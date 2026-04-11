@@ -15,6 +15,10 @@ export const AcademicProgressView: React.FC<ViewRendererProps> = ({
   // Encontrar propriedades relevantes
   const statusProp    = properties.find(p => p.prop_key === 'status')
   const trimestreProp = properties.find(p => p.prop_key === 'trimestre')
+  const cicloProp     = properties.find(p => p.prop_key === 'ciclo')
+  // ciclo para autodidata, trimestre para projetos acadêmicos convencionais
+  const groupProp     = trimestreProp ?? cicloProp
+  const groupLabel    = cicloProp && !trimestreProp ? 'Ciclo' : 'Trimestre'
   const notaProp      = properties.find(p => p.prop_key === 'nota')
   const creditosProp  = properties.find(p => p.prop_key === 'creditos')
   const codigoProp    = properties.find(p => p.prop_key === 'codigo')
@@ -24,13 +28,13 @@ export const AcademicProgressView: React.FC<ViewRendererProps> = ({
     return page.prop_values?.find(v => v.property_id === propId)
   }
 
-  // Agregar por trimestre
+  // Agregar por ciclo/trimestre
   const byTrimester = useMemo(() => {
     const map: Record<string, typeof pages> = {}
     const unsorted: typeof pages = []
 
     pages.forEach(page => {
-      const pv  = trimestreProp ? getPV(page, trimestreProp.id) : undefined
+      const pv  = groupProp ? getPV(page, groupProp.id) : undefined
       const tri = pv?.value_text ?? ''
       if (tri) {
         if (!map[tri]) map[tri] = []
@@ -191,7 +195,7 @@ export const AcademicProgressView: React.FC<ViewRendererProps> = ({
                     fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em',
                     color: color, fontWeight: 'bold',
                   }}>
-                    {trimester === '—' ? 'SEM TRIMESTRE' : trimester}
+                    {trimester === '—' ? `SEM ${groupLabel.toUpperCase()}` : trimester}
                   </div>
                   <div style={{ flex: 1, height: 1, background: border }} />
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2 }}>

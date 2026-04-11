@@ -40,10 +40,11 @@ export const CalendarView: React.FC<ViewRendererProps> = ({
 
   const dateProp     = properties.find(p => p.id === view.date_property_id)
   const trimestreProp = project.project_type === 'academic'
-    ? properties.find(p => p.prop_key === 'trimestre')
+    ? (properties.find(p => p.prop_key === 'trimestre') ?? properties.find(p => p.prop_key === 'ciclo'))
     : undefined
+  const triLabel = trimestreProp?.prop_key === 'ciclo' ? 'Ciclo' : 'Tri.'
 
-  // Trimestre do mês exibido (ex: "2025.2")
+  // Trimestre do mês exibido (ex: "2025.2") — só relevante para projetos não-autodidata
   const currentTri = trimesterLabel(year, month)
 
   // Filtro por trimestre: null = todos
@@ -66,7 +67,7 @@ export const CalendarView: React.FC<ViewRendererProps> = ({
     const pv = page.prop_values?.find(v => v.property_id === dateProp.id)
     if (!pv?.value_date) return
     if (triFilter) {
-      const pageTri = page.prop_values?.find(v => v.prop_key === 'trimestre')?.value_text
+      const pageTri = page.prop_values?.find(v => v.prop_key === trimestreProp?.prop_key)?.value_text
       if (pageTri !== triFilter) return
     }
     const key = pv.value_date.slice(0, 10)
@@ -78,7 +79,7 @@ export const CalendarView: React.FC<ViewRendererProps> = ({
   const availableTris = trimestreProp
     ? [...new Set(
         pages
-          .map(p => p.prop_values?.find(v => v.prop_key === 'trimestre')?.value_text)
+          .map(p => p.prop_values?.find(v => v.prop_key === trimestreProp.prop_key)?.value_text)
           .filter(Boolean) as string[]
       )].sort()
     : []
@@ -129,8 +130,8 @@ export const CalendarView: React.FC<ViewRendererProps> = ({
           hoje
         </button>
 
-        {/* Indicador de trimestre (projetos acadêmicos) */}
-        {trimestreProp && (
+        {/* Indicador de período (projetos acadêmicos) */}
+        {trimestreProp && trimestreProp.prop_key !== 'ciclo' && (
           <span style={{
             fontFamily: 'var(--font-mono)', fontSize: 9, color: accent,
             letterSpacing: '0.06em', borderLeft: `1px solid ${border}`, paddingLeft: 10,
@@ -155,7 +156,7 @@ export const CalendarView: React.FC<ViewRendererProps> = ({
           flexWrap: 'wrap',
         }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, letterSpacing: '0.08em' }}>
-            TRI.
+            {triLabel.toUpperCase()}
           </span>
           <button
             onClick={() => setTriFilter(null)}
@@ -248,7 +249,7 @@ export const CalendarView: React.FC<ViewRendererProps> = ({
               {/* Page chips */}
               {cellPages.slice(0, 3).map(page => {
                 const pageTri = trimestreProp
-                  ? page.prop_values?.find(v => v.prop_key === 'trimestre')?.value_text
+                  ? page.prop_values?.find(v => v.prop_key === trimestreProp.prop_key)?.value_text
                   : undefined
                 return (
                   <button key={page.id} onClick={() => onPageOpen(page)} style={{

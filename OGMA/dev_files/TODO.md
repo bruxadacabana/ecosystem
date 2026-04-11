@@ -93,6 +93,7 @@ Funcionalidades em falta ou incompletas nas áreas já iniciadas (Biblioteca, Ed
 - [x] Tipo de projeto **"Hobbies"** — `'hobby'` adicionado ao `ProjectType` com subcategorias, propriedades padrão (Status, Tags, Data Início, Notas) e views (Lista, Tabela)
 - [x] **Ideias Futuras** — `'idea'` adicionado ao `ProjectType`; widget "Ideias Futuras" no Dashboard lista projetos deste tipo com status e descrição
 - [x] Planner global: algoritmo de agendamento considera prioridade + prazo + limite de horas/dia; reagendamento disponível globalmente; agenda por dia implementada
+- [x] Organização progressiva para projetos acadêmicos **Autodidata**: propriedade `ciclo` (Ciclo 1–5, expansível pelo utilizador) em vez de `trimestre`; `AcademicProgressView` e `CalendarView` adaptam agrupamento e labels automaticamente conforme subcategoria
 
 ---
 
@@ -229,7 +230,6 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 - [x] Ícone do app (temporário) — ver secção "Ícone da aplicação" acima
 - [ ] Decoração cósmica completa, animações, ícone final definitivo
-- [ ] Necessário criar uma forma de organizar as páginas de um projeto do tipo acadêmico autodidata de maneira que seja possível acrescentar as disciplinas (páginas) e organizá-las de forma progressiva sem usar trimestres, já que não é fixo (autodidata). Talvez usar fase ou ciclo.
 
 ---
 

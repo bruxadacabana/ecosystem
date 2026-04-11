@@ -41,7 +41,7 @@ const api = (channel: string, handler: (data: any) => Promise<any> | any) => {
 
 // ── Seed interno: propriedades e views padrão por tipo de projeto ──────────────
 
-async function seedProjectProperties(projectId: number, projectType: string): Promise<Map<string, number>> {
+async function seedProjectProperties(projectId: number, projectType: string, subcategory?: string): Promise<Map<string, number>> {
   const propIds = new Map<string, number>()
   let order = 0
 
@@ -71,11 +71,18 @@ async function seedProjectProperties(projectId: number, projectType: string): Pr
         ['Pendente', '#8B7355'], ['Cursando', '#b8860b'],
         ['Concluída', '#4A6741'], ['Trancada', '#8B3A2A'],
       ])
-      await addProp('Trimestre', 'trimestre', 'select', [
-        [`${year - 1}.1`, null], [`${year - 1}.2`, null], [`${year - 1}.3`, null], [`${year - 1}.4`, null],
-        [`${year}.1`,     null], [`${year}.2`,     null], [`${year}.3`,     null], [`${year}.4`,     null],
-        [`${year + 1}.1`, null], [`${year + 1}.2`, null], [`${year + 1}.3`, null], [`${year + 1}.4`, null],
-      ])
+      if (subcategory === 'Autodidata') {
+        await addProp('Ciclo', 'ciclo', 'select', [
+          ['Ciclo 1', null], ['Ciclo 2', null], ['Ciclo 3', null],
+          ['Ciclo 4', null], ['Ciclo 5', null],
+        ])
+      } else {
+        await addProp('Trimestre', 'trimestre', 'select', [
+          [`${year - 1}.1`, null], [`${year - 1}.2`, null], [`${year - 1}.3`, null], [`${year - 1}.4`, null],
+          [`${year}.1`,     null], [`${year}.2`,     null], [`${year}.3`,     null], [`${year}.4`,     null],
+          [`${year + 1}.1`, null], [`${year + 1}.2`, null], [`${year + 1}.3`, null], [`${year + 1}.4`, null],
+        ])
+      }
       await addProp('Área', 'area', 'multi_select', [
         ['Humanas', '#7A5C2E'], ['Exatas', '#2C5F8A'], ['Biológicas', '#4A6741'],
         ['Computação', '#4A3A7A'], ['Linguagens', '#6A4A2E'], ['Artes', '#8A2A5A'],
@@ -175,13 +182,16 @@ async function seedProjectProperties(projectId: number, projectType: string): Pr
 async function seedProjectViews(
   projectId: number,
   projectType: string,
-  propIds: Map<string, number>
+  propIds: Map<string, number>,
+  subcategory?: string,
 ): Promise<void> {
   type ViewDef = [string, string, string | null, string | null]
 
+  const academicGroupProp = subcategory === 'Autodidata' ? 'ciclo' : 'trimestre'
+
   const viewConfigs: Record<string, ViewDef[]> = {
     academic: [
-      ['Progresso',  'progress', 'trimestre', null      ],
+      ['Progresso',  'progress', academicGroupProp, null      ],
       ['Tabela',     'table',    null,        null      ],
       ['Kanban',     'kanban',   'status',    null      ],
       ['Calendário', 'calendar', null,        'data_fim'],
@@ -721,8 +731,8 @@ export function registerIpcHandlers(): void {
     )
 
     const projectId = r.lastInsertRowid
-    const propIds   = await seedProjectProperties(projectId, data.project_type ?? 'custom')
-    await seedProjectViews(projectId, data.project_type ?? 'custom', propIds)
+    const propIds   = await seedProjectProperties(projectId, data.project_type ?? 'custom', data.subcategory ?? undefined)
+    await seedProjectViews(projectId, data.project_type ?? 'custom', propIds, data.subcategory ?? undefined)
 
     dbLog.info('projects:create', { id: projectId, name: data.name })
     return dbGet('SELECT * FROM projects WHERE id = ?', projectId)
