@@ -241,6 +241,8 @@
   gap: 12px;
   padding: 60px 20px;
   color: var(--ink-faint, #9C8E7A);
+  position: relative;
+  min-height: 220px;
 }
 
 /* ── Modal ───────────────────────────────────────────────────────────────── */

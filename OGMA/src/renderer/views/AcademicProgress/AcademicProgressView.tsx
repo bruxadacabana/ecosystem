@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react'
 import { ViewRendererProps } from '../ProjectDashboard/ViewRenderer'
 import { disciplineColor, disciplineColorAlpha } from '../../utils/colorUtils'
+import { CosmosLayer } from '../../components/Cosmos/CosmosLayer'
 
 export const AcademicProgressView: React.FC<ViewRendererProps> = ({
   project, pages, properties, dark, onPageOpen, onNewPage,
@@ -163,7 +164,10 @@ export const AcademicProgressView: React.FC<ViewRendererProps> = ({
       {/* ── Semestres ── */}
       {byTrimester.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center',
-          gap: 12, padding: 40, color: ink2, fontStyle: 'italic' }}>
+          gap: 12, padding: 40, color: ink2, fontStyle: 'italic', position: 'relative',
+          minHeight: 200 }}>
+          <CosmosLayer width={560} height={200} seed="academic_empty" density="low" dark={dark}
+            style={{ opacity: dark ? 0.22 : 0.1 }} />
           <span style={{ fontSize: 32, opacity: 0.4 }}>◎</span>
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, color: ink }}>
             Nenhuma disciplina ainda

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { Page, Project, ProjectView, ProjectProperty, PropOption } from '../../types'
 import { useAppStore } from '../../store/useAppStore'
 import { fromIpc } from '../../types/errors'
+import { CosmosLayer } from '../../components/Cosmos/CosmosLayer'
 import './KanbanView.css'
 
 const db = () => (window as any).db
@@ -270,7 +271,9 @@ export const KanbanView: React.FC<Props> = ({
 
   if (!groupPropId) {
     return (
-      <div className="kanban-loading" style={{ color: ink2 }}>
+      <div className="kanban-loading" style={{ color: ink2, position: 'relative' }}>
+        <CosmosLayer width={480} height={180} seed="kanban_nogroup" density="low" dark={dark}
+          style={{ opacity: dark ? 0.2 : 0.1 }} />
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontStyle: 'italic' }}>
           Esta vista não tem agrupamento configurado.
         </span>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { ViewRendererProps } from '../ProjectDashboard/ViewRenderer'
+import { CosmosLayer } from '../../components/Cosmos/CosmosLayer'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -52,7 +53,10 @@ export const CalendarView: React.FC<ViewRendererProps> = ({
 
   if (!dateProp) {
     return (
-      <div style={{ padding: '40px 32px', color: ink2, fontStyle: 'italic', fontSize: 13 }}>
+      <div style={{ padding: '40px 32px', color: ink2, fontStyle: 'italic', fontSize: 13,
+        position: 'relative', minHeight: 140 }}>
+        <CosmosLayer width={480} height={140} seed="cal_nodate" density="low" dark={dark}
+          style={{ opacity: dark ? 0.2 : 0.09 }} />
         <p>Esta vista não tem uma propriedade de data configurada.</p>
         <p style={{ fontSize: 11, marginTop: 6 }}>
           Cria uma nova vista e define "Agrupar por data" — ou edita esta vista diretamente na base de dados.
@@ -115,8 +119,10 @@ export const CalendarView: React.FC<ViewRendererProps> = ({
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '8px 16px', borderBottom: `1px solid ${border}`, flexShrink: 0,
-        background: bg, flexWrap: 'wrap',
+        background: bg, flexWrap: 'wrap', position: 'relative',
       }}>
+        <CosmosLayer width={700} height={52} seed={`cal_nav_${project.id}`} density="low" dark={dark}
+          style={{ opacity: dark ? 0.14 : 0.07 }} />
         <button className="btn btn-ghost btn-sm" onClick={prevMonth} style={{ color: ink2, fontSize: 16 }}>‹</button>
         <h3 style={{
           fontFamily: 'var(--font-display)', fontSize: 16, fontStyle: 'italic',

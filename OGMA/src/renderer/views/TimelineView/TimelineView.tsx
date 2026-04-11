@@ -1,6 +1,7 @@
 import React, { useRef } from 'react'
 import { Page } from '../../types'
 import { ViewRendererProps } from '../ProjectDashboard/ViewRenderer'
+import { CosmosLayer } from '../../components/Cosmos/CosmosLayer'
 
 const DAY_W    = 28   // px per day
 const LEFT_W   = 210  // px for the page name column
@@ -34,7 +35,10 @@ export const TimelineView: React.FC<ViewRendererProps> = ({
 
   if (!dateProp) {
     return (
-      <div style={{ padding: '40px 32px', color: ink2, fontStyle: 'italic', fontSize: 13 }}>
+      <div style={{ padding: '40px 32px', color: ink2, fontStyle: 'italic', fontSize: 13,
+        position: 'relative', minHeight: 140 }}>
+        <CosmosLayer width={480} height={140} seed="timeline_nodate" density="low" dark={dark}
+          style={{ opacity: dark ? 0.2 : 0.09 }} />
         <p>Esta vista não tem uma propriedade de data configurada.</p>
         <p style={{ fontSize: 11, marginTop: 6 }}>
           Cria a vista com "Agrupar por data" definido.
@@ -63,7 +67,9 @@ export const TimelineView: React.FC<ViewRendererProps> = ({
   if (pagesWithDates.length === 0) {
     return (
       <div style={{ padding: '40px 32px', color: ink2, fontStyle: 'italic', fontSize: 13,
-        display: 'flex', flexDirection: 'column', gap: 12 }}>
+        display: 'flex', flexDirection: 'column', gap: 12, position: 'relative', minHeight: 160 }}>
+        <CosmosLayer width={480} height={160} seed="timeline_empty" density="low" dark={dark}
+          style={{ opacity: dark ? 0.2 : 0.09 }} />
         <p>Nenhuma página com data definida via "{dateProp.name}".</p>
         <button className="btn btn-sm" onClick={onNewPage} style={{ borderColor: color, color, alignSelf: 'flex-start' }}>
           + Nova página

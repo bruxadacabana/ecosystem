@@ -229,13 +229,13 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 ## Fase 11 — Polimento
 
 - [x] Ícone do app (temporário) — ver secção "Ícone da aplicação" acima
-- [ ] Decoração cósmica completa, animações, ícone final definitivo
+- [x] Decoração cósmica completa, animações
 
 ---
 
 ## Fase 12 — Analytics (todos vem desativados por padrão e são ativados nas configurações: vai abrir uma janela centralizada com um checkbox para marcar os que deseja ativar)
 
-- [x] Pico de Produtividade: "Você é uma criatura da [Manhã/Noite]", baseado no horário em que a maioria das páginas é editada.
+- [x] Pico de Produtividade: "Você é uma criatura da [Manhã/Noite]", baseaddefinitivoo no horário em que a maioria das páginas é editada.
 - [x] Taxa de Absorção Literária: Quantos recursos (livros/artigos) foram concluídos no mês vs. adicionados à lista de leitura.
 - [ ] Páginas por "Área do Conhecimento": Um gráfico de pizza ou barras mostrando se você está dedicando mais tempo a Letras, Cibersegurança ou Hobbies Manuais.
 - [x] Produtividade por Fase Lunar: Uma estatística curiosa mostrando em qual fase da lua você costuma concluir mais tarefas (ex: "Sua produtividade aumenta 20% na Lua Crescente").

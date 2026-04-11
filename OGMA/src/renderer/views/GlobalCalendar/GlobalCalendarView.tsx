@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { fromIpc } from '../../types/errors'
 import { useAppStore } from '../../store/useAppStore'
+import { CosmosLayer } from '../../components/Cosmos/CosmosLayer'
 
 const db = () => (window as any).db
 
@@ -283,8 +284,11 @@ export function GlobalCalendarView({ dark, onPageOpen }: Props) {
       {/* Barra superior */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
-        padding: '8px 16px', borderBottom: `1px solid ${border}`, flexShrink: 0, background: bg,
+        padding: '8px 16px', borderBottom: `1px solid ${border}`, flexShrink: 0,
+        background: bg, position: 'relative',
       }}>
+        <CosmosLayer width={800} height={50} seed="global_cal_header" density="low" dark={dark}
+          style={{ opacity: dark ? 0.14 : 0.07 }} />
 
         {/* Tabs */}
         {(['calendar', 'agenda', 'reminders'] as const).map(t => (
@@ -453,7 +457,10 @@ export function GlobalCalendarView({ dark, onPageOpen }: Props) {
       {tab === 'agenda' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 40px' }}>
           {agendaDates.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 48, color: ink2, fontStyle: 'italic', fontSize: 13 }}>
+            <div style={{ textAlign: 'center', padding: 48, color: ink2, fontStyle: 'italic', fontSize: 13,
+              position: 'relative', minHeight: 180 }}>
+              <CosmosLayer width={600} height={180} seed="global_agenda_empty" density="low" dark={dark}
+                style={{ opacity: dark ? 0.2 : 0.1 }} />
               Sem actividades nos próximos 60 dias.
             </div>
           ) : agendaDates.map(date => {
@@ -589,7 +596,10 @@ export function GlobalCalendarView({ dark, onPageOpen }: Props) {
           )}
 
           {reminders.length === 0 && (
-            <div style={{ textAlign: 'center', padding: 48, color: ink2, fontStyle: 'italic', fontSize: 13 }}>
+            <div style={{ textAlign: 'center', padding: 48, color: ink2, fontStyle: 'italic', fontSize: 13,
+              position: 'relative', minHeight: 180 }}>
+              <CosmosLayer width={600} height={180} seed="global_reminders_empty" density="low" dark={dark}
+                style={{ opacity: dark ? 0.2 : 0.1 }} />
               Nenhum lembrete registado.
             </div>
           )}

@@ -16,7 +16,7 @@
   color: var(--ink-ghost);
   font-size: 10px;
   opacity: 0.5;
-  animation: paperFall 0.3s ease-out both;
+  animation: paperFall 0.22s ease-out both;
 }
 
 .modal-star.s1 { font-size: 7px;  animation-delay: 0.05s; }

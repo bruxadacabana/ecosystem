@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { SubSection } from '../../components/Sidebar/Sidebar'
 import { fromIpc } from '../../types/errors'
+import { CosmosLayer } from '../../components/Cosmos/CosmosLayer'
 import './LibraryView.css'
 
 const db = () => (window as any).db
@@ -1568,6 +1569,8 @@ function ReadingsView({ dark }: { dark: boolean }) {
       <div className="library-scroll">
         {filtered.length === 0 ? (
           <div className="library-empty">
+            <CosmosLayer width={560} height={220} seed="library_readings_empty" density="low" dark={dark}
+              style={{ opacity: dark ? 0.2 : 0.1 }} />
             <span style={{ fontSize: 36, opacity: 0.4 }}>📖</span>
             <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic',
               fontSize: 16, color: ink }}>
@@ -2090,6 +2093,8 @@ function ResourcesView({ dark }: { dark: boolean }) {
       <div className="library-scroll">
         {filtered.length === 0 ? (
           <div className="library-empty">
+            <CosmosLayer width={560} height={220} seed="library_resources_empty" density="low" dark={dark}
+              style={{ opacity: dark ? 0.2 : 0.1 }} />
             <span style={{ fontSize: 36, opacity: 0.4 }}>◇</span>
             <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 16, color: ink }}>
               {query ? 'Nenhum recurso encontrado' : 'Nenhum recurso ainda'}
