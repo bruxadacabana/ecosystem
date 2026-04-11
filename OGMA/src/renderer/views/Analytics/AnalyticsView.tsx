@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { fromIpc } from '../../types/errors'
 import { PROJECT_TYPE_LABELS } from '../../types'
+import { AlchemyLoader } from '../../components/UI/AlchemyLoader'
 import './AnalyticsView.css'
 
 const db = () => (window as any).db
@@ -474,9 +475,8 @@ export function AnalyticsView({ dark }: { dark: boolean }) {
       </div>
 
       {loading ? (
-        <div style={{ color: ink2, fontFamily: 'var(--font-mono)', fontSize: 11,
-          fontStyle: 'italic', padding: '60px 0', textAlign: 'center', opacity: 0.5 }}>
-          A carregar…
+        <div style={{ padding: '60px 0', textAlign: 'center', opacity: 0.6 }}>
+          <AlchemyLoader symbol="☿" size="lg" />
         </div>
       ) : !data ? (
         <div style={{ color: ink2, fontFamily: 'var(--font-display)', fontStyle: 'italic',

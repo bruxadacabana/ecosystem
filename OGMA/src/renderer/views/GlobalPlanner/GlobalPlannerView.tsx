@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { fromIpc } from '../../types/errors'
 import { useAppStore } from '../../store/useAppStore'
 import { CosmosLayer } from '../../components/Cosmos/CosmosLayer'
+import { AlchemyLoader } from '../../components/UI/AlchemyLoader'
 import './GlobalPlannerView.css'
 
 const db = () => (window as any).db
@@ -570,7 +571,7 @@ export function GlobalPlannerView({ dark, onProjectOpen }: Props) {
           </div>
 
           <div className="bj-task-list">
-            {loading ? <div style={{ fontFamily:'var(--font-mono)', fontSize:11, color:ink2, padding:'32px 0', textAlign:'center', opacity:0.5 }}>A carregar…</div> : 
+            {loading ? <div style={{ padding:'32px 0', textAlign:'center', opacity:0.6 }}><AlchemyLoader symbol="♄" size="md" /></div> : 
              
              rightTab === 'agenda' ? (
               /* MODO AGENDA */

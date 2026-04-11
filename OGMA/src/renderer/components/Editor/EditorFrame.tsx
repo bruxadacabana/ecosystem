@@ -5,6 +5,7 @@
  */
 import React, { useRef, useEffect, useCallback, useState } from 'react'
 import { createLogger } from '../../utils/logger'
+import { AlchemyLoader } from '../UI/AlchemyLoader'
 import './EditorFrame.css'
 
 const log = createLogger('EditorFrame')
@@ -246,7 +247,7 @@ export const EditorFrame: React.FC<Props> = ({
     <div className="editor-frame-wrapper">
       {loading && (
         <div className="editor-loading">
-          <span className="editor-loading-text">Carregando editor...</span>
+          <AlchemyLoader symbol="☿" size="md" />
         </div>
       )}
       <div

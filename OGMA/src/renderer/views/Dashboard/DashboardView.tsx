@@ -3,6 +3,8 @@ import { CosmosLayer } from '../../components/Cosmos/CosmosLayer'
 import { useAppStore } from '../../store/useAppStore'
 import { PROJECT_TYPE_ICONS, AppSettings, StoredLocation, Project } from '../../types'
 import { fromIpc } from '../../types/errors'
+import { AlchemyLoader } from '../../components/UI/AlchemyLoader'
+import { WaxSeal } from '../../components/UI/WaxSeal'
 
 const db = () => (window as any).db
 
@@ -1188,7 +1190,7 @@ function AgendaWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSiz
         AGENDA DA SEMANA
       </span>
       {loading ? (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>…</span>
+        <AlchemyLoader symbol="☿" size="sm" />
       ) : (
         <div style={{
           display: 'grid',
@@ -1304,7 +1306,7 @@ function RemindersWidget({ dark, size, isActive }: { dark: boolean; size: Widget
         )}
       </div>
       {loading ? (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>…</span>
+        <AlchemyLoader symbol="☿" size="sm" />
       ) : shown.length === 0 ? (
         <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2 }}>
           Nenhum lembrete pendente.
@@ -1399,7 +1401,7 @@ function ProvasWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSiz
         PRÓXIMAS PROVAS
       </span>
       {loading ? (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>…</span>
+        <AlchemyLoader symbol="☿" size="sm" />
       ) : shown.length === 0 ? (
         <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2 }}>
           Sem provas ou prazos próximos.
@@ -1501,7 +1503,7 @@ function ProjProgressWidget({ dark, size, isActive }: { dark: boolean; size: Wid
         PROGRESSO DOS PROJETOS
       </span>
       {loading ? (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>…</span>
+        <AlchemyLoader symbol="☿" size="sm" />
       ) : shown.length === 0 ? (
         <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2 }}>
           Nenhum projeto ativo.
@@ -1595,7 +1597,7 @@ function QuoteWidget({ dark, size }: { dark: boolean; size: WidgetSize }) {
           >↻</button>
         </div>
         {loading ? (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>…</span>
+          <AlchemyLoader symbol="☿" size="sm" />
         ) : !quote ? (
           <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2 }}>
             Nenhuma citação guardada ainda.
@@ -1678,7 +1680,7 @@ function IdeasWidget({ dark, size, onProjectOpen }: { dark: boolean; size: Widge
           </span>
         </div>
         {loading ? (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>…</span>
+          <AlchemyLoader symbol="☿" size="sm" />
         ) : ideas.length === 0 ? (
           <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2 }}>
             Nenhuma ideia ainda. Crie um projeto do tipo "Ideia Futura".
@@ -2137,13 +2139,14 @@ const TASK_TYPE_ICONS: Record<string, string> = {
 }
 
 function DayPlanWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSize; isActive: boolean }) {
-  const [blocks,  setBlocks]  = useState<TodayBlock[]>([])
-  const [loading, setLoading] = useState(true)
+  const [blocks,    setBlocks]    = useState<TodayBlock[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [sealedId,  setSealedId]  = useState<number | null>(null)
 
   const ink    = dark ? '#E8DFC8' : '#2C2416'
-  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
-  const border = dark ? '#3A3020' : '#C4B9A8'
-  const bg     = dark ? '#1A1610' : '#F5F0E8'
+  const ink2   = dark ? '#7A7260' : '#9C8E7A'
+  const border = dark ? '#2A3148' : '#C4B9A8'
+  const bg     = dark ? '#12161E' : '#F5F0E8'
   const accent = dark ? '#D4A820' : '#b8860b'
 
   const load = async () => {
@@ -2180,7 +2183,7 @@ function DayPlanWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSi
       </div>
 
       {loading ? (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>…</span>
+        <AlchemyLoader symbol="☿" size="sm" />
       ) : blocks.length === 0 ? (
         <span style={{
           fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2,
@@ -2195,11 +2198,12 @@ function DayPlanWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSi
             return (
               <div key={block.id} style={{
                 display: 'flex', alignItems: 'center', gap: 8,
-                background: dark ? '#211D16' : '#EDE7D9',
+                background: dark ? '#181D28' : '#EDE7D9',
                 border: `1px solid ${border}`,
                 borderLeft: `3px solid ${isDone ? '#4A6741' : color}`,
                 borderRadius: 2, padding: '6px 10px',
                 opacity: isDone ? 0.65 : 1,
+                position: 'relative', overflow: 'hidden',
               }}>
                 <span style={{ fontSize: 14, flexShrink: 0 }}>
                   {TASK_TYPE_ICONS[block.task_type] ?? '◦'}
@@ -2225,11 +2229,14 @@ function DayPlanWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSi
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ padding: '1px 5px', fontSize: 10, color: accent, flexShrink: 0 }}
-                    onClick={() => handleLog(block, block.planned_hours)}
+                    onClick={async () => { await handleLog(block, block.planned_hours); setSealedId(block.id) }}
                     title="Marcar como concluído"
                   >
                     ✓
                   </button>
+                )}
+                {sealedId === block.id && (
+                  <WaxSeal variant="gold" symbol="✓" onDismiss={() => setSealedId(null)} />
                 )}
               </div>
             )

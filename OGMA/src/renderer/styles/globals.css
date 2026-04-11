@@ -233,6 +233,8 @@ input[type="email"], input[type="number"], textarea, select {
   box-shadow: 3px 3px 0 var(--paper-darker);
   transition: background var(--transition), box-shadow var(--transition);
   animation: paperFall 0.22s ease-out;
+  position: relative;
+  overflow: hidden;
 }
 .card:hover {
   background: var(--paper-darker);
@@ -563,7 +565,7 @@ input, textarea, [contenteditable] {
 
 /* ── Foxing — manchas de envelhecimento ─────────────────── */
 .foxing { position: relative; overflow: hidden; }
-.foxing::after {
+.foxing::after, .card::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -578,8 +580,11 @@ input, textarea, [contenteditable] {
 }
 
 /* ── Marginalia — anotação de margem ─────────────────────── */
-.marginalia-item { position: relative; }
-.marginalia-item::before {
+.marginalia-item,
+.nav-item { position: relative; }
+
+.marginalia-item::before,
+.nav-item::before {
   content: '✦';
   position: absolute;
   left: 4px;
@@ -593,7 +598,8 @@ input, textarea, [contenteditable] {
   pointer-events: none;
   user-select: none;
 }
-.marginalia-item:hover::before { opacity: 1; }
+.marginalia-item:hover::before,
+.nav-item:hover::before { opacity: 1; }
 
 /* ── Selo de cera ────────────────────────────────────────── */
 .wax-seal {

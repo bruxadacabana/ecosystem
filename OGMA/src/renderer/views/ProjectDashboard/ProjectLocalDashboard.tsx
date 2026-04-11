@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Project, Page } from '../../types'
 import { fromIpc } from '../../types/errors'
+import { AlchemyLoader } from '../../components/UI/AlchemyLoader'
 
 const db = () => (window as any).db
 
@@ -731,9 +732,9 @@ export function ProjectLocalDashboard({ project, dark, pages, onPageOpen, onOpen
     return (
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flex: 1, color: ink2, fontFamily: 'var(--font-mono)', fontSize: 11, opacity: 0.5,
+        flex: 1, opacity: 0.6,
       }}>
-        A carregar…
+        <AlchemyLoader symbol="☿" size="lg" />
       </div>
     )
   }
