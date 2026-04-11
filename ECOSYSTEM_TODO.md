@@ -9,7 +9,18 @@ utilizável antes de avançar para a próxima.
 
 ---
 
-## PRINCÍPIO INEGOCIÁVEL
+## PRINCÍPIOS INEGOCIÁVEIS
+
+**Compatibilidade de plataforma: todos os apps devem rodar no Windows 10 e no CachyOS (Linux).**
+
+Isso implica:
+- Sem paths hardcoded com separadores Unix — usar APIs de path da linguagem (`Path`, `os.path`, `std::path`)
+- Sem dependências exclusivas de uma plataforma (ex.: bibliotecas só-Linux ou só-Windows)
+- Testar caminhos com espaços (o diretório de trabalho da própria Jenifer tem espaço no nome)
+- Apps Python: empacotar com `uv` ou fornecer instruções explícitas para ambos os SOs
+- Apps Tauri/Rust: garantir que `cargo tauri build` funcione nos dois targets
+
+---
 
 **Tratamento de erros com tipagem é prioridade absoluta em todo o ecossistema.**
 

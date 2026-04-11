@@ -123,13 +123,16 @@ Diferenciais visuais exclusivos do AETHER:
 Pré-requisitos: [Rust](https://rustup.rs) · Node.js 18+ · dependências do Tauri para Linux/Windows
 
 ```bash
-# Instalar dependências
+# 1. Instalar o Tauri CLI (uma vez)
+cargo install tauri-cli --version "^2.0.0" --locked
+
+# 2. Instalar dependências JS
 npm install
 
-# Rodar em modo desenvolvimento
+# 3. Rodar em modo desenvolvimento
 cargo tauri dev
 
-# Build de produção
+# 4. Build de produção
 cargo tauri build
 ```
 
