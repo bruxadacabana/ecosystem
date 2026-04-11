@@ -146,7 +146,7 @@ export const CosmosLayer: React.FC<Props> = ({
         <g key="moon" opacity={0.26}>
           <circle cx={mx} cy={my} r={mr} fill={starColor} />
           <circle cx={mx + mr * 0.55} cy={my} r={mr * 0.8}
-            fill={dark ? '#1A1610' : '#F5F0E8'} />
+            fill={dark ? '#12161E' : '#F5F0E8'} />
         </g>
       )
     }

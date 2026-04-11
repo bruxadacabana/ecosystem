@@ -5,14 +5,13 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 9999; /* Garante que fica por cima de ABSOLUTAMENTE TUDO */
+  z-index: 9999;
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: var(--bg-primary, #1a1610a6);
-  
-  /* Animação suave de entrada */
-  animation: fadeIn 0.5s ease-out forwards;
+  background: rgba(26,22,16,0.85);
+  backdrop-filter: blur(2px);
+  animation: splashFadeIn 0.55s ease forwards;
 }
 
 /* ── O "Cartão" / Documento Místico ── */
@@ -20,7 +19,7 @@
   position: relative;
   width: 520px;
   height: 340px;
-  border-radius: 8px;
+  border-radius: 2px;
   border-width: 1px;
   border-style: solid;
   display: flex;
@@ -28,24 +27,25 @@
   justify-content: center;
   align-items: center;
   overflow: hidden;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+  box-shadow: 8px 8px 0 rgba(44,36,22,0.3);
 }
 
 /* ── Detalhe estético: Margem de documento antigo ── */
 .splash-margin {
   position: absolute;
-  left: 40px;
+  left: 44px;
   top: 0;
   bottom: 0;
-  width: 2px;
+  width: 1px;
   z-index: 1;
 }
 
 /* ── Textos e Layout ── */
 .splash-logo {
   font-family: var(--font-display, serif);
-  font-size: 42px;
-  letter-spacing: 0.1em;
+  font-size: 68px;
+  font-style: italic;
+  letter-spacing: 0.06em;
   position: relative;
   z-index: 10;
   margin-bottom: 4px;
@@ -53,8 +53,9 @@
 
 .splash-sub {
   font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  letter-spacing: 0.25em;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
   position: relative;
   z-index: 10;
   margin-bottom: 24px;
@@ -70,23 +71,21 @@
 
 .splash-status {
   font-family: var(--font-mono, monospace);
-  font-size: 13px;
-  letter-spacing: 0.05em;
+  font-size: 11px;
+  letter-spacing: 0.04em;
   position: relative;
   z-index: 10;
   margin-bottom: 16px;
   text-align: center;
-  
-  /* Animação de pulsar para dar ideia de processamento */
-  animation: pulse 2s infinite ease-in-out;
 }
 
 .splash-dots {
-  font-size: 24px;
+  font-size: 18px;
   line-height: 0.5;
   position: relative;
   z-index: 10;
   margin-bottom: 20px;
+  animation: blink 1.2s infinite;
 }
 
 .splash-version {
@@ -94,18 +93,12 @@
   bottom: 16px;
   right: 20px;
   font-family: var(--font-mono, monospace);
-  font-size: 10px;
+  font-size: 9px;
   z-index: 10;
 }
 
-/* ── Keyframes (Animações) ── */
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes pulse {
-  0% { opacity: 0.7; }
-  50% { opacity: 1; }
-  100% { opacity: 0.7; }
+/* ── Keyframes ── */
+@keyframes splashFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }

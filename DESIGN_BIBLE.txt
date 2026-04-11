@@ -550,7 +550,7 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   DIMENSÕES FIXAS:
-  --sidebar-w:  224px   Largura da sidebar (sempre visível, nunca colapsável)
+  --sidebar-w:  224px   Largura da sidebar expandida
   --topbar-h:   44px    Altura da topbar
   --radius:     2px     Border-radius PADRÃO de TUDO
 
@@ -793,11 +793,14 @@
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Largura fixa: 224px. Nunca colapsável.
+  Largura expandida: 224px. Colapsada: 44px (apenas ícones visíveis).
+  Sidebar é SEMPRE colapsável — o usuário pode reduzir para ícones a qualquer momento.
+  Ao colapsar, a linha de margem (sidebar::before) deve ser ocultada.
   background: --paper-dark, border-right: 1px solid --rule
 
   DECORAÇÃO: linha vermelha de margem em left: 44px (sidebar::before)
   Ícones de nav ficam à esquerda da linha, texto à direita.
+  No estado colapsado, apenas ícones são exibidos (sem labels de texto).
 
   LOGO AREA (topo):
   · Nome do app em IM Fell English, 24px, itálico

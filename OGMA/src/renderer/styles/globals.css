@@ -35,23 +35,23 @@
   --transition: 140ms ease;
 }
 
-/* ── Tema Noturno ───────────────────────────────────────── */
+/* ── Tema Noturno — "Atlas Astronômico à Meia-Noite" ────── */
 html.dark {
-  --paper:          #1A1610;
-  --paper-dark:     #211D16;
-  --paper-darker:   #2A2520;
-  --paper-darkest:  #332E26;
+  --paper:          #12161E;
+  --paper-dark:     #181D28;
+  --paper-darker:   #1E2433;
+  --paper-darkest:  #252B3A;
   --ink:            #E8DFC8;
   --ink-light:      #C8B99A;
-  --ink-faint:      #8A7A62;
-  --ink-ghost:      #4A3E2E;
+  --ink-faint:      #7A7260;
+  --ink-ghost:      #2E3445;
   --ribbon:         #C45A40;
   --ribbon-light:   #D97A5A;
   --accent-green:   #6A9060;
   --stamp:          #A07840;
-  --rule:           #3A3020;
-  --shadow:         rgba(0,0,0,0.4);
-  --margin-line:    rgba(160,80,40,0.2);
+  --rule:           #2A3148;
+  --shadow:         rgba(0,0,0,0.5);
+  --margin-line:    rgba(212,168,32,0.15);
   --cursor-color:   #D4A820;
   --accent:         #D4A820;
 }
