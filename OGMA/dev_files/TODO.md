@@ -298,6 +298,17 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ---
 
+## Design System — Efeitos Visuais (2026-04-10)
+
+- [x] Vinheta sépia — body::before radial-gradient escurecendo bordas
+- [x] Foxing — classe .foxing com manchas de envelhecimento nos cantos de cards
+- [x] Marginalia — classe .marginalia-item com símbolo ✦ no hover à esquerda
+- [x] Selo de cera — componente WaxSeal (aparecer em conclusão de item)
+- [x] Luz de vela — componente CandleGlow com brilho radial pulsante no fundo
+- [x] Loader alquímico — componente AlchemyLoader substituindo spinners
+
+---
+
 ## Melhorias Futuras
 
 - [x] Dashboard e página inicial de projeto: melhorar layout, widgets personalizáveis por projeto, resumo de progresso, atividades recentes, acesso rápido às páginas mais relevantes — `ProjectLocalDashboard` com coluna de stats por tipo + grid de widgets customizável (add/remove, localStorage); toolbar com dropdown de vistas substituindo abas horizontais

@@ -543,6 +543,90 @@
 
   Selecionar texto ilumina-o em âmbar — como marcar com lápis de cera.
 
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  9. VINHETA SÉPIA — Bordas Envelhecidas                               ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  body::before — radial-gradient cobrindo toda a tela.
+  Transparente no centro (55%), escurece nas bordas:
+    Dia:   rgba(44,36,22,0.10)
+    Noite: rgba(0,0,0,0.20)
+  pointer-events: none. z-index: 0.
+
+  Imita o envelhecimento e manuseio nas bordas do papel real. O usuário
+  não percebe conscientemente — mas sem ela o app parece "digitalizado",
+  não "físico".
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  10. FOXING — Manchas de Envelhecimento                               ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Classe utilitária .foxing — aplicar em cards e headers de seção.
+  Implementado como ::after com quatro radial-gradient circulares,
+  opacidade 4–6%, nos quatro cantos do elemento. Estático, não animado.
+  O elemento pai precisa ter position: relative e overflow: hidden.
+
+  O cartógrafo não usava papel novo. Todo elemento "foxado" acumula
+  décadas de uso imaginário.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  11. MARGINALIA — Anotação de Margem                                  ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Classe utilitária .marginalia-item — aplicar em itens de lista e nav.
+  No hover, o símbolo ✦ aparece via ::before, fadeIn 140ms, na borda
+  esquerda do elemento (como anotação de leitor numa margem de manuscrito).
+  Cor: --ink-ghost. Font-family: --font-display. Font-size: 8px.
+
+  Símbolos possíveis: ✦  ☿  ♄  ★  ⊕  ☾
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  12. SELO DE CERA — Documento Selado                                  ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Componente React WaxSeal — surge ao concluir uma tarefa ou item.
+  Círculo 40×40px, border-radius: 50%, rotação: -12deg.
+  Variante red (padrão): --ribbon  |  Variante gold: --accent
+  Auto-dismiss após 1800ms.
+
+  @keyframes sealAppear {
+    from { opacity: 0; transform: rotate(-12deg) scale(1.3); }
+    to   { opacity: 0.5; transform: rotate(-12deg) scale(1); }
+  }
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  13. LUZ DE VELA — Brilho Atmosférico                                 ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Componente React CandleGlow — div fixo atrás de tudo (z-index: 0).
+  radial-gradient elipsoidal centrado em 50% 48%:
+    Dia:   rgba(184,134,11,0.025) → transparent
+    Noite: rgba(212,168,32,0.035) → transparent
+  Animação: candleFlicker 4s ease-in-out infinite.
+
+  A amplitude é propositalmente ínfima — imperceptível conscientemente,
+  mas suficiente para sentir que há uma vela na sala.
+
+  @keyframes candleFlicker {
+    0%, 100% { opacity: 0; }
+    50%       { opacity: 1; }
+  }
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  14. SÍMBOLO ALQUÍMICO — Loader                                       ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Componente React AlchemyLoader e classe CSS .alchemy-loader.
+  Substitui spinners modernos em qualquer estado de carregamento.
+  Símbolo padrão: ☿  |  Outros: ♄  ☉  ⊕  ☾  ✦
+  Cor: --accent. Tamanhos: sm (13px) / md (18px) / lg (28px).
+
+  @keyframes alchemyRotate {
+    0%   { transform: rotate(0deg);   opacity: 0.6; }
+    50%  { transform: rotate(180deg); opacity: 1.0; }
+    100% { transform: rotate(360deg); opacity: 0.6; }
+  }
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   VII. LAYOUT E MÉTRICAS
