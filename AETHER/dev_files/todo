@@ -59,6 +59,16 @@ mesma paleta sépia, mesma tipografia, mesmas regras de sombra, animações e co
 
 ---
 
+## Design Bible v2.0 — Audit (2026-04-11)
+
+- [x] tokens.css: modo noturno migrado para paleta "Atlas Astronômico à Meia-Noite"
+- [x] tokens.css: `--sidebar-w` corrigido para 224px (era 260px)
+- [x] typography.css: hierarquia tipográfica alinhada ao bible (t-body 13px, t-btn 11px, t-label 10px, t-section 9px, t-badge 10px, t-meta 9px)
+- [x] components.css: `.btn` corrigido para 11px / 5px 14px
+- [x] Splash.tsx: background hardcoded `rgba(26,22,16,0.45)` → `var(--paper)`
+
+---
+
 ## FASE 0 — Design System
 
 > Entregável: toda a fundação visual implementada. Nenhum componente de UI é construído sem isso estar pronto.

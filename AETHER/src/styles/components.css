@@ -9,9 +9,9 @@
 
 .btn {
   font-family: var(--font-mono);
-  font-size: 14px;
-  letter-spacing: 0.06em;
-  padding: 6px 16px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 5px 14px;
   border-radius: var(--radius);
   border: 1px solid var(--rule);
   background: var(--paper-dark);
@@ -86,8 +86,8 @@
 }
 
 .btn-sm {
-  font-size: 12px;
-  padding: 4px 11px;
+  font-size: 10px;
+  padding: 3px 10px;
 }
 
 .btn-icon {

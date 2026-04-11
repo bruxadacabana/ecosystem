@@ -36,7 +36,7 @@
   --shadow:         rgba(44, 36, 22, 0.14);
 
   /* Métricas */
-  --sidebar-w:      260px;
+  --sidebar-w:      224px;
   --topbar-h:       44px;
   --radius:         2px;
 
@@ -104,20 +104,20 @@ html.light {
 }
 
 /* ----------------------------------------------------------
-   MODO NOTURNO — "Scriptorium à Luz de Vela"
+   MODO NOTURNO — "Atlas Astronômico à Meia-Noite"
 ---------------------------------------------------------- */
 html.dark {
   /* Fundos */
-  --paper:          #1A1610;
-  --paper-dark:     #211D16;
-  --paper-darker:   #2A2520;
-  --paper-darkest:  #332E26;
+  --paper:          #12161E;
+  --paper-dark:     #181D28;
+  --paper-darker:   #1E2433;
+  --paper-darkest:  #252B3A;
 
   /* Tintas */
   --ink:            #E8DFC8;
   --ink-light:      #C8B99A;
-  --ink-faint:      #8A7A62;
-  --ink-ghost:      #4A3E2E;
+  --ink-faint:      #7A7260;
+  --ink-ghost:      #2E3445;
 
   /* Acento — brilha mais à noite */
   --accent:         #D4A820;
@@ -130,9 +130,9 @@ html.dark {
   --stamp:          #A07840;
 
   /* Linhas */
-  --rule:           #3A3020;
-  --margin-line:    rgba(160, 80, 40, 0.2);
-  --shadow:         rgba(0, 0, 0, 0.4);
+  --rule:           #2A3148;
+  --margin-line:    rgba(212, 168, 32, 0.15);
+  --shadow:         rgba(0, 0, 0, 0.5);
 
   /* Sombras flat — noturno */
   --shadow-btn:         2px 2px 0 var(--rule);
