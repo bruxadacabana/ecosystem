@@ -9,7 +9,6 @@ import sys
 import os
 import json
 import re
-import math
 from datetime import datetime
 from pathlib import Path
 
@@ -20,23 +19,16 @@ from PyQt6.QtWidgets import (
     QSizePolicy, QAbstractItemView, QSplitter,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QFontDatabase
 
-
-# ── Paleta (Design Bible v2.0) ────────────────────────────────────────────────
-PAPER        = "#F5F0E8"
-PAPER_DARK   = "#EDE7D9"
-PAPER_DARKER = "#E0D8C8"
-INK          = "#2C2416"
-INK_LIGHT    = "#5C4E3A"
-INK_FAINT    = "#9C8E7A"
-INK_GHOST    = "#C4B9A8"
-ACCENT       = "#b8860b"
-RIBBON       = "#8B3A2A"
-RIBBON_LIGHT = "#B85C4A"
-ACCENT_GREEN = "#4A6741"
-STAMP        = "#7A5C2E"
-RULE         = "#C4B9A8"
+# Componentes e estilos partilhados do ecossistema
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from ecosystem_qt import (
+    PAPER, PAPER_DARK, PAPER_DARKER,
+    INK, INK_LIGHT, INK_FAINT, INK_GHOST,
+    ACCENT, RIBBON, RIBBON_LIGHT, ACCENT_GREEN, STAMP, RULE,
+    load_ecosystem_fonts, build_qss,
+    AlchemyLoaderQt, WaxSealQt, CandleGlowQt, VignetteWidget,
+)
 
 APP_DIR    = Path(__file__).parent
 PREFS_FILE = APP_DIR / ".prefs.json"
@@ -56,242 +48,6 @@ def save_prefs(p: dict):
         PREFS_FILE.write_text(json.dumps(p, indent=2))
     except Exception:
         pass
-
-
-# ── Fontes do ecossistema ─────────────────────────────────────────────────────
-def load_ecosystem_fonts() -> tuple[str, str]:
-    """
-    Tenta registrar IM Fell English e Special Elite via QFontDatabase.
-    Busca nos diretórios de fontes padrão do sistema.
-    Retorna (family_display, family_mono) — com fallback se não encontradas.
-    """
-    search_dirs = [
-        Path.home() / ".local/share/fonts",
-        Path("/usr/share/fonts"),
-        Path("/usr/local/share/fonts"),
-    ]
-    targets = {
-        "IMFellEnglish-Regular.ttf": None,
-        "IMFellEnglish-Italic.ttf":  None,
-        "SpecialElite-Regular.ttf":  None,
-    }
-    for d in search_dirs:
-        if not d.exists():
-            continue
-        for ttf in d.rglob("*.ttf"):
-            if ttf.name in targets and targets[ttf.name] is None:
-                fid = QFontDatabase.addApplicationFont(str(ttf))
-                if fid >= 0:
-                    families = QFontDatabase.applicationFontFamilies(fid)
-                    if families:
-                        targets[ttf.name] = families[0]
-
-    display = targets.get("IMFellEnglish-Regular.ttf") or "Georgia"
-    mono    = targets.get("SpecialElite-Regular.ttf")  or "Courier"
-    return display, mono
-
-
-# ── QSS ───────────────────────────────────────────────────────────────────────
-def build_qss(display: str, mono: str) -> str:
-    return f"""
-    QMainWindow, QWidget {{
-        background: {PAPER};
-        color: {INK};
-        font-family: '{mono}';
-        font-size: 12px;
-    }}
-    QTabWidget::pane {{
-        border: 1px solid {RULE};
-        background: {PAPER_DARK};
-        border-radius: 2px;
-        top: -1px;
-    }}
-    QTabBar::tab {{
-        background: {PAPER_DARKER};
-        color: {INK_FAINT};
-        font-family: '{mono}';
-        font-size: 10px;
-        letter-spacing: 2px;
-        padding: 6px 20px;
-        border: 1px solid {RULE};
-        border-bottom: none;
-        border-radius: 2px 2px 0 0;
-        min-width: 120px;
-    }}
-    QTabBar::tab:selected {{
-        background: {PAPER_DARK};
-        color: {INK};
-        border-bottom: 1px solid {PAPER_DARK};
-    }}
-    QTabBar::tab:hover:!selected {{
-        background: {PAPER_DARK};
-        color: {INK_LIGHT};
-    }}
-    QLineEdit {{
-        background: {PAPER_DARK};
-        color: {INK};
-        border: 1px solid {RULE};
-        border-radius: 2px;
-        padding: 7px 11px;
-        font-family: '{display}';
-        font-style: italic;
-        font-size: 13px;
-        selection-background-color: rgba(184,134,11,0.25);
-    }}
-    QLineEdit:focus {{
-        border-color: {ACCENT};
-        background: {PAPER};
-    }}
-    QPushButton {{
-        background: {PAPER_DARK};
-        color: {INK_LIGHT};
-        border: 1px solid {RULE};
-        border-radius: 2px;
-        padding: 5px 14px;
-        font-family: '{mono}';
-        font-size: 11px;
-        letter-spacing: 1px;
-    }}
-    QPushButton:hover {{
-        background: {PAPER_DARKER};
-        border-color: {STAMP};
-        color: {INK};
-    }}
-    QPushButton:pressed {{
-        background: {PAPER_DARKER};
-        padding-top: 6px;
-        padding-left: 15px;
-    }}
-    QPushButton:disabled {{
-        color: {INK_GHOST};
-        border-color: {RULE};
-        background: {PAPER_DARK};
-    }}
-    QPushButton#primary {{
-        background: {INK};
-        color: {PAPER};
-        border-color: {INK};
-        font-size: 12px;
-        padding: 7px 20px;
-    }}
-    QPushButton#primary:hover {{
-        background: {INK_LIGHT};
-        color: {PAPER};
-    }}
-    QPushButton#primary:disabled {{
-        background: {PAPER_DARKER};
-        color: {INK_GHOST};
-        border-color: {RULE};
-    }}
-    QPushButton#danger {{
-        background: {RIBBON};
-        color: {PAPER};
-        border-color: {RIBBON};
-    }}
-    QPushButton#danger:hover {{
-        background: {RIBBON_LIGHT};
-        color: {PAPER};
-    }}
-    QPushButton#danger:disabled {{
-        background: {PAPER_DARKER};
-        color: {INK_GHOST};
-        border-color: {RULE};
-    }}
-    QComboBox {{
-        background: {PAPER_DARK};
-        color: {INK};
-        border: 1px solid {RULE};
-        border-radius: 2px;
-        padding: 5px 10px;
-        font-family: '{mono}';
-        font-size: 11px;
-    }}
-    QComboBox:focus {{ border-color: {ACCENT}; }}
-    QComboBox::drop-down {{ border: none; width: 20px; }}
-    QComboBox::down-arrow {{ width: 10px; height: 10px; }}
-    QComboBox QAbstractItemView {{
-        background: {PAPER_DARK};
-        color: {INK};
-        border: 1px solid {RULE};
-        selection-background-color: {PAPER_DARKER};
-        selection-color: {INK};
-        outline: none;
-        padding: 2px;
-    }}
-    QTextEdit {{
-        background: {PAPER_DARK};
-        color: {INK_LIGHT};
-        border: 1px solid {RULE};
-        border-radius: 2px;
-        padding: 8px;
-        font-family: 'Courier Prime', 'Courier New', monospace;
-        font-size: 11px;
-        selection-background-color: rgba(184,134,11,0.25);
-    }}
-    QListWidget {{
-        background: {PAPER_DARK};
-        color: {INK};
-        border: 1px solid {RULE};
-        border-radius: 2px;
-        font-family: '{mono}';
-        font-size: 11px;
-        outline: none;
-    }}
-    QListWidget::item {{ padding: 6px 10px; }}
-    QListWidget::item:selected {{
-        background: rgba(184,134,11,0.15);
-        color: {INK};
-    }}
-    QListWidget::item:hover {{ background: {PAPER_DARKER}; }}
-    QProgressBar {{
-        background: {PAPER_DARKER};
-        border: 1px solid {RULE};
-        border-radius: 2px;
-        max-height: 6px;
-        text-align: center;
-    }}
-    QProgressBar::chunk {{
-        background: {ACCENT};
-        border-radius: 1px;
-    }}
-    QScrollBar:vertical {{
-        background: {PAPER_DARK};
-        width: 6px;
-        border-radius: 2px;
-        margin: 0;
-    }}
-    QScrollBar::handle:vertical {{
-        background: {RULE};
-        border-radius: 2px;
-        min-height: 20px;
-    }}
-    QScrollBar::handle:vertical:hover {{ background: {STAMP}; }}
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-    QFrame#rule {{ background: {RULE}; max-height: 1px; border: none; }}
-    QLabel#section {{
-        color: {INK_FAINT};
-        font-family: '{mono}';
-        font-size: 9px;
-        letter-spacing: 3px;
-    }}
-    QLabel#title {{
-        color: {INK};
-        font-family: '{display}';
-        font-size: 32px;
-        font-style: italic;
-    }}
-    QLabel#subtitle {{
-        color: {INK_FAINT};
-        font-family: '{mono}';
-        font-size: 9px;
-        letter-spacing: 4px;
-    }}
-    QLabel#meta {{
-        color: {INK_FAINT};
-        font-family: '{mono}';
-        font-size: 10px;
-    }}
-    """
 
 
 # ── Idiomas ───────────────────────────────────────────────────────────────────
