@@ -191,12 +191,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] IPC `db:sync` adicionado para sync manual do renderer
 - [x] `tsc --noEmit` sem erros em `src/main/`
 
-### Passo 5 — Verificar compatibilidade
+### Passo 5 — Verificar compatibilidade ✅
 
-- [ ] `PRAGMA user_version` — libsql suporta; manter lógica de migração de schema
-- [ ] FTS5 (`search_index`) — verificar se Turso suporta `fts5` (suporta desde 2024); testar queries de busca
-- [ ] Transações (se houver `db.transaction()` no código) — substituir por `client.transaction()` async
-- [ ] `tsc --noEmit` sem erros em todos os ficheiros da aplicação
+- [x] `PRAGMA user_version` — não usado (migração incremental via `runIncrementalMigrations`); compatível com Turso
+- [x] FTS5 (`search_index`) — Turso suporta; criação separada do batch DDL com try/catch; queries MATCH funcionais
+- [x] Transações — nenhum `db.transaction()` restante; substituição por awaits sequenciais completa
+- [x] `tsc --noEmit` sem erros — corrigidos: `skipLibCheck` no tsconfig renderer, declarações de módulo para plugins EditorJS sem tipos, `vite-env.d.ts` para `import.meta.env`, import inexistente `appSettings` removido de SettingsView
 
 ### Passo 6 — Migrar dados existentes ✅
 

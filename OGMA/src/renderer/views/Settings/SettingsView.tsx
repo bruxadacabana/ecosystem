@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 import { fromIpc } from '../../types/errors'
 import { IconPicker } from '../../components/UI/IconPicker'
-import { appSettings, StoredLocation } from '../../types'
+import { StoredLocation } from '../../types'
 import './SettingsView.css'
 
 const db = () => (window as any).db
