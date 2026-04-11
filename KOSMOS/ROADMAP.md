@@ -1,5 +1,5 @@
 # KOSMOS — TODO
-Atualizado em: 2026-03-22
+Atualizado em: 2026-04-11
 
 > **Padrões obrigatórios (toda sessão de desenvolvimento):**
 > - Tipagem completa em todos os parâmetros e retornos
@@ -9,6 +9,14 @@ Atualizado em: 2026-03-22
 > - **Commit git a cada funcionalidade concluída** — mensagem descritiva, nunca acumular para o final
 
 Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
+
+---
+
+## Design Bible v2.0 — Audit (2026-04-11)
+
+- [x] Modo noturno migrado para paleta "Atlas Astronômico à Meia-Noite" em `night.qss`
+- [x] `reader_night.css` atualizado para nova paleta (fundo, bordas, `hr::after`)
+- [x] `splash_screen.py` — cores hardcoded noturnas corrigidas
 
 ---
 

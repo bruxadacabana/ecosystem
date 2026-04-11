@@ -34,7 +34,7 @@ class SplashScreen(QWidget):
 
         is_night = self._theme.current == "night"
         text_color  = "#E8DFC8" if is_night else "#2C2416"
-        sub_color   = "#8A7A62" if is_night else "#9C8E7A"
+        sub_color   = "#7A7260" if is_night else "#9C8E7A"
 
         layout.addStretch(2)
 
@@ -67,7 +67,7 @@ class SplashScreen(QWidget):
 
         # Barra de progresso
         accent = "#D4A820" if is_night else "#b8860b"
-        track  = "#332E26" if is_night else "#D5CCBA"
+        track  = "#252B3A" if is_night else "#D5CCBA"
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setValue(0)
@@ -91,8 +91,8 @@ class SplashScreen(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         is_night = self._theme.current == "night"
-        bg_color  = "#1A1610" if is_night else "#F5F0E8"
-        brd_color = "#4A3E2E" if is_night else "#C4B9A8"
+        bg_color  = "#12161E" if is_night else "#F5F0E8"
+        brd_color = "#2E3445" if is_night else "#C4B9A8"
 
         painter.fillRect(self.rect(), QColor(bg_color))
 

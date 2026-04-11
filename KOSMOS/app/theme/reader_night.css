@@ -6,7 +6,7 @@
 }
 
 body {
-    background-color: #1A1610;
+    background-color: #12161E;
     /* campo estelar via radial-gradients — mais visível no modo noturno */
     background-image:
         radial-gradient(circle, rgba(232,223,200,0.50) 1px, transparent 1px),
@@ -53,7 +53,7 @@ h3 { font-size: 1.2em; }
 a {
     color: #D4A820;
     text-decoration: underline;
-    text-decoration-color: #4A3E2E;
+    text-decoration-color: #2E3445;
 }
 a:hover {
     color: #E8C840;
@@ -65,7 +65,7 @@ p { margin: 0 0 1em 0; }
 img {
     max-width: 100%;
     height: auto;
-    border: 1px solid #4A3E2E;
+    border: 1px solid #2E3445;
     border-radius: 2px;
     margin: 1em 0;
     display: block;
@@ -82,15 +82,15 @@ blockquote {
 code {
     font-family: "Courier Prime", "Courier New", monospace;
     font-size: 0.85em;
-    background-color: #211D16;
+    background-color: #181D28;
     padding: 1px 5px;
     border-radius: 2px;
     color: #C45A40;
 }
 
 pre {
-    background-color: #211D16;
-    border: 1px solid #4A3E2E;
+    background-color: #181D28;
+    border: 1px solid #2E3445;
     border-radius: 2px;
     padding: 1em;
     overflow-x: auto;
@@ -106,7 +106,7 @@ pre code {
 /* Separador cósmico */
 hr {
     border: none;
-    border-top: 1px solid rgba(74, 62, 46, 0.7);
+    border-top: 1px solid rgba(46, 52, 69, 0.7);
     margin: 2.2em 0;
     overflow: visible;
     text-align: center;
@@ -117,7 +117,7 @@ hr::after {
     display: inline-block;
     position: relative;
     top: -0.65em;
-    background: #1A1610;
+    background: #12161E;
     padding: 0 0.6em;
     color: #D4A820;
     font-size: 14px;
@@ -141,8 +141,8 @@ table {
     font-size: 0.95em;
 }
 th {
-    background-color: #211D16;
-    border: 1px solid #4A3E2E;
+    background-color: #181D28;
+    border: 1px solid #2E3445;
     padding: 6px 12px;
     text-align: left;
     font-family: "Special Elite", "Courier New", monospace;
@@ -150,7 +150,7 @@ th {
     letter-spacing: 0.08em;
 }
 td {
-    border: 1px solid #4A3E2E;
+    border: 1px solid #2E3445;
     padding: 6px 12px;
 }
 
@@ -164,6 +164,6 @@ li { margin-bottom: 0.3em; }
 
 iframe {
     max-width: 100%;
-    border: 1px solid #4A3E2E;
+    border: 1px solid #2E3445;
     border-radius: 2px;
 }
