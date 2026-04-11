@@ -1,0 +1,144 @@
+/* ============================================================
+   AETHER — Design Tokens
+   Sistema visual do ecossistema (OGMA Design Bible)
+   ============================================================ */
+
+:root {
+  /* ----------------------------------------------------------
+     MODO DIURNO — "Papel ao Sol da Manhã"
+  ---------------------------------------------------------- */
+
+  /* Fundos */
+  --paper:          #F5F0E8;
+  --paper-dark:     #EDE7D9;
+  --paper-darker:   #E0D8C8;
+  --paper-darkest:  #D5CCBA;
+
+  /* Tintas */
+  --ink:            #2C2416;
+  --ink-light:      #5C4E3A;
+  --ink-faint:      #9C8E7A;
+  --ink-ghost:      #C4B9A8;
+
+  /* Acento */
+  --accent:         #b8860b;
+  --cursor-color:   #b8860b;
+
+  /* Funcionais */
+  --ribbon:         #8B3A2A;
+  --ribbon-light:   #B85C4A;
+  --accent-green:   #4A6741;
+  --stamp:          #7A5C2E;
+
+  /* Linhas */
+  --rule:           #C4B9A8;
+  --margin-line:    rgba(160, 50, 30, 0.3);
+  --shadow:         rgba(44, 36, 22, 0.14);
+
+  /* Métricas */
+  --sidebar-w:      260px;
+  --topbar-h:       44px;
+  --radius:         2px;
+
+  /* Transições */
+  --transition:     140ms ease;
+
+  /* Tipografia */
+  --font-display:   'IM Fell English', Georgia, serif;
+  --font-mono:      'Special Elite', 'Courier New', monospace;
+  --font-code:      'Courier Prime', 'Courier New', monospace;
+
+  /* Sombras flat (sem blur) */
+  --shadow-btn:     2px 2px 0 var(--rule);
+  --shadow-btn-primary: 2px 2px 0 var(--stamp);
+  --shadow-card:    3px 3px 0 var(--paper-darker);
+  --shadow-card-hover: 4px 4px 0 var(--paper-darkest);
+  --shadow-modal:   6px 6px 0 var(--ink-ghost);
+  --shadow-menu:    3px 3px 0 var(--rule);
+
+  /* Cores de projetos (paleta dessaturada) */
+  --project-sepia:     #8B7355;
+  --project-red:       #8B3A2A;
+  --project-green:     #4A6741;
+  --project-brown:     #7A5C2E;
+  --project-blue:      #2C5F8A;
+  --project-purple:    #6B4F72;
+  --project-teal:      #5C8A6B;
+  --project-gold:      #8A6B2C;
+}
+
+/* ----------------------------------------------------------
+   MODO CLARO — "Folha em Branco"
+   Fundo quase branco, neutro, sem tinta sépia.
+   Mantém os mesmos acentos dourados.
+---------------------------------------------------------- */
+html.light {
+  --paper:          #FEFEFE;
+  --paper-dark:     #F5F4F1;
+  --paper-darker:   #EDECEA;
+  --paper-darkest:  #E2E0DC;
+
+  --ink:            #1A1A16;
+  --ink-light:      #484440;
+  --ink-faint:      #868480;
+  --ink-ghost:      #BBBAB6;
+
+  --accent:         #9A7008;
+  --cursor-color:   #9A7008;
+
+  --ribbon:         #8B3A2A;
+  --ribbon-light:   #B85C4A;
+  --accent-green:   #3E5E38;
+  --stamp:          #7A5C2E;
+
+  --rule:           #DDDCD8;
+  --margin-line:    rgba(100, 80, 60, 0.15);
+  --shadow:         rgba(26, 26, 22, 0.10);
+
+  --shadow-btn:         2px 2px 0 var(--rule);
+  --shadow-btn-primary: 2px 2px 0 var(--stamp);
+  --shadow-card:        3px 3px 0 var(--paper-darker);
+  --shadow-card-hover:  4px 4px 0 var(--paper-darkest);
+  --shadow-modal:       6px 6px 0 var(--ink-ghost);
+  --shadow-menu:        3px 3px 0 var(--rule);
+}
+
+/* ----------------------------------------------------------
+   MODO NOTURNO — "Scriptorium à Luz de Vela"
+---------------------------------------------------------- */
+html.dark {
+  /* Fundos */
+  --paper:          #1A1610;
+  --paper-dark:     #211D16;
+  --paper-darker:   #2A2520;
+  --paper-darkest:  #332E26;
+
+  /* Tintas */
+  --ink:            #E8DFC8;
+  --ink-light:      #C8B99A;
+  --ink-faint:      #8A7A62;
+  --ink-ghost:      #4A3E2E;
+
+  /* Acento — brilha mais à noite */
+  --accent:         #D4A820;
+  --cursor-color:   #D4A820;
+
+  /* Funcionais */
+  --ribbon:         #C45A40;
+  --ribbon-light:   #D97A5A;
+  --accent-green:   #6A9060;
+  --stamp:          #A07840;
+
+  /* Linhas */
+  --rule:           #3A3020;
+  --margin-line:    rgba(160, 80, 40, 0.2);
+  --shadow:         rgba(0, 0, 0, 0.4);
+
+  /* Sombras flat — noturno */
+  --shadow-btn:         2px 2px 0 var(--rule);
+  --shadow-btn-primary: 2px 2px 0 var(--stamp);
+  --shadow-card:        3px 3px 0 var(--paper-darker);
+  --shadow-card-hover:  4px 4px 0 var(--paper-darkest);
+  --shadow-modal:       6px 6px 0 var(--ink-ghost);
+  --shadow-menu:        3px 3px 0 var(--rule);
+}

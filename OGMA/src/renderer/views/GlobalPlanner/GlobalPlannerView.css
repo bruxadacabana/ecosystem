@@ -1,0 +1,360 @@
+/* ── Raiz ─────────────────────────────────────────────────────────────────── */
+
+.bj-root {
+  height:     100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* fundo pontilhado estilo papel bullet journal */
+.bj-dot-bg {
+  position:         fixed;
+  inset:            0;
+  pointer-events:   none;
+  z-index:          0;
+  background-image: radial-gradient(circle, var(--bj-dot) 1.1px, transparent 1.1px);
+  background-size:  22px 22px;
+}
+
+:root      { --bj-dot: rgba(140, 120,  80, 0.18); }
+.dark      { --bj-dot: rgba(180, 155, 100, 0.10); }
+
+/* ── Layout colunas ──────────────────────────────────────────────────────── */
+
+.bj-columns {
+  display:   flex;
+  min-height: 100%;
+  gap:        0;
+}
+
+.bj-columns--narrow {
+  flex-direction: column;
+}
+
+.bj-col-left {
+  width:       320px;
+  flex-shrink: 0;
+  padding:     28px 24px 40px;
+  display:     flex;
+  flex-direction: column;
+  gap:         0;
+}
+
+.bj-columns--narrow .bj-col-left {
+  width: 100%;
+}
+
+.bj-page-divider {
+  width:        1px;
+  align-self:   stretch;
+  border-left:  1px dashed;
+  opacity:      0.35;
+  margin:       24px 0;
+  flex-shrink:  0;
+}
+
+.bj-col-right {
+  flex:        1;
+  min-width:   0;
+  padding:     28px 28px 40px;
+  display:     flex;
+  flex-direction: column;
+  gap:         14px;
+}
+
+/* ── Data header ──────────────────────────────────────────────────────────── */
+
+.bj-date-header {
+  margin-bottom: 18px;
+}
+
+/* ── Mini calendário ─────────────────────────────────────────────────────── */
+
+.bj-mini-cal {
+  margin-bottom: 4px;
+}
+
+.bj-mini-cal-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  margin-bottom:   8px;
+}
+
+.bj-cal-nav {
+  background:  transparent;
+  border:      none;
+  cursor:      pointer;
+  font-family: var(--font-mono);
+  font-size:   14px;
+  padding:     0 4px;
+  opacity:     0.5;
+  transition:  opacity 120ms;
+  color:       inherit;
+}
+.bj-cal-nav:hover { opacity: 1; }
+
+.bj-mini-cal-grid {
+  display:               grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap:                   2px;
+  text-align:            center;
+}
+
+.bj-cal-day {
+  background:    transparent;
+  border:        1px solid transparent;
+  border-radius: 2px;
+  cursor:        pointer;
+  font-family:   var(--font-mono);
+  font-size:     10px;
+  padding:       3px 0;
+  line-height:   1.2;
+  transition:    background 100ms, border-color 100ms;
+}
+.bj-cal-day:hover { opacity: 0.8; }
+.bj-cal-day--today { font-weight: 600; }
+
+.bj-cal-clear {
+  background:    transparent;
+  border:        none;
+  cursor:        pointer;
+  font-family:   var(--font-mono);
+  font-size:     9px;
+  letter-spacing: 0.06em;
+  margin-top:    6px;
+  padding:       0;
+  opacity:       0.6;
+  transition:    opacity 120ms;
+}
+.bj-cal-clear:hover { opacity: 1; }
+
+/* ── Separadores e secções ───────────────────────────────────────────────── */
+
+.bj-section-sep {
+  border-top: 1px dashed;
+  opacity:    0.3;
+  margin:     14px 0;
+}
+
+.bj-section {
+  margin-bottom: 4px;
+}
+
+.bj-section-label {
+  font-family:     var(--font-mono);
+  font-size:       8px;
+  letter-spacing:  0.20em;
+  text-transform:  uppercase;
+  margin-bottom:   8px;
+  opacity:         0.6;
+}
+
+/* ── Item urgente ─────────────────────────────────────────────────────────── */
+
+.bj-urgent-item {
+  display:     flex;
+  align-items: flex-start;
+  gap:         8px;
+  padding:     5px 0;
+  transition:  opacity 120ms;
+}
+
+.bj-bullet-btn {
+  background:    transparent;
+  border:        none;
+  cursor:        pointer;
+  font-family:   var(--font-mono);
+  font-size:     14px;
+  line-height:   1;
+  padding:       0 2px;
+  flex-shrink:   0;
+  margin-top:    0;
+  transition:    opacity 120ms, transform 120ms;
+}
+.bj-bullet-btn:hover { transform: scale(1.2); }
+
+/* ── Bloco de trabalho ───────────────────────────────────────────────────── */
+
+.bj-block-item {
+  display:   flex;
+  gap:       8px;
+  padding:   6px 0;
+  align-items: flex-start;
+}
+
+.bj-log-btn {
+  background:    transparent;
+  border:        none;
+  cursor:        pointer;
+  font-family:   var(--font-mono);
+  font-size:     9px;
+  letter-spacing: 0.06em;
+  padding:       0;
+  opacity:       0.7;
+  transition:    opacity 120ms;
+}
+.bj-log-btn:hover { opacity: 1; }
+
+/* ── Cabeçalho direita ───────────────────────────────────────────────────── */
+
+.bj-right-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  gap:             10px;
+  flex-wrap:       wrap;
+  padding-bottom:  10px;
+  border-bottom:   1px dashed;
+  border-color:    var(--rule);
+  opacity-transition: 120ms;
+}
+
+.bj-toggle-btn {
+  background:    transparent;
+  border:        1px solid;
+  border-radius: 2px;
+  cursor:        pointer;
+  font-family:   var(--font-mono);
+  font-size:     9px;
+  letter-spacing: 0.06em;
+  padding:       2px 7px;
+  transition:    color 120ms, border-color 120ms;
+}
+
+.bj-group-toggle {
+  display:       flex;
+  border:        1px solid;
+  border-radius: 2px;
+  overflow:      hidden;
+}
+.bj-group-toggle button {
+  background:    transparent;
+  border:        none;
+  cursor:        pointer;
+  font-family:   var(--font-mono);
+  font-size:     9px;
+  letter-spacing: 0.06em;
+  padding:       2px 8px;
+  transition:    color 120ms;
+}
+.bj-group-toggle button:first-child { border-right: 1px solid; border-color: inherit; }
+.bj-group-toggle button.active { font-weight: 600; }
+
+/* ── Lista de tarefas ────────────────────────────────────────────────────── */
+
+.bj-task-list {
+  flex:       1;
+  overflow-y: auto;
+  display:    flex;
+  flex-direction: column;
+  gap:        0;
+}
+
+.bj-group {
+  margin-bottom: 16px;
+}
+
+.bj-group-label {
+  font-family:    var(--font-mono);
+  font-size:      9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight:    600;
+  padding:        4px 0 6px;
+  border-bottom:  1px solid;
+  margin-bottom:  4px;
+  display:        flex;
+  align-items:    center;
+}
+
+/* ── TaskRow ─────────────────────────────────────────────────────────────── */
+
+.bj-task-row {
+  border:        1px solid transparent;
+  border-radius: 2px;
+  margin-bottom: 2px;
+  transition:    border-color 120ms;
+}
+
+.bj-task-row:hover { border-color: var(--rule) !important; }
+.bj-task-row--expanded { border-color: inherit !important; }
+
+.bj-task-main {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  padding:     6px 8px;
+  cursor:      pointer;
+  user-select: none;
+}
+
+.bj-bullet {
+  font-family: var(--font-mono);
+  font-size:   14px;
+  line-height: 1;
+  flex-shrink: 0;
+  width:       14px;
+  text-align:  center;
+}
+
+/* ── Detail panel ─────────────────────────────────────────────────────────── */
+
+.bj-task-detail {
+  padding:       10px 12px 12px;
+  border-top:    1px solid;
+  border-radius: 0 0 2px 2px;
+}
+
+.bj-detail-fields {
+  display:        flex;
+  flex-direction: column;
+  gap:            6px;
+}
+
+.bj-detail-row {
+  display:     flex;
+  align-items: center;
+  gap:         10px;
+  font-family: var(--font-mono);
+  font-size:   10px;
+  letter-spacing: 0.06em;
+}
+.bj-detail-row label {
+  width:       72px;
+  flex-shrink: 0;
+  text-align:  right;
+}
+
+/* ── Formulário de criação ───────────────────────────────────────────────── */
+
+.bj-create-form {
+  border:        1px solid;
+  border-radius: 2px;
+  padding:       12px 14px;
+  display:       flex;
+  flex-direction: column;
+  gap:           6px;
+}
+
+/* ── Pomodoro animações ──────────────────────────────────────────────────── */
+
+@keyframes pomo-star-twinkle {
+  0%, 100% { opacity: 0.15; }
+  50%       { opacity: 0.90; }
+}
+
+@keyframes pomo-particle-fall {
+  0%   { transform: translateY(0px);  opacity: 0;   }
+  15%  { opacity: 0.95; }
+  80%  { opacity: 0.50; }
+  100% { transform: translateY(14px); opacity: 0;   }
+}
+
+.pomo-star {
+  animation: pomo-star-twinkle 2.1s ease-in-out infinite;
+}
+
+.pomo-particle {
+  animation: pomo-particle-fall 0.65s ease-in infinite;
+}

@@ -1,0 +1,89 @@
+{
+  "name": "ogma",
+  "version": "0.1.0",
+  "description": "Gerenciador unificado de projetos, estudos e leituras",
+  "author": "Jenifer Angelo",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "concurrently --kill-others \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && tsc -p tsconfig.main.json && electron .",
+    "build": "npm run build:vite && npm run build:electron",
+    "build:vite": "vite build",
+    "build:electron": "tsc -p tsconfig.main.json",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:win": "npm run build && electron-builder --win",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@editorjs/checklist": "^1.6.0",
+    "@editorjs/code": "^2.9.3",
+    "@editorjs/delimiter": "^1.4.2",
+    "@editorjs/editorjs": "^2.31.5",
+    "@editorjs/header": "^2.8.7",
+    "@editorjs/image": "^2.10.1",
+    "@editorjs/inline-code": "^1.5.1",
+    "@editorjs/list": "^1.10.0",
+    "@editorjs/marker": "^1.4.0",
+    "@editorjs/quote": "^2.7.3",
+    "@editorjs/table": "^2.4.3",
+    "@libsql/client": "^0.17.2",
+    "editorjs-drag-drop": "^1.1.16",
+    "editorjs-toggle-block": "^0.3.16",
+    "electron-store": "^8.1.0",
+    "neverthrow": "^8.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^33.0.0",
+    "electron-builder": "^24.9.1",
+    "electron-rebuild": "^3.2.9",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.4.0",
+    "vite": "^6.0.0",
+    "wait-on": "^7.2.0",
+    "zustand": "^4.5.0"
+  },
+  "build": {
+    "appId": "com.ogma.app",
+    "productName": "OGMA",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "data/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "data",
+        "to": "data"
+      }
+    ],
+    "asar": true,
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office"
+    },
+    "win": {
+      "icon": "assets/ogma.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}

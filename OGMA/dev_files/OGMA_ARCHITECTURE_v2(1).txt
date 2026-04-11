@@ -1,0 +1,623 @@
+================================================================================
+  OGMA — ARQUITETURA REVISADA v2.0
+  Decisão Arquitetural: Projetos como Databases (modelo Notion)
+  Data: 2026-03-21
+  Status: APROVADO — aguardando refatoração do código
+================================================================================
+
+  Este documento registra a decisão arquitetural que corrige o erro fundamental
+  da v1 (schema atual em database.ts). O código ainda não foi refatorado.
+  A refatoração deve seguir este documento como referência.
+
+  Problema identificado: o schema v1 trata Kanban, Database, Calendário e
+  Documento como tipos de página distintos com tabelas separadas. Isso impede
+  que o mesmo conjunto de dados seja visualizado de formas diferentes.
+
+  Solução: adotar o modelo mental do Notion, onde cada projeto é uma coleção
+  de páginas, cada página tem propriedades + corpo de texto, e as views
+  (Kanban, Tabela, Calendário, Lista, Galeria) são apenas formas diferentes
+  de visualizar e filtrar essa coleção.
+
+
+================================================================================
+1. MODELO MENTAL CORRETO
+================================================================================
+
+  WORKSPACE
+    └── PROJETO
+          ├── Propriedades configuráveis do projeto
+          │     (definem quais campos cada página deste projeto terá)
+          │
+          ├── Views do projeto
+          │     (formas de visualizar as páginas — Kanban, Tabela, etc.)
+          │
+          └── PÁGINAS (coleção)
+                ├── Página A
+                │     ├── Título
+                │     ├── Propriedades (Status="Em andamento", Data="2026-04-01"...)
+                │     └── Corpo (texto rico — Editor.js JSON)
+                ├── Página B
+                │     ├── Título
+                │     ├── Propriedades
+                │     └── Corpo
+                └── ...
+
+  ANALOGIA NOTION:
+    Projeto   = Database do Notion
+    Página    = Item/linha dentro da database, que abre como página completa
+    Corpo     = O conteúdo que aparece ao abrir a página
+    View      = Kanban / Table / Calendar / List / Gallery do Notion
+    Propriedade = Campo da database (Status, Date, Select, etc.)
+
+
+================================================================================
+2. ESTRUTURA DE UMA PÁGINA
+================================================================================
+
+  Toda página tem SEMPRE:
+    id, project_id, title, icon, cover, body_json, sort_order,
+    created_at, updated_at, is_deleted
+
+  Mais um conjunto de VALORES DE PROPRIEDADE:
+    Cada projeto define quais propriedades suas páginas têm.
+    Cada página armazena os valores para essas propriedades.
+
+  Exemplo — Projeto de Software com propriedades: Status, Prioridade, Sprint:
+    Página "Implementar login"
+      title:      "Implementar login"
+      body_json:  { blocos do Editor.js... }
+      Status:     "Em andamento"
+      Prioridade: "Alta"
+      Sprint:     "Sprint 3"
+
+  Exemplo — Projeto Acadêmico com propriedades: Semestre, Área, Carga Horária:
+    Página "Cálculo I"
+      title:        "Cálculo I"
+      body_json:    { blocos do Editor.js... }
+      Semestre:     "1º Semestre"
+      Área:         "Matemática"
+      Carga Horária: 60
+
+
+================================================================================
+3. PROPRIEDADES — TIPOS SUPORTADOS
+================================================================================
+
+  Propriedades são definidas por projeto. Cada projeto tem seu próprio conjunto.
+  Algumas propriedades são criadas automaticamente conforme o tipo do projeto.
+
+  TIPOS DE PROPRIEDADE:
+  ┌──────────────┬─────────────────────────────────────────────────────────┐
+  │ Tipo         │ Descrição                                               │
+  ├──────────────┼─────────────────────────────────────────────────────────┤
+  │ text         │ Texto livre curto (ex: Professor, Código, URL)          │
+  │ number       │ Número (ex: Carga horária, Créditos, Progresso %)       │
+  │ select       │ Uma opção de lista (ex: Status, Prioridade, Semestre)   │
+  │ multi_select │ Múltiplas opções (ex: Tags, Áreas, Sprints)             │
+  │ date         │ Data ou intervalo de datas                              │
+  │ checkbox     │ Sim/Não (ex: Concluído, Ativo)                          │
+  │ url          │ Link externo                                            │
+  │ color        │ Cor (hex) — usada para cores de disciplinas             │
+  └──────────────┴─────────────────────────────────────────────────────────┘
+
+  Tipos reservados para versão futura (não implementar agora):
+    relation  — referência a página de outro projeto
+    rollup    — agregação de valores de páginas relacionadas
+    formula   — campo calculado
+
+  PROPRIEDADE ESPECIAL: STATUS
+    Todo projeto tem uma propriedade "Status" do tipo select por padrão.
+    Os valores do Status definem as colunas do Kanban.
+    Se o projeto não tem Status configurado, a view Kanban não está disponível.
+
+  PROPRIEDADE ESPECIAL: DATA
+    Projetos com propriedade do tipo "date" podem usar a view Calendário.
+    O campo de data usado para posicionar no calendário é configurável por view.
+
+
+================================================================================
+4. PROPRIEDADES PADRÃO POR TIPO DE PROJETO
+================================================================================
+
+  Quando um projeto é criado, propriedades são criadas automaticamente
+  conforme o tipo. O usuário pode adicionar, remover e renomear depois.
+
+  ── TIPO: academic (Acadêmico) ───────────────────────────────────────────────
+    Status          select       [Pendente, Cursando, Concluída, Trancada]
+    Semestre        select       [] (usuário define os semestres)
+    Área            multi_select [] (usuário define as áreas)
+    Carga Horária   number
+    Créditos        number
+    Professor       text
+    Data Início     date
+    Data Fim        date
+    Código          text         (ex: MAT001 — gerado automaticamente)
+    Cor             color        (cor da disciplina — usada nas views)
+
+  ── TIPO: software (Dev/Software) ────────────────────────────────────────────
+    Status          select       [Backlog, A Fazer, Em Andamento, Em Revisão, Concluído]
+    Prioridade      select       [Baixa, Média, Alta, Urgente]
+    Tags            multi_select []
+    Sprint          select       []
+    Data Limite     date
+    Estimativa      number       (horas estimadas)
+
+  ── TIPO: health (Saúde e Hábitos) ──────────────────────────────────────────
+    Status          select       [Não Iniciado, Em Andamento, Concluído, Abandonado]
+    Frequência      select       [Diário, Semanal, Mensal, Pontual]
+    Data Início     date
+    Meta            text
+    Progresso       number       (%)
+    Tags            multi_select []
+
+  ── TIPO: creative (Criativo) ────────────────────────────────────────────────
+    Status          select       [Ideia, Em Progresso, Pausado, Concluído, Publicado]
+    Tags            multi_select []
+    Data Limite     date
+    Prioridade      select       [Baixa, Média, Alta]
+
+  ── TIPO: research (Pesquisa) ────────────────────────────────────────────────
+    Status          select       [A Pesquisar, Em Andamento, Rascunho, Revisão, Concluído]
+    Fonte           text
+    Data            date
+    Tags            multi_select []
+    Área            multi_select []
+
+  ── TIPO: custom (Personalizado) ─────────────────────────────────────────────
+    Status          select       [A Fazer, Em Andamento, Concluído]
+    Tags            multi_select []
+    Data            date
+    (usuário define todo o resto)
+
+
+================================================================================
+5. VIEWS — TIPOS E COMPORTAMENTO
+================================================================================
+
+  Views são configurações salvas de como visualizar as páginas de um projeto.
+  Um projeto pode ter múltiplas views (ex: "Kanban por Status" + "Tabela geral").
+  A view padrão é criada automaticamente quando o projeto é criado.
+
+  ── VIEW: table (Tabela) ─────────────────────────────────────────────────────
+    Lista todas as páginas como linhas de uma tabela.
+    Colunas = propriedades visíveis (configurável por view).
+    Suporta: ordenação por coluna, filtros, busca.
+    Disponível: sempre (todos os projetos).
+
+  ── VIEW: kanban (Kanban) ────────────────────────────────────────────────────
+    Agrupa páginas em colunas baseado em uma propriedade select.
+    Por padrão agrupa por "Status".
+    Cada coluna = um valor do select.
+    Cards mostram: título + propriedades selecionadas.
+    Suporta: drag & drop entre colunas (muda o valor da propriedade).
+    Disponível: projetos que têm ao menos uma propriedade do tipo select.
+
+  ── VIEW: calendar (Calendário) ──────────────────────────────────────────────
+    Mostra páginas em um calendário mensal.
+    Posição = valor de uma propriedade do tipo date (configurável por view).
+    Suporta: clicar no dia para criar página, arrastar para mudar data.
+    Disponível: projetos que têm ao menos uma propriedade do tipo date.
+
+  ── VIEW: list (Lista) ───────────────────────────────────────────────────────
+    Lista simples de páginas com título + propriedades inline.
+    Mais compacta que a tabela.
+    Suporta: agrupamento por propriedade, filtros, ordenação.
+    Disponível: sempre.
+
+  ── VIEW: gallery (Galeria) ──────────────────────────────────────────────────
+    Cards em grade, usando a imagem de capa (cover) da página.
+    Fallback para ícone quando não há capa.
+    Disponível: sempre (versão futura — não implementar agora).
+
+  CONFIGURAÇÃO DE VIEW (salva no banco):
+    - Nome da view
+    - Tipo (table/kanban/calendar/list/gallery)
+    - Propriedade de agrupamento (ex: "Status" para Kanban)
+    - Propriedade de data (ex: "Data Limite" para Calendário)
+    - Propriedades visíveis (quais colunas/campos mostrar)
+    - Filtros ativos
+    - Ordenação ativa
+    - É a view padrão?
+
+
+================================================================================
+6. SCHEMA DO BANCO — V2 (CORRETO)
+================================================================================
+
+  Este é o schema que deve substituir o atual em database.ts.
+  As tabelas marcadas com [REMOVER] existem no schema v1 e devem ser deletadas.
+  As tabelas marcadas com [NOVO] são novas.
+  As tabelas marcadas com [MANTER] existem e ficam como estão.
+
+  ── [REMOVER] kanban_columns    — substituído por prop_options do select "Status"
+  ── [REMOVER] kanban_cards      — substituído por pages + page_prop_values
+  ── [REMOVER] kanban_checklists — vira blocos checklist no body_json da página
+  ── [REMOVER] card_tags         — substituído por page_prop_values (multi_select)
+  ── [REMOVER] db_properties     — substituído por project_properties
+  ── [REMOVER] db_entries        — substituído por pages
+  ── [REMOVER] db_values         — substituído por page_prop_values
+  ── [REMOVER] db_views          — substituído por project_views
+
+  ── [MANTER] workspaces
+  ── [MANTER] tags               — sistema global de tags (separado das propriedades)
+  ── [MANTER] page_tags          — many-to-many páginas ↔ tags globais
+  ── [MANTER] page_backlinks
+  ── [MANTER] page_versions
+  ── [MANTER] calendar_events    — eventos do calendário GLOBAL (não são páginas)
+  ── [MANTER] reminders
+  ── [MANTER] resources
+  ── [MANTER] readings + reading_tags + reading_notes + reading_quotes + reading_links + reading_goals
+  ── [MANTER] time_sessions
+  ── [MANTER] config
+
+  ── [MODIFICAR] projects        — adicionar: default_view_type
+  ── [MODIFICAR] pages           — renomear content_json → body_json,
+                                   remover page_type (não há mais tipos de página),
+                                   adicionar: cover_color
+
+  ── [NOVO] project_properties   — define quais propriedades um projeto tem
+  ── [NOVO] prop_options         — opções para propriedades do tipo select/multi_select
+  ── [NOVO] page_prop_values     — valores das propriedades para cada página
+  ── [NOVO] project_views        — views salvas de um projeto
+
+  ────────────────────────────────────────────────────────────────────────────
+  TABELA: projects  [MODIFICAR]
+  ────────────────────────────────────────────────────────────────────────────
+    id                INTEGER PK AUTOINCREMENT
+    workspace_id      INTEGER NOT NULL → workspaces(id) CASCADE
+    name              TEXT NOT NULL
+    description       TEXT
+    icon              TEXT
+    color             TEXT
+    project_type      TEXT NOT NULL DEFAULT 'custom'
+                        'academic'|'creative'|'research'|'software'|'health'|'custom'
+    subcategory       TEXT
+    status            TEXT DEFAULT 'active'
+    date_start        TEXT
+    date_end          TEXT
+    sort_order        INTEGER DEFAULT 0
+    created_at        TEXT DEFAULT datetime('now')
+    updated_at        TEXT DEFAULT datetime('now')
+
+    [REMOVIDO] extra_fields  — substituído por project_properties
+
+  ────────────────────────────────────────────────────────────────────────────
+  TABELA: pages  [MODIFICAR]
+  ────────────────────────────────────────────────────────────────────────────
+    id           INTEGER PK AUTOINCREMENT
+    project_id   INTEGER → projects(id) CASCADE
+    parent_id    INTEGER → pages(id) CASCADE    — subpáginas
+    title        TEXT NOT NULL DEFAULT 'Sem título'
+    icon         TEXT
+    cover        TEXT                           — URL/path de imagem de capa
+    cover_color  TEXT                           — cor de fundo alternativa à imagem
+    body_json    TEXT                           — conteúdo Editor.js (era content_json)
+    sort_order   INTEGER DEFAULT 0
+    is_deleted   INTEGER DEFAULT 0
+    created_at   TEXT DEFAULT datetime('now')
+    updated_at   TEXT DEFAULT datetime('now')
+
+    [REMOVIDO] page_type  — não há mais tipos. A "forma" da página é determinada
+                            pela view ativa do projeto, não pelo tipo da página.
+
+  ────────────────────────────────────────────────────────────────────────────
+  TABELA: project_properties  [NOVO]
+  ────────────────────────────────────────────────────────────────────────────
+    id           INTEGER PK AUTOINCREMENT
+    project_id   INTEGER NOT NULL → projects(id) CASCADE
+    name         TEXT NOT NULL        — nome visível (ex: "Status", "Prioridade")
+    prop_key     TEXT NOT NULL        — chave interna slug (ex: "status", "priority")
+    prop_type    TEXT NOT NULL        — 'text'|'number'|'select'|'multi_select'|
+                                        'date'|'checkbox'|'url'|'color'
+    is_required  INTEGER DEFAULT 0
+    is_built_in  INTEGER DEFAULT 0    — propriedades criadas pelo template (não deletáveis)
+    sort_order   INTEGER DEFAULT 0
+    created_at   TEXT DEFAULT datetime('now')
+
+    UNIQUE (project_id, prop_key)
+
+  ────────────────────────────────────────────────────────────────────────────
+  TABELA: prop_options  [NOVO]
+  ────────────────────────────────────────────────────────────────────────────
+    id          INTEGER PK AUTOINCREMENT
+    property_id INTEGER NOT NULL → project_properties(id) CASCADE
+    label       TEXT NOT NULL     — texto visível (ex: "Em Andamento")
+    color       TEXT              — cor do badge (hex)
+    sort_order  INTEGER DEFAULT 0
+
+    Nota: Para propriedades do tipo 'select' e 'multi_select'.
+    Para Kanban: cada option = uma coluna. A ordem das options = ordem das colunas.
+
+  ────────────────────────────────────────────────────────────────────────────
+  TABELA: page_prop_values  [NOVO]
+  ────────────────────────────────────────────────────────────────────────────
+    id          INTEGER PK AUTOINCREMENT
+    page_id     INTEGER NOT NULL → pages(id) CASCADE
+    property_id INTEGER NOT NULL → project_properties(id) CASCADE
+    value_text  TEXT           — usado por: text, url, color
+    value_num   REAL           — usado por: number
+    value_bool  INTEGER        — usado por: checkbox
+    value_date  TEXT           — usado por: date (ISO datetime)
+    value_date2 TEXT           — usado por: date (fim do intervalo)
+    value_json  TEXT           — usado por: select (id da option), multi_select (array de ids)
+
+    UNIQUE (page_id, property_id)
+
+    Nota sobre select/multi_select:
+      select:       value_json = option_id (integer como string)
+      multi_select: value_json = JSON array de option_ids ex: "[1, 3, 5]"
+
+  ────────────────────────────────────────────────────────────────────────────
+  TABELA: project_views  [NOVO]
+  ────────────────────────────────────────────────────────────────────────────
+    id                   INTEGER PK AUTOINCREMENT
+    project_id           INTEGER NOT NULL → projects(id) CASCADE
+    name                 TEXT NOT NULL
+    view_type            TEXT NOT NULL   — 'table'|'kanban'|'list'|'calendar'|'gallery'
+    group_by_property_id INTEGER → project_properties(id) SET NULL
+                                          — propriedade usada para agrupar (Kanban/List)
+    date_property_id     INTEGER → project_properties(id) SET NULL
+                                          — propriedade de data (Calendar)
+    visible_props_json   TEXT            — JSON array de property_ids visíveis
+    filter_json          TEXT            — JSON com filtros ativos
+    sort_json            TEXT            — JSON com ordenação ativa
+    include_subpages     INTEGER DEFAULT 0  — 0: só páginas raiz, 1: inclui subpáginas
+    is_default           INTEGER DEFAULT 0
+    sort_order           INTEGER DEFAULT 0
+
+  ────────────────────────────────────────────────────────────────────────────
+  TABELA: page_properties  [REMOVER / SUBSTITUÍDA]
+  ────────────────────────────────────────────────────────────────────────────
+    Esta tabela (que existia para metadados genéricos de página) é removida.
+    Tudo migra para page_prop_values.
+
+
+================================================================================
+7. COMO AS VIEWS FUNCIONAM NA PRÁTICA
+================================================================================
+
+  ── KANBAN ───────────────────────────────────────────────────────────────────
+
+    Config mínima:
+      view_type = 'kanban'
+      group_by_property_id → aponta para uma project_property do tipo 'select'
+
+    Para renderizar:
+      1. Buscar a propriedade de agrupamento (ex: "Status")
+      2. Buscar as prop_options dessa propriedade (= colunas)
+         + coluna extra "Sem status" para páginas sem valor
+      3. Buscar todas as páginas do projeto (não deletadas)
+      4. Para cada página, buscar seu page_prop_value para a propriedade de agrupamento
+      5. Distribuir páginas nas colunas
+
+    Mover card = UPDATE page_prop_values SET value_json = novo_option_id
+
+  ── CALENDÁRIO ───────────────────────────────────────────────────────────────
+
+    Config mínima:
+      view_type = 'calendar'
+      date_property_id → aponta para uma project_property do tipo 'date'
+
+    Para renderizar:
+      1. Buscar todas as páginas do mês/semana visível
+      2. Para cada página, buscar seu page_prop_value para date_property_id
+      3. Posicionar no dia correspondente
+
+    Mudar data = UPDATE page_prop_values SET value_date = nova_data
+
+  ── TABELA ───────────────────────────────────────────────────────────────────
+
+    Para renderizar:
+      1. Buscar project_properties do projeto (= colunas)
+      2. Buscar todas as páginas com seus valores
+      3. Montar JOIN ou busca individual por página
+
+    Query eficiente (buscar tudo de uma vez):
+      SELECT p.id, p.title, p.icon, p.created_at,
+             ppv.property_id, ppv.value_text, ppv.value_num,
+             ppv.value_bool, ppv.value_date, ppv.value_json,
+             pp.name as prop_name, pp.prop_type
+      FROM pages p
+      LEFT JOIN page_prop_values ppv ON ppv.page_id = p.id
+      LEFT JOIN project_properties pp ON pp.id = ppv.property_id
+      WHERE p.project_id = ? AND p.is_deleted = 0
+      ORDER BY p.sort_order ASC
+
+
+================================================================================
+8. IPC API — V2 (NOVO CONTRATO)
+================================================================================
+
+  As mudanças na API refletem o novo modelo. O window.db.pages agora inclui
+  operações de propriedades. Kanban e Database deixam de ter endpoints próprios.
+
+  window.db.projects
+    .list()             → Project[] (sem mudança)
+    .create(data)       → Project  (sem mudança)
+    .update(data)       → Project  (sem mudança)
+    .delete({ id })     → ok       (sem mudança)
+    .getProperties(id)  → ProjectProperty[]  [NOVO]
+    .getViews(id)       → ProjectView[]      [NOVO]
+
+  window.db.properties  [NOVO — substitui partes do db_properties antigo]
+    .create(data)       → ProjectProperty
+      data: { project_id, name, prop_key, prop_type, is_required?, sort_order? }
+    .update(data)       → ProjectProperty
+    .delete({ id })     → ok
+    .reorder(items)     → ok    items: [{ id, sort_order }]
+    .getOptions(id)     → PropOption[]
+    .createOption(data) → PropOption
+      data: { property_id, label, color?, sort_order? }
+    .updateOption(data) → PropOption
+    .deleteOption({id}) → ok
+    .reorderOptions(items) → ok
+
+  window.db.pages
+    .list({ project_id })                → Page[] com prop_values embutidos
+    .get({ id })                         → Page completa com prop_values
+    .create(data)                        → Page
+      data: { project_id, title, icon?, body_json?, sort_order? }
+    .update(data)                        → Page
+      data: { id, title?, icon?, cover?, body_json?, sort_order? }
+    .delete({ id })                      → ok  (soft delete)
+    .setPropValue({ page_id, property_id, ...value }) → ok  [NOVO]
+    .reorder(items)                      → ok
+
+  window.db.views  [NOVO — substitui db_views]
+    .create(data)       → ProjectView
+      data: { project_id, name, view_type, group_by_property_id?,
+              date_property_id?, visible_props_json?, is_default? }
+    .update(data)       → ProjectView
+    .delete({ id })     → ok
+    .setDefault({ id }) → ok
+
+
+================================================================================
+9. SEED AUTOMÁTICO AO CRIAR PROJETO
+================================================================================
+
+  Quando um projeto é criado (projects:create), o handler IPC deve:
+    1. Inserir o projeto
+    2. Chamar seedProjectProperties(projectId, projectType)
+       → cria as project_properties padrão para o tipo (ver seção 4)
+       → para cada select/multi_select, cria as prop_options padrão
+    3. Chamar seedProjectViews(projectId, projectType)
+       → cria as views padrão:
+           academic:  Tabela + Kanban (por Status) + Calendário (por Data Fim)
+           software:  Kanban (por Status) + Tabela + Calendário (por Data Limite)
+           health:    Lista + Calendário (por Data Início) + Tabela
+           creative:  Kanban (por Status) + Galeria + Tabela
+           research:  Tabela + Lista
+           custom:    Tabela + Kanban (por Status)
+    4. Retornar o projeto com as propriedades e views já criadas
+
+  Isso garante que todo projeto novo já está funcional sem configuração manual.
+
+
+================================================================================
+10. PÁGINA ABERTA — O QUE O USUÁRIO VÊ
+================================================================================
+
+  Quando o usuário clica em uma página (de qualquer view), abre a página completa.
+  A tela de página tem sempre a mesma estrutura:
+
+    ┌─────────────────────────────────────────────────────┐
+    │  [Ícone]  Título da Página                          │
+    │  [Imagem de capa ou cor]                            │
+    ├─────────────────────────────────────────────────────┤
+    │  PROPRIEDADES                                       │
+    │  Status:      ● Em andamento                        │
+    │  Prioridade:  ■ Alta                                │
+    │  Data Limite: 01/04/2026                            │
+    │  Tags:        #backend  #auth                       │
+    │  [+ Adicionar propriedade]                          │
+    ├─────────────────────────────────────────────────────┤
+    │  CORPO (Editor.js)                                  │
+    │                                                     │
+    │  Escreva algo ou pressione "/" para um bloco...     │
+    │                                                     │
+    └─────────────────────────────────────────────────────┘
+
+  O painel de propriedades é colapsável.
+  Modificar uma propriedade aqui atualiza imediatamente a view do projeto
+  (ex: mover o card para outra coluna no Kanban).
+
+
+================================================================================
+11. O QUE MUDA NO CÓDIGO — PLANO DE REFATORAÇÃO
+================================================================================
+
+  FASE DE REFATORAÇÃO (a executar, não documentar ainda):
+
+  ── PASSO 1: Schema ──────────────────────────────────────────────────────────
+    - Reescrever database.ts com o novo schema
+    - Remover tabelas: kanban_*, db_*, page_properties (a genérica)
+    - Adicionar tabelas: project_properties, prop_options, page_prop_values, project_views
+    - Modificar: projects (remover extra_fields), pages (renomear content_json→body_json,
+      remover page_type, adicionar cover_color)
+
+  ── PASSO 2: IPC ─────────────────────────────────────────────────────────────
+    - Reescrever ipc.ts com os novos handlers
+    - Adicionar: properties:*, views:*
+    - Modificar: pages:list (incluir prop_values), pages:create/update
+    - Adicionar handler: seedProjectProperties, seedProjectViews (interno, não IPC)
+    - Remover: handlers kanban:*, db:*
+
+  ── PASSO 3: Preload ─────────────────────────────────────────────────────────
+    - Atualizar preload.ts com window.db.properties e window.db.views
+
+  ── PASSO 4: Store ───────────────────────────────────────────────────────────
+    - Atualizar useAppStore.ts: adicionar currentView, pageProperties
+    - Remover estado que referenciava page_type
+
+  ── PASSO 5: Tipos TypeScript ────────────────────────────────────────────────
+    - Atualizar types/index.ts com os novos tipos
+    - Remover: KanbanColumn, KanbanCard, DbProperty, etc.
+    - Adicionar: ProjectProperty, PropOption, PagePropValue, ProjectView
+
+  ── PASSO 6: UI ──────────────────────────────────────────────────────────────
+    - ProjectDashboardView: reescrever para renderizar a view ativa do projeto
+    - Criar ViewRenderer: componente que recebe view_type e renderiza a view correta
+    - Criar KanbanView, TableView, ListView, CalendarView como sub-componentes
+    - Reescrever PageView: adicionar painel de propriedades + Editor.js
+    - Reescrever NewProjectModal: remover seleção de tipo de página (não existe mais)
+    - Remover NewPageModal (ou simplificar — criar página não tem tipo)
+
+
+================================================================================
+12. O QUE NÃO MUDA
+================================================================================
+
+  - Editor.js e EditorFrame (funciona igual — só muda onde o conteúdo é salvo)
+  - Sistema de temas (CSS variables, diurno/noturno)
+  - Sidebar
+  - Sistema de log
+  - Biblioteca (readings, resources) — schema não muda
+  - Calendário GLOBAL de eventos — diferente das views de projeto
+  - Sistema de design (cores, fontes, estética sépia)
+  - Setup de ambiente (CachyOS e Windows 10)
+  - .gitignore
+
+
+================================================================================
+13. DECISÕES ARQUITETURAIS FECHADAS
+================================================================================
+
+  1. SUBPÁGINAS: ✅ DECIDIDO
+     Sim, subpáginas existem (campo parent_id em pages).
+     Visibilidade nas views: configurável por view.
+     Cada project_view tem um campo include_subpages INTEGER DEFAULT 0.
+     Quando 0: views mostram apenas páginas de nível raiz (parent_id IS NULL).
+     Quando 1: views mostram todas as páginas do projeto, independente de nível.
+     O usuário controla isso nas configurações da view.
+
+     Impacto no schema:
+       project_views → adicionar coluna: include_subpages INTEGER DEFAULT 0
+
+     Impacto nas queries:
+       Quando include_subpages = 0:
+         WHERE p.project_id = ? AND p.parent_id IS NULL AND p.is_deleted = 0
+       Quando include_subpages = 1:
+         WHERE p.project_id = ? AND p.is_deleted = 0
+
+  2. TÍTULO: ✅ DECIDIDO
+     Mantido como campo fixo da tabela pages (title TEXT NOT NULL).
+     Não é uma project_property. Sempre presente, não configurável, não deletável.
+     É a primeira "coluna" em todas as views (Table, Kanban, List).
+
+  3. SUB-DATABASES: ✅ DECIDIDO
+     Não implementar na v1. Uma página contém apenas corpo de texto rico (Editor.js).
+     Sub-databases ficam para versão futura.
+
+  4. TAGS GLOBAIS vs. PROPRIEDADES: ✅ DECIDIDO
+     Manter os dois sistemas em paralelo:
+     - Tags globais (tabela tags + page_tags): para busca e filtro cross-projeto.
+       Aparecem na busca global (Ctrl+K) e no filtro da Biblioteca.
+     - Propriedade multi_select de tags por projeto: para organização interna
+       do projeto. Os valores são prop_options locais ao projeto.
+     Os dois sistemas são independentes. Uma página pode ter tags globais E
+     uma propriedade "Tags" com valores próprios do projeto.
+
+================================================================================
+  FIM DO DOCUMENTO DE ARQUITETURA — OGMA v2.0
+================================================================================

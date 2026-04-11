@@ -1,0 +1,90 @@
+.type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: 2px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 140ms, border-color 140ms;
+  box-shadow: 2px 2px 0 rgba(44,36,22,0.1);
+}
+
+.type-card:hover {
+  filter: brightness(0.97);
+}
+
+.type-card.selected {
+  box-shadow: 3px 3px 0 rgba(44,36,22,0.15);
+}
+
+.type-card-icon { font-size: 22px; line-height: 1; }
+
+.type-card-label {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 14px;
+  font-style: italic;
+}
+
+.type-card-desc {
+  font-family: 'Special Elite', monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+}
+
+.sub-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sub-btn {
+  font-family: 'Special Elite', monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border: 1px solid;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 140ms;
+  background: transparent;
+}
+
+.sub-btn.selected { font-weight: bold; }
+
+.color-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.color-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  outline: 3px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 120ms, transform 120ms;
+}
+
+.color-dot:hover { transform: scale(1.15); }
+.color-dot.selected { outline-style: solid; transform: scale(1.1); }
+
+.custom-field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid;
+}

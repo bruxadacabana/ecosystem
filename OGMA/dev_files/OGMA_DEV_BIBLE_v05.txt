@@ -1,0 +1,1326 @@
+================================================================================
+  OGMA — BÍBLIA DO DESENVOLVEDOR v0.5
+  Gerenciador Unificado de Projetos, Estudos e Leituras
+  Atualizado: 2026-03-21
+  Status: EM DESENVOLVIMENTO — Fases 1–3 concluídas; refatoração arquitetural
+          pendente antes de continuar com as próximas fases
+================================================================================
+
+  Este documento é destinado a qualquer desenvolvedor que vá iniciar ou dar
+  continuidade ao projeto OGMA. Contém toda a informação necessária para
+  compreender a estrutura, configurar o ambiente, as decisões de arquitetura,
+  o sistema de design e o escopo completo de funcionalidades.
+  Deve ser atualizado a cada mudança significativa no projeto.
+
+  OGMA absorve e substitui completamente o StudyFlow. Toda referência ao
+  StudyFlow serve para garantir que nenhuma funcionalidade crítica seja perdida.
+
+  NOTA SOBRE VERSOES ANTERIORES:
+  v0.1-v0.3 descreviam o OGMA como app Python/PyQt6 -- ignorar completamente.
+  v0.4 tinha o schema correto mas o modelo de dados errado (Kanban e Database
+  como tipos de pagina separados). v0.5 corrige isso com a arquitetura v2.
+
+  ESTADO ATUAL DO CODIGO vs. ESTE DOCUMENTO:
+  O codigo das Fases 1-3 foi implementado com o schema v1 (incorreto).
+  Este documento descreve a arquitetura v2 (correta) que ainda precisa ser
+  implementada como refatoracao. Antes de implementar a Fase 4 em diante,
+  o schema, IPC e UI devem ser refatorados conforme descrito aqui.
+
+================================================================================
+INDICE
+================================================================================
+
+  1.  Visao Geral e Modelo Mental
+  2.  Stack Tecnologica e Versoes
+  3.  Estrutura de Pastas
+  4.  Hierarquia de Dados -- Modelo Notion
+  5.  Banco de Dados -- Schema v2 (correto)
+  6.  Propriedades -- Tipos e Defaults por Tipo de Projeto
+  7.  Views -- Tipos e Comportamento
+  8.  API IPC -- Referencia Completa (window.db)
+  9.  Seed Automatico ao Criar Projeto
+  10. Arquitetura Tecnica -- Decisoes Importantes
+  11. Editor de Texto Rico -- Como Funciona
+  12. Sistema de Design -- Biblia Visual
+  13. Bibliotecas -- Guia Detalhado
+  14. Armadilhas Tecnicas Conhecidas
+  15. Instrucoes de Setup -- CachyOS
+  16. Instrucoes de Setup -- Windows 10
+  17. Funcionalidades -- Escopo por Fase
+  18. Plano de Refatoracao (Schema v1 para v2)
+  19. Modulo Academico -- Heranca Critica do StudyFlow
+  20. Migracao de Dados do StudyFlow
+  21. Historico de Versoes deste Documento
+
+
+================================================================================
+1. VISAO GERAL E MODELO MENTAL
+================================================================================
+
+Nome: OGMA
+Inspiracao: Ogma, deus celta da escrita, eloquencia e conhecimento.
+
+Conceito:
+  Gerenciador e organizador unificado de projetos pessoais, estudos academicos
+  e leituras. Substitui e absorve completamente o StudyFlow. Inspirado no Notion,
+  com estetica de papel envelhecido / maquina de escrever / cosmos desenhado a
+  lapis sobre pergaminho. 100% local, sem sincronizacao, sem conta, sem telemetria.
+  Todos os dados armazenados exclusivamente em ogma/data/.
+
+────────────────────────────────────────────────────────────────────────────────
+MODELO MENTAL FUNDAMENTAL (ler com atencao)
+────────────────────────────────────────────────────────────────────────────────
+
+  PROJETO = banco de dados de paginas (como uma Database do Notion)
+  PAGINA  = a unidade basica de dados. Tem titulo + propriedades + corpo de texto.
+  VIEW    = uma forma de visualizar as paginas de um projeto.
+
+  Kanban, Tabela, Calendario e Lista NAO sao tipos de pagina.
+  Sao formas diferentes de visualizar o mesmo conjunto de paginas.
+
+  Exemplo concreto:
+    Projeto "TCC" tem paginas: "Introducao", "Metodologia", "Resultados"
+    Cada pagina tem propriedades: Status, Data Limite, Prioridade
+    View Kanban:     mostra as paginas agrupadas por Status (colunas)
+    View Tabela:     mostra as paginas como linhas com todas as propriedades
+    View Calendario: mostra as paginas posicionadas por Data Limite
+    Os mesmos dados, apresentados de formas diferentes.
+
+  Uma pagina sempre tem:
+    - Titulo (campo fixo, sempre presente)
+    - Propriedades configuráveis (definidas pelo projeto)
+    - Corpo de texto rico (Editor.js -- pode estar vazio)
+
+  Abrir uma pagina (de qualquer view) mostra:
+    ┌──────────────────────────────────────────┐
+    │ [icone] Titulo da Pagina                 │
+    │ [capa]                                   │
+    ├──────────────────────────────────────────┤
+    │ Status:      Em andamento                │
+    │ Prioridade:  Alta                        │
+    │ Data Limite: 01/04/2026                  │
+    ├──────────────────────────────────────────┤
+    │ Corpo (Editor.js)                        │
+    │ Escreva algo...                          │
+    └──────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────────────────────
+EQUIVALENCIA COM O STUDYFLOW
+────────────────────────────────────────────────────────────────────────────────
+  Grade curricular  ->  Projeto (project_type = 'academic')
+  Disciplina        ->  Pagina (com propriedades: Semestre, Area, Status, etc.)
+  Semestre          ->  Propriedade do tipo select dentro do projeto academico
+  Fonte             ->  Propriedade do tipo select ou text
+  Area              ->  Propriedade do tipo multi_select
+
+────────────────────────────────────────────────────────────────────────────────
+MODULO DE LEITURAS
+────────────────────────────────────────────────────────────────────────────────
+  Faz parte da Biblioteca -- nao e um modulo separado.
+  Sidebar: Biblioteca expande em Recursos e Leituras.
+  Um livro existe uma vez na Biblioteca e pode ser vinculado a multiplas paginas
+  via reading_links.
+
+Plataformas-alvo:
+  - CachyOS / Arch Linux (plataforma principal -- usuario: spacewitch)
+    Pasta: ~/Documents/OGMA/ogma-electron/
+  - Windows 10 x64
+
+
+================================================================================
+2. STACK TECNOLOGICA E VERSOES
+================================================================================
+
+RUNTIME E FRAMEWORK
+  Electron            33.x
+  Node.js             22.x LTS
+  React               18.x
+  TypeScript          5.4.x
+
+BUILD E DEV
+  Vite                6.x (com @vitejs/plugin-react)
+  concurrently        8.x -- rodar Vite + Electron em paralelo
+  wait-on             7.x -- aguardar Vite subir antes de abrir Electron
+
+BANCO DE DADOS
+  better-sqlite3-multiple-ciphers   11.x
+    Binarios pre-compilados para Electron 33 Linux/Windows x64.
+    API 100% sincrona, identica ao better-sqlite3 original.
+    Resolve incompatibilidade do better-sqlite3 padrao com GCC 15 (CachyOS).
+
+EDITOR DE TEXTO RICO
+  @editorjs/editorjs          2.31.x
+  @editorjs/header            2.8.x
+  @editorjs/list              1.10.x
+  @editorjs/checklist         1.6.x
+  @editorjs/quote             2.7.x
+  @editorjs/code              2.9.x
+  @editorjs/table             2.4.x
+  @editorjs/image             2.10.x
+  @editorjs/inline-code       1.5.x
+  @editorjs/delimiter         1.4.x
+  @editorjs/marker            1.4.x
+  editorjs-toggle-block       0.3.x
+
+  O Editor.js roda via dynamic import no renderer React, montado numa <div ref>.
+  Sem iframe, sem bundle separado. Ver secao 11.
+
+ESTADO GLOBAL
+  zustand             4.5.x
+
+EMPACOTAMENTO
+  electron-builder    24.x
+  electron-rebuild    3.x (postinstall para o better-sqlite3-mc)
+
+TYPESCRIPT
+  @types/node         22.x
+  @types/react        18.x
+  @types/react-dom    18.x
+
+FONTES (Google Fonts -- carregadas em src/renderer/index.html)
+  IM Fell English     https://fonts.google.com/specimen/IM+Fell+English
+  Special Elite       https://fonts.google.com/specimen/Special+Elite
+  Courier Prime       https://fonts.google.com/specimen/Courier+Prime
+
+
+================================================================================
+3. ESTRUTURA DE PASTAS
+================================================================================
+
+ogma-electron/
+│
+├── OGMA_DEV_BIBLE.txt                <- Este documento
+├── package.json                      <- Dependencias, scripts, electron-builder
+├── vite.config.ts                    <- root=src/renderer, port=5173
+├── tsconfig.json                     <- TypeScript renderer
+├── tsconfig.main.json                <- TypeScript processo main
+├── .gitignore
+│
+├── data/                             <- TODOS os dados gerados
+│   ├── ogma.db
+│   ├── uploads/                      <- Imagens embutidas
+│   ├── exports/
+│   └── logs/
+│       └── ogma-YYYY-MM-DD.log
+│
+├── src/
+│   ├── main/                         <- Processo principal (Node.js)
+│   │   ├── main.ts                   <- Entry point Electron
+│   │   ├── database.ts               <- Schema SQLite + helpers dbGet/dbAll/dbRun
+│   │   ├── ipc.ts                    <- Todos os IPC handlers
+│   │   ├── logger.ts                 <- Niveis DEBUG/INFO/WARN/ERROR
+│   │   ├── paths.ts                  <- DATA_DIR, DB_PATH, UPLOADS_DIR, etc.
+│   │   ├── preload.ts                <- contextBridge -> window.db
+│   │   └── sqlite-electron.d.ts      <- Tipos TypeScript do banco
+│   │
+│   └── renderer/                     <- React + Vite
+│       ├── index.html                <- Google Fonts + entry point
+│       ├── main.tsx                  <- ReactDOM.createRoot
+│       ├── App.tsx                   <- Shell: views, modais, tema, sidebar
+│       ├── types/
+│       │   └── index.ts              <- Tipos globais (Project, Page, etc.)
+│       ├── store/
+│       │   └── useAppStore.ts        <- Zustand global state
+│       ├── styles/
+│       │   └── globals.css           <- Design system sepia (CSS variables)
+│       ├── utils/
+│       │   ├── logger.ts             <- Logger do renderer (via IPC)
+│       │   └── colorUtils.ts         <- HSL 9 tons para cores de disciplinas
+│       ├── components/
+│       │   ├── Cosmos/
+│       │   │   └── CosmosLayer.tsx   <- SVG cosmico procedural
+│       │   ├── Splash/
+│       │   │   ├── SplashScreen.tsx
+│       │   │   └── SplashScreen.css
+│       │   ├── Sidebar/
+│       │   │   ├── Sidebar.tsx
+│       │   │   └── Sidebar.css
+│       │   ├── UI/
+│       │   │   ├── Modal.tsx
+│       │   │   └── Modal.css
+│       │   ├── Projects/
+│       │   │   ├── NewProjectModal.tsx    <- Wizard: tipo -> detalhes -> campos
+│       │   │   ├── NewProjectModal.css
+│       │   │   └── EditProjectModal.tsx
+│       │   ├── Pages/
+│       │   │   └── NewPageModal.tsx       <- A refatorar: sem selecao de tipo
+│       │   └── Editor/
+│       │       ├── EditorFrame.tsx        <- dynamic import + div ref
+│       │       └── EditorFrame.css        <- Tema sepia do editor
+│       └── views/
+│           ├── Dashboard/
+│           │   └── DashboardView.tsx
+│           ├── ProjectDashboard/          <- A refatorar: ViewRenderer
+│           │   ├── ProjectDashboardView.tsx
+│           │   └── ProjectDashboardView.css
+│           └── PageView/                  <- A refatorar: painel de props
+│               ├── PageView.tsx
+│               └── PageView.css
+│
+└── dist/                             <- Gerado por build (nao versionado)
+
+
+================================================================================
+4. HIERARQUIA DE DADOS -- MODELO NOTION
+================================================================================
+
+  WORKSPACE (1)
+    └── PROJETO (N)
+          ├── project_properties  -- define os campos das paginas deste projeto
+          ├── project_views       -- formas de visualizar as paginas
+          └── PAGINAS (N)
+                ├── title         -- campo fixo (sempre presente)
+                ├── icon, cover   -- campos fixos opcionais
+                ├── body_json     -- corpo Editor.js (pode ser vazio)
+                └── page_prop_values -- valores das propriedades do projeto
+
+  RELACIONAMENTOS ADICIONAIS:
+    Pagina <-> Pagina:     page_backlinks (backlinks do editor)
+    Pagina -> Tags globais: page_tags (para busca cross-projeto)
+    Leitura <-> Pagina:    reading_links (Biblioteca)
+
+  DECISOES ARQUITETURAIS FECHADAS:
+    - Titulo: campo fixo da tabela pages. Nao e uma project_property.
+    - Subpaginas: existem (parent_id). Visibilidade por view configuravel
+      via include_subpages (0=so raiz, 1=todas). Padrao: 0.
+    - Sub-databases: nao na v1. Cada pagina tem so corpo de texto rico.
+    - Tags: dois sistemas paralelos -- tags globais (cross-projeto) e
+      propriedade multi_select local ao projeto. Independentes.
+
+
+================================================================================
+5. BANCO DE DADOS -- SCHEMA v2 (CORRETO)
+================================================================================
+
+Arquivo: src/main/database.ts
+Banco:   data/ogma.db (SQLite)
+PRAGMAs: foreign_keys = ON, journal_mode = WAL
+
+Criacao via initSchema() em getDb(). Sem migrations formais -- ALTER TABLE
+com verificacao via PRAGMA table_info para novas colunas.
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: workspaces
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  name          TEXT NOT NULL DEFAULT 'Meu Workspace'
+  icon          TEXT DEFAULT 'X'
+  accent_color  TEXT DEFAULT '#b8860b'
+  created_at    TEXT DEFAULT datetime('now')
+  updated_at    TEXT DEFAULT datetime('now')
+
+  Sempre existe exatamente 1 workspace. Criado pelo seed na primeira abertura.
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: projects
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  workspace_id  INTEGER NOT NULL -> workspaces(id) CASCADE
+  name          TEXT NOT NULL
+  description   TEXT
+  icon          TEXT
+  color         TEXT
+  project_type  TEXT NOT NULL DEFAULT 'custom'
+                  'academic'|'creative'|'research'|'software'|'health'|'custom'
+  subcategory   TEXT
+  status        TEXT DEFAULT 'active'
+  date_start    TEXT
+  date_end      TEXT
+  sort_order    INTEGER DEFAULT 0
+  created_at    TEXT DEFAULT datetime('now')
+  updated_at    TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: pages
+────────────────────────────────────────────────────────────────────────────────
+  id           INTEGER PK AUTOINCREMENT
+  project_id   INTEGER -> projects(id) CASCADE
+  parent_id    INTEGER -> pages(id) CASCADE    -- subpaginas (nivel ilimitado)
+  title        TEXT NOT NULL DEFAULT 'Sem titulo'
+  icon         TEXT
+  cover        TEXT                           -- URL/path de imagem
+  cover_color  TEXT                           -- cor alternativa a imagem
+  body_json    TEXT                           -- JSON do Editor.js
+  sort_order   INTEGER DEFAULT 0
+  is_deleted   INTEGER DEFAULT 0
+  created_at   TEXT DEFAULT datetime('now')
+  updated_at   TEXT DEFAULT datetime('now')
+
+  NOTA: Nao ha mais page_type. A forma de uma pagina e determinada
+  pela view ativa do projeto, nao por um tipo fixo na pagina.
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: project_properties
+────────────────────────────────────────────────────────────────────────────────
+  id           INTEGER PK AUTOINCREMENT
+  project_id   INTEGER NOT NULL -> projects(id) CASCADE
+  name         TEXT NOT NULL        -- nome visivel (ex: "Status")
+  prop_key     TEXT NOT NULL        -- slug interno (ex: "status")
+  prop_type    TEXT NOT NULL        -- 'text'|'number'|'select'|'multi_select'|
+                                       'date'|'checkbox'|'url'|'color'
+  is_required  INTEGER DEFAULT 0
+  is_built_in  INTEGER DEFAULT 0    -- criado pelo template, nao deletavel
+  sort_order   INTEGER DEFAULT 0
+  created_at   TEXT DEFAULT datetime('now')
+
+  UNIQUE (project_id, prop_key)
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: prop_options
+────────────────────────────────────────────────────────────────────────────────
+  id          INTEGER PK AUTOINCREMENT
+  property_id INTEGER NOT NULL -> project_properties(id) CASCADE
+  label       TEXT NOT NULL     -- texto visivel (ex: "Em Andamento")
+  color       TEXT              -- cor do badge (hex)
+  sort_order  INTEGER DEFAULT 0
+
+  Para select e multi_select. Para Kanban: cada option = uma coluna.
+  A ordem das options define a ordem das colunas no Kanban.
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: page_prop_values
+────────────────────────────────────────────────────────────────────────────────
+  id          INTEGER PK AUTOINCREMENT
+  page_id     INTEGER NOT NULL -> pages(id) CASCADE
+  property_id INTEGER NOT NULL -> project_properties(id) CASCADE
+  value_text  TEXT     -- text, url, color
+  value_num   REAL     -- number
+  value_bool  INTEGER  -- checkbox (0 ou 1)
+  value_date  TEXT     -- date inicio (ISO datetime)
+  value_date2 TEXT     -- date fim do intervalo (ISO datetime)
+  value_json  TEXT     -- select: option_id como string
+                          multi_select: JSON array de option_ids
+
+  UNIQUE (page_id, property_id)
+
+  Semantica de value_json:
+    select:       value_json = "42"          (id da prop_option escolhida)
+    multi_select: value_json = "[1, 3, 5]"   (array de prop_option ids)
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: project_views
+────────────────────────────────────────────────────────────────────────────────
+  id                   INTEGER PK AUTOINCREMENT
+  project_id           INTEGER NOT NULL -> projects(id) CASCADE
+  name                 TEXT NOT NULL
+  view_type            TEXT NOT NULL   -- 'table'|'kanban'|'list'|'calendar'|'gallery'
+  group_by_property_id INTEGER -> project_properties(id) SET NULL
+                                        -- propriedade de agrupamento (Kanban/List)
+  date_property_id     INTEGER -> project_properties(id) SET NULL
+                                        -- propriedade de data (Calendar)
+  visible_props_json   TEXT            -- JSON array de property_ids visiveis
+  filter_json          TEXT            -- JSON com filtros ativos
+  sort_json            TEXT            -- JSON com ordenacao ativa
+  include_subpages     INTEGER DEFAULT 0  -- 0: so raiz, 1: inclui subpaginas
+  is_default           INTEGER DEFAULT 0
+  sort_order           INTEGER DEFAULT 0
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: page_backlinks  (many-to-many)
+────────────────────────────────────────────────────────────────────────────────
+  source_page_id  INTEGER NOT NULL -> pages(id) CASCADE
+  target_page_id  INTEGER NOT NULL -> pages(id) CASCADE
+  PRIMARY KEY (source_page_id, target_page_id)
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: page_versions
+────────────────────────────────────────────────────────────────────────────────
+  id           INTEGER PK AUTOINCREMENT
+  page_id      INTEGER NOT NULL -> pages(id) CASCADE
+  body_json    TEXT NOT NULL
+  created_at   TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: tags  (tags globais -- cross-projeto)
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  workspace_id  INTEGER NOT NULL -> workspaces(id) CASCADE
+  name          TEXT NOT NULL
+  color         TEXT
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: page_tags  (many-to-many)
+────────────────────────────────────────────────────────────────────────────────
+  page_id  INTEGER -> pages(id) CASCADE
+  tag_id   INTEGER -> tags(id) CASCADE
+  PRIMARY KEY (page_id, tag_id)
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: calendar_events  (calendario global -- diferente das views de projeto)
+────────────────────────────────────────────────────────────────────────────────
+  id              INTEGER PK AUTOINCREMENT
+  workspace_id    INTEGER NOT NULL -> workspaces(id) CASCADE
+  title           TEXT NOT NULL
+  description     TEXT
+  start_dt        TEXT NOT NULL    -- ISO datetime
+  end_dt          TEXT
+  all_day         INTEGER DEFAULT 0
+  color           TEXT
+  linked_page_id  INTEGER -> pages(id) SET NULL
+  created_at      TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: reminders
+────────────────────────────────────────────────────────────────────────────────
+  id              INTEGER PK AUTOINCREMENT
+  title           TEXT NOT NULL
+  trigger_at      TEXT NOT NULL
+  offset_minutes  INTEGER
+  linked_event_id INTEGER -> calendar_events(id) CASCADE
+  linked_page_id  INTEGER -> pages(id) SET NULL
+  is_dismissed    INTEGER DEFAULT 0
+  created_at      TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: resources
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  workspace_id  INTEGER NOT NULL -> workspaces(id) CASCADE
+  project_id    INTEGER -> projects(id) SET NULL
+  title         TEXT NOT NULL
+  resource_type TEXT    -- 'link'|'book'|'video'|'article'|'other'
+  url           TEXT
+  description   TEXT
+  tags_json     TEXT    -- JSON array de strings
+  created_at    TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: readings
+────────────────────────────────────────────────────────────────────────────────
+  id           INTEGER PK AUTOINCREMENT
+  workspace_id INTEGER NOT NULL -> workspaces(id) CASCADE
+  title        TEXT NOT NULL
+  reading_type TEXT DEFAULT 'book'    -- 'book'|'article'|'manga'|'other'
+  author       TEXT
+  publisher    TEXT
+  year         INTEGER
+  isbn         TEXT
+  cover_path   TEXT
+  status       TEXT DEFAULT 'want'    -- 'want'|'reading'|'done'|'abandoned'
+  rating       INTEGER
+  current_page INTEGER DEFAULT 0
+  total_pages  INTEGER
+  date_start   TEXT
+  date_end     TEXT
+  review       TEXT
+  api_source   TEXT                   -- 'openlibrary'|'googlebooks'
+  api_id       TEXT
+  created_at   TEXT DEFAULT datetime('now')
+  updated_at   TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELAS: reading_tags, reading_notes, reading_quotes, reading_links, reading_goals
+────────────────────────────────────────────────────────────────────────────────
+  reading_tags:   reading_id -> readings(id), tag_id -> tags(id)
+  reading_notes:  id, reading_id, chapter, content, created_at
+  reading_quotes: id, reading_id, text, location, created_at
+  reading_links:  reading_id -> readings(id), page_id -> pages(id) [many-to-many]
+  reading_goals:  id, workspace_id, year, target
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: time_sessions
+────────────────────────────────────────────────────────────────────────────────
+  id           INTEGER PK AUTOINCREMENT
+  workspace_id INTEGER NOT NULL -> workspaces(id)
+  page_id      INTEGER -> pages(id) SET NULL
+  project_id   INTEGER -> projects(id) SET NULL
+  duration_min INTEGER NOT NULL
+  session_type TEXT DEFAULT 'manual'
+  started_at   TEXT
+  finished_at  TEXT
+  created_at   TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: config
+────────────────────────────────────────────────────────────────────────────────
+  key    TEXT PRIMARY KEY
+  value  TEXT
+
+  Chaves: 'theme' ('light'|'dark'), 'unsplash_api_key'
+
+
+================================================================================
+6. PROPRIEDADES -- TIPOS E DEFAULTS POR TIPO DE PROJETO
+================================================================================
+
+Quando um projeto e criado, seedProjectProperties() cria automaticamente
+as propriedades padrao para o tipo. O usuario pode adicionar, remover e
+renomear depois (exceto is_built_in = 1).
+
+TIPOS DE PROPRIEDADE SUPORTADOS:
+  text         Texto curto livre (Professor, Codigo, URL)
+  number       Numero (Carga horaria, Creditos, Progresso %)
+  select       Uma opcao de lista -- as options definem colunas do Kanban
+  multi_select Multiplas opcoes (Tags, Areas)
+  date         Data ou intervalo (value_date + value_date2 opcional)
+  checkbox     Sim/Nao
+  url          Link externo
+  color        Cor hex -- para cores de disciplinas academicas
+
+  Futuros (nao implementar agora): relation, rollup, formula
+
+PROPRIEDADE ESPECIAL STATUS:
+  Todo projeto tem uma propriedade "Status" do tipo select.
+  Os options do Status sao as colunas do Kanban.
+  Sem Status configurado -> view Kanban indisponivel.
+
+PROPRIEDADE ESPECIAL DATE:
+  Projetos com propriedade do tipo date podem usar a view Calendario.
+  O campo de data para o calendario e configuravel por view (date_property_id).
+
+── ACADEMIC ──────────────────────────────────────────────────────────────────
+  Status        select       [Pendente, Cursando, Concluida, Trancada]
+  Semestre      select       [] (usuario define)
+  Area          multi_select [] (usuario define)
+  Carga Horaria number
+  Creditos      number
+  Professor     text
+  Data Inicio   date
+  Data Fim      date
+  Codigo        text         (gerado automaticamente -- PREFIX###)
+  Cor           color
+
+── SOFTWARE ──────────────────────────────────────────────────────────────────
+  Status        select       [Backlog, A Fazer, Em Andamento, Em Revisao, Concluido]
+  Prioridade    select       [Baixa, Media, Alta, Urgente]
+  Tags          multi_select []
+  Sprint        select       []
+  Data Limite   date
+  Estimativa    number       (horas)
+
+── HEALTH ────────────────────────────────────────────────────────────────────
+  Status        select       [Nao Iniciado, Em Andamento, Concluido, Abandonado]
+  Frequencia    select       [Diario, Semanal, Mensal, Pontual]
+  Data Inicio   date
+  Meta          text
+  Progresso     number       (%)
+  Tags          multi_select []
+
+── CREATIVE ──────────────────────────────────────────────────────────────────
+  Status        select       [Ideia, Em Progresso, Pausado, Concluido, Publicado]
+  Tags          multi_select []
+  Data Limite   date
+  Prioridade    select       [Baixa, Media, Alta]
+
+── RESEARCH ──────────────────────────────────────────────────────────────────
+  Status        select       [A Pesquisar, Em Andamento, Rascunho, Revisao, Concluido]
+  Fonte         text
+  Data          date
+  Tags          multi_select []
+  Area          multi_select []
+
+── CUSTOM ────────────────────────────────────────────────────────────────────
+  Status        select       [A Fazer, Em Andamento, Concluido]
+  Tags          multi_select []
+  Data          date
+
+
+================================================================================
+7. VIEWS -- TIPOS E COMPORTAMENTO
+================================================================================
+
+Views sao salvas em project_views. Um projeto pode ter multiplas views.
+
+── TABLE (Tabela) ────────────────────────────────────────────────────────────
+  Lista paginas como linhas. Colunas = propriedades visiveis (configuravel).
+  Suporta: ordenacao por coluna, filtros, busca.
+  Disponivel: sempre.
+
+── KANBAN ────────────────────────────────────────────────────────────────────
+  Agrupa paginas em colunas por uma propriedade select (group_by_property_id).
+  Padrao: agrupar por "Status". Cada option = uma coluna.
+  Cards mostram titulo + propriedades selecionadas.
+  Mover card = UPDATE page_prop_values para o novo option_id.
+  + coluna "Sem valor" para paginas sem valor definido.
+  Disponivel: projetos com ao menos uma propriedade select.
+
+── CALENDAR (Calendario) ─────────────────────────────────────────────────────
+  Posiciona paginas em calendario mensal pelo valor de date_property_id.
+  Mover no calendario = UPDATE page_prop_values para nova data.
+  Disponivel: projetos com ao menos uma propriedade date.
+
+── LIST (Lista) ──────────────────────────────────────────────────────────────
+  Lista compacta. Suporta agrupamento, filtros, ordenacao.
+  Disponivel: sempre.
+
+── GALLERY (Galeria) ─────────────────────────────────────────────────────────
+  Cards em grade com imagem de capa. Versao futura -- nao implementar agora.
+
+SUBPAGINAS NAS VIEWS:
+  Controlado por include_subpages na project_view.
+  0 (padrao): WHERE parent_id IS NULL -- so paginas raiz.
+  1: WHERE project_id = ? -- todas as paginas incluindo subpaginas.
+
+SEED DE VIEWS POR TIPO:
+  academic:  Tabela + Kanban (por Status) + Calendario (por Data Fim)
+  software:  Kanban (por Status) + Tabela + Calendario (por Data Limite)
+  health:    Lista + Calendario (por Data Inicio) + Tabela
+  creative:  Kanban (por Status) + Galeria + Tabela
+  research:  Tabela + Lista
+  custom:    Tabela + Kanban (por Status)
+
+
+================================================================================
+8. API IPC -- REFERENCIA COMPLETA (window.db)
+================================================================================
+
+Bridge em preload.ts -> window.db no renderer.
+Todos os metodos retornam Promises. Handlers main sao sincronos (better-sqlite3).
+
+O wrapper api() em ipc.ts retorna sempre:
+  { ok: true, data: resultado }
+  { ok: false, error: 'mensagem' }
+
+CONVENCAO: canal 'tabela:operacao' -> window.db.tabela.operacao(data)
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.workspace
+────────────────────────────────────────────────────────────────────────────────
+  .get()               -> Workspace
+  .update(data)        -> Workspace   data: { name?, icon?, accent_color? }
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.projects
+────────────────────────────────────────────────────────────────────────────────
+  .list()              -> Project[]
+  .create(data)        -> Project + propriedades e views ja criadas (seed automatico)
+    data: { name, project_type, description?, icon?, color?, subcategory?,
+            date_start?, date_end? }
+  .update(data)        -> Project    data: { id, ...campos }
+  .delete({ id })      -> ok         CASCADE: pages, properties, views
+  .getProperties(id)   -> ProjectProperty[] com prop_options embutidas
+  .getViews(id)        -> ProjectView[]
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.properties
+────────────────────────────────────────────────────────────────────────────────
+  .create(data)          -> ProjectProperty
+    data: { project_id, name, prop_key, prop_type, is_required?, sort_order? }
+  .update(data)          -> ProjectProperty
+  .delete({ id })        -> ok   (bloqueia se is_built_in = 1)
+  .reorder(items)        -> ok   items: [{ id, sort_order }]
+  .getOptions(property_id)  -> PropOption[]
+  .createOption(data)    -> PropOption
+    data: { property_id, label, color?, sort_order? }
+  .updateOption(data)    -> PropOption
+  .deleteOption({ id })  -> ok
+  .reorderOptions(items) -> ok
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.pages
+────────────────────────────────────────────────────────────────────────────────
+  .list({ project_id, view_id? })
+    -> Page[] com prop_values embutidos, filtrados pelo include_subpages da view
+    Se view_id omitido: retorna so paginas raiz (parent_id IS NULL)
+
+  .get({ id })         -> Page completa com prop_values
+
+  .create(data)        -> Page
+    data: { project_id, title, icon?, body_json?, parent_id?, sort_order? }
+
+  .update(data)        -> Page
+    data: { id, title?, icon?, cover?, cover_color?, body_json?, sort_order? }
+
+  .delete({ id })      -> ok   soft delete (is_deleted = 1)
+
+  .setPropValue(data)  -> ok
+    data: { page_id, property_id, value_text?, value_num?, value_bool?,
+            value_date?, value_date2?, value_json? }
+
+  .reorder(items)      -> ok   items: [{ id, sort_order }]
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.views
+────────────────────────────────────────────────────────────────────────────────
+  .create(data)        -> ProjectView
+    data: { project_id, name, view_type, group_by_property_id?,
+            date_property_id?, visible_props_json?, include_subpages?,
+            is_default? }
+  .update(data)        -> ProjectView
+  .delete({ id })      -> ok
+  .setDefault({ id })  -> ok
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.config
+────────────────────────────────────────────────────────────────────────────────
+  .get({ key })        -> string | null
+  .set({ key, value }) -> ok
+  .getAll()            -> { [key]: value }
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.uploads
+────────────────────────────────────────────────────────────────────────────────
+  .saveImage({ base64, ext }) -> { path: string }
+
+
+================================================================================
+9. SEED AUTOMATICO AO CRIAR PROJETO
+================================================================================
+
+Quando projects:create e chamado, o handler executa internamente:
+  1. Insere o projeto
+  2. seedProjectProperties(projectId, projectType)
+     -> Cria as project_properties padrao para o tipo (ver secao 6)
+     -> Para cada select/multi_select, cria as prop_options padrao
+  3. seedProjectViews(projectId, projectType)
+     -> Cria as views padrao para o tipo (ver secao 7)
+     -> Define a primeira como is_default = 1
+  4. Retorna o projeto com propriedades e views ja embutidas
+
+Isso garante que todo projeto novo esta funcional sem configuracao adicional.
+
+
+================================================================================
+10. ARQUITETURA TECNICA -- DECISOES IMPORTANTES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+10.1  DOIS PROCESSOS DO ELECTRON
+────────────────────────────────────────────────────────────────────────────────
+  Main (src/main/): Node.js, banco de dados, arquivos, ipcMain.handle()
+  Renderer (src/renderer/): React/Chromium, SEM Node.js direto
+  Preload (src/main/preload.ts): ponte unica via contextBridge -> window.db
+
+  Seguranca: contextIsolation: true, nodeIntegration: false, sandbox: false
+
+────────────────────────────────────────────────────────────────────────────────
+10.2  BETTER-SQLITE3-MULTIPLE-CIPHERS
+────────────────────────────────────────────────────────────────────────────────
+  GCC 15 do CachyOS quebra o rebuild do better-sqlite3 padrao (C++20).
+  O better-sqlite3-multiple-ciphers distribui binarios pre-compilados
+  para Electron 33 Linux x64 -- sem necessidade de compilacao.
+  API 100% identica ao better-sqlite3 padrao.
+
+────────────────────────────────────────────────────────────────────────────────
+10.3  DEV WORKFLOW
+────────────────────────────────────────────────────────────────────────────────
+  npm run dev -> concurrently: Vite (5173) + wait-on + tsc main + electron
+  Dev: win.loadURL('http://localhost:5173')
+  Prod: win.loadFile('dist/renderer/index.html')
+  isDev: process.env.NODE_ENV === 'development' || !app.isPackaged
+
+────────────────────────────────────────────────────────────────────────────────
+10.4  PATHS E DADOS
+────────────────────────────────────────────────────────────────────────────────
+  src/main/paths.ts:
+    Dev:  ROOT = raiz do projeto
+    Prod: ROOT = pasta do executavel
+  DATA_DIR -> ROOT/data/, DB_PATH, UPLOADS_DIR, EXPORTS_DIR, LOGS_DIR
+  REGRA: nenhum dado fora de DATA_DIR.
+
+────────────────────────────────────────────────────────────────────────────────
+10.5  ZUSTAND -- GERENCIAMENTO DE ESTADO
+────────────────────────────────────────────────────────────────────────────────
+  src/renderer/store/useAppStore.ts
+  Estado global: workspace, projects, pages, dark, sidebarOpen
+  A adicionar na refatoracao: currentView, pageProperties, activeProject
+
+  Dentro de componente:  const { projects } = useAppStore()
+  Fora de componente:    useAppStore.getState().loadProjects()
+
+  O que fica local (useState): valores de propriedades editadas, estado de modais
+
+
+================================================================================
+11. EDITOR DE TEXTO RICO -- COMO FUNCIONA
+================================================================================
+
+Dynamic import no renderer React, montado numa <div ref>. Sem iframe.
+Padrao validado pelo StudyFlow (referencia de implementacao).
+
+  useEffect(() => {
+    const init = async () => {
+      const [{ default: EditorJS }, { default: Header }, ...] =
+        await Promise.all([import('@editorjs/editorjs'), ...])
+
+      editorRef.current = new EditorJS({
+        holder: holderRef.current,
+        data: JSON.parse(content ?? '{}'),
+        onChange: async () => {
+          clearTimeout(timer)
+          timer = setTimeout(async () => {
+            const output = await editorRef.current.save()
+            onSave(JSON.stringify(output))  // debounce 1.5s
+          }, 1500)
+        },
+        onReady: () => setLoading(false),
+      })
+    }
+    init()
+    return () => editorRef.current?.destroy()
+  }, [])
+
+Troca de conteudo (nova pagina): editorRef.current.render(newData)
+Nao destruir e recriar -- causa flicker desnecessario.
+
+Auto-save em pages.body_json (era content_json no schema v1).
+
+Formato salvo:
+  { "time": 123, "blocks": [...], "version": "2.31.x" }
+
+Tema: CSS scoped em .editor-holder, variante .editor-dark para noturno.
+Cursor: caret-color: var(--accent, #b8860b) -- dourado envelhecido.
+
+
+================================================================================
+12. SISTEMA DE DESIGN -- BIBLIA VISUAL
+================================================================================
+
+Estetica: PAPEL ANTIGO / MAQUINA DE ESCREVER.
+Sem sombras difusas, bordas arredondadas expressivas ou flat design moderno.
+
+────────────────────────────────────────────────────────────────────────────────
+TIPOGRAFIA
+────────────────────────────────────────────────────────────────────────────────
+  --font-display/body: 'IM Fell English', Georgia, serif
+    Titulos, nomes de projetos e paginas. Serif historica, inclinacao italiana.
+
+  --font-mono: 'Special Elite', 'Courier New', monospace
+    Labels, badges, navegacao, timestamps. Simula maquina de escrever.
+
+  --font-code: 'Courier Prime', 'Courier New', monospace
+    Blocos de codigo no editor.
+
+  Carregamento em index.html (Google Fonts):
+    IM Fell English:ital@0;1 + Special Elite + Courier Prime
+
+────────────────────────────────────────────────────────────────────────────────
+PALETA DIURNA
+────────────────────────────────────────────────────────────────────────────────
+  --paper:        #F5F0E8   fundo principal (off-white envelhecido)
+  --paper-dark:   #EDE7D9   cards, inputs
+  --paper-darker: #E5DECE   hover
+  --ink:          #2C2416   texto principal (quase preto sepia)
+  --ink-light:    #5C4E3A   texto secundario
+  --ink-faint:    #9C8E7A   placeholder, subtitulos
+  --ink-ghost:    #C4B9A8   elementos sutis
+  --accent:       #b8860b   dourado envelhecido (cursor, destaques, links)
+  --accent-dark:  #8B6508   hover do accent
+  --rule:         #C4B9A8   bordas e divisores
+  --ribbon:       #8B3A2A   vermelho sepia (alertas, destruicao, inline code)
+  --shadow:       rgba(44,36,22,0.15)
+
+  PROIBIDO: branco puro (#fff), cinza moderno (#888, #999)
+
+────────────────────────────────────────────────────────────────────────────────
+PALETA NOTURNA
+────────────────────────────────────────────────────────────────────────────────
+  --paper:        #1A1610
+  --paper-dark:   #211D16
+  --paper-darker: #2A2520
+  --ink:          #E8DFC8
+  --ink-light:    #C8B99A
+  --ink-faint:    #8A7A62
+  --ink-ghost:    #4A3E2E
+  --accent:       #D4A820
+  --accent-dark:  #B8860B
+  --rule:         #3A3020
+  --ribbon:       #C45A40
+  --shadow:       rgba(0,0,0,0.4)
+
+────────────────────────────────────────────────────────────────────────────────
+BORDAS, SOMBRAS E CURSOR
+────────────────────────────────────────────────────────────────────────────────
+  border-radius: 2px MAXIMO. Cantos quase retos.
+  Sombras solidas deslocadas:
+    3px 3px 0 var(--rule)    padrao para cards
+    2px 2px 0 var(--rule)    elementos menores
+    4px 4px 0 var(--shadow)  modais
+  caret-color: var(--accent) em todos os inputs e no editor.
+
+────────────────────────────────────────────────────────────────────────────────
+ELEMENTOS DECORATIVOS
+────────────────────────────────────────────────────────────────────────────────
+  CosmosLayer.tsx: estrelas a lapis, lua, amassados de pergaminho, textura de papel.
+  Sidebar: abas de fichario.
+  Animacoes: discretas, so de entrada (fade + translate leve).
+  Bordas dobradas: pseudo-elementos com gradiente sepia.
+
+
+================================================================================
+13. BIBLIOTECAS -- GUIA DETALHADO
+================================================================================
+
+════════════════════════════════════════════════════════════════════════════════
+ELECTRON 33
+════════════════════════════════════════════════════════════════════════════════
+Site: https://www.electronjs.org/docs/latest
+Arquitetura: Main (Node.js) + Renderer (Chromium).
+IPC: ipcMain.handle / ipcRenderer.invoke.
+Seguranca: contextIsolation: true, sandbox: false (preload).
+
+════════════════════════════════════════════════════════════════════════════════
+BETTER-SQLITE3-MULTIPLE-CIPHERS 11.x
+════════════════════════════════════════════════════════════════════════════════
+Site: https://github.com/m4heshd/better-sqlite3-multiple-ciphers
+API identica ao better-sqlite3 padrao:
+  const db = new Database('/path/ogma.db')
+  db.pragma('foreign_keys = ON')
+  db.prepare('SELECT * FROM projects WHERE id=?').get(id)    -> uma linha
+  db.prepare('SELECT * FROM projects').all()                  -> array
+  db.prepare('INSERT INTO projects (name) VALUES (?)').run(n) -> { lastInsertRowid }
+  db.transaction(fn)(items)                                   -> atomico
+
+════════════════════════════════════════════════════════════════════════════════
+REACT 18 + ZUSTAND 4.5
+════════════════════════════════════════════════════════════════════════════════
+Padroes: functional components, hooks. Sem class components, sem Redux.
+Zustand: estado global minimo. create<T>((set) => ({ ... }))
+Dentro de componente: const { x } = useStore()
+Fora: useStore.getState().action()
+
+════════════════════════════════════════════════════════════════════════════════
+VITE 6
+════════════════════════════════════════════════════════════════════════════════
+root: 'src/renderer', base: './', outDir: 'dist/renderer', port: 5173.
+Alias '@' -> 'src/renderer'. Usar: import X from '@/store/useAppStore'
+
+════════════════════════════════════════════════════════════════════════════════
+EDITOR.JS 2.31
+════════════════════════════════════════════════════════════════════════════════
+Site: https://editorjs.io -- editor bloco a bloco.
+SEMPRE dynamic import, NUNCA import estatico:
+  const { default: EditorJS } = await import('@editorjs/editorjs')  correto
+  import EditorJS from '@editorjs/editorjs'  <- errado, quebra no Electron
+
+Plugins: header, list, checklist, quote, code, table, image, inline-code,
+         delimiter, marker, editorjs-toggle-block.
+
+════════════════════════════════════════════════════════════════════════════════
+ELECTRON-BUILDER 24 + ELECTRON-REBUILD 3
+════════════════════════════════════════════════════════════════════════════════
+Builder: npm run dist:linux / dist:win. Config em package.json "build".
+Rebuild postinstall automatico.
+Manual: npx electron-rebuild -f -w better-sqlite3-multiple-ciphers
+
+
+================================================================================
+14. ARMADILHAS TECNICAS CONHECIDAS
+================================================================================
+
+1. DYNAMIC IMPORT DO EDITOR.JS
+   Sempre dentro de funcao async. Import estatico quebra no Electron.
+
+2. TROCA DE CONTEUDO NO EDITOR
+   Usar editor.render(newData), nao destroy + recriar. Evita flicker.
+
+3. FOCO EM MODAIS (ELECTRON/WINDOWS)
+   onMouseDown={e => { if (e.target===e.currentTarget) onClose() }}
+   Nao usar onClick + stopPropagation -- conflita com foco em inputs.
+
+4. DATAS ISO E FUSO HORARIO
+   new Date('2026-03-21T00:00:00')  <- correto (GMT-3 nao afeta)
+   new Date('2026-03-21')           <- pode mostrar dia anterior
+
+5. BETTER-SQLITE3 + GCC 15
+   No CachyOS, GCC 15 quebra o rebuild do better-sqlite3 padrao.
+   Usar sempre better-sqlite3-multiple-ciphers.
+
+6. .npmrc
+   Pode ter linha do mirror do binario -- gera avisos, pode remover.
+   .gitignore ja exclui.
+
+7. CONCURRENTLY
+   --kill-others garante que Vite e Electron morrem juntos.
+
+8. SANDBOX
+   sandbox: false necessario no BrowserWindow para o preload acessar ipcRenderer.
+
+9. SCHEMA V1 AINDA NO CODIGO
+   O codigo das Fases 1-3 usa o schema v1 (kanban_*, db_*, page_type).
+   Nao adicionar features novas sem antes executar a refatoracao (secao 18).
+
+
+================================================================================
+15. INSTRUCOES DE SETUP -- CachyOS
+================================================================================
+
+Sistema: CachyOS (Arch). Usuario: spacewitch. Pasta: ~/Documents/OGMA/ogma-electron/
+
+PRE-REQUISITOS:
+  sudo pacman -S nodejs npm git nss nspr atk cups libxkbcommon \
+                 libxcomposite libxdamage libxfixes libxrandr libgbm pango cairo alsa-lib
+
+  # nvm para gerenciar versao do Node:
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+  source ~/.bashrc
+  nvm install 22 && nvm use 22 && nvm alias default 22
+
+INSTALACAO:
+  git clone <repo> && cd ogma-electron
+  npm install      # postinstall roda electron-rebuild automaticamente
+  npm run dev
+
+BUILD:
+  npm run dist:linux
+
+PROBLEMAS COMUNS:
+  Sandbox:  electron . --no-sandbox
+            ou: sudo sysctl kernel.unprivileged_userns_clone=1
+  libEGL:   sudo pacman -S mesa lib32-mesa
+  Wayland:  export ELECTRON_OZONE_PLATFORM_HINT=auto
+  Rebuild:  npx electron-rebuild -f -w better-sqlite3-multiple-ciphers
+
+MENU DE APLICATIVOS (~/.local/share/applications/ogma.desktop):
+  [Desktop Entry]
+  Name=OGMA
+  Exec=/home/spacewitch/Documents/OGMA/ogma-electron/node_modules/.bin/electron
+       /home/spacewitch/Documents/OGMA/ogma-electron
+  Icon=/home/spacewitch/Documents/OGMA/ogma-electron/assets/icon.png
+  Terminal=false
+  Type=Application
+  Categories=Office;Education;
+
+
+================================================================================
+16. INSTRUCOES DE SETUP -- Windows 10
+================================================================================
+
+PRE-REQUISITOS (nesta ordem):
+  1. Node.js 22 LTS (nodejs.org) -- marcar "Automatically install necessary tools"
+  2. Git (git-scm.com)
+  3. Reiniciar
+
+INSTALACAO:
+  cd D:\caminho\para\ogma-electron
+  npm install
+  npm run dev
+
+BUILD:
+  npm run dist:win
+
+PROBLEMAS COMUNS:
+  Rebuild falhou:   npx electron-rebuild -f -w better-sqlite3-multiple-ciphers
+  Electron sumiu:   node node_modules\electron\install.js
+  MSBuild missing:  instalar Visual C++ Build Tools (workload "Desktop C++")
+  Tela branca:      DevTools (main.ts: win.webContents.openDevTools())
+                    logs em data\logs\ogma-YYYY-MM-DD.log
+
+MENU INICIAR (PowerShell):
+  $ws = New-Object -ComObject WScript.Shell
+  $s  = $ws.CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\OGMA.lnk")
+  $s.TargetPath = "D:\ogma-electron\node_modules\.bin\electron.cmd"
+  $s.Arguments  = "D:\ogma-electron"
+  $s.WorkingDirectory = "D:\ogma-electron"
+  $s.Save()
+
+
+================================================================================
+17. FUNCIONALIDADES -- ESCOPO POR FASE
+================================================================================
+
+As Fases 1-3 foram implementadas com o schema v1 (incorreto).
+Antes de implementar a Fase 4, executar a refatoracao descrita na secao 18.
+
+FASE 0 -- REFATORACAO ARQUITETURAL (executar antes da Fase 4)
+  [ ] Reescrever database.ts com schema v2
+  [ ] Reescrever ipc.ts com nova API (properties, views, pages v2)
+  [ ] Atualizar preload.ts
+  [ ] Atualizar useAppStore.ts
+  [ ] Atualizar types/index.ts
+  [ ] Reescrever ProjectDashboardView (ViewRenderer + sub-views)
+  [ ] Reescrever PageView (painel de propriedades + editor)
+  [ ] Simplificar NewPageModal (sem selecao de tipo)
+
+FASE 1 -- FUNDACAO (concluida, schema v1)
+  [x] Estrutura de pastas, paths.ts, logger.ts
+  [x] Schema do banco + PRAGMAs
+  [x] Temas diurno e noturno
+  [x] Splash screen (CosmosLayer)
+  [x] Sidebar, topbar, toggle tema
+
+FASE 2 -- PROJETOS E PAGINAS (concluida, schema v1 -- refatorar)
+  [x] CRUD projetos, wizard de criacao
+  [x] Dashboard de projeto por tipo
+  [x] Listagem de paginas, modal de nova pagina
+  [x] Grade de projetos, breadcrumb
+  [x] Dashboard global com widgets
+
+FASE 3 -- EDITOR DE TEXTO RICO (concluida)
+  [x] Dynamic import do Editor.js (sem iframe)
+  [x] 10 tipos de bloco, auto-save 1.5s
+  [x] Tema sepia diurno e noturno
+  [x] editor.render() para troca de conteudo
+
+FASE 4 -- KANBAN (requer Fase 0)
+  [ ] View Kanban: colunas por Status, cards = paginas
+  [ ] Drag & drop entre colunas (muda prop_value do Status)
+  [ ] Cards mostram propriedades configuráveis
+  [ ] Filtros e ordenacao na view
+
+FASE 5 -- TABLE E LIST
+  [ ] View Table: todas as propriedades como colunas
+  [ ] View List: compacta com agrupamento
+  [ ] Edicao inline de propriedades nas views
+  [ ] Filtros, ordenacao, busca
+
+FASE 6 -- MODULO ACADEMICO COMPLETO
+  [ ] colorUtils.ts -- HSL 9 tons para cor de disciplinas
+  [ ] Projetos Academicos com subcategorias
+  [ ] Gerador de codigo PREFIX### automatico
+  [ ] Pre-requisitos com deteccao de ciclo (BFS)
+  [ ] View de grade curricular (visualizacao especial)
+  [ ] Banners Unsplash
+  [ ] Script de migracao do StudyFlow
+
+FASE 7 -- BIBLIOTECA (RECURSOS + LEITURAS)
+  [ ] View Biblioteca com abas: Recursos / Leituras
+  [ ] CRUD de recursos
+  [ ] CRUD de leituras + Open Library API + Google Books fallback
+  [ ] Abas de leitura: Geral, Notas, Citacoes, Vinculos
+  [ ] reading_links: vincular livro <-> pagina
+  [ ] Metas anuais de leitura
+
+FASE 8 -- CALENDARIO, LEMBRETES E ANALYTICS
+  [ ] View Calendario de projeto (usa date_property_id)
+  [ ] Calendario global de eventos
+  [ ] Lembretes (Notification API do Electron)
+  [ ] Analytics de tempo, registro manual
+
+FASE 9 -- DASHBOARD GLOBAL + WIDGETS COSMICOS
+  [ ] Fase da lua (calculo astronomico)
+  [ ] Widgets: eventos proximos, leituras, atividade recente, lua, citacao
+  [ ] Drag-and-drop dos widgets + persistencia
+
+FASE 10 -- BUSCA, TAGS E POLIMENTO
+  [ ] Busca global FTS5 (Ctrl+K)
+  [ ] Tags globais e por projeto
+  [ ] Exportacao PDF
+  [ ] Decoracao cosmica completa, animacoes, icone do app
+
+FASE 11 -- FUTURO
+  [ ] Pomodoro Timer
+  [ ] IA: Ollama + APIs externas
+  [ ] Historico de versoes (page_versions ja existe no schema)
+  [ ] Templates customizados
+  [ ] Multi-perfil local, backup automatico
+
+
+================================================================================
+18. PLANO DE REFATORACAO (Schema v1 para v2)
+================================================================================
+
+Executar ANTES da Fase 4. O schema v1 tem:
+  - kanban_columns, kanban_cards, kanban_checklists, card_tags -> remover
+  - db_properties, db_entries, db_values, db_views -> remover
+  - page_properties (metadados genericos) -> remover
+  - pages.page_type -> remover
+  - pages.content_json -> renomear para body_json
+  - projects.extra_fields -> remover
+
+O schema v2 adiciona:
+  - project_properties, prop_options, page_prop_values, project_views
+
+PASSOS EM ORDEM:
+  1. database.ts -- reescrever initSchema() com schema v2
+  2. ipc.ts -- adicionar handlers properties:* e views:*,
+               atualizar pages:*, remover kanban:* e db:*
+  3. preload.ts -- expor window.db.properties e window.db.views
+  4. useAppStore.ts -- adicionar currentView, properties; remover page_type
+  5. types/index.ts -- novos tipos: ProjectProperty, PropOption, PagePropValue,
+                       ProjectView; remover KanbanCard, DbEntry, etc.
+  6. ProjectDashboardView -- reescrever como ViewRenderer que despacha para
+                             KanbanView / TableView / ListView / CalendarView
+  7. PageView -- adicionar painel de propriedades acima do editor
+  8. NewPageModal -- simplificar: criar pagina sem selecionar tipo
+
+NOTA: O banco de dados em data/ogma.db deve ser deletado antes do primeiro
+run apos a refatoracao (dados de desenvolvimento, sem migracao necessaria).
+
+
+================================================================================
+19. MODULO ACADEMICO -- HERANCA CRITICA DO STUDYFLOW
+================================================================================
+
+O StudyFlow era um app standalone academico. O OGMA absorve tudo dentro do
+tipo de projeto 'academic'. Cada grade curricular vira um projeto academico,
+cada disciplina vira uma pagina com as propriedades do modulo academico.
+
+Funcionalidades especificas (Fase 6):
+
+CORES DERIVADAS (colorUtils.ts):
+  Propriedade "Cor" do tipo color em cada disciplina/pagina.
+  A partir da cor base, o sistema HSL gera 9 variacoes tonais.
+  Usada na borda esquerda do card na view e no header da pagina aberta.
+
+GERADOR DE CODIGO (IPC: pages:generateCode):
+  Input: { title, projectId }
+  Logica: extrai iniciais das palavras principais (sem stopwords PT-BR),
+  prefixo ate 4 chars, + numero sequencial 3 digitos evitando colisao.
+  Ex: "Calculo I" -> "CALC001", "Matematica Discreta" -> "MATD001"
+
+PRE-REQUISITOS:
+  Tabela separada (a definir na Fase 6): academic_prerequisites.
+  Deteccao de ciclo via BFS antes de salvar.
+  "A requer B" = B deve ser concluida antes de iniciar A.
+
+PROGRESSO:
+  Calculado em tempo real: COUNT(*) WHERE Status = 'Concluida' / COUNT(*) total
+  Por semestre (filtro na propriedade Semestre) e por projeto inteiro.
+
+
+================================================================================
+20. MIGRACAO DE DADOS DO STUDYFLOW
+================================================================================
+
+Script: src/main/studyflow_migration.ts (Fase 6)
+Acesso: Configuracoes -> "Importar dados do StudyFlow"
+Idempotente.
+
+MAPEAMENTO PRINCIPAL:
+  grades         -> projects (project_type='academic')
+  disciplinas    -> pages + page_prop_values (Status, Semestre, Area, etc.)
+  disciplina.conteudo -> pages.body_json  (JSON do Editor.js -- compativel direto)
+  disciplina.cor -> page_prop_value para propriedade "Cor"
+  semestres      -> prop_options da propriedade "Semestre"
+  areas          -> prop_options da propriedade "Area"
+  prerequisitos  -> academic_prerequisites
+  tarefas        -> checklist no body_json ou tabela de tasks
+  prazos         -> calendar_events vinculados a pagina
+  recursos       -> resources (Biblioteca)
+  eventos_cal.   -> calendar_events
+  sessoes_pomodoro -> time_sessions
+  configuracoes  -> config
+
+
+================================================================================
+21. HISTORICO DE VERSOES DESTE DOCUMENTO
+================================================================================
+
+v0.5 -- 2026-03-21
+  REDESIGN ARQUITETURAL COMPLETO.
+  Incorpora a decisao de que projetos sao databases de paginas (modelo Notion).
+  Kanban, Calendario e Tabela sao views -- nao tipos de pagina.
+
+  Mudancas principais:
+  - Secao 1 reescrita com modelo mental Notion explicito e comparacao com Notion
+  - Schema v2: tabelas corretas -- project_properties, prop_options,
+    page_prop_values, project_views
+  - Tabelas obsoletas do v1 listadas como removidas: kanban_*, db_*,
+    page_properties generica
+  - pages.page_type removido; content_json renomeado para body_json
+  - projects.extra_fields removido
+  - API IPC v2: window.db.properties e window.db.views adicionados;
+    window.db.pages atualizado com setPropValue e suporte a view_id
+  - Secao 6: propriedades padrao por tipo de projeto completamente definidas
+  - Secao 7: comportamento das views com queries e decisoes de subpaginas
+  - Secao 9: seed automatico ao criar projeto documentado
+  - Fase 0 (refatoracao) adicionada antes da Fase 4
+  - Secao 18: plano de refatoracao passo a passo
+  - Decisoes arquiteturais fechadas:
+      subpaginas: existem, include_subpages por view (0=raiz, 1=todas)
+      titulo: campo fixo da tabela pages
+      sub-databases: nao na v1
+      tags: dois sistemas paralelos (globais + multi_select por projeto)
+
+v0.4 -- 2026-03-21
+  Schema correto (Electron/React/TS) mas modelo de dados errado (kanban e
+  database como tipos de pagina separados). Setup, bibliotecas, editor e
+  design system ainda validos.
+
+v0.1-v0.3 -- 2026-03-20
+  OBSOLETAS. Stack Python/PyQt6. Ignorar completamente.
+
+================================================================================
+  FIM DA BIBLIA DO DESENVOLVEDOR -- OGMA v0.5
+================================================================================

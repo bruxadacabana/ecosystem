@@ -1,0 +1,25 @@
+{
+  "name": "ogma-editor",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node build.js --watch"
+  },
+  "dependencies": {
+    "@editorjs/editorjs": "^2.31.5",
+    "@editorjs/header": "^2.8.7",
+    "@editorjs/list": "^1.10.0",
+    "@editorjs/checklist": "^1.6.0",
+    "@editorjs/quote": "^2.7.3",
+    "@editorjs/code": "^2.9.3",
+    "@editorjs/table": "^2.4.3",
+    "@editorjs/image": "^2.10.1",
+    "@editorjs/inline-code": "^1.5.1",
+    "@editorjs/delimiter": "^1.4.2",
+    "editorjs-toggle-block": "^0.3.16"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

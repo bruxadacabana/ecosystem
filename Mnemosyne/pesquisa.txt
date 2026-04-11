@@ -1,0 +1,1030 @@
+========================================================
+PESQUISA PARA O MNEMOSYNE
+Sessão: 2026-03-31
+========================================================
+
+--------------------------------------------------------
+# Pesquisa: Personal Context Management para LLMs
+
+> Investigação sobre técnicas, arquitecturas e estado da arte para gerir grandes
+> bases de conhecimento pessoal com modelos de linguagem, com foco em reduzir
+> alucinações e escalar além do limite do contexto.
+
+---
+
+## 1. O Conceito Central: Context Engineering
+
+Em 2025, o campo convergiu num termo novo: **Context Engineering**.
+
+> *"A prática de construir sistemas dinâmicos que fornecem a informação certa e
+> as ferramentas certas, no formato certo, para que um LLM possa executar uma
+> tarefa de forma fiável."*
+> — LangChain Blog
+
+A mudança filosófica é importante: já não se trata de *prompt engineering*
+(formular bem a pergunta), mas de **gerir o que entra na janela de contexto do
+modelo como se fosse um recurso escasso**. Cada token de contexto tem custo —
+de dinheiro, de latência, e de qualidade da resposta.
+
+A descoberta central da investigação recente é:
+
+> **A maioria das falhas de agentes de IA não são falhas de modelo — são falhas
+> de contexto.** O modelo tinha capacidade de responder correctamente, mas não
+> recebeu a informação certa no momento certo.
+
+### Os cinco pilares do Context Engineering
+
+| Pilar | O que resolve |
+|---|---|
+| **Retrieval** | Buscar apenas o que é relevante agora |
+| **Memory** | Lembrar interacções passadas entre sessões |
+| **Compression** | Reduzir ruído antes de enviar ao modelo |
+| **Structure** | Organizar a informação de forma que o modelo processe bem |
+| **Coordination** | Gerir múltiplas fontes de contexto em simultâneo |
+
+---
+
+## 2. Arquitecturas de Memória de Longo Prazo
+
+### 2.1 MemGPT — LLMs como Sistemas Operativos
+
+**Referência:** [arxiv.org/abs/2310.08560](https://arxiv.org/abs/2310.08560)
+
+MemGPT inspirou-se nos sistemas operativos tradicionais: tal como um OS gere
+memória RAM e disco, o MemGPT gere três camadas de memória para o LLM:
+
+```
+┌─────────────────────────────────────┐
+│  CORE MEMORY (sempre no contexto)   │  ← factos essenciais, perfil do utilizador
+│  ~alguns KB, acesso instantâneo     │
+├─────────────────────────────────────┤
+│  RECALL MEMORY (busca semântica)    │  ← histórico de conversas pesquisável
+│  vector store, acesso por query     │
+├─────────────────────────────────────┤
+│  ARCHIVAL MEMORY (arquivo frio)     │  ← tudo o resto, acesso sob pedido
+│  base de dados grande, raramente    │
+│  acedida directamente               │
+└─────────────────────────────────────┘
+```
+
+O modelo pode, por iniciativa própria (via *tool calls*), **mover informação
+entre camadas** — resumir conversas antigas para archival, promover um facto
+importante para core memory, etc. Isto é denominado *self-directed memory
+editing*.
+
+**Limitação:** requer um modelo capaz de usar ferramentas de forma fiável e
+aumenta significativamente a latência por chamada.
+
+---
+
+### 2.2 Mem0 — Camada de Memória Universal
+
+**Referência:** [arxiv.org/abs/2504.19413](https://arxiv.org/abs/2504.19413)
+**GitHub:** [github.com/mem0ai/mem0](https://github.com/mem0ai/mem0)
+
+Mem0 é uma arquitectura de produção que extrai, consolida e recupera informação
+saliente de conversas de forma dinâmica. Os resultados publicados são
+notáveis:
+
+- **91% menos latência P95** vs. métodos full-context
+- **>90% menos custo de tokens**
+- Suporte a **memória baseada em grafos** para capturar relações entre entidades
+
+A ideia central é que o sistema **não guarda conversas inteiras** — extrai os
+*factos relevantes* e descarta o ruído. Uma conversa de 10.000 tokens pode
+resultar em 5 memórias compactas de 50 tokens cada.
+
+**Benchmarks (2025):** Mem0 supera OpenAI Memory, LangMem e MemGPT em métricas
+de precisão e latência para memória de longo prazo.
+
+---
+
+## 3. Estratégias de Indexação para Grandes Corpora
+
+### 3.1 RAPTOR — Indexação Hierárquica por Resumos Recursivos
+
+**Referência:** [arxiv.org/abs/2401.18059](https://arxiv.org/abs/2401.18059)
+**GitHub:** [github.com/parthsarthi03/raptor](https://github.com/parthsarthi03/raptor)
+
+RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval) é a
+técnica mais relevante para o problema do Mnemosyne com grandes bibliotecas.
+
+**O problema que resolve:** RAG tradicional só recupera fragmentos curtos e
+contíguos do texto. Perguntas que requerem síntese de múltiplos documentos ou
+compreensão de alto nível do corpus ficam sem resposta adequada.
+
+**Como funciona:**
+
+```
+Documentos brutos
+      │
+      ▼
+[chunk1] [chunk2] [chunk3] [chunk4] [chunk5] [chunk6]
+      │         │                 │         │
+      └────┬────┘                 └────┬────┘
+           ▼                           ▼
+     [resumo A]                  [resumo B]
+           │                           │
+           └──────────────┬────────────┘
+                          ▼
+                    [resumo geral]
+```
+
+1. Os chunks são agrupados por similaridade semântica (clustering)
+2. Cada grupo é resumido pelo LLM (operação "Map")
+3. Os resumos são recursivamente agrupados e resumidos novamente (operação "Reduce")
+4. O resultado é uma **árvore de resumos** em vários níveis de abstracção
+
+**Na pesquisa (busca):** o sistema pode recuperar tanto de folhas (detalhes
+precisos) como de nós superiores (síntese conceptual), dependendo do tipo de
+pergunta.
+
+**Resultado:** +20% de melhoria absoluta no benchmark QuALITY (raciocínio
+multi-passo) em relação ao RAG tradicional com GPT-4.
+
+---
+
+### 3.2 Indexação Hierárquica (HIRO)
+
+**Referência:** [arxiv.org/abs/2403.00435](https://arxiv.org/abs/2403.00435)
+
+Abordagem similar ao RAPTOR mas com foco em estruturas hierárquicas pré-
+existentes nos documentos (títulos, capítulos, secções). Gera um índice
+semântico organizado que mapeia conteúdo para caminhos na hierarquia do
+documento. Especialmente eficaz para EPUBs com estrutura de capítulos.
+
+---
+
+### 3.3 TreeRAG
+
+**Referência:** [ACL 2025](https://aclanthology.org/2025.findings-acl.20.pdf)
+
+Extensão de RAPTOR que armazena a árvore de forma persistente e optimizada para
+retrieval eficiente. Adequado para bases de conhecimento que crescem ao longo
+do tempo (como uma biblioteca pessoal).
+
+---
+
+## 4. Compressão Contextual e Anti-Alucinação
+
+### 4.1 Contextual Compression Retriever
+
+**Disponível no LangChain** como `ContextualCompressionRetriever`.
+
+Após o retriever devolver N chunks, um segundo LLM-call comprime cada chunk
+para extrair apenas a parte relevante à pergunta antes de enviar ao modelo
+principal.
+
+```
+Pergunta: "Qual é a tese central do livro X?"
+
+Retrieval normal:
+  → chunk de 500 tokens com 450 tokens irrelevantes
+
+Com compressão contextual:
+  → chunk comprimido para 50 tokens com apenas a tese central
+```
+
+**Vantagem:** reduz drasticamente o ruído no contexto, que é uma das principais
+causas de alucinação. Investigação mostra redução de 20–30% nas alucinações
+em QA e sumarização.
+
+**Custo:** uma chamada LLM extra por chunk recuperado.
+
+---
+
+### 4.2 Map-Reduce para Sumarização
+
+O padrão canónico para sumarizar corpora grandes sem estourar o contexto:
+
+```
+Fase Map (paralelizável):
+  [doc1] → llm → [resumo1]
+  [doc2] → llm → [resumo2]
+  [doc3] → llm → [resumo3]
+  ...
+
+Fase Reduce:
+  [resumo1 + resumo2 + resumo3 + ...] → llm → [resumo final]
+```
+
+**LangChain:** `load_summarize_chain(llm, chain_type="map_reduce")`
+
+Variante **Refine**: em vez de combinar todos os resumos de uma vez, cada
+resumo parcial é refinado sequencialmente, incorporando o anterior. Produz
+resumos mais coerentes mas é mais lento.
+
+```
+Refine:
+  [doc1] → resumo1
+  [doc2 + resumo1] → resumo2 (refinado)
+  [doc3 + resumo2] → resumo3 (refinado)
+  ...
+```
+
+**BriefContext (2025):** variação de map-reduce que combate o problema
+*"lost-in-the-middle"* — o fenómeno em que LLMs ignoram informação que está
+no meio de contextos longos, focando-se no início e no fim.
+
+---
+
+## 5. GraphRAG vs. Vector RAG
+
+| Dimensão | Vector RAG (actual Mnemosyne) | GraphRAG |
+|---|---|---|
+| **Representação** | Embeddings de similaridade semântica | Nós e arestas (entidades e relações) |
+| **Pergunta ideal** | "O que diz o documento X sobre Y?" | "Como X se relaciona com Y?" |
+| **Multi-hop** | Fraco | Excelente |
+| **Setup** | Baixo | Alto (construção do grafo) |
+| **Escalabilidade** | Muito boa | Boa |
+| **Alucinação** | Moderada | Menor (estrutura determina contexto) |
+| **Biblioteca pessoal** | Suficiente para começar | Ideal a longo prazo |
+
+**Conclusão:** para o Mnemosyne no estado actual, Vector RAG é adequado. A
+transição para GraphRAG faria sentido quando a biblioteca crescer e as perguntas
+se tornarem mais relacionais ("quais os livros que abordam este tema de formas
+diferentes?").
+
+**Abordagem híbrida (recomendada a médio prazo):** usar vector search para
+retrieval inicial amplo, depois um knowledge graph para refinar o contexto com
+relações entre entidades.
+
+---
+
+## 6. Implicações Práticas para o Mnemosyne
+
+Com base nesta investigação, há um conjunto de melhorias ordenadas por
+impacto/complexidade:
+
+### Fase imediata (baixo esforço, alto impacto)
+
+**A. Sumarização Map-Reduce**
+Substituir o truncamento ingénuo de 20k chars por uma cadeia map-reduce. O
+LangChain já tem isto pronto:
+```python
+from langchain.chains.summarize import load_summarize_chain
+chain = load_summarize_chain(llm, chain_type="map_reduce")
+```
+Elimina a limitação de tamanho de corpus e produz resumos muito mais coerentes.
+
+**B. Compressão Contextual no RAG**
+Adicionar `ContextualCompressionRetriever` à frente do retriever actual. Reduz
+alucinações sem mudar a arquitectura de fundo.
+
+---
+
+### Fase intermédia (médio esforço, transformacional)
+
+**C. RAPTOR para a biblioteca de EPUBs**
+Construir a árvore de resumos hierárquica durante a indexação. Permite perguntas
+de síntese ("quais os temas comuns nos livros desta pasta?") que o RAG flat
+actual não consegue responder bem.
+
+**D. Memória de conversação (entre sessões)**
+Inspirado no Mem0: extrair factos-chave de cada sessão e guardar num ficheiro
+`memory.json` dentro de `.mnemosyne/`. Na sessão seguinte, injectar no core
+context do prompt. Leve, sem dependências, 100% local.
+
+---
+
+### Fase avançada (alto esforço, longo prazo)
+
+**E. GraphRAG**
+Construir um knowledge graph das entidades (autores, conceitos, obras) e das
+suas relações durante a indexação. Permite navegação relacional da biblioteca.
+
+**F. Memória adaptativa (estilo MemGPT)**
+O modelo pode promover/arquivar informação entre camadas por iniciativa própria.
+Requer um modelo local capaz de usar ferramentas de forma fiável (llama3.2 ou
+superior).
+
+---
+
+## 7. Referências
+
+- [Context Engineering for Agents — LangChain Blog](https://blog.langchain.com/context-engineering-for-agents/)
+- [The rise of "context engineering" — LangChain](https://blog.langchain.com/the-rise-of-context-engineering/)
+- [Context Engineering Guide — LlamaIndex](https://www.llamaindex.ai/blog/context-engineering-what-it-is-and-techniques-to-consider)
+- [MemGPT: Towards LLMs as Operating Systems — arxiv](https://arxiv.org/abs/2310.08560)
+- [Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory — arxiv](https://arxiv.org/abs/2504.19413)
+- [Mem0 GitHub](https://github.com/mem0ai/mem0)
+- [RAPTOR: Recursive Abstractive Processing for Tree-Organized Retrieval — arxiv](https://arxiv.org/abs/2401.18059)
+- [RAPTOR GitHub](https://github.com/parthsarthi03/raptor)
+- [Hierarchical Indexing for Retrieval-Augmented Opinion Summarization — arxiv](https://arxiv.org/abs/2403.00435)
+- [Contextual Compression in RAG: A Survey — arxiv](https://arxiv.org/html/2409.13385v1)
+- [A MapReduce Approach to Effectively Utilize Long Context in RAG — ResearchGate](https://www.researchgate.net/publication/387321566_A_MapReduce_Approach_to_Effectively_Utilize_Long_Context_Information_in_Retrieval_Augmented_Language_Models)
+- [GraphRAG vs Vector RAG — Meilisearch](https://www.meilisearch.com/blog/graph-rag-vs-vector-rag)
+- [Knowledge Graph vs. Vector RAG — Neo4j](https://neo4j.com/blog/developer/knowledge-graph-vs-vector-rag/)
+- [Advanced RAG Techniques — Neo4j](https://neo4j.com/blog/genai/advanced-rag-techniques/)
+- [TreeRAG — ACL 2025](https://aclanthology.org/2025.findings-acl.20.pdf)
+
+========================================================
+PESQUISA PARA O MNEMOSYNE
+Sessão: 2026-04-09
+========================================================
+
+--------------------------------------------------------
+1. PERSONAL CONTEXT MANAGEMENT (PCM)
+--------------------------------------------------------
+
+Conceito emergente na intersecção de:
+  - Context Engineering para LLMs (otimizar o que entra na janela de contexto)
+  - Personal Memory Layers (sistemas persistentes de info do usuário entre sessões)
+
+Diferença de PKM:
+  - PKM = coleta, organiza e recupera conhecimento PARA o usuário
+  - PCM = gerencia o que o AI acessa do seu conhecimento pessoal
+  O PKM é a fonte; o PCM é a camada de entrega ao LLM via RAG ou memória.
+
+Protocolos relevantes:
+  - MCP (Model Context Protocol, Anthropic): padrão para conectar fontes
+    pessoais (email, docs, tools) diretamente a sistemas de AI.
+    OpenMemory MCP, SuperMemory MCP, mem-agent-mcp implementam isso.
+
+Arquitetura de 3 camadas de memória em AI:
+  1. Short-term / Context Window — memória de trabalho da sessão atual
+  2. Session Memory — persiste durante interação multi-etapas
+  3. Long-term Memory — persiste indefinidamente em vector DB ou storage externo
+
+Padrões de design para RAG pessoal:
+  - Hybrid Retrieval: combinar busca por palavras-chave (TF-IDF) + semântica
+    (embeddings). Melhora relevância para conexões explícitas e implícitas.
+  - Auditabilidade: citar fontes, rastrear resposta até documento específico.
+    Constrói confiança — crucial para sistema de conhecimento pessoal.
+  - Local-First: OpenMemory, SuperMemory, MCP enfatizam dados locais,
+    não na nuvem, para privacidade e controle.
+  - Selective Context Retrieval: incluir só documentos relevantes.
+    Contexto menor e focado > contexto grande e barulhento.
+  - Persistent Evolving Context: manter metadados sobre consultas feitas,
+    documentos relevantes, evolução do entendimento. Sistema "aprende".
+  - Long-term Memory Integration: além do RAG, camada de memória que armazena
+    fatos, preferências e insights extraídos dos documentos.
+
+O desafio central do PCM:
+  Como colocar a informação pessoal certa na janela de contexto do LLM
+  no momento certo, sem sobrecarregar com ruído nem violar privacidade?
+
+Referências:
+  - JetBrains Research: Smarter Context Management for LLM-Powered Agents
+  - Weaviate: Context Engineering — LLM Memory and Retrieval for AI Agents
+  - Cognee: Model Context Protocol + LLM Memory
+  - mem0.ai: OpenMemory MCP
+  - Medium: Smart PKM with RAG and Knowledge Graphs
+
+========================================================
+PESQUISA PARA O MNEMOSYNE
+Sessão: 2026-04-10
+========================================================
+
+--------------------------------------------------------
+2. MODELOS LLM PARA RAG LOCAL — RX 6600 (8GB VRAM) + ROCm
+--------------------------------------------------------
+
+Hardware de referência: AMD RX 6600 (8GB VRAM), 16GB RAM, CachyOS (Arch Linux)
+Contexto: App Mnemosyne (Python + LangChain + ChromaDB), documentos pessoais,
+          resposta em português.
+
+--- SUPORTE ROCm NO RX 6600 ---
+
+O RX 6600 (gfx1032, RDNA2) NÃO está na lista oficial de GPUs suportadas pelo
+ROCm. No Linux, o workaround padrão e amplamente utilizado é:
+
+  HSA_OVERRIDE_GFX_VERSION=10.3.0 ollama serve
+
+Isso mapeia a GPU para a arquitetura gfx1030 (suportada). Funciona de forma
+confiável para a maioria das operações no Linux. Em Windows, o workaround
+NÃO funciona via WSL2 de forma confiável.
+
+No CachyOS (Arch Linux), o workaround funciona bem. Pode-se persistir com:
+  - Variável de ambiente no /etc/environment ou ~/.config/fish/config.fish
+  - Opção rocmOverrideGfx no systemd service do Ollama
+
+Limitação importante: sem o override, o Ollama usa CPU (muito mais lento).
+Com o override, o desempenho é comparável a GPUs RDNA2 oficialmente suportadas.
+
+--- LIMITE PRÁTICO DE PARÂMETROS PARA 8GB VRAM ---
+
+Regra geral para Ollama com GGUF:
+  - Até 8B parâmetros (Q4_K_M): cabe inteiro na VRAM (~5-6 GB de modelo)
+  - Até 8B parâmetros (Q8_0): VRAM no limite (~8-9 GB — pode não caber)
+  - 14B parâmetros (Q4_K_M): ~8.3 GB de modelo — excede VRAM, layers em RAM
+  - 14B parâmetros em 8GB: velocidade cai para 4-11 tokens/segundo
+
+Fórmula aproximada para VRAM de modelo:
+  VRAM (GB) ≈ (parâmetros_B × bits_quantização / 8) × 1.1
+  Ex: 8B × 4 bits / 8 × 1.1 = ~4.4 GB (para pesos, sem KV cache)
+
+KV Cache: impacto adicional. Com context de 8K tokens num modelo 8B,
+          o KV cache pode consumir 1-2 GB extras. Reduzir context de 8K → 4K
+          economiza ~0.2-0.4 GB.
+
+Recomendação de sweet spot para 8GB VRAM: modelos de 7B-8B em Q4_K_M.
+
+--- TABELA DE VRAM POR MODELO E QUANTIZAÇÃO ---
+
+Modelo           | Parâm | Q4_K_M  | Q8_0    | Obs
+-----------------|-------|---------|---------|----------------------------------
+Qwen3 4B         | 4B    | ~2.5 GB | ~4.5 GB | Cabe com folga; ótimo para context longo
+Qwen3 8B         | 8B    | ~4.6 GB | ~8.5 GB | Q4_K_M ideal; Q8_0 no limite
+Qwen3 14B        | 14B   | ~8.3 GB | ~15 GB  | Q4_K_M estoura; spill para RAM
+Llama 3.1 8B     | 8B    | ~4.9 GB | ~9 GB   | Q4_K_M confortável; Q8_0 não cabe
+Mistral 7B       | 7B    | ~4.0 GB | ~7.5 GB | Compacto, mas português fraco
+Phi-4 mini       | 3.8B  | ~2.1 GB | ~3.8 GB | Muito eficiente; contexto 16K
+Gemma3 4B        | 4B    | ~3.0 GB | ~5.5 GB | 140+ idiomas, 128K context
+Gemma3 12B       | 12B   | ~6.7 GB | ~12 GB  | Q4_K_M cabe; melhor qualidade
+
+Obs: valores incluem apenas pesos. KV cache é adicional (~1-2 GB para 8K ctx).
+
+--- MODELOS DE CHAT/QA — AVALIAÇÃO PARA RAG EM PORTUGUÊS ---
+
+1. QWEN3 8B (recomendação principal)
+   - 100+ idiomas incluindo português; excelente instruction following
+   - 8B parâmetros, context nativo 32K (YaRN até 131K)
+   - Q4_K_M: ~4.6 GB VRAM — sobra ~3 GB para KV cache (context confortável)
+   - Ollama: ollama pull qwen3:8b-q4_K_M
+   - Thinking mode (</think>) pode ser desativado com /no_think no prompt
+   - Treinado em 36T tokens, forte em raciocínio e multilíngue
+   - MELHOR ESCOLHA para RAG português no hardware disponível
+
+2. GEMMA3 4B
+   - 140+ idiomas; instruction tuning excelente (competitivo com Gemma2-27B)
+   - 128K context nativo — muito útil para RAG com documentos longos
+   - Q4_K_M: ~3.0 GB VRAM — sobra muito espaço para context longo
+   - Google DeepMind; arquitetura moderna, forte em seguir instruções
+   - BOA OPÇÃO ALTERNATIVA, especialmente para context window grande
+
+3. GEMMA3 12B (se aceitar velocidade menor)
+   - Q4_K_M: ~6.7 GB VRAM — ainda cabe com ~1.3 GB para KV cache
+   - Muito mais capaz que o 4B; português mais fluente
+   - Velocidade menor (mais layers, mais processamento)
+   - RECOMENDADO se prioridade for qualidade sobre velocidade
+
+4. LLAMA 3.1 8B
+   - Boa qualidade geral; português decente mas não nativo
+   - Q4_K_M: ~4.9 GB — comparável ao Qwen3 8B
+   - Context 128K; forte em instruction following
+   - Menos otimizado para português que Qwen3
+
+5. MISTRAL 7B / MISTRAL NEMO
+   - Português fraco — treinado com foco em inglês e francês
+   - Boa velocidade, mas não ideal para uso em PT-BR
+   - Não recomendado como modelo principal para Mnemosyne
+
+6. PHI-4 MINI (3.8B)
+   - Excelente eficiência; 2.1 GB Q4_K_M
+   - Context 16K — limitado para RAG com documentos grandes
+   - Instruction following forte; português razoável
+   - Útil se o hardware estiver sobrecarregado com embedding + chat
+
+7. QWEN3 14B
+   - Q4_K_M: ~8.3 GB — excede VRAM de 8 GB
+   - Spill para RAM = 4-11 tokens/s (lento demais para uso interativo)
+   - Não recomendado para RX 6600 8GB
+
+--- MODELOS DE EMBEDDING — AVALIAÇÃO PARA RAG EM PORTUGUÊS ---
+
+ATENÇÃO CRÍTICA: nomic-embed-text v1 e mxbai-embed-large são
+essencialmente inglês-only. Recall@1 < 0.16 em tarefas multilíngues.
+NÃO usar como embedding principal se os documentos forem em português.
+
+1. BGE-M3 (recomendação principal)
+   - BAAI; 568M parâmetros; 100+ idiomas incluindo português
+   - 8192 tokens de context (ideal para chunking de documentos longos)
+   - 1024 dimensões de embedding
+   - VRAM: ~1.06 GB em F16; ~438 MB em Q4_K_M; ~635 MB em Q8_0
+   - Suporta dense, sparse E multi-vector retrieval simultaneamente
+   - Recall@1 geral: 72% (melhor entre modelos open-source testados)
+   - Ollama: ollama pull bge-m3
+   - MELHOR ESCOLHA para Mnemosyne com documentos em português
+
+2. NOMIC-EMBED-TEXT-V2-MoE (alternativa multilíngue)
+   - Novo modelo MoE da Nomic AI; ~100 idiomas
+   - Treinado em 1.6B pares contrastivos multilíngues
+   - Mais leve que BGE-M3; boa opção se VRAM for limitada
+   - Disponível no Ollama: ollama pull nomic-embed-text-v2-moe
+   - Performance multilíngue muito superior ao v1
+
+3. QWEN3-EMBEDDING 8B (se quiser máxima qualidade)
+   - Melhor MTEB multilíngue disponível no Ollama
+   - ~4.6 GB VRAM adicionais — soma com o modelo de chat
+   - PROBLEMA: com Qwen3 8B chat + Qwen3 Embedding 8B = ~9 GB VRAM total
+   - Viável apenas se rodar os modelos em sequência (não simultâneo)
+   - Disponível: ollama pull dengcao/Qwen3-Embedding-8B
+
+4. NOMIC-EMBED-TEXT v1 / MXBAI-EMBED-LARGE
+   - EVITAR para documentos em português
+   - Funcionam bem apenas para inglês
+   - mxbai: 335M params, 1GB VRAM; nomic: 137M params, ~275 MB VRAM
+
+--- CONFIGURAÇÃO RECOMENDADA PARA MNEMOSYNE ---
+
+Setup primário (melhor balanço):
+  Chat/QA:   qwen3:8b-q4_K_M    (~4.6 GB VRAM)
+  Embedding: bge-m3             (~0.6-1.1 GB VRAM)
+  Total:     ~5.2-5.7 GB VRAM — sobram ~2-3 GB para KV cache
+
+Setup alternativo (maior qualidade, mais lento):
+  Chat/QA:   gemma3:12b-q4_K_M  (~6.7 GB VRAM)
+  Embedding: bge-m3             (~0.6 GB VRAM em Q4)
+  Total:     ~7.3 GB VRAM — contexto mais limitado
+
+Setup econômico (hardware sobrecarregado):
+  Chat/QA:   gemma3:4b-q4_K_M  (~3.0 GB VRAM)
+  Embedding: bge-m3             (~0.6 GB VRAM)
+  Total:     ~3.6 GB VRAM — muito espaço para context
+
+Config Ollama para o workaround ROCm no CachyOS:
+  export HSA_OVERRIDE_GFX_VERSION=10.3.0
+  ollama serve
+
+Configuração no LangChain (Mnemosyne):
+  from langchain_community.llms import Ollama
+  from langchain_community.embeddings import OllamaEmbeddings
+
+  llm = Ollama(model="qwen3:8b-q4_K_M")
+  embeddings = OllamaEmbeddings(model="bge-m3")
+
+--- TOKENS POR SEGUNDO ESPERADOS (RX 6600 com workaround ROCm) ---
+
+  Qwen3 8B  Q4_K_M: ~30-45 tokens/s  (na VRAM)
+  Gemma3 4B Q4_K_M: ~50-70 tokens/s  (modelo menor)
+  Gemma3 12B Q4_K_M: ~15-25 tokens/s (mais pesado)
+  Qwen3 14B Q4_K_M: ~4-11 tokens/s   (spill para RAM)
+
+Referências:
+  - https://localllm.in/blog/best-local-llms-8gb-vram-2025
+  - https://willitrunai.com/blog/qwen-3-gpu-requirements
+  - https://major.io/p/ollama-with-amd-radeon-6600xt/
+  - https://tkamucheka.github.io/blog/2026/02/08/ollama-dual-rocm-gpu/
+  - https://www.morphllm.com/ollama-embedding-models
+  - https://milvus.io/blog/choose-embedding-model-rag-2026.md
+  - https://huggingface.co/BAAI/bge-m3
+  - https://apxml.com/models/qwen3-8b
+  - https://ollama.com/library/qwen3:8b
+  - https://ollama.com/library/bge-m3
+  - https://www.glukhov.org/rag/embeddings/qwen3-embedding-qwen3-reranker-on-ollama/
+  - https://github.com/ollama/ollama/issues/3781
+
+
+--------------------------------------------------------
+2. COMO O CLAUDE CODE GERENCIA MEMÓRIA E CONTEXTO
+--------------------------------------------------------
+
+Sistema de memória dual:
+  A) CLAUDE.md (instruções persistentes)
+     - Escrito pelo usuário manualmente
+     - Princípios, regras, diretrizes arquiteturais
+     - Escopo: projeto, usuário ou organização
+     - Carregado toda sessão (arquivo inteiro)
+
+  B) Auto Memory (contexto aprendido)
+     - Escrito pelo próprio Claude automaticamente
+     - Padrões descobertos, preferências de código, hábitos de workflow
+     - Escopo: por projeto
+     - Carregado todo sessão (primeiras 200 linhas ou 25KB do MEMORY.md)
+
+Estrutura de arquivos:
+  ~/.claude/projects/<project>/memory/
+  ├── MEMORY.md          # Índice conciso (carregado no startup)
+  ├── user_*.md          # Perfil do usuário
+  ├── project_*.md       # Detalhes do projeto
+  ├── feedback_*.md      # Correções e preferências inegociáveis
+  └── reference_*.md     # Conhecimento de referência
+
+  Cada arquivo usa frontmatter YAML:
+    ---
+    name: "Título"
+    description: "Uma linha — usada para decidir relevância futura"
+    type: user|project|feedback|reference
+    ---
+    Conteúdo em markdown...
+
+Tipos de memória:
+  - user: perfil, preferências, nível técnico
+  - project: arquitetura, estado, integrações
+  - feedback: correções importantes, requisitos inegociáveis
+  - reference: onde encontrar informações em sistemas externos
+
+Como carrega no startup:
+  1. System prompt (4.2KB) — sempre
+  2. Auto memory MEMORY.md (primeiras 200 linhas/25KB)
+  3. Environment info (OS, shell, diretório)
+  4. CLAUDE.md (raiz do projeto e ancestrais)
+  5. Nested CLAUDE.md (subdiretórios, sob demanda)
+  6. Rules (.claude/rules/) — carregados por matching de path
+
+O que persiste entre sessões:
+  ✅ CLAUDE.md (relido do disco)
+  ✅ MEMORY.md e arquivos de memória
+  ✅ Session checkpoints
+  ❌ Histórico de conversa (reinicia, exceto com /continue)
+
+Recuperação semântica — sem banco de dados:
+  Claude lê MEMORY.md → entende contexto → busca arquivos relevantes.
+  Não há query explícita tipo "buscar type=project".
+  É matching semântico baseado em entendimento da tarefa atual.
+
+Gestão da janela de contexto:
+  - Budget reservado: ~5-10KB no startup
+  - Compactação (/compact): histórico de conversa resumido por AI
+    Antes: [System | Memory | Conversa 1-100]
+    Depois: [System | Memory | Conversa 1-49 | Resumo AI de 50-100]
+  - CLAUDE.md é re-injetado após compactação
+  - Nested CLAUDE.md NÃO é re-injetado automaticamente
+
+CLAUDE.md vs Auto Memory:
+  CLAUDE.md                    Auto Memory
+  ─────────────────────────── ──────────────────────────
+  Você escreve manualmente     Claude escreve automaticamente
+  Princípios, padrões fixos    Descobertas, aprendizados
+  Versionado no projeto        Local por máquina/desenvolvedor
+  ~200 linhas máx             Até 25KB em arquivos de tópico
+  Carregado todo sessão        Índice sempre; tópicos sob demanda
+
+O que vale salvar em memória:
+  ✅ Comandos de build corrigidos
+  ✅ Padrões de debugging descobertos
+  ✅ Preferências de estilo de código aplicadas
+  ✅ Decisões arquiteturais tomadas
+  ✅ Workarounds para problemas específicos
+  ❌ Contexto conversacional
+  ❌ Passos de resolução de problema de sessão única
+  ❌ Conhecimento genérico (Claude já sabe)
+  ❌ Soluções temporárias
+
+
+--------------------------------------------------------
+3. INSIGHTS PARA APLICAR NO MNEMOSYNE
+--------------------------------------------------------
+
+Do PCM:
+  → Implementar hybrid retrieval (keyword + semântico) para melhor precisão
+  → Atribuição de fontes é fundamental — não opcional
+  → Manter metadados de consultas (o que foi perguntado, quais docs ajudaram)
+  → Considerar sistema de "relevância decaindo com tempo" para documentos antigos
+  → Indexar separadamente documentos "manuais" vs "gerados automaticamente"
+
+Da arquitetura do Claude Code:
+  → Estrutura em camadas: índice leve (sempre carregado) + detalhes sob demanda
+  → Frontmatter YAML como metadados leves — sem schema rígido
+  → Separar "o que o usuário escreve" de "o que o sistema aprende"
+  → Impor limite de tamanho no índice → força priorização do que vale lembrar
+  → Recuperação semântica > queries explícitas por tipo
+  → Checkpoints/versioning de estado de memória, não só histórico de conversa
+  → Contexto específico por domínio (ex: regras diferentes por subdiretório)
+    → Para Mnemosyne: contextos diferentes por coleção de documentos
+
+Proposta de aplicação concreta no Mnemosyne:
+
+  CAMADA 1 — Índice (sempre em memória):
+    index.json por coleção indexada
+    {
+      "name": "Artigos 2025",
+      "path": "/docs/artigos",
+      "total_chunks": 847,
+      "last_indexed": "2026-04-09",
+      "file_types": {"pdf": 12, "md": 34, "txt": 5},
+      "summary": "Artigos sobre IA, literatura e ficção científica"
+    }
+
+  CAMADA 2 — Memória de sessão (o que foi útil):
+    session_memory.json — últimas N consultas + documentos que geraram resposta
+    Permite "você perguntou algo parecido antes..."
+
+  CAMADA 3 — Documentos completos (ChromaDB):
+    O que já existe. Recuperação sob demanda por similaridade semântica.
+
+  Metadados por documento indexado:
+    - hash sha256 (para indexação incremental)
+    - data de criação/modificação
+    - tipo (pdf/md/txt/docx)
+    - score de relevância médio nas últimas N consultas
+    - última vez que foi retornado como fonte
+
+Ollama — detecção dinâmica de modelos:
+  API endpoint: GET http://localhost:11434/api/tags
+  Retorna lista de modelos disponíveis localmente.
+  → Ao iniciar, buscar modelos disponíveis
+  → Filtrar por tipo: modelos de embedding (nomic-embed-text, mxbai-embed-*)
+    vs modelos de chat (llama*, qwen*, mistral*, etc.)
+  → Apresentar ao usuário para escolha, salvar em config.json
+  → Se Ollama não estiver rodando: mostrar aviso, desabilitar funcionalidades
+
+========================================================
+FIM DA PESQUISA
+========================================================
+
+
+========================================================
+PESQUISA — NotebookLM (Google)
+Sessão: 2026-04-10
+========================================================
+
+Referência: app RAG local do Google, cloud-only, concorrente/inspiração para Mnemosyne.
+
+--------------------------------------------------------
+1. INGESTÃO DE FONTES
+--------------------------------------------------------
+
+Formatos de arquivo:
+  PDF, DOCX/DOC, TXT, MD, PPTX, CSV/XLSX (Google Sheets)
+  Imagens (documentos escaneados, diagramas)
+  Áudio: mp3, wav, ogg, opus, aac, m4a e outros
+
+Fontes externas:
+  Google Docs, Google Slides, Google Drive
+  URLs de páginas web
+  Vídeos do YouTube (importa transcrição/legenda)
+  Podcasts (requer legenda disponível)
+  Texto colado diretamente
+
+Limites:
+  Plano gratuito: 50 fontes por notebook, 500.000 palavras ou 200 MB por fonte
+  Plus: 100 fontes | Ultra: 600 fontes
+
+--------------------------------------------------------
+2. CONSULTA E CITAÇÃO
+--------------------------------------------------------
+
+  - Responde APENAS com base nas fontes carregadas (sem alucinação por design)
+  - Toda resposta inclui citações inline numeradas
+  - Clicar/hover na citação mostra o trecho exato do documento original
+  - Seleção granular de fontes: ativar/desativar fontes por consulta
+  - Comparação entre documentos: identifica conceitos em múltiplas fontes e compara
+  - Menção do nome do documento na query afina a busca
+  - Três modos de chat:
+      Default: pesquisa e brainstorming geral
+      Learning Guide: tutoria passo a passo, perguntas socráticas
+      Custom: persona, tom e estilo definidos pelo usuário
+  - Contexto: janela de 1 milhão de tokens
+
+--------------------------------------------------------
+3. FORMATOS DE OUTPUT
+--------------------------------------------------------
+
+  Audio Overview (Podcast):
+    - Conversa entre dois hosts de IA cobrindo os temas principais
+    - Disponível em 80+ idiomas
+    - Modo interativo: usuário pode entrar na conversa ao vivo por voz
+    - Download para escuta offline
+
+  Video Overview (2025):
+    - Slides visuais com narração de IA, imagens e diagramas
+
+  Infographics (nov/2025):
+    - Geração de infográficos a partir das fontes
+
+  Slide Decks (nov/2025):
+    - Apresentações prontas geradas a partir dos documentos
+
+  Data Tables (dez/2025):
+    - Converte fontes não estruturadas em tabelas interativas e consultáveis
+
+  Mind Map (2025):
+    - Mapa mental interativo de conceitos e conexões entre fontes
+
+--------------------------------------------------------
+4. FERRAMENTAS DE ESTUDO
+--------------------------------------------------------
+
+  Notebook Guide (automático ao carregar fontes):
+    - Resumo geral, tópicos principais, perguntas sugeridas
+
+  Study Guide: guia simplificado + quiz de amostra com gabarito
+
+  Flashcards:
+    - Criados automaticamente (termos, datas, conceitos)
+    - Dificuldade e quantidade configuráveis
+    - Rastreamento "acertei / errei", opção de revisão seletiva
+
+  Quiz:
+    - Múltipla escolha com explicações
+    - Dificuldade configurável
+    - Gera novo set de flashcards com base nos erros
+
+  Briefing Document: resumo executivo com temas, achados e insights acionáveis
+
+  FAQ Generator: transforma documentos em perguntas frequentes
+
+  Timeline: extrai linha do tempo estruturada dos documentos
+
+  Learning Guide Mode: tutoria socrática — faz perguntas antes de revelar respostas
+
+--------------------------------------------------------
+5. COLABORAÇÃO
+--------------------------------------------------------
+
+  - Compartilhamento por link (viewer ou editor)
+  - Edição simultânea em tempo real (tipo Google Docs)
+  - Modo chat-only para colaboração sem acesso completo ao notebook
+  - Analytics de uso dos últimos 7 dias por notebook
+
+--------------------------------------------------------
+6. DEEP RESEARCH (pesquisa autônoma web)
+--------------------------------------------------------
+
+  - Agente que cria plano de pesquisa e navega centenas de sites
+  - Dois modos: Deep Research (20+ fontes) e Fast Research (acesso rápido)
+  - Prioriza fontes confiáveis, filtra baixa qualidade
+  - Roda em background enquanto usuário trabalha
+  - Gera citações automáticas de todos os sites visitados
+  - Fontes adicionadas diretamente ao notebook
+
+--------------------------------------------------------
+7. LIMITAÇÕES (relevantes para Mnemosyne)
+--------------------------------------------------------
+
+  Cloud-only — sem processamento local, sem modo offline
+  Sem integração entre notebooks — sem grafo de conhecimento cross-notebook
+  Sem exportação real — copy-paste quebra citações e formatação
+  Sem gestão de tarefas — sem fila de perguntas abertas, sem status
+  Sem integração com ferramentas externas (Jira, Notion, etc.)
+  Vídeo/podcast dependem de legenda disponível
+
+--------------------------------------------------------
+8. FEATURES INTERESSANTES PARA INSPIRAR MNEMOSYNE
+--------------------------------------------------------
+
+  Citação precisa com trecho exato visível — muito além de só listar o arquivo
+  Seleção de fontes por consulta — query só nas fontes marcadas
+  Modo Learning Guide — tutoria socrática em vez de só responder
+  Flashcards e Quiz automáticos gerados dos documentos
+  Audio Overview — síntese audível (possível via TTS local no futuro)
+  FAQ Generator — gera perguntas frequentes dos documentos
+  Notebook Guide automático — resumo e perguntas sugeridas ao carregar fontes
+  Data Tables — estruturar documentos em tabelas consultáveis
+  Personalidades/modos de chat configuráveis
+
+========================================================
+FIM DA PESQUISA — NotebookLM
+========================================================
+
+
+========================================================
+PESQUISA — LLMs ideais para RAG local (RX 6600 + ROCm)
+Sessão: 2026-04-10
+========================================================
+
+Hardware da usuária:
+  GPU: AMD Radeon RX 6600 — 8GB VRAM (gfx1032, RDNA2)
+  RAM: 16GB
+  OS: CachyOS (Arch Linux)
+  Suporte: ROCm (não CUDA)
+
+--------------------------------------------------------
+1. SUPORTE ROCm NO RX 6600
+--------------------------------------------------------
+
+  RX 6600 NÃO está na lista oficial do ROCm (gfx1032).
+  Workaround estável e amplamente usado no Linux:
+
+    HSA_OVERRIDE_GFX_VERSION=10.3.0 ollama serve
+
+  Isso mapeia a GPU para gfx1030 (suportada). Funciona de forma
+  confiável no Linux. No CachyOS, persistir via:
+    ~/.config/fish/config.fish:
+      set -x HSA_OVERRIDE_GFX_VERSION 10.3.0
+  Sem o workaround: Ollama cai para CPU.
+
+--------------------------------------------------------
+2. LIMITE PRÁTICO — 8GB VRAM
+--------------------------------------------------------
+
+  Sweet spot: modelos de 7B-8B em Q4_K_M.
+  Regra:
+    Até 8B Q4_K_M  → cabe na VRAM, sobra para KV cache
+    8B Q8_0        → ~8-9 GB de pesos → excede VRAM
+    14B Q4_K_M     → ~8.3 GB → spill para RAM, 4-11 t/s
+  KV cache adiciona ~1-2 GB além dos pesos (context 8K).
+
+--------------------------------------------------------
+3. VRAM POR MODELO E QUANTIZAÇÃO
+--------------------------------------------------------
+
+  Modelo          Parâm  Q4_K_M   Q8_0    Obs
+  ─────────────── ─────  ──────── ──────  ───────────────────────
+  Qwen3 4B        4B     ~2.5 GB  ~4.5 GB Cabe com folga
+  Qwen3 8B        8B     ~4.6 GB  ~8.5 GB Q4_K_M ideal
+  Qwen3 14B       14B    ~8.3 GB  ~15 GB  Spill RAM → lento
+  Llama 3.1 8B    8B     ~4.9 GB  ~9 GB   Q4_K_M confortável
+  Mistral 7B      7B     ~4.0 GB  ~7.5 GB Português fraco
+  Phi-4 mini      3.8B   ~2.1 GB  ~3.8 GB Context 16K — limitado
+  Gemma3 4B       4B     ~3.0 GB  ~5.5 GB 140 idiomas, 128K ctx
+  Gemma3 12B      12B    ~6.7 GB  ~12 GB  Maior qualidade
+
+  * Valores são só de pesos. KV cache é adicional.
+
+--------------------------------------------------------
+4. MODELOS DE CHAT/QA — RECOMENDAÇÕES
+--------------------------------------------------------
+
+  MELHOR BALANÇO: Qwen3 8B Q4_K_M
+    → 100+ idiomas, excelente português
+    → Instruction following top (crítico para RAG)
+    → ~4.6 GB VRAM, sobram ~3 GB para KV cache
+    → Context nativo 32K (YaRN até 131K)
+    → ~30-45 tokens/s com ROCm no RX 6600
+    → ollama pull qwen3:8b-q4_K_M
+
+  MAIOR QUALIDADE: Gemma3 12B Q4_K_M
+    → ~6.7 GB VRAM, ~15-25 tokens/s
+    → 140+ idiomas, arquitetura moderna Google DeepMind
+    → Contexto mais restrito pela VRAM
+
+  MAIS LEVE: Gemma3 4B Q4_K_M
+    → ~3.0 GB VRAM, ~50-70 tokens/s
+    → Context 128K nativo — ótimo para docs longos em RAG
+
+  NÃO RECOMENDADOS:
+    Mistral 7B — foco inglês/francês, português fraco
+    Phi-4 mini — context 16K limitado para RAG
+    Qwen3 14B — spill para RAM, muito lento
+
+--------------------------------------------------------
+5. MODELOS DE EMBEDDING — RECOMENDAÇÕES
+--------------------------------------------------------
+
+  ATENÇÃO: nomic-embed-text v1 e mxbai-embed-large são
+  essencialmente inglês-only. Recall@1 < 0.16 multilíngue.
+  NÃO usar para documentos em português.
+
+  MELHOR: bge-m3
+    → 568M parâmetros, 100+ idiomas incl. português
+    → Context 8192 tokens (ideal para RAG)
+    → Dense + sparse + multi-vector retrieval
+    → VRAM: ~1.06 GB (F16), ~0.6 GB (Q4_K_M)
+    → Recall@1 geral de 72%
+    → ollama pull bge-m3
+
+  ALTERNATIVA MULTILÍNGUE: nomic-embed-text-v2-moe
+    → ~100 idiomas, treinado em 1.6B pares multilíngues
+    → Mais leve que bge-m3
+    → Muito superior ao nomic v1 para português
+    → ollama pull nomic-embed-text-v2-moe
+
+  MÁXIMA QUALIDADE (uso sequencial, não simultâneo):
+    qwen3-embedding 8B — melhor MTEB multilíngue
+    Problema: ~4.6 GB VRAM adicionais
+
+--------------------------------------------------------
+6. CONFIGURAÇÃO RECOMENDADA PARA O MNEMOSYNE
+--------------------------------------------------------
+
+  SETUP PRIMÁRIO (melhor balanço):
+    Chat/QA:   qwen3:8b-q4_K_M    → ~4.6 GB VRAM
+    Embedding: bge-m3              → ~0.6-1.1 GB VRAM
+    Total:     ~5.2-5.7 GB VRAM   (sobram 2-3 GB para KV cache)
+
+  SETUP DE MAIOR QUALIDADE (mais lento):
+    Chat/QA:   gemma3:12b-q4_K_M  → ~6.7 GB VRAM
+    Embedding: bge-m3              → ~0.6 GB VRAM
+    Total:     ~7.3 GB VRAM
+
+  SETUP ECONÔMICO:
+    Chat/QA:   gemma3:4b-q4_K_M   → ~3.0 GB VRAM
+    Embedding: bge-m3              → ~0.6 GB VRAM
+    Total:     ~3.6 GB VRAM
+
+  Workaround ROCm no CachyOS (fish):
+    set -x HSA_OVERRIDE_GFX_VERSION 10.3.0
+    (em ~/.config/fish/config.fish, antes de subir o ollama)
+
+--------------------------------------------------------
+7. VELOCIDADE ESTIMADA (RX 6600 + workaround ROCm)
+--------------------------------------------------------
+
+  Gemma3 4B Q4_K_M   → ~50-70 tokens/s
+  Qwen3 8B Q4_K_M    → ~30-45 tokens/s
+  Gemma3 12B Q4_K_M  → ~15-25 tokens/s
+  Qwen3 14B Q4_K_M   → ~4-11 tokens/s (spill RAM)
+
+========================================================
+FIM DA PESQUISA — LLMs para RAG no RX 6600
+========================================================
+
+========================================================
+NOTA TÉCNICA: Wikilinks do Obsidian — Regex de extracção
+Sessão: 2026-04-10
+========================================================
+
+Regex para extrair wikilinks em notas Obsidian:
+
+  r'\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]'
+
+Grupo 1: nome do arquivo (sem secção, sem alias)
+Grupo 2: alias (se existir, else None)
+
+Cobre os 4 formatos possíveis:
+  [[nota]]                  → group(1)="nota",    group(2)=None
+  [[nota|alias]]            → group(1)="nota",    group(2)="alias"
+  [[nota#secção]]           → group(1)="nota",    group(2)=None
+  [[nota#secção|alias]]     → group(1)="nota",    group(2)="alias"
+
+Uso no loader:
+  import re
+  WIKILINK_RE = re.compile(r'\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]')
+  links = [m.group(1).strip() for m in WIKILINK_RE.finditer(body)]
+
+========================================================
+FIM DA NOTA TÉCNICA — Wikilinks
+========================================================

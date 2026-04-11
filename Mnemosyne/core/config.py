@@ -1,0 +1,102 @@
+"""
+Configuração do Mnemosyne — lê config.json, usa defaults se ausente.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+
+from .errors import ConfigError
+
+
+_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
+
+_DEFAULTS: dict = {
+    "llm_model": "",
+    "embed_model": "",
+    "chunk_size": 800,
+    "chunk_overlap": 100,
+    "retriever_k": 4,
+    "watched_dir": "",
+    "vault_dir": "",
+    "auto_index_on_change": True,
+}
+
+
+@dataclass
+class AppConfig:
+    llm_model: str
+    embed_model: str
+    chunk_size: int
+    chunk_overlap: int
+    retriever_k: int
+    watched_dir: str
+    vault_dir: str
+    auto_index_on_change: bool
+
+    @property
+    def persist_dir(self) -> str:
+        """Caminho do vectorstore, derivado automaticamente da pasta monitorada."""
+        if self.watched_dir:
+            return str(Path(self.watched_dir) / ".mnemosyne" / "chroma_db")
+        return ""
+
+    @property
+    def mnemosyne_dir(self) -> str:
+        """Diretório .mnemosyne dentro da pasta monitorada."""
+        if self.watched_dir:
+            return str(Path(self.watched_dir) / ".mnemosyne")
+        return ""
+
+    @property
+    def is_configured(self) -> bool:
+        """True se todos os campos obrigatórios estiverem preenchidos."""
+        return bool(self.llm_model and self.embed_model and self.watched_dir)
+
+
+def load_config() -> AppConfig:
+    """
+    Carrega config.json; usa defaults para chaves ausentes.
+
+    Raises:
+        ConfigError: se config.json existir mas for inválido.
+    """
+    data: dict = dict(_DEFAULTS)
+
+    if _CONFIG_PATH.exists():
+        try:
+            with _CONFIG_PATH.open(encoding="utf-8") as f:
+                loaded = json.load(f)
+            if not isinstance(loaded, dict):
+                raise ConfigError("config.json deve ser um objeto JSON.")
+            data.update(loaded)
+        except json.JSONDecodeError as exc:
+            raise ConfigError(f"config.json inválido: {exc}") from exc
+
+    return AppConfig(
+        llm_model=str(data.get("llm_model", "")),
+        embed_model=str(data.get("embed_model", "")),
+        chunk_size=int(data.get("chunk_size", 800)),
+        chunk_overlap=int(data.get("chunk_overlap", 100)),
+        retriever_k=int(data.get("retriever_k", 4)),
+        watched_dir=str(data.get("watched_dir", "")),
+        vault_dir=str(data.get("vault_dir", "")),
+        auto_index_on_change=bool(data.get("auto_index_on_change", True)),
+    )
+
+
+def save_config(config: AppConfig) -> None:
+    """Persiste AppConfig em config.json."""
+    data = {
+        "llm_model": config.llm_model,
+        "embed_model": config.embed_model,
+        "chunk_size": config.chunk_size,
+        "chunk_overlap": config.chunk_overlap,
+        "retriever_k": config.retriever_k,
+        "watched_dir": config.watched_dir,
+        "vault_dir": config.vault_dir,
+        "auto_index_on_change": config.auto_index_on_change,
+    }
+    with _CONFIG_PATH.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)

@@ -4,10 +4,33 @@
 # Memória e configuração do Claude Code
 .claude/
 
-# Apps — cada um tem seu próprio repositório
-AETHER/
-KOSMOS/
-Mnemosyne/
-OGMA/
-stellar-downloader/
-transcriber/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Node / Electron / Tauri
+node_modules/
+dist/
+build/
+.next/
+out/
+
+# Rust
+target/
+
+# Dados gerados em runtime (não versionados)
+KOSMOS/data/
+Mnemosyne/data/
+OGMA/data/
+AETHER/data/
+transcriber/data/
+stellar-downloader/data/
+
+# Logs
+*.log
+
+# Variáveis de ambiente
+.env
+.env.*

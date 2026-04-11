@@ -1,0 +1,21 @@
+.page-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.page-type-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid;
+  border-radius: 2px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 140ms, border-color 140ms;
+  box-shadow: 2px 2px 0 rgba(44,36,22,0.08);
+}
+
+.page-type-btn:hover { filter: brightness(0.97); }
+.page-type-btn.selected { box-shadow: 3px 3px 0 rgba(44,36,22,0.12); }

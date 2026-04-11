@@ -1,0 +1,1463 @@
+================================================================================
+  OGMA — BÍBLIA DO DESENVOLVEDOR v0.4
+  Gerenciador Unificado de Projetos, Estudos e Leituras
+  Atualizado: 2026-03-21
+  Status: EM DESENVOLVIMENTO — Fases 1, 2 e 3 concluídas
+================================================================================
+
+  Este documento é destinado a qualquer desenvolvedor que vá iniciar ou dar
+  continuidade ao projeto OGMA. Contém toda a informação necessária para
+  compreender a estrutura, configurar o ambiente, as decisões de arquitetura,
+  o sistema de design e o escopo completo de funcionalidades.
+  Deve ser atualizado a cada mudança significativa no projeto.
+
+  OGMA absorve e substitui completamente o StudyFlow. Toda referência ao
+  StudyFlow neste documento serve para garantir que nenhuma funcionalidade
+  crítica seja perdida na unificação.
+
+  ⚠ NOTA IMPORTANTE SOBRE VERSÕES ANTERIORES DO DOCUMENTO:
+  As versões v0.1–v0.3 descreviam o OGMA como um app Python/PyQt6.
+  Essa abordagem foi abandonada. O projeto foi completamente refeito como
+  app Electron + React + TypeScript. IGNORE qualquer referência à stack
+  Python/PyQt6 em versões anteriores deste documento.
+
+================================================================================
+ÍNDICE
+================================================================================
+
+  1.  Visão Geral do Projeto
+  2.  Stack Tecnológica e Versões
+  3.  Estrutura de Pastas
+  4.  Hierarquia de Dados
+  5.  Banco de Dados — Schema Completo
+  6.  API IPC — Referência Completa (window.db)
+  7.  Arquitetura Técnica — Decisões Importantes
+  8.  Editor de Texto Rico — Como Funciona
+  9.  Sistema de Design — Bíblia Visual
+  10. Bibliotecas — Guia Detalhado
+  11. Armadilhas Técnicas Conhecidas
+  12. Instruções de Setup — CachyOS
+  13. Instruções de Setup — Windows 10
+  14. Funcionalidades — Escopo por Fase
+  15. Módulo Acadêmico — Herança Crítica do StudyFlow
+  16. Migração de Dados do StudyFlow
+  17. Roadmap de Desenvolvimento (Fases)
+  18. Histórico de Versões deste Documento
+
+
+================================================================================
+1. VISÃO GERAL DO PROJETO
+================================================================================
+
+Nome: OGMA
+Inspiração: Ogma, deus celta da escrita, eloquência e conhecimento.
+
+Conceito:
+  Gerenciador e organizador unificado de projetos pessoais, estudos acadêmicos
+  e leituras. Substitui e absorve completamente o StudyFlow. Inspirado no Notion,
+  com estética de papel envelhecido / máquina de escrever / cosmos desenhado a
+  lápis sobre pergaminho. 100% local, sem sincronização, sem conta, sem telemetria.
+  Todos os dados armazenados exclusivamente em ogma/data/.
+
+Equivalência com o StudyFlow:
+  O StudyFlow chamava a entidade principal de "grade curricular".
+  No OGMA, essa mesma entidade é um "Projeto do tipo Acadêmico".
+  São a mesma coisa — apenas a terminologia foi unificada.
+  Toda a lógica especial do StudyFlow (semestres, disciplinas, pré-requisitos,
+  cores derivadas, fontes, áreas de conhecimento) é preservada integralmente
+  dentro do tipo Acadêmico. Ao migrar dados do StudyFlow, cada grade vira
+  um Projeto Acadêmico e cada disciplina vira uma Página do tipo Disciplina.
+
+Módulo de Leituras:
+  Faz parte da Biblioteca de Recursos — não é um módulo separado.
+  Na sidebar, "Biblioteca" expande em duas subseções: Recursos e Leituras.
+  Um livro existe uma única vez na Biblioteca. Páginas e disciplinas de qualquer
+  projeto podem referenciar esse livro via vínculo (tabela reading_links).
+
+Plataformas-alvo:
+  - CachyOS / Arch Linux (plataforma principal de desenvolvimento)
+    Usuário: spacewitch — pasta do projeto em ~/Documents/OGMA/
+  - Windows 10 x64
+
+
+================================================================================
+2. STACK TECNOLÓGICA E VERSÕES
+================================================================================
+
+RUNTIME E FRAMEWORK
+  Electron            33.x
+  Node.js             22.x LTS (recomendado para desenvolvimento)
+  React               18.x
+  TypeScript          5.4.x
+
+BUILD E DEV
+  Vite                6.x (com @vitejs/plugin-react)
+  concurrently        8.x — rodar Vite + Electron em paralelo
+  wait-on             7.x — aguardar Vite subir antes de abrir o Electron
+
+BANCO DE DADOS
+  better-sqlite3-multiple-ciphers   11.x
+    Nota: usa binários pré-compilados para Electron 33 Linux/Windows x64.
+    API 100% síncrona (idêntica ao better-sqlite3 original).
+    Não exige rebuild no Linux com GCC 15. Resolve o problema de
+    incompatibilidade do better-sqlite3 padrão com GCC 15 no CachyOS.
+
+EDITOR DE TEXTO RICO
+  @editorjs/editorjs          2.31.x
+  @editorjs/header            2.8.x
+  @editorjs/list              1.10.x
+  @editorjs/checklist         1.6.x
+  @editorjs/quote             2.7.x
+  @editorjs/code              2.9.x
+  @editorjs/table             2.4.x
+  @editorjs/image             2.10.x
+  @editorjs/inline-code       1.5.x
+  @editorjs/delimiter         1.4.x
+  @editorjs/marker            1.4.x
+  editorjs-toggle-block       0.3.x
+
+  IMPORTANTE: O Editor.js roda via dynamic import direto no renderer React,
+  montado numa <div ref>. Não usa iframe, não usa QWebChannel, não usa bundle
+  separado. Ver seção 8 para detalhes completos.
+
+ESTADO GLOBAL
+  zustand             4.5.x
+
+EMPACOTAMENTO
+  electron-builder    24.x
+  electron-rebuild    3.x (usado no postinstall para o better-sqlite3-mc)
+
+TYPESCRIPT
+  @types/node         22.x
+  @types/react        18.x
+  @types/react-dom    18.x
+
+FONTES (carregadas via Google Fonts em src/renderer/index.html)
+  IM Fell English     https://fonts.google.com/specimen/IM+Fell+English
+  Special Elite       https://fonts.google.com/specimen/Special+Elite
+  Courier Prime       https://fonts.google.com/specimen/Courier+Prime
+
+
+================================================================================
+3. ESTRUTURA DE PASTAS
+================================================================================
+
+ogma-electron/
+│
+├── OGMA_DEV_BIBLE.txt                ← Este documento
+├── package.json                      ← Dependências, scripts, electron-builder
+├── vite.config.ts                    ← Vite (root=src/renderer, port=5173)
+├── tsconfig.json                     ← TypeScript para o renderer
+├── tsconfig.main.json                ← TypeScript para o processo main
+├── .gitignore
+│
+├── data/                             ← TODOS os dados gerados ficam aqui
+│   ├── ogma.db                       ← Banco SQLite
+│   ├── uploads/                      ← Imagens embutidas em páginas
+│   │   └── <uuid>.<ext>
+│   ├── exports/                      ← PDFs e exportações futuras
+│   └── logs/                         ← Logs diários
+│       └── ogma-YYYY-MM-DD.log
+│
+├── src/
+│   ├── main/                         ← Processo principal do Electron (Node.js)
+│   │   ├── main.ts                   ← Entry point: cria BrowserWindow, registra IPC
+│   │   ├── database.ts               ← Schema SQLite, helpers dbGet/dbAll/dbRun
+│   │   ├── ipc.ts                    ← Todos os handlers IPC (registerIpcHandlers)
+│   │   ├── logger.ts                 ← Sistema de log com níveis DEBUG/INFO/WARN/ERROR
+│   │   ├── paths.ts                  ← Caminhos centralizados (DATA_DIR, DB_PATH, etc.)
+│   │   ├── preload.ts                ← Bridge contextBridge → window.db
+│   │   └── sqlite-electron.d.ts      ← Tipos TypeScript para o banco
+│   │
+│   └── renderer/                     ← Processo renderer (React + Vite)
+│       ├── index.html                ← HTML raiz (carrega Google Fonts, React)
+│       ├── main.tsx                  ← Entry React: ReactDOM.createRoot + error handlers
+│       ├── App.tsx                   ← Shell principal: views, modais, tema, sidebar
+│       │
+│       ├── types/
+│       │   └── index.ts              ← Tipos TypeScript globais (Project, Page, etc.)
+│       │
+│       ├── store/
+│       │   └── useAppStore.ts        ← Zustand: workspace, projects, pages
+│       │
+│       ├── styles/
+│       │   └── globals.css           ← Design system sépia completo (variáveis CSS)
+│       │
+│       ├── utils/
+│       │   ├── logger.ts             ← Logger do renderer (envia via IPC ao main)
+│       │   └── colorUtils.ts         ← Utilitário HSL para cores de disciplinas
+│       │
+│       ├── components/
+│       │   ├── Cosmos/
+│       │   │   └── CosmosLayer.tsx   ← SVG cósmico procedural (estrelas, lua, etc.)
+│       │   │
+│       │   ├── Splash/
+│       │   │   ├── SplashScreen.tsx
+│       │   │   └── SplashScreen.css
+│       │   │
+│       │   ├── Sidebar/
+│       │   │   ├── Sidebar.tsx       ← Navegação: projetos, biblioteca, calendário
+│       │   │   └── Sidebar.css
+│       │   │
+│       │   ├── UI/
+│       │   │   ├── Modal.tsx         ← Modal genérico reutilizável
+│       │   │   └── Modal.css
+│       │   │
+│       │   ├── Projects/
+│       │   │   ├── NewProjectModal.tsx    ← Wizard 3 passos: tipo → detalhes → campos
+│       │   │   ├── NewProjectModal.css
+│       │   │   └── EditProjectModal.tsx
+│       │   │
+│       │   ├── Pages/
+│       │   │   └── NewPageModal.tsx  ← Criação de página (tipo: doc/db/kanban/etc.)
+│       │   │
+│       │   └── Editor/
+│       │       ├── EditorFrame.tsx   ← Wrapper do Editor.js (dynamic import + div ref)
+│       │       └── EditorFrame.css   ← Tema sépia completo para o Editor.js
+│       │
+│       └── views/
+│           ├── Dashboard/
+│           │   └── DashboardView.tsx      ← Dashboard global com widgets reais
+│           │
+│           ├── ProjectDashboard/
+│           │   ├── ProjectDashboardView.tsx   ← Dashboard de projeto por tipo
+│           │   └── ProjectDashboardView.css
+│           │
+│           └── PageView/
+│               ├── PageView.tsx      ← Visualização de página com editor
+│               └── PageView.css
+│
+└── dist/                             ← Gerado por npm run build (não versionado)
+    ├── main/                         ← JS compilado do processo main
+    └── renderer/                     ← Bundle do Vite
+
+
+================================================================================
+4. HIERARQUIA DE DADOS
+================================================================================
+
+  WORKSPACE (1)
+    └── PROJETO (N) — 6 tipos: academic, creative, research, software, health, custom
+          └── PÁGINA (N) — 6 tipos: document, database, kanban, calendar, discipline, custom
+                └── CONTEÚDO — JSON do Editor.js (para pages do tipo document/discipline)
+                              ou JSON de colunas/cards (kanban)
+                              ou propriedades+entradas (database)
+
+Relacionamentos adicionais:
+  Página ↔ Página:     page_backlinks (many-to-many — backlinks do editor)
+  Página → Tags:       page_tags
+  Leitura ↔ Página:    reading_links
+  Kanban Card → Tags:  card_tags
+
+
+================================================================================
+5. BANCO DE DADOS — SCHEMA COMPLETO
+================================================================================
+
+Arquivo: src/main/database.ts
+Banco:   data/ogma.db (SQLite)
+PRAGMAs: foreign_keys = ON, journal_mode = WAL
+
+As tabelas são criadas pelo initSchema() chamado em getDb() na primeira abertura.
+Não há sistema de migrations formal — novas colunas são adicionadas com ALTER TABLE
+dentro do initSchema() usando verificação via PRAGMA table_info.
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: workspaces
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  name          TEXT NOT NULL DEFAULT 'Meu Workspace'
+  icon          TEXT DEFAULT '✦'
+  accent_color  TEXT DEFAULT '#b8860b'
+  created_at    TEXT DEFAULT datetime('now')
+  updated_at    TEXT DEFAULT datetime('now')
+
+  Nota: Existe sempre exatamente 1 workspace. Criado automaticamente pelo seed.
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: projects
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  workspace_id  INTEGER NOT NULL → workspaces(id) CASCADE
+  name          TEXT NOT NULL
+  description   TEXT
+  icon          TEXT
+  color         TEXT
+  project_type  TEXT NOT NULL DEFAULT 'custom'
+                  Valores: 'academic'|'creative'|'research'|'software'|'health'|'custom'
+  subcategory   TEXT             — subtipo dentro do project_type
+  status        TEXT DEFAULT 'active'
+  date_start    TEXT             — ISO date
+  date_end      TEXT             — ISO date
+  extra_fields  TEXT             — JSON para campos customizados por tipo
+  sort_order    INTEGER DEFAULT 0
+  created_at    TEXT DEFAULT datetime('now')
+  updated_at    TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: pages
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  project_id    INTEGER → projects(id) CASCADE
+  parent_id     INTEGER → pages(id) CASCADE    — para páginas aninhadas
+  title         TEXT NOT NULL DEFAULT 'Sem título'
+  icon          TEXT
+  cover         TEXT
+  page_type     TEXT NOT NULL DEFAULT 'document'
+                  Valores: 'document'|'database'|'kanban'|'calendar'|'discipline'|'custom'
+  content_json  TEXT             — JSON do Editor.js (document/discipline)
+  sort_order    INTEGER DEFAULT 0
+  is_deleted    INTEGER DEFAULT 0
+  created_at    TEXT DEFAULT datetime('now')
+  updated_at    TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: page_properties
+────────────────────────────────────────────────────────────────────────────────
+  id        INTEGER PK AUTOINCREMENT
+  page_id   INTEGER NOT NULL → pages(id) CASCADE
+  key       TEXT NOT NULL
+  value     TEXT
+  prop_type TEXT
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: page_backlinks
+────────────────────────────────────────────────────────────────────────────────
+  source_page_id  INTEGER NOT NULL → pages(id) CASCADE
+  target_page_id  INTEGER NOT NULL → pages(id) CASCADE
+  PRIMARY KEY (source_page_id, target_page_id)
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: page_versions
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  page_id       INTEGER NOT NULL → pages(id) CASCADE
+  content_json  TEXT NOT NULL
+  created_at    TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: tags
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  workspace_id  INTEGER NOT NULL → workspaces(id) CASCADE
+  name          TEXT NOT NULL
+  color         TEXT
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: page_tags  (many-to-many)
+────────────────────────────────────────────────────────────────────────────────
+  page_id  INTEGER → pages(id) CASCADE
+  tag_id   INTEGER → tags(id) CASCADE
+  PRIMARY KEY (page_id, tag_id)
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: kanban_columns
+────────────────────────────────────────────────────────────────────────────────
+  id         INTEGER PK AUTOINCREMENT
+  page_id    INTEGER NOT NULL → pages(id) CASCADE
+  name       TEXT NOT NULL
+  color      TEXT
+  sort_order INTEGER DEFAULT 0
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: kanban_cards
+────────────────────────────────────────────────────────────────────────────────
+  id          INTEGER PK AUTOINCREMENT
+  column_id   INTEGER NOT NULL → kanban_columns(id) CASCADE
+  title       TEXT NOT NULL
+  description TEXT
+  priority    TEXT DEFAULT 'media'    — 'baixa'|'media'|'alta'|'urgente'
+  due_date    TEXT                    — ISO date
+  sort_order  INTEGER DEFAULT 0
+  is_done     INTEGER DEFAULT 0
+  created_at  TEXT DEFAULT datetime('now')
+  updated_at  TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: kanban_checklists
+────────────────────────────────────────────────────────────────────────────────
+  id         INTEGER PK AUTOINCREMENT
+  card_id    INTEGER NOT NULL → kanban_cards(id) CASCADE
+  text       TEXT NOT NULL
+  is_checked INTEGER DEFAULT 0
+  sort_order INTEGER DEFAULT 0
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: card_tags  (many-to-many)
+────────────────────────────────────────────────────────────────────────────────
+  card_id  INTEGER → kanban_cards(id) CASCADE
+  tag_id   INTEGER → tags(id) CASCADE
+  PRIMARY KEY (card_id, tag_id)
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: db_properties
+────────────────────────────────────────────────────────────────────────────────
+  id          INTEGER PK AUTOINCREMENT
+  page_id     INTEGER NOT NULL → pages(id) CASCADE
+  name        TEXT NOT NULL
+  prop_type   TEXT NOT NULL     — 'text'|'number'|'select'|'multi_select'|
+                                   'date'|'checkbox'|'url'|'email'|'phone'|
+                                   'relation'|'rollup'|'formula'
+  config_json TEXT              — JSON com opções (ex: select options)
+  sort_order  INTEGER DEFAULT 0
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: db_entries
+────────────────────────────────────────────────────────────────────────────────
+  id         INTEGER PK AUTOINCREMENT
+  page_id    INTEGER NOT NULL → pages(id) CASCADE
+  created_at TEXT DEFAULT datetime('now')
+  updated_at TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: db_values
+────────────────────────────────────────────────────────────────────────────────
+  id           INTEGER PK AUTOINCREMENT
+  entry_id     INTEGER NOT NULL → db_entries(id) CASCADE
+  property_id  INTEGER NOT NULL → db_properties(id) CASCADE
+  value_text   TEXT
+  value_number REAL
+  value_bool   INTEGER
+  value_date   TEXT
+  value_json   TEXT
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: db_views
+────────────────────────────────────────────────────────────────────────────────
+  id          INTEGER PK AUTOINCREMENT
+  page_id     INTEGER NOT NULL → pages(id) CASCADE
+  name        TEXT NOT NULL
+  view_type   TEXT NOT NULL    — 'table'|'kanban'|'calendar'|'list'|'gallery'
+  filter_json TEXT
+  sort_json   TEXT
+  group_by    INTEGER → db_properties(id)
+  is_default  INTEGER DEFAULT 0
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: calendar_events
+────────────────────────────────────────────────────────────────────────────────
+  id              INTEGER PK AUTOINCREMENT
+  workspace_id    INTEGER NOT NULL → workspaces(id) CASCADE
+  title           TEXT NOT NULL
+  description     TEXT
+  start_dt        TEXT NOT NULL    — ISO datetime
+  end_dt          TEXT             — ISO datetime
+  all_day         INTEGER DEFAULT 0
+  color           TEXT
+  linked_card_id  INTEGER → kanban_cards(id) SET NULL
+  linked_entry_id INTEGER → db_entries(id) SET NULL
+  created_at      TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: reminders
+────────────────────────────────────────────────────────────────────────────────
+  id              INTEGER PK AUTOINCREMENT
+  title           TEXT NOT NULL
+  trigger_at      TEXT NOT NULL    — ISO datetime
+  offset_minutes  INTEGER
+  linked_event_id INTEGER → calendar_events(id) CASCADE
+  linked_card_id  INTEGER → kanban_cards(id) CASCADE
+  is_dismissed    INTEGER DEFAULT 0
+  created_at      TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: resources
+────────────────────────────────────────────────────────────────────────────────
+  id            INTEGER PK AUTOINCREMENT
+  workspace_id  INTEGER NOT NULL → workspaces(id) CASCADE
+  project_id    INTEGER → projects(id) SET NULL
+  title         TEXT NOT NULL
+  resource_type TEXT       — 'link'|'book'|'video'|'article'|'other'
+  url           TEXT
+  description   TEXT
+  tags_json     TEXT       — JSON array de strings
+  created_at    TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: readings
+────────────────────────────────────────────────────────────────────────────────
+  id           INTEGER PK AUTOINCREMENT
+  workspace_id INTEGER NOT NULL → workspaces(id) CASCADE
+  title        TEXT NOT NULL
+  reading_type TEXT DEFAULT 'book'    — 'book'|'article'|'manga'|'other'
+  author       TEXT
+  publisher    TEXT
+  year         INTEGER
+  isbn         TEXT
+  cover_path   TEXT
+  status       TEXT DEFAULT 'want'    — 'want'|'reading'|'done'|'abandoned'
+  rating       INTEGER
+  current_page INTEGER DEFAULT 0
+  total_pages  INTEGER
+  date_start   TEXT
+  date_end     TEXT
+  review       TEXT
+  api_source   TEXT                   — 'openlibrary'|'googlebooks'
+  api_id       TEXT
+  created_at   TEXT DEFAULT datetime('now')
+  updated_at   TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: reading_tags  (many-to-many)
+────────────────────────────────────────────────────────────────────────────────
+  reading_id  INTEGER → readings(id) CASCADE
+  tag_id      INTEGER → tags(id) CASCADE
+  PRIMARY KEY (reading_id, tag_id)
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: reading_notes
+────────────────────────────────────────────────────────────────────────────────
+  id         INTEGER PK AUTOINCREMENT
+  reading_id INTEGER NOT NULL → readings(id) CASCADE
+  chapter    TEXT
+  content    TEXT NOT NULL
+  created_at TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: reading_quotes
+────────────────────────────────────────────────────────────────────────────────
+  id         INTEGER PK AUTOINCREMENT
+  reading_id INTEGER NOT NULL → readings(id) CASCADE
+  text       TEXT NOT NULL
+  location   TEXT
+  created_at TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: reading_links  (many-to-many livro ↔ página)
+────────────────────────────────────────────────────────────────────────────────
+  reading_id  INTEGER NOT NULL → readings(id) CASCADE
+  page_id     INTEGER NOT NULL → pages(id) CASCADE
+  PRIMARY KEY (reading_id, page_id)
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: reading_goals
+────────────────────────────────────────────────────────────────────────────────
+  id           INTEGER PK AUTOINCREMENT
+  workspace_id INTEGER NOT NULL → workspaces(id) CASCADE
+  year         INTEGER NOT NULL
+  target       INTEGER NOT NULL
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: time_sessions
+────────────────────────────────────────────────────────────────────────────────
+  id           INTEGER PK AUTOINCREMENT
+  workspace_id INTEGER NOT NULL → workspaces(id)
+  page_id      INTEGER → pages(id) SET NULL
+  project_id   INTEGER → projects(id) SET NULL
+  area_id      INTEGER
+  duration_min INTEGER NOT NULL
+  session_type TEXT DEFAULT 'manual'
+  started_at   TEXT
+  finished_at  TEXT
+  created_at   TEXT DEFAULT datetime('now')
+
+────────────────────────────────────────────────────────────────────────────────
+TABELA: config
+────────────────────────────────────────────────────────────────────────────────
+  key    TEXT PRIMARY KEY
+  value  TEXT
+
+  Chaves usadas:
+    'theme'            → 'light'|'dark'
+    'unsplash_api_key' → chave API do Unsplash
+    (extensível — qualquer chave via window.db.config.set)
+
+
+================================================================================
+6. API IPC — REFERÊNCIA COMPLETA (window.db)
+================================================================================
+
+A bridge é definida em src/main/preload.ts e exposta como window.db no renderer.
+Todos os métodos retornam Promises (via ipcRenderer.invoke).
+Todos os handlers IPC são síncronos no lado main (better-sqlite3 é síncrono).
+
+O wrapper api() em ipc.ts encapsula cada handler e retorna sempre:
+  { ok: true, data: resultado }   — sucesso
+  { ok: false, error: 'mensagem' } — erro capturado
+
+CONVENÇÃO DE NOMENCLATURA:
+  Canal IPC:    'tabela:operacao'         ex: 'projects:create'
+  Acesso React: window.db.tabela.operacao ex: window.db.projects.create(data)
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.workspace
+────────────────────────────────────────────────────────────────────────────────
+  .get()
+    → Workspace   — o workspace único do app
+
+  .update(data)
+    → Workspace
+    data: { name?, icon?, accent_color? }
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.projects
+────────────────────────────────────────────────────────────────────────────────
+  .list()
+    → Project[]   — todos os projetos do workspace
+
+  .create(data)
+    → Project
+    data: { name, project_type, description?, icon?, color?, subcategory?,
+            date_start?, date_end?, extra_fields? }
+
+  .update(data)
+    → Project
+    data: { id, ...campos a atualizar }
+
+  .delete({ id })
+    → { ok: true }   — CASCADE deleta todas as páginas do projeto
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.pages
+────────────────────────────────────────────────────────────────────────────────
+  .list({ project_id })
+    → Page[]   — páginas do projeto (não deletadas), ordenadas por sort_order
+
+  .create(data)
+    → Page
+    data: { project_id, title, page_type, icon?, content_json?, sort_order? }
+
+  .update(data)
+    → Page
+    data: { id, ...campos a atualizar }
+
+  .delete({ id })
+    → { ok: true }   — soft delete (is_deleted = 1)
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.config
+────────────────────────────────────────────────────────────────────────────────
+  .get({ key })      → string | null
+  .set({ key, value }) → { ok: true }
+  .getAll()          → { [key]: value }
+
+────────────────────────────────────────────────────────────────────────────────
+window.db.uploads
+────────────────────────────────────────────────────────────────────────────────
+  .saveImage({ base64, ext })
+    → { path: string }   — salva em data/uploads/ e retorna o caminho absoluto
+
+
+================================================================================
+7. ARQUITETURA TÉCNICA — DECISÕES IMPORTANTES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+7.1  DOIS PROCESSOS DO ELECTRON
+────────────────────────────────────────────────────────────────────────────────
+  Main Process (src/main/):
+    - Roda em Node.js com acesso completo ao sistema
+    - Gerencia o BrowserWindow, o banco de dados e os arquivos
+    - Expõe APIs via ipcMain.handle()
+
+  Renderer Process (src/renderer/):
+    - Roda em Chromium, como um app React normal
+    - SEM acesso direto ao Node.js (contextIsolation: true)
+    - Acessa o sistema APENAS via window.db (contextBridge do preload.ts)
+
+  Preload (src/main/preload.ts):
+    - Script especial que roda no contexto do renderer MAS com acesso ao Node
+    - Única ponte entre renderer e main
+    - Expõe exatamente o que o renderer precisa, nada mais
+
+────────────────────────────────────────────────────────────────────────────────
+7.2  BETTER-SQLITE3-MULTIPLE-CIPHERS
+────────────────────────────────────────────────────────────────────────────────
+  Por que este pacote e não o better-sqlite3 padrão:
+    O CachyOS usa GCC 15, que tem mudanças no padrão C++20 que quebram a
+    compilação do better-sqlite3 padrão durante o postinstall (electron-rebuild).
+    O better-sqlite3-multiple-ciphers distribui binários pré-compilados para
+    Electron 33 Linux x64, eliminando completamente a necessidade de compilação.
+
+  A API é 100% idêntica ao better-sqlite3 padrão:
+    import Database from 'better-sqlite3-multiple-ciphers'
+    const db = new Database('/caminho/ogma.db')
+    db.pragma('foreign_keys = ON')
+    const row = db.prepare('SELECT * FROM projects WHERE id=?').get(id)
+    const rows = db.prepare('SELECT * FROM projects').all()
+    const result = db.prepare('INSERT INTO projects (name) VALUES (?)').run('Meu Projeto')
+    result.lastInsertRowid  // ← ID inserido
+
+────────────────────────────────────────────────────────────────────────────────
+7.3  DEV WORKFLOW
+────────────────────────────────────────────────────────────────────────────────
+  npm run dev
+    → Inicia concurrently com dois processos:
+      1. Vite dev server (http://localhost:5173) — hot reload do renderer
+      2. wait-on aguarda porta 5173, compila TypeScript do main, abre Electron
+
+  O Electron em modo dev carrega: win.loadURL('http://localhost:5173')
+  Em produção carrega: win.loadFile('dist/renderer/index.html')
+
+  A flag isDev é detectada por:
+    const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
+
+────────────────────────────────────────────────────────────────────────────────
+7.4  PATHS E DADOS
+────────────────────────────────────────────────────────────────────────────────
+  Definidos em src/main/paths.ts:
+    Em dev:       ROOT = raiz do projeto (2 níveis acima de src/main/)
+    Em produção:  ROOT = pasta do executável
+
+  Caminhos exportados:
+    DATA_DIR    → ROOT/data/
+    DB_PATH     → ROOT/data/ogma.db
+    UPLOADS_DIR → ROOT/data/uploads/
+    EXPORTS_DIR → ROOT/data/exports/
+    LOGS_DIR    → ROOT/data/logs/
+    SETTINGS    → ROOT/data/settings.json
+
+  REGRA: NENHUM dado do app é armazenado fora de DATA_DIR.
+
+────────────────────────────────────────────────────────────────────────────────
+7.5  ZUSTAND — GERENCIAMENTO DE ESTADO
+────────────────────────────────────────────────────────────────────────────────
+  Arquivo: src/renderer/store/useAppStore.ts
+
+  Estado global mantido:
+    workspace     — workspace atual
+    projects      — lista de projetos
+    pages         — páginas do projeto ativo
+    dark          — tema atual (boolean)
+    sidebarOpen   — estado da sidebar
+
+  Padrão de uso:
+    // Dentro de componente:
+    const { projects, dark } = useAppStore()
+
+    // Fora de componente (callbacks, utilitários):
+    const { loadProjects } = useAppStore.getState()
+
+  O que NÃO está na store (gerenciado localmente via useState):
+    Dados de entidades futuras (kanban, database, leituras, etc.)
+    Isso é intencional para evitar over-fetching.
+
+
+================================================================================
+8. EDITOR DE TEXTO RICO — COMO FUNCIONA
+================================================================================
+
+  O Editor.js é carregado via dynamic import diretamente no renderer React,
+  montado numa <div> via ref. Esta é a mesma abordagem usada pelo StudyFlow
+  (que serviu de referência para esta solução).
+
+  NÃO usa:
+    - iframe
+    - QWebChannel / QWebEngineView (era a abordagem da versão Python — abandonada)
+    - Bundle separado (era o EditorFrame antigo — também abandonado)
+    - Build step separado do editor
+
+  Como funciona (EditorFrame.tsx):
+
+    const holderRef = useRef<HTMLDivElement>(null)
+    const editorRef = useRef<any>(null)
+
+    useEffect(() => {
+      const init = async () => {
+        const [
+          { default: EditorJS },
+          { default: Header },
+          // ... outros plugins
+        ] = await Promise.all([
+          import('@editorjs/editorjs'),
+          import('@editorjs/header'),
+          // ...
+        ])
+
+        editorRef.current = new EditorJS({
+          holder: holderRef.current,
+          data: JSON.parse(content ?? '{}'),
+          tools: { header: { class: Header, ... }, ... },
+          onChange: async () => {
+            const output = await editorRef.current.save()
+            onSave(JSON.stringify(output))  // debounce 1.5s
+          },
+          onReady: () => setLoading(false),
+        })
+      }
+      init()
+      return () => { editorRef.current?.destroy() }
+    }, []) // monta uma vez
+
+    return <div ref={holderRef} className="editor-holder" />
+
+  Troca de conteúdo sem recriar o editor:
+    Quando a prop `content` muda (usuário navega para outra página),
+    o EditorFrame chama editorRef.current.render(newData) ao invés de
+    recriar a instância. Isso é mais rápido e evita flicker.
+
+  Auto-save:
+    onChange dispara um setTimeout de 1500ms. Se o usuário continuar
+    digitando, o timer é reiniciado (clearTimeout). Isso garante que
+    o save só acontece 1.5s após a última modificação.
+
+  Formato salvo em pages.content_json:
+    {
+      "time": 1234567890,
+      "blocks": [
+        { "type": "header",    "data": { "text": "Título", "level": 2 } },
+        { "type": "paragraph", "data": { "text": "Texto..." } },
+        { "type": "list",      "data": { "style": "unordered", "items": ["a","b"] } }
+      ],
+      "version": "2.31.x"
+    }
+
+  Tema do editor:
+    Aplicado via CSS scoped em .editor-holder (EditorFrame.css).
+    O toggle de tema dark/light adiciona/remove a classe .editor-dark no holder.
+    Sem !important em excesso — as variáveis CSS do design system são herdadas.
+
+
+================================================================================
+9. SISTEMA DE DESIGN — BÍBLIA VISUAL
+================================================================================
+
+  O design do OGMA segue uma estética de PAPEL ANTIGO / MÁQUINA DE ESCREVER.
+  Toda a linguagem visual simula documentos físicos, cadernos e carimbos.
+  Não há sombras difusas, bordas arredondadas expressivas ou flat design moderno.
+
+────────────────────────────────────────────────────────────────────────────────
+TIPOGRAFIA
+────────────────────────────────────────────────────────────────────────────────
+  --font-display / --font-body: 'IM Fell English', Georgia, serif
+    Uso: Títulos (h1–h5), nome do app, nomes de projetos e páginas
+    Característica: Serif histórica com serifas pronunciadas, inclinação italiana
+    Fallback: Georgia (presente em todos os sistemas)
+
+  --font-mono: 'Special Elite', 'Courier New', monospace
+    Uso: Labels de formulário, badges, navegação, timestamps, códigos
+    Característica: Simula texto digitado em máquina de escrever
+    Fallback: Courier New
+
+  --font-code: 'Courier Prime', 'Courier New', monospace
+    Uso: Blocos de código no editor
+    Fallback: Courier New
+
+  Carregamento: Google Fonts em src/renderer/index.html
+    <link href="https://fonts.googleapis.com/css2?
+      family=IM+Fell+English:ital@0;1
+      &family=Special+Elite
+      &family=Courier+Prime
+      &display=swap">
+
+────────────────────────────────────────────────────────────────────────────────
+PALETA DE CORES — TEMA DIURNO (padrão)
+────────────────────────────────────────────────────────────────────────────────
+  --paper:       #F5F0E8   ← fundo principal (off-white envelhecido)
+  --paper-dark:  #EDE7D9   ← fundo de cards, inputs, elementos elevados
+  --paper-darker:#E5DECE   ← hover states mais escuros
+  --ink:         #2C2416   ← texto principal (quase preto, tom sépia)
+  --ink-light:   #5C4E3A   ← texto secundário
+  --ink-faint:   #9C8E7A   ← texto de placeholder, subtítulos
+  --ink-ghost:   #C4B9A8   ← elementos muito sutis
+  --accent:      #b8860b   ← dourado envelhecido (cursor, destaques, links ativos)
+  --accent-dark: #8B6508   ← hover do accent
+  --rule:        #C4B9A8   ← bordas e divisores
+  --ribbon:      #8B3A2A   ← vermelho sépia (alertas, destruição, inline code)
+  --shadow:      rgba(44, 36, 22, 0.15)
+
+  PROIBIDO: branco puro (#fff), cinza moderno (#888, #999, etc.)
+
+────────────────────────────────────────────────────────────────────────────────
+PALETA DE CORES — TEMA NOTURNO
+────────────────────────────────────────────────────────────────────────────────
+  --paper:       #1A1610   ← fundo (sépia muito escuro)
+  --paper-dark:  #211D16   ← cards, inputs
+  --paper-darker:#2A2520   ← hover
+  --ink:         #E8DFC8   ← texto principal (off-white sépia)
+  --ink-light:   #C8B99A   ← texto secundário
+  --ink-faint:   #8A7A62   ← placeholder
+  --ink-ghost:   #4A3E2E   ← bordas sutis
+  --accent:      #D4A820   ← dourado mais claro (melhor contraste no escuro)
+  --accent-dark: #B8860B
+  --rule:        #3A3020
+  --ribbon:      #C45A40
+  --shadow:      rgba(0, 0, 0, 0.4)
+
+────────────────────────────────────────────────────────────────────────────────
+BORDAS E SOMBRAS
+────────────────────────────────────────────────────────────────────────────────
+  border-radius: 2px    ← MÁXIMO. Cantos quase retos, nunca redondos.
+  Sombras: sólidas e deslocadas, nunca difusas:
+    box-shadow: 3px 3px 0 var(--rule)   ← padrão para cards
+    box-shadow: 2px 2px 0 var(--rule)   ← elementos menores
+    box-shadow: 4px 4px 0 var(--shadow) ← modais e elementos elevados
+
+────────────────────────────────────────────────────────────────────────────────
+CURSOR
+────────────────────────────────────────────────────────────────────────────────
+  caret-color: var(--accent, #b8860b)
+  O cursor piscante em todos os inputs e no editor deve ser dourado envelhecido.
+  Aplicar em * dentro de .editor-holder e em todos os inputs globalmente.
+
+────────────────────────────────────────────────────────────────────────────────
+ELEMENTOS DECORATIVOS
+────────────────────────────────────────────────────────────────────────────────
+  CosmosLayer.tsx: camada SVG procedural com:
+    - Estrelas com aparência de desenho a lápis, tamanhos variados
+    - Lua em fase crescente/minguante
+    - Pequenos amassados simulando o app ter sido feito em pergaminho
+    - Textura sutil de papel
+
+  Menu/Sidebar: inspirado em abas de fichário
+  Animações: discretas, de entrada apenas (fade + translate leve)
+  Papel dobrado nas bordas: pseudo-elementos com gradiente sépia
+
+
+================================================================================
+10. BIBLIOTECAS — GUIA DETALHADO
+================================================================================
+
+════════════════════════════════════════════════════════════════════════════════
+ELECTRON 33
+════════════════════════════════════════════════════════════════════════════════
+Site: https://www.electronjs.org
+Docs: https://www.electronjs.org/docs/latest
+
+O que é: Framework para criar apps desktop com tecnologias web (HTML/CSS/JS/Node).
+
+Arquitetura (dois processos separados):
+  Main:     Node.js, acesso ao sistema, cria janelas (BrowserWindow)
+  Renderer: Chromium, executa o React, sem acesso direto ao sistema
+
+Segurança no OGMA:
+  contextIsolation: true  → renderer não tem acesso direto ao Node
+  nodeIntegration: false  → padrão seguro
+  sandbox: false          → necessário para o preload funcionar com IPC
+  preload.ts              → única ponte controlada via contextBridge
+
+Para abrir DevTools em desenvolvimento:
+  win.webContents.openDevTools()   (no main.ts, comentar/descomentar)
+  Ou: Ctrl+Shift+I dentro da janela do app
+
+════════════════════════════════════════════════════════════════════════════════
+BETTER-SQLITE3-MULTIPLE-CIPHERS 11.x
+════════════════════════════════════════════════════════════════════════════════
+Site: https://github.com/m4heshd/better-sqlite3-multiple-ciphers
+API: idêntica ao better-sqlite3 padrão
+
+Por que foi escolhido: Ver seção 7.2.
+
+API básica:
+  import Database from 'better-sqlite3-multiple-ciphers'
+  const db = new Database('/caminho/ogma.db')
+  db.pragma('foreign_keys = ON')
+  db.pragma('journal_mode = WAL')
+
+  // Consulta única linha:
+  const row = db.prepare('SELECT * FROM projects WHERE id=?').get(id)
+
+  // Consulta múltiplas linhas:
+  const rows = db.prepare('SELECT * FROM projects').all()
+
+  // Inserção:
+  const result = db.prepare('INSERT INTO projects (name) VALUES (?)').run('Proj')
+  result.lastInsertRowid  // ID inserido
+
+  // Transação (múltiplas operações atômicas):
+  const tx = db.transaction((items) => {
+    items.forEach(i => stmt.run(i.id, i.order))
+  })
+  tx(myItems)
+
+════════════════════════════════════════════════════════════════════════════════
+REACT 18
+════════════════════════════════════════════════════════════════════════════════
+Site: https://react.dev
+
+Padrões usados no projeto:
+  - Functional components com hooks (useState, useEffect, useRef, useCallback)
+  - Sem class components
+  - Sem Redux — estado global via Zustand, estado local via useState
+
+════════════════════════════════════════════════════════════════════════════════
+ZUSTAND 4.5
+════════════════════════════════════════════════════════════════════════════════
+Site: https://zustand-demo.pmnd.rs
+Docs: https://docs.pmnd.rs/zustand/getting-started/introduction
+
+O que é: Biblioteca de estado global minimalista para React. Sem boilerplate,
+sem Context, sem reducers.
+
+Uso básico:
+  import { create } from 'zustand'
+
+  const useStore = create<StoreType>((set, get) => ({
+    count: 0,
+    increment: () => set(state => ({ count: state.count + 1 })),
+    load: async () => {
+      const data = await window.db.projects.list()
+      set({ projects: data })
+    },
+  }))
+
+  // Em componente:
+  const { count, increment } = useStore()
+
+  // Fora de componente:
+  useStore.getState().load()
+
+════════════════════════════════════════════════════════════════════════════════
+VITE 6
+════════════════════════════════════════════════════════════════════════════════
+Site: https://vitejs.dev
+
+Configuração no projeto (vite.config.ts):
+  root:    'src/renderer'    ← ponto de entrada
+  base:    './'              ← necessário para file:// em produção
+  outDir:  'dist/renderer'
+  port:    5173 (strictPort: true)
+
+  O alias '@' aponta para 'src/renderer' — use em imports:
+    import { useAppStore } from '@/store/useAppStore'
+
+════════════════════════════════════════════════════════════════════════════════
+EDITOR.JS 2.31
+════════════════════════════════════════════════════════════════════════════════
+Site: https://editorjs.io
+Docs: https://editorjs.io/api
+
+O que é: Editor de texto bloco a bloco (block-style editor). Cada bloco
+é um tipo de conteúdo independente (parágrafo, cabeçalho, lista, etc.).
+
+Plugins instalados no OGMA:
+  @editorjs/header       → headings H1/H2/H3
+  @editorjs/list         → listas ordenadas e não-ordenadas
+  @editorjs/checklist    → checklists interativas
+  @editorjs/quote        → citações com autor
+  @editorjs/code         → blocos de código
+  @editorjs/table        → tabelas
+  @editorjs/image        → imagens (upload via IPC)
+  @editorjs/inline-code  → código inline
+  @editorjs/delimiter    → divisor (· · ·)
+  @editorjs/marker       → marcador de texto (highlight)
+  editorjs-toggle-block  → bloco expansível/recolhível
+
+IMPORTANTE: Usar SEMPRE dynamic import, nunca import estático no topo do arquivo:
+  // CORRETO:
+  const { default: EditorJS } = await import('@editorjs/editorjs')
+
+  // ERRADO:
+  import EditorJS from '@editorjs/editorjs'  ← quebra no Electron
+
+════════════════════════════════════════════════════════════════════════════════
+ELECTRON-BUILDER 24
+════════════════════════════════════════════════════════════════════════════════
+Site: https://www.electron.build
+
+Configurado em package.json na chave "build":
+  Windows: instalador NSIS (.exe) para x64
+  Linux:   AppImage e .deb para x64
+  asar: true (bundle do código em .asar)
+
+Para gerar builds:
+  npm run dist:win    → gera dist-electron/ com instalador Windows
+  npm run dist:linux  → gera dist-electron/ com AppImage e .deb
+
+════════════════════════════════════════════════════════════════════════════════
+ELECTRON-REBUILD 3
+════════════════════════════════════════════════════════════════════════════════
+Site: https://github.com/electron/rebuild
+
+O que é: Recompila módulos Node nativos para a versão do Electron.
+No OGMA, é chamado automaticamente no postinstall:
+  "postinstall": "electron-rebuild -f -w better-sqlite3-multiple-ciphers"
+
+Quando rodar manualmente:
+  npx electron-rebuild -f -w better-sqlite3-multiple-ciphers
+
+Quando é necessário:
+  - Após npm install (se postinstall falhou)
+  - Após atualizar a versão do Electron
+  - Se o app travar com erro sobre versão incompatível de módulo nativo
+
+
+================================================================================
+11. ARMADILHAS TÉCNICAS CONHECIDAS
+================================================================================
+
+1. DYNAMIC IMPORT NO EDITOR.JS
+   O Editor.js e seus plugins devem ser importados com dynamic import DENTRO
+   de funções assíncronas. Import estático no topo do arquivo quebra no Electron
+   porque o Chromium do Electron processa os módulos de forma diferente.
+
+2. TROCA DE CONTEÚDO NO EDITOR
+   Quando o usuário navega para outra página, não destrua e recrie o editor.
+   Use editorRef.current.render(newData). Recriar o editor causa flicker e
+   é desnecessariamente custoso.
+
+3. FOCO EM INPUTS DENTRO DE MODAIS (ELECTRON/WINDOWS)
+   No Windows, usar onClick + stopPropagation no overlay de modal para fechar
+   conflita com o foco em inputs dentro do modal. O padrão correto é:
+     onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
+   Isso só fecha o modal quando o clique é no overlay, não no conteúdo.
+
+4. DATAS ISO E FUSO HORÁRIO
+   Ao exibir datas ISO (YYYY-MM-DD) como datas locais, sempre adicione T00:00:00:
+     new Date('2026-03-21T00:00:00')  ← correto
+     new Date('2026-03-21')           ← pode mostrar dia anterior em GMT-3
+
+5. BETTER-SQLITE3 E GCC 15
+   No CachyOS (Arch) com GCC 15, o better-sqlite3 padrão falha no rebuild
+   devido a mudanças no padrão C++20. Usar SEMPRE o pacote
+   better-sqlite3-multiple-ciphers que tem binários pré-compilados.
+
+6. .npmrc NA RAIZ
+   O arquivo .npmrc pode conter a linha:
+     better_sqlite3_multiple_ciphers_binary_host_mirror=...
+   que gera avisos durante o npm install. Pode ser removido com segurança
+   — não afeta a instalação. O .gitignore já exclui o .npmrc.
+
+7. CONCURRENTLY E ENCERRAMENTO
+   O script dev usa --kill-others no concurrently para garantir que tanto
+   o Vite quanto o Electron sejam encerrados quando qualquer um dos dois sair.
+   Sem isso, o processo Vite pode continuar rodando em background.
+
+8. PRELOAD E SANDBOX
+   O preload.ts requer sandbox: false no BrowserWindow para funcionar
+   corretamente com ipcRenderer. Com sandbox: true, o preload não tem acesso
+   ao ipcRenderer.
+
+
+================================================================================
+12. INSTRUÇÕES DE SETUP — CachyOS
+================================================================================
+
+Sistema: CachyOS (Arch Linux)
+Usuário de referência: spacewitch
+Pasta do projeto: ~/Documents/OGMA/ogma-electron/
+
+PRÉ-REQUISITOS:
+  sudo pacman -S nodejs npm git
+
+  # Verificar versão do Node (precisa ser 20.x ou 22.x LTS):
+  node --version
+
+  # Se precisar de outra versão, usar nvm:
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+  source ~/.bashrc   # ou ~/.zshrc
+  nvm install 22
+  nvm use 22
+  nvm alias default 22
+
+  # Para o Electron abrir a janela (dependências gráficas):
+  sudo pacman -S nss nspr atk cups libxkbcommon libxcomposite \
+                 libxdamage libxfixes libxrandr libgbm pango cairo alsa-lib
+
+INSTALAÇÃO E DEV:
+  git clone <repo> && cd ogma-electron
+  npm install          # instala tudo + roda postinstall (electron-rebuild)
+  npm run dev          # inicia Vite + Electron em modo desenvolvimento
+
+BUILD DE PRODUÇÃO:
+  npm run dist:linux   # gera AppImage e .deb em dist-electron/
+
+SOLUÇÃO DE PROBLEMAS NO LINUX:
+  Erro: "The SUID sandbox helper binary..."
+  → Solução A: electron . --no-sandbox
+  → Solução B (permanente):
+      sudo sysctl kernel.unprivileged_userns_clone=1
+      echo "kernel.unprivileged_userns_clone=1" | sudo tee -a /etc/sysctl.d/99-sysctl.conf
+
+  Erro: "libEGL.so: cannot open shared object file"
+  → sudo pacman -S mesa lib32-mesa
+
+  App não abre em Wayland:
+  → DISPLAY=:0 npm run dev
+  → ou: export ELECTRON_OZONE_PLATFORM_HINT=auto
+
+  Erro de rebuild do better-sqlite3 (se precisar recompilar por algum motivo):
+  → npx electron-rebuild -f -w better-sqlite3-multiple-ciphers
+
+ADICIONAR AO MENU DE APLICATIVOS (freedesktop .desktop):
+  nano ~/.local/share/applications/ogma.desktop
+
+  [Desktop Entry]
+  Name=OGMA
+  Comment=Gerenciador de Projetos, Estudos e Leituras
+  Exec=/home/spacewitch/Documents/OGMA/ogma-electron/node_modules/.bin/electron /home/spacewitch/Documents/OGMA/ogma-electron
+  Icon=/home/spacewitch/Documents/OGMA/ogma-electron/assets/icon.png
+  Terminal=false
+  Type=Application
+  Categories=Office;Education;
+  StartupNotify=true
+
+  chmod +x ~/.local/share/applications/ogma.desktop
+  update-desktop-database ~/.local/share/applications/
+
+
+================================================================================
+13. INSTRUÇÕES DE SETUP — Windows 10
+================================================================================
+
+PRÉ-REQUISITOS (instalar nesta ordem):
+  1. Node.js 22 LTS: https://nodejs.org
+     Durante a instalação, marque "Automatically install the necessary tools"
+     (instala Chocolatey, Python e Visual C++ Build Tools)
+  2. Git: https://git-scm.com
+  3. Reiniciar o computador
+
+INSTALAÇÃO E DEV:
+  # Abrir PowerShell ou cmd como Administrador
+  cd D:\caminho\para\ogma-electron
+  npm install
+  npm run dev
+
+BUILD DE PRODUÇÃO:
+  npm run dist:win    # gera instalador .exe em dist-electron/
+
+SOLUÇÃO DE PROBLEMAS NO WINDOWS:
+  Erro: "better-sqlite3-multiple-ciphers was compiled against different Node.js"
+  → npx electron-rebuild -f -w better-sqlite3-multiple-ciphers
+
+  Erro: "Cannot find module 'electron'"
+  → node node_modules\electron\install.js
+
+  Erro durante rebuild: "MSBuild not found" ou "cl.exe not found"
+  → Instalar Visual C++ Build Tools:
+      https://visualstudio.microsoft.com/visual-cpp-build-tools/
+    Selecionar workload "Desenvolvimento para desktop com C++"
+
+  App abre mas tela fica branca:
+  → Abrir DevTools: mainWindow.webContents.openDevTools() no main.ts
+  → Verificar logs em data\logs\ogma-YYYY-MM-DD.log
+
+ADICIONAR AO MENU INICIAR (PowerShell):
+  $ws = New-Object -ComObject WScript.Shell
+  $s  = $ws.CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\OGMA.lnk")
+  $s.TargetPath       = "D:\caminho\para\ogma-electron\node_modules\.bin\electron.cmd"
+  $s.Arguments        = "D:\caminho\para\ogma-electron"
+  $s.WorkingDirectory = "D:\caminho\para\ogma-electron"
+  $s.Save()
+
+
+================================================================================
+14. FUNCIONALIDADES — ESCOPO POR FASE
+================================================================================
+
+FASE 1 — FUNDAÇÃO ✅ CONCLUÍDA
+  [x] Estrutura de pastas, paths.ts, logger.ts
+  [x] Schema completo do banco + PRAGMAs
+  [x] Temas diurno e noturno (CSS variables)
+  [x] main.ts + BrowserWindow configurado
+  [x] Splash screen com cosmos (CosmosLayer)
+  [x] Sidebar com abas (projetos, biblioteca, calendário, configurações)
+  [x] Toggle tema diurno/noturno
+
+FASE 2 — PROJETOS E PÁGINAS ✅ CONCLUÍDA
+  [x] CRUD completo de projetos (criar, editar, excluir)
+  [x] Modal de criação com wizard 3 passos (tipo → detalhes → campos custom)
+  [x] Sidebar dinâmica com projetos reais do banco
+  [x] Dashboard de projeto com seções por tipo (Acadêmico, Saúde, Dev)
+  [x] Listagem de páginas reais no dashboard
+  [x] Modal de nova página (Documento, Database, Kanban, Calendário, Disciplina)
+  [x] Grade de projetos na view Projetos
+  [x] Breadcrumb no topbar
+  [x] Dashboard global com widgets reais (Projetos Ativos + Atividade Recente)
+
+FASE 3 — EDITOR DE TEXTO RICO ✅ CONCLUÍDA
+  [x] Dynamic import do Editor.js direto no renderer (sem iframe)
+  [x] 10 tipos de bloco: Parágrafo, H1/H2/H3, Lista, Checklist, Citação,
+      Código, Tabela, Inline Code, Divisor, Marker
+  [x] Auto-save com debounce 1.5s
+  [x] Tema sépia completo (diurno e noturno)
+  [x] Troca de conteúdo via editor.render() sem recriar instância
+  [x] Disciplinas com abas (Conteúdo com editor)
+  [x] Cursor dourado envelhecido
+
+FASE 4 — KANBAN 🔲 PENDENTE
+  [ ] Colunas configuráveis por página Kanban
+  [ ] Cards com título, descrição, prioridade, data de vencimento
+  [ ] Drag & drop entre colunas
+  [ ] Checklist interno nos cards
+  [ ] Tags nos cards
+  [ ] Filtros por prioridade, tag, status
+
+FASE 5 — DATABASE 🔲 PENDENTE
+  [ ] Tipos de propriedade: text, number, select, multi_select, date,
+      checkbox, url, email, phone, relation, rollup, formula
+  [ ] Views: tabela, kanban, calendário, lista, galeria
+  [ ] Filtros, ordenação, views salvas
+  [ ] Configuração de colunas e propriedades
+
+FASE 6 — MÓDULO ACADÊMICO COMPLETO 🔲 PENDENTE
+  [ ] colorUtils.ts — sistema HSL 9 tons para cores derivadas
+  [ ] Projetos Acadêmicos com subcategorias (Faculdade, Idiomas, Concurso, etc.)
+  [ ] Páginas Disciplina completas: tarefas, prazos, recursos, tópicos
+  [ ] Geração automática de código de disciplina (PREFIX###)
+  [ ] Semestres opcionais dentro de projetos acadêmicos
+  [ ] Pré-requisitos com detecção de ciclo (BFS)
+  [ ] Fontes e áreas de conhecimento (CRUD)
+  [ ] Banners Unsplash para disciplinas
+  [ ] Visualizações de disciplinas (kanban de status, grade curricular)
+  [ ] Script de migração do StudyFlow
+
+FASE 7 — BIBLIOTECA (RECURSOS + LEITURAS) 🔲 PENDENTE
+  [ ] View de Biblioteca com abas: Recursos / Leituras
+  [ ] CRUD de recursos (link, livro, vídeo, artigo)
+  [ ] CRUD de leituras + busca Open Library API + fallback Google Books
+  [ ] Abas de leitura: Geral, Notas, Citações, Vínculos
+  [ ] reading_links: vincular livro ↔ página
+  [ ] Linha do tempo de leituras
+  [ ] Estatísticas de leitura
+  [ ] Metas anuais de leitura
+
+FASE 8 — CALENDÁRIO, LEMBRETES E ANALYTICS 🔲 PENDENTE
+  [ ] Calendário global (visualização mensal e semanal)
+  [ ] Criação e edição de eventos
+  [ ] Vínculo de eventos com cards Kanban e entradas Database
+  [ ] Lembretes locais (Notification API do Electron)
+  [ ] Analytics de tempo: registro manual, gráficos por projeto/área
+  [ ] Integração de prazos acadêmicos no calendário global
+
+FASE 9 — DASHBOARD GLOBAL + WIDGETS CÓSMICOS 🔲 PENDENTE
+  [ ] Fase da lua (cálculo astronômico)
+  [ ] Widgets reais: próximos eventos, leituras em andamento, hábitos,
+      atividade recente, fase da lua, citação do dia
+  [ ] Drag-and-drop dos widgets + persistência de layout
+  [ ] Mensagens de boas-vindas contextuais
+  [ ] Visibilidade configurável dos widgets
+
+FASE 10 — BUSCA, TAGS, EXPORTAÇÃO E POLIMENTO 🔲 PENDENTE
+  [ ] Busca global FTS5 (Ctrl+K) — todos os títulos e conteúdos
+  [ ] Sistema de tags global (projetos, páginas, cards, leituras)
+  [ ] Exportação PDF com template sépia
+  [ ] Decoração cósmica completa (amassados, texturas de papel)
+  [ ] Animações de entrada para todos os elementos principais
+  [ ] Ícone oficial do app
+  [ ] Testes completos em CachyOS e Windows 10
+
+FASE 11 — FUTURO
+  [ ] Pomodoro Timer integrado
+  [ ] IA: bridge com Ollama (modelos locais) + APIs externas
+  [ ] Histórico de versões de páginas (page_versions já está no schema)
+  [ ] Templates customizados de projetos e páginas
+  [ ] Upload de imagem no editor via @editorjs/image
+  [ ] Multi-perfil local
+  [ ] Exportação/importação JSON do workspace
+  [ ] Backup automático em data/backups/
+
+
+================================================================================
+15. MÓDULO ACADÊMICO — HERANÇA CRÍTICA DO STUDYFLOW
+================================================================================
+
+O StudyFlow era um app standalone de organização acadêmica.
+O OGMA absorve 100% das suas funcionalidades dentro do tipo de projeto "academic".
+
+Mapeamento de terminologia:
+  StudyFlow               OGMA
+  ────────────────────────────────────
+  Grade curricular    →   Projeto (project_type = 'academic')
+  Disciplina          →   Página (page_type = 'discipline')
+  Semestre            →   Seção dentro do projeto acadêmico
+  Fonte               →   academic_sources (a implementar)
+  Área de conhecimento→   academic_areas (a implementar)
+
+Funcionalidades específicas do módulo acadêmico (Fase 6):
+
+  CORES DERIVADAS (colorUtils.ts):
+    Cada disciplina tem uma cor base. A partir dela, o sistema HSL gera
+    9 variações tonais (mais claro → mais escuro). A cor é usada na
+    borda esquerda do card, no header da página e na aba ativa.
+
+  GERADOR DE CÓDIGO:
+    IPC: disciplinas:gerarCodigo({ nome, projectId })
+    Lógica: extrai iniciais das palavras principais (sem stopwords PT-BR),
+    forma um prefixo de até 4 chars, adiciona número sequencial de 3 dígitos
+    para evitar colisão (ex: 'MAT001', 'CALC002').
+
+  PRÉ-REQUISITOS:
+    Detecção de ciclo via BFS antes de salvar.
+    Semântica: "A requer B" = B deve ser concluída antes de iniciar A.
+    Ao tentar adicionar A→B, verifica se B→A já existe.
+
+  PROGRESSO:
+    Calculado em tempo real: disciplinas concluídas / total.
+    Por semestre e por projeto inteiro.
+
+
+================================================================================
+16. MIGRAÇÃO DE DADOS DO STUDYFLOW
+================================================================================
+
+Script futuro: src/main/studyflow_migration.ts
+Acesso: Configurações → "Importar dados do StudyFlow"
+Idempotente (pode ser executado múltiplas vezes com segurança).
+
+MAPEAMENTO PRINCIPAL:
+  grades              → projects (project_type='academic')
+  semestres           → seções dentro do projeto (a definir schema)
+  disciplinas         → pages (page_type='discipline')
+  fontes              → academic_sources
+  areas               → academic_areas
+  disciplina_areas    → academic_discipline_areas
+  prerequisitos       → academic_prerequisites
+  tarefas             → academic_tasks
+  prazos              → academic_deadlines
+  recursos            → resources (Biblioteca)
+  eventos_calendario  → calendar_events
+  sessoes_pomodoro    → time_sessions
+  configuracoes       → config
+
+CAMPOS PRESERVADOS:
+  disciplina.conteudo (JSON do Editor.js do StudyFlow)
+    → Compatível diretamente com o Editor.js do OGMA.
+    Não precisa de transformação.
+
+  disciplina.cor, disciplina.banner_url, etc.
+    → Mapeados para os campos equivalentes da tabela pages + page_properties.
+
+
+================================================================================
+17. ROADMAP DE DESENVOLVIMENTO (FASES)
+================================================================================
+
+  ✅ FASE 1 — Fundação
+  ✅ FASE 2 — Projetos e Páginas
+  ✅ FASE 3 — Editor de Texto Rico
+  🔲 FASE 4 — Kanban
+  🔲 FASE 5 — Database
+  🔲 FASE 6 — Módulo Acadêmico Completo
+  🔲 FASE 7 — Biblioteca (Recursos + Leituras)
+  🔲 FASE 8 — Calendário, Lembretes e Analytics
+  🔲 FASE 9 — Dashboard Global + Widgets Cósmicos
+  🔲 FASE 10 — Busca, Tags, Exportação e Polimento
+  🔲 FASE 11 — Futuro (Pomodoro, IA, Histórico de Versões)
+
+
+================================================================================
+18. HISTÓRICO DE VERSÕES DESTE DOCUMENTO
+================================================================================
+
+v0.4 — 2026-03-21
+  REESCRITA COMPLETA. A stack foi alterada de Python/PyQt6 para
+  Electron + React + TypeScript antes do início do desenvolvimento.
+  As versões v0.1–v0.3 descreviam a stack Python e devem ser ignoradas.
+
+  Mudanças desta versão em relação ao estado anterior:
+  - Stack inteira documentada corretamente (Electron 33, React 18, TypeScript 5.4,
+    Vite 6, Zustand 4.5, better-sqlite3-multiple-ciphers 11.x)
+  - Estrutura de pastas real do projeto documentada
+  - Schema do banco documentado conforme database.ts real
+  - API IPC (window.db) documentada conforme preload.ts e ipc.ts reais
+  - Seção dedicada ao Editor.js: dynamic import, sem iframe, sem bundle separado
+    (abordagem confirmada pelo StudyFlow como referência)
+  - Editor.js: pacotes reais no package.json documentados
+  - Handler app:editorUrl removido (não existe mais no ipc.ts e preload.ts)
+  - Fases 1, 2 e 3 marcadas como concluídas
+  - Armadilhas técnicas atualizadas com os problemas reais encontrados
+  - Setup de CachyOS e Windows 10 reescritos para a stack Electron/Node
+
+v0.3 — 2026-03-20
+  OBSOLETA. Descrevia o OGMA como app Python/PyQt6. Ignorar.
+
+v0.2 — 2026-03-20
+  OBSOLETA. Descrevia o OGMA como app Python/PyQt6. Ignorar.
+
+v0.1 — 2026-03-20
+  OBSOLETA. Rascunho inicial Python. Ignorar.
+
+================================================================================
+  FIM DA BÍBLIA DO DESENVOLVEDOR — OGMA v0.4
+================================================================================

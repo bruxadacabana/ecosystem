@@ -1,0 +1,322 @@
+/* ── Layout v2 ──────────────────────────────────────────── */
+
+.proj-dashboard-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.proj-dashboard-top {
+  flex-shrink: 0;
+  padding: 20px 28px 0;
+}
+
+.proj-dashboard-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 28px 40px;
+}
+
+.proj-dashboard-content--kanban,
+.proj-dashboard-content--noscroll {
+  overflow: hidden;
+  padding: 0;
+}
+
+/* ── View tabs ──────────────────────────────────────────── */
+
+.view-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-bottom: 1px solid;
+  margin-top: 16px;
+  overflow-x: auto;
+}
+
+.view-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  transition: color 120ms, border-color 120ms;
+  white-space: nowrap;
+  margin-bottom: -1px;
+}
+
+/* ── Estado vazio ───────────────────────────────────────── */
+
+.proj-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+
+
+/* ── Header ─────────────────────────────────────────────── */
+.proj-header {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 2px;
+  margin-bottom: 24px;
+  min-height: 120px;
+  animation: paperFall 0.22s ease-out;
+}
+
+.proj-header-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+}
+
+.proj-header-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 20px 20px 24px;
+}
+
+.proj-header-icon {
+  width: 52px;
+  height: 52px;
+  border: 1px solid;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.proj-header-name {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 26px;
+  font-style: italic;
+  font-weight: normal;
+  line-height: 1.1;
+  margin-bottom: 6px;
+}
+
+.proj-header-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.proj-header-desc {
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.5;
+  margin-top: 4px;
+  max-width: 500px;
+}
+
+/* ── Seções ─────────────────────────────────────────────── */
+.proj-section-label {
+  font-family: 'Special Elite', monospace;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  margin-top: 4px;
+}
+
+.proj-section-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+/* ── Cards ──────────────────────────────────────────────── */
+.proj-card {
+  animation: paperFall 0.22s ease-out both;
+  min-height: 90px;
+}
+
+.proj-card-wide {
+  grid-column: 1 / -1;
+}
+
+.proj-card-title {
+  font-family: 'Special Elite', monospace;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.proj-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  text-align: center;
+}
+
+/* ── Progresso ──────────────────────────────────────────── */
+.proj-progress-bar {
+  height: 6px;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+
+.proj-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+/* ── Datas ──────────────────────────────────────────────── */
+.proj-dates {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+/* ── Lista de páginas ───────────────────────────────────── */
+.pages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid;
+  border-radius: 2px;
+  cursor: pointer;
+  background: transparent;
+  transition: background 120ms;
+  animation: paperFall 0.2s ease-out both;
+  width: 100%;
+}
+
+.page-row:hover {
+  background: rgba(44,36,22,0.05);
+}
+
+html.dark .page-row:hover {
+  background: rgba(232,223,200,0.05);
+}
+/* ── Dashboard Local ────────────────────────────────────── */
+
+.proj-local-dashboard {
+  display: flex;
+  gap: 20px;
+  padding: 20px 28px 40px;
+  min-height: 100%;
+  align-items: flex-start;
+}
+
+.proj-local-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 190px;
+  flex-shrink: 0;
+}
+
+.proj-local-stat-card {
+  border: 1px solid;
+  border-radius: 2px;
+  padding: 10px 12px;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.08);
+  animation: paperFall 0.22s ease-out both;
+}
+
+.proj-local-stat-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.proj-local-stat-value {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.proj-local-stat-sub {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  margin-top: 2px;
+  letter-spacing: 0.04em;
+}
+
+.proj-local-widgets {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-content: start;
+}
+
+.proj-local-widget {
+  border: 1px solid;
+  border-radius: 2px;
+  padding: 14px 16px;
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.06);
+  animation: paperFall 0.22s ease-out both;
+}
+
+.proj-local-widget--wide {
+  grid-column: 1 / -1;
+}
+
+.proj-local-widget--add {
+  border-style: dashed;
+  box-shadow: none;
+  background: transparent !important;
+}
+
+.proj-local-widget-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* ── Kanban summary ─────────────────────────────────────── */
+.kanban-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.kanban-col-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px;
+  border: 1px solid;
+  border-radius: 2px;
+  text-align: center;
+}

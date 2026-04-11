@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect width="256" height="256" rx="40" fill="#1A1610"/>
+  <!-- Estrela de 6 pontas (✦) central -->
+  <text x="128" y="168" text-anchor="middle" font-size="140" fill="#b8860b" font-family="serif">✦</text>
+  <!-- Arco decorativo superior -->
+  <path d="M 54 128 A 74 74 0 0 1 202 128" stroke="#b8860b" stroke-width="2.5" fill="none" opacity="0.5"/>
+  <!-- Arco decorativo inferior -->
+  <path d="M 54 128 A 74 74 0 0 0 202 128" stroke="#8B7355" stroke-width="1.5" fill="none" opacity="0.35"/>
+</svg>

@@ -1,0 +1,10 @@
+.sidebar-sub-list {
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.18s ease-out;
+}
+
+.nav-sub-item {
+  padding-left: 40px !important;
+  font-size: 11px !important;
+}

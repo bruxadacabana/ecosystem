@@ -1,0 +1,48 @@
+/* Stylesheet for the interface (optional) */
+
+QMainWindow {
+    background-color: #FDF8F0;
+}
+
+QLabel {
+    color: #4A4A4A;
+    font-family: "Cormorant Garamond", serif;
+}
+
+QPushButton {
+    background-color: #D4C4B0;
+    border: 1px solid #C9A87C;
+    border-radius: 3px;
+    padding: 6px 12px;
+    font-family: "Courier Prime", monospace;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #C9A87C;
+}
+
+QLineEdit, QTextEdit {
+    background-color: white;
+    border: 1px solid #D4C4B0;
+    border-radius: 3px;
+    padding: 4px;
+    font-family: "Courier Prime", monospace;
+}
+
+QTabWidget::pane {
+    border: 1px solid #D4C4B0;
+    background-color: #FDF8F0;
+}
+
+QTabBar::tab {
+    background-color: #F0E8DC;
+    padding: 8px 16px;
+    font-family: "Playfair Display", serif;
+    font-size: 12pt;
+}
+
+QTabBar::tab:selected {
+    background-color: #E8DDD0;
+    border-bottom: 2px solid #C9A87C;
+}

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<style>
+@page {
+    margin: 2.5cm;
+    size: A4;
+}
+
+body {
+    background-color: #f0e8d5;
+    color: #2C2416;
+    font-family: "IM Fell English", Georgia, serif;
+    font-size: 11pt;
+    line-height: 1.7;
+}
+
+.header {
+    margin-bottom: 1.5em;
+    border-bottom: 1px solid #C4B49A;
+    padding-bottom: 1em;
+}
+
+.source {
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 9pt;
+    color: #9C8B6E;
+    margin: 0 0 0.3em 0;
+}
+
+.title {
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 20pt;
+    margin: 0.2em 0;
+    color: #2C2416;
+    line-height: 1.2;
+}
+
+.meta {
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 9pt;
+    color: #6B5A3E;
+    margin: 0.3em 0 0 0;
+}
+
+.content h1, .content h2, .content h3 {
+    font-family: "Special Elite", "Courier New", monospace;
+    color: #2C2416;
+}
+
+.content img {
+    max-width: 100%;
+    border: 1px solid #C4B49A;
+}
+
+.content a {
+    color: #8B7355;
+}
+
+.content blockquote {
+    border-left: 3px solid #8B7355;
+    padding-left: 1em;
+    color: #6B5A3E;
+    font-style: italic;
+}
+
+.content code, .content pre {
+    font-family: "Courier Prime", "Courier New", monospace;
+    background-color: #e8ddc8;
+    font-size: 0.9em;
+}
+
+.content pre {
+    padding: 0.8em;
+    border: 1px solid #C4B49A;
+}
+
+.footer {
+    margin-top: 2em;
+    padding-top: 0.8em;
+    border-top: 1px solid #C4B49A;
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 8pt;
+    color: #9C8B6E;
+    text-align: right;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+    <p class="source">{{ source }}</p>
+    <h1 class="title">{{ title }}</h1>
+    <p class="meta">{{ author }}{% if author and date %} · {% endif %}{{ date }}</p>
+</div>
+
+<div class="content">
+    {{ content }}
+</div>
+
+<div class="footer">
+    <p>Exportado pelo KOSMOS em {{ exported_at }}</p>
+</div>
+
+</body>
+</html>

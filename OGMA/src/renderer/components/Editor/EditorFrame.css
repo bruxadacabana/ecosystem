@@ -1,0 +1,372 @@
+/* ── Wrapper ──────────────────────────────────────────────────────────────── */
+.editor-frame-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── Loading ──────────────────────────────────────────────────────────────── */
+.editor-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper, #F5F0E8);
+  z-index: 10;
+}
+
+.editor-loading-text {
+  font-family: 'Special Elite', monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint, #9C8E7A);
+  font-style: italic;
+}
+
+/* ── Holder ───────────────────────────────────────────────────────────────── */
+.editor-holder {
+  flex: 1;
+  padding: 40px 0 80px;
+  min-height: 100%;
+  transition: opacity 150ms;
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink, #2C2416);
+}
+
+.editor-holder--hidden { opacity: 0; pointer-events: none; }
+
+/* ── Cursor dourado ───────────────────────────────────────────────────────── */
+.editor-holder * { caret-color: var(--accent, #b8860b); }
+
+/* ── Layout do Editor.js ─────────────────────────────────────────────────── */
+.editor-holder .codex-editor {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+.editor-holder .codex-editor__redactor {
+  padding-bottom: 60px !important;
+}
+
+/* ── Parágrafo ────────────────────────────────────────────────────────────── */
+.editor-holder .ce-paragraph {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink, #2C2416);
+}
+
+.editor-holder .ce-paragraph[data-placeholder]:empty::before {
+  color: var(--ink-faint, #9C8E7A) !important;
+  font-style: italic;
+}
+
+/* ── Headings ─────────────────────────────────────────────────────────────── */
+.editor-holder .ce-header {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-weight: normal;
+  font-style: italic;
+  color: var(--ink, #2C2416);
+  line-height: 1.3;
+  padding: 0;
+}
+.editor-holder h1.ce-header { font-size: 2rem;    margin: 1.4rem 0 0.4rem; }
+.editor-holder h2.ce-header { font-size: 1.55rem; margin: 1.2rem 0 0.3rem; }
+.editor-holder h3.ce-header { font-size: 1.2rem;  margin: 1rem 0 0.25rem; }
+
+/* ── Lista ────────────────────────────────────────────────────────────────── */
+.editor-holder .cdx-list {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 16px;
+  color: var(--ink, #2C2416);
+  padding-left: 1.4rem;
+}
+.editor-holder .cdx-list__item { margin-bottom: 4px; }
+
+/* ── Checklist ────────────────────────────────────────────────────────────── */
+.editor-holder .cdx-checklist__item-text {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 16px;
+  color: var(--ink, #2C2416);
+}
+.editor-holder .cdx-checklist__item--checked .cdx-checklist__item-text {
+  text-decoration: line-through;
+  color: var(--ink-faint, #9C8E7A);
+}
+.editor-holder .cdx-checklist__item-checkbox {
+  border: 1px solid var(--rule, #C4B9A8);
+  background: var(--paper-dark, #EDE7D9);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.editor-holder .cdx-checklist__item--checked .cdx-checklist__item-checkbox {
+  background: var(--accent, #b8860b);
+  border-color: var(--accent, #b8860b);
+}
+
+/* ── Citação ──────────────────────────────────────────────────────────────── */
+.editor-holder .cdx-quote {
+  border-left: 3px solid var(--accent, #b8860b);
+  padding: 8px 16px;
+  margin: 4px 0;
+  background: var(--paper-dark, #EDE7D9);
+}
+.editor-holder .cdx-quote__text {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 17px;
+  font-style: italic;
+  color: var(--ink, #2C2416);
+  border: none !important;
+  background: transparent !important;
+}
+.editor-holder .cdx-quote__caption {
+  font-family: 'Special Elite', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint, #9C8E7A);
+  border: none !important;
+  background: transparent !important;
+}
+
+/* ── Código ───────────────────────────────────────────────────────────────── */
+.editor-holder .ce-code__textarea {
+  font-family: 'Courier Prime', 'Courier New', monospace;
+  font-size: 13px;
+  background: var(--paper-dark, #EDE7D9);
+  color: var(--ink, #2C2416);
+  border: 1px solid var(--rule, #C4B9A8);
+  border-radius: 2px;
+  padding: 12px 14px;
+  line-height: 1.6;
+  resize: none;
+}
+
+/* ── Inline code ──────────────────────────────────────────────────────────── */
+.editor-holder .cdx-inline-code {
+  font-family: 'Courier Prime', 'Courier New', monospace;
+  font-size: 13px;
+  background: var(--paper-dark, #EDE7D9);
+  padding: 1px 5px;
+  border-radius: 2px;
+  color: var(--ribbon, #8B3A2A);
+}
+
+/* ── Marker ───────────────────────────────────────────────────────────────── */
+.editor-holder .cdx-marker {
+  background: rgba(184,134,11,0.2);
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+/* ── Tabela ───────────────────────────────────────────────────────────────── */
+.editor-holder .tc-table { border-collapse: collapse; width: 100%; }
+.editor-holder .tc-cell {
+  border: 1px solid var(--rule, #C4B9A8);
+  padding: 8px 12px;
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 15px;
+  color: var(--ink, #2C2416);
+  min-width: 80px;
+}
+.editor-holder .tc-row:first-child .tc-cell { background: var(--paper-dark, #EDE7D9); }
+.editor-holder .tc-toolbox,
+.editor-holder .tc-popover {
+  background: var(--paper-dark, #EDE7D9);
+  border: 1px solid var(--rule, #C4B9A8);
+  border-radius: 2px;
+}
+
+/* ── Divisor ──────────────────────────────────────────────────────────────── */
+.editor-holder .ce-delimiter::before {
+  content: '· · ·';
+  color: var(--ink-ghost, #C4B9A8);
+  font-size: 18px;
+  letter-spacing: 0.5em;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────────── */
+.editor-holder .ce-toolbar__plus,
+.editor-holder .ce-toolbar__settings-btn {
+  color: var(--ink-faint, #9C8E7A);
+  background: transparent;
+}
+.editor-holder .ce-toolbar__plus:hover,
+.editor-holder .ce-toolbar__settings-btn:hover {
+  color: var(--ink, #2C2416);
+  background: var(--paper-dark, #EDE7D9);
+}
+
+/* Drag handle: cursor indica que o bloco é arrastável */
+.editor-holder .ce-toolbar__settings-btn[draggable="true"] {
+  cursor: grab;
+}
+.editor-holder .ce-toolbar__settings-btn[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* Garantir que os popups do editor ficam acima da topbar (z-index: 10) */
+.editor-holder .ce-settings,
+.editor-holder .ce-toolbox,
+.editor-holder .ce-inline-toolbar,
+.editor-holder .ce-conversion-toolbar,
+.editor-holder .ce-popover {
+  z-index: 50;
+}
+
+.editor-holder .ce-toolbox {
+  background: var(--paper-dark, #EDE7D9);
+  border: 1px solid var(--rule, #C4B9A8);
+  border-radius: 2px;
+  box-shadow: 3px 3px 0 var(--rule, #C4B9A8);
+}
+.editor-holder .ce-toolbox__button { color: var(--ink-light, #5C4E3A); }
+.editor-holder .ce-toolbox__button:hover {
+  background: var(--paper, #F5F0E8);
+  color: var(--ink, #2C2416);
+}
+
+/* ── Inline toolbar ───────────────────────────────────────────────────────── */
+.editor-holder .ce-inline-toolbar {
+  background: var(--paper-dark, #EDE7D9);
+  border: 1px solid var(--rule, #C4B9A8);
+  border-radius: 2px;
+  box-shadow: 3px 3px 0 var(--rule, #C4B9A8);
+}
+.editor-holder .ce-inline-toolbar__buttons .ce-inline-tool {
+  color: var(--ink-light, #5C4E3A);
+}
+.editor-holder .ce-inline-toolbar__buttons .ce-inline-tool:hover,
+.editor-holder .ce-inline-toolbar__buttons .ce-inline-tool--active {
+  color: var(--accent, #b8860b);
+  background: var(--paper, #F5F0E8);
+}
+
+/* ── Block settings ───────────────────────────────────────────────────────── */
+.editor-holder .ce-settings {
+  background: var(--paper-dark, #EDE7D9);
+  border: 1px solid var(--rule, #C4B9A8);
+  border-radius: 2px;
+  box-shadow: 3px 3px 0 var(--rule, #C4B9A8);
+}
+.editor-holder .ce-settings__button { color: var(--ink-light, #5C4E3A); }
+.editor-holder .ce-settings__button:hover {
+  color: var(--ink, #2C2416);
+  background: var(--paper, #F5F0E8);
+}
+
+/* ── Conversão de bloco ───────────────────────────────────────────────────── */
+.editor-holder .ce-conversion-toolbar {
+  background: var(--paper-dark, #EDE7D9);
+  border: 1px solid var(--rule, #C4B9A8);
+  border-radius: 2px;
+}
+.editor-holder .ce-conversion-tool { color: var(--ink-light, #5C4E3A); }
+.editor-holder .ce-conversion-tool:hover { background: var(--paper, #F5F0E8); }
+
+/* ── Colunas ──────────────────────────────────────────────────────────────── */
+.editor-holder .columns-block {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin: 2px 0;
+}
+
+.editor-holder .columns-block__col {
+  min-height: 1.75em;
+  padding: 2px 10px 2px 2px;
+  border: none;
+  border-right: 1px solid var(--rule, #C4B9A8);
+  outline: none;
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink, #2C2416);
+  word-break: break-word;
+  transition: background 100ms;
+}
+
+.editor-holder .columns-block__col:last-child {
+  border-right: none;
+  padding-left: 10px;
+}
+
+.editor-holder .columns-block__col:focus {
+  background: rgba(184, 134, 11, 0.04);
+}
+
+/* Placeholder via CSS quando vazio */
+.editor-holder .columns-block__col:empty::before {
+  content: attr(data-placeholder);
+  color: var(--ink-faint, #9C8E7A);
+  font-style: italic;
+  pointer-events: none;
+}
+
+/* ── Seleção de bloco (override do Editor.js que usa fundo claro) ─────────── */
+.editor-holder .ce-block--selected .ce-block__content {
+  background: rgba(184, 134, 11, 0.07);
+}
+
+/* ── Seleção de texto ─────────────────────────────────────────────────────── */
+.editor-holder ::selection { background: rgba(184,134,11,0.2); }
+
+/* ── Tema escuro ──────────────────────────────────────────────────────────── */
+.editor-dark .ce-paragraph,
+.editor-dark .ce-header,
+.editor-dark .cdx-list,
+.editor-dark .cdx-checklist__item-text,
+.editor-dark .cdx-quote__text,
+.editor-dark .ce-code__textarea,
+.editor-dark .tc-cell { color: #E8DFC8; }
+
+.editor-dark .cdx-quote   { background: #211D16; }
+.editor-dark .ce-code__textarea { background: #211D16; border-color: #3A3020; }
+.editor-dark .tc-cell     { border-color: #3A3020; }
+.editor-dark .tc-row:first-child .tc-cell { background: #211D16; }
+
+.editor-dark .ce-toolbox,
+.editor-dark .ce-inline-toolbar,
+.editor-dark .ce-settings,
+.editor-dark .ce-conversion-toolbar,
+.editor-dark .tc-toolbox,
+.editor-dark .tc-popover { background: #211D16; border-color: #3A3020; box-shadow: 3px 3px 0 #3A3020; }
+
+.editor-dark .ce-toolbox__button,
+.editor-dark .ce-settings__button,
+.editor-dark .ce-inline-tool,
+.editor-dark .ce-conversion-tool { color: #C8B99A; }
+
+.editor-dark .ce-toolbox__button:hover,
+.editor-dark .ce-settings__button:hover { background: #2A2520; }
+
+.editor-dark .ce-inline-tool:hover,
+.editor-dark .ce-inline-tool--active { color: #D4A820 !important; }
+
+.editor-dark .cdx-checklist__item-checkbox { background: #211D16; border-color: #3A3020; }
+.editor-dark .cdx-checklist__item--checked .cdx-checklist__item-checkbox { background: #D4A820; border-color: #D4A820; }
+.editor-dark .cdx-marker { background: rgba(212,168,32,0.2); }
+.editor-dark .cdx-inline-code { background: #211D16; color: #C45A40; }
+.editor-dark .ce-delimiter::before { color: #4A3E2E; }
+.editor-dark .ce-toolbar__plus,
+.editor-dark .ce-toolbar__settings-btn { color: #8A7A62; }
+.editor-dark .ce-toolbar__plus:hover,
+.editor-dark .ce-toolbar__settings-btn:hover { background: #211D16; color: #E8DFC8; }
+.editor-dark .columns-block__col {
+  border-right-color: #3A3020;
+  color: #E8DFC8;
+}
+.editor-dark .columns-block__col:focus { background: rgba(212, 168, 32, 0.05); }
+
+/* Bloco seleccionado em dark mode — substitui o fundo branco do Editor.js */
+.editor-dark .ce-block--selected .ce-block__content {
+  background: rgba(212, 168, 32, 0.08) !important;
+}
+
+.editor-dark ::selection { background: rgba(212,168,32,0.2); }

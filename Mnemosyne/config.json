@@ -1,0 +1,9 @@
+{
+  "llm_model": "qwen3:8b",
+  "embed_model": "bge-m3:latest",
+  "chunk_size": 800,
+  "chunk_overlap": 100,
+  "retriever_k": 4,
+  "watched_dir": "/home/spacewitch/Documents/biblioteca",
+  "auto_index_on_change": true
+}

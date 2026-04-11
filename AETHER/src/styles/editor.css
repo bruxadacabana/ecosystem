@@ -1,0 +1,341 @@
+/* ============================================================
+   AETHER — Estilos do Editor WYSIWYG
+   TipTap / ProseMirror — tipografia de livro impresso
+   ============================================================ */
+
+/* ----------------------------------------------------------
+   CONTAINER DO EDITOR
+---------------------------------------------------------- */
+
+.editor-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+/* ----------------------------------------------------------
+   ÁREA DE SCROLL (onde o texto vive)
+---------------------------------------------------------- */
+
+.editor-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 60px 0 80px;
+}
+
+/* ----------------------------------------------------------
+   COLUNA DE TEXTO — centralizada, largura de livro
+---------------------------------------------------------- */
+
+.editor-column {
+  max-width: var(--editor-col-width, 680px);
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+/* ----------------------------------------------------------
+   PROSEMIRROR — o elemento editável em si
+---------------------------------------------------------- */
+
+.ProseMirror {
+  outline: none;
+  /* Cursor estilo máquina de escrever: caret-shape não tem
+     suporte universal, então usamos caret-color + animação
+     via ::after no pseudo-elemento de seleção colapsada.
+     O cursor fino padrão é substituído por uma barra mais
+     visível com a cor do acento. */
+  caret-color: var(--accent);
+  caret-shape: block; /* suportado no Firefox; Chromium ignora */
+}
+
+/* ----------------------------------------------------------
+   PARÁGRAFOS — indentação de livro impresso
+   Primeira linha indentada, sem espaço entre parágrafos
+   (como romance tipográfico clássico).
+   O primeiro parágrafo do documento e o primeiro após um
+   título não recebem indentação.
+---------------------------------------------------------- */
+
+.ProseMirror p {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--editor-font-size, 16px);
+  line-height: var(--editor-line-height, 1.75);
+  color: var(--ink);
+  margin: 0;
+  text-indent: 2em;
+}
+
+/* Parágrafo logo após um título ou blockquote: sem indent */
+.ProseMirror h1 + p,
+.ProseMirror h2 + p,
+.ProseMirror h3 + p,
+.ProseMirror blockquote + p {
+  text-indent: 0;
+}
+
+/* Parágrafo vazio (placeholder) não recebe indent */
+.ProseMirror p.is-editor-empty:first-child {
+  text-indent: 0;
+}
+
+/* ----------------------------------------------------------
+   TÍTULOS
+---------------------------------------------------------- */
+
+.ProseMirror h1 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: normal;
+  font-size: 26px;
+  color: var(--ink);
+  line-height: 1.3;
+  margin: 1.8em 0 0.4em;
+  text-indent: 0;
+}
+
+.ProseMirror h1:first-child {
+  margin-top: 0;
+}
+
+.ProseMirror h2 {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: normal;
+  font-size: 20px;
+  color: var(--ink-light);
+  line-height: 1.4;
+  margin: 1.6em 0 0.3em;
+  text-indent: 0;
+}
+
+.ProseMirror h3 {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+  margin: 1.4em 0 0.6em;
+  text-indent: 0;
+}
+
+/* ----------------------------------------------------------
+   FORMATAÇÃO INLINE
+---------------------------------------------------------- */
+
+.ProseMirror strong {
+  font-weight: bold;
+  font-style: italic; /* mantém o itálico do IM Fell */
+  color: var(--ink);
+}
+
+.ProseMirror em {
+  font-style: italic;
+  color: var(--ink-light);
+}
+
+/* ----------------------------------------------------------
+   BLOCKQUOTE — citação, pensamento do personagem
+---------------------------------------------------------- */
+
+.ProseMirror blockquote {
+  border-left: 2px solid var(--rule);
+  margin: 1.2em 0 1.2em 1em;
+  padding: 0 0 0 1.2em;
+  color: var(--ink-light);
+}
+
+.ProseMirror blockquote p {
+  text-indent: 0;
+}
+
+/* ----------------------------------------------------------
+   CÓDIGO
+---------------------------------------------------------- */
+
+.ProseMirror code {
+  font-family: var(--font-code);
+  font-size: 13px;
+  font-style: normal;
+  background: var(--paper-dark);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1px 5px;
+  color: var(--ink-light);
+}
+
+.ProseMirror pre {
+  background: var(--paper-dark);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin: 1em 0;
+  overflow-x: auto;
+}
+
+.ProseMirror pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ----------------------------------------------------------
+   SEPARADOR HORIZONTAL (--- no Markdown)
+   Usado para separar cenas dentro de um capítulo
+---------------------------------------------------------- */
+
+.ProseMirror hr {
+  border: none;
+  text-align: center;
+  margin: 2em 0;
+  color: var(--ink-ghost);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.5em;
+}
+
+.ProseMirror hr::after {
+  content: '· · ·';
+}
+
+/* ----------------------------------------------------------
+   PLACEHOLDER — texto antes do usuário começar a digitar
+---------------------------------------------------------- */
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--ink-ghost);
+  font-style: italic;
+  pointer-events: none;
+  height: 0;
+}
+
+/* ----------------------------------------------------------
+   SELEÇÃO DE TEXTO — âmbar (consistente com global.css)
+---------------------------------------------------------- */
+
+.ProseMirror ::selection {
+  background: rgba(184, 134, 11, 0.25);
+}
+
+html.dark .ProseMirror ::selection {
+  background: rgba(212, 168, 32, 0.2);
+}
+
+/* ----------------------------------------------------------
+   CURSOR MÁQUINA DE ESCREVER
+   Firefox suporta caret-shape: block.
+   Chromium: usamos uma animação no pseudo-elemento para
+   simular o cursor em bloco piscando.
+   A abordagem é não-destrutiva — o cursor nativo ainda
+   funciona, mas fica estilizado com a cor do acento.
+---------------------------------------------------------- */
+
+/* Cursor em bloco piscante — Webkit/Blink via hack de seleção */
+.ProseMirror:focus {
+  /* Chromium: caret como linha larga */
+  caret-color: var(--accent);
+}
+
+/* ----------------------------------------------------------
+   RODAPÉ DO EDITOR — statusbar (Salvando / Salvo)
+---------------------------------------------------------- */
+
+.editor-statusbar {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 40px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-dark);
+  flex-shrink: 0;
+  gap: 16px;
+}
+
+.editor-statusbar-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-ghost);
+}
+
+.editor-statusbar-label.saving {
+  color: var(--accent);
+  animation: blink 1.2s ease infinite;
+}
+
+.editor-statusbar-label.saved {
+  color: var(--accent-green);
+}
+
+/* ----------------------------------------------------------
+   TOPBAR DO EDITOR — título do capítulo
+---------------------------------------------------------- */
+
+.editor-topbar {
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  padding: 0 40px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-dark);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.editor-chapter-title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink-light);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-word-count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-ghost);
+  flex-shrink: 0;
+}
+
+/* ----------------------------------------------------------
+   BUSCA — destaques de ocorrências no texto
+---------------------------------------------------------- */
+
+.search-highlight {
+  background: rgba(184, 134, 11, 0.18);
+  border-radius: 2px;
+}
+
+.search-highlight-current {
+  background: rgba(184, 134, 11, 0.45);
+  outline: 1px solid rgba(184, 134, 11, 0.6);
+}
+
+html.dark .search-highlight {
+  background: rgba(212, 168, 32, 0.15);
+}
+
+html.dark .search-highlight-current {
+  background: rgba(212, 168, 32, 0.38);
+  outline-color: rgba(212, 168, 32, 0.5);
+}
+
+html.light .search-highlight {
+  background: rgba(161, 117, 8, 0.2);
+}
+
+html.light .search-highlight-current {
+  background: rgba(161, 117, 8, 0.42);
+  outline-color: rgba(161, 117, 8, 0.6);
+}

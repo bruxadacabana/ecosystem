@@ -1,0 +1,1457 @@
+================================================================
+  AETHER — DEV BIBLE
+  Documentação interna para desenvolvedores
+  Última atualização: Fase 4 concluída (itens 4.1–4.6)
+================================================================
+
+Este arquivo é a fonte de verdade sobre como o AETHER funciona.
+Se você está chegando agora ao projeto, leia do início ao fim
+antes de tocar em qualquer código.
+
+PADRÃO OBRIGATÓRIO: este arquivo deve ser atualizado sempre que
+uma nova fase ou item significativo for concluído. Não é opcional.
+
+
+----------------------------------------------------------------
+  ÍNDICE
+----------------------------------------------------------------
+
+  1.  O que é o AETHER
+  2.  Contexto: ecossistema OGMA
+  3.  Stack e dependências
+  4.  Como rodar o projeto
+  5.  Estrutura de pastas
+  6.  Arquitetura geral
+  7.  Modelo de dados e armazenamento
+  8.  Camada Rust (src-tauri/)
+  9.  Camada TypeScript/React (src/)
+  10. Design system
+  11. Padrões obrigatórios de código
+  12. Estado atual do projeto (o que está pronto)
+  13. Próximos passos (o que ainda falta)
+
+
+================================================================
+  1. O QUE É O AETHER
+================================================================
+
+AETHER é um editor de texto local para escrita criativa.
+Inspirado no Ellipsus e no Scrivener, mas completamente offline,
+sem telemetria e sem qualquer servidor externo.
+
+Nome completo : AETHER — Forja de Mundos
+Versão atual  : 0.1.0
+Última atualização: Fase 5 concluída (itens 5.1–5.6)
+Plataformas   : Windows 10 e Linux (CachyOS / qualquer distro)
+
+O usuário escolhe uma pasta no próprio computador (o "vault"),
+e todos os dados vivem lá. A ferramenta nunca acessa a internet
+a não ser para carregar as fontes do Google Fonts no momento
+do desenvolvimento (em produção, as fontes devem ser bundladas).
+
+
+================================================================
+  2. CONTEXTO: ECOSSISTEMA OGMA
+================================================================
+
+O AETHER é a quarta ferramenta de um ecossistema pessoal:
+
+  OGMA       — [ferramenta 1, não documentada aqui]
+  KOSMOS     — [ferramenta 2, não documentada aqui]
+  MNEMOSYNE  — [ferramenta 3, não documentada aqui]
+  AETHER     — editor de escrita criativa (este projeto)
+
+Todas as ferramentas compartilham o "OGMA Design Bible": mesma
+paleta de cores sépia, mesma tipografia, mesmas regras de sombra
+e animações base. O arquivo de design tokens (tokens.css) é a
+implementação direta do Design Bible para o AETHER.
+
+Diferenciais visuais do AETHER dentro do ecossistema:
+  - Animação pageFloat: folhas de papel caem ao abrir capítulos
+  - Animação pageExit: folha "voa" ao deletar
+  - Efeito typewriter no splash e em loading states
+  - Cursor do editor como _ piscante (não |)
+  - CosmosLayer com labels mitológicos nas constelações
+  - Nebulosas com pulso lento animado (etherPulse, 8s)
+
+
+================================================================
+  3. STACK E DEPENDÊNCIAS
+================================================================
+
+BACKEND (Rust)
+  tauri             2.x    — framework desktop
+  tauri-plugin-log  2.x    — logging em desenvolvimento
+  serde + serde_json 1.x   — serialização JSON
+  thiserror          1.x   — derivação de Error trait
+  uuid               1.x   — geração de IDs (v4)
+  chrono             0.4   — datas em ISO 8601
+
+FRONTEND (TypeScript / React)
+  react + react-dom          19.x  — UI
+  @tauri-apps/api            2.x   — bridge JS↔Rust
+  vite                       8.x   — bundler
+  typescript                 5.9   — linguagem (strict: true)
+  @tiptap/react              3.x   — editor WYSIWYG (ProseMirror)
+  @tiptap/starter-kit        3.x   — extensões base
+  @tiptap/extension-typography 3.x — aspas tipográficas, traços
+  @tiptap/extension-placeholder 3.x — placeholder de editor
+  @tiptap/pm                 3.x   — ProseMirror (state, view, model)
+
+FONTES (Google Fonts — carregadas em typography.css)
+  IM Fell English  — display, SEMPRE itálico em títulos/conteúdo
+  Special Elite    — UI geral, botões, labels, mono
+  Courier Prime    — blocos de código no editor
+
+Não há banco de dados. Não há ORM. Tudo é arquivo em disco.
+
+
+================================================================
+  4. COMO RODAR O PROJETO
+================================================================
+
+PRÉ-REQUISITOS
+  - Rust toolchain (rustup): https://rustup.rs
+  - Node.js 18+ e npm
+  - Tauri CLI: cargo install tauri-cli --version "^2"
+  - Linux: libwebkit2gtk, libappindicator-gtk3, etc.
+    (sudo pacman -S --needed webkit2gtk-4.1 libappindicator-gtk3)
+
+DESENVOLVIMENTO
+  # Na raiz do projeto:
+  npm install          # instala dependências JS (só na primeira vez)
+  cargo tauri dev      # inicia Tauri + Vite em modo dev
+
+  O Vite roda em http://localhost:5173 e o Tauri abre a janela
+  apontando para ele. Hot reload funciona no frontend.
+  Alterações no Rust recompilam e reiniciam o processo backend.
+
+BUILD DE PRODUÇÃO
+  cargo tauri build    # gera binário + instalador em src-tauri/target/
+
+APENAS O FRONTEND (sem Tauri)
+  npm run dev          # Vite na porta 5173, sem backend Rust
+  npm run build        # build estático para src-tauri/../dist/
+
+
+================================================================
+  5. ESTRUTURA DE PASTAS
+================================================================
+
+AETHER/
+│
+├── dev_files/
+│   ├── todo          — roadmap e padrões obrigatórios do projeto
+│   └── dev_bible.txt — ESTE ARQUIVO (documentação interna)
+│
+├── src/              — Frontend (TypeScript + React + Vite)
+│   ├── main.tsx      — entry point: aplica tema + tipografia e monta React
+│   ├── App.tsx       — raiz da aplicação React (máquina de estados de nav)
+│   │
+│   ├── components/   — componentes React reutilizáveis
+│   │   ├── CosmosLayer.tsx    — fundo estelar SVG procedural
+│   │   ├── Splash.tsx         — tela de carregamento inicial
+│   │   ├── Toast.tsx          — sistema de notificações
+│   │   ├── VaultSetup.tsx     — tela de primeiro uso (seletor de vault)
+│   │   ├── HomeScreen.tsx     — lista de projetos + modal de criação
+│   │   ├── ProjectView.tsx    — layout Binder + área central; viewMode state
+│   │   ├── Binder.tsx         — sidebar esquerda (árvore projetos)
+│   │   ├── Editor.tsx         — editor WYSIWYG TipTap + Scratchpad inline
+│   │   ├── ThemeToggle.tsx    — botão ciclar tema (sépia/claro/escuro)
+│   │   ├── TypographyPanel.tsx — popover com sliders de tipografia
+│   │   ├── CorkboardView.tsx  — vista mural: grade de cartões por capítulo
+│   │   ├── OutlineView.tsx    — vista esboço: tabela status/título/sinopse/palavras
+│   │   └── TrashView.tsx      — lixeira: capítulos soft-deleted, restore/purge
+│   │
+│   ├── lib/          — utilitários puros (sem React)
+│   │   ├── theme.ts           — sistema 3 temas (sépia/claro/escuro)
+│   │   ├── typography.ts      — tipografia customizável via CSS vars
+│   │   ├── tauri.ts           — wrapper tipado sobre invoke()
+│   │   └── searchReplace.ts   — extensão TipTap: localizar e substituir
+│   │
+│   ├── hooks/        — hooks React customizados (vazio)
+│   ├── store/        — estado global (vazio)
+│   ├── types/
+│   │   └── index.ts           — todos os tipos TypeScript do app
+│   │
+│   └── styles/       — CSS (sem preprocessador, sem Tailwind)
+│       ├── tokens.css       — variáveis CSS: paleta, métricas, fontes
+│       ├── animations.css   — keyframes e classes utilitárias
+│       ├── typography.css   — import de fontes e classes de texto
+│       ├── components.css   — btn, input, card, modal, badge, tag
+│       ├── editor.css       — estilos do editor TipTap
+│       └── global.css       — reset, textura, scrollbar, seleção
+│
+├── src-tauri/        — Backend (Rust / Tauri)
+│   ├── src/
+│   │   ├── main.rs          — entry point do processo Rust
+│   │   ├── lib.rs           — setup do Tauri, AppState, registro de commands
+│   │   ├── error.rs         — AppError enum (todo erro do app)
+│   │   ├── types.rs         — todos os tipos de dados serializáveis
+│   │   └── storage.rs       — toda a leitura/escrita em disco
+│   │
+│   ├── Cargo.toml           — dependências Rust
+│   ├── tauri.conf.json      — configuração da janela, bundle, etc.
+│   └── capabilities/
+│       └── default.json     — permissões da API Tauri
+│
+├── public/           — assets estáticos copiados para o dist/
+├── index.html        — HTML raiz (ponto de entrada do Vite)
+├── vite.config.ts    — configuração do Vite
+├── tsconfig.json     — configuração TypeScript (strict: true)
+├── package.json      — scripts e dependências npm
+└── README.md         — README público do projeto
+
+
+================================================================
+  6. ARQUITETURA GERAL
+================================================================
+
+FLUXO GERAL
+  [Usuário] → [Janela Tauri (WebView)] → [React/TS] → [invoke()] → [Rust]
+                                                                      ↓
+                                                              [Sistema de arquivos]
+
+O frontend é uma SPA React rodando dentro de uma WebView Tauri.
+A comunicação com o backend Rust acontece via `invoke()` do
+pacote @tauri-apps/api. Cada chamada retorna uma Promise.
+
+COMUNICAÇÃO JS ↔ RUST
+  - No Rust: funções decoradas com #[tauri::command]
+  - No TS: invoke<ReturnType>('command_name', { args })
+  - Todo command Rust retorna Result<T, AppError>
+  - No TS, o tipo é: { ok: true; data: T } | { ok: false; error: AppError }
+    (implementar wrapper em src/types/ — ver item 1.5 do todo)
+
+ESTADO GLOBAL
+  - Tema: classe 'dark' no <html>, persistido em localStorage
+  - Vault path: Mutex<Option<PathBuf>> no AppState do Rust
+  - Estado da UI: ainda não implementado (fase 1.6+)
+
+TEMA DIA/NOITE
+  Aplicado ANTES do primeiro render pelo initTheme() em main.tsx.
+  Isso evita o "flash" de tema errado que ocorre quando o tema
+  é aplicado após o React montar. O mecanismo é:
+    1. main.tsx chama initTheme() (lê localStorage, adiciona class)
+    2. Depois monta o React
+  Para alternar: importar toggleTheme() de src/lib/theme.ts
+
+
+================================================================
+  7. MODELO DE DADOS E ARMAZENAMENTO
+================================================================
+
+PRINCÍPIO FUNDAMENTAL (modelo Obsidian)
+  O usuário tem controle total sobre onde seus dados ficam.
+  Cada vault é uma pasta normal — pode ser movida, copiada,
+  versionada com git, sincronizada com qualquer ferramenta.
+  O AETHER nunca armazena dados do usuário em servidores.
+
+DOIS NÍVEIS DE ARMAZENAMENTO
+
+  Nível 1 — AppData do sistema (gerenciado pelo Tauri)
+    Linux  : ~/.local/share/aether/app.json
+    Windows: %AppData%\aether\app.json
+
+    Conteúdo de app.json:
+    {
+      "vault_path": "/caminho/escolhido/pelo/usuario"  // ou null
+    }
+
+    Isso é TUDO que fica no AppData. Somente o caminho do vault.
+    Nenhum dado de conteúdo, nenhuma preferência do usuário.
+
+  Nível 2 — Dentro do vault (portátil, do usuário)
+    {vault}/
+    ├── .aether/
+    │   └── config.json          — preferências (tema, fonte, etc.)
+    │
+    └── {project_id}/            — uma pasta por projeto (UUID v4)
+        ├── project.json         — metadados do projeto
+        └── {book_id}/           — uma pasta por livro (UUID v4)
+            ├── book.json        — metadados + lista de capítulos
+            └── {chapter_id}.md  — conteúdo do capítulo (Markdown puro)
+
+TIPOS DE DADOS (definidos em src-tauri/src/types.rs)
+
+  AppData
+    vault_path: Option<PathBuf>
+
+  VaultConfig  (em .aether/config.json)
+    theme:        Theme (Day | Dark)
+    font_size:    u8    (padrão: 16)
+    line_height:  f32   (padrão: 1.75)
+    column_width: u16   (padrão: 680)
+
+  Project  (= ProjectMeta, em project.json)
+    id:              String (UUID v4)
+    name:            String
+    description:     Option<String>
+    project_type:    ProjectType (Single | Series | Fanfiction)
+    default_book_id: Option<String>  — só para Single; ID do livro único
+    created_at:      String (ISO 8601)
+    updated_at:      String (ISO 8601)
+    -- metadados opcionais (todos com #[serde(default)]) --
+    subtitle:        Option<String>
+    genre:           Option<String>
+    target_audience: Option<String>
+    language:        Option<String>
+    tags:            Vec<String>
+    has_magic_system: bool
+    tech_level:      Option<String>
+    inspirations:    Option<String>
+
+  Book  (em book.json)
+    id:          String (UUID v4)
+    project_id:  String
+    name:        String
+    order:       usize
+    chapters:    Vec<ChapterMeta>
+    series_name: Option<String>  — para Fanfiction: agrupa livros por série
+
+  BookMeta  (versão compacta para listagens)
+    id:          String
+    name:        String
+    order:       usize
+    series_name: Option<String>
+
+  ChapterMeta  (dentro de book.json — NÃO tem conteúdo)
+    id:            String (UUID v4)
+    title:         String
+    order:         usize
+    status:        ChapterStatus (Draft | Revision | Final)
+    synopsis:      Option<String>
+    word_count:    usize         (cache, recalculado ao salvar)
+    trashed_at:    Option<String> (ISO 8601; None = ativo; Some = na lixeira)
+    character_ids: Vec<String>   (4.6 — personagens vinculados)
+    note_ids:      Vec<String>   (4.6 — notas de worldbuilding vinculadas)
+
+  O conteúdo do capítulo é lido separadamente do arquivo .md.
+  O scratchpad do capítulo fica em {chapter_id}.scratch.md (mesmo dir).
+
+  Character  (em {project_id}/characters/{char_id}.json)
+    id:           String (UUID v4)
+    project_id:   String
+    name:         String
+    role:         Option<String>
+    description:  Option<String>
+    fields:       Vec<CustomField>   (campos livres label+value)
+    image_path:   Option<String>     (caminho relativo ao vault)
+    chapter_ids:  Vec<String>        (capítulos vinculados)
+    created_at:   String (ISO 8601)
+    updated_at:   String (ISO 8601)
+
+  CustomField
+    label:  String
+    value:  String
+
+  Relationship  (em {project_id}/characters/relationships.json — Vec)
+    id:      String (UUID v4)
+    from_id: String
+    to_id:   String
+    kind:    String   (ex: "Aliados", "Inimigos", "Família")
+    note:    Option<String>
+
+  WorldNote  (em {project_id}/worldbuilding/{note_id}.json)
+    id:          String (UUID v4)
+    project_id:  String
+    name:        String
+    category:    WorldCategory (location | faction | object | concept | other)
+    description: Option<String>
+    fields:      Vec<CustomField>
+    image_path:  Option<String>
+    chapter_ids: Vec<String>
+    created_at:  String (ISO 8601)
+    updated_at:  String (ISO 8601)
+
+  TimelineEvent  (em {project_id}/timeline.json — Vec<TimelineEvent>)
+    id:            String (UUID v4)
+    project_id:    String
+    title:         String
+    description:   Option<String>
+    date_label:    String   (rótulo livre: "Ano 1024", "Antes da guerra")
+    order:         usize
+    character_ids: Vec<String>
+    note_ids:      Vec<String>
+    chapter_ids:   Vec<String>
+
+IDs
+  Todos os IDs são UUID v4 gerados em Rust (uuid::Uuid::new_v4()).
+  IDs são usados como nomes de pasta e de arquivo.
+  O usuário nunca vê os IDs diretamente.
+
+DATAS
+  Todas as datas são strings ISO 8601 geradas com chrono::Utc::now().
+  Não há timestamps Unix no modelo.
+
+
+================================================================
+  8. CAMADA RUST (src-tauri/src/)
+================================================================
+
+REGRA FUNDAMENTAL
+  Toda função que pode falhar retorna Result<T, AppError>.
+  .unwrap() e .expect() são PROIBIDOS em código de produção.
+  Se uma função interna só pode falhar por bug (não por input
+  do usuário), use um AppError descritivo mesmo assim.
+
+── error.rs ──────────────────────────────────────────────────
+
+  Define o enum AppError com as variantes:
+    Io(String)              — erros de std::io
+    Json(String)            — erros de serde_json
+    VaultNotConfigured      — vault ainda não selecionado
+    VaultNotFound(String)   — pasta do vault não existe
+    ProjectNotFound(String) — projeto não encontrado
+    BookNotFound(String)    — livro não encontrado
+    ChapterNotFound(String) — capítulo não encontrado
+    InvalidPath(String)     — caminho malformado
+    InvalidName(String)     — nome vazio ou inválido
+    AlreadyExists(String)   — ID já existe (colisão extremamente rara)
+
+  AppError implementa:
+    - thiserror::Error     (para Display e std::error::Error)
+    - serde::Serialize     (obrigatório para retornar em commands Tauri)
+    - From<std::io::Error> (conversão automática com ?)
+    - From<serde_json::Error> (conversão automática com ?)
+
+  O serde usa tag = "kind" + content = "message" para que o JSON
+  de erro no frontend seja: { "kind": "ProjectNotFound", "message": "..." }
+
+── types.rs ──────────────────────────────────────────────────
+
+  Todos os structs e enums que são serializados para disco ou
+  enviados ao frontend. Ver seção 7 para detalhes dos tipos.
+
+  Regra: tipos que vão para o frontend derivam Serialize.
+         Tipos que vêm do frontend derivam Deserialize.
+         Tipos que vão para disco derivam ambos.
+
+── storage.rs ────────────────────────────────────────────────
+
+  Única responsabilidade: ler e escrever arquivos em disco.
+  Não sabe nada de Tauri, não sabe nada de React.
+
+  Funções públicas disponíveis:
+
+  AppData:
+    load_app_data(app_data_dir) → Result<AppData, AppError>
+    save_app_data(app_data_dir, data) → Result<(), AppError>
+
+  VaultConfig:
+    load_vault_config(vault_path) → Result<VaultConfig, AppError>
+    save_vault_config(vault_path, config) → Result<(), AppError>
+
+  Projetos:
+    list_projects(vault_path) → Result<Vec<Project>, AppError>
+    create_project(vault_path, name) → Result<Project, AppError>
+    load_project(vault_path, project_id) → Result<Project, AppError>
+    save_project(vault_path, project) → Result<(), AppError>
+    delete_project(vault_path, project_id) → Result<(), AppError>
+
+  Livros:
+    list_books(vault_path, project_id) → Result<Vec<BookMeta>, AppError>
+    create_book(vault_path, project_id, name) → Result<BookMeta, AppError>
+    load_book(vault_path, project_id, book_id) → Result<Book, AppError>
+    save_book(vault_path, book) → Result<(), AppError>
+    delete_book(vault_path, project_id, book_id) → Result<(), AppError>
+
+  Capítulos:
+    create_chapter(vault_path, project_id, book_id, title) → Result<ChapterMeta, AppError>
+    read_chapter(vault_path, project_id, book_id, chapter_id) → Result<String, AppError>
+    save_chapter(vault_path, project_id, book_id, chapter_id, content) → Result<(), AppError>
+    delete_chapter(vault_path, project_id, book_id, chapter_id) → Result<(), AppError>
+    reorder_chapters(vault_path, project_id, book_id, ordered_ids) → Result<(), AppError>
+
+  Lixeira:
+    trash_chapter(vault_path, project_id, book_id, chapter_id) → Result<ChapterMeta, AppError>
+    restore_chapter(vault_path, project_id, book_id, chapter_id) → Result<ChapterMeta, AppError>
+    list_trash(vault_path, project_id, book_id) → Result<Vec<ChapterMeta>, AppError>
+
+  Scratchpad:
+    read_scratchpad(vault_path, project_id, book_id, chapter_id) → Result<String, AppError>
+    save_scratchpad(vault_path, project_id, book_id, chapter_id, content) → Result<(), AppError>
+    scratchpad_path → {book_dir}/{chapter_id}.scratch.md
+
+  Personagens:
+    list_characters(vault_path, project_id) → Result<Vec<Character>, AppError>
+    create_character(vault_path, project_id, name) → Result<Character, AppError>
+    load_character(vault_path, project_id, character_id) → Result<Character, AppError>
+    save_character(vault_path, project_id, character) → Result<Character, AppError>
+    delete_character(vault_path, project_id, character_id) → Result<(), AppError>
+    characters_dir → {project_id}/characters/
+
+  Relacionamentos:
+    load_relationships(vault_path, project_id) → Result<Vec<Relationship>, AppError>
+    save_relationships(vault_path, project_id, &[Relationship]) → Result<(), AppError>
+    relationships_path → {project_id}/characters/relationships.json
+
+  Worldbuilding:
+    list_world_notes(vault_path, project_id) → Result<Vec<WorldNote>, AppError>
+    create_world_note(vault_path, project_id, name, category) → Result<WorldNote, AppError>
+    load_world_note(vault_path, project_id, note_id) → Result<WorldNote, AppError>
+    save_world_note(vault_path, project_id, note) → Result<WorldNote, AppError>
+    delete_world_note(vault_path, project_id, note_id) → Result<(), AppError>
+    worldbuilding_dir → {project_id}/worldbuilding/
+
+  Timeline:
+    load_timeline(vault_path, project_id) → Result<Vec<TimelineEvent>, AppError>
+    save_timeline(vault_path, project_id, &[TimelineEvent]) → Result<(), AppError>
+    timeline_path → {project_id}/timeline.json
+
+  Imagens:
+    attach_image(vault_path, project_id, entity_prefix, source_path) → Result<String, AppError>
+      Copia para {project_id}/images/{prefix}_{filename}; retorna caminho relativo ao vault.
+    load_image_base64(vault_path, relative_path) → Result<String, AppError>
+      Lê e retorna como data URL (data:image/...;base64,...).
+    remove_image(vault_path, relative_path) → Result<(), AppError>
+    images_dir → {project_id}/images/
+
+  Sessões (5.2/5.3):
+    load_sessions(vault_path) → Result<Vec<WritingSession>, AppError>
+    save_sessions(vault_path, &[WritingSession]) → Result<(), AppError>
+    start_session(vault_path, project_id, book_id, chapter_id, words_at_start, goal_minutes?)
+                              → Result<WritingSession, AppError>
+    end_session(vault_path, session_id, words_at_end) → Result<WritingSession, AppError>
+    sessions_path → {vault}/.aether/sessions.json
+
+  Snapshots (5.5):
+    list_snapshots(vault_path, project_id, book_id, chapter_id) → Result<Vec<SnapshotMeta>, AppError>
+    create_snapshot(vault_path, project_id, book_id, chapter_id, label?) → Result<SnapshotMeta, AppError>
+    load_snapshot_content(vault_path, project_id, book_id, snapshot_id) → Result<String, AppError>
+    restore_snapshot(vault_path, project_id, book_id, chapter_id, snapshot_id) → Result<(), AppError>
+    delete_snapshot(vault_path, project_id, book_id, snapshot_id) → Result<(), AppError>
+    snapshots_dir → {project}/{book}/snapshots/
+
+  Anotações (5.6):
+    load_annotations(vault_path, project_id, book_id, chapter_id) → Result<Vec<Annotation>, AppError>
+    create_annotation(vault_path, project_id, book_id, chapter_id, text, quote) → Result<Annotation, AppError>
+    update_annotation(vault_path, project_id, book_id, chapter_id, annotation_id, text, resolved)
+                                                                    → Result<Annotation, AppError>
+    delete_annotation(vault_path, project_id, book_id, chapter_id, annotation_id) → Result<(), AppError>
+    annotations_path → {project}/{book}/{chapter_id}.annotations.json
+
+  Funções internas (privadas):
+    now_iso()         — retorna Utc::now() como String ISO 8601
+    new_id()          — gera UUID v4 como String
+    read_json(path)   — lê arquivo e desserializa
+    write_json(path, value) — serializa (pretty) e escreve
+    touch_project(vault_path, project_id) — atualiza updated_at
+    count_words(text) — conta palavras por split_whitespace
+
+── lib.rs ────────────────────────────────────────────────────
+
+  Entry point da biblioteca. Declara os módulos, define AppState
+  e registra os Tauri commands.
+
+  AppState:
+    vault_path: Mutex<Option<PathBuf>>
+    Injetado via .manage(). Acessível em todo command via
+    State<'_, AppState>.
+
+  No setup:
+    1. Obtém app_data_dir via app.path().app_data_dir()
+    2. Chama storage::load_app_data() para carregar vault salvo
+    3. Se existir, preenche o Mutex (sem .unwrap() — usa lock())
+    4. Inicializa tauri-plugin-log em modo debug
+
+  Quando adicionar um novo command:
+    1. Escreva a função em um módulo dedicado (ex: commands/project.rs)
+    2. Decore com #[tauri::command]
+    3. Registre em .invoke_handler(tauri::generate_handler![...])
+
+── commands/ ─────────────────────────────────────────────────
+
+  Módulo que contém todos os #[tauri::command].
+  Cada arquivo agrupa commands por domínio.
+  Todo command recebe State<'_, AppState>, extrai vault_path
+  via require_vault() e chama storage::.
+
+  commands/project.rs  — vault + projetos
+    get_vault_path()                     → Result<Option<String>, AppError>
+    set_vault_path(path)                 → Result<(), AppError>
+    list_projects()                      → Result<Vec<Project>, AppError>
+    create_project(name, project_type, description?, subtitle?,
+                   genre?, target_audience?, language?, tags?,
+                   has_magic_system?, tech_level?, inspirations?)
+                                         → Result<Project, AppError>
+    open_project(project_id)             → Result<Project, AppError>
+    delete_project(project_id)           → Result<(), AppError>
+    update_project(id, name?, desc?)     → Result<Project, AppError>
+
+  commands/book.rs — livros
+    list_books(project_id)                            → Result<Vec<BookMeta>, AppError>
+    create_book(project_id, name, series_name?)       → Result<BookMeta, AppError>
+    open_book(project_id, book_id)                    → Result<Book, AppError>
+    update_book(project_id, book_id, name, series_name?) → Result<BookMeta, AppError>
+    delete_book(project_id, book_id)                  → Result<(), AppError>
+    reorder_books(project_id, ordered_ids)            → Result<(), AppError>
+
+  commands/book.rs — open_book
+    open_book filtra capítulos na lixeira antes de retornar
+    (book.chapters.retain(|c| c.trashed_at.is_none()))
+
+  commands/chapter.rs — capítulos
+    create_chapter(project_id, book_id, title)              → Result<ChapterMeta, AppError>
+    read_chapter(project_id, book_id, chapter_id)           → Result<String, AppError>
+    save_chapter(project_id, book_id, chapter_id, content)  → Result<(), AppError>
+    delete_chapter(project_id, book_id, chapter_id)         → Result<(), AppError>  ← hard delete (lixeira)
+    reorder_chapters(project_id, book_id, ordered_ids)      → Result<(), AppError>
+    update_chapter_title(project_id, book_id, chapter_id, title)      → Result<ChapterMeta, AppError>
+    update_chapter_status(project_id, book_id, chapter_id, status)    → Result<ChapterMeta, AppError>
+    update_chapter_synopsis(project_id, book_id, chapter_id, synopsis)→ Result<ChapterMeta, AppError>
+    -- Lixeira --
+    trash_chapter(project_id, book_id, chapter_id)          → Result<(), AppError>  ← soft delete
+    restore_chapter(project_id, book_id, chapter_id)        → Result<ChapterMeta, AppError>
+    list_trash(project_id, book_id)                         → Result<Vec<ChapterMeta>, AppError>
+    list_books_for_trash(project_id)                        → Result<Vec<BookMeta>, AppError>
+    -- Scratchpad --
+    read_scratchpad(project_id, book_id, chapter_id)        → Result<String, AppError>
+    save_scratchpad(project_id, book_id, chapter_id, content)→ Result<(), AppError>
+    -- Vínculos capítulo ↔ lore (4.6) --
+    update_chapter_links(project_id, book_id, chapter_id, character_ids, note_ids)
+                                                             → Result<ChapterMeta, AppError>
+    -- Metas de palavras (5.1) --
+    set_chapter_word_goal(project_id, book_id, chapter_id, goal?) → Result<ChapterMeta, AppError>
+    set_book_word_goal(project_id, book_id, goal?)                → Result<(), AppError>
+    -- Snapshots (5.5) --
+    list_snapshots(project_id, book_id, chapter_id)         → Result<Vec<SnapshotMeta>, AppError>
+    create_snapshot(project_id, book_id, chapter_id, label?)→ Result<SnapshotMeta, AppError>
+    load_snapshot_content(project_id, book_id, snapshot_id) → Result<String, AppError>
+    restore_snapshot(project_id, book_id, chapter_id, snapshot_id) → Result<(), AppError>
+    delete_snapshot(project_id, book_id, snapshot_id)       → Result<(), AppError>
+    -- Anotações (5.6) --
+    list_annotations(project_id, book_id, chapter_id)       → Result<Vec<Annotation>, AppError>
+    create_annotation(project_id, book_id, chapter_id, text, quote) → Result<Annotation, AppError>
+    update_annotation(project_id, book_id, chapter_id, annotation_id, text, resolved)
+                                                             → Result<Annotation, AppError>
+    delete_annotation(project_id, book_id, chapter_id, annotation_id) → Result<(), AppError>
+
+  commands/stats.rs — estatísticas e sessões (5.2/5.3)
+    start_session(project_id, book_id, chapter_id, words_at_start, goal_minutes?)
+                                          → Result<WritingSession, AppError>
+    end_session(session_id, words_at_end) → Result<WritingSession, AppError>
+    list_sessions(project_id?)            → Result<Vec<WritingSession>, AppError>
+    get_writing_streak(project_id)        → Result<u32, AppError>
+      Conta dias consecutivos com ao menos uma sessão encerrada com progresso.
+
+  commands/character.rs — personagens e relacionamentos (4.1/4.2)
+    list_characters(project_id)                           → Result<Vec<Character>, AppError>
+    create_character(project_id, name)                    → Result<Character, AppError>
+    load_character(project_id, character_id)              → Result<Character, AppError>
+    save_character(project_id, character_id, name, role?, description?,
+                   fields, image_path?, chapter_ids)      → Result<Character, AppError>
+    delete_character(project_id, character_id)            → Result<(), AppError>
+    list_relationships(project_id)                        → Result<Vec<Relationship>, AppError>
+    add_relationship(project_id, from_id, to_id, kind, note?) → Result<Relationship, AppError>
+    update_relationship(project_id, relationship_id, kind, note?) → Result<Relationship, AppError>
+    delete_relationship(project_id, relationship_id)      → Result<(), AppError>
+
+  commands/world.rs — worldbuilding, timeline e imagens (4.3/4.4/4.5)
+    list_world_notes(project_id)                          → Result<Vec<WorldNote>, AppError>
+    create_world_note(project_id, name, category)         → Result<WorldNote, AppError>
+    load_world_note(project_id, note_id)                  → Result<WorldNote, AppError>
+    save_world_note(project_id, note_id, name, category, description?,
+                    fields, image_path?, chapter_ids)     → Result<WorldNote, AppError>
+    delete_world_note(project_id, note_id)                → Result<(), AppError>
+    load_timeline(project_id)                             → Result<Vec<TimelineEvent>, AppError>
+    create_timeline_event(project_id, title, date_label)  → Result<TimelineEvent, AppError>
+    save_timeline_event(project_id, event_id, title, date_label, description?,
+                        character_ids, note_ids, chapter_ids) → Result<TimelineEvent, AppError>
+    reorder_timeline(project_id, ordered_ids)             → Result<(), AppError>
+    delete_timeline_event(project_id, event_id)           → Result<(), AppError>
+    attach_image(project_id, entity_prefix, source_path)  → Result<String, AppError>
+    load_image(relative_path)                             → Result<String, AppError>
+    remove_image(relative_path)                           → Result<(), AppError>
+
+  Para adicionar novos commands:
+    1. Criar commands/{dominio}.rs
+    2. Declarar em commands/mod.rs: pub mod {dominio};
+    3. Registrar em lib.rs dentro de generate_handler![...]
+
+── main.rs ───────────────────────────────────────────────────
+
+  Só chama app_lib::run(). Não alterar.
+
+
+================================================================
+  9. CAMADA TYPESCRIPT/REACT (src/)
+================================================================
+
+── main.tsx ──────────────────────────────────────────────────
+
+  Entry point. Três responsabilidades:
+    1. Chama initTheme() ANTES do render (evita flash de tema)
+    2. Verifica que #root existe (lança Error se não)
+    3. Monta o React em StrictMode
+
+── App.tsx ───────────────────────────────────────────────────
+
+  Componente raiz. Por ora exibe o Splash e, após o fade-out,
+  mostra um placeholder. Será substituído pelo roteamento e
+  layout principal nas fases 1.6 e 1.7.
+
+  Estado atual:
+    splashDone: boolean — controla se o Splash está visível
+
+── components/Splash.tsx ─────────────────────────────────────
+
+  Tela de carregamento exibida ao iniciar o app.
+
+  Props:
+    onDone: () => void  — chamado após o fade-out completo
+
+  Comportamento:
+    - Exibe 4 mensagens em sequência com efeito typewriter
+    - Cada mensagem revela 1 caractere a cada 30ms
+    - 900ms entre mensagens
+    - Após "Pronto.", aguarda DONE_HOLD ms e inicia fade-out
+    - Chama onDone após 550ms de fade
+
+  Contém:
+    - CosmosLayer (density="high", animated=true, seed=42)
+    - Linha vermelha de margem (left: 48px)
+    - "AETHER" em 68px itálico
+    - "FORJA DE MUNDOS" em 9px uppercase
+    - Texto de status typewriter com cursor _ piscante
+    - "· · ·" loading dots (sumem no último step)
+    - Versão "v0.1.0" no canto inferior direito
+
+  Hook interno useTypewriter(text):
+    Recebe uma string, revela caractere por caractere.
+    Reseta quando o texto muda. Retorna a string parcial.
+
+── components/CosmosLayer.tsx ────────────────────────────────
+
+  SVG procedural determinístico. Mesmo seed = mesmo cosmos.
+  Usado como fundo decorativo em cards, headers e splash.
+
+  Props:
+    seed:      number    — determina todo o layout do cosmos
+    density?:  Density   — 'low' | 'medium' | 'high'
+    animated?: boolean   — ativa/desativa etherPulse
+    width?:    number    — largura do SVG (padrão: 520)
+    height?:   number    — altura do SVG (padrão: 340)
+    className?: string
+
+  Densidades:
+    low    — 1 nebulosa, 9 estrelas (headers de capítulo)
+    medium — 2 nebulosas, 14 estrelas, cometa, lua (headers de livro)
+    high   — 3 nebulosas, 19 estrelas, cometa, lua, planeta (splash)
+
+  PRNG: mulberry32 inicializado com seed.
+    Todas as posições e tamanhos derivam deste seed.
+    Garante que o mesmo projeto sempre tenha o mesmo cosmos.
+
+  Diferenciais AETHER:
+    - Labels mitológicos nas constelações (Special Elite, 7px)
+    - Nebulosas com animation: etherPulse 8s (quando animated=true)
+
+  Como usar:
+    <CosmosLayer seed={project.id_hash} density="medium" animated={true} />
+    (Para converter project_id (string) em seed numérico, usar uma
+    função de hash simples — ainda não implementada, fazer quando
+    CosmosLayer for usado nos headers de projeto)
+
+── components/Toast.tsx ──────────────────────────────────────
+
+  Sistema de notificações. Exibe mensagens temporárias.
+
+  Exports:
+    ToastType       — 'success' | 'error' | 'warning' | 'info'
+    ToastItem       — { id, type, message }
+    ToastContainer  — componente que renderiza a fila de toasts
+    useToast()      — hook que retorna { toasts, dismiss, success,
+                       error, warning, info }
+
+  Uso padrão:
+    function App() {
+      const toast = useToast()
+      return (
+        <>
+          <ToastContainer toasts={toast.toasts} onDismiss={toast.dismiss} />
+          <button onClick={() => toast.success('Salvo!')}>Salvar</button>
+        </>
+      )
+    }
+
+  Detalhes:
+    - Máximo 5 toasts simultâneos (slice(0, 5))
+    - Auto-dismiss: success=3s, error=7s, warning=5s, info=4s
+    - Click dismiss manual
+    - Cores dentro da paleta sépia (dia e noite)
+    - Posição: fixed, bottom-right, z-index: 9999
+
+── types/index.ts ────────────────────────────────────────────
+
+  Fonte de verdade dos tipos TypeScript. Espelha exatamente os
+  tipos Rust. Nunca usar `any` — strict: true obrigatório.
+
+  Exports:
+    AppErrorKind    — union com todas as variantes do enum Rust
+    AppError        — { kind: AppErrorKind, message: string }
+    TauriResult<T>  — { ok: true; data: T } | { ok: false; error: AppError }
+    Theme           — 'day' | 'dark'  (interno; ThemeToggle usa 'sepia'|'light'|'dark')
+    ChapterStatus   — 'draft' | 'revision' | 'final'
+    ProjectType     — 'single' | 'series' | 'fanfiction'
+    VaultConfig     — theme, font_size, line_height, column_width
+    Project         — id, name, description, project_type, default_book_id,
+                      created_at, updated_at, subtitle, genre, target_audience,
+                      language, tags[], has_magic_system, tech_level, inspirations
+    BookMeta        — id, name, order, series_name
+    Book            — id, project_id, name, order, chapters[], series_name, word_goal
+    ChapterMeta     — id, title, order, status, synopsis, word_count, trashed_at,
+                      character_ids, note_ids, word_goal
+    WritingSession  — id, project_id, book_id, chapter_id, started_at, ended_at?,
+                      words_at_start, words_at_end, goal_minutes?
+    SnapshotMeta    — id, chapter_id, created_at, label?, word_count
+    Annotation      — id, chapter_id, text, quote, created_at, resolved
+
+── lib/tauri.ts ──────────────────────────────────────────────
+
+  Wrapper tipado sobre o invoke() do @tauri-apps/api.
+  Normaliza exceções Tauri para TauriResult<T> — sem try/catch
+  espalhado pelo código.
+
+  Função interna call<T>(command, args): captura a exceção,
+  verifica se é AppError ({ kind, message }) e retorna
+  { ok: false, error } ou { ok: true, data }.
+
+  Padrão de uso:
+    import * as cmd from '../lib/tauri'
+    const result = await cmd.listProjects()
+    if (!result.ok) { toast.error(result.error.message); return }
+    setProjects(result.data)
+
+  Exports (uma função por command Tauri):
+    Vault    : getVaultPath, setVaultPath
+    Projetos : listProjects, createProject, openProject,
+               deleteProject, updateProject
+    Livros   : listBooks, createBook, openBook, updateBook,
+               deleteBook, reorderBooks
+    Capítulos: createChapter, readChapter, saveChapter,
+               deleteChapter, reorderChapters, updateChapterTitle,
+               updateChapterStatus, updateChapterSynopsis
+
+── components/Editor.tsx ─────────────────────────────────────
+
+  Editor WYSIWYG em tempo real. Sempre renderizado — o usuário
+  nunca vê símbolos Markdown.
+
+  Extensões TipTap:
+    StarterKit      — h1-h6, bold, italic, blockquote, hr, code,
+                      codeBlock, listas, histórico
+    Typography      — aspas tipográficas, traços, etc.
+    Placeholder     — texto fantasma antes do primeiro caractere
+    SearchReplace   — localizar e substituir (src/lib/searchReplace.ts)
+
+  Conversão Markdown ↔ HTML:
+    markdownToHtml(md) — carrega do .md para o editor
+    htmlToMarkdown(html) — serializa para salvar no .md
+    Mantém os arquivos .md portáveis e legíveis fora do app.
+
+  Auto-save:
+    debounce de 500ms após cada onUpdate do TipTap.
+    Cancela o timer pendente ao trocar de capítulo.
+    Estados: idle | saving | saved | error
+
+  Modo foco (focusMode):
+    Prop recebida de ProjectView. Quando ativo:
+    - Topbar e statusbar ficam ocultos
+    - Botão "esc" discreto no topo do texto
+    - Padding extra no topo/fundo do scroll
+    - Escape (em ProjectView) restaura o layout
+
+  Modo typewriter:
+    Toggle via botão "Type" no topbar.
+    Ao digitar, smooth-scrolls para centralizar o cursor verticalmente.
+    Usa useRef para acessar o estado dentro do closure do onUpdate.
+
+  Status por capítulo:
+    Indicador colorido no statusbar (● Rascunho/Revisão/Final).
+    Clique cicla entre os três estados; persiste via update_chapter_status.
+
+  Localizar e substituir (Ctrl+F):
+    Painel abre com Ctrl+F, fecha com Esc (capturado com stopPropagation
+    antes do Escape do modo foco).
+    Destaca todas as ocorrências (search-highlight) com a atual em negrito
+    (search-highlight-current). Navegação Enter/Shift+Enter ou ▲▼.
+    Substituir (atual) e Tudo (todas, do final para o início).
+
+  Tipografia customizável:
+    Painel <TypographyPanel> no topbar. Sliders para fontSize, lineHeight,
+    columnWidth. Aplica via CSS custom properties em :root. Persiste em
+    localStorage. Botão "Restaurar padrões".
+
+  Split mode (3.5/4.6/5.5/5.6):
+    Botão "Split" no topbar. Quando ativo, renderiza <SplitPanel> à direita.
+    SplitPanel tem QUATRO abas: "Notas" | "Vínculos" | "Histórico" | "Anotações".
+    Tab bar com overflow-x: auto para caber em espaços menores.
+    Desaparece em focusMode. Estado: splitMode boolean + splitTab SplitTab.
+
+  Scratchpad (3.4, definido em Editor.tsx):
+    Painel de notas lateral por capítulo.
+    Arquivo: {chapter_id}.scratch.md no mesmo diretório do capítulo.
+    Auto-save 600ms debounce. Carregado via cmd.readScratchpad ao trocar capítulo.
+    Prop showHeader=false quando usado dentro de SplitPanel.
+
+  LinksPanel (4.6, definido em Editor.tsx):
+    Lista personagens e notas de worldbuilding do projeto como chips clicáveis.
+    Clique em chip → toggled ON/OFF → debounce 600ms → update_chapter_links.
+    Personagem ativo: borda esquerda accent. Chip inativo: neutro.
+    Reflete chapter.characterIds e chapter.noteIds (carregados no useEffect).
+
+  SnapshotPanel (5.5, definido em Editor.tsx):
+    Aba "Histórico" no SplitPanel.
+    Lista snapshots do capítulo (mais recente primeiro).
+    Botão "+ Novo Snapshot": input de rótulo opcional → cria via create_snapshot.
+    Cada item: data/hora, rótulo, word_count; clique expande preview inline (6 linhas).
+    Botões: ↩ (restore com confirm) e × (delete).
+    Armazenado em {project}/{book}/snapshots/{id}.json (Snapshot inclui content).
+
+  AnnotationPanel (5.6, definido em Editor.tsx):
+    Aba "Anotações" no SplitPanel.
+    Lista anotações do capítulo separadas em ativas e resolvidas.
+    Form: campo "trecho citado" (opcional) + textarea para o texto da nota.
+    AnnotationItem: cita o trecho em accent com borda esquerda, texto, botões Resolver/×.
+    Armazenado em {chapter_id}.annotations.json no diretório do livro.
+
+  Sessão de escrita (5.2, definido em Editor.tsx):
+    Auto-start quando o editor carrega um capítulo (start_session).
+    Auto-end quando o capítulo muda ou o editor desmonta (end_session).
+    Timer exibido no statusbar: ◷ MM:SS +N (palavras escritas na sessão em accent).
+    Usa wordCountRef e sessionRef para evitar closures stale.
+
+  Meta de palavras (5.1, definido em Editor.tsx):
+    Botão "meta" no statusbar. Clique abre input inline para definir o número.
+    Quando definida: barra de progresso de 40px + "atual/meta" colorido.
+    Verde quando meta atingida; dourado quando em progresso.
+    Persiste via set_chapter_word_goal ao confirmar (Enter/blur).
+
+  Props:
+    chapter:      ActiveChapter (projectId, bookId, chapterId, title, status,
+                                 characterIds, noteIds, wordGoal)
+    focusMode?:   boolean
+    onEnterFocus?: () => void
+    onExitFocus?:  () => void
+    onError:      (msg: string) => void
+
+  Estilos em src/styles/editor.css:
+    .editor-wrap, .editor-scroll, .editor-column
+    .ProseMirror p — text-indent: 2em (todos os parágrafos)
+    .editor-topbar, .editor-statusbar
+    .search-highlight, .search-highlight-current
+
+── components/CharacterView.tsx ──────────────────────────────
+
+  Fichas de personagem (4.1) + relacionamentos (4.2).
+  Layout: lista lateral 220px + painel de detalhes.
+  CharListItem: nome + papel, hover mostra botão de exclusão.
+  CharacterForm: editor de ficha com nome, papel, descrição, imagem,
+    campos customizáveis (label+value, add/remove), botão Salvar.
+    Imagem: attach_image via file dialog, load_image para exibir,
+    remove_image para remover. Dirty tracking + "Salvo" quando limpo.
+  Sub-tabs: "Ficha" | "Relações".
+  RelationshipPanel: lista relações do personagem selecionado filtradas
+    do Vec<Relationship> global. Form inline para adicionar novas.
+    RelRow: tipo + direção (→ ou ←) + nota, botão × no hover.
+
+── components/WorldbuildingView.tsx ──────────────────────────
+
+  Notas de worldbuilding por categoria (4.3).
+  Layout: lista lateral 220px agrupada por categoria + painel editor.
+  Categorias: location, faction, object, concept, other.
+  Ao criar nota: seletor de categoria + campo nome (Enter/blur para confirmar).
+  WorldNoteForm: nome, categoria (select), imagem, descrição, campos livres.
+  Mesma lógica de dirty tracking e imagem do CharacterForm.
+
+── components/TimelineView.tsx ──────────────────────────────
+
+  Linha do tempo de eventos (4.4).
+  Layout: lista lateral 240px com linha vertical + painel editor.
+  EventListItem: ponto circular (accent quando ativo) + linha tracejada,
+    data em accent uppercase, título IM Fell.
+  Form de criação: título + data label (Enter / blur).
+  TimelineEventForm: data, título, descrição, vínculos com personagens
+    e notas (TagChips clicáveis). Dirty tracking + Salvar.
+
+── components/ProjectView.tsx ────────────────────────────────
+
+  Layout principal do projeto: Binder + área central.
+  Gerencia activeChapter, focusMode e viewMode.
+  Escape fecha o modo foco (useEffect ativo apenas quando focusMode=true).
+  Integra useToast() e passa onError/onSuccess ao Binder.
+
+  viewMode: 'corkboard' | 'outline' | 'trash' |
+            'characters' | 'worldbuilding' | 'timeline' | 'stats' | null
+    null = mostra dashboard (sem capítulo) ou editor (com capítulo)
+    Quando uma vista está ativa, ela sobrepõe o editor/dashboard.
+    Ao selecionar um capítulo de corkboard/outline → viewMode = null.
+
+  ViewToolbar: strip de 28px acima do conteúdo (oculta em focusMode).
+    8 botões: "Mural", "Esboço", "Lixeira" | sep | "Personagens", "Mundo", "Cronologia" | sep | "Stats"
+    Ativo = cor accent + borda inferior; inativo = ink-ghost.
+    overflow-x: auto para janelas estreitas.
+
+  ProjectDashboard (definido em ProjectView.tsx):
+    Header com CosmosLayer (seed=hashString(project.id)), nome, subtítulo.
+    Corpo: stats (palavras, capítulos, data), sinopse, badges de metadados,
+    inspirações. Carrega stats via listBooks + openBook (independente do Binder).
+
+  MetaBadge: pill com borda de 20px; prop accent para cor dourada.
+
+── components/CorkboardView.tsx ──────────────────────────────
+
+  Vista mural (3.1): grade de cartões tipo index card por capítulo.
+  Carrega books igual ao Binder (respeitando projectType).
+  Agrupado por livro em series/fanfiction; flat em single.
+  CorkCard: 196×164px, paperFall ao aparecer, hover → deslocamento e shadow accent.
+  Conteúdo: status dot + label, título IM Fell, sinopse truncada em 4 linhas.
+  Click → chama onSelectChapter (retorna ao editor).
+
+── components/OutlineView.tsx ────────────────────────────────
+
+  Vista esboço (3.2): tabela com colunas status / título / sinopse / palavras.
+  Grid: 16px | 1fr | 140px | 80px. Cabeçalho sticky. Agrupado por livro.
+  OutlineRow: fadeIn por índice (animação escalonada). Hover = paper-dark.
+  Clique → chama onSelectChapter.
+
+── components/StatsView.tsx ──────────────────────────────────
+
+  Painel de estatísticas do projeto (5.4). Vista "Stats" no ViewToolbar.
+
+  Carrega em paralelo: listBooks → openBook (para word_counts e word_goal),
+  listSessions(project_id), getWritingStreak(project_id).
+
+  Seções exibidas:
+    - StatCards: total palavras, total capítulos, streak, sessões encerradas
+    - Distribuição de status (Rascunho/Revisão/Final) com StatusBar
+    - Metas por livro: barra de progresso com bookWords/book.word_goal
+    - Gráfico de barras dos últimos 14 dias (palavras escritas por sessão)
+    - Lista de sessões recentes (última 10, invertida) com data e duração
+
+  buildDailyData(sessions, days): agrupa sessions.ended_at por date (YYYY-MM-DD),
+  soma words_at_end - words_at_start, retorna array de DayData.
+
+── components/TrashView.tsx ──────────────────────────────────
+
+  Lixeira (3.3): lista todos os capítulos soft-deleted de todos os livros.
+  Usa listBooksForTrash + listTrash por livro. Ordena mais recentes primeiro.
+  TrashEntry: { chapter: ChapterMeta, book: BookMeta }.
+  TrashRow: título + data trashed, nome do livro, botões Restaurar / Excluir.
+  Restaurar → cmd.restoreChapter. Excluir → cmd.deleteChapter (hard delete).
+
+── components/Binder.tsx ─────────────────────────────────────
+
+  Sidebar esquerda (largura: var(--sidebar-w) = 260px).
+  Renderiza diferente conforme projectType:
+
+  SINGLE: carrega o livro pelo defaultBookId diretamente.
+    - Sem cabeçalho de livro, sem botão "+ Novo livro"
+    - Lista plana de ChapterRows com "+ Novo capítulo" embaixo
+
+  SERIES: carrega todos os livros via listBooks + openBook.
+    - Árvore BookSection > ChapterRow, expansível
+    - Botão "+ Novo livro" no fundo da lista
+
+  FANFICTION: igual ao SERIES, mas livros agrupados por series_name.
+    - Cabeçalhos de série com linha horizontal e rótulo centralizado
+    - Livros sem série ficam na seção "Avulsas" (se houver séries)
+    - Criação de livro tem campo extra opcional de série
+
+  Funcionalidades comuns:
+    - Duplo clique no nome → InlineRename (input inline)
+    - Hover em capítulo → botão × (soft delete → lixeira)
+    - Indicador de status por cor (draft=ghost, revision=accent, final=green)
+    - "+ Novo capítulo" sempre visível
+    - Sinopse: textarea visível abaixo do capítulo ativo, debounce 600ms,
+      persiste via update_chapter_synopsis. Bordas sutis, transparente.
+    - ThemeToggle no topbar (botão cicla sépia→claro→escuro)
+    - Botão × usa trash_chapter (soft delete) em vez de delete_chapter
+
+  Props:
+    projectId, projectName, projectType, defaultBookId?,
+    activeChapter, onSelectChapter, onBack, onError, onSuccess
+
+  ActiveChapter: { projectId, bookId, chapterId, title, status,
+                   characterIds, noteIds, wordGoal }
+  (exportado de Binder.tsx para uso no ProjectView/Editor/LinksPanel)
+  wordGoal: number | null — meta de palavras do capítulo (5.1)
+
+── components/VaultSetup.tsx ─────────────────────────────────
+
+  Tela de primeiro uso. Aparece quando nenhum vault está
+  configurado (get_vault_path retorna null).
+  Usa tauri-plugin-dialog para abrir seletor de pasta nativo.
+  Chama cmd.setVaultPath() e chama onDone() ao concluir.
+
+  Props: onDone: () => void
+
+── components/HomeScreen.tsx ─────────────────────────────────
+
+  Lista de projetos do vault.
+  - Header com CosmosLayer (seed=7, density="medium", animated)
+  - Botão "Novo Projeto" → modal NewProjectModal
+  - Lista de ProjectCards (CosmosLayer density="low" por card)
+  - Cada card: nome, data de edição, botão de exclusão com confirm
+  - Estado vazio com mensagem estilizada
+  - Integra useToast() internamente
+
+  Props: onOpenProject: (project: Project) => void
+
+── App.tsx ───────────────────────────────────────────────────
+
+  Máquina de estados de navegação:
+    AppView = 'splash' | 'loading' | 'vault-setup' | 'home' | 'project'
+
+  Fluxo:
+    splash → onDone → checkVaultAndNavigate()
+      → vault-setup (se vault_path === null)
+      → home (se vault configurado)
+    home → onOpenProject → project (placeholder até 1.7)
+    project → voltar → home
+
+── components/ThemeToggle.tsx ─────────────────────────────────
+
+  Botão que cicla entre os três temas: sépia → claro → escuro.
+  Exibe rótulo do tema atual ("Sépia" / "Claro" / "Escuro").
+  Usado no topbar do Binder e no header da HomeScreen.
+
+── components/TypographyPanel.tsx ────────────────────────────
+
+  Popover com três sliders para customizar a tipografia do editor:
+    fontSize     13–22px   (padrão: 16px)
+    lineHeight   1.4–2.2   (padrão: 1.75)
+    columnWidth  480–920px (padrão: 680px)
+  Fecha ao clicar fora. Botão "Restaurar padrões".
+  Aplica via applyTypography() → CSS custom properties em :root.
+  Persiste em localStorage via lib/typography.ts.
+
+── lib/theme.ts ──────────────────────────────────────────────
+
+  Três temas: sépia (padrão), claro, escuro.
+    sépia  — sem classe no <html> (padrão da folha de estilos)
+    claro  — html.light  (fundo quase branco, tinta neutra)
+    escuro — html.dark   (fundo sépia escuro, dourado brilhante)
+
+  Exports:
+    Theme           — 'sepia' | 'light' | 'dark'
+    THEME_LABEL     — { sepia: 'Sépia', light: 'Claro', dark: 'Escuro' }
+    initTheme()     — aplica tema salvo (chamar antes do render)
+    getTheme()      — lê tema atual do DOM
+    applyTheme(t)   — aplica e persiste
+    cycleTheme()    — avança para o próximo tema e persiste
+
+  Mecanismo: classe 'light' ou 'dark' no <html>. Sépia = sem classe.
+  Persistência: localStorage, chave 'aether_theme'.
+
+── lib/typography.ts ─────────────────────────────────────────
+
+  Gerencia as preferências de tipografia do editor.
+
+  Exports:
+    TypographySettings — { fontSize, lineHeight, columnWidth }
+    DEFAULTS           — { fontSize: 16, lineHeight: 1.75, columnWidth: 680 }
+    initTypography()   — lê localStorage, aplica CSS vars (chamar antes do render)
+    applyTypography(s) — escreve --editor-font-size, --editor-line-height,
+                         --editor-col-width em :root; persiste em localStorage
+
+  Chave localStorage: 'aether_typography'.
+
+── lib/searchReplace.ts ──────────────────────────────────────
+
+  Extensão TipTap (Extension.create) que adiciona busca e substituição
+  ao editor via plugin ProseMirror.
+
+  SearchPluginState: { term, caseSensitive, matches[], current }
+  searchKey: PluginKey — para ler o estado do plugin de fora.
+
+  Decorations:
+    .search-highlight         — todas as ocorrências (âmbar suave)
+    .search-highlight-current — ocorrência atual (âmbar forte + outline)
+
+  Commands adicionados ao editor:
+    setSearchTerm(term, caseSensitive?) — busca e define matches
+    goToMatch(index)          — navega para uma ocorrência específica
+    replaceCurrentMatch(text) — substitui a ocorrência atual
+    replaceAllMatches(text)   — substitui todas (do final para o início)
+    clearSearch()             — limpa highlights e estado
+
+  findMatches(doc, term, caseSensitive) — função pura auxiliar.
+  Percorre doc.descendants() para encontrar posições exatas.
+
+── styles/ ───────────────────────────────────────────────────
+
+  Importados em cascata pelo global.css:
+    global.css → tokens.css, animations.css, typography.css, components.css
+
+  tokens.css
+    Todas as variáveis CSS. Modo dia em :root, modo noite em html.dark.
+    Nunca usar cores hardcoded no JS/TSX — sempre via var(--nome).
+    Variáveis disponíveis: ver seção 10 (Design System).
+
+  animations.css
+    Keyframes e classes utilitárias.
+    Classes disponíveis: .animate-paper-fall, .animate-page-float,
+    .animate-page-exit, .animate-fade-in, .animate-slide-in
+    Para delay escalonado em listas: style={{ animationDelay: `${i * 0.04}s` }}
+
+  typography.css
+    Import das fontes Google Fonts.
+    Classes: .t-splash-name, .t-splash-subtitle, .t-editor,
+             .t-label, .t-section, .t-code, .t-chapter-title,
+             .t-book-title
+
+  components.css
+    Classes utilitárias de UI:
+    Botões  : .btn .btn-primary .btn-accent .btn-danger .btn-ghost
+              .btn-sm .btn-icon
+    Inputs  : .input .form-label .form-group
+    Cards   : .card
+    Modais  : .modal-overlay .modal .modal-title .modal-body .modal-footer
+    Misc    : .badge .tag .section-label .divider
+
+
+================================================================
+  10. DESIGN SYSTEM
+================================================================
+
+PALETA (modo dia)
+  --paper          #F5F0E8   fundo principal
+  --paper-dark     #EDE7D9   fundo secundário (sidebar, cards)
+  --paper-darker   #E0D8C8   hover states
+  --paper-darkest  #D5CCBA   sombras, elementos profundos
+  --ink            #2C2416   texto principal
+  --ink-light      #5C4E3A   texto secundário
+  --ink-faint      #9C8E7A   placeholders, labels
+  --ink-ghost      #C4B9A8   elementos muito sutis
+  --accent         #b8860b   dourado (botões primary, foco)
+  --ribbon         #8B3A2A   vermelho (danger, status final)
+  --accent-green   #4A6741   verde (success)
+  --stamp          #7A5C2E   marrom médio (sombras de botão primary)
+  --rule           #C4B9A8   bordas, separadores
+  --margin-line    rgba(160,50,30,0.3)  linha vermelha de margem
+
+PALETA (modo noite — definida em html.dark)
+  As mesmas variáveis, valores mais escuros/saturados.
+  --accent         #D4A820   dourado mais brilhante
+  --paper          #1A1610   fundo quase preto sépia
+
+MÉTRICAS
+  --sidebar-w   260px   largura do binder/sidebar
+  --topbar-h    44px    altura da barra superior
+  --radius      2px     border-radius padrão (quase quadrado)
+  --transition  140ms ease
+
+TIPOGRAFIA
+  IM Fell English — display, títulos, conteúdo do editor
+    SEMPRE itálico quando usado em títulos ou conteúdo.
+    Nunca em maiúsculas (AETHER é exceção por ser nome próprio).
+
+  Special Elite — UI, botões, labels, textos mono
+    Maiúsculas com letter-spacing para labels e seções.
+
+  Courier Prime — blocos de código no editor
+    Nunca usar para UI.
+
+SOMBRAS (flat — sem blur)
+  --shadow-btn          2px 2px 0 var(--rule)
+  --shadow-btn-primary  2px 2px 0 var(--stamp)
+  --shadow-card         3px 3px 0 var(--paper-darker)
+  --shadow-modal        6px 6px 0 var(--ink-ghost)
+  --shadow-menu         3px 3px 0 var(--rule)
+  Regra: :active remove sombra e adiciona transform: translate(1px, 1px)
+
+ANIMAÇÕES DISPONÍVEIS
+  paperFall       0.22s  elemento aparece caindo (herdado do ecossistema)
+  fadeIn          0.15s  aparece por opacidade
+  slideIn         0.20s  entrada lateral
+  blink           1.2s   piscar (loading dots)
+  toastIn         0.18s  entrada de toast (de baixo)
+  pageFloat       0.28s  folha cai com rotação (AETHER exclusivo)
+  pageExit        0.22s  folha voa para canto (AETHER exclusivo)
+  typewriterCursor 0.6s  cursor _ piscando (AETHER exclusivo)
+  etherPulse        8s   nebulosa pulsa (AETHER exclusivo)
+  comet               —  cometa cruzando (AETHER exclusivo)
+
+
+================================================================
+  11. PADRÕES OBRIGATÓRIOS DE CÓDIGO
+================================================================
+
+Estes padrões não são sugestões. Toda PR ou commit que violar
+qualquer um deles deve ser corrigido antes de ser aceito.
+
+1. TRATAMENTO DE ERROS COM TIPAGEM É PRIORIDADE ABSOLUTA
+   - Rust: toda função que pode falhar retorna Result<T, AppError>.
+     Nunca .unwrap() ou .expect() em código de produção.
+   - TypeScript: strict: true sempre.
+     Erros de commands Tauri tipados com union type:
+       type Result<T> = { ok: true; data: T } | { ok: false; error: AppError }
+   - Erros tratados no ponto onde ocorrem — sem silenciar.
+
+2. COMMIT APÓS CADA ITEM INDIVIDUAL DO TODO
+   - Mensagem referencia o item: feat(fase-1): 1.3 comandos de projeto
+   - Atualizar o status do item no todo ([x]) ANTES de commitar.
+
+3. PRIVACIDADE É ABSOLUTA
+   - Zero telemetria, zero analytics, zero conexões externas.
+   - AppData do sistema contém APENAS o caminho do vault.
+   - Todo dado do usuário fica dentro do vault escolhido por ele.
+   - Não adicionar nenhuma dependência que faça chamadas de rede.
+
+4. MODELO OBSIDIAN
+   - Configurações em {vault}/.aether/ — nunca em ~/.aether/ global.
+   - Cada projeto é uma pasta auto-contida e portátil.
+   - O usuário pode mover/copiar/versionar o vault livremente.
+
+5. CORES SEMPRE VIA VARIÁVEIS CSS
+   - Nunca hardcodar cores em TSX/JSX/JS.
+   - Exceção: o próprio tokens.css e os valores de STYLES no Toast.tsx
+     (que existem porque aquelas cores específicas precisam de opacity
+     que as variáveis CSS ainda não suportam diretamente).
+
+6. FONTES CORRETAS POR CONTEXTO
+   - IM Fell English: títulos e conteúdo, sempre itálico
+   - Special Elite: UI, botões, labels
+   - Courier Prime: blocos de código no editor
+
+7. MANTER DEV_BIBLE.TXT ATUALIZADO
+   - Ao concluir qualquer item de fase que introduza novos arquivos,
+     módulos, comandos ou padrões, atualizar este documento.
+   - O dev_bible deve refletir o estado atual do projeto, não o
+     estado planejado.
+
+
+================================================================
+  12. ESTADO ATUAL DO PROJETO
+================================================================
+
+FASE 0 — Design System  [CONCLUÍDA]
+  [x] 0.1  Tokens CSS (paleta, métricas, tipografia, sombras)
+  [x] 0.2  Tipografia (3 famílias, hierarquia completa)
+  [x] 0.3  Animações base (ecossistema)
+  [x] 0.4  Animações exclusivas AETHER
+  [x] 0.5  Textura de papel (SVG feTurbulence, 30% opacity)
+  [x] 0.6  Componente CosmosLayer (SVG procedural, seeds, PRNG)
+  [x] 0.7  Linha vermelha de margem
+  [x] 0.8  Sistema de sombra flat
+  [x] 0.9  Scrollbar vintage (6px, sépia)
+  [x] 0.10 Cursor dourado (caret-color: var(--accent))
+  [x] 0.11 Seleção de texto âmbar
+  [x] 0.12 Sistema de temas dia/noite (localStorage, sem flash)
+  [x] 0.13 Sistema de toasts (4 tipos, auto-dismiss, sépia)
+  [x] 0.14 Splash screen (typewriter, CosmosLayer, fade-out)
+  [x] 0.15 Componentes base de UI (btn, input, card, modal, badge)
+
+FASE 1 — Fundação  [CONCLUÍDA]
+  [x] 1.1  Scaffold Tauri + React + TypeScript
+  [x] 1.2  Estrutura de dados em disco (tipos, storage, AppState)
+  [x] 1.3  Commands Tauri: gerenciamento de projetos
+  [x] 1.4  Commands Tauri: livros e capítulos
+  [x] 1.5  Tipos TypeScript + wrapper invoke() tipado
+  [x] 1.6  Tela inicial — lista de projetos
+  [x] 1.7  Layout principal (binder + área do editor)
+  [x] 1.8  Editor WYSIWYG com TipTap, auto-save, cursor máquina de escrever
+
+FASE 1.5 — Itens pendentes  [CONCLUÍDA]
+  [x] 1.9  Tipos de projeto: livro único, série e fanfiction
+           Fanfiction = série com agrupamento extra por series_name do livro
+  [x] 1.10 Modal de criação com metadados (gênero, idioma, tags, worldbuilding)
+           Project struct expandido com 8 campos opcionais (#[serde(default)])
+  [x] 1.11 Dashboard do projeto (CosmosLayer, stats, badges, sinopse, inspirações)
+  [x] 1.12 Sistema de logs em arquivo ({vault}/.aether/logs/aether-YYYY-MM-DD.log)
+           Fallback para {app_data_dir}/logs/ se vault não configurado.
+           Cleanup automático de arquivos com mais de 7 dias ao iniciar.
+
+FASE 2 — Experiência de escrita  [CONCLUÍDA]
+  [x] 2.1  Temas: sépia (padrão), claro, escuro — ThemeToggle, lib/theme.ts
+  [x] 2.2  Tipografia customizável — TypographyPanel, lib/typography.ts,
+           CSS vars --editor-font-size, --editor-line-height, --editor-col-width
+  [x] 2.3  Modo foco — Escape fecha, binder oculto, estado em ProjectView
+  [x] 2.4  Modo typewriter — cursor centralizado via scrollToCursor()
+  [x] 2.5  Tela cheia — F11 via getCurrentWindow().setFullscreen()
+  [x] 2.6  Contagem de palavras e caracteres em tempo real no statusbar
+  [x] 2.7  Status por capítulo (Rascunho/Revisão/Final), clique para ciclar
+  [x] 2.8  Sinopse por capítulo — textarea no Binder, debounce 600ms
+  [x] 2.9  Localizar e substituir — Ctrl+F, extensão SearchReplace (ProseMirror)
+
+  [x] 2.9  Localizar e substituir — Ctrl+F, extensão SearchReplace (ProseMirror)
+
+FASE 3 — Organização avançada  [CONCLUÍDA]
+  [x] 3.1  CorkboardView — grade de cartões (196px), paperFall, hover accent
+           ViewToolbar em ProjectView com viewMode state
+  [x] 3.2  OutlineView — tabela status/título/sinopse/palavras, sticky header,
+           fadeIn escalonado por índice
+  [x] 3.3  Lixeira — ChapterMeta.trashed_at (soft delete),
+           TrashView com restore/purge, Binder usa trash_chapter
+           open_book filtra trashed antes de retornar
+  [x] 3.4  Scratchpad — painel lateral, {chapter_id}.scratch.md,
+           auto-save 600ms, carrega ao trocar capítulo
+  [x] 3.5  Modo split — botão "Split" no topbar do editor,
+           editor + Scratchpad lado a lado (flex row)
+
+FASE 4 — Personagens & Worldbuilding  [CONCLUÍDA]
+  [x] 4.1  CharacterView — fichas com nome, papel, descrição, campos livres (CustomField)
+           CRUD completo Rust (characters_dir/), lista ordenada A-Z, busca inline
+  [x] 4.2  RelationshipPanel — relacionamentos com kind/note/direção, add/delete
+           Vec<Relationship> em characters/relationships.json
+  [x] 4.3  WorldbuildingView — notas por categoria (5 categorias), campos livres,
+           lista agrupada por categoria na sidebar, CRUD em worldbuilding/
+  [x] 4.4  TimelineView — lista com linha vertical, form com vínculos personagens/notas
+           Vec<TimelineEvent> em timeline.json, reorder + delete
+  [x] 4.5  Imagens — attach_image/load_image/remove_image em commands/world.rs
+           Cópia local para {project_id}/images/, retorno como data URL base64
+           Integrado no CharacterForm e WorldNoteForm
+  [x] 4.6  LinksPanel no Editor (aba "Vínculos" do SplitPanel) — chips clicáveis
+           para vincular personagens e notas ao capítulo via update_chapter_links
+           ChapterMeta extendido: character_ids + note_ids
+
+FASE 5 — Metas & Histórico  [CONCLUÍDA]
+  [x] 5.1  Meta de palavras — ChapterMeta.word_goal + Book.word_goal
+           set_chapter_word_goal / set_book_word_goal em commands/chapter.rs
+           Editor: botão "meta" no statusbar, barra de progresso inline
+           StatsView: barras de progresso por livro
+  [x] 5.2  Sessão de escrita com timer — WritingSession struct
+           {vault}/.aether/sessions.json (Vec<WritingSession>)
+           commands/stats.rs: start_session / end_session / list_sessions
+           Editor: auto-start ao carregar capítulo, auto-end ao trocar/desmontar
+           Statusbar: ◷ MM:SS +N (palavras escritas) em accent
+  [x] 5.3  Streak diário — get_writing_streak em commands/stats.rs
+           Deriva de sessions (dias UTC consecutivos com progresso de palavras)
+           Exibido em StatsView como StatCard
+  [x] 5.4  Painel de estatísticas — StatsView.tsx, viewMode 'stats' em ProjectView
+           Botão "Stats" no ViewToolbar. Carrega livros+sessões em paralelo.
+           Gráfico de barras 14 dias, distribuição de status, sessões recentes.
+  [x] 5.5  Snapshots — Snapshot / SnapshotMeta structs em types.rs
+           {project}/{book}/snapshots/{id}.json (conteúdo Markdown incluído)
+           commands/chapter.rs: list_snapshots / create_snapshot /
+             load_snapshot_content / restore_snapshot / delete_snapshot
+           Editor: aba "Histórico" no SplitPanel (SnapshotPanel)
+           Preview inline 6 linhas, botão ↩ restaurar (com confirm), × deletar
+  [x] 5.6  Anotações inline — Annotation struct em types.rs
+           {chapter_id}.annotations.json no diretório do livro
+           commands/chapter.rs: list_annotations / create_annotation /
+             update_annotation / delete_annotation
+           Editor: aba "Anotações" no SplitPanel (AnnotationPanel)
+           Form com trecho citado (quote) + texto; chip de quote em accent.
+           Seções "Ativas" e "Resolvidas", toggle resolver/reabrir.
+
+O app RODA. Progresso e histórico de escrita completos.
+
+
+================================================================
+  13. PRÓXIMOS PASSOS
+================================================================
+
+Fases 0, 1, 1.5, 2, 3, 4 e 5 — CONCLUÍDAS.
+
+FASE 6 — Exportação (MD, DOCX, PDF, EPUB)
+FASE 7 — Polimento (atalhos, onboarding, build de distribuição)
+
+Ver dev_files/todo para lista detalhada de cada item.
+
+
+================================================================
+  FIM DO DEV BIBLE
+================================================================

@@ -1,0 +1,22 @@
+[project]
+name = "video-transcriber"
+version = "1.0.0"
+description = "Transcreve videos do YouTube e TikTok para Markdown usando Whisper"
+requires-python = ">=3.9"
+dependencies = [
+    "yt-dlp",
+    "openai-whisper",
+]
+
+[project.scripts]
+transcriber = "transcriber:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.uv]
+dev-dependencies = []

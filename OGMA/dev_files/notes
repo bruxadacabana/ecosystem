@@ -1,0 +1,1461 @@
+1. Sim
+2. Quero poder adicionar e remover
+3. Acho que ia ser legal ter um desse local também
+The user confirmed:
+
+Yes - dropdown replaces horizontal view tabs, Planner and Tempo stay as separate buttons in the header
+Widgets are customizable (add/remove) like the global Dashboard
+Mini heatmap uses only project-specific data (time_sessions WHERE project_id = ?)
+This is a significant refactor of ProjectDashboardView. Let me plan what needs to be done:
+
+Current state of ProjectDashboardView:
+
+Header with project name, tabs for views (Lista, Kanban, etc.), Planner tab, Tempo tab
+
+Views rendered by ViewRenderer
+
+showPlanner and showTime states managing visibility
+
+New design:
+
+Header: project name + [▼ Vistas] dropdown + [Planner] button + [Tempo] button
+Default view: Dashboard with stats column + widgets grid
+Views accessed via dropdown
+Architecture:
+
+New IPC: analytics:project - takes project_id, returns project-specific data:
+
+Stats: pages count, tasks done/total, focus hours (time_sessions), last session, next deadline
+Heatmap: time_sessions for last 8 weeks for this project
+Recent pages, upcoming tasks, events
+New component - I need to create a project-specific dashboard component that mirrors the global Dashboard structure but pulls data from the new IPC endpoint
+
+, with a left stats column and customizable widget grid on the right.
+
+Widget system for project dashboard:
+
+Similar to global Dashboard but scoped to project
+WidgetId: 'tasks', 'recent_pages', 'heatmap', 'events', 'backlinks', 'tags', etc.
+DEFAULT_ORDER and DEFAULT_SIZES per project_type
+Persisted in localStorage as ogma_project_widgets_${projectId}
+Header refactor: Removing the horizontal view tabs and replacing them with a dropdown menu for views, while keeping Planner and Tempo as dedicated buttons.
+
+Now I'm thinking through the scope of what needs to be built. I'll need to add IPC endpoints for project-specific analytics like page counts, task stats, focus hours, and heatmap data, plus create several new widget components for upcoming tasks, recent pages, project-specific heatmaps, and calendar events.
+
+For the header, I'm planning to replace the view tabs with a dropdown menu and add separate buttons for the Planner and Time views. Since the user has confirmed all three questions, I should move forward with implementation, starting with the IPC handler for analytics and then building out the components and UI changes. Writing SQL queries...
+
+Now I'm setting up the widget system for each project using localStorage to track widget order and sizes, similar to how the global dashboard works.
+
+I'm defining the available widgets—tasks, recent pages, activity heatmap, calendar events, project progress, backlinks, tags, and session history—then establishing default widget configurations based on project type, with academic projects showing tasks and events prominently, creative projects focusing on recent work and progress, and research projects emphasizing backlinks and...
+
+Now I need to examine the current ProjectDashboardView implementation to understand what needs to be refactored.
+
+Perfeito — então vou implementar. Antes de escrever código, vou ler o ProjectDashboardView atual para entender o que precisará mudar.
+
+Bash Ver tamanho do arquivo
+IN
+wc -l "d:/windows/ProgramFiles/OGMA/src/renderer/views/ProjectDashboard/ProjectDashboardView.tsx"
+
+OUT
+436 d:/windows/ProgramFiles/OGMA/src/renderer/views/ProjectDashboard/ProjectDashboardView.tsx
+Read d:\windows\ProgramFiles\OGMA\src\renderer\views\ProjectDashboard\ProjectDashboardView.tsx
+Now I have a clear picture. Let me plan the implementation:
+
+Changes needed:
+
+src/main/ipc.ts — add analytics:project IPC handler
+src/main/preload.ts — bridge analytics.project
+src/renderer/views/ProjectDashboard/ProjectDashboardView.tsx — major refactor:
+Header stays but remove view tabs → replace with [▼ Vistas] dropdown + [Planner] + [Tempo] buttons
+Default state shows the dashboard instead of views
+Add ProjectLocalDashboard component
+New CSS for project dashboard
+New architecture for the view navigation:
+
+activeView state: null means "show dashboard"
+When a view is selected from dropdown: set activeView
+Planner/Tempo buttons work as before
+Header toolbar (replacing view-tabs div):
+
+
+[◉ Início]  [▼ Vistas (Lista, Kanban...)]  [⊞ Planner]  [◎ Tempo]  |  [⚙ Props]  [+ Página]
+Setting up IPC handlers...
+
+Now I'm defining the analytics endpoint that returns project metrics like page counts, task completion data, focus hours, upcoming deadlines, activity heatmaps, and recent pages along with upcoming tasks and events. I also need to track backlinks and tags used across the project.
+
+For the dashboard widgets, I'm starting with a tasks widget to display upcoming items.
+
+Defining the widget system for the project dashboard with different widget types for tasks, recent pages, activity heatmaps, events, progress tracking, linked readings, and focus sessions. Each project type gets a default set of widgets—academic projects show tasks and events prominently, creative projects focus on recent pages and progress, research projects include linked readings, and software projects prioritize tasks.
+
+Now I'm mapping out the stats columns that appear alongside each project type, so academic projects display pages viewed and task completion rates, creative projects show focus hours and open tasks, research projects track backlinks and tags, and so on.
+
+For the layout, I'm picturing a sidebar with stats on the left and a flexible two-column grid of widget cards on the right, all contained within a toolbar section. To implement this, I need to add the analytics IPC channel, set up the preload bridge, create the dashboard component itself, refactor the header to include a dropdown and action buttons, and wire everything together.
+
+Now I'm thinking through the implementation approach — I'll keep the existing components in place and add a new ProjectLocalDashboard component, then update the main view to use the new layout. For persisting widget state, I'll store the widget list and hidden widgets in localStorage using project-specific keys. I'll also check what analytics functionality already exists in the preload to avoid duplicating work.
+
+Tenho tudo o que preciso. Agora vou implementar — é uma mudança grande, por isso vou fazer em partes.
+
+Grep "analytics" (in d:\windows\ProgramFiles\OGMA\src\main\preload.ts)
+7 lines of output
+Update Todos
+
+IPC analytics:project em ipc.ts + bridge no preload.ts
+
+Refatorar ProjectDashboardView: header com dropdown + dashboard local com stats + widgets
+
+Atualizar TODO.md + git commit
+
+CONVERSAR: reorganizar dashboard do projeto (não implementar automaticamente)
+Read d:\windows\ProgramFiles\OGMA\src\main\ipc.ts (lines 1556-1575)
+Read d:\windows\ProgramFiles\OGMA\src\main\ipc.ts (lines 1576-1605)
+Now I have the full picture. Let me add the analytics:project IPC handler after analytics:todayFocus.
+
+The handler will take { project_id } and return all the needed data.
+
+Let me also check if page_links table exists for backlinks counting.
+
+Grep "page_links|backlinks" (in d:\windows\ProgramFiles\OGMA\src\main\database.ts)
+4 lines of output
+Tudo o que preciso. Vou adicionar o IPC:
+
+Edit d:\windows\ProgramFiles\OGMA\src\main\ipc.ts
+Added 123 lines
+Let me fix the errors:
+
+Line 1572: readingGoal.target and readingGoal.done - readingGoal is the result of dbGet() which returns the row object, not an array. The issue is that readingGoal is typed as any[] somewhere? Let me check the context.
+Wait, the error says "Property 'target' does not exist on type 'any[]'". This is the readingGoal from the reading_goals query. Looking at the return:
+
+
+
+
+reading_goal: readingGoal ? { target: readingGoal.target, done: readingGoal.done, year } : null,
+The issue is that dbGet returns any | undefined, but TypeScript is now inferring it as any[] for some reason... Actually wait, looking at the Promise.all array, the 11th item is readingGoal which is a dbGet call. But if readingGoal is now being accessed at index 11 in the destructuring, maybe the array got out of sync.
+
+Let me count the destructured variables to see if the indices match up with what's in the Promise.all array...
+
+Checking the destructuring order...
+
+The issue is that readingGoal is being typed as any[] instead of the object it should be from dbGet. After inserting readingAbsorption, readingSpeed, and activityByDow into the Promise.all array, the indices shifted and readingGoal is now pulling from the wrong position in the destructured results. I see the mismatch now—I inserted three new queries before readingGoal in the Promise.all array, but my destructuring still expects them in the old positions, so everything from index 7 onward is shifted and assigned to the wrong variables. Reordering the destructuring variables to match the Promise.all array order...
+
+O erro na linha 1572 é porque a ordem do destructuring ficou desalinhada com a Promise.all — os 3 novos queries foram inseridos antes de readingGoal no array mas o destructuring ainda tem readingGoal na posição 7.
+
+Read d:\windows\ProgramFiles\OGMA\src\main\ipc.ts (lines 1441-1455)
+Edit d:\windows\ProgramFiles\OGMA\src\main\ipc.ts
+Modified
+Agora os outros dois hints — linha 2144 e 2213:
+
+Read d:\windows\ProgramFiles\OGMA\src\main\ipc.ts (lines 2141-2150)
+Read d:\windows\ProgramFiles\OGMA\src\main\ipc.ts (lines 2210-2219)
+The hints (not errors) at lines 2144 and 2213:
+
+Line 2144: project_id is declared but never read - this is pre-existing code in planner:schedule handler
+Line 2213: dateStr is declared but never read - this is pre-existing code
+These are pre-existing hints, not errors from my new code. I don't need to fix them. Let me continue with adding the bridge in preload.ts.
+
+Ambos são pré-existentes e são apenas hints (não erros), não preciso tocar. Agora bridge no preload.ts:
+
+Edit d:\windows\ProgramFiles\OGMA\src\main\preload.ts
+Edit failed
+Read d:\windows\ProgramFiles\OGMA\src\main\preload.ts (lines 151-165)
+Edit d:\windows\ProgramFiles\OGMA\src\main\preload.ts
+Added 1 line
+Update Todos
+
+IPC analytics:project em ipc.ts + bridge no preload.ts
+
+Refatorar ProjectDashboardView: header com dropdown + dashboard local com stats + widgets
+
+Atualizar TODO.md + git commit
+Agora o grande refactor do ProjectDashboardView. Vou reescrever o ficheiro inteiramente — a estrutura muda muito:
+
+Read d:\windows\ProgramFiles\OGMA\src\renderer\views\ProjectDashboard\ProjectDashboardView.css
+Now I have a full picture. Let me design the new ProjectDashboardView.tsx. This is a major rewrite. The key changes are:
+
+New toolbar replacing the view-tabs div:
+
+[◉ Início] button (shows dashboard - default)
+[▼ Vistas] dropdown (opens a dropdown with view options)
+[⊞ Planner] button
+[◎ Tempo] button
+Spacer
+[⚙ Props] button
+[+ Página] button
+ProjectLocalDashboard component:
+
+Left column (~200px): type-dependent stats
+Right area: 2-column widget grid (customizable, add/remove)
+Widget system:
+
+WidgetId type
+DEFAULT_WIDGETS per project_type
+Widget rendering switch
+LocalStorage persistence per project
+The data will come from ProjectAnalyticsData via the analytics:project endpoint. I'm defining the widget types and their default configurations...
+
+Defining widget defaults for each project type...
+
+Now I'm mapping out the stats that should display for each category — things like task completion rates, focus hours, and activity metrics tailored to what matters most for academic work versus creative projects or health tracking.
+
+Setting up the widget labels in Portuguese...
+
+For the readings widget, I'm thinking about whether to reuse the existing LinkedReadingsPanel component directly or adapt it for a vertical card layout instead of the horizontal strip it currently uses. I'll create a modified version that fits better within the dashboard cards.
+
+Building the new ProjectDashboardView component... Building the component layout... Writing component styles... now. It'll be long but clean.
+
+Key things to implement per widget:
+
+tasks — list of upcoming_tasks with priority badge + deadline countdown
+recent_pages — list of recent_pages with icon + relative date
+heatmap — compact 8-week heatmap SVG
+events — list of upcoming_events with type icon + date
+progress — donut arc (tasks done/total) + bar for pages
+readings — reuse LinkedReadingsPanel (or simplified version)
+sessions — list of recent_sessions with date + duration
+Stats by type — I'll make a helper getStatsForType that returns an array of {label, value, sub?}.
+
+Let me write the code now. I'll try to keep it under ~600 lines including CSS additions.
+
+For the readings widget, I need to handle the fact that analytics:project doesn't include readings data — that comes separately from readingLinks.listForProject. I'll keep the readings widget fetching its own data similar to the original LinkedReadingsPanel but adapted for the widget grid layout. The upcoming events are already in the analytics data, so those are straightforward. For the readings display, I'll convert the horizontal strip format into a vertical list showing reading covers with metadata. Writing the component structure... Defining the data structure for analytics... I'm defining the widget labels in Portuguese and starting to work on the getStatsForType function that will format dates and calculate statistics based on the project type. Building the academic metrics display... Building the metrics display... Building the heatmap widget... Writing SVG visualization...
+
+Now I'm moving on to the ReadingsWidget component, which will display reading links associated with a project.
+
+I'm setting up state to hold the readings and fetching them from the database using the IPC layer when the projectId changes. If there are no readings, I'll show an empty state message in Portuguese. Otherwise, I'm mapping through the first four readings to display them, matching each one to its corresponding page and determining the appropriate status color.
+
+Building the reading item buttons... Setting up the color scheme based on the dark mode preference, then fetching the project analytics data from the database and handling the response. Still writing component logic... Finishing up the localStorage persistence for adding widgets back, then I need to think through the scroll behavior when switching between dashboard and other view modes — particularly for Kanban and Calendar views which need the no-scroll class. I'm also realizing that the UpcomingEventsPanel and LinkedReadingsPanel used to display in the header area but are now dashboard widgets, so they'll only appear when in dashboard mode, which might be what we want but I should verify that's the right behavior.
+
+For now I'll skip drag-and-drop widget reordering since the user only asked for add/remove functionality, and I can add that later if needed. Let me write out the full implementation.
+
+Vou reescrever o ProjectDashboardView.tsx inteiro agora:
+
+Now I have all the information I need. Let me write the new ProjectDashboardView.tsx.
+
+The key changes:
+
+Header stays but view tabs are replaced by a toolbar with:
+
+[◉ Início] button (back to dashboard)
+[▼ Vistas] dropdown button
+[⊞ Planner] button
+[◎ Tempo] button
+| [⚙ Props] [+ Página] on the right
+Default state: show ProjectLocalDashboard
+
+Navigation state tracks which section is active, and the views dropdown opens inline with the available list
+
+The dashboard layout has a narrow left column for stats and a wider right area with a two-column widget grid, using the same widget system as the global dashboard with localStorage persistence for visibility and configuration
+
+Now I'm mapping out the available widgets — tasks, recent pages, a mini activity heatmap, upcoming events, project progress, linked readings, and recent sessions — then defining which stats appear in the left column based on project type, like pages and focus hours for academic projects, or task completion metrics for software projects.
+
+For the heatmap widget, I'm going with a compact 8-week view. I need to structure the complete file by keeping the existing header and event panels, adding the new widget system with type-specific configurations, and refactoring the main dashboard view to support the new navigation and layout.
+
+Writing the component file...
+
+Now I'm thinking through the toolbar design—removing the old view tabs and replacing them with a cleaner layout that has the section buttons on the left and action buttons on the right, with a dropdown menu for switching between different views. For state management, I'll track which section is active and handle the view selection through the dropdown.
+
+I'm realizing there's a potential conflict with the existing useAppStore that already manages activeViewId, so I should leverage that store directly rather than creating duplicate state.
+
+Let me refactor this: I'll add a local section state that tracks which view mode we're in—'dashboard', 'view', 'planner', or 'tempo'—and when the section is 'view', I'll use the activeViewId from the store. The toolbar will update both the section and trigger the store's setActiveView when needed.
+
+Defining the types for the dashboard... Now I'm mapping out the individual dashboard widgets—upcoming tasks with deadline indicators and priority badges, recent pages with icons and timestamps, a compact 8-week focus activity heatmap, calendar events filtered for academic relevance, and progress visualization using donut arcs for task completion.
+
+I'm also including a readings widget that reuses existing panel content, recent focus sessions showing duration and labels, and then defining the default widget configurations for each project type—academic projects get the full suite with tasks, events, and pages, while creative and research projects have their own tailored combinations.
+
+Defining widget defaults by project type... Now I'm mapping out the file structure—starting with imports and type definitions, then moving through constants and icon mappings before building out each widget component individually. The stats column will pull data based on project type, and I'll keep the existing panels but refactor them as reusable widgets. This is going to be a substantial file, so I need to be methodical about how I organize it. I'm moving the UpcomingEventsPanel and LinkedReadingsPanel out of the header entirely—they'll become widgets in the dashboard instead, with the readings widget keeping its own data fetching and the events widget pulling from the main project data. For the toolbar, I'll add a simple dropdown view selector using absolute positioning, and I need to make sure the noScroll condition still works when switching to full-screen views like kanban or calendar.
+
+Writing the component file... I'm structuring the stats column with type-specific metrics, each displayed as a compact card, and implementing a widget system using localStorage to track visibility per project—similar to the global dashboard but without drag-and-drop functionality. The file will expand significantly from its current size, so I'll need to rewrite it comprehensively to accommodate the new stats layout and heatmap visualization.
+
+Now I'm building a relative date formatter that converts timestamps into Portuguese-language relative dates like "hoje," "ontem," or "5d atrás"...
+
+For the heatmap visualization, I'm creating a compact 56-cell grid (8 weeks by 7 days) with small 10×10px cells and minimal spacing, skipping month labels to keep it tight with just the color grid and a total count below.
+
+I'm mapping out the stats for each workspace type—academic gets pages created and focus hours, creative tracks sessions and tasks, research shows backlinks and tags, and so on—tailoring the metrics to what matters most for each category.
+
+Now I need to decide whether to keep everything in one file or split the dashboard component into its own file. Since this is getting complex, I'll separate ProjectLocalDashboard into a dedicated file alongside the existing view, letting the main file handle navigation and layout while the new component focuses on the stats and widgets.
+
+For the new dashboard component, I'll need to accept the project data and callbacks, fetch analytics information, and render both the statistics column and the widget grid. Meanwhile, I'll update the main view file to remove those header panels, replace the view tabs with a proper toolbar, add section state management, and conditionally show the dashboard when appropriate. Defining the analytics data structure... Defining widget configurations... Writing the widget components...
+
+For the visibility system, I'm using localStorage to track which widgets are shown or hidden per project—storing the visible widget IDs and deriving the hidden ones from the full set. When a user closes a widget or adds one back, it just moves between those two lists.
+
+On sizing, I'll keep it simple for now: a two-column grid layout without resize options, though I could mark certain widgets as full-width if needed later.
+
+Now I'm ready to start implementing. The ReadingsWidget will fetch its own data rather than relying on the parent dashboard, since the readings aren't included in the main analytics call anyway.
+
+I'll keep the existing LinkedReadingsPanel and UpcomingEventsPanel components but repurpose them—they'll no longer render in the header, instead becoming widgets within the dashboard grid. The new ProjectLocalDashboard file will contain all the widget logic and stats column, while ProjectDashboardView gets refactored to use a toolbar for navigation between dashboard, planner, and tempo views.
+
+Actually, I realize LinkedReadingsPanel needs to live somewhere accessible to both files. The cleanest approach is to define it directly in ProjectLocalDashboard since that's where it's primarily used as a widget.
+
+Now I need to add the CSS for the toolbar, dropdown, dashboard layout, stats column, and widget grid...
+
+Adding component styles...
+
+Vou criar o dashboard em ficheiro separado para manter o código organizado, depois refatoro o ProjectDashboardView.
+
+Write d:\windows\ProgramFiles\OGMA\src\renderer\views\ProjectDashboard\ProjectLocalDashboard.tsx
+824 lines
+import React, { useState, useEffect } from 'react'
+import { Project, Page } from '../../types'
+import { fromIpc } from '../../types/errors'
+
+const db = () => (window as any).db
+
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+
+interface ProjectAnalytics {
+  pages_count:     number
+  tasks_total:     number
+  tasks_done:      number
+  tasks_overdue:   number
+  focus_hours:     number
+  focus_hours_30d: number
+  last_session:    string | null
+  next_deadline:   { title: string; deadline: string } | null
+  heatmap:         { day: string; minutes: number }[]
+  recent_pages:    { id: number; title: string; icon: string; updated_at: string }[]
+  upcoming_tasks:  { id: number; title: string; deadline: string | null; priority: string; status: string; estimated_hours: number | null }[]
+  upcoming_events: { id: number; title: string; event_type: string; start_at: string }[]
+  backlinks_count: number
+  tags_count:      number
+  recent_sessions: { id: number; started_at: string; duration_min: number; label: string }[]
+}
+
+type ProjWidgetId = 'tasks' | 'recent_pages' | 'heatmap' | 'events' | 'progress' | 'readings' | 'sessions'
+
+// ── Constantes de widgets ─────────────────────────────────────────────────────
+
+const WIDGET_LABELS: Record<ProjWidgetId, string> = {
+  tasks:        'Próximas Tarefas',
+  recent_pages: 'Páginas Recentes',
+  heatmap:      'Actividade de Foco',
+  events:       'Próximas Actividades',
+  progress:     'Progresso do Projecto',
+  readings:     'Leituras Vinculadas',
+  sessions:     'Sessões Recentes',
+}
+
+const WIDE_WIDGETS: Set<ProjWidgetId> = new Set(['heatmap', 'readings'])
+
+const ALL_WIDGETS: ProjWidgetId[] = [
+  'tasks', 'recent_pages', 'heatmap', 'events', 'progress', 'readings', 'sessions',
+]
+
+const DEFAULT_WIDGETS: Record<string, ProjWidgetId[]> = {
+  academic: ['tasks', 'events', 'recent_pages', 'heatmap', 'progress'],
+  creative: ['recent_pages', 'tasks',            'heatmap', 'progress'],
+  research: ['recent_pages', 'tasks',            'heatmap', 'readings'],
+  software: ['tasks',        'recent_pages',     'progress','heatmap'],
+  health:   ['sessions',     'heatmap',          'tasks',   'recent_pages'],
+  hobby:    ['sessions',     'heatmap',          'recent_pages', 'tasks'],
+  idea:     ['recent_pages', 'tasks',            'heatmap'],
+  custom:   ['tasks',        'recent_pages',     'heatmap', 'progress'],
+}
+
+function getWidgets(projectId: number, type: string): ProjWidgetId[] {
+  const raw = localStorage.getItem(`ogma_proj_widgets_${projectId}`)
+  if (raw) { try { return JSON.parse(raw) } catch {} }
+  return DEFAULT_WIDGETS[type] ?? DEFAULT_WIDGETS.custom
+}
+
+function getHidden(projectId: number, type: string): ProjWidgetId[] {
+  const raw = localStorage.getItem(`ogma_proj_hidden_${projectId}`)
+  if (raw) { try { return JSON.parse(raw) } catch {} }
+  const defaults = DEFAULT_WIDGETS[type] ?? DEFAULT_WIDGETS.custom
+  return ALL_WIDGETS.filter(w => !defaults.includes(w))
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmtRelDate(dateStr: string): string {
+  if (!dateStr) return '—'
+  const d    = new Date(dateStr)
+  const now  = new Date()
+  const diff = Math.floor((now.getTime() - d.getTime()) / 86400000)
+  if (diff === 0)  return 'hoje'
+  if (diff === 1)  return 'ontem'
+  if (diff < 7)    return `${diff}d atrás`
+  if (diff < 30)   return `${Math.floor(diff / 7)}sem atrás`
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+}
+
+function fmtDuration(min: number): string {
+  if (min < 60) return `${min}min`
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return m > 0 ? `${h}h ${m}min` : `${h}h`
+}
+
+function fmtDeadline(dateStr: string): { label: string; overdue: boolean } {
+  const d    = new Date(dateStr + 'T12:00:00')
+  const now  = new Date()
+  now.setHours(0, 0, 0, 0)
+  const diff = Math.floor((d.getTime() - now.getTime()) / 86400000)
+  if (diff < 0) return { label: `${Math.abs(diff)}d atrasado`, overdue: true }
+  if (diff === 0) return { label: 'hoje', overdue: false }
+  if (diff === 1) return { label: 'amanhã', overdue: false }
+  if (diff < 7)   return { label: `em ${diff}d`, overdue: false }
+  return { label: d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }), overdue: false }
+}
+
+// ── Mini Heatmap SVG ─────────────────────────────────────────────────────────
+
+function MiniHeatmap({ data, dark, accent, projectId }: {
+  data: { day: string; minutes: number }[]
+  dark: boolean
+  accent: string
+  projectId: number
+}) {
+  const ink2 = dark ? '#8A7A62' : '#9C8E7A'
+  const base = dark ? '#2A2418' : '#D8D0C0'
+  const CELL = 10; const GAP = 2
+  const WEEKS = 8
+
+  const map = new Map(data.map(r => [r.day, r.minutes]))
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const start = new Date(today)
+  start.setDate(start.getDate() - (WEEKS * 7 - 1))
+  const dow = (start.getDay() + 6) % 7
+  start.setDate(start.getDate() - dow)
+
+  const weeks: { date: string; minutes: number }[][] = []
+  let cur = new Date(start)
+  while (cur <= today) {
+    const week: { date: string; minutes: number }[] = []
+    for (let d = 0; d < 7; d++) {
+      if (cur > today) { week.push({ date: '', minutes: -1 }) }
+      else {
+        const key = cur.toISOString().slice(0, 10)
+        week.push({ date: key, minutes: map.get(key) ?? 0 })
+      }
+      cur.setDate(cur.getDate() + 1)
+    }
+    weeks.push(week)
+  }
+
+  const intensity = (min: number) => {
+    if (min <= 0)  return base
+    if (min < 30)  return accent + '44'
+    if (min < 60)  return accent + '88'
+    if (min < 120) return accent + 'BB'
+    return accent
+  }
+
+  const totalH = 7 * (CELL + GAP) - GAP
+  const totalW = weeks.length * (CELL + GAP) - GAP
+  const totalMin = data.reduce((s, r) => s + r.minutes, 0)
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${totalW} ${totalH}`}
+        style={{ width: totalW, height: totalH, display: 'block' }}>
+        {weeks.map((week, wi) =>
+          week.map((cell, di) => {
+            if (!cell.date) return null
+            return (
+              <rect key={`${wi}-${di}`}
+                x={wi * (CELL + GAP)} y={di * (CELL + GAP)}
+                width={CELL} height={CELL} rx={1}
+                fill={intensity(cell.minutes)}>
+                <title>{cell.date}: {fmtDuration(cell.minutes)}</title>
+              </rect>
+            )
+          })
+        )}
+      </svg>
+      <div style={{
+        fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2,
+        marginTop: 8, display: 'flex', justifyContent: 'space-between',
+      }}>
+        <span>Últimas {WEEKS} semanas</span>
+        <span style={{ color: accent }}>{fmtDuration(totalMin)} registadas</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Coluna de Stats ───────────────────────────────────────────────────────────
+
+interface StatItem { label: string; value: string; sub?: string; accent?: boolean }
+
+function getStats(project: Project, data: ProjectAnalytics): StatItem[] {
+  const type = project.project_type
+  const taskPct = data.tasks_total > 0
+    ? `${Math.round((data.tasks_done / data.tasks_total) * 100)}%`
+    : '—'
+
+  const lastSess = data.last_session ? fmtRelDate(data.last_session) : 'nunca'
+  const nextDL = data.next_deadline
+    ? fmtDeadline(data.next_deadline.deadline).label
+    : 'nenhum'
+
+  const focusSub = `${data.focus_hours}h no total`
+
+  switch (type) {
+    case 'academic':
+      return [
+        { label: 'Páginas',      value: String(data.pages_count) },
+        { label: 'Tarefas',      value: taskPct,                  sub: `${data.tasks_done}/${data.tasks_total} concluídas` },
+        { label: 'Foco (30d)',   value: `${data.focus_hours_30d}h`, sub: focusSub },
+        { label: 'Próx. Prazo',  value: nextDL,                   accent: !!data.next_deadline },
+      ]
+    case 'creative':
+      return [
+        { label: 'Páginas',      value: String(data.pages_count) },
+        { label: 'Última Sessão',value: lastSess },
+        { label: 'Foco Total',   value: `${data.focus_hours}h`,   sub: `${data.focus_hours_30d}h este mês` },
+        { label: 'Tarefas Abertas', value: String(data.tasks_total - data.tasks_done) },
+      ]
+    case 'research':
+      return [
+        { label: 'Páginas',      value: String(data.pages_count) },
+        { label: 'Backlinks',    value: String(data.backlinks_count) },
+        { label: 'Tags',         value: String(data.tags_count) },
+        { label: 'Foco (30d)',   value: `${data.focus_hours_30d}h`, sub: focusSub },
+      ]
+    case 'software':
+      return [
+        { label: 'Tarefas',      value: taskPct,                   sub: `${data.tasks_done}/${data.tasks_total}` },
+        { label: 'Atrasadas',    value: String(data.tasks_overdue), accent: data.tasks_overdue > 0 },
+        { label: 'Foco (30d)',   value: `${data.focus_hours_30d}h`, sub: focusSub },
+        { label: 'Páginas',      value: String(data.pages_count) },
+      ]
+    case 'health':
+    case 'hobby':
+      return [
+        { label: 'Sessões',      value: String(data.recent_sessions.length), sub: 'registadas' },
+        { label: 'Foco Total',   value: `${data.focus_hours}h` },
+        { label: 'Última Sessão',value: lastSess },
+        { label: 'Tarefas',      value: taskPct, sub: `${data.tasks_done}/${data.tasks_total}` },
+      ]
+    case 'idea':
+      return [
+        { label: 'Páginas',      value: String(data.pages_count) },
+        { label: 'Tarefas',      value: String(data.tasks_total - data.tasks_done), sub: 'em aberto' },
+        { label: 'Última Edição',value: data.recent_pages[0] ? fmtRelDate(data.recent_pages[0].updated_at) : '—' },
+        { label: 'Status',       value: project.status === 'active' ? 'Ativo' : project.status === 'paused' ? 'Pausado' : 'Concluído' },
+      ]
+    default:
+      return [
+        { label: 'Páginas',      value: String(data.pages_count) },
+        { label: 'Tarefas',      value: taskPct, sub: `${data.tasks_done}/${data.tasks_total}` },
+        { label: 'Foco (30d)',   value: `${data.focus_hours_30d}h`, sub: focusSub },
+        { label: 'Última Sessão',value: lastSess },
+      ]
+  }
+}
+
+function StatsColumn({ project, data, dark }: {
+  project: Project; data: ProjectAnalytics; dark: boolean
+}) {
+  const ink    = dark ? '#E8DFC8' : '#2C2416'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const border = dark ? '#3A3020' : '#C4B9A8'
+  const accent = dark ? '#D4A820' : '#b8860b'
+  const color  = project.color ?? accent
+  const stats  = getStats(project, data)
+
+  return (
+    <div className="proj-local-stats">
+      {stats.map((s, i) => (
+        <div key={i} className="proj-local-stat-card" style={{ borderColor: border }}>
+          <span className="proj-local-stat-label" style={{ color: ink2 }}>{s.label}</span>
+          <span className="proj-local-stat-value" style={{ color: s.accent ? color : ink }}>
+            {s.value}
+          </span>
+          {s.sub && (
+            <span className="proj-local-stat-sub" style={{ color: ink2 }}>{s.sub}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Widgets ───────────────────────────────────────────────────────────────────
+
+const EVENT_ICONS: Record<string, string> = {
+  prova: '📝', trabalho: '📋', seminario: '🎙', defesa: '🎓',
+  prazo: '⏰', reuniao: '👥', outro: '◦',
+}
+const EVENT_COLORS: Record<string, string> = {
+  prova: '#8B3A2A', trabalho: '#2C5F8A', seminario: '#6B4F72',
+  defesa: '#b8860b', prazo: '#7A5C2E', reuniao: '#4A6741', outro: '#8B7355',
+}
+const PRIORITY_COLORS: Record<string, string> = {
+  urgent: '#8B3A2A', high: '#7A5C2E', medium: '#b8860b', low: '#4A6741',
+}
+
+function TasksWidget({ data, dark, onOpenPlanner }: {
+  data: ProjectAnalytics; dark: boolean; onOpenPlanner: () => void
+}) {
+  const ink    = dark ? '#E8DFC8' : '#2C2416'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const border = dark ? '#3A3020' : '#C4B9A8'
+  const accent = dark ? '#D4A820' : '#b8860b'
+
+  if (data.upcoming_tasks.length === 0) {
+    return (
+      <div style={{ padding: '16px 0', textAlign: 'center' }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2, opacity: 0.6 }}>
+          Sem tarefas em aberto.
+        </span>
+        <br />
+        <button className="btn btn-ghost btn-sm" onClick={onOpenPlanner}
+          style={{ marginTop: 8, color: accent, fontSize: 10 }}>
+          + Ir ao Planner
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {data.upcoming_tasks.map(t => {
+        const dl = t.deadline ? fmtDeadline(t.deadline) : null
+        return (
+          <div key={t.id} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '5px 8px', border: `1px solid ${border}`, borderRadius: 2,
+            borderLeft: `3px solid ${PRIORITY_COLORS[t.priority] ?? border}`,
+          }}>
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10, color: ink,
+              flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {t.title}
+            </span>
+            {dl && (
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 9,
+                color: dl.overdue ? '#8B3A2A' : ink2, flexShrink: 0,
+              }}>
+                {dl.label}
+              </span>
+            )}
+          </div>
+        )
+      })}
+      {data.tasks_total > data.upcoming_tasks.length && (
+        <button className="btn btn-ghost btn-sm" onClick={onOpenPlanner}
+          style={{ color: ink2, fontSize: 9, marginTop: 4, alignSelf: 'flex-end' }}>
+          Ver todas ({data.tasks_total - data.tasks_done} abertas)
+        </button>
+      )}
+    </div>
+  )
+}
+
+function RecentPagesWidget({ data, dark, onPageOpen }: {
+  data: ProjectAnalytics; dark: boolean; onPageOpen: (page: any) => void
+}) {
+  const ink    = dark ? '#E8DFC8' : '#2C2416'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const border = dark ? '#3A3020' : '#C4B9A8'
+  const bg     = dark ? '#1E1A12' : '#F0EBE0'
+
+  if (data.recent_pages.length === 0) {
+    return (
+      <p style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2, opacity: 0.6 }}>
+        Nenhuma página ainda.
+      </p>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {data.recent_pages.map(p => (
+        <button key={p.id}
+          onClick={() => onPageOpen({ id: p.id })}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '5px 8px', border: `1px solid ${border}`, borderRadius: 2,
+            background: 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = bg)}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        >
+          <span style={{ fontSize: 14, flexShrink: 0 }}>{p.icon ?? '📄'}</span>
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 10, color: ink,
+            flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {p.title}
+          </span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, flexShrink: 0 }}>
+            {fmtRelDate(p.updated_at)}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function EventsWidget({ data, dark }: {
+  data: ProjectAnalytics; dark: boolean
+}) {
+  const ink    = dark ? '#E8DFC8' : '#2C2416'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const border = dark ? '#3A3020' : '#C4B9A8'
+
+  if (data.upcoming_events.length === 0) {
+    return (
+      <p style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2, opacity: 0.6 }}>
+        Sem actividades próximas.
+      </p>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {data.upcoming_events.map(ev => {
+        const color = EVENT_COLORS[ev.event_type ?? 'outro'] ?? '#8B7355'
+        const dt    = ev.start_at?.slice(0, 10) ?? ''
+        const dl    = dt ? fmtDeadline(dt) : null
+        return (
+          <div key={ev.id} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '5px 8px', border: `1px solid ${color}44`,
+            borderLeft: `3px solid ${color}`, borderRadius: 2,
+          }}>
+            <span>{EVENT_ICONS[ev.event_type ?? 'outro']}</span>
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10, color: ink,
+              flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {ev.title}
+            </span>
+            {dl && (
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color, flexShrink: 0 }}>
+                {dl.label}
+              </span>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ProgressWidget({ data, dark, color }: {
+  data: ProjectAnalytics; dark: boolean; color: string
+}) {
+  const ink    = dark ? '#E8DFC8' : '#2C2416'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const track  = dark ? '#2A2418' : '#D8D0C0'
+
+  const taskPct   = data.tasks_total > 0 ? data.tasks_done / data.tasks_total : 0
+  const taskLabel = `${Math.round(taskPct * 100)}%`
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Donut */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <svg viewBox="0 0 80 80" style={{ width: 80, height: 80, flexShrink: 0 }}>
+          {(() => {
+            const R = 32; const circ = 2 * Math.PI * R
+            const off = circ * (1 - taskPct)
+            return (<>
+              <circle cx={40} cy={40} r={R} fill="none" stroke={track} strokeWidth={8} />
+              <circle cx={40} cy={40} r={R} fill="none" stroke={color} strokeWidth={8}
+                strokeLinecap="round"
+                strokeDasharray={circ} strokeDashoffset={off}
+                transform="rotate(-90 40 40)"
+                style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+              />
+              <text x={40} y={36} textAnchor="middle"
+                fontFamily="var(--font-mono)" fontSize={15} fill={color}>{taskLabel}</text>
+              <text x={40} y={48} textAnchor="middle"
+                fontFamily="var(--font-mono)" fontSize={7} fill={ink2} letterSpacing={1}>TAREFAS</text>
+            </>)
+          })()}
+        </svg>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, letterSpacing: '0.1em' }}>
+              CONCLUÍDAS
+            </div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: ink }}>
+              {data.tasks_done}
+            </div>
+          </div>
+          <div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, letterSpacing: '0.1em' }}>
+              ATRASADAS
+            </div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, color: data.tasks_overdue > 0 ? '#8B3A2A' : ink }}>
+              {data.tasks_overdue}
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* Pages bar */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2 }}>PÁGINAS</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink }}>{data.pages_count}</span>
+        </div>
+        <div style={{ height: 4, background: track, borderRadius: 2 }}>
+          <div style={{
+            height: '100%', width: `${Math.min(100, (data.pages_count / Math.max(data.pages_count, 10)) * 100)}%`,
+            background: color, borderRadius: 2, transition: 'width 0.4s ease',
+          }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SessionsWidget({ data, dark }: {
+  data: ProjectAnalytics; dark: boolean
+}) {
+  const ink    = dark ? '#E8DFC8' : '#2C2416'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const border = dark ? '#3A3020' : '#C4B9A8'
+  const accent = dark ? '#D4A820' : '#b8860b'
+
+  if (data.recent_sessions.length === 0) {
+    return (
+      <p style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2, opacity: 0.6 }}>
+        Nenhuma sessão registada. Use a aba Tempo para registar.
+      </p>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {data.recent_sessions.map(s => (
+        <div key={s.id} style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '4px 8px', border: `1px solid ${border}`, borderRadius: 2,
+        }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, flexShrink: 0 }}>
+            {s.started_at?.slice(0, 10) ?? '—'}
+          </span>
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 10, color: ink,
+            flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {s.label || 'Sessão de foco'}
+          </span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: accent, flexShrink: 0 }}>
+            {fmtDuration(s.duration_min)}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ReadingsWidget({ projectId, dark, pages, onPageOpen }: {
+  projectId: number; dark: boolean; pages: Page[]; onPageOpen: (page: any) => void
+}) {
+  const [readings, setReadings] = useState<any[]>([])
+  const ink    = dark ? '#E8DFC8' : '#2C2416'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const border = dark ? '#3A3020' : '#C4B9A8'
+  const bg     = dark ? '#211D16' : '#EDE7D9'
+
+  const STATUS_LABELS: Record<string, string> = {
+    want: 'Quer ler', reading: 'Lendo', done: 'Lido', abandoned: 'Abandonado',
+  }
+  const STATUS_COLORS: Record<string, string> = {
+    want: '#8B7355', reading: '#b8860b', done: '#4A6741', abandoned: '#8B3A2A',
+  }
+
+  useEffect(() => {
+    fromIpc<any[]>(() => db().readingLinks.listForProject(projectId), 'readingsWidget')
+      .then(r => r.match(d => setReadings(d), _e => {}))
+  }, [projectId])
+
+  if (readings.length === 0) {
+    return (
+      <p style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 13, color: ink2, opacity: 0.6 }}>
+        Nenhuma leitura vinculada a este projecto.
+      </p>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {readings.map((r: any) => {
+        let meta: any = {}
+        try { if (r.metadata_json) meta = JSON.parse(r.metadata_json) } catch {}
+        const cover    = r.cover_path || meta.cover_url || meta.cover_url_m
+        const progress = r.progress_type === 'percent'
+          ? (r.progress_percent ?? null)
+          : (r.total_pages > 0 ? Math.round((r.current_page / r.total_pages) * 100) : null)
+        const statusColor = STATUS_COLORS[r.status] ?? ink2
+        const page = pages.find((p: any) => p.id === r.page_id)
+
+        return (
+          <button key={`${r.id}-${r.page_id}`}
+            onClick={() => page && onPageOpen(page)}
+            style={{
+              display: 'flex', flexDirection: 'column', gap: 4,
+              background: bg, border: `1px solid ${border}`, borderRadius: 3,
+              padding: '6px 8px', cursor: page ? 'pointer' : 'default',
+              width: 120, textAlign: 'left',
+            }}
+            onMouseEnter={e => { if (page) (e.currentTarget as any).style.borderColor = statusColor }}
+            onMouseLeave={e => { if (page) (e.currentTarget as any).style.borderColor = border }}
+          >
+            <div style={{ display: 'flex', gap: 6 }}>
+              {cover ? (
+                <img src={cover} alt="" style={{ width: 28, height: 40, objectFit: 'cover', borderRadius: 1 }} />
+              ) : (
+                <div style={{ width: 28, height: 40, background: statusColor + '22', border: `1px solid ${statusColor}44`, borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
+                  {r.reading_type === 'article' ? '📄' : '📖'}
+                </div>
+              )}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 11, color: ink, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                  {r.title}
+                </div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: statusColor, marginTop: 2 }}>
+                  {STATUS_LABELS[r.status] ?? r.status}
+                </div>
+              </div>
+            </div>
+            {progress !== null && (
+              <div style={{ width: '100%', height: 2, background: border, borderRadius: 1 }}>
+                <div style={{ width: `${progress}%`, height: '100%', background: statusColor, borderRadius: 1 }} />
+              </div>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Widget Card wrapper ───────────────────────────────────────────────────────
+
+function WidgetCard({ id, dark, onHide, wide, children }: {
+  id: ProjWidgetId; dark: boolean; onHide: (id: ProjWidgetId) => void
+  wide?: boolean; children: React.ReactNode
+}) {
+  const [hover, setHover] = useState(false)
+  const border = dark ? '#3A3020' : '#C4B9A8'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const bg     = dark ? '#211D16' : '#EDE7D9'
+
+  return (
+    <div
+      className={wide ? 'proj-local-widget proj-local-widget--wide' : 'proj-local-widget'}
+      style={{ borderColor: border, background: bg, position: 'relative' }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+        <span className="proj-local-widget-title" style={{ color: ink2, flex: 1 }}>
+          {WIDGET_LABELS[id]}
+        </span>
+        {hover && (
+          <button
+            onClick={() => onHide(id)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: ink2, fontSize: 12, padding: '0 2px', lineHeight: 1,
+              opacity: 0.6,
+            }}
+            title="Remover widget"
+          >
+            ×
+          </button>
+        )}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// ── Componente principal ──────────────────────────────────────────────────────
+
+interface Props {
+  project:      Project
+  dark:         boolean
+  pages:        Page[]
+  onPageOpen:   (page: any) => void
+  onOpenPlanner: () => void
+}
+
+export function ProjectLocalDashboard({ project, dark, pages, onPageOpen, onOpenPlanner }: Props) {
+  const [data,    setData]    = useState<ProjectAnalytics | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [widgets, setWidgets] = useState<ProjWidgetId[]>(() =>
+    getWidgets(project.id, project.project_type)
+  )
+  const [hidden,  setHidden]  = useState<ProjWidgetId[]>(() =>
+    getHidden(project.id, project.project_type)
+  )
+
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const border = dark ? '#3A3020' : '#C4B9A8'
+  const accent = dark ? '#D4A820' : '#b8860b'
+  const bg     = dark ? '#211D16' : '#EDE7D9'
+  const color  = project.color ?? accent
+
+  useEffect(() => {
+    fromIpc<ProjectAnalytics>(
+      () => db().analytics.project(project.id),
+      'analyticsProject'
+    ).then(r => {
+      r.match(d => setData(d), _e => {})
+      setLoading(false)
+    })
+  }, [project.id])
+
+  const hideWidget = (id: ProjWidgetId) => {
+    const next    = widgets.filter(w => w !== id)
+    const nextH   = [...hidden, id]
+    setWidgets(next)
+    setHidden(nextH)
+    localStorage.setItem(`ogma_proj_widgets_${project.id}`, JSON.stringify(next))
+    localStorage.setItem(`ogma_proj_hidden_${project.id}`,  JSON.stringify(nextH))
+  }
+
+  const addWidget = (id: ProjWidgetId) => {
+    const next  = [...widgets, id]
+    const nextH = hidden.filter(w => w !== id)
+    setWidgets(next)
+    setHidden(nextH)
+    localStorage.setItem(`ogma_proj_widgets_${project.id}`, JSON.stringify(next))
+    localStorage.setItem(`ogma_proj_hidden_${project.id}`,  JSON.stringify(nextH))
+  }
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flex: 1, color: ink2, fontFamily: 'var(--font-mono)', fontSize: 11, opacity: 0.5,
+      }}>
+        A carregar…
+      </div>
+    )
+  }
+
+  if (!data) return null
+
+  const renderWidget = (id: ProjWidgetId) => {
+    switch (id) {
+      case 'tasks':
+        return (
+          <WidgetCard key={id} id={id} dark={dark} onHide={hideWidget}>
+            <TasksWidget data={data} dark={dark} onOpenPlanner={onOpenPlanner} />
+          </WidgetCard>
+        )
+      case 'recent_pages':
+        return (
+          <WidgetCard key={id} id={id} dark={dark} onHide={hideWidget}>
+            <RecentPagesWidget data={data} dark={dark} onPageOpen={onPageOpen} />
+          </WidgetCard>
+        )
+      case 'heatmap':
+        return (
+          <WidgetCard key={id} id={id} dark={dark} onHide={hideWidget} wide>
+            <MiniHeatmap data={data.heatmap} dark={dark} accent={color} projectId={project.id} />
+          </WidgetCard>
+        )
+      case 'events':
+        return (
+          <WidgetCard key={id} id={id} dark={dark} onHide={hideWidget}>
+            <EventsWidget data={data} dark={dark} />
+          </WidgetCard>
+        )
+      case 'progress':
+        return (
+          <WidgetCard key={id} id={id} dark={dark} onHide={hideWidget}>
+            <ProgressWidget data={data} dark={dark} color={color} />
+          </WidgetCard>
+        )
+      case 'readings':
+        return (
+          <WidgetCard key={id} id={id} dark={dark} onHide={hideWidget} wide>
+            <ReadingsWidget projectId={project.id} dark={dark} pages={pages} onPageOpen={onPageOpen} />
+          </WidgetCard>
+        )
+      case 'sessions':
+        return (
+          <WidgetCard key={id} id={id} dark={dark} onHide={hideWidget}>
+            <SessionsWidget data={data} dark={dark} />
+          </WidgetCard>
+        )
+      default:
+        return null
+    }
+  }
+
+  return (
+    <div className="proj-local-dashboard">
+      {/* Stats column */}
+      <StatsColumn project={project} data={data} dark={dark} />
+
+      {/* Widget grid */}
+      <div className="proj-local-widgets">
+        {widgets.map(id => renderWidget(id))}
+
+        {/* + Adicionar widget */}
+        {hidden.length > 0 && (
+          <div className="proj-local-widget proj-local-widget--add" style={{ borderColor: border }}>
+            <span className="proj-local-widget-title" style={{ color: ink2, marginBottom: 10, display: 'block' }}>
+              + Adicionar widget
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {hidden.map(id => (
+                <button key={id}
+                  onClick={() => addWidget(id)}
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: ink2, fontSize: 10, justifyContent: 'flex-start' }}
+                >
+                  + {WIDGET_LABELS[id]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+Agora refatoro o ProjectDashboardView.tsx — header com toolbar + dropdown de vistas, removendo as abas e os painéis do cabeçalho:
+
+Write d:\windows\ProgramFiles\OGMA\src\renderer\views\ProjectDashboard\ProjectDashboardView.tsx
+332 lines
+import React, { useState, useRef, useEffect } from 'react'
+import { Project, Page, PROJECT_TYPE_LABELS, PROJECT_TYPE_ICONS } from '../../types'
+import { CosmosLayer } from '../../components/Cosmos/CosmosLayer'
+import { useAppStore } from '../../store/useAppStore'
+import { ViewRenderer } from './ViewRenderer'
+import { NewViewModal } from '../../components/Views/NewViewModal'
+import { ManagePropertiesModal } from '../../components/Properties/ManagePropertiesModal'
+import { PlannerTab } from './PlannerTab'
+import { StudyTimerTab } from './StudyTimerTab'
+import { ProjectLocalDashboard } from './ProjectLocalDashboard'
+import './ProjectDashboardView.css'
+
+interface Props {
+  project:    Project
+  dark:       boolean
+  onPageOpen: (page: Page) => void
+  onEdit:     () => void
+  onNewPage:  () => void
+}
+
+const VIEW_TYPE_ICONS: Record<string, string> = {
+  table:    '☰',
+  kanban:   '☷',
+  list:     '≡',
+  calendar: '☽',
+  gallery:  '⊞',
+  timeline: '⟶',
+  progress: '◎',
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+
+function ProjectHeader({ project, dark, onEdit }: {
+  project: Project; dark: boolean; onEdit: () => void
+}) {
+  const color  = project.color ?? '#8B7355'
+  const ink    = dark ? '#E8DFC8' : '#2C2416'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const border = dark ? '#3A3020' : '#C4B9A8'
+  const cardBg = dark ? '#211D16' : '#EDE7D9'
+
+  return (
+    <div className="proj-header" style={{ background: cardBg, borderColor: border }}>
+      <CosmosLayer width={800} height={120}
+        seed={`proj_header_${project.id}`} density="medium" dark={dark}
+        style={{ opacity: 0.55 }} />
+      <div className="proj-header-bar" style={{ background: color }} />
+
+      <div className="proj-header-content" style={{ position: 'relative', zIndex: 2 }}>
+        <div className="proj-header-icon" style={{ background: color + '33', borderColor: color, color }}>
+          {project.icon ?? PROJECT_TYPE_ICONS[project.project_type]}
+        </div>
+        <div style={{ flex: 1 }}>
+          <h1 className="proj-header-name" style={{ color: ink }}>{project.name}</h1>
+          <div className="proj-header-meta">
+            <span className="badge" style={{ borderColor: color, color }}>
+              {PROJECT_TYPE_LABELS[project.project_type]}
+            </span>
+            {project.subcategory && (
+              <span className="badge" style={{ borderColor: border, color: ink2 }}>
+                {project.subcategory}
+              </span>
+            )}
+            <span className="badge" style={{
+              borderColor: project.status === 'active' ? '#4A6741' : border,
+              color: project.status === 'active' ? '#4A6741' : ink2,
+            }}>
+              {project.status === 'active' ? '● Ativo'
+                : project.status === 'paused' ? '◌ Pausado'
+                : project.status === 'completed' ? '✓ Concluído' : '◻ Arquivado'}
+            </span>
+          </div>
+          {project.description && (
+            <p className="proj-header-desc" style={{ color: ink2 }}>{project.description}</p>
+          )}
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={onEdit}
+          style={{ color: ink2, flexShrink: 0 }}>
+          ✎ Editar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── View principal ────────────────────────────────────────────────────────────
+
+type Section = 'dashboard' | 'planner' | 'tempo'
+
+export const ProjectDashboardView: React.FC<Props> = ({
+  project, dark, onPageOpen, onEdit, onNewPage,
+}) => {
+  const {
+    pages, projectProperties, projectViews,
+    activeViewId, setActiveView,
+    loadViews, loadProperties, loadPages,
+  } = useAppStore()
+
+  const [section,          setSection]          = useState<Section>('dashboard')
+  const [activeView,       setActiveViewLocal]  = useState<number | null>(null)
+  const [showViewsDropdown,setShowViewsDropdown] = useState(false)
+  const [showNewView,      setShowNewView]      = useState(false)
+  const [showManageProps,  setShowManageProps]  = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const ink    = dark ? '#E8DFC8' : '#2C2416'
+  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
+  const border = dark ? '#3A3020' : '#C4B9A8'
+  const color  = project.color ?? '#8B7355'
+  const bg     = dark ? '#1A1610' : '#F5F0E8'
+  const cardBg = dark ? '#211D16' : '#EDE7D9'
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showViewsDropdown) return
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowViewsDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showViewsDropdown])
+
+  const openView = (viewId: number) => {
+    setActiveViewLocal(viewId)
+    setActiveView(viewId)
+    setSection('dashboard') // sai de planner/tempo, usa activeView para detectar
+    setShowViewsDropdown(false)
+  }
+
+  const openDashboard = () => {
+    setActiveViewLocal(null)
+    setSection('dashboard')
+  }
+
+  const currentView = activeView != null
+    ? projectViews.find(v => v.id === activeView) ?? null
+    : null
+
+  const showingView = section === 'dashboard' && activeView != null && currentView != null
+
+  const noScroll = showingView && (
+    currentView?.view_type === 'kanban'
+    || currentView?.view_type === 'calendar'
+    || currentView?.view_type === 'timeline'
+  )
+
+  // toolbar button style helper
+  const toolbarBtn = (active: boolean) => ({
+    display: 'flex' as const,
+    alignItems: 'center' as const,
+    gap: 5,
+    padding: '6px 12px',
+    border: 'none',
+    borderBottom: `2px solid ${active ? color : 'transparent'}`,
+    background: 'transparent',
+    cursor: 'pointer' as const,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    letterSpacing: '0.08em',
+    color: active ? color : ink2,
+    transition: 'color 120ms, border-color 120ms',
+    whiteSpace: 'nowrap' as const,
+    marginBottom: -1,
+  })
+
+  return (
+    <div className={`proj-dashboard-root${noScroll ? ' proj-dashboard-root--kanban' : ''}`}>
+
+      {/* ── Header + toolbar — sempre visíveis ───────────────────────── */}
+      <div className="proj-dashboard-top">
+        <ProjectHeader project={project} dark={dark} onEdit={onEdit} />
+
+        {/* Toolbar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 0,
+          borderBottom: `1px solid ${border}`,
+          padding: '0 4px',
+        }}>
+          {/* ◉ Início */}
+          <button
+            style={toolbarBtn(section === 'dashboard' && activeView == null)}
+            onClick={openDashboard}
+          >
+            <span style={{ fontSize: 11 }}>◉</span>
+            Início
+          </button>
+
+          {/* ▼ Vistas (dropdown) */}
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            <button
+              style={{
+                ...toolbarBtn(showingView),
+                paddingRight: 8,
+              }}
+              onClick={() => setShowViewsDropdown(v => !v)}
+            >
+              {currentView && showingView
+                ? <><span style={{ fontSize: 11 }}>{VIEW_TYPE_ICONS[currentView.view_type] ?? '◦'}</span>{currentView.name}</>
+                : <><span style={{ fontSize: 11 }}>☰</span>Vistas</>
+              }
+              <span style={{ fontSize: 9, marginLeft: 2, opacity: 0.7 }}>▾</span>
+            </button>
+
+            {showViewsDropdown && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, zIndex: 100,
+                background: cardBg, border: `1px solid ${border}`, borderRadius: 2,
+                boxShadow: `3px 3px 0 ${dark ? '#1A1610' : '#C4B9A8'}`,
+                minWidth: 180, padding: '4px 0',
+              }}>
+                {projectViews.map(v => (
+                  <button key={v.id}
+                    onClick={() => openView(v.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '7px 14px', width: '100%', border: 'none',
+                      background: activeView === v.id ? color + '18' : 'transparent',
+                      cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10,
+                      color: activeView === v.id ? color : ink2,
+                      borderLeft: `3px solid ${activeView === v.id ? color : 'transparent'}`,
+                    }}
+                  >
+                    <span>{VIEW_TYPE_ICONS[v.view_type] ?? '◦'}</span>
+                    {v.name}
+                  </button>
+                ))}
+                <div style={{ borderTop: `1px solid ${border}`, margin: '4px 0' }} />
+                <button
+                  onClick={() => { setShowViewsDropdown(false); setShowNewView(true) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 14px', width: '100%', border: 'none',
+                    background: 'transparent', cursor: 'pointer',
+                    fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2,
+                    borderLeft: '3px solid transparent',
+                  }}
+                >
+                  + Nova vista
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Planner */}
+          <button
+            style={toolbarBtn(section === 'planner')}
+            onClick={() => { setSection('planner'); setActiveViewLocal(null) }}
+          >
+            <span style={{ fontSize: 11 }}>⊞</span>
+            Planner
+          </button>
+
+          {/* Tempo */}
+          <button
+            style={toolbarBtn(section === 'tempo')}
+            onClick={() => { setSection('tempo'); setActiveViewLocal(null) }}
+          >
+            <span style={{ fontSize: 11 }}>◎</span>
+            Tempo
+          </button>
+
+          <div style={{ flex: 1 }} />
+
+          {/* Props + Nova página */}
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ color: ink2, fontSize: 10, padding: '2px 8px' }}
+            onClick={() => setShowManageProps(true)}
+          >
+            ⚙ Props
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ color: ink2, fontSize: 10, padding: '2px 8px' }}
+            onClick={onNewPage}
+          >
+            + Página
+          </button>
+        </div>
+      </div>
+
+      {/* ── Conteúdo ──────────────────────────────────────────────────── */}
+      <div className={`proj-dashboard-content${noScroll ? ' proj-dashboard-content--noscroll' : ''}`}>
+        {section === 'tempo' ? (
+          <StudyTimerTab projectId={project.id} dark={dark} pages={pages} />
+        ) : section === 'planner' ? (
+          <PlannerTab projectId={project.id} dark={dark} pages={pages} />
+        ) : showingView ? (
+          <ViewRenderer
+            view={currentView!}
+            project={project}
+            pages={pages}
+            properties={projectProperties}
+            dark={dark}
+            onPageOpen={onPageOpen}
+            onNewPage={onNewPage}
+          />
+        ) : (
+          <ProjectLocalDashboard
+            project={project}
+            dark={dark}
+            pages={pages}
+            onPageOpen={onPageOpen}
+            onOpenPlanner={() => setSection('planner')}
+          />
+        )}
+      </div>
+
+      {showNewView && (
+        <NewViewModal
+          project={project}
+          properties={projectProperties}
+          dark={dark}
+          onClose={() => setShowNewView(false)}
+          onCreated={(viewId) => { openView(viewId) }}
+        />
+      )}
+
+      {showManageProps && (
+        <ManagePropertiesModal
+          project={project}
+          dark={dark}
+          onClose={() => setShowManageProps(false)}
+          onChanged={() => { loadProperties(project.id); loadViews(project.id); loadPages(project.id) }}
+        />
+      )}
+    </div>
+  )
+}
+d:\windows\ProgramFiles\OGMA\src\main\ipc.ts
+na verdade, eu preciso sair agora, então apenas adicione todas as tarefas detalhadamente no todo e ê commit
+Agora adiciono os estilos CSS para o dashboard local:
+
+Edit d:\windows\ProgramFiles\OGMA\src\renderer\views\ProjectDashboard\ProjectDashboardView.css
+Added 84 lines
+You're out of extra usage · resets 9pm (America/Sao_Paulo)
+
+You're out of extra usage · resets 9pm (America/Sao_Paulo)

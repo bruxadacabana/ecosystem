@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: blob:;" />
+  <title>OGMA Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Variáveis — Tema Diurno ──────────────────────── */
+    :root {
+      --paper:        #F5F0E8;
+      --paper-dark:   #EDE7D9;
+      --ink:          #2C2416;
+      --ink-light:    #5C4E3A;
+      --ink-faint:    #9C8E7A;
+      --ink-ghost:    #C4B9A8;
+      --rule:         #C4B9A8;
+      --accent:       #b8860b;
+      --ribbon:       #8B3A2A;
+      --font-display: 'IM Fell English', Georgia, serif;
+      --font-mono:    'Special Elite', 'Courier New', monospace;
+      --font-code:    'Courier Prime', 'Courier New', monospace;
+    }
+
+    /* ── Tema Noturno ─────────────────────────────────── */
+    html.dark {
+      --paper:      #1A1610;
+      --paper-dark: #211D16;
+      --ink:        #E8DFC8;
+      --ink-light:  #C8B99A;
+      --ink-faint:  #8A7A62;
+      --ink-ghost:  #4A3E2E;
+      --rule:       #3A3020;
+      --accent:     #D4A820;
+      --ribbon:     #C45A40;
+    }
+
+    /* ── Reset ────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--font-display);
+      font-size: 16px;
+      line-height: 1.7;
+      transition: background 140ms, color 140ms;
+    }
+
+    /* ── Container do editor ──────────────────────────── */
+    #editor-container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 48px 32px 120px;
+      min-height: 100vh;
+    }
+
+    /* ── Cursor dourado ───────────────────────────────── */
+    .ce-block__content,
+    .ce-block__content * {
+      caret-color: var(--accent);
+    }
+
+    /* ── Estilos dos blocos ───────────────────────────── */
+
+    /* Parágrafo */
+    .ce-paragraph {
+      font-family: var(--font-display);
+      font-size: 16px;
+      line-height: 1.75;
+      color: var(--ink);
+    }
+
+    .ce-paragraph[data-placeholder]:empty::before {
+      color: var(--ink-faint) !important;
+      font-style: italic;
+    }
+
+    /* Headings */
+    .ce-header {
+      font-family: var(--font-display);
+      font-weight: normal;
+      color: var(--ink);
+      line-height: 1.3;
+    }
+
+    h1.ce-header { font-size: 2rem;   font-style: italic; margin: 1.5rem 0 0.5rem; }
+    h2.ce-header { font-size: 1.55rem; font-style: italic; margin: 1.2rem 0 0.4rem; }
+    h3.ce-header { font-size: 1.2rem;  font-style: italic; margin: 1rem 0 0.3rem; }
+
+    /* Listas */
+    .cdx-list {
+      font-family: var(--font-display);
+      font-size: 16px;
+      color: var(--ink);
+      padding-left: 1.5rem;
+    }
+
+    .cdx-list__item { margin-bottom: 4px; }
+
+    /* Checklist */
+    .cdx-checklist__item-text {
+      font-family: var(--font-display);
+      font-size: 16px;
+      color: var(--ink);
+    }
+
+    .cdx-checklist__item--checked .cdx-checklist__item-text {
+      text-decoration: line-through;
+      color: var(--ink-faint);
+    }
+
+    .cdx-checklist__item-checkbox {
+      border: 1px solid var(--rule);
+      background: var(--paper-dark);
+      border-radius: 2px;
+    }
+
+    .cdx-checklist__item--checked .cdx-checklist__item-checkbox {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* Citação */
+    .cdx-quote {
+      border-left: 3px solid var(--accent);
+      padding: 8px 16px;
+      margin: 8px 0;
+      background: var(--paper-dark);
+    }
+
+    .cdx-quote__text {
+      font-family: var(--font-display);
+      font-size: 17px;
+      font-style: italic;
+      color: var(--ink);
+    }
+
+    .cdx-quote__caption {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      color: var(--ink-faint);
+      margin-top: 4px;
+    }
+
+    /* Código */
+    .ce-code__textarea {
+      font-family: var(--font-code);
+      font-size: 13px;
+      background: var(--paper-dark);
+      color: var(--ink);
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      padding: 12px 14px;
+      line-height: 1.6;
+    }
+
+    /* Inline code */
+    .cdx-inline-code {
+      font-family: var(--font-code);
+      font-size: 13px;
+      background: var(--paper-dark);
+      padding: 1px 5px;
+      border-radius: 2px;
+      color: var(--ribbon);
+    }
+
+    /* Tabela */
+    .tc-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .tc-cell {
+      border: 1px solid var(--rule);
+      padding: 8px 12px;
+      font-family: var(--font-display);
+      font-size: 15px;
+      color: var(--ink);
+      min-width: 80px;
+    }
+
+    .tc-row:first-child .tc-cell {
+      background: var(--paper-dark);
+      font-weight: 600;
+    }
+
+    .tc-toolbox, .tc-popover {
+      background: var(--paper-dark);
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+    }
+
+    /* Divisor */
+    .ce-delimiter::before {
+      content: '· · ·';
+      color: var(--ink-ghost);
+      font-size: 20px;
+      letter-spacing: 0.5em;
+    }
+
+    /* Imagem */
+    .image-tool__image {
+      border-radius: 2px;
+      border: 1px solid var(--rule);
+    }
+
+    .image-tool__caption {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-faint);
+      text-align: center;
+      margin-top: 4px;
+      font-style: italic;
+    }
+
+    /* Toggle */
+    .toggle-block__title {
+      font-family: var(--font-display);
+      font-size: 16px;
+      color: var(--ink);
+    }
+
+    /* ── Toolbar do editor ────────────────────────────── */
+    .ce-toolbar__plus,
+    .ce-toolbar__settings-btn {
+      color: var(--ink-faint);
+      background: transparent;
+    }
+
+    .ce-toolbar__plus:hover,
+    .ce-toolbar__settings-btn:hover {
+      color: var(--ink);
+      background: var(--paper-dark);
+    }
+
+    .ce-toolbox {
+      background: var(--paper-dark);
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      box-shadow: 3px 3px 0 var(--rule);
+    }
+
+    .ce-toolbox__button {
+      color: var(--ink-light);
+    }
+
+    .ce-toolbox__button:hover {
+      background: var(--paper);
+      color: var(--ink);
+    }
+
+    /* Inline toolbar */
+    .ce-inline-toolbar {
+      background: var(--paper-dark);
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      box-shadow: 3px 3px 0 var(--rule);
+    }
+
+    .ce-inline-toolbar__buttons .ce-inline-tool {
+      color: var(--ink-light);
+    }
+
+    .ce-inline-toolbar__buttons .ce-inline-tool:hover,
+    .ce-inline-toolbar__buttons .ce-inline-tool--active {
+      color: var(--accent);
+      background: var(--paper);
+    }
+
+    /* Conversion toolbar */
+    .ce-conversion-toolbar {
+      background: var(--paper-dark);
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+    }
+
+    .ce-conversion-tool {
+      color: var(--ink-light);
+    }
+
+    .ce-conversion-tool:hover,
+    .ce-conversion-tool--focused {
+      background: var(--paper);
+      color: var(--ink);
+    }
+
+    /* Block settings */
+    .ce-settings {
+      background: var(--paper-dark);
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      box-shadow: 3px 3px 0 var(--rule);
+    }
+
+    .ce-settings__button {
+      color: var(--ink-light);
+    }
+
+    .ce-settings__button:hover {
+      color: var(--ink);
+      background: var(--paper);
+    }
+
+    /* ── Seleção de texto ─────────────────────────────── */
+    ::selection {
+      background: rgba(184, 134, 11, 0.25);
+    }
+
+    /* ── Scrollbar ────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--paper-dark); }
+    ::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
+
+    /* ── Linhas de pauta sutis ────────────────────────── */
+    #editor-container::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image: repeating-linear-gradient(
+        transparent, transparent 27px,
+        var(--rule) 27px, var(--rule) 28px
+      );
+      opacity: 0.03;
+      pointer-events: none;
+      z-index: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="editor-container"></div>
+  <script src="./editor.bundle.js"></script>
+</body>
+</html>

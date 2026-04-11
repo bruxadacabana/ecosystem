@@ -1,0 +1,106 @@
+/* ── Container ────────────────────────────────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 360px;
+  width: 100%;
+}
+
+/* ── Toast base ───────────────────────────────────────────────────────────── */
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid;
+  border-radius: 2px;
+  pointer-events: all;
+  animation: toastIn 180ms ease-out both;
+  font-family: var(--font-mono, 'Special Elite', monospace);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.08);
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Tipos ────────────────────────────────────────────────────────────────── */
+.toast--error {
+  background: #F9F2EA;
+  border-color: #8B3A2A;
+  color: #5A1E12;
+}
+.toast--success {
+  background: #F0F5EE;
+  border-color: #4A6741;
+  color: #2A4A22;
+}
+.toast--warning {
+  background: #F9F5E8;
+  border-color: #b8860b;
+  color: #6B4E00;
+}
+.toast--info {
+  background: #EEF2F9;
+  border-color: #2C5F8A;
+  color: #1A3A5A;
+}
+
+/* ── Dark mode ────────────────────────────────────────────────────────────── */
+html.dark .toast--error   { background: #2A1810; border-color: #C45A40; color: #E8A090; }
+html.dark .toast--success { background: #162015; border-color: #5C8A4E; color: #8AC880; }
+html.dark .toast--warning { background: #231C08; border-color: #D4A820; color: #E8C860; }
+html.dark .toast--info    { background: #0E1A28; border-color: #4A8ABF; color: #80B8E8; }
+
+/* ── Ícone ────────────────────────────────────────────────────────────────── */
+.toast__icon {
+  font-size: 13px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+/* ── Corpo ────────────────────────────────────────────────────────────────── */
+.toast__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.toast__title {
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.toast__detail {
+  font-size: 10px;
+  opacity: 0.75;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+/* ── Fechar ───────────────────────────────────────────────────────────────── */
+.toast__close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 0 0 4px;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity 120ms;
+  color: inherit;
+}
+
+.toast__close:hover { opacity: 1; }

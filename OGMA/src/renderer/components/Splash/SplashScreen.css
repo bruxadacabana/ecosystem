@@ -1,0 +1,111 @@
+/* ── Overlay que cobre toda a janela ── */
+.splash-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999; /* Garante que fica por cima de ABSOLUTAMENTE TUDO */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: var(--bg-primary, #1a1610a6);
+  
+  /* Animação suave de entrada */
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* ── O "Cartão" / Documento Místico ── */
+.splash-card {
+  position: relative;
+  width: 520px;
+  height: 340px;
+  border-radius: 8px;
+  border-width: 1px;
+  border-style: solid;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Detalhe estético: Margem de documento antigo ── */
+.splash-margin {
+  position: absolute;
+  left: 40px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  z-index: 1;
+}
+
+/* ── Textos e Layout ── */
+.splash-logo {
+  font-family: var(--font-display, serif);
+  font-size: 42px;
+  letter-spacing: 0.1em;
+  position: relative;
+  z-index: 10;
+  margin-bottom: 4px;
+}
+
+.splash-sub {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  position: relative;
+  z-index: 10;
+  margin-bottom: 24px;
+}
+
+.splash-divider {
+  width: 60px;
+  height: 1px;
+  position: relative;
+  z-index: 10;
+  margin-bottom: 24px;
+}
+
+.splash-status {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  position: relative;
+  z-index: 10;
+  margin-bottom: 16px;
+  text-align: center;
+  
+  /* Animação de pulsar para dar ideia de processamento */
+  animation: pulse 2s infinite ease-in-out;
+}
+
+.splash-dots {
+  font-size: 24px;
+  line-height: 0.5;
+  position: relative;
+  z-index: 10;
+  margin-bottom: 20px;
+}
+
+.splash-version {
+  position: absolute;
+  bottom: 16px;
+  right: 20px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  z-index: 10;
+}
+
+/* ── Keyframes (Animações) ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 0.7; }
+}

@@ -1,0 +1,152 @@
+/* ============================================================
+   AETHER — Tipografia
+   Três famílias: IM Fell English · Special Elite · Courier Prime
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap');
+
+/* ----------------------------------------------------------
+   HIERARQUIA TIPOGRÁFICA
+   Regra fundamental: IM Fell English SEMPRE em itálico para
+   títulos e conteúdo. Special Elite NUNCA em itálico.
+---------------------------------------------------------- */
+
+/* Títulos de página */
+.t-page-title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: normal;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+/* Nome do app na sidebar */
+.t-app-name {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: normal;
+  font-size: 24px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+/* Nome "AETHER" no splash */
+.t-splash-name {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: normal;
+  font-size: 68px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+/* Subtítulo no splash — "FORJA DE MUNDOS" */
+.t-splash-subtitle {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-faint);
+}
+
+/* Título de modal */
+.t-modal-title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: normal;
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+/* Título de card */
+.t-card-title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: normal;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+/* Corpo geral do app */
+.t-body {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 16px;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+
+/* Texto secundário */
+.t-secondary {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 14px;
+  color: var(--ink-light);
+}
+
+/* Botões */
+.t-btn {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+/* Labels de formulário */
+.t-label {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+}
+
+/* Seções / rótulos de categoria */
+.t-section {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-ghost);
+}
+
+/* Badges e tags */
+.t-badge {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Datas e metadados */
+.t-meta {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+/* Corpo do editor */
+.t-editor {
+  font-family: var(--font-display);
+  font-style: normal;
+  font-weight: normal;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink);
+}
+
+/* Código */
+.t-code {
+  font-family: var(--font-code);
+  font-size: 14px;
+  color: var(--ribbon);
+}
