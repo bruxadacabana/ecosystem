@@ -16,6 +16,7 @@ import { LibraryView } from './views/Library/LibraryView'
 import { GlobalCalendarView } from './views/GlobalCalendar/GlobalCalendarView'
 import { GlobalPlannerView } from './views/GlobalPlanner/GlobalPlannerView'
 import { AnalyticsView } from './views/Analytics/AnalyticsView'
+import { CandleGlow } from './components/UI/CandleGlow'
 import { useAppStore } from './store/useAppStore'
 import { Project, Page, PROJECT_TYPE_ICONS, AppSettings } from './types'
 
@@ -168,9 +169,9 @@ export default function App() {
 
   // Títulos da topbar
   const ink    = dark ? '#E8DFC8' : '#2C2416'
-  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
-  const inkBg  = dark ? '#211D16' : '#EDE7D9'
-  const border = dark ? '#3A3020' : '#C4B9A8'
+  const ink2   = dark ? '#7A7260' : '#9C8E7A'
+  const inkBg  = dark ? '#181D28' : '#EDE7D9'
+  const border = dark ? '#2A3148' : '#C4B9A8'
 
   const topbarTitle = view === 'project' ? (activeProject?.name ?? 'Projeto')
     : view === 'page' ? (activePage?.title ?? 'Página')
@@ -188,6 +189,7 @@ export default function App() {
 
   return (
     <ErrorBoundary dark={dark}>
+      <CandleGlow />
       <ToastContainer />
       {!splashDone && <SplashScreen onDone={() => setSplashDone(true)} dark={dark} />}
 
@@ -361,9 +363,9 @@ function ProjectsGrid({ projects, dark, onSelect, onNew }: {
   onSelect: (id: number) => void; onNew: () => void;
 }) {
   const ink    = dark ? '#E8DFC8' : '#2C2416'
-  const ink2   = dark ? '#8A7A62' : '#9C8E7A'
-  const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const ink2   = dark ? '#7A7260' : '#9C8E7A'
+  const border = dark ? '#2A3148' : '#C4B9A8'
+  const cardBg = dark ? '#181D28' : '#EDE7D9'
 
   if (projects.length === 0) {
     return (
