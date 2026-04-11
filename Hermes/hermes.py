@@ -1,0 +1,1084 @@
+#!/usr/bin/env python3
+"""
+Hermes — Mensageiro Universal
+Descarregar e transcrever vídeos do YouTube, TikTok e 1000+ sites.
+PyQt6 · Ecossistema local-first · Design Bible v2.0
+"""
+
+import sys
+import os
+import json
+import re
+import math
+from datetime import datetime
+from pathlib import Path
+
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QComboBox, QTextEdit, QFileDialog,
+    QTabWidget, QFrame, QProgressBar, QListWidget, QListWidgetItem,
+    QSizePolicy, QAbstractItemView, QSplitter,
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QFontDatabase
+
+
+# ── Paleta (Design Bible v2.0) ────────────────────────────────────────────────
+PAPER        = "#F5F0E8"
+PAPER_DARK   = "#EDE7D9"
+PAPER_DARKER = "#E0D8C8"
+INK          = "#2C2416"
+INK_LIGHT    = "#5C4E3A"
+INK_FAINT    = "#9C8E7A"
+INK_GHOST    = "#C4B9A8"
+ACCENT       = "#b8860b"
+RIBBON       = "#8B3A2A"
+RIBBON_LIGHT = "#B85C4A"
+ACCENT_GREEN = "#4A6741"
+STAMP        = "#7A5C2E"
+RULE         = "#C4B9A8"
+
+APP_DIR    = Path(__file__).parent
+PREFS_FILE = APP_DIR / ".prefs.json"
+DATA_DIR   = APP_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+
+
+# ── Preferências ──────────────────────────────────────────────────────────────
+def load_prefs() -> dict:
+    try:
+        return json.loads(PREFS_FILE.read_text())
+    except Exception:
+        return {}
+
+def save_prefs(p: dict):
+    try:
+        PREFS_FILE.write_text(json.dumps(p, indent=2))
+    except Exception:
+        pass
+
+
+# ── Fontes do ecossistema ─────────────────────────────────────────────────────
+def load_ecosystem_fonts() -> tuple[str, str]:
+    """
+    Tenta registrar IM Fell English e Special Elite via QFontDatabase.
+    Busca nos diretórios de fontes padrão do sistema.
+    Retorna (family_display, family_mono) — com fallback se não encontradas.
+    """
+    search_dirs = [
+        Path.home() / ".local/share/fonts",
+        Path("/usr/share/fonts"),
+        Path("/usr/local/share/fonts"),
+    ]
+    targets = {
+        "IMFellEnglish-Regular.ttf": None,
+        "IMFellEnglish-Italic.ttf":  None,
+        "SpecialElite-Regular.ttf":  None,
+    }
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for ttf in d.rglob("*.ttf"):
+            if ttf.name in targets and targets[ttf.name] is None:
+                fid = QFontDatabase.addApplicationFont(str(ttf))
+                if fid >= 0:
+                    families = QFontDatabase.applicationFontFamilies(fid)
+                    if families:
+                        targets[ttf.name] = families[0]
+
+    display = targets.get("IMFellEnglish-Regular.ttf") or "Georgia"
+    mono    = targets.get("SpecialElite-Regular.ttf")  or "Courier"
+    return display, mono
+
+
+# ── QSS ───────────────────────────────────────────────────────────────────────
+def build_qss(display: str, mono: str) -> str:
+    return f"""
+    QMainWindow, QWidget {{
+        background: {PAPER};
+        color: {INK};
+        font-family: '{mono}';
+        font-size: 12px;
+    }}
+    QTabWidget::pane {{
+        border: 1px solid {RULE};
+        background: {PAPER_DARK};
+        border-radius: 2px;
+        top: -1px;
+    }}
+    QTabBar::tab {{
+        background: {PAPER_DARKER};
+        color: {INK_FAINT};
+        font-family: '{mono}';
+        font-size: 10px;
+        letter-spacing: 2px;
+        padding: 6px 20px;
+        border: 1px solid {RULE};
+        border-bottom: none;
+        border-radius: 2px 2px 0 0;
+        min-width: 120px;
+    }}
+    QTabBar::tab:selected {{
+        background: {PAPER_DARK};
+        color: {INK};
+        border-bottom: 1px solid {PAPER_DARK};
+    }}
+    QTabBar::tab:hover:!selected {{
+        background: {PAPER_DARK};
+        color: {INK_LIGHT};
+    }}
+    QLineEdit {{
+        background: {PAPER_DARK};
+        color: {INK};
+        border: 1px solid {RULE};
+        border-radius: 2px;
+        padding: 7px 11px;
+        font-family: '{display}';
+        font-style: italic;
+        font-size: 13px;
+        selection-background-color: rgba(184,134,11,0.25);
+    }}
+    QLineEdit:focus {{
+        border-color: {ACCENT};
+        background: {PAPER};
+    }}
+    QPushButton {{
+        background: {PAPER_DARK};
+        color: {INK_LIGHT};
+        border: 1px solid {RULE};
+        border-radius: 2px;
+        padding: 5px 14px;
+        font-family: '{mono}';
+        font-size: 11px;
+        letter-spacing: 1px;
+    }}
+    QPushButton:hover {{
+        background: {PAPER_DARKER};
+        border-color: {STAMP};
+        color: {INK};
+    }}
+    QPushButton:pressed {{
+        background: {PAPER_DARKER};
+        padding-top: 6px;
+        padding-left: 15px;
+    }}
+    QPushButton:disabled {{
+        color: {INK_GHOST};
+        border-color: {RULE};
+        background: {PAPER_DARK};
+    }}
+    QPushButton#primary {{
+        background: {INK};
+        color: {PAPER};
+        border-color: {INK};
+        font-size: 12px;
+        padding: 7px 20px;
+    }}
+    QPushButton#primary:hover {{
+        background: {INK_LIGHT};
+        color: {PAPER};
+    }}
+    QPushButton#primary:disabled {{
+        background: {PAPER_DARKER};
+        color: {INK_GHOST};
+        border-color: {RULE};
+    }}
+    QPushButton#danger {{
+        background: {RIBBON};
+        color: {PAPER};
+        border-color: {RIBBON};
+    }}
+    QPushButton#danger:hover {{
+        background: {RIBBON_LIGHT};
+        color: {PAPER};
+    }}
+    QPushButton#danger:disabled {{
+        background: {PAPER_DARKER};
+        color: {INK_GHOST};
+        border-color: {RULE};
+    }}
+    QComboBox {{
+        background: {PAPER_DARK};
+        color: {INK};
+        border: 1px solid {RULE};
+        border-radius: 2px;
+        padding: 5px 10px;
+        font-family: '{mono}';
+        font-size: 11px;
+    }}
+    QComboBox:focus {{ border-color: {ACCENT}; }}
+    QComboBox::drop-down {{ border: none; width: 20px; }}
+    QComboBox::down-arrow {{ width: 10px; height: 10px; }}
+    QComboBox QAbstractItemView {{
+        background: {PAPER_DARK};
+        color: {INK};
+        border: 1px solid {RULE};
+        selection-background-color: {PAPER_DARKER};
+        selection-color: {INK};
+        outline: none;
+        padding: 2px;
+    }}
+    QTextEdit {{
+        background: {PAPER_DARK};
+        color: {INK_LIGHT};
+        border: 1px solid {RULE};
+        border-radius: 2px;
+        padding: 8px;
+        font-family: 'Courier Prime', 'Courier New', monospace;
+        font-size: 11px;
+        selection-background-color: rgba(184,134,11,0.25);
+    }}
+    QListWidget {{
+        background: {PAPER_DARK};
+        color: {INK};
+        border: 1px solid {RULE};
+        border-radius: 2px;
+        font-family: '{mono}';
+        font-size: 11px;
+        outline: none;
+    }}
+    QListWidget::item {{ padding: 6px 10px; }}
+    QListWidget::item:selected {{
+        background: rgba(184,134,11,0.15);
+        color: {INK};
+    }}
+    QListWidget::item:hover {{ background: {PAPER_DARKER}; }}
+    QProgressBar {{
+        background: {PAPER_DARKER};
+        border: 1px solid {RULE};
+        border-radius: 2px;
+        max-height: 6px;
+        text-align: center;
+    }}
+    QProgressBar::chunk {{
+        background: {ACCENT};
+        border-radius: 1px;
+    }}
+    QScrollBar:vertical {{
+        background: {PAPER_DARK};
+        width: 6px;
+        border-radius: 2px;
+        margin: 0;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {RULE};
+        border-radius: 2px;
+        min-height: 20px;
+    }}
+    QScrollBar::handle:vertical:hover {{ background: {STAMP}; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+    QFrame#rule {{ background: {RULE}; max-height: 1px; border: none; }}
+    QLabel#section {{
+        color: {INK_FAINT};
+        font-family: '{mono}';
+        font-size: 9px;
+        letter-spacing: 3px;
+    }}
+    QLabel#title {{
+        color: {INK};
+        font-family: '{display}';
+        font-size: 32px;
+        font-style: italic;
+    }}
+    QLabel#subtitle {{
+        color: {INK_FAINT};
+        font-family: '{mono}';
+        font-size: 9px;
+        letter-spacing: 4px;
+    }}
+    QLabel#meta {{
+        color: {INK_FAINT};
+        font-family: '{mono}';
+        font-size: 10px;
+    }}
+    """
+
+
+# ── Idiomas ───────────────────────────────────────────────────────────────────
+LANGUAGES = {
+    "auto": "Automático",   "pt": "Português",   "en": "Inglês",
+    "es":   "Espanhol",     "fr": "Francês",     "de": "Alemão",
+    "it":   "Italiano",     "ja": "Japonês",     "ko": "Coreano",
+    "zh":   "Chinês",       "ru": "Russo",       "ar": "Árabe",
+    "nl":   "Holandês",     "pl": "Polonês",     "tr": "Turco",
+    "sv":   "Sueco",        "da": "Dinamarquês", "fi": "Finlandês",
+    "uk":   "Ucraniano",    "hi": "Hindi",
+}
+LANG_DISPLAY = [f"{v}  [{k}]" for k, v in LANGUAGES.items()]
+LANG_CODES   = list(LANGUAGES.keys())
+WHISPER_MODELS = ["tiny", "base", "small", "medium", "large"]
+
+
+# ── Utilitários — detecção e device ──────────────────────────────────────────
+def detect_device() -> tuple[str, str]:
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return "cpu", "CPU (CUDA indisponível)"
+        vram_mb  = torch.cuda.get_device_properties(0).total_memory // (1024 * 1024)
+        gpu_name = torch.cuda.get_device_properties(0).name
+        if vram_mb < 3072:
+            return "cpu", f"CPU (GPU {gpu_name} — {vram_mb} MB insuficiente)"
+        return "cuda", f"GPU {gpu_name} ({vram_mb} MB)"
+    except Exception:
+        return "cpu", "CPU"
+
+
+def is_playlist_url(url: str) -> bool:
+    return bool(re.search(
+        r"(playlist|list=|/channel/|/@[^/]+/?$|/c/|/user/)", url, re.I))
+
+
+# ── Utilitários — formatos yt-dlp ─────────────────────────────────────────────
+def build_format_list(info: dict) -> list[dict]:
+    fmts = info.get("formats", [])
+    options = [
+        {"label": "✦  Melhor qualidade (vídeo + áudio)", "format_id": "bestvideo+bestaudio/best", "ext": "mp4"},
+        {"label": "◈  Apenas áudio (MP3)",                "format_id": "bestaudio",               "ext": "mp3"},
+        {"label": "─" * 52,                               "format_id": None,                       "ext": None},
+    ]
+    seen: set = set()
+    for f in reversed(fmts):
+        if f.get("vcodec", "none") == "none":
+            continue
+        height = f.get("height") or 0
+        ext    = f.get("ext", "?")
+        key    = (height, ext)
+        if key in seen:
+            continue
+        seen.add(key)
+        fps      = f.get("fps") or 0
+        tbr      = f.get("tbr") or f.get("vbr") or 0
+        has_aud  = f.get("acodec", "none") != "none"
+        res_str  = f"{height}p" if height else "?"
+        fps_str  = f" {fps:.0f}fps" if fps and fps > 30 else ""
+        aud_str  = " + áudio" if has_aud else " [sem áudio]"
+        tbr_str  = f" ~{tbr:.0f}k" if tbr else ""
+        options.append({
+            "label":     f"  {res_str}{fps_str}  —  {ext.upper()}{tbr_str}{aud_str}",
+            "format_id": f.get("format_id", ""),
+            "ext":       ext,
+        })
+    return options
+
+
+# ── Utilitários — markdown ────────────────────────────────────────────────────
+def build_markdown(title: str, url: str, info: dict, result: dict, forced_lang: str) -> str:
+    now       = datetime.now().strftime("%Y-%m-%d %H:%M")
+    dur_s     = info.get("duration", 0)
+    duration  = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else "desconhecida"
+    channel   = info.get("uploader") or info.get("channel") or "desconhecido"
+    detected  = result.get("language", "?").upper()
+    lang_note = detected if forced_lang == "auto" else f"{forced_lang.upper()} (forçado)"
+    lines = [
+        f"# {title}", "",
+        f"> **Fonte:** [{url}]({url})  ",
+        f"> **Canal:** {channel}  ",
+        f"> **Duração:** {duration}  ",
+        f"> **Idioma:** {lang_note}  ",
+        f"> **Gerado em:** {now}",
+        "", "---", "", "## Transcrição", "",
+    ]
+    for seg in result.get("segments", []):
+        start = int(seg["start"])
+        mm, ss = divmod(start, 60)
+        lines.append(f"**[{mm:02d}:{ss:02d}]** {seg['text'].strip()}")
+        lines.append("")
+    if not result.get("segments"):
+        for para in result.get("text", "").split("\n"):
+            if para.strip():
+                lines.append(para.strip())
+                lines.append("")
+    return "\n".join(lines)
+
+
+# ── Workers ───────────────────────────────────────────────────────────────────
+class DownloadWorker(QThread):
+    log      = pyqtSignal(str, str)   # (mensagem, tag: ok|err|warn|"")
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)        # título do vídeo
+    error    = pyqtSignal(str)
+
+    def __init__(self, url: str, fmt: dict, outdir: str, parent=None):
+        super().__init__(parent)
+        self.url    = url
+        self.fmt    = fmt
+        self.outdir = outdir
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        try:
+            import yt_dlp
+        except ImportError:
+            self.error.emit("yt-dlp não encontrado. Instale com: pip install yt-dlp")
+            return
+
+        def hook(d):
+            if self._cancelled:
+                raise Exception("Cancelado.")
+            if d.get("status") == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                done  = d.get("downloaded_bytes", 0)
+                if total:
+                    self.progress.emit(int(done / total * 100))
+            elif d.get("status") == "finished":
+                self.progress.emit(100)
+                self.log.emit("Processando…", "ok")
+
+        fid      = self.fmt["format_id"]
+        is_audio = fid == "bestaudio"
+        pp = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}] \
+             if is_audio else \
+             [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}]
+
+        ydl_opts = {
+            "format":              fid,
+            "outtmpl":             os.path.join(self.outdir, "%(title)s.%(ext)s"),
+            "postprocessors":      pp,
+            "quiet":               True,
+            "no_warnings":         True,
+            "progress_hooks":      [hook],
+            "noplaylist":          True,
+            "merge_output_format": "mp4",
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(self.url, download=True)
+                self.finished.emit(info.get("title") or "vídeo")
+        except Exception as exc:
+            if self._cancelled:
+                self.log.emit("Download cancelado.", "warn")
+            else:
+                self.error.emit(str(exc))
+
+
+class InspectWorker(QThread):
+    log      = pyqtSignal(str, str)
+    finished = pyqtSignal(dict, list)  # (info, formats)
+    error    = pyqtSignal(str)
+
+    def __init__(self, url: str, parent=None):
+        super().__init__(parent)
+        self.url = url
+
+    def run(self):
+        try:
+            import yt_dlp
+        except ImportError:
+            self.error.emit("yt-dlp não encontrado.")
+            return
+        self.log.emit("Inspecionando URL…", "")
+        try:
+            opts = {"quiet": True, "no_warnings": True, "skip_download": True}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(self.url, download=False)
+            fmts = build_format_list(info)
+            self.finished.emit(info, fmts)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+class PlaylistIndexWorker(QThread):
+    log      = pyqtSignal(str, str)
+    finished = pyqtSignal(list)
+    error    = pyqtSignal(str)
+
+    def __init__(self, url: str, parent=None):
+        super().__init__(parent)
+        self.url = url
+
+    def run(self):
+        try:
+            import yt_dlp
+        except ImportError:
+            self.error.emit("yt-dlp não encontrado.")
+            return
+        self.log.emit("Lendo playlist…", "")
+        try:
+            opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "skip_download": True}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(self.url, download=False)
+            entries = []
+            for e in (info.get("entries") or []):
+                if not e:
+                    continue
+                vurl = e.get("url") or e.get("webpage_url", "")
+                if vurl and not vurl.startswith("http"):
+                    vurl = f"https://www.youtube.com/watch?v={vurl}"
+                entries.append({"url": vurl, "title": e.get("title", "(sem título)")})
+            self.finished.emit(entries)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+class TranscribeWorker(QThread):
+    log      = pyqtSignal(str, str)
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str, str)   # (markdown_text, output_path)
+    error    = pyqtSignal(str)
+
+    def __init__(self, url: str, model_size: str, language: str,
+                 cpu_limit: int, outdir: str, parent=None):
+        super().__init__(parent)
+        self.url        = url
+        self.model_size = model_size
+        self.language   = language
+        self.cpu_limit  = cpu_limit
+        self.outdir     = outdir
+        self._cancelled = False
+        self._model_cache: list = []
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        try:
+            import yt_dlp, whisper
+        except ImportError as e:
+            self.error.emit(f"Dependência não encontrada: {e}. Instale yt-dlp e openai-whisper.")
+            return
+
+        import tempfile
+
+        # Aplicar limite de CPU
+        if self._cancelled: return
+        self._apply_cpu_limit()
+
+        # Download do áudio
+        self.log.emit("Baixando áudio…", "")
+        self.progress.emit(10)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                ydl_opts = {
+                    "format":         "bestaudio/best",
+                    "outtmpl":        os.path.join(tmpdir, "%(title)s.%(ext)s"),
+                    "postprocessors": [{"key": "FFmpegExtractAudio",
+                                        "preferredcodec": "mp3", "preferredquality": "128"}],
+                    "quiet":          True,
+                    "no_warnings":    True,
+                    "noplaylist":     True,
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info      = ydl.extract_info(self.url, download=True)
+                    audio_path = ydl.prepare_filename(info).rsplit(".", 1)[0] + ".mp3"
+                    title      = info.get("title", "transcrição")
+
+                if self._cancelled: return
+                self.progress.emit(40)
+
+                # Transcrição
+                device, _ = detect_device()
+                cache_key = (self.model_size, device)
+                if not self._model_cache or self._model_cache[0][0] != cache_key:
+                    self.log.emit(f"Carregando modelo Whisper ({self.model_size}) em {device.upper()}…", "")
+                    model = whisper.load_model(self.model_size, device=device)
+                    self._model_cache.clear()
+                    self._model_cache.append((cache_key, model))
+                else:
+                    model = self._model_cache[0][1]
+
+                if self._cancelled: return
+                self.progress.emit(60)
+
+                lang_arg = self.language if self.language != "auto" else None
+                self.log.emit(f"Transcrevendo… idioma: {self.language}", "")
+                result = model.transcribe(audio_path, verbose=False, language=lang_arg)
+                self.progress.emit(90)
+
+                # Gerar markdown
+                md_text = build_markdown(title, self.url, info, result, self.language)
+                safe    = re.sub(r'[<>:"/\\|?*]', "_", title)[:60]
+                out_path = os.path.join(
+                    self.outdir, f"{datetime.now().strftime('%Y%m%d_%H%M')}_{safe}.md")
+                Path(out_path).write_text(md_text, encoding="utf-8")
+                self.progress.emit(100)
+                self.finished.emit(md_text, out_path)
+
+        except Exception as exc:
+            if self._cancelled:
+                self.log.emit("Transcrição cancelada.", "warn")
+            else:
+                self.error.emit(str(exc))
+
+    def _apply_cpu_limit(self):
+        import math
+        total   = os.cpu_count() or 1
+        threads = max(1, math.ceil(total * self.cpu_limit / 100))
+        os.environ["OMP_NUM_THREADS"] = str(threads)
+        os.environ["MKL_NUM_THREADS"] = str(threads)
+        try:
+            import torch
+            torch.set_num_threads(threads)
+        except Exception:
+            pass
+
+
+# ── Janela principal ──────────────────────────────────────────────────────────
+class HermesApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Hermes")
+        self.resize(920, 820)
+
+        self._prefs           = load_prefs()
+        self._formats: list   = []
+        self._info: dict      = {}
+        self._playlist: list  = []
+        self._last_md: str    = ""
+        self._worker          = None
+        self._device, self._device_label = detect_device()
+
+        display_family, mono_family = load_ecosystem_fonts()
+        self._display = display_family
+        self._mono    = mono_family
+
+        self.setStyleSheet(build_qss(display_family, mono_family))
+        self._build_ui()
+        self._load_prefs()
+        self._log(f"Hermes iniciado. Dispositivo: {self._device_label}", "ok")
+
+    # ── Construção da UI ──────────────────────────────────────────────────────
+    def _build_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(32, 24, 32, 20)
+        root.setSpacing(0)
+
+        # Cabeçalho
+        root.addLayout(self._build_header())
+        root.addSpacing(16)
+        root.addWidget(self._rule())
+        root.addSpacing(14)
+
+        # URL (compartilhada)
+        root.addWidget(self._section_label("ENDEREÇO DO VÍDEO OU PLAYLIST"))
+        root.addSpacing(4)
+        url_row = QHBoxLayout()
+        self.url_edit = QLineEdit()
+        self.url_edit.setPlaceholderText("https://youtube.com/watch?v=…  ou  https://tiktok.com/@perfil/…")
+        self.url_edit.returnPressed.connect(self._on_url_enter)
+        url_row.addWidget(self.url_edit)
+        self.paste_btn = QPushButton("COLAR")
+        self.paste_btn.clicked.connect(self._paste_url)
+        url_row.addWidget(self.paste_btn)
+        root.addLayout(url_row)
+        root.addSpacing(14)
+
+        # Tabs
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_download_tab(), "DESCARREGAR")
+        self.tabs.addTab(self._build_transcribe_tab(), "TRANSCREVER")
+        root.addWidget(self.tabs)
+        root.addSpacing(12)
+
+        # Output dir
+        root.addWidget(self._rule())
+        root.addSpacing(10)
+        out_row = QHBoxLayout()
+        out_row.addWidget(self._section_label("PASTA DE SAÍDA"))
+        out_row.addSpacing(8)
+        self.outdir_edit = QLineEdit(str(DATA_DIR))
+        out_row.addWidget(self.outdir_edit)
+        browse_btn = QPushButton("…")
+        browse_btn.setFixedWidth(36)
+        browse_btn.clicked.connect(self._pick_dir)
+        out_row.addWidget(browse_btn)
+        root.addLayout(out_row)
+        root.addSpacing(12)
+
+        # Log
+        root.addWidget(self._section_label("REGISTRO"))
+        root.addSpacing(4)
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setMinimumHeight(120)
+        self.log_box.setMaximumHeight(180)
+        root.addWidget(self.log_box)
+        root.addSpacing(10)
+
+        # Rodapé
+        footer = QHBoxLayout()
+        self.open_btn = QPushButton("ABRIR PASTA")
+        self.open_btn.clicked.connect(self._open_outdir)
+        footer.addWidget(self.open_btn)
+        self.copy_md_btn = QPushButton("COPIAR MARKDOWN")
+        self.copy_md_btn.setEnabled(False)
+        self.copy_md_btn.clicked.connect(self._copy_md)
+        footer.addWidget(self.copy_md_btn)
+        footer.addStretch()
+        self.status_lbl = QLabel()
+        self.status_lbl.setObjectName("meta")
+        footer.addWidget(self.status_lbl)
+        root.addLayout(footer)
+
+    def _build_header(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        title = QLabel("Hermes")
+        title.setObjectName("title")
+        row.addWidget(title)
+        row.addSpacing(16)
+        sub_col = QVBoxLayout()
+        sub_col.addSpacing(10)
+        sub = QLabel("MENSAGEIRO UNIVERSAL")
+        sub.setObjectName("subtitle")
+        sub_col.addWidget(sub)
+        device_lbl = QLabel(self._device_label.upper())
+        device_lbl.setObjectName("meta")
+        sub_col.addWidget(device_lbl)
+        row.addLayout(sub_col)
+        row.addStretch()
+        return row
+
+    def _build_download_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        # Botões de ação
+        action_row = QHBoxLayout()
+        self.inspect_btn = QPushButton("✦ INSPECIONAR")
+        self.inspect_btn.setObjectName("primary")
+        self.inspect_btn.clicked.connect(self._inspect)
+        action_row.addWidget(self.inspect_btn)
+        self.dl_btn = QPushButton("DESCARREGAR")
+        self.dl_btn.setEnabled(False)
+        self.dl_btn.clicked.connect(self._start_download)
+        action_row.addWidget(self.dl_btn)
+        self.dl_cancel_btn = QPushButton("CANCELAR")
+        self.dl_cancel_btn.setObjectName("danger")
+        self.dl_cancel_btn.setEnabled(False)
+        self.dl_cancel_btn.clicked.connect(self._cancel)
+        action_row.addWidget(self.dl_cancel_btn)
+        action_row.addStretch()
+        layout.addLayout(action_row)
+
+        # Info do vídeo
+        self.video_info_lbl = QLabel()
+        self.video_info_lbl.setObjectName("meta")
+        self.video_info_lbl.setWordWrap(True)
+        layout.addWidget(self.video_info_lbl)
+
+        # Lista de playlist (visível se URL for playlist)
+        self.playlist_lbl = self._section_label("PLAYLIST")
+        self.playlist_lbl.hide()
+        layout.addWidget(self.playlist_lbl)
+        self.playlist_list = QListWidget()
+        self.playlist_list.setMaximumHeight(120)
+        self.playlist_list.hide()
+        self.playlist_list.itemSelectionChanged.connect(self._on_playlist_select)
+        layout.addWidget(self.playlist_list)
+
+        # Formatos
+        layout.addWidget(self._section_label("FORMATO / QUALIDADE"))
+        self.fmt_combo = QComboBox()
+        self.fmt_combo.setEnabled(False)
+        self.fmt_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.fmt_combo)
+
+        # Progresso
+        self.dl_progress = QProgressBar()
+        self.dl_progress.setValue(0)
+        layout.addWidget(self.dl_progress)
+
+        layout.addStretch()
+        return w
+
+    def _build_transcribe_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        # Opções
+        opts_row = QHBoxLayout()
+        opts_row.addWidget(self._section_label("MODELO"))
+        self.model_combo = QComboBox()
+        self.model_combo.addItems(WHISPER_MODELS)
+        self.model_combo.setCurrentText("small")
+        self.model_combo.setFixedWidth(100)
+        opts_row.addWidget(self.model_combo)
+        opts_row.addSpacing(20)
+        opts_row.addWidget(self._section_label("IDIOMA"))
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItems(LANG_DISPLAY)
+        self.lang_combo.setFixedWidth(180)
+        opts_row.addWidget(self.lang_combo)
+        opts_row.addSpacing(20)
+        opts_row.addWidget(self._section_label("LIMITE CPU"))
+        self.cpu_combo = QComboBox()
+        self.cpu_combo.addItems(["25%", "50%", "75%", "100%"])
+        self.cpu_combo.setCurrentText("100%")
+        self.cpu_combo.setFixedWidth(80)
+        if self._device == "cuda":
+            self.cpu_combo.setEnabled(False)
+        opts_row.addWidget(self.cpu_combo)
+        opts_row.addStretch()
+        layout.addLayout(opts_row)
+
+        # Botões
+        action_row = QHBoxLayout()
+        self.tr_btn = QPushButton("☿ TRANSCREVER")
+        self.tr_btn.setObjectName("primary")
+        self.tr_btn.clicked.connect(self._start_transcribe)
+        action_row.addWidget(self.tr_btn)
+        self.tr_cancel_btn = QPushButton("CANCELAR")
+        self.tr_cancel_btn.setObjectName("danger")
+        self.tr_cancel_btn.setEnabled(False)
+        self.tr_cancel_btn.clicked.connect(self._cancel)
+        action_row.addWidget(self.tr_cancel_btn)
+        action_row.addStretch()
+        layout.addLayout(action_row)
+
+        # Progresso
+        self.tr_progress = QProgressBar()
+        self.tr_progress.setValue(0)
+        layout.addWidget(self.tr_progress)
+
+        # Preview do markdown
+        layout.addWidget(self._section_label("PRÉVIA DA TRANSCRIÇÃO"))
+        self.md_preview = QTextEdit()
+        self.md_preview.setReadOnly(True)
+        self.md_preview.setPlaceholderText("A transcrição gerada aparecerá aqui…")
+        layout.addWidget(self.md_preview)
+
+        return w
+
+    # ── Helpers de UI ─────────────────────────────────────────────────────────
+    def _rule(self) -> QFrame:
+        f = QFrame()
+        f.setObjectName("rule")
+        f.setFixedHeight(1)
+        return f
+
+    def _section_label(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setObjectName("section")
+        return lbl
+
+    # ── Log ───────────────────────────────────────────────────────────────────
+    def _log(self, msg: str, tag: str = ""):
+        ts = datetime.now().strftime("%H:%M:%S")
+        colors = {"ok": ACCENT_GREEN, "err": RIBBON, "warn": ACCENT, "": INK_FAINT}
+        color = colors.get(tag, INK_FAINT)
+        self.log_box.append(
+            f'<span style="color:{INK_GHOST}; font-size:10px">{ts}</span>'
+            f'<span style="color:{INK_GHOST}">  |  </span>'
+            f'<span style="color:{color}">{msg}</span>'
+        )
+
+    # ── Preferências ──────────────────────────────────────────────────────────
+    def _load_prefs(self):
+        if "outdir" in self._prefs:
+            self.outdir_edit.setText(self._prefs["outdir"])
+        if "model" in self._prefs:
+            self.model_combo.setCurrentText(self._prefs["model"])
+        if "lang_idx" in self._prefs:
+            self.lang_combo.setCurrentIndex(self._prefs["lang_idx"])
+        if "cpu_limit" in self._prefs:
+            self.cpu_combo.setCurrentText(self._prefs["cpu_limit"])
+
+    def _save_prefs(self):
+        save_prefs({
+            "outdir":    self.outdir_edit.text(),
+            "model":     self.model_combo.currentText(),
+            "lang_idx":  self.lang_combo.currentIndex(),
+            "cpu_limit": self.cpu_combo.currentText(),
+        })
+
+    def closeEvent(self, event):
+        self._save_prefs()
+        super().closeEvent(event)
+
+    # ── Ações compartilhadas ──────────────────────────────────────────────────
+    def _paste_url(self):
+        clipboard = QApplication.clipboard()
+        text = clipboard.text().strip()
+        if text:
+            self.url_edit.setText(text)
+
+    def _on_url_enter(self):
+        if self.tabs.currentIndex() == 0:
+            self._inspect()
+        else:
+            self._start_transcribe()
+
+    def _pick_dir(self):
+        d = QFileDialog.getExistingDirectory(self, "Pasta de saída", self.outdir_edit.text())
+        if d:
+            self.outdir_edit.setText(d)
+
+    def _open_outdir(self):
+        import subprocess
+        subprocess.Popen(["xdg-open", self.outdir_edit.text()])
+
+    def _copy_md(self):
+        if self._last_md:
+            QApplication.clipboard().setText(self._last_md)
+            self.status_lbl.setText("Markdown copiado.")
+            QTimer.singleShot(2000, lambda: self.status_lbl.setText(""))
+
+    def _cancel(self):
+        if self._worker and self._worker.isRunning():
+            self._worker.cancel()
+
+    def _set_busy(self, busy: bool, tab: int = 0):
+        if tab == 0:
+            self.inspect_btn.setEnabled(not busy)
+            self.dl_btn.setEnabled(not busy and bool(self._formats))
+            self.dl_cancel_btn.setEnabled(busy)
+            self.fmt_combo.setEnabled(not busy)
+        else:
+            self.tr_btn.setEnabled(not busy)
+            self.tr_cancel_btn.setEnabled(busy)
+
+    # ── Descarregar ───────────────────────────────────────────────────────────
+    def _inspect(self):
+        url = self.url_edit.text().strip()
+        if not url:
+            self._log("Nenhuma URL inserida.", "warn")
+            return
+
+        self._set_busy(True, 0)
+        self.fmt_combo.clear()
+        self.fmt_combo.setEnabled(False)
+        self.dl_btn.setEnabled(False)
+        self.video_info_lbl.setText("")
+
+        if is_playlist_url(url):
+            self._worker = PlaylistIndexWorker(url, self)
+            self._worker.log.connect(self._log)
+            self._worker.finished.connect(self._on_playlist_loaded)
+            self._worker.error.connect(self._on_worker_error)
+        else:
+            self._worker = InspectWorker(url, self)
+            self._worker.log.connect(self._log)
+            self._worker.finished.connect(self._on_inspect_done)
+            self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+    def _on_inspect_done(self, info: dict, fmts: list):
+        self._info    = info
+        self._formats = fmts
+        self.playlist_lbl.hide()
+        self.playlist_list.hide()
+
+        title    = info.get("title", "")
+        channel  = info.get("uploader") or info.get("channel") or ""
+        dur_s    = info.get("duration", 0)
+        duration = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else ""
+        self.video_info_lbl.setText(
+            f"<b>{title}</b>  ·  {channel}  ·  {duration}")
+
+        self.fmt_combo.clear()
+        for f in fmts:
+            self.fmt_combo.addItem(f["label"])
+        self.fmt_combo.setEnabled(True)
+        self.fmt_combo.setCurrentIndex(0)
+        self.dl_btn.setEnabled(True)
+        self._set_busy(False, 0)
+        self._log(f"Inspecionado: {title}", "ok")
+
+    def _on_playlist_loaded(self, entries: list):
+        self._playlist = entries
+        self.playlist_list.clear()
+        for e in entries:
+            self.playlist_list.addItem(e["title"])
+        self.playlist_lbl.show()
+        self.playlist_list.show()
+        self._set_busy(False, 0)
+        self._log(f"Playlist: {len(entries)} itens.", "ok")
+
+    def _on_playlist_select(self):
+        rows = self.playlist_list.selectedItems()
+        if not rows:
+            return
+        idx = self.playlist_list.row(rows[0])
+        entry = self._playlist[idx]
+        self.url_edit.setText(entry["url"])
+        self._inspect()
+
+    def _start_download(self):
+        url = self.url_edit.text().strip()
+        if not url or not self._formats:
+            return
+        idx = self.fmt_combo.currentIndex()
+        if idx < 0 or idx >= len(self._formats):
+            return
+        fmt = self._formats[idx]
+        if fmt.get("format_id") is None:
+            return  # separador
+
+        outdir = self.outdir_edit.text() or str(DATA_DIR)
+        self._set_busy(True, 0)
+        self.dl_progress.setValue(0)
+        self._log(f"Baixando: {fmt['label'].strip()}…", "")
+
+        self._worker = DownloadWorker(url, fmt, outdir, self)
+        self._worker.log.connect(self._log)
+        self._worker.progress.connect(self.dl_progress.setValue)
+        self._worker.finished.connect(self._on_download_done)
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+    def _on_download_done(self, title: str):
+        self._set_busy(False, 0)
+        self.dl_progress.setValue(100)
+        self._log(f"Download concluído: {title}", "ok")
+        self.status_lbl.setText(f"✓ {title}")
+
+    # ── Transcrever ───────────────────────────────────────────────────────────
+    def _start_transcribe(self):
+        url = self.url_edit.text().strip()
+        if not url:
+            self._log("Nenhuma URL inserida.", "warn")
+            return
+        model    = self.model_combo.currentText()
+        lang_idx = self.lang_combo.currentIndex()
+        lang     = LANG_CODES[lang_idx] if lang_idx < len(LANG_CODES) else "auto"
+        cpu_pct  = int(self.cpu_combo.currentText().replace("%", ""))
+        outdir   = self.outdir_edit.text() or str(DATA_DIR)
+
+        self._set_busy(True, 1)
+        self.tr_progress.setValue(0)
+        self.md_preview.clear()
+        self._log(f"Iniciando transcrição — modelo: {model}, idioma: {lang}…", "")
+
+        self._worker = TranscribeWorker(url, model, lang, cpu_pct, outdir, self)
+        self._worker.log.connect(self._log)
+        self._worker.progress.connect(self.tr_progress.setValue)
+        self._worker.finished.connect(self._on_transcribe_done)
+        self._worker.error.connect(self._on_worker_error)
+        self._worker.start()
+
+    def _on_transcribe_done(self, md_text: str, out_path: str):
+        self._last_md = md_text
+        self._set_busy(False, 1)
+        self.tr_progress.setValue(100)
+        self.md_preview.setPlainText(md_text)
+        self.copy_md_btn.setEnabled(True)
+        self._log(f"Transcrição salva: {out_path}", "ok")
+        self.status_lbl.setText(f"✓ Salvo em {Path(out_path).name}")
+
+    # ── Erros ─────────────────────────────────────────────────────────────────
+    def _on_worker_error(self, msg: str):
+        self._set_busy(False, self.tabs.currentIndex())
+        self._log(f"Erro: {msg}", "err")
+        self.status_lbl.setText("Erro — ver registro.")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+def main():
+    app = QApplication(sys.argv)
+    app.setApplicationName("Hermes")
+    window = HermesApp()
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
