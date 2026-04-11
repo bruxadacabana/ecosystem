@@ -80,6 +80,19 @@ body {
   transition: background var(--transition), color var(--transition);
 }
 
+/* ── Vinheta sépia — bordas envelhecidas ────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(44,36,22,0.10) 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+html.dark body::before {
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.20) 100%);
+}
+
 /* ── Ruído de fibra de papel (sutil, sem linhas) ─────────── */
 body::after {
   content: '';
@@ -274,6 +287,22 @@ input[type="email"], input[type="number"], textarea, select {
   10%  { opacity: 0.7; }
   90%  { opacity: 0.7; }
   to   { transform: translateX(60px) translateY(-60px); opacity: 0; }
+}
+
+@keyframes sealAppear {
+  from { opacity: 0; transform: rotate(-12deg) scale(1.3); }
+  to   { opacity: 0.5; transform: rotate(-12deg) scale(1); }
+}
+
+@keyframes candleFlicker {
+  0%, 100% { opacity: 0; }
+  50%       { opacity: 1; }
+}
+
+@keyframes alchemyRotate {
+  0%   { transform: rotate(0deg);   opacity: 0.6; }
+  50%  { transform: rotate(180deg); opacity: 1.0; }
+  100% { transform: rotate(360deg); opacity: 0.6; }
 }
 
 /* ── Sidebar ─────────────────────────────────────────────── */
@@ -531,6 +560,86 @@ input, textarea, [contenteditable] {
 
 /* ── Scrollbar em área de conteúdo ──────────────────────── */
 .content-area::-webkit-scrollbar { width: 5px; }
+
+/* ── Foxing — manchas de envelhecimento ─────────────────── */
+.foxing { position: relative; overflow: hidden; }
+.foxing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(ellipse 22px 16px at  7% 11%, rgba(122,92,46,0.055) 0%, transparent 100%),
+    radial-gradient(ellipse 14px 11px at 93% 87%, rgba(92,74,46,0.045)  0%, transparent 100%),
+    radial-gradient(ellipse 18px 14px at 88% 14%, rgba(107,85,52,0.050) 0%, transparent 100%),
+    radial-gradient(ellipse 10px  8px at 12% 88%, rgba(92,74,46,0.040)  0%, transparent 100%);
+  border-radius: inherit;
+}
+
+/* ── Marginalia — anotação de margem ─────────────────────── */
+.marginalia-item { position: relative; }
+.marginalia-item::before {
+  content: '✦';
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 8px;
+  font-family: var(--font-display);
+  color: var(--ink-ghost);
+  opacity: 0;
+  transition: opacity 140ms ease;
+  pointer-events: none;
+  user-select: none;
+}
+.marginalia-item:hover::before { opacity: 1; }
+
+/* ── Selo de cera ────────────────────────────────────────── */
+.wax-seal {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--ribbon);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--paper);
+  transform: rotate(-12deg);
+  animation: sealAppear 200ms ease-out forwards;
+  pointer-events: none;
+  user-select: none;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.18);
+}
+.wax-seal-gold { background: var(--accent); }
+
+/* ── Luz de vela ─────────────────────────────────────────── */
+.candle-glow {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse 55% 45% at 50% 48%, rgba(184,134,11,0.025) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: candleFlicker 4s ease-in-out infinite;
+}
+html.dark .candle-glow {
+  background: radial-gradient(ellipse 55% 45% at 50% 48%, rgba(212,168,32,0.035) 0%, transparent 70%);
+}
+
+/* ── Loader alquímico ────────────────────────────────────── */
+.alchemy-loader {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--accent);
+  animation: alchemyRotate 2s ease-in-out infinite;
+  line-height: 1;
+}
+.alchemy-loader-sm { font-size: 13px; }
+.alchemy-loader-lg { font-size: 28px; }
 
 /* ── Utilitários ─────────────────────────────────────────── */
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
