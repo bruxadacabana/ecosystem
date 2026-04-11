@@ -62,6 +62,7 @@ Nenhuma feature está "pronta" se os erros forem silenciados, genéricos ou sem 
 - Zero telemetria, zero analytics, zero conexões externas não solicitadas
 - Dados ficam na máquina do usuário — nunca em servidores de terceiros por padrão
 - Toda conexão externa (API, sync, Ollama) é opt-in e configurável
+- Dados gerados em runtime devem ser armazenados em `<app>/data/` — pasta raiz da aplicação, quando a natureza do app permitir
 
 ---
 
