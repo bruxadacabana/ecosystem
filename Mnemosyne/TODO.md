@@ -172,8 +172,10 @@ Edit failed
 
 ## Fase 5 — UI e design
 
-- [ ] `gui/styles.qss` — fontes do ecossistema (IM Fell English, Special Elite, Courier Prime)
-- [ ] `gui/styles.qss` — visual rico: inputs estilo ficha de biblioteca, cards de resultado
+- [x] `gui/styles.qss` — fontes do ecossistema (IM Fell English, Special Elite, Courier Prime)
+- [x] `gui/styles.qss` — visual rico: inputs estilo ficha de biblioteca, cards de resultado
+- [x] `gui/styles.qss` — Design Bible v2.0: paleta "Papel ao Sol da Manhã", border-radius 2px, botões/tabs/scrollbars completos
+- [x] `gui/main_window.py` — remover hardcodes de cor legados; objectNames para ollamaBanner, folderLabel, cancelBtn, similarLabel; cores dinâmicas de badge/watcher mapeadas para o ecossistema
 
 ## Fase 6 — Coleções Duais: Segunda Memória & Arquivo
 
@@ -201,4 +203,4 @@ Edit failed
 
 ---
 
-*Atualizado em: 2026-04-10*
+*Atualizado em: 2026-04-11*

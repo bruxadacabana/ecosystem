@@ -196,17 +196,15 @@ class MainWindow(QMainWindow):
         self.ollama_banner = QLabel(
             "⚠  Ollama não encontrado. Inicie o Ollama para usar o Mnemosyne."
         )
+        self.ollama_banner.setObjectName("ollamaBanner")
         self.ollama_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.ollama_banner.setStyleSheet(
-            "background:#C9A87C; color:#1E2A3E; padding:6px; font-weight:bold;"
-        )
         self.ollama_banner.setVisible(False)
         root.addWidget(self.ollama_banner)
 
         # Barra superior
         top = QHBoxLayout()
         self.folder_label = QLabel(self.config.watched_dir or "Pasta não configurada")
-        self.folder_label.setStyleSheet("color:#4A4A4A; font-style:italic;")
+        self.folder_label.setObjectName("folderLabel")
 
         self.config_btn = QPushButton("Configurar")
         self.config_btn.setEnabled(False)
@@ -217,18 +215,12 @@ class MainWindow(QMainWindow):
         self.index_btn.clicked.connect(self.start_indexing)
 
         self.cancel_btn = QPushButton("Interromper")
+        self.cancel_btn.setObjectName("cancelBtn")
         self.cancel_btn.setVisible(False)
-        self.cancel_btn.setStyleSheet(
-            "QPushButton { background-color: #8B2020; color: white; }"
-            "QPushButton:hover { background-color: #A02020; }"
-        )
         self.cancel_btn.clicked.connect(self._cancel_worker)
 
         self.badge_label = QLabel()
         self.badge_label.setVisible(False)
-        self.badge_label.setStyleSheet(
-            "padding: 3px 8px; border-radius: 3px; font-weight: bold;"
-        )
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)
@@ -290,8 +282,8 @@ class MainWindow(QMainWindow):
         layout.addLayout(source_row)
 
         self.similar_label = QLabel()
+        self.similar_label.setObjectName("similarLabel")
         self.similar_label.setVisible(False)
-        self.similar_label.setStyleSheet("color:#C9A87C; font-style:italic; padding:4px;")
         layout.addWidget(self.similar_label)
 
         layout.addWidget(QLabel("Resposta:"))
@@ -497,15 +489,15 @@ class MainWindow(QMainWindow):
         if watcher and watcher.is_active:
             if watcher.is_enabled:
                 self.manage_watcher_label.setText("✔ Ativo")
-                self.manage_watcher_label.setStyleSheet("color:#2E7D32; font-weight:bold;")
+                self.manage_watcher_label.setStyleSheet("color:#4A6741; font-weight:bold;")
                 self.toggle_watcher_btn.setText("Pausar watcher")
             else:
                 self.manage_watcher_label.setText("⏸ Pausado")
-                self.manage_watcher_label.setStyleSheet("color:#C9A87C; font-weight:bold;")
+                self.manage_watcher_label.setStyleSheet("color:#b8860b; font-weight:bold;")
                 self.toggle_watcher_btn.setText("Retomar watcher")
         else:
             self.manage_watcher_label.setText("Inativo")
-            self.manage_watcher_label.setStyleSheet("color:#4A4A4A;")
+            self.manage_watcher_label.setStyleSheet("color:#9C8E7A;")
 
     def _toggle_watcher(self) -> None:
         watcher = getattr(self, "_watcher", None)
@@ -658,8 +650,8 @@ class MainWindow(QMainWindow):
         if total == 0:
             self.badge_label.setText("✓ índice actualizado")
             self.badge_label.setStyleSheet(
-                "padding: 3px 8px; border-radius: 3px; font-weight: bold;"
-                "background: #2E7D32; color: white;"
+                "padding: 3px 8px; border-radius: 2px; font-weight: bold;"
+                "background: #4A6741; color: #F5F0E8;"
             )
         else:
             parts = []
@@ -669,8 +661,8 @@ class MainWindow(QMainWindow):
                 parts.append(f"{len(modified)} modificado(s)")
             self.badge_label.setText(" / ".join(parts) + " por indexar")
             self.badge_label.setStyleSheet(
-                "padding: 3px 8px; border-radius: 3px; font-weight: bold;"
-                "background: #C9A87C; color: #1E2A3E;"
+                "padding: 3px 8px; border-radius: 2px; font-weight: bold;"
+                "background: #b8860b; color: #F5F0E8;"
             )
         self.badge_label.setVisible(True)
 
@@ -890,7 +882,27 @@ class MainWindow(QMainWindow):
         ts = datetime.now().strftime("%H:%M:%S")
         self.event_log.append(f"[{ts}] {message}")
 
+    def _load_fonts(self) -> None:
+        """Carrega IM Fell English, Special Elite e Courier Prime do sistema."""
+        from PySide6.QtGui import QFontDatabase
+
+        font_dirs = [
+            os.path.expanduser("~/.local/share/fonts"),
+            "/usr/share/fonts",
+            "/usr/local/share/fonts",
+        ]
+        targets = {"IM Fell English", "Special Elite", "Courier Prime"}
+        for font_dir in font_dirs:
+            if not os.path.isdir(font_dir):
+                continue
+            for root, _, files in os.walk(font_dir):
+                for fname in files:
+                    if fname.lower().endswith((".ttf", ".otf")):
+                        if any(t.replace(" ", "").lower() in fname.lower().replace(" ", "").replace("-", "") for t in targets):
+                            QFontDatabase.addApplicationFont(os.path.join(root, fname))
+
     def apply_style(self) -> None:
+        self._load_fonts()
         style_path = os.path.join(os.path.dirname(__file__), "styles.qss")
         if os.path.exists(style_path):
             with open(style_path, encoding="utf-8") as f:
@@ -898,35 +910,29 @@ class MainWindow(QMainWindow):
         else:
             self.setStyleSheet(
                 """
-                QMainWindow { background-color: #FDF8F0; }
-                QLabel { color: #4A4A4A; }
+                QMainWindow { background-color: #F5F0E8; }
+                QLabel { color: #5C4E3A; }
                 QPushButton {
-                    background-color: #D4C4B0;
-                    border: 1px solid #C9A87C;
-                    padding: 5px 12px;
-                    border-radius: 3px;
-                }
-                QPushButton:hover { background-color: #C9A87C; }
-                QPushButton:disabled { background-color: #EDE8E0; color: #9A9A9A; }
-                QLineEdit, QTextEdit {
-                    background-color: white;
-                    border: 1px solid #D4C4B0;
+                    background-color: #EDE7D9;
+                    border: 1px solid #C4B9A8;
+                    padding: 5px 14px;
                     border-radius: 2px;
-                    padding: 2px;
+                    color: #5C4E3A;
                 }
-                QTabWidget::pane { border: 1px solid #D4C4B0; }
-                QTabBar::tab { background-color: #F0E8DC; padding: 8px 16px; }
-                QTabBar::tab:selected {
-                    background-color: #FDF8F0;
-                    border-bottom: 2px solid #C9A87C;
+                QPushButton:hover { background-color: #E0D8C8; border-color: #7A5C2E; }
+                QPushButton:disabled { background-color: #EDE7D9; color: #C4B9A8; }
+                QLineEdit, QTextEdit {
+                    background-color: #F5F0E8;
+                    border: 1px solid #C4B9A8;
+                    border-radius: 2px;
+                    padding: 4px 8px;
+                    color: #2C2416;
                 }
-                QGroupBox {
-                    border: 1px solid #D4C4B0;
-                    border-radius: 4px;
-                    margin-top: 8px;
-                    padding: 8px;
-                }
-                QGroupBox::title { color: #1E2A3E; font-weight: bold; }
+                QTabWidget::pane { border: 1px solid #C4B9A8; background-color: #F5F0E8; }
+                QTabBar::tab { background-color: #EDE7D9; padding: 5px 16px; color: #9C8E7A; border: 1px solid #C4B9A8; border-bottom: none; }
+                QTabBar::tab:selected { background-color: #F5F0E8; color: #2C2416; border-bottom: 2px solid #b8860b; }
+                QGroupBox { border: 1px solid #C4B9A8; border-radius: 2px; margin-top: 10px; padding: 8px; }
+                QGroupBox::title { color: #5C4E3A; }
                 """
             )
 
