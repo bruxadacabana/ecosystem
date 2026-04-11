@@ -1,0 +1,1019 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║          ECOSSISTEMA — DESIGN BIBLE  v2.0                                    ║
+║          Identidade Visual Compartilhada · Sépia · Cosmos Medieval           ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+  Documento vivo. Atualizar sempre que uma decisão de design for aprovada.
+  Esta bíblia define TUDO: cada cor, cada fonte, cada animação, cada regra
+  de espaçamento, cada símbolo decorativo de todos os apps do ecossistema.
+  Não existe "quase certo" aqui.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  I. ALMA E VISÃO
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Os apps do ecossistema são completamente locais — sem nuvem, sem conta,
+  sem rastreamento. São cadernos, ateliers e laboratórios digitais que vivem
+  no computador do usuário como objetos físicos, não como serviços.
+
+  A premissa visual compartilhada: o que aconteceria se uma biblioteca medieval
+  de alquimia tivesse sido modernizada por um cartógrafo do século XIX que
+  descobriu a astronomia? O resultado seria papel envelhecido coberto de notas
+  à tinta, margens anotadas, selos de cera, mapas estelares desenhados à mão,
+  e uma luminosidade dourada de vela.
+
+  Os apps não tentam ser "clean" ou "minimal" no sentido moderno. Eles têm
+  textura, têm peso, têm caráter. Mas nunca são ruidosos nem difíceis de usar.
+  A ornamentação serve a função — cada elemento decorativo existe porque
+  aumenta a sensação de um objeto precioso, não porque é bonito por si só.
+
+  ───────────────────────────────────────────────────────────────────
+
+  MITOLOGIA E NOMENCLATURA:
+
+  Cada app do ecossistema tem nome derivado de mitologia, línguas antigas
+  ou conceitos esotéricos e cósmicos. Essa etimologia não é decorativa —
+  é a alma de cada ferramenta, e deve ecoar na identidade visual de cada app.
+
+  · OGMA       — deus irlandês das letras e do conhecimento; criador do Ogham,
+                 o mais antigo alfabeto da Irlanda, entalhado em pedra
+  · KOSMOS     — palavra grega para ordem, harmonia, universo e totalidade;
+                 oposto ao Caos primordial
+  · AETHER     — éter primordial da mitologia grega; o quinto elemento,
+                 substância dos céus além do ar mortal
+  · Mnemosyne  — titânide grega da memória e da lembrança; mãe das nove musas;
+                 personificação do ato de recordar
+
+  Ao criar um novo app, o nome deve seguir esta tradição: mitologia, língua
+  antiga, conceito hermético ou astronômico. O nome é o primeiro símbolo.
+
+  ───────────────────────────────────────────────────────────────────
+
+  PALAVRAS-CHAVE DA IDENTIDADE:
+  · Sépia · Pergaminho · Tinta · Cosmos · Medieval · Cartografia
+  · Manuscrito · Máquina de escrever · Alquimia · Astronomia
+  · Mitologia · Esotérico · Grimório · Hermetismo · Constelação
+  · Biblioteca · Arquivo · Mapa estelar · Vela · Caligrafia · Ogham
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  II. REFERÊNCIAS E INSPIRAÇÕES
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  VISUAIS DIRETOS:
+  · Iluminuras medievais — bordas decoradas, ouro sobre pergaminho
+  · Mapas do século XVII — paleta sépia, linhas finas, rosetas de vento
+  · Máquinas de escrever Underwood/Olivetti — tipo monospaced, ação mecânica
+  · Cadernos Moleskine — papel creme, cantos retos, marcações discretas
+  · Atlas astronômicos de Bode (1801) — constelações desenhadas à mão,
+    estrelas com forma geométrica, linhas pontilhadas ligando pontos
+  · Grimórios e bestiários medievais — títulos em itálico pesado,
+    texto justificado em colunas, ornamentos tipográficos
+  · Tábuas herméticas e alquímicas — símbolos, marginalia, camadas de sentido
+  · Inscrições Ogham — entalhes em pedra, escrita como marca física no mundo
+
+  SOM E RITMO:
+  A interface deve ter ritmo como uma máquina de escrever:
+  ações têm peso, cliques têm "snap", transições são curtas e confiantes.
+  Nada flutua nem dissolve lentamente. Tudo "cai" ou "aparece" com intenção.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  III. SISTEMA DE CORES
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  MODO DIURNO — "Papel ao Sol da Manhã"                                  │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  FUNDOS (do mais claro ao mais escuro):
+  --paper:          #F5F0E8   Fundo principal — papel de livro antigo
+  --paper-dark:     #EDE7D9   Sidebar, cards, modais — papel ligeiramente mais velho
+  --paper-darker:   #E0D8C8   Hover states, inputs focados — papel com patina
+  --paper-darkest:  #D5CCBA   Estado ativo de nav — papel mais encardido
+
+  TINTAS (do mais escuro ao mais claro):
+  --ink:            #2C2416   Texto principal — tinta marrom-preta de nanquim
+  --ink-light:      #5C4E3A   Texto secundário — tinta desgastada
+  --ink-faint:      #9C8E7A   Placeholder, labels — tinta muito pálida
+  --ink-ghost:      #C4B9A8   Regras, bordas, texto fantasma
+
+  ACENTO PRINCIPAL:
+  --accent:         #b8860b   Dourado — ouro velho de iluminura
+  --cursor-color:   #b8860b   Cursor de texto — sempre dourado
+
+  CORES FUNCIONAIS (ação / semântica):
+  --ribbon:         #8B3A2A   Vermelho desbotado — perigo, erro, exclusão
+  --ribbon-light:   #B85C4A   Vermelho hover
+  --accent-green:   #4A6741   Verde musgo — sucesso, concluído
+  --stamp:          #7A5C2E   Marrom-carimbado — sombras, toque de calor
+
+  LINHAS E DIVISORES:
+  --rule:           #C4B9A8   Linhas de pauta — mesma que --ink-ghost
+  --margin-line:    rgba(160,50,30,0.3)   Linha vermelha de margem (sidebar)
+  --shadow:         rgba(44,36,22,0.14)   Sombra sépia natural
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  MODO NOTURNO — "Atlas Astronômico à Meia-Noite"                        │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  No modo noturno, a metáfora muda: não é mais papel envelhecido sob vela,
+  mas um atlas astronômico aberto na escuridão — fundo de céu profundo com
+  constelações desenhadas a ouro, como os atlas de Flamsteed e Bode.
+
+  O azul não é azul de tela moderna. É azul que passou décadas numa
+  encadernação de couro: dessaturado, com toque sépia, como tecido de veludo
+  desbotado. O dourado BRILHA mais que no dia — é ouro sobre céu escuro,
+  não sobre papel claro.
+
+  FUNDOS:
+  --paper:          #12161E   Fundo principal — céu noturno de atlas antigo
+  --paper-dark:     #181D28   Sidebar, cards — azul-noite mais fundo
+  --paper-darker:   #1E2433   Hover — azul com patina envelhecida
+  --paper-darkest:  #252B3A   Ativo — azul ligeiramente mais claro
+
+  TINTAS:
+  --ink:            #E8DFC8   Texto — pergaminho iluminado sobre céu escuro
+  --ink-light:      #C8B99A   Texto secundário — creme envelhecido
+  --ink-faint:      #7A7260   Placeholder — manchas de fumaça sobre azul
+  --ink-ghost:      #2E3445   Bordas fantasmas — azul quase invisível
+
+  ACENTOS NOTURNOS:
+  --accent:         #D4A820   Dourado brilhante — constelação sobre o céu
+  --cursor-color:   #D4A820   Cursor — pena de ouro sobre atlas
+
+  FUNCIONAIS NOTURNOS:
+  --ribbon:         #C45A40   Vermelho — brasa acesa
+  --ribbon-light:   #D97A5A   Vermelho hover — brasa mais brilhante
+  --accent-green:   #6A9060   Verde — musgo iluminado
+  --stamp:          #A07840   Caramelo — lacre de cera
+  --margin-line:    rgba(212,168,32,0.15)   Linha dourada — margem de atlas
+  --shadow:         rgba(0,0,0,0.5)
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │  PALETA DE PROJETOS / CATEGORIAS — Cores Temáticas                       │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+  Oito cores disponíveis para categorias e projetos, todas dentro da paleta
+  sépia-terrosa:
+
+  #8B7355   Sépia quente (padrão)
+  #8B3A2A   Vermelho desbotado
+  #4A6741   Verde musgo
+  #7A5C2E   Marrom pergaminho
+  #2C5F8A   Azul de tinta de mapa
+  #6B4F72   Roxo de violeta seco
+  #5C8A6B   Verde-água de ervas
+  #8A6B2C   Dourado de lacre
+
+  REGRA: Todas as cores são "dessaturadas" — pigmentos envelhecidos,
+  não cores vibrantes de tela. Nada de #FF0000 ou #00FF00. Sempre como se
+  o pigmento tivesse passado décadas exposto à luz.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  IV. TIPOGRAFIA
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  O ecossistema usa exatamente três famílias tipográficas. Nada mais.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  FONTE 1: IM Fell English (via Google Fonts)                          ║
+  ║  CSS var: --font-display                                              ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Serif antiga com irregularidades orgânicas — simula tipo móvel de chumbo
+  do século XVII. Tem "imperfeições" intencionais que dão caráter.
+
+  USO:
+  · Títulos de seções e páginas (h1 22px itálico, h2 26px itálico, etc.)
+  · Títulos de itens e projetos (26px itálico, font-weight: normal)
+  · Conteúdo de parágrafos em editores (16px, line-height: 1.75)
+  · Títulos de cards em listas e tabelas (13–15px itálico)
+  · Nome do app no splash e na sidebar (68px e 24px respectivamente)
+  · Títulos de modais (18px itálico)
+  · Nome na topbar (16px itálico)
+  · Corpo de citações em editores (17px itálico)
+
+  REGRA FUNDAMENTAL: IM Fell English é SEMPRE usada em itálico para títulos
+  e texto de conteúdo. Apenas dados tabulares e labels usam roman (não itálico).
+  O itálico é a "assinatura caligráfica" do ecossistema.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  FONTE 2: Special Elite (via Google Fonts)                            ║
+  ║  CSS var: --font-mono                                                 ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Monospace que imita teclas de máquina de escrever — cada letra ocupa o
+  mesmo espaço, como se fosse digitada. Tem textura mecânica.
+
+  USO:
+  · Corpo padrão do app (13px) — a fonte que o usuário vê em 90% das UIs
+  · Botões (11px, letter-spacing: 0.08em)
+  · Labels de formulário (10px, uppercase, letter-spacing: 0.14em)
+  · Navegação da sidebar (12px, letter-spacing: 0.06em)
+  · Badges e tags (10px, uppercase, letter-spacing: 0.1em)
+  · Seções e rótulos de categoria (9px, uppercase, letter-spacing: 0.2em)
+  · Headers de tabela (9px, uppercase, letter-spacing: 0.15em)
+  · Texto no splash (9px e 11px)
+  · Datas e metadados (9–11px)
+  · Rodapés de cards (9px)
+  · Toasts (11px, letter-spacing: 0.04em)
+
+  REGRA: Special Elite NUNCA é usada em itálico (exceto raras exceções
+  como a mensagem de carregamento do splash). É sempre roman, sempre
+  com letter-spacing generoso (mínimo 0.06em) para imitar o espaçamento
+  mecânico das máquinas de escrever.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  FONTE 3: Courier Prime (via Google Fonts)                            ║
+  ║  CSS var: --font-code                                                 ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Courier clássico redesenhado para alta legibilidade em tela. Mais
+  elegante que Courier New, preservando o caráter telegráfico.
+
+  USO EXCLUSIVO:
+  · Blocos de código em editores (13px)
+  · Código inline em editores (13px)
+
+  ───────────────────────────────────────────────────────────────────────
+
+  HIERARQUIA TIPOGRÁFICA COMPLETA:
+
+  68px  IM Fell English Itálico    → Nome do app no Splash
+  26px  IM Fell English Itálico    → Título/nome principal no header
+  24px  IM Fell English Itálico    → Nome do app na sidebar
+  22px  IM Fell English Itálico    → Título de seção (h1)
+  20px  IM Fell English Itálico    → Empty state title
+  18px  IM Fell English Itálico    → Título de modal
+  17px  IM Fell English Itálico    → Citação em editores
+  16px  IM Fell English Itálico    → Parágrafo de editor, h1 editor (2rem)
+  15px  IM Fell English            → Células de tabela, nomes em cards
+  13px  IM Fell English Itálico    → Título de card
+  13px  Special Elite              → Corpo geral do app
+  12px  Special Elite              → Nav sidebar, texto secundário
+  11px  Special Elite              → Botões, tags, metadados, toasts
+  10px  Special Elite Uppercase    → Labels de form, badges, nav sub
+   9px  Special Elite Uppercase    → Section labels, table headers, datas
+   7.5px Special Elite Uppercase   → Subtítulo do app na sidebar
+
+  ───────────────────────────────────────────────────────────────────────
+
+  LETTER-SPACING PADRÃO POR TAMANHO:
+
+  Títulos (≥18px)     → 0.02–0.06em
+  Corpo (13–16px)     → 0 (normal)
+  Botões (11px)       → 0.08em
+  Labels (10px)       → 0.14em
+  Seções (9px)        → 0.18–0.22em (máximo espaçamento)
+
+  REGRA DOURADA: Quanto menor o texto, mais letter-spacing.
+  Texto minúsculo sem espaçamento parece ilegível; texto maiúsculo
+  muito pequeno com espaçamento generoso parece gravado em pedra —
+  exatamente o efeito desejado.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  V. ANIMAÇÕES
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  FILOSOFIA: Animações curtas e funcionais. Nunca lentas, nunca decorativas
+  demais. Cada animação imita física real: objetos caem, surgem, piscam.
+  A duração máxima de qualquer animação de UI é 250ms.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  paperFall — A animação principal do sistema                     │
+  └──────────────────────────────────────────────────────────────────┘
+
+  @keyframes paperFall {
+    from { opacity: 0; transform: translateY(-14px) rotate(-0.4deg); }
+    to   { opacity: 1; transform: translateY(0)     rotate(0); }
+  }
+  Duração: 0.20–0.22s · Easing: ease-out
+
+  Imita uma folha de papel sendo colocada sobre uma mesa: vem de cima,
+  com uma leve rotação como se estivesse caindo, e pousa suavemente.
+  Usada em: cards, headers, colunas, linhas de lista, modais.
+
+  REGRA: Elementos em lista usam animationDelay escalonado (i * 0.04s)
+  para dar efeito de "chuva de papéis" quando a lista carrega.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  fadeIn — Aparecimento simples                                   │
+  └──────────────────────────────────────────────────────────────────┘
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  Duração: 0.15–0.25s · Easing: ease
+
+  Usada em: overlay de modais, painéis laterais, dropdowns,
+  conteúdo de página. Não tem movimento, só opacidade.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  slideIn — Entrada lateral                                       │
+  └──────────────────────────────────────────────────────────────────┘
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-16px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  Duração: usar com critério · Easing: ease
+
+  Reservada para painéis que vêm da esquerda (sidebar, drawers).
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  blink — Pulsação                                                │
+  └──────────────────────────────────────────────────────────────────┘
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
+  Duração: 1.2s (splash) / 0.6s (indicador de drop Kanban)
+
+  Usada em: reticências de loading no splash ("· · ·"),
+  linha de drop no Kanban (pulsação brilhante ao arrastar).
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  comet — Cometa no cosmos (uso interno CosmosLayer)              │
+  └──────────────────────────────────────────────────────────────────┘
+
+  @keyframes comet {
+    from { transform: translateX(-60px) translateY(60px); opacity: 0; }
+    10%  { opacity: 0.7; }
+    90%  { opacity: 0.7; }
+    to   { transform: translateX(60px) translateY(-60px); opacity: 0; }
+  }
+  Movimento diagonal — imita cometa cruzando o céu.
+  (Referência, não necessariamente aplicado em CSS puro.)
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │  toastIn — Entrada de notificação                                │
+  └──────────────────────────────────────────────────────────────────┘
+
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  Duração: 180ms · Easing: ease-out
+
+  Toast surge de baixo, leve e rápido. Não usa paperFall porque o toast
+  não é "papel" — é uma nota urgente colada rapidamente.
+
+  ───────────────────────────────────────────────────────────────────
+
+  TRANSIÇÕES DE HOVER/INTERAÇÃO:
+
+  --transition: 140ms ease   → Padrão para background, color, border-color
+  120ms ease                 → Cards, botões ghost, dropdowns
+  100ms                      → Microinterações (prop-select-btn, opacidade)
+  80ms                       → Muito rápido (hover em itens de dropdown)
+  0.4s ease                  → Barra de progresso (preenchimento suave)
+
+  REGRA: Nada além de 300ms para transições de estado.
+  Transições longas tornam o app "lento" mesmo quando não é.
+
+  ───────────────────────────────────────────────────────────────────
+
+  FEEDBACK DE CLIQUE (botões):
+
+  .btn:active {
+    box-shadow: none;
+    transform: translate(1px, 1px);
+  }
+
+  Cards no hover:
+    transform: translate(-1px, -1px)   → flutua levemente para cima-esquerda
+    box-shadow aumenta 1px
+
+  Cards no click:
+    transform: none; box-shadow reduz  → "pressiona" de volta ao plano
+
+  Este padrão imita a física de pressionar um botão de máquina de escrever:
+  você sente que está interagindo com algo com peso real.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  VI. DECORAÇÕES E EFEITOS VISUAIS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  1. TEXTURA DE PAPEL — Ruído de Fibra                                ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Implementado como body::after — cobre toda a tela com um SVG de ruído
+  fractal gerado por feTurbulence (baseFrequency: 0.65, numOctaves: 4).
+  Opacity: 30%. pointer-events: none. z-index: 0.
+
+  Este efeito é SUTIL. O usuário não deve notar conscientemente —
+  mas se removido, o app parece "digital demais", sem textura de papel.
+  É a diferença entre papel real e uma foto de papel.
+
+  Cor do ruído: baseado na cor do SVG (cinza) sobre o fundo sépia.
+  No modo noturno, o ruído é invisível contra o fundo escuro (intencional).
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  2. LINHA VERMELHA DE MARGEM — A Regra do Caderno                    ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Implementada como sidebar::before — uma linha vertical de 1px de largura
+  na posição left: 44px (exatamente onde os ícones de nav terminam).
+
+  Cor: --margin-line (rgba(160,50,30,0.3) no dia, rgba(160,80,40,0.2) à noite)
+
+  Esta linha é a "margem vermelha" de um caderno universitário americano.
+  Posiciona visualmente os ícones de nav no lado esquerdo da margem,
+  como se fossem anotações numéricas em um manuscrito.
+
+  Também aparece no splash screen, na posição left: 44px, mesma posição,
+  criando consistência entre a tela de abertura e o layout principal.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  3. COSMOS LAYER — O Mapa Estelar                                    ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Componente que gera SVG procedural e determinístico
+  (mesmo seed = mesmo resultado) com:
+
+  ELEMENTOS GERADOS:
+  a) Nebulosas — elipses com blur gaussiano (feGaussianBlur), opacidade 3–7%.
+     Cor: --stamp (marrom-dourado). Criam profundidade atmosférica.
+
+  b) Estrelas — formas de 10 pontas geradas por cálculo trigonométrico,
+     com raio aleatório ±10% e rotação ±30°. Opacidade 12–40%.
+     Cores: starColor (#5C4E3A dia / #C8B99A noite) e starDim.
+
+  c) Constelações — pontos (estrelas pequenas) conectados por linhas
+     pontilhadas (strokeDasharray: "2,4"). Opacidade 22%.
+     Imita o estilo dos atlas astronômicos históricos de Bode e Flamsteed.
+
+  d) Cometa — três linhas divergentes com espessura decrescente (0.9, 0.65, 0.4px)
+     mais um núcleo elíptico na cor dourada (accent, opacidade 50%).
+
+  e) Lua crescente — dois círculos sobrepostos (técnica de máscara natural):
+     círculo menor na cor do fundo "apaga" parte do maior, criando crescente.
+
+  f) Planeta — círculo com elipse de anel ao redor. Aparece apenas em
+     density="high". Opacidade 22%.
+
+  DENSIDADES:
+  · low    → 1 nebulosa, 9 estrelas, sem constelação, sem cometa (headers simples)
+  · medium → 2 nebulosas, 14 estrelas, constelação 5pts, cometa, lua (headers principais)
+  · high   → 3 nebulosas, 19 estrelas, constelação 6pts, cometa, lua, planeta (splash)
+
+  POSICIONAMENTO: sempre absolute, top/left: 0, pointer-events: none, aria-hidden.
+  Fica atrás de todo conteúdo (z-index menor que o conteúdo do card).
+
+  TRANSPARÊNCIA TÍPICA: 0.40–0.55 opacity no elemento pai, para que
+  o cosmos seja visível mas não concorra com o texto sobre ele.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  4. BARRA COLORIDA LATERAL — A Lombada do Livro                      ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Presente em:
+  · Header de seção/projeto (left: 0, top/bottom: 0, width: 4px) — cor temática
+  · Header de página/item   (left: 0, top/bottom: 0, width: 4px) — cor temática
+  · Nav items ativos (border-left: 3px solid accent)              — cor dourada
+
+  Imita a lombada colorida de um livro em uma estante de biblioteca,
+  identificando visualmente a seção à qual o conteúdo pertence.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  5. SOMBRA OFFSET (Box Shadow Plano) — Profundidade de Papel Empilhado║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Todo elemento com "peso" (botões, cards, modais, menus) tem sombra
+  em dois planos: não circular/difusa, mas OFFSET retangular:
+
+  Botão:         box-shadow: 2px 2px 0 var(--rule)
+  Botão primary: box-shadow: 2px 2px 0 var(--stamp)
+  Card:          box-shadow: 3px 3px 0 var(--paper-darker)
+  Card hover:    box-shadow: 4px 4px 0 var(--paper-darkest)
+  Modal:         box-shadow: 6px 6px 0 var(--ink-ghost)
+  Menus popup:   box-shadow: 3px 3px 0 var(--rule)
+
+  Esta técnica (flat shadow / Swiss poster shadow) imita o efeito de folhas
+  de papel empilhadas: o "livro" tem espessura, não flutua no ar.
+  É propositalmente sem blur (0px) para ser nítido como papel físico.
+
+  No clique (:active), a sombra desaparece e o elemento translada +1px +1px,
+  como se estivéssemos pressionando a folha contra a mesa.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  6. SCROLLBAR VINTAGE                                                 ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  track:  --paper-dark
+  thumb:  --rule (borda #C4B9A8)
+  hover:  --stamp (marrom mais quente)
+  border-radius: 2px
+
+  Fino, quase invisível, mas com a paleta correta.
+  Não é o scrollbar padrão do sistema — mas também não chama atenção.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  7. CURSOR DOURADO                                                    ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  caret-color: --accent (#b8860b dia / #D4A820 noite)
+
+  Em TODOS os inputs, textareas e contenteditable. O cursor piscante
+  é dourado — como uma pena de ouro escrevendo.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  8. SELEÇÃO DE TEXTO                                                  ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  ::selection { background: rgba(184,134,11,0.25); }   → dourado translúcido
+  No editor (dark): background: rgba(212,168,32,0.2);
+
+  Selecionar texto ilumina-o em âmbar — como marcar com lápis de cera.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  VII. LAYOUT E MÉTRICAS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  DIMENSÕES FIXAS:
+  --sidebar-w:  224px   Largura da sidebar (sempre visível, nunca colapsável)
+  --topbar-h:   44px    Altura da topbar
+  --radius:     2px     Border-radius PADRÃO de TUDO
+
+  REGRA DO BORDER-RADIUS: O ecossistema usa border-radius de 2px em praticamente
+  todos os elementos — botões, cards, inputs, modais, tags, badges.
+  Isso cria cantos levemente arredondados como um papel cortado à mão,
+  não cantos perfeitamente retos (muito frio) nem muito redondos (muito casual).
+
+  EXCEÇÕES ao 2px:
+  · Badges "pill" (categorias, status): border-radius: 20px — selos ovais
+  · Tags multi_select e Kanban tags: border-radius: 20px — chips de papel
+  · prop-dot (ponto de cor): border-radius: 50% — círculo perfeito
+
+  ───────────────────────────────────────────────────────────────────
+
+  ESPAÇAMENTOS:
+
+  Espaçamento interno padrão (padding):
+  · Sidebar nav item:    padding: 9px 16px
+  · Botão .btn:          padding: 5px 14px
+  · Botão .btn-sm:       padding: 3px 10px
+  · Card .card:          padding: 14px 16px
+  · Input:               padding: 7px 11px
+  · Modal title:         padding: 18px 20px 12px
+  · Modal body:          padding: 18px 20px
+  · Modal footer:        padding: 12px 20px
+  · Content area:        padding: 28px 32px
+  · Header principal:    padding: 20px 20px 20px 24px (extra à esquerda pela barra)
+  · Table cell (título): padding: 9px 20px
+  · Table cell (prop):   padding: 9px 12px
+
+  GAPS:
+  · Grid de itens:   gap: 16px
+  · Cards em lista:  gap: 7px entre cards
+  · Toast container: gap: 8px
+  · Table gap:       0 (bordas de linha)
+
+  ───────────────────────────────────────────────────────────────────
+
+  GRID DE EDITOR DE TEXTO:
+
+  Conteúdo do editor limitado a 720px de largura máxima, centralizado.
+  padding: 0 32px nas laterais.
+  padding-bottom: 60px no final (espaço para respiro).
+  padding no holder (wrapper): 40px 0 80px.
+
+  O editor NUNCA vai de borda a borda. Há sempre uma coluna de "margem"
+  em ambos os lados — como na diagramação de um livro clássico.
+
+  ───────────────────────────────────────────────────────────────────
+
+  Z-INDEX STACK:
+
+  0         Fundo (textura de papel body::after)
+  1         Conteúdo normal (#root)
+  10        Topbar (position: relative)
+  50        Popups do editor (toolbox, inline toolbar, settings, popover)
+  100       Dropdowns e popovers
+  1000      Modais e overlays
+  9999      Toasts e splash screen
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  VIII. COMPONENTES
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  BOTÕES                                                               ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  .btn (base):
+  · font-family: --font-mono, 11px, letter-spacing: 0.08em
+  · padding: 5px 14px, border-radius: 2px
+  · border: 1px solid --rule
+  · background: --paper-dark, color: --ink-light
+  · box-shadow: 2px 2px 0 --rule  ← sombra "estampada"
+  · transition: 140ms ease
+  · hover: background --paper-darker, border-color --stamp, color --ink
+  · active: box-shadow none, transform translate(1px,1px)
+
+  .btn-primary:
+  · background: --ink, color: --paper, border: --ink
+  · box-shadow: 2px 2px 0 --stamp  ← sombra quente
+  · hover: background --ink-light
+
+  .btn-accent:
+  · background: --accent, color: --paper
+  · hover: filter brightness(1.1)
+
+  .btn-danger:
+  · background: --ribbon, color: --paper
+  · hover: background --ribbon-light
+
+  .btn-ghost:
+  · background/border: transparent, no shadow
+  · hover: background --paper-darker
+
+  .btn-sm: padding: 3px 10px, font-size: 10px
+  .btn-icon: padding: 5px, min-width: 30px, justified center
+
+  REGRA: Botões primários são escuros (tinta sobre papel).
+  Botões fantasmas são invisíveis até o hover.
+  Nunca usar cores vibrantes em botões — sempre dentro da paleta sépia.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  INPUTS E FORMULÁRIOS                                                 ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  · font-family: --font-display (IM Fell English), 14px
+  · padding: 7px 11px, border-radius: 2px
+  · border: 1px solid --rule, background: --paper-dark
+  · box-shadow: 2px 2px 0 --paper-darker
+  · focus: border-color --accent, background --paper
+  · placeholder: --ink-faint, font-style: italic
+
+  Labels (.form-label):
+  · --font-mono, 10px, uppercase, letter-spacing: 0.14em
+  · color: --ink-faint, margin-bottom: 5px
+
+  REGRA: Inputs têm corpo de serif (IM Fell) para que digitar seja
+  "escrever à mão", não "preencher formulário". A diferença é sutil
+  mas impacta a experiência emocional.
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  CARDS                                                                ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  · background: --paper-dark, border: 1px solid --rule
+  · border-radius: 2px, padding: 14px 16px
+  · box-shadow: 3px 3px 0 --paper-darker
+  · animation: paperFall 0.22s ease-out
+  · hover: background --paper-darker, shadow 4px 4px
+
+  VARIANTE ARRASTÁVEL:
+  · hover: translate(-1px,-1px), shadow aumenta
+  · dragging: opacity 0.35 (indica que está sendo carregado)
+  · done/concluído: opacity 0.55 (item concluído tem menos presença visual)
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  BADGES / TAGS                                                        ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  .badge (status, categoria):
+  · --font-mono, 10px, uppercase, letter-spacing: 0.1em
+  · padding: 2px 8px, border-radius: 20px (oval)
+  · border: 1px solid, background: transparent
+  · cor da borda = cor temática do status/categoria
+
+  .tag (mini-chip em cards):
+  · --font-mono, 8px, letter-spacing: 0.06em
+  · padding: 1px 6px, border-radius: 20px (pill)
+  · opacity: 0.85 (levemente translúcido)
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  MODAIS                                                               ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  OVERLAY: rgba(44,36,22,0.5) — sépia semi-transparente, não preto
+  Blur: nenhum — o fundo fica visível mas atenuado
+
+  JANELA MODAL:
+  · background: --paper (mais claro que tudo — parece uma folha sobre tudo)
+  · border: 1px solid --rule, border-radius: 2px
+  · box-shadow: 6px 6px 0 --ink-ghost  ← sombra maior e mais escura
+  · min-width: 420px, max-width: 620px
+  · animation: paperFall 0.2s ease-out (cai como documento sobre mesa)
+
+  ESTRUTURA:
+  · .modal-title: --font-display, 18px, itálico, padding: 18px 20px 12px
+  · .modal-body:  padding: 18px 20px
+  · .modal-footer: border-top, padding: 12px 20px, justify: flex-end
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║  TOASTS / NOTIFICAÇÕES                                                ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Posição: fixed, bottom: 24px, right: 24px, max 5 simultâneos
+  Animação: toastIn (180ms, slide 6px de baixo)
+  Auto-dismiss: error=7s, success=3s, warning=5s, info=4s
+
+  ESQUEMAS DE COR (dia/noite):
+  · error:   fundo #F9F2EA / borda #8B3A2A / texto #5A1E12
+             dark: #2A1810 / #C45A40 / #E8A090
+  · success: fundo #F0F5EE / borda #4A6741 / texto #2A4A22
+             dark: #162015 / #5C8A4E / #8AC880
+  · warning: fundo #F9F5E8 / borda #b8860b / texto #6B4E00
+             dark: #231C08 / #D4A820 / #E8C860
+  · info:    fundo #EEF2F9 / borda #2C5F8A / texto #1A3A5A
+             dark: #0E1A28 / #4A8ABF / #80B8E8
+
+  Todos os fundos de toast são derivados da paleta sépia, nunca branco puro.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  IX. TELA DE SPLASH
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  A splash screen é a "carta de apresentação" de cada app. Define o tom.
+
+  ESTRUTURA:
+  · Overlay: rgba(26,22,16,0.85) com backdrop-filter: blur(2px)
+    → O fundo do app fica levemente visível e desfocado atrás
+  · Fade-in: opacity 0→1 em 0.55s ease
+  · Fade-out: opacity 1→0 em 0.55s (suave, não abrupto)
+
+  CARD DE SPLASH (520×340px):
+  · border: 1px solid (cor do papel)
+  · border-radius: 2px
+  · overflow: hidden (contém o cosmos)
+  · box-shadow: 8px 8px 0 rgba(44,36,22,0.3) — sombra de livro fechado
+
+  ELEMENTOS INTERNOS:
+  1. CosmosLayer (full size, density="high") — mapa estelar de fundo
+  2. Linha de margem vermelha (left: 44px) — consistência com sidebar
+  3. Nome do app (68px, IM Fell itálico, centralizado, z-index: 2)
+  4. Subtítulo do app (9px, Special Elite, uppercase, letter-spacing: 0.22em)
+  5. Divisor horizontal (1px, margem interna)
+  6. Texto de status (11px, Special Elite, letra por letra)
+  7. Dots de loading (18px, "· · ·", animation: blink 1.2s)
+  8. Versão (9px, canto inferior direito)
+
+  SEQUÊNCIA DE LOADING (adaptar por app):
+  "Iniciando [nome]..." → "Abrindo banco de dados..." →
+  "Configurando ambiente..." → "Pronto." → fade out após 400ms
+
+  ───────────────────────────────────────────────────────────────────
+
+  LOGOTIPO DE CADA APP:
+
+  Fonte IM Fell English, 68px, itálico, letter-spacing: 0.06em.
+  Sem subline geométrica, sem ícone. O nome em si É o logotipo.
+  A força do nome vem da sua etimologia — mitológica, cósmica, hermética.
+  O visual não precisa explicar o que o nome já carrega.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  X. SIDEBAR
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Largura fixa: 224px. Nunca colapsável.
+  background: --paper-dark, border-right: 1px solid --rule
+
+  DECORAÇÃO: linha vermelha de margem em left: 44px (sidebar::before)
+  Ícones de nav ficam à esquerda da linha, texto à direita.
+
+  LOGO AREA (topo):
+  · Nome do app em IM Fell English, 24px, itálico
+  · Subtítulo/descrição em Special Elite, 7.5px, uppercase, letter-spacing: 0.22em
+  · Separado por border-bottom: 1px solid --rule
+
+  NAV ITEMS:
+  · border-left: 3px solid transparent (reserva espaço para indicador ativo)
+  · Ativo: border-left-color --accent (dourado), background --paper-darkest
+  · Icon width: 18px fixo (alinhamento consistente)
+  · Rótulo de seção: 9px, uppercase, letter-spacing: 0.2em, color: --ink-ghost
+
+  FOOTER:
+  · border-top: 1px solid --rule, padding: 10px 16px
+  · Informação do workspace ou configurações globais + ícone de tema
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  XI. EDITOR DE TEXTO RICO
+  (Referência para apps com escrita longa — adaptar implementação por stack)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ÁREA DE ESCRITA:
+  · max-width: 720px, margin: 0 auto — coluna de livro
+  · padding: 0 32px (margens laterais internas)
+  · padding-top: 40px, padding-bottom: 80px+60px — respiro generoso
+
+  TIPOGRAFIA DO EDITOR:
+  · Parágrafo: IM Fell English, 16px, line-height: 1.75, cor: --ink
+  · Placeholder: --ink-faint, itálico
+  · Heading 1: 2rem, itálico, margin: 1.4rem 0 0.4rem
+  · Heading 2: 1.55rem, itálico, margin: 1.2rem 0 0.3rem
+  · Heading 3: 1.2rem, itálico, margin: 1rem 0 0.25rem
+  · Lista (ol/ul): 16px, padding-left: 1.4rem, item gap: 4px
+  · Citação: 17px itálico, borda esquerda 3px dourada, bg: --paper-dark
+  · Código inline: Courier Prime 13px, bg: --paper-dark, cor: --ribbon
+  · Bloco de código: Courier Prime 13px, bg: --paper-dark, border: --rule
+  · Divisor: "· · ·" em CSS (content), 18px, letter-spacing: 0.5em, cor: --ink-ghost
+  · Marker (highlight): background rgba(184,134,11,0.2) — âmbar translúcido
+  · Tabela: IM Fell 15px, bordas --rule, header row com --paper-dark
+
+  BLOCO SELECIONADO:
+  · Dia: background rgba(184,134,11,0.07) — âmbar muito sutil
+  · Noite: background rgba(212,168,32,0.08)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  XII. SÍMBOLOS E ÍCONES
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  O ecossistema usa caracteres Unicode e emojis para ícones — sem biblioteca
+  de ícones SVG. Isso reforça o caráter de máquina de escrever (tipos especiais)
+  e a estética de manuscrito com símbolos alquímicos e astrológicos.
+
+  ÍCONES DE SISTEMA:
+  ✦   Estrela de quatro pontas — símbolo principal do ecossistema
+  ☰   Três linhas horizontais — tabela / lista densa
+  ☷   Trigramas — kanban / colunas
+  ≡   Três linhas iguais — lista simples
+  ☽   Lua crescente — calendário, data, noite
+  ⟶   Seta — timeline, navegação linear
+  ⊞   Grade — galeria, colunas múltiplas
+  ⌕   Lupa estilizada — busca
+  ✎   Lápis — editar
+  🗑   Lixeira — excluir
+  ✓   Check — confirmação, salvo
+  ✕   X — cancelar, limpar
+  ›   Seta direita — link/navegação
+  ▲▼  Triângulos — ordenação ascendente/descendente
+  ●   Ponto sólido — status ativo
+  ◌   Ponto vazio — pausado
+  ◻   Quadrado vazio — arquivado
+  · · ·   Reticências com espaço — loading, divisor
+  ⚙   Engrenagem — configurações
+
+  ÍCONES ESOTÉRICOS / ASTROLÓGICOS (para uso temático):
+  ☿   Mercúrio — comunicação, mensagem
+  ♄   Saturno — tempo, arquivo, permanência
+  ☉   Sol — destaque, item principal
+  ☾   Lua — tema noturno, sonho
+  ★   Estrela sólida — favorito, destaque
+  ✧   Estrela vazia — item marcado levemente
+  ⊕   Cruz no círculo — localização, ponto fixo
+
+  PADRÃO: Emojis são usados como ícones de item (escolhidos pelo usuário).
+  Caracteres Unicode (sem cor) são usados para ícones de interface.
+  Símbolos esotéricos/astrológicos podem ser usados com moderação em
+  elementos decorativos ou identificadores de seção.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  XIII. MODO NOTURNO — REGRAS ESPECÍFICAS
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  O modo noturno NÃO é apenas inverter cores. É uma mudança de ambiente:
+  do "estúdio à luz do dia" para o "atlas astronômico aberto à meia-noite".
+
+  A metáfora é Flamsteed ou Bode abrindo seu atlas no escuro: fundo de céu
+  profundo, constelações traçadas a ouro, texto em pergaminho iluminado.
+  O azul não é vibrante — é veludo desbotado pelo tempo, com toque sépia.
+
+  PRINCÍPIOS DO MODO NOTURNO:
+  1. Nunca preto puro (#000). O fundo é #12161E — azul-noite envelhecido.
+  2. Texto nunca branco puro (#FFF). Máximo: #E8DFC8 (pergaminho iluminado).
+  3. O dourado BRILHA mais no modo noturno (#D4A820 vs #b8860b).
+     Constelação sobre céu escuro — mais visível que ouro sobre papel.
+  4. Bordas e linhas são fantasmas azuis (--ink-ghost: #2E3445), quase invisíveis.
+  5. Sombras são mais opacas (rgba(0,0,0,0.5) vs rgba(44,36,22,0.14)).
+  6. O CosmosLayer fica MUITO mais visível no noturno — é o cenário principal.
+  7. A linha de margem muda: não é mais vermelha, é dourada (rgba(212,168,32,0.15))
+     — como a linha de ouro nos atlas históricos que separa o texto das gravuras.
+
+  TOGGLE: Adiciona/remove a class "dark" no elemento raiz.
+  Persiste em localStorage com chave específica por app
+  (ex: 'ogma_theme', 'kosmos_theme', 'aether_theme').
+  Ícone no topbar: ☽ (para ativar noturno) / ☀ (para ativar diurno).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  XIV. PADRÕES DE INTERAÇÃO
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  REGRAS GERAIS DE UX:
+
+  1. Nenhum elemento fica sem feedback visual.
+     Todo hover tem mudança (background, border ou cor).
+     Todo clique tem transform (translate ou scale) — "peso físico".
+
+  2. Textos editáveis: clique para editar, blur/Enter para salvar, Escape cancela.
+     Sempre com indicação visual (cursor: text, opacity hover).
+
+  3. Confirmações destrutivas: diálogo nativo de confirmação.
+     Sem modal fancy para exclusões — direto e claro.
+
+  4. Salvamento automático: indicador textual visível ("✓ Salvo às HH:MM").
+
+  5. Carregamento: spinner textual enquanto carrega.
+     Nunca esqueleto de loading — apenas a mensagem de carregamento.
+
+  6. Empty states: sempre com CosmosLayer + mensagem em itálico + botão de ação.
+     Nunca página em branco sem orientação.
+
+  PADRÕES DE TECLADO:
+  · Enter nos inputs de modal → confirma
+  · Escape em qualquer input inline → cancela/fecha
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  XV. O QUE NUNCA FAZER
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ✗  Usar cores fora da paleta sépia (sem azuis vibrantes, verdes néon, etc.)
+  ✗  border-radius > 3px em elementos de UI (exceto pills/badges que são 20px)
+  ✗  Sombras com blur > 0px em elementos de interface (sombra é sempre flat)
+  ✗  Animações com duration > 300ms
+  ✗  Usar IM Fell English em peso bold (font-weight: normal SEMPRE)
+  ✗  Usar Special Elite em itálico
+  ✗  Branco puro (#FFF) ou preto puro (#000) em qualquer lugar
+  ✗  Fontes além das três do sistema (sem Roboto, Inter, SF Pro, etc.)
+  ✗  Ícones SVG de biblioteca (sem FontAwesome, Heroicons, etc.)
+  ✗  Animações de "fade" longas (>200ms)
+  ✗  Hover states sem feedback
+  ✗  Modais sem overlay sépia
+  ✗  Cards sem sombra flat
+  ✗  Texto em caixa alta sem letter-spacing generoso
+  ✗  Gradientes lineares (exceto em casos muito específicos e sépia)
+  ✗  Border-radius redondo (50%) em elementos não-circulares
+  ✗  Toast de sucesso em vermelho, erro em verde
+  ✗  Nomes de apps modernos, genéricos ou sem etimologia (sem "AppManager", "NoteKit")
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  XVI. CHECKLIST DE NOVO COMPONENTE
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Ao criar qualquer novo componente visual, verificar:
+
+  [ ] Usa variáveis CSS (--paper, --ink, --accent, etc.)?
+  [ ] Funciona em modo dia E noturno?
+  [ ] border-radius: 2px (ou 20px se pill)?
+  [ ] Sombra é flat (X Y 0px cor) ou sem sombra?
+  [ ] Animação de entrada usa paperFall ou fadeIn?
+  [ ] Hover tem feedback visual?
+  [ ] Clique tem transform (translate ou opacity)?
+  [ ] Fontes são apenas IM Fell / Special Elite / Courier Prime?
+  [ ] Texto em uppercase tem letter-spacing generoso (≥0.1em)?
+  [ ] Cores estão dentro da paleta sépia?
+  [ ] Nenhum branco/preto puro?
+  [ ] z-index está na stack correta?
+  [ ] CosmosLayer se for um header ou empty state?
+  [ ] Barra lateral colorida se for um header principal?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  XVII. FILOSOFIA FINAL
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Os apps deste ecossistema não competem com Notion, Linear, ou qualquer
+  SaaS moderno. Eles pertencem a uma categoria diferente: a categoria dos
+  objetos que têm personalidade própria, que envelhecem bem, que você quer
+  usar não por obrigação mas por prazer.
+
+  É a diferença entre uma caneta Bic e uma caneta-tinteiro.
+  A Bic funciona melhor, é mais prática, custa menos.
+  Mas há pessoas que preferem a tinteiro — não porque são irracionais,
+  mas porque o ato de escrever importa tanto quanto o conteúdo escrito.
+
+  Para essas pessoas, este ecossistema foi feito.
+
+  Cada pixel de textura de papel, cada fonte irregular, cada sombra flat,
+  cada estrela no cosmos, cada dourado no cursor — tudo diz:
+  "Este é um lugar onde seus pensamentos importam. Use com cuidado."

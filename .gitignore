@@ -1,0 +1,13 @@
+# Ambiente virtual
+.venv/
+
+# Memória e configuração do Claude Code
+.claude/
+
+# Apps — cada um tem seu próprio repositório
+AETHER/
+KOSMOS/
+Mnemosyne/
+OGMA/
+stellar-downloader/
+transcriber/
