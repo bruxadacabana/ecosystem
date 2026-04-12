@@ -79,9 +79,9 @@ e tipado com a mesma atenção que o caminho feliz.
 - [ ] Botão "Abrir no AETHER" em projetos criativos do OGMA
 
 ### 1.2 — KOSMOS → Mnemosyne (artigos salvos)
-- [ ] KOSMOS escreve `archive_path` e `data_path` em `ecosystem.json` na inicialização
+- [x] KOSMOS escreve `archive_path` e `data_path` em `ecosystem.json` na inicialização
       via `ecosystem_client.write_section("kosmos", {...})` em `KOSMOS/main.py`
-- [ ] Mnemosyne lê `ecosystem.json` e oferece o archive do KOSMOS
+- [x] Mnemosyne lê `ecosystem.json` e oferece o archive do KOSMOS
       como pasta sugerida na tela de indexação (botão "Sugestões do ecossistema" na SetupDialog)
 - [ ] Verificar se o botão "Arquivar" em artigos salvos chama
       `archive_manager` corretamente — garantir que gera `.md` válido
@@ -89,7 +89,7 @@ e tipado com a mesma atenção que o caminho feliz.
 ### 1.3 — AETHER → Mnemosyne (indexar escritos)
 - [x] AETHER escreve `vault_path` em `ecosystem.json` na inicialização
       (startup Rust, após carregar vault — `ecosystem::write_section()` em lib.rs)
-- [ ] Mnemosyne oferece vault AETHER como pasta sugerida (mesmo botão da 1.2)
+- [x] Mnemosyne oferece vault AETHER como pasta sugerida (botão "Sugestões do ecossistema")
 - [ ] Testar indexação dos `.md` de capítulos pelo Mnemosyne
 
 ### 1.4 — Hermes → archive do KOSMOS (transcrições)

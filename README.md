@@ -154,6 +154,7 @@ Escrita atômica em todos (arquivo temporário + rename). Falha silenciosa nos a
 **Integrações concluídas (Fase 1):**
 - AETHER escreve `vault_path` no startup (ao carregar o vault)
 - KOSMOS escreve `data_path` e `archive_path` no startup
+- Mnemosyne: botão "Sugestões do ecossistema" na SetupDialog preenche campos com caminhos do KOSMOS/AETHER
 
 ---
 
