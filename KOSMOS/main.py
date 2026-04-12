@@ -33,6 +33,19 @@ def main() -> None:
     from app.utils.paths import Paths
     Paths.ensure_directories()
 
+    # --- Registrar caminhos no ecosystem compartilhado ------------------
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _sys.path.insert(0, str(_Path(__file__).parent.parent))
+        from ecosystem_client import write_section as _write_ecosystem
+        _write_ecosystem("kosmos", {
+            "data_path":    str(Paths.DATA),
+            "archive_path": str(Paths.ARCHIVE),
+        })
+    except Exception:
+        pass  # Ecosystem é opcional — nunca bloquear o startup
+
     # --- Logger ---------------------------------------------------------
     from app.utils.logger import setup_logger
     setup_logger()
