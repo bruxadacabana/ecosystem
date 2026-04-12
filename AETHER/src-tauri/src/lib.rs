@@ -3,6 +3,7 @@
 // ============================================================
 
 mod commands;
+mod ecosystem;
 mod error;
 mod storage;
 mod types;
@@ -214,6 +215,15 @@ pub fn run() {
                     .level(log_level)
                     .build(),
             )?;
+
+            // Registrar vault_path no ecosystem compartilhado (falha silenciosa)
+            if let Some(ref vault) = loaded_vault {
+                ecosystem::write_section(
+                    "aether",
+                    serde_json::json!({ "vault_path": vault.to_string_lossy() }),
+                )
+                .unwrap_or_else(|e| eprintln!("AETHER: ecosystem write falhou: {e}"));
+            }
 
             log::info!("AETHER iniciado. Vault: {:?}", loaded_vault);
 

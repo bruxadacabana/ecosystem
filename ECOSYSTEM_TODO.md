@@ -41,20 +41,22 @@ e tipado com a mesma atenção que o caminho feliz.
 ---
 
 ## FASE 0 — Fundação do ecossistema
-> Pré-requisito para todas as fases seguintes. Sem código novo nos apps.
+> Pré-requisito para todas as fases seguintes.
 
-- [ ] Criar `.ecosystem.json` na raiz de `program files/`
-      Formato inicial:
-      ```json
-      {
-        "aether":    { "vault_path": "" },
-        "kosmos":    { "data_path": "", "archive_path": "" },
-        "ogma":      { "data_path": "" },
-        "mnemosyne": { "index_paths": [] },
-        "hub":       { "data_path": "" }
-      }
-      ```
-- [ ] Preencher o `.ecosystem.json` manualmente com os caminhos reais
+> **Decisão de caminho (revisada):** O arquivo de contrato foi movido para
+> `~/.local/share/ecosystem/ecosystem.json` (Linux) / `%APPDATA%\ecosystem\ecosystem.json` (Windows).
+> Motivo: apps Tauri (AETHER) e Electron (OGMA) não conhecem o caminho de `program files/`
+> em produção. O caminho XDG/AppData é descoberto automaticamente por todas as linguagens.
+
+- [x] Criar `ecosystem.json` em `~/.local/share/ecosystem/` com caminhos reais do KOSMOS
+- [x] Criar `ecosystem_client.py` — utilitário Python compartilhado (KOSMOS, Mnemosyne, Hermes)
+      Funções: `ecosystem_path()`, `read_ecosystem()`, `write_section()` com escrita atômica
+- [x] Criar `OGMA/src/main/ecosystem.ts` — utilitário TypeScript para OGMA
+      Funções: `ecosystemPath()`, `readEcosystem()`, `writeSection()` com escrita atômica
+- [x] Criar `AETHER/src-tauri/src/ecosystem.rs` — módulo Rust para AETHER
+      Funções: `ecosystem_path()`, `write_section()` usando `dirs::data_dir()`
+- [x] Adicionar `dirs = "5"` em `AETHER/src-tauri/Cargo.toml`
+- [x] Wiring em `AETHER/src-tauri/src/lib.rs`: escreve `vault_path` no startup (falha silenciosa)
 - [ ] Documentar o contrato: quem escreve cada campo, quando, formato
 - [ ] Instalar e configurar Syncthing entre PC e tablet
       - Definir quais pastas sincronizar (vault AETHER + archive KOSMOS)
@@ -77,22 +79,24 @@ e tipado com a mesma atenção que o caminho feliz.
 - [ ] Botão "Abrir no AETHER" em projetos criativos do OGMA
 
 ### 1.2 — KOSMOS → Mnemosyne (artigos salvos)
-- [ ] KOSMOS escreve `archive_path` em `.ecosystem.json` na inicialização
-- [ ] Mnemosyne lê `.ecosystem.json` e oferece o archive do KOSMOS
-      como pasta sugerida na tela de indexação
+- [ ] KOSMOS escreve `archive_path` e `data_path` em `ecosystem.json` na inicialização
+      via `ecosystem_client.write_section("kosmos", {...})` em `KOSMOS/main.py`
+- [ ] Mnemosyne lê `ecosystem.json` e oferece o archive do KOSMOS
+      como pasta sugerida na tela de indexação (botão "Sugestões do ecossistema" na SetupDialog)
 - [ ] Verificar se o botão "Arquivar" em artigos salvos chama
       `archive_manager` corretamente — garantir que gera `.md` válido
 
 ### 1.3 — AETHER → Mnemosyne (indexar escritos)
-- [ ] AETHER escreve `vault_path` em `.ecosystem.json` na inicialização
-      (no startup do Rust, ao carregar o vault)
-- [ ] Mnemosyne oferece vault AETHER como pasta sugerida
+- [x] AETHER escreve `vault_path` em `ecosystem.json` na inicialização
+      (startup Rust, após carregar vault — `ecosystem::write_section()` em lib.rs)
+- [ ] Mnemosyne oferece vault AETHER como pasta sugerida (mesmo botão da 1.2)
 - [ ] Testar indexação dos `.md` de capítulos pelo Mnemosyne
 
-### 1.4 — transcriber → archive
-- [ ] Adicionar opção no transcriber: salvar output também em
-      `kosmos/data/archive/` além da pasta padrão
-- [ ] Formato: mesmo padrão Markdown do archive_manager do KOSMOS
+### 1.4 — Hermes → archive do KOSMOS (transcrições)
+- [ ] Adicionar checkbox "Salvar também no arquivo do KOSMOS" na aba Transcrever do Hermes
+      Lê `kosmos.archive_path` do ecosystem; desabilitado se vazio
+- [ ] Salvar transcrição como `.md` em `archive/hermes/` com frontmatter KOSMOS-compatível
+- [ ] Formato: mesmo padrão Markdown do `archive_manager.py` do KOSMOS
 
 ---
 
@@ -208,8 +212,8 @@ e tipado com a mesma atenção que o caminho feliz.
 
 ## Estado das fases do ecossistema
 
-  Fase 0: não iniciada  (desbloqueada — pode começar agora)
-  Fase 1: não iniciada  (desbloqueada após Fase 0)
+  Fase 0: ✅ Fundação concluída (ecosystem_client.py, ecosystem.ts, ecosystem.rs, ecosystem.json)
+  Fase 1: 🔄 Em progresso — 1.3 AETHER-side concluída; 1.1, 1.2, 1.4 pendentes
   Fase 2: não iniciada
   Fase 3: não iniciada
   Fase 4: não iniciada
