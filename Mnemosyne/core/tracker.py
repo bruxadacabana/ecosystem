@@ -19,6 +19,9 @@ class FileRecord:
     path: str
     hash: str
     indexed_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    score_avg: float = 0.0          # score médio de similaridade nas consultas
+    last_retrieved_at: str = ""     # timestamp da última vez retornado como fonte
+    retrieve_count: int = 0         # total de consultas em que foi retornado
 
 
 class FileTracker:
@@ -38,8 +41,22 @@ class FileTracker:
         try:
             with self._path.open(encoding="utf-8") as f:
                 raw = json.load(f)
-            self._records = {item["path"]: FileRecord(**item) for item in raw}
-        except (json.JSONDecodeError, TypeError, KeyError, OSError):
+            records: dict[str, FileRecord] = {}
+            for item in raw:
+                try:
+                    rec = FileRecord(
+                        path=item["path"],
+                        hash=item["hash"],
+                        indexed_at=item.get("indexed_at", ""),
+                        score_avg=float(item.get("score_avg", 0.0)),
+                        last_retrieved_at=item.get("last_retrieved_at", ""),
+                        retrieve_count=int(item.get("retrieve_count", 0)),
+                    )
+                    records[rec.path] = rec
+                except (KeyError, ValueError, TypeError):
+                    continue
+            self._records = records
+        except (json.JSONDecodeError, TypeError, OSError):
             self._records = {}
 
     def save(self) -> None:
@@ -119,6 +136,22 @@ class FileTracker:
 
         deleted = [p for p in self._records if p not in found]
         return new, modified, deleted
+
+    def update_retrieved(self, file_path: str, score: float = 1.0) -> None:
+        """
+        Actualiza metadados de relevância após o documento ser retornado
+        como fonte numa consulta RAG.
+
+        score: [0.0, 1.0] — contribuição desta consulta para o score médio.
+        """
+        rec = self._records.get(file_path)
+        if rec is None:
+            return
+        n = rec.retrieve_count
+        rec.score_avg = (rec.score_avg * n + max(0.0, min(1.0, score))) / (n + 1)
+        rec.retrieve_count = n + 1
+        rec.last_retrieved_at = datetime.now().isoformat()
+        self.save()
 
     @property
     def records(self) -> dict[str, FileRecord]:
