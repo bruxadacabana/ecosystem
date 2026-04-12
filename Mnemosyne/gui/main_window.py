@@ -38,6 +38,7 @@ from core.tracker import FileTracker
 from gui.workers import (
     AskWorker,
     CompactMemoryWorker,
+    GuideWorker,
     IndexFileWorker,
     IndexWorker,
     OllamaCheckWorker,
@@ -636,6 +637,7 @@ class MainWindow(QMainWindow):
                 self.refresh_manage_info()
             except VectorstoreNotFoundError as exc:
                 QMessageBox.critical(self, "Erro", str(exc))
+            self._start_guide_generation()
         else:
             QMessageBox.critical(self, "Erro na indexação", message)
 
@@ -701,6 +703,22 @@ class MainWindow(QMainWindow):
                 "background: #b8860b; color: #F5F0E8;"
             )
         self.badge_label.setVisible(True)
+
+    # ── Notebook Guide ────────────────────────────────────────────────────────
+
+    def _start_guide_generation(self) -> None:
+        """Inicia geração do Notebook Guide em background após indexação."""
+        if self.vectorstore is None or not self.config.mnemosyne_dir:
+            return
+        self._log_event("Gerando Notebook Guide…")
+        self._guide_worker = GuideWorker(
+            self.vectorstore, self.config, self.config.mnemosyne_dir
+        )
+        self._guide_worker.finished.connect(self._on_guide_finished)
+        self._guide_worker.start()
+
+    def _on_guide_finished(self, success: bool, message: str) -> None:
+        self._log_event(message)
 
     # ── Seleção de arquivos ───────────────────────────────────────────────────
 

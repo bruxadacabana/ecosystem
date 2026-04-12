@@ -14,6 +14,7 @@ from core.errors import (
     EmptyDirectoryError,
     QueryError,
     SummarizationError,
+    GuideError,
 )
 from core.indexer import create_vectorstore, index_single_file, load_vectorstore, update_vectorstore
 from core.loaders import load_documents, load_single_file
@@ -311,3 +312,27 @@ class SummarizeWorker(QThread):
             self.finished.emit(False, str(exc))
         except Exception as exc:
             self.finished.emit(False, f"Erro inesperado: {exc}")
+
+
+class GuideWorker(QThread):
+    """Gera o Notebook Guide após indexação completa (resumo + perguntas sugeridas)."""
+
+    finished = Signal(bool, str)  # sucesso, mensagem/erro
+
+    def __init__(self, vectorstore, config: AppConfig, mnemosyne_dir: str) -> None:
+        super().__init__()
+        self.vectorstore = vectorstore
+        self.config = config
+        self.mnemosyne_dir = mnemosyne_dir
+
+    def run(self) -> None:
+        from core.guide import generate_guide, save_guide
+        try:
+            result = generate_guide(self.vectorstore, self.config)
+            save_guide(result, self.mnemosyne_dir)
+            n = len(result["questions"])
+            self.finished.emit(True, f"Guide gerado — {n} pergunta(s) sugerida(s).")
+        except GuideError as exc:
+            self.finished.emit(False, f"Guide: {exc}")
+        except OSError as exc:
+            self.finished.emit(False, f"Guide: erro ao salvar — {exc}")

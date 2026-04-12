@@ -92,7 +92,7 @@
 - [x] `core/rag.py` — suporte a filtro por lista de arquivos via ChromaDB `where` metadata
 
 ### 4.3 Notebook Guide automático
-- [ ] `core/guide.py` — ao terminar indexação, gerar automaticamente:
+- [x] `core/guide.py` — ao terminar indexação, gerar automaticamente:
   - Resumo geral da coleção
   - 5 perguntas sugeridas sobre o conteúdo
 - [ ] `core/guide.py` — modo "Pérolas Escondidas": identificar os 3 fatos mais surpreendentes ou contraintuitivos dos documentos, com citação directa do texto como evidência
