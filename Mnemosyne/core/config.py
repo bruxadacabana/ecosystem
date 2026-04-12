@@ -21,6 +21,7 @@ _DEFAULTS: dict = {
     "watched_dir": "",
     "vault_dir": "",
     "auto_index_on_change": True,
+    "relevance_decay_days": 30,
 }
 
 
@@ -34,6 +35,7 @@ class AppConfig:
     watched_dir: str
     vault_dir: str
     auto_index_on_change: bool
+    relevance_decay_days: int = 30
 
     @property
     def persist_dir(self) -> str:
@@ -83,6 +85,7 @@ def load_config() -> AppConfig:
         watched_dir=str(data.get("watched_dir", "")),
         vault_dir=str(data.get("vault_dir", "")),
         auto_index_on_change=bool(data.get("auto_index_on_change", True)),
+        relevance_decay_days=int(data.get("relevance_decay_days", 30)),
     )
 
 
@@ -97,6 +100,7 @@ def save_config(config: AppConfig) -> None:
         "watched_dir": config.watched_dir,
         "vault_dir": config.vault_dir,
         "auto_index_on_change": config.auto_index_on_change,
+        "relevance_decay_days": config.relevance_decay_days,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
