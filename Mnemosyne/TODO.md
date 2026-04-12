@@ -83,9 +83,9 @@
   - Prerequisito para 4.6
 
 ### 4.1 Citação aprimorada
-- [ ] `core/rag.py` — retornar trecho exato do chunk junto com o nome do arquivo (não só o path)
-- [ ] `gui/main_window.py` — exibir fontes com trecho visível, não só nome do arquivo
-- [ ] `gui/main_window.py` — indicador de relevância por fonte (similaridade do chunk)
+- [x] `core/rag.py` — retornar trecho exato do chunk junto com o nome do arquivo (não só o path)
+- [x] `gui/main_window.py` — exibir fontes com trecho visível, não só nome do arquivo
+- [x] `gui/main_window.py` — indicador de relevância por fonte (similaridade do chunk)
 
 ### 4.2 Seleção de fontes por consulta
 - [ ] `gui/main_window.py` — listar arquivos indexados com checkboxes; query respeita seleção

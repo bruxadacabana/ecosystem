@@ -260,14 +260,15 @@ class AskWorker(QThread):
                     self.token.emit(chunk.content)
                     full += chunk.content
             answer = strip_think(full)
+            source_paths = [s["path"] for s in sources]
             updated = list(self.chat_history) + [
                 Turn(role="user", content=self.question),
-                Turn(role="assistant", content=answer, sources=sources),
+                Turn(role="assistant", content=answer, sources=source_paths),
             ]
             if self.tracker and sources:
                 for rank, src in enumerate(sources):
                     score = max(0.3, 1.0 - rank * 0.2)
-                    self.tracker.update_retrieved(src, score)
+                    self.tracker.update_retrieved(src["path"], score)
             self.finished.emit(True, answer, sources, updated)
         except Exception as exc:
             self.finished.emit(False, f"Erro na consulta: {exc}", [], self.chat_history)

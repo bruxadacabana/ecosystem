@@ -21,9 +21,15 @@ if TYPE_CHECKING:
     from .tracker import FileTracker
 
 
+class SourceRecord(TypedDict):
+    path: str     # absolute file path
+    excerpt: str  # first ~250 chars of best chunk from this source
+    score: float  # combined relevance score [0.0, 1.0]
+
+
 class AskResult(TypedDict):
     answer: str
-    sources: list[str]
+    sources: list[SourceRecord]
 
 
 # Quantos turnos recentes incluir no histórico
@@ -339,7 +345,7 @@ def prepare_ask(
     retrieval_mode: str = "hybrid",
     tracker: FileTracker | None = None,
     persona: str = "curador",
-) -> tuple[list[BaseMessage], list[str]]:
+) -> tuple[list[BaseMessage], list[SourceRecord]]:
     """
     Recupera documentos relevantes e retorna (prompt, sources).
     Usado pelo worker para streaming com possibilidade de interrupção.
@@ -380,12 +386,15 @@ def prepare_ask(
     context = "\n\n---\n".join(doc.page_content for doc in docs)
 
     seen: set[str] = set()
-    sources: list[str] = []
-    for doc in docs:
+    sources: list[SourceRecord] = []
+    n_docs = len(docs)
+    for rank, doc in enumerate(docs):
         src = doc.metadata.get("source", "")
         if src and src not in seen:
             seen.add(src)
-            sources.append(src)
+            score = max(0.0, 1.0 - rank / max(n_docs, 1))
+            excerpt = doc.page_content[:250].strip().replace("\n", " ")
+            sources.append(SourceRecord(path=src, excerpt=excerpt, score=score))
 
     messages = _build_messages(context, question, chat_history or [], persona)
     return messages, sources

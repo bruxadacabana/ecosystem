@@ -298,7 +298,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Fontes:"))
         self.sources_text = QTextEdit()
         self.sources_text.setReadOnly(True)
-        self.sources_text.setMaximumHeight(80)
+        self.sources_text.setMaximumHeight(160)
         layout.addWidget(self.sources_text)
 
         self.tabs.addTab(tab, "Perguntar")
@@ -724,11 +724,21 @@ class MainWindow(QMainWindow):
             self.answer_text.setPlainText(text)
             self._chat_history = updated_history
             self._session_memory.save_query(
-                self.question_edit.text().strip(), text, sources
+                self.question_edit.text().strip(), text,
+                [s["path"] for s in sources],
             )
             if sources:
-                lines = [f"• {os.path.basename(s)}" for s in sources]
-                self.sources_text.setPlainText("\n".join(lines))
+                lines = []
+                for s in sources:
+                    name = os.path.basename(s["path"])
+                    pct = int(s["score"] * 100)
+                    filled = round(s["score"] * 10)
+                    bar = "█" * filled + "░" * (10 - filled)
+                    excerpt = s["excerpt"]
+                    if len(excerpt) > 180:
+                        excerpt = excerpt[:180] + "…"
+                    lines.append(f"• {name}  {bar} {pct}%\n  \"{excerpt}\"")
+                self.sources_text.setPlainText("\n\n".join(lines))
             else:
                 self.sources_text.setPlainText("(nenhuma fonte identificada)")
         else:
