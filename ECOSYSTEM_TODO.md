@@ -100,44 +100,61 @@ e tipado com a mesma atenção que o caminho feliz.
 
 ---
 
-## FASE 2 — App Hub (desktop/web)
-> Novo programa. Roda no PC como web app antes de ir para Android.
-> Stack: Tauri 2 + React + TypeScript (mesma do AETHER).
+## FASE 2 — App Hub (desktop → Android)
+> Novo programa. Stack: Tauri 2 + React + TypeScript (mesma do AETHER).
+> Read-only por padrão — HUB lê dados dos outros apps sem substituir os editores primários.
+> Cada sub-fase entrega algo funcional e independente antes de avançar.
 
-### 2.1 — Estrutura base do hub
+### 2.1 — Fundação + Tela de Configuração
 - [ ] Criar projeto Tauri 2 em `program files/HUB/`
-- [ ] Importar design system dos apps existentes:
-      - `tokens.css`, `animations.css`, `typography.css`
-      - Fontes: IM Fell English · Special Elite · Courier Prime
-- [ ] Roteador de módulos (Escrita / Projetos / Leituras / Perguntas)
-- [ ] Tela de configuração inicial: lê `.ecosystem.json`, valida caminhos
-- [ ] CosmosLayer compartilhado (copiar do AETHER ou do OGMA)
+- [ ] Copiar design system do AETHER sem modificações:
+      `tokens.css`, `animations.css`, `typography.css`, `components.css`
+      `CosmosLayer.tsx`, `Toast.tsx`, `ThemeToggle.tsx`
+- [ ] Splash screen com typewriter + CosmosLayer
+- [ ] Router interno: `splash → setup | home`
+      `type HubView = 'home' | 'writing' | 'reading' | 'projects' | 'questions'`
+- [ ] Tela de configuração (SetupView): lê/edita/valida caminhos do `ecosystem.json`
+      — campos: `aether.vault_path`, `kosmos.archive_path`, `ogma.data_path`
+      — ícone ✓/✗ por campo via IPC `validate_path()`
+- [ ] Dashboard (HomeView): 4 cards com CosmosLayer individual
+      — cards desabilitados se caminho não configurado
+- [ ] Rust: `commands/config.rs` — `read_ecosystem_config`, `validate_path`, `save_ecosystem_config`
+      usando `ecosystem.rs` copiado do AETHER
 
-### 2.2 — Módulo Escrita (compatível com AETHER)
-- [ ] Listar projetos do vault AETHER (lê `project.json` de cada pasta)
-- [ ] Navegar livros e capítulos (lê `book.json`)
-- [ ] Abrir e editar capítulo (lê/salva `{cap_id}.md`)
-      - Editor TipTap reutilizado do AETHER
-      - Auto-save com debounce
-- [ ] Criar projeto, livro e capítulo novos (compatível com o formato AETHER)
-- [ ] Contagem de palavras em tempo real
+### 2.2 — Módulo Escrita (AETHER vault, read-only)
+- [ ] Rust `commands/writing.rs`:
+      `list_writing_projects(vault_path)` — lê todos `{vault}/*/project.json`
+      `list_books(vault_path, project_id)` — lê `{vault}/{proj}/*/book.json`
+      `read_chapter(vault_path, project_id, book_id, chapter_id)` — lê `.md`
+- [ ] `WritingView.tsx` — grade de projetos com CosmosLayer individual
+- [ ] `BookView.tsx` — árvore livros + capítulos com status e word count
+- [ ] `ChapterView.tsx` — `react-markdown` renderiza o `.md`
+- [ ] Tipos `Project`, `Book`, `ChapterMeta` copiados de AETHER
 
-### 2.3 — Módulo Projetos (compatível com OGMA)
-- [ ] Leitura do `ogma.db` via @libsql/client ou better-sqlite3
-- [ ] Listar projetos e páginas (somente leitura inicialmente)
-- [ ] Captura rápida: adicionar página/nota a um projeto existente
-- [ ] Visualizar corpo da página (Editor.js JSON → renderização simples)
+### 2.3 — Módulo Leituras (KOSMOS archive, read-only)
+- [ ] Rust `commands/reading.rs`:
+      `list_articles(archive_path)` — scan `{archive}/**/*.md`, parseia frontmatter
+      `read_article(path)` — separa frontmatter do corpo
+      `toggle_read(archive_path, article_path)` — lê/escreve `hub_read_state.json`
+- [ ] `ReadingView.tsx` — lista com filtros (fonte, lido/não lido); badge não lidos
+- [ ] `ArticleView.tsx` — frontmatter em destaque + `react-markdown`
 
-### 2.4 — Módulo Leituras (compatível com KOSMOS)
-- [ ] Listar arquivos `.md` de `kosmos/data/archive/`
-- [ ] Renderizar artigo (Markdown → HTML)
-- [ ] Marcar como lido (arquivo de estado `hub_read_state.json` no archive)
+### 2.4 — Módulo Projetos (OGMA, read-only)
+- [ ] Adicionar `rusqlite = { version = "0.31", features = ["bundled"] }` ao Cargo.toml
+      (`bundled` compila SQLite estático — funciona no Android)
+- [ ] Rust `commands/projects.rs`:
+      `list_ogma_projects(db_path)` — SELECT projects WHERE status != 'archived'
+      `list_project_pages(db_path, project_id)` — SELECT pages WHERE is_deleted = 0
+- [ ] `lib/editorjs-renderer.ts` — renderiza blocos Editor.js (`paragraph`, `header`,
+      `list`, `checklist`, `image`, `code`, `quote`) sem depender do Editor.js
+- [ ] `ProjectsView.tsx` + `PageView.tsx`
 
-### 2.5 — Módulo Perguntas (compatível com Mnemosyne)
-- [ ] Interface de chat simples
-- [ ] Conectar ao Ollama via HTTP (`localhost:11434`)
-- [ ] Usar ChromaDB do Mnemosyne como fonte (ou reindexar localmente)
-- [ ] Fallback quando Ollama não está rodando
+### 2.5 — Módulo Perguntas (Ollama, sem Rust)
+- [ ] `lib/ollama.ts`:
+      `listModels()` — GET `localhost:11434/api/tags`
+      `streamChat(model, messages)` — POST `/api/chat` com streaming NDJSON
+- [ ] `QuestionsView.tsx` — seletor de modelo, histórico de sessão, streaming
+      banner "Ollama offline" + botão Tentar novamente
 
 ---
 
