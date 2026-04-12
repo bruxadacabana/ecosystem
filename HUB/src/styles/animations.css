@@ -1,0 +1,140 @@
+/* ============================================================
+   AETHER — Animações
+   Base do ecossistema + exclusivas do AETHER
+   ============================================================ */
+
+/* ----------------------------------------------------------
+   BASE DO ECOSSISTEMA (herdadas do OGMA)
+---------------------------------------------------------- */
+
+/* paperFall — elemento "cai" como folha sobre mesa */
+@keyframes paperFall {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) rotate(-0.4deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0);
+  }
+}
+
+/* fadeIn — aparecimento simples por opacidade */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* slideIn — entrada lateral (sidebar, drawers) */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* blink — piscar (cursor, loading dots) */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* toastIn — entrada de notificação (de baixo) */
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ----------------------------------------------------------
+   EXCLUSIVAS DO AETHER
+---------------------------------------------------------- */
+
+/* pageFloat — folha de papel cai com rotação ao abrir/criar capítulo */
+@keyframes pageFloat {
+  from {
+    opacity: 0;
+    transform: translateY(-22px) translateX(4px) rotate(-1.2deg);
+  }
+  60% {
+    transform: translateY(3px) translateX(-1px) rotate(0.3deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateX(0) rotate(0);
+  }
+}
+
+/* pageExit — folha "voa" para o canto ao deletar capítulo */
+@keyframes pageExit {
+  from {
+    opacity: 1;
+    transform: translateY(0) translateX(0) rotate(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-40px) translateX(60px) rotate(8deg);
+  }
+}
+
+/* typewriterCursor — cursor _ piscando no editor */
+@keyframes typewriterCursor {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* etherPulse — nebulosas do CosmosLayer pulsam lentamente */
+@keyframes etherPulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.65; }
+}
+
+/* comet — cometa cruzando o cosmos */
+@keyframes comet {
+  from {
+    transform: translateX(-60px) translateY(60px);
+    opacity: 0;
+  }
+  10%  { opacity: 0.7; }
+  90%  { opacity: 0.7; }
+  to {
+    transform: translateX(60px) translateY(-60px);
+    opacity: 0;
+  }
+}
+
+/* ----------------------------------------------------------
+   CLASSES UTILITÁRIAS
+---------------------------------------------------------- */
+
+.animate-paper-fall {
+  animation: paperFall 0.22s ease-out both;
+}
+
+.animate-page-float {
+  animation: pageFloat 0.28s ease-out both;
+}
+
+.animate-page-exit {
+  animation: pageExit 0.22s ease-in both;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.18s ease both;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.2s ease both;
+}
+
+/* Delay escalonado para listas (aplica em JS com style) */
+/* Exemplo: style={{ animationDelay: `${index * 0.04}s` }} */
