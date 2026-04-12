@@ -1,40 +1,5 @@
 # Mnemosyne — TODO de Desenvolvimento
 
-## Onde paramos
-Par 3 concluído. O que foi feito:
-
-Item	Detalhe
-Multi-Query	_multi_query_retrieve() — LLM gera 3 variações da pergunta, retrieval para cada uma, deduplica por page_content[:200], fallback para hybrid se a geração falhar
-HyDE	_hyde_retrieve() — LLM gera parágrafo hipotético plausível, usa o texto como query no hybrid retrieval; fallback para busca semântica normal
-prepare_ask / ask	Novo parâmetro retrieval_mode: str = "hybrid" — valores: "hybrid", "multi_query", "hyde"
-UI	Seletor "Modo" na aba Perguntar (Híbrido / Multi-Query / HyDE) com tooltip explicativo
-Posso prosseguir com o Par 4 (compactação automática ao fechar + metadados de relevância no tracker)?
-
-prossiga
-Let me implement Par 4: compactação automática ao fechar + metadados de relevância no tracker.
-
-Update Todos
-
-Compactação automática ao fechar (closeEvent + CompactMemoryWorker)
-
-Metadados de relevância no tracker (score_avg + last_retrieved_at)
-Item 1 — Compactação automática ao fechar
-
-A compactação usa o LLM para sintetizar o history.jsonl em factos compactos guardados em memory.json["session"]. Preciso de: compact_session_memory() em memory.py, CompactMemoryWorker em workers.py, e closeEvent em main_window.py.
-
-Read d:\windows\ProgramFiles\programas\Mnemosyne\core\memory.py (lines 2-31)
-Adiciono compact_session_memory() ao MemoryStore:
-
-Read d:\windows\ProgramFiles\programas\Mnemosyne\core\memory.py (lines 156-185)
-Read d:\windows\ProgramFiles\programas\Mnemosyne\core\memory.py (lines 206-235)
-Read d:\windows\ProgramFiles\programas\Mnemosyne\core\memory.py (lines 236-255)
-Edit d:\windows\ProgramFiles\programas\Mnemosyne\core\memory.py
-Edit failed
-prossiga
-The user rejected the edit but then said "prossiga" - they want me to continue. Let me re-attempt the edit to memory.py to add compact_session_memory().
-
-Edit d:\windows\ProgramFiles\programas\Mnemosyne\core\memory.py
-Edit failed
 
 ## Padrões obrigatórios (não negociáveis)
 
@@ -103,9 +68,9 @@ Edit failed
 - [x] `core/rag.py` — compressão contextual: após retrieval, filtrar cada chunk com LLM antes de enviar ao modelo principal (reduz alucinações 20–30%); k aumentado de 4 para 6 (mais candidatos); fallback para chunks originais se todos forem descartados
 - [x] `core/rag.py` — Multi-Query Retrieval: reformular a pergunta em 3 variações antes do retrieval e deduplicar resultados por `page_content`; melhora recall para perguntas vagas (+1 LLM call leve)
 - [x] `core/rag.py` — HyDE (Hypothetical Document Embeddings): gerar resposta hipotética à pergunta e embeddá-la em vez da pergunta original; eficaz para perguntas abstractas ("qual a visão de X sobre Y?"); alternativa ao Multi-Query
-- [ ] `gui/main_window.py` — compactação automática ao fechar: `closeEvent` → diálogo "Guardar esta conversa na memória?" → `CompactMemoryWorker`; elimina necessidade de compactar manualmente (depende do `memory.py` reescrito)
-- [ ] `core/tracker.py` — metadados de relevância por documento: `score_avg` (score médio de similaridade nas últimas N consultas) e `last_retrieved_at` (timestamp da última vez que foi retornado como fonte)
-- [ ] `core/rag.py` — time-decay de relevância: penalizar documentos com `last_retrieved_at` muito antigo no ranking final; parâmetro `relevance_decay_days` configurável em `AppConfig`
+- [x] `gui/main_window.py` — compactação automática ao fechar: `closeEvent` → diálogo "Guardar esta conversa na memória?" → `CompactMemoryWorker`; elimina necessidade de compactar manualmente (depende do `memory.py` reescrito)
+- [x] `core/tracker.py` — metadados de relevância por documento: `score_avg` (score médio de similaridade nas últimas N consultas) e `last_retrieved_at` (timestamp da última vez que foi retornado como fonte)
+- [x] `core/rag.py` — time-decay de relevância: penalizar documentos com `last_retrieved_at` muito antigo no ranking final; parâmetro `relevance_decay_days` configurável em `AppConfig`
 
 ## Fase 4 — Inspirado no NotebookLM
 
@@ -203,4 +168,4 @@ Edit failed
 
 ---
 
-*Atualizado em: 2026-04-11*
+*Atualizado em: 2026-04-11 — Fase 3 concluída.*
