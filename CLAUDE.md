@@ -28,9 +28,9 @@ Instruções para o Claude Code ao trabalhar neste repositório.
 
 ## Workflow
 
-- Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado
+- Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado (sempre acrescentar itens que não constam nele antes de começar a implementação e marcar como concluido após)
 - Commit por item individual concluído
-- Nunca avançar de fase sem aprovação explícita da usuária
+- Nunca avançar para outro item dentro de uma fase sem aprovação explícita da usuária
 - Toda pesquisa do Mnemosyne vai para `Mnemosyne/pesquisa.txt`
 
 ---
