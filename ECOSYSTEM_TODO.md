@@ -106,19 +106,19 @@ e tipado com a mesma atenção que o caminho feliz.
 > Cada sub-fase entrega algo funcional e independente antes de avançar.
 
 ### 2.1 — Fundação + Tela de Configuração
-- [ ] Criar projeto Tauri 2 em `program files/HUB/`
-- [ ] Copiar design system do AETHER sem modificações:
+- [x] Criar projeto Tauri 2 em `program files/HUB/`
+- [x] Copiar design system do AETHER sem modificações:
       `tokens.css`, `animations.css`, `typography.css`, `components.css`
       `CosmosLayer.tsx`, `Toast.tsx`, `ThemeToggle.tsx`
-- [ ] Splash screen com typewriter + CosmosLayer
-- [ ] Router interno: `splash → setup | home`
+- [x] Splash screen com typewriter + CosmosLayer
+- [x] Router interno: `splash → setup | home`
       `type HubView = 'home' | 'writing' | 'reading' | 'projects' | 'questions'`
-- [ ] Tela de configuração (SetupView): lê/edita/valida caminhos do `ecosystem.json`
+- [x] Tela de configuração (SetupView): lê/edita/valida caminhos do `ecosystem.json`
       — campos: `aether.vault_path`, `kosmos.archive_path`, `ogma.data_path`
       — ícone ✓/✗ por campo via IPC `validate_path()`
-- [ ] Dashboard (HomeView): 4 cards com CosmosLayer individual
+- [x] Dashboard (HomeView): 4 cards com CosmosLayer individual
       — cards desabilitados se caminho não configurado
-- [ ] Rust: `commands/config.rs` — `read_ecosystem_config`, `validate_path`, `save_ecosystem_config`
+- [x] Rust: `commands/config.rs` — `read_ecosystem_config`, `validate_path`, `save_ecosystem_config`
       usando `ecosystem.rs` copiado do AETHER
 
 ### 2.2 — Módulo Escrita (AETHER vault, read-only)
@@ -230,7 +230,7 @@ e tipado com a mesma atenção que o caminho feliz.
 ## Estado das fases do ecossistema
 
   Fase 0: ✅ Fundação concluída (ecosystem_client.py, ecosystem.ts, ecosystem.rs, ecosystem.json)
-  Fase 1: 🔄 Em progresso — 1.3 AETHER-side concluída; 1.1, 1.2, 1.4 pendentes
-  Fase 2: não iniciada
+  Fase 1: 🔄 Em progresso — 1.2 e 1.3 concluídas; 1.1 e 1.4 pendentes
+  Fase 2: 🔄 Em progresso — 2.1 concluída; 2.2–2.5 pendentes
   Fase 3: não iniciada
   Fase 4: não iniciada
