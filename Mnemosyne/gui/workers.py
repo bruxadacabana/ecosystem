@@ -1,7 +1,7 @@
 # Threads para indexação, consultas e resumos.
 from __future__ import annotations
 
-from langchain_ollama import OllamaLLM
+from langchain_ollama import ChatOllama, OllamaLLM
 from PySide6.QtCore import QThread, Signal
 
 from core.config import AppConfig
@@ -213,6 +213,7 @@ class AskWorker(QThread):
         source_type: str | None = None,
         retrieval_mode: str = "hybrid",
         tracker: FileTracker | None = None,
+        persona: str = "curador",
     ) -> None:
         super().__init__()
         self.vectorstore = vectorstore
@@ -222,13 +223,14 @@ class AskWorker(QThread):
         self.source_type = source_type
         self.retrieval_mode = retrieval_mode
         self.tracker = tracker
+        self.persona = persona
 
     def run(self) -> None:
         try:
-            prompt, sources = prepare_ask(
+            messages, sources = prepare_ask(
                 self.vectorstore, self.question, self.config,
                 self.chat_history, self.source_type, self.retrieval_mode,
-                self.tracker,
+                self.tracker, self.persona,
             )
         except QueryError as exc:
             self.finished.emit(False, str(exc), [], self.chat_history)
@@ -247,20 +249,21 @@ class AskWorker(QThread):
             return
 
         try:
-            llm = OllamaLLM(model=self.config.llm_model, temperature=0)
+            llm = ChatOllama(model=self.config.llm_model, temperature=0)
             full = ""
-            for chunk in llm.stream(prompt):
+            for chunk in llm.stream(messages):
                 if self.isInterruptionRequested():
                     self.finished.emit(False, "Interrompido.", [], self.chat_history)
                     return
-                self.token.emit(chunk)
-                full += chunk
+                # AIMessageChunk: chunks de metadata chegam com content="" — ignorar
+                if chunk.content:
+                    self.token.emit(chunk.content)
+                    full += chunk.content
             answer = strip_think(full)
             updated = list(self.chat_history) + [
                 Turn(role="user", content=self.question),
                 Turn(role="assistant", content=answer, sources=sources),
             ]
-            # Actualizar metadados de relevância para cada fonte retornada
             if self.tracker and sources:
                 for rank, src in enumerate(sources):
                     score = max(0.3, 1.0 - rank * 0.2)

@@ -9,7 +9,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from langchain_core.documents import Document
-from langchain_ollama import OllamaLLM
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_ollama import ChatOllama, OllamaLLM
 from rank_bm25 import BM25Okapi
 
 from .config import AppConfig
@@ -25,26 +26,51 @@ class AskResult(TypedDict):
     sources: list[str]
 
 
-_SYSTEM_PROMPT = (
-    "Você é Mnemosyne, um bibliotecário celeste que ajuda a encontrar informações "
-    "em documentos pessoais.\n"
-    "Use apenas os trechos fornecidos abaixo para responder. "
-    "Se a informação não estiver nos trechos, diga que não encontrou nos documentos indexados. "
-    "Responda em português."
-)
-
-_PROMPT_TEMPLATE = (
-    "{system}\n\n"
-    "{history}"
-    "Trechos relevantes:\n{context}\n\n"
-    "Pergunta: {question}\n\n"
-    "Resposta:"
-)
-
-# Cap do histórico injectado no prompt (caracteres)
-_HISTORY_CAP = 6_000
-# Quantos turnos recentes incluir
+# Quantos turnos recentes incluir no histórico
 _HISTORY_TURNS = 5
+
+# Personas disponíveis — system prompt fixo por modo de consulta.
+# A persona fica no SystemMessage, separada do contexto RAG e da pergunta.
+# Isso impede "persona drift" em modelos 7B-14B onde o contexto RAG empurra
+# a persona para fora da janela de atenção depois de 4-5 turnos.
+PERSONAS: dict[str, str] = {
+    "curador": (
+        "Você é Mnemosyne, um bibliotecário celeste e guardião de documentos pessoais. "
+        "Responda apenas com base nos trechos fornecidos. "
+        "Se a informação não estiver nos trechos, diga que não encontrou nos documentos indexados. "
+        "Responda sempre em português."
+    ),
+    "socrático": (
+        "Você é Mnemosyne, um guia socrático. "
+        "Em vez de dar a resposta directamente, faça 2-3 perguntas que ajudem o utilizador "
+        "a descobrir a resposta por conta própria, usando os trechos como base. "
+        "Só revele a resposta completa se o utilizador pedir explicitamente. "
+        "Responda sempre em português."
+    ),
+    "resumido": (
+        "Você é Mnemosyne. Responda de forma curta e directa — no máximo 3 frases. "
+        "Use apenas os trechos fornecidos. "
+        "Responda sempre em português."
+    ),
+    "comparação": (
+        "Você é Mnemosyne. Quando há múltiplos documentos relevantes, apresente semelhanças "
+        "e diferenças entre as perspectivas encontradas em bullet points "
+        "(• Semelhança: / • Diferença:). "
+        "Use apenas os trechos fornecidos. Responda sempre em português."
+    ),
+    "podcaster": (
+        "Você é Mnemosyne, a anfitriã de um podcast de cultura e conhecimento. "
+        "Responda com tom conversacional e entusiasta, como se estivesse a explicar "
+        "algo fascinante ao público. Use os trechos como base factual mas fale com fluidez. "
+        "Responda sempre em português."
+    ),
+    "crítico": (
+        "Você é Mnemosyne, uma leitora crítica. "
+        "Analise os argumentos e ideias encontrados nos trechos de forma rigorosa: "
+        "identifique premissas, pontos fortes, limitações e possíveis contradições. "
+        "Use apenas os trechos fornecidos. Responda sempre em português."
+    ),
+}
 
 
 def strip_think(text: str) -> str:
@@ -276,21 +302,32 @@ def _apply_time_decay(
     return [docs[i] for _, i in scored]
 
 
-def _format_history(turns: list[Turn]) -> str:
-    """Formata os últimos turnos como texto para o prompt, respeitando o cap."""
-    recent = turns[-_HISTORY_TURNS:]
-    lines: list[str] = []
-    total = 0
-    for turn in reversed(recent):
-        prefix = "Utilizador" if turn.role == "user" else "Mnemosyne"
-        entry = f"{prefix}: {turn.content}"
-        if total + len(entry) > _HISTORY_CAP:
-            break
-        lines.insert(0, entry)
-        total += len(entry)
-    if not lines:
-        return ""
-    return "[Histórico da conversa]\n" + "\n".join(lines) + "\n\n"
+def _build_messages(
+    context: str,
+    question: str,
+    history: list[Turn],
+    persona: str = "curador",
+) -> list[BaseMessage]:
+    """
+    Constrói a lista de mensagens para ChatOllama com roles separados:
+      SystemMessage  — persona fixa (nunca se perde no contexto)
+      HumanMessage   — turnos anteriores do utilizador
+      AIMessage      — respostas anteriores do assistente
+      HumanMessage   — trechos RAG + pergunta actual (mensagem final)
+    """
+    system_text = PERSONAS.get(persona, PERSONAS["curador"])
+    messages: list[BaseMessage] = [SystemMessage(content=system_text)]
+
+    for turn in history[-_HISTORY_TURNS:]:
+        if turn.role == "user":
+            messages.append(HumanMessage(content=turn.content))
+        elif turn.role == "assistant":
+            messages.append(AIMessage(content=turn.content))
+
+    messages.append(HumanMessage(
+        content=f"Trechos relevantes:\n{context}\n\nPergunta: {question}"
+    ))
+    return messages
 
 
 def prepare_ask(
@@ -301,7 +338,8 @@ def prepare_ask(
     source_type: str | None = None,
     retrieval_mode: str = "hybrid",
     tracker: FileTracker | None = None,
-) -> tuple[str, list[str]]:
+    persona: str = "curador",
+) -> tuple[list[BaseMessage], list[str]]:
     """
     Recupera documentos relevantes e retorna (prompt, sources).
     Usado pelo worker para streaming com possibilidade de interrupção.
@@ -349,14 +387,8 @@ def prepare_ask(
             seen.add(src)
             sources.append(src)
 
-    history_text = _format_history(chat_history) if chat_history else ""
-    prompt = _PROMPT_TEMPLATE.format(
-        system=_SYSTEM_PROMPT,
-        history=history_text,
-        context=context,
-        question=question,
-    )
-    return prompt, sources
+    messages = _build_messages(context, question, chat_history or [], persona)
+    return messages, sources
 
 
 def ask(
@@ -367,6 +399,7 @@ def ask(
     source_type: str | None = None,
     retrieval_mode: str = "hybrid",
     tracker: FileTracker | None = None,
+    persona: str = "curador",
 ) -> AskResult:
     """
     Consulta RAG síncrona (sem streaming).
@@ -375,11 +408,13 @@ def ask(
         QueryError: se a chain falhar por qualquer motivo.
     """
     try:
-        prompt, sources = prepare_ask(
-            vectorstore, question, config, chat_history, source_type, retrieval_mode, tracker
+        messages, sources = prepare_ask(
+            vectorstore, question, config, chat_history,
+            source_type, retrieval_mode, tracker, persona,
         )
-        llm = OllamaLLM(model=config.llm_model, temperature=0)
-        answer = strip_think(llm.invoke(prompt))
+        llm = ChatOllama(model=config.llm_model, temperature=0)
+        response = llm.invoke(messages)
+        answer = strip_think(response.content)
     except QueryError:
         raise
     except Exception as exc:
