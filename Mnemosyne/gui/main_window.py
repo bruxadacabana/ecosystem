@@ -5,6 +5,7 @@ import os
 import sys
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -29,11 +30,12 @@ from PySide6.QtWidgets import (
 from core.config import AppConfig, load_config, save_config
 from core.errors import ConfigError, VectorstoreNotFoundError
 from core.indexer import load_vectorstore
-from core.memory import CollectionIndex, CollectionInfo, SessionMemory, Turn
+from core.memory import CollectionIndex, CollectionInfo, MemoryStore, SessionMemory, Turn
 from core.ollama_client import OllamaModel, filter_chat_models, filter_embed_models
 from core.tracker import FileTracker
 from gui.workers import (
     AskWorker,
+    CompactMemoryWorker,
     IndexFileWorker,
     IndexWorker,
     OllamaCheckWorker,
@@ -157,6 +159,7 @@ class MainWindow(QMainWindow):
         self._chat_history: list[Turn] = []
         self._collection_index: CollectionIndex | None = None
         self._file_tracker: FileTracker | None = None
+        self._memory_store: MemoryStore | None = None
         self._ollama_ok = False
         self._raw_answer = ""
         self._raw_summary = ""
@@ -448,6 +451,7 @@ class MainWindow(QMainWindow):
         if self.config.mnemosyne_dir:
             self._collection_index = CollectionIndex(self.config.mnemosyne_dir)
             self._file_tracker = FileTracker(self.config.mnemosyne_dir)
+            self._memory_store = MemoryStore(self.config.mnemosyne_dir)
 
         self._update_badge()
 
@@ -701,7 +705,8 @@ class MainWindow(QMainWindow):
 
         self._ask_worker = AskWorker(
             self.vectorstore, question, self.config,
-            self._chat_history, source_type, retrieval_mode
+            self._chat_history, source_type, retrieval_mode,
+            self._file_tracker,
         )
         self._ask_worker.token.connect(self._on_ask_token)
         self._ask_worker.finished.connect(self._on_answer)
@@ -855,6 +860,50 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(
                     self, "Erro", f"Não foi possível remover o índice: {exc}"
                 )
+
+    # ── Fecho da janela ───────────────────────────────────────────────────────
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """
+        Ao fechar: se houver histórico na sessão, oferece compactar e guardar
+        na memória persistida antes de encerrar.
+        """
+        if not self._chat_history or self._memory_store is None:
+            event.accept()
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Guardar conversa?",
+            "Guardar esta conversa na memória antes de fechar?\n\n"
+            "Os factos relevantes serão extraídos e persistidos para sessões futuras.",
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+        )
+
+        if reply == QMessageBox.StandardButton.Cancel:
+            event.ignore()
+            return
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Persistir turnos no histórico antes de compactar
+            try:
+                for turn in self._chat_history:
+                    self._memory_store.append_turn(turn)
+            except OSError:
+                pass
+
+            self._compact_worker = CompactMemoryWorker(
+                self._memory_store, self.config.llm_model
+            )
+            self.statusBar().showMessage("A guardar memória…")
+            self._compact_worker.start()
+            # Aguarda no máximo 15 s para não bloquear indefinidamente
+            self._compact_worker.wait(15_000)
+
+        event.accept()
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
