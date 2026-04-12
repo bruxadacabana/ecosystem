@@ -88,8 +88,8 @@
 - [x] `gui/main_window.py` — indicador de relevância por fonte (similaridade do chunk)
 
 ### 4.2 Seleção de fontes por consulta
-- [ ] `gui/main_window.py` — listar arquivos indexados com checkboxes; query respeita seleção
-- [ ] `core/rag.py` — suporte a filtro por lista de arquivos via ChromaDB `where` metadata
+- [x] `gui/main_window.py` — listar arquivos indexados com checkboxes; query respeita seleção
+- [x] `core/rag.py` — suporte a filtro por lista de arquivos via ChromaDB `where` metadata
 
 ### 4.3 Notebook Guide automático
 - [ ] `core/guide.py` — ao terminar indexação, gerar automaticamente:

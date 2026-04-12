@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -284,6 +286,32 @@ class MainWindow(QMainWindow):
         source_row.addStretch()
         layout.addLayout(source_row)
 
+        # Filtro por arquivo — QGroupBox checkable: desmarcado = sem filtro
+        self.file_filter_box = QGroupBox("Filtrar por arquivo")
+        self.file_filter_box.setCheckable(True)
+        self.file_filter_box.setChecked(False)
+        ff_layout = QVBoxLayout(self.file_filter_box)
+        ff_layout.setSpacing(4)
+
+        ff_btn_row = QHBoxLayout()
+        select_all_btn = QPushButton("Todos")
+        select_all_btn.setFixedWidth(64)
+        select_all_btn.clicked.connect(lambda: self._set_all_files_checked(True))
+        select_none_btn = QPushButton("Nenhum")
+        select_none_btn.setFixedWidth(64)
+        select_none_btn.clicked.connect(lambda: self._set_all_files_checked(False))
+        ff_btn_row.addWidget(select_all_btn)
+        ff_btn_row.addWidget(select_none_btn)
+        ff_btn_row.addStretch()
+        ff_layout.addLayout(ff_btn_row)
+
+        self.file_list_widget = QListWidget()
+        self.file_list_widget.setMaximumHeight(120)
+        self.file_list_widget.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        ff_layout.addWidget(self.file_list_widget)
+
+        layout.addWidget(self.file_filter_box)
+
         self.similar_label = QLabel()
         self.similar_label.setObjectName("similarLabel")
         self.similar_label.setVisible(False)
@@ -466,6 +494,7 @@ class MainWindow(QMainWindow):
             )
             self._log_event("Nenhum índice encontrado — use 'Indexar tudo'.")
 
+        self._populate_file_list()
         self.index_btn.setEnabled(True)
         self.refresh_manage_info()
 
@@ -530,6 +559,7 @@ class MainWindow(QMainWindow):
     def _on_file_indexed(self, success: bool, message: str) -> None:
         self._log_event(message)
         if success:
+            self._populate_file_list()
             try:
                 self.vectorstore = load_vectorstore(self.config)
                 self._enable_query_buttons()
@@ -576,6 +606,7 @@ class MainWindow(QMainWindow):
         self._log_event(message)
         if success:
             self._update_badge()
+            self._populate_file_list()
             try:
                 self.vectorstore = load_vectorstore(self.config)
                 self._enable_query_buttons()
@@ -598,6 +629,7 @@ class MainWindow(QMainWindow):
         if success:
             self._update_collection_index()
             self._update_badge()
+            self._populate_file_list()
             try:
                 self.vectorstore = load_vectorstore(self.config)
                 self._enable_query_buttons()
@@ -670,6 +702,72 @@ class MainWindow(QMainWindow):
             )
         self.badge_label.setVisible(True)
 
+    # ── Seleção de arquivos ───────────────────────────────────────────────────
+
+    def _populate_file_list(self) -> None:
+        """Popula a lista de arquivos com checkboxes na aba Perguntar."""
+        self.file_list_widget.clear()
+        supported = {".pdf", ".docx", ".txt", ".md", ".epub"}
+        paths: list[str] = []
+
+        if self.config.watched_dir and os.path.isdir(self.config.watched_dir):
+            for root, dirs, files in os.walk(self.config.watched_dir):
+                dirs[:] = [d for d in dirs if d != ".mnemosyne"]
+                for f in sorted(files):
+                    _, ext = os.path.splitext(f.lower())
+                    if ext in supported:
+                        paths.append(os.path.join(root, f))
+
+        if self.config.vault_dir and os.path.isdir(self.config.vault_dir):
+            for root, dirs, files in os.walk(self.config.vault_dir):
+                dirs[:] = [d for d in dirs if d not in {".obsidian", "templates", "attachments"}]
+                for f in sorted(files):
+                    if f.lower().endswith(".md"):
+                        paths.append(os.path.join(root, f))
+
+        for path in paths:
+            item = QListWidgetItem(os.path.basename(path))
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            item.setToolTip(path)
+            self.file_list_widget.addItem(item)
+
+        if not paths:
+            placeholder = QListWidgetItem("(nenhum arquivo encontrado)")
+            placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.file_list_widget.addItem(placeholder)
+
+    def _set_all_files_checked(self, checked: bool) -> None:
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        for i in range(self.file_list_widget.count()):
+            item = self.file_list_widget.item(i)
+            if item and (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+                item.setCheckState(state)
+
+    def _get_selected_files(self) -> list[str] | None:
+        """
+        Retorna lista de paths selecionados, ou None se o filtro estiver
+        inativo ou todos os arquivos estiverem marcados (= sem restrição).
+        """
+        if not self.file_filter_box.isChecked():
+            return None
+        total = 0
+        selected: list[str] = []
+        for i in range(self.file_list_widget.count()):
+            item = self.file_list_widget.item(i)
+            if not item or not (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+                continue
+            total += 1
+            if item.checkState() == Qt.CheckState.Checked:
+                path = item.data(Qt.ItemDataRole.UserRole)
+                if path:
+                    selected.append(path)
+        # Todos marcados = sem filtro; nenhum marcado = sem filtro (evita resultado vazio)
+        if not selected or len(selected) == total:
+            return None
+        return selected
+
     # ── Consulta ──────────────────────────────────────────────────────────────
 
     def ask_question(self) -> None:
@@ -703,10 +801,12 @@ class MainWindow(QMainWindow):
         retrieval_map = {"Híbrido": "hybrid", "Multi-Query": "multi_query", "HyDE": "hyde"}
         retrieval_mode = retrieval_map.get(self.retrieval_combo.currentText(), "hybrid")
 
+        source_files = self._get_selected_files()
+
         self._ask_worker = AskWorker(
             self.vectorstore, question, self.config,
             self._chat_history, source_type, retrieval_mode,
-            self._file_tracker,
+            self._file_tracker, source_files=source_files,
         )
         self._ask_worker.token.connect(self._on_ask_token)
         self._ask_worker.finished.connect(self._on_answer)

@@ -84,11 +84,32 @@ def strip_think(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
+def _build_where_filter(
+    source_type: str | None,
+    source_files: list[str] | None,
+) -> dict | None:
+    """
+    Constrói o filtro ChromaDB `where` combinando source_type e source_files.
+    Retorna None se nenhum filtro for necessário.
+    """
+    conditions: list[dict] = []
+    if source_type:
+        conditions.append({"source_type": {"$eq": source_type}})
+    if source_files:
+        conditions.append({"source": {"$in": source_files}})
+    if not conditions:
+        return None
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$and": conditions}
+
+
 def _hybrid_retrieve(
     vectorstore: Any,
     question: str,
     k: int,
     source_type: str | None = None,
+    source_files: list[str] | None = None,
 ) -> list[Document]:
     """
     Hybrid retrieval: combina busca semântica e BM25.
@@ -96,8 +117,9 @@ def _hybrid_retrieve(
     """
     # Semântico: buscar k*2 candidatos para ter mais para o BM25 filtrar
     search_kwargs: dict = {"k": k * 2}
-    if source_type:
-        search_kwargs["filter"] = {"source_type": source_type}
+    where = _build_where_filter(source_type, source_files)
+    if where:
+        search_kwargs["filter"] = where
     try:
         semantic_docs = vectorstore.similarity_search(question, **search_kwargs)
     except Exception as exc:
@@ -166,6 +188,7 @@ def _multi_query_retrieve(
     k: int,
     llm_model: str,
     source_type: str | None = None,
+    source_files: list[str] | None = None,
     n_variants: int = 3,
 ) -> list[Document]:
     """
@@ -193,7 +216,7 @@ def _multi_query_retrieve(
 
     for q in queries:
         try:
-            docs = _hybrid_retrieve(vectorstore, q, k, source_type)
+            docs = _hybrid_retrieve(vectorstore, q, k, source_type, source_files)
         except QueryError:
             continue
         for doc in docs:
@@ -202,7 +225,7 @@ def _multi_query_retrieve(
                 seen.add(key)
                 results.append(doc)
 
-    return results[:k] if results else _hybrid_retrieve(vectorstore, question, k, source_type)
+    return results[:k] if results else _hybrid_retrieve(vectorstore, question, k, source_type, source_files)
 
 
 def _hyde_retrieve(
@@ -211,6 +234,7 @@ def _hyde_retrieve(
     k: int,
     llm_model: str,
     source_type: str | None = None,
+    source_files: list[str] | None = None,
 ) -> list[Document]:
     """
     HyDE: gera uma resposta hipotética à pergunta e usa o seu embedding
@@ -224,9 +248,9 @@ def _hyde_retrieve(
         ))
         if not hypothetical.strip():
             raise ValueError("Resposta hipotética vazia")
-        return _hybrid_retrieve(vectorstore, hypothetical, k, source_type)
+        return _hybrid_retrieve(vectorstore, hypothetical, k, source_type, source_files)
     except Exception:
-        return _hybrid_retrieve(vectorstore, question, k, source_type)
+        return _hybrid_retrieve(vectorstore, question, k, source_type, source_files)
 
 
 _COMPRESS_PROMPT = (
@@ -345,6 +369,7 @@ def prepare_ask(
     retrieval_mode: str = "hybrid",
     tracker: FileTracker | None = None,
     persona: str = "curador",
+    source_files: list[str] | None = None,
 ) -> tuple[list[BaseMessage], list[SourceRecord]]:
     """
     Recupera documentos relevantes e retorna (prompt, sources).
@@ -354,6 +379,8 @@ def prepare_ask(
     source_type: filtrar por "biblioteca", "vault" ou None (ambos).
     retrieval_mode: "hybrid" (padrão), "multi_query" ou "hyde".
     tracker: FileTracker opcional — activa re-ranking por time-decay de relevância.
+    source_files: lista de caminhos absolutos para restringir a consulta a
+        arquivos específicos; None significa sem restrição por arquivo.
 
     Raises:
         QueryError: se a busca vetorial falhar.
@@ -364,14 +391,14 @@ def prepare_ask(
     try:
         if retrieval_mode == "multi_query":
             docs = _multi_query_retrieve(
-                vectorstore, question, candidate_k, config.llm_model, source_type
+                vectorstore, question, candidate_k, config.llm_model, source_type, source_files
             )
         elif retrieval_mode == "hyde":
             docs = _hyde_retrieve(
-                vectorstore, question, candidate_k, config.llm_model, source_type
+                vectorstore, question, candidate_k, config.llm_model, source_type, source_files
             )
         else:
-            docs = _hybrid_retrieve(vectorstore, question, candidate_k, source_type)
+            docs = _hybrid_retrieve(vectorstore, question, candidate_k, source_type, source_files)
     except QueryError:
         raise
     except Exception as exc:
@@ -409,6 +436,7 @@ def ask(
     retrieval_mode: str = "hybrid",
     tracker: FileTracker | None = None,
     persona: str = "curador",
+    source_files: list[str] | None = None,
 ) -> AskResult:
     """
     Consulta RAG síncrona (sem streaming).
@@ -419,7 +447,7 @@ def ask(
     try:
         messages, sources = prepare_ask(
             vectorstore, question, config, chat_history,
-            source_type, retrieval_mode, tracker, persona,
+            source_type, retrieval_mode, tracker, persona, source_files,
         )
         llm = ChatOllama(model=config.llm_model, temperature=0)
         response = llm.invoke(messages)
