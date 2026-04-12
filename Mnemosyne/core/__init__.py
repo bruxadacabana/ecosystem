@@ -10,6 +10,7 @@ from .errors import (
     VectorstoreNotFoundError,
     QueryError,
     SummarizationError,
+    GuideError,
     ConfigError,
 )
 from .indexer import create_vectorstore, load_vectorstore, index_single_file, update_vectorstore

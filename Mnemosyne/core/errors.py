@@ -66,5 +66,9 @@ class SummarizationError(MnemosyneError):
     """Falha ao gerar resumo."""
 
 
+class GuideError(MnemosyneError):
+    """Falha ao gerar o Notebook Guide."""
+
+
 class ConfigError(MnemosyneError):
     """Erro de configuração."""
