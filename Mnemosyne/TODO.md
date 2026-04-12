@@ -95,8 +95,8 @@
 - [x] `core/guide.py` — ao terminar indexação, gerar automaticamente:
   - Resumo geral da coleção
   - 5 perguntas sugeridas sobre o conteúdo
-- [ ] `core/guide.py` — modo "Pérolas Escondidas": identificar os 3 fatos mais surpreendentes ou contraintuitivos dos documentos, com citação directa do texto como evidência
-- [ ] `gui/main_window.py` — exibir Guide na aba Resumir ou em painel lateral
+- [x] `core/guide.py` — modo "Pérolas Escondidas": identificar os 3 fatos mais surpreendentes ou contraintuitivos dos documentos, com citação directa do texto como evidência
+- [x] `gui/main_window.py` — exibir Guide na aba Resumir ou em painel lateral
 
 ### 4.4 FAQ Generator
 - [ ] `core/faq.py` — gerar lista de perguntas frequentes a partir dos documentos indexados

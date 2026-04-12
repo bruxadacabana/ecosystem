@@ -17,9 +17,15 @@ from .rag import strip_think
 from .summarizer import summarize_all
 
 
+class GemRecord(TypedDict):
+    fact: str       # fato surpreendente em 1-2 frases
+    citation: str   # trecho direto do texto como evidência
+
+
 class GuideResult(TypedDict):
     summary: str
     questions: list[str]
+    hidden_gems: list[GemRecord]
     generated_at: str
 
 
@@ -30,6 +36,17 @@ _QUESTIONS_PROMPT = (
     "Escreva uma pergunta por linha, sem numeração e sem marcadores.\n\n"
     "Trechos:\n{context}\n\n"
     "Perguntas:"
+)
+
+_GEMS_PROMPT = (
+    "Examine os trechos abaixo e identifique os 3 fatos, ideias ou dados mais "
+    "surpreendentes, contraintuitivos ou pouco conhecidos. "
+    "Para cada um, escreva exatamente neste formato:\n"
+    "FATO: <descrição do fato em 1-2 frases>\n"
+    "CITAÇÃO: \"<trecho copiado literalmente do texto acima>\"\n\n"
+    "Repita o padrão FATO/CITAÇÃO 3 vezes. Responda em português.\n\n"
+    "Trechos:\n{context}\n\n"
+    "Pérolas escondidas:"
 )
 
 _SAMPLE_K = 12
@@ -82,6 +99,38 @@ def _generate_questions(context: str, config: AppConfig) -> list[str]:
     return questions
 
 
+def _generate_hidden_gems(context: str, config: AppConfig) -> list[GemRecord]:
+    """
+    Identifica até 3 fatos surpreendentes com citação direta do texto.
+    Retorna lista vazia em caso de falha (gems são opcionais no guide).
+    """
+    try:
+        llm = OllamaLLM(model=config.llm_model, temperature=0.3, timeout=90)
+        raw = strip_think(llm.invoke(_GEMS_PROMPT.format(context=context)))
+    except Exception:
+        return []
+
+    gems: list[GemRecord] = []
+    current_fact = ""
+    current_citation = ""
+
+    for line in raw.splitlines():
+        stripped = line.strip()
+        lower = stripped.lower()
+        if lower.startswith("fato"):
+            if current_fact:
+                gems.append(GemRecord(fact=current_fact, citation=current_citation))
+            current_fact = stripped.split(":", 1)[-1].strip().strip("*").strip()
+            current_citation = ""
+        elif lower.startswith("cita"):
+            current_citation = stripped.split(":", 1)[-1].strip().strip('"')
+
+    if current_fact:
+        gems.append(GemRecord(fact=current_fact, citation=current_citation))
+
+    return gems[:3]
+
+
 def generate_guide(vectorstore: Any, config: AppConfig) -> GuideResult:
     """
     Gera resumo geral da coleção + 5 perguntas sugeridas.
@@ -96,10 +145,12 @@ def generate_guide(vectorstore: Any, config: AppConfig) -> GuideResult:
 
     context = _sample_context(vectorstore)
     questions = _generate_questions(context, config)
+    hidden_gems = _generate_hidden_gems(context, config)
 
     return GuideResult(
         summary=summary,
         questions=questions,
+        hidden_gems=hidden_gems,
         generated_at=datetime.now().isoformat(),
     )
 
@@ -133,6 +184,7 @@ def load_guide(mnemosyne_dir: str) -> GuideResult | None:
         return GuideResult(
             summary=str(data.get("summary", "")),
             questions=list(data.get("questions", [])),
+            hidden_gems=list(data.get("hidden_gems", [])),
             generated_at=str(data.get("generated_at", "")),
         )
     except (json.JSONDecodeError, KeyError) as exc:

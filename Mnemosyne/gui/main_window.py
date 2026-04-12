@@ -335,6 +335,8 @@ class MainWindow(QMainWindow):
     def _build_tab_summary(self) -> None:
         tab = QWidget()
         layout = QVBoxLayout(tab)
+
+        # Resumo manual (SummarizeWorker)
         self.summary_btn = QPushButton("Gerar resumo geral")
         self.summary_btn.setEnabled(False)
         self.summary_btn.clicked.connect(self.summarize)
@@ -343,6 +345,39 @@ class MainWindow(QMainWindow):
         self.summary_text = QTextEdit()
         self.summary_text.setReadOnly(True)
         layout.addWidget(self.summary_text)
+
+        # Notebook Guide (gerado automaticamente após indexação)
+        guide_box = QGroupBox("Notebook Guide")
+        guide_layout = QVBoxLayout(guide_box)
+        guide_layout.setSpacing(6)
+
+        guide_layout.addWidget(QLabel("Resumo da coleção:"))
+        self.guide_summary_text = QTextEdit()
+        self.guide_summary_text.setReadOnly(True)
+        self.guide_summary_text.setMaximumHeight(90)
+        self.guide_summary_text.setPlaceholderText("Indexe documentos para gerar o guide…")
+        guide_layout.addWidget(self.guide_summary_text)
+
+        guide_layout.addWidget(QLabel("Perguntas sugeridas (duplo clique para perguntar):"))
+        self.guide_questions_list = QListWidget()
+        self.guide_questions_list.setMaximumHeight(110)
+        self.guide_questions_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.guide_questions_list.itemDoubleClicked.connect(self._on_guide_question_clicked)
+        guide_layout.addWidget(self.guide_questions_list)
+
+        guide_layout.addWidget(QLabel("Pérolas escondidas:"))
+        self.guide_gems_text = QTextEdit()
+        self.guide_gems_text.setReadOnly(True)
+        self.guide_gems_text.setMaximumHeight(110)
+        guide_layout.addWidget(self.guide_gems_text)
+
+        self.guide_refresh_btn = QPushButton("Atualizar Guide")
+        self.guide_refresh_btn.setEnabled(False)
+        self.guide_refresh_btn.setToolTip("Regenera o Notebook Guide para a coleção actual")
+        self.guide_refresh_btn.clicked.connect(self._start_guide_generation)
+        guide_layout.addWidget(self.guide_refresh_btn)
+
+        layout.addWidget(guide_box)
         self.tabs.addTab(tab, "Resumir")
 
     def _build_tab_manage(self) -> None:
@@ -496,6 +531,7 @@ class MainWindow(QMainWindow):
             self._log_event("Nenhum índice encontrado — use 'Indexar tudo'.")
 
         self._populate_file_list()
+        self._load_guide_into_ui()
         self.index_btn.setEnabled(True)
         self.refresh_manage_info()
 
@@ -707,9 +743,10 @@ class MainWindow(QMainWindow):
     # ── Notebook Guide ────────────────────────────────────────────────────────
 
     def _start_guide_generation(self) -> None:
-        """Inicia geração do Notebook Guide em background após indexação."""
+        """Inicia geração do Notebook Guide em background."""
         if self.vectorstore is None or not self.config.mnemosyne_dir:
             return
+        self.guide_refresh_btn.setEnabled(False)
         self._log_event("Gerando Notebook Guide…")
         self._guide_worker = GuideWorker(
             self.vectorstore, self.config, self.config.mnemosyne_dir
@@ -719,6 +756,48 @@ class MainWindow(QMainWindow):
 
     def _on_guide_finished(self, success: bool, message: str) -> None:
         self._log_event(message)
+        if success:
+            self._load_guide_into_ui()
+        self.guide_refresh_btn.setEnabled(self.vectorstore is not None)
+
+    def _load_guide_into_ui(self) -> None:
+        """Carrega guide.json e preenche os widgets do painel Guide."""
+        if not self.config.mnemosyne_dir:
+            return
+        from core.guide import load_guide, GuideError
+        try:
+            result = load_guide(self.config.mnemosyne_dir)
+        except GuideError as exc:
+            self._log_event(f"Guide: {exc}")
+            return
+
+        if result is None:
+            return
+
+        self.guide_summary_text.setPlainText(result["summary"])
+
+        self.guide_questions_list.clear()
+        for q in result["questions"]:
+            self.guide_questions_list.addItem(q)
+
+        gems = result.get("hidden_gems", [])
+        if gems:
+            parts = []
+            for gem in gems:
+                fact = gem.get("fact", "")
+                citation = gem.get("citation", "")
+                entry = f"★ {fact}"
+                if citation:
+                    entry += f'\n  "{citation}"'
+                parts.append(entry)
+            self.guide_gems_text.setPlainText("\n\n".join(parts))
+        else:
+            self.guide_gems_text.setPlainText("(nenhuma pérola identificada)")
+
+    def _on_guide_question_clicked(self, item: QListWidgetItem) -> None:
+        """Popula o campo de pergunta e muda para a aba Perguntar."""
+        self.question_edit.setText(item.text())
+        self.tabs.setCurrentIndex(0)
 
     # ── Seleção de arquivos ───────────────────────────────────────────────────
 
@@ -1047,11 +1126,13 @@ class MainWindow(QMainWindow):
         self.summary_btn.setEnabled(True)
         self.clear_index_btn.setEnabled(True)
         self.update_index_btn.setEnabled(True)
+        self.guide_refresh_btn.setEnabled(True)
 
     def _disable_query_buttons(self) -> None:
         self.ask_btn.setEnabled(False)
         self.summary_btn.setEnabled(False)
         self.update_index_btn.setEnabled(False)
+        self.guide_refresh_btn.setEnabled(False)
 
     def _log_event(self, message: str) -> None:
         from datetime import datetime
