@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -119,12 +120,68 @@ class SetupDialog(QDialog):
 
         layout.addLayout(form)
 
+        # Botão de sugestões do ecossistema (só aparece se houver caminhos)
+        self._ecosystem_suggestions = self._load_ecosystem_suggestions()
+        if self._ecosystem_suggestions:
+            suggest_btn = QPushButton("Sugestões do ecossistema")
+            suggest_btn.setToolTip(
+                "Caminhos detectados nos outros apps do ecossistema"
+            )
+            suggest_btn.clicked.connect(
+                lambda: self._show_ecosystem_menu(suggest_btn)
+            )
+            layout.addWidget(suggest_btn)
+
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
+
+    def _load_ecosystem_suggestions(self) -> list[tuple[str, str, str]]:
+        """
+        Lê o ecosystem.json e retorna lista de (label, path, field).
+        `field` é "folder" ou "vault".
+        Retorna lista vazia se ecosystem_client não estiver disponível
+        ou não houver caminhos configurados.
+        """
+        try:
+            from pathlib import Path as _Path
+            import sys as _sys
+            _root = str(_Path(__file__).parent.parent.parent)
+            if _root not in _sys.path:
+                _sys.path.insert(0, _root)
+            from ecosystem_client import read_ecosystem
+            eco = read_ecosystem()
+        except Exception:
+            return []
+
+        suggestions: list[tuple[str, str, str]] = []
+
+        archive = eco.get("kosmos", {}).get("archive_path", "")
+        if archive and os.path.isdir(archive):
+            suggestions.append(("KOSMOS — archive", archive, "folder"))
+
+        vault = eco.get("aether", {}).get("vault_path", "")
+        if vault and os.path.isdir(vault):
+            suggestions.append(("AETHER — vault", vault, "vault"))
+
+        return suggestions
+
+    def _show_ecosystem_menu(self, btn: QPushButton) -> None:
+        """Exibe QMenu com caminhos do ecossistema; clique preenche o campo."""
+        menu = QMenu(self)
+        for label, path, field in self._ecosystem_suggestions:
+            action = menu.addAction(f"{label}  →  {path}")
+            action.setData((path, field))
+        chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        if chosen is not None:
+            path, field = chosen.data()
+            if field == "folder":
+                self.folder_edit.setText(path)
+            else:
+                self.vault_edit.setText(path)
 
     def _pick_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
