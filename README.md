@@ -117,15 +117,43 @@ Todos os apps compartilham a mesma identidade visual, definida no [DESIGN_BIBLE.
 
 O roteiro de integração dos apps — incluindo o HUB unificado e suporte Android — está em [ECOSYSTEM_TODO.md](ECOSYSTEM_TODO.md).
 
+### Contrato compartilhado — `ecosystem.json`
+
+Os apps se comunicam via um arquivo JSON em `~/.local/share/ecosystem/ecosystem.json` (Linux) ou `%APPDATA%\ecosystem\ecosystem.json` (Windows). Cada app escreve apenas a sua própria seção; as demais são preservadas.
+
+```json
+{
+  "aether":    { "vault_path": "/caminho/para/vault" },
+  "kosmos":    { "data_path": "...", "archive_path": "..." },
+  "ogma":      { "data_path": "" },
+  "mnemosyne": { "index_paths": [] },
+  "hub":       { "data_path": "" }
+}
+```
+
+**Utilitários:**
+
+| Arquivo | Stack | Usado por |
+|---|---|---|
+| [`ecosystem_client.py`](ecosystem_client.py) | Python | KOSMOS, Mnemosyne, Hermes |
+| [`OGMA/src/main/ecosystem.ts`](OGMA/src/main/ecosystem.ts) | TypeScript | OGMA |
+| [`AETHER/src-tauri/src/ecosystem.rs`](AETHER/src-tauri/src/ecosystem.rs) | Rust | AETHER |
+
+Escrita atômica em todos (arquivo temporário + rename). Falha silenciosa nos apps — nunca bloqueia o startup.
+
 **Estado atual das fases:**
 
 | Fase | Descrição | Estado |
 |---|---|---|
-| 0 | Fundação: `.ecosystem.json` + Syncthing | Não iniciada |
-| 1 | Interligação dos apps existentes | Não iniciada |
+| 0 | Fundação: `ecosystem.json` + utilitários Python/TS/Rust | Concluída |
+| 1 | Interligação dos apps existentes | Em progresso |
 | 2 | App Hub desktop (Tauri 2 + React) | Não iniciada |
 | 3 | Android (APK via Tauri 2) | Não iniciada |
 | 4 | Polimento e features extras | Não iniciada |
+
+**Integrações concluídas (Fase 1):**
+- AETHER escreve `vault_path` no startup (ao carregar o vault)
+- KOSMOS escreve `data_path` e `archive_path` no startup
 
 ---
 
