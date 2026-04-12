@@ -3,8 +3,10 @@ QA: recupera chunks relevantes e gera resposta via Ollama.
 """
 from __future__ import annotations
 
+import math
 import re
-from typing import Any, TypedDict
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langchain_core.documents import Document
 from langchain_ollama import OllamaLLM
@@ -13,6 +15,9 @@ from rank_bm25 import BM25Okapi
 from .config import AppConfig
 from .errors import QueryError
 from .memory import Turn
+
+if TYPE_CHECKING:
+    from .tracker import FileTracker
 
 
 class AskResult(TypedDict):
@@ -228,6 +233,49 @@ def _contextual_compress(
         return docs  # fallback total se o LLM não estiver disponível
 
 
+def _apply_time_decay(
+    docs: list[Document],
+    tracker: FileTracker | None,
+    decay_days: int,
+) -> list[Document]:
+    """
+    Re-ordena docs aplicando um multiplicador de decaimento temporal baseado em
+    last_retrieved_at. Penaliza fontes consultadas há muito tempo; documentos
+    sem histórico não são penalizados.
+
+    A fórmula de decaimento é: base * (0.7 + 0.3 * exp(-days_ago / decay_days))
+    — mild, para não descartar documentos genuinamente relevantes.
+    """
+    if tracker is None or decay_days <= 0 or len(docs) <= 1:
+        return docs
+
+    now = datetime.now()
+    n = len(docs)
+    records = tracker.records
+
+    scored: list[tuple[float, int]] = []
+    for i, doc in enumerate(docs):
+        base = 1.0 - (i / n)  # posição inversa normalizada [0, 1]
+
+        src = doc.metadata.get("source", "")
+        rec = records.get(src) if src else None
+
+        if rec and rec.last_retrieved_at:
+            try:
+                last = datetime.fromisoformat(rec.last_retrieved_at)
+                days_ago = max(0, (now - last).days)
+                multiplier = 0.7 + 0.3 * math.exp(-days_ago / decay_days)
+            except ValueError:
+                multiplier = 1.0
+        else:
+            multiplier = 1.0  # sem histórico: sem penalização
+
+        scored.append((base * multiplier, i))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [docs[i] for _, i in scored]
+
+
 def _format_history(turns: list[Turn]) -> str:
     """Formata os últimos turnos como texto para o prompt, respeitando o cap."""
     recent = turns[-_HISTORY_TURNS:]
@@ -252,6 +300,7 @@ def prepare_ask(
     chat_history: list[Turn] | None = None,
     source_type: str | None = None,
     retrieval_mode: str = "hybrid",
+    tracker: FileTracker | None = None,
 ) -> tuple[str, list[str]]:
     """
     Recupera documentos relevantes e retorna (prompt, sources).
@@ -260,6 +309,7 @@ def prepare_ask(
     chat_history: turnos anteriores da sessão para contexto multi-turno.
     source_type: filtrar por "biblioteca", "vault" ou None (ambos).
     retrieval_mode: "hybrid" (padrão), "multi_query" ou "hyde".
+    tracker: FileTracker opcional — activa re-ranking por time-decay de relevância.
 
     Raises:
         QueryError: se a busca vetorial falhar.
@@ -285,6 +335,9 @@ def prepare_ask(
 
     # Compressão contextual: filtrar chunks irrelevantes via LLM
     docs = _contextual_compress(docs, question, config.llm_model)
+
+    # Re-ranking por time-decay: penaliza fontes consultadas há muito tempo
+    docs = _apply_time_decay(docs, tracker, config.relevance_decay_days)
 
     context = "\n\n---\n".join(doc.page_content for doc in docs)
 
@@ -313,6 +366,7 @@ def ask(
     chat_history: list[Turn] | None = None,
     source_type: str | None = None,
     retrieval_mode: str = "hybrid",
+    tracker: FileTracker | None = None,
 ) -> AskResult:
     """
     Consulta RAG síncrona (sem streaming).
@@ -322,7 +376,7 @@ def ask(
     """
     try:
         prompt, sources = prepare_ask(
-            vectorstore, question, config, chat_history, source_type, retrieval_mode
+            vectorstore, question, config, chat_history, source_type, retrieval_mode, tracker
         )
         llm = OllamaLLM(model=config.llm_model, temperature=0)
         answer = strip_think(llm.invoke(prompt))
