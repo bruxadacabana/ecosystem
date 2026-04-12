@@ -17,10 +17,11 @@ from core.errors import (
 )
 from core.indexer import create_vectorstore, index_single_file, load_vectorstore, update_vectorstore
 from core.loaders import load_documents, load_single_file
-from core.memory import Turn
+from core.memory import MemoryStore, Turn
 from core.ollama_client import list_models, validate_model
 from core.rag import prepare_ask, strip_think, AskResult
 from core.summarizer import iter_summary
+from core.tracker import FileTracker
 
 
 class OllamaCheckWorker(QThread):
@@ -174,6 +175,29 @@ class IndexFileWorker(QThread):
             self.finished.emit(False, str(exc))
 
 
+class CompactMemoryWorker(QThread):
+    """
+    Usa o LLM para sintetizar o histórico em factos compactos e persistidos.
+    Chamado no closeEvent quando o utilizador opta por guardar a conversa.
+    """
+
+    finished = Signal(bool, str)  # sucesso, mensagem/erro
+
+    def __init__(self, memory_store: MemoryStore, llm_model: str) -> None:
+        super().__init__()
+        self.memory_store = memory_store
+        self.llm_model = llm_model
+
+    def run(self) -> None:
+        try:
+            facts = self.memory_store.compact_session_memory(self.llm_model)
+            self.finished.emit(True, f"Memória guardada ({len(facts)} chars).")
+        except RuntimeError as exc:
+            self.finished.emit(False, str(exc))
+        except Exception as exc:
+            self.finished.emit(False, f"Erro inesperado ao compactar: {exc}")
+
+
 class AskWorker(QThread):
     """Executa uma consulta RAG com streaming token a token."""
 
@@ -188,6 +212,7 @@ class AskWorker(QThread):
         chat_history: list[Turn] | None = None,
         source_type: str | None = None,
         retrieval_mode: str = "hybrid",
+        tracker: FileTracker | None = None,
     ) -> None:
         super().__init__()
         self.vectorstore = vectorstore
@@ -196,12 +221,14 @@ class AskWorker(QThread):
         self.chat_history: list[Turn] = list(chat_history) if chat_history else []
         self.source_type = source_type
         self.retrieval_mode = retrieval_mode
+        self.tracker = tracker
 
     def run(self) -> None:
         try:
             prompt, sources = prepare_ask(
                 self.vectorstore, self.question, self.config,
-                self.chat_history, self.source_type, self.retrieval_mode
+                self.chat_history, self.source_type, self.retrieval_mode,
+                self.tracker,
             )
         except QueryError as exc:
             self.finished.emit(False, str(exc), [], self.chat_history)
@@ -233,6 +260,11 @@ class AskWorker(QThread):
                 Turn(role="user", content=self.question),
                 Turn(role="assistant", content=answer, sources=sources),
             ]
+            # Actualizar metadados de relevância para cada fonte retornada
+            if self.tracker and sources:
+                for rank, src in enumerate(sources):
+                    score = max(0.3, 1.0 - rank * 0.2)
+                    self.tracker.update_retrieved(src, score)
             self.finished.emit(True, answer, sources, updated)
         except Exception as exc:
             self.finished.emit(False, f"Erro na consulta: {exc}", [], self.chat_history)
