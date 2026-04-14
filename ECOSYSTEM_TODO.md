@@ -92,11 +92,12 @@ e tipado com a mesma atenção que o caminho feliz.
 - [x] Mnemosyne oferece vault AETHER como pasta sugerida (botão "Sugestões do ecossistema")
 - [ ] Testar indexação dos `.md` de capítulos pelo Mnemosyne
 
-### 1.4 — Hermes → archive do KOSMOS (transcrições)
-- [ ] Adicionar checkbox "Salvar também no arquivo do KOSMOS" na aba Transcrever do Hermes
-      Lê `kosmos.archive_path` do ecosystem; desabilitado se vazio
-- [ ] Salvar transcrição como `.md` em `archive/hermes/` com frontmatter KOSMOS-compatível
-- [ ] Formato: mesmo padrão Markdown do `archive_manager.py` do KOSMOS
+### 1.4 — Hermes → Mnemosyne (transcrições indexáveis)
+- [ ] Adicionar campo "Pasta de saída do Mnemosyne" na aba Transcrever do Hermes
+      Lê `mnemosyne.index_paths[0]` do ecosystem como sugestão; desabilitado se vazio
+- [ ] Adicionar checkbox "Indexar no Mnemosyne após transcrever"
+      Salva o `.md` diretamente numa das pastas monitoradas pelo Mnemosyne
+- [ ] Formato: Markdown limpo com frontmatter mínimo (título, data, fonte/URL, duração)
 
 ---
 
