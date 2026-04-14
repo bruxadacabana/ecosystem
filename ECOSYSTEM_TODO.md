@@ -67,16 +67,29 @@ e tipado com a mesma atenção que o caminho feliz.
 ## FASE 1 — Interligação dos apps existentes
 > Aproveita o que já existe. Mudanças cirúrgicas, sem novo app.
 
-### 1.1 — OGMA → AETHER (criar projeto criativo)
-- [ ] Adicionar coluna `aether_project_id TEXT` na tabela `projects`
-      do OGMA (schema v2, arquivo `src/main/database.ts`)
-- [ ] OGMA lê vault path de `.ecosystem.json` na criação de projeto
-- [ ] Ao criar projeto com `project_type = 'creative'`, OGMA escreve
-      no vault AETHER:
-      - `{vault}/{uuid}/project.json`  (formato Project do AETHER)
-      - `{vault}/{uuid}/{book_uuid}/book.json`  (livro padrão vazio)
+### 1.1 — OGMA → AETHER (projetos de escrita)
+
+#### Passo A — Renomear tipo `creative` → `writing` no OGMA
+- [ ] `src/renderer/types/index.ts`: alterar `ProjectType` union, SUBCATEGORIES,
+      PROJECT_TYPE_LABELS ('Escrita'), PROJECT_TYPE_ICONS ('✍️' mantém),
+      PROJECT_TYPE_DESCRIPTIONS
+- [ ] `src/renderer/components/Projects/NewProjectModal.tsx`: atualizar array TYPES
+- [ ] `src/renderer/views/ProjectDashboard/ProjectLocalDashboard.tsx`:
+      renomear case `'creative'` → `'writing'`
+- [ ] `src/main/ipc.ts`: renomear todas as ocorrências do literal `'creative'`
+- [ ] `src/main/database.ts`: adicionar migration que faz
+      `UPDATE projects SET project_type = 'writing' WHERE project_type = 'creative'`
+      (o campo é TEXT sem CHECK constraint — migration simples)
+
+#### Passo B — Integrar projetos de escrita com o AETHER
+- [ ] `src/main/database.ts`: adicionar coluna `aether_project_id TEXT` na tabela
+      `projects` (nova migration, schema v3)
+- [ ] OGMA lê `aether.vault_path` do `ecosystem.json` na criação de projeto
+- [ ] Ao criar projeto com `project_type = 'writing'`, OGMA escreve no vault AETHER:
+      - `{vault}/{uuid}/project.json`  (formato Project do AETHER — campos: id, name, project_type, genre, description)
+      - `{vault}/{uuid}/{book_uuid}/book.json`  (livro padrão vazio, sem capítulos)
 - [ ] Salvar `aether_project_id` no banco do OGMA para manter o vínculo
-- [ ] Botão "Abrir no AETHER" em projetos criativos do OGMA
+- [ ] Botão "Abrir no AETHER" em projetos de escrita (desabilitado se vault não configurado)
 
 ### 1.2 — KOSMOS → Mnemosyne (artigos salvos)
 - [x] KOSMOS escreve `archive_path` e `data_path` em `ecosystem.json` na inicialização
