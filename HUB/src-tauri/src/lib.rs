@@ -47,6 +47,9 @@ pub fn run() {
             commands::config::read_ecosystem_config,
             commands::config::validate_path,
             commands::config::save_ecosystem_config,
+            commands::writing::list_writing_projects,
+            commands::writing::list_books,
+            commands::writing::read_chapter,
         ])
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir().map_err(|e| {

@@ -28,6 +28,47 @@ export interface EcosystemConfig {
 }
 
 // ----------------------------------------------------------
+//  AETHER — Escrita
+// ----------------------------------------------------------
+
+export type ProjectType = 'single' | 'series' | 'fanfiction'
+export type ChapterStatus = 'draft' | 'revision' | 'final'
+
+export interface Project {
+  id: string
+  name: string
+  description: string | null
+  project_type: ProjectType
+  default_book_id: string | null
+  created_at: string
+  updated_at: string
+  subtitle: string | null
+  genre: string | null
+  tags: string[]
+}
+
+export interface ChapterMeta {
+  id: string
+  title: string
+  order: number
+  status: ChapterStatus
+  synopsis: string | null
+  word_count: number
+  trashed_at: string | null
+  word_goal: number | null
+}
+
+export interface Book {
+  id: string
+  project_id: string
+  name: string
+  order: number
+  chapters: ChapterMeta[]
+  series_name: string | null
+  word_goal: number | null
+}
+
+// ----------------------------------------------------------
 //  HUB Navigation
 // ----------------------------------------------------------
 

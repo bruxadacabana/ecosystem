@@ -122,14 +122,14 @@ e tipado com a mesma atenção que o caminho feliz.
       usando `ecosystem.rs` copiado do AETHER
 
 ### 2.2 — Módulo Escrita (AETHER vault, read-only)
-- [ ] Rust `commands/writing.rs`:
+- [x] Rust `commands/writing.rs`:
       `list_writing_projects(vault_path)` — lê todos `{vault}/*/project.json`
       `list_books(vault_path, project_id)` — lê `{vault}/{proj}/*/book.json`
       `read_chapter(vault_path, project_id, book_id, chapter_id)` — lê `.md`
-- [ ] `WritingView.tsx` — grade de projetos com CosmosLayer individual
-- [ ] `BookView.tsx` — árvore livros + capítulos com status e word count
-- [ ] `ChapterView.tsx` — `react-markdown` renderiza o `.md`
-- [ ] Tipos `Project`, `Book`, `ChapterMeta` copiados de AETHER
+- [x] `WritingView.tsx` — grade de projetos com CosmosLayer individual
+- [x] `BookView.tsx` — árvore livros + capítulos com status e word count
+- [x] `ChapterView.tsx` — `react-markdown` renderiza o `.md`
+- [x] Tipos `Project`, `Book`, `ChapterMeta` copiados de AETHER
 
 ### 2.3 — Módulo Leituras (KOSMOS archive, read-only)
 - [ ] Rust `commands/reading.rs`:
@@ -231,6 +231,6 @@ e tipado com a mesma atenção que o caminho feliz.
 
   Fase 0: ✅ Fundação concluída (ecosystem_client.py, ecosystem.ts, ecosystem.rs, ecosystem.json)
   Fase 1: 🔄 Em progresso — 1.2 e 1.3 concluídas; 1.1 e 1.4 pendentes
-  Fase 2: 🔄 Em progresso — 2.1 concluída; 2.2–2.5 pendentes
+  Fase 2: 🔄 Em progresso — 2.1 e 2.2 concluídas; 2.3–2.5 pendentes
   Fase 3: não iniciada
   Fase 4: não iniciada

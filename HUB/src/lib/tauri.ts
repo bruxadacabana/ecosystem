@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book } from '../types'
 
 async function call<T>(
   command: string,
@@ -47,3 +47,21 @@ export const saveEcosystemConfig = (
   updates: Partial<EcosystemConfig>,
 ): Promise<TauriResult<void>> =>
   call<void>('save_ecosystem_config', { updates })
+
+// ----------------------------------------------------------
+//  Módulo Escrita — vault AETHER
+// ----------------------------------------------------------
+
+export const listWritingProjects = (vaultPath: string): Promise<TauriResult<Project[]>> =>
+  call<Project[]>('list_writing_projects', { vaultPath })
+
+export const listBooks = (vaultPath: string, projectId: string): Promise<TauriResult<Book[]>> =>
+  call<Book[]>('list_books', { vaultPath, projectId })
+
+export const readChapter = (
+  vaultPath: string,
+  projectId: string,
+  bookId: string,
+  chapterId: string,
+): Promise<TauriResult<string>> =>
+  call<string>('read_chapter', { vaultPath, projectId, bookId, chapterId })
