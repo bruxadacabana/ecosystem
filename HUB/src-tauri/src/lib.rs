@@ -50,6 +50,11 @@ pub fn run() {
             commands::writing::list_writing_projects,
             commands::writing::list_books,
             commands::writing::read_chapter,
+            commands::launcher::launch_app,
+            commands::launcher::is_app_running,
+            commands::launcher::get_all_app_statuses,
+            commands::launcher::validate_exe_path,
+            commands::launcher::discover_app_exe,
         ])
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir().map_err(|e| {

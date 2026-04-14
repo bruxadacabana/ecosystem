@@ -1,6 +1,8 @@
 /* ============================================================
    HUB — SetupView
    Edição e validação dos caminhos do ecosystem.json.
+   Seção 1: caminhos de dados (vault, archive, db)
+   Seção 2: executáveis dos 5 apps (com auto-descoberta)
    ============================================================ */
 
 import { useEffect, useState } from 'react'
@@ -17,34 +19,86 @@ interface PathField {
   field: string
   label: string
   placeholder: string
+  validateAs: 'dir' | 'file'
+  candidates?: string[]   // para auto-descoberta (apenas campos de exe)
 }
 
-const FIELDS: PathField[] = [
+const DATA_FIELDS: PathField[] = [
   {
     key: 'aether',
     field: 'vault_path',
     label: 'AETHER — Vault',
     placeholder: 'Caminho da pasta vault do AETHER…',
+    validateAs: 'dir',
   },
   {
     key: 'kosmos',
     field: 'archive_path',
     label: 'KOSMOS — Archive',
     placeholder: 'Caminho da pasta archive do KOSMOS…',
+    validateAs: 'dir',
   },
   {
     key: 'ogma',
     field: 'data_path',
     label: 'OGMA — Dados',
     placeholder: 'Caminho da pasta data do OGMA…',
+    validateAs: 'dir',
   },
 ]
 
-type ValidityMap = Record<string, boolean | null>  // null = não verificado ainda
+const EXE_FIELDS: PathField[] = [
+  {
+    key: 'aether',
+    field: 'exe_path',
+    label: 'AETHER',
+    placeholder: 'Caminho para o executável do AETHER…',
+    validateAs: 'file',
+    candidates: ['AETHER', 'aether', 'AETHER.exe'],
+  },
+  {
+    key: 'ogma',
+    field: 'exe_path',
+    label: 'OGMA',
+    placeholder: 'Caminho para o executável do OGMA…',
+    validateAs: 'file',
+    candidates: ['OGMA', 'ogma', 'OGMA.exe'],
+  },
+  {
+    key: 'kosmos',
+    field: 'exe_path',
+    label: 'KOSMOS',
+    placeholder: 'Caminho para o executável do KOSMOS…',
+    validateAs: 'file',
+    candidates: ['KOSMOS', 'kosmos', 'KOSMOS.exe'],
+  },
+  {
+    key: 'mnemosyne',
+    field: 'exe_path',
+    label: 'Mnemosyne',
+    placeholder: 'Caminho para o executável do Mnemosyne…',
+    validateAs: 'file',
+    candidates: ['Mnemosyne', 'mnemosyne', 'Mnemosyne.exe'],
+  },
+  {
+    key: 'hermes',
+    field: 'exe_path',
+    label: 'Hermes',
+    placeholder: 'Caminho para o executável do Hermes…',
+    validateAs: 'file',
+    candidates: ['Hermes', 'hermes', 'Hermes.exe'],
+  },
+]
+
+const ALL_FIELDS = [...DATA_FIELDS, ...EXE_FIELDS]
+
+type ValidityMap = Record<string, boolean | null>   // null = não verificado
+type DetectingMap = Record<string, boolean>
 
 export function SetupView({ onBack, onSaved }: SetupViewProps) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [validity, setValidity] = useState<ValidityMap>({})
+  const [detecting, setDetecting] = useState<DetectingMap>({})
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -54,7 +108,7 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
       if (!result.ok) return
       const eco = result.data
       const initial: Record<string, string> = {}
-      for (const f of FIELDS) {
+      for (const f of ALL_FIELDS) {
         const section = eco[f.key] as Record<string, unknown> | undefined
         initial[`${f.key}.${f.field}`] = String(section?.[f.field] ?? '')
       }
@@ -62,13 +116,14 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
     })
   }, [])
 
-  // Valida um campo quando o valor muda (debounce implícito: ao sair do campo)
-  async function validateField(compositeKey: string, value: string) {
+  async function validateField(compositeKey: string, value: string, validateAs: 'dir' | 'file') {
     if (!value.trim()) {
       setValidity(v => ({ ...v, [compositeKey]: null }))
       return
     }
-    const result = await cmd.validatePath(value.trim())
+    const result = validateAs === 'file'
+      ? await cmd.validateExePath(value.trim())
+      : await cmd.validatePath(value.trim())
     setValidity(v => ({ ...v, [compositeKey]: result.ok ? result.data : false }))
   }
 
@@ -77,17 +132,32 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
     setValidity(v => ({ ...v, [compositeKey]: null }))
   }
 
+  async function handleDiscover(f: PathField) {
+    if (!f.candidates) return
+    const compositeKey = `${f.key}.${f.field}`
+    setDetecting(d => ({ ...d, [compositeKey]: true }))
+
+    const result = await cmd.discoverAppExe(f.candidates)
+    setDetecting(d => ({ ...d, [compositeKey]: false }))
+
+    if (result.ok && result.data) {
+      setValues(v => ({ ...v, [compositeKey]: result.data as string }))
+      setValidity(v => ({ ...v, [compositeKey]: true }))
+    } else {
+      setValidity(v => ({ ...v, [compositeKey]: false }))
+    }
+  }
+
   async function handleSave() {
     setSaving(true)
     setError('')
 
-    // Montar updates por seção
     const updates: Partial<EcosystemConfig> = {}
-    for (const f of FIELDS) {
+    for (const f of ALL_FIELDS) {
       const compositeKey = `${f.key}.${f.field}`
       const val = values[compositeKey]?.trim() ?? ''
       if (val) {
-        const section = (updates[f.key] ?? {}) as Record<string, string>
+        const section = ((updates as Record<string, unknown>)[f.key] ?? {}) as Record<string, unknown>
         section[f.field] = val
         ;(updates as Record<string, unknown>)[f.key] = section
       }
@@ -114,6 +184,72 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
     const v = validity[compositeKey]
     if (v === null || v === undefined) return 'var(--ink-ghost)'
     return v ? '#4A6741' : '#8B3A2A'
+  }
+
+  function renderField(f: PathField) {
+    const compositeKey = `${f.key}.${f.field}`
+    const value = values[compositeKey] ?? ''
+    const isDetecting = detecting[compositeKey] ?? false
+
+    return (
+      <div key={compositeKey}>
+        <label
+          style={{
+            display: 'block',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: 'var(--ink-ghost)',
+            marginBottom: 6,
+          }}
+        >
+          {f.label}
+        </label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            type="text"
+            value={value}
+            placeholder={f.placeholder}
+            onChange={e => handleChange(compositeKey, e.target.value)}
+            onBlur={e => validateField(compositeKey, e.target.value, f.validateAs)}
+            style={{
+              flex: 1,
+              fontFamily: 'var(--font-mono)',
+              fontSize: 12,
+              padding: '6px 10px',
+              background: 'var(--paper-dark)',
+              border: '1px solid var(--rule)',
+              borderRadius: 'var(--radius)',
+              color: 'var(--ink)',
+              outline: 'none',
+            }}
+          />
+          {f.candidates && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => handleDiscover(f)}
+              disabled={isDetecting}
+              style={{ flexShrink: 0, fontSize: 10, padding: '4px 8px' }}
+            >
+              {isDetecting ? '…' : 'Detectar'}
+            </button>
+          )}
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 14,
+              color: validityColor(compositeKey),
+              width: 18,
+              textAlign: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {validityIcon(compositeKey)}
+          </span>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -176,60 +312,50 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
           Os caminhos são gravados no arquivo de configuração compartilhado do ecossistema.
         </p>
 
+        {/* Seção: caminhos de dados */}
+        <p
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            color: 'var(--accent)',
+            marginBottom: 16,
+          }}
+        >
+          Caminhos de dados
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 40 }}>
+          {DATA_FIELDS.map(f => renderField(f))}
+        </div>
+
+        {/* Seção: executáveis */}
+        <p
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            color: 'var(--accent)',
+            marginBottom: 8,
+          }}
+        >
+          Executáveis dos apps
+        </p>
+        <p
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: 'var(--ink-ghost)',
+            marginBottom: 16,
+            lineHeight: 1.6,
+          }}
+        >
+          Usados pela barra de atalhos para iniciar os apps e monitorar se estão rodando.
+          Use "Detectar" para buscar automaticamente no PATH.
+        </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          {FIELDS.map(f => {
-            const compositeKey = `${f.key}.${f.field}`
-            const value = values[compositeKey] ?? ''
-            return (
-              <div key={compositeKey}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 10,
-                    letterSpacing: '0.14em',
-                    textTransform: 'uppercase',
-                    color: 'var(--ink-ghost)',
-                    marginBottom: 6,
-                  }}
-                >
-                  {f.label}
-                </label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input
-                    type="text"
-                    value={value}
-                    placeholder={f.placeholder}
-                    onChange={e => handleChange(compositeKey, e.target.value)}
-                    onBlur={e => validateField(compositeKey, e.target.value)}
-                    style={{
-                      flex: 1,
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 12,
-                      padding: '6px 10px',
-                      background: 'var(--paper-dark)',
-                      border: '1px solid var(--rule)',
-                      borderRadius: 'var(--radius)',
-                      color: 'var(--ink)',
-                      outline: 'none',
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 14,
-                      color: validityColor(compositeKey),
-                      width: 18,
-                      textAlign: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {validityIcon(compositeKey)}
-                  </span>
-                </div>
-              </div>
-            )
-          })}
+          {EXE_FIELDS.map(f => renderField(f))}
         </div>
 
         {error && (

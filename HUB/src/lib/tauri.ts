@@ -65,3 +65,24 @@ export const readChapter = (
   chapterId: string,
 ): Promise<TauriResult<string>> =>
   call<string>('read_chapter', { vaultPath, projectId, bookId, chapterId })
+
+// ----------------------------------------------------------
+//  Módulo Launcher — apps externos
+// ----------------------------------------------------------
+
+export const launchApp = (exePath: string): Promise<TauriResult<void>> =>
+  call<void>('launch_app', { exePath })
+
+export const isAppRunning = (exePath: string): Promise<TauriResult<boolean>> =>
+  call<boolean>('is_app_running', { exePath })
+
+export const getAllAppStatuses = (
+  exePaths: Record<string, string>,
+): Promise<TauriResult<Record<string, boolean>>> =>
+  call<Record<string, boolean>>('get_all_app_statuses', { exePaths })
+
+export const validateExePath = (path: string): Promise<TauriResult<boolean>> =>
+  call<boolean>('validate_exe_path', { path })
+
+export const discoverAppExe = (candidates: string[]): Promise<TauriResult<string | null>> =>
+  call<string | null>('discover_app_exe', { candidates })

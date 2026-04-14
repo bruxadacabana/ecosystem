@@ -156,6 +156,26 @@ e tipado com a mesma atenção que o caminho feliz.
 - [ ] `QuestionsView.tsx` — seletor de modelo, histórico de sessão, streaming
       banner "Ollama offline" + botão Tentar novamente
 
+### 2.6 — Barra de atalhos para apps externos
+> Barra permanente visível em todas as views. Lança os 5 apps e indica se estão rodando.
+
+- [x] Tela de Setup: adicionar campos de executável para cada app
+      — `aether.exe_path`, `ogma.exe_path`, `kosmos.exe_path`,
+        `mnemosyne.exe_path`, `hermes.exe_path` em `ecosystem.json`
+      — auto-descoberta por nome de processo conhecido como fallback
+        (ex.: buscar `AETHER.exe` / `aether` no PATH e locais comuns)
+      — ícone ✓/✗ por campo (reutilizar `validate_path()` existente)
+- [x] Rust `commands/launcher.rs`:
+      `launch_app(exe_path: String) -> Result<(), AppError>` — `Command::new(exe_path).spawn()`
+      `is_app_running(process_name: String) -> bool` — lista processos do SO
+        (Windows: `tasklist`, Linux: `/proc` ou `pgrep`)
+      `get_all_app_statuses() -> HashMap<String, bool>` — chama `is_app_running` para os 5 apps
+- [x] `AppBar.tsx` — barra lateral esquerda fixa com 5 botões de app
+      — cada botão: sigla em IM Fell English itálico + ponto indicador (rodando / parado)
+      — clique: chama `launch_app`; se já rodando, apenas pulsa o indicador
+      — polling a cada 5s via `get_all_app_statuses` para atualizar status
+- [x] Integrar `AppBar` no layout raiz (visível em todas as views, inclusive Home)
+
 ---
 
 ## FASE 3 — Android (APK)
@@ -231,6 +251,6 @@ e tipado com a mesma atenção que o caminho feliz.
 
   Fase 0: ✅ Fundação concluída (ecosystem_client.py, ecosystem.ts, ecosystem.rs, ecosystem.json)
   Fase 1: 🔄 Em progresso — 1.2 e 1.3 concluídas; 1.1 e 1.4 pendentes
-  Fase 2: 🔄 Em progresso — 2.1 e 2.2 concluídas; 2.3–2.5 pendentes
+  Fase 2: 🔄 Em progresso — 2.1, 2.2 e 2.6 concluídas; 2.3–2.5 pendentes
   Fase 3: não iniciada
   Fase 4: não iniciada
