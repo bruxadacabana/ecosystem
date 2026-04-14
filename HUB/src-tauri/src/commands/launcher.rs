@@ -32,8 +32,7 @@ pub fn is_app_running(exe_path: String) -> bool {
     if exe_path.trim().is_empty() {
         return false;
     }
-    let name = process_name_from_path(&exe_path);
-    check_running(&name)
+    check_running(&exe_path)
 }
 
 /// Retorna o status de execução para todos os apps informados.
@@ -46,8 +45,7 @@ pub fn get_all_app_statuses(exe_paths: HashMap<String, String>) -> HashMap<Strin
             let running = if path.trim().is_empty() {
                 false
             } else {
-                let name = process_name_from_path(&path);
-                check_running(&name)
+                check_running(&path)
             };
             (app, running)
         })
@@ -95,22 +93,23 @@ pub fn discover_app_exe(candidates: Vec<String>) -> Option<String> {
 //  Helpers internos
 // ----------------------------------------------------------
 
-fn process_name_from_path(exe_path: &str) -> String {
-    std::path::Path::new(exe_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(exe_path)
-        .to_string()
-}
-
-fn check_running(process_name: &str) -> bool {
+fn check_running(exe_path: &str) -> bool {
     #[cfg(target_os = "windows")]
     {
-        check_running_windows(process_name)
+        // No Windows, usa o nome do arquivo para buscar via tasklist
+        let process_name = std::path::Path::new(exe_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(exe_path)
+            .to_string();
+        check_running_windows(&process_name)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        check_running_unix(process_name)
+        // No Linux/macOS, busca o exe_path completo na linha de comando do processo
+        // (pgrep -f) — funciona tanto para scripts (bash iniciar.sh) quanto para
+        // binários instalados, inclusive em modo dev (cargo tauri dev).
+        check_running_unix(exe_path)
     }
 }
 
@@ -136,9 +135,9 @@ fn check_running_windows(process_name: &str) -> bool {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn check_running_unix(process_name: &str) -> bool {
+fn check_running_unix(exe_path: &str) -> bool {
     Command::new("pgrep")
-        .args(["-x", process_name])
+        .args(["-f", exe_path])
         .output()
         .map(|out| out.status.success())
         .unwrap_or(false)
