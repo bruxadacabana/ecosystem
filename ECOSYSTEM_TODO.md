@@ -268,3 +268,38 @@ e tipado com a mesma atenção que o caminho feliz.
   Fase 2: 🔄 Em progresso — 2.1, 2.2 e 2.6 concluídas; 2.3–2.5 pendentes
   Fase 3: não iniciada
   Fase 4: não iniciada
+
+---
+
+## PLANEJAMENTO — Ordem de execução (2026-04)
+
+Definida após revisão de todos os TODOs individuais (OGMA, Mnemosyne, Hermes, KOSMOS, Ecosystem).
+
+```
+1. HUB 2.3 — Módulo Leituras (KOSMOS archive)
+   Continuação natural do plano em andamento.
+
+2. HUB 2.4 — Módulo Projetos (OGMA SQLite)
+   Sequencial após 2.3. Requer rusqlite bundled.
+
+3. HUB 2.5 — Módulo Perguntas (Ollama)
+   Frontend puro, pode ser feito em paralelo com 2.4.
+
+4. Ecosystem 1.1 Passo A — Renomear creative → writing no OGMA
+   Mudança localizada. Desbloqueia o Passo B.
+
+5. Ecosystem 1.4 — Hermes → Mnemosyne
+   Pequeno, alto valor. Checkbox + markdown output.
+
+6. Mnemosyne 4.4 — FAQ e flashcards
+   Próxima feature block do Mnemosyne sobre pesquisas indexadas.
+```
+
+**Deixar para depois** (sem dependências críticas, expansão de escopo):
+- OGMA Fase 12 (analytics) e 13 (Pomodoro)
+- OGMA Fase Extra (histórico de páginas)
+- KOSMOS Fase B (Reddit, YouTube) e D (PDF export)
+- KOSMOS Fase F-AI (busca semântica, análise de viés)
+- Hermes Fase 2 (histórico, preview, batch mode)
+- Ecosystem 1.1 Passo B (AETHER integration) — depende do Passo A
+- Mnemosyne Fases 4.5–6

@@ -72,6 +72,25 @@ export interface Book {
 }
 
 // ----------------------------------------------------------
+//  KOSMOS — Leituras
+// ----------------------------------------------------------
+
+export interface ArticleMeta {
+  path: string      // caminho absoluto do .md
+  title: string
+  source: string    // label do feed (pasta pai)
+  date: string
+  author: string
+  url: string
+  is_read: boolean
+}
+
+export interface ArticleContent {
+  meta: ArticleMeta
+  body: string      // corpo Markdown sem o bloco frontmatter
+}
+
+// ----------------------------------------------------------
 //  HUB Navigation
 // ----------------------------------------------------------
 

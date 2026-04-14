@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent } from '../types'
 
 async function call<T>(
   command: string,
@@ -65,6 +65,25 @@ export const readChapter = (
   chapterId: string,
 ): Promise<TauriResult<string>> =>
   call<string>('read_chapter', { vaultPath, projectId, bookId, chapterId })
+
+// ----------------------------------------------------------
+//  Módulo Leituras — archive KOSMOS
+// ----------------------------------------------------------
+
+export const listArticles = (archivePath: string): Promise<TauriResult<ArticleMeta[]>> =>
+  call<ArticleMeta[]>('list_articles', { archivePath })
+
+export const readArticle = (
+  archivePath: string,
+  path: string,
+): Promise<TauriResult<ArticleContent>> =>
+  call<ArticleContent>('read_article', { archivePath, path })
+
+export const toggleRead = (
+  archivePath: string,
+  articlePath: string,
+): Promise<TauriResult<boolean>> =>
+  call<boolean>('toggle_read', { archivePath, articlePath })
 
 // ----------------------------------------------------------
 //  Módulo Launcher — apps externos
