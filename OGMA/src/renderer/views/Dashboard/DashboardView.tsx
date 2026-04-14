@@ -135,11 +135,12 @@ function getNextQuarter() {
 
 interface ComputedSabbat {
   name:    string
-  symbol:  string
-  date:    Date
-  day:     number   // dia do ano (1-365)
-  dateStr: string   // "21 dez"
-  season:  string   // "Solstício de Inverno"
+  symbol:      string
+  date:        Date
+  day:         number   // dia do ano (1-365)
+  dateStr:     string   // "21 dez"
+  season:      string   // chave para coloração dos sectores ("Primavera", "Verão"…)
+  description: string   // texto exibido na UI — evocativo, não genérico
 }
 
 /** Solstícios e equinócios via algoritmo de Meeus (precisão ~1 dia) */
@@ -176,29 +177,29 @@ function buildWheelSabbats(year: number, hemisphere: 'north' | 'south'): Compute
   // Cross-quarter sabbats: datas fixas tradicionais (não dependem do hemisfério)
   const fix = (month: number, day: number) => new Date(year, month, day)
 
-  const mk = (name: string, symbol: string, date: Date, season: string): ComputedSabbat => ({
-    name, symbol, date, day: getDayOfYear(date), dateStr: fmtDate(date), season,
+  const mk = (name: string, symbol: string, date: Date, season: string, description: string): ComputedSabbat => ({
+    name, symbol, date, day: getDayOfYear(date), dateStr: fmtDate(date), season, description,
   })
 
   const raw = hemisphere === 'north' ? [
-    mk('Imbolc',     '✧', fix(1, 2),  'Início da Primavera'),   // 2 fev — fixo
-    mk('Ostara',     '◉', march,      'Equinócio de Primavera'), // astronómico
-    mk('Beltane',    '✦', fix(4, 1),  'Início do Verão'),        // 1 mai — fixo
-    mk('Litha',      '⊙', june,       'Solstício de Verão'),      // astronómico
-    mk('Lughnasadh', '✤', fix(7, 1),  'Início do Outono'),       // 1 ago — fixo
-    mk('Mabon',      '◈', sep,        'Equinócio de Outono'),     // astronómico
-    mk('Samhain',    '☽', fix(9, 31), 'Início do Inverno'),      // 31 out — fixo
-    mk('Yule',       '✶', dec,        'Solstício de Inverno'),    // astronómico
+    mk('Imbolc',     '✧', fix(1, 2),  'Primavera', 'Festa de Brigid · Luz Crescente'),           // 2 fev — fixo
+    mk('Ostara',     '◉', march,      'Primavera', 'Equilíbrio de Luz · Renovação e Fertilidade'), // astronómico
+    mk('Beltane',    '✦', fix(4, 1),  'Verão',     'Festa do Fogo · Véu Entre os Mundos'),        // 1 mai — fixo
+    mk('Litha',      '⊙', june,       'Verão',     'Triunfo Solar · O Dia Mais Longo'),            // astronómico
+    mk('Lughnasadh', '✤', fix(7, 1),  'Outono',    'Colheita de Lugh · O Grão Sagrado'),           // 1 ago — fixo
+    mk('Mabon',      '◈', sep,        'Outono',    'Segunda Colheita · Gratidão e Equilíbrio'),    // astronómico
+    mk('Samhain',    '☽', fix(9, 31), 'Inverno',   'O Véu se Abre · Festa dos Ancestrais'),       // 31 out — fixo
+    mk('Yule',       '✶', dec,        'Inverno',   'Renascimento Solar · A Noite Mais Longa'),     // astronómico
   ] : [
     // Hemisfério Sul — estações invertidas; cross-quarters com datas fixas
-    mk('Lughnasadh', '✤', fix(1, 2),  'Início do Outono'),       // 2 fev — fixo
-    mk('Mabon',      '◈', march,      'Equinócio de Outono'),     // astronómico
-    mk('Samhain',    '☽', fix(4, 1),  'Início do Inverno'),      // 1 mai — fixo
-    mk('Yule',       '✶', june,       'Solstício de Inverno'),    // astronómico
-    mk('Imbolc',     '✧', fix(7, 1),  'Início da Primavera'),    // 1 ago — fixo
-    mk('Ostara',     '◉', sep,        'Equinócio de Primavera'), // astronómico
-    mk('Beltane',    '✦', fix(9, 31), 'Início do Verão'),        // 31 out — fixo
-    mk('Litha',      '⊙', dec,        'Solstício de Verão'),      // astronómico
+    mk('Lughnasadh', '✤', fix(1, 2),  'Outono',    'Colheita de Lugh · O Grão Sagrado'),           // 2 fev — fixo
+    mk('Mabon',      '◈', march,      'Outono',    'Segunda Colheita · Gratidão e Equilíbrio'),    // astronómico
+    mk('Samhain',    '☽', fix(4, 1),  'Inverno',   'O Véu se Abre · Festa dos Ancestrais'),        // 1 mai — fixo
+    mk('Yule',       '✶', june,       'Inverno',   'Renascimento Solar · A Noite Mais Longa'),     // astronómico
+    mk('Imbolc',     '✧', fix(7, 1),  'Primavera', 'Festa de Brigid · Luz Crescente'),             // 1 ago — fixo
+    mk('Ostara',     '◉', sep,        'Primavera', 'Equilíbrio de Luz · Renovação e Fertilidade'), // astronómico
+    mk('Beltane',    '✦', fix(9, 31), 'Verão',     'Festa do Fogo · Véu Entre os Mundos'),         // 31 out — fixo
+    mk('Litha',      '⊙', dec,        'Verão',     'Triunfo Solar · O Dia Mais Longo'),             // astronómico
   ]
 
   return raw.sort((a, b) => a.day - b.day)
@@ -291,7 +292,7 @@ function WidgetWrapper({ id, size, dark, isDragging, onDragStart, onDragEnter, o
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const accent = dark ? '#D4A820' : '#b8860b'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
 
   return (
     <div
@@ -317,7 +318,7 @@ function WidgetWrapper({ id, size, dark, isDragging, onDragStart, onDragEnter, o
       }}>
         {(['sm','md','lg'] as WidgetSize[]).map(s => (
           <button key={s} onClick={() => onSizeChange(s)} style={{
-            fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.08em',
+            fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.08em',
             padding: '2px 6px', border: `1px solid ${size === s ? accent : border}`,
             borderRadius: 2, background: size === s ? accent + '25' : cardBg,
             color: size === s ? accent : ink2, cursor: 'pointer', userSelect: 'none',
@@ -359,7 +360,7 @@ function WelcomeWidget({ dark }: { dark: boolean }) {
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const accent = dark ? '#D4A820' : '#b8860b'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
 
   const phrases = [
     'A lua e os astros aguardam sua jornada.',
@@ -411,7 +412,7 @@ function StatsWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSize
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const accent = dark ? '#D4A820' : '#b8860b'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
 
   useEffect(() => {
     if (isActive) {
@@ -421,7 +422,7 @@ function StatsWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSize
   }, [isActive])
 
   const label = (
-    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.2em',
+    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.2em',
       color: ink2, textTransform: 'uppercase', marginBottom: 12 }}>◈ Estatísticas</div>
   )
 
@@ -443,7 +444,7 @@ function StatsWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSize
           <div key={l}>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 28,
               fontStyle: 'italic', color: accent, lineHeight: 1 }}>{v}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, marginTop: 2 }}>{l}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, marginTop: 2 }}>{l}</div>
           </div>
         ))}
       </div>
@@ -475,8 +476,8 @@ function StatsWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSize
           }}>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: size === 'lg' ? 40 : 36,
               fontStyle: 'italic', color: accent, lineHeight: 1, marginBottom: 4 }}>{item.value}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink, letterSpacing: '0.08em' }}>{item.label}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, marginTop: 2 }}>{item.sub}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink, letterSpacing: '0.08em' }}>{item.label}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2, marginTop: 2 }}>{item.sub}</div>
           </div>
         ))}
       </div>
@@ -493,7 +494,7 @@ function ProjectsWidget({ dark, size, onProjectOpen, isActive }: { dark: boolean
   const ink    = dark ? '#E8DFC8' : '#2C2416'
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
 
   useEffect(() => {
     if (isActive) {
@@ -512,7 +513,7 @@ function ProjectsWidget({ dark, size, onProjectOpen, isActive }: { dark: boolean
   const shown  = active.slice(0, limit)
 
   const label = (
-    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.2em',
+    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.2em',
       color: ink2, textTransform: 'uppercase', marginBottom: 10 }}>✦ Projetos Ativos</div>
   )
 
@@ -535,7 +536,7 @@ function ProjectsWidget({ dark, size, onProjectOpen, isActive }: { dark: boolean
           {p.name}
         </span>
         {!compact && (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, flexShrink: 0 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2, flexShrink: 0 }}>
             {counts[p.id] ?? 0} págs
           </span>
         )}
@@ -560,7 +561,7 @@ function ProjectsWidget({ dark, size, onProjectOpen, isActive }: { dark: boolean
         )
       }
       {active.length > limit && (
-        <p style={{ fontSize: 10, color: ink2, fontStyle: 'italic', textAlign: 'right', marginTop: 6 }}>
+        <p style={{ fontSize: 11, color: ink2, fontStyle: 'italic', textAlign: 'right', marginTop: 6 }}>
           +{active.length - limit} mais
         </p>
       )}
@@ -584,10 +585,10 @@ function RecentWidget({ dark, size, onPageOpen, isActive }: { dark: boolean; siz
   const ink    = dark ? '#E8DFC8' : '#2C2416'
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
 
   const label = (
-    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.2em',
+    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.2em',
       color: ink2, textTransform: 'uppercase', marginBottom: 10 }}>⊛ Atividade Recente</div>
   )
 
@@ -608,13 +609,13 @@ function RecentWidget({ dark, size, onPageOpen, isActive }: { dark: boolean; siz
           {p.title}
         </div>
         {!compact && (
-          <div style={{ fontSize: 10, color: ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div style={{ fontSize: 11, color: ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {p.project_name}
           </div>
         )}
       </div>
       {!compact && (
-        <span style={{ fontSize: 10, color: ink2, flexShrink: 0, fontFamily: 'var(--font-mono)' }}>
+        <span style={{ fontSize: 11, color: ink2, flexShrink: 0, fontFamily: 'var(--font-mono)' }}>
           {timeAgo(p.updated_at)}
         </span>
       )}
@@ -658,11 +659,11 @@ function PrazosWidget({ dark, size, onPageOpen, isActive }: { dark: boolean; siz
   const ink    = dark ? '#E8DFC8' : '#2C2416'
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
   const ribbon = dark ? '#C45A40' : '#8B3A2A'
 
   const label = (
-    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.2em',
+    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.2em',
       color: ink2, textTransform: 'uppercase', marginBottom: 10 }}>
       ⚑ Prazos Próximos {size !== 'md' && <span style={{ opacity: 0.6 }}>({days} dias)</span>}
     </div>
@@ -689,9 +690,9 @@ function PrazosWidget({ dark, size, onPageOpen, isActive }: { dark: boolean; siz
             fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {item.title}
           </div>
-          {!compact && <div style={{ fontSize: 10, color: ink2 }}>{item.project_name} · {item.prop_name}</div>}
+          {!compact && <div style={{ fontSize: 11, color: ink2 }}>{item.project_name} · {item.prop_name}</div>}
         </div>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0,
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, flexShrink: 0,
           color: isUrgent ? ribbon : ink2, fontWeight: isUrgent ? 'bold' : 'normal' }}>
           {dateLabel}
         </span>
@@ -723,14 +724,14 @@ function CosmosWidget({ dark, size }: { dark: boolean; size: WidgetSize }) {
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const accent = dark ? '#D4A820' : '#b8860b'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
 
   const moon     = getMoonPhase()
   const fullMoon = size === 'lg' ? getNextFullMoon() : null
   const nextQ    = size === 'lg' ? getNextQuarter()  : null
 
   const label = (
-    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.2em',
+    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.2em',
       color: ink2, textTransform: 'uppercase', marginBottom: 8 }}>☽ Fase da Lua</div>
   )
 
@@ -741,7 +742,7 @@ function CosmosWidget({ dark, size }: { dark: boolean; size: WidgetSize }) {
         <span style={{ fontSize: 36, lineHeight: 1 }}>{moon.emoji}</span>
         <div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontStyle: 'italic', color: ink }}>{moon.name}</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent, marginTop: 2 }}>{moon.pct}% do ciclo</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent, marginTop: 2 }}>{moon.pct}% do ciclo</div>
         </div>
       </div>
     </div>
@@ -777,12 +778,12 @@ function CosmosWidget({ dark, size }: { dark: boolean; size: WidgetSize }) {
         <div style={{ flex: 1 }}>
           {label}
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontStyle: 'italic', color: ink, marginBottom: 2 }}>{moon.name}</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>{moon.pct}% do ciclo</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>{moon.pct}% do ciclo</div>
         </div>
         <div style={{ width: 1, background: border, alignSelf: 'stretch' }} />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
           {arcSvg}
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: accent, letterSpacing: '0.08em' }}>{moon.pct}%</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent, letterSpacing: '0.08em' }}>{moon.pct}%</div>
         </div>
       </div>
     </div>
@@ -795,31 +796,31 @@ function CosmosWidget({ dark, size }: { dark: boolean; size: WidgetSize }) {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           {label}
           {arcSvg}
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: accent, letterSpacing: '0.08em' }}>{moon.pct}%</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent, letterSpacing: '0.08em' }}>{moon.pct}%</div>
         </div>
         <div style={{ width: 1, background: border, alignSelf: 'stretch' }} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em',
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.15em',
             color: ink2, textTransform: 'uppercase', marginBottom: 4 }}>Fase Atual</div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontStyle: 'italic', color: ink, marginBottom: 2 }}>{moon.name}</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, marginBottom: 12 }}>{moon.pct}% do ciclo sinódico</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2, marginBottom: 12 }}>{moon.pct}% do ciclo sinódico</div>
           <div style={{ display: 'flex', gap: 20 }}>
             {fullMoon && (
               <div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em',
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.15em',
                   color: ink2, textTransform: 'uppercase', marginBottom: 3 }}>Próxima Lua Cheia</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontStyle: 'italic', color: ink }}>{fullMoon.dateStr}</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent, marginTop: 1 }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent, marginTop: 1 }}>
                   {fullMoon.days === 0 ? 'hoje' : fullMoon.days === 1 ? 'amanhã' : `em ${fullMoon.days} dias`}
                 </div>
               </div>
             )}
             {nextQ && (
               <div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em',
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.15em',
                   color: ink2, textTransform: 'uppercase', marginBottom: 3 }}>Próxima Fase</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontStyle: 'italic', color: ink }}>{nextQ.name}</div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent, marginTop: 1 }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent, marginTop: 1 }}>
                   {nextQ.days === 0 ? 'hoje' : nextQ.days === 1 ? 'amanhã' : `em ${nextQ.days} dias`}
                 </div>
               </div>
@@ -837,7 +838,7 @@ function WheelOfYearWidget({ dark, size, location }: { dark: boolean; size: Widg
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const accent = dark ? '#D4A820' : '#b8860b'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
   const ink    = dark ? '#E8DFC8' : '#2C2416'
 
   const hemisphere = location?.hemisphere ?? null
@@ -848,7 +849,7 @@ function WheelOfYearWidget({ dark, size, location }: { dark: boolean; size: Widg
 
   const label = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.2em',
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.2em',
         color: ink2, textTransform: 'uppercase' }}>✦ Roda do Ano</span>
       {hemisphere !== null && (
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: ink2, opacity: 0.65 }}>
@@ -880,8 +881,8 @@ function WheelOfYearWidget({ dark, size, location }: { dark: boolean; size: Widg
           <span style={{ fontSize: 36, lineHeight: 1, fontFamily: 'var(--font-mono)', color: accent }}>{nextSabbat.symbol}</span>
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontStyle: 'italic', color: ink }}>{nextSabbat.name}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent, marginTop: 2 }}>{dl}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, marginTop: 1 }}>{nextSabbat.dateStr} · {nextSabbat.season}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent, marginTop: 2 }}>{dl}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, marginTop: 1 }}>{nextSabbat.dateStr} · {nextSabbat.description}</div>
             <div style={{ height: 3, background: border, borderRadius: 2, marginTop: 6, width: 80, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${Math.round(todayDoy / 365 * 100)}%`, background: accent, borderRadius: 2 }} />
             </div>
@@ -1023,17 +1024,17 @@ function WheelOfYearWidget({ dark, size, location }: { dark: boolean; size: Widg
   const legend = (
     <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ marginBottom: 14 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em',
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.15em',
           color: ink2, textTransform: 'uppercase', marginBottom: 6 }}>Próximo Sabá</div>
         <div style={{ fontSize: 30, marginBottom: 4, fontFamily: 'var(--font-mono)', color: accent }}>{nextSabbat.symbol}</div>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontStyle: 'italic', color: ink }}>{nextSabbat.name}</div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent, marginTop: 2 }}>{dl}</div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, marginTop: 1 }}>{nextSabbat.season} · {nextSabbat.dateStr}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent, marginTop: 2 }}>{dl}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, marginTop: 1 }}>{nextSabbat.description} · {nextSabbat.dateStr}</div>
       </div>
       <div style={{ borderTop: `1px solid ${border}`, paddingTop: 10 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em',
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.15em',
           color: ink2, textTransform: 'uppercase', marginBottom: 6 }}>Posição no Ano</div>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink, marginBottom: 6 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink, marginBottom: 6 }}>
           Dia {todayDoy} · {Math.round(todayDoy / 365 * 100)}%
         </div>
         <div style={{ height: 3, background: border, borderRadius: 2, overflow: 'hidden' }}>
@@ -1043,7 +1044,7 @@ function WheelOfYearWidget({ dark, size, location }: { dark: boolean; size: Widg
           {sabbats.filter(s => s.day >= todayDoy).slice(0, 3).map(s => (
             <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: s === nextSabbat ? accent : ink2 }}>{s.symbol}</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: s === nextSabbat ? accent : ink2 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: s === nextSabbat ? accent : ink2 }}>
                 {s.name} · {s.dateStr}{s === nextSabbat && ' ←'}
               </span>
             </div>
@@ -1070,24 +1071,24 @@ function WheelOfYearWidget({ dark, size, location }: { dark: boolean; size: Widg
           <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 42, fontFamily: 'var(--font-mono)', color: accent }}>{nextSabbat.symbol}</span>
             <div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em',
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.15em',
                 color: ink2, textTransform: 'uppercase', marginBottom: 2 }}>Próximo Sabá</div>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontStyle: 'italic', color: ink }}>{nextSabbat.name}</div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent, marginTop: 2 }}>{dl} · {nextSabbat.dateStr}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, marginTop: 1 }}>{nextSabbat.season}</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2, marginTop: 1 }}>{nextSabbat.description}</div>
             </div>
           </div>
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2 }}>Dia {todayDoy} de 365</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: accent }}>{Math.round(todayDoy / 365 * 100)}%</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>Dia {todayDoy} de 365</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent }}>{Math.round(todayDoy / 365 * 100)}%</span>
             </div>
             <div style={{ height: 3, background: border, borderRadius: 2, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${Math.round(todayDoy / 365 * 100)}%`, background: accent, borderRadius: 2 }} />
             </div>
           </div>
           <div style={{ borderTop: `1px solid ${border}`, paddingTop: 12 }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em',
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.15em',
               color: ink2, textTransform: 'uppercase', marginBottom: 8 }}>Roda Completa</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px' }}>
               {sabbats.map(s => {
@@ -1105,8 +1106,8 @@ function WheelOfYearWidget({ dark, size, location }: { dark: boolean; size: Widg
                         color: isPast ? ink2 : ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {s.name}
                       </div>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2 }}>
-                        {s.dateStr} · {s.season}
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>
+                        {s.dateStr} · {s.description}
                       </div>
                     </div>
                     {isNext && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: accent, flexShrink: 0 }}>←</span>}
@@ -1158,7 +1159,7 @@ function AgendaWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSiz
   const ink    = dark ? '#E8DFC8' : '#2C2416'
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
   const accent = dark ? '#D4A820' : '#b8860b'
   const today  = new Date().toISOString().slice(0, 10)
 
@@ -1186,7 +1187,7 @@ function AgendaWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSiz
 
   return (
     <div style={{ padding: size === 'sm' ? '10px 12px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2 }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2 }}>
         AGENDA DA SEMANA
       </span>
       {loading ? (
@@ -1263,7 +1264,7 @@ function RemindersWidget({ dark, size, isActive }: { dark: boolean; size: Widget
   const ink    = dark ? '#E8DFC8' : '#2C2416'
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
   const accent = dark ? '#D4A820' : '#b8860b'
 
   const load = () => {
@@ -1296,11 +1297,11 @@ function RemindersWidget({ dark, size, isActive }: { dark: boolean; size: Widget
   return (
     <div style={{ padding: size === 'sm' ? '10px 12px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2 }}>
           LEMBRETES
         </span>
         {reminders.length > 0 && (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent }}>
             {reminders.length}
           </span>
         )}
@@ -1331,20 +1332,20 @@ function RemindersWidget({ dark, size, isActive }: { dark: boolean; size: Widget
                     {r.title}
                   </div>
                   {size !== 'sm' && r.event_type && (
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2 }}>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>
                       {EVENT_TYPE_ICONS[r.event_type]} {r.event_type}
                     </div>
                   )}
                 </div>
                 <span style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 9, flexShrink: 0,
+                  fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0,
                   color: urgent ? '#8B3A2A' : ink2,
                 }}>
                   {label}
                 </span>
                 <button
                   className="btn btn-ghost btn-sm"
-                  style={{ padding: '1px 5px', fontSize: 10, color: ink2, flexShrink: 0 }}
+                  style={{ padding: '1px 5px', fontSize: 11, color: ink2, flexShrink: 0 }}
                   onClick={() => dismiss(r.id)}
                   title="Dispensar"
                 >✕</button>
@@ -1352,7 +1353,7 @@ function RemindersWidget({ dark, size, isActive }: { dark: boolean; size: Widget
             )
           })}
           {reminders.length > limit && (
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, textAlign: 'center' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, textAlign: 'center' }}>
               +{reminders.length - limit} mais
             </span>
           )}
@@ -1373,7 +1374,7 @@ function ProvasWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSiz
   const ink    = dark ? '#E8DFC8' : '#2C2416'
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
 
   useEffect(() => {
     if (!isActive) return
@@ -1397,7 +1398,7 @@ function ProvasWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSiz
 
   return (
     <div style={{ padding: size === 'sm' ? '10px 12px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2 }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2 }}>
         PRÓXIMAS PROVAS
       </span>
       {loading ? (
@@ -1432,7 +1433,7 @@ function ProvasWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSiz
                   </div>
                   {size !== 'sm' && ev.description && (
                     <div style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2,
+                      fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2,
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>
                       {ev.description}
@@ -1452,7 +1453,7 @@ function ProvasWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSiz
             )
           })}
           {events.length > limit && (
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, textAlign: 'center' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, textAlign: 'center' }}>
               +{events.length - limit} mais
             </span>
           )}
@@ -1476,7 +1477,7 @@ function ProjProgressWidget({ dark, size, isActive }: { dark: boolean; size: Wid
   const ink    = dark ? '#E8DFC8' : '#2C2416'
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
 
   useEffect(() => {
     if (!isActive) return
@@ -1499,7 +1500,7 @@ function ProjProgressWidget({ dark, size, isActive }: { dark: boolean; size: Wid
 
   return (
     <div style={{ padding: size === 'sm' ? '10px 12px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2 }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2 }}>
         PROGRESSO DOS PROJETOS
       </span>
       {loading ? (
@@ -1532,7 +1533,7 @@ function ProjProgressWidget({ dark, size, isActive }: { dark: boolean; size: Wid
                   }}>
                     {p.name}
                   </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color, flexShrink: 0 }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color, flexShrink: 0 }}>
                     {pct}%
                   </span>
                 </div>
@@ -1553,7 +1554,7 @@ function ProjProgressWidget({ dark, size, isActive }: { dark: boolean; size: Wid
         </div>
       )}
       {projects.length > limit && (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, textAlign: 'center' }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, textAlign: 'center' }}>
           +{projects.length - limit} mais
         </span>
       )}
@@ -1580,13 +1581,13 @@ function QuoteWidget({ dark, size }: { dark: boolean; size: WidgetSize }) {
   useEffect(() => { load() }, [])
 
   return (
-    <div className="card" style={{ background: dark ? '#211D16' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
+    <div className="card" style={{ background: dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
       <div style={{
         padding: size === 'sm' ? '10px 12px' : '16px 18px',
         display: 'flex', flexDirection: 'column', gap: 10,
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2 }}>
             CITAÇÃO
           </span>
           <button
@@ -1617,16 +1618,16 @@ function QuoteWidget({ dark, size }: { dark: boolean; size: WidgetSize }) {
               </p>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent }}>
                 — {quote.reading_title}
               </span>
               {quote.author && size !== 'sm' && (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2 }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>
                   {quote.author}
                 </span>
               )}
               {quote.location && size === 'lg' && (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2, fontStyle: 'italic' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, fontStyle: 'italic' }}>
                   {quote.location}
                 </span>
               )}
@@ -1669,13 +1670,13 @@ function IdeasWidget({ dark, size, onProjectOpen }: { dark: boolean; size: Widge
   const maxVisible = size === 'sm' ? 3 : size === 'md' ? 5 : 10
 
   return (
-    <div className="card" style={{ background: dark ? '#211D16' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
+    <div className="card" style={{ background: dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
       <div style={{ padding: size === 'sm' ? '10px 12px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2 }}>
             IDEIAS FUTURAS
           </span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>
             {ideas.length} {ideas.length === 1 ? 'ideia' : 'ideias'}
           </span>
         </div>
@@ -1709,7 +1710,7 @@ function IdeasWidget({ dark, size, onProjectOpen }: { dark: boolean; size: Widge
                   </div>
                   {idea.description && size !== 'sm' && (
                     <div style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2,
+                      fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2,
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}>
                       {idea.description}
@@ -1717,7 +1718,7 @@ function IdeasWidget({ dark, size, onProjectOpen }: { dark: boolean; size: Widge
                   )}
                 </div>
                 <span style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 9, color: STATUS_COLORS[idea.status] ?? ink2,
+                  fontFamily: 'var(--font-mono)', fontSize: 10, color: STATUS_COLORS[idea.status] ?? ink2,
                   flexShrink: 0,
                 }}>
                   {STATUS_LABELS[idea.status] ?? idea.status}
@@ -1725,7 +1726,7 @@ function IdeasWidget({ dark, size, onProjectOpen }: { dark: boolean; size: Widge
               </button>
             ))}
             {ideas.length > maxVisible && (
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, paddingLeft: 8 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2, paddingLeft: 8 }}>
                 + {ideas.length - maxVisible} mais
               </span>
             )}
@@ -1768,9 +1769,9 @@ function ReadingGoalWidget({ dark, size }: { dark: boolean; size: WidgetSize }) 
   const trackC = dark ? '#2A2418' : '#D8D0C0'
 
   return (
-    <div className="card" style={{ background: dark ? '#211D16' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
+    <div className="card" style={{ background: dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
       <div style={{ padding: size === 'sm' ? '10px 12px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2 }}>
           META DE LEITURA {year}
         </span>
         {!target ? (
@@ -1807,11 +1808,11 @@ function ReadingGoalWidget({ dark, size }: { dark: boolean; size: WidgetSize }) 
                 {Math.round(pct * 100)}%
               </span>
               {pct >= 1 ? (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4A6741' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#4A6741' }}>
                   ✓ Meta atingida!
                 </span>
               ) : (
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>
                   {target - done} livro{target - done !== 1 ? 's' : ''} restante{target - done !== 1 ? 's' : ''}
                 </span>
               )}
@@ -1821,7 +1822,7 @@ function ReadingGoalWidget({ dark, size }: { dark: boolean; size: WidgetSize }) 
                 const expected  = Math.round((dayOfYear / 365) * target)
                 const diff = done - expected
                 return (
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9,
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10,
                     color: diff >= 0 ? '#4A6741' : dark ? '#C45A40' : '#8B3A2A' }}>
                     {diff >= 0 ? `+${diff}` : diff} vs. esperado
                   </span>
@@ -1892,14 +1893,14 @@ function HeatmapWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSi
     .reduce((s, r) => s + r.minutes, 0)
 
   return (
-    <div className="card" style={{ background: dark ? '#211D16' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
+    <div className="card" style={{ background: dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
       <div style={{ padding: size === 'sm' ? '10px 12px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2 }}>
             MAPA DE ATIVIDADE
           </span>
           {totalMins > 0 && (
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent }}>
               {Math.round(totalMins / 60)}h este mês
             </span>
           )}
@@ -2035,7 +2036,7 @@ function PomodoroWidget({ dark, size }: { dark: boolean; size: WidgetSize }) {
   const compact = size === 'sm'
 
   return (
-    <div className="card" style={{ background: dark ? '#211D16' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
+    <div className="card" style={{ background: dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9', borderColor: dark ? '#3A3020' : '#C4B9A8' }}>
       <div style={{
         padding: compact ? '10px 12px' : '14px 16px',
         display: 'flex',
@@ -2046,11 +2047,11 @@ function PomodoroWidget({ dark, size }: { dark: boolean; size: WidgetSize }) {
         {/* Header */}
         {!compact && (
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2 }}>
               POMODORO
             </span>
             {todayMins > 0 && (
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent }}>
                 {Math.floor(todayMins / 60) > 0 ? `${Math.floor(todayMins / 60)}h ` : ''}{todayMins % 60}min hoje
               </span>
             )}
@@ -2171,12 +2172,12 @@ function DayPlanWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSi
       {/* Cabeçalho */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.14em', color: ink2,
+          fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.14em', color: ink2,
         }}>
           PLANO DO DIA
         </span>
         {totalPlanned > 0 && (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent }}>
             {totalDone.toFixed(1)}/{totalPlanned.toFixed(1)}h
           </span>
         )}
@@ -2217,18 +2218,18 @@ function DayPlanWidget({ dark, size, isActive }: { dark: boolean; size: WidgetSi
                     {block.task_title}
                   </div>
                   {size !== 'sm' && (
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2 }}>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>
                       {block.project_icon ?? '◦'} {block.project_name}
                     </div>
                   )}
                 </div>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: isDone ? '#4A6741' : ink2, flexShrink: 0 }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: isDone ? '#4A6741' : ink2, flexShrink: 0 }}>
                   {isDone ? `✓ ${block.planned_hours}h` : `${block.planned_hours}h`}
                 </span>
                 {!isDone && (
                   <button
                     className="btn btn-ghost btn-sm"
-                    style={{ padding: '1px 5px', fontSize: 10, color: accent, flexShrink: 0 }}
+                    style={{ padding: '1px 5px', fontSize: 11, color: accent, flexShrink: 0 }}
                     onClick={async () => { await handleLog(block, block.planned_hours); setSealedId(block.id) }}
                     title="Marcar como concluído"
                   >
@@ -2262,7 +2263,7 @@ function WeatherWidget({ dark, size, location }: { dark: boolean; size: WidgetSi
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const accent = dark ? '#D4A820' : '#b8860b'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
   const ink    = dark ? '#E8DFC8' : '#2C2416'
 
   const [weather,  setWeather]  = useState<WeatherData | null>(null)
@@ -2270,7 +2271,7 @@ function WeatherWidget({ dark, size, location }: { dark: boolean; size: WidgetSi
   const [error,    setError]    = useState<string | null>(null)
 
   const label = (
-    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.2em',
+    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.2em',
       color: ink2, textTransform: 'uppercase', marginBottom: 8 }}>
       ◌ Previsão do Tempo{location && (
         <span style={{ opacity: 0.65 }}> · {location.city}</span>
@@ -2331,7 +2332,7 @@ function WeatherWidget({ dark, size, location }: { dark: boolean; size: WidgetSi
             fontStyle: 'italic', color: ink, lineHeight: 1 }}>
             {Math.round(cur.temperature_2m)}°
           </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, marginTop: 3 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2, marginTop: 3 }}>
             {wmoLabel(cur.weather_code)}
           </div>
         </div>
@@ -2352,10 +2353,10 @@ function WeatherWidget({ dark, size, location }: { dark: boolean; size: WidgetSi
               fontStyle: 'italic', color: ink, lineHeight: 1 }}>
               {Math.round(cur.temperature_2m)}°
             </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, marginTop: 3 }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2, marginTop: 3 }}>
               {wmoLabel(cur.weather_code)}
             </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2, marginTop: 2 }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2, marginTop: 2 }}>
               Sensação {Math.round(cur.apparent_temperature)}°
             </div>
           </div>
@@ -2371,15 +2372,15 @@ function WeatherWidget({ dark, size, location }: { dark: boolean; size: WidgetSi
               ['Vento',     `${Math.round(cur.wind_speed_10m)} km/h`],
             ].map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>{k}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink }}>{v}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>{k}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink }}>{v}</span>
               </div>
             ))}
           </div>
           <div style={{ borderTop: `1px solid ${border}`, paddingTop: 8,
             display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>Hoje</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>Hoje</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink }}>
               {Math.round(daily.temperature_2m_min[0])}° / {Math.round(daily.temperature_2m_max[0])}°
             </span>
           </div>
@@ -2402,7 +2403,7 @@ function WeatherWidget({ dark, size, location }: { dark: boolean; size: WidgetSi
                 fontStyle: 'italic', color: ink, lineHeight: 1 }}>
                 {Math.round(cur.temperature_2m)}°
               </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: accent }}>
                 Sensação {Math.round(cur.apparent_temperature)}°
               </div>
             </div>
@@ -2416,8 +2417,8 @@ function WeatherWidget({ dark, size, location }: { dark: boolean; size: WidgetSi
             ['Vento',   `${Math.round(cur.wind_speed_10m)} km/h`],
           ].map(([k, v]) => (
             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>{k}</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink }}>{v}</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>{k}</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink }}>{v}</span>
             </div>
           ))}
         </div>
@@ -2435,7 +2436,7 @@ function WeatherWidget({ dark, size, location }: { dark: boolean; size: WidgetSi
                 background: i === 0 ? accent + '14' : 'transparent',
                 border: i === 0 ? `1px solid ${accent}35` : '1px solid transparent',
               }}>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: i === 0 ? accent : ink2,
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: i === 0 ? accent : ink2,
                   textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                   {dayLabel(date)}
                 </div>
@@ -2443,11 +2444,11 @@ function WeatherWidget({ dark, size, location }: { dark: boolean; size: WidgetSi
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink }}>
                   {Math.round(daily.temperature_2m_max[i])}°
                 </div>
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: ink2 }}>
                   {Math.round(daily.temperature_2m_min[i])}°
                 </div>
                 {precip > 0 && (
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: ink2 }}>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ink2 }}>
                     💧 {precip}%
                   </div>
                 )}
@@ -2471,7 +2472,7 @@ function AddWidgetCard({ dark, hiddenWidgets, onAdd }: {
   const ink2   = dark ? '#8A7A62' : '#9C8E7A'
   const accent = dark ? '#D4A820' : '#b8860b'
   const border = dark ? '#3A3020' : '#C4B9A8'
-  const cardBg = dark ? '#211D16' : '#EDE7D9'
+  const cardBg = dark ? 'rgba(18, 22, 30, 0.80)' : '#EDE7D9'
   const rowHover = dark ? '#2A2318' : '#E5DDD0'
 
   return (
@@ -2499,7 +2500,7 @@ function AddWidgetCard({ dark, hiddenWidgets, onAdd }: {
           background: cardBg, border: `1px solid ${border}`, borderRadius: 4,
           boxShadow: '0 4px 16px rgba(0,0,0,0.18)', minWidth: 220, overflow: 'hidden',
         }}>
-          <div style={{ padding: '8px 12px 6px', fontFamily: 'var(--font-mono)', fontSize: 10,
+          <div style={{ padding: '8px 12px 6px', fontFamily: 'var(--font-mono)', fontSize: 11,
             color: ink2, letterSpacing: '0.1em', textTransform: 'uppercase', borderBottom: `1px solid ${border}` }}>
             Widgets ocultos
           </div>
@@ -2647,8 +2648,19 @@ export const DashboardView: React.FC<Props> = ({ dark, isActive, onProjectOpen, 
   const hiddenList = DEFAULT_ORDER.filter(id => hidden.has(id))
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px 40px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 16, gridAutoFlow: 'dense', gridAutoRows: 'minmax(180px, auto)' }}>
+    <div style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+      {/* Fundo estrelado — visível apenas no modo noturno através dos widgets semi-transparentes */}
+      {dark && (
+        <CosmosLayer
+          width={1600}
+          height={2400}
+          seed="dashboard_night_bg"
+          density="medium"
+          dark={dark}
+          style={{ position: 'absolute', top: 0, left: 0, opacity: 0.6, pointerEvents: 'none', zIndex: 0 }}
+        />
+      )}
+      <div style={{ padding: '28px 32px 40px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 16, gridAutoFlow: 'dense', gridAutoRows: 'minmax(180px, auto)', position: 'relative', zIndex: 1 }}>
         <WelcomeWidget dark={dark} />
         {order.filter(id => !hidden.has(id)).map(id => (
           <WidgetWrapper

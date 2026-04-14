@@ -249,7 +249,7 @@ html.dark .page-row:hover {
 .proj-local-stat-label {
   display: block;
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   margin-bottom: 2px;
@@ -265,7 +265,7 @@ html.dark .page-row:hover {
 .proj-local-stat-sub {
   display: block;
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 9px;
   margin-top: 2px;
   letter-spacing: 0.04em;
 }
@@ -298,7 +298,7 @@ html.dark .page-row:hover {
 
 .proj-local-widget-title {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
