@@ -427,7 +427,7 @@ function ProjectsGrid({ projects, dark, onSelect, onNew }: {
                     {p.project_type === 'academic' ? 'Acadêmico'
                       : p.project_type === 'software' ? 'Dev'
                       : p.project_type === 'health' ? 'Saúde'
-                      : p.project_type === 'creative' ? 'Criativo'
+                      : p.project_type === 'writing' ? 'Escrita'
                       : p.project_type === 'research' ? 'Pesquisa' : 'Personalizado'}
                     {p.subcategory ? ` · ${p.subcategory}` : ''}
                   </div>

@@ -42,7 +42,7 @@ declare global {
 // ── Projeto ───────────────────────────────────────────────────────────────────
 
 export type ProjectType =
-  | 'academic' | 'creative' | 'research'
+  | 'academic' | 'writing' | 'research'
   | 'software' | 'health'  | 'hobby' | 'idea' | 'custom'
 
 export type ProjectStatus = 'active' | 'paused' | 'completed' | 'archived'
@@ -172,7 +172,7 @@ export interface Workspace {
 
 export const SUBCATEGORIES: Record<ProjectType, string[]> = {
   academic: ['Faculdade', 'Idiomas', 'Concurso Público', 'Curso Livre', 'Autodidata', 'Livre'],
-  creative: ['Roteiro', 'Worldbuilding', 'Escrita Ficcional', 'Outro'],
+  writing:  ['Roteiro', 'Worldbuilding', 'Escrita Ficcional', 'Outro'],
   research: ['Científica', 'Jornalística', 'Pessoal', 'Outro'],
   software: ['Aplicativo Desktop', 'Web', 'Mobile', 'Biblioteca', 'Outro'],
   health:   ['Fitness', 'Nutrição', 'Saúde Mental', 'Geral'],
@@ -183,7 +183,7 @@ export const SUBCATEGORIES: Record<ProjectType, string[]> = {
 
 export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
   academic: 'Acadêmico',
-  creative: 'Criativo',
+  writing:  'Escrita',
   research: 'Pesquisa',
   software: 'Dev de Software',
   health:   'Saúde e Hábitos',
@@ -194,7 +194,7 @@ export const PROJECT_TYPE_LABELS: Record<ProjectType, string> = {
 
 export const PROJECT_TYPE_ICONS: Record<ProjectType, string> = {
   academic: '🎓',
-  creative: '✍️',
+  writing:  '✍️',
   research: '🔍',
   software: '💻',
   health:   '🌿',
@@ -205,7 +205,7 @@ export const PROJECT_TYPE_ICONS: Record<ProjectType, string> = {
 
 export const PROJECT_TYPE_DESCRIPTIONS: Record<ProjectType, string> = {
   academic: 'Grades curriculares, disciplinas, semestres e prazos acadêmicos.',
-  creative: 'Roteiros, worldbuilding, escrita ficcional e projetos criativos.',
+  writing:  'Roteiros, worldbuilding, escrita ficcional e projetos criativos.',
   research: 'Pesquisas científicas, jornalísticas ou pessoais.',
   software: 'Desenvolvimento de aplicativos, APIs, bibliotecas e sistemas.',
   health:   'Rastreamento de hábitos, metas de saúde e rotinas.',

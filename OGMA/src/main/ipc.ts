@@ -124,7 +124,7 @@ async function seedProjectProperties(projectId: number, projectType: string, sub
       await addProp('Progresso',   'progresso',   'number')
       await addProp('Tags',        'tags',        'multi_select')
     },
-    creative: async () => {
+    writing: async () => {
       await addProp('Status', 'status', 'select', [
         ['Ideia', '#8B7355'], ['Em Progresso', '#b8860b'],
         ['Pausado', '#7A5C2E'], ['Concluído', '#4A6741'], ['Publicado', '#2C5F8A'],
@@ -206,7 +206,7 @@ async function seedProjectViews(
       ['Calendário', 'calendar', null,     'data_inicio'],
       ['Tabela',     'table',    null,     null         ],
     ],
-    creative: [
+    writing: [
       ['Kanban', 'kanban', 'status', null],
       ['Tabela', 'table',  null,     null],
     ],

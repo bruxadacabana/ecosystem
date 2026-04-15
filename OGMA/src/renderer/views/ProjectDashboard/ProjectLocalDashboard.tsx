@@ -47,7 +47,7 @@ const ALL_WIDGETS: ProjWidgetId[] = [
 
 const DEFAULT_WIDGETS: Record<string, ProjWidgetId[]> = {
   academic: ['tasks', 'events', 'recent_pages', 'heatmap', 'progress'],
-  creative: ['recent_pages', 'tasks',            'heatmap', 'progress'],
+  writing:  ['recent_pages', 'tasks',            'heatmap', 'progress'],
   research: ['recent_pages', 'tasks',            'heatmap', 'readings'],
   software: ['tasks',        'recent_pages',     'progress','heatmap'],
   health:   ['sessions',     'heatmap',          'tasks',   'recent_pages'],
@@ -203,7 +203,7 @@ function getStats(project: Project, data: ProjectAnalytics): StatItem[] {
         { label: 'Foco (30d)',   value: `${data.focus_hours_30d}h`, sub: focusSub },
         { label: 'Próx. Prazo',  value: nextDL,                   accent: !!data.next_deadline },
       ]
-    case 'creative':
+    case 'writing':
       return [
         { label: 'Páginas',      value: String(data.pages_count) },
         { label: 'Última Sessão',value: lastSess },

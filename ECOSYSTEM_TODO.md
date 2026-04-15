@@ -70,14 +70,14 @@ e tipado com a mesma atenção que o caminho feliz.
 ### 1.1 — OGMA → AETHER (projetos de escrita)
 
 #### Passo A — Renomear tipo `creative` → `writing` no OGMA
-- [ ] `src/renderer/types/index.ts`: alterar `ProjectType` union, SUBCATEGORIES,
+- [x] `src/renderer/types/index.ts`: alterar `ProjectType` union, SUBCATEGORIES,
       PROJECT_TYPE_LABELS ('Escrita'), PROJECT_TYPE_ICONS ('✍️' mantém),
       PROJECT_TYPE_DESCRIPTIONS
-- [ ] `src/renderer/components/Projects/NewProjectModal.tsx`: atualizar array TYPES
-- [ ] `src/renderer/views/ProjectDashboard/ProjectLocalDashboard.tsx`:
+- [x] `src/renderer/components/Projects/NewProjectModal.tsx`: atualizar array TYPES
+- [x] `src/renderer/views/ProjectDashboard/ProjectLocalDashboard.tsx`:
       renomear case `'creative'` → `'writing'`
-- [ ] `src/main/ipc.ts`: renomear todas as ocorrências do literal `'creative'`
-- [ ] `src/main/database.ts`: adicionar migration que faz
+- [x] `src/main/ipc.ts`: renomear todas as ocorrências do literal `'creative'`
+- [x] `src/main/database.ts`: adicionar migration que faz
       `UPDATE projects SET project_type = 'writing' WHERE project_type = 'creative'`
       (o campo é TEXT sem CHECK constraint — migration simples)
 
