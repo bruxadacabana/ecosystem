@@ -264,7 +264,7 @@ e tipado com a mesma atenção que o caminho feliz.
 ## Estado das fases do ecossistema
 
   Fase 0: ✅ Fundação concluída (ecosystem_client.py, ecosystem.ts, ecosystem.rs, ecosystem.json)
-  Fase 1: 🔄 Em progresso — 1.2 e 1.3 concluídas; 1.1 e 1.4 pendentes
+  Fase 1: ✅ Concluída — 1.1, 1.2, 1.3 e 1.4 concluídas
   Fase 2: ✅ Concluída — 2.1, 2.2, 2.3, 2.4, 2.5 e 2.6 concluídas
   Fase 3: não iniciada
   Fase 4: não iniciada
@@ -280,8 +280,8 @@ Definida após revisão de todos os TODOs individuais (OGMA, Mnemosyne, Hermes, 
 5. Ecosystem 1.4 — Hermes → Mnemosyne
    Pequeno, alto valor. Checkbox + markdown output.
 
-6. Mnemosyne 4.4 — FAQ e flashcards
-   Próxima feature block do Mnemosyne sobre pesquisas indexadas.
+6. Mnemosyne 4.4 — FAQ e flashcards ✅
+   core/faq.py + FaqWorker + UI na aba Resumir implementados.
 ```
 
 **Deixar para depois** (sem dependências críticas, expansão de escopo):

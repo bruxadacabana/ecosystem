@@ -39,6 +39,7 @@ from core.tracker import FileTracker
 from gui.workers import (
     AskWorker,
     CompactMemoryWorker,
+    FaqWorker,
     GuideWorker,
     IndexFileWorker,
     IndexWorker,
@@ -223,6 +224,7 @@ class MainWindow(QMainWindow):
         self._ollama_ok = False
         self._raw_answer = ""
         self._raw_summary = ""
+        self._raw_faq = ""
 
         self._retry_timer = QTimer(self)
         self._retry_timer.setInterval(30_000)  # 30 segundos
@@ -402,6 +404,25 @@ class MainWindow(QMainWindow):
         self.summary_text = QTextEdit()
         self.summary_text.setReadOnly(True)
         layout.addWidget(self.summary_text)
+
+        # FAQ Generator
+        faq_box = QGroupBox("FAQ — Perguntas Frequentes")
+        faq_layout = QVBoxLayout(faq_box)
+        faq_layout.setSpacing(6)
+
+        self.faq_btn = QPushButton("Gerar FAQ")
+        self.faq_btn.setEnabled(False)
+        self.faq_btn.setToolTip("Gera perguntas frequentes com respostas a partir dos documentos indexados")
+        self.faq_btn.clicked.connect(self._start_faq_generation)
+        faq_layout.addWidget(self.faq_btn)
+
+        self.faq_text = QTextEdit()
+        self.faq_text.setReadOnly(True)
+        self.faq_text.setMaximumHeight(200)
+        self.faq_text.setPlaceholderText("Clique em 'Gerar FAQ' para criar perguntas frequentes sobre os documentos indexados…")
+        faq_layout.addWidget(self.faq_text)
+
+        layout.addWidget(faq_box)
 
         # Notebook Guide (gerado automaticamente após indexação)
         guide_box = QGroupBox("Notebook Guide")
@@ -797,6 +818,41 @@ class MainWindow(QMainWindow):
             )
         self.badge_label.setVisible(True)
 
+    # ── FAQ Generator ─────────────────────────────────────────────────────────
+
+    def _start_faq_generation(self) -> None:
+        """Inicia geração do FAQ em background com streaming."""
+        if self.vectorstore is None:
+            return
+        self.faq_btn.setEnabled(False)
+        self.faq_text.clear()
+        self._raw_faq = ""
+        self._log_event("Gerando FAQ…")
+        self._faq_worker = FaqWorker(self.vectorstore, self.config)
+        self._faq_worker.token.connect(self._on_faq_token)
+        self._faq_worker.finished.connect(self._on_faq_finished)
+        self._faq_worker.start()
+
+    def _on_faq_token(self, chunk: str) -> None:
+        self._raw_faq += chunk
+        self.faq_text.setPlainText(self._raw_faq)
+        sb = self.faq_text.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _on_faq_finished(self, success: bool, error: str, items: list) -> None:
+        self.faq_btn.setEnabled(self.vectorstore is not None)
+        if success:
+            lines = []
+            for i, item in enumerate(items, 1):
+                lines.append(f"P{i}: {item['question']}")
+                lines.append(f"R: {item['answer']}")
+                lines.append("")
+            self.faq_text.setPlainText("\n".join(lines).strip())
+            self._log_event(f"FAQ gerado — {len(items)} pergunta(s).")
+        else:
+            self.faq_text.setPlainText(f"Erro: {error}")
+            self._log_event(f"Erro ao gerar FAQ: {error}")
+
     # ── Notebook Guide ────────────────────────────────────────────────────────
 
     def _start_guide_generation(self) -> None:
@@ -1181,6 +1237,7 @@ class MainWindow(QMainWindow):
     def _enable_query_buttons(self) -> None:
         self.ask_btn.setEnabled(True)
         self.summary_btn.setEnabled(True)
+        self.faq_btn.setEnabled(True)
         self.clear_index_btn.setEnabled(True)
         self.update_index_btn.setEnabled(True)
         self.guide_refresh_btn.setEnabled(True)
@@ -1188,6 +1245,7 @@ class MainWindow(QMainWindow):
     def _disable_query_buttons(self) -> None:
         self.ask_btn.setEnabled(False)
         self.summary_btn.setEnabled(False)
+        self.faq_btn.setEnabled(False)
         self.update_index_btn.setEnabled(False)
         self.guide_refresh_btn.setEnabled(False)
 

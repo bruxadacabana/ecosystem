@@ -16,6 +16,7 @@ from core.errors import (
     SummarizationError,
     GuideError,
 )
+from core.faq import iter_faq, parse_faq
 from core.indexer import create_vectorstore, index_single_file, load_vectorstore, update_vectorstore
 from core.loaders import load_documents, load_single_file
 from core.memory import MemoryStore, Turn
@@ -312,6 +313,43 @@ class SummarizeWorker(QThread):
             self.finished.emit(False, str(exc))
         except Exception as exc:
             self.finished.emit(False, f"Erro inesperado: {exc}")
+
+
+class FaqWorker(QThread):
+    """Gera FAQ com streaming token a token."""
+
+    token    = Signal(str)
+    finished = Signal(bool, str, list)  # sucesso, erro, list[FaqItem]
+
+    def __init__(self, vectorstore, config: AppConfig) -> None:
+        super().__init__()
+        self.vectorstore = vectorstore
+        self.config = config
+
+    def run(self) -> None:
+        try:
+            validate_model(self.config.llm_model)
+        except ModelNotFoundError as exc:
+            self.finished.emit(False, str(exc), [])
+            return
+        except OllamaUnavailableError as exc:
+            self.finished.emit(False, str(exc), [])
+            return
+
+        try:
+            full = ""
+            for chunk in iter_faq(self.vectorstore, self.config):
+                if self.isInterruptionRequested():
+                    self.finished.emit(False, "Interrompido.", [])
+                    return
+                self.token.emit(chunk)
+                full += chunk
+            items = parse_faq(strip_think(full))
+            self.finished.emit(True, "", items)
+        except ValueError as exc:
+            self.finished.emit(False, str(exc), [])
+        except Exception as exc:
+            self.finished.emit(False, f"Erro inesperado: {exc}", [])
 
 
 class GuideWorker(QThread):

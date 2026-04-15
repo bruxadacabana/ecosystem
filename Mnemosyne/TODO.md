@@ -99,8 +99,9 @@
 - [x] `gui/main_window.py` — exibir Guide na aba Resumir ou em painel lateral
 
 ### 4.4 FAQ Generator
-- [ ] `core/faq.py` — gerar lista de perguntas frequentes a partir dos documentos indexados
-- [ ] `gui/main_window.py` — botão "Gerar FAQ" na aba Resumir
+- [x] `core/faq.py` — gerar lista de perguntas frequentes a partir dos documentos indexados
+- [x] `gui/workers.py` — FaqWorker com streaming token a token
+- [x] `gui/main_window.py` — botão "Gerar FAQ" na aba Resumir
 
 ### 4.5 Flashcards, Quiz e Estudo
 - [ ] `core/flashcards.py` — extrair termos-chave, datas e conceitos e formatar como flashcards (frente/verso)
