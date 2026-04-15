@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -66,6 +66,23 @@ CREATE INDEX IF NOT EXISTS idx_cache_lookup
     ON search_cache(query, sources, created_at);
 """
 
+_CREATE_LOCAL_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS local_fts USING fts5(
+    path   UNINDEXED,
+    title,
+    body,
+    source UNINDEXED
+);
+"""
+
+_CREATE_LOCAL_META = """
+CREATE TABLE IF NOT EXISTS local_index_meta (
+    path   TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    mtime  TEXT NOT NULL
+);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 
 # ---------------------------------------------------------------------------
@@ -80,6 +97,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_DOWNLOADS)
         await db.execute(_CREATE_SEARCH_CACHE)
         await db.execute(_CREATE_IDX_CACHE)
+        await db.execute(_CREATE_LOCAL_FTS)
+        await db.execute(_CREATE_LOCAL_META)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -100,6 +119,9 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
 
     if from_version < 2:
         pass  # Versão 2 — search_cache criado pelas CREATE TABLE IF NOT EXISTS acima
+
+    if from_version < 3:
+        pass  # Versão 3 — local_fts + local_index_meta criados acima
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
