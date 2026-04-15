@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 import config
 import database
+from routers import search as search_router
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -45,6 +46,8 @@ app.mount("/static", StaticFiles(directory=_BASE_DIR / "static"), name="static")
 
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
+app.include_router(search_router.router)
+
 # ---------------------------------------------------------------------------
 # Rotas principais (Fase 1 — estrutura)
 # As rotas de busca, downloads e torrents serão adicionadas nas próximas fases.
@@ -55,7 +58,15 @@ async def index(request: Request) -> HTMLResponse:
     recent = await database.recent_searches()
     return templates.TemplateResponse(
         "search.html",
-        {"request": request, "results": [], "query": "", "recent": recent},
+        {
+            "request": request,
+            "results": [],
+            "query": "",
+            "sources": "all",
+            "recent": recent,
+            "error": None,
+            "active_tab": "search",
+        },
     )
 
 
