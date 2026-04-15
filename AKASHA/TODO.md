@@ -25,22 +25,22 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 > Entrega: servidor sobe na porta 7070, design system completo, página de busca vazia funcional.
 
-- [ ] `pyproject.toml` — dependências uv: `fastapi`, `uvicorn[standard]`, `aiosqlite`, `httpx`,
+- [x] `pyproject.toml` — dependências uv: `fastapi`, `uvicorn[standard]`, `aiosqlite`, `httpx`,
       `jinja2`, `python-multipart`, `duckduckgo-search`, `qbittorrent-api`, `trafilatura`
-- [ ] `main.py` — FastAPI app + lifespan: inicializa DB, escreve `akasha.base_url`
+- [x] `main.py` — FastAPI app + lifespan: inicializa DB, escreve `akasha.base_url`
       em `ecosystem.json` no startup (try/except — nunca bloquear)
-- [ ] `config.py` — lê `ecosystem.json` via `ecosystem_client`; expõe `kosmos_archive`,
+- [x] `config.py` — lê `ecosystem.json` via `ecosystem_client`; expõe `kosmos_archive`,
       `aether_vault`, `mnemosyne_indices`, `qbt_host`, `qbt_port`; fallback silencioso
-- [ ] `database.py` — schema SQLite + migrations: tabelas `searches`, `downloads`, `settings`
+- [x] `database.py` — schema SQLite + migrations: tabelas `searches`, `downloads`, `settings`
       (campo `schema_version`); função `init_db()` chamada no startup
-- [ ] `static/style.css` — paleta CSS completa (sépia diurna + noturno astronômico via
+- [x] `static/style.css` — paleta CSS completa (sépia diurna + noturno astronômico via
       `prefers-color-scheme: dark`), tipografia (IM Fell English · Special Elite · Courier Prime),
       componentes: `.btn`, `.btn-ghost`, `.card`, `.input`, `.tag`, `.badge`, `.toast`
-- [ ] `templates/base.html` — layout base: topbar (AKASHA itálico 24px, toggle ☽/☀),
+- [x] `templates/base.html` — layout base: topbar (AKASHA itálico 24px, toggle ☽/☀),
       search bar com HTMX (`hx-get="/search" hx-trigger="submit"`), nav tabs (Busca / Downloads / Torrents)
-- [ ] `templates/search.html` — extends base: área de resultados com skeleton loader,
+- [x] `templates/search.html` — extends base: área de resultados com skeleton loader,
       empty state com buscas recentes
-- [ ] `iniciar.sh` — detecta `.venv` do ecossistema em `../`; se não existir, cria venv local;
+- [x] `iniciar.sh` — detecta `.venv` do ecossistema em `../`; se não existir, cria venv local;
       `uv sync` e executa `uv run python main.py`; `chmod +x`
 
 ---
@@ -148,4 +148,4 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 ---
 
-*Atualizado em: 2026-04-15 — Planejamento concluído. Fase 1 não iniciada.*
+*Atualizado em: 2026-04-15 — Fase 1 concluída.*

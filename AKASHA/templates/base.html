@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AKASHA{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <!-- ─── Topbar ─────────────────────────────────────────────── -->
+  <header class="topbar">
+    <a href="/" class="topbar-brand">
+      <em>AKASHA</em>
+    </a>
+
+    <form
+      class="topbar-search"
+      action="/search"
+      method="get"
+      hx-get="/search"
+      hx-target="#main-content"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+      hx-indicator="#search-indicator"
+    >
+      <div class="search-wrap">
+        <input
+          type="text"
+          name="q"
+          class="input"
+          placeholder="buscar…"
+          value="{{ query | default('') }}"
+          autocomplete="off"
+          autofocus
+        >
+        <button type="submit" class="btn btn-primary">&#x2315;</button>
+        <span id="search-indicator" class="htmx-indicator search-spinner"></span>
+      </div>
+      <div class="source-filters">
+        <label class="tag {% if sources == 'all' or not sources %}tag-active{% endif %}">
+          <input type="radio" name="sources" value="all" {% if sources == 'all' or not sources %}checked{% endif %} hidden>
+          todos
+        </label>
+        <label class="tag {% if sources == 'web' %}tag-active{% endif %}">
+          <input type="radio" name="sources" value="web" {% if sources == 'web' %}checked{% endif %} hidden>
+          web
+        </label>
+        <label class="tag {% if sources == 'local' %}tag-active{% endif %}">
+          <input type="radio" name="sources" value="local" {% if sources == 'local' %}checked{% endif %} hidden>
+          local
+        </label>
+      </div>
+    </form>
+
+    <nav class="topbar-nav">
+      <a href="/" class="nav-link {% if active_tab == 'search' %}nav-link-active{% endif %}">busca</a>
+      <a href="/downloads" class="nav-link {% if active_tab == 'downloads' %}nav-link-active{% endif %}">downloads</a>
+      <a href="/torrents" class="nav-link {% if active_tab == 'torrents' %}nav-link-active{% endif %}">torrents</a>
+    </nav>
+
+    <button
+      class="btn btn-ghost theme-toggle"
+      id="theme-toggle"
+      aria-label="Alternar tema"
+      title="Alternar tema noturno"
+      onclick="toggleTheme()"
+    >&#9790;</button>
+  </header>
+
+  <!-- ─── Conteúdo principal ───────────────────────────────────── -->
+  <main id="main-content" class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- ─── Toast container ──────────────────────────────────────── -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- ─── Scripts ──────────────────────────────────────────────── -->
+  <script>
+    // ── Tema ────────────────────────────────────────────────────
+    (function () {
+      var saved = localStorage.getItem('akasha-theme');
+      if (saved) {
+        document.documentElement.classList.add('theme-' + saved);
+      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.documentElement.classList.add('theme-dark');
+      }
+    })();
+
+    function toggleTheme() {
+      var html = document.documentElement;
+      var isDark = html.classList.contains('theme-dark');
+      html.classList.remove('theme-dark', 'theme-light');
+      var next = isDark ? 'light' : 'dark';
+      html.classList.add('theme-' + next);
+      localStorage.setItem('akasha-theme', next);
+      document.getElementById('theme-toggle').textContent = next === 'dark' ? '\u2600' : '\u263E';
+    }
+
+    // Corrige ícone do botão ao carregar
+    (function () {
+      var html = document.documentElement;
+      var btn = document.getElementById('theme-toggle');
+      if (btn) {
+        btn.textContent = html.classList.contains('theme-dark') ? '\u2600' : '\u263E';
+      }
+    })();
+
+    // ── Toast ────────────────────────────────────────────────────
+    function showToast(msg, type) {
+      var container = document.getElementById('toast-container');
+      var toast = document.createElement('div');
+      toast.className = 'toast toast-' + (type || 'info');
+      toast.textContent = msg;
+      container.appendChild(toast);
+      setTimeout(function () { toast.remove(); }, 4000);
+    }
+
+    // ── Source filter: submeter ao clicar no label ───────────────
+    document.addEventListener('change', function (e) {
+      if (e.target && e.target.name === 'sources') {
+        e.target.closest('form').requestSubmit();
+      }
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
