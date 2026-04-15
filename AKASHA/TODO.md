@@ -64,16 +64,16 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 > Entrega: busca nos arquivos do ecossistema integrada com os resultados web.
 
-- [ ] `services/local_search.py` — ler KOSMOS archive (`{archive_path}/**/*.md`):
+- [x] `services/local_search.py` — ler KOSMOS archive (`{archive_path}/**/*.md`):
       parsear frontmatter YAML simples, indexar título + corpo em FTS5
-- [ ] `services/local_search.py` — ler AETHER vault (`{vault_path}/*/chapters/*.md`):
+- [x] `services/local_search.py` — ler AETHER vault (`{vault_path}/*/chapters/*.md`):
       título e conteúdo dos capítulos; indexar em FTS5
-- [ ] FTS5 virtual table `local_index` em SQLite: schema `(path, title, body, source, mtime)`
-- [ ] Reindexação automática no startup se `mtime` dos arquivos mudou desde última indexação
-- [ ] `services/local_search.py` — query ChromaDB do Mnemosyne se `mnemosyne_indices`
+- [x] FTS5 virtual table `local_index` em SQLite: schema `(path, title, body, source, mtime)`
+- [x] Reindexação automática no startup se `mtime` dos arquivos mudou desde última indexação
+- [x] `services/local_search.py` — query ChromaDB do Mnemosyne se `mnemosyne_indices`
       não vazio (import opcional; graceful fallback se `chromadb` não instalado)
-- [ ] `routers/search.py` — fundir resultados web + local: ranking por relevância, deduplicação
-- [ ] Badge de fonte em cada card: `WEB` · `KOSMOS` · `AETHER` · `MNEMOSYNE` com cor distinta
+- [x] `routers/search.py` — fundir resultados web + local: ranking por relevância, deduplicação
+- [x] Badge de fonte em cada card: `WEB` · `KOSMOS` · `AETHER` · `MNEMOSYNE` com cor distinta
 
 ---
 
@@ -148,4 +148,4 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 ---
 
-*Atualizado em: 2026-04-15 — Fases 1 e 2 concluídas.*
+*Atualizado em: 2026-04-15 — Fases 1, 2 e 3 concluídas.*
