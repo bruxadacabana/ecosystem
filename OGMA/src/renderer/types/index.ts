@@ -61,9 +61,10 @@ export interface Project {
   status:       ProjectStatus
   date_start:   string | null
   date_end:     string | null
-  sort_order:   number
-  created_at:   string
-  updated_at:   string
+  sort_order:        number
+  aether_project_id: string | null
+  created_at:        string
+  updated_at:        string
 }
 
 export interface ProjectCreateInput {

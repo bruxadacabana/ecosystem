@@ -16,6 +16,7 @@ import * as os from "os";
 
 export interface AetherConfig {
   vault_path: string;
+  exe_path?:  string;
 }
 
 export interface KosmosConfig {

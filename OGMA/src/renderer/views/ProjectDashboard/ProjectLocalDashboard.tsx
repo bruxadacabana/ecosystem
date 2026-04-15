@@ -790,10 +790,36 @@ export function ProjectLocalDashboard({ project, dark, pages, onPageOpen, onOpen
     }
   }
 
+  const openInAether = async () => {
+    if (!project.aether_project_id) return
+    try {
+      await db().projects.openInAether(project.aether_project_id)
+    } catch { /* falha silenciosa — vault pode não estar configurado */ }
+  }
+
   return (
     <div className="proj-local-dashboard">
       {/* Stats column */}
-      <StatsColumn project={project} data={data} dark={dark} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <StatsColumn project={project} data={data} dark={dark} />
+        {project.project_type === 'writing' && (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={openInAether}
+            disabled={!project.aether_project_id}
+            title={project.aether_project_id ? 'Abrir projeto no AETHER' : 'Projeto não vinculado ao AETHER'}
+            style={{
+              color:       project.aether_project_id ? accent : ink2,
+              borderColor: border,
+              fontSize:    11,
+              opacity:     project.aether_project_id ? 1 : 0.45,
+              width:       '100%',
+            }}
+          >
+            ✦ Abrir no AETHER
+          </button>
+        )}
+      </div>
 
       {/* Widget grid */}
       <div className="proj-local-widgets">

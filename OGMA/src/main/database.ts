@@ -411,6 +411,7 @@ async function runIncrementalMigrations(client: Client): Promise<void> {
     `ALTER TABLE reminders ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE`,
     `ALTER TABLE projects ADD COLUMN institution TEXT`,
     `UPDATE projects SET project_type = 'writing' WHERE project_type = 'creative'`,
+    `ALTER TABLE projects ADD COLUMN aether_project_id TEXT`,
   ]
 
   for (const sql of migrations) {

@@ -82,14 +82,14 @@ e tipado com a mesma atenção que o caminho feliz.
       (o campo é TEXT sem CHECK constraint — migration simples)
 
 #### Passo B — Integrar projetos de escrita com o AETHER
-- [ ] `src/main/database.ts`: adicionar coluna `aether_project_id TEXT` na tabela
-      `projects` (nova migration, schema v3)
-- [ ] OGMA lê `aether.vault_path` do `ecosystem.json` na criação de projeto
-- [ ] Ao criar projeto com `project_type = 'writing'`, OGMA escreve no vault AETHER:
+- [x] `src/main/database.ts`: adicionar coluna `aether_project_id TEXT` na tabela
+      `projects` (nova migration)
+- [x] OGMA lê `aether.vault_path` do `ecosystem.json` na criação de projeto
+- [x] Ao criar projeto com `project_type = 'writing'`, OGMA escreve no vault AETHER:
       - `{vault}/{uuid}/project.json`  (formato Project do AETHER — campos: id, name, project_type, genre, description)
       - `{vault}/{uuid}/{book_uuid}/book.json`  (livro padrão vazio, sem capítulos)
-- [ ] Salvar `aether_project_id` no banco do OGMA para manter o vínculo
-- [ ] Botão "Abrir no AETHER" em projetos de escrita (desabilitado se vault não configurado)
+- [x] Salvar `aether_project_id` no banco do OGMA para manter o vínculo
+- [x] Botão "Abrir no AETHER" em projetos de escrita (desabilitado se vault não configurado)
 
 ### 1.2 — KOSMOS → Mnemosyne (artigos salvos)
 - [x] KOSMOS escreve `archive_path` e `data_path` em `ecosystem.json` na inicialização
@@ -273,22 +273,10 @@ e tipado com a mesma atenção que o caminho feliz.
 
 ## PLANEJAMENTO — Ordem de execução (2026-04)
 
-Definida após revisão de todos os TODOs individuais (OGMA, Mnemosyne, Hermes, KOSMOS, Ecosystem).
-
-```
-
-5. Ecosystem 1.4 — Hermes → Mnemosyne
-   Pequeno, alto valor. Checkbox + markdown output.
-
-6. Mnemosyne 4.4 — FAQ e flashcards ✅
-   core/faq.py + FaqWorker + UI na aba Resumir implementados.
-```
-
 **Deixar para depois** (sem dependências críticas, expansão de escopo):
 - OGMA Fase 12 (analytics) e 13 (Pomodoro)
 - OGMA Fase Extra (histórico de páginas)
 - KOSMOS Fase B (Reddit, YouTube) e D (PDF export)
 - KOSMOS Fase F-AI (busca semântica, análise de viés)
 - Hermes Fase 2 (histórico, preview, batch mode)
-- Ecosystem 1.1 Passo B (AETHER integration) — depende do Passo A
 - Mnemosyne Fases 4.5–6

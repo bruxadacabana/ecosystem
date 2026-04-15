@@ -1,12 +1,23 @@
-import { ipcMain } from 'electron'
+import { ipcMain, shell } from 'electron'
 import https from 'https'
 import http from 'http'
+import * as fs from 'fs'
+import * as path from 'path'
+import { spawn } from 'child_process'
 import { dbGet, dbAll, dbRun, getClient } from './database'
 import { createLogger, RENDERER_LOG_CHANNEL } from './logger'
 import { getSetting, setSetting, getAllSettings, AppSettings } from './settings'
+import { readEcosystem } from './ecosystem'
 
 const log   = createLogger('ipc')
 const dbLog = createLogger('db')
+
+function _generateUuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+  })
+}
 
 // ── Classificação de erros ─────────────────────────────────────────────────────
 
@@ -734,8 +745,90 @@ export function registerIpcHandlers(): void {
     const propIds   = await seedProjectProperties(projectId, data.project_type ?? 'custom', data.subcategory ?? undefined)
     await seedProjectViews(projectId, data.project_type ?? 'custom', propIds, data.subcategory ?? undefined)
 
+    // Se for projeto de escrita, criar estrutura no vault AETHER
+    if (data.project_type === 'writing') {
+      try {
+        const ecosystem = readEcosystem()
+        const vaultPath = ecosystem.aether?.vault_path
+        if (vaultPath) {
+          const aetherProjectId = _generateUuid()
+          const bookId          = _generateUuid()
+          const now             = new Date().toISOString()
+
+          // {vault}/{project_uuid}/project.json
+          const projDir = path.join(vaultPath, aetherProjectId)
+          fs.mkdirSync(projDir, { recursive: true })
+          const projectJson = {
+            id:           aetherProjectId,
+            name:         data.name,
+            description:  data.description ?? null,
+            project_type: 'single',
+            default_book_id: bookId,
+            created_at:   now,
+            updated_at:   now,
+          }
+          fs.writeFileSync(
+            path.join(projDir, 'project.json'),
+            JSON.stringify(projectJson, null, 2),
+            'utf-8'
+          )
+
+          // {vault}/{project_uuid}/{book_uuid}/book.json
+          const bookDir = path.join(projDir, bookId)
+          fs.mkdirSync(bookDir, { recursive: true })
+          const bookJson = {
+            id:         bookId,
+            project_id: aetherProjectId,
+            name:       data.name,
+            order:      0,
+            chapters:   [],
+          }
+          fs.writeFileSync(
+            path.join(bookDir, 'book.json'),
+            JSON.stringify(bookJson, null, 2),
+            'utf-8'
+          )
+
+          // Salvar vínculo no banco
+          await dbRun(
+            `UPDATE projects SET aether_project_id = ? WHERE id = ?`,
+            aetherProjectId, projectId
+          )
+          dbLog.info('projects:create:aether', { projectId, aetherProjectId })
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e)
+        log.warn('projects:create:aether falhou (não crítico)', { error: msg })
+      }
+    }
+
     dbLog.info('projects:create', { id: projectId, name: data.name })
     return dbGet('SELECT * FROM projects WHERE id = ?', projectId)
+  })
+
+  api('projects:open_in_aether', async (data: { aether_project_id: string }) => {
+    const ecosystem = readEcosystem()
+    const vaultPath = ecosystem.aether?.vault_path
+    const exePath   = ecosystem.aether?.exe_path
+
+    if (!vaultPath) throw new Error('Vault AETHER não configurado no ecosystem.json')
+
+    // Tentar lançar AETHER se exe_path estiver definido
+    if (exePath) {
+      try {
+        spawn(exePath, [], { detached: true, stdio: 'ignore' }).unref()
+        return { launched: true }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e)
+        log.warn('projects:open_in_aether: spawn falhou, abrindo pasta', { error: msg })
+      }
+    }
+
+    // Fallback: abrir pasta do projeto no explorador de arquivos
+    const projectDir = path.join(vaultPath, data.aether_project_id)
+    const targetDir  = fs.existsSync(projectDir) ? projectDir : vaultPath
+    await shell.openPath(targetDir)
+    return { launched: false }
   })
 
   api('projects:update', async (data) => {
