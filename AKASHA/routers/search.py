@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 
 import database
 from services.web_search import SearchResult, search_web
+from services.local_search import rank_combined, search_local
 
 router = APIRouter()
 
@@ -30,9 +31,18 @@ async def search(
 
     if q:
         try:
+            web: list[SearchResult] = []
+            local: list[SearchResult] = []
+
             if sources in ("web", "all"):
-                results = await search_web(q)
-            # Busca local será adicionada na Fase 3
+                web = await search_web(q)
+            if sources in ("local", "all"):
+                local = await search_local(q)
+
+            if sources == "all":
+                results = rank_combined(web + local, q)
+            else:
+                results = web + local
         except RuntimeError as exc:
             error = str(exc)
 
