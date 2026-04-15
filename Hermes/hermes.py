@@ -16,12 +16,13 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox, QTextEdit, QFileDialog,
     QTabWidget, QFrame, QProgressBar, QListWidget, QListWidgetItem,
-    QSizePolicy, QAbstractItemView, QSplitter,
+    QSizePolicy, QAbstractItemView, QSplitter, QCheckBox,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 
 # Componentes e estilos partilhados do ecossistema
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from ecosystem_client import read_ecosystem
 from ecosystem_qt import (
     PAPER, PAPER_DARK, PAPER_DARKER,
     INK, INK_LIGHT, INK_FAINT, INK_GHOST,
@@ -146,6 +147,40 @@ def build_markdown(title: str, url: str, info: dict, result: dict, forced_lang: 
                 lines.append(para.strip())
                 lines.append("")
     return "\n".join(lines)
+
+
+# ── Utilitários — markdown Mnemosyne ─────────────────────────────────────────
+def build_mnemosyne_markdown(title: str, url: str, duration: str, full_md: str) -> str:
+    """Markdown com frontmatter YAML para indexação pelo Mnemosyne.
+    Remove timestamps e cabeçalhos do markdown completo, deixando
+    apenas o texto limpo da transcrição."""
+    date       = datetime.now().strftime("%Y-%m-%d")
+    title_safe = title.replace('"', '\\"')
+
+    clean_lines: list[str] = []
+    for line in full_md.splitlines():
+        stripped = line.strip()
+        if (stripped.startswith("#")
+                or stripped.startswith(">")
+                or stripped == "---"
+                or stripped == "## Transcrição"):
+            continue
+        # Remove prefixo **[MM:SS]** mas mantém o texto
+        clean = re.sub(r"^\*\*\[\d{2}:\d{2}\]\*\*\s*", "", line)
+        clean_lines.append(clean)
+
+    body = "\n".join(clean_lines).strip()
+
+    return "\n".join([
+        "---",
+        f'title: "{title_safe}"',
+        f"date: {date}",
+        f"source: {url}",
+        f"duration: {duration}",
+        "---",
+        "",
+        body,
+    ])
 
 
 # ── Workers ───────────────────────────────────────────────────────────────────
@@ -273,7 +308,7 @@ class PlaylistIndexWorker(QThread):
 class TranscribeWorker(QThread):
     log      = pyqtSignal(str, str)
     progress = pyqtSignal(int)
-    finished = pyqtSignal(str, str)   # (markdown_text, output_path)
+    finished = pyqtSignal(str, str, str, str, str)   # (markdown_text, output_path, title, url, duration)
     error    = pyqtSignal(str)
 
     def __init__(self, url: str, model_size: str, language: str,
@@ -345,13 +380,15 @@ class TranscribeWorker(QThread):
                 self.progress.emit(90)
 
                 # Gerar markdown
+                dur_s    = info.get("duration", 0)
+                duration = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else "desconhecida"
                 md_text = build_markdown(title, self.url, info, result, self.language)
                 safe    = re.sub(r'[<>:"/\\|?*]', "_", title)[:60]
                 out_path = os.path.join(
                     self.outdir, f"{datetime.now().strftime('%Y%m%d_%H%M')}_{safe}.md")
                 Path(out_path).write_text(md_text, encoding="utf-8")
                 self.progress.emit(100)
-                self.finished.emit(md_text, out_path)
+                self.finished.emit(md_text, out_path, title, self.url, duration)
 
         except Exception as exc:
             if self._cancelled:
@@ -595,6 +632,26 @@ class HermesApp(QMainWindow):
         self.tr_progress.setValue(0)
         layout.addWidget(self.tr_progress)
 
+        # Integração Mnemosyne
+        layout.addWidget(self._rule())
+        mnemo_row = QHBoxLayout()
+        mnemo_row.addWidget(self._section_label("PASTA DO MNEMOSYNE"))
+        mnemo_row.addSpacing(8)
+        self.mnemo_dir_edit = QLineEdit()
+        self.mnemo_dir_edit.setPlaceholderText("Pasta monitorada pelo Mnemosyne… (veja ecosystem.json)")
+        self.mnemo_dir_edit.textChanged.connect(self._on_mnemo_dir_changed)
+        mnemo_row.addWidget(self.mnemo_dir_edit)
+        mnemo_browse_btn = QPushButton("…")
+        mnemo_browse_btn.setFixedWidth(36)
+        mnemo_browse_btn.clicked.connect(self._pick_mnemo_dir)
+        mnemo_row.addWidget(mnemo_browse_btn)
+        layout.addLayout(mnemo_row)
+
+        self.mnemo_check = QCheckBox("Indexar no Mnemosyne após transcrever")
+        self.mnemo_check.setEnabled(False)
+        layout.addWidget(self.mnemo_check)
+        layout.addWidget(self._rule())
+
         # Preview do markdown
         layout.addWidget(self._section_label("PRÉVIA DA TRANSCRIÇÃO"))
         self.md_preview = QTextEdit()
@@ -637,13 +694,28 @@ class HermesApp(QMainWindow):
             self.lang_combo.setCurrentIndex(self._prefs["lang_idx"])
         if "cpu_limit" in self._prefs:
             self.cpu_combo.setCurrentText(self._prefs["cpu_limit"])
+        # Pasta do Mnemosyne: preferência salva > sugestão do ecosystem.json
+        if "mnemo_dir" in self._prefs:
+            self.mnemo_dir_edit.setText(self._prefs["mnemo_dir"])
+        else:
+            try:
+                eco   = read_ecosystem()
+                paths = eco.get("mnemosyne", {}).get("index_paths", [])
+                if paths:
+                    self.mnemo_dir_edit.setText(paths[0])
+            except Exception:
+                pass
+        if self._prefs.get("mnemo_check") and self.mnemo_dir_edit.text().strip():
+            self.mnemo_check.setChecked(True)
 
     def _save_prefs(self):
         save_prefs({
-            "outdir":    self.outdir_edit.text(),
-            "model":     self.model_combo.currentText(),
-            "lang_idx":  self.lang_combo.currentIndex(),
-            "cpu_limit": self.cpu_combo.currentText(),
+            "outdir":      self.outdir_edit.text(),
+            "model":       self.model_combo.currentText(),
+            "lang_idx":    self.lang_combo.currentIndex(),
+            "cpu_limit":   self.cpu_combo.currentText(),
+            "mnemo_dir":   self.mnemo_dir_edit.text(),
+            "mnemo_check": self.mnemo_check.isChecked(),
         })
 
     def closeEvent(self, event):
@@ -667,6 +739,18 @@ class HermesApp(QMainWindow):
         d = QFileDialog.getExistingDirectory(self, "Pasta de saída", self.outdir_edit.text())
         if d:
             self.outdir_edit.setText(d)
+
+    def _pick_mnemo_dir(self):
+        current = self.mnemo_dir_edit.text() or str(DATA_DIR)
+        d = QFileDialog.getExistingDirectory(self, "Pasta monitorada pelo Mnemosyne", current)
+        if d:
+            self.mnemo_dir_edit.setText(d)
+
+    def _on_mnemo_dir_changed(self, text: str):
+        enabled = bool(text.strip())
+        self.mnemo_check.setEnabled(enabled)
+        if not enabled:
+            self.mnemo_check.setChecked(False)
 
     def _open_outdir(self):
         import subprocess
@@ -811,7 +895,8 @@ class HermesApp(QMainWindow):
         self._worker.error.connect(self._on_worker_error)
         self._worker.start()
 
-    def _on_transcribe_done(self, md_text: str, out_path: str):
+    def _on_transcribe_done(self, md_text: str, out_path: str,
+                             title: str, url: str, duration: str):
         self._last_md = md_text
         self._set_busy(False, 1)
         self.tr_progress.setValue(100)
@@ -819,6 +904,19 @@ class HermesApp(QMainWindow):
         self.copy_md_btn.setEnabled(True)
         self._log(f"Transcrição salva: {out_path}", "ok")
         self.status_lbl.setText(f"✓ Salvo em {Path(out_path).name}")
+
+        # Indexar no Mnemosyne, se solicitado
+        if self.mnemo_check.isChecked():
+            mnemo_dir = self.mnemo_dir_edit.text().strip()
+            if mnemo_dir:
+                mnemo_md  = build_mnemosyne_markdown(title, url, duration, md_text)
+                safe      = re.sub(r'[<>:"/\\|?*]', "_", title)[:60]
+                mnemo_path = Path(mnemo_dir) / f"{datetime.now().strftime('%Y%m%d_%H%M')}_{safe}.md"
+                try:
+                    mnemo_path.write_text(mnemo_md, encoding="utf-8")
+                    self._log(f"Indexado no Mnemosyne: {mnemo_path.name}", "ok")
+                except OSError as e:
+                    self._log(f"Erro ao salvar no Mnemosyne: {e}", "err")
 
     # ── Erros ─────────────────────────────────────────────────────────────────
     def _on_worker_error(self, msg: str):

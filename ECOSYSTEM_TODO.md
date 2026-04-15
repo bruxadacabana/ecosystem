@@ -106,11 +106,11 @@ e tipado com a mesma atenção que o caminho feliz.
 - [ ] Testar indexação dos `.md` de capítulos pelo Mnemosyne
 
 ### 1.4 — Hermes → Mnemosyne (transcrições indexáveis)
-- [ ] Adicionar campo "Pasta de saída do Mnemosyne" na aba Transcrever do Hermes
+- [x] Adicionar campo "Pasta de saída do Mnemosyne" na aba Transcrever do Hermes
       Lê `mnemosyne.index_paths[0]` do ecosystem como sugestão; desabilitado se vazio
-- [ ] Adicionar checkbox "Indexar no Mnemosyne após transcrever"
+- [x] Adicionar checkbox "Indexar no Mnemosyne após transcrever"
       Salva o `.md` diretamente numa das pastas monitoradas pelo Mnemosyne
-- [ ] Formato: Markdown limpo com frontmatter mínimo (título, data, fonte/URL, duração)
+- [x] Formato: Markdown limpo com frontmatter mínimo (título, data, fonte/URL, duração)
 
 ---
 
@@ -276,17 +276,6 @@ e tipado com a mesma atenção que o caminho feliz.
 Definida após revisão de todos os TODOs individuais (OGMA, Mnemosyne, Hermes, KOSMOS, Ecosystem).
 
 ```
-1. HUB 2.3 — Módulo Leituras (KOSMOS archive)
-   Continuação natural do plano em andamento.
-
-2. HUB 2.4 — Módulo Projetos (OGMA SQLite)
-   Sequencial após 2.3. Requer rusqlite bundled.
-
-3. HUB 2.5 — Módulo Perguntas (Ollama)
-   Frontend puro, pode ser feito em paralelo com 2.4.
-
-4. Ecosystem 1.1 Passo A — Renomear creative → writing no OGMA
-   Mudança localizada. Desbloqueia o Passo B.
 
 5. Ecosystem 1.4 — Hermes → Mnemosyne
    Pequeno, alto valor. Checkbox + markdown output.
