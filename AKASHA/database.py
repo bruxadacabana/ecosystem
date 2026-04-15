@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -51,6 +51,21 @@ CREATE TABLE IF NOT EXISTS downloads (
 );
 """
 
+_CREATE_SEARCH_CACHE = """
+CREATE TABLE IF NOT EXISTS search_cache (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    query        TEXT    NOT NULL,
+    sources      TEXT    NOT NULL DEFAULT 'web',
+    results_json TEXT    NOT NULL,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_IDX_CACHE = """
+CREATE INDEX IF NOT EXISTS idx_cache_lookup
+    ON search_cache(query, sources, created_at);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 
 # ---------------------------------------------------------------------------
@@ -63,6 +78,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_SETTINGS)
         await db.execute(_CREATE_SEARCHES)
         await db.execute(_CREATE_DOWNLOADS)
+        await db.execute(_CREATE_SEARCH_CACHE)
+        await db.execute(_CREATE_IDX_CACHE)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -79,11 +96,15 @@ async def init_db() -> None:
 async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
     """Aplica migrations incrementais."""
     if from_version < 1:
-        # Versão 1 — schema inicial já criado pelas CREATE TABLE IF NOT EXISTS acima
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
-            (str(SCHEMA_VERSION),),
-        )
+        pass  # Versão 1 — schema inicial criado pelas CREATE TABLE IF NOT EXISTS acima
+
+    if from_version < 2:
+        pass  # Versão 2 — search_cache criado pelas CREATE TABLE IF NOT EXISTS acima
+
+    await db.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
+        (str(SCHEMA_VERSION),),
+    )
 
 # ---------------------------------------------------------------------------
 # Helpers de acesso (usados pelos routers)
