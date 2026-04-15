@@ -16,6 +16,7 @@ import { ReadingView } from './views/ReadingView'
 import { ArticleView } from './views/ArticleView'
 import { ProjectsView } from './views/ProjectsView'
 import { PageView } from './views/PageView'
+import { QuestionsView } from './views/QuestionsView'
 import * as cmd from './lib/tauri'
 import type { HubView, Project, Book, ChapterMeta, ArticleMeta, OgmaProject } from './types'
 
@@ -172,22 +173,9 @@ export default function App() {
               />
             )}
 
-            {/* ---- Placeholder — sub-fase 2.5 ---- */}
+            {/* ---- Módulo Perguntas ---- */}
             {view === 'questions' && (
-              <div style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                justifyContent: 'center', height: '100%', gap: 16, background: 'var(--paper)',
-              }}>
-                <p style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 24, color: 'var(--ink)' }}>
-                  Perguntas
-                </p>
-                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)' }}>
-                  Em desenvolvimento — próxima sub-fase
-                </p>
-                <button className="btn btn-ghost btn-sm" onClick={handleGoHome}>
-                  ← Voltar ao Hub
-                </button>
-              </div>
+              <QuestionsView onBack={handleGoHome} />
             )}
           </div>
         </div>

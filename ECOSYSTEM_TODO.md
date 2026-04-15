@@ -164,10 +164,10 @@ e tipado com a mesma atenção que o caminho feliz.
 - [x] `ProjectsView.tsx` + `PageView.tsx`
 
 ### 2.5 — Módulo Perguntas (Ollama, sem Rust)
-- [ ] `lib/ollama.ts`:
+- [x] `lib/ollama.ts`:
       `listModels()` — GET `localhost:11434/api/tags`
       `streamChat(model, messages)` — POST `/api/chat` com streaming NDJSON
-- [ ] `QuestionsView.tsx` — seletor de modelo, histórico de sessão, streaming
+- [x] `QuestionsView.tsx` — seletor de modelo, histórico de sessão, streaming
       banner "Ollama offline" + botão Tentar novamente
 
 ### 2.6 — Barra de atalhos para apps externos
@@ -265,7 +265,7 @@ e tipado com a mesma atenção que o caminho feliz.
 
   Fase 0: ✅ Fundação concluída (ecosystem_client.py, ecosystem.ts, ecosystem.rs, ecosystem.json)
   Fase 1: 🔄 Em progresso — 1.2 e 1.3 concluídas; 1.1 e 1.4 pendentes
-  Fase 2: 🔄 Em progresso — 2.1, 2.2, 2.3, 2.4 e 2.6 concluídas; 2.5 pendente
+  Fase 2: ✅ Concluída — 2.1, 2.2, 2.3, 2.4, 2.5 e 2.6 concluídas
   Fase 3: não iniciada
   Fase 4: não iniciada
 
