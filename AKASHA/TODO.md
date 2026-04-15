@@ -49,14 +49,14 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 > Entrega: busca DuckDuckGo funcional com resultados em cards e histórico persistido.
 
-- [ ] `services/web_search.py` — DuckDuckGo via `duckduckgo-search`; cache em SQLite (TTL 1h);
+- [x] `services/web_search.py` — DuckDuckGo via `duckduckgo-search`; cache em SQLite (TTL 1h);
       deduplicação por URL normalizada; retorna `list[SearchResult]` (Pydantic)
-- [ ] `routers/search.py` — `GET /search?q=&sources=web` → renderiza `search.html` com resultados;
+- [x] `routers/search.py` — `GET /search?q=&sources=web` → renderiza `search.html` com resultados;
       salva query + timestamp em `searches`
-- [ ] `templates/search.html` — cards de resultado: título linkado, snippet, badge de fonte,
+- [x] `templates/search.html` — cards de resultado: título linkado, snippet, badge de fonte,
       data; HTMX `hx-get` no form com indicador de loading
-- [ ] Widget "Buscas recentes" no empty state: lista das últimas 10 queries da tabela `searches`
-- [ ] Filtro de fonte no UI: radio/toggle Web / Local / Todos (query param `sources=`)
+- [x] Widget "Buscas recentes" no empty state: lista das últimas 10 queries da tabela `searches`
+- [x] Filtro de fonte no UI: radio/toggle Web / Local / Todos (query param `sources=`)
 
 ---
 
@@ -148,4 +148,4 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 ---
 
-*Atualizado em: 2026-04-15 — Fase 1 concluída.*
+*Atualizado em: 2026-04-15 — Fases 1 e 2 concluídas.*
