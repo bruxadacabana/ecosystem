@@ -268,15 +268,3 @@ e tipado com a mesma atenção que o caminho feliz.
   Fase 2: ✅ Concluída — 2.1, 2.2, 2.3, 2.4, 2.5 e 2.6 concluídas
   Fase 3: não iniciada
   Fase 4: não iniciada
-
----
-
-## PLANEJAMENTO — Ordem de execução (2026-04)
-
-**Deixar para depois** (sem dependências críticas, expansão de escopo):
-- OGMA Fase 12 (analytics) e 13 (Pomodoro)
-- OGMA Fase Extra (histórico de páginas)
-- KOSMOS Fase B (Reddit, YouTube) e D (PDF export)
-- KOSMOS Fase F-AI (busca semântica, análise de viés)
-- Hermes Fase 2 (histórico, preview, batch mode)
-- Mnemosyne Fases 4.5–6

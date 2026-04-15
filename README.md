@@ -96,6 +96,88 @@ Utilitário de download e transcrição de vídeos. Baixa qualquer URL suportada
 
 ---
 
+### AKASHA — Registros do Universo
+
+Buscador pessoal local. Agrega resultados da web e do próprio ecossistema numa interface única, com suporte a downloads genéricos e integração com qBittorrent. Roda como servidor local acessado via browser — sem conta, sem nuvem.
+
+- Busca web: agrega DuckDuckGo e outros providers; resultados unificados com deduplicação
+- Busca local: pesquisa no archive do KOSMOS, vault do AETHER e index do Mnemosyne
+- Downloads: arquivos genéricos (PDF, imagens, ZIPs); arquivar página diretamente no KOSMOS
+- qBittorrent: adicionar torrent/magnet, acompanhar fila e progresso
+- Integração com ecossistema: delega vídeo/áudio ao Hermes; lê `ecosystem.json` para caminhos
+
+**Stack:** Python + FastAPI · HTMX + Jinja2 · SQLite · uv  
+**Estado:** Planejamento — não iniciado.  
+**Porta padrão:** 7070
+
+---
+
+## Etimologia — A alma dos nomes
+
+Cada app do ecossistema tem nome derivado de mitologia, línguas antigas ou conceitos esotéricos e cósmicos. Essa etimologia não é decorativa — é a alma de cada ferramenta.
+
+---
+
+### AETHER — *pronuncia-se: ay-ther*
+
+**Origem:** Grego antigo *αἰθήρ* (aithḗr), da raiz *aíthō* — "queimar", "brilhar com luz própria".
+
+**O conceito:** O quinto elemento da cosmologia grega — além da terra, água, fogo e ar. A substância pura e luminosa dos céus, o que os deuses respiravam, o meio pelo qual a luz viajava. Diferente do ar mortal: o Aether é eterno, imutável, a quintessência que preenche o espaço além da esfera lunar. Aristóteles o descreveu como o material de que as estrelas são feitas.
+
+**No ecossistema:** o espaço etéreo onde histórias existem antes de se materializarem em palavras.
+
+---
+
+### OGMA — *pronuncia-se: og-mah*
+
+**Origem:** Irlandês antigo *Ogma*, proto-céltico *Ogmios* — intimamente ligado a *ogam*, o alfabeto mais antigo da Irlanda, entalhado em bordas de pedra e osso.
+
+**O conceito:** Divindade irlandesa da eloquência, escrita e letras. Criador do Ogham — o sistema de escrita céltico onde cada letra é uma série de entalhes sobre uma aresta, a escrita como marca física e permanente no mundo. Representado como um ancião de aparência nobre com uma corrente dourada saindo da língua, cujas extremidades se prendiam às línguas de todos que o seguiam: símbolo do poder da linguagem de conectar, conduzir e persuadir.
+
+**No ecossistema:** o deus que dá forma ao pensamento — gerenciador de projetos, estudos e escritas.
+
+---
+
+### KOSMOS — *pronuncia-se: koz-mos*
+
+**Origem:** Grego *κόσμος* (kósmos) — ordem, harmonia, ornamento, universo. A mesma raiz de "cosmético": algo que organiza e embeleza o que era caótico.
+
+**O conceito:** Oposto semântico e filosófico ao Caos primordial. Para os gregos, o cosmos não era apenas o universo físico — era a prova de que o universo *tem sentido*, que há uma ordem inteligível subjacente a tudo. Pitágoras foi o primeiro a usar o termo para descrever o universo como uma totalidade ordenada e harmônica. O Kosmos implica que tudo tem seu lugar, sua relação, sua proporção.
+
+**No ecossistema:** impõe ordem ao fluxo caótico da web — leitor RSS e agregador de feeds.
+
+---
+
+### Mnemosyne — *pronuncia-se: nem-oz-ih-nee*
+
+**Origem:** Grego *Μνημοσύνη* (Mnēmosýnē), da raiz *mnēmē* — "memória", "lembrança". Cognata de *mnemon* (aquele que lembra) e ancestral direta de "mnemônico".
+
+**O conceito:** Titânide grega, filha de Urano e Gaia, personificação da Memória em sua forma mais absoluta. Mãe das nove Musas — todas as artes nascem da memória. No submundo, guardava o rio Mnemosyne, oposto ao Letes (o esquecimento). Almas corajosas que bebessem de Mnemosyne antes de reencarnar lembrariam de tudo que já haviam vivido — saberiam quem eram. A memória como identidade e como poder.
+
+**No ecossistema:** guarda e recupera o conhecimento indexado — assistente RAG local com Ollama.
+
+---
+
+### Hermes — *pronuncia-se: her-meez*
+
+**Origem:** Grego *Ἑρμῆς* (Hermês) — origem pré-grega incerta; associado a *herma*, pilha de pedras usada como marcador de caminhos e fronteiras.
+
+**O conceito:** Mensageiro dos deuses olímpicos, guia das almas entre mundos (*psicopompo*), deus das viagens, comércio e comunicação. O único olímpico que transitava livremente entre o Olimpo, o mundo dos vivos e o Hades — o mediador por excelência. Inventor da lira, da flauta e do alfabeto. Seu símbolo, o caduceu (duas serpentes entrelaçadas), é a representação do movimento entre opostos.
+
+**No ecossistema:** o mensageiro que traz conteúdo de outros domínios — downloader e transcritor de vídeos.
+
+---
+
+### AKASHA — *pronuncia-se: ah-kah-shah*
+
+**Origem:** Sânscrito *ākāśa* (आकाश), da raiz *kāś* — "aparecer", "ser visível", "brilhar". Significado literal: "espaço luminoso", "éter".
+
+**O conceito:** Na cosmologia hindu/vedanta, o quinto elemento — o substrato invisível que permeia e contém todos os outros quatro. Diferente do Aether grego (substância dos céus), Akasha é o próprio espaço onde tudo existe, ressoa e persiste. No esoterismo ocidental (Teosofia, século XIX), os *Registros Akáshicos* são descritos como uma biblioteca cósmica imaterial onde cada pensamento, palavra e ação — passados, presentes e futuros — está eternamente gravada no tecido do universo. Consultar os Registros é acessar o conhecimento total: tudo que já foi pesquisado, descoberto, criado ou dito.
+
+**No ecossistema:** o buscador que consulta os registros universais — web e ecossistema local num só lugar.
+
+---
+
 ## Guia de instalação e uso
 
 Este guia assume que você está configurando tudo do zero. Se alguns requisitos já estiverem instalados, pule os passos correspondentes.
