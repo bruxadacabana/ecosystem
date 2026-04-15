@@ -91,6 +91,33 @@ export interface ArticleContent {
 }
 
 // ----------------------------------------------------------
+//  OGMA — Projetos
+// ----------------------------------------------------------
+
+export interface OgmaProject {
+  id:           number
+  name:         string
+  description:  string | null
+  icon:         string | null
+  color:        string | null
+  project_type: string
+  subcategory:  string | null
+  status:       string
+  date_start:   string | null
+  date_end:     string | null
+  sort_order:   number
+}
+
+export interface OgmaPage {
+  id:         number
+  title:      string
+  icon:       string | null
+  parent_id:  number | null
+  sort_order: number
+  body_json:  string | null
+}
+
+// ----------------------------------------------------------
 //  HUB Navigation
 // ----------------------------------------------------------
 

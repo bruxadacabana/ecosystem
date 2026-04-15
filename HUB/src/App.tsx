@@ -14,8 +14,10 @@ import { BookView } from './views/BookView'
 import { ChapterView } from './views/ChapterView'
 import { ReadingView } from './views/ReadingView'
 import { ArticleView } from './views/ArticleView'
+import { ProjectsView } from './views/ProjectsView'
+import { PageView } from './views/PageView'
 import * as cmd from './lib/tauri'
-import type { HubView, Project, Book, ChapterMeta, ArticleMeta } from './types'
+import type { HubView, Project, Book, ChapterMeta, ArticleMeta, OgmaProject } from './types'
 
 type AppView = 'splash' | 'home' | 'setup' | HubView | 'book' | 'chapter'
 
@@ -27,6 +29,8 @@ export default function App() {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const [selectedChapter, setSelectedChapter] = useState<ChapterMeta | null>(null)
   const [selectedArticle, setSelectedArticle] = useState<ArticleMeta | null>(null)
+  const [ogmaDataPath, setOgmaDataPath] = useState('')
+  const [selectedOgmaProject, setSelectedOgmaProject] = useState<OgmaProject | null>(null)
   const toast = useToast()
 
   // Carrega caminhos do ecosystem.json na inicialização
@@ -35,6 +39,7 @@ export default function App() {
       if (result.ok) {
         setVaultPath(result.data.aether?.vault_path ?? '')
         setArchivePath(result.data.kosmos?.archive_path ?? '')
+        setOgmaDataPath(result.data.ogma?.data_path ?? '')
       }
     })
   }, [])
@@ -45,6 +50,7 @@ export default function App() {
       if (result.ok) {
         setVaultPath(result.data.aether?.vault_path ?? '')
         setArchivePath(result.data.kosmos?.archive_path ?? '')
+        setOgmaDataPath(result.data.ogma?.data_path ?? '')
       }
     })
     setView('home')
@@ -52,6 +58,7 @@ export default function App() {
     setSelectedBook(null)
     setSelectedChapter(null)
     setSelectedArticle(null)
+    setSelectedOgmaProject(null)
   }
 
   return (
@@ -148,15 +155,31 @@ export default function App() {
               />
             )}
 
-            {/* ---- Placeholders — sub-fases 2.4, 2.5 ---- */}
-            {(view === 'projects' || view === 'questions') && (
+            {/* ---- Módulo Projetos ---- */}
+            {view === 'projects' && !selectedOgmaProject && (
+              <ProjectsView
+                dataPath={ogmaDataPath}
+                onBack={handleGoHome}
+                onSelectProject={project => setSelectedOgmaProject(project)}
+              />
+            )}
+
+            {view === 'projects' && selectedOgmaProject && (
+              <PageView
+                dataPath={ogmaDataPath}
+                project={selectedOgmaProject}
+                onBack={() => setSelectedOgmaProject(null)}
+              />
+            )}
+
+            {/* ---- Placeholder — sub-fase 2.5 ---- */}
+            {view === 'questions' && (
               <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
                 justifyContent: 'center', height: '100%', gap: 16, background: 'var(--paper)',
               }}>
                 <p style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', fontSize: 24, color: 'var(--ink)' }}>
-                  {view === 'projects'  && 'Projetos'}
-                  {view === 'questions' && 'Perguntas'}
+                  Perguntas
                 </p>
                 <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)' }}>
                   Em desenvolvimento — próxima sub-fase

@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage } from '../types'
 
 async function call<T>(
   command: string,
@@ -84,6 +84,19 @@ export const toggleRead = (
   articlePath: string,
 ): Promise<TauriResult<boolean>> =>
   call<boolean>('toggle_read', { archivePath, articlePath })
+
+// ----------------------------------------------------------
+//  Módulo Projetos — OGMA SQLite
+// ----------------------------------------------------------
+
+export const listOgmaProjects = (dataPath: string): Promise<TauriResult<OgmaProject[]>> =>
+  call<OgmaProject[]>('list_ogma_projects', { dataPath })
+
+export const listProjectPages = (
+  dataPath: string,
+  projectId: number,
+): Promise<TauriResult<OgmaPage[]>> =>
+  call<OgmaPage[]>('list_project_pages', { dataPath, projectId })
 
 // ----------------------------------------------------------
 //  Módulo Launcher — apps externos

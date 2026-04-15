@@ -53,6 +53,8 @@ pub fn run() {
             commands::reading::list_articles,
             commands::reading::read_article,
             commands::reading::toggle_read,
+            commands::projects::list_ogma_projects,
+            commands::projects::list_project_pages,
             commands::launcher::launch_app,
             commands::launcher::is_app_running,
             commands::launcher::get_all_app_statuses,

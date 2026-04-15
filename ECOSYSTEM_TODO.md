@@ -154,14 +154,14 @@ e tipado com a mesma atenção que o caminho feliz.
 - [x] `ArticleView.tsx` — frontmatter em destaque + `react-markdown`
 
 ### 2.4 — Módulo Projetos (OGMA, read-only)
-- [ ] Adicionar `rusqlite = { version = "0.31", features = ["bundled"] }` ao Cargo.toml
+- [x] Adicionar `rusqlite = { version = "0.31", features = ["bundled"] }` ao Cargo.toml
       (`bundled` compila SQLite estático — funciona no Android)
-- [ ] Rust `commands/projects.rs`:
+- [x] Rust `commands/projects.rs`:
       `list_ogma_projects(db_path)` — SELECT projects WHERE status != 'archived'
       `list_project_pages(db_path, project_id)` — SELECT pages WHERE is_deleted = 0
-- [ ] `lib/editorjs-renderer.ts` — renderiza blocos Editor.js (`paragraph`, `header`,
-      `list`, `checklist`, `image`, `code`, `quote`) sem depender do Editor.js
-- [ ] `ProjectsView.tsx` + `PageView.tsx`
+- [x] `lib/editorjs-renderer.tsx` — renderiza blocos Editor.js (`paragraph`, `header`,
+      `list`, `checklist`, `quote`, `code`, `table`, `delimiter`, `columns`)
+- [x] `ProjectsView.tsx` + `PageView.tsx`
 
 ### 2.5 — Módulo Perguntas (Ollama, sem Rust)
 - [ ] `lib/ollama.ts`:
@@ -265,7 +265,7 @@ e tipado com a mesma atenção que o caminho feliz.
 
   Fase 0: ✅ Fundação concluída (ecosystem_client.py, ecosystem.ts, ecosystem.rs, ecosystem.json)
   Fase 1: 🔄 Em progresso — 1.2 e 1.3 concluídas; 1.1 e 1.4 pendentes
-  Fase 2: 🔄 Em progresso — 2.1, 2.2, 2.3 e 2.6 concluídas; 2.4–2.5 pendentes
+  Fase 2: 🔄 Em progresso — 2.1, 2.2, 2.3, 2.4 e 2.6 concluídas; 2.5 pendente
   Fase 3: não iniciada
   Fase 4: não iniciada
 
