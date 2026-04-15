@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 import config
 import database
 from routers import search as search_router
+from services.local_search import index_local_files
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
     # Startup
     await database.init_db()
     config.register_akasha()
+    await index_local_files()
     yield
     # Shutdown — nada a liberar por enquanto
 
