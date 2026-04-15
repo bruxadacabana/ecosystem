@@ -146,12 +146,12 @@ e tipado com a mesma atenção que o caminho feliz.
 - [x] Tipos `Project`, `Book`, `ChapterMeta` copiados de AETHER
 
 ### 2.3 — Módulo Leituras (KOSMOS archive, read-only)
-- [ ] Rust `commands/reading.rs`:
+- [x] Rust `commands/reading.rs`:
       `list_articles(archive_path)` — scan `{archive}/**/*.md`, parseia frontmatter
       `read_article(path)` — separa frontmatter do corpo
       `toggle_read(archive_path, article_path)` — lê/escreve `hub_read_state.json`
-- [ ] `ReadingView.tsx` — lista com filtros (fonte, lido/não lido); badge não lidos
-- [ ] `ArticleView.tsx` — frontmatter em destaque + `react-markdown`
+- [x] `ReadingView.tsx` — lista com filtros (fonte, lido/não lido); badge não lidos
+- [x] `ArticleView.tsx` — frontmatter em destaque + `react-markdown`
 
 ### 2.4 — Módulo Projetos (OGMA, read-only)
 - [ ] Adicionar `rusqlite = { version = "0.31", features = ["bundled"] }` ao Cargo.toml
@@ -265,7 +265,7 @@ e tipado com a mesma atenção que o caminho feliz.
 
   Fase 0: ✅ Fundação concluída (ecosystem_client.py, ecosystem.ts, ecosystem.rs, ecosystem.json)
   Fase 1: 🔄 Em progresso — 1.2 e 1.3 concluídas; 1.1 e 1.4 pendentes
-  Fase 2: 🔄 Em progresso — 2.1, 2.2 e 2.6 concluídas; 2.3–2.5 pendentes
+  Fase 2: 🔄 Em progresso — 2.1, 2.2, 2.3 e 2.6 concluídas; 2.4–2.5 pendentes
   Fase 3: não iniciada
   Fase 4: não iniciada
 
