@@ -24,9 +24,10 @@
       method="get"
       hx-get="/search"
       hx-target="#main-content"
-      hx-swap="innerHTML"
+      hx-swap="outerHTML"
+      hx-select="#main-content"
       hx-push-url="true"
-      hx-indicator="#search-indicator"
+      hx-indicator="#search-indicator, #skeleton-area"
     >
       <div class="search-wrap">
         <input

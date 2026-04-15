@@ -3,8 +3,16 @@
 {% block title %}{% if query %}{{ query }} — AKASHA{% else %}AKASHA{% endif %}{% endblock %}
 
 {% block content %}
+<!-- ─── Erro de busca ──────────────────────────────────────────── -->
+{% if error %}
+  <section class="empty-state">
+    <p class="empty-icon">&#x26A0;</p>
+    <p class="empty-title">Erro na busca</p>
+    <p class="empty-hint">{{ error }}</p>
+  </section>
+
 <!-- ─── Resultados ──────────────────────────────────────────────── -->
-{% if results %}
+{% elif results %}
   <section class="results-section">
     <p class="results-meta">{{ results | length }} resultado{% if results | length != 1 %}s{% endif %} para <strong>{{ query }}</strong></p>
     <ol class="results-list">
@@ -38,7 +46,7 @@
     </ol>
   </section>
 
-{% elif query %}
+{% elif query and not error %}
   <!-- ─── Estado vazio — busca sem resultado ─────────────────────── -->
   <section class="empty-state">
     <p class="empty-icon">&#x2205;</p>
@@ -64,7 +72,8 @@
             class="recent-link"
             hx-get="/search?q={{ q | urlencode }}&sources=all"
             hx-target="#main-content"
-            hx-swap="innerHTML"
+            hx-swap="outerHTML"
+            hx-select="#main-content"
             hx-push-url="true"
           >{{ q }}</a>
         </li>
