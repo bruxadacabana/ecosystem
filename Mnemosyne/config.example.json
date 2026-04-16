@@ -1,10 +1,10 @@
 {
-  "llm_model": "deepseek-r1:7b",
-  "embed_model": "bge-m3:latest",
+  "llm_model": "",
+  "embed_model": "",
   "chunk_size": 800,
   "chunk_overlap": 100,
   "retriever_k": 4,
-  "watched_dir": "/home/spacewitch/Documents/biblioteca",
+  "watched_dir": "",
   "vault_dir": "",
   "auto_index_on_change": true,
   "relevance_decay_days": 30

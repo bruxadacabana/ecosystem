@@ -35,3 +35,10 @@ stellar-downloader/data/
 # Variáveis de ambiente
 .env
 .env.*
+
+# Configurações locais de máquina (modelo LLM, caminhos absolutos — variam por computador)
+Mnemosyne/config.json
+Hermes/.prefs.json
+
+# Bancos de dados de runtime
+AKASHA/akasha.db
