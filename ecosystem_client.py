@@ -61,6 +61,30 @@ def read_ecosystem() -> dict[str, Any]:
                 for k, v in _DEFAULTS.items()}
 
 
+def derive_paths(sync_root: str) -> dict[str, Any]:
+    """
+    Dado um diretório raiz de sincronização, retorna os caminhos derivados
+    para cada app do ecossistema.
+
+    Estrutura gerada:
+        {sync_root}/aether/          → aether.vault_path
+        {sync_root}/kosmos/          → kosmos.archive_path
+        {sync_root}/mnemosyne/docs/  → mnemosyne.watched_dir
+        {sync_root}/mnemosyne/chroma_db/ → mnemosyne.chroma_dir
+        {sync_root}/hermes/          → hermes.output_dir
+        {sync_root}/akasha/          → akasha.archive_path
+    """
+    root = Path(sync_root)
+    return {
+        "aether":    {"vault_path":   str(root / "aether")},
+        "kosmos":    {"archive_path": str(root / "kosmos")},
+        "mnemosyne": {"watched_dir":  str(root / "mnemosyne" / "docs"),
+                      "chroma_dir":   str(root / "mnemosyne" / "chroma_db")},
+        "hermes":    {"output_dir":   str(root / "hermes")},
+        "akasha":    {"archive_path": str(root / "akasha")},
+    }
+
+
 def write_section(app: str, section: dict[str, Any]) -> None:
     """
     Atualiza apenas a seção `app` do ecosystem.json, preservando as demais.
