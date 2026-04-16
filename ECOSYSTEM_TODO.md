@@ -112,11 +112,41 @@ e tipado com a mesma atenção que o caminho feliz.
       Salva o `.md` diretamente numa das pastas monitoradas pelo Mnemosyne
 - [x] Formato: Markdown limpo com frontmatter mínimo (título, data, fonte/URL, duração)
 
-### 1.5 — AKASHA → Mnemosyne (páginas arquivadas indexáveis)
-- [ ] AKASHA escreve `akasha.archive_path` em `ecosystem.json` no startup
-      (já escreve `base_url` e `exe_path` — adicionar `archive_path: str(ARCHIVE_PATH)`)
-- [ ] Mnemosyne oferece `AKASHA/data/archive/` como pasta sugerida no botão
-      "Sugestões do ecossistema" da SetupDialog (junto com KOSMOS e AETHER)
+### 1.5 — Completar contrato ecosystem.json (seções faltantes)
+
+Cada app deve escrever sua seção completa no startup. Schema alvo:
+```json
+{
+  "aether":    { "vault_path": "...", "exe_path": "..." },
+  "ogma":      { "data_path": "...", "exe_path": "..." },
+  "kosmos":    { "archive_path": "...", "data_path": "...", "exe_path": "..." },
+  "mnemosyne": { "watched_dir": "...", "vault_dir": "...", "index_paths": ["..."], "exe_path": "..." },
+  "hermes":    { "output_dir": "...", "exe_path": "..." },
+  "akasha":    { "archive_path": "...", "base_url": "...", "exe_path": "..." }
+}
+```
+
+- [ ] **OGMA** — `writeSection("ogma", { data_path, exe_path })` no startup
+      (`writeSection` existe em `ecosystem.ts` mas nunca é chamado)
+- [ ] **Mnemosyne** — `write_section("mnemosyne", { watched_dir, vault_dir, index_paths, exe_path })` no startup
+      (paths vêm do `AppConfig`; `persist_dir` = `{watched_dir}/.mnemosyne/chroma_db`)
+- [ ] **Hermes** — `write_section("hermes", { output_dir, exe_path })` no startup
+      (`output_dir` = pasta de downloads/transcrições configurada na UI)
+- [ ] **AKASHA** — adicionar `archive_path` à seção já escrita por `register_akasha()`
+
+### 1.6 — AKASHA: busca local cobre todo o ecossistema
+
+- [ ] Indexar `AKASHA/data/archive/` própria no FTS5 (source "AKASHA")
+      (`index_local_files()` em `services/local_search.py` — mesmo extractor do KOSMOS)
+- [ ] Ler `mnemosyne.watched_dir` e `mnemosyne.vault_dir` do ecosystem.json em `config.py`
+- [ ] Indexar `mnemosyne.watched_dir` no FTS5 (source "MNEMOSYNE")
+- [ ] Indexar `mnemosyne.vault_dir` no FTS5 (source "OBSIDIAN")
+      (depende de 1.5 — Mnemosyne precisa escrever esses caminhos primeiro)
+
+### 1.7 — Mnemosyne: sugestões do ecossistema cobrindo todos os archives
+
+- [ ] Adicionar AKASHA archive (`akasha.archive_path`) nas sugestões da SetupDialog
+      (depende de 1.5 — AKASHA precisa escrever `archive_path` primeiro)
 
 ---
 
