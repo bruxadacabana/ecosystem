@@ -101,13 +101,13 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 > Entrega: salvar qualquer página como `.md` no formato KOSMOS direto da busca.
 
-- [ ] `services/archiver.py` — fetch via `httpx`, extração de conteúdo com `trafilatura`,
-      geração de Markdown com frontmatter KOSMOS:
-      `title`, `source`, `url`, `date`, `author` (se disponível)
-- [ ] `routers/search.py` — `POST /archive` (body: `{url, dest_dir?}`):
-      chama archiver, salva em `{kosmos_archive}/{YYYY-MM-DD}_{slug}.md`
-- [ ] Botão "📥 Arquivar" em cada card de resultado web (HTMX `hx-post`, swap com toast)
-- [ ] Fallback: se `kosmos_archive` não configurado, retornar erro 400 com mensagem clara
+- [x] `services/archiver.py` — fetch via `httpx`, extração com `trafilatura`; frontmatter
+      idêntico ao KOSMOS (`title`, `source`, `date`, `author`, `url`);
+      salva em `{archive_path}/Web/{YYYY-MM-DD}_{slug}.md`; slug max 60 chars
+- [x] `routers/search.py` — `POST /archive` (body form: `url`):
+      chama archiver, retorna 200 OK ou 400 se `kosmos_archive` não configurado
+- [x] Botão "arquivar" em cada card de resultado `WEB` (HTMX `hx-post`, toast de confirmação)
+- [x] Fallback: se `kosmos_archive` não configurado, retornar erro 400 com mensagem clara
       orientando a configurar o caminho em `/settings`
 
 ---
@@ -179,4 +179,4 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 ---
 
-*Atualizado em: 2026-04-16 — Fases 1, 2 e 3 concluídas (incluindo correção de seções). Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local.*
+*Atualizado em: 2026-04-16 — Fases 1, 2, 3 e 5 concluídas. Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local.*
