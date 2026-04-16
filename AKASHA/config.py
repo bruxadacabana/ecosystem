@@ -65,9 +65,11 @@ def register_akasha() -> None:
     if not _ECO_AVAILABLE:
         return
     try:
+        import sys as _sys
+        script = "iniciar.bat" if _sys.platform == "win32" else "iniciar.sh"
         _write_section("akasha", {
             "base_url": AKASHA_BASE_URL,
-            "exe_path": str(_AKASHA_DIR / "iniciar.sh"),
+            "exe_path": str(_AKASHA_DIR / script),
         })
     except Exception:
         pass  # ecosystem é opcional — nunca bloquear o startup

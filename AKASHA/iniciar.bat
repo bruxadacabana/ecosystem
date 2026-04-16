@@ -1,21 +1,17 @@
 @echo off
 cd /d "%~dp0"
 
-set ECO_VENV=%~dp0..\.venv
-set LOCAL_VENV=%~dp0.venv
+echo [AKASHA] Sincronizando dependencias...
+uv sync --quiet
 
-if exist "%ECO_VENV%\Scripts\activate.bat" (
-    set VENV_DIR=%ECO_VENV%
-) else (
-    set VENV_DIR=%LOCAL_VENV%
-    if not exist "%LOCAL_VENV%" (
-        echo [AKASHA] Criando venv local em %LOCAL_VENV%...
-        uv venv "%LOCAL_VENV%"
-    )
+if errorlevel 1 (
+    echo [AKASHA] Erro ao instalar dependencias. Verifique se uv esta instalado.
+    pause
+    exit /b 1
 )
 
-echo [AKASHA] Sincronizando dependencias...
-uv sync
+echo [AKASHA] Iniciando servidor na porta 7070...
+echo [AKASHA] Abrindo http://localhost:7070 no navegador...
+start "" "http://localhost:7070"
 
-echo [AKASHA] Iniciando na porta 7070...
 uv run python main.py
