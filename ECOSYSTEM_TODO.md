@@ -233,6 +233,11 @@ e tipado com a mesma atenção que o caminho feliz.
       — Mnemosyne: ✅ criado `core/logger.py`, rotação diária, 7 backups
       — Hermes: ✅ criado `_setup_logger()` em hermes.py; `_log()` da UI persiste em arquivo
       — AKASHA: pendente — criar ao iniciar o desenvolvimento
+- [ ] Integrar AKASHA aos outros apps do ecossistema:
+      — OGMA, AETHER, KOSMOS, Mnemosyne, Hermes: seleção de texto → "Pesquisar no AKASHA"
+        (menu de contexto ou botão flutuante que abre `http://localhost:7071/search?q=<texto>`)
+      — HUB: botão/atalho na barra lateral para abrir AKASHA no browser
+      — Requisito: AKASHA deve estar rodando para receber a requisição
 - [ ] Quick capture: widget ou atalho Android para adicionar nota rápida
       ao OGMA sem abrir o app completo
 - [ ] Streak AETHER visível no hub (ler `sessions.json` do vault)

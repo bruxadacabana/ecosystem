@@ -154,11 +154,38 @@ a:hover { opacity: 0.75; }
 }
 .topbar-brand:hover { opacity: 1; }
 
+.topbar-search {
+  flex:        1;
+  display:     flex;
+  flex-direction: column;
+  gap:         4px;
+  min-width:   0;
+}
+
+.topbar-search .search-wrap {
+  display:     flex;
+  gap:         6px;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.topbar-search .input {
+  flex:        1;
+  min-width:   0;
+  padding:     5px 10px;
+  font-size:   13px;
+}
+
+.topbar-search .source-filters {
+  display:     flex;
+  gap:         4px;
+}
+
 .topbar-nav {
   display:     flex;
   align-items: center;
   gap:         2px;
-  flex:        1;
+  flex-shrink: 0;
 }
 
 .topbar-link {
