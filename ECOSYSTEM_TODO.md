@@ -88,6 +88,18 @@ ProtonDrive/ecosystem/
       - Após configurar sync_root no HUB, copiar ecosystem.json para a segunda máquina
       - Testar round-trip: arquivar página no AKASHA → aparece no Proton → segunda máquina
 
+### 0.6 — OGMA: migrar de Turso para Proton Drive (SQLite local)
+
+Motivação: Proton mantém cópias locais em todas as máquinas + nuvem, sem depender de
+conta externa. Turso só mantém na nuvem.
+
+- [ ] Remover integração Turso do OGMA (`src/main/database.ts` — voltar para SQLite puro local)
+      Remover dependências: `@libsql/client`, `dotenv` e o `.env` com token Turso
+- [ ] Adicionar `ogma/` ao `sync_root` em `apply_sync_root()` (Rust + derive_paths Python)
+      `data_path: {sync_root}/ogma/` — inclui `ogma.db`, `uploads/`, `exports/`
+- [ ] Atualizar `writeSection("ogma", ...)` no startup para usar o novo `data_path`
+- [ ] Testar migração: exportar dados do Turso → importar no SQLite local antes de remover
+
 ---
 
 ## FASE 1 — Interligação dos apps existentes
