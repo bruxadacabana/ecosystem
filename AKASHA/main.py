@@ -4,6 +4,8 @@ FastAPI app + lifespan: inicializa DB e registra no ecossistema.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,7 +17,32 @@ from fastapi.templating import Jinja2Templates
 import config
 import database
 from routers import search as search_router
+from routers import library as library_router
 from services.local_search import index_local_files
+from services.library import check_overdue, scrape_and_store
+
+_log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Background: monitoramento de URLs da biblioteca
+# ---------------------------------------------------------------------------
+
+async def _monitor_library() -> None:
+    """Acorda a cada hora e re-scrape URLs cujo intervalo venceu."""
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            overdue = await check_overdue()
+        except Exception as exc:
+            _log.warning("library monitor: erro ao listar vencidas: %s", exc)
+            continue
+        for entry in overdue:
+            try:
+                await scrape_and_store(entry.id)
+            except Exception as exc:
+                _log.warning("library monitor: erro ao re-scrape %s: %s", entry.url, exc)
+
 
 # ---------------------------------------------------------------------------
 # Lifespan
@@ -27,6 +54,7 @@ async def lifespan(app: FastAPI):
     await database.init_db()
     config.register_akasha()
     await index_local_files()
+    asyncio.get_event_loop().create_task(_monitor_library())
     yield
     # Shutdown — nada a liberar por enquanto
 
@@ -49,6 +77,7 @@ app.mount("/static", StaticFiles(directory=_BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
 app.include_router(search_router.router)
+app.include_router(library_router.router)
 
 # ---------------------------------------------------------------------------
 # Rotas principais (Fase 1 — estrutura)

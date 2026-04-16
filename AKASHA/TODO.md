@@ -136,19 +136,19 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 > Entrega: biblioteca pessoal de sites com scraping periódico e versionamento por diff.
 
-- [ ] Migration v5: tabelas `library_urls` (url, title, snippet, content_md, content_hash,
+- [x] Migration v5: tabelas `library_urls` (url, title, snippet, content_md, content_hash,
       language, word_count, tags_json, notes, check_interval_days, last_checked_at, status)
       + `library_diffs` (url_id, diff_text, scraped_at) + FTS5 `library_fts`
-- [ ] `services/library.py` — `add_url()`, `scrape_and_store()` (trafilatura + metadados:
+- [x] `services/library.py` — `add_url()`, `scrape_and_store()` (trafilatura + metadados:
       language, word_count); `check_overdue()`; `compute_diff()` via `difflib.unified_diff()`
-- [ ] `routers/library.py` — `GET /library?tag=&lang=`; `POST /library/add`
+- [x] `routers/library.py` — `GET /library?tag=&lang=`; `POST /library/add`
       (body: `{url, interval_days, tags?, notes?}`); `PATCH /library/{id}`;
       `POST /library/refresh/{id}`; `DELETE /library/{id}`
-- [ ] `templates/library.html` — cards com título, snippet, idioma, contagem de palavras,
+- [x] `templates/library.html` — cards com título, snippet, idioma, contagem de palavras,
       tags, data do último scrape, badge de intervalo, campo de notas inline (HTMX `hx-patch`),
       badge "mudou" se diff recente; filtro por tag e idioma no topo
-- [ ] Background task no lifespan: acorda a cada hora, re-scrape URLs vencidas silenciosamente
-- [ ] Busca local `/search?sources=local` inclui conteúdo da `library_fts`
+- [x] Background task no lifespan: acorda a cada hora, re-scrape URLs vencidas silenciosamente
+- [x] Busca local `/search?sources=local` inclui conteúdo da `library_fts`
 
 ---
 
@@ -180,4 +180,4 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 ---
 
-*Atualizado em: 2026-04-16 — Fases 1, 2, 3 e 5 concluídas. Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local.*
+*Atualizado em: 2026-04-16 — Fases 1, 2, 3, 5 e 7 concluídas. Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local.*

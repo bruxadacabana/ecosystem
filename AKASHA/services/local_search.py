@@ -182,6 +182,8 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
     fts_query = _sanitize_fts(query)
     if not fts_query:
         return []
+    results: list[SearchResult] = []
+    # Busca em arquivos locais (KOSMOS, AETHER, MNEMOSYNE)
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             rows = await (await db.execute(
@@ -194,17 +196,31 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
                    LIMIT ?""",
                 (fts_query, max_results),
             )).fetchall()
-    except Exception:
-        return []
-    return [
-        SearchResult(
-            title=row[1],
-            url=row[0],
-            snippet=row[2],
-            source=row[3],
+        results.extend(
+            SearchResult(title=row[1], url=row[0], snippet=row[2], source=row[3])
+            for row in rows
         )
-        for row in rows
-    ]
+    except Exception:
+        pass
+    # Busca na Biblioteca de URLs
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            lib_rows = await (await db.execute(
+                """SELECT url, title,
+                          snippet(library_fts, 3, '', '', '…', 40)
+                   FROM library_fts
+                   WHERE library_fts MATCH ?
+                   ORDER BY rank
+                   LIMIT ?""",
+                (fts_query, max_results),
+            )).fetchall()
+        results.extend(
+            SearchResult(title=row[1], url=row[0], snippet=row[2], source="BIBLIOTECA")
+            for row in lib_rows
+        )
+    except Exception:
+        pass
+    return results
 
 
 # ---------------------------------------------------------------------------
