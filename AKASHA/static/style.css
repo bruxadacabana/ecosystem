@@ -414,7 +414,7 @@ a:hover { opacity: 0.75; }
 .card-title a { color: var(--ink); }
 .card-title a:hover { color: var(--accent); opacity: 1; }
 
-.card-url {
+.card-url, .result-url {
   font-family:     var(--font-mono);
   font-size:       9px;
   color:           var(--accent);
