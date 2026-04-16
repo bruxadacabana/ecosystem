@@ -60,6 +60,7 @@ pub fn run() {
             commands::launcher::get_all_app_statuses,
             commands::launcher::validate_exe_path,
             commands::launcher::discover_app_exe,
+            commands::launcher::auto_discover_all_exe_paths,
         ])
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir().map_err(|e| {

@@ -1,0 +1,44 @@
+# Normaliza line endings: LF no repositório, conversão automática no checkout
+* text=auto
+
+# Rust — sempre LF
+*.rs    text eol=lf
+*.toml  text eol=lf
+*.lock  text eol=lf
+
+# TypeScript / JavaScript / Web
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.jsx   text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+
+# Python
+*.py    text eol=lf
+*.txt   text eol=lf
+
+# Shell scripts — sempre LF (quebra se virar CRLF)
+*.sh    text eol=lf
+
+# Windows batch — sempre CRLF
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.vbs   text eol=crlf
+
+# Binários — sem conversão
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.eot   binary
+*.pdf   binary
+*.zip   binary
+*.db    binary

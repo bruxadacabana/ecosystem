@@ -89,6 +89,81 @@ pub fn discover_app_exe(candidates: Vec<String>) -> Option<String> {
     None
 }
 
+/// Descobre automaticamente os scripts de inicialização de todos os apps,
+/// procurando na pasta raiz do ecossistema (pasta-mãe do diretório HUB/).
+/// Retorna um map `{ "app_key" → "caminho_do_script" }` para os apps encontrados.
+#[tauri::command]
+pub fn auto_discover_all_exe_paths() -> HashMap<String, String> {
+    let mut result = HashMap::new();
+    let Some(root) = find_ecosystem_root() else {
+        return result;
+    };
+
+    // (app_key, subdir, scripts em ordem de prioridade)
+    // Windows: .bat tem prioridade para os apps que o possuem
+    let apps: &[(&str, &str, &[&str])] = &[
+        ("aether",    "AETHER",    &["iniciar.sh"]),
+        ("ogma",      "OGMA",      &["iniciar.bat", "iniciar.sh"]),
+        ("kosmos",    "KOSMOS",    &["iniciar.sh"]),
+        ("mnemosyne", "Mnemosyne", &["iniciar.sh"]),
+        ("hermes",    "Hermes",    &["iniciar.sh"]),
+        ("akasha",    "AKASHA",    &["iniciar.sh"]),
+    ];
+
+    for (key, subdir, scripts) in apps {
+        for script in *scripts {
+            let candidate = root.join(subdir).join(script);
+            if candidate.is_file() {
+                result.insert(
+                    key.to_string(),
+                    candidate.to_string_lossy().into_owned(),
+                );
+                break;
+            }
+        }
+    }
+
+    result
+}
+
+// ----------------------------------------------------------
+//  Helpers — descoberta do root do ecossistema
+// ----------------------------------------------------------
+
+/// Sobe pelo path do executável atual até encontrar um componente chamado "HUB",
+/// depois retorna o pai desse diretório (a pasta raiz do ecossistema).
+fn find_ecosystem_root() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let mut current = exe.as_path();
+
+    while let Some(parent) = current.parent() {
+        let is_hub = parent
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.eq_ignore_ascii_case("hub"))
+            .unwrap_or(false);
+
+        if is_hub {
+            if let Some(root) = parent.parent() {
+                if is_ecosystem_root(root) {
+                    return Some(root.to_path_buf());
+                }
+            }
+        }
+        current = parent;
+    }
+    None
+}
+
+/// Verifica se um diretório é a raiz do ecossistema
+/// confirmando a presença de ao menos 2 dos apps conhecidos.
+fn is_ecosystem_root(path: &std::path::Path) -> bool {
+    ["AETHER", "OGMA", "KOSMOS", "Mnemosyne", "Hermes"]
+        .iter()
+        .filter(|app| path.join(app).is_dir())
+        .count() >= 2
+}
+
 // ----------------------------------------------------------
 //  Helpers internos
 // ----------------------------------------------------------

@@ -118,3 +118,6 @@ export const validateExePath = (path: string): Promise<TauriResult<boolean>> =>
 
 export const discoverAppExe = (candidates: string[]): Promise<TauriResult<string | null>> =>
   call<string | null>('discover_app_exe', { candidates })
+
+export const autoDiscoverAllExePaths = (): Promise<TauriResult<Record<string, string>>> =>
+  call<Record<string, string>>('auto_discover_all_exe_paths')

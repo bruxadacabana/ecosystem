@@ -42,3 +42,8 @@ Hermes/.prefs.json
 
 # Bancos de dados de runtime
 AKASHA/akasha.db
+*.db-shm
+*.db-wal
+
+# Artefatos do SO
+Thumbs.db

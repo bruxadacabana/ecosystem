@@ -107,6 +107,7 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [validity, setValidity] = useState<ValidityMap>({})
   const [detecting, setDetecting] = useState<DetectingMap>({})
+  const [detectingAll, setDetectingAll] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -138,6 +139,30 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
   function handleChange(compositeKey: string, value: string) {
     setValues(v => ({ ...v, [compositeKey]: value }))
     setValidity(v => ({ ...v, [compositeKey]: null }))
+  }
+
+  async function handleDiscoverAll() {
+    setDetectingAll(true)
+    const result = await cmd.autoDiscoverAllExePaths()
+    setDetectingAll(false)
+
+    if (!result.ok || !result.data) return
+
+    const found = result.data
+    const newValues: Record<string, string> = {}
+    const newValidity: ValidityMap = {}
+
+    for (const f of EXE_FIELDS) {
+      const compositeKey = `${f.key}.${f.field}`
+      const discovered = found[f.key]
+      if (discovered) {
+        newValues[compositeKey] = discovered
+        newValidity[compositeKey] = true
+      }
+    }
+
+    setValues(v => ({ ...v, ...newValues }))
+    setValidity(v => ({ ...v, ...newValidity }))
   }
 
   async function handleDiscover(f: PathField) {
@@ -338,18 +363,28 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
         </div>
 
         {/* Seção: executáveis */}
-        <p
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            letterSpacing: '0.16em',
-            textTransform: 'uppercase',
-            color: 'var(--accent)',
-            marginBottom: 8,
-          }}
-        >
-          Executáveis dos apps
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <p
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              letterSpacing: '0.16em',
+              textTransform: 'uppercase',
+              color: 'var(--accent)',
+              margin: 0,
+            }}
+          >
+            Executáveis dos apps
+          </p>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleDiscoverAll}
+            disabled={detectingAll}
+            style={{ fontSize: 10, padding: '4px 10px' }}
+          >
+            {detectingAll ? '…' : 'Detectar tudo'}
+          </button>
+        </div>
         <p
           style={{
             fontFamily: 'var(--font-mono)',
@@ -360,7 +395,7 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
           }}
         >
           Usados pela barra de atalhos para iniciar os apps e monitorar se estão rodando.
-          Use "Detectar" para buscar automaticamente no PATH.
+          "Detectar tudo" procura os scripts na pasta raiz do ecossistema automaticamente.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {EXE_FIELDS.map(f => renderField(f))}
