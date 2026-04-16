@@ -6,11 +6,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+import httpx
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
+import config
 import database
+from services.archiver import archive_url
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local
 
@@ -18,6 +21,25 @@ router = APIRouter()
 
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
+
+
+@router.post("/archive")
+async def archive(url: str = Form(...)) -> Response:
+    """Arquiva uma URL no formato KOSMOS em {archive_path}/Web/."""
+    if not config.kosmos_archive:
+        raise HTTPException(
+            status_code=400,
+            detail="KOSMOS archive não configurado. Configure o caminho em /settings.",
+        )
+    try:
+        await archive_url(url, config.kosmos_archive)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=f"Erro HTTP ao buscar URL: {exc.response.status_code}")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"Falha de rede: {exc}")
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return Response(status_code=200)
 
 
 @router.get("/search", response_class=HTMLResponse)
