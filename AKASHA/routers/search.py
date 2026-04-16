@@ -29,15 +29,10 @@ async def archive(
     tags: str = Form(""),    # comma-separated, ex: "python, web, referência"
     notes: str = Form(""),
 ) -> Response:
-    """Arquiva uma URL no formato KOSMOS estendido em {archive_path}/Web/."""
-    if not config.kosmos_archive:
-        raise HTTPException(
-            status_code=400,
-            detail="KOSMOS archive não configurado. Configure o caminho em /settings.",
-        )
+    """Arquiva uma URL em {AKASHA}/data/archive/."""
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     try:
-        await archive_url(url, config.kosmos_archive, tags=tag_list, notes=notes)
+        await archive_url(url, str(config.ARCHIVE_PATH), tags=tag_list, notes=notes)
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=502, detail=f"Erro HTTP ao buscar URL: {exc.response.status_code}")
     except httpx.RequestError as exc:

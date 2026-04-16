@@ -30,6 +30,7 @@ AKASHA_BASE_URL: str = f"http://localhost:{AKASHA_PORT}"
 
 _AKASHA_DIR = Path(__file__).parent
 DB_PATH: Path = _AKASHA_DIR / "akasha.db"
+ARCHIVE_PATH: Path = _AKASHA_DIR / "data" / "archive"
 
 # ---------------------------------------------------------------------------
 # Leitura do ecossistema
