@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import asyncio
 
 import aiosqlite
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from pydantic import BaseModel
 
 from config import DB_PATH
