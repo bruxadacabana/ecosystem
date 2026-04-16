@@ -12,7 +12,7 @@ if errorlevel 1 (
 
 echo [AKASHA] Iniciando servidor na porta 7070...
 echo [AKASHA] Abrindo http://localhost:7070 no navegador...
-start "" "http://localhost:7070"
+start "" "http://localhost:7071"
 
 uv run python main.py
 pause

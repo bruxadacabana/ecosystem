@@ -25,7 +25,7 @@ except ImportError:
 # Defaults e constantes
 # ---------------------------------------------------------------------------
 
-AKASHA_PORT: int = 7070
+AKASHA_PORT: int = 7071
 AKASHA_BASE_URL: str = f"http://localhost:{AKASHA_PORT}"
 
 _AKASHA_DIR = Path(__file__).parent
