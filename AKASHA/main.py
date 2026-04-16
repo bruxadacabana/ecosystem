@@ -88,9 +88,9 @@ app.include_router(library_router.router)
 async def index(request: Request) -> HTMLResponse:
     recent = await database.recent_searches()
     return templates.TemplateResponse(
+        request,
         "search.html",
         {
-            "request": request,
             "web_results": [],
             "local_results": [],
             "query": "",

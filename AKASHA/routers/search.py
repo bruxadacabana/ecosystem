@@ -72,9 +72,9 @@ async def search(
     recent = await database.recent_searches()
 
     return templates.TemplateResponse(
+        request,
         "search.html",
         {
-            "request": request,
             "web_results": web_results,
             "local_results": local_results,
             "query": q,

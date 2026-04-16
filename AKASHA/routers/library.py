@@ -39,9 +39,9 @@ async def library_page(
     all_langs: list[str] = sorted({e.language for e in entries if e.language})
 
     return templates.TemplateResponse(
+        request,
         "library.html",
         {
-            "request":    request,
             "entries":    entries,
             "all_tags":   all_tags,
             "all_langs":  all_langs,
@@ -75,9 +75,9 @@ async def library_add(
     all_tags  = sorted({t for e in entries for t in e.tags})
     all_langs = sorted({e.language for e in entries if e.language})
     return templates.TemplateResponse(
+        request,
         "library.html",
         {
-            "request":     request,
             "entries":     entries,
             "all_tags":    all_tags,
             "all_langs":   all_langs,
