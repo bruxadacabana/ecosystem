@@ -152,7 +152,8 @@ async def _index_directory(
 
 async def index_local_files() -> None:
     """
-    Indexa KOSMOS archive e AETHER vault incrementalmente.
+    Indexa incrementalmente todos os archives do ecossistema.
+    Fontes: KOSMOS, AETHER, AKASHA/data/archive, Mnemosyne watched_dir e vault_dir.
     Remove do índice arquivos que não existem mais.
     Chamado no startup do app.
     """
@@ -163,6 +164,17 @@ async def index_local_files() -> None:
     if config.aether_vault:
         await _index_directory(
             Path(config.aether_vault), "AETHER", "*/chapters/*.md", _extract_aether
+        )
+    await _index_directory(
+        config.ARCHIVE_PATH, "AKASHA", "*.md", _extract_kosmos
+    )
+    if config.mnemosyne_watched:
+        await _index_directory(
+            Path(config.mnemosyne_watched), "MNEMOSYNE", "**/*.md", _extract_kosmos
+        )
+    if config.mnemosyne_vault:
+        await _index_directory(
+            Path(config.mnemosyne_vault), "OBSIDIAN", "**/*.md", _extract_kosmos
         )
     await _purge_missing()
 

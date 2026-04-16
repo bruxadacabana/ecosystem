@@ -48,9 +48,11 @@ def _load() -> dict[str, Any]:
 _eco: dict[str, Any] = _load()
 
 # Caminhos expostos (string vazia = não configurado)
-kosmos_archive: str  = _eco.get("kosmos", {}).get("archive_path", "")
-aether_vault:   str  = _eco.get("aether", {}).get("vault_path", "")
-mnemosyne_indices: list[str] = _eco.get("mnemosyne", {}).get("index_paths", [])
+kosmos_archive:     str       = _eco.get("kosmos",    {}).get("archive_path", "")
+aether_vault:       str       = _eco.get("aether",    {}).get("vault_path",   "")
+mnemosyne_watched:  str       = _eco.get("mnemosyne", {}).get("watched_dir",  "")
+mnemosyne_vault:    str       = _eco.get("mnemosyne", {}).get("vault_dir",    "")
+mnemosyne_indices:  list[str] = _eco.get("mnemosyne", {}).get("index_paths",  [])
 
 # qBittorrent (defaults sobrescrevíveis pelo banco de settings)
 QBT_HOST_DEFAULT: str = "localhost"
@@ -69,8 +71,9 @@ def register_akasha() -> None:
         import sys as _sys
         script = "iniciar.bat" if _sys.platform == "win32" else "iniciar.sh"
         _write_section("akasha", {
-            "base_url": AKASHA_BASE_URL,
-            "exe_path": str(_AKASHA_DIR / script),
+            "base_url":     AKASHA_BASE_URL,
+            "exe_path":     str(_AKASHA_DIR / script),
+            "archive_path": str(ARCHIVE_PATH),
         })
     except Exception:
         pass  # ecosystem é opcional — nunca bloquear o startup
