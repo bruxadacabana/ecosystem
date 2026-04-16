@@ -26,10 +26,14 @@ export interface KosmosConfig {
 
 export interface OgmaConfig {
   data_path: string;
+  exe_path?: string;
 }
 
 export interface MnemosyneConfig {
-  index_paths: string[];
+  watched_dir?:  string;
+  vault_dir?:    string;
+  index_paths:   string[];
+  exe_path?:     string;
 }
 
 export interface HubConfig {

@@ -1,11 +1,12 @@
 import { app, BrowserWindow, shell } from 'electron'
 import path from 'path'
-import { ensureDirs } from './paths'
+import { ensureDirs, DATA_DIR } from './paths'
 import { getClient, closeClient, syncClient } from './database'
 import { registerIpcHandlers } from './ipc'
 import { startReminderScheduler } from './scheduler'
 import { createLogger, setupGlobalErrorHandlers } from './logger'
 import { initSettings } from './settings'
+import { writeSection } from './ecosystem'
 
 const log = createLogger('main')
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
@@ -73,6 +74,13 @@ app.whenReady().then(async () => {
   initSettings()
   registerIpcHandlers()
   startReminderScheduler()
+
+  try {
+    writeSection('ogma', {
+      data_path: DATA_DIR,
+      exe_path:  app.isPackaged ? app.getPath('exe') : '',
+    })
+  } catch { /* ecosystem é opcional */ }
 
   // Iniciar janela e fluxo de sincronia
   log.info('Criando janela principal')
