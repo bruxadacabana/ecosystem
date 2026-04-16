@@ -102,9 +102,10 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 > Entrega: salvar qualquer página como `.md` no formato KOSMOS direto da busca.
 
 - [x] `services/archiver.py` — fetch via `httpx`, extração com `trafilatura`; frontmatter
-      idêntico ao KOSMOS (`title`, `source`, `date`, `author`, `url`);
+      KOSMOS estendido: `title`, `source`, `date`, `author`, `url` + `language` (auto),
+      `word_count` (auto), `tags` (lista), `notes` (texto livre);
       salva em `{archive_path}/Web/{YYYY-MM-DD}_{slug}.md`; slug max 60 chars
-- [x] `routers/search.py` — `POST /archive` (body form: `url`):
+- [x] `routers/search.py` — `POST /archive` (body form: `url`, `tags?`, `notes?`):
       chama archiver, retorna 200 OK ou 400 se `kosmos_archive` não configurado
 - [x] Botão "arquivar" em cada card de resultado `WEB` (HTMX `hx-post`, toast de confirmação)
 - [x] Fallback: se `kosmos_archive` não configurado, retornar erro 400 com mensagem clara
