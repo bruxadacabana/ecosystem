@@ -1,0 +1,8 @@
+{
+  "outdir": "/home/spacewitch/Documents/program files/Hermes/data",
+  "model": "small",
+  "lang_idx": 0,
+  "cpu_limit": "100%",
+  "mnemo_dir": "",
+  "mnemo_check": false
+}
