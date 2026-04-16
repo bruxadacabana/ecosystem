@@ -16,8 +16,8 @@ if [ -n "$ELECTRON_PID" ]; then
     exit 0
 fi
 
-# Limpa processos órfãos na porta 5173
-STALE_PID=$(lsof -ti:5173 2>/dev/null)
+# Limpa processos órfãos na porta 5175 (porta exclusiva do OGMA)
+STALE_PID=$(lsof -ti:5175 2>/dev/null)
 if [ -n "$STALE_PID" ]; then
     kill "$STALE_PID" 2>/dev/null || true
     sleep 1
