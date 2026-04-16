@@ -32,7 +32,7 @@ Projetado para rodar também como APK Android (via Tauri 2) numa fase futura.
 - **Módulo Leituras:** lista e lê artigos do archive do KOSMOS; marca como lido
 - **Módulo Projetos:** lista projetos e páginas do OGMA (read-only)
 - **Módulo Perguntas:** chat local com qualquer modelo Ollama, streaming token a token
-- Barra de atalhos: lança os 5 apps e indica visualmente se cada um está rodando
+- Barra de atalhos: lança os 6 apps e indica visualmente se cada um está rodando
 - Read-only por padrão — não substitui os editores primários de cada app
 
 **Stack:** Rust (Tauri v2) · TypeScript + React + Vite  
@@ -107,8 +107,8 @@ Buscador pessoal local. Agrega resultados da web e do próprio ecossistema numa 
 - Integração com ecossistema: delega vídeo/áudio ao Hermes; lê `ecosystem.json` para caminhos
 
 **Stack:** Python + FastAPI · HTMX + Jinja2 · SQLite · uv  
-**Estado:** Planejamento — não iniciado.  
-**Porta padrão:** 7070
+**Estado:** Fases 1–3, 5 e 7 concluídas. Busca web + local + biblioteca de URLs funcionais.  
+**Porta:** 7070
 
 ---
 
@@ -764,6 +764,22 @@ Cada app escreve apenas a sua própria seção; as demais são preservadas. Escr
   "hub":       { "data_path": "" }
 }
 ```
+
+### Portas reservadas (modo desenvolvimento)
+
+Cada app que roda um servidor Vite ou web usa uma porta fixa com `strictPort: true`.
+**Não altere essas portas** — elas estão hardcoded em múltiplos arquivos de configuração.
+
+| App | Porta | Arquivo de referência |
+|---|---|---|
+| HUB | 5173 | `HUB/vite.config.ts` · `HUB/src-tauri/tauri.conf.json` |
+| AETHER | 5174 | `AETHER/vite.config.ts` · `AETHER/src-tauri/tauri.conf.json` |
+| OGMA | 5175 | `OGMA/vite.config.ts` · `OGMA/package.json` · `OGMA/src/main/main.ts` |
+| AKASHA | 7070 | `AKASHA/config.py` |
+
+KOSMOS, Mnemosyne e Hermes são apps desktop (PyQt6/PySide6) — não expõem portas de rede.
+
+---
 
 **Utilitários de integração:**
 
