@@ -521,7 +521,26 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"Ollama ativo — {len(models)} modelo(s) disponível(is)."
         )
-        if not self.config.is_configured:
+
+        available_names = {m.name for m in models}
+        llm_ok    = not self.config.llm_model    or self.config.llm_model    in available_names
+        embed_ok  = not self.config.embed_model  or self.config.embed_model  in available_names
+
+        if not self.config.is_configured or not llm_ok or not embed_ok:
+            if self.config.is_configured and (not llm_ok or not embed_ok):
+                missing: list[str] = []
+                if not llm_ok:
+                    missing.append(f"LLM '{self.config.llm_model}'")
+                if not embed_ok:
+                    missing.append(f"embedding '{self.config.embed_model}'")
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "Modelo não encontrado",
+                    "O(s) modelo(s) configurado(s) não estão disponíveis neste computador:\n"
+                    + "\n".join(f"  • {m}" for m in missing)
+                    + "\n\nEscolha os modelos disponíveis para continuar.",
+                )
             self._show_setup_dialog()
         else:
             self._post_config_init()
