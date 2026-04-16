@@ -47,6 +47,7 @@ pub fn run() {
             commands::config::read_ecosystem_config,
             commands::config::validate_path,
             commands::config::save_ecosystem_config,
+            commands::config::apply_sync_root,
             commands::writing::list_writing_projects,
             commands::writing::list_books,
             commands::writing::read_chapter,

@@ -110,18 +110,22 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
   const [detectingAll, setDetectingAll] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [syncRoot, setSyncRoot] = useState('')
+  const [applyingSync, setApplyingSync] = useState(false)
+  const [syncMsg, setSyncMsg] = useState('')
 
   // Carrega valores atuais do ecosystem.json
   useEffect(() => {
     cmd.readEcosystemConfig().then(result => {
       if (!result.ok) return
-      const eco = result.data
+      const eco = result.data as Record<string, unknown>
       const initial: Record<string, string> = {}
       for (const f of ALL_FIELDS) {
         const section = eco[f.key] as Record<string, unknown> | undefined
         initial[`${f.key}.${f.field}`] = String(section?.[f.field] ?? '')
       }
       setValues(initial)
+      setSyncRoot(String(eco['sync_root'] ?? ''))
     })
   }, [])
 
@@ -178,6 +182,29 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
       setValidity(v => ({ ...v, [compositeKey]: true }))
     } else {
       setValidity(v => ({ ...v, [compositeKey]: false }))
+    }
+  }
+
+  async function handleApplySyncRoot() {
+    if (!syncRoot.trim()) return
+    setApplyingSync(true)
+    setSyncMsg('')
+    const result = await cmd.applySyncRoot(syncRoot.trim())
+    setApplyingSync(false)
+    if (!result.ok) {
+      setSyncMsg(`Erro: ${result.error.message}`)
+    } else {
+      setSyncMsg('Caminhos aplicados. Reinicie cada app para carregar os novos caminhos.')
+      // Recarrega os campos de dados para refletir os novos caminhos
+      const eco = await cmd.readEcosystemConfig()
+      if (eco.ok) {
+        const updated: Record<string, string> = {}
+        for (const f of DATA_FIELDS) {
+          const section = (eco.data as Record<string, unknown>)[f.key] as Record<string, unknown> | undefined
+          updated[`${f.key}.${f.field}`] = String(section?.[f.field] ?? '')
+        }
+        setValues(v => ({ ...v, ...updated }))
+      }
     }
   }
 
@@ -344,6 +371,40 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
           Configure os caminhos dos outros apps para ativar os módulos do HUB.
           Os caminhos são gravados no arquivo de configuração compartilhado do ecossistema.
         </p>
+
+        {/* Seção: sincronização */}
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 12 }}>
+          Sincronização (Proton Drive)
+        </p>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)', marginBottom: 12, lineHeight: 1.6 }}>
+          Aponte para a pasta raiz do ecossistema no Proton Drive. As subpastas são criadas automaticamente e os caminhos de todos os apps são configurados de uma vez.
+        </p>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', marginBottom: 16, lineHeight: 1.6, fontStyle: 'italic' }}>
+          ⚠ Mova seus arquivos existentes para as novas pastas manualmente antes de aplicar.
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+          <input
+            type="text"
+            value={syncRoot}
+            placeholder="Ex: C:\Users\...\ProtonDrive\ecosystem"
+            onChange={e => { setSyncRoot(e.target.value); setSyncMsg('') }}
+            style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12, padding: '6px 10px', background: 'var(--paper-dark)', border: '1px solid var(--rule)', borderRadius: 'var(--radius)', color: 'var(--ink)', outline: 'none' }}
+          />
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleApplySyncRoot}
+            disabled={applyingSync || !syncRoot.trim()}
+            style={{ flexShrink: 0, fontSize: 10, padding: '4px 10px' }}
+          >
+            {applyingSync ? '…' : 'Aplicar ao ecossistema'}
+          </button>
+        </div>
+        {syncMsg && (
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: syncMsg.startsWith('Erro') ? '#8B3A2A' : '#4A6741', marginBottom: 16 }}>
+            {syncMsg}
+          </p>
+        )}
+        <div style={{ borderBottom: '1px solid var(--rule)', marginBottom: 32 }} />
 
         {/* Seção: caminhos de dados */}
         <p

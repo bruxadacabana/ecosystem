@@ -48,6 +48,9 @@ export const saveEcosystemConfig = (
 ): Promise<TauriResult<void>> =>
   call<void>('save_ecosystem_config', { updates })
 
+export const applySyncRoot = (syncRoot: string): Promise<TauriResult<void>> =>
+  call<void>('apply_sync_root', { syncRoot })
+
 // ----------------------------------------------------------
 //  Módulo Escrita — vault AETHER
 // ----------------------------------------------------------
