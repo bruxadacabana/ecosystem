@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Biblioteca — AKASHA{% endblock %}
+
+{% block content %}
+<!-- ─── Formulário de adição ─────────────────────────────────────── -->
+<section class="lib-add-section">
+  <form
+    class="lib-add-form"
+    hx-post="/library/add"
+    hx-target="#main-content"
+    hx-swap="outerHTML"
+    hx-select="#main-content"
+    hx-indicator="#lib-spinner"
+  >
+    <div class="lib-add-row">
+      <input
+        type="url"
+        name="url"
+        class="input lib-url-input"
+        placeholder="https://..."
+        required
+        autocomplete="off"
+      >
+      <select name="interval_days" class="input lib-interval-select">
+        <option value="1">diário</option>
+        <option value="7" selected>semanal</option>
+        <option value="30">mensal</option>
+      </select>
+      <button type="submit" class="btn btn-primary">
+        + adicionar
+      </button>
+      <span id="lib-spinner" class="htmx-indicator search-spinner"></span>
+    </div>
+    <div class="lib-add-meta">
+      <input type="text" name="tags" class="input" placeholder="tags (vírgula)" style="flex:1">
+      <input type="text" name="notes" class="input" placeholder="nota inicial (opcional)" style="flex:2">
+    </div>
+  </form>
+</section>
+
+<!-- ─── Filtros ──────────────────────────────────────────────────── -->
+{% if all_tags or all_langs %}
+<section class="lib-filters">
+  {% if all_tags %}
+  <div class="filter-group">
+    <a href="/library" class="tag {% if not filter_tag %}tag-active{% endif %}">todas as tags</a>
+    {% for t in all_tags %}
+    <a
+      href="/library?tag={{ t | urlencode }}{% if filter_lang %}&lang={{ filter_lang | urlencode }}{% endif %}"
+      class="tag {% if filter_tag == t %}tag-active{% endif %}"
+    >{{ t }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if all_langs %}
+  <div class="filter-group">
+    <a href="/library{% if filter_tag %}?tag={{ filter_tag | urlencode }}{% endif %}" class="tag {% if not filter_lang %}tag-active{% endif %}">todos os idiomas</a>
+    {% for l in all_langs %}
+    <a
+      href="/library?lang={{ l | urlencode }}{% if filter_tag %}&tag={{ filter_tag | urlencode }}{% endif %}"
+      class="tag {% if filter_lang == l %}tag-active{% endif %}"
+    >{{ l }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+<!-- ─── Lista de entradas ────────────────────────────────────────── -->
+{% if entries %}
+<section class="lib-entries">
+  {% for e in entries %}
+  <article class="card lib-card" id="lib-entry-{{ e.id }}">
+
+    <!-- Cabeçalho -->
+    <div class="result-header">
+      <span class="badge badge-biblioteca">BIBLIOTECA</span>
+      {% if e.language %}<span class="badge badge-lang">{{ e.language }}</span>{% endif %}
+      <span class="badge badge-interval">
+        {% if e.check_interval_days == 1 %}diário
+        {% elif e.check_interval_days == 7 %}semanal
+        {% elif e.check_interval_days == 30 %}mensal
+        {% else %}{{ e.check_interval_days }}d
+        {% endif %}
+      </span>
+      {% if e.has_recent_diff %}<span class="badge badge-changed">mudou</span>{% endif %}
+      {% if e.status == 'error' %}<span class="badge badge-error">erro</span>{% endif %}
+    </div>
+
+    <!-- Título -->
+    <h2 class="result-title">
+      <a href="{{ e.url }}" target="_blank" rel="noopener noreferrer" class="result-link">{{ e.title or e.url }}</a>
+    </h2>
+
+    <!-- Snippet -->
+    {% if e.snippet %}
+    <p class="result-snippet">{{ e.snippet }}</p>
+    {% endif %}
+
+    <!-- Meta -->
+    <p class="lib-meta">
+      {{ e.word_count }} palavras
+      {% if e.last_checked_at %}
+        · verificado em {{ e.last_checked_at[:10] }}
+      {% endif %}
+      <span class="result-url">· {{ e.url }}</span>
+    </p>
+
+    <!-- Tags -->
+    {% if e.tags %}
+    <div class="lib-tags">
+      {% for t in e.tags %}<span class="tag">{{ t }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Notas (inline edit) -->
+    <form
+      hx-patch="/library/{{ e.id }}"
+      hx-swap="none"
+      hx-on::after-request="showToast('Nota salva', 'success')"
+      class="lib-notes-form"
+    >
+      <textarea
+        name="notes"
+        class="lib-notes-textarea"
+        placeholder="adicionar nota…"
+        rows="2"
+      >{{ e.notes }}</textarea>
+      <button type="submit" class="btn btn-ghost btn-sm">salvar nota</button>
+    </form>
+
+    <!-- Ações -->
+    <div class="result-footer" style="margin-top: 8px;">
+      <span></span>
+      <div class="result-actions">
+        <button
+          class="btn btn-ghost btn-sm"
+          hx-post="/library/refresh/{{ e.id }}"
+          hx-swap="none"
+          hx-on::after-request="showToast(event.detail.successful ? 'Atualizado!' : 'Erro ao atualizar', event.detail.successful ? 'success' : 'error')"
+        >&#x21BA; atualizar</button>
+        <button
+          class="btn btn-ghost btn-sm btn-danger"
+          hx-delete="/library/{{ e.id }}"
+          hx-swap="outerHTML"
+          hx-target="#lib-entry-{{ e.id }}"
+          hx-confirm="Remover esta entrada da biblioteca?"
+        >&#x2715; remover</button>
+      </div>
+    </div>
+
+  </article>
+  {% endfor %}
+</section>
+
+{% else %}
+<!-- ─── Estado vazio ──────────────────────────────────────────────── -->
+<section class="empty-state">
+  <p class="empty-icon">&#x1F4DA;</p>
+  <p class="empty-title">Biblioteca vazia</p>
+  <p class="empty-hint">Adicione uma URL acima para começar a monitorar páginas.</p>
+</section>
+{% endif %}
+{% endblock %}
