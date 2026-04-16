@@ -112,6 +112,12 @@ e tipado com a mesma atenção que o caminho feliz.
       Salva o `.md` diretamente numa das pastas monitoradas pelo Mnemosyne
 - [x] Formato: Markdown limpo com frontmatter mínimo (título, data, fonte/URL, duração)
 
+### 1.5 — AKASHA → Mnemosyne (páginas arquivadas indexáveis)
+- [ ] AKASHA escreve `akasha.archive_path` em `ecosystem.json` no startup
+      (já escreve `base_url` e `exe_path` — adicionar `archive_path: str(ARCHIVE_PATH)`)
+- [ ] Mnemosyne oferece `AKASHA/data/archive/` como pasta sugerida no botão
+      "Sugestões do ecossistema" da SetupDialog (junto com KOSMOS e AETHER)
+
 ---
 
 ## FASE 2 — App Hub (desktop → Android)
