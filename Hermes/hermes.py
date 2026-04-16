@@ -458,7 +458,21 @@ class HermesApp(QMainWindow):
         self.setStyleSheet(build_qss(display_family, mono_family))
         self._build_ui()
         self._load_prefs()
+        self._register_ecosystem()
         self._log(f"Hermes iniciado. Dispositivo: {self._device_label}", "ok")
+
+    def _register_ecosystem(self) -> None:
+        try:
+            import platform as _platform
+            from ecosystem_client import write_section
+            script = "iniciar.bat" if _platform.system() == "Windows" else "iniciar.sh"
+            data: dict = {"exe_path": str(APP_DIR / script)}
+            outdir = self._prefs.get("outdir", "")
+            if outdir:
+                data["output_dir"] = outdir
+            write_section("hermes", data)
+        except Exception:
+            pass
 
     # ── Construção da UI ──────────────────────────────────────────────────────
     def _build_ui(self):
