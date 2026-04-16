@@ -58,9 +58,35 @@ e tipado com a mesma atenção que o caminho feliz.
 - [x] Adicionar `dirs = "5"` em `AETHER/src-tauri/Cargo.toml`
 - [x] Wiring em `AETHER/src-tauri/src/lib.rs`: escreve `vault_path` no startup (falha silenciosa)
 - [ ] Documentar o contrato: quem escreve cada campo, quando, formato
-- [ ] Instalar e configurar Syncthing entre PC e tablet
-      - Definir quais pastas sincronizar (vault AETHER + archive KOSMOS)
-      - Testar round-trip: criar arquivo no PC → aparece no Android
+
+### 0.5 — sync_root: sincronização via Proton Drive (ou qualquer pasta sync)
+
+Objetivo: um campo `sync_root` top-level no ecosystem.json aponta para a pasta do Proton Drive.
+O HUB deriva e aplica todos os caminhos de uma vez. Cada app respeita o caminho configurado.
+
+```
+ProtonDrive/ecosystem/
+├── aether/        ← vault_path
+├── kosmos/        ← archive_path
+├── mnemosyne/
+│   ├── docs/      ← watched_dir
+│   └── chroma_db/ ← persist_dir (ChromaDB sincronizado)
+├── hermes/        ← output_dir
+└── akasha/        ← archive_path
+```
+
+- [x] **`ecosystem_client.py`** — adicionar `derive_paths(sync_root)` e campo `sync_root` no schema
+- [x] **`Mnemosyne/core/config.py`** — novo campo `chroma_dir`; `persist_dir` usa-o se definido
+- [x] **`Mnemosyne/gui/main_window.py`** — campo "Pasta do ChromaDB" na SetupDialog
+- [x] **`AKASHA/config.py`** — `ARCHIVE_PATH` lê `akasha.archive_path` do ecosystem.json se disponível
+- [ ] **`HUB/src-tauri/src/commands/config.rs`** — comando `apply_sync_root(sync_root)`
+      Cria subpastas + escreve seções no ecosystem.json via `derive_paths`
+- [ ] **`HUB/src/views/SetupView.tsx`** — seção "Sincronização": campo sync_root + botão "Aplicar"
+      Aviso: "Mova seus arquivos existentes manualmente antes de aplicar"
+
+- [ ] Instalar e configurar Proton Drive entre máquinas
+      - Após configurar sync_root no HUB, copiar ecosystem.json para a segunda máquina
+      - Testar round-trip: arquivar página no AKASHA → aparece no Proton → segunda máquina
 
 ---
 
