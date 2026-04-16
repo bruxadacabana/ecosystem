@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -83,6 +83,43 @@ CREATE TABLE IF NOT EXISTS local_index_meta (
 );
 """
 
+_CREATE_LIBRARY_URLS = """
+CREATE TABLE IF NOT EXISTS library_urls (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    url                 TEXT    NOT NULL UNIQUE,
+    title               TEXT    NOT NULL DEFAULT '',
+    snippet             TEXT    NOT NULL DEFAULT '',
+    content_md          TEXT    NOT NULL DEFAULT '',
+    content_hash        TEXT    NOT NULL DEFAULT '',
+    language            TEXT    NOT NULL DEFAULT '',
+    word_count          INTEGER NOT NULL DEFAULT 0,
+    tags_json           TEXT    NOT NULL DEFAULT '[]',
+    notes               TEXT    NOT NULL DEFAULT '',
+    check_interval_days INTEGER NOT NULL DEFAULT 7,
+    last_checked_at     TEXT,
+    status              TEXT    NOT NULL DEFAULT 'pending',
+    created_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_LIBRARY_DIFFS = """
+CREATE TABLE IF NOT EXISTS library_diffs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    url_id     INTEGER NOT NULL REFERENCES library_urls(id) ON DELETE CASCADE,
+    diff_text  TEXT    NOT NULL,
+    scraped_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_LIBRARY_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS library_fts USING fts5(
+    url_id UNINDEXED,
+    url    UNINDEXED,
+    title,
+    body
+);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 
 # ---------------------------------------------------------------------------
@@ -99,6 +136,9 @@ async def init_db() -> None:
         await db.execute(_CREATE_IDX_CACHE)
         await db.execute(_CREATE_LOCAL_FTS)
         await db.execute(_CREATE_LOCAL_META)
+        await db.execute(_CREATE_LIBRARY_URLS)
+        await db.execute(_CREATE_LIBRARY_DIFFS)
+        await db.execute(_CREATE_LIBRARY_FTS)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -122,6 +162,9 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
 
     if from_version < 3:
         pass  # Versão 3 — local_fts + local_index_meta criados acima
+
+    if from_version < 5:
+        pass  # Versão 5 — library_urls, library_diffs, library_fts criados acima
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
