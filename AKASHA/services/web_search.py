@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import aiosqlite
-from duckduckgo_search import AsyncDDGS
+from duckduckgo_search import DDGS
 from pydantic import BaseModel
 
 from config import DB_PATH
@@ -84,7 +84,7 @@ def _deduplicate(results: list[SearchResult]) -> list[SearchResult]:
 
 async def _fetch_ddg(query: str, max_results: int) -> list[SearchResult]:
     try:
-        raw = await AsyncDDGS().atext(query, max_results=max_results)
+        raw = await DDGS().atext(query, max_results=max_results)
     except Exception as exc:
         raise RuntimeError(f"Falha na busca DuckDuckGo: {exc}") from exc
     return [
