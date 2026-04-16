@@ -72,8 +72,9 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 - [x] Reindexação automática no startup se `mtime` dos arquivos mudou desde última indexação
 - [x] `services/local_search.py` — query ChromaDB do Mnemosyne se `mnemosyne_indices`
       não vazio (import opcional; graceful fallback se `chromadb` não instalado)
-- [x] `routers/search.py` — fundir resultados web + local: ranking por relevância, deduplicação
 - [x] Badge de fonte em cada card: `WEB` · `KOSMOS` · `AETHER` · `MNEMOSYNE` com cor distinta
+- [ ] **Correção:** `routers/search.py` — retornar `web_results` e `local_results` separados no contexto
+- [ ] **Correção:** `templates/search.html` — seções separadas quando `sources=all`: "Resultados web" + "No meu ecossistema"
 
 ---
 
@@ -130,22 +131,52 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 ---
 
-## Fase 7 — Polimento e Integração Final
+## Fase 7 — Biblioteca de URLs
 
-> Entrega: app production-ready, integrado no ecossistema, lançável com um comando.
+> Entrega: biblioteca pessoal de sites com scraping periódico e versionamento por diff.
 
-- [ ] `iniciar.sh` — versão final robusta: verificar uv instalado, `uv sync --frozen`,
-      tratar erros de porta em uso (sugerir porta alternativa)
-- [ ] Escrever `akasha.exe_path` no `ecosystem.json` no startup para o HUB poder lançar o app
-- [ ] `templates/settings.html` — página `/settings`: caminhos do ecossistema (somente leitura,
-      vindos do `ecosystem.json`), pasta padrão de download (editável), host/porta qBittorrent
-- [ ] Modo noturno: toggle manual salvo em cookie `theme=dark|light`; respeitar
-      `prefers-color-scheme` como padrão inicial
-- [ ] Performance: busca web < 800ms p95; busca local < 200ms para 10k arquivos indexados;
-      SSE sem memory leak (fechar generator no disconnect)
-- [ ] `README.md` — atualizar seção "Estado" para "Implementado — Fase 7"; instruções
-      detalhadas de instalação para CachyOS (Fish + Niri) e Windows 10
+- [ ] Migration v5: tabelas `library_urls` (url, title, snippet, content_md, content_hash,
+      language, word_count, tags_json, notes, check_interval_days, last_checked_at, status)
+      + `library_diffs` (url_id, diff_text, scraped_at) + FTS5 `library_fts`
+- [ ] `services/library.py` — `add_url()`, `scrape_and_store()` (trafilatura + metadados:
+      language, word_count); `check_overdue()`; `compute_diff()` via `difflib.unified_diff()`
+- [ ] `routers/library.py` — `GET /library?tag=&lang=`; `POST /library/add`
+      (body: `{url, interval_days, tags?, notes?}`); `PATCH /library/{id}`;
+      `POST /library/refresh/{id}`; `DELETE /library/{id}`
+- [ ] `templates/library.html` — cards com título, snippet, idioma, contagem de palavras,
+      tags, data do último scrape, badge de intervalo, campo de notas inline (HTMX `hx-patch`),
+      badge "mudou" se diff recente; filtro por tag e idioma no topo
+- [ ] Background task no lifespan: acorda a cada hora, re-scrape URLs vencidas silenciosamente
+- [ ] Busca local `/search?sources=local` inclui conteúdo da `library_fts`
 
 ---
 
-*Atualizado em: 2026-04-15 — Fases 1, 2 e 3 concluídas.*
+## Fase 8 — Histórico unificado
+
+> Entrega: página `/history` com timeline de todas as atividades.
+
+- [ ] Migration v4: tabela `activity_log` (`id, type, title, url, meta_json, created_at`)
+      onde `type` ∈ `search|archive|download`
+- [ ] `routers/history.py` — `GET /history?type=all|search|archive|download&page=1`
+      paginado por data desc
+- [ ] `templates/history.html` — timeline agrupada por data; ícone por tipo;
+      filtros por tipo no topo com HTMX
+- [ ] Popular `activity_log` nos eventos: `save_search()`, `POST /archive` (sucesso),
+      download concluído (status → `done`)
+
+---
+
+## Fase 9 — Polimento e Integração Final
+
+> Entrega: app production-ready, integrado no ecossistema, lançável com um comando.
+
+- [ ] `iniciar.sh` — versão final robusta: verificar uv instalado, `uv sync --frozen`
+- [ ] Escrever `akasha.exe_path` no `ecosystem.json` no startup para o HUB poder lançar
+- [ ] `templates/settings.html` — página `/settings`: caminhos do ecossistema (leitura),
+      pasta padrão de download, host/porta qBittorrent
+- [ ] Nav: adicionar aba "Biblioteca" e "Histórico" na topbar
+- [ ] `README.md` — atualizar seção "Estado" para "Implementado — Fase 9"
+
+---
+
+*Atualizado em: 2026-04-16 — Fases 1, 2 e 3 concluídas. Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local.*

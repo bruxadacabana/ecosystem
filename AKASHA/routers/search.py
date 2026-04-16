@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 
 import database
 from services.web_search import SearchResult, search_web
-from services.local_search import rank_combined, search_local
+from services.local_search import search_local
 
 router = APIRouter()
 
@@ -26,27 +26,21 @@ async def search(
     q: str = "",
     sources: str = "all",
 ) -> HTMLResponse:
-    results: list[SearchResult] = []
+    web_results: list[SearchResult] = []
+    local_results: list[SearchResult] = []
     error: str | None = None
 
     if q:
         try:
-            web: list[SearchResult] = []
-            local: list[SearchResult] = []
-
             if sources in ("web", "all"):
-                web = await search_web(q)
+                web_results = await search_web(q)
             if sources in ("local", "all"):
-                local = await search_local(q)
-
-            if sources == "all":
-                results = rank_combined(web + local, q)
-            else:
-                results = web + local
+                local_results = await search_local(q)
         except RuntimeError as exc:
             error = str(exc)
 
-        await database.save_search(q, sources, len(results))
+        total = len(web_results) + len(local_results)
+        await database.save_search(q, sources, total)
 
     recent = await database.recent_searches()
 
@@ -54,7 +48,8 @@ async def search(
         "search.html",
         {
             "request": request,
-            "results": results,
+            "web_results": web_results,
+            "local_results": local_results,
             "query": q,
             "sources": sources,
             "recent": recent,
