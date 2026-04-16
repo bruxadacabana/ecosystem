@@ -20,6 +20,7 @@ _DEFAULTS: dict = {
     "retriever_k": 4,
     "watched_dir": "",
     "vault_dir": "",
+    "chroma_dir": "",
     "auto_index_on_change": True,
     "relevance_decay_days": 30,
 }
@@ -34,12 +35,15 @@ class AppConfig:
     retriever_k: int
     watched_dir: str
     vault_dir: str
+    chroma_dir: str
     auto_index_on_change: bool
     relevance_decay_days: int = 30
 
     @property
     def persist_dir(self) -> str:
-        """Caminho do vectorstore, derivado automaticamente da pasta monitorada."""
+        """Caminho do vectorstore: chroma_dir se definido, senão derivado de watched_dir."""
+        if self.chroma_dir:
+            return self.chroma_dir
         if self.watched_dir:
             return str(Path(self.watched_dir) / ".mnemosyne" / "chroma_db")
         return ""
@@ -84,6 +88,7 @@ def load_config() -> AppConfig:
         retriever_k=int(data.get("retriever_k", 4)),
         watched_dir=str(data.get("watched_dir", "")),
         vault_dir=str(data.get("vault_dir", "")),
+        chroma_dir=str(data.get("chroma_dir", "")),
         auto_index_on_change=bool(data.get("auto_index_on_change", True)),
         relevance_decay_days=int(data.get("relevance_decay_days", 30)),
     )
@@ -99,6 +104,7 @@ def save_config(config: AppConfig) -> None:
         "retriever_k": config.retriever_k,
         "watched_dir": config.watched_dir,
         "vault_dir": config.vault_dir,
+        "chroma_dir": config.chroma_dir,
         "auto_index_on_change": config.auto_index_on_change,
         "relevance_decay_days": config.relevance_decay_days,
     }
