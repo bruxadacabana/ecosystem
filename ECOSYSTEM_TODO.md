@@ -243,7 +243,7 @@ e tipado com a mesma atenção que o caminho feliz.
 - [ ] Streak AETHER visível no hub (ler `sessions.json` do vault)
 - [ ] Notificação Android: novos artigos no archive do KOSMOS
 - [ ] Busca cross-módulo: pesquisar em escritos + projetos + artigos
-- [ ] stellar-downloader + transcriber integrados:
+- [ ] stellar-downloader + transcriber integrados (HERMES):
       - Download → transcrição automática → salvar no archive
 - [ ] Exportação do hub: capítulo AETHER → PDF/EPUB direto do Android
 
