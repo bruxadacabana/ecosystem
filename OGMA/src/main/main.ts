@@ -38,7 +38,7 @@ function createWindow(): BrowserWindow {
   mainWindow = win
 
   if (isDev) {
-    win.loadURL('http://localhost:5173')
+    win.loadURL('http://localhost:5175')
   } else {
     win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
   }
