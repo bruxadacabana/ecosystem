@@ -73,8 +73,8 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 - [x] `services/local_search.py` — query ChromaDB do Mnemosyne se `mnemosyne_indices`
       não vazio (import opcional; graceful fallback se `chromadb` não instalado)
 - [x] Badge de fonte em cada card: `WEB` · `KOSMOS` · `AETHER` · `MNEMOSYNE` com cor distinta
-- [ ] **Correção:** `routers/search.py` — retornar `web_results` e `local_results` separados no contexto
-- [ ] **Correção:** `templates/search.html` — seções separadas quando `sources=all`: "Resultados web" + "No meu ecossistema"
+- [x] **Correção:** `routers/search.py` — retornar `web_results` e `local_results` separados no contexto
+- [x] **Correção:** `templates/search.html` — seções separadas quando `sources=all`: "Resultados web" + "No meu ecossistema"
 
 ---
 
@@ -179,4 +179,4 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 
 ---
 
-*Atualizado em: 2026-04-16 — Fases 1, 2 e 3 concluídas. Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local.*
+*Atualizado em: 2026-04-16 — Fases 1, 2 e 3 concluídas (incluindo correção de seções). Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local.*
