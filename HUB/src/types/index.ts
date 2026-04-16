@@ -25,10 +25,11 @@ export interface EcosystemConfig {
   ogma:      { data_path: string; exe_path?: string }
   mnemosyne: { index_paths: string[]; exe_path?: string }
   hermes:    { exe_path?: string }
+  akasha:    { base_url?: string; exe_path?: string }
   hub:       { data_path: string }
 }
 
-export type AppName = 'aether' | 'ogma' | 'kosmos' | 'mnemosyne' | 'hermes'
+export type AppName = 'aether' | 'ogma' | 'kosmos' | 'mnemosyne' | 'hermes' | 'akasha'
 
 // ----------------------------------------------------------
 //  AETHER — Escrita

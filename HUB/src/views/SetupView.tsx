@@ -88,6 +88,14 @@ const EXE_FIELDS: PathField[] = [
     validateAs: 'file',
     candidates: ['Hermes', 'hermes', 'Hermes.exe'],
   },
+  {
+    key: 'akasha',
+    field: 'exe_path',
+    label: 'AKASHA',
+    placeholder: 'Caminho para o iniciar.sh do AKASHA…',
+    validateAs: 'file',
+    candidates: ['iniciar.sh'],
+  },
 ]
 
 const ALL_FIELDS = [...DATA_FIELDS, ...EXE_FIELDS]

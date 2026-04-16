@@ -1,6 +1,6 @@
 /* ============================================================
    HUB — AppBar
-   Barra lateral esquerda fixa com atalhos para os 5 apps
+   Barra lateral esquerda fixa com atalhos para os 6 apps
    do ecossistema. Mostra se cada app está rodando e permite
    iniciá-los com um clique.
    ============================================================ */
@@ -47,6 +47,12 @@ const APPS: AppDef[] = [
     label: 'Hermes',
     candidates: ['Hermes', 'hermes', 'Hermes.exe'],
   },
+  {
+    name: 'akasha',
+    sigla: 'Ak',
+    label: 'AKASHA',
+    candidates: ['akasha/iniciar.sh', 'iniciar.sh'],
+  },
 ]
 
 const POLL_INTERVAL_MS = 5000
@@ -75,6 +81,7 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
         kosmos:    eco.kosmos?.exe_path    ?? '',
         mnemosyne: eco.mnemosyne?.exe_path ?? '',
         hermes:    (eco.hermes as { exe_path?: string } | undefined)?.exe_path ?? '',
+        akasha:    eco.akasha?.exe_path    ?? '',
       })
     })
   }
