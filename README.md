@@ -123,14 +123,14 @@ Na cosmologia hindu/vedanta, o quinto elemento — o espaço onde tudo existe, r
 Buscador pessoal local. Agrega resultados da web e do próprio ecossistema numa interface única, com biblioteca de URLs monitorada e arquivação de páginas. Roda como servidor Python acessado via browser — sem conta, sem nuvem, sem telemetria.
 
 - Busca web: DuckDuckGo sem API key; cache local de 1h; histórico persistido
-- Busca local: archive do KOSMOS, vault do AETHER, index do Mnemosyne e biblioteca de URLs
-- Arquivação: salva qualquer página como `.md` no formato do KOSMOS archive
+- Busca local: lê `ecosystem.json` para descobrir os caminhos — `kosmos.archive_path` (`**/*.md`), `aether.vault_dir` (`*/chapters/*.md`) e `mnemosyne.indices` (ChromaDB, opcional); fontes não configuradas são silenciosamente ignoradas
+- Arquivação: salva qualquer página como `.md` em `AKASHA/data/archive/{YYYY-MM-DD}_{slug}.md` (pasta própria, sem dependências externas)
 - Biblioteca de URLs: monitoramento periódico com diff automático e busca FTS5
 - Integração com ecossistema: lê `ecosystem.json`; delega vídeo/áudio ao Hermes
 
 **Stack:** Python + FastAPI · HTMX + Jinja2 · SQLite · uv  
 **Estado:** Fases 1–3, 5 e 7 concluídas. Busca web + local + biblioteca de URLs funcionais.  
-**Porta:** 7070
+**Porta:** 7071
 
 ---
 
@@ -731,7 +731,7 @@ Cada app que roda um servidor Vite ou web usa uma porta fixa com `strictPort: tr
 | HUB | 5173 | `HUB/vite.config.ts` · `HUB/src-tauri/tauri.conf.json` |
 | AETHER | 5174 | `AETHER/vite.config.ts` · `AETHER/src-tauri/tauri.conf.json` |
 | OGMA | 5175 | `OGMA/vite.config.ts` · `OGMA/package.json` · `OGMA/src/main/main.ts` |
-| AKASHA | 7070 | `AKASHA/config.py` |
+| AKASHA | 7071 | `AKASHA/config.py` |
 
 KOSMOS, Mnemosyne e Hermes são apps desktop (PyQt6/PySide6) — não expõem portas de rede.
 

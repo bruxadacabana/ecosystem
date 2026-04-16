@@ -5,7 +5,7 @@
 
 Buscador pessoal local. Agrega resultados da web e do próprio ecossistema numa interface única, com biblioteca de URLs monitorada e arquivação de páginas. Roda como servidor Python acessado via browser — sem conta, sem nuvem, sem telemetria.
 
-**Porta:** `7070`  
+**Porta:** `7071`  
 **Plataformas:** Windows 10 · CachyOS (Arch Linux)
 
 ---
@@ -18,14 +18,22 @@ Buscador pessoal local. Agrega resultados da web e do próprio ecossistema numa 
 - Histórico de buscas persistido
 
 ### Busca local
-- Archive do KOSMOS (`archive_path/**/*.md`) — artigos salvos com frontmatter
-- Vault do AETHER (`vault_path/*/chapters/*.md`) — capítulos escritos
-- Index do Mnemosyne (ChromaDB) — documentos indexados, quando disponível
-- Biblioteca de URLs (ver abaixo) — conteúdo scrapeado e versionado
-- Resultados web e locais em **seções separadas** na mesma interface
+
+Os caminhos são lidos automaticamente de `ecosystem.json` no startup:
+
+| Fonte | Chave em `ecosystem.json` | O que indexa |
+|---|---|---|
+| KOSMOS archive | `kosmos.archive_path` | `{archive_path}/**/*.md` — artigos salvos com frontmatter |
+| AETHER vault | `aether.vault_dir` | `{vault_dir}/*/chapters/*.md` — capítulos escritos |
+| Mnemosyne | `mnemosyne.indices` | ChromaDB — documentos indexados (opcional) |
+| Biblioteca | interno (SQLite) | conteúdo scrapeado das URLs monitoradas |
+
+Se uma chave não estiver configurada, a fonte correspondente é silenciosamente ignorada.  
+Resultados web e locais aparecem em **seções separadas** na mesma interface.
 
 ### Arquivação de páginas
-- Salva qualquer página como `.md` em `{archive_path}/Web/{YYYY-MM-DD}_{slug}.md`
+- Salva qualquer página como `.md` em `AKASHA/data/archive/{YYYY-MM-DD}_{slug}.md`
+- Não requer configuração externa — pasta criada automaticamente no primeiro uso
 - Frontmatter estendido: `title`, `source`, `date`, `author`, `url`, `language`, `word_count`, `tags`, `notes`
 - Extração via `trafilatura`
 
@@ -64,9 +72,11 @@ Buscador pessoal local. Agrega resultados da web e do próprio ecossistema numa 
 AKASHA/
 ├── main.py                  # FastAPI app + lifespan (init DB, registra no ecossistema, background task)
 ├── pyproject.toml           # dependências uv
-├── config.py                # lê ecosystem.json; expõe kosmos_archive, aether_vault, etc.
+├── config.py                # lê ecosystem.json; expõe kosmos_archive, aether_vault, ARCHIVE_PATH, etc.
 ├── database.py              # schema SQLite v5 + migrations
 ├── iniciar.sh               # script de inicialização (uv sync + uv run)
+├── data/
+│   └── archive/             # páginas arquivadas: {YYYY-MM-DD}_{slug}.md (criada automaticamente)
 ├── routers/
 │   ├── search.py            # GET /search · POST /archive
 │   └── library.py           # GET /library · POST /library/add · PATCH · DELETE · POST /refresh
