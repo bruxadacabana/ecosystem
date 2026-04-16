@@ -168,6 +168,10 @@ class SetupDialog(QDialog):
         if vault and os.path.isdir(vault):
             suggestions.append(("AETHER — vault", vault, "vault"))
 
+        akasha_archive = eco.get("akasha", {}).get("archive_path", "")
+        if akasha_archive and os.path.isdir(akasha_archive):
+            suggestions.append(("AKASHA — archive", akasha_archive, "folder"))
+
         return suggestions
 
     def _show_ecosystem_menu(self, btn: QPushButton) -> None:
@@ -245,11 +249,33 @@ class MainWindow(QMainWindow):
                 auto_index_on_change=True,
             )
 
+        self._register_ecosystem()
         self._build_ui()
         self.apply_style()
         self._start_ollama_check()
 
     # ── Construção da UI ──────────────────────────────────────────────────────
+
+    def _register_ecosystem(self) -> None:
+        try:
+            _root = str(Path(__file__).parent.parent.parent)
+            if _root not in sys.path:
+                sys.path.insert(0, _root)
+            from ecosystem_client import write_section
+            import platform as _platform
+            script = "iniciar.bat" if _platform.system() == "Windows" else "iniciar.sh"
+            data: dict = {
+                "exe_path": str(Path(__file__).parent.parent / script),
+            }
+            if self.config.watched_dir:
+                data["watched_dir"] = self.config.watched_dir
+            if self.config.vault_dir:
+                data["vault_dir"] = self.config.vault_dir
+            if self.config.persist_dir:
+                data["index_paths"] = [self.config.persist_dir]
+            write_section("mnemosyne", data)
+        except Exception:
+            pass
 
     def _build_ui(self) -> None:
         central = QWidget()
