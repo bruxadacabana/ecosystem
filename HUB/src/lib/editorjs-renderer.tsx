@@ -113,7 +113,7 @@ function ParagraphBlock({ data }: { data: Record<string, unknown> }) {
 function HeaderBlock({ data }: { data: Record<string, unknown> }) {
   const text  = String(data.text ?? '')
   const level = Number(data.level ?? 2)
-  const Tag   = `h${Math.min(Math.max(level, 1), 6)}` as keyof JSX.IntrinsicElements
+  const Tag   = `h${Math.min(Math.max(level, 1), 6)}` as React.ElementType
   return (
     <Tag
       className={`ej-header ej-header-${level}`}

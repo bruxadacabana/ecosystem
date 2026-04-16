@@ -8,6 +8,8 @@ PyQt6 · Ecossistema local-first · Design Bible v2.0
 import sys
 import os
 import json
+import logging
+import logging.handlers
 import re
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +37,31 @@ APP_DIR    = Path(__file__).parent
 PREFS_FILE = APP_DIR / ".prefs.json"
 DATA_DIR   = APP_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
+
+_LOGS_DIR = DATA_DIR / "logs"
+
+
+def _setup_logger() -> None:
+    """Configura logging para arquivo rotativo e stderr."""
+    _LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[
+            logging.handlers.TimedRotatingFileHandler(
+                _LOGS_DIR / "hermes.log",
+                when="midnight",
+                backupCount=7,
+                encoding="utf-8",
+            ),
+            logging.StreamHandler(),
+        ],
+    )
+    for noisy_lib in ("yt_dlp", "urllib3", "httpx"):
+        logging.getLogger(noisy_lib).setLevel(logging.WARNING)
+
+
+_log_file = logging.getLogger("hermes")
 
 
 # ── Preferências ──────────────────────────────────────────────────────────────
@@ -683,6 +710,12 @@ class HermesApp(QMainWindow):
             f'<span style="color:{INK_GHOST}">  |  </span>'
             f'<span style="color:{color}">{msg}</span>'
         )
+        if tag == "err":
+            _log_file.error(msg)
+        elif tag == "warn":
+            _log_file.warning(msg)
+        else:
+            _log_file.info(msg)
 
     # ── Preferências ──────────────────────────────────────────────────────────
     def _load_prefs(self):
@@ -927,6 +960,8 @@ class HermesApp(QMainWindow):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 def main():
+    _setup_logger()
+    _log_file.info("Hermes iniciado.")
     app = QApplication(sys.argv)
     app.setApplicationName("Hermes")
     window = HermesApp()

@@ -6,6 +6,11 @@
 use std::collections::HashMap;
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 use crate::AppError;
 
 // ----------------------------------------------------------
@@ -13,6 +18,7 @@ use crate::AppError;
 // ----------------------------------------------------------
 
 /// Inicia um app externo pelo caminho do executável.
+/// No Windows, scripts `.sh` são automaticamente envolvidos com `bash`.
 #[tauri::command]
 pub fn launch_app(exe_path: String) -> Result<(), AppError> {
     if exe_path.trim().is_empty() {
@@ -20,10 +26,33 @@ pub fn launch_app(exe_path: String) -> Result<(), AppError> {
             "Caminho do executável não configurado.".into(),
         ));
     }
-    Command::new(&exe_path)
-        .spawn()
+
+    let mut cmd = build_launch_command(&exe_path);
+    cmd.spawn()
         .map(|_| ())
         .map_err(|e| AppError::Io(format!("Não foi possível iniciar '{}': {}", exe_path, e)))
+}
+
+/// Constrói o Command correto dependendo do tipo de script e plataforma.
+/// - Windows + .sh → `bash <path>`
+/// - Windows + .bat/.cmd → `cmd /C <path>`  (deixa o cmd resolver o ambiente)
+/// - Unix ou binário nativo → executa diretamente
+fn build_launch_command(exe_path: &str) -> Command {
+    #[cfg(target_os = "windows")]
+    {
+        let lower = exe_path.to_lowercase();
+        if lower.ends_with(".sh") {
+            let mut cmd = Command::new("bash");
+            cmd.arg(exe_path);
+            return cmd;
+        }
+        if lower.ends_with(".bat") || lower.ends_with(".cmd") {
+            let mut cmd = Command::new("cmd");
+            cmd.args(["/C", exe_path]);
+            return cmd;
+        }
+    }
+    Command::new(exe_path)
 }
 
 /// Verifica se um processo correspondente ao executável está em execução.
@@ -73,7 +102,12 @@ pub fn discover_app_exe(candidates: Vec<String>) -> Option<String> {
 
         // Busca no PATH: `where` no Windows, `which` no Unix
         let finder = if cfg!(target_os = "windows") { "where" } else { "which" };
-        if let Ok(output) = Command::new(finder).arg(candidate.as_str()).output() {
+        #[allow(unused_mut)]
+        let mut finder_cmd = Command::new(finder);
+        finder_cmd.arg(candidate.as_str());
+        #[cfg(target_os = "windows")]
+        finder_cmd.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(output) = finder_cmd.output() {
             if output.status.success() {
                 let found = String::from_utf8_lossy(&output.stdout)
                     .lines()
@@ -102,12 +136,12 @@ pub fn auto_discover_all_exe_paths() -> HashMap<String, String> {
     // (app_key, subdir, scripts em ordem de prioridade)
     // Windows: .bat tem prioridade para os apps que o possuem
     let apps: &[(&str, &str, &[&str])] = &[
-        ("aether",    "AETHER",    &["iniciar.sh"]),
+        ("aether",    "AETHER",    &["iniciar.bat", "iniciar.sh"]),
         ("ogma",      "OGMA",      &["iniciar.bat", "iniciar.sh"]),
-        ("kosmos",    "KOSMOS",    &["iniciar.sh"]),
-        ("mnemosyne", "Mnemosyne", &["iniciar.sh"]),
-        ("hermes",    "Hermes",    &["iniciar.sh"]),
-        ("akasha",    "AKASHA",    &["iniciar.sh"]),
+        ("kosmos",    "KOSMOS",    &["iniciar.bat", "iniciar.sh"]),
+        ("mnemosyne", "Mnemosyne", &["iniciar.bat", "iniciar.sh"]),
+        ("hermes",    "Hermes",    &["iniciar.bat", "iniciar.sh"]),
+        ("akasha",    "AKASHA",    &["iniciar.bat", "iniciar.sh"]),
     ];
 
     for (key, subdir, scripts) in apps {
@@ -198,6 +232,7 @@ fn check_running_windows(process_name: &str) -> bool {
             "/FO",
             "CSV",
         ])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
         Ok(out) => {

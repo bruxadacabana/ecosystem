@@ -225,6 +225,14 @@ e tipado com a mesma atenção que o caminho feliz.
 ## FASE 4 — Polimento e features extras
 > Qualidade de vida. Só após Fase 3 estável.
 
+- [x] Verificar sistema de log em todos os apps e criar onde não existir
+      — OGMA: ✅ `createLogger` + `setupGlobalErrorHandlers` em main.ts
+      — HUB: ✅ `tauri_plugin_log`, arquivo diário, 7 dias de retenção
+      — AETHER: ✅ `tauri_plugin_log`, arquivo diário, 7 dias de retenção
+      — KOSMOS: ✅ `setup_logger()` em app/utils/logger.py, arquivo + stderr
+      — Mnemosyne: ✅ criado `core/logger.py`, rotação diária, 7 backups
+      — Hermes: ✅ criado `_setup_logger()` em hermes.py; `_log()` da UI persiste em arquivo
+      — AKASHA: pendente — criar ao iniciar o desenvolvimento
 - [ ] Quick capture: widget ou atalho Android para adicionar nota rápida
       ao OGMA sem abrir o app completo
 - [ ] Streak AETHER visível no hub (ler `sessions.json` do vault)
