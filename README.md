@@ -1,4 +1,4 @@
-# Ecossistema — program files/
+# Ecossistema
 
 Conjunto de aplicativos pessoais, completamente locais, sem conta, sem nuvem, sem telemetria.
 Desenvolvidos para CachyOS (Arch Linux) e Windows 10.
