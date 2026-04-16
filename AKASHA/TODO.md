@@ -4,7 +4,7 @@
 
 Buscador pessoal local. Agrega resultados da web e do ecossistema numa interface única,
 com downloads genéricos e integração com qBittorrent.
-Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
+Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
@@ -174,10 +174,89 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7070.
 - [ ] `iniciar.sh` — versão final robusta: verificar uv instalado, `uv sync --frozen`
 - [ ] Escrever `akasha.exe_path` no `ecosystem.json` no startup para o HUB poder lançar
 - [ ] `templates/settings.html` — página `/settings`: caminhos do ecossistema (leitura),
-      pasta padrão de download, host/porta qBittorrent
-- [ ] Nav: adicionar aba "Biblioteca" e "Histórico" na topbar
+      pasta padrão de download, host/porta qBittorrent, profundidade padrão de crawl (default: 2)
+- [ ] Nav: adicionar aba "Biblioteca", "Histórico" e "Sites" na topbar
 - [ ] `README.md` — atualizar seção "Estado" para "Implementado — Fase 9"
 
 ---
 
-*Atualizado em: 2026-04-16 — Fases 1, 2, 3, 5 e 7 concluídas. Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local.*
+## Fase 10 — Buscador de Sites Pessoais
+
+> Entrega: motor de busca próprio sobre domínios curados. O usuário adiciona sites, o AKASHA
+> faz crawling BFS respeitando profundidade, indexa em FTS5 e expõe via checkboxes na busca.
+
+### Decisões de design
+- **Escopo do crawler**: mesmo domínio + subdomínios selecionados pelo usuário
+- **Profundidade default**: 2 (configurável em `/settings`)
+- **Re-crawl**: manual (botão) + automático junto ao monitoramento da biblioteca (loop horário)
+- **Interface de busca**: checkboxes na barra — `□ Web  □ Ecossistema  □ Sites pessoais`
+- **Acesso ao conteúdo**: apenas via busca (ver Planos Futuros para navegação inline)
+
+### Banco de dados
+
+- [ ] Migration v6: tabela `crawl_sites` —
+      `id, base_url, label, crawl_depth, subdomains_json, page_count,
+       last_crawled_at, status (idle|crawling|error), created_at`
+      — `subdomains_json`: lista de domínios adicionais aprovados pelo usuário
+      (ex: `["docs.exemplo.com", "wiki.exemplo.com"]`)
+- [ ] Migration v6: tabela `crawl_pages` —
+      `id, site_id, url, title, content_md, content_hash, http_status, crawled_at`
+- [ ] Migration v6: FTS5 `crawl_fts` — `(site_id UNINDEXED, url UNINDEXED, title, content_md)`
+      com trigger de sincronização em INSERT/UPDATE/DELETE em `crawl_pages`
+
+### Services
+
+- [ ] `services/crawler.py` — `discover_subdomains(base_url) -> list[str]`:
+      faz GET na homepage, extrai todos os `<a href>` e filtra subdomínios distintos do mesmo
+      domínio-raiz (eTLD+1); também tenta `{base_url}/sitemap.xml`
+- [ ] `services/crawler.py` — `crawl_site(site_id: int) -> int`:
+      BFS respeitando `crawl_depth`, restringe a `base_url` + `subdomains_json`;
+      pula URLs já visitadas (hash da URL); atualiza `crawl_pages` + `crawl_fts`;
+      retorna número de páginas indexadas
+- [ ] `services/crawler.py` — `extract_links(html: str, base_url: str) -> list[str]`:
+      extrai e normaliza links internos; descarta âncoras, query strings únicas, assets
+- [ ] Integrar `crawl_site()` no loop horário do lifespan (junto com `check_overdue()`)
+
+### Routers
+
+- [ ] `routers/crawler.py` — `POST /sites/discover` (body: `{url}`):
+      chama `discover_subdomains()`, retorna `{base_url, subdomains: list[str]}`
+      para o front perguntar quais incluir (resposta HTMX com checkboxes)
+- [ ] `routers/crawler.py` — `POST /sites` (body: `{url, label, crawl_depth, subdomains}`):
+      cria entrada em `crawl_sites`, dispara `crawl_site()` em background task
+- [ ] `routers/crawler.py` — `GET /sites` → lista de sites com `page_count`,
+      `last_crawled_at`, `status`
+- [ ] `routers/crawler.py` — `DELETE /sites/{id}` — remove site e todas as `crawl_pages`
+- [ ] `routers/crawler.py` — `POST /sites/{id}/crawl` — re-crawl manual; retorna toast via HTMX
+
+### Integração com busca
+
+- [ ] `routers/search.py` — novo source `sites`: busca em `crawl_fts`;
+      retorna `list[SearchResult]` com `source="SITES"` e badge dourado
+- [ ] `templates/search.html` — substituir radio de fonte por checkboxes:
+      `□ Web  □ Ecossistema  □ Sites pessoais`; persistir escolha em `localStorage`;
+      quando "Sites pessoais" marcado e sem sites cadastrados, exibir link para `/sites`
+- [ ] `templates/search.html` — terceira seção de resultados "Nos meus sites" quando
+      checkbox marcado e há resultados
+
+### Interface de gerenciamento
+
+- [ ] `templates/sites.html` — lista de sites cadastrados; cada card mostra:
+      label, domínio, contagem de páginas, data do último crawl, badge de status,
+      subdomínios incluídos; botão "Re-crawl" e "Remover"
+- [ ] `templates/sites.html` — formulário "Adicionar site": campo URL → botão "Detectar subdomínios"
+      → HTMX retorna checkboxes dos subdomínios encontrados → campo profundidade → "Adicionar"
+- [ ] Nav: aba "Sites" na topbar
+
+---
+
+## Planos Futuros
+
+> Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
+
+- **Navegação inline de páginas crawleadas** — permitir abrir e ler o conteúdo de uma `crawl_page`
+  diretamente na interface do AKASHA, sem sair para o navegador (reader mode próprio)
+
+---
+
+*Atualizado em: 2026-04-16 — Fases 1, 2, 3, 5 e 7 concluídas. Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local, +Buscador de Sites (Fase 10).*

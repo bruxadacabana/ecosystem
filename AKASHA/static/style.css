@@ -14,7 +14,7 @@
   --paper-darker:   #E0D8C8;
   --ink:            #2C2416;
   --ink-light:      #5C4E3A;
-  --ink-ghost:      #8C7B6A;
+  --ink-ghost:      #746455;
   --accent:         #b8860b;
   --accent-dim:     #D4A820;
   --ribbon:         #8B3A2A;
@@ -43,7 +43,7 @@
     --paper-darker:   #1E2433;
     --ink:            #E8DFC8;
     --ink-light:      #BFB49A;
-    --ink-ghost:      #7A7060;
+    --ink-ghost:      #7C828E;
     --accent:         #D4A820;
     --accent-dim:     #b8860b;
     --ribbon:         #C45A40;
@@ -63,7 +63,7 @@ html.theme-dark {
   --paper-darker:   #1E2433;
   --ink:            #E8DFC8;
   --ink-light:      #BFB49A;
-  --ink-ghost:      #7A7060;
+  --ink-ghost:      #7C828E;
   --accent:         #D4A820;
   --accent-dim:     #b8860b;
   --ribbon:         #C45A40;
@@ -80,7 +80,7 @@ html.theme-light {
   --paper-darker:   #E0D8C8;
   --ink:            #2C2416;
   --ink-light:      #5C4E3A;
-  --ink-ghost:      #8C7B6A;
+  --ink-ghost:      #746455;
   --accent:         #b8860b;
   --ribbon:         #8B3A2A;
   --accent-green:   #4A6741;

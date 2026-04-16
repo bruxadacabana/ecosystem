@@ -133,19 +133,23 @@ pub fn auto_discover_all_exe_paths() -> HashMap<String, String> {
         return result;
     };
 
-    // (app_key, subdir, scripts em ordem de prioridade)
-    // Windows: .bat tem prioridade para os apps que o possuem
-    let apps: &[(&str, &str, &[&str])] = &[
-        ("aether",    "AETHER",    &["iniciar.bat", "iniciar.sh"]),
-        ("ogma",      "OGMA",      &["iniciar.bat", "iniciar.sh"]),
-        ("kosmos",    "KOSMOS",    &["iniciar.bat", "iniciar.sh"]),
-        ("mnemosyne", "Mnemosyne", &["iniciar.bat", "iniciar.sh"]),
-        ("hermes",    "Hermes",    &["iniciar.bat", "iniciar.sh"]),
-        ("akasha",    "AKASHA",    &["iniciar.bat", "iniciar.sh"]),
+    // Scripts em ordem de prioridade: .sh primeiro no Unix, .bat primeiro no Windows
+    #[cfg(target_os = "windows")]
+    let scripts: &[&str] = &["iniciar.bat", "iniciar.sh"];
+    #[cfg(not(target_os = "windows"))]
+    let scripts: &[&str] = &["iniciar.sh", "iniciar.bat"];
+
+    let apps: &[(&str, &str)] = &[
+        ("aether",    "AETHER"),
+        ("ogma",      "OGMA"),
+        ("kosmos",    "KOSMOS"),
+        ("mnemosyne", "Mnemosyne"),
+        ("hermes",    "Hermes"),
+        ("akasha",    "AKASHA"),
     ];
 
-    for (key, subdir, scripts) in apps {
-        for script in *scripts {
+    for (key, subdir) in apps {
+        for script in scripts {
             let candidate = root.join(subdir).join(script);
             if candidate.is_file() {
                 result.insert(

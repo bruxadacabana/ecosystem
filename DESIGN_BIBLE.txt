@@ -101,8 +101,8 @@
   TINTAS (do mais escuro ao mais claro):
   --ink:            #2C2416   Texto principal — tinta marrom-preta de nanquim
   --ink-light:      #5C4E3A   Texto secundário — tinta desgastada
-  --ink-faint:      #9C8E7A   Placeholder, labels — tinta muito pálida
-  --ink-ghost:      #C4B9A8   Regras, bordas, texto fantasma
+  --ink-faint:      #6B5C49   Labels, captions, texto terciário (5.2:1 contraste)
+  --ink-ghost:      #746455   Texto fantasma, placeholders, disabled text (4.6:1)
 
   ACENTO PRINCIPAL:
   --accent:         #b8860b   Dourado — ouro velho de iluminura
@@ -115,7 +115,7 @@
   --stamp:          #7A5C2E   Marrom-carimbado — sombras, toque de calor
 
   LINHAS E DIVISORES:
-  --rule:           #C4B9A8   Linhas de pauta — mesma que --ink-ghost
+  --rule:           #C4B9A8   Linhas de pauta e bordas (mantém a leveza visual)
   --margin-line:    rgba(160,50,30,0.3)   Linha vermelha de margem (sidebar)
   --shadow:         rgba(44,36,22,0.14)   Sombra sépia natural
 
@@ -141,8 +141,8 @@
   TINTAS:
   --ink:            #E8DFC8   Texto — pergaminho iluminado sobre céu escuro
   --ink-light:      #C8B99A   Texto secundário — creme envelhecido
-  --ink-faint:      #7A7260   Placeholder — manchas de fumaça sobre azul
-  --ink-ghost:      #2E3445   Bordas fantasmas — azul quase invisível
+  --ink-faint:      #9A9080   Labels, captions — cinza-sépia sobre noite (5.6:1)
+  --ink-ghost:      #7C828E   Texto fantasma, placeholders — cinza azulado (4.7:1)
 
   ACENTOS NOTURNOS:
   --accent:         #D4A820   Dourado brilhante — constelação sobre o céu

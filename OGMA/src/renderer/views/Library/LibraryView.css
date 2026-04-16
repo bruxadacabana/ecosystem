@@ -24,7 +24,7 @@
   border: 1px solid var(--rule, #C4B9A8);
   border-radius: 2px;
   background: transparent;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   cursor: pointer;
   transition: all 100ms;
 }
@@ -123,7 +123,7 @@
   font-family: 'Special Elite', monospace;
   font-size: 10px;
   letter-spacing: 0.06em;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -212,7 +212,7 @@
 
 .resource-item-desc {
   font-size: 12px;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   margin-top: 3px;
   white-space: nowrap;
   overflow: hidden;
@@ -223,7 +223,7 @@
   font-family: 'Special Elite', monospace;
   font-size: 9px;
   letter-spacing: 0.1em;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   border: 1px solid var(--rule, #C4B9A8);
   border-radius: 1px;
   padding: 2px 6px;
@@ -240,7 +240,7 @@
   justify-content: center;
   gap: 12px;
   padding: 60px 20px;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   position: relative;
   min-height: 220px;
 }
@@ -291,7 +291,7 @@
   font-family: 'Special Elite', monospace;
   font-size: 10px;
   letter-spacing: 0.12em;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
 }
 
 .library-modal-input {

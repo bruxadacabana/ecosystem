@@ -102,7 +102,7 @@ QPushButton:pressed {
     border-color: #A07840;
 }
 QPushButton:disabled {
-    color: #2E3445;
+    color: #7C828E;
     border-color: #181D28;
     background-color: #12161E;
 }
@@ -237,7 +237,7 @@ QWidget#sidebarContent {
 
 QPushButton#sidebarNavItem {
     background-color: transparent;
-    color: #7A7260;
+    color: #9A9080;
     border: none;
     border-left: 3px solid transparent;
     border-radius: 0;
@@ -259,7 +259,7 @@ QPushButton#sidebarNavItem:checked {
 
 QLabel#sectionHeader {
     background-color: transparent;
-    color: #7A7260;
+    color: #9A9080;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 9px;
     letter-spacing: 0.2em;
@@ -267,7 +267,7 @@ QLabel#sectionHeader {
 }
 
 QLabel#feedsPlaceholder {
-    color: #7A7260;
+    color: #9A9080;
     font-family: "IM Fell English", Georgia, serif;
     font-style: italic;
     font-size: 12px;
@@ -282,7 +282,7 @@ QWidget#sidebarHeader {
 }
 QPushButton#addFeedBtn {
     background: transparent;
-    color: #7A7260;
+    color: #9A9080;
     border: none;
     font-size: 18px;
     padding: 0;
@@ -352,7 +352,7 @@ QLabel#cardTitle {
     font-size: 17px;
 }
 QLabel#cardMeta {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 11px;
@@ -412,7 +412,7 @@ QLabel#sentimentNegative {
     color: #C07070;
 }
 QLabel#sentimentNeutral {
-    color: #7A7260;
+    color: #9A9080;
 }
 QLabel#clickbaitIndicator {
     color: #C08030;
@@ -442,7 +442,7 @@ QLabel#feedListTitle {
     font-size: 17px;
 }
 QPushButton#backButton {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
     border: none;
     font-family: "Special Elite", "Courier New", monospace;
@@ -474,7 +474,7 @@ QFrame#listSeparator {
     max-height: 1px;
 }
 QLabel#emptyLabel {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
     font-family: "IM Fell English", Georgia, serif;
     font-style: italic;
@@ -505,10 +505,10 @@ QLabel#sourceName {
     font-size: 15px;
 }
 QLabel#sourceName[paused="true"] {
-    color: #7A7260;
+    color: #9A9080;
 }
 QLabel#sourceMeta {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
     font-size: 10px;
 }
@@ -564,7 +564,7 @@ QWidget#filterBar {
 }
 QWidget#filterBar QLabel {
     background: transparent;
-    color: #7A7260;
+    color: #9A9080;
 }
 QWidget#filterBar QComboBox {
     background-color: #12161E;
@@ -588,7 +588,7 @@ QWidget#filterBar QLineEdit:focus {
 }
 QWidget#filterBar QCheckBox {
     background: transparent;
-    color: #7A7260;
+    color: #9A9080;
 }
 
 /* --- Dialog status label ----------------------------------- */
@@ -650,7 +650,7 @@ QGroupBox::title {
     subcontrol-position: top left;
     padding: 0 8px;
     left: 12px;
-    color: #7A7260;
+    color: #9A9080;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 9px;
     letter-spacing: 0.2em;
@@ -714,7 +714,7 @@ QLabel#discoveryTitle {
     background: transparent;
 }
 QLabel#discoveryMeta {
-    color: #7A7260;
+    color: #9A9080;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 10px;
     letter-spacing: 0.04em;
@@ -763,11 +763,11 @@ QPushButton#topicBtn:hover {
 }
 /* Dashboard */
 QLabel#dashboardTitle {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
 }
 QLabel#dashboardSummary {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
 }
 QWidget#dashboardPanel {
@@ -801,11 +801,11 @@ QFrame#dashboardStatBar {
     border-radius: 1px;
 }
 QLabel#dashboardStatEmpty {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
 }
 QLabel#dashboardSectionTitle {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
     letter-spacing: 0.12em;
 }
@@ -936,11 +936,11 @@ QLineEdit#searchInput {
     padding: 2px 0;
 }
 QLabel#searchIcon {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
 }
 QLabel#searchEscHint {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
 }
 QWidget#searchResultsContainer {
@@ -955,7 +955,7 @@ QWidget#searchResultItem[selected="true"] {
     background-color: #1E2433;
 }
 QLabel#searchResultSource {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
 }
 QLabel#searchResultTitle {
@@ -969,7 +969,7 @@ QLabel#searchResultTitle mark {
     padding: 0 1px;
 }
 QLabel#searchResultSnippet {
-    color: #7A7260;
+    color: #9A9080;
     background: transparent;
 }
 QLabel#searchResultSnippet mark {

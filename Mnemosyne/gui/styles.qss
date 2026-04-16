@@ -11,8 +11,8 @@
    --paper-darkest:#D5CCBA
    --ink:          #2C2416
    --ink-light:    #5C4E3A
-   --ink-faint:    #9C8E7A
-   --ink-ghost:    #C4B9A8
+   --ink-faint:    #6B5C49
+   --ink-ghost:    #746455
    --accent:       #b8860b
    --ribbon:       #8B3A2A
    --stamp:        #7A5C2E
@@ -55,12 +55,12 @@ QLabel#ollamaBanner {
 }
 
 QLabel#folderLabel {
-    color: #9C8E7A;
+    color: #6B5C49;
     font-style: italic;
 }
 
 QLabel#similarLabel {
-    color: #9C8E7A;
+    color: #6B5C49;
     font-style: italic;
     padding: 4px;
 }
@@ -92,7 +92,7 @@ QPushButton:pressed {
 
 QPushButton:disabled {
     background-color: #EDE7D9;
-    color: #C4B9A8;
+    color: #746455;
     border-color: #C4B9A8;
 }
 
@@ -176,7 +176,7 @@ QTabBar::tab {
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 11px;
     letter-spacing: 0.05em;
-    color: #9C8E7A;
+    color: #6B5C49;
     margin-right: 2px;
 }
 
@@ -202,7 +202,7 @@ QGroupBox {
     padding: 8px 6px 6px 6px;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 11px;
-    color: #9C8E7A;
+    color: #6B5C49;
 }
 
 QGroupBox::title {
@@ -270,7 +270,7 @@ QProgressBar {
     border-radius: 2px;
     background-color: #EDE7D9;
     text-align: center;
-    color: #9C8E7A;
+    color: #6B5C49;
     font-size: 10px;
     max-height: 8px;
 }
@@ -287,7 +287,7 @@ QProgressBar::chunk {
 QStatusBar {
     background-color: #EDE7D9;
     border-top: 1px solid #C4B9A8;
-    color: #9C8E7A;
+    color: #6B5C49;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 10px;
 }

@@ -56,14 +56,14 @@
 }
 
 .search-input::placeholder {
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   font-style: italic;
 }
 
 .search-kbd {
   font-family: 'Special Elite', monospace;
   font-size: 10px;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   background: var(--paper, #F5F0E8);
   border: 1px solid var(--rule, #C4B9A8);
   border-radius: 2px;
@@ -82,7 +82,7 @@
   font-family: 'Special Elite', monospace;
   font-size: 10px;
   letter-spacing: 0.12em;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   padding: 8px 16px 4px;
 }
 
@@ -140,7 +140,7 @@
   font-family: 'IM Fell English', Georgia, serif;
   font-style: italic;
   font-size: 14px;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
 }
 
 /* ── Divisor ─────────────────────────────────────────────────────────────── */
@@ -162,7 +162,7 @@
   font-family: 'Special Elite', monospace;
   font-size: 10px;
   letter-spacing: 0.08em;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   display: flex;
   align-items: center;
   gap: 4px;

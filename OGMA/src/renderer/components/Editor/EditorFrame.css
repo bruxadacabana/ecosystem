@@ -23,7 +23,7 @@
   font-family: 'Special Elite', monospace;
   font-size: 11px;
   letter-spacing: 0.14em;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   font-style: italic;
 }
 
@@ -64,7 +64,7 @@
 }
 
 .editor-holder .ce-paragraph[data-placeholder]:empty::before {
-  color: var(--ink-faint, #9C8E7A) !important;
+  color: var(--ink-faint, #6B5C49) !important;
   font-style: italic;
 }
 
@@ -98,7 +98,7 @@
 }
 .editor-holder .cdx-checklist__item--checked .cdx-checklist__item-text {
   text-decoration: line-through;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
 }
 .editor-holder .cdx-checklist__item-checkbox {
   border: 1px solid var(--rule, #C4B9A8);
@@ -130,7 +130,7 @@
   font-family: 'Special Elite', monospace;
   font-size: 11px;
   letter-spacing: 0.1em;
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   border: none !important;
   background: transparent !important;
 }
@@ -186,7 +186,7 @@
 /* ── Divisor ──────────────────────────────────────────────────────────────── */
 .editor-holder .ce-delimiter::before {
   content: '· · ·';
-  color: var(--ink-ghost, #C4B9A8);
+  color: var(--ink-ghost, #746455);
   font-size: 18px;
   letter-spacing: 0.5em;
 }
@@ -194,7 +194,7 @@
 /* ── Toolbar ──────────────────────────────────────────────────────────────── */
 .editor-holder .ce-toolbar__plus,
 .editor-holder .ce-toolbar__settings-btn {
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   background: transparent;
 }
 .editor-holder .ce-toolbar__plus:hover,
@@ -304,7 +304,7 @@
 /* Placeholder via CSS quando vazio */
 .editor-holder .columns-block__col:empty::before {
   content: attr(data-placeholder);
-  color: var(--ink-faint, #9C8E7A);
+  color: var(--ink-faint, #6B5C49);
   font-style: italic;
   pointer-events: none;
 }

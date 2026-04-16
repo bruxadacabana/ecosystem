@@ -102,7 +102,7 @@ QPushButton:pressed {
     border-color: #7A5C2E;
 }
 QPushButton:disabled {
-    color: #C4B9A8;
+    color: #746455;
     border-color: #E0D8C8;
     background-color: #F0EBE2;
 }
@@ -259,7 +259,7 @@ QPushButton#sidebarNavItem:checked {
 
 QLabel#sectionHeader {
     background-color: transparent;
-    color: #9C8E7A;
+    color: #6B5C49;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 9px;
     letter-spacing: 0.2em;
@@ -267,7 +267,7 @@ QLabel#sectionHeader {
 }
 
 QLabel#feedsPlaceholder {
-    color: #9C8E7A;
+    color: #6B5C49;
     font-family: "IM Fell English", Georgia, serif;
     font-style: italic;
     font-size: 12px;
@@ -282,7 +282,7 @@ QWidget#sidebarHeader {
 }
 QPushButton#addFeedBtn {
     background: transparent;
-    color: #9C8E7A;
+    color: #6B5C49;
     border: none;
     font-size: 18px;
     padding: 0;
@@ -352,7 +352,7 @@ QLabel#cardTitle {
     font-size: 17px;
 }
 QLabel#cardMeta {
-    color: #9C8E7A;
+    color: #6B5C49;
     background: transparent;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 11px;
@@ -412,7 +412,7 @@ QLabel#sentimentNegative {
     color: #8A3A2A;
 }
 QLabel#sentimentNeutral {
-    color: #9C8E7A;
+    color: #6B5C49;
 }
 QLabel#clickbaitIndicator {
     color: #8A5010;
@@ -442,7 +442,7 @@ QLabel#feedListTitle {
     font-size: 17px;
 }
 QPushButton#backButton {
-    color: #9C8E7A;
+    color: #6B5C49;
     background: transparent;
     border: none;
     font-family: "Special Elite", "Courier New", monospace;
@@ -474,7 +474,7 @@ QFrame#listSeparator {
     max-height: 1px;
 }
 QLabel#emptyLabel {
-    color: #9C8E7A;
+    color: #6B5C49;
     background: transparent;
     font-family: "IM Fell English", Georgia, serif;
     font-style: italic;
@@ -505,10 +505,10 @@ QLabel#sourceName {
     font-size: 15px;
 }
 QLabel#sourceName[paused="true"] {
-    color: #9C8E7A;
+    color: #6B5C49;
 }
 QLabel#sourceMeta {
-    color: #9C8E7A;
+    color: #6B5C49;
     background: transparent;
     font-size: 10px;
 }
@@ -650,7 +650,7 @@ QGroupBox::title {
     subcontrol-position: top left;
     padding: 0 8px;
     left: 12px;
-    color: #9C8E7A;
+    color: #6B5C49;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 9px;
     letter-spacing: 0.2em;
@@ -714,7 +714,7 @@ QLabel#discoveryTitle {
     background: transparent;
 }
 QLabel#discoveryMeta {
-    color: #9C8E7A;
+    color: #6B5C49;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 10px;
     letter-spacing: 0.04em;
@@ -763,7 +763,7 @@ QPushButton#topicBtn:hover {
 }
 /* Dashboard */
 QLabel#dashboardTitle {
-    color: #9C8E7A;
+    color: #6B5C49;
     background: transparent;
 }
 QLabel#dashboardSummary {
