@@ -155,7 +155,8 @@ permite adicionar `extra_dirs` para indexação adicional.
 Objetivo: config local de cada app também fica na pasta sincronizada, para que as
 preferências se propaguem entre máquinas sem reconfigurar manualmente.
 
-Organização proposta dentro de `sync_root`:
+Estrutura confirmada: `{sync_root}/{app}/.config/settings.json` para todos os apps.
+
 ```
 {sync_root}/
 ├── ogma/
@@ -167,34 +168,35 @@ Organização proposta dentro de `sync_root`:
 ├── akasha/
 │   ├── akasha.db
 │   └── .config/
-│       └── settings.json  (ex: check_interval_days, tema)
+│       └── settings.json
 ├── hermes/
 │   ├── (transcrições .md)
 │   └── .config/
-│       └── prefs.json
+│       └── settings.json
 ├── mnemosyne/
 │   ├── docs/
 │   ├── chroma_db/
 │   └── .config/
-│       └── config.json
+│       └── settings.json
 ├── aether/
 │   └── .config/
-│       └── vault.json
+│       └── settings.json
 └── kosmos/
     └── .config/
-        └── prefs.json
+        └── settings.json
 ```
 
-Cada app lê sua config de `{sync_root}/{app}/.config/` se `data_path` estiver definido
-no ecosystem.json, com fallback para o local atual.
+Cada app lê `{sync_root}/{app}/.config/settings.json` se `config_path` estiver definido
+no ecosystem.json, com fallback para o arquivo local atual.
 
-- [ ] **`derive_paths()`** — adicionar `config_path: {sync_root}/{app}/.config/` para cada app
+- [ ] **`derive_paths()`** — adicionar `config_path: {sync_root}/{app}/.config` para cada app
 - [ ] **`apply_sync_root()` (Rust)** — criar subpastas `.config/` + escrever `config_path` no ecosystem.json
-- [ ] **OGMA** — `SETTINGS` em `paths.ts` usa `ogma.config_path` do ecosystem.json se disponível
-- [ ] **Hermes** — `_load_prefs()` / `_save_prefs()` usa `hermes.config_path` se disponível
-- [ ] **AKASHA** — `config.py` usa `akasha.config_path` para settings locais (ex: `settings.json`)
-- [ ] **Mnemosyne** — `load_config()` / `save_config()` usa `mnemosyne.config_path` se disponível
-- [ ] **AETHER/KOSMOS** — idem para as configurações que já possuem
+- [ ] **OGMA** — `SETTINGS` em `paths.ts` usa `{ogma.config_path}/settings.json` se disponível
+- [ ] **Hermes** — `_load_prefs()` / `_save_prefs()` usa `{hermes.config_path}/settings.json` se disponível
+- [ ] **AKASHA** — `config.py` usa `{akasha.config_path}/settings.json` se disponível
+- [ ] **Mnemosyne** — `load_config()` / `save_config()` usa `{mnemosyne.config_path}/settings.json` se disponível
+- [ ] **AETHER** — equivalente em Rust/TypeScript conforme estrutura existente
+- [ ] **KOSMOS** — equivalente conforme estrutura existente
 
 ---
 
