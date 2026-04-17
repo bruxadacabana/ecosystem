@@ -11,6 +11,10 @@ utilizável antes de avançar para a próxima.
 
 ## PRINCÍPIOS INEGOCIÁVEIS
 
+**HUB é o primeiro app a rodar.** Centraliza todas as configurações comuns do ecossistema.
+Os demais apps leem `ecosystem.json` no startup — se não houver valor configurado, usam
+defaults locais. Nunca bloquear o startup por falta de configuração do ecosystem.
+
 **Compatibilidade de plataforma: todos os apps devem rodar no Windows 10 e no CachyOS (Linux).**
 
 Isso implica:
@@ -128,9 +132,9 @@ Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 - [ ] `AKASHA/templates/base.html` — adicionar link "lista negra" no nav
 
 #### 0.8d — AKASHA: melhorias de UI nos cards e páginas
-- [ ] `AKASHA/static/style.css` — adicionar classe `.page-subtitle`
-- [ ] `AKASHA/templates/library.html` — subtítulo descritivo da Biblioteca
-- [ ] `AKASHA/templates/sites.html` — subtítulo descritivo de Sites
+- [x] `AKASHA/static/style.css` — adicionar classe `.page-subtitle`
+- [x] `AKASHA/templates/library.html` — subtítulo descritivo da Biblioteca
+- [x] `AKASHA/templates/sites.html` — subtítulo descritivo de Sites
 - [ ] `AKASHA/routers/crawler.py` — rota `POST /sites/add-quick` (quick-add sem parâmetros extras)
 - [ ] `AKASHA/templates/_macros.html` — botão "Adicionar a Sites" nos cards
 
@@ -408,8 +412,9 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 
 ## Estado das fases do ecossistema
 
-  Fase 0: ✅ Fundação concluída (ecosystem_client.py, ecosystem.ts, ecosystem.rs, ecosystem.json)
-  Fase 1: ✅ Concluída — 1.1, 1.2, 1.3 e 1.4 concluídas
+  Fase 0: ✅ Base concluída (0–0.5). Items 0.6–0.9 em andamento (sync + integrações)
+  Fase 1: ✅ Concluída — 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 1.9 concluídas
+            ⚠️  Item pendente: 1.2 — verificar botão "Arquivar" no KOSMOS
   Fase 2: ✅ Concluída — 2.1, 2.2, 2.3, 2.4, 2.5 e 2.6 concluídas
   Fase 3: não iniciada
   Fase 4: não iniciada
