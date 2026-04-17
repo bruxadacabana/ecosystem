@@ -300,3 +300,26 @@ async def get_crawl_site(site_id: int) -> tuple | None:
         return await (await db.execute(
             "SELECT * FROM crawl_sites WHERE id = ?", (site_id,)
         )).fetchone()
+
+
+async def add_crawl_site(
+    base_url: str,
+    label: str,
+    crawl_depth: int,
+    subdomains_json: str,
+) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """INSERT OR IGNORE INTO crawl_sites (base_url, label, crawl_depth, subdomains_json)
+               VALUES (?, ?, ?, ?)""",
+            (base_url, label, crawl_depth, subdomains_json),
+        )
+        await db.commit()
+        return cursor.lastrowid or 0
+
+
+async def delete_crawl_site(site_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM crawl_fts WHERE site_id = ?", (str(site_id),))
+        await db.execute("DELETE FROM crawl_sites WHERE id = ?", (site_id,))
+        await db.commit()

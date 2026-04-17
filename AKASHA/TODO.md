@@ -251,7 +251,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       para o front perguntar quais incluir (resposta HTMX com checkboxes)
 - [ ] `routers/crawler.py` — `POST /sites` (body: `{url, label, crawl_depth, subdomains}`):
       cria entrada em `crawl_sites`, dispara `crawl_site()` em background task
-- [ ] `routers/crawler.py` — `GET /sites` → lista de sites com `page_count`,
+- [x] `routers/crawler.py` — `GET /sites` → lista de sites com `page_count`,
       `last_crawled_at`, `status`
 - [ ] `routers/crawler.py` — `DELETE /sites/{id}` — remove site e todas as `crawl_pages`
 - [ ] `routers/crawler.py` — `POST /sites/{id}/crawl` — re-crawl manual; retorna toast via HTMX
