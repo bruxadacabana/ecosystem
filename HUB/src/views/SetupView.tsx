@@ -234,6 +234,7 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
     }
 
     setSavedMsg('Configuração salva. Reinicie cada app para aplicar os novos caminhos.')
+    onSaved()
   }
 
   function validityIcon(compositeKey: string): string {
