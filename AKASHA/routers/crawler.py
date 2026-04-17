@@ -132,6 +132,20 @@ async def sites_delete(site_id: int) -> Response:
     return Response(status_code=200)
 
 
+# ---------------------------------------------------------------------------
+# POST /sites/{site_id}/crawl — re-crawl manual
+# ---------------------------------------------------------------------------
+
+@router.post("/sites/{site_id}/crawl")
+async def sites_crawl(site_id: int) -> Response:
+    """Dispara re-crawl manual em background; retorna 200 imediatamente."""
+    from database import get_crawl_site
+    if not await get_crawl_site(site_id):
+        raise HTTPException(status_code=404, detail="Site não encontrado")
+    asyncio.get_event_loop().create_task(_bg_crawl(site_id))
+    return Response(status_code=200)
+
+
 async def _bg_crawl(site_id: int) -> None:
     import logging
     log = logging.getLogger("akasha.crawler")
