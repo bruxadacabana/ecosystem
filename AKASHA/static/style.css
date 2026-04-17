@@ -403,6 +403,12 @@ a:hover { opacity: 0.75; }
 
 .results-section { margin-bottom: 32px; }
 
+.page-subtitle {
+  font-size: 13px;
+  color: var(--ink-faint);
+  margin: -0.25rem 0 1.5rem;
+}
+
 .results-section-title {
   font-family:   var(--font-display);
   font-style:    italic;
