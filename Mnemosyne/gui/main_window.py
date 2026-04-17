@@ -212,13 +212,21 @@ class SetupDialog(QDialog):
         if folder:
             self.vault_edit.setText(folder)
 
-    def get_values(self) -> tuple[str, str, str, str]:
-        """Retorna (watched_dir, llm_model, embed_model, vault_dir)."""
+    def _pick_chroma(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self, "Selecionar pasta do ChromaDB"
+        )
+        if folder:
+            self.chroma_edit.setText(folder)
+
+    def get_values(self) -> tuple[str, str, str, str, str]:
+        """Retorna (watched_dir, llm_model, embed_model, vault_dir, chroma_dir)."""
         return (
             self.folder_edit.text().strip(),
             self.llm_combo.currentText(),
             self.embed_combo.currentText(),
             self.vault_edit.text().strip(),
+            self.chroma_edit.text().strip(),
         )
 
 
@@ -607,7 +615,7 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            folder, llm, embed, vault = dialog.get_values()
+            folder, llm, embed, vault, chroma = dialog.get_values()
             if not folder:
                 QMessageBox.warning(self, "Aviso", "Selecione uma pasta para continuar.")
                 return
@@ -615,6 +623,7 @@ class MainWindow(QMainWindow):
             self.config.llm_model = llm
             self.config.embed_model = embed
             self.config.vault_dir = vault
+            self.config.chroma_dir = chroma
             save_config(self.config)
             self._post_config_init()
         else:
@@ -623,7 +632,7 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            folder, llm, embed, vault = dialog.get_values()
+            folder, llm, embed, vault, chroma = dialog.get_values()
             if not folder:
                 return
             changed_dir = folder != self.config.watched_dir
@@ -631,6 +640,7 @@ class MainWindow(QMainWindow):
             self.config.llm_model = llm
             self.config.embed_model = embed
             self.config.vault_dir = vault
+            self.config.chroma_dir = chroma
             save_config(self.config)
             self.folder_label.setText(folder)
             self.manage_path_label.setText(folder)
