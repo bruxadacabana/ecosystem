@@ -9,7 +9,28 @@ Todos os módulos devem importar daqui::
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
+
+
+def _eco_archive(default: Path) -> Path:
+    """Retorna kosmos.archive_path do ecosystem.json se configurado, senão default."""
+    try:
+        appdata = os.environ.get("APPDATA", "")
+        candidates = [
+            Path(appdata) / "ecosystem" / "ecosystem.json",
+            Path.home() / ".local" / "share" / "ecosystem" / "ecosystem.json",
+        ]
+        for eco_path in candidates:
+            if eco_path.exists():
+                data = json.loads(eco_path.read_text(encoding="utf-8"))
+                archive = data.get("kosmos", {}).get("archive_path", "")
+                if archive:
+                    return Path(archive)
+    except Exception:
+        pass
+    return default
 
 
 class Paths:
@@ -20,7 +41,7 @@ class Paths:
     CACHE:        Path = DATA / "cache"
     FAVICONS:     Path = CACHE / "favicons"
     IMAGES:       Path = CACHE / "images"
-    ARCHIVE:      Path = DATA / "archive"
+    ARCHIVE:      Path = _eco_archive(DATA / "archive")
     EXPORTS:      Path = DATA / "exports"
     ARGOS_MODELS: Path = DATA / "argos_models"
     LOGS:         Path = DATA / "logs"

@@ -165,9 +165,9 @@ permite adicionar `extra_dirs` para indexação adicional.
   (StatsLoadWorker); widgets são criados na thread principal após o worker terminar
 
 #### KOSMOS — Archive_path ignora ecosystem.json
-- Bug: `Paths.ARCHIVE` está hardcoded como `ROOT/"data"/"archive"`.
-  O `archive_path` configurado via HUB (Proton Drive) é ignorado.
-- [ ] `KOSMOS/app/utils/paths.py` — ler `kosmos.archive_path` do ecosystem.json
+- Bug: `Paths.ARCHIVE` estava hardcoded como `ROOT/"data"/"archive"`.
+  O `archive_path` configurado via HUB (Proton Drive) era ignorado.
+- [x] `KOSMOS/app/utils/paths.py` — ler `kosmos.archive_path` do ecosystem.json
   no startup; usar como `ARCHIVE` se disponível (fallback para `DATA/"archive"`)
 
 #### Hermes — "Descarregar" → "Baixar" (português do Brasil)
