@@ -30,7 +30,8 @@ Instruções para o Claude Code ao trabalhar neste repositório.
 
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado (sempre acrescentar itens que não constam nele antes de começar a implementação e marcar como concluido após)
 - Commit por item individual concluído
-- Nunca avançar para outro item dentro de uma fase sem aprovação explícita da usuária
+- **Nunca começar a implementar nada sem ordem explícita da usuária.** Discussão, planejamento e anotação no TODO não são ordens de implementação.
+- **Nunca avançar de um item para o próximo no TODO sem ordem explícita.** "Continue" sem especificar o quê não é autorização para implementar.
 - Toda pesquisa do Mnemosyne vai para `Mnemosyne/pesquisa.txt`
 
 ---
