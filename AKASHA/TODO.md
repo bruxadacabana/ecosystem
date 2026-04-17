@@ -113,10 +113,17 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] Fallback: se `kosmos_archive` não configurado, retornar erro 400 com mensagem clara
       orientando a configurar o caminho em `/settings`
 - [ ] **Melhorar extração de conteúdo:** substituir trafilatura único por cascata de extratores
-      (mesmo padrão do `ArticleScraper` do KOSMOS): o HTML é baixado uma vez e cada extrator
-      tenta em ordem; o primeiro a retornar ≥ 100 palavras vence; se nenhum atingir, usa o
-      resultado mais longo. Pesquisar e decidir quais extratores incluir além de trafilatura
-      (candidatos: `newspaper4k`, `readability-lxml`, `BeautifulSoup`, `markdownify`, outros).
+      (mesmo padrão do `ArticleScraper` do KOSMOS): HTML baixado uma vez, cada extrator tenta
+      em ordem; primeiro a retornar ≥ 100 palavras vence; se nenhum atingir, usa o mais longo.
+      Cascata decidida (pesquisada em 2026-04-16):
+        1. `newspaper4k`     — melhor resultado geral para artigos e notícias
+        2. `trafilatura`     — algoritmo complementar, bom para docs e blogs
+        3. `readability-lxml`— algoritmo do modo leitura do Firefox
+        4. `inscriptis`      — preserva layout de tabelas e documentação técnica
+        5. `BeautifulSoup`   — fallback manual, remove nav/footer/script e pega `<main>`
+      Usar `markdownify` (ou `html-to-markdown`) como conversor HTML→Markdown em cada etapa.
+      Descartar: Resiliparse (deps C/Rust, overkill), ReadabiliPy (requer Node.js),
+      Fundus (parsers por domínio, pesado, foco em notícias).
 
 ---
 
