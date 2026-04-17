@@ -3,7 +3,7 @@ ecosystem_client — utilitário Python compartilhado do ecossistema.
 
 Usado por KOSMOS, Mnemosyne e Hermes para ler/escrever
 ~/.local/share/ecosystem/ecosystem.json (Linux) ou
-%APPDATA%\ecosystem\ecosystem.json (Windows).
+%APPDATA%\\ecosystem\\ecosystem.json (Windows).
 """
 from __future__ import annotations
 
@@ -52,6 +52,10 @@ def read_ecosystem() -> dict[str, Any]:
             data = json.load(f)
         # Merge: garante que todas as seções existam mesmo em arquivos antigos
         result: dict[str, Any] = {}
+        # Preserva campos extras do arquivo que não estão em _DEFAULTS (ex: sync_root)
+        for key, value in data.items():
+            if key not in _DEFAULTS:
+                result[key] = value
         for key, default in _DEFAULTS.items():
             if isinstance(default, dict):
                 result[key] = {**default, **data.get(key, {})}
