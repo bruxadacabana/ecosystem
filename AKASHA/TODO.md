@@ -238,7 +238,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       GET homepage + tenta sitemap.xml; filtra subdomínios do mesmo domínio-raiz
 - [x] `services/crawler.py` — `crawl_site(site_id) -> int`:
       BFS async com httpx; delega extração ao ecosystem_scraper; atualiza crawl_pages + crawl_fts
-- [ ] `services/crawler.py` — `search_sites(query) -> list[SearchResult]`:
+- [x] `services/crawler.py` — `search_sites(query) -> list[SearchResult]`:
       busca FTS5 em crawl_fts; retorna SearchResult com source="SITES"
 - [ ] `services/crawler.py` — `crawl_pending_sites()`:
       crawls sites com last_crawled_at IS NULL; chamado pelo loop horário

@@ -263,3 +263,39 @@ async def crawl_site(site_id: int) -> int:
         await db.commit()
 
     return pages_saved
+
+
+# ---------------------------------------------------------------------------
+# search_sites
+# ---------------------------------------------------------------------------
+
+def _sanitize_fts(query: str) -> str:
+    cleaned = re.sub(r'["\'\(\)\*\:\^]', " ", query)
+    return " ".join(cleaned.split())
+
+
+async def search_sites(query: str, max_results: int = 20) -> list:
+    """Busca FTS5 em crawl_fts; retorna list[SearchResult] com source='SITES'."""
+    from services.web_search import SearchResult
+
+    fts_query = _sanitize_fts(query)
+    if not fts_query:
+        return []
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                """SELECT url, title,
+                          snippet(crawl_fts, 3, '', '', '…', 40)
+                   FROM crawl_fts
+                   WHERE crawl_fts MATCH ?
+                   ORDER BY rank
+                   LIMIT ?""",
+                (fts_query, max_results),
+            )).fetchall()
+        return [
+            SearchResult(title=row[1], url=row[0], snippet=row[2], source="SITES")
+            for row in rows
+        ]
+    except Exception as exc:
+        log.warning("search_sites FTS erro: %s", exc)
+        return []
