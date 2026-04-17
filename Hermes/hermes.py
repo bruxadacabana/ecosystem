@@ -175,6 +175,13 @@ def build_format_list(info: dict) -> list[dict]:
     return options
 
 
+# Formatos fixos para download de playlist inteira (sem inspecionar cada vídeo)
+_PLAYLIST_FORMATS: list[dict] = [
+    {"label": "✦  Melhor qualidade (vídeo + áudio)", "format_id": "bestvideo+bestaudio/best", "ext": "mp4"},
+    {"label": "◈  Apenas áudio (MP3)",                "format_id": "bestaudio",               "ext": "mp3"},
+]
+
+
 # ── Utilitários — markdown ────────────────────────────────────────────────────
 def build_markdown(title: str, url: str, info: dict, result: dict, forced_lang: str) -> str:
     now       = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -246,12 +253,14 @@ class DownloadWorker(QThread):
     finished = pyqtSignal(str)        # título do vídeo
     error    = pyqtSignal(str)
 
-    def __init__(self, url: str, fmt: dict, outdir: str, parent=None):
+    def __init__(self, url: str, fmt: dict, outdir: str, parent=None,
+                 playlist_mode: bool = False):
         super().__init__(parent)
-        self.url    = url
-        self.fmt    = fmt
-        self.outdir = outdir
-        self._cancelled = False
+        self.url           = url
+        self.fmt           = fmt
+        self.outdir        = outdir
+        self.playlist_mode = playlist_mode
+        self._cancelled    = False
 
     def cancel(self):
         self._cancelled = True
@@ -281,14 +290,18 @@ class DownloadWorker(QThread):
              if is_audio else \
              [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}]
 
+        outtmpl = os.path.join(
+            self.outdir,
+            "%(playlist_index)02d - %(title)s.%(ext)s" if self.playlist_mode else "%(title)s.%(ext)s",
+        )
         ydl_opts = {
             "format":              fid,
-            "outtmpl":             os.path.join(self.outdir, "%(title)s.%(ext)s"),
+            "outtmpl":             outtmpl,
             "postprocessors":      pp,
             "quiet":               True,
             "no_warnings":         True,
             "progress_hooks":      [hook],
-            "noplaylist":          True,
+            "noplaylist":          not self.playlist_mode,
             "merge_output_format": "mp4",
         }
         try:
@@ -636,6 +649,15 @@ class HermesApp(QMainWindow):
         self.playlist_list.itemSelectionChanged.connect(self._on_playlist_select)
         layout.addWidget(self.playlist_list)
 
+        self.playlist_hint_lbl = QLabel(
+            "Escolha o formato abaixo e clique BAIXAR para baixar toda a playlist.\n"
+            "Ou selecione um vídeo acima para baixar individualmente."
+        )
+        self.playlist_hint_lbl.setObjectName("meta")
+        self.playlist_hint_lbl.setWordWrap(True)
+        self.playlist_hint_lbl.hide()
+        layout.addWidget(self.playlist_hint_lbl)
+
         # Formatos
         layout.addWidget(self._section_label("FORMATO / QUALIDADE"))
         self.fmt_combo = QComboBox()
@@ -906,6 +928,15 @@ class HermesApp(QMainWindow):
             self.playlist_list.addItem(e["title"])
         self.playlist_lbl.show()
         self.playlist_list.show()
+        self.playlist_hint_lbl.show()
+        # Popula formatos padrão para download de toda a playlist
+        self._formats = list(_PLAYLIST_FORMATS)
+        self.fmt_combo.clear()
+        for f in self._formats:
+            self.fmt_combo.addItem(f["label"])
+        self.fmt_combo.setEnabled(True)
+        self.fmt_combo.setCurrentIndex(0)
+        self.dl_btn.setEnabled(True)
         self._set_busy(False, 0)
         self._log(f"Playlist: {len(entries)} itens.", "ok")
 
@@ -915,6 +946,7 @@ class HermesApp(QMainWindow):
             return
         idx = self.playlist_list.row(rows[0])
         entry = self._playlist[idx]
+        self.playlist_hint_lbl.hide()
         self.url_edit.setText(entry["url"])
         self._inspect()
 
@@ -934,7 +966,8 @@ class HermesApp(QMainWindow):
         self.dl_progress.setValue(0)
         self._log(f"Baixando: {fmt['label'].strip()}…", "")
 
-        self._worker = DownloadWorker(url, fmt, outdir, self)
+        self._worker = DownloadWorker(url, fmt, outdir, self,
+                                       playlist_mode=is_playlist_url(url))
         self._worker.log.connect(self._log)
         self._worker.progress.connect(self.dl_progress.setValue)
         self._worker.finished.connect(self._on_download_done)
