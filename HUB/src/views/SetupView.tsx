@@ -11,7 +11,7 @@ import type { EcosystemConfig } from '../types'
 
 interface SetupViewProps {
   onBack: () => void
-  onSaved: () => void
+  onSaved?: () => void
 }
 
 interface PathField {
@@ -103,7 +103,7 @@ const ALL_FIELDS = [...DATA_FIELDS, ...EXE_FIELDS]
 type ValidityMap = Record<string, boolean | null>   // null = não verificado
 type DetectingMap = Record<string, boolean>
 
-export function SetupView({ onBack, onSaved }: SetupViewProps) {
+export function SetupView({ onBack }: SetupViewProps) {
   const [values, setValues] = useState<Record<string, string>>({})
   const [validity, setValidity] = useState<ValidityMap>({})
   const [detecting, setDetecting] = useState<DetectingMap>({})
