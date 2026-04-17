@@ -10,7 +10,28 @@ from pathlib import Path
 from .errors import ConfigError
 
 
-_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
+def _resolve_config_path() -> Path:
+    """Retorna {mnemosyne.config_path}/settings.json se definido no ecosystem.json."""
+    try:
+        import os as _os
+        appdata = _os.environ.get("APPDATA", "")
+        candidates = [
+            Path(appdata) / "ecosystem" / "ecosystem.json",
+            Path.home() / ".local" / "share" / "ecosystem" / "ecosystem.json",
+        ]
+        for eco_path in candidates:
+            if eco_path.exists():
+                data = json.loads(eco_path.read_text(encoding="utf-8"))
+                config_dir = data.get("mnemosyne", {}).get("config_path", "")
+                if config_dir:
+                    return Path(config_dir) / "settings.json"
+    except Exception:
+        pass
+    return Path(__file__).parent.parent / "config.json"
+
+
+_CONFIG_PATH = _resolve_config_path()
+_LEGACY_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
 
 _DEFAULTS: dict = {
     "llm_model": "",
@@ -70,15 +91,18 @@ def load_config() -> AppConfig:
     """
     data: dict = dict(_DEFAULTS)
 
-    if _CONFIG_PATH.exists():
-        try:
-            with _CONFIG_PATH.open(encoding="utf-8") as f:
-                loaded = json.load(f)
-            if not isinstance(loaded, dict):
-                raise ConfigError("config.json deve ser um objeto JSON.")
-            data.update(loaded)
-        except json.JSONDecodeError as exc:
-            raise ConfigError(f"config.json inválido: {exc}") from exc
+    # Tenta caminho primário (config_path sincronizado), fallback para config.json local
+    for candidate in (_CONFIG_PATH, _LEGACY_CONFIG_PATH):
+        if candidate.exists():
+            try:
+                with candidate.open(encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if not isinstance(loaded, dict):
+                    raise ConfigError("settings.json deve ser um objeto JSON.")
+                data.update(loaded)
+            except json.JSONDecodeError as exc:
+                raise ConfigError(f"settings.json inválido: {exc}") from exc
+            break
 
     return AppConfig(
         llm_model=str(data.get("llm_model", "")),
@@ -95,7 +119,8 @@ def load_config() -> AppConfig:
 
 
 def save_config(config: AppConfig) -> None:
-    """Persiste AppConfig em config.json."""
+    """Persiste AppConfig em settings.json (ou config.json legado)."""
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "llm_model": config.llm_model,
         "embed_model": config.embed_model,
