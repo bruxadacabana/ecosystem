@@ -57,6 +57,8 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       data; HTMX `hx-get` no form com indicador de loading
 - [x] Widget "Buscas recentes" no empty state: lista das últimas 10 queries da tabela `searches`
 - [x] Filtro de fonte no UI: radio/toggle Web / Local / Todos (query param `sources=`)
+- [ ] Botão "Carregar mais" abaixo dos cards de resultado: busca a próxima página via `offset`
+      do DuckDuckGo e acrescenta os cards ao final (HTMX `hx-swap="beforeend"`)
 
 ---
 
@@ -149,6 +151,23 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       badge "mudou" se diff recente; filtro por tag e idioma no topo
 - [x] Background task no lifespan: acorda a cada hora, re-scrape URLs vencidas silenciosamente
 - [x] Busca local `/search?sources=local` inclui conteúdo da `library_fts`
+- [ ] Botão "Adicionar à biblioteca" em cada card de resultado `WEB` (HTMX `hx-post="/library/add"`,
+      abre mini-form com intervalo de re-scrape, toast de confirmação)
+
+---
+
+## Fase 7.5 — Lista negra de domínios
+
+> Entrega: domínios bloqueados nunca aparecem nos resultados de busca web.
+
+- [ ] Migration: tabela `blocked_domains` — `id, domain, added_at`
+- [ ] `services/web_search.py` — filtrar resultados excluindo domínios em `blocked_domains`
+      (comparação por hostname normalizado sem `www.`)
+- [ ] Botão "Bloquear domínio" em cada card de resultado `WEB`:
+      HTMX `hx-post="/domains/block"`, toast de confirmação
+- [ ] `routers/domains.py` — `POST /domains/block` (body: `{domain}`);
+      `DELETE /domains/block/{id}` (desbloquear)
+- [ ] `templates/settings.html` — seção "Domínios bloqueados": lista com botão desbloquear
 
 ---
 
