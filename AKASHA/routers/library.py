@@ -16,6 +16,7 @@ from services.library import (
     delete_entry,
     get_diffs,
     list_entries,
+    queue_url,
     scrape_and_store,
     update_entry,
 )
@@ -86,6 +87,16 @@ async def library_add(
             "active_tab":  "library",
         },
     )
+
+
+@router.post("/library/add-quick")
+async def library_add_quick(url: str = Form(...)) -> Response:
+    """Enfileira URL na biblioteca sem bloquear — scrape acontece no loop horário."""
+    try:
+        await queue_url(url)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return Response(status_code=200)
 
 
 @router.post("/library/refresh/{entry_id}")

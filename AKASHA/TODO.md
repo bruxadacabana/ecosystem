@@ -163,8 +163,8 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       badge "mudou" se diff recente; filtro por tag e idioma no topo
 - [x] Background task no lifespan: acorda a cada hora, re-scrape URLs vencidas silenciosamente
 - [x] Busca local `/search?sources=local` inclui conteúdo da `library_fts`
-- [ ] Botão "Adicionar à biblioteca" em cada card de resultado `WEB` (HTMX `hx-post="/library/add"`,
-      abre mini-form com intervalo de re-scrape, toast de confirmação)
+- [x] Botão `+` em cada card de resultado `WEB`: enfileira URL na biblioteca via `POST /library/add-quick`
+      (sem scrape imediato — status='pending', loop horário faz o scrape); toast de confirmação
 
 ---
 
@@ -172,13 +172,12 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 > Entrega: domínios bloqueados nunca aparecem nos resultados de busca web.
 
-- [ ] Migration: tabela `blocked_domains` — `id, domain, added_at`
-- [ ] `services/web_search.py` — filtrar resultados excluindo domínios em `blocked_domains`
-      (comparação por hostname normalizado sem `www.`)
-- [ ] Botão "Bloquear domínio" em cada card de resultado `WEB`:
-      HTMX `hx-post="/domains/block"`, toast de confirmação
-- [ ] `routers/domains.py` — `POST /domains/block` (body: `{domain}`);
-      `DELETE /domains/block/{id}` (desbloquear)
+- [x] Migration v6: tabela `blocked_domains` — `id, domain, added_at`
+- [x] `services/web_search.py` — filtrar resultados excluindo domínios em `blocked_domains`
+      (hostname normalizado sem `www.`); aplicado antes de retornar ao router
+- [x] Botão `−` em cada card de resultado `WEB`: `POST /domains/block`, toast de confirmação
+- [x] `routers/domains.py` — `POST /domains/block` (extrai domínio da URL);
+      `DELETE /domains/block/{domain}` (desbloquear)
 - [ ] `templates/settings.html` — seção "Domínios bloqueados": lista com botão desbloquear
 
 ---

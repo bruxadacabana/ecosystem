@@ -19,6 +19,7 @@ import database
 from routers import search as search_router
 from routers import library as library_router
 from routers import system as system_router
+from routers import domains as domains_router
 from services.local_search import index_local_files
 from services.library import check_overdue, scrape_and_store
 
@@ -80,6 +81,7 @@ templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 app.include_router(search_router.router)
 app.include_router(library_router.router)
 app.include_router(system_router.router)
+app.include_router(domains_router.router)
 
 # ---------------------------------------------------------------------------
 # Rotas principais (Fase 1 — estrutura)

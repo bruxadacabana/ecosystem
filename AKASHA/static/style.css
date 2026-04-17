@@ -355,6 +355,22 @@ a:hover { opacity: 0.75; }
 }
 .btn-danger:hover { background: var(--ribbon); color: var(--paper); }
 
+.btn-sm {
+  font-size: 9px;
+  padding:   4px 8px;
+}
+
+.card-action-icon {
+  width:       22px;
+  height:      22px;
+  padding:     0;
+  font-size:   14px;
+  line-height: 1;
+  justify-content: center;
+  font-family: var(--font-body);
+}
+.card-action-block:hover { color: #c0392b; border-color: #c0392b; }
+
 .btn:disabled {
   opacity: 0.4;
   cursor:  not-allowed;

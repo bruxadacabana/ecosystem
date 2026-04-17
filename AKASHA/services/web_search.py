@@ -8,12 +8,14 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import asyncio
+from urllib.parse import urlparse
 
 import aiosqlite
 from ddgs import DDGS
 from pydantic import BaseModel
 
 from config import DB_PATH
+from database import get_blocked_domains
 
 # ---------------------------------------------------------------------------
 # Modelo de resultado
@@ -69,6 +71,18 @@ def _normalize(url: str) -> str:
     return url.rstrip("/").lower()
 
 
+def _hostname(url: str) -> str:
+    host = urlparse(url).hostname or ""
+    return host.removeprefix("www.").lower()
+
+
+async def _filter_blocked(results: list[SearchResult]) -> list[SearchResult]:
+    blocked = await get_blocked_domains()
+    if not blocked:
+        return results
+    return [r for r in results if _hostname(r.url) not in blocked]
+
+
 def _deduplicate(results: list[SearchResult]) -> list[SearchResult]:
     seen: set[str] = set()
     out: list[SearchResult] = []
@@ -116,13 +130,14 @@ async def search_web(query: str, max_results: int = 10, offset: int = 0) -> list
     if offset == 0:
         cached = await _get_cached(query)
         if cached is not None:
-            return cached
+            return await _filter_blocked(cached)
         results = await _fetch_ddg(query, max_results)
         results = _deduplicate(results)
         await _set_cache(query, results)
-        return results
+        return await _filter_blocked(results)
 
     # Página seguinte: busca offset + max_results, fatia a partir de offset
     raw = await _fetch_ddg(query, offset + max_results)
     raw = _deduplicate(raw)
+    raw = await _filter_blocked(raw)
     return raw[offset : offset + max_results]

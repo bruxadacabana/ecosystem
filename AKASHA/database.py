@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -120,6 +120,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS library_fts USING fts5(
 );
 """
 
+_CREATE_BLOCKED_DOMAINS = """
+CREATE TABLE IF NOT EXISTS blocked_domains (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain     TEXT    NOT NULL UNIQUE,
+    added_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 
 # ---------------------------------------------------------------------------
@@ -139,6 +147,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_LIBRARY_URLS)
         await db.execute(_CREATE_LIBRARY_DIFFS)
         await db.execute(_CREATE_LIBRARY_FTS)
+        await db.execute(_CREATE_BLOCKED_DOMAINS)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -165,6 +174,9 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
 
     if from_version < 5:
         pass  # Versão 5 — library_urls, library_diffs, library_fts criados acima
+
+    if from_version < 6:
+        pass  # Versão 6 — blocked_domains criado acima
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -198,6 +210,28 @@ async def save_search(query: str, sources: str, result_count: int) -> None:
             "INSERT INTO searches (query, sources, result_count) VALUES (?, ?, ?)",
             (query, sources, result_count),
         )
+        await db.commit()
+
+
+async def get_blocked_domains() -> set[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT domain FROM blocked_domains"
+        )).fetchall()
+    return {r[0] for r in rows}
+
+
+async def add_blocked_domain(domain: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO blocked_domains (domain) VALUES (?)", (domain,)
+        )
+        await db.commit()
+
+
+async def remove_blocked_domain(domain: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM blocked_domains WHERE domain = ?", (domain,))
         await db.commit()
 
 

@@ -142,6 +142,19 @@ async def _fetch_and_extract(url: str) -> tuple[str, str, str, int]:
 # CRUD
 # ---------------------------------------------------------------------------
 
+async def queue_url(url: str, interval_days: int = 7) -> None:
+    """Insere URL na biblioteca sem scrape imediato (status='pending').
+    O loop horário fará o scrape automaticamente."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT OR IGNORE INTO library_urls
+               (url, check_interval_days, status)
+               VALUES (?, ?, 'pending')""",
+            (url, interval_days),
+        )
+        await db.commit()
+
+
 async def add_url(
     url: str,
     interval_days: int = 7,

@@ -22,6 +22,22 @@
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Arquivado!' : 'Erro ao arquivar', event.detail.successful ? 'success' : 'error')"
       >&#x25A4; arquivar</button>
+      <button
+        class="btn btn-ghost card-action-icon"
+        title="Adicionar à biblioteca"
+        hx-post="/library/add-quick"
+        hx-vals='{"url": "{{ r.url }}"}'
+        hx-swap="none"
+        hx-on::after-request="showToast(event.detail.successful ? 'Adicionado à biblioteca!' : 'Erro ao adicionar', event.detail.successful ? 'success' : 'error')"
+      >+</button>
+      <button
+        class="btn btn-ghost card-action-icon card-action-block"
+        title="Bloquear domínio"
+        hx-post="/domains/block"
+        hx-vals='{"url": "{{ r.url }}"}'
+        hx-swap="none"
+        hx-on::after-request="showToast(event.detail.successful ? 'Domínio bloqueado' : 'Erro ao bloquear', event.detail.successful ? 'info' : 'error')"
+      >−</button>
       {% endif %}
     </div>
   </div>
