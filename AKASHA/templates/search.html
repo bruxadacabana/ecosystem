@@ -12,77 +12,65 @@
     <p class="empty-hint">{{ error }}</p>
   </section>
 
+<!-- ─── Aviso sites sem cadastro ────────────────────────────────── -->
+{% if src_sites and not has_sites and query %}
+  <section class="empty-state" style="padding:1rem 0;">
+    <p class="empty-hint">Nenhum site pessoal cadastrado. <a href="/sites" class="result-link">Adicionar sites →</a></p>
+  </section>
+{% endif %}
+
 <!-- ─── Resultados ──────────────────────────────────────────────── -->
-{% elif web_results or local_results %}
+{% elif web_results or local_results or site_results %}
 
-  {# ── Modo sources=all: duas seções ── #}
-  {% if sources == "all" %}
-
-    {% if web_results %}
-    <section class="results-section">
-      <h3 class="results-section-title">Resultados web</h3>
-      <p class="results-meta">{{ web_results | length }} resultado{% if web_results | length != 1 %}s{% endif %} para <strong>{{ query }}</strong></p>
-      <ol id="web-results-list" class="results-list">
-        {% for r in web_results %}{{ result_card(r) }}{% endfor %}
-      </ol>
-      {% if has_more_web %}
-      <div id="load-more-web" class="load-more-area">
-        <button class="btn btn-ghost load-more-btn"
-                hx-get="/search/more?q={{ query | urlencode }}&sources={{ sources }}&offset={{ web_results | length }}"
-                hx-target="#web-results-list"
-                hx-swap="beforeend">
-          carregar mais
-        </button>
-      </div>
-      {% endif %}
-    </section>
+  {# ── Seção Web ── #}
+  {% if web_results %}
+  <section class="results-section">
+    {% if local_results or site_results %}<h3 class="results-section-title">Resultados web</h3>{% endif %}
+    <p class="results-meta">{{ web_results | length }} resultado{% if web_results | length != 1 %}s{% endif %} para <strong>{{ query }}</strong></p>
+    <ol id="web-results-list" class="results-list">
+      {% for r in web_results %}{{ result_card(r) }}{% endfor %}
+    </ol>
+    {% if has_more_web %}
+    <div id="load-more-web" class="load-more-area">
+      <button class="btn btn-ghost load-more-btn"
+              hx-get="/search/more?q={{ query | urlencode }}&src_web=on&offset={{ web_results | length }}"
+              hx-target="#web-results-list"
+              hx-swap="beforeend">
+        carregar mais
+      </button>
+    </div>
     {% endif %}
+  </section>
+  {% endif %}
 
-    {% if local_results %}
-    <section class="results-section results-section-local">
-      <h3 class="results-section-title">No meu ecossistema</h3>
-      <p class="results-meta">{{ local_results | length }} resultado{% if local_results | length != 1 %}s{% endif %}</p>
-      <ol class="results-list">
-        {% for r in local_results %}{{ result_card(r) }}{% endfor %}
-      </ol>
-    </section>
-    {% endif %}
+  {# ── Seção Ecossistema ── #}
+  {% if local_results %}
+  <section class="results-section results-section-local">
+    <h3 class="results-section-title">No meu ecossistema</h3>
+    <p class="results-meta">{{ local_results | length }} resultado{% if local_results | length != 1 %}s{% endif %}</p>
+    <ol class="results-list">
+      {% for r in local_results %}{{ result_card(r) }}{% endfor %}
+    </ol>
+  </section>
+  {% endif %}
 
-    {% if not web_results and not local_results %}
-    <section class="empty-state">
-      <p class="empty-icon">&#x2205;</p>
-      <p class="empty-title">Nenhum resultado para <em>{{ query }}</em></p>
-      <p class="empty-hint">Tente termos diferentes ou verifique a ortografia.</p>
-    </section>
-    {% endif %}
+  {# ── Seção Sites pessoais ── #}
+  {% if site_results %}
+  <section class="results-section">
+    <h3 class="results-section-title">Nos meus sites</h3>
+    <p class="results-meta">{{ site_results | length }} resultado{% if site_results | length != 1 %}s{% endif %}</p>
+    <ol class="results-list">
+      {% for r in site_results %}{{ result_card(r) }}{% endfor %}
+    </ol>
+  </section>
+  {% endif %}
 
-  {# ── Modo sources=web ou sources=local: lista única ── #}
-  {% else %}
-    {% set results = web_results + local_results %}
-    {% if results %}
-    <section class="results-section">
-      <p class="results-meta">{{ results | length }} resultado{% if results | length != 1 %}s{% endif %} para <strong>{{ query }}</strong></p>
-      <ol id="web-results-list" class="results-list">
-        {% for r in results %}{{ result_card(r) }}{% endfor %}
-      </ol>
-      {% if has_more_web and sources == "web" %}
-      <div id="load-more-web" class="load-more-area">
-        <button class="btn btn-ghost load-more-btn"
-                hx-get="/search/more?q={{ query | urlencode }}&sources={{ sources }}&offset={{ web_results | length }}"
-                hx-target="#web-results-list"
-                hx-swap="beforeend">
-          carregar mais
-        </button>
-      </div>
-      {% endif %}
-    </section>
-    {% else %}
-    <section class="empty-state">
-      <p class="empty-icon">&#x2205;</p>
-      <p class="empty-title">Nenhum resultado para <em>{{ query }}</em></p>
-      <p class="empty-hint">Tente termos diferentes ou verifique a ortografia.</p>
-    </section>
-    {% endif %}
+  {% if not web_results and not local_results and not site_results %}
+  <section class="empty-state">
+    <p class="empty-icon">&#x2205;</p>
+    <p class="empty-title">Nenhum resultado para <em>{{ query }}</em></p>
+    <p class="empty-hint">Tente termos diferentes ou verifique a ortografia.</p>
+  </section>
   {% endif %}
 
 {% elif query and not error %}

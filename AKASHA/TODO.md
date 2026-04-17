@@ -263,7 +263,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] `templates/search.html` — substituir radio de fonte por checkboxes:
       `□ Web  □ Ecossistema  □ Sites pessoais`; persistir escolha em `localStorage`;
       quando "Sites pessoais" marcado e sem sites cadastrados, exibir link para `/sites`
-- [ ] `templates/search.html` — terceira seção de resultados "Nos meus sites" quando
+- [x] `templates/search.html` — terceira seção de resultados "Nos meus sites" quando
       checkbox marcado e há resultados
 
 ### Interface de gerenciamento
