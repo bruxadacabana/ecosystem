@@ -92,6 +92,16 @@ class SetupDialog(QDialog):
         vault_row.addWidget(vault_btn)
         form.addRow("Vault Obsidian:", vault_row)
 
+        # Pasta do ChromaDB (opcional)
+        chroma_row = QHBoxLayout()
+        self.chroma_edit = QLineEdit(current.chroma_dir)
+        self.chroma_edit.setPlaceholderText("Opcional — deixe vazio para usar padrão (watched_dir/.mnemosyne/chroma_db)")
+        chroma_btn = QPushButton("Escolher…")
+        chroma_btn.clicked.connect(self._pick_chroma)
+        chroma_row.addWidget(self.chroma_edit)
+        chroma_row.addWidget(chroma_btn)
+        form.addRow("Pasta do ChromaDB:", chroma_row)
+
         chat_models = filter_chat_models(models)
         embed_models = filter_embed_models(models)
 
