@@ -112,18 +112,15 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] Botão "arquivar" em cada card de resultado `WEB` (HTMX `hx-post`, toast de confirmação)
 - [x] Fallback: se `kosmos_archive` não configurado, retornar erro 400 com mensagem clara
       orientando a configurar o caminho em `/settings`
-- [ ] **Melhorar extração de conteúdo:** substituir trafilatura único por cascata de extratores
-      (mesmo padrão do `ArticleScraper` do KOSMOS): HTML baixado uma vez, cada extrator tenta
-      em ordem; primeiro a retornar ≥ 100 palavras vence; se nenhum atingir, usa o mais longo.
-      Cascata decidida (pesquisada em 2026-04-16):
-        1. `newspaper4k`     — melhor resultado geral para artigos e notícias
-        2. `trafilatura`     — algoritmo complementar, bom para docs e blogs
-        3. `readability-lxml`— algoritmo do modo leitura do Firefox
-        4. `inscriptis`      — preserva layout de tabelas e documentação técnica
-        5. `BeautifulSoup`   — fallback manual, remove nav/footer/script e pega `<main>`
-      Usar `markdownify` (ou `html-to-markdown`) como conversor HTML→Markdown em cada etapa.
-      Descartar: Resiliparse (deps C/Rust, overkill), ReadabiliPy (requer Node.js),
-      Fundus (parsers por domínio, pesado, foco em notícias).
+- [x] **Melhorar extração de conteúdo:** cascata de extratores em `services/archiver.py`;
+      HTML baixado uma vez, primeiro a retornar ≥ 100 palavras vence; fallback = mais longo.
+      Cascata implementada (newspaper4k e readability-lxml opcionais — lxml 6.x não tem wheel
+      para Python 3.14 no PyPI, mas o import é silenciado):
+        1. `newspaper4k`     — opcional (ImportError silenciado)
+        2. `trafilatura`     — markdown nativo, instalado
+        3. `readability-lxml`— opcional (ImportError silenciado)
+        4. `inscriptis`      — texto estruturado, instalado
+        5. `BeautifulSoup`   — fallback html.parser + markdownify, instalado
 
 ---
 
