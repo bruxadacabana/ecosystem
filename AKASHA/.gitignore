@@ -1,0 +1,5 @@
+data/
+akasha.db
+__pycache__/
+*.pyc
+.venv/
