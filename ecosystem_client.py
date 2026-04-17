@@ -23,6 +23,8 @@ _DEFAULTS: dict[str, Any] = {
     "ogma":      {"data_path": ""},
     "mnemosyne": {"index_paths": []},
     "hub":       {"data_path": ""},
+    "hermes":    {"output_dir": ""},
+    "akasha":    {"archive_path": "", "base_url": ""},
 }
 
 
