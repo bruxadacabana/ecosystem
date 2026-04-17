@@ -39,6 +39,8 @@ class Config:
         config.set("theme", "night")
     """
 
+    _LEGACY_PATH: Path = Paths.DATA / "settings.json"
+
     def __init__(self) -> None:
         self._path: Path = Paths.SETTINGS
         self._data: dict[str, Any] = {}
@@ -49,19 +51,22 @@ class Config:
     # ------------------------------------------------------------------
 
     def _load(self) -> None:
-        if self._path.exists():
-            try:
-                with open(self._path, "r", encoding="utf-8") as fh:
-                    loaded = json.load(fh)
-                if not isinstance(loaded, dict):
-                    raise ConfigError("settings.json não contém um objeto JSON válido.")
-                self._data = loaded
-            except json.JSONDecodeError as exc:
-                log.warning("settings.json corrompido, usando padrões. Detalhe: %s", exc)
-                self._data = {}
-            except OSError as exc:
-                log.warning("Não foi possível ler settings.json: %s", exc)
-                self._data = {}
+        # Tenta caminho primário (config_path sincronizado), fallback para legado em data/
+        for candidate in (self._path, self._LEGACY_PATH):
+            if candidate.exists():
+                try:
+                    with open(candidate, "r", encoding="utf-8") as fh:
+                        loaded = json.load(fh)
+                    if not isinstance(loaded, dict):
+                        raise ConfigError("settings.json não contém um objeto JSON válido.")
+                    self._data = loaded
+                except json.JSONDecodeError as exc:
+                    log.warning("settings.json corrompido, usando padrões. Detalhe: %s", exc)
+                    self._data = {}
+                except OSError as exc:
+                    log.warning("Não foi possível ler settings.json: %s", exc)
+                    self._data = {}
+                break
 
         # Preencher chaves ausentes com defaults
         for key, value in DEFAULTS.items():
@@ -70,6 +75,7 @@ class Config:
 
     def _save(self) -> None:
         try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
             with open(self._path, "w", encoding="utf-8") as fh:
                 json.dump(self._data, fh, indent=2, ensure_ascii=False)
         except OSError as exc:

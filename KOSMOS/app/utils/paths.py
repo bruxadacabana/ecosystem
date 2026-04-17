@@ -14,8 +14,8 @@ import os
 from pathlib import Path
 
 
-def _eco_archive(default: Path) -> Path:
-    """Retorna kosmos.archive_path do ecosystem.json se configurado, senão default."""
+def _read_kosmos_eco() -> dict:
+    """Lê a seção 'kosmos' do ecosystem.json; retorna {} em caso de erro."""
     try:
         appdata = os.environ.get("APPDATA", "")
         candidates = [
@@ -24,13 +24,23 @@ def _eco_archive(default: Path) -> Path:
         ]
         for eco_path in candidates:
             if eco_path.exists():
-                data = json.loads(eco_path.read_text(encoding="utf-8"))
-                archive = data.get("kosmos", {}).get("archive_path", "")
-                if archive:
-                    return Path(archive)
+                return json.loads(eco_path.read_text(encoding="utf-8")).get("kosmos", {})
     except Exception:
         pass
-    return default
+    return {}
+
+
+_kosmos_eco = _read_kosmos_eco()
+
+
+def _eco_archive(default: Path) -> Path:
+    archive = _kosmos_eco.get("archive_path", "")
+    return Path(archive) if archive else default
+
+
+def _eco_config_dir(default: Path) -> Path:
+    config_path = _kosmos_eco.get("config_path", "")
+    return Path(config_path) if config_path else default
 
 
 class Paths:
@@ -51,7 +61,7 @@ class Paths:
     FONTS: Path = THEME / "fonts"
 
     DB:       Path = DATA / "kosmos.db"
-    SETTINGS: Path = DATA / "settings.json"
+    SETTINGS: Path = _eco_config_dir(DATA) / "settings.json"
 
     @classmethod
     def ensure_directories(cls) -> None:
