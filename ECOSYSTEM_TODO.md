@@ -152,6 +152,26 @@ permite adicionar `extra_dirs` para indexação adicional.
 
 ### EXTRAS — Bugs e melhorias urgentes
 
+#### HUB — Race condition no ecosystem.json (paths somem às vezes)
+- Causa: `write_section` faz read-modify-write do arquivo inteiro sem lock.
+  Se HUB e outro app chamam `write_section` ao mesmo tempo (ex: app abrindo
+  enquanto HUB salva), o último a escrever apaga as mudanças do outro.
+- [ ] `ecosystem_client.py` — envolver read-modify-write com `fcntl.flock` (Linux)
+  / `msvcrt.locking` ou `win32file.LockFile` (Windows). Alternativa portável: `filelock`
+- [ ] `HUB/src-tauri/src/ecosystem.rs` — usar `fs2::FileExt::lock_exclusive` ou
+  criar lock file `.ecosystem.lock` ao lado do JSON durante o write
+- Ambos devem usar o mesmo mecanismo de lock (lock file `.ecosystem.lock` é mais simples
+  pois funciona cross-process e cross-language)
+
+#### HUB — Caminhos não atualizam nos apps sem reiniciar
+- Causa: todos os apps leem ecosystem.json UMA VEZ no startup (import time no Python,
+  startup no Rust/Electron). Não há polling nem file watcher.
+- Solução imediata (sem refatoração): exibir aviso após "Salvar configuração" igual ao
+  que já existe para "Aplicar ao ecossistema" — "Reinicie cada app para aplicar".
+- [ ] `HUB/src/views/SetupView.tsx` — exibir `savedMsg` com aviso de reinicialização
+  após `handleSave()` bem-sucedido (igual ao `syncMsg` existente)
+- Solução futura (opcional): file watcher nos apps para recarregar paths on-the-fly
+
 #### KOSMOS — Botão "Resumo IA" sempre oculto em janelas normais
 - Bug: `_summarize_btn` está em `_toolbar_row2`, que só fica visível quando
   a janela é mais estreita que 950px. Nunca aparece em tela cheia.
