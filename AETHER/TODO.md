@@ -348,6 +348,10 @@ mesma paleta sépia, mesma tipografia, mesmas regras de sombra, animações e co
 
 > Entregável: produto refinado.
 
+- [ ] 7.0 Botão de excluir visível para projetos, livros e capítulos
+      — usuária não encontrou a ação na UI; verificar se `delete_book` está implementado
+        (1.4 lista `delete_chapter` mas não `delete_book`); tornar todos os deletes
+        descobertos: botão visível no hover ou menu de contexto claro
 - [ ] 7.1 Atalhos de teclado customizáveis
 - [ ] 7.2 Gerador de nomes
 - [ ] 7.3 Projetos recentes na tela inicial com preview
