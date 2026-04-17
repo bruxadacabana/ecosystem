@@ -121,6 +121,17 @@ async def sites_add(
     )
 
 
+# ---------------------------------------------------------------------------
+# DELETE /sites/{site_id}
+# ---------------------------------------------------------------------------
+
+@router.delete("/sites/{site_id}")
+async def sites_delete(site_id: int) -> Response:
+    """Remove site e todas as páginas indexadas (cascade)."""
+    await delete_crawl_site(site_id)
+    return Response(status_code=200)
+
+
 async def _bg_crawl(site_id: int) -> None:
     import logging
     log = logging.getLogger("akasha.crawler")
