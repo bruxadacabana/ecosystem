@@ -236,7 +236,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       extrai links normalizados; descarta âncoras, assets, esquemas não-http
 - [x] `services/crawler.py` — `discover_subdomains(base_url) -> list[str]`:
       GET homepage + tenta sitemap.xml; filtra subdomínios do mesmo domínio-raiz
-- [ ] `services/crawler.py` — `crawl_site(site_id) -> int`:
+- [x] `services/crawler.py` — `crawl_site(site_id) -> int`:
       BFS async com httpx; delega extração ao ecosystem_scraper; atualiza crawl_pages + crawl_fts
 - [ ] `services/crawler.py` — `search_sites(query) -> list[SearchResult]`:
       busca FTS5 em crawl_fts; retorna SearchResult com source="SITES"
