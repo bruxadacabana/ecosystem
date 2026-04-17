@@ -183,7 +183,7 @@ permite adicionar `extra_dirs` para indexação adicional.
 #### KOSMOS — Stats travando e fechando o app
 - Bug: `_reload_charts()` roda na thread principal fazendo k-means (numpy)
   + queries + matplotlib, bloqueando o Qt event loop. Windows marca como "não respondendo".
-- [ ] `KOSMOS/app/ui/views/stats_view.py` — mover carregamento de dados para `QThread`
+- [x] `KOSMOS/app/ui/views/stats_view.py` — mover carregamento de dados para `QThread`
   (StatsLoadWorker); widgets são criados na thread principal após o worker terminar
 
 #### KOSMOS — Archive_path ignora ecosystem.json

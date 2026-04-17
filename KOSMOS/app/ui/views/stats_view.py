@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import calendar
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel,
@@ -52,6 +52,39 @@ _PALETTE = {
 }
 
 
+class _StatsLoadWorker(QThread):
+    """Carrega todos os dados de estatísticas em background (DB + k-means)."""
+
+    finished = pyqtSignal(object)   # dict com todos os dados
+    error    = pyqtSignal(str)
+
+    def __init__(self, days: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._days = days
+
+    def run(self) -> None:
+        try:
+            from app.core.stats import (
+                get_article_clusters, get_daily_stats, get_feed_stats,
+                get_monthly_stats, get_platform_stats, get_sentiment_trend,
+                get_top_entities, get_total_stats,
+            )
+            days = self._days
+            self.finished.emit({
+                "days":      days,
+                "totals":    get_total_stats(),
+                "daily":     get_daily_stats(days=days),
+                "feeds":     get_feed_stats(limit=10),
+                "monthly":   get_monthly_stats(months=12),
+                "platform":  get_platform_stats(),
+                "sentiment": get_sentiment_trend(days=days),
+                "entities":  get_top_entities(days=days),
+                "clusters":  get_article_clusters(days=max(days, 90)),
+            })
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
 class StatsView(QWidget):
     """View de estatísticas com resumo e gráficos matplotlib.
 
@@ -63,7 +96,8 @@ class StatsView(QWidget):
 
     def __init__(self, theme_manager: "ThemeManager", parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._theme = theme_manager
+        self._theme  = theme_manager
+        self._worker: _StatsLoadWorker | None = None
         self.setObjectName("feedListView")
         self._build_ui()
 
@@ -144,26 +178,42 @@ class StatsView(QWidget):
         self._reload_charts()
 
     # ------------------------------------------------------------------
-    # Carregamento
+    # Carregamento assíncrono
     # ------------------------------------------------------------------
 
     def _reload_charts(self) -> None:
+        if self._worker and self._worker.isRunning():
+            return
+
         days = self._period_combo.currentData()
+        self._period_combo.setEnabled(False)
         self._clear_body()
 
-        from app.core.stats import (
-            get_article_clusters, get_daily_stats, get_feed_stats,
-            get_monthly_stats, get_platform_stats, get_sentiment_trend,
-            get_top_entities, get_total_stats,
-        )
-        totals    = get_total_stats()
-        daily     = get_daily_stats(days=days)
-        feeds     = get_feed_stats(limit=10)
-        monthly   = get_monthly_stats(months=12)
-        platform  = get_platform_stats()
-        sentiment = get_sentiment_trend(days=days)
-        entities  = get_top_entities(days=days)
-        clusters  = get_article_clusters(days=max(days, 90))
+        loading = QLabel("Carregando estatísticas…")
+        loading.setObjectName("cardMeta")
+        loading.setFont(self._mono(11))
+        loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._body_layout.addWidget(loading)
+        self._body_layout.addStretch()
+
+        self._worker = _StatsLoadWorker(days, self)
+        self._worker.finished.connect(self._on_data_loaded)
+        self._worker.error.connect(self._on_load_error)
+        self._worker.start()
+
+    def _on_data_loaded(self, payload: dict[str, Any]) -> None:
+        self._period_combo.setEnabled(True)
+        self._clear_body()
+
+        days      = payload["days"]
+        totals    = payload["totals"]
+        daily     = payload["daily"]
+        feeds     = payload["feeds"]
+        monthly   = payload["monthly"]
+        platform  = payload["platform"]
+        sentiment = payload["sentiment"]
+        entities  = payload["entities"]
+        clusters  = payload["clusters"]
 
         pal = _PALETTE.get(self._theme.current, _PALETTE["day"])
 
@@ -189,6 +239,18 @@ class StatsView(QWidget):
             self._body_layout.addWidget(self._build_clusters_section(clusters, pal))
 
         self._body_layout.addStretch()
+
+    def _on_load_error(self, msg: str) -> None:
+        self._period_combo.setEnabled(True)
+        self._clear_body()
+        lbl = QLabel(f"Erro ao carregar estatísticas:\n{msg}")
+        lbl.setObjectName("cardMeta")
+        lbl.setFont(self._mono(11))
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setWordWrap(True)
+        self._body_layout.addWidget(lbl)
+        self._body_layout.addStretch()
+        log.error("Erro ao carregar stats: %s", msg)
 
     def _clear_body(self) -> None:
         while self._body_layout.count():
