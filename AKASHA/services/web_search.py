@@ -107,13 +107,22 @@ async def _fetch_ddg(query: str, max_results: int) -> list[SearchResult]:
 # Função pública
 # ---------------------------------------------------------------------------
 
-async def search_web(query: str, max_results: int = 10) -> list[SearchResult]:
-    """Busca via DuckDuckGo com cache TTL 1h e deduplicação por URL."""
-    cached = await _get_cached(query)
-    if cached is not None:
-        return cached
+async def search_web(query: str, max_results: int = 10, offset: int = 0) -> list[SearchResult]:
+    """Busca via DuckDuckGo com cache TTL 1h e deduplicação por URL.
 
-    results = await _fetch_ddg(query, max_results)
-    results = _deduplicate(results)
-    await _set_cache(query, results)
-    return results
+    offset > 0: busca a próxima página sem usar cache (para "carregar mais").
+    Retorna max_results itens a partir de offset.
+    """
+    if offset == 0:
+        cached = await _get_cached(query)
+        if cached is not None:
+            return cached
+        results = await _fetch_ddg(query, max_results)
+        results = _deduplicate(results)
+        await _set_cache(query, results)
+        return results
+
+    # Página seguinte: busca offset + max_results, fatia a partir de offset
+    raw = await _fetch_ddg(query, offset + max_results)
+    raw = _deduplicate(raw)
+    return raw[offset : offset + max_results]

@@ -57,7 +57,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       data; HTMX `hx-get` no form com indicador de loading
 - [x] Widget "Buscas recentes" no empty state: lista das últimas 10 queries da tabela `searches`
 - [x] Filtro de fonte no UI: radio/toggle Web / Local / Todos (query param `sources=`)
-- [ ] Botão "Carregar mais" abaixo dos cards de resultado: busca a próxima página via `offset`
+- [x] Botão "Carregar mais" abaixo dos cards de resultado: busca a próxima página via `offset`
       do DuckDuckGo e acrescenta os cards ao final (HTMX `hx-swap="beforeend"`)
 
 ---

@@ -1,0 +1,15 @@
+{% from "_macros.html" import result_card %}
+{% for r in results %}{{ result_card(r) }}{% endfor %}
+{% if has_more %}
+<div id="load-more-web" class="load-more-area" hx-swap-oob="true">
+  <button class="btn btn-ghost load-more-btn"
+          hx-get="/search/more?q={{ query | urlencode }}&sources={{ sources }}&offset={{ next_offset }}"
+          hx-target="#web-results-list"
+          hx-swap="beforeend"
+          hx-indicator=".load-more-area">
+    carregar mais
+  </button>
+</div>
+{% else %}
+<span id="load-more-web" hx-swap-oob="true"></span>
+{% endif %}

@@ -42,6 +42,9 @@ async def archive(
     return Response(status_code=200)
 
 
+_PAGE_SIZE = 10
+
+
 @router.get("/search", response_class=HTMLResponse)
 async def search(
     request: Request,
@@ -55,7 +58,7 @@ async def search(
     if q:
         try:
             if sources in ("web", "all"):
-                web_results = await search_web(q)
+                web_results = await search_web(q, max_results=_PAGE_SIZE)
             if sources in ("local", "all"):
                 local_results = await search_local(q)
         except RuntimeError as exc:
@@ -72,10 +75,39 @@ async def search(
         {
             "web_results": web_results,
             "local_results": local_results,
+            "has_more_web": len(web_results) >= _PAGE_SIZE,
             "query": q,
             "sources": sources,
             "recent": recent,
             "error": error,
             "active_tab": "search",
+        },
+    )
+
+
+@router.get("/search/more", response_class=HTMLResponse)
+async def search_more(
+    request: Request,
+    q: str = "",
+    sources: str = "web",
+    offset: int = 0,
+) -> HTMLResponse:
+    """Fragmento HTMX: próxima página de resultados web."""
+    results: list[SearchResult] = []
+    if q and sources in ("web", "all"):
+        try:
+            results = await search_web(q, max_results=_PAGE_SIZE, offset=offset)
+        except RuntimeError:
+            pass
+
+    return templates.TemplateResponse(
+        request,
+        "search_more.html",
+        {
+            "results": results,
+            "query": q,
+            "sources": sources,
+            "next_offset": offset + _PAGE_SIZE,
+            "has_more": len(results) >= _PAGE_SIZE,
         },
     )

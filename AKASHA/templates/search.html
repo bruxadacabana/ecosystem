@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import result_card %}
 
 {% block title %}{% if query %}{{ query }} — AKASHA{% else %}AKASHA{% endif %}{% endblock %}
 
@@ -14,37 +15,6 @@
 <!-- ─── Resultados ──────────────────────────────────────────────── -->
 {% elif web_results or local_results %}
 
-  {# Macro para renderizar um card de resultado #}
-  {% macro result_card(r) %}
-  <li class="card result-card">
-    <div class="result-header">
-      <span class="badge badge-{{ r.source | lower }}">{{ r.source }}</span>
-      {% if r.date %}<time class="result-date">{{ r.date }}</time>{% endif %}
-    </div>
-    <h2 class="result-title">
-      <a href="{{ r.url }}" target="_blank" rel="noopener noreferrer" class="result-link">{{ r.title }}</a>
-    </h2>
-    {% if r.snippet %}
-      <p class="result-snippet">{{ r.snippet }}</p>
-    {% endif %}
-    <div class="result-footer">
-      <span class="result-url">{{ r.url }}</span>
-      <div class="result-actions">
-        <a href="{{ r.url }}" download class="btn btn-ghost btn-sm">&#x21A7; baixar</a>
-        {% if r.source == "WEB" %}
-        <button
-          class="btn btn-ghost btn-sm"
-          hx-post="/archive"
-          hx-vals='{"url": "{{ r.url }}"}'
-          hx-swap="none"
-          hx-on::after-request="showToast(event.detail.successful ? 'Arquivado!' : 'Erro ao arquivar', event.detail.successful ? 'success' : 'error')"
-        >&#x25A4; arquivar</button>
-        {% endif %}
-      </div>
-    </div>
-  </li>
-  {% endmacro %}
-
   {# ── Modo sources=all: duas seções ── #}
   {% if sources == "all" %}
 
@@ -52,9 +22,19 @@
     <section class="results-section">
       <h3 class="results-section-title">Resultados web</h3>
       <p class="results-meta">{{ web_results | length }} resultado{% if web_results | length != 1 %}s{% endif %} para <strong>{{ query }}</strong></p>
-      <ol class="results-list">
+      <ol id="web-results-list" class="results-list">
         {% for r in web_results %}{{ result_card(r) }}{% endfor %}
       </ol>
+      {% if has_more_web %}
+      <div id="load-more-web" class="load-more-area">
+        <button class="btn btn-ghost load-more-btn"
+                hx-get="/search/more?q={{ query | urlencode }}&sources={{ sources }}&offset={{ web_results | length }}"
+                hx-target="#web-results-list"
+                hx-swap="beforeend">
+          carregar mais
+        </button>
+      </div>
+      {% endif %}
     </section>
     {% endif %}
 
@@ -82,9 +62,19 @@
     {% if results %}
     <section class="results-section">
       <p class="results-meta">{{ results | length }} resultado{% if results | length != 1 %}s{% endif %} para <strong>{{ query }}</strong></p>
-      <ol class="results-list">
+      <ol id="web-results-list" class="results-list">
         {% for r in results %}{{ result_card(r) }}{% endfor %}
       </ol>
+      {% if has_more_web and sources == "web" %}
+      <div id="load-more-web" class="load-more-area">
+        <button class="btn btn-ghost load-more-btn"
+                hx-get="/search/more?q={{ query | urlencode }}&sources={{ sources }}&offset={{ web_results | length }}"
+                hx-target="#web-results-list"
+                hx-swap="beforeend">
+          carregar mais
+        </button>
+      </div>
+      {% endif %}
     </section>
     {% else %}
     <section class="empty-state">
