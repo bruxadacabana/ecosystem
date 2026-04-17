@@ -66,6 +66,7 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
   const [exePaths, setExePaths] = useState<Partial<Record<AppName, string>>>({})
   const [statuses, setStatuses] = useState<Partial<Record<AppName, boolean>>>({})
   const [pulsing, setPulsing] = useState<Partial<Record<AppName, boolean>>>({})
+  const [akashaBaseUrl, setAkashaBaseUrl] = useState('')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ----------------------------------------------------------
@@ -83,6 +84,7 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
         hermes:    (eco.hermes as { exe_path?: string } | undefined)?.exe_path ?? '',
         akasha:    eco.akasha?.exe_path    ?? '',
       })
+      setAkashaBaseUrl(eco.akasha?.base_url ?? 'http://localhost:7071')
     })
   }
 
@@ -149,6 +151,16 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
     setTimeout(() => setPulsing(p => ({ ...p, [name]: false })), 700)
   }
 
+  async function stopAkasha() {
+    const base = akashaBaseUrl || 'http://localhost:7071'
+    try {
+      await fetch(`${base}/shutdown`, { method: 'POST' })
+    } catch {
+      // processo pode cair antes de responder — ignorar
+    }
+    setTimeout(() => pollStatuses(exePaths), 1500)
+  }
+
   // ----------------------------------------------------------
   //  Render
   // ----------------------------------------------------------
@@ -180,6 +192,7 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
             configured={configured}
             pulsing={isPulsing}
             onClick={() => handleClick(app)}
+            onStop={app.name === 'akasha' ? stopAkasha : undefined}
           />
         )
       })}
@@ -197,61 +210,95 @@ interface AppButtonProps {
   configured: boolean
   pulsing: boolean
   onClick: () => void
+  onStop?: () => void
 }
 
-function AppButton({ app, running, configured, pulsing, onClick }: AppButtonProps) {
+function AppButton({ app, running, configured, pulsing, onClick, onStop }: AppButtonProps) {
   const [hovered, setHovered] = useState(false)
+  const showStop = hovered && running && !!onStop
 
   return (
-    <button
-      title={configured ? app.label : `${app.label} — configure o executável`}
-      onClick={onClick}
+    <div
+      style={{ position: 'relative', display: 'inline-flex' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        width: 44,
-        height: 50,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 5,
-        background: hovered && configured ? 'var(--rule)' : 'transparent',
-        border: 'none',
-        borderRadius: 'var(--radius)',
-        cursor: configured ? 'pointer' : 'default',
-        opacity: configured ? 1 : 0.35,
-        transition: 'background 120ms, opacity 200ms',
-        padding: 0,
-        userSelect: 'none',
-      }}
     >
-      {/* Sigla em IM Fell English itálico */}
-      <span
+      <button
+        title={configured ? app.label : `${app.label} — configure o executável`}
+        onClick={onClick}
         style={{
-          fontFamily: 'var(--font-display)',
-          fontStyle: 'italic',
-          fontSize: 17,
-          lineHeight: 1,
-          color: running ? 'var(--ink)' : 'var(--ink-muted, var(--ink))',
-          transition: 'color 300ms',
+          width: 44,
+          height: 50,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 5,
+          background: hovered && configured ? 'var(--rule)' : 'transparent',
+          border: 'none',
+          borderRadius: 'var(--radius)',
+          cursor: configured ? 'pointer' : 'default',
+          opacity: configured ? 1 : 0.35,
+          transition: 'background 120ms, opacity 200ms',
+          padding: 0,
+          userSelect: 'none',
         }}
       >
-        {app.sigla}
-      </span>
+        {/* Sigla em IM Fell English itálico */}
+        <span
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontStyle: 'italic',
+            fontSize: 17,
+            lineHeight: 1,
+            color: running ? 'var(--ink)' : 'var(--ink-muted, var(--ink))',
+            transition: 'color 300ms',
+          }}
+        >
+          {app.sigla}
+        </span>
 
-      {/* Indicador de status */}
-      <span
-        style={{
-          width: 5,
-          height: 5,
-          borderRadius: '50%',
-          background: running ? '#4A6741' : 'var(--rule)',
-          transition: 'background 400ms',
-          animation: pulsing ? 'etherPulse 0.7s ease-in-out' : 'none',
-          flexShrink: 0,
-        }}
-      />
-    </button>
+        {/* Indicador de status */}
+        <span
+          style={{
+            width: 5,
+            height: 5,
+            borderRadius: '50%',
+            background: running ? '#4A6741' : 'var(--rule)',
+            transition: 'background 400ms',
+            animation: pulsing ? 'etherPulse 0.7s ease-in-out' : 'none',
+            flexShrink: 0,
+          }}
+        />
+      </button>
+
+      {/* Botão de parada — aparece ao passar o mouse quando o app está rodando */}
+      {showStop && (
+        <button
+          title={`Encerrar ${app.label}`}
+          onClick={e => { e.stopPropagation(); onStop() }}
+          style={{
+            position: 'absolute',
+            top: 2,
+            right: 2,
+            width: 14,
+            height: 14,
+            borderRadius: '50%',
+            background: '#c0392b',
+            border: 'none',
+            color: '#fff',
+            fontSize: 9,
+            lineHeight: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          ✕
+        </button>
+      )}
+    </div>
   )
 }

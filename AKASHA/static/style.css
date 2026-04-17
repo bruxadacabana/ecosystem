@@ -244,6 +244,27 @@ a:hover { opacity: 0.75; }
 }
 .btn-theme:hover { color: var(--ink); border-color: var(--ink-ghost); }
 
+/* ── Botão de encerramento ──────────────────────────────── */
+
+.shutdown-btn {
+  background:  transparent;
+  border:      1px solid var(--rule);
+  border-radius: var(--radius);
+  color:       var(--ink-ghost);
+  cursor:      pointer;
+  font-size:   14px;
+  width:       30px;
+  height:      28px;
+  display:     flex;
+  align-items: center;
+  justify-content: center;
+  transition:  color var(--transition), border-color var(--transition);
+}
+.shutdown-btn:hover {
+  color:        #c0392b;
+  border-color: #c0392b;
+}
+
 /* ── Área principal ─────────────────────────────────────── */
 
 .main {

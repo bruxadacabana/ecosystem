@@ -72,6 +72,15 @@
       title="Alternar tema noturno"
       onclick="toggleTheme()"
     >&#9790;</button>
+
+    <button
+      class="btn btn-ghost shutdown-btn"
+      title="Encerrar AKASHA"
+      hx-post="/shutdown"
+      hx-swap="none"
+      hx-confirm="Encerrar o AKASHA?"
+      hx-on::after-request="showToast('AKASHA encerrado.', 'info')"
+    >&#x23FB;</button>
   </header>
 
   <!-- ─── Conteúdo principal ───────────────────────────────────── -->
