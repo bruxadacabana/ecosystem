@@ -221,28 +221,28 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Banco de dados
 
-- [ ] Migration v6: tabela `crawl_sites` —
+- [x] Migration v7: tabela `crawl_sites` —
       `id, base_url, label, crawl_depth, subdomains_json, page_count,
        last_crawled_at, status (idle|crawling|error), created_at`
-      — `subdomains_json`: lista de domínios adicionais aprovados pelo usuário
-      (ex: `["docs.exemplo.com", "wiki.exemplo.com"]`)
-- [ ] Migration v6: tabela `crawl_pages` —
+- [x] Migration v7: tabela `crawl_pages` —
       `id, site_id, url, title, content_md, content_hash, http_status, crawled_at`
-- [ ] Migration v6: FTS5 `crawl_fts` — `(site_id UNINDEXED, url UNINDEXED, title, content_md)`
-      com trigger de sincronização em INSERT/UPDATE/DELETE em `crawl_pages`
+- [x] Migration v7: FTS5 `crawl_fts` — `(site_id UNINDEXED, url UNINDEXED, title, content_md)`
+      sincronização manual em Python (sem triggers SQL no FTS5)
+- [x] `database.py` — helpers: `get_all_crawl_sites()`, `get_crawl_site(id)`
 
 ### Services
 
+- [ ] `services/crawler.py` — `extract_links(html, base_url) -> list[str]`:
+      extrai links normalizados; descarta âncoras, assets, esquemas não-http
 - [ ] `services/crawler.py` — `discover_subdomains(base_url) -> list[str]`:
-      faz GET na homepage, extrai todos os `<a href>` e filtra subdomínios distintos do mesmo
-      domínio-raiz (eTLD+1); também tenta `{base_url}/sitemap.xml`
-- [ ] `services/crawler.py` — `crawl_site(site_id: int) -> int`:
-      BFS respeitando `crawl_depth`, restringe a `base_url` + `subdomains_json`;
-      pula URLs já visitadas (hash da URL); atualiza `crawl_pages` + `crawl_fts`;
-      retorna número de páginas indexadas
-- [ ] `services/crawler.py` — `extract_links(html: str, base_url: str) -> list[str]`:
-      extrai e normaliza links internos; descarta âncoras, query strings únicas, assets
-- [ ] Integrar `crawl_site()` no loop horário do lifespan (junto com `check_overdue()`)
+      GET homepage + tenta sitemap.xml; filtra subdomínios do mesmo domínio-raiz
+- [ ] `services/crawler.py` — `crawl_site(site_id) -> int`:
+      BFS async com httpx; delega extração ao ecosystem_scraper; atualiza crawl_pages + crawl_fts
+- [ ] `services/crawler.py` — `search_sites(query) -> list[SearchResult]`:
+      busca FTS5 em crawl_fts; retorna SearchResult com source="SITES"
+- [ ] `services/crawler.py` — `crawl_pending_sites()`:
+      crawls sites com last_crawled_at IS NULL; chamado pelo loop horário
+- [ ] Integrar `crawl_pending_sites()` no loop horário do lifespan (`_monitor_library`)
 
 ### Routers
 

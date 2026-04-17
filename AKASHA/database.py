@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -128,7 +128,44 @@ CREATE TABLE IF NOT EXISTS blocked_domains (
 );
 """
 
+_CREATE_CRAWL_SITES = """
+CREATE TABLE IF NOT EXISTS crawl_sites (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    base_url        TEXT    NOT NULL UNIQUE,
+    label           TEXT    NOT NULL DEFAULT '',
+    crawl_depth     INTEGER NOT NULL DEFAULT 2,
+    subdomains_json TEXT    NOT NULL DEFAULT '[]',
+    page_count      INTEGER NOT NULL DEFAULT 0,
+    last_crawled_at TEXT,
+    status          TEXT    NOT NULL DEFAULT 'idle',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_CRAWL_PAGES = """
+CREATE TABLE IF NOT EXISTS crawl_pages (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id      INTEGER NOT NULL REFERENCES crawl_sites(id) ON DELETE CASCADE,
+    url          TEXT    NOT NULL UNIQUE,
+    title        TEXT    NOT NULL DEFAULT '',
+    content_md   TEXT    NOT NULL DEFAULT '',
+    content_hash TEXT    NOT NULL DEFAULT '',
+    http_status  INTEGER NOT NULL DEFAULT 0,
+    crawled_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_CRAWL_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS crawl_fts USING fts5(
+    site_id  UNINDEXED,
+    url      UNINDEXED,
+    title,
+    content_md
+);
+"""
+
 # Status válidos para downloads: queued | active | done | error
+# Status válidos para crawl_sites: idle | crawling | error
 
 # ---------------------------------------------------------------------------
 # Inicialização e migrations
@@ -148,6 +185,9 @@ async def init_db() -> None:
         await db.execute(_CREATE_LIBRARY_DIFFS)
         await db.execute(_CREATE_LIBRARY_FTS)
         await db.execute(_CREATE_BLOCKED_DOMAINS)
+        await db.execute(_CREATE_CRAWL_SITES)
+        await db.execute(_CREATE_CRAWL_PAGES)
+        await db.execute(_CREATE_CRAWL_FTS)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -177,6 +217,9 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
 
     if from_version < 6:
         pass  # Versão 6 — blocked_domains criado acima
+
+    if from_version < 7:
+        pass  # Versão 7 — crawl_sites, crawl_pages, crawl_fts criados acima
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -242,3 +285,18 @@ async def recent_searches(limit: int = 10) -> list[str]:
             (limit,),
         )).fetchall()
         return [r[0] for r in rows]
+
+
+async def get_all_crawl_sites() -> list[tuple]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT * FROM crawl_sites ORDER BY created_at DESC"
+        )).fetchall()
+    return list(rows)
+
+
+async def get_crawl_site(site_id: int) -> tuple | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        return await (await db.execute(
+            "SELECT * FROM crawl_sites WHERE id = ?", (site_id,)
+        )).fetchone()
