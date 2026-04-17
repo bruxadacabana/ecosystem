@@ -16,3 +16,5 @@ readability-lxml
 html2text
 langdetect
 rapidfuzz
+inscriptis
+markdownify

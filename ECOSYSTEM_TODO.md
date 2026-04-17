@@ -172,7 +172,19 @@ Cada app deve escrever sua seção completa no startup. Schema alvo:
       (`output_dir` = pasta de downloads/transcrições configurada na UI)
 - [x] **AKASHA** — adicionar `archive_path` à seção já escrita por `register_akasha()`
 
-### 1.6 — AKASHA: busca local cobre todo o ecossistema
+### 1.6 — Scraper compartilhado: KOSMOS e AKASHA
+
+Objetivo: eliminar a duplicação de código da cascata de extração web.
+`ecosystem_scraper.py` (raiz do repo) é o único ponto de manutenção da cascata.
+
+- [x] Criar `ecosystem_scraper.py` — cascata newspaper4k → trafilatura → readability-lxml
+      → inscriptis → BeautifulSoup; `extract(html, url, output_format)` sem I/O próprio
+- [x] `AKASHA/services/archiver.py` — delegar `_cascade_extract` ao módulo compartilhado
+- [x] `AKASHA/services/library.py` — idem para `_fetch_and_extract`
+- [x] `KOSMOS/app/core/article_scraper.py` — simplificar para `_cascade_extract(..., output_format="html")`
+- [x] `KOSMOS/requirements.txt` — adicionar `inscriptis` e `markdownify`
+
+### 1.8 — AKASHA: busca local cobre todo o ecossistema
 
 - [x] Indexar `AKASHA/data/archive/` própria no FTS5 (source "AKASHA")
       (`index_local_files()` em `services/local_search.py` — mesmo extractor do KOSMOS)
@@ -181,7 +193,7 @@ Cada app deve escrever sua seção completa no startup. Schema alvo:
 - [x] Indexar `mnemosyne.vault_dir` no FTS5 (source "OBSIDIAN")
       (depende de 1.5 — Mnemosyne precisa escrever esses caminhos primeiro)
 
-### 1.7 — Mnemosyne: sugestões do ecossistema cobrindo todos os archives
+### 1.9 — Mnemosyne: sugestões do ecossistema cobrindo todos os archives
 
 - [x] Adicionar AKASHA archive (`akasha.archive_path`) nas sugestões da SetupDialog
       (depende de 1.5 — AKASHA precisa escrever `archive_path` primeiro)

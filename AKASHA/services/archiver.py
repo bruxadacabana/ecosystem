@@ -1,11 +1,11 @@
 """
 AKASHA — Arquivação de páginas web no formato KOSMOS estendido
-Extração em cascata: newspaper4k → trafilatura → readability-lxml → inscriptis → BeautifulSoup
-HTML baixado uma vez; primeiro extrator a retornar ≥ 100 palavras vence.
+Fetch via httpx; extração delegada ao ecosystem_scraper (cascata compartilhada).
 """
 from __future__ import annotations
 
 import re
+import sys
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,16 +15,13 @@ from urllib.parse import urlparse
 import httpx
 import trafilatura
 
+# Módulo compartilhado do ecossistema
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from ecosystem_scraper import extract as _cascade_extract
+
 # ---------------------------------------------------------------------------
-# Constante e helpers de texto
+# Helpers
 # ---------------------------------------------------------------------------
-
-_WORD_THRESHOLD = 100
-
-
-def _word_count(text: str) -> int:
-    return len(text.split())
-
 
 def _slugify(text: str, max_len: int = 60) -> str:
     text = unicodedata.normalize("NFKD", text)
@@ -54,97 +51,7 @@ def _url_fallback_title(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Extratores individuais — todos silenciosos em falha ou lib ausente
-# ---------------------------------------------------------------------------
-
-def _ext_newspaper(html: str, url: str) -> str:
-    try:
-        from newspaper import Article  # newspaper4k
-        art = Article(url)
-        art.set_html(html)
-        art.parse()
-        return art.text or ""
-    except Exception:
-        return ""
-
-
-def _ext_trafilatura(html: str) -> str:
-    try:
-        result = trafilatura.extract(
-            html,
-            include_formatting=True,
-            output_format="markdown",
-            no_fallback=False,
-            favor_recall=True,
-        )
-        return result or ""
-    except Exception:
-        return ""
-
-
-def _ext_readability(html: str) -> str:
-    try:
-        from markdownify import markdownify as md
-        from readability import Document
-        doc = Document(html)
-        return md(doc.summary(), heading_style="ATX")
-    except Exception:
-        return ""
-
-
-def _ext_inscriptis(html: str) -> str:
-    try:
-        from inscriptis import get_text
-        return get_text(html)
-    except Exception:
-        return ""
-
-
-def _ext_bs4(html: str) -> str:
-    try:
-        from bs4 import BeautifulSoup
-        from markdownify import markdownify as md
-        soup = BeautifulSoup(html, "html.parser")
-        for tag in soup(["nav", "footer", "script", "style", "aside", "header"]):
-            tag.decompose()
-        article = soup.find("article") or soup.find("main") or soup.find("body")
-        if article is None:
-            return ""
-        return md(str(article), heading_style="ATX")
-    except Exception:
-        return ""
-
-
-# ---------------------------------------------------------------------------
-# Cascata de extração
-# ---------------------------------------------------------------------------
-
-def _extract_cascade(html: str, url: str) -> str:
-    """Tenta extratores em ordem; retorna o primeiro com ≥ 100 palavras.
-    Se nenhum atingir o limiar, retorna o mais longo dos resultados parciais."""
-    extractors = [
-        lambda: _ext_newspaper(html, url),
-        lambda: _ext_trafilatura(html),
-        lambda: _ext_readability(html),
-        lambda: _ext_inscriptis(html),
-        lambda: _ext_bs4(html),
-    ]
-    partial: list[str] = []
-    for ext in extractors:
-        try:
-            text = ext()
-            if not text:
-                continue
-            if _word_count(text) >= _WORD_THRESHOLD:
-                return text
-            partial.append(text)
-        except Exception:
-            continue
-    return max(partial, key=_word_count, default="")
-
-
-# ---------------------------------------------------------------------------
-# Resultado da arquivação
+# Resultado
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -172,7 +79,7 @@ async def archive_url(
     notes: str = "",
 ) -> ArchivedPage:
     """
-    Faz fetch da URL, extrai conteúdo via cascata e salva em:
+    Faz fetch da URL, extrai conteúdo via cascata compartilhada e salva em:
         {archive_path}/Web/{YYYY-MM-DD}_{slug}.md
 
     Levanta:
@@ -192,19 +99,19 @@ async def archive_url(
         response.raise_for_status()
         html = response.text
 
-    # ── Metadados (trafilatura extrai de qualquer forma) ──────────────────
+    # ── Metadados (trafilatura) ───────────────────────────────────────────
     metadata  = trafilatura.extract_metadata(html, default_url=url)
     title:    str = (metadata and metadata.title)              or _url_fallback_title(url)
     author:   str = (metadata and metadata.author)             or ""
     language: str = (metadata and getattr(metadata, "language", "")) or ""
     domain:   str = urlparse(url).netloc
 
-    # ── Extração em cascata ───────────────────────────────────────────────
-    content: str = _extract_cascade(html, url)
+    # ── Extração em cascata compartilhada ─────────────────────────────────
+    content: str = _cascade_extract(html, url, output_format="markdown")
 
-    now        = datetime.now()
-    date_str   = now.strftime("%Y-%m-%d %H:%M")
-    wc         = _word_count(content)
+    now      = datetime.now()
+    date_str = now.strftime("%Y-%m-%d %H:%M")
+    wc       = len(content.split())
 
     # ── Frontmatter KOSMOS estendido ──────────────────────────────────────
     body = (

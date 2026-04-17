@@ -13,11 +13,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
+import sys
+from pathlib import Path as _Path
+
 import aiosqlite
 import httpx
 import trafilatura
 
 from config import DB_PATH
+
+sys.path.insert(0, str(_Path(__file__).parent.parent.parent))
+from ecosystem_scraper import extract as _cascade_extract
 
 
 # ---------------------------------------------------------------------------
@@ -124,17 +130,10 @@ async def _fetch_and_extract(url: str) -> tuple[str, str, str, int]:
         response.raise_for_status()
         html = response.text
 
-    metadata = trafilatura.extract_metadata(html, default_url=url)
-    content: str = trafilatura.extract(
-        html,
-        include_formatting=True,
-        output_format="markdown",
-        no_fallback=False,
-        favor_recall=True,
-    ) or ""
-
+    metadata  = trafilatura.extract_metadata(html, default_url=url)
     title:    str = (metadata and metadata.title) or urlparse(url).netloc
     language: str = (metadata and getattr(metadata, "language", "")) or ""
+    content: str = _cascade_extract(html, url, output_format="markdown")
     return title, language, content, len(content.split())
 
 
