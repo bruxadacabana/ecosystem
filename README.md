@@ -727,11 +727,36 @@ Cada app escreve apenas a sua própria seção; as demais são preservadas. Escr
   "aether":    { "vault_path": "...", "exe_path": "..." },
   "kosmos":    { "archive_path": "...", "data_path": "...", "exe_path": "..." },
   "ogma":      { "data_path": "...", "exe_path": "..." },
-  "mnemosyne": { "watched_dir": "...", "chroma_dir": "...", "index_paths": [], "exe_path": "..." },
+  "mnemosyne": { "watched_dir": "...", "vault_dir": "...", "chroma_dir": "...", "index_paths": [], "exe_path": "..." },
   "hermes":    { "output_dir": "...", "exe_path": "..." },
   "akasha":    { "archive_path": "...", "base_url": "...", "exe_path": "..." }
 }
 ```
+
+#### Contrato por campo
+
+| Campo | Escrito por | Quando | Lido por | Formato |
+|---|---|---|---|---|
+| `sync_root` | HUB | ação do usuário (SetupView → Aplicar) | HUB (SetupView) | string — caminho absoluto |
+| `aether.vault_path` | AETHER · HUB | startup · `apply_sync_root` | AKASHA (busca local) | string — caminho absoluto |
+| `aether.exe_path` | AETHER | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
+| `kosmos.archive_path` | KOSMOS · HUB | startup · `apply_sync_root` | AKASHA (busca local), Mnemosyne (sugestões) | string — caminho absoluto |
+| `kosmos.data_path` | KOSMOS | startup | HUB | string — caminho absoluto |
+| `kosmos.exe_path` | KOSMOS | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
+| `ogma.data_path` | OGMA | startup | HUB | string — caminho absoluto |
+| `ogma.exe_path` | OGMA | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
+| `mnemosyne.watched_dir` | Mnemosyne · HUB | startup (se configurado) · `apply_sync_root` | AKASHA (busca local), Mnemosyne (sugestões) | string — caminho absoluto |
+| `mnemosyne.vault_dir` | Mnemosyne | startup (se configurado) | AKASHA (busca local), Mnemosyne (sugestões) | string — caminho absoluto |
+| `mnemosyne.chroma_dir` | HUB | `apply_sync_root` | Mnemosyne (`persist_dir`) | string — caminho absoluto |
+| `mnemosyne.index_paths` | Mnemosyne | startup (se `persist_dir` configurado) | — reservado para uso futuro | array de strings |
+| `mnemosyne.exe_path` | Mnemosyne | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
+| `hermes.output_dir` | Hermes · HUB | startup · `apply_sync_root` | HUB | string — caminho absoluto |
+| `hermes.exe_path` | Hermes | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
+| `akasha.archive_path` | HUB | `apply_sync_root` | AKASHA (arquivação e busca local) | string — caminho absoluto |
+| `akasha.base_url` | AKASHA | startup | HUB (link para o app) | string — URL base (ex: `http://localhost:7071`) |
+| `akasha.exe_path` | AKASHA | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
+
+**Regras de escrita:** cada app usa `write_section(app, {...})` — merge atômico que preserva todos os campos da seção que não estão no payload. O HUB é o único que escreve campos de múltiplos apps (via `apply_sync_root`). Nunca sobrescrever `exe_path` de outro app.
 
 ### Portas reservadas (modo desenvolvimento)
 
@@ -771,10 +796,10 @@ KOSMOS, Mnemosyne e Hermes são apps desktop (PyQt6/PySide6) — não expõem po
 - AETHER escreve `vault_path` e `exe_path` no startup
 - KOSMOS escreve `archive_path`, `data_path` e `exe_path` no startup
 - OGMA escreve `data_path` e `exe_path` no startup
-- Mnemosyne escreve `watched_dir`, `chroma_dir`, `index_paths` e `exe_path` no startup; botão "Sugestões do ecossistema" preenche campos com caminhos do KOSMOS/AETHER
+- Mnemosyne escreve `watched_dir`, `vault_dir` (se configurado), `index_paths` e `exe_path` no startup; botão "Sugestões do ecossistema" preenche campos com caminhos do KOSMOS/AKASHA/AETHER
 - Hermes escreve `output_dir` e `exe_path` no startup
 - AKASHA escreve `base_url` e `exe_path` no startup; lê `archive_path` configurado pelo HUB
-- HUB: lê `ecosystem.json` para descobrir dados de todos os apps; `apply_sync_root()` deriva e grava todos os caminhos de uma vez a partir de uma pasta raiz (ex.: Proton Drive)
+- HUB: lê `ecosystem.json` para descobrir dados de todos os apps; `apply_sync_root()` escreve `sync_root` + todos os caminhos de pasta de uma vez (preservando `exe_path` e demais campos)
 
 ---
 

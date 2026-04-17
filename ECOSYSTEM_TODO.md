@@ -57,7 +57,7 @@ e tipado com a mesma atenção que o caminho feliz.
       Funções: `ecosystem_path()`, `write_section()` usando `dirs::data_dir()`
 - [x] Adicionar `dirs = "5"` em `AETHER/src-tauri/Cargo.toml`
 - [x] Wiring em `AETHER/src-tauri/src/lib.rs`: escreve `vault_path` no startup (falha silenciosa)
-- [ ] Documentar o contrato: quem escreve cada campo, quando, formato
+- [x] Documentar o contrato: quem escreve cada campo, quando, formato
 
 ### 0.5 — sync_root: sincronização via Proton Drive (ou qualquer pasta sync)
 
