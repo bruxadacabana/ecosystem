@@ -273,7 +273,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       subdomínios incluídos; botão "Re-crawl" e "Remover"
 - [x] `templates/sites.html` — formulário "Adicionar site": campo URL → botão "Detectar subdomínios"
       → HTMX retorna checkboxes dos subdomínios encontrados → campo profundidade → "Adicionar"
-- [ ] Nav: aba "Sites" na topbar
+- [x] Nav: aba "Sites" na topbar
 
 ---
 
