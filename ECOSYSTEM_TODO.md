@@ -182,7 +182,7 @@ permite adicionar `extra_dirs` para indexação adicional.
 - [ ] `Hermes/hermes.py` — auto-selecionar o primeiro vídeo da lista após carregar
 
 #### Mnemosyne — Indexação trava o computador mesmo com LLM cloud
-- Configuração confirmada: LLM = kimi-k2.5:cloud (nuvem, OK), embedding = bge-m3:latest (local)
+- Configuração confirmada no Windows 10: LLM = kimi-k2.5:cloud (nuvem, OK), embedding = bge-m3:latest (local, ~570MB)
 - Causa raiz: `Chroma.from_documents()` envia TODOS os chunks para o Ollama de uma vez,
   sem pausas. bge-m3 ocupa ~570MB na RAM de GPU/CPU; com muitos arquivos são milhares
   de chamadas consecutivas sem liberar memória → travamento.
