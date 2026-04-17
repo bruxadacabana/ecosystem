@@ -516,6 +516,7 @@ a:hover { opacity: 0.75; }
 .badge-aether    { background: color-mix(in srgb, var(--accent-green)  20%, transparent); color: var(--accent-green); border: 1px solid var(--accent-green); }
 .badge-mnemosyne { background: color-mix(in srgb, var(--ink-ghost)     20%, transparent); color: var(--ink-ghost);    border: 1px solid var(--rule); }
 .badge-biblioteca { background: color-mix(in srgb, var(--accent-green) 20%, transparent); color: var(--accent-green); border: 1px solid var(--accent-green); }
+.badge-sites      { background: color-mix(in srgb, var(--accent-dim)   20%, transparent); color: var(--accent-dim);   border: 1px solid var(--accent-dim); }
 
 .tag {
   border:         1px solid var(--rule);

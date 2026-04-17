@@ -16,6 +16,8 @@ import database
 from services.archiver import archive_url
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local
+from services.crawler import search_sites
+from database import get_all_crawl_sites
 
 router = APIRouter()
 
@@ -48,39 +50,65 @@ _PAGE_SIZE = 10
 @router.get("/search", response_class=HTMLResponse)
 async def search(
     request: Request,
-    q: str = "",
-    sources: str = "all",
+    q:         str = "",
+    src_web:   str = "",   # "on" quando checkbox marcado
+    src_eco:   str = "",
+    src_sites: str = "",
+    # retrocompat
+    sources: str = "",
 ) -> HTMLResponse:
-    web_results: list[SearchResult] = []
+    # Retrocompat: mapeia ?sources=all|web|local para os novos params
+    if sources and not any([src_web, src_eco, src_sites]):
+        src_web   = "on" if sources in ("web",   "all") else ""
+        src_eco   = "on" if sources in ("local", "all") else ""
+
+    # Padrão: web + eco quando nada selecionado
+    if not any([src_web, src_eco, src_sites]):
+        src_web = src_eco = "on"
+
+    web_results:   list[SearchResult] = []
     local_results: list[SearchResult] = []
+    site_results:  list[SearchResult] = []
     error: str | None = None
 
     if q:
         try:
-            if sources in ("web", "all"):
-                web_results = await search_web(q, max_results=_PAGE_SIZE)
-            if sources in ("local", "all"):
+            if src_web:
+                web_results   = await search_web(q, max_results=_PAGE_SIZE)
+            if src_eco:
                 local_results = await search_local(q)
+            if src_sites:
+                site_results  = await search_sites(q)
         except RuntimeError as exc:
             error = str(exc)
 
-        total = len(web_results) + len(local_results)
-        await database.save_search(q, sources, total)
+        total = len(web_results) + len(local_results) + len(site_results)
+        src_label = "+".join(filter(None, [
+            "web" if src_web else "",
+            "local" if src_eco else "",
+            "sites" if src_sites else "",
+        ]))
+        await database.save_search(q, src_label or "web", total)
 
+    has_sites = src_sites and bool(await get_all_crawl_sites())
     recent = await database.recent_searches()
 
     return templates.TemplateResponse(
         request,
         "search.html",
         {
-            "web_results": web_results,
+            "web_results":   web_results,
             "local_results": local_results,
-            "has_more_web": len(web_results) >= _PAGE_SIZE,
-            "query": q,
-            "sources": sources,
-            "recent": recent,
-            "error": error,
-            "active_tab": "search",
+            "site_results":  site_results,
+            "has_more_web":  len(web_results) >= _PAGE_SIZE,
+            "query":         q,
+            "src_web":       bool(src_web),
+            "src_eco":       bool(src_eco),
+            "src_sites":     bool(src_sites),
+            "has_sites":     has_sites,
+            "recent":        recent,
+            "error":         error,
+            "active_tab":    "search",
         },
     )
 

@@ -258,7 +258,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Integração com busca
 
-- [ ] `routers/search.py` — novo source `sites`: busca em `crawl_fts`;
+- [x] `routers/search.py` — novo source `sites`: busca em `crawl_fts`;
       retorna `list[SearchResult]` com `source="SITES"` e badge dourado
 - [ ] `templates/search.html` — substituir radio de fonte por checkboxes:
       `□ Web  □ Ecossistema  □ Sites pessoais`; persistir escolha em `localStorage`;
