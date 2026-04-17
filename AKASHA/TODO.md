@@ -112,6 +112,11 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] Botão "arquivar" em cada card de resultado `WEB` (HTMX `hx-post`, toast de confirmação)
 - [x] Fallback: se `kosmos_archive` não configurado, retornar erro 400 com mensagem clara
       orientando a configurar o caminho em `/settings`
+- [ ] **Melhorar extração de conteúdo:** substituir trafilatura único por cascata de extratores
+      (mesmo padrão do `ArticleScraper` do KOSMOS): o HTML é baixado uma vez e cada extrator
+      tenta em ordem; o primeiro a retornar ≥ 100 palavras vence; se nenhum atingir, usa o
+      resultado mais longo. Pesquisar e decidir quais extratores incluir além de trafilatura
+      (candidatos: `newspaper4k`, `readability-lxml`, `BeautifulSoup`, `markdownify`, outros).
 
 ---
 
