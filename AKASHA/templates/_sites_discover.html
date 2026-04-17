@@ -1,0 +1,29 @@
+<form hx-post="/sites" hx-target="#sites-list" hx-swap="outerHTML"
+  style="border:1px solid var(--rule);border-radius:var(--radius);padding:1rem;margin-bottom:1rem;">
+  <input type="hidden" name="url" value="{{ base_url }}">
+  <div style="margin-bottom:.75rem;">
+    <label class="meta" style="display:block;margin-bottom:.25rem;">Label (opcional)</label>
+    <input type="text" name="label" class="input" placeholder="{{ base_url }}" style="width:100%;">
+  </div>
+  <div style="margin-bottom:.75rem;">
+    <label class="meta" style="display:block;margin-bottom:.25rem;">Profundidade</label>
+    <input type="number" name="crawl_depth" class="input" value="2" min="1" max="5" style="width:5rem;">
+  </div>
+  {% if subdomains %}
+  <div style="margin-bottom:.75rem;">
+    <span class="meta">Subdomínios encontrados:</span>
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.4rem;">
+      {% for sub in subdomains %}
+      <label class="tag" style="cursor:pointer;">
+        <input type="checkbox" name="subdomains" value="{{ sub }}" style="margin-right:.3rem;">
+        {{ sub }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <div style="display:flex;gap:.5rem;">
+    <button type="submit" class="btn btn-primary">Adicionar e crawlar</button>
+    <button type="button" class="btn btn-ghost" onclick="this.closest('form').parentElement.innerHTML=''">Cancelar</button>
+  </div>
+</form>

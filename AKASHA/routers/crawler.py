@@ -11,7 +11,8 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from database import get_all_crawl_sites
+from database import add_crawl_site, delete_crawl_site, get_all_crawl_sites
+from services.crawler import crawl_site, discover_subdomains
 
 router = APIRouter()
 
@@ -58,4 +59,26 @@ async def sites_page(request: Request) -> HTMLResponse:
         request,
         "sites.html",
         {"sites": sites, "active_tab": "sites"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /sites/discover
+# ---------------------------------------------------------------------------
+
+@router.post("/sites/discover", response_class=HTMLResponse)
+async def sites_discover(request: Request, url: str = Form(...)) -> HTMLResponse:
+    """Descobre subdomínios e retorna fragment HTMX com checkboxes."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="URL inválida")
+
+    base_url   = f"{parsed.scheme}://{parsed.netloc}"
+    subdomains = await discover_subdomains(base_url)
+
+    return templates.TemplateResponse(
+        request,
+        "_sites_discover.html",
+        {"base_url": base_url, "subdomains": subdomains},
     )
