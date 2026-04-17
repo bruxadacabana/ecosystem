@@ -3,42 +3,65 @@
     {% for site in sites %}
     <div class="card" style="margin-bottom:.75rem;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
-        <div>
-          <strong>{{ site.label or site.base_url }}</strong>
-          {% if site.label %}<br><span class="meta">{{ site.base_url }}</span>{% endif %}
-          <br>
-          <span class="meta">
-            {{ site.page_count }} página{{ 's' if site.page_count != 1 else '' }} ·
-            profundidade {{ site.crawl_depth }} ·
+
+        <!-- ─ Info ─ -->
+        <div style="min-width:0;">
+          <strong style="font-size:14px;">{{ site.label or site.base_url }}</strong>
+          {% if site.label %}
+            <br><a href="{{ site.base_url }}" target="_blank" rel="noopener" class="result-url" style="font-size:11px;">{{ site.base_url }}</a>
+          {% endif %}
+
+          <div class="meta" style="margin-top:.4rem;display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">
+            <span>{{ site.page_count }} página{{ 's' if site.page_count != 1 else '' }}</span>
+            <span>·</span>
+            <span>profundidade {{ site.crawl_depth }}</span>
+            <span>·</span>
             {% if site.last_crawled_at %}
-              último crawl {{ site.last_crawled_at[:10] }}
+              <span>crawl {{ site.last_crawled_at[:10] }}</span>
             {% else %}
-              nunca rastreado
+              <span>nunca rastreado</span>
             {% endif %}
-            · <span class="tag">{{ site.status }}</span>
-          </span>
+            <span>·</span>
+            <span class="tag {% if site.status == 'crawling' %}tag-active{% elif site.status == 'error' %}tag-error{% endif %}">
+              {{ site.status }}
+            </span>
+          </div>
+
+          {% if site.subdomains %}
+          <div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.3rem;">
+            {% for sub in site.subdomains %}
+            <span class="tag" style="font-size:7px;">{{ sub }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
         </div>
-        <div style="display:flex;gap:.5rem;flex-shrink:0;">
+
+        <!-- ─ Ações ─ -->
+        <div style="display:flex;gap:.4rem;flex-shrink:0;align-items:flex-start;margin-top:.1rem;">
           <button class="btn btn-ghost btn-sm"
             hx-post="/sites/{{ site.id }}/crawl"
             hx-swap="none"
-            hx-on::after-request="showToast(event.detail.successful ? 'Crawl iniciado!' : 'Erro ao iniciar crawl', event.detail.successful ? 'success' : 'error')">
-            ↺ Crawlar
+            hx-on::after-request="showToast(event.detail.successful ? 'Crawl iniciado!' : 'Erro ao iniciar', event.detail.successful ? 'success' : 'error')"
+            title="Re-crawlar este site">
+            ↺
           </button>
           <button class="btn btn-ghost btn-sm card-action-block"
             hx-delete="/sites/{{ site.id }}"
             hx-swap="outerHTML"
             hx-target="closest .card"
-            hx-confirm="Remover site e todas as páginas indexadas?">
+            hx-confirm="Remover site e todas as {{ site.page_count }} páginas indexadas?"
+            title="Remover site">
             −
           </button>
         </div>
+
       </div>
     </div>
     {% endfor %}
   {% else %}
-    <p class="meta" style="text-align:center;padding:2rem 0;">
-      Nenhum site cadastrado. Use o campo acima para adicionar.
-    </p>
+    <div class="empty-state" style="padding:2rem 0;">
+      <p class="empty-icon" style="font-size:2rem;">&#x26B2;</p>
+      <p class="empty-hint">Nenhum site cadastrado ainda.<br>Use o formulário acima para adicionar o primeiro.</p>
+    </div>
   {% endif %}
 </div>

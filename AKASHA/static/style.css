@@ -528,6 +528,8 @@ a:hover { opacity: 0.75; }
   padding:        1px 5px;
   text-transform: uppercase;
 }
+.tag-active { color: var(--accent);  border-color: var(--accent); }
+.tag-error  { color: var(--ribbon);  border-color: var(--ribbon); }
 
 /* ── Input genérico ─────────────────────────────────────── */
 
