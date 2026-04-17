@@ -87,7 +87,7 @@ ProtonDrive/ecosystem/
 - [x] Instalar e configurar Proton Drive entre máquinas
       - sync_root aplicado: `C:\Users\USUARIO\Documents\p\My files\backup\ecosystem`
       - Subpastas criadas; ecosystem.json atualizado com todos os caminhos derivados
-      - [ ] Testar round-trip: arquivar página no AKASHA → aparece no Proton → segunda máquina
+      - [x] Testar round-trip: arquivar página no AKASHA → aparece no Proton → segunda máquina
 
 ### 0.6 — OGMA: migrar de Turso para Proton Drive (SQLite local)
 
@@ -100,6 +100,51 @@ conta externa. Turso só mantém na nuvem.
       `data_path: {sync_root}/ogma/` — inclui `ogma.db`, `uploads/`, `exports/`
 - [ ] Atualizar `writeSection("ogma", ...)` no startup para usar o novo `data_path`
 - [ ] Testar migração: exportar dados do Turso → importar no SQLite local antes de remover
+
+### 0.7 — Hermes: usar output_dir do ecosystem.json no startup
+
+Objetivo: Hermes deve ler `hermes.output_dir` do ecosystem.json se `outdir` não estiver
+nas prefs locais — o mesmo padrão já aplicado ao `mnemo_dir`. Após `apply_sync_root`,
+Hermes passa a usar `{sync_root}/hermes/` automaticamente.
+
+- [ ] `Hermes/hermes.py` — `_load_prefs()`: se `outdir` não estiver em prefs, ler
+      `hermes.output_dir` do ecosystem.json como fallback
+
+### 0.8 — AKASHA: integração Hermes + DB no Proton + lista negra + UI
+
+#### 0.8a — AKASHA indexa arquivos do Hermes na busca local
+- [ ] `AKASHA/config.py` — adicionar `hermes_output: str` lendo `hermes.output_dir` do ecosystem.json
+- [ ] `AKASHA/services/local_search.py` — adicionar 6ª fonte `HERMES` em `index_local_files()`
+
+#### 0.8b — AKASHA: DB (biblioteca + lista negra) movível para Proton
+- [ ] `AKASHA/config.py` — `DB_PATH` lê `akasha.data_path` do ecosystem.json se disponível
+- [ ] `ecosystem_client.py` — `derive_paths()`: adicionar `data_path` à seção `akasha`
+- [ ] `HUB/src-tauri/src/commands/config.rs` — `apply_sync_root()`: incluir `akasha.data_path`
+
+#### 0.8c — AKASHA: aba "lista negra" no menu
+- [ ] `AKASHA/database.py` — adicionar `get_blocked_domains() -> list[str]`
+- [ ] `AKASHA/routers/domains.py` — adicionar rota `GET /domains` com listagem + template
+- [ ] `AKASHA/templates/domains.html` — nova página herdando base.html
+- [ ] `AKASHA/templates/base.html` — adicionar link "lista negra" no nav
+
+#### 0.8d — AKASHA: melhorias de UI nos cards e páginas
+- [ ] `AKASHA/static/style.css` — adicionar classe `.page-subtitle`
+- [ ] `AKASHA/templates/library.html` — subtítulo descritivo da Biblioteca
+- [ ] `AKASHA/templates/sites.html` — subtítulo descritivo de Sites
+- [ ] `AKASHA/routers/crawler.py` — rota `POST /sites/add-quick` (quick-add sem parâmetros extras)
+- [ ] `AKASHA/templates/_macros.html` — botão "Adicionar a Sites" nos cards
+
+### 0.9 — Mnemosyne: caminhos primários do ecosystem.json + pastas extras
+
+Objetivo: Mnemosyne lê `watched_dir`, `vault_dir`, `chroma_dir` do ecosystem.json no
+startup (HUB é fonte de verdade). SetupDialog exibe esses caminhos como read-only e
+permite adicionar `extra_dirs` para indexação adicional.
+
+- [ ] `Mnemosyne/core/config.py` — adicionar `extra_dirs: list[str]`; `load_config()` merge
+      ecosystem.json: watched_dir/vault_dir/chroma_dir do ecosystem têm precedência
+- [ ] `Mnemosyne/gui/main_window.py` — SetupDialog: caminhos principais viram read-only
+      (vindos do ecosystem); adicionar QListWidget "Pastas extras" com +/−
+- [ ] `Mnemosyne/core/` (indexador) — loop sobre `[watched_dir] + extra_dirs`
 
 ---
 
