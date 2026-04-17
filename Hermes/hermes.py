@@ -33,10 +33,32 @@ from ecosystem_qt import (
     AlchemyLoaderQt, WaxSealQt, CandleGlowQt, VignetteWidget,
 )
 
-APP_DIR    = Path(__file__).parent
-PREFS_FILE = APP_DIR / ".prefs.json"
-DATA_DIR   = APP_DIR / "data"
+APP_DIR  = Path(__file__).parent
+DATA_DIR = APP_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
+
+
+def _resolve_prefs_file() -> Path:
+    """Retorna settings.json em {hermes.config_path} se definido, senão .prefs.json local."""
+    try:
+        candidates = [
+            Path(os.environ.get("APPDATA", "")) / "ecosystem" / "ecosystem.json",
+            Path.home() / ".local" / "share" / "ecosystem" / "ecosystem.json",
+        ]
+        for eco_path in candidates:
+            if eco_path.exists():
+                data = json.loads(eco_path.read_text(encoding="utf-8"))
+                config_dir = data.get("hermes", {}).get("config_path", "")
+                if config_dir:
+                    p = Path(config_dir)
+                    p.mkdir(parents=True, exist_ok=True)
+                    return p / "settings.json"
+    except Exception:
+        pass
+    return APP_DIR / ".prefs.json"
+
+
+PREFS_FILE = _resolve_prefs_file()
 
 _LOGS_DIR = DATA_DIR / "logs"
 
@@ -65,15 +87,22 @@ _log_file = logging.getLogger("hermes")
 
 
 # ── Preferências ──────────────────────────────────────────────────────────────
+_LEGACY_PREFS = APP_DIR / ".prefs.json"
+
 def load_prefs() -> dict:
-    try:
-        return json.loads(PREFS_FILE.read_text())
-    except Exception:
-        return {}
+    # Tenta o caminho primário; fallback para arquivo legado na pasta do app
+    for candidate in (PREFS_FILE, _LEGACY_PREFS):
+        try:
+            if candidate.exists():
+                return json.loads(candidate.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
 
 def save_prefs(p: dict):
     try:
-        PREFS_FILE.write_text(json.dumps(p, indent=2))
+        PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PREFS_FILE.write_text(json.dumps(p, indent=2), encoding="utf-8")
     except Exception:
         pass
 
