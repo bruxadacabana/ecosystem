@@ -46,12 +46,18 @@ pub fn apply_sync_root(sync_root: String) -> Result<(), AppError> {
 
     let dirs = [
         root.join("aether"),
+        root.join("aether").join(".config"),
         root.join("kosmos"),
+        root.join("kosmos").join(".config"),
         root.join("mnemosyne").join("docs"),
         root.join("mnemosyne").join("chroma_db"),
+        root.join("mnemosyne").join(".config"),
         root.join("hermes"),
+        root.join("hermes").join(".config"),
         root.join("akasha"),
+        root.join("akasha").join(".config"),
         root.join("ogma"),
+        root.join("ogma").join(".config"),
     ];
 
     for dir in &dirs {
@@ -62,15 +68,31 @@ pub fn apply_sync_root(sync_root: String) -> Result<(), AppError> {
     ecosystem::write_section("sync_root", json!(sync_root))?;
 
     // Escreve caminhos derivados por app (merge — preserva exe_path e outros campos)
-    ecosystem::write_section("aether",    json!({ "vault_path":   root.join("aether").to_string_lossy().as_ref() }))?;
-    ecosystem::write_section("kosmos",    json!({ "archive_path": root.join("kosmos").to_string_lossy().as_ref() }))?;
+    ecosystem::write_section("aether", json!({
+        "vault_path":  root.join("aether").to_string_lossy().as_ref(),
+        "config_path": root.join("aether").join(".config").to_string_lossy().as_ref(),
+    }))?;
+    ecosystem::write_section("kosmos", json!({
+        "archive_path": root.join("kosmos").to_string_lossy().as_ref(),
+        "config_path":  root.join("kosmos").join(".config").to_string_lossy().as_ref(),
+    }))?;
     ecosystem::write_section("mnemosyne", json!({
         "watched_dir": root.join("mnemosyne").join("docs").to_string_lossy().as_ref(),
         "chroma_dir":  root.join("mnemosyne").join("chroma_db").to_string_lossy().as_ref(),
+        "config_path": root.join("mnemosyne").join(".config").to_string_lossy().as_ref(),
     }))?;
-    ecosystem::write_section("hermes",    json!({ "output_dir":   root.join("hermes").to_string_lossy().as_ref() }))?;
-    ecosystem::write_section("akasha",    json!({ "archive_path": root.join("akasha").to_string_lossy().as_ref() }))?;
-    ecosystem::write_section("ogma",      json!({ "data_path":    root.join("ogma").to_string_lossy().as_ref() }))?;
+    ecosystem::write_section("hermes", json!({
+        "output_dir":  root.join("hermes").to_string_lossy().as_ref(),
+        "config_path": root.join("hermes").join(".config").to_string_lossy().as_ref(),
+    }))?;
+    ecosystem::write_section("akasha", json!({
+        "archive_path": root.join("akasha").to_string_lossy().as_ref(),
+        "config_path":  root.join("akasha").join(".config").to_string_lossy().as_ref(),
+    }))?;
+    ecosystem::write_section("ogma", json!({
+        "data_path":   root.join("ogma").to_string_lossy().as_ref(),
+        "config_path": root.join("ogma").join(".config").to_string_lossy().as_ref(),
+    }))?;
 
     Ok(())
 }

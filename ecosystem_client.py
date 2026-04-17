@@ -30,13 +30,13 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 _DEFAULTS: dict[str, Any] = {
-    "aether":    {"vault_path": ""},
-    "kosmos":    {"data_path": "", "archive_path": ""},
-    "ogma":      {"data_path": ""},
-    "mnemosyne": {"index_paths": []},
+    "aether":    {"vault_path": "", "config_path": ""},
+    "kosmos":    {"data_path": "", "archive_path": "", "config_path": ""},
+    "ogma":      {"data_path": "", "config_path": ""},
+    "mnemosyne": {"index_paths": [], "config_path": ""},
     "hub":       {"data_path": ""},
-    "hermes":    {"output_dir": ""},
-    "akasha":    {"archive_path": "", "base_url": ""},
+    "hermes":    {"output_dir": "", "config_path": ""},
+    "akasha":    {"archive_path": "", "base_url": "", "config_path": ""},
 }
 
 
@@ -95,13 +95,19 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
     """
     root = Path(sync_root)
     return {
-        "aether":    {"vault_path":   str(root / "aether")},
-        "kosmos":    {"archive_path": str(root / "kosmos")},
+        "aether":    {"vault_path":   str(root / "aether"),
+                      "config_path":  str(root / "aether"    / ".config")},
+        "kosmos":    {"archive_path": str(root / "kosmos"),
+                      "config_path":  str(root / "kosmos"    / ".config")},
         "mnemosyne": {"watched_dir":  str(root / "mnemosyne" / "docs"),
-                      "chroma_dir":   str(root / "mnemosyne" / "chroma_db")},
-        "hermes":    {"output_dir":   str(root / "hermes")},
-        "akasha":    {"archive_path": str(root / "akasha")},
-        "ogma":      {"data_path":    str(root / "ogma")},
+                      "chroma_dir":   str(root / "mnemosyne" / "chroma_db"),
+                      "config_path":  str(root / "mnemosyne" / ".config")},
+        "hermes":    {"output_dir":   str(root / "hermes"),
+                      "config_path":  str(root / "hermes"    / ".config")},
+        "akasha":    {"archive_path": str(root / "akasha"),
+                      "config_path":  str(root / "akasha"    / ".config")},
+        "ogma":      {"data_path":    str(root / "ogma"),
+                      "config_path":  str(root / "ogma"      / ".config")},
     }
 
 
