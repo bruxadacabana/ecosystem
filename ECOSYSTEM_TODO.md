@@ -255,14 +255,14 @@ Estrutura confirmada: `{sync_root}/{app}/.config/settings.json` para todos os ap
 Cada app lê `{sync_root}/{app}/.config/settings.json` se `config_path` estiver definido
 no ecosystem.json, com fallback para o arquivo local atual.
 
-- [ ] **`derive_paths()`** — adicionar `config_path: {sync_root}/{app}/.config` para cada app
-- [ ] **`apply_sync_root()` (Rust)** — criar subpastas `.config/` + escrever `config_path` no ecosystem.json
-- [ ] **OGMA** — `SETTINGS` em `paths.ts` usa `{ogma.config_path}/settings.json` se disponível
-- [ ] **Hermes** — `_load_prefs()` / `_save_prefs()` usa `{hermes.config_path}/settings.json` se disponível
-- [ ] **AKASHA** — `config.py` usa `{akasha.config_path}/settings.json` se disponível
-- [ ] **Mnemosyne** — `load_config()` / `save_config()` usa `{mnemosyne.config_path}/settings.json` se disponível
-- [ ] **AETHER** — equivalente em Rust/TypeScript conforme estrutura existente
-- [ ] **KOSMOS** — equivalente conforme estrutura existente
+- [x] **`derive_paths()`** — adicionar `config_path: {sync_root}/{app}/.config` para cada app
+- [x] **`apply_sync_root()` (Rust)** — criar subpastas `.config/` + escrever `config_path` no ecosystem.json
+- [x] **OGMA** — `SETTINGS` em `paths.ts` usa `{ogma.config_path}/settings.json` se disponível
+- [x] **Hermes** — `_load_prefs()` / `_save_prefs()` usa `{hermes.config_path}/settings.json` se disponível
+- [x] **KOSMOS** — `Paths.SETTINGS` usa `{kosmos.config_path}/settings.json` se disponível
+- [x] **Mnemosyne** — `load_config()` / `save_config()` usa `{mnemosyne.config_path}/settings.json` se disponível
+- [ ] **AKASHA** — sem settings.json próprio; config está no akasha.db (sincronizado via 0.8b)
+- [ ] **AETHER** — vault config já fica dentro de vault_path (sincronizado); sem settings separado
 
 ---
 
