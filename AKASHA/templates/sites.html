@@ -19,49 +19,6 @@
   <div id="subdomain-picker"></div>
 
   <!-- ─── Lista de sites ────────────────────────────────── -->
-  <div id="sites-list">
-    {% if sites %}
-      {% for site in sites %}
-      <div class="card" style="margin-bottom:.75rem;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
-          <div>
-            <strong>{{ site.label or site.base_url }}</strong>
-            {% if site.label %}<br><span class="meta">{{ site.base_url }}</span>{% endif %}
-            <br>
-            <span class="meta">
-              {{ site.page_count }} página{{ 's' if site.page_count != 1 else '' }} ·
-              profundidade {{ site.crawl_depth }} ·
-              {% if site.last_crawled_at %}
-                último crawl {{ site.last_crawled_at[:10] }}
-              {% else %}
-                nunca rastreado
-              {% endif %}
-              · <span class="tag">{{ site.status }}</span>
-            </span>
-          </div>
-          <div style="display:flex;gap:.5rem;flex-shrink:0;">
-            <button class="btn btn-ghost btn-sm"
-              hx-post="/sites/{{ site.id }}/crawl"
-              hx-swap="none"
-              hx-on::after-request="showToast(event.detail.successful ? 'Crawl iniciado!' : 'Erro ao iniciar crawl', event.detail.successful ? 'success' : 'error')">
-              ↺ Crawlar
-            </button>
-            <button class="btn btn-ghost btn-sm card-action-block"
-              hx-delete="/sites/{{ site.id }}"
-              hx-swap="outerHTML"
-              hx-target="closest .card"
-              hx-confirm="Remover site e todas as páginas indexadas?">
-              −
-            </button>
-          </div>
-        </div>
-      </div>
-      {% endfor %}
-    {% else %}
-      <p class="meta" style="text-align:center;padding:2rem 0;">
-        Nenhum site cadastrado. Use o campo acima para adicionar.
-      </p>
-    {% endif %}
-  </div>
+  {% include "_sites_list.html" %}
 </div>
 {% endblock %}

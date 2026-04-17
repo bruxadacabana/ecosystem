@@ -4,6 +4,7 @@ AKASHA — Router de Sites Pessoais (Fase 10)
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -82,3 +83,48 @@ async def sites_discover(request: Request, url: str = Form(...)) -> HTMLResponse
         "_sites_discover.html",
         {"base_url": base_url, "subdomains": subdomains},
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /sites
+# ---------------------------------------------------------------------------
+
+@router.post("/sites", response_class=HTMLResponse)
+async def sites_add(
+    request: Request,
+    url:         str  = Form(...),
+    label:       str  = Form(""),
+    crawl_depth: int  = Form(2),
+    subdomains:  list[str] = Form(default=[]),
+) -> HTMLResponse:
+    """Cria site e dispara crawl em background; retorna lista atualizada."""
+    import json
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="URL inválida")
+
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    site_id  = await add_crawl_site(
+        base_url, label or base_url, crawl_depth, json.dumps(subdomains)
+    )
+    if site_id:
+        asyncio.get_event_loop().create_task(_bg_crawl(site_id))
+
+    rows  = await get_all_crawl_sites()
+    sites = [_row_to_site(r) for r in rows]
+    return templates.TemplateResponse(
+        request,
+        "_sites_list.html",
+        {"sites": sites},
+    )
+
+
+async def _bg_crawl(site_id: int) -> None:
+    import logging
+    log = logging.getLogger("akasha.crawler")
+    try:
+        await crawl_site(site_id)
+    except Exception as exc:
+        log.warning("bg crawl %d: %s", site_id, exc)

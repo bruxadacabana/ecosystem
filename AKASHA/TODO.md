@@ -249,7 +249,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] `routers/crawler.py` — `POST /sites/discover` (body: `{url}`):
       chama `discover_subdomains()`, retorna `{base_url, subdomains: list[str]}`
       para o front perguntar quais incluir (resposta HTMX com checkboxes)
-- [ ] `routers/crawler.py` — `POST /sites` (body: `{url, label, crawl_depth, subdomains}`):
+- [x] `routers/crawler.py` — `POST /sites` (body: `{url, label, crawl_depth, subdomains}`):
       cria entrada em `crawl_sites`, dispara `crawl_site()` em background task
 - [x] `routers/crawler.py` — `GET /sites` → lista de sites com `page_count`,
       `last_crawled_at`, `status`
