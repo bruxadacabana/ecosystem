@@ -18,3 +18,4 @@ langdetect
 rapidfuzz
 inscriptis
 markdownify
+filelock>=3.13

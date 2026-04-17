@@ -9,6 +9,7 @@
 //  apps; o AETHER só precisa escrever sua própria seção.
 
 use crate::error::AppError;
+use fs2::FileExt;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
@@ -31,7 +32,7 @@ fn read_ecosystem(path: &std::path::Path) -> Value {
 }
 
 /// Atualiza apenas a seção `app` do ecosystem.json, preservando as demais.
-/// Escrita atômica: grava em arquivo temporário e renomeia.
+/// Lock exclusivo via `.ecosystem.lock` + escrita atômica (tmp → rename).
 ///
 /// Falha silenciosa é aceitável no call site — use `unwrap_or_else(|e| eprintln!(...))`.
 pub fn write_section(app: &str, section: Value) -> Result<(), AppError> {
@@ -42,6 +43,14 @@ pub fn write_section(app: &str, section: Value) -> Result<(), AppError> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+
+    // Lock exclusivo — mesmo mecanismo usado pelo Python (filelock cria o mesmo arquivo)
+    let lock_path = path.with_file_name(".ecosystem.lock");
+    let lock_file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .open(&lock_path)?;
+    lock_file.lock_exclusive()?;
 
     let mut data = read_ecosystem(&path);
 
@@ -65,5 +74,6 @@ pub fn write_section(app: &str, section: Value) -> Result<(), AppError> {
     std::fs::write(&tmp_path, serialized)?;
     std::fs::rename(&tmp_path, &path)?;
 
+    // Lock liberado automaticamente quando lock_file sai de escopo
     Ok(())
 }

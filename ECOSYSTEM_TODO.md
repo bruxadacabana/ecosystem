@@ -159,9 +159,9 @@ permite adicionar `extra_dirs` para indexação adicional.
 - Solução acordada: **lock file** `.ecosystem.lock` na mesma pasta do JSON.
   Funciona cross-process e cross-language (Python + Rust + futuro TS) sem
   dependência de APIs específicas de plataforma.
-- [ ] `ecosystem_client.py` — usar `filelock.FileLock` (lib `filelock`) em torno
+- [x] `ecosystem_client.py` — usar `filelock.FileLock` (lib `filelock`) em torno
   do read-modify-write; adicionar `filelock` ao `requirements.txt` de cada app Python
-- [ ] `HUB/src-tauri/src/ecosystem.rs` — implementar lock file manual:
+- [x] `HUB/src-tauri/src/ecosystem.rs` — implementar lock file manual:
   `OpenOptions::create + write` em `.ecosystem.lock`, `lock_exclusive` via `fs2`,
   liberar após o `rename`. Adicionar `fs2` ao `Cargo.toml` do HUB.
 

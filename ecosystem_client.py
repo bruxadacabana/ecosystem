@@ -10,8 +10,20 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import warnings
 from pathlib import Path
 from typing import Any
+
+try:
+    from filelock import FileLock as _FileLock
+    _HAS_FILELOCK = True
+except ImportError:
+    _HAS_FILELOCK = False
+    warnings.warn(
+        "filelock não instalado — write_section sem proteção contra race condition. "
+        "Instale com: pip install filelock",
+        stacklevel=1,
+    )
 
 # ---------------------------------------------------------------------------
 # Schema padrão — seções por app
@@ -93,30 +105,41 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
     }
 
 
+def _lock_path() -> Path:
+    return ecosystem_path().parent / ".ecosystem.lock"
+
+
 def write_section(app: str, section: dict[str, Any]) -> None:
     """
     Atualiza apenas a seção `app` do ecosystem.json, preservando as demais.
-    Escrita atômica: grava em arquivo temporário e renomeia.
+    Escrita atômica + lock exclusivo para evitar race condition entre processos.
 
     Raises:
         OSError: se a escrita falhar.
     """
-    data = read_ecosystem()
-    if app not in data:
-        data[app] = {}
-    data[app].update(section)
-
     path = ecosystem_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, path)
-    except OSError:
+    def _do_write() -> None:
+        data = read_ecosystem()
+        if app not in data:
+            data[app] = {}
+        data[app].update(section)
+
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
         try:
-            os.unlink(tmp)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, path)
         except OSError:
-            pass
-        raise
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    if _HAS_FILELOCK:
+        with _FileLock(str(_lock_path()), timeout=10):
+            _do_write()
+    else:
+        _do_write()

@@ -25,4 +25,5 @@ tauri-plugin-dialog = "2"
 thiserror = "1"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
+fs2 = "0.4"
 rusqlite = { version = "0.31", features = ["bundled"] }

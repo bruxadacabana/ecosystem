@@ -11,3 +11,4 @@ rank-bm25>=0.2.2
 ebooklib>=0.18
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
+filelock>=3.13
