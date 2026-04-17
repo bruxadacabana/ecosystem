@@ -84,9 +84,10 @@ ProtonDrive/ecosystem/
 - [x] **`HUB/src/views/SetupView.tsx`** — seção "Sincronização": campo sync_root + botão "Aplicar"
       Aviso: "Mova seus arquivos existentes manualmente antes de aplicar"
 
-- [ ] Instalar e configurar Proton Drive entre máquinas
-      - Após configurar sync_root no HUB, copiar ecosystem.json para a segunda máquina
-      - Testar round-trip: arquivar página no AKASHA → aparece no Proton → segunda máquina
+- [x] Instalar e configurar Proton Drive entre máquinas
+      - sync_root aplicado: `C:\Users\USUARIO\Documents\p\My files\backup\ecosystem`
+      - Subpastas criadas; ecosystem.json atualizado com todos os caminhos derivados
+      - [ ] Testar round-trip: arquivar página no AKASHA → aparece no Proton → segunda máquina
 
 ### 0.6 — OGMA: migrar de Turso para Proton Drive (SQLite local)
 
