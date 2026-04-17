@@ -156,21 +156,23 @@ permite adicionar `extra_dirs` para indexação adicional.
 - Causa: `write_section` faz read-modify-write do arquivo inteiro sem lock.
   Se HUB e outro app chamam `write_section` ao mesmo tempo (ex: app abrindo
   enquanto HUB salva), o último a escrever apaga as mudanças do outro.
-- [ ] `ecosystem_client.py` — envolver read-modify-write com `fcntl.flock` (Linux)
-  / `msvcrt.locking` ou `win32file.LockFile` (Windows). Alternativa portável: `filelock`
-- [ ] `HUB/src-tauri/src/ecosystem.rs` — usar `fs2::FileExt::lock_exclusive` ou
-  criar lock file `.ecosystem.lock` ao lado do JSON durante o write
-- Ambos devem usar o mesmo mecanismo de lock (lock file `.ecosystem.lock` é mais simples
-  pois funciona cross-process e cross-language)
+- Solução acordada: **lock file** `.ecosystem.lock` na mesma pasta do JSON.
+  Funciona cross-process e cross-language (Python + Rust + futuro TS) sem
+  dependência de APIs específicas de plataforma.
+- [ ] `ecosystem_client.py` — usar `filelock.FileLock` (lib `filelock`) em torno
+  do read-modify-write; adicionar `filelock` ao `requirements.txt` de cada app Python
+- [ ] `HUB/src-tauri/src/ecosystem.rs` — implementar lock file manual:
+  `OpenOptions::create + write` em `.ecosystem.lock`, `lock_exclusive` via `fs2`,
+  liberar após o `rename`. Adicionar `fs2` ao `Cargo.toml` do HUB.
 
 #### HUB — Caminhos não atualizam nos apps sem reiniciar
-- Causa: todos os apps leem ecosystem.json UMA VEZ no startup (import time no Python,
-  startup no Rust/Electron). Não há polling nem file watcher.
-- Solução imediata (sem refatoração): exibir aviso após "Salvar configuração" igual ao
-  que já existe para "Aplicar ao ecossistema" — "Reinicie cada app para aplicar".
-- [ ] `HUB/src/views/SetupView.tsx` — exibir `savedMsg` com aviso de reinicialização
-  após `handleSave()` bem-sucedido (igual ao `syncMsg` existente)
-- Solução futura (opcional): file watcher nos apps para recarregar paths on-the-fly
+- Causa: todos os apps leem ecosystem.json UMA VEZ no startup. Não há watcher.
+- Solução acordada: **aviso de reinicialização** após salvar (opção simples).
+  File watcher descartado — mudança de paths em runtime exigiria refatoração
+  invasiva em todos os módulos que cachêam o valor de Paths.X.
+- [ ] `HUB/src/views/SetupView.tsx` — exibir mensagem após `handleSave()` bem-sucedido:
+  "Configuração salva. Reinicie cada app para aplicar os novos caminhos."
+  (mesmo padrão do `syncMsg` já existente para o sync_root)
 
 #### KOSMOS — Botão "Resumo IA" sempre oculto em janelas normais
 - Bug: `_summarize_btn` está em `_toolbar_row2`, que só fica visível quando
