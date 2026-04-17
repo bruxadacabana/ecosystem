@@ -43,7 +43,7 @@ Projetado para rodar também como APK Android (via Tauri 2) numa fase futura.
 - Read-only por padrão — não substitui os editores primários de cada app
 
 **Stack:** Rust (Tauri v2) · TypeScript + React + Vite  
-**Estado:** Em desenvolvimento ativo (módulos Escrita e Configuração prontos).
+**Estado:** Fases 2.1–2.6 completas. Todos os módulos implementados.
 
 ---
 
@@ -447,6 +447,16 @@ function hermes --description "Rodar Hermes (downloader + transcritor)"
 end
 ```
 
+**AKASHA** — `~/.config/fish/functions/akasha.fish`:
+```fish
+function akasha --description "Rodar AKASHA (buscador pessoal, porta 7071)"
+    set -l dir "/home/spacewitch/Documents/program files/AKASHA"
+    echo "→ AKASHA  (http://localhost:7071)"
+    bash "$dir/iniciar.sh" &
+    disown
+end
+```
+
 ---
 
 ## Windows 10
@@ -713,11 +723,13 @@ Cada app escreve apenas a sua própria seção; as demais são preservadas. Escr
 
 ```json
 {
-  "aether":    { "vault_path": "/caminho/para/vault" },
-  "kosmos":    { "data_path": "...", "archive_path": "..." },
-  "ogma":      { "data_path": "" },
-  "mnemosyne": { "index_paths": [] },
-  "hub":       { "data_path": "" }
+  "sync_root":  "/caminho/proton-drive/ecosystem",
+  "aether":    { "vault_path": "...", "exe_path": "..." },
+  "kosmos":    { "archive_path": "...", "data_path": "...", "exe_path": "..." },
+  "ogma":      { "data_path": "...", "exe_path": "..." },
+  "mnemosyne": { "watched_dir": "...", "chroma_dir": "...", "index_paths": [], "exe_path": "..." },
+  "hermes":    { "output_dir": "...", "exe_path": "..." },
+  "akasha":    { "archive_path": "...", "base_url": "...", "exe_path": "..." }
 }
 ```
 
@@ -750,16 +762,19 @@ KOSMOS, Mnemosyne e Hermes são apps desktop (PyQt6/PySide6) — não expõem po
 | Fase | Descrição | Estado |
 |---|---|---|
 | 0 | Fundação: `ecosystem.json` + utilitários Python/TS/Rust | ✅ Concluída |
-| 1 | Interligação dos apps existentes | 🔄 Em progresso (1.2, 1.3 prontas) |
-| 2 | App Hub desktop (Tauri 2 + React) | 🔄 Em progresso (2.1, 2.2 prontas) |
+| 1 | Interligação dos apps existentes | ✅ Concluída — 1.1, 1.2, 1.3, 1.4 |
+| 2 | App Hub desktop (Tauri 2 + React) | ✅ Concluída — 2.1–2.6 |
 | 3 | Android (APK via Tauri 2) | Não iniciada |
 | 4 | Polimento e features extras | Não iniciada |
 
 **Integrações ativas:**
-- AETHER escreve `vault_path` no startup (ao carregar o vault)
-- KOSMOS escreve `data_path` e `archive_path` no startup
-- Mnemosyne: botão "Sugestões do ecossistema" na tela de indexação preenche campos com caminhos do KOSMOS/AETHER
-- HUB: lê `ecosystem.json` para descobrir onde cada app armazena seus dados; permite reconfigurar caminhos via tela de setup
+- AETHER escreve `vault_path` e `exe_path` no startup
+- KOSMOS escreve `archive_path`, `data_path` e `exe_path` no startup
+- OGMA escreve `data_path` e `exe_path` no startup
+- Mnemosyne escreve `watched_dir`, `chroma_dir`, `index_paths` e `exe_path` no startup; botão "Sugestões do ecossistema" preenche campos com caminhos do KOSMOS/AETHER
+- Hermes escreve `output_dir` e `exe_path` no startup
+- AKASHA escreve `base_url` e `exe_path` no startup; lê `archive_path` configurado pelo HUB
+- HUB: lê `ecosystem.json` para descobrir dados de todos os apps; `apply_sync_root()` deriva e grava todos os caminhos de uma vez a partir de uma pasta raiz (ex.: Proton Drive)
 
 ---
 
