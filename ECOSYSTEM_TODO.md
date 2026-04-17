@@ -517,10 +517,11 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
                     Itens abertos da Fase 10 (FTS5/Turso, testes offline)
                     são qualidade/teste — não bloqueiam integração.
   KOSMOS        ✅  archive_manager.py funcional. Pronto para integração.
-  Mnemosyne     ⚠️  Protótipo incompleto. core/rag.py vazio. Usa HuggingFace
-                    em vez de Ollama (inconsistente com o ecossistema).
-                    Design diverge do sistema visual. Precisa de
-                    desenvolvimento antes de entrar no hub.
+  Mnemosyne     ✅  Fases 1–5 concluídas. RAG completo (hybrid retrieval,
+                    BM25, HyDE, Multi-Query, memória em camadas, citação
+                    aprimorada, FAQ, Guide). Usa ChatOllama. Design alinhado
+                    ao ecossistema (Design Bible v2). Pronto para integração.
+                    Pendente: Fase 6 (coleções duais, redesign UI, sessões).
   transcriber   ✅  Utilitário funcional. Mudança mínima necessária.
   stellar-dl    ✅  Utilitário funcional. Mudança mínima necessária.
 
