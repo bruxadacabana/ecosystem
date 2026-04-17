@@ -42,18 +42,21 @@
         <button type="submit" class="btn btn-primary">&#x2315;</button>
         <span id="search-indicator" class="htmx-indicator search-spinner"></span>
       </div>
-      <div class="source-filters">
-        <label class="tag {% if sources == 'all' or not sources %}tag-active{% endif %}">
-          <input type="radio" name="sources" value="all" {% if sources == 'all' or not sources %}checked{% endif %} hidden>
-          todos
-        </label>
-        <label class="tag {% if sources == 'web' %}tag-active{% endif %}">
-          <input type="radio" name="sources" value="web" {% if sources == 'web' %}checked{% endif %} hidden>
+      <div class="source-filters" id="source-filters">
+        <label class="tag" id="lbl-src-web">
+          <input type="checkbox" name="src_web" value="on" id="cb-src-web"
+                 {% if src_web is not defined or src_web %}checked{% endif %} hidden>
           web
         </label>
-        <label class="tag {% if sources == 'local' %}tag-active{% endif %}">
-          <input type="radio" name="sources" value="local" {% if sources == 'local' %}checked{% endif %} hidden>
+        <label class="tag" id="lbl-src-eco">
+          <input type="checkbox" name="src_eco" value="on" id="cb-src-eco"
+                 {% if src_eco is not defined or src_eco %}checked{% endif %} hidden>
           local
+        </label>
+        <label class="tag" id="lbl-src-sites">
+          <input type="checkbox" name="src_sites" value="on" id="cb-src-sites"
+                 {% if src_sites is defined and src_sites %}checked{% endif %} hidden>
+          sites
         </label>
       </div>
     </form>
@@ -132,12 +135,42 @@
       setTimeout(function () { toast.remove(); }, 4000);
     }
 
-    // ── Source filter: submeter ao clicar no label ───────────────
-    document.addEventListener('change', function (e) {
-      if (e.target && e.target.name === 'sources') {
-        e.target.closest('form').requestSubmit();
+    // ── Source checkboxes — localStorage + submit ───────────────
+    (function () {
+      var CBS = ['cb-src-web', 'cb-src-eco', 'cb-src-sites'];
+      var LBLS = { 'cb-src-web': 'lbl-src-web', 'cb-src-eco': 'lbl-src-eco', 'cb-src-sites': 'lbl-src-sites' };
+      var DEFAULTS = { 'cb-src-web': true, 'cb-src-eco': true, 'cb-src-sites': false };
+
+      function syncLabel(id) {
+        var cb  = document.getElementById(id);
+        var lbl = document.getElementById(LBLS[id]);
+        if (cb && lbl) lbl.classList.toggle('tag-active', cb.checked);
       }
-    });
+
+      // Página inicial sem query: restaurar preferências do localStorage
+      var hasQuery = new URLSearchParams(window.location.search).has('q');
+      if (!hasQuery) {
+        CBS.forEach(function (id) {
+          var stored = localStorage.getItem('akasha-' + id);
+          var cb = document.getElementById(id);
+          if (cb && stored !== null) cb.checked = stored === 'true';
+        });
+      } else {
+        // Sincronizar localStorage com estado atual (vindo do servidor)
+        CBS.forEach(function (id) {
+          var cb = document.getElementById(id);
+          if (cb) localStorage.setItem('akasha-' + id, cb.checked);
+        });
+      }
+      CBS.forEach(syncLabel);
+
+      document.addEventListener('change', function (e) {
+        if (!e.target || !CBS.includes(e.target.id)) return;
+        localStorage.setItem('akasha-' + e.target.id, e.target.checked);
+        syncLabel(e.target.id);
+        e.target.closest('form').requestSubmit();
+      });
+    })();
   </script>
   {% block scripts %}{% endblock %}
 </body>
