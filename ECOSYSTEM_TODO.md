@@ -150,6 +150,52 @@ permite adicionar `extra_dirs` para indexação adicional.
       (vindos do ecosystem); adicionar QListWidget "Pastas extras" com +/−
 - [ ] `Mnemosyne/core/` (indexador) — loop sobre `[watched_dir] + extra_dirs`
 
+### EXTRAS — Bugs e melhorias urgentes
+
+#### KOSMOS — Botão "Resumo IA" sempre oculto em janelas normais
+- Bug: `_summarize_btn` está em `_toolbar_row2`, que só fica visível quando
+  a janela é mais estreita que 950px. Nunca aparece em tela cheia.
+- [ ] `KOSMOS/app/ui/views/reader_view.py` — mover `_summarize_btn` para `_toolbar_row1`
+  (sempre visível) e controlar visibilidade apenas via `ai_enabled`
+
+#### KOSMOS — Stats travando e fechando o app
+- Bug: `_reload_charts()` roda na thread principal fazendo k-means (numpy)
+  + queries + matplotlib, bloqueando o Qt event loop. Windows marca como "não respondendo".
+- [ ] `KOSMOS/app/ui/views/stats_view.py` — mover carregamento de dados para `QThread`
+  (StatsLoadWorker); widgets são criados na thread principal após o worker terminar
+
+#### KOSMOS — Archive_path ignora ecosystem.json
+- Bug: `Paths.ARCHIVE` está hardcoded como `ROOT/"data"/"archive"`.
+  O `archive_path` configurado via HUB (Proton Drive) é ignorado.
+- [ ] `KOSMOS/app/utils/paths.py` — ler `kosmos.archive_path` do ecosystem.json
+  no startup; usar como `ARCHIVE` se disponível (fallback para `DATA/"archive"`)
+
+#### Hermes — "Descarregar" → "Baixar" (português do Brasil)
+- "Descarregar" é PT-Portugal. Renomear para "Baixar" no botão e na aba.
+- [ ] `Hermes/hermes.py` — renomear label do botão e da aba
+
+#### Hermes — UX de playlist confusa: qualidade não aparece após carregar lista
+- Após carregar a playlist, o usuário não sabe que precisa clicar em um vídeo
+  para ver as opções de qualidade. A UI não dá feedback sobre isso.
+- [ ] `Hermes/hermes.py` — adicionar instrução visual (label) após carregar playlist:
+  "Selecione um vídeo acima para escolher a qualidade e baixar"
+- [ ] `Hermes/hermes.py` — auto-selecionar o primeiro vídeo da lista após carregar
+
+#### Mnemosyne — Indexação trava o computador mesmo com LLM cloud
+- Causa: o LLM (kimi-k2.5:cloud) roda na nuvem, mas o modelo de **embeddings**
+  (`config.embed_model`) roda LOCALMENTE via Ollama. `OllamaEmbeddings` processa
+  TODOS os chunks localmente, sobrecarregando CPU/RAM em bibliotecas grandes.
+- Kimi-k2.5 é um modelo MUITO grande para rodar localmente — verificar se
+  `embed_model` está apontando para um modelo de embedding leve (ex: `nomic-embed-text`)
+  e não para kimi-k2.5 por engano.
+- [ ] `Mnemosyne/gui/main_window.py` — separar claramente na SetupDialog:
+  "Modelo de chat (LLM)" vs "Modelo de embedding (local, leve)"
+  com tooltip explicando que embedding roda localmente
+- [ ] `Mnemosyne/core/indexer.py` — processar chunks em lotes menores com pausa
+  para não saturar a RAM durante indexação de bibliotecas grandes
+
+---
+
 ### 0.10 — Arquivos de configuração de todos os apps no Proton Drive
 
 Objetivo: config local de cada app também fica na pasta sincronizada, para que as
