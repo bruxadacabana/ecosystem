@@ -232,7 +232,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Services
 
-- [ ] `services/crawler.py` — `extract_links(html, base_url) -> list[str]`:
+- [x] `services/crawler.py` — `extract_links(html, base_url) -> list[str]`:
       extrai links normalizados; descarta âncoras, assets, esquemas não-http
 - [ ] `services/crawler.py` — `discover_subdomains(base_url) -> list[str]`:
       GET homepage + tenta sitemap.xml; filtra subdomínios do mesmo domínio-raiz
