@@ -98,11 +98,11 @@ ProtonDrive/ecosystem/
 Motivação: Proton mantém cópias locais em todas as máquinas + nuvem, sem depender de
 conta externa. Turso só mantém na nuvem.
 
-- [ ] Remover integração Turso do OGMA (`src/main/database.ts` — voltar para SQLite puro local)
+- [x] Remover integração Turso do OGMA (`src/main/database.ts` — voltar para SQLite puro local)
       Remover dependências: `@libsql/client`, `dotenv` e o `.env` com token Turso
-- [ ] Adicionar `ogma/` ao `sync_root` em `apply_sync_root()` (Rust + derive_paths Python)
+- [x] Adicionar `ogma/` ao `sync_root` em `apply_sync_root()` (Rust + derive_paths Python)
       `data_path: {sync_root}/ogma/` — inclui `ogma.db`, `uploads/`, `exports/`
-- [ ] Atualizar `writeSection("ogma", ...)` no startup para usar o novo `data_path`
+- [x] Atualizar `paths.ts` do OGMA para usar `ogma.data_path` do ecosystem.json (fallback local)
 - [ ] Testar migração: exportar dados do Turso → importar no SQLite local antes de remover
 
 ### 0.7 — Hermes: usar output_dir do ecosystem.json no startup
@@ -149,6 +149,52 @@ permite adicionar `extra_dirs` para indexação adicional.
 - [ ] `Mnemosyne/gui/main_window.py` — SetupDialog: caminhos principais viram read-only
       (vindos do ecosystem); adicionar QListWidget "Pastas extras" com +/−
 - [ ] `Mnemosyne/core/` (indexador) — loop sobre `[watched_dir] + extra_dirs`
+
+### 0.10 — Arquivos de configuração de todos os apps no Proton Drive
+
+Objetivo: config local de cada app também fica na pasta sincronizada, para que as
+preferências se propaguem entre máquinas sem reconfigurar manualmente.
+
+Organização proposta dentro de `sync_root`:
+```
+{sync_root}/
+├── ogma/
+│   ├── ogma.db          ← banco SQLite (já feito no 0.6)
+│   ├── uploads/
+│   ├── exports/
+│   └── .config/
+│       └── settings.json
+├── akasha/
+│   ├── akasha.db
+│   └── .config/
+│       └── settings.json  (ex: check_interval_days, tema)
+├── hermes/
+│   ├── (transcrições .md)
+│   └── .config/
+│       └── prefs.json
+├── mnemosyne/
+│   ├── docs/
+│   ├── chroma_db/
+│   └── .config/
+│       └── config.json
+├── aether/
+│   └── .config/
+│       └── vault.json
+└── kosmos/
+    └── .config/
+        └── prefs.json
+```
+
+Cada app lê sua config de `{sync_root}/{app}/.config/` se `data_path` estiver definido
+no ecosystem.json, com fallback para o local atual.
+
+- [ ] **`derive_paths()`** — adicionar `config_path: {sync_root}/{app}/.config/` para cada app
+- [ ] **`apply_sync_root()` (Rust)** — criar subpastas `.config/` + escrever `config_path` no ecosystem.json
+- [ ] **OGMA** — `SETTINGS` em `paths.ts` usa `ogma.config_path` do ecosystem.json se disponível
+- [ ] **Hermes** — `_load_prefs()` / `_save_prefs()` usa `hermes.config_path` se disponível
+- [ ] **AKASHA** — `config.py` usa `akasha.config_path` para settings locais (ex: `settings.json`)
+- [ ] **Mnemosyne** — `load_config()` / `save_config()` usa `mnemosyne.config_path` se disponível
+- [ ] **AETHER/KOSMOS** — idem para as configurações que já possuem
 
 ---
 

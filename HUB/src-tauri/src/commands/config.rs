@@ -51,6 +51,7 @@ pub fn apply_sync_root(sync_root: String) -> Result<(), AppError> {
         root.join("mnemosyne").join("chroma_db"),
         root.join("hermes"),
         root.join("akasha"),
+        root.join("ogma"),
     ];
 
     for dir in &dirs {
@@ -69,6 +70,7 @@ pub fn apply_sync_root(sync_root: String) -> Result<(), AppError> {
     }))?;
     ecosystem::write_section("hermes",    json!({ "output_dir":   root.join("hermes").to_string_lossy().as_ref() }))?;
     ecosystem::write_section("akasha",    json!({ "archive_path": root.join("akasha").to_string_lossy().as_ref() }))?;
+    ecosystem::write_section("ogma",      json!({ "data_path":    root.join("ogma").to_string_lossy().as_ref() }))?;
 
     Ok(())
 }

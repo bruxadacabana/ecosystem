@@ -1,7 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import path from 'path'
 import { ensureDirs, DATA_DIR } from './paths'
-import { getClient, closeClient, syncClient } from './database'
+import { getClient, closeClient } from './database'
 import { registerIpcHandlers } from './ipc'
 import { startReminderScheduler } from './scheduler'
 import { createLogger, setupGlobalErrorHandlers } from './logger'
@@ -64,13 +64,6 @@ app.whenReady().then(async () => {
   ensureDirs()
   log.info('OGMA iniciando', { version: '0.1.0', platform: process.platform })
 
-  // Carregar credenciais Turso
-  try {
-    const dotenv = await import('dotenv')
-    const { DATA_DIR } = await import('./paths')
-    dotenv.config({ path: path.join(DATA_DIR, '.env') })
-  } catch { /* dotenv opcional */ }
-
   initSettings()
   registerIpcHandlers()
   startReminderScheduler()
@@ -123,8 +116,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', async () => {
+app.on('before-quit', () => {
   log.info('OGMA encerrando')
-  await syncClient().catch(() => {})
   closeClient()
 })

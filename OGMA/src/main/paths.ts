@@ -1,13 +1,27 @@
 import { app } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
 
 // Em produção: pasta do executável. Em dev: raiz do projeto.
 const ROOT = app.isPackaged
   ? path.dirname(app.getPath('exe'))
   : path.resolve(__dirname, '..', '..')
 
-export const DATA_DIR    = path.join(ROOT, 'data')
+function readEcosystemDataPath(): string | null {
+  try {
+    const ecosystemJson = path.join(os.homedir(), 'AppData', 'Roaming', 'ecosystem', 'ecosystem.json')
+    const raw = fs.readFileSync(ecosystemJson, 'utf-8')
+    const parsed = JSON.parse(raw)
+    return parsed?.ogma?.data_path || null
+  } catch {
+    return null
+  }
+}
+
+const _ecoDataPath = readEcosystemDataPath()
+
+export const DATA_DIR    = _ecoDataPath ?? path.join(ROOT, 'data')
 export const DB_PATH     = path.join(DATA_DIR, 'ogma.db')
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads')
 export const EXPORTS_DIR = path.join(DATA_DIR, 'exports')

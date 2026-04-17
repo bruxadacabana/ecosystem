@@ -1,125 +1,79 @@
 /**
- * OGMA Database — v3 (libsql / Turso)
+ * OGMA Database — v4 (better-sqlite3, local-only)
  *
- * Embedded replica: leitura local (offline-first), escrita sincroniza com Turso Cloud.
- * Se TURSO_URL não estiver definido, funciona em modo local puro (ficheiro SQLite).
- *
- * Variáveis de ambiente (carregar de data/.env antes de chamar getClient):
- *   TURSO_URL   — libsql://ogma-<nome>.turso.io
- *   TURSO_TOKEN — token de autenticação Turso
+ * SQLite puro local. Sincronização via Proton Drive (pasta configurada pelo HUB).
+ * API async preservada para compatibilidade com ipc.ts.
  */
 
-import { createClient, Client, InArgs } from '@libsql/client'
+import Database from 'better-sqlite3'
 import { DB_PATH } from './paths'
 import { createLogger } from './logger'
 
 const log = createLogger('database')
 
-let _client: Client | null = null
-// Garante que todos os chamadores aguardam a inicialização completa
-let _initPromise: Promise<Client> | null = null
-
-function toFileUrl(p: string): string {
-  return p.startsWith('file:') ? p : `file:${p}`
-}
+let _db: Database.Database | null = null
 
 // ── Ciclo de vida ──────────────────────────────────────────────────────────────
-export function getClient(): Promise<Client> {
-  if (_client) return Promise.resolve(_client)
-  if (_initPromise) return _initPromise
-  _initPromise = _initClient()
-  return _initPromise
-}
 
-async function _initClient(): Promise<Client> {
-    const localUrl  = toFileUrl(DB_PATH)
-    const syncUrl   = process.env.TURSO_URL
-    const authToken = process.env.TURSO_TOKEN
-    let client: Client
-
-    if (syncUrl && authToken) {
-      // Embedded replica — garante o schema local; sync em background
-      client = createClient({
-        url: localUrl,
-        syncUrl: syncUrl,
-        authToken: authToken,
-        syncInterval: 60000,
-      })
-      await initSchema(client)
-      await seedDefaults(client)
-      // Sync em background após inicialização — não bloqueia o startup
-      client.sync().catch(e => log.warn('Sync background falhou', { e }))
-    } else {
-      // Local puro
-      client = createClient({ url: localUrl })
-      await client.execute('PRAGMA foreign_keys = ON')
-      await initSchema(client)
-      await seedDefaults(client)
-    }
-
-    await client.execute('PRAGMA foreign_keys = ON')
-    _client = client
-    log.info('Cliente libsql aberto', {
-      local: DB_PATH,
-      sync: syncUrl ?? 'local-only',
-      mode: syncUrl ? 'embedded-replica' : 'local'
-    })
-    log.info('Banco pronto')
-    return _client
+export async function getClient(): Promise<Database.Database> {
+  if (_db) return _db
+  _db = new Database(DB_PATH)
+  _db.pragma('foreign_keys = ON')
+  await initSchema(_db)
+  seedDefaults(_db)
+  log.info('Banco SQLite aberto', { path: DB_PATH })
+  return _db
 }
 
 export function closeClient(): void {
-  if (_client) {
-    _client.close()
-    _client = null
-    log.info('Cliente fechado')
+  if (_db) {
+    _db.close()
+    _db = null
+    log.info('Banco fechado')
   }
 }
 
-export async function syncClient(): Promise<void> {
-  if (_client && process.env.TURSO_URL) {
-    await _client.sync()
-    log.info('Sync concluído')
-  }
-}
-
-// ── Helpers assíncronos ────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 export type DbRunResult = { lastInsertRowid: number; rowsAffected: number }
 
 export async function dbGet<T = any>(sql: string, ...args: any[]): Promise<T | null> {
-  const c = await getClient()
-  const r = await c.execute({ sql, args: args as InArgs })
-  return (r.rows[0] as unknown as T) ?? null
+  const db = await getClient()
+  return (db.prepare(sql).get(...args) as T) ?? null
 }
 
 export async function dbAll<T = any>(sql: string, ...args: any[]): Promise<T[]> {
-  const c = await getClient()
-  const r = await c.execute({ sql, args: args as InArgs })
-  return r.rows as unknown as T[]
+  const db = await getClient()
+  return db.prepare(sql).all(...args) as T[]
 }
 
 export async function dbRun(sql: string, ...args: any[]): Promise<DbRunResult> {
-  const c = await getClient()
-  const r = await c.execute({ sql, args: args as InArgs })
+  const db = await getClient()
+  const r = db.prepare(sql).run(...args)
   return {
-    lastInsertRowid: Number(r.lastInsertRowid ?? 0),
-    rowsAffected:   r.rowsAffected,
+    lastInsertRowid: Number(r.lastInsertRowid),
+    rowsAffected:   r.changes,
   }
+}
+
+export async function dbTransaction(statements: { sql: string; args: any[] }[]): Promise<void> {
+  const db = await getClient()
+  const run = db.transaction((stmts: { sql: string; args: any[] }[]) => {
+    for (const { sql, args } of stmts) {
+      db.prepare(sql).run(...args)
+    }
+  })
+  run(statements)
 }
 
 // ── Schema ─────────────────────────────────────────────────────────────────────
 
-async function initSchema(client: Client): Promise<void> {
-  // Sem nuclear migration: schema já está em v2 e CREATE TABLE IF NOT EXISTS
-  // é idempotente. PRAGMA user_version = N não é suportado pelo Turso remoto.
-  await createTables(client)
-  await runIncrementalMigrations(client)
+async function initSchema(db: Database.Database): Promise<void> {
+  createTables(db)
+  runIncrementalMigrations(db)
 }
 
-async function createTables(client: Client): Promise<void> {
-  // Executar cada CREATE TABLE individualmente — batch DDL pode falhar em algumas
-  // implementações libsql com FTS5 virtual tables
+function createTables(db: Database.Database): void {
   const statements = [
     // ── Core ────────────────────────────────────────────────────────────────
     `CREATE TABLE IF NOT EXISTS workspaces (
@@ -127,7 +81,7 @@ async function createTables(client: Client): Promise<void> {
       name               TEXT NOT NULL DEFAULT 'Meu Workspace',
       icon               TEXT DEFAULT '✦',
       accent_color       TEXT DEFAULT '#b8860b',
-      dashboard_settings TEXT, -- <--- NOVA COLUNA AQUI
+      dashboard_settings TEXT,
       created_at         TEXT DEFAULT (datetime('now')),
       updated_at         TEXT DEFAULT (datetime('now'))
     )`,
@@ -343,17 +297,14 @@ async function createTables(client: Client): Promise<void> {
     )`,
   ]
 
-  // Separar FTS5 (virtual table) do resto — batch DDL pode rejeitar virtual tables
-  const fts5 = statements.find(s => s.includes('fts5'))
-  const regular = statements.filter(s => !s.includes('fts5'))
-  await client.batch(regular.map(sql => ({ sql, args: [] })), 'write')
-  if (fts5) try { await client.execute(fts5) } catch { /* já existe */ }
+  for (const sql of statements) {
+    try { db.exec(sql) } catch { /* já existe */ }
+  }
 }
 
-async function runIncrementalMigrations(client: Client): Promise<void> {
-  // Cada migration é idempotente — falha silenciosa se já existir
+function runIncrementalMigrations(db: Database.Database): void {
   const migrations = [
-    `ALTER TABLE workspaces ADD COLUMN dashboard_settings TEXT`, // <--- NOVA MIGRATION AQUI
+    `ALTER TABLE workspaces ADD COLUMN dashboard_settings TEXT`,
     `ALTER TABLE readings ADD COLUMN resource_id INTEGER REFERENCES resources(id) ON DELETE SET NULL`,
     `ALTER TABLE resources ADD COLUMN metadata_json TEXT`,
     `ALTER TABLE projects ADD COLUMN semester TEXT`,
@@ -415,67 +366,53 @@ async function runIncrementalMigrations(client: Client): Promise<void> {
   ]
 
   for (const sql of migrations) {
-    try { await client.execute(sql) } catch { /* já existe */ }
+    try { db.exec(sql) } catch { /* já existe */ }
   }
 
-  await ensureAcademicProperties(client)
+  ensureAcademicProperties(db)
 }
 
-async function ensureAcademicProperties(client: Client): Promise<void> {
+function ensureAcademicProperties(db: Database.Database): void {
   try {
-    const result = await client.execute(
-      `SELECT id FROM projects WHERE project_type = 'academic'`
-    )
-    for (const row of result.rows) {
-      const pid = Number(row[0])
-
-      // Propriedade "Código"
-      const hasCodigo = await client.execute({
-        sql:  `SELECT id FROM project_properties WHERE project_id = ? AND prop_key = 'codigo'`,
-        args: [pid],
-      })
-      if (hasCodigo.rows.length === 0) {
-        await client.execute({
-          sql:  `INSERT INTO project_properties (project_id, name, prop_key, prop_type, is_built_in, sort_order) VALUES (?, 'Código', 'codigo', 'text', 1, 0)`,
-          args: [pid],
-        })
+    const projects = db.prepare(`SELECT id FROM projects WHERE project_type = 'academic'`).all() as { id: number }[]
+    for (const { id: pid } of projects) {
+      const hasCodigo = db.prepare(
+        `SELECT id FROM project_properties WHERE project_id = ? AND prop_key = 'codigo'`
+      ).get(pid)
+      if (!hasCodigo) {
+        db.prepare(
+          `INSERT INTO project_properties (project_id, name, prop_key, prop_type, is_built_in, sort_order) VALUES (?, 'Código', 'codigo', 'text', 1, 0)`
+        ).run(pid)
       }
 
-      // Propriedade "Trimestre"
-      const hasTrimestre = await client.execute({
-        sql:  `SELECT id FROM project_properties WHERE project_id = ? AND prop_key = 'trimestre'`,
-        args: [pid],
-      })
-      if (hasTrimestre.rows.length === 0) {
+      const hasTrimestre = db.prepare(
+        `SELECT id FROM project_properties WHERE project_id = ? AND prop_key = 'trimestre'`
+      ).get(pid)
+      if (!hasTrimestre) {
         const year = new Date().getFullYear()
-        const r = await client.execute({
-          sql:  `INSERT INTO project_properties (project_id, name, prop_key, prop_type, is_built_in, sort_order) VALUES (?, 'Trimestre', 'trimestre', 'select', 1, 1)`,
-          args: [pid],
-        })
+        const r = db.prepare(
+          `INSERT INTO project_properties (project_id, name, prop_key, prop_type, is_built_in, sort_order) VALUES (?, 'Trimestre', 'trimestre', 'select', 1, 1)`
+        ).run(pid)
         const propId = Number(r.lastInsertRowid)
         const labels = [
           `${year - 1}.1`, `${year - 1}.2`, `${year - 1}.3`, `${year - 1}.4`,
           `${year}.1`,     `${year}.2`,     `${year}.3`,     `${year}.4`,
           `${year + 1}.1`, `${year + 1}.2`, `${year + 1}.3`, `${year + 1}.4`,
         ]
-        for (let i = 0; i < labels.length; i++) {
-          await client.execute({
-            sql:  `INSERT INTO prop_options (property_id, label, color, sort_order) VALUES (?, ?, null, ?)`,
-            args: [propId, labels[i], i],
-          })
-        }
+        const insertOpt = db.prepare(
+          `INSERT INTO prop_options (property_id, label, color, sort_order) VALUES (?, ?, null, ?)`
+        )
+        labels.forEach((label, i) => insertOpt.run(propId, label, i))
       }
     }
   } catch { /* falha silenciosa */ }
 }
 
-async function seedDefaults(client: Client): Promise<void> {
-  const result = await client.execute('SELECT id FROM workspaces LIMIT 1')
-  if (result.rows.length > 0) return
-
+function seedDefaults(db: Database.Database): void {
+  const exists = db.prepare('SELECT id FROM workspaces LIMIT 1').get()
+  if (exists) return
   log.info('Criando workspace padrão')
-  await client.execute({
-    sql:  `INSERT INTO workspaces (name, icon, accent_color) VALUES ('Meu Workspace', '✦', '#b8860b')`,
-    args: [],
-  })
+  db.prepare(
+    `INSERT INTO workspaces (name, icon, accent_color) VALUES ('Meu Workspace', '✦', '#b8860b')`
+  ).run()
 }

@@ -4,7 +4,7 @@ import http from 'http'
 import * as fs from 'fs'
 import * as path from 'path'
 import { spawn } from 'child_process'
-import { dbGet, dbAll, dbRun, getClient } from './database'
+import { dbGet, dbAll, dbRun, dbTransaction, getClient } from './database'
 import { createLogger, RENDERER_LOG_CHANNEL } from './logger'
 import { getSetting, setSetting, getAllSettings, AppSettings } from './settings'
 import { readEcosystem } from './ecosystem'
@@ -470,13 +470,8 @@ async function scheduleGlobalTasks(): Promise<void> {
 
   if (tasks.length === 0) return
 
-  const c = await getClient()
-
   // Limpa o horizonte: deleta todos os blocos agendados no futuro para recalcular
-  await c.execute({
-    sql:  `DELETE FROM work_blocks WHERE date >= ? AND status = 'scheduled'`,
-    args: [today],
-  })
+  await dbRun(`DELETE FROM work_blocks WHERE date >= ? AND status = 'scheduled'`, today)
 
   const loadMap = new Map<string, number>()
   const inserts: { sql: string; args: any[] }[] = []
@@ -545,7 +540,7 @@ async function scheduleGlobalTasks(): Promise<void> {
   }
 
   if (inserts.length > 0) {
-    await c.batch(inserts, 'write')
+    await dbTransaction(inserts)
   }
 }
 
@@ -977,14 +972,10 @@ export function registerIpcHandlers(): void {
   })
 
   api('pages:reorder', async (items: { id: number; sort_order: number }[]) => {
-    const c = await getClient()
-    await c.batch(
-      items.map(({ id, sort_order }) => ({
-        sql:  'UPDATE pages SET sort_order=? WHERE id=?',
-        args: [sort_order, id],
-      })),
-      'write'
-    )
+    await dbTransaction(items.map(({ id, sort_order }) => ({
+      sql:  'UPDATE pages SET sort_order=? WHERE id=?',
+      args: [sort_order, id],
+    })))
     return { ok: true }
   })
 
@@ -1154,14 +1145,10 @@ export function registerIpcHandlers(): void {
   })
 
   api('properties:reorder', async (items: { id: number; sort_order: number }[]) => {
-    const c = await getClient()
-    await c.batch(
-      items.map(({ id, sort_order }) => ({
-        sql:  'UPDATE project_properties SET sort_order=? WHERE id=?',
-        args: [sort_order, id],
-      })),
-      'write'
-    )
+    await dbTransaction(items.map(({ id, sort_order }) => ({
+      sql:  'UPDATE project_properties SET sort_order=? WHERE id=?',
+      args: [sort_order, id],
+    })))
     return { ok: true }
   })
 
@@ -1196,14 +1183,10 @@ export function registerIpcHandlers(): void {
   })
 
   api('properties:reorderOptions', async (items: { id: number; sort_order: number }[]) => {
-    const c = await getClient()
-    await c.batch(
-      items.map(({ id, sort_order }) => ({
-        sql:  'UPDATE prop_options SET sort_order=? WHERE id=?',
-        args: [sort_order, id],
-      })),
-      'write'
-    )
+    await dbTransaction(items.map(({ id, sort_order }) => ({
+      sql:  'UPDATE prop_options SET sort_order=? WHERE id=?',
+      args: [sort_order, id],
+    })))
     return { ok: true }
   })
 
@@ -2412,18 +2395,6 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('appSettings:set', (_e, { key, value }: { key: keyof AppSettings; value: AppSettings[keyof AppSettings] }) => {
     setSetting(key, value as any)
-  })
-
-  // ── Sincronização manual ──────────────────────────────────────────────────────
-
-  ipcMain.handle('db:sync', async () => {
-    const { syncClient } = await import('./database')
-    try {
-      await syncClient()
-      return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err.message }
-    }
   })
 
 }
