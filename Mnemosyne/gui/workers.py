@@ -86,6 +86,8 @@ class IndexWorker(QThread):
         vectorstore = None
         errors: list[str] = []
 
+        _BATCH = 50  # chunks por chamada ao Ollama — evita saturar RAM com bge-m3
+
         for i, file_path in enumerate(files, 1):
             name = os.path.basename(file_path)
             self.progress.emit(name, i, total)
@@ -100,15 +102,20 @@ class IndexWorker(QThread):
                 continue
 
             try:
+                import time
                 os.makedirs(self.config.persist_dir, exist_ok=True)
-                if vectorstore is None:
-                    vectorstore = Chroma.from_documents(
-                        documents=chunks,
-                        embedding=embeddings,
-                        persist_directory=self.config.persist_dir,
-                    )
-                else:
-                    vectorstore.add_documents(chunks)
+                for b in range(0, len(chunks), _BATCH):
+                    batch = chunks[b : b + _BATCH]
+                    if vectorstore is None:
+                        vectorstore = Chroma.from_documents(
+                            documents=batch,
+                            embedding=embeddings,
+                            persist_directory=self.config.persist_dir,
+                        )
+                    else:
+                        vectorstore.add_documents(batch)
+                    if b + _BATCH < len(chunks):
+                        time.sleep(0.1)
             except Exception as exc:
                 self.finished.emit(False, f"Erro ao indexar '{name}': {exc}")
                 return

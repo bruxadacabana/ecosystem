@@ -127,6 +127,7 @@ class SetupDialog(QDialog):
             idx = self.embed_combo.findText(current.embed_model)
             if idx >= 0:
                 self.embed_combo.setCurrentIndex(idx)
+        self.embed_combo.setToolTip("Usado na indexação — roda na sua máquina via Ollama")
         form.addRow("Modelo de embedding:", self.embed_combo)
 
         layout.addLayout(form)

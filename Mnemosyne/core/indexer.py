@@ -49,17 +49,28 @@ def create_vectorstore(config: AppConfig) -> Chroma:
     splitter = _get_splitter(config)
     chunks = splitter.split_documents(documents)
 
+    _BATCH = 50
     try:
+        import time
         os.makedirs(config.persist_dir, exist_ok=True)
-        vectorstore = Chroma.from_documents(
-            documents=chunks,
-            embedding=_get_embeddings(config),
-            persist_directory=config.persist_dir,
-        )
+        embeddings = _get_embeddings(config)
+        vectorstore = None
+        for b in range(0, len(chunks), _BATCH):
+            batch = chunks[b : b + _BATCH]
+            if vectorstore is None:
+                vectorstore = Chroma.from_documents(
+                    documents=batch,
+                    embedding=embeddings,
+                    persist_directory=config.persist_dir,
+                )
+            else:
+                vectorstore.add_documents(batch)
+            if b + _BATCH < len(chunks):
+                time.sleep(0.1)
     except Exception as exc:
         raise IndexBuildError(f"Falha ao criar vectorstore: {exc}") from exc
 
-    return vectorstore
+    return vectorstore  # type: ignore[return-value]
 
 
 def index_single_file(file_path: str, config: AppConfig) -> Chroma:
@@ -136,6 +147,7 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
         modified_files.extend((f, source_type) for f in m)
         deleted_files.extend(d)
 
+    _BATCH = 50
     stats = {"new": 0, "modified": 0, "deleted": 0, "errors": 0}
 
     # Deletados
@@ -148,10 +160,13 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
     for file_path, source_type in modified_files:
         _delete_file_chunks(vs, file_path)
         try:
+            import time
             docs = load_single_file(file_path, source_type=source_type)
             chunks = splitter.split_documents(docs)
-            if chunks:
-                vs.add_documents(chunks)
+            for b in range(0, len(chunks), _BATCH):
+                vs.add_documents(chunks[b : b + _BATCH])
+                if b + _BATCH < len(chunks):
+                    time.sleep(0.1)
             tracker.mark_indexed(file_path)
             stats["modified"] += 1
         except Exception:
@@ -160,10 +175,13 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
     # Novos
     for file_path, source_type in new_files:
         try:
+            import time
             docs = load_single_file(file_path, source_type=source_type)
             chunks = splitter.split_documents(docs)
-            if chunks:
-                vs.add_documents(chunks)
+            for b in range(0, len(chunks), _BATCH):
+                vs.add_documents(chunks[b : b + _BATCH])
+                if b + _BATCH < len(chunks):
+                    time.sleep(0.1)
             tracker.mark_indexed(file_path)
             stats["new"] += 1
         except Exception:

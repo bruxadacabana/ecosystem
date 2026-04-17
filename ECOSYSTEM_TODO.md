@@ -208,10 +208,10 @@ permite adicionar `extra_dirs` para indexação adicional.
 - Causa raiz: `Chroma.from_documents()` envia TODOS os chunks para o Ollama de uma vez,
   sem pausas. bge-m3 ocupa ~570MB na RAM de GPU/CPU; com muitos arquivos são milhares
   de chamadas consecutivas sem liberar memória → travamento.
-- [ ] `Mnemosyne/core/indexer.py` — processar chunks em lotes (ex: 50 chunks por vez)
+- [x] `Mnemosyne/core/indexer.py` — processar chunks em lotes (ex: 50 chunks por vez)
   usando `Chroma.add_documents()` em loop com `time.sleep(0.1)` entre lotes,
   ao invés de `Chroma.from_documents()` com tudo de uma vez
-- [ ] `Mnemosyne/gui/main_window.py` — deixar mais claro na SetupDialog que
+- [x] `Mnemosyne/gui/main_window.py` — deixar mais claro na SetupDialog que
   "Modelo de embedding" roda LOCALMENTE (tooltip: "Usado na indexação — roda na sua máquina via Ollama")
 
 ---
