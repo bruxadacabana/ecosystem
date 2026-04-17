@@ -110,6 +110,7 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
   const [detectingAll, setDetectingAll] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [savedMsg, setSavedMsg] = useState('')
   const [syncRoot, setSyncRoot] = useState('')
   const [applyingSync, setApplyingSync] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
@@ -143,6 +144,7 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
   function handleChange(compositeKey: string, value: string) {
     setValues(v => ({ ...v, [compositeKey]: value }))
     setValidity(v => ({ ...v, [compositeKey]: null }))
+    setSavedMsg('')
   }
 
   async function handleDiscoverAll() {
@@ -231,7 +233,7 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
       return
     }
 
-    onSaved()
+    setSavedMsg('Configuração salva. Reinicie cada app para aplicar os novos caminhos.')
   }
 
   function validityIcon(compositeKey: string): string {
@@ -463,15 +465,14 @@ export function SetupView({ onBack, onSaved }: SetupViewProps) {
         </div>
 
         {error && (
-          <p
-            style={{
-              marginTop: 20,
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              color: '#8B3A2A',
-            }}
-          >
+          <p style={{ marginTop: 20, fontFamily: 'var(--font-mono)', fontSize: 11, color: '#8B3A2A' }}>
             {error}
+          </p>
+        )}
+
+        {savedMsg && (
+          <p style={{ marginTop: 20, fontFamily: 'var(--font-mono)', fontSize: 11, color: '#4A6741' }}>
+            {savedMsg}
           </p>
         )}
 

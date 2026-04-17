@@ -170,7 +170,7 @@ permite adicionar `extra_dirs` para indexação adicional.
 - Solução acordada: **aviso de reinicialização** após salvar (opção simples).
   File watcher descartado — mudança de paths em runtime exigiria refatoração
   invasiva em todos os módulos que cachêam o valor de Paths.X.
-- [ ] `HUB/src/views/SetupView.tsx` — exibir mensagem após `handleSave()` bem-sucedido:
+- [x] `HUB/src/views/SetupView.tsx` — exibir mensagem após `handleSave()` bem-sucedido:
   "Configuração salva. Reinicie cada app para aplicar os novos caminhos."
   (mesmo padrão do `syncMsg` já existente para o sync_root)
 
