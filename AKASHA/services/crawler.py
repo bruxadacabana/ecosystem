@@ -299,3 +299,25 @@ async def search_sites(query: str, max_results: int = 20) -> list:
     except Exception as exc:
         log.warning("search_sites FTS erro: %s", exc)
         return []
+
+
+# ---------------------------------------------------------------------------
+# crawl_pending_sites
+# ---------------------------------------------------------------------------
+
+async def crawl_pending_sites() -> None:
+    """Crawla sites com last_crawled_at IS NULL (nunca rastreados).
+
+    Chamado pelo loop horário do lifespan.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT id, base_url FROM crawl_sites WHERE last_crawled_at IS NULL AND status = 'idle'"
+        )).fetchall()
+
+    for site_id, base_url in rows:
+        try:
+            count = await crawl_site(site_id)
+            log.info("crawl_pending_sites: %s — %d páginas indexadas", base_url, count)
+        except Exception as exc:
+            log.warning("crawl_pending_sites: erro em %s — %s", base_url, exc)

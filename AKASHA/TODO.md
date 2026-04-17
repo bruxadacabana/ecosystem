@@ -240,7 +240,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       BFS async com httpx; delega extração ao ecosystem_scraper; atualiza crawl_pages + crawl_fts
 - [x] `services/crawler.py` — `search_sites(query) -> list[SearchResult]`:
       busca FTS5 em crawl_fts; retorna SearchResult com source="SITES"
-- [ ] `services/crawler.py` — `crawl_pending_sites()`:
+- [x] `services/crawler.py` — `crawl_pending_sites()`:
       crawls sites com last_crawled_at IS NULL; chamado pelo loop horário
 - [ ] Integrar `crawl_pending_sites()` no loop horário do lifespan (`_monitor_library`)
 
