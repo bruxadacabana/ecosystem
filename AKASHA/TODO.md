@@ -242,7 +242,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       busca FTS5 em crawl_fts; retorna SearchResult com source="SITES"
 - [x] `services/crawler.py` — `crawl_pending_sites()`:
       crawls sites com last_crawled_at IS NULL; chamado pelo loop horário
-- [ ] Integrar `crawl_pending_sites()` no loop horário do lifespan (`_monitor_library`)
+- [x] Integrar `crawl_pending_sites()` no loop horário do lifespan (`_monitor_library`)
 
 ### Routers
 
