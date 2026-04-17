@@ -182,17 +182,15 @@ permite adicionar `extra_dirs` para indexação adicional.
 - [ ] `Hermes/hermes.py` — auto-selecionar o primeiro vídeo da lista após carregar
 
 #### Mnemosyne — Indexação trava o computador mesmo com LLM cloud
-- Causa: o LLM (kimi-k2.5:cloud) roda na nuvem, mas o modelo de **embeddings**
-  (`config.embed_model`) roda LOCALMENTE via Ollama. `OllamaEmbeddings` processa
-  TODOS os chunks localmente, sobrecarregando CPU/RAM em bibliotecas grandes.
-- Kimi-k2.5 é um modelo MUITO grande para rodar localmente — verificar se
-  `embed_model` está apontando para um modelo de embedding leve (ex: `nomic-embed-text`)
-  e não para kimi-k2.5 por engano.
-- [ ] `Mnemosyne/gui/main_window.py` — separar claramente na SetupDialog:
-  "Modelo de chat (LLM)" vs "Modelo de embedding (local, leve)"
-  com tooltip explicando que embedding roda localmente
-- [ ] `Mnemosyne/core/indexer.py` — processar chunks em lotes menores com pausa
-  para não saturar a RAM durante indexação de bibliotecas grandes
+- Configuração confirmada: LLM = kimi-k2.5:cloud (nuvem, OK), embedding = bge-m3:latest (local)
+- Causa raiz: `Chroma.from_documents()` envia TODOS os chunks para o Ollama de uma vez,
+  sem pausas. bge-m3 ocupa ~570MB na RAM de GPU/CPU; com muitos arquivos são milhares
+  de chamadas consecutivas sem liberar memória → travamento.
+- [ ] `Mnemosyne/core/indexer.py` — processar chunks em lotes (ex: 50 chunks por vez)
+  usando `Chroma.add_documents()` em loop com `time.sleep(0.1)` entre lotes,
+  ao invés de `Chroma.from_documents()` com tudo de uma vez
+- [ ] `Mnemosyne/gui/main_window.py` — deixar mais claro na SetupDialog que
+  "Modelo de embedding" roda LOCALMENTE (tooltip: "Usado na indexação — roda na sua máquina via Ollama")
 
 ---
 
