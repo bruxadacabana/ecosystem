@@ -1334,3 +1334,261 @@ DEEPSEEK:
   Se precisar de sparring técnico para algum desses itens específicos (como a implementação do *Hybrid Retrieval* com BM25 ou o Map-Reduce sem langchain depreciado), estou à disposição.
 
   ========================================================
+
+========================================================
+PESQUISA — Performance de Indexação em Hardware Limitado
+Sessão: 2026-04-17
+========================================================
+
+Contexto: indexação com bge-m3 ainda trava o computador de trabalho.
+Hardware de trabalho confirmado:
+  CPU: Intel Core i5-3470 (Ivy Bridge, 2012) — 4 cores/4 threads, 3.2GHz base
+  RAM: 8 GB (7.9 GB utilizável)
+  GPU: Intel HD Graphics (32 MB dedicados — gráficos integrados, inútil para ML)
+  OS: Windows 10 x64
+  Armazenamento: 447 GB SSD
+
+Hardware de casa (CachyOS):
+  CPU: (não especificado)
+  RAM: 16 GB
+  GPU: AMD Radeon RX 6600 (8 GB VRAM, RDNA2, gfx1032)
+  OS: CachyOS (Arch Linux), Niri + Fish
+  Armazenamento: ~2 TB (3 SSDs)
+
+--------------------------------------------------------
+1. DIAGNÓSTICO CRÍTICO — i5-3470 (Ivy Bridge)
+--------------------------------------------------------
+
+O i5-3470 tem AVX mas NÃO tem AVX2.
+AVX2 foi introduzido na 4ª geração Intel (Haswell). O i5-3470 é 3ª geração.
+
+Impacto no Ollama/GGUF:
+  - Ollama detecta e usa AVX quando disponível, mas o caminho de código AVX2
+    (instruções de 256 bits com inteiros) é 2-4x mais rápido para inferência GGUF
+  - Sem AVX2: Ollama funciona, mas cada batch de embedding é muito mais lento
+  - bge-m3 com 568M parâmetros em AVX-only = saturação total do CPU por minutos
+
+Outros fatores agravantes no hardware de trabalho:
+  - 8 GB RAM: com OS + Ollama + bge-m3 (F16: ~1GB, Q8: ~635MB) + ChromaDB
+    em memória = muito pouco espaço. Pressão de memória causa paginação (swap)
+    que destrói a performance.
+  - Intel HD 32MB: completamente inutilizável para ML (memória de display, não VRAM)
+  - 4 cores sem hyperthreading: bge-m3 usa todos os 4 cores sem deixar nada
+    para o OS/UI → computador parece travado
+
+Conclusão: bge-m3 não é adequado para este hardware. É overkill até para o
+hardware de casa, mas com a GPU RX 6600 é viável. No i5-3470, é inviável.
+
+--------------------------------------------------------
+2. SOLUÇÃO ARQUITETURAL RECOMENDADA — "Indexar uma vez, usar em qualquer lugar"
+--------------------------------------------------------
+
+Premissa: ChromaDB persiste dados em arquivos SQLite + binários no persist_directory.
+Esses arquivos podem ser COPIADOS entre máquinas. Se apenas uma máquina escreve
+e a outra só lê, não há problema de corrupção.
+
+Estratégia:
+  1. INDEXAÇÃO: ocorre APENAS no CachyOS (casa), com bge-m3 + RX 6600 via ROCm.
+     Rápido, eficiente, sem travar nada.
+  2. SYNC: o persist_directory do ChromaDB é sincronizado via Proton Drive
+     (junto com akasha.db e outros dados do ecossistema).
+  3. CONSULTAS: Windows abre o vectorstore em modo leitura. Não indexa nada.
+     Usa o índice já construído pela máquina de casa.
+
+Implementação no Mnemosyne:
+  - Detectar se Ollama está disponível localmente
+  - Se sim: permitir indexação (botão habilitado)
+  - Se não (Ollama ausente ou muito lento): mostrar aviso "indexação disponível
+    apenas no computador principal" e desabilitar botão Indexar
+  - Consultas (aba Perguntar) funcionam em ambas as máquinas, desde que o
+    vectorstore sincronizado esteja disponível no persist_directory configurado
+
+Compatibilidade do vectorstore:
+  CRÍTICO: o modelo de embedding DEVE ser o mesmo na máquina que indexou
+  e na que consulta. Se indexou com bge-m3 em casa, a máquina de trabalho
+  também precisa ter bge-m3 disponível no Ollama (para o retriever funcionar).
+  Alternativa: usar um modelo disponível nas duas máquinas.
+
+Limitações:
+  - SQLite não suporta acesso de escrita simultâneo por múltiplas máquinas.
+    A estratégia funciona apenas com write exclusivo em uma máquina.
+  - Não é adequado para atualizações em tempo real no trabalho (ok para o caso de uso).
+
+--------------------------------------------------------
+3. MODELOS DE EMBEDDING ALTERNATIVOS PARA CPU FRACO
+--------------------------------------------------------
+
+--- 3.1 qwen3-embedding:0.6b (VIA OLLAMA — recomendado) ---
+
+  Tamanho: 639 MB (Q8_0)
+  Parâmetros: 0.6B (600M)
+  Idiomas: 100+ (português incluído)
+  Disponível: ollama pull qwen3-embedding:0.6b
+  Uso LangChain: OllamaEmbeddings(model="qwen3-embedding:0.6b")
+
+  Prós:
+    - Drástica redução vs bge-m3 (639MB vs ~1GB F16 / ~635MB Q8)
+    - Mesmo pipeline Ollama — zero mudança de código
+    - Multilíngue de qualidade (família Qwen3)
+    - Dimensão de embedding adequada para RAG pessoal
+
+  Contras:
+    - Ainda roda via Ollama (processo separado) — overhead de servidor HTTP
+    - Em i5-3470 sem AVX2 ainda será lento, mas muito menos que bge-m3
+    - REQUER RE-INDEXAÇÃO completa ao trocar de bge-m3
+
+--- 3.2 potion-multilingual-128M / model2vec (SEM OLLAMA — mais leve) ---
+
+  Parâmetros: 128M (estáticos — pre-computados via destilação)
+  Dimensão: 256 (vs 1024 do bge-m3)
+  Idiomas: 101 (incluindo português)
+  MTEB score: 47.31 (90.86% da performance do LaBSE como referência)
+  Velocidade: até 500x mais rápido que sentence-transformers em CPU
+  Tipo: "static embeddings" — não faz inferência neural em tempo real
+
+  Instalação:
+    pip install model2vec langchain-community
+
+  Uso LangChain:
+    from langchain_community.embeddings import Model2vecEmbeddings
+    embeddings = Model2vecEmbeddings("minishlab/potion-multilingual-128M")
+    # Compatível com Chroma como embedding_function normal
+
+  Vantagens:
+    - Não depende do Ollama — roda em Python puro
+    - Extremamente rápido em CPU (estático = só lookup de tabela)
+    - Contexto teoricamente ilimitado (embeddings pré-computados por token)
+    - Perfeito para hardware muito limitado
+
+  Desvantagens:
+    - Qualidade de embedding inferior (MTEB 47.31 vs bge-m3 ~72)
+    - 256 dimensões = retrieval menos preciso para perguntas complexas
+    - REQUER RE-INDEXAÇÃO completa ao trocar de bge-m3
+    - Modelo baixado do HuggingFace (primeira vez), mas pequeno (~50-100MB)
+
+Recomendação para o hardware de trabalho (i5-3470):
+  Melhor opção: "indexar só em casa" (solução arquitetural, seção 2)
+  Se precisar indexar no trabalho: potion-multilingual-128M (sem Ollama,
+  500x mais rápido em CPU antigo sem AVX2)
+  Opção intermediária: qwen3-embedding:0.6b (ainda via Ollama, mas muito menor)
+
+--------------------------------------------------------
+4. CONFIGURAÇÕES DE THROTTLING (QUANDO O OLLAMA FOR NECESSÁRIO)
+--------------------------------------------------------
+
+--- 4.1 Variável de ambiente OLLAMA_NUM_THREAD ---
+
+  Limita os threads de CPU que o Ollama usa globalmente.
+  Configuração no Windows:
+    Painel de Controle → Sistema → Variáveis de Ambiente
+    Adicionar: OLLAMA_NUM_THREAD = 2
+    (usar 2 de 4 cores disponíveis — deixa 2 para o OS)
+
+  ATENÇÃO: bug relatado na versão 0.6.6 do Ollama onde OLLAMA_NUM_THREAD
+  é ignorado. Verificar versão instalada.
+
+--- 4.2 Per-request num_thread (LangChain) ---
+
+  OllamaEmbeddings aceita num_thread como parâmetro:
+
+    from langchain_ollama import OllamaEmbeddings
+    embeddings = OllamaEmbeddings(
+        model="qwen3-embedding:0.6b",
+        num_thread=2,  # limita para 2 threads por chamada
+    )
+
+  Recomendação: definir num_thread = metade dos cores físicos do sistema.
+  No i5-3470: num_thread=2 (de 4 cores).
+
+--- 4.3 QThread.Priority para IndexWorker ---
+
+  Ceder prioridade de CPU ao OS durante indexação:
+
+    # Em workers.py, no método run() do IndexWorker:
+    # ... não aplicável diretamente, mas pode usar start() com priority:
+
+    # No código que inicia o worker:
+    worker = IndexWorker(config)
+    worker.start(QThread.Priority.IdlePriority)  # PySide6
+    # ou após start():
+    worker.start()
+    worker.setPriority(QThread.Priority.IdlePriority)
+
+  Prioridades disponíveis (da mais baixa para a mais alta):
+    IdlePriority, LowestPriority, LowPriority, NormalPriority, ...
+
+  Nota: no Windows, o scheduler do OS ainda pode dar muito CPU ao processo Python.
+  Combinar com num_thread=2 é mais eficaz.
+
+--- 4.4 Sleep entre batches — ajuste por hardware ---
+
+  Atual: time.sleep(0.1) entre batches de 50 chunks.
+
+  Para i5-3470:
+    - Reduzir batch de 50 → 10 chunks
+    - Aumentar sleep de 0.1s → 1.0s
+    - Permite que o OS respire e evita starvation de outros processos
+
+  Configuração ideal baseada no hardware:
+    Hardware fraco (i5-3470, 8GB): batch=10, sleep=1.0
+    Hardware médio (sem GPU, 16GB): batch=25, sleep=0.3
+    Hardware forte (com GPU ROCm/CUDA): batch=50, sleep=0.05
+
+--------------------------------------------------------
+5. DETECÇÃO AUTOMÁTICA DE HARDWARE (PROPOSTA PARA O MNEMOSYNE)
+--------------------------------------------------------
+
+Ao iniciar o IndexWorker, detectar hardware e ajustar parâmetros:
+
+  import platform
+  import os
+
+  def _detect_batch_config() -> tuple[int, float]:
+      """Retorna (batch_size, sleep_s) baseado no hardware disponível."""
+      import psutil
+      ram_gb = psutil.virtual_memory().total / (1024**3)
+      cpu_count = os.cpu_count() or 4
+
+      # Verificar se Ollama está em GPU (via response time ou flags)
+      # Heurística simples: se RAM < 12GB e sem GPU conhecida → hardware fraco
+      if ram_gb < 10:
+          return 10, 1.0   # conservador
+      elif ram_gb < 20:
+          return 25, 0.3   # médio
+      else:
+          return 50, 0.05  # agressivo (com GPU provavelmente)
+
+  Nota: psutil já é uma dependência comum; verificar se está no requirements.
+
+--------------------------------------------------------
+6. COMPATIBILIDADE DE VECTORSTORE ENTRE MÁQUINAS
+--------------------------------------------------------
+
+Estrutura do persist_directory (ChromaDB):
+  chroma_db/
+  ├── chroma.sqlite3          ← banco principal (SQLite)
+  └── <uuid>/                 ← uma pasta por coleção
+      ├── data_level0.bin     ← index HNSW
+      ├── header.bin
+      ├── length.bin
+      └── link_lists.bin
+
+Regras de sincronização via Proton Drive:
+  ✅ Seguro copiar para outra máquina (somente leitura)
+  ✅ Uma máquina escreve, outras lêem — sem conflito
+  ❌ Duas máquinas escrevendo simultaneamente → corrupção garantida
+  ❌ Abrir para escrita enquanto em sync (arquivo em uso) → erro
+
+Estratégia recomendada no código:
+  - Adicionar campo "indexing_machine" no config.json ou .mnemosyne/config.json
+  - Se a máquina atual != indexing_machine: desabilitar botões de indexação
+  - Mostrar mensagem: "Índice construído em [outra máquina]. Consultas disponíveis."
+
+ChromaDB em modo só-leitura (API):
+  Não existe um "modo read-only" oficial na API Python do ChromaDB.
+  A proteção deve ser feita na UI (desabilitar botões) e na lógica do app,
+  não no banco de dados em si.
+
+========================================================
+FIM DA PESQUISA — Performance em Hardware Limitado
+========================================================
