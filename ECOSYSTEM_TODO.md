@@ -126,17 +126,17 @@ Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 - [x] `HUB/src-tauri/src/commands/config.rs` — `apply_sync_root()`: incluir `akasha.data_path`
 
 #### 0.8c — AKASHA: aba "lista negra" no menu
-- [ ] `AKASHA/database.py` — adicionar `get_blocked_domains() -> list[str]`
-- [ ] `AKASHA/routers/domains.py` — adicionar rota `GET /domains` com listagem + template
-- [ ] `AKASHA/templates/domains.html` — nova página herdando base.html
-- [ ] `AKASHA/templates/base.html` — adicionar link "lista negra" no nav
+- [x] `AKASHA/database.py` — adicionar `list_blocked_domains() -> list[tuple[str,str]]` (domain + added_at)
+- [x] `AKASHA/routers/domains.py` — adicionar rota `GET /domains` com listagem + template
+- [x] `AKASHA/templates/domains.html` — nova página herdando base.html
+- [x] `AKASHA/templates/base.html` — adicionar link "lista negra" no nav
 
 #### 0.8d — AKASHA: melhorias de UI nos cards e páginas
 - [x] `AKASHA/static/style.css` — adicionar classe `.page-subtitle`
 - [x] `AKASHA/templates/library.html` — subtítulo descritivo da Biblioteca
 - [x] `AKASHA/templates/sites.html` — subtítulo descritivo de Sites
-- [ ] `AKASHA/routers/crawler.py` — rota `POST /sites/add-quick` (quick-add sem parâmetros extras)
-- [ ] `AKASHA/templates/_macros.html` — botão "Adicionar a Sites" nos cards
+- [x] `AKASHA/routers/crawler.py` — rota `POST /sites/add-quick` (quick-add sem parâmetros extras)
+- [x] `AKASHA/templates/_macros.html` — botão "Adicionar a Sites" nos cards
 
 ### 0.9 — Mnemosyne: caminhos primários do ecosystem.json + pastas extras
 

@@ -31,6 +31,14 @@
         hx-on::after-request="showToast(event.detail.successful ? 'Adicionado à biblioteca!' : 'Erro ao adicionar', event.detail.successful ? 'success' : 'error')"
       >+</button>
       <button
+        class="btn btn-ghost card-action-icon"
+        title="Adicionar a Sites"
+        hx-post="/sites/add-quick"
+        hx-vals='{"url": "{{ r.url }}"}'
+        hx-swap="none"
+        hx-on::after-request="showToast(event.detail.successful ? 'Adicionado a Sites!' : 'Erro ao adicionar', event.detail.successful ? 'success' : 'error')"
+      >&#x2609;</button>
+      <button
         class="btn btn-ghost card-action-icon card-action-block"
         title="Bloquear domínio"
         hx-post="/domains/block"

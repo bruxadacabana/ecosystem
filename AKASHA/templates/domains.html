@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Lista negra — AKASHA{% endblock %}
+
+{% block content %}
+<p class="page-subtitle">Domínios bloqueados — resultados de pesquisa destes domínios são ocultados automaticamente.</p>
+
+<!-- ─── Formulário de bloqueio manual ────────────────────────────── -->
+<section class="lib-add-section">
+  <form
+    class="lib-add-form"
+    hx-post="/domains/block"
+    hx-target="#domains-list"
+    hx-swap="none"
+    hx-on::after-request="if(event.detail.successful){ showToast('Domínio bloqueado', 'info'); this.reset(); } else { showToast('Erro ao bloquear', 'error'); }"
+  >
+    <div class="lib-add-row">
+      <input
+        type="text"
+        name="url"
+        class="input lib-url-input"
+        placeholder="https://exemplo.com  ou  exemplo.com"
+        required
+        autocomplete="off"
+      >
+      <button type="submit" class="btn btn-primary">+ bloquear</button>
+    </div>
+  </form>
+</section>
+
+<!-- ─── Lista de domínios bloqueados ─────────────────────────────── -->
+<ul class="result-list" id="domains-list">
+{% if domains %}
+  {% for domain, added_at in domains %}
+  <li class="card result-card" id="domain-{{ domain | replace('.', '-') }}">
+    <div class="result-header">
+      <span class="badge badge-web">bloqueado</span>
+      <time class="result-date">{{ added_at[:10] }}</time>
+    </div>
+    <h2 class="result-title">
+      <span class="result-link">{{ domain }}</span>
+    </h2>
+    <div class="result-footer">
+      <span class="result-url">{{ domain }}</span>
+      <div class="result-actions">
+        <button
+          class="btn btn-ghost btn-sm"
+          hx-delete="/domains/block/{{ domain }}"
+          hx-target="#domain-{{ domain | replace('.', '-') }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful) showToast('{{ domain }} desbloqueado', 'success')"
+        >desbloquear</button>
+      </div>
+    </div>
+  </li>
+  {% endfor %}
+{% else %}
+  <li class="empty-state">
+    <div class="empty-icon">◎</div>
+    <p class="empty-title">Nenhum domínio bloqueado</p>
+    <p class="empty-hint">Bloqueie um domínio acima ou use o botão "−" nos resultados de busca.</p>
+  </li>
+{% endif %}
+</ul>
+{% endblock %}

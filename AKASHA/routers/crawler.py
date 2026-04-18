@@ -122,6 +122,24 @@ async def sites_add(
 
 
 # ---------------------------------------------------------------------------
+# POST /sites/add-quick — adiciona site com parâmetros padrão (sem formulário)
+# ---------------------------------------------------------------------------
+
+@router.post("/sites/add-quick")
+async def sites_add_quick(url: str = Form(...)) -> Response:
+    """Adiciona site com depth=1 e sem subdomínios; dispara crawl em background."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="URL inválida")
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    site_id = await add_crawl_site(base_url, base_url, 1, "[]")
+    if site_id:
+        asyncio.get_event_loop().create_task(_bg_crawl(site_id))
+    return Response(status_code=200)
+
+
+# ---------------------------------------------------------------------------
 # DELETE /sites/{site_id}
 # ---------------------------------------------------------------------------
 
