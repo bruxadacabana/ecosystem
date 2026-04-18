@@ -176,17 +176,24 @@ def build_format_list(info: dict) -> list[dict]:
 
 
 # ── Utilitários — markdown ────────────────────────────────────────────────────
-def build_markdown(title: str, url: str, info: dict, result: dict, forced_lang: str) -> str:
+def build_markdown(title: str, url: str, info: dict, result: dict, forced_lang: str,
+                   is_local: bool = False) -> str:
     now       = datetime.now().strftime("%Y-%m-%d %H:%M")
     dur_s     = info.get("duration", 0)
     duration  = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else "desconhecida"
-    channel   = info.get("uploader") or info.get("channel") or "desconhecido"
     detected  = result.get("language", "?").upper()
     lang_note = detected if forced_lang == "auto" else f"{forced_lang.upper()} (forçado)"
+    if is_local:
+        fonte_line  = f"> **Arquivo:** `{url}`  "
+        origem_line = f"> **Origem:** arquivo local  "
+    else:
+        channel     = info.get("uploader") or info.get("channel") or "desconhecido"
+        fonte_line  = f"> **Fonte:** [{url}]({url})  "
+        origem_line = f"> **Canal:** {channel}  "
     lines = [
         f"# {title}", "",
-        f"> **Fonte:** [{url}]({url})  ",
-        f"> **Canal:** {channel}  ",
+        fonte_line,
+        origem_line,
         f"> **Duração:** {duration}  ",
         f"> **Idioma:** {lang_note}  ",
         f"> **Gerado em:** {now}",
@@ -364,13 +371,14 @@ class PlaylistIndexWorker(QThread):
 class TranscribeWorker(QThread):
     log      = pyqtSignal(str, str)
     progress = pyqtSignal(int)
-    finished = pyqtSignal(str, str, str, str, str)   # (markdown_text, output_path, title, url, duration)
+    finished = pyqtSignal(str, str, str, str, str)   # (markdown_text, output_path, title, source, duration)
     error    = pyqtSignal(str)
 
-    def __init__(self, url: str, model_size: str, language: str,
+    def __init__(self, source: str, is_local: bool, model_size: str, language: str,
                  cpu_limit: int, outdir: str, parent=None):
         super().__init__(parent)
-        self.url        = url
+        self.source     = source
+        self.is_local   = is_local
         self.model_size = model_size
         self.language   = language
         self.cpu_limit  = cpu_limit
@@ -383,18 +391,42 @@ class TranscribeWorker(QThread):
 
     def run(self):
         try:
-            import yt_dlp, whisper
+            import whisper
         except ImportError as e:
-            self.error.emit(f"Dependência não encontrada: {e}. Instale yt-dlp e openai-whisper.")
+            self.error.emit(f"Dependência não encontrada: {e}. Instale openai-whisper.")
+            return
+
+        if self._cancelled: return
+        self._apply_cpu_limit()
+
+        if self.is_local:
+            self._run_local(whisper)
+        else:
+            self._run_url(whisper)
+
+    def _run_local(self, whisper) -> None:
+        audio_path = self.source
+        title      = Path(audio_path).stem
+        self.log.emit(f"Arquivo local: {Path(audio_path).name}", "")
+        self.progress.emit(20)
+        try:
+            self._transcribe_and_save(whisper, audio_path, title, self.source,
+                                      info={}, is_local=True)
+        except Exception as exc:
+            if self._cancelled:
+                self.log.emit("Transcrição cancelada.", "warn")
+            else:
+                self.error.emit(str(exc))
+
+    def _run_url(self, whisper) -> None:
+        try:
+            import yt_dlp
+        except ImportError as e:
+            self.error.emit(f"Dependência não encontrada: {e}. Instale yt-dlp.")
             return
 
         import tempfile
 
-        # Aplicar limite de CPU
-        if self._cancelled: return
-        self._apply_cpu_limit()
-
-        # Download do áudio
         self.log.emit("Baixando áudio…", "")
         self.progress.emit(10)
         try:
@@ -409,48 +441,49 @@ class TranscribeWorker(QThread):
                     "noplaylist":     True,
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info      = ydl.extract_info(self.url, download=True)
+                    info       = ydl.extract_info(self.source, download=True)
                     audio_path = ydl.prepare_filename(info).rsplit(".", 1)[0] + ".mp3"
                     title      = info.get("title", "transcrição")
 
                 if self._cancelled: return
                 self.progress.emit(40)
-
-                # Transcrição
-                device, _ = detect_device()
-                cache_key = (self.model_size, device)
-                if not self._model_cache or self._model_cache[0][0] != cache_key:
-                    self.log.emit(f"Carregando modelo Whisper ({self.model_size}) em {device.upper()}…", "")
-                    model = whisper.load_model(self.model_size, device=device)
-                    self._model_cache.clear()
-                    self._model_cache.append((cache_key, model))
-                else:
-                    model = self._model_cache[0][1]
-
-                if self._cancelled: return
-                self.progress.emit(60)
-
-                lang_arg = self.language if self.language != "auto" else None
-                self.log.emit(f"Transcrevendo… idioma: {self.language}", "")
-                result = model.transcribe(audio_path, verbose=False, language=lang_arg)
-                self.progress.emit(90)
-
-                # Gerar markdown
-                dur_s    = info.get("duration", 0)
-                duration = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else "desconhecida"
-                md_text = build_markdown(title, self.url, info, result, self.language)
-                safe    = re.sub(r'[<>:"/\\|?*]', "_", title)[:60]
-                out_path = os.path.join(
-                    self.outdir, f"{datetime.now().strftime('%Y%m%d_%H%M')}_{safe}.md")
-                Path(out_path).write_text(md_text, encoding="utf-8")
-                self.progress.emit(100)
-                self.finished.emit(md_text, out_path, title, self.url, duration)
+                self._transcribe_and_save(whisper, audio_path, title, self.source,
+                                          info=info, is_local=False)
 
         except Exception as exc:
             if self._cancelled:
                 self.log.emit("Transcrição cancelada.", "warn")
             else:
                 self.error.emit(str(exc))
+
+    def _transcribe_and_save(self, whisper, audio_path: str, title: str,
+                              source: str, info: dict, is_local: bool) -> None:
+        device, _ = detect_device()
+        cache_key = (self.model_size, device)
+        if not self._model_cache or self._model_cache[0][0] != cache_key:
+            self.log.emit(f"Carregando modelo Whisper ({self.model_size}) em {device.upper()}…", "")
+            model = whisper.load_model(self.model_size, device=device)
+            self._model_cache.clear()
+            self._model_cache.append((cache_key, model))
+        else:
+            model = self._model_cache[0][1]
+
+        if self._cancelled: return
+        self.progress.emit(60)
+
+        lang_arg = self.language if self.language != "auto" else None
+        self.log.emit(f"Transcrevendo… idioma: {self.language}", "")
+        result   = model.transcribe(audio_path, verbose=False, language=lang_arg)
+        self.progress.emit(90)
+
+        dur_s    = info.get("duration", 0)
+        duration = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else "desconhecida"
+        md_text  = build_markdown(title, source, info, result, self.language, is_local=is_local)
+        safe     = re.sub(r'[<>:"/\\|?*]', "_", title)[:60]
+        out_path = os.path.join(self.outdir, f"{datetime.now().strftime('%Y%m%d_%H%M')}_{safe}.md")
+        Path(out_path).write_text(md_text, encoding="utf-8")
+        self.progress.emit(100)
+        self.finished.emit(md_text, out_path, title, source, duration)
 
     def _apply_cpu_limit(self):
         import math
@@ -682,6 +715,20 @@ class HermesApp(QMainWindow):
         opts_row.addWidget(self.cpu_combo)
         opts_row.addStretch()
         layout.addLayout(opts_row)
+
+        # Arquivo local (alternativa à URL)
+        local_row = QHBoxLayout()
+        local_row.addWidget(self._section_label("ARQUIVO LOCAL"))
+        local_row.addSpacing(8)
+        self.local_file_edit = QLineEdit()
+        self.local_file_edit.setPlaceholderText(
+            "Opcional — selecione um arquivo de vídeo ou áudio local (mp4, mkv, mp3, wav…)")
+        local_row.addWidget(self.local_file_edit)
+        local_browse_btn = QPushButton("…")
+        local_browse_btn.setFixedWidth(36)
+        local_browse_btn.clicked.connect(self._pick_local_file)
+        local_row.addWidget(local_browse_btn)
+        layout.addLayout(local_row)
 
         # Botões
         action_row = QHBoxLayout()
@@ -948,11 +995,27 @@ class HermesApp(QMainWindow):
         self.status_lbl.setText(f"✓ {title}")
 
     # ── Transcrever ───────────────────────────────────────────────────────────
+    def _pick_local_file(self):
+        exts = "Vídeo e áudio (*.mp4 *.mkv *.avi *.mov *.webm *.mp3 *.wav *.m4a *.ogg *.flac);;Todos os arquivos (*)"
+        path, _ = QFileDialog.getOpenFileName(self, "Selecionar arquivo", str(DATA_DIR), exts)
+        if path:
+            self.local_file_edit.setText(path)
+
     def _start_transcribe(self):
-        url = self.url_edit.text().strip()
-        if not url:
-            self._log("Nenhuma URL inserida.", "warn")
+        local_file = self.local_file_edit.text().strip() if hasattr(self, "local_file_edit") else ""
+        url        = self.url_edit.text().strip()
+
+        if local_file:
+            if not Path(local_file).is_file():
+                self._log(f"Arquivo não encontrado: {local_file}", "err")
+                return
+            source, is_local = local_file, True
+        elif url:
+            source, is_local = url, False
+        else:
+            self._log("Insira uma URL ou selecione um arquivo local.", "warn")
             return
+
         model    = self.model_combo.currentText()
         lang_idx = self.lang_combo.currentIndex()
         lang     = LANG_CODES[lang_idx] if lang_idx < len(LANG_CODES) else "auto"
@@ -962,9 +1025,9 @@ class HermesApp(QMainWindow):
         self._set_busy(True, 1)
         self.tr_progress.setValue(0)
         self.md_preview.clear()
-        self._log(f"Iniciando transcrição — modelo: {model}, idioma: {lang}…", "")
+        self._log(f"Iniciando transcrição — {'arquivo local' if is_local else 'URL'}, modelo: {model}, idioma: {lang}…", "")
 
-        self._worker = TranscribeWorker(url, model, lang, cpu_pct, outdir, self)
+        self._worker = TranscribeWorker(source, is_local, model, lang, cpu_pct, outdir, self)
         self._worker.log.connect(self._log)
         self._worker.progress.connect(self.tr_progress.setValue)
         self._worker.finished.connect(self._on_transcribe_done)
