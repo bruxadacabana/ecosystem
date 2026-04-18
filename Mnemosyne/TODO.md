@@ -72,6 +72,33 @@
 - [x] `core/tracker.py` — metadados de relevância por documento: `score_avg` (score médio de similaridade nas últimas N consultas) e `last_retrieved_at` (timestamp da última vez que foi retornado como fonte)
 - [x] `core/rag.py` — time-decay de relevância: penalizar documentos com `last_retrieved_at` muito antigo no ranking final; parâmetro `relevance_decay_days` configurável em `AppConfig`
 
+### Performance e hardware-awareness (Fase 3 — complemento)
+
+- [ ] `core/indexer.py` — **SemanticChunker** como alternativa ao `RecursiveCharacterTextSplitter`: quebrar em limites de mudança semântica (usa embedding do próprio modelo para detectar "viradas de assunto") em vez de por tamanho fixo; ativa via `AppConfig.semantic_chunking: bool`; produz chunks mais coesos — importante para corpora longos como EPUBs e PDFs acadêmicos; disponível em `langchain_experimental.text_splitter.SemanticChunker`
+- [ ] `core/indexer.py` — **batch adaptativo ao hardware**: detectar RAM disponível via `psutil.virtual_memory()` e ajustar `_BATCH` e `sleep_s` automaticamente:
+  - RAM < 10 GB (ex: computador de trabalho): `batch=10, sleep=1.0`
+  - RAM 10–20 GB (intermediário): `batch=25, sleep=0.3`
+  - RAM > 20 GB ou GPU detectada: `batch=50, sleep=0.05`
+  - `psutil` já é dependência provável — verificar; adicionar ao `requirements.txt` se faltar
+- [ ] `core/indexer.py` — **embedding paralelo via `asyncio.gather`**: ao indexar uma coleção grande, enviar múltiplos batches ao Ollama simultaneamente em vez de sequencialmente; aplicar só quando Ollama estiver em GPU (detectar via tempo de resposta do primeiro batch: se < 2s, assumir GPU e paralelizar); reduz tempo de indexação de grandes bibliotecas
+- [ ] `gui/workers.py` — `IndexWorker` e `UpdateIndexWorker`: chamar `self.start(QThread.Priority.IdlePriority)` ou `self.setPriority(QThread.Priority.IdlePriority)` para ceder CPU ao OS durante indexação — evita que o computador pareça travado em hardware fraco
+- [ ] `core/config.py` + `gui/main_window.py` — **portabilidade do vectorstore entre máquinas**: campo `indexing_only: bool` no `config.json`; se `True`, desabilitar todos os botões de indexação na UI com mensagem "Índice gerenciado em outra máquina — somente consultas disponíveis"; útil para abrir o ChromaDB sincronizado via Proton Drive no computador de trabalho sem risco de corrupção por escrita simultânea
+
+## Fase 3.5 — RAPTOR: Indexação Hierárquica
+
+> **Contexto:** RAG flat recupera fragmentos curtos e contíguos. Perguntas que exigem síntese de múltiplos documentos ("quais temas aparecem em vários livros?", "como esses autores diferem sobre X?") ficam sem resposta adequada. RAPTOR resolve isso construindo uma *árvore de resumos* durante a indexação: chunks → clusters semânticos → resumos de cluster → resumo dos resumos → … Permite recuperar tanto de folhas (detalhes precisos) quanto de nós superiores (síntese conceptual).
+> Referência: arxiv.org/abs/2401.18059 | +20% no benchmark QuALITY vs RAG flat com GPT-4.
+
+- [ ] `core/raptor.py` — construtor da árvore RAPTOR:
+  - Fase 1 (Cluster): agrupar chunks por similaridade semântica via k-means (scikit-learn) com k automático (regra: sqrt(N/2))
+  - Fase 2 (Summarize/Map): para cada cluster, usar LLM para gerar resumo compacto do grupo
+  - Fase 3 (Recurse): tratar resumos como novos "documentos" e repetir até restar ≤ 1 cluster (ou atingir `max_levels` configurável — padrão 3)
+  - Retornar lista flat de todos os nós da árvore (chunks originais + resumos de todos os níveis) com metadata `raptor_level: int` e `raptor_cluster: int`
+- [ ] `core/indexer.py` — integrar RAPTOR como etapa opcional pós-chunking; controlado por `AppConfig.use_raptor: bool` (padrão `False` — opt-in por ser mais lento na indexação); ao ativar: substituir chunks pelos nós RAPTOR antes de embeddar e inserir no Chroma
+- [ ] `core/rag.py` — ao usar RAPTOR: retriever busca em todos os níveis; para perguntas de síntese, dar preferência a nós de nível alto (`raptor_level >= 1`) via reranking por nível + score
+- [ ] `gui/main_window.py` / `SetupDialog` — checkbox "Indexação RAPTOR (síntese multi-documento)" com aviso de tempo extra; mostrar nível máximo configurável (slider 1–3)
+- [ ] `requirements.txt` — adicionar `scikit-learn` (para k-means)
+
 ## Fase 4 — Inspirado no NotebookLM
 
 ### 4.0 Pré-requisito arquitectural
@@ -185,4 +212,4 @@
 
 ---
 
-*Atualizado em: 2026-04-16 — Itens de redesign e sessões nomeadas adicionados.*
+*Atualizado em: 2026-04-17 — Fase 3 performance/hardware-awareness + Fase 3.5 RAPTOR adicionadas.*
