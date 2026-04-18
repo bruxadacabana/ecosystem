@@ -1,4 +1,4 @@
-# Diretivas do Ecossistema — program files/
+# Diretivas do Ecossistema
 
 Instruções para o Claude Code ao trabalhar neste repositório.
 
@@ -26,7 +26,7 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 
 ### Hardware — Computador principal (CachyOS)
 
-- CPU: não especificado
+- CPU: AMD Ryzen 5 4600G
 - RAM: 16 GB
 - GPU: AMD Radeon RX 6600, RDNA2, 8 GB VRAM (gfx1032) — ROCm com `HSA_OVERRIDE_GFX_VERSION=10.3.0`
 - OS: CachyOS (Arch Linux), Niri + Fish shell
