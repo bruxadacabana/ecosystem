@@ -36,7 +36,7 @@ _DEFAULTS: dict[str, Any] = {
     "mnemosyne": {"index_paths": [], "config_path": ""},
     "hub":       {"data_path": ""},
     "hermes":    {"output_dir": "", "config_path": ""},
-    "akasha":    {"archive_path": "", "base_url": "", "config_path": ""},
+    "akasha":    {"archive_path": "", "data_path": "", "base_url": "", "config_path": ""},
 }
 
 
@@ -90,7 +90,7 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
         {sync_root}/mnemosyne/docs/  → mnemosyne.watched_dir
         {sync_root}/mnemosyne/chroma_db/ → mnemosyne.chroma_dir
         {sync_root}/hermes/          → hermes.output_dir
-        {sync_root}/akasha/          → akasha.archive_path
+        {sync_root}/akasha/          → akasha.archive_path + akasha.data_path
         {sync_root}/ogma/            → ogma.data_path
     """
     root = Path(sync_root)
@@ -105,6 +105,7 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
         "hermes":    {"output_dir":   str(root / "hermes"),
                       "config_path":  str(root / "hermes"    / ".config")},
         "akasha":    {"archive_path": str(root / "akasha"),
+                      "data_path":    str(root / "akasha"),
                       "config_path":  str(root / "akasha"    / ".config")},
         "ogma":      {"data_path":    str(root / "ogma"),
                       "config_path":  str(root / "ogma"      / ".config")},

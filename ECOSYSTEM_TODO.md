@@ -121,9 +121,9 @@ Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 - [ ] `AKASHA/services/local_search.py` — adicionar 6ª fonte `HERMES` em `index_local_files()`
 
 #### 0.8b — AKASHA: DB (biblioteca + lista negra) movível para Proton
-- [ ] `AKASHA/config.py` — `DB_PATH` lê `akasha.data_path` do ecosystem.json se disponível
-- [ ] `ecosystem_client.py` — `derive_paths()`: adicionar `data_path` à seção `akasha`
-- [ ] `HUB/src-tauri/src/commands/config.rs` — `apply_sync_root()`: incluir `akasha.data_path`
+- [x] `AKASHA/config.py` — `DB_PATH` lê `akasha.data_path` do ecosystem.json se disponível
+- [x] `ecosystem_client.py` — `derive_paths()`: adicionar `data_path` à seção `akasha`
+- [x] `HUB/src-tauri/src/commands/config.rs` — `apply_sync_root()`: incluir `akasha.data_path`
 
 #### 0.8c — AKASHA: aba "lista negra" no menu
 - [ ] `AKASHA/database.py` — adicionar `get_blocked_domains() -> list[str]`
