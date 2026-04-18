@@ -387,6 +387,7 @@ interface ProjectCardProps {
 
 function ProjectCard({ project, onOpen, onDelete, index }: ProjectCardProps) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [hovered, setHovered] = useState(false)
   const seed = hashString(project.id)
 
   return (
@@ -400,6 +401,8 @@ function ProjectCard({ project, onOpen, onDelete, index }: ProjectCardProps) {
         padding: 0,
       }}
       onClick={onOpen}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setConfirmDelete(false) }}
     >
       {/* Cosmos de fundo — baixa densidade */}
       <CosmosLayer seed={seed} density="low" animated={false} width={580} height={90} />
@@ -458,39 +461,41 @@ function ProjectCard({ project, onOpen, onDelete, index }: ProjectCardProps) {
           </p>
         </div>
 
-        {/* Ações */}
-        <div
-          style={{ display: 'flex', gap: '4px', flexShrink: 0 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {confirmDelete ? (
-            <>
+        {/* Ações — visíveis no hover */}
+        {(hovered || confirmDelete) && (
+          <div
+            style={{ display: 'flex', gap: '4px', flexShrink: 0 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {confirmDelete ? (
+              <>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={onDelete}
+                  title="Confirmar exclusão"
+                >
+                  Confirmar
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setConfirmDelete(false)}
+                >
+                  Cancelar
+                </button>
+              </>
+            ) : (
               <button
-                className="btn btn-danger btn-sm"
-                onClick={onDelete}
-                title="Confirmar exclusão"
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => setConfirmDelete(true)}
+                title="Excluir projeto"
+                aria-label="Excluir projeto"
+                style={{ color: 'var(--ink-ghost)', fontSize: '18px', lineHeight: 1 }}
               >
-                Confirmar
+                ×
               </button>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setConfirmDelete(false)}
-              >
-                Cancelar
-              </button>
-            </>
-          ) : (
-            <button
-              className="btn btn-ghost btn-icon btn-sm"
-              onClick={() => setConfirmDelete(true)}
-              title="Excluir projeto"
-              aria-label="Excluir projeto"
-              style={{ color: 'var(--ink-ghost)' }}
-            >
-              ×
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
