@@ -311,6 +311,15 @@ class MainWindow(QMainWindow):
         self.ollama_banner.setVisible(False)
         root.addWidget(self.ollama_banner)
 
+        # Banner modo somente leitura (indexing_only)
+        self.readonly_banner = QLabel(
+            "⟳  Índice gerenciado em outra máquina — somente consultas disponíveis neste computador."
+        )
+        self.readonly_banner.setObjectName("ollamaBanner")
+        self.readonly_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.readonly_banner.setVisible(False)
+        root.addWidget(self.readonly_banner)
+
         # Barra superior
         top = QHBoxLayout()
         self.folder_label = QLabel(self.config.watched_dir or "Pasta não configurada")
@@ -676,10 +685,18 @@ class MainWindow(QMainWindow):
 
         self._populate_file_list()
         self._load_guide_into_ui()
-        self.index_btn.setEnabled(True)
+
+        if self.config.indexing_only:
+            self.readonly_banner.setVisible(True)
+            self.index_btn.setEnabled(False)
+            self.update_index_btn.setEnabled(False)
+        else:
+            self.readonly_banner.setVisible(False)
+            self.index_btn.setEnabled(True)
+
         self.refresh_manage_info()
 
-        if self.config.auto_index_on_change:
+        if self.config.auto_index_on_change and not self.config.indexing_only:
             self._start_watcher()
 
     # ── Watcher ───────────────────────────────────────────────────────────────
@@ -752,6 +769,8 @@ class MainWindow(QMainWindow):
     # ── Indexação ─────────────────────────────────────────────────────────────
 
     def start_indexing(self) -> None:
+        if self.config.indexing_only:
+            return
         if not self.config.watched_dir or not os.path.isdir(self.config.watched_dir):
             QMessageBox.warning(
                 self, "Aviso", "Pasta monitorada inválida. Configure primeiro."
@@ -770,6 +789,8 @@ class MainWindow(QMainWindow):
         self._index_worker.start()
 
     def start_update_index(self) -> None:
+        if self.config.indexing_only:
+            return
         self.update_index_btn.setEnabled(False)
         self.index_btn.setEnabled(False)
         self.progress.setVisible(True)
@@ -1304,8 +1325,8 @@ class MainWindow(QMainWindow):
         self.ask_btn.setEnabled(True)
         self.summary_btn.setEnabled(True)
         self.faq_btn.setEnabled(True)
-        self.clear_index_btn.setEnabled(True)
-        self.update_index_btn.setEnabled(True)
+        self.clear_index_btn.setEnabled(not self.config.indexing_only)
+        self.update_index_btn.setEnabled(not self.config.indexing_only)
         self.guide_refresh_btn.setEnabled(True)
 
     def _disable_query_buttons(self) -> None:

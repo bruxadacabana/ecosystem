@@ -74,15 +74,15 @@
 
 ### Performance e hardware-awareness (Fase 3 — complemento)
 
-- [ ] `core/indexer.py` — **SemanticChunker** como alternativa ao `RecursiveCharacterTextSplitter`: quebrar em limites de mudança semântica (usa embedding do próprio modelo para detectar "viradas de assunto") em vez de por tamanho fixo; ativa via `AppConfig.semantic_chunking: bool`; produz chunks mais coesos — importante para corpora longos como EPUBs e PDFs acadêmicos; disponível em `langchain_experimental.text_splitter.SemanticChunker`
-- [ ] `core/indexer.py` — **batch adaptativo ao hardware**: detectar RAM disponível via `psutil.virtual_memory()` e ajustar `_BATCH` e `sleep_s` automaticamente:
+- [x] `core/indexer.py` — **SemanticChunker** como alternativa ao `RecursiveCharacterTextSplitter`: quebrar em limites de mudança semântica (usa embedding do próprio modelo para detectar "viradas de assunto") em vez de por tamanho fixo; ativa via `AppConfig.semantic_chunking: bool`; produz chunks mais coesos — importante para corpora longos como EPUBs e PDFs acadêmicos; disponível em `langchain_experimental.text_splitter.SemanticChunker`
+- [x] `core/indexer.py` — **batch adaptativo ao hardware**: detectar RAM disponível via `psutil.virtual_memory()` e ajustar `_BATCH` e `sleep_s` automaticamente:
   - RAM < 10 GB (ex: computador de trabalho): `batch=10, sleep=1.0`
   - RAM 10–20 GB (intermediário): `batch=25, sleep=0.3`
   - RAM > 20 GB ou GPU detectada: `batch=50, sleep=0.05`
   - `psutil` já é dependência provável — verificar; adicionar ao `requirements.txt` se faltar
-- [ ] `core/indexer.py` — **embedding paralelo via `asyncio.gather`**: ao indexar uma coleção grande, enviar múltiplos batches ao Ollama simultaneamente em vez de sequencialmente; aplicar só quando Ollama estiver em GPU (detectar via tempo de resposta do primeiro batch: se < 2s, assumir GPU e paralelizar); reduz tempo de indexação de grandes bibliotecas
-- [ ] `gui/workers.py` — `IndexWorker` e `UpdateIndexWorker`: chamar `self.start(QThread.Priority.IdlePriority)` ou `self.setPriority(QThread.Priority.IdlePriority)` para ceder CPU ao OS durante indexação — evita que o computador pareça travado em hardware fraco
-- [ ] `core/config.py` + `gui/main_window.py` — **portabilidade do vectorstore entre máquinas**: campo `indexing_only: bool` no `config.json`; se `True`, desabilitar todos os botões de indexação na UI com mensagem "Índice gerenciado em outra máquina — somente consultas disponíveis"; útil para abrir o ChromaDB sincronizado via Proton Drive no computador de trabalho sem risco de corrupção por escrita simultânea
+- [x] `core/indexer.py` — **embedding paralelo via ThreadPoolExecutor** (pipeline): ao indexar uma coleção grande, pre-submeter todos os batches ao pool e consumir em ordem — enquanto batch[n] é gravado no Chroma, batch[n+1] é embedado em paralelo; aplicar só quando Ollama estiver em GPU (detectar via tempo de resposta do probe batch: se < 2s e batch >= 50, assumir GPU); usa `_collection.add()` com embeddings pré-computados para evitar chamada dupla; reduz tempo de indexação de grandes bibliotecas
+- [x] `gui/workers.py` — `IndexWorker` e `UpdateIndexWorker`: override de `start()` com `QThread.Priority.IdlePriority` como default; `IndexFileWorker` usa `LowPriority` — cede CPU ao OS durante indexação e evita que o computador pareça travado em hardware fraco
+- [x] `core/config.py` + `gui/main_window.py` — **portabilidade do vectorstore entre máquinas**: campo `indexing_only: bool` no `config.json`; se `True`, desabilitar todos os botões de indexação na UI com banner "Índice gerenciado em outra máquina — somente consultas disponíveis"; watcher não é iniciado; útil para abrir o ChromaDB sincronizado via Proton Drive no computador de trabalho sem risco de corrupção por escrita simultânea
 
 ## Fase 3.5 — RAPTOR: Indexação Hierárquica
 

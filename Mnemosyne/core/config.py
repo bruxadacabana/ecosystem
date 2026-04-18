@@ -44,6 +44,8 @@ _DEFAULTS: dict = {
     "chroma_dir": "",
     "auto_index_on_change": True,
     "relevance_decay_days": 30,
+    "semantic_chunking": False,
+    "indexing_only": False,
 }
 
 
@@ -55,10 +57,12 @@ class AppConfig:
     chunk_overlap: int
     retriever_k: int
     watched_dir: str
-    vault_dir: str
-    chroma_dir: str
-    auto_index_on_change: bool
+    vault_dir: str = ""
+    chroma_dir: str = ""
+    auto_index_on_change: bool = True
     relevance_decay_days: int = 30
+    semantic_chunking: bool = False
+    indexing_only: bool = False
 
     @property
     def persist_dir(self) -> str:
@@ -115,6 +119,8 @@ def load_config() -> AppConfig:
         chroma_dir=str(data.get("chroma_dir", "")),
         auto_index_on_change=bool(data.get("auto_index_on_change", True)),
         relevance_decay_days=int(data.get("relevance_decay_days", 30)),
+        semantic_chunking=bool(data.get("semantic_chunking", False)),
+        indexing_only=bool(data.get("indexing_only", False)),
     )
 
 
@@ -132,6 +138,8 @@ def save_config(config: AppConfig) -> None:
         "chroma_dir": config.chroma_dir,
         "auto_index_on_change": config.auto_index_on_change,
         "relevance_decay_days": config.relevance_decay_days,
+        "semantic_chunking": config.semantic_chunking,
+        "indexing_only": config.indexing_only,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
