@@ -52,12 +52,12 @@ Projetado para rodar também como APK Android (via Tauri 2) numa fase futura.
 
 Divindade irlandesa criadora do Ogham — o alfabeto mais antigo da Irlanda, entalhado em bordas de pedra. Representado com uma corrente dourada saindo da língua, presa às línguas de todos que o seguiam: o poder da linguagem de conectar e conduzir.
 
-Gerenciador unificado de projetos, estudos e leituras. Cada projeto tem páginas com editor de blocos rico, propriedades customizáveis e um banco local que sincroniza opcionalmente com o Turso.
+Gerenciador unificado de projetos, estudos e leituras. Cada projeto tem páginas com editor de blocos rico e propriedades customizáveis. Banco SQLite local sincronizado via Proton Drive.
 
 - Projetos do tipo criativo, técnico, estudo, leitura
 - Editor de blocos com imagens, tabelas, checklists, código
 - Tags, filtros, busca por texto
-- Offline-first: funciona 100% local; Turso é opt-in
+- Offline-first: 100% local, sem conta externa
 
 **Stack:** Electron · TypeScript + React + Vite  
 **Estado:** Schema v2 em produção.
@@ -757,6 +757,42 @@ Cada app escreve apenas a sua própria seção; as demais são preservadas. Escr
 | `akasha.exe_path` | AKASHA | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
 
 **Regras de escrita:** cada app usa `write_section(app, {...})` — merge atômico que preserva todos os campos da seção que não estão no payload. O HUB é o único que escreve campos de múltiplos apps (via `apply_sync_root`). Nunca sobrescrever `exe_path` de outro app.
+
+### Estrutura de sincronização (Proton Drive)
+
+O campo `sync_root` aponta para a pasta raiz do ecossistema no Proton Drive. O HUB deriva e aplica todos os subcaminhos de uma vez via `apply_sync_root`. Cada app lê o seu caminho do ecosystem.json no startup, com fallback para o caminho local.
+
+```
+{sync_root}/
+├── ogma/
+│   ├── ogma.db              ← banco SQLite
+│   ├── uploads/
+│   ├── exports/
+│   └── .config/
+│       └── settings.json    ← preferências sincronizadas
+├── kosmos/
+│   ├── (artigos arquivados .md)
+│   └── .config/
+│       └── settings.json
+├── hermes/
+│   ├── (transcrições .md)
+│   └── .config/
+│       └── settings.json
+├── mnemosyne/
+│   ├── docs/
+│   ├── chroma_db/
+│   └── .config/
+│       └── settings.json
+├── aether/
+│   └── .config/
+│       └── settings.json
+└── akasha/
+    ├── akasha.db
+    └── .config/
+        └── settings.json
+```
+
+Cada app lê `{sync_root}/{app}/.config/settings.json` se `config_path` estiver definido no ecosystem.json, com fallback para o arquivo de configuração local. O banco do KOSMOS (`kosmos.db`) é mantido local por ser metadados de feeds — somente o archive de artigos é sincronizado.
 
 ### Portas reservadas (modo desenvolvimento)
 

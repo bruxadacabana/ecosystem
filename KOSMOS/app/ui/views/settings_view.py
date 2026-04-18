@@ -448,16 +448,18 @@ class SettingsView(QWidget):
 
         from app.utils.paths import Paths
 
-        # Caminho do banco
-        db_lbl = QLabel(f"Banco de dados:  {Paths.DB}")
-        db_lbl.setObjectName("cardMeta")
-        db_lbl.setFont(self._mono(10))
-        layout.addWidget(db_lbl)
+        def _path_row(label: str, path: object, tag: str = "") -> QLabel:
+            tag_str = f"  [{tag}]" if tag else ""
+            lbl = QLabel(f"{label}{tag_str}  {path}")
+            lbl.setObjectName("cardMeta")
+            lbl.setFont(self._mono(10))
+            lbl.setWordWrap(True)
+            return lbl
 
-        data_lbl = QLabel(f"Pasta de dados:  {Paths.DATA}")
-        data_lbl.setObjectName("cardMeta")
-        data_lbl.setFont(self._mono(10))
-        layout.addWidget(data_lbl)
+        layout.addWidget(_path_row("Archive (artigos):", Paths.ARCHIVE, "sincronizado"))
+        layout.addWidget(_path_row("Configurações:", Paths.SETTINGS, "sincronizado"))
+        layout.addWidget(_path_row("Banco de dados:", Paths.DB, "local"))
+        layout.addWidget(_path_row("Pasta de dados:", Paths.DATA, "local"))
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
