@@ -17,7 +17,14 @@ from core.errors import (
     GuideError,
 )
 from core.faq import iter_faq, parse_faq
-from core.indexer import create_vectorstore, index_single_file, load_vectorstore, update_vectorstore
+from core.indexer import (
+    create_vectorstore,
+    index_single_file,
+    load_vectorstore,
+    update_vectorstore,
+    _detect_batch_config,
+    _get_splitter,
+)
 from core.loaders import load_documents, load_single_file
 from core.memory import MemoryStore, Turn
 from core.ollama_client import list_models, validate_model
@@ -43,24 +50,41 @@ class OllamaCheckWorker(QThread):
 
 
 class IndexWorker(QThread):
-    """Indexa todos os documentos da pasta monitorada."""
+    """
+    Indexa todos os documentos da pasta monitorada.
 
-    finished = Signal(bool, str)   # sucesso, mensagem
-    progress = Signal(str, int, int)  # nome_arquivo, posição, total
+    Otimizações:
+    - Inicia com IdlePriority para não travar o sistema durante indexação
+    - Batch e sleep adaptativos à RAM disponível (via _detect_batch_config)
+    - Probe de timing no primeiro batch: se < 2s (GPU), usa embedding paralelo
+      via ThreadPoolExecutor — enquanto um batch é gravado no Chroma, o próximo
+      já está sendo embedado em paralelo (pipeline)
+    - Embeddings pré-computados gravados diretamente via _collection.add()
+      para evitar chamada dupla ao Ollama (Nota: usa API interna do ChromaDB;
+      verificar compatibilidade ao atualizar o pacote chromadb)
+    """
+
+    finished = Signal(bool, str)
+    progress = Signal(str, int, int)  # label, posição, total
 
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
         self.config = config
 
+    def start(self, priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
+        super().start(priority)
+
     def run(self) -> None:
         import os
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        import time
+        import uuid
+        from concurrent.futures import ThreadPoolExecutor
         from langchain_chroma import Chroma
         from langchain_ollama import OllamaEmbeddings
 
         _SUPPORTED = {".pdf", ".docx", ".txt", ".md", ".epub"}
 
-        # Colectar lista de ficheiros
+        # ── 1. Coletar lista de arquivos ──────────────────────────────────────
         files: list[str] = []
         try:
             for root, dirs, fnames in os.walk(self.config.watched_dir):
@@ -77,52 +101,120 @@ class IndexWorker(QThread):
             self.finished.emit(False, str(EmptyDirectoryError(self.config.watched_dir)))
             return
 
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=self.config.chunk_size,
-            chunk_overlap=self.config.chunk_overlap,
-        )
+        _BATCH, _SLEEP = _detect_batch_config()
         embeddings = OllamaEmbeddings(model=self.config.embed_model)
+        splitter = _get_splitter(self.config, embeddings)
         total = len(files)
-        vectorstore = None
         errors: list[str] = []
 
-        _BATCH = 50  # chunks por chamada ao Ollama — evita saturar RAM com bge-m3
-
+        # ── 2. Carregar e chunkar todos os arquivos (progresso por arquivo) ───
+        all_chunks: list = []
         for i, file_path in enumerate(files, 1):
+            if self.isInterruptionRequested():
+                self.finished.emit(False, "Interrompido.")
+                return
             name = os.path.basename(file_path)
             self.progress.emit(name, i, total)
             try:
                 docs = load_single_file(file_path)
+                chunks = splitter.split_documents(docs)
+                all_chunks.extend(chunks)
             except MnemosyneError as exc:
                 errors.append(str(exc))
-                continue
 
-            chunks = splitter.split_documents(docs)
-            if not chunks:
-                continue
+        if not all_chunks:
+            self.finished.emit(False, "Nenhum chunk gerado — verifique os arquivos.")
+            return
 
+        # ── 3. Probe: embedar primeiro batch e medir tempo (detecta GPU) ──────
+        try:
+            os.makedirs(self.config.persist_dir, exist_ok=True)
+            vs = Chroma(
+                persist_directory=self.config.persist_dir,
+                embedding_function=embeddings,
+            )
+            probe = all_chunks[:_BATCH]
+            t0 = time.time()
+            probe_embs = embeddings.embed_documents([c.page_content for c in probe])
+            t_probe = time.time() - t0
+
+            vs._collection.add(
+                ids=[str(uuid.uuid4()) for _ in probe],
+                documents=[c.page_content for c in probe],
+                embeddings=probe_embs,
+                metadatas=[c.metadata or {} for c in probe],
+            )
+        except Exception as exc:
+            self.finished.emit(False, f"Erro ao criar vectorstore: {exc}")
+            return
+
+        remaining = all_chunks[len(probe):]
+        if not remaining:
+            msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
+            if errors:
+                msg += f" {len(errors)} erro(s) ignorado(s)."
+            self.finished.emit(True, msg)
+            return
+
+        # GPU detectada: tempo de probe < 2s e batch grande (não hardware fraco)
+        use_parallel = t_probe < 2.0 and _BATCH >= 50
+
+        # ── 4a. Embedding paralelo (GPU): pipeline embed[n+1] + write[n] ──────
+        if use_parallel:
+            batch_list = [remaining[b : b + _BATCH] for b in range(0, len(remaining), _BATCH)]
+            n_batches = len(batch_list)
             try:
-                import time
-                os.makedirs(self.config.persist_dir, exist_ok=True)
-                for b in range(0, len(chunks), _BATCH):
-                    batch = chunks[b : b + _BATCH]
-                    if vectorstore is None:
-                        vectorstore = Chroma.from_documents(
-                            documents=batch,
-                            embedding=embeddings,
-                            persist_directory=self.config.persist_dir,
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    # Submeter todos os futuros antecipadamente (ThreadPool gerencia)
+                    futures = [
+                        (batch, pool.submit(
+                            embeddings.embed_documents,
+                            [c.page_content for c in batch],
+                        ))
+                        for batch in batch_list
+                    ]
+                    for b_idx, (batch, future) in enumerate(futures):
+                        if self.isInterruptionRequested():
+                            self.finished.emit(False, "Interrompido.")
+                            return
+                        embs = future.result()
+                        vs._collection.add(
+                            ids=[str(uuid.uuid4()) for _ in batch],
+                            documents=[c.page_content for c in batch],
+                            embeddings=embs,
+                            metadatas=[c.metadata or {} for c in batch],
                         )
-                    else:
-                        vectorstore.add_documents(batch)
-                    if b + _BATCH < len(chunks):
-                        time.sleep(0.1)
+                        self.progress.emit("Incorporando (paralelo)…", b_idx + 1, n_batches)
+                        if b_idx + 1 < n_batches:
+                            time.sleep(_SLEEP)
             except Exception as exc:
-                self.finished.emit(False, f"Erro ao indexar '{name}': {exc}")
+                self.finished.emit(False, f"Erro na indexação paralela: {exc}")
                 return
 
-        if vectorstore is None:
-            self.finished.emit(False, "Nenhum documento pôde ser indexado.")
-            return
+        # ── 4b. Embedding sequencial (CPU / hardware fraco) ───────────────────
+        else:
+            n_batches = max(1, -(-len(remaining) // _BATCH))  # ceiling division
+            b_idx = 0
+            try:
+                for b in range(0, len(remaining), _BATCH):
+                    if self.isInterruptionRequested():
+                        self.finished.emit(False, "Interrompido.")
+                        return
+                    batch = remaining[b : b + _BATCH]
+                    embs = embeddings.embed_documents([c.page_content for c in batch])
+                    vs._collection.add(
+                        ids=[str(uuid.uuid4()) for _ in batch],
+                        documents=[c.page_content for c in batch],
+                        embeddings=embs,
+                        metadatas=[c.metadata or {} for c in batch],
+                    )
+                    b_idx += 1
+                    self.progress.emit("Incorporando…", b_idx, n_batches)
+                    if b + _BATCH < len(remaining):
+                        time.sleep(_SLEEP)
+            except Exception as exc:
+                self.finished.emit(False, f"Erro na indexação: {exc}")
+                return
 
         msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
         if errors:
@@ -138,6 +230,9 @@ class UpdateIndexWorker(QThread):
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
         self.config = config
+
+    def start(self, priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
+        super().start(priority)
 
     def run(self) -> None:
         try:
@@ -168,6 +263,9 @@ class IndexFileWorker(QThread):
         super().__init__()
         self.file_path = file_path
         self.config = config
+
+    def start(self, priority: QThread.Priority = QThread.Priority.LowPriority) -> None:
+        super().start(priority)
 
     def run(self) -> None:
         import os

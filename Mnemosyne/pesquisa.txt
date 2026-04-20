@@ -1334,3 +1334,472 @@ DEEPSEEK:
   Se precisar de sparring técnico para algum desses itens específicos (como a implementação do *Hybrid Retrieval* com BM25 ou o Map-Reduce sem langchain depreciado), estou à disposição.
 
   ========================================================
+
+========================================================
+PESQUISA — Performance de Indexação em Hardware Limitado
+Sessão: 2026-04-17
+========================================================
+
+Hardware de trabalho confirmado (GALLANT-ADM):
+  CPU: Intel Core i5-3470 (Ivy Bridge, 2012) — 4 cores/4 threads, 3.2GHz base
+  RAM: 8 GB (7.9 GB utilizável)
+  GPU: Intel HD Graphics (32 MB dedicados — gráficos integrados, inútil para ML)
+  OS: Windows 10 x64
+  Armazenamento: 447 GB SSD
+
+Hardware de casa (CachyOS):
+  CPU: AMD Ryzen 5 4600G (6 cores / 12 threads, Zen 2)
+  RAM: 16 GB
+  GPU: AMD Radeon RX 6600 (8 GB VRAM, RDNA2, gfx1032)
+  OS: CachyOS (Arch Linux), Niri + Fish
+  Armazenamento: ~2 TB (3 SSDs)
+
+--------------------------------------------------------
+1. DIAGNÓSTICO CRÍTICO — i5-3470 (Ivy Bridge)
+--------------------------------------------------------
+
+O i5-3470 tem AVX mas NÃO tem AVX2.
+AVX2 foi introduzido na 4ª geração Intel (Haswell). O i5-3470 é 3ª geração.
+
+Impacto no Ollama/GGUF:
+  - Ollama detecta e usa AVX quando disponível, mas o caminho de código AVX2
+    (instruções de 256 bits com inteiros) é 2-4x mais rápido para inferência GGUF
+  - Sem AVX2: Ollama funciona, mas cada batch de embedding é muito mais lento
+  - bge-m3 com 568M parâmetros em AVX-only = saturação total do CPU por minutos
+
+Outros fatores agravantes no hardware de trabalho:
+  - 8 GB RAM: com OS + Ollama + bge-m3 (F16: ~1GB, Q8: ~635MB) + ChromaDB
+    em memória = muito pouco espaço. Pressão de memória causa paginação (swap)
+    que destrói a performance.
+  - Intel HD 32MB: completamente inutilizável para ML (memória de display, não VRAM)
+  - 4 cores sem hyperthreading: bge-m3 usa todos os 4 cores sem deixar nada
+    para o OS/UI → computador parece travado
+
+Conclusão: bge-m3 não é adequado para este hardware. É overkill até para o
+hardware de casa, mas com a GPU RX 6600 é viável. No i5-3470, é inviável.
+
+--------------------------------------------------------
+2. SOLUÇÃO ARQUITETURAL RECOMENDADA — "Indexar uma vez, usar em qualquer lugar"
+--------------------------------------------------------
+
+Premissa: ChromaDB persiste dados em arquivos SQLite + binários no persist_directory.
+Esses arquivos podem ser COPIADOS entre máquinas. Se apenas uma máquina escreve
+e a outra só lê, não há problema de corrupção.
+
+Estratégia:
+  1. INDEXAÇÃO: ocorre APENAS no CachyOS (casa), com bge-m3 + RX 6600 via ROCm.
+     Rápido, eficiente, sem travar nada.
+  2. SYNC: o persist_directory do ChromaDB é sincronizado via Proton Drive
+     (junto com akasha.db e outros dados do ecossistema).
+  3. CONSULTAS: Windows abre o vectorstore em modo leitura. Não indexa nada.
+     Usa o índice já construído pela máquina de casa.
+
+Implementação no Mnemosyne:
+  - Detectar se Ollama está disponível localmente
+  - Se sim: permitir indexação (botão habilitado)
+  - Se não (Ollama ausente ou muito lento): mostrar aviso "indexação disponível
+    apenas no computador principal" e desabilitar botão Indexar
+  - Consultas (aba Perguntar) funcionam em ambas as máquinas, desde que o
+    vectorstore sincronizado esteja disponível no persist_directory configurado
+
+Compatibilidade do vectorstore:
+  CRÍTICO: o modelo de embedding DEVE ser o mesmo na máquina que indexou
+  e na que consulta. Se indexou com bge-m3 em casa, a máquina de trabalho
+  também precisa ter bge-m3 disponível no Ollama (para o retriever funcionar).
+  Alternativa: usar um modelo disponível nas duas máquinas.
+
+Limitações:
+  - SQLite não suporta acesso de escrita simultâneo por múltiplas máquinas.
+    A estratégia funciona apenas com write exclusivo em uma máquina.
+  - Não é adequado para atualizações em tempo real no trabalho (ok para o caso de uso).
+
+--------------------------------------------------------
+3. MODELOS DE EMBEDDING ALTERNATIVOS PARA CPU FRACO
+--------------------------------------------------------
+
+--- 3.1 qwen3-embedding:0.6b (VIA OLLAMA — recomendado) ---
+
+  Tamanho: 639 MB (Q8_0)
+  Parâmetros: 0.6B (600M)
+  Idiomas: 100+ (português incluído)
+  Disponível: ollama pull qwen3-embedding:0.6b
+  Uso LangChain: OllamaEmbeddings(model="qwen3-embedding:0.6b")
+
+  Prós:
+    - Drástica redução vs bge-m3 (639MB vs ~1GB F16 / ~635MB Q8)
+    - Mesmo pipeline Ollama — zero mudança de código
+    - Multilíngue de qualidade (família Qwen3)
+    - Dimensão de embedding adequada para RAG pessoal
+
+  Contras:
+    - Ainda roda via Ollama (processo separado) — overhead de servidor HTTP
+    - Em i5-3470 sem AVX2 ainda será lento, mas muito menos que bge-m3
+    - REQUER RE-INDEXAÇÃO completa ao trocar de bge-m3
+
+--- 3.2 potion-multilingual-128M / model2vec (SEM OLLAMA — mais leve) ---
+
+  Parâmetros: 128M (estáticos — pre-computados via destilação)
+  Dimensão: 256 (vs 1024 do bge-m3)
+  Idiomas: 101 (incluindo português)
+  MTEB score: 47.31 (90.86% da performance do LaBSE como referência)
+  Velocidade: até 500x mais rápido que sentence-transformers em CPU
+  Tipo: "static embeddings" — não faz inferência neural em tempo real
+
+  Instalação:
+    pip install model2vec langchain-community
+
+  Uso LangChain:
+    from langchain_community.embeddings import Model2vecEmbeddings
+    embeddings = Model2vecEmbeddings("minishlab/potion-multilingual-128M")
+    # Compatível com Chroma como embedding_function normal
+
+  Vantagens:
+    - Não depende do Ollama — roda em Python puro
+    - Extremamente rápido em CPU (estático = só lookup de tabela)
+    - Contexto teoricamente ilimitado (embeddings pré-computados por token)
+    - Perfeito para hardware muito limitado
+
+  Desvantagens:
+    - Qualidade de embedding inferior (MTEB 47.31 vs bge-m3 ~72)
+    - 256 dimensões = retrieval menos preciso para perguntas complexas
+    - REQUER RE-INDEXAÇÃO completa ao trocar de bge-m3
+    - Modelo baixado do HuggingFace (primeira vez), mas pequeno (~50-100MB)
+
+Recomendação para o hardware de trabalho (i5-3470):
+  Melhor opção: "indexar só em casa" (solução arquitetural, seção 2)
+  Se precisar indexar no trabalho: potion-multilingual-128M (sem Ollama,
+  500x mais rápido em CPU antigo sem AVX2)
+  Opção intermediária: qwen3-embedding:0.6b (ainda via Ollama, mas muito menor)
+
+--------------------------------------------------------
+4. CONFIGURAÇÕES DE THROTTLING (QUANDO O OLLAMA FOR NECESSÁRIO)
+--------------------------------------------------------
+
+--- 4.1 Variável de ambiente OLLAMA_NUM_THREAD ---
+
+  Limita os threads de CPU que o Ollama usa globalmente.
+  Configuração no Windows:
+    Painel de Controle → Sistema → Variáveis de Ambiente
+    Adicionar: OLLAMA_NUM_THREAD = 2
+    (usar 2 de 4 cores disponíveis — deixa 2 para o OS)
+
+  ATENÇÃO: bug relatado na versão 0.6.6 do Ollama onde OLLAMA_NUM_THREAD
+  é ignorado. Verificar versão instalada.
+
+--- 4.2 Per-request num_thread (LangChain) ---
+
+  OllamaEmbeddings aceita num_thread como parâmetro:
+
+    from langchain_ollama import OllamaEmbeddings
+    embeddings = OllamaEmbeddings(
+        model="qwen3-embedding:0.6b",
+        num_thread=2,  # limita para 2 threads por chamada
+    )
+
+  Recomendação: definir num_thread = metade dos cores físicos do sistema.
+  No i5-3470: num_thread=2 (de 4 cores).
+
+--- 4.3 QThread.Priority para IndexWorker ---
+
+  Ceder prioridade de CPU ao OS durante indexação:
+
+    # Em workers.py, no método run() do IndexWorker:
+    # ... não aplicável diretamente, mas pode usar start() com priority:
+
+    # No código que inicia o worker:
+    worker = IndexWorker(config)
+    worker.start(QThread.Priority.IdlePriority)  # PySide6
+    # ou após start():
+    worker.start()
+    worker.setPriority(QThread.Priority.IdlePriority)
+
+  Prioridades disponíveis (da mais baixa para a mais alta):
+    IdlePriority, LowestPriority, LowPriority, NormalPriority, ...
+
+  Nota: no Windows, o scheduler do OS ainda pode dar muito CPU ao processo Python.
+  Combinar com num_thread=2 é mais eficaz.
+
+--- 4.4 Sleep entre batches — ajuste por hardware ---
+
+  Atual: time.sleep(0.1) entre batches de 50 chunks.
+
+  Para i5-3470:
+    - Reduzir batch de 50 → 10 chunks
+    - Aumentar sleep de 0.1s → 1.0s
+    - Permite que o OS respire e evita starvation de outros processos
+
+  Configuração ideal baseada no hardware:
+    Hardware fraco (i5-3470, 8GB): batch=10, sleep=1.0
+    Hardware médio (sem GPU, 16GB): batch=25, sleep=0.3
+    Hardware forte (com GPU ROCm/CUDA): batch=50, sleep=0.05
+
+--------------------------------------------------------
+5. DETECÇÃO AUTOMÁTICA DE HARDWARE (PROPOSTA PARA O MNEMOSYNE)
+--------------------------------------------------------
+
+Ao iniciar o IndexWorker, detectar hardware e ajustar parâmetros:
+
+  import platform
+  import os
+
+  def _detect_batch_config() -> tuple[int, float]:
+      """Retorna (batch_size, sleep_s) baseado no hardware disponível."""
+      import psutil
+      ram_gb = psutil.virtual_memory().total / (1024**3)
+      cpu_count = os.cpu_count() or 4
+
+      # Verificar se Ollama está em GPU (via response time ou flags)
+      # Heurística simples: se RAM < 12GB e sem GPU conhecida → hardware fraco
+      if ram_gb < 10:
+          return 10, 1.0   # conservador
+      elif ram_gb < 20:
+          return 25, 0.3   # médio
+      else:
+          return 50, 0.05  # agressivo (com GPU provavelmente)
+
+  Nota: psutil já é uma dependência comum; verificar se está no requirements.
+
+--------------------------------------------------------
+6. COMPATIBILIDADE DE VECTORSTORE ENTRE MÁQUINAS
+--------------------------------------------------------
+
+Estrutura do persist_directory (ChromaDB):
+  chroma_db/
+  ├── chroma.sqlite3          ← banco principal (SQLite)
+  └── <uuid>/                 ← uma pasta por coleção
+      ├── data_level0.bin     ← index HNSW
+      ├── header.bin
+      ├── length.bin
+      └── link_lists.bin
+
+Regras de sincronização via Proton Drive:
+  ✅ Seguro copiar para outra máquina (somente leitura)
+  ✅ Uma máquina escreve, outras lêem — sem conflito
+  ❌ Duas máquinas escrevendo simultaneamente → corrupção garantida
+  ❌ Abrir para escrita enquanto em sync (arquivo em uso) → erro
+
+Estratégia recomendada no código:
+  - Adicionar campo "indexing_machine" no config.json ou .mnemosyne/config.json
+  - Se a máquina atual != indexing_machine: desabilitar botões de indexação
+  - Mostrar mensagem: "Índice construído em [outra máquina]. Consultas disponíveis."
+
+ChromaDB em modo só-leitura (API):
+  Não existe um "modo read-only" oficial na API Python do ChromaDB.
+  A proteção deve ser feita na UI (desabilitar botões) e na lógica do app,
+  não no banco de dados em si.
+
+========================================================
+FIM DA PESQUISA — Performance em Hardware Limitado
+========================================================
+
+========================================================
+PESQUISA — Modelos de Embedding Leves + Ollama CPU Tuning
+Sessão: 2026-04-17 (aprofundamento)
+========================================================
+
+Fontes consultadas: Ollama GitHub Issues, HuggingFace, LangChain docs,
+glukhov.org, BentoML blog, OpenBenchmarking.org, Intel ARK.
+
+--------------------------------------------------------
+1. POR QUE O i5-3470 NÃO TEM AVX2 — E O QUE ISSO SIGNIFICA
+--------------------------------------------------------
+
+O Intel Core i5-3470 é arquitetura Ivy Bridge (3ª geração, 2012).
+Suporta: SSE 4.2, AVX, AES, Intel VT-x, RdRand.
+NÃO suporta: AVX2, AVX-512, FMA.
+
+AVX2 foi introduzido no Haswell (4ª geração, 2013). É o conjunto de instruções
+que os runtimes GGUF (llama.cpp, usado pelo Ollama) usam como alvo principal.
+Sem AVX2:
+  - Ollama usa o caminho de código AVX (mais lento, ~2-4x)
+  - Modelos GGUF ainda rodam, mas lentamente
+  - bge-m3 com 568M parâmetros em AVX-only: cada batch de 50 chunks
+    pode levar minutos em vez de segundos
+
+Fonte: Intel ARK, OpenBenchmarking.org (i5-3470 benchmarks),
+Ollama GitHub issues #2524 e #2281.
+
+Implicação prática: para este hardware, qualquer modelo via Ollama será lento.
+A solução não é só trocar o modelo — é não usar Ollama nesse hardware para
+indexação, ou usar embeddings estáticos que não dependem do Ollama.
+
+--------------------------------------------------------
+2. OLLAMA_NUM_THREAD — O QUE FAZ, COMO CONFIGURA, LIMITAÇÕES
+--------------------------------------------------------
+
+OLLAMA_NUM_THREAD é uma variável de ambiente que define quantos threads
+o Ollama usa para inferência de CPU. Por padrão, Ollama detecta o número
+de cores físicos automaticamente (não lógicos/HT).
+
+Como configurar:
+  Linux/Mac (fish): set -x OLLAMA_NUM_THREAD 2
+  Windows: Configurações → Sistema → Variáveis de Ambiente → Nova variável
+
+Alternativa per-request (LangChain):
+  OllamaEmbeddings(model="bge-m3", num_thread=2)
+  → Documentado em langchain_ollama/embeddings com assinatura:
+    num_thread: int | None = None
+  → Recomendação oficial: usar número de cores físicos (não lógicos)
+
+LIMITAÇÃO IMPORTANTE (descoberta na pesquisa):
+  Bug reportado no Ollama 0.6.6 (abril 2025 — Issue #10476):
+  OLLAMA_NUM_THREAD é ignorado. A variável funciona em versões anteriores.
+  Workaround: usar num_thread no per-request (LangChain) até correção.
+
+OLLAMA_NUM_PARALLEL (diferente de NUM_THREAD):
+  Controla quantas REQUESTS simultâneas o servidor processa.
+  Padrão: 4 (ou 1 dependendo de memória disponível).
+  Para hardware fraco: OLLAMA_NUM_PARALLEL=1 garante que só uma request
+  de embedding roda de cada vez, evitando contenção de memória.
+
+Fonte: Ollama GitHub Issues #2496, #9784, #10476, LangChain reference docs.
+
+--------------------------------------------------------
+3. MODELOS DE EMBEDDING ALTERNATIVOS — PESQUISA APROFUNDADA
+--------------------------------------------------------
+
+--- 3.1 potion-multilingual-128M (model2vec) ---
+
+Desenvolvido pela MinishLab. "model2vec" é uma técnica de destilação que
+converte qualquer sentence transformer em um modelo de embeddings estáticos.
+"Estático" significa: os embeddings são pré-computados por token e armazenados
+como tabela de lookup. Não há inferência neural em tempo real.
+
+Como funciona:
+  1. O modelo pai (ex: BGE-M3) é executado uma vez em um corpus de treino
+  2. Os embeddings de cada token são registrados e comprimidos (PCA)
+  3. O "modelo" resultante é uma tabela de vetores por token (lookup table)
+  4. Inferência = somar vetores dos tokens da frase (sem transformers, sem GPU)
+
+Por que é tão rápido:
+  - Sem atenção (attention), sem camadas transformers, sem gradientes
+  - Operação = tokenização + soma de vetores = quase instantâneo em CPU
+  - "Até 500x mais rápido que sentence-transformers em CPU" (MinishLab GitHub)
+
+Especificações (potion-multilingual-128M):
+  - Parâmetros: 128M (parâmetros do modelo PAI — o modelo distilado é muito menor)
+  - Dimensão de saída: 256 (vs 1024 do bge-m3)
+  - Idiomas: 101 (treinado em C4 dataset com temperature-smoothed sampling)
+  - Contexto: teoricamente ilimitado (sem janela de contexto de transformers)
+  - Descarregável do HuggingFace (~50-100 MB de modelo efetivo)
+  - 92.000 downloads/mês (HuggingFace, abril 2026)
+
+Qualidade (MTEB benchmark):
+  potion-multilingual-128M: 47.31 média — 90.86% do desempenho do LaBSE
+  LaBSE (referência):       52.07 média
+  bge-m3 Recall@1 geral:    72% (de pesquisa anterior)
+
+  → Para RAG pessoal (perguntas sobre biblioteca própria, baixa ambiguidade),
+    47.31 é suficiente. Para tarefas de alta precisão, é inferior.
+
+Integração com LangChain (verificada na documentação):
+  from langchain_community.embeddings import Model2vecEmbeddings
+  embeddings = Model2vecEmbeddings("minishlab/potion-multilingual-128M")
+  # Compatível com Chroma, FAISS, qualquer vector store que use o protocolo
+  # Embeddings do LangChain. Sem Ollama, sem servidor.
+
+Fonte: MinishLab GitHub (model2vec), HuggingFace potion-multilingual-128M,
+LangChain docs (model2vec integration).
+
+--- 3.2 qwen3-embedding:0.6b ---
+
+Menor modelo da família Qwen3 Embedding (série: 0.6B, 4B, 8B).
+Disponível nativamente no Ollama: ollama pull qwen3-embedding:0.6b
+
+Especificações confirmadas (Ollama library):
+  Tamanho no disco: 639 MB (Q8_0)
+  Parâmetros: 0.6B (600M)
+  Quantização padrão: Q8_0 (maior qualidade para o tamanho)
+  Idiomas: 100+ (família Qwen3 é multilíngue de nascença)
+  Contexto: compatível com janelas longas (herdado do Qwen3)
+
+Qualidade MTEB:
+  Qwen3-Embedding 8B: #1 no MTEB Multilingual (score 70.58, junho 2025)
+  Qwen3-Embedding 0.6B: sem benchmark publicado explicitamente, mas
+  escalamento usual sugere ~50-60 — muito melhor que potion-multilingual-128M,
+  comparable a bge-m3 para português.
+
+Por que é melhor que bge-m3 para hardware limitado:
+  - 639 MB vs ~1 GB do bge-m3 F16 (ou ~635 MB do bge-m3 Q8)
+  - Família mais nova (2025 vs 2023) — melhor eficiência por parâmetro
+  - Português: Qwen3 foi treinado com ênfase em múltiplos idiomas incluindo PT-BR
+
+Limitação no i5-3470:
+  Ainda roda via Ollama (processo HTTP), ainda sofre com ausência de AVX2.
+  Porém o modelo menor reduz o tempo de inferência por token drasticamente.
+  Em i5-3470: bge-m3 pode levar 10-30 min/batch; qwen3:0.6b talvez 2-5 min.
+  Ambos são lentos — a solução certa para esse hardware é não indexar nele.
+
+Fonte: ollama.com/library/qwen3-embedding, glukhov.org (Qwen3 embedding review).
+
+--- 3.3 EmbeddingGemma-300M (Google DeepMind, 2025) ---
+
+Derivado do Gemma 3, 300M parâmetros, 100+ idiomas.
+Otimizado para on-device: < 200 MB RAM com quantização.
+Não disponível via Ollama ainda (verificado em abril 2026).
+Disponível no HuggingFace. Integração LangChain não confirmada.
+A investigar no futuro se precisar de modelo ainda menor que potion.
+
+Fonte: Google Developers Blog "Introducing EmbeddingGemma".
+
+--------------------------------------------------------
+4. SEMANTIC CHUNKER — O QUE É E QUANDO VALE A PENA
+--------------------------------------------------------
+
+SemanticChunker (langchain-experimental) usa o próprio modelo de embedding
+para detectar "fronteiras semânticas" no texto:
+
+Como funciona:
+  1. Divide o texto em sentenças (por pontuação)
+  2. Computa embedding de cada par de sentenças adjacentes
+  3. Calcula similaridade coseno entre pares
+  4. Quebra onde a similaridade cai abaixo de um threshold
+     (breakpoint_threshold_type="percentile", padrão 95º percentil)
+
+Por que produz chunks melhores:
+  - RecursiveCharacterTextSplitter quebra por tamanho fixo, potencialmente
+    no meio de um argumento ou parágrafo coeso
+  - SemanticChunker garante que cada chunk contém uma unidade de sentido completa
+  - Especialmente valioso para: EPUBs, PDFs acadêmicos, notas Obsidian longas
+
+Custo:
+  - Faz chamadas de embedding durante o split (não só durante a indexação)
+  - Dobra o número de chamadas ao Ollama: uma para split, uma para Chroma
+  - Só justifica em hardware com GPU (CachyOS, não trabalho)
+  - Configurável via AppConfig.semantic_chunking = True (opt-in, padrão False)
+
+Não tem chunk_size nem chunk_overlap — o tamanho emerge da estrutura semântica.
+
+Fonte: LangChain experimental docs, langchain-experimental PyPI.
+
+--------------------------------------------------------
+5. QTHREAD.PRIORITY — COMO O SCHEDULER DO OS INTERPRETA
+--------------------------------------------------------
+
+QThread.Priority é passado diretamente ao scheduler de threads do OS:
+
+  Windows: SetThreadPriority() do WinAPI
+    THREAD_PRIORITY_IDLE     → IdlePriority (executa só quando CPU ociosa)
+    THREAD_PRIORITY_LOWEST   → LowestPriority
+    THREAD_PRIORITY_BELOW_NORMAL → LowPriority
+    THREAD_PRIORITY_NORMAL   → NormalPriority
+
+  Linux: nice() values (POSIX)
+    IdlePriority    → nice +19 (menor prioridade possível)
+    LowPriority     → nice +10
+
+Implicação prática para IndexWorker com IdlePriority:
+  - O OS nunca sacrifica threads interativas (UI, browser) pelo IndexWorker
+  - Indexação ocorre nos ciclos de CPU que ninguém mais quer
+  - No Windows com i5-3470: ainda pode ser lento se o Ollama saturar os 4 cores
+    (o Ollama roda como processo separado com prioridade Normal)
+  - Combinação ideal: IdlePriority + OLLAMA_NUM_THREAD=2
+
+Nota da documentação Qt: "o efeito da prioridade depende da política de
+scheduling do OS e pode ser ignorado em sistemas que não suportam".
+
+Fonte: Qt for Python docs (QThread), bogotobogo.com Qt5 QThread Priority.
+
+========================================================
+FIM DA PESQUISA — Modelos Leves + Ollama CPU Tuning
+========================================================

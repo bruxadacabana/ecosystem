@@ -39,6 +39,10 @@ def _resolve_archive_path(eco: dict[str, Any]) -> Path:
     p = eco.get("akasha", {}).get("archive_path", "")
     return Path(p) if p else _AKASHA_DIR / "data" / "archive"
 
+def _resolve_db_path(eco: dict[str, Any]) -> Path:
+    p = eco.get("akasha", {}).get("data_path", "")
+    return Path(p) / "akasha.db" if p else _AKASHA_DIR / "akasha.db"
+
 # ---------------------------------------------------------------------------
 # Leitura do ecossistema
 # ---------------------------------------------------------------------------
@@ -56,6 +60,7 @@ _eco: dict[str, Any] = _load()
 
 DB_PATH:      Path = _resolve_db_path(_eco)
 ARCHIVE_PATH: Path = _resolve_archive_path(_eco)
+DB_PATH:      Path = _resolve_db_path(_eco)
 
 # Caminhos expostos (string vazia = não configurado)
 kosmos_archive:     str       = _eco.get("kosmos",    {}).get("archive_path", "")

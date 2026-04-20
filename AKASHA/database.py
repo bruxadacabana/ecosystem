@@ -264,6 +264,15 @@ async def get_blocked_domains() -> set[str]:
     return {r[0] for r in rows}
 
 
+async def list_blocked_domains() -> list[tuple[str, str]]:
+    """Retorna lista de (domain, added_at) ordenada pela data mais recente."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT domain, added_at FROM blocked_domains ORDER BY added_at DESC"
+        )).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
 async def add_blocked_domain(domain: str) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(

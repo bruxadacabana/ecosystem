@@ -90,7 +90,7 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
         {sync_root}/mnemosyne/docs/  → mnemosyne.watched_dir
         {sync_root}/mnemosyne/chroma_db/ → mnemosyne.chroma_dir
         {sync_root}/hermes/          → hermes.output_dir
-        {sync_root}/akasha/          → akasha.archive_path
+        {sync_root}/akasha/          → akasha.archive_path + akasha.data_path
         {sync_root}/ogma/            → ogma.data_path
     """
     root = Path(sync_root)

@@ -1,4 +1,4 @@
-# Diretivas do Ecossistema — program files/
+# Diretivas do Ecossistema
 
 Instruções para o Claude Code ao trabalhar neste repositório.
 
@@ -13,6 +13,24 @@ Instruções para o Claude Code ao trabalhar neste repositório.
 - Sem dependências exclusivas de uma plataforma
 - Apps Python: compatível com `uv` em ambos os SOs
 - Apps Tauri: `cargo tauri build` deve funcionar nos dois targets
+
+### Hardware — Computador de trabalho (Windows 10)
+
+- CPU: Intel Core i5-3470, Ivy Bridge 2012, 4 cores/4 threads, 3.2 GHz — **sem AVX2**
+- RAM: 8 GB
+- GPU: Intel HD Graphics integrada (32 MB dedicados — inútil para ML)
+- OS: Windows 10 x64
+
+Implicações: modelos de embedding pesados (ex: bge-m3) saturam o CPU e travam o sistema.
+Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar embedding estático leve.
+
+### Hardware — Computador principal (CachyOS)
+
+- CPU: AMD Ryzen 5 4600G
+- RAM: 16 GB
+- GPU: AMD Radeon RX 6600, RDNA2, 8 GB VRAM (gfx1032) — ROCm com `HSA_OVERRIDE_GFX_VERSION=10.3.0`
+- OS: CachyOS (Arch Linux), Niri + Fish shell
+- Armazenamento: ~2 TB (3 SSDs)
 
 ---
 

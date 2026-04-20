@@ -15,7 +15,38 @@ from .loaders import load_documents, load_single_file
 from .tracker import FileTracker
 
 
-def _get_splitter(config: AppConfig) -> RecursiveCharacterTextSplitter:
+def _detect_batch_config() -> tuple[int, float]:
+    """
+    Retorna (batch_size, sleep_s) baseado na RAM disponível.
+    Hardware fraco (< 10 GB): batch pequeno e pausa longa para não travar o sistema.
+    Hardware forte (com GPU provavelmente): batch grande e pausa mínima.
+    """
+    try:
+        import psutil
+        ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+    except ImportError:
+        ram_gb = 8.0  # assume conservador se psutil indisponível
+    if ram_gb < 10:
+        return 10, 1.0
+    elif ram_gb < 20:
+        return 25, 0.3
+    return 50, 0.05
+
+
+def _get_splitter(config: AppConfig, embeddings: OllamaEmbeddings | None = None):
+    """
+    Retorna splitter configurado. Se semantic_chunking=True, usa SemanticChunker
+    (requer langchain-experimental; faz chamadas de embedding durante o split
+    para detectar fronteiras semânticas — mais lento, chunks mais coesos).
+    Fallback para RecursiveCharacterTextSplitter se o pacote não estiver instalado.
+    """
+    if config.semantic_chunking:
+        try:
+            from langchain_experimental.text_splitter import SemanticChunker
+            emb = embeddings or _get_embeddings(config)
+            return SemanticChunker(emb)
+        except ImportError:
+            pass
     return RecursiveCharacterTextSplitter(
         chunk_size=config.chunk_size,
         chunk_overlap=config.chunk_overlap,
@@ -46,14 +77,14 @@ def create_vectorstore(config: AppConfig) -> Chroma:
     if not documents:
         raise EmptyDirectoryError(config.watched_dir)
 
-    splitter = _get_splitter(config)
+    embeddings = _get_embeddings(config)
+    splitter = _get_splitter(config, embeddings)
     chunks = splitter.split_documents(documents)
 
-    _BATCH = 50
+    _BATCH, _SLEEP = _detect_batch_config()
     try:
         import time
         os.makedirs(config.persist_dir, exist_ok=True)
-        embeddings = _get_embeddings(config)
         vectorstore = None
         for b in range(0, len(chunks), _BATCH):
             batch = chunks[b : b + _BATCH]
@@ -66,7 +97,7 @@ def create_vectorstore(config: AppConfig) -> Chroma:
             else:
                 vectorstore.add_documents(batch)
             if b + _BATCH < len(chunks):
-                time.sleep(0.1)
+                time.sleep(_SLEEP)
     except Exception as exc:
         raise IndexBuildError(f"Falha ao criar vectorstore: {exc}") from exc
 
@@ -147,7 +178,7 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
         modified_files.extend((f, source_type) for f in m)
         deleted_files.extend(d)
 
-    _BATCH = 50
+    _BATCH, _SLEEP = _detect_batch_config()
     stats = {"new": 0, "modified": 0, "deleted": 0, "errors": 0}
 
     # Deletados
@@ -166,7 +197,7 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
             for b in range(0, len(chunks), _BATCH):
                 vs.add_documents(chunks[b : b + _BATCH])
                 if b + _BATCH < len(chunks):
-                    time.sleep(0.1)
+                    time.sleep(_SLEEP)
             tracker.mark_indexed(file_path)
             stats["modified"] += 1
         except Exception:
@@ -181,7 +212,7 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
             for b in range(0, len(chunks), _BATCH):
                 vs.add_documents(chunks[b : b + _BATCH])
                 if b + _BATCH < len(chunks):
-                    time.sleep(0.1)
+                    time.sleep(_SLEEP)
             tracker.mark_indexed(file_path)
             stats["new"] += 1
         except Exception:
