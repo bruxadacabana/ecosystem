@@ -145,8 +145,8 @@
 - [ ] Export PDF via `weasyprint` (pesquisar viabilidade — baixa prioridade)
 
 #### Study Guide Estruturado
-- [ ] `core/study_guide.py` — guia de estudo completo: (1) conceitos-chave com definição de 2-3 frases, (2) termos técnicos com explicação, (3) questões de revisão (abertas, não múltipla escolha — isso é do Quiz/4.5), (4) tópicos para aprofundar; diferente do NotebookGuide automático que é só intro; retorna Markdown
-- [ ] Integrar no Studio Panel como tipo `"Guia de Estudo"`
+- [x] `core/study_guide.py` — `iter_study_guide()`: 4 seções — Conceitos-Chave (definição 2-3 frases), Termos Técnicos (glossário), Questões de Revisão (8-12 perguntas abertas), Tópicos para Aprofundar; stuff ou map-reduce
+- [x] Integrar no Studio Panel como tipo `"Guia de Estudo"` — via `_STUDIO_DISPATCH`
 
 #### Table of Contents
 - [ ] `core/toc.py` — índice temático navegável: LLM identifica os temas e subtemas cobertos pelos documentos e os organiza em hierarquia com links de âncora Markdown; útil para coleções grandes onde o usuário não sabe o que está indexado; retorna Markdown com `## Tema > ### Subtema`
