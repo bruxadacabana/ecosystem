@@ -153,9 +153,8 @@
 - [x] Integrar no Studio Panel como tipo `"Índice de Temas"` — via `_STUDIO_DISPATCH`
 
 #### Timeline
-- [ ] `core/timeline.py` — extrair eventos com data/período dos documentos; ordenar cronologicamente; formato: lista de itens `[data] — [evento] — [fonte]`; útil para documentos históricos, biográficos, projetos com marcos
-- [ ] Integrar no Studio Panel como tipo `"Linha do Tempo"`
-- [ ] *(remove o item de 4.7 que listava isso como botão separado na aba Resumir — passa a ser Studio Panel)*
+- [x] `core/timeline.py` — `iter_timeline()`: fase Map extrai eventos datados por fonte; fase Reduce consolida e ordena cronologicamente; formato `- **[data]** — [evento]`; query de retrieval favorece docs com datas; temperatura 0.0 para precisão factual
+- [x] Integrar no Studio Panel como tipo `"Linha do Tempo"` — via `_STUDIO_DISPATCH`
 
 #### Blog Post
 - [ ] `core/blogpost.py` — texto corrido narrativo sobre o conteúdo das fontes: introdução cativante, desenvolvimento em parágrafos fluidos (sem bullet points), conclusão; tom acessível, não acadêmico; útil para comunicar conteúdo técnico para não-especialistas; retorna Markdown
