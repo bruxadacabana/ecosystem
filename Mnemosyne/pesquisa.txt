@@ -1802,4 +1802,123 @@ Fonte: Qt for Python docs (QThread), bogotobogo.com Qt5 QThread Priority.
 
 ========================================================
 FIM DA PESQUISA — Modelos Leves + Ollama CPU Tuning
+
+
+========================================================
+4. NOTEBOOKLM — FUNCIONALIDADES RELEVANTES PARA MNEMOSYNE
+   (pesquisado em 2026-04-20)
+========================================================
+
+NotebookLM (Google, powered by Gemini + RAG) é a referência principal
+para o Mnemosyne. Funciona online, mas a análise das features guia
+o que implementar offline com Ollama.
+
+FUNCIONALIDADES EXISTENTES NO NOTEBOOKLM:
+
+  Geração de documentos (Studio Panel):
+  · Study Guide — resumo estruturado com conceitos-chave, questões, termos
+  · Briefing Document — sumário executivo para papers/relatórios técnicos
+  · FAQ — perguntas frequentes geradas a partir das fontes
+  · Table of Contents — sumário navegável
+  · Timeline — extração e ordenação de eventos cronológicos
+  · Blog Post — texto corrido narrativo sobre o conteúdo
+  · Data Tables — especifica colunas; LLM extrai entidades e preenche tabela;
+    exporta para Google Sheets / CSV
+  · Slide Decks — apresentação automática, exporta para PPTX
+
+  Visualização:
+  · Mind Maps — hierárquicos; ramos expandíveis/colapsáveis; nós clicáveis
+    abrem chat contextual sobre aquele tópico; exporta como PNG
+    (NÃO é um grafo arbitrário — é árvore hierárquica com conceito central)
+
+  Áudio/Vídeo (fora do escopo offline):
+  · Audio Overview — podcast de 2 hosts; modo interativo (interrumpível)
+  · Video Overview — animado, com estilos visuais; exporta como vídeo
+
+  Flashcards & Quiz:
+  · Flashcards com progresso (Got it / Missed it), shuffle, retry
+  · Quiz com tracking de performance
+
+  Deep Research (Novembro 2025):
+  · Agente que cria plano de pesquisa, navega centenas de sites, sintetiza
+  · NÃO replicável offline (depende de acesso web) — mas podemos fazer
+    "deep RAG iterativo" que reformula e aprofunda via múltiplas queries
+
+GAPS DO NOTEBOOKLM (vantagens do Mnemosyne local-first):
+  · Sem export para Markdown/Obsidian — Mnemosyne pode integrar diretamente
+  · Sem vault pessoal (Obsidian) — Fase 6 do Mnemosyne
+  · Privacidade: todas as fontes vão para servidores Google
+  · Dependência de conectividade
+  · Sem personalização do LLM
+  · Colaboração muito limitada (básica, sem roles)
+
+O QUE AINDA FALTA NO MNEMOSYNE (comparando com NotebookLM):
+
+  PRIORITÁRIO (a usuária destacou):
+  · Mind Map — implementação mais rica: não só export JSON, mas visualização
+    integrada no Qt com QGraphicsView + nós clicáveis que acionam busca RAG;
+    ou pelo menos renderização via graphviz como SVG/PNG; exportar também
+    em formato Mermaid (.md) para integração com Obsidian
+  · Reports completos — o TODO tem briefing e mindmap em 4.9, mas falta:
+    - "Relatório de Pesquisa" completo: seções com intro, temas, achados por
+      fonte, divergências, conclusão (mais elaborado que briefing)
+    - Export para Markdown e PDF
+
+  IMPORTANTE:
+  · Data Tables (extração estruturada de entidades em tabela) — já em 4.9
+  · Timeline — já em 4.7
+  · Slide deck (PPTX) — não está no TODO, mas é útil
+
+  FORA DO ESCOPO (requer recursos pesados / online):
+  · Video overview
+  · Audio interativo (apenas script de podcast está planejado)
+  · Deep Research (web scraping ativo)
+
+DECISÃO DE IMPLEMENTAÇÃO PARA MIND MAPS:
+  Opções técnicas para Qt:
+  a) graphviz Python (`graphviz` lib) → gera SVG → renderiza em QLabel/
+     QSvgWidget; simples, dependência leve, mas não interativo
+  b) matplotlib + networkx → gera imagem; simples mas pesado
+  c) QGraphicsView custom → 100% interativo, sem deps externas, mas complexo
+  d) Mermaid syntax export → abre no browser local (webbrowser.open);
+     muito simples, boa experiência, sem deps Qt extras
+  Recomendação: (d) para MVP + (a) como fallback embutido; (c) como fase posterior
+
+  Estrutura do JSON exportado:
+  {
+    "title": "...",
+    "central": "conceito central",
+    "branches": [
+      {
+        "label": "tema 1",
+        "children": ["subtópico A", "subtópico B"],
+        "source": "arquivo.pdf"
+      }
+    ]
+  }
+
+SOBRE REPORTS:
+  O que existe: summary (stuff/map-reduce) e briefing (4.9 pendente)
+  O que falta: "Relatório de Pesquisa" estruturado multi-seção
+  Estrutura sugerida para core/report.py:
+    1. Título e período/escopo
+    2. Sumário executivo (2-3 parágrafos)
+    3. Principais temas (N seções, cada uma com findings)
+    4. Análise por fonte (1 parágrafo por documento indexado)
+    5. Pontos de convergência e divergência entre fontes
+    6. Lacunas identificadas (o que os documentos NÃO cobrem)
+    7. Recomendações / próximos passos
+    8. Referências (lista de fontes)
+  Export: Markdown (nativo), PDF via weasyprint ou pandoc
+  Abordagem: LLM Map por seção → Reduce final; similar ao summarizer
+  existente mas com schema rígido de saída
+
+Fontes consultadas:
+  - NotebookLM blog oficial (blog.google/innovation-and-ai)
+  - workspaceupdates.googleblog.com
+  - learnprompting.org/blog/notebooklm-guide
+  - support.google.com/notebooklm
+
+========================================================
+FIM DA PESQUISA — NotebookLM Features
 ========================================================

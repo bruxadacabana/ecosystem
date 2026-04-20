@@ -129,12 +129,27 @@
 - [ ] `gui/main_window.py` — botão "Ouvir resumo" com player embutido
 
 ### 4.9 Outputs Estruturados
-- [ ] `core/briefing.py` — Briefing Document: resumo executivo estruturado com temas principais, achados, insights acionáveis e divergências entre fontes; mais rico e directo que o resumo geral
-- [ ] `gui/main_window.py` — botão "Gerar Briefing" na aba Resumir
-- [ ] `core/mindmap.py` — Mind Map: extrair conceitos-chave e conexões entre fontes; exportar como JSON para visualização externa
-- [ ] `gui/main_window.py` — botão "Exportar Mind Map" na aba Resumir
-- [ ] `core/tables.py` — Data Tables: LLM extrai entidades e relações dos documentos e formata como tabela consultável; exportar como CSV/JSON
-- [ ] `gui/main_window.py` — botão "Gerar Tabela" na aba Resumir com opção de exportação
+
+#### Briefing Document
+- [ ] `core/briefing.py` — resumo executivo estruturado: temas principais, achados, insights acionáveis e divergências entre fontes; mais rico que o resumo geral
+- [ ] `gui/main_window.py` — botão "Gerar Briefing" na aba Análise; export para Markdown
+
+#### Relatório de Pesquisa completo
+- [ ] `core/report.py` — `ReportGenerator`: relatório multi-seção via Map-Reduce; seções fixas: (1) sumário executivo, (2) principais temas com findings, (3) análise por fonte, (4) convergências e divergências, (5) lacunas identificadas, (6) referências; retorna Markdown estruturado
+- [ ] `gui/main_window.py` — botão "Gerar Relatório" na aba Análise; export para `.md`; opcional: PDF via `weasyprint` (pesquisar viabilidade)
+
+#### Mind Map
+- [ ] `core/mindmap.py` — `MindMapBuilder`: LLM gera estrutura hierárquica como JSON `{central, branches: [{label, children[], source}]}`; exportar como (a) JSON, (b) Mermaid mindmap syntax `mindmap\n  root((...))` para abrir no browser/Obsidian, (c) `.mm` XML (FreeMind/XMind compatível)
+- [ ] `gui/main_window.py` — botão "Mind Map" na aba Análise; abre resultado em viewer: primeiro tenta renderizar SVG via `graphviz` lib em QLabel; fallback abre Mermaid no browser via `webbrowser.open()`; botão de export salva `.md` com bloco `mermaid` ou `.mm`
+- [ ] `requirements.txt` — verificar se `graphviz` (lib Python) é viável; alternativa: só exportar e abrir externamente (sem dep extra)
+
+#### Data Tables
+- [ ] `core/tables.py` — LLM extrai entidades e relações dos documentos conforme schema definido pelo usuário; retorna lista de dicts; exportar como CSV/JSON
+- [ ] `gui/main_window.py` — botão "Extrair Tabela" na aba Análise; campo para o usuário especificar colunas desejadas (ex: "Nome, Data, Valor"); visualização em QTableWidget; export CSV
+
+#### Slide Deck (baixa prioridade)
+- [ ] `core/slides.py` — gerar apresentação em formato Markdown de slides (compatível com Marp/reveal.js); cada slide = seção do briefing; export como `.md`
+- [ ] `gui/main_window.py` — botão "Gerar Slides" na aba Análise
 
 ## Fase 5 — UI e design
 
@@ -185,4 +200,4 @@
 
 ---
 
-*Atualizado em: 2026-04-20 — Sessões de chat nomeadas implementadas.*
+*Atualizado em: 2026-04-20 — 4.9 expandido: Relatório completo, Mind Map, Data Tables, Slides após pesquisa NotebookLM.*
