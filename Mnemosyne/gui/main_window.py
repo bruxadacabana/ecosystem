@@ -24,7 +24,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QTabWidget,
+    QSplitter,
+    QStackedWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -300,9 +301,10 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setSpacing(6)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # Banner Ollama indisponível
+        # Ollama banner
         self.ollama_banner = QLabel(
             "⚠  Ollama não encontrado. Inicie o Ollama para usar o Mnemosyne."
         )
@@ -311,99 +313,90 @@ class MainWindow(QMainWindow):
         self.ollama_banner.setVisible(False)
         root.addWidget(self.ollama_banner)
 
-        # Barra superior
-        top = QHBoxLayout()
+        # ── Splitter principal ──────────────────────────────────────
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setObjectName("mainSplitter")
+        splitter.setHandleWidth(1)
+
+        # ── Sidebar ─────────────────────────────────────────────────
+        sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(234)
+        sb = QVBoxLayout(sidebar)
+        sb.setContentsMargins(14, 18, 14, 14)
+        sb.setSpacing(4)
+
+        # Brand
+        brand_lbl = QLabel("Mnemosyne")
+        brand_lbl.setObjectName("sidebarBrand")
+        sb.addWidget(brand_lbl)
+
         self.folder_label = QLabel(self.config.watched_dir or "Pasta não configurada")
-        self.folder_label.setObjectName("folderLabel")
+        self.folder_label.setObjectName("sidebarFolder")
+        self.folder_label.setWordWrap(True)
+        sb.addWidget(self.folder_label)
 
-        self.config_btn = QPushButton("Configurar")
-        self.config_btn.setEnabled(False)
-        self.config_btn.clicked.connect(self.open_config)
+        sb.addSpacing(12)
 
-        self.index_btn = QPushButton("Indexar tudo")
-        self.index_btn.setEnabled(False)
-        self.index_btn.clicked.connect(self.start_indexing)
+        # Nav buttons
+        self._content_stack = QStackedWidget()
 
-        self.cancel_btn = QPushButton("Interromper")
-        self.cancel_btn.setObjectName("cancelBtn")
-        self.cancel_btn.setVisible(False)
-        self.cancel_btn.clicked.connect(self._cancel_worker)
+        self._nav_chat_btn     = QPushButton("Chat")
+        self._nav_analysis_btn = QPushButton("Análise")
+        self._nav_manage_btn   = QPushButton("Gerenciar")
+        for idx, btn in enumerate((self._nav_chat_btn, self._nav_analysis_btn, self._nav_manage_btn)):
+            btn.setObjectName("navBtn")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda checked, i=idx: self._switch_page(i))
+            sb.addWidget(btn)
+        self._nav_chat_btn.setChecked(True)
 
-        self.badge_label = QLabel()
-        self.badge_label.setVisible(False)
+        sb.addSpacing(12)
+        self._add_sidebar_rule(sb)
+        sb.addSpacing(8)
 
-        self.progress = QProgressBar()
-        self.progress.setVisible(False)
-
-        top.addWidget(QLabel("Pasta:"))
-        top.addWidget(self.folder_label, 1)
-        top.addWidget(self.badge_label)
-        top.addWidget(self.config_btn)
-        top.addWidget(self.index_btn)
-        top.addWidget(self.cancel_btn)
-        top.addWidget(self.progress)
-        root.addLayout(top)
-
-        # Abas
-        self.tabs = QTabWidget()
-        self._build_tab_ask()
-        self._build_tab_summary()
-        self._build_tab_manage()
-        root.addWidget(self.tabs)
-
-    def _build_tab_ask(self) -> None:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-
-        q_row = QHBoxLayout()
-        self.question_edit = QLineEdit()
-        self.question_edit.setPlaceholderText("Pergunte à sua memória…")
-        self.question_edit.returnPressed.connect(self.ask_question)
-        self.ask_btn = QPushButton("Perguntar")
-        self.ask_btn.setEnabled(False)
-        self.ask_btn.clicked.connect(self.ask_question)
-        self.new_chat_btn = QPushButton("Nova Conversa")
-        self.new_chat_btn.setToolTip("Reseta o histórico da conversa actual")
-        self.new_chat_btn.clicked.connect(self._reset_conversation)
-        q_row.addWidget(self.question_edit)
-        q_row.addWidget(self.ask_btn)
-        q_row.addWidget(self.new_chat_btn)
-        layout.addLayout(q_row)
-
-        # Seletores de fonte e modo de recuperação
-        source_row = QHBoxLayout()
-        source_row.addWidget(QLabel("Buscar em:"))
+        # Buscar em
+        lbl_src = QLabel("Buscar em:")
+        lbl_src.setObjectName("sidebarLabel")
+        sb.addWidget(lbl_src)
         self.source_combo = QComboBox()
         self.source_combo.addItems(["Biblioteca", "Vault", "Ambos"])
-        self.source_combo.setCurrentIndex(2)  # Ambos por defeito
-        source_row.addWidget(self.source_combo)
-        source_row.addSpacing(16)
-        source_row.addWidget(QLabel("Modo:"))
+        self.source_combo.setCurrentIndex(2)
+        sb.addWidget(self.source_combo)
+
+        sb.addSpacing(6)
+
+        # Modo de recuperação
+        lbl_mode = QLabel("Modo:")
+        lbl_mode.setObjectName("sidebarLabel")
+        sb.addWidget(lbl_mode)
         self.retrieval_combo = QComboBox()
         self.retrieval_combo.addItems(["Híbrido", "Multi-Query", "HyDE"])
         self.retrieval_combo.setCurrentIndex(0)
         self.retrieval_combo.setToolTip(
             "Híbrido: semântico + BM25 (padrão)\n"
             "Multi-Query: 3 reformulações da pergunta (+1 LLM call)\n"
-            "HyDE: embeds resposta hipotética em vez da pergunta (melhor para perguntas abstractas)"
+            "HyDE: embeds resposta hipotética (melhor para perguntas abstractas)"
         )
-        source_row.addWidget(self.retrieval_combo)
-        source_row.addStretch()
-        layout.addLayout(source_row)
+        sb.addWidget(self.retrieval_combo)
 
-        # Filtro por arquivo — QGroupBox checkable: desmarcado = sem filtro
+        sb.addSpacing(10)
+
+        # Filtro por arquivo
         self.file_filter_box = QGroupBox("Filtrar por arquivo")
+        self.file_filter_box.setObjectName("sidebarGroup")
         self.file_filter_box.setCheckable(True)
         self.file_filter_box.setChecked(False)
         ff_layout = QVBoxLayout(self.file_filter_box)
+        ff_layout.setContentsMargins(6, 6, 6, 6)
         ff_layout.setSpacing(4)
 
         ff_btn_row = QHBoxLayout()
         select_all_btn = QPushButton("Todos")
-        select_all_btn.setFixedWidth(64)
+        select_all_btn.setFixedWidth(52)
         select_all_btn.clicked.connect(lambda: self._set_all_files_checked(True))
         select_none_btn = QPushButton("Nenhum")
-        select_none_btn.setFixedWidth(64)
+        select_none_btn.setFixedWidth(52)
         select_none_btn.clicked.connect(lambda: self._set_all_files_checked(False))
         ff_btn_row.addWidget(select_all_btn)
         ff_btn_row.addWidget(select_none_btn)
@@ -411,101 +404,231 @@ class MainWindow(QMainWindow):
         ff_layout.addLayout(ff_btn_row)
 
         self.file_list_widget = QListWidget()
-        self.file_list_widget.setMaximumHeight(120)
+        self.file_list_widget.setMaximumHeight(96)
         self.file_list_widget.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         ff_layout.addWidget(self.file_list_widget)
+        sb.addWidget(self.file_filter_box)
 
-        layout.addWidget(self.file_filter_box)
+        sb.addSpacing(12)
+        self._add_sidebar_rule(sb)
+        sb.addSpacing(8)
 
+        # Ações
+        self.new_chat_btn = QPushButton("↺  Nova Conversa")
+        self.new_chat_btn.setToolTip("Reseta o histórico da conversa actual")
+        self.new_chat_btn.clicked.connect(self._reset_conversation)
+        sb.addWidget(self.new_chat_btn)
+
+        self.index_btn = QPushButton("⊞  Indexar tudo")
+        self.index_btn.setEnabled(False)
+        self.index_btn.clicked.connect(self.start_indexing)
+        sb.addWidget(self.index_btn)
+
+        self.config_btn = QPushButton("⚙  Configurar")
+        self.config_btn.setEnabled(False)
+        self.config_btn.clicked.connect(self.open_config)
+        sb.addWidget(self.config_btn)
+
+        # Badge + progresso + cancelar
+        self.badge_label = QLabel()
+        self.badge_label.setObjectName("badgeLabel")
+        self.badge_label.setVisible(False)
+        sb.addWidget(self.badge_label)
+
+        self.progress = QProgressBar()
+        self.progress.setVisible(False)
+        sb.addWidget(self.progress)
+
+        self.cancel_btn = QPushButton("■  Interromper")
+        self.cancel_btn.setObjectName("cancelBtn")
+        self.cancel_btn.setVisible(False)
+        self.cancel_btn.clicked.connect(self._cancel_worker)
+        sb.addWidget(self.cancel_btn)
+
+        sb.addStretch()
+
+        splitter.addWidget(sidebar)
+
+        # ── Content stack ────────────────────────────────────────────
+        self._build_page_chat()
+        self._build_page_analysis()
+        self._build_page_manage()
+
+        splitter.addWidget(self._content_stack)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+
+        root.addWidget(splitter)
+
+    def _add_sidebar_rule(self, layout: QVBoxLayout) -> None:
+        rule = QLabel()
+        rule.setObjectName("sidebarRule")
+        rule.setFixedHeight(1)
+        layout.addWidget(rule)
+
+    def _switch_page(self, index: int) -> None:
+        self._content_stack.setCurrentIndex(index)
+        for i, btn in enumerate((self._nav_chat_btn, self._nav_analysis_btn, self._nav_manage_btn)):
+            btn.setChecked(i == index)
+
+    def _build_page_chat(self) -> None:
+        page = QWidget()
+        page.setObjectName("contentPage")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(8)
+
+        # Resposta (streaming)
         self.similar_label = QLabel()
         self.similar_label.setObjectName("similarLabel")
         self.similar_label.setVisible(False)
         layout.addWidget(self.similar_label)
 
-        layout.addWidget(QLabel("Resposta:"))
         self.answer_text = QTextEdit()
+        self.answer_text.setObjectName("answerText")
         self.answer_text.setReadOnly(True)
         self.answer_text.setPlaceholderText("A resposta aparecerá aqui…")
-        layout.addWidget(self.answer_text)
+        layout.addWidget(self.answer_text, 1)
 
-        layout.addWidget(QLabel("Fontes:"))
+        # Fontes
+        sources_lbl = QLabel("Fontes:")
+        sources_lbl.setObjectName("sectionLabel")
+        layout.addWidget(sources_lbl)
         self.sources_text = QTextEdit()
+        self.sources_text.setObjectName("sourcesText")
         self.sources_text.setReadOnly(True)
-        self.sources_text.setMaximumHeight(160)
+        self.sources_text.setMaximumHeight(130)
         layout.addWidget(self.sources_text)
 
-        self.tabs.addTab(tab, "Perguntar")
+        # Input
+        input_row = QHBoxLayout()
+        input_row.setSpacing(8)
+        self.question_edit = QLineEdit()
+        self.question_edit.setObjectName("questionInput")
+        self.question_edit.setPlaceholderText("Pergunte à sua memória…")
+        self.question_edit.returnPressed.connect(self.ask_question)
+        self.ask_btn = QPushButton("Enviar")
+        self.ask_btn.setObjectName("sendBtn")
+        self.ask_btn.setEnabled(False)
+        self.ask_btn.clicked.connect(self.ask_question)
+        input_row.addWidget(self.question_edit, 1)
+        input_row.addWidget(self.ask_btn)
+        layout.addLayout(input_row)
 
-    def _build_tab_summary(self) -> None:
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
+        self._content_stack.addWidget(page)
 
-        # Resumo manual (SummarizeWorker)
+    def _build_page_analysis(self) -> None:
+        page = QWidget()
+        page.setObjectName("contentPage")
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(20, 16, 20, 16)
+        outer.setSpacing(10)
+
+        # Pill nav row
+        pill_row = QHBoxLayout()
+        pill_row.setSpacing(4)
+        self._analysis_stack = QStackedWidget()
+
+        def make_pill(label: str, idx: int) -> QPushButton:
+            btn = QPushButton(label)
+            btn.setObjectName("pillBtn")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda: self._switch_analysis(idx))
+            return btn
+
+        self._pill_summary = make_pill("Resumo", 0)
+        self._pill_faq     = make_pill("FAQ", 1)
+        self._pill_guide   = make_pill("Guide", 2)
+        self._pill_summary.setChecked(True)
+        for btn in (self._pill_summary, self._pill_faq, self._pill_guide):
+            pill_row.addWidget(btn)
+        pill_row.addStretch()
+        outer.addLayout(pill_row)
+        outer.addWidget(self._analysis_stack, 1)
+
+        # ── Sub-página: Resumo ──────────────────────────────────────
+        summary_page = QWidget()
+        sl = QVBoxLayout(summary_page)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.setSpacing(8)
         self.summary_btn = QPushButton("Gerar resumo geral")
         self.summary_btn.setEnabled(False)
         self.summary_btn.clicked.connect(self.summarize)
-        layout.addWidget(self.summary_btn)
-        layout.addWidget(QLabel("Resumo:"))
+        sl.addWidget(self.summary_btn)
         self.summary_text = QTextEdit()
         self.summary_text.setReadOnly(True)
-        layout.addWidget(self.summary_text)
+        self.summary_text.setPlaceholderText("Clique em 'Gerar resumo geral' para resumir a coleção indexada…")
+        sl.addWidget(self.summary_text, 1)
+        self._analysis_stack.addWidget(summary_page)
 
-        # FAQ Generator
-        faq_box = QGroupBox("FAQ — Perguntas Frequentes")
-        faq_layout = QVBoxLayout(faq_box)
-        faq_layout.setSpacing(6)
-
+        # ── Sub-página: FAQ ─────────────────────────────────────────
+        faq_page = QWidget()
+        fl = QVBoxLayout(faq_page)
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.setSpacing(8)
         self.faq_btn = QPushButton("Gerar FAQ")
         self.faq_btn.setEnabled(False)
         self.faq_btn.setToolTip("Gera perguntas frequentes com respostas a partir dos documentos indexados")
         self.faq_btn.clicked.connect(self._start_faq_generation)
-        faq_layout.addWidget(self.faq_btn)
-
+        fl.addWidget(self.faq_btn)
         self.faq_text = QTextEdit()
         self.faq_text.setReadOnly(True)
-        self.faq_text.setMaximumHeight(200)
         self.faq_text.setPlaceholderText("Clique em 'Gerar FAQ' para criar perguntas frequentes sobre os documentos indexados…")
-        faq_layout.addWidget(self.faq_text)
+        fl.addWidget(self.faq_text, 1)
+        self._analysis_stack.addWidget(faq_page)
 
-        layout.addWidget(faq_box)
+        # ── Sub-página: Guide ───────────────────────────────────────
+        guide_page = QWidget()
+        gl = QVBoxLayout(guide_page)
+        gl.setContentsMargins(0, 0, 0, 0)
+        gl.setSpacing(8)
 
-        # Notebook Guide (gerado automaticamente após indexação)
-        guide_box = QGroupBox("Notebook Guide")
-        guide_layout = QVBoxLayout(guide_box)
-        guide_layout.setSpacing(6)
-
-        guide_layout.addWidget(QLabel("Resumo da coleção:"))
+        lbl_gs = QLabel("Resumo da coleção:")
+        lbl_gs.setObjectName("sectionLabel")
+        gl.addWidget(lbl_gs)
         self.guide_summary_text = QTextEdit()
         self.guide_summary_text.setReadOnly(True)
-        self.guide_summary_text.setMaximumHeight(90)
+        self.guide_summary_text.setMaximumHeight(100)
         self.guide_summary_text.setPlaceholderText("Indexe documentos para gerar o guide…")
-        guide_layout.addWidget(self.guide_summary_text)
+        gl.addWidget(self.guide_summary_text)
 
-        guide_layout.addWidget(QLabel("Perguntas sugeridas (duplo clique para perguntar):"))
+        lbl_gq = QLabel("Perguntas sugeridas (duplo clique para perguntar):")
+        lbl_gq.setObjectName("sectionLabel")
+        gl.addWidget(lbl_gq)
         self.guide_questions_list = QListWidget()
-        self.guide_questions_list.setMaximumHeight(110)
+        self.guide_questions_list.setMaximumHeight(120)
         self.guide_questions_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.guide_questions_list.itemDoubleClicked.connect(self._on_guide_question_clicked)
-        guide_layout.addWidget(self.guide_questions_list)
+        gl.addWidget(self.guide_questions_list)
 
-        guide_layout.addWidget(QLabel("Pérolas escondidas:"))
+        lbl_gg = QLabel("Pérolas escondidas:")
+        lbl_gg.setObjectName("sectionLabel")
+        gl.addWidget(lbl_gg)
         self.guide_gems_text = QTextEdit()
         self.guide_gems_text.setReadOnly(True)
-        self.guide_gems_text.setMaximumHeight(110)
-        guide_layout.addWidget(self.guide_gems_text)
+        self.guide_gems_text.setMaximumHeight(100)
+        gl.addWidget(self.guide_gems_text)
 
         self.guide_refresh_btn = QPushButton("Atualizar Guide")
         self.guide_refresh_btn.setEnabled(False)
         self.guide_refresh_btn.setToolTip("Regenera o Notebook Guide para a coleção actual")
         self.guide_refresh_btn.clicked.connect(self._start_guide_generation)
-        guide_layout.addWidget(self.guide_refresh_btn)
+        gl.addWidget(self.guide_refresh_btn)
+        gl.addStretch()
+        self._analysis_stack.addWidget(guide_page)
 
-        layout.addWidget(guide_box)
-        self.tabs.addTab(tab, "Resumir")
+        self._content_stack.addWidget(page)
 
-    def _build_tab_manage(self) -> None:
+    def _switch_analysis(self, index: int) -> None:
+        self._analysis_stack.setCurrentIndex(index)
+        for i, btn in enumerate((self._pill_summary, self._pill_faq, self._pill_guide)):
+            btn.setChecked(i == index)
+
+    def _build_page_manage(self) -> None:
         tab = QWidget()
+        tab.setObjectName("contentPage")
         layout = QVBoxLayout(tab)
+        layout.setContentsMargins(20, 16, 20, 16)
 
         info = QGroupBox("Pasta monitorada")
         info_form = QFormLayout(info)
@@ -546,7 +669,7 @@ class MainWindow(QMainWindow):
         self.event_log.setReadOnly(True)
         layout.addWidget(self.event_log)
 
-        self.tabs.addTab(tab, "Gerenciar")
+        self._content_stack.addWidget(tab)
 
     # ── Inicialização Ollama ──────────────────────────────────────────────────
 
@@ -974,9 +1097,9 @@ class MainWindow(QMainWindow):
             self.guide_gems_text.setPlainText("(nenhuma pérola identificada)")
 
     def _on_guide_question_clicked(self, item: QListWidgetItem) -> None:
-        """Popula o campo de pergunta e muda para a aba Perguntar."""
+        """Popula o campo de pergunta e muda para a página Chat."""
         self.question_edit.setText(item.text())
-        self.tabs.setCurrentIndex(0)
+        self._switch_page(0)
 
     # ── Seleção de arquivos ───────────────────────────────────────────────────
 

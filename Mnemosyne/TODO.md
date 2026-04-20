@@ -172,7 +172,7 @@
 ### Redesign de Interface
 
 - [ ] **Pesquisar UI do NotebookLM** como referência de design para RAG pessoal — anotar o que faz sentido adaptar para uso offline/local
-- [ ] **Reformulação completa da UI** (aprovada) — sidebar + painel principal; sem abas; modo escuro (#12161E); fontes do ecossistema aplicadas; design system consistente com DESIGN_BIBLE.txt
+- [x] **Reformulação completa da UI** (aprovada) — sidebar + painel principal; sem abas; modo escuro (#12161E); fontes do ecossistema aplicadas; design system consistente com DESIGN_BIBLE.txt
 
 ### Sessões de Chat Nomeadas
 
@@ -185,4 +185,4 @@
 
 ---
 
-*Atualizado em: 2026-04-16 — Itens de redesign e sessões nomeadas adicionados.*
+*Atualizado em: 2026-04-20 — Redesign de interface concluído.*
