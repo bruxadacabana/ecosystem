@@ -192,14 +192,20 @@ class CompactMemoryWorker(QThread):
 
     finished = Signal(bool, str)  # sucesso, mensagem/erro
 
-    def __init__(self, memory_store: MemoryStore, llm_model: str) -> None:
+    def __init__(
+        self,
+        memory_store: MemoryStore,
+        llm_model: str,
+        turns: list | None = None,
+    ) -> None:
         super().__init__()
         self.memory_store = memory_store
         self.llm_model = llm_model
+        self.turns = turns
 
     def run(self) -> None:
         try:
-            facts = self.memory_store.compact_session_memory(self.llm_model)
+            facts = self.memory_store.compact_session_memory(self.llm_model, self.turns)
             self.finished.emit(True, f"Memória guardada ({len(facts)} chars).")
         except RuntimeError as exc:
             self.finished.emit(False, str(exc))

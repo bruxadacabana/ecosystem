@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
@@ -34,7 +35,15 @@ from PySide6.QtWidgets import (
 from core.config import AppConfig, load_config, save_config
 from core.errors import ConfigError, VectorstoreNotFoundError
 from core.indexer import load_vectorstore
-from core.memory import CollectionIndex, CollectionInfo, MemoryStore, SessionMemory, Turn
+from core.memory import (
+    ChatSession,
+    CollectionIndex,
+    CollectionInfo,
+    MemoryStore,
+    SessionManager,
+    SessionMemory,
+    Turn,
+)
 from core.ollama_client import OllamaModel, filter_chat_models, filter_embed_models
 from core.tracker import FileTracker
 from gui.workers import (
@@ -245,6 +254,9 @@ class MainWindow(QMainWindow):
         self._collection_index: CollectionIndex | None = None
         self._file_tracker: FileTracker | None = None
         self._memory_store: MemoryStore | None = None
+        self._session_manager: SessionManager | None = None
+        self._current_session: ChatSession | None = None
+        self._updating_sessions = False
         self._ollama_ok = False
         self._raw_answer = ""
         self._raw_summary = ""
@@ -351,7 +363,37 @@ class MainWindow(QMainWindow):
             sb.addWidget(btn)
         self._nav_chat_btn.setChecked(True)
 
-        sb.addSpacing(12)
+        # Sessions panel
+        sb.addSpacing(8)
+        self._add_sidebar_rule(sb)
+        sb.addSpacing(4)
+
+        sessions_header = QHBoxLayout()
+        sessions_header.setContentsMargins(0, 0, 0, 0)
+        sessions_lbl = QLabel("CONVERSAS")
+        sessions_lbl.setObjectName("sidebarLabel")
+        sessions_header.addWidget(sessions_lbl)
+        sessions_header.addStretch()
+        self._new_session_btn = QPushButton("+")
+        self._new_session_btn.setFixedSize(22, 18)
+        self._new_session_btn.setToolTip("Nova sessão")
+        self._new_session_btn.clicked.connect(self._on_new_session)
+        sessions_header.addWidget(self._new_session_btn)
+        sb.addLayout(sessions_header)
+
+        self._sessions_list = QListWidget()
+        self._sessions_list.setObjectName("sessionsList")
+        self._sessions_list.setMaximumHeight(110)
+        self._sessions_list.itemClicked.connect(self._on_session_item_clicked)
+        self._sessions_list.itemDoubleClicked.connect(self._on_session_double_clicked)
+        self._sessions_list.itemChanged.connect(self._on_session_title_changed)
+        self._sessions_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._sessions_list.customContextMenuRequested.connect(
+            self._show_session_context_menu
+        )
+        sb.addWidget(self._sessions_list)
+
+        sb.addSpacing(8)
         self._add_sidebar_rule(sb)
         sb.addSpacing(8)
 
@@ -783,6 +825,14 @@ class MainWindow(QMainWindow):
             self._collection_index = CollectionIndex(self.config.mnemosyne_dir)
             self._file_tracker = FileTracker(self.config.mnemosyne_dir)
             self._memory_store = MemoryStore(self.config.mnemosyne_dir)
+            self._session_manager = SessionManager(self.config.mnemosyne_dir)
+            sessions = self._session_manager.list_sessions()
+            if not sessions:
+                self._current_session = self._session_manager.new_session()
+            else:
+                self._current_session = sessions[0]
+            self._chat_history = self._session_manager.load_turns(self._current_session.id)
+            self._refresh_sessions_list()
 
         self._update_badge()
 
@@ -1179,6 +1229,24 @@ class MainWindow(QMainWindow):
         if not question:
             return
 
+        # Auto-título: primeira pergunta da sessão vira o título
+        if (
+            self._current_session
+            and self._session_manager
+            and self._current_session.title == "Nova conversa"
+            and not self._chat_history
+        ):
+            auto_title = question[:60]
+            self._session_manager.rename_session(self._current_session.id, auto_title)
+            self._current_session.title = auto_title
+            self._refresh_sessions_list()
+
+        # Persistir turno do utilizador
+        if self._current_session and self._session_manager:
+            self._session_manager.append_turn(
+                self._current_session.id, Turn(role="user", content=question)
+            )
+
         similar = self._session_memory.find_similar(question)
         if similar:
             preview = similar.question[:60]
@@ -1222,6 +1290,12 @@ class MainWindow(QMainWindow):
         if success:
             self.answer_text.setPlainText(text)
             self._chat_history = updated_history
+            # Persistir turno do assistente
+            if self._current_session and self._session_manager:
+                self._session_manager.append_turn(
+                    self._current_session.id,
+                    Turn(role="assistant", content=text, sources=[s["path"] for s in sources]),
+                )
             self._session_memory.save_query(
                 self.question_edit.text().strip(), text,
                 [s["path"] for s in sources],
@@ -1247,14 +1321,133 @@ class MainWindow(QMainWindow):
         self.ask_btn.setEnabled(True)
         self.statusBar().showMessage("Pronto." if success else "Interrompido.")
 
-    def _reset_conversation(self) -> None:
+    # ── Sessões de chat ───────────────────────────────────────────────────────
+
+    def _refresh_sessions_list(self) -> None:
+        if not hasattr(self, "_sessions_list") or self._session_manager is None:
+            return
+        self._updating_sessions = True
+        self._sessions_list.clear()
+        for session in self._session_manager.list_sessions():
+            label = session.title[:32] if len(session.title) <= 32 else session.title[:29] + "…"
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, session.id)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+            try:
+                from datetime import datetime as _dt
+                dt = _dt.fromisoformat(session.updated_at)
+                date_str = dt.strftime("%d/%m %H:%M")
+            except ValueError:
+                date_str = session.updated_at[:16]
+            item.setToolTip(f"{session.title}\n{date_str}")
+            self._sessions_list.addItem(item)
+            if self._current_session and session.id == self._current_session.id:
+                self._sessions_list.setCurrentItem(item)
+        self._updating_sessions = False
+
+    def _on_new_session(self) -> None:
+        if self._session_manager is None:
+            return
+        self._current_session = self._session_manager.new_session()
         self._chat_history = []
         self._session_memory.clear()
         self.answer_text.clear()
         self.sources_text.clear()
         self.similar_label.setVisible(False)
         self.question_edit.clear()
-        self._log_event("Nova conversa iniciada.")
+        self._refresh_sessions_list()
+        self._log_event("Nova sessão iniciada.")
+
+    def _load_session(self, session: ChatSession) -> None:
+        if self._session_manager is None:
+            return
+        self._current_session = session
+        turns = self._session_manager.load_turns(session.id)
+        self._chat_history = turns
+        self._session_memory.clear()
+        i = 0
+        while i < len(turns) - 1:
+            if turns[i].role == "user" and turns[i + 1].role == "assistant":
+                self._session_memory.save_query(
+                    turns[i].content, turns[i + 1].content, turns[i + 1].sources
+                )
+                i += 2
+            else:
+                i += 1
+        self.answer_text.clear()
+        self.sources_text.clear()
+        self.similar_label.setVisible(False)
+        self.question_edit.clear()
+        for turn in reversed(turns):
+            if turn.role == "assistant":
+                self.answer_text.setPlainText(turn.content)
+                break
+        self._log_event(f'Sessão carregada: "{session.title}"')
+
+    def _on_session_item_clicked(self, item: QListWidgetItem) -> None:
+        if self._updating_sessions:
+            return
+        session_id = item.data(Qt.ItemDataRole.UserRole)
+        if session_id and self._session_manager:
+            session = self._session_manager.get_session(session_id)
+            if session and (
+                self._current_session is None or session.id != self._current_session.id
+            ):
+                self._load_session(session)
+
+    def _on_session_double_clicked(self, item: QListWidgetItem) -> None:
+        self._sessions_list.editItem(item)
+
+    def _on_session_title_changed(self, item: QListWidgetItem) -> None:
+        if self._updating_sessions:
+            return
+        session_id = item.data(Qt.ItemDataRole.UserRole)
+        if session_id and self._session_manager:
+            new_title = item.text().strip() or "Nova conversa"
+            self._session_manager.rename_session(session_id, new_title)
+            if self._current_session and self._current_session.id == session_id:
+                self._current_session.title = new_title
+
+    def _show_session_context_menu(self, pos: object) -> None:
+        item = self._sessions_list.itemAt(pos)  # type: ignore[arg-type]
+        if item is None:
+            return
+        session_id = item.data(Qt.ItemDataRole.UserRole)
+        if not session_id:
+            return
+        menu = QMenu(self)
+        rename_action = menu.addAction("Renomear")
+        delete_action = menu.addAction("Excluir")
+        action = menu.exec(self._sessions_list.mapToGlobal(pos))  # type: ignore[arg-type]
+        if action == rename_action:
+            self._sessions_list.editItem(item)
+        elif action == delete_action:
+            self._delete_session(session_id)
+
+    def _delete_session(self, session_id: str) -> None:
+        if self._session_manager is None:
+            return
+        remaining = [
+            s for s in self._session_manager.list_sessions() if s.id != session_id
+        ]
+        is_current = self._current_session and self._current_session.id == session_id
+        self._session_manager.delete_session(session_id)
+        if is_current:
+            if remaining:
+                self._current_session = remaining[0]
+                self._chat_history = self._session_manager.load_turns(
+                    self._current_session.id
+                )
+            else:
+                self._current_session = self._session_manager.new_session()
+                self._chat_history = []
+            self.answer_text.clear()
+            self.sources_text.clear()
+            self.question_edit.clear()
+        self._refresh_sessions_list()
+
+    def _reset_conversation(self) -> None:
+        self._on_new_session()
 
     # ── Resumo ────────────────────────────────────────────────────────────────
 
@@ -1397,15 +1590,10 @@ class MainWindow(QMainWindow):
             return
 
         if reply == QMessageBox.StandardButton.Yes:
-            # Persistir turnos no histórico antes de compactar
-            try:
-                for turn in self._chat_history:
-                    self._memory_store.append_turn(turn)
-            except OSError:
-                pass
-
+            # Turnos já persistidos incrementalmente; passar para compactação
+            turns_to_compact = self._chat_history or []
             self._compact_worker = CompactMemoryWorker(
-                self._memory_store, self.config.llm_model
+                self._memory_store, self.config.llm_model, turns_to_compact
             )
             self.statusBar().showMessage("A guardar memória…")
             self._compact_worker.start()

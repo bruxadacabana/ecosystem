@@ -382,6 +382,33 @@ QListWidget::item:hover {
 }
 
 /* ----------------------------------------------------------
+   SESSIONS LIST (sidebar)
+---------------------------------------------------------- */
+
+QListWidget#sessionsList {
+    background-color: #181D28;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 2px;
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 10px;
+    color: #C8B99A;
+}
+
+QListWidget#sessionsList::item {
+    padding: 3px 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+QListWidget#sessionsList::item:selected {
+    background-color: #252B3A;
+    color: #D4A820;
+}
+
+QListWidget#sessionsList::item:hover {
+    background-color: #1E2433;
+}
+
+/* ----------------------------------------------------------
    SCROLLBAR
 ---------------------------------------------------------- */
 

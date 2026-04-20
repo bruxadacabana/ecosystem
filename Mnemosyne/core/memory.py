@@ -14,6 +14,7 @@ Uso no RAG:
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -241,10 +242,14 @@ class MemoryStore:
 
         return "\n\n".join(parts)
 
-    def compact_session_memory(self, llm_model: str) -> str:
+    def compact_session_memory(
+        self, llm_model: str, turns: list[Turn] | None = None
+    ) -> str:
         """
         Usa o LLM para sintetizar o histórico de turnos em factos compactos
         e guarda o resultado em memory.json["session"].
+
+        turns: se fornecido, usa esses turnos em vez de ler history.jsonl.
 
         Retorna o texto dos factos gerados.
 
@@ -254,7 +259,8 @@ class MemoryStore:
         from langchain_ollama import OllamaLLM
         from .rag import strip_think  # import local para evitar ciclo
 
-        turns = self.load_history()
+        if turns is None:
+            turns = self.load_history()
         if not turns:
             raise RuntimeError("Histórico vazio — nada a compactar.")
 
@@ -289,6 +295,142 @@ class MemoryStore:
 
         self.session_facts = result
         return result
+
+
+# ── ChatSession + SessionManager ─────────────────────────────────────────────
+
+
+@dataclass
+class ChatSession:
+    id: str
+    title: str
+    created_at: str
+    updated_at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ChatSession":
+        return cls(
+            id=data["id"],
+            title=data.get("title", "Nova conversa"),
+            created_at=data.get("created_at", ""),
+            updated_at=data.get("updated_at", ""),
+        )
+
+
+class SessionManager:
+    """Gerencia sessões de chat nomeadas em <mnemosyne_dir>/sessions/."""
+
+    def __init__(self, mnemosyne_dir: str) -> None:
+        self._sessions_dir = Path(mnemosyne_dir) / "sessions"
+        self._sessions_dir.mkdir(parents=True, exist_ok=True)
+        self._index_path = self._sessions_dir / "_index.json"
+        self._sessions: list[ChatSession] = self._load_index()
+
+        # Migrar history.jsonl legado para uma sessão nomeada
+        legacy = Path(mnemosyne_dir) / "history.jsonl"
+        if legacy.exists() and not self._sessions:
+            self._migrate_legacy(legacy)
+
+    def _load_index(self) -> list[ChatSession]:
+        if not self._index_path.exists():
+            return []
+        try:
+            with self._index_path.open(encoding="utf-8") as f:
+                data = json.load(f)
+            return [ChatSession.from_dict(item) for item in data]
+        except (json.JSONDecodeError, TypeError, KeyError):
+            return []
+
+    def _save_index(self) -> None:
+        with self._index_path.open("w", encoding="utf-8") as f:
+            json.dump(
+                [s.to_dict() for s in self._sessions], f, indent=2, ensure_ascii=False
+            )
+
+    def _migrate_legacy(self, legacy_path: Path) -> None:
+        import shutil
+        now = datetime.now().isoformat()
+        session = ChatSession(
+            id=uuid.uuid4().hex[:8],
+            title="Conversa anterior",
+            created_at=now,
+            updated_at=now,
+        )
+        self._sessions.append(session)
+        self._save_index()
+        shutil.copy2(str(legacy_path), str(self._session_path(session.id)))
+
+    def _session_path(self, session_id: str) -> Path:
+        return self._sessions_dir / f"{session_id}.jsonl"
+
+    def new_session(self) -> "ChatSession":
+        now = datetime.now().isoformat()
+        session = ChatSession(
+            id=uuid.uuid4().hex[:8],
+            title="Nova conversa",
+            created_at=now,
+            updated_at=now,
+        )
+        self._sessions.insert(0, session)
+        self._save_index()
+        return session
+
+    def list_sessions(self) -> list["ChatSession"]:
+        return sorted(self._sessions, key=lambda s: s.updated_at, reverse=True)
+
+    def get_session(self, session_id: str) -> "ChatSession | None":
+        return next((s for s in self._sessions if s.id == session_id), None)
+
+    def load_turns(self, session_id: str) -> list[Turn]:
+        path = self._session_path(session_id)
+        if not path.exists():
+            return []
+        turns: list[Turn] = []
+        try:
+            with path.open(encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        turns.append(Turn.from_dict(json.loads(line)))
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+        except OSError:
+            return []
+        return turns
+
+    def append_turn(self, session_id: str, turn: Turn) -> None:
+        path = self._session_path(session_id)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(turn.to_dict(), ensure_ascii=False) + "\n")
+        now = datetime.now().isoformat()
+        for s in self._sessions:
+            if s.id == session_id:
+                s.updated_at = now
+                break
+        self._save_index()
+
+    def rename_session(self, session_id: str, title: str) -> None:
+        for s in self._sessions:
+            if s.id == session_id:
+                s.title = title.strip() or "Nova conversa"
+                s.updated_at = datetime.now().isoformat()
+                break
+        self._save_index()
+
+    def delete_session(self, session_id: str) -> None:
+        path = self._session_path(session_id)
+        if path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        self._sessions = [s for s in self._sessions if s.id != session_id]
+        self._save_index()
 
 
 # ── SessionMemory — retrocompatibilidade com main_window.py ───────────────────
