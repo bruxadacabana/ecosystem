@@ -29,9 +29,12 @@ AKASHA_PORT: int = 7071
 AKASHA_BASE_URL: str = f"http://localhost:{AKASHA_PORT}"
 
 _AKASHA_DIR = Path(__file__).parent
-DB_PATH: Path = _AKASHA_DIR / "akasha.db"
 
 # Lido do ecosystem.json se disponível; senão usa pasta local
+def _resolve_db_path(eco: dict[str, Any]) -> Path:
+    p = eco.get("akasha", {}).get("data_path", "")
+    return Path(p) / "akasha.db" if p else _AKASHA_DIR / "akasha.db"
+
 def _resolve_archive_path(eco: dict[str, Any]) -> Path:
     p = eco.get("akasha", {}).get("archive_path", "")
     return Path(p) if p else _AKASHA_DIR / "data" / "archive"
@@ -51,6 +54,7 @@ def _load() -> dict[str, Any]:
 
 _eco: dict[str, Any] = _load()
 
+DB_PATH:      Path = _resolve_db_path(_eco)
 ARCHIVE_PATH: Path = _resolve_archive_path(_eco)
 
 # Caminhos expostos (string vazia = não configurado)

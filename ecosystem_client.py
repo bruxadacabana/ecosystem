@@ -36,7 +36,7 @@ _DEFAULTS: dict[str, Any] = {
     "mnemosyne": {"index_paths": [], "config_path": ""},
     "hub":       {"data_path": ""},
     "hermes":    {"output_dir": "", "config_path": ""},
-    "akasha":    {"archive_path": "", "base_url": "", "config_path": ""},
+    "akasha":    {"archive_path": "", "data_path": "", "base_url": "", "config_path": ""},
 }
 
 
@@ -105,6 +105,7 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
         "hermes":    {"output_dir":   str(root / "hermes"),
                       "config_path":  str(root / "hermes"    / ".config")},
         "akasha":    {"archive_path": str(root / "akasha"),
+                      "data_path":    str(root / "akasha"),
                       "config_path":  str(root / "akasha"    / ".config")},
         "ogma":      {"data_path":    str(root / "ogma"),
                       "config_path":  str(root / "ogma"      / ".config")},

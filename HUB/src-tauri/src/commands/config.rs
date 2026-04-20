@@ -87,6 +87,7 @@ pub fn apply_sync_root(sync_root: String) -> Result<(), AppError> {
     }))?;
     ecosystem::write_section("akasha", json!({
         "archive_path": root.join("akasha").to_string_lossy().as_ref(),
+        "data_path":    root.join("akasha").to_string_lossy().as_ref(),
         "config_path":  root.join("akasha").join(".config").to_string_lossy().as_ref(),
     }))?;
     ecosystem::write_section("ogma", json!({
