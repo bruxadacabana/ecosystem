@@ -70,5 +70,9 @@ class GuideError(MnemosyneError):
     """Falha ao gerar o Notebook Guide."""
 
 
+class BriefingError(MnemosyneError):
+    """Falha ao gerar Briefing Document."""
+
+
 class ConfigError(MnemosyneError):
     """Erro de configuração."""

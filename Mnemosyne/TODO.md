@@ -136,8 +136,8 @@
 - [x] `gui/main_window.py` — pill "Studio" na aba Análise; `QComboBox` com 9 tipos; botão "Gerar" (`sendBtn`); `QTextEdit` read-only com streaming; botão "Exportar .md" com `QFileDialog`; `StudioWorker` em `workers.py` com dispatcher por tipo via lazy import
 
 #### Briefing Document
-- [ ] `core/briefing.py` — sumário executivo para papers/relatórios técnicos: temas principais, achados, insights acionáveis e divergências entre fontes; mais denso e estruturado que o resumo geral; retorna Markdown com seções fixas
-- [ ] Integrar no Studio Panel como tipo `"Briefing"`
+- [x] `core/briefing.py` — `iter_briefing()`: stuff (<12k chars) ou map-reduce; 4 seções fixas: Temas Principais, Achados, Insights Acionáveis, Divergências e Limitações; `BriefingError` adicionado a `errors.py`
+- [x] Integrar no Studio Panel como tipo `"Briefing"` — via `_STUDIO_DISPATCH` em workers.py
 
 #### Relatório de Pesquisa Completo
 - [ ] `core/report.py` — `ReportGenerator` via Map-Reduce (necessário para coleções grandes): seções fixas — (1) sumário executivo, (2) principais temas com findings, (3) análise por fonte, (4) convergências e divergências entre fontes, (5) lacunas identificadas, (6) referências com trechos; retorna Markdown estruturado
