@@ -332,3 +332,39 @@ async def delete_crawl_site(site_id: int) -> None:
         await db.execute("DELETE FROM crawl_fts WHERE site_id = ?", (str(site_id),))
         await db.execute("DELETE FROM crawl_sites WHERE id = ?", (site_id,))
         await db.commit()
+
+
+async def get_crawl_page_by_url(url: str) -> tuple | None:
+    """Retorna a crawl_page completa (com content_md) para o URL dado."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        return await (await db.execute(
+            "SELECT id, site_id, url, title, content_md, http_status, crawled_at "
+            "FROM crawl_pages WHERE url = ?",
+            (url,),
+        )).fetchone()
+
+
+async def get_crawl_pages_by_site(
+    site_id: int,
+    limit: int = 20,
+    offset: int = 0,
+    q: str = "",
+) -> list[tuple]:
+    """Lista páginas de um site (sem content_md) com filtro opcional por título/url."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        if q:
+            pattern = f"%{q}%"
+            rows = await (await db.execute(
+                "SELECT id, url, title, http_status, crawled_at "
+                "FROM crawl_pages WHERE site_id = ? AND (title LIKE ? OR url LIKE ?) "
+                "ORDER BY crawled_at DESC LIMIT ? OFFSET ?",
+                (site_id, pattern, pattern, limit, offset),
+            )).fetchall()
+        else:
+            rows = await (await db.execute(
+                "SELECT id, url, title, http_status, crawled_at "
+                "FROM crawl_pages WHERE site_id = ? "
+                "ORDER BY crawled_at DESC LIMIT ? OFFSET ?",
+                (site_id, limit, offset),
+            )).fetchall()
+    return list(rows)

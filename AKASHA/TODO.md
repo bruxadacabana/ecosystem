@@ -277,13 +277,37 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
+## Fase 10.5 — Navegação inline de páginas crawleadas
+
+> Entrega: reader mode próprio — abrir e ler qualquer `crawl_page` sem sair do AKASHA.
+
+- [ ] `database.py` — helpers `get_crawl_page_by_url(url) -> tuple | None` e
+      `get_crawl_pages_by_site(site_id, limit, offset) -> list[tuple]`
+      (retorna `id, url, title, http_status, crawled_at` sem `content_md` para a lista)
+- [ ] `routers/crawler.py` — `GET /sites/reader?url=` — busca `crawl_page` por URL via
+      `get_crawl_page_by_url`, converte `content_md` → HTML com lib `markdown`,
+      renderiza `page_reader.html`; 404 se não encontrada
+- [ ] `routers/crawler.py` — `GET /sites/{site_id}/pages?q=&page=1` — lista paginada
+      (20/pág) de páginas do site; suporte a filtro por `q` (título/url); retorna fragment
+      HTMX `_site_pages.html`
+- [ ] `templates/page_reader.html` — layout reader mode: cabeçalho com título, URL original
+      (link externo ↗), data de crawl, botão "← Voltar"; conteúdo HTML do markdown com
+      tipografia IM Fell English; compatível com tema sépia/noturno
+- [ ] `templates/_site_pages.html` — fragment HTMX: lista de cards de página (título, URL
+      abreviada, data, badge de status HTTP); botão "Ler" abre `/sites/reader?url=...`;
+      paginação "Carregar mais" com `hx-swap="beforeend"`
+- [ ] `templates/sites.html` — botão "📄 N páginas" em cada site card que expande
+      `_site_pages.html` via HTMX (`hx-get="/sites/{id}/pages" hx-swap="innerHTML"`);
+      colapsar ao clicar de novo
+- [ ] `templates/_macros.html` — nos cards de resultado com `source="SITES"`, adicionar
+      botão "Ler" ao lado do link externo que abre `/sites/reader?url=...` inline
+
+---
+
 ## Planos Futuros
 
 > Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
 
-- **Navegação inline de páginas crawleadas** — permitir abrir e ler o conteúdo de uma `crawl_page`
-  diretamente na interface do AKASHA, sem sair para o navegador (reader mode próprio)
-
 ---
 
-*Atualizado em: 2026-04-16 — Fases 1, 2, 3, 5 e 7 concluídas. Escopo revisado: +Biblioteca de URLs, +Histórico, seções separadas web/local, +Buscador de Sites (Fase 10).*
+*Atualizado em: 2026-04-20 — Fases 1, 2, 3, 5 e 7 concluídas. Fase 10.5 adicionada: navegação inline de páginas crawleadas.*
