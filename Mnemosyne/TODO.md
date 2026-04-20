@@ -118,8 +118,7 @@
 - [ ] `gui/main_window.py` — seletor de modo visível na aba Perguntar
 
 ### 4.7 Timeline automática
-- [ ] `core/timeline.py` — extrair eventos com data/período dos documentos e ordenar cronologicamente
-- [ ] `gui/main_window.py` — botão "Gerar linha do tempo" na aba Resumir
+- [ ] *(movido para 4.9 Studio Panel — tipo "Linha do Tempo")*
 
 ### 4.8 Audio Overview
 - [ ] `core/podcast.py` — Script de Podcast: gerar diálogo escrito entre dois "hosts" cobrindo os temas principais dos documentos; implementável sem TTS como passo intermédio
@@ -128,28 +127,55 @@
 - [ ] `core/audio.py` — gerar áudio a partir do script via TTS local (depende do item anterior)
 - [ ] `gui/main_window.py` — botão "Ouvir resumo" com player embutido
 
-### 4.9 Outputs Estruturados
+### 4.9 Studio Panel — Geração de Documentos
+
+> **Conceito:** Um painel único na aba Análise onde a usuária escolhe o *tipo de documento* a gerar e clica em "Gerar". Equivalente ao Studio Panel do NotebookLM. Cada tipo tem seu próprio `core/*.py` mas todos passam pelo mesmo ponto de entrada na UI.
+>
+> **Já implementado (não entram no Studio Panel, são automáticos):**
+> - `SummarizeWorker` → resumo geral (aba Resumir)
+> - `FaqWorker` → FAQ (aba Resumir — seção 4.4)
+> - `GuideWorker` → Notebook Guide automático pós-indexação (resumo + perguntas sugeridas, gerado internamente)
+
+#### UI do Studio Panel
+- [ ] `gui/main_window.py` — painel "Gerar Documento" na aba Análise: `QComboBox` com todos os tipos abaixo; botão "Gerar"; área de resultado com `QTextEdit` read-only; botão "Exportar .md"; o tipo selecionado determina qual `core/*.py` é chamado
 
 #### Briefing Document
-- [ ] `core/briefing.py` — resumo executivo estruturado: temas principais, achados, insights acionáveis e divergências entre fontes; mais rico que o resumo geral
-- [ ] `gui/main_window.py` — botão "Gerar Briefing" na aba Análise; export para Markdown
+- [ ] `core/briefing.py` — sumário executivo para papers/relatórios técnicos: temas principais, achados, insights acionáveis e divergências entre fontes; mais denso e estruturado que o resumo geral; retorna Markdown com seções fixas
+- [ ] Integrar no Studio Panel como tipo `"Briefing"`
 
-#### Relatório de Pesquisa completo
-- [ ] `core/report.py` — `ReportGenerator`: relatório multi-seção via Map-Reduce; seções fixas: (1) sumário executivo, (2) principais temas com findings, (3) análise por fonte, (4) convergências e divergências, (5) lacunas identificadas, (6) referências; retorna Markdown estruturado
-- [ ] `gui/main_window.py` — botão "Gerar Relatório" na aba Análise; export para `.md`; opcional: PDF via `weasyprint` (pesquisar viabilidade)
+#### Relatório de Pesquisa Completo
+- [ ] `core/report.py` — `ReportGenerator` via Map-Reduce (necessário para coleções grandes): seções fixas — (1) sumário executivo, (2) principais temas com findings, (3) análise por fonte, (4) convergências e divergências entre fontes, (5) lacunas identificadas, (6) referências com trechos; retorna Markdown estruturado
+- [ ] Integrar no Studio Panel como tipo `"Relatório"`; opcional: export PDF via `weasyprint` (pesquisar viabilidade)
+
+#### Study Guide Estruturado
+- [ ] `core/study_guide.py` — guia de estudo completo: (1) conceitos-chave com definição de 2-3 frases, (2) termos técnicos com explicação, (3) questões de revisão (abertas, não múltipla escolha — isso é do Quiz/4.5), (4) tópicos para aprofundar; diferente do NotebookGuide automático que é só intro; retorna Markdown
+- [ ] Integrar no Studio Panel como tipo `"Guia de Estudo"`
+
+#### Table of Contents
+- [ ] `core/toc.py` — índice temático navegável: LLM identifica os temas e subtemas cobertos pelos documentos e os organiza em hierarquia com links de âncora Markdown; útil para coleções grandes onde o usuário não sabe o que está indexado; retorna Markdown com `## Tema > ### Subtema`
+- [ ] Integrar no Studio Panel como tipo `"Índice de Temas"`
+
+#### Timeline
+- [ ] `core/timeline.py` — extrair eventos com data/período dos documentos; ordenar cronologicamente; formato: lista de itens `[data] — [evento] — [fonte]`; útil para documentos históricos, biográficos, projetos com marcos
+- [ ] Integrar no Studio Panel como tipo `"Linha do Tempo"`
+- [ ] *(remove o item de 4.7 que listava isso como botão separado na aba Resumir — passa a ser Studio Panel)*
+
+#### Blog Post
+- [ ] `core/blogpost.py` — texto corrido narrativo sobre o conteúdo das fontes: introdução cativante, desenvolvimento em parágrafos fluidos (sem bullet points), conclusão; tom acessível, não acadêmico; útil para comunicar conteúdo técnico para não-especialistas; retorna Markdown
+- [ ] Integrar no Studio Panel como tipo `"Blog Post"`
 
 #### Mind Map
-- [ ] `core/mindmap.py` — `MindMapBuilder`: LLM gera estrutura hierárquica como JSON `{central, branches: [{label, children[], source}]}`; exportar como (a) JSON, (b) Mermaid mindmap syntax `mindmap\n  root((...))` para abrir no browser/Obsidian, (c) `.mm` XML (FreeMind/XMind compatível)
-- [ ] `gui/main_window.py` — botão "Mind Map" na aba Análise; abre resultado em viewer: primeiro tenta renderizar SVG via `graphviz` lib em QLabel; fallback abre Mermaid no browser via `webbrowser.open()`; botão de export salva `.md` com bloco `mermaid` ou `.mm`
-- [ ] `requirements.txt` — verificar se `graphviz` (lib Python) é viável; alternativa: só exportar e abrir externamente (sem dep extra)
+- [ ] `core/mindmap.py` — `MindMapBuilder`: LLM gera estrutura hierárquica como JSON `{central, branches: [{label, children[], source}]}`; exportar como (a) Mermaid mindmap syntax para abrir no Obsidian/browser, (b) `.mm` XML compatível com FreeMind/XMind
+- [ ] Integrar no Studio Panel como tipo `"Mind Map"`; botão de export abre Mermaid no browser via `webbrowser.open()` ou salva `.mm`
+- [ ] `requirements.txt` — avaliar `graphviz` para SVG embutido; alternativa: só export externo
 
 #### Data Tables
-- [ ] `core/tables.py` — LLM extrai entidades e relações dos documentos conforme schema definido pelo usuário; retorna lista de dicts; exportar como CSV/JSON
-- [ ] `gui/main_window.py` — botão "Extrair Tabela" na aba Análise; campo para o usuário especificar colunas desejadas (ex: "Nome, Data, Valor"); visualização em QTableWidget; export CSV
+- [ ] `core/tables.py` — LLM extrai entidades e relações conforme schema definido pela usuária; retorna lista de dicts; campo livre para especificar colunas (ex: "Nome, Data, Valor, Fonte")
+- [ ] Integrar no Studio Panel como tipo `"Tabela de Dados"`; visualização em `QTableWidget`; export CSV/JSON
 
 #### Slide Deck (baixa prioridade)
-- [ ] `core/slides.py` — gerar apresentação em formato Markdown de slides (compatível com Marp/reveal.js); cada slide = seção do briefing; export como `.md`
-- [ ] `gui/main_window.py` — botão "Gerar Slides" na aba Análise
+- [ ] `core/slides.py` — gerar apresentação em Markdown de slides (compatível com Marp/reveal.js); cada slide = seção do briefing; export como `.md`
+- [ ] Integrar no Studio Panel como tipo `"Slides"`
 
 ## Fase 5 — UI e design
 
@@ -202,4 +228,4 @@
 
 ---
 
-*Atualizado em: 2026-04-20 — legibilidade + toggle dia/noite implementados; 4.9 expandido: Relatório completo, Mind Map, Data Tables, Slides após pesquisa NotebookLM.*
+*Atualizado em: 2026-04-20 — 4.9 reorganizado como Studio Panel com 9 tipos de documento (Briefing, Relatório, Study Guide, Table of Contents, Timeline, Blog Post, Mind Map, Data Tables, Slides); 4.7 consolidado em 4.9.*
