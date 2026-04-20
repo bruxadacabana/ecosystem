@@ -110,12 +110,8 @@
 - [ ] `gui/main_window.py` — nova aba "Estudar" com modo Flashcard, modo Quiz e modo Roteiro
 
 ### 4.6 Modos de consulta configuráveis
-- [ ] `core/rag.py` — suporte a múltiplos modos de prompt (via system prompt do `ChatOllama`; depende de 4.0):
-  - `"resposta"` (padrão — responde directamente)
-  - `"socrático"` (Learning Guide — faz perguntas antes de revelar a resposta)
-  - `"resumido"` (resposta curta e directa)
-  - `"comparação"` (compara dois documentos sobre um tema: apresenta semelhanças e diferenças em bullet points)
-- [ ] `gui/main_window.py` — seletor de modo visível na aba Perguntar
+- [x] `core/rag.py` — 6 personas via `PERSONAS` dict + `SystemMessage` separado do contexto RAG: `curador` (padrão), `socrático`, `resumido`, `comparação`, `podcaster`, `crítico`
+- [x] `gui/main_window.py` — `QComboBox` "Modo:" na aba Chat com tooltip descritivo; valor mapeado para `AskWorker(persona=...)`
 
 ### 4.7 Timeline automática
 - [ ] *(movido para 4.9 Studio Panel — tipo "Linha do Tempo")*

@@ -549,6 +549,33 @@ class MainWindow(QMainWindow):
         self.sources_text.setMaximumHeight(130)
         layout.addWidget(self.sources_text)
 
+        # Modo de consulta
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(8)
+        mode_lbl = QLabel("Modo:")
+        mode_lbl.setObjectName("sectionLabel")
+        mode_row.addWidget(mode_lbl)
+        self.persona_combo = QComboBox()
+        self.persona_combo.addItems([
+            "Curador",
+            "Socrático",
+            "Resumido",
+            "Comparação",
+            "Podcaster",
+            "Crítico",
+        ])
+        self.persona_combo.setToolTip(
+            "Curador: resposta directa usando as fontes (padrão)\n"
+            "Socrático: faz perguntas para guiar o raciocínio antes de responder\n"
+            "Resumido: resposta curta, máximo 3 frases\n"
+            "Comparação: semelhanças e diferenças em bullet points entre fontes\n"
+            "Podcaster: tom conversacional e entusiasta\n"
+            "Crítico: analisa argumentos, premissas e limitações"
+        )
+        mode_row.addWidget(self.persona_combo)
+        mode_row.addStretch()
+        layout.addLayout(mode_row)
+
         # Input
         input_row = QHBoxLayout()
         input_row.setSpacing(8)
@@ -1275,12 +1302,22 @@ class MainWindow(QMainWindow):
         retrieval_map = {"Híbrido": "hybrid", "Multi-Query": "multi_query", "HyDE": "hyde"}
         retrieval_mode = retrieval_map.get(self.retrieval_combo.currentText(), "hybrid")
 
+        persona_map = {
+            "Curador": "curador",
+            "Socrático": "socrático",
+            "Resumido": "resumido",
+            "Comparação": "comparação",
+            "Podcaster": "podcaster",
+            "Crítico": "crítico",
+        }
+        persona = persona_map.get(self.persona_combo.currentText(), "curador")
+
         source_files = self._get_selected_files()
 
         self._ask_worker = AskWorker(
             self.vectorstore, question, self.config,
             self._chat_history, source_type, retrieval_mode,
-            self._file_tracker, source_files=source_files,
+            self._file_tracker, persona=persona, source_files=source_files,
         )
         self._ask_worker.token.connect(self._on_ask_token)
         self._ask_worker.finished.connect(self._on_answer)
