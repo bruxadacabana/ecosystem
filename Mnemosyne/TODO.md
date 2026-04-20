@@ -157,8 +157,8 @@
 - [x] Integrar no Studio Panel como tipo `"Linha do Tempo"` — via `_STUDIO_DISPATCH`
 
 #### Blog Post
-- [ ] `core/blogpost.py` — texto corrido narrativo sobre o conteúdo das fontes: introdução cativante, desenvolvimento em parágrafos fluidos (sem bullet points), conclusão; tom acessível, não acadêmico; útil para comunicar conteúdo técnico para não-especialistas; retorna Markdown
-- [ ] Integrar no Studio Panel como tipo `"Blog Post"`
+- [x] `core/blogpost.py` — `iter_blogpost()`: temperatura 0.5 para escrita criativa; fase Map extrai pontos interessantes e exemplos; fase Reduce gera texto corrido com título criativo, introdução, 3-5 parágrafos de desenvolvimento e conclusão — sem bullet points
+- [x] Integrar no Studio Panel como tipo `"Blog Post"` — via `_STUDIO_DISPATCH`
 
 #### Mind Map
 - [ ] `core/mindmap.py` — `MindMapBuilder`: LLM gera estrutura hierárquica como JSON `{central, branches: [{label, children[], source}]}`; exportar como (a) Mermaid mindmap syntax para abrir no Obsidian/browser, (b) `.mm` XML compatível com FreeMind/XMind
