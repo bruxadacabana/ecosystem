@@ -485,3 +485,79 @@ class GuideWorker(QThread):
             self.finished.emit(False, f"Guide: {exc}")
         except OSError as exc:
             self.finished.emit(False, f"Guide: erro ao salvar — {exc}")
+
+
+# Mapa de tipo de documento → módulo e função geradora
+# Cada módulo expõe iter_*(vectorstore, config) → Iterator[str]
+_STUDIO_DISPATCH: dict[str, tuple[str, str]] = {
+    "Briefing":       ("core.briefing",    "iter_briefing"),
+    "Relatório":      ("core.report",      "iter_report"),
+    "Guia de Estudo": ("core.study_guide", "iter_study_guide"),
+    "Índice de Temas":("core.toc",         "iter_toc"),
+    "Linha do Tempo": ("core.timeline",    "iter_timeline"),
+    "Blog Post":      ("core.blogpost",    "iter_blogpost"),
+    "Mind Map":       ("core.mindmap",     "iter_mindmap"),
+    "Tabela de Dados":("core.tables",      "iter_tables"),
+    "Slides":         ("core.slides",      "iter_slides"),
+}
+
+
+class StudioWorker(QThread):
+    """Gera documentos estruturados via Studio Panel — despacha para o módulo correto."""
+
+    token    = Signal(str)        # chunk de texto durante streaming
+    finished = Signal(bool, str)  # sucesso, texto_final/erro
+
+    def __init__(
+        self,
+        vectorstore,
+        config: AppConfig,
+        doc_type: str,
+        extra: dict | None = None,
+    ) -> None:
+        super().__init__()
+        self.vectorstore = vectorstore
+        self.config = config
+        self.doc_type = doc_type
+        self.extra = extra or {}
+
+    def run(self) -> None:
+        try:
+            validate_model(self.config.llm_model)
+        except ModelNotFoundError as exc:
+            self.finished.emit(False, str(exc))
+            return
+        except OllamaUnavailableError as exc:
+            self.finished.emit(False, str(exc))
+            return
+
+        dispatch = _STUDIO_DISPATCH.get(self.doc_type)
+        if dispatch is None:
+            self.finished.emit(False, f"Tipo desconhecido: {self.doc_type}")
+            return
+
+        module_name, func_name = dispatch
+        try:
+            import importlib
+            mod = importlib.import_module(module_name)
+            iter_func = getattr(mod, func_name)
+        except ImportError:
+            self.finished.emit(False, f"'{self.doc_type}' ainda não implementado.")
+            return
+        except AttributeError:
+            self.finished.emit(False, f"Função '{func_name}' não encontrada em {module_name}.")
+            return
+
+        try:
+            full = ""
+            for chunk in iter_func(self.vectorstore, self.config, **self.extra):
+                if self.isInterruptionRequested():
+                    self.finished.emit(False, "Interrompido.")
+                    return
+                self.token.emit(chunk)
+                full += chunk
+            self.finished.emit(True, strip_think(full))
+        except MnemosyneError as exc:
+            self.finished.emit(False, str(exc))
+        except Exception as exc:
+            self.finished.emit(False, f"Erro ao gerar {self.doc_type}: {exc}")

@@ -133,7 +133,7 @@
 > - `GuideWorker` → Notebook Guide automático pós-indexação (resumo + perguntas sugeridas, gerado internamente)
 
 #### UI do Studio Panel
-- [ ] `gui/main_window.py` — painel "Gerar Documento" na aba Análise: `QComboBox` com todos os tipos abaixo; botão "Gerar"; área de resultado com `QTextEdit` read-only; botão "Exportar .md"; o tipo selecionado determina qual `core/*.py` é chamado
+- [x] `gui/main_window.py` — pill "Studio" na aba Análise; `QComboBox` com 9 tipos; botão "Gerar" (`sendBtn`); `QTextEdit` read-only com streaming; botão "Exportar .md" com `QFileDialog`; `StudioWorker` em `workers.py` com dispatcher por tipo via lazy import
 
 #### Briefing Document
 - [ ] `core/briefing.py` — sumário executivo para papers/relatórios técnicos: temas principais, achados, insights acionáveis e divergências entre fontes; mais denso e estruturado que o resumo geral; retorna Markdown com seções fixas

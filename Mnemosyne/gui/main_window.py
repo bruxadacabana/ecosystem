@@ -54,6 +54,7 @@ from gui.workers import (
     IndexFileWorker,
     IndexWorker,
     OllamaCheckWorker,
+    StudioWorker,
     SummarizeWorker,
     UpdateIndexWorker,
 )
@@ -261,6 +262,8 @@ class MainWindow(QMainWindow):
         self._raw_answer = ""
         self._raw_summary = ""
         self._raw_faq = ""
+        self._studio_raw = ""
+        self._studio_worker: StudioWorker | None = None
 
         self._retry_timer = QTimer(self)
         self._retry_timer.setInterval(30_000)  # 30 segundos
@@ -615,8 +618,9 @@ class MainWindow(QMainWindow):
         self._pill_summary = make_pill("Resumo", 0)
         self._pill_faq     = make_pill("FAQ", 1)
         self._pill_guide   = make_pill("Guide", 2)
+        self._pill_studio  = make_pill("Studio", 3)
         self._pill_summary.setChecked(True)
-        for btn in (self._pill_summary, self._pill_faq, self._pill_guide):
+        for btn in (self._pill_summary, self._pill_faq, self._pill_guide, self._pill_studio):
             pill_row.addWidget(btn)
         pill_row.addStretch()
         outer.addLayout(pill_row)
@@ -693,11 +697,67 @@ class MainWindow(QMainWindow):
         gl.addStretch()
         self._analysis_stack.addWidget(guide_page)
 
+        # ── Sub-página: Studio Panel ────────────────────────────────
+        studio_page = QWidget()
+        stl = QVBoxLayout(studio_page)
+        stl.setContentsMargins(0, 0, 0, 0)
+        stl.setSpacing(8)
+
+        ctrl_row = QHBoxLayout()
+        ctrl_row.setSpacing(8)
+        self.studio_type_combo = QComboBox()
+        self.studio_type_combo.addItems([
+            "Briefing",
+            "Relatório",
+            "Guia de Estudo",
+            "Índice de Temas",
+            "Linha do Tempo",
+            "Blog Post",
+            "Mind Map",
+            "Tabela de Dados",
+            "Slides",
+        ])
+        self.studio_type_combo.setToolTip(
+            "Briefing: sumário executivo com temas, achados e insights acionáveis\n"
+            "Relatório: relatório multi-seção completo via Map-Reduce\n"
+            "Guia de Estudo: conceitos-chave, termos e questões de revisão\n"
+            "Índice de Temas: hierarquia de temas/subtemas dos documentos\n"
+            "Linha do Tempo: eventos extraídos em ordem cronológica\n"
+            "Blog Post: texto narrativo acessível sobre o conteúdo\n"
+            "Mind Map: estrutura hierárquica em sintaxe Mermaid\n"
+            "Tabela de Dados: extração de entidades em tabela estruturada\n"
+            "Slides: apresentação em Markdown (Marp/reveal.js)"
+        )
+        self.studio_generate_btn = QPushButton("Gerar")
+        self.studio_generate_btn.setObjectName("sendBtn")
+        self.studio_generate_btn.setEnabled(False)
+        self.studio_generate_btn.clicked.connect(self._start_studio_generation)
+        ctrl_row.addWidget(self.studio_type_combo, 1)
+        ctrl_row.addWidget(self.studio_generate_btn)
+        stl.addLayout(ctrl_row)
+
+        self.studio_result_text = QTextEdit()
+        self.studio_result_text.setReadOnly(True)
+        self.studio_result_text.setPlaceholderText(
+            "Selecione o tipo de documento e clique em Gerar…"
+        )
+        stl.addWidget(self.studio_result_text, 1)
+
+        export_row = QHBoxLayout()
+        export_row.addStretch()
+        self.studio_export_btn = QPushButton("Exportar .md")
+        self.studio_export_btn.setEnabled(False)
+        self.studio_export_btn.clicked.connect(self._studio_export_md)
+        export_row.addWidget(self.studio_export_btn)
+        stl.addLayout(export_row)
+
+        self._analysis_stack.addWidget(studio_page)
+
         self._content_stack.addWidget(page)
 
     def _switch_analysis(self, index: int) -> None:
         self._analysis_stack.setCurrentIndex(index)
-        for i, btn in enumerate((self._pill_summary, self._pill_faq, self._pill_guide)):
+        for i, btn in enumerate((self._pill_summary, self._pill_faq, self._pill_guide, self._pill_studio)):
             btn.setChecked(i == index)
 
     def _build_page_manage(self) -> None:
@@ -1185,6 +1245,55 @@ class MainWindow(QMainWindow):
         self.question_edit.setText(item.text())
         self._switch_page(0)
 
+    # ── Studio Panel ──────────────────────────────────────────────────────────
+
+    def _start_studio_generation(self) -> None:
+        if self.vectorstore is None:
+            return
+        doc_type = self.studio_type_combo.currentText()
+        self.studio_generate_btn.setEnabled(False)
+        self.studio_export_btn.setEnabled(False)
+        self.studio_result_text.setPlainText("")
+        self._studio_raw = ""
+        self.statusBar().showMessage(f"Gerando {doc_type}…")
+        self._studio_worker = StudioWorker(self.vectorstore, self.config, doc_type)
+        self._studio_worker.token.connect(self._on_studio_token)
+        self._studio_worker.finished.connect(self._on_studio_finished)
+        self._studio_worker.start()
+
+    def _on_studio_token(self, chunk: str) -> None:
+        self._studio_raw += chunk
+        self.studio_result_text.setPlainText(self._studio_raw)
+        sb = self.studio_result_text.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _on_studio_finished(self, success: bool, text: str) -> None:
+        self.studio_generate_btn.setEnabled(self.vectorstore is not None)
+        if success:
+            self.studio_result_text.setPlainText(text)
+            self.studio_export_btn.setEnabled(bool(text))
+            self.statusBar().showMessage("Documento gerado.")
+        else:
+            self.studio_result_text.setPlainText(f"Erro: {text}")
+            self.statusBar().showMessage("Erro ao gerar documento.")
+
+    def _studio_export_md(self) -> None:
+        text = self.studio_result_text.toPlainText()
+        if not text:
+            return
+        doc_type = self.studio_type_combo.currentText()
+        default_name = doc_type.lower().replace(" ", "_") + ".md"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar como Markdown", default_name, "Markdown (*.md)"
+        )
+        if path:
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+                self.statusBar().showMessage(f"Exportado: {path}")
+            except OSError as exc:
+                QMessageBox.warning(self, "Erro ao exportar", str(exc))
+
     # ── Seleção de arquivos ───────────────────────────────────────────────────
 
     def _populate_file_list(self) -> None:
@@ -1662,6 +1771,7 @@ class MainWindow(QMainWindow):
         self.clear_index_btn.setEnabled(True)
         self.update_index_btn.setEnabled(True)
         self.guide_refresh_btn.setEnabled(True)
+        self.studio_generate_btn.setEnabled(True)
 
     def _disable_query_buttons(self) -> None:
         self.ask_btn.setEnabled(False)
@@ -1669,6 +1779,7 @@ class MainWindow(QMainWindow):
         self.faq_btn.setEnabled(False)
         self.update_index_btn.setEnabled(False)
         self.guide_refresh_btn.setEnabled(False)
+        self.studio_generate_btn.setEnabled(False)
 
     def _log_event(self, message: str) -> None:
         from datetime import datetime
