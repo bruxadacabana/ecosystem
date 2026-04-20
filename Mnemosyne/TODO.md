@@ -149,8 +149,8 @@
 - [x] Integrar no Studio Panel como tipo `"Guia de Estudo"` — via `_STUDIO_DISPATCH`
 
 #### Table of Contents
-- [ ] `core/toc.py` — índice temático navegável: LLM identifica os temas e subtemas cobertos pelos documentos e os organiza em hierarquia com links de âncora Markdown; útil para coleções grandes onde o usuário não sabe o que está indexado; retorna Markdown com `## Tema > ### Subtema`
-- [ ] Integrar no Studio Panel como tipo `"Índice de Temas"`
+- [x] `core/toc.py` — `iter_toc()`: fase Map lista temas por fonte; fase Reduce consolida em hierarquia `## Tema > - Subtema > - Tópico` com máximo 8 temas principais; stuff ou map-reduce
+- [x] Integrar no Studio Panel como tipo `"Índice de Temas"` — via `_STUDIO_DISPATCH`
 
 #### Timeline
 - [ ] `core/timeline.py` — extrair eventos com data/período dos documentos; ordenar cronologicamente; formato: lista de itens `[data] — [evento] — [fonte]`; útil para documentos históricos, biográficos, projetos com marcos
