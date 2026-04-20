@@ -170,8 +170,8 @@
 - [x] Integrar no Studio Panel como tipo `"Tabela de Dados"` — campo de schema visível só neste tipo; `QTableWidget` com headers dinâmicos; parser de tabela Markdown; botão "Exportar CSV" via `csv.writer`
 
 #### Slide Deck (baixa prioridade)
-- [ ] `core/slides.py` — gerar apresentação em Markdown de slides (compatível com Marp/reveal.js); cada slide = seção do briefing; export como `.md`
-- [ ] Integrar no Studio Panel como tipo `"Slides"`
+- [x] `core/slides.py` — `iter_slides()`: slides separados por `---`, título `#`, conteúdo `##` + bullet points; 6-10 slides; compatível com Marp/reveal.js; stuff ou map-reduce
+- [x] Integrar no Studio Panel como tipo `"Slides"` — via `_STUDIO_DISPATCH`
 
 ## Fase 5 — UI e design
 
