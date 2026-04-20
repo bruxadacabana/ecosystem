@@ -140,8 +140,9 @@
 - [x] Integrar no Studio Panel como tipo `"Briefing"` — via `_STUDIO_DISPATCH` em workers.py
 
 #### Relatório de Pesquisa Completo
-- [ ] `core/report.py` — `ReportGenerator` via Map-Reduce (necessário para coleções grandes): seções fixas — (1) sumário executivo, (2) principais temas com findings, (3) análise por fonte, (4) convergências e divergências entre fontes, (5) lacunas identificadas, (6) referências com trechos; retorna Markdown estruturado
-- [ ] Integrar no Studio Panel como tipo `"Relatório"`; opcional: export PDF via `weasyprint` (pesquisar viabilidade)
+- [x] `core/report.py` — `iter_report()`: stuff (<10k chars) ou map-reduce; fase Map extrai temas/args/dados por fonte; fase Reduce gera 6 seções fixas em Markdown: Sumário Executivo, Temas e Findings, Análise por Fonte, Convergências/Divergências, Lacunas, Referências; `ReportError` definido no próprio módulo
+- [x] Integrar no Studio Panel como tipo `"Relatório"` — via `_STUDIO_DISPATCH`
+- [ ] Export PDF via `weasyprint` (pesquisar viabilidade — baixa prioridade)
 
 #### Study Guide Estruturado
 - [ ] `core/study_guide.py` — guia de estudo completo: (1) conceitos-chave com definição de 2-3 frases, (2) termos técnicos com explicação, (3) questões de revisão (abertas, não múltipla escolha — isso é do Quiz/4.5), (4) tópicos para aprofundar; diferente do NotebookGuide automático que é só intro; retorna Markdown
