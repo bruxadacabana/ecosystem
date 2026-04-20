@@ -167,7 +167,7 @@
 
 #### Data Tables
 - [x] `core/tables.py` — `iter_tables(schema=...)`: sempre map-reduce para cobertura completa; fase Map extrai entidades por fonte conforme schema livre; fase Reduce consolida em tabela Markdown `| col | col |`; temperatura 0.0 para precisão; `schema` passado como kwarg pelo StudioWorker
-- [ ] Integrar no Studio Panel como tipo `"Tabela de Dados"` — campo de texto para schema antes de gerar; visualização em `QTableWidget`; botão export CSV
+- [x] Integrar no Studio Panel como tipo `"Tabela de Dados"` — campo de schema visível só neste tipo; `QTableWidget` com headers dinâmicos; parser de tabela Markdown; botão "Exportar CSV" via `csv.writer`
 
 #### Slide Deck (baixa prioridade)
 - [ ] `core/slides.py` — gerar apresentação em Markdown de slides (compatível com Marp/reveal.js); cada slide = seção do briefing; export como `.md`

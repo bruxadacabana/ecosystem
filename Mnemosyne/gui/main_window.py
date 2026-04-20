@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -27,6 +28,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSplitter,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -264,6 +267,7 @@ class MainWindow(QMainWindow):
         self._raw_faq = ""
         self._studio_raw = ""
         self._studio_worker: StudioWorker | None = None
+        self._studio_table_data: tuple[list[str], list[list[str]]] | None = None
 
         self._retry_timer = QTimer(self)
         self._retry_timer.setInterval(30_000)  # 30 segundos
@@ -736,6 +740,20 @@ class MainWindow(QMainWindow):
         ctrl_row.addWidget(self.studio_generate_btn)
         stl.addLayout(ctrl_row)
 
+        # Schema row — visível apenas para "Tabela de Dados"
+        self._studio_schema_row = QHBoxLayout()
+        schema_lbl = QLabel("Colunas:")
+        schema_lbl.setObjectName("sectionLabel")
+        self._studio_schema_row.addWidget(schema_lbl)
+        self.studio_schema_edit = QLineEdit()
+        self.studio_schema_edit.setPlaceholderText("ex: Nome, Data, Valor, Fonte")
+        self.studio_schema_edit.setText("Nome, Descrição, Fonte")
+        self._studio_schema_row.addWidget(self.studio_schema_edit, 1)
+        self._studio_schema_widget = QWidget()
+        self._studio_schema_widget.setLayout(self._studio_schema_row)
+        self._studio_schema_widget.setVisible(False)
+        stl.addWidget(self._studio_schema_widget)
+
         self.studio_result_text = QTextEdit()
         self.studio_result_text.setReadOnly(True)
         self.studio_result_text.setPlaceholderText(
@@ -743,13 +761,28 @@ class MainWindow(QMainWindow):
         )
         stl.addWidget(self.studio_result_text, 1)
 
+        # Tabela — visível apenas para "Tabela de Dados" após geração
+        self.studio_table = QTableWidget()
+        self.studio_table.setVisible(False)
+        self.studio_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        stl.addWidget(self.studio_table, 1)
+
         export_row = QHBoxLayout()
         export_row.addStretch()
+        self.studio_export_csv_btn = QPushButton("Exportar CSV")
+        self.studio_export_csv_btn.setEnabled(False)
+        self.studio_export_csv_btn.setVisible(False)
+        self.studio_export_csv_btn.clicked.connect(self._studio_export_csv)
+        export_row.addWidget(self.studio_export_csv_btn)
         self.studio_export_btn = QPushButton("Exportar .md")
         self.studio_export_btn.setEnabled(False)
         self.studio_export_btn.clicked.connect(self._studio_export_md)
         export_row.addWidget(self.studio_export_btn)
         stl.addLayout(export_row)
+
+        self.studio_type_combo.currentTextChanged.connect(self._on_studio_type_changed)
 
         self._analysis_stack.addWidget(studio_page)
 
@@ -1247,16 +1280,32 @@ class MainWindow(QMainWindow):
 
     # ── Studio Panel ──────────────────────────────────────────────────────────
 
+    def _on_studio_type_changed(self, doc_type: str) -> None:
+        is_table = doc_type == "Tabela de Dados"
+        self._studio_schema_widget.setVisible(is_table)
+        self.studio_table.setVisible(False)
+        self.studio_result_text.setVisible(not is_table)
+        self.studio_export_csv_btn.setVisible(is_table)
+
     def _start_studio_generation(self) -> None:
         if self.vectorstore is None:
             return
         doc_type = self.studio_type_combo.currentText()
         self.studio_generate_btn.setEnabled(False)
         self.studio_export_btn.setEnabled(False)
+        self.studio_export_csv_btn.setEnabled(False)
         self.studio_result_text.setPlainText("")
+        self.studio_table.setVisible(False)
         self._studio_raw = ""
         self.statusBar().showMessage(f"Gerando {doc_type}…")
-        self._studio_worker = StudioWorker(self.vectorstore, self.config, doc_type)
+
+        extra: dict = {}
+        if doc_type == "Tabela de Dados":
+            schema = self.studio_schema_edit.text().strip()
+            if schema:
+                extra["schema"] = schema
+
+        self._studio_worker = StudioWorker(self.vectorstore, self.config, doc_type, extra)
         self._studio_worker.token.connect(self._on_studio_token)
         self._studio_worker.finished.connect(self._on_studio_finished)
         self._studio_worker.start()
@@ -1269,13 +1318,48 @@ class MainWindow(QMainWindow):
 
     def _on_studio_finished(self, success: bool, text: str) -> None:
         self.studio_generate_btn.setEnabled(self.vectorstore is not None)
+        doc_type = self.studio_type_combo.currentText()
         if success:
-            self.studio_result_text.setPlainText(text)
+            if doc_type == "Tabela de Dados":
+                self.studio_result_text.setVisible(False)
+                self._studio_populate_table(text)
+                self.studio_export_csv_btn.setEnabled(True)
+            else:
+                self.studio_result_text.setPlainText(text)
             self.studio_export_btn.setEnabled(bool(text))
             self.statusBar().showMessage("Documento gerado.")
         else:
+            self.studio_result_text.setVisible(True)
             self.studio_result_text.setPlainText(f"Erro: {text}")
             self.statusBar().showMessage("Erro ao gerar documento.")
+
+    def _studio_populate_table(self, markdown_table: str) -> None:
+        """Parseia tabela Markdown e preenche o QTableWidget."""
+        lines = [
+            ln.strip() for ln in markdown_table.splitlines()
+            if ln.strip().startswith("|") and "---" not in ln
+        ]
+        if not lines:
+            self.studio_result_text.setVisible(True)
+            self.studio_result_text.setPlainText(markdown_table)
+            return
+
+        def parse_row(line: str) -> list[str]:
+            return [cell.strip() for cell in line.strip("|").split("|")]
+
+        headers = parse_row(lines[0])
+        rows = [parse_row(ln) for ln in lines[1:]]
+
+        self.studio_table.clear()
+        self.studio_table.setColumnCount(len(headers))
+        self.studio_table.setRowCount(len(rows))
+        self.studio_table.setHorizontalHeaderLabels(headers)
+        for r, row in enumerate(rows):
+            for c, cell in enumerate(row):
+                if c < len(headers):
+                    self.studio_table.setItem(r, c, QTableWidgetItem(cell))
+        self.studio_table.setVisible(True)
+        self._studio_table_data = (headers, rows)
 
     def _studio_export_md(self) -> None:
         text = self.studio_result_text.toPlainText()
@@ -1291,6 +1375,25 @@ class MainWindow(QMainWindow):
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(text)
                 self.statusBar().showMessage(f"Exportado: {path}")
+            except OSError as exc:
+                QMessageBox.warning(self, "Erro ao exportar", str(exc))
+
+    def _studio_export_csv(self) -> None:
+        data = getattr(self, "_studio_table_data", None)
+        if not data:
+            return
+        headers, rows = data
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar como CSV", "tabela.csv", "CSV (*.csv)"
+        )
+        if path:
+            try:
+                import csv
+                with open(path, "w", encoding="utf-8", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(headers)
+                    writer.writerows(rows)
+                self.statusBar().showMessage(f"CSV exportado: {path}")
             except OSError as exc:
                 QMessageBox.warning(self, "Erro ao exportar", str(exc))
 
