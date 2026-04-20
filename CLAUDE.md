@@ -50,6 +50,7 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 - Commit por item individual concluído
 - **Nunca começar a implementar nada sem ordem explícita da usuária.** Discussão, planejamento e anotação no TODO não são ordens de implementação.
 - **Nunca avançar de um item para o próximo no TODO sem ordem explícita.** "Continue" sem especificar o quê não é autorização para implementar.
+- **Após concluir cada item: parar, resumir o que foi feito, e aguardar permissão explícita para prosseguir.** Implementar vários itens seguidos numa mesma resposta só é permitido se a usuária disser explicitamente "faça o bloco inteiro" ou equivalente.
 - Toda pesquisa do Mnemosyne vai para `Mnemosyne/pesquisa.txt`
 
 ---
