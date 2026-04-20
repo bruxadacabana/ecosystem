@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -164,6 +164,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS crawl_fts USING fts5(
 );
 """
 
+_CREATE_IDX_CRAWL_PAGES_SITE = """
+CREATE INDEX IF NOT EXISTS idx_crawl_pages_site ON crawl_pages(site_id);
+"""
+
+_CREATE_IDX_LIBRARY_DIFFS_URL = """
+CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -194,6 +202,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_CRAWL_SITES)
         await db.execute(_CREATE_CRAWL_PAGES)
         await db.execute(_CREATE_CRAWL_FTS)
+        await db.execute(_CREATE_IDX_CRAWL_PAGES_SITE)
+        await db.execute(_CREATE_IDX_LIBRARY_DIFFS_URL)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -226,6 +236,14 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
 
     if from_version < 7:
         pass  # Versão 7 — crawl_sites, crawl_pages, crawl_fts criados acima
+
+    if from_version < 8:
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crawl_pages_site ON crawl_pages(site_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id)"
+        )
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
