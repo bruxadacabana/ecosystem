@@ -304,10 +304,73 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
+## Fase 11 — Performance e Robustez
+
+> Entrega: app mais rápido, sem gargalos de I/O e com SQLite bem configurado.
+
+### Alta prioridade (impacto imediato visível)
+
+- [ ] **SQLite WAL mode + pragmas** — `database.py`: na função `init_db()`, após conectar,
+      executar `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`,
+      `PRAGMA cache_size=-8000` (8 MB), `PRAGMA mmap_size=67108864` (64 MB).
+      WAL elimina lock de leitura durante writes — crítico para crawl + busca simultâneos.
+      Hoje reads e writes se bloqueiam mutuamente porque o modo padrão é DELETE.
+
+- [ ] **Índices ausentes** — `database.py`: adicionar via migration v8:
+      `CREATE INDEX IF NOT EXISTS idx_crawl_pages_site ON crawl_pages(site_id)` e
+      `CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id)`.
+      Sem eles, `get_crawl_pages_by_site` e `_recent_diff_ids` fazem full-table scan.
+
+- [ ] **Busca paralela** — `routers/search.py`: substituir as três chamadas sequenciais
+      (`search_web`, `search_local`, `search_sites`) por `asyncio.gather()` com filtro
+      condicional — se `src_web` está off, passa `None` no slot. Cada fonte demora
+      100–500 ms; sequencial = soma; paralelo = máximo. Reduz latência de ~1 s para ~400 ms.
+
+- [ ] **`check_overdue` e `list_entries` sem `content_md`** — `services/library.py`:
+      substituir `SELECT *` por `SELECT id, url, title, snippet, content_hash, language,
+      word_count, tags_json, notes, check_interval_days, last_checked_at, status, created_at`.
+      `content_md` pode ser texto de MBs; carregá-lo para só verificar datas desperdiça RAM
+      e lentifica a página `/library`. `scrape_and_store` ainda recebe `content_md` pois
+      precisa calcular diff — neste caso manter `SELECT *`.
+
+### Média prioridade (reduz lock contention no crawler)
+
+- [ ] **Crawl com conexão única por sessão** — `services/crawler.py`: a função `crawl_site`
+      abre um novo `aiosqlite.connect()` por página dentro de `_process_url`. Reestruturar
+      para que a conexão seja aberta uma vez antes do BFS loop e passada como parâmetro.
+      Reduz de N+2 para 3 conexões por crawl (setup + loop + finalização).
+
+- [ ] **FTS skip em conteúdo idêntico** — `services/crawler.py` → `_upsert_page`:
+      antes de `DELETE FROM crawl_fts WHERE url = ?`, consultar `content_hash` atual;
+      se igual ao novo hash, pular DELETE + INSERT no FTS. Re-indexar texto idêntico
+      é o principal custo de re-crawl em sites que não mudaram.
+
+- [ ] **`asyncio.get_event_loop()` → `asyncio.get_running_loop()`** — `routers/crawler.py`
+      (3 ocorrências) e `main.py` (1 ocorrência): `get_event_loop()` está deprecated
+      desde Python 3.10 e gera DeprecationWarning em 3.12+. Substituir por
+      `asyncio.get_running_loop().create_task(...)`.
+
+### Baixa prioridade (manutenção a longo prazo)
+
+- [ ] **Limpeza periódica do search_cache** — `main.py` → `_monitor_library()`:
+      ao acordar, executar `DELETE FROM search_cache WHERE created_at < ?` com cutoff
+      de 24 h. Sem essa limpeza o cache cresce indefinidamente — cada query única
+      adiciona uma linha; após semanas de uso o arquivo SQLite infla.
+
+- [ ] **Monitor de biblioteca com paralelismo controlado** — `main.py` → `_monitor_library()`:
+      em vez de re-scrape sequencial das URLs vencidas, usar `asyncio.gather` com
+      `asyncio.Semaphore(3)` — máximo 3 scrapes simultâneos. Uma biblioteca com 50+
+      URLs vencidas pode travar o event loop por vários minutos em modo sequencial.
+
+- [ ] **Dependência `markdown`** — `pyproject.toml`: adicionar `markdown>=3.7`
+      (necessário para Fase 10.5 — converter `content_md` → HTML no reader mode).
+
+---
+
 ## Planos Futuros
 
 > Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
 
 ---
 
-*Atualizado em: 2026-04-20 — Fases 1, 2, 3, 5 e 7 concluídas. Fase 10.5 adicionada: navegação inline de páginas crawleadas.*
+*Atualizado em: 2026-04-20 — Fases 1, 2, 3, 5 e 7 concluídas. Fase 10.5 (reader mode) e Fase 11 (performance) adicionadas.*
