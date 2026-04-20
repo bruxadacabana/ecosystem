@@ -174,6 +174,12 @@ CREATE VIRTUAL TABLE IF NOT EXISTS crawl_fts USING fts5(
 async def init_db() -> None:
     """Cria tabelas e aplica migrations necessárias."""
     async with aiosqlite.connect(DB_PATH) as db:
+        # WAL mode: reads nunca bloqueiam writes (crítico para crawl + busca simultâneos)
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
+        await db.execute("PRAGMA cache_size=-8000")      # 8 MB de page cache
+        await db.execute("PRAGMA mmap_size=67108864")    # 64 MB mmap
+
         await db.execute(_CREATE_SETTINGS)
         await db.execute(_CREATE_SEARCHES)
         await db.execute(_CREATE_DOWNLOADS)
