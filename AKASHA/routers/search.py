@@ -4,6 +4,7 @@ GET /search?q=&sources=all|web|local → renderiza search.html
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import httpx
@@ -73,13 +74,22 @@ async def search(
 
     if q:
         try:
-            if src_web:
-                web_results   = await search_web(q, max_results=_PAGE_SIZE)
-            if src_eco:
-                local_results = await search_local(q)
-            if src_sites:
-                site_results  = await search_sites(q)
-        except RuntimeError as exc:
+            tasks = await asyncio.gather(
+                search_web(q, max_results=_PAGE_SIZE) if src_web   else asyncio.sleep(0, result=[]),
+                search_local(q)                        if src_eco   else asyncio.sleep(0, result=[]),
+                search_sites(q)                        if src_sites else asyncio.sleep(0, result=[]),
+                return_exceptions=True,
+            )
+            web_r, eco_r, sites_r = tasks
+            if isinstance(web_r,   list): web_results   = web_r
+            if isinstance(eco_r,   list): local_results = eco_r
+            if isinstance(sites_r, list): site_results  = sites_r
+            # Propaga o primeiro erro real (RuntimeError da busca web)
+            for res in tasks:
+                if isinstance(res, RuntimeError):
+                    error = str(res)
+                    break
+        except Exception as exc:
             error = str(exc)
 
         total = len(web_results) + len(local_results) + len(site_results)
