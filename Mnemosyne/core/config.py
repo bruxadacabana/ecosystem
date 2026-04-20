@@ -46,6 +46,7 @@ _DEFAULTS: dict = {
     "relevance_decay_days": 30,
     "semantic_chunking": False,
     "indexing_only": False,
+    "dark_mode": True,
 }
 
 
@@ -63,6 +64,7 @@ class AppConfig:
     relevance_decay_days: int = 30
     semantic_chunking: bool = False
     indexing_only: bool = False
+    dark_mode: bool = True
 
     @property
     def persist_dir(self) -> str:
@@ -121,6 +123,7 @@ def load_config() -> AppConfig:
         relevance_decay_days=int(data.get("relevance_decay_days", 30)),
         semantic_chunking=bool(data.get("semantic_chunking", False)),
         indexing_only=bool(data.get("indexing_only", False)),
+        dark_mode=bool(data.get("dark_mode", True)),
     )
 
 
@@ -140,6 +143,7 @@ def save_config(config: AppConfig) -> None:
         "relevance_decay_days": config.relevance_decay_days,
         "semantic_chunking": config.semantic_chunking,
         "indexing_only": config.indexing_only,
+        "dark_mode": config.dark_mode,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

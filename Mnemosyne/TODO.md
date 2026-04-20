@@ -188,6 +188,8 @@
 
 - [ ] **Pesquisar UI do NotebookLM** como referência de design para RAG pessoal — anotar o que faz sentido adaptar para uso offline/local
 - [x] **Reformulação completa da UI** (aprovada) — sidebar + painel principal; sem abas; modo escuro (#12161E); fontes do ecossistema aplicadas; design system consistente com DESIGN_BIBLE.txt
+- [x] **Ajuste de legibilidade** — fontes aumentadas conforme Design Bible: corpo 13px, inputs/answerText IM Fell English 14–15px, sidebarBrand 24px, letter-spacing corrigido nos labels e botões
+- [x] **Toggle dia/noite** — botão "☀ Modo Dia / ☽ Modo Noite" na sidebar inferior; `styles_light.qss` criado com paleta "Papel ao Sol da Manhã"; `dark_mode` persistido em config
 
 ### Sessões de Chat Nomeadas
 
@@ -200,4 +202,4 @@
 
 ---
 
-*Atualizado em: 2026-04-20 — 4.9 expandido: Relatório completo, Mind Map, Data Tables, Slides após pesquisa NotebookLM.*
+*Atualizado em: 2026-04-20 — legibilidade + toggle dia/noite implementados; 4.9 expandido: Relatório completo, Mind Map, Data Tables, Slides após pesquisa NotebookLM.*

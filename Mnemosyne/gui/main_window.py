@@ -489,6 +489,13 @@ class MainWindow(QMainWindow):
 
         sb.addStretch()
 
+        # Theme toggle
+        self._theme_btn = QPushButton("☀  Modo Dia")
+        self._theme_btn.setObjectName("navBtn")
+        self._theme_btn.clicked.connect(self._toggle_theme)
+        sb.addWidget(self._theme_btn)
+        self._update_theme_btn_label()
+
         splitter.addWidget(sidebar)
 
         # ── Content stack ────────────────────────────────────────────
@@ -1651,9 +1658,24 @@ class MainWindow(QMainWindow):
                         if any(t.replace(" ", "").lower() in fname.lower().replace(" ", "").replace("-", "") for t in targets):
                             QFontDatabase.addApplicationFont(os.path.join(root, fname))
 
+    def _update_theme_btn_label(self) -> None:
+        if not hasattr(self, "_theme_btn"):
+            return
+        if self.config.dark_mode:
+            self._theme_btn.setText("☀  Modo Dia")
+        else:
+            self._theme_btn.setText("☽  Modo Noite")
+
+    def _toggle_theme(self) -> None:
+        self.config.dark_mode = not self.config.dark_mode
+        save_config(self.config)
+        self._update_theme_btn_label()
+        self.apply_style()
+
     def apply_style(self) -> None:
         self._load_fonts()
-        style_path = os.path.join(os.path.dirname(__file__), "styles.qss")
+        qss_file = "styles.qss" if self.config.dark_mode else "styles_light.qss"
+        style_path = os.path.join(os.path.dirname(__file__), qss_file)
         if os.path.exists(style_path):
             with open(style_path, encoding="utf-8") as f:
                 self.setStyleSheet(f.read())
