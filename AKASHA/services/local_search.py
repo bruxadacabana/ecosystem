@@ -176,6 +176,10 @@ async def index_local_files() -> None:
         await _index_directory(
             Path(config.mnemosyne_vault), "OBSIDIAN", "**/*.md", _extract_kosmos
         )
+    if config.hermes_output:
+        await _index_directory(
+            Path(config.hermes_output), "HERMES", "**/*.md", _extract_kosmos
+        )
     await _purge_missing()
 
 
