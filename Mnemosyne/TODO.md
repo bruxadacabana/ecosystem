@@ -166,8 +166,8 @@
 - [ ] `requirements.txt` — avaliar `graphviz` para SVG embutido no Qt (baixa prioridade)
 
 #### Data Tables
-- [ ] `core/tables.py` — LLM extrai entidades e relações conforme schema definido pela usuária; retorna lista de dicts; campo livre para especificar colunas (ex: "Nome, Data, Valor, Fonte")
-- [ ] Integrar no Studio Panel como tipo `"Tabela de Dados"`; visualização em `QTableWidget`; export CSV/JSON
+- [x] `core/tables.py` — `iter_tables(schema=...)`: sempre map-reduce para cobertura completa; fase Map extrai entidades por fonte conforme schema livre; fase Reduce consolida em tabela Markdown `| col | col |`; temperatura 0.0 para precisão; `schema` passado como kwarg pelo StudioWorker
+- [ ] Integrar no Studio Panel como tipo `"Tabela de Dados"` — campo de texto para schema antes de gerar; visualização em `QTableWidget`; botão export CSV
 
 #### Slide Deck (baixa prioridade)
 - [ ] `core/slides.py` — gerar apresentação em Markdown de slides (compatível com Marp/reveal.js); cada slide = seção do briefing; export como `.md`
