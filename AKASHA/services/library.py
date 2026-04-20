@@ -71,11 +71,22 @@ def compute_diff(old: str, new: str) -> str:
 
 
 def _row_to_entry(row: tuple, has_recent_diff: bool = False) -> LibraryEntry:
-    (
-        id_, url, title, snippet, content_md, content_hash, language,
-        word_count, tags_json, notes, check_interval_days,
-        last_checked_at, status, created_at,
-    ) = row
+    """Aceita rows com ou sem content_md (SELECT * vs SELECT _LIST_COLS)."""
+    if len(row) == 14:
+        # SELECT * — inclui content_md na posição 4
+        (
+            id_, url, title, snippet, content_md, content_hash, language,
+            word_count, tags_json, notes, check_interval_days,
+            last_checked_at, status, created_at,
+        ) = row
+    else:
+        # SELECT _LIST_COLS — sem content_md
+        (
+            id_, url, title, snippet, content_hash, language,
+            word_count, tags_json, notes, check_interval_days,
+            last_checked_at, status, created_at,
+        ) = row
+        content_md = ""
     return LibraryEntry(
         id=id_,
         url=url,
@@ -245,12 +256,18 @@ async def scrape_and_store(entry_id: int) -> LibraryEntry:
     return entry
 
 
+_LIST_COLS = (
+    "id, url, title, snippet, content_hash, language, word_count, "
+    "tags_json, notes, check_interval_days, last_checked_at, status, created_at"
+)
+
+
 async def check_overdue() -> list[LibraryEntry]:
     """Retorna entradas ativas cujo prazo de re-scrape já venceu."""
     now = datetime.now(timezone.utc)
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await (await db.execute(
-            "SELECT * FROM library_urls WHERE status != 'paused'"
+            f"SELECT {_LIST_COLS} FROM library_urls WHERE status != 'paused'"
         )).fetchall()
 
     overdue: list[LibraryEntry] = []
@@ -269,7 +286,7 @@ async def list_entries(tag: str = "", lang: str = "") -> list[LibraryEntry]:
     """Lista entradas com filtro opcional por tag e idioma."""
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await (await db.execute(
-            "SELECT * FROM library_urls ORDER BY created_at DESC"
+            f"SELECT {_LIST_COLS} FROM library_urls ORDER BY created_at DESC"
         )).fetchall()
 
     diff_ids = await _recent_diff_ids()
