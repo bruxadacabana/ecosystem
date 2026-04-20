@@ -833,6 +833,14 @@ class HermesApp(QMainWindow):
     def _load_prefs(self):
         if "outdir" in self._prefs:
             self.outdir_edit.setText(self._prefs["outdir"])
+        else:
+            # Fallback: pasta sincronizada definida pelo HUB no ecosystem.json
+            try:
+                eco_outdir = read_ecosystem().get("hermes", {}).get("output_dir", "")
+                if eco_outdir:
+                    self.outdir_edit.setText(eco_outdir)
+            except Exception:
+                pass
         if "model" in self._prefs:
             self.model_combo.setCurrentText(self._prefs["model"])
         if "lang_idx" in self._prefs:
