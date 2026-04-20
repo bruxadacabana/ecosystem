@@ -592,6 +592,11 @@ class HermesApp(QMainWindow):
         out_row.addSpacing(8)
         self.outdir_edit = QLineEdit(str(DATA_DIR))
         out_row.addWidget(self.outdir_edit)
+        self._home_btn = QPushButton("⌂")
+        self._home_btn.setFixedWidth(30)
+        self._home_btn.setToolTip("Restaurar pasta sincronizada (configurada no HUB)")
+        self._home_btn.clicked.connect(self._set_home_outdir)
+        out_row.addWidget(self._home_btn)
         browse_btn = QPushButton("…")
         browse_btn.setFixedWidth(36)
         browse_btn.clicked.connect(self._pick_dir)
@@ -831,16 +836,11 @@ class HermesApp(QMainWindow):
 
     # ── Preferências ──────────────────────────────────────────────────────────
     def _load_prefs(self):
-        if "outdir" in self._prefs:
+        # Pasta de saída: ecosystem.json é sempre o ponto de partida.
+        # Prefs é fallback para quando ecosystem não está configurado.
+        self._set_home_outdir(silent=True)
+        if not self.outdir_edit.text() and "outdir" in self._prefs:
             self.outdir_edit.setText(self._prefs["outdir"])
-        else:
-            # Fallback: pasta sincronizada definida pelo HUB no ecosystem.json
-            try:
-                eco_outdir = read_ecosystem().get("hermes", {}).get("output_dir", "")
-                if eco_outdir:
-                    self.outdir_edit.setText(eco_outdir)
-            except Exception:
-                pass
         if "model" in self._prefs:
             self.model_combo.setCurrentText(self._prefs["model"])
         if "lang_idx" in self._prefs:
@@ -887,6 +887,17 @@ class HermesApp(QMainWindow):
             self._inspect()
         else:
             self._start_transcribe()
+
+    def _set_home_outdir(self, silent: bool = False) -> None:
+        """Preenche outdir_edit com a pasta sincronizada definida no HUB."""
+        try:
+            eco_outdir = read_ecosystem().get("hermes", {}).get("output_dir", "")
+            if eco_outdir:
+                self.outdir_edit.setText(eco_outdir)
+            elif not silent:
+                self.status_lbl.setText("Configure o diretório de sincronização no HUB.")
+        except Exception:
+            pass
 
     def _pick_dir(self):
         d = QFileDialog.getExistingDirectory(self, "Pasta de saída", self.outdir_edit.text())
