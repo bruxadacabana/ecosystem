@@ -122,6 +122,24 @@ async def sites_add(
 
 
 # ---------------------------------------------------------------------------
+# POST /sites/add-quick — adiciona site a partir de uma URL de resultado
+# ---------------------------------------------------------------------------
+
+@router.post("/sites/add-quick")
+async def sites_add_quick(url: str = Form(...)) -> Response:
+    """Adiciona domínio base de uma URL ao rastreador de sites com defaults."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="URL inválida")
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    site_id = await add_crawl_site(base_url, base_url, crawl_depth=2, subdomains="[]")
+    if site_id:
+        asyncio.get_event_loop().create_task(_bg_crawl(site_id))
+    return Response(status_code=200)
+
+
+# ---------------------------------------------------------------------------
 # DELETE /sites/{site_id}
 # ---------------------------------------------------------------------------
 

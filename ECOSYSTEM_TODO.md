@@ -135,8 +135,8 @@ Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 - [x] `AKASHA/static/style.css` — adicionar classe `.page-subtitle`
 - [x] `AKASHA/templates/library.html` — subtítulo descritivo da Biblioteca
 - [x] `AKASHA/templates/sites.html` — subtítulo descritivo de Sites
-- [ ] `AKASHA/routers/crawler.py` — rota `POST /sites/add-quick` (quick-add sem parâmetros extras)
-- [ ] `AKASHA/templates/_macros.html` — botão "Adicionar a Sites" nos cards
+- [x] `AKASHA/routers/crawler.py` — rota `POST /sites/add-quick` (quick-add sem parâmetros extras)
+- [x] `AKASHA/templates/_macros.html` — botão "Adicionar a Sites" nos cards
 
 ### 0.9 — Mnemosyne: caminhos primários do ecosystem.json + pastas extras
 
