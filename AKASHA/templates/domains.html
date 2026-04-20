@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Lista Negra — AKASHA{% endblock %}
+
+{% block content %}
+<p class="page-subtitle">Domínios bloqueados — resultados de busca e crawl destes domínios são ignorados.</p>
+
+<section class="lib-add-section">
+  <form
+    class="lib-add-form"
+    hx-post="/domains/block"
+    hx-target="#domains-list"
+    hx-swap="outerHTML"
+    hx-select="#domains-list"
+    hx-on::after-request="this.reset(); showToast('Domínio bloqueado.', 'success')"
+  >
+    <div class="lib-add-row">
+      <input
+        type="url"
+        name="url"
+        class="input"
+        placeholder="https://exemplo.com"
+        required
+        autocomplete="off"
+      >
+      <button type="submit" class="btn btn-primary">+ bloquear</button>
+    </div>
+  </form>
+</section>
+
+<section id="domains-list">
+  {% if domains %}
+    <ul class="domains-list">
+      {% for domain in domains %}
+      <li class="domains-item">
+        <span class="domains-name">{{ domain }}</span>
+        <button
+          class="btn btn-ghost btn-sm"
+          title="Desbloquear"
+          hx-delete="/domains/block/{{ domain }}"
+          hx-target="#domains-list"
+          hx-swap="outerHTML"
+          hx-select="#domains-list"
+          hx-on::after-request="showToast('{{ domain }} desbloqueado.', 'info')"
+        >✕</button>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">Nenhum domínio bloqueado.</p>
+  {% endif %}
+</section>
+{% endblock %}

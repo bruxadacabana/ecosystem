@@ -1,23 +1,39 @@
 """
 AKASHA — Lista negra de domínios
-POST /domains/block : bloqueia domínio extraído de uma URL
+GET  /domains                  : página com lista de domínios bloqueados
+POST /domains/block            : bloqueia domínio extraído de uma URL
 DELETE /domains/block/{domain} : desbloqueia
 """
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Form, HTTPException
-from fastapi.responses import Response
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, Response
+from fastapi.templating import Jinja2Templates
 
-from database import add_blocked_domain, remove_blocked_domain
+from database import add_blocked_domain, get_blocked_domains, remove_blocked_domain
 
 router = APIRouter()
+
+_BASE_DIR = Path(__file__).parent.parent
+templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
 
 def _extract_domain(url: str) -> str:
     host = urlparse(url).hostname or ""
     return host.removeprefix("www.").lower()
+
+
+@router.get("/domains", response_class=HTMLResponse)
+async def domains_page(request: Request) -> HTMLResponse:
+    domains = sorted(await get_blocked_domains())
+    return templates.TemplateResponse(
+        request,
+        "domains.html",
+        {"domains": domains, "active_tab": "domains"},
+    )
 
 
 @router.post("/domains/block")
