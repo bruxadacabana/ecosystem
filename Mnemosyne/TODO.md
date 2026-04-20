@@ -161,9 +161,9 @@
 - [x] Integrar no Studio Panel como tipo `"Blog Post"` — via `_STUDIO_DISPATCH`
 
 #### Mind Map
-- [ ] `core/mindmap.py` — `MindMapBuilder`: LLM gera estrutura hierárquica como JSON `{central, branches: [{label, children[], source}]}`; exportar como (a) Mermaid mindmap syntax para abrir no Obsidian/browser, (b) `.mm` XML compatível com FreeMind/XMind
-- [ ] Integrar no Studio Panel como tipo `"Mind Map"`; botão de export abre Mermaid no browser via `webbrowser.open()` ou salva `.mm`
-- [ ] `requirements.txt` — avaliar `graphviz` para SVG embutido; alternativa: só export externo
+- [x] `core/mindmap.py` — `iter_mindmap()`: fase Map extrai hierarquia por fonte; fase Reduce gera bloco `\`\`\`mermaid mindmap\`\`\`` com `root((Tema))`, máximo 6 ramos, 3-4 subtópicos; pronto para Obsidian/GitHub/VS Code
+- [x] Integrar no Studio Panel como tipo `"Mind Map"` — via `_STUDIO_DISPATCH`; export via botão "Exportar .md" já existente
+- [ ] `requirements.txt` — avaliar `graphviz` para SVG embutido no Qt (baixa prioridade)
 
 #### Data Tables
 - [ ] `core/tables.py` — LLM extrai entidades e relações conforme schema definido pela usuária; retorna lista de dicts; campo livre para especificar colunas (ex: "Nome, Data, Valor, Fonte")
