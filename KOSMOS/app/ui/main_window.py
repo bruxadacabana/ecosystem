@@ -81,7 +81,7 @@ class MainWindow(QMainWindow):
 
         # Overlay de busca global — filho do widget central para cobrir toda a área
         from app.ui.widgets.search_overlay import SearchOverlay
-        self._search_overlay = SearchOverlay(self._fm, parent=central)
+        self._search_overlay = SearchOverlay(self._fm, self._config, parent=central)
         self._search_overlay.article_selected.connect(self._on_search_article_selected)
 
         shortcut = QShortcut(QKeySequence("Ctrl+K"), self)

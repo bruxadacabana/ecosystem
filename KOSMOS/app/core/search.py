@@ -1,4 +1,4 @@
-"""Busca global de artigos via FTS5 (BM25)."""
+"""Busca global de artigos via FTS5 (BM25) ou embedding semântico."""
 
 from __future__ import annotations
 
@@ -114,6 +114,78 @@ def search_articles(
 
     except Exception as exc:
         log.error("Erro na busca FTS5 (query=%r): %s", query, exc)
+        return []
+    finally:
+        session.close()
+
+
+def search_articles_semantic(
+    query:       str,
+    endpoint:    str,
+    embed_model: str,
+    limit:       int = 40,
+) -> list[SearchResult]:
+    """Busca semântica via cosine similarity sobre embeddings armazenados.
+
+    Gera o embedding da query via Ollama (bloqueante — chamar de thread
+    separada), recupera todos os artigos com embedding do banco e ranqueia
+    por similaridade. Artigos duplicados são excluídos.
+
+    Args:
+        query:       Texto de busca em linguagem natural.
+        endpoint:    URL do servidor Ollama.
+        embed_model: Modelo de embedding (ex: ``bge-m3:latest``).
+        limit:       Número máximo de resultados.
+
+    Returns:
+        Lista de SearchResult em ordem decrescente de similaridade.
+        Lista vazia se não houver embeddings ou o Ollama estiver offline.
+    """
+    if not query.strip():
+        return []
+
+    from app.core.ai_bridge import AiBridge, OllamaError
+
+    bridge = AiBridge(endpoint=endpoint, embed_model=embed_model)
+    try:
+        query_vec = bridge.embed(query, timeout=60)
+    except OllamaError as exc:
+        log.error("Busca semântica — erro ao gerar embedding da query: %s", exc)
+        return []
+
+    session = get_session()
+    try:
+        articles = (
+            session.query(Article)
+            .filter(Article.embedding.isnot(None), Article.duplicate_of.is_(None))
+            .all()
+        )
+        if not articles:
+            return []
+
+        scored: list[tuple[float, Article]] = []
+        for art in articles:
+            vec   = AiBridge.blob_to_vec(art.embedding)   # type: ignore[arg-type]
+            score = AiBridge.cosine_similarity(query_vec, vec)
+            scored.append((score, art))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        _tag_re = re.compile(r"<[^>]+>")
+        results: list[SearchResult] = []
+        for score, art in scored[:limit]:
+            raw_text = art.content_full or art.summary or ""
+            snippet  = _tag_re.sub("", raw_text)[:200].strip()
+            results.append(SearchResult(
+                article=art,
+                rank=score,
+                title_snippet=art.title or "",
+                content_snippet=snippet,
+            ))
+        return results
+
+    except Exception as exc:
+        log.error("Erro na busca semântica: %s", exc)
         return []
     finally:
         session.close()

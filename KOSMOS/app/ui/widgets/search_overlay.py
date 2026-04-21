@@ -5,20 +5,44 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QKeyEvent, QPainter
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QScrollArea, QVBoxLayout, QWidget,
+    QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 if TYPE_CHECKING:
     from app.core.feed_manager import FeedManager
     from app.core.search import SearchResult
+    from app.utils.config import Config
 
 log = logging.getLogger("kosmos.ui.search")
 
 _MAX_RESULTS = 40
+
+
+class _SemanticSearchWorker(QThread):
+    """Executa busca semântica em thread separada (embed é bloqueante)."""
+
+    finished = pyqtSignal(list)   # list[SearchResult]
+    failed   = pyqtSignal(str)
+
+    def __init__(self, query: str, endpoint: str, embed_model: str) -> None:
+        super().__init__()
+        self._query       = query
+        self._endpoint    = endpoint
+        self._embed_model = embed_model
+
+    def run(self) -> None:
+        from app.core.search import search_articles_semantic
+        try:
+            results = search_articles_semantic(
+                self._query, self._endpoint, self._embed_model, limit=_MAX_RESULTS
+            )
+            self.finished.emit(results)
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
 
 class _ResultItem(QWidget):
@@ -91,18 +115,29 @@ class _ResultItem(QWidget):
 class SearchOverlay(QWidget):
     """Overlay flutuante de busca global (Ctrl+K).
 
+    Modos de busca:
+        FTS5 (padrão)  — palavras-chave via SQLite FTS5, síncrono.
+        Semântica      — cosine similarity sobre embeddings, requer IA habilitada.
+
     Sinais:
         article_selected(article_id) — usuário clicou num resultado.
     """
 
     article_selected = pyqtSignal(int)
 
-    def __init__(self, feed_manager: "FeedManager", parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        feed_manager: "FeedManager",
+        config: "Config | None" = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
-        self._fm = feed_manager
-        self._feeds_by_id: dict[int, str] = {}
+        self._fm     = feed_manager
+        self._config = config
+        self._feeds_by_id:  dict[int, str]  = {}
         self._result_items: list[_ResultItem] = []
         self._selected_idx: int = -1
+        self._sem_worker: _SemanticSearchWorker | None = None
 
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -154,12 +189,34 @@ class SearchOverlay(QWidget):
         self._search_edit.installEventFilter(self)
         search_hl.addWidget(self._search_edit, 1)
 
+        self._sem_toggle = QPushButton("☽ Semântica")
+        self._sem_toggle.setObjectName("searchSemToggle")
+        self._sem_toggle.setFont(self._mono(9))
+        self._sem_toggle.setCheckable(True)
+        self._sem_toggle.setFixedHeight(22)
+        self._sem_toggle.setToolTip(
+            "Alterna entre busca por palavras-chave (FTS5) "
+            "e busca semântica por similaridade de embedding."
+        )
+        self._sem_toggle.toggled.connect(self._on_mode_toggled)
+        self._sem_toggle.hide()
+        search_hl.addWidget(self._sem_toggle)
+
         esc_lbl = QLabel("Esc")
         esc_lbl.setObjectName("searchEscHint")
         esc_lbl.setFont(self._mono(9))
         search_hl.addWidget(esc_lbl)
 
         panel_layout.addWidget(search_row)
+
+        # Label de status (carregando / sem embeddings)
+        self._status_lbl = QLabel()
+        self._status_lbl.setObjectName("searchStatusLabel")
+        self._status_lbl.setFont(self._mono(10))
+        self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status_lbl.setContentsMargins(0, 6, 0, 6)
+        self._status_lbl.hide()
+        panel_layout.addWidget(self._status_lbl)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -198,11 +255,26 @@ class SearchOverlay(QWidget):
         self.show()
         self._search_edit.clear()
         self._clear_results()
+        self._status_lbl.hide()
+        self._sem_toggle.setVisible(self._semantic_available())
         self._search_edit.setFocus()
+
+    def _semantic_available(self) -> bool:
+        """True se IA está habilitada e o modelo de embedding está configurado."""
+        if self._config is None:
+            return False
+        return (
+            bool(self._config.get("ai_enabled", False))
+            and bool(self._config.get("ai_embed_model", ""))
+        )
 
     def deactivate(self) -> None:
         self.hide()
         self._search_timer.stop()
+        if self._sem_worker and self._sem_worker.isRunning():
+            self._sem_worker.finished.disconnect()
+            self._sem_worker.failed.disconnect()
+            self._sem_worker = None
 
     # ------------------------------------------------------------------
     # Pintura — fundo semi-transparente
@@ -247,18 +319,60 @@ class SearchOverlay(QWidget):
     def _on_text_changed(self, text: str) -> None:
         if not text.strip():
             self._clear_results()
+            self._status_lbl.hide()
             return
         self._search_timer.start(280)
 
+    def _on_mode_toggled(self, checked: bool) -> None:
+        self._clear_results()
+        self._status_lbl.hide()
+        query = self._search_edit.text()
+        if query.strip():
+            self._search_timer.start(100)
+
     def _run_search(self) -> None:
-        from app.core.search import search_articles
         query = self._search_edit.text()
         if not query.strip():
             self._clear_results()
             return
 
-        results = search_articles(query, limit=_MAX_RESULTS)
+        if self._sem_toggle.isChecked() and self._semantic_available():
+            self._run_semantic_search(query)
+        else:
+            from app.core.search import search_articles
+            results = search_articles(query, limit=_MAX_RESULTS)
+            self._populate_results(results)
+
+    def _run_semantic_search(self, query: str) -> None:
+        # Cancelar worker anterior se ainda estiver rodando
+        if self._sem_worker and self._sem_worker.isRunning():
+            self._sem_worker.finished.disconnect()
+            self._sem_worker.failed.disconnect()
+
+        endpoint    = self._config.get("ai_endpoint", "http://localhost:11434")   # type: ignore[union-attr]
+        embed_model = self._config.get("ai_embed_model", "")                      # type: ignore[union-attr]
+
+        self._status_lbl.setText("Gerando embedding… aguarde")
+        self._status_lbl.show()
+        self._clear_results()
+
+        self._sem_worker = _SemanticSearchWorker(query, str(endpoint), str(embed_model))
+        self._sem_worker.finished.connect(self._on_semantic_done)
+        self._sem_worker.failed.connect(self._on_semantic_error)
+        self._sem_worker.start()
+
+    def _on_semantic_done(self, results: list) -> None:
+        self._status_lbl.hide()
+        if not results:
+            self._status_lbl.setText("Nenhum artigo com embedding encontrado.")
+            self._status_lbl.show()
+            return
         self._populate_results(results)
+
+    def _on_semantic_error(self, msg: str) -> None:
+        self._status_lbl.setText(f"Erro na busca semântica: {msg}")
+        self._status_lbl.show()
+        log.error("Busca semântica: %s", msg)
 
     def _populate_results(self, results: list["SearchResult"]) -> None:
         self._clear_results()

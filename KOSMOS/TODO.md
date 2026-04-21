@@ -140,9 +140,9 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 - [x] Score de relevância = cosine similarity(embedding do artigo, perfil) → `ai_relevance REAL`
 - [x] Badge de relevância opcional nos article cards (configurável nas Settings)
 
-**Busca semântica (`nomic-embed-text`):**
-- [ ] Toggle na search overlay para alternar entre FTS5 (palavras-chave) e busca vetorial (semântica)
-- [ ] Embed a query em tempo real → retorna top-N artigos por cosine similarity
+**Busca semântica (`bge-m3:latest`):**
+- [x] Toggle na search overlay para alternar entre FTS5 (palavras-chave) e busca vetorial (semântica)
+- [x] Embed a query em tempo real → retorna top-N artigos por cosine similarity
 
 **Análise de viés político (`qwen2.5:7b`):**
 - [ ] Migration: colunas `ai_political_economic REAL` (-1.0 esquerda ↔ +1.0 direita) e `ai_political_authority REAL` (-1.0 libertário ↔ +1.0 autoritário) em `articles`
