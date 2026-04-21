@@ -144,6 +144,13 @@ async def _upsert_page(
     http_status: int,
     now: str,
 ) -> None:
+    # Verifica hash atual antes de tocar o FTS — re-indexar texto idêntico é
+    # o principal custo de re-crawl em sites que não mudaram.
+    row = await (await db.execute(
+        "SELECT content_hash FROM crawl_pages WHERE url = ?", (url,)
+    )).fetchone()
+    fts_changed = row is None or row[0] != content_hash
+
     await db.execute(
         """INSERT INTO crawl_pages
                (site_id, url, title, content_md, content_hash, http_status, crawled_at)
@@ -154,13 +161,14 @@ async def _upsert_page(
                crawled_at=excluded.crawled_at""",
         (site_id, url, title, content_md, content_hash, http_status, now),
     )
-    # Sync FTS5 manualmente
-    await db.execute("DELETE FROM crawl_fts WHERE url = ?", (url,))
-    if content_md:
-        await db.execute(
-            "INSERT INTO crawl_fts (site_id, url, title, content_md) VALUES (?, ?, ?, ?)",
-            (str(site_id), url, title, content_md[:12000]),
-        )
+    # Sync FTS5 manualmente — skip se conteúdo idêntico
+    if fts_changed:
+        await db.execute("DELETE FROM crawl_fts WHERE url = ?", (url,))
+        if content_md:
+            await db.execute(
+                "INSERT INTO crawl_fts (site_id, url, title, content_md) VALUES (?, ?, ?, ?)",
+                (str(site_id), url, title, content_md[:12000]),
+            )
 
 
 async def crawl_site(site_id: int) -> int:
