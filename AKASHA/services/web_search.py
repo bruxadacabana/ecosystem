@@ -121,23 +121,21 @@ async def _fetch_ddg(query: str, max_results: int) -> list[SearchResult]:
 # Função pública
 # ---------------------------------------------------------------------------
 
+_CACHE_SIZE = 30  # resultados pré-buscados por query — serve 3 páginas de 10
+
+
 async def search_web(query: str, max_results: int = 10, offset: int = 0) -> list[SearchResult]:
     """Busca via DuckDuckGo com cache TTL 1h e deduplicação por URL.
 
-    offset > 0: busca a próxima página sem usar cache (para "carregar mais").
-    Retorna max_results itens a partir de offset.
+    Pré-busca _CACHE_SIZE resultados no primeiro acesso; páginas seguintes
+    (offset > 0) servem do mesmo lote em cache sem re-consultar o DDG,
+    evitando resultados repetidos ou inconsistências de paginação.
     """
-    if offset == 0:
-        cached = await _get_cached(query)
-        if cached is not None:
-            return await _filter_blocked(cached)
-        results = await _fetch_ddg(query, max_results)
-        results = _deduplicate(results)
-        await _set_cache(query, results)
-        return await _filter_blocked(results)
+    cached = await _get_cached(query)
+    if cached is not None:
+        return (await _filter_blocked(cached))[offset : offset + max_results]
 
-    # Página seguinte: busca offset + max_results, fatia a partir de offset
-    raw = await _fetch_ddg(query, offset + max_results)
-    raw = _deduplicate(raw)
-    raw = await _filter_blocked(raw)
-    return raw[offset : offset + max_results]
+    results = await _fetch_ddg(query, _CACHE_SIZE)
+    results = _deduplicate(results)
+    await _set_cache(query, results)
+    return (await _filter_blocked(results))[offset : offset + max_results]
