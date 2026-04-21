@@ -645,6 +645,34 @@ python hermes.py
 
 ---
 
+## Atualizar dependências
+
+Após um `git pull` ou quando quiser garantir que todas as dependências estão sincronizadas, rode o script de atualização na raiz do ecossistema. Ele atualiza todos os apps em sequência e lista erros ao final sem interromper o processo.
+
+#### CachyOS
+
+```fish
+bash "/home/spacewitch/Documents/program files/atualizar.sh"
+```
+
+O script:
+1. `git pull` — atualiza o repositório
+2. `uv sync` — sincroniza dependências do AKASHA
+3. `pip install -r` — atualiza deps do KOSMOS e Mnemosyne no `.venv` compartilhado
+4. `pip install --upgrade yt-dlp openai-whisper` — atualiza deps do Hermes
+5. `npm install` — sincroniza pacotes do AETHER, HUB e OGMA
+
+#### Windows 10
+
+Clique duas vezes em `atualizar.bat` na raiz do ecossistema, ou no PowerShell:
+
+```powershell
+cd "program files"
+.\atualizar.bat
+```
+
+---
+
 ## Build de produção (opcional)
 
 Se quiser gerar executáveis para distribuição ou atalhos sem o terminal:
