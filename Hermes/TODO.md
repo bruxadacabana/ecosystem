@@ -54,6 +54,7 @@ Ver `CONTRIBUTING.md` na raiz do ecossistema.
 - [ ] `POST /transcribe` — recebe JSON `{url: str}`; enfileira transcrição via
       worker existente; retorna `{"status": "queued", "url": url}`
 - [ ] `GET /health` — retorna `{"status": "ok", "queue_size": n}`
+      (usado pelo AKASHA para confirmar que Hermes subiu após auto-launch)
 - [ ] `hermes.py` — escrever `hermes.api_port` no `ecosystem.json` no startup
       (try/except silencioso — nunca bloquear abertura do app)
 - [ ] Feedback visual: downloads/transcrições recebidos via API aparecem no log

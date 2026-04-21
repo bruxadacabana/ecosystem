@@ -395,9 +395,15 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [ ] `routers/hermes_bridge.py` — `POST /api/hermes/download`
       (body Pydantic: `url: str`, `mode: Literal["download","transcribe"] = "download"`,
       `format: str | None = None`):
-      lê `hermes.api_port` do ecosystem.json; delega via `httpx.AsyncClient`
-      para `http://localhost:{port}/download` ou `/transcribe`; retorna 200,
-      503 se Hermes offline, 400 se URL inválida
+      1. Lê `hermes.api_port` do ecosystem.json
+      2. Tenta `GET /health` no Hermes — se falhar (offline):
+         a. Lê `hermes.exe_path` do ecosystem.json
+         b. Verifica via `psutil` se processo Hermes está rodando
+         c. Se não estiver, dispara `subprocess.Popen(exe_path)`
+         d. Aguarda `/health` responder com polling (timeout 30s, intervalo 1s)
+         e. Se não subir no timeout, retorna 503 com mensagem clara
+      3. Delega via `httpx.AsyncClient` para `/download` ou `/transcribe`
+      Adicionar `psutil` ao `pyproject.toml` se não presente
 - [ ] Registrar `hermes_bridge` router em `main.py`
 
 ### Instalação (desenvolvimento)
