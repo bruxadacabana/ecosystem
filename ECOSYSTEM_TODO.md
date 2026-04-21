@@ -150,6 +150,13 @@ permite adicionar `extra_dirs` para indexação adicional.
       (vindos do ecosystem); adicionar QListWidget "Pastas extras" com +/−
 - [ ] `Mnemosyne/core/` (indexador) — loop sobre `[watched_dir] + extra_dirs`
 
+### EXTRAS — Utilitários e manutenção
+
+#### Scripts de atualização de dependências
+- [x] `atualizar.sh` — bash (CachyOS): git pull + uv sync (AKASHA) + pip install -r (KOSMOS, Mnemosyne, Hermes) + npm install (AETHER, HUB, OGMA)
+- [x] `atualizar.bat` — batch (Windows 10): mesma sequência com comandos equivalentes
+- [x] `README.md` — seção "Atualizar dependências" adicionada entre "Rodar os apps" e "Build de produção"
+
 ### EXTRAS — Bugs e melhorias urgentes
 
 #### HUB — Race condition no ecosystem.json (paths somem às vezes)
