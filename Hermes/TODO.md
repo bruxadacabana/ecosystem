@@ -45,19 +45,19 @@ Ver `CONTRIBUTING.md` na raiz do ecossistema.
 > e transcrição de fontes externas (extensão Firefox via AKASHA). Roda em thread
 > separada, invisível ao usuário, sem alterar a UI existente.
 
-- [ ] `api_server.py` — servidor HTTP em `threading.Thread` usando `http.server` +
+- [x] `api_server.py` — servidor HTTP em `threading.Thread` usando `http.server` +
       `socketserver.TCPServer`; porta padrão 7072 (configurável em `.prefs.json`);
       inicia no `__init__` do app, para no `closeEvent`
-- [ ] `POST /download` — recebe JSON `{url: str, format?: str}`; adiciona à fila
+- [x] `POST /download` — recebe JSON `{url: str, format?: str}`; adiciona à fila
       de download reutilizando o worker existente; retorna
       `{"status": "queued", "url": url}` ou `{"error": "..."}` com status 400
-- [ ] `POST /transcribe` — recebe JSON `{url: str}`; enfileira transcrição via
+- [x] `POST /transcribe` — recebe JSON `{url: str}`; enfileira transcrição via
       worker existente; retorna `{"status": "queued", "url": url}`
-- [ ] `GET /health` — retorna `{"status": "ok", "queue_size": n}`
+- [x] `GET /health` — retorna `{"status": "ok", "active": n}`
       (usado pelo AKASHA para confirmar que Hermes subiu após auto-launch)
-- [ ] `hermes.py` — escrever `hermes.api_port` no `ecosystem.json` no startup
+- [x] `hermes.py` — escrever `hermes.api_port` no `ecosystem.json` no startup
       (try/except silencioso — nunca bloquear abertura do app)
-- [ ] Feedback visual: downloads/transcrições recebidos via API aparecem no log
+- [x] Feedback visual: downloads/transcrições recebidos via API aparecem no log
       com badge `[API]` para distinguir de ações manuais
 
 ---

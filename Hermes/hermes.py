@@ -15,6 +15,8 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from api_server import ApiSignalBridge, HermesApiServer
+
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox, QTextEdit, QFileDialog,
@@ -655,6 +657,14 @@ class HermesApp(QMainWindow):
         self._build_ui()
         self._load_prefs()
         self._load_history()
+
+        self._api_port   = self._prefs.get("api_port", 7072)
+        self._api_bridge = ApiSignalBridge(self)
+        self._api_server = HermesApiServer(self._api_port, self._api_bridge)
+        self._api_bridge.download_requested.connect(self._on_api_download)
+        self._api_bridge.transcribe_requested.connect(self._on_api_transcribe)
+        self._api_server.start()
+
         self._register_ecosystem()
         self._check_ffmpeg()
         self._log(f"Hermes iniciado. Dispositivo: {self._device_label}", "ok")
@@ -664,7 +674,7 @@ class HermesApp(QMainWindow):
             import platform as _platform
             from ecosystem_client import write_section
             script = "iniciar.bat" if _platform.system() == "Windows" else "iniciar.sh"
-            data: dict = {"exe_path": str(APP_DIR / script)}
+            data: dict = {"exe_path": str(APP_DIR / script), "api_port": self._api_port}
             outdir = self._prefs.get("outdir", "")
             if outdir:
                 data["output_dir"] = outdir
@@ -1028,6 +1038,7 @@ class HermesApp(QMainWindow):
 
     def closeEvent(self, event):
         self._save_prefs()
+        self._api_server.stop()
         super().closeEvent(event)
 
     # ── Ações compartilhadas ──────────────────────────────────────────────────
@@ -1311,6 +1322,43 @@ class HermesApp(QMainWindow):
         self.tr_progress.setValue(100)
         self._log(f"Lote concluído: {done}/{total} transcrições.", "ok")
         self.status_lbl.setText(f"✓ {done}/{total} transcrições concluídas")
+
+    # ── API handlers ─────────────────────────────────────────────────────────
+    def _on_api_download(self, url: str, format_id: str) -> None:
+        self._log(f"[API] Download solicitado: {url}", "")
+        fmt    = {"format_id": format_id, "label": format_id, "ext": "mp4"}
+        outdir = self.outdir_edit.text() or str(DATA_DIR)
+        worker = DownloadWorker(url, fmt, outdir, self, playlist_mode=is_playlist_url(url))
+        worker.log.connect(self._log)
+        worker.finished.connect(
+            lambda title: self._on_api_job_done(f"[API] Download concluído: {title}"))
+        worker.error.connect(
+            lambda msg: self._on_api_job_done(f"[API] Erro no download: {msg}", err=True))
+        worker.start()
+
+    def _on_api_transcribe(self, url: str) -> None:
+        self._log(f"[API] Transcrição solicitada: {url}", "")
+        model    = self.model_combo.currentText()
+        lang_idx = self.lang_combo.currentIndex()
+        lang     = LANG_CODES[lang_idx] if lang_idx < len(LANG_CODES) else "auto"
+        cpu_pct  = int(self.cpu_combo.currentText().replace("%", ""))
+        outdir   = self.outdir_edit.text() or str(DATA_DIR)
+        worker = TranscribeWorker(url, False, model, lang, cpu_pct, outdir, self)
+        worker.log.connect(self._log)
+        worker.progress.connect(self.tr_progress.setValue)
+        worker.finished.connect(self._on_api_transcribe_done)
+        worker.error.connect(
+            lambda msg: self._on_api_job_done(f"[API] Erro na transcrição: {msg}", err=True))
+        worker.start()
+
+    def _on_api_transcribe_done(self, md_text: str, out_path: str,
+                                 title: str, url: str, duration: str) -> None:
+        self._on_transcribe_done(md_text, out_path, title, url, duration)
+        self._on_api_job_done(f"[API] Transcrição concluída: {title}")
+
+    def _on_api_job_done(self, msg: str, err: bool = False) -> None:
+        self._api_server.active = max(0, self._api_server.active - 1)
+        self._log(msg, "err" if err else "ok")
 
     # ── Histórico ─────────────────────────────────────────────────────────────
     def _load_history(self) -> None:
