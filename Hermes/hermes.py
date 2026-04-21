@@ -11,6 +11,7 @@ import json
 import logging
 import logging.handlers
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -534,6 +535,7 @@ class HermesApp(QMainWindow):
         self._build_ui()
         self._load_prefs()
         self._register_ecosystem()
+        self._check_ffmpeg()
         self._log(f"Hermes iniciado. Dispositivo: {self._device_label}", "ok")
 
     def _register_ecosystem(self) -> None:
@@ -548,6 +550,14 @@ class HermesApp(QMainWindow):
             write_section("hermes", data)
         except Exception:
             pass
+
+    def _check_ffmpeg(self) -> None:
+        if not shutil.which("ffmpeg"):
+            self._log(
+                "⚠ ffmpeg não encontrado — downloads e transcrições podem falhar. "
+                "Instale ffmpeg e certifique-se de que está no PATH.",
+                "warn",
+            )
 
     # ── Construção da UI ──────────────────────────────────────────────────────
     def _build_ui(self):

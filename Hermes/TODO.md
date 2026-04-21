@@ -35,7 +35,7 @@ Ver `CONTRIBUTING.md` na raiz do ecossistema.
 - [x] Preview do markdown gerado dentro do app
 - [x] Integração com Mnemosyne (enviar transcrição para indexação RAG)
 - [ ] Modo batch: transcrever playlist inteira de uma vez
-- [ ] Detecção de ffmpeg e aviso se não encontrado
+- [x] Detecção de ffmpeg e aviso se não encontrado
 
 ---
 
