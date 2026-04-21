@@ -367,10 +367,49 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
+## Fase 12 — Extensão Firefox (Zen Browser)
+
+> Entrega: extensão Manifest V3 que detecta URLs de vídeo na aba atual e delega o download
+> ao Hermes via AKASHA com um clique. Requer Fase 3 do Hermes (mini API HTTP).
+
+### Estrutura de arquivos
+- [ ] `extension/manifest.json` — Manifest V3; permissões: `activeTab`,
+      `http://localhost:7071/*`; action com ícones active/inactive;
+      background service worker; popup declarado
+- [ ] `extension/icons/` — ícone 16/32/48/128px nos dois estados (active e greyscale)
+- [ ] `extension/popup/popup.html` + `popup.css` + `popup.js` — UI mínima:
+      URL atual, dois botões: "⬇ Baixar vídeo" e "📝 Transcrever";
+      ambos rodam em segundo plano via Hermes; feedback de estado
+      (aguardando / na fila / erro Hermes offline / erro AKASHA offline)
+
+### Background script
+- [ ] `extension/background.js` — ao mudar de aba ou navegar, verificar se a URL
+      pertence a site de vídeo suportado pelo yt-dlp (YouTube, Vimeo, Twitch,
+      Twitter/X, TikTok, Reddit, Dailymotion, Bilibili, Niconico, etc.);
+      habilitar/desabilitar ícone da action conforme resultado
+- [ ] `extension/background.js` — ao receber mensagem `{action: "download"|"transcribe", url}`
+      do popup, fazer `POST http://localhost:7071/api/hermes/download` com `{url, mode}`;
+      retornar `{ok, error?}` ao popup; fechar popup após confirmação (roda em bg)
+
+### Backend AKASHA
+- [ ] `routers/hermes_bridge.py` — `POST /api/hermes/download`
+      (body Pydantic: `url: str`, `mode: Literal["download","transcribe"] = "download"`,
+      `format: str | None = None`):
+      lê `hermes.api_port` do ecosystem.json; delega via `httpx.AsyncClient`
+      para `http://localhost:{port}/download` ou `/transcribe`; retorna 200,
+      503 se Hermes offline, 400 se URL inválida
+- [ ] Registrar `hermes_bridge` router em `main.py`
+
+### Instalação (desenvolvimento)
+- [ ] `extension/README.md` — instruções: `about:debugging` → "Este Firefox" →
+      "Carregar extensão temporária" → selecionar `extension/manifest.json`
+
+---
+
 ## Planos Futuros
 
 > Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
 
 ---
 
-*Atualizado em: 2026-04-20 — Fases 1, 2, 3, 5 e 7 concluídas. Fase 10.5 (reader mode) e Fase 11 (performance) adicionadas.*
+*Atualizado em: 2026-04-21 — Fase 12 (extensão Firefox + integração Hermes) adicionada.*
