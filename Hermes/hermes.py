@@ -534,6 +534,7 @@ class HermesApp(QMainWindow):
         self.setStyleSheet(build_qss(display_family, mono_family))
         self._build_ui()
         self._load_prefs()
+        self._load_history()
         self._register_ecosystem()
         self._check_ffmpeg()
         self._log(f"Hermes iniciado. Dispositivo: {self._device_label}", "ok")
@@ -611,6 +612,7 @@ class HermesApp(QMainWindow):
         browse_btn.setFixedWidth(36)
         browse_btn.clicked.connect(self._pick_dir)
         out_row.addWidget(browse_btn)
+        self.outdir_edit.textChanged.connect(self._load_history)
         root.addLayout(out_row)
         root.addSpacing(12)
 
@@ -812,6 +814,15 @@ class HermesApp(QMainWindow):
         self.md_preview.setReadOnly(True)
         self.md_preview.setPlaceholderText("A transcrição gerada aparecerá aqui…")
         layout.addWidget(self.md_preview)
+
+        # Histórico de transcrições
+        layout.addSpacing(6)
+        layout.addWidget(self._section_label("HISTÓRICO DE TRANSCRIÇÕES"))
+        self.history_list = QListWidget()
+        self.history_list.setMaximumHeight(110)
+        self.history_list.setToolTip("Clique num item para carregar na prévia")
+        self.history_list.itemClicked.connect(self._on_history_select)
+        layout.addWidget(self.history_list)
 
         return w
 
@@ -1105,6 +1116,9 @@ class HermesApp(QMainWindow):
         self.copy_md_btn.setEnabled(True)
         self._log(f"Transcrição salva: {out_path}", "ok")
         self.status_lbl.setText(f"✓ Salvo em {Path(out_path).name}")
+        item = QListWidgetItem(Path(out_path).stem)
+        item.setData(Qt.ItemDataRole.UserRole, out_path)
+        self.history_list.insertItem(0, item)
 
         # Indexar no Mnemosyne, se solicitado
         if self.mnemo_check.isChecked():
@@ -1118,6 +1132,32 @@ class HermesApp(QMainWindow):
                     self._log(f"Indexado no Mnemosyne: {mnemo_path.name}", "ok")
                 except OSError as e:
                     self._log(f"Erro ao salvar no Mnemosyne: {e}", "err")
+
+    # ── Histórico ─────────────────────────────────────────────────────────────
+    def _load_history(self) -> None:
+        self.history_list.clear()
+        outdir = self.outdir_edit.text().strip()
+        if not outdir or not Path(outdir).is_dir():
+            return
+        md_files = sorted(
+            Path(outdir).glob("*.md"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )[:20]
+        for p in md_files:
+            item = QListWidgetItem(p.stem)
+            item.setData(Qt.ItemDataRole.UserRole, str(p))
+            self.history_list.addItem(item)
+
+    def _on_history_select(self, item: QListWidgetItem) -> None:
+        path = item.data(Qt.ItemDataRole.UserRole)
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+            self.md_preview.setPlainText(text)
+            self._last_md = text
+            self.copy_md_btn.setEnabled(True)
+        except OSError as e:
+            self._log(f"Erro ao abrir arquivo: {e}", "err")
 
     # ── Erros ─────────────────────────────────────────────────────────────────
     def _on_worker_error(self, msg: str):
