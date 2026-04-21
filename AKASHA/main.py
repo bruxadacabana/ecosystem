@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     await database.init_db()
     config.register_akasha()
     await index_local_files()
-    asyncio.get_event_loop().create_task(_monitor_library())
+    asyncio.get_running_loop().create_task(_monitor_library())
     yield
     # Shutdown — nada a liberar por enquanto
 

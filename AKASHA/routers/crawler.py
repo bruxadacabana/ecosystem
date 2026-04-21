@@ -110,7 +110,7 @@ async def sites_add(
         base_url, label or base_url, crawl_depth, json.dumps(subdomains)
     )
     if site_id:
-        asyncio.get_event_loop().create_task(_bg_crawl(site_id))
+        asyncio.get_running_loop().create_task(_bg_crawl(site_id))
 
     rows  = await get_all_crawl_sites()
     sites = [_row_to_site(r) for r in rows]
@@ -135,7 +135,7 @@ async def sites_add_quick(url: str = Form(...)) -> Response:
     base_url = f"{parsed.scheme}://{parsed.netloc}"
     site_id = await add_crawl_site(base_url, base_url, crawl_depth=2, subdomains="[]")
     if site_id:
-        asyncio.get_event_loop().create_task(_bg_crawl(site_id))
+        asyncio.get_running_loop().create_task(_bg_crawl(site_id))
     return Response(status_code=200)
 
 
@@ -160,7 +160,7 @@ async def sites_crawl(site_id: int) -> Response:
     from database import get_crawl_site
     if not await get_crawl_site(site_id):
         raise HTTPException(status_code=404, detail="Site não encontrado")
-    asyncio.get_event_loop().create_task(_bg_crawl(site_id))
+    asyncio.get_running_loop().create_task(_bg_crawl(site_id))
     return Response(status_code=200)
 
 
