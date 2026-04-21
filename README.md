@@ -673,33 +673,54 @@ cd "program files"
 
 ---
 
-## Build de produção (opcional)
+## Build de produção
 
-Se quiser gerar executáveis para distribuição ou atalhos sem o terminal:
+Necessário após alterações de código nos apps Tauri (AETHER, HUB) e no OGMA. Apps Python (KOSMOS, Mnemosyne, Hermes, AKASHA) rodam do source — sem build.
 
-#### AETHER e HUB
+#### CachyOS
 
-```bash
-# CachyOS — gera .AppImage e .deb em src-tauri/target/release/bundle/
-cd AETHER && cargo tauri build
+```fish
+# Builda AETHER, HUB e OGMA de uma vez:
+bash "/home/spacewitch/Documents/program files/buildar.sh"
 
-# Windows — gera .msi em src-tauri\target\release\bundle\msi\
-cd AETHER && cargo tauri build
+# Ou só um app específico:
+bash "/home/spacewitch/Documents/program files/buildar.sh hub
+bash "/home/spacewitch/Documents/program files/buildar.sh aether hub
 ```
 
-#### OGMA
+Saída:
+- AETHER/HUB → `src-tauri/target/release/bundle/appimage/` e `deb/`
+- OGMA → `OGMA/dist/`
+
+#### Windows 10
+
+Clique duas vezes em `buildar.bat` na raiz, ou no PowerShell:
+
+```powershell
+cd "program files"
+.\buildar.bat          # builda tudo
+.\buildar.bat hub      # só o HUB
+```
+
+Saída:
+- AETHER/HUB → `src-tauri\target\release\bundle\msi\` e `nsis\`
+- OGMA → `OGMA\dist\`
+
+#### Manualmente (por app)
 
 ```bash
 # CachyOS
+cd AETHER && cargo tauri build
 cd OGMA && npm run dist:linux
 
 # Windows
+cd AETHER && cargo tauri build
 cd OGMA && npm run dist:win
 ```
 
 #### Apps Python
 
-Sem build padrão configurado — rodam do source com o venv ativado.
+Sem build — rodam do source com o venv ativado.
 
 ---
 
