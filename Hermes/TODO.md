@@ -32,8 +32,8 @@ Ver `CONTRIBUTING.md` na raiz do ecossistema.
       aceita mp4, mkv, avi, mov, webm, mp3, wav, m4a, ogg, flac; pula yt-dlp;
       se preenchido, tem prioridade sobre a URL
 - [ ] Histórico de transcrições (lista das últimas .md geradas)
-- [ ] Preview do markdown gerado dentro do app
-- [ ] Integração com Mnemosyne (enviar transcrição para indexação RAG)
+- [x] Preview do markdown gerado dentro do app
+- [x] Integração com Mnemosyne (enviar transcrição para indexação RAG)
 - [ ] Modo batch: transcrever playlist inteira de uma vez
 - [ ] Detecção de ffmpeg e aviso se não encontrado
 
