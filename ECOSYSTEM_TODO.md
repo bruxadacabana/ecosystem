@@ -153,9 +153,9 @@ permite adicionar `extra_dirs` para indexação adicional.
 ### EXTRAS — Utilitários e manutenção
 
 #### Script de build de produção
-- [ ] `buildar.sh` — bash (CachyOS): `cargo tauri build` para AETHER e HUB + `npm run dist:linux` para OGMA; aceita args para buildar só apps específicos
-- [ ] `buildar.bat` — batch (Windows 10): mesma sequência com `npm run dist:win` para OGMA
-- [ ] `README.md` — seção "Build de produção" atualizada com os novos scripts
+- [x] `buildar.sh` — bash (CachyOS): `cargo tauri build` para AETHER e HUB + `npm run dist:linux` para OGMA; aceita args para buildar só apps específicos
+- [x] `buildar.bat` — batch (Windows 10): mesma sequência com `npm run dist:win` para OGMA
+- [x] `README.md` — seção "Build de produção" atualizada com os novos scripts
 
 #### Scripts de atualização de dependências
 - [x] `atualizar.sh` — bash (CachyOS): git pull + uv sync (AKASHA) + pip install -r (KOSMOS, Mnemosyne, Hermes) + npm install (AETHER, HUB, OGMA)
