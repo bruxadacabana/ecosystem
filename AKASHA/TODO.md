@@ -331,20 +331,15 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Média prioridade (reduz lock contention no crawler)
 
-- [ ] **Crawl com conexão única por sessão** — `services/crawler.py`: a função `crawl_site`
-      abre um novo `aiosqlite.connect()` por página dentro de `_process_url`. Reestruturar
-      para que a conexão seja aberta uma vez antes do BFS loop e passada como parâmetro.
-      Reduz de N+2 para 3 conexões por crawl (setup + loop + finalização).
+- [x] **Crawl com conexão única por sessão** — `services/crawler.py`: `crawl_site` agora
+      usa 2 conexões (leitura inicial + sessão BFS completa); `_process_url` captura `db`
+      via closure em vez de abrir nova conexão por página.
 
-- [ ] **FTS skip em conteúdo idêntico** — `services/crawler.py` → `_upsert_page`:
-      antes de `DELETE FROM crawl_fts WHERE url = ?`, consultar `content_hash` atual;
-      se igual ao novo hash, pular DELETE + INSERT no FTS. Re-indexar texto idêntico
-      é o principal custo de re-crawl em sites que não mudaram.
+- [x] **FTS skip em conteúdo idêntico** — `services/crawler.py` → `_upsert_page`:
+      consulta `content_hash` atual antes do FTS; pula DELETE + INSERT se hash idêntico.
 
-- [ ] **`asyncio.get_event_loop()` → `asyncio.get_running_loop()`** — `routers/crawler.py`
-      (3 ocorrências) e `main.py` (1 ocorrência): `get_event_loop()` está deprecated
-      desde Python 3.10 e gera DeprecationWarning em 3.12+. Substituir por
-      `asyncio.get_running_loop().create_task(...)`.
+- [x] **`asyncio.get_event_loop()` → `asyncio.get_running_loop()`** — `routers/crawler.py`
+      (3 ocorrências) e `main.py` (1 ocorrência).
 
 ### Baixa prioridade (manutenção a longo prazo)
 
