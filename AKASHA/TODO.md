@@ -310,28 +310,24 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Alta prioridade (impacto imediato visível)
 
-- [ ] **SQLite WAL mode + pragmas** — `database.py`: na função `init_db()`, após conectar,
+- [x] **SQLite WAL mode + pragmas** — `database.py`: na função `init_db()`, após conectar,
       executar `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`,
       `PRAGMA cache_size=-8000` (8 MB), `PRAGMA mmap_size=67108864` (64 MB).
       WAL elimina lock de leitura durante writes — crítico para crawl + busca simultâneos.
       Hoje reads e writes se bloqueiam mutuamente porque o modo padrão é DELETE.
 
-- [ ] **Índices ausentes** — `database.py`: adicionar via migration v8:
+- [x] **Índices ausentes** — `database.py`: migration v8:
       `CREATE INDEX IF NOT EXISTS idx_crawl_pages_site ON crawl_pages(site_id)` e
       `CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id)`.
       Sem eles, `get_crawl_pages_by_site` e `_recent_diff_ids` fazem full-table scan.
 
-- [ ] **Busca paralela** — `routers/search.py`: substituir as três chamadas sequenciais
-      (`search_web`, `search_local`, `search_sites`) por `asyncio.gather()` com filtro
-      condicional — se `src_web` está off, passa `None` no slot. Cada fonte demora
-      100–500 ms; sequencial = soma; paralelo = máximo. Reduz latência de ~1 s para ~400 ms.
+- [x] **Busca paralela** — `routers/search.py`: `asyncio.gather()` com filtro
+      condicional — se `src_web` está off, passa `asyncio.sleep(0, result=[])` no slot.
+      Reduz latência de ~1 s para ~400 ms.
 
-- [ ] **`check_overdue` e `list_entries` sem `content_md`** — `services/library.py`:
-      substituir `SELECT *` por `SELECT id, url, title, snippet, content_hash, language,
-      word_count, tags_json, notes, check_interval_days, last_checked_at, status, created_at`.
-      `content_md` pode ser texto de MBs; carregá-lo para só verificar datas desperdiça RAM
-      e lentifica a página `/library`. `scrape_and_store` ainda recebe `content_md` pois
-      precisa calcular diff — neste caso manter `SELECT *`.
+- [x] **`check_overdue` e `list_entries` sem `content_md`** — `services/library.py`:
+      `_LIST_COLS` sem `content_md`; `_row_to_entry` aceita rows de 13 ou 14 colunas.
+      `scrape_and_store` mantém `SELECT *` pois precisa do conteúdo para calcular diff.
 
 ### Média prioridade (reduz lock contention no crawler)
 
