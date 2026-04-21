@@ -109,6 +109,21 @@ async def archive_url(
     # ── Extração em cascata compartilhada ─────────────────────────────────
     content: str = _cascade_extract(html, url, output_format="markdown")
 
+    # ── Fallback Jina Reader — ativado se cascata retornou < 100 palavras ─
+    if len(content.split()) < 100:
+        try:
+            jina_resp = await client.get(
+                f"https://r.jina.ai/{url}",
+                headers={"Accept": "text/plain", "X-Return-Format": "markdown"},
+                timeout=20,
+            )
+            jina_resp.raise_for_status()
+            jina_text = jina_resp.text.strip()
+            if len(jina_text.split()) > len(content.split()):
+                content = jina_text
+        except Exception:
+            pass  # Jina indisponível — mantém resultado local
+
     now      = datetime.now()
     date_str = now.strftime("%Y-%m-%d %H:%M")
     wc       = len(content.split())

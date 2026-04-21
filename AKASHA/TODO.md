@@ -114,13 +114,14 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       orientando a configurar o caminho em `/settings`
 - [x] **Melhorar extração de conteúdo:** cascata de extratores em `services/archiver.py`;
       HTML baixado uma vez, primeiro a retornar ≥ 100 palavras vence; fallback = mais longo.
-      Cascata implementada (newspaper4k e readability-lxml opcionais — lxml 6.x não tem wheel
-      para Python 3.14 no PyPI, mas o import é silenciado):
-        1. `newspaper4k`     — opcional (ImportError silenciado)
-        2. `trafilatura`     — markdown nativo, instalado
-        3. `readability-lxml`— opcional (ImportError silenciado)
-        4. `inscriptis`      — texto estruturado, instalado
-        5. `BeautifulSoup`   — fallback html.parser + markdownify, instalado
+      Cascata implementada (newspaper4k e readability-lxml bloqueados — lxml 5.x não compila
+      em Python 3.14; lxml 6.x não é compatível com essas libs):
+        1. `newspaper4k`     — BLOQUEADO (lxml 5.x / Python 3.14)
+        2. `trafilatura`     — markdown nativo, instalado ✓
+        3. `readability-lxml`— BLOQUEADO (lxml 5.x / Python 3.14)
+        4. `inscriptis`      — texto estruturado, instalado ✓
+        5. `BeautifulSoup`   — fallback html.parser + markdownify, instalado ✓
+        6. `Jina Reader API` — fallback remoto: r.jina.ai/{url} se cascata < 100 palavras ✓
 
 ---
 
