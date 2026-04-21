@@ -512,6 +512,117 @@ class TranscribeWorker(QThread):
             pass
 
 
+class BatchTranscribeWorker(QThread):
+    log            = pyqtSignal(str, str)
+    batch_progress = pyqtSignal(int, int)      # (current, total)
+    step_done      = pyqtSignal(str, str, str) # (out_path, title, md_text)
+    finished       = pyqtSignal(int, int)      # (done, total)
+
+    def __init__(self, entries: list, model_size: str, language: str,
+                 cpu_limit: int, outdir: str, parent=None):
+        super().__init__(parent)
+        self.entries    = entries
+        self.model_size = model_size
+        self.language   = language
+        self.cpu_limit  = cpu_limit
+        self.outdir     = outdir
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def _apply_cpu_limit(self) -> None:
+        import math
+        total   = os.cpu_count() or 1
+        threads = max(1, math.ceil(total * self.cpu_limit / 100))
+        os.environ["OMP_NUM_THREADS"] = str(threads)
+        os.environ["MKL_NUM_THREADS"] = str(threads)
+        try:
+            import torch
+            torch.set_num_threads(threads)
+        except Exception:
+            pass
+
+    def run(self) -> None:
+        try:
+            import whisper
+        except ImportError as e:
+            self.log.emit(f"Dependência não encontrada: {e}", "err")
+            return
+        try:
+            import yt_dlp
+        except ImportError as e:
+            self.log.emit(f"Dependência não encontrada: {e}", "err")
+            return
+        import tempfile
+
+        self._apply_cpu_limit()
+        device, _ = detect_device()
+        self.log.emit(f"Carregando modelo {self.model_size} ({device.upper()})…", "")
+        try:
+            model = whisper.load_model(self.model_size, device=device)
+        except Exception as e:
+            self.log.emit(f"Erro ao carregar modelo: {e}", "err")
+            return
+
+        lang_arg = self.language if self.language != "auto" else None
+        total    = len(self.entries)
+        done     = 0
+
+        for i, entry in enumerate(self.entries):
+            if self._cancelled:
+                self.log.emit("Transcrição em lote cancelada.", "warn")
+                break
+
+            url   = entry["url"]
+            title = entry.get("title", f"item_{i + 1}")
+            self.batch_progress.emit(i + 1, total)
+            self.log.emit(f"[{i + 1}/{total}] Baixando: {title}", "")
+
+            try:
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    ydl_opts = {
+                        "format":         "bestaudio/best",
+                        "outtmpl":        os.path.join(tmpdir, "%(title)s.%(ext)s"),
+                        "postprocessors": [{"key": "FFmpegExtractAudio",
+                                            "preferredcodec": "mp3",
+                                            "preferredquality": "128"}],
+                        "quiet":          True,
+                        "no_warnings":    True,
+                        "noplaylist":     True,
+                    }
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info       = ydl.extract_info(url, download=True)
+                        audio_path = ydl.prepare_filename(info).rsplit(".", 1)[0] + ".mp3"
+                        real_title = info.get("title", title)
+
+                    if self._cancelled:
+                        break
+
+                    self.log.emit(f"[{i + 1}/{total}] Transcrevendo: {real_title}", "")
+                    result = model.transcribe(audio_path, verbose=False, language=lang_arg)
+
+                dur_s    = info.get("duration", 0)
+                duration = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else "desconhecida"
+                md_text  = build_markdown(real_title, url, info, result, self.language)
+                safe     = re.sub(r'[<>:"/\\|?*]', "_", real_title)[:60]
+                out_path = os.path.join(
+                    self.outdir,
+                    f"{datetime.now().strftime('%Y%m%d_%H%M')}_{safe}.md",
+                )
+                Path(out_path).write_text(md_text, encoding="utf-8")
+                done += 1
+                self.log.emit(f"[{i + 1}/{total}] ✓ {real_title}", "ok")
+                self.step_done.emit(out_path, real_title, md_text)
+
+            except OSError as e:
+                self.log.emit(f"[{i + 1}/{total}] Erro de I/O em '{title}': {e}", "err")
+            except Exception as e:
+                self.log.emit(f"[{i + 1}/{total}] Erro em '{title}': {e}", "err")
+
+        self.finished.emit(done, total)
+
+
 # ── Janela principal ──────────────────────────────────────────────────────────
 class HermesApp(QMainWindow):
     def __init__(self):
@@ -775,6 +886,11 @@ class HermesApp(QMainWindow):
         self.tr_btn.setObjectName("primary")
         self.tr_btn.clicked.connect(self._start_transcribe)
         action_row.addWidget(self.tr_btn)
+        self.batch_tr_btn = QPushButton("TRANSCREVER PLAYLIST")
+        self.batch_tr_btn.setEnabled(False)
+        self.batch_tr_btn.hide()
+        self.batch_tr_btn.clicked.connect(self._start_batch_transcribe)
+        action_row.addWidget(self.batch_tr_btn)
         self.tr_cancel_btn = QPushButton("CANCELAR")
         self.tr_cancel_btn.setObjectName("danger")
         self.tr_cancel_btn.setEnabled(False)
@@ -959,6 +1075,7 @@ class HermesApp(QMainWindow):
             self.fmt_combo.setEnabled(not busy)
         else:
             self.tr_btn.setEnabled(not busy)
+            self.batch_tr_btn.setEnabled(not busy and bool(self._playlist))
             self.tr_cancel_btn.setEnabled(busy)
 
     # ── Descarregar ───────────────────────────────────────────────────────────
@@ -991,6 +1108,8 @@ class HermesApp(QMainWindow):
         self._formats = fmts
         self.playlist_lbl.hide()
         self.playlist_list.hide()
+        self.batch_tr_btn.setEnabled(False)
+        self.batch_tr_btn.hide()
 
         title    = info.get("title", "")
         channel  = info.get("uploader") or info.get("channel") or ""
@@ -1024,6 +1143,8 @@ class HermesApp(QMainWindow):
         self.fmt_combo.setEnabled(True)
         self.fmt_combo.setCurrentIndex(0)
         self.dl_btn.setEnabled(True)
+        self.batch_tr_btn.setEnabled(True)
+        self.batch_tr_btn.show()
         self._set_busy(False, 0)
         self._log(f"Playlist: {len(entries)} itens.", "ok")
 
@@ -1132,6 +1253,46 @@ class HermesApp(QMainWindow):
                     self._log(f"Indexado no Mnemosyne: {mnemo_path.name}", "ok")
                 except OSError as e:
                     self._log(f"Erro ao salvar no Mnemosyne: {e}", "err")
+
+    # ── Batch transcription ───────────────────────────────────────────────────
+    def _start_batch_transcribe(self) -> None:
+        if not self._playlist:
+            return
+        model    = self.model_combo.currentText()
+        lang_idx = self.lang_combo.currentIndex()
+        lang     = LANG_CODES[lang_idx] if lang_idx < len(LANG_CODES) else "auto"
+        cpu_pct  = int(self.cpu_combo.currentText().replace("%", ""))
+        outdir   = self.outdir_edit.text() or str(DATA_DIR)
+
+        self._set_busy(True, 1)
+        self.tr_progress.setValue(0)
+        self._log(f"Iniciando transcrição em lote — {len(self._playlist)} vídeos…", "")
+
+        self._worker = BatchTranscribeWorker(
+            self._playlist, model, lang, cpu_pct, outdir, self)
+        self._worker.log.connect(self._log)
+        self._worker.batch_progress.connect(self._on_batch_progress)
+        self._worker.step_done.connect(self._on_batch_step_done)
+        self._worker.finished.connect(self._on_batch_done)
+        self._worker.start()
+
+    def _on_batch_progress(self, current: int, total: int) -> None:
+        self.tr_progress.setValue(int(current / total * 100))
+        self.status_lbl.setText(f"{current}/{total} transcrições…")
+
+    def _on_batch_step_done(self, out_path: str, title: str, md_text: str) -> None:
+        item = QListWidgetItem(Path(out_path).stem)
+        item.setData(Qt.ItemDataRole.UserRole, out_path)
+        self.history_list.insertItem(0, item)
+        self.md_preview.setPlainText(md_text)
+        self._last_md = md_text
+        self.copy_md_btn.setEnabled(True)
+
+    def _on_batch_done(self, done: int, total: int) -> None:
+        self._set_busy(False, 1)
+        self.tr_progress.setValue(100)
+        self._log(f"Lote concluído: {done}/{total} transcrições.", "ok")
+        self.status_lbl.setText(f"✓ {done}/{total} transcrições concluídas")
 
     # ── Histórico ─────────────────────────────────────────────────────────────
     def _load_history(self) -> None:

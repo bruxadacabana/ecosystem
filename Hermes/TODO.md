@@ -34,7 +34,7 @@ Ver `CONTRIBUTING.md` na raiz do ecossistema.
 - [x] Histórico de transcrições (lista das últimas .md geradas)
 - [x] Preview do markdown gerado dentro do app
 - [x] Integração com Mnemosyne (enviar transcrição para indexação RAG)
-- [ ] Modo batch: transcrever playlist inteira de uma vez
+- [x] Modo batch: transcrever playlist inteira de uma vez
 - [x] Detecção de ffmpeg e aviso se não encontrado
 
 ---
