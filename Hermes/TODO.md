@@ -68,12 +68,13 @@ Ver `CONTRIBUTING.md` na raiz do ecossistema.
 > que restringem o que é aceito. Objetivo: garantir que todos os principais
 > sites de vídeo funcionem sem fricção.
 
-- [ ] Auditar `hermes.py`: verificar se há lista de sites hardcoded ou validação
-      de URL que limite os sites aceitos; remover restrições desnecessárias
-- [ ] Testar e garantir suporte explícito a: YouTube, Vimeo, Twitch, Twitter/X,
-      TikTok, Reddit (video), Instagram, Dailymotion, Bilibili, Niconico
-- [ ] Testar formatos disponíveis por plataforma (algumas não separam vídeo+áudio)
-- [ ] Adicionar tooltip ou link na UI apontando para lista oficial de sites do yt-dlp
+- [x] Auditar `hermes.py`: sem validação hardcoded que bloqueie sites; yt-dlp aceita tudo
+- [x] Expandir `is_playlist_url`: adicionados padrões para Twitch, SoundCloud, Vimeo,
+      Dailymotion, Bandcamp, Bilibili e Niconico
+- [x] Placeholder do campo URL atualizado com lista de plataformas suportadas
+- [x] Tooltip no campo URL com lista de sites e link para supportedsites.md do yt-dlp
+- [x] Tooltip no combo de formato explicando plataformas com stream já mesclado
+- [ ] Testar formatos disponíveis nas plataformas adicionadas (validação manual)
 
 ---
 

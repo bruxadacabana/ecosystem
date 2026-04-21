@@ -140,7 +140,16 @@ def detect_device() -> tuple[str, str]:
 
 def is_playlist_url(url: str) -> bool:
     return bool(re.search(
-        r"(playlist|list=|/channel/|/@[^/]+/?$|/c/|/user/)", url, re.I))
+        r"(playlist|list="                               # YouTube playlist params
+        r"|/channel/|/@[^/]+/?$|/c/|/user/"             # YouTube channel URLs
+        r"|twitch\.tv/[^/]+/(videos|clips|schedule)"    # Twitch collections
+        r"|soundcloud\.com/[^/]+/sets/"                 # SoundCloud sets
+        r"|vimeo\.com/(channels|groups|album)/"         # Vimeo collections
+        r"|dailymotion\.com/playlist/"                  # Dailymotion playlists
+        r"|bandcamp\.com/album/"                        # Bandcamp albums
+        r"|space\.bilibili\.com/"                       # Bilibili user space
+        r"|nicovideo\.jp/(user|mylist)/)"               # Niconico user/mylist
+        , url, re.I))
 
 
 # ── Utilitários — formatos yt-dlp ─────────────────────────────────────────────
@@ -690,7 +699,13 @@ class HermesApp(QMainWindow):
         root.addSpacing(4)
         url_row = QHBoxLayout()
         self.url_edit = QLineEdit()
-        self.url_edit.setPlaceholderText("https://youtube.com/watch?v=…  ou  https://tiktok.com/@perfil/…")
+        self.url_edit.setPlaceholderText(
+            "YouTube · Twitch · Vimeo · TikTok · Twitter/X · Instagram · Reddit · Bilibili · 1000+ sites")
+        self.url_edit.setToolTip(
+            "Suporta qualquer site do yt-dlp:\n"
+            "YouTube, Twitch, Vimeo, TikTok, Twitter/X, Instagram,\n"
+            "Reddit, Dailymotion, Bilibili, Niconico, SoundCloud e 1000+ outros.\n\n"
+            "Lista completa: https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md")
         self.url_edit.returnPressed.connect(self._on_url_enter)
         url_row.addWidget(self.url_edit)
         self.paste_btn = QPushButton("COLAR")
@@ -824,6 +839,9 @@ class HermesApp(QMainWindow):
         self.fmt_combo = QComboBox()
         self.fmt_combo.setEnabled(False)
         self.fmt_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.fmt_combo.setToolTip(
+            "Algumas plataformas (ex: TikTok, Instagram, Twitter/X) disponibilizam\n"
+            "apenas vídeo+áudio já mesclados — 'Melhor qualidade' funcionará sempre.")
         layout.addWidget(self.fmt_combo)
 
         # Progresso
