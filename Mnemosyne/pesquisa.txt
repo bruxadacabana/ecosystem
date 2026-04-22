@@ -1920,5 +1920,556 @@ Fontes consultadas:
   - support.google.com/notebooklm
 
 ========================================================
+
+
+========================================================
+5. DEEP RESEARCH AGENTS — ESTADO DA ARTE E REPLICAÇÃO OFFLINE
+   (pesquisado em 2026-04-21)
+========================================================
+
+VISÃO GERAL DO CONCEITO
+-----------------------
+"Deep Research" é uma categoria de agente de IA que, dado um tema ou pergunta
+complexa, executa automaticamente um ciclo de planejamento → busca iterativa →
+leitura → síntese → relatório com citações. A diferença em relação ao RAG
+tradicional é o caráter iterativo e autônomo: o agente decide sozinho quais
+queries lançar a seguir com base no que aprendeu nas etapas anteriores, de forma
+similar a como um pesquisador humano revisita e refina suas buscas.
+
+O pipeline canônico é:
+  1. Receber a pergunta do utilizador
+  2. Planejar: decompor em sub-questões (query planning)
+  3. Para cada sub-questão: buscar → ler e extrair informação relevante
+  4. Re-avaliar: "o que ainda falta saber?" → gerar novas queries se necessário
+  5. Sintetizar: produzir relatório estruturado com citações rastreáveis
+
+---
+
+PRODUTOS COMERCIAIS
+-------------------
+
+PERPLEXITY DEEP RESEARCH (lançado fevereiro 2025):
+  · Executa 20–50 queries direcionadas por sessão, clustering por relevância
+    e recência
+  · Loop iterativo de recuperação: ajusta o plano conforme descobre novas
+    informações — se a query inicial retorna algo inesperado, o agente gera
+    uma nova query para aprofundar aquele ângulo antes de prosseguir
+  · Tempo típico: 2–4 minutos por sessão de deep research
+  · Endpoint de API: Sonar Deep Research (docs.perplexity.ai/models/sonar-deep-research)
+  · Acessível via API paga — não replicável offline
+
+OPENAI DEEP RESEARCH (o1-based, lançado fevereiro 2025):
+  · Treinado com reinforcement learning end-to-end em tarefas de navegação e
+    raciocínio — não é apenas prompt engineering, é um modelo especializado
+  · Planeja trajetória multi-step: decide quando buscar, quando ler, quando
+    parar e escrever; capaz de backtracking se uma fonte contradiz outra
+  · Produz relatórios longos (20–50 páginas) com citações inline
+  · Dependente de acesso web irrestrito e da API OpenAI — inviável offline
+  · Fonte: openai.com/index/introducing-deep-research/
+
+NOTEBOOKLM DEEP RESEARCH (novembro 2025, Google Labs):
+  · Dois modos distintos:
+    - Fast Research: scan rápido, importa fontes para o notebook
+    - Deep Research: análise profunda, roda em background (minutos), gera
+      relatório que pode ser importado diretamente como fonte no notebook
+  · Pode pesquisar na web OU apenas dentro do Google Drive do utilizador
+  · Cria plano de pesquisa explícito antes de navegar
+  · Relatório gerado entra no notebook como nova fonte, tornando-se base para
+    perguntas RAG posteriores — arquitetura interessante: pesquisa aumenta o
+    corpus local
+  · Completamente dependente de infraestrutura Google — não replicável offline
+  · Fonte: techcrunch.com/2025/11/13 e blog.google/innovation-and-ai
+
+---
+
+PROJETOS OPEN-SOURCE
+--------------------
+
+GPT RESEARCHER (github.com/assafelovic/gpt-researcher):
+  · Projeto mais maduro e avaliado — superou Perplexity, OpenAI e HuggingFace
+    em citation quality, report quality e information coverage em benchmarks
+  · Arquitetura: Planner Agent → Execution Agents → Publisher Agent
+    - Planner recebe a pergunta e gera N sub-questões
+    - Executors (paralelos) buscam cada sub-questão em múltiplas fontes
+    - Publisher agrega e produz relatório estruturado com citações
+  · Suporte a multi-agent via LangGraph: "Chief Editor" orquestra Research,
+    Review, Writer e Publisher agents em paralelo
+  · Suporta qualquer LLM (OpenAI, Anthropic, Ollama, etc.) e qualquer search
+    backend (Tavily, DuckDuckGo, SerpAPI, Bing, etc.)
+  · Instalação: `pip install gpt-researcher`
+  · Dependência principal de search: por padrão usa Tavily API (paga), mas
+    DuckDuckGo funciona como fallback gratuito
+  · Documentação: docs.tavily.com/examples/open-sources/gpt-researcher
+
+STANFORD STORM / Co-STORM (github.com/stanford-oval/storm):
+  · Nome completo: "Synthesis of Topic Outlines through Retrieval and
+    Multi-perspective Question Asking"
+  · Implementado com DSPy (framework de otimização de prompts do Stanford)
+  · Pipeline em duas etapas:
+    1. Pre-writing: descobre perspectivas diversas sobre o tema; simula
+       conversas entre "escritores" com diferentes pontos de vista e um
+       "especialista no tópico" — este padrão é específico do STORM
+    2. Writing: gera artigo completo no estilo Wikipedia com citações
+  · Resultados 25% mais organizados e 10% mais abrangentes que baseline
+    outline-driven RAG
+  · Co-STORM (versão colaborativa) adiciona loop interativo com o utilizador
+  · Requisito: acesso a LLM de qualidade (recomenda GPT-4 ou equivalente)
+  · Demo ao vivo: storm.genie.stanford.edu
+  · Melhor para: geração de artigos/wikis, não para respostas diretas
+
+LANGCHAIN OPEN DEEP RESEARCH (github.com/langchain-ai/open_deep_research):
+  · Criado pela equipe LangChain, código-aberto, configurável para qualquer
+    provedor de modelos e ferramentas de busca
+  · Arquitetura Supervisor-Researcher: Research Supervisor divide query em
+    sub-tópicos e spawna múltiplos Sub-Researchers em paralelo (cada um foca
+    em uma sub-questão), depois sintetiza os resultados
+  · Por padrão usa Tavily, mas aceita DuckDuckGo e MCP servers
+  · Instalação: `pip install open-deep-research`
+  · Mais adequado como base para customização do que como produto final
+
+LOCAL DEEP RESEARCH (pypi.org/project/local-deep-research):
+  · Projeto voltado explicitamente para privacidade e uso offline
+  · Usa Ollama para LLM local; por padrão busca em ArXiv, Wikipedia, PubMed
+    (sem chaves de API) — não busca na web geral aberta por padrão
+  · Pode indexar documentos privados com embedding local (RAG) e incluí-los
+    no loop de pesquisa — é o projeto open-source mais próximo do que o
+    Mnemosyne precisaria
+  · Sem telemetria, sem analytics, sem chamadas externas exceto as buscas
+    configuradas
+  · Requisitos: Python 3.11+, SQLCipher para banco encriptado
+
+---
+
+O QUE TORNA UM DEEP RESEARCH AGENT EFICAZ
+------------------------------------------
+
+1. PLANEJAMENTO ITERATIVO DE QUERIES:
+   · Não é só expandir a query inicial — é replanear com base no que foi
+     encontrado. Se a busca A retorna algo contraditório, o agente gera a
+     query B para resolver a contradição antes de avançar
+   · Técnica chave: "gap analysis" — ao final de cada rodada, o agente lista
+     explicitamente o que ainda não sabe e gera queries só para essas lacunas
+   · Implementação típica: prompt estruturado pedindo ao LLM para classificar
+     cada achado como "suficiente", "requer aprofundamento" ou "irrelevante"
+
+2. SÍNTESE MULTI-FONTE:
+   · Cada fonte é sumarizada individualmente antes da síntese final
+     (padrão Map-Reduce) — evita que o LLM "esqueça" fontes no final
+   · Atribuição de citações: cada claim no relatório rastreia qual chunk de
+     qual URL sustenta a afirmação — não é só listar URLs no final
+   · Cross-source validation: identificar quando duas fontes dizem coisas
+     diferentes sobre o mesmo ponto e anotar a discordância
+
+3. CITATION TRACKING:
+   · Nos sistemas comerciais, cada sentença produzida tem um ID de fonte
+     rastreável — o modelo aprende isso via RLHF/RL especializado
+   · Em sistemas open-source: abordagem mais simples — chunks recebem IDs
+     numéricos, o LLM é instruído a citar "[1]" "[2]" no texto, e uma
+     etapa de pós-processamento expande os IDs para URLs
+
+4. CONTROLE DE PROFUNDIDADE:
+   · Parâmetro crítico: quantas rodadas de busca/refinamento? 2–3 é pragmático
+     para uso local; sistemas comerciais fazem 5–10+
+   · Critério de parada: ou número máximo de iterações, ou quando o LLM
+     avalia que "não há mais lacunas significativas"
+
+---
+
+REPLICAÇÃO OFFLINE COM OLLAMA + VECTORSTORE LOCAL
+--------------------------------------------------
+
+Nível de fidelidade possível: ~60–70% da experiência dos sistemas comerciais.
+O que não é replicável offline: acesso irrestrito à web em tempo real,
+modelos de raciocínio especializados (o1, Gemini Ultra), velocidade de busca
+em larga escala.
+
+ABORDAGEM PRAGMÁTICA PARA O MNEMOSYNE:
+
+Estratégia "Deep RAG Iterativo" (sem acesso web):
+  - Rodada 1: query original → retrieval híbrido → LLM responde E lista
+    explicitamente o que ficou sem resposta
+  - Rodada 2: para cada lacuna listada → nova query → retrieval → adiciona
+    ao contexto
+  - Rodada 3 (opcional): sintetizar tudo em relatório estruturado
+  - Máximo de 2–3 rodadas para não sobrecarregar CPU do i5-3470
+
+Estratégia "Deep RAG + Web" (com AKASHA como backend de busca):
+  - Funciona como acima mas permite buscar via DuckDuckGo quando o corpus
+    local não tem resposta — ver Seção 6 deste documento para análise completa
+
+BIBLIOTECAS PYTHON ÚTEIS PARA IMPLEMENTAÇÃO LOCAL:
+  · `rank_bm25` — já usada no Mnemosyne (BM25Okapi em rag.py)
+  · `langchain_ollama.OllamaLLM` / `ChatOllama` — já usadas
+  · `chromadb.EphemeralClient()` — para coleções temporárias de sessão
+    (dados só em RAM, não persistem em disco — ideal para conteúdo web)
+  · `httpx` (async) — já presente no ecossistema (AKASHA)
+  · `trafilatura` — extração de texto de HTML, single-digit ms por página
+    depois de baixada; já usada no AKASHA (ecosystem_scraper)
+  · `dspy` — se quiser replicar o padrão STORM (programático, não só
+    prompts); não é necessário para a abordagem básica
+
+LIMITAÇÕES NO HARDWARE DE TRABALHO (i5-3470, 8GB, Windows):
+  · Multi-query expand: cada variação de query chama o LLM → lento no CPU
+    fraco; limitar a 2 variações no máximo
+  · Embedding de conteúdo web novo: ~50–100ms por chunk com modelo leve
+    (nomic-embed-text); 5 páginas × 10 chunks = 500ms a 1s total de embedding
+  · Sem AVX2: modelos quantizados Q4 ou Q5 são obrigatórios; Q8 trava
+
+---
+
+Fontes consultadas:
+  - github.com/assafelovic/gpt-researcher
+  - github.com/langchain-ai/open_deep_research
+  - github.com/stanford-oval/storm
+  - storm-project.stanford.edu
+  - pypi.org/project/local-deep-research
+  - openai.com/index/introducing-deep-research/
+  - perplexity.ai/hub/blog/introducing-perplexity-deep-research
+  - techcrunch.com/2025/11/13 (NotebookLM Deep Research)
+  - blog.google/innovation-and-ai/models-and-research/google-labs/notebooklm-deep-research-file-types/
+  - docs.tavily.com/examples/open-sources/gpt-researcher
+  - medium.com/@leucopsis (open-source deep research assistants overview)
+  - blog.bytebytego.com/p/how-openai-gemini-and-claude-use
+
+========================================================
+FIM DA PESQUISA — Deep Research Agents
+
+
+========================================================
+6. INTEGRAÇÃO MNEMOSYNE + AKASHA — ANÁLISE DE VIABILIDADE
+   (pesquisado em 2026-04-21)
+========================================================
+
+CONTEXTO E PROPOSTA
+-------------------
+A proposta é um "Modo de Pesquisa Profunda" que conecta os dois apps:
+
+  1. Utilizadora faz uma pergunta de pesquisa no Mnemosyne
+  2. Mnemosyne detecta que precisa de mais contexto do que a biblioteca local tem
+  3. Consulta AKASHA: busca DDG pelo tema → crawla/arquiva top-5 páginas →
+     retorna conteúdo como Markdown
+  4. Mnemosyne indexa temporariamente esse conteúdo como "sessão de pesquisa"
+     (sem poluir o vectorstore permanente)
+  5. RAG responde combinando biblioteca local + páginas buscadas agora
+
+---
+
+O QUE JÁ EXISTE NOS DOIS APPS (reutilizável)
+---------------------------------------------
+
+NO AKASHA (FastAPI, porta 7071):
+
+  GET /search?q=&src_web=on
+    → Busca DuckDuckGo com cache SQLite TTL 1h
+    → Retorna lista de SearchResult(title, url, snippet, source, date)
+    → Cache pré-busca 30 resultados por query (3 páginas de 10)
+    → Rate limiting natural: 1 request DDG por query nova, sem re-chamada
+      se já em cache
+
+  POST /archive (Form: url, tags, notes)
+    → Faz fetch da URL + extração em cascata:
+        trafilatura → inscriptis → bs4 + fallback Jina Reader se < 100 palavras
+    → Salva como Markdown com frontmatter YAML em data/archive/Web/
+    → Retorna HTTP 200 (ou 502/500 com detalhe do erro)
+    → Timeout de fetch: 30s (httpx); Jina: 20s adicional
+
+  ecosystem_scraper.extract(html, url, output_format="markdown")
+    → Função compartilhada do ecossistema; chamada diretamente pelo archiver
+    → Cascata: trafilatura (principal) → inscriptis (fallback 1) → bs4 (fallback 2)
+    → Trafilatura: extração em single-digit ms após HTML baixado
+
+  config.py:
+    → AKASHA_PORT = 7071
+    → AKASHA_BASE_URL = "http://localhost:7071"
+    → mnemosyne_watched, mnemosyne_vault expostos via ecosystem.json
+
+NO MNEMOSYNE (PySide6, local):
+
+  core/indexer.py — index_single_file(file_path, config) → Chroma
+    → Indexa um único arquivo e adiciona ao vectorstore existente
+    → Usa splitter RecursiveCharacterTextSplitter (chunk_size=800,
+      chunk_overlap=100) ou SemanticChunker se configurado
+    → Embeddings via OllamaEmbeddings(model=config.embed_model)
+
+  core/rag.py — prepare_ask() / ask()
+    → Retrieval híbrido (semântico + BM25Okapi)
+    → Modos: "hybrid", "multi_query", "hyde"
+    → Filtro por source_type ("biblioteca", "vault", ou None para ambos)
+    → Filtro por source_files: lista de paths absolutos
+    → Time-decay re-ranking via FileTracker
+
+  core/indexer.py — _delete_file_chunks(vs, file_path)
+    → Remove chunks de um arquivo via metadata filter do Chroma
+    → vs._collection.delete(where={"source": file_path})
+    → Já existe, está testada — crucial para limpeza de sessão temporária
+
+  core/loaders.py — load_single_file(file_path)
+    → Suporta .md (via TextLoader) — arquivos Markdown do AKASHA são
+      diretamente ingeríveis sem nenhuma adaptação
+
+  chromadb.EphemeralClient()
+    → Chroma suporta cliente in-memory que não persiste em disco
+    → API idêntica ao PersistentClient — coleções, add(), query() funcionam
+      igualmente
+    → Reinicio do app limpa automaticamente — sem lixo em disco
+
+---
+
+PEÇAS QUE FALTAM CONSTRUIR
+---------------------------
+
+LADO AKASHA:
+
+  A) Endpoint novo: GET /fetch?url=<url> → retorna conteúdo MD em JSON
+     · Equivale ao archiver mas sem salvar em disco — só retorna o texto
+     · Necessário para que o Mnemosyne obtenha o conteúdo de uma URL
+       específica sem poluir o archive do AKASHA
+     · Estimativa: ~30 linhas de código, basicamente archiver.py sem o
+       `dest_path.write_text()`
+     · Alternativamente: usar diretamente ecosystem_scraper sem passar pelo
+       AKASHA — mais simples, elimina round-trip HTTP, mas acoplamento direto
+
+  B) Endpoint: GET /search/json?q=&max=5 → retorna JSON (não HTML)
+     · O /search atual retorna HTML (template Jinja2) — inutilizável por
+       consumidores de API
+     · Mnemosyne precisaria de JSON para processar os resultados
+     · Estimativa: ~20 linhas, reutiliza a lógica de search_web() existente
+
+LADO MNEMOSYNE:
+
+  C) AkashaClient (core/akasha_client.py)
+     · Wrapper httpx para os dois endpoints acima
+     · Responsabilidades: verificar se AKASHA está rodando (GET /health),
+       buscar resultados, fazer fetch de URL → retornar conteúdo Markdown
+     · Deve ser async (para não bloquear a UI do Qt) — AkashaWorker em
+       gui/workers.py executa em QThread separada
+
+  D) Indexação temporária de sessão (core/session_indexer.py ou extensão
+     do indexer.py)
+     · Opção 1 — ChromaDB EphemeralClient: cria cliente in-memory paralelo ao
+       vectorstore persistente; após a sessão, o cliente vai para GC
+     · Opção 2 — Collection separada no vectorstore persistente com TTL manual:
+       adiciona chunks com metadata `session_id` e `expires_at`; ao iniciar,
+       limpa chunks de sessões antigas via `_collection.delete(where={"session_id": ...})`
+     · Opção 3 — Arquivos temporários em disco + limpeza: salva os MD do AKASHA
+       em pasta temp, indexa normalmente, limpa ao fechar
+     · Recomendação: Opção 1 (EphemeralClient) para sessões de pesquisa que
+       não devem sobreviver ao fechamento do app; Opção 2 se quiser histórico
+       de sessões (ex: retomar pesquisa do dia anterior)
+
+  E) Detecção de "precisa de mais contexto"
+     · Estratégia simples: se o RAG retorna < N fontes com score > threshold,
+       ou se o LLM inclui na resposta "não encontrei informação suficiente",
+       oferecer à utilizadora a opção de expandir para busca web
+     · Estratégia mais sofisticada: LLM classifica a resposta como
+       "suficiente" / "incompleta" em etapa separada
+     · Para MVP: botão explícito "Pesquisar na web" na UI, sem detecção
+       automática — mais simples e mais controlado pela utilizadora
+
+  F) UI no Mnemosyne (gui/main_window.py)
+     · Botão ou aba "Pesquisa Profunda"
+     · Exibir progresso: "Buscando no AKASHA… Encontrei 5 URLs. Carregando
+       conteúdo… Indexando temporariamente… Consultando RAG…"
+     · Indicar visualmente quais fontes vieram da web vs. da biblioteca local
+       (ex: ícone de globe vs. ícone de livro na lista de fontes)
+     · Opção de "Manter fontes web no vectorstore" (persistir ou descartar)
+
+---
+
+LATÊNCIAS ESPERADAS
+-------------------
+
+Cenário base: pergunta → busca DDG → 5 URLs → fetch → embedding → RAG
+
+1. Verificação se AKASHA está rodando (GET /health):
+   · Localhost HTTP: < 5ms
+
+2. Busca DDG via AKASHA (GET /search/json?q=tema&max=5):
+   · Cache HIT (query já buscada na última hora): < 20ms (SQLite read)
+   · Cache MISS (primeira busca): 1–3s (DDG não tem SLA público; rate limit
+     ocasional pode causar falha — ver abaixo)
+
+3. Fetch de 5 URLs (paralelizável):
+   · Sites rápidos (CDN, artigos estáticos): 200–800ms por URL
+   · Sites lentos / com JS: 2–5s por URL (httpx não executa JS — o que o
+     AKASHA consegue é apenas conteúdo SSR)
+   · Com paralelização (asyncio.gather): os 5 fetches em simultâneo → tempo
+     dominado pelo mais lento: 1–5s total no cenário otimista
+   · Timeout AKASHA: 30s por URL (conservador; pode reduzir para 10s no
+     modo de pesquisa profunda)
+   · Jina Reader fallback: +20s por URL que falhar a extração local — evitar
+     no modo automático (limite: só acionar Jina se resultado for vazio)
+
+4. Extração de conteúdo (trafilatura):
+   · Após HTML baixado: single-digit ms por página (< 10ms)
+   · Negligenciável
+
+5. Embedding das páginas no EphemeralClient:
+   · Modelo nomic-embed-text (typical): ~50–100ms por chunk via Ollama
+   · 5 páginas × 10 chunks médios = 50 chunks
+   · Hardware de trabalho (i5-3470): ~5–10s total
+   · Hardware de casa (Ryzen 4600G + RX 6600): ~1–2s total
+   · NOTA: embedding é o gargalo principal no hardware fraco
+
+6. RAG sobre o corpus combinado (local + web):
+   · Já medido no contexto normal do Mnemosyne: < 100ms para retrieval
+   · Geração da resposta: depende do modelo — 3–30s no i5, 1–5s no Ryzen
+
+LATÊNCIA TOTAL ESTIMADA:
+  · Casa (Ryzen + RX 6600), cache HIT:  ~3–8s
+  · Casa (Ryzen + RX 6600), cache MISS: ~5–15s
+  · Trabalho (i5-3470), cache HIT:      ~8–18s
+  · Trabalho (i5-3470), cache MISS:     ~12–30s
+
+Comparação: uma pergunta RAG normal no Mnemosyne leva 3–15s (modelo + retrieval).
+O overhead da pesquisa web é real mas justificado para perguntas que o corpus
+local claramente não cobre.
+
+---
+
+ALTERNATIVAS DE ARQUITETURA
+----------------------------
+
+COMUNICAÇÃO ENTRE APPS:
+
+  Opção A — REST polling (proposta original):
+    · Mnemosyne chama AKASHA via HTTP a cada operação
+    · Vantagem: simples, AKASHA não precisa saber que o Mnemosyne existe
+    · Desvantagem: overhead de TCP por chamada (< 1ms local — negligenciável)
+    · Recomendada para MVP
+
+  Opção B — Importação direta de módulo Python:
+    · Mnemosyne importa ecosystem_scraper.extract() diretamente (já no PATH
+      do ecossistema via sys.path) sem passar pelo AKASHA
+    · Vantagem: sem overhead HTTP, sem dependência que AKASHA esteja rodando
+    · Desvantagem: perde o cache DDG do AKASHA (cada busca seria nova),
+      perde a cascata já testada do archiver
+    · Alternativa viável se quiser eliminar dependência de serviço externo
+
+  Opção C — Modo híbrido: ecosystem_scraper para fetch, AKASHA para busca DDG:
+    · Busca DDG passa pelo AKASHA (cache compartilhado)
+    · Fetch/extração de conteúdo usa ecosystem_scraper diretamente
+    · Melhor dos dois mundos — evita duplicar a lógica de scraping
+
+INDEXAÇÃO TEMPORÁRIA:
+
+  Opção A — ChromaDB EphemeralClient (in-memory):
+    · `import chromadb; tmp_vs = chromadb.EphemeralClient().create_collection("session")`
+    · Pros: limpo, zero lixo em disco, API idêntica ao PersistentClient
+    · Contras: embeddings recalculados a cada sessão (não há cache entre sessões),
+      consome RAM enquanto a sessão estiver ativa
+    · Recomendada para "pesquisa descartável"
+
+  Opção B — Collection "session" no vectorstore persistente:
+    · Mesma instância Chroma, collection separada com metadado `session_id`
+    · Pros: sessão sobrevive ao fechamento do app (pode retomar)
+    · Contras: requer limpeza manual periódica (cronjob ou limpeza no startup)
+
+  Opção C — Sem vectorstore para web, apenas context stuffing:
+    · Conteúdo web vai direto no prompt como contexto extra (não embedado)
+    · Pros: zero latência de embedding, mais simples
+    · Contras: limitado pela janela de contexto do LLM (tipicamente 8–32K
+      tokens); 5 páginas web = ~10.000–25.000 palavras → excede facilmente
+    · Viável apenas para respostas curtas ou conteúdo muito curto por página
+
+---
+
+RISCOS E MITIGAÇÕES
+--------------------
+
+RISCO 1 — Qualidade do conteúdo web:
+  · Sites podem retornar HTML com pouco conteúdo textual (JS-heavy, paywalls,
+    login obrigatório)
+  · Mitigação: threshold mínimo (já implementado no archiver: < 100 palavras →
+    Jina Reader); descartar páginas com < 200 palavras; exibir aviso na UI
+  · Sites JS-heavy (React SPAs): trafilatura/inscriptis não executam JS →
+    conteúdo pode ser vazio ou apenas o esqueleto HTML
+  · Mitigação: Jina Reader como fallback (https://r.jina.ai/URL) — funciona
+    para muitos SPAs pois o serviço Jina executa headless browser; porém
+    requer conectividade com jina.ai e pode ser lento (20s timeout)
+
+RISCO 2 — Rate limiting do DuckDuckGo:
+  · A biblioteca `ddgs` (usada pelo AKASHA) sofre RatelimitException
+    periodicamente — DDG não tem SLA de rate limit documentado
+  · O AKASHA já mitiga com cache TTL 1h: queries repetidas não re-chamam DDG
+  · Mitigação adicional para pesquisa profunda: se DDG falhar, exibir erro
+    claro na UI em vez de silenciosamente retornar vazio; oferecer retry
+  · Não há alternativa gratuita confiável para DDG sem API key (SerpAPI,
+    Bing Search API, Brave Search API são pagas)
+
+RISCO 3 — Dependência de conectividade:
+  · Modo de Pesquisa Profunda fica inutilizável sem internet
+  · O Mnemosyne é local-first — este modo deve ser explicitamente opt-in
+  · Mitigação: exibir status de conectividade antes de ativar; degradar
+    graciosamente para "modo offline" que usa apenas corpus local
+
+RISCO 4 — AKASHA não está rodando:
+  · Verificar GET /health antes de qualquer operação; se falhar (< 5ms),
+    exibir mensagem "AKASHA offline — inicie com iniciar.sh e tente novamente"
+  · Opção B (importação direta) elimina esta dependência mas perde o cache DDG
+
+RISCO 5 — Poluição do vectorstore permanente:
+  · Se a indexação temporária for mal implementada e persistir no vectorstore
+    principal, perguntas futuras podem recuperar conteúdo web desatualizado
+    como se fosse da biblioteca pessoal
+  · Mitigação: EphemeralClient em objeto separado (sem cruzamento com vs
+    persistente) OU metadado `session_id` com limpeza garantida no startup
+
+RISCO 6 — Saturação de RAM no i5-3470 (8GB):
+  · ChromaDB EphemeralClient + 5 páginas web indexadas: ~50–100MB de RAM
+    adicional (embeddings + índice HNSW em memória)
+  · Mais o modelo Ollama já carregado: modelos 7B Q4 ocupam ~4–5GB
+  · Total estimado: 5–6GB ocupados → margem apertada nos 8GB de RAM
+  · Mitigação: não carregar mais de 3–5 páginas por sessão; limpar o cliente
+    ephemeral explicitamente após uso (del tmp_vs; gc.collect())
+
+---
+
+RESUMO DE VIABILIDADE
+---------------------
+
+VIABILIDADE TÉCNICA: ALTA
+  · Todos os componentes críticos existem nos dois apps
+  · Nenhuma dependência nova de terceiros é obrigatória (httpx, chromadb,
+    trafilatura já estão no ecossistema)
+  · A única peça genuinamente nova é a lógica de orquestração no Mnemosyne
+    e um ou dois endpoints novos no AKASHA
+
+ESFORÇO ESTIMADO DE IMPLEMENTAÇÃO:
+  · AKASHA: ~100 linhas (endpoint /fetch e /search/json)
+  · Mnemosyne core: ~200 linhas (akasha_client.py + session_indexer.py)
+  · Mnemosyne UI: ~150 linhas (botão + worker + indicadores de progresso)
+  · Total: ~450 linhas, espalhadas em 3–4 arquivos novos e pequenas edições
+    em gui/main_window.py e gui/workers.py
+
+RECOMENDAÇÃO DE IMPLEMENTAÇÃO (ordem de dependência):
+  1. Endpoint GET /search/json no AKASHA (desbloqueia todo o resto)
+  2. Endpoint GET /fetch?url= no AKASHA
+  3. AkashaClient em Mnemosyne (com verificação de health)
+  4. SessionIndexer com EphemeralClient
+  5. DeepResearchWorker em gui/workers.py (orquestra 1–4)
+  6. UI: botão + progresso + indicadores de fonte
+
+RECOMENDAÇÃO DE ARQUITETURA:
+  · Comunicação: REST polling (Opção A) — mais simples para MVP
+  · Indexação temporária: EphemeralClient in-memory (Opção A) para MVP;
+    migrar para collection persistente com TTL apenas se a utilizadora quiser
+    retomar sessões entre reinicializações
+
+---
+
+Fontes consultadas (além da inspeção direta do código dos dois apps):
+  - docs.trychroma.com/docs/run-chroma/ephemeral-client
+  - docs.trychroma.com/reference/python/client
+  - cookbook.chromadb.dev/core/clients/
+  - github.com/chroma-core/chroma/issues/1976 (comportamento de persistência)
+  - trafilatura.readthedocs.io/en/latest/evaluation.html (benchmarks de extração)
+  - adrien.barbaresi.eu/blog/web-scraping-trafilatura-faster.html
+  - github.com/open-webui/open-webui/discussions/6624 (DDG rate limiting)
+  - github.com/crewAIInc/crewAI/issues/136 (DDG rate limiting em agentes)
+  - fastapi.tiangolo.com/async/ (latência async vs sync)
+
+========================================================
+FIM DA PESQUISA — Integração Mnemosyne + AKASHA
 FIM DA PESQUISA — NotebookLM Features
 ========================================================
