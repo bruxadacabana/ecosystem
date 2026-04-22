@@ -121,7 +121,7 @@ async def _fetch_ddg(query: str, max_results: int) -> list[SearchResult]:
 # Função pública
 # ---------------------------------------------------------------------------
 
-_CACHE_SIZE = 30  # resultados pré-buscados por query — serve 3 páginas de 10
+_CACHE_SIZE = 60  # resultados pré-buscados por query — serve até 6 páginas de 10
 
 
 async def search_web(query: str, max_results: int = 10, offset: int = 0) -> list[SearchResult]:
