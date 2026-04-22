@@ -733,3 +733,49 @@ a:hover { opacity: 0.75; }
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* ── Responsividade da topbar ─────────────────────────────── */
+
+/* Tablet / janela estreita: nav desce para segunda linha */
+@media (max-width: 860px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap:       8px;
+    padding:   8px 14px;
+  }
+
+  .topbar-brand  { order: 1; }
+  .topbar-search { order: 2; flex: 1; min-width: 160px; }
+  .theme-toggle  { order: 3; flex-shrink: 0; }
+  .shutdown-btn  { order: 4; flex-shrink: 0; }
+
+  .topbar-nav {
+    order:       10;
+    flex-basis:  100%;
+    flex-wrap:   wrap;
+    gap:         2px;
+    padding-top: 6px;
+    border-top:  1px solid var(--rule);
+  }
+}
+
+/* Mobile: busca desce para linha própria entre brand e nav */
+@media (max-width: 540px) {
+  .topbar { gap: 6px; padding: 7px 12px; }
+
+  .topbar-brand  { order: 1; }
+  .theme-toggle  { order: 2; margin-left: auto; }
+  .shutdown-btn  { order: 3; }
+  .topbar-search {
+    order:      4;
+    flex-basis: 100%;
+    flex:       none;
+  }
+  .topbar-nav    { order: 10; }
+
+  .nav-link, .topbar-link {
+    font-size:      8px;
+    padding:        3px 7px;
+    letter-spacing: 0.10em;
+  }
+}
