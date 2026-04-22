@@ -39,6 +39,14 @@
         hx-on::after-request="showToast(event.detail.successful ? 'Adicionado a Sites!' : 'Erro ao adicionar', event.detail.successful ? 'success' : 'error')"
       >&#x2316;</button>
       <button
+        class="btn btn-ghost card-action-icon"
+        title="Ver mais tarde"
+        hx-post="/watch-later/add"
+        hx-vals='{"url": "{{ r.url }}", "title": "{{ r.title | replace('"', '&quot;') }}", "snippet": "{{ r.snippet | replace('"', '&quot;') | truncate(200, true, '') }}"}'
+        hx-swap="none"
+        hx-on::after-request="showToast(event.detail.successful ? 'Salvo para depois!' : 'Erro ao salvar', event.detail.successful ? 'success' : 'error')"
+      >☆</button>
+      <button
         class="btn btn-ghost card-action-icon card-action-block"
         title="Bloquear domínio"
         hx-post="/domains/block"

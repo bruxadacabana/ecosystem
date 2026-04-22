@@ -20,7 +20,7 @@
 {% endif %}
 
 <!-- ─── Resultados ──────────────────────────────────────────────── -->
-{% elif web_results or local_results or site_results %}
+{% elif web_results or local_results or site_results or watch_later_results %}
 
   {# ── Seção Web ── #}
   {% if web_results %}
@@ -65,7 +65,18 @@
   </section>
   {% endif %}
 
-  {% if not web_results and not local_results and not site_results %}
+  {# ── Seção Ver Mais Tarde ── #}
+  {% if watch_later_results %}
+  <section class="results-section">
+    <h3 class="results-section-title">Salvo para depois</h3>
+    <p class="results-meta">{{ watch_later_results | length }} resultado{% if watch_later_results | length != 1 %}s{% endif %} na sua lista</p>
+    <ol class="results-list">
+      {% for r in watch_later_results %}{{ result_card(r) }}{% endfor %}
+    </ol>
+  </section>
+  {% endif %}
+
+  {% if not web_results and not local_results and not site_results and not watch_later_results %}
   <section class="empty-state">
     <p class="empty-icon">&#x2205;</p>
     <p class="empty-title">Nenhum resultado para <em>{{ query }}</em></p>

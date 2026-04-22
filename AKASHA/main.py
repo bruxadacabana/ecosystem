@@ -21,6 +21,7 @@ from routers import library as library_router
 from routers import system as system_router
 from routers import domains as domains_router
 from routers import crawler as crawler_router
+from routers import watch_later as watch_later_router
 from services.local_search import index_local_files
 from services.library import check_overdue, scrape_and_store
 from services.crawler import crawl_pending_sites
@@ -89,6 +90,7 @@ app.include_router(library_router.router)
 app.include_router(system_router.router)
 app.include_router(domains_router.router)
 app.include_router(crawler_router.router)
+app.include_router(watch_later_router.router)
 
 # ---------------------------------------------------------------------------
 # Rotas principais (Fase 1 — estrutura)
@@ -104,6 +106,7 @@ async def index(request: Request) -> HTMLResponse:
         {
             "web_results": [],
             "local_results": [],
+            "watch_later_results": [],
             "query": "",
             "sources": "all",
             "recent": recent,

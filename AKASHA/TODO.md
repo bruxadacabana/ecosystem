@@ -412,42 +412,42 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Banco de dados
 
-- [ ] Migration v9: tabela `watch_later` —
+- [x] Migration v9: tabela `watch_later` —
       `id, url (UNIQUE), title, snippet, notes, added_at`
-- [ ] Migration v9: FTS5 `watch_later_fts` — `(id UNINDEXED, url UNINDEXED, title, notes)`
+- [x] Migration v9: FTS5 `watch_later_fts` — `(id UNINDEXED, url UNINDEXED, title, notes)`
       sincronizada manualmente nos helpers
 
 ### Backend
 
-- [ ] `database.py` — helpers: `add_watch_later(url, title, snippet) -> int`;
+- [x] `database.py` — helpers: `add_watch_later(url, title, snippet) -> int`;
       `get_all_watch_later() -> list[tuple]`; `delete_watch_later(id) -> None`;
       `search_watch_later(query, limit) -> list[tuple]`
-- [ ] `services/local_search.py` — função `search_watch_later(query, max_results)`
+- [x] `services/local_search.py` — função `search_watch_later(query, max_results)`
       que consulta `watch_later_fts`; retorna `list[SearchResult]` com `source="DEPOIS"`;
       NÃO adiciona ao `local_fts` (não visível para o ecossistema)
-- [ ] `routers/watch_later.py` — `GET /watch-later` (página da lista);
+- [x] `routers/watch_later.py` — `GET /watch-later` (página da lista);
       `POST /watch-later/add` (form: url, title?, snippet?; retorna 200);
       `DELETE /watch-later/{id}` (retorna 200)
 
 ### Templates
 
-- [ ] `templates/watch_later.html` — lista de itens salvos: título, URL, data,
+- [x] `templates/watch_later.html` — lista de itens salvos: título, URL, data,
       campo notes inline editável, botão "remover"; empty state com hint
-- [ ] `templates/_macros.html` — botão `☆ ver depois` (`hx-post="/watch-later/add"`)
+- [x] `templates/_macros.html` — botão `☆ ver depois` (`hx-post="/watch-later/add"`)
       nos cards de resultado `WEB`, junto com os outros botões de ação
-- [ ] `templates/base.html` — aba "ver depois" na nav entre "sites" e "downloads"
-- [ ] `templates/search.html` — seção "Salvo para depois" (após seção Sites,
+- [x] `templates/base.html` — aba "ver depois" na nav entre "sites" e "downloads"
+- [x] `templates/search.html` — seção "Salvo para depois" (após seção Sites,
       antes do empty state); aparece sempre que há matches no `watch_later_fts`
 
 ### Integração com busca
 
-- [ ] `routers/search.py` — incluir `search_watch_later(q)` no `asyncio.gather`;
+- [x] `routers/search.py` — incluir `search_watch_later(q)` no `asyncio.gather`;
       passa `watch_later_results` para o template; seção visível
       independente dos checkboxes (sempre busca se há query)
 
 ### TODO update
 
-- [ ] Atualizar `AKASHA/TODO.md` ao concluir: marcar itens e atualizar data
+- [x] Atualizar `AKASHA/TODO.md` ao concluir: marcar itens e atualizar data
 
 ---
 

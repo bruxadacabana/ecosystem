@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -172,6 +172,26 @@ _CREATE_IDX_LIBRARY_DIFFS_URL = """
 CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id);
 """
 
+_CREATE_WATCH_LATER = """
+CREATE TABLE IF NOT EXISTS watch_later (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    url      TEXT    NOT NULL UNIQUE,
+    title    TEXT    NOT NULL DEFAULT '',
+    snippet  TEXT    NOT NULL DEFAULT '',
+    notes    TEXT    NOT NULL DEFAULT '',
+    added_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_WATCH_LATER_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS watch_later_fts USING fts5(
+    id      UNINDEXED,
+    url     UNINDEXED,
+    title,
+    notes
+);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -204,6 +224,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_CRAWL_FTS)
         await db.execute(_CREATE_IDX_CRAWL_PAGES_SITE)
         await db.execute(_CREATE_IDX_LIBRARY_DIFFS_URL)
+        await db.execute(_CREATE_WATCH_LATER)
+        await db.execute(_CREATE_WATCH_LATER_FTS)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -244,6 +266,23 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id)"
         )
+
+    if from_version < 9:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS watch_later (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                url      TEXT    NOT NULL UNIQUE,
+                title    TEXT    NOT NULL DEFAULT '',
+                snippet  TEXT    NOT NULL DEFAULT '',
+                notes    TEXT    NOT NULL DEFAULT '',
+                added_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS watch_later_fts USING fts5(
+                id UNINDEXED, url UNINDEXED, title, notes
+            )
+        """)
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -392,3 +431,72 @@ async def get_crawl_pages_by_site(
                 (site_id, limit, offset),
             )).fetchall()
     return list(rows)
+
+
+# ---------------------------------------------------------------------------
+# Watch Later helpers
+# ---------------------------------------------------------------------------
+
+async def add_watch_later(url: str, title: str = "", snippet: str = "") -> int:
+    """Adiciona URL à lista Ver Mais Tarde. Ignora silenciosamente se já existir."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO watch_later (url, title, snippet) VALUES (?, ?, ?)",
+            (url, title, snippet),
+        )
+        row_id = cursor.lastrowid or 0
+        if row_id:
+            await db.execute(
+                "INSERT INTO watch_later_fts (id, url, title, notes) VALUES (?, ?, ?, '')",
+                (row_id, url, title),
+            )
+        await db.commit()
+        return row_id
+
+
+async def get_all_watch_later() -> list[tuple]:
+    """Retorna todos os itens ordenados do mais recente ao mais antigo."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT id, url, title, snippet, notes, added_at FROM watch_later ORDER BY id DESC"
+        )).fetchall()
+    return list(rows)
+
+
+async def update_watch_later_notes(item_id: int, notes: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE watch_later SET notes = ? WHERE id = ?", (notes, item_id))
+        await db.execute(
+            "UPDATE watch_later_fts SET notes = ? WHERE id = ?", (notes, item_id)
+        )
+        await db.commit()
+
+
+async def delete_watch_later(item_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM watch_later_fts WHERE id = ?", (item_id,))
+        await db.execute("DELETE FROM watch_later WHERE id = ?", (item_id,))
+        await db.commit()
+
+
+async def search_watch_later(query: str, limit: int = 20) -> list[tuple]:
+    """Busca FTS5 em watch_later_fts. Retorna (id, url, title, snippet, notes, added_at)."""
+    import re
+    cleaned = re.sub(r'["\'\(\)\*\:\^]', " ", query).strip()
+    if not cleaned:
+        return []
+    fts_query = " ".join(f"{t}*" for t in cleaned.split() if t)
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                """SELECT w.id, w.url, w.title, w.snippet, w.notes, w.added_at
+                   FROM watch_later_fts f
+                   JOIN watch_later w ON w.id = f.id
+                   WHERE watch_later_fts MATCH ?
+                   ORDER BY rank
+                   LIMIT ?""",
+                (fts_query, limit),
+            )).fetchall()
+        return list(rows)
+    except Exception:
+        return []

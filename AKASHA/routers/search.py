@@ -18,7 +18,7 @@ from services.archiver import archive_url
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local
 from services.crawler import search_sites
-from database import get_all_crawl_sites
+from database import get_all_crawl_sites, search_watch_later as _db_search_wl
 
 router = APIRouter()
 
@@ -67,9 +67,10 @@ async def search(
     if not any([src_web, src_eco, src_sites]):
         src_web = src_eco = "on"
 
-    web_results:   list[SearchResult] = []
-    local_results: list[SearchResult] = []
-    site_results:  list[SearchResult] = []
+    web_results:        list[SearchResult] = []
+    local_results:      list[SearchResult] = []
+    site_results:       list[SearchResult] = []
+    watch_later_results: list[SearchResult] = []
     error: str | None = None
 
     if q:
@@ -78,12 +79,18 @@ async def search(
                 search_web(q, max_results=_PAGE_SIZE) if src_web   else asyncio.sleep(0, result=[]),
                 search_local(q)                        if src_eco   else asyncio.sleep(0, result=[]),
                 search_sites(q)                        if src_sites else asyncio.sleep(0, result=[]),
+                _db_search_wl(q),
                 return_exceptions=True,
             )
-            web_r, eco_r, sites_r = tasks
+            web_r, eco_r, sites_r, wl_r = tasks
             if isinstance(web_r,   list): web_results   = web_r
             if isinstance(eco_r,   list): local_results = eco_r
             if isinstance(sites_r, list): site_results  = sites_r
+            if isinstance(wl_r,    list):
+                watch_later_results = [
+                    SearchResult(title=r[2] or r[1], url=r[1], snippet=r[3], source="DEPOIS")
+                    for r in wl_r
+                ]
             # Propaga o primeiro erro real (RuntimeError da busca web)
             for res in tasks:
                 if isinstance(res, RuntimeError):
@@ -92,7 +99,7 @@ async def search(
         except Exception as exc:
             error = str(exc)
 
-        total = len(web_results) + len(local_results) + len(site_results)
+        total = len(web_results) + len(local_results) + len(site_results) + len(watch_later_results)
         src_label = "+".join(filter(None, [
             "web" if src_web else "",
             "local" if src_eco else "",
@@ -107,10 +114,11 @@ async def search(
         request,
         "search.html",
         {
-            "web_results":   web_results,
-            "local_results": local_results,
-            "site_results":  site_results,
-            "has_more_web":  len(web_results) >= _PAGE_SIZE,
+            "web_results":          web_results,
+            "local_results":        local_results,
+            "site_results":         site_results,
+            "watch_later_results":  watch_later_results,
+            "has_more_web":         len(web_results) >= _PAGE_SIZE,
             "query":         q,
             "src_web":       bool(src_web),
             "src_eco":       bool(src_eco),

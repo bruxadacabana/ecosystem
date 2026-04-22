@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Ver Mais Tarde — AKASHA{% endblock %}
+
+{% block content %}
+<p class="page-subtitle">URLs para retomar depois — não arquivadas, não monitoradas, visíveis só no AKASHA.</p>
+
+{% if items %}
+<section class="lib-entries">
+  {% for item in items %}
+  <article class="card lib-card" id="wl-item-{{ item.id }}">
+
+    <div class="result-header">
+      <span class="badge badge-depois">VER DEPOIS</span>
+      <time class="result-date">{{ item.added_at[:10] }}</time>
+    </div>
+
+    <h2 class="result-title">
+      <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer" class="result-link">
+        {{ item.title or item.url }}
+      </a>
+    </h2>
+
+    {% if item.snippet %}
+    <p class="result-snippet">{{ item.snippet }}</p>
+    {% endif %}
+
+    <div class="lib-meta-row">
+      <span class="result-url">{{ item.url }}</span>
+    </div>
+
+    <!-- Notas inline -->
+    <div class="lib-notes-row">
+      <input
+        type="text"
+        class="input lib-notes-input"
+        placeholder="nota (opcional)"
+        value="{{ item.notes }}"
+        hx-patch="/watch-later/{{ item.id }}/notes"
+        hx-trigger="change"
+        hx-vals='js:{"notes": event.target.value}'
+        hx-swap="none"
+      >
+    </div>
+
+    <!-- Ações -->
+    <div class="result-footer">
+      <div class="result-actions">
+        <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">
+          ↗ abrir
+        </a>
+        <button
+          class="btn btn-ghost btn-sm"
+          hx-post="/archive"
+          hx-vals='{"url": "{{ item.url }}"}'
+          hx-swap="none"
+          hx-on::after-request="showToast(event.detail.successful ? 'Arquivado!' : 'Erro ao arquivar', event.detail.successful ? 'success' : 'error')"
+        >◪ arquivar</button>
+        <button
+          class="btn btn-ghost btn-sm btn-danger"
+          hx-delete="/watch-later/{{ item.id }}"
+          hx-target="#wl-item-{{ item.id }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="showToast('Removido.', 'info')"
+        >− remover</button>
+      </div>
+    </div>
+
+  </article>
+  {% endfor %}
+</section>
+
+{% else %}
+<section class="empty-state">
+  <p class="empty-icon">☆</p>
+  <p class="empty-title">Nenhuma URL salva para depois</p>
+  <p class="empty-hint">Use o botão ☆ nos resultados de busca para guardar URLs aqui.</p>
+</section>
+{% endif %}
+
+{% endblock %}
