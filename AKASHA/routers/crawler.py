@@ -133,7 +133,7 @@ async def sites_add_quick(url: str = Form(...)) -> Response:
     if not parsed.scheme or not parsed.netloc:
         raise HTTPException(status_code=400, detail="URL inválida")
     base_url = f"{parsed.scheme}://{parsed.netloc}"
-    site_id = await add_crawl_site(base_url, base_url, crawl_depth=2, subdomains="[]")
+    site_id = await add_crawl_site(base_url, base_url, crawl_depth=2, subdomains_json="[]")
     if site_id:
         asyncio.get_running_loop().create_task(_bg_crawl(site_id))
     return Response(status_code=200)
