@@ -18,7 +18,11 @@ from services.archiver import archive_url
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local
 from services.crawler import search_sites
-from database import get_all_crawl_sites, search_watch_later as _db_search_wl
+from database import (
+    get_all_crawl_sites,
+    search_watch_later as _db_search_wl,
+    log_activity,
+)
 
 router = APIRouter()
 
@@ -42,6 +46,8 @@ async def archive(
         raise HTTPException(status_code=502, detail=f"Falha de rede: {exc}")
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    import json as _json
+    await log_activity("archive", url, url, _json.dumps({"tags": tag_list}))
     return Response(status_code=200)
 
 
@@ -105,7 +111,9 @@ async def search(
             "local" if src_eco else "",
             "sites" if src_sites else "",
         ]))
+        import json as _json
         await database.save_search(q, src_label or "web", total)
+        await log_activity("search", q, "", _json.dumps({"sources": src_label or "web", "results": total}))
 
     has_sites = src_sites and bool(await get_all_crawl_sites())
     recent = await database.recent_searches()

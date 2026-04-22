@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -192,6 +192,21 @@ CREATE VIRTUAL TABLE IF NOT EXISTS watch_later_fts USING fts5(
 );
 """
 
+_CREATE_ACTIVITY_LOG = """
+CREATE TABLE IF NOT EXISTS activity_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    type       TEXT    NOT NULL,
+    title      TEXT    NOT NULL DEFAULT '',
+    url        TEXT    NOT NULL DEFAULT '',
+    meta_json  TEXT    NOT NULL DEFAULT '{}',
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_IDX_ACTIVITY_LOG = """
+CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -226,6 +241,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_IDX_LIBRARY_DIFFS_URL)
         await db.execute(_CREATE_WATCH_LATER)
         await db.execute(_CREATE_WATCH_LATER_FTS)
+        await db.execute(_CREATE_ACTIVITY_LOG)
+        await db.execute(_CREATE_IDX_ACTIVITY_LOG)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -282,6 +299,22 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             CREATE VIRTUAL TABLE IF NOT EXISTS watch_later_fts USING fts5(
                 id UNINDEXED, url UNINDEXED, title, notes
             )
+        """)
+
+    if from_version < 10:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS activity_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                type       TEXT    NOT NULL,
+                title      TEXT    NOT NULL DEFAULT '',
+                url        TEXT    NOT NULL DEFAULT '',
+                meta_json  TEXT    NOT NULL DEFAULT '{}',
+                created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_activity_log_created
+            ON activity_log(created_at DESC)
         """)
 
     await db.execute(
@@ -477,6 +510,62 @@ async def delete_watch_later(item_id: int) -> None:
         await db.execute("DELETE FROM watch_later_fts WHERE id = ?", (item_id,))
         await db.execute("DELETE FROM watch_later WHERE id = ?", (item_id,))
         await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Activity Log helpers
+# ---------------------------------------------------------------------------
+
+async def log_activity(
+    type: str,
+    title: str,
+    url: str = "",
+    meta_json: str = "{}",
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO activity_log (type, title, url, meta_json) VALUES (?, ?, ?, ?)",
+            (type, title, url, meta_json),
+        )
+        await db.commit()
+
+
+_HISTORY_PAGE_SIZE = 40
+
+
+async def get_activity_log(
+    type_filter: str = "all",
+    page: int = 1,
+) -> list[tuple]:
+    """Retorna página de (id, type, title, url, meta_json, created_at) mais recentes."""
+    offset = (page - 1) * _HISTORY_PAGE_SIZE
+    async with aiosqlite.connect(DB_PATH) as db:
+        if type_filter == "all":
+            rows = await (await db.execute(
+                "SELECT id, type, title, url, meta_json, created_at "
+                "FROM activity_log ORDER BY id DESC LIMIT ? OFFSET ?",
+                (_HISTORY_PAGE_SIZE, offset),
+            )).fetchall()
+        else:
+            rows = await (await db.execute(
+                "SELECT id, type, title, url, meta_json, created_at "
+                "FROM activity_log WHERE type = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (type_filter, _HISTORY_PAGE_SIZE, offset),
+            )).fetchall()
+    return list(rows)
+
+
+async def count_activity_log(type_filter: str = "all") -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        if type_filter == "all":
+            row = await (await db.execute(
+                "SELECT COUNT(*) FROM activity_log"
+            )).fetchone()
+        else:
+            row = await (await db.execute(
+                "SELECT COUNT(*) FROM activity_log WHERE type = ?", (type_filter,)
+            )).fetchone()
+    return row[0] if row else 0
 
 
 async def search_watch_later(query: str, limit: int = 20) -> list[tuple]:

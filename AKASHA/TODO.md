@@ -185,14 +185,14 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 > Entrega: página `/history` com timeline de todas as atividades.
 
-- [ ] Migration v4: tabela `activity_log` (`id, type, title, url, meta_json, created_at`)
+- [x] Migration v10: tabela `activity_log` (`id, type, title, url, meta_json, created_at`)
       onde `type` ∈ `search|archive|download`
-- [ ] `routers/history.py` — `GET /history?type=all|search|archive|download&page=1`
+- [x] `routers/history.py` — `GET /history?type=all|search|archive|download&page=1`
       paginado por data desc
-- [ ] `templates/history.html` — timeline agrupada por data; ícone por tipo;
+- [x] `templates/history.html` — timeline agrupada por data; ícone por tipo;
       filtros por tipo no topo com HTMX
-- [ ] Popular `activity_log` nos eventos: `save_search()`, `POST /archive` (sucesso),
-      download concluído (status → `done`)
+- [x] Popular `activity_log` nos eventos: `save_search()` e `POST /archive` (sucesso);
+      download: pendente até Fase 11 (downloads ainda não implementados)
 
 ---
 
