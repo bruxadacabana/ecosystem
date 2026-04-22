@@ -404,10 +404,37 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
+## Fase 13 — API de Pesquisa Profunda (integração com Mnemosyne)
+
+> Entrega: endpoint JSON que o Mnemosyne pode chamar para buscar + scraping on-demand,
+> permitindo "Modo de Pesquisa Profunda" que combina biblioteca local com conteúdo web atual.
+
+### Novos endpoints
+
+- [ ] `GET /search/json?q={query}&sources=web,sites&max={n}` — retorna resultados de busca
+      como JSON puro (`list[SearchResult]`) em vez de HTML; reutiliza a lógica de
+      `routers/search.py` mas com `Response` JSON; usado pelo Mnemosyne para obter URLs relevantes
+      sem scraping ainda
+
+- [ ] `POST /fetch` (body: `{url: str, max_words: int = 2000}`) — fetch + scraping
+      completo de uma URL usando a cascata do `ecosystem_scraper` + fallback Jina Reader;
+      retorna `{url, title, content_md, word_count, error?}`; não persiste nada — resposta
+      efêmera para uso imediato pelo Mnemosyne; timeout 30s
+
+### Notas de implementação
+
+- Ambos os endpoints são somente-leitura — não alteram estado do AKASHA
+- `GET /search/json` pode ser implementado extraindo a lógica de busca de `routers/search.py`
+  para uma função pura e reutilizando em ambos os handlers (HTML e JSON)
+- `POST /fetch` reutiliza `ecosystem_scraper.extract()` + a lógica de Jina já em `archiver.py`
+- Latência esperada: `/search/json` ~400ms (DDG cache hit) / ~1.5s (miss); `/fetch` ~2–8s por URL
+
+---
+
 ## Planos Futuros
 
 > Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
 
 ---
 
-*Atualizado em: 2026-04-21 — Fase 12 (extensão Firefox + integração Hermes) adicionada.*
+*Atualizado em: 2026-04-21 — Fase 12 (extensão Firefox + integração Hermes) adicionada; Fase 13 (API de Pesquisa Profunda) adicionada.*

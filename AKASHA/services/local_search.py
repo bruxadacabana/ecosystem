@@ -166,7 +166,7 @@ async def index_local_files() -> None:
             Path(config.aether_vault), "AETHER", "*/chapters/*.md", _extract_aether
         )
     await _index_directory(
-        config.ARCHIVE_PATH, "AKASHA", "*.md", _extract_kosmos
+        config.ARCHIVE_PATH, "AKASHA", "**/*.md", _extract_kosmos
     )
     if config.mnemosyne_watched:
         await _index_directory(

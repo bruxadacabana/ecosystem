@@ -224,4 +224,59 @@
 
 ---
 
-*Atualizado em: 2026-04-20 — 4.9 reorganizado como Studio Panel com 9 tipos de documento (Briefing, Relatório, Study Guide, Table of Contents, Timeline, Blog Post, Mind Map, Data Tables, Slides); 4.7 consolidado em 4.9.*
+---
+
+## Fase 7 — Modo de Pesquisa Profunda (integração com AKASHA)
+
+> Combina a biblioteca local do Mnemosyne com conteúdo web buscado em tempo real pelo AKASHA.
+> Requer que o AKASHA esteja rodando na porta 7071 (Fase 13 do AKASHA: `/search/json` e `/fetch`).
+> Degradação graciosa: se AKASHA offline, botão oculto e aviso ao usuário.
+
+### AkashaClient
+
+- [ ] `core/akasha_client.py` — cliente httpx para a API REST do AKASHA:
+      `search(query, max_results) -> list[AkashaResult]` — chama `GET /search/json`;
+      `fetch(url) -> FetchResult` — chama `POST /fetch`;
+      `is_available() -> bool` — `GET /health` com timeout 2s;
+      tipos: `AkashaResult(url, title, snippet)`, `FetchResult(url, title, content_md, word_count)`;
+      erros específicos: `AkashaOfflineError`, `AkashaFetchError`
+
+### SessionIndexer
+
+- [ ] `core/session_indexer.py` — indexação temporária em memória para a sessão de pesquisa:
+      usa `chromadb.EphemeralClient()` (sem persistência em disco);
+      `add_pages(pages: list[FetchResult]) -> None` — chunka com `RecursiveCharacterTextSplitter`
+      e embeda via Ollama; `search(query, k=5) -> list[Document]`; `clear() -> None`;
+      limite de RAM: máx 10 páginas por sessão (configura­vel); estimativa ~50-100MB por sessão
+
+### DeepResearchWorker
+
+- [ ] `gui/workers.py` — `DeepResearchWorker(QThread)`:
+      sinal `status(str)` para feedback incremental ("Buscando no AKASHA…", "Carregando 3/5…", etc.);
+      sinal `finished(bool, str, list)` — sucesso, resposta RAG, fontes (local + web);
+      pipeline:
+        1. `AkashaClient.search(query)` → lista de URLs candidatas (top 5)
+        2. Para cada URL: `AkashaClient.fetch(url)` (paralelo com `asyncio.gather` via `asyncio.run`)
+        3. `SessionIndexer.add_pages(pages)` → indexa em memória
+        4. `prepare_ask()` com retriever combinado (vectorstore local + session_indexer)
+        5. LLM gera resposta; emite `finished`
+        6. `SessionIndexer.clear()` após resposta
+
+### Interface
+
+- [ ] `gui/main_window.py` — toggle "🌐 Pesquisa Profunda" no painel de perguntas:
+      visível apenas se AKASHA disponível (verificar `is_available()` no startup);
+      quando ativo, `AskWorker` é substituído por `DeepResearchWorker`;
+      status incremental exibido na barra inferior durante a pesquisa;
+      citar fontes web com badge `[WEB]` distintos das fontes locais
+
+### Notas de implementação
+
+- Latência esperada: 8–20s em casa (RX 6600), 20–40s no trabalho (i5-3470, sem AVX2)
+- No i5: limitar a 3 páginas web (não 5) e desativar embedding da session (usar context stuffing)
+  — margem de RAM apertada com 8GB; verificar `psutil.virtual_memory().available` antes de embedar
+- `SessionIndexer` usa `EphemeralClient` — dados descartados ao chamar `clear()` ou fechar o app
+
+---
+
+*Atualizado em: 2026-04-21 — Fase 7 (Modo de Pesquisa Profunda / integração AKASHA) adicionada.*
