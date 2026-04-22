@@ -478,10 +478,22 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
+## Fase 14 — Integração KOSMOS nos cards de resultado
+
+> Botão nos cards de resultado web para enviar URL diretamente ao KOSMOS (leitor/anotador).
+
+- [ ] `templates/_macros.html` — botão "abrir no KOSMOS" nos cards `WEB`:
+      `hx-post="/kosmos/open"` com `{"url": "{{ r.url }}"}`;
+      ou redirecionar para KOSMOS via URL scheme se ele expuser um endpoint `/open?url=`
+- [ ] Definir com KOSMOS qual é o mecanismo de abertura (endpoint HTTP local ou outro IPC)
+- [ ] Registrar rota bridge em `routers/` se necessário (similar ao hermes_bridge)
+
+---
+
 ## Planos Futuros
 
 > Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
 
 ---
 
-*Atualizado em: 2026-04-21 — Fase 12 (extensão Firefox + integração Hermes) adicionada; Fase 13 (API de Pesquisa Profunda) adicionada.*
+*Atualizado em: 2026-04-21 — Fase 12 (extensão Firefox + integração Hermes) adicionada; Fase 13 (API de Pesquisa Profunda) adicionada; Fase 14 (integração KOSMOS nos cards) adicionada.*
