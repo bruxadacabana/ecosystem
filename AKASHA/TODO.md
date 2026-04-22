@@ -480,13 +480,13 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ## Fase 14 — Integração KOSMOS nos cards de resultado
 
-> Botão nos cards de resultado web para enviar URL diretamente ao KOSMOS (leitor/anotador).
+> Botão nos cards de resultado web para adicionar a URL à lista de fontes do KOSMOS.
 
-- [ ] `templates/_macros.html` — botão "abrir no KOSMOS" nos cards `WEB`:
-      `hx-post="/kosmos/open"` com `{"url": "{{ r.url }}"}`;
-      ou redirecionar para KOSMOS via URL scheme se ele expuser um endpoint `/open?url=`
-- [ ] Definir com KOSMOS qual é o mecanismo de abertura (endpoint HTTP local ou outro IPC)
-- [ ] Registrar rota bridge em `routers/` se necessário (similar ao hermes_bridge)
+- [ ] `templates/_macros.html` — botão "adicionar ao KOSMOS" nos cards `WEB`:
+      `hx-post="/kosmos/add-source"` com `{"url": "{{ r.url }}"}`;
+      encaminhar para o endpoint do KOSMOS que gerencia fontes
+- [ ] Verificar qual endpoint do KOSMOS recebe novas fontes (API HTTP local)
+- [ ] Registrar rota bridge em `routers/kosmos_bridge.py` se necessário (similar ao hermes_bridge)
 
 ---
 
