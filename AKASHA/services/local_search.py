@@ -213,7 +213,7 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
                 (fts_query, max_results),
             )).fetchall()
         results.extend(
-            SearchResult(title=row[1], url=row[0], snippet=row[2], source=row[3])
+            SearchResult(title=row[1], url=Path(row[0]).as_uri(), snippet=row[2], source=row[3])
             for row in rows
         )
     except Exception:
