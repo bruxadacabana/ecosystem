@@ -1,4 +1,4 @@
-<div id="sites-list">
+<div id="library-sites-list">
   {% if sites %}
     {% for site in sites %}
     <div class="card" style="margin-bottom:.75rem;">
@@ -39,14 +39,14 @@
         <!-- ─ Ações ─ -->
         <div style="display:flex;gap:.4rem;flex-shrink:0;align-items:flex-start;margin-top:.1rem;">
           <button class="btn btn-ghost btn-sm"
-            hx-post="/sites/{{ site.id }}/crawl"
+            hx-post="/library/{{ site.id }}/crawl"
             hx-swap="none"
             hx-on::after-request="showToast(event.detail.successful ? 'Crawl iniciado!' : 'Erro ao iniciar', event.detail.successful ? 'success' : 'error')"
             title="Re-crawlar este site">
             ↺
           </button>
           <button class="btn btn-ghost btn-sm card-action-block"
-            hx-delete="/sites/{{ site.id }}"
+            hx-delete="/library/{{ site.id }}"
             hx-swap="outerHTML"
             hx-target="closest .card"
             hx-confirm="Remover site e todas as {{ site.page_count }} páginas indexadas?"

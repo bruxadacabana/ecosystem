@@ -56,7 +56,7 @@
         <label class="tag" id="lbl-src-sites">
           <input type="checkbox" name="src_sites" value="on" id="cb-src-sites"
                  {% if src_sites is defined and src_sites %}checked{% endif %} hidden>
-          sites
+          biblioteca
         </label>
       </div>
     </form>
@@ -64,7 +64,6 @@
     <nav class="topbar-nav">
       <a href="/" class="nav-link {% if active_tab == 'search' %}nav-link-active{% endif %}">busca</a>
       <a href="/library" class="nav-link {% if active_tab == 'library' %}nav-link-active{% endif %}">biblioteca</a>
-      <a href="/sites" class="nav-link {% if active_tab == 'sites' %}nav-link-active{% endif %}">sites</a>
       <a href="/watch-later" class="nav-link {% if active_tab == 'watch_later' %}nav-link-active{% endif %}">ver depois</a>
       <a href="/downloads" class="nav-link {% if active_tab == 'downloads' %}nav-link-active{% endif %}">downloads</a>
       <a href="/torrents" class="nav-link {% if active_tab == 'torrents' %}nav-link-active{% endif %}">torrents</a>

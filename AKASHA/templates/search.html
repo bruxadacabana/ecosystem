@@ -54,10 +54,10 @@
   </section>
   {% endif %}
 
-  {# ── Seção Sites pessoais ── #}
+  {# ── Seção Biblioteca ── #}
   {% if site_results %}
   <section class="results-section">
-    <h3 class="results-section-title">Nos meus sites</h3>
+    <h3 class="results-section-title">Na minha biblioteca</h3>
     <p class="results-meta">{{ site_results | length }} resultado{% if site_results | length != 1 %}s{% endif %}</p>
     <ol class="results-list">
       {% for r in site_results %}{{ result_card(r) }}{% endfor %}

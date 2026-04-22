@@ -17,13 +17,11 @@ from fastapi.templating import Jinja2Templates
 import config
 import database
 from routers import search as search_router
-from routers import library as library_router
 from routers import system as system_router
 from routers import domains as domains_router
 from routers import crawler as crawler_router
 from routers import watch_later as watch_later_router
 from services.local_search import index_local_files
-from services.library import check_overdue, scrape_and_store
 from services.crawler import crawl_pending_sites
 
 _log = logging.getLogger(__name__)
@@ -33,20 +31,10 @@ _log = logging.getLogger(__name__)
 # Background: monitoramento de URLs da biblioteca
 # ---------------------------------------------------------------------------
 
-async def _monitor_library() -> None:
-    """Acorda a cada hora: re-scrape URLs vencidas + crawla sites pendentes."""
+async def _monitor_crawler() -> None:
+    """Acorda a cada hora e crawla sites pendentes da biblioteca."""
     while True:
         await asyncio.sleep(3600)
-        try:
-            overdue = await check_overdue()
-        except Exception as exc:
-            _log.warning("library monitor: erro ao listar vencidas: %s", exc)
-            overdue = []
-        for entry in overdue:
-            try:
-                await scrape_and_store(entry.id)
-            except Exception as exc:
-                _log.warning("library monitor: erro ao re-scrape %s: %s", entry.url, exc)
         try:
             await crawl_pending_sites()
         except Exception as exc:
@@ -63,7 +51,7 @@ async def lifespan(app: FastAPI):
     await database.init_db()
     config.register_akasha()
     await index_local_files()
-    asyncio.get_running_loop().create_task(_monitor_library())
+    asyncio.get_running_loop().create_task(_monitor_crawler())
     yield
     # Shutdown — nada a liberar por enquanto
 
@@ -86,7 +74,6 @@ app.mount("/static", StaticFiles(directory=_BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
 app.include_router(search_router.router)
-app.include_router(library_router.router)
 app.include_router(system_router.router)
 app.include_router(domains_router.router)
 app.include_router(crawler_router.router)

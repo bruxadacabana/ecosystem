@@ -1,5 +1,5 @@
 """
-AKASHA — Router de Sites Pessoais (Fase 10)
+AKASHA — Router da Biblioteca (crawler de domínios)
 """
 from __future__ import annotations
 
@@ -49,26 +49,26 @@ def _row_to_site(row: tuple) -> CrawlSite:
 
 
 # ---------------------------------------------------------------------------
-# GET /sites
+# GET /library
 # ---------------------------------------------------------------------------
 
-@router.get("/sites", response_class=HTMLResponse)
-async def sites_page(request: Request) -> HTMLResponse:
+@router.get("/library", response_class=HTMLResponse)
+async def library_page(request: Request) -> HTMLResponse:
     rows = await get_all_crawl_sites()
     sites = [_row_to_site(r) for r in rows]
     return templates.TemplateResponse(
         request,
-        "sites.html",
-        {"sites": sites, "active_tab": "sites"},
+        "library.html",
+        {"sites": sites, "active_tab": "library"},
     )
 
 
 # ---------------------------------------------------------------------------
-# POST /sites/discover
+# POST /library/discover
 # ---------------------------------------------------------------------------
 
-@router.post("/sites/discover", response_class=HTMLResponse)
-async def sites_discover(request: Request, url: str = Form(...)) -> HTMLResponse:
+@router.post("/library/discover", response_class=HTMLResponse)
+async def library_discover(request: Request, url: str = Form(...)) -> HTMLResponse:
     """Descobre subdomínios e retorna fragment HTMX com checkboxes."""
     from urllib.parse import urlparse
     parsed = urlparse(url)
@@ -80,17 +80,17 @@ async def sites_discover(request: Request, url: str = Form(...)) -> HTMLResponse
 
     return templates.TemplateResponse(
         request,
-        "_sites_discover.html",
+        "_library_discover.html",
         {"base_url": base_url, "subdomains": subdomains},
     )
 
 
 # ---------------------------------------------------------------------------
-# POST /sites
+# POST /library
 # ---------------------------------------------------------------------------
 
-@router.post("/sites", response_class=HTMLResponse)
-async def sites_add(
+@router.post("/library", response_class=HTMLResponse)
+async def library_add(
     request: Request,
     url:         str  = Form(...),
     label:       str  = Form(""),
@@ -116,18 +116,18 @@ async def sites_add(
     sites = [_row_to_site(r) for r in rows]
     return templates.TemplateResponse(
         request,
-        "_sites_list.html",
+        "_library_list.html",
         {"sites": sites},
     )
 
 
 # ---------------------------------------------------------------------------
-# POST /sites/add-quick — adiciona site a partir de uma URL de resultado
+# POST /library/add-quick — adiciona domínio a partir de uma URL de resultado
 # ---------------------------------------------------------------------------
 
-@router.post("/sites/add-quick")
-async def sites_add_quick(url: str = Form(...)) -> Response:
-    """Adiciona domínio base de uma URL ao rastreador de sites com defaults."""
+@router.post("/library/add-quick")
+async def library_add_quick(url: str = Form(...)) -> Response:
+    """Adiciona domínio base de uma URL à biblioteca com defaults."""
     from urllib.parse import urlparse
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.netloc:
@@ -140,22 +140,22 @@ async def sites_add_quick(url: str = Form(...)) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# DELETE /sites/{site_id}
+# DELETE /library/{site_id}
 # ---------------------------------------------------------------------------
 
-@router.delete("/sites/{site_id}")
-async def sites_delete(site_id: int) -> Response:
+@router.delete("/library/{site_id}")
+async def library_delete(site_id: int) -> Response:
     """Remove site e todas as páginas indexadas (cascade)."""
     await delete_crawl_site(site_id)
     return Response(status_code=200)
 
 
 # ---------------------------------------------------------------------------
-# POST /sites/{site_id}/crawl — re-crawl manual
+# POST /library/{site_id}/crawl — re-crawl manual
 # ---------------------------------------------------------------------------
 
-@router.post("/sites/{site_id}/crawl")
-async def sites_crawl(site_id: int) -> Response:
+@router.post("/library/{site_id}/crawl")
+async def library_crawl(site_id: int) -> Response:
     """Dispara re-crawl manual em background; retorna 200 imediatamente."""
     from database import get_crawl_site
     if not await get_crawl_site(site_id):
