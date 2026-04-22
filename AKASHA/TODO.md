@@ -176,7 +176,8 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] Botão `−` em cada card de resultado `WEB`: `POST /domains/block`, toast de confirmação
 - [x] `routers/domains.py` — `POST /domains/block` (extrai domínio da URL);
       `DELETE /domains/block/{domain}` (desbloquear)
-- [ ] `templates/settings.html` — seção "Domínios bloqueados": lista com botão desbloquear
+- [x] `templates/domains.html` — página `/domains` dedicada: lista de domínios bloqueados
+      com botão desbloquear (✕) e formulário para adicionar via URL
 
 ---
 
