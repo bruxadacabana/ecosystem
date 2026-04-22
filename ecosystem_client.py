@@ -31,7 +31,7 @@ except ImportError:
 
 _DEFAULTS: dict[str, Any] = {
     "aether":    {"vault_path": "", "config_path": ""},
-    "kosmos":    {"data_path": "", "archive_path": "", "config_path": ""},
+    "kosmos":    {"data_path": "", "archive_path": "", "config_path": "", "http_port": 8965},
     "ogma":      {"data_path": "", "config_path": ""},
     "mnemosyne": {"index_paths": [], "config_path": ""},
     "hub":       {"data_path": ""},

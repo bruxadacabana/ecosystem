@@ -32,6 +32,14 @@
       >&#x2316;</button>
       <button
         class="btn btn-ghost card-action-icon"
+        title="Adicionar ao KOSMOS"
+        hx-post="/kosmos/add-source"
+        hx-vals='{"url": "{{ r.url }}", "name": "{{ r.title | replace('"', '&quot;') }}"}'
+        hx-swap="none"
+        hx-on::after-request="showToast(event.detail.successful ? 'Adicionado ao KOSMOS!' : 'Erro — KOSMOS está aberto?', event.detail.successful ? 'success' : 'error')"
+      >K</button>
+      <button
+        class="btn btn-ghost card-action-icon"
         title="Ver mais tarde"
         hx-post="/watch-later/add"
         hx-vals='{"url": "{{ r.url }}", "title": "{{ r.title | replace('"', '&quot;') }}", "snippet": "{{ r.snippet | replace('"', '&quot;') | truncate(200, true, '') }}"}'

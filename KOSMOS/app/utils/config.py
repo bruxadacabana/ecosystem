@@ -22,6 +22,7 @@ DEFAULTS: dict[str, Any] = {
     "reddit_client_id":         "",
     "reddit_client_secret":     "",
     "reddit_user_agent":        "KOSMOS/1.0",
+    "http_port":                8965,
 }
 
 

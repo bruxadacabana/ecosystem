@@ -482,11 +482,11 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 > Botão nos cards de resultado web para adicionar a URL à lista de fontes do KOSMOS.
 
-- [ ] `templates/_macros.html` — botão "adicionar ao KOSMOS" nos cards `WEB`:
-      `hx-post="/kosmos/add-source"` com `{"url": "{{ r.url }}"}`;
-      encaminhar para o endpoint do KOSMOS que gerencia fontes
-- [ ] Verificar qual endpoint do KOSMOS recebe novas fontes (API HTTP local)
-- [ ] Registrar rota bridge em `routers/kosmos_bridge.py` se necessário (similar ao hermes_bridge)
+- [x] `templates/_macros.html` — botão "K" nos cards `WEB`:
+      `hx-post="/kosmos/add-source"` com `{"url": "...", "name": "..."}`;
+      usa `detect_feed_type()` do KOSMOS para inferir tipo (youtube/rss/etc.)
+- [x] KOSMOS expõe `POST /add-source` via `http.server` em thread daemon (porta 8965 por padrão)
+- [x] `routers/kosmos_bridge.py` — lê porta do ecosystem.json, encaminha para KOSMOS; 503 se KOSMOS offline
 
 ---
 

@@ -21,6 +21,7 @@ from routers import system as system_router
 from routers import domains as domains_router
 from routers import crawler as crawler_router
 from routers import watch_later as watch_later_router
+from routers import kosmos_bridge as kosmos_bridge_router
 from services.local_search import index_local_files
 from services.crawler import crawl_pending_sites
 
@@ -78,6 +79,7 @@ app.include_router(system_router.router)
 app.include_router(domains_router.router)
 app.include_router(crawler_router.router)
 app.include_router(watch_later_router.router)
+app.include_router(kosmos_bridge_router.router)
 
 # ---------------------------------------------------------------------------
 # Rotas principais (Fase 1 — estrutura)
