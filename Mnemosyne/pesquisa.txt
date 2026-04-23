@@ -2473,3 +2473,269 @@ Fontes consultadas (além da inspeção direta do código dos dois apps):
 FIM DA PESQUISA — Integração Mnemosyne + AKASHA
 FIM DA PESQUISA — NotebookLM Features
 ========================================================
+
+========================================================
+PESQUISA PARA O MNEMOSYNE
+Sessão: 2026-04-23
+Tema: Otimização, Chunking, Reranking, Avaliação RAG
+========================================================
+
+--------------------------------------------------------
+1. CHROMADB — MÉTRICA DE DISTÂNCIA (BUG CRÍTICO)
+--------------------------------------------------------
+
+O Mnemosyne usa ChromaDB com a métrica padrão: L2 (distância euclidiana ao
+quadrado). Para embeddings de texto, isso é subótimo.
+
+POR QUE COSINE É MELHOR PARA TEXTO:
+  - Cosine mede o ângulo entre vetores (direção = significado semântico)
+  - L2 mede distância absoluta incluindo magnitude
+  - Modelos de embedding de texto (Sentence Transformers, nomic-embed, etc.)
+    produzem vetores normalizados — L2 nestes vetores mede diferenças mínimas
+    de dimensão que não refletem similaridade semântica
+  - Impacto documentado: trocar L2 → cosine pode melhorar resultados em 10x
+    em buscas semânticas de texto
+
+SITUAÇÃO ATUAL NO MNEMOSYNE:
+  - core/indexer.py: `Chroma(persist_directory=..., embedding_function=...)`
+    → sem especificar métrica → L2 por padrão
+  - Afeta: create_vectorstore(), index_single_file(), update_vectorstore(),
+    load_vectorstore(), IndexWorker.run()
+
+COMO CORRIGIR:
+  No LangChain, passa-se via collection_metadata:
+
+    Chroma(
+        persist_directory=config.persist_dir,
+        embedding_function=embeddings,
+        collection_metadata={"hnsw:space": "cosine"},
+    )
+
+  Ou via API direta do ChromaDB (nova sintaxe preferida):
+
+    client.create_collection(
+        name="...",
+        configuration={"hnsw": {"space": "cosine"}}
+    )
+
+  ATENÇÃO: a métrica só pode ser definida na CRIAÇÃO da coleção.
+  Coleções existentes com L2 precisam ser recriadas para usar cosine.
+  Como o IndexWorker já apaga e recria o persist_dir, a correção é trivial:
+  basta adicionar collection_metadata ao Chroma() em todos os pontos de criação.
+
+  O campo "hnsw:space" aceita: "l2" (padrão), "cosine", "ip" (inner product).
+  Para embeddings de texto: sempre usar "cosine".
+
+Fontes:
+  - razikus.substack.com/p/chromadb-defaults-to-l2-distance
+  - community.sap.com: "Why Cosine Similarity > L2 Distance for RAG Systems"
+  - milvus.io/ai-quick-reference/how-does-the-distance-metric-used-cosine-vs-l2...
+  - docs.trychroma.com/docs/collections/configure
+
+--------------------------------------------------------
+2. TAMANHO DE CHUNK — SITUAÇÃO ATUAL E RECOMENDAÇÃO
+--------------------------------------------------------
+
+SITUAÇÃO ATUAL NO MNEMOSYNE:
+  - chunk_size = 800 (caracteres, não tokens — RecursiveCharacterTextSplitter)
+  - chunk_overlap = 100 (12.5% de overlap — dentro do range recomendado)
+
+NOTA IMPORTANTE: RecursiveCharacterTextSplitter usa CARACTERES, não tokens.
+  800 chars ≈ 200-250 tokens (dependendo do idioma).
+  O range recomendado de 400-512 TOKENS ≈ 1600-2048 caracteres.
+  Portanto, o chunk_size atual de 800 chars está ABAIXO do ótimo recomendado.
+
+BENCHMARKS 2025-2026:
+  - Vecta (fev/2026), 50 papers: recursive 512-token = 69% accuracy (1º lugar)
+    Semantic chunking = 54% accuracy (15 pontos abaixo — PIOR que recursivo)
+  - NAACL 2025 (Vectara): fixed-size supera semantic chunking em retrieval,
+    evidence retrieval E answer generation
+  - A pesquisa mostra: chunks semânticos muito pequenos (~43 tokens médios)
+    recuperam bem isolados mas dão contexto insuficiente ao LLM → perda na
+    geração da resposta
+  - Exceção: domínio clínico com chunking adaptativo por tópico lógico →
+    87% accuracy vs 13% para fixed-size (muito específico de domínio)
+
+CONCLUSÃO PARA O MNEMOSYNE:
+  - semantic_chunking=False (padrão atual) está correto — não mudar
+  - chunk_size de 800 chars é baixo; subir para 1600-2000 chars (≈ 400-512 tok)
+  - chunk_overlap manter em ~15% do novo chunk_size → ~240-300 chars
+  - Exemplo: chunk_size=1800, chunk_overlap=250
+
+Fontes:
+  - firecrawl.dev/blog/best-chunking-strategies-rag
+  - ragaboutit.com: "The 2026 RAG Performance Paradox..."
+  - blog.premai.io/rag-chunking-strategies-the-2026-benchmark-guide/
+  - langcopilot.com: "Document Chunking for RAG: 9 Strategies Tested"
+
+--------------------------------------------------------
+3. RERANKING COM FLASHRANK — MELHORIA DE PRECISÃO SEM TORCH
+--------------------------------------------------------
+
+CONCEITO — RETRIEVAL EM DOIS ESTÁGIOS:
+  Etapa 1 (Retrieve amplo): busca vetorial com k=30-50 candidatos
+  Etapa 2 (Rerank preciso): cross-encoder pontua cada par (query, doc)
+                            e reordena os candidatos → top 5-10 para o LLM
+
+  Cross-encoder: recebe query + doc juntos → score de relevância 0-1.
+  É mais lento que bi-encoder (embedding vetorial) mas muito mais preciso,
+  pois vê o contexto da query ao avaliar cada documento.
+
+FLASHRANK — POR QUE É IDEAL PARA O MNEMOSYNE:
+  - Modelo mais leve do mundo para reranking: ~4MB
+  - Sem dependência de PyTorch ou Transformers (usa ONNX Runtime)
+  - Latência no CPU: 15-30ms para 50 candidatos (via FlashRank)
+                    100-250ms para 50 candidatos (via MiniLM cross-encoder)
+  - Instalação: pip install flashrank
+  - Funciona 100% offline
+
+INTEGRAÇÃO COM LANGCHAIN:
+  from langchain.retrievers import ContextualCompressionRetriever
+  from langchain.retrievers.document_compressors import FlashrankRerank
+
+  compressor = FlashrankRerank(model="ms-marco-MiniLM-L-12-v2", top_n=5)
+  retriever = ContextualCompressionRetriever(
+      base_compressor=compressor,
+      base_retriever=vs.as_retriever(search_kwargs={"k": 30}),
+  )
+  docs = retriever.invoke("minha pergunta")
+
+  O FlashrankRerank está em langchain_community.document_compressors.
+  Modelos disponíveis (baixados automaticamente, cacheados em cache_dir):
+    - "ms-marco-MiniLM-L-12-v2" (padrão, inglês)
+    - "ms-marco-MultiBERT-L-12" (multilíngue — melhor para PT)
+    - "rank-T5-flan" (alternativa leve)
+
+IMPACTO ESPERADO:
+  A adição de reranking é a melhoria com maior ROI num pipeline RAG maduro:
+  - Aumenta precision nos top-k documentos passados ao LLM
+  - Reduz alucinações (LLM recebe documentos mais relevantes)
+  - Custo: +15-30ms em CPU (imperceptível dado que o LLM já demora segundos)
+
+ONDE IMPLEMENTAR NO MNEMOSYNE:
+  core/rag.py → função prepare_ask() → substituir o retriever base por
+  ContextualCompressionRetriever com FlashrankRerank.
+
+Fontes:
+  - github.com/PrithivirajDamodaran/FlashRank
+  - docs.langchain.com/oss/python/integrations/retrievers/flashrank-reranker
+  - api.python.langchain.com: FlashrankRerank
+  - thegeocommunity.com: "Reranking for RAG: Cross-Encoders vs LLM Rerankers"
+  - medium.com/@vaibhav-p-dixit: "Reranking in RAG: Cross-Encoders, FlashRank"
+
+--------------------------------------------------------
+4. RAGAS — AVALIAÇÃO DO PIPELINE SEM GROUND TRUTH
+--------------------------------------------------------
+
+CONCEITO:
+  RAGAS (Retrieval Augmented Generation Assessment) é um framework de avaliação
+  de pipelines RAG que NÃO requer ground truth (anotações humanas).
+  Avalia automaticamente múltiplas dimensões do pipeline.
+
+MÉTRICAS PRINCIPAIS (sem ground truth):
+  - Faithfulness: a resposta é fiel aos documentos recuperados?
+    (detecta alucinações — resposta com info não presente nos docs)
+  - Answer Relevancy: a resposta responde à pergunta feita?
+  - Context Precision: os docs recuperados são relevantes para a query?
+  - Context Recall: os docs mais importantes foram recuperados?
+  - Noise Sensitivity: o sistema se distrai com docs irrelevantes?
+
+COMO FUNCIONA SEM GROUND TRUTH:
+  RAGAS usa o próprio LLM como juiz para avaliar as métricas.
+  Para uso local: configurar o LLM avaliador para Ollama em vez de OpenAI.
+  Exemplo com Ollama:
+
+  from ragas.llms import LangchainLLMWrapper
+  from langchain_ollama import ChatOllama
+  evaluator_llm = LangchainLLMWrapper(ChatOllama(model="qwen2.5:7b"))
+
+UTILIDADE PARA O MNEMOSYNE:
+  - Antes/depois de mudanças (ex: cosine vs L2, chunk size): medir impacto real
+  - Identificar quais perguntas o sistema responde mal e por quê
+  - Dado o hardware (não precisa de GPU para avaliação, só Ollama rodando)
+
+LIMITAÇÃO:
+  - RAGAS é uma biblioteca, não plataforma — sem UI embutida
+  - Avaliação usa LLM → é lenta para corpus grande
+  - Requer o LLM estar rodando durante a avaliação
+
+Fontes:
+  - arxiv.org/abs/2309.15217 (paper original RAGAS)
+  - braintrust.dev/articles/best-rag-evaluation-tools
+  - dev.to/kuldeep_paul: "Top 5 RAG Evaluation Platforms in 2025"
+  - haystack.deepset.ai/cookbook/rag_eval_ragas
+
+--------------------------------------------------------
+5. LIGHTRAG E GRAFOS DE CONHECIMENTO — VIABILIDADE LOCAL
+--------------------------------------------------------
+
+LIGHTRAG:
+  Sistema RAG com grafo de conhecimento integrado (EMNLP 2025).
+  Extrai entidades e relações dos documentos, constrói grafo, usa busca
+  dual (vetorial + grafo) para recuperação mais rica.
+
+  Instalação: pip install lightrag-hku
+  Suporte nativo a Ollama (LLM + embeddings → 100% offline)
+  Novidade: reranker integrado (agosto 2025) + avaliação via RAGAS
+
+LIMITAÇÃO CRÍTICA PARA O MNEMOSYNE:
+  LightRAG recomenda ≥ 32B parâmetros para extração eficaz de grafo.
+  Modelos menores (7B-14B) extraem entidades mas perdem relações complexas.
+  Com RX 6600 (8GB VRAM), o máximo prático é ~8B Q4_K_M (4.4 GB de modelo).
+  Um modelo 32B Q4_K_M precisaria de ~18 GB → inviável na GPU; CPU seria lento.
+
+  CONCLUSÃO: LightRAG é promissor mas requer hardware que a usuária não tem.
+  Alternativa futura: construir grafo com modelo 8B em CPU (lento mas possível)
+  e usar grafo apenas como índice suplementar, não para extração em tempo real.
+
+ZEP — MEMÓRIA TEMPORAL EM GRAFO (referência para Fase 6):
+  Zep usa grafo de conhecimento temporal para memória de agentes:
+  - "Episodes" = unidades de dado (texto, JSON, mensagens)
+  - Extrai entidades e datas relativas ("na semana passada", "próxima quinta")
+  - Preserva como a informação está conectada temporalmente
+  Não é diretamente utilizável offline hoje mas a arquitetura é referência.
+
+Fontes:
+  - github.com/HKUDS/LightRAG
+  - stable-learn.com/en/lightrag-introduction/
+  - arxiv.org/html/2501.13956v1 (Zep: Temporal Knowledge Graph)
+  - arxiv.org/html/2602.05665v1 (Graph-Based Agent Memory)
+
+--------------------------------------------------------
+6. RESUMO — IMPACTO VS. ESFORÇO PARA O MNEMOSYNE
+--------------------------------------------------------
+
+  ALTA PRIORIDADE (esforço baixo, impacto alto):
+
+  [A] Métrica cosine no ChromaDB
+      Esforço: ~30 min (adicionar collection_metadata em 4-5 pontos do código)
+      Impacto: potencialmente até 10x melhoria na qualidade de retrieval
+      Risco: coleções existentes precisam ser recriadas (IndexWorker já faz isso)
+
+  [B] Tamanho de chunk: 800 → 1800 chars, overlap 100 → 250
+      Esforço: 5 min (mudar defaults em config.py)
+      Impacto: chunks maiores = mais contexto por fragmento = melhor resposta do LLM
+      Risco: mais tokens por contexto → resposta um pouco mais lenta
+
+  MÉDIA PRIORIDADE (esforço médio, impacto transformacional):
+
+  [C] FlashRank reranking no prepare_ask()
+      Esforço: ~2h (instalar flashrank, modificar core/rag.py, testar)
+      Impacto: maior precision nos documentos passados ao LLM, menos alucinações
+      Risco: +15-30ms por query (desprezível)
+
+  BAIXA PRIORIDADE (esforço alto, valor futuro):
+
+  [D] RAGAS para avaliação
+      Esforço: 1 dia (script de avaliação, perguntas de teste, análise)
+      Impacto: dados para validar [A], [B], [C] objetivamente
+      Risco: usa LLM durante avaliação → lento
+
+  [E] LightRAG / grafos de conhecimento
+      Esforço: semanas
+      Impacto: retrieval muito mais rico para perguntas relacionais
+      Risco: requer ≥ 32B parâmetros para resultados bons → hardware insuficiente
+
+========================================================
+FIM DA PESQUISA — Otimização, Chunking, Reranking, Avaliação
+========================================================
