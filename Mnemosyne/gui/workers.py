@@ -76,6 +76,7 @@ class IndexWorker(QThread):
 
     def run(self) -> None:
         import os
+        import shutil
         import time
         import uuid
         from concurrent.futures import ThreadPoolExecutor
@@ -101,120 +102,134 @@ class IndexWorker(QThread):
             self.finished.emit(False, str(EmptyDirectoryError(self.config.watched_dir)))
             return
 
+        # ── 2. Limpar vectorstore anterior (evita acúmulo de duplicatas) ──────
+        # Cada execução de "Indexar tudo" parte do zero; o progresso por arquivo
+        # é salvo no tracker para que "Atualizar índice" possa retomar se necessário.
+        if os.path.exists(self.config.persist_dir):
+            try:
+                shutil.rmtree(self.config.persist_dir)
+            except OSError as exc:
+                self.finished.emit(False, f"Erro ao limpar índice anterior: {exc}")
+                return
+        try:
+            os.makedirs(self.config.persist_dir, exist_ok=True)
+        except OSError as exc:
+            self.finished.emit(False, f"Erro ao criar diretório: {exc}")
+            return
+
         _BATCH, _SLEEP = _detect_batch_config()
         embeddings = OllamaEmbeddings(model=self.config.embed_model)
         splitter = _get_splitter(self.config, embeddings)
+        tracker = FileTracker(self.config.mnemosyne_dir)
         total = len(files)
         errors: list[str] = []
 
-        # ── 2. Carregar e chunkar todos os arquivos (progresso por arquivo) ───
-        all_chunks: list = []
-        for i, file_path in enumerate(files, 1):
-            if self.isInterruptionRequested():
-                self.finished.emit(False, "Interrompido.")
-                return
-            name = os.path.basename(file_path)
-            self.progress.emit(name, i, total)
-            try:
-                docs = load_single_file(file_path)
-                chunks = splitter.split_documents(docs)
-                all_chunks.extend(chunks)
-            except MnemosyneError as exc:
-                errors.append(str(exc))
-
-        if not all_chunks:
-            self.finished.emit(False, "Nenhum chunk gerado — verifique os arquivos.")
-            return
-
-        # ── 3. Probe: embedar primeiro batch e medir tempo (detecta GPU) ──────
+        # ── 3. Abrir Chroma vazio ─────────────────────────────────────────────
         try:
-            os.makedirs(self.config.persist_dir, exist_ok=True)
             vs = Chroma(
                 persist_directory=self.config.persist_dir,
                 embedding_function=embeddings,
-            )
-            probe = all_chunks[:_BATCH]
-            t0 = time.time()
-            probe_embs = embeddings.embed_documents([c.page_content for c in probe])
-            t_probe = time.time() - t0
-
-            vs._collection.add(
-                ids=[str(uuid.uuid4()) for _ in probe],
-                documents=[c.page_content for c in probe],
-                embeddings=probe_embs,
-                metadatas=[c.metadata or {} for c in probe],
             )
         except Exception as exc:
             self.finished.emit(False, f"Erro ao criar vectorstore: {exc}")
             return
 
-        remaining = all_chunks[len(probe):]
-        if not remaining:
-            msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
-            if errors:
-                msg += f" {len(errors)} erro(s) ignorado(s)."
-            self.finished.emit(True, msg)
-            return
+        # ── 4. Processar arquivo por arquivo ──────────────────────────────────
+        # Probe de GPU no primeiro batch; progresso salvo no tracker após cada
+        # arquivo para permitir retomada via "Atualizar índice" se interrompido.
+        use_parallel: bool = False
+        probe_done: bool = False
 
-        # GPU detectada: tempo de probe < 2s e batch grande (não hardware fraco)
-        use_parallel = t_probe < 2.0 and _BATCH >= 50
-
-        # ── 4a. Embedding paralelo (GPU): pipeline embed[n+1] + write[n] ──────
-        if use_parallel:
-            batch_list = [remaining[b : b + _BATCH] for b in range(0, len(remaining), _BATCH)]
-            n_batches = len(batch_list)
-            try:
-                with ThreadPoolExecutor(max_workers=2) as pool:
-                    # Submeter todos os futuros antecipadamente (ThreadPool gerencia)
-                    futures = [
-                        (batch, pool.submit(
-                            embeddings.embed_documents,
-                            [c.page_content for c in batch],
-                        ))
-                        for batch in batch_list
-                    ]
-                    for b_idx, (batch, future) in enumerate(futures):
-                        if self.isInterruptionRequested():
-                            self.finished.emit(False, "Interrompido.")
-                            return
-                        embs = future.result()
-                        vs._collection.add(
-                            ids=[str(uuid.uuid4()) for _ in batch],
-                            documents=[c.page_content for c in batch],
-                            embeddings=embs,
-                            metadatas=[c.metadata or {} for c in batch],
-                        )
-                        self.progress.emit("Incorporando (paralelo)…", b_idx + 1, n_batches)
-                        if b_idx + 1 < n_batches:
-                            time.sleep(_SLEEP)
-            except Exception as exc:
-                self.finished.emit(False, f"Erro na indexação paralela: {exc}")
+        for i, file_path in enumerate(files, 1):
+            if self.isInterruptionRequested():
+                self.finished.emit(False, "Interrompido.")
                 return
 
-        # ── 4b. Embedding sequencial (CPU / hardware fraco) ───────────────────
-        else:
-            n_batches = max(1, -(-len(remaining) // _BATCH))  # ceiling division
-            b_idx = 0
+            name = os.path.basename(file_path)
+            self.progress.emit(name, i, total)
+
             try:
-                for b in range(0, len(remaining), _BATCH):
-                    if self.isInterruptionRequested():
-                        self.finished.emit(False, "Interrompido.")
-                        return
-                    batch = remaining[b : b + _BATCH]
-                    embs = embeddings.embed_documents([c.page_content for c in batch])
+                docs = load_single_file(file_path)
+                chunks = splitter.split_documents(docs)
+            except MnemosyneError as exc:
+                errors.append(str(exc))
+                continue
+
+            if not chunks:
+                tracker.mark_indexed(file_path)
+                continue
+
+            # Probe de GPU no primeiro batch de chunks encontrado
+            if not probe_done:
+                probe_batch = chunks[:_BATCH]
+                try:
+                    t0 = time.time()
+                    probe_embs = embeddings.embed_documents([c.page_content for c in probe_batch])
+                    t_probe = time.time() - t0
                     vs._collection.add(
-                        ids=[str(uuid.uuid4()) for _ in batch],
-                        documents=[c.page_content for c in batch],
-                        embeddings=embs,
-                        metadatas=[c.metadata or {} for c in batch],
+                        ids=[str(uuid.uuid4()) for _ in probe_batch],
+                        documents=[c.page_content for c in probe_batch],
+                        embeddings=probe_embs,
+                        metadatas=[c.metadata or {} for c in probe_batch],
                     )
-                    b_idx += 1
-                    self.progress.emit("Incorporando…", b_idx, n_batches)
-                    if b + _BATCH < len(remaining):
-                        time.sleep(_SLEEP)
-            except Exception as exc:
-                self.finished.emit(False, f"Erro na indexação: {exc}")
-                return
+                    use_parallel = t_probe < 2.0 and _BATCH >= 50
+                    probe_done = True
+                except Exception as exc:
+                    self.finished.emit(False, f"Erro ao criar vectorstore: {exc}")
+                    return
+                remaining = chunks[len(probe_batch):]
+            else:
+                remaining = chunks
+
+            # Embedar chunks restantes do arquivo em batches
+            if remaining:
+                batch_list = [remaining[b : b + _BATCH] for b in range(0, len(remaining), _BATCH)]
+                n_batches = len(batch_list)
+                try:
+                    if use_parallel and n_batches > 1:
+                        with ThreadPoolExecutor(max_workers=2) as pool:
+                            futures = [
+                                (batch, pool.submit(
+                                    embeddings.embed_documents,
+                                    [c.page_content for c in batch],
+                                ))
+                                for batch in batch_list
+                            ]
+                            for b_idx, (batch, future) in enumerate(futures):
+                                if self.isInterruptionRequested():
+                                    self.finished.emit(False, "Interrompido.")
+                                    return
+                                embs = future.result()
+                                vs._collection.add(
+                                    ids=[str(uuid.uuid4()) for _ in batch],
+                                    documents=[c.page_content for c in batch],
+                                    embeddings=embs,
+                                    metadatas=[c.metadata or {} for c in batch],
+                                )
+                                self.progress.emit(f"Incorporando {name}", i, total)
+                                if b_idx + 1 < n_batches:
+                                    time.sleep(_SLEEP)
+                    else:
+                        for b_idx, batch in enumerate(batch_list):
+                            if self.isInterruptionRequested():
+                                self.finished.emit(False, "Interrompido.")
+                                return
+                            embs = embeddings.embed_documents([c.page_content for c in batch])
+                            vs._collection.add(
+                                ids=[str(uuid.uuid4()) for _ in batch],
+                                documents=[c.page_content for c in batch],
+                                embeddings=embs,
+                                metadatas=[c.metadata or {} for c in batch],
+                            )
+                            self.progress.emit(f"Incorporando {name}", i, total)
+                            if b_idx + 1 < n_batches:
+                                time.sleep(_SLEEP)
+                except Exception as exc:
+                    errors.append(f"{name}: {exc}")
+                    continue
+
+            # Salvar progresso no tracker após cada arquivo concluído
+            tracker.mark_indexed(file_path)
 
         msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
         if errors:

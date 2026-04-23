@@ -279,4 +279,10 @@
 
 ---
 
-*Atualizado em: 2026-04-21 — Fase 7 (Modo de Pesquisa Profunda / integração AKASHA) adicionada.*
+## Correções de bugs
+
+- [x] `gui/workers.py` — `IndexWorker`: limpar `persist_dir` antes de indexar para evitar acúmulo de duplicatas no ChromaDB em execuções repetidas
+- [x] `gui/workers.py` — `IndexWorker`: chamar `tracker.mark_indexed(file_path)` após cada arquivo para salvar progresso; interrupção agora permite retomada via "Atualizar índice"
+- [x] `gui/workers.py` — `IndexWorker`: reestruturado para processar arquivo por arquivo (load → chunk → embed → add → mark_indexed) em vez de chunkar tudo antes de embedar
+
+*Atualizado em: 2026-04-23 — bugs críticos do IndexWorker corrigidos.*
