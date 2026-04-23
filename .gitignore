@@ -31,6 +31,8 @@ stellar-downloader/data/
 
 # Logs
 *.log
+*.log.*
+Mnemosyne/logs/
 
 # Variáveis de ambiente
 .env
