@@ -724,7 +724,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 
 ### Busca: priorização e segunda coluna
 - [ ] Definir 3 níveis de prioridade nos resultados de busca:
-  - P1: conteúdo local indexado (arquivos do ecossistema, biblioteca e sites crawleados)
+  - P1: conteúdo local indexado (arquivos do ecossistema + biblioteca/sites crawleados)
   - P2: domínios favoritos/prioritários (ver seção acima)
   - P3: resultados web gerais
 - [ ] Criar segunda coluna (ou painel lateral) para exibir resultados locais separados dos web
