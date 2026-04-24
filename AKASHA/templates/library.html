@@ -1,6 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Biblioteca — AKASHA{% endblock %}
 
+{% block scripts %}
+<script>
+function toggleSitePages(btn, siteId) {
+  var sec = document.getElementById('pages-section-' + siteId);
+  if (!sec) return;
+  if (sec.innerHTML.trim()) {
+    sec.innerHTML = '';
+    sec.style.marginTop = '0';
+    btn.classList.remove('tag-active');
+  } else {
+    sec.style.marginTop = '.75rem';
+    htmx.ajax('GET', '/library/' + siteId + '/pages', {target: '#pages-section-' + siteId, swap: 'innerHTML'});
+    btn.classList.add('tag-active');
+  }
+}
+</script>
+{% endblock %}
+
 {% block content %}
 <div class="container" style="max-width:860px;margin:2rem auto;padding:0 1.5rem;">
   <p class="page-subtitle">Crawler de domínios — rastreia automaticamente todas as páginas de um site até uma profundidade configurável.</p>

@@ -38,6 +38,13 @@
 
         <!-- ─ Ações ─ -->
         <div style="display:flex;gap:.4rem;flex-shrink:0;align-items:flex-start;margin-top:.1rem;">
+          {% if site.page_count > 0 %}
+          <button class="btn btn-ghost btn-sm"
+            onclick="toggleSitePages(this, {{ site.id }})"
+            title="Ver páginas indexadas">
+            &#x1F4C4; {{ site.page_count }} página{{ 's' if site.page_count != 1 else '' }}
+          </button>
+          {% endif %}
           <button class="btn btn-ghost btn-sm"
             hx-post="/library/{{ site.id }}/crawl"
             hx-swap="none"
@@ -56,6 +63,9 @@
         </div>
 
       </div>
+
+      <!-- ─ Páginas crawleadas (expande ao clicar no botão acima) ─ -->
+      <div id="pages-section-{{ site.id }}" style="margin-top:0;"></div>
     </div>
     {% endfor %}
   {% else %}

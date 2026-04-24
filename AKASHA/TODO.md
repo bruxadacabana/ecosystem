@@ -298,9 +298,9 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] `templates/_site_pages.html` — fragment HTMX: lista de cards de página (título, URL
       abreviada, data, badge de status HTTP); botão "Ler" abre `/library/reader?url=...`;
       paginação "Carregar mais" com `hx-swap="outerHTML"` no load-more li
-- [ ] `templates/sites.html` — botão "📄 N páginas" em cada site card que expande
-      `_site_pages.html` via HTMX (`hx-get="/sites/{id}/pages" hx-swap="innerHTML"`);
-      colapsar ao clicar de novo
+- [x] `templates/_library_list.html` — botão "📄 N páginas" em cada site card que expande
+      `_site_pages.html` via HTMX (`htmx.ajax GET /library/{id}/pages`);
+      colapsar ao clicar de novo (toggleSitePages em library.html)
 - [ ] `templates/_macros.html` — nos cards de resultado com `source="SITES"`, adicionar
       botão "Ler" ao lado do link externo que abre `/sites/reader?url=...` inline
 
