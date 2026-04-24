@@ -805,7 +805,7 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 
 ---
 
-## PENDÊNCIAS — ECOSSISTEMA / LOGOS
+## PENDÊNCIAS — ECOSSISTEMA 
 
 > Ver notas de design detalhadas em `## ONDE PARAMOS → LOGOS` neste arquivo.
 
@@ -835,6 +835,51 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 - [ ] Planejar API de "Mapa de Contexto" no AKASHA:
   — dado um termo, retornar resultados cruzados: Mnemosyne (RAG) + KOSMOS (artigos) + Hermes (transcrições) + AETHER (notas)
 - [ ] HUB consumir essa API num botão de busca global cross-app
+
+### HUB: redesign da UI como dashboard do ecossistema
+
+O HUB deixou de ser um companion Android e é agora o **painel de controle central**
+do ecossistema. A UI atual (se existente) foi projetada para outra finalidade —
+precisa ser reimaginada como um dashboard desktop (Tauri).
+
+#### Arquitetura de navegação
+- [ ] Sidebar vertical persistente com 4 seções principais:
+  — **Home** (dashboard de status dos apps)
+  — **LOGOS** (fila de LLM + monitor de VRAM)
+  — **Atividade** (feed de eventos cross-app)
+  — **Configuração** (ecosystem.json + sync_root)
+- [ ] Topbar mínima: nome do ecossistema + indicador global de saúde + botão de silêncio
+
+#### Tela Home — status dos apps
+- [ ] Card por app do ecossistema (AKASHA · KOSMOS · AETHER · Mnemosyne · Hermes · OGMA):
+  — status ao vivo (running / stopped / erro) via ping periódico nos `/health` endpoints
+  — porta, botão "abrir no browser" (apps web) ou "focar janela" (apps Qt/Tauri)
+  — botão de iniciar / encerrar cada app diretamente do HUB
+- [ ] Badge de alerta quando app está offline mas deveria estar rodando
+- [ ] Mini-resumo por app (última atividade, contagem de arquivos/artigos/etc.)
+
+#### Painel de configuração do ecossistema
+- [ ] Campo `sync_root` com botão "Aplicar" — chama `apply_sync_root()` e mostra preview
+  dos caminhos derivados por app antes de confirmar
+- [ ] Aviso de migração: se sync_root muda e dados existem no caminho antigo, exibir
+  instrução para mover arquivos (ex.: `akasha.db`, archives) antes de reiniciar
+- [ ] Editor visual das seções do `ecosystem.json` (alternativa ao JSON bruto):
+  campos por app com labels descritivos e validação de caminhos
+
+#### System tray / always-accessible
+- [ ] HUB fica na bandeja do sistema ao minimizar (não fecha, não some da taskbar)
+- [ ] Menu de contexto na bandeja: abrir/fechar apps individuais, ativar "Modo Silêncio",
+  status rápido (quantos apps rodando)
+- [ ] Notificações nativas do SO para eventos importantes (crawl concluído, erro de app, etc.)
+
+#### Design visual
+- [ ] Seguir DESIGN_BIBLE.txt — tema padrão: "Atlas Astronômico à Meia-Noite" (`#12161E`)
+- [ ] Dois modos de janela:
+  — **Compacto** (~600×400): só cards de status + botões de ação imediata
+  — **Expandido** (~1200×700): dashboard completo com sidebar + todas as seções
+- [ ] Tipografia e paleta consistentes com AETHER/OGMA (tokens compartilhados do ecossistema)
+
+---
 
 ### Migração Rust/PyO3 para indexação (longo prazo)
 - [x] Avaliar substituição do indexador Python do AKASHA por módulo Rust via PyO3
