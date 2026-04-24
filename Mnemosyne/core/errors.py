@@ -91,3 +91,14 @@ class ObsidianVaultError(MnemosyneError):
 
 class FrontmatterParseError(MnemosyneError):
     """Erro ao interpretar frontmatter YAML de uma nota."""
+
+
+class AkashaOfflineError(MnemosyneError):
+    """AKASHA não está acessível na porta configurada."""
+
+    def __init__(self) -> None:
+        super().__init__("AKASHA offline — inicie o servidor em localhost:7071")
+
+
+class AkashaFetchError(MnemosyneError):
+    """Falha ao buscar ou processar uma URL via AKASHA."""

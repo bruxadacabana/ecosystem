@@ -245,7 +245,7 @@
 
 ### AkashaClient
 
-- [ ] `core/akasha_client.py` — cliente httpx para a API REST do AKASHA:
+- [x] `core/akasha_client.py` — cliente httpx para a API REST do AKASHA:
       `search(query, max_results) -> list[AkashaResult]` — chama `GET /search/json`;
       `fetch(url) -> FetchResult` — chama `POST /fetch`;
       `is_available() -> bool` — `GET /health` com timeout 2s;
