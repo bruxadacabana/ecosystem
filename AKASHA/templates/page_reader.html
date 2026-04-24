@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — AKASHA{% endblock %}
+
+{% block head %}
+<style>
+  .reader-header {
+    max-width: 720px;
+    margin: 2rem auto 1.5rem;
+    padding: 0 1.5rem;
+  }
+  .reader-back {
+    display: inline-block;
+    font-size: 13px;
+    margin-bottom: 1rem;
+    opacity: .7;
+  }
+  .reader-back:hover { opacity: 1; }
+  .reader-title {
+    font-family: 'IM Fell English', serif;
+    font-size: 1.7rem;
+    line-height: 1.3;
+    margin: 0 0 .6rem;
+  }
+  .reader-meta {
+    font-size: 11px;
+    opacity: .6;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+  }
+  .reader-body {
+    max-width: 720px;
+    margin: 0 auto 4rem;
+    padding: 0 1.5rem;
+    font-family: 'IM Fell English', serif;
+    font-size: 1.05rem;
+    line-height: 1.8;
+  }
+  .reader-body h1, .reader-body h2, .reader-body h3,
+  .reader-body h4, .reader-body h5, .reader-body h6 {
+    font-family: 'IM Fell English', serif;
+    margin: 1.6em 0 .4em;
+    line-height: 1.25;
+  }
+  .reader-body p  { margin: 0 0 1em; }
+  .reader-body a  { text-decoration: underline; }
+  .reader-body ul, .reader-body ol { padding-left: 1.5em; margin: 0 0 1em; }
+  .reader-body li { margin-bottom: .3em; }
+  .reader-body blockquote {
+    border-left: 3px solid var(--rule);
+    margin: 1em 0;
+    padding: .3em 1em;
+    opacity: .8;
+  }
+  .reader-body pre {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: .8em 1em;
+    overflow-x: auto;
+    font-family: 'Courier Prime', monospace;
+    font-size: .9rem;
+  }
+  .reader-body code {
+    font-family: 'Courier Prime', monospace;
+    font-size: .9em;
+    background: var(--surface);
+    padding: .1em .3em;
+    border-radius: 2px;
+  }
+  .reader-body pre code { background: none; padding: 0; }
+  .reader-body img { max-width: 100%; height: auto; border-radius: var(--radius); }
+  .reader-body hr { border: none; border-top: 1px solid var(--rule); margin: 2em 0; }
+  .reader-empty {
+    text-align: center;
+    padding: 3rem 0;
+    opacity: .5;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="reader-header">
+  <a href="javascript:history.back()" class="reader-back result-link">← Voltar</a>
+
+  <h1 class="reader-title">{{ title }}</h1>
+
+  <div class="reader-meta">
+    <a href="{{ url }}" target="_blank" rel="noopener noreferrer" class="result-link">
+      {{ url }} ↗
+    </a>
+    {% if crawled_at %}
+    <span>·</span>
+    <span>indexado em {{ crawled_at[:10] }}</span>
+    {% endif %}
+    {% if http_status %}
+    <span>·</span>
+    <span class="tag {% if http_status == 200 %}tag-active{% elif http_status >= 400 %}tag-error{% endif %}"
+          style="font-size:9px;">
+      HTTP {{ http_status }}
+    </span>
+    {% endif %}
+  </div>
+</div>
+
+<article class="reader-body">
+  {% if content_html %}
+    {{ content_html | safe }}
+  {% else %}
+    <div class="reader-empty">
+      <p>Nenhum conteúdo indexado para esta página.</p>
+    </div>
+  {% endif %}
+</article>
+{% endblock %}

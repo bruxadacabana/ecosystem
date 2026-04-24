@@ -12,7 +12,12 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from database import add_crawl_site, delete_crawl_site, get_all_crawl_sites
+import markdown as _md
+
+from database import (
+    add_crawl_site, delete_crawl_site, get_all_crawl_sites,
+    get_crawl_page_by_url,
+)
 from services.crawler import crawl_site, discover_subdomains
 
 router = APIRouter()
@@ -162,6 +167,30 @@ async def library_crawl(site_id: int) -> Response:
         raise HTTPException(status_code=404, detail="Site não encontrado")
     asyncio.get_running_loop().create_task(_bg_crawl(site_id))
     return Response(status_code=200)
+
+
+@router.get("/library/reader", response_class=HTMLResponse)
+async def library_reader(request: Request, url: str = "") -> HTMLResponse:
+    """Reader mode: abre o conteúdo de uma crawl_page pelo URL."""
+    if not url:
+        raise HTTPException(status_code=400, detail="Parâmetro url é obrigatório")
+    page = await get_crawl_page_by_url(url)
+    if not page:
+        raise HTTPException(status_code=404, detail="Página não encontrada no índice")
+    # row: id(0) site_id(1) url(2) title(3) content_md(4) http_status(5) crawled_at(6)
+    content_html = _md.markdown(page[4], extensions=["extra", "toc"]) if page[4] else ""
+    return templates.TemplateResponse(
+        request,
+        "page_reader.html",
+        {
+            "title":        page[3] or page[2],
+            "url":          page[2],
+            "crawled_at":   page[6],
+            "http_status":  page[5],
+            "content_html": content_html,
+            "active_tab":   "library",
+        },
+    )
 
 
 async def _bg_crawl(site_id: int) -> None:

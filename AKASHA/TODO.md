@@ -283,16 +283,16 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 > Entrega: reader mode próprio — abrir e ler qualquer `crawl_page` sem sair do AKASHA.
 
-- [ ] `database.py` — helpers `get_crawl_page_by_url(url) -> tuple | None` e
+- [x] `database.py` — helpers `get_crawl_page_by_url(url) -> tuple | None` e
       `get_crawl_pages_by_site(site_id, limit, offset) -> list[tuple]`
       (retorna `id, url, title, http_status, crawled_at` sem `content_md` para a lista)
-- [ ] `routers/crawler.py` — `GET /sites/reader?url=` — busca `crawl_page` por URL via
+- [x] `routers/crawler.py` — `GET /library/reader?url=` — busca `crawl_page` por URL via
       `get_crawl_page_by_url`, converte `content_md` → HTML com lib `markdown`,
       renderiza `page_reader.html`; 404 se não encontrada
 - [ ] `routers/crawler.py` — `GET /sites/{site_id}/pages?q=&page=1` — lista paginada
       (20/pág) de páginas do site; suporte a filtro por `q` (título/url); retorna fragment
       HTMX `_site_pages.html`
-- [ ] `templates/page_reader.html` — layout reader mode: cabeçalho com título, URL original
+- [x] `templates/page_reader.html` — layout reader mode: cabeçalho com título, URL original
       (link externo ↗), data de crawl, botão "← Voltar"; conteúdo HTML do markdown com
       tipografia IM Fell English; compatível com tema sépia/noturno
 - [ ] `templates/_site_pages.html` — fragment HTMX: lista de cards de página (título, URL
@@ -357,7 +357,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       ⚠ **BLOQUEADO**: depende de `services/library.py` e `routers/library.py` (Fase 7
       marcada como concluída no TODO mas nunca implementada).
 
-- [ ] **Dependência `markdown`** — `pyproject.toml`: adicionar `markdown>=3.7`
+- [x] **Dependência `markdown`** — `pyproject.toml`: adicionar `markdown>=3.7`
       (necessário para Fase 10.5 — converter `content_md` → HTML no reader mode).
       ⚠ **ADIADO**: adicionar junto com a implementação da Fase 10.5.
 
