@@ -700,15 +700,18 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 ### Bug: porta errada no iniciar.bat/sh
 - [x] `iniciar.bat` / `iniciar.sh` — corrigir porta: uvicorn sobe em 7071 mas o script abre `http://localhost:7070`
 
+### Lista de favoritos (domínios prioritários)
+- [ ] Criar lista de domínios favoritos — boosting no ranking de busca sem precisar crawlear
+  — UI: página de gerenciamento no AKASHA (adicionar/remover domínio + peso de prioridade)
+  — Backend: tabela `favorite_domains` com `domain` e `priority_score`
+  — Resultados de domínios favoritos sobem para P2 automaticamente na ordenação
+
 ### Busca: priorização e segunda coluna
 - [ ] Definir 3 níveis de prioridade nos resultados de busca:
   - P1: resultados locais (arquivos indexados, biblioteca, sites crawleados)
-  - P2: domínios favoritos/prioritários (sem precisar crawlear)
+  - P2: domínios favoritos/prioritários (ver seção acima)
   - P3: resultados web gerais
 - [ ] Criar segunda coluna (ou painel lateral) para exibir resultados locais separados dos web
-- [ ] Criar lista de "domínios favoritos" — boosting no ranking sem crawling obrigatório
-  - UI: página de gerenciamento (adicionar/remover domínio + peso de prioridade)
-  - Backend: tabela ou campo `priority_score` para os domínios
 
 ### Extração: Medium e Substack
 - [ ] Pesquisar alternativas de scraping para Medium (falha mesmo em artigos gratuitos)
