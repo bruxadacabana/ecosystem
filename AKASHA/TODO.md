@@ -491,10 +491,66 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
+## Fase 15 — Qualidade de Busca e Crawl (pesquisa 2026-04-24)
+
+> Melhorias derivadas de pesquisa sobre arquitetura de buscadores, otimização de índice invertido
+> e deduplicação. Organizadas por prioridade.
+
+### Alta prioridade
+
+- [ ] **[A] BM25 com pesos por campo** — usar `bm25(crawl_fts, 10, 1)` na consulta FTS5
+      para dar peso 10× ao título vs. corpo; melhora ranking sem custo computacional
+      (`database.py` / `services/local_search.py`)
+
+- [ ] **[B] Normalização de URL antes de inserir no crawl** — remover parâmetros de tracking
+      (`utm_*`, `fbclid`, `ref`, etc.) antes de `INSERT` em `crawl_pages`; evita duplicatas
+      por variação de URL (`services/crawler.py` + helper em `database.py`)
+
+- [ ] **[C] FTS5 optimize periódico pós-crawl** — executar
+      `INSERT INTO crawl_fts(crawl_fts) VALUES('optimize')` após crawls com > 200 páginas
+      novas; mescla segmentos fragmentados e mantém performance de busca estável
+      (`services/crawler.py` ou job agendado em `main.py`)
+
+- [ ] **[D] Cache de robots.txt por domínio (TTL 24h)** — armazenar regras de robots.txt
+      em memória por domínio com expiração de 24h; evita fetch redundante a cada URL
+      (`services/crawler.py`)
+
+### Média prioridade
+
+- [ ] **[E] Rate limiting por domínio com fila de prioridade** — limitar requisições por
+      domínio (ex: 1 req/s) usando `asyncio.Queue` + semáforo por host; evita banimento
+      e respeita servidores (`services/crawler.py`)
+
+- [ ] **[F] SimHash para detecção de near-duplicatas** — calcular SimHash do conteúdo
+      extraído; rejeitar páginas com distância Hamming < 3 de páginas já indexadas;
+      `pip install simhash`; reduz ruído no índice sem hashing exato
+      (`services/crawler.py` + `database.py`)
+
+- [ ] **[G] Índice de prefixo FTS5** — adicionar `prefix="2,3"` na criação de `crawl_fts`
+      para acelerar buscas com autocompletar e queries de prefixo parcial
+      (`database.py` — migration necessária)
+
+- [ ] **[H] `favor_recall=True` no trafilatura antes do fallback Jina** — passar
+      `favor_recall=True` no `ecosystem_scraper` / extração local para aumentar cobertura
+      de conteúdo antes de recorrer ao Jina Reader externo
+      (`ecosystem_scraper.py` ou `services/archiver.py`)
+
+### Baixa prioridade
+
+- [ ] **[I] Campo separado para headings no FTS5** — extrair headings (h1–h3) do HTML
+      e indexar em coluna dedicada com peso ~50×; melhora recall para queries de conceito
+      (`database.py` + `services/crawler.py` — migration necessária)
+
+- [ ] **[J] Meilisearch como backend alternativo para corpus grande** — avaliar substituição
+      do FTS5 pelo Meilisearch self-hosted quando o corpus ultrapassar ~100k páginas;
+      oferece typo-tolerance, facetas e ranking configurável nativo; requer processo separado
+
+---
+
 ## Planos Futuros
 
 > Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
 
 ---
 
-*Atualizado em: 2026-04-21 — Fase 12 (extensão Firefox + integração Hermes) adicionada; Fase 13 (API de Pesquisa Profunda) adicionada; Fase 14 (integração KOSMOS nos cards) adicionada.*
+*Atualizado em: 2026-04-24 — Fase 15 (Qualidade de Busca e Crawl) adicionada com 10 melhorias derivadas de pesquisa sobre arquitetura de buscadores.*

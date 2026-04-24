@@ -51,7 +51,11 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 - **Nunca começar a implementar nada sem ordem explícita da usuária.** Discussão, planejamento e anotação no TODO não são ordens de implementação.
 - **Nunca avançar de um item para o próximo no TODO sem ordem explícita.** "Continue" sem especificar o quê não é autorização para implementar.
 - **Após concluir cada item: parar, resumir o que foi feito, e aguardar permissão explícita para prosseguir.** Implementar vários itens seguidos numa mesma resposta só é permitido se a usuária disser explicitamente "faça o bloco inteiro" ou equivalente.
-- **Pesquisas:** sempre salvar o resultado em `pesquisa.txt` do app relevante (ex: `Mnemosyne/pesquisa.txt`) E apresentar no chat um resumo médio-detalhado: cobrindo os achados principais, implicações práticas e referências relevantes. Não apenas uma linha, nem um relatório exaustivo — algo que a usuária possa ler em 1–2 minutos e tomar uma decisão.
+- **Pesquisas:** regras obrigatórias ao realizar qualquer pesquisa (WebSearch, WebFetch, Agent):
+  1. **Reler o `pesquisa.txt` existente** do app antes de iniciar, para não duplicar pesquisa já feita.
+  2. **Salvar no `pesquisa.txt`** do app relevante (ex: `Mnemosyne/pesquisa.txt`, `AKASHA/pesquisa.txt`) apenas: resumo estruturado por tema, achados principais, implicações práticas e lista de fontes com URLs. **Nunca incluir sugestões ou melhorias no `pesquisa.txt`** — esse arquivo é somente para os achados da pesquisa.
+  3. **Apresentar no chat** um resumo médio-detalhado (1–2 minutos de leitura) cobrindo achados principais e implicações práticas, **seguido de lista separada de mudanças/melhorias sugeridas** com base na pesquisa.
+  4. Sugestões e melhorias vão no **chat e no TODO**, nunca no `pesquisa.txt`.
 
 ---
 

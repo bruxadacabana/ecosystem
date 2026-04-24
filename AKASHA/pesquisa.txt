@@ -322,63 +322,6 @@ Categorias existentes:
   fallback para web em tempo real.
 
 ================================================================================
-10. SUGESTÕES DE MELHORIA PARA O AKASHA
-================================================================================
-
-Alta prioridade (impacto imediato na qualidade de resultados):
-
-  [A] PESOS DE COLUNA NO BM25
-      Modificar crawl_fts para separar title e content_md, e usar:
-        ORDER BY bm25(crawl_fts, 10, 1)
-      Títulos relevantes devem aparecer antes de body match. Atualmente todos os
-      campos pesam igual — um match de "python" no body de uma página sobre CSS
-      supera um match no título de uma página sobre Python.
-
-  [B] NORMALIZAÇÃO DE URL ANTES DE INSERÇÃO
-      Remover parâmetros de tracking (utm_*, ref, fbclid, gclid) e normalizar
-      http→https, www→sem www antes de qualquer lookup em crawl_pages. Reduz
-      crawls duplicados sem precisar de SimHash.
-
-  [C] OPTIMIZE PERIÓDICO DO FTS5
-      Após cada sessão de crawl > 200 páginas, executar:
-        INSERT INTO crawl_fts(crawl_fts) VALUES('optimize');
-      Consolida fragmentos e mantém performance das buscas estável ao longo do tempo.
-
-  [D] ROBOTS.TXT CACHE POR DOMÍNIO
-      Atualmente cada crawl re-busca robots.txt? Implementar cache em SQLite
-      (tabela robots_cache com domain, rules, cached_at) com TTL de 24h.
-
-Média prioridade:
-
-  [E] PER-DOMAIN RATE LIMITING
-      Implementar fila com earliest_available_at por domínio em vez de sleep global.
-      Permite crawlar múltiplos domínios em paralelo respeitando o delay de cada um.
-
-  [F] NEAR-DUPLICATE DETECTION (SimHash)
-      Calcular SimHash de content_md ao indexar e comparar com páginas já indexadas
-      do mesmo domínio (distância Hamming < 3 = near-duplicate → skip).
-      Biblioteca: pip install simhash (pura Python, sem dependências pesadas).
-
-  [G] PREFIX INDEX NO FTS5
-      Adicionar prefix="2,3" na criação do crawl_fts para acelerar auto-complete
-      e buscas por prefixo.
-
-  [H] TRAFILATURA COM FAVOR_RECALL PARA FALLBACK
-      Quando trafilatura retorna < 100 palavras mas não chega no threshold do Jina
-      fallback (< 100), tentar novamente com favor_recall=True antes de acionar Jina.
-
-Baixa prioridade:
-
-  [I] CAMPO SEPARADO DE HEADINGS NO FTS5
-      Extrair H1/H2/H3 de content_md em campo separado com peso ainda maior que
-      título (peso 50 vs 10 vs 1). Headings são o sinal de estrutura mais confiável.
-
-  [J] MEILISEARCH COMO BACKEND ALTERNATIVO
-      Para corpus > 500k páginas ou se a qualidade de ranking do FTS5 se tornar
-      insuficiente, Meilisearch oferece typo-tolerance e ranking configurável com
-      API compatível. Não necessário agora — FTS5 é adequado para o volume atual.
-
-================================================================================
 FONTES
 ================================================================================
 
