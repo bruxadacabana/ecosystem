@@ -185,22 +185,27 @@
 > **Princípio central:** Obsidian é uma extensão do teu próprio cérebro — notas pessoais, pensamentos em evolução, conhecimento construído por ti. A Biblioteca é um arquivo de vozes externas — textos escritos por múltiplas pessoas, com perspectivas possivelmente contraditórias. Esta distinção muda a *relação epistémica* com o conteúdo e, portanto, o comportamento do Mnemosyne.
 
 ### Arquitetura de Coleções
-- [ ] `core/collections.py` — `CollectionType` (enum: `VAULT` | `LIBRARY`), `CollectionConfig` (TypedDict: `name`, `path`, `type`), `load_collections()`, `save_collections()`, `add_collection()`, `remove_collection()`; migrar `config.json` de `{"watched_dir": "..."}` para `{"collections": [...], "last_active": "nome"}` com retrocompatibilidade
-- [ ] `core/errors.py` — exceções novas: `CollectionNotFoundError`, `ObsidianVaultError`, `FrontmatterParseError`
+- [x] `core/collections.py` — `CollectionType` (enum: `VAULT` | `LIBRARY`), `CollectionConfig` (dataclass: `name`, `path`, `type`, `enabled`, `source`, `ecosystem_key`); `sync_ecosystem_collections()`, `available_ecosystem_paths()`; migração automática do formato legado `{watched_dir, vault_dir}`
+- [x] `core/errors.py` — exceções novas: `CollectionNotFoundError`, `ObsidianVaultError`, `FrontmatterParseError`
 
 ### Vault Obsidian (Segunda Memória)
-- [ ] `core/loaders.py` — loader Obsidian completo: `python-frontmatter` para YAML; metadata por nota: `title`, `tags`, `aliases`, `links` (wikilinks extraídos com regex `r'\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]'` — cobre os 4 formatos: `[[nota]]`, `[[nota|alias]]`, `[[nota#secção]]`, `[[nota#secção|alias]]`); ignorar `.obsidian/`, `templates/`, `attachments/`, notas com menos de 50 chars de corpo
-- [ ] `core/loaders.py` — chunking por cabeçalho `##` para notas `.md`: 1 nota = 1 ou N chunks por secção, nunca partido a meio de parágrafo
-- [ ] `core/rag.py` — seguimento de wiki-links: ao recuperar uma nota, incluir resumo (primeiros 300 chars) das notas linkadas como contexto secundário no prompt
-- [ ] `core/rag.py` — prompt do Vault: tom introspectivo — "Nas tuas notas sobre X, escreveste que…"; citar título da nota, não o caminho do ficheiro
+- [x] `core/loaders.py` — loader Obsidian completo: `python-frontmatter` para YAML; metadata por nota: `title`, `tags`, `aliases`, `wikilinks`; regex cobre 4 formatos de wikilink; ignorar `.obsidian/`, `templates/`, `attachments/`, `.trash/`; notas com menos de 50 chars de corpo ignoradas
+- [x] `core/loaders.py` — chunking por cabeçalho `##` para notas `.md`: `_split_by_heading()` — 1 nota = 1 ou N chunks por secção
+- [x] `core/rag.py` — seguimento de wiki-links: `_follow_wikilinks()` lê notas ligadas e injeta primeiros 300 chars como contexto secundário no prompt
+- [x] `core/rag.py` — prompt do Vault: `PERSONAS_VAULT` com tom introspectivo — "Nas tuas notas sobre X, escreveste que…"; cita título da nota, não o caminho
 - [ ] `core/memory.py` — secção `collection` do Vault descreve o *teu estilo de pensar* (temas recorrentes, forma de estruturar ideias, língua preferida para reflectir), diferente da Biblioteca que descreve domínio de conhecimento externo
 
 ### Biblioteca (Arquivo de Vozes Externas)
-- [ ] `core/rag.py` — prompt da Biblioteca: tom académico — "Em *[Título]* de [Autor], encontra-se que…"; se autores divergirem, apresentar perspectivas em confronto
-- [ ] `core/loaders.py` — garantir metadata `author` e `title` em todos os loaders (PDF, EPUB, DOCX) para uso como chave de citação nas respostas
+- [x] `core/rag.py` — prompt da Biblioteca: `PERSONAS` com tom académico — "Em *[Título]* de [Autor], encontra-se que…"; se autores divergirem, apresentar perspectivas em confronto
+- [x] `core/loaders.py` — garantir metadata `author` e `title` em todos os loaders (PDF, EPUB, DOCX)
+
+### Integração automática do ecossistema
+- [x] `core/collections.py` — `ECOSYSTEM_SOURCES` define KOSMOS, AKASHA e Hermes (AETHER excluído); `sync_ecosystem_collections()` lê `ecosystem.json` automaticamente a cada `load_config()`
+- [x] `gui/main_window.py` — `SetupDialog` com toggles (checkboxes) por fonte detectada em vez do antigo botão "Sugestões do ecossistema"
+- [x] `core/config.py` — `ecosystem_enabled: dict[str, bool]` persiste estado ligado/desligado por fonte; `_migrate_legacy()` converte formato antigo para coleções
 
 ### Interface de Gestão de Coleções
-- [ ] `gui/main_window.py` — selector de coleção no cabeçalho: `QComboBox` com ícone de tipo (`🔮 VAULT` / `📚 BIBLIOTECA`); trocar de coleção carrega vectorstore + memória + reseta `chat_history`
+- [x] `gui/main_window.py` — selector de coleção na sidebar: `QComboBox` com ícone de tipo (`🔮 VAULT` / `📚 BIBLIOTECA`); trocar de coleção carrega vectorstore + memória + reseta `chat_history`
 - [ ] `gui/main_window.py` — diálogo "Nova Coleção": campos nome, caminho (com botão "…"), tipo (radio Vault/Biblioteca); auto-detectar pasta `.obsidian/` e pré-selecionar tipo
 - [ ] `gui/main_window.py` — aba Coleções no tab Gerenciar: lista com nome, tipo, caminho e estado do índice; botões editar/remover/indexar agora
 
@@ -212,6 +217,13 @@
 - [x] **Reformulação completa da UI** (aprovada) — sidebar + painel principal; sem abas; modo escuro (#12161E); fontes do ecossistema aplicadas; design system consistente com DESIGN_BIBLE.txt
 - [x] **Ajuste de legibilidade** — fontes aumentadas conforme Design Bible: corpo 13px, inputs/answerText IM Fell English 14–15px, sidebarBrand 24px, letter-spacing corrigido nos labels e botões
 - [x] **Toggle dia/noite** — botão "☀ Modo Dia / ☽ Modo Noite" na sidebar inferior; `styles_light.qss` criado com paleta "Papel ao Sol da Manhã"; `dark_mode` persistido em config
+
+### Barra de progresso e alinhamento visual com o ecossistema
+
+> O Mnemosyne foi feito em PySide6 em vez de PyQt6 (como KOSMOS e Hermes), e usa `styles.qss` próprio em vez do `ecosystem_qt.py`. A diferença visual percebida vem principalmente de: (1) o `.qss` do Mnemosyne não partilha o sistema de tokens do `ecosystem_qt.py`; (2) a barra de progresso e os feedbacks de indexação estão escondidos na barra inferior da janela (statusBar), que trunca nomes de arquivo longos e não tem indicador visual de avanço real.
+
+- [ ] **Barra de progresso durante indexação** — substituir a statusBar por um widget dedicado na sidebar: `QProgressBar` com valor real (x/y arquivos), nome do arquivo atual numa linha acima (com elide no meio para não cortar o nome), e botão "Interromper" visível ao lado — tudo visível sem depender da barra inferior
+- [ ] **Redesign completo da UI para paridade com o ecossistema** — migrar `styles.qss` do Mnemosyne para usar os mesmos tokens de cor do `ecosystem_qt.py` (`build_qss()`), adaptado para PySide6; aplicar as mesmas fontes, espaçamentos e padrões visuais dos outros apps; resultado: Mnemosyne visualmente consistente com KOSMOS/Hermes mesmo sendo PySide6 em vez de PyQt6
 
 ### Sessões de Chat Nomeadas
 

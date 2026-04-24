@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -64,7 +65,7 @@ from gui.workers import (
 
 
 class SetupDialog(QDialog):
-    """Diálogo de configuração — seleção de pasta, modelo LLM e embedding."""
+    """Diálogo de configuração — modelos LLM/embedding, pasta biblioteca, toggles de ecossistema."""
 
     def __init__(
         self,
@@ -76,17 +77,15 @@ class SetupDialog(QDialog):
         self.setWindowTitle("Configuração do Mnemosyne")
         self.setMinimumWidth(540)
 
+        from PySide6.QtWidgets import QCheckBox, QScrollArea
+        from core.collections import available_ecosystem_paths
+
         layout = QVBoxLayout(self)
-        layout.addWidget(
-            QLabel(
-                "Configure o Mnemosyne.\n"
-                "As configurações são salvas em config.json."
-            )
-        )
+        layout.addWidget(QLabel("Configure o Mnemosyne.\nAs configurações são salvas em config.json."))
 
         form = QFormLayout()
 
-        # Pasta monitorada (Biblioteca)
+        # Pasta principal (Biblioteca do utilizador)
         folder_row = QHBoxLayout()
         self.folder_edit = QLineEdit(current.watched_dir)
         self.folder_edit.setPlaceholderText("Selecione a pasta com seus documentos…")
@@ -95,26 +94,6 @@ class SetupDialog(QDialog):
         folder_row.addWidget(self.folder_edit)
         folder_row.addWidget(folder_btn)
         form.addRow("Biblioteca (pasta):", folder_row)
-
-        # Vault Obsidian (opcional)
-        vault_row = QHBoxLayout()
-        self.vault_edit = QLineEdit(current.vault_dir)
-        self.vault_edit.setPlaceholderText("Opcional — pasta do vault Obsidian…")
-        vault_btn = QPushButton("Escolher…")
-        vault_btn.clicked.connect(self._pick_vault)
-        vault_row.addWidget(self.vault_edit)
-        vault_row.addWidget(vault_btn)
-        form.addRow("Vault Obsidian:", vault_row)
-
-        # Pasta do ChromaDB (opcional)
-        chroma_row = QHBoxLayout()
-        self.chroma_edit = QLineEdit(current.chroma_dir)
-        self.chroma_edit.setPlaceholderText("Opcional — deixe vazio para usar padrão (watched_dir/.mnemosyne/chroma_db)")
-        chroma_btn = QPushButton("Escolher…")
-        chroma_btn.clicked.connect(self._pick_chroma)
-        chroma_row.addWidget(self.chroma_edit)
-        chroma_row.addWidget(chroma_btn)
-        form.addRow("Pasta do ChromaDB:", chroma_row)
 
         chat_models = filter_chat_models(models)
         embed_models = filter_embed_models(models)
@@ -146,17 +125,21 @@ class SetupDialog(QDialog):
 
         layout.addLayout(form)
 
-        # Botão de sugestões do ecossistema (só aparece se houver caminhos)
-        self._ecosystem_suggestions = self._load_ecosystem_suggestions()
-        if self._ecosystem_suggestions:
-            suggest_btn = QPushButton("Sugestões do ecossistema")
-            suggest_btn.setToolTip(
-                "Caminhos detectados nos outros apps do ecossistema"
-            )
-            suggest_btn.clicked.connect(
-                lambda: self._show_ecosystem_menu(suggest_btn)
-            )
-            layout.addWidget(suggest_btn)
+        # Integrações do ecossistema (toggles por fonte detectada)
+        eco_paths = available_ecosystem_paths()
+        self._eco_checkboxes: dict[str, QCheckBox] = {}
+        if eco_paths:
+            eco_group = QGroupBox("Integrações do ecossistema")
+            eco_layout = QVBoxLayout(eco_group)
+            eco_layout.addWidget(QLabel(
+                "Pastas detectadas automaticamente — activa/desactiva a indexação:"
+            ))
+            for label, eco_key, path in eco_paths:
+                cb = QCheckBox(f"{label}  —  {path}")
+                cb.setChecked(current.ecosystem_enabled.get(eco_key, True))
+                eco_layout.addWidget(cb)
+                self._eco_checkboxes[eco_key] = cb
+            layout.addWidget(eco_group)
 
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -165,83 +148,19 @@ class SetupDialog(QDialog):
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
 
-    def _load_ecosystem_suggestions(self) -> list[tuple[str, str, str]]:
-        """
-        Lê o ecosystem.json e retorna lista de (label, path, field).
-        `field` é "folder" ou "vault".
-        Retorna lista vazia se ecosystem_client não estiver disponível
-        ou não houver caminhos configurados.
-        """
-        try:
-            from pathlib import Path as _Path
-            import sys as _sys
-            _root = str(_Path(__file__).parent.parent.parent)
-            if _root not in _sys.path:
-                _sys.path.insert(0, _root)
-            from ecosystem_client import read_ecosystem
-            eco = read_ecosystem()
-        except Exception:
-            return []
-
-        suggestions: list[tuple[str, str, str]] = []
-
-        archive = eco.get("kosmos", {}).get("archive_path", "")
-        if archive and os.path.isdir(archive):
-            suggestions.append(("KOSMOS — archive", archive, "folder"))
-
-        vault = eco.get("aether", {}).get("vault_path", "")
-        if vault and os.path.isdir(vault):
-            suggestions.append(("AETHER — vault", vault, "vault"))
-
-        akasha_archive = eco.get("akasha", {}).get("archive_path", "")
-        if akasha_archive and os.path.isdir(akasha_archive):
-            suggestions.append(("AKASHA — archive", akasha_archive, "folder"))
-
-        return suggestions
-
-    def _show_ecosystem_menu(self, btn: QPushButton) -> None:
-        """Exibe QMenu com caminhos do ecossistema; clique preenche o campo."""
-        menu = QMenu(self)
-        for label, path, field in self._ecosystem_suggestions:
-            action = menu.addAction(f"{label}  →  {path}")
-            action.setData((path, field))
-        chosen = menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
-        if chosen is not None:
-            path, field = chosen.data()
-            if field == "folder":
-                self.folder_edit.setText(path)
-            else:
-                self.vault_edit.setText(path)
-
     def _pick_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(
-            self, "Selecionar pasta de documentos"
-        )
+        folder = QFileDialog.getExistingDirectory(self, "Selecionar pasta de documentos")
         if folder:
             self.folder_edit.setText(folder)
 
-    def _pick_vault(self) -> None:
-        folder = QFileDialog.getExistingDirectory(
-            self, "Selecionar vault do Obsidian"
-        )
-        if folder:
-            self.vault_edit.setText(folder)
-
-    def _pick_chroma(self) -> None:
-        folder = QFileDialog.getExistingDirectory(
-            self, "Selecionar pasta do ChromaDB"
-        )
-        if folder:
-            self.chroma_edit.setText(folder)
-
-    def get_values(self) -> tuple[str, str, str, str, str]:
-        """Retorna (watched_dir, llm_model, embed_model, vault_dir, chroma_dir)."""
+    def get_values(self) -> tuple[str, str, str, dict[str, bool]]:
+        """Retorna (library_path, llm_model, embed_model, ecosystem_enabled)."""
+        eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
         return (
             self.folder_edit.text().strip(),
             self.llm_combo.currentText(),
             self.embed_combo.currentText(),
-            self.vault_edit.text().strip(),
-            self.chroma_edit.text().strip(),
+            eco_enabled,
         )
 
 
@@ -283,9 +202,6 @@ class MainWindow(QMainWindow):
                 chunk_size=800,
                 chunk_overlap=100,
                 retriever_k=4,
-                watched_dir="",
-                vault_dir="",
-                auto_index_on_change=True,
             )
 
         self._register_ecosystem()
@@ -308,8 +224,6 @@ class MainWindow(QMainWindow):
             }
             if self.config.watched_dir:
                 data["watched_dir"] = self.config.watched_dir
-            if self.config.vault_dir:
-                data["vault_dir"] = self.config.vault_dir
             if self.config.persist_dir:
                 data["index_paths"] = [self.config.persist_dir]
             write_section("mnemosyne", data)
@@ -349,6 +263,12 @@ class MainWindow(QMainWindow):
         brand_lbl = QLabel("Mnemosyne")
         brand_lbl.setObjectName("sidebarBrand")
         sb.addWidget(brand_lbl)
+
+        # Seletor de coleção ativa
+        self.collection_combo = QComboBox()
+        self.collection_combo.setToolTip("Coleção ativa — clique para trocar")
+        self.collection_combo.currentIndexChanged.connect(self._on_collection_changed)
+        sb.addWidget(self.collection_combo)
 
         self.folder_label = QLabel(self.config.watched_dir or "Pasta não configurada")
         self.folder_label.setObjectName("sidebarFolder")
@@ -403,17 +323,6 @@ class MainWindow(QMainWindow):
         sb.addSpacing(8)
         self._add_sidebar_rule(sb)
         sb.addSpacing(8)
-
-        # Buscar em
-        lbl_src = QLabel("Buscar em:")
-        lbl_src.setObjectName("sidebarLabel")
-        sb.addWidget(lbl_src)
-        self.source_combo = QComboBox()
-        self.source_combo.addItems(["Biblioteca", "Vault", "Ambos"])
-        self.source_combo.setCurrentIndex(2)
-        sb.addWidget(self.source_combo)
-
-        sb.addSpacing(6)
 
         # Modo de recuperação
         lbl_mode = QLabel("Modo:")
@@ -870,7 +779,6 @@ class MainWindow(QMainWindow):
                     missing.append(f"LLM '{self.config.llm_model}'")
                 if not embed_ok:
                     missing.append(f"embedding '{self.config.embed_model}'")
-                from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(
                     self,
                     "Modelo não encontrado",
@@ -908,16 +816,11 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            folder, llm, embed, vault, chroma = dialog.get_values()
+            folder, llm, embed, eco_enabled = dialog.get_values()
             if not folder:
                 QMessageBox.warning(self, "Aviso", "Selecione uma pasta para continuar.")
                 return
-            self.config.watched_dir = folder
-            self.config.llm_model = llm
-            self.config.embed_model = embed
-            self.config.vault_dir = vault
-            self.config.chroma_dir = chroma
-            save_config(self.config)
+            self._apply_setup_values(folder, llm, embed, eco_enabled)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -925,28 +828,85 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            folder, llm, embed, vault, chroma = dialog.get_values()
+            folder, llm, embed, eco_enabled = dialog.get_values()
             if not folder:
                 return
             changed_dir = folder != self.config.watched_dir
-            self.config.watched_dir = folder
-            self.config.llm_model = llm
-            self.config.embed_model = embed
-            self.config.vault_dir = vault
-            self.config.chroma_dir = chroma
-            save_config(self.config)
-            self.folder_label.setText(folder)
-            self.manage_path_label.setText(folder)
+            self._apply_setup_values(folder, llm, embed, eco_enabled)
+            self.folder_label.setText(self.config.watched_dir)
+            self.manage_path_label.setText(self.config.watched_dir)
             if changed_dir:
                 self.vectorstore = None
                 self._disable_query_buttons()
             self._log_event("Configuração atualizada.")
             self._post_config_init()
 
+    def _apply_setup_values(
+        self, folder: str, llm: str, embed: str, eco_enabled: dict[str, bool]
+    ) -> None:
+        """Aplica os valores do SetupDialog ao config e guarda."""
+        from core.collections import CollectionConfig, CollectionType
+
+        self.config.llm_model = llm
+        self.config.embed_model = embed
+        self.config.ecosystem_enabled.update(eco_enabled)
+
+        # Atualiza ou cria a coleção Biblioteca do utilizador
+        user_colls = [c for c in self.config.collections if c.source == "user"]
+        if user_colls:
+            user_colls[0].path = folder
+            if not self.config.active_collection:
+                self.config.active_collection = user_colls[0].name
+        else:
+            coll = CollectionConfig(
+                name="Biblioteca",
+                path=folder,
+                type=CollectionType.LIBRARY,
+                source="user",
+            )
+            self.config.collections.insert(0, coll)
+            self.config.active_collection = coll.name
+
+        save_config(self.config)
+        self._populate_collection_combo()
+
+    def _populate_collection_combo(self) -> None:
+        """Preenche o QComboBox de coleções com as coleções habilitadas."""
+        self.collection_combo.blockSignals(True)
+        self.collection_combo.clear()
+        for coll in self.config.collections:
+            if not coll.enabled:
+                continue
+            icon = "🔮" if coll.type.value == "vault" else "📚"
+            self.collection_combo.addItem(f"{icon} {coll.name}", userData=coll.name)
+        # Selecionar a coleção ativa
+        active = self.config.active_collection
+        if active:
+            idx = self.collection_combo.findData(active)
+            if idx >= 0:
+                self.collection_combo.setCurrentIndex(idx)
+        self.collection_combo.blockSignals(False)
+
+    def _on_collection_changed(self, index: int) -> None:
+        """Troca a coleção ativa, recarrega o vectorstore e reseta o chat."""
+        if index < 0:
+            return
+        name = self.collection_combo.itemData(index)
+        if not name or name == self.config.active_collection:
+            return
+        self.config.active_collection = name
+        save_config(self.config)
+        self.vectorstore = None
+        self._disable_query_buttons()
+        self._post_config_init()
+        self._reset_conversation()
+        self._log_event(f"Coleção ativa: {name}")
+
     def _post_config_init(self) -> None:
         """Chamado após configuração válida estar disponível."""
-        self.folder_label.setText(self.config.watched_dir)
-        self.manage_path_label.setText(self.config.watched_dir)
+        self._populate_collection_combo()
+        self.folder_label.setText(self.config.watched_dir or "Pasta não configurada")
+        self.manage_path_label.setText(self.config.watched_dir or "—")
 
         if self.config.mnemosyne_dir:
             self._collection_index = CollectionIndex(self.config.mnemosyne_dir)
@@ -1403,21 +1363,15 @@ class MainWindow(QMainWindow):
         """Popula a lista de arquivos com checkboxes na aba Perguntar."""
         self.file_list_widget.clear()
         supported = {".pdf", ".docx", ".txt", ".md", ".epub"}
+        ignore_dirs = {".mnemosyne", ".obsidian", "templates", "attachments", ".trash"}
         paths: list[str] = []
 
         if self.config.watched_dir and os.path.isdir(self.config.watched_dir):
             for root, dirs, files in os.walk(self.config.watched_dir):
-                dirs[:] = [d for d in dirs if d != ".mnemosyne"]
+                dirs[:] = [d for d in dirs if d not in ignore_dirs]
                 for f in sorted(files):
                     _, ext = os.path.splitext(f.lower())
                     if ext in supported:
-                        paths.append(os.path.join(root, f))
-
-        if self.config.vault_dir and os.path.isdir(self.config.vault_dir):
-            for root, dirs, files in os.walk(self.config.vault_dir):
-                dirs[:] = [d for d in dirs if d not in {".obsidian", "templates", "attachments"}]
-                for f in sorted(files):
-                    if f.lower().endswith(".md"):
                         paths.append(os.path.join(root, f))
 
         for path in paths:
@@ -1508,9 +1462,6 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setVisible(True)
         self.statusBar().showMessage("Consultando Mnemosyne…")
 
-        source_map = {"Biblioteca": "biblioteca", "Vault": "vault", "Ambos": None}
-        source_type = source_map.get(self.source_combo.currentText())
-
         retrieval_map = {"Híbrido": "hybrid", "Multi-Query": "multi_query", "HyDE": "hyde"}
         retrieval_mode = retrieval_map.get(self.retrieval_combo.currentText(), "hybrid")
 
@@ -1525,11 +1476,13 @@ class MainWindow(QMainWindow):
         persona = persona_map.get(self.persona_combo.currentText(), "curador")
 
         source_files = self._get_selected_files()
+        collection_type = self.config.collection_type
 
         self._ask_worker = AskWorker(
             self.vectorstore, question, self.config,
-            self._chat_history, source_type, retrieval_mode,
+            self._chat_history, None, retrieval_mode,
             self._file_tracker, persona=persona, source_files=source_files,
+            collection_type=collection_type,
         )
         self._ask_worker.token.connect(self._on_ask_token)
         self._ask_worker.finished.connect(self._on_answer)

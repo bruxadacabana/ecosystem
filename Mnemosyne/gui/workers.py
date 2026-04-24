@@ -343,6 +343,7 @@ class AskWorker(QThread):
         tracker: FileTracker | None = None,
         persona: str = "curador",
         source_files: list[str] | None = None,
+        collection_type: str = "library",
     ) -> None:
         super().__init__()
         self.vectorstore = vectorstore
@@ -354,6 +355,7 @@ class AskWorker(QThread):
         self.tracker = tracker
         self.persona = persona
         self.source_files = source_files
+        self.collection_type = collection_type
 
     def run(self) -> None:
         try:
@@ -361,6 +363,7 @@ class AskWorker(QThread):
                 self.vectorstore, self.question, self.config,
                 self.chat_history, self.source_type, self.retrieval_mode,
                 self.tracker, self.persona, self.source_files,
+                self.collection_type,
             )
         except QueryError as exc:
             self.finished.emit(False, str(exc), [], self.chat_history)
