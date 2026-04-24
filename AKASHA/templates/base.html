@@ -55,7 +55,7 @@
         </label>
         <label class="tag" id="lbl-src-sites">
           <input type="checkbox" name="src_sites" value="on" id="cb-src-sites"
-                 {% if src_sites is defined and src_sites %}checked{% endif %} hidden>
+                 {% if src_sites is not defined or src_sites %}checked{% endif %} hidden>
           biblioteca
         </label>
       </div>
@@ -143,7 +143,7 @@
     (function () {
       var CBS = ['cb-src-web', 'cb-src-eco', 'cb-src-sites'];
       var LBLS = { 'cb-src-web': 'lbl-src-web', 'cb-src-eco': 'lbl-src-eco', 'cb-src-sites': 'lbl-src-sites' };
-      var DEFAULTS = { 'cb-src-web': true, 'cb-src-eco': true, 'cb-src-sites': false };
+      var DEFAULTS = { 'cb-src-web': true, 'cb-src-eco': true, 'cb-src-sites': true };
 
       function syncLabel(id) {
         var cb  = document.getElementById(id);

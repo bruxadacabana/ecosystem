@@ -71,9 +71,9 @@ async def search(
         src_web   = "on" if sources in ("web",   "all") else ""
         src_eco   = "on" if sources in ("local", "all") else ""
 
-    # Padrão: web + eco quando nada selecionado
+    # Padrão: web + eco + sites quando nada selecionado
     if not any([src_web, src_eco, src_sites]):
-        src_web = src_eco = "on"
+        src_web = src_eco = src_sites = "on"
 
     web_results:        list[SearchResult] = []
     fav_results:        list[SearchResult] = []
