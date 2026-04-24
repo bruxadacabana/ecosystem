@@ -227,10 +227,10 @@ class _AnalyzeWorker(QThread):
     """Analisa artigo via Ollama em um único call JSON.
 
     Retorna: tags, sentiment (-1.0→+1.0), clickbait (0.0→1.0), five_ws e entities.
-    Falha silenciosamente.
     """
 
-    done = pyqtSignal(dict)
+    done   = pyqtSignal(dict)
+    failed = pyqtSignal(str)
 
     _SYSTEM = (
         'Você é uma API JSON. Responda APENAS com JSON válido. '
@@ -274,7 +274,8 @@ class _AnalyzeWorker(QThread):
             if isinstance(data, dict):
                 self.done.emit(data)
         except Exception as exc:
-            log.debug("Análise de artigo falhou (silencioso): %s", exc)
+            log.error("Análise de artigo falhou: %s", exc)
+            self.failed.emit(str(exc))
 
 
 class _EmbedWorker(QThread):
@@ -508,6 +509,13 @@ class ReaderView(QWidget):
         self._translate_btn.clicked.connect(self._on_translate)
         r1.addWidget(self._translate_btn)
 
+        self._summarize_btn = QPushButton("∑ Resumir")
+        self._summarize_btn.setObjectName("markAllBtn")
+        self._summarize_btn.setFont(btn_font)
+        self._summarize_btn.setToolTip("Gerar resumo do artigo via IA local (Ollama)")
+        self._summarize_btn.clicked.connect(self._on_summarize)
+        r1.addWidget(self._summarize_btn)
+
         r1.addStretch()
         root.addWidget(row1)
 
@@ -518,13 +526,6 @@ class ReaderView(QWidget):
         r2 = QHBoxLayout(self._toolbar_row2)
         r2.setContentsMargins(16, 0, 16, 0)
         r2.setSpacing(8)
-
-        self._summarize_btn = QPushButton("∑ Resumir")
-        self._summarize_btn.setObjectName("markAllBtn")
-        self._summarize_btn.setFont(btn_font)
-        self._summarize_btn.setToolTip("Gerar resumo do artigo via IA local (Ollama)")
-        self._summarize_btn.clicked.connect(self._on_summarize)
-        r2.addWidget(self._summarize_btn)
 
         self._highlight_btn = QPushButton("◾ Destacar")
         self._highlight_btn.setObjectName("markAllBtn")
@@ -1129,6 +1130,9 @@ class ReaderView(QWidget):
             content   = content,
         )
         self._analyze_worker.done.connect(self._on_analyze_done)
+        self._analyze_worker.failed.connect(
+            lambda msg: log.error("_AnalyzeWorker: %s", msg)
+        )
         self._analyze_worker.start()
 
     def _on_analyze_done(self, data: dict) -> None:
