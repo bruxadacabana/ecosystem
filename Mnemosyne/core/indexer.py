@@ -67,12 +67,8 @@ def create_vectorstore(config: AppConfig) -> Chroma:
         EmptyDirectoryError: se nenhum documento for encontrado.
         IndexBuildError: se a criação do Chroma falhar.
     """
-    documents, _ = load_documents(config.watched_dir, source_type="biblioteca")
-
-    # Indexar vault do Obsidian se configurado
-    if config.vault_dir and os.path.isdir(config.vault_dir):
-        vault_docs, _ = load_documents(config.vault_dir, source_type="vault")
-        documents.extend(vault_docs)
+    source_type = config.collection_type  # "vault" or "library"
+    documents, _ = load_documents(config.watched_dir, source_type=source_type)
 
     if not documents:
         raise EmptyDirectoryError(config.watched_dir)
@@ -113,7 +109,7 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
         DocumentLoadError: se o arquivo não puder ser carregado.
         IndexBuildError: se a atualização do Chroma falhar.
     """
-    docs = load_single_file(file_path)
+    docs = load_single_file(file_path, source_type=config.collection_type)
     if not docs:
         return load_vectorstore(config)
 
@@ -163,10 +159,8 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
     tracker = FileTracker(config.mnemosyne_dir)
     splitter = _get_splitter(config)
 
-    # Scan das pastas configuradas
-    dirs: list[tuple[str, str]] = [(config.watched_dir, "biblioteca")]
-    if config.vault_dir and os.path.isdir(config.vault_dir):
-        dirs.append((config.vault_dir, "vault"))
+    source_type = config.collection_type  # "vault" or "library"
+    dirs: list[tuple[str, str]] = [(config.watched_dir, source_type)]
 
     new_files: list[tuple[str, str]] = []
     modified_files: list[tuple[str, str]] = []

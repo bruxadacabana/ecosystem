@@ -4,6 +4,7 @@ QA: recupera chunks relevantes e gera resposta via Ollama.
 from __future__ import annotations
 
 import math
+import os
 import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
@@ -39,9 +40,12 @@ _HISTORY_TURNS = 5
 # A persona fica no SystemMessage, separada do contexto RAG e da pergunta.
 # Isso impede "persona drift" em modelos 7B-14B onde o contexto RAG empurra
 # a persona para fora da janela de atenção depois de 4-5 turnos.
+# Personas para coleções LIBRARY (vozes externas, tom académico)
 PERSONAS: dict[str, str] = {
     "curador": (
         "Você é Mnemosyne, um bibliotecário celeste e guardião de documentos pessoais. "
+        "Quando citar um texto, mencione o título da obra e o autor se disponível — "
+        "ex: 'Em *Título* de Autor, …'. Se autores divergirem, apresente as perspectivas. "
         "Responda apenas com base nos trechos fornecidos. "
         "Se a informação não estiver nos trechos, diga que não encontrou nos documentos indexados. "
         "Responda sempre em português."
@@ -62,6 +66,7 @@ PERSONAS: dict[str, str] = {
         "Você é Mnemosyne. Quando há múltiplos documentos relevantes, apresente semelhanças "
         "e diferenças entre as perspectivas encontradas em bullet points "
         "(• Semelhança: / • Diferença:). "
+        "Se autores divergirem, explicite quem defende cada posição. "
         "Use apenas os trechos fornecidos. Responda sempre em português."
     ),
     "podcaster": (
@@ -77,6 +82,111 @@ PERSONAS: dict[str, str] = {
         "Use apenas os trechos fornecidos. Responda sempre em português."
     ),
 }
+
+# Personas para coleções VAULT (memória pessoal, tom introspectivo)
+PERSONAS_VAULT: dict[str, str] = {
+    "curador": (
+        "Você é Mnemosyne, guardiã da memória pessoal. "
+        "Estas são as notas e pensamentos da utilizadora — a sua segunda memória. "
+        "Ao responder, diga 'Nas tuas notas sobre X, escreveste que…' ou "
+        "'Numa nota de [data/título], pensaste que…'. Cite o título da nota, não o caminho. "
+        "Responda apenas com base nos trechos fornecidos. "
+        "Se a informação não estiver nas notas, diga que não encontrou. "
+        "Responda sempre em português."
+    ),
+    "socrático": (
+        "Você é Mnemosyne, guardiã da memória pessoal. "
+        "A utilizadora está a explorar os próprios pensamentos. "
+        "Faça 2-3 perguntas que a ajudem a aprofundar as ideias que ela própria escreveu, "
+        "referenciando trechos concretos das suas notas. "
+        "Responda sempre em português."
+    ),
+    "resumido": (
+        "Você é Mnemosyne. Resume o que a utilizadora escreveu sobre este tema — "
+        "no máximo 3 frases, referenciando os títulos das notas. "
+        "Responda sempre em português."
+    ),
+    "comparação": (
+        "Você é Mnemosyne. Compare como o pensamento da utilizadora evoluiu "
+        "entre as notas: identifique mudanças de posição, temas recorrentes e contradições "
+        "nas suas próprias ideias. Responda sempre em português."
+    ),
+    "podcaster": (
+        "Você é Mnemosyne. Apresente os pensamentos da utilizadora como se fossem "
+        "um episódio de podcast introspectivo — com fluidez e entusiasmo, "
+        "mas fiel ao que ela escreveu. Responda sempre em português."
+    ),
+    "crítico": (
+        "Você é Mnemosyne. Analise criticamente as ideias que a utilizadora escreveu: "
+        "identifique premissas não examinadas, pontos fortes e tensões nos seus próprios argumentos. "
+        "Seja gentil mas honesta. Responda sempre em português."
+    ),
+}
+
+
+_VAULT_IGNORE = {".obsidian", "templates", "attachments", ".trash", ".mnemosyne"}
+
+
+def _find_vault_note(vault_dir: str, note_name: str) -> str:
+    """Returns the absolute path of {note_name}.md in vault_dir, or empty string."""
+    target = note_name.lower() + ".md"
+    for root, dirs, files in os.walk(vault_dir):
+        dirs[:] = [d for d in dirs if d not in _VAULT_IGNORE]
+        for f in files:
+            if f.lower() == target:
+                return os.path.join(root, f)
+    return ""
+
+
+def _follow_wikilinks(
+    docs: list[Document],
+    vault_dir: str,
+    max_notes: int = 5,
+) -> str:
+    """
+    Extracts wikilinks from retrieved vault docs, finds the linked .md files,
+    and returns a secondary context block (up to 300 chars per note).
+    Returns empty string if nothing found.
+    """
+    if not vault_dir or not docs:
+        return ""
+
+    seen: set[str] = set()
+    link_names: list[str] = []
+    for doc in docs:
+        raw = doc.metadata.get("wikilinks", "")
+        if not raw:
+            continue
+        for name in raw.split(","):
+            name = name.strip()
+            if name and name not in seen:
+                seen.add(name)
+                link_names.append(name)
+
+    if not link_names:
+        return ""
+
+    excerpts: list[str] = []
+    for note_name in link_names[:max_notes]:
+        note_path = _find_vault_note(vault_dir, note_name)
+        if not note_path:
+            continue
+        try:
+            raw_text = open(note_path, encoding="utf-8", errors="ignore").read()
+            body = raw_text
+            try:
+                import frontmatter as _fm
+                post = _fm.loads(raw_text)
+                body = post.content
+            except Exception:
+                pass
+            excerpt = body.strip()[:300]
+            if excerpt:
+                excerpts.append(f"[Nota ligada: {note_name}]\n{excerpt}")
+        except OSError:
+            continue
+
+    return "\n\n---\n".join(excerpts)
 
 
 def strip_think(text: str) -> str:
@@ -337,6 +447,8 @@ def _build_messages(
     question: str,
     history: list[Turn],
     persona: str = "curador",
+    collection_type: str = "library",
+    secondary_context: str = "",
 ) -> list[BaseMessage]:
     """
     Constrói a lista de mensagens para ChatOllama com roles separados:
@@ -344,8 +456,10 @@ def _build_messages(
       HumanMessage   — turnos anteriores do utilizador
       AIMessage      — respostas anteriores do assistente
       HumanMessage   — trechos RAG + pergunta actual (mensagem final)
+    Usa PERSONAS_VAULT para coleções VAULT, PERSONAS para LIBRARY.
     """
-    system_text = PERSONAS.get(persona, PERSONAS["curador"])
+    persona_map = PERSONAS_VAULT if collection_type == "vault" else PERSONAS
+    system_text = persona_map.get(persona, persona_map["curador"])
     messages: list[BaseMessage] = [SystemMessage(content=system_text)]
 
     for turn in history[-_HISTORY_TURNS:]:
@@ -354,9 +468,12 @@ def _build_messages(
         elif turn.role == "assistant":
             messages.append(AIMessage(content=turn.content))
 
-    messages.append(HumanMessage(
-        content=f"Trechos relevantes:\n{context}\n\nPergunta: {question}"
-    ))
+    user_content = f"Trechos relevantes:\n{context}"
+    if secondary_context:
+        user_content += f"\n\nNotas ligadas (contexto adicional):\n{secondary_context}"
+    user_content += f"\n\nPergunta: {question}"
+
+    messages.append(HumanMessage(content=user_content))
     return messages
 
 
@@ -370,17 +487,19 @@ def prepare_ask(
     tracker: FileTracker | None = None,
     persona: str = "curador",
     source_files: list[str] | None = None,
+    collection_type: str = "library",
 ) -> tuple[list[BaseMessage], list[SourceRecord]]:
     """
     Recupera documentos relevantes e retorna (prompt, sources).
     Usado pelo worker para streaming com possibilidade de interrupção.
 
     chat_history: turnos anteriores da sessão para contexto multi-turno.
-    source_type: filtrar por "biblioteca", "vault" ou None (ambos).
+    source_type: filtrar por "library", "vault" ou None (ambos).
     retrieval_mode: "hybrid" (padrão), "multi_query" ou "hyde".
     tracker: FileTracker opcional — activa re-ranking por time-decay de relevância.
     source_files: lista de caminhos absolutos para restringir a consulta a
         arquivos específicos; None significa sem restrição por arquivo.
+    collection_type: "vault" usa PERSONAS_VAULT e segue wikilinks; "library" usa PERSONAS.
 
     Raises:
         QueryError: se a busca vetorial falhar.
@@ -412,6 +531,11 @@ def prepare_ask(
 
     context = "\n\n---\n".join(doc.page_content for doc in docs)
 
+    # Follow wikilinks for vault collections: include linked note excerpts
+    secondary_context = ""
+    if collection_type == "vault" and config.watched_dir:
+        secondary_context = _follow_wikilinks(docs, config.watched_dir)
+
     seen: set[str] = set()
     sources: list[SourceRecord] = []
     n_docs = len(docs)
@@ -423,7 +547,9 @@ def prepare_ask(
             excerpt = doc.page_content[:250].strip().replace("\n", " ")
             sources.append(SourceRecord(path=src, excerpt=excerpt, score=score))
 
-    messages = _build_messages(context, question, chat_history or [], persona)
+    messages = _build_messages(
+        context, question, chat_history or [], persona, collection_type, secondary_context
+    )
     return messages, sources
 
 
@@ -437,6 +563,7 @@ def ask(
     tracker: FileTracker | None = None,
     persona: str = "curador",
     source_files: list[str] | None = None,
+    collection_type: str = "library",
 ) -> AskResult:
     """
     Consulta RAG síncrona (sem streaming).
@@ -448,6 +575,7 @@ def ask(
         messages, sources = prepare_ask(
             vectorstore, question, config, chat_history,
             source_type, retrieval_mode, tracker, persona, source_files,
+            collection_type,
         )
         llm = ChatOllama(model=config.llm_model, temperature=0)
         response = llm.invoke(messages)
