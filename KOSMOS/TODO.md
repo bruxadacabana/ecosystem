@@ -190,6 +190,80 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 ---
 
+---
+
+## FASE G — Unificar "Salvo" e "Arquivo" em um único conceito: Arquivar
+
+> Objetivo: eliminar o conceito separado de "Salvo" (favorito no banco).
+> Clicar em ★ / "Arquivar" faz as duas coisas de uma vez: marca `is_saved=1`
+> no banco E exporta o `.md` em `data/archive/`. Um único gesto, um único estado.
+> A aba "Salvos" vira "Arquivados" e reflete exatamente o que está no sistema de arquivos.
+
+### G.1 — Renomear ação e botão no leitor
+
+- [ ] `reader_view.py` — botão `_save_btn`: texto muda de "☆ Salvar" / "★ Salvo"
+      para "☆ Arquivar" / "★ Arquivado"
+- [ ] `reader_view.py` — `_on_toggle_saved()`: ao marcar como salvo, chamar
+      `archive_manager.export_article(article)` junto; ao desmarcar, deletar o `.md`
+      correspondente (com confirmação ou silenciosamente — definir na implementação)
+- [ ] Remover botão "Exportar" separado da `_toolbar_row2` (ação agora está em Arquivar)
+
+### G.2 — Renomear aba e view "Salvos" → "Arquivados"
+
+- [ ] `sidebar.py` — texto do botão de navegação: "Salvos" → "Arquivados"
+- [ ] `saved_view.py` — título e strings internas: "Salvos" → "Arquivados"
+- [ ] `unified_feed_view.py` — qualquer referência ao estado salvo visível para o usuário
+
+### G.3 — Migrar artigos já salvos (sem .md) ao iniciar
+
+- [ ] `feed_manager.py` ou startup — ao iniciar o app, exportar automaticamente todos os
+      artigos com `is_saved=1` que ainda não têm `.md` correspondente
+      (garante consistência para quem já usava o ★ antes da mudança)
+
+### G.4 — Ajustar ArchiveView
+
+- [ ] `archive_view.py` — remover qualquer distinção entre "salvos" e "arquivados";
+      a view já lista os `.md` do diretório, que agora é a única fonte de verdade
+
+---
+
+## FASE H — Indicador de Status do Ollama
+
+> Atualmente não há feedback visual enquanto o Ollama está conectando/processando —
+> o usuário não sabe se a requisição está pendente antes do streaming começar.
+
+### H.1 — Indicador na janela de Configurações
+
+- [ ] `settings_dialog.py` → seção IA: substituir ou complementar o botão "Testar conexão"
+      por um label de status persistente que atualiza ao abrir a seção:
+      `"● Ollama conectado — qwen2.5:7b"` (verde) ou `"○ Ollama offline"` (vermelho)
+- [ ] Verificação assíncrona via `ai_bridge.is_available()` ao exibir a seção de IA;
+      não bloquear a abertura das Configurações
+
+### H.2 — Spinner antes do streaming do Resumo
+
+- [ ] `reader_view.py` → painel de resumo: exibir `"⟳ Aguardando Ollama…"` (label + spinner animado)
+      entre o clique do botão "Resumir" e o primeiro token recebido;
+      substituído pelo streaming assim que o primeiro token chega
+
+### H.3 — Feedback durante análise em background
+
+- [ ] `reader_view.py` → meta bar: exibir `"⟳ analisando…"` como placeholder
+      na seção de tags e/ou 5Ws enquanto `_AnalyzeWorker` está rodando;
+      hoje essa seção fica vazia e silenciosa até o resultado chegar
+- [ ] Ao término (sucesso ou erro), substituir pelo resultado ou por mensagem de erro
+      discreta (`"IA indisponível"`) sem bloquear a leitura
+
+### H.4 — Badge de status global (sidebar ou statusbar)
+
+- [ ] Adicionar indicador global discreto (ex: ponto colorido na sidebar ou
+      `QStatusBar` no rodapé da janela principal): verde quando Ollama disponível,
+      cinza quando não verificado, vermelho quando offline
+- [ ] Polling leve a cada 60s via `QTimer` usando `ai_bridge.is_available()`;
+      nenhum retry automático — apenas atualiza o indicador
+
+---
+
 ## IDEIAS
 
 - [ ] **Detecção de evento**: identificar automaticamente que artigos de fontes diferentes cobrem exatamente o mesmo evento do mesmo dia — requer clustering temporal + semântico combinados (embeddings por janela de tempo + similaridade de título/entidades)
