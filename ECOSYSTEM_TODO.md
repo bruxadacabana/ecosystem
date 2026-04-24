@@ -701,10 +701,26 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 - [x] `iniciar.bat` / `iniciar.sh` — corrigir porta: uvicorn sobe em 7071 mas o script abre `http://localhost:7070`
 
 ### Lista de favoritos (domínios prioritários)
-- [ ] Criar lista de domínios favoritos — boosting no ranking de busca sem precisar crawlear
-  — UI: página de gerenciamento no AKASHA (adicionar/remover domínio + peso de prioridade)
-  — Backend: tabela `favorite_domains` com `domain` e `priority_score`
-  — Resultados de domínios favoritos sobem para P2 automaticamente na ordenação
+- [ ] `AKASHA/database.py` — adicionar tabela `favorite_domains (id, domain UNIQUE, label, priority_score, added_at)`
+      e migration para `SCHEMA_VERSION = 12`
+      Funções: `add_favorite_domain(domain, label, priority_score)`, `remove_favorite_domain(domain)`,
+      `list_favorite_domains() -> list[tuple]`, `get_favorite_domains() -> set[str]`
+- [ ] `AKASHA/routers/favorites.py` — novo router com rotas:
+      `GET  /favorites`                       → página com lista + formulário de adição
+      `POST /favorites/add`                   → adiciona domínio (extrai de URL ou aceita domínio direto)
+      `DELETE /favorites/{domain}`            → remove favorito
+      `POST /favorites/{domain}/to-blacklist` → move para lista negra (add_blocked + remove_favorite)
+      `POST /favorites/{domain}/to-library`   → move para biblioteca (add watch-later com URL base)
+- [ ] `AKASHA/templates/favorites.html` — página principal herdando `base.html`
+      Subtítulo: "Domínios prioritários — resultados destes sites aparecem antes dos demais na busca."
+      Formulário de adição (URL ou domínio direto + campo label opcional)
+      Inclui partial `_favorites_list.html`
+- [ ] `AKASHA/templates/_favorites_list.html` — partial HTMX com a lista de favoritos
+      Cada item: domínio + label + data de adição + botões:
+      [✕ remover] [→ lista negra] [→ biblioteca]
+- [ ] `AKASHA/templates/base.html` — adicionar link "favoritos" no nav (entre "lista negra" e fim)
+- [ ] `AKASHA/main.py` — registrar `favorites.router`
+- [ ] Resultados de domínios favoritos sobem para P2 automaticamente na ordenação (implementar junto com o item de priorização de busca)
 
 ### Busca: priorização e segunda coluna
 - [ ] Definir 3 níveis de prioridade nos resultados de busca:
