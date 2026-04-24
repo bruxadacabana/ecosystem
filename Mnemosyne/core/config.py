@@ -4,9 +4,10 @@ Configuração do Mnemosyne — lê config.json, usa defaults se ausente.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from .collections import CollectionConfig, CollectionType, sync_ecosystem_collections
 from .errors import ConfigError
 
 
@@ -39,9 +40,9 @@ _DEFAULTS: dict = {
     "chunk_size": 800,
     "chunk_overlap": 100,
     "retriever_k": 4,
-    "watched_dir": "",
-    "vault_dir": "",
-    "chroma_dir": "",
+    "collections": [],
+    "active_collection": "",
+    "ecosystem_enabled": {},
     "auto_index_on_change": True,
     "relevance_decay_days": 30,
     "semantic_chunking": False,
@@ -57,47 +58,102 @@ class AppConfig:
     chunk_size: int
     chunk_overlap: int
     retriever_k: int
-    watched_dir: str
-    vault_dir: str = ""
-    chroma_dir: str = ""
+    collections: list[CollectionConfig] = field(default_factory=list)
+    active_collection: str = ""
+    ecosystem_enabled: dict[str, bool] = field(default_factory=dict)
     auto_index_on_change: bool = True
     relevance_decay_days: int = 30
     semantic_chunking: bool = False
     indexing_only: bool = False
     dark_mode: bool = True
 
+    # ── Propriedades derivadas da coleção ativa ───────────────────────────────
+
+    @property
+    def active_coll(self) -> CollectionConfig | None:
+        """Retorna a coleção ativa, ou a primeira habilitada como fallback."""
+        for c in self.collections:
+            if c.name == self.active_collection:
+                return c
+        # fallback: primeira coleção user-defined habilitada, depois qualquer
+        for c in self.collections:
+            if c.source == "user" and c.enabled:
+                return c
+        return self.collections[0] if self.collections else None
+
+    @property
+    def watched_dir(self) -> str:
+        coll = self.active_coll
+        return coll.path if coll else ""
+
+    @property
+    def vault_dir(self) -> str:
+        """Path da coleção ativa se for VAULT, senão vazio."""
+        coll = self.active_coll
+        return coll.path if coll and coll.type == CollectionType.VAULT else ""
+
     @property
     def persist_dir(self) -> str:
-        """Caminho do vectorstore: chroma_dir se definido, senão derivado de watched_dir."""
-        if self.chroma_dir:
-            return self.chroma_dir
-        if self.watched_dir:
-            return str(Path(self.watched_dir) / ".mnemosyne" / "chroma_db")
-        return ""
+        coll = self.active_coll
+        return coll.persist_dir if coll else ""
 
     @property
     def mnemosyne_dir(self) -> str:
-        """Diretório .mnemosyne dentro da pasta monitorada."""
-        if self.watched_dir:
-            return str(Path(self.watched_dir) / ".mnemosyne")
-        return ""
+        coll = self.active_coll
+        return coll.mnemosyne_dir if coll else ""
+
+    @property
+    def collection_type(self) -> str:
+        coll = self.active_coll
+        return coll.type.value if coll else "library"
 
     @property
     def is_configured(self) -> bool:
-        """True se todos os campos obrigatórios estiverem preenchidos."""
-        return bool(self.llm_model and self.embed_model and self.watched_dir)
+        return bool(self.llm_model and self.embed_model and self.active_coll and self.watched_dir)
+
+
+def _migrate_legacy(data: dict) -> dict:
+    """
+    Migra config antigo {watched_dir, vault_dir} para o novo formato {collections}.
+    Não-destrutivo: preserva campos existentes.
+    """
+    if data.get("collections"):
+        return data  # já no novo formato
+
+    watched = data.get("watched_dir", "")
+    vault = data.get("vault_dir", "")
+    collections: list[dict] = []
+
+    if watched:
+        collections.append(CollectionConfig(
+            name="Biblioteca",
+            path=watched,
+            type=CollectionType.LIBRARY,
+        ).to_dict())
+
+    if vault:
+        collections.append(CollectionConfig(
+            name="Vault Obsidian",
+            path=vault,
+            type=CollectionType.VAULT,
+        ).to_dict())
+
+    data["collections"] = collections
+    data["active_collection"] = "Biblioteca" if watched else ""
+    return data
 
 
 def load_config() -> AppConfig:
     """
     Carrega config.json; usa defaults para chaves ausentes.
+    Migra automaticamente do formato legado (watched_dir / vault_dir).
+    Sincroniza coleções de ecossistema detectadas via ecosystem.json.
 
     Raises:
         ConfigError: se config.json existir mas for inválido.
     """
     data: dict = dict(_DEFAULTS)
 
-    # Tenta caminho primário (config_path sincronizado), fallback para config.json local
     for candidate in (_CONFIG_PATH, _LEGACY_CONFIG_PATH):
         if candidate.exists():
             try:
@@ -110,15 +166,25 @@ def load_config() -> AppConfig:
                 raise ConfigError(f"settings.json inválido: {exc}") from exc
             break
 
+    data = _migrate_legacy(data)
+
+    # Desserializar coleções
+    raw_colls: list[dict] = data.get("collections", [])
+    collections = [CollectionConfig.from_dict(c) for c in raw_colls if isinstance(c, dict)]
+
+    # Sincronizar coleções do ecossistema
+    ecosystem_enabled: dict[str, bool] = data.get("ecosystem_enabled", {})
+    collections = sync_ecosystem_collections(collections, ecosystem_enabled)
+
     return AppConfig(
         llm_model=str(data.get("llm_model", "")),
         embed_model=str(data.get("embed_model", "")),
         chunk_size=int(data.get("chunk_size", 800)),
         chunk_overlap=int(data.get("chunk_overlap", 100)),
         retriever_k=int(data.get("retriever_k", 4)),
-        watched_dir=str(data.get("watched_dir", "")),
-        vault_dir=str(data.get("vault_dir", "")),
-        chroma_dir=str(data.get("chroma_dir", "")),
+        collections=collections,
+        active_collection=str(data.get("active_collection", "")),
+        ecosystem_enabled=ecosystem_enabled,
         auto_index_on_change=bool(data.get("auto_index_on_change", True)),
         relevance_decay_days=int(data.get("relevance_decay_days", 30)),
         semantic_chunking=bool(data.get("semantic_chunking", False)),
@@ -136,9 +202,9 @@ def save_config(config: AppConfig) -> None:
         "chunk_size": config.chunk_size,
         "chunk_overlap": config.chunk_overlap,
         "retriever_k": config.retriever_k,
-        "watched_dir": config.watched_dir,
-        "vault_dir": config.vault_dir,
-        "chroma_dir": config.chroma_dir,
+        "collections": [c.to_dict() for c in config.collections],
+        "active_collection": config.active_collection,
+        "ecosystem_enabled": config.ecosystem_enabled,
         "auto_index_on_change": config.auto_index_on_change,
         "relevance_decay_days": config.relevance_decay_days,
         "semantic_chunking": config.semantic_chunking,
