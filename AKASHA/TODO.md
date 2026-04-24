@@ -578,14 +578,14 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Média prioridade (inconsistência / UX)
 
-- [ ] **[BUG-4] `main.py` `index()` — contexto incompleto para `search.html`**
+- [x] **[BUG-4] `main.py` `index()` — contexto incompleto para `search.html`**
       `main.py:101`: o handler da rota `/` não passa `site_results`, `has_sites` e
       `has_more_web` para o template. O Jinja2 não crasha (trata `undefined` como falsy),
       mas o comportamento é inconsistente com o handler `/search`.
       **Fix:** adicionar as chaves faltantes com valores padrão (`site_results=[]`,
       `has_sites=False`, `has_more_web=False`, `src_web=True`, `src_eco=True`, `src_sites=False`).
 
-- [ ] **[BUG-5] `search.html` — aviso "nenhum site cadastrado" dentro do bloco `{% if error %}`**
+- [x] **[BUG-5] `search.html` — aviso "nenhum site cadastrado" dentro do bloco `{% if error %}`**
       `templates/search.html`: o bloco `{% if src_sites and not has_sites and query %}` está
       aninhado dentro de `{% if error %}`, então o aviso só aparece quando há erro de busca.
       Deveria aparecer independentemente, como estado informativo separado.

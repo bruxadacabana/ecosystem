@@ -4,6 +4,13 @@
 {% block title %}{% if query %}{{ query }} — AKASHA{% else %}AKASHA{% endif %}{% endblock %}
 
 {% block content %}
+<!-- ─── Aviso sites sem cadastro ────────────────────────────────── -->
+{% if src_sites and not has_sites and query %}
+  <section class="empty-state" style="padding:1rem 0;">
+    <p class="empty-hint">Nenhum site pessoal cadastrado. <a href="/library" class="result-link">Adicionar sites →</a></p>
+  </section>
+{% endif %}
+
 <!-- ─── Erro de busca ──────────────────────────────────────────── -->
 {% if error %}
   <section class="empty-state">
@@ -11,13 +18,6 @@
     <p class="empty-title">Erro na busca</p>
     <p class="empty-hint">{{ error }}</p>
   </section>
-
-<!-- ─── Aviso sites sem cadastro ────────────────────────────────── -->
-{% if src_sites and not has_sites and query %}
-  <section class="empty-state" style="padding:1rem 0;">
-    <p class="empty-hint">Nenhum site pessoal cadastrado. <a href="/library" class="result-link">Adicionar sites →</a></p>
-  </section>
-{% endif %}
 
 <!-- ─── Resultados ──────────────────────────────────────────────── -->
 {% elif web_results or local_results or site_results or watch_later_results %}
