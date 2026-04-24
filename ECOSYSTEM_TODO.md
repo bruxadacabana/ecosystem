@@ -111,14 +111,14 @@ Objetivo: Hermes deve ler `hermes.output_dir` do ecosystem.json se `outdir` não
 nas prefs locais — o mesmo padrão já aplicado ao `mnemo_dir`. Após `apply_sync_root`,
 Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 
-- [ ] `Hermes/hermes.py` — `_load_prefs()`: se `outdir` não estiver em prefs, ler
+- [x] `Hermes/hermes.py` — `_load_prefs()`: se `outdir` não estiver em prefs, ler
       `hermes.output_dir` do ecosystem.json como fallback
 
 ### 0.8 — AKASHA: integração Hermes + DB no Proton + lista negra + UI
 
 #### 0.8a — AKASHA indexa arquivos do Hermes na busca local
-- [ ] `AKASHA/config.py` — adicionar `hermes_output: str` lendo `hermes.output_dir` do ecosystem.json
-- [ ] `AKASHA/services/local_search.py` — adicionar 6ª fonte `HERMES` em `index_local_files()`
+- [x] `AKASHA/config.py` — adicionar `hermes_output: str` lendo `hermes.output_dir` do ecosystem.json
+- [x] `AKASHA/services/local_search.py` — adicionar 6ª fonte `HERMES` em `index_local_files()`
 
 #### 0.8b — AKASHA: DB (biblioteca + lista negra) movível para Proton
 - [ ] `AKASHA/config.py` — `DB_PATH` lê `akasha.data_path` do ecosystem.json se disponível
