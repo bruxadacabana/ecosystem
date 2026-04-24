@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -128,6 +128,16 @@ CREATE TABLE IF NOT EXISTS blocked_domains (
 );
 """
 
+_CREATE_FAVORITE_DOMAINS = """
+CREATE TABLE IF NOT EXISTS favorite_domains (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain         TEXT    NOT NULL UNIQUE,
+    label          TEXT    NOT NULL DEFAULT '',
+    priority_score INTEGER NOT NULL DEFAULT 10,
+    added_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 _CREATE_CRAWL_SITES = """
 CREATE TABLE IF NOT EXISTS crawl_sites (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -235,6 +245,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_LIBRARY_DIFFS)
         await db.execute(_CREATE_LIBRARY_FTS)
         await db.execute(_CREATE_BLOCKED_DOMAINS)
+        await db.execute(_CREATE_FAVORITE_DOMAINS)
         await db.execute(_CREATE_CRAWL_SITES)
         await db.execute(_CREATE_CRAWL_PAGES)
         await db.execute(_CREATE_CRAWL_FTS)
@@ -316,6 +327,17 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         await db.execute("""
             CREATE INDEX IF NOT EXISTS idx_activity_log_created
             ON activity_log(created_at DESC)
+        """)
+
+    if from_version < 12:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS favorite_domains (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain         TEXT    NOT NULL UNIQUE,
+                label          TEXT    NOT NULL DEFAULT '',
+                priority_score INTEGER NOT NULL DEFAULT 10,
+                added_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
         """)
 
     if from_version < 11:
@@ -401,6 +423,39 @@ async def add_blocked_domain(domain: str) -> None:
 async def remove_blocked_domain(domain: str) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM blocked_domains WHERE domain = ?", (domain,))
+        await db.commit()
+
+
+async def get_favorite_domains() -> set[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT domain FROM favorite_domains"
+        )).fetchall()
+    return {r[0] for r in rows}
+
+
+async def list_favorite_domains() -> list[tuple]:
+    """Retorna lista de (id, domain, label, priority_score, added_at) por score desc."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT id, domain, label, priority_score, added_at "
+            "FROM favorite_domains ORDER BY priority_score DESC, added_at DESC"
+        )).fetchall()
+    return list(rows)
+
+
+async def add_favorite_domain(domain: str, label: str = "", priority_score: int = 10) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO favorite_domains (domain, label, priority_score) VALUES (?, ?, ?)",
+            (domain, label, priority_score),
+        )
+        await db.commit()
+
+
+async def remove_favorite_domain(domain: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM favorite_domains WHERE domain = ?", (domain,))
         await db.commit()
 
 

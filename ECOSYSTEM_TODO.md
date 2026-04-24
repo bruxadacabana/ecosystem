@@ -723,9 +723,9 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 - [ ] Resultados de domínios favoritos sobem para P2 automaticamente na ordenação (implementar junto com o item de priorização de busca)
 
 ### Busca: priorização e segunda coluna
-- [ ] Definir 3 níveis de prioridade nos resultados de busca:
+- [x] Definir 3 níveis de prioridade nos resultados de busca:
   - P1: conteúdo local indexado (arquivos do ecossistema + biblioteca/sites crawleados)
-  - P2: domínios favoritos/prioritários (ver seção acima)
+  - P2: domínios favoritos/prioritários — web_results separados em fav_results antes de renderizar
   - P3: resultados web gerais
 - [x] Criar segunda coluna (ou painel lateral) para exibir resultados locais separados dos web
       Coluna esquerda (principal): resultados web + biblioteca + ver depois

@@ -21,6 +21,7 @@ from services.local_search import search_local
 from services.crawler import search_sites
 from database import (
     get_all_crawl_sites,
+    get_favorite_domains,
     search_watch_later as _db_search_wl,
     log_activity,
 )
@@ -75,6 +76,7 @@ async def search(
         src_web = src_eco = "on"
 
     web_results:        list[SearchResult] = []
+    fav_results:        list[SearchResult] = []
     local_results:      list[SearchResult] = []
     site_results:       list[SearchResult] = []
     watch_later_results: list[SearchResult] = []
@@ -106,7 +108,17 @@ async def search(
         except Exception as exc:
             error = str(exc)
 
-        total = len(web_results) + len(local_results) + len(site_results) + len(watch_later_results)
+        # Separar web_results em P2 (favoritos) e P3 (restante)
+        if web_results:
+            from urllib.parse import urlparse
+            fav_domains = await get_favorite_domains()
+            if fav_domains:
+                def _domain(url: str) -> str:
+                    return (urlparse(url).hostname or "").removeprefix("www.").lower()
+                fav_results  = [r for r in web_results if _domain(r.url) in fav_domains]
+                web_results  = [r for r in web_results if _domain(r.url) not in fav_domains]
+
+        total = len(web_results) + len(fav_results) + len(local_results) + len(site_results) + len(watch_later_results)
         src_label = "+".join(filter(None, [
             "web" if src_web else "",
             "local" if src_eco else "",
@@ -124,6 +136,7 @@ async def search(
         "search.html",
         {
             "web_results":          web_results,
+            "fav_results":          fav_results,
             "local_results":        local_results,
             "site_results":         site_results,
             "watch_later_results":  watch_later_results,

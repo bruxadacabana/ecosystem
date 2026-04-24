@@ -106,6 +106,7 @@ async def index(request: Request) -> HTMLResponse:
         "search.html",
         {
             "web_results":          [],
+            "fav_results":          [],
             "local_results":        [],
             "site_results":         [],
             "watch_later_results":  [],

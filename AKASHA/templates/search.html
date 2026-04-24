@@ -22,7 +22,7 @@
 <!-- ─── Resultados ──────────────────────────────────────────────── -->
 {% elif web_results or local_results or site_results or watch_later_results %}
 
-{% set has_main   = web_results or site_results or watch_later_results %}
+{% set has_main   = web_results or fav_results or site_results or watch_later_results %}
 {% set has_eco    = local_results %}
 {% set two_col    = has_main and has_eco %}
 
@@ -52,9 +52,19 @@
       </section>
       {% endif %}
 
+      {% if fav_results %}
+      <section class="results-section">
+        <h3 class="results-section-title">Sites prioritários</h3>
+        <p class="results-meta">{{ fav_results | length }} resultado{% if fav_results | length != 1 %}s{% endif %} em domínios favoritos</p>
+        <ol class="results-list">
+          {% for r in fav_results %}{{ result_card(r) }}{% endfor %}
+        </ol>
+      </section>
+      {% endif %}
+
       {% if web_results %}
       <section class="results-section">
-        {% if site_results or watch_later_results or has_eco %}<h3 class="results-section-title">Web</h3>{% endif %}
+        {% if site_results or watch_later_results or fav_results or has_eco %}<h3 class="results-section-title">Web</h3>{% endif %}
         <p class="results-meta">{{ web_results | length }} resultado{% if web_results | length != 1 %}s{% endif %} para <strong>{{ query }}</strong></p>
         <ol id="web-results-list" class="results-list">
           {% for r in web_results %}{{ result_card(r) }}{% endfor %}
