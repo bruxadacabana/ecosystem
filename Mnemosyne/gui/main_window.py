@@ -494,15 +494,26 @@ class MainWindow(QMainWindow):
         self.badge_label.setVisible(False)
         sb.addWidget(self.badge_label)
 
+        self.progress_file_label = QLabel()
+        self.progress_file_label.setObjectName("progressFileLabel")
+        self.progress_file_label.setWordWrap(False)
+        self.progress_file_label.setVisible(False)
+        sb.addWidget(self.progress_file_label)
+
+        progress_row = QHBoxLayout()
+        progress_row.setSpacing(4)
+        progress_row.setContentsMargins(0, 0, 0, 0)
         self.progress = QProgressBar()
         self.progress.setVisible(False)
-        sb.addWidget(self.progress)
-
-        self.cancel_btn = QPushButton("■  Interromper")
+        self.cancel_btn = QPushButton("■")
         self.cancel_btn.setObjectName("cancelBtn")
+        self.cancel_btn.setFixedSize(24, 24)
+        self.cancel_btn.setToolTip("Interromper")
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(self._cancel_worker)
-        sb.addWidget(self.cancel_btn)
+        progress_row.addWidget(self.progress, 1)
+        progress_row.addWidget(self.cancel_btn)
+        sb.addLayout(progress_row)
 
         sb.addStretch()
 
@@ -1251,6 +1262,9 @@ class MainWindow(QMainWindow):
         self.index_btn.setEnabled(False)
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
+        self.progress_file_label.setText("Iniciando…")
+        self.progress_file_label.setVisible(True)
+        self.cancel_btn.setVisible(True)
         self.statusBar().showMessage("Indexando documentos…")
         self._log_event(f"Iniciando indexação de: {self.config.watched_dir}")
 
@@ -1264,6 +1278,9 @@ class MainWindow(QMainWindow):
         self.index_btn.setEnabled(False)
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
+        self.progress_file_label.setText("Verificando arquivos…")
+        self.progress_file_label.setVisible(True)
+        self.cancel_btn.setVisible(True)
         self.statusBar().showMessage("Actualizando índice incrementalmente…")
         self._log_event("Iniciando actualização incremental do índice.")
 
@@ -1273,6 +1290,8 @@ class MainWindow(QMainWindow):
 
     def _on_update_index_finished(self, success: bool, message: str) -> None:
         self.progress.setVisible(False)
+        self.progress_file_label.setVisible(False)
+        self.cancel_btn.setVisible(False)
         self.index_btn.setEnabled(True)
         self._log_event(message)
         if success:
@@ -1289,12 +1308,26 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Aviso", message)
         self.statusBar().showMessage(message)
 
+    @staticmethod
+    def _elide_middle(text: str, max_chars: int = 26) -> str:
+        if len(text) <= max_chars:
+            return text
+        half = (max_chars - 1) // 2
+        return text[:half] + "…" + text[-(max_chars - half - 1):]
+
     def _on_index_progress(self, name: str, pos: int, total: int) -> None:
+        elided = self._elide_middle(name)
+        self.progress_file_label.setText(f"{elided}  ({pos}/{total})")
+        if total > 0:
+            self.progress.setRange(0, total)
+            self.progress.setValue(pos)
         self.statusBar().showMessage(f"Indexando {name}… ({pos}/{total})")
 
     def _on_index_finished(self, success: bool, message: str) -> None:
         self.index_btn.setEnabled(True)
         self.progress.setVisible(False)
+        self.progress_file_label.setVisible(False)
+        self.cancel_btn.setVisible(False)
         self._log_event(message)
 
         if success:
