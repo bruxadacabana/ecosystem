@@ -301,8 +301,8 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] `templates/_library_list.html` — botão "📄 N páginas" em cada site card que expande
       `_site_pages.html` via HTMX (`htmx.ajax GET /library/{id}/pages`);
       colapsar ao clicar de novo (toggleSitePages em library.html)
-- [ ] `templates/_macros.html` — nos cards de resultado com `source="SITES"`, adicionar
-      botão "Ler" ao lado do link externo que abre `/sites/reader?url=...` inline
+- [x] `templates/_macros.html` — nos cards de resultado com `source="SITES"`, adicionar
+      botão "Ler" ao lado do link externo que abre `/library/reader?url=...` inline
 
 ---
 

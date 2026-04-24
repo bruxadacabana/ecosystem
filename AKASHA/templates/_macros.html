@@ -14,6 +14,11 @@
     <span class="result-url">{{ r.url }}</span>
     <div class="result-actions">
       <a href="{{ r.url }}" download class="btn btn-ghost btn-sm">&#x21A7; baixar</a>
+      {% if r.source == "SITES" %}
+      <a href="/library/reader?url={{ r.url | urlencode }}"
+         class="btn btn-ghost btn-sm"
+         title="Ler no reader mode">Ler</a>
+      {% endif %}
       {% if r.source == "WEB" %}
       <button
         class="btn btn-ghost btn-sm"
