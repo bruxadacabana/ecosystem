@@ -56,6 +56,12 @@ Isso garante que ambas as instâncias do Claude Code estejam na mesma página so
 
 ## Contexto do projeto
 
+### AKASHA
+
+- `/library` = crawler de domínios — "Sites" e "Biblioteca" foram **unificados** numa única seção chamada Biblioteca
+- Porta real do servidor: **7071** (não 7070)
+- Router principal: `AKASHA/routers/crawler.py` (gerencia `/library`)
+
 ### HUB / LOGOS
 
 O HUB é o **dashboard e painel de controle do ecossistema**: lança apps, centraliza configuração, visualiza dados de todos os programas e hospeda o **LOGOS** (proxy inteligente de LLM).
