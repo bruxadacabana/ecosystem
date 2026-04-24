@@ -96,7 +96,7 @@ class SavedView(QWidget):
         back_btn.clicked.connect(self.back_requested.emit)
         layout.addWidget(back_btn)
 
-        title = QLabel("Arquivados")
+        title = QLabel("Arquivo")
         title.setObjectName("feedListTitle")
         f = QFont("Special Elite")
         if not f.exactMatch():

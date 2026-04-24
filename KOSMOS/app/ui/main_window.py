@@ -115,7 +115,6 @@ class MainWindow(QMainWindow):
         from app.ui.views.reader_view        import ReaderView
         from app.ui.views.settings_view      import SettingsView
         from app.ui.views.saved_view         import SavedView
-        from app.ui.views.archive_view       import ArchiveView
         from app.ui.views.stats_view         import StatsView
 
         self._dashboard = DashboardView(self._theme)
@@ -139,9 +138,6 @@ class MainWindow(QMainWindow):
         self._saved = SavedView(self._fm)
         self._stack.addWidget(self._saved)
 
-        self._archive = ArchiveView(self._fm)
-        self._stack.addWidget(self._archive)
-
         self._stats = StatsView(self._theme)
         self._stack.addWidget(self._stats)
 
@@ -155,7 +151,7 @@ class MainWindow(QMainWindow):
             "sources":    self._sources,
             "all_unread": self._dashboard,
             "saved":      self._saved,
-            "archive":    self._archive,
+            "archive":    self._saved,
             "stats":      self._stats,
             "settings":   self._settings,
         }
@@ -173,9 +169,6 @@ class MainWindow(QMainWindow):
         # Saved view
         self._saved.back_requested.connect(self._on_back)
         self._saved.article_clicked.connect(self._on_saved_article_clicked)
-
-        # Archive view
-        self._archive.back_requested.connect(self._on_back)
 
         # Stats view
         self._stats.back_requested.connect(self._on_back)
@@ -227,8 +220,6 @@ class MainWindow(QMainWindow):
             self._sources.load()
         elif widget is self._saved:
             self._saved.load()
-        elif widget is self._archive:
-            self._archive.load()
         elif widget is self._stats:
             self._stats.load()
         self._stack.setCurrentWidget(widget)
