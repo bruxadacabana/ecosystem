@@ -119,6 +119,18 @@ export interface OgmaPage {
 }
 
 // ----------------------------------------------------------
+//  LOGOS — Status do proxy LLM
+// ----------------------------------------------------------
+
+export interface LogosStatus {
+  active_priority: number | null
+  queue: [number, number, number]
+  vram_used_mb: number | null
+  vram_pct: number | null
+  ollama_url: string
+}
+
+// ----------------------------------------------------------
 //  HUB Navigation
 // ----------------------------------------------------------
 

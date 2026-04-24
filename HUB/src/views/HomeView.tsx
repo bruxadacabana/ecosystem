@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react'
 import { CosmosLayer } from '../components/CosmosLayer'
+import { LogosPanel } from '../components/LogosPanel'
 import { ThemeToggle } from '../components/ThemeToggle'
 import * as cmd from '../lib/tauri'
 import type { EcosystemConfig, HubView, ModuleCard } from '../types'
@@ -118,6 +119,7 @@ export function HomeView({ onNavigate, onSetup }: HomeViewProps) {
           gap: 1,
           background: 'var(--rule)',
           overflow: 'hidden',
+          minHeight: 0,
         }}
       >
         {MODULES.map(m => {
@@ -192,6 +194,9 @@ export function HomeView({ onNavigate, onSetup }: HomeViewProps) {
           )
         })}
       </div>
+
+      {/* Barra de status do LOGOS */}
+      <LogosPanel />
     </div>
   )
 }

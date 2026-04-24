@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus } from '../types'
 
 async function call<T>(
   command: string,
@@ -124,3 +124,13 @@ export const discoverAppExe = (candidates: string[]): Promise<TauriResult<string
 
 export const autoDiscoverAllExePaths = (): Promise<TauriResult<Record<string, string>>> =>
   call<Record<string, string>>('auto_discover_all_exe_paths')
+
+// ----------------------------------------------------------
+//  LOGOS — Status e controle do proxy LLM
+// ----------------------------------------------------------
+
+export const logosGetStatus = (): Promise<TauriResult<LogosStatus>> =>
+  call<LogosStatus>('logos_get_status')
+
+export const logosSilence = (): Promise<TauriResult<number>> =>
+  call<number>('logos_silence')
