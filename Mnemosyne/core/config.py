@@ -48,6 +48,8 @@ _DEFAULTS: dict = {
     "semantic_chunking": False,
     "indexing_only": False,
     "dark_mode": True,
+    "reranking_enabled": True,
+    "reranking_top_n": 6,
 }
 
 
@@ -66,6 +68,8 @@ class AppConfig:
     semantic_chunking: bool = False
     indexing_only: bool = False
     dark_mode: bool = True
+    reranking_enabled: bool = True
+    reranking_top_n: int = 6
 
     # ── Propriedades derivadas da coleção ativa ───────────────────────────────
 
@@ -190,6 +194,8 @@ def load_config() -> AppConfig:
         semantic_chunking=bool(data.get("semantic_chunking", False)),
         indexing_only=bool(data.get("indexing_only", False)),
         dark_mode=bool(data.get("dark_mode", True)),
+        reranking_enabled=bool(data.get("reranking_enabled", True)),
+        reranking_top_n=int(data.get("reranking_top_n", 6)),
     )
 
 
@@ -210,6 +216,8 @@ def save_config(config: AppConfig) -> None:
         "semantic_chunking": config.semantic_chunking,
         "indexing_only": config.indexing_only,
         "dark_mode": config.dark_mode,
+        "reranking_enabled": config.reranking_enabled,
+        "reranking_top_n": config.reranking_top_n,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

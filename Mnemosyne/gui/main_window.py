@@ -141,6 +141,14 @@ class SetupDialog(QDialog):
                 self._eco_checkboxes[eco_key] = cb
             layout.addWidget(eco_group)
 
+        # Opções de qualidade
+        opts_group = QGroupBox("Opções de qualidade")
+        opts_layout = QVBoxLayout(opts_group)
+        self.reranking_check = QCheckBox("Reranking semântico (FlashRank) — melhora precisão, usa ~200 MB RAM extra")
+        self.reranking_check.setChecked(current.reranking_enabled)
+        opts_layout.addWidget(self.reranking_check)
+        layout.addWidget(opts_group)
+
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -153,14 +161,15 @@ class SetupDialog(QDialog):
         if folder:
             self.folder_edit.setText(folder)
 
-    def get_values(self) -> tuple[str, str, str, dict[str, bool]]:
-        """Retorna (library_path, llm_model, embed_model, ecosystem_enabled)."""
+    def get_values(self) -> tuple[str, str, str, dict[str, bool], bool]:
+        """Retorna (library_path, llm_model, embed_model, ecosystem_enabled, reranking_enabled)."""
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
         return (
             self.folder_edit.text().strip(),
             self.llm_combo.currentText(),
             self.embed_combo.currentText(),
             eco_enabled,
+            self.reranking_check.isChecked(),
         )
 
 
@@ -1056,11 +1065,11 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            folder, llm, embed, eco_enabled = dialog.get_values()
+            folder, llm, embed, eco_enabled, reranking = dialog.get_values()
             if not folder:
                 QMessageBox.warning(self, "Aviso", "Selecione uma pasta para continuar.")
                 return
-            self._apply_setup_values(folder, llm, embed, eco_enabled)
+            self._apply_setup_values(folder, llm, embed, eco_enabled, reranking)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -1068,11 +1077,11 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            folder, llm, embed, eco_enabled = dialog.get_values()
+            folder, llm, embed, eco_enabled, reranking = dialog.get_values()
             if not folder:
                 return
             changed_dir = folder != self.config.watched_dir
-            self._apply_setup_values(folder, llm, embed, eco_enabled)
+            self._apply_setup_values(folder, llm, embed, eco_enabled, reranking)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             if changed_dir:
@@ -1082,7 +1091,8 @@ class MainWindow(QMainWindow):
             self._post_config_init()
 
     def _apply_setup_values(
-        self, folder: str, llm: str, embed: str, eco_enabled: dict[str, bool]
+        self, folder: str, llm: str, embed: str, eco_enabled: dict[str, bool],
+        reranking_enabled: bool = True,
     ) -> None:
         """Aplica os valores do SetupDialog ao config e guarda."""
         from core.collections import CollectionConfig, CollectionType
@@ -1090,6 +1100,7 @@ class MainWindow(QMainWindow):
         self.config.llm_model = llm
         self.config.embed_model = embed
         self.config.ecosystem_enabled.update(eco_enabled)
+        self.config.reranking_enabled = reranking_enabled
 
         # Atualiza ou cria a coleção Biblioteca do utilizador
         user_colls = [c for c in self.config.collections if c.source == "user"]

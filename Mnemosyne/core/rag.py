@@ -363,6 +363,30 @@ def _hyde_retrieve(
         return _hybrid_retrieve(vectorstore, question, k, source_type, source_files)
 
 
+_RERANK_CANDIDATE_K = 30
+
+
+def _flashrank_rerank(
+    docs: list[Document], query: str, top_n: int
+) -> list[Document]:
+    """
+    Re-classifica docs por relevância semântica usando FlashRank
+    (ms-marco-MultiBERT-L-12, multilíngue — melhor para PT).
+    Fallback para os primeiros top_n se FlashRank não estiver instalado ou falhar.
+    """
+    if not docs:
+        return docs
+    top_n = min(top_n, len(docs))
+    try:
+        from flashrank import Ranker, RerankRequest  # type: ignore[import]
+        ranker = Ranker(model_name="ms-marco-MultiBERT-L-12")
+        passages = [{"id": i, "text": doc.page_content} for i, doc in enumerate(docs)]
+        results = ranker.rerank(RerankRequest(query=query, passages=passages))
+        return [docs[r["id"]] for r in results[:top_n]]
+    except Exception:
+        return docs[:top_n]
+
+
 _COMPRESS_PROMPT = (
     "O trecho abaixo é relevante para responder à pergunta?\n"
     "Responda apenas 'sim' ou 'não'.\n\n"
@@ -504,8 +528,8 @@ def prepare_ask(
     Raises:
         QueryError: se a busca vetorial falhar.
     """
-    # Buscar k+2 candidatos para dar margem à compressão contextual
-    candidate_k = config.retriever_k + 2
+    # Reranking activo: buscar 30 candidatos; sem reranking: k+2 como antes
+    candidate_k = _RERANK_CANDIDATE_K if config.reranking_enabled else config.retriever_k + 2
 
     try:
         if retrieval_mode == "multi_query":
@@ -528,6 +552,10 @@ def prepare_ask(
 
     # Re-ranking por time-decay: penaliza fontes consultadas há muito tempo
     docs = _apply_time_decay(docs, tracker, config.relevance_decay_days)
+
+    # FlashRank: reordena por relevância semântica e reduz ao top_n configurado
+    if config.reranking_enabled:
+        docs = _flashrank_rerank(docs, question, config.reranking_top_n)
 
     context = "\n\n---\n".join(doc.page_content for doc in docs)
 

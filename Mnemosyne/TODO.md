@@ -312,14 +312,14 @@
   - Justificativa: 800 chars ≈ 200 tokens; ótimo benchmarkado é 400-512 tokens ≈ 1600-2000 chars; overlap mantém ~14%
 
 ### 8.3 FlashRank reranking (média prioridade)
-- [ ] `requirements.txt` — adicionar `flashrank`
-- [ ] `core/rag.py` — envolver o retriever base em `ContextualCompressionRetriever` com `FlashrankRerank`:
+- [x] `requirements.txt` — adicionar `flashrank`
+- [x] `core/rag.py` — envolver o retriever base em `ContextualCompressionRetriever` com `FlashrankRerank`:
   - busca vetorial com k=30 candidatos
   - FlashRank reordena por relevância real → top 6-8 para o LLM
   - modelo multilíngue: `"ms-marco-MultiBERT-L-12"` (melhor para PT)
   - `top_n` configurável em `AppConfig`
-- [ ] `core/config.py` — campos novos: `reranking_enabled: bool = True`, `reranking_top_n: int = 6`
-- [ ] `gui/main_window.py` — toggle "Reranking" na SetupDialog (opcional — pode ficar para depois)
+- [x] `core/config.py` — campos novos: `reranking_enabled: bool = True`, `reranking_top_n: int = 6`
+- [x] `gui/main_window.py` — toggle "Reranking" na SetupDialog (opcional — pode ficar para depois)
 
 ### 8.4 RAGAS — avaliação do pipeline (baixa prioridade)
 - [ ] `eval/ragas_eval.py` — script standalone (fora do app) para avaliar faithfulness, context precision e answer relevancy usando Ollama como juiz
