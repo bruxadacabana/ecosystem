@@ -7,10 +7,11 @@ import json
 import logging
 import re
 import sys
+import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, parse_qsl, urlencode
 
 import aiosqlite
 import httpx
@@ -31,6 +32,63 @@ _ASSET_EXTS = re.compile(
     re.IGNORECASE,
 )
 _ALLOWED_SCHEMES = {"http", "https"}
+
+_TRACKING_PARAMS = re.compile(
+    r"^(utm_\w+|fbclid|gclid|msclkid|mc_eid|ref_?)$",
+    re.IGNORECASE,
+)
+
+# robots.txt: domain → (disallow_paths, timestamp)
+_robots_cache: dict[str, tuple[set[str], float]] = {}
+_ROBOTS_TTL = 86400.0  # 24h
+
+
+def _normalize_url(url: str) -> str:
+    """Remove parâmetros de tracking (utm_*, fbclid, etc.) para evitar duplicatas."""
+    parsed = urlparse(url)
+    if not parsed.query:
+        return url
+    clean = [(k, v) for k, v in parse_qsl(parsed.query) if not _TRACKING_PARAMS.match(k)]
+    return parsed._replace(query=urlencode(clean)).geturl()
+
+
+async def _get_disallow_paths(client: httpx.AsyncClient, base_url: str) -> set[str]:
+    """Retorna paths Disallow do robots.txt do domínio (cache TTL 24h)."""
+    parsed = urlparse(base_url)
+    domain = parsed.netloc
+    now = time.monotonic()
+    cached = _robots_cache.get(domain)
+    if cached and (now - cached[1]) < _ROBOTS_TTL:
+        return cached[0]
+    robots_url = f"{parsed.scheme}://{domain}/robots.txt"
+    disallow: set[str] = set()
+    try:
+        resp = await client.get(robots_url, timeout=10)
+        if resp.status_code == 200:
+            active = False
+            for line in resp.text.splitlines():
+                line = line.split("#")[0].strip()
+                if not line:
+                    continue
+                key, _, val = line.partition(":")
+                key = key.strip().lower()
+                val = val.strip()
+                if key == "user-agent":
+                    active = val in ("*", "akasha-crawler")
+                elif key == "disallow" and active and val:
+                    disallow.add(val)
+    except Exception:
+        pass
+    _robots_cache[domain] = (disallow, now)
+    return disallow
+
+
+def _is_allowed(url: str, disallow_paths: set[str]) -> bool:
+    """True se o path do URL não começa com nenhum Disallow."""
+    if not disallow_paths:
+        return True
+    path = urlparse(url).path or "/"
+    return not any(path.startswith(d) for d in disallow_paths)
 
 
 def extract_links(html: str, base_url: str) -> list[str]:
@@ -57,8 +115,8 @@ def extract_links(html: str, base_url: str) -> list[str]:
         if parsed.scheme not in _ALLOWED_SCHEMES:
             continue
 
-        # Remove fragmento, normaliza
-        clean = parsed._replace(fragment="").geturl()
+        # Remove fragmento, normaliza e remove tracking params
+        clean = _normalize_url(parsed._replace(fragment="").geturl())
 
         # Assets estáticos
         path_no_qs = parsed.path.split("?")[0]
@@ -213,6 +271,10 @@ async def crawl_site(site_id: int) -> int:
             client: httpx.AsyncClient, url: str, depth: int
         ) -> list[tuple[str, int]]:
             """Baixa, indexa e retorna links novos com depth+1."""
+            disallow = await _get_disallow_paths(client, url)
+            if not _is_allowed(url, disallow):
+                log.debug("robots.txt: bloqueado %s", url)
+                return []
             async with sem:
                 html, status = await _fetch_page(client, url)
             if not html:
@@ -261,6 +323,9 @@ async def crawl_site(site_id: int) -> int:
                         if link not in visited:
                             queue.append((link, link_depth))
 
+        if pages_saved > 200:
+            await db.execute("INSERT INTO crawl_fts(crawl_fts) VALUES('optimize')")
+
         await db.execute(
             """UPDATE crawl_sites
                SET status='idle', last_crawled_at=?, page_count=(
@@ -297,7 +362,7 @@ async def search_sites(query: str, max_results: int = 20) -> list:
                           snippet(crawl_fts, 3, '', '', '…', 40)
                    FROM crawl_fts
                    WHERE crawl_fts MATCH ?
-                   ORDER BY rank
+                   ORDER BY bm25(crawl_fts, 0, 0, 10, 1)
                    LIMIT ?""",
                 (fts_query, max_results),
             )).fetchall()

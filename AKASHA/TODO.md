@@ -498,20 +498,20 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Alta prioridade
 
-- [ ] **[A] BM25 com pesos por campo** — usar `bm25(crawl_fts, 10, 1)` na consulta FTS5
+- [x] **[A] BM25 com pesos por campo** — usar `bm25(crawl_fts, 10, 1)` na consulta FTS5
       para dar peso 10× ao título vs. corpo; melhora ranking sem custo computacional
       (`database.py` / `services/local_search.py`)
 
-- [ ] **[B] Normalização de URL antes de inserir no crawl** — remover parâmetros de tracking
+- [x] **[B] Normalização de URL antes de inserir no crawl** — remover parâmetros de tracking
       (`utm_*`, `fbclid`, `ref`, etc.) antes de `INSERT` em `crawl_pages`; evita duplicatas
       por variação de URL (`services/crawler.py` + helper em `database.py`)
 
-- [ ] **[C] FTS5 optimize periódico pós-crawl** — executar
+- [x] **[C] FTS5 optimize periódico pós-crawl** — executar
       `INSERT INTO crawl_fts(crawl_fts) VALUES('optimize')` após crawls com > 200 páginas
       novas; mescla segmentos fragmentados e mantém performance de busca estável
       (`services/crawler.py` ou job agendado em `main.py`)
 
-- [ ] **[D] Cache de robots.txt por domínio (TTL 24h)** — armazenar regras de robots.txt
+- [x] **[D] Cache de robots.txt por domínio (TTL 24h)** — armazenar regras de robots.txt
       em memória por domínio com expiração de 24h; evita fetch redundante a cada URL
       (`services/crawler.py`)
 

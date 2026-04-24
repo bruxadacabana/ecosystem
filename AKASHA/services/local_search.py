@@ -208,7 +208,7 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
                           source
                    FROM local_fts
                    WHERE local_fts MATCH ?
-                   ORDER BY rank
+                   ORDER BY bm25(local_fts, 0, 10, 1, 0)
                    LIMIT ?""",
                 (fts_query, max_results),
             )).fetchall()
@@ -226,7 +226,7 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
                           snippet(library_fts, 3, '', '', '…', 40)
                    FROM library_fts
                    WHERE library_fts MATCH ?
-                   ORDER BY rank
+                   ORDER BY bm25(library_fts, 0, 0, 10, 1)
                    LIMIT ?""",
                 (fts_query, max_results),
             )).fetchall()
