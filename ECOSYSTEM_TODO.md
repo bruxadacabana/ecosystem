@@ -833,9 +833,35 @@ Arquivos:
   — `ecosystem_client.py` — `request_llm()`, `logos_status()`, `logos_silence()`
 
 ### Gerenciamento de LLM simultâneo (Mnemosyne + KOSMOS)
-- [ ] Investigar comportamento atual quando os dois apps fazem chamadas simultâneas ao Ollama
+- [x] Investigar comportamento atual quando os dois apps fazem chamadas simultâneas ao Ollama
   — risco: VRAM saturada → travamento no Windows 10 (8 GB RAM, GPU integrada)
-- [ ] Solução de curto prazo (pré-LOGOS): semáforo/lock global no `ecosystem_client.py` para serializar chamadas
+
+  **Achados:**
+  — KOSMOS: `ai_bridge.py` usa `requests.Session` direto ao `/api/generate`, timeout=120s, sem coordenação
+  — Mnemosyne: `langchain_ollama` em QThread via `workers.py`, sem coordenação
+  — Nenhum dos dois usa `ecosystem_client.request_llm()` → não passam pelo LOGOS
+  — No Windows 10 (8 GB RAM, GPU integrada): chamadas simultâneas podem saturar a RAM com dois modelos carregados
+  — No CachyOS (RX 6600, 8 GB VRAM): dois modelos 7B simultâneos arriscam overflow de VRAM
+
+  **Solução imediata sem código** — configurar variáveis de ambiente do Ollama:
+  ```
+  OLLAMA_NUM_PARALLEL=1        # serializa requisições dentro do Ollama
+  OLLAMA_MAX_LOADED_MODELS=1   # descarrega modelo anterior antes de carregar novo
+  ```
+  No Windows: `setx OLLAMA_NUM_PARALLEL 1` + `setx OLLAMA_MAX_LOADED_MODELS 1` (requer reiniciar Ollama)
+  No CachyOS: adicionar ao `.env` do serviço systemd do Ollama ou ao `~/.config/fish/config.fish`
+
+- [x] Solução de longo prazo: migrar `KOSMOS/app/core/ai_bridge.py` e `Mnemosyne/core/workers.py`
+  para usar `ecosystem_client.request_llm()` → passam pelo LOGOS com controle de prioridade e VRAM
+
+  **Migrado (chamadas síncronas P3):**
+  — KOSMOS `ai_bridge.py`: `generate()` usa `request_llm(priority=3)` via LOGOS; `generate_stream()` e `embed()` permanecem diretos (streaming/embeddings não passam pelo LOGOS)
+  — Mnemosyne `memory.py`: `compact_session_memory()` usa `request_llm(priority=3)`
+  — Mnemosyne `summarizer.py`: fase Map de `iter_summary()` + `prepare_summary()` + `summarize_all()` usam `request_llm(priority=3)`; fase Reduce (streaming) permanece via LangChain `OllamaLLM.stream()`
+
+  **Não migrado (requer suporte a streaming no LOGOS):**
+  — Mnemosyne `AskWorker`: `ChatOllama.stream()` — RAG interativo
+  — Mnemosyne `SummarizeWorker`/`FaqWorker`/`StudioWorker`/`GuideWorker`: usam `iter_*()` com streaming LangChain
 
 ### AKASHA como broker unificado de informação
 - [ ] Planejar API de "Mapa de Contexto" no AKASHA:
@@ -909,10 +935,13 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
 
 ### Controle de recursos — extensão do LOGOS
 
-- [ ] Painel de VRAM em tempo real + fila de prioridades visível
+- [x] Painel de VRAM em tempo real + fila de prioridades visível
   — mostrar o que está rodando agora em P1/P2/P3 com estimativa de VRAM ocupada
-- [ ] Botão "Silêncio" — pausa instantânea de todas as tarefas P3 para liberar GPU
+  — Implementado: `HUB/src/components/LogosPanel.tsx` (polling 5s via Tauri IPC)
+  — Posicionado como footer do HomeView
+- [x] Botão "Silêncio" — pausa instantânea de todas as tarefas P3 para liberar GPU
   — útil ao iniciar escrita no AETHER ou chat no HUB
+  — Implementado: botão "silenciar" no LogosPanel (chama `logos_silence` Tauri command)
 - [ ] Painel de gerenciamento do Ollama:
   — listar modelos instalados com tamanho e estado (carregado/descarregado)
   — ver qual app está usando qual modelo no momento

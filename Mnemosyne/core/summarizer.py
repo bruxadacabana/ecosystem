@@ -7,6 +7,8 @@ Modos:
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Any, Iterator
 
 from langchain_ollama import OllamaLLM
@@ -14,6 +16,12 @@ from langchain_ollama import OllamaLLM
 from .config import AppConfig
 from .errors import SummarizationError
 from .rag import strip_think
+
+# ecosystem_client: serializa chamadas LLM síncronas via LOGOS (P3 background)
+_eco_root = str(Path(__file__).parent.parent.parent)
+if _eco_root not in sys.path:
+    sys.path.insert(0, _eco_root)
+from ecosystem_client import request_llm as _request_llm  # type: ignore  # noqa: E402
 
 
 _STUFF_CHAR_LIMIT = 12_000   # chars totais abaixo dos quais usamos "stuff"
@@ -94,13 +102,17 @@ def prepare_summary(vectorstore: Any, config: AppConfig) -> str:
         context = "\n\n---\n".join(content for _, content in docs)
         return _STUFF_PROMPT.format(context=context)
 
-    # Map-Reduce: resumir cada documento individualmente
-    llm = OllamaLLM(model=config.llm_model, temperature=0.2, timeout=120)
+    # Map-Reduce: resumir cada documento individualmente via LOGOS (P3)
     partial_summaries: list[str] = []
     for _, content in docs:
         try:
-            raw = llm.invoke(_MAP_PROMPT.format(chunk=content))
-            partial_summaries.append(strip_think(raw))
+            resp = _request_llm(
+                [{"role": "user", "content": _MAP_PROMPT.format(chunk=content)}],
+                app="mnemosyne",
+                model=config.llm_model,
+                priority=3,
+            )
+            partial_summaries.append(strip_think(resp.get("message", {}).get("content", "")))
         except Exception:
             continue
 
@@ -127,18 +139,22 @@ def iter_summary(
         raise SummarizationError("Nenhum documento indexado para resumir.")
 
     total_chars = sum(len(content) for _, content in docs)
-    llm_map = OllamaLLM(model=config.llm_model, temperature=0.2, timeout=120)
 
     if total_chars <= _STUFF_CHAR_LIMIT:
         context = "\n\n---\n".join(content for _, content in docs)
         prompt = _STUFF_PROMPT.format(context=context)
     else:
-        # Fase Map
+        # Fase Map via LOGOS (P3 background) — síncrona para construir o prompt Reduce
         partial_summaries: list[str] = []
         for _, content in docs:
             try:
-                raw = llm_map.invoke(_MAP_PROMPT.format(chunk=content))
-                partial_summaries.append(strip_think(raw))
+                resp = _request_llm(
+                    [{"role": "user", "content": _MAP_PROMPT.format(chunk=content)}],
+                    app="mnemosyne",
+                    model=config.llm_model,
+                    priority=3,
+                )
+                partial_summaries.append(strip_think(resp.get("message", {}).get("content", "")))
             except Exception:
                 continue
 
@@ -162,8 +178,13 @@ def summarize_all(vectorstore: Any, config: AppConfig) -> str:
     """
     try:
         prompt = prepare_summary(vectorstore, config)
-        llm = OllamaLLM(model=config.llm_model, temperature=0.2, timeout=180)
-        return strip_think(llm.invoke(prompt))
+        resp = _request_llm(
+            [{"role": "user", "content": prompt}],
+            app="mnemosyne",
+            model=config.llm_model,
+            priority=3,
+        )
+        return strip_think(resp.get("message", {}).get("content", ""))
     except SummarizationError:
         raise
     except Exception as exc:

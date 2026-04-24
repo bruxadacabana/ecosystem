@@ -269,7 +269,6 @@ class MemoryStore:
         Raises:
             RuntimeError: se o histórico estiver vazio ou o LLM falhar.
         """
-        from langchain_ollama import OllamaLLM
         from .rag import strip_think  # import local para evitar ciclo
 
         if turns is None:
@@ -314,8 +313,21 @@ class MemoryStore:
             )
 
         try:
-            llm = OllamaLLM(model=llm_model, temperature=0, timeout=120)
-            result = strip_think(llm.invoke(prompt))
+            import sys as _sys
+            from pathlib import Path as _Path
+            _eco_root = str(_Path(__file__).parent.parent.parent)
+            if _eco_root not in _sys.path:
+                _sys.path.insert(0, _eco_root)
+            from ecosystem_client import request_llm as _request_llm  # type: ignore
+            resp = _request_llm(
+                [{"role": "user", "content": prompt}],
+                app="mnemosyne",
+                model=llm_model,
+                priority=3,
+            )
+            result = strip_think(resp.get("message", {}).get("content", ""))
+        except RuntimeError as exc:
+            raise RuntimeError(f"Falha ao compactar memória: {exc}") from exc
         except Exception as exc:
             raise RuntimeError(f"Falha ao compactar memória: {exc}") from exc
 

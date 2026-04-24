@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import struct
+import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Generator
 
 import requests
@@ -13,6 +15,10 @@ if TYPE_CHECKING:
     pass
 
 log = logging.getLogger("kosmos.ai")
+
+# ecosystem_client: proxy LOGOS para serialização de chamadas LLM
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+from ecosystem_client import request_llm as _request_llm  # noqa: E402
 
 DEFAULT_ENDPOINT = "http://localhost:11434"
 
@@ -104,26 +110,28 @@ class AiBridge:
                 "Nenhum modelo de geração configurado. "
                 "Escolha um em Configurações → IA."
             )
-        payload: dict = {
-            "model":  self._gen_model,
-            "prompt": prompt,
-            "stream": False,
-        }
+        messages: list[dict] = []
         if system:
-            payload["system"] = system
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        options: dict = {}
         if json_format:
-            payload["format"] = "json"
+            options["format"] = "json"
 
         try:
-            r = self._session.post(
-                f"{self._endpoint}/api/generate",
-                json=payload,
-                timeout=timeout,
+            result = _request_llm(
+                messages,
+                app="kosmos",
+                model=self._gen_model,
+                priority=3,
+                stream=False,
+                ollama_base=self._endpoint,
+                **options,
             )
-            r.raise_for_status()
-            return r.json().get("response", "")
-        except requests.RequestException as exc:
-            raise OllamaError(f"Erro ao gerar texto: {exc}") from exc
+            return result.get("message", {}).get("content", "")
+        except RuntimeError as exc:
+            raise OllamaError(str(exc)) from exc
 
     def generate_stream(
         self,
