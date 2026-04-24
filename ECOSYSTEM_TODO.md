@@ -6,7 +6,7 @@ Desenvolvimento em fases progressivas — cada fase entrega algo utilizável ant
 
 O HUB agora se consagra como o **Cérebro Executivo e Autoridade Central** do ecossistema, transcendendo a função de agregador para se tornar o **LOGOS**: o maestro soberano responsável por orquestrar tanto a navegação de conhecimento quanto a gestão crítica de hardware. Sua missão fundamental é atuar como um proxy inteligente que monitora a VRAM e dita a hierarquia de execução da IA, garantindo que tarefas pesadas de fundo (como as análises do KOSMOS ou transcrições do Hermes) curvem-se instantaneamente à prioridade absoluta de atividades interativas e criativas (como o chat do HUB ou a escrita no AETHER). Ao centralizar lançamentos, perfis de energia e a coordenação de recursos em uma "Consola de Alquimista", o HUB elimina o atrito técnico e mantém a ordem sistêmica, permitindo que você exerça sua polimatia com a fluidez e a naturalidade de quem domina não apenas a informação, mas a própria força que a processa.
 
-## Onde paramos
+## ONDE PARAMOS
 Não implemente nada do que vou pedir em seguida. Faça pesquisas necessárias e acrescente os passos necessários ao TODO respectivo.
 - AKASHA: há alguma forma de priorizar resultados de sites e artigos acadêmicos e blogs? Talvez criar uma lista de "favoritos".
 - AKASHA: quero também uma forma melhor de baixar/arquivar sites em md. Preciso que inclua mais sites, como o medium e SUbstack. O Medium da erro mesmo quando consigo acessar gratuitamente. Também quero que seja possível piorizar certos sites nas buscas mesmo sem clawlea-los.
