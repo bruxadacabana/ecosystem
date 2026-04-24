@@ -37,8 +37,8 @@ _LEGACY_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
 _DEFAULTS: dict = {
     "llm_model": "",
     "embed_model": "",
-    "chunk_size": 800,
-    "chunk_overlap": 100,
+    "chunk_size": 1800,
+    "chunk_overlap": 250,
     "retriever_k": 4,
     "collections": [],
     "active_collection": "",
@@ -179,8 +179,8 @@ def load_config() -> AppConfig:
     return AppConfig(
         llm_model=str(data.get("llm_model", "")),
         embed_model=str(data.get("embed_model", "")),
-        chunk_size=int(data.get("chunk_size", 800)),
-        chunk_overlap=int(data.get("chunk_overlap", 100)),
+        chunk_size=int(data.get("chunk_size", 1800)),
+        chunk_overlap=int(data.get("chunk_overlap", 250)),
         retriever_k=int(data.get("retriever_k", 4)),
         collections=collections,
         active_collection=str(data.get("active_collection", "")),
