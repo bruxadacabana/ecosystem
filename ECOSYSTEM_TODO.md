@@ -92,6 +92,25 @@ Ao centralizar no HUB, o fluxo de comunicação mudaria para um modelo de Autori
     Ponto de Candura: O único desafio dessa abordagem é que, para o KOSMOS ou o Hermes continuarem sendo otimizados em segundo plano, o HUB precisará estar sempre aberto (mesmo que minimizado na tray). Se você fechar o HUB, o maestro sai do palco e os outros apps perdem a coordenação do hardware.
 
 
+### Anotações
+
+#### 1. Refinamento do Protocolo de "Ticket" (Comunicação)
+Como o HUB (Rust/Tauri) será o servidor do LOGOS, o Claude precisará saber como os outros apps (Python) devem se comportar.
+* **Sugestão:** Adicione que o LOGOS deve expor uma **API REST ou WebSocket interna** (ex: porta 7072).
+* **O fluxo:** O app envia um `POST /request_ticket { "app": "KOSMOS", "priority": 3, "estimated_vram": "2GB" }`. O LOGOS responde com um `201 Created` (Autorizado) ou `429 Too Many Requests` (Fila/Pausa).
+
+#### 2. Especificidade da GPU (AMD/ROCm)
+Como você usa uma **RX 6600** no CachyOS, o monitoramento de VRAM é diferente de placas NVIDIA.
+* **Nota para o Claude:** Lembre-o de que no Linux a ferramenta primária é o `rocm-smi`, e no Windows o monitoramento deve ser via `pyadl` ou consultas ao driver AMD. O Rust (backend do HUB) pode usar crates como `sysinfo`, mas para VRAM de AMD específica, chamadas de sistema podem ser necessárias.
+
+#### 3. Gerenciamento de Estado do Ollama
+O Ollama já possui uma fila interna, mas ele não sabe das suas prioridades pessoais.
+* **Logística:** Informe ao Claude que o LOGOS deve ser capaz de enviar um sinal de "CANCEL" ou limpar o contexto do Ollama via API (`/api/generate` com `keep_alive: 0`) para forçar a liberação de VRAM quando uma tarefa de Prioridade 1 (Escrita no AETHER) surgir.
+
+#### 4. O Cenário de "Failsafe" (Plano B)
+O que acontece se o HUB for fechado acidentalmente?
+* **Definição:** Decida se os apps devem "travar" (esperando o maestro) ou se devem ter um modo de "emergência" onde tentam falar diretamente com o Ollama com configurações mínimas de segurança.
+
 ---
 
 ## PRINCÍPIOS INEGOCIÁVEIS
