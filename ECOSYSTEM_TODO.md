@@ -730,6 +730,26 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
   — usar operadores de busca (`filetype:pdf site:...`) via engine configurada
   — exibir opção de download direto quando o arquivo for acessível publicamente
 
+### Busca e download de artigos científicos
+Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
+
+- [ ] `AKASHA/services/paper_search.py` — busca paralela em Semantic Scholar + arXiv (`aioarxiv`)
+  — Semantic Scholar: sem key necessária para uso básico, 200M+ papers, campo `openAccessPdf.url`
+  — arXiv: `aioarxiv` (async nativo), PDFs sempre gratuitos em arxiv.org/pdf/{id}
+  — retorna `list[SearchResult]` com source="PAPER" e campos extras (DOI, ano, autores)
+- [ ] `AKASHA/services/paper_download.py` — download de PDF open access por resultado de busca
+  — fluxo: arXiv direto (se tem arXiv ID) → Unpaywall por DOI (`unpywall`) → CORE API
+  — extração PDF → Markdown via `pymupdf4llm` (CPU-only, sem GPU, ~10x mais rápido que alternativas)
+- [ ] `AKASHA/services/archiver.py` — nova função `archive_pdf(pdf_bytes, metadata)` 
+  — salva em `data/archive/Papers/` com frontmatter YAML (mesmo padrão do `Web/`)
+  — indexado automaticamente pelo Mnemosyne via `watched_dir` sem nenhuma mudança no Mnemosyne
+- [ ] `AKASHA/routers/search.py` — adicionar fonte `src_papers` no `GET /search`
+  — nova rota `POST /papers/download` para baixar paper arquivado pelo usuário
+- [ ] `AKASHA/templates/search.html` — seção de resultados acadêmicos
+  — campos específicos: DOI, ano, autores, badge "PDF disponível"
+- [ ] `AKASHA/templates/base.html` — checkbox `src_papers` nos filtros de busca
+- [ ] Dependências novas: `aioarxiv`, `unpywall`, `pymupdf4llm`
+
 ---
 
 ## PENDÊNCIAS — KOSMOS

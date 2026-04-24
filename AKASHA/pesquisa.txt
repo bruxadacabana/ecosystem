@@ -349,6 +349,134 @@ FONTES
   https://www.researchgate.net/publication/220982102_Compressed_Inverted_Indexes_for_In-Memory_Search_Engines
 
 ================================================================================
+ARTIGOS CIENTÍFICOS — BUSCA, DOWNLOAD E EXTRAÇÃO
+Data: 2026-04-24
+Contexto: integrar busca e arquivamento de papers no AKASHA; indexação no Mnemosyne
+================================================================================
+
+1. APIs DE BUSCA ACADÊMICA
+---------------------------
+
+a) SEMANTIC SCHOLAR
+  Cobertura: 200M+ papers (CS, bio, física, medicina, humanidades)
+  Autenticação: sem chave funciona (pool compartilhado ~1000 req/s total); com chave: 1 RPS garantido
+  Campos úteis: title, authors, abstract, year, externalIds (DOI, arXiv, PubMed), openAccessPdf.url
+  Lib Python: `semantic-scholar-api` no PyPI ou uso direto via httpx (REST simples)
+  Endpoint principal: GET https://api.semanticscholar.org/graph/v1/paper/search?query=...&fields=...
+  Sem custo, não precisa de cadastro para uso básico
+
+b) OPENALEX
+  Cobertura: 250M+ papers, todas as áreas, inclui grey literature
+  ATENÇÃO: desde fevereiro/2026, exige API key (gratuita, créditos diários)
+  Lib Python: `pyalex` (PyPI, suporte a cursor paging)
+  Campo PDF: `open_access.oa_url` — URL direta para PDF quando disponível
+  Melhor cobertura geral, mas requer cadastro para key gratuita
+
+c) ARXIV
+  Cobertura: CS, física, matemática, biologia quantitativa, economia, estatística
+  PDFs sempre gratuitos e diretamente acessíveis em arxiv.org/pdf/{id}
+  Lib sync: `arxiv` (PyPI, madura)
+  Lib async: `aioarxiv` (PyPI, lançada 2025, async nativo com rate limiting)
+  Sem autenticação necessária
+
+d) CORE
+  Cobertura: 300M+ registros de metadados, 40M+ full-text open access
+  Agrega de 10.000+ repositórios institucionais
+  API key gratuita necessária (cadastro em core.ac.uk)
+  Rate limit: 5 requests simples / 1 batch por 10 segundos
+  Oferece URL e bytes do PDF diretamente via API
+
+e) CROSSREF (habanero)
+  Foco: resolução de DOI → metadados bibliográficos completos
+  Lib: `habanero` (PyPI)
+  Não fornece PDFs — apenas metadados (título, autores, journal, ISSN, etc.)
+  "Polite pool": incluir mailto= para prioridade
+  Útil como camada de enriquecimento de metadados quando se tem o DOI
+
+2. DOWNLOAD LEGAL DE PDFs
+--------------------------
+
+a) UNPAYWALL (lib: `unpywall`)
+  Dado um DOI, retorna todas as URLs conhecidas de versões open access
+  Requere apenas email (sem custo, sem cadastro formal)
+  Endpoint: GET https://api.unpaywall.org/v2/{doi}?email=...
+  Lib Python: `unpywall` (PyPI) com `download_pdf_file(doi)` e `get_all_links(doi)`
+  Cobre: versões em repositórios institucionais, preprints, PubMed Central, etc.
+
+b) ARXIV DIRETO
+  URL previsível: https://arxiv.org/pdf/{arxiv_id}
+  Sem autenticação, sem rate limit restritivo para uso pessoal
+
+c) OPENALEX open_access.oa_url
+  Quando disponível, retorna URL direta do PDF na resposta da busca
+
+d) CORE
+  Retorna bytes do PDF diretamente via API (quando full-text disponível)
+
+FLUXO RECOMENDADO (dado um DOI):
+  1. Tentar OpenAlex oa_url (se tiver key)
+  2. Tentar Unpaywall (sempre grátis)
+  3. Tentar arXiv direto (se externalId inclui arXiv ID)
+  4. Tentar CORE (se tiver key)
+
+3. EXTRAÇÃO DE TEXTO DE PDFs
+------------------------------
+
+a) PYMUPDF4LLM (recomendado)
+  Extensão do PyMuPDF que converte PDF → Markdown estruturado
+  CPU-only: sem GPU, sem modelos ML — apenas parsing heurístico de layout
+  Velocidade: ~10x mais rápido que alternativas (benchmark 2025)
+  Lida com: texto, tabelas, cabeçalhos, listas, notas de rodapé
+  Instalação: `pip install pymupdf4llm`
+  Uso: `pymupdf4llm.to_markdown("paper.pdf")`
+  Limitação: equações matemáticas em LaTeX/simbólico são transcritas como símbolos
+              (não há extração semântica de fórmulas — esperado em parsers rule-based)
+  Ideal para hardware alvo (i5-3470, 8GB RAM): processamento puramente CPU, leve
+
+b) PDFPLUMBER
+  Melhor para extração de tabelas com coordenadas
+  Mais lento que PyMuPDF para texto puro
+  Uso: complementar a pymupdf4llm se tabelas forem críticas
+
+c) PYPDF
+  Mais leve, extração básica de texto sem estrutura
+  Fallback quando pymupdf4llm não consegue parsear um PDF
+
+4. INTEGRAÇÃO AKASHA ↔ MNEMOSYNE
+-----------------------------------
+
+Fluxo completo:
+  1. AKASHA busca: Semantic Scholar / arXiv → lista de papers com metadados
+  2. Usuário escolhe paper → AKASHA baixa PDF (Unpaywall → arXiv → CORE)
+  3. AKASHA extrai Markdown com pymupdf4llm
+  4. AKASHA arquiva em data/archive/Papers/{YYYY-MM-DD}_{slug}.md (mesmo padrão do Web/)
+  5. Mnemosyne indexa automaticamente via watched_dir — sem mudanças necessárias no Mnemosyne
+
+Sem dependência de Mnemosyne na cadeia de busca — papers ficam disponíveis
+na busca local do AKASHA (local_fts) logo após o arquivamento.
+
+5. DEPENDÊNCIAS NOVAS
+----------------------
+  - `aioarxiv` — busca async arXiv (≈ 20KB, sem deps pesadas)
+  - `unpywall` — Unpaywall PDF links por DOI (≈ 30KB)
+  - `pymupdf4llm` — extração PDF → Markdown (depende de pymupdf ≈ 15MB)
+  - httpx direto para Semantic Scholar e CORE (sem lib extra)
+  - `pyalex` opcional para OpenAlex (requer key desde fev/2026)
+
+FONTES
+-------
+- Semantic Scholar API: https://www.semanticscholar.org/product/api
+- OpenAlex docs: https://docs.openalex.org/
+- pyalex GitHub: https://github.com/J535D165/pyalex
+- aioarxiv PyPI: https://pypi.org/project/aioarxiv/
+- unpywall PyPI: https://pypi.org/project/unpywall/
+- CORE API: https://core.ac.uk/services/api
+- habanero GitHub: https://github.com/sckott/habanero
+- pymupdf4llm PyPI: https://pypi.org/project/pymupdf4llm/
+- PDF Parsing Comparison 2025: https://dev.to/onlyoneaman/i-tested-7-python-pdf-extractors-so-you-dont-have-to-2025-edition-akm
+- Comparative Study PDF Parsing (arXiv): https://arxiv.org/html/2410.09871v1
+
+================================================================================
 MEDIUM E SUBSTACK — SCRAPING E EXTRAÇÃO DE CONTEÚDO
 Data: 2026-04-24
 Contexto: corrigir falha de extração no AKASHA (fetch_and_extract) e KOSMOS (ArticleScraper)
