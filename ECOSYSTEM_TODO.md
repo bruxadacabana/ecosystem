@@ -1,11 +1,10 @@
 # ECOSYSTEM — Roadmap de Integração
 # OGMA · KOSMOS · AETHER · MNEMOSYNE · HUB
 
-Objetivo: interligar os apps existentes e criar um app hub
-unificado que rode no Android (APK via Tauri 2).
+Objetivo: ser o Maestro que harmoniza o desejo de conhecimento infinito (Polimatia) com as limitações físicas do seu hardware (RX 6600). Ele não apenas exibe dados; ele gerencia a existência das outras ferramentas.
+Desenvolvimento em fases progressivas — cada fase entrega algo utilizável antes de avançar para a próxima.
 
-Desenvolvimento em fases progressivas — cada fase entrega algo
-utilizável antes de avançar para a próxima.
+O HUB agora se consagra como o **Cérebro Executivo e Autoridade Central** do ecossistema, transcendendo a função de agregador para se tornar o **LOGOS**: o maestro soberano responsável por orquestrar tanto a navegação de conhecimento quanto a gestão crítica de hardware. Sua missão fundamental é atuar como um proxy inteligente que monitora a VRAM e dita a hierarquia de execução da IA, garantindo que tarefas pesadas de fundo (como as análises do KOSMOS ou transcrições do Hermes) curvem-se instantaneamente à prioridade absoluta de atividades interativas e criativas (como o chat do HUB ou a escrita no AETHER). Ao centralizar lançamentos, perfis de energia e a coordenação de recursos em uma "Consola de Alquimista", o HUB elimina o atrito técnico e mantém a ordem sistêmica, permitindo que você exerça sua polimatia com a fluidez e a naturalidade de quem domina não apenas a informação, mas a própria força que a processa.
 
 ## Onde paramos
 Não implemente nada do que vou pedir em seguida. Faça pesquisas necessárias e acrescente os passos necessários ao TODO respectivo.
