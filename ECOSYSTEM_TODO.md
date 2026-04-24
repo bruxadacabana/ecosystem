@@ -8,8 +8,31 @@ Desenvolvimento em fases progressivas — cada fase entrega algo
 utilizável antes de avançar para a próxima.
 
 ## Onde paramos
-- primeiro, no AKASHA, há alguma forma de priorizar resultados de sites e artigos acadêmicos e blogs?
-- quero também uma forma melhor de baixar/arquivar sites em md. Preciso que inclua mais sites, como o medium e SUbstack. O Medium da erro mesmo quando consigo acessar gratuitamente. Também quero que seja possível piorizar certos sites nas buscas mesmo sem clawlea-los.
+Não implemente nada do que vou pedir em seguida. Faça pesquisas necessárias e acrescente os passos necessários ao TODO respectivo.
+- AKASHA: há alguma forma de priorizar resultados de sites e artigos acadêmicos e blogs? Talvez criar uma lista de "favoritos".
+- AKASHA: quero também uma forma melhor de baixar/arquivar sites em md. Preciso que inclua mais sites, como o medium e SUbstack. O Medium da erro mesmo quando consigo acessar gratuitamente. Também quero que seja possível piorizar certos sites nas buscas mesmo sem clawlea-los.
+- KOSMOS: não consegue fazer o scrapping de artigos do Medium. Pesquisa alternativas.
+- AKASHA: talvez devessemos criar níveis de prioridade de pesquisa online para definirmos a ordem dos resultados. Pense na biblioteca/sites crawleados como prioridade 1, sites prioritários/favoritos como prioridade 2 e outros resultados como prioridade 3. Crie uma segunda coluna para exibir os resultados locais.
+- AKASHA: quero poder pesquisar formatos específicos e o AKASHA pesquisar na internet arquivos que estão públicos para o acesso e dê a opção de baixar
+- KOSMOS: quero que as tags no feed incluam tags que eu selecionei que foram criadas pela IA com base na análise do artigo. ALém disso, crie uma opção de estatística que exiba as tags de artigos que li com mais frequencia. 
+- KOSMOS: verifique o que desencadeia a análise no KOSMOS (deve ser assim que um artigo é aberto  — mas também deve ser feita uma pré-análise nos artigos recebidos para detectar clickbait, tags, sentimento, relevância e política. Quero inclut a análise dos 5w nessa pré análise.). Ele está demorando a começar e a ser concluido, deve ter uma forma de melhorar e otimizar esse processo. Pesquise, crie um KOSMOS/pesquisa.txt e siga as regras do CLAUDE.md.
+- KOSMOS: gosto das estatísticas que incluiem os 5w, mas talvez pudéssemos aumentar os gráficos e detalhá-los. Acho que serão informações importantes. 
+- KOSMOS: talvez pudessemos criar uma forma do HUB fazer o KOSMOS começar a rodar em segundo plano, carregando apenas o necessário para baixar os artigos e fazer a pré análise
+- KOSMOS: crie um aviso de status ao abrir um artigo para informar em que estado a análise do artigo se encontra, quer esteja em andamento, tenha havido um erro ou o que seja. Atualmente o aviso de análise só aparece quando arquivo um artigo, preciso que isso apareça independentemente.
+- KOSMOS: verifique se a lista de fontes e artigos baixados já está sendo salva na pasta compartilhada do ecossistema para que eu possa manter sincronizado entre os dispositivos
+- KOSMOS: crie uma forma de eu poder marcar dentro do artigo se eu tiver algum problema (texto incompleto, falha no scrapping e outros que você pensar) e faça isso diminuir o ranking de relevância daquela fonte. Mas também faça isso aparecer no log para podermos pesquisar possibilidades para resolver isso no futuro.
+- ECOSSISTEMA: [IMPORTANTE] como funciona o uso e gerenciamento do LLM local quando o Mnemosyne e o KOSMOS estão rodando ao mesmo tempo?
+- o AKASHA não abriu no Windows. Terminal:
+[AKASHA] Sincronizando dependencias...
+[AKASHA] Iniciando servidor na porta 7070...
+[AKASHA] Abrindo http://localhost:7070 no navegador...
+D:\windows\ProgramFiles\ecosystem\ecosystem_client.py:22: UserWarning: filelock não instalado — write_section sem proteção contra race condition. Instale com: pip install filelock
+  warnings.warn(
+INFO:     Started server process [1512]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7071 (Press CTRL+C to quit)
+
 
 ---
 
