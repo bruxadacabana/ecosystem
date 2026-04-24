@@ -734,6 +734,54 @@ a:hover { opacity: 0.75; }
   100% { background-position: -200% 0; }
 }
 
+/* ── Busca: layout em duas colunas ───────────────────────────── */
+
+.search-wrapper {
+  max-width: 1200px;
+  margin:    0 auto;
+  padding:   20px 20px 48px;
+}
+
+.search-cols {
+  display:               grid;
+  grid-template-columns: 1fr 300px;
+  gap:                   0 28px;
+  align-items:           start;
+}
+
+.search-col-local {
+  border-left:  1px solid var(--rule);
+  padding-left: 20px;
+  position:     sticky;
+  top:          68px;
+  max-height:   calc(100vh - 80px);
+  overflow-y:   auto;
+}
+
+.search-col-local .results-section-title::before {
+  content: "⬡  ";
+  font-style: normal;
+  opacity: 0.5;
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .search-cols {
+    grid-template-columns: 1fr;
+  }
+  .search-col-local {
+    order:        -1;
+    border-left:  none;
+    padding-left: 0;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 20px;
+    margin-bottom:  8px;
+    position:      static;
+    max-height:    none;
+    overflow-y:    visible;
+  }
+}
+
 /* ── Responsividade da topbar ─────────────────────────────── */
 
 /* Tablet / janela estreita: nav desce para segunda linha */

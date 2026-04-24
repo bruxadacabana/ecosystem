@@ -727,7 +727,9 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
   - P1: conteúdo local indexado (arquivos do ecossistema + biblioteca/sites crawleados)
   - P2: domínios favoritos/prioritários (ver seção acima)
   - P3: resultados web gerais
-- [ ] Criar segunda coluna (ou painel lateral) para exibir resultados locais separados dos web
+- [x] Criar segunda coluna (ou painel lateral) para exibir resultados locais separados dos web
+      Coluna esquerda (principal): resultados web + biblioteca + ver depois
+      Coluna direita (sidebar): resultados do ecossistema local (arquivos indexados)
 
 ### Extração: Medium e Substack
 - [ ] Pesquisar alternativas de scraping para Medium (falha mesmo em artigos gratuitos)

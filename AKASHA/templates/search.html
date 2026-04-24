@@ -22,67 +22,73 @@
 <!-- ─── Resultados ──────────────────────────────────────────────── -->
 {% elif web_results or local_results or site_results or watch_later_results %}
 
-  {# ── Seção Web ── #}
-  {% if web_results %}
-  <section class="results-section">
-    {% if local_results or site_results %}<h3 class="results-section-title">Resultados web</h3>{% endif %}
-    <p class="results-meta">{{ web_results | length }} resultado{% if web_results | length != 1 %}s{% endif %} para <strong>{{ query }}</strong></p>
-    <ol id="web-results-list" class="results-list">
-      {% for r in web_results %}{{ result_card(r) }}{% endfor %}
-    </ol>
-    {% if has_more_web %}
-    <div id="load-more-web" class="load-more-area">
-      <button class="btn btn-ghost load-more-btn"
-              hx-get="/search/more?q={{ query | urlencode }}&src_web=on&offset={{ web_results | length }}"
-              hx-target="#web-results-list"
-              hx-swap="beforeend">
-        carregar mais
-      </button>
+{% set has_main   = web_results or site_results or watch_later_results %}
+{% set has_eco    = local_results %}
+{% set two_col    = has_main and has_eco %}
+
+<div class="search-wrapper">
+  <div class="{% if two_col %}search-cols{% endif %}">
+
+    {# ── Coluna principal: biblioteca (P1) → ver depois → web (P3) ── #}
+    {% if has_main %}
+    <div>
+      {% if site_results %}
+      <section class="results-section">
+        <h3 class="results-section-title">Na minha biblioteca</h3>
+        <p class="results-meta">{{ site_results | length }} resultado{% if site_results | length != 1 %}s{% endif %}</p>
+        <ol class="results-list">
+          {% for r in site_results %}{{ result_card(r) }}{% endfor %}
+        </ol>
+      </section>
+      {% endif %}
+
+      {% if watch_later_results %}
+      <section class="results-section">
+        <h3 class="results-section-title">Salvo para depois</h3>
+        <p class="results-meta">{{ watch_later_results | length }} resultado{% if watch_later_results | length != 1 %}s{% endif %} na sua lista</p>
+        <ol class="results-list">
+          {% for r in watch_later_results %}{{ result_card(r) }}{% endfor %}
+        </ol>
+      </section>
+      {% endif %}
+
+      {% if web_results %}
+      <section class="results-section">
+        {% if site_results or watch_later_results or has_eco %}<h3 class="results-section-title">Web</h3>{% endif %}
+        <p class="results-meta">{{ web_results | length }} resultado{% if web_results | length != 1 %}s{% endif %} para <strong>{{ query }}</strong></p>
+        <ol id="web-results-list" class="results-list">
+          {% for r in web_results %}{{ result_card(r) }}{% endfor %}
+        </ol>
+        {% if has_more_web %}
+        <div id="load-more-web" class="load-more-area">
+          <button class="btn btn-ghost load-more-btn"
+                  hx-get="/search/more?q={{ query | urlencode }}&src_web=on&offset={{ web_results | length }}"
+                  hx-target="#web-results-list"
+                  hx-swap="beforeend">
+            carregar mais
+          </button>
+        </div>
+        {% endif %}
+      </section>
+      {% endif %}
     </div>
     {% endif %}
-  </section>
-  {% endif %}
 
-  {# ── Seção Ecossistema ── #}
-  {% if local_results %}
-  <section class="results-section results-section-local">
-    <h3 class="results-section-title">No meu ecossistema</h3>
-    <p class="results-meta">{{ local_results | length }} resultado{% if local_results | length != 1 %}s{% endif %}</p>
-    <ol class="results-list">
-      {% for r in local_results %}{{ result_card(r) }}{% endfor %}
-    </ol>
-  </section>
-  {% endif %}
+    {# ── Coluna direita: ecossistema local ── #}
+    {% if has_eco %}
+    <div class="{% if two_col %}search-col-local{% endif %}">
+      <section class="results-section">
+        <h3 class="results-section-title">No meu ecossistema</h3>
+        <p class="results-meta">{{ local_results | length }} resultado{% if local_results | length != 1 %}s{% endif %}</p>
+        <ol class="results-list">
+          {% for r in local_results %}{{ result_card(r) }}{% endfor %}
+        </ol>
+      </section>
+    </div>
+    {% endif %}
 
-  {# ── Seção Biblioteca ── #}
-  {% if site_results %}
-  <section class="results-section">
-    <h3 class="results-section-title">Na minha biblioteca</h3>
-    <p class="results-meta">{{ site_results | length }} resultado{% if site_results | length != 1 %}s{% endif %}</p>
-    <ol class="results-list">
-      {% for r in site_results %}{{ result_card(r) }}{% endfor %}
-    </ol>
-  </section>
-  {% endif %}
-
-  {# ── Seção Ver Mais Tarde ── #}
-  {% if watch_later_results %}
-  <section class="results-section">
-    <h3 class="results-section-title">Salvo para depois</h3>
-    <p class="results-meta">{{ watch_later_results | length }} resultado{% if watch_later_results | length != 1 %}s{% endif %} na sua lista</p>
-    <ol class="results-list">
-      {% for r in watch_later_results %}{{ result_card(r) }}{% endfor %}
-    </ol>
-  </section>
-  {% endif %}
-
-  {% if not web_results and not local_results and not site_results and not watch_later_results %}
-  <section class="empty-state">
-    <p class="empty-icon">&#x2205;</p>
-    <p class="empty-title">Nenhum resultado para <em>{{ query }}</em></p>
-    <p class="empty-hint">Tente termos diferentes ou verifique a ortografia.</p>
-  </section>
-  {% endif %}
+  </div>
+</div>
 
 {% elif query and not error %}
   <!-- ─── Estado vazio — busca sem resultado ─────────────────────── -->
