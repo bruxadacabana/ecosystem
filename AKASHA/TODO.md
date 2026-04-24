@@ -289,15 +289,15 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] `routers/crawler.py` — `GET /library/reader?url=` — busca `crawl_page` por URL via
       `get_crawl_page_by_url`, converte `content_md` → HTML com lib `markdown`,
       renderiza `page_reader.html`; 404 se não encontrada
-- [ ] `routers/crawler.py` — `GET /sites/{site_id}/pages?q=&page=1` — lista paginada
+- [x] `routers/crawler.py` — `GET /library/{site_id}/pages?q=&page=1` — lista paginada
       (20/pág) de páginas do site; suporte a filtro por `q` (título/url); retorna fragment
       HTMX `_site_pages.html`
 - [x] `templates/page_reader.html` — layout reader mode: cabeçalho com título, URL original
       (link externo ↗), data de crawl, botão "← Voltar"; conteúdo HTML do markdown com
       tipografia IM Fell English; compatível com tema sépia/noturno
-- [ ] `templates/_site_pages.html` — fragment HTMX: lista de cards de página (título, URL
-      abreviada, data, badge de status HTTP); botão "Ler" abre `/sites/reader?url=...`;
-      paginação "Carregar mais" com `hx-swap="beforeend"`
+- [x] `templates/_site_pages.html` — fragment HTMX: lista de cards de página (título, URL
+      abreviada, data, badge de status HTTP); botão "Ler" abre `/library/reader?url=...`;
+      paginação "Carregar mais" com `hx-swap="outerHTML"` no load-more li
 - [ ] `templates/sites.html` — botão "📄 N páginas" em cada site card que expande
       `_site_pages.html` via HTMX (`hx-get="/sites/{id}/pages" hx-swap="innerHTML"`);
       colapsar ao clicar de novo

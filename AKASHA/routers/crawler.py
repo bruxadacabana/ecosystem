@@ -16,7 +16,7 @@ import markdown as _md
 
 from database import (
     add_crawl_site, delete_crawl_site, get_all_crawl_sites,
-    get_crawl_page_by_url,
+    get_crawl_page_by_url, get_crawl_pages_by_site,
 )
 from services.crawler import crawl_site, discover_subdomains
 
@@ -167,6 +167,33 @@ async def library_crawl(site_id: int) -> Response:
         raise HTTPException(status_code=404, detail="Site não encontrado")
     asyncio.get_running_loop().create_task(_bg_crawl(site_id))
     return Response(status_code=200)
+
+
+_PAGES_SIZE = 20
+
+
+@router.get("/library/{site_id}/pages", response_class=HTMLResponse)
+async def library_site_pages(
+    request: Request,
+    site_id: int,
+    q: str = "",
+    page: int = 1,
+) -> HTMLResponse:
+    """Fragment HTMX: lista paginada de páginas crawleadas de um site."""
+    offset = (page - 1) * _PAGES_SIZE
+    rows = await get_crawl_pages_by_site(site_id, limit=_PAGES_SIZE + 1, offset=offset, q=q)
+    has_more = len(rows) > _PAGES_SIZE
+    return templates.TemplateResponse(
+        request,
+        "_site_pages.html",
+        {
+            "site_id":  site_id,
+            "pages":    rows[:_PAGES_SIZE],
+            "page":     page,
+            "q":        q,
+            "has_more": has_more,
+        },
+    )
 
 
 @router.get("/library/reader", response_class=HTMLResponse)

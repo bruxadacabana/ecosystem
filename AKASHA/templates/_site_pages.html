@@ -1,0 +1,55 @@
+{% if page == 1 %}
+{% if not pages %}
+<p class="empty-state" style="padding:1rem 0;font-size:13px;">Nenhuma página indexada ainda.</p>
+{% else %}
+<ul class="results-list" style="margin-top:.75rem;" id="pages-list-{{ site_id }}">
+{% endif %}
+{% endif %}
+
+{% for p in pages %}
+{# row: id(0) url(1) title(2) http_status(3) crawled_at(4) #}
+<li class="card" style="padding:.6rem .9rem;margin-bottom:.4rem;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;">
+    <div style="min-width:0;flex:1;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:.2rem;
+                  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+        {{ p[2] or p[1] }}
+      </div>
+      <div class="meta" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+        {{ p[1] }}
+      </div>
+      {% if p[4] %}
+      <div class="meta" style="font-size:10px;margin-top:.2rem;">{{ p[4][:10] }}</div>
+      {% endif %}
+    </div>
+    <div style="display:flex;gap:.35rem;flex-shrink:0;align-items:center;">
+      {% if p[3] %}
+      <span class="tag {% if p[3] == 200 %}tag-active{% elif p[3] >= 400 %}tag-error{% endif %}"
+            style="font-size:9px;">{{ p[3] }}</span>
+      {% endif %}
+      <a href="/library/reader?url={{ p[1] | urlencode }}"
+         class="btn btn-ghost btn-sm"
+         title="Ler no reader mode">Ler</a>
+      <a href="{{ p[1] }}" target="_blank" rel="noopener noreferrer"
+         class="btn btn-ghost btn-sm" title="Abrir URL original">↗</a>
+    </div>
+  </div>
+</li>
+{% endfor %}
+
+{% if has_more %}
+<li id="load-more-{{ site_id }}" style="list-style:none;padding:.4rem 0;">
+  <button class="btn btn-ghost load-more-btn"
+          hx-get="/library/{{ site_id }}/pages?page={{ page + 1 }}{% if q %}&q={{ q | urlencode }}{% endif %}"
+          hx-target="#load-more-{{ site_id }}"
+          hx-swap="outerHTML"
+          hx-indicator="find .search-spinner">
+    carregar mais
+    <span class="htmx-indicator search-spinner" style="margin-left:.4rem;"></span>
+  </button>
+</li>
+{% endif %}
+
+{% if page == 1 and pages %}
+</ul>
+{% endif %}
