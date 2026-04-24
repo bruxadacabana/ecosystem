@@ -34,13 +34,23 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 async def _monitor_crawler() -> None:
-    """Acorda a cada hora e crawla sites pendentes da biblioteca."""
+    """Acorda a cada hora: crawla sites pendentes e limpa search_cache > 24h."""
     while True:
         await asyncio.sleep(3600)
         try:
             await crawl_pending_sites()
         except Exception as exc:
-            _log.warning("library monitor: erro ao crawlar sites pendentes: %s", exc)
+            _log.warning("monitor: erro ao crawlar sites pendentes: %s", exc)
+        try:
+            import aiosqlite
+            from config import DB_PATH
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "DELETE FROM search_cache WHERE created_at < datetime('now', '-1 day')"
+                )
+                await db.commit()
+        except Exception as exc:
+            _log.warning("monitor: erro ao limpar search_cache: %s", exc)
 
 
 # ---------------------------------------------------------------------------

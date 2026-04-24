@@ -345,7 +345,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Baixa prioridade (manutenção a longo prazo)
 
-- [ ] **Limpeza periódica do search_cache** — `main.py` → `_monitor_library()`:
+- [x] **Limpeza periódica do search_cache** — `main.py` → `_monitor_crawler()`:
       ao acordar, executar `DELETE FROM search_cache WHERE created_at < ?` com cutoff
       de 24 h. Sem essa limpeza o cache cresce indefinidamente — cada query única
       adiciona uma linha; após semanas de uso o arquivo SQLite infla.
@@ -354,9 +354,12 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       em vez de re-scrape sequencial das URLs vencidas, usar `asyncio.gather` com
       `asyncio.Semaphore(3)` — máximo 3 scrapes simultâneos. Uma biblioteca com 50+
       URLs vencidas pode travar o event loop por vários minutos em modo sequencial.
+      ⚠ **BLOQUEADO**: depende de `services/library.py` e `routers/library.py` (Fase 7
+      marcada como concluída no TODO mas nunca implementada).
 
 - [ ] **Dependência `markdown`** — `pyproject.toml`: adicionar `markdown>=3.7`
       (necessário para Fase 10.5 — converter `content_md` → HTML no reader mode).
+      ⚠ **ADIADO**: adicionar junto com a implementação da Fase 10.5.
 
 ---
 
