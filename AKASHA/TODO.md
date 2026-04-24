@@ -459,12 +459,12 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Novos endpoints
 
-- [ ] `GET /search/json?q={query}&sources=web,sites&max={n}` — retorna resultados de busca
+- [x] `GET /search/json?q={query}&sources=web,sites&max={n}` — retorna resultados de busca
       como JSON puro (`list[SearchResult]`) em vez de HTML; reutiliza a lógica de
       `routers/search.py` mas com `Response` JSON; usado pelo Mnemosyne para obter URLs relevantes
       sem scraping ainda
 
-- [ ] `POST /fetch` (body: `{url: str, max_words: int = 2000}`) — fetch + scraping
+- [x] `POST /fetch` (body: `{url: str, max_words: int = 2000}`) — fetch + scraping
       completo de uma URL usando a cascata do `ecosystem_scraper` + fallback Jina Reader;
       retorna `{url, title, content_md, word_count, error?}`; não persiste nada — resposta
       efêmera para uso imediato pelo Mnemosyne; timeout 30s

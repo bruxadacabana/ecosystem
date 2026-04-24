@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 import sys
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -51,8 +51,19 @@ def _url_fallback_title(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Resultado
+# Tipos
 # ---------------------------------------------------------------------------
+
+@dataclass
+class FetchedPage:
+    """Resultado de fetch + extração de conteúdo, sem persistência."""
+    url: str
+    title: str
+    content_md: str
+    word_count: int
+    author: str = field(default="")
+    language: str = field(default="")
+
 
 @dataclass
 class ArchivedPage:
@@ -69,8 +80,62 @@ class ArchivedPage:
 
 
 # ---------------------------------------------------------------------------
-# Função pública
+# Funções públicas
 # ---------------------------------------------------------------------------
+
+async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
+    """
+    Faz fetch de uma URL e extrai conteúdo em Markdown (sem salvar em disco).
+    Inclui fallback Jina Reader se a cascata retornar < 100 palavras.
+    max_words=0 significa sem limite de truncamento.
+
+    Levanta:
+        httpx.HTTPStatusError — status HTTP >= 400
+        httpx.RequestError    — falha de rede
+    """
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=30,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; AKASHA-archiver/1.0)"},
+    ) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        html = response.text
+
+        metadata = trafilatura.extract_metadata(html, default_url=url)
+        title:    str = (metadata and metadata.title)                      or _url_fallback_title(url)
+        author:   str = (metadata and metadata.author)                     or ""
+        language: str = (metadata and getattr(metadata, "language", ""))   or ""
+
+        content: str = _cascade_extract(html, url, output_format="markdown")
+
+        if len(content.split()) < 100:
+            try:
+                jina_resp = await client.get(
+                    f"https://r.jina.ai/{url}",
+                    headers={"Accept": "text/plain", "X-Return-Format": "markdown"},
+                    timeout=20,
+                )
+                jina_resp.raise_for_status()
+                jina_text = jina_resp.text.strip()
+                if len(jina_text.split()) > len(content.split()):
+                    content = jina_text
+            except Exception:
+                pass  # Jina indisponível — mantém resultado local
+
+    words = content.split()
+    if max_words > 0 and len(words) > max_words:
+        content = " ".join(words[:max_words])
+
+    return FetchedPage(
+        url=url,
+        title=title,
+        content_md=content,
+        word_count=len(words),
+        author=author,
+        language=language,
+    )
+
 
 async def archive_url(
     url: str,
@@ -89,68 +154,33 @@ async def archive_url(
     """
     tags = tags or []
 
-    # ── Fetch ────────────────────────────────────────────────────────────
-    async with httpx.AsyncClient(
-        follow_redirects=True,
-        timeout=30,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; AKASHA-archiver/1.0)"},
-    ) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        html = response.text
-
-    # ── Metadados (trafilatura) ───────────────────────────────────────────
-    metadata  = trafilatura.extract_metadata(html, default_url=url)
-    title:    str = (metadata and metadata.title)              or _url_fallback_title(url)
-    author:   str = (metadata and metadata.author)             or ""
-    language: str = (metadata and getattr(metadata, "language", "")) or ""
-    domain:   str = urlparse(url).netloc
-
-    # ── Extração em cascata compartilhada ─────────────────────────────────
-    content: str = _cascade_extract(html, url, output_format="markdown")
-
-    # ── Fallback Jina Reader — ativado se cascata retornou < 100 palavras ─
-    if len(content.split()) < 100:
-        try:
-            jina_resp = await client.get(
-                f"https://r.jina.ai/{url}",
-                headers={"Accept": "text/plain", "X-Return-Format": "markdown"},
-                timeout=20,
-            )
-            jina_resp.raise_for_status()
-            jina_text = jina_resp.text.strip()
-            if len(jina_text.split()) > len(content.split()):
-                content = jina_text
-        except Exception:
-            pass  # Jina indisponível — mantém resultado local
+    page = await fetch_and_extract(url)  # sem truncamento — arquivo completo
 
     now      = datetime.now()
     date_str = now.strftime("%Y-%m-%d %H:%M")
-    wc       = len(content.split())
+    domain   = urlparse(url).netloc
 
-    # ── Frontmatter KOSMOS estendido ──────────────────────────────────────
     body = (
         f'---\n'
-        f'title: "{_yaml_str(title)}"\n'
+        f'title: "{_yaml_str(page.title)}"\n'
         f'source: "{_yaml_str(domain)}"\n'
         f'date: {date_str}\n'
-        f'author: "{_yaml_str(author)}"\n'
+        f'author: "{_yaml_str(page.author)}"\n'
         f'url: {url}\n'
-        f'language: {language}\n'
-        f'word_count: {wc}\n'
+        f'language: {page.language}\n'
+        f'word_count: {page.word_count}\n'
         f'tags: {_yaml_tags(tags)}\n'
         f'notes: "{_yaml_str(notes)}"\n'
         f'---\n\n'
-        f'# {title}\n\n'
-        f'{content}'
+        f'# {page.title}\n\n'
+        f'{page.content_md}'
     )
 
-    # ── Salvar ────────────────────────────────────────────────────────────
     dest_dir = Path(archive_path) / "Web"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     date_prefix = now.strftime("%Y-%m-%d")
-    slug        = _slugify(title)
+    slug        = _slugify(page.title)
     dest_path   = dest_dir / f"{date_prefix}_{slug}.md"
 
     counter = 1
@@ -164,7 +194,7 @@ async def archive_url(
         raise RuntimeError(f"Não foi possível salvar o arquivo: {exc}") from exc
 
     return ArchivedPage(
-        title=title, source=domain, author=author, date=date_str,
-        url=url, language=language, word_count=wc,
+        title=page.title, source=domain, author=page.author, date=date_str,
+        url=url, language=page.language, word_count=page.word_count,
         tags=tags, notes=notes, path=dest_path,
     )

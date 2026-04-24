@@ -11,10 +11,11 @@ import httpx
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 
 import config
 import database
-from services.archiver import archive_url
+from services.archiver import archive_url, fetch_and_extract
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local
 from services.crawler import search_sites
@@ -137,6 +138,79 @@ async def search(
             "active_tab":    "search",
         },
     )
+
+
+@router.get("/search/json")
+async def search_json(
+    q:       str = "",
+    sources: str = "web,sites",   # vírgula separada: web, eco, sites
+    max:     int = 10,
+) -> list[SearchResult]:
+    """
+    API JSON para o Mnemosyne (Pesquisa Profunda).
+    Retorna resultados combinados das fontes selecionadas sem renderizar HTML.
+    """
+    if not q:
+        return []
+
+    src_list  = {s.strip() for s in sources.split(",")}
+    src_web   = "web"   in src_list
+    src_eco   = "eco"   in src_list
+    src_sites = "sites" in src_list
+
+    tasks = await asyncio.gather(
+        search_web(q, max_results=max) if src_web   else asyncio.sleep(0, result=[]),
+        search_local(q)                if src_eco   else asyncio.sleep(0, result=[]),
+        search_sites(q)                if src_sites else asyncio.sleep(0, result=[]),
+        return_exceptions=True,
+    )
+
+    combined: list[SearchResult] = []
+    for result in tasks:
+        if isinstance(result, list):
+            combined.extend(result)
+
+    return combined[:max]
+
+
+class _FetchBody(BaseModel):
+    url:       str
+    max_words: int = 2000
+
+
+class _FetchResponse(BaseModel):
+    url:        str
+    title:      str
+    content_md: str
+    word_count: int
+    error:      str | None = None
+
+
+@router.post("/fetch")
+async def fetch(body: _FetchBody) -> _FetchResponse:
+    """
+    Fetch + scraping de uma URL (sem persistência). Usado pelo Mnemosyne para
+    carregar conteúdo web na sessão de Pesquisa Profunda.
+    Cascata: ecosystem_scraper → Jina Reader (fallback < 100 palavras).
+    """
+    try:
+        page = await fetch_and_extract(body.url, max_words=body.max_words)
+        return _FetchResponse(
+            url=page.url,
+            title=page.title,
+            content_md=page.content_md,
+            word_count=page.word_count,
+        )
+    except httpx.HTTPStatusError as exc:
+        return _FetchResponse(
+            url=body.url, title="", content_md="", word_count=0,
+            error=f"HTTP {exc.response.status_code}",
+        )
+    except httpx.RequestError as exc:
+        return _FetchResponse(
+            url=body.url, title="", content_md="", word_count=0,
+            error=f"Erro de rede: {exc}",
+        )
 
 
 @router.get("/search/more", response_class=HTMLResponse)
