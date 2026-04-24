@@ -39,6 +39,52 @@ INFO:     Started server process [1512]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:7071 (Press CTRL+C to quit)
+- AETHER: apesar de eu ter atualizado o endereço onde os arquivos deveriam ser salvos no HUB, ele continua salvando na pasta antiga e não encontro opção para configurar isso dentro do AETHER. Terminal:
+[AETHER] Binario de release nao encontrado. Compilando agora...
+[AETHER] Execute "cargo tauri build --no-bundle" para agilizar aberturas futuras.
+     Running BeforeDevCommand (`npm run dev`)
+
+> aether-scaffold@0.0.0 dev
+> vite
+
+
+  VITE v8.0.8  ready in 497 ms
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: use --host to expose
+     Running DevCommand (`cargo  run --no-default-features --color always --`)
+        Info Watching D:\windows\ProgramFiles\ecosystem\AETHER\src-tauri for changes...
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\D:\windows\ProgramFiles\ecosystem\AETHER\src-tauri\target\debug\incremental\app_lib-1s5tgmff81ury\s-hho1uh6c1t-0rusvsq-working`
+
+warning: constant `VAULT_CONFIG_FILE` is never used
+  --> src\storage.rs:23:7
+   |
+23 | const VAULT_CONFIG_FILE: &str = "config.json";
+   |       ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `load_vault_config` is never used
+  --> src\storage.rs:83:8
+   |
+83 | pub fn load_vault_config(vault_path: &Path) -> Result<VaultConfig, AppError> {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: function `save_vault_config` is never used
+  --> src\storage.rs:91:8
+   |
+91 | pub fn save_vault_config(vault_path: &Path, config: &VaultConfig) -> Result<(), AppError> {
+   |        ^^^^^^^^^^^^^^^^^
+
+warning: `app` (lib) generated 4 warnings
+warning: hard linking files in the incremental compilation cache failed. copying files instead. consider moving the cache directory to a file system which supports hard linking in session dir `\\?\D:\windows\ProgramFiles\ecosystem\AETHER\src-tauri\target\debug\incremental\app-0ngj3dag8bu6w\s-hho1xceeuj-0wbbjal-working`
+
+warning: `app` (bin "app") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 15s
+     Running `target\debug\app.exe`
+[2026-04-24][18:19:14][app_lib][INFO] AETHER iniciado. Vault: Some("C:\\Users\\USUARIO\\Documents\\p\\My files\\backup\\notebook\\02_Areas\\escrita")
+[2026-04-24][19:23:03][app_lib::commands::project][INFO] Projeto criado: 'Baldur's Gate 3' (f59919a4-9a67-4db3-8390-0fd4decb2114)
+[2026-04-24][19:23:23][app_lib::commands::project][INFO] Projeto criado: 'Crepúsculo' (479f4237-359c-4b78-a472-ebfc278d7f99)
 
 ### LOGOS
 
