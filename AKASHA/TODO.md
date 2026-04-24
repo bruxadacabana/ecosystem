@@ -524,7 +524,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       domínio (ex: 1 req/s) usando `asyncio.Queue` + semáforo por host; evita banimento
       e respeita servidores (`services/crawler.py`)
 
-- [ ] **[F] SimHash para detecção de near-duplicatas** — calcular SimHash do conteúdo
+- [x] **[F] SimHash para detecção de near-duplicatas** — calcular SimHash do conteúdo
       extraído; rejeitar páginas com distância Hamming < 3 de páginas já indexadas;
       `pip install simhash`; reduz ruído no índice sem hashing exato
       (`services/crawler.py` + `database.py`)

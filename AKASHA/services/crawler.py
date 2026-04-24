@@ -199,6 +199,22 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
+def _simhash(text: str, bits: int = 64) -> int:
+    """64-bit SimHash sem dependências externas (shingles de 3 palavras)."""
+    v = [0] * bits
+    words = re.sub(r"\W+", " ", text.lower()).split()
+    tokens = [" ".join(words[i:i+3]) for i in range(max(1, len(words) - 2))] if words else words
+    for token in tokens:
+        h = int(hashlib.md5(token.encode()).hexdigest(), 16) & ((1 << bits) - 1)
+        for i in range(bits):
+            v[i] += 1 if (h >> i) & 1 else -1
+    return sum(1 << i for i in range(bits) if v[i] > 0)
+
+
+def _hamming(a: int, b: int) -> int:
+    return bin(a ^ b).count("1")
+
+
 async def _fetch_page(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
     """Retorna (html, http_status). html vazio em caso de erro."""
     try:
@@ -274,6 +290,7 @@ async def crawl_site(site_id: int) -> int:
     visited: set[str] = set()
     queue: deque[tuple[str, int]] = deque([(base_url, 0)])
     pages_saved = 0
+    seen_simhashes: list[int] = []  # near-duplicate detection por sessão
 
     # Conexão 2: única para todo o BFS (status=crawling → upserts → status=idle)
     # aiosqlite serializa operações na mesma conexão, portanto as corrotinas
@@ -302,6 +319,14 @@ async def crawl_site(site_id: int) -> int:
             t = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
             title = t.group(1).strip() if t else urlparse(url).path or url
             chash = _hash(content_md)
+
+            # Near-duplicate detection: pula páginas com conteúdo quase idêntico
+            if content_md:
+                sim = _simhash(content_md)
+                if any(_hamming(sim, h) < 3 for h in seen_simhashes):
+                    log.debug("near-duplicate ignorado: %s", url)
+                    return []
+                seen_simhashes.append(sim)
 
             await _upsert_page(db, site_id, url, title, content_md, chash, status, now)
             await db.commit()
