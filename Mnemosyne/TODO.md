@@ -254,7 +254,7 @@
 
 ### SessionIndexer
 
-- [ ] `core/session_indexer.py` — indexação temporária em memória para a sessão de pesquisa:
+- [x] `core/session_indexer.py` — indexação temporária em memória para a sessão de pesquisa:
       usa `chromadb.EphemeralClient()` (sem persistência em disco);
       `add_pages(pages: list[FetchResult]) -> None` — chunka com `RecursiveCharacterTextSplitter`
       e embeda via Ollama; `search(query, k=5) -> list[Document]`; `clear() -> None`;
