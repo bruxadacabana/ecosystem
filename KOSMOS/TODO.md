@@ -264,6 +264,45 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 ---
 
+## FASE I — Idioma de exibição e detecção de idioma nos artigos
+
+> Objetivo: o usuário escolhe um idioma de exibição nas Configurações e todos
+> os títulos e manchetes são traduzidos automaticamente para esse idioma ao
+> serem exibidos. Cada card também indica o idioma original do artigo.
+> Usa o mesmo motor de tradução já presente (`deep-translator`).
+
+### I.1 — Detectar e persistir idioma de cada artigo
+
+- [ ] `models.py` — verificar se coluna `language` já existe em `Article`
+      (foi adicionada no filtro de idioma da Fase C); se não, adicionar migration
+- [ ] `feed_manager.py` / `scraper.py` — garantir que `language` é detectado via
+      `langdetect` no momento do save e persistido; artigos sem idioma ficam como `None`
+- [ ] `article_card.py` — exibir badge pequeno com o idioma original do artigo
+      (ex: `EN`, `PT`, `ES`) na meta row, visível em todas as views de lista
+
+### I.2 — Configuração de idioma de exibição
+
+- [ ] `config.py` — adicionar campo `display_language: str = ""` (vazio = sem tradução)
+- [ ] `settings_view.py` — seção "Idioma de exibição": QComboBox com idiomas comuns
+      (Português, English, Español, Français, Deutsch, 中文, …) + opção "Original (sem tradução)"
+- [ ] Ao mudar, salvar em `settings.json` via `_cfg.set("display_language", code)`
+
+### I.3 — Tradução automática dos títulos na exibição
+
+- [ ] `article_card.py` — se `display_language` configurado e `article.language != display_language`,
+      chamar `deep-translator` para traduzir o título antes de exibir no card
+- [ ] Cache de traduções em memória (dict `{article_id: translated_title}`) para evitar
+      re-traduzir ao rolar a lista; cache descartado ao mudar o idioma de exibição
+- [ ] Tradução assíncrona: mostrar título original enquanto traduz, substituir ao concluir
+      (para não travar o scroll); usar `QThread` ou `asyncio` conforme o contexto
+
+### I.4 — Tradução no reader (opcional / fase posterior)
+
+- [ ] Botão "Traduzir" na toolbar do leitor já existe — verificar se usa `display_language`
+      como destino automático ao invés de pedir confirmação; ajustar se necessário
+
+---
+
 ## IDEIAS
 
 - [ ] **Detecção de evento**: identificar automaticamente que artigos de fontes diferentes cobrem exatamente o mesmo evento do mesmo dia — requer clustering temporal + semântico combinados (embeddings por janela de tempo + similaridade de título/entidades)
