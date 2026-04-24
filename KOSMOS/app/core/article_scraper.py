@@ -12,7 +12,7 @@ log = logging.getLogger("kosmos.scraper")
 
 # Módulo compartilhado do ecossistema
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from ecosystem_scraper import extract as _cascade_extract
+from ecosystem_scraper import extract as _cascade_extract, get_fetch_url as _get_fetch_url
 
 _HEADERS = {
     "User-Agent": (
@@ -67,7 +67,7 @@ class ArticleScraper:
         try:
             import requests
             resp = requests.get(
-                url,
+                _get_fetch_url(url),
                 timeout=self._TIMEOUT,
                 headers=_HEADERS,
                 allow_redirects=True,

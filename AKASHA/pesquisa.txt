@@ -347,3 +347,87 @@ FONTES
   https://www.firecrawl.dev/glossary/web-crawling-apis/what-is-polite-crawling
 - Compressed Inverted Indexes for In-Memory Search Engines (ResearchGate):
   https://www.researchgate.net/publication/220982102_Compressed_Inverted_Indexes_for_In-Memory_Search_Engines
+
+================================================================================
+MEDIUM E SUBSTACK — SCRAPING E EXTRAÇÃO DE CONTEÚDO
+Data: 2026-04-24
+Contexto: corrigir falha de extração no AKASHA (fetch_and_extract) e KOSMOS (ArticleScraper)
+================================================================================
+
+1. POR QUE MEDIUM FALHA
+------------------------
+Medium usa paywall em duas camadas:
+  a) Soft paywall (JS overlay): conteúdo presente no HTML mas ocultado por JS.
+     Trafilatura pode extrair o texto, mas a requisição HTTP retorna conteúdo
+     truncado ou com aviso de assinatura.
+  b) Hard paywall (server-side): servidor não envia o corpo do artigo para
+     usuários não autenticados. Trafilatura/readability não conseguem extrair
+     o que não chegou na resposta.
+Adicionalmente, Medium detecta User-Agents de scrapers e pode retornar 403 ou
+HTML vazio mesmo para artigos gratuitos, mesmo com headers realistas.
+
+2. SOLUÇÃO PARA MEDIUM — FREEDIUM
+-----------------------------------
+Freedium (freedium.cfd) é um proxy open-source que acessa Medium via contas
+com assinatura paga e serve o conteúdo sem paywall.
+
+Uso: reescrever a URL antes do fetch:
+  https://medium.com/@author/slug
+  → https://freedium.cfd/https://medium.com/@author/slug
+
+O HTML retornado pelo Freedium é estático e processável por trafilatura normalmente.
+Nenhuma mudança na camada de extração do ecosystem_scraper é necessária.
+
+Ordem de fallbacks (Medium):
+  1. Freedium (fetch via proxy)
+  2. Jina Reader r.jina.ai/{url} (já implementado no AKASHA para < 100 palavras)
+  3. Direto (resultado parcial ou vazio)
+
+Limitações:
+  - Freedium pode estar indisponível (tratar como timeout, continuar cascata)
+  - Uso pessoal tolerado; não usar para automação em massa
+
+3. SUBSTACK — ESTRUTURA HTML
+------------------------------
+Substack é significativamente mais fácil de extrair que Medium:
+  - Sem paywall JS — artigos livres têm HTML completo na resposta
+  - Conteúdo principal em <div class="available-content"> ou <div class="body markup">
+  - Artigos pagos: servidor retorna HTML sem o corpo (esperado, não é bug)
+
+Trafilatura com favor_recall=True (já ativo no ecosystem_scraper) extrai
+corretamente artigos Substack gratuitos na maioria dos casos.
+
+Problema real: o fallback BeautifulSoup no ecosystem_scraper não conhece os
+seletores específicos do Substack. Quando trafilatura/readability falham (e.g.,
+artigo pago ou layout incomum), o BS4 cai direto em <body> capturando navegação
+e rodapés junto com o conteúdo.
+
+Fix: adicionar class_="available-content" e class_="post-content" como candidatos
+no _ext_bs4, antes do fallback para <body>.
+
+4. READABILITY-LXML vs TRAFILATURA vs PUPPETEER
+-------------------------------------------------
+Tanto trafilatura quanto readability falham da mesma forma no hard paywall
+(conteúdo ausente no HTML recebido). Puppeteer/Playwright headless funcionaria
+pois executa JS e pode fazer login, mas é impraticável no hardware alvo
+(i5-3470, 8GB RAM): Chrome consome 300-500MB extra por instância.
+
+Trafilatura com favor_recall=True já é a melhor opção estática disponível.
+
+5. IMPLICAÇÕES PRÁTICAS
+-------------------------
+A correção vive em dois níveis:
+  a) ecosystem_scraper.py:
+     - Nova função pública get_fetch_url(url) → Freedium para medium.com
+     - _ext_bs4: adicionar seletores específicos do Substack antes de <body>
+  b) Callers:
+     - AKASHA/services/archiver.py: usar get_fetch_url() antes do fetch httpx
+     - KOSMOS/app/core/article_scraper.py: usar get_fetch_url() em _fetch_html()
+
+FONTES
+-------
+- Freedium GitHub: https://github.com/Freedium-cfd
+- Jina Reader API: https://jina.ai/reader/
+- Trafilatura Settings: https://trafilatura.readthedocs.io/en/latest/settings.html
+- Substack scraping 2026: https://dev.to/agenthustler/how-to-scrape-substack-newsletters-in-2026-a-complete-guide-2lce
+- Medium anti-scraping 2024: https://medium.com/@datajournal/most-popular-anti-scraping-techniques-in-2024-765473ea0451

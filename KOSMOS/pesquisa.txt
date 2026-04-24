@@ -1,0 +1,50 @@
+PESQUISA — KOSMOS
+================================================================================
+MEDIUM E SUBSTACK — SCRAPING E EXTRAÇÃO DE CONTEÚDO
+Data: 2026-04-24
+Contexto: corrigir falha de extração no ArticleScraper do KOSMOS (leitor de artigos RSS)
+================================================================================
+
+1. POR QUE MEDIUM FALHA
+------------------------
+Medium usa paywall em duas camadas:
+  a) Soft paywall (JS overlay): conteúdo presente no HTML mas ocultado por JS.
+     Trafilatura pode extrair o texto, mas a requisição HTTP retorna conteúdo
+     truncado ou com aviso de assinatura mesmo com headers realistas.
+  b) Hard paywall (server-side): servidor não envia o corpo do artigo para
+     usuários não autenticados. Nenhum extrator estático funciona aqui.
+Medium também detecta User-Agents automáticos e pode retornar 403 mesmo para
+artigos gratuitos.
+
+2. SOLUÇÃO — FREEDIUM
+-----------------------
+Freedium (freedium.cfd) é um proxy open-source que acessa Medium via assinatura
+e serve o conteúdo completo sem paywall.
+
+Reescrita de URL antes do fetch HTTP:
+  https://medium.com/@author/slug
+  → https://freedium.cfd/https://medium.com/@author/slug
+
+HTML retornado é estático; ecosystem_scraper processa normalmente sem mudanças.
+Freedium pode estar offline — tratar como falha de rede, não erro fatal.
+
+3. SUBSTACK — ESTRUTURA HTML
+------------------------------
+Artigos gratuitos do Substack: HTML completo, trafilatura extrai corretamente.
+Artigos pagos: servidor omite o corpo (comportamento esperado, não é bug).
+
+Seletor principal do conteúdo: <div class="available-content"> ou <div class="body markup">
+O fallback BS4 do ecosystem_scraper precisa conhecer esses seletores; sem isso
+cai em <body> e captura navegação junto com o texto.
+
+4. IMPLICAÇÕES PRÁTICAS
+-------------------------
+Mudança em KOSMOS/app/core/article_scraper.py:
+  - Importar get_fetch_url do ecosystem_scraper
+  - Em _fetch_html(): usar get_fetch_url(url) como URL efetiva de fetch
+
+FONTES
+-------
+- Freedium GitHub: https://github.com/Freedium-cfd
+- Trafilatura Settings: https://trafilatura.readthedocs.io/en/latest/settings.html
+- Substack scraping 2026: https://dev.to/agenthustler/how-to-scrape-substack-newsletters-in-2026-a-complete-guide-2lce

@@ -17,7 +17,7 @@ import trafilatura
 
 # Módulo compartilhado do ecossistema
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from ecosystem_scraper import extract as _cascade_extract
+from ecosystem_scraper import extract as _cascade_extract, get_fetch_url as _get_fetch_url
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,7 +99,7 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         timeout=30,
         headers={"User-Agent": "Mozilla/5.0 (compatible; AKASHA-archiver/1.0)"},
     ) as client:
-        response = await client.get(url)
+        response = await client.get(_get_fetch_url(url))
         response.raise_for_status()
         html = response.text
 

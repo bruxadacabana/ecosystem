@@ -719,10 +719,11 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
       Coluna direita (sidebar): resultados do ecossistema local (arquivos indexados)
 
 ### Extração: Medium e Substack
-- [ ] Pesquisar alternativas de scraping para Medium (falha mesmo em artigos gratuitos)
-  — opções: trafilatura com configs avançadas, readability-lxml, puppeteer headless
-  — salvar achados em `AKASHA/pesquisa.txt` antes de implementar (obrigatório per CLAUDE.md)
-- [ ] Pesquisar e corrigir extração do Substack (padrão HTML diferente do Medium)
+- [x] Pesquisar alternativas de scraping para Medium (falha mesmo em artigos gratuitos)
+  — solução: Freedium proxy (freedium.cfd) em get_fetch_url() no ecosystem_scraper.py
+  — pesquisa salva em `AKASHA/pesquisa.txt`
+- [x] Pesquisar e corrigir extração do Substack (padrão HTML diferente do Medium)
+  — fix: seletores .available-content e .post-content adicionados ao _ext_bs4
 
 ### Busca de arquivos públicos por formato
 - [ ] Adicionar opção de pesquisar arquivos públicos (PDF, epub, etc.) na busca web
@@ -734,9 +735,9 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 ## PENDÊNCIAS — KOSMOS
 
 ### Bug: scraping do Medium falha
-- [ ] Pesquisar alternativas ao scraping do Medium
-  — criar `KOSMOS/pesquisa.txt` com achados antes de implementar (obrigatório per CLAUDE.md)
-  — coordenar com solução do AKASHA (mesma causa, pode compartilhar fix via `ecosystem_scraper.py`)
+- [x] Pesquisar alternativas ao scraping do Medium
+  — pesquisa salva em `KOSMOS/pesquisa.txt`
+  — fix compartilhado via ecosystem_scraper.py (get_fetch_url → Freedium proxy)
 
 ### Tags geradas por IA nos cards do feed
 - [ ] Exibir tags geradas pela análise de IA diretamente nos cards do feed

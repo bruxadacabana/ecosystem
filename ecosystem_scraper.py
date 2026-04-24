@@ -14,8 +14,32 @@ para que cada app instale apenas o subconjunto que funciona no seu ambiente.
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
 
 _WORD_THRESHOLD = 100
+
+
+# ---------------------------------------------------------------------------
+# URL rewriting — proxy helpers para fontes com paywall
+# ---------------------------------------------------------------------------
+
+def _hostname(url: str) -> str:
+    try:
+        return urlparse(url).hostname or ""
+    except Exception:
+        return ""
+
+
+def get_fetch_url(url: str) -> str:
+    """Retorna a URL ótima para fetch de conteúdo.
+
+    Medium → proxy Freedium (contorna paywall sem headless browser).
+    Outros → URL original inalterada.
+    """
+    host = _hostname(url)
+    if host == "medium.com" or host.endswith(".medium.com"):
+        return f"https://freedium.cfd/{url}"
+    return url
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +132,8 @@ def _ext_bs4(html: str, output_format: str) -> str:
             tag.decompose()
         article = (
             soup.find("article")
+            or soup.find(class_="available-content")   # Substack
+            or soup.find(class_="post-content")        # Substack (alternativo)
             or soup.find(attrs={"role": "main"})
             or soup.find("main")
             or soup.find("body")
