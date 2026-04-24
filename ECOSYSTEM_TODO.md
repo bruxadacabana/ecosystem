@@ -837,11 +837,20 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 - [ ] HUB consumir essa API num botão de busca global cross-app
 
 ### Migração Rust/PyO3 para indexação (longo prazo)
-- [ ] Avaliar substituição do indexador Python do AKASHA por módulo Rust via PyO3
-  — tantivy como motor FTS (alternativa ao SQLite FTS5, muito mais rápido em escala)
-  — rayon para processamento paralelo (sem GIL)
-  — walkdir para traversal eficiente do filesystem
-  — prioridade: baixa — reavaliar quando o volume de dados justificar
+- [x] Avaliar substituição do indexador Python do AKASHA por módulo Rust via PyO3
+
+  **Conclusão: não justificada no volume atual — adiar indefinidamente.**
+
+  Análise (2026-04-24):
+  - Volume estimado atual: 5k–20k documentos; SQLite FTS5 escala até ~10M sem degradação
+  - Startup do indexador é incremental (só mtime diffs) — já roda em < 5s
+  - Gargalo real do ecossistema: I/O de rede (crawl BFS) e inferência LLM (Mnemosyne), não indexação local
+  - Custo: PyO3 introduz build Rust obrigatório no CI + complexidade de cross-compile (Windows 10 + CachyOS)
+  - tantivy compila sem AVX2 (i5-3470 OK), mas o ganho é imperceptível na escala atual
+
+  Gatilhos para reavaliar:
+  — volume indexado > 500k documentos **ou** startup time > 30s na máquina alvo
+  — buscas FTS retornando em > 2s de forma consistente
 
 ---
 
