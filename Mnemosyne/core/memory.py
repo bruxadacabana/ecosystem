@@ -208,17 +208,26 @@ class MemoryStore:
 
     # ── Contexto para o prompt RAG ────────────────────────────────────────────
 
-    def build_memory_context(self, recent_turns: list[Turn] | None = None) -> str:
+    def build_memory_context(
+        self,
+        recent_turns: list[Turn] | None = None,
+        collection_type: str = "library",
+    ) -> str:
         """
         Monta string de contexto de memória para injectar no prompt RAG.
         Inclui: descrição da colecção, factos de sessão e últimos turnos.
 
+        collection_type: "vault" usa framing introspectivo; "library" usa framing académico.
         recent_turns: se None, carrega os últimos _HISTORY_TURNS do ficheiro.
         """
         parts: list[str] = []
 
         if self.collection_description.strip():
-            parts.append(f"[Sobre esta colecção]\n{self.collection_description.strip()}")
+            if collection_type == "vault":
+                label = "[Sobre o teu estilo de pensar e escrever]"
+            else:
+                label = "[Sobre esta colecção]"
+            parts.append(f"{label}\n{self.collection_description.strip()}")
 
         if self.session_facts.strip():
             parts.append(f"[Factos relevantes desta sessão]\n{self.session_facts.strip()}")
@@ -243,12 +252,16 @@ class MemoryStore:
         return "\n\n".join(parts)
 
     def compact_session_memory(
-        self, llm_model: str, turns: list[Turn] | None = None
+        self,
+        llm_model: str,
+        turns: list[Turn] | None = None,
+        collection_type: str = "library",
     ) -> str:
         """
         Usa o LLM para sintetizar o histórico de turnos em factos compactos
         e guarda o resultado em memory.json["session"].
 
+        collection_type: "vault" extrai padrões de pensamento; "library" extrai factos de domínio.
         turns: se fornecido, usa esses turnos em vez de ler history.jsonl.
 
         Retorna o texto dos factos gerados.
@@ -276,16 +289,29 @@ class MemoryStore:
             total += len(entry)
 
         history_text = "\n".join(lines)
-        prompt = (
-            "A seguir está uma conversa entre um utilizador e o assistente Mnemosyne. "
-            "Extrai uma lista de factos compactos e relevantes desta conversa "
-            "(máximo 10 pontos, uma frase cada). "
-            "Foca-te em informação sobre o utilizador, as suas dúvidas recorrentes "
-            "e os temas dos documentos que consultou. "
-            "Responde em português.\n\n"
-            f"Conversa:\n{history_text}\n\n"
-            "Factos compactos:"
-        )
+
+        if collection_type == "vault":
+            prompt = (
+                "A seguir está uma conversa onde a utilizadora explorou as suas próprias notas pessoais. "
+                "Extrai uma lista de observações compactas sobre o estilo de pensar e escrever da utilizadora "
+                "(máximo 10 pontos, uma frase cada). "
+                "Foca-te em: temas recorrentes nas suas notas, forma como estrutura ideias, "
+                "padrões de escrita, língua preferida para reflectir, e contradições ou evoluções de pensamento. "
+                "Responde em português.\n\n"
+                f"Conversa:\n{history_text}\n\n"
+                "Observações sobre o estilo de pensar:"
+            )
+        else:
+            prompt = (
+                "A seguir está uma conversa entre um utilizador e o assistente Mnemosyne. "
+                "Extrai uma lista de factos compactos e relevantes desta conversa "
+                "(máximo 10 pontos, uma frase cada). "
+                "Foca-te em informação sobre o utilizador, as suas dúvidas recorrentes "
+                "e os temas dos documentos que consultou. "
+                "Responde em português.\n\n"
+                f"Conversa:\n{history_text}\n\n"
+                "Factos compactos:"
+            )
 
         try:
             llm = OllamaLLM(model=llm_model, temperature=0, timeout=120)
