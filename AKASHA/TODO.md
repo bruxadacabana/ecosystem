@@ -529,11 +529,11 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       `pip install simhash`; reduz ruído no índice sem hashing exato
       (`services/crawler.py` + `database.py`)
 
-- [ ] **[G] Índice de prefixo FTS5** — adicionar `prefix="2,3"` na criação de `crawl_fts`
+- [x] **[G] Índice de prefixo FTS5** — adicionar `prefix="2,3"` na criação de `crawl_fts`
       para acelerar buscas com autocompletar e queries de prefixo parcial
       (`database.py` — migration necessária)
 
-- [ ] **[H] `favor_recall=True` no trafilatura antes do fallback Jina** — passar
+- [x] **[H] `favor_recall=True` no trafilatura antes do fallback Jina** — passar
       `favor_recall=True` no `ecosystem_scraper` / extração local para aumentar cobertura
       de conteúdo antes de recorrer ao Jina Reader externo
       (`ecosystem_scraper.py` ou `services/archiver.py`)

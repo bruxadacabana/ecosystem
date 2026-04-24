@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -157,10 +157,11 @@ CREATE TABLE IF NOT EXISTS crawl_pages (
 
 _CREATE_CRAWL_FTS = """
 CREATE VIRTUAL TABLE IF NOT EXISTS crawl_fts USING fts5(
-    site_id  UNINDEXED,
-    url      UNINDEXED,
+    site_id    UNINDEXED,
+    url        UNINDEXED,
     title,
-    content_md
+    content_md,
+    prefix = '2 3'
 );
 """
 
@@ -315,6 +316,26 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         await db.execute("""
             CREATE INDEX IF NOT EXISTS idx_activity_log_created
             ON activity_log(created_at DESC)
+        """)
+
+    if from_version < 11:
+        # Recriar crawl_fts com prefix='2 3' para acelerar buscas de prefixo.
+        # FTS5 não suporta ALTER TABLE — drop + recreate + repopulate de crawl_pages.
+        await db.execute("DROP TABLE IF EXISTS crawl_fts")
+        await db.execute("""
+            CREATE VIRTUAL TABLE crawl_fts USING fts5(
+                site_id    UNINDEXED,
+                url        UNINDEXED,
+                title,
+                content_md,
+                prefix = '2 3'
+            )
+        """)
+        await db.execute("""
+            INSERT INTO crawl_fts (site_id, url, title, content_md)
+            SELECT CAST(site_id AS TEXT), url, title, substr(content_md, 1, 12000)
+            FROM crawl_pages
+            WHERE content_md != ''
         """)
 
     await db.execute(
