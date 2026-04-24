@@ -808,8 +808,46 @@ class MainWindow(QMainWindow):
         tab.setObjectName("contentPage")
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
 
-        info = QGroupBox("Pasta monitorada")
+        # ── Coleções ──────────────────────────────────────────────────────────
+        colls_group = QGroupBox("Coleções")
+        colls_layout = QVBoxLayout(colls_group)
+        colls_layout.setSpacing(6)
+
+        self.collections_table = QTableWidget(0, 4)
+        self.collections_table.setHorizontalHeaderLabels(["Nome", "Tipo", "Caminho", "Estado"])
+        self.collections_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.collections_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.collections_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.collections_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.collections_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.collections_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.collections_table.setMaximumHeight(160)
+        colls_layout.addWidget(self.collections_table)
+
+        colls_btns = QHBoxLayout()
+        self.coll_activate_btn = QPushButton("Ativar")
+        self.coll_activate_btn.setToolTip("Definir como coleção ativa")
+        self.coll_activate_btn.setEnabled(False)
+        self.coll_activate_btn.clicked.connect(self._on_coll_activate)
+        self.coll_index_now_btn = QPushButton("Indexar agora")
+        self.coll_index_now_btn.setEnabled(False)
+        self.coll_index_now_btn.clicked.connect(self._on_coll_index_now)
+        self.coll_remove_btn = QPushButton("Remover")
+        self.coll_remove_btn.setEnabled(False)
+        self.coll_remove_btn.clicked.connect(self._on_coll_remove)
+        colls_btns.addWidget(self.coll_activate_btn)
+        colls_btns.addWidget(self.coll_index_now_btn)
+        colls_btns.addWidget(self.coll_remove_btn)
+        colls_btns.addStretch()
+        colls_layout.addLayout(colls_btns)
+
+        self.collections_table.itemSelectionChanged.connect(self._on_coll_selection_changed)
+        layout.addWidget(colls_group)
+
+        # ── Coleção ativa ────────────────────────────────────────────────────
+        info = QGroupBox("Coleção ativa")
         info_form = QFormLayout(info)
         self.manage_path_label = QLabel(self.config.watched_dir or "—")
         self.manage_path_label.setWordWrap(True)
@@ -819,7 +857,7 @@ class MainWindow(QMainWindow):
         self.manage_date_label = QLabel("—")
         info_form.addRow("Caminho:", self.manage_path_label)
         info_form.addRow("Watcher:", self.manage_watcher_label)
-        info_form.addRow("Arquivos indexados:", self.manage_files_label)
+        info_form.addRow("Arquivos:", self.manage_files_label)
         info_form.addRow("Tipos:", self.manage_types_label)
         info_form.addRow("Última indexação:", self.manage_date_label)
         layout.addWidget(info)
@@ -829,7 +867,7 @@ class MainWindow(QMainWindow):
         self.refresh_manage_btn.clicked.connect(self.refresh_manage_info)
         self.update_index_btn = QPushButton("Atualizar índice")
         self.update_index_btn.setEnabled(False)
-        self.update_index_btn.setToolTip("Indexa apenas arquivos novos ou modificados desde a última indexação")
+        self.update_index_btn.setToolTip("Indexa apenas arquivos novos ou modificados")
         self.update_index_btn.clicked.connect(self.start_update_index)
         self.toggle_watcher_btn = QPushButton("Pausar watcher")
         self.toggle_watcher_btn.setEnabled(False)
@@ -849,6 +887,96 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.event_log)
 
         self._content_stack.addWidget(tab)
+
+    def _refresh_collections_table(self) -> None:
+        """Preenche a tabela de coleções com o estado actual do config."""
+        self.collections_table.setRowCount(0)
+        for coll in self.config.collections:
+            row = self.collections_table.rowCount()
+            self.collections_table.insertRow(row)
+
+            active_mark = " ★" if coll.name == self.config.active_collection else ""
+            name_item = QTableWidgetItem(coll.name + active_mark)
+            type_item = QTableWidgetItem(
+                "🔮 Vault" if coll.type.value == "vault" else "📚 Biblioteca"
+            )
+            path_item = QTableWidgetItem(coll.path)
+            path_item.setToolTip(coll.path)
+
+            indexed = os.path.isdir(coll.persist_dir) if coll.persist_dir else False
+            state_item = QTableWidgetItem("✔ indexada" if indexed else "— sem índice")
+
+            for col, item in enumerate((name_item, type_item, path_item, state_item)):
+                item.setData(Qt.ItemDataRole.UserRole, coll.name)
+                self.collections_table.setItem(row, col, item)
+
+        self._on_coll_selection_changed()
+
+    def _on_coll_selection_changed(self) -> None:
+        has_sel = bool(self.collections_table.selectedItems())
+        self.coll_activate_btn.setEnabled(has_sel)
+        self.coll_index_now_btn.setEnabled(has_sel)
+        # Não permitir remover a última coleção user-defined
+        user_count = sum(1 for c in self.config.collections if c.source == "user")
+        sel_name = self._selected_coll_name()
+        sel_coll = next((c for c in self.config.collections if c.name == sel_name), None)
+        can_remove = has_sel and sel_coll is not None and not (
+            sel_coll.source == "user" and user_count <= 1
+        )
+        self.coll_remove_btn.setEnabled(can_remove)
+
+    def _selected_coll_name(self) -> str:
+        items = self.collections_table.selectedItems()
+        if not items:
+            return ""
+        return items[0].data(Qt.ItemDataRole.UserRole) or ""
+
+    def _on_coll_activate(self) -> None:
+        name = self._selected_coll_name()
+        if not name or name == self.config.active_collection:
+            return
+        self.config.active_collection = name
+        save_config(self.config)
+        self.vectorstore = None
+        self._disable_query_buttons()
+        self._post_config_init()
+        self._reset_conversation()
+        self._log_event(f"Coleção ativada: {name}")
+
+    def _on_coll_index_now(self) -> None:
+        name = self._selected_coll_name()
+        if not name:
+            return
+        if name != self.config.active_collection:
+            self.config.active_collection = name
+            save_config(self.config)
+            self._populate_collection_combo()
+            self._post_config_init()
+        self._switch_page(0)
+        self.start_indexing()
+
+    def _on_coll_remove(self) -> None:
+        name = self._selected_coll_name()
+        if not name:
+            return
+        reply = QMessageBox.question(
+            self,
+            "Confirmar remoção",
+            f"Remover a coleção '{name}' da lista?\n\n"
+            "O vectorstore no disco não será apagado.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        was_active = name == self.config.active_collection
+        self.config.collections = [c for c in self.config.collections if c.name != name]
+        if was_active:
+            enabled = [c for c in self.config.collections if c.enabled]
+            self.config.active_collection = enabled[0].name if enabled else ""
+        save_config(self.config)
+        self._populate_collection_combo()
+        self._post_config_init()
+        self._log_event(f"Coleção removida: {name}")
 
     # ── Inicialização Ollama ──────────────────────────────────────────────────
 
@@ -1038,6 +1166,7 @@ class MainWindow(QMainWindow):
         self._populate_file_list()
         self._load_guide_into_ui()
         self.index_btn.setEnabled(True)
+        self._refresh_collections_table()
         self.refresh_manage_info()
 
         if self.config.auto_index_on_change:
