@@ -77,6 +77,7 @@ class ArchivedPage:
     tags:       list[str]
     notes:      str
     path:       Path
+    content_md: str = field(default="")
 
 
 # ---------------------------------------------------------------------------
@@ -196,5 +197,5 @@ async def archive_url(
     return ArchivedPage(
         title=page.title, source=domain, author=page.author, date=date_str,
         url=url, language=page.language, word_count=page.word_count,
-        tags=tags, notes=notes, path=dest_path,
+        tags=tags, notes=notes, path=dest_path, content_md=page.content_md,
     )

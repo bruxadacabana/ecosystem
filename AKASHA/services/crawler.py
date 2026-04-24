@@ -426,6 +426,37 @@ async def search_sites(query: str, max_results: int = 20) -> list:
 
 
 # ---------------------------------------------------------------------------
+# index_visited_page — favoritos (páginas arquivadas manualmente)
+# ---------------------------------------------------------------------------
+
+async def index_visited_page(url: str, title: str, content_md: str) -> None:
+    """Indexa uma página arquivada no crawl_fts sob um crawl_site virtual do domínio.
+
+    Cria o site virtual com depth=0 (sem BFS) se ainda não existir.
+    Usado exclusivamente para domínios favoritos quando o usuário arquiva uma página.
+    """
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO crawl_sites (base_url, label, crawl_depth, subdomains_json) VALUES (?, ?, 0, '[]')",
+            (base_url, parsed.netloc),
+        )
+        await db.commit()
+        row = await (await db.execute(
+            "SELECT id FROM crawl_sites WHERE base_url = ?", (base_url,)
+        )).fetchone()
+        if not row:
+            return
+        site_id: int = row[0]
+        content_hash = _hash(content_md)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await _upsert_page(db, site_id, url, title, content_md, content_hash, 200, now)
+        await db.commit()
+
+
+# ---------------------------------------------------------------------------
 # crawl_pending_sites
 # ---------------------------------------------------------------------------
 

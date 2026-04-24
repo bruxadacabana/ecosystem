@@ -18,7 +18,7 @@ import database
 from services.archiver import archive_url, fetch_and_extract
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local
-from services.crawler import search_sites
+from services.crawler import search_sites, index_visited_page
 from database import (
     get_all_crawl_sites,
     get_favorite_domains,
@@ -41,7 +41,7 @@ async def archive(
     """Arquiva uma URL em {AKASHA}/data/archive/."""
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
     try:
-        await archive_url(url, str(config.ARCHIVE_PATH), tags=tag_list, notes=notes)
+        page = await archive_url(url, str(config.ARCHIVE_PATH), tags=tag_list, notes=notes)
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=502, detail=f"Erro HTTP ao buscar URL: {exc.response.status_code}")
     except httpx.RequestError as exc:
@@ -50,6 +50,14 @@ async def archive(
         raise HTTPException(status_code=500, detail=str(exc))
     import json as _json
     await log_activity("archive", url, url, _json.dumps({"tags": tag_list}))
+
+    # Se o domínio é favorito, indexa a página no crawl_fts em background
+    from urllib.parse import urlparse as _up
+    _domain = (_up(url).hostname or "").removeprefix("www.").lower()
+    fav_domains = await get_favorite_domains()
+    if _domain in fav_domains:
+        asyncio.create_task(index_visited_page(url, page.title, page.content_md))
+
     return Response(status_code=200)
 
 
