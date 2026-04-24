@@ -42,6 +42,23 @@ _TRACKING_PARAMS = re.compile(
 _robots_cache: dict[str, tuple[set[str], float]] = {}
 _ROBOTS_TTL = 86400.0  # 24h
 
+# Rate limiting por domínio: máx. 1 req/s por host
+_DOMAIN_RATE = 1.0
+_domain_locks: dict[str, asyncio.Lock] = {}
+_domain_last_req: dict[str, float] = {}
+
+
+async def _rate_limit(domain: str) -> None:
+    """Garante intervalo mínimo de _DOMAIN_RATE segundos entre requests ao mesmo domínio."""
+    if domain not in _domain_locks:
+        _domain_locks[domain] = asyncio.Lock()
+    async with _domain_locks[domain]:
+        now = time.monotonic()
+        wait = _DOMAIN_RATE - (now - _domain_last_req.get(domain, 0.0))
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _domain_last_req[domain] = time.monotonic()
+
 
 def _normalize_url(url: str) -> str:
     """Remove parâmetros de tracking (utm_*, fbclid, etc.) para evitar duplicatas."""
@@ -275,6 +292,7 @@ async def crawl_site(site_id: int) -> int:
             if not _is_allowed(url, disallow):
                 log.debug("robots.txt: bloqueado %s", url)
                 return []
+            await _rate_limit(urlparse(url).netloc)
             async with sem:
                 html, status = await _fetch_page(client, url)
             if not html:

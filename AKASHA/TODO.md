@@ -520,7 +520,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Média prioridade
 
-- [ ] **[E] Rate limiting por domínio com fila de prioridade** — limitar requisições por
+- [x] **[E] Rate limiting por domínio com fila de prioridade** — limitar requisições por
       domínio (ex: 1 req/s) usando `asyncio.Queue` + semáforo por host; evita banimento
       e respeita servidores (`services/crawler.py`)
 
