@@ -89,6 +89,7 @@ def create_vectorstore(config: AppConfig) -> Chroma:
                     documents=batch,
                     embedding=embeddings,
                     persist_directory=config.persist_dir,
+                    collection_metadata={"hnsw:space": "cosine"},
                 )
             else:
                 vectorstore.add_documents(batch)
@@ -121,6 +122,7 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
         vs = Chroma(
             persist_directory=config.persist_dir,
             embedding_function=_get_embeddings(config),
+            collection_metadata={"hnsw:space": "cosine"},
         )
         vs.add_documents(chunks)
     except Exception as exc:
@@ -228,4 +230,5 @@ def load_vectorstore(config: AppConfig) -> Chroma:
     return Chroma(
         persist_directory=config.persist_dir,
         embedding_function=_get_embeddings(config),
+        collection_metadata={"hnsw:space": "cosine"},
     )

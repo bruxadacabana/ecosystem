@@ -129,6 +129,7 @@ class IndexWorker(QThread):
             vs = Chroma(
                 persist_directory=self.config.persist_dir,
                 embedding_function=embeddings,
+                collection_metadata={"hnsw:space": "cosine"},
             )
         except Exception as exc:
             self.finished.emit(False, f"Erro ao criar vectorstore: {exc}")

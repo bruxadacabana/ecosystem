@@ -303,9 +303,9 @@
 ## Fase 8 — Otimizações de RAG (pesquisa 2026-04-23)
 
 ### 8.1 Métrica cosine no ChromaDB (alta prioridade)
-- [ ] `core/indexer.py` — adicionar `collection_metadata={"hnsw:space": "cosine"}` em todos os pontos que criam ou abrem o Chroma: `create_vectorstore()`, `index_single_file()`, `update_vectorstore()`, `load_vectorstore()`
-- [ ] `gui/workers.py` — `IndexWorker.run()`: adicionar `collection_metadata={"hnsw:space": "cosine"}` na criação do `Chroma(persist_directory=...)`
-- [ ] Validar que coleções existentes são recriadas automaticamente ao rodar "Indexar tudo" (o IndexWorker já apaga o persist_dir — a métrica será aplicada na recriação)
+- [x] `core/indexer.py` — adicionar `collection_metadata={"hnsw:space": "cosine"}` em todos os pontos que criam ou abrem o Chroma: `create_vectorstore()`, `index_single_file()`, `update_vectorstore()`, `load_vectorstore()`
+- [x] `gui/workers.py` — `IndexWorker.run()`: adicionar `collection_metadata={"hnsw:space": "cosine"}` na criação do `Chroma(persist_directory=...)`
+- [x] Validar que coleções existentes são recriadas automaticamente ao rodar "Indexar tudo" (o IndexWorker já apaga o persist_dir — a métrica será aplicada na recriação)
 
 ### 8.2 Tamanho de chunk (alta prioridade)
 - [ ] `core/config.py` — alterar defaults: `chunk_size` 800 → 1800, `chunk_overlap` 100 → 250
