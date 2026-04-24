@@ -20,6 +20,14 @@ pub fn ecosystem_path() -> Option<PathBuf> {
     dirs::data_dir().map(|base| base.join("ecosystem").join("ecosystem.json"))
 }
 
+/// Lê o ecosystem.json e retorna o valor JSON. Retorna `{}` se ausente ou inválido.
+pub fn read_json() -> Value {
+    match ecosystem_path() {
+        Some(p) => read_ecosystem(&p),
+        None => json!({}),
+    }
+}
+
 /// Lê o ecosystem.json atual. Retorna `{}` se ausente ou inválido.
 fn read_ecosystem(path: &std::path::Path) -> Value {
     if !path.exists() {

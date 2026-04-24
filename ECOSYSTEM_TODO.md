@@ -805,26 +805,32 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 
 ---
 
-## PENDÊNCIAS — ECOSSISTEMA 
+## PENDÊNCIAS — ECOSSISTEMA
 
 > Ver notas de design detalhadas em `## ONDE PARAMOS → LOGOS` neste arquivo.
 
 ### LOGOS: proxy central de LLM (integrado ao HUB)
-- [ ] Decidir arquitetura final: LOGOS como parte do backend Rust do HUB vs. serviço separado
+- [x] Decidir arquitetura final: LOGOS como parte do backend Rust do HUB vs. serviço separado
   — recomendado: integrado ao HUB (evita ter mais um processo rodando; HUB já é o maestro)
-- [ ] Definir protocolo de ticket: `POST /request_ticket { app, priority, estimated_vram }` → 201 ou 429
-- [ ] Implementar fila de prioridades no HUB:
-  - P1 (crítica): chat interativo HUB + escrita ativa no AETHER
-  - P2 (importante): buscas RAG no Mnemosyne
-  - P3 (background): pré-análise KOSMOS + transcrições Hermes
-- [ ] Hardware Guard: monitorar VRAM da RX 6600
-  — Linux/CachyOS: `rocm-smi`
-  — Windows: `pyadl` ou consultas ao driver AMD via `sysinfo` crate
-  — pausar tarefas P3 quando VRAM > 85%; injetar `num_gpu`/`num_ctx` menores em P3
-- [ ] Cancelamento gracioso: enviar `keep_alive: 0` ao Ollama para liberar VRAM quando P1 chegar
-- [ ] Definir failsafe: comportamento dos apps quando HUB/LOGOS não estiver rodando
-  — opção A: apps "travam" esperando o maestro (mais seguro)
-  — opção B: modo emergência — falam direto com Ollama com configurações mínimas conservadoras
+- [x] Definir protocolo: `POST /logos/chat { app, priority, model, messages, ... }` → 200 ou 429
+- [x] Implementar fila de prioridades (`HUB/src-tauri/src/logos.rs`):
+  - P1: aguarda indefinidamente (sem timeout)
+  - P2: timeout 60s
+  - P3: timeout 30s + 429 imediato se VRAM > 85%
+- [x] Hardware Guard: VRAM via Ollama `/api/ps` (sum size_vram) + sysfs Linux para total
+  — Linux/CachyOS: `/sys/class/drm/card{n}/device/mem_info_vram_total` (AMD sysfs)
+  — Windows: total_vram desconhecido (sem GPU discreta no i5-3470); pct retorna None
+- [x] Cancelamento gracioso: `POST /logos/silence` → keep_alive: 0 em todos os modelos carregados
+- [x] Failsafe implementado em `ecosystem_client.py`:
+  — LOGOS online: request roteado com prioridade
+  — LOGOS offline: fallback direto ao Ollama (modo emergência silencioso)
+  — LOGOS retorna 429: RuntimeError propagado ao app chamador
+- [x] Tauri IPC commands: `logos_get_status`, `logos_silence` (para o frontend HUB)
+
+Arquivos:
+  — `HUB/src-tauri/src/logos.rs` — servidor Axum porta 7072
+  — `HUB/src-tauri/src/commands/logos.rs` — IPC Tauri
+  — `ecosystem_client.py` — `request_llm()`, `logos_status()`, `logos_silence()`
 
 ### Gerenciamento de LLM simultâneo (Mnemosyne + KOSMOS)
 - [ ] Investigar comportamento atual quando os dois apps fazem chamadas simultâneas ao Ollama

@@ -5,6 +5,7 @@
 mod commands;
 mod ecosystem;
 mod error;
+mod logos;
 
 pub use error::AppError;
 
@@ -62,8 +63,24 @@ pub fn run() {
             commands::launcher::validate_exe_path,
             commands::launcher::discover_app_exe,
             commands::launcher::auto_discover_all_exe_paths,
+            commands::logos::logos_get_status,
+            commands::logos::logos_silence,
         ])
         .setup(|app| {
+            // Inicializar LOGOS antes do logging para ter o estado pronto
+            let ollama_url = {
+                let eco = ecosystem::read_json();
+                eco["logos"]["ollama_base"]
+                    .as_str()
+                    .unwrap_or("http://localhost:11434")
+                    .to_string()
+            };
+            let logos_state = logos::LogosState::new(ollama_url);
+            app.manage(logos_state.clone());
+            tauri::async_runtime::spawn(async move {
+                logos::start_server(logos_state).await;
+            });
+
             let app_data_dir = app.path().app_data_dir().map_err(|e| {
                 eprintln!("HUB: Não foi possível obter app_data_dir: {e}");
                 e

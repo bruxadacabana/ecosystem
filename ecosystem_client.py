@@ -37,6 +37,7 @@ _DEFAULTS: dict[str, Any] = {
     "hub":       {"data_path": ""},
     "hermes":    {"output_dir": "", "config_path": ""},
     "akasha":    {"archive_path": "", "data_path": "", "base_url": "", "config_path": ""},
+    "logos":     {"ollama_base": "http://localhost:11434"},
 }
 
 
@@ -110,6 +111,114 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
         "ogma":      {"data_path":    str(root / "ogma"),
                       "config_path":  str(root / "ogma"      / ".config")},
     }
+
+
+# ---------------------------------------------------------------------------
+# LOGOS — cliente HTTP (porta 7072)
+# ---------------------------------------------------------------------------
+
+_LOGOS_PORT = 7072
+_LOGOS_BASE = f"http://127.0.0.1:{_LOGOS_PORT}"
+
+
+def _logos_get(path: str, timeout: float = 3.0) -> "dict[str, Any] | None":
+    """GET JSON ao LOGOS. Retorna None se HUB não estiver rodando."""
+    import urllib.request as _r
+    try:
+        with _r.urlopen(f"{_LOGOS_BASE}{path}", timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except OSError:
+        return None
+
+
+def _logos_post(path: str, data: "dict[str, Any]", timeout: float = 10.0) -> "dict[str, Any] | None":
+    """POST JSON ao LOGOS. Retorna None se HUB não estiver rodando."""
+    import urllib.request as _r
+    import urllib.error as _ue
+    body = json.dumps(data).encode()
+    req = _r.Request(f"{_LOGOS_BASE}{path}", data=body,
+                     headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with _r.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except _ue.HTTPError:
+        return None
+    except OSError:
+        return None
+
+
+def logos_status() -> "dict[str, Any] | None":
+    """Retorna status do LOGOS (prioridade ativa, fila, VRAM). None se HUB não estiver rodando."""
+    return _logos_get("/logos/status")
+
+
+def logos_silence() -> bool:
+    """Envia keep_alive: 0 para descarregar modelos do Ollama. Retorna True se bem-sucedido."""
+    result = _logos_post("/logos/silence", {}, timeout=15.0)
+    return result is not None
+
+
+def request_llm(
+    messages: "list[dict[str, Any]]",
+    *,
+    app: str,
+    model: str,
+    priority: int = 3,
+    stream: bool = False,
+    ollama_base: str = "http://localhost:11434",
+    **options: Any,
+) -> "dict[str, Any]":
+    """Envia chamada LLM ao LOGOS (fila de prioridades) com failsafe direto ao Ollama.
+
+    priority: 1=P1 interativo, 2=P2 RAG, 3=P3 background (padrão)
+
+    Raises:
+        RuntimeError: se LOGOS rejeitar (429) ou Ollama retornar erro HTTP.
+    """
+    import urllib.request as _r
+    import urllib.error as _ue
+
+    payload: dict[str, Any] = {
+        "app": app,
+        "priority": max(1, min(3, priority)),
+        "model": model,
+        "messages": messages,
+        "stream": stream,
+        **options,
+    }
+
+    # --- Tentar via LOGOS ---
+    logos_req = _r.Request(
+        f"{_LOGOS_BASE}/logos/chat",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with _r.urlopen(logos_req, timeout=300) as resp:
+            return json.loads(resp.read())
+    except _ue.HTTPError as e:
+        if e.code == 429:
+            raise RuntimeError(json.loads(e.read()).get("error", "LOGOS: solicitação rejeitada (429)"))
+        # Outros erros HTTP → fallback ao Ollama direto
+    except OSError:
+        pass  # HUB/LOGOS não está rodando → modo emergência
+
+    # --- Failsafe: Ollama direto ---
+    direct: dict[str, Any] = {k: v for k, v in payload.items() if k not in ("app", "priority")}
+    direct_req = _r.Request(
+        f"{ollama_base}/api/chat",
+        data=json.dumps(direct).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with _r.urlopen(direct_req, timeout=300) as resp:
+            return json.loads(resp.read())
+    except _ue.HTTPError as e:
+        raise RuntimeError(f"Ollama HTTP {e.code}: {e.read().decode(errors='replace')}")
+    except OSError as e:
+        raise RuntimeError(f"Ollama indisponível: {e}")
 
 
 def _lock_path() -> Path:
