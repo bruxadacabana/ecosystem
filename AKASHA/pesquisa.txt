@@ -1,0 +1,406 @@
+PESQUISA — Funcionamento, Otimização e Gerenciamento em Buscadores
+Data: 2026-04-24
+Contexto: informar melhorias no AKASHA (FastAPI + SQLite FTS5 + crawler BFS próprio)
+
+================================================================================
+1. ARQUITETURA GERAL DE BUSCADORES (Google e equivalentes)
+================================================================================
+
+Os grandes buscadores funcionam em três estágios encadeados:
+
+1a. CRAWLING
+------------
+Um agente automatizado (Googlebot, no caso do Google) descobre URLs de três formas:
+páginas já conhecidas, links extraídos de páginas visitadas, e sitemaps enviados
+explicitamente. Desde julho de 2024, o Google usa exclusivamente o smartphone
+crawler (mobile-first indexing completo).
+
+O crawler opera com um "crawl budget" por site — limite de tempo e recursos que o
+Google dedica a rastrear um domínio. É determinado por dois fatores:
+  - crawl capacity limit: quanto o servidor do site aguenta sem degradar
+  - crawl demand: quão popular/frequentemente atualizado é o conteúdo
+
+Otimizações relevantes:
+  - robots.txt bloqueia seções irrelevantes (não use para redirecionar budget)
+  - sitemaps devem listar apenas URLs canônicas e desejadas para indexação
+  - links internos sinalizam importância: páginas ligadas de nós de alta autoridade
+    recebem mais atenção do crawler
+  - conteúdo duplicado (sem canonical) desperdiça budget: o crawler processa a página
+    mas não a indexa
+
+1b. INDEXAÇÃO
+-------------
+Após o crawl, o conteúdo é analisado e armazenado no índice invertido.
+O Google mantém múltiplos tiers de índice com prioridades e frequências de
+atualização diferentes — não existe um índice único.
+
+Processos na indexação:
+  - canonicalização: identificar qual URL representa o "grupo" de páginas similares
+  - deduplicação near-duplicate: fingerprinting para detectar conteúdo quase-idêntico
+  - extração de metadata: título, autor, data, entidades, idioma
+  - construção do inverted index: mapa de termos → lista de documentos + posições
+
+1c. RANKING
+-----------
+O sistema de ranking atual (pós-2024) usa múltiplas camadas:
+  - Ascorer: avaliação primária (vazado nas Google API Leaks 2024)
+  - BERT/MUM: compreensão semântica de query e documento
+  - RankBrain: aprendizado de máquina para queries nunca vistas antes
+  - Twiddlers: ajustes baseados em sinais adicionais (freshness, localidade, etc.)
+  - Core Web Vitals: métricas de UX incluindo INP (Interaction to Next Paint)
+    substituiu FID como métrica oficial em março de 2024
+
+================================================================================
+2. ÍNDICE INVERTIDO — ESTRUTURA E COMPRESSÃO
+================================================================================
+
+A estrutura central de um buscador é o inverted index: um mapeamento de termos
+para listas de postings (IDs de documentos + posições). Em escala, essas listas
+contêm bilhões de inteiros.
+
+Técnicas de compressão de posting lists:
+  - d-gaps (delta encoding): armazenar diferenças entre IDs consecutivos em vez dos
+    IDs absolutos (IDs são monotonicamente crescentes, então as diferenças são pequenas)
+  - Elias-Fano: estrutura quasi-sucinta; busca em tempo O(1) amortizado; uso de memória
+    próximo ao ótimo teórico. Usado em sistemas de produção
+  - PFOR (PForDelta): compressão de blocos de 128 inteiros; bom trade-off entre
+    taxa de compressão e velocidade de decodificação
+  - BIC (Binary Interpolative Code): maior eficiência de espaço, próxima à entropia
+    teórica; mais lento que PFOR
+
+RAM vs disco:
+  - RAM é centenas de vezes mais cara que disco: boa compressão é essencial para
+    manter índices hot em memória
+  - Record-level vs word-level: record-level indexa apenas quais documentos contêm
+    o termo; word-level adiciona posições → permite busca por frase, mais memória
+
+Aplicabilidade ao AKASHA:
+  - SQLite FTS5 já usa um inverted index internamente com compressão própria
+  - Ao criar tabelas FTS5, usar `columnsize=0` (omite backing table de tamanhos de
+    coluna) se não precisar de score por coluna — economiza espaço
+  - Usar external-content tables para evitar dados duplicados (FTS aponta para a
+    tabela principal em vez de guardar cópia do conteúdo)
+
+================================================================================
+3. GERENCIAMENTO DE CRAWL BUDGET E POLITENESS
+================================================================================
+
+Para um crawler pessoal, as boas práticas de "politeness" são:
+
+3a. ROBOTS.TXT
+--------------
+  - Sempre buscar e respeitar {domínio}/robots.txt antes de crawlar
+  - Campos relevantes: User-agent, Disallow, Allow, Crawl-delay, Sitemap
+  - Importante: Google e Bing NÃO respeitam Crawl-delay no robots.txt dos sites
+    que visitam — isso é específico de crawlers menores; mas um crawler pessoal
+    DEVE respeitar para não sobrecarregar servidores pequenos
+  - Implementar cache do robots.txt por domínio (TTL: 24h) para não re-buscar
+
+3b. RATE LIMITING POR DOMÍNIO
+------------------------------
+  - Registrar timestamp do último request por domínio
+  - Só liberar próxima URL do mesmo domínio após elapsed >= crawl_delay
+  - Default recomendado se robots.txt não especifica: 10-15s para sites pequenos,
+    1-2s para sites com permissão explícita ou grandes
+  - Abordagem proativa: fila priorizada com "earliest_available_at" por domínio
+
+3c. BFS COM PRIORIDADE
+-----------------------
+  - BFS puro é adequado para corpus pequeno (< 10k páginas)
+  - Para sites maiores, adicionar score de prioridade baseado em:
+    - profundidade da URL (URLs mais rasas têm mais valor)
+    - PageRank interno estimado (número de links apontando para a URL)
+    - data de modificação se disponível no HTTP header (Last-Modified)
+  - Limitar profundidade por site para não se perder em sites infinitos
+
+3d. APLICABILIDADE AO AKASHA
+------------------------------
+  O AKASHA já respeita depth limit e sitemap discovery. Melhorias possíveis:
+  - Implementar per-domain rate limiting com fila priorizada (não apenas delay global)
+  - Cache de robots.txt com TTL por domínio
+  - Priorizar URLs rasas e ligadas de várias páginas do mesmo site
+
+================================================================================
+4. DEDUPLICAÇÃO — SIMHASH, MINHASH, CANONICAL
+================================================================================
+
+4a. SIMHASH (Google)
+--------------------
+Algoritmo de fingerprinting de 64 bits para near-duplicate detection:
+  1. Tokenizar o documento em n-gramas de palavras
+  2. Para cada token, calcular hash binário de 64 bits
+  3. Acumular: soma vetorial dos hashes (ponderada por frequência)
+  4. Resultado: 64 bits onde cada bit é o sinal da soma acumulada
+
+Dois documentos near-duplicados têm SimHashes que diferem em poucos bits
+(distância de Hamming baixa). Threshold típico: < 3 bits diferentes → duplicata.
+
+Muito eficiente: comparação de dois SimHashes = XOR + popcount → O(1).
+Escala bem: Google usa SimHash para deduplicar bilhões de páginas.
+
+4b. MINHASH (AltaVista, depois Yahoo)
+--------------------------------------
+Estima a similaridade de Jaccard entre dois conjuntos de n-gramas.
+Mais adequado para comparar conjuntos ("estes dois documentos falam dos mesmos
+tópicos?") do que detectar quase-cópias textuais.
+Mais pesado que SimHash para o mesmo propósito de deduplicação exata.
+
+4c. CANONICAL URLS
+------------------
+Um cluster canonical agrupa URLs com conteúdo idêntico ou muito similar sob uma
+URL canônica. Idealmente, os clusters de canonical e os de SimHash devem coincidir.
+
+Casos comuns de duplicação no crawler pessoal:
+  - www.exemplo.com vs exemplo.com
+  - http vs https
+  - URLs com parâmetros de tracking (?utm_source=..., ?ref=...)
+  - Trailing slash: /pagina vs /pagina/
+
+Normalização de URL a aplicar ANTES de qualquer lookup:
+  - lowercased scheme + hostname
+  - remover fragmento (#...)
+  - remover parâmetros de tracking (lista: utm_*, ref, fbclid, gclid, etc.)
+  - normalizar trailing slash consistentemente
+
+4d. APLICABILIDADE AO AKASHA
+------------------------------
+  Atualmente o AKASHA usa content_hash (SHA-256) para detectar páginas idênticas.
+  Melhoria: adicionar SimHash de 64 bits para detectar near-duplicates
+  (páginas com 95%+ do conteúdo igual mas com timestamps ou menus diferentes).
+
+  Implementação Python simples de SimHash:
+    pip install simhash  # ou implementação manual (~30 linhas)
+
+  Ao indexar nova página: calcular SimHash, comparar com hashes já indexados do
+  mesmo domínio. Se distância Hamming < 3: skip ou substituir a versão mais antiga.
+
+================================================================================
+5. SQLite FTS5 — OTIMIZAÇÕES ESPECÍFICAS
+================================================================================
+
+O SQLite FTS5 já usa BM25 internamente — um dos melhores algoritmos de ranking
+léxico. Optimizações pouco usadas mas relevantes:
+
+5a. BM25 COM PESOS DE COLUNA
+------------------------------
+  bm25(tabela, w0, w1, w2, ...) permite ponderar colunas:
+    SELECT * FROM crawl_fts WHERE crawl_fts MATCH 'python'
+    ORDER BY bm25(crawl_fts, 10, 1)  -- título vale 10x mais que body
+
+  IMPORTANTE: ORDER BY bm25(...) sem DESC retorna os PIORES primeiro.
+  Sempre usar: ORDER BY bm25(crawl_fts, 10, 1) (sem DESC no SQLite FTS5,
+  pois scores negativos são usados — menor = mais relevante).
+
+  Verificar: alguns wrappers precisam de negação: ORDER BY -bm25(...) DESC
+
+5b. PREFIX INDEXES
+-------------------
+  Adicionar `prefix="2,3"` na criação da tabela FTS5 pré-computa índices para
+  prefixos de 2 e 3 caracteres — acelera muito queries com * (auto-complete):
+    CREATE VIRTUAL TABLE crawl_fts USING fts5(
+      title, content_md,
+      prefix="2,3",
+      content=crawl_pages, content_rowid=id
+    );
+
+5c. EXTERNAL CONTENT TABLE
+----------------------------
+  Evitar duplicação de dados: FTS5 como external-content table aponta para a
+  tabela principal em vez de guardar cópia. Requer 3 triggers (INSERT/UPDATE/DELETE)
+  para manter o índice sincronizado.
+
+  Já usado no AKASHA (crawl_fts aponta para crawl_pages) — correto.
+
+5d. VACUUM E REBUILD
+---------------------
+  Após muitas inserções/deletions fragmentadas, o índice FTS5 degrada.
+  Executar periodicamente:
+    INSERT INTO crawl_fts(crawl_fts) VALUES('rebuild');  -- reconstrói
+    INSERT INTO crawl_fts(crawl_fts) VALUES('optimize'); -- merge de segmentos
+
+  O 'optimize' é equivalente ao merge do índice delta — consolida fragmentos sem
+  rebuild completo.
+
+5e. LIMITAÇÕES DO FTS5 vs ALTERNATIVAS
+----------------------------------------
+  SQLite FTS5 não suporta busca semântica (vetorial). Para corpus pessoal onde
+  a qualidade de ranking importa mais que a escala, vale considerar:
+  - Meilisearch: busca por typo-tolerance, faceted search, ranking configurável
+    (~10MB RAM idle, bom para corpus até ~1M documentos pequenos)
+  - Tantivy (Rust): núcleo do Quickwit e Meilisearch; porta BM25 + mais opções
+  - Para AKASHA atual: FTS5 é adequado e evita dependências externas
+
+================================================================================
+6. BLOOM FILTER — DEDUPLICAÇÃO DE URLs NO CRAWLER
+================================================================================
+
+Problema: verificar se uma URL já foi visitada. Com milhões de URLs, um set em
+Python usa ~100 bytes/URL = 100MB para 1M URLs.
+
+Bloom filter: estrutura probabilística baseada em array de bits + k funções hash.
+  - Nunca produz falsos negativos (se diz "não visto" é garantido)
+  - Pode produzir falsos positivos (diz "visto" quando não foi — configura-se a taxa)
+  - 90% menos memória: 1.2GB vs 12GB+ para 1 bilhão de URLs (com Redis)
+  - Para crawlers pessoais (< 500k URLs): ~600KB para falso-positivo de 1%
+
+Implementação Python:
+  pip install pybloom-live  # ou mmh3 + bitarray para implementação manual
+
+Parâmetros de calibração:
+  - n (itens esperados) × p (taxa de falso positivo) → tamanho do bit array
+  - n=100_000, p=0.01 → ~120KB; n=1_000_000, p=0.01 → ~1.2MB
+
+Para o AKASHA: o volume atual (< 100k URLs por site) não justifica implementação
+de Bloom filter — o set em memória / lookup em crawl_pages é suficiente. Mas se
+o corpus crescer para múltiplos sites com 100k+ páginas cada, vale implementar.
+
+================================================================================
+7. INDEXAÇÃO INCREMENTAL (MAIN + DELTA)
+================================================================================
+
+O padrão "main + delta" resolve o problema de atualizar um índice sem rebuild:
+  - main index: corpus estável, indexado completamente
+  - delta index: apenas documentos novos/modificados desde o último merge
+
+Delta pode ser reindexado a cada minuto; merge com o main ocorre periodicamente.
+
+Sem merge periódico, o índice degrada por fragmentação — buscas ficam mais lentas
+pois precisam consultar múltiplos segmentos.
+
+Elasticsearch reindexação incremental: near-real-time (NRT), segmentos de ~1s
+Solr delta updates: a cada ~5 minutos
+Manticore Search: delta index com merge configurável
+
+Aplicabilidade ao AKASHA:
+  - FTS5 já usa segmentos internos similares a este padrão
+  - O 'optimize' periódico (seção 5d) é o equivalente do merge
+  - Para crawl_fts: executar optimize após cada batch de crawl grande (> 500 páginas)
+
+================================================================================
+8. TRAFILATURA — QUALIDADE DE EXTRAÇÃO
+================================================================================
+
+Benchmark (Bevendorff et al. 2023, comparação de extratores web):
+  - Trafilatura: melhor F1 médio (0.883) entre ferramentas open-source testadas
+  - Segundo lugar: newspaper4k / readability-lxml (mas bloqueados por lxml 5.x/Python 3.14)
+  - Terceiro: BeautifulSoup + markdownify (fallback manual)
+
+Trafilatura é usado em produção por: HuggingFace, IBM Research, Microsoft Research,
+Allen Institute, Stanford, Tokyo Institute of Technology.
+
+Melhorias no uso atual do AKASHA:
+  - trafilatura.extract() com include_links=False e include_images=False reduz ruído
+    em conteúdo Markdown (links de navegação, alts de imagem)
+  - trafilatura.extract() com favor_precision=True (padrão) prioriza precisão;
+    usar favor_recall=True para páginas com muito JavaScript que truncam o conteúdo
+  - Para páginas JS-heavy onde trafilatura retorna < 50 palavras: Jina Reader
+    já implementado como fallback — correto
+  - Adicionar include_comments=False explicitamente (já é o padrão mas deixar claro)
+
+================================================================================
+9. BUSCADORES SELF-HOSTED — REFERÊNCIAS DE ARQUITETURA
+================================================================================
+
+Categorias existentes:
+  a) Metabuscadores (agregam resultados de outros motores):
+     - SearXNG: Python/Flask, privacidade, sem cache de índice, 30+ fontes
+     - Whoogle: Python, só Google, sem JS, muito leve
+     Limitação: dependem de APIs externas, não indexam conteúdo próprio
+
+  b) Índice próprio descentralizado:
+     - YaCy: Java, P2P, cada node contribui com parte do índice
+     Limitação: lento para corpus pessoal, overhead de coordenação P2P
+
+  c) Full-text search engine para conteúdo próprio:
+     - Meilisearch: Rust, typo-tolerance, faceted search, ~10MB RAM idle
+       API REST simples; muito boa UX de busca; não faz crawling
+     - Tantivy: Rust, Lucene-like, núcleo de vários outros
+     - Zinc/OpenSearch: alternativas ao Elasticsearch mais leves
+
+  O AKASHA é único porque combina crawler próprio + índice FTS5 + metabusca DDG.
+  Isso o coloca numa categoria diferente: buscador pessoal com corpus curado +
+  fallback para web em tempo real.
+
+================================================================================
+10. SUGESTÕES DE MELHORIA PARA O AKASHA
+================================================================================
+
+Alta prioridade (impacto imediato na qualidade de resultados):
+
+  [A] PESOS DE COLUNA NO BM25
+      Modificar crawl_fts para separar title e content_md, e usar:
+        ORDER BY bm25(crawl_fts, 10, 1)
+      Títulos relevantes devem aparecer antes de body match. Atualmente todos os
+      campos pesam igual — um match de "python" no body de uma página sobre CSS
+      supera um match no título de uma página sobre Python.
+
+  [B] NORMALIZAÇÃO DE URL ANTES DE INSERÇÃO
+      Remover parâmetros de tracking (utm_*, ref, fbclid, gclid) e normalizar
+      http→https, www→sem www antes de qualquer lookup em crawl_pages. Reduz
+      crawls duplicados sem precisar de SimHash.
+
+  [C] OPTIMIZE PERIÓDICO DO FTS5
+      Após cada sessão de crawl > 200 páginas, executar:
+        INSERT INTO crawl_fts(crawl_fts) VALUES('optimize');
+      Consolida fragmentos e mantém performance das buscas estável ao longo do tempo.
+
+  [D] ROBOTS.TXT CACHE POR DOMÍNIO
+      Atualmente cada crawl re-busca robots.txt? Implementar cache em SQLite
+      (tabela robots_cache com domain, rules, cached_at) com TTL de 24h.
+
+Média prioridade:
+
+  [E] PER-DOMAIN RATE LIMITING
+      Implementar fila com earliest_available_at por domínio em vez de sleep global.
+      Permite crawlar múltiplos domínios em paralelo respeitando o delay de cada um.
+
+  [F] NEAR-DUPLICATE DETECTION (SimHash)
+      Calcular SimHash de content_md ao indexar e comparar com páginas já indexadas
+      do mesmo domínio (distância Hamming < 3 = near-duplicate → skip).
+      Biblioteca: pip install simhash (pura Python, sem dependências pesadas).
+
+  [G] PREFIX INDEX NO FTS5
+      Adicionar prefix="2,3" na criação do crawl_fts para acelerar auto-complete
+      e buscas por prefixo.
+
+  [H] TRAFILATURA COM FAVOR_RECALL PARA FALLBACK
+      Quando trafilatura retorna < 100 palavras mas não chega no threshold do Jina
+      fallback (< 100), tentar novamente com favor_recall=True antes de acionar Jina.
+
+Baixa prioridade:
+
+  [I] CAMPO SEPARADO DE HEADINGS NO FTS5
+      Extrair H1/H2/H3 de content_md em campo separado com peso ainda maior que
+      título (peso 50 vs 10 vs 1). Headings são o sinal de estrutura mais confiável.
+
+  [J] MEILISEARCH COMO BACKEND ALTERNATIVO
+      Para corpus > 500k páginas ou se a qualidade de ranking do FTS5 se tornar
+      insuficiente, Meilisearch oferece typo-tolerance e ranking configurável com
+      API compatível. Não necessário agora — FTS5 é adequado para o volume atual.
+
+================================================================================
+FONTES
+================================================================================
+
+- Google Search Central — How Search Works:
+  https://developers.google.com/search/docs/fundamentals/how-search-works
+- Google Crawl Budget Management:
+  https://developers.google.com/crawling/docs/crawl-budget
+- Techniques for Inverted Index Compression (ACM Computing Surveys):
+  https://dl.acm.org/doi/abs/10.1145/3415148
+- Detecting Near-Duplicates for Web Crawling (Manku, Google Inc.):
+  https://research.google.com/pubs/archive/33026.pdf
+- SQLite FTS5 Extension (documentação oficial):
+  https://www.sqlite.org/fts5.html
+- Bloom Filter for URL Deduplication in Crawlers:
+  https://oneuptime.com/blog/post/2026-03-31-redis-bloom-filter-url-deduplication/view
+- Delta Index Updates (Manticore Search):
+  https://docs.manticoresearch.com/3.4.0/html/indexing/delta_index_updates.html
+- Trafilatura — Evaluation:
+  https://trafilatura.readthedocs.io/en/latest/evaluation.html
+- Bevendorff et al. 2023 — Empirical Comparison of Web Content Extraction Algorithms:
+  https://chuniversiteit.nl/papers/comparison-of-web-content-extraction-algorithms
+- Polite Crawling Best Practices (Firecrawl):
+  https://www.firecrawl.dev/glossary/web-crawling-apis/what-is-polite-crawling
+- Compressed Inverted Indexes for In-Memory Search Engines (ResearchGate):
+  https://www.researchgate.net/publication/220982102_Compressed_Inverted_Indexes_for_In-Memory_Search_Engines
