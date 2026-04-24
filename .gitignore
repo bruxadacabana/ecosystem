@@ -13,9 +13,20 @@ __pycache__/
 # Node / Electron / Tauri
 node_modules/
 dist/
+dist-electron/
 build/
 .next/
 out/
+release/
+*.exe
+*.exe.blockmap
+*.AppImage
+*.deb
+*.rpm
+*.dmg
+*.pkg
+builder-debug.yml
+builder-effective-config.yaml
 
 # Rust
 target/
