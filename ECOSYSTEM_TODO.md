@@ -7,6 +7,10 @@ unificado que rode no Android (APK via Tauri 2).
 Desenvolvimento em fases progressivas — cada fase entrega algo
 utilizável antes de avançar para a próxima.
 
+## Onde paramos
+- primeiro, no AKASHA, há alguma forma de priorizar resultados de sites e artigos acadêmicos e blogs?
+- quero também uma forma melhor de baixar/arquivar sites em md. Preciso que inclua mais sites, como o medium e SUbstack. O Medium da erro mesmo quando consigo acessar gratuitamente. Também quero que seja possível piorizar certos sites nas buscas mesmo sem clawlea-los.
+
 ---
 
 ## PRINCÍPIOS INEGOCIÁVEIS
