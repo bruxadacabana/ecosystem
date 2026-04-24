@@ -21,6 +21,14 @@ Não implemente nada do que vou pedir em seguida. Faça pesquisas necessárias e
 - KOSMOS: crie um aviso de status ao abrir um artigo para informar em que estado a análise do artigo se encontra, quer esteja em andamento, tenha havido um erro ou o que seja. Atualmente o aviso de análise só aparece quando arquivo um artigo, preciso que isso apareça independentemente.
 - KOSMOS: verifique se a lista de fontes e artigos baixados já está sendo salva na pasta compartilhada do ecossistema para que eu possa manter sincronizado entre os dispositivos
 - KOSMOS: crie uma forma de eu poder marcar dentro do artigo se eu tiver algum problema (texto incompleto, falha no scrapping e outros que você pensar) e faça isso diminuir o ranking de relevância daquela fonte. Mas também faça isso aparecer no log para podermos pesquisar possibilidades para resolver isso no futuro.
+- ECOSSISTEMA: Interoperabilidade Silenciosa: O AKASHA poderia servir como o "indexador de fundo" para o ecossistema. Quando você buscar por um conceito, ele não apenas mostra o trecho do livro no Mnemosyne, mas também os artigos relacionados no KOSMOS e os vídeos transcritos no Hermes.
+- ECOSSISTEMA: Transição de partes críticas do Python para módulos em Rust (via PyO3) nas ferramentas de busca (AKASHA) pode aumentar a velocidade de indexação do ChromaDB conforme seu vault cresce para a escala de terabytes.
+  - Tantivy como Motor: Em vez de depender apenas do FTS5 do SQLite, você pode integrar a crate tantivy (uma alternativa em Rust ao Lucene/Elasticsearch). Ela é incrivelmente rápida e permite buscas complexas (booleana, fuzzy, facetada) em milissegundos, mesmo com milhões de documentos.
+  - Processamento em Paralelo: Com a crate rayon, o Rust pode percorrer seu sistema de arquivos (usando walkdir) e processar arquivos Markdown, PDFs e transcrições em todas as threads disponíveis do seu processador, algo que o Python teria dificuldade devido ao GIL.
+  - Embeddings no Core: O módulo em Rust pode gerenciar a fila de geração de vetores para o Mnemosyne. Ele detecta o novo arquivo, extrai o texto em Rust e apenas envia o "payload" limpo para o Python/Ollama gerar o embedding, mantendo a memória sob controle.
+- ECOSSISTEMA: a idéia aqui é o AKASHA atuar como um Broker de Informação. Imagine a seguinte cena: você busca por um termo de Cibersegurança que estudou meses atrás. A Resposta Unificada: O AKASHA não retorna apenas links. Ele retorna um "Mapa de Contexto": Mnemosyne: Traz um resumo semântico (via RAG) de um PDF técnico denso. KOSMOS: Mostra 3 artigos de feeds RSS que você favoritou sobre o tema. Hermes: Apresenta o trecho exato de uma transcrição de vídeo do YouTube onde o conceito foi explicado. AETHER: Exibe uma nota de worldbuilding onde você aplicou esse conceito em uma narrativa. Isso é "silencioso" porque você não precisou abrir cada app. O HUB apenas consome essa API rica do AKASHA.
+- ECOSSISTEMA: ao pesquisar por um conceito complexo de Cibersegurança, o AKASHA pode usar o vectorstore da Mnemosyne para encontrar parágrafos específicos dentro de PDFs técnicos, cruzar com uma transcrição do Hermes e sugerir um capítulo em rascunho no AETHER que trate de um tema similar. Contexto unificado: Isso remove o "atrito de alternância". Você não precisa lembrar onde guardou a informação; basta saber que ela existe no tecido do ecossistema.
+- ECOSSISTEMA: o ideal é que as chamadas de IA passem por um serviço centralizado (ou um padrão de fila) que gerencie as prioridades, evitando que a pré-análise de segundo plano do KOSMOS "mate" a interatividade do chat no Mnemosyne.
 - ECOSSISTEMA: [IMPORTANTE] como funciona o uso e gerenciamento do LLM local quando o Mnemosyne e o KOSMOS estão rodando ao mesmo tempo?
 - o AKASHA não abriu no Windows. Terminal:
 [AKASHA] Sincronizando dependencias...
@@ -32,6 +40,56 @@ INFO:     Started server process [1512]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:7071 (Press CTRL+C to quit)
+
+### LOGOS
+
+A ideia é que nenhum app fale diretamente com o Ollama. Todos falam com o **LOGOS**, e ele decide o que fazer.
+
+!!! pensar se é melhor mesmo mantê-lo independente ou integrá-lo ao HUB. Talvez seja interessante repensar o HUB, tornando a função principal dele gerenciar os outros programas. Já faz parte do workflow do ecossistema o HUB ser o centro de tudo e os outros programas serem sempre abertos e ter suas pastas configuradas pelo HUB.
+
+### As 4 Funções do LOGOS
+
+1.  **Interceptação de Requisições (O Proxy):**
+    * Em vez de apontar o HUB/Mnemosyne para o `localhost:11434`, você os aponta para o `localhost:7072` (LOGOS).
+    * O LOGOS olha para a requisição e vê: "Ah, o KOSMOS quer resumir um artigo, mas a prioridade dele é baixa".
+
+2.  **Gerenciador de Prioridades (Fila Dinâmica):**
+    * **Prioridade 1 (Crítica):** Chat interativo do HUB e escrita ativa no AETHER. O LOGOS suspende qualquer outra tarefa de IA para dar vazão imediata a estas.
+    * **Prioridade 2 (Importante):** Buscas RAG no Mnemosyne.
+    * **Prioridade 3 (Background):** Pré-análise de artigos no KOSMOS e transcrições no Hermes. Rodam apenas quando a GPU está ociosa.
+
+3.  **Hardware Guard (O Escudo da GPU):**
+    * O LOGOS monitora a VRAM da sua **RX 6600** em tempo real.
+    * Se a VRAM passar de 85%, ele pausa as tarefas de Prioridade 3 e limpa o cache do Ollama (usando `keep_alive: 0`).
+    * Ele injeta automaticamente parâmetros como `num_gpu` e `num_ctx` menores em tarefas de segundo plano para garantir que o sistema não trave.
+
+4.  **Otimização de Contexto:**
+    * Se o KOSMOS pede um resumo, o LOGOS pode "podar" o contexto para 2048 tokens antes de enviar ao Ollama, economizando memória preciosa.
+
+---
+
+### 💡 Próximos Passos para o Desenvolvimento
+
+1.  **Defina os Perfis de Hardware:** Crie no `ecosystem.json` perfis como "Modo Trabalho" (Prioriza Mnemosyne/AETHER) e "Modo Consumo" (Prioriza KOSMOS/HUB).
+2.  **Módulo de Monitoramento:** Use uma biblioteca como `pyadl` ou execute comandos `rocm-smi` (no Arch) e `nvidia-smi/WMIC` (no Windows) dentro do LOGOS para saber quanto de VRAM resta antes de aceitar uma nova tarefa.
+3.  **A "Interrupção Graciosa":** Implemente uma forma de o LOGOS enviar um sinal para o KOSMOS pausar um scrapping se você começar a digitar no chat do HUB.
+4.  Tratamento de Erros: Rust garante que se o LOGOS falhar ao detectar a VRAM, o erro seja tratado antes de causar um kernel panic ou travar o driver da AMD.
+5.  No HUB, você pode ter widgets em tempo real:
+    1.  Um pequeno indicador estelar (seguindo sua estética) que brilha mais forte quando a GPU está livre e fica vermelho/denso quando o KOSMOS está processando.
+    2.  Um botão de "Pânico/Silêncio" que suspende todas as IAs de fundo instantaneamente para você focar na escrita no AETHER.
+6. O HUB já tem a função de lançar os apps. Com o LOGOS dentro dele: O HUB pode decidir não abrir o Mnemosyne se detectar que o Hermes está usando 90% da VRAM em uma transcrição, avisando você com um toast elegante.
+
+### Como o LOGOS operaria dentro do HUB
+
+Ao centralizar no HUB, o fluxo de comunicação mudaria para um modelo de Autoridade Central:
+
+    Apps (Clientes): KOSMOS, Mnemosyne e Hermes não perguntariam ao Ollama "Você está livre?". Eles enviariam um evento via WebSocket ou HTTP local para o HUB: LOGOS, preciso de 2GB de VRAM para um resumo.
+
+    Decisão do LOGOS (Rust): O backend do HUB verifica o estado da RX 6600. Se houver espaço, ele retorna o "ticket" de autorização.
+
+    Execução: O app prossegue. Se o HUB detectar que você abriu a aba de "Perguntas" (Chat interativo), ele revoga os tickets de baixa prioridade.
+
+    Ponto de Candura: O único desafio dessa abordagem é que, para o KOSMOS ou o Hermes continuarem sendo otimizados em segundo plano, o HUB precisará estar sempre aberto (mesmo que minimizado na tray). Se você fechar o HUB, o maestro sai do palco e os outros apps perdem a coordenação do hardware.
 
 
 ---
