@@ -26,5 +26,6 @@ echo "[AKASHA] Sincronizando dependências…"
 uv sync --python "$VENV_DIR/bin/python"
 
 # ── Inicia o servidor ─────────────────────────────────────────────────
-echo "[AKASHA] Iniciando na porta 7070…"
+echo "[AKASHA] Iniciando na porta 7071…"
+xdg-open "http://localhost:7071" 2>/dev/null &
 exec uv run python main.py

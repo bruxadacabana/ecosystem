@@ -698,7 +698,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 ## PENDÊNCIAS — AKASHA
 
 ### Bug: porta errada no iniciar.bat/sh
-- [ ] `iniciar.bat` / `iniciar.sh` — corrigir porta: uvicorn sobe em 7071 mas o script abre `http://localhost:7070`
+- [x] `iniciar.bat` / `iniciar.sh` — corrigir porta: uvicorn sobe em 7071 mas o script abre `http://localhost:7070`
 
 ### Busca: priorização e segunda coluna
 - [ ] Definir 3 níveis de prioridade nos resultados de busca:
