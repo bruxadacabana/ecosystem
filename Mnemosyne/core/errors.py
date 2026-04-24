@@ -76,3 +76,18 @@ class BriefingError(MnemosyneError):
 
 class ConfigError(MnemosyneError):
     """Erro de configuração."""
+
+
+class CollectionNotFoundError(MnemosyneError):
+    """Coleção não encontrada no índice de coleções."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"Coleção '{name}' não encontrada.")
+
+
+class ObsidianVaultError(MnemosyneError):
+    """Erro ao processar um vault do Obsidian."""
+
+
+class FrontmatterParseError(MnemosyneError):
+    """Erro ao interpretar frontmatter YAML de uma nota."""
