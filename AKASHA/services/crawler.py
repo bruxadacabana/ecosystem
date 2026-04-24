@@ -296,45 +296,52 @@ async def crawl_site(site_id: int) -> int:
                 if urlparse(link).netloc in allowed_hosts and link not in visited
             ]
 
-        async with httpx.AsyncClient(
-            follow_redirects=True,
-            timeout=_CRAWL_TIMEOUT,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; AKASHA-crawler/1.0)"},
-        ) as client:
-            while queue:
-                batch: list[tuple[str, int]] = []
-                while queue and len(batch) < _CRAWL_CONCURRENCY:
-                    url, depth = queue.popleft()
-                    if url in visited:
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=_CRAWL_TIMEOUT,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; AKASHA-crawler/1.0)"},
+            ) as client:
+                while queue:
+                    batch: list[tuple[str, int]] = []
+                    while queue and len(batch) < _CRAWL_CONCURRENCY:
+                        url, depth = queue.popleft()
+                        if url in visited:
+                            continue
+                        visited.add(url)
+                        batch.append((url, depth))
+
+                    if not batch:
                         continue
-                    visited.add(url)
-                    batch.append((url, depth))
 
-                if not batch:
-                    continue
+                    results = await asyncio.gather(
+                        *(_process_url(client, u, d) for u, d in batch)
+                    )
+                    pages_saved += len(batch)
 
-                results = await asyncio.gather(
-                    *(_process_url(client, u, d) for u, d in batch)
-                )
-                pages_saved += len(batch)
+                    for new_links in results:
+                        for link, link_depth in new_links:
+                            if link not in visited:
+                                queue.append((link, link_depth))
 
-                for new_links in results:
-                    for link, link_depth in new_links:
-                        if link not in visited:
-                            queue.append((link, link_depth))
+            if pages_saved > 200:
+                await db.execute("INSERT INTO crawl_fts(crawl_fts) VALUES('optimize')")
 
-        if pages_saved > 200:
-            await db.execute("INSERT INTO crawl_fts(crawl_fts) VALUES('optimize')")
-
-        await db.execute(
-            """UPDATE crawl_sites
-               SET status='idle', last_crawled_at=?, page_count=(
-                   SELECT COUNT(*) FROM crawl_pages WHERE site_id=?
-               )
-               WHERE id=?""",
-            (now, site_id, site_id),
-        )
-        await db.commit()
+            await db.execute(
+                """UPDATE crawl_sites
+                   SET status='idle', last_crawled_at=?, page_count=(
+                       SELECT COUNT(*) FROM crawl_pages WHERE site_id=?
+                   )
+                   WHERE id=?""",
+                (now, site_id, site_id),
+            )
+            await db.commit()
+        except Exception:
+            await db.execute(
+                "UPDATE crawl_sites SET status='idle' WHERE id=?", (site_id,)
+            )
+            await db.commit()
+            raise
 
     return pages_saved
 

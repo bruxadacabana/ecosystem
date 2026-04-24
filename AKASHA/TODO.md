@@ -550,10 +550,54 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
+## Fase 16 — Correção de Bugs (auditoria 2026-04-24)
+
+> Bugs encontrados por inspeção de código. Nenhum requer migration de schema.
+
+### Alta prioridade (funcionalidade quebrada)
+
+- [x] **[BUG-1] `/domains` — bloquear/desbloquear não atualiza a lista na UI**
+      `routers/domains.py` + `templates/domains.html`: os endpoints `POST /domains/block` e
+      `DELETE /domains/block/{domain}` retornam `Response(status_code=200)` com body vazio,
+      mas o template usa `hx-select="#domains-list"` esperando receber esse elemento na resposta.
+      HTMX não encontra o seletor → lista não atualiza; usuária precisa recarregar a página.
+      **Fix:** retornar a lista atualizada como fragment HTML em ambos os endpoints, ou
+      mudar para `hx-get="/domains" hx-trigger="revealed"` como follow-up.
+
+- [x] **[BUG-2] `search.html` — link "Adicionar sites" aponta para `/sites` que não existe**
+      `templates/search.html:18`: `<a href="/sites">Adicionar sites →</a>` causa 404.
+      O gerenciamento dos sites crawleados está em `/library`.
+      **Fix:** corrigir para `href="/library"`.
+
+- [x] **[BUG-3] `crawl_site` — status travado em `'crawling'` quando ocorre exceção**
+      `services/crawler.py`: o status é definido como `'crawling'` antes do BFS, mas só
+      resetado para `'idle'` no final bem-sucedido. Se qualquer exceção ocorrer (HTTP, DB,
+      timeout), o site fica com `status='crawling'` para sempre. `crawl_pending_sites()`
+      filtra por `status='idle'`, logo o site nunca mais é re-crawlado automaticamente.
+      **Fix:** envolver o BFS em `try/finally` e garantir `UPDATE status='idle'` no `finally`.
+
+### Média prioridade (inconsistência / UX)
+
+- [ ] **[BUG-4] `main.py` `index()` — contexto incompleto para `search.html`**
+      `main.py:101`: o handler da rota `/` não passa `site_results`, `has_sites` e
+      `has_more_web` para o template. O Jinja2 não crasha (trata `undefined` como falsy),
+      mas o comportamento é inconsistente com o handler `/search`.
+      **Fix:** adicionar as chaves faltantes com valores padrão (`site_results=[]`,
+      `has_sites=False`, `has_more_web=False`, `src_web=True`, `src_eco=True`, `src_sites=False`).
+
+- [ ] **[BUG-5] `search.html` — aviso "nenhum site cadastrado" dentro do bloco `{% if error %}`**
+      `templates/search.html`: o bloco `{% if src_sites and not has_sites and query %}` está
+      aninhado dentro de `{% if error %}`, então o aviso só aparece quando há erro de busca.
+      Deveria aparecer independentemente, como estado informativo separado.
+      **Fix:** mover o bloco de aviso para fora do `{% if error %}`, antes ou logo após o
+      bloco principal de resultados.
+
+---
+
 ## Planos Futuros
 
 > Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
 
 ---
 
-*Atualizado em: 2026-04-24 — Fase 15 (Qualidade de Busca e Crawl) adicionada com 10 melhorias derivadas de pesquisa sobre arquitetura de buscadores.*
+*Atualizado em: 2026-04-24 — Fase 16 adicionada com 5 bugs identificados por auditoria de código (crawler, domains, search template).*

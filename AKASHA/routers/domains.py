@@ -13,7 +13,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from database import add_blocked_domain, get_blocked_domains, remove_blocked_domain
+from database import add_blocked_domain, get_blocked_domains, remove_blocked_domain, list_blocked_domains
 
 router = APIRouter()
 
@@ -36,16 +36,18 @@ async def domains_page(request: Request) -> HTMLResponse:
     )
 
 
-@router.post("/domains/block")
-async def block_domain(url: str = Form(...)) -> Response:
+@router.post("/domains/block", response_class=HTMLResponse)
+async def block_domain(request: Request, url: str = Form(...)) -> HTMLResponse:
     domain = _extract_domain(url)
     if not domain:
         raise HTTPException(status_code=400, detail="URL inválida")
     await add_blocked_domain(domain)
-    return Response(status_code=200)
+    domains = sorted(await get_blocked_domains())
+    return templates.TemplateResponse(request, "_domains_list.html", {"domains": domains})
 
 
-@router.delete("/domains/block/{domain}")
-async def unblock_domain(domain: str) -> Response:
+@router.delete("/domains/block/{domain}", response_class=HTMLResponse)
+async def unblock_domain(request: Request, domain: str) -> HTMLResponse:
     await remove_blocked_domain(domain)
-    return Response(status_code=200)
+    domains = sorted(await get_blocked_domains())
+    return templates.TemplateResponse(request, "_domains_list.html", {"domains": domains})

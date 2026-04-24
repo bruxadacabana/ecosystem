@@ -1,0 +1,21 @@
+<section id="domains-list">
+  {% if domains %}
+    <ul class="domains-list">
+      {% for domain in domains %}
+      <li class="domains-item">
+        <span class="domains-name">{{ domain }}</span>
+        <button
+          class="btn btn-ghost btn-sm"
+          title="Desbloquear"
+          hx-delete="/domains/block/{{ domain }}"
+          hx-target="#domains-list"
+          hx-swap="outerHTML"
+          hx-on::after-request="showToast('{{ domain }} desbloqueado.', 'info')"
+        >✕</button>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">Nenhum domínio bloqueado.</p>
+  {% endif %}
+</section>
