@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Favoritos — AKASHA{% endblock %}
+
+{% block content %}
+<p class="page-subtitle">Domínios prioritários — resultados destes sites aparecem antes dos demais na busca (P2).</p>
+
+<section class="lib-add-section">
+  <form
+    class="lib-add-form"
+    hx-post="/favorites/add"
+    hx-target="#favorites-list"
+    hx-swap="outerHTML"
+    hx-on::after-request="this.reset(); showToast('Domínio adicionado aos favoritos.', 'success')"
+  >
+    <div class="lib-add-row">
+      <input
+        type="text"
+        name="url"
+        class="input"
+        placeholder="https://exemplo.com ou exemplo.com"
+        required
+        autocomplete="off"
+      >
+      <input
+        type="text"
+        name="label"
+        class="input"
+        placeholder="rótulo (opcional)"
+        autocomplete="off"
+        style="max-width:180px;"
+      >
+      <button type="submit" class="btn btn-primary">+ favoritar</button>
+    </div>
+  </form>
+</section>
+
+{% include "_favorites_list.html" %}
+{% endblock %}

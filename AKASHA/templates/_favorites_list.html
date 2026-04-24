@@ -1,0 +1,41 @@
+<section id="favorites-list">
+  {% if favorites %}
+    <ul class="domains-list">
+      {% for fav in favorites %}
+      {# fav: (id, domain, label, priority_score, added_at) #}
+      <li class="domains-item">
+        <span class="domains-name">
+          {{ fav[1] }}{% if fav[2] %} <span class="domains-label">— {{ fav[2] }}</span>{% endif %}
+        </span>
+        <div class="domains-actions">
+          <button
+            class="btn btn-ghost btn-sm"
+            title="Mover para lista negra"
+            hx-post="/favorites/{{ fav[1] }}/to-blacklist"
+            hx-target="#favorites-list"
+            hx-swap="outerHTML"
+            hx-on::after-request="showToast('{{ fav[1] }} movido para lista negra.', 'info')"
+          >→ negra</button>
+          <button
+            class="btn btn-ghost btn-sm"
+            title="Adicionar à biblioteca (crawl)"
+            hx-post="/favorites/{{ fav[1] }}/to-library"
+            hx-swap="none"
+            hx-on::after-request="showToast('{{ fav[1] }} adicionado à biblioteca.', 'success')"
+          >→ biblioteca</button>
+          <button
+            class="btn btn-ghost btn-sm"
+            title="Remover dos favoritos"
+            hx-delete="/favorites/{{ fav[1] }}"
+            hx-target="#favorites-list"
+            hx-swap="outerHTML"
+            hx-on::after-request="showToast('{{ fav[1] }} removido.', 'info')"
+          >✕</button>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-state">Nenhum domínio favorito.</p>
+  {% endif %}
+</section>

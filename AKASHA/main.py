@@ -19,6 +19,7 @@ import database
 from routers import search as search_router
 from routers import system as system_router
 from routers import domains as domains_router
+from routers import favorites as favorites_router
 from routers import crawler as crawler_router
 from routers import watch_later as watch_later_router
 from routers import kosmos_bridge as kosmos_bridge_router
@@ -88,6 +89,7 @@ templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 app.include_router(search_router.router)
 app.include_router(system_router.router)
 app.include_router(domains_router.router)
+app.include_router(favorites_router.router)
 app.include_router(crawler_router.router)
 app.include_router(watch_later_router.router)
 app.include_router(kosmos_bridge_router.router)
