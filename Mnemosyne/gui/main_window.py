@@ -164,6 +164,81 @@ class SetupDialog(QDialog):
         )
 
 
+class NewCollectionDialog(QDialog):
+    """Diálogo para criar uma nova coleção — nome, caminho e tipo."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        from PySide6.QtWidgets import QButtonGroup, QRadioButton
+        self.setWindowTitle("Nova Coleção")
+        self.setMinimumWidth(480)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Ex: Notas de filosofia, Vault pessoal…")
+        form.addRow("Nome:", self.name_edit)
+
+        path_row = QHBoxLayout()
+        self.path_edit = QLineEdit()
+        self.path_edit.setPlaceholderText("Selecione a pasta da coleção…")
+        self.path_edit.textChanged.connect(self._on_path_changed)
+        path_btn = QPushButton("…")
+        path_btn.setFixedWidth(32)
+        path_btn.clicked.connect(self._pick_path)
+        path_row.addWidget(self.path_edit)
+        path_row.addWidget(path_btn)
+        form.addRow("Pasta:", path_row)
+
+        layout.addLayout(form)
+
+        # Tipo de coleção
+        type_group = QGroupBox("Tipo")
+        type_layout = QVBoxLayout(type_group)
+        self._rb_library = QRadioButton("📚  Biblioteca — vozes externas (livros, artigos, documentos)")
+        self._rb_vault   = QRadioButton("🔮  Vault Obsidian — memória pessoal (notas e pensamentos)")
+        self._rb_library.setChecked(True)
+        type_layout.addWidget(self._rb_library)
+        type_layout.addWidget(self._rb_vault)
+        layout.addWidget(type_group)
+
+        self._auto_label = QLabel()
+        self._auto_label.setObjectName("sidebarFolder")
+        self._auto_label.setVisible(False)
+        layout.addWidget(self._auto_label)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def _pick_path(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Selecionar pasta da coleção")
+        if folder:
+            self.path_edit.setText(folder)
+            if not self.name_edit.text().strip():
+                self.name_edit.setText(os.path.basename(folder))
+
+    def _on_path_changed(self, path: str) -> None:
+        """Auto-detecta .obsidian/ e pré-seleciona tipo Vault."""
+        obsidian = os.path.isdir(os.path.join(path.strip(), ".obsidian"))
+        if obsidian:
+            self._rb_vault.setChecked(True)
+            self._auto_label.setText("✔  Vault Obsidian detectado automaticamente")
+            self._auto_label.setVisible(True)
+        else:
+            self._rb_library.setChecked(True)
+            self._auto_label.setVisible(False)
+
+    def get_values(self) -> tuple[str, str, "CollectionType"]:
+        from core.collections import CollectionType
+        coll_type = CollectionType.VAULT if self._rb_vault.isChecked() else CollectionType.LIBRARY
+        return self.name_edit.text().strip(), self.path_edit.text().strip(), coll_type
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -230,6 +305,23 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _open_new_collection_dialog(self) -> None:
+        dialog = NewCollectionDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, path, coll_type = dialog.get_values()
+        if not name or not path:
+            QMessageBox.warning(self, "Aviso", "Nome e caminho são obrigatórios.")
+            return
+        from core.collections import CollectionConfig
+        coll = CollectionConfig(name=name, path=path, type=coll_type, source="user")
+        self.config.collections.append(coll)
+        self.config.active_collection = name
+        save_config(self.config)
+        self._populate_collection_combo()
+        self._post_config_init()
+        self._log_event(f"Coleção adicionada: {name} ({coll_type.value})")
+
     def _build_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
@@ -264,11 +356,20 @@ class MainWindow(QMainWindow):
         brand_lbl.setObjectName("sidebarBrand")
         sb.addWidget(brand_lbl)
 
-        # Seletor de coleção ativa
+        # Seletor de coleção ativa + botão nova coleção
+        coll_row = QHBoxLayout()
+        coll_row.setContentsMargins(0, 0, 0, 0)
+        coll_row.setSpacing(4)
         self.collection_combo = QComboBox()
         self.collection_combo.setToolTip("Coleção ativa — clique para trocar")
         self.collection_combo.currentIndexChanged.connect(self._on_collection_changed)
-        sb.addWidget(self.collection_combo)
+        coll_add_btn = QPushButton("+")
+        coll_add_btn.setFixedSize(22, 22)
+        coll_add_btn.setToolTip("Nova coleção")
+        coll_add_btn.clicked.connect(self._open_new_collection_dialog)
+        coll_row.addWidget(self.collection_combo, 1)
+        coll_row.addWidget(coll_add_btn)
+        sb.addLayout(coll_row)
 
         self.folder_label = QLabel(self.config.watched_dir or "Pasta não configurada")
         self.folder_label.setObjectName("sidebarFolder")
