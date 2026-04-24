@@ -222,7 +222,7 @@
 > O Mnemosyne foi feito em PySide6 em vez de PyQt6 (como KOSMOS e Hermes), e usa `styles.qss` próprio em vez do `ecosystem_qt.py`. A diferença visual percebida vem principalmente de: (1) o `.qss` do Mnemosyne não partilha o sistema de tokens do `ecosystem_qt.py`; (2) a barra de progresso e os feedbacks de indexação estão escondidos na barra inferior da janela (statusBar), que trunca nomes de arquivo longos e não tem indicador visual de avanço real.
 
 - [x] **Barra de progresso durante indexação** — substituir a statusBar por um widget dedicado na sidebar: `QProgressBar` com valor real (x/y arquivos), nome do arquivo atual numa linha acima (com elide no meio para não cortar o nome), e botão "Interromper" visível ao lado — tudo visível sem depender da barra inferior
-- [ ] **Redesign completo da UI para paridade com o ecossistema** — migrar `styles.qss` do Mnemosyne para usar os mesmos tokens de cor do `ecosystem_qt.py` (`build_qss()`), adaptado para PySide6; aplicar as mesmas fontes, espaçamentos e padrões visuais dos outros apps; resultado: Mnemosyne visualmente consistente com KOSMOS/Hermes mesmo sendo PySide6 em vez de PyQt6
+- [x] **Redesign completo da UI para paridade com o ecossistema** — migrar `styles.qss` do Mnemosyne para usar os mesmos tokens de cor do `ecosystem_qt.py` (`build_qss()`), adaptado para PySide6; aplicar as mesmas fontes, espaçamentos e padrões visuais dos outros apps; resultado: Mnemosyne visualmente consistente com KOSMOS/Hermes mesmo sendo PySide6 em vez de PyQt6
 
 ### Sessões de Chat Nomeadas
 

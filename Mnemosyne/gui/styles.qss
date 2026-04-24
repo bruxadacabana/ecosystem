@@ -2,20 +2,21 @@
    Mnemosyne — Stylesheet  (Redesign 2026)
    Design Bible v2.0 — Modo Noturno "Atlas Astronômico à Meia-Noite"
    Fontes: IM Fell English · Special Elite · Courier Prime
+   Tokens alinhados com ecosystem_qt.py (NIGHT_*)
    ============================================================
 
    Paleta escura:
-     paper:         #12161E   fundo principal — céu noturno
-     paper-dark:    #181D28   sidebar — azul-noite mais fundo
-     paper-darker:  #1E2433   hover — azul com patina
-     paper-darkest: #252B3A   ativo, selecionado
+     paper:         #12161E   fundo principal — céu noturno         (NIGHT_PAPER)
+     paper-dark:    #181D28   sidebar — azul-noite mais fundo        (NIGHT_PAPER_DARK)
+     paper-darker:  #1E2433   hover — azul com patina               (NIGHT_PAPER_DARKER)
+     paper-darkest: #252B3A   ativo, selecionado                    (NIGHT_PAPER_DARKEST)
      ink:           #E8DFC8   texto principal — pergaminho iluminado
      ink-light:     #C8B99A   texto secundário
-     ink-faint:     #9A9080   labels, captions
-     ink-ghost:     #7C828E   placeholders, disabled
-     accent:        #D4A820   dourado brilhante — constelação
+     ink-faint:     #9A9080   labels, captions                      (NIGHT_INK_FAINT)
+     ink-ghost:     #7C828E   placeholders, disabled                (NIGHT_INK_GHOST)
+     accent:        #D4A820   dourado brilhante — constelação (ACCENT amplificado)
      ribbon:        #C45A40   vermelho — brasa acesa
-     rule:          rgba(255,255,255,0.07)
+     rule:          #2A3148   separadores e bordas                  (NIGHT_RULE)
 */
 
 /* ----------------------------------------------------------
@@ -39,7 +40,7 @@ QDialog {
 ---------------------------------------------------------- */
 
 QSplitter::handle {
-    background: rgba(255, 255, 255, 0.06);
+    background: #2A3148;
     width: 1px;
 }
 
@@ -49,7 +50,7 @@ QSplitter::handle {
 
 QWidget#sidebar {
     background-color: #181D28;
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    border-right: 1px solid #2A3148;
 }
 
 QLabel#sidebarBrand {
@@ -78,7 +79,7 @@ QLabel#sidebarLabel {
 }
 
 QLabel#sidebarRule {
-    background-color: rgba(255, 255, 255, 0.06);
+    background-color: #2A3148;
     max-height: 1px;
     min-height: 1px;
 }
@@ -87,6 +88,13 @@ QLabel#badgeLabel {
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 10px;
     color: #D4A820;
+    background: transparent;
+}
+
+QLabel#progressFileLabel {
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 10px;
+    color: #9A9080;
     background: transparent;
 }
 
@@ -123,7 +131,7 @@ QPushButton#navBtn:checked {
 
 QPushButton#pillBtn {
     background-color: #1E2433;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid #2A3148;
     border-radius: 2px;
     padding: 4px 14px;
     font-family: "Special Elite", "Courier New", monospace;
@@ -197,7 +205,7 @@ QPushButton {
     font-size: 11px;
     letter-spacing: 0.08em;
     background-color: #1E2433;
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    border: 1px solid #2A3148;
     border-radius: 2px;
     padding: 5px 14px;
     color: #C8B99A;
@@ -205,7 +213,7 @@ QPushButton {
 
 QPushButton:hover {
     background-color: #252B3A;
-    border-color: rgba(212, 168, 32, 0.4);
+    border-color: rgba(212, 168, 32, 0.5);
     color: #E8DFC8;
 }
 
@@ -216,7 +224,7 @@ QPushButton:pressed {
 QPushButton:disabled {
     background-color: #181D28;
     color: #7C828E;
-    border-color: rgba(255, 255, 255, 0.05);
+    border-color: #2A3148;
 }
 
 QPushButton#cancelBtn {
@@ -246,7 +254,22 @@ QPushButton#sendBtn:hover {
 QPushButton#sendBtn:disabled {
     background-color: #1E2433;
     color: #7C828E;
-    border-color: rgba(255, 255, 255, 0.05);
+    border-color: #2A3148;
+}
+
+QPushButton#stopBtn {
+    background-color: transparent;
+    border: 1px solid #2A3148;
+    border-radius: 2px;
+    color: #9A9080;
+    font-size: 11px;
+    padding: 0;
+}
+
+QPushButton#stopBtn:hover {
+    background-color: #C45A40;
+    border-color: #C45A40;
+    color: #E8DFC8;
 }
 
 /* ----------------------------------------------------------
@@ -255,7 +278,7 @@ QPushButton#sendBtn:disabled {
 
 QLineEdit, QTextEdit, QPlainTextEdit {
     background-color: #181D28;
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    border: 1px solid #2A3148;
     border-radius: 2px;
     padding: 4px 8px;
     color: #E8DFC8;
@@ -267,7 +290,7 @@ QLineEdit, QTextEdit, QPlainTextEdit {
 
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
     border-color: rgba(212, 168, 32, 0.5);
-    background-color: #1A1F2E;
+    background-color: #1E2433;
 }
 
 QLineEdit#questionInput {
@@ -280,13 +303,13 @@ QTextEdit#answerText {
     font-family: "IM Fell English", Georgia, serif;
     font-size: 15px;
     line-height: 1.6;
-    border-color: rgba(255, 255, 255, 0.06);
+    border-color: #2A3148;
 }
 
 QTextEdit#sourcesText {
     font-size: 11px;
     color: #9A9080;
-    border-color: rgba(255, 255, 255, 0.06);
+    border-color: #2A3148;
 }
 
 /* ----------------------------------------------------------
@@ -295,7 +318,7 @@ QTextEdit#sourcesText {
 
 QComboBox {
     background-color: #1E2433;
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    border: 1px solid #2A3148;
     border-radius: 2px;
     padding: 4px 8px;
     color: #C8B99A;
@@ -315,7 +338,7 @@ QComboBox::drop-down {
 
 QComboBox QAbstractItemView {
     background-color: #181D28;
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    border: 1px solid #2A3148;
     color: #C8B99A;
     selection-background-color: #252B3A;
     selection-color: #E8DFC8;
@@ -326,7 +349,7 @@ QComboBox QAbstractItemView {
 ---------------------------------------------------------- */
 
 QGroupBox {
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid #2A3148;
     border-radius: 2px;
     margin-top: 8px;
     padding: 8px 6px 6px 6px;
@@ -338,7 +361,7 @@ QGroupBox {
 
 QGroupBox#sidebarGroup {
     background-color: #12161E;
-    border-color: rgba(255, 255, 255, 0.06);
+    border-color: #2A3148;
 }
 
 QGroupBox::title {
@@ -362,7 +385,7 @@ QGroupBox::indicator {
 
 QListWidget {
     background-color: #181D28;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    border: 1px solid #2A3148;
     border-radius: 2px;
     color: #C8B99A;
     font-family: "Courier Prime", "Courier New", monospace;
@@ -388,7 +411,7 @@ QListWidget::item:hover {
 
 QListWidget#sessionsList {
     background-color: #181D28;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid #2A3148;
     border-radius: 2px;
     font-family: "Courier Prime", "Courier New", monospace;
     font-size: 10px;
@@ -397,7 +420,7 @@ QListWidget#sessionsList {
 
 QListWidget#sessionsList::item {
     padding: 3px 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid #2A3148;
 }
 
 QListWidget#sessionsList::item:selected {
@@ -407,6 +430,102 @@ QListWidget#sessionsList::item:selected {
 
 QListWidget#sessionsList::item:hover {
     background-color: #1E2433;
+}
+
+/* ----------------------------------------------------------
+   TABLE WIDGET (coleções)
+---------------------------------------------------------- */
+
+QTableWidget {
+    background-color: #181D28;
+    border: 1px solid #2A3148;
+    border-radius: 2px;
+    color: #C8B99A;
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 11px;
+    gridline-color: #2A3148;
+}
+
+QTableWidget::item {
+    padding: 4px 6px;
+    border-bottom: 1px solid #2A3148;
+}
+
+QTableWidget::item:selected {
+    background-color: #252B3A;
+    color: #D4A820;
+}
+
+QTableWidget::item:hover {
+    background-color: #1E2433;
+}
+
+QHeaderView::section {
+    background-color: #12161E;
+    color: #9A9080;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    border: none;
+    border-bottom: 1px solid #2A3148;
+    border-right: 1px solid #2A3148;
+    padding: 4px 6px;
+}
+
+/* ----------------------------------------------------------
+   CHECKBOX
+---------------------------------------------------------- */
+
+QCheckBox {
+    color: #C8B99A;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 12px;
+    spacing: 6px;
+}
+
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #2A3148;
+    border-radius: 2px;
+    background-color: #181D28;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #D4A820;
+    border-color: #D4A820;
+}
+
+QCheckBox::indicator:hover {
+    border-color: rgba(212, 168, 32, 0.5);
+}
+
+/* ----------------------------------------------------------
+   RADIO BUTTON
+---------------------------------------------------------- */
+
+QRadioButton {
+    color: #C8B99A;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 12px;
+    spacing: 6px;
+}
+
+QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #2A3148;
+    border-radius: 7px;
+    background-color: #181D28;
+}
+
+QRadioButton::indicator:checked {
+    background-color: #D4A820;
+    border-color: #D4A820;
+}
+
+QRadioButton::indicator:hover {
+    border-color: rgba(212, 168, 32, 0.5);
 }
 
 /* ----------------------------------------------------------
@@ -478,7 +597,7 @@ QProgressBar::chunk {
 
 QStatusBar {
     background-color: #181D28;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid #2A3148;
     color: #7C828E;
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 10px;
@@ -491,7 +610,7 @@ QStatusBar {
 QMenuBar {
     background-color: #181D28;
     color: #C8B99A;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid #2A3148;
 }
 
 QMenuBar::item:selected {
@@ -500,7 +619,7 @@ QMenuBar::item:selected {
 
 QMenu {
     background-color: #181D28;
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    border: 1px solid #2A3148;
     color: #C8B99A;
 }
 

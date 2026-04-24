@@ -68,6 +68,13 @@ QLabel#sidebarFolder {
     background: transparent;
 }
 
+QLabel#progressFileLabel {
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 10px;
+    color: #6B5C49;
+    background: transparent;
+}
+
 QLabel#sidebarLabel {
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 10px;
@@ -250,6 +257,21 @@ QPushButton#sendBtn:disabled {
     border-color: #D5CCBA;
 }
 
+QPushButton#stopBtn {
+    background-color: transparent;
+    border: 1px solid #C4B9A8;
+    border-radius: 2px;
+    color: #6B5C49;
+    font-size: 11px;
+    padding: 0;
+}
+
+QPushButton#stopBtn:hover {
+    background-color: #8B3A2A;
+    border-color: #8B3A2A;
+    color: #F5F0E8;
+}
+
 /* ----------------------------------------------------------
    INPUTS
 ---------------------------------------------------------- */
@@ -408,6 +430,102 @@ QListWidget#sessionsList::item:selected {
 
 QListWidget#sessionsList::item:hover {
     background-color: #E0D8C8;
+}
+
+/* ----------------------------------------------------------
+   TABLE WIDGET (coleções)
+---------------------------------------------------------- */
+
+QTableWidget {
+    background-color: #EDE7D9;
+    border: 1px solid #C4B9A8;
+    border-radius: 2px;
+    color: #5C4E3A;
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 11px;
+    gridline-color: #C4B9A8;
+}
+
+QTableWidget::item {
+    padding: 4px 6px;
+    border-bottom: 1px solid #C4B9A8;
+}
+
+QTableWidget::item:selected {
+    background-color: #D5CCBA;
+    color: #b8860b;
+}
+
+QTableWidget::item:hover {
+    background-color: #E0D8C8;
+}
+
+QHeaderView::section {
+    background-color: #F5F0E8;
+    color: #6B5C49;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    border: none;
+    border-bottom: 1px solid #C4B9A8;
+    border-right: 1px solid #C4B9A8;
+    padding: 4px 6px;
+}
+
+/* ----------------------------------------------------------
+   CHECKBOX
+---------------------------------------------------------- */
+
+QCheckBox {
+    color: #5C4E3A;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 12px;
+    spacing: 6px;
+}
+
+QCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #C4B9A8;
+    border-radius: 2px;
+    background-color: #EDE7D9;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #b8860b;
+    border-color: #b8860b;
+}
+
+QCheckBox::indicator:hover {
+    border-color: #b8860b;
+}
+
+/* ----------------------------------------------------------
+   RADIO BUTTON
+---------------------------------------------------------- */
+
+QRadioButton {
+    color: #5C4E3A;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 12px;
+    spacing: 6px;
+}
+
+QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #C4B9A8;
+    border-radius: 7px;
+    background-color: #EDE7D9;
+}
+
+QRadioButton::indicator:checked {
+    background-color: #b8860b;
+    border-color: #b8860b;
+}
+
+QRadioButton::indicator:hover {
+    border-color: #b8860b;
 }
 
 /* ----------------------------------------------------------
