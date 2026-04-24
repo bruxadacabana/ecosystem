@@ -201,29 +201,29 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 ### G.1 — Renomear ação e botão no leitor
 
-- [ ] `reader_view.py` — botão `_save_btn`: texto muda de "☆ Salvar" / "★ Salvo"
+- [x] `reader_view.py` — botão `_save_btn`: texto muda de "☆ Salvar" / "★ Salvo"
       para "☆ Arquivar" / "★ Arquivado"
-- [ ] `reader_view.py` — `_on_toggle_saved()`: ao marcar como salvo, chamar
+- [x] `reader_view.py` — `_on_toggle_saved()`: ao marcar como salvo, chamar
       `archive_manager.export_article(article)` junto; ao desmarcar, deletar o `.md`
-      correspondente (com confirmação ou silenciosamente — definir na implementação)
-- [ ] Remover botão "Exportar" separado da `_toolbar_row2` (ação agora está em Arquivar)
+      correspondente (silenciosamente, com log de erro)
+- [x] Remover botão "Exportar" separado da `_toolbar_row2` (ação agora está em Arquivar)
 
 ### G.2 — Renomear aba e view "Salvos" → "Arquivados"
 
-- [ ] `sidebar.py` — texto do botão de navegação: "Salvos" → "Arquivados"
-- [ ] `saved_view.py` — título e strings internas: "Salvos" → "Arquivados"
-- [ ] `unified_feed_view.py` — qualquer referência ao estado salvo visível para o usuário
+- [x] `sidebar.py` — texto do botão de navegação: "Salvos" → "Arquivados"
+- [x] `saved_view.py` — título e strings internas: "Salvos" → "Arquivados"
+- [x] `unified_feed_view.py` — sem referências visíveis ao usuário (verificado)
 
 ### G.3 — Migrar artigos já salvos (sem .md) ao iniciar
 
-- [ ] `feed_manager.py` ou startup — ao iniciar o app, exportar automaticamente todos os
-      artigos com `is_saved=1` que ainda não têm `.md` correspondente
-      (garante consistência para quem já usava o ★ antes da mudança)
+- [x] `main_window.py` — `_migrate_saved_to_archive()` no startup: exporta artigos
+      com `is_saved=1` que ainda não têm `.md` correspondente
 
 ### G.4 — Ajustar ArchiveView
 
-- [ ] `archive_view.py` — remover qualquer distinção entre "salvos" e "arquivados";
-      a view já lista os `.md` do diretório, que agora é a única fonte de verdade
+- [x] `archive_view.py` — remover botão "Exportar artigo atual" órfão do header
+- [x] `archive_view.py` — mensagem de estado vazio atualizada (sem referência ao botão Exportar)
+- [x] `archive_manager.py` — adicionar `get_archive_path()` e `delete_archive()` helpers
 
 ---
 

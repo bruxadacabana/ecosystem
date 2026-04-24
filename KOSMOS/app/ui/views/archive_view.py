@@ -90,12 +90,6 @@ class ArchiveView(QWidget):
         title.setFont(f)
         layout.addWidget(title, 1)
 
-        self._export_btn = QPushButton("Exportar artigo atual")
-        self._export_btn.setFont(self._mono(11))
-        self._export_btn.setEnabled(False)
-        self._export_btn.setToolTip("Abra um artigo no leitor para exportá-lo")
-        layout.addWidget(self._export_btn)
-
         return header
 
     # ------------------------------------------------------------------
@@ -124,8 +118,7 @@ class ArchiveView(QWidget):
         if not md_files:
             msg = QLabel(
                 "Nenhum artigo arquivado ainda.\n\n"
-                "Para exportar um artigo para Markdown, abra-o no leitor\n"
-                "e use o botão  Exportar  na toolbar."
+                "Abra um artigo no leitor e clique em  ☆ Arquivar."
             )
             msg.setObjectName("emptyLabel")
             msg.setAlignment(Qt.AlignmentFlag.AlignCenter)

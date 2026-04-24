@@ -153,7 +153,7 @@ class Sidebar(QWidget):
         self._sources_btn = self._nav_btn("\u229e", "Fontes", "sources")
         cl.addWidget(self._sources_btn)
 
-        self._saved_btn = self._nav_btn("\u2665", "Salvos", "saved")
+        self._saved_btn = self._nav_btn("\u2665", "Arquivados", "saved")
         cl.addWidget(self._saved_btn)
 
         self._archive_btn = self._nav_btn("\u25a6", "Arquivo", "archive")

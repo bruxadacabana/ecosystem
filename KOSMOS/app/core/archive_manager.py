@@ -70,6 +70,27 @@ def _yaml_str(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def get_archive_path(article: "Article", feed_name: str | None = None) -> Path:
+    """Retorna o Path esperado do .md sem criar o arquivo."""
+    from app.utils.paths import Paths
+    feed_slug = _slugify(feed_name or "sem-fonte", 40)
+    title = article.title or "sem-titulo"
+    return Paths.ARCHIVE / feed_slug / (_slugify(title) + ".md")
+
+
+def delete_archive(article: "Article", feed_name: str | None = None) -> bool:
+    """Remove o .md correspondente ao artigo, se existir. Retorna True se deletou."""
+    path = get_archive_path(article, feed_name)
+    if path.exists():
+        try:
+            path.unlink()
+            log.info("Arquivo removido: %s", path)
+            return True
+        except OSError as exc:
+            log.warning("Não foi possível remover arquivo: %s", exc)
+    return False
+
+
 def export_article(article: "Article", feed_name: str | None = None) -> Path:
     """Exporta o artigo para Markdown em data/archive/{feed}/{slug}.md.
 

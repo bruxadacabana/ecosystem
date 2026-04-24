@@ -485,7 +485,7 @@ class ReaderView(QWidget):
         r1.setContentsMargins(16, 0, 16, 0)
         r1.setSpacing(8)
 
-        self._save_btn = QPushButton("☆  Salvar")
+        self._save_btn = QPushButton("☆  Arquivar")
         self._save_btn.setObjectName("markAllBtn")
         self._save_btn.setFont(btn_font)
         self._save_btn.clicked.connect(self._on_toggle_saved)
@@ -533,13 +533,6 @@ class ReaderView(QWidget):
         self._highlight_btn.setToolTip("Selecione um trecho no artigo e clique para destacar")
         self._highlight_btn.clicked.connect(self._on_highlight_btn)
         r2.addWidget(self._highlight_btn)
-
-        self._export_btn = QPushButton("Exportar")
-        self._export_btn.setObjectName("markAllBtn")
-        self._export_btn.setFont(btn_font)
-        self._export_btn.setToolTip("Exportar artigo para Markdown em data/archive/")
-        self._export_btn.clicked.connect(self._on_export)
-        r2.addWidget(self._export_btn)
 
         r2.addStretch()
 
@@ -890,7 +883,7 @@ class ReaderView(QWidget):
         self._meta_label.setText("  ·  ".join(date_parts))
 
         # Botões de estado
-        self._save_btn.setText("★  Salvo" if article.is_saved else "☆  Salvar")
+        self._save_btn.setText("★  Arquivado" if article.is_saved else "☆  Arquivar")
         self._read_btn.setText(
             "Marcar como não lido" if article.is_read else "Marcar como lido"
         )
@@ -1432,20 +1425,29 @@ class ReaderView(QWidget):
             return
         new_state = self._fm.toggle_saved(self._article.id)
         self._article.is_saved = int(new_state)
-        self._save_btn.setText("★  Salvo" if new_state else "☆  Salvar")
+        self._save_btn.setText("★  Arquivado" if new_state else "☆  Arquivar")
         self.saved_toggled.emit(self._article.id, new_state)
 
-        # Se está salvando e há resumo no painel ainda não persistido, salvar agora
-        if new_state and not self._article.ai_summary:
-            current_text = self._summary_text.toPlainText().strip()
-            if current_text:
-                self._fm.save_ai_summary(self._article.id, current_text)
-                self._article.ai_summary = current_text
+        feed_name = self._feed.name if self._feed else None
 
-        # Mostrar/ocultar painel de citação
         if new_state:
+            # Se está arquivando e há resumo no painel ainda não persistido, salvar agora
+            if not self._article.ai_summary:
+                current_text = self._summary_text.toPlainText().strip()
+                if current_text:
+                    self._fm.save_ai_summary(self._article.id, current_text)
+                    self._article.ai_summary = current_text
+            # Exportar .md
+            try:
+                from app.core.archive_manager import export_article
+                export_article(self._article, feed_name)
+            except Exception as exc:
+                log.error("Erro ao arquivar artigo: %s", exc)
             self._show_citation_panel()
         else:
+            # Remover .md
+            from app.core.archive_manager import delete_archive
+            delete_archive(self._article, feed_name)
             self._citation_panel.hide()
 
     def _on_toggle_read(self) -> None:
@@ -1616,12 +1618,18 @@ class ReaderView(QWidget):
         self._highlights.append(hl)
         self._refresh_highlights_row()
 
-        # Auto-salvar o artigo ao criar o primeiro destaque
+        # Auto-arquivar ao criar o primeiro destaque
         if not self._article.is_saved:
             new_state = self._fm.toggle_saved(self._article.id)
             self._article.is_saved = int(new_state)
-            self._save_btn.setText("★  Salvo")
+            self._save_btn.setText("★  Arquivado")
             self.saved_toggled.emit(self._article.id, new_state)
+            try:
+                from app.core.archive_manager import export_article
+                feed_name = self._feed.name if self._feed else None
+                export_article(self._article, feed_name)
+            except Exception as exc:
+                log.error("Erro ao arquivar artigo (destaque): %s", exc)
 
         # Aplicar na página atual sem recarregar
         color = "rgba(230,180,60,0.45)" if self._theme.current == "day" else "rgba(180,140,40,0.5)"
@@ -1733,25 +1741,6 @@ class ReaderView(QWidget):
             return
         import webbrowser
         webbrowser.open(self._article.url)
-
-    def _on_export(self) -> None:
-        if self._article is None:
-            return
-        from app.core.archive_manager import export_article
-        feed_name = self._feed.name if self._feed else None
-        try:
-            export_article(self._article, feed_name)
-            self._export_btn.setText("✓ Exportado")
-        except Exception as exc:
-            log.warning("Erro ao exportar artigo: %s", exc)
-            self._export_btn.setText("! Erro")
-        self._export_btn.setEnabled(False)
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(2500, self._reset_export_btn)
-
-    def _reset_export_btn(self) -> None:
-        self._export_btn.setText("Exportar")
-        self._export_btn.setEnabled(True)
 
     # ------------------------------------------------------------------
     # Resumo IA

@@ -1,4 +1,4 @@
-"""View de artigos salvos/favoritados."""
+"""View de artigos arquivados."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ class SavedView(QWidget):
         back_btn.clicked.connect(self.back_requested.emit)
         layout.addWidget(back_btn)
 
-        title = QLabel("Salvos")
+        title = QLabel("Arquivados")
         title.setObjectName("feedListTitle")
         f = QFont("Special Elite")
         if not f.exactMatch():
@@ -119,7 +119,7 @@ class SavedView(QWidget):
 
         self._search_edit = QLineEdit()
         self._search_edit.setFont(self._mono(11))
-        self._search_edit.setPlaceholderText("Buscar nos salvos…")
+        self._search_edit.setPlaceholderText("Buscar nos arquivados…")
         self._search_edit.textChanged.connect(lambda: self._search_timer.start(300))
         layout.addWidget(self._search_edit)
 
@@ -189,7 +189,7 @@ class SavedView(QWidget):
                 item.widget().deleteLater()
 
         if not articles:
-            empty = QLabel("Nenhum artigo salvo.")
+            empty = QLabel("Nenhum artigo arquivado.")
             empty.setObjectName("emptyLabel")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setContentsMargins(0, 40, 0, 0)

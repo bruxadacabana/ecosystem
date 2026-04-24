@@ -48,6 +48,26 @@ class MainWindow(QMainWindow):
         self._sidebar.refresh_feeds()
         self._dashboard.load(self._fm)
 
+        # Migrar artigos já salvos que ainda não têm .md em data/archive/
+        self._migrate_saved_to_archive()
+
+    def _migrate_saved_to_archive(self) -> None:
+        """Exporta artigos com is_saved=1 que ainda não têm .md em data/archive/."""
+        from app.core.archive_manager import export_article, get_archive_path
+        feeds = {f.id: f.name for f in self._fm.get_feeds()}
+        articles = self._fm.get_saved_articles(limit=500)
+        migrated = 0
+        for article in articles:
+            feed_name = feeds.get(article.feed_id)
+            if not get_archive_path(article, feed_name).exists():
+                try:
+                    export_article(article, feed_name)
+                    migrated += 1
+                except Exception as exc:
+                    log.warning("Migração: falha ao exportar '%s': %s", article.title, exc)
+        if migrated:
+            log.info("Migração: %d artigo(s) exportados para data/archive/", migrated)
+
     # ------------------------------------------------------------------
     # Construção
     # ------------------------------------------------------------------
