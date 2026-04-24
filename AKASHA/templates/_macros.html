@@ -5,7 +5,11 @@
     {% if r.date %}<time class="result-date">{{ r.date }}</time>{% endif %}
   </div>
   <h2 class="result-title">
+    {% if r.url.startswith('file://') %}
+    <span class="result-link">{{ r.title }}</span>
+    {% else %}
     <a href="{{ r.url }}" target="_blank" rel="noopener noreferrer" class="result-link">{{ r.title }}</a>
+    {% endif %}
   </h2>
   {% if r.snippet %}
     <p class="result-snippet">{{ r.snippet }}</p>
@@ -13,7 +17,16 @@
   <div class="result-footer">
     <span class="result-url">{{ r.url }}</span>
     <div class="result-actions">
+      {% if r.url.startswith('file://') %}
+      <button
+        class="btn btn-ghost btn-sm"
+        hx-get="/open-file?url={{ r.url | urlencode }}"
+        hx-swap="none"
+        hx-on::after-request="showToast(event.detail.successful ? 'Abrindo arquivo…' : 'Erro ao abrir', event.detail.successful ? 'success' : 'error')"
+        title="Abrir com o app padrão do sistema">&#x2197; abrir</button>
+      {% else %}
       <a href="{{ r.url }}" download class="btn btn-ghost btn-sm">&#x21A7; baixar</a>
+      {% endif %}
       {% if r.source == "SITES" %}
       <a href="/library/reader?url={{ r.url | urlencode }}"
          class="btn btn-ghost btn-sm"

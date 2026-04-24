@@ -10,7 +10,7 @@ praw==7.7.*
 deep-translator==1.11.*
 weasyprint==62.*
 Pillow>=10
-matplotlib==3.8.*
+matplotlib>=3.9
 trafilatura
 readability-lxml
 html2text
