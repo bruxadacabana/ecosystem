@@ -4,9 +4,12 @@
 Objetivo: ser o Maestro que harmoniza o desejo de conhecimento infinito (Polimatia) com as limitações físicas do seu hardware (RX 6600). Ele não apenas exibe dados; ele gerencia a existência das outras ferramentas.
 Desenvolvimento em fases progressivas — cada fase entrega algo utilizável antes de avançar para a próxima.
 
-O HUB agora se consagra como o **Cérebro Executivo e Autoridade Central** do ecossistema, transcendendo a função de agregador para se tornar o **LOGOS**: o maestro soberano responsável por orquestrar tanto a navegação de conhecimento quanto a gestão crítica de hardware. Sua missão fundamental é atuar como um proxy inteligente que monitora a VRAM e dita a hierarquia de execução da IA, garantindo que tarefas pesadas de fundo (como as análises do KOSMOS ou transcrições do Hermes) curvem-se instantaneamente à prioridade absoluta de atividades interativas e criativas (como o chat do HUB ou a escrita no AETHER). Ao centralizar lançamentos, perfis de energia e a coordenação de recursos em uma "Consola de Alquimista", o HUB elimina o atrito técnico e mantém a ordem sistêmica, permitindo que você exerça sua polimatia com a fluidez e a naturalidade de quem domina não apenas a informação, mas a própria força que a processa.
+O HUB é o **dashboard e painel de controle do ecossistema** — a interface central a partir da qual todos os outros apps são lançados, monitorados e configurados. Ele incorpora o **LOGOS**: proxy inteligente de LLM que monitora a VRAM da GPU e dita a hierarquia de execução da IA, garantindo que tarefas pesadas de fundo (análises do KOSMOS, transcrições do Hermes) cedam imediatamente à prioridade de atividades interativas (chat do HUB, escrita no AETHER). Centraliza lançamentos, perfis de energia e coordenação de recursos numa "Consola de Alquimista" — eliminando o atrito técnico e mantendo a ordem sistêmica do ecossistema.
 
 ## ONDE PARAMOS
+> Itens processados e organizados nas seções **PENDÊNCIAS — AKASHA / KOSMOS / AETHER / ECOSSISTEMA** ao final deste arquivo.
+> Esta seção mantida como rascunho/referência de contexto.
+
 Não implemente nada do que vou pedir em seguida. Faça pesquisas necessárias e acrescente os passos necessários ao TODO respectivo.
 - AKASHA: há alguma forma de priorizar resultados de sites e artigos acadêmicos e blogs? Talvez criar uma lista de "favoritos".
 - AKASHA: quero também uma forma melhor de baixar/arquivar sites em md. Preciso que inclua mais sites, como o medium e SUbstack. O Medium da erro mesmo quando consigo acessar gratuitamente. Também quero que seja possível piorizar certos sites nas buscas mesmo sem clawlea-los.
@@ -335,12 +338,6 @@ permite adicionar `extra_dirs` para indexação adicional.
   "Configuração salva. Reinicie cada app para aplicar os novos caminhos."
   (mesmo padrão do `syncMsg` já existente para o sync_root)
 
-#### KOSMOS — Botão "Resumo IA" sempre oculto em janelas normais
-- Bug: `_summarize_btn` está em `_toolbar_row2`, que só fica visível quando
-  a janela é mais estreita que 950px. Nunca aparece em tela cheia.
-- [ ] `KOSMOS/app/ui/views/reader_view.py` — mover `_summarize_btn` para `_toolbar_row1`
-  (sempre visível) e controlar visibilidade apenas via `ai_enabled`
-
 #### KOSMOS — Stats travando e fechando o app
 - Bug: `_reload_charts()` roda na thread principal fazendo k-means (numpy)
   + queries + matplotlib, bloqueando o Qt event loop. Windows marca como "não respondendo".
@@ -525,10 +522,10 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 
 ---
 
-## FASE 2 — App Hub (desktop → Android)
-> Novo programa. Stack: Tauri 2 + React + TypeScript (mesma do AETHER).
-> Read-only por padrão — HUB lê dados dos outros apps sem substituir os editores primários.
-> Cada sub-fase entrega algo funcional e independente antes de avançar.
+## FASE 2 — App Hub (dashboard e painel de controle)
+> HUB como dashboard central do ecossistema: lança apps, centraliza configuração, visualiza dados de todos os outros programas e hospeda o LOGOS (proxy de LLM).
+> Stack: Tauri 2 + React + TypeScript. Read-only por padrão nos módulos de visualização — não substitui os editores primários.
+> Módulos Android originalmente planejados aqui foram movidos para replanejamento separado (ver FASE 3).
 
 ### 2.1 — Fundação + Tela de Configuração
 - [x] Criar projeto Tauri 2 em `program files/HUB/`
@@ -604,7 +601,9 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 ---
 
 ## FASE 3 — Android (APK)
-> Hub roda no tablet. Requer Fase 2 completa.
+> ⚠️ **SUSPENSA PARA REPLANEJAMENTO.** O HUB passou a ter papel de LOGOS (orquestrador de IA), mudando seu foco principal.
+> A necessidade de acesso ao ecossistema no Android continua existindo, mas a abordagem precisa ser repensada
+> — provavelmente um app separado ou solução diferente do HUB. Itens abaixo mantidos como referência histórica.
 
 ### 3.1 — Build Android do hub
 - [ ] Configurar ambiente Tauri Android:
@@ -691,5 +690,126 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
   Fase 1: ✅ Concluída — 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 1.9 concluídas
             ⚠️  Item pendente: 1.2 — verificar botão "Arquivar" no KOSMOS
   Fase 2: ✅ Concluída — 2.1, 2.2, 2.3, 2.4, 2.5 e 2.6 concluídas
-  Fase 3: não iniciada
+  Fase 3: ⚠️ suspensa — HUB agora é LOGOS; acesso Android a repensar separadamente
   Fase 4: não iniciada
+
+---
+
+## PENDÊNCIAS — AKASHA
+
+### Bug: porta errada no iniciar.bat/sh
+- [ ] `iniciar.bat` / `iniciar.sh` — corrigir porta: uvicorn sobe em 7071 mas o script abre `http://localhost:7070`
+
+### Busca: priorização e segunda coluna
+- [ ] Definir 3 níveis de prioridade nos resultados de busca:
+  - P1: resultados locais (arquivos indexados, biblioteca, sites crawleados)
+  - P2: domínios favoritos/prioritários (sem precisar crawlear)
+  - P3: resultados web gerais
+- [ ] Criar segunda coluna (ou painel lateral) para exibir resultados locais separados dos web
+- [ ] Criar lista de "domínios favoritos" — boosting no ranking sem crawling obrigatório
+  - UI: página de gerenciamento (adicionar/remover domínio + peso de prioridade)
+  - Backend: tabela ou campo `priority_score` para os domínios
+
+### Extração: Medium e Substack
+- [ ] Pesquisar alternativas de scraping para Medium (falha mesmo em artigos gratuitos)
+  — opções: trafilatura com configs avançadas, readability-lxml, puppeteer headless
+  — salvar achados em `AKASHA/pesquisa.txt` antes de implementar (obrigatório per CLAUDE.md)
+- [ ] Pesquisar e corrigir extração do Substack (padrão HTML diferente do Medium)
+
+### Busca de arquivos públicos por formato
+- [ ] Adicionar opção de pesquisar arquivos públicos (PDF, epub, etc.) na busca web
+  — usar operadores de busca (`filetype:pdf site:...`) via engine configurada
+  — exibir opção de download direto quando o arquivo for acessível publicamente
+
+---
+
+## PENDÊNCIAS — KOSMOS
+
+### Bug: scraping do Medium falha
+- [ ] Pesquisar alternativas ao scraping do Medium
+  — criar `KOSMOS/pesquisa.txt` com achados antes de implementar (obrigatório per CLAUDE.md)
+  — coordenar com solução do AKASHA (mesma causa, pode compartilhar fix via `ecosystem_scraper.py`)
+
+### Tags geradas por IA nos cards do feed
+- [ ] Exibir tags geradas pela análise de IA diretamente nos cards do feed
+  — apenas tags previamente aprovadas/selecionadas pelo usuário
+- [ ] Estatística de tags: exibir na view de stats as tags mais frequentes nos artigos lidos
+  — gráfico de frequência de tags por período
+
+### Pré-análise em background (requer pesquisa prévia)
+- [ ] Criar `KOSMOS/pesquisa.txt` — pesquisar otimizações para o pipeline de análise (obrigatório per CLAUDE.md)
+  — verificar quando e como a análise é disparada: atualmente apenas ao abrir o artigo
+  — objetivo: pré-análise ao receber novos artigos (clickbait, tags, sentimento, relevância, 5Ws)
+  — investigar causas da lentidão (tempo de início + tempo de conclusão)
+- [ ] Após pesquisa: implementar pré-análise em background para artigos recém-recebidos
+- [ ] Incluir análise dos 5Ws na pré-análise
+
+### Estatísticas expandidas
+- [ ] Ampliar gráficos de estatísticas com detalhamento dos 5Ws
+  — mais granularidade, mais gráficos por período e por fonte
+
+### Status de análise visível ao abrir artigo
+- [ ] Criar indicador de status da análise ao abrir qualquer artigo
+  — estados: "analisando…", "análise concluída", "erro na análise", "não analisado"
+  — atualmente o indicador só aparece ao arquivar; deve ser independente dessa ação
+
+### Verificação de sincronização
+- [ ] Verificar se lista de fontes e artigos baixados está sendo salva na pasta compartilhada (Proton Drive)
+  — confirmar que `archive_path` e `data_path` apontam para `sync_root/kosmos/`
+
+### Marcação de problemas em artigos
+- [ ] Criar mecanismo para marcar problemas dentro de um artigo
+  — tipos: scraping incompleto, paywall, conteúdo cortado, outros (campo livre)
+  — efeito: diminuir ranking de relevância da fonte automaticamente
+  — registrar no log para análise futura de possíveis correções
+
+---
+
+## PENDÊNCIAS — AETHER
+
+### Bug: vault_path não atualiza após mudança no HUB
+- [ ] Investigar por que o AETHER continua salvando no caminho antigo mesmo após `sync_root` ser atualizado no HUB
+  — log no startup mostra: `Vault: Some("C:\\Users\\USUARIO\\Documents\\p\\My files\\backup\\notebook\\02_Areas\\escrita")`
+  — verificar `AETHER/src-tauri/src/lib.rs`: se a leitura do ecosystem.json acontece antes ou depois da gravação do vault_path local
+  — verificar `AETHER/src-tauri/src/ecosystem.rs`: se `read_ecosystem` está lendo o arquivo atualizado
+- [ ] Adicionar opção de configurar `vault_path` dentro do próprio AETHER (sem depender exclusivamente do HUB)
+
+---
+
+## PENDÊNCIAS — ECOSSISTEMA / LOGOS
+
+> Ver notas de design detalhadas em `## ONDE PARAMOS → LOGOS` neste arquivo.
+
+### LOGOS: proxy central de LLM (integrado ao HUB)
+- [ ] Decidir arquitetura final: LOGOS como parte do backend Rust do HUB vs. serviço separado
+  — recomendado: integrado ao HUB (evita ter mais um processo rodando; HUB já é o maestro)
+- [ ] Definir protocolo de ticket: `POST /request_ticket { app, priority, estimated_vram }` → 201 ou 429
+- [ ] Implementar fila de prioridades no HUB:
+  - P1 (crítica): chat interativo HUB + escrita ativa no AETHER
+  - P2 (importante): buscas RAG no Mnemosyne
+  - P3 (background): pré-análise KOSMOS + transcrições Hermes
+- [ ] Hardware Guard: monitorar VRAM da RX 6600
+  — Linux/CachyOS: `rocm-smi`
+  — Windows: `pyadl` ou consultas ao driver AMD via `sysinfo` crate
+  — pausar tarefas P3 quando VRAM > 85%; injetar `num_gpu`/`num_ctx` menores em P3
+- [ ] Cancelamento gracioso: enviar `keep_alive: 0` ao Ollama para liberar VRAM quando P1 chegar
+- [ ] Definir failsafe: comportamento dos apps quando HUB/LOGOS não estiver rodando
+  — opção A: apps "travam" esperando o maestro (mais seguro)
+  — opção B: modo emergência — falam direto com Ollama com configurações mínimas conservadoras
+
+### Gerenciamento de LLM simultâneo (Mnemosyne + KOSMOS)
+- [ ] Investigar comportamento atual quando os dois apps fazem chamadas simultâneas ao Ollama
+  — risco: VRAM saturada → travamento no Windows 10 (8 GB RAM, GPU integrada)
+- [ ] Solução de curto prazo (pré-LOGOS): semáforo/lock global no `ecosystem_client.py` para serializar chamadas
+
+### AKASHA como broker unificado de informação
+- [ ] Planejar API de "Mapa de Contexto" no AKASHA:
+  — dado um termo, retornar resultados cruzados: Mnemosyne (RAG) + KOSMOS (artigos) + Hermes (transcrições) + AETHER (notas)
+- [ ] HUB consumir essa API num botão de busca global cross-app
+
+### Migração Rust/PyO3 para indexação (longo prazo)
+- [ ] Avaliar substituição do indexador Python do AKASHA por módulo Rust via PyO3
+  — tantivy como motor FTS (alternativa ao SQLite FTS5, muito mais rápido em escala)
+  — rayon para processamento paralelo (sem GIL)
+  — walkdir para traversal eficiente do filesystem
+  — prioridade: baixa — reavaliar quando o volume de dados justificar

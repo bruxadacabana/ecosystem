@@ -44,6 +44,31 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 
 ---
 
+## Memória entre máquinas
+
+O Claude Code mantém memória local em `~/.claude/projects/.../memory/`. Essa memória **não é sincronizada** entre o computador de trabalho (Windows 10) e o computador principal (CachyOS) — cada instância tem sua própria memória local.
+
+**Regra obrigatória:** toda vez que uma informação for salva ou atualizada na memória local, o mesmo conteúdo deve ser registrado no `CLAUDE.md` (este arquivo), que é versionado no repositório e sincronizado via Proton Drive entre as máquinas.
+
+Isso garante que ambas as instâncias do Claude Code estejam na mesma página sobre contexto do projeto, preferências da usuária e decisões de arquitetura.
+
+---
+
+## Contexto do projeto
+
+### HUB / LOGOS
+
+O HUB é o **dashboard e painel de controle do ecossistema**: lança apps, centraliza configuração, visualiza dados de todos os programas e hospeda o **LOGOS** (proxy inteligente de LLM).
+
+O LOGOS gerencia prioridades de execução de IA:
+- **P1 (crítica):** chat interativo do HUB + escrita ativa no AETHER
+- **P2 (importante):** buscas RAG no Mnemosyne
+- **P3 (background):** pré-análise KOSMOS + transcrições Hermes
+
+Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é** um app Android — a Fase 3 (Android APK) está suspensa para replanejamento.
+
+---
+
 ## Workflow
 
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado (sempre acrescentar itens que não constam nele antes de começar a implementação e marcar como concluido após)
