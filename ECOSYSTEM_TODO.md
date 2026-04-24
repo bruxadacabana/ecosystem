@@ -813,3 +813,62 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
   — rayon para processamento paralelo (sem GIL)
   — walkdir para traversal eficiente do filesystem
   — prioridade: baixa — reavaliar quando o volume de dados justificar
+
+---
+
+## PENDÊNCIAS — HUB (dashboard e painel de controle)
+
+### Controle de recursos — extensão do LOGOS
+
+- [ ] Painel de VRAM em tempo real + fila de prioridades visível
+  — mostrar o que está rodando agora em P1/P2/P3 com estimativa de VRAM ocupada
+- [ ] Botão "Silêncio" — pausa instantânea de todas as tarefas P3 para liberar GPU
+  — útil ao iniciar escrita no AETHER ou chat no HUB
+- [ ] Painel de gerenciamento do Ollama:
+  — listar modelos instalados com tamanho e estado (carregado/descarregado)
+  — ver qual app está usando qual modelo no momento
+  — forçar `keep_alive: 0` para liberar VRAM manualmente
+- [ ] Perfis de workflow com um clique:
+  — "Modo Escrita": AETHER P1, tudo mais P3; silenciar notificações de background
+  — "Modo Estudo": KOSMOS + Mnemosyne P1, AETHER P2
+  — "Modo Consumo": KOSMOS P1, Hermes permitido, Mnemosyne background
+  — perfil altera automaticamente as prioridades do LOGOS
+
+### Feed de atividade unificado
+
+- [ ] Painel mostrando eventos recentes de todos os apps em ordem cronológica:
+  — KOSMOS: artigos baixados, análises concluídas, erros de scraping
+  — Hermes: transcrições iniciadas / concluídas
+  — Mnemosyne: indexações e re-indexações
+  — AETHER: projetos/capítulos salvos
+  — AKASHA: arquivamentos, crawls concluídos
+- [ ] Filtro por app e por tipo de evento (sucesso / erro / info)
+- [ ] Implementação: cada app escreve eventos num arquivo de log estruturado (JSON Lines)
+  em `{sync_root}/{app}/activity.jsonl`; HUB lê e exibe em polling leve
+
+### Busca global via AKASHA (Mapa de Contexto)
+
+- [ ] Campo de busca no HUB que consulta o AKASHA e retorna resultados cruzados de todas as fontes:
+  — Mnemosyne (RAG semântico), KOSMOS (artigos), Hermes (transcrições), AETHER (notas/capítulos)
+- [ ] Exibir resultados agrupados por fonte com snippet de contexto
+- [ ] Depende de: AKASHA implementar API de "Mapa de Contexto" (ver PENDÊNCIAS — ECOSSISTEMA)
+
+### Quick capture / inbox
+
+- [ ] Campo de captura rápida acessível sem abrir nenhum app específico
+  — roteamento automático por tipo de conteúdo:
+    - URL de vídeo (youtube.com, etc.) → dispara Hermes
+    - URL genérica → envia para AKASHA arquivar
+    - Texto livre → cria nota rápida no OGMA
+  — feedback visual confirmando para onde o conteúdo foi roteado
+
+### Estatísticas cross-app ("diário de atividade polimática")
+
+- [ ] Painel de métricas combinadas por período (dia / semana / mês):
+  — artigos lidos (KOSMOS)
+  — palavras escritas / sessões de escrita (AETHER)
+  — documentos indexados (Mnemosyne)
+  — vídeos transcritos e duração total (Hermes)
+  — páginas arquivadas (AKASHA)
+- [ ] Visualização estilo "mapa de calor" (tipo GitHub contributions) mostrando dias de atividade
+- [ ] Implementação: agregar dados dos logs de atividade de cada app (activity.jsonl)
