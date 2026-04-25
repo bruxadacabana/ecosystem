@@ -256,20 +256,25 @@ async fn vram_usage(client: &Client, ollama_url: &str) -> (Option<u64>, Option<f
     (Some(used_mb), pct)
 }
 
-/// Lê a memória VRAM total da GPU via sysfs (Linux/AMD) ou via configuração.
-/// Retorna None em plataformas sem sysfs ou sem GPU discreta.
+/// Lê a memória VRAM total da GPU via sysfs (Linux/AMD).
+/// Itera todos os cards e retorna o maior valor — garante que a GPU discreta
+/// (RX 6600, card1+) seja usada em vez da integrada (card0, Vega/UMA ~2-3 GB).
 fn total_vram_mb() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
-        for i in 0..4u8 {
+        let mut max_mb: Option<u64> = None;
+        for i in 0..8u8 {
             let path = format!("/sys/class/drm/card{i}/device/mem_info_vram_total");
             if let Ok(s) = std::fs::read_to_string(&path) {
                 if let Ok(bytes) = s.trim().parse::<u64>() {
-                    return Some(bytes / 1_000_000);
+                    let mb = bytes / 1_048_576;
+                    max_mb = Some(max_mb.map_or(mb, |prev| prev.max(mb)));
                 }
             }
         }
+        return max_mb;
     }
+    #[allow(unreachable_code)]
     None
 }
 
