@@ -35,7 +35,7 @@ _CONFIG_PATH = _resolve_config_path()
 _LEGACY_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
 
 _DEFAULTS: dict = {
-    "llm_model": "",
+    "llm_model": "qwen2.5:7b",    # RAG: qualidade adequada para síntese de documentos longos
     "embed_model": "",
     "chunk_size": 1800,
     "chunk_overlap": 250,

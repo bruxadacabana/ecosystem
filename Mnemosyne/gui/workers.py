@@ -530,7 +530,7 @@ class AskWorker(QThread):
             return
 
         try:
-            llm = ChatOllama(model=self.config.llm_model, temperature=0)
+            llm = ChatOllama(model=self.config.llm_model, temperature=0, num_ctx=8192)
             full = ""
             for chunk in llm.stream(messages):
                 if self.isInterruptionRequested():

@@ -87,16 +87,22 @@ class AiBridge:
     def generate(
         self,
         prompt:      str,
-        system:      str  = "",
-        json_format: bool = False,
-        timeout:     int  = 120,
+        system:      str        = "",
+        json_format: bool       = False,
+        json_schema: dict | None = None,
+        num_ctx:     int  | None = None,
+        priority:    int        = 3,
+        timeout:     int        = 120,
     ) -> str:
         """Gera texto completo (sem streaming).
 
         Args:
             prompt:      Prompt do usuário.
             system:      Instrução de sistema opcional.
-            json_format: Se True, força saída JSON válido via ``format: "json"``.
+            json_format: Se True, força saída JSON simples via ``format: "json"``.
+            json_schema: JSON Schema completo para constrained decoding (sobrepõe json_format).
+            num_ctx:     Janela de contexto explícita (necessário para KV prefix cache).
+            priority:    Prioridade LOGOS (1=P1 interativo, 2=P2, 3=P3 background).
             timeout:     Timeout em segundos.
 
         Returns:
@@ -116,15 +122,19 @@ class AiBridge:
         messages.append({"role": "user", "content": prompt})
 
         options: dict = {}
-        if json_format:
+        if json_schema is not None:
+            options["format"] = json_schema
+        elif json_format:
             options["format"] = "json"
+        if num_ctx is not None:
+            options["options"] = {"num_ctx": num_ctx}
 
         try:
             result = _request_llm(
                 messages,
                 app="kosmos",
                 model=self._gen_model,
-                priority=3,
+                priority=priority,
                 stream=False,
                 ollama_base=self._endpoint,
                 **options,

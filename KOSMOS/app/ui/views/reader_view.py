@@ -224,9 +224,10 @@ class _SummarizeWorker(QThread):
 
 
 class _AnalyzeWorker(QThread):
-    """Analisa artigo via Ollama em um único call JSON.
+    """Analisa artigo via Ollama em um único call JSON com constrained decoding.
 
     Retorna: tags, sentiment (-1.0→+1.0), clickbait (0.0→1.0), five_ws e entities.
+    Usa JSON Schema completo (XGrammar via Ollama) e num_ctx fixo para KV prefix cache.
     """
 
     done   = pyqtSignal(dict)
@@ -236,20 +237,58 @@ class _AnalyzeWorker(QThread):
         'Você é uma API JSON. Responda APENAS com JSON válido. '
         'O primeiro caractere deve ser "{".'
     )
-    _SCHEMA = (
-        '{"tags": ["tag1", "tag2"], '
-        '"sentiment": 0.0, '
-        '"clickbait": 0.0, '
-        '"five_ws": {"who": "...", "what": "...", "when": "...", "where": "...", "why": "..."}, '
-        '"entities": {"people": ["nome1"], "orgs": ["org1"], "places": ["lugar1"]}}'
-    )
 
-    def __init__(self, endpoint: str, gen_model: str, title: str, content: str) -> None:
+    # JSON Schema completo para constrained decoding — garante campos obrigatórios
+    # sem fallback de parsing. Overhead sub-milissegundo via XGrammar no Ollama.
+    _JSON_SCHEMA: dict = {
+        "type": "object",
+        "properties": {
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 3,
+                "maxItems": 5,
+            },
+            "sentiment": {"type": "number", "minimum": -1.0, "maximum": 1.0},
+            "clickbait": {"type": "number", "minimum": 0.0,  "maximum": 1.0},
+            "five_ws": {
+                "type": "object",
+                "properties": {
+                    "who":   {"type": "string"},
+                    "what":  {"type": "string"},
+                    "when":  {"type": "string"},
+                    "where": {"type": "string"},
+                    "why":   {"type": "string"},
+                },
+                "required": ["who", "what", "when", "where", "why"],
+            },
+            "entities": {
+                "type": "object",
+                "properties": {
+                    "people": {"type": "array", "items": {"type": "string"}},
+                    "orgs":   {"type": "array", "items": {"type": "string"}},
+                    "places": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["people", "orgs", "places"],
+            },
+        },
+        "required": ["tags", "sentiment", "clickbait", "five_ws", "entities"],
+    }
+
+    def __init__(
+        self,
+        endpoint:  str,
+        gen_model: str,
+        title:     str,
+        content:   str,
+        num_ctx:   int = 4096,
+    ) -> None:
         super().__init__()
         self._endpoint  = endpoint
         self._gen_model = gen_model
         self._title     = title
         self._content   = content
+        self._num_ctx   = num_ctx
 
     def run(self) -> None:
         try:
@@ -257,19 +296,23 @@ class _AnalyzeWorker(QThread):
             from app.core.ai_bridge import AiBridge
             bridge = AiBridge(endpoint=self._endpoint, gen_model=self._gen_model)
             prompt = (
-                f"Analise este artigo e responda com JSON.\n\n"
+                f"Analise este artigo.\n\n"
                 f"Título: {self._title}\n\n"
                 f"{self._content}\n\n"
-                f"Responda com este JSON:\n{self._SCHEMA}\n\n"
                 f"Regras:\n"
                 f"- tags: 3 a 5 palavras-chave em letras minúsculas, no idioma do artigo\n"
                 f"- sentiment: -1.0 (muito negativo) até +1.0 (muito positivo)\n"
                 f"- clickbait: 0.0 (sem clickbait) até 1.0 (clickbait puro)\n"
                 f"- five_ws: respostas concisas (máximo 2 frases), no idioma do artigo\n"
-                f"- entities: nomes próprios de pessoas, organizações e lugares mencionados "
+                f"- entities: nomes próprios de pessoas, organizações e lugares "
                 f"(listas vazias se não houver)"
             )
-            result = bridge.generate(prompt, system=self._SYSTEM, json_format=True)
+            result = bridge.generate(
+                prompt,
+                system=self._SYSTEM,
+                json_schema=self._JSON_SCHEMA,
+                num_ctx=self._num_ctx,
+            )
             data = _json.loads(result)
             if isinstance(data, dict):
                 self.done.emit(data)
@@ -1144,7 +1187,11 @@ class ReaderView(QWidget):
         self._tags_layout.addStretch()
 
     def _start_analyze(self) -> None:
-        """Inicia análise completa (tags, sentimento, clickbait, 5Ws) em background."""
+        """Inicia análise completa (tags, sentimento, clickbait, 5Ws) em background.
+
+        Não reanalisaa artigos já processados (background analyzer pode ter
+        feito a análise antes do usuário abrir o artigo).
+        """
         if self._article is None:
             return
         if not bool(self._config.get("ai_enabled", False)):
@@ -1153,6 +1200,14 @@ class ReaderView(QWidget):
         if not gen_model:
             return
 
+        # Pular se já analisado (background analyzer pode ter precedido)
+        if (
+            self._article.ai_sentiment is not None
+            and self._article.ai_clickbait is not None
+        ):
+            return
+
+        num_ctx  = int(self._config.get("ai_num_ctx", 4096))
         endpoint = self._config.get("ai_endpoint", "http://localhost:11434")
         raw = self._article.content_full or self._article.summary or ""
         try:
@@ -1160,7 +1215,7 @@ class ReaderView(QWidget):
             content = BeautifulSoup(raw, "html.parser").get_text(" ", strip=True)
         except Exception:
             content = re.sub(r"<[^>]+>", " ", raw)
-        content = content[:3000]
+        content = content[:num_ctx * 3]  # ~3 chars/token
 
         if self._analyze_worker and self._analyze_worker.isRunning():
             self._analyze_worker.quit()
@@ -1172,6 +1227,7 @@ class ReaderView(QWidget):
             gen_model = str(gen_model),
             title     = self._article.title or "",
             content   = content,
+            num_ctx   = num_ctx,
         )
         self._analyze_worker.done.connect(self._on_analyze_done)
         self._analyze_worker.failed.connect(self._on_analyze_failed)

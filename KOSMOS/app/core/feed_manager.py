@@ -611,6 +611,36 @@ class FeedManager:
         finally:
             session.close()
 
+    def get_unanalyzed_article_ids(self, limit: int = 50) -> list[int]:
+        """Retorna IDs de artigos sem análise de IA (ai_sentiment IS NULL)."""
+        session = get_session()
+        try:
+            rows = (
+                session.query(Article.id)
+                .filter(Article.ai_sentiment.is_(None))
+                .order_by(Article.published_at.desc().nullslast(), Article.fetched_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [r.id for r in rows]
+        finally:
+            session.close()
+
+    def save_ai_tags_json(self, article_id: int, tags: list[str]) -> None:
+        """Persiste tags geradas por IA no campo ai_tags (JSON) do artigo."""
+        import json as _j
+        session = get_session()
+        try:
+            article = session.get(Article, article_id)
+            if article:
+                article.ai_tags = _j.dumps(tags, ensure_ascii=False)
+                session.commit()
+        except SQLAlchemyError as exc:
+            session.rollback()
+            log.error("Erro ao salvar ai_tags do artigo %d: %s", article_id, exc)
+        finally:
+            session.close()
+
     def save_ai_analysis(
         self,
         article_id: int,

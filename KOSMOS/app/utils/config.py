@@ -23,6 +23,9 @@ DEFAULTS: dict[str, Any] = {
     "reddit_client_secret":     "",
     "reddit_user_agent":        "KOSMOS/1.0",
     "http_port":                8965,
+    # IA — modelos recomendados pelo LOGOS para o KOSMOS
+    "ai_gen_model":             "gemma2:2b",   # análise: ~2-3× mais rápido que 7B
+    "ai_num_ctx":               4096,           # necessário para KV prefix cache consistente
 }
 
 

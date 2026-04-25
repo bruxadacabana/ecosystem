@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from app.utils.config import Config
     from app.theme.theme_manager import ThemeManager
 
+from app.core.background_analyzer import BackgroundAnalyzer
+
 log = logging.getLogger("kosmos.ui")
 
 
@@ -50,6 +52,14 @@ class MainWindow(QMainWindow):
 
         # Migrar artigos já salvos que ainda não têm .md em data/archive/
         self._migrate_saved_to_archive()
+
+        # Iniciar pré-análise em background
+        self._bg_analyzer = BackgroundAnalyzer(self._fm, self._config)
+        self._bg_analyzer.start()
+        # Enfileira artigos sem análise que já existem no banco
+        unanalyzed = self._fm.get_unanalyzed_article_ids(limit=100)
+        if unanalyzed:
+            self._bg_analyzer.enqueue_background(unanalyzed)
 
     def _migrate_saved_to_archive(self) -> None:
         """Exporta artigos com is_saved=1 que ainda não têm .md em data/archive/."""
@@ -348,6 +358,12 @@ class MainWindow(QMainWindow):
         ):
             self._feed_list.refresh()
 
+        # Enfileirar novos artigos para pré-análise em background
+        if new_count > 0:
+            new_ids = self._fm.get_unanalyzed_article_ids(limit=new_count + 5)
+            if new_ids:
+                self._bg_analyzer.enqueue_background(new_ids)
+
     def _on_update_error(self, feed_id: int, message: str) -> None:
         log.warning("Erro ao atualizar feed %d: %s", feed_id, message)
 
@@ -357,4 +373,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self._updater.stop()
+        self._bg_analyzer.stop()
+        self._bg_analyzer.wait(2000)
         super().closeEvent(event)
