@@ -1,3 +1,43 @@
+{% macro paper_card(r) %}
+<li class="card result-card">
+  <div class="result-header">
+    <span class="badge badge-paper">PAPER</span>
+    {% if r.has_pdf %}<span class="badge badge-paper-pdf">PDF disponível</span>{% endif %}
+    {% if r.year %}<time class="result-date">{{ r.year }}</time>{% endif %}
+  </div>
+  <h2 class="result-title">
+    <a href="{{ r.url }}" target="_blank" rel="noopener noreferrer" class="result-link">{{ r.title }}</a>
+  </h2>
+  {% if r.authors %}
+    <p class="result-authors"><em>{{ r.authors }}</em></p>
+  {% endif %}
+  {% if r.snippet %}
+    <p class="result-snippet">{{ r.snippet }}</p>
+  {% endif %}
+  <div class="result-footer">
+    <span class="result-url">
+      {% if r.doi %}DOI: {{ r.doi }}{% elif r.arxiv_id %}arXiv: {{ r.arxiv_id }}{% else %}{{ r.url }}{% endif %}
+    </span>
+    <div class="result-actions">
+      {% if r.pdf_url %}
+      <a href="{{ r.pdf_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">&#x21A7; PDF</a>
+      {% endif %}
+      {% if r.has_pdf %}
+      <button
+        class="btn btn-ghost btn-sm"
+        hx-post="/papers/download"
+        hx-ext="json-enc"
+        hx-vals='{"title": "{{ r.title | replace('"', '&quot;') }}", "source_url": "{{ r.url }}", "arxiv_id": "{{ r.arxiv_id or '' }}", "doi": "{{ r.doi or '' }}", "pdf_url": "{{ r.pdf_url or '' }}", "authors": "{{ r.authors | replace('"', '&quot;') }}", "year": {{ r.year or 'null' }} }'
+        hx-swap="none"
+        hx-on::after-request="showToast(event.detail.successful ? 'Paper arquivado!' : 'Erro: ' + event.detail.xhr.responseText, event.detail.successful ? 'success' : 'error')"
+        title="Baixar PDF e arquivar"
+      >&#x25A4; arquivar</button>
+      {% endif %}
+    </div>
+  </div>
+</li>
+{% endmacro %}
+
 {% macro result_card(r) %}
 <li class="card result-card">
   <div class="result-header">

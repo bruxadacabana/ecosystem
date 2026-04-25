@@ -138,6 +138,66 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
     )
 
 
+async def archive_pdf(
+    *,
+    content_md:  str,
+    title:       str,
+    authors:     str,
+    year:        int | None,
+    doi:         str | None,
+    arxiv_id:    str | None,
+    source_url:  str,
+    archive_path: str,
+) -> Path:
+    """
+    Salva Markdown extraído de um PDF em:
+        {archive_path}/Papers/{YYYY-MM-DD}_{slug}.md
+
+    Levanta:
+        OSError — falha ao gravar no disco.
+    """
+    now      = datetime.now()
+    date_str = now.strftime("%Y-%m-%d %H:%M")
+
+    frontmatter = (
+        f'---\n'
+        f'title: "{_yaml_str(title)}"\n'
+        f'source: "paper"\n'
+        f'date: {date_str}\n'
+        f'author: "{_yaml_str(authors)}"\n'
+        f'url: {source_url}\n'
+        f'language: \n'
+        f'word_count: {len(content_md.split())}\n'
+        f'type: paper\n'
+    )
+    if doi:
+        frontmatter += f'doi: "{_yaml_str(doi)}"\n'
+    if arxiv_id:
+        frontmatter += f'arxiv_id: {arxiv_id}\n'
+    if year:
+        frontmatter += f'year: {year}\n'
+    frontmatter += 'tags: []\nnotes: ""\n---\n\n'
+
+    body = frontmatter + f'# {title}\n\n'
+    if authors:
+        body += f'*{authors}*\n\n'
+    body += content_md
+
+    dest_dir = Path(archive_path) / "Papers"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    date_prefix = now.strftime("%Y-%m-%d")
+    slug        = _slugify(title)
+    dest_path   = dest_dir / f"{date_prefix}_{slug}.md"
+    counter = 1
+    while dest_path.exists():
+        dest_path = dest_dir / f"{date_prefix}_{slug}_{counter}.md"
+        counter += 1
+
+    dest_path.write_text(body, encoding="utf-8")
+    return dest_path
+
+
 async def archive_url(
     url: str,
     archive_path: str,

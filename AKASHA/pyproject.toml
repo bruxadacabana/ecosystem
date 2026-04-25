@@ -18,6 +18,8 @@ dependencies = [
     "markdownify>=0.13",
     "beautifulsoup4>=4.12",
     "markdown>=3.7",
+    "aioarxiv>=0.2",
+    "pymupdf4llm>=0.0.17",
 ]
 
 [build-system]
