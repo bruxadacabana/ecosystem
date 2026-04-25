@@ -84,18 +84,17 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 > Entrega: baixar arquivos genéricos com progresso em tempo real via SSE.
 
-- [ ] `services/downloader.py` — download async via `httpx` com streaming; calcula progresso
-      por `Content-Length`; salva em diretório configurável; retorna `DownloadInfo` (Pydantic)
-- [ ] `routers/downloads.py` — `POST /download` (body: `{url, dest_dir}`): inicia download
-      em background task, retorna `download_id`
-- [ ] `routers/downloads.py` — `GET /downloads/progress/{id}` (SSE): emite
-      `data: {percent, speed_kbps, eta_s, status}` até concluir ou falhar
-- [ ] `routers/downloads.py` — `GET /downloads` — fila ativa + histórico (paginado, 20/página)
-- [ ] Migration: tabela `downloads` — id, url, filename, dest_dir, size_bytes,
-      downloaded_bytes, status (`queued`/`active`/`done`/`error`), started_at, finished_at
-- [ ] `templates/downloads.html` — aba Downloads: barras de progresso com HTMX SSE
-      (`hx-ext="sse"`), histórico colapsável; botão cancelar
-- [ ] Botão "↓ Baixar" nos cards de resultado de busca (HTMX `hx-post="/download"`)
+- [x] `services/downloader.py` — download async via `httpx` com streaming; calcula progresso
+      por `Content-Length`; salva em diretório configurável
+- [x] `routers/downloads.py` — `POST /download` (body: `{url, dest_dir}`): inicia download
+      em background task; `GET /downloads/active` fragmento HTMX; `POST /downloads/{id}/cancel`
+- [x] `routers/downloads.py` — `GET /downloads/progress/{id}` (SSE): emite fragmento HTML
+      de progresso a cada 0.6s até concluir ou falhar
+- [x] `routers/downloads.py` — `GET /downloads` — ativos (polling 3s) + histórico paginado
+- [x] Migration: tabela `downloads` já existia no schema; helpers adicionados em `database.py`
+- [x] `templates/downloads.html` + `_downloads_active.html` — barras de progresso SSE,
+      formulário de novo download, histórico paginado, botão cancelar
+- [x] Botão "↓ baixar" nos cards de resultado de busca `WEB` (HTMX `hx-post="/download"`)
 
 ---
 

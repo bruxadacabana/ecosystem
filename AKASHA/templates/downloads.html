@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Downloads — AKASHA{% endblock %}
+
+{% block head %}
+<script src="https://unpkg.com/htmx-ext-sse@2.2.1/sse.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Downloads</h1>
+</div>
+
+<!-- ── Formulário de novo download ─────────────────────────────── -->
+<section class="card dl-form-card">
+  <form
+    hx-post="/download"
+    hx-ext="json-enc"
+    hx-swap="none"
+    hx-on::after-request="showToast(event.detail.successful ? 'Download iniciado!' : 'Erro ao iniciar download', event.detail.successful ? 'success' : 'error'); this.reset();"
+    class="dl-form"
+  >
+    <input
+      type="url"
+      name="url"
+      class="input dl-url-input"
+      placeholder="https://exemplo.com/arquivo.pdf"
+      required
+      autocomplete="off"
+    >
+    <input
+      type="text"
+      name="dest_dir"
+      class="input dl-dest-input"
+      placeholder="Destino (padrão: ~/Downloads)"
+      autocomplete="off"
+    >
+    <button type="submit" class="btn btn-primary">&#x21A7; Baixar</button>
+  </form>
+</section>
+
+<!-- ── Downloads ativos (polling automático) ───────────────────── -->
+{% include "_downloads_active.html" %}
+
+<!-- ── Histórico ───────────────────────────────────────────────── -->
+{% if downloads %}
+<section class="dl-history">
+  <h2 class="section-title">Histórico</h2>
+  <table class="dl-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Arquivo</th>
+        <th>Tamanho</th>
+        <th>Status</th>
+        <th>Concluído</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for d in downloads %}
+      <tr>
+        <td class="dl-id">{{ d.id }}</td>
+        <td class="dl-cell-filename">
+          {% if d.filename %}
+            <span class="dl-filename">{{ d.filename }}</span>
+          {% endif %}
+          <span class="dl-url dl-url-small">{{ d.url }}</span>
+        </td>
+        <td class="dl-cell-size">{{ d.size_fmt }}</td>
+        <td>
+          <span class="badge badge-{{ d.status }}">{{ d.status }}</span>
+          {% if d.status == 'error' and d.error_msg %}
+            <span class="dl-error-msg" title="{{ d.error_msg }}">{{ d.error_msg | truncate(40) }}</span>
+          {% endif %}
+        </td>
+        <td class="dl-cell-date">{{ d.finished_at or d.created_at or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Paginação -->
+  {% if total_pages > 1 %}
+  <nav class="pagination">
+    {% if page > 1 %}
+      <a href="/downloads?page={{ page - 1 }}" class="btn btn-ghost btn-sm">&#8592; anterior</a>
+    {% endif %}
+    <span class="pagination-info">{{ page }} / {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a href="/downloads?page={{ page + 1 }}" class="btn btn-ghost btn-sm">próxima &#8594;</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% else %}
+<p class="empty-state">Nenhum download ainda.</p>
+{% endif %}
+
+{% endblock %}

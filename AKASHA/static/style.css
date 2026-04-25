@@ -854,3 +854,157 @@ a:hover { opacity: 0.75; }
     letter-spacing: 0.10em;
   }
 }
+
+/* ============================================================
+   Downloads
+   ============================================================ */
+
+.dl-form-card {
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+
+.dl-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dl-url-input  { flex: 3; min-width: 200px; }
+.dl-dest-input { flex: 2; min-width: 140px; }
+
+.dl-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dl-card {
+  padding: 12px 14px;
+}
+
+.dl-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.dl-filename {
+  flex: 1;
+  font-family: var(--font-code);
+  font-size: 0.85rem;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dl-url {
+  font-family: var(--font-code);
+  font-size: 0.72rem;
+  color: var(--ink-ghost);
+  margin: 2px 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dl-url-small {
+  display: block;
+  margin-top: 2px;
+}
+
+.dl-cancel {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Progress bar */
+.dl-progress-wrap { margin-top: 6px; }
+
+.dl-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dl-progress-track {
+  height: 6px;
+  background: var(--paper-darker);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dl-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.dl-progress-label {
+  font-family: var(--font-code);
+  font-size: 0.72rem;
+  color: var(--ink-ghost);
+}
+
+.dl-done {
+  color: var(--accent-green);
+  font-family: var(--font-code);
+  font-size: 0.82rem;
+}
+
+.dl-error {
+  color: var(--ribbon);
+  font-family: var(--font-code);
+  font-size: 0.82rem;
+}
+
+.dl-error-msg {
+  font-size: 0.72rem;
+  color: var(--ribbon-dim);
+  margin-left: 4px;
+}
+
+/* History table */
+.dl-history { margin-top: 8px; }
+
+.dl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-code);
+  font-size: 0.82rem;
+}
+
+.dl-table th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-ghost);
+  font-weight: normal;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+
+.dl-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--rule-light);
+  vertical-align: top;
+}
+
+.dl-table tr:last-child td { border-bottom: none; }
+
+.dl-id         { color: var(--ink-ghost); width: 2.5em; text-align: right; }
+.dl-cell-size  { white-space: nowrap; }
+.dl-cell-date  { white-space: nowrap; color: var(--ink-ghost); font-size: 0.72rem; }
+
+/* Badges de status de download */
+.badge-active  { background: rgba(74, 103, 65, 0.15); color: var(--accent-green); }
+.badge-queued  { background: rgba(184, 134, 11, 0.12); color: var(--accent); }
+.badge-done    { background: rgba(74, 103, 65, 0.12); color: var(--accent-green); }
+.badge-error   { background: rgba(139, 58, 42, 0.12); color: var(--ribbon); }

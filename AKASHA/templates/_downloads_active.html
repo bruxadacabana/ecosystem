@@ -1,0 +1,41 @@
+<section
+  id="active-downloads"
+  hx-get="/downloads/active"
+  hx-trigger="every 3s"
+  hx-swap="outerHTML"
+>
+{% if active_downloads %}
+  <h2 class="section-title">Em andamento</h2>
+  <ul class="dl-list">
+  {% for d in active_downloads %}
+    <li class="card dl-card" id="dl-card-{{ d.id }}">
+      <div class="dl-card-header">
+        <span class="dl-filename">{{ d.filename }}</span>
+        <span class="badge badge-{{ d.status }}">{{ d.status }}</span>
+        <button
+          class="btn btn-ghost btn-sm dl-cancel"
+          hx-post="/downloads/{{ d.id }}/cancel"
+          hx-swap="none"
+          hx-on::after-request="showToast(event.detail.successful ? 'Cancelado' : 'Erro ao cancelar', event.detail.successful ? 'info' : 'error')"
+          title="Cancelar"
+        >&#x2715;</button>
+      </div>
+      <p class="dl-url">{{ d.url }}</p>
+      <div
+        class="dl-progress-wrap"
+        hx-ext="sse"
+        sse-connect="/downloads/progress/{{ d.id }}"
+        sse-close="done"
+      >
+        <div hx-swap="innerHTML" sse-swap="progress" class="dl-progress">
+          <div class="dl-progress-track">
+            <div class="dl-progress-fill" style="width:{{ d.pct }}%"></div>
+          </div>
+          <span class="dl-progress-label">{{ d.downloaded_fmt }} / {{ d.size_fmt }} ({{ d.pct }}%)</span>
+        </div>
+      </div>
+    </li>
+  {% endfor %}
+  </ul>
+{% endif %}
+</section>

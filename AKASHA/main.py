@@ -25,6 +25,7 @@ from routers import watch_later as watch_later_router
 from routers import kosmos_bridge as kosmos_bridge_router
 from routers import history as history_router
 from routers import papers as papers_router
+from routers import downloads as downloads_router
 from services.local_search import index_local_files
 from services.crawler import crawl_pending_sites
 
@@ -96,6 +97,7 @@ app.include_router(watch_later_router.router)
 app.include_router(kosmos_bridge_router.router)
 app.include_router(history_router.router)
 app.include_router(papers_router.router)
+app.include_router(downloads_router.router)
 
 # ---------------------------------------------------------------------------
 # Rotas principais (Fase 1 — estrutura)

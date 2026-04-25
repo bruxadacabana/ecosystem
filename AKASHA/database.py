@@ -665,3 +665,93 @@ async def search_watch_later(query: str, limit: int = 20) -> list[tuple]:
         return list(rows)
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# Downloads helpers
+# ---------------------------------------------------------------------------
+
+async def create_download(url: str, filename: str = "", dest_dir: str = "") -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "INSERT INTO downloads (url, filename, dest_dir, status) VALUES (?, ?, ?, 'queued')",
+            (url, filename, dest_dir),
+        )
+        await db.commit()
+        return cursor.lastrowid or 0
+
+
+async def update_download_start(
+    download_id: int, filename: str, dest_dir: str, size_bytes: int
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """UPDATE downloads
+               SET filename = ?, dest_dir = ?, size_bytes = ?, status = 'active',
+                   started_at = datetime('now')
+               WHERE id = ?""",
+            (filename, dest_dir, size_bytes, download_id),
+        )
+        await db.commit()
+
+
+async def update_download_progress(
+    download_id: int, downloaded_bytes: int, size_bytes: int
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE downloads SET downloaded_bytes = ?, size_bytes = ? WHERE id = ?",
+            (downloaded_bytes, size_bytes, download_id),
+        )
+        await db.commit()
+
+
+async def finish_download(
+    download_id: int, filename: str, status: str, error_msg: str = ""
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """UPDATE downloads
+               SET filename = ?, status = ?, error_msg = ?, finished_at = datetime('now')
+               WHERE id = ?""",
+            (filename, status, error_msg, download_id),
+        )
+        await db.commit()
+
+
+async def get_download(download_id: int) -> tuple | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        return await (await db.execute(
+            "SELECT id, url, filename, dest_dir, size_bytes, downloaded_bytes, "
+            "status, started_at, finished_at, error_msg, created_at "
+            "FROM downloads WHERE id = ?",
+            (download_id,),
+        )).fetchone()
+
+
+async def list_downloads(page: int = 1, page_size: int = 20) -> list[tuple]:
+    offset = (page - 1) * page_size
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT id, url, filename, dest_dir, size_bytes, downloaded_bytes, "
+            "status, started_at, finished_at, error_msg, created_at "
+            "FROM downloads ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (page_size, offset),
+        )).fetchall()
+    return list(rows)
+
+
+async def count_downloads() -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute("SELECT COUNT(*) FROM downloads")).fetchone()
+    return row[0] if row else 0
+
+
+async def get_active_downloads() -> list[tuple]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT id, url, filename, dest_dir, size_bytes, downloaded_bytes, "
+            "status, started_at, finished_at, error_msg, created_at "
+            "FROM downloads WHERE status IN ('queued', 'active') ORDER BY created_at ASC",
+        )).fetchall()
+    return list(rows)
