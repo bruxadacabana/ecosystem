@@ -783,7 +783,7 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — mais granularidade, mais gráficos por período e por fonte
 
 ### Status de análise visível ao abrir artigo
-- [ ] Criar indicador de status da análise ao abrir qualquer artigo
+- [x] Criar indicador de status da análise ao abrir qualquer artigo
   — estados: "analisando…", "análise concluída", "erro na análise", "não analisado"
   — atualmente o indicador só aparece ao arquivar; deve ser independente dessa ação
 

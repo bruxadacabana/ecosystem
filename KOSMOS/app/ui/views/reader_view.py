@@ -460,6 +460,11 @@ class ReaderView(QWidget):
         self._clickbait_lbl.hide()
         ind_layout.addWidget(self._clickbait_lbl)
 
+        self._analysis_status_lbl = QLabel("")
+        self._analysis_status_lbl.setFont(self._mono_font(10))
+        self._analysis_status_lbl.hide()
+        ind_layout.addWidget(self._analysis_status_lbl)
+
         ind_layout.addStretch()
         self._indicators_row = ind_row
         self._indicators_row.hide()
@@ -900,6 +905,20 @@ class ReaderView(QWidget):
         # Indicadores IA
         self._update_meta_indicators()
 
+        # Status inicial da análise
+        ai_on     = bool(self._config.get("ai_enabled", False))
+        gen_model = self._config.get("ai_gen_model", "")
+        if not ai_on or not gen_model:
+            self._update_analysis_status("")
+        elif (
+            article.ai_sentiment is not None
+            or article.ai_5ws is not None
+            or article.ai_clickbait is not None
+        ):
+            self._update_analysis_status("done")
+        else:
+            self._update_analysis_status("not_analyzed")
+
         # Painel de citação — visível apenas quando salvo
         if article.is_saved:
             self._show_citation_panel()
@@ -1026,7 +1045,38 @@ class ReaderView(QWidget):
         else:
             self._clickbait_lbl.hide()
 
+        self._sync_indicators_row()
+
+    def _sync_indicators_row(self) -> None:
+        has_any = (
+            self._sentiment_lbl.isVisible()
+            or self._clickbait_lbl.isVisible()
+            or self._analysis_status_lbl.isVisible()
+        )
         self._indicators_row.setVisible(has_any)
+
+    def _update_analysis_status(self, state: str) -> None:
+        """Atualiza o indicador de status da análise IA na meta bar.
+
+        state: "running" | "done" | "error" | "not_analyzed" | "" (oculto)
+        """
+        lbl = self._analysis_status_lbl
+        _STATES: dict[str, tuple[str, str]] = {
+            "running":      ("⟳  analisando…",        "analysisRunning"),
+            "done":         ("✓  análise concluída",   "analysisDone"),
+            "error":        ("!  erro na análise",     "analysisError"),
+            "not_analyzed": ("○  não analisado",       "analysisNone"),
+        }
+        if state in _STATES:
+            text, obj_name = _STATES[state]
+            lbl.setText(text)
+            lbl.setObjectName(obj_name)
+            lbl.style().unpolish(lbl)
+            lbl.style().polish(lbl)
+            lbl.show()
+        else:
+            lbl.hide()
+        self._sync_indicators_row()
 
     @staticmethod
     def _estimate_reading_time(html: str) -> int:
@@ -1116,6 +1166,7 @@ class ReaderView(QWidget):
             self._analyze_worker.quit()
             self._analyze_worker.wait(300)
 
+        self._update_analysis_status("running")
         self._analyze_worker = _AnalyzeWorker(
             endpoint  = str(endpoint),
             gen_model = str(gen_model),
@@ -1123,9 +1174,7 @@ class ReaderView(QWidget):
             content   = content,
         )
         self._analyze_worker.done.connect(self._on_analyze_done)
-        self._analyze_worker.failed.connect(
-            lambda msg: log.error("_AnalyzeWorker: %s", msg)
-        )
+        self._analyze_worker.failed.connect(self._on_analyze_failed)
         self._analyze_worker.start()
 
     def _on_analyze_done(self, data: dict) -> None:
@@ -1187,7 +1236,12 @@ class ReaderView(QWidget):
                 self._5ws_status_lbl.setText("")
 
         self._update_meta_indicators()
+        self._update_analysis_status("done")
         self.analysis_done.emit()
+
+    def _on_analyze_failed(self, msg: str) -> None:
+        log.error("_AnalyzeWorker: %s", msg)
+        self._update_analysis_status("error")
 
     def _on_accept_suggested_tag(self, tag_name: str) -> None:
         if self._article is None:

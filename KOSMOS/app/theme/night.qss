@@ -417,6 +417,18 @@ QLabel#sentimentNeutral {
 QLabel#clickbaitIndicator {
     color: #C08030;
 }
+QLabel#analysisRunning {
+    color: #9A9080;
+}
+QLabel#analysisDone {
+    color: #6AAA6A;
+}
+QLabel#analysisError {
+    color: #C07070;
+}
+QLabel#analysisNone {
+    color: #6A6058;
+}
 QFrame#cardSeparator {
     background-color: #1E2433;
     border: none;
