@@ -106,7 +106,7 @@ export function SettingsView({ dark, onToggleTheme, fontSizeValue, onFontSize }:
   useEffect(() => {
     fromIpc<any>(() => db().config.get('user_location'), 'getLocation').then(r => {
       if (r.isOk() && r.value) {
-        try { setSavedLoc(JSON.parse(r.value)) } catch {}
+        try { setSavedLoc(JSON.parse(r.value?.value)) } catch {}
       }
     })
   }, [])

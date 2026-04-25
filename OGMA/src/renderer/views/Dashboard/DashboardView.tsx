@@ -2543,7 +2543,7 @@ export const DashboardView: React.FC<Props> = ({ dark, isActive, onProjectOpen, 
     if (isActive) {
       fromIpc<any>(() => db().config.get('user_location'), 'getLocation').then(r => {
         if (r.isOk() && r.value) {
-          try { setLocation(JSON.parse(r.value)) } catch {}
+          try { setLocation(JSON.parse(r.value?.value)) } catch {}
         } else {
           setLocation(null)
         }
