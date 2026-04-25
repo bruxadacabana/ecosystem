@@ -280,7 +280,7 @@ def _score(result: SearchResult, terms: list[str]) -> int:
 def rank_combined(
     results: list[SearchResult],
     query: str,
-    max_results: int = 20,
+    max_results: int = 500,
 ) -> list[SearchResult]:
     """Deduplica por URL/path e ordena por relevância de termos."""
     seen: set[str] = set()
@@ -299,7 +299,7 @@ def rank_combined(
 # Função pública
 # ---------------------------------------------------------------------------
 
-async def search_local(query: str, max_results: int = 20) -> list[SearchResult]:
+async def search_local(query: str, max_results: int = 500) -> list[SearchResult]:
     """Busca local: FTS5 + ChromaDB (opcional)."""
     fts_results = await _search_fts(query, max_results)
     chroma_results = await _search_chroma(query)

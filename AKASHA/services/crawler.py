@@ -398,7 +398,7 @@ def _sanitize_fts(query: str) -> str:
     return " ".join(cleaned.split())
 
 
-async def search_sites(query: str, max_results: int = 20) -> list:
+async def search_sites(query: str, max_results: int = 500) -> list:
     """Busca FTS5 em crawl_fts; retorna list[SearchResult] com source='SITES'."""
     from services.web_search import SearchResult
 
