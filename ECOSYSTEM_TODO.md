@@ -726,29 +726,30 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
   — fix: seletores .available-content e .post-content adicionados ao _ext_bs4
 
 ### Busca de arquivos públicos por formato
-- [ ] Adicionar opção de pesquisar arquivos públicos (PDF, epub, etc.) na busca web
+- [x] Adicionar opção de pesquisar arquivos públicos (PDF, epub, etc.) na busca web
   — usar operadores de busca (`filetype:pdf site:...`) via engine configurada
   — exibir opção de download direto quando o arquivo for acessível publicamente
 
 ### Busca e download de artigos científicos
 Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 
-- [ ] `AKASHA/services/paper_search.py` — busca paralela em Semantic Scholar + arXiv (`aioarxiv`)
+- [x] `AKASHA/services/paper_search.py` — busca paralela em Semantic Scholar + arXiv (`aioarxiv`)
   — Semantic Scholar: sem key necessária para uso básico, 200M+ papers, campo `openAccessPdf.url`
   — arXiv: `aioarxiv` (async nativo), PDFs sempre gratuitos em arxiv.org/pdf/{id}
-  — retorna `list[SearchResult]` com source="PAPER" e campos extras (DOI, ano, autores)
-- [ ] `AKASHA/services/paper_download.py` — download de PDF open access por resultado de busca
-  — fluxo: arXiv direto (se tem arXiv ID) → Unpaywall por DOI (`unpywall`) → CORE API
-  — extração PDF → Markdown via `pymupdf4llm` (CPU-only, sem GPU, ~10x mais rápido que alternativas)
-- [ ] `AKASHA/services/archiver.py` — nova função `archive_pdf(pdf_bytes, metadata)` 
+  — retorna `list[PaperResult(SearchResult)]` com source="PAPER" e campos extras (DOI, ano, autores)
+- [x] `AKASHA/services/paper_download.py` — download de PDF open access por resultado de busca
+  — fluxo: URL direta → arXiv direto → Unpaywall REST (sem lib) via httpx
+  — extração PDF → Markdown via `pymupdf4llm` (CPU-only); fallback `pypdf`
+- [x] `AKASHA/services/archiver.py` — nova função `archive_pdf(content_md, metadata)` 
   — salva em `data/archive/Papers/` com frontmatter YAML (mesmo padrão do `Web/`)
   — indexado automaticamente pelo Mnemosyne via `watched_dir` sem nenhuma mudança no Mnemosyne
-- [ ] `AKASHA/routers/search.py` — adicionar fonte `src_papers` no `GET /search`
-  — nova rota `POST /papers/download` para baixar paper arquivado pelo usuário
-- [ ] `AKASHA/templates/search.html` — seção de resultados acadêmicos
+- [x] `AKASHA/routers/search.py` — fonte `src_papers` no `GET /search` + gather paralelo
+- [x] `AKASHA/routers/papers.py` — rota `POST /papers/download` (novo router)
+- [x] `AKASHA/templates/search.html` — seção de resultados acadêmicos
   — campos específicos: DOI, ano, autores, badge "PDF disponível"
-- [ ] `AKASHA/templates/base.html` — checkbox `src_papers` nos filtros de busca
-- [ ] Dependências novas: `aioarxiv`, `unpywall`, `pymupdf4llm`
+- [x] `AKASHA/templates/base.html` — checkbox `src_papers` nos filtros de busca
+- [x] `AKASHA/templates/_macros.html` — macro `paper_card(r)` com botão arquivar
+- [x] Dependências novas: `aioarxiv`, `pymupdf4llm` (unpaywall: chamada REST direta)
 
 ### Abrir arquivos locais / leitor do ecossistema
 - [x] `/open-file` com xdg-open já implementado (com fallback `gio open` e detecção de erro — BUG-6 corrigido)
