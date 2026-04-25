@@ -767,18 +767,27 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — fix compartilhado via ecosystem_scraper.py (get_fetch_url → Freedium proxy)
 
 ### Tags geradas por IA nos cards do feed
-- [ ] Exibir tags geradas pela análise de IA diretamente nos cards do feed
-  — apenas tags previamente aprovadas/selecionadas pelo usuário
-- [ ] Estatística de tags: exibir na view de stats as tags mais frequentes nos artigos lidos
-  — gráfico de frequência de tags por período
+- [x] Exibir tags geradas pela análise de IA diretamente nos cards do feed
+  — tags aprovadas pelo usuário (article_tags) exibidas como chips nos cards do feed
+  — `FeedManager.get_tags_for_articles()` busca em batch para evitar N queries
+  — `ArticleCard`: novo param `user_tags`, chips com objeto `QLabel#aiTagChip`
+  — estilos `aiTagChip` adicionados em day.qss e night.qss
+- [x] Estatística de tags: exibir na view de stats as tags mais frequentes nos artigos lidos
+  — `get_top_ai_tags_read(days, limit)` em stats.py: conta tags de `ai_tags` JSON nos artigos lidos
+  — `StatsView._build_ai_tags_chart()`: gráfico horizontal exibido abaixo do sentimento
 
 ### Pré-análise em background (requer pesquisa prévia)
 - [x] Criar `KOSMOS/pesquisa.txt` — pesquisar otimizações para o pipeline de análise (obrigatório per CLAUDE.md)
   — verificar quando e como a análise é disparada: atualmente apenas ao abrir o artigo
   — objetivo: pré-análise ao receber novos artigos (clickbait, tags, sentimento, relevância, 5Ws)
   — investigar causas da lentidão (tempo de início + tempo de conclusão)
-- [ ] Após pesquisa: implementar pré-análise em background para artigos recém-recebidos
-- [ ] Incluir análise dos 5Ws na pré-análise
+- [x] Após pesquisa: implementar pré-análise em background para artigos recém-recebidos
+  — `BackgroundAnalyzer` (QThread + PriorityQueue): HIGH=artigo aberto, LOW=pré-análise silenciosa
+  — enfileira artigos sem análise no startup + a cada `feed_updated`; lotes de até 5 artigos/call
+  — integrado no MainWindow; sinal `article_analyzed` propagado para atualizar badges na UI
+- [x] Incluir análise dos 5Ws na pré-análise
+  — campo `five_ws` incluído no JSON Schema tanto do `_AnalyzeWorker` quanto do `BackgroundAnalyzer`
+  — batch schema com schema dinâmico por lote; fallback individual em caso de falha
 
 ### Estatísticas expandidas
 - [ ] Ampliar gráficos de estatísticas com detalhamento dos 5Ws

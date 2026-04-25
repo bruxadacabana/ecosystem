@@ -172,8 +172,9 @@ class FeedListView(QWidget):
             self._cards_layout.insertWidget(0, empty)
             return
 
+        tags_by_id = self._fm.get_tags_for_articles([a.id for a in articles])
         for article in articles:
-            card = ArticleCard(article)
+            card = ArticleCard(article, user_tags=tags_by_id.get(article.id, []))
             card.clicked.connect(self._on_card_clicked)
 
             sep = QFrame()

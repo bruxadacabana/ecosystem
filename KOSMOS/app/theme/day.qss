@@ -898,6 +898,16 @@ QPushButton#suggestedTagDismiss {
 QPushButton#suggestedTagDismiss:hover {
     color: #8B4010;
 }
+/* Tags de IA nos cards do feed */
+QLabel#aiTagChip {
+    background-color: rgba(139, 115, 85, 0.12);
+    color: #5C3A10;
+    border: 1px solid rgba(139, 115, 85, 0.45);
+    border-radius: 8px;
+    padding: 1px 8px;
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 9px;
+}
 /* Highlights no leitor */
 QWidget#highlightsRow {
     background-color: #EDE4CE;

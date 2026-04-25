@@ -828,6 +828,29 @@ class FeedManager:
     # Tags
     # ------------------------------------------------------------------
 
+    def get_tags_for_articles(self, article_ids: list[int]) -> dict[int, list[str]]:
+        """Retorna tags aprovadas pelo usuário em lote (article_id → lista de nomes).
+
+        Evita N queries ao popular a lista de cards do feed.
+        """
+        if not article_ids:
+            return {}
+        session = get_session()
+        try:
+            rows = (
+                session.query(ArticleTag.article_id, Tag.name)
+                .join(Tag, Tag.id == ArticleTag.tag_id)
+                .filter(ArticleTag.article_id.in_(article_ids))
+                .order_by(Tag.name)
+                .all()
+            )
+            result: dict[int, list[str]] = {}
+            for article_id, tag_name in rows:
+                result.setdefault(article_id, []).append(tag_name)
+            return result
+        finally:
+            session.close()
+
     def get_tags(self) -> list[Tag]:
         """Retorna todas as tags existentes ordenadas por nome."""
         session = get_session()

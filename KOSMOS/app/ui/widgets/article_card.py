@@ -49,6 +49,7 @@ class ArticleCard(QWidget):
         ai_relevance:  float | None = None,
         ai_sentiment:  float | None = None,
         ai_clickbait:  float | None = None,
+        user_tags:     "list[str]"  = (),   # type: ignore[assignment]
         parent: "QWidget | None"    = None,
     ) -> None:
         super().__init__(parent)
@@ -59,6 +60,7 @@ class ArticleCard(QWidget):
         self._ai_relevance = ai_relevance
         self._ai_sentiment = ai_sentiment
         self._ai_clickbait = ai_clickbait
+        self._user_tags    = list(user_tags)
 
         self.setObjectName("articleCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -117,6 +119,23 @@ class ArticleCard(QWidget):
         meta_font.setPointSize(10)
         self._meta_lbl.setFont(meta_font)
         content.addWidget(self._meta_lbl)
+
+        # Tags aprovadas pelo usuário
+        if self._user_tags:
+            tag_font = QFont("Courier Prime")
+            if not tag_font.exactMatch():
+                tag_font = QFont("Courier New")
+            tag_font.setPointSize(9)
+            tags_row = QHBoxLayout()
+            tags_row.setSpacing(4)
+            tags_row.setContentsMargins(0, 2, 0, 0)
+            for tag_name in self._user_tags[:6]:
+                chip = QLabel(tag_name)
+                chip.setObjectName("aiTagChip")
+                chip.setFont(tag_font)
+                tags_row.addWidget(chip)
+            tags_row.addStretch()
+            content.addLayout(tags_row)
 
         # Resumo (snippet do conteúdo)
         raw = article.summary or article.content_full or ""

@@ -67,7 +67,7 @@ class _StatsLoadWorker(QThread):
             from app.core.stats import (
                 get_article_clusters, get_daily_stats, get_feed_stats,
                 get_monthly_stats, get_platform_stats, get_sentiment_trend,
-                get_top_entities, get_total_stats,
+                get_top_ai_tags_read, get_top_entities, get_total_stats,
             )
             days = self._days
             self.finished.emit({
@@ -80,6 +80,7 @@ class _StatsLoadWorker(QThread):
                 "sentiment": get_sentiment_trend(days=days),
                 "entities":  get_top_entities(days=days),
                 "clusters":  get_article_clusters(days=max(days, 90)),
+                "ai_tags":   get_top_ai_tags_read(days=days, limit=20),
             })
         except Exception as exc:
             self.error.emit(str(exc))
@@ -214,12 +215,16 @@ class StatsView(QWidget):
         sentiment = payload["sentiment"]
         entities  = payload["entities"]
         clusters  = payload["clusters"]
+        ai_tags   = payload.get("ai_tags", [])
 
         pal = _PALETTE.get(self._theme.current, _PALETTE["day"])
 
         self._body_layout.addWidget(self._build_summary_cards(totals, pal))
         self._body_layout.addWidget(self._build_daily_chart(daily, pal, days))
         self._body_layout.addWidget(self._build_sentiment_chart(sentiment, pal, days))
+
+        if ai_tags:
+            self._body_layout.addWidget(self._build_ai_tags_chart(ai_tags, pal, days))
 
         if any(entities.get(t) for t in ("people", "orgs", "places")):
             self._body_layout.addWidget(self._build_entities_section(entities, pal))
@@ -524,6 +529,31 @@ class StatsView(QWidget):
 
         root.addWidget(grid_w)
         return section
+
+    def _build_ai_tags_chart(self, ai_tags, pal: dict, days: int) -> QWidget:
+        """Gráfico horizontal: tags de IA mais frequentes nos artigos lidos."""
+        fig, canvas = self._make_canvas((9, max(2.4, len(ai_tags) * 0.28)), pal)
+        if canvas is None:
+            return QLabel("matplotlib indisponível")
+
+        ax = fig.add_subplot(111)
+        names  = [t.tag[:30]  for t in reversed(ai_tags)]
+        counts = [t.count      for t in reversed(ai_tags)]
+        y = range(len(names))
+        ax.barh(y, counts, color=pal["accent"])
+        ax.set_yticks(list(y))
+        ax.set_yticklabels(names, fontsize=8)
+        ax.set_title(
+            f"Tags de IA mais frequentes nos artigos lidos — últimos {days} dias",
+            color=pal["fg"], pad=8,
+        )
+        ax.xaxis.grid(True)
+        ax.set_axisbelow(True)
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.tick_params(axis="x", labelsize=8)
+
+        canvas.draw()
+        return canvas
 
     def _build_feed_chart(self, feeds, pal: dict) -> QWidget:
         fig, canvas = self._make_canvas((4.5, 3.2), pal)

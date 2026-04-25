@@ -80,6 +80,13 @@ class EntityStats:
 
 
 @dataclass
+class TagFrequency:
+    """Frequência de uma tag de IA nos artigos lidos no período."""
+    tag:   str
+    count: int
+
+
+@dataclass
 class ArticleCluster:
     """Grupo de artigos semanticamente similares."""
     label:         str
@@ -369,6 +376,47 @@ def get_top_entities(days: int = 30, limit: int = 8) -> dict[str, list[EntitySta
     except Exception as exc:
         log.error("Erro ao obter entidades: %s", exc)
         return {"people": [], "orgs": [], "places": []}
+    finally:
+        session.close()
+
+
+def get_top_ai_tags_read(days: int = 30, limit: int = 20) -> list[TagFrequency]:
+    """Top tags de IA nos artigos lidos no período.
+
+    Parseia o campo ai_tags (JSON) de artigos com sessão de leitura no período
+    e conta a frequência de cada tag para o gráfico de estatísticas.
+    """
+    import json as _json
+    since = datetime.utcnow() - timedelta(days=days)
+    session = get_session()
+    try:
+        rows = session.execute(text("""
+            SELECT a.ai_tags
+            FROM articles a
+            INNER JOIN read_sessions rs ON rs.article_id = a.id
+            WHERE a.ai_tags IS NOT NULL
+              AND rs.started_at >= :since
+              AND rs.duration_sec IS NOT NULL
+            GROUP BY a.id
+        """), {"since": since}).fetchall()
+
+        counts: dict[str, int] = {}
+        for row in rows:
+            try:
+                tags = _json.loads(row[0])
+                if isinstance(tags, list):
+                    for tag in tags:
+                        name = str(tag).strip().lower()
+                        if name:
+                            counts[name] = counts.get(name, 0) + 1
+            except Exception:
+                continue
+
+        top = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+        return [TagFrequency(tag=tag, count=cnt) for tag, cnt in top]
+    except Exception as exc:
+        log.error("Erro ao obter top AI tags: %s", exc)
+        return []
     finally:
         session.close()
 

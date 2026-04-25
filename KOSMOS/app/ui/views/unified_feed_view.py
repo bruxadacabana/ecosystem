@@ -334,6 +334,7 @@ class UnifiedFeedView(QWidget):
         show_badge      = bool(self._cfg.get("ai_relevance_badge",   False))
         show_sentiment  = bool(self._cfg.get("ai_sentiment_border",  False))
         show_clickbait  = bool(self._cfg.get("ai_clickbait_badge",   False))
+        tags_by_id = self._fm.get_tags_for_articles([a.id for a in articles])
         for article in articles:
             feed_name = self._feeds.get(article.feed_id)
             relevance = article.ai_relevance if show_badge     else None
@@ -345,6 +346,7 @@ class UnifiedFeedView(QWidget):
                 ai_relevance = relevance,
                 ai_sentiment = sentiment,
                 ai_clickbait = clickbait,
+                user_tags    = tags_by_id.get(article.id, []),
             )
             card.clicked.connect(self._on_card_clicked)
 
