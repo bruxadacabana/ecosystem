@@ -58,6 +58,19 @@
                  {% if src_sites is not defined or src_sites %}checked{% endif %} hidden>
           biblioteca
         </label>
+        <label class="tag" id="lbl-src-papers">
+          <input type="checkbox" name="src_papers" value="on" id="cb-src-papers"
+                 {% if src_papers is defined and src_papers %}checked{% endif %} hidden>
+          papers
+        </label>
+        <select name="filetype" id="sel-filetype" class="filetype-select"
+                onchange="this.form.requestSubmit()">
+          <option value=""      {% if not filetype or filetype == '' %}selected{% endif %}>todos os formatos</option>
+          <option value="pdf"   {% if filetype == 'pdf'  %}selected{% endif %}>PDF</option>
+          <option value="epub"  {% if filetype == 'epub' %}selected{% endif %}>EPUB</option>
+          <option value="docx"  {% if filetype == 'docx' %}selected{% endif %}>DOCX</option>
+          <option value="txt"   {% if filetype == 'txt'  %}selected{% endif %}>TXT</option>
+        </select>
       </div>
     </form>
 
@@ -141,9 +154,9 @@
 
     // ── Source checkboxes — localStorage + submit ───────────────
     (function () {
-      var CBS = ['cb-src-web', 'cb-src-eco', 'cb-src-sites'];
-      var LBLS = { 'cb-src-web': 'lbl-src-web', 'cb-src-eco': 'lbl-src-eco', 'cb-src-sites': 'lbl-src-sites' };
-      var DEFAULTS = { 'cb-src-web': true, 'cb-src-eco': true, 'cb-src-sites': true };
+      var CBS = ['cb-src-web', 'cb-src-eco', 'cb-src-sites', 'cb-src-papers'];
+      var LBLS = { 'cb-src-web': 'lbl-src-web', 'cb-src-eco': 'lbl-src-eco', 'cb-src-sites': 'lbl-src-sites', 'cb-src-papers': 'lbl-src-papers' };
+      var DEFAULTS = { 'cb-src-web': true, 'cb-src-eco': true, 'cb-src-sites': true, 'cb-src-papers': false };
 
       function syncLabel(id) {
         var cb  = document.getElementById(id);

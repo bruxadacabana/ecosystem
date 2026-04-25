@@ -124,18 +124,22 @@ async def _fetch_ddg(query: str, max_results: int) -> list[SearchResult]:
 _CACHE_SIZE = 60  # resultados pré-buscados por query — serve até 6 páginas de 10
 
 
-async def search_web(query: str, max_results: int = 10, offset: int = 0) -> list[SearchResult]:
+async def search_web(query: str, max_results: int = 10, offset: int = 0, filetype: str = "") -> list[SearchResult]:
     """Busca via DuckDuckGo com cache TTL 1h e deduplicação por URL.
 
     Pré-busca _CACHE_SIZE resultados no primeiro acesso; páginas seguintes
     (offset > 0) servem do mesmo lote em cache sem re-consultar o DDG,
     evitando resultados repetidos ou inconsistências de paginação.
+
+    filetype: se não vazio, acrescenta "filetype:{ext}" à query (ex: "pdf", "epub").
     """
-    cached = await _get_cached(query)
+    effective_query = f"{query} filetype:{filetype}" if filetype else query
+
+    cached = await _get_cached(effective_query)
     if cached is not None:
         return (await _filter_blocked(cached))[offset : offset + max_results]
 
-    results = await _fetch_ddg(query, _CACHE_SIZE)
+    results = await _fetch_ddg(effective_query, _CACHE_SIZE)
     results = _deduplicate(results)
-    await _set_cache(query, results)
+    await _set_cache(effective_query, results)
     return (await _filter_blocked(results))[offset : offset + max_results]

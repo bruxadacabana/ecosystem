@@ -181,7 +181,23 @@ a:hover { opacity: 0.75; }
 .topbar-search .source-filters {
   display:     flex;
   gap:         4px;
+  align-items: center;
+  flex-wrap:   wrap;
 }
+
+.filetype-select {
+  font-family:     var(--font-mono);
+  font-size:       8px;
+  letter-spacing:  0.1em;
+  text-transform:  uppercase;
+  color:           var(--ink-ghost);
+  background:      transparent;
+  border:          1px solid var(--rule);
+  border-radius:   var(--radius);
+  padding:         1px 4px;
+  cursor:          pointer;
+}
+.filetype-select:focus { outline: none; border-color: var(--accent); }
 
 .topbar-nav {
   display:     flex;
@@ -485,11 +501,18 @@ a:hover { opacity: 0.75; }
   white-space:     nowrap;
 }
 
-.card-snippet {
+.card-snippet, .result-snippet {
   font-size:   12px;
   color:       var(--ink-light);
   line-height: 1.6;
   margin-bottom: 8px;
+}
+
+.result-authors {
+  font-size:   11px;
+  color:       var(--ink-ghost);
+  margin-top:  2px;
+  margin-bottom: 4px;
 }
 
 .card-footer {
@@ -523,6 +546,8 @@ a:hover { opacity: 0.75; }
 .badge-mnemosyne { background: color-mix(in srgb, var(--ink-ghost)     20%, transparent); color: var(--ink-ghost);    border: 1px solid var(--rule); }
 .badge-biblioteca { background: color-mix(in srgb, var(--accent-green) 20%, transparent); color: var(--accent-green); border: 1px solid var(--accent-green); }
 .badge-sites      { background: color-mix(in srgb, var(--accent-dim)   20%, transparent); color: var(--accent-dim);   border: 1px solid var(--accent-dim); }
+.badge-paper      { background: color-mix(in srgb, var(--ribbon)        15%, transparent); color: var(--ribbon);       border: 1px solid var(--ribbon); }
+.badge-paper-pdf  { background: color-mix(in srgb, var(--accent-green)  15%, transparent); color: var(--accent-green); border: 1px solid var(--accent-green); font-size: 7px; }
 
 .tag {
   border:         1px solid var(--rule);

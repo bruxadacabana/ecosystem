@@ -19,6 +19,7 @@ from services.archiver import archive_url, fetch_and_extract
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local
 from services.crawler import search_sites, index_visited_page
+from services.paper_search import PaperResult, search_papers
 from database import (
     get_all_crawl_sites,
     get_favorite_domains,
@@ -66,11 +67,13 @@ _PAGE_SIZE = 10
 
 @router.get("/search", response_class=HTMLResponse)
 async def search(
-    request: Request,
-    q:         str = "",
-    src_web:   str = "",   # "on" quando checkbox marcado
-    src_eco:   str = "",
-    src_sites: str = "",
+    request:    Request,
+    q:          str = "",
+    src_web:    str = "",   # "on" quando checkbox marcado
+    src_eco:    str = "",
+    src_sites:  str = "",
+    src_papers: str = "",
+    filetype:   str = "",   # ex: "pdf", "epub" — acrescenta ao query DDG
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -83,32 +86,34 @@ async def search(
     if not any([src_web, src_eco, src_sites]):
         src_web = src_eco = src_sites = "on"
 
-    web_results:        list[SearchResult] = []
-    fav_results:        list[SearchResult] = []
-    local_results:      list[SearchResult] = []
-    site_results:       list[SearchResult] = []
+    web_results:         list[SearchResult] = []
+    fav_results:         list[SearchResult] = []
+    local_results:       list[SearchResult] = []
+    site_results:        list[SearchResult] = []
     watch_later_results: list[SearchResult] = []
+    paper_results:       list[PaperResult]  = []
     error: str | None = None
 
     if q:
         try:
             tasks = await asyncio.gather(
-                search_web(q, max_results=_PAGE_SIZE) if src_web   else asyncio.sleep(0, result=[]),
-                search_local(q)                        if src_eco   else asyncio.sleep(0, result=[]),
-                search_sites(q)                        if src_sites else asyncio.sleep(0, result=[]),
+                search_web(q, max_results=_PAGE_SIZE, filetype=filetype) if src_web    else asyncio.sleep(0, result=[]),
+                search_local(q)                                           if src_eco    else asyncio.sleep(0, result=[]),
+                search_sites(q)                                           if src_sites  else asyncio.sleep(0, result=[]),
+                search_papers(q)                                          if src_papers else asyncio.sleep(0, result=[]),
                 _db_search_wl(q),
                 return_exceptions=True,
             )
-            web_r, eco_r, sites_r, wl_r = tasks
-            if isinstance(web_r,   list): web_results   = web_r
-            if isinstance(eco_r,   list): local_results = eco_r
-            if isinstance(sites_r, list): site_results  = sites_r
-            if isinstance(wl_r,    list):
+            web_r, eco_r, sites_r, papers_r, wl_r = tasks
+            if isinstance(web_r,    list): web_results    = web_r
+            if isinstance(eco_r,    list): local_results  = eco_r
+            if isinstance(sites_r,  list): site_results   = sites_r
+            if isinstance(papers_r, list): paper_results  = papers_r
+            if isinstance(wl_r,     list):
                 watch_later_results = [
                     SearchResult(title=r[2] or r[1], url=r[1], snippet=r[3], source="DEPOIS")
                     for r in wl_r
                 ]
-            # Propaga o primeiro erro real (RuntimeError da busca web)
             for res in tasks:
                 if isinstance(res, RuntimeError):
                     error = str(res)
@@ -126,11 +131,12 @@ async def search(
                 fav_results  = [r for r in web_results if _domain(r.url) in fav_domains]
                 web_results  = [r for r in web_results if _domain(r.url) not in fav_domains]
 
-        total = len(web_results) + len(fav_results) + len(local_results) + len(site_results) + len(watch_later_results)
+        total = len(web_results) + len(fav_results) + len(local_results) + len(site_results) + len(watch_later_results) + len(paper_results)
         src_label = "+".join(filter(None, [
             "web" if src_web else "",
             "local" if src_eco else "",
             "sites" if src_sites else "",
+            "papers" if src_papers else "",
         ]))
         import json as _json
         await database.save_search(q, src_label or "web", total)
@@ -148,11 +154,14 @@ async def search(
             "local_results":        local_results,
             "site_results":         site_results,
             "watch_later_results":  watch_later_results,
+            "paper_results":        paper_results,
             "has_more_web":         len(web_results) >= _PAGE_SIZE,
             "query":         q,
             "src_web":       bool(src_web),
             "src_eco":       bool(src_eco),
             "src_sites":     bool(src_sites),
+            "src_papers":    bool(src_papers),
+            "filetype":      filetype,
             "has_sites":     has_sites,
             "recent":        recent,
             "error":         error,
