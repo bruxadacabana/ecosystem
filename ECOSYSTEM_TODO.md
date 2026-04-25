@@ -750,6 +750,10 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 - [ ] `AKASHA/templates/base.html` — checkbox `src_papers` nos filtros de busca
 - [ ] Dependências novas: `aioarxiv`, `unpywall`, `pymupdf4llm`
 
+### Abrir arquivos locais / leitor do ecossistema
+- [x] `/open-file` com xdg-open já implementado (com fallback `gio open` e detecção de erro — BUG-6 corrigido)
+- [ ] **Leitor próprio do ecossistema** — criar leitor de artigos/documentos integrado, inspirado no reader mode do KOSMOS; prioridade baixa, fazer após o xdg-open estar estável
+
 ---
 
 ## PENDÊNCIAS — KOSMOS

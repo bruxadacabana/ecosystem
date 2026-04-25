@@ -592,6 +592,15 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       **Fix:** mover o bloco de aviso para fora do `{% if error %}`, antes ou logo após o
       bloco principal de resultados.
 
+- [x] **[BUG-6] `routers/system.py` — `/open-file` nunca reporta erro ao abrir arquivo local**
+      `subprocess.Popen(["xdg-open", path])` é fire-and-forget: sempre retorna HTTP 200 mesmo
+      que o xdg-open falhe silenciosamente (comum no CachyOS/Niri/Wayland quando
+      `DBUS_SESSION_BUS_ADDRESS` não está disponível no processo filho). O toast mostra
+      "Abrindo arquivo…" mesmo que nada abra.
+      **Fix:** usar `asyncio.create_subprocess_exec` para capturar o código de retorno;
+      tentar `gio open` como fallback se xdg-open falhar; retornar HTTP 500 com mensagem
+      legível se ambos falharem.
+
 ---
 
 ## Planos Futuros
@@ -600,4 +609,4 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
-*Atualizado em: 2026-04-24 — Fase 16 adicionada com 5 bugs identificados por auditoria de código (crawler, domains, search template).*
+*Atualizado em: 2026-04-24 — Fase 16 adicionada com 5 bugs identificados por auditoria de código (crawler, domains, search template). BUG-6 adicionado: xdg-open silently failing.*
