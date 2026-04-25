@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo } from '../types'
 
 async function call<T>(
   command: string,
@@ -134,3 +134,19 @@ export const logosGetStatus = (): Promise<TauriResult<LogosStatus>> =>
 
 export const logosSilence = (): Promise<TauriResult<number>> =>
   call<number>('logos_silence')
+
+export const logosSetProfile = (profile: string): Promise<TauriResult<string>> =>
+  call<string>('logos_set_profile', { profile })
+
+export const logosListModels = (): Promise<TauriResult<OllamaModelInfo[]>> =>
+  call<OllamaModelInfo[]>('logos_list_models')
+
+export const logosUnloadModel = (model: string): Promise<TauriResult<boolean>> =>
+  call<boolean>('logos_unload_model', { model })
+
+// ----------------------------------------------------------
+//  Janela — modo compacto
+// ----------------------------------------------------------
+
+export const setWindowCompact = (compact: boolean): Promise<TauriResult<void>> =>
+  call<void>('set_window_compact', { compact })

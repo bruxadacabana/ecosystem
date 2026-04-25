@@ -123,11 +123,24 @@ export interface OgmaPage {
 // ----------------------------------------------------------
 
 export interface LogosStatus {
-  active_priority: number | null
-  queue: [number, number, number]
-  vram_used_mb: number | null
-  vram_pct: number | null
-  ollama_url: string
+  active_priority:    number | null
+  /** "leve" | "pesado" | null */
+  active_model_class: string | null
+  /** App que está usando o LOGOS no momento ("kosmos", "mnemosyne", etc.) */
+  active_app:         string | null
+  /** Perfil de workflow ativo: "normal" | "escrita" | "estudo" | "consumo" */
+  current_profile:    string
+  /** Modo de hardware: "normal" (CachyOS/GPU) | "sobrevivencia" (Windows/CPU-only) */
+  hardware_mode:      string
+  queue:              [number, number, number]
+  vram_used_mb:       number | null
+  vram_pct:           number | null
+  ollama_url:         string
+}
+
+export interface OllamaModelInfo {
+  name:         string
+  size_vram_mb: number
 }
 
 // ----------------------------------------------------------
@@ -135,6 +148,8 @@ export interface LogosStatus {
 // ----------------------------------------------------------
 
 export type HubView = 'home' | 'writing' | 'reading' | 'projects' | 'questions'
+
+export type HubSection = 'home' | 'logos' | 'atividade' | 'config'
 
 export interface ModuleCard {
   id: HubView

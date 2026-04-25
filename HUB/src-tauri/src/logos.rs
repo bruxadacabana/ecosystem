@@ -10,6 +10,15 @@
 //    GET  /logos/status  → StatusResponse
 //    POST /logos/chat    → proxy para Ollama /api/chat
 //    POST /logos/silence → keep_alive: 0 em todos os modelos carregados
+//
+//  Otimizações de Ollama gerenciadas pelo LOGOS:
+//    keep_alive: -1  → injetado automaticamente em todo request (modelo
+//                      permanece carregado na VRAM entre chamadas)
+//    Concorrência dinâmica via semáforo com 2 permits:
+//      modelos leves (≤3B) → adquire 1 permit → até 2 rodam em paralelo
+//      modelos pesados (>3B) → adquire 2 permits → exclusividade total
+//      Requer OLLAMA_NUM_PARALLEL=2 no systemd para o Ollama aceitar 2
+//      requests simultâneos.
 // ============================================================
 
 use axum::{
@@ -38,8 +47,20 @@ const VRAM_P3_BLOCK: f32 = 0.85;
 
 struct Inner {
     ollama_url: String,
+    /// Semáforo com 2 permits:
+    ///   modelos leves  (≤3B): adquire 1 → permite 2 simultâneos
+    ///   modelos pesados (>3B): adquire 2 → exclusividade (NUM_PARALLEL efetivo = 1)
     semaphore: Arc<Semaphore>,
     active_priority: Mutex<Option<u8>>,
+    /// Classe do modelo em execução: "leve" | "pesado"
+    active_model_class: Mutex<Option<String>>,
+    /// App que está usando o LOGOS no momento ("kosmos", "mnemosyne", etc.)
+    active_app: Mutex<Option<String>>,
+    /// Perfil de workflow ativo — altera override de prioridade por app
+    active_profile: Mutex<String>,
+    /// Modo de hardware determinado em tempo de compilação: "normal" | "sobrevivencia"
+    /// "sobrevivencia" é ativado automaticamente em builds Windows (CPU-only, RAM limitada).
+    hardware_mode: String,
     queue_counts: Mutex<[u32; 3]>,
     client: Client,
 }
@@ -55,10 +76,19 @@ impl LogosState {
             .timeout(Duration::from_secs(300))
             .build()
             .unwrap_or_default();
+        let hardware_mode = if cfg!(target_os = "windows") {
+            "sobrevivencia".to_string()
+        } else {
+            "normal".to_string()
+        };
         Self(Arc::new(Inner {
             ollama_url: ollama_url.into(),
-            semaphore: Arc::new(Semaphore::new(1)),
+            semaphore: Arc::new(Semaphore::new(2)),
             active_priority: Mutex::new(None),
+            active_model_class: Mutex::new(None),
+            active_app: Mutex::new(None),
+            active_profile: Mutex::new("normal".to_string()),
+            hardware_mode,
             queue_counts: Mutex::new([0, 0, 0]),
             client,
         }))
@@ -70,6 +100,14 @@ impl LogosState {
 #[derive(Serialize, Clone)]
 pub struct StatusResponse {
     pub active_priority: Option<u8>,
+    /// Classe do modelo em execução: "leve" | "pesado" | null
+    pub active_model_class: Option<String>,
+    /// App que está usando o LOGOS ("kosmos", "mnemosyne", etc.)
+    pub active_app: Option<String>,
+    /// Perfil de workflow ativo: "normal" | "escrita" | "estudo" | "consumo"
+    pub current_profile: String,
+    /// Modo de hardware: "normal" (CachyOS/GPU) | "sobrevivencia" (Windows/CPU-only)
+    pub hardware_mode: String,
     /// Contagem de requests aguardando por prioridade [P1, P2, P3]
     pub queue: [u32; 3],
     /// VRAM em uso (MB) reportada pelo Ollama /api/ps
@@ -79,6 +117,12 @@ pub struct StatusResponse {
     pub ollama_url: String,
 }
 
+#[derive(Serialize, Clone)]
+pub struct OllamaModelInfo {
+    pub name: String,
+    pub size_vram_mb: u64,
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 pub fn build_router(state: LogosState) -> Router {
@@ -86,6 +130,8 @@ pub fn build_router(state: LogosState) -> Router {
         .route("/logos/status",  get(status_handler))
         .route("/logos/chat",    post(chat_handler))
         .route("/logos/silence", post(silence_handler))
+        .route("/logos/profile", post(profile_handler))
+        .route("/logos/models",  get(models_handler))
         .with_state(state)
 }
 
@@ -99,17 +145,79 @@ async fn chat_handler(
     State(s): State<LogosState>,
     Json(mut body): Json<serde_json::Map<String, serde_json::Value>>,
 ) -> Response {
-    let priority = body
+    let requested_priority = body
         .remove("priority")
         .and_then(|v| v.as_u64())
         .map(|p| p.clamp(1, 3) as u8)
         .unwrap_or(3);
-    // Remove campos LOGOS-específicos; o restante vai ao Ollama
-    body.remove("app");
+    // Lê app antes de remover (rastreamento + override de perfil)
+    let app_name = body
+        .remove("app")
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default();
+
+    // Aplica override de prioridade baseado no perfil ativo
+    let profile = s.0.active_profile.lock().await.clone();
+    let priority = apply_profile_priority(&profile, &app_name, requested_priority);
+    let is_survival = s.0.hardware_mode == "sobrevivencia";
+
+    // Determina classe do modelo e número de permits necessários.
+    // Survival: força 2 permits mesmo em modelos leves → serial (sem paralelo no trabalho).
+    let model_name = body.get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let light = is_light_model(&model_name);
+    let permits = if !is_survival && light { 1u32 } else { 2u32 };
+    let model_class = if light { "leve" } else { "pesado" }.to_string();
+
+    // keep_alive:
+    //   Normal     → injeta -1 (modelo permanece na VRAM entre requests)
+    //   Sobrevivência → força 0 (RAM liberada imediatamente após cada request)
+    if is_survival {
+        body.insert("keep_alive".to_string(), serde_json::json!(0));
+    } else {
+        body.entry("keep_alive".to_string())
+            .or_insert_with(|| serde_json::json!(-1));
+    }
+
+    // Sobrevivência: cap de num_ctx em 2048 (contextos maiores saturam RAM no Windows)
+    if is_survival {
+        const MAX_CTX: u64 = 2048;
+        if let Some(opts) = body.get_mut("options").and_then(|v| v.as_object_mut()) {
+            let ctx = opts.get("num_ctx").and_then(|v| v.as_u64()).unwrap_or(0);
+            if ctx == 0 || ctx > MAX_CTX {
+                opts.insert("num_ctx".to_string(), serde_json::json!(MAX_CTX));
+            }
+        } else {
+            body.insert("options".to_string(), serde_json::json!({ "num_ctx": MAX_CTX }));
+        }
+    }
+
     let ollama_payload = serde_json::Value::Object(body);
 
-    // P3: rejeitar imediatamente se VRAM saturada
-    if priority == 3 {
+    // Rejeições antecipadas — antes de entrar na fila/semáforo
+    if is_survival {
+        // Modelos pesados bloqueados: sem VRAM, sem RAM suficiente
+        if !light {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({
+                    "error": "Modo Sobrevivência: apenas modelos ≤3B são aceitos nesta máquina"
+                })),
+            ).into_response();
+        }
+        // P3 bloqueado: sem análise em background no computador de trabalho
+        if priority == 3 {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({
+                    "error": "Modo Sobrevivência: tarefas P3 desabilitadas para preservar recursos"
+                })),
+            ).into_response();
+        }
+    } else if priority == 3 {
+        // Normal: rejeita P3 se VRAM saturada
         if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url).await {
             if pct > VRAM_P3_BLOCK {
                 return (
@@ -125,13 +233,15 @@ async fn chat_handler(
     // Incrementa contador de fila
     s.0.queue_counts.lock().await[(priority - 1) as usize] += 1;
 
-    // Aguarda semáforo respeitando timeout por prioridade
+    // Aguarda semáforo respeitando timeout por prioridade.
+    // Modelos pesados adquirem 2 permits (exclusividade total);
+    // modelos leves adquirem 1 (até 2 simultâneos se OLLAMA_NUM_PARALLEL=2).
     let sem = s.0.semaphore.clone();
     let permit = match priority {
-        1 => sem.acquire_owned().await.ok(),
-        2 => tokio::time::timeout(P2_TIMEOUT, sem.acquire_owned())
+        1 => sem.acquire_many_owned(permits).await.ok(),
+        2 => tokio::time::timeout(P2_TIMEOUT, sem.acquire_many_owned(permits))
                 .await.ok().and_then(|r| r.ok()),
-        _ => tokio::time::timeout(P3_TIMEOUT, sem.acquire_owned())
+        _ => tokio::time::timeout(P3_TIMEOUT, sem.acquire_many_owned(permits))
                 .await.ok().and_then(|r| r.ok()),
     };
 
@@ -153,15 +263,19 @@ async fn chat_handler(
         }
     };
 
-    // Marca prioridade ativa
-    *s.0.active_priority.lock().await = Some(priority);
+    // Marca prioridade, classe do modelo e app ativos
+    *s.0.active_priority.lock().await    = Some(priority);
+    *s.0.active_model_class.lock().await = Some(model_class);
+    *s.0.active_app.lock().await         = Some(app_name);
 
     // Encaminha ao Ollama
     let url = format!("{}/api/chat", s.0.ollama_url);
     let result = s.0.client.post(&url).json(&ollama_payload).send().await;
 
-    // Limpa prioridade ativa antes de liberar o semáforo
-    *s.0.active_priority.lock().await = None;
+    // Limpa estado ativo antes de liberar o semáforo
+    *s.0.active_priority.lock().await    = None;
+    *s.0.active_model_class.lock().await = None;
+    *s.0.active_app.lock().await         = None;
     drop(_permit);
 
     match result {
@@ -188,14 +302,36 @@ async fn silence_handler(State(s): State<LogosState>) -> Response {
     (StatusCode::OK, Json(serde_json::json!({ "unloaded": unloaded }))).into_response()
 }
 
+async fn profile_handler(
+    State(s): State<LogosState>,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    let requested = body["profile"].as_str().unwrap_or("normal").to_string();
+    let profile = do_set_profile(&s, requested).await;
+    (StatusCode::OK, Json(serde_json::json!({ "profile": profile }))).into_response()
+}
+
+async fn models_handler(State(s): State<LogosState>) -> Response {
+    let models = do_list_models(&s).await;
+    (StatusCode::OK, Json(models)).into_response()
+}
+
 // ── Lógica pública (usada também pelos Tauri commands) ────────
 
 pub async fn collect_status(s: &LogosState) -> StatusResponse {
-    let active_priority = *s.0.active_priority.lock().await;
+    let active_priority    = *s.0.active_priority.lock().await;
+    let active_model_class = s.0.active_model_class.lock().await.clone();
+    let active_app         = s.0.active_app.lock().await.clone();
+    let current_profile    = s.0.active_profile.lock().await.clone();
+    let hardware_mode      = s.0.hardware_mode.clone();
     let queue = *s.0.queue_counts.lock().await;
     let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, &s.0.ollama_url).await;
     StatusResponse {
         active_priority,
+        active_model_class,
+        active_app,
+        current_profile,
+        hardware_mode,
         queue,
         vram_used_mb,
         vram_pct,
@@ -224,6 +360,103 @@ pub async fn do_silence(s: &LogosState) -> usize {
         }
     }
     count
+}
+
+/// Retorna lista de modelos atualmente carregados na memória pelo Ollama.
+pub async fn list_ollama_models(client: &Client, ollama_url: &str) -> Vec<OllamaModelInfo> {
+    let Ok(resp) = client
+        .get(format!("{}/api/ps", ollama_url))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    else {
+        return vec![];
+    };
+    let Ok(json) = resp.json::<serde_json::Value>().await else {
+        return vec![];
+    };
+    json["models"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|m| {
+            let name = m["name"].as_str()?.to_string();
+            let size_vram_mb = m["size_vram"].as_u64().unwrap_or(0) / 1_000_000;
+            Some(OllamaModelInfo { name, size_vram_mb })
+        })
+        .collect()
+}
+
+/// Envia keep_alive: 0 para descarregar um modelo específico da VRAM.
+/// Retorna true se o request chegou ao Ollama (independente de o modelo estar carregado).
+pub async fn do_unload_model(s: &LogosState, model: &str) -> bool {
+    s.0.client
+        .post(format!("{}/api/generate", s.0.ollama_url))
+        .json(&serde_json::json!({ "model": model, "keep_alive": 0 }))
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .is_ok()
+}
+
+/// Altera o perfil de workflow ativo. Valores inválidos caem em "normal".
+/// Retorna o perfil efetivamente aplicado.
+pub async fn do_set_profile(s: &LogosState, profile: String) -> String {
+    let validated = match profile.as_str() {
+        "escrita" | "estudo" | "consumo" | "normal" => profile,
+        _ => "normal".to_string(),
+    };
+    *s.0.active_profile.lock().await = validated.clone();
+    validated
+}
+
+/// Wrapper público de `list_ollama_models` para uso nos Tauri commands.
+pub async fn do_list_models(s: &LogosState) -> Vec<OllamaModelInfo> {
+    list_ollama_models(&s.0.client, &s.0.ollama_url).await
+}
+
+/// Aplica override de prioridade baseado no perfil ativo e no app requisitante.
+///
+/// Perfis e seus efeitos:
+///   escrita — prioriza AETHER/HUB; rebaixa KOSMOS reader (P1→P2) e Mnemosyne RAG (P2→P3)
+///   estudo  — promove Mnemosyne RAG (P2→P1); rebaixa KOSMOS reader (P1→P2)
+///   consumo — sem override (KOSMOS P1, tudo normal)
+///   normal  — sem override
+fn apply_profile_priority(profile: &str, app: &str, requested: u8) -> u8 {
+    match profile {
+        "escrita" => match (app, requested) {
+            // AETHER e HUB (chat interativo) mantêm prioridade máxima
+            ("aether" | "hub", p) => p,
+            // KOSMOS reader rebaixado: não interrompe a escrita
+            ("kosmos", 1) => 2,
+            // Mnemosyne RAG rebaixado para background: escrita em foco
+            ("mnemosyne", 2) => 3,
+            _ => requested,
+        },
+        "estudo" => match (app, requested) {
+            // Mnemosyne RAG promovido: consultas ao vault são prioridade
+            ("mnemosyne", 2) => 1,
+            // KOSMOS reader rebaixado: não compete com o estudo ativo
+            ("kosmos", 1) => 2,
+            _ => requested,
+        },
+        // consumo e normal: sem override de prioridade
+        _ => requested,
+    }
+}
+
+// ── Classificação de modelo ───────────────────────────────────
+
+/// Retorna true se o modelo é "leve" (≤3B parâmetros).
+/// Modelos leves adquirem 1 permit → até 2 rodam em paralelo.
+/// Modelos pesados adquirem 2 permits → exclusividade total.
+fn is_light_model(model: &str) -> bool {
+    let lower = model.to_lowercase();
+    // Detecta tamanho pelo tag: "gemma2:2b", "qwen2.5:3b", "llama3.2:1b-instruct"
+    [":0.5b", ":1b", ":1.5b", ":2b", ":3b",
+     "-0.5b", "-1b", "-1.5b", "-2b", "-3b"]
+        .iter()
+        .any(|p| lower.contains(p))
 }
 
 // ── VRAM helpers ──────────────────────────────────────────────

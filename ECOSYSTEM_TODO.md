@@ -771,7 +771,7 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — gráfico de frequência de tags por período
 
 ### Pré-análise em background (requer pesquisa prévia)
-- [ ] Criar `KOSMOS/pesquisa.txt` — pesquisar otimizações para o pipeline de análise (obrigatório per CLAUDE.md)
+- [x] Criar `KOSMOS/pesquisa.txt` — pesquisar otimizações para o pipeline de análise (obrigatório per CLAUDE.md)
   — verificar quando e como a análise é disparada: atualmente apenas ao abrir o artigo
   — objetivo: pré-análise ao receber novos artigos (clickbait, tags, sentimento, relevância, 5Ws)
   — investigar causas da lentidão (tempo de início + tempo de conclusão)
@@ -868,6 +868,41 @@ Arquivos:
   — Mnemosyne `AskWorker`: `ChatOllama.stream()` — RAG interativo
   — Mnemosyne `SummarizeWorker`/`FaqWorker`/`StudioWorker`/`GuideWorker`: usam `iter_*()` com streaming LangChain
 
+### LOGOS: otimizações de configuração do Ollama
+
+Achados de pesquisa `KOSMOS/pesquisa.txt` (2026-04-25) — LOGOS é responsável por configurar e expor essas variáveis de ambiente ao Ollama:
+
+- [x] Configurar `OLLAMA_KEEP_ALIVE=-1` via injeção automática no proxy
+  — LOGOS injeta `keep_alive: -1` em todo request que não o definiu explicitamente
+  — elimina cold start de 3–10s; modelo permanece carregado na VRAM entre análises
+- [x] Configurar `OLLAMA_KV_CACHE_TYPE=q8_0` no systemd
+  — reduz VRAM do KV cache em ~50%; abre espaço para `num_ctx` maior ou NUM_PARALLEL=2
+- [x] Configurar concorrência dinâmica baseada no tamanho do modelo
+  — LOGOS usa `Semaphore::new(2)` com `acquire_many_owned(permits)`:
+    modelos ≤3B adquirem 1 permit → até 2 rodam em paralelo
+    modelos >3B adquirem 2 permits → exclusividade total
+  — `LogosPanel` exibe badge "leve" / "pesado" do modelo em execução
+- [x] Configurar `OLLAMA_NUM_PARALLEL=2` no systemd
+  — permite ao Ollama aceitar 2 requests simultâneos; necessário para modelos leves rodarem em paralelo via semáforo do LOGOS
+
+### LOGOS: seleção e especialização de modelos por app
+
+- [x] KOSMOS (análise em background): usar Gemma 2 2B (`gemma2:2b`)
+  — default `ai_gen_model` em KOSMOS/app/utils/config.py
+- [x] Mnemosyne (RAG): usar Qwen 2.5 7B (`qwen2.5:7b`)
+  — default `llm_model` em Mnemosyne/core/config.py
+- [x] KOSMOS: `num_ctx=4096` explícito e constante em `_AnalyzeWorker` e `_start_analyze`
+  — Mnemosyne AskWorker: `num_ctx=8192`
+- [x] KOSMOS: JSON Schema completo no `_AnalyzeWorker` (constrained decoding via XGrammar)
+  — `_JSON_SCHEMA` como class constant; `json_schema=` em `ai_bridge.generate()`
+- [x] KOSMOS: pré-análise em background — `BackgroundAnalyzer` (QThread + PriorityQueue)
+  — HIGH (P0): artigo aberto pelo usuário → single call imediato
+  — LOW (P10): novos artigos do feed → enfileirados no startup e em `_on_feed_updated`
+  — cache check: artigos com `ai_sentiment IS NOT NULL` são pulados
+- [x] KOSMOS: batching de até 5 artigos por call LLM no background
+  — schema dinâmico por lote; fallback individual se batch falhar
+  — `num_ctx=8192` para batch; análise interativa permanece `num_ctx=4096`
+
 ### AKASHA como broker unificado de informação
 - [ ] Planejar API de "Mapa de Contexto" no AKASHA:
   — dado um termo, retornar resultados cruzados: Mnemosyne (RAG) + KOSMOS (artigos) + Hermes (transcrições) + AETHER (notas)
@@ -880,15 +915,15 @@ do ecossistema. A UI atual (se existente) foi projetada para outra finalidade �
 precisa ser reimaginada como um dashboard desktop (Tauri).
 
 #### Arquitetura de navegação
-- [ ] Sidebar vertical persistente com 4 seções principais:
+- [x] Sidebar vertical persistente com 4 seções principais:
   — **Home** (dashboard de status dos apps)
   — **LOGOS** (fila de LLM + monitor de VRAM)
   — **Atividade** (feed de eventos cross-app)
   — **Configuração** (ecosystem.json + sync_root)
-- [ ] Topbar mínima: nome do ecossistema + indicador global de saúde + botão de silêncio
+- [x] Topbar mínima: nome do ecossistema + indicador global de saúde + botão de silêncio
 
 #### Tela Home — status dos apps
-- [ ] Card por app do ecossistema (AKASHA · KOSMOS · AETHER · Mnemosyne · Hermes · OGMA):
+- [x] Card por app do ecossistema (AKASHA · KOSMOS · AETHER · Mnemosyne · Hermes · OGMA):
   — status ao vivo (running / stopped / erro) via ping periódico nos `/health` endpoints
   — porta, botão "abrir no browser" (apps web) ou "focar janela" (apps Qt/Tauri)
   — botão de iniciar / encerrar cada app diretamente do HUB
@@ -896,7 +931,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
 - [ ] Mini-resumo por app (última atividade, contagem de arquivos/artigos/etc.)
 
 #### Painel de configuração do ecossistema
-- [ ] Campo `sync_root` com botão "Aplicar" — chama `apply_sync_root()` e mostra preview
+- [x] Campo `sync_root` com botão "Aplicar" — chama `apply_sync_root()` e mostra preview
   dos caminhos derivados por app antes de confirmar
 - [ ] Aviso de migração: se sync_root muda e dados existem no caminho antigo, exibir
   instrução para mover arquivos (ex.: `akasha.db`, archives) antes de reiniciar
@@ -904,17 +939,22 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   campos por app com labels descritivos e validação de caminhos
 
 #### System tray / always-accessible
-- [ ] HUB fica na bandeja do sistema ao minimizar (não fecha, não some da taskbar)
-- [ ] Menu de contexto na bandeja: abrir/fechar apps individuais, ativar "Modo Silêncio",
-  status rápido (quantos apps rodando)
-- [ ] Notificações nativas do SO para eventos importantes (crawl concluído, erro de app, etc.)
+- [x] HUB fica na bandeja do sistema ao minimizar (não fecha, não some da taskbar)
+- [x] Fechar janela (× ou Alt+F4) → oculta na bandeja em vez de encerrar o processo
+- [x] Menu de contexto na bandeja (clique direito): "Abrir HUB" · "Silenciar LOGOS" · "Fechar HUB"
+  — "Silenciar LOGOS" chama POST /logos/silence diretamente pelo processo do HUB
+  — abrir/fechar apps individuais: acessível via DashboardView (cards da Home)
+- [x] Infraestrutura de notificações nativas (tauri-plugin-notification):
+  — comando `send_notification(title, body)` disponível para o frontend
+  — gatilhos por evento (app offline, VRAM crítica, etc.) dependem do Feed de Atividade
+- [ ] Notificações automáticas por evento: depende de `activity.jsonl` por app (ver Feed de Atividade)
 
 #### Design visual
-- [ ] Seguir DESIGN_BIBLE.txt — tema padrão: "Atlas Astronômico à Meia-Noite" (`#12161E`)
-- [ ] Dois modos de janela:
-  — **Compacto** (~600×400): só cards de status + botões de ação imediata
-  — **Expandido** (~1200×700): dashboard completo com sidebar + todas as seções
-- [ ] Tipografia e paleta consistentes com AETHER/OGMA (tokens compartilhados do ecossistema)
+- [x] Seguir DESIGN_BIBLE.txt — tema padrão: "Atlas Astronômico à Meia-Noite" (`#12161E`)
+- [x] Dois modos de janela:
+  — **Compacto** (~640×440): só cards de status + botões de ação imediata
+  — **Expandido** (~1280×800): dashboard completo com sidebar + todas as seções
+- [x] Tipografia e paleta consistentes com AETHER/OGMA (tokens compartilhados do ecossistema)
 
 ---
 
@@ -947,15 +987,22 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
 - [x] Botão "Silêncio" — pausa instantânea de todas as tarefas P3 para liberar GPU
   — útil ao iniciar escrita no AETHER ou chat no HUB
   — Implementado: botão "silenciar" no LogosPanel (chama `logos_silence` Tauri command)
-- [ ] Painel de gerenciamento do Ollama:
-  — listar modelos instalados com tamanho e estado (carregado/descarregado)
-  — ver qual app está usando qual modelo no momento
-  — forçar `keep_alive: 0` para liberar VRAM manualmente
-- [ ] Perfis de workflow com um clique:
-  — "Modo Escrita": AETHER P1, tudo mais P3; silenciar notificações de background
-  — "Modo Estudo": KOSMOS + Mnemosyne P1, AETHER P2
-  — "Modo Consumo": KOSMOS P1, Hermes permitido, Mnemosyne background
-  — perfil altera automaticamente as prioridades do LOGOS
+- [x] Painel de gerenciamento do Ollama:
+  — listar modelos carregados na VRAM com tamanho (GET /logos/models → `logosListModels`)
+  — ver qual app está usando o LOGOS no momento (`active_app` no StatusResponse)
+  — forçar `keep_alive: 0` por modelo individual (`logosUnloadModel` Tauri command)
+- [x] Perfis de workflow com um clique:
+  — "Modo Escrita": AETHER/HUB mantêm P1; KOSMOS reader → P2; Mnemosyne RAG → P3
+  — "Modo Estudo": Mnemosyne RAG → P1; KOSMOS reader → P2
+  — "Modo Consumo" e "Normal": sem override de prioridade
+  — perfil persistido em `LogosState.active_profile`; alterado via POST /logos/profile ou `logosSetProfile`
+- [x] Modo Sobrevivência (Windows/CPU-only) — ativado automaticamente em builds Windows via `cfg!(target_os = "windows")`:
+  — `keep_alive: 0` forçado em todo request (RAM liberada imediatamente)
+  — `num_ctx` limitado a 2048 pelo LOGOS independente do que o app pediu
+  — modelos >3B rejeitados com 429 ("apenas modelos ≤3B aceitos")
+  — requests P3 rejeitados imediatamente (sem análise em background)
+  — paralelismo desabilitado (sempre 2 permits, serial mesmo em modelos leves)
+  — badge "Modo Sobrevivência — Windows" exibido na LogosView
 
 ### Feed de atividade unificado
 
