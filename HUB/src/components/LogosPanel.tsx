@@ -37,11 +37,12 @@ export function LogosPanel() {
     setSilencing(false)
   }
 
-  const online         = status !== null
-  const activePriority = status?.active_priority ?? null
-  const queue          = status?.queue ?? ([0, 0, 0] as [number, number, number])
-  const vramMb         = status?.vram_used_mb ?? null
-  const vramPct        = status?.vram_pct ?? null
+  const online           = status !== null
+  const activePriority   = status?.active_priority ?? null
+  const activeModelClass = status?.active_model_class ?? null
+  const queue            = status?.queue ?? ([0, 0, 0] as [number, number, number])
+  const vramMb           = status?.vram_used_mb ?? null
+  const vramPct          = status?.vram_pct ?? null
 
   let vramBarColor = 'var(--accent-green)'
   if (vramPct !== null) {
@@ -144,6 +145,24 @@ export function LogosPanel() {
           )
         })}
       </div>
+
+      {/* Badge de classe do modelo ativo */}
+      {activeModelClass !== null && (
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.06em',
+            color: activeModelClass === 'leve' ? 'var(--accent-green)' : 'var(--accent)',
+            border: `1px solid ${activeModelClass === 'leve' ? 'var(--accent-green)' : 'var(--accent)'}`,
+            borderRadius: 'var(--radius)',
+            padding: '2px 6px',
+            opacity: 0.8,
+          }}
+        >
+          {activeModelClass}
+        </span>
+      )}
 
       {/* Barra de VRAM */}
       <div

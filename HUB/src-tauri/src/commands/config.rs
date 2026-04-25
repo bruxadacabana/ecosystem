@@ -113,3 +113,17 @@ pub fn save_ecosystem_config(updates: Value) -> Result<(), AppError> {
 
     Ok(())
 }
+
+/// Alterna entre modo compacto (~640×440) e expandido (~1280×800).
+#[tauri::command]
+pub fn set_window_compact(
+    window: tauri::WebviewWindow,
+    compact: bool,
+) -> Result<(), AppError> {
+    let size = if compact {
+        tauri::LogicalSize::new(640_f64, 440_f64)
+    } else {
+        tauri::LogicalSize::new(1280_f64, 800_f64)
+    };
+    window.set_size(size).map_err(|e| AppError::Io(e.to_string()))
+}

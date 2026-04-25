@@ -9,7 +9,11 @@ mod logos;
 
 pub use error::AppError;
 
-use tauri::Manager;
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager,
+};
 
 // ----------------------------------------------------------
 //  Logging em arquivo
@@ -44,6 +48,7 @@ fn cleanup_old_logs(logs_dir: &std::path::Path, keep_days: u64) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             commands::config::read_ecosystem_config,
             commands::config::validate_path,
@@ -65,6 +70,11 @@ pub fn run() {
             commands::launcher::auto_discover_all_exe_paths,
             commands::logos::logos_get_status,
             commands::logos::logos_silence,
+            commands::logos::logos_set_profile,
+            commands::logos::logos_list_models,
+            commands::logos::logos_unload_model,
+            commands::config::set_window_compact,
+            commands::notify::send_notification,
         ])
         .setup(|app| {
             // Inicializar LOGOS antes do logging para ter o estado pronto
@@ -80,6 +90,71 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 logos::start_server(logos_state).await;
             });
+
+            // System tray — clique esquerdo mostra/oculta; direito abre menu
+            let show_item    = MenuItem::with_id(app, "show",    "Abrir HUB",       true, None::<&str>)?;
+            let silence_item = MenuItem::with_id(app, "silence", "Silenciar LOGOS", true, None::<&str>)?;
+            let sep          = PredefinedMenuItem::separator(app)?;
+            let quit_item    = MenuItem::with_id(app, "quit",    "Fechar HUB",      true, None::<&str>)?;
+            let tray_menu    = Menu::with_items(app, &[&show_item, &silence_item, &sep, &quit_item])?;
+
+            if let Some(icon) = app.default_window_icon().cloned() {
+                let _ = TrayIconBuilder::new()
+                    .icon(icon)
+                    .tooltip("HUB — Central do Ecossistema")
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "show" => {
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.show();
+                                let _ = win.set_focus();
+                            }
+                        }
+                        "silence" => {
+                            tauri::async_runtime::spawn(async {
+                                let _ = reqwest::Client::new()
+                                    .post("http://127.0.0.1:7072/logos/silence")
+                                    .send()
+                                    .await;
+                            });
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(win) = app.get_webview_window("main") {
+                                if win.is_visible().unwrap_or(false) {
+                                    let _ = win.hide();
+                                } else {
+                                    let _ = win.show();
+                                    let _ = win.set_focus();
+                                }
+                            }
+                        }
+                    })
+                    .build(app);
+            }
+
+            // Fechar janela → ocultar na bandeja (não encerra o processo)
+            if let Some(win) = app.get_webview_window("main") {
+                let win_clone = win.clone();
+                win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win_clone.hide();
+                    }
+                });
+            }
 
             let app_data_dir = app.path().app_data_dir().map_err(|e| {
                 eprintln!("HUB: Não foi possível obter app_data_dir: {e}");
