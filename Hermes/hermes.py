@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Hermes — Mensageiro Universal
-Descarregar e transcrever vídeos do YouTube, TikTok e 1000+ sites.
+Baixar e transcrever vídeos do YouTube, TikTok e 1000+ sites.
 PyQt6 · Ecossistema local-first · Design Bible v2.0
 """
 
@@ -642,9 +642,10 @@ class HermesApp(QMainWindow):
         self.resize(920, 820)
 
         self._prefs           = load_prefs()
-        self._formats: list   = []
-        self._info: dict      = {}
-        self._playlist: list  = []
+        self._formats: list          = []
+        self._info: dict             = {}
+        self._playlist: list         = []
+        self._from_playlist_select   = False  # mantém playlist visível ao inspecionar vídeo individual
         self._last_md: str    = ""
         self._worker          = None
         self._device, self._device_label = detect_device()
@@ -726,7 +727,7 @@ class HermesApp(QMainWindow):
 
         # Tabs
         self.tabs = QTabWidget()
-        self.tabs.addTab(self._build_download_tab(), "DESCARREGAR")
+        self.tabs.addTab(self._build_download_tab(), "BAIXAR")
         self.tabs.addTab(self._build_transcribe_tab(), "TRANSCREVER")
         root.addWidget(self.tabs)
         root.addSpacing(12)
@@ -807,7 +808,7 @@ class HermesApp(QMainWindow):
         self.inspect_btn.setObjectName("primary")
         self.inspect_btn.clicked.connect(self._inspect)
         action_row.addWidget(self.inspect_btn)
-        self.dl_btn = QPushButton("DESCARREGAR")
+        self.dl_btn = QPushButton("BAIXAR")
         self.dl_btn.setEnabled(False)
         self.dl_btn.clicked.connect(self._start_download)
         action_row.addWidget(self.dl_btn)
@@ -836,8 +837,8 @@ class HermesApp(QMainWindow):
         layout.addWidget(self.playlist_list)
 
         self.playlist_hint_lbl = QLabel(
-            "Escolha o formato abaixo e clique BAIXAR para baixar toda a playlist.\n"
-            "Ou selecione um vídeo acima para baixar individualmente."
+            "Selecione um vídeo acima para ver as opções de qualidade e baixar individualmente.\n"
+            "Ou use os formatos abaixo para baixar toda a playlist de uma vez."
         )
         self.playlist_hint_lbl.setObjectName("meta")
         self.playlist_hint_lbl.setWordWrap(True)
@@ -1107,7 +1108,7 @@ class HermesApp(QMainWindow):
             self.batch_tr_btn.setEnabled(not busy and bool(self._playlist))
             self.tr_cancel_btn.setEnabled(busy)
 
-    # ── Descarregar ───────────────────────────────────────────────────────────
+    # ── Baixar ────────────────────────────────────────────────────────────────
     def _inspect(self):
         url = self.url_edit.text().strip()
         if not url:
@@ -1135,10 +1136,15 @@ class HermesApp(QMainWindow):
     def _on_inspect_done(self, info: dict, fmts: list):
         self._info    = info
         self._formats = fmts
-        self.playlist_lbl.hide()
-        self.playlist_list.hide()
-        self.batch_tr_btn.setEnabled(False)
-        self.batch_tr_btn.hide()
+        # Esconde a playlist só se a inspeção não veio de um clique na lista
+        # (se veio, mantém a lista visível para o usuário navegar entre vídeos)
+        if not self._from_playlist_select:
+            self.playlist_lbl.hide()
+            self.playlist_list.hide()
+            self.playlist_hint_lbl.hide()
+            self.batch_tr_btn.setEnabled(False)
+            self.batch_tr_btn.hide()
+        self._from_playlist_select = False
 
         title    = info.get("title", "")
         channel  = info.get("uploader") or info.get("channel") or ""
@@ -1176,6 +1182,9 @@ class HermesApp(QMainWindow):
         self.batch_tr_btn.show()
         self._set_busy(False, 0)
         self._log(f"Playlist: {len(entries)} itens.", "ok")
+        # Auto-seleciona o primeiro vídeo para mostrar as opções de qualidade imediatamente
+        if entries:
+            self.playlist_list.setCurrentRow(0)
 
     def _on_playlist_select(self):
         rows = self.playlist_list.selectedItems()
@@ -1185,6 +1194,7 @@ class HermesApp(QMainWindow):
         entry = self._playlist[idx]
         self.playlist_hint_lbl.hide()
         self.url_edit.setText(entry["url"])
+        self._from_playlist_select = True
         self._inspect()
 
     def _start_download(self):
@@ -1388,6 +1398,7 @@ class HermesApp(QMainWindow):
 
     # ── Erros ─────────────────────────────────────────────────────────────────
     def _on_worker_error(self, msg: str):
+        self._from_playlist_select = False
         self._set_busy(False, self.tabs.currentIndex())
         self._log(f"Erro: {msg}", "err")
         self.status_lbl.setText("Erro — ver registro.")

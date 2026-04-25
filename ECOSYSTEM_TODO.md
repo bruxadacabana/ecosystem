@@ -352,14 +352,16 @@ permite adicionar `extra_dirs` para indexação adicional.
 
 #### Hermes — "Descarregar" → "Baixar" (português do Brasil)
 - "Descarregar" é PT-Portugal. Renomear para "Baixar" no botão e na aba.
-- [ ] `Hermes/hermes.py` — renomear label do botão e da aba
+- [x] `Hermes/hermes.py` — renomear label do botão, da aba e do comentário de seção
 
 #### Hermes — UX de playlist confusa: qualidade não aparece após carregar lista
 - Após carregar a playlist, o usuário não sabe que precisa clicar em um vídeo
   para ver as opções de qualidade. A UI não dá feedback sobre isso.
-- [ ] `Hermes/hermes.py` — adicionar instrução visual (label) após carregar playlist:
-  "Selecione um vídeo acima para escolher a qualidade e baixar"
-- [ ] `Hermes/hermes.py` — auto-selecionar o primeiro vídeo da lista após carregar
+- [x] `Hermes/hermes.py` — instrução visual atualizada: "Selecione um vídeo acima
+  para ver as opções de qualidade e baixar individualmente."
+- [x] `Hermes/hermes.py` — auto-seleciona o primeiro vídeo ao carregar playlist
+  — flag `_from_playlist_select` mantém a lista visível após selecionar vídeo individual
+  — `_on_inspect_done` só esconde o painel de playlist em inspeções fora da playlist
 
 #### Mnemosyne — Indexação trava o computador mesmo com LLM cloud
 - Configuração confirmada no Windows 10: LLM = kimi-k2.5:cloud (nuvem, OK), embedding = bge-m3:latest (local, ~570MB)
