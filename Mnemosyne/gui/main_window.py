@@ -38,7 +38,7 @@ from PySide6.QtWidgets import (
 
 from core.config import AppConfig, load_config, save_config
 from core.errors import ConfigError, VectorstoreNotFoundError
-from core.indexer import load_vectorstore
+from core.indexer import IndexCheckpoint, load_vectorstore
 from core.memory import (
     ChatSession,
     CollectionIndex,
@@ -58,6 +58,7 @@ from gui.workers import (
     IndexFileWorker,
     IndexWorker,
     OllamaCheckWorker,
+    ResumeIndexWorker,
     StudioWorker,
     SummarizeWorker,
     UpdateIndexWorker,
@@ -491,6 +492,13 @@ class MainWindow(QMainWindow):
         self.index_btn.setEnabled(False)
         self.index_btn.clicked.connect(self.start_indexing)
         sb.addWidget(self.index_btn)
+
+        self.resume_btn = QPushButton("↩  Retomar indexação")
+        self.resume_btn.setObjectName("resumeBtn")
+        self.resume_btn.setToolTip("Continua a indexação interrompida sem apagar o progresso")
+        self.resume_btn.setVisible(False)
+        self.resume_btn.clicked.connect(self.start_resume_indexing)
+        sb.addWidget(self.resume_btn)
 
         self.config_btn = QPushButton("⚙  Configurar")
         self.config_btn.setEnabled(False)
@@ -1188,6 +1196,7 @@ class MainWindow(QMainWindow):
         self._populate_file_list()
         self._load_guide_into_ui()
         self.index_btn.setEnabled(True)
+        self._check_resume_available()
         self._refresh_collections_table()
         self.refresh_manage_info()
 
@@ -1340,6 +1349,7 @@ class MainWindow(QMainWindow):
         self.progress_file_label.setVisible(False)
         self.cancel_btn.setVisible(False)
         self._log_event(message)
+        self._check_resume_available()
 
         if success:
             self._update_collection_index()
@@ -1353,7 +1363,61 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Erro", str(exc))
             self._start_guide_generation()
         else:
-            QMessageBox.critical(self, "Erro na indexação", message)
+            self._log_event("Indexação interrompida — clique 'Retomar indexação' para continuar.")
+
+        self.statusBar().showMessage(message)
+
+    def _check_resume_available(self) -> None:
+        """Mostra o botão 'Retomar' se há checkpoint de indexação interrompida."""
+        mnemosyne_dir = self.config.mnemosyne_dir if self.config else ""
+        persist_dir   = self.config.persist_dir   if self.config else ""
+        can_resume = bool(
+            mnemosyne_dir
+            and persist_dir
+            and os.path.exists(persist_dir)
+            and IndexCheckpoint.exists(mnemosyne_dir)
+        )
+        self.resume_btn.setVisible(can_resume)
+
+    def start_resume_indexing(self) -> None:
+        if not self.config or not self.config.watched_dir:
+            return
+        self.resume_btn.setVisible(False)
+        self.index_btn.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self.progress_file_label.setText("Retomando indexação…")
+        self.progress_file_label.setVisible(True)
+        self.cancel_btn.setVisible(True)
+        self.statusBar().showMessage("Retomando indexação interrompida…")
+        self._log_event("Retomando indexação interrompida.")
+
+        self._resume_worker = ResumeIndexWorker(self.config)
+        self._resume_worker.finished.connect(self._on_resume_finished)
+        self._resume_worker.progress.connect(self._on_index_progress)
+        self._resume_worker.start()
+
+    def _on_resume_finished(self, success: bool, message: str) -> None:
+        self.index_btn.setEnabled(True)
+        self.progress.setVisible(False)
+        self.progress_file_label.setVisible(False)
+        self.cancel_btn.setVisible(False)
+        self._log_event(message)
+        self._check_resume_available()
+
+        if success:
+            self._update_collection_index()
+            self._update_badge()
+            self._populate_file_list()
+            try:
+                self.vectorstore = load_vectorstore(self.config)
+                self._enable_query_buttons()
+                self.refresh_manage_info()
+            except VectorstoreNotFoundError as exc:
+                QMessageBox.critical(self, "Erro", str(exc))
+            self._start_guide_generation()
+        else:
+            self._log_event("Retomada interrompida — clique 'Retomar indexação' para continuar.")
 
         self.statusBar().showMessage(message)
 
@@ -2088,7 +2152,7 @@ class MainWindow(QMainWindow):
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _cancel_worker(self) -> None:
-        for attr in ("_ask_worker", "_summary_worker"):
+        for attr in ("_index_worker", "_resume_worker", "_ask_worker", "_summary_worker"):
             worker = getattr(self, attr, None)
             if worker and worker.isRunning():
                 worker.requestInterruption()

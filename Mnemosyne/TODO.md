@@ -335,30 +335,14 @@
 
 ## Fase 9 — Robustez do indexador (2026-04-24)
 
-### 9.1 Recuperação de readonly após interrupção (alta prioridade)
+### 9.1 Recuperação de readonly após interrupção
+- [x] `core/indexer.py` — `_clear_orphan_wal()`: apaga `chroma.sqlite3-wal` e `chroma.sqlite3-shm` antes de abrir o ChromaDB; chamado em `load_vectorstore()`, `index_single_file()` e `update_vectorstore()`
 
-- [ ] `core/indexer.py` — no início de `create_vectorstore()` / `index_single_file()` / `update_vectorstore()` / `load_vectorstore()`, antes de abrir o ChromaDB, apagar arquivos de lock órfãos se existirem:
-  ```python
-  for suffix in ("-wal", "-shm"):
-      lock = persist_dir / f"chroma.sqlite3{suffix}"
-      if lock.exists():
-          lock.unlink(missing_ok=True)
-  ```
-  **Motivação:** quando o processo é encerrado abruptamente (SIGKILL, crash), o ChromaDB deixa `chroma.sqlite3-wal` e `chroma.sqlite3-shm` no disco. Na próxima abertura, o SQLite os interpreta como transação não finalizada e abre a coleção em modo readonly. A remoção dos arquivos força o SQLite a descartar a WAL pendente e reabrir normalmente.
+### 9.2 Indexação retomável
+- [x] `core/indexer.py` — `IndexCheckpoint`: SQLite em `{mnemosyne_dir}/index_checkpoint.db`; registra status `'ok'`/`'error'` e mtime por arquivo; deletado ao concluir com sucesso; presença indica indexação interrompida
+- [x] `gui/workers.py` — `IndexWorker.run()`: deleta toda a pasta `.mnemosyne` (não só `chroma_db`); cria checkpoint; registra cada arquivo; deleta checkpoint ao terminar com sucesso; checkpoint permanece se interrompido
+- [x] `gui/workers.py` — `ResumeIndexWorker`: lê checkpoint existente, processa apenas arquivos pendentes, atualiza checkpoint e tracker, deleta checkpoint ao concluir
+- [x] `gui/main_window.py` — botão "↩ Retomar indexação" na sidebar: visível apenas se persist_dir + checkpoint existem; lança `ResumeIndexWorker`; some após conclusão bem-sucedida
+- [x] `gui/main_window.py` — `_cancel_worker()` corrigido para também interromper `_index_worker` e `_resume_worker`
 
-### 9.2 Indexação retomável (média prioridade)
-
-- [ ] `core/indexer.py` — criar tabela de checkpoint SQLite separada do ChromaDB (ex: `{persist_dir}/index_checkpoint.db`) com schema:
-  ```sql
-  CREATE TABLE IF NOT EXISTS indexed_files (
-      path    TEXT PRIMARY KEY,
-      mtime   REAL NOT NULL,
-      status  TEXT NOT NULL DEFAULT 'ok',  -- 'ok' | 'error'
-      indexed_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-  ```
-- [ ] `gui/workers.py` — `IndexWorker.run()`: antes de processar cada arquivo, verificar se já existe entrada com mesmo `path` e `mtime` na tabela; pular arquivo se `status = 'ok'` e mtime não mudou.
-- [ ] `gui/workers.py` — `IndexWorker.run()`: chamar `tracker.mark_indexed(path)` após indexar com sucesso; registrar `status = 'error'` em caso de falha por arquivo individual.
-- [ ] `gui/main_window.py` — "Atualizar índice" já aproveita o checkpoint automaticamente; "Indexar tudo" limpa o persist_dir E a tabela de checkpoint antes de começar.
-
-*Atualizado em: 2026-04-24 — Fase 9 adicionada (robustez readonly + indexação retomável).*
+*Atualizado em: 2026-04-25 — Fase 9 implementada (readonly fix + retomada via Option B).*

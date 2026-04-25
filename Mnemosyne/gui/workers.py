@@ -24,6 +24,8 @@ from core.indexer import (
     update_vectorstore,
     _detect_batch_config,
     _get_splitter,
+    _clear_orphan_wal,
+    IndexCheckpoint,
 )
 from core.loaders import load_documents, load_single_file
 from core.memory import MemoryStore, Turn
@@ -102,14 +104,13 @@ class IndexWorker(QThread):
             self.finished.emit(False, str(EmptyDirectoryError(self.config.watched_dir)))
             return
 
-        # ── 2. Limpar vectorstore anterior (evita acúmulo de duplicatas) ──────
-        # Cada execução de "Indexar tudo" parte do zero; o progresso por arquivo
-        # é salvo no tracker para que "Atualizar índice" possa retomar se necessário.
-        if os.path.exists(self.config.persist_dir):
+        # ── 2. Limpar toda a pasta .mnemosyne (parte do zero) ────────────────
+        mnemosyne_dir = self.config.mnemosyne_dir
+        if mnemosyne_dir and os.path.exists(mnemosyne_dir):
             try:
-                shutil.rmtree(self.config.persist_dir)
+                shutil.rmtree(mnemosyne_dir)
             except OSError as exc:
-                self.finished.emit(False, f"Erro ao limpar índice anterior: {exc}")
+                self.finished.emit(False, f"Erro ao limpar estado anterior: {exc}")
                 return
         try:
             os.makedirs(self.config.persist_dir, exist_ok=True)
@@ -121,6 +122,7 @@ class IndexWorker(QThread):
         embeddings = OllamaEmbeddings(model=self.config.embed_model)
         splitter = _get_splitter(self.config, embeddings)
         tracker = FileTracker(self.config.mnemosyne_dir)
+        checkpoint = IndexCheckpoint(self.config.mnemosyne_dir)
         total = len(files)
         errors: list[str] = []
 
@@ -154,10 +156,12 @@ class IndexWorker(QThread):
                 chunks = splitter.split_documents(docs)
             except MnemosyneError as exc:
                 errors.append(str(exc))
+                checkpoint.record(file_path, "error")
                 continue
 
             if not chunks:
                 tracker.mark_indexed(file_path)
+                checkpoint.record(file_path, "ok")
                 continue
 
             # Probe de GPU no primeiro batch de chunks encontrado
@@ -227,12 +231,155 @@ class IndexWorker(QThread):
                                 time.sleep(_SLEEP)
                 except Exception as exc:
                     errors.append(f"{name}: {exc}")
+                    checkpoint.record(file_path, "error")
                     continue
 
-            # Salvar progresso no tracker após cada arquivo concluído
+            # Salvar progresso no tracker e no checkpoint após cada arquivo
             tracker.mark_indexed(file_path)
+            checkpoint.record(file_path, "ok")
 
+        # Apagar checkpoint: indexação concluída — botão "Retomar" não deve aparecer
+        checkpoint.delete()
         msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
+        if errors:
+            msg += f" {len(errors)} erro(s) ignorado(s)."
+        self.finished.emit(True, msg)
+
+
+class ResumeIndexWorker(QThread):
+    """
+    Retoma indexação interrompida usando o IndexCheckpoint existente.
+    Processa apenas os arquivos que ainda NÃO estão no checkpoint como 'ok'.
+    Não apaga persist_dir nem o checkpoint — continua de onde parou.
+    Deleta o checkpoint ao concluir com sucesso.
+    """
+
+    finished = Signal(bool, str)
+    progress = Signal(str, int, int)
+
+    def __init__(self, config: AppConfig) -> None:
+        super().__init__()
+        self.config = config
+
+    def start(self, priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
+        super().start(priority)
+
+    def run(self) -> None:
+        import os
+        import time
+        import uuid
+
+        _SUPPORTED = {".pdf", ".docx", ".txt", ".md", ".epub"}
+        from langchain_chroma import Chroma
+        from langchain_ollama import OllamaEmbeddings
+
+        # ── 1. Coletar todos os arquivos ──────────────────────────────────────
+        files: list[str] = []
+        try:
+            for root, dirs, fnames in os.walk(self.config.watched_dir):
+                dirs[:] = [d for d in dirs if d != ".mnemosyne"]
+                for f in sorted(fnames):
+                    _, ext = os.path.splitext(f.lower())
+                    if ext in _SUPPORTED:
+                        files.append(os.path.join(root, f))
+        except FileNotFoundError as exc:
+            self.finished.emit(False, f"Pasta não encontrada: {exc}")
+            return
+
+        if not files:
+            self.finished.emit(False, str(EmptyDirectoryError(self.config.watched_dir)))
+            return
+
+        # ── 2. Ler checkpoint e filtrar pendentes ─────────────────────────────
+        checkpoint = IndexCheckpoint(self.config.mnemosyne_dir)
+        pending = [f for f in files if not checkpoint.is_done(f)]
+        total_all = len(files)
+        already_done = total_all - len(pending)
+
+        if not pending:
+            checkpoint.delete()
+            self.finished.emit(
+                True,
+                f"Nada a retomar — todos os {total_all} arquivo(s) já indexados.",
+            )
+            return
+
+        # ── 3. Verificar e abrir vectorstore existente ────────────────────────
+        if not os.path.exists(self.config.persist_dir):
+            checkpoint.close()
+            self.finished.emit(False, "Índice parcial não encontrado. Use 'Indexar tudo'.")
+            return
+
+        _clear_orphan_wal(self.config.persist_dir)
+
+        _BATCH, _SLEEP = _detect_batch_config()
+        embeddings = OllamaEmbeddings(model=self.config.embed_model)
+        splitter = _get_splitter(self.config, embeddings)
+        tracker = FileTracker(self.config.mnemosyne_dir)
+        errors: list[str] = []
+
+        try:
+            vs = Chroma(
+                persist_directory=self.config.persist_dir,
+                embedding_function=embeddings,
+                collection_metadata={"hnsw:space": "cosine"},
+            )
+        except Exception as exc:
+            checkpoint.close()
+            self.finished.emit(False, f"Erro ao abrir vectorstore: {exc}")
+            return
+
+        # ── 4. Processar arquivos pendentes ───────────────────────────────────
+        total = len(pending)
+        for i, file_path in enumerate(pending, 1):
+            if self.isInterruptionRequested():
+                checkpoint.close()
+                self.finished.emit(False, "Retomada interrompida.")
+                return
+
+            name = os.path.basename(file_path)
+            self.progress.emit(name, already_done + i, total_all)
+
+            try:
+                docs = load_single_file(file_path)
+                chunks = splitter.split_documents(docs)
+            except MnemosyneError as exc:
+                errors.append(str(exc))
+                checkpoint.record(file_path, "error")
+                continue
+
+            if not chunks:
+                tracker.mark_indexed(file_path)
+                checkpoint.record(file_path, "ok")
+                continue
+
+            try:
+                batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
+                for b_idx, batch in enumerate(batch_list):
+                    if self.isInterruptionRequested():
+                        checkpoint.close()
+                        self.finished.emit(False, "Retomada interrompida.")
+                        return
+                    embs = embeddings.embed_documents([c.page_content for c in batch])
+                    vs._collection.add(
+                        ids=[str(uuid.uuid4()) for _ in batch],
+                        documents=[c.page_content for c in batch],
+                        embeddings=embs,
+                        metadatas=[c.metadata or {} for c in batch],
+                    )
+                    self.progress.emit(f"Incorporando {name}", already_done + i, total_all)
+                    if b_idx + 1 < len(batch_list):
+                        time.sleep(_SLEEP)
+            except Exception as exc:
+                errors.append(f"{name}: {exc}")
+                checkpoint.record(file_path, "error")
+                continue
+
+            tracker.mark_indexed(file_path)
+            checkpoint.record(file_path, "ok")
+
+        checkpoint.delete()
+        msg = f"Retomada concluída — {already_done} já indexados, {total} processados agora."
         if errors:
             msg += f" {len(errors)} erro(s) ignorado(s)."
         self.finished.emit(True, msg)

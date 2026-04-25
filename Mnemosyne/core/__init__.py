@@ -13,7 +13,7 @@ from .errors import (
     GuideError,
     ConfigError,
 )
-from .indexer import create_vectorstore, load_vectorstore, index_single_file, update_vectorstore
+from .indexer import create_vectorstore, load_vectorstore, index_single_file, update_vectorstore, IndexCheckpoint
 from .rag import ask, prepare_ask, strip_think, AskResult, SourceRecord, PERSONAS
 from .summarizer import summarize_all, prepare_summary
 from .tracker import FileTracker, FileRecord
