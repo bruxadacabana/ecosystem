@@ -766,7 +766,7 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — `.result-actions` overflow em janelas ~600–800px: botões saem do card ou ficam comprimidos
   — Fix: `flex-wrap: wrap` + `justify-content: flex-end` nas ações; máx 2 ações por linha em < 700px
   — Botões de ação: reduzir para ícone (sem texto) abaixo de 680px com `title` tooltip
-- [ ] **Tabela de downloads (`dl-table`) — responsividade**
+- [x] **Tabela de downloads (`dl-table`) — responsividade**
   — Em janelas estreitas a tabela quebra (coluna URL muito longa, coluna data sobreposta)
   — Fix: ocultar coluna "Concluído" abaixo de 700px; truncar URL com `max-width` + `text-overflow`
   — Abaixo de 520px: substituir tabela por cards empilhados (cada download = 1 card compacto)

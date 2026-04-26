@@ -1046,6 +1046,62 @@ a:hover { opacity: 0.75; }
 .dl-cell-size  { white-space: nowrap; }
 .dl-cell-date  { white-space: nowrap; color: var(--ink-ghost); font-size: 0.72rem; }
 
+/* Truncar URL longa na coluna de arquivo */
+.dl-cell-filename {
+  width:     55%;
+  max-width: 0;        /* habilita text-overflow em células de tabela */
+}
+
+/* 700px: ocultar coluna "Concluído" */
+@media (max-width: 700px) {
+  .dl-cell-date,
+  .dl-table th:last-child { display: none; }
+}
+
+/* 520px: tabela de histórico vira cards empilhados */
+@media (max-width: 520px) {
+  .dl-table,
+  .dl-table thead,
+  .dl-table tbody,
+  .dl-table tr,
+  .dl-table th,
+  .dl-table td { display: block; }
+
+  .dl-table thead tr { display: none; }
+
+  .dl-table tr {
+    background:    var(--paper-dark);
+    border:        1px solid var(--rule);
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+    padding:       8px 10px;
+  }
+
+  .dl-table td {
+    border-bottom: none;
+    padding:       2px 0;
+    max-width:     none;
+    width:         auto;
+  }
+
+  .dl-table tr:last-child td { border-bottom: none; }
+
+  /* Label inline antes do valor */
+  .dl-table td[data-label]::before {
+    content:        attr(data-label) " ";
+    color:          var(--ink-ghost);
+    font-size:      0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* URL e filename podem quebrar linha normalmente nos cards */
+  .dl-cell-filename .dl-filename,
+  .dl-cell-filename .dl-url { white-space: normal; overflow: visible; }
+
+  .dl-id { text-align: left; }
+}
+
 /* Badges de status de download */
 .badge-active  { background: rgba(74, 103, 65, 0.15); color: var(--accent-green); }
 .badge-queued  { background: rgba(184, 134, 11, 0.12); color: var(--accent); }
