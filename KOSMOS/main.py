@@ -45,6 +45,16 @@ def main() -> None:
     from app.utils.config import Config
     config = Config()
 
+    # --- Aplicar perfil de hardware do LOGOS (modelos recomendados por máquina) ---
+    try:
+        from ecosystem_client import get_active_profile as _get_logos_profile
+        _profile = _get_logos_profile()
+        if _profile:
+            config.apply_logos_profile(_profile)
+            log.info("LOGOS: perfil '%s' aplicado.", _profile.get("profile", "?"))
+    except Exception as _exc:
+        log.debug("LOGOS não disponível no startup: %s", _exc)
+
     # --- Registrar no ecosystem (inclui http_port agora que config está disponível) --
     try:
         import sys as _sys

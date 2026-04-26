@@ -48,6 +48,7 @@ class Config:
     def __init__(self) -> None:
         self._path: Path = Paths.SETTINGS
         self._data: dict[str, Any] = {}
+        self._user_set_keys: set[str] = set()  # chaves presentes no arquivo salvo pelo usuário
         self._load()
 
     # ------------------------------------------------------------------
@@ -64,6 +65,7 @@ class Config:
                     if not isinstance(loaded, dict):
                         raise ConfigError("settings.json não contém um objeto JSON válido.")
                     self._data = loaded
+                    self._user_set_keys = set(loaded.keys())
                 except json.JSONDecodeError as exc:
                     log.warning("settings.json corrompido, usando padrões. Detalhe: %s", exc)
                     self._data = {}
@@ -98,3 +100,14 @@ class Config:
 
     def get_all(self) -> dict[str, Any]:
         return dict(self._data)
+
+    def apply_logos_profile(self, profile: "dict[str, Any]") -> None:
+        """Aplica modelos recomendados pelo LOGOS para campos não configurados pelo usuário.
+
+        Chaves presentes no arquivo salvo (override explícito) nunca são alteradas.
+        """
+        models = profile.get("models", {})
+        if "ai_gen_model" not in self._user_set_keys:
+            model = models.get("llm_kosmos", "")
+            if model:
+                self._data["ai_gen_model"] = model

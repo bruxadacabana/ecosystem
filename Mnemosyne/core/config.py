@@ -149,16 +149,46 @@ def _migrate_legacy(data: dict) -> dict:
     return data
 
 
+def _apply_logos_recommendations(config: "AppConfig", saved_keys: "set[str]") -> "AppConfig":
+    """Aplica modelos recomendados pelo LOGOS para campos não configurados pelo usuário.
+
+    Nunca sobrescreve chaves presentes no arquivo salvo (override explícito do usuário).
+    `embed_model` vazio é sempre preenchido se o LOGOS tiver uma recomendação.
+    Silencioso se o HUB/LOGOS não estiver rodando.
+    """
+    try:
+        import json as _json
+        import urllib.request as _r
+        from dataclasses import replace as _replace
+        with _r.urlopen("http://127.0.0.1:7072/logos/hardware", timeout=2.0) as _resp:
+            _profile = _json.loads(_resp.read())
+        _models = _profile.get("models", {})
+        _changes: dict = {}
+        if "llm_model" not in saved_keys:
+            _llm = _models.get("llm_mnemosyne", "")
+            if _llm:
+                _changes["llm_model"] = _llm
+        if not config.embed_model:
+            _embed = _models.get("embed", "")
+            if _embed:
+                _changes["embed_model"] = _embed
+        return _replace(config, **_changes) if _changes else config
+    except Exception:
+        return config
+
+
 def load_config() -> AppConfig:
     """
     Carrega config.json; usa defaults para chaves ausentes.
     Migra automaticamente do formato legado (watched_dir / vault_dir).
     Sincroniza coleções de ecossistema detectadas via ecosystem.json.
+    Aplica modelos recomendados pelo LOGOS para campos não salvos pelo usuário.
 
     Raises:
         ConfigError: se config.json existir mas for inválido.
     """
     data: dict = dict(_DEFAULTS)
+    _saved_keys: set[str] = set()
 
     for candidate in (_CONFIG_PATH, _LEGACY_CONFIG_PATH):
         if candidate.exists():
@@ -167,6 +197,7 @@ def load_config() -> AppConfig:
                     loaded = json.load(f)
                 if not isinstance(loaded, dict):
                     raise ConfigError("settings.json deve ser um objeto JSON.")
+                _saved_keys = set(loaded.keys())
                 data.update(loaded)
             except json.JSONDecodeError as exc:
                 raise ConfigError(f"settings.json inválido: {exc}") from exc
@@ -182,7 +213,7 @@ def load_config() -> AppConfig:
     ecosystem_enabled: dict[str, bool] = data.get("ecosystem_enabled", {})
     collections = sync_ecosystem_collections(collections, ecosystem_enabled)
 
-    return AppConfig(
+    config = AppConfig(
         llm_model=str(data.get("llm_model", "")),
         embed_model=str(data.get("embed_model", "")),
         chunk_size=int(data.get("chunk_size", 1800)),
@@ -200,6 +231,7 @@ def load_config() -> AppConfig:
         reranking_enabled=bool(data.get("reranking_enabled", True)),
         reranking_top_n=int(data.get("reranking_top_n", 6)),
     )
+    return _apply_logos_recommendations(config, _saved_keys)
 
 
 def save_config(config: AppConfig) -> None:
