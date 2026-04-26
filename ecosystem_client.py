@@ -152,23 +152,53 @@ def logos_status() -> "dict[str, Any] | None":
     return _logos_get("/logos/status")
 
 
+def get_active_profile() -> "dict[str, Any] | None":
+    """Retorna o perfil de hardware ativo do LOGOS com modelos recomendados.
+
+    Estrutura retornada::
+
+        {
+          "profile": "main_pc" | "laptop" | "work_pc",
+          "profile_display": str,
+          "models": {"llm_mnemosyne": str, "llm_kosmos": str, "embed": str}
+        }
+
+    Retorna None se o HUB não estiver rodando.
+    """
+    return _logos_get("/logos/hardware")
+
+
 def logos_silence() -> bool:
     """Envia keep_alive: 0 para descarregar modelos do Ollama. Retorna True se bem-sucedido."""
     result = _logos_post("/logos/silence", {}, timeout=15.0)
     return result is not None
 
 
+# Mapeamento de nome de app para campo do ModelProfile retornado por /logos/hardware.
+# Apps não listados usam "llm_kosmos" como fallback (modelo mais leve).
+_APP_MODEL_KEY: "dict[str, str]" = {
+    "mnemosyne": "llm_mnemosyne",
+    "kosmos":    "llm_kosmos",
+}
+
+# Modelo usado se LOGOS não estiver rodando e model não for especificado.
+_FALLBACK_MODEL = "smollm2:1.7b"
+
+
 def request_llm(
     messages: "list[dict[str, Any]]",
     *,
     app: str,
-    model: str,
+    model: "str | None" = None,
     priority: int = 3,
     stream: bool = False,
     ollama_base: str = "http://localhost:11434",
     **options: Any,
 ) -> "dict[str, Any]":
     """Envia chamada LLM ao LOGOS (fila de prioridades) com failsafe direto ao Ollama.
+
+    Se `model` for None, consulta GET /logos/hardware e usa o modelo recomendado
+    para o `app` informado. Callers que passam `model` explicitamente não são afetados.
 
     priority: 1=P1 interativo, 2=P2 RAG, 3=P3 background (padrão)
 
@@ -177,6 +207,14 @@ def request_llm(
     """
     import urllib.request as _r
     import urllib.error as _ue
+
+    if model is None:
+        profile = get_active_profile()
+        if profile is not None:
+            key = _APP_MODEL_KEY.get(app, "llm_kosmos")
+            model = profile["models"].get(key, _FALLBACK_MODEL)
+        else:
+            model = _FALLBACK_MODEL
 
     payload: dict[str, Any] = {
         "app": app,

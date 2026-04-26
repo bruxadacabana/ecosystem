@@ -1040,7 +1040,7 @@ e seleciona automaticamente o perfil de modelos adequado — sem configuração 
 - [x] Implementar `detect_hardware_profile()` em `logos.rs` com as 3 etapas de detecção
 - [x] Definir `HardwareProfile` enum + struct `ModelProfile { llm_mnemosyne, llm_kosmos, embed }`
 - [x] Expor `GET /logos/hardware` no servidor Axum
-- [ ] `ecosystem_client.py`: `get_active_profile()` + adaptar `request_llm()` para usar modelo do perfil ativo
+- [x] `ecosystem_client.py`: `get_active_profile()` + adaptar `request_llm()` para usar modelo do perfil ativo
 - [ ] KOSMOS e Mnemosyne: ler perfil do LOGOS no startup e usar modelos recomendados mas inclua a possibilidade de haver override manual (tornando o recomendado pelo LOGOS sempre como padrão)
 - [ ] HUB LogosPanel: exibir perfil ativo ("PC Principal · RX 6600", "Laptop · MX150 2 GB", etc.)
 
