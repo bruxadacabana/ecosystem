@@ -275,7 +275,7 @@
 
 ### Interface
 
-- [ ] `gui/main_window.py` — toggle "🌐 Pesquisa Profunda" no painel de perguntas:
+- [x] `gui/main_window.py` — toggle "🌐 Pesquisa Profunda" no painel de perguntas:
       visível apenas se AKASHA disponível (verificar `is_available()` no startup);
       quando ativo, `AskWorker` é substituído por `DeepResearchWorker`;
       status incremental exibido na barra inferior durante a pesquisa;

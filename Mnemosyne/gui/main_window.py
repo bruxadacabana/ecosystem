@@ -52,6 +52,7 @@ from core.ollama_client import OllamaModel, filter_chat_models, filter_embed_mod
 from core.tracker import FileTracker
 from gui.workers import (
     AskWorker,
+    DeepResearchWorker,
     CompactMemoryWorker,
     FaqWorker,
     GuideWorker,
@@ -310,6 +311,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 650)
 
         self.vectorstore = None
+        self._akasha_available = False
         self._available_models: list[OllamaModel] = []
         self._session_memory = SessionMemory()
         self._chat_history: list[Turn] = []
@@ -692,7 +694,15 @@ class MainWindow(QMainWindow):
         self.ask_btn.setObjectName("sendBtn")
         self.ask_btn.setEnabled(False)
         self.ask_btn.clicked.connect(self.ask_question)
+        self._deep_research_toggle = QCheckBox("🌐 Web")
+        self._deep_research_toggle.setObjectName("deepResearchToggle")
+        self._deep_research_toggle.setToolTip(
+            "Pesquisa Profunda — combina biblioteca local com resultados web do AKASHA\n"
+            "(requer AKASHA rodando)"
+        )
+        self._deep_research_toggle.setEnabled(False)
         input_row.addWidget(self.question_edit, 1)
+        input_row.addWidget(self._deep_research_toggle)
         input_row.addWidget(self.ask_btn)
         layout.addLayout(input_row)
 
@@ -1265,6 +1275,18 @@ class MainWindow(QMainWindow):
 
         if self.config.background_index_enabled:
             self._start_idle_indexer()
+
+        self._check_akasha_availability()
+
+    def _check_akasha_availability(self) -> None:
+        try:
+            from core.akasha_client import AkashaClient
+            self._akasha_available = AkashaClient().is_available()
+        except Exception:
+            self._akasha_available = False
+        self._deep_research_toggle.setEnabled(self._akasha_available)
+        if not self._akasha_available:
+            self._deep_research_toggle.setChecked(False)
 
     # ── Watcher ───────────────────────────────────────────────────────────────
 
@@ -1914,14 +1936,24 @@ class MainWindow(QMainWindow):
         source_files = self._get_selected_files()
         collection_type = self.config.collection_type
 
-        self._ask_worker = AskWorker(
-            self.vectorstore, question, self.config,
-            self._chat_history, None, retrieval_mode,
-            self._file_tracker, persona=persona, source_files=source_files,
-            collection_type=collection_type,
-        )
-        self._ask_worker.token.connect(self._on_ask_token)
-        self._ask_worker.finished.connect(self._on_answer)
+        if self._deep_research_toggle.isChecked() and self._akasha_available:
+            self._ask_worker = DeepResearchWorker(
+                self.vectorstore, question, self.config,
+                self._chat_history, self._file_tracker,
+                persona=persona, collection_type=collection_type,
+            )
+            self._ask_worker.status.connect(self.statusBar().showMessage)
+            self._ask_worker.token.connect(self._on_ask_token)
+            self._ask_worker.finished.connect(self._on_deep_answer)
+        else:
+            self._ask_worker = AskWorker(
+                self.vectorstore, question, self.config,
+                self._chat_history, None, retrieval_mode,
+                self._file_tracker, persona=persona, source_files=source_files,
+                collection_type=collection_type,
+            )
+            self._ask_worker.token.connect(self._on_ask_token)
+            self._ask_worker.finished.connect(self._on_answer)
         self._ask_worker.start()
 
     def _on_ask_token(self, chunk: str) -> None:
@@ -1948,14 +1980,16 @@ class MainWindow(QMainWindow):
             if sources:
                 lines = []
                 for s in sources:
-                    name = os.path.basename(s["path"])
+                    is_web = s["path"].startswith("http://") or s["path"].startswith("https://")
+                    name   = s["path"] if is_web else os.path.basename(s["path"])
+                    badge  = "[WEB] " if is_web else ""
                     pct = int(s["score"] * 100)
                     filled = round(s["score"] * 10)
                     bar = "█" * filled + "░" * (10 - filled)
                     excerpt = s["excerpt"]
                     if len(excerpt) > 180:
                         excerpt = excerpt[:180] + "…"
-                    lines.append(f"• {name}  {bar} {pct}%\n  \"{excerpt}\"")
+                    lines.append(f"• {badge}{name}  {bar} {pct}%\n  \"{excerpt}\"")
                 self.sources_text.setPlainText("\n\n".join(lines))
             else:
                 self.sources_text.setPlainText("(nenhuma fonte identificada)")
@@ -1963,6 +1997,37 @@ class MainWindow(QMainWindow):
             self.answer_text.setPlainText(f"Erro: {text}")
             self.sources_text.clear()
 
+        self.ask_btn.setEnabled(True)
+        self.statusBar().showMessage("Pronto." if success else "Interrompido.")
+
+    def _on_deep_answer(self, success: bool, text: str, sources: list) -> None:
+        """Slot para DeepResearchWorker.finished — sem updated_history."""
+        self.cancel_btn.setVisible(False)
+        if success:
+            self.answer_text.setPlainText(text)
+            self._session_memory.save_query(
+                self.question_edit.text().strip(), text,
+                [s["path"] for s in sources],
+            )
+            if sources:
+                lines = []
+                for s in sources:
+                    is_web = s["path"].startswith("http://") or s["path"].startswith("https://")
+                    name   = s["path"] if is_web else os.path.basename(s["path"])
+                    badge  = "[WEB] " if is_web else ""
+                    pct    = int(s["score"] * 100)
+                    filled = round(s["score"] * 10)
+                    bar    = "█" * filled + "░" * (10 - filled)
+                    excerpt = s["excerpt"]
+                    if len(excerpt) > 180:
+                        excerpt = excerpt[:180] + "…"
+                    lines.append(f"• {badge}{name}  {bar} {pct}%\n  \"{excerpt}\"")
+                self.sources_text.setPlainText("\n\n".join(lines))
+            else:
+                self.sources_text.setPlainText("(nenhuma fonte identificada)")
+        else:
+            self.answer_text.setPlainText(f"Erro: {text}")
+            self.sources_text.clear()
         self.ask_btn.setEnabled(True)
         self.statusBar().showMessage("Pronto." if success else "Interrompido.")
 
