@@ -99,6 +99,24 @@ class SetupDialog(QDialog):
         chat_models = filter_chat_models(models)
         embed_models = filter_embed_models(models)
 
+        # Perfil de hardware do LOGOS (para botões "Recomendado")
+        self._logos_llm = ""
+        self._logos_embed = ""
+        self._logos_display = ""
+        try:
+            from pathlib import Path as _Path
+            _root = str(_Path(__file__).parent.parent.parent)
+            if _root not in sys.path:
+                sys.path.insert(0, _root)
+            from ecosystem_client import get_active_profile as _get_profile
+            _p = _get_profile()
+            if _p:
+                self._logos_llm     = _p.get("models", {}).get("llm_mnemosyne", "")
+                self._logos_embed   = _p.get("models", {}).get("embed", "")
+                self._logos_display = _p.get("profile_display", "")
+        except Exception:
+            pass
+
         # Modelo LLM
         self.llm_combo = QComboBox()
         for m in chat_models:
@@ -109,7 +127,18 @@ class SetupDialog(QDialog):
             idx = self.llm_combo.findText(current.llm_model)
             if idx >= 0:
                 self.llm_combo.setCurrentIndex(idx)
-        form.addRow("Modelo LLM:", self.llm_combo)
+        llm_row = QHBoxLayout()
+        llm_row.setContentsMargins(0, 0, 0, 0)
+        llm_row.addWidget(self.llm_combo, 1)
+        llm_rec_btn = QPushButton("↩ Recomendado")
+        llm_rec_btn.setToolTip(
+            f"Recomendado pelo LOGOS ({self._logos_display}): {self._logos_llm}"
+            if self._logos_llm else "LOGOS não disponível"
+        )
+        llm_rec_btn.setEnabled(bool(self._logos_llm))
+        llm_rec_btn.clicked.connect(self._use_logos_llm)
+        llm_row.addWidget(llm_rec_btn)
+        form.addRow("Modelo LLM:", llm_row)
 
         # Modelo embedding
         self.embed_combo = QComboBox()
@@ -122,7 +151,18 @@ class SetupDialog(QDialog):
             if idx >= 0:
                 self.embed_combo.setCurrentIndex(idx)
         self.embed_combo.setToolTip("Usado na indexação — roda na sua máquina via Ollama")
-        form.addRow("Modelo de embedding:", self.embed_combo)
+        embed_row = QHBoxLayout()
+        embed_row.setContentsMargins(0, 0, 0, 0)
+        embed_row.addWidget(self.embed_combo, 1)
+        embed_rec_btn = QPushButton("↩ Recomendado")
+        embed_rec_btn.setToolTip(
+            f"Recomendado pelo LOGOS ({self._logos_display}): {self._logos_embed}"
+            if self._logos_embed else "LOGOS não disponível"
+        )
+        embed_rec_btn.setEnabled(bool(self._logos_embed))
+        embed_rec_btn.clicked.connect(self._use_logos_embed)
+        embed_row.addWidget(embed_rec_btn)
+        form.addRow("Modelo de embedding:", embed_row)
 
         layout.addLayout(form)
 
@@ -156,6 +196,20 @@ class SetupDialog(QDialog):
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
+
+    def _use_logos_llm(self) -> None:
+        if not self._logos_llm:
+            return
+        idx = self.llm_combo.findText(self._logos_llm)
+        if idx >= 0:
+            self.llm_combo.setCurrentIndex(idx)
+
+    def _use_logos_embed(self) -> None:
+        if not self._logos_embed:
+            return
+        idx = self.embed_combo.findText(self._logos_embed)
+        if idx >= 0:
+            self.embed_combo.setCurrentIndex(idx)
 
     def _pick_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Selecionar pasta de documentos")

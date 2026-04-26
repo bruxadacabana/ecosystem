@@ -312,6 +312,12 @@ class SettingsView(QWidget):
         self._ai_gen_combo.activated.connect(self._on_ai_gen_selected)
         self._ai_gen_combo.lineEdit().editingFinished.connect(self._on_ai_gen_selected)
         row_gen.addWidget(self._ai_gen_combo, 1)
+        _logos_gen_btn = QPushButton("↩ Recomendado")
+        _logos_gen_btn.setFont(self._mono(11))
+        _logos_gen_btn.setFixedWidth(130)
+        _logos_gen_btn.setToolTip("Aplicar modelo recomendado pelo LOGOS para esta máquina")
+        _logos_gen_btn.clicked.connect(self._on_use_logos_gen)
+        row_gen.addWidget(_logos_gen_btn)
         layout.addLayout(row_gen)
 
         # Modelo de embeddings (combo editável)
@@ -695,6 +701,28 @@ class SettingsView(QWidget):
         val = self._ai_gen_combo.currentText().strip()
         if val:
             self._cfg.set("ai_gen_model", val)
+
+    def _on_use_logos_gen(self) -> None:
+        try:
+            from pathlib import Path as _Path
+            _root = str(_Path(__file__).parent.parent.parent.parent.parent)
+            if _root not in sys.path:
+                sys.path.insert(0, _root)
+            from ecosystem_client import get_active_profile as _get
+            profile = _get()
+            if profile:
+                model = profile.get("models", {}).get("llm_kosmos", "")
+                display = profile.get("profile_display", "LOGOS")
+                if model:
+                    if self._ai_gen_combo.findText(model) < 0:
+                        self._ai_gen_combo.insertItem(0, model)
+                    self._ai_gen_combo.setCurrentText(model)
+                    self._cfg.set("ai_gen_model", model)
+                    self._ai_status.setText(f"✓ Modelo recomendado aplicado: {model}  ({display})")
+                    return
+            self._ai_status.setText("LOGOS não disponível — execute o HUB primeiro.")
+        except ValueError as exc:
+            self._ai_status.setText(f"Erro ao consultar LOGOS: {exc}")
 
     def _on_ai_embed_selected(self) -> None:
         val = self._ai_embed_combo.currentText().strip()
