@@ -1037,7 +1037,7 @@ e seleciona automaticamente o perfil de modelos adequado — sem configuração 
 - Perfil exposto via `GET /logos/profile` → apps lêem e ajustam modelos dinamicamente
 - `ecosystem_client.py`: `get_active_profile()` → retorna o perfil atual do LOGOS
 
-- [ ] Implementar `detect_hardware_profile()` em `logos.rs` com as 3 etapas de detecção
+- [x] Implementar `detect_hardware_profile()` em `logos.rs` com as 3 etapas de detecção
 - [ ] Definir `HardwareProfile` enum + struct `ModelProfile { llm_mnemosyne, llm_kosmos, embed }`
 - [ ] Expor `GET /logos/profile` no servidor Axum
 - [ ] `ecosystem_client.py`: `get_active_profile()` + adaptar `request_llm()` para usar modelo do perfil ativo

@@ -43,6 +43,85 @@ const P3_TIMEOUT: Duration = Duration::from_secs(30);
 // P3 recebe 429 imediatamente se VRAM acima deste limiar
 const VRAM_P3_BLOCK: f32 = 0.85;
 
+// ── Perfil de hardware ────────────────────────────────────────
+
+/// Identifica em qual máquina o HUB está rodando.
+/// Detectado em runtime via fingerprint de GPU — uma única vez no startup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HardwareProfile {
+    /// PC principal — AMD Ryzen 5 4600G + RX 6600 8 GB (ROCm/Linux)
+    MainPc,
+    /// Laptop Ideapad 330 — i7-8550U + NVIDIA MX150 2 GB (CUDA/Linux)
+    Laptop,
+    /// PC de trabalho — i5-3470 sem GPU discreta (CPU-only/Windows)
+    WorkPc,
+}
+
+impl HardwareProfile {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HardwareProfile::MainPc => "main_pc",
+            HardwareProfile::Laptop => "laptop",
+            HardwareProfile::WorkPc => "work_pc",
+        }
+    }
+
+    pub fn display(self) -> &'static str {
+        match self {
+            HardwareProfile::MainPc => "PC Principal · RX 6600 (8 GB)",
+            HardwareProfile::Laptop => "Laptop · MX150 (2 GB)",
+            HardwareProfile::WorkPc => "PC de Trabalho · CPU-only",
+        }
+    }
+}
+
+/// Detecta o perfil de hardware em runtime via fingerprint de GPU.
+/// Chamada uma única vez no startup — bloqueante mas negligenciável.
+///
+/// Lógica em cascata:
+///   1. Windows (compile-time)                          → WorkPc
+///   2. Linux: `nvidia-smi` retorna "MX150"             → Laptop
+///   3. Linux: AMD sysfs VRAM ≥ 4 GiB (RX 6600 = 8 GiB) → MainPc
+///   4. Fallback                                         → WorkPc
+pub fn detect_hardware_profile() -> HardwareProfile {
+    #[cfg(target_os = "windows")]
+    return HardwareProfile::WorkPc;
+
+    #[cfg(target_os = "linux")]
+    {
+        // Etapa 1: NVIDIA MX150 → Laptop
+        if let Ok(out) = std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=name", "--format=csv,noheader"])
+            .output()
+        {
+            if String::from_utf8_lossy(&out.stdout)
+                .to_lowercase()
+                .contains("mx150")
+            {
+                return HardwareProfile::Laptop;
+            }
+        }
+
+        // Etapa 2: AMD sysfs — VRAM ≥ 4 GiB → MainPc
+        for i in 0..8u8 {
+            let path = format!("/sys/class/drm/card{i}/device/mem_info_vram_total");
+            if let Ok(s) = std::fs::read_to_string(&path) {
+                if let Ok(bytes) = s.trim().parse::<u64>() {
+                    if bytes >= 4 * 1024 * 1024 * 1024 {
+                        return HardwareProfile::MainPc;
+                    }
+                }
+            }
+        }
+
+        // Etapa 3: Fallback
+        return HardwareProfile::WorkPc;
+    }
+
+    #[allow(unreachable_code)]
+    HardwareProfile::WorkPc
+}
+
 // ── Estado interno ────────────────────────────────────────────
 
 struct Inner {
@@ -61,6 +140,8 @@ struct Inner {
     /// Modo de hardware determinado em tempo de compilação: "normal" | "sobrevivencia"
     /// "sobrevivencia" é ativado automaticamente em builds Windows (CPU-only, RAM limitada).
     hardware_mode: String,
+    /// Perfil de hardware detectado em runtime via fingerprint de GPU.
+    hardware_profile: HardwareProfile,
     queue_counts: Mutex<[u32; 3]>,
     client: Client,
 }
@@ -81,6 +162,7 @@ impl LogosState {
         } else {
             "normal".to_string()
         };
+        let hardware_profile = detect_hardware_profile();
         Self(Arc::new(Inner {
             ollama_url: ollama_url.into(),
             semaphore: Arc::new(Semaphore::new(2)),
@@ -89,6 +171,7 @@ impl LogosState {
             active_app: Mutex::new(None),
             active_profile: Mutex::new("normal".to_string()),
             hardware_mode,
+            hardware_profile,
             queue_counts: Mutex::new([0, 0, 0]),
             client,
         }))
@@ -108,6 +191,10 @@ pub struct StatusResponse {
     pub current_profile: String,
     /// Modo de hardware: "normal" (CachyOS/GPU) | "sobrevivencia" (Windows/CPU-only)
     pub hardware_mode: String,
+    /// Perfil de hardware detectado: "main_pc" | "laptop" | "work_pc"
+    pub hardware_profile: String,
+    /// Nome legível do perfil: "PC Principal · RX 6600 (8 GB)" etc.
+    pub hardware_profile_display: String,
     /// Contagem de requests aguardando por prioridade [P1, P2, P3]
     pub queue: [u32; 3],
     /// VRAM em uso (MB) reportada pelo Ollama /api/ps
@@ -323,7 +410,9 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let active_model_class = s.0.active_model_class.lock().await.clone();
     let active_app         = s.0.active_app.lock().await.clone();
     let current_profile    = s.0.active_profile.lock().await.clone();
-    let hardware_mode      = s.0.hardware_mode.clone();
+    let hardware_mode             = s.0.hardware_mode.clone();
+    let hardware_profile          = s.0.hardware_profile.as_str().to_string();
+    let hardware_profile_display  = s.0.hardware_profile.display().to_string();
     let queue = *s.0.queue_counts.lock().await;
     let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, &s.0.ollama_url).await;
     StatusResponse {
@@ -332,6 +421,8 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         active_app,
         current_profile,
         hardware_mode,
+        hardware_profile,
+        hardware_profile_display,
         queue,
         vram_used_mb,
         vram_pct,
