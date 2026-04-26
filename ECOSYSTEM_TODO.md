@@ -770,7 +770,7 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — Em janelas estreitas a tabela quebra (coluna URL muito longa, coluna data sobreposta)
   — Fix: ocultar coluna "Concluído" abaixo de 700px; truncar URL com `max-width` + `text-overflow`
   — Abaixo de 520px: substituir tabela por cards empilhados (cada download = 1 card compacto)
-- [ ] **Formulário de download em linha (`dl-form`)**
+- [x] **Formulário de download em linha (`dl-form`)**
   — Em janelas estreitas os 3 campos ficam espremidos
   — Fix: `flex-direction: column` abaixo de 580px; cada campo ocupa 100% da largura
 - [ ] **Página de biblioteca (`/library`) — grid de cards**

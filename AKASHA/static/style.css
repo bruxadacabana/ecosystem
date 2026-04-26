@@ -916,6 +916,12 @@ a:hover { opacity: 0.75; }
 .dl-url-input  { flex: 3; min-width: 200px; }
 .dl-dest-input { flex: 2; min-width: 140px; }
 
+@media (max-width: 580px) {
+  .dl-form { flex-direction: column; }
+  .dl-url-input,
+  .dl-dest-input { width: 100%; min-width: 0; flex: none; }
+}
+
 .dl-list {
   list-style: none;
   padding: 0;
