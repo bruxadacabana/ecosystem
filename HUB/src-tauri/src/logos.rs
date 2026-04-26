@@ -239,6 +239,13 @@ pub struct OllamaModelInfo {
     pub size_vram_mb: u64,
 }
 
+#[derive(Serialize)]
+pub struct HardwareResponse {
+    pub profile:         &'static str,
+    pub profile_display: &'static str,
+    pub models:          ModelProfile,
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 pub fn build_router(state: LogosState) -> Router {
@@ -247,7 +254,8 @@ pub fn build_router(state: LogosState) -> Router {
         .route("/logos/chat",    post(chat_handler))
         .route("/logos/silence", post(silence_handler))
         .route("/logos/profile", post(profile_handler))
-        .route("/logos/models",  get(models_handler))
+        .route("/logos/models",   get(models_handler))
+        .route("/logos/hardware", get(hardware_handler))
         .with_state(state)
 }
 
@@ -430,6 +438,15 @@ async fn profile_handler(
 async fn models_handler(State(s): State<LogosState>) -> Response {
     let models = do_list_models(&s).await;
     (StatusCode::OK, Json(models)).into_response()
+}
+
+async fn hardware_handler(State(s): State<LogosState>) -> Json<HardwareResponse> {
+    let hw = s.0.hardware_profile;
+    Json(HardwareResponse {
+        profile:         hw.as_str(),
+        profile_display: hw.display(),
+        models:          hw.model_profile(),
+    })
 }
 
 // ── Lógica pública (usada também pelos Tauri commands) ────────
