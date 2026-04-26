@@ -262,7 +262,7 @@
 
 ### DeepResearchWorker
 
-- [ ] `gui/workers.py` — `DeepResearchWorker(QThread)`:
+- [x] `gui/workers.py` — `DeepResearchWorker(QThread)`:
       sinal `status(str)` para feedback incremental ("Buscando no AKASHA…", "Carregando 3/5…", etc.);
       sinal `finished(bool, str, list)` — sucesso, resposta RAG, fontes (local + web);
       pipeline:

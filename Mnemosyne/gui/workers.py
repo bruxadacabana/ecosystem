@@ -15,6 +15,8 @@ from core.errors import (
     QueryError,
     SummarizationError,
     GuideError,
+    AkashaOfflineError,
+    AkashaFetchError,
 )
 from core.faq import iter_faq, parse_faq
 from core.indexer import (
@@ -30,7 +32,7 @@ from core.indexer import (
 from core.loaders import load_documents, load_single_file
 from core.memory import MemoryStore, Turn
 from core.ollama_client import list_models, validate_model
-from core.rag import prepare_ask, strip_think, AskResult
+from core.rag import prepare_ask, strip_think, AskResult, SourceRecord
 from core.summarizer import iter_summary
 from core.tracker import FileTracker
 
@@ -553,6 +555,218 @@ class AskWorker(QThread):
             self.finished.emit(True, answer, sources, updated)
         except Exception as exc:
             self.finished.emit(False, f"Erro na consulta: {exc}", [], self.chat_history)
+
+
+class DeepResearchWorker(QThread):
+    """Pesquisa profunda: combina biblioteca local com páginas buscadas no AKASHA em tempo real.
+
+    Pipeline:
+      1. AkashaClient.search() → lista de URLs candidatas
+      2. fetch() paralelo via asyncio.gather → conteúdo Markdown de cada página
+      3. SessionIndexer.add_pages() → índice efêmero em memória (ou stuffing em RAM limitada)
+      4. Retrieval local (vectorstore) + retrieval web (session)
+      5. Prompt combinado [Local] + [WEB] → streaming com ChatOllama
+      6. SessionIndexer.clear() no finally
+    """
+
+    status   = Signal(str)            # feedback incremental ("Buscando no AKASHA…")
+    token    = Signal(str)            # token de streaming
+    finished = Signal(bool, str, list)  # sucesso, resposta/erro, fontes (local + web)
+
+    def __init__(
+        self,
+        vectorstore,
+        question: str,
+        config: AppConfig,
+        chat_history: list[Turn] | None = None,
+        tracker: FileTracker | None = None,
+        persona: str = "curador",
+        collection_type: str = "library",
+    ) -> None:
+        super().__init__()
+        self.vectorstore    = vectorstore
+        self.question       = question
+        self.config         = config
+        self.chat_history   = list(chat_history) if chat_history else []
+        self.tracker        = tracker
+        self.persona        = persona
+        self.collection_type = collection_type
+
+    def run(self) -> None:
+        import asyncio as _asyncio
+        import psutil as _psutil
+        from langchain_core.messages import SystemMessage, HumanMessage
+        from core.akasha_client import AkashaClient, FetchResult
+        from core.session_indexer import SessionIndexer
+
+        available_gb = _psutil.virtual_memory().available / (1024 ** 3)
+        low_memory   = available_gb < 4.0
+        max_pages    = 3 if low_memory else 5
+
+        # ── 1. Buscar no AKASHA ──────────────────────────────────────────
+        self.status.emit("Buscando no AKASHA…")
+        client = AkashaClient()
+        try:
+            results = client.search(self.question, max_results=max_pages)
+        except AkashaOfflineError:
+            self.finished.emit(False, "AKASHA não está disponível. Inicie-o primeiro.", [])
+            return
+        except AkashaFetchError as exc:
+            self.finished.emit(False, f"Erro na busca web: {exc}", [])
+            return
+
+        # ── 2. Carregar páginas em paralelo ──────────────────────────────
+        pages: list[FetchResult] = []
+        if results:
+            self.status.emit(f"Carregando {len(results)} página(s)…")
+
+            async def _fetch_all() -> list[FetchResult]:
+                fetched = await _asyncio.gather(
+                    *[client.fetch(r.url) for r in results],
+                    return_exceptions=True,
+                )
+                return [p for p in fetched if isinstance(p, FetchResult)]
+
+            try:
+                pages = _asyncio.run(_fetch_all())
+            except Exception as exc:
+                self.status.emit(f"Aviso: erro ao carregar páginas ({exc}).")
+
+        # ── 3. Indexar em memória (ou preparar stuffing) ──────────────────
+        session: SessionIndexer | None = None
+        web_docs = []
+
+        if pages and not low_memory and self.config.embed_model:
+            self.status.emit(f"Indexando {len(pages)} página(s) em memória…")
+            try:
+                session = SessionIndexer(self.config.embed_model, max_pages=max_pages)
+                session.add_pages(pages)
+                web_docs = session.search(self.question, k=5)
+            except Exception as exc:
+                self.status.emit(f"Aviso: falha ao indexar web ({exc}) — usando contexto direto.")
+                if session:
+                    session.clear()
+                session = None
+                web_docs = []
+
+        # ── 4. Retrieval local ────────────────────────────────────────────
+        self.status.emit("Recuperando fontes locais…")
+        local_docs = []
+        try:
+            local_docs = self.vectorstore.similarity_search(
+                self.question, k=self.config.retriever_k
+            )
+        except Exception:
+            pass  # vectorstore pode estar vazio
+
+        if self.isInterruptionRequested():
+            if session:
+                session.clear()
+            self.finished.emit(False, "Interrompido.", [])
+            return
+
+        # ── 5. Construir contexto e fontes ────────────────────────────────
+        self.status.emit("Gerando resposta…")
+
+        local_context: list[str] = []
+        local_sources: list[SourceRecord] = []
+        seen_local: set[str] = set()
+        for i, doc in enumerate(local_docs):
+            src   = doc.metadata.get("source", "")
+            title = doc.metadata.get("title") or (src.split("/")[-1] if src else "?")
+            if src and src not in seen_local:
+                seen_local.add(src)
+                local_sources.append(SourceRecord(
+                    path=src,
+                    excerpt=doc.page_content[:250],
+                    score=max(0.3, 1.0 - i * 0.15),
+                ))
+            local_context.append(f"[Local — {title}]\n{doc.page_content}")
+
+        web_context: list[str] = []
+        web_sources: list[SourceRecord] = []
+        if web_docs:
+            seen_web: set[str] = set()
+            for i, doc in enumerate(web_docs):
+                url   = doc.metadata.get("source", "")
+                title = doc.metadata.get("title", url)
+                if url and url not in seen_web:
+                    seen_web.add(url)
+                    web_sources.append(SourceRecord(
+                        path=url,
+                        excerpt=doc.page_content[:250],
+                        score=max(0.3, 1.0 - i * 0.15),
+                    ))
+                web_context.append(f"[WEB — {title} — {url}]\n{doc.page_content}")
+        elif pages:
+            # Stuffing direto (RAM limitada ou embed_model ausente)
+            for page in pages[:max_pages]:
+                if not page.content_md.strip():
+                    continue
+                snippet = page.content_md[:1500]
+                web_context.append(f"[WEB — {page.title} — {page.url}]\n{snippet}")
+                web_sources.append(SourceRecord(
+                    path=page.url,
+                    excerpt=snippet[:250],
+                    score=0.7,
+                ))
+
+        all_context = "\n\n---\n\n".join(local_context + web_context)
+        all_sources = local_sources + web_sources
+
+        history_text = ""
+        if self.chat_history:
+            recent = self.chat_history[-3:]
+            history_text = "\n".join(
+                f"{'Usuária' if t.role == 'user' else 'Mnemosyne'}: {t.content}"
+                for t in recent
+            )
+
+        system_msg = SystemMessage(content=(
+            "Você é o Mnemosyne, assistente de pesquisa profunda.\n"
+            "Responda baseando-se nas fontes fornecidas — biblioteca local e páginas web.\n"
+            "Para fontes locais, cite o título ou arquivo. "
+            "Para fontes web, cite a URL com prefixo [WEB].\n"
+            "Se as fontes divergirem, apresente as perspectivas em contraste.\n"
+            "Responda sempre em português."
+        ))
+        history_section = f"\nHistórico recente:\n{history_text}\n" if history_text else ""
+        human_msg = HumanMessage(content=(
+            f"Fontes disponíveis:\n\n{all_context}\n\n"
+            f"{history_section}"
+            f"Pergunta: {self.question}"
+        ))
+
+        # ── 6. Gerar resposta com streaming ──────────────────────────────
+        try:
+            validate_model(self.config.llm_model)
+        except (ModelNotFoundError, OllamaUnavailableError) as exc:
+            if session:
+                session.clear()
+            self.finished.emit(False, str(exc), [])
+            return
+
+        try:
+            llm  = ChatOllama(model=self.config.llm_model, temperature=0, num_ctx=8192)
+            full = ""
+            for chunk in llm.stream([system_msg, human_msg]):
+                if self.isInterruptionRequested():
+                    self.finished.emit(False, "Interrompido.", [])
+                    return
+                if chunk.content:
+                    self.token.emit(chunk.content)
+                    full += chunk.content
+
+            answer = strip_think(full)
+            if self.tracker and local_sources:
+                for rank, src in enumerate(local_sources):
+                    self.tracker.update_retrieved(src["path"], max(0.3, 1.0 - rank * 0.2))
+            self.finished.emit(True, answer, all_sources)
+        except Exception as exc:
+            self.finished.emit(False, f"Erro na consulta: {exc}", [])
+        finally:
+            if session:
+                session.clear()
 
 
 class SummarizeWorker(QThread):
