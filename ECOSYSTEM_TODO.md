@@ -777,9 +777,9 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — Cards da biblioteca usam grid mas não têm breakpoint explícito abaixo de 700px
   — Auditado: layout é flex coluna única (não grid); inline styles extraídos para classes CSS
   — lib-site-row/info/actions: @media 640px → coluna; lib-discover-form: flex-wrap
-- [ ] **Topbar — links de navegação em janela ~700px**
+- [x] **Topbar — links de navegação em janela ~700px**
   — Entre 540px e 860px os links de nav ficam em segunda linha mas com espaçamento irregular
-  — Fix: limitar gap a 2px e garantir `flex-wrap: wrap` correto; testar em 650px, 750px, 850px
+  — Fix: column-gap/row-gap separados (row-gap: 0); nav controla espaço via margin-top: 4px
 - [ ] **Página watch-later, history, favorites**
   — Auditar e corrigir quebras similares às da tabela de downloads
 - [ ] **Testar em janelas representativas:** 800×600, 1024×600, 1280×720 (não apenas mobile)

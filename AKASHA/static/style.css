@@ -897,9 +897,11 @@ a:hover { opacity: 0.75; }
 /* Tablet / janela estreita: nav desce para segunda linha */
 @media (max-width: 860px) {
   .topbar {
-    flex-wrap: wrap;
-    gap:       8px;
-    padding:   8px 14px;
+    flex-wrap:   wrap;
+    column-gap:  8px;
+    row-gap:     0;        /* nav controla seu próprio espaço com margin-top */
+    padding:     8px 14px;
+    align-items: center;
   }
 
   .topbar-brand  { order: 1; }
@@ -912,14 +914,19 @@ a:hover { opacity: 0.75; }
     flex-basis:  100%;
     flex-wrap:   wrap;
     gap:         2px;
-    padding-top: 6px;
+    margin-top:  4px;
+    padding-top: 4px;
     border-top:  1px solid var(--rule);
   }
 }
 
 /* Mobile: busca desce para linha própria entre brand e nav */
 @media (max-width: 540px) {
-  .topbar { gap: 6px; padding: 7px 12px; }
+  .topbar {
+    column-gap: 6px;
+    row-gap:    0;
+    padding:    7px 12px;
+  }
 
   .topbar-brand  { order: 1; }
   .theme-toggle  { order: 2; margin-left: auto; }
@@ -929,7 +936,7 @@ a:hover { opacity: 0.75; }
     flex-basis: 100%;
     flex:       none;
   }
-  .topbar-nav    { order: 10; }
+  .topbar-nav { order: 10; }
 
   .nav-link, .topbar-link {
     font-size:      8px;
