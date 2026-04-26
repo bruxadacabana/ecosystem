@@ -73,6 +73,35 @@ impl HardwareProfile {
             HardwareProfile::WorkPc => "PC de Trabalho · CPU-only",
         }
     }
+
+    pub fn model_profile(self) -> ModelProfile {
+        match self {
+            HardwareProfile::MainPc => ModelProfile {
+                llm_mnemosyne: "qwen2.5:7b",
+                llm_kosmos:    "gemma2:2b",
+                embed:         "bge-m3",
+            },
+            HardwareProfile::Laptop => ModelProfile {
+                llm_mnemosyne: "gemma2:2b",
+                llm_kosmos:    "smollm2:1.7b",
+                embed:         "nomic-embed-text",
+            },
+            HardwareProfile::WorkPc => ModelProfile {
+                llm_mnemosyne: "smollm2:1.7b",
+                llm_kosmos:    "smollm2:1.7b",
+                embed:         "all-minilm",
+            },
+        }
+    }
+}
+
+/// Modelos recomendados para cada perfil de hardware.
+/// Lidos pelos apps Python via `GET /logos/hardware` no startup.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ModelProfile {
+    pub llm_mnemosyne: &'static str,
+    pub llm_kosmos:    &'static str,
+    pub embed:         &'static str,
 }
 
 /// Detecta o perfil de hardware em runtime via fingerprint de GPU.
