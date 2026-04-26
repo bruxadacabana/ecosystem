@@ -909,13 +909,12 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 
 ### Mnemosyne: indexação automática em idle (Fase 10)
 
-- [ ] Quando o Mnemosyne não está indexando ativamente, monitorar as pastas do ecossistema
+- [x] Quando o Mnemosyne não está indexando ativamente, monitorar as pastas do ecossistema
   e indexar automaticamente arquivos novos/modificados gerados por AKASHA, KOSMOS, Hermes e AETHER
-  — pastas monitoradas: `{sync_root}/akasha/archive/`, `{sync_root}/kosmos/articles/`,
-    `{sync_root}/hermes/transcriptions/`, `vault_dir` (AETHER)
-  — implementação: file watcher (`watchdog`) + fila thread-safe + `IdleIndexProcessor` (QTimer 30s)
-  — idle = nenhum IndexWorker/ResumeIndexWorker/QueryWorker ativo; pausa se indexação manual começa
-  — UI discreta: "⟳ Indexando 3 novos arquivos…" na sidebar, silencioso quando fila vazia
+  — pastas monitoradas: coleções `source == "ecosystem"` do `collections.py` (KOSMOS, AKASHA, Hermes)
+  — implementação: `FolderWatcher` por coleção + `queue.Queue` + `_IndexJobWorker` (QTimer 30s, IdlePriority)
+  — idle = nenhum IndexWorker/ResumeIndexWorker/UpdateIndexWorker/IndexFileWorker ativo
+  — UI discreta: "⟳ Indexando N arquivo(s) do ecossistema…" na sidebar, silencioso quando fila vazia
   — ver detalhamento completo em `Mnemosyne/TODO.md — Fase 10`
 
 ---
