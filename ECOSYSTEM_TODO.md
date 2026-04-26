@@ -1043,7 +1043,7 @@ e seleciona automaticamente o perfil de modelos adequado — sem configuração 
 - [x] `ecosystem_client.py`: `get_active_profile()` + adaptar `request_llm()` para usar modelo do perfil ativo
 - [x] KOSMOS e Mnemosyne: ler perfil do LOGOS no startup e usar modelos recomendados mas inclua a possibilidade de haver override manual (tornando o recomendado pelo LOGOS sempre como padrão)
 - [x] Criar um botão para "usar recomendado" ao lado da configuração de LLM no KOSMOS e Mnemosyne
-- [ ] HUB LogosPanel: exibir perfil ativo ("PC Principal · RX 6600", "Laptop · MX150 2 GB", etc.)
+- [x] HUB LogosPanel: exibir perfil ativo ("PC Principal · RX 6600", "Laptop · MX150 2 GB", etc.)
 
 ### AKASHA como broker unificado de informação
 - [ ] Planejar API de "Mapa de Contexto" no AKASHA:

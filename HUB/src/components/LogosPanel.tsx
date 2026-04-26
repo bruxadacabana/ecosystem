@@ -37,12 +37,13 @@ export function LogosPanel() {
     setSilencing(false)
   }
 
-  const online           = status !== null
-  const activePriority   = status?.active_priority ?? null
-  const activeModelClass = status?.active_model_class ?? null
-  const queue            = status?.queue ?? ([0, 0, 0] as [number, number, number])
-  const vramMb           = status?.vram_used_mb ?? null
-  const vramPct          = status?.vram_pct ?? null
+  const online              = status !== null
+  const activePriority      = status?.active_priority ?? null
+  const activeModelClass    = status?.active_model_class ?? null
+  const queue               = status?.queue ?? ([0, 0, 0] as [number, number, number])
+  const vramMb              = status?.vram_used_mb ?? null
+  const vramPct             = status?.vram_pct ?? null
+  const hwDisplay           = status?.hardware_profile_display ?? null
 
   let vramBarColor = 'var(--accent-green)'
   if (vramPct !== null) {
@@ -93,6 +94,22 @@ export function LogosPanel() {
           LOGOS
         </span>
       </div>
+
+      {/* Perfil de hardware detectado */}
+      {hwDisplay !== null && (
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            color: 'var(--ink-ghost)',
+            letterSpacing: '0.04em',
+            whiteSpace: 'nowrap',
+          }}
+          title="Perfil de hardware detectado pelo LOGOS"
+        >
+          {hwDisplay}
+        </span>
+      )}
 
       {/* Slots P1 / P2 / P3 */}
       <div style={{ display: 'flex', gap: 5 }}>

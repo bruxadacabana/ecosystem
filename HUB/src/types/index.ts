@@ -132,6 +132,10 @@ export interface LogosStatus {
   current_profile:    string
   /** Modo de hardware: "normal" (CachyOS/GPU) | "sobrevivencia" (Windows/CPU-only) */
   hardware_mode:      string
+  /** Perfil de hardware detectado: "main_pc" | "laptop" | "work_pc" */
+  hardware_profile:         string
+  /** Nome legível: "PC Principal · RX 6600 (8 GB)" etc. */
+  hardware_profile_display: string
   queue:              [number, number, number]
   vram_used_mb:       number | null
   vram_pct:           number | null
