@@ -780,8 +780,9 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 - [x] **Topbar — links de navegação em janela ~700px**
   — Entre 540px e 860px os links de nav ficam em segunda linha mas com espaçamento irregular
   — Fix: column-gap/row-gap separados (row-gap: 0); nav controla espaço via margin-top: 4px
-- [ ] **Página watch-later, history, favorites**
-  — Auditar e corrigir quebras similares às da tabela de downloads
+- [x] **Página watch-later, history, favorites**
+  — Auditadas e corrigidas: lib-entries/meta-row/notes-row (CSS ausente), btn-label + title nos botões,
+    history inline styles → classes CSS, lib-add-row flex-wrap, domains-actions flex-wrap
 - [ ] **Testar em janelas representativas:** 800×600, 1024×600, 1280×720 (não apenas mobile)
 
 ---

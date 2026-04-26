@@ -2,10 +2,10 @@
 {% block title %}Histórico — AKASHA{% endblock %}
 
 {% block content %}
-<div class="container" style="max-width:760px;margin:2rem auto;padding:0 1.5rem;">
+<div class="history-container">
 
   <!-- ─── Filtros ───────────────────────────────────────────── -->
-  <div class="source-filters" style="margin-bottom:1.5rem;">
+  <div class="source-filters history-filters">
     {% for t, label in [('all','tudo'), ('search','buscas'), ('archive','arquivos'), ('download','downloads')] %}
     <a
       class="tag {% if type_filter == t %}tag-active{% endif %}"
@@ -37,14 +37,14 @@
         {% set ns.last_date = item.date_label %}
       {% endif %}
 
-      <li style="display:flex;align-items:flex-start;gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--rule);">
-        <span style="font-size:1rem;flex-shrink:0;width:1.2rem;text-align:center;margin-top:.1rem;">
+      <li class="history-item">
+        <span class="history-item-icon">
           {% if item.type == 'search' %}&#x2315;
           {% elif item.type == 'archive' %}&#x25A4;
           {% elif item.type == 'download' %}&#x21A7;
           {% else %}&#x25CB;{% endif %}
         </span>
-        <div style="min-width:0;flex:1;">
+        <div class="history-item-content">
           {% if item.type == 'search' %}
             <a href="/search?q={{ item.title | urlencode }}&sources=all"
                class="result-link"
@@ -68,7 +68,7 @@
             {% endif %}
           {% endif %}
         </div>
-        <span class="meta" style="flex-shrink:0;font-size:11px;">{{ item.time }}</span>
+        <span class="history-item-time meta">{{ item.time }}</span>
       </li>
 
       {% if loop.last %}</ul>{% endif %}
@@ -76,7 +76,7 @@
 
     <!-- ─── Paginação ─────────────────────────────────────────── -->
     {% if total_pages > 1 %}
-    <div style="display:flex;justify-content:center;align-items:center;gap:1rem;margin-top:1.5rem;">
+    <div class="history-pagination">
       {% if page > 1 %}
       <a class="btn btn-ghost btn-sm"
          href="/history?type={{ type_filter }}&page={{ page - 1 }}"

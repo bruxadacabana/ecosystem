@@ -784,8 +784,79 @@ a:hover { opacity: 0.75; }
 /* ── lib-add form (biblioteca e lista negra) ────────────────── */
 .lib-add-section { margin-bottom: 24px; }
 .lib-add-form    { display: flex; flex-direction: column; gap: 8px; }
-.lib-add-row     { display: flex; gap: 8px; }
-.lib-add-row .input { flex: 1; }
+.lib-add-row     { display: flex; gap: 8px; flex-wrap: wrap; }
+.lib-add-row .input { flex: 1; min-width: 120px; }
+
+@media (max-width: 580px) {
+  .lib-add-row { flex-direction: column; }
+  .lib-add-row .input { max-width: none; }
+}
+
+/* ── Watch Later ─────────────────────────────────────────── */
+.lib-entries { display: flex; flex-direction: column; gap: 12px; }
+
+.lib-meta-row {
+  font-family:   var(--font-mono);
+  font-size:     9px;
+  color:         var(--ink-ghost);
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+  margin-top:    4px;
+}
+
+.lib-notes-row  { margin-top: 6px; }
+.lib-notes-input {
+  width:     100%;
+  font-size: 11px;
+  padding:   3px 6px;
+}
+
+/* ── Favoritos e lista negra ─────────────────────────────── */
+.domains-actions { flex-wrap: wrap; }
+
+@media (max-width: 480px) {
+  .domains-item { flex-wrap: wrap; }
+}
+
+/* ── Histórico ───────────────────────────────────────────── */
+.history-container { max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; }
+.history-filters   { margin-bottom: 1.5rem; }
+
+.history-item {
+  display:       flex;
+  align-items:   flex-start;
+  gap:           .75rem;
+  padding:       .5rem 0;
+  border-bottom: 1px solid var(--rule);
+  flex-wrap:     wrap;
+}
+
+.history-item-icon {
+  font-size:   1rem;
+  flex-shrink: 0;
+  width:       1.2rem;
+  text-align:  center;
+  margin-top:  .1rem;
+}
+
+.history-item-content { min-width: 0; flex: 1; }
+
+.history-item-time {
+  flex-shrink: 0;
+  font-size:   11px;
+  color:       var(--ink-ghost);
+  font-family: var(--font-mono);
+}
+
+.history-pagination {
+  display:         flex;
+  justify-content: center;
+  align-items:     center;
+  gap:             1rem;
+  margin-top:      1.5rem;
+  flex-wrap:       wrap;
+}
 
 /* ── Biblioteca — cards de sites cadastrados ─────────────── */
 .lib-discover-form {

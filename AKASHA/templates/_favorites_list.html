@@ -15,14 +15,14 @@
             hx-target="#favorites-list"
             hx-swap="outerHTML"
             hx-on::after-request="showToast('{{ fav[1] }} movido para lista negra.', 'info')"
-          >→ negra</button>
+          >→ <span class="btn-label">negra</span></button>
           <button
             class="btn btn-ghost btn-sm"
             title="Adicionar à biblioteca (crawl)"
             hx-post="/favorites/{{ fav[1] }}/to-library"
             hx-swap="none"
             hx-on::after-request="showToast('{{ fav[1] }} adicionado à biblioteca.', 'success')"
-          >→ biblioteca</button>
+          >→ <span class="btn-label">biblioteca</span></button>
           <button
             class="btn btn-ghost btn-sm"
             title="Remover dos favoritos"

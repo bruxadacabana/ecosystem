@@ -46,23 +46,26 @@
     <!-- Ações -->
     <div class="result-footer">
       <div class="result-actions">
-        <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">
-          ↗ abrir
+        <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer"
+           class="btn btn-ghost btn-sm" title="Abrir URL">
+          ↗ <span class="btn-label">abrir</span>
         </a>
         <button
           class="btn btn-ghost btn-sm"
+          title="Arquivar página"
           hx-post="/archive"
           hx-vals='{"url": "{{ item.url }}"}'
           hx-swap="none"
           hx-on::after-request="showToast(event.detail.successful ? 'Arquivado!' : 'Erro ao arquivar', event.detail.successful ? 'success' : 'error')"
-        >◪ arquivar</button>
+        >◪ <span class="btn-label">arquivar</span></button>
         <button
           class="btn btn-ghost btn-sm btn-danger"
+          title="Remover da lista"
           hx-delete="/watch-later/{{ item.id }}"
           hx-target="#wl-item-{{ item.id }}"
           hx-swap="outerHTML"
           hx-on::after-request="showToast('Removido.', 'info')"
-        >− remover</button>
+        >− <span class="btn-label">remover</span></button>
       </div>
     </div>
 
