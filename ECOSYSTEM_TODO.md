@@ -907,6 +907,19 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 
 > Ver notas de design detalhadas em `## ONDE PARAMOS → LOGOS` neste arquivo.
 
+### Mnemosyne: indexação automática em idle (Fase 10)
+
+- [ ] Quando o Mnemosyne não está indexando ativamente, monitorar as pastas do ecossistema
+  e indexar automaticamente arquivos novos/modificados gerados por AKASHA, KOSMOS, Hermes e AETHER
+  — pastas monitoradas: `{sync_root}/akasha/archive/`, `{sync_root}/kosmos/articles/`,
+    `{sync_root}/hermes/transcriptions/`, `vault_dir` (AETHER)
+  — implementação: file watcher (`watchdog`) + fila thread-safe + `IdleIndexProcessor` (QTimer 30s)
+  — idle = nenhum IndexWorker/ResumeIndexWorker/QueryWorker ativo; pausa se indexação manual começa
+  — UI discreta: "⟳ Indexando 3 novos arquivos…" na sidebar, silencioso quando fila vazia
+  — ver detalhamento completo em `Mnemosyne/TODO.md — Fase 10`
+
+---
+
 ### LOGOS: proxy central de LLM (integrado ao HUB)
 - [x] Decidir arquitetura final: LOGOS como parte do backend Rust do HUB vs. serviço separado
   — recomendado: integrado ao HUB (evita ter mais um processo rodando; HUB já é o maestro)
