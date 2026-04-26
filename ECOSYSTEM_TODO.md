@@ -922,6 +922,18 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — UI discreta: "⟳ Indexando N arquivo(s) do ecossistema…" na sidebar, silencioso quando fila vazia
   — ver detalhamento completo em `Mnemosyne/TODO.md — Fase 10`
 
+### Bug: Mnemosyne `index_single_file` sem batching
+
+> Causa confirmada de CPU a 90% durante idle indexing de artigos do KOSMOS.
+> `index_single_file()` chama `vs.add_documents(chunks)` com todos os chunks de uma vez,
+> sem pausas — ao contrário de `create_vectorstore()` e `IndexWorker`, que usam lotes e sleep.
+> O IdleIndexer acumula uma fila de artigos do KOSMOS e processa cada um sem throttling,
+> saturando o CPU continuamente.
+
+- [ ] `Mnemosyne/core/indexer.py` — `index_single_file()`: substituir `vs.add_documents(chunks)`
+  por loop com `_detect_batch_config()` (lotes de 25 chunks, sleep 0.3 s entre lotes),
+  idêntico ao padrão já usado em `create_vectorstore()`
+
 ---
 
 ### LOGOS: proxy central de LLM (integrado ao HUB)
@@ -1045,6 +1057,31 @@ e seleciona automaticamente o perfil de modelos adequado — sem configuração 
 - [x] Criar um botão para "usar recomendado" ao lado da configuração de LLM no KOSMOS e Mnemosyne
 - [x] HUB LogosPanel: exibir perfil ativo ("PC Principal · RX 6600", "Laptop · MX150 2 GB", etc.)
 
+### LOGOS: proxy transparente para todas as chamadas ao Ollama (correção arquitetural)
+
+> Contexto: a implementação atual do LOGOS controla apenas chamadas que passam explicitamente
+> por `POST /logos/chat`. Embeddings (LangChain/Chroma), streaming (ChatOllama) e qualquer
+> outra chamada direta ao Ollama (porta 11434) são invisíveis ao LOGOS — ele não pode gerenciar
+> o que não vê. O design original previa um proxy transparente: apps apontam para 7072 (LOGOS)
+> em vez de 11434 (Ollama). Enquanto essa correção não for feita, o LOGOS não cumpre seu papel
+> central de gerenciador de hardware e prioridades para todo o ecossistema.
+
+- [ ] `HUB/src-tauri/src/logos.rs` — implementar rotas de proxy para os endpoints nativos do Ollama:
+  — `POST /api/chat` e `POST /api/generate` → proxy com fila P1/P2/P3 (mesma lógica do `/logos/chat`)
+  — `POST /api/embeddings` e `POST /api/embed` → proxy com fila (P3 por padrão para embeddings)
+  — `GET /api/tags`, `GET /api/ps`, `DELETE /api/delete` → proxy direto sem fila (metadados)
+  — identificação do app por header `X-App: <nome>` (ex: `mnemosyne`, `kosmos`)
+  — keep_alive: -1 injetado automaticamente em todas as chamadas de chat/generate que passam pelo proxy
+  — Hardware Guard (VRAM, CPU, RAM) aplicado a todos os requests, não só aos via `/logos/chat`
+- [ ] `ecosystem_client.py` — `OLLAMA_BASE_URL` aponta para 7072 (LOGOS) em vez de 11434;
+  fallback para 11434 se LOGOS offline (modo emergência já existente)
+- [ ] `Mnemosyne/core/indexer.py` e `workers.py` — `OllamaEmbeddings(base_url="http://localhost:7072")`,
+  `ChatOllama(base_url="http://localhost:7072")`; header `X-App: mnemosyne` via parâmetro `headers`
+- [ ] `KOSMOS/app/core/ai_bridge.py` — URL base para 7072; header `X-App: kosmos`
+- [ ] Auditar todos os apps em busca de `localhost:11434` hardcoded e substituir pela URL do LOGOS
+- [ ] Testar integração: chat no Mnemosyne (P1) enquanto KOSMOS analisa em background (P3)
+  → KOSMOS deve pausar na fila do LOGOS até o chat terminar
+
 ### AKASHA como broker unificado de informação
 - [ ] Planejar API de "Mapa de Contexto" no AKASHA:
   — dado um termo, retornar resultados cruzados: Mnemosyne (RAG) + KOSMOS (artigos) + Hermes (transcrições) + AETHER (notas)
@@ -1145,6 +1182,41 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   — requests P3 rejeitados imediatamente (sem análise em background)
   — paralelismo desabilitado (sempre 2 permits, serial mesmo em modelos leves)
   — badge "Modo Sobrevivência — Windows" exibido na LogosView
+- [ ] Monitoramento de CPU e RAM no painel LOGOS:
+  — adicionar `cpu_pct: f32` e `ram_free_mb: u64` ao `StatusResponse` via crate `sysinfo`
+  — P3 bloqueado também quando CPU > 85% ou RAM livre < 1.5 GB (além do VRAM > 85% já existente)
+  — `HUB/src/components/LogosPanel.tsx`: exibir CPU% e RAM livre junto com a barra de VRAM;
+    em máquinas sem GPU discreta (Windows, laptop sem ROCm), substituir a barra de VRAM por CPU/RAM
+  — relevante em todas as máquinas, não só quando há GPU discreta
+- [ ] LOGOS: injetar `keep_alive` automaticamente por prioridade no proxy transparente:
+  — P1 (chat ativo): `keep_alive: -1` (mantém aquecido enquanto sessão aberta)
+  — P2 (Mnemosyne RAG): `keep_alive: "10m"` (libera após inatividade)
+  — P3 (KOSMOS background, embeddings idle): `keep_alive: "0"` (descarrega imediatamente)
+  — implementado no middleware do proxy (porta 7072) sem alterar os apps clientes
+  — fonte: parâmetro por-requisição do Ollama, sobrescreve `OLLAMA_KEEP_ALIVE` global
+- [ ] LOGOS: configurar variáveis de ambiente do Ollama por perfil de hardware no startup:
+  — `OLLAMA_MAX_LOADED_MODELS=2` (high) / `=1` (medium/low) — limita coexistência de modelos na VRAM
+  — `OLLAMA_GPU_OVERHEAD=524288000` (500 MB) no perfil high — protege a RX 6600 de OOM em picos
+  — `OLLAMA_FLASH_ATTENTION=1` em todos os perfis — reduz VRAM em contextos longos
+  — `OLLAMA_NUM_PARALLEL=1` (medium/low) — serializa requisições em máquinas com pouca memória
+- [ ] LOGOS: passar `num_thread` no body das requisições P3:
+  — limitar CPU do Ollama em tarefas de background (ex: `"num_thread": 2` em P3, `null` em P1/P2)
+  — `num_thread` é parâmetro por-requisição (não variável de ambiente) — injetar no proxy transparente
+- [ ] LOGOS: consciência de bateria via UPower/DBus (laptop Lenovo MX150):
+  — ler `OnBattery` da interface `org.freedesktop.UPower` via crate `zbus` (Linux)
+  — quando `OnBattery=true`: suspender P3 completamente, `keep_alive: "0"` em todo request
+  — quando plugado: comportamento normal com limiares de CPU/VRAM
+  — polling a cada 60s ou via sinal DBus; exibir ícone de bateria no LogosPanel quando em bateria
+- [ ] Mnemosyne: substituir `OllamaEmbeddings.add_documents()` por chamada direta ao `/api/embed` com batch nativo:
+  — endpoint aceita array de strings numa única chamada: `{"model": "...", "input": ["t1", "t2", ...]}`
+  — elimina overhead de 1000–2000ms/chunk do LangChain (vs. 200–300ms via chamada direta ao Ollama)
+  — fix correto para o bug de CPU 90%: N chunks → 1 request HTTP por lote, sleep entre lotes
+  — aplicar em `index_single_file()`, `create_vectorstore()` e `IndexWorker`
+- [ ] Mnemosyne: suporte a EmbeddingGemma via sentence-transformers no perfil `low` (Windows 10):
+  — EmbeddingGemma (Google, 2025): 308 M params, <200 MB quantizado, roda em CPU puro, 100+ línguas
+  — perfil `low` → EmbeddingGemma local sem Ollama; perfil `medium/high` → Ollama (nomic-embed-text)
+  — elimina dependência de GPU para indexação no i5-3470 (Windows 10)
+  — verificar se EmbeddingGemma requer AVX2 antes de adotar no perfil low
 
 ### Feed de atividade unificado
 

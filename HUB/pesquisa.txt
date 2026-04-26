@@ -1,0 +1,200 @@
+# HUB — Pesquisa: Otimização, Gerenciamento de Recursos e Adaptabilidade do Ecossistema
+Data: 2026-04-26
+Contexto: como melhorar o ecossistema (LOGOS, Mnemosyne, KOSMOS, Hermes, AKASHA, AETHER)
+em termos de CPU/RAM/VRAM, produtividade e adaptação a diferentes computadores.
+
+---
+
+## 1. Controle de recursos do Ollama via variáveis de ambiente
+
+Fonte canônica: github.com/ollama/ollama/blob/main/envconfig/config.go
+
+| Variável                   | Padrão    | Descrição                                                      |
+|---------------------------|-----------|----------------------------------------------------------------|
+| OLLAMA_NUM_PARALLEL        | 1         | Máximo de requisições processadas em paralelo por modelo       |
+| OLLAMA_MAX_LOADED_MODELS   | 0 (=3×GPU)| Máximo de modelos carregados simultaneamente em memória        |
+| OLLAMA_KEEP_ALIVE          | 5m        | Quanto tempo um modelo fica em RAM/VRAM depois de ocioso       |
+| OLLAMA_MAX_QUEUE           | 512       | Máximo de requisições na fila antes de retornar 503            |
+| OLLAMA_GPU_OVERHEAD        | 0 bytes   | Reserva de VRAM por GPU (bytes) — evita OOM em picos           |
+| OLLAMA_CONTEXT_LENGTH      | 0 (auto)  | Janela de contexto global; auto-detectado pelo VRAM disponível |
+| OLLAMA_FLASH_ATTENTION     | false     | Flash Attention (reduz VRAM em contextos longos)               |
+| OLLAMA_SCHED_SPREAD        | false     | Distribui modelo por todas as GPUs disponíveis                 |
+| OLLAMA_LOAD_TIMEOUT        | 5m        | Timeout para carregamento de modelo (0 = infinito)             |
+| HSA_OVERRIDE_GFX_VERSION   | —         | Necessário para AMD ROCm em GPUs sem suporte oficial (ex: RX 6600: "10.3.0") |
+
+Nota: OLLAMA_NUM_THREADS e OLLAMA_MAX_VRAM NÃO existem como env vars no código-fonte.
+O controle de threads por CPU é feito via parâmetro `num_thread` na Modelfile ou no body da requisição.
+
+Implicações práticas:
+- OLLAMA_MAX_LOADED_MODELS=2 limita quantos modelos coexistem na VRAM (ex: embedding + chat).
+- OLLAMA_GPU_OVERHEAD=524288000 (500 MB) protege contra OOM na RX 6600 (8 GB) com modelos pesados.
+- OLLAMA_FLASH_ATTENTION=1 melhora performance em contextos longos (Mnemosyne RAG com histórico).
+- OLLAMA_NUM_PARALLEL=1 (padrão) já serializa por modelo; aumentar para 2 permite KOSMOS + Mnemosyne simultâneos, mas aumenta pressão de memória.
+
+---
+
+## 2. keep_alive por requisição — gestão granular de memória
+
+O parâmetro `keep_alive` pode ser passado em cada requisição /api/chat ou /api/generate,
+sobrescrevendo o OLLAMA_KEEP_ALIVE global. Rastreado por modelo individualmente.
+
+| Valor       | Comportamento                                          |
+|-------------|--------------------------------------------------------|
+| "0"         | Descarrega o modelo imediatamente após a resposta      |
+| "-1"        | Nunca descarrega (mantém sempre aquecido)              |
+| "5m"        | Descarrega 5 minutos após o último uso                 |
+| "2h"        | Mantém por 2 horas                                     |
+
+Estratégia recomendada para o ecossistema:
+- P1 (chat HUB, escrita AETHER): keep_alive=-1 enquanto a sessão estiver ativa; 0 ao fechar sessão.
+- P2 (RAG Mnemosyne): keep_alive="10m" — aquecido durante sessão de leitura, libera depois.
+- P3 (KOSMOS análise, embeddings): keep_alive="0" — carrega, processa, libera imediatamente.
+
+O LOGOS pode injetar keep_alive automaticamente no proxy transparente, sem que os apps
+precisem gerenciar isso diretamente.
+
+---
+
+## 3. Comportamento de paralelismo e fila do Ollama
+
+Fontes: glukhov.org/post/2025/05/how-ollama-handles-parallel-requests; Ollama FAQ
+
+- Ollama usa fila FIFO: quando parallelism está esgotado, novas requisições aguardam.
+- Modelos diferentes competem por VRAM: Ollama descarrega modelos ociosos para carregar novos.
+- Este comportamento é automático mas não priorizado — Ollama não sabe qual app é mais urgente.
+- LOGOS como proxy transparente (porta 7072) é a única forma de impor prioridade real P1 > P2 > P3.
+
+Contention observada no ecossistema:
+- Mnemosyne (embeddings) + KOSMOS (chat) chamando porta 11434 diretamente → Ollama serializa sem critério de prioridade.
+- Solução: LOGOS intercepta tudo na 7072, segura P3 quando P1 ou P2 estão ativos.
+
+---
+
+## 4. Otimização de VRAM — parâmetros por modelo
+
+Fonte: eastondev.com/blog/en/posts/ai/ollama-gpu-scheduling
+
+| Parâmetro    | Efeito                                                               |
+|--------------|----------------------------------------------------------------------|
+| num_gpu      | Quantas camadas rodam na GPU (não "quantas GPUs")                    |
+| low_vram     | Move KV cache para RAM do sistema (economiza VRAM, reduz velocidade) |
+| num_ctx      | Janela de contexto; dobrar = dobrar uso de KV cache                  |
+| num_batch    | Tamanho do batch de inferência; padrão 512, reduzir p/ 256 → -20% VRAM pico |
+
+Hierarquia de otimização quando VRAM é limitada:
+1. Usar quantização Q4_K_M (75% menos VRAM vs FP16, perda de qualidade ~2-3%)
+2. Reduzir num_ctx (4096 → 2048)
+3. Reduzir num_batch (512 → 256)
+4. Ativar low_vram=true
+5. Reduzir num_gpu (offload de camadas para CPU)
+
+Para o laptop (MX150, 2 GB VRAM): SmolLM2 1.7B e Gemma 2B Q4 são os modelos-teto realistas.
+LOGOS já detecta o perfil e deve aplicar esses parâmetros automaticamente na Modelfile ou via request body.
+
+---
+
+## 5. CPU e RAM — sysinfo crate (Rust, cross-platform)
+
+Fonte: crates.io/crates/sysinfo; docs.rs/sysinfo/latest/sysinfo
+
+- Biblioteca Rust, cross-platform (Linux, Windows, macOS).
+- Fornece: CPU% (por núcleo e global), RAM total/usada/livre, swap, processos, disco, rede.
+- IMPORTANTE: manter a mesma instância de `System` entre leituras — CPU% é calculado como delta entre duas leituras; criar nova instância a cada vez resulta em 0%.
+- API: `System::new_all()` → `system.refresh_cpu_all()` → `system.global_cpu_usage()`.
+- Para RAM: `system.total_memory()`, `system.available_memory()`, `system.used_memory()`.
+
+Uso planejado no LOGOS:
+- Adicionar cpu_pct e ram_free_mb ao StatusResponse.
+- Bloquear P3 também quando CPU > 85% ou RAM livre < 1.5 GB.
+- Em máquinas sem GPU discreta (Windows 10, laptop integrada), substituir barra VRAM por CPU/RAM no LogosPanel.
+
+---
+
+## 6. Embeddings — batching eficiente e alternativas leves
+
+Fontes: github.com/ollama/ollama/issues/7400; developers.googleblog.com/en/introducing-embeddinggemma
+
+### Overhead de OllamaEmbeddings via LangChain
+- LangChain OllamaEmbeddings: 1000-2000ms por chamada (overhead de abstração).
+- Chamadas diretas ao /api/embed do Ollama: 200-300ms, utilização GPU 70-80%.
+- Recomendação: usar httpx/requests diretamente ou langchain-ollama (não langchain-community).
+
+### Batching nativo do Ollama /api/embed
+- O endpoint /api/embed aceita array de strings no campo "input":
+  {"model": "nomic-embed-text", "input": ["texto 1", "texto 2", ...]}
+- Uma única chamada HTTP por lote → muito mais eficiente que N chamadas individuais.
+- Bug do Mnemosyne: index_single_file() chama add_documents(chunks) que internamente gera
+  1 chamada HTTP por chunk → N round-trips sem sleep → satura CPU/Ollama.
+
+### EmbeddingGemma (Google, 2025)
+- 308 M parâmetros, <200 MB quantizado, roda em CPU com <200 MB de RAM.
+- Multilingual (100+ línguas), baseado em Gemma 3.
+- Compatível com sentence-transformers, Ollama, LangChain, llama.cpp.
+- Alternativa viável para o computador de trabalho (Windows 10, sem GPU) — indexação sem Ollama.
+
+### paraphrase-multilingual (Ollama)
+- Modelo leve para embeddings multilíngues disponível via `ollama pull paraphrase-multilingual`.
+- Boa opção P3 em máquinas com pouca VRAM.
+
+---
+
+## 7. Consciência de bateria (laptop) — UPower/DBus
+
+Fontes: wikipedia.org/wiki/UPower; phoronix.com/news/Power-Profiles-Daemon-0.21
+
+- UPower é o padrão Linux para gerenciamento de energia. Acessível via DBus.
+- Interface: org.freedesktop.UPower no barramento de sistema.
+- Em Python: biblioteca `dbus-python` ou `dasbus` para ler estado da bateria.
+- Em Rust: crate `zbus` para DBus, ou crate `battery` (cross-platform, simples).
+- Informações disponíveis: OnBattery (bool), Percentage, TimeToEmpty, State (Charging/Discharging/Full).
+- Power Profiles Daemon v0.21 (UPower project): ajusta perfil de CPU automaticamente por AC/bateria.
+
+Estratégia para LOGOS no laptop:
+- Quando OnBattery=true: suspender P3 completamente; reduzir OLLAMA_NUM_PARALLEL=1; usar keep_alive=0.
+- Quando plugado: comportamento normal com os limiares de CPU/VRAM.
+- Leitura do estado de bateria via polling (a cada 30-60s) ou via sinal DBus (mais eficiente).
+
+---
+
+## 8. Adaptabilidade multi-hardware — perfil automático
+
+Fonte: github.com/AlexsJones/llmfit; dasroot.net/posts/2026/04/mapping-local-llm-landscape-2025
+
+llmfit (ferramenta de referência): detecta RAM, CPU, GPU/VRAM e pontua modelos em 4 dimensões:
+qualidade, velocidade, fit de memória e janela de contexto. Suporta override manual de hardware
+para simular outros computadores.
+
+Estratégia para o ecossistema (LOGOS já tem HardwareProfile):
+- HardwareProfile detectado no startup → mapeia para conjunto de modelos e configurações.
+- Por perfil: modelo recomendado, OLLAMA_NUM_PARALLEL máximo, limiares P3 (VRAM/CPU/bateria).
+- Comunicar o perfil ativo para todos os apps via ecosystem_client.get_active_profile().
+- Apps adaptam comportamento: Mnemosyne reduz batch size no Windows 10; KOSMOS escolhe modelo menor no laptop.
+
+Perfis atuais detectados pelo LOGOS:
+| Perfil         | Máquina               | Modelo recomendado     | Parallel | P3 threshold       |
+|---------------|-----------------------|------------------------|----------|--------------------|
+| high          | RX 6600, 16 GB RAM    | llama3.2 3B / gemma3  | 2        | VRAM>85%, CPU>85%  |
+| medium        | MX150 2 GB, 11 GB RAM | SmolLM2 1.7B           | 1        | VRAM>75%, bateria  |
+| low           | i5-3470, 8 GB, sem GPU| SmolLM2 1.7B (CPU)    | 1        | CPU>70%, RAM<1.5GB |
+
+---
+
+## 9. Fontes
+
+- https://github.com/ollama/ollama/blob/main/envconfig/config.go
+- https://docs.ollama.com/faq
+- https://www.glukhov.org/post/2025/05/how-ollama-handles-parallel-requests/
+- https://eastondev.com/blog/en/posts/ai/ollama-gpu-scheduling/
+- https://dasroot.net/posts/2026/01/ollama-performance-tuning-gpu-acceleration-model-quantization/
+- https://github.com/langchain-ai/langchain/issues/21870
+- https://github.com/ollama/ollama/issues/7400
+- https://crates.io/crates/sysinfo
+- https://docs.rs/sysinfo/latest/sysinfo/
+- https://developers.googleblog.com/en/introducing-embeddinggemma/
+- https://markaicode.com/ollama-keep-alive-memory-management/
+- https://phoronix.com/news/Power-Profiles-Daemon-0.21
+- https://en.wikipedia.org/wiki/UPower
+- https://github.com/AlexsJones/llmfit
+- https://dasroot.net/posts/2026/04/mapping-local-llm-landscape-2025/
+- https://collabnix.com/ollama-embedded-models-the-complete-technical-guide-to-local-ai-embeddings-in-2025/
+- https://markaicode.com/ollama-environment-variables-configuration-guide/

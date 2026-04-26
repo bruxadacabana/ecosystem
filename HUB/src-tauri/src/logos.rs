@@ -603,6 +603,15 @@ async fn vram_pct(client: &Client, ollama_url: &str) -> Option<f32> {
 }
 
 async fn vram_usage(client: &Client, ollama_url: &str) -> (Option<u64>, Option<f32>) {
+    // No Linux, sysfs é a fonte correta para AMD/ROCm —
+    // o Ollama reporta size_vram=0 para GPUs AMD, tornando /api/ps inútil para VRAM.
+    #[cfg(target_os = "linux")]
+    if let Some((total_mb, used_mb)) = sysfs_vram_mb() {
+        let pct = if total_mb > 0 { Some(used_mb as f32 / total_mb as f32) } else { None };
+        return (Some(used_mb), pct);
+    }
+
+    // Fallback: Ollama /api/ps (NVIDIA ou plataformas sem sysfs AMD)
     let Ok(resp) = client
         .get(format!("{}/api/ps", ollama_url))
         .timeout(Duration::from_secs(3))
@@ -621,28 +630,34 @@ async fn vram_usage(client: &Client, ollama_url: &str) -> (Option<u64>, Option<f
         .filter_map(|m| m["size_vram"].as_u64())
         .sum();
     let used_mb = used_bytes / 1_000_000;
-    let total_mb = total_vram_mb();
+    let total_mb = sysfs_vram_mb().map(|(t, _)| t);
     let pct = total_mb.filter(|&t| t > 0).map(|t| used_mb as f32 / t as f32);
     (Some(used_mb), pct)
 }
 
-/// Lê a memória VRAM total da GPU via sysfs (Linux/AMD).
-/// Itera todos os cards e retorna o maior valor — garante que a GPU discreta
-/// (RX 6600, card1+) seja usada em vez da integrada (card0, Vega/UMA ~2-3 GB).
-fn total_vram_mb() -> Option<u64> {
+/// Lê total e uso de VRAM da GPU discreta via sysfs (Linux/AMD).
+/// Itera card0..card7, identifica a GPU discreta pelo maior mem_info_vram_total
+/// e retorna (total_mb, used_mb) desse card.
+fn sysfs_vram_mb() -> Option<(u64, u64)> {
     #[cfg(target_os = "linux")]
     {
-        let mut max_mb: Option<u64> = None;
+        let mut best: Option<(u64, u64)> = None; // (total_mb, used_mb)
         for i in 0..8u8 {
-            let path = format!("/sys/class/drm/card{i}/device/mem_info_vram_total");
-            if let Ok(s) = std::fs::read_to_string(&path) {
-                if let Ok(bytes) = s.trim().parse::<u64>() {
-                    let mb = bytes / 1_048_576;
-                    max_mb = Some(max_mb.map_or(mb, |prev| prev.max(mb)));
-                }
-            }
+            let t_path = format!("/sys/class/drm/card{i}/device/mem_info_vram_total");
+            let u_path = format!("/sys/class/drm/card{i}/device/mem_info_vram_used");
+            let Ok(t_str) = std::fs::read_to_string(&t_path) else { continue };
+            let Ok(u_str) = std::fs::read_to_string(&u_path) else { continue };
+            let Ok(t_bytes) = t_str.trim().parse::<u64>() else { continue };
+            let Ok(u_bytes) = u_str.trim().parse::<u64>() else { continue };
+            let t_mb = t_bytes / 1_048_576;
+            let u_mb = u_bytes / 1_048_576;
+            best = Some(match best {
+                None => (t_mb, u_mb),
+                Some((prev_t, _)) if t_mb > prev_t => (t_mb, u_mb),
+                Some(prev) => prev,
+            });
         }
-        return max_mb;
+        return best;
     }
     #[allow(unreachable_code)]
     None
