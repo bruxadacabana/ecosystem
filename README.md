@@ -388,74 +388,63 @@ Abre em background.
 
 Se as funções fish não estiverem configuradas (por exemplo, em uma nova instalação), crie os arquivos manualmente. Cada app tem um arquivo em `~/.config/fish/functions/` — o Fish carrega automaticamente qualquer arquivo `.fish` nessa pasta:
 
-**AETHER** — `~/.config/fish/functions/aether.fish`:
-```fish
-function aether --description "Rodar AETHER em modo desenvolvimento"
-    set -l dir "/home/spacewitch/Documents/program files/AETHER"
+# Garante que a pasta de funções existe
+mkdir -p ~/.config/fish/functions/
+
+# Cria o arquivo para AETHER
+printf 'function aether --description "Rodar AETHER em modo desenvolvimento"
+    set -l dir "/home/spacewitch/Documents/ecosystem//AETHER"
     echo "→ AETHER dev  ($dir)"
     cd $dir && cargo tauri dev
-end
-```
+end' > ~/.config/fish/functions/aether.fish
 
-**HUB** — `~/.config/fish/functions/hub.fish`:
-```fish
-function hub --description "Rodar HUB em modo desenvolvimento"
-    set -l dir "/home/spacewitch/Documents/program files/HUB"
+# Cria o arquivo para HUB
+printf 'function hub --description "Rodar HUB em modo desenvolvimento"
+    set -l dir "/home/spacewitch/Documents/ecosystem//HUB"
     echo "→ HUB dev  ($dir)"
     cd $dir && cargo tauri dev
-end
-```
+end' > ~/.config/fish/functions/hub.fish
 
-**OGMA** — `~/.config/fish/functions/ogma.fish`:
-```fish
-function ogma --description "Rodar OGMA (Electron)"
-    set -l dir "/home/spacewitch/Documents/program files/OGMA"
+# Cria o arquivo para OGMA
+printf 'function ogma --description "Rodar OGMA (Electron)"
+    set -l dir "/home/spacewitch/Documents/ecosystem//OGMA"
     echo "→ OGMA  (log em /tmp/ogma.log)"
     bash "$dir/iniciar.sh"
-end
-```
+end' > ~/.config/fish/functions/ogma.fish
 
-**KOSMOS** — `~/.config/fish/functions/kosmos.fish`:
-```fish
-function kosmos --description "Rodar KOSMOS (leitor RSS)"
-    set -l dir "/home/spacewitch/Documents/program files/KOSMOS"
-    set -l python "/home/spacewitch/Documents/program files/.venv/bin/python"
+# Cria o arquivo para KOSMOS
+printf 'function kosmos --description "Rodar KOSMOS (leitor RSS)"
+    set -l dir "/home/spacewitch/Documents/ecosystem//KOSMOS"
+    set -l python "/home/spacewitch/Documents/ecosystem/.venv/bin/python"
     echo "→ KOSMOS"
     cd $dir && $python main.py &
     disown
-end
-```
+end' > ~/.config/fish/functions/kosmos.fish
 
-**Mnemosyne** — `~/.config/fish/functions/mnemosyne.fish`:
-```fish
-function mnemosyne --description "Rodar Mnemosyne (RAG local)"
-    set -l dir "/home/spacewitch/Documents/program files/Mnemosyne"
-    set -l python "/home/spacewitch/Documents/program files/.venv/bin/python"
+# Cria o arquivo para Mnemosyne
+printf 'function mnemosyne --description "Rodar Mnemosyne (RAG local)"
+    set -l dir "/home/spacewitch/Documents/ecosystem//Mnemosyne"
+    set -l python "/home/spacewitch/Documents/ecosystem/.venv/bin/python"
     echo "→ Mnemosyne"
     cd $dir && $python main.py &
     disown
-end
-```
+end' > ~/.config/fish/functions/mnemosyne.fish
 
-**Hermes** — `~/.config/fish/functions/hermes.fish`:
-```fish
-function hermes --description "Rodar Hermes (downloader + transcritor)"
-    set -l dir "/home/spacewitch/Documents/program files/Hermes"
+# Cria o arquivo para Hermes
+printf 'function hermes --description "Rodar Hermes (downloader + transcritor)"
+    set -l dir "/home/spacewitch/Documents/ecosystem//Hermes"
     echo "→ Hermes"
     bash "$dir/iniciar.sh" &
     disown
-end
-```
+end' > ~/.config/fish/functions/hermes.fish
 
-**AKASHA** — `~/.config/fish/functions/akasha.fish`:
-```fish
-function akasha --description "Rodar AKASHA (buscador pessoal, porta 7071)"
-    set -l dir "/home/spacewitch/Documents/program files/AKASHA"
+# Cria o arquivo para AKASHA
+printf 'function akasha --description "Rodar AKASHA (buscador pessoal, porta 7071)"
+    set -l dir "/home/spacewitch/Documents/ecosystem/AKASHA"
     echo "→ AKASHA  (http://localhost:7071)"
     bash "$dir/iniciar.sh" &
     disown
-end
-```
+end' > ~/.config/fish/functions/akasha.fish
 
 ---
 
