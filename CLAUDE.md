@@ -32,14 +32,16 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 - OS: CachyOS (Arch Linux), Niri + Fish shell
 - Armazenamento: ~2 TB (3 SSDs)
 
-### Hardware — Laptop (CachyOS)
+### Hardware — Laptop — Lenovo Ideapad 330 (CachyOS)
 
 - CPU: Intel Core i7-8550U, Kaby Lake R (8ª gen), 4 cores/8 threads, até ~4 GHz — **tem AVX2**
-- RAM: 11.58 GiB
-- GPU: Intel UHD Graphics 620, 1.15 GHz (integrada — sem ROCm/CUDA útil para ML)
+- RAM: 11.58 GiB (~12 GB)
+- GPU discreta: **NVIDIA MX150, ~2 GB VRAM** (possivelmente 4 GB — confirmar) — **CUDA disponível**
+- GPU integrada: Intel UHD Graphics 620 (Optimus/híbrido)
 - OS: CachyOS (Arch Linux), Niri + Fish shell
+- Drivers: `nvidia-cachyos` (ou equivalente) necessário para CUDA no Wayland/Niri
 
-Implicações: AVX2 disponível (diferente do i5-3470), mas sem GPU discreta. Modelos leves de CPU funcionam; bge-m3 será lento. RAM de 11.58 GB limita modelos grandes.
+Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só para AMD/ROCm). Modelos recomendados: SmolLM2 1.7B (KOSMOS) e Gemma 2B Q4 (Mnemosyne). Llama 8B força offload para CPU → aquecimento, evitar. Em bateria: reduzir frequência de indexação (feature LOGOS).
 
 ---
 
