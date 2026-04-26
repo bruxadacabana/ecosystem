@@ -32,6 +32,15 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 - OS: CachyOS (Arch Linux), Niri + Fish shell
 - Armazenamento: ~2 TB (3 SSDs)
 
+### Hardware — Laptop (CachyOS)
+
+- CPU: Intel Core i7-8550U, Kaby Lake R (8ª gen), 4 cores/8 threads, até ~4 GHz — **tem AVX2**
+- RAM: 11.58 GiB
+- GPU: Intel UHD Graphics 620, 1.15 GHz (integrada — sem ROCm/CUDA útil para ML)
+- OS: CachyOS (Arch Linux), Niri + Fish shell
+
+Implicações: AVX2 disponível (diferente do i5-3470), mas sem GPU discreta. Modelos leves de CPU funcionam; bge-m3 será lento. RAM de 11.58 GB limita modelos grandes.
+
 ---
 
 ## Princípio de erros
@@ -48,7 +57,7 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 
 O Claude Code mantém memória local em `~/.claude/projects/.../memory/`. Essa memória **não é sincronizada** entre o computador de trabalho (Windows 10) e o computador principal (CachyOS) — cada instância tem sua própria memória local.
 
-**Regra obrigatória:** toda vez que uma informação for salva ou atualizada na memória local, o mesmo conteúdo deve ser registrado no `CLAUDE.md` (este arquivo), que é versionado no repositório e sincronizado via Proton Drive entre as máquinas.
+**Regra obrigatória:** toda vez que uma informação for salva ou atualizada na memória local (`~/.claude/projects/.../memory/`), o mesmo conteúdo deve ser registrado no `CLAUDE.md` (este arquivo) **na mesma resposta**, sem esperar o fim da sessão. O `CLAUDE.md` é versionado e sincronizado via Proton Drive entre as máquinas.
 
 Isso garante que ambas as instâncias do Claude Code estejam na mesma página sobre contexto do projeto, preferências da usuária e decisões de arquitetura.
 

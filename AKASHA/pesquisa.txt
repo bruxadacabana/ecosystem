@@ -559,3 +559,210 @@ FONTES
 - Trafilatura Settings: https://trafilatura.readthedocs.io/en/latest/settings.html
 - Substack scraping 2026: https://dev.to/agenthustler/how-to-scrape-substack-newsletters-in-2026-a-complete-guide-2lce
 - Medium anti-scraping 2024: https://medium.com/@datajournal/most-popular-anti-scraping-techniques-in-2024-765473ea0451
+
+================================================================================
+BUSCA E INTEGRAÇÃO DE TORRENTS — Prowlarr, Jackett, qBittorrent Web API
+Data: 2026-04-25
+Contexto: Fase 6 AKASHA — pesquisa de torrents + envio ao qBittorrent
+================================================================================
+
+1. JACKETT — AGREGADOR DE INDEXADORES (LEGADO)
+================================================
+
+Jackett atua como proxy: recebe queries no formato Torznab e as converte para requests
+específicos de cada tracker. Roda localmente na porta 9117.
+
+ENDPOINT DE BUSCA:
+  GET http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/api
+  Parâmetros:
+    apikey = <chave do Jackett, em Settings>
+    t      = search (também: tvsearch, movie)
+    q      = termo de busca (URL-encoded)
+    cat    = categorias separadas por vírgula (ex: 5000,5030,5070 para vídeo)
+    limit  = max resultados (padrão: 1000; Jackett pode ignorar)
+
+  Usar indexer "all" busca em todos os indexadores simultaneamente.
+  Por indexer específico: .../indexers/{indexer-id}/results/torznab/api
+
+FORMATO DE RESPOSTA: XML (RSS Torznab — não JSON)
+  Namespace: xmlns:torznab="http://www.torznab.com/schemas/2015/feed"
+  Estrutura de cada <item>:
+    <title>Nome do Release</title>
+    <link>magnet:?xt=urn:btih:...</link>
+    <guid>https://tracker/torrent/12345</guid>
+    <size>2147483648</size>          <!-- bytes -->
+    <pubDate>Mon, 15 Jan 2024 12:30:00 +0000</pubDate>
+    <torznab:attr name="seeders"  value="42"/>
+    <torznab:attr name="peers"    value="13"/>
+    <torznab:attr name="category" value="5040"/>
+
+  Parsing Python: xml.etree.ElementTree com namespace torznab
+  Extrair atributos: item.findall('torznab:attr', {'torznab': '...'})
+
+AUTENTICAÇÃO: apenas via parâmetro apikey na URL (sem header).
+STATUS: projeto estável mas em manutenção. Prowlarr é o substituto ativo.
+
+2. PROWLARR — AGREGADOR MODERNO (RECOMENDADO)
+==============================================
+
+Prowlarr é o substituto moderno do Jackett, desenvolvido pelo mesmo time que
+Sonarr/Radarr. Possui integração nativa com o ecossistema *arr, mas também
+funciona de forma standalone via sua própria API REST (JSON — não XML).
+Porta padrão: 9696.
+
+ENDPOINT DE BUSCA:
+  GET http://127.0.0.1:9696/api/v1/search
+  Header: X-Api-Key: <chave em Settings → General → Security>
+  Parâmetros:
+    query      = termo de busca
+    indexerIds = -1 (todos) ou lista de IDs separados por vírgula
+    categories = IDs de categoria (ex: 2000 para filmes, 5000 para TV)
+    type       = search | tvsearch | moviesearch
+
+  Exemplo:
+    GET /api/v1/search?query=ubuntu+22.04&indexerIds=-1&type=search
+
+FORMATO DE RESPOSTA: JSON (array de objetos)
+  Campos relevantes por resultado:
+    title       : nome do release
+    seeders     : número de seeders
+    leechers    : número de leechers
+    size        : tamanho em bytes
+    downloadUrl : URL do .torrent (pode ser nulo)
+    magnetUrl   : magnet link (preferir este sobre downloadUrl)
+    indexer     : nome do indexador que retornou o resultado
+    categories  : lista de objetos {id, name}
+    publishDate : data de publicação (ISO 8601)
+    infoHash    : hash SHA-1 do torrent
+    protocol    : "torrent" ou "usenet"
+
+AUTENTICAÇÃO: header HTTP X-Api-Key (não parâmetro de URL).
+STATUS: ativo, desenvolvido ativamente. Suporta mais indexadores que Jackett.
+
+DIFERENÇA JACKETT vs PROWLARR:
+  Jackett:  XML/Torznab, apikey na URL, porta 9117, mais indexadores esotéricos
+  Prowlarr: JSON nativo, header auth, porta 9696, integração *arr, mais moderno
+  Para AKASHA: suportar ambos — Prowlarr prioritário, Jackett como fallback.
+
+3. qBITTORRENT WEB API
+=======================
+
+qBittorrent expõe uma API REST na porta 8080 (configurável). Todas as rotas
+precisam de autenticação via cookie SID, exceto /auth/login.
+
+AUTENTICAÇÃO:
+  POST /api/v2/auth/login
+  Body (form): username=admin&password=adminadmin
+  Resposta: cookie "SID" a usar em todas as requisições seguintes.
+
+  BYPASS LOCALHOST: em Options → Web UI → Authentication → "bypass for localhost"
+  Ou em ~/.config/qBittorrent/qBittorrent.conf: WebUI\LocalHostAuth=false
+  Com bypass ativo, não é necessário fazer login — ideal para integração local.
+
+ADICIONAR MAGNET:
+  POST /api/v2/torrents/add
+  Content-Type: multipart/form-data
+  Campos:
+    urls     = magnet:?xt=urn:btih:...    (um por linha, pode ser múltiplos)
+    savepath = /home/user/Downloads       (opcional)
+    category = nome-categoria             (opcional)
+    paused   = true/false                 (opcional; paused=true para confirmar antes)
+
+  Resposta de sucesso: texto "Ok."
+  Também aceita upload de arquivo: campo "torrents" (multipart file)
+
+LISTAR TORRENTS COM PROGRESSO:
+  GET /api/v2/torrents/info
+  Parâmetros (opcionais):
+    filter = all | downloading | seeding | completed | paused | active | inactive | stalled
+    sort   = any field name (ex: progress, dlspeed, eta)
+    limit  = max resultados
+    offset = paginação
+
+  Resposta JSON — campos relevantes por torrent:
+    name         : nome do torrent
+    hash         : identificador único
+    progress     : float 0..1 (multiplicar por 100 para %)
+    dlspeed      : velocidade download em bytes/s
+    upspeed      : velocidade upload em bytes/s
+    eta          : tempo restante em segundos (8640000 = infinito/sem seeds)
+    state        : downloading | uploading | pausedDL | pausedUP | stalledDL |
+                   stalledUP | checkingDL | error | missingFiles | queuedDL
+    size         : tamanho total em bytes
+    downloaded   : bytes baixados até agora
+    ratio        : ratio upload/download
+    num_seeds    : seeds conectados
+    num_leechs   : leechs conectados
+    save_path    : diretório de destino
+
+CANCELAR/PAUSAR:
+  POST /api/v2/torrents/pause  → body: hashes=<hash1>|<hash2>
+  POST /api/v2/torrents/resume → body: hashes=<hash>
+  POST /api/v2/torrents/delete → body: hashes=<hash>&deleteFiles=false
+
+4. LIBRARY PYTHON: qbittorrent-api
+====================================
+
+Lib PyPI oficial: `qbittorrent-api` (rmartin16/qbittorrent-api)
+Suporta qBittorrent v4.1+ / Web API v2.x até v2.11.4 (qBittorrent v5.1.4, nov 2025)
+Instalação: `pip install qbittorrent-api`
+Suporte assíncrono: não nativo (usa threads internamente); para uso em FastAPI,
+chamar via `asyncio.to_thread()` ou usar httpx diretamente.
+
+Interface básica:
+  from qbittorrentapi import Client
+  client = Client(host="localhost:8080", username="", password="")
+  client.torrents_add(urls="magnet:?xt=urn:btih:...")
+  torrents = client.torrents_info(status_filter="downloading")
+  for t in torrents:
+      t.name, t.progress, t.dlspeed, t.eta, t.state
+
+Para uso sem auth (localhost bypass): username="" password="" ou omitir.
+Suporte async via `qbittorrentapi.Client` + `asyncio.to_thread`.
+
+ALTERNATIVA: usar httpx diretamente com cookie SID — mais leve, sem dep extra.
+
+5. FLUXO END-TO-END RECOMENDADO
+================================
+
+  1. Usuário digita termo na aba "Torrents" do AKASHA
+  2. AKASHA chama Prowlarr GET /api/v1/search (ou Jackett como fallback)
+  3. Resultados mostrados: título, seeders/leechers, tamanho, indexer, data
+  4. Usuário clica "↓ baixar" num resultado
+  5. AKASHA extrai magnetUrl (ou downloadUrl) e envia para qBittorrent
+     via POST /api/v2/torrents/add
+  6. qBittorrent aparece na seção "Torrents ativos" com polling SSE ou
+     HTMX polling a cada 5s mostrando progress/speed/eta
+
+6. CATEGORIAS TORZNAB RELEVANTES
+==================================
+  2000 = Filmes
+  3000 = Áudio / Música
+  4000 = PC (software, jogos)
+  5000 = TV
+  6000 = XXX (ignorar ou bloquear)
+  7000 = Livros / eBooks
+  8000 = Outros
+  Usar cat=2000,3000,4000,5000,7000 para excluir categorias indesejadas.
+
+7. CONSIDERAÇÕES
+=================
+  - qBittorrent só precisa estar rodando localmente; sem config extra com bypass
+  - Prowlarr/Jackett precisam ser instalados e configurados pelo usuário
+  - AKASHA deve verificar conexão e mostrar banner gracioso se offline
+  - Preferir magnetUrl sobre downloadUrl para privacidade
+  - Salvar config (hosts, ports, apikeys) na tabela settings do SQLite
+
+FONTES
+-------
+- qBittorrent Web API (4.1): https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1)
+- qbittorrent-api PyPI: https://pypi.org/project/qbittorrent-api/
+- qbittorrent-api docs (Torrents): https://qbittorrent-api.readthedocs.io/en/latest/apidoc/torrents.html
+- Jackett GitHub: https://github.com/Jackett/Jackett
+- Jackett Torznab API Reference (DeepWiki): https://deepwiki.com/Jackett/Jackett/3-torznab-api-reference
+- Torznab Specification: https://torznab.github.io/spec-1.3-draft/revisions/1.0-Torznab-Torrent-Support.html
+- Prowlarr API Docs: https://prowlarr.com/docs/api/
+- Prowlarr vs Jackett: https://selfhosting.sh/compare/prowlarr-vs-jackett/
+- prowlarr-qbittorrent-plugin (exemplo de integração): https://github.com/swannie-eire/prowlarr-qbittorrent-plugin/blob/main/prowlarr.py
+- SearXNG Torznab engine (parsing reference): https://docs.searxng.org/dev/engines/online/torznab.html
+- qBittorrent localhost auth bypass: https://qbittorrent-api.readthedocs.io/en/latest/behavior&configuration.html

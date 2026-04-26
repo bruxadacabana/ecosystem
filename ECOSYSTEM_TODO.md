@@ -757,6 +757,32 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 - [x] `/open-file` com xdg-open já implementado (com fallback `gio open` e detecção de erro — BUG-6 corrigido)
 - [ ] **Leitor próprio do ecossistema** — criar leitor de artigos/documentos integrado, inspirado no reader mode do KOSMOS; prioridade baixa, fazer após o xdg-open estar estável
 
+### Responsividade — AKASHA (prioridade alta)
+
+> Contexto: AKASHA é usado frequentemente em janela não-cheia. O CSS já tem breakpoints
+> em 900px (colunas de busca) e 860px (topbar), mas várias seções ainda quebram em janelas médias.
+
+- [ ] **Cards de resultado — ações em janela estreita**
+  — `.result-actions` overflow em janelas ~600–800px: botões saem do card ou ficam comprimidos
+  — Fix: `flex-wrap: wrap` + `justify-content: flex-end` nas ações; máx 2 ações por linha em < 700px
+  — Botões de ação: reduzir para ícone (sem texto) abaixo de 680px com `title` tooltip
+- [ ] **Tabela de downloads (`dl-table`) — responsividade**
+  — Em janelas estreitas a tabela quebra (coluna URL muito longa, coluna data sobreposta)
+  — Fix: ocultar coluna "Concluído" abaixo de 700px; truncar URL com `max-width` + `text-overflow`
+  — Abaixo de 520px: substituir tabela por cards empilhados (cada download = 1 card compacto)
+- [ ] **Formulário de download em linha (`dl-form`)**
+  — Em janelas estreitas os 3 campos ficam espremidos
+  — Fix: `flex-direction: column` abaixo de 580px; cada campo ocupa 100% da largura
+- [ ] **Página de biblioteca (`/library`) — grid de cards**
+  — Cards da biblioteca usam grid mas não têm breakpoint explícito abaixo de 700px
+  — Auditar e adicionar: 1 coluna abaixo de 640px, 2 colunas entre 640px–900px
+- [ ] **Topbar — links de navegação em janela ~700px**
+  — Entre 540px e 860px os links de nav ficam em segunda linha mas com espaçamento irregular
+  — Fix: limitar gap a 2px e garantir `flex-wrap: wrap` correto; testar em 650px, 750px, 850px
+- [ ] **Página watch-later, history, favorites**
+  — Auditar e corrigir quebras similares às da tabela de downloads
+- [ ] **Testar em janelas representativas:** 800×600, 1024×600, 1280×720 (não apenas mobile)
+
 ---
 
 ## PENDÊNCIAS — KOSMOS
@@ -808,6 +834,22 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — efeito: diminuir ranking de relevância da fonte automaticamente
   — registrar no log para análise futura de possíveis correções
 
+### Responsividade — KOSMOS
+
+> KOSMOS é PyQt6. Responsividade significa: layouts que escalam ao redimensionar a janela,
+> sem elementos que cortam ou somem.
+
+- [ ] **Auditar layout principal (splitter horizontal)**
+  — O splitter entre sidebar (feeds) e área principal (artigos) deve ter `setMinimumWidth` adequado
+  — Abaixo de ~900px total: testar se o painel de artigos fica ilegível
+- [ ] **ArticleCard — chips de tags em janela estreita**
+  — Chips `QLabel#aiTagChip` em `QHBoxLayout` overflow se o card é muito estreito
+  — Fix: limitar `max-width` do chip e aplicar `setText(elided_text)` usando `fontMetrics().elidedText()`
+- [ ] **StatsView — gráficos matplotlib em janela pequena**
+  — Gráficos ficam ilegíveis em < 600px de largura (labels sobrepostos)
+  — Fix: `tight_layout()` + `subplots_adjust()`; reduzir tamanho de fonte dos eixos dinamicamente
+- [ ] **Testar em janela 800×600 mínima**
+
 ---
 
 ## PENDÊNCIAS — AETHER
@@ -818,6 +860,46 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — verificar `AETHER/src-tauri/src/lib.rs`: se a leitura do ecosystem.json acontece antes ou depois da gravação do vault_path local
   — verificar `AETHER/src-tauri/src/ecosystem.rs`: se `read_ecosystem` está lendo o arquivo atualizado
 - [ ] Adicionar opção de configurar `vault_path` dentro do próprio AETHER (sem depender exclusivamente do HUB)
+
+### Responsividade — AETHER
+
+> AETHER é Tauri (React + CSS). Responsividade significa: a área de edição deve escalar bem
+> em janelas menores sem perder usabilidade.
+
+- [ ] **Auditar sidebar de projetos/capítulos**
+  — Em janelas estreitas (~800px) a sidebar pode esconder o editor
+  — Fix: `min-width` na sidebar, collapsível com toggle button abaixo de 900px
+- [ ] **Barra de ferramentas do editor**
+  — Botões de formatação podem overflow em janela estreita
+  — Fix: ocultar labels de texto, manter apenas ícones abaixo de 900px; wrapping se necessário
+- [ ] **Testar em janela 900×600 mínima**
+
+### Responsividade — Mnemosyne
+
+> Mnemosyne é PySide6. Verificar os mesmos pontos de KOSMOS.
+
+- [ ] **Auditar splitter principal (lista de documentos | viewer)**
+  — Testar em 800px de largura; definir `setMinimumWidth` adequado em cada painel
+- [ ] **Lista de documentos: truncar nome de arquivo longo com tooltip**
+- [ ] **Testar em janela 800×600 mínima**
+
+### Responsividade — Hermes
+
+> Hermes é PyQt6 ou equivalente. Mesmos princípios de KOSMOS.
+
+- [ ] **Auditar layout principal: lista de vídeos | área de transcrição**
+  — Em janelas estreitas a transcrição precisa de scroll vertical, não horizontal
+- [ ] **Testar em janela 800×600 mínima**
+
+### Responsividade — HUB
+
+> HUB é Tauri. A interface já é web-based mas deve funcionar em janelas menores.
+
+- [ ] **Auditar grid de cards de apps**
+  — De 3 colunas → 2 → 1 conforme janela estreita (CSS grid `auto-fill`)
+- [ ] **LogosView e painéis de status**
+  — Verificar que scrollam corretamente quando a janela é reduzida
+- [ ] **Testar em janela 800×600 mínima**
 
 ---
 

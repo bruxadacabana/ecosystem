@@ -124,22 +124,78 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
-## Fase 6 — qBittorrent
+## Fase 6 — Torrents (busca + qBittorrent)
 
-> Entrega: gerenciar torrents locais direto da interface.
+> Entrega: pesquisar torrents via Prowlarr/Jackett e baixar com qBittorrent diretamente do AKASHA.
+> Pré-requisito do usuário: qBittorrent rodando com Web UI ativo (porta 8080);
+> Prowlarr (9696) ou Jackett (9117) instalado e com indexadores configurados.
 
-- [ ] `services/qbt_client.py` — wrapper `qbittorrent-api`: `list_torrents() -> list[TorrentInfo]`,
-      `add_magnet(url: str) -> None`, `add_file(data: bytes) -> None`; raises `QbtOfflineError`
-      se inacessível
-- [ ] `routers/qbittorrent.py` — `GET /torrents` → lista ativa (nome, progresso %, velocidade,
-      ETA, estado); renderiza fragmento HTMX para polling
-- [ ] `routers/qbittorrent.py` — `POST /torrents/add` — aceita magnet link (form field)
-      ou upload de arquivo `.torrent` (`multipart/form-data`)
-- [ ] `templates/downloads.html` — aba "Torrents": tabela com polling a cada 5s
-      (`hx-trigger="every 5s" hx-get="/torrents"`)
-- [ ] Configuração em `/settings`: `qbt_host` e `qbt_port` (defaults: `localhost`, `8080`);
-      salvos em `settings` SQLite
-- [ ] Banner "qBittorrent offline" quando `QbtOfflineError` — sem quebrar o resto da página
+### 6.1 — Configuração
+
+- [ ] Adicionar campos na tabela `settings` (migration nova):
+      `qbt_host` (default: localhost), `qbt_port` (default: 8080),
+      `prowlarr_host`, `prowlarr_port` (9696), `prowlarr_apikey`,
+      `jackett_host`, `jackett_port` (9117), `jackett_apikey`
+- [ ] Adicionar estes campos à página `/settings` existente
+
+### 6.2 — Cliente qBittorrent
+
+- [ ] `services/qbt_client.py` — usa `httpx` direto (sem dep qbittorrent-api):
+      - `_get_session()` → faz POST /auth/login e retorna cookie SID
+        (se `LocalHostAuth=false`, pular login)
+      - `async def list_torrents(filter="all") -> list[TorrentInfo]`
+        (GET /api/v2/torrents/info; campos: name, hash, progress, dlspeed,
+        upspeed, eta, state, size, downloaded, num_seeds, num_leechs)
+      - `async def add_magnet(magnet: str, save_path: str = "") -> None`
+        (POST /api/v2/torrents/add com urls=magnet)
+      - `async def add_torrent_file(data: bytes, save_path: str = "") -> None`
+      - `async def pause_torrent(info_hash: str) -> None`
+      - `async def resume_torrent(info_hash: str) -> None`
+      - `async def delete_torrent(info_hash: str, delete_files: bool = False) -> None`
+      - Raises `QbtOfflineError(Exception)` se inacessível
+
+### 6.3 — Busca de Torrents (Prowlarr + Jackett)
+
+- [ ] `services/torrent_search.py`:
+      - `async def search_prowlarr(query, apikey, host, port, categories="") -> list[TorrentResult]`
+        (GET /api/v1/search, header X-Api-Key, resposta JSON;
+        campos: title, seeders, leechers, size, magnetUrl, downloadUrl, indexer, publishDate)
+      - `async def search_jackett(query, apikey, host, port, categories="") -> list[TorrentResult]`
+        (GET /api/v2.0/indexers/all/results/torznab/api, resposta XML Torznab;
+        parse com xml.etree.ElementTree + namespace torznab;
+        extrair: title, link/magnet, size, seeders via torznab:attr)
+      - `async def search(query, settings) -> list[TorrentResult]`
+        (tenta Prowlarr primeiro; fallback para Jackett; raises TorrentSearchOfflineError se ambos falham)
+      - Dataclass `TorrentResult`: title, seeders, leechers, size_bytes, size_fmt,
+        magnet_url, torrent_url, indexer, pub_date
+
+### 6.4 — Router
+
+- [ ] `routers/torrents.py`:
+      - `GET /torrents` → página principal (formulário de busca + ativos + histórico)
+      - `GET /torrents/search?q=&cat=` → HTMX fragment com resultados (hx-get polling)
+      - `GET /torrents/active` → HTMX fragment: lista de torrents ativos no qBittorrent
+        com polling a cada 5s
+      - `POST /torrents/add` (form: magnet= ou file=) → adiciona ao qBittorrent
+      - `POST /torrents/{hash}/pause`, `/resume`, `/delete`
+      - Todos retornam banner gracioso se `QbtOfflineError` ou `TorrentSearchOfflineError`
+
+### 6.5 — Templates
+
+- [ ] `templates/torrents.html` — página principal:
+      - Formulário de busca (campo q + select de categoria)
+      - Div de resultados: `hx-get="/torrents/search"` com `hx-trigger="submit from:#search-form"`
+      - Seção "Ativos": `hx-get="/torrents/active" hx-trigger="every 5s"` (polling HTMX)
+- [ ] `templates/_torrents_active.html` — fragmento: tabela com nome, progresso (barra),
+      velocidade, ETA, estado, botões pausa/resume/delete
+- [ ] `templates/_torrent_results.html` — fragmento: cards de resultado com título,
+      seeders/leechers, tamanho, indexer, botão "↓ baixar"
+
+### 6.6 — CSS e nav
+
+- [ ] Adicionar estilos `.torrent-card`, `.torrent-table`, `.seed-count`, `.leech-count`
+      a `static/style.css`
+- [ ] `_macros.html` WEB cards: não adicionar botão torrent (seria scope creep)
 
 ---
 
