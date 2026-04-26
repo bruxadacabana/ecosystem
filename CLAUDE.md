@@ -36,14 +36,14 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 
 - CPU: Intel Core i7-8550U (8 threads) @ 4.00 GHz — **tem AVX2**
 - RAM: 11.58 GiB
-- GPU 1 (discreta): **NVIDIA GeForce MX150** — VRAM não confirmada (2 GB ou 4 GB; rodar `nvidia-smi`)
+- GPU 1 (discreta): **NVIDIA GeForce MX150, 2048 MiB VRAM (2 GB — confirmado)**
 - GPU 2 (integrada): Intel UHD Graphics 620 @ 1.15 GHz (Optimus/híbrido)
 - Disco: 443 GB btrfs
 - Tela: 1920×1080, 15", 60 Hz
 - OS: CachyOS x86_64, kernel 7.0.1-1-cachyos, Niri 26.04 (Wayland), Fish 4.6.0
 - Bateria: L17M2PB7 (monitorável — relevante para LOGOS)
 
-Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). Modelos: SmolLM2 1.7B (KOSMOS) + Gemma 2B Q4 (Mnemosyne) se VRAM = 2 GB; margem para Phi-3 mini se 4 GB. Llama 8B → offload excessivo → aquecimento, evitar. Em bateria: LOGOS deve reduzir indexação.
+Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRAM = 2 GB: modelos-teto são SmolLM2 1.7B (KOSMOS, ~1 GB Q4) e Gemma 2B Q4 (Mnemosyne, ~1.5 GB). Phi-3 mini e Llama 8B → offload para CPU → aquecimento, evitar. Em bateria: LOGOS deve reduzir indexação.
 
 ---
 
