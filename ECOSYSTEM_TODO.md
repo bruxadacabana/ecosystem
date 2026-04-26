@@ -1013,6 +1013,37 @@ Achados de pesquisa `KOSMOS/pesquisa.txt` (2026-04-25) — LOGOS é responsável
   — schema dinâmico por lote; fallback individual se batch falhar
   — `num_ctx=8192` para batch; análise interativa permanece `num_ctx=4096`
 
+### LOGOS: perfis de hardware com detecção automática por fingerprint de GPU
+
+Objetivo: ao iniciar, o LOGOS identifica em qual máquina está rodando via fingerprint de GPU
+e seleciona automaticamente o perfil de modelos adequado — sem configuração manual por máquina.
+
+**Perfis definidos:**
+
+| Máquina | GPU detectada | LLM (Mnemosyne) | LLM (KOSMOS) | Embedding |
+|---|---|---|---|---|
+| PC principal | RX 6600 (AMD sysfs / `rocm-smi`) | qwen2.5:7b | gemma2:2b | bge-m3 |
+| Laptop Ideapad 330 | MX150 via `nvidia-smi` | gemma2:2b | smollm2:1.7b | nomic-embed-text |
+| PC de trabalho (Windows) | nenhuma GPU discreta | (CPU only) modelos leves | smollm2:1.7b | nomic-embed-text |
+
+**Lógica de detecção (em ordem):**
+1. Tentar `nvidia-smi --query-gpu=name --format=csv,noheader` → se retornar "MX150" → perfil laptop
+2. Tentar ler `/sys/class/drm/card*/device/mem_info_vram_total` (AMD sysfs) → se encontrar RX 6600 → perfil principal
+3. Fallback → perfil Windows/CPU-only
+
+**Implementação sugerida:**
+- `HUB/src-tauri/src/logos.rs`: função `detect_hardware_profile() -> HardwareProfile` rodando no startup
+- `HardwareProfile` enum: `MainPc | Laptop | WorkPc`
+- Perfil exposto via `GET /logos/profile` → apps lêem e ajustam modelos dinamicamente
+- `ecosystem_client.py`: `get_active_profile()` → retorna o perfil atual do LOGOS
+
+- [ ] Implementar `detect_hardware_profile()` em `logos.rs` com as 3 etapas de detecção
+- [ ] Definir `HardwareProfile` enum + struct `ModelProfile { llm_mnemosyne, llm_kosmos, embed }`
+- [ ] Expor `GET /logos/profile` no servidor Axum
+- [ ] `ecosystem_client.py`: `get_active_profile()` + adaptar `request_llm()` para usar modelo do perfil ativo
+- [ ] KOSMOS e Mnemosyne: ler perfil do LOGOS no startup e usar modelos recomendados se não houver override manual
+- [ ] HUB LogosPanel: exibir perfil ativo ("PC Principal · RX 6600", "Laptop · MX150 2 GB", etc.)
+
 ### AKASHA como broker unificado de informação
 - [ ] Planejar API de "Mapa de Contexto" no AKASHA:
   — dado um termo, retornar resultados cruzados: Mnemosyne (RAG) + KOSMOS (artigos) + Hermes (transcrições) + AETHER (notas)
