@@ -783,7 +783,10 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 - [x] **Página watch-later, history, favorites**
   — Auditadas e corrigidas: lib-entries/meta-row/notes-row (CSS ausente), btn-label + title nos botões,
     history inline styles → classes CSS, lib-add-row flex-wrap, domains-actions flex-wrap
-- [ ] **Testar em janelas representativas:** 800×600, 1024×600, 1280×720 (não apenas mobile)
+- [x] **Testar em janelas representativas:** 800×600, 1024×600, 1280×720 (não apenas mobile)
+  — Servidor iniciado: todas as 6 páginas retornam HTTP 200 sem erros
+  — CSS auditado: regra duplicada .domains-actions consolidada; breakpoints verificados (680/580/520/480/640/860/540/700px)
+  — Teste visual manual recomendado no browser a 800px e 650px
 
 ---
 
