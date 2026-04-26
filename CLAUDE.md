@@ -32,16 +32,18 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 - OS: CachyOS (Arch Linux), Niri + Fish shell
 - Armazenamento: ~2 TB (3 SSDs)
 
-### Hardware — Laptop — Lenovo Ideapad 330 (CachyOS)
+### Hardware — Laptop — Lenovo Ideapad 330-15IKB, modelo 81FE (CachyOS)
 
-- CPU: Intel Core i7-8550U, Kaby Lake R (8ª gen), 4 cores/8 threads, até ~4 GHz — **tem AVX2**
-- RAM: 11.58 GiB (~12 GB)
-- GPU discreta: **NVIDIA MX150, ~2 GB VRAM** (possivelmente 4 GB — confirmar) — **CUDA disponível**
-- GPU integrada: Intel UHD Graphics 620 (Optimus/híbrido)
-- OS: CachyOS (Arch Linux), Niri + Fish shell
-- Drivers: `nvidia-cachyos` (ou equivalente) necessário para CUDA no Wayland/Niri
+- CPU: Intel Core i7-8550U (8 threads) @ 4.00 GHz — **tem AVX2**
+- RAM: 11.58 GiB
+- GPU 1 (discreta): **NVIDIA GeForce MX150** — VRAM não confirmada (2 GB ou 4 GB; rodar `nvidia-smi`)
+- GPU 2 (integrada): Intel UHD Graphics 620 @ 1.15 GHz (Optimus/híbrido)
+- Disco: 443 GB btrfs
+- Tela: 1920×1080, 15", 60 Hz
+- OS: CachyOS x86_64, kernel 7.0.1-1-cachyos, Niri 26.04 (Wayland), Fish 4.6.0
+- Bateria: L17M2PB7 (monitorável — relevante para LOGOS)
 
-Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só para AMD/ROCm). Modelos recomendados: SmolLM2 1.7B (KOSMOS) e Gemma 2B Q4 (Mnemosyne). Llama 8B força offload para CPU → aquecimento, evitar. Em bateria: reduzir frequência de indexação (feature LOGOS).
+Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). Modelos: SmolLM2 1.7B (KOSMOS) + Gemma 2B Q4 (Mnemosyne) se VRAM = 2 GB; margem para Phi-3 mini se 4 GB. Llama 8B → offload excessivo → aquecimento, evitar. Em bateria: LOGOS deve reduzir indexação.
 
 ---
 
