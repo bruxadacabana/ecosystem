@@ -773,9 +773,10 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 - [x] **Formulário de download em linha (`dl-form`)**
   — Em janelas estreitas os 3 campos ficam espremidos
   — Fix: `flex-direction: column` abaixo de 580px; cada campo ocupa 100% da largura
-- [ ] **Página de biblioteca (`/library`) — grid de cards**
+- [x] **Página de biblioteca (`/library`) — grid de cards**
   — Cards da biblioteca usam grid mas não têm breakpoint explícito abaixo de 700px
-  — Auditar e adicionar: 1 coluna abaixo de 640px, 2 colunas entre 640px–900px
+  — Auditado: layout é flex coluna única (não grid); inline styles extraídos para classes CSS
+  — lib-site-row/info/actions: @media 640px → coluna; lib-discover-form: flex-wrap
 - [ ] **Topbar — links de navegação em janela ~700px**
   — Entre 540px e 860px os links de nav ficam em segunda linha mas com espaçamento irregular
   — Fix: limitar gap a 2px e garantir `flex-wrap: wrap` correto; testar em 650px, 750px, 850px

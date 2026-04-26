@@ -787,6 +787,46 @@ a:hover { opacity: 0.75; }
 .lib-add-row     { display: flex; gap: 8px; }
 .lib-add-row .input { flex: 1; }
 
+/* ── Biblioteca — cards de sites cadastrados ─────────────── */
+.lib-discover-form {
+  display:       flex;
+  gap:           .5rem;
+  align-items:   center;
+  margin-bottom: .75rem;
+  flex-wrap:     wrap;
+}
+.lib-discover-input {
+  flex:      1;
+  min-width: 0;
+  max-width: 480px;
+}
+
+.lib-site-row {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     flex-start;
+  gap:             1rem;
+}
+
+.lib-site-info {
+  min-width: 0;
+  flex:      1;
+}
+
+.lib-site-actions {
+  display:     flex;
+  gap:         .4rem;
+  flex-shrink: 0;
+  align-items: flex-start;
+  margin-top:  .1rem;
+}
+
+@media (max-width: 640px) {
+  .lib-site-row { flex-direction: column; }
+  .lib-site-actions { flex-wrap: wrap; margin-top: .5rem; }
+  .lib-discover-input { max-width: none; }
+}
+
 /* ── Lista negra e favoritos ─────────────────────────────────── */
 .domains-list    { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .domains-item    { display: flex; align-items: center; justify-content: space-between;

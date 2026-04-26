@@ -28,13 +28,13 @@ function toggleSitePages(btn, siteId) {
     <h2 class="results-section-title" style="margin-bottom:1rem;">Adicionar site</h2>
 
     <form id="discover-form"
-      style="display:flex;gap:.5rem;align-items:center;margin-bottom:.75rem;"
+      class="lib-discover-form"
       hx-post="/library/discover"
       hx-target="#subdomain-picker"
       hx-swap="innerHTML"
       hx-indicator="#disc-spinner">
-      <input type="url" name="url" class="input" placeholder="https://exemplo.com"
-             required autocomplete="off" style="flex:1;max-width:480px;">
+      <input type="url" name="url" class="input lib-discover-input" placeholder="https://exemplo.com"
+             required autocomplete="off">
       <button type="submit" class="btn btn-primary">Detectar subdomínios</button>
       <span id="disc-spinner" class="htmx-indicator search-spinner"></span>
     </form>

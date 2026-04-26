@@ -2,10 +2,10 @@
   {% if sites %}
     {% for site in sites %}
     <div class="card" style="margin-bottom:.75rem;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
+      <div class="lib-site-row">
 
-        <!-- ─ Info ─ -->
-        <div style="min-width:0;">
+        <!-- Info -->
+        <div class="lib-site-info">
           <strong style="font-size:14px;">{{ site.label or site.base_url }}</strong>
           {% if site.label %}
             <br><a href="{{ site.base_url }}" target="_blank" rel="noopener" class="result-url" style="font-size:11px;">{{ site.base_url }}</a>
@@ -36,8 +36,8 @@
           {% endif %}
         </div>
 
-        <!-- ─ Ações ─ -->
-        <div style="display:flex;gap:.4rem;flex-shrink:0;align-items:flex-start;margin-top:.1rem;">
+        <!-- Ações -->
+        <div class="lib-site-actions">
           {% if site.page_count > 0 %}
           <button class="btn btn-ghost btn-sm"
             onclick="toggleSitePages(this, {{ site.id }})"
