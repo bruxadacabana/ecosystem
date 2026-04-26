@@ -20,7 +20,7 @@
     </span>
     <div class="result-actions">
       {% if r.pdf_url %}
-      <a href="{{ r.pdf_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm">&#x21A7; PDF</a>
+      <a href="{{ r.pdf_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm" title="Ver PDF">&#x21A7; <span class="btn-label">PDF</span></a>
       {% endif %}
       {% if r.has_pdf %}
       <button
@@ -31,7 +31,7 @@
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Paper arquivado!' : 'Erro: ' + event.detail.xhr.responseText, event.detail.successful ? 'success' : 'error')"
         title="Baixar PDF e arquivar"
-      >&#x25A4; arquivar</button>
+      >&#x25A4; <span class="btn-label">arquivar</span></button>
       {% endif %}
     </div>
   </div>
@@ -63,14 +63,14 @@
         hx-get="/open-file?url={{ r.url | urlencode }}"
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Abrindo arquivo…' : 'Erro ao abrir', event.detail.successful ? 'success' : 'error')"
-        title="Abrir com o app padrão do sistema">&#x2197; abrir</button>
+        title="Abrir com o app padrão do sistema">&#x2197; <span class="btn-label">abrir</span></button>
       {% else %}
-      <a href="{{ r.url }}" download class="btn btn-ghost btn-sm">&#x21A7; baixar</a>
+      <a href="{{ r.url }}" download class="btn btn-ghost btn-sm" title="Baixar arquivo">&#x21A7; <span class="btn-label">baixar</span></a>
       {% endif %}
       {% if r.source == "SITES" %}
       <a href="/library/reader?url={{ r.url | urlencode }}"
          class="btn btn-ghost btn-sm"
-         title="Ler no reader mode">Ler</a>
+         title="Ler no reader mode">&#x2261; <span class="btn-label">ler</span></a>
       {% endif %}
       {% if r.source == "WEB" %}
       <button
@@ -79,7 +79,8 @@
         hx-vals='{"url": "{{ r.url }}"}'
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Arquivado!' : 'Erro ao arquivar', event.detail.successful ? 'success' : 'error')"
-      >&#x25A4; arquivar</button>
+        title="Arquivar página"
+      >&#x25A4; <span class="btn-label">arquivar</span></button>
       <button
         class="btn btn-ghost btn-sm"
         hx-post="/download"
@@ -88,7 +89,7 @@
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Download iniciado!' : 'Erro ao iniciar download', event.detail.successful ? 'success' : 'error')"
         title="Baixar arquivo"
-      >&#x21A7; baixar</button>
+      >&#x21A7; <span class="btn-label">baixar</span></button>
       <button
         class="btn btn-ghost card-action-icon"
         title="Adicionar à biblioteca"

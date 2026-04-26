@@ -762,7 +762,7 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 > Contexto: AKASHA é usado frequentemente em janela não-cheia. O CSS já tem breakpoints
 > em 900px (colunas de busca) e 860px (topbar), mas várias seções ainda quebram em janelas médias.
 
-- [ ] **Cards de resultado — ações em janela estreita**
+- [x] **Cards de resultado — ações em janela estreita**
   — `.result-actions` overflow em janelas ~600–800px: botões saem do card ou ficam comprimidos
   — Fix: `flex-wrap: wrap` + `justify-content: flex-end` nas ações; máx 2 ações por linha em < 700px
   — Botões de ação: reduzir para ícone (sem texto) abaixo de 680px com `title` tooltip

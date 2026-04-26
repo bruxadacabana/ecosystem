@@ -515,17 +515,60 @@ a:hover { opacity: 0.75; }
   margin-bottom: 4px;
 }
 
-.card-footer {
+.card-footer, .result-footer {
   display:     flex;
   align-items: center;
   gap:         8px;
   flex-wrap:   wrap;
+  margin-top:  10px;
 }
 
-.card-actions {
-  margin-left: auto;
-  display:     flex;
-  gap:         6px;
+.result-header {
+  display:       flex;
+  align-items:   center;
+  gap:           6px;
+  flex-wrap:     wrap;
+  margin-bottom: 6px;
+}
+
+.result-date {
+  font-family:    var(--font-mono);
+  font-size:      9px;
+  color:          var(--ink-ghost);
+  letter-spacing: 0.04em;
+  margin-left:    auto;
+}
+
+.result-title {
+  font-family:   var(--font-display);
+  font-style:    italic;
+  font-size:     17px;
+  color:         var(--ink);
+  margin-bottom: 4px;
+  line-height:   1.25;
+}
+
+.result-link { color: var(--ink); }
+.result-link:hover { color: var(--accent); opacity: 1; }
+
+.card-actions, .result-actions {
+  margin-left:     auto;
+  display:         flex;
+  gap:             6px;
+  flex-wrap:       wrap;
+  justify-content: flex-end;
+}
+
+/* Abaixo de 680px: botões de ação ficam só com ícone (texto via tooltip) */
+@media (max-width: 680px) {
+  .result-actions .btn-label { display: none; }
+  .result-actions .btn-sm {
+    width:           22px;
+    height:          22px;
+    padding:         0;
+    line-height:     1;
+    justify-content: center;
+  }
 }
 
 /* ── Badges e tags ──────────────────────────────────────── */
