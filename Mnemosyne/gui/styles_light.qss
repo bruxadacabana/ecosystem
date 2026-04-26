@@ -75,6 +75,13 @@ QLabel#progressFileLabel {
     background: transparent;
 }
 
+QLabel#bgIndexLabel {
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 10px;
+    color: #9A8F80;
+    background: transparent;
+}
+
 QLabel#sidebarLabel {
     font-family: "Special Elite", "Courier New", monospace;
     font-size: 10px;

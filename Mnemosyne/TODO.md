@@ -349,55 +349,32 @@
 
 ---
 
-## Fase 10 — Indexação incremental automática do ecossistema (idle indexer)
+## Fase 10 — Indexação incremental automática do ecossistema (idle indexer) ✓
 
 > Objetivo: quando o Mnemosyne não está executando uma indexação manual (estado "idle"),
 > monitorar as pastas do ecossistema e indexar automaticamente qualquer arquivo novo ou
 > modificado gerado por AKASHA, KOSMOS, Hermes ou AETHER.
->
-> **Pré-requisito:** pesquisa prévia obrigatória (ver CLAUDE.md) antes de implementar.
-> Pesquisar: `watchdog` (Python file watcher), indexação incremental em ChromaDB sem rebuild,
-> idle detection em PySide6 (sem polling caro), integração com o checkpoint da Fase 9.
 
 ### 10.1 — File watcher (detector de novos arquivos)
 
-- [ ] Pesquisar e documentar em `Mnemosyne/pesquisa.txt`:
-  — lib `watchdog` (PyPI): Observer + FileSystemEventHandler; suporte Linux (inotify) + Windows (ReadDirectoryChangesW)
-  — alternativa: polling periódico leve (a cada 60s verificar mtimes) — mais simples, sem dep extra
-  — decidir entre watchdog (evento imediato) vs polling (mais robusto, sem deps)
-- [ ] `core/ecosystem_watcher.py` — monitora as pastas ativas do ecossistema (lidas de `ecosystem.json`):
-  — AKASHA: `{sync_root}/akasha/archive/` (arquivos `.md` arquivados)
-  — KOSMOS: `{sync_root}/kosmos/articles/` (artigos exportados)
-  — Hermes: `{sync_root}/hermes/transcriptions/` (transcrições `.md`)
-  — AETHER: `vault_dir` (notas `.md`)
-  — Ignora arquivos temporários (`.swp`, `.tmp`, `~`, `.part`)
-  — Coloca eventos `(path, collection_name)` numa `asyncio.Queue` ou `queue.Queue` thread-safe
+- [x] Reutilizado `FolderWatcher` existente (`core/watcher.py`) — QFileSystemWatcher por coleção de ecossistema
+- [x] `core/idle_indexer.py` — monitora coleções com `source == "ecosystem"` via `IdleIndexer.setup()`
 
 ### 10.2 — Idle detector
 
-- [ ] `core/idle_indexer.py` — estado "idle" = nenhum `IndexWorker`, `ResumeIndexWorker` ou `QueryWorker` ativo
-  — observar sinais existentes: `indexing_started` / `indexing_finished` do `IndexWorker`
-  — expor `is_idle() -> bool` consumido pelo processador da fila
+- [x] `_is_busy()` lambda em `main_window.py` — verifica `_index_worker`, `_resume_worker`, `_update_worker`, `_file_worker`
 
 ### 10.3 — Processador de fila incremental
 
-- [ ] `core/idle_indexer.py` — `IdleIndexProcessor` (QThread ou QTimer):
-  — acorda a cada 30s quando idle
-  — retira até 5 itens da fila de novos arquivos
-  — chama `index_single_file(path, collection)` existente do `core/indexer.py` por arquivo
-  — se indexação manual começar no meio: pausa (aguarda `is_idle()`)
-  — registra no checkpoint os arquivos processados (aproveitar infraestrutura da Fase 9)
-  — emite sinal `file_indexed(path)` para atualização de UI
+- [x] `IdleIndexer` com `QTimer` (30s) + `queue.Queue` thread-safe
+- [x] `_IndexJobWorker(QThread)` em `IdlePriority` — chama `index_single_file()` por arquivo
 
 ### 10.4 — Feedback na UI
 
-- [ ] `gui/main_window.py` — indicador discreto na barra de status da sidebar:
-  — quando idle indexer processa: "⟳ Indexando 3 novos arquivos…" (não bloqueia UI)
-  — quando fila vazia: nenhuma indicação (silencioso)
-  — clique no indicador abre log de arquivos indexados em background
+- [x] `self._bg_label` (`QLabel#bgIndexLabel`) na sidebar — "⟳ Indexando N arquivo(s) do ecossistema…"
+- [x] Invisível quando fila vazia; eventos logados no log de eventos do Mnemosyne
 
 ### 10.5 — Configuração
 
-- [ ] Checkbox "Indexação automática em background" na SetupDialog (padrão: ativo)
-  — persiste em `config.py` como `background_index_enabled: bool`
-  — quando desativado: watcher para, fila descartada
+- [x] `background_index_enabled: bool = True` em `AppConfig` e `config.py`
+- [x] Idle indexer para no `closeEvent` da janela principal

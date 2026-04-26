@@ -532,6 +532,12 @@ class MainWindow(QMainWindow):
         progress_row.addWidget(self.cancel_btn)
         sb.addLayout(progress_row)
 
+        self._bg_label = QLabel()
+        self._bg_label.setObjectName("bgIndexLabel")
+        self._bg_label.setWordWrap(True)
+        self._bg_label.setVisible(False)
+        sb.addWidget(self._bg_label)
+
         sb.addStretch()
 
         # Theme toggle
@@ -1203,6 +1209,9 @@ class MainWindow(QMainWindow):
         if self.config.auto_index_on_change:
             self._start_watcher()
 
+        if self.config.background_index_enabled:
+            self._start_idle_indexer()
+
     # ── Watcher ───────────────────────────────────────────────────────────────
 
     def _start_watcher(self) -> None:
@@ -1269,6 +1278,41 @@ class MainWindow(QMainWindow):
             except VectorstoreNotFoundError:
                 pass
         self.statusBar().showMessage(message)
+
+    # ── Indexador idle (ecossistema) ──────────────────────────────────────────
+
+    def _start_idle_indexer(self) -> None:
+        from core.idle_indexer import IdleIndexer
+
+        existing: IdleIndexer | None = getattr(self, "_idle_indexer", None)
+        if existing is not None:
+            existing.stop()
+
+        def _is_busy() -> bool:
+            for attr in ("_index_worker", "_resume_worker", "_update_worker", "_file_worker"):
+                w = getattr(self, attr, None)
+                if w is not None and w.isRunning():
+                    return True
+            return False
+
+        self._idle_indexer = IdleIndexer(self)
+        self._idle_indexer.queue_size_changed.connect(self._on_bg_queue_size_changed)
+        self._idle_indexer.file_indexed.connect(self._on_bg_file_indexed)
+        self._idle_indexer.setup(self.config, _is_busy)
+
+    def _on_bg_queue_size_changed(self, size: int) -> None:
+        if size > 0:
+            self._bg_label.setText(f"⟳ Indexando {size} arquivo(s) do ecossistema…")
+            self._bg_label.setVisible(True)
+        else:
+            self._bg_label.setVisible(False)
+
+    def _on_bg_file_indexed(self, file_path: str, coll_name: str, success: bool, msg: str) -> None:
+        name = os.path.basename(file_path)
+        if success:
+            self._log_event(f"[{coll_name}] Indexado: {name}")
+        else:
+            self._log_event(f"[{coll_name}] Erro ao indexar {name}: {msg}")
 
     # ── Indexação ─────────────────────────────────────────────────────────────
 
@@ -2117,6 +2161,10 @@ class MainWindow(QMainWindow):
         Ao fechar: se houver histórico na sessão, oferece compactar e guardar
         na memória persistida antes de encerrar.
         """
+        idle: object = getattr(self, "_idle_indexer", None)
+        if idle is not None:
+            idle.stop()  # type: ignore[union-attr]
+
         if not self._chat_history or self._memory_store is None:
             event.accept()
             return

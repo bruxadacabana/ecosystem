@@ -44,6 +44,7 @@ _DEFAULTS: dict = {
     "active_collection": "",
     "ecosystem_enabled": {},
     "auto_index_on_change": True,
+    "background_index_enabled": True,
     "relevance_decay_days": 30,
     "semantic_chunking": False,
     "indexing_only": False,
@@ -64,6 +65,7 @@ class AppConfig:
     active_collection: str = ""
     ecosystem_enabled: dict[str, bool] = field(default_factory=dict)
     auto_index_on_change: bool = True
+    background_index_enabled: bool = True
     relevance_decay_days: int = 30
     semantic_chunking: bool = False
     indexing_only: bool = False
@@ -190,6 +192,7 @@ def load_config() -> AppConfig:
         active_collection=str(data.get("active_collection", "")),
         ecosystem_enabled=ecosystem_enabled,
         auto_index_on_change=bool(data.get("auto_index_on_change", True)),
+        background_index_enabled=bool(data.get("background_index_enabled", True)),
         relevance_decay_days=int(data.get("relevance_decay_days", 30)),
         semantic_chunking=bool(data.get("semantic_chunking", False)),
         indexing_only=bool(data.get("indexing_only", False)),
@@ -212,6 +215,7 @@ def save_config(config: AppConfig) -> None:
         "active_collection": config.active_collection,
         "ecosystem_enabled": config.ecosystem_enabled,
         "auto_index_on_change": config.auto_index_on_change,
+        "background_index_enabled": config.background_index_enabled,
         "relevance_decay_days": config.relevance_decay_days,
         "semantic_chunking": config.semantic_chunking,
         "indexing_only": config.indexing_only,

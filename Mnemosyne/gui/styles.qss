@@ -98,6 +98,13 @@ QLabel#progressFileLabel {
     background: transparent;
 }
 
+QLabel#bgIndexLabel {
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 10px;
+    color: #7C828E;
+    background: transparent;
+}
+
 /* ----------------------------------------------------------
    NAV BUTTONS (sidebar)
 ---------------------------------------------------------- */
