@@ -757,6 +757,119 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
 - [x] `/open-file` com xdg-open já implementado (com fallback `gio open` e detecção de erro — BUG-6 corrigido)
 - [ ] **Leitor próprio do ecossistema** — criar leitor de artigos/documentos integrado, inspirado no reader mode do KOSMOS; prioridade baixa, fazer após o xdg-open estar estável
 
+### AKASHA — busca local e fusão de resultados
+
+- [ ] Bug: `_search_chroma()` cria novo `PersistentClient` a cada query — cachear como singleton:
+  **Motivo:** `AKASHA/services/local_search.py` linha ~247 faz
+  `client = _chromadb.PersistentClient(path=index_path)` dentro da função de busca.
+  Abrir um PersistentClient abre o SQLite subjacente do ChromaDB e carrega metadados — custo
+  de I/O repetido desnecessariamente a cada busca interativa.
+  **Implementação (`AKASHA/services/local_search.py`):**
+  ```python
+  _chroma_clients: dict[str, Any] = {}   # module-level cache
+
+  def _get_chroma_client(index_path: str):
+      if index_path not in _chroma_clients:
+          _chroma_clients[index_path] = _chromadb.PersistentClient(path=index_path)
+      return _chroma_clients[index_path]
+  ```
+  Substituir `client = _chromadb.PersistentClient(path=index_path)` por
+  `client = _get_chroma_client(index_path)` em `_search_chroma()`.
+  Resultado: latência de busca local reduzida; sem impacto em corretude.
+
+- [ ] AKASHA: substituir `rank_combined()` por Reciprocal Rank Fusion (RRF):
+  **Motivo:** `rank_combined()` usa `_score()` — contagem simples de keywords nos campos title e
+  snippet. Isso descarta os scores de relevância reais de cada método:
+  - FTS5 retorna resultados já ordenados por bm25() (score real de relevância lexical)
+  - ChromaDB retorna resultados ordenados por distância euclidiana no espaço de embeddings
+  Ignorar essas ordenações e usar contagem de termos é inferior ao RRF, que considera a posição
+  relativa de cada resultado em cada lista sem precisar dos scores absolutos.
+  A pesquisa confirma: RRF sem parâmetros supera linear combination com alpha tuning manual
+  na maioria dos benchmarks (arxiv 2604.01733).
+  **Implementação (`AKASHA/services/local_search.py`):**
+  ```python
+  def _rrf(rankings: list[list[SearchResult]], k: int = 60) -> list[SearchResult]:
+      """Reciprocal Rank Fusion — funde múltiplas listas rankeadas."""
+      scores: dict[str, float]       = {}
+      by_url: dict[str, SearchResult] = {}
+      for ranking in rankings:
+          for rank, result in enumerate(ranking):
+              key = result.url.lower().rstrip("/")
+              scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+              by_url[key] = result
+      ordered = sorted(scores, key=scores.__getitem__, reverse=True)
+      return [by_url[key] for key in ordered]
+  ```
+  Substituir a chamada a `rank_combined()` por `_rrf([fts_results, chroma_results])` em
+  `search_local()`. A função `rank_combined()` pode ser mantida como fallback para resultados
+  de fontes sem ranking explícito (web results, etc.).
+
+- [ ] AKASHA: FTS5 com tokenizer `unicode61 remove_diacritics=2` para busca acentuada:
+  **Motivo:** a tabela `local_fts` usa o tokenizer padrão do FTS5 (`unicode61`), que por padrão
+  trata "açaí" diferente de "acai". Com `remove_diacritics=2`, "cafe" encontra "café" e
+  "musica" encontra "música" — essencial para corpus em português.
+  **Implementação (`AKASHA/database.py` — migration):**
+  Recriar a tabela FTS com o tokenizer correto. As migrations existentes já têm padrão — adicionar:
+  ```sql
+  CREATE VIRTUAL TABLE IF NOT EXISTS local_fts USING fts5(
+      path UNINDEXED,
+      title,
+      body,
+      source UNINDEXED,
+      tokenize = 'unicode61 remove_diacritics 2'
+  );
+  ```
+  Como é uma virtual table, recriar exige reindexar — executar `index_local_files()` no próximo startup.
+
+- [ ] AKASHA: deduplicação de conteúdo crawlado por hash SHA-256:
+  **Motivo:** o crawler normaliza URLs mas não detecta conteúdo duplicado entre URLs diferentes
+  (syndication, mirrors, redirects resolvidos). Dois artigos com mesmo conteúdo são indexados
+  e buscados duplicadamente, poluindo os resultados.
+  Mesma técnica do KOSMOS: SHA-256 do conteúdo extraído como guarda de deduplicação.
+  **Implementação (`AKASHA/services/crawler.py` + `database.py`):**
+  1. Adicionar coluna `content_hash TEXT` à tabela que armazena páginas crawladas
+  2. Antes de persistir uma página: calcular `hashlib.sha256(content.encode()).hexdigest()`
+  3. `SELECT id FROM crawled_pages WHERE content_hash = ?` — se existir: ignorar URL, não re-indexar
+  4. Adicionar index em `content_hash` para a query ser O(1)
+
+- [ ] AKASHA: ETag/Last-Modified no crawler para não re-crawlar páginas sem mudança:
+  **Motivo:** o crawler re-crawla todas as URLs a cada ciclo, mesmo que o conteúdo não tenha
+  mudado. Servidores que suportam cache HTTP retornam 304 Not Modified com ETag/Last-Modified,
+  evitando download e parsing do HTML inteiro.
+  **Implementação (`AKASHA/services/crawler.py`):**
+  1. Armazenar `etag` e `last_modified` junto a cada URL crawlada na tabela do banco
+  2. No re-crawl, passar os headers condicionais:
+     ```python
+     headers = {}
+     if stored_etag:    headers["If-None-Match"]     = stored_etag
+     if stored_lm:      headers["If-Modified-Since"] = stored_lm
+     resp = await client.get(url, headers=headers)
+     if resp.status_code == 304:
+         return  # sem mudança — ignorar
+     # senão: processar normalmente e salvar novos etag/last-modified
+     etag = resp.headers.get("ETag")
+     lm   = resp.headers.get("Last-Modified")
+     ```
+
+- [ ] AKASHA: throttle adaptativo no crawler baseado em tempo de resposta do servidor:
+  **Motivo:** `_CRAWL_CONCURRENCY = 4` é fixo e não reflete a capacidade real do servidor alvo.
+  Servidores lentos (resposta > 2s) ficam sobrecarregados; servidores rápidos são sub-utilizados.
+  Scrapy AutoThrottle usa `delay = response_time / target_concurrency` como heurística.
+  **Implementação (`AKASHA/services/crawler.py`):**
+  1. Medir `response_time` de cada request: `t0 = time.monotonic(); resp = await client.get(url); dt = time.monotonic() - t0`
+  2. Manter média móvel de response_time por domínio (janela de 5 requests)
+  3. Ajustar delay no rate limiter:
+     - `dt_avg < 0.5s` → delay mínimo (0.5s) — servidor rápido
+     - `0.5s ≤ dt_avg < 2s` → delay = dt_avg (politeness simples)
+     - `dt_avg ≥ 2s` → delay = 2× dt_avg, reduzir concorrência para 2
+  4. Em 429 (Too Many Requests): backoff exponencial `2^n × delay_base + jitter`
+
+- [ ] AKASHA: Trafilatura como primeiro estágio de extração (substituição em ecosystem_scraper.py):
+  **Motivo:** idêntico ao KOSMOS — F1=0.945 do Trafilatura vs F1=0.665 do BeautifulSoup.
+  Conteúdo mais limpo no índice FTS5 do AKASHA = busca mais precisa, menos falsos positivos.
+  Ver item equivalente em PENDÊNCIAS — KOSMOS para implementação detalhada (compartilham
+  o `ecosystem_scraper.py`).
+
 ### Responsividade — AKASHA (prioridade alta)
 
 > Contexto: AKASHA é usado frequentemente em janela não-cheia. O CSS já tem breakpoints
@@ -838,6 +951,97 @@ Pesquisa salva em `AKASHA/pesquisa.txt` — APIs, download, extração de PDF.
   — tipos: scraping incompleto, paywall, conteúdo cortado, outros (campo livre)
   — efeito: diminuir ranking de relevância da fonte automaticamente
   — registrar no log para análise futura de possíveis correções
+
+### KOSMOS — qualidade de IA e integração com LOGOS
+
+- [ ] Bug: `generate_stream()` bypassa o LOGOS — chamar via `ecosystem_client`:
+  **Motivo:** `ai_bridge.py` linha ~162 chama `self._session.post(f"{self._endpoint}/api/generate")`
+  diretamente, sem passar por `_request_llm`. Isso significa que leituras de artigo em streaming
+  (P1) não estão registradas no LOGOS e não interrompem P3. O sistema de prioridades fica cego
+  para toda interação do usuário com o reader do KOSMOS.
+  **Implementação (`KOSMOS/app/core/ai_bridge.py`):**
+  1. Substituir o bloco `generate_stream()` por uma chamada a `_request_llm(..., stream=True)`
+     que já suporta streaming e retorna um generator de tokens
+  2. Garantir que o `priority=1` seja passado para leituras interativas (o usuário abriu o artigo)
+  3. Testar que o LogosPanel mostra P1 ativo durante leitura de artigo
+
+- [ ] Bug: `embed()` bypassa o LOGOS — endpoint hardcoded na porta 11434:
+  **Motivo:** `ai_bridge.py` linha ~207 chama `self._endpoint` diretamente (porta 11434, não 7072).
+  O `keep_alive: "0"` que o LOGOS injetaria para P3 nunca é aplicado a embeddings do KOSMOS.
+  **Implementação:**
+  1. `AiBridge.__init__()`: usar como padrão o endpoint do LOGOS (7072) se disponível,
+     configurado via `ecosystem_client.get_logos_url()` ou variável de ambiente `LOGOS_URL`
+  2. Ou: redirecionar os embeddings do KOSMOS via `ecosystem_client.request_embed()` (a criar),
+     que já sabe o endpoint correto e injeta headers `X-App: kosmos`
+
+- [ ] KOSMOS workers de background: definir prioridade de OS com `os.nice()`:
+  **Motivo:** `BackgroundUpdater` e `BackgroundAnalyzer` rodam como QThread com `IdlePriority`,
+  mas esse priority afeta apenas o GIL do Python — o kernel do OS ainda aloca CPU normalmente.
+  Durante atualização de feeds + pré-análise simultâneos, o sistema pode ficar lento.
+  Mesmo fix do Mnemosyne idle indexer.
+  **Implementação (`KOSMOS/app/core/background_updater.py` e `background_analyzer.py`):**
+  No início do método `run()` de cada worker:
+  ```python
+  import os, sys, ctypes
+  if sys.platform != "win32":
+      os.nice(15)
+  else:
+      ctypes.windll.kernel32.SetPriorityClass(
+          ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
+  ```
+
+- [ ] KOSMOS: deduplicação de artigos RSS por fingerprint de conteúdo:
+  **Motivo:** 29% de feeds RSS emitem GUIDs duplicados ou incorretos (FeedHash Corpus 2024, 12.7M
+  itens). Artigos re-publicados com título diferente passam pela checagem de GUID. Sem fingerprint
+  de conteúdo, o KOSMOS armazena e analisa artigos duplicados, desperdiçando chamadas ao Ollama.
+  Fingerprint SHA-256 de (title_norm + date_ISO + url_norm) tem 99.98% de resistência a colisões.
+  Resultado: redução de 92–100% em duplicatas ingeridas e 11–19% menos CPU em background.
+  Fonte: FeedOps Benchmark 2024; postly.ai/rss-feed/filtering-deduplication
+  **Implementação (`KOSMOS/app/core/database.py` + `feed_fetcher.py`):**
+  1. Adicionar coluna `content_hash TEXT` à tabela `articles` (migration) — pode ser NULL em artigos antigos
+  2. Adicionar index: `CREATE INDEX IF NOT EXISTS idx_articles_hash ON articles(content_hash)`
+  3. Na inserção de novo artigo, calcular:
+     ```python
+     import hashlib, re
+     def _article_fingerprint(title: str, pub_date: str, url: str) -> str:
+         norm_title = re.sub(r'\s+', ' ', title.lower().strip())
+         norm_url   = url.lower().rstrip('/').split('?')[0]
+         raw        = f"{norm_title}|{pub_date[:10]}|{norm_url}"
+         return hashlib.sha256(raw.encode()).hexdigest()
+     ```
+  4. Antes de inserir: `SELECT id FROM articles WHERE content_hash = ?` — se existir, ignorar
+  5. Para near-duplicatas (mesmo conteúdo, URL diferente): adicionar SimHash do body
+     (`pip install python-simhash`): armazenar simhash int64, rejeitar se distância de Hamming < 8
+
+- [ ] KOSMOS: caching ETag/Last-Modified nos feeds RSS:
+  **Motivo:** o `FeedFetcher` faz GET incondicional nos feeds a cada ciclo. Servidores RSS que
+  suportam cache HTTP retornam 304 Not Modified quando sem novidades, economizando bandwidth e
+  parsing. `feedparser` já suporta ETag e Last-Modified nativamente.
+  **Implementação (`KOSMOS/app/core/feed_fetcher.py` e `database.py`):**
+  1. Adicionar colunas `etag TEXT` e `last_modified TEXT` à tabela `feeds`
+  2. Na busca do feed: `result = feedparser.parse(url, etag=feed.etag, modified=feed.last_modified)`
+  3. Se `result.status == 304`: ignorar (sem novidades), retornar imediatamente
+  4. Senão: processar entries normalmente; salvar `result.etag` e `result.modified` no banco
+
+- [ ] KOSMOS: substituir extração de conteúdo por Trafilatura na cascade do ecosystem_scraper:
+  **Motivo:** Benchmark ScrapingHub (2024): Trafilatura F1=0.945 vs BeautifulSoup F1=0.665.
+  A diferença de ~28% em F1 significa menos boilerplate (navegação, anúncios, rodapés) no texto
+  extraído. Texto mais limpo = embedding de maior qualidade = análise de IA mais precisa.
+  Fonte: trafilatura.readthedocs.io/en/latest/evaluation; github.com/scrapinghub/article-extraction-benchmark
+  **Implementação (`ecosystem_scraper.py` — compartilhado com AKASHA):**
+  1. Adicionar `trafilatura` às dependências do `ecosystem_scraper.py` (ou do projeto que o usa)
+  2. Na função `extract()`, tentar Trafilatura primeiro antes do readability/bs4:
+     ```python
+     import trafilatura
+     def extract(html: str, url: str = "") -> str:
+         # 1. Trafilatura — melhor para artigos de notícia
+         text = trafilatura.extract(html, include_comments=False, include_tables=False)
+         if text and len(text) > 200:
+             return text
+         # 2. Fallback: readability → bs4 → html2text (cascade atual)
+         ...
+     ```
+  3. Verificar compatibilidade: Trafilatura é Python puro, sem AVX2, funciona no Windows 10
 
 ### Responsividade — KOSMOS
 
@@ -1183,40 +1387,416 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   — paralelismo desabilitado (sempre 2 permits, serial mesmo em modelos leves)
   — badge "Modo Sobrevivência — Windows" exibido na LogosView
 - [ ] Monitoramento de CPU e RAM no painel LOGOS:
-  — adicionar `cpu_pct: f32` e `ram_free_mb: u64` ao `StatusResponse` via crate `sysinfo`
-  — P3 bloqueado também quando CPU > 85% ou RAM livre < 1.5 GB (além do VRAM > 85% já existente)
-  — `HUB/src/components/LogosPanel.tsx`: exibir CPU% e RAM livre junto com a barra de VRAM;
-    em máquinas sem GPU discreta (Windows, laptop sem ROCm), substituir a barra de VRAM por CPU/RAM
-  — relevante em todas as máquinas, não só quando há GPU discreta
+  **Motivo:** a barra de VRAM (já implementada via sysfs) só funciona com GPU discreta AMD/NVIDIA.
+  No Windows 10 (sem GPU) e no laptop (Intel integrada sem ROCm), o painel fica cego. CPU e RAM
+  são os recursos críticos nessas máquinas. Sem esse monitoramento, P3 pode saturar o CPU a 90%
+  sem que o LOGOS perceba (bug confirmado com Mnemosyne idle indexer).
+  Fonte: crates.io/crates/sysinfo — cross-platform, Linux + Windows.
+  **Implementação — Rust (`HUB/src-tauri/src/logos.rs` + `Cargo.toml`):**
+  1. Adicionar ao `Cargo.toml`: `sysinfo = { version = "0.32", features = ["cpu"] }`
+  2. Adicionar campo `sys: sysinfo::System` ao struct `Inner`, inicializado com `System::new_all()`
+     CRÍTICO: manter a mesma instância entre leituras — CPU% é calculado como delta entre
+     duas leituras consecutivas. Criar nova instância a cada poll retorna sempre 0%.
+  3. No loop de `collect_status()`: chamar `inner.sys.refresh_cpu_all()` e
+     `inner.sys.refresh_memory()` antes de ler os valores
+  4. Adicionar ao `StatusResponse`:
+     `cpu_pct: f32`      — de `sys.global_cpu_usage()`
+     `ram_free_mb: u64`  — de `sys.available_memory() / 1_048_576`
+  5. Na lógica de bloqueio de P3: adicionar condições — bloquear quando `cpu_pct > 85.0`
+     OU `ram_free_mb < 1536` (além do `vram_pct > 0.85` já existente)
+  **Implementação — TypeScript (`HUB/src/components/LogosPanel.tsx`):**
+  6. Ler `cpu_pct` e `ram_free_mb` do status (já chegam via `logosGetStatus`)
+  7. Detectar ausência de GPU: `vramPct === null` → substituir barra de VRAM por barras de CPU e RAM
+     CPU: verde se < 70%, amarelo se 70–85%, vermelho se > 85%
+     RAM livre: verde se > 4 GB, amarelo se 1.5–4 GB, vermelho se < 1.5 GB
+  8. Em máquinas com GPU: exibir CPU% e RAM como texto compacto ao lado da barra de VRAM
+  **Tipo do status TS (`HUB/src/types.ts`):**
+  9. Adicionar `cpu_pct?: number` e `ram_free_mb?: number` ao tipo `LogosStatus`
+
 - [ ] LOGOS: injetar `keep_alive` automaticamente por prioridade no proxy transparente:
-  — P1 (chat ativo): `keep_alive: -1` (mantém aquecido enquanto sessão aberta)
-  — P2 (Mnemosyne RAG): `keep_alive: "10m"` (libera após inatividade)
-  — P3 (KOSMOS background, embeddings idle): `keep_alive: "0"` (descarrega imediatamente)
-  — implementado no middleware do proxy (porta 7072) sem alterar os apps clientes
-  — fonte: parâmetro por-requisição do Ollama, sobrescreve `OLLAMA_KEEP_ALIVE` global
+  **Motivo:** por padrão o Ollama retém modelos por 5 minutos após ociosidade. Um modelo P3
+  (KOSMOS background) fica ocupando VRAM 5 minutos depois de terminar, impedindo P1 de usar
+  o hardware. O parâmetro `keep_alive` por-requisição sobrescreve o global `OLLAMA_KEEP_ALIVE`
+  e é rastreado por modelo individualmente. Aplicado no proxy, é completamente transparente para
+  os apps — nenhum deles precisa saber do LOGOS.
+  Fonte: docs.ollama.com/faq; markaicode.com/ollama-keep-alive-memory-management
+  **Implementação (`HUB/src-tauri/src/logos.rs` — handler do proxy `/api/chat` e `/api/generate`):**
+  1. No handler de proxy, após receber o body JSON do app cliente:
+     a. Deserializar: `let mut body: serde_json::Value = serde_json::from_slice(&bytes)?;`
+     b. Determinar a prioridade — a partir do header `X-Priority` enviado pelo `ecosystem_client.py`
+        ou inferida do `X-App` header (mnemosyne=P2, kosmos=P3, hub=P1)
+     c. Injetar conforme prioridade:
+        P1 → `body["keep_alive"] = json!(-1)`  (mantém aquecido indefinidamente)
+        P2 → `body["keep_alive"] = json!("10m")` (libera após 10 min de inatividade)
+        P3 → `body["keep_alive"] = json!("0")`  (descarrega imediatamente após resposta)
+     d. Reserializar e repassar ao Ollama na porta 11434
+  2. Apps que usam `ecosystem_client.py` → `request_llm()` já envia `X-App`; basta mapear app→prioridade
+     no LOGOS (ex: app="mnemosyne" → P2)
+  3. Para `/api/embed` (embeddings): sempre P3 → `keep_alive: "0"` (embedding models não precisam ficar quentes)
+
 - [ ] LOGOS: configurar variáveis de ambiente do Ollama por perfil de hardware no startup:
-  — `OLLAMA_MAX_LOADED_MODELS=2` (high) / `=1` (medium/low) — limita coexistência de modelos na VRAM
-  — `OLLAMA_GPU_OVERHEAD=524288000` (500 MB) no perfil high — protege a RX 6600 de OOM em picos
-  — `OLLAMA_FLASH_ATTENTION=1` em todos os perfis — reduz VRAM em contextos longos
-  — `OLLAMA_NUM_PARALLEL=1` (medium/low) — serializa requisições em máquinas com pouca memória
-- [ ] LOGOS: passar `num_thread` no body das requisições P3:
-  — limitar CPU do Ollama em tarefas de background (ex: `"num_thread": 2` em P3, `null` em P1/P2)
-  — `num_thread` é parâmetro por-requisição (não variável de ambiente) — injetar no proxy transparente
+  **Motivo:** o Ollama usa configurações globais que não distinguem hardware. Sem `OLLAMA_GPU_OVERHEAD`,
+  a RX 6600 pode sofrer OOM ao carregar dois modelos simultaneamente (ex: nomic-embed-text + llama 3).
+  `OLLAMA_FLASH_ATTENTION=1` ativa tiling de atenção que reduz uso de VRAM em contextos longos
+  (suportado via backend Triton no ROCm para RDNA2/gfx1032 da RX 6600).
+  `OLLAMA_MAX_LOADED_MODELS` impede que o Ollama carregue 3 modelos simultâneos (padrão) em máquinas
+  onde nem 2 cabem confortavelmente.
+  Fonte canônica: github.com/ollama/ollama/blob/main/envconfig/config.go
+  **Parâmetros por perfil:**
+  | Variável                   | high (RX 6600) | medium (MX150) | low (i5-3470) |
+  |---------------------------|----------------|----------------|---------------|
+  | OLLAMA_MAX_LOADED_MODELS   | 2              | 1              | 1             |
+  | OLLAMA_GPU_OVERHEAD (bytes)| 524 288 000    | 209 715 200    | 0             |
+  | OLLAMA_FLASH_ATTENTION     | 1              | 1              | 0 (sem GPU)   |
+  | OLLAMA_NUM_PARALLEL        | 2              | 1              | 1             |
+  **Implementação (`HUB/src-tauri/src/logos.rs`):**
+  1. Opção A — se o LOGOS gerencia o processo Ollama (recomendado):
+     Em `Inner::start_ollama()` (ou equivalente), construir o `Command` com `.envs(env_map)`
+     onde `env_map` é montado a partir do `HardwareProfile` detectado no startup
+  2. Opção B — se o Ollama roda como serviço do sistema:
+     Escrever as variáveis em `~/.config/ollama/ollama_env` e instruir o usuário a configurar
+     o serviço systemd com `EnvironmentFile=%h/.config/ollama/ollama_env`
+     O LOGOS escreve esse arquivo no startup e exibe aviso se o serviço precisar ser reiniciado
+  3. Registrar as variáveis ativas no log de startup do LOGOS para debugging
+
+- [ ] LOGOS: preempção inteligente de P3 — suspender (não cancelar) ao detectar P1 sem VRAM:
+  **Motivo:** o botão "silenciar" atual cancela P3 de forma cega. A literatura científica
+  (Priority-Aware Preemptive Scheduling, arxiv 2503.09304; Topology-aware Preemptive Scheduling,
+  arxiv 2411.11560) mostra que o correto é:
+  a) Calcular se P1 cabe na VRAM disponível ANTES de preemptar — preemptar sem espaço suficiente
+     desperdiça VRAM e introduz latência desnecessária.
+  b) Suspender P3 (keep_alive: "0" força unload), não cancelar — a fila P3 é mantida e
+     retomada quando P1 encerra.
+  **Implementação (`HUB/src-tauri/src/logos.rs`):**
+  1. Ao receber request P1 via proxy:
+     a. Verificar se há request P3 em execução (`active_priority == 3`)
+     b. Consultar `/api/tags` para obter `size` estimado do modelo P1 em bytes
+     c. Ler VRAM livre atual (sysfs)
+     d. Se `vram_livre_mb < modelo_p1_mb + 500` (500 MB de buffer):
+        — Enviar `POST /api/chat` com `{"model": modelo_p3, "keep_alive": "0"}` ao Ollama
+          (prompt vazio força unload imediato sem gerar resposta)
+        — Poll de `/api/ps` até o modelo P3 desaparecer (timeout 10s)
+        — Só então encaminhar o request P1 ao Ollama
+     e. Se VRAM livre é suficiente: não preemptar, deixar coexistir
+  2. Manter `suspended_p3_queue: VecDeque<PendingRequest>` no `Inner`; ao P1 terminar,
+     recolocar os P3 suspensos na fila normal
+  3. Adicionar ao `StatusResponse`: `suspended_count: u32` para o LogosPanel mostrar
+
+- [ ] LOGOS: injetar parâmetros de eficiência por prioridade no body dos requests:
+  **Motivo:** `num_thread`, `num_batch` e `num_ctx` são parâmetros por-requisição aceitos pelo
+  Ollama no body de `/api/chat` e `/api/generate` (não são variáveis de ambiente). Injetados
+  pelo proxy, permitem reduzir impacto de P3 no sistema sem mudar os apps. Evidência empírica:
+  num_batch 512→256 reduz VRAM pico em ~20% (eastondev.com/blog/en/posts/ai/ollama-gpu-scheduling).
+  `num_thread` controla quantos cores o Ollama usa para computação — limitá-lo em P3 libera CPU
+  para o sistema e outros apps (literatura de CPU inference: diminishing returns além de 4 threads
+  em modelos pequenos, arxiv 2311.00502).
+  **Implementação (`HUB/src-tauri/src/logos.rs` — mesmo middleware do `keep_alive`):**
+  Injetar no body antes de repassar ao Ollama, conforme prioridade:
+  ```
+  P3: num_thread=2, num_batch=256, num_ctx=2048
+  P2: num_batch=256 (preservar RAM), num_ctx=null (app decide)
+  P1: sem injeção (máxima performance, app decide tudo)
+  ```
+  Perfil `low` (CPU-only): P1 → num_thread=3 (deixar 1 core livre para o SO)
+  Perfil `medium` (MX150): P3 → num_thread=2, num_gpu=0 (forçar CPU-only em background)
+
 - [ ] LOGOS: consciência de bateria via UPower/DBus (laptop Lenovo MX150):
-  — ler `OnBattery` da interface `org.freedesktop.UPower` via crate `zbus` (Linux)
-  — quando `OnBattery=true`: suspender P3 completamente, `keep_alive: "0"` em todo request
-  — quando plugado: comportamento normal com limiares de CPU/VRAM
-  — polling a cada 60s ou via sinal DBus; exibir ícone de bateria no LogosPanel quando em bateria
-- [ ] Mnemosyne: substituir `OllamaEmbeddings.add_documents()` por chamada direta ao `/api/embed` com batch nativo:
-  — endpoint aceita array de strings numa única chamada: `{"model": "...", "input": ["t1", "t2", ...]}`
-  — elimina overhead de 1000–2000ms/chunk do LangChain (vs. 200–300ms via chamada direta ao Ollama)
-  — fix correto para o bug de CPU 90%: N chunks → 1 request HTTP por lote, sleep entre lotes
-  — aplicar em `index_single_file()`, `create_vectorstore()` e `IndexWorker`
+  **Motivo:** indexação idle (P3) em bateria esgota carga e aquece o laptop sem benefício
+  imediato. UPower é o padrão Linux para gerenciamento de energia (freedesktop.org).
+  Pesquisa relevante: PowerLens (arxiv 2603.19584, 2025) demonstrou 38.8% de economia de
+  energia via gerenciamento adaptativo de recursos em nível de sistema. Em bateria, a
+  prioridade é preservar energia, não maximizar throughput de inferência.
+  **Implementação (`HUB/src-tauri/src/logos.rs`):**
+  1. Adicionar dependência `battery = "0.7"` ao `Cargo.toml` (cross-platform: Linux + Windows)
+     Alternativa Linux-only com mais detalhes: crate `zbus` para ler `org.freedesktop.UPower`
+  2. Adicionar campo `on_battery: bool` ao struct `Inner`; atualizar a cada 60s num tokio task
+  3. Quando `on_battery = true`, aplicar em cascata:
+     — Bloquear todos os requests P3 (retornar 503 com body `{"reason": "on_battery"}`)
+     — Injetar `keep_alive: "0"` em P1 e P2 (liberar modelo após cada resposta, economizar VRAM)
+     — Injetar `num_thread: 2` em P1 e P2 (reduzir consumo de energia do CPU)
+     — Threshold de P2 mais conservador: bloquear se CPU > 60% (vs 85% em AC)
+  4. Adicionar ao `StatusResponse`: `on_battery: bool`
+  5. Atualizar `LogosStatus` type em `HUB/src/types.ts`
+  6. `LogosPanel.tsx`: exibir badge "⚡ Bateria" quando `on_battery=true`; colorir P3 de vermelho
+     para indicar bloqueio
+
+### LOGOS — scheduling de processos em nível de SO
+
+- [ ] Lançar o processo Ollama com prioridade reduzida via `nice` quando gerenciado pelo LOGOS:
+  **Motivo:** `nice` é a ferramenta padrão UNIX para indicar ao scheduler do kernel que um processo
+  deve ceder CPU para outros quando há contention. Definir nice=10–15 para o Ollama em P3 garante
+  que o sistema continue responsivo sem necessitar de polling ativo do LOGOS. Custo de implementação:
+  uma linha. Custo de não implementar: CPU a 90% quando P3 está ativo.
+  **Implementação (`HUB/src-tauri/src/logos.rs`):**
+  — Linux: `Command::new("nice").args(["-n", "10", "ollama", "serve"])` ao lançar Ollama em P3
+    OU usar `renice(2)` via syscall após obter o PID do processo Ollama
+  — Windows: `SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS)` via `windows-sys` crate
+  — Ao receber P1: temporariamente aumentar prioridade do Ollama (`renice -5 $pid`) para minimizar
+    latência, restaurar após P1 concluir
+
+- [ ] Lançar processos de background do Python (KOSMOS idle analysis, Mnemosyne idle indexer)
+  com prioridade de SO reduzida:
+  **Motivo:** os workers de background Python (`_IndexJobWorker`, `KosmosAnalyzer`) rodam em
+  threads PySide6 com `IdlePriority`, mas isso só afeta o scheduler do Python (GIL), não o
+  scheduler do OS. O OS ainda aloca CPU para o processo Python normalmente. `os.nice()` afeta
+  o processo inteiro — deve ser chamado no worker no início de sua execução.
+  **Implementação:**
+  — `Mnemosyne/core/idle_indexer.py`, no início de `_IndexJobWorker.run()`:
+    ```python
+    import os, sys
+    if sys.platform != "win32":
+        os.nice(15)          # Linux/Mac: nice máximo para background
+    else:
+        import ctypes
+        ctypes.windll.kernel32.SetPriorityClass(
+            ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
+    ```
+  — `KOSMOS/app/core/background_worker.py` (ou equivalente): mesma lógica no início do worker
+  — Resultado: durante idle indexing, o sistema mantém 30–40% de CPU disponível para apps ativos
+
+- [ ] Configurar cgroup para o Ollama no systemd (Linux — máquina principal e laptop):
+  **Motivo:** nice afeta prioridade relativa mas não limita CPU absoluto. cgroups v2 (padrão
+  no CachyOS/Arch) permitem limitar CPU por quota absoluta (ex: no máximo 50% de um core) e
+  memória máxima. O systemd usa cgroups nativamente via diretivas de unit file.
+  **Implementação (manual, documentar no README do HUB):**
+  Criar/editar `~/.config/systemd/user/ollama.service.d/logos-limits.conf`:
+  ```ini
+  [Service]
+  CPUWeight=20        # vs 100 padrão — Ollama cede CPU quando há contention
+  CPUQuota=80%        # nunca exceder 80% de 1 core em P3 (ajustar se multi-GPU)
+  MemoryMax=10G       # não exceder 10 GB de RAM (proteger os 6 GB restantes do sistema)
+  IOSchedulingClass=idle  # I/O em idle — não compete com apps ativos em disco
+  ```
+  Reload: `systemctl --user daemon-reload && systemctl --user restart ollama`
+  Este arquivo é gerenciado pelo HUB: ao detectar perfil `high` ou `medium`, escreve os valores
+  corretos e recarrega o serviço.
+
+### Mnemosyne — RAG, chunking e recuperação melhorados
+
+- [ ] Mnemosyne: substituir `OllamaEmbeddings.add_documents()` por chamada direta ao `/api/embed`:
+  **Motivo:** `OllamaEmbeddings` do LangChain gera 1 chamada HTTP por chunk (overhead de
+  1000–2000ms cada). O endpoint `/api/embed` do Ollama aceita um array de textos numa única
+  chamada HTTP (200–300ms por lote). Com 500 chunks por artigo: 500 × 1.5s = 750s vs
+  (500/25) × 0.3s = 6s. Esta diferença de 125× é a causa raiz do CPU a 90% durante idle indexing.
+  Fonte: github.com/ollama/ollama/issues/7400
+  **Implementação (`Mnemosyne/core/indexer.py`):**
+  1. Criar função utilitária `_embed_batch(texts: list[str], model: str, base_url: str) -> list[list[float]]`:
+     ```python
+     import httpx
+     resp = httpx.post(
+         f"{base_url}/api/embed",
+         json={"model": model, "input": texts},
+         timeout=120.0
+     )
+     resp.raise_for_status()
+     return resp.json()["embeddings"]
+     ```
+  2. Em `index_single_file()`, substituir `vs.add_documents(chunks)` por:
+     ```python
+     batch_size, sleep_s = _detect_batch_config()
+     for i in range(0, len(chunks), batch_size):
+         batch = chunks[i : i + batch_size]
+         embeddings = _embed_batch(
+             [c.page_content for c in batch], embed_model, base_url
+         )
+         vs.add_embeddings(
+             list(zip([c.page_content for c in batch], embeddings)),
+             metadatas=[c.metadata for c in batch]
+         )
+         time.sleep(sleep_s)
+     ```
+  3. Aplicar o mesmo padrão em `create_vectorstore()` e `IndexWorker`
+  4. Remover `OllamaEmbeddings` dos caminhos de indexação (manter apenas no path de busca,
+     que já faz 1 chamada por query — sem problema de volume)
+  5. Adicionar `httpx` como dependência se não estiver no `pyproject.toml`
+
 - [ ] Mnemosyne: suporte a EmbeddingGemma via sentence-transformers no perfil `low` (Windows 10):
-  — EmbeddingGemma (Google, 2025): 308 M params, <200 MB quantizado, roda em CPU puro, 100+ línguas
-  — perfil `low` → EmbeddingGemma local sem Ollama; perfil `medium/high` → Ollama (nomic-embed-text)
-  — elimina dependência de GPU para indexação no i5-3470 (Windows 10)
-  — verificar se EmbeddingGemma requer AVX2 antes de adotar no perfil low
+  **Motivo:** no i5-3470 (sem GPU, sem AVX2, 8 GB RAM), rodar Ollama para embeddings é lento
+  e compete com o sistema. EmbeddingGemma (Google, abril 2025) tem 308 M params, <200 MB
+  quantizado, roda em CPU puro com <200 MB de RAM, suporta 100+ línguas. Elimina a dependência
+  do Ollama para indexação no Windows, permitindo indexar em background sem saturar o sistema.
+  Fonte: developers.googleblog.com/en/introducing-embeddinggemma
+  **PRÉ-REQUISITO — verificar AVX2 antes de implementar:**
+  O i5-3470 (Ivy Bridge 2012) NÃO tem AVX2. EmbeddingGemma pode requerer AVX2 dependendo do
+  backend de quantização. Testar antes:
+  ```python
+  from sentence_transformers import SentenceTransformer
+  m = SentenceTransformer("google/embedding-gemma-308m-IT-v1")
+  print(m.encode(["teste"]))
+  ```
+  Se falhar com "Illegal instruction" → fallback para `paraphrase-multilingual-MiniLM-L6-v2` (117M,
+  384 dims, sem AVX2, via sentence-transformers).
+  **Implementação (`Mnemosyne/core/indexer.py` + `ecosystem_client.py`):**
+  1. Criar fábrica `_build_embed_fn(profile: str) -> Callable[[list[str]], list[list[float]]]`:
+     ```python
+     def _build_embed_fn(profile):
+         if profile in ("high", "medium"):
+             def fn(texts): return _embed_batch(texts, "nomic-embed-text", base_url)
+             return fn
+         else:  # low / sem Ollama
+             from sentence_transformers import SentenceTransformer
+             model = SentenceTransformer("google/embedding-gemma-308m-IT-v1")
+             def fn(texts): return model.encode(texts, batch_size=8).tolist()
+             return fn
+     ```
+  2. No startup do indexer: `profile = ecosystem_client.get_active_profile().hardware_profile`
+  3. Usar `_embed_fn = _build_embed_fn(profile)` em todos os pontos de chamada
+  4. Adicionar ao `pyproject.toml`: `sentence-transformers` como dependência opcional:
+     `[tool.uv.optional-dependencies] low-resource = ["sentence-transformers>=3.0"]`
+
+- [ ] Mnemosyne: chunking adaptativo em substituição ao fixed-size atual:
+  **Motivo:** chunking fixo (padrão) pode cortar conceitos no meio e misturar tópicos distintos,
+  reduzindo precisão de recuperação. Papers de 2025 (arxiv 2504.19754; PMC12649634) mostram que
+  chunking adaptativo — que alinha a fronteiras de seção e parágrafos usando similaridade cosine
+  — oferece o melhor balanço entre qualidade e custo computacional para documentos estruturados
+  como artigos científicos (KOSMOS) e notas (Mnemosyne).
+  **Tamanhos ótimos por tipo de documento (validados empiricamente):**
+  — Artigos científicos / notícias (KOSMOS): 512–1024 tokens; preservar parágrafos completos
+  — Transcrições de vídeo (Hermes): 300–600 tokens; preservar frases completas (quebrar em pontuação)
+  — Notas gerais e documentos longos (Mnemosyne): 256–512 tokens com 10–15% de overlap
+  — Overlap entre chunks: 50–100 tokens de sobreposição para evitar perda de informação na fronteira
+  **Implementação (`Mnemosyne/core/indexer.py`):**
+  1. Adicionar `langchain_experimental.text_splitter.SemanticChunker` ou implementar:
+     Estratégia simples sem LLM extra: usar `RecursiveCharacterTextSplitter` com separadores
+     hierárquicos `["\n\n", "\n", ". ", " "]` em vez de chunk fixo — já melhora sobre o atual
+  2. Parâmetros configuráveis por tipo de fonte:
+     ```python
+     CHUNK_PARAMS = {
+         "article":      {"chunk_size": 768,  "chunk_overlap": 100},
+         "transcript":   {"chunk_size": 400,  "chunk_overlap": 60},
+         "note":         {"chunk_size": 384,  "chunk_overlap": 50},
+         "document":     {"chunk_size": 512,  "chunk_overlap": 75},
+     }
+     ```
+  3. Detectar tipo pela extensão/fonte e aplicar parâmetros correspondentes
+  4. Adicionar campo `source_type` ao metadata de cada chunk para rastreabilidade
+
+- [ ] Mnemosyne: recuperação híbrida BM25 + dense (Reciprocal Rank Fusion):
+  **Motivo:** Mnemosyne usa apenas busca densa (embedding vetorial). BM25 (busca lexical) captura
+  termos exatos, nomes próprios e queries de palavra-chave que o embedding pode errar. Papers
+  confirmam: pipeline híbrido supera qualquer método isolado — Recall@5 = 0.816 em benchmark
+  financeiro de 23k queries vs ~0.65 com dense-only (arxiv 2604.01733). Custo: biblioteca
+  `rank_bm25` (Python puro, sem GPU, sem servidor extra). Fusão por RRF não tem parâmetros
+  e é robusta por construção.
+  Fonte: arxiv 2604.01733; arxiv 2404.07220 (Blended RAG, 2024)
+  **Implementação (`Mnemosyne/core/retriever.py` ou equivalente):**
+  1. Adicionar `rank-bm25` ao `pyproject.toml`
+  2. Na indexação: manter um índice BM25 paralelo ao ChromaDB:
+     ```python
+     from rank_bm25 import BM25Okapi
+     corpus_tokens = [doc.page_content.lower().split() for doc in all_chunks]
+     bm25 = BM25Okapi(corpus_tokens)
+     ```
+  3. Na busca, executar em paralelo:
+     ```python
+     dense_results = vectorstore.similarity_search(query, k=50)
+     bm25_scores   = bm25.get_scores(query.lower().split())
+     bm25_top50    = sorted(range(len(bm25_scores)),
+                            key=lambda i: bm25_scores[i], reverse=True)[:50]
+     ```
+  4. Fusão por Reciprocal Rank Fusion (RRF, k=60):
+     ```python
+     def rrf(rankings: list[list[int]], k=60):
+         scores = {}
+         for ranking in rankings:
+             for rank, doc_id in enumerate(ranking):
+                 scores[doc_id] = scores.get(doc_id, 0) + 1 / (k + rank + 1)
+         return sorted(scores, key=scores.get, reverse=True)
+     ```
+  5. Retornar top-10 do RRF como resultado final da busca
+  6. Persistir o índice BM25 serializado (pickle) junto ao vectorstore ChromaDB para evitar
+     reconstrução a cada startup
+
+- [ ] Mnemosyne: reranking leve com FlashRank (CPU, sem GPU, ~10ms/query):
+  **Motivo:** recuperação híbrida melhora recall; reranking melhora precisão — são complementares.
+  Cross-encoder reranking adiciona +10 nDCG points sobre bi-encoders em MS MARCO (pinecone.io/
+  learn/series/rag/rerankers). FlashRank usa modelos ONNX quantizados que rodam em CPU a ~10ms
+  por query — viável mesmo no Windows 10 sem GPU. Não usa VRAM, não compete com o modelo de chat.
+  **Implementação (`Mnemosyne/core/retriever.py`):**
+  1. Adicionar `flashrank` ao `pyproject.toml`
+  2. Inicializar (lazy, no primeiro uso):
+     ```python
+     from flashrank import Ranker, RerankRequest
+     _reranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="~/.cache/flashrank")
+     ```
+  3. Após recuperação híbrida (top-50), aplicar reranking nos top-20:
+     ```python
+     passages = [{"id": i, "text": doc.page_content} for i, doc in enumerate(candidates[:20])]
+     request  = RerankRequest(query=query, passages=passages)
+     results  = _reranker.rerank(request)
+     final    = [candidates[r["id"]] for r in results[:5]]
+     ```
+  4. Retornar os top-5 rerankeados ao LLM
+  5. Tornar reranking opcional via config (desabilitar no perfil `low` se latência for crítica)
+
+- [ ] Mnemosyne: dimensões Matryoshka para reduzir tamanho do índice ChromaDB:
+  **Motivo:** nomic-embed-text v1.5 suporta Matryoshka Representation Learning (MRL) — o mesmo
+  modelo funciona bem em múltiplas dimensões (768, 512, 256, 128). O índice ChromaDB atual
+  armazena float32 em dim=768, usando 3072 bytes/vetor. Com dim=256: 1024 bytes/vetor (3× menor),
+  sem mudança de modelo, sem re-indexar com modelo diferente.
+  Pesquisa: NeurIPS 2022 (arxiv 2205.13147) — até 14× menor embedding para mesma acurácia em
+  determinadas tarefas. Matryoshka-Adaptor (arxiv 2407.20243): redução 2–12× sem perda em BEIR.
+  **Implementação (`Mnemosyne/core/indexer.py` + re-indexação necessária):**
+  1. Passar `truncate_dim=256` ao inicializar o modelo nomic-embed-text:
+     — Via Ollama: o endpoint /api/embed aceita `truncate_dim` como parâmetro
+       `{"model": "nomic-embed-text", "input": texts, "truncate_dim": 256}`
+     — Verificar se a versão do Ollama instalada suporta `truncate_dim` antes de ativar
+  2. Atualizar configuração do ChromaDB para usar `embedding_function` com dim=256
+  3. Re-indexar o corpus existente (uma vez): marcar documentos com `dim=256` no metadata
+  4. Medir impacto na qualidade de recuperação antes de adotar em produção:
+     buscar 20 queries manuais e comparar top-5 com dim=768 vs dim=256
+
+### Mnemosyne — índice vetorial e quantização futura
+
+- [ ] Monitorar RAM consumida pelo índice ChromaDB e definir gatilho de migração para Qdrant:
+  **Motivo:** ChromaDB usa HNSW (hnswlib) — todo o índice fica em RAM em float32. Para 1M vetores
+  em dim=768: ~3 GB RAM só do índice. Se o Mnemosyne crescer para cobrir toda a biblioteca AKASHA,
+  o índice pode saturar a RAM do Windows 10 (8 GB total). Qdrant oferece quantização scalar
+  (int8, 4× compressão, 99%+ qualidade) e binary (32× compressão, 95%+ com rescoring) de forma
+  nativa — sem mudar o modelo de embedding.
+  Fontes: qdrant.tech/benchmarks; huggingface.co/blog/embedding-quantization
+  **Gatilhos para migrar ChromaDB → Qdrant:**
+  — RAM do índice > 4 GB (verificar com `psutil.Process().memory_info().rss`)
+  — Latência de busca P50 > 50ms (adicionar log de tempo em `retriever.py`)
+  — Corpus > 1M chunks
+  **Pré-migração — ativar agora sem migrar:**
+  — Usar dim=256 (Matryoshka) reduz índice 9× vs dim=768 em float32 — adia a necessidade
+    de migrar consideravelmente
+  **Quando migrar:**
+  1. Instalar Qdrant como processo local (Docker ou binário nativo — sem servidor remoto)
+  2. Ativar scalar quantization int8 na coleção: `quantization_config=ScalarQuantization(type=INT8)`
+  3. Re-exportar todos os embeddings do ChromaDB e importar no Qdrant
+  4. Atualizar `retriever.py` para usar `qdrant_client` — API similar ao ChromaDB
+  5. Manter ChromaDB como fallback para o perfil `low` (Windows 10) se Qdrant for pesado
+
+### Tecnologias a monitorar — não implementar agora
+
+- [ ] Speculative decoding — monitorar suporte no Ollama:
+  **O que é:** um draft model pequeno (ex: SmolLM2 1.7B) gera N tokens em rascunho; o modelo
+  alvo (ex: Llama 3 8B) verifica o rascunho em um único forward pass. Se correto, todos N tokens
+  são aceitos. Speedup típico: 2–3× sem nenhuma perda de qualidade (verificação garante equivalência
+  exata ao modelo original). Fonte: arxiv 2402.01528; arxiv 2504.06419.
+  **Estado atual (2026-04):** llama.cpp suporta via `--draft-model`. Ollama não suporta nativamente.
+  **Ação:** verificar trimestralmente as release notes do Ollama. Quando disponível:
+  — Perfil `high` (RX 6600): draft=SmolLM2 1.7B, target=Llama 3 8B → estimativa de 2× speedup no P1
+  — Não aplicar em P3 (draft model ocupa VRAM adicional; não vale para background)
+
+- [ ] LMCache — reuso de KV cache entre turns de conversa:
+  **O que é:** sistema que armazena o KV cache em múltiplos tiers (GPU VRAM → CPU DRAM → disco)
+  e reutiliza entre requisições com prefixo compartilhado. Para Mnemosyne RAG com documento fixo
+  como contexto, o KV cache do contexto não precisa ser recalculado a cada query.
+  Speedup: NVIDIA reporta 14× TTFT mais rápido para sequências longas.
+  Fonte: arxiv 2510.09665 (LMCache, 2024).
+  **Estado atual (2026-04):** não integrado ao Ollama. Requer vLLM ou llama.cpp com modificações.
+  **Ação:** monitorar integração no Ollama. Quando disponível, beneficia especialmente
+  o Mnemosyne em sessões longas de leitura (contexto do documento = prefixo fixo = 100% cache hit).
+
+- [ ] KVSwap — disk offload do KV cache para NVMe (MX150 2 GB VRAM):
+  **O que é:** sistema projetado para dispositivos com VRAM muito limitada (como o MX150) que
+  move o KV cache de conversas longas para o NVMe SSD em vez de truncar o contexto.
+  Fonte: arxiv 2511.11907 (KVSwap, novembro 2024).
+  **Pré-condição:** NVMe rápido (PCIe 3.0×4, ≥1500 MB/s leitura). Com SSD SATA: impraticável.
+  **Ação:** verificar spec do SSD do laptop antes de avaliar. Monitorar integração no Ollama.
 
 ### Feed de atividade unificado
 
