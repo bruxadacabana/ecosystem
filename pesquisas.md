@@ -1,18 +1,10 @@
 # Pesquisas do Ecossistema
 
-> Arquivo consolidado de pesquisa técnica para HUB/LOGOS, AKASHA, KOSMOS e Mnemosyne.
-> Última atualização: 2026-04-26
-
-## Índice
-
-1. [HUB / LOGOS — Otimização e Gerenciamento de Recursos](#hub--logos--otimização-e-gerenciamento-de-recursos)
-2. [AKASHA — Busca, Crawling e Indexação](#akasha--busca-crawling-e-indexação)
-3. [KOSMOS — Pipeline LLM e Análise de Artigos](#kosmos--pipeline-llm-e-análise-de-artigos)
-4. [Mnemosyne — RAG, Memória e Context Engineering](#mnemosyne--rag-memória-e-context-engineering)
+> Última atualização: 2026-04-27
 
 ---
 
-## HUB / LOGOS — Otimização e Gerenciamento de Recursos
+## HUB
 
 # HUB — Pesquisa: Otimização, Gerenciamento de Recursos e Adaptabilidade do Ecossistema
 Última atualização: 2026-04-26 (versão expandida com literatura científica)
@@ -824,7 +816,7 @@ Adaptação simples para o crawler AKASHA:
 
 ---
 
-## AKASHA — Busca, Crawling e Indexação
+## AKASHA
 
 PESQUISA — Funcionamento, Otimização e Gerenciamento em Buscadores
 Data: 2026-04-24
@@ -1597,7 +1589,7 @@ FONTES
 
 ---
 
-## KOSMOS — Pipeline LLM e Análise de Artigos
+## KOSMOS
 
 PESQUISA — KOSMOS
 ================================================================================
@@ -1934,7 +1926,7 @@ FONTES
 
 ---
 
-## Mnemosyne — RAG, Memória e Context Engineering
+## Mnemosyne
 
 ========================================================
 PESQUISA PARA O MNEMOSYNE
@@ -4677,4 +4669,3 @@ Fontes:
 ========================================================
 FIM DA PESQUISA — Otimização, Chunking, Reranking, Avaliação
 ========================================================
-
