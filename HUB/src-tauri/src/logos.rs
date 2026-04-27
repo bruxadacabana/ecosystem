@@ -32,6 +32,7 @@ use reqwest::Client;
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
+use sysinfo::System;
 use tokio::sync::{Mutex, Semaphore};
 
 pub const LOGOS_PORT: u16 = 7072;
@@ -42,6 +43,9 @@ const P3_TIMEOUT: Duration = Duration::from_secs(30);
 
 // P3 recebe 429 imediatamente se VRAM acima deste limiar
 const VRAM_P3_BLOCK: f32 = 0.85;
+// P3 recebe 429 se CPU ou RAM insuficiente — protege Windows e laptop durante indexação
+const CPU_P3_BLOCK: f32 = 85.0;
+const RAM_P3_BLOCK_MB: u64 = 1_536;
 
 // ── Perfil de hardware ────────────────────────────────────────
 
@@ -173,6 +177,9 @@ struct Inner {
     hardware_profile: HardwareProfile,
     queue_counts: Mutex<[u32; 3]>,
     client: Client,
+    /// Instância sysinfo — mantida entre polls para que CPU% seja calculado como delta.
+    /// CRÍTICO: nunca criar nova instância a cada poll (retorna sempre 0%).
+    sys: Mutex<System>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -192,6 +199,10 @@ impl LogosState {
             "normal".to_string()
         };
         let hardware_profile = detect_hardware_profile();
+        // Inicialização prévia do sysinfo — primeira leitura é sempre 0%; a segunda é o delta real.
+        let mut sys = System::new_all();
+        sys.refresh_cpu_all();
+        sys.refresh_memory();
         Self(Arc::new(Inner {
             ollama_url: ollama_url.into(),
             semaphore: Arc::new(Semaphore::new(2)),
@@ -203,6 +214,7 @@ impl LogosState {
             hardware_profile,
             queue_counts: Mutex::new([0, 0, 0]),
             client,
+            sys: Mutex::new(sys),
         }))
     }
 }
@@ -231,6 +243,12 @@ pub struct StatusResponse {
     /// Razão vram_used / vram_total; None se total desconhecido
     pub vram_pct: Option<f32>,
     pub ollama_url: String,
+    /// Uso de CPU global (%) via sysinfo — delta entre dois polls consecutivos
+    pub cpu_pct: f32,
+    /// RAM livre em MB via sysinfo
+    pub ram_free_mb: u64,
+    /// RAM total em MB via sysinfo
+    pub ram_total_mb: u64,
 }
 
 #[derive(Serialize, Clone)]
@@ -352,6 +370,21 @@ async fn chat_handler(
                 ).into_response();
             }
         }
+        // CPU/RAM check — protege Windows (sem GPU) e laptop durante indexação pesada
+        let (cpu, ram_free) = {
+            let (c, f, _) = cpu_ram_usage(&s.0.sys).await;
+            (c, f)
+        };
+        if cpu > CPU_P3_BLOCK || ram_free < RAM_P3_BLOCK_MB {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({
+                    "error": format!(
+                        "CPU {cpu:.0}% ou RAM livre {ram_free} MB insuficiente — tarefa P3 adiada"
+                    )
+                })),
+            ).into_response();
+        }
     }
 
     // Incrementa contador de fila
@@ -461,6 +494,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let hardware_profile_display  = s.0.hardware_profile.display().to_string();
     let queue = *s.0.queue_counts.lock().await;
     let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, &s.0.ollama_url).await;
+    let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
     StatusResponse {
         active_priority,
         active_model_class,
@@ -473,6 +507,9 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         vram_used_mb,
         vram_pct,
         ollama_url: s.0.ollama_url.clone(),
+        cpu_pct,
+        ram_free_mb,
+        ram_total_mb,
     }
 }
 
@@ -661,6 +698,19 @@ fn sysfs_vram_mb() -> Option<(u64, u64)> {
     }
     #[allow(unreachable_code)]
     None
+}
+
+/// Lê uso de CPU e memória via sysinfo.
+/// Mantém a instância System entre chamadas — CPU% é calculado como delta entre dois polls.
+/// Retorna (cpu_pct: f32, ram_free_mb: u64, ram_total_mb: u64).
+async fn cpu_ram_usage(sys: &Mutex<System>) -> (f32, u64, u64) {
+    let mut s = sys.lock().await;
+    s.refresh_cpu_all();
+    s.refresh_memory();
+    let cpu = s.global_cpu_usage();
+    let free_mb  = s.available_memory() / 1_048_576;
+    let total_mb = s.total_memory()     / 1_048_576;
+    (cpu, free_mb, total_mb)
 }
 
 // ── Entry point ───────────────────────────────────────────────

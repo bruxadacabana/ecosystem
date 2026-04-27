@@ -140,6 +140,12 @@ export interface LogosStatus {
   vram_used_mb:       number | null
   vram_pct:           number | null
   ollama_url:         string
+  /** Uso de CPU global (0–100) via sysinfo — delta entre polls consecutivos */
+  cpu_pct:            number
+  /** RAM livre em MB via sysinfo */
+  ram_free_mb:        number
+  /** RAM total em MB via sysinfo */
+  ram_total_mb:       number
 }
 
 export interface OllamaModelInfo {

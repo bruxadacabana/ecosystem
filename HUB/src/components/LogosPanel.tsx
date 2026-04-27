@@ -44,6 +44,9 @@ export function LogosPanel() {
   const vramMb              = status?.vram_used_mb ?? null
   const vramPct             = status?.vram_pct ?? null
   const hwDisplay           = status?.hardware_profile_display ?? null
+  const cpuPct              = status?.cpu_pct ?? 0
+  const ramFreeMb           = status?.ram_free_mb ?? 0
+  const ramTotalMb          = status?.ram_total_mb ?? 0
 
   let vramBarColor = 'var(--accent-green)'
   if (vramPct !== null) {
@@ -56,6 +59,24 @@ export function LogosPanel() {
     vramPct !== null
       ? `${(vramMb / 1000).toFixed(1)} GB · ${Math.round(vramPct * 100)}%`
       : `${vramMb} MB`
+
+  // CPU bar — verde < 70%, amarelo 70–85%, vermelho > 85%
+  let cpuBarColor = 'var(--accent-green)'
+  if (cpuPct > 85) cpuBarColor = 'var(--ribbon)'
+  else if (cpuPct > 70) cpuBarColor = 'var(--accent)'
+
+  // RAM — verde > 4 GB livre, amarelo 1.5–4 GB, vermelho < 1.5 GB
+  const ramFreeGb = ramFreeMb / 1024
+  let ramBarColor = 'var(--accent-green)'
+  if (ramFreeGb < 1.5) ramBarColor = 'var(--ribbon)'
+  else if (ramFreeGb < 4) ramBarColor = 'var(--accent)'
+
+  // Barra RAM como uso: (total - free) / total * 100
+  const ramUsedPct = ramTotalMb > 0 ? Math.min(100, ((ramTotalMb - ramFreeMb) / ramTotalMb) * 100) : 0
+
+  const ramFreeLabel = ramFreeGb >= 1
+    ? `${ramFreeGb.toFixed(1)} GB`
+    : `${ramFreeMb} MB`
 
   return (
     <div
@@ -181,61 +202,39 @@ export function LogosPanel() {
         </span>
       )}
 
-      {/* Barra de VRAM */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          flex: 1,
-          minWidth: 100,
-          maxWidth: 220,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            color: 'var(--ink-ghost)',
-            letterSpacing: '0.08em',
-            flexShrink: 0,
-          }}
-        >
-          VRAM
-        </span>
-        <div
-          style={{
-            flex: 1,
-            height: 4,
-            background: 'var(--rule)',
-            borderRadius: 2,
-            overflow: 'hidden',
-          }}
-        >
-          {vramPct !== null && (
-            <div
-              style={{
-                height: '100%',
-                width: `${Math.min(100, Math.round(vramPct * 100))}%`,
-                background: vramBarColor,
-                transition: 'width 400ms ease, background 400ms ease',
-              }}
-            />
-          )}
+      {/* Recursos — VRAM (com GPU) ou CPU+RAM (sem GPU) */}
+      {vramPct === null ? (
+        // Sem GPU discreta: barras de CPU e RAM substituem VRAM
+        <div style={{ display: 'flex', gap: 10, flex: 1, minWidth: 160 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', letterSpacing: '0.08em', flexShrink: 0 }}>CPU</span>
+            <div style={{ flex: 1, height: 4, background: 'var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${Math.min(100, Math.round(cpuPct))}%`, background: cpuBarColor, transition: 'width 400ms ease, background 400ms ease' }} />
+            </div>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', whiteSpace: 'nowrap', minWidth: 32 }}>{cpuPct.toFixed(0)}%</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 1 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', letterSpacing: '0.08em', flexShrink: 0 }}>RAM</span>
+            <div style={{ flex: 1, height: 4, background: 'var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${Math.round(ramUsedPct)}%`, background: ramBarColor, transition: 'width 400ms ease, background 400ms ease' }} />
+            </div>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: ramBarColor, whiteSpace: 'nowrap', minWidth: 52 }}>{ramFreeLabel} livre</span>
+          </div>
         </div>
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 10,
-            color: 'var(--ink-ghost)',
-            letterSpacing: '0.04em',
-            whiteSpace: 'nowrap',
-            minWidth: 72,
-          }}
-        >
-          {vramLabel}
-        </span>
-      </div>
+      ) : (
+        // Com GPU: barra de VRAM + CPU% e RAM como texto compacto
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 100, maxWidth: 340 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', letterSpacing: '0.08em', flexShrink: 0 }}>VRAM</span>
+          <div style={{ flex: 1, height: 4, background: 'var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${Math.min(100, Math.round(vramPct * 100))}%`, background: vramBarColor, transition: 'width 400ms ease, background 400ms ease' }} />
+          </div>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', letterSpacing: '0.04em', whiteSpace: 'nowrap', minWidth: 72 }}>{vramLabel}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', letterSpacing: '0.04em', whiteSpace: 'nowrap', opacity: 0.65 }}
+                title="CPU e RAM via sysinfo">
+            CPU {cpuPct.toFixed(0)}% · {ramFreeLabel} livre
+          </span>
+        </div>
+      )}
 
       {/* Botão Silenciar */}
       <button
