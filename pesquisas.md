@@ -1,3 +1,1941 @@
+# Pesquisas do Ecossistema
+
+> Arquivo consolidado de pesquisa técnica para HUB/LOGOS, AKASHA, KOSMOS e Mnemosyne.
+> Última atualização: 2026-04-26
+
+## Índice
+
+1. [HUB / LOGOS — Otimização e Gerenciamento de Recursos](#hub--logos--otimização-e-gerenciamento-de-recursos)
+2. [AKASHA — Busca, Crawling e Indexação](#akasha--busca-crawling-e-indexação)
+3. [KOSMOS — Pipeline LLM e Análise de Artigos](#kosmos--pipeline-llm-e-análise-de-artigos)
+4. [Mnemosyne — RAG, Memória e Context Engineering](#mnemosyne--rag-memória-e-context-engineering)
+
+---
+
+## HUB / LOGOS — Otimização e Gerenciamento de Recursos
+
+# HUB — Pesquisa: Otimização, Gerenciamento de Recursos e Adaptabilidade do Ecossistema
+Última atualização: 2026-04-26 (versão expandida com literatura científica)
+Contexto: como otimizar LOGOS/HUB/Mnemosyne/KOSMOS/Hermes em CPU, RAM, VRAM e
+produtividade, com adaptação a múltiplas máquinas (RX 6600, MX150, i5-3470 sem GPU).
+
+---
+
+## 1. Controle de recursos do Ollama — variáveis de ambiente
+
+Fonte canônica: github.com/ollama/ollama/blob/main/envconfig/config.go
+
+| Variável                   | Padrão    | Descrição                                                      |
+|---------------------------|-----------|----------------------------------------------------------------|
+| OLLAMA_NUM_PARALLEL        | 1         | Máximo de requisições em paralelo por modelo                   |
+| OLLAMA_MAX_LOADED_MODELS   | 0 (=3×GPU)| Máximo de modelos em memória simultaneamente                   |
+| OLLAMA_KEEP_ALIVE          | 5m        | Tempo de retenção do modelo após ociosidade                    |
+| OLLAMA_MAX_QUEUE           | 512       | Máximo de requisições na fila antes de 503                     |
+| OLLAMA_GPU_OVERHEAD        | 0 bytes   | Reserva de VRAM por GPU para evitar OOM                        |
+| OLLAMA_CONTEXT_LENGTH      | 0 (auto)  | Janela de contexto global                                      |
+| OLLAMA_FLASH_ATTENTION     | false     | Flash Attention (reduz VRAM em contextos longos)               |
+| OLLAMA_SCHED_SPREAD        | false     | Distribui modelo por todas as GPUs disponíveis                 |
+| OLLAMA_LOAD_TIMEOUT        | 5m        | Timeout de carregamento de modelo                              |
+| HSA_OVERRIDE_GFX_VERSION   | —         | AMD ROCm para GPUs sem suporte oficial (RX 6600: "10.3.0")     |
+
+OLLAMA_NUM_THREADS e OLLAMA_MAX_VRAM NÃO existem como variáveis de ambiente.
+Controle de threads: parâmetro `num_thread` no body da requisição ou na Modelfile.
+Fonte: markaicode.com/ollama-environment-variables-configuration-guide
+
+---
+
+## 2. keep_alive por requisição — gestão granular de memória
+
+O parâmetro keep_alive pode ser passado individualmente em cada request /api/chat ou /api/generate,
+sobrescrevendo o OLLAMA_KEEP_ALIVE global. Ollama rastreia expiração por modelo individualmente.
+
+| Valor   | Comportamento                                          |
+|---------|--------------------------------------------------------|
+| "0"     | Descarrega imediatamente após a resposta               |
+| "-1"    | Nunca descarrega (mantém sempre aquecido)              |
+| "5m"    | Descarrega 5 minutos após o último uso                 |
+| "10m"   | Mantém por 10 minutos                                  |
+
+Estratégia recomendada por prioridade no LOGOS:
+- P1 (chat HUB, escrita AETHER): keep_alive=-1 enquanto sessão ativa; 0 ao fechar
+- P2 (Mnemosyne RAG): keep_alive="10m"
+- P3 (KOSMOS background, embeddings idle): keep_alive="0" — carrega, processa, libera
+Fonte: markaicode.com/ollama-keep-alive-memory-management; docs.ollama.com/faq
+
+---
+
+## 3. Comportamento de paralelismo e fila do Ollama
+
+Fontes: glukhov.org/post/2025/05/how-ollama-handles-parallel-requests; Ollama FAQ
+
+- Fila FIFO: quando parallelism está esgotado, novas requisições aguardam.
+- Modelos diferentes competem por VRAM: Ollama descarrega ociosos para carregar novos.
+- Este comportamento não tem conceito de prioridade — LOGOS como proxy (porta 7072) é a
+  única forma de impor prioridade real P1 > P2 > P3.
+
+Parâmetros úteis do Ollama no body da requisição (não variáveis de ambiente):
+- num_thread: limitar CPU por prioridade (ex: 2 para P3, null para P1/P2)
+- num_batch: tamanho do batch de prefill (padrão 512; reduzir p/ 256 → −20% VRAM pico)
+- num_gpu: camadas na GPU (não "quantidade de GPUs")
+- low_vram: move KV cache para RAM do sistema (economiza VRAM, reduz velocidade)
+- num_ctx: janela de contexto; dobrar = dobrar uso de KV cache
+
+---
+
+## 4. Agendamento com prioridade e preempção — estado da arte científico
+
+### PagedAttention / vLLM (SOSP 2023)
+Paper: arxiv.org/abs/2309.06180
+Técnica fundamental da área. PagedAttention armazena o KV cache em blocos não-contíguos
+(análogo à memória virtual de SO), eliminando fragmentação de memória. Continuous batching
+processa sequências individualmente — ao concluir, libera blocos imediatamente para nova
+requisição. Resultado: 2–4× throughput vs. FasterTransformer/Orca.
+Implicação para o ecossistema: o LOGOS pode implementar preempção com lógica similar —
+ao receber P1, suspende P3 no meio do streaming e realoca a GPU.
+
+### Priority-Aware Preemptive Scheduling para inferência mista (março 2025)
+Paper: arxiv.org/html/2503.09304
+Sistemas reais separam workloads em dois tipos:
+- High-priority (latência crítica): tempo-para-primeiro-token (TTFT) e turnaround rápidos
+- Low-priority (best-effort): throughput máximo mas interrompíveis
+O scheduler monitora memória disponível e suspende jobs low-priority ao detectar pressão,
+sem cancelá-los — os suspende no KV cache e retoma quando a GPU liberar.
+Implicação: LOGOS P3 pode ser suspenso (não cancelado) ao chegar P1.
+
+### Topology-aware Preemptive Scheduling (novembro 2024)
+Paper: arxiv.org/html/2411.11560
+Mostra que preempção mal projetada desperdiça recursos: ao libertar a GPU para P1,
+se a memória liberada pela P3 não é suficiente para carregar o modelo P1, há perda dupla.
+Solução: calcular quanto VRAM P1 precisa antes de decidir preemptar quem.
+Implicação: LOGOS deve conhecer o tamanho estimado do modelo P1 antes de silenciar P3.
+
+### NEO: CPU Offloading para KV Cache (novembro 2024)
+Paper: arxiv.org/abs/2411.01142
+Descarrega atenção e KV cache para CPU/DRAM via pipeline assimétrico GPU-CPU,
+usando load-aware scheduling para balancear carga entre os dois processadores.
+Resultado: até 7.5× throughput em GPUs T4 vs. GPU-only, com mesma latência.
+Implicação: em máquinas com VRAM limitada (MX150 2 GB), offload do KV cache
+para RAM (11 GB disponíveis) pode permitir modelos maiores do que o esperado.
+Ollama já tem num_gpu e low_vram para controle parcial disso.
+
+### APEX: CPU-GPU Parallelism para inferência restrita (2026)
+Paper: arxiv.org/html/2506.03296
+Estratégia de escalonamento informada por profiling — prevê tempo de execução de subtarefas
+CPU e GPU e despacha dinamicamente. Resultado: 84–96% de melhoria de throughput em T4.
+Implicação: modelos menores no laptop (MX150 2 GB) se beneficiam de offload inteligente.
+
+---
+
+## 5. KV Cache — otimização e compressão
+
+Survey: arxiv.org/abs/2412.19442 (dezembro 2024)
+Review: arxiv.org/abs/2508.06297
+
+Estratégias principais de compressão de KV cache:
+a) Seleção de tokens: manter apenas tokens "importantes" no cache (entropia, atenção)
+b) Quantização do KV cache: reduzir precisão de float16 para int8 ou int4
+   — KIVI, KVQuant, DiffKV, ShadowKV: estado da arte em compressão de KV
+c) Low-rank decomposition: compressão por decomposição matricial
+d) Offload hierárquico: GPU HBM → CPU DRAM → NVMe SSD
+
+### KVSwap (novembro 2024)
+Paper: arxiv.org/html/2511.11907
+Primeiro sistema projetado especificamente para offload para disco em dispositivos
+com recursos limitados. Relevante para o laptop com MX150 (2 GB VRAM).
+
+### LMCache (outubro 2024)
+Paper: arxiv.org/pdf/2510.09665
+Suporta armazenamento em múltiplos tiers: GPU → CPU DRAM → disco local.
+Permite reuso de KV cache entre turns de conversa (shared-prefix) — relevante
+para chats longos no Mnemosyne onde o contexto do documento raramente muda.
+NVIDIA reporta: KV cache offload → 14× TTFT mais rápido para sequências longas.
+
+### Flash Attention (2023) e impacto no ROCm
+Paper original: dao-ailab/flash-attention; Port ROCm: github.com/ROCm/flash-attention
+Flash Attention usa tiling para melhorar localidade de memória no cálculo de atenção
+(MHA, GQA, MQA). Disponível no ROCm via backend CK (Composable Kernel) e Triton.
+A partir do PyTorch 2.3 para ROCm, está integrado ao F.scaled_dot_product_attention.
+RDNA GPUs (RX 6600 é RDNA2) são suportadas via backend Triton.
+Ativar OLLAMA_FLASH_ATTENTION=1 já usa isso automaticamente no Ollama.
+
+---
+
+## 6. Quantização — benchmarks científicos
+
+### Resultados de qualidade por formato (2025)
+Benchmark avaliou Qwen2.5, DeepSeek, Mistral, LLaMA 3.3 em MMLU, GSM8K, BBH, C-Eval, IFEval:
+- FP16: referência (100%)
+- GPTQ-INT8: mais estável, 95–99% da qualidade original; melhor quando acurácia > velocidade
+- Q5_K_M / Q8_0: ~95–99% qualidade, boa portabilidade; sweet spot para produção
+- Q4_K_M: 1–3% degradação em MMLU (7B: 71–72% vs 73% no FP16), aceitável para chat
+         perdas maiores em C-Eval e IFEval — problemático para tarefas seguindo instruções
+- AWQ: similar a Q4_K_M em qualidade; mais rápido em GPUs com kernels dedicados
+
+Fonte: jarvislabs.ai/blog/vllm-quantization-complete-guide-benchmarks;
+       ionio.ai/blog/llm-quantize-analysis; localllm.in/blog/quantization-explained
+
+### GGUF Q4_K_M vs Q8_0 — decisão prática para o ecossistema
+Para chat (Mnemosyne, HUB): Q5_K_M ou Q8_0 se VRAM permitir.
+Para análise background (KOSMOS P3): Q4_K_M é aceitável — resultado não é crítico.
+Para embeddings (nomic-embed-text): já é pequeno, não precisa quantizar mais.
+
+### Parâmetros por modelo no request body (não variáveis de ambiente)
+- quantize: pode ser passado na Modelfile para forçar quantização específica
+- num_batch: 512 default; reduzir para 256 → -20% VRAM pico, pequena perda de throughput
+
+---
+
+## 7. Inferência CPU-only — limites reais e técnicas
+
+### llama.cpp em CPU — benchmarks
+Paper: arxiv.org/html/2505.06461 (CPUs outperforming GPUs in mobile inference, 2025)
+Fontes: clarifai.com/blog/ilama.cpp; github.com/ggml-org/llama.cpp
+
+Números reais por hardware:
+- 2-core CPU + 8 GB DDR2: ~2 tokens/s em modelos 4B Q4
+- i5-3470 (4 cores, sem AVX2, DDR3): estimado 1–2 tokens/s em 3B Q4; modelos >7B impraticáveis
+- i7-8550U (AVX2): estimado 4–8 tokens/s em 3B Q4 com CPU-only
+- iPhone 15 Pro (CPU-only, F16): 17 tokens/s em 1B; supera GPU (12.8 t/s) por overhead de transfer
+
+Gargalo principal: largura de banda de memória (memory bandwidth), não FLOPS.
+- Dobrar os canais de memória = dobrar performance (llama.cpp)
+- AVX2: matriz-vetor otimizada via SIMD; sem AVX2 (i5-3470 Ivy Bridge) → fallback genérico
+
+### Instrução sem AVX2 (i5-3470 / Ivy Bridge) — implicações
+- llama.cpp compila e roda sem AVX2, mas usa fallback menos otimizado
+- Limite prático: SmolLM2 1.7B Q4 (< 1.5 GB RAM) a ~1–2 tokens/s
+- Embeddings CPU-only: modelos ≤ 300 M params via sentence-transformers são viáveis
+
+### Otimização de threads no CPU
+- Diminishing returns além de 8–16 threads para modelos pequenos
+- Regra: num_thread = número de cores físicos (não threads lógicos)
+- Para i5-3470: num_thread=4; para i7-8550U: num_thread=4 (4 cores físicos, 8 threads)
+
+### CPU vs GPU — quando CPU vence
+- Modelos pequenos (1–3B) com GPU de baixa bandwidth (MX150 2 GB DDR5 ~60 GB/s):
+  o overhead de PCIe e gerenciamento de VRAM pode superar o benefício de SIMD da GPU
+- MX150: VRAM pequena força offload constante CPU←→GPU → pode ser melhor ficar no CPU
+
+---
+
+## 8. Estratégias de RAG — chunking
+
+Papers:
+- arxiv.org/abs/2504.19754 (Reconstructing Context: Advanced Chunking Strategies, 2025)
+- pmc.ncbi.nlm.nih.gov/articles/PMC12649634 (Chunking for Clinical Decision Support, 2025)
+- aclanthology.org/2025.icnlsp-1.15.pdf (Semantic Chunking, 2025)
+
+### Estratégias comparadas
+
+| Estratégia             | Como funciona                                    | Prós                              | Contras                          |
+|----------------------|--------------------------------------------------|-----------------------------------|----------------------------------|
+| Fixed-size (padrão)  | Divide por número fixo de tokens                 | Simples, rápido                   | Pode cortar conceitos no meio    |
+| Recursive             | Divide por separadores hierárquicos (\n\n, \n, ) | Melhor que fixed; preserva §      | Ainda pode misturar conceitos    |
+| Semantic              | Agrupa por similaridade de embedding             | Alta coerência semântica          | Lento (requer embedding no index)|
+| Proposition-based     | Extrai proposições atômicas via LLM              | Máxima granularidade              | Muito lento, custo alto          |
+| Contextual retrieval  | Adiciona contexto do documento a cada chunk via LLM | Melhor recall, coerência global | Custo computacional alto         |
+| Late chunking         | Chunka após embeddings do documento inteiro      | Eficiente, preserva contexto      | Sacrifica completude             |
+| Adaptive              | Alinha a fronteiras de seção + embedding cosine  | Variável, domínio-aware           | Mais complexo de implementar     |
+
+### Resultados empíricos (2025)
+- Contextual retrieval: preserva coerência semântica, melhor recall; mais caro computacionalmente
+- Late chunking: mais eficiente, mas sacrifica relevância e completude
+- Adaptive chunking: melhor balanço geral para documentos estruturados (artigos, papers)
+- Proposition-based: máxima qualidade mas impraticável para indexação em background (muito lento)
+
+### Tamanhos de chunk por domínio (empiricamente validado)
+- Artigos científicos / notícias (KOSMOS): 512–1024 tokens; preservar parágrafos completos
+- Transcrições de vídeo (Hermes): 300–600 tokens; preservar frases completas
+- Documentos longos / notas (Mnemosyne geral): 256–512 tokens com 50–100 tokens de overlap
+- Patentes / documentação técnica: 1000–1500 tokens
+- Chat logs / trechos curtos: 200–400 tokens
+
+### Overlap como mecanismo de continuidade
+- 10–15% de overlap entre chunks adjacentes é o padrão que minimiza informação perdida
+  sem aumentar muito o número de chunks (e portanto o custo de embedding)
+
+---
+
+## 9. Recuperação híbrida — BM25 + dense + sparse neural
+
+Papers:
+- arxiv.org/html/2604.01733 (BM25 to Corrective RAG benchmark, 2025)
+- arxiv.org/html/2404.07220 (Blended RAG, 2024)
+- arxiv.org/pdf/2503.23013 (DAT: Dynamic Alpha Tuning, 2025)
+
+### Por que híbrida?
+
+| Tipo            | Pontos fortes                                 | Pontos fracos                              |
+|----------------|-----------------------------------------------|--------------------------------------------|
+| BM25 (sparse)  | Rápido, sem GPU, funciona para nomes próprios | Sem semântica; miss em paráfrases          |
+| Dense (vector) | Semântico; pega paráfrases e sinonímia        | Miss em queries com termos exatos raros    |
+| SPLADE (sparse neural) | Semântico + expande termos           | Lento na indexação, >RAM que BM25          |
+| Híbrido        | Cobre falhas de cada método                   | Requer tuning do alpha de fusão            |
+
+### Resultados benchmark (2025)
+- Pipeline dois estágios: hybrid retrieval + neural reranking:
+  Recall@5 = 0.816 e MRR@3 = 0.605 em benchmark financeiro de 23k queries
+  Supera todos os métodos de estágio único por margem significativa.
+- Cohere Rerank 3.5: +23.4% sobre hybrid search simples em BEIR
+- SPLADE vs BM25 no Amazon ESCI: SPLADE fine-tuned nDCG@10=0.388 vs BM25=0.301
+
+### DAT — Dynamic Alpha Tuning (2025, under review)
+Usa LLM para avaliar top-1 de cada método e calibrar o peso (alpha) entre BM25 e dense
+dinamicamente por query. Mais inteligente que alpha fixo (geralmente 0.5).
+
+### SPLADE — Sparse Neural
+- Converte queries em vetores esparsos de alta dimensão com termos expandidos semanticamente
+- Eficiente via índice invertido (mesma infra de BM25), mas com qualidade neural
+- Custo: indexação mais lenta que BM25; inferência comparável se bem otimizado (< 4ms/query)
+- BM42 (Qdrant, 2025): versão leve de SPLADE sem fine-tuning, pronta para uso
+
+### Implementação prática para Mnemosyne
+Mnemosyne usa ChromaDB (dense-only). Para implementar híbrido:
+1. Adicionar BM25 paralelo (rank_bm25 Python): leve, sem dependências pesadas
+2. Fusão por Reciprocal Rank Fusion (RRF): fórmula simples, sem parâmetros
+3. Opcional: SPLADE via Qdrant se migrar do ChromaDB
+
+---
+
+## 10. Reranking — duas etapas de recuperação
+
+Fontes: pinecone.io/learn/series/rag/rerankers; arxiv.org/html/2507.05577; zeroentropy.dev
+
+### Arquitetura dois estágios
+1. Fast retriever (BM25 ou dense): recupera 50–100 candidatos priorizando recall
+2. Cross-encoder reranker: avalia cada par (query, doc) com forward pass completo do transformer
+   → retorna 5–10 melhores para o LLM
+
+### Ganhos de qualidade
+- +10 nDCG points sobre bi-encoders em MS MARCO
+- +28% NDCG@10 sobre baseline retriever (média across benchmarks)
+- 15–30% melhoria de precisão de recuperação em sistemas enterprise
+- Cohere Rerank 3.5: 23.4% sobre hybrid search; reduz irrelevantes de 30–40% para <10%
+
+### Latência
+- Cross-encoder em ~30 candidatos: 100–200ms por query (CPU)
+- Cross-encoder em GPU: <50ms
+- Para o Mnemosyne RAG interativo (P2): aceitável se reranker for leve (ms-marco-MiniLM)
+- Modelos leves de reranking: ms-marco-MiniLM-L-6-v2, BGE-reranker-base
+
+### FlashRank — reranking ultraleve sem GPU
+Biblioteca Python que usa modelos ONNX quantizados para reranking, sem GPU, ~10ms/query em CPU.
+Ideal para máquinas sem GPU discreta (Windows 10) ou para não usar a VRAM do modelo principal.
+
+---
+
+## 11. Embeddings — eficiência vs qualidade
+
+Papers:
+- arxiv.org/abs/2205.13147 (Matryoshka Representation Learning — NeurIPS 2022)
+- arxiv.org/abs/2510.12474 (SMEC: Sequential Matryoshka, 2024)
+- arxiv.org/abs/2505.02266 (Parameter-Efficient Transformer Embeddings, 2025)
+- arxiv.org/html/2406.01607 (MTEB survey, 2024)
+
+### Matryoshka Representation Learning (MRL)
+Treina embeddings que funcionam bem em múltiplas dimensões (1024, 512, 256, 128...).
+Permite usar dim=128 (muito rápido, baixo RAM) ou dim=768 (máxima qualidade) dependendo do contexto.
+Resultado: até 14× menor embedding para a mesma acurácia em ImageNet-1K.
+Aplicação: nomic-embed-text v2 e Jina embeddings suportam MRL → Mnemosyne pode usar dim=256
+para busca inicial (mais rápido, menos RAM) e dim=768 para reranking.
+
+### Modelos recomendados por perfil de hardware
+
+| Perfil   | Modelo                          | Params  | Dimensão | Nota                                     |
+|---------|---------------------------------|---------|----------|------------------------------------------|
+| high    | nomic-embed-text v1.5           | 137M    | 768/128* | MRL, multilingual, via Ollama            |
+| medium  | nomic-embed-text v1.5           | 137M    | 768/128* | Mesma via Ollama (MX150 aguenta)         |
+| low     | EmbeddingGemma (Google, 2025)   | 308M    | 256      | <200MB quant, CPU puro, 100+ línguas     |
+| low     | paraphrase-multilingual-miniLM  | 117M    | 384      | Via Ollama; alternativa leve             |
+*MRL: pode usar dim reduzida
+
+### EmbeddingGemma (Google, 2025)
+- 308 M parâmetros, <200 MB quantizado, CPU-only com <200 MB de RAM
+- Multilingual (100+ línguas), baseado em Gemma 3
+- Compatível com sentence-transformers, Ollama, LangChain, llama.cpp
+- Ideal para i5-3470 (Windows 10, sem GPU, sem AVX2)
+- VERIFICAR: se requer AVX2 antes de adotar no perfil low
+
+### KaLM-Embedding-V2 (2025)
+State-of-the-art com <0.5B parâmetros, compete com modelos 3–26× maiores em MTEB.
+Demonstra que compacidade + dados de qualidade supera escala bruta.
+
+### Overhead LangChain vs chamada direta
+- OllamaEmbeddings (langchain_community): 1000–2000ms por chamada
+- Chamada direta /api/embed: 200–300ms, utilização GPU 70–80%
+- /api/embed aceita array de strings em uma única chamada HTTP:
+  {"model": "nomic-embed-text", "input": ["texto1", "texto2", ...]}
+- Impacto no ecossistema: index_single_file() deve usar /api/embed diretamente, não add_documents()
+Fonte: github.com/ollama/ollama/issues/7400
+
+---
+
+## 12. Quantização do índice vetorial — redução de memória
+
+Fontes: huggingface.co/blog/embedding-quantization; qdrant.tech/articles/what-is-vector-quantization;
+        mongodb.com/blog/product-release-announcements/binary-quantization-rescoring
+
+### Tipos de quantização vetorial
+
+| Tipo       | Redução de memória | Qualidade retida | Método de compensação     |
+|-----------|---------------------|------------------|---------------------------|
+| float32   | 1× (referência)     | 100%             | —                         |
+| float16   | 2×                  | ~100%            | —                         |
+| int8 (scalar) | 4×             | 99%+             | Rescoring automático      |
+| int4      | 8×                  | 95–98%           | Rescoring recomendado     |
+| binary    | 32×                 | 95% com rescoring| Rescoring obrigatório     |
+
+### Binary Quantization + Rescoring (MongoDB Atlas, 2025)
+96% menos memória com 95% de precisão de busca retida via rescoring automático.
+ChromaDB 2025 (Rust rewrite): ainda não tem quantização nativa documentada.
+Qdrant: quantização scalar e binary nativas com rescoring automático.
+
+### Implicação para Mnemosyne (ChromaDB)
+O ChromaDB atual armazena float32. Para Mnemosyne com índice grande, considerar:
+1. Migrar para Qdrant (em disco, com quantização nativa) se o índice ultrapassar 10M vetores
+2. Ou usar dim=256 (MRL) para reduzir tamanho sem perda de qualidade relevante
+
+---
+
+## 13. Índices vetoriais — HNSW vs FAISS — benchmarks
+
+Fontes: vectroid.com/resources/hnsw-vs-faiss; zilliz.com/blog/faiss-vs-hnswlib;
+        arxiv.org/pdf/2602.11443; mdpi.com/2076-3417/15/19/10554
+
+### HNSW (Hierarchical Navigable Small Worlds)
+- Melhor para queries em tempo real (< 10ms em SIFT1M, ~95% recall@10)
+- HNSWlib: tudo em RAM, sem GPU, muito rápido no CPU; sem suporte a GPU
+- Construção lenta (CPU): horas para índices grandes (100M+ vetores)
+- ChromaDB usa HNSW (via hnswlib); Qdrant usa HNSW customizado
+
+### FAISS + CAGRA (GPU)
+- CAGRA (NVIDIA, GPU): construção 12× mais rápida que HNSW no CPU
+- Queries: CAGRA supera HNSW em throughput batch em GPU
+- CPU-only FAISS (IVFFlat): inferior ao HNSW em recall/throughput para queries pontuais
+- Para o ecossistema (desktop, sem servidor): HNSW é a escolha certa
+
+### pgvectorscale (benchmarks maio 2025)
+471 QPS a 99% recall em 50M vetores — 11.4× melhor que Qdrant (41 QPS).
+Relevante se o ecossistema migrar para PostgreSQL como backend.
+
+### Recomendação prática
+Para o volume atual do Mnemosyne (< 10M documentos):
+- ChromaDB (HNSW, in-process) é suficiente e sem overhead de servidor
+- Se RAM do índice > 8 GB ou latência > 50ms: migrar para Qdrant (quantização scalar)
+
+---
+
+## 14. Batching — throughput vs latência
+
+Papers: arxiv.org/pdf/2010.13103 (LazyBatching); mdpi.com/1424-8220/26/4/1101 (IoT pipelines);
+        arxiv.org/html/2510.14392 (FairBatching); baseten.co/blog/continuous-vs-dynamic-batching
+
+### Static vs Continuous batching
+- Static: batch todo junto, espera todos finalizarem; melhor para offline (4–8× throughput)
+- Continuous: cada sequência termina independentemente, substitui imediatamente novo request
+  → 2–3× throughput em cargas mistas; ideal para chat interativo (P1/P2)
+  → benefício real proporcional à variância de tamanho de output
+
+Para o ecossistema:
+- P1 (chat) e P2 (RAG): continuous batching (Ollama já faz isso internamente)
+- P3 (embeddings background): static batching com batch grande = mais throughput
+
+### Batch size ótimo para embeddings
+- Throughput cresce com batch size até saturar a banda de memória
+- Para nomic-embed-text em RX 6600 (8 GB): batch de 64–128 chunks por chamada /api/embed
+- Para nomic-embed-text em CPU (i5-3470): batch de 8–16 chunks (limitação de RAM bandwidth)
+- Regra: medir experimentalmente, returns diminuem após 64 em GPUs de consumo
+
+### Dynamic batching adaptativo (2024–2025)
+Monitora latência e memória em tempo real, ajusta batch size dinamicamente.
+Resultado: 8–28% ganho de throughput vs batching estático; 22% ganho de capacidade.
+Implementação simples: expor batch_size como configuração por perfil no LOGOS.
+
+---
+
+## 15. Scheduling e prioridade de processos — nível de OS
+
+Fontes: scoutapm.com/blog/restricting-process-cpu-usage;
+        digitize.au/blogs/making-processes-play-nice-linux-nice-ionice;
+        technops.com/linux-process-scheduling-nice-renice-and-ionice
+
+### Linux: nice, ionice, cgroups, cpulimit, systemd
+
+| Mecanismo     | O que faz                                          | Granularidade           |
+|--------------|----------------------------------------------------|-------------------------|
+| nice          | Prioridade de escalonamento CPU (−20 a +19)        | Processo                |
+| ionice        | Prioridade de I/O (classe idle, best-effort, RT)   | Processo                |
+| cpulimit      | Limita CPU por % via SIGSTOP/SIGCONT              | Processo, preciso       |
+| cgroups v2    | Controle hierárquico de CPU, RAM, I/O, GPU         | Grupo de processos      |
+| systemd unit  | Nice=15, IOSchedulingClass=idle, CPUQuota=30%      | Serviço managed         |
+
+### Estratégia para o ecossistema
+- Ollama em P3: lançar com `nice -n 10 ollama serve` ou `renice 10 $(pgrep ollama)`
+- Python KOSMOS background: `os.nice(10)` no worker thread
+- Mnemosyne idle indexer: `os.nice(15)` + `ionice -c 3` no processo de indexação
+- Windows: `SetPriorityClass(ABOVE_NORMAL → BELOW_NORMAL)` via ctypes; sem ionice
+
+### Linux cgroups para o Ollama
+Criar grupo específico para P3:
+- CPU: `CPUWeight=20` (vs 100 para P1)
+- MemoryMax: limitar RAM total disponível para Ollama em P3
+Vantagem: controle sem monitoramento ativo — o kernel faz o enforcement.
+
+---
+
+## 16. mmap — carregamento rápido de modelos
+
+Fontes: markaicode.com/memory-mapped-models-load-large-llms-faster;
+        usenix.org/system/files/osdi24-fu.pdf (ServerlessLLM);
+        justine.lol/mmap (Edge AI Just Got Faster)
+
+### Como funciona
+mmap carrega pesos via virtual memory mapping: o OS faz page-in apenas das páginas
+acessadas, evitando leitura completa do arquivo. O kernel evicta páginas sob pressão
+em vez de matar o processo.
+
+### Performance
+- llama.cpp com mmap: até 100× mais rápido para carregar o modelo vs leitura C++ padrão
+- Usa metade da RAM vs carregamento completo (páginas compartilhadas entre processos)
+- ServerlessLLM: 6–8× mais rápido que PyTorch/Safetensors para modelos grandes
+
+### Caveats importantes (2025)
+Em alguns sistemas (DGX Spark com kernel recente), mmap é 2–4× mais lento que não-mmap.
+Depende fortemente do filesystem e versão do kernel. Em SSDs NVME rápidos (ecossistema):
+mmap tende a ser melhor para modelos grandes (Llama 3 8B); indiferente para modelos pequenos.
+Ollama usa mmap por padrão quando disponível.
+
+---
+
+## 17. Disk offload — swap de pesos para NVMe
+
+Papers: atlarge-research.com/pdfs/2025-cheops-llm.pdf (I/O offload study);
+        arxiv.org/html/2511.11907 (KVSwap)
+
+Estudo CHEOPS 2025: characteriza I/O de offload de pesos e KV cache para NVMe SSD.
+Gargalo: bandwidth PCIe (típico: 32–64 GB/s em PCIe 4.0 × 4) vs HBM (1–3 TB/s).
+Overhead de swap de pesos é dominado pela bandwidth do barramento, não pela latência.
+
+Para MX150 (2 GB VRAM): disk offload de pesos é viável para modelos 3B Q4 (~2 GB)
+se o SSD for NVMe rápido. Com SSDs SATA (500 MB/s), impraticável.
+Configuração Ollama: num_gpu=0 (CPU-only) ou num_gpu=N (partial offload) por modelo.
+
+---
+
+## 18. Bateria e gerenciamento de energia
+
+Fontes: phoronix.com/news/Power-Profiles-Daemon-0.21; wikipedia.org/wiki/UPower;
+        arxiv.org/html/2603.19584 (PowerLens, 2026)
+
+### UPower / DBus (Linux)
+Interface: org.freedesktop.UPower no barramento de sistema.
+Campos: OnBattery (bool), Percentage (float), TimeToEmpty (int), State (enum).
+Crate Rust: `battery` (cross-platform) ou `zbus` (para DBus raw).
+Power Profiles Daemon v0.21: ajusta perfil de CPU automaticamente por AC/bateria.
+
+### PowerLens — LLM para gerenciamento de energia (2025)
+Pesquisa: usa LLM como agente de gerenciamento de recursos em nível de sistema.
+38.8% de economia de energia vs padrão Android mantendo satisfação de usuário > 4.3/5.
+Relevante como referência de abordagem; não é implementação direta para o ecossistema.
+
+### Estratégia para laptop Lenovo (MX150)
+- OnBattery=true: suspender P3 completamente; keep_alive="0" em todo request; num_thread=2
+- LOGOS muda para "Modo Bateria": badge no LogosPanel, nenhuma indexação automática
+- OnBattery=false: comportamento normal
+
+---
+
+## 19. Speculative decoding — aceleração de inferência
+
+Papers: arxiv.org/abs/2402.01528 (Decoding Speculative Decoding, 2025);
+        arxiv.org/html/2504.06419 (SPIRe, 2025);
+        arxiv.org/html/2312.11462 (Cascade Speculative Drafting, 2025)
+
+Técnica: modelo de rascunho (draft model pequeno) gera N tokens; modelo alvo verifica
+em batch. Se o draft estava correto, todos N tokens são aceitos em 1 forward pass.
+Speedup típico: 2–3× sem perda de qualidade (a verificação garante equivalência exata).
+
+### Condições de eficácia
+- Draft model deve ser ≥ 10× menor que o modelo alvo
+- Batch size pequeno: draft model pequeno > draft model grande (bottleneck é peso, não KV)
+- Tokenização idêntica entre draft e target é necessária
+
+### Aplicabilidade ao ecossistema
+Para RX 6600 com Llama 3 8B: usar SmolLM2 1.7B como draft model.
+Ollama não suporta speculative decoding nativamente ainda (2026-04).
+llama.cpp suporta via --draft-model. Para o ecossistema, viável apenas se chamar llama.cpp
+diretamente (bypass Ollama) para sessões longas de chat (P1).
+
+---
+
+## 20. Adaptabilidade multi-hardware — perfil automático
+
+Ferramenta de referência: github.com/AlexsJones/llmfit (detecta RAM, CPU, GPU, pontua modelos)
+Fontes: dasroot.net/posts/2026/04/mapping-local-llm-landscape-2025
+
+### Matriz de perfis para o ecossistema
+
+| Perfil  | Máquina               | Modelo chat     | Embedding              | P3 threshold               |
+|--------|-----------------------|-----------------|------------------------|----------------------------|
+| high   | RX 6600 8GB, 16GB RAM | Llama 3.2 3B    | nomic-embed-text v1.5  | VRAM>85%, CPU>85%, RAM<1.5G|
+| medium | MX150 2GB, 11GB RAM   | SmolLM2 1.7B    | nomic-embed-text v1.5  | VRAM>75%, bateria, CPU>80% |
+| low    | i5-3470, 8GB, sem GPU | SmolLM2 1.7B CPU| EmbeddingGemma (CPU)   | CPU>70%, RAM<1.5GB         |
+
+### Parâmetros Ollama por perfil (a configurar no startup do LOGOS)
+
+| Env var                    | high      | medium    | low       |
+|---------------------------|-----------|-----------|-----------|
+| OLLAMA_MAX_LOADED_MODELS   | 2         | 1         | 1         |
+| OLLAMA_GPU_OVERHEAD (bytes)| 524288000 | 209715200 | 0         |
+| OLLAMA_FLASH_ATTENTION     | true      | true      | false*    |
+| OLLAMA_NUM_PARALLEL        | 2         | 1         | 1         |
+*low não tem GPU, flash attention não se aplica
+
+---
+
+## 21. ChromaDB vs Qdrant — decisão para Mnemosyne
+
+Fontes: airbyte.com/data-engineering-resources/chroma-db-vs-qdrant;
+        qdrant.tech/benchmarks; liquidmetal.ai/casesAndBlogs/vector-comparison
+
+### ChromaDB (atual Mnemosyne)
+- Simples, embedded in-process (sem servidor separado), API Python idiomática
+- 2025: rewrite em Rust entregou 4× faster writes/queries, multithreading real
+- Sem quantização nativa documentada, sem filtros escaláveis
+- Adequado para < 10M vetores — ecossistema atual
+
+### Qdrant
+- Rust nativo, server-based (separado do processo Python)
+- Quantização scalar (4×) e binary (32×) nativas com rescoring automático
+- Filtros avançados com payload indexing
+- Melhor para > 10M vetores ou quando RAM do índice for gargalo
+
+### Recomendação
+Manter ChromaDB enquanto o índice ficar em < 10M vetores.
+Gatilho para migrar para Qdrant: index RAM > 4 GB ou latência P50 > 50ms.
+Versão futura: Qdrant embedded (sem servidor) disponível — mesma API local do ChromaDB.
+
+---
+
+## 22. Fontes — artigos científicos e documentação primária
+
+### Papers arXiv / ACM / USENIX (por tema)
+
+Scheduling e memória de inferência:
+- https://arxiv.org/abs/2309.06180 — PagedAttention / vLLM (SOSP 2023)
+- https://arxiv.org/abs/2411.01142 — NEO: CPU Offloading for LLM Inference (2024)
+- https://arxiv.org/html/2506.03296 — APEX: Async CPU-GPU Execution (2026)
+- https://arxiv.org/html/2503.09304 — Priority-Aware Preemptive Scheduling MoE (2025)
+- https://arxiv.org/html/2411.11560 — Topology-aware Preemptive Scheduling (2024)
+- https://arxiv.org/html/2504.11320 — Fluid-Guided Online Scheduling (2026)
+- https://arxiv.org/html/2411.15715 — ScheInfer: Task Scheduling for LLM Inference (2024)
+- https://arxiv.org/html/2508.08448 — GPU Multitasking in the Era of LLM (2025)
+
+KV Cache:
+- https://arxiv.org/abs/2412.19442 — Survey on KV Cache Management (2024)
+- https://arxiv.org/pdf/2510.09665 — LMCache (2024)
+- https://arxiv.org/html/2604.19769 — TTKV: Temporal-Tiered KV Cache (2025)
+- https://arxiv.org/html/2603.20397 — KV Cache Optimization Strategies (2025)
+- https://arxiv.org/abs/2511.11907 — KVSwap: Disk-based KV Cache Offloading (2024)
+
+Quantização e hardware:
+- https://arxiv.org/html/2505.06461 — CPUs Outperforming GPUs (2025)
+- https://arxiv.org/html/2311.00502 — Efficient LLM Inference on CPUs (2023)
+- https://arxiv.org/html/2410.04466 — Hardware Perspective Survey (2024)
+- https://arxiv.org/html/2604.18529 — HybridGen: CPU-GPU Hybrid (2026)
+
+RAG e Chunking:
+- https://arxiv.org/abs/2504.19754 — Advanced Chunking Strategies (2025)
+- https://arxiv.org/html/2604.01733 — BM25 to Corrective RAG (2025)
+- https://arxiv.org/html/2404.07220 — Blended RAG (2024)
+- https://arxiv.org/pdf/2503.23013 — DAT: Dynamic Alpha Tuning (2025)
+- https://arxiv.org/html/2506.00054 — RAG Survey (2025)
+- https://aclanthology.org/2025.icnlsp-1.15.pdf — Semantic Chunking (2025)
+
+Embeddings:
+- https://arxiv.org/abs/2205.13147 — Matryoshka Representation Learning (NeurIPS 2022)
+- https://arxiv.org/abs/2510.12474 — SMEC: Sequential Matryoshka (2024)
+- https://arxiv.org/abs/2505.02266 — Parameter-Efficient Transformer Embeddings (2025)
+- https://arxiv.org/html/2406.01607 — MTEB Survey (2024)
+- https://arxiv.org/abs/2407.20243 — Matryoshka-Adaptor (2024)
+- https://arxiv.org/html/2503.01776 — Beyond Matryoshka: Sparse Coding (2025)
+
+Speculative decoding:
+- https://arxiv.org/abs/2402.01528 — Decoding Speculative Decoding (2025)
+- https://arxiv.org/html/2504.06419 — SPIRe (2025)
+- https://arxiv.org/html/2312.11462 — Cascade Speculative Drafting (2025)
+
+Retrieval sparse/hybrid:
+- https://arxiv.org/html/2511.22263 — SPLADE on Billion-Scale (2024)
+- https://dl.acm.org/doi/10.1145/3634912 — Effective Sparse Neural Retrieval (2024)
+- https://arxiv.org/html/2508.17694 — Semantic Search Survey (2025)
+
+Outras fontes técnicas:
+- https://github.com/ollama/ollama/blob/main/envconfig/config.go
+- https://github.com/ollama/ollama/issues/7400 — Embedding overhead LangChain
+- https://docs.rs/sysinfo/latest/sysinfo/ — Crate sysinfo (Rust)
+- https://developers.googleblog.com/en/introducing-embeddinggemma/
+- https://qdrant.tech/benchmarks/
+- https://huggingface.co/blog/embedding-quantization
+- https://www.glukhov.org/post/2025/05/how-ollama-handles-parallel-requests/
+- https://dasroot.net/posts/2026/01/ollama-performance-tuning-gpu-acceleration-model-quantization/
+
+---
+
+## 23. KOSMOS — otimizações específicas
+
+### Bugs encontrados na análise do código
+
+a) `generate_stream()` em `KOSMOS/app/core/ai_bridge.py` (linha ~162) chama Ollama diretamente
+   via `self._session.post(f"{self._endpoint}/api/generate")`, bypassando o `request_llm` do
+   ecosystem_client e, portanto, todo o sistema de prioridades do LOGOS. Isso significa que
+   leituras em streaming no KOSMOS (P1) não estão registradas no LOGOS e não interrompem P3.
+   Fix: usar `_request_llm(..., stream=True)` que já suporta streaming.
+
+b) `embed()` (linha ~207) também chama `self._endpoint` diretamente (porta 11434, não 7072),
+   bypassando o proxy do LOGOS. Para embeddings P3, keep_alive="0" nunca é injetado.
+   Fix: redirecionar para o endpoint do LOGOS ou passar por `ecosystem_client`.
+
+c) Nenhum `os.nice()` nos workers de background:
+   `BackgroundUpdater` (QThread) e `BackgroundAnalyzer` (QThread) não definem prioridade de OS.
+   O `IdlePriority` do Qt afeta apenas o GIL Python, não o scheduler do kernel.
+
+### Trafilatura vs BeautifulSoup — extração de conteúdo
+Fontes: trafilatura.readthedocs.io/en/latest/evaluation; github.com/scrapinghub/article-extraction-benchmark
+
+Benchmark ScrapingHub (artigos de notícias, corpus 2024):
+- Trafilatura 0.5+: F1 = 0.945 ± 0.009, precisão = 0.925, recall = 0.966
+- BeautifulSoup 4.13: F1 = 0.665 ± 0.015, precisão = 0.499, recall = 0.994
+- Newspaper4k: F1 intermediário (~0.78)
+- go_trafilatura: F1 = 0.960 ± 0.007 (melhor geral)
+
+Trafilatura remove boilerplate (headers, footers, navegação, anúncios) com heurísticas
+sofisticadas. BeautifulSoup extrai tudo indiscriminadamente (recall alto, precisão baixa).
+Conteúdo limpo = menos tokens = embedding de maior qualidade = análise de IA mais precisa.
+
+`ecosystem_scraper.py` usa cascade (readability → bs4 → html2text) — substituir a segunda
+etapa do cascade por Trafilatura melhora qualidade sem mudar a arquitetura.
+
+### Deduplicação de artigos RSS — fingerprint de conteúdo
+Fonte: postly.ai/rss-feed/filtering-deduplication; FeedHash Corpus 2024 (12.7M itens)
+
+Problema: 29% de feeds RSS emitem GUIDs duplicados ou incorretos. GUID sozinho é insuficiente.
+Solução robusta: SHA-256 de (title_normalizado + pubDate_ISO + link_canônico).
+Resultados empiricamente validados:
+- Redução de 92–100% em ingestão de duplicatas (147 feeds monitorados, FeedOps Benchmark 2024)
+- Redução de 11–19% em uso de CPU de background
+
+Estratégia de fallback em camadas:
+1. GUID exato → mais rápido, mas 29% de feeds têm GUIDs problemáticos
+2. URL canônica normalizada (strip utm_*, lowercase hostname, strip trailing slash)
+3. SHA-256 de (title_norm + date_ISO + url_norm) → 99.98% de resistência a colisões
+4. SimHash do body do artigo → para detectar re-publicações com título diferente
+
+### SimHash para detecção de near-duplicatas
+Fontes: github.com/scrapinghub/python-simhash; spotintelligence.com/simhash
+
+SimHash: fingerprint de 64 bits onde documentos similares têm hashes similares (distância de Hamming).
+Diferente de SHA-256 (hash exato), SimHash detecta near-duplicatas (≥85% de conteúdo igual).
+Usos: detectar artigos re-publicados com pequenas edições, artigos syndicated de mesma agência.
+
+Biblioteca: `python-simhash` (ScrapingHub) — eficiente em Python puro.
+Custo: O(n×k) para n artigos e k shingles por artigo — escalável até 100k artigos.
+Armazenamento: 8 bytes por artigo (uint64) no SQLite.
+
+### ETag / Last-Modified para feeds RSS
+O FeedFetcher do KOSMOS deve enviar `If-None-Match` / `If-Modified-Since` em requests RSS.
+Servidores RSS que suportam cache HTTP retornam 304 Not Modified se sem novidades.
+Economia: 40–60% menos bandwidth e CPU de parsing em feeds frequentes.
+Implementação: `feedparser` suporta ETag e Last-Modified nativamente via `feedparser.parse(url, etag=..., modified=...)`.
+
+---
+
+## 24. AKASHA — otimizações específicas
+
+### Bugs encontrados na análise do código
+
+a) `_search_chroma()` em `AKASHA/services/local_search.py` (linha ~247) cria um novo
+   `chromadb.PersistentClient(path=index_path)` a CADA chamada de busca. Abrir um cliente
+   ChromaDB envolve I/O de disco e inicialização de estado — custo desnecessário repetido.
+   Fix: cachear o cliente como módulo-level singleton ou no objeto de estado da app.
+
+b) `rank_combined()` (linha ~281) usa contagem simples de keywords (`_score()`) para fundir
+   resultados FTS5 e ChromaDB, sem considerar os scores de relevância retornados por cada
+   método. A ChromaDB retorna distância euclidiana; FTS5 retorna bm25(). Ignorá-los e usar
+   contagem de termos descarta informação valiosa.
+   Fix: usar Reciprocal Rank Fusion (RRF) com os ranks de cada método.
+
+c) `_extract_kosmos()` e `_extract_aether()` truncam o body em 8000 caracteres para o FTS.
+   Documentos longos (papers AKASHA, notas longas do AETHER) perdem conteúdo do meio/fim.
+   FTS5 com content table (externa) pode indexar o texto completo sem duplicar storage.
+
+### SQLite FTS5 — otimizações disponíveis
+Fonte: sqlite.org/fts5.html; thelinuxcode.com/sqlite-full-text-search-fts5
+
+BM25 built-in: AKASHA já usa `ORDER BY bm25(local_fts, 0, 10, 1, 0)` — correto.
+Pesos de coluna: o segundo argumento do bm25() é peso por coluna; os pesos atuais (0,10,1,0)
+priorizam title corretamente.
+
+Otimizações disponíveis não exploradas:
+- `prefix="2 3 4"` na criação da tabela FTS: índice de prefixo para autocomplete sem varredura
+- `content=tabela_externa`: FTS sem duplicar o texto (só o índice invertido), economizando disco
+- `columnsize=0`: remove tabela de estatísticas de tamanho de coluna (économise espaço se não usar BM25 ponderado por comprimento — mas AKASHA usa BM25, então manter)
+- `detail=none` ou `detail=column`: reduz tamanho do índice mas elimina `snippet()` e `highlight()` — AKASHA usa snippet(), então manter `detail=full`
+- Tokenizer: usar `unicode61` (padrão) com `remove_diacritics=2` para matching acentuado:
+  "açaí" corresponde a "acai" — relevante para corpus em português
+
+### Crawler — conteúdo duplicado e ETag
+O crawler do AKASHA (`services/crawler.py`) usa URL normalizada como dedup, mas não:
+- Verifica ETag/Last-Modified (re-crawla páginas sem mudança desperdiçando requests)
+- Deduplica por hash de conteúdo (duas URLs diferentes com mesmo conteúdo são indexadas duas vezes)
+
+Fix:
+- Armazenar ETag e Last-Modified junto à URL crawlada; enviar If-None-Match/If-Modified-Since no re-crawl
+- Calcular SHA-256 do conteúdo extraído; salvar na tabela; recusar URLs que já têm esse hash
+
+### Trafilatura para o AKASHA
+Mesma lógica do KOSMOS: `ecosystem_scraper.extract` usa cascade com BeautifulSoup como fallback.
+Para o AKASHA, páginas de biblioteca/pessoais têm estrutura variada — Trafilatura lida melhor.
+Benefício adicional: menos boilerplate nos artigos indexados pelo FTS = busca mais precisa.
+
+### Crawling adaptativo por resposta do servidor
+Fonte: zyte.com/blog/how-to-crawl-the-web-politely; substack.thewebscraping.club/p/rate-limit-scraping-exponential-backoff
+
+`_CRAWL_CONCURRENCY = 4` é fixo. AutoThrottle (Scrapy) usa a fórmula:
+  delay_atual = response_time / AUTOTHROTTLE_TARGET_CONCURRENCY
+Adaptação simples para o crawler AKASHA:
+- Se response_time > 2s: reduzir concorrência para 2
+- Se response_time < 500ms: aumentar até 8
+- Backoff exponencial em 429/503: base_delay * 2^n_retries + jitter
+
+---
+
+## 25. Fontes adicionais — KOSMOS e AKASHA
+
+- https://trafilatura.readthedocs.io/en/latest/evaluation.html
+- https://github.com/scrapinghub/article-extraction-benchmark
+- https://github.com/adbar/trafilatura
+- https://github.com/scrapinghub/python-simhash
+- https://postly.ai/rss-feed/filtering-deduplication
+- https://www.sqlite.org/fts5.html
+- https://thelinuxcode.com/sqlite-full-text-search-fts5-in-practice-fast-search-ranking-and-real-world-patterns/
+- https://www.zyte.com/blog/how-to-crawl-the-web-politely-with-scrapy/
+- https://substack.thewebscraping.club/p/rate-limit-scraping-exponential-backoff
+
+---
+
+## AKASHA — Busca, Crawling e Indexação
+
+PESQUISA — Funcionamento, Otimização e Gerenciamento em Buscadores
+Data: 2026-04-24
+Contexto: informar melhorias no AKASHA (FastAPI + SQLite FTS5 + crawler BFS próprio)
+
+================================================================================
+1. ARQUITETURA GERAL DE BUSCADORES (Google e equivalentes)
+================================================================================
+
+Os grandes buscadores funcionam em três estágios encadeados:
+
+1a. CRAWLING
+------------
+Um agente automatizado (Googlebot, no caso do Google) descobre URLs de três formas:
+páginas já conhecidas, links extraídos de páginas visitadas, e sitemaps enviados
+explicitamente. Desde julho de 2024, o Google usa exclusivamente o smartphone
+crawler (mobile-first indexing completo).
+
+O crawler opera com um "crawl budget" por site — limite de tempo e recursos que o
+Google dedica a rastrear um domínio. É determinado por dois fatores:
+  - crawl capacity limit: quanto o servidor do site aguenta sem degradar
+  - crawl demand: quão popular/frequentemente atualizado é o conteúdo
+
+Otimizações relevantes:
+  - robots.txt bloqueia seções irrelevantes (não use para redirecionar budget)
+  - sitemaps devem listar apenas URLs canônicas e desejadas para indexação
+  - links internos sinalizam importância: páginas ligadas de nós de alta autoridade
+    recebem mais atenção do crawler
+  - conteúdo duplicado (sem canonical) desperdiça budget: o crawler processa a página
+    mas não a indexa
+
+1b. INDEXAÇÃO
+-------------
+Após o crawl, o conteúdo é analisado e armazenado no índice invertido.
+O Google mantém múltiplos tiers de índice com prioridades e frequências de
+atualização diferentes — não existe um índice único.
+
+Processos na indexação:
+  - canonicalização: identificar qual URL representa o "grupo" de páginas similares
+  - deduplicação near-duplicate: fingerprinting para detectar conteúdo quase-idêntico
+  - extração de metadata: título, autor, data, entidades, idioma
+  - construção do inverted index: mapa de termos → lista de documentos + posições
+
+1c. RANKING
+-----------
+O sistema de ranking atual (pós-2024) usa múltiplas camadas:
+  - Ascorer: avaliação primária (vazado nas Google API Leaks 2024)
+  - BERT/MUM: compreensão semântica de query e documento
+  - RankBrain: aprendizado de máquina para queries nunca vistas antes
+  - Twiddlers: ajustes baseados em sinais adicionais (freshness, localidade, etc.)
+  - Core Web Vitals: métricas de UX incluindo INP (Interaction to Next Paint)
+    substituiu FID como métrica oficial em março de 2024
+
+================================================================================
+2. ÍNDICE INVERTIDO — ESTRUTURA E COMPRESSÃO
+================================================================================
+
+A estrutura central de um buscador é o inverted index: um mapeamento de termos
+para listas de postings (IDs de documentos + posições). Em escala, essas listas
+contêm bilhões de inteiros.
+
+Técnicas de compressão de posting lists:
+  - d-gaps (delta encoding): armazenar diferenças entre IDs consecutivos em vez dos
+    IDs absolutos (IDs são monotonicamente crescentes, então as diferenças são pequenas)
+  - Elias-Fano: estrutura quasi-sucinta; busca em tempo O(1) amortizado; uso de memória
+    próximo ao ótimo teórico. Usado em sistemas de produção
+  - PFOR (PForDelta): compressão de blocos de 128 inteiros; bom trade-off entre
+    taxa de compressão e velocidade de decodificação
+  - BIC (Binary Interpolative Code): maior eficiência de espaço, próxima à entropia
+    teórica; mais lento que PFOR
+
+RAM vs disco:
+  - RAM é centenas de vezes mais cara que disco: boa compressão é essencial para
+    manter índices hot em memória
+  - Record-level vs word-level: record-level indexa apenas quais documentos contêm
+    o termo; word-level adiciona posições → permite busca por frase, mais memória
+
+Aplicabilidade ao AKASHA:
+  - SQLite FTS5 já usa um inverted index internamente com compressão própria
+  - Ao criar tabelas FTS5, usar `columnsize=0` (omite backing table de tamanhos de
+    coluna) se não precisar de score por coluna — economiza espaço
+  - Usar external-content tables para evitar dados duplicados (FTS aponta para a
+    tabela principal em vez de guardar cópia do conteúdo)
+
+================================================================================
+3. GERENCIAMENTO DE CRAWL BUDGET E POLITENESS
+================================================================================
+
+Para um crawler pessoal, as boas práticas de "politeness" são:
+
+3a. ROBOTS.TXT
+--------------
+  - Sempre buscar e respeitar {domínio}/robots.txt antes de crawlar
+  - Campos relevantes: User-agent, Disallow, Allow, Crawl-delay, Sitemap
+  - Importante: Google e Bing NÃO respeitam Crawl-delay no robots.txt dos sites
+    que visitam — isso é específico de crawlers menores; mas um crawler pessoal
+    DEVE respeitar para não sobrecarregar servidores pequenos
+  - Implementar cache do robots.txt por domínio (TTL: 24h) para não re-buscar
+
+3b. RATE LIMITING POR DOMÍNIO
+------------------------------
+  - Registrar timestamp do último request por domínio
+  - Só liberar próxima URL do mesmo domínio após elapsed >= crawl_delay
+  - Default recomendado se robots.txt não especifica: 10-15s para sites pequenos,
+    1-2s para sites com permissão explícita ou grandes
+  - Abordagem proativa: fila priorizada com "earliest_available_at" por domínio
+
+3c. BFS COM PRIORIDADE
+-----------------------
+  - BFS puro é adequado para corpus pequeno (< 10k páginas)
+  - Para sites maiores, adicionar score de prioridade baseado em:
+    - profundidade da URL (URLs mais rasas têm mais valor)
+    - PageRank interno estimado (número de links apontando para a URL)
+    - data de modificação se disponível no HTTP header (Last-Modified)
+  - Limitar profundidade por site para não se perder em sites infinitos
+
+3d. APLICABILIDADE AO AKASHA
+------------------------------
+  O AKASHA já respeita depth limit e sitemap discovery. Melhorias possíveis:
+  - Implementar per-domain rate limiting com fila priorizada (não apenas delay global)
+  - Cache de robots.txt com TTL por domínio
+  - Priorizar URLs rasas e ligadas de várias páginas do mesmo site
+
+================================================================================
+4. DEDUPLICAÇÃO — SIMHASH, MINHASH, CANONICAL
+================================================================================
+
+4a. SIMHASH (Google)
+--------------------
+Algoritmo de fingerprinting de 64 bits para near-duplicate detection:
+  1. Tokenizar o documento em n-gramas de palavras
+  2. Para cada token, calcular hash binário de 64 bits
+  3. Acumular: soma vetorial dos hashes (ponderada por frequência)
+  4. Resultado: 64 bits onde cada bit é o sinal da soma acumulada
+
+Dois documentos near-duplicados têm SimHashes que diferem em poucos bits
+(distância de Hamming baixa). Threshold típico: < 3 bits diferentes → duplicata.
+
+Muito eficiente: comparação de dois SimHashes = XOR + popcount → O(1).
+Escala bem: Google usa SimHash para deduplicar bilhões de páginas.
+
+4b. MINHASH (AltaVista, depois Yahoo)
+--------------------------------------
+Estima a similaridade de Jaccard entre dois conjuntos de n-gramas.
+Mais adequado para comparar conjuntos ("estes dois documentos falam dos mesmos
+tópicos?") do que detectar quase-cópias textuais.
+Mais pesado que SimHash para o mesmo propósito de deduplicação exata.
+
+4c. CANONICAL URLS
+------------------
+Um cluster canonical agrupa URLs com conteúdo idêntico ou muito similar sob uma
+URL canônica. Idealmente, os clusters de canonical e os de SimHash devem coincidir.
+
+Casos comuns de duplicação no crawler pessoal:
+  - www.exemplo.com vs exemplo.com
+  - http vs https
+  - URLs com parâmetros de tracking (?utm_source=..., ?ref=...)
+  - Trailing slash: /pagina vs /pagina/
+
+Normalização de URL a aplicar ANTES de qualquer lookup:
+  - lowercased scheme + hostname
+  - remover fragmento (#...)
+  - remover parâmetros de tracking (lista: utm_*, ref, fbclid, gclid, etc.)
+  - normalizar trailing slash consistentemente
+
+4d. APLICABILIDADE AO AKASHA
+------------------------------
+  Atualmente o AKASHA usa content_hash (SHA-256) para detectar páginas idênticas.
+  Melhoria: adicionar SimHash de 64 bits para detectar near-duplicates
+  (páginas com 95%+ do conteúdo igual mas com timestamps ou menus diferentes).
+
+  Implementação Python simples de SimHash:
+    pip install simhash  # ou implementação manual (~30 linhas)
+
+  Ao indexar nova página: calcular SimHash, comparar com hashes já indexados do
+  mesmo domínio. Se distância Hamming < 3: skip ou substituir a versão mais antiga.
+
+================================================================================
+5. SQLite FTS5 — OTIMIZAÇÕES ESPECÍFICAS
+================================================================================
+
+O SQLite FTS5 já usa BM25 internamente — um dos melhores algoritmos de ranking
+léxico. Optimizações pouco usadas mas relevantes:
+
+5a. BM25 COM PESOS DE COLUNA
+------------------------------
+  bm25(tabela, w0, w1, w2, ...) permite ponderar colunas:
+    SELECT * FROM crawl_fts WHERE crawl_fts MATCH 'python'
+    ORDER BY bm25(crawl_fts, 10, 1)  -- título vale 10x mais que body
+
+  IMPORTANTE: ORDER BY bm25(...) sem DESC retorna os PIORES primeiro.
+  Sempre usar: ORDER BY bm25(crawl_fts, 10, 1) (sem DESC no SQLite FTS5,
+  pois scores negativos são usados — menor = mais relevante).
+
+  Verificar: alguns wrappers precisam de negação: ORDER BY -bm25(...) DESC
+
+5b. PREFIX INDEXES
+-------------------
+  Adicionar `prefix="2,3"` na criação da tabela FTS5 pré-computa índices para
+  prefixos de 2 e 3 caracteres — acelera muito queries com * (auto-complete):
+    CREATE VIRTUAL TABLE crawl_fts USING fts5(
+      title, content_md,
+      prefix="2,3",
+      content=crawl_pages, content_rowid=id
+    );
+
+5c. EXTERNAL CONTENT TABLE
+----------------------------
+  Evitar duplicação de dados: FTS5 como external-content table aponta para a
+  tabela principal em vez de guardar cópia. Requer 3 triggers (INSERT/UPDATE/DELETE)
+  para manter o índice sincronizado.
+
+  Já usado no AKASHA (crawl_fts aponta para crawl_pages) — correto.
+
+5d. VACUUM E REBUILD
+---------------------
+  Após muitas inserções/deletions fragmentadas, o índice FTS5 degrada.
+  Executar periodicamente:
+    INSERT INTO crawl_fts(crawl_fts) VALUES('rebuild');  -- reconstrói
+    INSERT INTO crawl_fts(crawl_fts) VALUES('optimize'); -- merge de segmentos
+
+  O 'optimize' é equivalente ao merge do índice delta — consolida fragmentos sem
+  rebuild completo.
+
+5e. LIMITAÇÕES DO FTS5 vs ALTERNATIVAS
+----------------------------------------
+  SQLite FTS5 não suporta busca semântica (vetorial). Para corpus pessoal onde
+  a qualidade de ranking importa mais que a escala, vale considerar:
+  - Meilisearch: busca por typo-tolerance, faceted search, ranking configurável
+    (~10MB RAM idle, bom para corpus até ~1M documentos pequenos)
+  - Tantivy (Rust): núcleo do Quickwit e Meilisearch; porta BM25 + mais opções
+  - Para AKASHA atual: FTS5 é adequado e evita dependências externas
+
+================================================================================
+6. BLOOM FILTER — DEDUPLICAÇÃO DE URLs NO CRAWLER
+================================================================================
+
+Problema: verificar se uma URL já foi visitada. Com milhões de URLs, um set em
+Python usa ~100 bytes/URL = 100MB para 1M URLs.
+
+Bloom filter: estrutura probabilística baseada em array de bits + k funções hash.
+  - Nunca produz falsos negativos (se diz "não visto" é garantido)
+  - Pode produzir falsos positivos (diz "visto" quando não foi — configura-se a taxa)
+  - 90% menos memória: 1.2GB vs 12GB+ para 1 bilhão de URLs (com Redis)
+  - Para crawlers pessoais (< 500k URLs): ~600KB para falso-positivo de 1%
+
+Implementação Python:
+  pip install pybloom-live  # ou mmh3 + bitarray para implementação manual
+
+Parâmetros de calibração:
+  - n (itens esperados) × p (taxa de falso positivo) → tamanho do bit array
+  - n=100_000, p=0.01 → ~120KB; n=1_000_000, p=0.01 → ~1.2MB
+
+Para o AKASHA: o volume atual (< 100k URLs por site) não justifica implementação
+de Bloom filter — o set em memória / lookup em crawl_pages é suficiente. Mas se
+o corpus crescer para múltiplos sites com 100k+ páginas cada, vale implementar.
+
+================================================================================
+7. INDEXAÇÃO INCREMENTAL (MAIN + DELTA)
+================================================================================
+
+O padrão "main + delta" resolve o problema de atualizar um índice sem rebuild:
+  - main index: corpus estável, indexado completamente
+  - delta index: apenas documentos novos/modificados desde o último merge
+
+Delta pode ser reindexado a cada minuto; merge com o main ocorre periodicamente.
+
+Sem merge periódico, o índice degrada por fragmentação — buscas ficam mais lentas
+pois precisam consultar múltiplos segmentos.
+
+Elasticsearch reindexação incremental: near-real-time (NRT), segmentos de ~1s
+Solr delta updates: a cada ~5 minutos
+Manticore Search: delta index com merge configurável
+
+Aplicabilidade ao AKASHA:
+  - FTS5 já usa segmentos internos similares a este padrão
+  - O 'optimize' periódico (seção 5d) é o equivalente do merge
+  - Para crawl_fts: executar optimize após cada batch de crawl grande (> 500 páginas)
+
+================================================================================
+8. TRAFILATURA — QUALIDADE DE EXTRAÇÃO
+================================================================================
+
+Benchmark (Bevendorff et al. 2023, comparação de extratores web):
+  - Trafilatura: melhor F1 médio (0.883) entre ferramentas open-source testadas
+  - Segundo lugar: newspaper4k / readability-lxml (mas bloqueados por lxml 5.x/Python 3.14)
+  - Terceiro: BeautifulSoup + markdownify (fallback manual)
+
+Trafilatura é usado em produção por: HuggingFace, IBM Research, Microsoft Research,
+Allen Institute, Stanford, Tokyo Institute of Technology.
+
+Melhorias no uso atual do AKASHA:
+  - trafilatura.extract() com include_links=False e include_images=False reduz ruído
+    em conteúdo Markdown (links de navegação, alts de imagem)
+  - trafilatura.extract() com favor_precision=True (padrão) prioriza precisão;
+    usar favor_recall=True para páginas com muito JavaScript que truncam o conteúdo
+  - Para páginas JS-heavy onde trafilatura retorna < 50 palavras: Jina Reader
+    já implementado como fallback — correto
+  - Adicionar include_comments=False explicitamente (já é o padrão mas deixar claro)
+
+================================================================================
+9. BUSCADORES SELF-HOSTED — REFERÊNCIAS DE ARQUITETURA
+================================================================================
+
+Categorias existentes:
+  a) Metabuscadores (agregam resultados de outros motores):
+     - SearXNG: Python/Flask, privacidade, sem cache de índice, 30+ fontes
+     - Whoogle: Python, só Google, sem JS, muito leve
+     Limitação: dependem de APIs externas, não indexam conteúdo próprio
+
+  b) Índice próprio descentralizado:
+     - YaCy: Java, P2P, cada node contribui com parte do índice
+     Limitação: lento para corpus pessoal, overhead de coordenação P2P
+
+  c) Full-text search engine para conteúdo próprio:
+     - Meilisearch: Rust, typo-tolerance, faceted search, ~10MB RAM idle
+       API REST simples; muito boa UX de busca; não faz crawling
+     - Tantivy: Rust, Lucene-like, núcleo de vários outros
+     - Zinc/OpenSearch: alternativas ao Elasticsearch mais leves
+
+  O AKASHA é único porque combina crawler próprio + índice FTS5 + metabusca DDG.
+  Isso o coloca numa categoria diferente: buscador pessoal com corpus curado +
+  fallback para web em tempo real.
+
+================================================================================
+FONTES
+================================================================================
+
+- Google Search Central — How Search Works:
+  https://developers.google.com/search/docs/fundamentals/how-search-works
+- Google Crawl Budget Management:
+  https://developers.google.com/crawling/docs/crawl-budget
+- Techniques for Inverted Index Compression (ACM Computing Surveys):
+  https://dl.acm.org/doi/abs/10.1145/3415148
+- Detecting Near-Duplicates for Web Crawling (Manku, Google Inc.):
+  https://research.google.com/pubs/archive/33026.pdf
+- SQLite FTS5 Extension (documentação oficial):
+  https://www.sqlite.org/fts5.html
+- Bloom Filter for URL Deduplication in Crawlers:
+  https://oneuptime.com/blog/post/2026-03-31-redis-bloom-filter-url-deduplication/view
+- Delta Index Updates (Manticore Search):
+  https://docs.manticoresearch.com/3.4.0/html/indexing/delta_index_updates.html
+- Trafilatura — Evaluation:
+  https://trafilatura.readthedocs.io/en/latest/evaluation.html
+- Bevendorff et al. 2023 — Empirical Comparison of Web Content Extraction Algorithms:
+  https://chuniversiteit.nl/papers/comparison-of-web-content-extraction-algorithms
+- Polite Crawling Best Practices (Firecrawl):
+  https://www.firecrawl.dev/glossary/web-crawling-apis/what-is-polite-crawling
+- Compressed Inverted Indexes for In-Memory Search Engines (ResearchGate):
+  https://www.researchgate.net/publication/220982102_Compressed_Inverted_Indexes_for_In-Memory_Search_Engines
+
+================================================================================
+ARTIGOS CIENTÍFICOS — BUSCA, DOWNLOAD E EXTRAÇÃO
+Data: 2026-04-24
+Contexto: integrar busca e arquivamento de papers no AKASHA; indexação no Mnemosyne
+================================================================================
+
+1. APIs DE BUSCA ACADÊMICA
+---------------------------
+
+a) SEMANTIC SCHOLAR
+  Cobertura: 200M+ papers (CS, bio, física, medicina, humanidades)
+  Autenticação: sem chave funciona (pool compartilhado ~1000 req/s total); com chave: 1 RPS garantido
+  Campos úteis: title, authors, abstract, year, externalIds (DOI, arXiv, PubMed), openAccessPdf.url
+  Lib Python: `semantic-scholar-api` no PyPI ou uso direto via httpx (REST simples)
+  Endpoint principal: GET https://api.semanticscholar.org/graph/v1/paper/search?query=...&fields=...
+  Sem custo, não precisa de cadastro para uso básico
+
+b) OPENALEX
+  Cobertura: 250M+ papers, todas as áreas, inclui grey literature
+  ATENÇÃO: desde fevereiro/2026, exige API key (gratuita, créditos diários)
+  Lib Python: `pyalex` (PyPI, suporte a cursor paging)
+  Campo PDF: `open_access.oa_url` — URL direta para PDF quando disponível
+  Melhor cobertura geral, mas requer cadastro para key gratuita
+
+c) ARXIV
+  Cobertura: CS, física, matemática, biologia quantitativa, economia, estatística
+  PDFs sempre gratuitos e diretamente acessíveis em arxiv.org/pdf/{id}
+  Lib sync: `arxiv` (PyPI, madura)
+  Lib async: `aioarxiv` (PyPI, lançada 2025, async nativo com rate limiting)
+  Sem autenticação necessária
+
+d) CORE
+  Cobertura: 300M+ registros de metadados, 40M+ full-text open access
+  Agrega de 10.000+ repositórios institucionais
+  API key gratuita necessária (cadastro em core.ac.uk)
+  Rate limit: 5 requests simples / 1 batch por 10 segundos
+  Oferece URL e bytes do PDF diretamente via API
+
+e) CROSSREF (habanero)
+  Foco: resolução de DOI → metadados bibliográficos completos
+  Lib: `habanero` (PyPI)
+  Não fornece PDFs — apenas metadados (título, autores, journal, ISSN, etc.)
+  "Polite pool": incluir mailto= para prioridade
+  Útil como camada de enriquecimento de metadados quando se tem o DOI
+
+2. DOWNLOAD LEGAL DE PDFs
+--------------------------
+
+a) UNPAYWALL (lib: `unpywall`)
+  Dado um DOI, retorna todas as URLs conhecidas de versões open access
+  Requere apenas email (sem custo, sem cadastro formal)
+  Endpoint: GET https://api.unpaywall.org/v2/{doi}?email=...
+  Lib Python: `unpywall` (PyPI) com `download_pdf_file(doi)` e `get_all_links(doi)`
+  Cobre: versões em repositórios institucionais, preprints, PubMed Central, etc.
+
+b) ARXIV DIRETO
+  URL previsível: https://arxiv.org/pdf/{arxiv_id}
+  Sem autenticação, sem rate limit restritivo para uso pessoal
+
+c) OPENALEX open_access.oa_url
+  Quando disponível, retorna URL direta do PDF na resposta da busca
+
+d) CORE
+  Retorna bytes do PDF diretamente via API (quando full-text disponível)
+
+FLUXO RECOMENDADO (dado um DOI):
+  1. Tentar OpenAlex oa_url (se tiver key)
+  2. Tentar Unpaywall (sempre grátis)
+  3. Tentar arXiv direto (se externalId inclui arXiv ID)
+  4. Tentar CORE (se tiver key)
+
+3. EXTRAÇÃO DE TEXTO DE PDFs
+------------------------------
+
+a) PYMUPDF4LLM (recomendado)
+  Extensão do PyMuPDF que converte PDF → Markdown estruturado
+  CPU-only: sem GPU, sem modelos ML — apenas parsing heurístico de layout
+  Velocidade: ~10x mais rápido que alternativas (benchmark 2025)
+  Lida com: texto, tabelas, cabeçalhos, listas, notas de rodapé
+  Instalação: `pip install pymupdf4llm`
+  Uso: `pymupdf4llm.to_markdown("paper.pdf")`
+  Limitação: equações matemáticas em LaTeX/simbólico são transcritas como símbolos
+              (não há extração semântica de fórmulas — esperado em parsers rule-based)
+  Ideal para hardware alvo (i5-3470, 8GB RAM): processamento puramente CPU, leve
+
+b) PDFPLUMBER
+  Melhor para extração de tabelas com coordenadas
+  Mais lento que PyMuPDF para texto puro
+  Uso: complementar a pymupdf4llm se tabelas forem críticas
+
+c) PYPDF
+  Mais leve, extração básica de texto sem estrutura
+  Fallback quando pymupdf4llm não consegue parsear um PDF
+
+4. INTEGRAÇÃO AKASHA ↔ MNEMOSYNE
+-----------------------------------
+
+Fluxo completo:
+  1. AKASHA busca: Semantic Scholar / arXiv → lista de papers com metadados
+  2. Usuário escolhe paper → AKASHA baixa PDF (Unpaywall → arXiv → CORE)
+  3. AKASHA extrai Markdown com pymupdf4llm
+  4. AKASHA arquiva em data/archive/Papers/{YYYY-MM-DD}_{slug}.md (mesmo padrão do Web/)
+  5. Mnemosyne indexa automaticamente via watched_dir — sem mudanças necessárias no Mnemosyne
+
+Sem dependência de Mnemosyne na cadeia de busca — papers ficam disponíveis
+na busca local do AKASHA (local_fts) logo após o arquivamento.
+
+5. DEPENDÊNCIAS NOVAS
+----------------------
+  - `aioarxiv` — busca async arXiv (≈ 20KB, sem deps pesadas)
+  - `unpywall` — Unpaywall PDF links por DOI (≈ 30KB)
+  - `pymupdf4llm` — extração PDF → Markdown (depende de pymupdf ≈ 15MB)
+  - httpx direto para Semantic Scholar e CORE (sem lib extra)
+  - `pyalex` opcional para OpenAlex (requer key desde fev/2026)
+
+FONTES
+-------
+- Semantic Scholar API: https://www.semanticscholar.org/product/api
+- OpenAlex docs: https://docs.openalex.org/
+- pyalex GitHub: https://github.com/J535D165/pyalex
+- aioarxiv PyPI: https://pypi.org/project/aioarxiv/
+- unpywall PyPI: https://pypi.org/project/unpywall/
+- CORE API: https://core.ac.uk/services/api
+- habanero GitHub: https://github.com/sckott/habanero
+- pymupdf4llm PyPI: https://pypi.org/project/pymupdf4llm/
+- PDF Parsing Comparison 2025: https://dev.to/onlyoneaman/i-tested-7-python-pdf-extractors-so-you-dont-have-to-2025-edition-akm
+- Comparative Study PDF Parsing (arXiv): https://arxiv.org/html/2410.09871v1
+
+================================================================================
+MEDIUM E SUBSTACK — SCRAPING E EXTRAÇÃO DE CONTEÚDO
+Data: 2026-04-24
+Contexto: corrigir falha de extração no AKASHA (fetch_and_extract) e KOSMOS (ArticleScraper)
+================================================================================
+
+1. POR QUE MEDIUM FALHA
+------------------------
+Medium usa paywall em duas camadas:
+  a) Soft paywall (JS overlay): conteúdo presente no HTML mas ocultado por JS.
+     Trafilatura pode extrair o texto, mas a requisição HTTP retorna conteúdo
+     truncado ou com aviso de assinatura.
+  b) Hard paywall (server-side): servidor não envia o corpo do artigo para
+     usuários não autenticados. Trafilatura/readability não conseguem extrair
+     o que não chegou na resposta.
+Adicionalmente, Medium detecta User-Agents de scrapers e pode retornar 403 ou
+HTML vazio mesmo para artigos gratuitos, mesmo com headers realistas.
+
+2. SOLUÇÃO PARA MEDIUM — FREEDIUM
+-----------------------------------
+Freedium (freedium.cfd) é um proxy open-source que acessa Medium via contas
+com assinatura paga e serve o conteúdo sem paywall.
+
+Uso: reescrever a URL antes do fetch:
+  https://medium.com/@author/slug
+  → https://freedium.cfd/https://medium.com/@author/slug
+
+O HTML retornado pelo Freedium é estático e processável por trafilatura normalmente.
+Nenhuma mudança na camada de extração do ecosystem_scraper é necessária.
+
+Ordem de fallbacks (Medium):
+  1. Freedium (fetch via proxy)
+  2. Jina Reader r.jina.ai/{url} (já implementado no AKASHA para < 100 palavras)
+  3. Direto (resultado parcial ou vazio)
+
+Limitações:
+  - Freedium pode estar indisponível (tratar como timeout, continuar cascata)
+  - Uso pessoal tolerado; não usar para automação em massa
+
+3. SUBSTACK — ESTRUTURA HTML
+------------------------------
+Substack é significativamente mais fácil de extrair que Medium:
+  - Sem paywall JS — artigos livres têm HTML completo na resposta
+  - Conteúdo principal em <div class="available-content"> ou <div class="body markup">
+  - Artigos pagos: servidor retorna HTML sem o corpo (esperado, não é bug)
+
+Trafilatura com favor_recall=True (já ativo no ecosystem_scraper) extrai
+corretamente artigos Substack gratuitos na maioria dos casos.
+
+Problema real: o fallback BeautifulSoup no ecosystem_scraper não conhece os
+seletores específicos do Substack. Quando trafilatura/readability falham (e.g.,
+artigo pago ou layout incomum), o BS4 cai direto em <body> capturando navegação
+e rodapés junto com o conteúdo.
+
+Fix: adicionar class_="available-content" e class_="post-content" como candidatos
+no _ext_bs4, antes do fallback para <body>.
+
+4. READABILITY-LXML vs TRAFILATURA vs PUPPETEER
+-------------------------------------------------
+Tanto trafilatura quanto readability falham da mesma forma no hard paywall
+(conteúdo ausente no HTML recebido). Puppeteer/Playwright headless funcionaria
+pois executa JS e pode fazer login, mas é impraticável no hardware alvo
+(i5-3470, 8GB RAM): Chrome consome 300-500MB extra por instância.
+
+Trafilatura com favor_recall=True já é a melhor opção estática disponível.
+
+5. IMPLICAÇÕES PRÁTICAS
+-------------------------
+A correção vive em dois níveis:
+  a) ecosystem_scraper.py:
+     - Nova função pública get_fetch_url(url) → Freedium para medium.com
+     - _ext_bs4: adicionar seletores específicos do Substack antes de <body>
+  b) Callers:
+     - AKASHA/services/archiver.py: usar get_fetch_url() antes do fetch httpx
+     - KOSMOS/app/core/article_scraper.py: usar get_fetch_url() em _fetch_html()
+
+FONTES
+-------
+- Freedium GitHub: https://github.com/Freedium-cfd
+- Jina Reader API: https://jina.ai/reader/
+- Trafilatura Settings: https://trafilatura.readthedocs.io/en/latest/settings.html
+- Substack scraping 2026: https://dev.to/agenthustler/how-to-scrape-substack-newsletters-in-2026-a-complete-guide-2lce
+- Medium anti-scraping 2024: https://medium.com/@datajournal/most-popular-anti-scraping-techniques-in-2024-765473ea0451
+
+================================================================================
+BUSCA E INTEGRAÇÃO DE TORRENTS — Prowlarr, Jackett, qBittorrent Web API
+Data: 2026-04-25
+Contexto: Fase 6 AKASHA — pesquisa de torrents + envio ao qBittorrent
+================================================================================
+
+1. JACKETT — AGREGADOR DE INDEXADORES (LEGADO)
+================================================
+
+Jackett atua como proxy: recebe queries no formato Torznab e as converte para requests
+específicos de cada tracker. Roda localmente na porta 9117.
+
+ENDPOINT DE BUSCA:
+  GET http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/api
+  Parâmetros:
+    apikey = <chave do Jackett, em Settings>
+    t      = search (também: tvsearch, movie)
+    q      = termo de busca (URL-encoded)
+    cat    = categorias separadas por vírgula (ex: 5000,5030,5070 para vídeo)
+    limit  = max resultados (padrão: 1000; Jackett pode ignorar)
+
+  Usar indexer "all" busca em todos os indexadores simultaneamente.
+  Por indexer específico: .../indexers/{indexer-id}/results/torznab/api
+
+FORMATO DE RESPOSTA: XML (RSS Torznab — não JSON)
+  Namespace: xmlns:torznab="http://www.torznab.com/schemas/2015/feed"
+  Estrutura de cada <item>:
+    <title>Nome do Release</title>
+    <link>magnet:?xt=urn:btih:...</link>
+    <guid>https://tracker/torrent/12345</guid>
+    <size>2147483648</size>          <!-- bytes -->
+    <pubDate>Mon, 15 Jan 2024 12:30:00 +0000</pubDate>
+    <torznab:attr name="seeders"  value="42"/>
+    <torznab:attr name="peers"    value="13"/>
+    <torznab:attr name="category" value="5040"/>
+
+  Parsing Python: xml.etree.ElementTree com namespace torznab
+  Extrair atributos: item.findall('torznab:attr', {'torznab': '...'})
+
+AUTENTICAÇÃO: apenas via parâmetro apikey na URL (sem header).
+STATUS: projeto estável mas em manutenção. Prowlarr é o substituto ativo.
+
+2. PROWLARR — AGREGADOR MODERNO (RECOMENDADO)
+==============================================
+
+Prowlarr é o substituto moderno do Jackett, desenvolvido pelo mesmo time que
+Sonarr/Radarr. Possui integração nativa com o ecossistema *arr, mas também
+funciona de forma standalone via sua própria API REST (JSON — não XML).
+Porta padrão: 9696.
+
+ENDPOINT DE BUSCA:
+  GET http://127.0.0.1:9696/api/v1/search
+  Header: X-Api-Key: <chave em Settings → General → Security>
+  Parâmetros:
+    query      = termo de busca
+    indexerIds = -1 (todos) ou lista de IDs separados por vírgula
+    categories = IDs de categoria (ex: 2000 para filmes, 5000 para TV)
+    type       = search | tvsearch | moviesearch
+
+  Exemplo:
+    GET /api/v1/search?query=ubuntu+22.04&indexerIds=-1&type=search
+
+FORMATO DE RESPOSTA: JSON (array de objetos)
+  Campos relevantes por resultado:
+    title       : nome do release
+    seeders     : número de seeders
+    leechers    : número de leechers
+    size        : tamanho em bytes
+    downloadUrl : URL do .torrent (pode ser nulo)
+    magnetUrl   : magnet link (preferir este sobre downloadUrl)
+    indexer     : nome do indexador que retornou o resultado
+    categories  : lista de objetos {id, name}
+    publishDate : data de publicação (ISO 8601)
+    infoHash    : hash SHA-1 do torrent
+    protocol    : "torrent" ou "usenet"
+
+AUTENTICAÇÃO: header HTTP X-Api-Key (não parâmetro de URL).
+STATUS: ativo, desenvolvido ativamente. Suporta mais indexadores que Jackett.
+
+DIFERENÇA JACKETT vs PROWLARR:
+  Jackett:  XML/Torznab, apikey na URL, porta 9117, mais indexadores esotéricos
+  Prowlarr: JSON nativo, header auth, porta 9696, integração *arr, mais moderno
+  Para AKASHA: suportar ambos — Prowlarr prioritário, Jackett como fallback.
+
+3. qBITTORRENT WEB API
+=======================
+
+qBittorrent expõe uma API REST na porta 8080 (configurável). Todas as rotas
+precisam de autenticação via cookie SID, exceto /auth/login.
+
+AUTENTICAÇÃO:
+  POST /api/v2/auth/login
+  Body (form): username=admin&password=adminadmin
+  Resposta: cookie "SID" a usar em todas as requisições seguintes.
+
+  BYPASS LOCALHOST: em Options → Web UI → Authentication → "bypass for localhost"
+  Ou em ~/.config/qBittorrent/qBittorrent.conf: WebUI\LocalHostAuth=false
+  Com bypass ativo, não é necessário fazer login — ideal para integração local.
+
+ADICIONAR MAGNET:
+  POST /api/v2/torrents/add
+  Content-Type: multipart/form-data
+  Campos:
+    urls     = magnet:?xt=urn:btih:...    (um por linha, pode ser múltiplos)
+    savepath = /home/user/Downloads       (opcional)
+    category = nome-categoria             (opcional)
+    paused   = true/false                 (opcional; paused=true para confirmar antes)
+
+  Resposta de sucesso: texto "Ok."
+  Também aceita upload de arquivo: campo "torrents" (multipart file)
+
+LISTAR TORRENTS COM PROGRESSO:
+  GET /api/v2/torrents/info
+  Parâmetros (opcionais):
+    filter = all | downloading | seeding | completed | paused | active | inactive | stalled
+    sort   = any field name (ex: progress, dlspeed, eta)
+    limit  = max resultados
+    offset = paginação
+
+  Resposta JSON — campos relevantes por torrent:
+    name         : nome do torrent
+    hash         : identificador único
+    progress     : float 0..1 (multiplicar por 100 para %)
+    dlspeed      : velocidade download em bytes/s
+    upspeed      : velocidade upload em bytes/s
+    eta          : tempo restante em segundos (8640000 = infinito/sem seeds)
+    state        : downloading | uploading | pausedDL | pausedUP | stalledDL |
+                   stalledUP | checkingDL | error | missingFiles | queuedDL
+    size         : tamanho total em bytes
+    downloaded   : bytes baixados até agora
+    ratio        : ratio upload/download
+    num_seeds    : seeds conectados
+    num_leechs   : leechs conectados
+    save_path    : diretório de destino
+
+CANCELAR/PAUSAR:
+  POST /api/v2/torrents/pause  → body: hashes=<hash1>|<hash2>
+  POST /api/v2/torrents/resume → body: hashes=<hash>
+  POST /api/v2/torrents/delete → body: hashes=<hash>&deleteFiles=false
+
+4. LIBRARY PYTHON: qbittorrent-api
+====================================
+
+Lib PyPI oficial: `qbittorrent-api` (rmartin16/qbittorrent-api)
+Suporta qBittorrent v4.1+ / Web API v2.x até v2.11.4 (qBittorrent v5.1.4, nov 2025)
+Instalação: `pip install qbittorrent-api`
+Suporte assíncrono: não nativo (usa threads internamente); para uso em FastAPI,
+chamar via `asyncio.to_thread()` ou usar httpx diretamente.
+
+Interface básica:
+  from qbittorrentapi import Client
+  client = Client(host="localhost:8080", username="", password="")
+  client.torrents_add(urls="magnet:?xt=urn:btih:...")
+  torrents = client.torrents_info(status_filter="downloading")
+  for t in torrents:
+      t.name, t.progress, t.dlspeed, t.eta, t.state
+
+Para uso sem auth (localhost bypass): username="" password="" ou omitir.
+Suporte async via `qbittorrentapi.Client` + `asyncio.to_thread`.
+
+ALTERNATIVA: usar httpx diretamente com cookie SID — mais leve, sem dep extra.
+
+5. FLUXO END-TO-END RECOMENDADO
+================================
+
+  1. Usuário digita termo na aba "Torrents" do AKASHA
+  2. AKASHA chama Prowlarr GET /api/v1/search (ou Jackett como fallback)
+  3. Resultados mostrados: título, seeders/leechers, tamanho, indexer, data
+  4. Usuário clica "↓ baixar" num resultado
+  5. AKASHA extrai magnetUrl (ou downloadUrl) e envia para qBittorrent
+     via POST /api/v2/torrents/add
+  6. qBittorrent aparece na seção "Torrents ativos" com polling SSE ou
+     HTMX polling a cada 5s mostrando progress/speed/eta
+
+6. CATEGORIAS TORZNAB RELEVANTES
+==================================
+  2000 = Filmes
+  3000 = Áudio / Música
+  4000 = PC (software, jogos)
+  5000 = TV
+  6000 = XXX (ignorar ou bloquear)
+  7000 = Livros / eBooks
+  8000 = Outros
+  Usar cat=2000,3000,4000,5000,7000 para excluir categorias indesejadas.
+
+7. CONSIDERAÇÕES
+=================
+  - qBittorrent só precisa estar rodando localmente; sem config extra com bypass
+  - Prowlarr/Jackett precisam ser instalados e configurados pelo usuário
+  - AKASHA deve verificar conexão e mostrar banner gracioso se offline
+  - Preferir magnetUrl sobre downloadUrl para privacidade
+  - Salvar config (hosts, ports, apikeys) na tabela settings do SQLite
+
+FONTES
+-------
+- qBittorrent Web API (4.1): https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1)
+- qbittorrent-api PyPI: https://pypi.org/project/qbittorrent-api/
+- qbittorrent-api docs (Torrents): https://qbittorrent-api.readthedocs.io/en/latest/apidoc/torrents.html
+- Jackett GitHub: https://github.com/Jackett/Jackett
+- Jackett Torznab API Reference (DeepWiki): https://deepwiki.com/Jackett/Jackett/3-torznab-api-reference
+- Torznab Specification: https://torznab.github.io/spec-1.3-draft/revisions/1.0-Torznab-Torrent-Support.html
+- Prowlarr API Docs: https://prowlarr.com/docs/api/
+- Prowlarr vs Jackett: https://selfhosting.sh/compare/prowlarr-vs-jackett/
+- prowlarr-qbittorrent-plugin (exemplo de integração): https://github.com/swannie-eire/prowlarr-qbittorrent-plugin/blob/main/prowlarr.py
+- SearXNG Torznab engine (parsing reference): https://docs.searxng.org/dev/engines/online/torznab.html
+- qBittorrent localhost auth bypass: https://qbittorrent-api.readthedocs.io/en/latest/behavior&configuration.html
+
+---
+
+## KOSMOS — Pipeline LLM e Análise de Artigos
+
+PESQUISA — KOSMOS
+================================================================================
+OTIMIZAÇÕES DE PIPELINE LLM LOCAL (OLLAMA) PARA ANÁLISE DE ARTIGOS
+Data: 2026-04-25
+Contexto: _AnalyzeWorker — 1 call JSON ao abrir artigo; extrai tags, sentiment,
+clickbait, five_ws e entities; conteúdo truncado a 3000 chars; hardware: RX 6600 8GB
+================================================================================
+
+1. SAÍDA ESTRUTURADA JSON — CONSTRAINED DECODING vs PROMPT ENGINEERING
+------------------------------------------------------------------------
+Ollama usa XGrammar como engine de constrained decoding por baixo do capô quando
+format="json" é passado. XGrammar é também o padrão no vLLM desde 2025.
+
+Mecanismo:
+  - O JSON Schema é compilado em um finite state machine (FSM)
+  - A cada step de token, logits de tokens inválidos são zerados (→ -inf)
+  - Garantia matemática de JSON válido, não estatística
+  - Vocabulário é particionado em tokens context-independent (pré-computados) e
+    context-dependent (validados em tempo real)
+  - Custo: ~50–200ms de compilação do FSM na 1ª requisição; requests subsequentes
+    com mesmo schema usam cache → overhead ≈ zero
+
+Performance XGrammar vs alternativas:
+  - Geração de máscara por token: <40 microsegundos (sub-milissegundo)
+  - Até 3.5× mais rápido que Outlines para JSON schema
+  - Mais de 10× mais rápido que llama-cpp para CFGs complexas
+  - End-to-end com Llama-3-8B no H100: 14× mais rápido que engines anteriores
+    para JSON schema, 80× para CFG
+
+Overhead vs texto livre:
+  - Constrained decoding NÃO aumenta latência em condições normais — o overhead
+    de masking é sub-milissegundo por token
+  - Benchmark do paper "Generating Structured Outputs" (arXiv 2501.10868):
+    constrained decoding reduz latência em ~50% vs unconstrained (Guidance: 6–9ms/token
+    vs geração livre: 15–16ms/token)
+  - Surpreendente: constrained decoding melhora acurácia de tarefa em ~3%
+    (o modelo converge mais rápido para resposta correta quando tokens inválidos são
+    eliminados)
+  - Outlines: overhead alto de compilação (3–12s por schema); evitar
+  - Guidance: compilação quase instantânea, melhor qualidade, mas não integrado ao Ollama
+  - Ollama com format="json": usa XGrammar internamente → overhead mínimo, OK para produção
+
+Observação sobre format="json" (genérico) vs JSON Schema (estruturado):
+  - Ollama aceita ambos: format: "json" (força JSON válido sem schema) e
+    format: {schema JSON} (constrained decoding com schema específico)
+  - O _AnalyzeWorker atual usa format="json" genérico — funciona, mas não garante
+    os campos específicos do schema
+  - Passar o JSON Schema real (com tipos e campos obrigatórios) aumenta confiabilidade
+    e elimina necessidade de fallback de parsing
+
+Limitação conhecida (2025): ao usar gemma4 com format + think=false, o constraint
+é silenciosamente ignorado. Outros modelos (qwen2.5, llama3.2) não têm esse problema.
+
+2. MODELOS MENORES (1B–3B) PARA CLASSIFICAÇÃO
+----------------------------------------------
+Viabilidade geral:
+  - Modelos 1B–3B são viáveis para tarefas de classificação e extração estruturada
+  - Penalised logistic regression sobre embeddings de modelos pequenos frequentemente
+    iguala ou supera modelos grandes em classification tasks com poucas amostras
+  - Qwen2.5: "0.5B, 1.5B, 3B mantêm performance forte em quase todos os benchmarks"
+    (relatório técnico oficial Qwen)
+  - Qwen2.5-3B é comparável ao Qwen2-7B em benchmarks gerais
+
+Benchmark de extração de entidades (10 amostras, Analytics Vidhya 2025):
+  | Modelo         | Projetos | Empresas | Pessoas | Média |
+  |----------------|----------|----------|---------|-------|
+  | Gemma 2B       | 9/10     | 10/10    | 10/10   | 9.7   |
+  | Llama 3.2 3B   | 6/10     | 6.5/10   | 10/10   | 7.5   |
+  | Llama 3.2 1B   | 5/10     | 6.5/10   | 6.5/10  | 6.0   |
+  | Qwen 7B        | 5/10     | 3/10     | 10/10   | 6.0   |
+  (n=10, dataset único — indicativo, não conclusivo)
+  Gemma 2B domina extração; Llama 3.2 1B e Qwen 7B empatam em média.
+
+Velocidade de inferência (tokens/segundo):
+
+  Qwen2.5-1.5B-Instruct (benchmark oficial Qwen, NVIDIA A100 BF16, 1 seq):
+    - Transformer: ~40 tokens/s (varia 38–41 conforme comprimento do contexto)
+    - vLLM:        ~183 tokens/s (alta throughput, batch)
+    - Estimativa Ollama em hardware consumer (RX 6600 8GB, Q4_K_M): ~80–120 tokens/s*
+
+  Qwen2.5-3B-Instruct (benchmark oficial Qwen, NVIDIA A100 BF16, 1 seq):
+    - Transformer: ~30 tokens/s (varia 25–32 conforme contexto)
+    - vLLM:        ~128 tokens/s
+    - Estimativa Ollama em hardware consumer (RX 6600 8GB, Q4_K_M): ~50–80 tokens/s*
+
+  Qwen2.5-7B (referência atual do KOSMOS, hardware similar):
+    - M1 Pro 32GB (4-bit Ollama): 25–30 tokens/s
+    - RTX 3060 12GB (Q4 llama.cpp): ~42 tokens/s
+    - Estimativa RX 6600 8GB: ~35–55 tokens/s*
+
+  *Estimativas para RX 6600: sem benchmark direto disponível publicamente. A RX 6600
+   tem 8GB VRAM e RDNA2 (gfx1032). Modelos Q4_K_M de 1.5B cabem em ~1.5GB VRAM;
+   3B cabem em ~2.5GB. A diferença de velocidade 1.5B vs 7B pode ser 2–3×.
+
+  Nota: llama.cpp é 3–10% mais rápido que Ollama para single-user no mesmo hardware;
+  diferença vem da camada Go de serialização do Ollama.
+
+Qualidade para as tarefas do KOSMOS:
+  - Sentiment (binário/escalar): altamente resiliente — mesmo modelos 1B acertam bem
+  - Clickbait (float 0–1): tarefa de classificação simples, 3B suficiente
+  - Tags (3–5 palavras-chave): tarefa de extração leve, 3B adequado
+  - Entities (NER): tarefa mais exigente — Gemma 2B > Llama 3.2 3B > Llama 3.2 1B
+  - Five_Ws (extração de quem/o quê/quando/onde/por quê): mais difícil, prefere 7B
+
+Conclusão: usar modelo 3B (ex: qwen2.5:3b, gemma2:2b) somente para as tarefas leves
+(tags, sentiment, clickbait) é viável com ~15–20% de degradação vs 7B. Para five_ws
+e entities, degradação maior.
+
+3. PRÉ-ANÁLISE EM BACKGROUND
+------------------------------
+Estratégia geral:
+  - Processar artigos recém-recebidos do feed antes de serem abertos
+  - Objetivo: quando usuário abrir, resultado já está cacheado em DB
+  - Não travar GUI, não saturar Ollama, respeitar limites de VRAM
+
+Padrão recomendado para PyQt6:
+  asyncio.PriorityQueue + QThread worker ou asyncio com qasync:
+    - Fila de artigos pendentes ordenada por prioridade
+    - Prioridade 1: artigo aberto pelo usuário (interativa) — bypassa a fila
+    - Prioridade 2: artigos do feed atual visível
+    - Prioridade 3: artigos de feeds não visualizados
+
+  Controle de concorrência:
+    - Semaphore com limite de 1 (para single-user, manter baixa latência interativa)
+    - asyncio.Semaphore(1) ou threading.Semaphore(1) antes de cada call Ollama
+    - Quando usuário abre artigo → cancela task de background pendente se houver
+      (ou mantém mas eleva a prioridade, dependendo do estado)
+
+  Limites de throughput:
+    - Não processar mais de 1 artigo background por vez enquanto GUI ativa
+    - Limite de N artigos por ciclo de fetch (ex: processar máximo 20 novos artigos
+      por rodada, ignorar os mais antigos se já em cache)
+
+  Verificação de cache:
+    - Antes de encaminhar à fila, checar se ai_tags IS NOT NULL no DB
+    - Artigos já analisados (mesmo que parcialmente) não entram na fila
+
+  Idle-time processing:
+    - Ativar processamento background apenas quando nenhum artigo está aberto
+    - Detectar inatividade via sinal (ex: lastActivity + QTimer de 5s)
+
+4. BATCHING DE MÚLTIPLOS ARTIGOS
+----------------------------------
+Viabilidade:
+  - Tecnicamente possível: incluir N artigos num único prompt com JSON array na resposta
+  - Reduz overhead de round-trip HTTP e carregamento de contexto do sistema
+
+Dados do paper arXiv 2604.03684 ("Researchers waste 80% of LLM annotation costs
+by classifying one text at a time"):
+  - Batch sizes de 25–100 são seguros para a maioria dos LLMs com perda de acurácia
+    menor que 2 pontos percentuais
+  - Batch size 100: ~84% de economia de tokens vs 1 chamada por artigo
+  - Variável stacking (múltiplas tarefas no mesmo prompt): até 10 dimensões produz
+    resultados dentro de 2.2pp do baseline single-variable para 7 de 8 modelos
+  - Degradação depende mais da complexidade da tarefa que do comprimento do prompt
+  - Tarefas estruturais e determinísticas (JSON, classificação binária de sentimento)
+    são as mais resilientes ao batching
+  - Tarefas semânticas finas (análise de emoção, extração de tópico) degradam mais
+
+Limitações do batching para o KOSMOS:
+  - Contexto total: 10 artigos × 3000 chars = 30.000 chars → pode exceder contexto
+    padrão de 4096 tokens; requer num_ctx maior (8192–16384)
+  - Num_ctx maior → mais VRAM por parallel slot
+  - Resposta em JSON array mais difícil de parsear (índice pode não corresponder
+    ao artigo correto se modelo pular item)
+  - Para análise on-demand (artigo aberto pelo usuário): batching não ajuda
+  - Para background: batching de 5–10 artigos por call é viável e pode economizar
+    30–60% do tempo total vs calls sequenciais
+
+Recomendação: batching de 5–10 artigos é interessante APENAS para processamento
+background; análise interativa (ao abrir artigo) deve permanecer 1 call.
+
+5. SPLIT DE ANÁLISE — 2 CALLS EM PARALELO
+-------------------------------------------
+Proposta: dividir o único call atual em:
+  Call A (rápido): tags + sentiment + clickbait (3 campos simples)
+  Call B (pesado): five_ws + entities (2 campos complexos)
+  Ambos disparados em paralelo, Call A exibe indicadores imediatamente.
+
+Análise de custo/benefício:
+  Pró:
+    - Indicadores simples (sentiment borde, clickbait badge, tags) aparecem ~2×
+      mais rápido para o usuário
+    - Call A é significativamente mais curto na resposta (menos tokens gerados)
+    - Possibilidade de usar modelo menor (ex: 3B) para Call A e modelo maior para B
+
+  Contra:
+    - 2 chamadas HTTP vs 1 → 2× overhead de rede e setup de request
+    - Ollama executa as chamadas sequencialmente (OLLAMA_NUM_PARALLEL=1 por padrão)
+    - Com OLLAMA_NUM_PARALLEL=1: os 2 calls ficam em fila → sem ganho de tempo total
+    - Com OLLAMA_NUM_PARALLEL=2: ambos executam em paralelo mas o VRAM aumenta
+      e latência por call sobe 20–40%
+    - Complexidade de implementação: 2 QThreads + merge de resultados parciais
+
+  Conclusão: o ganho real depende de OLLAMA_NUM_PARALLEL ≥ 2 E do modelo ser rápido
+  o suficiente para Call A terminar antes de Call B. Com qwen2.5:7b e 1 call atual
+  já gerando ~200–400 tokens, o split pode economizar 1–3s na exibição dos badges.
+  Se o modelo de chat é lento (≥7B), o split com modelo 3B para Call A é a otimização
+  de maior impacto percebido pelo usuário.
+
+  Alternativa mais simples: streaming parcial — fazer o call atual com stream=True
+  e parsear o JSON incrementalmente; exibir campos assim que disponíveis no stream.
+  Requer parser JSON incremental (ex: biblioteca json-stream).
+
+6. CONCORRÊNCIA NO OLLAMA
+---------------------------
+Comportamento padrão (OLLAMA_NUM_PARALLEL=1):
+  - Ollama processa requests em fila FIFO para o mesmo modelo
+  - Uma request executa, as demais aguardam
+  - Latência por request: mínima (sem contenção de VRAM)
+  - Para single-user: padrão correto
+
+OLLAMA_NUM_PARALLEL > 1:
+  - Múltiplas requests executam simultaneamente no mesmo modelo
+  - VRAM aumenta linearmente: cada slot paralelo adiciona ~15–25% do VRAM base
+    do modelo (ex: modelo 7B Q4_K_M ~4.5GB; com 2 parallel slots → ~5.5–6GB)
+  - Contexto efetivo: OLLAMA_NUM_PARALLEL × num_ctx
+    (ex: 4 parallel × 4096 ctx = 16384 ctx worth of VRAM)
+  - Latência por request com 4 parallel: +20–40% vs serial
+  - Throughput: 3–4× maior com 4 parallel
+
+Configuração para RX 6600 (8GB VRAM):
+  - Com qwen2.5:7b Q4_K_M (~4.5GB): OLLAMA_NUM_PARALLEL=1 é o mais seguro
+    (margem de ~2.5GB para KV cache e overhead)
+  - Com qwen2.5:3b Q4_K_M (~2.5GB): OLLAMA_NUM_PARALLEL=2 é viável
+    (deixa ~3GB livre para 2 slots de KV cache)
+  - Configurar via: export OLLAMA_NUM_PARALLEL=2 antes de ollama serve
+  - No systemd: adicionar Environment=OLLAMA_NUM_PARALLEL=2 no service
+
+OLLAMA_KEEP_ALIVE (crítico para latência):
+  - Default: 5 minutos — modelo é descarregado da VRAM após 5min de inatividade
+  - Cold start (carregar modelo do disco para VRAM): 3–10 segundos para 7B
+  - Warm request (modelo já na VRAM): overhead ≈ zero
+  - Para KOSMOS: definir OLLAMA_KEEP_ALIVE=30m ou -1 (nunca descarregar)
+  - Ou passar keep_alive=-1 em cada request via API para manter modelo carregado
+
+KV Cache prefix reuse (prompt caching):
+  - Ollama reutiliza KV cache automaticamente quando requests compartilham o
+    mesmo prefixo de tokens (byte-for-byte idêntico)
+  - Ganho medido: 17.7× mais rápido no processamento do prompt na 2ª request
+    (54ms vs 962ms para o mesmo system prompt)
+  - Requisitos: (a) modelo deve estar na VRAM (keep_alive); (b) system prompt
+    idêntico byte-for-byte; (c) num_ctx consistente entre requests
+  - O _AnalyzeWorker atual usa system prompt fixo → se keep_alive configurado,
+    todas as análises subsequentes se beneficiam do cache do system prompt
+  - num_ctx deve ser passado explicitamente e constante (não variar entre calls)
+
+KV Cache Quantization (OLLAMA_KV_CACHE_TYPE):
+  - Default: f16 (16 bits por valor de KV cache)
+  - q8_0: ~50% menos VRAM para KV cache, perda de precisão mínima
+  - q4_0: ~75% menos VRAM, perda mensurável mas aceitável para classificação
+  - Configurar: export OLLAMA_KV_CACHE_TYPE=q8_0
+  - Permite aumentar num_ctx ou OLLAMA_NUM_PARALLEL sem OOM
+
+OLLAMA_MAX_LOADED_MODELS:
+  - Default: 3 × número de GPUs (= 3 para 1 GPU)
+  - Para KOSMOS: 2 é suficiente (gen_model + embed_model)
+  - Reduzir para 2 se houver pressão de VRAM: export OLLAMA_MAX_LOADED_MODELS=2
+
+FONTES
+-------
+- Ollama Structured Outputs (docs): https://docs.ollama.com/capabilities/structured-outputs
+- Ollama Structured Outputs (blog): https://ollama.com/blog/structured-outputs
+- XGrammar paper (arXiv): https://arxiv.org/pdf/2411.15100
+- XGrammar blog (mlc.ai): https://blog.mlc.ai/2024/11/22/achieving-efficient-flexible-portable-structured-generation-with-xgrammar
+- XGrammar docs: https://xgrammar.mlc.ai/docs/tutorials/workflow_of_xgrammar.html
+- Structured Outputs benchmark (arXiv 2501.10868): https://arxiv.org/html/2501.10868v1
+- Constrained decoding guia: https://www.letsdatascience.com/blog/structured-outputs-making-llms-return-reliable-json
+- Gemma 2B vs Llama 3.2 vs Qwen entity extraction: https://www.analyticsvidhya.com/blog/2025/01/gemma-2b-vs-llama-3-2-vs-qwen-7b/
+- Qwen2.5 speed benchmark oficial: https://qwen.readthedocs.io/en/v2.5/benchmark/speed_benchmark.html
+- LLM speed comparison (RTX 3060): https://singhajit.com/llm-inference-speed-comparison/
+- Batch annotation efficiency (arXiv 2604.03684): https://arxiv.org/html/2604.03684
+- Multi-task prompting degradation: https://www.mdpi.com/2079-9292/14/21/4349
+- Ollama FAQ (OLLAMA_NUM_PARALLEL, KEEP_ALIVE): https://docs.ollama.com/faq
+- Ollama parallel requests guide: https://www.glukhov.org/llm-performance/ollama/how-ollama-handles-parallel-requests/
+- Ollama concurrent requests config: https://markaicode.com/ollama-concurrent-requests-parallel-inference/
+- Ollama keep_alive & cold start: https://mljourney.com/ollama-keep-alive-and-model-preloading-eliminate-cold-start-latency/
+- Ollama prompt caching (KV prefix reuse): https://leanpub.com/read/ollama/prompt-caching
+- Ollama KV cache quantization: https://smcleod.net/2024/12/bringing-k/v-context-quantisation-to-ollama/
+- Ollama ROCm RX 6600 XT setup: https://major.io/p/ollama-with-amd-radeon-6600xt/
+- Asyncio + Ollama parallelism: https://medium.com/@sainathbalaji007/optimizing-parallel-processing-with-ollama-api-and-llms-in-python-9c353ae5ae68
+- PyQt6 QThreadPool background tasks: https://www.pythonguis.com/tutorials/multithreading-pyqt6-applications-qthreadpool/
+
+================================================================================
+MEDIUM E SUBSTACK — SCRAPING E EXTRAÇÃO DE CONTEÚDO
+Data: 2026-04-24
+Contexto: corrigir falha de extração no ArticleScraper do KOSMOS (leitor de artigos RSS)
+================================================================================
+
+1. POR QUE MEDIUM FALHA
+------------------------
+Medium usa paywall em duas camadas:
+  a) Soft paywall (JS overlay): conteúdo presente no HTML mas ocultado por JS.
+     Trafilatura pode extrair o texto, mas a requisição HTTP retorna conteúdo
+     truncado ou com aviso de assinatura mesmo com headers realistas.
+  b) Hard paywall (server-side): servidor não envia o corpo do artigo para
+     usuários não autenticados. Nenhum extrator estático funciona aqui.
+Medium também detecta User-Agents automáticos e pode retornar 403 mesmo para
+artigos gratuitos.
+
+2. SOLUÇÃO — FREEDIUM
+-----------------------
+Freedium (freedium.cfd) é um proxy open-source que acessa Medium via assinatura
+e serve o conteúdo completo sem paywall.
+
+Reescrita de URL antes do fetch HTTP:
+  https://medium.com/@author/slug
+  → https://freedium.cfd/https://medium.com/@author/slug
+
+HTML retornado é estático; ecosystem_scraper processa normalmente sem mudanças.
+Freedium pode estar offline — tratar como falha de rede, não erro fatal.
+
+3. SUBSTACK — ESTRUTURA HTML
+------------------------------
+Artigos gratuitos do Substack: HTML completo, trafilatura extrai corretamente.
+Artigos pagos: servidor omite o corpo (comportamento esperado, não é bug).
+
+Seletor principal do conteúdo: <div class="available-content"> ou <div class="body markup">
+O fallback BS4 do ecosystem_scraper precisa conhecer esses seletores; sem isso
+cai em <body> e captura navegação junto com o texto.
+
+4. IMPLICAÇÕES PRÁTICAS
+-------------------------
+Mudança em KOSMOS/app/core/article_scraper.py:
+  - Importar get_fetch_url do ecosystem_scraper
+  - Em _fetch_html(): usar get_fetch_url(url) como URL efetiva de fetch
+
+FONTES
+-------
+- Freedium GitHub: https://github.com/Freedium-cfd
+- Trafilatura Settings: https://trafilatura.readthedocs.io/en/latest/settings.html
+- Substack scraping 2026: https://dev.to/agenthustler/how-to-scrape-substack-newsletters-in-2026-a-complete-guide-2lce
+
+---
+
+## Mnemosyne — RAG, Memória e Context Engineering
+
 ========================================================
 PESQUISA PARA O MNEMOSYNE
 Sessão: 2026-03-31
@@ -2739,3 +4677,4 @@ Fontes:
 ========================================================
 FIM DA PESQUISA — Otimização, Chunking, Reranking, Avaliação
 ========================================================
+
