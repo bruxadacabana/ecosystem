@@ -719,9 +719,86 @@ async fn cpu_ram_usage(sys: &Mutex<System>) -> (f32, u64, u64) {
     (cpu, free_mb, total_mb)
 }
 
+// ── Ollama env vars por perfil de hardware ────────────────────
+
+/// Retorna as variáveis de ambiente recomendadas para o Ollama
+/// conforme o perfil de hardware detectado.
+///
+/// | Variável                   | high (RX 6600) | medium (MX150) | low (i5-3470) |
+/// |---------------------------|----------------|----------------|---------------|
+/// | OLLAMA_MAX_LOADED_MODELS   | 2              | 1              | 1             |
+/// | OLLAMA_GPU_OVERHEAD (bytes)| 524 288 000    | 209 715 200    | 0             |
+/// | OLLAMA_FLASH_ATTENTION     | 1              | 1              | 0 (sem GPU)   |
+/// | OLLAMA_NUM_PARALLEL        | 2              | 1              | 1             |
+fn ollama_env_for_profile(profile: HardwareProfile) -> Vec<(&'static str, String)> {
+    match profile {
+        HardwareProfile::MainPc => vec![
+            ("OLLAMA_MAX_LOADED_MODELS", "2".into()),
+            ("OLLAMA_GPU_OVERHEAD",      "524288000".into()),
+            ("OLLAMA_FLASH_ATTENTION",   "1".into()),
+            ("OLLAMA_NUM_PARALLEL",      "2".into()),
+        ],
+        HardwareProfile::Laptop => vec![
+            ("OLLAMA_MAX_LOADED_MODELS", "1".into()),
+            ("OLLAMA_GPU_OVERHEAD",      "209715200".into()),
+            ("OLLAMA_FLASH_ATTENTION",   "1".into()),
+            ("OLLAMA_NUM_PARALLEL",      "1".into()),
+        ],
+        HardwareProfile::WorkPc => vec![
+            ("OLLAMA_MAX_LOADED_MODELS", "1".into()),
+            ("OLLAMA_GPU_OVERHEAD",      "0".into()),
+            ("OLLAMA_FLASH_ATTENTION",   "0".into()),
+            ("OLLAMA_NUM_PARALLEL",      "1".into()),
+        ],
+    }
+}
+
+/// Persiste as variáveis de ambiente do Ollama em arquivo de configuração e registra no log.
+///
+/// Linux: escreve em `~/.config/ollama/ollama_env` (compatível com systemd EnvironmentFile).
+/// Windows: não escreve arquivo (sem systemd); apenas loga as variáveis recomendadas.
+///
+/// Para aplicar no Linux após escrita:
+///   systemctl --user daemon-reload && systemctl --user restart ollama
+pub fn configure_ollama_env(profile: HardwareProfile) {
+    let vars = ollama_env_for_profile(profile);
+    log::info!(
+        "LOGOS: perfil {} — variáveis Ollama recomendadas: {}",
+        profile.display(),
+        vars.iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        let Some(config_dir) = dirs::config_dir() else { return };
+        let ollama_dir = config_dir.join("ollama");
+        if std::fs::create_dir_all(&ollama_dir).is_err() { return }
+        let env_path = ollama_dir.join("ollama_env");
+        let Ok(mut f) = std::fs::OpenOptions::new()
+            .write(true).create(true).truncate(true)
+            .open(&env_path)
+        else { return };
+        for (k, v) in &vars {
+            let _ = writeln!(f, "{k}={v}");
+        }
+        log::info!(
+            "LOGOS: variáveis escritas em {} — rode `systemctl --user restart ollama` para aplicar",
+            env_path.display()
+        );
+    }
+}
+
 // ── Entry point ───────────────────────────────────────────────
 
 pub async fn start_server(state: LogosState) {
+    // Configura variáveis de ambiente do Ollama conforme o perfil de hardware detectado.
+    // No Linux, escreve ~/.config/ollama/ollama_env; sempre loga as variáveis recomendadas.
+    configure_ollama_env(state.0.hardware_profile);
+
     let addr = format!("127.0.0.1:{LOGOS_PORT}");
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
