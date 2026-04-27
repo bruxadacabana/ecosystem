@@ -313,14 +313,20 @@ async fn chat_handler(
     let permits = if !is_survival && light { 1u32 } else { 2u32 };
     let model_class = if light { "leve" } else { "pesado" }.to_string();
 
-    // keep_alive:
-    //   Normal     → injeta -1 (modelo permanece na VRAM entre requests)
-    //   Sobrevivência → força 0 (RAM liberada imediatamente após cada request)
+    // Injeção de keep_alive por prioridade (transparente para os apps):
+    //   Sobrevivência → 0 (RAM liberada imediatamente, independente da prioridade)
+    //   P1 → -1 (modelo permanece na VRAM indefinidamente — sessão ativa)
+    //   P2 → "10m" (libera após 10 min de inatividade)
+    //   P3 → "0"  (descarrega imediatamente após resposta — background, não precisa ficar quente)
     if is_survival {
         body.insert("keep_alive".to_string(), serde_json::json!(0));
     } else {
-        body.entry("keep_alive".to_string())
-            .or_insert_with(|| serde_json::json!(-1));
+        let ka = match priority {
+            1 => serde_json::json!(-1),
+            2 => serde_json::json!("10m"),
+            _ => serde_json::json!(0),
+        };
+        body.entry("keep_alive".to_string()).or_insert(ka);
     }
 
     // Sobrevivência: cap de num_ctx em 2048 (contextos maiores saturam RAM no Windows)
