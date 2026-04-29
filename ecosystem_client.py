@@ -147,6 +147,15 @@ def _logos_post(path: str, data: "dict[str, Any]", timeout: float = 10.0) -> "di
         return None
 
 
+def get_ollama_base() -> str:
+    """Retorna o endpoint base do Ollama conforme configurado em ecosystem.json.
+
+    Lê logos.ollama_base; fallback para http://localhost:11434.
+    """
+    eco = read_ecosystem()
+    return eco.get("logos", {}).get("ollama_base", "http://localhost:11434")
+
+
 def logos_status() -> "dict[str, Any] | None":
     """Retorna status do LOGOS (prioridade ativa, fila, VRAM). None se HUB não estiver rodando."""
     return _logos_get("/logos/status")
@@ -253,6 +262,103 @@ def request_llm(
     try:
         with _r.urlopen(direct_req, timeout=300) as resp:
             return json.loads(resp.read())
+    except _ue.HTTPError as e:
+        raise RuntimeError(f"Ollama HTTP {e.code}: {e.read().decode(errors='replace')}")
+    except OSError as e:
+        raise RuntimeError(f"Ollama indisponível: {e}")
+
+
+def request_llm_stream(
+    messages: "list[dict[str, Any]]",
+    *,
+    app: str,
+    model: "str | None" = None,
+    priority: int = 1,
+    ollama_base: str = "http://localhost:11434",
+    **options: Any,
+) -> "Generator[str, None, None]":
+    """Streaming LLM via LOGOS (P1 por padrão) com fallback direto ao Ollama.
+
+    Yields tokens de texto à medida que chegam (NDJSON, campo ``message.content``).
+
+    Raises:
+        RuntimeError: se LOGOS rejeitar (429) ou Ollama retornar erro.
+    """
+    import urllib.request as _r
+    import urllib.error as _ue
+    from typing import Generator
+
+    if model is None:
+        profile = get_active_profile()
+        if profile is not None:
+            key = _APP_MODEL_KEY.get(app, "llm_kosmos")
+            model = profile["models"].get(key, _FALLBACK_MODEL)
+        else:
+            model = _FALLBACK_MODEL
+
+    payload: dict[str, Any] = {
+        "app": app,
+        "priority": max(1, min(3, priority)),
+        "model": model,
+        "messages": messages,
+        "stream": True,
+        **options,
+    }
+
+    def _iter_ndjson(resp: Any) -> "Generator[str, None, None]":
+        buf = b""
+        while True:
+            chunk = resp.read(512)
+            if not chunk:
+                break
+            buf += chunk
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    token = (
+                        obj.get("message", {}).get("content")  # /api/chat
+                        or obj.get("response")                  # /api/generate
+                        or ""
+                    )
+                    if token:
+                        yield token
+                    if obj.get("done"):
+                        return
+                except (json.JSONDecodeError, AttributeError):
+                    continue
+
+    # --- Tentar via LOGOS ---
+    logos_req = _r.Request(
+        f"{_LOGOS_BASE}/logos/chat",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with _r.urlopen(logos_req, timeout=300) as resp:
+            yield from _iter_ndjson(resp)
+            return
+    except _ue.HTTPError as e:
+        if e.code == 429:
+            raise RuntimeError(json.loads(e.read()).get("error", "LOGOS: solicitação rejeitada (429)"))
+    except OSError:
+        pass  # HUB não está rodando → fallback
+
+    # --- Failsafe: Ollama direto ---
+    direct: dict[str, Any] = {k: v for k, v in payload.items() if k not in ("app", "priority")}
+    direct_req = _r.Request(
+        f"{ollama_base}/api/chat",
+        data=json.dumps(direct).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with _r.urlopen(direct_req, timeout=300) as resp:
+            yield from _iter_ndjson(resp)
     except _ue.HTTPError as e:
         raise RuntimeError(f"Ollama HTTP {e.code}: {e.read().decode(errors='replace')}")
     except OSError as e:

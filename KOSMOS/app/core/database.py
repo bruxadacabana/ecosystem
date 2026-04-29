@@ -113,6 +113,8 @@ def _migrate(engine: Engine) -> None:
         "ALTER TABLE articles ADD COLUMN ai_sentiment REAL",
         "ALTER TABLE articles ADD COLUMN ai_clickbait REAL",
         "ALTER TABLE articles ADD COLUMN ai_entities TEXT",
+        "ALTER TABLE articles ADD COLUMN content_hash TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_articles_hash ON articles(content_hash)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

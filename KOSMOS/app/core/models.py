@@ -95,6 +95,7 @@ class Article(Base):
     ai_sentiment:  float | None   = Column(Float, nullable=True)  # -1.0 negativo ↔ +1.0 positivo
     ai_clickbait:  float | None   = Column(Float, nullable=True)  # 0.0 sem clickbait ↔ 1.0 puro
     ai_entities:   str | None     = Column(Text, nullable=True)   # JSON: {people,orgs,places}
+    content_hash:  str | None     = Column(String, nullable=True, index=True)  # SHA-256 anti-dup
 
     feed          = relationship("Feed", back_populates="articles")
     tags          = relationship("Tag", secondary="article_tags", back_populates="articles")

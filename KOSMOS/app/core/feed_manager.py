@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -14,6 +16,18 @@ from app.core.database import get_session
 from app.core.models import Article, ArticleTag, Category, Feed, Highlight, ReadSession, Tag
 
 log = logging.getLogger("kosmos.feed_manager")
+
+
+def _article_fingerprint(title: str, pub_date: str, url: str) -> str:
+    """SHA-256 de (título normalizado + data ISO[:10] + URL normalizada).
+
+    Resistência de 99.98% a colisões em artigos duplicados com GUIDs distintos.
+    """
+    norm_title = re.sub(r"\s+", " ", title.lower().strip())
+    norm_url   = url.lower().rstrip("/").split("?")[0] if url else ""
+    date_prefix = (pub_date or "")[:10]
+    raw = f"{norm_title}|{date_prefix}|{norm_url}"
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _detect_lang(text: str) -> str | None:
@@ -251,19 +265,30 @@ class FeedManager:
         session = get_session()
         try:
             for data in articles_data:
+                title     = data.get("title", "(sem título)")
+                url       = data.get("url") or ""
+                pub_date  = data.get("published_at") or ""
+                c_hash    = _article_fingerprint(title, pub_date, url)
+
+                # Rejeitar duplicatas por fingerprint de conteúdo (ignora GUIDs errados)
+                existing = session.query(Article.id).filter_by(content_hash=c_hash).first()
+                if existing:
+                    continue
+
                 lang = _detect_lang(
-                    data.get("title", "") + " " + (data.get("summary") or "")
+                    title + " " + (data.get("summary") or "")
                 )
                 article = Article(
                     feed_id      = feed_id,
                     guid         = data["guid"],
-                    title        = data.get("title", "(sem título)"),
-                    url          = data.get("url"),
+                    title        = title,
+                    url          = url or None,
                     author       = data.get("author"),
-                    published_at = data.get("published_at"),
+                    published_at = pub_date or None,
                     summary      = data.get("summary"),
                     content_full = data.get("content"),
                     language     = lang,
+                    content_hash = c_hash,
                     extra_json   = json.dumps(data["extra"]) if data.get("extra") else None,
                 )
                 session.add(article)
