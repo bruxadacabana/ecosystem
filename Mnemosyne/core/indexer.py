@@ -11,6 +11,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 
+from .bm25_index import BM25Index
 from .config import AppConfig
 from .errors import EmptyDirectoryError, IndexBuildError, VectorstoreNotFoundError
 from .loaders import load_documents, load_single_file
@@ -246,6 +247,10 @@ def create_vectorstore(config: AppConfig) -> Chroma:
     except Exception as exc:
         raise IndexBuildError(f"Falha ao criar vectorstore: {exc}") from exc
 
+    bm25_idx = BM25Index(config.mnemosyne_dir)
+    bm25_idx.add_documents(chunks)
+    bm25_idx.save()
+
     return vs
 
 
@@ -289,6 +294,10 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
                 time.sleep(_SLEEP)
     except Exception as exc:
         raise IndexBuildError(f"Falha ao adicionar ao vectorstore: {exc}") from exc
+
+    bm25_idx = BM25Index.load(config.mnemosyne_dir)
+    bm25_idx.add_documents(chunks)
+    bm25_idx.save()
 
     return vs
 
@@ -341,10 +350,12 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
 
     _BATCH, _SLEEP = _detect_batch_config()
     stats = {"new": 0, "modified": 0, "deleted": 0, "errors": 0}
+    bm25_idx = BM25Index.load(config.mnemosyne_dir)
 
     # Deletados
     for file_path in deleted_files:
         _delete_file_chunks(vs, file_path)
+        bm25_idx.remove_source(file_path)
         tracker.remove(file_path)
         stats["deleted"] += 1
 
@@ -368,11 +379,13 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
     # Modificados: remove chunks antigos, re-indexa
     for file_path, source_type in modified_files:
         _delete_file_chunks(vs, file_path)
+        bm25_idx.remove_source(file_path)
         try:
             docs = load_single_file(file_path, source_type=source_type)
             splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
             _add_chunks(vs, chunks, config.embed_model)
+            bm25_idx.add_documents(chunks)
             tracker.mark_indexed(file_path)
             stats["modified"] += 1
         except Exception:
@@ -385,11 +398,13 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
             splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
             _add_chunks(vs, chunks, config.embed_model)
+            bm25_idx.add_documents(chunks)
             tracker.mark_indexed(file_path)
             stats["new"] += 1
         except Exception:
             stats["errors"] += 1
 
+    bm25_idx.save()
     return vs, stats
 
 

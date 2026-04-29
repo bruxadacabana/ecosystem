@@ -3171,7 +3171,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   3. Detectar tipo pela extensão/fonte e aplicar parâmetros correspondentes
   4. Adicionar campo `source_type` ao metadata de cada chunk para rastreabilidade
 
-- [ ] Mnemosyne: recuperação híbrida BM25 + dense (Reciprocal Rank Fusion):
+- [x] Mnemosyne: recuperação híbrida BM25 + dense (Reciprocal Rank Fusion):
   **Motivo:** Mnemosyne usa apenas busca densa (embedding vetorial). BM25 (busca lexical) captura
   termos exatos, nomes próprios e queries de palavra-chave que o embedding pode errar. Papers
   confirmam: pipeline híbrido supera qualquer método isolado — Recall@5 = 0.816 em benchmark

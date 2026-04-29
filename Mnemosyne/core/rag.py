@@ -14,6 +14,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_ollama import ChatOllama, OllamaLLM
 from rank_bm25 import BM25Okapi
 
+from .bm25_index import BM25Index
 from .config import AppConfig
 from .errors import QueryError
 from .memory import Turn
@@ -220,13 +221,16 @@ def _hybrid_retrieve(
     k: int,
     source_type: str | None = None,
     source_files: list[str] | None = None,
+    bm25_index: BM25Index | None = None,
 ) -> list[Document]:
     """
-    Hybrid retrieval: combina busca semântica e BM25.
-    Retorna até k documentos únicos, ordenados por score combinado.
+    Hybrid retrieval com RRF real quando bm25_index fornecido (corpus completo),
+    ou fusão ponderada sobre pool semântico como fallback legado.
     """
-    # Semântico: buscar k*2 candidatos para ter mais para o BM25 filtrar
-    search_kwargs: dict = {"k": k * 2}
+    _RRF_K = 60  # constante padrão RRF
+    candidate_n = max(k * 3, 50)
+
+    search_kwargs: dict = {"k": candidate_n if bm25_index else k * 2}
     where = _build_where_filter(source_type, source_files)
     if where:
         search_kwargs["filter"] = where
@@ -238,22 +242,46 @@ def _hybrid_retrieve(
     if not semantic_docs:
         return []
 
-    # BM25 sobre o pool semântico
-    tokenized_corpus = [doc.page_content.lower().split() for doc in semantic_docs]
-    tokenized_query = question.lower().split()
+    if bm25_index and bm25_index.size > 0:
+        # True RRF: dense top-N ∪ BM25 top-N do corpus completo
+        bm25_results = bm25_index.get_top_k(question, candidate_n)
 
+        # Filtrar BM25 por source_type / source_files se necessário
+        if source_files:
+            source_set = set(source_files)
+            bm25_results = [(r, d) for r, d in bm25_results
+                            if d.metadata.get("source") in source_set]
+        if source_type:
+            bm25_results = [(r, d) for r, d in bm25_results
+                            if d.metadata.get("source_type") == source_type]
+
+        rrf_scores: dict[str, float] = {}
+        doc_map: dict[str, Document] = {}
+
+        for rank, doc in enumerate(semantic_docs):
+            key = doc.page_content[:200]
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank + 1)
+            doc_map[key] = doc
+
+        for bm25_rank, doc in bm25_results:
+            key = doc.page_content[:200]
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + bm25_rank + 1)
+            if key not in doc_map:
+                doc_map[key] = doc
+
+        sorted_keys = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
+        return [doc_map[ky] for ky in sorted_keys[:k]]
+
+    # Fallback legado: BM25 sobre o pool semântico
+    tokenized_corpus = [doc.page_content.lower().split() for doc in semantic_docs]
     try:
-        bm25 = BM25Okapi(tokenized_corpus)
-        bm25_scores = bm25.get_scores(tokenized_query)
+        bm25_local = BM25Okapi(tokenized_corpus)
+        bm25_scores = bm25_local.get_scores(question.lower().split())
     except Exception:
-        # Se BM25 falhar, retornar só o resultado semântico
         return semantic_docs[:k]
 
-    # Normalizar BM25 para [0, 1]
     max_score = max(bm25_scores) if max(bm25_scores) > 0 else 1.0
     normalized = [s / max_score for s in bm25_scores]
-
-    # Score combinado: 0.6 semântico (posição inversa) + 0.4 BM25
     n = len(semantic_docs)
     combined = [
         (0.6 * (1.0 - i / n) + 0.4 * normalized[i], i)
@@ -261,7 +289,6 @@ def _hybrid_retrieve(
     ]
     combined.sort(key=lambda x: x[0], reverse=True)
 
-    # Deduplicar por conteúdo, limitar a k
     seen: set[str] = set()
     results: list[Document] = []
     for _, idx in combined:
@@ -272,7 +299,6 @@ def _hybrid_retrieve(
             results.append(doc)
         if len(results) >= k:
             break
-
     return results
 
 
@@ -300,6 +326,7 @@ def _multi_query_retrieve(
     source_type: str | None = None,
     source_files: list[str] | None = None,
     n_variants: int = 3,
+    bm25_index: BM25Index | None = None,
 ) -> list[Document]:
     """
     Reformula a pergunta em n variações, faz retrieval para cada uma e
@@ -326,7 +353,7 @@ def _multi_query_retrieve(
 
     for q in queries:
         try:
-            docs = _hybrid_retrieve(vectorstore, q, k, source_type, source_files)
+            docs = _hybrid_retrieve(vectorstore, q, k, source_type, source_files, bm25_index)
         except QueryError:
             continue
         for doc in docs:
@@ -335,7 +362,7 @@ def _multi_query_retrieve(
                 seen.add(key)
                 results.append(doc)
 
-    return results[:k] if results else _hybrid_retrieve(vectorstore, question, k, source_type, source_files)
+    return results[:k] if results else _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index)
 
 
 def _hyde_retrieve(
@@ -345,6 +372,7 @@ def _hyde_retrieve(
     llm_model: str,
     source_type: str | None = None,
     source_files: list[str] | None = None,
+    bm25_index: BM25Index | None = None,
 ) -> list[Document]:
     """
     HyDE: gera uma resposta hipotética à pergunta e usa o seu embedding
@@ -358,9 +386,9 @@ def _hyde_retrieve(
         ))
         if not hypothetical.strip():
             raise ValueError("Resposta hipotética vazia")
-        return _hybrid_retrieve(vectorstore, hypothetical, k, source_type, source_files)
+        return _hybrid_retrieve(vectorstore, hypothetical, k, source_type, source_files, bm25_index)
     except Exception:
-        return _hybrid_retrieve(vectorstore, question, k, source_type, source_files)
+        return _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index)
 
 
 _RERANK_CANDIDATE_K = 30
@@ -512,6 +540,7 @@ def prepare_ask(
     persona: str = "curador",
     source_files: list[str] | None = None,
     collection_type: str = "library",
+    bm25_index: BM25Index | None = None,
 ) -> tuple[list[BaseMessage], list[SourceRecord]]:
     """
     Recupera documentos relevantes e retorna (prompt, sources).
@@ -534,14 +563,17 @@ def prepare_ask(
     try:
         if retrieval_mode == "multi_query":
             docs = _multi_query_retrieve(
-                vectorstore, question, candidate_k, config.llm_model, source_type, source_files
+                vectorstore, question, candidate_k, config.llm_model, source_type, source_files,
+                bm25_index=bm25_index,
             )
         elif retrieval_mode == "hyde":
             docs = _hyde_retrieve(
-                vectorstore, question, candidate_k, config.llm_model, source_type, source_files
+                vectorstore, question, candidate_k, config.llm_model, source_type, source_files,
+                bm25_index=bm25_index,
             )
         else:
-            docs = _hybrid_retrieve(vectorstore, question, candidate_k, source_type, source_files)
+            docs = _hybrid_retrieve(vectorstore, question, candidate_k, source_type, source_files,
+                                    bm25_index)
     except QueryError:
         raise
     except Exception as exc:

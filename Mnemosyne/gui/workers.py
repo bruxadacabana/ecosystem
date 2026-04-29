@@ -19,6 +19,7 @@ from core.errors import (
     AkashaFetchError,
 )
 from core.faq import iter_faq, parse_faq
+from core.bm25_index import BM25Index
 from core.indexer import (
     create_vectorstore,
     index_single_file,
@@ -127,6 +128,7 @@ class IndexWorker(QThread):
         splitter = _get_splitter(self.config, embeddings, source_type=self.config.collection_type)
         tracker = FileTracker(self.config.mnemosyne_dir)
         checkpoint = IndexCheckpoint(self.config.mnemosyne_dir)
+        bm25_idx = BM25Index(self.config.mnemosyne_dir)
         total = len(files)
         errors: list[str] = []
 
@@ -167,6 +169,8 @@ class IndexWorker(QThread):
                 tracker.mark_indexed(file_path)
                 checkpoint.record(file_path, "ok")
                 continue
+
+            bm25_idx.add_documents(chunks)
 
             # Probe de GPU no primeiro batch de chunks encontrado
             if not probe_done:
@@ -250,6 +254,7 @@ class IndexWorker(QThread):
             tracker.mark_indexed(file_path)
             checkpoint.record(file_path, "ok")
 
+        bm25_idx.save()
         # Apagar checkpoint: indexação concluída — botão "Retomar" não deve aparecer
         checkpoint.delete()
         msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
@@ -328,6 +333,7 @@ class ResumeIndexWorker(QThread):
         embeddings = OllamaEmbeddings(model=self.config.embed_model)
         splitter = _get_splitter(self.config, embeddings, source_type=self.config.collection_type)
         tracker = FileTracker(self.config.mnemosyne_dir)
+        bm25_idx = BM25Index.load(self.config.mnemosyne_dir)
         errors: list[str] = []
 
         try:
@@ -365,6 +371,8 @@ class ResumeIndexWorker(QThread):
                 checkpoint.record(file_path, "ok")
                 continue
 
+            bm25_idx.add_documents(chunks)
+
             try:
                 batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
                 for b_idx, batch in enumerate(batch_list):
@@ -393,6 +401,7 @@ class ResumeIndexWorker(QThread):
             tracker.mark_indexed(file_path)
             checkpoint.record(file_path, "ok")
 
+        bm25_idx.save()
         checkpoint.delete()
         msg = f"Retomada concluída — {already_done} já indexados, {total} processados agora."
         if errors:
@@ -521,12 +530,14 @@ class AskWorker(QThread):
         self.collection_type = collection_type
 
     def run(self) -> None:
+        bm25_idx = BM25Index.load(self.config.mnemosyne_dir)
         try:
             messages, sources = prepare_ask(
                 self.vectorstore, self.question, self.config,
                 self.chat_history, self.source_type, self.retrieval_mode,
                 self.tracker, self.persona, self.source_files,
                 self.collection_type,
+                bm25_index=bm25_idx,
             )
         except QueryError as exc:
             self.finished.emit(False, str(exc), [], self.chat_history)
