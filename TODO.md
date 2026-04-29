@@ -3063,7 +3063,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 > O IdleIndexer acumula uma fila de artigos do KOSMOS e processa cada um sem throttling,
 > saturando o CPU continuamente.
 
-- [ ] `Mnemosyne/core/indexer.py` — `index_single_file()`: substituir `vs.add_documents(chunks)`
+- [x] `Mnemosyne/core/indexer.py` — `index_single_file()`: substituir `vs.add_documents(chunks)`
   por loop com `_detect_batch_config()` (lotes de 25 chunks, sleep 0.3 s entre lotes),
   idêntico ao padrão já usado em `create_vectorstore()`
 
@@ -3073,7 +3073,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 ### RAG — Embeddings, Recuperação e Chunking
 
 
-- [ ] Mnemosyne: substituir `OllamaEmbeddings.add_documents()` por chamada direta ao `/api/embed`:
+- [x] Mnemosyne: substituir `OllamaEmbeddings.add_documents()` por chamada direta ao `/api/embed`:
   **Motivo:** `OllamaEmbeddings` do LangChain gera 1 chamada HTTP por chunk (overhead de
   1000–2000ms cada). O endpoint `/api/embed` do Ollama aceita um array de textos numa única
   chamada HTTP (200–300ms por lote). Com 500 chunks por artigo: 500 × 1.5s = 750s vs

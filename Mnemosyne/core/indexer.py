@@ -14,6 +14,7 @@ from langchain_ollama import OllamaEmbeddings
 from .config import AppConfig
 from .errors import EmptyDirectoryError, IndexBuildError, VectorstoreNotFoundError
 from .loaders import load_documents, load_single_file
+from .ollama_client import _BASE_URL as _OLLAMA_BASE
 from .tracker import FileTracker
 
 
@@ -103,6 +104,21 @@ class IndexCheckpoint:
         return (Path(mnemosyne_dir) / cls._FILENAME).exists()
 
 
+def _embed_batch(texts: list[str], model: str, base_url: str = _OLLAMA_BASE) -> list[list[float]]:
+    """Chama /api/embed do Ollama com um lote de textos — 1 HTTP por lote.
+
+    Muito mais eficiente que OllamaEmbeddings (que faz 1 chamada por texto).
+    """
+    import httpx
+    resp = httpx.post(
+        f"{base_url}/api/embed",
+        json={"model": model, "input": texts},
+        timeout=120.0,
+    )
+    resp.raise_for_status()
+    return resp.json()["embeddings"]
+
+
 def _detect_batch_config() -> tuple[int, float]:
     """
     Retorna (batch_size, sleep_s) baseado na RAM disponível.
@@ -173,25 +189,28 @@ def create_vectorstore(config: AppConfig) -> Chroma:
     _BATCH, _SLEEP = _detect_batch_config()
     try:
         import time
+        import uuid
         os.makedirs(config.persist_dir, exist_ok=True)
-        vectorstore = None
-        for b in range(0, len(chunks), _BATCH):
-            batch = chunks[b : b + _BATCH]
-            if vectorstore is None:
-                vectorstore = Chroma.from_documents(
-                    documents=batch,
-                    embedding=embeddings,
-                    persist_directory=config.persist_dir,
-                    collection_metadata={"hnsw:space": "cosine"},
-                )
-            else:
-                vectorstore.add_documents(batch)
-            if b + _BATCH < len(chunks):
+        vs = Chroma(
+            persist_directory=config.persist_dir,
+            embedding_function=embeddings,
+            collection_metadata={"hnsw:space": "cosine"},
+        )
+        for start in range(0, len(chunks), _BATCH):
+            batch = chunks[start : start + _BATCH]
+            embs = _embed_batch([c.page_content for c in batch], config.embed_model)
+            vs._collection.add(
+                ids=[str(uuid.uuid4()) for _ in batch],
+                documents=[c.page_content for c in batch],
+                embeddings=embs,
+                metadatas=[c.metadata or {} for c in batch],
+            )
+            if start + _BATCH < len(chunks):
                 time.sleep(_SLEEP)
     except Exception as exc:
         raise IndexBuildError(f"Falha ao criar vectorstore: {exc}") from exc
 
-    return vectorstore  # type: ignore[return-value]
+    return vs
 
 
 def index_single_file(file_path: str, config: AppConfig) -> Chroma:
@@ -211,6 +230,8 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
     chunks = splitter.split_documents(docs)
 
     try:
+        import time
+        import uuid
         os.makedirs(config.persist_dir, exist_ok=True)
         _clear_orphan_wal(config.persist_dir)
         vs = Chroma(
@@ -218,7 +239,18 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
             embedding_function=_get_embeddings(config),
             collection_metadata={"hnsw:space": "cosine"},
         )
-        vs.add_documents(chunks)
+        _BATCH, _SLEEP = _detect_batch_config()
+        batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
+        for b_idx, batch in enumerate(batch_list):
+            embs = _embed_batch([c.page_content for c in batch], config.embed_model)
+            vs._collection.add(
+                ids=[str(uuid.uuid4()) for _ in batch],
+                documents=[c.page_content for c in batch],
+                embeddings=embs,
+                metadatas=[c.metadata or {} for c in batch],
+            )
+            if b_idx + 1 < len(batch_list):
+                time.sleep(_SLEEP)
     except Exception as exc:
         raise IndexBuildError(f"Falha ao adicionar ao vectorstore: {exc}") from exc
 
@@ -281,17 +313,30 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
         tracker.remove(file_path)
         stats["deleted"] += 1
 
+    import time
+    import uuid
+
+    def _add_chunks(vs: Chroma, chunks: list, embed_model: str) -> None:
+        """Adiciona lista de chunks ao vectorstore via _embed_batch (sem OllamaEmbeddings)."""
+        batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
+        for b_idx, batch in enumerate(batch_list):
+            embs = _embed_batch([c.page_content for c in batch], embed_model)
+            vs._collection.add(
+                ids=[str(uuid.uuid4()) for _ in batch],
+                documents=[c.page_content for c in batch],
+                embeddings=embs,
+                metadatas=[c.metadata or {} for c in batch],
+            )
+            if b_idx + 1 < len(batch_list):
+                time.sleep(_SLEEP)
+
     # Modificados: remove chunks antigos, re-indexa
     for file_path, source_type in modified_files:
         _delete_file_chunks(vs, file_path)
         try:
-            import time
             docs = load_single_file(file_path, source_type=source_type)
             chunks = splitter.split_documents(docs)
-            for b in range(0, len(chunks), _BATCH):
-                vs.add_documents(chunks[b : b + _BATCH])
-                if b + _BATCH < len(chunks):
-                    time.sleep(_SLEEP)
+            _add_chunks(vs, chunks, config.embed_model)
             tracker.mark_indexed(file_path)
             stats["modified"] += 1
         except Exception:
@@ -300,13 +345,9 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
     # Novos
     for file_path, source_type in new_files:
         try:
-            import time
             docs = load_single_file(file_path, source_type=source_type)
             chunks = splitter.split_documents(docs)
-            for b in range(0, len(chunks), _BATCH):
-                vs.add_documents(chunks[b : b + _BATCH])
-                if b + _BATCH < len(chunks):
-                    time.sleep(_SLEEP)
+            _add_chunks(vs, chunks, config.embed_model)
             tracker.mark_indexed(file_path)
             stats["new"] += 1
         except Exception:

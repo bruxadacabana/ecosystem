@@ -25,8 +25,10 @@ from core.indexer import (
     load_vectorstore,
     update_vectorstore,
     _detect_batch_config,
+    _embed_batch,
     _get_splitter,
     _clear_orphan_wal,
+    _OLLAMA_BASE,
     IndexCheckpoint,
 )
 from core.loaders import load_documents, load_single_file
@@ -171,7 +173,10 @@ class IndexWorker(QThread):
                 probe_batch = chunks[:_BATCH]
                 try:
                     t0 = time.time()
-                    probe_embs = embeddings.embed_documents([c.page_content for c in probe_batch])
+                    probe_embs = _embed_batch(
+                        [c.page_content for c in probe_batch],
+                        self.config.embed_model, _OLLAMA_BASE,
+                    )
                     t_probe = time.time() - t0
                     vs._collection.add(
                         ids=[str(uuid.uuid4()) for _ in probe_batch],
@@ -194,11 +199,13 @@ class IndexWorker(QThread):
                 n_batches = len(batch_list)
                 try:
                     if use_parallel and n_batches > 1:
+                        # Pipeline: embeda próximo lote enquanto grava o atual
                         with ThreadPoolExecutor(max_workers=2) as pool:
                             futures = [
                                 (batch, pool.submit(
-                                    embeddings.embed_documents,
+                                    _embed_batch,
                                     [c.page_content for c in batch],
+                                    self.config.embed_model, _OLLAMA_BASE,
                                 ))
                                 for batch in batch_list
                             ]
@@ -221,7 +228,10 @@ class IndexWorker(QThread):
                             if self.isInterruptionRequested():
                                 self.finished.emit(False, "Interrompido.")
                                 return
-                            embs = embeddings.embed_documents([c.page_content for c in batch])
+                            embs = _embed_batch(
+                                [c.page_content for c in batch],
+                                self.config.embed_model, _OLLAMA_BASE,
+                            )
                             vs._collection.add(
                                 ids=[str(uuid.uuid4()) for _ in batch],
                                 documents=[c.page_content for c in batch],
@@ -362,7 +372,10 @@ class ResumeIndexWorker(QThread):
                         checkpoint.close()
                         self.finished.emit(False, "Retomada interrompida.")
                         return
-                    embs = embeddings.embed_documents([c.page_content for c in batch])
+                    embs = _embed_batch(
+                        [c.page_content for c in batch],
+                        self.config.embed_model, _OLLAMA_BASE,
+                    )
                     vs._collection.add(
                         ids=[str(uuid.uuid4()) for _ in batch],
                         documents=[c.page_content for c in batch],
