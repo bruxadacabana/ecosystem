@@ -763,7 +763,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
 
 ### LOGOS — scheduling de processos em nível de SO
 
-- [ ] Lançar o processo Ollama com prioridade reduzida via `nice` quando gerenciado pelo LOGOS:
+- [x] Lançar o processo Ollama com prioridade reduzida via `nice` quando gerenciado pelo LOGOS:
   **Motivo:** `nice` é a ferramenta padrão UNIX para indicar ao scheduler do kernel que um processo
   deve ceder CPU para outros quando há contention. Definir nice=10–15 para o Ollama em P3 garante
   que o sistema continue responsivo sem necessitar de polling ativo do LOGOS. Custo de implementação:
@@ -775,7 +775,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   — Ao receber P1: temporariamente aumentar prioridade do Ollama (`renice -5 $pid`) para minimizar
     latência, restaurar após P1 concluir
 
-- [ ] Lançar processos de background do Python (KOSMOS idle analysis, Mnemosyne idle indexer)
+- [x] Lançar processos de background do Python (KOSMOS idle analysis, Mnemosyne idle indexer)
   com prioridade de SO reduzida:
   **Motivo:** os workers de background Python (`_IndexJobWorker`, `KosmosAnalyzer`) rodam em
   threads PySide6 com `IdlePriority`, mas isso só afeta o scheduler do Python (GIL), não o
@@ -795,7 +795,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   — `KOSMOS/app/core/background_worker.py` (ou equivalente): mesma lógica no início do worker
   — Resultado: durante idle indexing, o sistema mantém 30–40% de CPU disponível para apps ativos
 
-- [ ] Configurar cgroup para o Ollama no systemd (Linux — máquina principal e laptop):
+- [x] Configurar cgroup para o Ollama no systemd (Linux — máquina principal e laptop):
   **Motivo:** nice afeta prioridade relativa mas não limita CPU absoluto. cgroups v2 (padrão
   no CachyOS/Arch) permitem limitar CPU por quota absoluta (ex: no máximo 50% de um core) e
   memória máxima. O systemd usa cgroups nativamente via diretivas de unit file.
@@ -1428,6 +1428,30 @@ mesma paleta sépia, mesma tipografia, mesmas regras de sombra, animações e co
   — Botões de formatação podem overflow em janela estreita
   — Fix: ocultar labels de texto, manter apenas ícones abaixo de 900px; wrapping se necessário
 - [ ] **Testar em janela 900×600 mínima**
+
+---
+
+### Verificação de formato de saída
+
+- [ ] Verificar se todos os arquivos gerados pelo AETHER (escrita, fichas, worldbuilding) são salvos como `.md`
+  **Motivo:** Markdown garante portabilidade e segurança dos dados — os arquivos devem ser legíveis
+  sem o AETHER, sincronizáveis via Proton Drive/git, e compatíveis com outros editores (Obsidian, VSCode).
+  Confirmar que nenhum dado fica preso em formato binário ou JSON opaco não-editável pelo usuário.
+
+---
+
+### Pesquisas pendentes
+
+- [ ] **Acesso remoto ao AETHER** — pesquisar abordagens para acessar projetos/vault fora da rede local
+  (Tailscale, self-hosted sync, CRDT via websocket). Ver também FASE 3 do HUB (linha ~400 deste arquivo).
+
+- [ ] **Escrita colaborativa em tempo real** — pesquisar como múltiplas pessoas podem escrever simultaneamente
+  no mesmo documento remotamente (referências: Ellipsus, Google Docs, Notion).
+  Tecnologias relevantes: OT (Operational Transformation), CRDT (Yjs/Automerge), WebSocket multiplex.
+
+- [ ] **Versão Android do AETHER** — pesquisar viabilidade de Tauri Android para o AETHER
+  (acesso ao vault, editor de markdown, fichas de personagem/worldbuilding no celular).
+  Ver replanejamento da Fase 3 do HUB para contexto sobre o que já foi descartado.
 
 ---
 
