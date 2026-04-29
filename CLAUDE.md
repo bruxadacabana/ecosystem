@@ -77,6 +77,8 @@ Isso garante que ambas as instâncias do Claude Code estejam na mesma página so
 
 ### HUB / LOGOS
 
+**O HUB ESTÁ SEMPRE ABERTO.** É o centro do ecossistema: gerencia o funcionamento de todos os outros apps, é através dele que os demais programas são abertos e monitorados. Nunca listar "exige HUB rodando" como desvantagem — isso é uma premissa arquitetural, não uma restrição.
+
 O HUB é o **dashboard e painel de controle do ecossistema**: lança apps, centraliza configuração, visualiza dados de todos os programas e hospeda o **LOGOS** (proxy inteligente de LLM).
 
 O LOGOS gerencia prioridades de execução de IA:
