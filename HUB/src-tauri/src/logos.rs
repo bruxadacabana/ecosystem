@@ -46,6 +46,8 @@ const VRAM_P3_BLOCK: f32 = 0.85;
 // P3 recebe 429 se CPU ou RAM insuficiente — protege Windows e laptop durante indexação
 const CPU_P3_BLOCK: f32 = 85.0;
 const RAM_P3_BLOCK_MB: u64 = 1_536;
+// Em bateria: threshold de CPU mais conservador para P2 (preservar energia)
+const ON_BATTERY_P2_CPU_BLOCK: f32 = 60.0;
 
 // ── Perfil de hardware ────────────────────────────────────────
 
@@ -180,6 +182,10 @@ struct Inner {
     /// Instância sysinfo — mantida entre polls para que CPU% seja calculado como delta.
     /// CRÍTICO: nunca criar nova instância a cada poll (retorna sempre 0%).
     sys: Mutex<System>,
+    /// True se rodando em bateria (Linux: /sys/class/power_supply/*/status). Atualizado a cada 60s.
+    on_battery: Mutex<bool>,
+    /// Contagem de requests P3 preemptados por P1 desde o startup.
+    preempted_count: Mutex<u32>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -215,6 +221,8 @@ impl LogosState {
             queue_counts: Mutex::new([0, 0, 0]),
             client,
             sys: Mutex::new(sys),
+            on_battery: Mutex::new(is_on_battery()),
+            preempted_count: Mutex::new(0),
         }))
     }
 }
@@ -249,6 +257,10 @@ pub struct StatusResponse {
     pub ram_free_mb: u64,
     /// RAM total em MB via sysinfo
     pub ram_total_mb: u64,
+    /// True se rodando em bateria — P3 bloqueado, thresholds de P2 mais conservadores
+    pub on_battery: bool,
+    /// Requests P3 preemptados por P1 desde o startup
+    pub preempted_count: u32,
 }
 
 #[derive(Serialize, Clone)]
@@ -312,13 +324,15 @@ async fn chat_handler(
     let light = is_light_model(&model_name);
     let permits = if !is_survival && light { 1u32 } else { 2u32 };
     let model_class = if light { "leve" } else { "pesado" }.to_string();
+    let on_battery = *s.0.on_battery.lock().await;
 
     // Injeção de keep_alive por prioridade (transparente para os apps):
     //   Sobrevivência → 0 (RAM liberada imediatamente, independente da prioridade)
+    //   Bateria + P1/P2 → 0 (economiza VRAM; modelo descarregado após cada resposta)
     //   P1 → -1 (modelo permanece na VRAM indefinidamente — sessão ativa)
     //   P2 → "10m" (libera após 10 min de inatividade)
     //   P3 → "0"  (descarrega imediatamente após resposta — background, não precisa ficar quente)
-    if is_survival {
+    if is_survival || on_battery {
         body.insert("keep_alive".to_string(), serde_json::json!(0));
     } else {
         let ka = match priority {
@@ -341,6 +355,10 @@ async fn chat_handler(
             body.insert("options".to_string(), serde_json::json!({ "num_ctx": MAX_CTX }));
         }
     }
+
+    // Parâmetros de eficiência por prioridade (num_thread, num_batch, num_ctx, num_gpu).
+    // Chamado após survival/keep_alive para não sobrescrever caps já aplicados.
+    inject_efficiency_params(&mut body, priority, s.0.hardware_profile, is_survival, on_battery);
 
     let ollama_payload = serde_json::Value::Object(body);
 
@@ -365,6 +383,15 @@ async fn chat_handler(
             ).into_response();
         }
     } else if priority == 3 {
+        // Em bateria: P3 bloqueado completamente (preservar energia)
+        if on_battery {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "Modo bateria: tarefas P3 desabilitadas para preservar energia"
+                })),
+            ).into_response();
+        }
         // Normal: rejeita P3 se VRAM saturada
         if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url).await {
             if pct > VRAM_P3_BLOCK {
@@ -391,6 +418,23 @@ async fn chat_handler(
                 })),
             ).into_response();
         }
+    } else if priority == 2 && on_battery {
+        // Em bateria: threshold de CPU mais conservador para P2
+        let (cpu, _ram, _) = cpu_ram_usage(&s.0.sys).await;
+        if cpu > ON_BATTERY_P2_CPU_BLOCK {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({
+                    "error": format!("CPU {cpu:.0}% em bateria — tarefa P2 adiada")
+                })),
+            ).into_response();
+        }
+    }
+
+    // Preempção inteligente (P1 apenas): se P3 está ativo e VRAM insuficiente para P1,
+    // força descarregamento dos modelos P3 antes de entrar na fila do semáforo.
+    if priority == 1 {
+        try_preempt_p3(&s, &model_name).await;
     }
 
     // Incrementa contador de fila
@@ -501,6 +545,8 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let queue = *s.0.queue_counts.lock().await;
     let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, &s.0.ollama_url).await;
     let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
+    let on_battery     = *s.0.on_battery.lock().await;
+    let preempted_count = *s.0.preempted_count.lock().await;
     StatusResponse {
         active_priority,
         active_model_class,
@@ -516,6 +562,8 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         cpu_pct,
         ram_free_mb,
         ram_total_mb,
+        on_battery,
+        preempted_count,
     }
 }
 
@@ -719,6 +767,173 @@ async fn cpu_ram_usage(sys: &Mutex<System>) -> (f32, u64, u64) {
     (cpu, free_mb, total_mb)
 }
 
+// ── Bateria ───────────────────────────────────────────────────
+
+/// Detecta se o dispositivo está rodando em bateria via sysfs (Linux).
+/// Lê /sys/class/power_supply/*/status; retorna true se alguma fonte reportar "Discharging".
+/// No Windows retorna sempre false (work_pc é desktop sem bateria).
+fn is_on_battery() -> bool {
+    #[cfg(target_os = "linux")]
+    if let Ok(entries) = std::fs::read_dir("/sys/class/power_supply") {
+        for entry in entries.flatten() {
+            if let Ok(s) = std::fs::read_to_string(entry.path().join("status")) {
+                if s.trim() == "Discharging" {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+// ── Parâmetros de eficiência por prioridade ───────────────────
+
+/// Injeta parâmetros de eficiência no objeto `options` do body conforme prioridade e hardware.
+///
+/// P1 normal: sem injeção (máxima performance, app decide).
+/// P1 bateria: num_thread=2 (reduzir consumo energético do CPU).
+/// P1 survival: num_thread=3 (i5-3470: 4 cores, deixa 1 livre para o SO).
+/// P2: num_batch=256 (preservar RAM); em bateria: num_thread=2 adicional.
+/// P3: num_thread=2, num_batch=256, num_ctx=2048 (impacto mínimo no sistema).
+/// P3 laptop (MX150 2 GB): num_gpu=0 adicional (background roda só na CPU, preserva VRAM).
+fn inject_efficiency_params(
+    body: &mut serde_json::Map<String, serde_json::Value>,
+    priority: u8,
+    hw: HardwareProfile,
+    is_survival: bool,
+    on_battery: bool,
+) {
+    if priority == 1 {
+        let opts = body.entry("options").or_insert_with(|| serde_json::json!({}));
+        if let Some(o) = opts.as_object_mut() {
+            if is_survival {
+                // i5-3470: 4 cores sem hyperthreading — 3 para Ollama, 1 livre para o SO
+                o.entry("num_thread").or_insert(serde_json::json!(3));
+            } else if on_battery {
+                // Em bateria: 2 threads para reduzir consumo energético
+                o.entry("num_thread").or_insert(serde_json::json!(2));
+            }
+        }
+        return;
+    }
+    let opts = body.entry("options").or_insert_with(|| serde_json::json!({}));
+    let Some(o) = opts.as_object_mut() else { return };
+    match priority {
+        2 => {
+            o.entry("num_batch").or_insert(serde_json::json!(256));
+            if on_battery {
+                o.entry("num_thread").or_insert(serde_json::json!(2));
+            }
+        }
+        _ => {
+            o.entry("num_thread").or_insert(serde_json::json!(2));
+            o.entry("num_batch").or_insert(serde_json::json!(256));
+            o.entry("num_ctx").or_insert(serde_json::json!(2048));
+            if hw == HardwareProfile::Laptop {
+                // MX150 tem apenas 2 GB VRAM — background não deve competir com P1/P2
+                o.entry("num_gpu").or_insert(serde_json::json!(0));
+            }
+        }
+    }
+}
+
+// ── Preempção inteligente ─────────────────────────────────────
+
+/// Retorna estimativa de VRAM necessária em MB para o modelo, via /api/tags.
+/// /api/tags reporta tamanho em disco (bytes); VRAM ≈ 85% para modelos Q4.
+/// Fallback: 4 GB (conservador — garante que preemptamos se não conseguirmos estimar).
+async fn estimate_model_vram_mb(client: &Client, ollama_url: &str, model: &str) -> u64 {
+    let Ok(resp) = client
+        .get(format!("{ollama_url}/api/tags"))
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+    else {
+        return 4_096;
+    };
+    let Ok(json) = resp.json::<serde_json::Value>().await else {
+        return 4_096;
+    };
+    json["models"]
+        .as_array()
+        .and_then(|arr| {
+            arr.iter()
+                .find(|m| m["name"].as_str() == Some(model))
+                .and_then(|m| m["size"].as_u64())
+                .map(|bytes| bytes * 85 / (100 * 1_048_576))
+        })
+        .unwrap_or(4_096)
+}
+
+/// Preempção inteligente: se P3 está ativo E a VRAM livre não comporta o modelo P1,
+/// força descarregamento dos modelos via do_silence() e aguarda até 10s para VRAM liberar.
+/// Chamado antes do P1 entrar na fila do semáforo — garante VRAM livre quando P1 executa.
+async fn try_preempt_p3(s: &LogosState, model_name: &str) {
+    if *s.0.active_priority.lock().await != Some(3) {
+        return;
+    }
+    let Some((vram_total, vram_used)) = sysfs_vram_mb() else { return };
+    let vram_free = vram_total.saturating_sub(vram_used);
+    let needed_mb = estimate_model_vram_mb(&s.0.client, &s.0.ollama_url, model_name).await;
+    if vram_free >= needed_mb + 500 {
+        return; // VRAM suficiente — coexistência possível
+    }
+    log::info!(
+        "LOGOS: preemptando P3 — VRAM livre {vram_free} MB, necessário ≈{needed_mb} MB para P1 ({model_name})"
+    );
+    do_silence(s).await;
+    *s.0.preempted_count.lock().await += 1;
+    // Aguarda até 10s para os modelos serem descarregados do /api/ps
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if list_ollama_models(&s.0.client, &s.0.ollama_url).await.is_empty() {
+            break;
+        }
+    }
+}
+
+// ── cgroup para Ollama via systemd ───────────────────────────
+
+/// Escreve drop-in de cgroup para o serviço Ollama em ~/.config/systemd/user/ollama.service.d/
+/// Limita CPU e RAM do Ollama para que o sistema permaneça responsivo durante inferência P3.
+/// Aplica apenas em máquinas com GPU discreta (MainPc e Laptop).
+fn configure_cgroup(profile: HardwareProfile) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write as _;
+        let (cpu_weight, cpu_quota, mem_max) = match profile {
+            HardwareProfile::MainPc => (20u32, "80%", "10G"),
+            HardwareProfile::Laptop => (20u32, "60%", "6G"),
+            HardwareProfile::WorkPc => return, // CPU-only sem cgroup — sem GPU para proteger
+        };
+        let Some(home) = dirs::home_dir() else { return };
+        let drop_in = home.join(".config/systemd/user/ollama.service.d");
+        if std::fs::create_dir_all(&drop_in).is_err() {
+            return;
+        }
+        let conf = drop_in.join("logos-limits.conf");
+        let Ok(mut f) = std::fs::OpenOptions::new()
+            .write(true).create(true).truncate(true)
+            .open(&conf)
+        else {
+            return;
+        };
+        let _ = writeln!(f, "[Service]");
+        let _ = writeln!(f, "CPUWeight={cpu_weight}");
+        let _ = writeln!(f, "CPUQuota={cpu_quota}");
+        let _ = writeln!(f, "MemoryMax={mem_max}");
+        let _ = writeln!(f, "IOSchedulingClass=idle");
+        log::info!(
+            "LOGOS: cgroup escrito em {} — rode `systemctl --user daemon-reload && systemctl --user restart ollama` para aplicar",
+            conf.display()
+        );
+    }
+}
+
 // ── Ollama env vars por perfil de hardware ────────────────────
 
 /// Retorna as variáveis de ambiente recomendadas para o Ollama
@@ -798,6 +1013,18 @@ pub async fn start_server(state: LogosState) {
     // Configura variáveis de ambiente do Ollama conforme o perfil de hardware detectado.
     // No Linux, escreve ~/.config/ollama/ollama_env; sempre loga as variáveis recomendadas.
     configure_ollama_env(state.0.hardware_profile);
+
+    // Escreve drop-in de cgroup para o serviço Ollama (Linux/systemd, perfis high/medium).
+    configure_cgroup(state.0.hardware_profile);
+
+    // Task de atualização do status de bateria a cada 60s.
+    let battery_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            *battery_state.0.on_battery.lock().await = is_on_battery();
+        }
+    });
 
     let addr = format!("127.0.0.1:{LOGOS_PORT}");
     let listener = match tokio::net::TcpListener::bind(&addr).await {

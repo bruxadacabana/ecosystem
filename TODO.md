@@ -627,7 +627,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   — requests P3 rejeitados imediatamente (sem análise em background)
   — paralelismo desabilitado (sempre 2 permits, serial mesmo em modelos leves)
   — badge "Modo Sobrevivência — Windows" exibido na LogosView
-- [ ] Monitoramento de CPU e RAM no painel LOGOS:
+- [x] Monitoramento de CPU e RAM no painel LOGOS:
   **Motivo:** a barra de VRAM (já implementada via sysfs) só funciona com GPU discreta AMD/NVIDIA.
   No Windows 10 (sem GPU) e no laptop (Intel integrada sem ROCm), o painel fica cego. CPU e RAM
   são os recursos críticos nessas máquinas. Sem esse monitoramento, P3 pode saturar o CPU a 90%
@@ -654,7 +654,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   **Tipo do status TS (`HUB/src/types.ts`):**
   9. Adicionar `cpu_pct?: number` e `ram_free_mb?: number` ao tipo `LogosStatus`
 
-- [ ] LOGOS: injetar `keep_alive` automaticamente por prioridade no proxy transparente:
+- [x] LOGOS: injetar `keep_alive` automaticamente por prioridade no proxy transparente:
   **Motivo:** por padrão o Ollama retém modelos por 5 minutos após ociosidade. Um modelo P3
   (KOSMOS background) fica ocupando VRAM 5 minutos depois de terminar, impedindo P1 de usar
   o hardware. O parâmetro `keep_alive` por-requisição sobrescreve o global `OLLAMA_KEEP_ALIVE`
@@ -675,7 +675,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
      no LOGOS (ex: app="mnemosyne" → P2)
   3. Para `/api/embed` (embeddings): sempre P3 → `keep_alive: "0"` (embedding models não precisam ficar quentes)
 
-- [ ] LOGOS: configurar variáveis de ambiente do Ollama por perfil de hardware no startup:
+- [x] LOGOS: configurar variáveis de ambiente do Ollama por perfil de hardware no startup:
   **Motivo:** o Ollama usa configurações globais que não distinguem hardware. Sem `OLLAMA_GPU_OVERHEAD`,
   a RX 6600 pode sofrer OOM ao carregar dois modelos simultaneamente (ex: nomic-embed-text + llama 3).
   `OLLAMA_FLASH_ATTENTION=1` ativa tiling de atenção que reduz uso de VRAM em contextos longos
@@ -700,7 +700,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
      O LOGOS escreve esse arquivo no startup e exibe aviso se o serviço precisar ser reiniciado
   3. Registrar as variáveis ativas no log de startup do LOGOS para debugging
 
-- [ ] LOGOS: preempção inteligente de P3 — suspender (não cancelar) ao detectar P1 sem VRAM:
+- [x] LOGOS: preempção inteligente de P3 — suspender (não cancelar) ao detectar P1 sem VRAM:
   **Motivo:** o botão "silenciar" atual cancela P3 de forma cega. A literatura científica
   (Priority-Aware Preemptive Scheduling, arxiv 2503.09304; Topology-aware Preemptive Scheduling,
   arxiv 2411.11560) mostra que o correto é:
@@ -723,7 +723,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
      recolocar os P3 suspensos na fila normal
   3. Adicionar ao `StatusResponse`: `suspended_count: u32` para o LogosPanel mostrar
 
-- [ ] LOGOS: injetar parâmetros de eficiência por prioridade no body dos requests:
+- [x] LOGOS: injetar parâmetros de eficiência por prioridade no body dos requests:
   **Motivo:** `num_thread`, `num_batch` e `num_ctx` são parâmetros por-requisição aceitos pelo
   Ollama no body de `/api/chat` e `/api/generate` (não são variáveis de ambiente). Injetados
   pelo proxy, permitem reduzir impacto de P3 no sistema sem mudar os apps. Evidência empírica:
@@ -741,7 +741,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   Perfil `low` (CPU-only): P1 → num_thread=3 (deixar 1 core livre para o SO)
   Perfil `medium` (MX150): P3 → num_thread=2, num_gpu=0 (forçar CPU-only em background)
 
-- [ ] LOGOS: consciência de bateria via UPower/DBus (laptop Lenovo MX150):
+- [x] LOGOS: consciência de bateria via UPower/DBus (laptop Lenovo MX150):
   **Motivo:** indexação idle (P3) em bateria esgota carga e aquece o laptop sem benefício
   imediato. UPower é o padrão Linux para gerenciamento de energia (freedesktop.org).
   Pesquisa relevante: PowerLens (arxiv 2603.19584, 2025) demonstrou 38.8% de economia de

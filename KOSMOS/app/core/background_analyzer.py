@@ -80,6 +80,20 @@ class BackgroundAnalyzer(QThread):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
+        # Reduz prioridade do processo OS para liberar CPU para apps ativos
+        import sys as _sys, os as _os
+        if _sys.platform != "win32":
+            try:
+                _os.nice(15)
+            except OSError:
+                pass
+        else:
+            try:
+                import ctypes as _ct
+                _ct.windll.kernel32.SetPriorityClass(
+                    _ct.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
+            except Exception:
+                pass
         while self._running:
             try:
                 prio, article_id, title, content = self._queue.get(timeout=5)

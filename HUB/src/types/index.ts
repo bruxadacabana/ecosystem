@@ -146,6 +146,10 @@ export interface LogosStatus {
   ram_free_mb:        number
   /** RAM total em MB via sysinfo */
   ram_total_mb:       number
+  /** True se rodando em bateria — P3 bloqueado, thresholds de P2 mais conservadores */
+  on_battery:         boolean
+  /** Requests P3 preemptados por P1 desde o startup */
+  preempted_count:    number
 }
 
 export interface OllamaModelInfo {

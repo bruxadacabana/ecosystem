@@ -36,6 +36,20 @@ class _IndexJobWorker(QThread):
 
     def run(self) -> None:
         self.setPriority(QThread.Priority.IdlePriority)
+        # Reduz prioridade do processo OS (além do QThread) para liberar CPU para apps ativos
+        import sys as _sys, os as _os
+        if _sys.platform != "win32":
+            try:
+                _os.nice(15)
+            except OSError:
+                pass
+        else:
+            try:
+                import ctypes as _ct
+                _ct.windll.kernel32.SetPriorityClass(
+                    _ct.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
+            except Exception:
+                pass
         try:
             from core.indexer import index_single_file  # lazy import — heavy
             index_single_file(self._job.file_path, self._config)
