@@ -3144,7 +3144,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   4. Adicionar ao `pyproject.toml`: `sentence-transformers` como dependência opcional:
      `[tool.uv.optional-dependencies] low-resource = ["sentence-transformers>=3.0"]`
 
-- [ ] Mnemosyne: chunking adaptativo em substituição ao fixed-size atual:
+- [x] Mnemosyne: chunking adaptativo em substituição ao fixed-size atual:
   **Motivo:** chunking fixo (padrão) pode cortar conceitos no meio e misturar tópicos distintos,
   reduzindo precisão de recuperação. Papers de 2025 (arxiv 2504.19754; PMC12649634) mostram que
   chunking adaptativo — que alinha a fronteiras de seção e parágrafos usando similaridade cosine

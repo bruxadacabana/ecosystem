@@ -124,7 +124,7 @@ class IndexWorker(QThread):
 
         _BATCH, _SLEEP = _detect_batch_config()
         embeddings = OllamaEmbeddings(model=self.config.embed_model)
-        splitter = _get_splitter(self.config, embeddings)
+        splitter = _get_splitter(self.config, embeddings, source_type=self.config.collection_type)
         tracker = FileTracker(self.config.mnemosyne_dir)
         checkpoint = IndexCheckpoint(self.config.mnemosyne_dir)
         total = len(files)
@@ -326,7 +326,7 @@ class ResumeIndexWorker(QThread):
 
         _BATCH, _SLEEP = _detect_batch_config()
         embeddings = OllamaEmbeddings(model=self.config.embed_model)
-        splitter = _get_splitter(self.config, embeddings)
+        splitter = _get_splitter(self.config, embeddings, source_type=self.config.collection_type)
         tracker = FileTracker(self.config.mnemosyne_dir)
         errors: list[str] = []
 

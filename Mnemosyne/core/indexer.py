@@ -119,6 +119,29 @@ def _embed_batch(texts: list[str], model: str, base_url: str = _OLLAMA_BASE) -> 
     return resp.json()["embeddings"]
 
 
+CHUNK_PARAMS: dict[str, dict[str, int]] = {
+    "article":    {"chunk_size": 768,  "chunk_overlap": 100},
+    "transcript": {"chunk_size": 400,  "chunk_overlap": 60},
+    "note":       {"chunk_size": 384,  "chunk_overlap": 50},
+    "document":   {"chunk_size": 512,  "chunk_overlap": 75},
+}
+
+_TRANSCRIPT_EXTS = frozenset({".vtt", ".srt"})
+_DOCUMENT_EXTS   = frozenset({".pdf", ".epub", ".docx"})
+
+
+def _chunk_type_for(source_type: str, file_path: str = "") -> str:
+    """Detecta o tipo lógico de conteúdo para selecionar parâmetros de chunking."""
+    ext = os.path.splitext(file_path.lower())[1] if file_path else ""
+    if ext in _TRANSCRIPT_EXTS:
+        return "transcript"
+    if source_type == "vault":
+        return "note"
+    if ext in _DOCUMENT_EXTS:
+        return "document"
+    return "article"  # .md/.txt em library → artigos scraped
+
+
 def _detect_batch_config() -> tuple[int, float]:
     """
     Retorna (batch_size, sleep_s) baseado na RAM disponível.
@@ -137,12 +160,21 @@ def _detect_batch_config() -> tuple[int, float]:
     return 50, 0.05
 
 
-def _get_splitter(config: AppConfig, embeddings: OllamaEmbeddings | None = None):
-    """
-    Retorna splitter configurado. Se semantic_chunking=True, usa SemanticChunker
-    (requer langchain-experimental; faz chamadas de embedding durante o split
-    para detectar fronteiras semânticas — mais lento, chunks mais coesos).
-    Fallback para RecursiveCharacterTextSplitter se o pacote não estiver instalado.
+def _get_splitter(
+    config: AppConfig,
+    embeddings: OllamaEmbeddings | None = None,
+    source_type: str = "",
+    file_path: str = "",
+):
+    """Retorna splitter configurado com parâmetros adaptativos por tipo de conteúdo.
+
+    Se semantic_chunking=True, usa SemanticChunker (langchain-experimental).
+    Caso contrário, usa RecursiveCharacterTextSplitter com separadores hierárquicos
+    e parâmetros de chunk_size/overlap ajustados ao tipo de documento detectado:
+      vault/.md        → note (384/50)
+      .pdf/.epub/.docx → document (512/75)
+      .vtt/.srt        → transcript (400/60)
+      .md/.txt library → article (768/100)
     """
     if config.semantic_chunking:
         try:
@@ -151,9 +183,13 @@ def _get_splitter(config: AppConfig, embeddings: OllamaEmbeddings | None = None)
             return SemanticChunker(emb)
         except ImportError:
             pass
+
+    chunk_type = _chunk_type_for(source_type or config.collection_type, file_path)
+    params = CHUNK_PARAMS.get(chunk_type, CHUNK_PARAMS["document"])
     return RecursiveCharacterTextSplitter(
-        chunk_size=config.chunk_size,
-        chunk_overlap=config.chunk_overlap,
+        chunk_size=params["chunk_size"],
+        chunk_overlap=params["chunk_overlap"],
+        separators=["\n\n", "\n", ". ", " ", ""],
     )
 
 
@@ -183,7 +219,7 @@ def create_vectorstore(config: AppConfig) -> Chroma:
         raise EmptyDirectoryError(config.watched_dir)
 
     embeddings = _get_embeddings(config)
-    splitter = _get_splitter(config, embeddings)
+    splitter = _get_splitter(config, embeddings, source_type=config.collection_type)
     chunks = splitter.split_documents(documents)
 
     _BATCH, _SLEEP = _detect_batch_config()
@@ -226,7 +262,7 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
     if not docs:
         return load_vectorstore(config)
 
-    splitter = _get_splitter(config)
+    splitter = _get_splitter(config, source_type=config.collection_type, file_path=file_path)
     chunks = splitter.split_documents(docs)
 
     try:
@@ -286,7 +322,6 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
     _clear_orphan_wal(config.persist_dir)
     vs = load_vectorstore(config)
     tracker = FileTracker(config.mnemosyne_dir)
-    splitter = _get_splitter(config)
 
     source_type = config.collection_type  # "vault" or "library"
     dirs: list[tuple[str, str]] = [(config.watched_dir, source_type)]
@@ -335,6 +370,7 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
         _delete_file_chunks(vs, file_path)
         try:
             docs = load_single_file(file_path, source_type=source_type)
+            splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
             _add_chunks(vs, chunks, config.embed_model)
             tracker.mark_indexed(file_path)
@@ -346,6 +382,7 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
     for file_path, source_type in new_files:
         try:
             docs = load_single_file(file_path, source_type=source_type)
+            splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
             _add_chunks(vs, chunks, config.embed_model)
             tracker.mark_indexed(file_path)
