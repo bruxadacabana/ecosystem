@@ -30,6 +30,18 @@ fn read_ecosystem(path: &std::path::Path) -> Value {
         .unwrap_or_else(|| json!({}))
 }
 
+/// Lê o vault_path da seção `aether` do ecosystem.json.
+/// Retorna None se o arquivo não existir ou o campo estiver ausente/vazio.
+pub fn read_vault_path() -> Option<PathBuf> {
+    let path = ecosystem_path()?;
+    let data = read_ecosystem(&path);
+    data.get("aether")
+        .and_then(|s| s.get("vault_path"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
 /// Atualiza apenas a seção `app` do ecosystem.json, preservando as demais.
 /// Escrita atômica: grava em arquivo temporário e renomeia.
 ///

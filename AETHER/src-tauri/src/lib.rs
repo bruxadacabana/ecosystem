@@ -156,24 +156,34 @@ pub fn run() {
                 e
             })?;
 
-            let mut loaded_vault: Option<PathBuf> = None;
-
+            // Carregar vault do armazenamento local
+            let mut local_vault: Option<PathBuf> = None;
             match storage::load_app_data(&app_data_dir) {
-                Ok(app_data) => {
-                    if let Some(vault_path) = app_data.vault_path {
-                        loaded_vault = Some(vault_path.clone());
-                        match app.state::<AppState>().vault_path.lock() {
-                            Ok(mut guard) => {
-                                *guard = Some(vault_path);
-                            }
-                            Err(e) => {
-                                eprintln!("AETHER: Mutex envenenado ao inicializar vault: {e}");
-                            }
-                        }
-                    }
+                Ok(app_data) => { local_vault = app_data.vault_path; }
+                Err(e) => { eprintln!("AETHER: Não foi possível carregar app_data: {e}"); }
+            }
+
+            // Se ecosystem.json (atualizado pelo HUB) tem um valor diferente, usá-lo
+            let eco_vault = ecosystem::read_vault_path();
+            let loaded_vault: Option<PathBuf> = if eco_vault.as_ref() != local_vault.as_ref() {
+                if let Some(eco) = eco_vault {
+                    // HUB atualizou o caminho — sincronizar armazenamento local
+                    let new_data = AppData { vault_path: Some(eco.clone()) };
+                    storage::save_app_data(&app_data_dir, &new_data)
+                        .unwrap_or_else(|e| eprintln!("AETHER: falha ao sincronizar vault_path: {e}"));
+                    Some(eco)
+                } else {
+                    local_vault // ecosystem.json ausente/vazio — manter local
                 }
-                Err(e) => {
-                    eprintln!("AETHER: Não foi possível carregar app_data: {e}");
+            } else {
+                local_vault
+            };
+
+            // Atualizar estado em memória
+            if let Some(ref vault_path) = loaded_vault {
+                match app.state::<AppState>().vault_path.lock() {
+                    Ok(mut guard) => { *guard = Some(vault_path.clone()); }
+                    Err(e) => { eprintln!("AETHER: Mutex envenenado ao inicializar vault: {e}"); }
                 }
             }
 

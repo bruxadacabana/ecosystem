@@ -1411,10 +1411,9 @@ mesma paleta sépia, mesma tipografia, mesmas regras de sombra, animações e co
 
 
 ### Bug: vault_path não atualiza após mudança no HUB
-- [ ] Investigar por que o AETHER continua salvando no caminho antigo mesmo após `sync_root` ser atualizado no HUB
-  — log no startup mostra: `Vault: Some("C:\\Users\\USUARIO\\Documents\\p\\My files\\backup\\notebook\\02_Areas\\escrita")`
-  — verificar `AETHER/src-tauri/src/lib.rs`: se a leitura do ecosystem.json acontece antes ou depois da gravação do vault_path local
-  — verificar `AETHER/src-tauri/src/ecosystem.rs`: se `read_ecosystem` está lendo o arquivo atualizado
+- [x] Investigar por que o AETHER continua salvando no caminho antigo mesmo após `sync_root` ser atualizado no HUB
+  — causa: startup lia app.json local e sobrescrevia o ecosystem.json, ignorando o que o HUB gravou
+  — fix: `ecosystem.rs` expõe `read_vault_path()`; `lib.rs` compara ecosystem.json vs local e prefere ecosystem.json
 - [ ] Adicionar opção de configurar `vault_path` dentro do próprio AETHER (sem depender exclusivamente do HUB)
 
 ### Responsividade — AETHER
@@ -2560,7 +2559,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 ### Integração com LOGOS e Qualidade de IA
 
 
-- [ ] Bug: `generate_stream()` bypassa o LOGOS — chamar via `ecosystem_client`:
+- [x] Bug: `generate_stream()` bypassa o LOGOS — chamar via `ecosystem_client`:
   **Motivo:** `ai_bridge.py` linha ~162 chama `self._session.post(f"{self._endpoint}/api/generate")`
   diretamente, sem passar por `_request_llm`. Isso significa que leituras de artigo em streaming
   (P1) não estão registradas no LOGOS e não interrompem P3. O sistema de prioridades fica cego
@@ -2571,7 +2570,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   2. Garantir que o `priority=1` seja passado para leituras interativas (o usuário abriu o artigo)
   3. Testar que o LogosPanel mostra P1 ativo durante leitura de artigo
 
-- [ ] Bug: `embed()` bypassa o LOGOS — endpoint hardcoded na porta 11434:
+- [x] Bug: `embed()` bypassa o LOGOS — endpoint hardcoded na porta 11434:
   **Motivo:** `ai_bridge.py` linha ~207 chama `self._endpoint` diretamente (porta 11434, não 7072).
   O `keep_alive: "0"` que o LOGOS injetaria para P3 nunca é aplicado a embeddings do KOSMOS.
   **Implementação:**
@@ -2580,7 +2579,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   2. Ou: redirecionar os embeddings do KOSMOS via `ecosystem_client.request_embed()` (a criar),
      que já sabe o endpoint correto e injeta headers `X-App: kosmos`
 
-- [ ] KOSMOS workers de background: definir prioridade de OS com `os.nice()`:
+- [x] KOSMOS workers de background: definir prioridade de OS com `os.nice()`:
   **Motivo:** `BackgroundUpdater` e `BackgroundAnalyzer` rodam como QThread com `IdlePriority`,
   mas esse priority afeta apenas o GIL do Python — o kernel do OS ainda aloca CPU normalmente.
   Durante atualização de feeds + pré-análise simultâneos, o sistema pode ficar lento.
@@ -2596,7 +2595,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
           ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
   ```
 
-- [ ] KOSMOS: deduplicação de artigos RSS por fingerprint de conteúdo:
+- [x] KOSMOS: deduplicação de artigos RSS por fingerprint de conteúdo:
   **Motivo:** 29% de feeds RSS emitem GUIDs duplicados ou incorretos (FeedHash Corpus 2024, 12.7M
   itens). Artigos re-publicados com título diferente passam pela checagem de GUID. Sem fingerprint
   de conteúdo, o KOSMOS armazena e analisa artigos duplicados, desperdiçando chamadas ao Ollama.
