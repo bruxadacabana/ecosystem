@@ -996,19 +996,18 @@ e seleciona automaticamente o perfil de modelos adequado — sem configuração 
 > em vez de 11434 (Ollama). Enquanto essa correção não for feita, o LOGOS não cumpre seu papel
 > central de gerenciador de hardware e prioridades para todo o ecossistema.
 
-- [ ] `HUB/src-tauri/src/logos.rs` — implementar rotas de proxy para os endpoints nativos do Ollama:
+- [x] `HUB/src-tauri/src/logos.rs` — implementar rotas de proxy para os endpoints nativos do Ollama:
   — `POST /api/chat` e `POST /api/generate` → proxy com fila P1/P2/P3 (mesma lógica do `/logos/chat`)
   — `POST /api/embeddings` e `POST /api/embed` → proxy com fila (P3 por padrão para embeddings)
   — `GET /api/tags`, `GET /api/ps`, `DELETE /api/delete` → proxy direto sem fila (metadados)
   — identificação do app por header `X-App: <nome>` (ex: `mnemosyne`, `kosmos`)
-  — keep_alive: -1 injetado automaticamente em todas as chamadas de chat/generate que passam pelo proxy
+  — keep_alive injetado automaticamente em todas as chamadas de chat/generate que passam pelo proxy
   — Hardware Guard (VRAM, CPU, RAM) aplicado a todos os requests, não só aos via `/logos/chat`
-- [ ] `ecosystem_client.py` — `OLLAMA_BASE_URL` aponta para 7072 (LOGOS) em vez de 11434;
-  fallback para 11434 se LOGOS offline (modo emergência já existente)
-- [ ] `Mnemosyne/core/indexer.py` e `workers.py` — `OllamaEmbeddings(base_url="http://localhost:7072")`,
-  `ChatOllama(base_url="http://localhost:7072")`; header `X-App: mnemosyne` via parâmetro `headers`
-- [ ] `KOSMOS/app/core/ai_bridge.py` — URL base para 7072; header `X-App: kosmos`
-- [ ] Auditar todos os apps em busca de `localhost:11434` hardcoded e substituir pela URL do LOGOS
+- [x] `ecosystem_client.py` — `LOGOS_OLLAMA_BASE` aponta para 7072 (LOGOS); `OLLAMA_DIRECT` 11434;
+  `get_ollama_url()` retorna 7072 se LOGOS acessível, senão 11434
+- [x] `Mnemosyne/core/indexer.py` — `OllamaEmbeddings(base_url="http://localhost:7072")`
+- [x] `KOSMOS/app/core/ai_bridge.py` — URL base para 7072; header `X-App: kosmos` em embed e generate_stream
+- [x] Auditar todos os apps em busca de `localhost:11434` hardcoded e substituir pela URL do LOGOS
 - [ ] Testar integração: chat no Mnemosyne (P1) enquanto KOSMOS analisa em background (P3)
   → KOSMOS deve pausar na fila do LOGOS até o chat terminar
 

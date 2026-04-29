@@ -120,6 +120,17 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
 _LOGOS_PORT = 7072
 _LOGOS_BASE = f"http://127.0.0.1:{_LOGOS_PORT}"
 
+# URL do Ollama a usar nos apps: aponta para o LOGOS (proxy transparente).
+# Apps devem usar get_ollama_url() para obter a URL correta em runtime.
+LOGOS_OLLAMA_BASE = f"http://127.0.0.1:{_LOGOS_PORT}"
+OLLAMA_DIRECT     = "http://localhost:11434"
+
+
+def get_ollama_url() -> str:
+    """Retorna a URL do Ollama a usar: 7072 (LOGOS) se disponível, 11434 direto como fallback."""
+    status = _logos_get("/logos/status", timeout=1.5)
+    return LOGOS_OLLAMA_BASE if status is not None else OLLAMA_DIRECT
+
 
 def _logos_get(path: str, timeout: float = 3.0) -> "dict[str, Any] | None":
     """GET JSON ao LOGOS. Retorna None se HUB não estiver rodando."""

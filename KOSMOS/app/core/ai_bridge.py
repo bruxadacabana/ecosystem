@@ -20,7 +20,7 @@ log = logging.getLogger("kosmos.ai")
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from ecosystem_client import request_llm as _request_llm  # noqa: E402
 
-DEFAULT_ENDPOINT = "http://localhost:11434"
+DEFAULT_ENDPOINT = "http://localhost:7072"   # LOGOS proxy; fallback a 11434 nas Settings
 
 
 class OllamaError(Exception):
@@ -171,6 +171,7 @@ class AiBridge:
             with self._session.post(
                 f"{self._endpoint}/api/generate",
                 json=payload,
+                headers={"X-App": "kosmos", "X-Priority": "1"},
                 timeout=timeout,
                 stream=True,
             ) as r:
@@ -212,6 +213,7 @@ class AiBridge:
             r = self._session.post(
                 f"{self._endpoint}/api/embed",
                 json={"model": self._embed_model, "input": text},
+                headers={"X-App": "kosmos", "X-Priority": "3"},
                 timeout=timeout,
             )
             r.raise_for_status()

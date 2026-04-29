@@ -137,7 +137,7 @@ class BackgroundAnalyzer(QThread):
         from app.core.ai_bridge import AiBridge, OllamaError
         from app.ui.views.reader_view import _AnalyzeWorker
 
-        endpoint  = str(self._config.get("ai_endpoint", "http://localhost:11434"))
+        endpoint  = str(self._config.get("ai_endpoint", "http://localhost:7072"))
         gen_model = str(self._config.get("ai_gen_model", ""))
         num_ctx   = int(self._config.get("ai_num_ctx", 4096))
         bridge    = AiBridge(endpoint=endpoint, gen_model=gen_model)
@@ -170,7 +170,7 @@ class BackgroundAnalyzer(QThread):
         """
         from app.core.ai_bridge import AiBridge, OllamaError
 
-        endpoint  = str(self._config.get("ai_endpoint", "http://localhost:11434"))
+        endpoint  = str(self._config.get("ai_endpoint", "http://localhost:7072"))
         gen_model = str(self._config.get("ai_gen_model", ""))
         bridge    = AiBridge(endpoint=endpoint, gen_model=gen_model)
 

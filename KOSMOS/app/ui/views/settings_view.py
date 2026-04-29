@@ -282,7 +282,7 @@ class SettingsView(QWidget):
         row_ep = QHBoxLayout()
         row_ep.addWidget(self._label("Endpoint:"))
         self._ai_endpoint = QLineEdit(
-            self._cfg.get("ai_endpoint", "http://localhost:11434")
+            self._cfg.get("ai_endpoint", "http://localhost:7072")
         )
         self._ai_endpoint.setFont(self._mono(12))
         self._ai_endpoint.editingFinished.connect(
@@ -553,7 +553,7 @@ class SettingsView(QWidget):
 
         # IA
         self._ai_enable.setChecked(bool(self._cfg.get("ai_enabled", False)))
-        self._ai_endpoint.setText(self._cfg.get("ai_endpoint", "http://localhost:11434"))
+        self._ai_endpoint.setText(self._cfg.get("ai_endpoint", "http://localhost:7072"))
         gen_val = self._cfg.get("ai_gen_model", "")
         emb_val = self._cfg.get("ai_embed_model", "")
         if gen_val:
@@ -625,7 +625,7 @@ class SettingsView(QWidget):
         """Conecta ao Ollama, lista modelos instalados e popula os combos."""
         from app.core.ai_bridge import AiBridge, OllamaError
 
-        endpoint = self._ai_endpoint.text().strip() or "http://localhost:11434"
+        endpoint = self._ai_endpoint.text().strip() or "http://localhost:7072"
         self._cfg.set("ai_endpoint", endpoint)
 
         self._ai_status.setText("Conectando…")

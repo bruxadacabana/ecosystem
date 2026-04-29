@@ -1208,7 +1208,7 @@ class ReaderView(QWidget):
             return
 
         num_ctx  = int(self._config.get("ai_num_ctx", 4096))
-        endpoint = self._config.get("ai_endpoint", "http://localhost:11434")
+        endpoint = self._config.get("ai_endpoint", "http://localhost:7072")
         raw = self._article.content_full or self._article.summary or ""
         try:
             from bs4 import BeautifulSoup
@@ -1334,7 +1334,7 @@ class ReaderView(QWidget):
         if self._article.embedding is not None:
             return   # já existe — não regerar
 
-        endpoint = self._config.get("ai_endpoint", "http://localhost:11434")
+        endpoint = self._config.get("ai_endpoint", "http://localhost:7072")
         title   = self._article.title or ""
         content = self._article.content_full or self._article.summary or ""
         try:
@@ -1873,7 +1873,7 @@ class ReaderView(QWidget):
             return
 
         # Verificar configuração de IA
-        endpoint  = self._config.get("ai_endpoint",  "http://localhost:11434")
+        endpoint  = self._config.get("ai_endpoint",  "http://localhost:7072")
         gen_model = self._config.get("ai_gen_model", "")
         if not gen_model:
             from PyQt6.QtWidgets import QMessageBox

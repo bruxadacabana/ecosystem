@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from .errors import OllamaUnavailableError
 
 
-_BASE_URL = "http://localhost:11434"
+_BASE_URL = "http://localhost:7072"   # LOGOS proxy; fallback direto via Ollama 11434
 _TIMEOUT = 2  # segundos
 
 # Fragmentos de nome que identificam modelos de embedding

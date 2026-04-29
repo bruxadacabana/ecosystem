@@ -349,7 +349,7 @@ class SearchOverlay(QWidget):
             self._sem_worker.finished.disconnect()
             self._sem_worker.failed.disconnect()
 
-        endpoint    = self._config.get("ai_endpoint", "http://localhost:11434")   # type: ignore[union-attr]
+        endpoint    = self._config.get("ai_endpoint", "http://localhost:7072")   # type: ignore[union-attr]
         embed_model = self._config.get("ai_embed_model", "")                      # type: ignore[union-attr]
 
         self._status_lbl.setText("Gerando embedding… aguarde")

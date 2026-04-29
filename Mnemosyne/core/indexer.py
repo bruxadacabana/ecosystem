@@ -142,7 +142,7 @@ def _get_splitter(config: AppConfig, embeddings: OllamaEmbeddings | None = None)
 
 
 def _get_embeddings(config: AppConfig) -> OllamaEmbeddings:
-    return OllamaEmbeddings(model=config.embed_model)
+    return OllamaEmbeddings(model=config.embed_model, base_url="http://localhost:7072")
 
 
 def create_vectorstore(config: AppConfig) -> Chroma:

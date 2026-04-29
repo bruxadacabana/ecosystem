@@ -6,10 +6,19 @@
 //  numa fila de prioridades (P1 > P2 > P3) e monitora VRAM
 //  da GPU (AMD/Linux via sysfs; fallback: uso relativo via Ollama /api/ps).
 //
-//  Rotas:
-//    GET  /logos/status  → StatusResponse
-//    POST /logos/chat    → proxy para Ollama /api/chat
-//    POST /logos/silence → keep_alive: 0 em todos os modelos carregados
+//  Rotas próprias:
+//    GET  /logos/status    → StatusResponse
+//    POST /logos/chat      → proxy para Ollama /api/chat (API legada)
+//    POST /logos/silence   → keep_alive: 0 em todos os modelos carregados
+//
+//  Proxy transparente (apps apontam para 7072 em vez de 11434):
+//    POST /api/chat        → fila P1/P2/P3 + hardware guard
+//    POST /api/generate    → fila P1/P2/P3 + hardware guard
+//    POST /api/embed       → fila P3 (embeddings, endpoint novo do Ollama)
+//    POST /api/embeddings  → fila P3 (embeddings, endpoint legado do Ollama)
+//    GET  /api/tags        → passthrough direto ao Ollama (sem fila)
+//    GET  /api/ps          → passthrough direto ao Ollama (sem fila)
+//    DELETE /api/delete    → passthrough direto ao Ollama (sem fila)
 //
 //  Otimizações de Ollama gerenciadas pelo LOGOS:
 //    keep_alive: -1  → injetado automaticamente em todo request (modelo
@@ -22,10 +31,11 @@
 // ============================================================
 
 use axum::{
+    body::Bytes,
     extract::State,
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use reqwest::Client;
@@ -280,12 +290,21 @@ pub struct HardwareResponse {
 
 pub fn build_router(state: LogosState) -> Router {
     Router::new()
-        .route("/logos/status",  get(status_handler))
-        .route("/logos/chat",    post(chat_handler))
-        .route("/logos/silence", post(silence_handler))
-        .route("/logos/profile", post(profile_handler))
+        // LOGOS API própria
+        .route("/logos/status",   get(status_handler))
+        .route("/logos/chat",     post(chat_handler))
+        .route("/logos/silence",  post(silence_handler))
+        .route("/logos/profile",  post(profile_handler))
         .route("/logos/models",   get(models_handler))
         .route("/logos/hardware", get(hardware_handler))
+        // Proxy transparente — apps apontam para 7072 em vez de 11434
+        .route("/api/chat",       post(api_chat_proxy))
+        .route("/api/generate",   post(api_generate_proxy))
+        .route("/api/embed",      post(api_embed_proxy))
+        .route("/api/embeddings", post(api_embeddings_proxy))
+        .route("/api/tags",       get(api_tags_passthrough))
+        .route("/api/ps",         get(api_ps_passthrough))
+        .route("/api/delete",     delete(api_delete_passthrough))
         .with_state(state)
 }
 
@@ -309,7 +328,34 @@ async fn chat_handler(
         .remove("app")
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_default();
+    queue_and_forward(s, body, app_name, requested_priority, "api/chat").await
+}
 
+/// Lê X-App e X-Priority dos headers HTTP. Fallback: app="", priority=3.
+fn extract_app_priority(headers: &HeaderMap) -> (String, u8) {
+    let app = headers
+        .get("x-app")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let priority = headers
+        .get("x-priority")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u8>().ok())
+        .map(|p| p.clamp(1, 3))
+        .unwrap_or(3);
+    (app, priority)
+}
+
+/// Núcleo da fila de prioridades: aplica guards, enfileira e encaminha ao Ollama.
+/// Compartilhado entre /logos/chat (legado) e /api/chat, /api/generate (proxy transparente).
+async fn queue_and_forward(
+    s: LogosState,
+    mut body: serde_json::Map<String, serde_json::Value>,
+    app_name: String,
+    requested_priority: u8,
+    ollama_target: &str,
+) -> Response {
     // Aplica override de prioridade baseado no perfil ativo
     let profile = s.0.active_profile.lock().await.clone();
     let priority = apply_profile_priority(&profile, &app_name, requested_priority);
@@ -476,7 +522,7 @@ async fn chat_handler(
     *s.0.active_app.lock().await         = Some(app_name);
 
     // Encaminha ao Ollama
-    let url = format!("{}/api/chat", s.0.ollama_url);
+    let url = format!("{}/{ollama_target}", s.0.ollama_url);
     let result = s.0.client.post(&url).json(&ollama_payload).send().await;
 
     // Limpa estado ativo antes de liberar o semáforo
@@ -501,6 +547,186 @@ async fn chat_handler(
             StatusCode::BAD_GATEWAY,
             Json(serde_json::json!({ "error": format!("Ollama indisponível: {e}") })),
         ).into_response(),
+    }
+}
+
+// ── Proxy transparente — /api/* ────────────────────────────────
+
+async fn api_chat_proxy(
+    State(s): State<LogosState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let (app_name, priority) = extract_app_priority(&headers);
+    let body_map = serde_json::from_slice(&body).unwrap_or_default();
+    queue_and_forward(s, body_map, app_name, priority, "api/chat").await
+}
+
+async fn api_generate_proxy(
+    State(s): State<LogosState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let (app_name, priority) = extract_app_priority(&headers);
+    let body_map = serde_json::from_slice(&body).unwrap_or_default();
+    queue_and_forward(s, body_map, app_name, priority, "api/generate").await
+}
+
+async fn api_embed_proxy(
+    State(s): State<LogosState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    do_embed_proxy(s, headers, body, "api/embed").await
+}
+
+async fn api_embeddings_proxy(
+    State(s): State<LogosState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    do_embed_proxy(s, headers, body, "api/embeddings").await
+}
+
+/// Proxy de embeddings — sempre P3, sem keep_alive, sem preempção.
+/// Hardware guard aplicado: rejeita se VRAM saturada ou CPU/RAM insuficiente.
+async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: &str) -> Response {
+    let app_name = headers
+        .get("x-app")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    let on_battery = *s.0.on_battery.lock().await;
+    let is_survival = s.0.hardware_mode == "sobrevivencia";
+
+    if on_battery {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error": "Modo bateria: embeddings desabilitados para preservar energia"
+        }))).into_response();
+    }
+    if is_survival {
+        return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+            "error": "Modo Sobrevivência: embeddings desabilitados nesta máquina"
+        }))).into_response();
+    }
+
+    if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url).await {
+        if pct > VRAM_P3_BLOCK {
+            return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+                "error": "VRAM > 85% — embedding adiado"
+            }))).into_response();
+        }
+    }
+    let (cpu, ram_free) = {
+        let (c, f, _) = cpu_ram_usage(&s.0.sys).await;
+        (c, f)
+    };
+    if cpu > CPU_P3_BLOCK || ram_free < RAM_P3_BLOCK_MB {
+        return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+            "error": format!("CPU {cpu:.0}% ou RAM livre {ram_free} MB insuficiente — embedding adiado")
+        }))).into_response();
+    }
+
+    s.0.queue_counts.lock().await[2] += 1;
+    let sem = s.0.semaphore.clone();
+    let permit = tokio::time::timeout(P3_TIMEOUT, sem.acquire_many_owned(1))
+        .await.ok().and_then(|r| r.ok());
+    {
+        let mut counts = s.0.queue_counts.lock().await;
+        counts[2] = counts[2].saturating_sub(1);
+    }
+
+    let _permit = match permit {
+        Some(p) => p,
+        None => return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+            "error": "Timeout aguardando LOGOS — sistema sobrecarregado"
+        }))).into_response(),
+    };
+
+    *s.0.active_priority.lock().await = Some(3);
+    *s.0.active_app.lock().await = Some(app_name);
+
+    let url = format!("{}/{target}", s.0.ollama_url);
+    let result = s.0.client
+        .post(&url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+        .await;
+
+    *s.0.active_priority.lock().await = None;
+    *s.0.active_app.lock().await = None;
+    drop(_permit);
+
+    match result {
+        Ok(resp) => {
+            let status = resp.status();
+            match resp.bytes().await {
+                Ok(bytes) => axum::http::Response::builder()
+                    .status(status)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+            }
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+            "error": format!("Ollama indisponível: {e}")
+        }))).into_response(),
+    }
+}
+
+async fn api_tags_passthrough(State(s): State<LogosState>) -> Response {
+    proxy_get_to_ollama(&s, "api/tags").await
+}
+
+async fn api_ps_passthrough(State(s): State<LogosState>) -> Response {
+    proxy_get_to_ollama(&s, "api/ps").await
+}
+
+async fn api_delete_passthrough(State(s): State<LogosState>, body: Bytes) -> Response {
+    let url = format!("{}/api/delete", s.0.ollama_url);
+    match s.0.client
+        .delete(&url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let status = resp.status();
+            match resp.bytes().await {
+                Ok(bytes) => axum::http::Response::builder()
+                    .status(status)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+            }
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+            "error": format!("Ollama indisponível: {e}")
+        }))).into_response(),
+    }
+}
+
+async fn proxy_get_to_ollama(s: &LogosState, path: &str) -> Response {
+    let url = format!("{}/{path}", s.0.ollama_url);
+    match s.0.client.get(&url).send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            match resp.bytes().await {
+                Ok(bytes) => axum::http::Response::builder()
+                    .status(status)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+            }
+        }
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+            "error": format!("Ollama indisponível: {e}")
+        }))).into_response(),
     }
 }
 
