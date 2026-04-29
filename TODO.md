@@ -145,11 +145,11 @@ Objetivo: Mnemosyne lê `watched_dir`, `vault_dir`, `chroma_dir` do ecosystem.js
 startup (HUB é fonte de verdade). SetupDialog exibe esses caminhos como read-only e
 permite adicionar `extra_dirs` para indexação adicional.
 
-- [ ] `Mnemosyne/core/config.py` — adicionar `extra_dirs: list[str]`; `load_config()` merge
+- [x] `Mnemosyne/core/config.py` — adicionar `extra_dirs: list[str]`; `load_config()` merge
       ecosystem.json: watched_dir/vault_dir/chroma_dir do ecosystem têm precedência
-- [ ] `Mnemosyne/gui/main_window.py` — SetupDialog: caminhos principais viram read-only
+- [x] `Mnemosyne/gui/main_window.py` — SetupDialog: caminhos principais viram read-only
       (vindos do ecosystem); adicionar QListWidget "Pastas extras" com +/−
-- [ ] `Mnemosyne/core/` (indexador) — loop sobre `[watched_dir] + extra_dirs`
+- [x] `Mnemosyne/core/` (indexador) — loop sobre `[watched_dir] + extra_dirs`
 
 ### EXTRAS — Utilitários e manutenção
 
@@ -405,7 +405,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 
 ---
 
-### FASE 4 — Polimento e features extras
+### FASE 4 — Features extras
 > Qualidade de vida. Só após Fase 3 estável.
 
 - [x] Verificar sistema de log em todos os apps e criar onde não existir

@@ -11,6 +11,29 @@ from .collections import CollectionConfig, CollectionType, sync_ecosystem_collec
 from .errors import ConfigError
 
 
+def _read_ecosystem_primary_paths() -> tuple[str, str, str]:
+    """Retorna (watched_dir, vault_dir, chroma_dir) da seção mnemosyne do ecosystem.json."""
+    try:
+        import os as _os
+        appdata = _os.environ.get("APPDATA", "")
+        candidates = [
+            Path(appdata) / "ecosystem" / "ecosystem.json",
+            Path.home() / ".local" / "share" / "ecosystem" / "ecosystem.json",
+        ]
+        for eco_path in candidates:
+            if eco_path.exists():
+                data = json.loads(eco_path.read_text(encoding="utf-8"))
+                m = data.get("mnemosyne", {})
+                return (
+                    m.get("watched_dir", ""),
+                    m.get("vault_dir", ""),
+                    m.get("chroma_dir", ""),
+                )
+    except Exception:
+        pass
+    return ("", "", "")
+
+
 def _resolve_config_path() -> Path:
     """Retorna {mnemosyne.config_path}/settings.json se definido no ecosystem.json."""
     try:
@@ -43,6 +66,7 @@ _DEFAULTS: dict = {
     "collections": [],
     "active_collection": "",
     "ecosystem_enabled": {},
+    "extra_dirs": [],
     "auto_index_on_change": True,
     "background_index_enabled": True,
     "relevance_decay_days": 30,
@@ -64,6 +88,7 @@ class AppConfig:
     collections: list[CollectionConfig] = field(default_factory=list)
     active_collection: str = ""
     ecosystem_enabled: dict[str, bool] = field(default_factory=dict)
+    extra_dirs: list[str] = field(default_factory=list)
     auto_index_on_change: bool = True
     background_index_enabled: bool = True
     relevance_decay_days: int = 30
@@ -72,6 +97,10 @@ class AppConfig:
     dark_mode: bool = True
     reranking_enabled: bool = True
     reranking_top_n: int = 6
+    # Populados em runtime a partir do ecosystem.json — nunca persistidos
+    ecosystem_watched_dir: str = ""
+    ecosystem_vault_dir: str = ""
+    ecosystem_chroma_dir: str = ""
 
     # ── Propriedades derivadas da coleção ativa ───────────────────────────────
 
@@ -89,22 +118,30 @@ class AppConfig:
 
     @property
     def watched_dir(self) -> str:
+        if self.ecosystem_watched_dir:
+            return self.ecosystem_watched_dir
         coll = self.active_coll
         return coll.path if coll else ""
 
     @property
     def vault_dir(self) -> str:
         """Path da coleção ativa se for VAULT, senão vazio."""
+        if self.ecosystem_vault_dir:
+            return self.ecosystem_vault_dir
         coll = self.active_coll
         return coll.path if coll and coll.type == CollectionType.VAULT else ""
 
     @property
     def persist_dir(self) -> str:
+        if self.ecosystem_chroma_dir:
+            return self.ecosystem_chroma_dir
         coll = self.active_coll
         return coll.persist_dir if coll else ""
 
     @property
     def mnemosyne_dir(self) -> str:
+        if self.ecosystem_chroma_dir:
+            return str(Path(self.ecosystem_chroma_dir).parent)
         coll = self.active_coll
         return coll.mnemosyne_dir if coll else ""
 
@@ -115,7 +152,7 @@ class AppConfig:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.llm_model and self.embed_model and self.active_coll and self.watched_dir)
+        return bool(self.llm_model and self.embed_model and self.watched_dir)
 
 
 def _migrate_legacy(data: dict) -> dict:
@@ -213,6 +250,9 @@ def load_config() -> AppConfig:
     ecosystem_enabled: dict[str, bool] = data.get("ecosystem_enabled", {})
     collections = sync_ecosystem_collections(collections, ecosystem_enabled)
 
+    raw_extra: list = data.get("extra_dirs", [])
+    extra_dirs = [str(d) for d in raw_extra if isinstance(d, str) and d]
+
     config = AppConfig(
         llm_model=str(data.get("llm_model", "")),
         embed_model=str(data.get("embed_model", "")),
@@ -222,6 +262,7 @@ def load_config() -> AppConfig:
         collections=collections,
         active_collection=str(data.get("active_collection", "")),
         ecosystem_enabled=ecosystem_enabled,
+        extra_dirs=extra_dirs,
         auto_index_on_change=bool(data.get("auto_index_on_change", True)),
         background_index_enabled=bool(data.get("background_index_enabled", True)),
         relevance_decay_days=int(data.get("relevance_decay_days", 30)),
@@ -231,7 +272,13 @@ def load_config() -> AppConfig:
         reranking_enabled=bool(data.get("reranking_enabled", True)),
         reranking_top_n=int(data.get("reranking_top_n", 6)),
     )
-    return _apply_logos_recommendations(config, _saved_keys)
+    config = _apply_logos_recommendations(config, _saved_keys)
+
+    eco_watched, eco_vault, eco_chroma = _read_ecosystem_primary_paths()
+    config.ecosystem_watched_dir = eco_watched
+    config.ecosystem_vault_dir = eco_vault
+    config.ecosystem_chroma_dir = eco_chroma
+    return config
 
 
 def save_config(config: AppConfig) -> None:
@@ -246,6 +293,7 @@ def save_config(config: AppConfig) -> None:
         "collections": [c.to_dict() for c in config.collections],
         "active_collection": config.active_collection,
         "ecosystem_enabled": config.ecosystem_enabled,
+        "extra_dirs": config.extra_dirs,
         "auto_index_on_change": config.auto_index_on_change,
         "background_index_enabled": config.background_index_enabled,
         "relevance_decay_days": config.relevance_decay_days,

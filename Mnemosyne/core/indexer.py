@@ -158,6 +158,11 @@ def create_vectorstore(config: AppConfig) -> Chroma:
     source_type = config.collection_type  # "vault" or "library"
     documents, _ = load_documents(config.watched_dir, source_type=source_type)
 
+    for extra_dir in config.extra_dirs:
+        if os.path.isdir(extra_dir):
+            extra_docs, _ = load_documents(extra_dir, source_type="library")
+            documents.extend(extra_docs)
+
     if not documents:
         raise EmptyDirectoryError(config.watched_dir)
 
@@ -253,6 +258,9 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
 
     source_type = config.collection_type  # "vault" or "library"
     dirs: list[tuple[str, str]] = [(config.watched_dir, source_type)]
+    for extra_dir in config.extra_dirs:
+        if os.path.isdir(extra_dir):
+            dirs.append((extra_dir, "library"))
 
     new_files: list[tuple[str, str]] = []
     modified_files: list[tuple[str, str]] = []

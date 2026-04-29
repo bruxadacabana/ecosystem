@@ -85,17 +85,22 @@ class SetupDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Configure o Mnemosyne.\nAs configurações são salvas em config.json."))
 
-        form = QFormLayout()
+        # Caminhos do ecossistema (somente leitura — gerenciados via HUB)
+        paths_group = QGroupBox("Caminhos do ecossistema  (somente leitura — configure no HUB)")
+        paths_form = QFormLayout(paths_group)
 
-        # Pasta principal (Biblioteca do utilizador)
-        folder_row = QHBoxLayout()
-        self.folder_edit = QLineEdit(current.watched_dir)
-        self.folder_edit.setPlaceholderText("Selecione a pasta com seus documentos…")
-        folder_btn = QPushButton("Escolher…")
-        folder_btn.clicked.connect(self._pick_folder)
-        folder_row.addWidget(self.folder_edit)
-        folder_row.addWidget(folder_btn)
-        form.addRow("Biblioteca (pasta):", folder_row)
+        def _ro(val: str) -> QLineEdit:
+            le = QLineEdit(val or "não configurado")
+            le.setReadOnly(True)
+            le.setStyleSheet("background: transparent; border: none; color: palette(mid);")
+            return le
+
+        paths_form.addRow("Biblioteca:", _ro(current.watched_dir))
+        paths_form.addRow("Vault:", _ro(current.vault_dir))
+        paths_form.addRow("ChromaDB:", _ro(current.persist_dir))
+        layout.addWidget(paths_group)
+
+        form = QFormLayout()
 
         chat_models = filter_chat_models(models)
         embed_models = filter_embed_models(models)
@@ -183,6 +188,25 @@ class SetupDialog(QDialog):
                 self._eco_checkboxes[eco_key] = cb
             layout.addWidget(eco_group)
 
+        # Pastas extras para indexação
+        extra_group = QGroupBox("Pastas extras para indexação")
+        extra_layout = QVBoxLayout(extra_group)
+        extra_layout.addWidget(QLabel("Indexadas junto com a Biblioteca principal:"))
+        self.extra_dirs_list = QListWidget()
+        for d in current.extra_dirs:
+            self.extra_dirs_list.addItem(d)
+        extra_layout.addWidget(self.extra_dirs_list)
+        extra_btns = QHBoxLayout()
+        extra_add_btn = QPushButton("+  Adicionar pasta…")
+        extra_add_btn.clicked.connect(self._add_extra_dir)
+        extra_rm_btn = QPushButton("−  Remover")
+        extra_rm_btn.clicked.connect(self._remove_extra_dir)
+        extra_btns.addWidget(extra_add_btn)
+        extra_btns.addWidget(extra_rm_btn)
+        extra_btns.addStretch()
+        extra_layout.addLayout(extra_btns)
+        layout.addWidget(extra_group)
+
         # Opções de qualidade
         opts_group = QGroupBox("Opções de qualidade")
         opts_layout = QVBoxLayout(opts_group)
@@ -212,16 +236,26 @@ class SetupDialog(QDialog):
         if idx >= 0:
             self.embed_combo.setCurrentIndex(idx)
 
-    def _pick_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Selecionar pasta de documentos")
+    def _add_extra_dir(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Selecionar pasta adicional")
         if folder:
-            self.folder_edit.setText(folder)
+            existing = [self.extra_dirs_list.item(i).text()
+                        for i in range(self.extra_dirs_list.count())]
+            if folder not in existing:
+                self.extra_dirs_list.addItem(folder)
 
-    def get_values(self) -> tuple[str, str, str, dict[str, bool], bool]:
-        """Retorna (library_path, llm_model, embed_model, ecosystem_enabled, reranking_enabled)."""
+    def _remove_extra_dir(self) -> None:
+        row = self.extra_dirs_list.currentRow()
+        if row >= 0:
+            self.extra_dirs_list.takeItem(row)
+
+    def get_values(self) -> tuple[list[str], str, str, dict[str, bool], bool]:
+        """Retorna (extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled)."""
+        extra_dirs = [self.extra_dirs_list.item(i).text()
+                      for i in range(self.extra_dirs_list.count())]
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
         return (
-            self.folder_edit.text().strip(),
+            extra_dirs,
             self.llm_combo.currentText(),
             self.embed_combo.currentText(),
             eco_enabled,
@@ -1143,11 +1177,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            folder, llm, embed, eco_enabled, reranking = dialog.get_values()
-            if not folder:
-                QMessageBox.warning(self, "Aviso", "Selecione uma pasta para continuar.")
-                return
-            self._apply_setup_values(folder, llm, embed, eco_enabled, reranking)
+            extra_dirs, llm, embed, eco_enabled, reranking = dialog.get_values()
+            self._apply_setup_values(extra_dirs, llm, embed, eco_enabled, reranking)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -1155,47 +1186,23 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            folder, llm, embed, eco_enabled, reranking = dialog.get_values()
-            if not folder:
-                return
-            changed_dir = folder != self.config.watched_dir
-            self._apply_setup_values(folder, llm, embed, eco_enabled, reranking)
+            extra_dirs, llm, embed, eco_enabled, reranking = dialog.get_values()
+            self._apply_setup_values(extra_dirs, llm, embed, eco_enabled, reranking)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
-            if changed_dir:
-                self.vectorstore = None
-                self._disable_query_buttons()
             self._log_event("Configuração atualizada.")
             self._post_config_init()
 
     def _apply_setup_values(
-        self, folder: str, llm: str, embed: str, eco_enabled: dict[str, bool],
+        self, extra_dirs: list[str], llm: str, embed: str, eco_enabled: dict[str, bool],
         reranking_enabled: bool = True,
     ) -> None:
         """Aplica os valores do SetupDialog ao config e guarda."""
-        from core.collections import CollectionConfig, CollectionType
-
         self.config.llm_model = llm
         self.config.embed_model = embed
+        self.config.extra_dirs = extra_dirs
         self.config.ecosystem_enabled.update(eco_enabled)
         self.config.reranking_enabled = reranking_enabled
-
-        # Atualiza ou cria a coleção Biblioteca do utilizador
-        user_colls = [c for c in self.config.collections if c.source == "user"]
-        if user_colls:
-            user_colls[0].path = folder
-            if not self.config.active_collection:
-                self.config.active_collection = user_colls[0].name
-        else:
-            coll = CollectionConfig(
-                name="Biblioteca",
-                path=folder,
-                type=CollectionType.LIBRARY,
-                source="user",
-            )
-            self.config.collections.insert(0, coll)
-            self.config.active_collection = coll.name
-
         save_config(self.config)
         self._populate_collection_combo()
 
