@@ -763,7 +763,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
 
 ### LOGOS — scheduling de processos em nível de SO
 
-- [ ] Lançar o processo Ollama com prioridade reduzida via `nice` quando gerenciado pelo LOGOS:
+- [x] Lançar o processo Ollama com prioridade reduzida via `nice` quando gerenciado pelo LOGOS:
   **Motivo:** `nice` é a ferramenta padrão UNIX para indicar ao scheduler do kernel que um processo
   deve ceder CPU para outros quando há contention. Definir nice=10–15 para o Ollama em P3 garante
   que o sistema continue responsivo sem necessitar de polling ativo do LOGOS. Custo de implementação:
@@ -775,7 +775,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   — Ao receber P1: temporariamente aumentar prioridade do Ollama (`renice -5 $pid`) para minimizar
     latência, restaurar após P1 concluir
 
-- [ ] Lançar processos de background do Python (KOSMOS idle analysis, Mnemosyne idle indexer)
+- [x] Lançar processos de background do Python (KOSMOS idle analysis, Mnemosyne idle indexer)
   com prioridade de SO reduzida:
   **Motivo:** os workers de background Python (`_IndexJobWorker`, `KosmosAnalyzer`) rodam em
   threads PySide6 com `IdlePriority`, mas isso só afeta o scheduler do Python (GIL), não o
@@ -795,7 +795,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   — `KOSMOS/app/core/background_worker.py` (ou equivalente): mesma lógica no início do worker
   — Resultado: durante idle indexing, o sistema mantém 30–40% de CPU disponível para apps ativos
 
-- [ ] Configurar cgroup para o Ollama no systemd (Linux — máquina principal e laptop):
+- [x] Configurar cgroup para o Ollama no systemd (Linux — máquina principal e laptop):
   **Motivo:** nice afeta prioridade relativa mas não limita CPU absoluto. cgroups v2 (padrão
   no CachyOS/Arch) permitem limitar CPU por quota absoluta (ex: no máximo 50% de um core) e
   memória máxima. O systemd usa cgroups nativamente via diretivas de unit file.

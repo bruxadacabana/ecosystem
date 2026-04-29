@@ -927,10 +927,68 @@ fn configure_cgroup(profile: HardwareProfile) {
         let _ = writeln!(f, "CPUQuota={cpu_quota}");
         let _ = writeln!(f, "MemoryMax={mem_max}");
         let _ = writeln!(f, "IOSchedulingClass=idle");
+        let _ = writeln!(f, "Nice=10");
         log::info!(
             "LOGOS: cgroup escrito em {} — rode `systemctl --user daemon-reload && systemctl --user restart ollama` para aplicar",
             conf.display()
         );
+    }
+}
+
+// ── Prioridade de SO do processo Ollama ──────────────────────
+
+/// Encontra o PID do processo Ollama via `pidof ollama` (Linux).
+/// Retorna None no Windows (processo não gerenciado pelo LOGOS) ou se não encontrado.
+fn find_ollama_pid() -> Option<u32> {
+    #[cfg(target_os = "linux")]
+    {
+        let out = std::process::Command::new("pidof")
+            .arg("ollama")
+            .output()
+            .ok()?;
+        // pidof pode retornar múltiplos PIDs separados por espaço — usa o primeiro
+        String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .next()?
+            .parse()
+            .ok()
+    }
+    #[cfg(not(target_os = "linux"))]
+    None
+}
+
+/// Chama `renice -n NICE_VAL PID` para ajustar a prioridade do processo Ollama.
+///
+/// Aumentar o nice (ex: 0 → 10): sempre permitido para o dono do processo.
+/// Diminuir o nice (ex: 10 → 0): requer CAP_SYS_NICE — falha silenciosa para usuário regular.
+fn renice_ollama(pid: u32, nice_val: i32) {
+    #[cfg(target_os = "linux")]
+    {
+        match std::process::Command::new("renice")
+            .args(["-n", &nice_val.to_string(), &pid.to_string()])
+            .output()
+        {
+            Ok(out) if out.status.success() => {
+                log::info!("LOGOS: Ollama PID {pid} → nice={nice_val}");
+            }
+            Ok(out) => {
+                let msg = String::from_utf8_lossy(&out.stderr);
+                log::debug!("LOGOS: renice Ollama PID {pid} nice={nice_val} falhou: {msg}");
+            }
+            Err(e) => {
+                log::debug!("LOGOS: renice indisponível: {e}");
+            }
+        }
+    }
+}
+
+/// Aplica nice=10 ao processo Ollama em execução (Linux).
+/// Complementa o `Nice=10` do systemd para casos em que o Ollama não roda via serviço.
+pub fn apply_ollama_nice() {
+    if let Some(pid) = find_ollama_pid() {
+        renice_ollama(pid, 10);
+    } else {
+        log::debug!("LOGOS: processo Ollama não encontrado para renice (ok se gerenciado por systemd)");
     }
 }
 
@@ -1016,6 +1074,12 @@ pub async fn start_server(state: LogosState) {
 
     // Escreve drop-in de cgroup para o serviço Ollama (Linux/systemd, perfis high/medium).
     configure_cgroup(state.0.hardware_profile);
+
+    // Aplica nice=10 ao processo Ollama em execução (complementa o Nice=10 do systemd).
+    // Em máquinas com GPU (MainPc/Laptop) — no WorkPc o modo sobrevivência já limita o acesso.
+    if state.0.hardware_profile != HardwareProfile::WorkPc {
+        apply_ollama_nice();
+    }
 
     // Task de atualização do status de bateria a cada 60s.
     let battery_state = state.clone();
