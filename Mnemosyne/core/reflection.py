@@ -16,6 +16,7 @@ não interromper a indexação caso o LLM falhe ou esteja lento.
 from __future__ import annotations
 
 import hashlib
+import re
 import sys
 from pathlib import Path
 from typing import Callable
@@ -23,8 +24,12 @@ from typing import Callable
 from langchain_core.documents import Document
 
 from .config import AppConfig
-from .errors import ReflectionError
-from .rag import strip_think
+
+
+def _strip_think(text: str) -> str:
+    """Remove blocos <think>...</think> gerados pelo Qwen3. Duplicado de rag.strip_think
+    para evitar importação circular (reflection ← rag ← reflection)."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 # ecosystem_client: serializa chamadas LLM síncronas via LOGOS (P3 background)
 _eco_root = str(Path(__file__).parent.parent.parent)
@@ -121,7 +126,7 @@ def generate_reflection(
             priority=3,
         )
         raw = resp.get("message", {}).get("content", "").strip()
-        content = strip_think(raw).strip()
+        content = _strip_think(raw).strip()
     except Exception as exc:
         # Nunca propagar — a indexação não pode ser bloqueada por falha de reflexão
         _ = exc
@@ -197,7 +202,7 @@ def generate_meta_reflection(
             priority=3,
         )
         raw = resp.get("message", {}).get("content", "").strip()
-        content = strip_think(raw).strip()
+        content = _strip_think(raw).strip()
     except Exception:
         return None
 
