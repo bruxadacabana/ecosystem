@@ -3316,7 +3316,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 > e MemGPT — que demonstram que representações sintéticas hierárquicas superam fragmentos brutos
 > em benchmarks de compreensão de textos longos (+20 pp no QuALITY vs RAG vanilla).
 
-- [ ] `core/reflection.py` — criar módulo de geração de reflexões:
+- [x] `core/reflection.py` — criar módulo de geração de reflexões:
   - `generate_reflection(chunks: list[Document], config: AppConfig) -> Document | None`
   - Prompt: *"Você recebeu N fragmentos de texto sobre um mesmo tema. Sintetize os conceitos-chave,
     identifique conexões não-óbvias e gere um artefato de conhecimento estruturado em 150-300 palavras."*
