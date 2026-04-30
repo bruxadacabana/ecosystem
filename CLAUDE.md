@@ -99,7 +99,7 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 - **Após concluir cada item: parar, resumir o que foi feito, e aguardar permissão explícita para prosseguir.** Implementar vários itens seguidos numa mesma resposta só é permitido se a usuária disser explicitamente "faça o bloco inteiro" ou equivalente.
 - **Pesquisas:** regras obrigatórias ao realizar qualquer pesquisa (WebSearch, WebFetch, Agent):
   1. **Reler o `pesquisas.md`** (raiz do ecossistema) antes de iniciar, para não duplicar pesquisa já feita.
-  2. **Salvar em `pesquisas.md`** (raiz) na seção do app relevante (`## HUB`, `## AKASHA`, `## KOSMOS`, `## Mnemosyne`) apenas: resumo estruturado por tema, achados principais, implicações práticas e **fontes em formato ABNT**. **Nunca incluir sugestões ou melhorias.**
+  2. **Salvar em `pesquisas.md`** (raiz) na seção do app relevante (`## HUB`, `## AKASHA`, `## KOSMOS`, `## Mnemosyne`): pesquisa **completa e detalhada**, cobrindo todos os aspectos do tema — mesmo os não imediatamente aplicáveis — com exemplos, métricas, benchmarks e **fontes em formato ABNT**. O conteúdo não deve ser filtrado pela relevância atual para o ecossistema. **Nunca incluir sugestões ou melhorias.**
   3. **Manter o índice atualizado** — adicionar entrada para a nova sessão no índice do início do arquivo.
   4. **Ordem cronológica crescente** — novas sessões sempre no final da seção relevante.
   5. **Apresentar no chat** um resumo médio-detalhado (1–2 minutos de leitura) cobrindo achados principais e implicações práticas, **seguido de lista separada de mudanças/melhorias sugeridas**.

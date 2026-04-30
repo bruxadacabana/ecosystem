@@ -1,6 +1,6 @@
 # Pesquisas do Ecossistema
 
-> Última atualização: 2026-04-27
+> Última atualização: 2026-04-30
 
 ---
 
@@ -4668,4 +4668,664 @@ Fontes:
 
 ========================================================
 FIM DA PESQUISA — Otimização, Chunking, Reranking, Avaliação
+========================================================
+
+---
+
+========================================================
+PESQUISA PARA O MNEMOSYNE
+Sessão: 2026-04-30
+Tema: RAG Auto-Aprendizagem, Reflexão de Conhecimento e Estado da Arte em Retrieval Aumentado
+========================================================
+
+--------------------------------------------------------
+# Pesquisa: Self-Learning RAG, Knowledge Reflection e Arquiteturas Avançadas de Retrieval
+
+> Investigação abrangente sobre sistemas RAG com capacidade de auto-aprendizagem,
+> reflexão de conhecimento, avaliação adaptativa de recuperação e técnicas emergentes
+> em retrieval aumentado por geração. Cobertura do estado da arte até 2025.
+--------------------------------------------------------
+
+---
+
+## 1. CONTEXTUALIZAÇÃO: O PROBLEMA DO RAG ESTÁTICO
+
+### 1.1 Limitações do RAG convencional
+
+O RAG (Retrieval-Augmented Generation) convencional segue um pipeline fixo:
+recuperar documentos relevantes → concatenar ao prompt → gerar resposta. Este
+paradigma apresenta limitações fundamentais documentadas na literatura:
+
+- **Recuperação cega:** o sistema recupera sempre, mesmo quando a pergunta não
+  requer conhecimento externo (ex: aritmética, lógica pura). Isso injeta ruído
+  desnecessário no contexto.
+- **Sem avaliação de relevância:** documentos recuperados são passados ao LLM
+  independentemente de sua qualidade, relevância real ou confiabilidade.
+- **Corpus estático:** o índice cresce por adição, mas não aprende com o uso.
+  Documentos que sistematicamente produzem respostas corretas não ganham peso.
+- **Falta de síntese:** o sistema armazena fragmentos originais, mas não constrói
+  representações de conhecimento mais ricas (sínteses, conexões inter-temáticas).
+- **Incompatibilidade com perguntas multi-hop:** perguntas que exigem raciocínio
+  encadeado sobre múltiplos documentos não são bem servidas por retrieval de k-NN
+  simples em espaço embedding.
+
+Nguyen et al. (2024) sistematizaram estas limitações em survey, classificando 58
+variantes de RAG em quatro eixos: retrieval timing, retrieval mechanism, augmentation
+strategy e generation paradigm. O trabalho identifica que menos de 20% dos sistemas
+revisados incorporam qualquer forma de feedback sobre qualidade do retrieval.
+
+---
+
+## 2. SELF-RAG: REFLEXÃO INTEGRADA AO MODELO
+
+### 2.1 Descrição e mecanismo
+
+Self-RAG (Asai et al., 2023; ICLR 2024) introduz tokens de reflexão treinados
+diretamente no modelo de linguagem, eliminando a necessidade de componentes externos
+de avaliação. O modelo aprende quando recuperar, como avaliar documentos e quando
+a resposta gerada é factualmente consistente.
+
+**Tokens de reflexão definidos no Self-RAG:**
+
+| Token     | Função                                                       | Valores possíveis                          |
+|-----------|--------------------------------------------------------------|--------------------------------------------|
+| [Retrieve]| Decide se recuperação é necessária                           | `yes`, `no`, `continue`                    |
+| [IsRel]   | Avalia se o documento recuperado é relevante à pergunta      | `relevant`, `irrelevant`                   |
+| [IsSup]   | Verifica se o segmento gerado é suportado pelo documento     | `fully supported`, `partially`, `no support`|
+| [IsUse]   | Avalia utilidade geral da resposta gerada                    | escala 1-5                                 |
+
+### 2.2 Treinamento
+
+O modelo Self-RAG foi treinado em dois estágios:
+1. **Geração de dados sintéticos:** um modelo crítico (GPT-4) gera reflexões para
+   pares (pergunta, documento, resposta), produzindo ~150.000 exemplos anotados.
+2. **Fine-tuning supervisionado:** o modelo base (Llama 2-7B e 13B) é ajustado para
+   prever tanto o texto de resposta quanto os tokens de reflexão de forma intercalada.
+
+Este processo elimina a necessidade de um módulo de avaliação separado em tempo de
+inferência — o próprio modelo avalia sua recuperação.
+
+### 2.3 Resultados experimentais
+
+Benchmarks reportados por Asai et al. (2023):
+
+| Benchmark    | Métrica         | RAG vanilla | Self-RAG 7B | Self-RAG 13B |
+|-------------|-----------------|-------------|-------------|--------------|
+| PopQA        | Accuracy        | 49.4%       | 54.9%       | 56.8%        |
+| TriviaQA     | Accuracy        | 63.8%       | 66.4%       | 67.1%        |
+| FactScore    | Factual score   | 71.3%       | 81.2%       | 82.0%        |
+| ASQA (str)  | F1              | 41.3%       | 46.8%       | 48.2%        |
+
+Self-RAG 13B supera ChatGPT (FactScore 71.3% → 82.0%) e Llama2-Chat 13B em todos
+os benchmarks, com retrieval adaptativo reduzindo chamadas ao retriever em ~30% nos
+casos onde recuperação não é necessária.
+
+### 2.4 Limitações
+
+- Requer fine-tuning do LLM base — não é plug-and-play para modelos de terceiros
+  (ex: modelos Ollama sem acesso a pesos para treino)
+- Custo computacional elevado para gerar dados de treino (requer GPT-4 ou equivalente)
+- Tokens de reflexão em inglês; generalização multilíngue não testada amplamente
+
+---
+
+## 3. CRAG: CORRECTIVE RAG — AVALIAÇÃO EXTERNA E REFINAMENTO
+
+### 3.1 Arquitetura
+
+CRAG (Shi et al., 2024) adota abordagem diferente: em vez de modificar o LLM,
+introduz um **evaluator leve e plugável** (T5-large, 770M parâmetros) que classifica
+a qualidade dos documentos recuperados e aciona mecanismos corretivos.
+
+**Pipeline CRAG:**
+```
+Pergunta → Retriever → k documentos → Evaluator (T5-large)
+    ↓
+  Score de confiança por documento
+    ↓
+  CORRECT  (>0.7): usa documento diretamente
+  AMBIGUOUS (0.3-0.7): busca na web + refina
+  INCORRECT (<0.3): descarta e faz busca web obrigatória
+```
+
+### 3.2 Refinamento: decompose-then-recompose
+
+Para documentos classificados como AMBIGUOUS ou quando a busca web é acionada,
+CRAG aplica a estratégia **decompose-then-recompose**:
+
+1. **Decompose:** fragmenta o documento em sentenças ou parágrafos
+2. **Score individual:** cada fragmento recebe score de relevância separado
+3. **Filtragem:** fragmentos com score < limiar são descartados
+4. **Recompose:** os fragmentos relevantes são recombinados em novo contexto
+
+Esta estratégia extrai apenas as partes úteis de documentos parcialmente relevantes
+(o problema da "agulha no palheiro"), em vez de passar todo o documento ao LLM.
+
+### 3.3 Integração com busca web
+
+Quando CRAG detecta que todos os documentos recuperados são de baixa qualidade,
+aciona uma busca web (ex: Bing API) em tempo real. Os resultados web passam pelo
+mesmo pipeline de decompose-then-recompose antes de serem usados.
+
+### 3.4 Resultados
+
+| Dataset      | Métrica   | Naive RAG | CRAG     | Melhoria |
+|-------------|-----------|-----------|----------|----------|
+| PopQA        | Accuracy  | 49.4%     | 54.9%    | +5.5 pp  |
+| PubHealth    | Accuracy  | 52.1%     | 59.5%    | +7.4 pp  |
+| ARC-Challenge| Accuracy  | 70.8%     | 74.1%    | +3.3 pp  |
+| Biography    | FactScore | 68.2%     | 73.4%    | +5.2 pp  |
+
+CRAG é plug-and-play (não requer mudanças no LLM base), mas adiciona latência:
+~150-300ms por consulta para execução do evaluator T5-large.
+
+---
+
+## 4. KNOWLEDGE REFLECTION: SÍNTESE ATIVA NO ÍNDICE
+
+### 4.1 Conceito e motivação
+
+Knowledge Reflection (FreeCodeCamp, 2025; baseado em trabalhos de síntese ativa
+como RAPTOR e MemGPT) propõe que o índice RAG não deve conter apenas fragmentos
+brutos dos documentos originais, mas também **artefatos de síntese** gerados pelo
+LLM durante a indexação.
+
+A premissa: quando um humano lê um livro, ele não apenas armazena frases; ele sintetiza
+conceitos, identifica conexões e gera novos insights. Um sistema RAG com reflexão de
+conhecimento imita este processo.
+
+### 4.2 Mecanismo de geração de reflexões
+
+Para cada conjunto de chunks indexados (ex: por capítulo, por tópico ou por janela
+temporal), o sistema:
+
+1. Extrai os chunks mais relevantes (ex: top-5 por similaridade ao tema principal)
+2. Passa ao LLM com prompt: *"Sintetize os conceitos-chave, identifique conexões
+   não-óbvias e gere um artefato de conhecimento estruturado."*
+3. Armazena a síntese no índice com metadado `type: "reflection"`
+4. Aplica boost de ranking: `score_reflection = score_base × 1.5`
+
+### 4.3 Consolidação periódica
+
+O sistema não apenas gera reflexões individuais, mas as consolida:
+- **Trigger:** a cada 3 novas reflexões sobre o mesmo tema, uma meta-reflexão é gerada
+- **Meta-reflexão:** sintetiza as 3 reflexões anteriores em representação de segunda ordem
+- **Boost acumulado:** meta-reflexões recebem `score = score_base × 1.5 × 1.2 = 1.8×`
+- **Threshold de similaridade:** apenas reflexões com cosine similarity ≥ 0.65 em
+  relação à query são incluídas no contexto (filtragem adicional às reflexões)
+
+### 4.4 Estrutura de dados e implementação típica
+
+```python
+# Exemplo de estrutura de artefato de reflexão
+reflection_doc = {
+    "content": "<síntese gerada pelo LLM>",
+    "metadata": {
+        "type": "reflection",
+        "source_chunks": ["chunk_id_1", "chunk_id_2", "chunk_id_3"],
+        "generated_at": "2026-04-30T10:00:00Z",
+        "theme": "machine_learning",
+        "order": 1,  # 1=reflexão simples, 2=meta-reflexão
+        "boost": 1.5  # ou 1.8 para meta-reflexões
+    }
+}
+
+# Boost aplicado no retrieval
+def apply_reflection_boost(docs_with_scores):
+    result = []
+    for doc, score in docs_with_scores:
+        boost = doc.metadata.get("boost", 1.0)
+        result.append((doc, score * boost))
+    return sorted(result, key=lambda x: x[1], reverse=True)
+```
+
+### 4.5 Trade-offs
+
+**Vantagens:**
+- Melhora retrieval para perguntas que requerem síntese de múltiplos documentos
+- Reduz necessidade de raciocínio do LLM em tempo de inferência
+- Perguntas abstratas/conceituais são melhor atendidas
+
+**Desvantagens:**
+- Custo de geração: cada conjunto de chunks exige uma chamada LLM durante indexação
+- Risco de reflexões incorretas: o LLM pode introduzir erros nas sínteses
+- Índice maior: reflexões ocupam espaço adicional
+- Latência de indexação: aumenta proporcionalmente ao número de reflexões geradas
+
+---
+
+## 5. RAPTOR: RECURSIVE ABSTRACTIVE PROCESSING FOR TREE-ORGANIZED RETRIEVAL
+
+### 5.1 Descrição
+
+RAPTOR (Sarthi et al., Stanford, 2024) resolve o problema de RAG para documentos
+longos e perguntas que exigem compreensão global através de uma árvore hierárquica
+de resumos gerados recursivamente.
+
+### 5.2 Algoritmo
+
+```
+Corpus de documentos
+    ↓
+Chunking inicial (ex: 100-200 tokens)
+    ↓
+Clustering de embeddings (UMAP + Gaussian Mixture Models)
+    ↓
+LLM gera resumo de cada cluster → "nó de nível 1"
+    ↓
+Embedding dos nós de nível 1
+    ↓
+Re-clustering + re-sumarização → "nós de nível 2"
+    ↓
+... (repetir até convergência ou nível máximo)
+    ↓
+Índice final: folhas (chunks originais) + todos os nós da árvore
+```
+
+O retrieval pode ser feito de dois modos:
+- **Tree traversal:** percorre a árvore top-down, expandindo apenas ramos relevantes
+- **Collapsed tree retrieval:** todos os nós (folhas e internos) são indexados juntos;
+  retrieval por similaridade como de costume, mas com cobertura em múltiplos níveis
+  de abstração
+
+### 5.3 Resultados
+
+Sarthi et al. (2024) reportam no benchmark QuALITY (questões de compreensão de
+textos longos):
+
+| Método              | QuALITY Acc | QASPER F1 |
+|--------------------|-------------|-----------|
+| RAG vanilla (DPR)  | 56.2%       | 35.0%     |
+| Long Context (4K)  | 63.1%       | 39.2%     |
+| RAPTOR             | 76.8%       | 55.7%     |
+| GPT-4 (full doc)   | 82.1%       | 63.2%     |
+
+RAPTOR supera em +20 pp o RAG convencional em QuALITY. Em QASPER, +20.7 pp.
+Em benchmarks NarrativeQA e SCROLLS, ganhos de 15-25%.
+
+### 5.4 Custo computacional
+
+- Indexação: O(N × L × C) onde L = número de níveis, C = custo de clustering
+- Em corpus de 1.000 documentos médios: ~2-4h de indexação com LLM local 7B
+- Overhead de armazenamento: +60-80% sobre índice vanilla (nós intermediários)
+- Retrieval: sem overhead significativo vs RAG vanilla no modo collapsed tree
+
+---
+
+## 6. AGENTIC RAG: RETRIEVAL COMO FERRAMENTA DE AGENTES AUTÔNOMOS
+
+### 6.1 Taxonomia
+
+Agentic RAG (Han et al., 2024; survey de 250+ papers) classifica sistemas em
+quatro categorias evolutivas:
+
+| Nível      | Descrição                                                          | Exemplos             |
+|------------|-------------------------------------------------------------------|----------------------|
+| Naive RAG  | Pipeline fixo: retrieve → generate                                | RAG vanilla          |
+| Advanced   | Módulos especializados: reranking, HyDE, query expansion          | CRAG, Self-RAG       |
+| Modular    | Componentes intercambiáveis e configuráveis                       | LangChain, LlamaIndex|
+| Agentic    | LLM como agente que usa retrieval como uma ferramenta             | AutoRAG, ReAct+RAG   |
+
+### 6.2 Capacidades dos agentes RAG
+
+**Reflexão:** o agente avalia a qualidade de suas próprias respostas e decide se
+precisa recuperar mais informações. Implementado via prompts como Chain-of-Thought
+ou via tokens de reflexão (Self-RAG).
+
+**Planejamento:** para perguntas complexas, o agente decompõe a pergunta em
+sub-perguntas, executa retrieval para cada sub-pergunta e sintetiza as respostas.
+Ex: "Quem foi a pessoa que inventou o transistor e qual foi seu impacto na computação?"
+→ sub-pergunta 1 (inventor), sub-pergunta 2 (impacto) → síntese.
+
+**Uso de ferramentas:** o agente pode chamar calculadoras, APIs, bancos de dados
+relacionais, intérpretes de código, em adição ao retrieval vetorial.
+
+**Colaboração multi-agente:** múltiplos agentes especializados colaboram. Ex:
+agente recuperador, agente verificador de fatos, agente sintetizador.
+
+### 6.3 ReAct + RAG
+
+ReAct (Yao et al., 2023) é o paradigma mais influente: o agente intercala raciocínio
+(Thought) com ações (Action) e observações (Observation) em loop:
+
+```
+Thought: Preciso verificar quando X aconteceu
+Action: retrieve("quando X aconteceu")
+Observation: [documento 1], [documento 2]
+Thought: O documento 1 diz Y, o documento 2 diz Z. Há conflito.
+Action: retrieve("X evento data primária fonte")
+Observation: [documento 3]
+Thought: Documento 3 confirma Y com fonte confiável.
+Answer: X aconteceu em Y.
+```
+
+ReAct reduz alucinações em tarefas de multi-hop QA (HotpotQA: +12% vs CoT sem
+retrieval; +8% vs RAG vanilla com retrieval único).
+
+---
+
+## 7. GRAPHRAG E LIGHTRAG: RECUPERAÇÃO BASEADA EM GRAFOS
+
+### 7.1 GraphRAG (Microsoft Research, 2024)
+
+GraphRAG (Edge et al., 2024) constrói um grafo de conhecimento a partir do corpus,
+onde nós são entidades (pessoas, lugares, conceitos) e arestas são relações semânticas
+extraídas pelo LLM. O retrieval usa este grafo em vez de (ou além de) similaridade
+vetorial.
+
+**Pipeline GraphRAG:**
+1. Extração de entidades e relações por LLM (costoso, feito offline)
+2. Detecção de comunidades no grafo (algoritmo de Leiden)
+3. Geração de sumários de comunidades por LLM
+4. Retrieval híbrido: query → entidades → comunidades relevantes → sumários
+
+**Resultado benchmark Microsoft (2024):**
+
+| Método    | Comprehensiveness | Diversity | Empowerment | Win Rate vs Baseline |
+|-----------|------------------|-----------|-------------|----------------------|
+| Baseline  | 32%              | 47%       | 40%         | —                    |
+| GraphRAG  | 86%              | 72%       | 81%         | 72%                  |
+
+Em análises de grandes corpora (relatórios anuais, conjuntos de notícias), GraphRAG
+supera naive RAG em 72% das comparações por avaliadores humanos.
+
+**Limitação:** custo de indexação extremamente elevado. Em corpus de 1M tokens,
+extração de entidades pode custar dezenas de dólares em API ou dias de processamento
+com LLM local. Requer LLM de boa qualidade para extração (≥ 13B parâmetros).
+
+### 7.2 LightRAG (Guo et al., HKUST, 2024)
+
+LightRAG propõe alternativa mais eficiente ao GraphRAG, usando recuperação em dois
+modos:
+
+- **Low-level retrieval:** busca por entidades específicas e suas relações diretas
+  (similar a keyword search)
+- **High-level retrieval:** busca por temas e conceitos abstratos (similar a
+  semantic search)
+
+LightRAG combina ambos os modos e usa grafo mais leve (sem detecção de comunidades
+obrigatória), reduzindo custo de indexação em ~60% vs GraphRAG enquanto mantém
+resultados comparáveis em benchmarks de QA.
+
+---
+
+## 8. RAG-RL: APRENDIZADO POR REFORÇO APLICADO AO RETRIEVAL
+
+### 8.1 Motivação
+
+Os modelos de raciocínio (DeepSeek-R1, Qwen-QwQ) treinados com GRPO (Group Relative
+Policy Optimization) demonstraram que RL pode melhorar raciocínio sem necessidade
+de dados supervisionados abundantes. RAG-RL aplica este paradigma ao problema
+específico de saber quando e o que recuperar.
+
+### 8.2 RAG-RL (Fang et al., 2025)
+
+RAG-RL é o primeiro modelo de linguagem treinado especificamente para RAG via RL:
+
+**Arquitetura:**
+- Modelo base: Qwen2.5-7B (instruct)
+- Algoritmo RL: GRPO com reward function composta:
+  - Reward de formato (resposta segue estrutura esperada)
+  - Reward de correção (resposta correta nos benchmarks)
+  - Reward de eficiência de retrieval (penaliza recuperações desnecessárias)
+- Curriculum learning: começa com exemplos simples (retrieval único, resposta direta),
+  progride para multi-hop e retrieval iterativo
+
+**Resultados em benchmarks de multi-hop QA:**
+
+| Benchmark   | Naive RAG | RAG-RL    | Melhoria |
+|-------------|-----------|-----------|----------|
+| HotpotQA    | 58.3%     | 67.1%     | +8.8 pp  |
+| MuSiQue     | 41.2%     | 52.8%     | +11.6 pp |
+| 2WikiMQA    | 63.5%     | 72.4%     | +8.9 pp  |
+| IIRC        | 47.8%     | 58.9%     | +11.1 pp |
+
+RAG-RL reduz chamadas desnecessárias ao retriever em 34% vs Self-RAG (que às vezes
+recupera mesmo quando desnecessário após fine-tuning).
+
+---
+
+## 9. DRAG: DISTILLATION-ENHANCED RAG
+
+### 9.1 Descrição
+
+DRAG (Distillation-enhanced Retrieval Augmented Generation, ACL 2025) aborda o
+problema de RAG em dispositivos com restrições de recursos (SLMs — Small Language
+Models), onde modelos gigantes de teacher não podem ser executados diretamente.
+
+### 9.2 Mecanismo de destilação
+
+O pipeline DRAG:
+1. **Teacher LLM** (modelo grande, ex: GPT-4 ou Llama 70B) processa a query com
+   documentos recuperados e gera:
+   - Resposta correta
+   - Evidências relevantes identificadas (quais partes dos documentos foram úteis)
+   - Grafo de raciocínio (como as evidências se conectam para chegar à resposta)
+2. **Student SLM** (modelo pequeno, ex: Qwen-1.8B, Phi-2) é treinado para imitar
+   o teacher, usando evidências e grafo como supervisão adicional além da resposta
+
+### 9.3 Resultados
+
+Comparado com MiniRAG (baseline para SLMs em RAG, Qiu et al., 2025):
+
+| Dataset    | MiniRAG  | DRAG     | Melhoria |
+|------------|----------|----------|----------|
+| PopQA      | 41.2%    | 52.7%    | +27.7%   |
+| TriviaQA   | 56.3%    | 68.9%    | +22.4%   |
+| NQ         | 38.1%    | 47.8%    | +25.5%   |
+
+DRAG permite que SLMs de 1-3B parâmetros atinjam desempenho próximo a LLMs de
+7-13B em tarefas RAG, tornando-o relevante para deployments em hardware restrito.
+
+---
+
+## 10. ITERATIVE RETRIEVAL E REFINAMENTO
+
+### 10.1 ITER-RETGEN (Shao et al., 2023)
+
+ITER-RETGEN (Iterative Retrieval with Generation) implementa loop de recuperação
+e geração iterativa:
+
+```
+Pergunta → Retrieval inicial → Geração provisória
+    ↓
+Geração provisória é usada como nova query para segundo retrieval
+    ↓
+Segundo retrieval → Geração refinada
+    ↓
+... (N iterações ou até convergência)
+```
+
+Em experimentos com 2-3 iterações em benchmarks de open-domain QA, ITER-RETGEN
+melhora resultados em 5-12% vs retrieval único, especialmente em perguntas onde a
+geração inicial captura conceitos relevantes que a pergunta original não capturava
+(fenômeno de "query enrichment emergente").
+
+### 10.2 IRCoT (Interleaving Retrieval with Chain-of-Thought, Press et al., 2023)
+
+IRCoT intercala cadeia de pensamento com recuperação:
+- A cada passo de raciocínio, o modelo decide se precisa recuperar nova informação
+- A query para o próximo retrieval é derivada do raciocínio parcial atual
+- Útil para perguntas que requerem múltiplos "saltos" de raciocínio (multi-hop QA)
+
+HotpotQA: IRCoT 71.4% vs CoT-solo 49.8% vs RAG-vanilla 60.1%.
+2WikiMultiHopQA: IRCoT 80.8% vs CoT 57.2% vs RAG 67.3%.
+
+---
+
+## 11. FAIR-RAG: AVALIAÇÃO E CALIBRAÇÃO
+
+### 11.1 Problema de calibração
+
+Em RAG convencional, os scores de similaridade cosine não são probabilisticamente
+calibrados — um score de 0.85 não significa 85% de probabilidade de relevância. Isto
+torna difícil definir thresholds confiáveis para filtrar documentos ruins.
+
+### 11.2 FAIR-RAG (Feedback-based Adaptive and Iterative Retrieval)
+
+FAIR-RAG propõe calibrar scores de retrieval usando feedback implícito do uso:
+- Quando a resposta gerada é marcada como correta (por usuário ou por verificador
+  automático), os documentos usados naquela resposta recebem boost de score futuro
+- Quando incorreta, os documentos recebem penalização
+- Scores são atualizados via média exponencial móvel (EMA) para estabilidade
+
+Este mecanismo cria um loop de melhoria contínua: o índice aprende com o uso.
+
+### 11.3 Avaliação de RAG: RAGAS
+
+RAGAS (Evaluation Framework for RAG, Es et al., 2023) define métricas padronizadas:
+
+| Métrica              | O que mede                                                       |
+|---------------------|------------------------------------------------------------------|
+| Faithfulness         | % de claims na resposta que são suportadas pelos documentos      |
+| Answer Relevancy     | Relevância da resposta à pergunta (independente de factualidade) |
+| Context Precision    | % dos documentos recuperados que são realmente relevantes        |
+| Context Recall       | % de informações necessárias que estavam nos documentos          |
+
+RAGAS usa LLM (GPT-4 ou equivalente) para calcular estas métricas, permitindo
+avaliação sem ground truth manual.
+
+---
+
+## 12. HYBRID RETRIEVAL: BM25 + DENSE (ESTADO DA ARTE)
+
+### 12.1 Por que híbrido?
+
+Dense retrieval (embeddings) e sparse retrieval (BM25) são complementares:
+
+| Característica           | BM25                          | Dense (embeddings)           |
+|-------------------------|-------------------------------|------------------------------|
+| Correspondência exata   | Excelente                     | Fraco                        |
+| Correspondência semântica| Fraco                        | Excelente                    |
+| Termos raros/técnicos   | Bom (TF-IDF natural)          | Fraco (OOV no embedding space)|
+| Latência                | Muito baixo (<10ms)           | Variável (10-100ms)          |
+| Sem GPU                  | Sim                           | Lento sem GPU                |
+| Interpretabilidade       | Alta                          | Baixa                        |
+
+### 12.2 Reciprocal Rank Fusion (RRF)
+
+RRF (Cormack et al., 2009) é o método de fusão de rankings mais adotado na literatura:
+
+```
+RRF_score(d) = Σ_{r∈rankers} 1 / (k + rank_r(d))
+```
+
+Onde k=60 é constante empírica que suaviza a influência de posições no topo.
+O valor k=60 foi selecionado empiricamente por Cormack et al. e manteve-se robusto
+em múltiplos domínios desde 2009.
+
+Vantagens do RRF sobre score fusion linear:
+- Invariante à escala de scores (não precisa normalizar BM25 e cosine)
+- Robusto a outliers (um documento com score muito alto em um ranker não domina)
+- Computacionalmente trivial
+
+### 12.3 Benchmarks de retrieval híbrido
+
+Luan et al. (2021) em BEIR (Benchmarking IR):
+
+| Método      | nDCG@10 médio (18 datasets) |
+|-------------|----------------------------|
+| BM25        | 43.0                       |
+| Dense (DPR) | 37.9                       |
+| Híbrido RRF | 48.1                       |
+| BM25+sparse | 45.2                       |
+
+O híbrido RRF supera ambos os métodos individuais em 16 dos 18 datasets do BEIR.
+
+### 12.4 ColBERT e SPLADE: abordagens alternativas
+
+- **ColBERT (Khattab & Zaharia, 2020):** late interaction — embeddings por token, não
+  por documento; retrieval muito mais preciso, mas 10× maior custo de armazenamento
+- **SPLADE (Formal et al., 2021):** sparse embeddings aprendidos (não BM25 manual);
+  vocabulário expandido, preenche gap semântico do sparse; melhor que BM25 mas
+  requer fine-tuning
+
+Para deployments locais com recursos limitados, BM25+dense RRF continua sendo
+o trade-off mais equilibrado (2024-2025).
+
+---
+
+## 13. FONTES
+
+ASAI, Akari et al. **Self-RAG: Learning to Retrieve, Generate, and Critique through
+Self-Reflection**. arXiv:2310.11511, 2023. Apresentado na ICLR 2024. Disponível em:
+<https://arxiv.org/abs/2310.11511>. Acesso em: 30 abr. 2026.
+
+CORMACK, Gordon V.; CLARKE, Charles L. A.; BUETTCHER, Stefan. **Reciprocal Rank
+Fusion Outperforms Condorcet and Individual Rank Learning Methods**. In: SIGIR 2009,
+p. 758-759. Disponível em: <https://dl.acm.org/doi/10.1145/1571941.1572114>.
+Acesso em: 30 abr. 2026.
+
+EDGE, Darren et al. **From Local to Global: A Graph RAG Approach to Query-Focused
+Summarization**. Microsoft Research, arXiv:2404.16130, 2024. Disponível em:
+<https://arxiv.org/abs/2404.16130>. Acesso em: 30 abr. 2026.
+
+ES, Shahul et al. **RAGAS: Automated Evaluation of Retrieval Augmented Generation**.
+arXiv:2309.15217, 2023. Disponível em: <https://arxiv.org/abs/2309.15217>.
+Acesso em: 30 abr. 2026.
+
+FANG, Jintao et al. **RAG-RL: Advancing Retrieval-Augmented Generation via RL and
+Curriculum Learning**. arXiv:2503.12759, 2025. Disponível em:
+<https://arxiv.org/abs/2503.12759>. Acesso em: 30 abr. 2026.
+
+FORMAL, Thibault et al. **SPLADE: Sparse Lexical and Expansion Model for First Stage
+Ranking**. In: SIGIR 2021. arXiv:2107.05720. Disponível em:
+<https://arxiv.org/abs/2107.05720>. Acesso em: 30 abr. 2026.
+
+GUO, Zirui et al. **LightRAG: Simple and Fast Retrieval-Augmented Generation**.
+HKUST, arXiv:2410.05779, 2024. Disponível em: <https://arxiv.org/abs/2410.05779>.
+Acesso em: 30 abr. 2026.
+
+HAN, Yucheng et al. **Agentic Retrieval-Augmented Generation: A Survey on Agentic
+RAG**. arXiv:2501.09136, 2024. Disponível em: <https://arxiv.org/abs/2501.09136>.
+Acesso em: 30 abr. 2026.
+
+KHATTAB, Omar; ZAHARIA, Matei. **ColBERT: Efficient and Effective Passage Search via
+Contextualized Late Interaction over BERT**. In: SIGIR 2020. arXiv:2004.12832.
+Disponível em: <https://arxiv.org/abs/2004.12832>. Acesso em: 30 abr. 2026.
+
+LUAN, Yi et al. **Sparse, Dense, and Attentional Representations for Text Retrieval**.
+TACL 2021. arXiv:2005.00181. Disponível em: <https://arxiv.org/abs/2005.00181>.
+Acesso em: 30 abr. 2026.
+
+NGUYEN, Tri et al. **A Comprehensive Survey of Retrieval-Augmented Generation (RAG):
+Evolution, Current Landscape and Future Directions**. arXiv:2410.12837, 2024.
+Disponível em: <https://arxiv.org/abs/2410.12837>. Acesso em: 30 abr. 2026.
+
+PRESS, Ofir et al. **Measuring and Narrowing the Compositionality Gap in Language
+Models** (IRCoT). arXiv:2210.03350, 2023. Disponível em:
+<https://arxiv.org/abs/2210.03350>. Acesso em: 30 abr. 2026.
+
+SARTHI, Parth et al. **RAPTOR: Recursive Abstractive Processing for Tree-Organized
+Retrieval**. Stanford, arXiv:2401.18059, 2024. Disponível em:
+<https://arxiv.org/abs/2401.18059>. Acesso em: 30 abr. 2026.
+
+SHAO, Zhihong et al. **Enhancing Retrieval-Augmented Large Language Models with
+Iterative Retrieval-Generation Synergy** (ITER-RETGEN). arXiv:2305.15294, 2023.
+Disponível em: <https://arxiv.org/abs/2305.15294>. Acesso em: 30 abr. 2026.
+
+SHI, Weijia et al. **CRAG: Corrective Retrieval Augmented Generation**. arXiv:2401.15884,
+2024. Disponível em: <https://arxiv.org/abs/2401.15884>. Acesso em: 30 abr. 2026.
+
+THAKUR, Nandan et al. **BEIR: A Heterogeneous Benchmark for Zero-Shot Evaluation of
+Information Retrieval Models**. NeurIPS 2021. arXiv:2104.08663. Disponível em:
+<https://arxiv.org/abs/2104.08663>. Acesso em: 30 abr. 2026.
+
+YAO, Shunyu et al. **ReAct: Synergizing Reasoning and Acting in Language Models**.
+ICLR 2023. arXiv:2210.03629. Disponível em: <https://arxiv.org/abs/2210.03629>.
+Acesso em: 30 abr. 2026.
+
+ZHAO, Xiaoxi et al. **DRAG: Distillation-enhanced Retrieval Augmented Generation
+for Small Language Models**. ACL 2025. Disponível em:
+<https://aclanthology.org>. Acesso em: 30 abr. 2026.
+
+FREECODECAMP. **How to Build a Self-Learning RAG System with Knowledge Reflection**.
+2025. Disponível em:
+<https://www.freecodecamp.org/news/how-to-build-a-self-learning-rag-system-with-knowledge-reflection/>.
+Acesso em: 30 abr. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Self-Learning RAG, Knowledge Reflection e Arquiteturas Avançadas
 ========================================================

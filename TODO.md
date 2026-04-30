@@ -2996,7 +2996,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 ---
 
-### Fase 8 — Otimizações de RAG (pesquisa 2026-04-23)
+### Fase 8 — Otimizações de RAG 
 
 ### 8.1 Métrica cosine no ChromaDB (alta prioridade)
 - [x] `core/indexer.py` — adicionar `collection_metadata={"hnsw:space": "cosine"}` em todos os pontos que criam ou abrem o Chroma: `create_vectorstore()`, `index_single_file()`, `update_vectorstore()`, `load_vectorstore()`
@@ -3292,6 +3292,149 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   4. Atualizar `retriever.py` para usar `qdrant_client` — API similar ao ChromaDB
   5. Manter ChromaDB como fallback para o perfil `low` (Windows 10) se Qdrant for pesado
 
+
+### Fase 11 — RAG Aprendente: Reflexão de Conhecimento e Retrieval Iterativo
+
+> **Contexto e motivação:** O RAG convencional armazena fragmentos brutos do corpus e recupera por
+> similaridade cosine. A literatura de 2024-2025 (Self-RAG, CRAG, RAPTOR, Knowledge Reflection,
+> ITER-RETGEN) demonstra que sistemas que sintetizam, avaliam e refinam o próprio conhecimento
+> superam em 5-27% o RAG vanilla nos principais benchmarks. As técnicas abaixo foram selecionadas
+> pelo critério de viabilidade no hardware disponível (sem fine-tuning de LLM, sem GPU obrigatória).
+
+---
+
+### 11.1 — Knowledge Reflection: síntese ativa durante indexação
+
+> **Por que fazer:** RAG convencional responde mal a perguntas conceituais/abstratas (ex: "qual a
+> visão geral sobre X?") porque recupera fragmentos textuais brutos, que raramente contêm sínteses
+> explícitas. Knowledge Reflection gera artefatos de síntese no momento da indexação — o LLM lê
+> um conjunto de chunks relacionados e produz uma "reflexão" estruturada que já responde ao tipo de
+> pergunta que humanos mais fazem. Reflexões recebem boost de score (1.5×) porque, ao serem
+> recuperadas, entregam mais valor por token ao contexto do que fragmentos brutos.
+>
+> **Base científica:** FreeCodeCamp (2025), complementado por RAPTOR (Sarthi et al., Stanford, 2024)
+> e MemGPT — que demonstram que representações sintéticas hierárquicas superam fragmentos brutos
+> em benchmarks de compreensão de textos longos (+20 pp no QuALITY vs RAG vanilla).
+
+- [ ] `core/reflection.py` — criar módulo de geração de reflexões:
+  - `generate_reflection(chunks: list[Document], config: AppConfig) -> Document | None`
+  - Prompt: *"Você recebeu N fragmentos de texto sobre um mesmo tema. Sintetize os conceitos-chave,
+    identifique conexões não-óbvias e gere um artefato de conhecimento estruturado em 150-300 palavras."*
+  - Retorna `Document` com `metadata["type"] = "reflection"`, `metadata["boost"] = 1.5`,
+    `metadata["source_chunks"]` = lista de ids dos chunks de origem, `metadata["order"] = 1`
+  - Retorna `None` se o LLM falhar (sem quebrar a indexação)
+  - **Atenção:** chamar LLM durante indexação aumenta o tempo total. Estimar ~3-5s por grupo
+    de chunks com modelo 7B. Emitir progresso na UI: "Gerando reflexão 3/12…"
+
+- [ ] `core/indexer.py` — integrar geração de reflexões em `create_vectorstore()` e
+  `update_vectorstore()`:
+  - Agrupar chunks por arquivo-fonte (ou por tema via agrupamento de similaridade simples)
+  - Para cada grupo com ≥ 3 chunks: chamar `generate_reflection()`
+  - Se reflexão gerada: adicioná-la ao ChromaDB e ao BM25Index como documento extra
+  - Guardar contador de reflexões por tema em metadata da coleção (para trigger de meta-reflexão)
+
+- [ ] `core/reflection.py` — meta-reflexão (consolidação de 3 em 1):
+  - `maybe_consolidate(theme: str, config: AppConfig, vectorstore) -> Document | None`
+  - Busca reflexões de ordem 1 sobre o mesmo tema (by `metadata["theme"]` e `metadata["order"] == 1`)
+  - Se ≥ 3 reflexões encontradas: gera meta-reflexão (ordem 2) com boost 1.8×
+  - Remove as 3 reflexões originais do vectorstore e BM25 (para não duplicar)
+  - Threshold de similaridade entre reflexões para confirmar que são do mesmo tema: cosine ≥ 0.65
+
+- [ ] `core/rag.py` — aplicar boost de reflexões no retrieval:
+  - Após recuperação híbrida (BM25+dense), identificar documentos com `metadata["boost"]`
+  - Multiplicar o score RRF pelo boost antes de ordenar: `score * doc.metadata.get("boost", 1.0)`
+  - Filtro extra: reflexões só entram no contexto se cosine similarity com a query ≥ 0.65
+    (evita reflexões genéricas que foram recuperadas por acidente)
+  - Testar: perguntas abstratas ("o que este corpus diz sobre X?") devem puxar reflexões;
+    perguntas específicas ("qual o valor de Y na tabela Z?") devem puxar chunks brutos
+
+- [ ] `gui/main_window.py` — feedback de reflexões na UI:
+  - Badge na sidebar: "N reflexões no índice" (clicável para ver lista)
+  - Durante indexação com reflexões: emitir progresso separado ("Gerando reflexões…") após
+    o progresso de chunks, para não confundir as duas fases
+
+---
+
+### 11.2 — Retrieval iterativo com enriquecimento de query (ITER-RETGEN)
+
+> **Por que fazer:** perguntas vagas ou mal formuladas produzem retrieval ruim porque a query
+> original não captura os termos que aparecem nos documentos relevantes. ITER-RETGEN (Shao et al.,
+> 2023) mostrou que usar uma resposta provisória do LLM como segunda query melhora recall em 5-12%
+> — porque a geração provisória "traduz" a pergunta original para a linguagem do corpus.
+> Custo: 1 chamada extra ao retriever (barato) + 1 chamada extra ao LLM (custosa). Tornar opcional.
+
+- [ ] `core/rag.py` — implementar retrieval em 2 iterações como modo opcional:
+  - Parâmetro `iterative_retrieval: bool` em `prepare_ask()` (default: False)
+  - **Iteração 1:** retrieval normal sobre a query original → gerar resposta provisória (curta,
+    temperatura 0.0, sem streaming, instrução: "resposta em 1-2 frases, sem elaborar")
+  - **Iteração 2:** usar resposta provisória como query adicional → recuperar N/2 chunks extras
+    (sem duplicar os já recuperados na iteração 1)
+  - **Síntese:** combinar chunks da iteração 1 e 2 (deduplicados por `page_content[:100]`),
+    limitar ao total configurado (k), passar ao LLM para resposta final
+  - **Quando ativar:** perguntas curtas (< 10 palavras) ou vagas se beneficiam mais; perguntas
+    específicas com termos técnicos se beneficiam menos. Deixar como toggle manual na UI.
+
+- [ ] `core/config.py` — campo `iterative_retrieval_enabled: bool = False`
+
+- [ ] `gui/main_window.py` — toggle "Busca iterativa" na aba Perguntar (desativado por padrão),
+  com tooltip: "Faz duas rodadas de busca — melhora recall em perguntas vagas (+~8% accuracy),
+  mas dobra o tempo de resposta"
+
+---
+
+### 11.3 — Avaliação automatizada do pipeline (RAGAS)
+
+> **Por que fazer:** as otimizações das Fases 8, 9, 10, 11.1 e 11.2 mudam o pipeline de formas
+> que podem melhorar uma métrica e piorar outra. Sem avaliação objetiva, é impossível saber se
+> uma mudança foi realmente positiva. RAGAS (Es et al., 2023) define 4 métricas computáveis via
+> LLM sem ground truth manual: Faithfulness (a resposta é suportada pelos documentos?),
+> Answer Relevancy (a resposta é relevante à pergunta?), Context Precision (documentos recuperados
+> são realmente úteis?) e Context Recall (informação necessária estava nos documentos?).
+>
+> **Uso pretendido:** script standalone, fora do app, rodado manualmente antes/depois de cada
+> mudança de pipeline para medir impacto real. Não é funcionalidade do app em si.
+
+- [ ] `eval/ragas_eval.py` — script de avaliação standalone:
+  - 20-30 perguntas de teste cobrindo os principais tipos de query do Mnemosyne
+    (factuais, conceituais, multi-hop, vagas) — criar `eval/questions.json`
+  - Para cada pergunta: rodar `prepare_ask()` com o pipeline atual; capturar chunks recuperados
+    e resposta gerada
+  - Calcular métricas RAGAS usando Ollama como juiz (modelo configurável, sugestão: qwen2.5:7b)
+  - Exportar relatório em `eval/results_YYYY-MM-DD.json` para comparação entre versões
+  - **Rodar como baseline ANTES de implementar 11.1 e 11.2**, depois rodar novamente para medir
+    o impacto de cada mudança
+
+- [ ] `eval/questions.json` — 20 perguntas de teste com resposta esperada (ground truth manual):
+  - 5 perguntas factuais simples (a resposta está explícita num único chunk)
+  - 5 perguntas conceituais (requerem síntese de múltiplos chunks)
+  - 5 perguntas vagas (beneficiadas por retrieval iterativo)
+  - 5 perguntas multi-hop (requerem raciocínio encadeado)
+
+---
+
+### 11.4 — Pesquisas pendentes (RAG avançado, longo prazo)
+
+> Itens abaixo requerem pesquisa adicional antes de qualquer decisão de implementação.
+> Não implementar sem ordem explícita.
+
+- [ ] **Pesquisar CRAG para o Mnemosyne:** avaliar custo de rodar o evaluator T5-large
+  (770M params) no hardware disponível. No CachyOS (RX 6600): possível em VRAM (770M Q4 ≈ 400 MB).
+  No Windows 10 (i5-3470, sem GPU): inviável em tempo real (+150-300ms/query em CPU puro sem AVX2).
+  Pesquisar se existe versão menor (T5-small, 60M) com qualidade aceitável. Registrar resultado
+  no `pesquisas.md`.
+
+- [ ] **Pesquisar RAPTOR para corpora com documentos longos:** RAPTOR é relevante quando o corpus
+  inclui livros inteiros ou textos muito longos (> 50 páginas). A indexação RAPTOR requer LLM de
+  boa qualidade para sumarização de clusters — viável com Llama 3.2 3B ou Qwen2.5 7B no CachyOS.
+  Investigar custo de indexação em corpus de 100 documentos médios e overhead de armazenamento.
+  Inviável no i5-3470.
+
+- [ ] **Pesquisar GraphRAG leve (LightRAG) para corpus relacional:** relevante quando o corpus
+  tem muitas relações entre entidades (ex: vault Obsidian com wikilinks densos). LightRAG é menos
+  custoso que GraphRAG da Microsoft, mas ainda requer extração de entidades via LLM. Investigar
+  viabilidade com modelos 7-8B no CachyOS. Registrar no `pesquisas.md`.
+
+---
 
 ### Responsividade
 
