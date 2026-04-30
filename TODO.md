@@ -3326,7 +3326,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   - **Atenção:** chamar LLM durante indexação aumenta o tempo total. Estimar ~3-5s por grupo
     de chunks com modelo 7B. Emitir progresso na UI: "Gerando reflexão 3/12…"
 
-- [ ] `core/indexer.py` — integrar geração de reflexões em `create_vectorstore()` e
+- [x] `core/indexer.py` — integrar geração de reflexões em `create_vectorstore()` e
   `update_vectorstore()`:
   - Agrupar chunks por arquivo-fonte (ou por tema via agrupamento de similaridade simples)
   - Para cada grupo com ≥ 3 chunks: chamar `generate_reflection()`

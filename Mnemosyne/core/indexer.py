@@ -3,10 +3,13 @@ Indexing e vectorstore: divide documentos em chunks e persiste com Chroma.
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from pathlib import Path
+from typing import Callable
 
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
@@ -16,7 +19,12 @@ from .config import AppConfig
 from .errors import EmptyDirectoryError, IndexBuildError, VectorstoreNotFoundError
 from .loaders import load_documents, load_single_file
 from .ollama_client import _BASE_URL as _OLLAMA_BASE
+from .reflection import generate_reflection, MIN_CHUNKS
 from .tracker import FileTracker
+
+# Arquivo JSON que contabiliza reflexões geradas por tema — usado pelo
+# mecanismo de meta-reflexão para detectar quando consolidar 3 reflexões.
+_REFLECTION_META_FILE = "reflection_meta.json"
 
 
 def _clear_orphan_wal(persist_dir: str) -> None:
@@ -198,10 +206,110 @@ def _get_embeddings(config: AppConfig) -> OllamaEmbeddings:
     return OllamaEmbeddings(model=config.embed_model)
 
 
-def create_vectorstore(config: AppConfig) -> Chroma:
+def _load_reflection_counts(mnemosyne_dir: str) -> dict[str, int]:
+    path = Path(mnemosyne_dir) / _REFLECTION_META_FILE
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_reflection_counts(mnemosyne_dir: str, counts: dict[str, int]) -> None:
+    path = Path(mnemosyne_dir) / _REFLECTION_META_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(counts, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _group_by_source(chunks: list[Document]) -> dict[str, list[Document]]:
+    """Agrupa chunks por arquivo-fonte (metadata["source"])."""
+    groups: dict[str, list[Document]] = {}
+    for chunk in chunks:
+        src = chunk.metadata.get("source", "")
+        if src:
+            groups.setdefault(src, []).append(chunk)
+    return groups
+
+
+def _add_reflection_to_index(
+    vs: Chroma,
+    bm25_idx: BM25Index,
+    reflection: Document,
+    embed_model: str,
+) -> None:
+    """Embeda e persiste uma reflexão no ChromaDB e no BM25Index."""
+    import uuid
+    embs = _embed_batch([reflection.page_content], embed_model)
+    vs._collection.add(
+        ids=[str(uuid.uuid4())],
+        documents=[reflection.page_content],
+        embeddings=embs,
+        metadatas=[reflection.metadata or {}],
+    )
+    bm25_idx.add_documents([reflection])
+
+
+def _generate_and_index_reflections(
+    chunks_by_source: dict[str, list[Document]],
+    vs: Chroma,
+    bm25_idx: BM25Index,
+    config: AppConfig,
+    progress_cb: Callable[[str], None] | None = None,
+) -> int:
+    """
+    Gera reflexões para cada grupo de arquivo-fonte com ≥ MIN_CHUNKS chunks.
+
+    Seta metadata["source"] = source_file na reflexão gerada para que a deleção
+    padrão via _delete_file_chunks() / remove_source() funcione automaticamente
+    quando o arquivo for modificado ou removido.
+
+    Retorna número de reflexões geradas.
+    """
+    eligible = {s: c for s, c in chunks_by_source.items() if len(c) >= MIN_CHUNKS}
+    if not eligible:
+        return 0
+
+    counts = _load_reflection_counts(config.mnemosyne_dir)
+    total = len(eligible)
+    n_generated = 0
+
+    for idx, (source_file, chunks) in enumerate(eligible.items(), 1):
+        label = f"{idx}/{total}"
+        reflection = generate_reflection(
+            chunks, config, progress_cb=progress_cb, group_label=label
+        )
+        if reflection is None:
+            continue
+
+        # Setar "source" igual ao arquivo de origem para que _delete_file_chunks()
+        # e bm25_idx.remove_source() apaguem a reflexão automaticamente ao
+        # modificar/deletar o arquivo.
+        reflection.metadata["source"] = source_file
+
+        _add_reflection_to_index(vs, bm25_idx, reflection, config.embed_model)
+
+        theme = reflection.metadata.get("theme", "unknown")
+        counts[theme] = counts.get(theme, 0) + 1
+        n_generated += 1
+
+    if n_generated:
+        _save_reflection_counts(config.mnemosyne_dir, counts)
+
+    return n_generated
+
+
+def create_vectorstore(
+    config: AppConfig,
+    progress_cb: Callable[[str], None] | None = None,
+) -> Chroma:
     """
     Carrega documentos de config.watched_dir (e opcionalmente config.vault_dir),
     divide em chunks e cria vectorstore único com metadata source_type.
+
+    Args:
+        progress_cb: callback opcional para emitir progresso na UI durante
+                     geração de reflexões (ex: lambda msg: worker.progress.emit(msg)).
 
     Raises:
         FileNotFoundError: se o diretório não existir.
@@ -249,6 +357,10 @@ def create_vectorstore(config: AppConfig) -> Chroma:
 
     bm25_idx = BM25Index(config.mnemosyne_dir)
     bm25_idx.add_documents(chunks)
+
+    chunks_by_source = _group_by_source(chunks)
+    _generate_and_index_reflections(chunks_by_source, vs, bm25_idx, config, progress_cb)
+
     bm25_idx.save()
 
     return vs
@@ -315,14 +427,18 @@ def _delete_file_chunks(vs: Chroma, file_path: str) -> None:
         pass  # Se falhar (ex: versão incompatível), continua sem travar
 
 
-def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
+def update_vectorstore(
+    config: AppConfig,
+    progress_cb: Callable[[str], None] | None = None,
+) -> tuple[Chroma, dict[str, int]]:
     """
     Actualiza o vectorstore incrementalmente usando FileTracker:
       - Adiciona chunks de ficheiros novos
       - Remove chunks antigos e re-indexa ficheiros modificados
       - Remove chunks de ficheiros deletados/renomeados
+      - Gera reflexões de conhecimento para ficheiros novos/modificados
 
-    Retorna (vectorstore, stats) onde stats = {new, modified, deleted, errors}.
+    Retorna (vectorstore, stats) onde stats = {new, modified, deleted, errors, reflections}.
 
     Raises:
         VectorstoreNotFoundError: se não houver vectorstore para actualizar.
@@ -349,10 +465,11 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
         deleted_files.extend(d)
 
     _BATCH, _SLEEP = _detect_batch_config()
-    stats = {"new": 0, "modified": 0, "deleted": 0, "errors": 0}
+    stats = {"new": 0, "modified": 0, "deleted": 0, "errors": 0, "reflections": 0}
     bm25_idx = BM25Index.load(config.mnemosyne_dir)
 
-    # Deletados
+    # Deletados: _delete_file_chunks e remove_source apagam tanto chunks quanto
+    # reflexões, pois reflexões têm metadata["source"] = file_path.
     for file_path in deleted_files:
         _delete_file_chunks(vs, file_path)
         bm25_idx.remove_source(file_path)
@@ -376,7 +493,8 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
             if b_idx + 1 < len(batch_list):
                 time.sleep(_SLEEP)
 
-    # Modificados: remove chunks antigos, re-indexa
+    # Modificados: remove chunks e reflexões antigas (pelo source), re-indexa.
+    # A deleção das reflexões é automática via _delete_file_chunks + remove_source.
     for file_path, source_type in modified_files:
         _delete_file_chunks(vs, file_path)
         bm25_idx.remove_source(file_path)
@@ -388,6 +506,11 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
             bm25_idx.add_documents(chunks)
             tracker.mark_indexed(file_path)
             stats["modified"] += 1
+            # Gerar reflexão para o arquivo reindexado
+            n = _generate_and_index_reflections(
+                {file_path: chunks}, vs, bm25_idx, config, progress_cb
+            )
+            stats["reflections"] += n
         except Exception:
             stats["errors"] += 1
 
@@ -401,6 +524,11 @@ def update_vectorstore(config: AppConfig) -> tuple[Chroma, dict[str, int]]:
             bm25_idx.add_documents(chunks)
             tracker.mark_indexed(file_path)
             stats["new"] += 1
+            # Gerar reflexão para o arquivo novo
+            n = _generate_and_index_reflections(
+                {file_path: chunks}, vs, bm25_idx, config, progress_cb
+            )
+            stats["reflections"] += n
         except Exception:
             stats["errors"] += 1
 
