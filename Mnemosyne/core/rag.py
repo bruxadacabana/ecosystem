@@ -18,6 +18,7 @@ from .bm25_index import BM25Index
 from .config import AppConfig
 from .errors import QueryError
 from .memory import Turn
+from .reflection import REFLECTION_COSINE_THRESHOLD
 
 if TYPE_CHECKING:
     from .tracker import FileTracker
@@ -226,6 +227,11 @@ def _hybrid_retrieve(
     """
     Hybrid retrieval com RRF real quando bm25_index fornecido (corpus completo),
     ou fusão ponderada sobre pool semântico como fallback legado.
+
+    Reflexões (metadata["type"] == "reflection") recebem boost multiplicativo no
+    score RRF e são filtradas por cosine similarity mínima (REFLECTION_COSINE_THRESHOLD)
+    para evitar que reflexões genéricas contaminem o contexto. ChromaDB com
+    hnsw:space=cosine retorna distância cosine; similaridade = 1 - distância.
     """
     _RRF_K = 60  # constante padrão RRF
     candidate_n = max(k * 3, 50)
@@ -235,12 +241,23 @@ def _hybrid_retrieve(
     if where:
         search_kwargs["filter"] = where
     try:
-        semantic_docs = vectorstore.similarity_search(question, **search_kwargs)
+        # similarity_search_with_score retorna (Document, distância_cosine)
+        # Necessário para calcular cosine similarity das reflexões no filtro de threshold
+        semantic_results: list[tuple[Document, float]] = (
+            vectorstore.similarity_search_with_score(question, **search_kwargs)
+        )
     except Exception as exc:
         raise QueryError(f"Falha na recuperação semântica: {exc}") from exc
 
-    if not semantic_docs:
+    if not semantic_results:
         return []
+
+    # key → cosine similarity (1 - distância); usado para filtrar reflexões abaixo do threshold
+    cosine_sim: dict[str, float] = {
+        doc.page_content[:200]: max(0.0, 1.0 - dist)
+        for doc, dist in semantic_results
+    }
+    semantic_docs = [doc for doc, _ in semantic_results]
 
     if bm25_index and bm25_index.size > 0:
         # True RRF: dense top-N ∪ BM25 top-N do corpus completo
@@ -269,6 +286,23 @@ def _hybrid_retrieve(
             if key not in doc_map:
                 doc_map[key] = doc
 
+        # Aplicar boost e filtro cosine para reflexões antes do sort final
+        to_remove: list[str] = []
+        for key, doc in doc_map.items():
+            if doc.metadata.get("type") != "reflection":
+                continue
+            sim = cosine_sim.get(key, 0.0)
+            if sim < REFLECTION_COSINE_THRESHOLD:
+                # Reflexão pouco relacionada com a query — excluir do contexto
+                to_remove.append(key)
+            else:
+                boost = doc.metadata.get("boost", 1.0)
+                rrf_scores[key] *= boost
+
+        for key in to_remove:
+            rrf_scores.pop(key, None)
+            doc_map.pop(key, None)
+
         sorted_keys = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
         return [doc_map[ky] for ky in sorted_keys[:k]]
 
@@ -283,10 +317,19 @@ def _hybrid_retrieve(
     max_score = max(bm25_scores) if max(bm25_scores) > 0 else 1.0
     normalized = [s / max_score for s in bm25_scores]
     n = len(semantic_docs)
-    combined = [
-        (0.6 * (1.0 - i / n) + 0.4 * normalized[i], i)
-        for i in range(n)
-    ]
+
+    combined: list[tuple[float, int]] = []
+    for i, doc in enumerate(semantic_docs):
+        key = doc.page_content[:200]
+        if doc.metadata.get("type") == "reflection":
+            if cosine_sim.get(key, 0.0) < REFLECTION_COSINE_THRESHOLD:
+                continue  # filtrar reflexão irrelevante
+            boost = doc.metadata.get("boost", 1.0)
+        else:
+            boost = 1.0
+        score = (0.6 * (1.0 - i / n) + 0.4 * normalized[i]) * boost
+        combined.append((score, i))
+
     combined.sort(key=lambda x: x[0], reverse=True)
 
     seen: set[str] = set()

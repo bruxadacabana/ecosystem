@@ -3340,7 +3340,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   - Remove as 3 reflexões originais do vectorstore e BM25 (para não duplicar)
   - Threshold de similaridade entre reflexões para confirmar que são do mesmo tema: cosine ≥ 0.65
 
-- [ ] `core/rag.py` — aplicar boost de reflexões no retrieval:
+- [x] `core/rag.py` — aplicar boost de reflexões no retrieval:
   - Após recuperação híbrida (BM25+dense), identificar documentos com `metadata["boost"]`
   - Multiplicar o score RRF pelo boost antes de ordenar: `score * doc.metadata.get("boost", 1.0)`
   - Filtro extra: reflexões só entram no contexto se cosine similarity com a query ≥ 0.65
