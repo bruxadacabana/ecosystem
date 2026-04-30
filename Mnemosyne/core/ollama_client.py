@@ -16,7 +16,7 @@ _BASE_URL = "http://localhost:11434"
 _TIMEOUT = 2  # segundos
 
 # Fragmentos de nome que identificam modelos de embedding
-_EMBED_HINTS = ("embed", "nomic", "mxbai", "bge", "e5")
+_EMBED_HINTS = ("embed", "nomic", "mxbai", "bge", "e5", "minilm")
 
 
 @dataclass
