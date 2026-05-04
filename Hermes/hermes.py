@@ -432,6 +432,8 @@ class TranscribeWorker(QThread):
         except BaseException as exc:
             # Guarda-chuva: captura SystemExit/KeyboardInterrupt que escapem dos
             # handlers internos e evita que o PyQt6 termine o processo.
+            import traceback as _tb
+            _log_file.error("TranscribeWorker crash: %s", _tb.format_exc())
             if not self._cancelled:
                 self.error.emit(str(exc) or type(exc).__name__)
 
@@ -1426,11 +1428,24 @@ class HermesApp(QMainWindow):
 def main():
     _setup_logger()
     _log_file.info("Hermes iniciado.")
+
+    def _qt_except_hook(exc_type, exc_value, exc_tb):
+        import traceback as _tb
+        _log_file.critical(
+            "Exceção não tratada: %s",
+            "".join(_tb.format_exception(exc_type, exc_value, exc_tb)),
+        )
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = _qt_except_hook
+
     app = QApplication(sys.argv)
     app.setApplicationName("Hermes")
     window = HermesApp()
     window.show()
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    _log_file.info("Hermes encerrado (código %d).", exit_code)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

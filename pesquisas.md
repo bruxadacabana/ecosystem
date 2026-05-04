@@ -1,6 +1,6 @@
 # Pesquisas do Ecossistema
 
-> Última atualização: 2026-04-30
+> Última atualização: 2026-05-04
 
 ---
 
@@ -5328,4 +5328,691 @@ Acesso em: 30 abr. 2026.
 
 ========================================================
 FIM DA PESQUISA — Self-Learning RAG, Knowledge Reflection e Arquiteturas Avançadas
+========================================================
+
+---
+
+## Referências Externas — Ferramentas e Projetos
+
+# Pesquisa: Understand-Anything — Plugin de Grafo de Conhecimento para Codebases
+
+Data: 2026-05-04
+Contexto: documentação técnica de referência do projeto github.com/Lum1104/Understand-Anything
+para avaliação de arquitetura, padrões, e potencial de inspiração para ferramentas do ecossistema.
+
+---
+
+## 1. Visão Geral e Identidade do Projeto
+
+**Nome:** Understand-Anything
+**Autor:** Lum1104 (GitHub)
+**Versão atual do plugin:** 2.5.1 (campo `version` em `.claude-plugin/plugin.json`)
+**Licença:** MIT
+**Repositório:** https://github.com/Lum1104/Understand-Anything
+**Homepage:** https://understand-anything.com
+**Demo ao vivo:** https://understand-anything.com/demo/
+**Linguagem principal:** TypeScript
+**Estrelas no GitHub (2026-05-04):** 11.482
+**Forks:** 975
+**Data de criação:** 2026-03-15
+**Última atualização:** 2026-05-04
+
+**Descrição oficial:** "Turn any codebase, knowledge base, or docs into an interactive knowledge graph
+you can explore, search, and ask questions about. Works with Claude Code, Codex, Cursor, Copilot,
+Gemini CLI, and more."
+
+**Lema:** "Graphs that teach > graphs that impress."
+
+---
+
+## 2. Arquitetura Técnica Geral
+
+O projeto é um monorepo pnpm-workspace com duas camadas principais:
+
+```
+understand-anything/
+├── understand-anything-plugin/      # Plugin principal (npm package)
+│   ├── packages/
+│   │   ├── core/                   # Motor de análise (@understand-anything/core)
+│   │   └── dashboard/              # Dashboard React (@understand-anything/dashboard)
+│   ├── agents/                     # Definições de agentes LLM (arquivos .md)
+│   ├── skills/                     # Definições de skills/comandos (arquivos .md)
+│   ├── src/                        # Implementação TypeScript das skills
+│   └── hooks/                      # Hooks de automação (hooks.json)
+├── homepage/                       # Site Astro (understand-anything.com)
+├── scripts/                        # Scripts utilitários (geração de grafos grandes)
+└── README.md + README.{locale}.md  # Documentação em 7 idiomas
+```
+
+**Paradigma de processamento:** O sistema usa um **pipeline multi-agente** onde agentes LLM
+especializados são orquestrados por um agente-coordenador. Cada agente recebe um prompt
+estruturado (Markdown) que define seu papel, fases de execução e formato de saída.
+
+**Runtime de agentes:** Claude Code Plugin (nativo) + portabilidade via "skills" genéricas
+instaláveis nos demais agentes suportados (Codex, Cursor, Copilot, Gemini CLI, etc.).
+
+---
+
+## 3. Pipeline Multi-Agente (/understand)
+
+O comando principal `/understand` orquestra **6 agentes especializados** em fases sequenciais,
+com paralelismo interno na fase 2:
+
+### Fase 0 — Pre-flight (Preflight)
+- Resolução do `PROJECT_ROOT` (argumento ou CWD)
+- Verificação e build do pacote `@understand-anything/core` se dist/ não existir
+- Leitura do hash git atual (`git rev-parse HEAD`)
+- Criação de diretórios intermediários (`.understand-anything/intermediate/`, `.understand-anything/tmp/`)
+- Configuração de auto-update (escrita em `.understand-anything/config.json`)
+- Verificação e merge de subdomain graphs existentes (`merge-subdomain-graphs.py`)
+- Leitura do grafo existente e metadados (para detectar incrementalidade)
+- **Lógica de decisão:**
+  - `--full` → análise completa
+  - Grafo inexistente → análise completa
+  - `--review` + grafo existente + hash igual → pula para Fase 6 (review-only)
+  - Grafo existente + hash igual → pergunta ao usuário
+  - Grafo existente + arquivos mudados → atualização incremental
+- Coleta de contexto do projeto: README (3000 chars), manifest, árvore de diretórios, entry point
+
+### Fase 0.5 — Ignore Configuration
+- Verifica existência de `.understand-anything/.understandignore`
+- Se ausente: gera arquivo de sugestões via script Node.js inline (lê `.gitignore`, detecta diretórios comuns)
+- **Aguarda confirmação do usuário antes de prosseguir**
+
+### Fase 1 — SCAN (agente `project-scanner`)
+- Descobre todos os arquivos do projeto (via `git ls-files` ou listagem recursiva com exclusões)
+- Aplica exclusões hardcoded: `node_modules/`, `.git/`, `dist/`, `build/`, `*.lock`, assets binários, etc.
+- Aplica filtros do `.understandignore` (via `@understand-anything/core` `createIgnoreFilter`)
+- Detecta linguagem por extensão (mapeamento para 35+ identificadores)
+- Categoriza cada arquivo (`code`, `config`, `docs`, `infra`, `data`, `script`, `markup`)
+- Detecta frameworks por leitura de manifests (`package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `Gemfile`, `pom.xml`, `build.gradle`)
+- Resolve imports internos para cada arquivo (pre-processamento para Fase 2)
+- Conta linhas com `wc -l`
+- Escreve `scan-result.json` com: nome do projeto, descrição, linguagens, frameworks, lista de arquivos, `importMap`, `filteredByIgnore`
+- **Gate:** se >100 arquivos, informa o usuário e aguarda confirmação
+
+### Fase 2 — ANALYZE (agente `file-analyzer`, paralelo)
+- Agrupa arquivos em lotes de 20-30 (target ~25 por lote), com arquivos relacionados juntos
+- Despacha até **5 subagentes concorrentes** para processar lotes em paralelo
+- **Por lote — Fase 2A (extração estrutural):**
+  - Cria JSON de input com `projectRoot`, `batchFiles`, `batchImportData`
+  - Executa `extract-structure.mjs` (script Node.js bundled) que usa tree-sitter
+  - Saída: funções, classes, imports, exports, call graph, métricas por arquivo
+  - Linguagens com tree-sitter: TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C/C++, C#
+  - Linguagens sem tree-sitter (Swift, Kotlin): métricas básicas apenas; LLM supplementa
+- **Por lote — Fase 2B (análise semântica por LLM):**
+  - Para cada arquivo: cria nó `GraphNode` com tipo determinado pelo `fileCategory`
+  - Determina `complexity`: simple (<50 linhas não-vazias), moderate (50-200), complex (>200)
+  - Escreve `summary` (1-2 frases), `tags`, `languageNotes`
+  - Para arquivos `code`: cria sub-nós `function` e `class` com seus summaries
+  - Para arquivos `infra`: detecta subtipo (`service`, `pipeline`, `resource`)
+  - Para arquivos `data`: detecta subtipo (`table`, `schema`, `endpoint`)
+  - Cria `GraphEdge` para: imports, contains, calls, reads_from, writes_to, etc.
+  - Escreve `batch-N.json`
+- Após todos os lotes: executa `merge-batch-graphs.py` (Python, bundled):
+  - Combina todos os `batch-*.json`
+  - Normaliza IDs de nós (prefixos duplos, prefixos de projeto, prefixos faltantes)
+  - Normaliza valores de complexidade (`low`→`simple`, `medium`→`moderate`, `high`→`complex`)
+  - Deduplica nós (por ID, mantém última ocorrência) e arestas (por `source+target+type`)
+  - Remove arestas pendentes (referenciando nós inexistentes)
+  - Produz `assembled-graph.json`
+
+### Fase 3 — ASSEMBLE REVIEW (agente `assemble-reviewer`)
+- Recebe o grafo montado + report do merge script + importMap
+- Verifica integridade referencial cross-batch
+- Adiciona notas de warning ao `$PHASE_WARNINGS`
+- Escreve `assemble-review.json`
+
+### Fase 4 — ARCHITECTURE (agente `architecture-analyzer`)
+- Recebe nós de nível de arquivo, arestas de importação, todas as arestas
+- Recebe contexto de linguagem (arquivos `languages/*.md`) e framework (arquivos `frameworks/*.md`)
+- Identifica camadas arquiteturais (API, Service, Data, UI, Utility, etc.)
+- Normaliza a saída: unwrap de envelope, renomeação de campos, síntese de IDs, conversão de paths
+- Para atualizações incrementais: recebe definições de camadas anteriores para consistência
+- Escreve `layers.json` (array de `{id, name, description, nodeIds[]}`)
+
+### Fase 5 — TOUR (agente `tour-builder`)
+- Recebe todos os nós de nível de arquivo, camadas, todas as arestas
+- Recebe README (3000 chars) e entry point do projeto
+- Gera walkthrough guiado ordenado por dependência
+- Normaliza a saída: unwrap, renomeação de campos, conversão de paths, remoção de refs dangling
+- Escreve `tour.json` (array de `{order, title, description, nodeIds[], languageLesson?}`)
+
+### Fase 6 — REVIEW (validação)
+- Monta o objeto `KnowledgeGraph` final com `version`, `project`, `nodes`, `edges`, `layers`, `tour`
+- **Caminho padrão (inline deterministic):** executa script Node.js gerado dinamicamente que valida:
+  - `nodes` e `edges` são arrays
+  - Cada nó tem `id`, `type`, `name`, `summary`, `tags`
+  - IDs únicos (sem duplicatas)
+  - Arestas referenciam nós existentes
+  - Nós de arquivo pertencem a camadas
+  - Tour referenciam nós existentes
+  - Orphan nodes (sem arestas) são reportados como warning
+  - Calcula estatísticas: totalNodes, totalEdges, tipos por contagem
+- **Caminho `--review` (LLM):** despacha agente `graph-reviewer` para validação semântica mais profunda
+- Aplicação de fixes automáticos para issues menores
+
+### Fase 7 — SAVE
+- Escreve `knowledge-graph.json` (grafo final)
+- Escreve `meta.json` (timestamp, hash, versão, contagem de arquivos)
+- Gera fingerprints estruturais (`fingerprints.json`) para baseline de atualizações futuras
+- Remove diretórios intermediários e temporários
+- Reporta sumário: arquivos por categoria, nós por tipo, arestas por tipo, camadas, tour steps
+- Auto-lança `/understand-dashboard` se validação passou
+
+---
+
+## 4. Skills/Comandos Disponíveis
+
+### /understand [path] [--full|--auto-update|--no-auto-update|--review]
+Pipeline completo de análise descrito acima. Produz `.understand-anything/knowledge-graph.json`.
+
+### /understand-dashboard [project-path]
+- Inicia servidor Vite dev com o dashboard React
+- Passa `GRAPH_DIR` via variável de ambiente para apontar ao projeto
+- Gera token aleatório por sessão (32 hex chars via `crypto.randomBytes(16)`)
+- URL: `http://127.0.0.1:5173?token=<TOKEN>`
+- Imprime a URL tokenizada no terminal (`🔑  Dashboard URL: ...`)
+- Servidor bind apenas em `127.0.0.1` (não expõe na LAN)
+- Serve: `knowledge-graph.json`, `domain-graph.json`, `diff-overlay.json`, `meta.json`, `file-content.json`
+- Todos os endpoints de dados requerem o token correto (HTTP 403 sem token)
+- Sanitiza file paths absolutos antes de servir (converte para relativos ao project root)
+
+### /understand-chat [query]
+- Responde perguntas sobre o codebase usando o grafo existente
+- Usa grep no JSON para encontrar nós relevantes (não carrega grafo inteiro em contexto)
+- Segue arestas 1-hop para encontrar componentes conectados
+- Suporta busca por nome, summary, e tags
+
+### /understand-diff
+- Analisa mudanças git atuais contra o grafo
+- Identifica: componentes mudados, componentes afetados (1-hop), camadas afetadas
+- Calcula blast radius baseado em complexidade e cross-layer edges
+- Escreve `diff-overlay.json` para visualização no dashboard
+
+### /understand-explain [file-path]
+- Deep-dive em um arquivo ou função específico
+- Lê o código-fonte + nó correspondente + vizinhança no grafo
+- Explica: papel arquitetural, estrutura interna, conexões externas, fluxo de dados
+
+### /understand-onboard
+- Gera guia de onboarding em Markdown
+- Seções: Project Overview, Architecture Layers, Key Concepts, Guided Tour, File Map, Complexity Hotspots
+- Oferece salvar em `docs/ONBOARDING.md`
+
+### /understand-domain [--full]
+- Extrai conhecimento de domínio de negócio
+- Se grafo existente: deriva a partir dele (barato, sem scan de arquivos)
+- Se `--full` ou sem grafo: scan leve via `extract-domain-context.py` (tree de arquivos, entry points, assinaturas)
+- Usa agente `domain-analyzer` para extrair: domínios, fluxos de negócio, passos de processo
+- Produz `domain-graph.json` com nós `domain`, `flow`, `step`
+- Lança dashboard automaticamente
+
+### /understand-knowledge [wiki-directory]
+- Analisa wikis no padrão Karpathy (raw sources + wiki markdown + schema)
+- **Fase 1 (determinística):** `parse-knowledge-base.py` extrai wikilinks, headings, categorias do `index.md`
+- **Fase 2:** batches de 10-15 artigos por agente `article-analyzer` (máximo 3 concurrent)
+- **Fase 3:** `merge-knowledge-graph.py` combina scan manifest + análises LLM
+- Produz grafo com `kind: "knowledge"` (força layout force-directed em vez de hierárquico)
+- Nós: `article`, `entity`, `topic`, `claim`, `source`
+- Arestas: `cites`, `contradicts`, `builds_on`, `exemplifies`, `categorized_under`, `authored_by`, `related`
+
+---
+
+## 5. Schema do KnowledgeGraph (tipos TypeScript)
+
+### KnowledgeGraph (raiz)
+```typescript
+interface KnowledgeGraph {
+  version: string;           // "1.0.0"
+  kind?: "codebase" | "knowledge";
+  project: ProjectMeta;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  layers: Layer[];
+  tour: TourStep[];
+}
+```
+
+### Tipos de Nó (21 total)
+| Categoria | Tipo | Convenção de ID | Descrição |
+|-----------|------|-----------------|-----------|
+| Código | `file` | `file:<path>` | Arquivo de código-fonte |
+| Código | `function` | `function:<path>:<name>` | Função ou método |
+| Código | `class` | `class:<path>:<name>` | Classe, interface ou tipo |
+| Código | `module` | `module:<name>` | Módulo ou pacote lógico |
+| Código | `concept` | `concept:<name>` | Conceito abstrato ou padrão |
+| Não-código | `config` | `config:<path>` | Arquivo de configuração |
+| Não-código | `document` | `document:<path>` | Arquivo de documentação |
+| Não-código | `service` | `service:<path>` | Serviço implantável (Docker, K8s) |
+| Não-código | `table` | `table:<path>:<table-name>` | Tabela de banco de dados |
+| Não-código | `endpoint` | `endpoint:<path>:<name>` | Endpoint de API |
+| Não-código | `pipeline` | `pipeline:<path>` | Pipeline CI/CD |
+| Não-código | `schema` | `schema:<path>` | Schema (GraphQL, Protobuf, Prisma) |
+| Não-código | `resource` | `resource:<path>` | Recurso de infraestrutura (Terraform) |
+| Domínio | `domain` | — | Domínio de negócio |
+| Domínio | `flow` | — | Fluxo de negócio |
+| Domínio | `step` | — | Passo de processo |
+| Conhecimento | `article` | — | Artigo de wiki |
+| Conhecimento | `entity` | — | Entidade extraída |
+| Conhecimento | `topic` | — | Tópico ou categoria |
+| Conhecimento | `claim` | — | Afirmação ou decisão |
+| Conhecimento | `source` | — | Fonte ou documento raw |
+
+### Tipos de Aresta (35 total, 8 categorias)
+| Categoria | Tipos |
+|-----------|-------|
+| Structural | `imports`, `exports`, `contains`, `inherits`, `implements` |
+| Behavioral | `calls`, `subscribes`, `publishes`, `middleware` |
+| Data flow | `reads_from`, `writes_to`, `transforms`, `validates` |
+| Dependencies | `depends_on`, `tested_by`, `configures` |
+| Semantic | `related`, `similar_to` |
+| Infrastructure | `deploys`, `serves`, `provisions`, `triggers`, `migrates`, `documents`, `routes`, `defines_schema` |
+| Domain | `contains_flow`, `flow_step`, `cross_domain` |
+| Knowledge | `cites`, `contradicts`, `builds_on`, `exemplifies`, `categorized_under`, `authored_by` |
+
+### Pesos de Aresta
+`contains`: 1.0 | `inherits/implements`: 0.9 | `calls/exports/defines_schema`: 0.8 |
+`imports/deploys/migrates`: 0.7 | `depends_on/configures/triggers`: 0.6 | demais: 0.5
+
+### GraphNode (campos)
+```typescript
+interface GraphNode {
+  id: string;
+  type: NodeType;
+  name: string;
+  filePath?: string;
+  lineRange?: [number, number];
+  summary: string;
+  tags: string[];
+  complexity: "simple" | "moderate" | "complex";
+  languageNotes?: string;
+  domainMeta?: DomainMeta;       // para nós domain/flow/step
+  knowledgeMeta?: KnowledgeMeta; // para nós de knowledge
+}
+```
+
+### GraphEdge (campos)
+```typescript
+interface GraphEdge {
+  source: string;
+  target: string;
+  type: EdgeType;
+  direction: "forward" | "backward" | "bidirectional";
+  description?: string;
+  weight: number; // 0-1
+}
+```
+
+---
+
+## 6. Motor de Análise: @understand-anything/core
+
+**Pacote:** `@understand-anything/core` v0.1.0
+**Localização:** `understand-anything-plugin/packages/core/`
+
+### Dependências principais
+| Pacote | Versão | Função |
+|--------|--------|--------|
+| `web-tree-sitter` | ^0.26.6 | Parser AST para análise estrutural de código |
+| `tree-sitter-typescript` | ^0.23.2 | Gramática TypeScript/JavaScript |
+| `tree-sitter-python` | ^0.25.0 | Gramática Python |
+| `tree-sitter-go` | ^0.25.0 | Gramática Go |
+| `tree-sitter-rust` | ^0.24.0 | Gramática Rust |
+| `tree-sitter-java` | ^0.23.5 | Gramática Java |
+| `tree-sitter-ruby` | ^0.23.1 | Gramática Ruby |
+| `tree-sitter-php` | ^0.23.11 | Gramática PHP |
+| `tree-sitter-cpp` | ^0.23.4 | Gramática C/C++ |
+| `tree-sitter-c-sharp` | ^0.23.1 | Gramática C# |
+| `tree-sitter-javascript` | ^0.25.0 | Gramática JavaScript (redundante com typescript) |
+| `fuse.js` | ^7.1.0 | Busca fuzzy (FTS) nos nós do grafo |
+| `ignore` | ^7.0.5 | Filtragem .gitignore-compatible para .understandignore |
+| `yaml` | ^2.8.3 | Parsing de arquivos YAML |
+| `zod` | ^4.3.6 | Validação de schema em runtime |
+
+**DevDependencies:** TypeScript 5.7, Vitest 3.1, @vitest/coverage-v8 3.2.4
+
+### Módulos exportados
+- `@understand-anything/core` — exports principais (GraphBuilder, tipos, fingerprints, staleness)
+- `@understand-anything/core/search` — motor de busca fuzzy (Fuse.js)
+- `@understand-anything/core/types` — interfaces TypeScript
+- `@understand-anything/core/schema` — schemas Zod para validação
+- `@understand-anything/core/languages` — LanguageRegistry, LanguageConfig
+
+### TreeSitterPlugin
+Plugin de análise estrutural usando web-tree-sitter. Suporta:
+- TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C++, C# (tree-sitter completo)
+- Swift, Kotlin (sem tree-sitter — métricas básicas + LLM supplementa)
+- Extrai: funções (nome, params, returnType, lineRange), classes (nome, methods, properties, lineRange), imports (source, specifiers, lineNumber), exports (nome, lineNumber), call graph
+
+### SearchEngine (Fuse.js)
+```typescript
+const FUSE_OPTIONS = {
+  keys: [
+    { name: "name", weight: 0.4 },
+    { name: "tags", weight: 0.3 },
+    { name: "summary", weight: 0.2 },
+    { name: "languageNotes", weight: 0.1 },
+  ],
+  threshold: 0.4,
+  includeScore: true,
+  ignoreLocation: true,
+  useExtendedSearch: true,
+};
+```
+Extended search: tokens separados por espaço viram OR implícito (`"auth contrl"` → `"auth | contrl"`).
+
+### SemanticSearchEngine
+Engine de busca semântica por cosine similarity sobre vetores pre-computados. Interface:
+```typescript
+class SemanticSearchEngine {
+  search(queryEmbedding: number[], options?: SemanticSearchOptions): SearchResult[]
+  hasEmbeddings(): boolean
+  addEmbedding(nodeId: string, embedding: number[]): void
+}
+```
+**Nota:** o engine existe mas o pipeline principal NÃO gera embeddings automaticamente — os embeddings
+precisam ser injetados externamente. A busca por padrão usa Fuse.js fuzzy.
+
+### FingerprintEngine
+Sistema de fingerprinting estrutural para detecção inteligente de mudanças:
+- **Níveis de mudança:** `NONE` (hash idêntico), `COSMETIC` (conteúdo diferente, estrutura igual), `STRUCTURAL` (assinatura mudou)
+- **Critérios de STRUCTURAL:** funções adicionadas/removidas, params mudados, return type mudado, export status mudado, mudança >50% no tamanho de função, classes adicionadas/removidas, methods/properties mudados, imports/exports mudados
+- **Decisão de update baseada em mudanças:**
+  - Todas `NONE`/`COSMETIC` → SKIP
+  - Algumas `STRUCTURAL`, mesmos diretórios → PARTIAL_UPDATE
+  - Novos/deletados diretórios ou >10 arquivos estruturais → ARCHITECTURE_UPDATE
+  - >30 arquivos estruturais ou >50% do total → FULL_UPDATE
+
+### LanguageRegistry
+Registry de configurações de linguagens. Cada `LanguageConfig` contém:
+- `id`, `displayName`, `extensions`, `filenames?`
+- `treeSitter?` (`wasmPackage`, `wasmFile`)
+- `concepts[]` — padrões de linguagem relevantes
+- `filePatterns` (`entryPoints`, `barrels`, `tests`, `config`)
+
+Linguagens configuradas: TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C, C++, C#,
+Swift, Kotlin, CSS, HTML, SQL, GraphQL, Protobuf, Terraform, YAML, JSON, TOML, Markdown,
+Dockerfile, Makefile, Jenkinsfile, Shell, Batch, PowerShell, Docker Compose, Kubernetes,
+GitHub Actions, env, CSV, OpenAPI, JSON Schema
+
+### FrameworkRegistry
+Configurações de frameworks com: `id`, `displayName`, `languages`, `detectionKeywords`,
+`manifestFiles`, `promptSnippetPath`, `entryPoints?`, `layerHints?`
+
+Frameworks configurados: Django, Flask, FastAPI, Express, Next.js, React, Vue, Gin, Rails, Spring
+
+---
+
+## 7. Dashboard (@understand-anything/dashboard)
+
+**Pacote:** `@understand-anything/dashboard` v0.1.0
+**Stack:** React 19, Vite 6, TypeScript 5.7, TailwindCSS v4, Zustand 5
+
+### Dependências principais
+| Pacote | Versão | Função |
+|--------|--------|--------|
+| `@xyflow/react` | ^12.0.0 | Renderização de grafos interativos (nodes + edges) |
+| `@dagrejs/dagre` | ^2.0.4 | Layout hierárquico (structural view) |
+| `elkjs` | ^0.9.3 | Layout ELK (Eclipse Layout Kernel) — escalável para grafos grandes |
+| `d3-force` | ^3.0.0 | Layout force-directed (knowledge/domain view) |
+| `graphology` | ^0.25.4 | Estrutura de dados de grafo genérica |
+| `graphology-communities-louvain` | ^2.0.1 | Detecção de comunidades (Louvain algorithm) |
+| `zustand` | ^5.0.0 | State management |
+| `react-markdown` | ^10.1.0 | Renderização de Markdown nos summaries |
+| `prism-react-renderer` | ^2.4.1 | Syntax highlighting no visualizador de código |
+
+### Modos de Visualização (ViewMode)
+- **structural:** grafo hierárquico com dagre/ELK, color-coded por camada arquitetural
+- **domain:** grafo horizontal de fluxos de negócio (domains → flows → steps)
+- **knowledge:** grafo force-directed com clustering Louvain para wikis
+
+### Algoritmos de Layout
+- **Dagre:** layout hierárquico primário para structural view
+- **ELK:** fallback/alternativa para grafos maiores, com reparo automático de input inválido
+- **D3-Force:** force simulation para knowledge/domain views
+- **Louvain:** detecção de comunidades para clustering em grafos não-estruturados (usando graphology-communities-louvain v2)
+- Web Worker dedicado para cálculos de layout pesados (não bloqueia UI)
+
+### Funcionalidades do Dashboard
+- **Navegação por camadas:** drilldown em camada específica (NavigationLevel: overview | layer-detail)
+- **Busca:** fuzzy (Fuse.js, modo "fuzzy") e semântica (cosine similarity, modo "semantic")
+- **Filtros:** por nodeType (21 tipos), complexity (simple/moderate/complex), layerId, edgeCategory (8 categorias)
+- **Sidebar:** NodeInfo com summary, tags, complexity, languageNotes, breadcrumb de histórico (máx 50 entradas)
+- **CodeViewer:** visualização de código-fonte inline com syntax highlighting (Prism)
+- **PathFinder:** modal para encontrar caminhos entre dois nós
+- **DiffToggle:** visualização de mudanças com overlay (`diff-overlay.json`)
+- **LearnPanel:** modo de aprendizado com tours guiados e language lessons
+- **PersonaSelector:** adapta nível de detalhe (non-technical | junior | experienced)
+- **ThemePicker:** temas dark/light com seletor de accent color
+- **ExportMenu:** exportação do grafo
+- **WarningBanner:** exibe warnings de validação
+- **TokenGate:** bloqueia acesso sem token de sessão (segurança)
+
+### Sistema de Temas
+6 presets predefinidos:
+- **dark-gold** (padrão escuro, accent gold `#d4a574`)
+- **dark-ocean** (escuro, accent ocean `#5ba4cf`)
+- **dark-forest**
+- **dark-midnight**
+- **light-paper**
+- **light-minimal**
+
+Cada preset tem 8 accent swatches intercambiáveis. Cores de nó por tipo são definidas por preset
+(ex: `node-file`, `node-function`, `node-class`, `node-config`, etc. — 13 tipos de nó com cor distinta).
+
+### Segurança do Servidor Vite
+- Token de sessão aleatório (32 hex chars) gerado ao iniciar
+- Bind exclusivo em `127.0.0.1` (nunca `0.0.0.0`)
+- Todos os endpoints de dados exigem `?token=<TOKEN>` (HTTP 403 sem token)
+- Sanitização de file paths absolutos antes de servir JSON (converte para relativos)
+- Path traversal protection (rejeita `../`, paths absolutos, null bytes)
+- Limite de 1 MB por arquivo em `/file-content.json`
+- Rejeita arquivos binários (bytes nulos)
+- Whitelist: apenas arquivos listados no `filePath` do grafo podem ser lidos via `/file-content.json`
+
+---
+
+## 8. Sistema de Hooks e Auto-Update
+
+### hooks.json
+Dois hooks registrados:
+
+**PostToolUse (Bash):**
+```bash
+# Detecta commits git e, se auto-update estiver habilitado e grafo existir,
+# injeta instrução para executar auto-update-prompt.md
+printf '%s' "$TOOL_INPUT" | grep -qE 'git\s+(commit|merge|cherry-pick|rebase)' && \
+[ -f .understand-anything/config.json ] && \
+grep -q '"autoUpdate".*true' .understand-anything/config.json && \
+[ -f .understand-anything/knowledge-graph.json ] && \
+echo "[understand-anything] Commit detected..."
+```
+
+**SessionStart:**
+```bash
+# Na abertura de sessão, verifica se grafo está desatualizado
+[ -f .understand-anything/config.json ] && grep -q '"autoUpdate".*true' ... && \
+[ "$(node -p ...meta.json...gitCommitHash)" != "$(git rev-parse HEAD)" ] && \
+echo "[understand-anything] Knowledge graph is stale..."
+```
+
+### auto-update-prompt.md
+Define o fluxo de atualização incremental automática após commits:
+1. Lê fingerprints existentes
+2. Analisa arquivos mudados com `analyzeChanges()`
+3. Classifica o tipo de update necessário (`classifyUpdate()`)
+4. Executa apenas o mínimo necessário (PARTIAL/ARCHITECTURE/FULL)
+
+---
+
+## 9. Linguagens e Frameworks Suportados
+
+### Linguagens com tree-sitter (extração estrutural completa)
+TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C, C++, C#
+
+### Linguagens com suporte parcial (métricas básicas, LLM supplementa)
+Swift, Kotlin
+
+### Linguagens/formatos não-código com parsers dedicados (packages/core/src/plugins/parsers/)
+Dockerfile, env, GraphQL, JSON, Makefile, Markdown, Protobuf, Shell, SQL, Terraform, TOML, YAML
+
+### Frameworks com context injection no pipeline
+Django, Flask, FastAPI, Express, Next.js, React, Vue, Gin, Rails, Spring
+
+---
+
+## 10. Compatibilidade Multi-Plataforma
+
+| Plataforma | Status | Método de Instalação |
+|------------|--------|----------------------|
+| Claude Code | Nativo | `/plugin marketplace add Lum1104/Understand-Anything` |
+| Codex | Suportado | AI-driven install via INSTALL.md |
+| OpenCode | Suportado | AI-driven install via INSTALL.md |
+| OpenClaw | Suportado | AI-driven install via INSTALL.md |
+| Cursor | Suportado | Auto-discovery via `.cursor-plugin/plugin.json` |
+| VS Code + GitHub Copilot | Suportado | Auto-discovery via `.copilot-plugin/plugin.json` |
+| Copilot CLI | Suportado | `copilot plugin install Lum1104/Understand-Anything:understand-anything-plugin` |
+| Antigravity | Suportado | AI-driven install via INSTALL.md |
+| Gemini CLI | Suportado | AI-driven install via INSTALL.md |
+| Pi Agent | Suportado | AI-driven install via INSTALL.md |
+
+Cada plataforma tem seu diretório de instalação: `~/.agents/skills/`, `~/.copilot/skills/`,
+`~/.codex/understand-anything/`, etc. O plugin resolve seu próprio root path via resolução de symlinks.
+
+---
+
+## 11. Requisitos de Sistema
+
+### Requisitos Mínimos
+- **Node.js:** >= 22 (desenvolvido em v24)
+- **pnpm:** >= 10.6.2 (pinned via `packageManager` em `package.json`)
+- **RAM:** não documentado explicitamente
+- **GPU/VRAM:** não requer — processamento local em Node.js + Python puro
+- **LLM externo:** o pipeline usa o agente LLM que executa a skill (Claude Code, Codex, etc.) para análise semântica; não há inferência local de ML
+
+### Requisitos de Build
+- TypeScript compilado via `tsc` (tsconfig por pacote)
+- `pnpm install --frozen-lockfile` para dependências
+- Build do core: `pnpm --filter @understand-anything/core build` (obrigatório antes do dashboard)
+
+### Performance Observada / Benchmarks
+- Lotes de 20-30 arquivos por agente, 5 agentes concorrentes (até 150 arquivos em paralelo)
+- Gate de 100 arquivos para confirmação manual antes de análise completa
+- Tree-sitter: análise estrutural determinística sem chamadas LLM (rápida)
+- Fase LLM: 1 chamada por lote de 20-30 arquivos (não por arquivo)
+- ELK layout: benchmarks em `packages/dashboard/scripts/benchmark-layout.mjs`
+- Aggregation benchmarks: `packages/dashboard/scripts/benchmark-aggregations.mjs`
+- Bundle splitting: react-vendor, xyflow, elk, graphology, graph-layout, markdown (chunks separados)
+
+### Limitações Documentadas
+- Swift e Kotlin sem extração tree-sitter (métricas básicas apenas, LLM supplementa)
+- Busca semântica (cosine similarity) requer embeddings externos — não gerados automaticamente
+- Projetos >100 arquivos requerem confirmação explícita
+- Grafos >10 MB requerem git-lfs para commit
+- `.env` files: incluídos na lista de arquivos mas agentes NUNCA devem incluir valores de variáveis nos outputs
+- Binários, assets (PNG, MP4, PDF, etc.) são excluídos da análise
+- Nenhum suporte a monorepos sem configuração manual de subdomain graphs
+
+---
+
+## 12. Formato de Armazenamento
+
+### Diretório `.understand-anything/` (por projeto)
+```
+.understand-anything/
+├── knowledge-graph.json    # Grafo principal (versionável)
+├── domain-graph.json       # Grafo de domínio de negócio (versionável)
+├── meta.json               # Metadados: timestamp, hash, versão, contagem
+├── fingerprints.json       # Fingerprints estruturais para detecção de mudanças
+├── config.json             # Configuração: {"autoUpdate": true|false}
+├── diff-overlay.json       # Overlay de diff atual (local, não versionar)
+└── .understandignore       # Padrões de exclusão (versionável)
+```
+
+**Recomendação de gitignore:**
+```gitignore
+.understand-anything/intermediate/
+.understand-anything/diff-overlay.json
+```
+
+### knowledge-graph.json — Estrutura de alto nível
+```json
+{
+  "version": "1.0.0",
+  "kind": "codebase",   // ou "knowledge"
+  "project": {
+    "name": "...",
+    "languages": ["typescript", "python"],
+    "frameworks": ["React", "FastAPI"],
+    "description": "...",
+    "analyzedAt": "2026-05-04T12:00:00Z",
+    "gitCommitHash": "abc123..."
+  },
+  "nodes": [...],    // GraphNode[]
+  "edges": [...],    // GraphEdge[]
+  "layers": [...],   // Layer[]
+  "tour": [...]      // TourStep[]
+}
+```
+
+---
+
+## 13. Exemplos de Referência
+
+**Repositório de exemplo com grafo committed:**
+https://github.com/Lum1104/microservices-demo (fork do GoogleCloudPlatform/microservices-demo)
+Go / Java / Python / Node — referência para grafo multi-linguagem committed.
+
+**Padrão Karpathy LLM wiki** (para /understand-knowledge):
+https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
+
+---
+
+## 14. Stack de Desenvolvimento (Contribuição)
+
+```
+TypeScript strict mode | pnpm workspaces | React 19 | Vite 6 | TailwindCSS v4 |
+React Flow (@xyflow/react) | Zustand | web-tree-sitter | Fuse.js | Zod | Dagre | ELK | D3-Force |
+graphology + graphology-communities-louvain | Vitest 3.x
+```
+
+**Convenção de commits:** `feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `test:`, `chore:`
+
+---
+
+## 15. Fontes
+
+LUM1104. **Understand-Anything**. GitHub, 2026. Disponível em:
+<https://github.com/Lum1104/Understand-Anything>. Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — README.md**. GitHub, 2026. Disponível em:
+<https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/README.md>.
+Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — understand-anything-plugin/packages/core**. GitHub, 2026.
+Disponível em:
+<https://github.com/Lum1104/Understand-Anything/tree/main/understand-anything-plugin/packages/core>.
+Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — understand-anything-plugin/packages/dashboard**. GitHub, 2026.
+Disponível em:
+<https://github.com/Lum1104/Understand-Anything/tree/main/understand-anything-plugin/packages/dashboard>.
+Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — skills (SKILL.md por comando)**. GitHub, 2026. Disponível em:
+<https://github.com/Lum1104/Understand-Anything/tree/main/understand-anything-plugin/skills>.
+Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — CONTRIBUTING.md**. GitHub, 2026. Disponível em:
+<https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/CONTRIBUTING.md>.
+Acesso em: 04 mai. 2026.
+
+KARPATHY, Andrej. **LLM Wiki Pattern (gist)**. GitHub, 2024. Disponível em:
+<https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f>. Acesso em: 04 mai. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Understand-Anything (Plugin de Grafo de Conhecimento)
 ========================================================

@@ -1817,11 +1817,11 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
-### Fase 11 — Performance e Robustez
+### Fase 11 — Correção de bugs e melhorias
 
 > Entrega: app mais rápido, sem gargalos de I/O e com SQLite bem configurado.
 
-### Alta prioridade (impacto imediato visível)
+#### Alta prioridade (impacto imediato visível)
 
 - [x] **SQLite WAL mode + pragmas** — `database.py`: na função `init_db()`, após conectar,
       executar `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`,
@@ -1842,7 +1842,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       `_LIST_COLS` sem `content_md`; `_row_to_entry` aceita rows de 13 ou 14 colunas.
       `scrape_and_store` mantém `SELECT *` pois precisa do conteúdo para calcular diff.
 
-### Média prioridade (reduz lock contention no crawler)
+#### Média prioridade (reduz lock contention no crawler)
 
 - [x] **Crawl com conexão única por sessão** — `services/crawler.py`: `crawl_site` agora
       usa 2 conexões (leitura inicial + sessão BFS completa); `_process_url` captura `db`
@@ -1854,7 +1854,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] **`asyncio.get_event_loop()` → `asyncio.get_running_loop()`** — `routers/crawler.py`
       (3 ocorrências) e `main.py` (1 ocorrência).
 
-### Baixa prioridade (manutenção a longo prazo)
+#### Baixa prioridade (manutenção a longo prazo)
 
 - [x] **Limpeza periódica do search_cache** — `main.py` → `_monitor_crawler()`:
       ao acordar, executar `DELETE FROM search_cache WHERE created_at < ?` com cutoff
@@ -1879,7 +1879,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 > Entrega: extensão Manifest V3 que detecta URLs de vídeo na aba atual e delega o download
 > ao Hermes via AKASHA com um clique. Requer Fase 3 do Hermes (mini API HTTP).
 
-### Estrutura de arquivos
+#### Estrutura de arquivos
 - [ ] `extension/manifest.json` — Manifest V3; permissões: `activeTab`,
       `http://localhost:7071/*`; action com ícones active/inactive;
       background service worker; popup declarado
@@ -1889,7 +1889,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       ambos rodam em segundo plano via Hermes; feedback de estado
       (aguardando / na fila / erro Hermes offline / erro AKASHA offline)
 
-### Background script
+#### Background script
 - [ ] `extension/background.js` — ao mudar de aba ou navegar, verificar se a URL
       pertence a site de vídeo suportado pelo yt-dlp (YouTube, Vimeo, Twitch,
       Twitter/X, TikTok, Reddit, Dailymotion, Bilibili, Niconico, etc.);
@@ -1898,7 +1898,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       do popup, fazer `POST http://localhost:7071/api/hermes/download` com `{url, mode}`;
       retornar `{ok, error?}` ao popup; fechar popup após confirmação (roda em bg)
 
-### Backend AKASHA
+#### Backend AKASHA
 - [ ] `routers/hermes_bridge.py` — `POST /api/hermes/download`
       (body Pydantic: `url: str`, `mode: Literal["download","transcribe"] = "download"`,
       `format: str | None = None`):
@@ -1913,26 +1913,26 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       Adicionar `psutil` ao `pyproject.toml` se não presente
 - [ ] Registrar `hermes_bridge` router em `main.py`
 
-### Instalação (desenvolvimento)
+#### Instalação (desenvolvimento)
 - [ ] `extension/README.md` — instruções: `about:debugging` → "Este Firefox" →
       "Carregar extensão temporária" → selecionar `extension/manifest.json`
 
 ---
 
-### Fase 12.5 — Aba "Ver Mais Tarde"
+#### Fase 12.5 — Aba "Ver Mais Tarde"
 
 > Lista interna de URLs para retomar depois, sem arquivar nem monitorar.
 > Visível apenas no AKASHA — não indexada no `local_fts` nem exportada para o ecossistema.
 > Resultados aparecem na busca global como seção separada "Salvo para depois".
 
-### Banco de dados
+#### Banco de dados
 
 - [x] Migration v9: tabela `watch_later` —
       `id, url (UNIQUE), title, snippet, notes, added_at`
 - [x] Migration v9: FTS5 `watch_later_fts` — `(id UNINDEXED, url UNINDEXED, title, notes)`
       sincronizada manualmente nos helpers
 
-### Backend
+#### Backend
 
 - [x] `database.py` — helpers: `add_watch_later(url, title, snippet) -> int`;
       `get_all_watch_later() -> list[tuple]`; `delete_watch_later(id) -> None`;
@@ -1944,7 +1944,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       `POST /watch-later/add` (form: url, title?, snippet?; retorna 200);
       `DELETE /watch-later/{id}` (retorna 200)
 
-### Templates
+#### Templates
 
 - [x] `templates/watch_later.html` — lista de itens salvos: título, URL, data,
       campo notes inline editável, botão "remover"; empty state com hint
@@ -1954,13 +1954,13 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] `templates/search.html` — seção "Salvo para depois" (após seção Sites,
       antes do empty state); aparece sempre que há matches no `watch_later_fts`
 
-### Integração com busca
+#### Integração com busca
 
 - [x] `routers/search.py` — incluir `search_watch_later(q)` no `asyncio.gather`;
       passa `watch_later_results` para o template; seção visível
       independente dos checkboxes (sempre busca se há query)
 
-### TODO update
+#### TODO update
 
 - [x] Atualizar `AKASHA/TODO.md` ao concluir: marcar itens e atualizar data
 
@@ -1971,7 +1971,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 > Entrega: endpoint JSON que o Mnemosyne pode chamar para buscar + scraping on-demand,
 > permitindo "Modo de Pesquisa Profunda" que combina biblioteca local com conteúdo web atual.
 
-### Novos endpoints
+#### Novos endpoints
 
 - [x] `GET /search/json?q={query}&sources=web,sites&max={n}` — retorna resultados de busca
       como JSON puro (`list[SearchResult]`) em vez de HTML; reutiliza a lógica de
@@ -1983,7 +1983,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       retorna `{url, title, content_md, word_count, error?}`; não persiste nada — resposta
       efêmera para uso imediato pelo Mnemosyne; timeout 30s
 
-### Notas de implementação
+#### Notas de implementação
 
 - Ambos os endpoints são somente-leitura — não alteram estado do AKASHA
 - `GET /search/json` pode ser implementado extraindo a lógica de busca de `routers/search.py`
@@ -2010,7 +2010,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 > Melhorias derivadas de pesquisa sobre arquitetura de buscadores, otimização de índice invertido
 > e deduplicação. Organizadas por prioridade.
 
-### Alta prioridade
+#### Alta prioridade
 
 - [x] **[A] BM25 com pesos por campo** — usar `bm25(crawl_fts, 10, 1)` na consulta FTS5
       para dar peso 10× ao título vs. corpo; melhora ranking sem custo computacional
@@ -2029,7 +2029,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       em memória por domínio com expiração de 24h; evita fetch redundante a cada URL
       (`services/crawler.py`)
 
-### Média prioridade
+#### Média prioridade
 
 - [x] **[E] Rate limiting por domínio com fila de prioridade** — limitar requisições por
       domínio (ex: 1 req/s) usando `asyncio.Queue` + semáforo por host; evita banimento
@@ -2049,7 +2049,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       de conteúdo antes de recorrer ao Jina Reader externo
       (`ecosystem_scraper.py` ou `services/archiver.py`)
 
-### Baixa prioridade
+#### Baixa prioridade
 
 - [ ] **[I] Campo separado para headings no FTS5** — extrair headings (h1–h3) do HTML
       e indexar em coluna dedicada com peso ~50×; melhora recall para queries de conceito
@@ -2065,7 +2065,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 > Bugs encontrados por inspeção de código. Nenhum requer migration de schema.
 
-### Alta prioridade (funcionalidade quebrada)
+#### Alta prioridade (funcionalidade quebrada)
 
 - [x] **[BUG-1] `/domains` — bloquear/desbloquear não atualiza a lista na UI**
       `routers/domains.py` + `templates/domains.html`: os endpoints `POST /domains/block` e
@@ -2087,7 +2087,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       filtra por `status='idle'`, logo o site nunca mais é re-crawlado automaticamente.
       **Fix:** envolver o BFS em `try/finally` e garantir `UPDATE status='idle'` no `finally`.
 
-### Média prioridade (inconsistência / UX)
+#### Média prioridade (inconsistência / UX)
 
 - [x] **[BUG-4] `main.py` `index()` — contexto incompleto para `search.html`**
       `main.py:101`: o handler da rota `/` não passa `site_results`, `has_sites` e
@@ -2113,16 +2113,6 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       legível se ambos falharem.
 
 ---
-
-### Planos Futuros
-
-> Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
-
----
-
-*Atualizado em: 2026-04-24 — Fase 16 adicionada com 5 bugs identificados por auditoria de código (crawler, domains, search template). BUG-6 adicionado: xdg-open silently failing.*
-
-
 
 ### Busca Local Avançada — Pendências Técnicas
 
