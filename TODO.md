@@ -64,7 +64,7 @@ e tipado com a mesma atenção que o caminho feliz.
 - [x] Wiring em `AETHER/src-tauri/src/lib.rs`: escreve `vault_path` no startup (falha silenciosa)
 - [x] Documentar o contrato: quem escreve cada campo, quando, formato
 
-### 0.5 — sync_root: sincronização via Proton Drive (ou qualquer pasta sync)
+#### 0.5 — sync_root: sincronização via Proton Drive (ou qualquer pasta sync)
 
 Objetivo: um campo `sync_root` top-level no ecosystem.json aponta para a pasta do Proton Drive.
 O HUB deriva e aplica todos os caminhos de uma vez. Cada app respeita o caminho configurado.
@@ -94,7 +94,7 @@ ProtonDrive/ecosystem/
       - Subpastas criadas; ecosystem.json atualizado com todos os caminhos derivados
       - [x] Testar round-trip: arquivar página no AKASHA → aparece no Proton → segunda máquina
 
-### 0.6 — OGMA: migrar de Turso para Proton Drive (SQLite local)
+#### 0.6 — OGMA: migrar de Turso para Proton Drive (SQLite local)
 
 Motivação: Proton mantém cópias locais em todas as máquinas + nuvem, sem depender de
 conta externa. Turso só mantém na nuvem.
@@ -106,7 +106,7 @@ conta externa. Turso só mantém na nuvem.
 - [x] Atualizar `paths.ts` do OGMA para usar `ogma.data_path` do ecosystem.json (fallback local)
 - [ ] Testar migração: exportar dados do Turso → importar no SQLite local antes de remover
 
-### 0.7 — Hermes: usar output_dir do ecosystem.json no startup
+#### 0.7 — Hermes: usar output_dir do ecosystem.json no startup
 
 Objetivo: Hermes deve ler `hermes.output_dir` do ecosystem.json se `outdir` não estiver
 nas prefs locais — o mesmo padrão já aplicado ao `mnemo_dir`. Após `apply_sync_root`,
@@ -115,18 +115,18 @@ Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 - [x] `Hermes/hermes.py` — `_load_prefs()`: se `outdir` não estiver em prefs, ler
       `hermes.output_dir` do ecosystem.json como fallback
 
-### 0.8 — AKASHA: integração Hermes + DB no Proton + lista negra + UI
+#### 0.8 — AKASHA: integração Hermes + DB no Proton + lista negra + UI
 
-#### 0.8a — AKASHA indexa arquivos do Hermes na busca local
+##### 0.8a — AKASHA indexa arquivos do Hermes na busca local
 - [x] `AKASHA/config.py` — adicionar `hermes_output: str` lendo `hermes.output_dir` do ecosystem.json
 - [x] `AKASHA/services/local_search.py` — adicionar 6ª fonte `HERMES` em `index_local_files()`
 
-#### 0.8b — AKASHA: DB (biblioteca + lista negra) movível para Proton
+##### 0.8b — AKASHA: DB (biblioteca + lista negra) movível para Proton
 - [x] `AKASHA/config.py` — `DB_PATH` lê `akasha.data_path` do ecosystem.json se disponível
 - [x] `ecosystem_client.py` — `derive_paths()`: adicionar `data_path` à seção `akasha`
 - [x] `HUB/src-tauri/src/commands/config.rs` — `apply_sync_root()`: incluir `akasha.data_path`
 
-#### 0.8c — AKASHA: aba "lista negra" no menu
+##### 0.8c — AKASHA: aba "lista negra" no menu
 - [x] `AKASHA/database.py` — `get_blocked_domains()` já existia (retorna set[str])
 - [x] `AKASHA/routers/domains.py` — adicionar rota `GET /domains` com listagem + template
 - [x] `AKASHA/templates/domains.html` — nova página herdando base.html
@@ -139,7 +139,7 @@ Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 - [x] `AKASHA/routers/crawler.py` — rota `POST /sites/add-quick` (quick-add sem parâmetros extras)
 - [x] `AKASHA/templates/_macros.html` — botão "Adicionar a Sites" nos cards
 
-### 0.9 — Mnemosyne: caminhos primários do ecosystem.json + pastas extras
+#### 0.9 — Mnemosyne: caminhos primários do ecosystem.json + pastas extras
 
 Objetivo: Mnemosyne lê `watched_dir`, `vault_dir`, `chroma_dir` do ecosystem.json no
 startup (HUB é fonte de verdade). SetupDialog exibe esses caminhos como read-only e
@@ -225,7 +225,7 @@ permite adicionar `extra_dirs` para indexação adicional.
 
 ---
 
-### 0.10 — Arquivos de configuração de todos os apps no Proton Drive
+#### 0.10 — Arquivos de configuração de todos os apps no Proton Drive
 
 Objetivo: config local de cada app também fica na pasta sincronizada, para que as
 preferências se propaguem entre máquinas sem reconfigurar manualmente.
@@ -278,9 +278,9 @@ no ecosystem.json, com fallback para o arquivo local atual.
 ### FASE 1 — Interligação dos apps existentes
 > Aproveita o que já existe. Mudanças cirúrgicas, sem novo app.
 
-### 1.1 — OGMA → AETHER (projetos de escrita)
+#### 1.1 — OGMA → AETHER (projetos de escrita)
 
-#### Passo A — Renomear tipo `creative` → `writing` no OGMA
+##### Passo A — Renomear tipo `creative` → `writing` no OGMA
 - [x] `src/renderer/types/index.ts`: alterar `ProjectType` union, SUBCATEGORIES,
       PROJECT_TYPE_LABELS ('Escrita'), PROJECT_TYPE_ICONS ('✍️' mantém),
       PROJECT_TYPE_DESCRIPTIONS
@@ -292,7 +292,7 @@ no ecosystem.json, com fallback para o arquivo local atual.
       `UPDATE projects SET project_type = 'writing' WHERE project_type = 'creative'`
       (o campo é TEXT sem CHECK constraint — migration simples)
 
-#### Passo B — Integrar projetos de escrita com o AETHER
+##### Passo B — Integrar projetos de escrita com o AETHER
 - [x] `src/main/database.ts`: adicionar coluna `aether_project_id TEXT` na tabela
       `projects` (nova migration)
 - [x] OGMA lê `aether.vault_path` do `ecosystem.json` na criação de projeto
@@ -302,7 +302,7 @@ no ecosystem.json, com fallback para o arquivo local atual.
 - [x] Salvar `aether_project_id` no banco do OGMA para manter o vínculo
 - [x] Botão "Abrir no AETHER" em projetos de escrita (desabilitado se vault não configurado)
 
-### 1.2 — KOSMOS → Mnemosyne (artigos salvos)
+#### 1.2 — KOSMOS → Mnemosyne (artigos salvos)
 - [x] KOSMOS escreve `archive_path` e `data_path` em `ecosystem.json` na inicialização
       via `ecosystem_client.write_section("kosmos", {...})` em `KOSMOS/main.py`
 - [x] Mnemosyne lê `ecosystem.json` e oferece o archive do KOSMOS
@@ -310,20 +310,20 @@ no ecosystem.json, com fallback para o arquivo local atual.
 - [ ] Verificar se o botão "Arquivar" em artigos salvos chama
       `archive_manager` corretamente — garantir que gera `.md` válido
 
-### 1.3 — AETHER → Mnemosyne (indexar escritos)
+#### 1.3 — AETHER → Mnemosyne (indexar escritos)
 - [x] AETHER escreve `vault_path` em `ecosystem.json` na inicialização
       (startup Rust, após carregar vault — `ecosystem::write_section()` em lib.rs)
 - [x] Mnemosyne oferece vault AETHER como pasta sugerida (botão "Sugestões do ecossistema")
 - [ ] Testar indexação dos `.md` de capítulos pelo Mnemosyne
 
-### 1.4 — Hermes → Mnemosyne (transcrições indexáveis)
+#### 1.4 — Hermes → Mnemosyne (transcrições indexáveis)
 - [x] Adicionar campo "Pasta de saída do Mnemosyne" na aba Transcrever do Hermes
       Lê `mnemosyne.index_paths[0]` do ecosystem como sugestão; desabilitado se vazio
 - [x] Adicionar checkbox "Indexar no Mnemosyne após transcrever"
       Salva o `.md` diretamente numa das pastas monitoradas pelo Mnemosyne
 - [x] Formato: Markdown limpo com frontmatter mínimo (título, data, fonte/URL, duração)
 
-### 1.5 — Completar contrato ecosystem.json (seções faltantes)
+#### 1.5 — Completar contrato ecosystem.json (seções faltantes)
 
 Cada app deve escrever sua seção completa no startup. Schema alvo:
 ```json
@@ -345,7 +345,7 @@ Cada app deve escrever sua seção completa no startup. Schema alvo:
       (`output_dir` = pasta de downloads/transcrições configurada na UI)
 - [x] **AKASHA** — adicionar `archive_path` à seção já escrita por `register_akasha()`
 
-### 1.6 — Scraper compartilhado: KOSMOS e AKASHA
+#### 1.6 — Scraper compartilhado: KOSMOS e AKASHA
 
 Objetivo: eliminar a duplicação de código da cascata de extração web.
 `ecosystem_scraper.py` (raiz do repo) é o único ponto de manutenção da cascata.
@@ -357,7 +357,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 - [x] `KOSMOS/app/core/article_scraper.py` — simplificar para `_cascade_extract(..., output_format="html")`
 - [x] `KOSMOS/requirements.txt` — adicionar `inscriptis` e `markdownify`
 
-### 1.8 — AKASHA: busca local cobre todo o ecossistema
+#### 1.8 — AKASHA: busca local cobre todo o ecossistema
 
 - [x] Indexar `AKASHA/data/archive/` própria no FTS5 (source "AKASHA")
       (`index_local_files()` em `services/local_search.py` — mesmo extractor do KOSMOS)
@@ -366,7 +366,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 - [x] Indexar `mnemosyne.vault_dir` no FTS5 (source "OBSIDIAN")
       (depende de 1.5 — Mnemosyne precisa escrever esses caminhos primeiro)
 
-### 1.9 — Mnemosyne: sugestões do ecossistema cobrindo todos os archives
+#### 1.9 — Mnemosyne: sugestões do ecossistema cobrindo todos os archives
 
 - [x] Adicionar AKASHA archive (`akasha.archive_path`) nas sugestões da SetupDialog
       (depende de 1.5 — AKASHA precisa escrever `archive_path` primeiro)
@@ -378,7 +378,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 > A necessidade de acesso ao ecossistema no Android continua existindo, mas a abordagem precisa ser repensada
 > — provavelmente um app separado ou solução diferente do HUB. Itens abaixo mantidos como referência histórica.
 
-### 3.1 — Build Android do hub
+#### 3.1 — Build Android do hub
 - [ ] Configurar ambiente Tauri Android:
       - Android Studio + NDK
       - `cargo install tauri-cli` (já deve estar instalado do AETHER)
@@ -387,7 +387,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 - [ ] Resolver incompatibilidades de UI para toque (botões, scroll)
 - [ ] Build de release (APK assinado)
 
-### 3.2 — Sincronização de dados
+#### 3.2 — Sincronização de dados
 - [ ] Configurar Syncthing: pastas a sincronizar
       - Vault AETHER completo
       - `kosmos/data/archive/`
@@ -397,7 +397,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
       - Salvar artigo no KOSMOS → sync → aparecer no hub Android
 - [ ] Tratar conflitos de sync (dois dispositivos editam o mesmo arquivo)
 
-### 3.3 — Acesso remoto (fora da rede local)
+#### 3.3 — Acesso remoto (fora da rede local)
 - [ ] Instalar Tailscale no PC e no tablet
 - [ ] Hub detecta se Ollama está acessível (local ou via Tailscale)
 - [ ] Módulo Projetos: acesso ao `ogma.db` via Tailscale quando remoto
@@ -432,7 +432,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 
 ---
 
-### Dependências entre fases
+#### Dependências entre fases
 
   Fase 0 ──► Fase 1 (qualquer sub-item)
   Fase 0 ──► Fase 2.1
@@ -442,7 +442,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 
 ---
 
-### Estado dos apps individuais (pré-condições para integração)
+#### Estado dos apps individuais (pré-condições para integração)
 
   AETHER        ✅  Fases 0–5 completas. Vault format estável. Sem bloqueios.
   OGMA          ✅  Schema v2 implementado (database.ts:114). IPC usa
@@ -457,7 +457,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
   transcriber   ✅  Utilitário funcional. Mudança mínima necessária.
   stellar-dl    ✅  Utilitário funcional. Mudança mínima necessária.
 
-### Estado das fases do ecossistema
+#### Estado das fases do ecossistema
 
   Fase 0: ✅ Base concluída (0–0.5). Items 0.6–0.9 em andamento (sync + integrações)
   Fase 1: ✅ Concluída — 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 1.9 concluídas
@@ -3237,7 +3237,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   learn/series/rag/rerankers). FlashRank usa modelos ONNX quantizados que rodam em CPU a ~10ms
   por query — viável mesmo no Windows 10 sem GPU. Não usa VRAM, não compete com o modelo de chat.
   **Implementação (`Mnemosyne/core/retriever.py`):**
-  1. Adicionar `flashrank` ao `pyproject.toml`
+  1. Adicionar `flashra1nk` ao `pyproject.toml`
   2. Inicializar (lazy, no primeiro uso):
      ```python
      from flashrank import Ranker, RerankRequest
@@ -3363,7 +3363,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 > — porque a geração provisória "traduz" a pergunta original para a linguagem do corpus.
 > Custo: 1 chamada extra ao retriever (barato) + 1 chamada extra ao LLM (custosa). Tornar opcional.
 
-- [ ] `core/rag.py` — implementar retrieval em 2 iterações como modo opcional:
+- [x] `core/rag.py` — implementar retrieval em 2 iterações como modo opcional:
   - Parâmetro `iterative_retrieval: bool` em `prepare_ask()` (default: False)
   - **Iteração 1:** retrieval normal sobre a query original → gerar resposta provisória (curta,
     temperatura 0.0, sem streaming, instrução: "resposta em 1-2 frases, sem elaborar")

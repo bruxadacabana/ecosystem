@@ -436,6 +436,70 @@ def _hyde_retrieve(
 
 _RERANK_CANDIDATE_K = 30
 
+_ITER_PROVISIONAL_PROMPT = (
+    "Com base nos trechos abaixo, responda em 1-2 frases curtas e directas. "
+    "Não elabore — apenas capture a essência para orientar uma busca mais aprofundada.\n\n"
+    "Trechos:\n{context}\n\n"
+    "Pergunta: {question}\n\n"
+    "Resposta:"
+)
+
+
+def _iterative_retrieve(
+    vectorstore: Any,
+    question: str,
+    k: int,
+    llm_model: str,
+    source_type: str | None = None,
+    source_files: list[str] | None = None,
+    bm25_index: BM25Index | None = None,
+) -> list[Document]:
+    """
+    Retrieval em 2 iterações (ITER-RETGEN simplificado).
+
+    Iteração 1: retrieval híbrido normal sobre a query original (k chunks).
+    Resposta provisória: gerada em temperatura 0.0, sem streaming, 1-2 frases.
+    Iteração 2: usa a resposta provisória como query adicional → k//2 chunks extras
+    (nunca duplicando chunks já recuperados na iteração 1, dedupados por page_content[:100]).
+    Retorna iter1 + extras; prepare_ask limita ao retriever_k configurado.
+    Fallback silencioso para iter1 se a geração provisória falhar.
+    """
+    iter1 = _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index)
+    if not iter1:
+        return iter1
+
+    provisional = ""
+    try:
+        context_preview = "\n\n---\n".join(doc.page_content[:400] for doc in iter1[:5])
+        prompt = _ITER_PROVISIONAL_PROMPT.format(context=context_preview, question=question)
+        llm = OllamaLLM(model=llm_model, temperature=0.0, timeout=30)
+        provisional = strip_think(llm.invoke(prompt)).strip()
+    except Exception:
+        pass  # sem resposta provisória → retornar só iter1
+
+    if not provisional:
+        return iter1
+
+    extra_k = max(1, k // 2)
+    seen: set[str] = {doc.page_content[:100] for doc in iter1}
+
+    try:
+        iter2 = _hybrid_retrieve(
+            vectorstore, provisional, extra_k * 2,
+            source_type, source_files, bm25_index,
+        )
+    except QueryError:
+        return iter1
+
+    extra: list[Document] = []
+    for doc in iter2:
+        key = doc.page_content[:100]
+        if key not in seen and len(extra) < extra_k:
+            seen.add(key)
+            extra.append(doc)
+
+    return iter1 + extra
+
 
 def _flashrank_rerank(
     docs: list[Document], query: str, top_n: int
@@ -584,6 +648,7 @@ def prepare_ask(
     source_files: list[str] | None = None,
     collection_type: str = "library",
     bm25_index: BM25Index | None = None,
+    iterative_retrieval: bool = False,
 ) -> tuple[list[BaseMessage], list[SourceRecord]]:
     """
     Recupera documentos relevantes e retorna (prompt, sources).
@@ -596,6 +661,9 @@ def prepare_ask(
     source_files: lista de caminhos absolutos para restringir a consulta a
         arquivos específicos; None significa sem restrição por arquivo.
     collection_type: "vault" usa PERSONAS_VAULT e segue wikilinks; "library" usa PERSONAS.
+    iterative_retrieval: activa retrieval em 2 iterações — gera resposta provisória a partir
+        dos chunks da iteração 1 e usa-a como query adicional para recuperar N/2 chunks extras.
+        Beneficia perguntas curtas ou vagas; toggle manual na UI.
 
     Raises:
         QueryError: se a busca vetorial falhar.
@@ -604,7 +672,12 @@ def prepare_ask(
     candidate_k = _RERANK_CANDIDATE_K if config.reranking_enabled else config.retriever_k + 2
 
     try:
-        if retrieval_mode == "multi_query":
+        if iterative_retrieval:
+            docs = _iterative_retrieve(
+                vectorstore, question, candidate_k, config.llm_model,
+                source_type, source_files, bm25_index,
+            )
+        elif retrieval_mode == "multi_query":
             docs = _multi_query_retrieve(
                 vectorstore, question, candidate_k, config.llm_model, source_type, source_files,
                 bm25_index=bm25_index,
@@ -631,6 +704,9 @@ def prepare_ask(
     # FlashRank: reordena por relevância semântica e reduz ao top_n configurado
     if config.reranking_enabled:
         docs = _flashrank_rerank(docs, question, config.reranking_top_n)
+    elif iterative_retrieval:
+        # Retrieval iterativo expande o pool além de candidate_k — limitar ao configurado
+        docs = docs[:config.retriever_k]
 
     context = "\n\n---\n".join(doc.page_content for doc in docs)
 
@@ -667,6 +743,7 @@ def ask(
     persona: str = "curador",
     source_files: list[str] | None = None,
     collection_type: str = "library",
+    iterative_retrieval: bool = False,
 ) -> AskResult:
     """
     Consulta RAG síncrona (sem streaming).
@@ -678,7 +755,7 @@ def ask(
         messages, sources = prepare_ask(
             vectorstore, question, config, chat_history,
             source_type, retrieval_mode, tracker, persona, source_files,
-            collection_type,
+            collection_type, bm25_index=None, iterative_retrieval=iterative_retrieval,
         )
         llm = ChatOllama(model=config.llm_model, temperature=0)
         response = llm.invoke(messages)
