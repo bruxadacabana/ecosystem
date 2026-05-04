@@ -315,7 +315,7 @@ interface SnapshotPanelProps {
   onSuccess: (msg: string) => void
 }
 
-function SnapshotPanel({ chapter, wordCount, onError, onSuccess }: SnapshotPanelProps) {
+function SnapshotPanel({ chapter, wordCount: _wordCount, onError, onSuccess }: SnapshotPanelProps) {
   const [snapshots, setSnapshots] = useState<import('../types').SnapshotMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)

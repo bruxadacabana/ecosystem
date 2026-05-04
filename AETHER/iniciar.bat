@@ -1,12 +1,8 @@
 @echo off
 cd /d "%~dp0"
 
-set EXE=%~dp0src-tauri\target\release\aether.exe
-
-if exist "%EXE%" (
-    start "" "%EXE%"
-) else (
-    echo [AETHER] Binario de release nao encontrado. Compilando agora...
-    echo [AETHER] Execute "cargo tauri build --no-bundle" para agilizar aberturas futuras.
-    cargo tauri dev
-)
+:: Sempre compila e executa via cargo tauri dev.
+:: O cargo detecta o que mudou e recompila apenas o necessario --
+:: se nada mudou, inicia em segundos. O binario de release (target\release\aether.exe)
+:: e gerado separadamente com "cargo tauri build" e nao e usado aqui.
+cargo tauri dev
