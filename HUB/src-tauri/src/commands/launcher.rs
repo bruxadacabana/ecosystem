@@ -262,12 +262,13 @@ fn check_running_windows(process_name: &str) -> bool {
     }
 }
 
-/// Busca processos cuja linha de comando contém `dir_name` (ex: "Hermes", "KOSMOS").
-/// Usado para detectar apps iniciados via .bat (python, cargo, node não aparecem pelo
-/// nome do .bat no tasklist).
+/// Busca processos cuja linha de comando contém `\dir_name\` (com barras — ex: `\Hermes\`).
+/// As barras evitam que o próprio processo WMIC (cujo cmdline contém o nome sem barras
+/// como parte do filtro) se auto-detecte como resultado positivo.
 #[cfg(target_os = "windows")]
 fn check_running_windows_cmdline(dir_name: &str) -> bool {
-    let filter = format!("commandline like '%{}%'", dir_name);
+    // WQL usa \\ para literal backslash → '%\\Hermes\\%' casa com \Hermes\ na cmdline
+    let filter = format!("commandline like '%\\\\{}\\\\%'", dir_name);
     match Command::new("wmic")
         .args(["process", "where", &filter, "get", "ProcessId"])
         .creation_flags(CREATE_NO_WINDOW)
