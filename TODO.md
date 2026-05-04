@@ -3854,6 +3854,94 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias baseadas em pesquisas para o ecossistema
 
+### Pesquisa: Understand-Anything — Padrões de Grafo de Conhecimento | 2026-05-04
+> Contexto: Análise do projeto github.com/Lum1104/Understand-Anything revelou padrões
+> arquiteturais aplicáveis ao ecossistema — tipagem de nós, indexação incremental
+> por nível de impacto, e pipeline multi-agente com prompts declarativos.
+> Os pontos 2 (grafo) e 6 (separação embedding/busca) se sobrepõem com itens já
+> existentes na Fase 11.3 do Mnemosyne (GraphRAG/LightRAG) — ver nota em cada item.
 
+#### Mnemosyne
+- [ ] **Classificação de chunks por tipo de nó durante indexação** (`core/indexer.py`,
+  `core/config.py`, `core/rag.py`). Adicionar metadado `node_type` a cada chunk com
+  valores possíveis: `article` (texto corrido), `entity` (pessoa/lugar/objeto nomeado),
+  `topic` (tema recorrente), `claim` (afirmação factual), `source` (referência externa).
+  Implementação: chamada LLM leve (< 3B, ex: Qwen2.5-1.5B) classifica o chunk no momento
+  da indexação; resultado salvo em `metadata["node_type"]` no ChromaDB. No retrieval,
+  aceitar filtro opcional `node_types: list[str]` em `prepare_ask()` para restringir busca.
+  Exemplo de uso: `?node_types=claim` só busca afirmações factuais — reduz ruído semântico
+  em perguntas como "o que eu afirmo sobre X?". Requer `iterative_retrieval_enabled` já
+  implementado na Fase 11.2 para não duplicar infra de LLM local.
 
-## Melhorias, conrreções e atualizações
+- [ ] **Indexação incremental em 4 níveis** (`core/indexer.py`). Substituir a detecção
+  binária (hash mudou → re-indexa tudo) por 4 níveis inspirados no FingerprintEngine do
+  Understand-Anything: NONE (nenhuma mudança), COSMETIC (espaços/formatação — hash de
+  texto normalizado igual), STRUCTURAL (conteúdo semântico alterado — re-indexa só chunks
+  afetados), FULL (arquivo novo ou removido). Implementação: salvar hash por chunk
+  (não só por arquivo) em `core/indexer.py`. Na re-indexação, comparar chunk por chunk:
+  só recalcula embedding e re-insere no ChromaDB os chunks que mudaram semanticamente.
+  Benefício crítico no i5-3470 (sem AVX2): corrigir typos não re-indexa 500 chunks.
+  Armazenar hashes em `{chroma_dir}/.chunk_hashes.json` ou em tabela SQLite auxiliar.
+
+#### HUB (LOGOS)
+- [ ] **Referência arquitetural: pipeline multi-agente via prompts .md** (pesquisa, não
+  implementação imediata). O Understand-Anything orquestra 5 subagentes em paralelo onde
+  cada "habilidade" é um arquivo `.md` de prompt — adicionar nova capacidade = criar novo
+  arquivo, sem alterar código. Aplicar ao LOGOS: cada tipo de tarefa (RAG query, síntese,
+  extração de entidades) seria um arquivo `logos/skills/<skill>.md`. O dispatcher lê o
+  tipo de request e escolhe o skill. Pesquisar viabilidade com `Qwen2.5-7B` no CachyOS
+  (modelo suficientemente capaz para seguir prompts estruturados). Registrar resultado
+  em `pesquisas.md` antes de implementar.
+
+---
+
+### Pesquisa: Integração KOSMOS-AKASHA — Padrões RSS Reader + Web Archiver | 2026-05-04
+> Contexto: Pesquisa sobre padrões de integração entre leitores RSS e arquivadores web
+> (FreshRSS+Wallabag, Miniflux+integrações, ArchiveBox). Objetivo: interligar KOSMOS
+> e AKASHA especialmente nas funções de crawling e indexação, evitando duplicação
+> e aproveitando ecosystem_scraper.py já compartilhado.
+
+#### KOSMOS
+- [ ] **Botão "Arquivar no AKASHA" no leitor de artigos** (`app/ui/views/reader_view.py`
+  ou `app/ui/views/article_view.py`). Padrão FreshRSS+Wallabag: ao clicar, envia
+  `POST http://localhost:7071/archive` com `url=<url_do_artigo>` (AKASHA já ouve na
+  porta 7071). AKASHA faz fetch completo e salva na biblioteca. Pré-requisito: AKASHA
+  precisa ter esse endpoint — ver item correspondente em AKASHA abaixo.
+  Mostrar toast "Arquivado no AKASHA" ao receber 200.
+  Mostrar erro "AKASHA offline" ao receber falha de conexão (não bloquear leitura).
+
+- [ ] **Auto-arquivar ao salvar artigo** (`app/ui/main_window.py` ou
+  `app/ui/views/unified_feed_view.py`). Padrão Miniflux automations: quando o usuário
+  clica em "Salvar" (bookmark) no artigo, enviar a URL automaticamente para AKASHA em
+  background (fire-and-forget, sem bloquear UI). Adicionar opção `auto_archive_on_save`
+  em `app/utils/config.py` (default: False). Na ação de salvar, se configurado, fazer
+  `requests.post("http://localhost:7071/archive", data={"url": url}, timeout=3)` em
+  thread separada.
+
+- [ ] **Busca unificada KOSMOS + AKASHA** (`app/ui/views/unified_feed_view.py` ou novo
+  `SearchView`). Ao pesquisar no KOSMOS, consultar também `GET http://localhost:7071/
+  search?q=<termo>` (AKASHA FTS5) e mesclar resultados com indicador de fonte (RSS vs
+  AKASHA). Evita abrir dois apps para pesquisar conteúdo relacionado.
+
+#### AKASHA
+- [ ] **Endpoint `POST /archive` para receber URLs de outros apps** (`routers/crawler.py`
+  ou novo `routers/archive_api.py`). Recebe `{"url": "...", "tags": [...], "notes": ""}`,
+  chama `archive_url()` existente, retorna `{"status": "ok", "path": "..."}`.
+  Autenticação: nenhuma (local-only, 127.0.0.1). Documentar no `CLAUDE.md` como contrato
+  de API. O KOSMOS e potencialmente outros apps do ecossistema usarão esse endpoint.
+
+- [ ] **Crawling incremental a partir dos feeds do KOSMOS** (`services/crawler.py` ou
+  novo `services/feed_crawler.py`). Padrão ArchiveBox: ao adicionar um feed ao KOSMOS,
+  notificar AKASHA (via `POST /add-source`) com o domínio raiz para crawl periódico.
+  AKASHA adiciona o domínio à lista de sites monitorados. Implementação: KOSMOS lê
+  `akasha.base_url` do ecosystem.json; ao criar feed, faz `POST /add-source?url=<domínio>
+  &name=<nome_feed>`. Evita que artigos de domínios monitorados existam só como resumo
+  RSS — a versão completa fica no AKASHA.
+
+- [ ] **Deduplicação entre arquivo AKASHA e artigos KOSMOS** (`services/library.py`).
+  Ao arquivar uma URL que já existe no archive do KOSMOS (`kosmos.archive_path`), criar
+  symlink ou registro cruzado em vez de duplicar. Consultar `kosmos.archive_path` do
+  ecosystem.json. Verificar por URL normalizada (remover parâmetros de rastreamento
+  `utm_*`). Se já arquivado pelo KOSMOS, retornar o path existente em vez de re-arquivar.
+
+## Melhorias, correções e atualizações
