@@ -66,19 +66,80 @@ pub fn is_app_running(exe_path: String) -> bool {
 
 /// Retorna o status de execução para todos os apps informados.
 /// `exe_paths`: map `{ "app_name" → "caminho_executável" }`.
+///
+/// No Windows, apps lançados via .bat não aparecem no tasklist pelo nome do script.
+/// Para esses casos fazemos UMA única chamada WMIC que retorna todos os cmdlines,
+/// depois buscamos o nome do diretório pai (`\Hermes\`, `\KOSMOS\`, …) em Rust —
+/// sem filtro WQL (evita escaping e self-matching do processo WMIC).
 #[tauri::command]
 pub fn get_all_app_statuses(exe_paths: HashMap<String, String>) -> HashMap<String, bool> {
-    exe_paths
-        .into_iter()
-        .map(|(app, path)| {
-            let running = if path.trim().is_empty() {
-                false
+    #[cfg(target_os = "windows")]
+    {
+        // Separar .bat/.sh (detectados por cmdline) de binários nativos (detectados por tasklist)
+        let mut script_apps: Vec<(String, String)> = Vec::new(); // (app, dir_name)
+        let mut exe_apps: Vec<(String, String)>    = Vec::new(); // (app, exe_path)
+
+        for (app, path) in &exe_paths {
+            if path.trim().is_empty() {
+                continue;
+            }
+            let lower = path.to_lowercase();
+            if lower.ends_with(".bat") || lower.ends_with(".sh") {
+                let dir_name = std::path::Path::new(path)
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                if !dir_name.is_empty() {
+                    script_apps.push((app.clone(), dir_name));
+                }
             } else {
-                check_running(&path)
-            };
-            (app, running)
-        })
-        .collect()
+                exe_apps.push((app.clone(), path.clone()));
+            }
+        }
+
+        // Uma única chamada WMIC para todos os scripts — resultado filtrado em Rust
+        let all_cmdlines_lower: String = if !script_apps.is_empty() {
+            Command::new("wmic")
+                .args(["process", "get", "CommandLine", "/format:list"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+                .map(|out| String::from_utf8_lossy(&out.stdout).to_lowercase())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        let mut result: HashMap<String, bool> = HashMap::new();
+
+        for (app, dir_name) in script_apps {
+            // Busca \DirName\ (case-insensitive) — o cmdline do WMIC em si não contém \Hermes\ etc.
+            let needle = format!("\\{}\\", dir_name.to_lowercase());
+            result.insert(app, all_cmdlines_lower.contains(&needle));
+        }
+
+        for (app, path) in exe_apps {
+            result.insert(app, check_running(&path));
+        }
+
+        // Garantir que todos os apps estejam no resultado
+        for app in exe_paths.keys() {
+            result.entry(app.clone()).or_insert(false);
+        }
+
+        result
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        exe_paths
+            .into_iter()
+            .map(|(app, path)| {
+                let running = if path.trim().is_empty() { false } else { check_running(&path) };
+                (app, running)
+            })
+            .collect()
+    }
 }
 
 /// Verifica se um caminho aponta para um arquivo executável existente.
@@ -262,24 +323,20 @@ fn check_running_windows(process_name: &str) -> bool {
     }
 }
 
-/// Busca processos cuja linha de comando contém `\dir_name\` (com barras — ex: `\Hermes\`).
-/// As barras evitam que o próprio processo WMIC (cujo cmdline contém o nome sem barras
-/// como parte do filtro) se auto-detecte como resultado positivo.
+/// Busca processos cuja linha de comando contém `\dir_name\`.
+/// Obtém todos os cmdlines sem filtro WQL (evita escaping e auto-match do WMIC),
+/// depois busca `\DirName\` em Rust (case-insensitive).
 #[cfg(target_os = "windows")]
 fn check_running_windows_cmdline(dir_name: &str) -> bool {
-    // WQL usa \\ para literal backslash → '%\\Hermes\\%' casa com \Hermes\ na cmdline
-    let filter = format!("commandline like '%\\\\{}\\\\%'", dir_name);
+    let needle = format!("\\{}\\", dir_name.to_lowercase());
     match Command::new("wmic")
-        .args(["process", "where", &filter, "get", "ProcessId"])
+        .args(["process", "get", "CommandLine", "/format:list"])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
         Ok(out) => {
-            let text = String::from_utf8_lossy(&out.stdout);
-            // WMIC retorna só o cabeçalho "ProcessId" quando não há resultados;
-            // quando há, adiciona linhas com o PID numérico.
-            text.lines()
-                .any(|l| l.trim().parse::<u32>().is_ok())
+            let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+            text.contains(&needle)
         }
         Err(_) => false,
     }
