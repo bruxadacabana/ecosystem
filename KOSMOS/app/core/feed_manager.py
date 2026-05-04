@@ -265,10 +265,12 @@ class FeedManager:
         session = get_session()
         try:
             for data in articles_data:
-                title     = data.get("title", "(sem título)")
-                url       = data.get("url") or ""
-                pub_date  = data.get("published_at") or ""
-                c_hash    = _article_fingerprint(title, pub_date, url)
+                title    = data.get("title", "(sem título)")
+                url      = data.get("url") or ""
+                pub_dt   = data.get("published_at")
+                # Convert datetime → ISO string for fingerprint (slicing datetime raises TypeError)
+                pub_str  = pub_dt.isoformat() if isinstance(pub_dt, datetime) else str(pub_dt or "")
+                c_hash   = _article_fingerprint(title, pub_str, url)
 
                 # Rejeitar duplicatas por fingerprint de conteúdo (ignora GUIDs errados)
                 existing = session.query(Article.id).filter_by(content_hash=c_hash).first()

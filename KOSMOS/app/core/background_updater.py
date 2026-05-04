@@ -141,7 +141,13 @@ class BackgroundUpdater(QThread):
             for a in result.articles
         ]
 
-        new_count = self._fm.save_articles(feed.id, articles_data)
+        try:
+            new_count = self._fm.save_articles(feed.id, articles_data)
+        except Exception as exc:
+            log.error("Erro ao salvar artigos do feed %d: %s", feed.id, exc, exc_info=True)
+            self._fm.update_feed_metadata(feed.id, last_error=f"save_articles: {exc}")
+            self.update_error.emit(feed.id, str(exc))
+            return 0
         self._fm.update_feed_metadata(
             feed.id,
             etag          = result.etag,
