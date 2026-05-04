@@ -219,6 +219,27 @@ class FeedManager:
         finally:
             session.close()
 
+    def clear_all_etags(self) -> None:
+        """Limpa etag e last_modified de todos os feeds ativos.
+
+        Garante que o próximo ciclo de fetch faça requisições completas
+        (sem 304 Not Modified), útil após correção de bug ou ao forçar
+        um refresh completo.
+        """
+        session = get_session()
+        try:
+            session.query(Feed).filter(Feed.active == 1).update(
+                {"etag": None, "last_modified": None},
+                synchronize_session=False,
+            )
+            session.commit()
+            log.info("Etags de todos os feeds limpos para force-refresh.")
+        except SQLAlchemyError as exc:
+            session.rollback()
+            log.error("Erro ao limpar etags: %s", exc)
+        finally:
+            session.close()
+
     def update_feed_metadata(
         self,
         feed_id: int,
