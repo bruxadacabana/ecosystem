@@ -209,7 +209,21 @@ fn is_ecosystem_root(path: &std::path::Path) -> bool {
 fn check_running(exe_path: &str) -> bool {
     #[cfg(target_os = "windows")]
     {
-        // No Windows, usa o nome do arquivo para buscar via tasklist
+        let lower = exe_path.to_lowercase();
+        if lower.ends_with(".bat") || lower.ends_with(".sh") {
+            // .bat não aparece no tasklist — o processo real é python.exe, cargo.exe, etc.
+            // Usa WMIC para buscar o nome do diretório pai (ex: "Hermes") na cmdline dos processos.
+            let dir_name = std::path::Path::new(exe_path)
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            if !dir_name.is_empty() {
+                return check_running_windows_cmdline(dir_name);
+            }
+            return false;
+        }
+        // Binário nativo: busca pelo nome do arquivo no tasklist
         let process_name = std::path::Path::new(exe_path)
             .file_name()
             .and_then(|n| n.to_str())
@@ -243,6 +257,28 @@ fn check_running_windows(process_name: &str) -> bool {
             let text = String::from_utf8_lossy(&out.stdout);
             text.to_lowercase()
                 .contains(&process_name.to_lowercase())
+        }
+        Err(_) => false,
+    }
+}
+
+/// Busca processos cuja linha de comando contém `dir_name` (ex: "Hermes", "KOSMOS").
+/// Usado para detectar apps iniciados via .bat (python, cargo, node não aparecem pelo
+/// nome do .bat no tasklist).
+#[cfg(target_os = "windows")]
+fn check_running_windows_cmdline(dir_name: &str) -> bool {
+    let filter = format!("commandline like '%{}%'", dir_name);
+    match Command::new("wmic")
+        .args(["process", "where", &filter, "get", "ProcessId"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        Ok(out) => {
+            let text = String::from_utf8_lossy(&out.stdout);
+            // WMIC retorna só o cabeçalho "ProcessId" quando não há resultados;
+            // quando há, adiciona linhas com o PID numérico.
+            text.lines()
+                .any(|l| l.trim().parse::<u32>().is_ok())
         }
         Err(_) => false,
     }
