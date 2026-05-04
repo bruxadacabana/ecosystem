@@ -105,6 +105,9 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
   5. **Apresentar no chat** um resumo médio-detalhado (1–2 minutos de leitura) cobrindo achados principais e implicações práticas, **seguido de lista separada de mudanças/melhorias sugeridas**.
   6. Sugestões e melhorias vão no **chat e no TODO**, nunca no `pesquisas.md`.
   7. **Nunca usar "HUB/LOGOS"** — HUB é o programa, LOGOS é apenas um subprograma dele.
+- **Estrutura obrigatória do TODO.md para melhorias:**
+  - Melhorias derivadas de pesquisas externas → seção `## Melhorias baseadas em pesquisas para o ecossistema`, com heading `### Pesquisa: <título> | <data>` e subseções `#### <Programa>` por app afetado.
+  - Outras melhorias, correções e atualizações → seção `## Melhorias, correções e atualizações`, com heading `### <Título> | <data>` e subseções `#### <Programa>` por app afetado.
 
 ---
 
