@@ -516,6 +516,7 @@ class AskWorker(QThread):
         persona: str = "curador",
         source_files: list[str] | None = None,
         collection_type: str = "library",
+        iterative_retrieval: bool = False,
     ) -> None:
         super().__init__()
         self.vectorstore = vectorstore
@@ -528,6 +529,7 @@ class AskWorker(QThread):
         self.persona = persona
         self.source_files = source_files
         self.collection_type = collection_type
+        self.iterative_retrieval = iterative_retrieval
 
     def run(self) -> None:
         bm25_idx = BM25Index.load(self.config.mnemosyne_dir)
@@ -538,6 +540,7 @@ class AskWorker(QThread):
                 self.tracker, self.persona, self.source_files,
                 self.collection_type,
                 bm25_index=bm25_idx,
+                iterative_retrieval=self.iterative_retrieval,
             )
         except QueryError as exc:
             self.finished.emit(False, str(exc), [], self.chat_history)

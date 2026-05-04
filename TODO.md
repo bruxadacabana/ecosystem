@@ -3374,9 +3374,9 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   - **Quando ativar:** perguntas curtas (< 10 palavras) ou vagas se beneficiam mais; perguntas
     específicas com termos técnicos se beneficiam menos. Deixar como toggle manual na UI.
 
-- [ ] `core/config.py` — campo `iterative_retrieval_enabled: bool = False`
+- [x] `core/config.py` — campo `iterative_retrieval_enabled: bool = False`
 
-- [ ] `gui/main_window.py` — toggle "Busca iterativa" na aba Perguntar (desativado por padrão),
+- [x] `gui/main_window.py` — toggle "Busca iterativa" na aba Perguntar (desativado por padrão),
   com tooltip: "Faz duas rodadas de busca — melhora recall em perguntas vagas (+~8% accuracy),
   mas dobra o tempo de resposta"
 
