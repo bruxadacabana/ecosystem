@@ -17,7 +17,7 @@ import trafilatura
 
 # Módulo compartilhado do ecossistema
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from ecosystem_scraper import extract as _cascade_extract, get_fetch_url as _get_fetch_url
+from ecosystem_scraper import extract as _cascade_extract, get_fetch_url as _get_fetch_url, get_fetch_url_fallbacks as _get_fetch_url_fallbacks
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,9 +99,20 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         timeout=30,
         headers={"User-Agent": "Mozilla/5.0 (compatible; AKASHA-archiver/1.0)"},
     ) as client:
-        response = await client.get(_get_fetch_url(url))
-        response.raise_for_status()
-        html = response.text
+        # Tenta cada URL candidata em ordem (relevante para Medium: freedium → scribe → original)
+        html = ""
+        last_exc: Exception | None = None
+        for fetch_url in _get_fetch_url_fallbacks(url):
+            try:
+                response = await client.get(fetch_url)
+                response.raise_for_status()
+                html = response.text
+                break
+            except Exception as exc:
+                last_exc = exc
+                continue
+        if not html:
+            raise last_exc or httpx.RequestError(f"Nenhum proxy respondeu para {url}")
 
         metadata = trafilatura.extract_metadata(html, default_url=url)
         title:    str = (metadata and metadata.title)                      or _url_fallback_title(url)
