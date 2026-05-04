@@ -106,8 +106,36 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
   6. Sugestões e melhorias vão no **chat e no TODO**, nunca no `pesquisas.md`.
   7. **Nunca usar "HUB/LOGOS"** — HUB é o programa, LOGOS é apenas um subprograma dele.
 - **Estrutura obrigatória do TODO.md para melhorias:**
-  - Melhorias derivadas de pesquisas externas → seção `## Melhorias baseadas em pesquisas para o ecossistema`, com heading `### Pesquisa: <título> | <data>` e subseções `#### <Programa>` por app afetado.
-  - Outras melhorias, correções e atualizações → seção `## Melhorias, correções e atualizações`, com heading `### <Título> | <data>` e subseções `#### <Programa>` por app afetado.
+  Existem duas seções fixas no `TODO.md` raiz. Cada sessão de trabalho (pesquisa, correção, conjunto de melhorias) cria um **novo `###` header** dentro da seção correta — nunca acrescenta itens em headers de sessões anteriores.
+
+  **Seção 1 — oriundas de pesquisa externa:**
+  ```
+  ## Melhorias baseadas em pesquisas para o ecossistema
+
+  ### Pesquisa: <título da pesquisa> | <data YYYY-MM-DD>
+  > Contexto: <1-2 frases explicando o que foi pesquisado e por que é relevante>
+  #### <Nome do App 1>
+  - [ ] <item com explicação do que fazer e por que>
+  #### <Nome do App 2>
+  - [ ] <item com explicação>
+  ```
+
+  **Seção 2 — melhorias, correções e atualizações internas:**
+  ```
+  ## Melhorias, correções e atualizações
+
+  ### <Título descritivo> | <data YYYY-MM-DD>
+  > Contexto: <1-2 frases explicando a motivação>
+  #### <Nome do App 1>
+  - [ ] <item com explicação do que fazer e por que>
+  #### <Nome do App 2>
+  - [ ] <item com explicação>
+  ```
+
+  **Regras adicionais:**
+  - Cada item `- [ ]` deve conter instrução suficiente para ser implementado sem contexto da conversa original (Claude futuro não tem memória da sessão).
+  - Nunca fundir itens de sessões diferentes num mesmo `###`.
+  - As seções `##` devem existir no arquivo mesmo que estejam vazias — nunca removê-las.
 
 ---
 
