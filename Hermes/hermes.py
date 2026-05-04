@@ -424,10 +424,16 @@ class TranscribeWorker(QThread):
         if self._cancelled: return
         self._apply_cpu_limit()
 
-        if self.is_local:
-            self._run_local(whisper)
-        else:
-            self._run_url(whisper)
+        try:
+            if self.is_local:
+                self._run_local(whisper)
+            else:
+                self._run_url(whisper)
+        except BaseException as exc:
+            # Guarda-chuva: captura SystemExit/KeyboardInterrupt que escapem dos
+            # handlers internos e evita que o PyQt6 termine o processo.
+            if not self._cancelled:
+                self.error.emit(str(exc) or type(exc).__name__)
 
     def _run_local(self, whisper) -> None:
         audio_path = self.source
@@ -450,6 +456,7 @@ class TranscribeWorker(QThread):
             self.error.emit(f"Dependência não encontrada: {e}. Instale yt-dlp.")
             return
 
+        import glob
         import tempfile
 
         self.log.emit("Baixando áudio…", "")
@@ -466,20 +473,31 @@ class TranscribeWorker(QThread):
                     "noplaylist":     True,
                 }
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info       = ydl.extract_info(self.source, download=True)
-                    audio_path = ydl.prepare_filename(info).rsplit(".", 1)[0] + ".mp3"
-                    title      = info.get("title", "transcrição")
+                    info  = ydl.extract_info(self.source, download=True)
+                    title = info.get("title", "transcrição")
+
+                # Localizar o .mp3 gerado pelo postprocessor via glob — mais robusto
+                # que prepare_filename().rsplit() que varia entre versões do yt_dlp.
+                mp3_files = glob.glob(os.path.join(tmpdir, "*.mp3"))
+                if not mp3_files:
+                    raise FileNotFoundError(
+                        "Arquivo de áudio não encontrado após download. "
+                        "Verifique se o ffmpeg está instalado e no PATH."
+                    )
+                audio_path = mp3_files[0]
 
                 if self._cancelled: return
                 self.progress.emit(40)
                 self._transcribe_and_save(whisper, audio_path, title, self.source,
                                           info=info, is_local=False)
 
-        except Exception as exc:
+        except BaseException as exc:
+            # BaseException (não só Exception) para capturar SystemExit que o
+            # yt_dlp pode lançar via sys.exit() em certos erros de rede/formato.
             if self._cancelled:
                 self.log.emit("Transcrição cancelada.", "warn")
             else:
-                self.error.emit(str(exc))
+                self.error.emit(str(exc) or type(exc).__name__)
 
     def _transcribe_and_save(self, whisper, audio_path: str, title: str,
                               source: str, info: dict, is_local: bool) -> None:
