@@ -327,11 +327,11 @@ class DownloadWorker(QThread):
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(self.url, download=True)
                 self.finished.emit(info.get("title") or "vídeo")
-        except Exception as exc:
+        except BaseException as exc:
             if self._cancelled:
                 self.log.emit("Download cancelado.", "warn")
             else:
-                self.error.emit(str(exc))
+                self.error.emit(str(exc) or type(exc).__name__)
 
 
 class InspectWorker(QThread):
@@ -1104,8 +1104,14 @@ class HermesApp(QMainWindow):
             self.mnemo_check.setChecked(False)
 
     def _open_outdir(self):
-        import subprocess
-        subprocess.Popen(["xdg-open", self.outdir_edit.text()])
+        path = self.outdir_edit.text() or str(DATA_DIR)
+        import sys as _sys
+        if _sys.platform == "win32":
+            import os as _os
+            _os.startfile(path)
+        else:
+            import subprocess
+            subprocess.Popen(["xdg-open", path])
 
     def _copy_md(self):
         if self._last_md:
