@@ -370,6 +370,10 @@ class PlaylistIndexWorker(QThread):
     def __init__(self, url: str, parent=None):
         super().__init__(parent)
         self.url = url
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
 
     def run(self):
         try:
@@ -419,8 +423,13 @@ class TranscribeWorker(QThread):
     def run(self):
         try:
             import whisper
-        except ImportError as e:
-            self.error.emit(f"Dependência não encontrada: {e}. Instale openai-whisper.")
+        except (ImportError, OSError) as e:
+            msg = (
+                "PyTorch não pôde carregar nesta CPU (sem suporte a AVX2). "
+                "Transcrição só funciona no CachyOS ou no laptop. "
+                f"Detalhe: {e}"
+            ) if isinstance(e, OSError) else f"Dependência não encontrada: {e}. Instale openai-whisper."
+            self.error.emit(msg)
             return
 
         if self._cancelled: return
@@ -579,13 +588,20 @@ class BatchTranscribeWorker(QThread):
     def run(self) -> None:
         try:
             import whisper
-        except ImportError as e:
-            self.log.emit(f"Dependência não encontrada: {e}", "err")
+        except (ImportError, OSError) as e:
+            msg = (
+                "PyTorch não pôde carregar nesta CPU (sem suporte a AVX2). "
+                "Transcrição só funciona no CachyOS ou no laptop. "
+                f"Detalhe: {e}"
+            ) if isinstance(e, OSError) else f"Dependência não encontrada: {e}"
+            self.log.emit(msg, "err")
+            self.finished.emit(0, len(self.entries))
             return
         try:
             import yt_dlp
         except ImportError as e:
             self.log.emit(f"Dependência não encontrada: {e}", "err")
+            self.finished.emit(0, len(self.entries))
             return
         import tempfile
 
