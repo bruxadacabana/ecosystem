@@ -79,6 +79,7 @@ if %errorlevel% neq 0 (
     echo   OK: Mnemosyne
 )
 
+"%PIP%" uninstall torch openai-whisper -y --quiet 2>nul
 "%PIP%" install --upgrade yt-dlp faster-whisper --quiet
 if %errorlevel% neq 0 (
     echo   ERRO: Hermes -- pip install falhou

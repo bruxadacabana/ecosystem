@@ -73,6 +73,7 @@ if [ -n "$VENV" ] && [ -d "$VENV" ]; then
         fail "Mnemosyne — pip install falhou"
     fi
 
+    "$PIP" uninstall torch openai-whisper -y --quiet 2>/dev/null || true
     if "$PIP" install --upgrade yt-dlp faster-whisper --quiet; then
         ok "Hermes (yt-dlp + faster-whisper) OK"
     else
