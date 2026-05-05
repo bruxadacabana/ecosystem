@@ -73,8 +73,8 @@ if [ -n "$VENV" ] && [ -d "$VENV" ]; then
         fail "Mnemosyne — pip install falhou"
     fi
 
-    if "$PIP" install --upgrade yt-dlp openai-whisper --quiet; then
-        ok "Hermes (yt-dlp + openai-whisper) OK"
+    if "$PIP" install --upgrade yt-dlp faster-whisper --quiet; then
+        ok "Hermes (yt-dlp + faster-whisper) OK"
     else
         fail "Hermes — pip install falhou"
     fi

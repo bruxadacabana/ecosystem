@@ -110,7 +110,7 @@ Utilitário de download e transcrição de vídeos. Baixa qualquer URL suportada
 - Output salvo em pasta configurável; histórico de transcrições
 - Workers em thread separada, log colorido em tempo real
 
-**Stack:** Python + PyQt6 · yt-dlp · openai-whisper  
+**Stack:** Python + PyQt6 · yt-dlp · faster-whisper  
 **Estado:** Fase 1 completa.
 
 ---
@@ -274,7 +274,7 @@ pip install -r KOSMOS/requirements.txt
 pip install -r Mnemosyne/requirements.txt
 
 # Instale as dependências do Hermes
-pip install yt-dlp openai-whisper
+pip install yt-dlp faster-whisper
 
 # Desative o ambiente virtual quando terminar
 deactivate
@@ -549,7 +549,7 @@ pip install --upgrade pip
 # Instale as dependências de cada app
 pip install -r KOSMOS\requirements.txt
 pip install -r Mnemosyne\requirements.txt
-pip install yt-dlp openai-whisper
+pip install yt-dlp faster-whisper
 
 # Desative quando terminar
 deactivate
@@ -648,7 +648,7 @@ O script:
 1. `git pull` — atualiza o repositório
 2. `uv sync` — sincroniza dependências do AKASHA
 3. `pip install -r` — atualiza deps do KOSMOS e Mnemosyne no `.venv` compartilhado
-4. `pip install --upgrade yt-dlp openai-whisper` — atualiza deps do Hermes
+4. `pip install --upgrade yt-dlp faster-whisper` — atualiza deps do Hermes
 5. `npm install` — sincroniza pacotes do AETHER, HUB e OGMA
 
 #### Windows 10

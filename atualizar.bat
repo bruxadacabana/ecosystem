@@ -79,12 +79,12 @@ if %errorlevel% neq 0 (
     echo   OK: Mnemosyne
 )
 
-"%PIP%" install --upgrade yt-dlp openai-whisper --quiet
+"%PIP%" install --upgrade yt-dlp faster-whisper --quiet
 if %errorlevel% neq 0 (
     echo   ERRO: Hermes -- pip install falhou
     set /a ERROS+=1
 ) else (
-    echo   OK: Hermes (yt-dlp + openai-whisper)
+    echo   OK: Hermes (yt-dlp + faster-whisper)
 )
 
 REM ── Node (AETHER . HUB . OGMA) ────────────────────────────────────────────────
