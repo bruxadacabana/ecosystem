@@ -150,7 +150,9 @@ def is_playlist_url(url: str) -> bool:
         r"|dailymotion\.com/playlist/"                  # Dailymotion playlists
         r"|bandcamp\.com/album/"                        # Bandcamp albums
         r"|space\.bilibili\.com/"                       # Bilibili user space
-        r"|nicovideo\.jp/(user|mylist)/)"               # Niconico user/mylist
+        r"|nicovideo\.jp/(user|mylist)/"                # Niconico user/mylist
+        r"|tiktok\.com/@[^/]+/collection/"              # TikTok collections
+        r"|tiktok\.com/@[^/?]+/?(?:\?|$))"              # TikTok perfil (todos os vídeos)
         , url, re.I))
 
 
@@ -666,6 +668,7 @@ class HermesApp(QMainWindow):
         self._info: dict             = {}
         self._playlist: list         = []
         self._from_playlist_select   = False  # mantém playlist visível ao inspecionar vídeo individual
+        self._pending_batch_transcribe = False  # sinaliza que _inspect foi chamado a pedido de _start_transcribe
         self._last_md: str    = ""
         self._worker          = None
         self._device, self._device_label = detect_device()
@@ -1212,6 +1215,12 @@ class HermesApp(QMainWindow):
         if entries:
             self.playlist_list.setCurrentRow(0)
 
+        # Se _start_transcribe() pediu para carregar a playlist antes de transcrever
+        if getattr(self, "_pending_batch_transcribe", False):
+            self._pending_batch_transcribe = False
+            self.tabs.setCurrentIndex(1)  # Volta para a aba Transcrever
+            self._start_batch_transcribe()
+
     def _on_playlist_select(self):
         rows = self.playlist_list.selectedItems()
         if not rows:
@@ -1263,6 +1272,17 @@ class HermesApp(QMainWindow):
     def _start_transcribe(self):
         local_file = self.local_file_edit.text().strip() if hasattr(self, "local_file_edit") else ""
         url        = self.url_edit.text().strip()
+
+        # Playlist URL → redireciona para transcrição em lote
+        if not local_file and url and is_playlist_url(url):
+            if self._playlist:
+                self._start_batch_transcribe()
+            else:
+                self._pending_batch_transcribe = True
+                self._log("Playlist detectada — carregando vídeos para transcrição em lote…", "")
+                self.tabs.setCurrentIndex(0)
+                self._inspect()
+            return
 
         if local_file:
             if not Path(local_file).is_file():
