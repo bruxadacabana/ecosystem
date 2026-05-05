@@ -3860,7 +3860,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > rápido que openai-whisper mesmo em CPU antiga. Substitui o backend atual do Hermes.
 
 #### Hermes
-- [ ] **Substituir openai-whisper por faster-whisper** nos workers `TranscribeWorker` e
+- [x] **Substituir openai-whisper por faster-whisper** nos workers `TranscribeWorker` e
   `BatchTranscribeWorker` (`Hermes/hermes.py`). Instalar `faster-whisper` no `.venv`.
   Adaptar a API: `WhisperModel("base", device="cpu", compute_type="int8")`;
   `model.transcribe()` retorna `(segments_generator, info)` — o texto é

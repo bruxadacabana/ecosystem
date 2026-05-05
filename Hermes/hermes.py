@@ -127,17 +127,14 @@ WHISPER_MODELS = ["tiny", "base", "small", "medium", "large"]
 
 # ── Utilitários — detecção e device ──────────────────────────────────────────
 def detect_device() -> tuple[str, str]:
+    """Retorna (device, label) compatível com faster-whisper (CTranslate2)."""
     try:
-        import torch
-        if not torch.cuda.is_available():
-            return "cpu", "CPU (CUDA indisponível)"
-        vram_mb  = torch.cuda.get_device_properties(0).total_memory // (1024 * 1024)
-        gpu_name = torch.cuda.get_device_properties(0).name
-        if vram_mb < 3072:
-            return "cpu", f"CPU (GPU {gpu_name} — {vram_mb} MB insuficiente)"
-        return "cuda", f"GPU {gpu_name} ({vram_mb} MB)"
+        import ctranslate2
+        if ctranslate2.get_cuda_device_count() > 0:
+            return "cuda", "GPU (CUDA)"
     except Exception:
-        return "cpu", "CPU"
+        pass
+    return "cpu", "CPU"
 
 
 def is_playlist_url(url: str) -> bool:
@@ -197,13 +194,13 @@ _PLAYLIST_FORMATS: list[dict] = [
 
 
 # ── Utilitários — markdown ────────────────────────────────────────────────────
-def build_markdown(title: str, url: str, info: dict, result: dict, forced_lang: str,
+def build_markdown(title: str, url: str, info: dict, segments: list,
+                   detected_lang: str, forced_lang: str,
                    is_local: bool = False) -> str:
     now       = datetime.now().strftime("%Y-%m-%d %H:%M")
     dur_s     = info.get("duration", 0)
     duration  = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else "desconhecida"
-    detected  = result.get("language", "?").upper()
-    lang_note = detected if forced_lang == "auto" else f"{forced_lang.upper()} (forçado)"
+    lang_note = detected_lang.upper() if forced_lang == "auto" else f"{forced_lang.upper()} (forçado)"
     if is_local:
         fonte_line  = f"> **Arquivo:** `{url}`  "
         origem_line = f"> **Origem:** arquivo local  "
@@ -220,16 +217,11 @@ def build_markdown(title: str, url: str, info: dict, result: dict, forced_lang: 
         f"> **Gerado em:** {now}",
         "", "---", "", "## Transcrição", "",
     ]
-    for seg in result.get("segments", []):
-        start = int(seg["start"])
+    for seg in segments:
+        start  = int(seg.start)
         mm, ss = divmod(start, 60)
-        lines.append(f"**[{mm:02d}:{ss:02d}]** {seg['text'].strip()}")
+        lines.append(f"**[{mm:02d}:{ss:02d}]** {seg.text.strip()}")
         lines.append("")
-    if not result.get("segments"):
-        for para in result.get("text", "").split("\n"):
-            if para.strip():
-                lines.append(para.strip())
-                lines.append("")
     return "\n".join(lines)
 
 
@@ -422,14 +414,9 @@ class TranscribeWorker(QThread):
 
     def run(self):
         try:
-            import whisper
-        except (ImportError, OSError) as e:
-            msg = (
-                "PyTorch não pôde carregar nesta CPU (sem suporte a AVX2). "
-                "Transcrição só funciona no CachyOS ou no laptop. "
-                f"Detalhe: {e}"
-            ) if isinstance(e, OSError) else f"Dependência não encontrada: {e}. Instale openai-whisper."
-            self.error.emit(msg)
+            from faster_whisper import WhisperModel
+        except ImportError as e:
+            self.error.emit(f"faster-whisper não encontrado: {e}. Execute: pip install faster-whisper")
             return
 
         if self._cancelled: return
@@ -437,9 +424,9 @@ class TranscribeWorker(QThread):
 
         try:
             if self.is_local:
-                self._run_local(whisper)
+                self._run_local(WhisperModel)
             else:
-                self._run_url(whisper)
+                self._run_url(WhisperModel)
         except BaseException as exc:
             # Guarda-chuva: captura SystemExit/KeyboardInterrupt que escapem dos
             # handlers internos e evita que o PyQt6 termine o processo.
@@ -512,13 +499,15 @@ class TranscribeWorker(QThread):
             else:
                 self.error.emit(str(exc) or type(exc).__name__)
 
-    def _transcribe_and_save(self, whisper, audio_path: str, title: str,
+    def _transcribe_and_save(self, WhisperModel, audio_path: str, title: str,
                               source: str, info: dict, is_local: bool) -> None:
-        device, _ = detect_device()
+        device, device_label = detect_device()
+        compute_type = "float16" if device == "cuda" else "int8"
         cache_key = (self.model_size, device)
         if not self._model_cache or self._model_cache[0][0] != cache_key:
-            self.log.emit(f"Carregando modelo Whisper ({self.model_size}) em {device.upper()}…", "")
-            model = whisper.load_model(self.model_size, device=device)
+            self.log.emit(
+                f"Carregando modelo Whisper ({self.model_size}) em {device_label}…", "")
+            model = WhisperModel(self.model_size, device=device, compute_type=compute_type)
             self._model_cache.clear()
             self._model_cache.append((cache_key, model))
         else:
@@ -529,12 +518,16 @@ class TranscribeWorker(QThread):
 
         lang_arg = self.language if self.language != "auto" else None
         self.log.emit(f"Transcrevendo… idioma: {self.language}", "")
-        result   = model.transcribe(audio_path, verbose=False, language=lang_arg)
+        segments_gen, fw_info = model.transcribe(
+            audio_path, language=lang_arg, vad_filter=True, beam_size=1)
+        segments = list(segments_gen)
         self.progress.emit(90)
 
-        dur_s    = info.get("duration", 0)
-        duration = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else "desconhecida"
-        md_text  = build_markdown(title, source, info, result, self.language, is_local=is_local)
+        detected_lang = getattr(fw_info, "language", "?")
+        dur_s         = info.get("duration", 0) or getattr(fw_info, "duration", 0)
+        duration      = f"{int(dur_s) // 60}m {int(dur_s) % 60}s" if dur_s else "desconhecida"
+        md_text  = build_markdown(title, source, info, segments, detected_lang,
+                                  self.language, is_local=is_local)
         safe     = re.sub(r'[<>:"/\\|?*]', "_", title)[:60]
         out_path = os.path.join(self.outdir, f"{datetime.now().strftime('%Y%m%d_%H%M')}_{safe}.md")
         Path(out_path).write_text(md_text, encoding="utf-8")
@@ -545,13 +538,10 @@ class TranscribeWorker(QThread):
         import math
         total   = os.cpu_count() or 1
         threads = max(1, math.ceil(total * self.cpu_limit / 100))
-        os.environ["OMP_NUM_THREADS"] = str(threads)
-        os.environ["MKL_NUM_THREADS"] = str(threads)
-        try:
-            import torch
-            torch.set_num_threads(threads)
-        except Exception:
-            pass
+        os.environ["OMP_NUM_THREADS"]        = str(threads)
+        os.environ["MKL_NUM_THREADS"]        = str(threads)
+        os.environ["CT2_INTER_THREADS"]      = "1"
+        os.environ["CT2_INTRA_THREADS"]      = str(threads)
 
 
 class BatchTranscribeWorker(QThread):
@@ -577,24 +567,17 @@ class BatchTranscribeWorker(QThread):
         import math
         total   = os.cpu_count() or 1
         threads = max(1, math.ceil(total * self.cpu_limit / 100))
-        os.environ["OMP_NUM_THREADS"] = str(threads)
-        os.environ["MKL_NUM_THREADS"] = str(threads)
-        try:
-            import torch
-            torch.set_num_threads(threads)
-        except Exception:
-            pass
+        os.environ["OMP_NUM_THREADS"]   = str(threads)
+        os.environ["MKL_NUM_THREADS"]   = str(threads)
+        os.environ["CT2_INTER_THREADS"] = "1"
+        os.environ["CT2_INTRA_THREADS"] = str(threads)
 
     def run(self) -> None:
         try:
-            import whisper
-        except (ImportError, OSError) as e:
-            msg = (
-                "PyTorch não pôde carregar nesta CPU (sem suporte a AVX2). "
-                "Transcrição só funciona no CachyOS ou no laptop. "
-                f"Detalhe: {e}"
-            ) if isinstance(e, OSError) else f"Dependência não encontrada: {e}"
-            self.log.emit(msg, "err")
+            from faster_whisper import WhisperModel
+        except ImportError as e:
+            self.log.emit(
+                f"faster-whisper não encontrado: {e}. Execute: pip install faster-whisper", "err")
             self.finished.emit(0, len(self.entries))
             return
         try:
@@ -603,15 +586,18 @@ class BatchTranscribeWorker(QThread):
             self.log.emit(f"Dependência não encontrada: {e}", "err")
             self.finished.emit(0, len(self.entries))
             return
+        import glob
         import tempfile
 
         self._apply_cpu_limit()
-        device, _ = detect_device()
-        self.log.emit(f"Carregando modelo {self.model_size} ({device.upper()})…", "")
+        device, device_label = detect_device()
+        compute_type = "float16" if device == "cuda" else "int8"
+        self.log.emit(f"Carregando modelo {self.model_size} em {device_label}…", "")
         try:
-            model = whisper.load_model(self.model_size, device=device)
+            model = WhisperModel(self.model_size, device=device, compute_type=compute_type)
         except Exception as e:
             self.log.emit(f"Erro ao carregar modelo: {e}", "err")
+            self.finished.emit(0, len(self.entries))
             return
 
         lang_arg = self.language if self.language != "auto" else None
@@ -642,18 +628,26 @@ class BatchTranscribeWorker(QThread):
                     }
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info       = ydl.extract_info(url, download=True)
-                        audio_path = ydl.prepare_filename(info).rsplit(".", 1)[0] + ".mp3"
                         real_title = info.get("title", title)
+
+                    mp3_files = glob.glob(os.path.join(tmpdir, "*.mp3"))
+                    if not mp3_files:
+                        raise FileNotFoundError(
+                            "Arquivo de áudio não encontrado. Verifique se o ffmpeg está no PATH.")
+                    audio_path = mp3_files[0]
 
                     if self._cancelled:
                         break
 
                     self.log.emit(f"[{i + 1}/{total}] Transcrevendo: {real_title}", "")
-                    result = model.transcribe(audio_path, verbose=False, language=lang_arg)
+                    segments_gen, fw_info = model.transcribe(
+                        audio_path, language=lang_arg, vad_filter=True, beam_size=1)
+                    segments = list(segments_gen)
 
-                dur_s    = info.get("duration", 0)
-                duration = f"{dur_s // 60}m {dur_s % 60}s" if dur_s else "desconhecida"
-                md_text  = build_markdown(real_title, url, info, result, self.language)
+                detected_lang = getattr(fw_info, "language", "?")
+                dur_s    = info.get("duration", 0) or getattr(fw_info, "duration", 0)
+                md_text  = build_markdown(real_title, url, info, segments, detected_lang,
+                                          self.language)
                 safe     = re.sub(r'[<>:"/\\|?*]', "_", real_title)[:60]
                 out_path = os.path.join(
                     self.outdir,
