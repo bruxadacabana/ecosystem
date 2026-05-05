@@ -3961,10 +3961,10 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
       (componente separado com add/remove, abaixo dos campos simples)
 
 #### Mnemosyne
-- [ ] `gui/main_window.py` — SetupDialog: tornar watched_dir, vault_dir e chroma_dir
+- [x] `gui/main_window.py` — SetupDialog: tornar watched_dir, vault_dir e chroma_dir
       editáveis (QLineEdit + botão de seleção de pasta); ao salvar, chamar
       `write_section("mnemosyne", {watched_dir, vault_dir, chroma_dir, extra_dirs})`
       via ecosystem_client — sobrescreve o ecosystem.json
-- [ ] `gui/main_window.py` — ao salvar extra_dirs, incluí-las também no ecosystem.json
+- [x] `gui/main_window.py` — ao salvar extra_dirs, incluí-las também no ecosystem.json
       (campo `extra_dirs: list[str]`) para que o HUB e outros apps saibam quais pastas
       o Mnemosyne está monitorando

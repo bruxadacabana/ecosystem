@@ -85,19 +85,31 @@ class SetupDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Configure o Mnemosyne.\nAs configurações são salvas em config.json."))
 
-        # Caminhos do ecossistema (somente leitura — gerenciados via HUB)
-        paths_group = QGroupBox("Caminhos do ecossistema  (somente leitura — configure no HUB)")
+        # Caminhos do ecossistema (editáveis — gravam no ecosystem.json)
+        paths_group = QGroupBox("Caminhos do ecossistema")
         paths_form = QFormLayout(paths_group)
 
-        def _ro(val: str) -> QLineEdit:
-            le = QLineEdit(val or "não configurado")
-            le.setReadOnly(True)
-            le.setStyleSheet("background: transparent; border: none; color: palette(mid);")
-            return le
+        def _path_row(val: str) -> tuple[QLineEdit, QHBoxLayout]:
+            le = QLineEdit(val or "")
+            le.setPlaceholderText("Selecione uma pasta…")
+            btn = QPushButton("…")
+            btn.setFixedWidth(32)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.addWidget(le, 1)
+            row.addWidget(btn)
+            btn.clicked.connect(lambda: le.setText(
+                QFileDialog.getExistingDirectory(self, "Selecionar pasta") or le.text()
+            ))
+            return le, row
 
-        paths_form.addRow("Biblioteca:", _ro(current.watched_dir))
-        paths_form.addRow("Vault:", _ro(current.vault_dir))
-        paths_form.addRow("ChromaDB:", _ro(current.persist_dir))
+        self.watched_edit, watched_row = _path_row(current.watched_dir)
+        self.vault_edit,   vault_row   = _path_row(current.vault_dir)
+        self.chroma_edit,  chroma_row  = _path_row(current.persist_dir)
+
+        paths_form.addRow("Biblioteca:", watched_row)
+        paths_form.addRow("Vault:", vault_row)
+        paths_form.addRow("ChromaDB:", chroma_row)
         layout.addWidget(paths_group)
 
         form = QFormLayout()
@@ -249,12 +261,15 @@ class SetupDialog(QDialog):
         if row >= 0:
             self.extra_dirs_list.takeItem(row)
 
-    def get_values(self) -> tuple[list[str], str, str, dict[str, bool], bool]:
-        """Retorna (extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled)."""
+    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool]:
+        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled)."""
         extra_dirs = [self.extra_dirs_list.item(i).text()
                       for i in range(self.extra_dirs_list.count())]
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
         return (
+            self.watched_edit.text().strip(),
+            self.vault_edit.text().strip(),
+            self.chroma_edit.text().strip(),
             extra_dirs,
             self.llm_combo.currentText(),
             self.embed_combo.currentText(),
@@ -1186,8 +1201,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            extra_dirs, llm, embed, eco_enabled, reranking = dialog.get_values()
-            self._apply_setup_values(extra_dirs, llm, embed, eco_enabled, reranking)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -1195,24 +1210,48 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            extra_dirs, llm, embed, eco_enabled, reranking = dialog.get_values()
-            self._apply_setup_values(extra_dirs, llm, embed, eco_enabled, reranking)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             self._log_event("Configuração atualizada.")
             self._post_config_init()
 
     def _apply_setup_values(
-        self, extra_dirs: list[str], llm: str, embed: str, eco_enabled: dict[str, bool],
-        reranking_enabled: bool = True,
+        self,
+        watched_dir: str, vault_dir: str, chroma_dir: str,
+        extra_dirs: list[str], llm: str, embed: str,
+        eco_enabled: dict[str, bool], reranking_enabled: bool = True,
     ) -> None:
         """Aplica os valores do SetupDialog ao config e guarda."""
+        if watched_dir:
+            self.config.watched_dir = watched_dir
+        if vault_dir:
+            self.config.vault_dir = vault_dir
+        if chroma_dir:
+            self.config.persist_dir = chroma_dir
         self.config.llm_model = llm
         self.config.embed_model = embed
         self.config.extra_dirs = extra_dirs
         self.config.ecosystem_enabled.update(eco_enabled)
         self.config.reranking_enabled = reranking_enabled
         save_config(self.config)
+        try:
+            from pathlib import Path as _Path
+            _root = str(_Path(__file__).parent.parent.parent)
+            if _root not in sys.path:
+                sys.path.insert(0, _root)
+            from ecosystem_client import write_section as _write
+            _eco: dict[str, object] = {"extra_dirs": extra_dirs}
+            if watched_dir:
+                _eco["watched_dir"] = watched_dir
+            if vault_dir:
+                _eco["vault_dir"] = vault_dir
+            if chroma_dir:
+                _eco["chroma_dir"] = chroma_dir
+            _write("mnemosyne", _eco)
+        except Exception:
+            pass
         self._populate_collection_combo()
 
     def _populate_collection_combo(self) -> None:
