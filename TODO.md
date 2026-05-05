@@ -3853,6 +3853,21 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias baseadas em pesquisas para o ecossistema
 
+### Pesquisa: Whisper sem AVX2 — faster-whisper como backend local | 2026-05-05
+> Contexto: openai-whisper usa PyTorch 2.x que exige AVX2 no Windows (WinError 1114).
+> O i5-3470 tem AVX e SSE4.1 mas não AVX2. faster-whisper usa CTranslate2 com
+> dispatch dinâmico de ISA (AVX2 → AVX → SSE4.1), roda sem compilação e é mais
+> rápido que openai-whisper mesmo em CPU antiga. Substitui o backend atual do Hermes.
+
+#### Hermes
+- [ ] **Substituir openai-whisper por faster-whisper** nos workers `TranscribeWorker` e
+  `BatchTranscribeWorker` (`Hermes/hermes.py`). Instalar `faster-whisper` no `.venv`.
+  Adaptar a API: `WhisperModel("base", device="cpu", compute_type="int8")`;
+  `model.transcribe()` retorna `(segments_generator, info)` — o texto é
+  `" ".join(seg.text.strip() for seg in segments)`. Usar `vad_filter=True` para
+  acelerar vídeos com silêncio. Remover `openai-whisper` e `torch` do `.venv` após
+  migração (libera ~3 GB de espaço no Windows).
+
 ### Pesquisa: Understand-Anything — Padrões de Grafo de Conhecimento | 2026-05-04
 > Contexto: Análise do projeto github.com/Lum1104/Understand-Anything revelou padrões
 > arquiteturais aplicáveis ao ecossistema — tipagem de nós, indexação incremental

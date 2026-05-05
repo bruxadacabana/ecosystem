@@ -8362,3 +8362,228 @@ N8N. **n8n — Workflow Automation**. Disponível em: <https://n8n.io>. Acesso e
 ========================================================
 FIM DA PESQUISA — Integração KOSMOS-AKASHA: Padrões RSS Reader + Web Archiver
 ========================================================
+
+---
+
+# PESQUISA — Whisper sem AVX2: Alternativas Locais e Gratuitas para Windows i5-3470
+
+Data: 2026-05-05
+
+Contexto: o openai-whisper usa PyTorch 2.x cujas DLLs Windows exigem AVX2 (WinError 1114).
+O i5-3470 (Ivy Bridge, 3ª geração Intel) tem AVX e SSE4.2 mas não AVX2. Objetivo: encontrar
+backend de transcrição que rode localmente sem custo no Windows 10 / i5-3470.
+
+---
+
+## 1. Causa raiz — PyTorch 2.x e AVX2
+
+O PyTorch 2.0+ abandonou o suporte a AVX puro nos wheels Windows pré-compilados; a baseline
+passou a ser AVX2 (PR de 2023, dev-discuss.pytorch.org). O erro `OSError: [WinError 1114]
+Uma rotina de inicialização de uma biblioteca de vínculo dinâmico (DLL) falhou` ocorre em
+`torch/__init__.py → _load_dll_libraries()` porque a DLL foi compilada com instruções AVX2
+que o i5-3470 não suporta.
+
+PyTorch 1.x (pré-1.6) rodava em CPUs mais antigas, mas versões contemporâneas ao openai-whisper
+(whisper requer torch ≥ 1.9) já adicionaram AVX2 como mínimo em Windows. Compilar PyTorch
+do zero sem AVX2 é tecnicamente possível mas inviável para uso prático (horas de build,
+dependências de Visual Studio, erros frequentes de linking no Windows).
+
+**Conclusão:** openai-whisper é inviável no i5-3470/Windows sem substituir o backend de PyTorch.
+
+---
+
+## 2. faster-whisper — melhor opção local gratuita
+
+**Repositório:** https://github.com/SYSTRAN/faster-whisper
+**Backend:** CTranslate2 (não usa PyTorch)
+**Licença:** MIT
+
+### 2.1 Compatibilidade com CPUs sem AVX2
+
+CTranslate2 usa dispatch dinâmico de ISA em tempo de execução: verifica quais extensões SIMD
+o CPU suporta e seleciona o kernel adequado. Hierarquia de fallback (Windows x86_64):
+`AVX512 → AVX2 → AVX → SSE4.1`. O i5-3470 tem SSE4.1 e SSE4.2, portanto o kernel SSE4.1
+é selecionado automaticamente sem nenhuma configuração adicional.
+
+A variável de ambiente `CT2_FORCE_CPU_ISA=sse2` força o nível mínimo (útil para diagnóstico).
+
+Confirmação na documentação do CTranslate2 (opennmt.net/CTranslate2/hardware_support.html):
+"x86-64: SSE4.1 required as minimum for CPU inference."
+
+### 2.2 Instalação
+
+```bash
+pip install faster-whisper
+```
+
+Sem compilação, sem dependências de sistema extras (ffmpeg é opcional — para arquivos de vídeo
+é necessário, mas pode ser instalado via `pip install av` ou baixado como binário standalone).
+
+### 2.3 API Python
+
+```python
+from faster_whisper import WhisperModel
+
+# device="cpu", compute_type="int8" para máxima compatibilidade com CPU antiga
+model = WhisperModel("base", device="cpu", compute_type="int8")
+
+segments, info = model.transcribe("audio.mp3", language="pt")
+for seg in segments:
+    print(f"[{seg.start:.1f}s] {seg.text}")
+```
+
+Parâmetros relevantes para o ecossistema:
+- `compute_type="int8"`: quantização INT8, 2–4× mais rápido que float32 em CPU, sem perda
+  significativa de qualidade para transcrição; requer apenas SSE4.1
+- `compute_type="int8_float16"`: mixed; funciona apenas em GPUs (não aplicável aqui)
+- `beam_size=1`: reduz uso de memória e tempo de inferência (default é 5)
+- `language="pt"`: evita detecção de idioma (economia de ~1s por segmento)
+- `vad_filter=True`: corta silêncio antes de processar (grande economia em vídeos com pausas)
+
+### 2.4 Modelos e velocidade estimada no i5-3470 (SSE4.1, INT8)
+
+| Modelo | Tamanho | VRAM/RAM | Velocidade relativa | Qualidade |
+|--------|---------|----------|---------------------|-----------|
+| tiny   | 39 MB   | ~1 GB    | ~10× realtime       | Básica    |
+| base   | 141 MB  | ~1 GB    | ~5× realtime        | Boa       |
+| small  | 465 MB  | ~2 GB    | ~2× realtime        | Muito boa |
+| medium | 1.5 GB  | ~5 GB    | Lento (4+ GB RAM)   | Excelente |
+
+"5× realtime" = 1 minuto de áudio processa em ~12 segundos. No i5-3470 com INT8 e SSE4.1,
+esperar 2–4× esses valores (portanto base ≈ 25–50s por minuto de áudio).
+Para o Hermes, `base` com `compute_type="int8"` é o equilíbrio adequado.
+
+### 2.5 Diferenças de API em relação ao openai-whisper
+
+| Aspecto | openai-whisper | faster-whisper |
+|---------|---------------|----------------|
+| Import | `import whisper` | `from faster_whisper import WhisperModel` |
+| Carregar modelo | `whisper.load_model("base")` | `WhisperModel("base", device="cpu", compute_type="int8")` |
+| Transcrever | `model.transcribe(path)` retorna dict com "text" | `model.transcribe(path)` retorna `(segments_generator, info)` |
+| Texto completo | `result["text"]` | `" ".join(seg.text for seg in segments)` |
+| Timestamp | `result["segments"]` lista | Iterador de `Segment(start, end, text)` |
+| Idioma | `language="pt"` | `language="pt"` (igual) |
+| Progresso | Não nativo | Não nativo; monitorar com gerador |
+
+A migração do Hermes requer adaptar `TranscribeWorker._run_local()` e `_run_url()` para o
+novo padrão de `(segments, info)` em vez de `{"text": ..., "segments": [...]}`.
+
+---
+
+## 3. whisper.cpp + Python bindings — segunda opção
+
+**Repositório:** https://github.com/ggml-org/whisper.cpp
+**Backend:** C/C++ puro, sem PyTorch, sem CTranslate2
+**Licença:** MIT
+
+### 3.1 Compatibilidade com CPUs sem AVX2
+
+whisper.cpp compila com flags de CPU configuráveis:
+```
+cmake .. -DGGML_AVX2=OFF -DGGML_AVX=ON -DGGML_F16C=OFF
+```
+O i5-3470 tem AVX (mas não AVX2 nem F16C), portanto esse conjunto de flags gera binário
+compatível. O resultado usa kernels AVX de 256 bits para matrizes float.
+
+### 3.2 Python bindings disponíveis
+
+**pywhispercpp** (https://github.com/abdeladim-s/pywhispercpp):
+```bash
+pip install pywhispercpp
+```
+Fornece wheels pré-compilados para Windows x86_64. A questão é se o wheel padrão tem AVX2
+compilado; se sim, a compilação manual é necessária. Não há documentação clara sobre qual ISA
+mínimo os wheels oficiais requerem — isso é o principal risco dessa opção.
+
+**whisper-cpp-python** (https://github.com/carloscdias/whisper-cpp-python):
+```bash
+pip install whisper-cpp-python
+```
+Wheels mais antigos podem ter menos otimizações AVX2. Projeto menos ativo.
+
+```python
+from pywhispercpp.model import Model
+model = Model('base', n_threads=4)
+segments = model.transcribe('audio.wav')
+for seg in segments:
+    print(seg.text)
+```
+
+### 3.3 Limitações
+
+- Wheels pré-compilados Windows podem ter AVX2 embutido; requer teste ou compilação manual
+- whisper.cpp aceita apenas WAV/MP3 diretamente; para outros formatos precisa de ffmpeg como
+  pré-processamento
+- API menos documentada que faster-whisper
+- Projeto mais focado em CLI do que em Python embedding
+
+### 3.4 Velocidade no i5-3470 com AVX
+
+whisper.cpp com AVX (sem AVX2) é comparável ao faster-whisper com SSE4.1 em termos de
+throughput — ambos são substancialmente mais lentos que uma máquina com AVX2, mas viáveis
+para uso esporádico. Benchmarks comunitários informais: base.en ≈ 8–15s por minuto de áudio
+em CPUs vintage com AVX, single-threaded.
+
+---
+
+## 4. Comparativo das opções locais gratuitas
+
+| Critério | faster-whisper | pywhispercpp |
+|----------|---------------|--------------|
+| Instalação | `pip install faster-whisper` | `pip install pywhispercpp` |
+| Risco de AVX2 | Nenhum (dispatch dinâmico) | Possível (depende do wheel) |
+| Integração Python | Nativa, Pythônica | Wrapper C, menos ergonômica |
+| Qualidade de saída | Mesma do openai-whisper | Mesma do whisper.cpp |
+| Progresso/streaming | Via gerador de segmentos | Callbacks |
+| Suporte a formatos | MP3/WAV/M4A via ffmpeg | WAV nativo; outros via ffmpeg |
+| Manutenção ativa | Sim (SYSTRAN) | Moderada |
+| **Recomendação** | **PRIMEIRA ESCOLHA** | Fallback |
+
+---
+
+## 5. Estratégia de implementação no Hermes
+
+A abordagem recomendada é substituir `import whisper` por `from faster_whisper import WhisperModel`
+nos workers `TranscribeWorker` e `BatchTranscribeWorker`. A lógica de download de áudio via yt-dlp
+permanece igual; apenas a etapa de transcrição muda.
+
+Pontos de atenção para a migração:
+1. `WhisperModel.transcribe()` retorna um **gerador** — consumir com `list()` ou iterar
+2. `compute_type="int8"` é obrigatório para CPU (float32 é 4× mais lento)
+3. `vad_filter=True` melhora muito a velocidade em vídeos (filtra silêncio)
+4. O modelo é carregado uma vez e pode ser reutilizado entre transcrições (cache no worker)
+5. Os modelos são baixados para `~/.cache/huggingface/hub/` por padrão no faster-whisper
+
+---
+
+## Fontes — ABNT
+
+SYSTRAN. **faster-whisper: Faster Whisper transcription with CTranslate2**. GitHub, 2024.
+Disponível em: <https://github.com/SYSTRAN/faster-whisper>. Acesso em: 05 mai. 2026.
+
+OPENNMT. **CTranslate2 — Hardware Support**. Documentação oficial. Disponível em:
+<https://opennmt.net/CTranslate2/hardware_support.html>. Acesso em: 05 mai. 2026.
+
+OPENNMT. **CTranslate2 — Installation**. Documentação oficial. Disponível em:
+<https://opennmt.net/CTranslate2/installation.html>. Acesso em: 05 mai. 2026.
+
+GGML. **whisper.cpp — Port of OpenAI's Whisper model in C/C++**. GitHub, 2024.
+Disponível em: <https://github.com/ggml-org/whisper.cpp>. Acesso em: 05 mai. 2026.
+
+ABDELADIM-S. **pywhispercpp — Python bindings for whisper.cpp**. GitHub, 2024.
+Disponível em: <https://github.com/abdeladim-s/pywhispercpp>. Acesso em: 05 mai. 2026.
+
+PYTORCH. **Dropping AVX support (AVX2-only)**. dev-discuss.pytorch.org, 2023.
+Disponível em: <https://dev-discuss.pytorch.org/t/dropping-avx-support-avx2-only/202>.
+Acesso em: 05 mai. 2026.
+
+PYTORCH. **Build PyTorch without AVX/AVX2 or CUDA for old systems (issue forum)**. 2023.
+Disponível em:
+<https://discuss.pytorch.org/t/build-pytorch-without-avx-avx2-or-cuda-for-old-systems/216532>.
+Acesso em: 05 mai. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Whisper sem AVX2: Alternativas Locais para Windows i5-3470
+========================================================
