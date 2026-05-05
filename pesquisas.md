@@ -1589,6 +1589,829 @@ FONTES
 
 ---
 
+================================================================================
+PESQUISA — MOTORES DE BUSCA PESSOAIS, RANKING DE RELEVÂNCIA E BUSCA HÍBRIDA
+Data: 2026-05-04
+Contexto: AKASHA usa FastAPI + SQLite FTS5 + arquivos HTML/Markdown + ChromaDB opcional.
+Cobre: FTS5 avançado, ranking além de BM25, motores self-hosted, busca científica,
+extração de snippets, busca híbrida, query understanding, deduplicação near-duplicate.
+================================================================================
+
+================================================================================
+1. SQLite FTS5 — FUNCIONALIDADES AVANÇADAS
+================================================================================
+
+1.1. BM25 BUILT-IN — IMPLEMENTAÇÃO E PARÂMETROS
+------------------------------------------------
+FTS5 inclui BM25 (Best Match 25) nativo. Parâmetros k1=1.2 e b=0.75 são hard-coded
+e não podem ser alterados. A fórmula:
+
+  Score(D,Q) = -1 + Σ[ IDF(qi) × (f(qi,D) × (k1+1)) / (f(qi,D) + k1×(1 − b + b×|D|/avgdl)) ]
+
+Onde:
+  - |D| = número de tokens no documento atual
+  - avgdl = média de tokens em todos os documentos
+  - IDF(qi) = inverse-document-frequency da frase i
+  - f(qi,D) = frequência da frase i no documento D
+
+Retorna valor NEGATIVO — quanto menor, mais relevante. Usar ORDER BY bm25(tabela).
+
+1.2. FUNÇÃO bm25() COM PESOS POR COLUNA
+-----------------------------------------
+Sintaxe: bm25(tabela, peso_col0, peso_col1, peso_col2, ...)
+
+Exemplo para tabela com colunas (path, title, body, source):
+  ORDER BY bm25(local_fts, 0, 10, 1, 0)
+
+Pesos extras são ignorados; colunas sem peso explícito recebem 1.0.
+A fórmula com pesos: f(qi,D) = Σ(wc × n(qi,c)) para cada coluna c.
+
+Configuração persistente do rank padrão:
+  INSERT INTO tabela(tabela, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)');
+  -- Após isso: ORDER BY rank funciona com esses pesos sem repetir na query.
+
+Override por query (três formas equivalentes):
+  SELECT * FROM ft WHERE ft MATCH ? AND rank MATCH 'bm25(10.0, 5.0)' ORDER BY rank
+  SELECT * FROM ft WHERE ft = ? AND rank = 'bm25(10.0, 5.0)' ORDER BY rank
+  SELECT * FROM ft(?, 'bm25(10.0, 5.0)') ORDER BY rank
+
+1.3. FUNÇÕES AUXILIARES BUILT-IN
+----------------------------------
+
+snippet(tabela, col_index, markup_ini, markup_fim, elipse, max_tokens)
+  - col_index: índice da coluna (0 = primeira); -1 = selecionar melhor automaticamente
+  - max_tokens: máximo de tokens no snippet (range: 1–64)
+  - Algoritmo: prioriza início de coluna, após "." ou ":", maximiza termos distintos
+  Exemplo: snippet(local_fts, 2, '<b>', '</b>', '…', 30)
+
+highlight(tabela, col_index, markup_ini, markup_fim)
+  - Retorna texto completo da coluna com termos marcados
+  - Frases sobrepostas recebem um único par de marcadores
+  Exemplo: highlight(local_fts, 1, '<mark>', '</mark>')
+
+Nota: FTS5 NÃO tem matchinfo() — essa função existe no FTS3/FTS4. Em FTS5, usar
+bm25() e funções auxiliares personalizadas para obter métricas equivalentes.
+
+1.4. QUERIES AVANÇADAS
+------------------------
+
+Prefix query (asterisco FORA de aspas):
+  MATCH 'searc*'                    -- qualquer token iniciando com "searc"
+  MATCH '"one two thr*"'            -- INVÁLIDO: asterisco dentro de aspas
+  MATCH 'one + two + thr*'          -- válido: frase com prefix no último token
+
+Phrase query:
+  MATCH '"machine learning"'        -- frase exata
+  MATCH 'machine + learning'        -- equivalente
+  MATCH '"machine learning" models' -- frase + termo separado
+
+Boolean:
+  MATCH 'python AND sqlite'
+  MATCH 'python OR javascript'
+  MATCH 'python NOT spam'
+  MATCH '(python OR ruby) AND search'
+
+Filtro por coluna:
+  WHERE tabela MATCH 'title : python'              -- apenas coluna title
+  WHERE tabela MATCH '{title body} : python'       -- em title OU body
+  WHERE tabela MATCH '- source : termo'            -- todas exceto source
+
+Prefix indexes para acelerar queries de prefixo:
+  CREATE VIRTUAL TABLE ft USING fts5(a, b, prefix='2 3')
+  -- Cria índices para prefixos de 2 e 3 caracteres → consultas prefix mais rápidas
+
+1.5. TOKENIZADORES
+-------------------
+
+unicode61 (padrão):
+  - Case-insensitive por Unicode 6.1
+  - Por padrão remove diacríticos de caracteres latinos (À=A, ê=e, etc.)
+  - Opções:
+      remove_diacritics 0|1|2   (0=preserva, 1=remove parcial, 2=remove correto)
+      tokenchars '-_'           (trata hífens e underscores como parte do token)
+      separators '.'            (ponto como separador adicional)
+      categories 'L* N* Co'     (classes Unicode tratadas como tokens)
+  Exemplo: tokenize="unicode61 remove_diacritics 2 tokenchars '-'"
+
+porter (stemming inglês):
+  - Wrapper sobre outro tokenizer, aplica algoritmo Porter Stemmer
+  - "correction" → "correct" → matches "correcting", "corrected"
+  - Apenas inglês; não afeta português
+  Exemplo: tokenize='porter unicode61 remove_diacritics 1'
+
+ascii:
+  - Não-ASCII (>127) sempre tokenizados; case-fold apenas ASCII
+  - Sem suporte a diacríticos; Ã e ã são tokens distintos
+
+Estratégia para AKASHA (PT+EN):
+  - tokenize='unicode61 remove_diacritics 2' garante que buscas sem acento
+    encontrem conteúdo com acento (buscar "pagina" encontra "página")
+  - porter não é adequado para português; stemming PT deve ser feito em
+    pré-processamento (ver seção 7)
+
+1.6. OPÇÕES DE COLUNA E ÍNDICE
+--------------------------------
+
+UNINDEXED: armazena valor mas não indexa para MATCH
+  CREATE VIRTUAL TABLE ft USING fts5(title, body, url UNINDEXED)
+  -- url pode ser recuperado mas não buscado via FTS
+
+detail=none/column/full: controla granularidade do índice
+  - full (padrão): armazena posições de tokens → suporta snippets e phrase queries
+  - column: armazena por coluna, não posição → phrase queries limitadas
+  - none: apenas saber se termo existe → mais compacto, sem snippets precisos
+
+1.7. FUNÇÕES AUXILIARES CUSTOMIZADAS
+--------------------------------------
+É possível registrar funções C customizadas via fts5_api (xCreateFunction).
+Em Python, a biblioteca sqlitefts (PyPI) permite adicionar funções auxiliares
+Python ao FTS5. Complexidade alta; raramente necessário além de bm25/snippet.
+
+================================================================================
+2. RANKING ALÉM DO BM25 — VARIANTES E ABORDAGENS
+================================================================================
+
+2.1. VARIANTES DO BM25
+------------------------
+
+| Variante  | Diferença principal                                           | Comportamento        |
+|-----------|---------------------------------------------------------------|----------------------|
+| BM25      | Implementação padrão Okapi                                    | IDF pode ser negativo|
+| BM25+     | Adiciona floor positivo quando termo ocorre ≥1 vez            | Sempre contribui     |
+| BM25L     | Modifica TF para penalizar menos documentos longos            | Favorece docs longos |
+| BM25-Adpt | Adapta k1 por termo (não por coleção)                         | Mais preciso         |
+
+Estudos empíricos (SIGIR, PMC 2020): diferenças de efetividade entre variantes são
+mínimas quando parâmetros são otimizados. SQLite FTS5 usa BM25 padrão com k1=1.2.
+
+Python: rank_bm25 (pip install rank-bm25) — BM25Okapi, BM25Plus, BM25L disponíveis
+        bm25s (pip install bm25s) — 100–500x mais rápido que rank_bm25 via scipy sparse
+
+BM25S:
+  - Pré-computa scores de relevância em matriz esparsa (scipy)
+  - Apenas dependências: numpy + scipy
+  - Throughput: ordem de magnitude superior para corpus > 100k documentos
+  - Ideal para re-score out-of-SQLite quando FTS5 não é suficiente
+
+2.2. TF-IDF CLÁSSICO E VARIANTES
+----------------------------------
+TF-IDF é a base conceitual do BM25. Diferença chave: BM25 satura o TF (evita
+que um termo que aparece 1000x valha 1000x mais que um que aparece 10x) e
+normaliza por comprimento do documento de forma probabilística.
+
+Para uso em Python standalone: sklearn.feature_extraction.text.TfidfVectorizer
+Útil para re-ranking como segundo passo após FTS5 (AKASHA já usa FTS5 primário).
+
+2.3. LEARNING TO RANK (L2R) LEVE PARA USO LOCAL
+--------------------------------------------------
+L2R usa ML para combinar múltiplos sinais de relevância em um score final.
+Abordagens por complexidade crescente:
+
+a) Pointwise (mais simples):
+   Trata ranking como regressão/classificação; aprende score por documento isolado.
+   XGBoost com objetivo 'rank:pairwise' ou 'rank:ndcg'.
+
+b) Pairwise:
+   Aprende que doc A é mais relevante que doc B.
+   LambdaRank / LambdaMART (XGBoost, LightGBM): estado da arte prático.
+
+c) Listwise:
+   Otimiza NDCG diretamente sobre listas; mais complexo.
+
+Para AKASHA (uso pessoal, sem corpus de treino anotado):
+  - L2R supervisionado é impraticável sem dados de relevância.
+  - Alternativa: usar cliclagens implícitas (tempo na página, re-visita) como sinal.
+  - Mínimo viável: combinar BM25 + boost por domínio favorito + recência de indexação.
+
+2.4. RE-RANKING COM CROSS-ENCODERS PEQUENOS
+--------------------------------------------
+Cross-encoders recebem (query, documento) como par e retornam score de relevância.
+São mais precisos que bi-encoders mas não escalam para corpus inteiro — usar para
+re-rankear top-K (ex: top-20 resultados FTS5 → re-rank com cross-encoder).
+
+Modelos leves:
+  - cross-encoder/ms-marco-MiniLM-L-6-v2 (~22MB): BEIR benchmark competitivo
+  - FlashRank (pip install flashrank): wrapper ultra-leve com modelos embutidos ~4MB
+  - rerankers (pip install rerankers): API unificada para múltiplos rerankers
+
+FlashRank é o mais prático para uso local (AKASHA): sem deps pesadas, funciona CPU.
+Cross-encoder/ms-marco-MiniLM-L-6-v2 via sentence-transformers: ~22MB, rápido em CPU.
+
+Custo: para top-20 documentos, re-ranking demora ~200ms em CPU típico — aceitável.
+
+================================================================================
+3. MOTORES DE BUSCA PESSOAIS / SELF-HOSTED
+================================================================================
+
+3.1. MARGINALIA SEARCH
+------------------------
+Criado por Viktor Lofgren (Suécia, 2021). Java, código aberto.
+GitHub: github.com/MarginaliaSearch/MarginaliaSearch
+
+Foco: web pequena, sites text-heavy, não-comerciais. Favorece conteúdo sem
+rastreadores, sem cookies, sem newsletters. Indexa ~100M páginas.
+
+Arquitetura:
+  - Crawler próprio + BFS
+  - Índice invertido customizado (não Lucene, não SQLite)
+  - Ranking: BM25 + sinais de qualidade proprietários
+  - Pode ser usado como white-label para dados próprios (via side-loading)
+  - Requer ~32GB RAM para ambiente produção-like; menor com índice menor
+  - Hardware mínimo possível via limitação de tamanho do índice
+
+Relevante para AKASHA: arquitetura de side-loading (importar URLs já coletadas)
+é o modelo mais próximo do que AKASHA precisa.
+
+3.2. MWMBL
+-----------
+Python (Django + FastAPI + scikit-learn). GitHub: github.com/mwmbl/mwmbl
+
+Características:
+  - TinyIndex: estrutura hash customizada (não inverted index clássico)
+  - Crawling distribuído pela comunidade; indexação central
+  - ~500M URLs únicas indexadas (mai. 2026)
+  - Usa jusText para extração de conteúdo
+  - Ranking: sinais comunitários (votos, curações)
+  - Não é adequado para self-hosting pessoal (depende de comunidade)
+
+3.3. STRACT
+-----------
+Rust, open source, desenvolvido por Mikkel Denker. https://stract.com
+
+Características:
+  - "Optics": instruções customizáveis que filtram/reordenam resultados por tipo
+  - Usuário pode bloquear domínios, desfavorecer sites com muitos anúncios
+  - Crawler web próprio (não ideal para arquivos pessoais)
+  - Roda em servidor único (basement server); ~1000 buscas/hora no exemplo do criador
+  - Self-hosting: possível mas projetado para busca web pública, não arquivo pessoal
+
+3.4. YaCy
+----------
+Java, P2P, criado em 2003 por Michael Christen. https://yacy.net
+
+Arquitetura:
+  - Distributed Hash Table (DHT) para distribuição do índice entre peers
+  - Reverse Word Indexing (RWI)
+  - Pode operar em modo intranet (isolado da rede P2P) — adequado para uso pessoal
+  - Web interface em http://localhost:8090
+  - Disponível como pacote Linux/Windows/Mac e imagem Docker
+  - RAM: mínimo funcional ~512MB; recomendado ≥1GB para indexação ativa
+
+Para AKASHA: YaCy no modo intranet pode indexar arquivos locais via file:// e
+servir busca full-text, mas integração com Python é via HTTP API básica.
+Desvantagem: JVM; overhead maior que SQLite FTS5.
+
+3.5. SEARXNG
+------------
+Python, metabuscador (agrega resultados de 70+ engines). https://searxng.org
+
+Diferença fundamental: SearXNG NÃO rastreia nem indexa — apenas agrega resultados
+de outros buscadores (Google, Bing, DuckDuckGo, etc.) sem repassar dados do usuário.
+
+Não é adequado para buscar em arquivo pessoal local.
+Uso para AKASHA: poderia ser integrado como fonte de busca web externa (complementar
+à busca local FTS5), agregando resultados de múltiplos buscadores públicos.
+
+3.6. ANÁLISE COMPARATIVA PARA AKASHA
+--------------------------------------
+| Motor      | Linguagem | Arquivo local | Ranking     | Self-host | Relevância p/AKASHA |
+|------------|-----------|---------------|-------------|-----------|---------------------|
+| SQLite FTS5| C (embutido)| Nativo       | BM25        | Embutido  | ALTO — já em uso    |
+| Marginalia | Java      | Via side-load | BM25 + sinais| Sim (RAM) | MÉDIO — referência  |
+| YaCy       | Java      | Sim (intranet)| BM25 + links| Sim (JVM) | BAIXO — overhead    |
+| Stract     | Rust      | Não nativo    | Custom      | Sim       | BAIXO — web-focused |
+| Mwmbl      | Python    | Não           | TinyIndex   | Não real  | BAIXO               |
+| SearXNG    | Python    | Não           | Agrega      | Sim       | COMPLEMENTAR (web)  |
+
+Conclusão: SQLite FTS5 + sqlite-vec é a stack ideal para AKASHA. Marginalia é
+referência de arquitetura; YaCy pode ser curiosidade para modo intranet.
+
+================================================================================
+4. BUSCA DE ARTIGOS CIENTÍFICOS — APIs GRATUITAS
+================================================================================
+
+4.1. OPENALEX
+--------------
+Mantido pela OurResearch (nonprofit). Sem fins lucrativos; 250M+ works indexados.
+Documentação: https://developers.openalex.org/
+
+Desde fev/2026: API key obrigatória (GRATUITA — basta cadastro).
+Rate limit: 100k requests/dia com key.
+
+Metadados retornados (Work object, 50+ campos top-level):
+  - id, doi, title, display_name
+  - publication_year, publication_date, language
+  - type (journal-article, book-chapter, dataset, etc.)
+  - abstract_inverted_index (abstract como mapa invertido — pyalex converte para texto)
+  - open_access: {is_oa, oa_status, oa_url}
+  - authorships: [{author, institutions, affiliations}]
+  - cited_by_count, citations_normalized_percentile
+  - topics, concepts, keywords
+  - locations: [{source, landing_page_url, pdf_url, is_oa}]
+  - referenced_works, related_works (IDs OpenAlex)
+
+Python: pip install pyalex
+  from pyalex import Works
+  works = Works().search("machine learning").filter(publication_year=2024).get()
+  # Converte abstract automaticamente: w.abstract (property calculada)
+
+Endpoints úteis:
+  GET https://api.openalex.org/works?search=query&filter=is_oa:true,year:2024
+  GET https://api.openalex.org/works/{openalex_id}
+  GET https://api.openalex.org/works?filter=doi:10.xxxx/yyyy
+
+4.2. SEMANTIC SCHOLAR
+----------------------
+Allen Institute for AI. 200M+ papers. API key opcional mas recomendada (grátis).
+API docs: https://api.semanticscholar.org/api-docs/
+
+Rate limits:
+  - Sem key: 100 requests/5 minutos (compartilhados entre todos os anônimos)
+  - Com key: 1 request/segundo (suficiente para uso pessoal)
+  - Bulk/batch endpoints: usar em vez de relevance search (menos resource-intensive)
+
+Metadados:
+  - paperId (S2 ID), externalIds (DOI, ArXiv, PubMed, etc.)
+  - title, abstract, year, venue, authors
+  - citationCount, referenceCount, influentialCitationCount
+  - isOpenAccess, openAccessPdf: {url, status}
+  - fieldsOfStudy, s2FieldsOfStudy
+  - tldr (AI-generated summary — único entre as APIs)
+  - embedding.specter_v2 (384-dim vetor disponível via API)
+
+Endpoints chave:
+  POST https://api.semanticscholar.org/graph/v1/paper/batch  (bulk por IDs)
+  GET  https://api.semanticscholar.org/graph/v1/paper/search/bulk?query=...
+  GET  https://api.semanticscholar.org/graph/v1/paper/{paper_id}
+  GET  https://api.semanticscholar.org/graph/v1/paper/{paper_id}/citations
+  GET  https://api.semanticscholar.org/graph/v1/paper/{paper_id}/references
+
+Parâmetro fields: especificar apenas campos necessários (ex: ?fields=title,abstract,year)
+
+Python: httpx direto (sem lib dedicada madura); ou semanticscholar PyPI (informal).
+
+4.3. ARXIV
+-----------
+Cornell University. Apenas preprints (CS, Física, Matemática, Economia, etc.).
+API REST v2: https://arxiv.org/search/
+
+Rate limits: máximo 3 requests/segundo; pausar entre requests.
+
+Python oficial: pip install arxiv (lukasschwab/arxiv.py)
+  import arxiv
+  client = arxiv.Client()
+  search = arxiv.Search(query="sqlite full text search", max_results=10)
+  for r in client.results(search):
+      print(r.title, r.pdf_url, r.entry_id, r.categories)
+
+Metadados disponíveis:
+  - entry_id (URL canônica: https://arxiv.org/abs/xxxx.xxxxx)
+  - title, summary (abstract), authors
+  - published, updated (datetime)
+  - primary_category, categories (lista)
+  - pdf_url (link direto para PDF — sem paywall)
+  - doi (quando disponível)
+  - journal_ref (quando publicado em journal)
+
+Categorias relevantes para AKASHA: cs.IR (Information Retrieval), cs.DB (Databases).
+arXiv PDFs são sempre open access — Unpaywall não necessário para arXiv.
+
+Busca por campos:
+  arxiv.Search(query="ti:sqlite AND ab:full-text")  # título e abstract
+  # Prefixos: ti: (título), au: (autor), ab: (abstract), cat: (categoria)
+
+4.4. CROSSREF
+--------------
+Agência oficial de registro de DOI. 150M+ obras. Sem key necessária.
+Endpoint: https://api.crossref.org/works
+
+Rate limit: liberal sem key; adicionar email no User-Agent para aumentar limite.
+  GET https://api.crossref.org/works?query=sqlite+search&rows=20
+  GET https://api.crossref.org/works/{doi}
+
+Metadados:
+  - DOI, título, autores, publisher, ISSN/ISBN
+  - data de publicação, tipo de obra
+  - URL da versão registrada
+  Nota: NÃO retorna abstracts diretamente (limitação da Crossref)
+
+Python: pip install habanero (wrapper Crossref)
+  from habanero import Crossref
+  cr = Crossref(mailto="email@exemplo.com")
+  results = cr.works(query="full text search sqlite", limit=10)
+
+Melhor uso: lookup de metadados por DOI quando já se tem o DOI.
+
+4.5. UNPAYWALL
+---------------
+OurResearch. Indexa localização open access de 50M+ artigos com DOI.
+Endpoint: GET https://api.unpaywall.org/v2/{doi}?email={seu_email}
+
+Rate limit: 100k calls/dia.
+
+Retorna:
+  - is_oa (boolean)
+  - oa_status: "gold" | "green" | "hybrid" | "bronze" | "closed"
+  - best_oa_location: {url, url_for_pdf, host_type, version}
+  - all_oa_locations: lista completa de localizações OA
+
+Python: pip install unpywall
+  from unpywall import Unpywall
+  df = Unpywall.doi(dois=['10.xxxx/yyyy'])
+  # Ou download direto:
+  Unpywall.download_pdf(dois=['10.xxxx/yyyy'], directory='/tmp')
+
+Estratégia para AKASHA: ao ter um DOI (de Crossref, S2, ou OpenAlex),
+consultar Unpaywall para obter PDF gratuito quando disponível.
+
+4.6. FLUXO INTEGRADO RECOMENDADO PARA AKASHA
+---------------------------------------------
+1. Busca por query → Semantic Scholar bulk search (metadados + tldr + OA flag)
+2. Para papers relevantes com DOI → Unpaywall para PDF open access
+3. Para papers arXiv (cat: cs.*) → arxiv.py direto (sempre OA)
+4. Para enriquecer com citações/conceitos → OpenAlex por DOI
+5. Extração PDF → pymupdf4llm → Markdown → indexar em local_fts
+
+(Nota: este fluxo já foi parcialmente documentado na pesquisa anterior de abril/2026)
+
+================================================================================
+5. EXTRAÇÃO DE SNIPPETS / EXCERPTS
+================================================================================
+
+5.1. SNIPPET FTS5 BUILT-IN
+---------------------------
+A função snippet() do FTS5 é adequada para uso imediato:
+  snippet(local_fts, -1, '<b>', '</b>', '…', 40)
+
+Limitações:
+  - max_tokens: teto de 64 tokens (documentação oficial)
+  - Seleção do snippet é heurística (início, após pontuação, máximo de termos)
+  - Não usa semântica — apenas contagem de termos
+
+Para snippets mais longos ou melhor qualidade: pós-processamento Python.
+
+5.2. TRAFILATURA — EXTRAÇÃO DE CONTEÚDO WEB
+--------------------------------------------
+pip install trafilatura
+
+Melhor ferramenta única para HTML → texto limpo + metadata:
+  import trafilatura
+  text = trafilatura.extract(html_content)
+  # Opções de formato: txt, markdown, json, csv, xml
+
+Benchmarks (ScrapingHub 2022, SIGIR 2023):
+  - F1 score: 0.945 (melhor overall no benchmark ScrapingHub com 640k páginas)
+  - Melhor média geral (F1 = 0.883) no benchmark combinado SIGIR 2023
+  - Readability tem mediana mais alta (0.970) — melhor em artigos padrão
+  - jusText: F1 = 0.802 (mais conservador, preserva apenas texto com sentenças)
+
+Arquitetura interna: usa readability-lxml como fallback #1, jusText como fallback #2.
+Quando extração inicial é curta/ruidosa, tenta automaticamente os fallbacks.
+
+Metadados extraídos: título, autor, data, categorias, tags, nome do site.
+Output como JSON incluindo todos os metadados + texto:
+  result = trafilatura.extract(html, output_format='json', include_metadata=True)
+
+Adotado por HuggingFace, IBM, Microsoft Research, Allen Institute, Stanford.
+
+5.3. EXTRAÇÃO DE PASSAGENS RELEVANTES (PASSAGE RETRIEVAL)
+----------------------------------------------------------
+Para melhorar snippets além do FTS5, abordagens em ordem crescente de complexidade:
+
+a) Janela deslizante simples:
+   Dividir documento em janelas de N palavras, rankear por contagem de termos query.
+   Implementação Python trivial; melhora snippets FTS5.
+
+b) BM25 por parágrafo:
+   Dividir documento em parágrafos, BM25-score cada um contra a query.
+   rank_bm25 ou bm25s; O(n_parágrafos × n_termos).
+   Produz snippets semanticamente coerentes (parágrafo completo).
+
+c) Dense passage retrieval (DPR):
+   Bi-encoder: embeddings de passagens pré-computados; busca vetorial no momento da query.
+   Custoso para indexar; ideal quando ChromaDB já está disponível (AKASHA tem ChromaDB).
+
+d) Cross-encoder para scoring de passagem:
+   Mais preciso mas mais lento; adequado apenas para re-ranking de candidatos.
+
+Para AKASHA: (b) BM25 por parágrafo é o melhor custo-benefício para snippets melhores.
+
+================================================================================
+6. BUSCA HÍBRIDA — FTS5 BM25 + SIMILARIDADE VETORIAL
+================================================================================
+
+6.1. SQLITE-VEC — EXTENSÃO VETORIAL PARA SQLITE
+-------------------------------------------------
+pip install sqlite-vec
+Desenvolvida por Alex Garcia. Escrita em C puro, sem dependências, MIT/Apache-2.0.
+Stable desde agosto/2024 (v0.1.0).
+
+Cria virtual tables para KNN search:
+  CREATE VIRTUAL TABLE vec_items USING vec0(embedding FLOAT[384])
+  INSERT INTO vec_items(rowid, embedding) VALUES (?, serialize_float32(?))
+  SELECT rowid, distance FROM vec_items WHERE embedding MATCH serialize_float32(?)
+  ORDER BY distance LIMIT 20
+
+Integração com Python:
+  import sqlite_vec
+  sqlite_vec.load(conn)  # carrega extensão
+  # vectors como list[float] → serialize_float32()
+
+Funciona no mesmo arquivo .db que FTS5 → sem servidor separado.
+Limitação: busca KNN exata (não aproximada); para corpora < 100k documentos, adequado.
+
+6.2. RECIPROCAL RANK FUSION (RRF)
+----------------------------------
+Fórmula padrão para combinar rankings sem normalização de scores:
+
+  RRF_score(d) = Σ_i  1 / (k + rank_i(d))
+
+Onde:
+  - k = 60 (padrão empírico; valor menor dá mais peso ao topo do ranking)
+  - rank_i(d) = posição do documento d no ranking i (começa em 1)
+  - Soma sobre todos os sistemas de recuperação (ex: FTS5 + vetorial)
+
+Python (implementação mínima):
+  def rrf(rankings: list[list], k=60) -> list:
+      scores = {}
+      for ranking in rankings:
+          for rank, doc_id in enumerate(ranking, start=1):
+              scores[doc_id] = scores.get(doc_id, 0) + 1.0 / (k + rank)
+      return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+Vantagem: independente de escala — combina BM25 (valores negativos) com cosine
+similarity (0–1) sem normalização. Documentos que aparecem em ambos os sistemas
+sobem naturalmente.
+
+Variação de k:
+  - k=20–40: topo do ranking tem influência muito maior
+  - k=60: valor padrão, balanceado
+  - k=80–100: distribuição mais uniforme; top ranks têm menos vantagem
+
+6.3. IMPLEMENTAÇÃO CONCRETA PARA AKASHA (FTS5 + sqlite-vec + RRF)
+-------------------------------------------------------------------
+
+Passo 1: FTS5 retorna top-N por BM25:
+  SELECT rowid FROM local_fts WHERE local_fts MATCH ? ORDER BY bm25(local_fts) LIMIT 50
+
+Passo 2: sqlite-vec retorna top-N por cosine:
+  SELECT rowid, distance FROM vec_items
+  WHERE embedding MATCH serialize_float32(query_embedding)
+  ORDER BY distance LIMIT 50
+
+Passo 3: RRF combina as duas listas:
+  fts_ranking  = [row[0] for row in fts_rows]
+  vec_ranking  = [row[0] for row in vec_rows]
+  combined     = rrf([fts_ranking, vec_ranking], k=60)
+  top_ids      = [doc_id for doc_id, score in combined[:20]]
+
+Passo 4: buscar metadados dos IDs finais:
+  SELECT title, body, path FROM docs WHERE rowid IN (...)
+
+Quando híbrido ajuda:
+  - Termos técnicos/acrônimos + queries conceituais → BM25 pega exatos, vetor pega semânticos
+  - Arquivos com conteúdo misturado PT/EN
+  - Queries ambíguas onde termos exatos nem sempre estão presentes
+
+Quando híbrido não ajuda (apenas BM25 é suficiente):
+  - Queries por título exato ou URL
+  - Corpus pequeno (<10k documentos) onde BM25 já ranqueia bem
+  - Quando custo de embedding é proibitivo para hardware alvo
+
+Chroma já no ecossistema (Mnemosyne): o _search_chroma() em local_search.py já
+consulta ChromaDB. Aplicar RRF entre resultados FTS5 e Chroma seria melhoria direta.
+
+================================================================================
+7. QUERY UNDERSTANDING — EXPANSÃO, STEMMING, SPELL CORRECTION
+================================================================================
+
+7.1. STEMMING PARA PORTUGUÊS E INGLÊS
+---------------------------------------
+
+RSLP Stemmer (Português):
+  - RSLP = Removedor de Sufixos da Língua Portuguesa
+  - Disponível em NLTK: from nltk.stem import RSLPStemmer
+  - Baseado em regras para português; produz stems válidos
+  - "buscando" → "busc", "arquivos" → "arq"
+
+Snowball Stemmer (multi-idioma):
+  - Suporta português: from nltk.stem import SnowballStemmer; s = SnowballStemmer("portuguese")
+  - Também inglês, espanhol, alemão, francês, etc.
+  - Levemente diferente do RSLP em casos edge
+
+spaCy (lemmatização):
+  - pt_core_news_sm/lg: modelos para português (pip install spacy + python -m spacy download pt_core_news_sm)
+  - Lemmatização > stemming: "foi" → "ser", "buscando" → "buscar"
+  - Mais preciso mas ~100MB download por modelo
+
+Estratégia para AKASHA (PT+EN bilíngue):
+  - Detecção de idioma: langdetect (pip install langdetect) — ~1ms por query
+  - PT: RSLP ou Snowball("portuguese")
+  - EN: porter (já disponível no FTS5 tokenizer) ou Snowball("english")
+  - Pré-processar query antes de passar ao FTS5 para melhorar recall
+
+Atenção: unicode61 com remove_diacritics 2 no FTS5 já resolve "pagina"→"página".
+Stemming adicional aumenta recall mas pode reduzir precisão.
+
+7.2. SPELL CORRECTION LEVE
+----------------------------
+
+pyspellchecker (pip install pyspellchecker):
+  - Puro Python, baseado em frequências de palavras
+  - Algoritmo: permutações por distância de Levenshtein ≤2
+  - Suporta PT: spell = SpellChecker(language='pt')
+  - Simples; lento para queries longas; sem "did you mean?" sofisticado
+
+symspellpy (pip install symspellpy):
+  - Port Python do SymSpell (C#)
+  - 1M+ palavras/segundo via tabela hash pre-computada de variantes
+  - Muito mais rápido que pyspellchecker para correção em tempo real
+  - Suporte multilíngue via dicionários de frequência customizáveis
+
+Embedding-based correction (2024):
+  - Melhor recall que Hunspell/pyspellchecker para queries de busca
+  - Custo: requer modelo de embedding rodando → overhead maior
+  - Referência: Embedding-based Query Spelling Correction (CEUR-WS 2024)
+
+Recomendação para AKASHA: symspellpy com dicionários PT+EN pré-compilados.
+Latência < 1ms por query; adequado para uso local.
+
+7.3. QUERY EXPANSION
+---------------------
+Técnicas de query expansion adicionam sinônimos/termos relacionados para aumentar recall:
+
+a) Expansão via dicionário (simples):
+   Sinônimos de WordNet ou NLTK → adicionar termos relacionados com peso menor.
+
+b) Expansão via embedding:
+   Encontrar os K termos mais similares ao vetor da query no espaço de embedding.
+   Custo: requer modelo de embedding.
+
+c) Expansão via pseudo-relevance feedback (PRF):
+   1. Rodar query original, pegar top-K documentos.
+   2. Extrair termos mais frequentes nesses documentos.
+   3. Re-rodar query expandida com esses termos.
+   Limitação: pode amplificar erros de relevância do primeiro passo.
+
+d) Expansão via LLM local:
+   Pedir ao LLM (Ollama) para gerar variações da query.
+   Ex: "buscar sqlite" → ["sqlite fts5", "full text search sqlite", "sqlite search"]
+   Custo: latência de inferência (~500ms em CPU); muito eficaz para PT+EN.
+
+Para AKASHA: LLM expansion via LOGOS/Ollama é viável dado o ecossistema.
+Alternativa simples sem LLM: stemming + expansão com OR no FTS5.
+
+================================================================================
+8. DEDUPLICAÇÃO NEAR-DUPLICATE
+================================================================================
+
+8.1. SIMHASH
+------------
+Algoritmo de Charikar (2002), usado pelo Google Crawler para deduplicação.
+Gera fingerprint de 64 bits (hash) tal que documentos similares têm fingerprints
+próximos em distância de Hamming.
+
+Processo:
+  1. Tokenizar documento em n-grams ou palavras
+  2. Para cada token: gerar hash normal e somá-los ponderados
+  3. Binarizar: bit final = 1 se soma positiva, 0 se negativa
+  Resultado: fingerprint de 64 bits; distância Hamming ≤ 3 → near-duplicate
+
+Python: pip install simhash (scrapinghub/python-simhash)
+  from simhash import Simhash, SimhashIndex
+  hash = Simhash(texto.split())
+  # Busca eficiente: SimhashIndex para múltiplos documentos
+
+Complexidade: O(n) para gerar; O(1) para comparar (XOR + popcount).
+Limitação: funciona melhor para textos ≥ algumas centenas de palavras.
+
+8.2. MINHASH + LSH
+------------------
+MinHash: estima similaridade de Jaccard entre dois conjuntos (ex: shingling).
+LSH (Locality-Sensitive Hashing): agrupa candidatos similares sem comparação exaustiva.
+
+Python: pip install datasketch
+  from datasketch import MinHash, MinHashLSH
+  m1 = MinHash(num_perm=128)
+  for shingle in shingles(texto): m1.update(shingle.encode('utf8'))
+  lsh = MinHashLSH(threshold=0.8, num_perm=128)
+  lsh.insert("doc_id", m1)
+  result = lsh.query(m1)  # near-duplicates
+
+num_perm: compromisso precisão×velocidade (128 é padrão; diminuir→ menos preciso)
+threshold: 0.8 = 80% Jaccard similarity → near-duplicate
+
+Quando usar MinHash vs SimHash:
+  - SimHash: melhor para texto longo; detecta duplicação de conteúdo
+  - MinHash+LSH: melhor para conjuntos (shingling); mais configurável em threshold
+  - SimHash é mais rápido para comparação par-a-par
+  - MinHash+LSH escala melhor para corpus grande via sub-linear query
+
+8.3. URL NORMALIZATION
+-----------------------
+Antes da deduplicação de conteúdo, normalizar URLs para detectar duplicatas triviais.
+
+Python: pip install url-normalize
+  from url_normalize import url_normalize
+  url_normalize("HTTP://EXAMPLE.COM/path?b=2&a=1")
+  # → "https://example.com/path?a=1&b=2"
+
+Regras de normalização canônica:
+  - Lowercasing do scheme e host
+  - Remoção de fragmento (#anchor) — ignorado por servidores
+  - Ordenação alfabética de parâmetros query
+  - Normalização de path (../., trailing slash por convenção)
+  - Conversão HTTP → HTTPS
+  - Tratamento de IDN (domínios internacionalizados)
+
+Biblioteca urlcanon (IIPC): canonicalização nível Web Archive, com SSURT
+(serialização adequada para sorting e prefix-matching).
+
+Para AKASHA: url_normalize antes de inserir no índice; SimHash sobre conteúdo
+extraído para detectar near-duplicates entre páginas diferentes.
+
+8.4. ESTRATÉGIA COMPLETA DE DEDUPLICAÇÃO PARA AKASHA
+------------------------------------------------------
+Nível 1 — URL exata: normalizar URL e checar duplicata no DB (já implícito na chave primária).
+Nível 2 — URL near-duplicate: comparar URL normalizada via heurísticas
+  (ex: session_id=xxx → remover params conhecidos de tracking).
+Nível 3 — Conteúdo near-duplicate: SimHash sobre texto extraído;
+  threshold ≤ 3 bits de Hamming → não indexar.
+Nível 4 — Deduplicação pós-consulta: na função rank_combined() já existente,
+  filtrar resultados cujos snippets sejam >80% idênticos.
+
+================================================================================
+FONTES
+================================================================================
+
+SQLITE:
+- SQLite FTS5 Extension (documentação oficial): https://www.sqlite.org/fts5.html
+- SQLite FTS5 Tokenizers (unicode61 e ascii): https://audrey.feldroy.com/articles/2025-01-13-SQLite-FTS5-Tokenizers-unicode61-and-ascii
+- sqlite-okapi-bm25 extension: https://github.com/neozenith/sqlite-okapi-bm25
+- sqlitefts Python (aux functions): https://pypi.org/project/sqlitefts/
+- sqlite-vec stable v0.1.0: https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html
+- Hybrid FTS5 + vector search SQLite (Alex Garcia, 2024): https://alexgarcia.xyz/blog/2024/sqlite-vec-hybrid-search/index.html
+
+RANKING:
+- BM25 variants reproducibility study: https://pmc.ncbi.nlm.nih.gov/articles/PMC7148026/
+- rank-bm25 PyPI: https://pypi.org/project/rank-bm25/
+- bm25s HuggingFace blog: https://huggingface.co/blog/xhluca/bm25s
+- FlashRank GitHub: https://github.com/PrithivirajDamodaran/FlashRank
+- rerankers (AnswerDotAI): https://github.com/AnswerDotAI/rerankers
+- XGBoost Learning to Rank: https://xgboost.readthedocs.io/en/stable/tutorials/learning_to_rank.html
+- LambdaMART explained: https://www.shaped.ai/blog/lambdamart-explained-the-workhorse-of-learning-to-rank
+
+BUSCA HÍBRIDA E RRF:
+- Hybrid search FTS5 + vector + RRF (Ceaksan, 2026): https://ceaksan.com/en/hybrid-search-fts5-vector-rrf
+- Reciprocal Rank Fusion implementation (Safjan): https://safjan.com/implementing-rank-fusion-in-python/
+- Hybrid retrieval RRF — score normalization problem: https://avchauzov.github.io/blog/2025/hybrid-retrieval-rrf-rank-fusion/
+- Chroma sparse vector / BM25 support: https://www.trychroma.com/project/sparse-vector-search
+- sqlite-hybrid-search GitHub: https://github.com/liamca/sqlite-hybrid-search
+- Building hybrid retriever for 16894 Obsidian files: https://blakecrosley.com/blog/hybrid-retriever-obsidian
+
+MOTORES SELF-HOSTED:
+- MarginaliaSearch GitHub: https://github.com/MarginaliaSearch/MarginaliaSearch
+- Mwmbl GitHub: https://github.com/mwmbl/mwmbl
+- Stract open source: https://alternativeto.net/software/stract/about/
+- YaCy distributed search: https://yacy.net/
+- YaCy architecture (Glukhov, 2025): https://www.glukhov.org/post/2025/06/yacy-search-engine/
+- SearXNG documentation: https://searxng.org/
+
+APIS CIENTÍFICAS:
+- OpenAlex documentation: https://developers.openalex.org/
+- pyalex GitHub: https://github.com/J535D165/pyalex
+- Semantic Scholar API: https://api.semanticscholar.org/api-docs/
+- arXiv API basics: https://info.arxiv.org/help/api/basics.html
+- arxiv.py GitHub: https://github.com/lukasschwab/arxiv.py
+- CrossRef free API (DEV): https://dev.to/0012303/crossref-has-a-free-api-search-150m-scholarly-articles-no-key-required-3fl5
+- Unpaywall products/API: https://unpaywall.org/products/api
+- unpywall GitHub: https://github.com/unpywall/unpywall
+- Research Paper APIs 2026 comparison (IntuitionLabs): https://intuitionlabs.ai/articles/research-paper-apis-scientific-literature
+
+EXTRAÇÃO DE CONTEÚDO:
+- Trafilatura documentation: https://trafilatura.readthedocs.io/en/latest/evaluation.html
+- Trafilatura GitHub: https://github.com/adbar/trafilatura
+- Article extraction benchmark (ScrapingHub): https://github.com/scrapinghub/article-extraction-benchmark
+
+QUERY UNDERSTANDING:
+- NLTK Portuguese stemmer: https://www.nltk.org/howto/portuguese_en.html
+- ptstem (Portuguese stemming): http://dfalbel.github.io/ptstem/articles/ptstem.html
+- pyspellchecker documentation: https://pyspellchecker.readthedocs.io/
+- symspellpy GitHub: https://github.com/mammothb/symspellpy
+- Embedding-based Query Spelling Correction (CEUR-WS 2024): https://ceur-ws.org/Vol-3689/WOWS_2024_paper_4.pdf
+
+DEDUPLICAÇÃO:
+- python-simhash (scrapinghub): https://github.com/scrapinghub/python-simhash
+- datasketch MinHash LSH: https://ekzhu.com/datasketch/lsh.html
+- Near-duplicate detection with datasketch (Kashnitsky): https://yorko.github.io/2023/practical-near-dup-detection/
+- url-normalize PyPI: https://pypi.org/project/url-normalize/
+- urlcanon (IIPC): https://github.com/iipc/urlcanon
+
+========================================================
+FIM DA PESQUISA — Motores de Busca, Ranking e Busca Híbrida (AKASHA)
+
+---
+
 ## KOSMOS
 
 PESQUISA — KOSMOS

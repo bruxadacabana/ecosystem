@@ -3943,6 +3943,87 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   ecosystem.json. Verificar por URL normalizada (remover parâmetros de rastreamento
   `utm_*`). Se já arquivado pelo KOSMOS, retornar o path existente em vez de re-arquivar.
 
+### Pesquisa: Motores de Busca Pessoais, Ranking de Relevância e Busca Híbrida | 2026-05-04
+> Contexto: pesquisa exaustiva sobre SQLite FTS5, ranking além de BM25, motores self-hosted,
+> APIs de artigos científicos, extração de snippets, busca híbrida FTS5+vetor, query understanding
+> e deduplicação near-duplicate — tudo aplicado ao AKASHA (FastAPI + SQLite FTS5 + ChromaDB).
+
+#### AKASHA
+- [ ] **Configurar pesos de coluna BM25 persistentes via `INSERT INTO tabela(tabela, rank)`**
+  (`database.py` ou função de inicialização do DB). Atualmente os pesos são passados
+  explicitamente em cada query (ex: `bm25(local_fts, 0, 10, 1, 0)`). Usar a configuração
+  persistente do FTS5: `INSERT INTO local_fts(local_fts, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)')`
+  na criação da tabela. Isso permite usar `ORDER BY rank` em vez de repetir os pesos em
+  cada query, e facilita ajuste de pesos sem alterar código de busca.
+
+- [ ] **Implementar snippets por parágrafo como alternativa ao snippet() FTS5**
+  (`services/local_search.py`). A função snippet() FTS5 é limitada a 64 tokens e usa
+  heurística simples. Para resultados de melhor qualidade: dividir o body do documento
+  em parágrafos, aplicar BM25 (bm25s ou rank_bm25) para rankear parágrafos contra a query,
+  retornar o parágrafo mais relevante como snippet. Implementar como opção configurável
+  (snippet_mode: 'fts5' | 'paragraph_bm25'). Dependência: pip install bm25s.
+
+- [ ] **Adicionar suporte a prefix queries e phrase queries na sanitização FTS5**
+  (`services/local_search.py`, função `_sanitize_fts`). Atualmente `_sanitize_fts()` remove
+  `*` e `"` da query, perdendo prefix queries (ex: "searc*") e phrase queries (ex: `"machine
+  learning"`). Melhorar sanitização para: (a) manter aspas duplas válidas (phrase), (b) manter
+  asterisco no final de tokens (prefix), (c) remover apenas chars que causam erros de sintaxe
+  FTS5. Adicionar detecção de intenção: se query contém aspas, tratá-la como phrase query.
+
+- [ ] **Configurar tokenizer unicode61 com remove_diacritics 2 nas tabelas FTS5**
+  (`database.py` na criação das tabelas). Atualmente as tabelas FTS5 usam o tokenizer padrão.
+  Adicionar `tokenize='unicode61 remove_diacritics 2'` na criação de local_fts e library_fts.
+  Isso garante que buscar "pagina" encontre "página", "cafe" encontre "café", etc.
+  Melhoria de recall para PT+EN sem custo adicional.
+
+- [ ] **Implementar RRF (Reciprocal Rank Fusion) entre FTS5 e ChromaDB**
+  (`services/local_search.py`, função `rank_combined`). O `rank_combined()` atual usa
+  re-scoring simples por contagem de termos. Substituir por RRF: (1) FTS5 retorna lista
+  ranqueada por BM25; (2) ChromaDB retorna lista por cosine similarity; (3) RRF combina
+  com fórmula `score += 1.0 / (60 + rank)`. Resultado: documentos que aparecem em ambos
+  os sistemas sobem no ranking sem precisar normalizar scores incompatíveis.
+  Implementação: ~15 linhas de Python. Nenhuma nova dependência.
+
+- [ ] **Adicionar detecção de idioma + stemming PT/EN na query antes do FTS5**
+  (`services/local_search.py`). Integrar langdetect (pip install langdetect) para detectar
+  idioma da query. Se PT: aplicar NLTK RSLPStemmer ou SnowballStemmer("portuguese"). Se EN:
+  aplicar SnowballStemmer("english"). Expandir query FTS5 com stems via OR: ex, "buscando" →
+  `(buscando OR busc*)`. Melhorar recall especialmente para queries PT onde conteúdo pode
+  estar em diferentes formas morfológicas. Atenção: unicode61 remove_diacritics já cobre
+  variações de acento — stemming é complementar.
+
+- [ ] **Implementar deduplicação near-duplicate via SimHash no archiver**
+  (`services/archiver.py` ou `services/library.py`). Ao arquivar nova URL, calcular SimHash
+  do texto extraído (pip install simhash). Comparar com SimHashes de documentos já indexados
+  armazenados em coluna da tabela de metadados (distância Hamming ≤ 3 → near-duplicate).
+  Se near-duplicate detectado: não arquivar; retornar URL do documento existente.
+  Também normalizar URL antes de inserir (pip install url-normalize) para deduplicação
+  de URLs equivalentes (tracking params, HTTP→HTTPS, trailing slash).
+
+- [ ] **Re-ranking cross-encoder para top-K resultados de busca**
+  (`services/local_search.py`). Após FTS5 retornar resultados, aplicar re-ranking com
+  FlashRank (pip install flashrank) nos top-20 resultados. FlashRank usa modelos embutidos
+  (~4MB) e funciona puramente em CPU sem GPU. Latência estimada: ~200ms para 20 docs
+  em CPU típico — aceitável para busca local. Implementar como opcional (reranking_enabled
+  em config): usuario pode desativar se latência for problema. Maior ganho para queries
+  ambíguas onde BM25 retorna muitos falsos positivos.
+
+- [ ] **sqlite-vec: adicionar busca vetorial nativa no mesmo arquivo .db do FTS5**
+  (`database.py`, `services/local_search.py`). Instalar pip install sqlite-vec. Criar
+  virtual table `vec_items(rowid, embedding FLOAT[384])` no mesmo arquivo akasha.db.
+  No archiver, ao indexar documento, gerar embedding (modelo leve, ex: all-MiniLM-L6-v2
+  via sentence-transformers) e inserir em vec_items. Na busca, combinar FTS5 BM25 +
+  sqlite-vec KNN via RRF. Vantagem: sem servidor separado; funciona offline; mesmo arquivo.
+  Atenção: MX150 tem 2GB VRAM — usar modelo de embedding ≤ 80MB; i5-3470 sem AVX2
+  pode ser lento para embeddings, considerar indexar só em CachyOS.
+
+- [ ] **Spell correction de queries com symspellpy**
+  (`services/local_search.py`, antes da query FTS5). Integrar symspellpy (pip install
+  symspellpy) com dicionários de frequência PT+EN pré-compilados. Se query tem ≤ 2 tokens
+  com baixo score BM25 (< resultados esperados), tentar corrigir. Mostrar "Mostrando
+  resultados para: [query corrigida]" no response. Latência: < 1ms após carga do dicionário
+  em memória. Carregar dicionário no startup do app (uma vez).
+
 ## Melhorias, correções e atualizações
 
 ### Caminhos do Mnemosyne: configuração no HUB + editabilidade no próprio app | 2026-05-04
