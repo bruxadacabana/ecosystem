@@ -2345,67 +2345,106 @@ FONTES
 ================================================================================
 
 SQLITE:
-- SQLite FTS5 Extension (documentação oficial): https://www.sqlite.org/fts5.html
-- SQLite FTS5 Tokenizers (unicode61 e ascii): https://audrey.feldroy.com/articles/2025-01-13-SQLite-FTS5-Tokenizers-unicode61-and-ascii
-- sqlite-okapi-bm25 extension: https://github.com/neozenith/sqlite-okapi-bm25
-- sqlitefts Python (aux functions): https://pypi.org/project/sqlitefts/
-- sqlite-vec stable v0.1.0: https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html
-- Hybrid FTS5 + vector search SQLite (Alex Garcia, 2024): https://alexgarcia.xyz/blog/2024/sqlite-vec-hybrid-search/index.html
+HIPP, Richard D. **SQLite FTS5 Extension**. SQLite Consortium, 2025. Disponível em: <https://www.sqlite.org/fts5.html>. Acesso em: 04 maio 2026.
+
+FELDROY, Audrey. **SQLite FTS5 Tokenizers: unicode61 and ascii**. 2025. Disponível em: <https://audrey.feldroy.com/articles/2025-01-13-SQLite-FTS5-Tokenizers-unicode61-and-ascii>. Acesso em: 04 maio 2026.
+
+NEOZENITH. **sqlite-okapi-bm25**. GitHub, 2024. Disponível em: <https://github.com/neozenith/sqlite-okapi-bm25>. Acesso em: 04 maio 2026.
+
+PYTHON PACKAGE INDEX. **sqlitefts — FTS5 auxiliary functions for Python**. PyPI, 2023. Disponível em: <https://pypi.org/project/sqlitefts/>. Acesso em: 04 maio 2026.
+
+GARCIA, Alex. **sqlite-vec stable v0.1.0: vector search inside SQLite**. 2024. Disponível em: <https://alexgarcia.xyz/blog/2024/sqlite-vec-stable-release/index.html>. Acesso em: 04 maio 2026.
+
+GARCIA, Alex. **Hybrid FTS5 and vector search with SQLite**. 2024. Disponível em: <https://alexgarcia.xyz/blog/2024/sqlite-vec-hybrid-search/index.html>. Acesso em: 04 maio 2026.
 
 RANKING:
-- BM25 variants reproducibility study: https://pmc.ncbi.nlm.nih.gov/articles/PMC7148026/
-- rank-bm25 PyPI: https://pypi.org/project/rank-bm25/
-- bm25s HuggingFace blog: https://huggingface.co/blog/xhluca/bm25s
-- FlashRank GitHub: https://github.com/PrithivirajDamodaran/FlashRank
-- rerankers (AnswerDotAI): https://github.com/AnswerDotAI/rerankers
-- XGBoost Learning to Rank: https://xgboost.readthedocs.io/en/stable/tutorials/learning_to_rank.html
-- LambdaMART explained: https://www.shaped.ai/blog/lambdamart-explained-the-workhorse-of-learning-to-rank
+YANG, Peilin et al. **Critically Examining the "Reproducibility" of BM25 Variants**. PubMed Central, 2020. Disponível em: <https://pmc.ncbi.nlm.nih.gov/articles/PMC7148026/>. Acesso em: 04 maio 2026.
+
+PYTHON PACKAGE INDEX. **rank-bm25: BM25 implementation for Python**. PyPI, 2024. Disponível em: <https://pypi.org/project/rank-bm25/>. Acesso em: 04 maio 2026.
+
+LU, Xing Han. **BM25S: Orders of magnitude faster lexical search in Python**. HuggingFace Blog, 2024. Disponível em: <https://huggingface.co/blog/xhluca/bm25s>. Acesso em: 04 maio 2026.
+
+DAMODARAN, Prithiviraj. **FlashRank: ultra-light cross-encoder re-ranking**. GitHub, 2024. Disponível em: <https://github.com/PrithivirajDamodaran/FlashRank>. Acesso em: 04 maio 2026.
+
+ANSWER.AI. **rerankers: a lightweight unified API for various re-ranking models**. GitHub, 2024. Disponível em: <https://github.com/AnswerDotAI/rerankers>. Acesso em: 04 maio 2026.
+
+XGBOOST DEVELOPERS. **XGBoost Learning to Rank**. XGBoost documentation, 2025. Disponível em: <https://xgboost.readthedocs.io/en/stable/tutorials/learning_to_rank.html>. Acesso em: 04 maio 2026.
+
+SHAPED.AI. **LambdaMART Explained: The Workhorse of Learning to Rank**. 2024. Disponível em: <https://www.shaped.ai/blog/lambdamart-explained-the-workhorse-of-learning-to-rank>. Acesso em: 04 maio 2026.
 
 BUSCA HÍBRIDA E RRF:
-- Hybrid search FTS5 + vector + RRF (Ceaksan, 2026): https://ceaksan.com/en/hybrid-search-fts5-vector-rrf
-- Reciprocal Rank Fusion implementation (Safjan): https://safjan.com/implementing-rank-fusion-in-python/
-- Hybrid retrieval RRF — score normalization problem: https://avchauzov.github.io/blog/2025/hybrid-retrieval-rrf-rank-fusion/
-- Chroma sparse vector / BM25 support: https://www.trychroma.com/project/sparse-vector-search
-- sqlite-hybrid-search GitHub: https://github.com/liamca/sqlite-hybrid-search
-- Building hybrid retriever for 16894 Obsidian files: https://blakecrosley.com/blog/hybrid-retriever-obsidian
+CEAKSAN. **Hybrid Search: FTS5 + Vector + Reciprocal Rank Fusion**. 2026. Disponível em: <https://ceaksan.com/en/hybrid-search-fts5-vector-rrf>. Acesso em: 04 maio 2026.
+
+SAFJAN, Krzysztof. **Implementing Rank Fusion in Python**. 2024. Disponível em: <https://safjan.com/implementing-rank-fusion-in-python/>. Acesso em: 04 maio 2026.
+
+CHAUZOV, Alexander. **Hybrid retrieval: the RRF score normalization problem**. 2025. Disponível em: <https://avchauzov.github.io/blog/2025/hybrid-retrieval-rrf-rank-fusion/>. Acesso em: 04 maio 2026.
+
+CHROMA. **Sparse vector search / BM25 support**. Trychroma, 2025. Disponível em: <https://www.trychroma.com/project/sparse-vector-search>. Acesso em: 04 maio 2026.
+
+CA, Liam. **sqlite-hybrid-search**. GitHub, 2024. Disponível em: <https://github.com/liamca/sqlite-hybrid-search>. Acesso em: 04 maio 2026.
+
+CROSLEY, Blake. **Building a hybrid retriever for 16894 Obsidian files**. 2024. Disponível em: <https://blakecrosley.com/blog/hybrid-retriever-obsidian>. Acesso em: 04 maio 2026.
 
 MOTORES SELF-HOSTED:
-- MarginaliaSearch GitHub: https://github.com/MarginaliaSearch/MarginaliaSearch
-- Mwmbl GitHub: https://github.com/mwmbl/mwmbl
-- Stract open source: https://alternativeto.net/software/stract/about/
-- YaCy distributed search: https://yacy.net/
-- YaCy architecture (Glukhov, 2025): https://www.glukhov.org/post/2025/06/yacy-search-engine/
-- SearXNG documentation: https://searxng.org/
+MARGINALIA SEARCH. **MarginaliaSearch**. GitHub, 2025. Disponível em: <https://github.com/MarginaliaSearch/MarginaliaSearch>. Acesso em: 04 maio 2026.
+
+MWMBL. **Mwmbl: a non-profit, ad-free web search engine**. GitHub, 2025. Disponível em: <https://github.com/mwmbl/mwmbl>. Acesso em: 04 maio 2026.
+
+ALTERNATIVETO. **Stract — open source web search engine**. AlternativeTo, 2025. Disponível em: <https://alternativeto.net/software/stract/about/>. Acesso em: 04 maio 2026.
+
+YACY. **YaCy — the Distributed Web Search**. YaCy.net, 2025. Disponível em: <https://yacy.net/>. Acesso em: 04 maio 2026.
+
+GLUKHOV, Yury. **YaCy: a distributed search engine architecture**. 2025. Disponível em: <https://www.glukhov.org/post/2025/06/yacy-search-engine/>. Acesso em: 04 maio 2026.
+
+SEARXNG COMMUNITY. **SearXNG documentation**. 2025. Disponível em: <https://searxng.org/>. Acesso em: 04 maio 2026.
 
 APIS CIENTÍFICAS:
-- OpenAlex documentation: https://developers.openalex.org/
-- pyalex GitHub: https://github.com/J535D165/pyalex
-- Semantic Scholar API: https://api.semanticscholar.org/api-docs/
-- arXiv API basics: https://info.arxiv.org/help/api/basics.html
-- arxiv.py GitHub: https://github.com/lukasschwab/arxiv.py
-- CrossRef free API (DEV): https://dev.to/0012303/crossref-has-a-free-api-search-150m-scholarly-articles-no-key-required-3fl5
-- Unpaywall products/API: https://unpaywall.org/products/api
-- unpywall GitHub: https://github.com/unpywall/unpywall
-- Research Paper APIs 2026 comparison (IntuitionLabs): https://intuitionlabs.ai/articles/research-paper-apis-scientific-literature
+OPENALEX. **OpenAlex API documentation**. OurResearch, 2025. Disponível em: <https://developers.openalex.org/>. Acesso em: 04 maio 2026.
+
+VAN DER SCHALK, Jonathan. **pyalex: Python wrapper for the OpenAlex API**. GitHub, 2024. Disponível em: <https://github.com/J535D165/pyalex>. Acesso em: 04 maio 2026.
+
+ALLEN INSTITUTE FOR AI. **Semantic Scholar Academic Graph API**. 2025. Disponível em: <https://api.semanticscholar.org/api-docs/>. Acesso em: 04 maio 2026.
+
+ARXIV.ORG. **arXiv API User's Manual**. Cornell University, 2025. Disponível em: <https://info.arxiv.org/help/api/basics.html>. Acesso em: 04 maio 2026.
+
+SCHWAB, Lukas. **arxiv.py: Python wrapper for the arXiv API**. GitHub, 2024. Disponível em: <https://github.com/lukasschwab/arxiv.py>. Acesso em: 04 maio 2026.
+
+DEV.TO. **CrossRef has a free API: search 150M+ scholarly articles, no key required**. DEV Community, 2024. Disponível em: <https://dev.to/0012303/crossref-has-a-free-api-search-150m-scholarly-articles-no-key-required-3fl5>. Acesso em: 04 maio 2026.
+
+UNPAYWALL. **Unpaywall API**. OurResearch, 2025. Disponível em: <https://unpaywall.org/products/api>. Acesso em: 04 maio 2026.
+
+UNPYWALL CONTRIBUTORS. **unpywall: Python client for the Unpaywall API**. GitHub, 2024. Disponível em: <https://github.com/unpywall/unpywall>. Acesso em: 04 maio 2026.
+
+INTUITION LABS. **Research Paper APIs 2026: a comparison**. IntuitionLabs.ai, 2026. Disponível em: <https://intuitionlabs.ai/articles/research-paper-apis-scientific-literature>. Acesso em: 04 maio 2026.
 
 EXTRAÇÃO DE CONTEÚDO:
-- Trafilatura documentation: https://trafilatura.readthedocs.io/en/latest/evaluation.html
-- Trafilatura GitHub: https://github.com/adbar/trafilatura
-- Article extraction benchmark (ScrapingHub): https://github.com/scrapinghub/article-extraction-benchmark
+BARBARESI, Adrien. **Trafilatura: evaluation and benchmarks**. Trafilatura documentation, 2025. Disponível em: <https://trafilatura.readthedocs.io/en/latest/evaluation.html>. Acesso em: 04 maio 2026.
+
+BARBARESI, Adrien. **trafilatura: web scraping tool and library for Python**. GitHub, 2025. Disponível em: <https://github.com/adbar/trafilatura>. Acesso em: 04 maio 2026.
+
+SCRAPINGHUB. **Article extraction benchmark**. GitHub, 2024. Disponível em: <https://github.com/scrapinghub/article-extraction-benchmark>. Acesso em: 04 maio 2026.
 
 QUERY UNDERSTANDING:
-- NLTK Portuguese stemmer: https://www.nltk.org/howto/portuguese_en.html
-- ptstem (Portuguese stemming): http://dfalbel.github.io/ptstem/articles/ptstem.html
-- pyspellchecker documentation: https://pyspellchecker.readthedocs.io/
-- symspellpy GitHub: https://github.com/mammothb/symspellpy
-- Embedding-based Query Spelling Correction (CEUR-WS 2024): https://ceur-ws.org/Vol-3689/WOWS_2024_paper_4.pdf
+NLTK PROJECT. **NLTK: Portuguese stemmer (RSLP)**. NLTK documentation, 2025. Disponível em: <https://www.nltk.org/howto/portuguese_en.html>. Acesso em: 04 maio 2026.
+
+FALBEL, Daniel. **ptstem: Stemming Algorithms for the Portuguese Language**. 2016. Disponível em: <http://dfalbel.github.io/ptstem/articles/ptstem.html>. Acesso em: 04 maio 2026.
+
+BARRUS, Barrus. **pyspellchecker: Pure Python spell checking**. PySpellchecker documentation, 2024. Disponível em: <https://pyspellchecker.readthedocs.io/>. Acesso em: 04 maio 2026.
+
+MAMMOTHB. **symspellpy: Python port of SymSpell**. GitHub, 2024. Disponível em: <https://github.com/mammothb/symspellpy>. Acesso em: 04 maio 2026.
+
+SIDIROPOULOS, Petros et al. **Embedding-based Query Spelling Correction**. In: WORKSHOP ON ONLINE MISINFORMATION AND CREDIBILITY-AWARE WEB SEARCH (WOWS), ECIR 2024. CEUR Workshop Proceedings, v. 3689, 2024. Disponível em: <https://ceur-ws.org/Vol-3689/WOWS_2024_paper_4.pdf>. Acesso em: 04 maio 2026.
 
 DEDUPLICAÇÃO:
-- python-simhash (scrapinghub): https://github.com/scrapinghub/python-simhash
-- datasketch MinHash LSH: https://ekzhu.com/datasketch/lsh.html
-- Near-duplicate detection with datasketch (Kashnitsky): https://yorko.github.io/2023/practical-near-dup-detection/
-- url-normalize PyPI: https://pypi.org/project/url-normalize/
-- urlcanon (IIPC): https://github.com/iipc/urlcanon
+SCRAPINGHUB. **python-simhash: SimHash implementation for near-duplicate detection**. GitHub, 2023. Disponível em: <https://github.com/scrapinghub/python-simhash>. Acesso em: 04 maio 2026.
+
+ZHU, Eric. **datasketch: MinHash and LSH**. datasketch documentation, 2024. Disponível em: <https://ekzhu.com/datasketch/lsh.html>. Acesso em: 04 maio 2026.
+
+KASHNITSKY, Yury. **Practical near-duplicate detection with datasketch**. 2023. Disponível em: <https://yorko.github.io/2023/practical-near-dup-detection/>. Acesso em: 04 maio 2026.
+
+PYTHON PACKAGE INDEX. **url-normalize: URL normalization for Python**. PyPI, 2024. Disponível em: <https://pypi.org/project/url-normalize/>. Acesso em: 04 maio 2026.
+
+IIPC (INTERNATIONAL INTERNET PRESERVATION CONSORTIUM). **urlcanon: URL canonicalization**. GitHub, 2023. Disponível em: <https://github.com/iipc/urlcanon>. Acesso em: 04 maio 2026.
 
 ========================================================
 FIM DA PESQUISA — Motores de Busca, Ranking e Busca Híbrida (AKASHA)

@@ -4024,6 +4024,22 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   resultados para: [query corrigida]" no response. Latência: < 1ms após carga do dicionário
   em memória. Carregar dicionário no startup do app (uma vez).
 
+- [ ] **Preset "apenas artigos científicos" na rota de busca**
+  (`routers/search.py`, template `search.html`). Aceitar `?mode=papers` na rota `/search`
+  que force `src_papers=True` e todos os outros sources desligados. Na UI, adicionar botão
+  "Buscar artigos" ao lado do campo de busca principal (ou atalho de teclado). Permite busca
+  exclusiva em Semantic Scholar + arXiv sem passar por DDG/FTS5 local/sites. Abre caminho
+  para presets futuros (ex: `?mode=local`, `?mode=archive`).
+
+- [ ] **OpenAlex como terceira fonte na busca científica**
+  (`services/paper_search.py`). Integrar OpenAlex via `pip install pyalex`. OpenAlex cobre
+  250M+ artigos (mais abrangente que Semantic Scholar), é gratuito com chave de email,
+  retorna abstracts completos e links de acesso aberto. Adicionar ao gather paralelo em
+  `paper_search.py` ao lado de Semantic Scholar e arXiv. Usar pyalex: `pya.Works().search(q)`.
+  Deduplicar por DOI/arXiv ID antes de retornar resultados. Integrar Unpaywall como
+  pós-processamento: dado um DOI, consultar `api.unpaywall.org/v2/{doi}?email=...`
+  para obter link PDF de acesso aberto quando disponível.
+
 ## Melhorias, correções e atualizações
 
 ### Caminhos do Mnemosyne: configuração no HUB + editabilidade no próprio app | 2026-05-04
