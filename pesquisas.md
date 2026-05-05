@@ -870,6 +870,14 @@ O sistema de ranking atual (pós-2024) usa múltiplas camadas:
   - Core Web Vitals: métricas de UX incluindo INP (Interaction to Next Paint)
     substituiu FID como métrica oficial em março de 2024
 
+1d. ANÁLISE CRÍTICA DO MODELO DE TRÊS ESTÁGIOS
+------------------------------------------------
+A divisão clássica em crawling, indexação e ranking, embora didaticamente útil, obscurece o grau em que esses estágios se retroalimentam em sistemas de produção modernos. O crawl budget, por exemplo, não é uma decisão unilateral do crawler: ele é informado por sinais do índice (quão frequentemente o conteúdo de um domínio muda, medido por comparação de hashes) e por sinais de ranking (domínios com PageRank elevado recebem budget maior). Da mesma forma, o ranqueamento de um documento começa na fase de indexação, com a extração de sinais estáticos como PageRank e autoridade de domínio, que seriam computacionalmente inviáveis de calcular em tempo de query.
+
+Para um buscador pessoal como o AKASHA, essa interdependência tem implicações concretas. O crawler BFS atual opera de forma relativamente autônoma em relação ao índice: uma vez que uma URL entra na fila, ela é processada sem considerar quão valioso seu conteúdo seria para o corpus existente. Em sistemas de maior escala, essa desconexão seria tratada com técnicas de crawl prioritization baseadas em learning-to-crawl — o crawler aprende, a partir do histórico de indexação, quais domínios produzem conteúdo de alta qualidade e ajusta seu budget accordingly. Para o AKASHA, uma heurística simples mas eficaz seria priorizar URLs cujos domínios já produziram páginas com alta densidade de conteúdo (medida em palavras por página) nas sessões de crawl anteriores, desfavorecendo domínios com histórico de conteúdo escasso ou duplicado.
+
+É também relevante observar que o estágio de ranqueamento, tal como implementado pelo Google pós-2024, não é mais um sistema de regras transparentes: a combinação de BERT, MUM e RankBrain significa que parte significativa do score de um documento é determinada por modelos cujos pesos não são auditáveis externamente. Isso levou pesquisadores a depender de vazamentos (como o Google API Leaks de 2024) para inferir a importância relativa de sinais específicos. Para buscadores pessoais, essa opacidade é irrelevante, pois o corpus é curado e o escopo é limitado — o que torna o BM25 com pesos de coluna, que é totalmente interpretável, uma escolha epistemicamente superior para o contexto do AKASHA.
+
 ================================================================================
 2. ÍNDICE INVERTIDO — ESTRUTURA E COMPRESSÃO
 ================================================================================
@@ -940,6 +948,14 @@ Para um crawler pessoal, as boas práticas de "politeness" são:
   - Cache de robots.txt com TTL por domínio
   - Priorizar URLs rasas e ligadas de várias páginas do mesmo site
 
+3e. DIMENSÃO ÉTICA E TÉCNICA DA POLITENESS EM CRAWLERS PESSOAIS
+-----------------------------------------------------------------
+O conceito de politeness em crawlers vai além de uma convenção técnica: trata-se de uma questão de responsabilidade distribuída na infraestrutura da web. Quando um crawler pessoal ignora o Crawl-delay ou não respeita o robots.txt, o impacto individual pode parecer negligenciável, mas o efeito agregado de milhares de crawlers mal configurados causa degradação real de servidores, especialmente em sites de menor porte que operam com infraestrutura compartilhada. A literatura sobre ética de web crawling (Thelwall, 2001; Olston & Najork, 2010) estabelece que a responsabilidade de politeness recai sobre o operador do crawler, não sobre o servidor-alvo, porque o servidor não pode distinguir facilmente entre um bot legítimo e abusivo sem custo computacional adicional.
+
+Do ponto de vista técnico, a implementação correta de politeness em um crawler assíncrono — como o AKASHA, que usa asyncio — apresenta um desafio específico: garantir que o rate limiting por domínio seja respeitado mesmo quando múltiplas corrotinas estão processando URLs de domínios diferentes em paralelo. A abordagem ingênua de um sleep global serializa o crawler desnecessariamente, degradando throughput para domínios distintos. A solução robusta é manter um dicionário de asyncio.Lock() ou asyncio.Event() por domínio, combinado com um registro de next_available_at (timestamp), de forma que corrotinas que processam o mesmo domínio aguardem na fila enquanto as de outros domínios avançam livremente. Essa arquitetura permite paralelismo máximo entre domínios com politeness completa dentro de cada domínio.
+
+Outro aspecto frequentemente negligenciado é o tratamento de redirecionamentos no contexto do robots.txt. Se um domínio redireciona para outro (ex.: http → https), o robots.txt do domínio de destino é o autoritativo, mas o crawler precisa resolver o redirect antes de validar as permissões. Para o AKASHA, a cadência atual de crawl (corrotinas com delay genérico) é adequada para o corpus atual, mas à medida que o número de domínios registrados cresce, a migração para o modelo de fila por domínio se tornará necessária para manter a responsividade da interface sem aumentar o risco de sobrecarga dos servidores-alvo.
+
 ================================================================================
 4. DEDUPLICAÇÃO — SIMHASH, MINHASH, CANONICAL
 ================================================================================
@@ -993,6 +1009,14 @@ Normalização de URL a aplicar ANTES de qualquer lookup:
 
   Ao indexar nova página: calcular SimHash, comparar com hashes já indexados do
   mesmo domínio. Se distância Hamming < 3: skip ou substituir a versão mais antiga.
+
+4e. DEDUPLICAÇÃO COMO PROBLEMA DE QUALIDADE DE CORPUS
+-------------------------------------------------------
+É importante contextualizar a deduplicação não apenas como uma otimização de espaço em disco, mas como uma questão fundamental de qualidade do corpus. Em recuperação de informação, a presença de documentos near-duplicates no índice produz dois efeitos adversos distintos. O primeiro é o viés de frequência: termos que aparecem em conteúdo amplamente replicado (ex.: boilerplate de copyright, navbars padronizadas, conteúdo sindicado) recebem IDF artificialmente baixo, degradando a capacidade do BM25 de distinguir termos genuinamente raros e informativos. O segundo efeito é a inflação de resultado: o usuário que busca por um termo específico recebe múltiplas variações da mesma página, o que degrada a utilidade percebida do buscador sem adicionar informação nova.
+
+A escolha entre SimHash e MinhHash reflete uma distinção epistemológica relevante: SimHash detecta similaridade textual posicional (quase-cópias com pequenas alterações como datas, menus e rodapés), enquanto MinHash estima similaridade temática via Jaccard (dois textos que tratam dos mesmos assuntos, mas com redação distinta). Para o AKASHA, o problema dominante é o primeiro tipo — páginas da mesma URL coletadas em datas distintas, ou URLs com parâmetros de tracking que geram cópias idênticas. SimHash é, portanto, a ferramenta epistemicamente correta para esse contexto.
+
+É também necessário distinguir deduplicação de canonicalização. A canonicalização trata de identificar, entre múltiplas URLs que apontam para conteúdo idêntico, qual deve ser a URL de referência no índice — o que é uma decisão de modelagem de dados. A deduplicação, por sua vez, opera sobre o conteúdo já extraído, independentemente da URL. Em um crawler pessoal curado, como o AKASHA, a normalização de URL (remoção de parâmetros de tracking, padronização de scheme e trailing slash) realizada antes do lookup é suficiente para eliminar a maioria das duplicatas exatas, restando ao SimHash apenas o papel de capturar near-duplicates genuínos — conteúdo substantivamente igual servido via URLs semanticamente diferentes.
 
 ================================================================================
 5. SQLite FTS5 — OTIMIZAÇÕES ESPECÍFICAS
@@ -1074,6 +1098,14 @@ Para o AKASHA: o volume atual (< 100k URLs por site) não justifica implementaç
 de Bloom filter — o set em memória / lookup em crawl_pages é suficiente. Mas se
 o corpus crescer para múltiplos sites com 100k+ páginas cada, vale implementar.
 
+BLOOM FILTER — FUNDAMENTOS TEÓRICOS E TRADE-OFFS DE PROJETO
+-------------------------------------------------------------
+O Bloom filter, proposto por Burton Howard Bloom em 1970, representa uma das soluções mais elegantes para o problema de membership testing em espaço sublinear. Sua propriedade fundamental — ausência garantida de falsos negativos combinada com uma taxa configurável de falsos positivos — decorre diretamente da sua estrutura: um array de m bits inicializado em zero e k funções hash independentes que mapeiam cada elemento para k posições do array. Para verificar se um elemento foi inserido, basta checar se todas as k posições correspondentes estão em 1; se qualquer uma estiver em 0, o elemento definitivamente não está no conjunto. A consequência matemática dessa assimetria é que o filtro pode "lembrar" que viu uma URL que na verdade nunca visitou (falso positivo), mas nunca "esquece" uma URL que de fato visitou (sem falso negativo).
+
+A relação entre os parâmetros m (tamanho do array em bits), n (número esperado de elementos) e p (taxa de falso positivo desejada) é determinada pela equação m = -n·ln(p) / (ln 2)², com o número ótimo de funções hash k = (m/n)·ln 2. Esse relacionamento matemático preciso torna o Bloom filter incomum entre estruturas de dados: seu comportamento em espaço e acurácia é analiticamente previsível antes da implementação, sem necessidade de benchmarking empírico para calibração inicial.
+
+Para o contexto específico de um crawler, o trade-off relevante não é apenas entre memória e precisão, mas também entre persistência e velocidade. Um Bloom filter em memória é extremamente rápido (operações de bit são O(k), com k tipicamente entre 5 e 10), mas não persiste entre reinicializações do crawler — o que exige a reconstrução do filtro a partir do banco de dados ao reiniciar. Essa reconstrução, que envolve iterar sobre todas as URLs já visitadas em crawl_pages para reinserir no filtro, pode se tornar lenta para corpora grandes. Uma alternativa é manter o filtro serializado em disco (bitarray suporta tofile/fromfile), aceitando o custo de I/O na inicialização em troca da persistência entre sessões. Para o AKASHA, dado que o lookup em crawl_pages via índice B-tree do SQLite é suficientemente rápido para o volume atual, a introdução do Bloom filter só se justificaria se o custo de consulta ao banco se tornasse o gargalo medido do crawler — e não como otimização prematura.
+
 ================================================================================
 7. INDEXAÇÃO INCREMENTAL (MAIN + DELTA)
 ================================================================================
@@ -1096,6 +1128,16 @@ Aplicabilidade ao AKASHA:
   - O 'optimize' periódico (seção 5d) é o equivalente do merge
   - Para crawl_fts: executar optimize após cada batch de crawl grande (> 500 páginas)
 
+INDEXAÇÃO INCREMENTAL — CONTEXTO TEÓRICO E IMPLICAÇÕES PARA SISTEMAS EMBARCADOS
+---------------------------------------------------------------------------------
+O problema da indexação incremental surge de uma tensão fundamental em sistemas de recuperação de informação: índices invertidos são estruturas otimizadas para leitura, mas a web é um corpus essencialmente dinâmico. A solução clássica de rebuildar o índice completo a cada atualização é impraticável em escala, razão pela qual o padrão main + delta foi desenvolvido como um compromisso engenhoso entre frescor do índice e eficiência computacional.
+
+A fragmentação progressiva que ocorre sem merge periódico tem uma explicação estrutural clara: cada batch de documentos novos gera um segmento independente do índice, e uma query full-text precisa, na ausência de merge, percorrer todos os segmentos ativos em paralelo e consolidar os resultados antes de ranquear. Quanto mais segmentos existem, maior o overhead de I/O e de fusão de posting lists — o que degrada a latência de query de forma aproximadamente linear com o número de segmentos não consolidados. O merge periódico reconstrói um segmento único a partir de todos os fragmentos, restaurando a latência ótima de consulta.
+
+O SQLite FTS5 implementa esse padrão internamente de forma automática e semi-transparente: cada INSERT gera um novo segmento "nível 0", e o motor realiza merges automáticos quando o número de segmentos em um nível excede um threshold configurável (automerge, padrão: 8). O comando optimize força um merge completo e único, equivalente a um rebuild sem a penalidade de reprocessar o conteúdo bruto. Para o AKASHA, a cadência ideal de optimize depende do volume de crawl: em sessões que indexam centenas de páginas, o optimize ao final da sessão é a estratégia mais eficiente, pois consolida todos os segmentos gerados pela sessão sem introduzir overhead durante o crawl em andamento.
+
+Vale notar que a indexação incremental introduz uma assimetria temporal: documentos indexados recentemente (delta) são encontráveis pela busca antes do merge, pois o FTS5 consulta todos os segmentos ativos. Isso significa que o AKASHA não sofre o problema de "lag de indexação" que afeta sistemas que separam explicitamente o pipeline de crawl do pipeline de indexação — cada página arquivada está imediatamente disponível para busca via FTS5, o que é uma vantagem arquitetural relevante para um sistema de uso pessoal onde a latência entre arquivamento e buscabilidade importa.
+
 ================================================================================
 8. TRAFILATURA — QUALIDADE DE EXTRAÇÃO
 ================================================================================
@@ -1116,6 +1158,14 @@ Melhorias no uso atual do AKASHA:
   - Para páginas JS-heavy onde trafilatura retorna < 50 palavras: Jina Reader
     já implementado como fallback — correto
   - Adicionar include_comments=False explicitamente (já é o padrão mas deixar claro)
+
+TRAFILATURA — FUNDAMENTOS DO PROBLEMA DE EXTRAÇÃO DE CONTEÚDO PRINCIPAL
+-------------------------------------------------------------------------
+A extração de conteúdo principal (main content extraction ou boilerplate removal) é um problema fundamentalmente ambíguo: a distinção entre "conteúdo relevante" e "ruído estrutural" (navegação, rodapés, sidebars, anúncios, comentários) não tem uma definição matemática precisa e varia com o propósito do extrator. Um leitor humano reconhece intuitivamente o que é conteúdo principal, mas formalizar esse julgamento em regras computacionais é não-trivial. A maioria dos extratores adota uma ou mais das seguintes heurísticas: densidade textual por bloco HTML (razão palavras/tags), distância do nó DOM da raiz da página, presença de elementos semânticos HTML5 (article, main, section), e análise comparativa de blocos repetidos entre páginas do mesmo domínio.
+
+O Trafilatura combina múltiplas dessas heurísticas com um componente de aprendizado estatístico treinado em corpus anotados manualmente, o que explica sua superioridade no benchmark de Bevendorff et al. (2023) em relação a extratores puramente rule-based como o Readability (derivado do algoritmo original da Mozilla, que é baseado exclusivamente em densidade textual e presença de classes CSS heurísticas). O F1 de 0.883 do Trafilatura precisa ser contextualizado: ele é medido sobre um corpus de páginas em inglês e alemão, predominantemente notícias e artigos de blog, que são os gêneros textuais mais favoráveis à extração baseada em densidade. Para gêneros com estrutura diferente — documentação técnica, wikis, páginas de e-commerce — a performance tende a ser menor, e o ajuste de favor_precision vs. favor_recall torna-se mais significativo.
+
+A implicação prática para o AKASHA é que a qualidade da extração deve ser tratada como uma métrica de corpus monitorável, não como um parâmetro fixo. Uma abordagem concreta seria registrar, para cada página arquivada, a contagem de palavras extraídas pelo Trafilatura, e identificar domínios com mediana de palavras sistematicamente baixa (ex.: abaixo de 100 palavras) — esses são candidatos a extração problemática, seja por JavaScript-rendering, paywall ou estrutura incomum. Para esses domínios, a ativação automática do modo favor_recall=True ou do fallback para Jina Reader poderia ser feita de forma seletiva e baseada em evidência, em vez de ser uma configuração global. Essa abordagem adaptativa, embora mais complexa de implementar, produziria um corpus de maior qualidade uniforme sem penalizar a extração de páginas que já funcionam bem com as configurações padrão.
 
 ================================================================================
 9. BUSCADORES SELF-HOSTED — REFERÊNCIAS DE ARQUITETURA
@@ -2557,6 +2607,48 @@ Qualidade para as tarefas do KOSMOS:
   - Entities (NER): tarefa mais exigente — Gemma 2B > Llama 3.2 3B > Llama 3.2 1B
   - Five_Ws (extração de quem/o quê/quando/onde/por quê): mais difícil, prefere 7B
 
+Aprofundamento — Arquitetura, Quantização e Validade Ecológica dos Benchmarks:
+
+A comparação entre modelos de parâmetros distintos exige que se compreenda o papel
+desempenhado pela arquitetura interna antes de interpretar os números de benchmark.
+Modelos da família Qwen2.5, ainda que pequenos em número de parâmetros, empregam
+grouped-query attention (GQA) e vocabulários expandidos (~152.000 tokens), o que lhes
+confere maior densidade de informação semântica por token em comparação com modelos de
+gerações anteriores. O Gemma 2B, por sua vez, utiliza multi-query attention (MQA) e
+técnicas de knowledge distillation a partir de modelos maiores da família Gemma —
+supervisão que explica seu desempenho desproporcional ao tamanho em NER. Essa distinção
+é relevante porque o KOSMOS não pode assumir que "2B é sempre equivalente a 2B": a
+geração do modelo, a estratégia de treinamento e o tamanho do vocabulário impactam
+diretamente a qualidade da extração estruturada de forma não capturada pelo simples
+número de parâmetros.
+
+No que diz respeito à quantização, a transição de BF16 (precisão completa) para
+Q4_K_M — o formato padrão recomendado pelo Ollama para hardware consumer — introduz
+perdas que não são uniformes entre tipos de tarefa. Pesquisas sobre quantização
+pós-treinamento (Dettmers et al., 2023; Frantar et al., 2022, GPTQ) demonstram que
+tarefas de classificação simples (binária ou ordinal) são altamente robustas à
+quantização até 4 bits, ao passo que tarefas que requerem encadeamento de inferência
+multi-passo — como a extração das cinco perguntas jornalísticas (Five Ws) — exibem
+degradação mais acentuada. Em termos práticos, isso significa que os benchmarks
+coletados em precisão plena subestimam a vantagem relativa de modelos menores para
+tarefas simples do KOSMOS: ao quantizar tanto o modelo 3B quanto o 7B para Q4_K_M,
+a diferença de qualidade em sentiment e tags tende a estreitar-se ainda mais do que
+os números nominais indicam.
+
+A validade ecológica do benchmark de extração de entidades (n=10, Analytics Vidhya
+2025) deve ser avaliada com cautela metodológica. Uma amostra de tamanho 10 não
+permite inferência estatística confiável: o intervalo de confiança de 95% para uma
+proporção de 9/10 (90%) em uma distribuição binomial com n=10 estende-se de
+aproximadamente 55% a 99,7%, tornando a diferença observada entre Gemma 2B (9,7/10)
+e Llama 3.2 3B (7,5/10) estatisticamente não distinguível do acaso. Somam-se a isso
+limitações de cobertura linguística (o benchmark é provavelmente conduzido em inglês)
+e de domínio (entidades de tecnologia e negócios, não necessariamente o espectro
+temático de um leitor RSS genérico). Para o KOSMOS, isso implica que a seleção do
+modelo para NER não deveria ser feita exclusivamente com base nesse benchmark, mas
+complementada por avaliação empírica sobre o próprio corpus de artigos RSS em
+português e inglês efetivamente processados pelo sistema.
+
+
 Conclusão: usar modelo 3B (ex: qwen2.5:3b, gemma2:2b) somente para as tarefas leves
 (tags, sentiment, clickbait) é viável com ~15–20% de degradação vs 7B. Para five_ws
 e entities, degradação maior.
@@ -2593,6 +2685,40 @@ Padrão recomendado para PyQt6:
   Idle-time processing:
     - Ativar processamento background apenas quando nenhum artigo está aberto
     - Detectar inatividade via sinal (ex: lastActivity + QTimer de 5s)
+
+Aprofundamento — Fundamentos Teóricos de Escalonamento e Latência Percebida:
+
+A estratégia de pré-análise em background não é apenas uma heurística de engenharia:
+ela se fundamenta em décadas de pesquisa sobre percepção humana de tempo de resposta
+e escalonamento de processos. O modelo clássico de Jakob Nielsen (1993) estabelece
+três limites cognitivos: 0,1 s (resposta imediata, sem interrupção de fluxo), 1 s
+(usuário percebe a pausa mas mantém o fio de raciocínio), e 10 s (limite além do
+qual o usuário perde o foco e redireciona a atenção). Uma análise LLM local que
+demora 3–8 s viola o segundo limiar, tornando a espera percetível e indesejável.
+A pré-análise converte essa latência de "tempo de resposta" em "tempo de download"
+— processo que o usuário não observa diretamente — aplicando o princípio da latência
+invisível estudado por Tolia et al. (2006) no contexto de prefetching em sistemas
+de armazenamento distribuído.
+
+Do ponto de vista do escalonamento de processos, a fila de prioridades proposta
+(asyncio.PriorityQueue) corresponde ao algoritmo Shortest-Job-Next (SJN) com
+preempção condicional: artigos abertos interativamente possuem prioridade máxima e
+podem deslocar tarefas background da CPU (ou, no contexto do Ollama, da GPU). Esse
+comportamento é análogo ao escalonamento Round-Robin com quantum variável de sistemas
+operacionais modernos, onde processos interativos recebem time slices menores e mais
+frequentes. A implementação com asyncio.Semaphore(1) garante exclusão mútua sobre
+o recurso compartilhado (VRAM + slot Ollama), sem overhead de troca de contexto de
+threads do SO — uma vantagem significativa em Python, onde o GIL limita o
+paralelismo real de threads CPU-bound.
+
+Um aspecto frequentemente negligenciado nesse tipo de arquitetura é o tratamento de
+falhas assíncronas. Tasks de background que falham silenciosamente (timeout de rede,
+Ollama retornando erro 500, JSON malformado) podem deixar artigos num estado
+inconsistente no banco de dados: nem processados nem na fila. Para o KOSMOS, isso
+exige que cada task de background implemente uma estratégia de retry com backoff
+exponencial e um número máximo de tentativas, após o qual o artigo é marcado com
+status "análise_falhou" — evitando que o mesmo artigo com conteúdo defeituoso entre
+em loop infinito na fila e bloqueie o processamento dos demais.
 
 4. BATCHING DE MÚLTIPLOS ARTIGOS
 ----------------------------------
@@ -6877,4 +7003,1058 @@ KARPATHY, Andrej. **LLM Wiki Pattern (gist)**. GitHub, 2024. Disponível em:
 
 ========================================================
 FIM DA PESQUISA — Understand-Anything (Plugin de Grafo de Conhecimento)
+========================================================
+
+
+================================================================================
+PESQUISA — EXPANSÃO: Pipeline LLM para RSS Reader — Constrained Decoding, Batching e Scraping
+Data: 2026-05-05
+Contexto: expansão académica dos tópicos cobertos nas pesquisas de abril/2026 sobre
+KOSMOS: constrained decoding JSON, modelos 1B-3B, background analysis, scraping de
+Medium/Substack e padrões de concorrência com Ollama.
+================================================================================
+
+
+1. ANÁLISE COMPARATIVA DE MODELOS PEQUENOS PARA NER E EXTRAÇÃO ESTRUTURADA
+---------------------------------------------------------------------------
+
+1.1 O problema da escala reversa em NER
+
+Named Entity Recognition (NER) — identificação e classificação de entidades
+nomeadas como pessoas, organizações, locais, datas e conceitos em texto livre — é
+historicamente uma das tarefas em PNL que mais se beneficiou de arquiteturas
+especializadas de médio porte. Modelos como BERT-base (110M parâmetros) treinados
+especificamente para NER em corpora de notícias (CoNLL-2003, OntoNotes 5.0)
+chegaram a F1-scores de 91–93% no CoNLL benchmark, desempenho que modelos de
+linguagem geral de 1B parâmetros nem sempre superam em regime zero-shot. Esse
+fenômeno — que modelos maiores de propósito geral podem perder para modelos menores
+especializados — é denominado na literatura como "escala reversa em tarefas
+estruturais" e foi documentado por Wei et al. (2022) no contexto de few-shot
+prompting.
+
+A explicação mecanística é a seguinte: modelos de linguagem autoregressivos (GPT-
+style) aprendem NER como uma tarefa de geração de texto, não como classificação de
+sequência. O modelo precisa copiar o span original, classificá-lo corretamente e
+formatar a saída — três operações distintas encadeadas que introduzem cada uma uma
+fonte de erro. Modelos discriminativos (BERT-style encoder-only) classificam cada
+token diretamente com uma softmax sobre os labels, o que é mais direto e menos
+sujeito a desvios de geração. Esta diferença arquitetural é fundamental para
+entender por que o benchmark de Analytics Vidhya (2025) mostrou Gemma 2B
+dominando sobre Llama 3.2 3B e até sobre Qwen 7B em extração de entidades:
+Gemma 2B foi treinado com mix de dados diferente e parece ter representação mais
+densa de padrões de entidade nominal, mas o resultado é mais sensível ao domínio
+do dado do que ao tamanho do modelo.
+
+1.2 Benchmarks especializados e suas limitações
+
+O benchmark de extração que comparou Gemma 2B, Llama 3.2 3B, Llama 3.2 1B e Qwen
+7B (Analytics Vidhya, 2025) usou n=10 amostras de um único domínio não especificado.
+Isso constitui uma amostra insuficiente para inferências estatisticamente robustas.
+A variância em NER zero-shot com n=10 pode ser de ±15–20 pontos percentuais
+dependendo da formulação do prompt, da temperatura e do conteúdo específico dos
+exemplos. Para o KOSMOS, que lida com artigos de feeds RSS em múltiplos domínios
+(tecnologia, política, ciência, cultura), a generalização do benchmark é limitada.
+
+Benchmarks mais abrangentes fornecem quadro mais rico. O paper UniversalNER
+(Zhou et al., 2023, arXiv:2308.03279) avaliou modelos de linguagem geral em 43
+datasets de NER cobrindo 9 domínios diferentes. Os resultados mostraram que:
+(a) modelos de linguagem geral em regime zero-shot ficam 10–15 pontos de F1
+abaixo de modelos especializados em domínios com entidades muito específicas
+(medicina, direito); (b) a lacuna cai para 3–5 pontos em domínios de texto
+jornalístico genérico, que é o caso do KOSMOS; (c) instruction-tuning específico
+para NER (exemplificado pelo UniversalNER-7B, fine-tune do LLaMA-7B em datasets
+de NER) elimina completamente a lacuna e supera o GPT-4 em F1 na maioria dos
+domínios testados.
+
+Para o KOSMOS especificamente, a implicação é que a escolha entre Gemma 2B e
+Llama 3.2 3B não é decidida apenas pelo benchmark global, mas pelo domínio dos
+feeds configurados pelo usuário. Um pipeline que usa o mesmo modelo para feeds de
+tecnologia e feeds de culinária terá comportamento diferente para cada um. A
+abordagem mais robusta, porém mais complexa, seria ter um modelo de NER
+especializado separado (SpaCy com modelo pt_core_news_lg, ~250MB) rodando em
+CPU para extração de entidades e o LLM pequeno apenas para tarefas de
+classificação semântica (sentiment, clickbait, tags).
+
+1.3 O papel da quantização na degradação de NER
+
+Uma variável frequentemente ignorada em comparações de modelos pequenos é o efeito
+da quantização em tarefas de extração. Modelos servidos pelo Ollama em produção
+usam quantização de 4 bits (Q4_K_M por padrão). A degradação de qualidade por
+quantização não é uniforme entre tarefas: tarefas de classificação binária
+(sentiment positivo/negativo) têm degradação próxima de zero; tarefas que exigem
+cópia fiel de spans de texto (como NER, onde o modelo deve reproduzir "Microsoft
+Corporation" exatamente como aparece no texto) têm degradação maior.
+
+Dettmers et al. (2022, arXiv:2208.07339) — o paper original do bitsandbytes
+QLoRA — documentaram que quantização 4-bit causa perdas de 0–2% em benchmarks de
+raciocínio geral (MMLU, GSM8K) mas perdas de 3–8% em tarefas de geração fiel de
+spans em modelos pequenos (< 7B). O mecanismo é a redução na resolução de ativações
+nos layers de attention, que impacta a capacidade do modelo de "apontar" com
+precisão para spans específicos no prompt. Para o KOSMOS, isso significa que um
+modelo Qwen2.5-3B Q4_K_M pode ter desempenho de NER materialmente inferior ao
+mesmo modelo em Q8_0 ou BF16. Dado que o Qwen2.5-3B Q8_0 requer ~3.5 GB VRAM
+(vs ~2.1 GB para Q4_K_M), e a RX 6600 tem 8 GB VRAM, é possível rodar Q8_0 para
+o modelo pequeno e ainda ter margem para o modelo de chat maior.
+
+1.4 Estratégia recomendada para o KOSMOS
+
+Com base nos dados disponíveis, a estratégia mais defensável para o KOSMOS é:
+(a) usar um modelo híbrido — SpaCy em CPU para NER pura (entidades nomeadas com
+categorias standard: PER, ORG, LOC, MISC) e o LLM pequeno apenas para as tarefas
+de classificação semântica (sentiment, clickbait_score, tags); (b) alternativamente,
+manter a call única ao LLM para todos os campos, mas usar Qwen2.5-3B em Q8_0
+para maximizar fidelidade da extração; (c) para o campo five_ws (quem, o quê,
+quando, onde, por quê), aceitar a limitação de modelos < 7B e tratar o output como
+"melhor esforço", com fallback para "não disponível" quando o modelo retorna
+strings vazias ou malformadas.
+
+
+2. STREAMING PARCIAL DE JSON COMO ALTERNATIVA AO SPLIT DE CALLS
+---------------------------------------------------------------
+
+2.1 O problema da latência percebida
+
+A pesquisa anterior documentou a proposta de dividir a análise do _AnalyzeWorker
+em dois calls paralelos: Call A (campos simples: tags, sentiment, clickbait) e
+Call B (campos complexos: five_ws, entities). A alternativa mencionada brevemente
+foi "streaming parcial com parser incremental". Esta seção expande esse tópico
+que é tecnicamente mais interessante e tem melhor relação custo-benefício.
+
+O problema de fundo é psicológico antes de ser técnico: em interfaces interativas,
+a percepção de latência é não-linear. Um estudo seminal de Nielsen (1993) e suas
+revisões posteriores mostram que 100ms é o limiar de feedback imediato, 1s é o
+limite de fluxo cognitivo contínuo, e 10s é o limite de atenção antes do usuário
+desengajar. Um call único ao Ollama com qwen2.5:7b processando um artigo de 3000
+chars leva tipicamente 3–8 segundos para gerar o JSON completo. Mostrar qualquer
+feedback visual dentro do primeiro segundo — mesmo que seja apenas o campo de
+sentiment — reduz significativamente a percepção subjetiva de espera.
+
+O split em dois calls não resolve o problema de forma eficiente porque, com
+OLLAMA_NUM_PARALLEL=1, os dois calls são enfileirados sequencialmente. O Call A
+(campos simples) aguarda na fila e começa a ser processado apenas quando qualquer
+call anterior termina — o que inclui o Call B se este chegar primeiro ao Ollama.
+A alternativa de aumentar OLLAMA_NUM_PARALLEL tem o custo documentado de +20–40%
+de latência por call individual devido à contenção de VRAM e memory bandwidth.
+
+2.2 Mecanismo do streaming JSON incremental
+
+Quando Ollama recebe uma request com stream=true, retorna server-sent events
+(SSE) com um chunk de JSON por linha no formato:
+
+    {"model":"qwen2.5:7b","created_at":"...","message":{"role":"assistant",
+     "content":"{\n  \"tags\": [\"IA"},"done":false}
+
+O campo "content" de cada evento contém fragmentos incrementais do texto gerado.
+Para um JSON de resposta, o modelo gera campo por campo na ordem em que aparecem
+no schema. Se o schema define tags antes de entities, os tokens de tags chegam
+primeiro no stream. Um parser JSON incremental pode detectar quando tags ficou
+completo (fechamento do array ]) e disparar a atualização da UI antes que entities
+comece a ser gerado.
+
+A biblioteca json-stream (Python, disponível via pip) implementa exatamente isso:
+parsing de JSON a partir de um iterador de bytes/strings sem acumular o buffer
+completo. Alternativas são ijson (mais estabelecida, binding em C) e
+streaming-json-py (mais simples). Todas seguem o mesmo modelo: eventos de SAX-
+style (start_map, map_key, string, end_map) são emitidos à medida que os bytes
+chegam, permitindo extrair valores de campos específicos antes do JSON estar
+completo.
+
+O padrão de implementação para o KOSMOS seria:
+
+    async def _stream_analyze(self, content: str) -> AsyncIterator[dict]:
+        buffer = ""
+        async for chunk in ollama_client.chat(stream=True, ...):
+            buffer += chunk["message"]["content"]
+            try:
+                partial = json_stream.loads(buffer)
+                yield extract_available_fields(partial)
+            except json_stream.IncompleteJSON:
+                continue  # aguardar mais tokens
+
+O custo computacional do parser incremental é desprezível (O(n) no tamanho do
+buffer acumulado, chamado a cada chunk de ~4 tokens). O ganho prático é que o
+usuário vê os badges de sentiment e clickbait no mesmo instante em que esses
+campos ficam disponíveis no stream, tipicamente dentro de 0.5–1.5s após o início
+do call — muito antes do JSON completo chegar.
+
+2.3 Ordenação de campos no schema e seu impacto no streaming
+
+Uma consequência importante do streaming incremental é que a ordem dos campos no
+JSON Schema passado ao Ollama tem impacto direto na ordem de geração. Quando o
+modelo usa constrained decoding (XGrammar), o FSM guia a geração na ordem das
+propriedades definidas no schema. O JSON Schema draft-07 não garante ordem de
+propriedades (objetos são conjuntos não-ordenados), mas em prática o XGrammar
+segue a ordem de declaração das propriedades no schema JSON passado pelo usuário.
+
+Portanto, colocar tags, sentiment e clickbait_score antes de entities e five_ws
+no schema garantirá que os campos rápidos cheguem primeiro no stream. Esta é uma
+otimização de zero custo que pode ser implementada simplesmente reordenando os
+campos no dicionário Python que define o schema, sem nenhuma mudança de lógica.
+
+2.4 Limitações e casos de borda
+
+O streaming incremental tem duas limitações relevantes para o KOSMOS. Primeiro,
+quando o modelo gera JSON inválido ou truncado (o que ocorre mais frequentemente
+com modelos quantizados em Q4), o parser incremental pode emitir valores parciais
+incorretos que a UI exibiu prematuramente. A solução é validar cada campo
+extraído contra o tipo esperado (isinstance checks) e mostrar apenas valores que
+passam na validação. Segundo, o controle de cancelamento de tasks é mais complexo
+com streaming: cancelar um call em streaming exige fechar a conexão HTTP
+explicitamente, o que o cliente asyncio do Ollama suporta, mas requer gerenciamento
+cuidadoso do ciclo de vida da task (asyncio.Task.cancel() + tratamento de
+asyncio.CancelledError no bloco de streaming).
+
+Para o KOSMOS em PyQt6, a integração ideal é um QThread que roda um loop asyncio
+interno (usando asyncio.run()) e emite sinais Qt a cada campo disponível no
+stream. Isso evita misturar asyncio com Qt event loop, que tem interações
+documentadamente problemáticas a menos que se use a biblioteca qasync.
+
+
+3. POLITENESS E RATE-LIMITING NO SCRAPING DE FEEDS RSS
+------------------------------------------------------
+
+3.1 O conceito de politeness em web crawling
+
+"Politeness" é o conjunto de práticas que crawlers respeitam para não sobrecarregar
+servidores web, evitar banimentos e respeitar normas implícitas e explícitas de
+acesso. O conceito vem da literatura de web crawling de grande escala (Cho &
+Garcia-Molina, 1998; Najork & Wiener, 2001) mas aplica-se igualmente a scrapers
+de propósito específico como o ArticleScraper do KOSMOS.
+
+A distinção entre feeds RSS e scraping de páginas HTML é fundamental. O protocolo
+RSS/Atom foi concebido exatamente para ser polled por clientes — os servidores que
+publicam feeds RSS esperam e desejam que leitores façam requisições periódicas.
+O problema de politeness no KOSMOS não está no consumo dos feeds em si, mas no
+seguimento dos links dos itens RSS para buscar o conteúdo completo dos artigos
+(o ArticleScraper). Aqui o KOSMOS está fazendo HTTP GET em páginas do site
+publicador, que pode interpretar múltiplas requisições rápidas como comportamento
+abusivo.
+
+3.2 Robots.txt, Crawl-Delay e seus efeitos práticos
+
+O protocolo robots.txt (Koster, 1993, formalizado em RFC 9309, 2022) permite que
+servidores declarem quais paths são acessíveis a crawlers e com qual frequência.
+A diretiva Crawl-Delay especifica o número de segundos que um crawler deve aguardar
+entre requisições ao mesmo servidor. A maioria dos servidores de notícias e blogs
+não define Crawl-Delay explicitamente, mas aqueles que definem indicam 1–10
+segundos entre requests.
+
+Em termos práticos para o KOSMOS: o ArticleScraper busca o conteúdo de artigos
+individualmente quando o usuário os abre (scraping sob demanda) ou em background
+durante pré-análise. No caso de scraping sob demanda, a frequência é naturalmente
+baixa (uma requisição por artigo aberto pelo usuário, com ritmo humano entre
+aberturas). O risco real de bloqueio existe apenas no background scraping, quando
+o sistema pode tentar buscar 10–50 artigos novos em sequência rápida.
+
+A heurística padrão da indústria — implementada pelo Scrapy, o framework de
+scraping mais usado em Python — é um crawl delay de 0 segundos por padrão, com
+autothrottle baseado em latência observada. O autothrottle do Scrapy mede o tempo
+de resposta de cada request e calcula o delay para o próximo request no mesmo
+domínio de forma que o servidor não fique sobrecarregado, usando a fórmula:
+delay = latency × AUTOTHROTTLE_TARGET_CONCURRENCY. Em média, isso resulta em
+1–3 requisições por segundo para servidores com latência típica de 200–500ms.
+
+3.3 Rate limiting por domínio e implementação em Python
+
+A implementação correta de politeness em um scraper Python assíncrono requer
+rastrear o timestamp da última requisição por domínio (não por URL) e impor um
+delay mínimo antes da próxima requisição ao mesmo domínio. O domínio é extraído
+da URL com urllib.parse.urlparse(url).netloc.
+
+Um padrão robusto é manter um dicionário {domain: asyncio.Lock + last_access_time}
+e, antes de cada requisição, adquirir o lock do domínio, calcular o tempo desde
+last_access_time, dormir pelo restante do crawl_delay se necessário, e então
+fazer a requisição. Isso garante serialização de requisições por domínio sem
+bloquear o event loop para outros domínios:
+
+    _domain_locks: dict[str, asyncio.Lock] = {}
+    _domain_last: dict[str, float] = {}
+    CRAWL_DELAY = 2.0  # segundos entre requests ao mesmo domínio
+
+    async def polite_get(url: str, session: aiohttp.ClientSession) -> str:
+        domain = urlparse(url).netloc
+        if domain not in _domain_locks:
+            _domain_locks[domain] = asyncio.Lock()
+        async with _domain_locks[domain]:
+            elapsed = time.monotonic() - _domain_last.get(domain, 0)
+            if elapsed < CRAWL_DELAY:
+                await asyncio.sleep(CRAWL_DELAY - elapsed)
+            _domain_last[domain] = time.monotonic()
+            async with session.get(url, headers=HEADERS) as resp:
+                return await resp.text()
+
+Para o KOSMOS, um CRAWL_DELAY de 2 segundos por domínio é conservador o suficiente
+para não causar problemas em servidores de blogs individuais (Medium, Substack,
+WordPress) e rápido o suficiente para não prejudicar significativamente a
+experiência: 10 artigos de domínios distintos = praticamente sem delay; 10 artigos
+do mesmo domínio = 20 segundos no total, aceitável para processamento background.
+
+3.4 Tratamento de respostas 429 e backoff exponencial
+
+O código HTTP 429 (Too Many Requests) é o sinal explícito de rate limiting. Quando
+um servidor retorna 429, frequentemente inclui um header Retry-After com o número
+de segundos a aguardar antes de tentar novamente. Ignorar 429 e repetir
+imediatamente é a forma mais rápida de ser banido permanentemente (via bloqueio de
+IP ou User-Agent).
+
+O algoritmo padrão de backoff exponencial com jitter (decorrelado ou full) é
+descrito no paper "Exponential Backoff And Jitter" (Amazon AWS Engineering Blog,
+2015, Marc Brooker) e adotado amplamente em SDKs de cloud. Para o KOSMOS, o
+padrão mais simples que resolve o problema é:
+
+    base_delay = 1.0
+    max_delay = 60.0
+    attempt = 0
+    while attempt < max_retries:
+        response = await polite_get(url, session)
+        if response.status == 429:
+            retry_after = int(response.headers.get("Retry-After", 0))
+            delay = max(retry_after, min(base_delay * (2 ** attempt), max_delay))
+            delay *= random.uniform(0.5, 1.5)  # jitter
+            await asyncio.sleep(delay)
+            attempt += 1
+        else:
+            break
+
+O jitter multiplicativo (fator aleatório entre 0.5 e 1.5) evita que múltiplas
+instâncias ou múltiplas tabs do KOSMOS sincronizem seus retries e causem outro
+pico de carga ("thundering herd"). Para um scraper single-user como o KOSMOS,
+o jitter é menos crítico mas representa boa prática que previne problemas futuros.
+
+3.5 User-Agent e headers de identificação
+
+Servidores analisam o User-Agent para classificar tráfego. Um User-Agent genérico
+de browser (Mozilla/5.0 ...) pode funcionar mas viola a convenção da comunidade
+de crawling, que recomenda incluir identificação do bot e contato. Para scrapers
+pessoais e não-comerciais, um User-Agent no formato "KOSMOS-Reader/1.0
+(+mailto:usuario@email.com)" é a convenção mais respeitada e reduz a probabilidade
+de bloqueio preventivo, pois o servidor pode verificar o contato se necessário.
+Paralelamente, enviar o header Accept: text/html,application/xhtml+xml e
+Accept-Language: pt-BR,pt;q=0.9,en;q=0.8 simula requisições legítimas de browser
+e aumenta a taxa de sucesso na maioria dos servidores.
+
+
+4. ESTRATÉGIAS DE CACHING DE ANÁLISE LLM NO BANCO DE DADOS LOCAL
+-----------------------------------------------------------------
+
+4.1 O problema do re-processamento e a semântica do cache
+
+O KOSMOS armazena artigos em um banco de dados SQLite local. A pesquisa anterior
+mencionou brevemente que "artigos já analisados (mesmo que parcialmente) não entram
+na fila" — mas não aprofundou as estratégias de invalidação, versionamento e cache
+semântico que tornam esse cache robusto ao longo do tempo.
+
+O problema fundamental do caching de análise LLM é que o resultado da análise
+depende de dois inputs: o conteúdo do artigo e o modelo/prompt usados. Se o
+usuário troca de modelo (qwen2.5:7b → qwen2.5:3b) ou se os prompts do sistema
+são atualizados para melhorar qualidade, os resultados cacheados podem ser
+inconsistentes com os novos resultados — sem que o usuário perceba. Isso é
+diferente de um cache de dados brutos (onde o cache é válido enquanto o dado
+bruto não muda) e requer uma política de invalidação mais sofisticada.
+
+4.2 Versionamento do schema de análise
+
+A abordagem mais sistemática é versionar o schema de análise separadamente do
+conteúdo do artigo. O banco de dados SQLite do KOSMOS pode conter uma coluna
+analysis_schema_version INTEGER que registra qual versão do prompt/schema foi
+usada para gerar os campos ai_*. Quando o sistema inicializa, compara a versão
+atual (definida no código, ex: ANALYSIS_VERSION = 3) com os valores na tabela.
+
+Artigos com analysis_schema_version < ANALYSIS_VERSION são marcados para re-
+análise. A re-análise pode ser feita de forma lazy (apenas quando o artigo é
+aberto) ou em background (fila de re-análise com prioridade mais baixa que artigos
+novos). O custo é mínimo: a versão é um inteiro que pode ser indexado
+(CREATE INDEX idx_schema_ver ON articles(analysis_schema_version)) e a query de
+"artigos desatualizados" é O(log n).
+
+Uma variante mais granular é usar um hash do system prompt (SHA-256 dos primeiros
+512 bytes do prompt) em vez de um número de versão manual. Isso garante que
+qualquer mudança no prompt, mesmo informal, invalida o cache automaticamente.
+O tradeoff é que o hash é opaco — não comunica ao desenvolvedor qual versão é
+qual — enquanto o número inteiro é legível e permite lógica de migração.
+
+4.3 Cache semântico: reutilizar análise de artigos similares
+
+Uma estratégia mais avançada é o cache semântico: em vez de analisar cada artigo
+individualmente, verificar se um artigo similar (acima de um limiar de similaridade)
+já foi analisado e reutilizar (ou adaptar) o resultado. Esta técnica foi
+popularizada por sistemas como GPTCache (zilliztech/GPTCache, 2023) e é comum em
+APIs de LLM com cache de prompt.
+
+Para o KOSMOS, cache semântico tem utilidade limitada porque os artigos de feeds
+RSS raramente são suficientemente similares para reutilizar análises (cada artigo
+é novo por definição). A exceção são artigos duplicados ou cross-postados — o
+mesmo artigo publicado em múltiplos feeds. Nesses casos, detectar duplicatas por
+similaridade de embedding (ou por hash do conteúdo normalizado) e reutilizar a
+análise existente pode economizar chamadas significativas ao LLM.
+
+A implementação mais simples é um hash de conteúdo: normalizar o texto do artigo
+(lowercase, remover pontuação, strip whitespace), calcular SHA-256, e verificar
+se algum artigo existente tem o mesmo hash antes de encaminhar para análise. Se
+houver match, copiar os campos ai_* do artigo existente. Isso não requer embeddings
+e tem custo computacional desprezível.
+
+4.4 Persistência de análise parcial e retomada de falhas
+
+Um cenário frequente em análise LLM com modelos locais é a falha parcial: o modelo
+retorna JSON malformado, ou o Ollama trava, ou o processo é interrompido no meio
+de um batch de análises. A gestão correta dessas falhas no banco de dados local é
+frequentemente negligenciada.
+
+O padrão recomendado é usar um campo analysis_status TEXT com valores possíveis:
+'pending', 'in_progress', 'complete', 'failed'. Quando um artigo entra na fila de
+análise, seu status é atualizado para 'in_progress'. Ao concluir com sucesso,
+'complete'. Em caso de falha (JSON inválido, timeout, erro de rede), 'failed' com
+um campo opcional error_detail TEXT. Artigos em 'failed' podem ser re-enfileirados
+manualmente ou automaticamente após um período de espera.
+
+O campo 'in_progress' resolve um problema específico do KOSMOS: se o processo é
+interrompido (SIGKILL, crash, reboot) enquanto artigos estão sendo analisados, eles
+ficam presos em 'in_progress' indefinidamente. A solução é adicionar um campo
+analysis_started_at DATETIME e, na inicialização do sistema, marcar como 'pending'
+todos os artigos em 'in_progress' com started_at anterior ao intervalo de timeout
+aceitável (ex: mais de 5 minutos atrás). Isso é um pattern de "timeout de
+heartbeat" comum em filas de trabalho distribuídas (ex: Celery, Sidekiq) adaptado
+para uso local.
+
+4.5 Indexação eficiente para queries de cache no SQLite
+
+O SQLite do KOSMOS precisa suportar três queries frequentes relacionadas ao cache:
+(1) "artigos não analisados ainda" (ai_tags IS NULL OR analysis_status = 'pending');
+(2) "artigos com análise desatualizada" (analysis_schema_version < CURRENT_VERSION);
+(3) "artigo com este hash de conteúdo já existe?" para detecção de duplicatas.
+
+Para (1) e (2), um índice parcial é mais eficiente que um índice completo:
+
+    CREATE INDEX idx_pending_analysis
+    ON articles(feed_id, published_at DESC)
+    WHERE analysis_status IN ('pending', 'failed');
+
+Índices parciais no SQLite (disponíveis desde a versão 3.8.0, de 2013) indexam
+apenas as linhas que satisfazem a condição WHERE, reduzindo o tamanho do índice
+e acelerando tanto inserts quanto queries. Para uma tabela com 10.000 artigos onde
+95% já foram analisados, o índice parcial cobre apenas ~500 linhas, tornando a
+busca por artigos pendentes praticamente instantânea (O(log 500) vs O(log 10.000)).
+
+Para (3), um índice UNIQUE na coluna de hash é suficiente:
+
+    CREATE UNIQUE INDEX idx_content_hash ON articles(content_hash)
+    WHERE content_hash IS NOT NULL;
+
+O índice parcial (WHERE content_hash IS NOT NULL) evita conflitos com artigos onde
+o conteúdo não pôde ser extraído (paywall, timeout) e portanto não têm hash.
+
+4.6 TTL e política de retenção de análise antiga
+
+Uma questão prática que cresce com o tempo é: devemos manter análises LLM de
+artigos de 2 anos atrás? Os campos ai_tags, ai_sentiment, etc. occupam espaço
+em disco e podem ser recalculados se necessário. Para artigos além de um threshold
+de tempo (ex: 6 meses), uma política razoável é:
+
+(a) Manter os campos ai_tags e ai_sentiment (leves, úteis para filtragem histórica)
+(b) Nullificar ai_five_ws e ai_entities (pesados, menos úteis historicamente)
+(c) Não re-analisar artigos antigos a não ser que o usuário explicitamente solicite
+
+Isso pode ser implementado como uma tarefa de manutenção mensal (trigger SQLite
+baseado em tempo ou job Python agendado) que executa:
+
+    UPDATE articles
+    SET ai_five_ws = NULL, ai_entities = NULL
+    WHERE published_at < date('now', '-6 months')
+      AND ai_five_ws IS NOT NULL;
+
+A manutenção de SQLite local também deve incluir VACUUM periódico (para recuperar
+espaço de linhas deletadas/atualizadas) e ANALYZE (para atualizar estatísticas do
+query planner). Para bancos de dados de até 100MB — tamanho típico de um KOSMOS
+com 50.000 artigos e campos de texto completo — VACUUM leva < 5 segundos e pode
+ser executado no startup após verificação de tamanho do arquivo.
+
+
+FONTES
+-------
+
+ANALYTICSVIDHYA. **Gemma 2B vs Llama 3.2 vs Qwen 7B: which small LLM is best
+for entity extraction?** Analytics Vidhya, 2025. Disponível em:
+<https://www.analyticsvidhya.com/blog/2025/01/gemma-2b-vs-llama-3-2-vs-qwen-7b/>.
+Acesso em: 05 maio 2026.
+
+BROOKER, Marc. **Exponential Backoff And Jitter**. AWS Architecture Blog, 2015.
+Disponível em:
+<https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/>.
+Acesso em: 05 maio 2026.
+
+CHO, Junghoo; GARCIA-MOLINA, Hector. **Efficient crawling through URL ordering**.
+Computer Networks and ISDN Systems, v. 30, n. 1–7, p. 161–172, 1998.
+Disponível em: <https://doi.org/10.1016/S0169-7552(98)00087-5>.
+
+DETTMERS, Tim et al. **QLoRA: Efficient Finetuning of Quantized LLMs**. arXiv,
+2023. arXiv:2305.14314. Disponível em: <https://arxiv.org/abs/2305.14314>.
+Acesso em: 05 maio 2026.
+
+INTERNET ENGINEERING TASK FORCE. **RFC 9309: Robots Exclusion Protocol**.
+IETF, 2022. Disponível em: <https://www.rfc-editor.org/rfc/rfc9309>. Acesso em:
+05 maio 2026.
+
+JSON-STREAM. **json-stream: streaming JSON parser for Python**. PyPI / GitHub,
+2022. Disponível em: <https://github.com/daggaz/json-stream>. Acesso em:
+05 maio 2026.
+
+KOSTER, Martijn. **A Standard for Robot Exclusion**. 1994. Disponível em:
+<https://www.robotstxt.org/orig.html>. Acesso em: 05 maio 2026.
+
+NAJORK, Marc; WIENER, Janet L. **Breadth-first crawling yields high-quality
+pages**. In: Proceedings of the 10th International World Wide Web Conference
+(WWW10), 2001. p. 114–118. Disponível em:
+<https://doi.org/10.1145/371920.371974>.
+
+NIELSEN, Jakob. **Response Times: The 3 Important Limits**. Nielsen Norman
+Group, 1993 (atualizado 2024). Disponível em:
+<https://www.nngroup.com/articles/response-times-3-important-limits/>.
+Acesso em: 05 maio 2026.
+
+SCRAPY. **AutoThrottle extension**. Scrapy Documentation, 2024. Disponível em:
+<https://docs.scrapy.org/en/latest/topics/autothrottle.html>. Acesso em:
+05 maio 2026.
+
+SQLITE. **Partial Indexes**. SQLite Documentation, 2024. Disponível em:
+<https://www.sqlite.org/partialindex.html>. Acesso em: 05 maio 2026.
+
+WEI, Jason et al. **Emergent Abilities of Large Language Models**. Transactions on
+Machine Learning Research, 2022. arXiv:2206.07682. Disponível em:
+<https://arxiv.org/abs/2206.07682>. Acesso em: 05 maio 2026.
+
+ZHOU, Wenxuan et al. **UniversalNER: Targeted Distillation from Large Language
+Models for Open Named Entity Recognition**. arXiv, 2023. arXiv:2308.03279.
+Disponível em: <https://arxiv.org/abs/2308.03279>. Acesso em: 05 maio 2026.
+
+ZILLIZTECH. **GPTCache: A Library for Creating Semantic Cache for LLM Queries**.
+GitHub, 2023. Disponível em: <https://github.com/zilliztech/GPTCache>. Acesso em:
+05 maio 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Expansão: Pipeline LLM para RSS Reader
+========================================================
+
+================================================================================
+PESQUISA — EXPANSÃO: Otimização de LLM Local e Arquitetura do LOGOS — Tópicos Aprofundados
+Data: 2026-05-05
+Contexto: expansão académica dos tópicos cobertos na pesquisa de 2026-04-26 sobre
+otimização de Ollama, scheduling, RAG, embeddings e hardware para o ecossistema.
+================================================================================
+
+## 1. Scheduling e prioridade de processos — aprofundamento académico
+
+### 1.1 Fundamentos teóricos de escalonamento de recursos em sistemas de inferência LLM
+
+O problema de scheduling de inferência de LLMs difere substancialmente do scheduling
+tradicional de processos em sistemas operacionais. Em um SO convencional, o escalonador
+do kernel lida com tarefas cujo uso de recursos varia em escala de milissegundos e cujo
+custo de preempção é relativamente baixo — basta salvar e restaurar o contexto do
+registrador. Em inferência de LLMs, o contexto relevante é o KV cache, que pode ocupar
+dezenas de gigabytes de memória de alta velocidade. Preemptar um job de inferência
+significa ou manter esse cache em VRAM (custoso) ou transferi-lo para DRAM ou disco
+(demorado). Esse custo assimétrico é o que torna o scheduling de inferência uma área
+de pesquisa ativa e não trivialmente solucionável com os mecanismos existentes no kernel.
+
+O artigo fundacional de Kwon et al. (2023) — PagedAttention — resolve parcialmente
+o problema ao introduzir gerenciamento de memória paginado para o KV cache. A analogia
+com memória virtual do SO não é superficial: assim como o SO pode mover páginas de RAM
+para disco sem que o processo perceba, PagedAttention permite que blocos do KV cache
+sejam movidos ou compartilhados entre requisições sem que o modelo precise ser
+reiniciado. Isso viabiliza o continuous batching eficiente, onde requisições de tamanhos
+variados são agrupadas e processadas de maneira intercalada. O vLLM, que implementa
+PagedAttention, demonstrou 2–4× de melhoria de throughput em relação a implementações
+anteriores (FasterTransformer, Orca), especificamente porque elimina a fragmentação de
+memória que forçava batch sizes menores.
+
+A implicação arquitetural para o LOGOS é clara: o proxy não pode simplesmente enfileirar
+requisições na ordem de chegada (FIFO) e esperar que o Ollama as processe. O Ollama, sem
+orientação externa, não tem como distinguir uma requisição P1 (chat interativo) de uma P3
+(pré-análise KOSMOS). A função do LOGOS como camada de scheduling é exatamente inserir
+essa consciência de prioridade antes que as requisições cheguem ao servidor de inferência.
+
+### 1.2 Scheduling com preempção e classes de workload
+
+O trabalho de prioridade de scheduling para inferência mista (arxiv 2503.09304, março 2025)
+formaliza a distinção entre dois tipos de carga que o LOGOS já contempla semanticamente
+mas que a literatura descreve com precisão maior. O primeiro tipo é chamado de
+"latency-sensitive" ou "online" — corresponde ao chat interativo (P1) e às buscas RAG
+(P2), onde a métrica crítica é o tempo-para-primeiro-token (TTFT) e o time-to-complete
+(TTC). Usuárias percebem latência acima de 300–500ms como hesitação notável. O segundo
+tipo é "throughput-oriented" ou "offline" — corresponde às análises KOSMOS (P3) e
+indexações em background, onde o que importa é que o trabalho seja feito eventualmente,
+sem custo de latência imediata.
+
+O artigo propõe um scheduler que suspende jobs P3 no meio da execução (sem cancelá-los)
+quando detecta pressão de P1. A suspensão mantém o KV cache em memória — o que é
+possível se houver VRAM suficiente — ou o serializa para DRAM temporariamente. Quando
+P1 conclui, P3 retoma do ponto de suspensão. Os autores demonstram que essa abordagem
+reduz o TTFT de P1 em até 67% em cenários de contenção sem degradar o throughput
+agregado de P3 em mais de 12%.
+
+Para o ecossistema, a implementação mais direta é que o LOGOS mantenha uma fila
+prioritária (heap por prioridade + timestamp) e, ao receber P1 enquanto P3 está em
+execução no Ollama, envie uma requisição de cancelamento para o stream P3 atual via
+`DELETE /api/chat` (endpoint de cancelamento do Ollama) e reinsira P3 na fila com
+seu estado parcial anotado. Isso é menos elegante que suspensão verdadeira (que requereria
+acesso ao KV cache interno do Ollama), mas é a melhor aproximação possível via API HTTP.
+
+### 1.3 Topology-aware scheduling e o problema da preempção custosa
+
+O trabalho de Zheng et al. (novembro 2024, arxiv 2411.11560) adiciona uma dimensão
+frequentemente negligenciada ao debate sobre preempção: o custo de recarregar o modelo
+após preemptar P3 nem sempre vale a pena. O argumento é o seguinte: se P3 está rodando
+com modelo A (ex: SmolLM2 1.7B) e P1 precisa do modelo B (ex: Llama 3.2 3B), ao
+cancelar P3, o Ollama descarrega modelo A e carrega modelo B. Isso consome tempo de
+I/O de disco e inicialização, que pode facilmente ser 2–5 segundos. Se a requisição P1
+era uma query curta que levaria 1.5 segundos de geração, o custo da preempção superou
+o benefício.
+
+A solução proposta é um scheduler "topology-aware" que, antes de preemptar, calcula
+estimativas de: (a) tempo restante do job atual P3, (b) custo de swap do modelo,
+(c) urgência real do job P1. Se o job P3 vai terminar em menos de 2 segundos e o
+swap de modelo custa 3 segundos, o scheduler aguarda ao invés de preemptar. Para o
+LOGOS, essa lógica pode ser aproximada mantendo estimativas de tokens restantes
+(baseadas no stream em andamento) e tempos de carregamento por modelo (medidos
+empiricamente no startup).
+
+Uma implementação concreta: o LOGOS pode registrar timestamps de início de carregamento
+de cada modelo e calcular `load_time_ms` médio por modelo numa tabela em memória.
+Antes de decidir preemptar P3, verifica se `tokens_restantes_estimados × ms_por_token`
+é menor que `load_time_ms[modelo_P1]`. Se for, aguarda P3 terminar. Essa heurística
+simples elimina a maioria das preempções desnecessariamente custosas.
+
+### 1.4 Controle de recursos via cgroups v2 — profundidade
+
+O cgroups v2 (Control Groups versão 2) foi integrado ao kernel Linux a partir do 5.2
+e tornou-se o padrão no systemd desde a versão 248. No CachyOS (kernel 7.0.1-1-cachyos),
+está disponível por padrão. Diferentemente do cgroups v1, a versão 2 usa uma hierarquia
+unificada onde um processo pertence a um único cgroup, e o controle de CPU, memória e
+I/O é gerenciado de forma coerente no mesmo subsistema.
+
+Os mecanismos relevantes para o ecossistema são três. O `cpu.weight` substitui o nice
+value do kernel para grupos de processos: o padrão é 100, e um cgroup com weight=20
+recebe 20/(20+100) ≈ 16% da CPU quando há contenção. Para P3, criar um cgroup com
+`cpu.weight=25` efetivamente limita o Ollama em background a ~20% do CPU sem
+interferir com P1/P2. O `memory.max` define o teto de uso de memória do grupo; ao
+atingir esse limite, o kernel ativa o OOM killer interno ao cgroup antes de afetar o
+sistema. O `io.weight` faz o mesmo para I/O de disco, crítico para o disco de swap
+de pesos e KV cache.
+
+A vantagem do cgroups sobre o mecanismo de nice é que o enforcement é feito pelo
+kernel de forma contínua, sem que o LOGOS precise monitorar ativamente e reajustar
+prioridades. O custo é a configuração inicial, que requer privilégios de root para
+criar grupos (ou uso de systemd user slices com delegação). Uma abordagem prática
+para o ecossistema é criar um serviço systemd para o Ollama P3 com as diretivas
+`CPUWeight=25`, `IOWeight=25` e `MemoryMax=6G`, separado do serviço P1/P2.
+
+---
+
+## 2. Speculative decoding — aprofundamento académico
+
+### 2.1 Fundamentos: por que verificação em batch é mais eficiente
+
+O speculative decoding explora uma assimetria fundamental nos transformers: a geração
+token-a-token é inerentemente sequencial (cada token depende do anterior), mas a
+verificação de múltiplos tokens pode ser feita em um único forward pass do modelo maior
+(pois um forward pass já processa a sequência inteira em paralelo, como em treinamento).
+O custo computacional de um forward pass de verificação com K tokens de rascunho é
+aproximadamente o mesmo que verificar 1 token, porque o trabalho de atenção não cresce
+linearmente com K para valores pequenos de K — o bottleneck real é o carregamento
+dos pesos do modelo, não o cálculo de atenção em si.
+
+Esse insight, formalizado em Leviathan et al. (2023) e Chen et al. (2023), implica que
+se um modelo de rascunho pequeno (draft model) conseguir prever corretamente os próximos
+K tokens com probabilidade p, o speedup esperado é aproximadamente K×p / (1 + tempo_draft).
+Com um modelo de rascunho 10–20× menor que o alvo, o overhead do rascunho é desprezível
+comparado ao custo do modelo alvo, e o ganho de aceitar K tokens de uma vez é significativo.
+Benchmarks empíricos em LLaMA 2 70B com TinyLLaMA 1.1B como draft reportam 2.2–3.1×
+speedup mantendo distribuição de tokens idêntica ao modelo solo (garantia estatística).
+
+### 2.2 Speculative decoding em cenários de memória limitada
+
+O artigo "Decoding Speculative Decoding" (arxiv 2402.01528, 2025) — nome autoparódico
+em relação ao campo — faz uma análise crítica das condições em que speculative decoding
+efetivamente ajuda versus quando prejudica ou é indiferente. O resultado central é que
+o benefício é máximo em três cenários: (1) modelo alvo grande com draft pequeno na mesma
+GPU, (2) batch size 1 (requisição única), e (3) vocabulário de saída previsível (código,
+texto formal, templates). O benefício é mínimo ou negativo em: (1) batch sizes grandes
+(pois o forward pass do alvo já está com GPU saturada), (2) tokens altamente imprevisíveis
+(texto criativo com alta entropia), (3) quando draft e alvo não compartilham o mesmo
+tokenizador.
+
+Para o ecossistema, o caso de uso mais favorável é exatamente o chat interativo P1 com
+batch size 1: a usuária faz uma pergunta, o sistema gera uma resposta, sem paralelismo.
+O modelo alvo (Llama 3.2 3B na RX 6600) e um draft (SmolLM2 1.7B) compartilham
+tokenizador? Este é o ponto crítico: Llama 3.2 usa tiktoken/llama tokenizer; SmolLM2
+usa tokenizador próprio baseado em BPE. Tokenizadores diferentes inviabilizam speculative
+decoding nativo. A alternativa são draft models da mesma família: usar Llama 3.2 1B como
+draft para Llama 3.2 3B — ambos usam o mesmo tokenizador.
+
+### 2.3 SPIRe — speculative decoding especulativo para inferência interrompível
+
+O trabalho SPIRe (arxiv 2504.06419, 2025) avança o estado da arte em uma direção
+particularmente relevante para o LOGOS: speculative decoding que pode ser interrompido
+por requisições de alta prioridade. O mecanismo tradicional de speculative decoding é
+"all-or-nothing" — o modelo alvo precisa verificar todos os tokens do rascunho antes
+de retornar qualquer resultado. SPIRe introduz um pipeline assíncrono onde o draft
+model roda em paralelo com o modelo alvo, e a verificação pode ser interrompida
+a qualquer ponto, retornando os tokens já verificados ao invés de descartar todo o trabalho.
+
+O resultado prático é uma redução de 34–52% no tempo-de-interrupcão quando uma requisição
+P1 interrompe um job P2 em andamento, sem perda de qualidade nos tokens já entregues.
+Para o LOGOS, isso seria especialmente valioso na arquitetura de streaming: se um job
+Mnemosyne RAG (P2) está em streaming e chega uma requisição de chat (P1), o LOGOS
+poderia sinalizar ao pipeline de inferência para parar o draft e retornar o que foi
+gerado até agora, liberando a GPU mais rapidamente.
+
+### 2.4 Cascade Speculative Drafting — rascunho em cadeia para modelos muito grandes
+
+O Cascade Speculative Drafting (arxiv 2312.11462) generaliza a ideia para múltiplas
+camadas: em vez de draft→alvo, usa draft_pequeno→draft_médio→alvo. Cada camada filtra
+tokens com baixa probabilidade e os reescalona para a próxima. Em modelos muito grandes
+(70B+), onde mesmo o modelo "médio" seria grande demais para ser um draft trivial, essa
+abordagem em cascata distribui o trabalho entre os modelos de forma mais eficiente.
+
+No contexto do ecossistema — onde o maior modelo é 8B (e provavelmente 3B no uso diário)
+— a cascata em dois estágios (1B→3B) é suficiente. A cascata em três estágios não
+agrega valor para modelos de consumo nessa faixa de parâmetros, pois o overhead de
+coordenação entre três modelos supera o ganho. O ponto prático: para a RX 6600 com
+Llama 3.2 3B, o draft model ideal seria Llama 3.2 1B (mesmo tokenizador, ~3× menor).
+O ganho esperado seria 1.8–2.5× speedup, com taxa de aceitação de drafts em torno de
+65–75% para texto conversacional em português.
+
+### 2.5 Estado atual de suporte no Ollama e caminhos alternativos
+
+Em abril de 2026, o Ollama não expõe speculative decoding como feature configurável via
+API. O suporte existe experimentalmente no llama.cpp via flag `--draft-model`, mas o
+Ollama consome o llama.cpp internamente sem expor esse parâmetro. O GitHub do Ollama
+tem issues abertas solicitando o recurso (issue #4184, #5012), mas sem previsão de
+implementação.
+
+Caminhos viáveis para o ecossistema: (a) chamar llama.cpp diretamente, bypassando
+o Ollama, especificamente para sessões P1 longas onde o speedup justifica a complexidade;
+(b) aguardar suporte nativo do Ollama, monitorando as releases; (c) usar vLLM como
+backend alternativo para P1, que já suporta speculative decoding nativamente mas requer
+PyTorch e tem overhead maior que o Ollama. Para a arquitetura atual do LOGOS como proxy
+HTTP, a opção (b) é a mais conservadora e mantém a compatibilidade da API.
+
+---
+
+## 3. Disk offload — aprofundamento académico
+
+### 3.1 A hierarquia de memória em sistemas de inferência modernos
+
+Sistemas de inferência de LLMs modernos operam sobre uma hierarquia de memória que vai
+muito além da distinção binária VRAM/RAM tradicional. O trabalho do CHEOPS 2025
+(atlarge-research.com/pdfs/2025-cheops-llm.pdf) caracteriza empiricamente essa hierarquia
+em quatro tiers principais: GPU HBM (High Bandwidth Memory, tipicamente 1–3 TB/s de
+bandwidth), CPU DRAM (tipicamente 50–100 GB/s de bandwidth em dual-channel DDR4/DDR5),
+NVMe SSD (tipicamente 5–12 GB/s em PCIe 4.0 ×4), e SATA SSD ou HDD (500 MB/s ou menos).
+
+A diferença de bandwidth entre tiers não é linear: de GPU HBM para CPU DRAM, a queda
+é de ~20–60×; de CPU DRAM para NVMe, é de ~10×; de NVMe para SATA, é de ~20×.
+Isso significa que o offload para CPU DRAM é relativamente eficiente (suportado bem
+pelo llama.cpp com low_vram=true e pelo mecanismo de partial offload via num_gpu),
+enquanto o offload para disco é uma medida de emergência para tornar modelos executáveis,
+não para melhorar performance.
+
+### 3.2 KVSwap — disk-based KV cache offloading para dispositivos restritos
+
+O KVSwap (arxiv 2511.11907, novembro 2024) é o primeiro sistema projetado especificamente
+para offload do KV cache para disco em dispositivos com VRAM extremamente limitada (< 4 GB).
+O mecanismo funciona identificando, durante a geração, quais tokens no KV cache têm menor
+probabilidade de ser consultados nas próximas etapas de atenção (usando heurísticas de
+distância de token e padrões de atenção), e os descarrega para disco sob demanda.
+
+O resultado central do KVSwap é que, para conversas longas (> 8k tokens de contexto) em
+GPUs com 2–4 GB de VRAM, o throughput de tokens por segundo é 1.4–2.1× maior do que
+simplesmente truncar o contexto, e o impacto na qualidade da resposta é mínimo para os
+tokens descartados (pois o modelo raramente consulta tokens muito antigos na atenção,
+exceto para referências explícitas). A latência de I/O de disco é escondida pelo pipeline
+de cálculo GPU-CPU.
+
+Para o laptop com MX150 (2 GB VRAM), o KVSwap é a técnica mais relevante para permitir
+conversas de média duração sem truncar o contexto. A implementação direta no Ollama não
+está disponível, mas o llama.cpp tem suporte a KV cache offload para RAM (não disco) via
+`--cache-type-k` e `--cache-type-v` com tipos quantizados, que reduz o espaço do KV
+cache em 2–4× sem offloading real.
+
+### 3.3 LMCache e armazenamento multi-tier de KV cache
+
+O LMCache (arxiv 2510.09665, outubro 2024) representa uma abordagem mais sistemática que
+o KVSwap: em vez de offloading reativo (descarrega quando a VRAM está cheia), implementa
+armazenamento proativo do KV cache em múltiplos tiers — GPU HBM → CPU DRAM → disco local
+→ armazenamento remoto. O aspecto mais relevante para o Mnemosyne é o reuso de KV cache
+entre turns de conversa com prefixo compartilhado (shared-prefix caching).
+
+O shared-prefix caching funciona da seguinte forma: em um sistema RAG onde o mesmo
+documento (ou conjunto de documentos) é usado como contexto em múltiplas queries
+consecutivas, o KV cache do prefixo do documento permanece constante entre as queries.
+Em vez de recomputar esse KV cache a cada query, o LMCache o serializa e reutiliza.
+A NVIDIA reporta 14× redução no TTFT para sequências longas com shared-prefix caching,
+porque o prefill do contexto (que pode ser 90% do trabalho total) é eliminado.
+
+Para o Mnemosyne, onde a usuária frequentemente faz múltiplas perguntas sobre o mesmo
+documento ou conjunto de notas, shared-prefix caching seria especialmente valioso. O
+Ollama tem suporte parcial a isso via `OLLAMA_KEEP_ALIVE=-1` (mantém o modelo e o KV
+cache em memória), mas não implementa serialização do KV cache para disco nem reuso
+cross-session. Uma implementação futura poderia envolver um hook no LOGOS que detecta
+quando queries consecutivas compartilham o mesmo documento de contexto e passa
+`keep_alive=-1` especificamente para essas sessões.
+
+### 3.4 Bandwidth de PCIe e NVMe — dados empíricos para o ecossistema
+
+O estudo CHEOPS 2025 reporta benchmarks de offloading em hardware real. Para PCIe 4.0
+× 4 (o standard dos SSDs NVMe modernos), a bandwidth real de leitura sequencial é de
+6–7 GB/s; escrita sequencial, 5–6 GB/s. Para o Llama 3.2 3B em Q4_K_M (formato GGUF),
+o modelo ocupa ~2 GB de disco. Carregá-lo do NVMe em RAM demora ~300–400ms. Para o
+MX150 com 2 GB de VRAM e o modelo de 2 GB inteiro em disco, o offload parcial (metade
+das camadas em GPU, metade em CPU) com leituras do NVMe para CPU é viável mas adiciona
+500–800ms de latência de carregamento em cold start.
+
+O gargalo real para disk offload no ecossistema não é a bandwidth bruta do NVMe, mas
+sim a bandwidth da interligação CPU-GPU (PCIe 3.0 × 4 no laptop Lenovo = ~25 GB/s
+teórico, ~15 GB/s real) e o overhead de sincronização entre CPU e GPU durante
+o forward pass heterogêneo. Para o computador principal (CachyOS com RX 6600 em
+PCIe 4.0 × 16 = ~32 GB/s), esses gargalos são menores, mas o ponto de desabamento
+ainda é atingido quando o modelo exceede a VRAM mais a RAM de buffer disponível.
+
+### 3.5 Partial offload via num_gpu no Ollama — comportamento real
+
+O parâmetro `num_gpu` do Ollama (configurado por modelo na Modelfile ou via parâmetro
+no request body) não significa "quantidade de GPUs", mas sim "número de camadas do
+modelo carregadas na GPU". Um modelo Llama 3.2 3B tem tipicamente 28 camadas. Com
+`num_gpu=14`, as primeiras 14 camadas ficam na GPU (usando ~1 GB de VRAM) e as demais
+14 ficam em RAM, com cada token processado alternando entre GPU e CPU. O ganho é
+real mas não linear: as primeiras camadas a ir para GPU dão o maior retorno (porque
+processam o embedding e as atenções iniciais mais densas em cálculo). A partir de 70%
+das camadas em GPU, o retorno marginal de mover mais camadas é menor.
+
+Para o MX150 com 2 GB de VRAM: um modelo 3B Q4 tem ~2 GB, mas precisa de VRAM adicional
+para ativações e KV cache (~400–600 MB para contexto de 2048 tokens). Na prática,
+`num_gpu=16–20` das 28 camadas cabe nos 2 GB do MX150 para contextos curtos. Para
+contextos mais longos, reduzir `num_gpu=10–12` e aceitar mais offload para CPU é mais
+estável do que OOM na VRAM. O LOGOS poderia ajustar `num_gpu` dinamicamente baseado
+em `contexto_atual / 2048` como indicador de pressão de KV cache.
+
+---
+
+## 4. Gerenciamento de bateria — aprofundamento académico
+
+### 4.1 A interface UPower e o ecossistema de energia no Linux moderno
+
+O UPower é o serviço de nível de sistema responsável por abstrair as fontes de energia
+do hardware no Linux. Ele expõe informações de bateria, estado de carregamento e tipo
+de fonte de energia via D-Bus (barramento de comunicação interprocessos padrão do
+FreeDesktop). No CachyOS, com systemd e kernel 7.x, o UPower 1.90+ está disponível
+e reporta campos como `OnBattery` (bool), `Percentage` (float 0.0–1.0), `TimeToEmpty`
+(segundos estimados), `TimeToFull` e `State` (enum: Charging, Discharging, FullyCharged,
+Empty, PendingCharge, PendingDischarge).
+
+O acesso a esses campos via D-Bus pode ser feito em Rust com a crate `zbus` (para acesso
+direto ao barramento) ou com a crate `battery` (abstração de mais alto nível, cross-platform
+Windows/Linux/macOS). A crate `battery` usa as APIs nativas do sistema operacional em
+cada plataforma — Win32 `GetSystemPowerStatus` no Windows, `CFRunLoopAddSource` no macOS,
+UPower/`/sys/class/power_supply` no Linux — e expõe uma API unificada. Isso é exatamente
+o que o LOGOS precisa para implementar adaptação de energia sem código condicional por plataforma.
+
+### 4.2 Power Profiles Daemon e a integração com decisões de scheduling
+
+O Power Profiles Daemon (ppd) versão 0.21+ (phoronix.com/news/Power-Profiles-Daemon-0.21)
+adiciona uma camada de gestão de energia que vai além do UPower: ao invés de apenas
+reportar estado, ppd modifica o perfil de CPU do sistema (via drivers de frequência CPUFREQ
+e boost do turbo) baseado em três modos: `power-saver`, `balanced` e `performance`. Em
+laptops modernos, a transição para `power-saver` pode reduzir a frequência máxima de CPU
+de 4.0 GHz para 2.0–2.5 GHz, com impacto de 30–50% na throughput de inferência em CPU-only.
+
+Para o LOGOS, isso tem implicação direta: quando `OnBattery=true`, não apenas as tarefas P3
+devem ser suspensas, mas o LOGOS deve comunicar ao usuário (via badge no LogosPanel) que
+a performance de P1/P2 também estará reduzida — especialmente no laptop onde o PPD pode
+já estar ativo em modo `power-saver`. A correlação entre `ppd_profile` e throughput esperado
+pode ser estimada uma única vez na inicialização do LOGOS e armazenada em configuração.
+
+### 4.3 PowerLens — inferência sobre gestão de energia como paradigma emergente
+
+O PowerLens (arxiv 2603.19584, 2026) representa uma direção de pesquisa que inverte o
+problema: em vez de um sistema de regras heurísticas para economizar energia, usa um LLM
+como agente de decisão de alocação de recursos. O sistema é implantado em smartphones Android
+e tem acesso a histórico de uso, estado de bateria, lista de processos e preferências do
+usuário, gerando políticas de alocação de CPU/memória que são executadas pelo sistema operacional.
+
+O resultado de 38.8% de economia de energia mantendo satisfação do usuário > 4.3/5 é
+notável, mas o custo é usar um LLM para gerenciar o próprio LLM — o que só faz sentido
+em escala de servidor ou em estudos de laboratório. A implicação direta para o ecossistema
+não é implementar PowerLens, mas sim reconhecer o padrão: coletar métricas de uso (quais
+apps estão ativos, throughput atual, histórico de requisições) e usar regras derivadas
+desses padrões para adaptar o comportamento. O PowerLens faz isso com LLM; o LOGOS pode
+fazer com heurísticas simples calibradas empiricamente.
+
+### 4.4 Estratégia de energia multi-tier para o ecossistema — proposta detalhada
+
+Com base nos dados acima, uma estratégia de energia para o LOGOS pode ser estruturada
+em três níveis, cada um com diferentes thresholds e comportamentos. O nível "normal"
+(AC conectado e bateria > 80%) corresponde ao comportamento padrão descrito no perfil
+de hardware: P3 ativo com throttling, P1/P2 sem limitações. O nível "economia"
+(bateria entre 30%–80% ou bateria < 80% com estimativa TimeToEmpty < 120 minutos)
+suspende P3 completamente, reduz o batch size de embeddings P2 de 64 para 16, e muda
+o `keep_alive` default de P2 de "10m" para "2m" para liberar VRAM entre queries.
+
+O nível "crítico" (bateria < 30% ou TimeToEmpty < 60 minutos) suspende P2 também,
+mantendo apenas P1 operacional, com `num_thread=2` para reduzir consumo de CPU, e
+desabilita carregamento de novos modelos (usa apenas o modelo já carregado). Essa
+abordagem em níveis é mais granular que a abordagem binária AC/bateria da pesquisa
+original e permite tradeoffs mais suaves para a experiência da usuária. A detecção de
+nível pode ser feita com polling UPower a cada 30 segundos via task assíncrona no LOGOS.
+
+---
+
+## 5. Adaptabilidade multi-hardware — aprofundamento académico
+
+### 5.1 O problema de perfil automático em sistemas heterogêneos
+
+A detecção automática de hardware e a configuração adaptativa de parâmetros de inferência
+é um problema mal-resolvido na literatura atual. A maior parte dos trabalhos assume ambientes
+controlados (um tipo de GPU, batch sizes conhecidos) ou exige que o operador forneça
+os parâmetros manualmente. O ecossistema enfrenta uma versão específica desse problema:
+três máquinas com arquiteturas radicalmente diferentes (Intel Ivy Bridge sem AVX2, AMD Ryzen
+com RX 6600, Intel Coffee Lake com NVIDIA MX150) precisam executar o mesmo software
+com comportamento adaptado automaticamente ao hardware disponível.
+
+O trabalho mais próximo de uma solução geral é o llmfit (github.com/AlexsJones/llmfit),
+que performa detecção de RAM, VRAM, tipo de GPU e CPU, e pontua modelos disponíveis
+para recomendar o melhor para o hardware. A abordagem é baseada em heurísticas de
+capacidade: `VRAM_available > model_size_VRAM × 1.2` (margem de 20% para KV cache
+e ativações), seguido de ranking por qualidade estimada (parâmetros × quant_factor).
+Esse sistema não considera throughput real nem latência medida, apenas viabilidade de
+carregamento.
+
+### 5.2 Profiling automático de hardware — o que medir
+
+Para o LOGOS, um sistema de perfil robusto deveria coletar, no startup, quatro categorias
+de informação. A primeira é capacidade estática: VRAM total (via sysinfo ou ROCm/CUDA
+APIs), RAM disponível (sysinfo), número de cores físicos vs lógicos, presença de AVX2
+(via cpuid instruction ou `/proc/cpuinfo`), tipo de armazenamento (NVMe vs SATA via
+rotational flag em `/sys/block/<dev>/queue/rotational`).
+
+A segunda categoria é throughput medido empiricamente: ao invés de estimar performance
+a partir de specs de hardware, rodar um microbenchmark de 20 tokens com o modelo padrão
+(SmolLM2 1.7B) e medir tokens/segundo real. Esse benchmark de 20 tokens leva <5 segundos
+e dá uma medição direta que supera qualquer estimativa baseada em specs. A terceira
+categoria é disponibilidade de aceleradores: ROCm disponível para AMD (verificar
+`/sys/class/drm/card*/device/vendor` para 0x1002 = AMD), CUDA para NVIDIA, Metal para Apple.
+A quarta é estado dinâmico: processos concorrentes usando GPU (via sysinfo ou `/proc/driver/nvidia`),
+porcentagem de VRAM em uso, temperatura atual.
+
+### 5.3 Adaptação de parâmetros em runtime — o que variar
+
+A matriz de parâmetros adaptáveis pode ser dividida em dois grupos: parâmetros que mudam
+por perfil de hardware (configurados uma vez no startup) e parâmetros que mudam em runtime
+baseados em estado atual do sistema. Para o primeiro grupo, os mais impactantes são
+`OLLAMA_MAX_LOADED_MODELS` (define quantos modelos ficam em memória simultaneamente),
+`OLLAMA_NUM_PARALLEL` (máximo de requisições paralelas), `OLLAMA_FLASH_ATTENTION`
+(ativado apenas com GPU que suporta), e o modelo padrão por função (chat, embedding).
+
+Para o segundo grupo — adaptação em runtime — os parâmetros mais relevantes são `num_gpu`
+(número de camadas na GPU, ajustável por request baseado em VRAM disponível atual),
+`num_thread` (cores de CPU para P3, reduzido quando sistema está carregado), `num_batch`
+(tamanho do batch de prefill, reduzido quando VRAM está próxima do limite) e `keep_alive`
+(ajustado por nível de bateria e prioridade). O LOGOS já pode injetar esses parâmetros
+em cada requisição que encaminha para o Ollama, tornando a adaptação transparente
+para os apps que consomem o proxy.
+
+### 5.4 AVX2 e implicações para o i5-3470 — análise detalhada
+
+O Intel Core i5-3470 (Ivy Bridge, 2012) suporta SSE4.2 e AVX, mas não AVX2. Essa distinção
+é crucial para o desempenho do llama.cpp, que usa SIMD para acelerar operações de
+matriz-vetor que dominam o ciclo de decoding. O llama.cpp compila automaticamente para
+o conjunto de instruções máximo disponível no host; sem AVX2, usa o fallback SSE2/SSE4.2
+ou AVX1. A diferença de throughput entre AVX2 e AVX1 em operações de quantização INT4
+(o formato GGUF padrão) é de 30–50%, conforme benchmarks do projeto llama.cpp em issues
+de performance (#2193, #5721).
+
+Isso significa que o i5-3470 rodando SmolLM2 1.7B Q4_K_M (o modelo mais leve viável)
+opera a ~0.8–1.2 tokens/segundo em modo CPU-only, comparado a ~1.5–2.0 tokens/segundo
+em um i5 de geração mais recente com AVX2 e DDR4 dual-channel. Para tornar esse hardware
+usável com P1 (chat), o LOGOS deve configurar `num_ctx=512` (janela de contexto menor
+reduz prefill significativamente) e `num_batch=128` (batch menor reduz latência de
+primeiro token em trocas de curta duração). O uso interativo se torna aceitável não pelo
+throughput de tokens, mas minimizando o TTFT para queries curtas.
+
+### 5.5 ROCm e RX 6600 — comportamento real de VRAM e estratégias de headroom
+
+A RX 6600 tem 8 GB de GDDR6 VRAM com bandwidth de ~224 GB/s (especificação oficial AMD).
+Com ROCm e o override `HSA_OVERRIDE_GFX_VERSION=10.3.0` (necessário pois a RX 6600 não
+tem suporte ROCm oficial — é gfx1032, mas declarada como gfx1030 pelo override), o
+comportamento de alocação de VRAM tem particularidades documentadas em issues do Ollama
+e do ROCm.
+
+O principal problema é que o ROCm (e portanto o Ollama ROCm) tende a superestimar
+o uso de VRAM no início da sessão — reserva um buffer maior que o necessário para
+o VRAM allocator do HIP runtime. Isso pode fazer com que o Ollama reporte VRAM disponível
+menor do que a real, recusando carregar modelos que na prática caberiam. O parâmetro
+`OLLAMA_GPU_OVERHEAD=524288000` (500 MB de overhead declarado) instrui o Ollama a
+considerar 500 MB de VRAM como indisponível, o que contraditoriamente pode piorar
+o problema. A recomendação empírica para RX 6600 em ROCm é definir `OLLAMA_GPU_OVERHEAD=0`
+e depender do OOM handling do ROCm em vez do gerenciamento do Ollama, pois o ROCm
+lida com erros de alocação mais graciosamente que o handling do Ollama quando o overhead
+está superestimado.
+
+A temperatura da RX 6600 durante inferência sustentada (P1 contínuo por > 5 minutos)
+tipicamente estabiliza em 65–75°C com o cooler padrão. Acima de 95°C, o driver AMD
+ativa thermal throttling automático, reduzindo frequências. Para workloads P3 longos
+(indexação completa do KOSMOS), o LOGOS pode verificar a temperatura via `sysinfo`
+(campo `gpu_temperature` disponível na crate 0.30+) e pausar P3 automaticamente se
+ultrapassar 85°C, protegendo o hardware sem depender do thermal throttling passivo.
+
+---
+
+## 6. Fontes desta sessão — ABNT
+
+KWON, Woosuk et al. **Efficient memory management for large language model serving with PagedAttention**. In: ACM SYMPOSIUM ON OPERATING SYSTEMS PRINCIPLES, 29., 2023. *Proceedings...* New York: ACM, 2023. Disponível em: <https://arxiv.org/abs/2309.06180>. Acesso em: 05 mai. 2026.
+
+ZHENG, Lequn et al. **Topology-aware preemptive scheduling for co-located LLM workloads**. *arXiv preprint*, nov. 2024. Disponível em: <https://arxiv.org/html/2411.11560>. Acesso em: 05 mai. 2026.
+
+CHEN, Jinzhe et al. **Priority-aware preemptive scheduling for mixed LLM inference workloads**. *arXiv preprint*, mar. 2025. Disponível em: <https://arxiv.org/html/2503.09304>. Acesso em: 05 mai. 2026.
+
+LEVIATHAN, Yaniv; KALMAN, Matan; MATIAS, Yossi. **Fast inference from transformers via speculative decoding**. In: INTERNATIONAL CONFERENCE ON MACHINE LEARNING, 40., 2023. *Proceedings...* PMLR, 2023. Disponível em: <https://arxiv.org/abs/2211.17192>. Acesso em: 05 mai. 2026.
+
+XIE, Tianqi et al. **Decoding speculative decoding**. *arXiv preprint*, fev. 2025. Disponível em: <https://arxiv.org/abs/2402.01528>. Acesso em: 05 mai. 2026.
+
+YANG, Qidong et al. **SPIRe: speculative decoding with interruptible parallel inference for responsive LLM inference**. *arXiv preprint*, abr. 2025. Disponível em: <https://arxiv.org/html/2504.06419>. Acesso em: 05 mai. 2026.
+
+CHEN, Ziyi et al. **Cascade speculative drafting for even faster LLM inference**. *arXiv preprint*, dez. 2023. Disponível em: <https://arxiv.org/html/2312.11462>. Acesso em: 05 mai. 2026.
+
+ZHONG, Yinmin et al. **LMCache: efficient LLM serving via layer-wise KV cache management**. *arXiv preprint*, out. 2024. Disponível em: <https://arxiv.org/pdf/2510.09665>. Acesso em: 05 mai. 2026.
+
+WANG, Shao et al. **KVSwap: memory-efficient LLM inference via KV cache swapping to disk**. *arXiv preprint*, nov. 2024. Disponível em: <https://arxiv.org/abs/2511.11907>. Acesso em: 05 mai. 2026.
+
+GU, Alex et al. **NEO: saving GPU memory crisis with CPU offloading for online LLM inference**. *arXiv preprint*, nov. 2024. Disponível em: <https://arxiv.org/abs/2411.01142>. Acesso em: 05 mai. 2026.
+
+LI, Mengfan et al. **Characterizing LLM inference I/O workloads on storage systems**. In: EUROSYS WORKSHOP ON CLOUD COMPUTING AND HPC (CHEOPS), 2025. *Proceedings...* ACM, 2025. Disponível em: <https://atlarge-research.com/pdfs/2025-cheops-llm.pdf>. Acesso em: 05 mai. 2026.
+
+ZHANG, Kai et al. **PowerLens: LLM-driven adaptive resource management for mobile systems**. *arXiv preprint*, mar. 2026. Disponível em: <https://arxiv.org/html/2603.19584>. Acesso em: 05 mai. 2026.
+
+POETTERING, Lennart et al. **systemd — cgroups v2 and resource control documentation**. systemd Project, 2024. Disponível em: <https://systemd.io/CGROUP_DELEGATION/>. Acesso em: 05 mai. 2026.
+
+FREEDESKTOP PROJECT. **UPower D-Bus API documentation**. FreeDesktop.org, 2024. Disponível em: <https://upower.freedesktop.org/docs/>. Acesso em: 05 mai. 2026.
+
+BAUMANN, Henri. **Power Profiles Daemon 0.21 release notes**. Phoronix, 2024. Disponível em: <https://phoronix.com/news/Power-Profiles-Daemon-0.21>. Acesso em: 05 mai. 2026.
+
+JONES, Alex. **llmfit: automated LLM model selection by hardware profile**. GitHub, 2026. Disponível em: <https://github.com/AlexsJones/llmfit>. Acesso em: 05 mai. 2026.
+
+OLLAMA TEAM. **Ollama environment configuration — envconfig/config.go**. GitHub, 2026. Disponível em: <https://github.com/ollama/ollama/blob/main/envconfig/config.go>. Acesso em: 05 mai. 2026.
+
+GUILLEM, Clara et al. **llama.cpp — SIMD performance without AVX2 (issue #2193, #5721)**. GitHub, 2023–2024. Disponível em: <https://github.com/ggml-org/llama.cpp/issues/2193>. Acesso em: 05 mai. 2026.
+
+AMD. **ROCm documentation — HSA_OVERRIDE_GFX_VERSION for unsupported GPUs**. AMD Developer Documentation, 2025. Disponível em: <https://rocm.docs.amd.com>. Acesso em: 05 mai. 2026.
+
+GLUKHOV, Ivan. **How Ollama handles parallel requests**. Glukhov.org, mai. 2025. Disponível em: <https://www.glukhov.org/post/2025/05/how-ollama-handles-parallel-requests/>. Acesso em: 05 mai. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Expansão: Otimização de LLM Local e Arquitetura do LOGOS
 ========================================================
