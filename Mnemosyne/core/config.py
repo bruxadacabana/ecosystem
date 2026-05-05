@@ -75,6 +75,7 @@ _DEFAULTS: dict = {
     "dark_mode": True,
     "reranking_enabled": True,
     "reranking_top_n": 6,
+    "iterative_retrieval_enabled": False,
 }
 
 
@@ -97,6 +98,7 @@ class AppConfig:
     dark_mode: bool = True
     reranking_enabled: bool = True
     reranking_top_n: int = 6
+    iterative_retrieval_enabled: bool = False
     # Populados em runtime a partir do ecosystem.json — nunca persistidos
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""
@@ -271,6 +273,7 @@ def load_config() -> AppConfig:
         dark_mode=bool(data.get("dark_mode", True)),
         reranking_enabled=bool(data.get("reranking_enabled", True)),
         reranking_top_n=int(data.get("reranking_top_n", 6)),
+        iterative_retrieval_enabled=bool(data.get("iterative_retrieval_enabled", False)),
     )
     config = _apply_logos_recommendations(config, _saved_keys)
 
@@ -302,6 +305,7 @@ def save_config(config: AppConfig) -> None:
         "dark_mode": config.dark_mode,
         "reranking_enabled": config.reranking_enabled,
         "reranking_top_n": config.reranking_top_n,
+        "iterative_retrieval_enabled": config.iterative_retrieval_enabled,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

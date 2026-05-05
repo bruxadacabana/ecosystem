@@ -64,7 +64,7 @@ e tipado com a mesma atenção que o caminho feliz.
 - [x] Wiring em `AETHER/src-tauri/src/lib.rs`: escreve `vault_path` no startup (falha silenciosa)
 - [x] Documentar o contrato: quem escreve cada campo, quando, formato
 
-### 0.5 — sync_root: sincronização via Proton Drive (ou qualquer pasta sync)
+#### 0.5 — sync_root: sincronização via Proton Drive (ou qualquer pasta sync)
 
 Objetivo: um campo `sync_root` top-level no ecosystem.json aponta para a pasta do Proton Drive.
 O HUB deriva e aplica todos os caminhos de uma vez. Cada app respeita o caminho configurado.
@@ -94,7 +94,7 @@ ProtonDrive/ecosystem/
       - Subpastas criadas; ecosystem.json atualizado com todos os caminhos derivados
       - [x] Testar round-trip: arquivar página no AKASHA → aparece no Proton → segunda máquina
 
-### 0.6 — OGMA: migrar de Turso para Proton Drive (SQLite local)
+#### 0.6 — OGMA: migrar de Turso para Proton Drive (SQLite local)
 
 Motivação: Proton mantém cópias locais em todas as máquinas + nuvem, sem depender de
 conta externa. Turso só mantém na nuvem.
@@ -106,7 +106,7 @@ conta externa. Turso só mantém na nuvem.
 - [x] Atualizar `paths.ts` do OGMA para usar `ogma.data_path` do ecosystem.json (fallback local)
 - [ ] Testar migração: exportar dados do Turso → importar no SQLite local antes de remover
 
-### 0.7 — Hermes: usar output_dir do ecosystem.json no startup
+#### 0.7 — Hermes: usar output_dir do ecosystem.json no startup
 
 Objetivo: Hermes deve ler `hermes.output_dir` do ecosystem.json se `outdir` não estiver
 nas prefs locais — o mesmo padrão já aplicado ao `mnemo_dir`. Após `apply_sync_root`,
@@ -115,18 +115,18 @@ Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 - [x] `Hermes/hermes.py` — `_load_prefs()`: se `outdir` não estiver em prefs, ler
       `hermes.output_dir` do ecosystem.json como fallback
 
-### 0.8 — AKASHA: integração Hermes + DB no Proton + lista negra + UI
+#### 0.8 — AKASHA: integração Hermes + DB no Proton + lista negra + UI
 
-#### 0.8a — AKASHA indexa arquivos do Hermes na busca local
+##### 0.8a — AKASHA indexa arquivos do Hermes na busca local
 - [x] `AKASHA/config.py` — adicionar `hermes_output: str` lendo `hermes.output_dir` do ecosystem.json
 - [x] `AKASHA/services/local_search.py` — adicionar 6ª fonte `HERMES` em `index_local_files()`
 
-#### 0.8b — AKASHA: DB (biblioteca + lista negra) movível para Proton
+##### 0.8b — AKASHA: DB (biblioteca + lista negra) movível para Proton
 - [x] `AKASHA/config.py` — `DB_PATH` lê `akasha.data_path` do ecosystem.json se disponível
 - [x] `ecosystem_client.py` — `derive_paths()`: adicionar `data_path` à seção `akasha`
 - [x] `HUB/src-tauri/src/commands/config.rs` — `apply_sync_root()`: incluir `akasha.data_path`
 
-#### 0.8c — AKASHA: aba "lista negra" no menu
+##### 0.8c — AKASHA: aba "lista negra" no menu
 - [x] `AKASHA/database.py` — `get_blocked_domains()` já existia (retorna set[str])
 - [x] `AKASHA/routers/domains.py` — adicionar rota `GET /domains` com listagem + template
 - [x] `AKASHA/templates/domains.html` — nova página herdando base.html
@@ -139,7 +139,7 @@ Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 - [x] `AKASHA/routers/crawler.py` — rota `POST /sites/add-quick` (quick-add sem parâmetros extras)
 - [x] `AKASHA/templates/_macros.html` — botão "Adicionar a Sites" nos cards
 
-### 0.9 — Mnemosyne: caminhos primários do ecosystem.json + pastas extras
+#### 0.9 — Mnemosyne: caminhos primários do ecosystem.json + pastas extras
 
 Objetivo: Mnemosyne lê `watched_dir`, `vault_dir`, `chroma_dir` do ecosystem.json no
 startup (HUB é fonte de verdade). SetupDialog exibe esses caminhos como read-only e
@@ -225,7 +225,7 @@ permite adicionar `extra_dirs` para indexação adicional.
 
 ---
 
-### 0.10 — Arquivos de configuração de todos os apps no Proton Drive
+#### 0.10 — Arquivos de configuração de todos os apps no Proton Drive
 
 Objetivo: config local de cada app também fica na pasta sincronizada, para que as
 preferências se propaguem entre máquinas sem reconfigurar manualmente.
@@ -278,9 +278,9 @@ no ecosystem.json, com fallback para o arquivo local atual.
 ### FASE 1 — Interligação dos apps existentes
 > Aproveita o que já existe. Mudanças cirúrgicas, sem novo app.
 
-### 1.1 — OGMA → AETHER (projetos de escrita)
+#### 1.1 — OGMA → AETHER (projetos de escrita)
 
-#### Passo A — Renomear tipo `creative` → `writing` no OGMA
+##### Passo A — Renomear tipo `creative` → `writing` no OGMA
 - [x] `src/renderer/types/index.ts`: alterar `ProjectType` union, SUBCATEGORIES,
       PROJECT_TYPE_LABELS ('Escrita'), PROJECT_TYPE_ICONS ('✍️' mantém),
       PROJECT_TYPE_DESCRIPTIONS
@@ -292,7 +292,7 @@ no ecosystem.json, com fallback para o arquivo local atual.
       `UPDATE projects SET project_type = 'writing' WHERE project_type = 'creative'`
       (o campo é TEXT sem CHECK constraint — migration simples)
 
-#### Passo B — Integrar projetos de escrita com o AETHER
+##### Passo B — Integrar projetos de escrita com o AETHER
 - [x] `src/main/database.ts`: adicionar coluna `aether_project_id TEXT` na tabela
       `projects` (nova migration)
 - [x] OGMA lê `aether.vault_path` do `ecosystem.json` na criação de projeto
@@ -302,7 +302,7 @@ no ecosystem.json, com fallback para o arquivo local atual.
 - [x] Salvar `aether_project_id` no banco do OGMA para manter o vínculo
 - [x] Botão "Abrir no AETHER" em projetos de escrita (desabilitado se vault não configurado)
 
-### 1.2 — KOSMOS → Mnemosyne (artigos salvos)
+#### 1.2 — KOSMOS → Mnemosyne (artigos salvos)
 - [x] KOSMOS escreve `archive_path` e `data_path` em `ecosystem.json` na inicialização
       via `ecosystem_client.write_section("kosmos", {...})` em `KOSMOS/main.py`
 - [x] Mnemosyne lê `ecosystem.json` e oferece o archive do KOSMOS
@@ -310,20 +310,20 @@ no ecosystem.json, com fallback para o arquivo local atual.
 - [ ] Verificar se o botão "Arquivar" em artigos salvos chama
       `archive_manager` corretamente — garantir que gera `.md` válido
 
-### 1.3 — AETHER → Mnemosyne (indexar escritos)
+#### 1.3 — AETHER → Mnemosyne (indexar escritos)
 - [x] AETHER escreve `vault_path` em `ecosystem.json` na inicialização
       (startup Rust, após carregar vault — `ecosystem::write_section()` em lib.rs)
 - [x] Mnemosyne oferece vault AETHER como pasta sugerida (botão "Sugestões do ecossistema")
 - [ ] Testar indexação dos `.md` de capítulos pelo Mnemosyne
 
-### 1.4 — Hermes → Mnemosyne (transcrições indexáveis)
+#### 1.4 — Hermes → Mnemosyne (transcrições indexáveis)
 - [x] Adicionar campo "Pasta de saída do Mnemosyne" na aba Transcrever do Hermes
       Lê `mnemosyne.index_paths[0]` do ecosystem como sugestão; desabilitado se vazio
 - [x] Adicionar checkbox "Indexar no Mnemosyne após transcrever"
       Salva o `.md` diretamente numa das pastas monitoradas pelo Mnemosyne
 - [x] Formato: Markdown limpo com frontmatter mínimo (título, data, fonte/URL, duração)
 
-### 1.5 — Completar contrato ecosystem.json (seções faltantes)
+#### 1.5 — Completar contrato ecosystem.json (seções faltantes)
 
 Cada app deve escrever sua seção completa no startup. Schema alvo:
 ```json
@@ -345,7 +345,7 @@ Cada app deve escrever sua seção completa no startup. Schema alvo:
       (`output_dir` = pasta de downloads/transcrições configurada na UI)
 - [x] **AKASHA** — adicionar `archive_path` à seção já escrita por `register_akasha()`
 
-### 1.6 — Scraper compartilhado: KOSMOS e AKASHA
+#### 1.6 — Scraper compartilhado: KOSMOS e AKASHA
 
 Objetivo: eliminar a duplicação de código da cascata de extração web.
 `ecosystem_scraper.py` (raiz do repo) é o único ponto de manutenção da cascata.
@@ -357,7 +357,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 - [x] `KOSMOS/app/core/article_scraper.py` — simplificar para `_cascade_extract(..., output_format="html")`
 - [x] `KOSMOS/requirements.txt` — adicionar `inscriptis` e `markdownify`
 
-### 1.8 — AKASHA: busca local cobre todo o ecossistema
+#### 1.8 — AKASHA: busca local cobre todo o ecossistema
 
 - [x] Indexar `AKASHA/data/archive/` própria no FTS5 (source "AKASHA")
       (`index_local_files()` em `services/local_search.py` — mesmo extractor do KOSMOS)
@@ -366,7 +366,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 - [x] Indexar `mnemosyne.vault_dir` no FTS5 (source "OBSIDIAN")
       (depende de 1.5 — Mnemosyne precisa escrever esses caminhos primeiro)
 
-### 1.9 — Mnemosyne: sugestões do ecossistema cobrindo todos os archives
+#### 1.9 — Mnemosyne: sugestões do ecossistema cobrindo todos os archives
 
 - [x] Adicionar AKASHA archive (`akasha.archive_path`) nas sugestões da SetupDialog
       (depende de 1.5 — AKASHA precisa escrever `archive_path` primeiro)
@@ -378,7 +378,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 > A necessidade de acesso ao ecossistema no Android continua existindo, mas a abordagem precisa ser repensada
 > — provavelmente um app separado ou solução diferente do HUB. Itens abaixo mantidos como referência histórica.
 
-### 3.1 — Build Android do hub
+#### 3.1 — Build Android do hub
 - [ ] Configurar ambiente Tauri Android:
       - Android Studio + NDK
       - `cargo install tauri-cli` (já deve estar instalado do AETHER)
@@ -387,7 +387,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 - [ ] Resolver incompatibilidades de UI para toque (botões, scroll)
 - [ ] Build de release (APK assinado)
 
-### 3.2 — Sincronização de dados
+#### 3.2 — Sincronização de dados
 - [ ] Configurar Syncthing: pastas a sincronizar
       - Vault AETHER completo
       - `kosmos/data/archive/`
@@ -397,7 +397,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
       - Salvar artigo no KOSMOS → sync → aparecer no hub Android
 - [ ] Tratar conflitos de sync (dois dispositivos editam o mesmo arquivo)
 
-### 3.3 — Acesso remoto (fora da rede local)
+#### 3.3 — Acesso remoto (fora da rede local)
 - [ ] Instalar Tailscale no PC e no tablet
 - [ ] Hub detecta se Ollama está acessível (local ou via Tailscale)
 - [ ] Módulo Projetos: acesso ao `ogma.db` via Tailscale quando remoto
@@ -432,7 +432,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 
 ---
 
-### Dependências entre fases
+#### Dependências entre fases
 
   Fase 0 ──► Fase 1 (qualquer sub-item)
   Fase 0 ──► Fase 2.1
@@ -442,7 +442,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 
 ---
 
-### Estado dos apps individuais (pré-condições para integração)
+#### Estado dos apps individuais (pré-condições para integração)
 
   AETHER        ✅  Fases 0–5 completas. Vault format estável. Sem bloqueios.
   OGMA          ✅  Schema v2 implementado (database.ts:114). IPC usa
@@ -457,7 +457,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
   transcriber   ✅  Utilitário funcional. Mudança mínima necessária.
   stellar-dl    ✅  Utilitário funcional. Mudança mínima necessária.
 
-### Estado das fases do ecossistema
+#### Estado das fases do ecossistema
 
   Fase 0: ✅ Base concluída (0–0.5). Items 0.6–0.9 em andamento (sync + integrações)
   Fase 1: ✅ Concluída — 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 1.9 concluídas
@@ -1410,10 +1410,9 @@ mesma paleta sépia, mesma tipografia, mesmas regras de sombra, animações e co
 
 
 ### Bug: vault_path não atualiza após mudança no HUB
-- [ ] Investigar por que o AETHER continua salvando no caminho antigo mesmo após `sync_root` ser atualizado no HUB
-  — log no startup mostra: `Vault: Some("C:\\Users\\USUARIO\\Documents\\p\\My files\\backup\\notebook\\02_Areas\\escrita")`
-  — verificar `AETHER/src-tauri/src/lib.rs`: se a leitura do ecosystem.json acontece antes ou depois da gravação do vault_path local
-  — verificar `AETHER/src-tauri/src/ecosystem.rs`: se `read_ecosystem` está lendo o arquivo atualizado
+- [x] Investigar por que o AETHER continua salvando no caminho antigo mesmo após `sync_root` ser atualizado no HUB
+  — causa: startup lia app.json local e sobrescrevia o ecosystem.json, ignorando o que o HUB gravou
+  — fix: `ecosystem.rs` expõe `read_vault_path()`; `lib.rs` compara ecosystem.json vs local e prefere ecosystem.json
 - [ ] Adicionar opção de configurar `vault_path` dentro do próprio AETHER (sem depender exclusivamente do HUB)
 
 ### Responsividade — AETHER
@@ -1428,6 +1427,30 @@ mesma paleta sépia, mesma tipografia, mesmas regras de sombra, animações e co
   — Botões de formatação podem overflow em janela estreita
   — Fix: ocultar labels de texto, manter apenas ícones abaixo de 900px; wrapping se necessário
 - [ ] **Testar em janela 900×600 mínima**
+
+---
+
+### Verificação de formato de saída
+
+- [ ] Verificar se todos os arquivos gerados pelo AETHER (escrita, fichas, worldbuilding) são salvos como `.md`
+  **Motivo:** Markdown garante portabilidade e segurança dos dados — os arquivos devem ser legíveis
+  sem o AETHER, sincronizáveis via Proton Drive/git, e compatíveis com outros editores (Obsidian, VSCode).
+  Confirmar que nenhum dado fica preso em formato binário ou JSON opaco não-editável pelo usuário.
+
+---
+
+### Pesquisas pendentes
+
+- [ ] **Acesso remoto ao AETHER** — pesquisar abordagens para acessar projetos/vault fora da rede local
+  (Tailscale, self-hosted sync, CRDT via websocket). Ver também FASE 3 do HUB (linha ~400 deste arquivo).
+
+- [ ] **Escrita colaborativa em tempo real** — pesquisar como múltiplas pessoas podem escrever simultaneamente
+  no mesmo documento remotamente (referências: Ellipsus, Google Docs, Notion).
+  Tecnologias relevantes: OT (Operational Transformation), CRDT (Yjs/Automerge), WebSocket multiplex.
+
+- [ ] **Versão Android do AETHER** — pesquisar viabilidade de Tauri Android para o AETHER
+  (acesso ao vault, editor de markdown, fichas de personagem/worldbuilding no celular).
+  Ver replanejamento da Fase 3 do HUB para contexto sobre o que já foi descartado.
 
 ---
 
@@ -1793,11 +1816,11 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
-### Fase 11 — Performance e Robustez
+### Fase 11 — Correção de bugs e melhorias
 
 > Entrega: app mais rápido, sem gargalos de I/O e com SQLite bem configurado.
 
-### Alta prioridade (impacto imediato visível)
+#### Alta prioridade (impacto imediato visível)
 
 - [x] **SQLite WAL mode + pragmas** — `database.py`: na função `init_db()`, após conectar,
       executar `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`,
@@ -1818,7 +1841,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       `_LIST_COLS` sem `content_md`; `_row_to_entry` aceita rows de 13 ou 14 colunas.
       `scrape_and_store` mantém `SELECT *` pois precisa do conteúdo para calcular diff.
 
-### Média prioridade (reduz lock contention no crawler)
+#### Média prioridade (reduz lock contention no crawler)
 
 - [x] **Crawl com conexão única por sessão** — `services/crawler.py`: `crawl_site` agora
       usa 2 conexões (leitura inicial + sessão BFS completa); `_process_url` captura `db`
@@ -1830,7 +1853,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] **`asyncio.get_event_loop()` → `asyncio.get_running_loop()`** — `routers/crawler.py`
       (3 ocorrências) e `main.py` (1 ocorrência).
 
-### Baixa prioridade (manutenção a longo prazo)
+#### Baixa prioridade (manutenção a longo prazo)
 
 - [x] **Limpeza periódica do search_cache** — `main.py` → `_monitor_crawler()`:
       ao acordar, executar `DELETE FROM search_cache WHERE created_at < ?` com cutoff
@@ -1855,7 +1878,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 > Entrega: extensão Manifest V3 que detecta URLs de vídeo na aba atual e delega o download
 > ao Hermes via AKASHA com um clique. Requer Fase 3 do Hermes (mini API HTTP).
 
-### Estrutura de arquivos
+#### Estrutura de arquivos
 - [ ] `extension/manifest.json` — Manifest V3; permissões: `activeTab`,
       `http://localhost:7071/*`; action com ícones active/inactive;
       background service worker; popup declarado
@@ -1865,7 +1888,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       ambos rodam em segundo plano via Hermes; feedback de estado
       (aguardando / na fila / erro Hermes offline / erro AKASHA offline)
 
-### Background script
+#### Background script
 - [ ] `extension/background.js` — ao mudar de aba ou navegar, verificar se a URL
       pertence a site de vídeo suportado pelo yt-dlp (YouTube, Vimeo, Twitch,
       Twitter/X, TikTok, Reddit, Dailymotion, Bilibili, Niconico, etc.);
@@ -1874,7 +1897,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       do popup, fazer `POST http://localhost:7071/api/hermes/download` com `{url, mode}`;
       retornar `{ok, error?}` ao popup; fechar popup após confirmação (roda em bg)
 
-### Backend AKASHA
+#### Backend AKASHA
 - [ ] `routers/hermes_bridge.py` — `POST /api/hermes/download`
       (body Pydantic: `url: str`, `mode: Literal["download","transcribe"] = "download"`,
       `format: str | None = None`):
@@ -1889,26 +1912,26 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       Adicionar `psutil` ao `pyproject.toml` se não presente
 - [ ] Registrar `hermes_bridge` router em `main.py`
 
-### Instalação (desenvolvimento)
+#### Instalação (desenvolvimento)
 - [ ] `extension/README.md` — instruções: `about:debugging` → "Este Firefox" →
       "Carregar extensão temporária" → selecionar `extension/manifest.json`
 
 ---
 
-### Fase 12.5 — Aba "Ver Mais Tarde"
+#### Fase 12.5 — Aba "Ver Mais Tarde"
 
 > Lista interna de URLs para retomar depois, sem arquivar nem monitorar.
 > Visível apenas no AKASHA — não indexada no `local_fts` nem exportada para o ecossistema.
 > Resultados aparecem na busca global como seção separada "Salvo para depois".
 
-### Banco de dados
+#### Banco de dados
 
 - [x] Migration v9: tabela `watch_later` —
       `id, url (UNIQUE), title, snippet, notes, added_at`
 - [x] Migration v9: FTS5 `watch_later_fts` — `(id UNINDEXED, url UNINDEXED, title, notes)`
       sincronizada manualmente nos helpers
 
-### Backend
+#### Backend
 
 - [x] `database.py` — helpers: `add_watch_later(url, title, snippet) -> int`;
       `get_all_watch_later() -> list[tuple]`; `delete_watch_later(id) -> None`;
@@ -1920,7 +1943,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       `POST /watch-later/add` (form: url, title?, snippet?; retorna 200);
       `DELETE /watch-later/{id}` (retorna 200)
 
-### Templates
+#### Templates
 
 - [x] `templates/watch_later.html` — lista de itens salvos: título, URL, data,
       campo notes inline editável, botão "remover"; empty state com hint
@@ -1930,13 +1953,13 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [x] `templates/search.html` — seção "Salvo para depois" (após seção Sites,
       antes do empty state); aparece sempre que há matches no `watch_later_fts`
 
-### Integração com busca
+#### Integração com busca
 
 - [x] `routers/search.py` — incluir `search_watch_later(q)` no `asyncio.gather`;
       passa `watch_later_results` para o template; seção visível
       independente dos checkboxes (sempre busca se há query)
 
-### TODO update
+#### TODO update
 
 - [x] Atualizar `AKASHA/TODO.md` ao concluir: marcar itens e atualizar data
 
@@ -1947,7 +1970,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 > Entrega: endpoint JSON que o Mnemosyne pode chamar para buscar + scraping on-demand,
 > permitindo "Modo de Pesquisa Profunda" que combina biblioteca local com conteúdo web atual.
 
-### Novos endpoints
+#### Novos endpoints
 
 - [x] `GET /search/json?q={query}&sources=web,sites&max={n}` — retorna resultados de busca
       como JSON puro (`list[SearchResult]`) em vez de HTML; reutiliza a lógica de
@@ -1959,7 +1982,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       retorna `{url, title, content_md, word_count, error?}`; não persiste nada — resposta
       efêmera para uso imediato pelo Mnemosyne; timeout 30s
 
-### Notas de implementação
+#### Notas de implementação
 
 - Ambos os endpoints são somente-leitura — não alteram estado do AKASHA
 - `GET /search/json` pode ser implementado extraindo a lógica de busca de `routers/search.py`
@@ -1986,7 +2009,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 > Melhorias derivadas de pesquisa sobre arquitetura de buscadores, otimização de índice invertido
 > e deduplicação. Organizadas por prioridade.
 
-### Alta prioridade
+#### Alta prioridade
 
 - [x] **[A] BM25 com pesos por campo** — usar `bm25(crawl_fts, 10, 1)` na consulta FTS5
       para dar peso 10× ao título vs. corpo; melhora ranking sem custo computacional
@@ -2005,7 +2028,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       em memória por domínio com expiração de 24h; evita fetch redundante a cada URL
       (`services/crawler.py`)
 
-### Média prioridade
+#### Média prioridade
 
 - [x] **[E] Rate limiting por domínio com fila de prioridade** — limitar requisições por
       domínio (ex: 1 req/s) usando `asyncio.Queue` + semáforo por host; evita banimento
@@ -2025,7 +2048,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       de conteúdo antes de recorrer ao Jina Reader externo
       (`ecosystem_scraper.py` ou `services/archiver.py`)
 
-### Baixa prioridade
+#### Baixa prioridade
 
 - [ ] **[I] Campo separado para headings no FTS5** — extrair headings (h1–h3) do HTML
       e indexar em coluna dedicada com peso ~50×; melhora recall para queries de conceito
@@ -2041,7 +2064,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 > Bugs encontrados por inspeção de código. Nenhum requer migration de schema.
 
-### Alta prioridade (funcionalidade quebrada)
+#### Alta prioridade (funcionalidade quebrada)
 
 - [x] **[BUG-1] `/domains` — bloquear/desbloquear não atualiza a lista na UI**
       `routers/domains.py` + `templates/domains.html`: os endpoints `POST /domains/block` e
@@ -2063,7 +2086,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       filtra por `status='idle'`, logo o site nunca mais é re-crawlado automaticamente.
       **Fix:** envolver o BFS em `try/finally` e garantir `UPDATE status='idle'` no `finally`.
 
-### Média prioridade (inconsistência / UX)
+#### Média prioridade (inconsistência / UX)
 
 - [x] **[BUG-4] `main.py` `index()` — contexto incompleto para `search.html`**
       `main.py:101`: o handler da rota `/` não passa `site_results`, `has_sites` e
@@ -2089,16 +2112,6 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       legível se ambos falharem.
 
 ---
-
-### Planos Futuros
-
-> Funcionalidades adiadas por complexidade ou baixa prioridade imediata.
-
----
-
-*Atualizado em: 2026-04-24 — Fase 16 adicionada com 5 bugs identificados por auditoria de código (crawler, domains, search template). BUG-6 adicionado: xdg-open silently failing.*
-
-
 
 ### Busca Local Avançada — Pendências Técnicas
 
@@ -2559,7 +2572,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 ### Integração com LOGOS e Qualidade de IA
 
 
-- [ ] Bug: `generate_stream()` bypassa o LOGOS — chamar via `ecosystem_client`:
+- [x] Bug: `generate_stream()` bypassa o LOGOS — chamar via `ecosystem_client`:
   **Motivo:** `ai_bridge.py` linha ~162 chama `self._session.post(f"{self._endpoint}/api/generate")`
   diretamente, sem passar por `_request_llm`. Isso significa que leituras de artigo em streaming
   (P1) não estão registradas no LOGOS e não interrompem P3. O sistema de prioridades fica cego
@@ -2570,7 +2583,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   2. Garantir que o `priority=1` seja passado para leituras interativas (o usuário abriu o artigo)
   3. Testar que o LogosPanel mostra P1 ativo durante leitura de artigo
 
-- [ ] Bug: `embed()` bypassa o LOGOS — endpoint hardcoded na porta 11434:
+- [x] Bug: `embed()` bypassa o LOGOS — endpoint hardcoded na porta 11434:
   **Motivo:** `ai_bridge.py` linha ~207 chama `self._endpoint` diretamente (porta 11434, não 7072).
   O `keep_alive: "0"` que o LOGOS injetaria para P3 nunca é aplicado a embeddings do KOSMOS.
   **Implementação:**
@@ -2579,7 +2592,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   2. Ou: redirecionar os embeddings do KOSMOS via `ecosystem_client.request_embed()` (a criar),
      que já sabe o endpoint correto e injeta headers `X-App: kosmos`
 
-- [ ] KOSMOS workers de background: definir prioridade de OS com `os.nice()`:
+- [x] KOSMOS workers de background: definir prioridade de OS com `os.nice()`:
   **Motivo:** `BackgroundUpdater` e `BackgroundAnalyzer` rodam como QThread com `IdlePriority`,
   mas esse priority afeta apenas o GIL do Python — o kernel do OS ainda aloca CPU normalmente.
   Durante atualização de feeds + pré-análise simultâneos, o sistema pode ficar lento.
@@ -2595,7 +2608,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
           ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
   ```
 
-- [ ] KOSMOS: deduplicação de artigos RSS por fingerprint de conteúdo:
+- [x] KOSMOS: deduplicação de artigos RSS por fingerprint de conteúdo:
   **Motivo:** 29% de feeds RSS emitem GUIDs duplicados ou incorretos (FeedHash Corpus 2024, 12.7M
   itens). Artigos re-publicados com título diferente passam pela checagem de GUID. Sem fingerprint
   de conteúdo, o KOSMOS armazena e analisa artigos duplicados, desperdiçando chamadas ao Ollama.
@@ -2972,7 +2985,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 ---
 
-### Fase 8 — Otimizações de RAG (pesquisa 2026-04-23)
+### Fase 8 — Otimizações de RAG 
 
 ### 8.1 Métrica cosine no ChromaDB (alta prioridade)
 - [x] `core/indexer.py` — adicionar `collection_metadata={"hnsw:space": "cosine"}` em todos os pontos que criam ou abrem o Chroma: `create_vectorstore()`, `index_single_file()`, `update_vectorstore()`, `load_vectorstore()`
@@ -3063,7 +3076,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 > O IdleIndexer acumula uma fila de artigos do KOSMOS e processa cada um sem throttling,
 > saturando o CPU continuamente.
 
-- [ ] `Mnemosyne/core/indexer.py` — `index_single_file()`: substituir `vs.add_documents(chunks)`
+- [x] `Mnemosyne/core/indexer.py` — `index_single_file()`: substituir `vs.add_documents(chunks)`
   por loop com `_detect_batch_config()` (lotes de 25 chunks, sleep 0.3 s entre lotes),
   idêntico ao padrão já usado em `create_vectorstore()`
 
@@ -3073,7 +3086,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 ### RAG — Embeddings, Recuperação e Chunking
 
 
-- [ ] Mnemosyne: substituir `OllamaEmbeddings.add_documents()` por chamada direta ao `/api/embed`:
+- [x] Mnemosyne: substituir `OllamaEmbeddings.add_documents()` por chamada direta ao `/api/embed`:
   **Motivo:** `OllamaEmbeddings` do LangChain gera 1 chamada HTTP por chunk (overhead de
   1000–2000ms cada). O endpoint `/api/embed` do Ollama aceita um array de textos numa única
   chamada HTTP (200–300ms por lote). Com 500 chunks por artigo: 500 × 1.5s = 750s vs
@@ -3144,7 +3157,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   4. Adicionar ao `pyproject.toml`: `sentence-transformers` como dependência opcional:
      `[tool.uv.optional-dependencies] low-resource = ["sentence-transformers>=3.0"]`
 
-- [ ] Mnemosyne: chunking adaptativo em substituição ao fixed-size atual:
+- [x] Mnemosyne: chunking adaptativo em substituição ao fixed-size atual:
   **Motivo:** chunking fixo (padrão) pode cortar conceitos no meio e misturar tópicos distintos,
   reduzindo precisão de recuperação. Papers de 2025 (arxiv 2504.19754; PMC12649634) mostram que
   chunking adaptativo — que alinha a fronteiras de seção e parágrafos usando similaridade cosine
@@ -3171,7 +3184,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   3. Detectar tipo pela extensão/fonte e aplicar parâmetros correspondentes
   4. Adicionar campo `source_type` ao metadata de cada chunk para rastreabilidade
 
-- [ ] Mnemosyne: recuperação híbrida BM25 + dense (Reciprocal Rank Fusion):
+- [x] Mnemosyne: recuperação híbrida BM25 + dense (Reciprocal Rank Fusion):
   **Motivo:** Mnemosyne usa apenas busca densa (embedding vetorial). BM25 (busca lexical) captura
   termos exatos, nomes próprios e queries de palavra-chave que o embedding pode errar. Papers
   confirmam: pipeline híbrido supera qualquer método isolado — Recall@5 = 0.816 em benchmark
@@ -3213,7 +3226,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   learn/series/rag/rerankers). FlashRank usa modelos ONNX quantizados que rodam em CPU a ~10ms
   por query — viável mesmo no Windows 10 sem GPU. Não usa VRAM, não compete com o modelo de chat.
   **Implementação (`Mnemosyne/core/retriever.py`):**
-  1. Adicionar `flashrank` ao `pyproject.toml`
+  1. Adicionar `flashra1nk` ao `pyproject.toml`
   2. Inicializar (lazy, no primeiro uso):
      ```python
      from flashrank import Ranker, RerankRequest
@@ -3268,6 +3281,149 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
   4. Atualizar `retriever.py` para usar `qdrant_client` — API similar ao ChromaDB
   5. Manter ChromaDB como fallback para o perfil `low` (Windows 10) se Qdrant for pesado
 
+
+### Fase 11 — RAG Aprendente: Reflexão de Conhecimento e Retrieval Iterativo
+
+> **Contexto e motivação:** O RAG convencional armazena fragmentos brutos do corpus e recupera por
+> similaridade cosine. A literatura de 2024-2025 (Self-RAG, CRAG, RAPTOR, Knowledge Reflection,
+> ITER-RETGEN) demonstra que sistemas que sintetizam, avaliam e refinam o próprio conhecimento
+> superam em 5-27% o RAG vanilla nos principais benchmarks. As técnicas abaixo foram selecionadas
+> pelo critério de viabilidade no hardware disponível (sem fine-tuning de LLM, sem GPU obrigatória).
+
+---
+
+### 11.1 — Knowledge Reflection: síntese ativa durante indexação
+
+> **Por que fazer:** RAG convencional responde mal a perguntas conceituais/abstratas (ex: "qual a
+> visão geral sobre X?") porque recupera fragmentos textuais brutos, que raramente contêm sínteses
+> explícitas. Knowledge Reflection gera artefatos de síntese no momento da indexação — o LLM lê
+> um conjunto de chunks relacionados e produz uma "reflexão" estruturada que já responde ao tipo de
+> pergunta que humanos mais fazem. Reflexões recebem boost de score (1.5×) porque, ao serem
+> recuperadas, entregam mais valor por token ao contexto do que fragmentos brutos.
+>
+> **Base científica:** FreeCodeCamp (2025), complementado por RAPTOR (Sarthi et al., Stanford, 2024)
+> e MemGPT — que demonstram que representações sintéticas hierárquicas superam fragmentos brutos
+> em benchmarks de compreensão de textos longos (+20 pp no QuALITY vs RAG vanilla).
+
+- [x] `core/reflection.py` — criar módulo de geração de reflexões:
+  - `generate_reflection(chunks: list[Document], config: AppConfig) -> Document | None`
+  - Prompt: *"Você recebeu N fragmentos de texto sobre um mesmo tema. Sintetize os conceitos-chave,
+    identifique conexões não-óbvias e gere um artefato de conhecimento estruturado em 150-300 palavras."*
+  - Retorna `Document` com `metadata["type"] = "reflection"`, `metadata["boost"] = 1.5`,
+    `metadata["source_chunks"]` = lista de ids dos chunks de origem, `metadata["order"] = 1`
+  - Retorna `None` se o LLM falhar (sem quebrar a indexação)
+  - **Atenção:** chamar LLM durante indexação aumenta o tempo total. Estimar ~3-5s por grupo
+    de chunks com modelo 7B. Emitir progresso na UI: "Gerando reflexão 3/12…"
+
+- [x] `core/indexer.py` — integrar geração de reflexões em `create_vectorstore()` e
+  `update_vectorstore()`:
+  - Agrupar chunks por arquivo-fonte (ou por tema via agrupamento de similaridade simples)
+  - Para cada grupo com ≥ 3 chunks: chamar `generate_reflection()`
+  - Se reflexão gerada: adicioná-la ao ChromaDB e ao BM25Index como documento extra
+  - Guardar contador de reflexões por tema em metadata da coleção (para trigger de meta-reflexão)
+
+- [ ] `core/reflection.py` — meta-reflexão (consolidação de 3 em 1):
+  - `maybe_consolidate(theme: str, config: AppConfig, vectorstore) -> Document | None`
+  - Busca reflexões de ordem 1 sobre o mesmo tema (by `metadata["theme"]` e `metadata["order"] == 1`)
+  - Se ≥ 3 reflexões encontradas: gera meta-reflexão (ordem 2) com boost 1.8×
+  - Remove as 3 reflexões originais do vectorstore e BM25 (para não duplicar)
+  - Threshold de similaridade entre reflexões para confirmar que são do mesmo tema: cosine ≥ 0.65
+
+- [x] `core/rag.py` — aplicar boost de reflexões no retrieval:
+  - Após recuperação híbrida (BM25+dense), identificar documentos com `metadata["boost"]`
+  - Multiplicar o score RRF pelo boost antes de ordenar: `score * doc.metadata.get("boost", 1.0)`
+  - Filtro extra: reflexões só entram no contexto se cosine similarity com a query ≥ 0.65
+    (evita reflexões genéricas que foram recuperadas por acidente)
+  - Testar: perguntas abstratas ("o que este corpus diz sobre X?") devem puxar reflexões;
+    perguntas específicas ("qual o valor de Y na tabela Z?") devem puxar chunks brutos
+
+- [ ] `gui/main_window.py` — feedback de reflexões na UI:
+  - Badge na sidebar: "N reflexões no índice" (clicável para ver lista)
+  - Durante indexação com reflexões: emitir progresso separado ("Gerando reflexões…") após
+    o progresso de chunks, para não confundir as duas fases
+
+---
+
+### 11.2 — Retrieval iterativo com enriquecimento de query (ITER-RETGEN)
+
+> **Por que fazer:** perguntas vagas ou mal formuladas produzem retrieval ruim porque a query
+> original não captura os termos que aparecem nos documentos relevantes. ITER-RETGEN (Shao et al.,
+> 2023) mostrou que usar uma resposta provisória do LLM como segunda query melhora recall em 5-12%
+> — porque a geração provisória "traduz" a pergunta original para a linguagem do corpus.
+> Custo: 1 chamada extra ao retriever (barato) + 1 chamada extra ao LLM (custosa). Tornar opcional.
+
+- [x] `core/rag.py` — implementar retrieval em 2 iterações como modo opcional:
+  - Parâmetro `iterative_retrieval: bool` em `prepare_ask()` (default: False)
+  - **Iteração 1:** retrieval normal sobre a query original → gerar resposta provisória (curta,
+    temperatura 0.0, sem streaming, instrução: "resposta em 1-2 frases, sem elaborar")
+  - **Iteração 2:** usar resposta provisória como query adicional → recuperar N/2 chunks extras
+    (sem duplicar os já recuperados na iteração 1)
+  - **Síntese:** combinar chunks da iteração 1 e 2 (deduplicados por `page_content[:100]`),
+    limitar ao total configurado (k), passar ao LLM para resposta final
+  - **Quando ativar:** perguntas curtas (< 10 palavras) ou vagas se beneficiam mais; perguntas
+    específicas com termos técnicos se beneficiam menos. Deixar como toggle manual na UI.
+
+- [x] `core/config.py` — campo `iterative_retrieval_enabled: bool = False`
+
+- [x] `gui/main_window.py` — toggle "Busca iterativa" na aba Perguntar (desativado por padrão),
+  com tooltip: "Faz duas rodadas de busca — melhora recall em perguntas vagas (+~8% accuracy),
+  mas dobra o tempo de resposta"
+
+---
+
+### 11.3 — Avaliação automatizada do pipeline (RAGAS)
+
+> **Por que fazer:** as otimizações das Fases 8, 9, 10, 11.1 e 11.2 mudam o pipeline de formas
+> que podem melhorar uma métrica e piorar outra. Sem avaliação objetiva, é impossível saber se
+> uma mudança foi realmente positiva. RAGAS (Es et al., 2023) define 4 métricas computáveis via
+> LLM sem ground truth manual: Faithfulness (a resposta é suportada pelos documentos?),
+> Answer Relevancy (a resposta é relevante à pergunta?), Context Precision (documentos recuperados
+> são realmente úteis?) e Context Recall (informação necessária estava nos documentos?).
+>
+> **Uso pretendido:** script standalone, fora do app, rodado manualmente antes/depois de cada
+> mudança de pipeline para medir impacto real. Não é funcionalidade do app em si.
+
+- [ ] `eval/ragas_eval.py` — script de avaliação standalone:
+  - 20-30 perguntas de teste cobrindo os principais tipos de query do Mnemosyne
+    (factuais, conceituais, multi-hop, vagas) — criar `eval/questions.json`
+  - Para cada pergunta: rodar `prepare_ask()` com o pipeline atual; capturar chunks recuperados
+    e resposta gerada
+  - Calcular métricas RAGAS usando Ollama como juiz (modelo configurável, sugestão: qwen2.5:7b)
+  - Exportar relatório em `eval/results_YYYY-MM-DD.json` para comparação entre versões
+  - **Rodar como baseline ANTES de implementar 11.1 e 11.2**, depois rodar novamente para medir
+    o impacto de cada mudança
+
+- [ ] `eval/questions.json` — 20 perguntas de teste com resposta esperada (ground truth manual):
+  - 5 perguntas factuais simples (a resposta está explícita num único chunk)
+  - 5 perguntas conceituais (requerem síntese de múltiplos chunks)
+  - 5 perguntas vagas (beneficiadas por retrieval iterativo)
+  - 5 perguntas multi-hop (requerem raciocínio encadeado)
+
+---
+
+### 11.4 — Pesquisas pendentes (RAG avançado, longo prazo)
+
+> Itens abaixo requerem pesquisa adicional antes de qualquer decisão de implementação.
+> Não implementar sem ordem explícita.
+
+- [ ] **Pesquisar CRAG para o Mnemosyne:** avaliar custo de rodar o evaluator T5-large
+  (770M params) no hardware disponível. No CachyOS (RX 6600): possível em VRAM (770M Q4 ≈ 400 MB).
+  No Windows 10 (i5-3470, sem GPU): inviável em tempo real (+150-300ms/query em CPU puro sem AVX2).
+  Pesquisar se existe versão menor (T5-small, 60M) com qualidade aceitável. Registrar resultado
+  no `pesquisas.md`.
+
+- [ ] **Pesquisar RAPTOR para corpora com documentos longos:** RAPTOR é relevante quando o corpus
+  inclui livros inteiros ou textos muito longos (> 50 páginas). A indexação RAPTOR requer LLM de
+  boa qualidade para sumarização de clusters — viável com Llama 3.2 3B ou Qwen2.5 7B no CachyOS.
+  Investigar custo de indexação em corpus de 100 documentos médios e overhead de armazenamento.
+  Inviável no i5-3470.
+
+- [ ] **Pesquisar GraphRAG leve (LightRAG) para corpus relacional:** relevante quando o corpus
+  tem muitas relações entre entidades (ex: vault Obsidian com wikilinks densos). LightRAG é menos
+  custoso que GraphRAG da Microsoft, mas ainda requer extração de entidades via LLM. Investigar
+  viabilidade com modelos 7-8B no CachyOS. Registrar no `pesquisas.md`.
+
+---
 
 ### Responsividade
 
@@ -3694,3 +3850,97 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ---
 
+
+## Melhorias baseadas em pesquisas para o ecossistema
+
+### Pesquisa: Understand-Anything — Padrões de Grafo de Conhecimento | 2026-05-04
+> Contexto: Análise do projeto github.com/Lum1104/Understand-Anything revelou padrões
+> arquiteturais aplicáveis ao ecossistema — tipagem de nós, indexação incremental
+> por nível de impacto, e pipeline multi-agente com prompts declarativos.
+> Os pontos 2 (grafo) e 6 (separação embedding/busca) se sobrepõem com itens já
+> existentes na Fase 11.3 do Mnemosyne (GraphRAG/LightRAG) — ver nota em cada item.
+
+#### Mnemosyne
+- [ ] **Classificação de chunks por tipo de nó durante indexação** (`core/indexer.py`,
+  `core/config.py`, `core/rag.py`). Adicionar metadado `node_type` a cada chunk com
+  valores possíveis: `article` (texto corrido), `entity` (pessoa/lugar/objeto nomeado),
+  `topic` (tema recorrente), `claim` (afirmação factual), `source` (referência externa).
+  Implementação: chamada LLM leve (< 3B, ex: Qwen2.5-1.5B) classifica o chunk no momento
+  da indexação; resultado salvo em `metadata["node_type"]` no ChromaDB. No retrieval,
+  aceitar filtro opcional `node_types: list[str]` em `prepare_ask()` para restringir busca.
+  Exemplo de uso: `?node_types=claim` só busca afirmações factuais — reduz ruído semântico
+  em perguntas como "o que eu afirmo sobre X?". Requer `iterative_retrieval_enabled` já
+  implementado na Fase 11.2 para não duplicar infra de LLM local.
+
+- [ ] **Indexação incremental em 4 níveis** (`core/indexer.py`). Substituir a detecção
+  binária (hash mudou → re-indexa tudo) por 4 níveis inspirados no FingerprintEngine do
+  Understand-Anything: NONE (nenhuma mudança), COSMETIC (espaços/formatação — hash de
+  texto normalizado igual), STRUCTURAL (conteúdo semântico alterado — re-indexa só chunks
+  afetados), FULL (arquivo novo ou removido). Implementação: salvar hash por chunk
+  (não só por arquivo) em `core/indexer.py`. Na re-indexação, comparar chunk por chunk:
+  só recalcula embedding e re-insere no ChromaDB os chunks que mudaram semanticamente.
+  Benefício crítico no i5-3470 (sem AVX2): corrigir typos não re-indexa 500 chunks.
+  Armazenar hashes em `{chroma_dir}/.chunk_hashes.json` ou em tabela SQLite auxiliar.
+
+#### HUB (LOGOS)
+- [ ] **Referência arquitetural: pipeline multi-agente via prompts .md** (pesquisa, não
+  implementação imediata). O Understand-Anything orquestra 5 subagentes em paralelo onde
+  cada "habilidade" é um arquivo `.md` de prompt — adicionar nova capacidade = criar novo
+  arquivo, sem alterar código. Aplicar ao LOGOS: cada tipo de tarefa (RAG query, síntese,
+  extração de entidades) seria um arquivo `logos/skills/<skill>.md`. O dispatcher lê o
+  tipo de request e escolhe o skill. Pesquisar viabilidade com `Qwen2.5-7B` no CachyOS
+  (modelo suficientemente capaz para seguir prompts estruturados). Registrar resultado
+  em `pesquisas.md` antes de implementar.
+
+---
+
+### Pesquisa: Integração KOSMOS-AKASHA — Padrões RSS Reader + Web Archiver | 2026-05-04
+> Contexto: Pesquisa sobre padrões de integração entre leitores RSS e arquivadores web
+> (FreshRSS+Wallabag, Miniflux+integrações, ArchiveBox). Objetivo: interligar KOSMOS
+> e AKASHA especialmente nas funções de crawling e indexação, evitando duplicação
+> e aproveitando ecosystem_scraper.py já compartilhado.
+
+#### KOSMOS
+- [ ] **Botão "Arquivar no AKASHA" no leitor de artigos** (`app/ui/views/reader_view.py`
+  ou `app/ui/views/article_view.py`). Padrão FreshRSS+Wallabag: ao clicar, envia
+  `POST http://localhost:7071/archive` com `url=<url_do_artigo>` (AKASHA já ouve na
+  porta 7071). AKASHA faz fetch completo e salva na biblioteca. Pré-requisito: AKASHA
+  precisa ter esse endpoint — ver item correspondente em AKASHA abaixo.
+  Mostrar toast "Arquivado no AKASHA" ao receber 200.
+  Mostrar erro "AKASHA offline" ao receber falha de conexão (não bloquear leitura).
+
+- [ ] **Auto-arquivar ao salvar artigo** (`app/ui/main_window.py` ou
+  `app/ui/views/unified_feed_view.py`). Padrão Miniflux automations: quando o usuário
+  clica em "Salvar" (bookmark) no artigo, enviar a URL automaticamente para AKASHA em
+  background (fire-and-forget, sem bloquear UI). Adicionar opção `auto_archive_on_save`
+  em `app/utils/config.py` (default: False). Na ação de salvar, se configurado, fazer
+  `requests.post("http://localhost:7071/archive", data={"url": url}, timeout=3)` em
+  thread separada.
+
+- [ ] **Busca unificada KOSMOS + AKASHA** (`app/ui/views/unified_feed_view.py` ou novo
+  `SearchView`). Ao pesquisar no KOSMOS, consultar também `GET http://localhost:7071/
+  search?q=<termo>` (AKASHA FTS5) e mesclar resultados com indicador de fonte (RSS vs
+  AKASHA). Evita abrir dois apps para pesquisar conteúdo relacionado.
+
+#### AKASHA
+- [ ] **Endpoint `POST /archive` para receber URLs de outros apps** (`routers/crawler.py`
+  ou novo `routers/archive_api.py`). Recebe `{"url": "...", "tags": [...], "notes": ""}`,
+  chama `archive_url()` existente, retorna `{"status": "ok", "path": "..."}`.
+  Autenticação: nenhuma (local-only, 127.0.0.1). Documentar no `CLAUDE.md` como contrato
+  de API. O KOSMOS e potencialmente outros apps do ecossistema usarão esse endpoint.
+
+- [ ] **Crawling incremental a partir dos feeds do KOSMOS** (`services/crawler.py` ou
+  novo `services/feed_crawler.py`). Padrão ArchiveBox: ao adicionar um feed ao KOSMOS,
+  notificar AKASHA (via `POST /add-source`) com o domínio raiz para crawl periódico.
+  AKASHA adiciona o domínio à lista de sites monitorados. Implementação: KOSMOS lê
+  `akasha.base_url` do ecosystem.json; ao criar feed, faz `POST /add-source?url=<domínio>
+  &name=<nome_feed>`. Evita que artigos de domínios monitorados existam só como resumo
+  RSS — a versão completa fica no AKASHA.
+
+- [ ] **Deduplicação entre arquivo AKASHA e artigos KOSMOS** (`services/library.py`).
+  Ao arquivar uma URL que já existe no archive do KOSMOS (`kosmos.archive_path`), criar
+  symlink ou registro cruzado em vez de duplicar. Consultar `kosmos.archive_path` do
+  ecosystem.json. Verificar por URL normalizada (remover parâmetros de rastreamento
+  `utm_*`). Se já arquivado pelo KOSMOS, retornar o path existente em vez de re-arquivar.
+
+## Melhorias, correções e atualizações

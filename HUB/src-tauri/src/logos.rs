@@ -42,7 +42,7 @@ use reqwest::Client;
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
-use sysinfo::System;
+use sysinfo::{ProcessesToUpdate, System};
 use tokio::sync::{Mutex, Semaphore};
 
 pub const LOGOS_PORT: u16 = 7072;
@@ -196,6 +196,9 @@ struct Inner {
     on_battery: Mutex<bool>,
     /// Contagem de requests P3 preemptados por P1 desde o startup.
     preempted_count: Mutex<u32>,
+    /// PID do processo Ollama detectado em runtime.
+    /// None se o Ollama ainda não foi encontrado ou reiniciou.
+    ollama_pid: Mutex<Option<u32>>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -233,6 +236,7 @@ impl LogosState {
             sys: Mutex::new(sys),
             on_battery: Mutex::new(is_on_battery()),
             preempted_count: Mutex::new(0),
+            ollama_pid: Mutex::new(None),
         }))
     }
 }
@@ -521,9 +525,23 @@ async fn queue_and_forward(
     *s.0.active_model_class.lock().await = Some(model_class);
     *s.0.active_app.lock().await         = Some(app_name);
 
+    // Boost de prioridade do Ollama para P1: restaura para normal enquanto responde
+    if priority == 1 {
+        if let Some(pid) = get_or_find_ollama_pid(&s).await {
+            set_ollama_priority(pid, true).await;
+        }
+    }
+
     // Encaminha ao Ollama
     let url = format!("{}/{ollama_target}", s.0.ollama_url);
     let result = s.0.client.post(&url).json(&ollama_payload).send().await;
+
+    // Restaura prioridade de background do Ollama após P1
+    if priority == 1 {
+        if let Some(pid) = *s.0.ollama_pid.lock().await {
+            set_ollama_priority(pid, false).await;
+        }
+    }
 
     // Limpa estado ativo antes de liberar o semáforo
     *s.0.active_priority.lock().await    = None;
@@ -1122,11 +1140,80 @@ async fn try_preempt_p3(s: &LogosState, model_name: &str) {
     }
 }
 
+// ── Prioridade de processo do Ollama ────────────────────────
+
+/// Encontra o PID do processo Ollama varrendo a tabela de processos do SO.
+/// Executa de forma síncrona — deve ser chamado via spawn_blocking.
+fn find_ollama_pid_sync() -> Option<u32> {
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, false);
+    sys.processes().iter().find_map(|(pid, proc)| {
+        let name = proc.name().to_string_lossy().to_lowercase();
+        // Corresponde a "ollama", "ollama.exe" — exclui "ollama_llm" (worker interno)
+        if name.starts_with("ollama") && !name.contains("_llm") {
+            Some(pid.as_u32())
+        } else {
+            None
+        }
+    })
+}
+
+/// Ajusta a prioridade de processo do Ollama via comandos de SO.
+///
+/// `p1_active = true`  → normal priority (nice=0 / NORMAL)
+///   Usado quando P1 (chat interativo) está ativo — Ollama recebe sua cota justa de CPU.
+/// `p1_active = false` → abaixo do normal (nice=10 / BELOW_NORMAL)
+///   Usado em background — P3 cede CPU para apps ativos sem polling ativo do LOGOS.
+///
+/// Nota: elevar acima do normal (nice < 0) requer root no Linux; usamos
+/// apenas 0 ↔ 10 para operar sem privilégios.
+async fn set_ollama_priority(pid: u32, p1_active: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        let nice_val = if p1_active { "0" } else { "10" };
+        let _ = tokio::process::Command::new("renice")
+            .args(["-n", nice_val, "-p", &pid.to_string()])
+            .output()
+            .await;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // NORMAL_PRIORITY_CLASS = 0x20, BELOW_NORMAL_PRIORITY_CLASS = 0x4000
+        let class = if p1_active { "Normal" } else { "BelowNormal" };
+        let script = format!(
+            "$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $p.PriorityClass = '{class}' }}"
+        );
+        let _ = tokio::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .output()
+            .await;
+    }
+}
+
+/// Retorna o PID do Ollama guardado, ou tenta descobri-lo agora.
+/// Atualiza o cache se encontrado.
+async fn get_or_find_ollama_pid(s: &LogosState) -> Option<u32> {
+    {
+        if let Some(pid) = *s.0.ollama_pid.lock().await {
+            return Some(pid);
+        }
+    }
+    let pid = tokio::task::spawn_blocking(find_ollama_pid_sync)
+        .await
+        .ok()
+        .flatten();
+    if let Some(p) = pid {
+        *s.0.ollama_pid.lock().await = Some(p);
+    }
+    pid
+}
+
 // ── cgroup para Ollama via systemd ───────────────────────────
 
 /// Escreve drop-in de cgroup para o serviço Ollama em ~/.config/systemd/user/ollama.service.d/
 /// Limita CPU e RAM do Ollama para que o sistema permaneça responsivo durante inferência P3.
 /// Aplica apenas em máquinas com GPU discreta (MainPc e Laptop).
+#[allow(unused_variables)]
 fn configure_cgroup(profile: HardwareProfile) {
     #[cfg(target_os = "linux")]
     {
@@ -1301,11 +1388,30 @@ pub async fn start_server(state: LogosState) {
     // Escreve drop-in de cgroup para o serviço Ollama (Linux/systemd, perfis high/medium).
     configure_cgroup(state.0.hardware_profile);
 
-    // Aplica nice=10 ao processo Ollama em execução (complementa o Nice=10 do systemd).
-    // Em máquinas com GPU (MainPc/Laptop) — no WorkPc o modo sobrevivência já limita o acesso.
-    if state.0.hardware_profile != HardwareProfile::WorkPc {
-        apply_ollama_nice();
-    }
+    // Task de descoberta do PID do Ollama + prioridade inicial de background.
+    // Aguarda 3s para dar tempo do Ollama inicializar caso tenha sido lançado junto com o HUB.
+    // Tenta novamente a cada 5 minutos para cobrir reinicios do Ollama.
+    let pid_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            if let Some(pid) = tokio::task::spawn_blocking(find_ollama_pid_sync)
+                .await
+                .ok()
+                .flatten()
+            {
+                let already_known = *pid_state.0.ollama_pid.lock().await == Some(pid);
+                *pid_state.0.ollama_pid.lock().await = Some(pid);
+                if !already_known {
+                    set_ollama_priority(pid, false).await;
+                    log::info!(
+                        "LOGOS: Ollama PID={pid} detectado — prioridade de background aplicada (nice=10)"
+                    );
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(297)).await; // ~5 min total
+        }
+    });
 
     // Task de atualização do status de bateria a cada 60s.
     let battery_state = state.clone();

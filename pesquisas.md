@@ -1,6 +1,6 @@
 # Pesquisas do Ecossistema
 
-> Última atualização: 2026-04-27
+> Última atualização: 2026-05-04
 
 ---
 
@@ -4668,4 +4668,1351 @@ Fontes:
 
 ========================================================
 FIM DA PESQUISA — Otimização, Chunking, Reranking, Avaliação
+========================================================
+
+---
+
+========================================================
+PESQUISA PARA O MNEMOSYNE
+Sessão: 2026-04-30
+Tema: RAG Auto-Aprendizagem, Reflexão de Conhecimento e Estado da Arte em Retrieval Aumentado
+========================================================
+
+--------------------------------------------------------
+# Pesquisa: Self-Learning RAG, Knowledge Reflection e Arquiteturas Avançadas de Retrieval
+
+> Investigação abrangente sobre sistemas RAG com capacidade de auto-aprendizagem,
+> reflexão de conhecimento, avaliação adaptativa de recuperação e técnicas emergentes
+> em retrieval aumentado por geração. Cobertura do estado da arte até 2025.
+--------------------------------------------------------
+
+---
+
+## 1. CONTEXTUALIZAÇÃO: O PROBLEMA DO RAG ESTÁTICO
+
+### 1.1 Limitações do RAG convencional
+
+O RAG (Retrieval-Augmented Generation) convencional segue um pipeline fixo:
+recuperar documentos relevantes → concatenar ao prompt → gerar resposta. Este
+paradigma apresenta limitações fundamentais documentadas na literatura:
+
+- **Recuperação cega:** o sistema recupera sempre, mesmo quando a pergunta não
+  requer conhecimento externo (ex: aritmética, lógica pura). Isso injeta ruído
+  desnecessário no contexto.
+- **Sem avaliação de relevância:** documentos recuperados são passados ao LLM
+  independentemente de sua qualidade, relevância real ou confiabilidade.
+- **Corpus estático:** o índice cresce por adição, mas não aprende com o uso.
+  Documentos que sistematicamente produzem respostas corretas não ganham peso.
+- **Falta de síntese:** o sistema armazena fragmentos originais, mas não constrói
+  representações de conhecimento mais ricas (sínteses, conexões inter-temáticas).
+- **Incompatibilidade com perguntas multi-hop:** perguntas que exigem raciocínio
+  encadeado sobre múltiplos documentos não são bem servidas por retrieval de k-NN
+  simples em espaço embedding.
+
+Nguyen et al. (2024) sistematizaram estas limitações em survey, classificando 58
+variantes de RAG em quatro eixos: retrieval timing, retrieval mechanism, augmentation
+strategy e generation paradigm. O trabalho identifica que menos de 20% dos sistemas
+revisados incorporam qualquer forma de feedback sobre qualidade do retrieval.
+
+---
+
+## 2. SELF-RAG: REFLEXÃO INTEGRADA AO MODELO
+
+### 2.1 Descrição e mecanismo
+
+Self-RAG (Asai et al., 2023; ICLR 2024) introduz tokens de reflexão treinados
+diretamente no modelo de linguagem, eliminando a necessidade de componentes externos
+de avaliação. O modelo aprende quando recuperar, como avaliar documentos e quando
+a resposta gerada é factualmente consistente.
+
+**Tokens de reflexão definidos no Self-RAG:**
+
+| Token     | Função                                                       | Valores possíveis                          |
+|-----------|--------------------------------------------------------------|--------------------------------------------|
+| [Retrieve]| Decide se recuperação é necessária                           | `yes`, `no`, `continue`                    |
+| [IsRel]   | Avalia se o documento recuperado é relevante à pergunta      | `relevant`, `irrelevant`                   |
+| [IsSup]   | Verifica se o segmento gerado é suportado pelo documento     | `fully supported`, `partially`, `no support`|
+| [IsUse]   | Avalia utilidade geral da resposta gerada                    | escala 1-5                                 |
+
+### 2.2 Treinamento
+
+O modelo Self-RAG foi treinado em dois estágios:
+1. **Geração de dados sintéticos:** um modelo crítico (GPT-4) gera reflexões para
+   pares (pergunta, documento, resposta), produzindo ~150.000 exemplos anotados.
+2. **Fine-tuning supervisionado:** o modelo base (Llama 2-7B e 13B) é ajustado para
+   prever tanto o texto de resposta quanto os tokens de reflexão de forma intercalada.
+
+Este processo elimina a necessidade de um módulo de avaliação separado em tempo de
+inferência — o próprio modelo avalia sua recuperação.
+
+### 2.3 Resultados experimentais
+
+Benchmarks reportados por Asai et al. (2023):
+
+| Benchmark    | Métrica         | RAG vanilla | Self-RAG 7B | Self-RAG 13B |
+|-------------|-----------------|-------------|-------------|--------------|
+| PopQA        | Accuracy        | 49.4%       | 54.9%       | 56.8%        |
+| TriviaQA     | Accuracy        | 63.8%       | 66.4%       | 67.1%        |
+| FactScore    | Factual score   | 71.3%       | 81.2%       | 82.0%        |
+| ASQA (str)  | F1              | 41.3%       | 46.8%       | 48.2%        |
+
+Self-RAG 13B supera ChatGPT (FactScore 71.3% → 82.0%) e Llama2-Chat 13B em todos
+os benchmarks, com retrieval adaptativo reduzindo chamadas ao retriever em ~30% nos
+casos onde recuperação não é necessária.
+
+### 2.4 Limitações
+
+- Requer fine-tuning do LLM base — não é plug-and-play para modelos de terceiros
+  (ex: modelos Ollama sem acesso a pesos para treino)
+- Custo computacional elevado para gerar dados de treino (requer GPT-4 ou equivalente)
+- Tokens de reflexão em inglês; generalização multilíngue não testada amplamente
+
+---
+
+## 3. CRAG: CORRECTIVE RAG — AVALIAÇÃO EXTERNA E REFINAMENTO
+
+### 3.1 Arquitetura
+
+CRAG (Shi et al., 2024) adota abordagem diferente: em vez de modificar o LLM,
+introduz um **evaluator leve e plugável** (T5-large, 770M parâmetros) que classifica
+a qualidade dos documentos recuperados e aciona mecanismos corretivos.
+
+**Pipeline CRAG:**
+```
+Pergunta → Retriever → k documentos → Evaluator (T5-large)
+    ↓
+  Score de confiança por documento
+    ↓
+  CORRECT  (>0.7): usa documento diretamente
+  AMBIGUOUS (0.3-0.7): busca na web + refina
+  INCORRECT (<0.3): descarta e faz busca web obrigatória
+```
+
+### 3.2 Refinamento: decompose-then-recompose
+
+Para documentos classificados como AMBIGUOUS ou quando a busca web é acionada,
+CRAG aplica a estratégia **decompose-then-recompose**:
+
+1. **Decompose:** fragmenta o documento em sentenças ou parágrafos
+2. **Score individual:** cada fragmento recebe score de relevância separado
+3. **Filtragem:** fragmentos com score < limiar são descartados
+4. **Recompose:** os fragmentos relevantes são recombinados em novo contexto
+
+Esta estratégia extrai apenas as partes úteis de documentos parcialmente relevantes
+(o problema da "agulha no palheiro"), em vez de passar todo o documento ao LLM.
+
+### 3.3 Integração com busca web
+
+Quando CRAG detecta que todos os documentos recuperados são de baixa qualidade,
+aciona uma busca web (ex: Bing API) em tempo real. Os resultados web passam pelo
+mesmo pipeline de decompose-then-recompose antes de serem usados.
+
+### 3.4 Resultados
+
+| Dataset      | Métrica   | Naive RAG | CRAG     | Melhoria |
+|-------------|-----------|-----------|----------|----------|
+| PopQA        | Accuracy  | 49.4%     | 54.9%    | +5.5 pp  |
+| PubHealth    | Accuracy  | 52.1%     | 59.5%    | +7.4 pp  |
+| ARC-Challenge| Accuracy  | 70.8%     | 74.1%    | +3.3 pp  |
+| Biography    | FactScore | 68.2%     | 73.4%    | +5.2 pp  |
+
+CRAG é plug-and-play (não requer mudanças no LLM base), mas adiciona latência:
+~150-300ms por consulta para execução do evaluator T5-large.
+
+---
+
+## 4. KNOWLEDGE REFLECTION: SÍNTESE ATIVA NO ÍNDICE
+
+### 4.1 Conceito e motivação
+
+Knowledge Reflection (FreeCodeCamp, 2025; baseado em trabalhos de síntese ativa
+como RAPTOR e MemGPT) propõe que o índice RAG não deve conter apenas fragmentos
+brutos dos documentos originais, mas também **artefatos de síntese** gerados pelo
+LLM durante a indexação.
+
+A premissa: quando um humano lê um livro, ele não apenas armazena frases; ele sintetiza
+conceitos, identifica conexões e gera novos insights. Um sistema RAG com reflexão de
+conhecimento imita este processo.
+
+### 4.2 Mecanismo de geração de reflexões
+
+Para cada conjunto de chunks indexados (ex: por capítulo, por tópico ou por janela
+temporal), o sistema:
+
+1. Extrai os chunks mais relevantes (ex: top-5 por similaridade ao tema principal)
+2. Passa ao LLM com prompt: *"Sintetize os conceitos-chave, identifique conexões
+   não-óbvias e gere um artefato de conhecimento estruturado."*
+3. Armazena a síntese no índice com metadado `type: "reflection"`
+4. Aplica boost de ranking: `score_reflection = score_base × 1.5`
+
+### 4.3 Consolidação periódica
+
+O sistema não apenas gera reflexões individuais, mas as consolida:
+- **Trigger:** a cada 3 novas reflexões sobre o mesmo tema, uma meta-reflexão é gerada
+- **Meta-reflexão:** sintetiza as 3 reflexões anteriores em representação de segunda ordem
+- **Boost acumulado:** meta-reflexões recebem `score = score_base × 1.5 × 1.2 = 1.8×`
+- **Threshold de similaridade:** apenas reflexões com cosine similarity ≥ 0.65 em
+  relação à query são incluídas no contexto (filtragem adicional às reflexões)
+
+### 4.4 Estrutura de dados e implementação típica
+
+```python
+# Exemplo de estrutura de artefato de reflexão
+reflection_doc = {
+    "content": "<síntese gerada pelo LLM>",
+    "metadata": {
+        "type": "reflection",
+        "source_chunks": ["chunk_id_1", "chunk_id_2", "chunk_id_3"],
+        "generated_at": "2026-04-30T10:00:00Z",
+        "theme": "machine_learning",
+        "order": 1,  # 1=reflexão simples, 2=meta-reflexão
+        "boost": 1.5  # ou 1.8 para meta-reflexões
+    }
+}
+
+# Boost aplicado no retrieval
+def apply_reflection_boost(docs_with_scores):
+    result = []
+    for doc, score in docs_with_scores:
+        boost = doc.metadata.get("boost", 1.0)
+        result.append((doc, score * boost))
+    return sorted(result, key=lambda x: x[1], reverse=True)
+```
+
+### 4.5 Trade-offs
+
+**Vantagens:**
+- Melhora retrieval para perguntas que requerem síntese de múltiplos documentos
+- Reduz necessidade de raciocínio do LLM em tempo de inferência
+- Perguntas abstratas/conceituais são melhor atendidas
+
+**Desvantagens:**
+- Custo de geração: cada conjunto de chunks exige uma chamada LLM durante indexação
+- Risco de reflexões incorretas: o LLM pode introduzir erros nas sínteses
+- Índice maior: reflexões ocupam espaço adicional
+- Latência de indexação: aumenta proporcionalmente ao número de reflexões geradas
+
+---
+
+## 5. RAPTOR: RECURSIVE ABSTRACTIVE PROCESSING FOR TREE-ORGANIZED RETRIEVAL
+
+### 5.1 Descrição
+
+RAPTOR (Sarthi et al., Stanford, 2024) resolve o problema de RAG para documentos
+longos e perguntas que exigem compreensão global através de uma árvore hierárquica
+de resumos gerados recursivamente.
+
+### 5.2 Algoritmo
+
+```
+Corpus de documentos
+    ↓
+Chunking inicial (ex: 100-200 tokens)
+    ↓
+Clustering de embeddings (UMAP + Gaussian Mixture Models)
+    ↓
+LLM gera resumo de cada cluster → "nó de nível 1"
+    ↓
+Embedding dos nós de nível 1
+    ↓
+Re-clustering + re-sumarização → "nós de nível 2"
+    ↓
+... (repetir até convergência ou nível máximo)
+    ↓
+Índice final: folhas (chunks originais) + todos os nós da árvore
+```
+
+O retrieval pode ser feito de dois modos:
+- **Tree traversal:** percorre a árvore top-down, expandindo apenas ramos relevantes
+- **Collapsed tree retrieval:** todos os nós (folhas e internos) são indexados juntos;
+  retrieval por similaridade como de costume, mas com cobertura em múltiplos níveis
+  de abstração
+
+### 5.3 Resultados
+
+Sarthi et al. (2024) reportam no benchmark QuALITY (questões de compreensão de
+textos longos):
+
+| Método              | QuALITY Acc | QASPER F1 |
+|--------------------|-------------|-----------|
+| RAG vanilla (DPR)  | 56.2%       | 35.0%     |
+| Long Context (4K)  | 63.1%       | 39.2%     |
+| RAPTOR             | 76.8%       | 55.7%     |
+| GPT-4 (full doc)   | 82.1%       | 63.2%     |
+
+RAPTOR supera em +20 pp o RAG convencional em QuALITY. Em QASPER, +20.7 pp.
+Em benchmarks NarrativeQA e SCROLLS, ganhos de 15-25%.
+
+### 5.4 Custo computacional
+
+- Indexação: O(N × L × C) onde L = número de níveis, C = custo de clustering
+- Em corpus de 1.000 documentos médios: ~2-4h de indexação com LLM local 7B
+- Overhead de armazenamento: +60-80% sobre índice vanilla (nós intermediários)
+- Retrieval: sem overhead significativo vs RAG vanilla no modo collapsed tree
+
+---
+
+## 6. AGENTIC RAG: RETRIEVAL COMO FERRAMENTA DE AGENTES AUTÔNOMOS
+
+### 6.1 Taxonomia
+
+Agentic RAG (Han et al., 2024; survey de 250+ papers) classifica sistemas em
+quatro categorias evolutivas:
+
+| Nível      | Descrição                                                          | Exemplos             |
+|------------|-------------------------------------------------------------------|----------------------|
+| Naive RAG  | Pipeline fixo: retrieve → generate                                | RAG vanilla          |
+| Advanced   | Módulos especializados: reranking, HyDE, query expansion          | CRAG, Self-RAG       |
+| Modular    | Componentes intercambiáveis e configuráveis                       | LangChain, LlamaIndex|
+| Agentic    | LLM como agente que usa retrieval como uma ferramenta             | AutoRAG, ReAct+RAG   |
+
+### 6.2 Capacidades dos agentes RAG
+
+**Reflexão:** o agente avalia a qualidade de suas próprias respostas e decide se
+precisa recuperar mais informações. Implementado via prompts como Chain-of-Thought
+ou via tokens de reflexão (Self-RAG).
+
+**Planejamento:** para perguntas complexas, o agente decompõe a pergunta em
+sub-perguntas, executa retrieval para cada sub-pergunta e sintetiza as respostas.
+Ex: "Quem foi a pessoa que inventou o transistor e qual foi seu impacto na computação?"
+→ sub-pergunta 1 (inventor), sub-pergunta 2 (impacto) → síntese.
+
+**Uso de ferramentas:** o agente pode chamar calculadoras, APIs, bancos de dados
+relacionais, intérpretes de código, em adição ao retrieval vetorial.
+
+**Colaboração multi-agente:** múltiplos agentes especializados colaboram. Ex:
+agente recuperador, agente verificador de fatos, agente sintetizador.
+
+### 6.3 ReAct + RAG
+
+ReAct (Yao et al., 2023) é o paradigma mais influente: o agente intercala raciocínio
+(Thought) com ações (Action) e observações (Observation) em loop:
+
+```
+Thought: Preciso verificar quando X aconteceu
+Action: retrieve("quando X aconteceu")
+Observation: [documento 1], [documento 2]
+Thought: O documento 1 diz Y, o documento 2 diz Z. Há conflito.
+Action: retrieve("X evento data primária fonte")
+Observation: [documento 3]
+Thought: Documento 3 confirma Y com fonte confiável.
+Answer: X aconteceu em Y.
+```
+
+ReAct reduz alucinações em tarefas de multi-hop QA (HotpotQA: +12% vs CoT sem
+retrieval; +8% vs RAG vanilla com retrieval único).
+
+---
+
+## 7. GRAPHRAG E LIGHTRAG: RECUPERAÇÃO BASEADA EM GRAFOS
+
+### 7.1 GraphRAG (Microsoft Research, 2024)
+
+GraphRAG (Edge et al., 2024) constrói um grafo de conhecimento a partir do corpus,
+onde nós são entidades (pessoas, lugares, conceitos) e arestas são relações semânticas
+extraídas pelo LLM. O retrieval usa este grafo em vez de (ou além de) similaridade
+vetorial.
+
+**Pipeline GraphRAG:**
+1. Extração de entidades e relações por LLM (costoso, feito offline)
+2. Detecção de comunidades no grafo (algoritmo de Leiden)
+3. Geração de sumários de comunidades por LLM
+4. Retrieval híbrido: query → entidades → comunidades relevantes → sumários
+
+**Resultado benchmark Microsoft (2024):**
+
+| Método    | Comprehensiveness | Diversity | Empowerment | Win Rate vs Baseline |
+|-----------|------------------|-----------|-------------|----------------------|
+| Baseline  | 32%              | 47%       | 40%         | —                    |
+| GraphRAG  | 86%              | 72%       | 81%         | 72%                  |
+
+Em análises de grandes corpora (relatórios anuais, conjuntos de notícias), GraphRAG
+supera naive RAG em 72% das comparações por avaliadores humanos.
+
+**Limitação:** custo de indexação extremamente elevado. Em corpus de 1M tokens,
+extração de entidades pode custar dezenas de dólares em API ou dias de processamento
+com LLM local. Requer LLM de boa qualidade para extração (≥ 13B parâmetros).
+
+### 7.2 LightRAG (Guo et al., HKUST, 2024)
+
+LightRAG propõe alternativa mais eficiente ao GraphRAG, usando recuperação em dois
+modos:
+
+- **Low-level retrieval:** busca por entidades específicas e suas relações diretas
+  (similar a keyword search)
+- **High-level retrieval:** busca por temas e conceitos abstratos (similar a
+  semantic search)
+
+LightRAG combina ambos os modos e usa grafo mais leve (sem detecção de comunidades
+obrigatória), reduzindo custo de indexação em ~60% vs GraphRAG enquanto mantém
+resultados comparáveis em benchmarks de QA.
+
+---
+
+## 8. RAG-RL: APRENDIZADO POR REFORÇO APLICADO AO RETRIEVAL
+
+### 8.1 Motivação
+
+Os modelos de raciocínio (DeepSeek-R1, Qwen-QwQ) treinados com GRPO (Group Relative
+Policy Optimization) demonstraram que RL pode melhorar raciocínio sem necessidade
+de dados supervisionados abundantes. RAG-RL aplica este paradigma ao problema
+específico de saber quando e o que recuperar.
+
+### 8.2 RAG-RL (Fang et al., 2025)
+
+RAG-RL é o primeiro modelo de linguagem treinado especificamente para RAG via RL:
+
+**Arquitetura:**
+- Modelo base: Qwen2.5-7B (instruct)
+- Algoritmo RL: GRPO com reward function composta:
+  - Reward de formato (resposta segue estrutura esperada)
+  - Reward de correção (resposta correta nos benchmarks)
+  - Reward de eficiência de retrieval (penaliza recuperações desnecessárias)
+- Curriculum learning: começa com exemplos simples (retrieval único, resposta direta),
+  progride para multi-hop e retrieval iterativo
+
+**Resultados em benchmarks de multi-hop QA:**
+
+| Benchmark   | Naive RAG | RAG-RL    | Melhoria |
+|-------------|-----------|-----------|----------|
+| HotpotQA    | 58.3%     | 67.1%     | +8.8 pp  |
+| MuSiQue     | 41.2%     | 52.8%     | +11.6 pp |
+| 2WikiMQA    | 63.5%     | 72.4%     | +8.9 pp  |
+| IIRC        | 47.8%     | 58.9%     | +11.1 pp |
+
+RAG-RL reduz chamadas desnecessárias ao retriever em 34% vs Self-RAG (que às vezes
+recupera mesmo quando desnecessário após fine-tuning).
+
+---
+
+## 9. DRAG: DISTILLATION-ENHANCED RAG
+
+### 9.1 Descrição
+
+DRAG (Distillation-enhanced Retrieval Augmented Generation, ACL 2025) aborda o
+problema de RAG em dispositivos com restrições de recursos (SLMs — Small Language
+Models), onde modelos gigantes de teacher não podem ser executados diretamente.
+
+### 9.2 Mecanismo de destilação
+
+O pipeline DRAG:
+1. **Teacher LLM** (modelo grande, ex: GPT-4 ou Llama 70B) processa a query com
+   documentos recuperados e gera:
+   - Resposta correta
+   - Evidências relevantes identificadas (quais partes dos documentos foram úteis)
+   - Grafo de raciocínio (como as evidências se conectam para chegar à resposta)
+2. **Student SLM** (modelo pequeno, ex: Qwen-1.8B, Phi-2) é treinado para imitar
+   o teacher, usando evidências e grafo como supervisão adicional além da resposta
+
+### 9.3 Resultados
+
+Comparado com MiniRAG (baseline para SLMs em RAG, Qiu et al., 2025):
+
+| Dataset    | MiniRAG  | DRAG     | Melhoria |
+|------------|----------|----------|----------|
+| PopQA      | 41.2%    | 52.7%    | +27.7%   |
+| TriviaQA   | 56.3%    | 68.9%    | +22.4%   |
+| NQ         | 38.1%    | 47.8%    | +25.5%   |
+
+DRAG permite que SLMs de 1-3B parâmetros atinjam desempenho próximo a LLMs de
+7-13B em tarefas RAG, tornando-o relevante para deployments em hardware restrito.
+
+---
+
+## 10. ITERATIVE RETRIEVAL E REFINAMENTO
+
+### 10.1 ITER-RETGEN (Shao et al., 2023)
+
+ITER-RETGEN (Iterative Retrieval with Generation) implementa loop de recuperação
+e geração iterativa:
+
+```
+Pergunta → Retrieval inicial → Geração provisória
+    ↓
+Geração provisória é usada como nova query para segundo retrieval
+    ↓
+Segundo retrieval → Geração refinada
+    ↓
+... (N iterações ou até convergência)
+```
+
+Em experimentos com 2-3 iterações em benchmarks de open-domain QA, ITER-RETGEN
+melhora resultados em 5-12% vs retrieval único, especialmente em perguntas onde a
+geração inicial captura conceitos relevantes que a pergunta original não capturava
+(fenômeno de "query enrichment emergente").
+
+### 10.2 IRCoT (Interleaving Retrieval with Chain-of-Thought, Press et al., 2023)
+
+IRCoT intercala cadeia de pensamento com recuperação:
+- A cada passo de raciocínio, o modelo decide se precisa recuperar nova informação
+- A query para o próximo retrieval é derivada do raciocínio parcial atual
+- Útil para perguntas que requerem múltiplos "saltos" de raciocínio (multi-hop QA)
+
+HotpotQA: IRCoT 71.4% vs CoT-solo 49.8% vs RAG-vanilla 60.1%.
+2WikiMultiHopQA: IRCoT 80.8% vs CoT 57.2% vs RAG 67.3%.
+
+---
+
+## 11. FAIR-RAG: AVALIAÇÃO E CALIBRAÇÃO
+
+### 11.1 Problema de calibração
+
+Em RAG convencional, os scores de similaridade cosine não são probabilisticamente
+calibrados — um score de 0.85 não significa 85% de probabilidade de relevância. Isto
+torna difícil definir thresholds confiáveis para filtrar documentos ruins.
+
+### 11.2 FAIR-RAG (Feedback-based Adaptive and Iterative Retrieval)
+
+FAIR-RAG propõe calibrar scores de retrieval usando feedback implícito do uso:
+- Quando a resposta gerada é marcada como correta (por usuário ou por verificador
+  automático), os documentos usados naquela resposta recebem boost de score futuro
+- Quando incorreta, os documentos recebem penalização
+- Scores são atualizados via média exponencial móvel (EMA) para estabilidade
+
+Este mecanismo cria um loop de melhoria contínua: o índice aprende com o uso.
+
+### 11.3 Avaliação de RAG: RAGAS
+
+RAGAS (Evaluation Framework for RAG, Es et al., 2023) define métricas padronizadas:
+
+| Métrica              | O que mede                                                       |
+|---------------------|------------------------------------------------------------------|
+| Faithfulness         | % de claims na resposta que são suportadas pelos documentos      |
+| Answer Relevancy     | Relevância da resposta à pergunta (independente de factualidade) |
+| Context Precision    | % dos documentos recuperados que são realmente relevantes        |
+| Context Recall       | % de informações necessárias que estavam nos documentos          |
+
+RAGAS usa LLM (GPT-4 ou equivalente) para calcular estas métricas, permitindo
+avaliação sem ground truth manual.
+
+---
+
+## 12. HYBRID RETRIEVAL: BM25 + DENSE (ESTADO DA ARTE)
+
+### 12.1 Por que híbrido?
+
+Dense retrieval (embeddings) e sparse retrieval (BM25) são complementares:
+
+| Característica           | BM25                          | Dense (embeddings)           |
+|-------------------------|-------------------------------|------------------------------|
+| Correspondência exata   | Excelente                     | Fraco                        |
+| Correspondência semântica| Fraco                        | Excelente                    |
+| Termos raros/técnicos   | Bom (TF-IDF natural)          | Fraco (OOV no embedding space)|
+| Latência                | Muito baixo (<10ms)           | Variável (10-100ms)          |
+| Sem GPU                  | Sim                           | Lento sem GPU                |
+| Interpretabilidade       | Alta                          | Baixa                        |
+
+### 12.2 Reciprocal Rank Fusion (RRF)
+
+RRF (Cormack et al., 2009) é o método de fusão de rankings mais adotado na literatura:
+
+```
+RRF_score(d) = Σ_{r∈rankers} 1 / (k + rank_r(d))
+```
+
+Onde k=60 é constante empírica que suaviza a influência de posições no topo.
+O valor k=60 foi selecionado empiricamente por Cormack et al. e manteve-se robusto
+em múltiplos domínios desde 2009.
+
+Vantagens do RRF sobre score fusion linear:
+- Invariante à escala de scores (não precisa normalizar BM25 e cosine)
+- Robusto a outliers (um documento com score muito alto em um ranker não domina)
+- Computacionalmente trivial
+
+### 12.3 Benchmarks de retrieval híbrido
+
+Luan et al. (2021) em BEIR (Benchmarking IR):
+
+| Método      | nDCG@10 médio (18 datasets) |
+|-------------|----------------------------|
+| BM25        | 43.0                       |
+| Dense (DPR) | 37.9                       |
+| Híbrido RRF | 48.1                       |
+| BM25+sparse | 45.2                       |
+
+O híbrido RRF supera ambos os métodos individuais em 16 dos 18 datasets do BEIR.
+
+### 12.4 ColBERT e SPLADE: abordagens alternativas
+
+- **ColBERT (Khattab & Zaharia, 2020):** late interaction — embeddings por token, não
+  por documento; retrieval muito mais preciso, mas 10× maior custo de armazenamento
+- **SPLADE (Formal et al., 2021):** sparse embeddings aprendidos (não BM25 manual);
+  vocabulário expandido, preenche gap semântico do sparse; melhor que BM25 mas
+  requer fine-tuning
+
+Para deployments locais com recursos limitados, BM25+dense RRF continua sendo
+o trade-off mais equilibrado (2024-2025).
+
+---
+
+## 13. FONTES
+
+ASAI, Akari et al. **Self-RAG: Learning to Retrieve, Generate, and Critique through
+Self-Reflection**. arXiv:2310.11511, 2023. Apresentado na ICLR 2024. Disponível em:
+<https://arxiv.org/abs/2310.11511>. Acesso em: 30 abr. 2026.
+
+CORMACK, Gordon V.; CLARKE, Charles L. A.; BUETTCHER, Stefan. **Reciprocal Rank
+Fusion Outperforms Condorcet and Individual Rank Learning Methods**. In: SIGIR 2009,
+p. 758-759. Disponível em: <https://dl.acm.org/doi/10.1145/1571941.1572114>.
+Acesso em: 30 abr. 2026.
+
+EDGE, Darren et al. **From Local to Global: A Graph RAG Approach to Query-Focused
+Summarization**. Microsoft Research, arXiv:2404.16130, 2024. Disponível em:
+<https://arxiv.org/abs/2404.16130>. Acesso em: 30 abr. 2026.
+
+ES, Shahul et al. **RAGAS: Automated Evaluation of Retrieval Augmented Generation**.
+arXiv:2309.15217, 2023. Disponível em: <https://arxiv.org/abs/2309.15217>.
+Acesso em: 30 abr. 2026.
+
+FANG, Jintao et al. **RAG-RL: Advancing Retrieval-Augmented Generation via RL and
+Curriculum Learning**. arXiv:2503.12759, 2025. Disponível em:
+<https://arxiv.org/abs/2503.12759>. Acesso em: 30 abr. 2026.
+
+FORMAL, Thibault et al. **SPLADE: Sparse Lexical and Expansion Model for First Stage
+Ranking**. In: SIGIR 2021. arXiv:2107.05720. Disponível em:
+<https://arxiv.org/abs/2107.05720>. Acesso em: 30 abr. 2026.
+
+GUO, Zirui et al. **LightRAG: Simple and Fast Retrieval-Augmented Generation**.
+HKUST, arXiv:2410.05779, 2024. Disponível em: <https://arxiv.org/abs/2410.05779>.
+Acesso em: 30 abr. 2026.
+
+HAN, Yucheng et al. **Agentic Retrieval-Augmented Generation: A Survey on Agentic
+RAG**. arXiv:2501.09136, 2024. Disponível em: <https://arxiv.org/abs/2501.09136>.
+Acesso em: 30 abr. 2026.
+
+KHATTAB, Omar; ZAHARIA, Matei. **ColBERT: Efficient and Effective Passage Search via
+Contextualized Late Interaction over BERT**. In: SIGIR 2020. arXiv:2004.12832.
+Disponível em: <https://arxiv.org/abs/2004.12832>. Acesso em: 30 abr. 2026.
+
+LUAN, Yi et al. **Sparse, Dense, and Attentional Representations for Text Retrieval**.
+TACL 2021. arXiv:2005.00181. Disponível em: <https://arxiv.org/abs/2005.00181>.
+Acesso em: 30 abr. 2026.
+
+NGUYEN, Tri et al. **A Comprehensive Survey of Retrieval-Augmented Generation (RAG):
+Evolution, Current Landscape and Future Directions**. arXiv:2410.12837, 2024.
+Disponível em: <https://arxiv.org/abs/2410.12837>. Acesso em: 30 abr. 2026.
+
+PRESS, Ofir et al. **Measuring and Narrowing the Compositionality Gap in Language
+Models** (IRCoT). arXiv:2210.03350, 2023. Disponível em:
+<https://arxiv.org/abs/2210.03350>. Acesso em: 30 abr. 2026.
+
+SARTHI, Parth et al. **RAPTOR: Recursive Abstractive Processing for Tree-Organized
+Retrieval**. Stanford, arXiv:2401.18059, 2024. Disponível em:
+<https://arxiv.org/abs/2401.18059>. Acesso em: 30 abr. 2026.
+
+SHAO, Zhihong et al. **Enhancing Retrieval-Augmented Large Language Models with
+Iterative Retrieval-Generation Synergy** (ITER-RETGEN). arXiv:2305.15294, 2023.
+Disponível em: <https://arxiv.org/abs/2305.15294>. Acesso em: 30 abr. 2026.
+
+SHI, Weijia et al. **CRAG: Corrective Retrieval Augmented Generation**. arXiv:2401.15884,
+2024. Disponível em: <https://arxiv.org/abs/2401.15884>. Acesso em: 30 abr. 2026.
+
+THAKUR, Nandan et al. **BEIR: A Heterogeneous Benchmark for Zero-Shot Evaluation of
+Information Retrieval Models**. NeurIPS 2021. arXiv:2104.08663. Disponível em:
+<https://arxiv.org/abs/2104.08663>. Acesso em: 30 abr. 2026.
+
+YAO, Shunyu et al. **ReAct: Synergizing Reasoning and Acting in Language Models**.
+ICLR 2023. arXiv:2210.03629. Disponível em: <https://arxiv.org/abs/2210.03629>.
+Acesso em: 30 abr. 2026.
+
+ZHAO, Xiaoxi et al. **DRAG: Distillation-enhanced Retrieval Augmented Generation
+for Small Language Models**. ACL 2025. Disponível em:
+<https://aclanthology.org>. Acesso em: 30 abr. 2026.
+
+FREECODECAMP. **How to Build a Self-Learning RAG System with Knowledge Reflection**.
+2025. Disponível em:
+<https://www.freecodecamp.org/news/how-to-build-a-self-learning-rag-system-with-knowledge-reflection/>.
+Acesso em: 30 abr. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Self-Learning RAG, Knowledge Reflection e Arquiteturas Avançadas
+========================================================
+
+---
+
+## Referências Externas — Ferramentas e Projetos
+
+# Pesquisa: Understand-Anything — Plugin de Grafo de Conhecimento para Codebases
+
+Data: 2026-05-04
+Contexto: documentação técnica de referência do projeto github.com/Lum1104/Understand-Anything
+para avaliação de arquitetura, padrões, e potencial de inspiração para ferramentas do ecossistema.
+
+---
+
+## 1. Visão Geral e Identidade do Projeto
+
+**Nome:** Understand-Anything
+**Autor:** Lum1104 (GitHub)
+**Versão atual do plugin:** 2.5.1 (campo `version` em `.claude-plugin/plugin.json`)
+**Licença:** MIT
+**Repositório:** https://github.com/Lum1104/Understand-Anything
+**Homepage:** https://understand-anything.com
+**Demo ao vivo:** https://understand-anything.com/demo/
+**Linguagem principal:** TypeScript
+**Estrelas no GitHub (2026-05-04):** 11.482
+**Forks:** 975
+**Data de criação:** 2026-03-15
+**Última atualização:** 2026-05-04
+
+**Descrição oficial:** "Turn any codebase, knowledge base, or docs into an interactive knowledge graph
+you can explore, search, and ask questions about. Works with Claude Code, Codex, Cursor, Copilot,
+Gemini CLI, and more."
+
+**Lema:** "Graphs that teach > graphs that impress."
+
+---
+
+## 2. Arquitetura Técnica Geral
+
+O projeto é um monorepo pnpm-workspace com duas camadas principais:
+
+```
+understand-anything/
+├── understand-anything-plugin/      # Plugin principal (npm package)
+│   ├── packages/
+│   │   ├── core/                   # Motor de análise (@understand-anything/core)
+│   │   └── dashboard/              # Dashboard React (@understand-anything/dashboard)
+│   ├── agents/                     # Definições de agentes LLM (arquivos .md)
+│   ├── skills/                     # Definições de skills/comandos (arquivos .md)
+│   ├── src/                        # Implementação TypeScript das skills
+│   └── hooks/                      # Hooks de automação (hooks.json)
+├── homepage/                       # Site Astro (understand-anything.com)
+├── scripts/                        # Scripts utilitários (geração de grafos grandes)
+└── README.md + README.{locale}.md  # Documentação em 7 idiomas
+```
+
+**Paradigma de processamento:** O sistema usa um **pipeline multi-agente** onde agentes LLM
+especializados são orquestrados por um agente-coordenador. Cada agente recebe um prompt
+estruturado (Markdown) que define seu papel, fases de execução e formato de saída.
+
+**Runtime de agentes:** Claude Code Plugin (nativo) + portabilidade via "skills" genéricas
+instaláveis nos demais agentes suportados (Codex, Cursor, Copilot, Gemini CLI, etc.).
+
+---
+
+## 3. Pipeline Multi-Agente (/understand)
+
+O comando principal `/understand` orquestra **6 agentes especializados** em fases sequenciais,
+com paralelismo interno na fase 2:
+
+### Fase 0 — Pre-flight (Preflight)
+- Resolução do `PROJECT_ROOT` (argumento ou CWD)
+- Verificação e build do pacote `@understand-anything/core` se dist/ não existir
+- Leitura do hash git atual (`git rev-parse HEAD`)
+- Criação de diretórios intermediários (`.understand-anything/intermediate/`, `.understand-anything/tmp/`)
+- Configuração de auto-update (escrita em `.understand-anything/config.json`)
+- Verificação e merge de subdomain graphs existentes (`merge-subdomain-graphs.py`)
+- Leitura do grafo existente e metadados (para detectar incrementalidade)
+- **Lógica de decisão:**
+  - `--full` → análise completa
+  - Grafo inexistente → análise completa
+  - `--review` + grafo existente + hash igual → pula para Fase 6 (review-only)
+  - Grafo existente + hash igual → pergunta ao usuário
+  - Grafo existente + arquivos mudados → atualização incremental
+- Coleta de contexto do projeto: README (3000 chars), manifest, árvore de diretórios, entry point
+
+### Fase 0.5 — Ignore Configuration
+- Verifica existência de `.understand-anything/.understandignore`
+- Se ausente: gera arquivo de sugestões via script Node.js inline (lê `.gitignore`, detecta diretórios comuns)
+- **Aguarda confirmação do usuário antes de prosseguir**
+
+### Fase 1 — SCAN (agente `project-scanner`)
+- Descobre todos os arquivos do projeto (via `git ls-files` ou listagem recursiva com exclusões)
+- Aplica exclusões hardcoded: `node_modules/`, `.git/`, `dist/`, `build/`, `*.lock`, assets binários, etc.
+- Aplica filtros do `.understandignore` (via `@understand-anything/core` `createIgnoreFilter`)
+- Detecta linguagem por extensão (mapeamento para 35+ identificadores)
+- Categoriza cada arquivo (`code`, `config`, `docs`, `infra`, `data`, `script`, `markup`)
+- Detecta frameworks por leitura de manifests (`package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `Gemfile`, `pom.xml`, `build.gradle`)
+- Resolve imports internos para cada arquivo (pre-processamento para Fase 2)
+- Conta linhas com `wc -l`
+- Escreve `scan-result.json` com: nome do projeto, descrição, linguagens, frameworks, lista de arquivos, `importMap`, `filteredByIgnore`
+- **Gate:** se >100 arquivos, informa o usuário e aguarda confirmação
+
+### Fase 2 — ANALYZE (agente `file-analyzer`, paralelo)
+- Agrupa arquivos em lotes de 20-30 (target ~25 por lote), com arquivos relacionados juntos
+- Despacha até **5 subagentes concorrentes** para processar lotes em paralelo
+- **Por lote — Fase 2A (extração estrutural):**
+  - Cria JSON de input com `projectRoot`, `batchFiles`, `batchImportData`
+  - Executa `extract-structure.mjs` (script Node.js bundled) que usa tree-sitter
+  - Saída: funções, classes, imports, exports, call graph, métricas por arquivo
+  - Linguagens com tree-sitter: TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C/C++, C#
+  - Linguagens sem tree-sitter (Swift, Kotlin): métricas básicas apenas; LLM supplementa
+- **Por lote — Fase 2B (análise semântica por LLM):**
+  - Para cada arquivo: cria nó `GraphNode` com tipo determinado pelo `fileCategory`
+  - Determina `complexity`: simple (<50 linhas não-vazias), moderate (50-200), complex (>200)
+  - Escreve `summary` (1-2 frases), `tags`, `languageNotes`
+  - Para arquivos `code`: cria sub-nós `function` e `class` com seus summaries
+  - Para arquivos `infra`: detecta subtipo (`service`, `pipeline`, `resource`)
+  - Para arquivos `data`: detecta subtipo (`table`, `schema`, `endpoint`)
+  - Cria `GraphEdge` para: imports, contains, calls, reads_from, writes_to, etc.
+  - Escreve `batch-N.json`
+- Após todos os lotes: executa `merge-batch-graphs.py` (Python, bundled):
+  - Combina todos os `batch-*.json`
+  - Normaliza IDs de nós (prefixos duplos, prefixos de projeto, prefixos faltantes)
+  - Normaliza valores de complexidade (`low`→`simple`, `medium`→`moderate`, `high`→`complex`)
+  - Deduplica nós (por ID, mantém última ocorrência) e arestas (por `source+target+type`)
+  - Remove arestas pendentes (referenciando nós inexistentes)
+  - Produz `assembled-graph.json`
+
+### Fase 3 — ASSEMBLE REVIEW (agente `assemble-reviewer`)
+- Recebe o grafo montado + report do merge script + importMap
+- Verifica integridade referencial cross-batch
+- Adiciona notas de warning ao `$PHASE_WARNINGS`
+- Escreve `assemble-review.json`
+
+### Fase 4 — ARCHITECTURE (agente `architecture-analyzer`)
+- Recebe nós de nível de arquivo, arestas de importação, todas as arestas
+- Recebe contexto de linguagem (arquivos `languages/*.md`) e framework (arquivos `frameworks/*.md`)
+- Identifica camadas arquiteturais (API, Service, Data, UI, Utility, etc.)
+- Normaliza a saída: unwrap de envelope, renomeação de campos, síntese de IDs, conversão de paths
+- Para atualizações incrementais: recebe definições de camadas anteriores para consistência
+- Escreve `layers.json` (array de `{id, name, description, nodeIds[]}`)
+
+### Fase 5 — TOUR (agente `tour-builder`)
+- Recebe todos os nós de nível de arquivo, camadas, todas as arestas
+- Recebe README (3000 chars) e entry point do projeto
+- Gera walkthrough guiado ordenado por dependência
+- Normaliza a saída: unwrap, renomeação de campos, conversão de paths, remoção de refs dangling
+- Escreve `tour.json` (array de `{order, title, description, nodeIds[], languageLesson?}`)
+
+### Fase 6 — REVIEW (validação)
+- Monta o objeto `KnowledgeGraph` final com `version`, `project`, `nodes`, `edges`, `layers`, `tour`
+- **Caminho padrão (inline deterministic):** executa script Node.js gerado dinamicamente que valida:
+  - `nodes` e `edges` são arrays
+  - Cada nó tem `id`, `type`, `name`, `summary`, `tags`
+  - IDs únicos (sem duplicatas)
+  - Arestas referenciam nós existentes
+  - Nós de arquivo pertencem a camadas
+  - Tour referenciam nós existentes
+  - Orphan nodes (sem arestas) são reportados como warning
+  - Calcula estatísticas: totalNodes, totalEdges, tipos por contagem
+- **Caminho `--review` (LLM):** despacha agente `graph-reviewer` para validação semântica mais profunda
+- Aplicação de fixes automáticos para issues menores
+
+### Fase 7 — SAVE
+- Escreve `knowledge-graph.json` (grafo final)
+- Escreve `meta.json` (timestamp, hash, versão, contagem de arquivos)
+- Gera fingerprints estruturais (`fingerprints.json`) para baseline de atualizações futuras
+- Remove diretórios intermediários e temporários
+- Reporta sumário: arquivos por categoria, nós por tipo, arestas por tipo, camadas, tour steps
+- Auto-lança `/understand-dashboard` se validação passou
+
+---
+
+## 4. Skills/Comandos Disponíveis
+
+### /understand [path] [--full|--auto-update|--no-auto-update|--review]
+Pipeline completo de análise descrito acima. Produz `.understand-anything/knowledge-graph.json`.
+
+### /understand-dashboard [project-path]
+- Inicia servidor Vite dev com o dashboard React
+- Passa `GRAPH_DIR` via variável de ambiente para apontar ao projeto
+- Gera token aleatório por sessão (32 hex chars via `crypto.randomBytes(16)`)
+- URL: `http://127.0.0.1:5173?token=<TOKEN>`
+- Imprime a URL tokenizada no terminal (`🔑  Dashboard URL: ...`)
+- Servidor bind apenas em `127.0.0.1` (não expõe na LAN)
+- Serve: `knowledge-graph.json`, `domain-graph.json`, `diff-overlay.json`, `meta.json`, `file-content.json`
+- Todos os endpoints de dados requerem o token correto (HTTP 403 sem token)
+- Sanitiza file paths absolutos antes de servir (converte para relativos ao project root)
+
+### /understand-chat [query]
+- Responde perguntas sobre o codebase usando o grafo existente
+- Usa grep no JSON para encontrar nós relevantes (não carrega grafo inteiro em contexto)
+- Segue arestas 1-hop para encontrar componentes conectados
+- Suporta busca por nome, summary, e tags
+
+### /understand-diff
+- Analisa mudanças git atuais contra o grafo
+- Identifica: componentes mudados, componentes afetados (1-hop), camadas afetadas
+- Calcula blast radius baseado em complexidade e cross-layer edges
+- Escreve `diff-overlay.json` para visualização no dashboard
+
+### /understand-explain [file-path]
+- Deep-dive em um arquivo ou função específico
+- Lê o código-fonte + nó correspondente + vizinhança no grafo
+- Explica: papel arquitetural, estrutura interna, conexões externas, fluxo de dados
+
+### /understand-onboard
+- Gera guia de onboarding em Markdown
+- Seções: Project Overview, Architecture Layers, Key Concepts, Guided Tour, File Map, Complexity Hotspots
+- Oferece salvar em `docs/ONBOARDING.md`
+
+### /understand-domain [--full]
+- Extrai conhecimento de domínio de negócio
+- Se grafo existente: deriva a partir dele (barato, sem scan de arquivos)
+- Se `--full` ou sem grafo: scan leve via `extract-domain-context.py` (tree de arquivos, entry points, assinaturas)
+- Usa agente `domain-analyzer` para extrair: domínios, fluxos de negócio, passos de processo
+- Produz `domain-graph.json` com nós `domain`, `flow`, `step`
+- Lança dashboard automaticamente
+
+### /understand-knowledge [wiki-directory]
+- Analisa wikis no padrão Karpathy (raw sources + wiki markdown + schema)
+- **Fase 1 (determinística):** `parse-knowledge-base.py` extrai wikilinks, headings, categorias do `index.md`
+- **Fase 2:** batches de 10-15 artigos por agente `article-analyzer` (máximo 3 concurrent)
+- **Fase 3:** `merge-knowledge-graph.py` combina scan manifest + análises LLM
+- Produz grafo com `kind: "knowledge"` (força layout force-directed em vez de hierárquico)
+- Nós: `article`, `entity`, `topic`, `claim`, `source`
+- Arestas: `cites`, `contradicts`, `builds_on`, `exemplifies`, `categorized_under`, `authored_by`, `related`
+
+---
+
+## 5. Schema do KnowledgeGraph (tipos TypeScript)
+
+### KnowledgeGraph (raiz)
+```typescript
+interface KnowledgeGraph {
+  version: string;           // "1.0.0"
+  kind?: "codebase" | "knowledge";
+  project: ProjectMeta;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  layers: Layer[];
+  tour: TourStep[];
+}
+```
+
+### Tipos de Nó (21 total)
+| Categoria | Tipo | Convenção de ID | Descrição |
+|-----------|------|-----------------|-----------|
+| Código | `file` | `file:<path>` | Arquivo de código-fonte |
+| Código | `function` | `function:<path>:<name>` | Função ou método |
+| Código | `class` | `class:<path>:<name>` | Classe, interface ou tipo |
+| Código | `module` | `module:<name>` | Módulo ou pacote lógico |
+| Código | `concept` | `concept:<name>` | Conceito abstrato ou padrão |
+| Não-código | `config` | `config:<path>` | Arquivo de configuração |
+| Não-código | `document` | `document:<path>` | Arquivo de documentação |
+| Não-código | `service` | `service:<path>` | Serviço implantável (Docker, K8s) |
+| Não-código | `table` | `table:<path>:<table-name>` | Tabela de banco de dados |
+| Não-código | `endpoint` | `endpoint:<path>:<name>` | Endpoint de API |
+| Não-código | `pipeline` | `pipeline:<path>` | Pipeline CI/CD |
+| Não-código | `schema` | `schema:<path>` | Schema (GraphQL, Protobuf, Prisma) |
+| Não-código | `resource` | `resource:<path>` | Recurso de infraestrutura (Terraform) |
+| Domínio | `domain` | — | Domínio de negócio |
+| Domínio | `flow` | — | Fluxo de negócio |
+| Domínio | `step` | — | Passo de processo |
+| Conhecimento | `article` | — | Artigo de wiki |
+| Conhecimento | `entity` | — | Entidade extraída |
+| Conhecimento | `topic` | — | Tópico ou categoria |
+| Conhecimento | `claim` | — | Afirmação ou decisão |
+| Conhecimento | `source` | — | Fonte ou documento raw |
+
+### Tipos de Aresta (35 total, 8 categorias)
+| Categoria | Tipos |
+|-----------|-------|
+| Structural | `imports`, `exports`, `contains`, `inherits`, `implements` |
+| Behavioral | `calls`, `subscribes`, `publishes`, `middleware` |
+| Data flow | `reads_from`, `writes_to`, `transforms`, `validates` |
+| Dependencies | `depends_on`, `tested_by`, `configures` |
+| Semantic | `related`, `similar_to` |
+| Infrastructure | `deploys`, `serves`, `provisions`, `triggers`, `migrates`, `documents`, `routes`, `defines_schema` |
+| Domain | `contains_flow`, `flow_step`, `cross_domain` |
+| Knowledge | `cites`, `contradicts`, `builds_on`, `exemplifies`, `categorized_under`, `authored_by` |
+
+### Pesos de Aresta
+`contains`: 1.0 | `inherits/implements`: 0.9 | `calls/exports/defines_schema`: 0.8 |
+`imports/deploys/migrates`: 0.7 | `depends_on/configures/triggers`: 0.6 | demais: 0.5
+
+### GraphNode (campos)
+```typescript
+interface GraphNode {
+  id: string;
+  type: NodeType;
+  name: string;
+  filePath?: string;
+  lineRange?: [number, number];
+  summary: string;
+  tags: string[];
+  complexity: "simple" | "moderate" | "complex";
+  languageNotes?: string;
+  domainMeta?: DomainMeta;       // para nós domain/flow/step
+  knowledgeMeta?: KnowledgeMeta; // para nós de knowledge
+}
+```
+
+### GraphEdge (campos)
+```typescript
+interface GraphEdge {
+  source: string;
+  target: string;
+  type: EdgeType;
+  direction: "forward" | "backward" | "bidirectional";
+  description?: string;
+  weight: number; // 0-1
+}
+```
+
+---
+
+## 6. Motor de Análise: @understand-anything/core
+
+**Pacote:** `@understand-anything/core` v0.1.0
+**Localização:** `understand-anything-plugin/packages/core/`
+
+### Dependências principais
+| Pacote | Versão | Função |
+|--------|--------|--------|
+| `web-tree-sitter` | ^0.26.6 | Parser AST para análise estrutural de código |
+| `tree-sitter-typescript` | ^0.23.2 | Gramática TypeScript/JavaScript |
+| `tree-sitter-python` | ^0.25.0 | Gramática Python |
+| `tree-sitter-go` | ^0.25.0 | Gramática Go |
+| `tree-sitter-rust` | ^0.24.0 | Gramática Rust |
+| `tree-sitter-java` | ^0.23.5 | Gramática Java |
+| `tree-sitter-ruby` | ^0.23.1 | Gramática Ruby |
+| `tree-sitter-php` | ^0.23.11 | Gramática PHP |
+| `tree-sitter-cpp` | ^0.23.4 | Gramática C/C++ |
+| `tree-sitter-c-sharp` | ^0.23.1 | Gramática C# |
+| `tree-sitter-javascript` | ^0.25.0 | Gramática JavaScript (redundante com typescript) |
+| `fuse.js` | ^7.1.0 | Busca fuzzy (FTS) nos nós do grafo |
+| `ignore` | ^7.0.5 | Filtragem .gitignore-compatible para .understandignore |
+| `yaml` | ^2.8.3 | Parsing de arquivos YAML |
+| `zod` | ^4.3.6 | Validação de schema em runtime |
+
+**DevDependencies:** TypeScript 5.7, Vitest 3.1, @vitest/coverage-v8 3.2.4
+
+### Módulos exportados
+- `@understand-anything/core` — exports principais (GraphBuilder, tipos, fingerprints, staleness)
+- `@understand-anything/core/search` — motor de busca fuzzy (Fuse.js)
+- `@understand-anything/core/types` — interfaces TypeScript
+- `@understand-anything/core/schema` — schemas Zod para validação
+- `@understand-anything/core/languages` — LanguageRegistry, LanguageConfig
+
+### TreeSitterPlugin
+Plugin de análise estrutural usando web-tree-sitter. Suporta:
+- TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C++, C# (tree-sitter completo)
+- Swift, Kotlin (sem tree-sitter — métricas básicas + LLM supplementa)
+- Extrai: funções (nome, params, returnType, lineRange), classes (nome, methods, properties, lineRange), imports (source, specifiers, lineNumber), exports (nome, lineNumber), call graph
+
+### SearchEngine (Fuse.js)
+```typescript
+const FUSE_OPTIONS = {
+  keys: [
+    { name: "name", weight: 0.4 },
+    { name: "tags", weight: 0.3 },
+    { name: "summary", weight: 0.2 },
+    { name: "languageNotes", weight: 0.1 },
+  ],
+  threshold: 0.4,
+  includeScore: true,
+  ignoreLocation: true,
+  useExtendedSearch: true,
+};
+```
+Extended search: tokens separados por espaço viram OR implícito (`"auth contrl"` → `"auth | contrl"`).
+
+### SemanticSearchEngine
+Engine de busca semântica por cosine similarity sobre vetores pre-computados. Interface:
+```typescript
+class SemanticSearchEngine {
+  search(queryEmbedding: number[], options?: SemanticSearchOptions): SearchResult[]
+  hasEmbeddings(): boolean
+  addEmbedding(nodeId: string, embedding: number[]): void
+}
+```
+**Nota:** o engine existe mas o pipeline principal NÃO gera embeddings automaticamente — os embeddings
+precisam ser injetados externamente. A busca por padrão usa Fuse.js fuzzy.
+
+### FingerprintEngine
+Sistema de fingerprinting estrutural para detecção inteligente de mudanças:
+- **Níveis de mudança:** `NONE` (hash idêntico), `COSMETIC` (conteúdo diferente, estrutura igual), `STRUCTURAL` (assinatura mudou)
+- **Critérios de STRUCTURAL:** funções adicionadas/removidas, params mudados, return type mudado, export status mudado, mudança >50% no tamanho de função, classes adicionadas/removidas, methods/properties mudados, imports/exports mudados
+- **Decisão de update baseada em mudanças:**
+  - Todas `NONE`/`COSMETIC` → SKIP
+  - Algumas `STRUCTURAL`, mesmos diretórios → PARTIAL_UPDATE
+  - Novos/deletados diretórios ou >10 arquivos estruturais → ARCHITECTURE_UPDATE
+  - >30 arquivos estruturais ou >50% do total → FULL_UPDATE
+
+### LanguageRegistry
+Registry de configurações de linguagens. Cada `LanguageConfig` contém:
+- `id`, `displayName`, `extensions`, `filenames?`
+- `treeSitter?` (`wasmPackage`, `wasmFile`)
+- `concepts[]` — padrões de linguagem relevantes
+- `filePatterns` (`entryPoints`, `barrels`, `tests`, `config`)
+
+Linguagens configuradas: TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C, C++, C#,
+Swift, Kotlin, CSS, HTML, SQL, GraphQL, Protobuf, Terraform, YAML, JSON, TOML, Markdown,
+Dockerfile, Makefile, Jenkinsfile, Shell, Batch, PowerShell, Docker Compose, Kubernetes,
+GitHub Actions, env, CSV, OpenAPI, JSON Schema
+
+### FrameworkRegistry
+Configurações de frameworks com: `id`, `displayName`, `languages`, `detectionKeywords`,
+`manifestFiles`, `promptSnippetPath`, `entryPoints?`, `layerHints?`
+
+Frameworks configurados: Django, Flask, FastAPI, Express, Next.js, React, Vue, Gin, Rails, Spring
+
+---
+
+## 7. Dashboard (@understand-anything/dashboard)
+
+**Pacote:** `@understand-anything/dashboard` v0.1.0
+**Stack:** React 19, Vite 6, TypeScript 5.7, TailwindCSS v4, Zustand 5
+
+### Dependências principais
+| Pacote | Versão | Função |
+|--------|--------|--------|
+| `@xyflow/react` | ^12.0.0 | Renderização de grafos interativos (nodes + edges) |
+| `@dagrejs/dagre` | ^2.0.4 | Layout hierárquico (structural view) |
+| `elkjs` | ^0.9.3 | Layout ELK (Eclipse Layout Kernel) — escalável para grafos grandes |
+| `d3-force` | ^3.0.0 | Layout force-directed (knowledge/domain view) |
+| `graphology` | ^0.25.4 | Estrutura de dados de grafo genérica |
+| `graphology-communities-louvain` | ^2.0.1 | Detecção de comunidades (Louvain algorithm) |
+| `zustand` | ^5.0.0 | State management |
+| `react-markdown` | ^10.1.0 | Renderização de Markdown nos summaries |
+| `prism-react-renderer` | ^2.4.1 | Syntax highlighting no visualizador de código |
+
+### Modos de Visualização (ViewMode)
+- **structural:** grafo hierárquico com dagre/ELK, color-coded por camada arquitetural
+- **domain:** grafo horizontal de fluxos de negócio (domains → flows → steps)
+- **knowledge:** grafo force-directed com clustering Louvain para wikis
+
+### Algoritmos de Layout
+- **Dagre:** layout hierárquico primário para structural view
+- **ELK:** fallback/alternativa para grafos maiores, com reparo automático de input inválido
+- **D3-Force:** force simulation para knowledge/domain views
+- **Louvain:** detecção de comunidades para clustering em grafos não-estruturados (usando graphology-communities-louvain v2)
+- Web Worker dedicado para cálculos de layout pesados (não bloqueia UI)
+
+### Funcionalidades do Dashboard
+- **Navegação por camadas:** drilldown em camada específica (NavigationLevel: overview | layer-detail)
+- **Busca:** fuzzy (Fuse.js, modo "fuzzy") e semântica (cosine similarity, modo "semantic")
+- **Filtros:** por nodeType (21 tipos), complexity (simple/moderate/complex), layerId, edgeCategory (8 categorias)
+- **Sidebar:** NodeInfo com summary, tags, complexity, languageNotes, breadcrumb de histórico (máx 50 entradas)
+- **CodeViewer:** visualização de código-fonte inline com syntax highlighting (Prism)
+- **PathFinder:** modal para encontrar caminhos entre dois nós
+- **DiffToggle:** visualização de mudanças com overlay (`diff-overlay.json`)
+- **LearnPanel:** modo de aprendizado com tours guiados e language lessons
+- **PersonaSelector:** adapta nível de detalhe (non-technical | junior | experienced)
+- **ThemePicker:** temas dark/light com seletor de accent color
+- **ExportMenu:** exportação do grafo
+- **WarningBanner:** exibe warnings de validação
+- **TokenGate:** bloqueia acesso sem token de sessão (segurança)
+
+### Sistema de Temas
+6 presets predefinidos:
+- **dark-gold** (padrão escuro, accent gold `#d4a574`)
+- **dark-ocean** (escuro, accent ocean `#5ba4cf`)
+- **dark-forest**
+- **dark-midnight**
+- **light-paper**
+- **light-minimal**
+
+Cada preset tem 8 accent swatches intercambiáveis. Cores de nó por tipo são definidas por preset
+(ex: `node-file`, `node-function`, `node-class`, `node-config`, etc. — 13 tipos de nó com cor distinta).
+
+### Segurança do Servidor Vite
+- Token de sessão aleatório (32 hex chars) gerado ao iniciar
+- Bind exclusivo em `127.0.0.1` (nunca `0.0.0.0`)
+- Todos os endpoints de dados exigem `?token=<TOKEN>` (HTTP 403 sem token)
+- Sanitização de file paths absolutos antes de servir JSON (converte para relativos)
+- Path traversal protection (rejeita `../`, paths absolutos, null bytes)
+- Limite de 1 MB por arquivo em `/file-content.json`
+- Rejeita arquivos binários (bytes nulos)
+- Whitelist: apenas arquivos listados no `filePath` do grafo podem ser lidos via `/file-content.json`
+
+---
+
+## 8. Sistema de Hooks e Auto-Update
+
+### hooks.json
+Dois hooks registrados:
+
+**PostToolUse (Bash):**
+```bash
+# Detecta commits git e, se auto-update estiver habilitado e grafo existir,
+# injeta instrução para executar auto-update-prompt.md
+printf '%s' "$TOOL_INPUT" | grep -qE 'git\s+(commit|merge|cherry-pick|rebase)' && \
+[ -f .understand-anything/config.json ] && \
+grep -q '"autoUpdate".*true' .understand-anything/config.json && \
+[ -f .understand-anything/knowledge-graph.json ] && \
+echo "[understand-anything] Commit detected..."
+```
+
+**SessionStart:**
+```bash
+# Na abertura de sessão, verifica se grafo está desatualizado
+[ -f .understand-anything/config.json ] && grep -q '"autoUpdate".*true' ... && \
+[ "$(node -p ...meta.json...gitCommitHash)" != "$(git rev-parse HEAD)" ] && \
+echo "[understand-anything] Knowledge graph is stale..."
+```
+
+### auto-update-prompt.md
+Define o fluxo de atualização incremental automática após commits:
+1. Lê fingerprints existentes
+2. Analisa arquivos mudados com `analyzeChanges()`
+3. Classifica o tipo de update necessário (`classifyUpdate()`)
+4. Executa apenas o mínimo necessário (PARTIAL/ARCHITECTURE/FULL)
+
+---
+
+## 9. Linguagens e Frameworks Suportados
+
+### Linguagens com tree-sitter (extração estrutural completa)
+TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C, C++, C#
+
+### Linguagens com suporte parcial (métricas básicas, LLM supplementa)
+Swift, Kotlin
+
+### Linguagens/formatos não-código com parsers dedicados (packages/core/src/plugins/parsers/)
+Dockerfile, env, GraphQL, JSON, Makefile, Markdown, Protobuf, Shell, SQL, Terraform, TOML, YAML
+
+### Frameworks com context injection no pipeline
+Django, Flask, FastAPI, Express, Next.js, React, Vue, Gin, Rails, Spring
+
+---
+
+## 10. Compatibilidade Multi-Plataforma
+
+| Plataforma | Status | Método de Instalação |
+|------------|--------|----------------------|
+| Claude Code | Nativo | `/plugin marketplace add Lum1104/Understand-Anything` |
+| Codex | Suportado | AI-driven install via INSTALL.md |
+| OpenCode | Suportado | AI-driven install via INSTALL.md |
+| OpenClaw | Suportado | AI-driven install via INSTALL.md |
+| Cursor | Suportado | Auto-discovery via `.cursor-plugin/plugin.json` |
+| VS Code + GitHub Copilot | Suportado | Auto-discovery via `.copilot-plugin/plugin.json` |
+| Copilot CLI | Suportado | `copilot plugin install Lum1104/Understand-Anything:understand-anything-plugin` |
+| Antigravity | Suportado | AI-driven install via INSTALL.md |
+| Gemini CLI | Suportado | AI-driven install via INSTALL.md |
+| Pi Agent | Suportado | AI-driven install via INSTALL.md |
+
+Cada plataforma tem seu diretório de instalação: `~/.agents/skills/`, `~/.copilot/skills/`,
+`~/.codex/understand-anything/`, etc. O plugin resolve seu próprio root path via resolução de symlinks.
+
+---
+
+## 11. Requisitos de Sistema
+
+### Requisitos Mínimos
+- **Node.js:** >= 22 (desenvolvido em v24)
+- **pnpm:** >= 10.6.2 (pinned via `packageManager` em `package.json`)
+- **RAM:** não documentado explicitamente
+- **GPU/VRAM:** não requer — processamento local em Node.js + Python puro
+- **LLM externo:** o pipeline usa o agente LLM que executa a skill (Claude Code, Codex, etc.) para análise semântica; não há inferência local de ML
+
+### Requisitos de Build
+- TypeScript compilado via `tsc` (tsconfig por pacote)
+- `pnpm install --frozen-lockfile` para dependências
+- Build do core: `pnpm --filter @understand-anything/core build` (obrigatório antes do dashboard)
+
+### Performance Observada / Benchmarks
+- Lotes de 20-30 arquivos por agente, 5 agentes concorrentes (até 150 arquivos em paralelo)
+- Gate de 100 arquivos para confirmação manual antes de análise completa
+- Tree-sitter: análise estrutural determinística sem chamadas LLM (rápida)
+- Fase LLM: 1 chamada por lote de 20-30 arquivos (não por arquivo)
+- ELK layout: benchmarks em `packages/dashboard/scripts/benchmark-layout.mjs`
+- Aggregation benchmarks: `packages/dashboard/scripts/benchmark-aggregations.mjs`
+- Bundle splitting: react-vendor, xyflow, elk, graphology, graph-layout, markdown (chunks separados)
+
+### Limitações Documentadas
+- Swift e Kotlin sem extração tree-sitter (métricas básicas apenas, LLM supplementa)
+- Busca semântica (cosine similarity) requer embeddings externos — não gerados automaticamente
+- Projetos >100 arquivos requerem confirmação explícita
+- Grafos >10 MB requerem git-lfs para commit
+- `.env` files: incluídos na lista de arquivos mas agentes NUNCA devem incluir valores de variáveis nos outputs
+- Binários, assets (PNG, MP4, PDF, etc.) são excluídos da análise
+- Nenhum suporte a monorepos sem configuração manual de subdomain graphs
+
+---
+
+## 12. Formato de Armazenamento
+
+### Diretório `.understand-anything/` (por projeto)
+```
+.understand-anything/
+├── knowledge-graph.json    # Grafo principal (versionável)
+├── domain-graph.json       # Grafo de domínio de negócio (versionável)
+├── meta.json               # Metadados: timestamp, hash, versão, contagem
+├── fingerprints.json       # Fingerprints estruturais para detecção de mudanças
+├── config.json             # Configuração: {"autoUpdate": true|false}
+├── diff-overlay.json       # Overlay de diff atual (local, não versionar)
+└── .understandignore       # Padrões de exclusão (versionável)
+```
+
+**Recomendação de gitignore:**
+```gitignore
+.understand-anything/intermediate/
+.understand-anything/diff-overlay.json
+```
+
+### knowledge-graph.json — Estrutura de alto nível
+```json
+{
+  "version": "1.0.0",
+  "kind": "codebase",   // ou "knowledge"
+  "project": {
+    "name": "...",
+    "languages": ["typescript", "python"],
+    "frameworks": ["React", "FastAPI"],
+    "description": "...",
+    "analyzedAt": "2026-05-04T12:00:00Z",
+    "gitCommitHash": "abc123..."
+  },
+  "nodes": [...],    // GraphNode[]
+  "edges": [...],    // GraphEdge[]
+  "layers": [...],   // Layer[]
+  "tour": [...]      // TourStep[]
+}
+```
+
+---
+
+## 13. Exemplos de Referência
+
+**Repositório de exemplo com grafo committed:**
+https://github.com/Lum1104/microservices-demo (fork do GoogleCloudPlatform/microservices-demo)
+Go / Java / Python / Node — referência para grafo multi-linguagem committed.
+
+**Padrão Karpathy LLM wiki** (para /understand-knowledge):
+https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
+
+---
+
+## 14. Stack de Desenvolvimento (Contribuição)
+
+```
+TypeScript strict mode | pnpm workspaces | React 19 | Vite 6 | TailwindCSS v4 |
+React Flow (@xyflow/react) | Zustand | web-tree-sitter | Fuse.js | Zod | Dagre | ELK | D3-Force |
+graphology + graphology-communities-louvain | Vitest 3.x
+```
+
+**Convenção de commits:** `feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `test:`, `chore:`
+
+---
+
+## 15. Fontes
+
+LUM1104. **Understand-Anything**. GitHub, 2026. Disponível em:
+<https://github.com/Lum1104/Understand-Anything>. Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — README.md**. GitHub, 2026. Disponível em:
+<https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/README.md>.
+Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — understand-anything-plugin/packages/core**. GitHub, 2026.
+Disponível em:
+<https://github.com/Lum1104/Understand-Anything/tree/main/understand-anything-plugin/packages/core>.
+Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — understand-anything-plugin/packages/dashboard**. GitHub, 2026.
+Disponível em:
+<https://github.com/Lum1104/Understand-Anything/tree/main/understand-anything-plugin/packages/dashboard>.
+Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — skills (SKILL.md por comando)**. GitHub, 2026. Disponível em:
+<https://github.com/Lum1104/Understand-Anything/tree/main/understand-anything-plugin/skills>.
+Acesso em: 04 mai. 2026.
+
+LUM1104. **Understand-Anything — CONTRIBUTING.md**. GitHub, 2026. Disponível em:
+<https://raw.githubusercontent.com/Lum1104/Understand-Anything/main/CONTRIBUTING.md>.
+Acesso em: 04 mai. 2026.
+
+KARPATHY, Andrej. **LLM Wiki Pattern (gist)**. GitHub, 2024. Disponível em:
+<https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f>. Acesso em: 04 mai. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Understand-Anything (Plugin de Grafo de Conhecimento)
 ========================================================

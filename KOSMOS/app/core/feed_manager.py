@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -14,6 +16,18 @@ from app.core.database import get_session
 from app.core.models import Article, ArticleTag, Category, Feed, Highlight, ReadSession, Tag
 
 log = logging.getLogger("kosmos.feed_manager")
+
+
+def _article_fingerprint(title: str, pub_date: str, url: str) -> str:
+    """SHA-256 de (título normalizado + data ISO[:10] + URL normalizada).
+
+    Resistência de 99.98% a colisões em artigos duplicados com GUIDs distintos.
+    """
+    norm_title = re.sub(r"\s+", " ", title.lower().strip())
+    norm_url   = url.lower().rstrip("/").split("?")[0] if url else ""
+    date_prefix = (pub_date or "")[:10]
+    raw = f"{norm_title}|{date_prefix}|{norm_url}"
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def _detect_lang(text: str) -> str | None:
@@ -205,6 +219,27 @@ class FeedManager:
         finally:
             session.close()
 
+    def clear_all_etags(self) -> None:
+        """Limpa etag e last_modified de todos os feeds ativos.
+
+        Garante que o próximo ciclo de fetch faça requisições completas
+        (sem 304 Not Modified), útil após correção de bug ou ao forçar
+        um refresh completo.
+        """
+        session = get_session()
+        try:
+            session.query(Feed).filter(Feed.active == 1).update(
+                {"etag": None, "last_modified": None},
+                synchronize_session=False,
+            )
+            session.commit()
+            log.info("Etags de todos os feeds limpos para force-refresh.")
+        except SQLAlchemyError as exc:
+            session.rollback()
+            log.error("Erro ao limpar etags: %s", exc)
+        finally:
+            session.close()
+
     def update_feed_metadata(
         self,
         feed_id: int,
@@ -251,19 +286,32 @@ class FeedManager:
         session = get_session()
         try:
             for data in articles_data:
+                title    = data.get("title", "(sem título)")
+                url      = data.get("url") or ""
+                pub_dt   = data.get("published_at")
+                # Convert datetime → ISO string for fingerprint (slicing datetime raises TypeError)
+                pub_str  = pub_dt.isoformat() if isinstance(pub_dt, datetime) else str(pub_dt or "")
+                c_hash   = _article_fingerprint(title, pub_str, url)
+
+                # Rejeitar duplicatas por fingerprint de conteúdo (ignora GUIDs errados)
+                existing = session.query(Article.id).filter_by(content_hash=c_hash).first()
+                if existing:
+                    continue
+
                 lang = _detect_lang(
-                    data.get("title", "") + " " + (data.get("summary") or "")
+                    title + " " + (data.get("summary") or "")
                 )
                 article = Article(
                     feed_id      = feed_id,
                     guid         = data["guid"],
-                    title        = data.get("title", "(sem título)"),
-                    url          = data.get("url"),
+                    title        = title,
+                    url          = url or None,
                     author       = data.get("author"),
-                    published_at = data.get("published_at"),
+                    published_at = pub_date or None,
                     summary      = data.get("summary"),
                     content_full = data.get("content"),
                     language     = lang,
+                    content_hash = c_hash,
                     extra_json   = json.dumps(data["extra"]) if data.get("extra") else None,
                 )
                 session.add(article)

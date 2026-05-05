@@ -14,9 +14,11 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_ollama import ChatOllama, OllamaLLM
 from rank_bm25 import BM25Okapi
 
+from .bm25_index import BM25Index
 from .config import AppConfig
 from .errors import QueryError
 from .memory import Turn
+from .reflection import REFLECTION_COSINE_THRESHOLD
 
 if TYPE_CHECKING:
     from .tracker import FileTracker
@@ -220,48 +222,116 @@ def _hybrid_retrieve(
     k: int,
     source_type: str | None = None,
     source_files: list[str] | None = None,
+    bm25_index: BM25Index | None = None,
 ) -> list[Document]:
     """
-    Hybrid retrieval: combina busca semântica e BM25.
-    Retorna até k documentos únicos, ordenados por score combinado.
+    Hybrid retrieval com RRF real quando bm25_index fornecido (corpus completo),
+    ou fusão ponderada sobre pool semântico como fallback legado.
+
+    Reflexões (metadata["type"] == "reflection") recebem boost multiplicativo no
+    score RRF e são filtradas por cosine similarity mínima (REFLECTION_COSINE_THRESHOLD)
+    para evitar que reflexões genéricas contaminem o contexto. ChromaDB com
+    hnsw:space=cosine retorna distância cosine; similaridade = 1 - distância.
     """
-    # Semântico: buscar k*2 candidatos para ter mais para o BM25 filtrar
-    search_kwargs: dict = {"k": k * 2}
+    _RRF_K = 60  # constante padrão RRF
+    candidate_n = max(k * 3, 50)
+
+    search_kwargs: dict = {"k": candidate_n if bm25_index else k * 2}
     where = _build_where_filter(source_type, source_files)
     if where:
         search_kwargs["filter"] = where
     try:
-        semantic_docs = vectorstore.similarity_search(question, **search_kwargs)
+        # similarity_search_with_score retorna (Document, distância_cosine)
+        # Necessário para calcular cosine similarity das reflexões no filtro de threshold
+        semantic_results: list[tuple[Document, float]] = (
+            vectorstore.similarity_search_with_score(question, **search_kwargs)
+        )
     except Exception as exc:
         raise QueryError(f"Falha na recuperação semântica: {exc}") from exc
 
-    if not semantic_docs:
+    if not semantic_results:
         return []
 
-    # BM25 sobre o pool semântico
-    tokenized_corpus = [doc.page_content.lower().split() for doc in semantic_docs]
-    tokenized_query = question.lower().split()
+    # key → cosine similarity (1 - distância); usado para filtrar reflexões abaixo do threshold
+    cosine_sim: dict[str, float] = {
+        doc.page_content[:200]: max(0.0, 1.0 - dist)
+        for doc, dist in semantic_results
+    }
+    semantic_docs = [doc for doc, _ in semantic_results]
 
+    if bm25_index and bm25_index.size > 0:
+        # True RRF: dense top-N ∪ BM25 top-N do corpus completo
+        bm25_results = bm25_index.get_top_k(question, candidate_n)
+
+        # Filtrar BM25 por source_type / source_files se necessário
+        if source_files:
+            source_set = set(source_files)
+            bm25_results = [(r, d) for r, d in bm25_results
+                            if d.metadata.get("source") in source_set]
+        if source_type:
+            bm25_results = [(r, d) for r, d in bm25_results
+                            if d.metadata.get("source_type") == source_type]
+
+        rrf_scores: dict[str, float] = {}
+        doc_map: dict[str, Document] = {}
+
+        for rank, doc in enumerate(semantic_docs):
+            key = doc.page_content[:200]
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank + 1)
+            doc_map[key] = doc
+
+        for bm25_rank, doc in bm25_results:
+            key = doc.page_content[:200]
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + bm25_rank + 1)
+            if key not in doc_map:
+                doc_map[key] = doc
+
+        # Aplicar boost e filtro cosine para reflexões antes do sort final
+        to_remove: list[str] = []
+        for key, doc in doc_map.items():
+            if doc.metadata.get("type") != "reflection":
+                continue
+            sim = cosine_sim.get(key, 0.0)
+            if sim < REFLECTION_COSINE_THRESHOLD:
+                # Reflexão pouco relacionada com a query — excluir do contexto
+                to_remove.append(key)
+            else:
+                boost = doc.metadata.get("boost", 1.0)
+                rrf_scores[key] *= boost
+
+        for key in to_remove:
+            rrf_scores.pop(key, None)
+            doc_map.pop(key, None)
+
+        sorted_keys = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
+        return [doc_map[ky] for ky in sorted_keys[:k]]
+
+    # Fallback legado: BM25 sobre o pool semântico
+    tokenized_corpus = [doc.page_content.lower().split() for doc in semantic_docs]
     try:
-        bm25 = BM25Okapi(tokenized_corpus)
-        bm25_scores = bm25.get_scores(tokenized_query)
+        bm25_local = BM25Okapi(tokenized_corpus)
+        bm25_scores = bm25_local.get_scores(question.lower().split())
     except Exception:
-        # Se BM25 falhar, retornar só o resultado semântico
         return semantic_docs[:k]
 
-    # Normalizar BM25 para [0, 1]
     max_score = max(bm25_scores) if max(bm25_scores) > 0 else 1.0
     normalized = [s / max_score for s in bm25_scores]
-
-    # Score combinado: 0.6 semântico (posição inversa) + 0.4 BM25
     n = len(semantic_docs)
-    combined = [
-        (0.6 * (1.0 - i / n) + 0.4 * normalized[i], i)
-        for i in range(n)
-    ]
+
+    combined: list[tuple[float, int]] = []
+    for i, doc in enumerate(semantic_docs):
+        key = doc.page_content[:200]
+        if doc.metadata.get("type") == "reflection":
+            if cosine_sim.get(key, 0.0) < REFLECTION_COSINE_THRESHOLD:
+                continue  # filtrar reflexão irrelevante
+            boost = doc.metadata.get("boost", 1.0)
+        else:
+            boost = 1.0
+        score = (0.6 * (1.0 - i / n) + 0.4 * normalized[i]) * boost
+        combined.append((score, i))
+
     combined.sort(key=lambda x: x[0], reverse=True)
 
-    # Deduplicar por conteúdo, limitar a k
     seen: set[str] = set()
     results: list[Document] = []
     for _, idx in combined:
@@ -272,7 +342,6 @@ def _hybrid_retrieve(
             results.append(doc)
         if len(results) >= k:
             break
-
     return results
 
 
@@ -300,6 +369,7 @@ def _multi_query_retrieve(
     source_type: str | None = None,
     source_files: list[str] | None = None,
     n_variants: int = 3,
+    bm25_index: BM25Index | None = None,
 ) -> list[Document]:
     """
     Reformula a pergunta em n variações, faz retrieval para cada uma e
@@ -326,7 +396,7 @@ def _multi_query_retrieve(
 
     for q in queries:
         try:
-            docs = _hybrid_retrieve(vectorstore, q, k, source_type, source_files)
+            docs = _hybrid_retrieve(vectorstore, q, k, source_type, source_files, bm25_index)
         except QueryError:
             continue
         for doc in docs:
@@ -335,7 +405,7 @@ def _multi_query_retrieve(
                 seen.add(key)
                 results.append(doc)
 
-    return results[:k] if results else _hybrid_retrieve(vectorstore, question, k, source_type, source_files)
+    return results[:k] if results else _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index)
 
 
 def _hyde_retrieve(
@@ -345,6 +415,7 @@ def _hyde_retrieve(
     llm_model: str,
     source_type: str | None = None,
     source_files: list[str] | None = None,
+    bm25_index: BM25Index | None = None,
 ) -> list[Document]:
     """
     HyDE: gera uma resposta hipotética à pergunta e usa o seu embedding
@@ -358,12 +429,76 @@ def _hyde_retrieve(
         ))
         if not hypothetical.strip():
             raise ValueError("Resposta hipotética vazia")
-        return _hybrid_retrieve(vectorstore, hypothetical, k, source_type, source_files)
+        return _hybrid_retrieve(vectorstore, hypothetical, k, source_type, source_files, bm25_index)
     except Exception:
-        return _hybrid_retrieve(vectorstore, question, k, source_type, source_files)
+        return _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index)
 
 
 _RERANK_CANDIDATE_K = 30
+
+_ITER_PROVISIONAL_PROMPT = (
+    "Com base nos trechos abaixo, responda em 1-2 frases curtas e directas. "
+    "Não elabore — apenas capture a essência para orientar uma busca mais aprofundada.\n\n"
+    "Trechos:\n{context}\n\n"
+    "Pergunta: {question}\n\n"
+    "Resposta:"
+)
+
+
+def _iterative_retrieve(
+    vectorstore: Any,
+    question: str,
+    k: int,
+    llm_model: str,
+    source_type: str | None = None,
+    source_files: list[str] | None = None,
+    bm25_index: BM25Index | None = None,
+) -> list[Document]:
+    """
+    Retrieval em 2 iterações (ITER-RETGEN simplificado).
+
+    Iteração 1: retrieval híbrido normal sobre a query original (k chunks).
+    Resposta provisória: gerada em temperatura 0.0, sem streaming, 1-2 frases.
+    Iteração 2: usa a resposta provisória como query adicional → k//2 chunks extras
+    (nunca duplicando chunks já recuperados na iteração 1, dedupados por page_content[:100]).
+    Retorna iter1 + extras; prepare_ask limita ao retriever_k configurado.
+    Fallback silencioso para iter1 se a geração provisória falhar.
+    """
+    iter1 = _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index)
+    if not iter1:
+        return iter1
+
+    provisional = ""
+    try:
+        context_preview = "\n\n---\n".join(doc.page_content[:400] for doc in iter1[:5])
+        prompt = _ITER_PROVISIONAL_PROMPT.format(context=context_preview, question=question)
+        llm = OllamaLLM(model=llm_model, temperature=0.0, timeout=30)
+        provisional = strip_think(llm.invoke(prompt)).strip()
+    except Exception:
+        pass  # sem resposta provisória → retornar só iter1
+
+    if not provisional:
+        return iter1
+
+    extra_k = max(1, k // 2)
+    seen: set[str] = {doc.page_content[:100] for doc in iter1}
+
+    try:
+        iter2 = _hybrid_retrieve(
+            vectorstore, provisional, extra_k * 2,
+            source_type, source_files, bm25_index,
+        )
+    except QueryError:
+        return iter1
+
+    extra: list[Document] = []
+    for doc in iter2:
+        key = doc.page_content[:100]
+        if key not in seen and len(extra) < extra_k:
+            seen.add(key)
+            extra.append(doc)
+
+    return iter1 + extra
 
 
 def _flashrank_rerank(
@@ -512,6 +647,8 @@ def prepare_ask(
     persona: str = "curador",
     source_files: list[str] | None = None,
     collection_type: str = "library",
+    bm25_index: BM25Index | None = None,
+    iterative_retrieval: bool = False,
 ) -> tuple[list[BaseMessage], list[SourceRecord]]:
     """
     Recupera documentos relevantes e retorna (prompt, sources).
@@ -524,6 +661,9 @@ def prepare_ask(
     source_files: lista de caminhos absolutos para restringir a consulta a
         arquivos específicos; None significa sem restrição por arquivo.
     collection_type: "vault" usa PERSONAS_VAULT e segue wikilinks; "library" usa PERSONAS.
+    iterative_retrieval: activa retrieval em 2 iterações — gera resposta provisória a partir
+        dos chunks da iteração 1 e usa-a como query adicional para recuperar N/2 chunks extras.
+        Beneficia perguntas curtas ou vagas; toggle manual na UI.
 
     Raises:
         QueryError: se a busca vetorial falhar.
@@ -532,16 +672,24 @@ def prepare_ask(
     candidate_k = _RERANK_CANDIDATE_K if config.reranking_enabled else config.retriever_k + 2
 
     try:
-        if retrieval_mode == "multi_query":
+        if iterative_retrieval:
+            docs = _iterative_retrieve(
+                vectorstore, question, candidate_k, config.llm_model,
+                source_type, source_files, bm25_index,
+            )
+        elif retrieval_mode == "multi_query":
             docs = _multi_query_retrieve(
-                vectorstore, question, candidate_k, config.llm_model, source_type, source_files
+                vectorstore, question, candidate_k, config.llm_model, source_type, source_files,
+                bm25_index=bm25_index,
             )
         elif retrieval_mode == "hyde":
             docs = _hyde_retrieve(
-                vectorstore, question, candidate_k, config.llm_model, source_type, source_files
+                vectorstore, question, candidate_k, config.llm_model, source_type, source_files,
+                bm25_index=bm25_index,
             )
         else:
-            docs = _hybrid_retrieve(vectorstore, question, candidate_k, source_type, source_files)
+            docs = _hybrid_retrieve(vectorstore, question, candidate_k, source_type, source_files,
+                                    bm25_index)
     except QueryError:
         raise
     except Exception as exc:
@@ -556,6 +704,9 @@ def prepare_ask(
     # FlashRank: reordena por relevância semântica e reduz ao top_n configurado
     if config.reranking_enabled:
         docs = _flashrank_rerank(docs, question, config.reranking_top_n)
+    elif iterative_retrieval:
+        # Retrieval iterativo expande o pool além de candidate_k — limitar ao configurado
+        docs = docs[:config.retriever_k]
 
     context = "\n\n---\n".join(doc.page_content for doc in docs)
 
@@ -592,6 +743,7 @@ def ask(
     persona: str = "curador",
     source_files: list[str] | None = None,
     collection_type: str = "library",
+    iterative_retrieval: bool = False,
 ) -> AskResult:
     """
     Consulta RAG síncrona (sem streaming).
@@ -603,7 +755,7 @@ def ask(
         messages, sources = prepare_ask(
             vectorstore, question, config, chat_history,
             source_type, retrieval_mode, tracker, persona, source_files,
-            collection_type,
+            collection_type, bm25_index=None, iterative_retrieval=iterative_retrieval,
         )
         llm = ChatOllama(model=config.llm_model, temperature=0)
         response = llm.invoke(messages)

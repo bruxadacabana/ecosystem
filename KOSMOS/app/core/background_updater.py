@@ -60,6 +60,20 @@ class BackgroundUpdater(QThread):
     # ------------------------------------------------------------------
 
     def run(self) -> None:
+        import sys as _sys, os as _os
+        if _sys.platform != "win32":
+            try:
+                _os.nice(15)
+            except OSError:
+                pass
+        else:
+            try:
+                import ctypes as _ct
+                _ct.windll.kernel32.SetPriorityClass(
+                    _ct.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
+            except Exception:
+                pass
+
         log.info("BackgroundUpdater iniciado.")
 
         from app.core.feed_fetcher import FeedFetcher
@@ -127,7 +141,13 @@ class BackgroundUpdater(QThread):
             for a in result.articles
         ]
 
-        new_count = self._fm.save_articles(feed.id, articles_data)
+        try:
+            new_count = self._fm.save_articles(feed.id, articles_data)
+        except Exception as exc:
+            log.error("Erro ao salvar artigos do feed %d: %s", feed.id, exc, exc_info=True)
+            self._fm.update_feed_metadata(feed.id, last_error=f"save_articles: {exc}")
+            self.update_error.emit(feed.id, str(exc))
+            return 0
         self._fm.update_feed_metadata(
             feed.id,
             etag          = result.etag,

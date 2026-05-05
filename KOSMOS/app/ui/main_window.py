@@ -174,7 +174,7 @@ class MainWindow(QMainWindow):
         # Sidebar → navegação
         self._sidebar.nav_requested.connect(self._on_navigate)
         self._sidebar.add_feed_requested.connect(self._on_add_feed)
-        self._sidebar.refresh_requested.connect(self._updater.trigger_now)
+        self._sidebar.refresh_requested.connect(self._on_force_refresh)
 
         # Saved view
         self._saved.back_requested.connect(self._on_back)
@@ -363,6 +363,15 @@ class MainWindow(QMainWindow):
             new_ids = self._fm.get_unanalyzed_article_ids(limit=new_count + 5)
             if new_ids:
                 self._bg_analyzer.enqueue_background(new_ids)
+
+    def _on_force_refresh(self) -> None:
+        """Limpa cache de etag de todos os feeds e dispara ciclo imediato.
+
+        Garante que fetches retornem conteúdo completo (sem 304 em cima
+        de etags corrompidos por bugs anteriores).
+        """
+        self._fm.clear_all_etags()
+        self._updater.trigger_now()
 
     def _on_update_error(self, feed_id: int, message: str) -> None:
         log.warning("Erro ao atualizar feed %d: %s", feed_id, message)

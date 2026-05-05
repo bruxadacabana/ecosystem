@@ -42,6 +42,22 @@ def get_fetch_url(url: str) -> str:
     return url
 
 
+def get_fetch_url_fallbacks(url: str) -> list[str]:
+    """Retorna lista de URLs para tentar em ordem, incluindo proxies de fallback.
+
+    Medium → [freedium.cfd, scribe.rip, URL original]
+    Outros → [URL original]
+    """
+    host = _hostname(url)
+    if host == "medium.com" or host.endswith(".medium.com"):
+        return [
+            f"https://freedium.cfd/{url}",
+            f"https://scribe.rip/{url}",
+            url,
+        ]
+    return [url]
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

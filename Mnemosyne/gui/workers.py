@@ -19,14 +19,17 @@ from core.errors import (
     AkashaFetchError,
 )
 from core.faq import iter_faq, parse_faq
+from core.bm25_index import BM25Index
 from core.indexer import (
     create_vectorstore,
     index_single_file,
     load_vectorstore,
     update_vectorstore,
     _detect_batch_config,
+    _embed_batch,
     _get_splitter,
     _clear_orphan_wal,
+    _OLLAMA_BASE,
     IndexCheckpoint,
 )
 from core.loaders import load_documents, load_single_file
@@ -122,9 +125,10 @@ class IndexWorker(QThread):
 
         _BATCH, _SLEEP = _detect_batch_config()
         embeddings = OllamaEmbeddings(model=self.config.embed_model)
-        splitter = _get_splitter(self.config, embeddings)
+        splitter = _get_splitter(self.config, embeddings, source_type=self.config.collection_type)
         tracker = FileTracker(self.config.mnemosyne_dir)
         checkpoint = IndexCheckpoint(self.config.mnemosyne_dir)
+        bm25_idx = BM25Index(self.config.mnemosyne_dir)
         total = len(files)
         errors: list[str] = []
 
@@ -166,12 +170,17 @@ class IndexWorker(QThread):
                 checkpoint.record(file_path, "ok")
                 continue
 
+            bm25_idx.add_documents(chunks)
+
             # Probe de GPU no primeiro batch de chunks encontrado
             if not probe_done:
                 probe_batch = chunks[:_BATCH]
                 try:
                     t0 = time.time()
-                    probe_embs = embeddings.embed_documents([c.page_content for c in probe_batch])
+                    probe_embs = _embed_batch(
+                        [c.page_content for c in probe_batch],
+                        self.config.embed_model, _OLLAMA_BASE,
+                    )
                     t_probe = time.time() - t0
                     vs._collection.add(
                         ids=[str(uuid.uuid4()) for _ in probe_batch],
@@ -194,11 +203,13 @@ class IndexWorker(QThread):
                 n_batches = len(batch_list)
                 try:
                     if use_parallel and n_batches > 1:
+                        # Pipeline: embeda próximo lote enquanto grava o atual
                         with ThreadPoolExecutor(max_workers=2) as pool:
                             futures = [
                                 (batch, pool.submit(
-                                    embeddings.embed_documents,
+                                    _embed_batch,
                                     [c.page_content for c in batch],
+                                    self.config.embed_model, _OLLAMA_BASE,
                                 ))
                                 for batch in batch_list
                             ]
@@ -221,7 +232,10 @@ class IndexWorker(QThread):
                             if self.isInterruptionRequested():
                                 self.finished.emit(False, "Interrompido.")
                                 return
-                            embs = embeddings.embed_documents([c.page_content for c in batch])
+                            embs = _embed_batch(
+                                [c.page_content for c in batch],
+                                self.config.embed_model, _OLLAMA_BASE,
+                            )
                             vs._collection.add(
                                 ids=[str(uuid.uuid4()) for _ in batch],
                                 documents=[c.page_content for c in batch],
@@ -240,6 +254,7 @@ class IndexWorker(QThread):
             tracker.mark_indexed(file_path)
             checkpoint.record(file_path, "ok")
 
+        bm25_idx.save()
         # Apagar checkpoint: indexação concluída — botão "Retomar" não deve aparecer
         checkpoint.delete()
         msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
@@ -316,8 +331,9 @@ class ResumeIndexWorker(QThread):
 
         _BATCH, _SLEEP = _detect_batch_config()
         embeddings = OllamaEmbeddings(model=self.config.embed_model)
-        splitter = _get_splitter(self.config, embeddings)
+        splitter = _get_splitter(self.config, embeddings, source_type=self.config.collection_type)
         tracker = FileTracker(self.config.mnemosyne_dir)
+        bm25_idx = BM25Index.load(self.config.mnemosyne_dir)
         errors: list[str] = []
 
         try:
@@ -355,6 +371,8 @@ class ResumeIndexWorker(QThread):
                 checkpoint.record(file_path, "ok")
                 continue
 
+            bm25_idx.add_documents(chunks)
+
             try:
                 batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
                 for b_idx, batch in enumerate(batch_list):
@@ -362,7 +380,10 @@ class ResumeIndexWorker(QThread):
                         checkpoint.close()
                         self.finished.emit(False, "Retomada interrompida.")
                         return
-                    embs = embeddings.embed_documents([c.page_content for c in batch])
+                    embs = _embed_batch(
+                        [c.page_content for c in batch],
+                        self.config.embed_model, _OLLAMA_BASE,
+                    )
                     vs._collection.add(
                         ids=[str(uuid.uuid4()) for _ in batch],
                         documents=[c.page_content for c in batch],
@@ -380,6 +401,7 @@ class ResumeIndexWorker(QThread):
             tracker.mark_indexed(file_path)
             checkpoint.record(file_path, "ok")
 
+        bm25_idx.save()
         checkpoint.delete()
         msg = f"Retomada concluída — {already_done} já indexados, {total} processados agora."
         if errors:
@@ -494,6 +516,7 @@ class AskWorker(QThread):
         persona: str = "curador",
         source_files: list[str] | None = None,
         collection_type: str = "library",
+        iterative_retrieval: bool = False,
     ) -> None:
         super().__init__()
         self.vectorstore = vectorstore
@@ -506,14 +529,18 @@ class AskWorker(QThread):
         self.persona = persona
         self.source_files = source_files
         self.collection_type = collection_type
+        self.iterative_retrieval = iterative_retrieval
 
     def run(self) -> None:
+        bm25_idx = BM25Index.load(self.config.mnemosyne_dir)
         try:
             messages, sources = prepare_ask(
                 self.vectorstore, self.question, self.config,
                 self.chat_history, self.source_type, self.retrieval_mode,
                 self.tracker, self.persona, self.source_files,
                 self.collection_type,
+                bm25_index=bm25_idx,
+                iterative_retrieval=self.iterative_retrieval,
             )
         except QueryError as exc:
             self.finished.emit(False, str(exc), [], self.chat_history)

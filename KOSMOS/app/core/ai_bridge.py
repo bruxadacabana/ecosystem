@@ -18,7 +18,11 @@ log = logging.getLogger("kosmos.ai")
 
 # ecosystem_client: proxy LOGOS para serialização de chamadas LLM
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
-from ecosystem_client import request_llm as _request_llm  # noqa: E402
+from ecosystem_client import (  # noqa: E402
+    request_llm as _request_llm,
+    request_llm_stream as _request_llm_stream,
+    get_ollama_base as _get_ollama_base,
+)
 
 DEFAULT_ENDPOINT = "http://localhost:7072"   # LOGOS proxy; fallback a 11434 nas Settings
 
@@ -149,47 +153,33 @@ class AiBridge:
         system:  str = "",
         timeout: int = 120,
     ) -> Generator[str, None, None]:
-        """Gera texto em streaming — yields tokens à medida que chegam.
+        """Gera texto em streaming via LOGOS (P1) com fallback direto ao Ollama.
+
+        Yields tokens à medida que chegam.
 
         Raises:
-            OllamaError: em falha de conexão.
+            OllamaError: em falha de conexão ou rejeição pelo LOGOS.
         """
         if not self._gen_model:
             raise OllamaError(
                 "Nenhum modelo de geração configurado. "
                 "Escolha um em Configurações → IA."
             )
-        payload: dict = {
-            "model":  self._gen_model,
-            "prompt": prompt,
-            "stream": True,
-        }
+        messages: list[dict] = []
         if system:
-            payload["system"] = system
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
 
         try:
-            with self._session.post(
-                f"{self._endpoint}/api/generate",
-                json=payload,
-                headers={"X-App": "kosmos", "X-Priority": "1"},
-                timeout=timeout,
-                stream=True,
-            ) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if not line:
-                        continue
-                    try:
-                        chunk = json.loads(line)
-                        token = chunk.get("response", "")
-                        if token:
-                            yield token
-                        if chunk.get("done"):
-                            break
-                    except json.JSONDecodeError:
-                        continue
-        except requests.RequestException as exc:
-            raise OllamaError(f"Erro no streaming: {exc}") from exc
+            yield from _request_llm_stream(
+                messages,
+                app="kosmos",
+                model=self._gen_model,
+                priority=1,
+                ollama_base=self._endpoint,
+            )
+        except RuntimeError as exc:
+            raise OllamaError(str(exc)) from exc
 
     # ------------------------------------------------------------------
     # Embeddings
@@ -197,6 +187,10 @@ class AiBridge:
 
     def embed(self, text: str, timeout: int = 30) -> list[float]:
         """Gera vetor de embedding para o texto.
+
+        Usa o endpoint configurado em ecosystem.json (logos.ollama_base) como
+        fallback caso self._endpoint seja o padrão, garantindo que mudanças
+        de endpoint via HUB sejam respeitadas.
 
         Returns:
             Lista de floats (dimensão depende do modelo configurado).
@@ -209,9 +203,10 @@ class AiBridge:
                 "Nenhum modelo de embeddings configurado. "
                 "Escolha um em Configurações → IA."
             )
+        endpoint = self._endpoint if self._endpoint != DEFAULT_ENDPOINT else _get_ollama_base()
         try:
             r = self._session.post(
-                f"{self._endpoint}/api/embed",
+                f"{endpoint}/api/embed",
                 json={"model": self._embed_model, "input": text},
                 headers={"X-App": "kosmos", "X-Priority": "3"},
                 timeout=timeout,

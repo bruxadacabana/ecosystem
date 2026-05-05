@@ -179,7 +179,7 @@ export function TimelineView({ projectId, onError, onSuccess }: TimelineViewProp
 // ----------------------------------------------------------
 
 function EventListItem({
-  event, index, isSelected, isLast, onClick, onDelete,
+  event, index: _index, isSelected, isLast, onClick, onDelete,
 }: {
   event: TimelineEvent
   index: number
@@ -248,7 +248,7 @@ interface TimelineEventFormProps {
 }
 
 function TimelineEventForm({
-  projectId, event, characters, notes, charName, noteName, onSaved, onError,
+  projectId, event, characters, notes, charName: _charName, noteName: _noteName, onSaved, onError,
 }: TimelineEventFormProps) {
   const [title, setTitle] = useState(event.title)
   const [dateLabel, setDateLabel] = useState(event.date_label)

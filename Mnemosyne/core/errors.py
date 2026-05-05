@@ -102,3 +102,7 @@ class AkashaOfflineError(MnemosyneError):
 
 class AkashaFetchError(MnemosyneError):
     """Falha ao buscar ou processar uma URL via AKASHA."""
+
+
+class ReflectionError(MnemosyneError):
+    """Falha ao gerar artefato de reflexão de conhecimento."""

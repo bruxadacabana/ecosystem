@@ -667,6 +667,7 @@ export function Binder({
                         status: ch.status,
                         characterIds: ch.character_ids ?? [],
                         noteIds: ch.note_ids ?? [],
+                        wordGoal: ch.word_goal ?? null,
                       })
                     }
                     onRename={(title) => handleRenameChapter(book.id, ch.id, title)}

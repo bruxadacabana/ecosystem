@@ -39,6 +39,17 @@ def main() -> None:
     from app.utils.logger import setup_logger
     setup_logger()
     log = logging.getLogger("kosmos")
+
+    # --- Capturar exceções não tratadas no event loop Qt ----------------
+    def _qt_except_hook(exc_type, exc_value, exc_tb):
+        import traceback as _tb
+        log.critical(
+            "Exceção não tratada: %s",
+            "".join(_tb.format_exception(exc_type, exc_value, exc_tb)),
+        )
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = _qt_except_hook
     log.info("KOSMOS v0.1 iniciando...")
 
     # --- Configurações --------------------------------------------------
@@ -231,7 +242,9 @@ def main() -> None:
     updater.trigger_now()
 
     log.info("KOSMOS pronto.")
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    log.info("KOSMOS encerrado (código %d).", exit_code)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

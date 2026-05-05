@@ -77,6 +77,8 @@ Isso garante que ambas as instâncias do Claude Code estejam na mesma página so
 
 ### HUB / LOGOS
 
+**O HUB ESTÁ SEMPRE ABERTO.** É o centro do ecossistema: gerencia o funcionamento de todos os outros apps, é através dele que os demais programas são abertos e monitorados. Nunca listar "exige HUB rodando" como desvantagem — isso é uma premissa arquitetural, não uma restrição.
+
 O HUB é o **dashboard e painel de controle do ecossistema**: lança apps, centraliza configuração, visualiza dados de todos os programas e hospeda o **LOGOS** (proxy inteligente de LLM).
 
 O LOGOS gerencia prioridades de execução de IA:
@@ -90,19 +92,52 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 
 ## Workflow
 
-- Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado (sempre acrescentar itens que não constam nele antes de começar a implementação e marcar como concluido após)
+- Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado.
+- **Marcar item como `[x]` no TODO imediatamente após concluí-lo** — não acumular para marcar depois, não esperar o fim da sessão.
+- **Antes de implementar qualquer coisa que não esteja no TODO: primeiro acrescentar o item ao TODO (com descrição), depois implementar.** Nunca implementar algo não registrado.
 - Commit por item individual concluído
 - **Nunca começar a implementar nada sem ordem explícita da usuária.** Discussão, planejamento e anotação no TODO não são ordens de implementação.
 - **Nunca avançar de um item para o próximo no TODO sem ordem explícita.** "Continue" sem especificar o quê não é autorização para implementar.
 - **Após concluir cada item: parar, resumir o que foi feito, e aguardar permissão explícita para prosseguir.** Implementar vários itens seguidos numa mesma resposta só é permitido se a usuária disser explicitamente "faça o bloco inteiro" ou equivalente.
 - **Pesquisas:** regras obrigatórias ao realizar qualquer pesquisa (WebSearch, WebFetch, Agent):
   1. **Reler o `pesquisas.md`** (raiz do ecossistema) antes de iniciar, para não duplicar pesquisa já feita.
-  2. **Salvar em `pesquisas.md`** (raiz) na seção do app relevante (`## HUB`, `## AKASHA`, `## KOSMOS`, `## Mnemosyne`) apenas: resumo estruturado por tema, achados principais, implicações práticas e **fontes em formato ABNT**. **Nunca incluir sugestões ou melhorias.**
+  2. **Salvar em `pesquisas.md`** (raiz) na seção do app relevante (`## HUB`, `## AKASHA`, `## KOSMOS`, `## Mnemosyne`): pesquisa **completa e detalhada**, cobrindo todos os aspectos do tema — mesmo os não imediatamente aplicáveis — com exemplos, métricas, benchmarks e **fontes em formato ABNT**. O conteúdo não deve ser filtrado pela relevância atual para o ecossistema. **Nunca incluir sugestões ou melhorias.**
   3. **Manter o índice atualizado** — adicionar entrada para a nova sessão no índice do início do arquivo.
   4. **Ordem cronológica crescente** — novas sessões sempre no final da seção relevante.
   5. **Apresentar no chat** um resumo médio-detalhado (1–2 minutos de leitura) cobrindo achados principais e implicações práticas, **seguido de lista separada de mudanças/melhorias sugeridas**.
   6. Sugestões e melhorias vão no **chat e no TODO**, nunca no `pesquisas.md`.
   7. **Nunca usar "HUB/LOGOS"** — HUB é o programa, LOGOS é apenas um subprograma dele.
+- **Estrutura obrigatória do TODO.md para melhorias:**
+  Existem duas seções fixas no `TODO.md` raiz. Cada sessão de trabalho (pesquisa, correção, conjunto de melhorias) cria um **novo `###` header** dentro da seção correta — nunca acrescenta itens em headers de sessões anteriores.
+
+  **Seção 1 — oriundas de pesquisa externa:**
+  ```
+  ## Melhorias baseadas em pesquisas para o ecossistema
+
+  ### Pesquisa: <título da pesquisa> | <data YYYY-MM-DD>
+  > Contexto: <1-2 frases explicando o que foi pesquisado e por que é relevante>
+  #### <Nome do App 1>
+  - [ ] <item com explicação do que fazer e por que>
+  #### <Nome do App 2>
+  - [ ] <item com explicação>
+  ```
+
+  **Seção 2 — melhorias, correções e atualizações internas:**
+  ```
+  ## Melhorias, correções e atualizações
+
+  ### <Título descritivo> | <data YYYY-MM-DD>
+  > Contexto: <1-2 frases explicando a motivação>
+  #### <Nome do App 1>
+  - [ ] <item com explicação do que fazer e por que>
+  #### <Nome do App 2>
+  - [ ] <item com explicação>
+  ```
+
+  **Regras adicionais:**
+  - Cada item `- [ ]` deve conter instrução suficiente para ser implementado sem contexto da conversa original (Claude futuro não tem memória da sessão).
+  - Nunca fundir itens de sessões diferentes num mesmo `###`.
+  - As seções `##` devem existir no arquivo mesmo que estejam vazias — nunca removê-las.
 
 ---
 

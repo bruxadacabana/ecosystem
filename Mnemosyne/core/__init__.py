@@ -15,6 +15,7 @@ from .errors import (
 )
 from .indexer import create_vectorstore, load_vectorstore, index_single_file, update_vectorstore, IndexCheckpoint
 from .rag import ask, prepare_ask, strip_think, AskResult, SourceRecord, PERSONAS
+from .reflection import generate_reflection, generate_meta_reflection, MIN_CHUNKS, REFLECTION_BOOST, META_REFLECTION_BOOST, REFLECTION_COSINE_THRESHOLD
 from .summarizer import summarize_all, prepare_summary
 from .tracker import FileTracker, FileRecord
 from .memory import MemoryStore, SessionMemory, Turn, CollectionIndex, CollectionInfo, QueryRecord
