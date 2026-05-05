@@ -2,7 +2,7 @@ PyQt6==6.7.*
 PyQt6-WebEngine==6.7.*
 SQLAlchemy==2.0.*
 feedparser==6.0.*
-requests==2.31.*
+requests>=2.32.5,<3.0.0
 beautifulsoup4==4.12.*
 lxml>=6
 newspaper4k==0.9.*
