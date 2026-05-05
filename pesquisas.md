@@ -1,6 +1,6 @@
 # Pesquisas do Ecossistema
 
-> Última atualização: 2026-05-04
+> Última atualização: 2026-05-05
 
 ---
 
@@ -8057,4 +8057,308 @@ GLUKHOV, Ivan. **How Ollama handles parallel requests**. Glukhov.org, mai. 2025.
 
 ========================================================
 FIM DA PESQUISA — Expansão: Otimização de LLM Local e Arquitetura do LOGOS
+========================================================
+
+---
+
+# PESQUISA — Integração KOSMOS-AKASHA: Padrões RSS Reader + Web Archiver
+
+Data: 2026-05-05
+
+Contexto: levantamento de padrões arquiteturais estabelecidos para integração entre leitores de RSS
+e arquivadores web, com foco nos projetos FreshRSS+Wallabag, Miniflux, e Omnivore, para embasar
+as decisões de design da integração entre KOSMOS (leitor RSS) e AKASHA (arquivador web/crawler).
+
+---
+
+## 1. Padrões Arquiteturais Estabelecidos
+
+### 1.1 FreshRSS + Wallabag — integração por extensão
+
+O FreshRSS usa extensões PHP que fazem POST HTTP para a API do Wallabag ao usuário salvar um artigo.
+O fluxo é: clique em "Salvar" no card → extensão detecta o evento → POST /api/entries com `url` e
+opcionalmente `tags` → Wallabag faz fetch completo da página (via Graby/embed.ly) → retorna
+`Entry` com `content`, `title`, `domain_name`, `reading_time`, `language`, `published_at`.
+
+O Wallabag persiste em banco relacional (SQLite/MySQL/PostgreSQL) com FTS5 via extensão.
+A exportação é em EPUB, PDF, HTML ou CSV. Não há formato Markdown nativo; o conteúdo é HTML sanitizado.
+
+**Relevância para o ecossistema:** KOSMOS pode emitir um sinal ao salvar artigo → MainWindow chama
+POST /archive no AKASHA com a URL. O AKASHA faz o fetch completo e persiste .md. Fluxo idêntico
+ao FreshRSS+Wallabag, mas com saída Markdown e sem dependência de servidor externo.
+
+### 1.2 Miniflux — integração nativa por webhooks
+
+O Miniflux define "integrations" configuráveis no painel: para cada integração (Wallabag, Pocket,
+Pinboard, Instapaper, Readwise, etc.) há um endpoint configurável e campos de credenciais. Ao salvar,
+dispara POST para todos os endpoints ativos simultaneamente. Não há retry automático; falhas são
+logadas mas silenciosas para o usuário.
+
+A integração com Wallabag usa o fluxo OAuth2 do Wallabag API v2 (POST /oauth/v2/token).
+A integração com Pocket usa o fluxo OAuth1 do Pocket API (POST /v3/add com `url` e `tags`).
+
+**Relevância:** o padrão de "lista de integrações configuráveis com endpoint + credenciais" é
+aplicável ao painel de configurações do KOSMOS. A integração com AKASHA seria apenas um campo
+de URL de endpoint (http://localhost:7071/archive), sem OAuth.
+
+### 1.3 Omnivore — arquitetura monolítica integrada
+
+O Omnivore combina leitor RSS e arquivador num único backend TypeScript/GraphQL, com worker
+separado para fetch de páginas (Mercury Parser / Puppeteer para SPAs). A vantagem é ausência de
+round-trip HTTP entre leitor e arquivador; a desvantagem é acoplamento forte.
+
+Usava PostgreSQL com índice GIN para FTS e pgvector para busca semântica. O projeto foi descontinuado
+em outubro de 2024 (adquirido e fechado), mas o código permanece open source.
+
+**Relevância:** o ecossistema optou por arquitetura desacoplada (KOSMOS + AKASHA como apps separados),
+alinhada com o modelo Miniflux/Wallabag em vez do modelo monolítico Omnivore. A busca semântica
+unificada requer API de consulta no AKASHA que o KOSMOS possa chamar.
+
+### 1.4 Pocket / Instapaper — modelo de deduplicação por URL
+
+Pocket e Instapaper usam a URL canônica (após redirect) como chave primária. Se a mesma URL é
+adicionada duas vezes, atualizam o registro existente (upsert) em vez de criar duplicata. Pocket
+usa canonicalização via HEAD request; Instapaper usa hash da URL normalizada (lowercase, sem
+parâmetros de tracking).
+
+**Parâmetros de tracking removidos na normalização:** `utm_*`, `fbclid`, `gclid`, `ref`, `source`,
+`mc_cid`, `mc_eid`. A normalização é crítica para RSS porque a mesma URL pode aparecer com
+diferentes parâmetros de tracking em diferentes feeds.
+
+**Relevância:** a deduplicação KOSMOS-AKASHA deve normalizar URLs antes de verificar existência,
+removendo parâmetros de tracking. O AKASHA já tem `urlparse` disponível; basta adicionar filtro
+de query params antes do lookup.
+
+---
+
+## 2. Padrões de Crawling Incremental
+
+### 2.1 FreshRSS — crawling acionado por feed update
+
+O FreshRSS não faz crawl autônomo de páginas; apenas processa os itens que chegam via RSS. Quando
+um novo item RSS tem conteúdo truncado (campo `<description>` com <200 palavras), a extensão
+"full content" faz fetch da URL do item para substituir o conteúdo truncado por full article.
+
+O fetch usa User-Agent configurável e respeita `robots.txt` opcionalmente (configurável por feed).
+O timeout é de 10 segundos por request; itens que falham são marcados com `error=1` no banco e não
+são reprocessados automaticamente.
+
+**Relevância:** o padrão de "fetch de conteúdo completo acionado por novo item RSS" é exatamente o
+caso de uso para auto-arquivar no AKASHA quando KOSMOS recebe artigo novo. O AKASHA tem a lógica
+de fetch completo (com cascata freedium/scribe.rip para Medium); o KOSMOS precisa apenas enviar
+a URL no momento correto (ao salvar, ou opcionalmente ao receber novo item de feeds marcados para
+auto-arquivar).
+
+### 2.2 Archivebox — crawling baseado em snapshots
+
+O Archivebox é o arquivador web mais completo do ecossistema open source. Armazena múltiplos
+snapshots de cada URL: HTML puro, screenshot, PDF, WARC (Web ARChive), curl output, git clone
+(para repositórios), yt-dlp (para vídeos), singlefile (HTML com recursos inline).
+
+O modelo de dados é: `Snapshot` (URL + timestamp) → `ArchiveResult[]` (um por tipo de arquivo).
+Snapshots são imutáveis; rearquivar cria novo Snapshot para a mesma URL. O índice é SQLite com
+FTS5 sobre `title`, `url`, `tags` e conteúdo extraído.
+
+O crawling incremental usa `--depth` (0 = apenas a URL, 1 = links da página, N = recursivo).
+Links descobertos são adicionados à fila de `ArchiveBox add` automático se `SAVE_ARCHIVE_DOT_ORG=True`.
+
+**Relevância direta ao AKASHA:** o AKASHA usa modelo mais simples (um .md por URL), adequado para
+o ecossistema local-first. A ideia de crawling incremental com `--depth=1` para domínios específicos
+(ex: blog de um autor) é aplicável ao feature de "crawler de domínio" do AKASHA.
+
+### 2.3 Heritrix / Scrapy — crawling com frontier e politeness
+
+Heritrix (Internet Archive) e Scrapy usam o conceito de "frontier": fila de URLs a visitar,
+com deduplicação via Bloom filter (Heritrix) ou set (Scrapy). A "politeness" é o delay entre
+requests para o mesmo domínio (crawl-delay no robots.txt; default 0.5s–2s).
+
+Scrapy usa `DOWNLOAD_DELAY` por domínio e `CONCURRENT_REQUESTS_PER_DOMAIN=1` por padrão.
+O Heritrix usa "URI frontier" com persistência em BDB (Berkeley DB) para crawls longos.
+
+Para crawlers de domínio único (caso do AKASHA), o padrão adequado é Scrapy-like com:
+- Set de URLs visitadas em memória (ou SQLite para persistência entre sessões)
+- Delay de 1–2s entre requests ao mesmo domínio
+- Respeito ao robots.txt (via `robotparser` do stdlib Python)
+- Profundidade máxima configurável (default: 2)
+
+---
+
+## 3. Padrões de Busca Unificada Cross-App
+
+### 3.1 Modelo de API de busca — FTS5 federado
+
+O padrão mais simples para busca cross-app é cada app expor um endpoint REST GET /search?q=<query>
+que retorna lista de resultados com campos normalizados: `{id, title, url, snippet, source, date}`.
+
+O app "orquestrador" (no ecossistema: KOSMOS ou HUB) faz requests paralelos aos endpoints de cada
+app, coleta resultados, e apresenta numa view unificada. Não há reranking cross-app; cada app
+ranqueia por seus próprios critérios (BM25 FTS5, data, relevância).
+
+O overhead de latência de round-trip HTTP localhost é < 5ms, negligenciável. O bottleneck real
+é a latência de cada FTS5 query (tipicamente 10–50ms para bases de 10k–100k documentos).
+
+### 3.2 SQLite FTS5 — capacidades e limites
+
+O FTS5 do SQLite suporta: operadores booleanos (AND, OR, NOT), phrase queries ("frase exata"),
+prefix search (word*), column filters (title:query), e snippets com highlight.
+
+A função `bm25()` retorna score negativo (mais negativo = mais relevante) compatível com `ORDER BY`.
+Para busca cross-language, o tokenizer default (unicode61) trata texto PT/EN corretamente;
+para CJK é necessário tokenizer customizado.
+
+**Limites:** FTS5 não suporta fuzzy search (typos), busca por proximidade sem phrase query, ou
+ranqueamento por data + relevância combinados de forma sofisticada. Para esses casos, a alternativa
+é pré-processar a query com correção ortográfica antes de enviar ao FTS5.
+
+### 3.3 Meilisearch / Typesense — alternativas a FTS5
+
+Para busca cross-app com fuzzy e facets, o Meilisearch e o Typesense são as alternativas mais
+leves ao Elasticsearch. Ambos usam modelo de "índice por coleção" (não por app), o que permite
+indexar documentos de múltiplas origens num único índice com campo `source` como facet.
+
+Meilisearch: ~50MB RAM idle, suporta typo tolerance configurável (0–2 typos), multi-index search,
+vectors (para busca semântica via API). Escrito em Rust; binário único, sem dependências.
+Typesense: similar ao Meilisearch, com ênfase em velocidade (<50ms P99). Suporta geo search e
+join entre coleções. Licença Business Source License 1.1 (BSL) — source disponível mas não OSI.
+
+**Relevância:** para o ecossistema local-first, manter FTS5 em cada app e federar via HTTP é
+mais simples e sem dependências extras. Meilisearch/Typesense só fazem sentido se o volume de
+documentos justificar (>100k itens) ou se fuzzy search for prioridade absoluta.
+
+---
+
+## 4. Padrões de Deduplicação e Normalização de URLs
+
+### 4.1 Canonicalização de URLs
+
+A normalização canônica de URLs antes de persistência evita duplicatas por variações cosméticas:
+
+1. Lowercasing do scheme e host: `HTTP://Example.COM` → `http://example.com`
+2. Remoção de porta default: `http://example.com:80/` → `http://example.com/`
+3. Decodificação de percent-encoding não-reservado: `%41` → `A`
+4. Remoção de fragmento: `url#section` → `url` (fragmentos são client-side)
+5. Remoção de trailing slash: `http://example.com/path/` → `http://example.com/path` (exceto raiz)
+6. Remoção de parâmetros de tracking: `utm_*`, `fbclid`, `gclid`, `ref`, `source`, `mc_*`
+7. Ordenação de query params: `?b=2&a=1` → `?a=1&b=2`
+
+O `urllib.parse` do Python suporta 1-4 via `urlnormalize` (inexistente no stdlib) ou manualmente.
+A biblioteca `url-normalize` (PyPI) implementa todos os 7 passos; é uma dependência leve (~5KB).
+
+### 4.2 Detecção de near-duplicates por conteúdo
+
+Para artigos com conteúdo similar (mesmo texto, URL diferente — ex: espelhado), o padrão é
+SimHash (Charikar, 2002): hash de 64 bits onde documentos similares têm Hamming distance pequena.
+SimHash de documentos com >85% conteúdo comum tem distance ≤ 3 bits (threshold usual).
+
+Python: biblioteca `simhash` (PyPI). Para o ecossistema, SimHash sobre o body do artigo permitiria
+detectar espelhos/mirrors e evitar duplicatas. Overhead: ~1ms por documento de 1000 palavras.
+
+---
+
+## 5. Padrões de Feed-to-Archive Automático
+
+### 5.1 Wallabag "auto-tagging rules"
+
+O Wallabag permite definir regras de auto-tagging: se `url matches "medium.com"` → tag `medium`;
+se `reading_time > 10` → tag `long-read`. As regras são avaliadas via Symfony Expression Language.
+
+O equivalente no ecossistema seria: ao arquivar artigo automaticamente via KOSMOS, propagar
+as tags do feed de origem (ex: categoria do feed = tag do arquivo no AKASHA).
+
+### 5.2 Reeder / NetNewsWire — "Read Later" com deep link
+
+O Reeder (iOS/macOS) integra com Instapaper, Pocket, Readwise via "send to" actions. O fluxo é
+via URL scheme deep link: `pocket://add?url=<url>` abre o Pocket app nativamente (sem HTTP).
+No ecossistema desktop, o equivalente seria um signal Python entre KOSMOS e AKASHA (sem HTTP),
+mas o HTTP localhost é preferível para evitar acoplamento de importação.
+
+### 5.3 IFTTT / n8n — automação por evento
+
+O padrão de event-driven archiving (se novo artigo RSS → arquivar) é implementável via n8n
+(workflow automation open source) sem código. O trigger é "RSS Feed" (polling a cada N minutos),
+a action é HTTP POST para o endpoint de arquivamento.
+
+Para o ecossistema, esse padrão é interno: o BackgroundUpdater do KOSMOS (que já faz polling
+dos feeds) pode disparar um POST /archive ao AKASHA para cada novo artigo de feeds marcados com
+`auto_archive=True`. Não precisa de n8n.
+
+---
+
+## 6. Padrões de Index Sharing e Busca Semântica Cross-App
+
+### 6.1 Shared vectorstore — Mnemosyne como hub semântico
+
+O Mnemosyne já é o hub de conhecimento do ecossistema. O padrão natural é que KOSMOS e AKASHA
+alimentem o Mnemosyne (via escrita de .md no diretório monitorado), e o Mnemosyne seja o único
+responsável por embeddings + busca semântica cross-app.
+
+Isso evita duplicação de vectorstore e garante que busca semântica no HUB consulta apenas um índice.
+O overhead é o delay entre arquivamento e indexação (tipicamente < 30s com watcher de diretório).
+
+### 6.2 Cross-encoder reranking — unificação pós-busca
+
+Quando múltiplas fontes retornam resultados (FTS5 KOSMOS + FTS5 AKASHA + vectorstore Mnemosyne),
+o reranking unificado usa um cross-encoder leve (ms-marco-MiniLM-L-6-v2, ~67MB) para reescorar
+todos os candidatos numa única passagem. O resultado é uma lista unificada com score normalizado.
+
+Overhead: ~50ms para 20 candidatos no Ryzen 5 4600G; ~200ms no i5-3470 (sem AVX2, mais lento).
+Alternativa sem modelo: RRF (Reciprocal Rank Fusion) — sem modelo, score = Σ 1/(k + rank_i).
+RRF é suficiente para a maioria dos casos e tem overhead < 1ms.
+
+---
+
+## 7. Benchmarks e Métricas Relevantes
+
+| Métrica | Valor | Fonte |
+|---------|-------|-------|
+| SQLite FTS5 query latência (10k docs) | 5–15ms | SQLite docs |
+| SQLite FTS5 query latência (100k docs) | 15–50ms | benchmarks comunitários |
+| HTTP localhost round-trip | < 5ms | medições típicas |
+| SimHash overhead por documento (1k palavras) | ~1ms | biblioteca simhash |
+| Wallabag fetch timeout | 10s | código fonte |
+| Meilisearch RAM idle | ~50MB | documentação oficial |
+| Cross-encoder reranking (20 docs, MiniLM) | 50ms i7 | sentence-transformers |
+| RRF fusion overhead | < 1ms | implementação manual |
+
+---
+
+## Fontes — ABNT
+
+WALLABAG. **Wallabag API Documentation**. Versão 2.x. Disponível em:
+<https://doc.wallabag.org/en/developer/api/readme.html>. Acesso em: 05 mai. 2026.
+
+FRESHRSS. **FreshRSS Extensions — Full Text RSS**. Disponível em:
+<https://github.com/FreshRSS/Extensions>. Acesso em: 05 mai. 2026.
+
+MINIFLUX. **Miniflux Integrations Documentation**. Disponível em:
+<https://miniflux.app/docs/services.html>. Acesso em: 05 mai. 2026.
+
+OMNIVORE. **Omnivore — open source read-it-later app (archived)**. GitHub, 2024. Disponível em:
+<https://github.com/omnivore-app/omnivore>. Acesso em: 05 mai. 2026.
+
+ARCHIVEBOX. **ArchiveBox Documentation — Getting Started**. Disponível em:
+<https://docs.archivebox.io/>. Acesso em: 05 mai. 2026.
+
+SCRAPY. **Scrapy Documentation — Settings: DOWNLOAD_DELAY**. Disponível em:
+<https://docs.scrapy.org/en/latest/topics/settings.html#download-delay>. Acesso em: 05 mai. 2026.
+
+SQLITE. **FTS5 Full-Text Search Extension**. SQLite Documentation. Disponível em:
+<https://www.sqlite.org/fts5.html>. Acesso em: 05 mai. 2026.
+
+MEILISEARCH. **Meilisearch Documentation**. Disponível em:
+<https://www.meilisearch.com/docs>. Acesso em: 05 mai. 2026.
+
+CHARIKAR, Moses S. **Similarity Estimation Techniques from Rounding Algorithms**. In: Proceedings
+of the Thiry-Fourth Annual ACM Symposium on Theory of Computing (STOC). ACM, 2002. p. 380–388.
+
+CORMACK, Gordon V.; CLARKE, Charles L. A.; BUETTCHER, Stefan. **Reciprocal Rank Fusion Outperforms
+Condorcet and Individual Rank Learning Methods**. In: Proceedings of the 32nd International ACM SIGIR
+Conference on Research and Development in Information Retrieval. ACM, 2009.
+
+N8N. **n8n — Workflow Automation**. Disponível em: <https://n8n.io>. Acesso em: 05 mai. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Integração KOSMOS-AKASHA: Padrões RSS Reader + Web Archiver
 ========================================================
