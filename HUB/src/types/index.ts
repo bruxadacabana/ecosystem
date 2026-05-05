@@ -23,7 +23,7 @@ export interface EcosystemConfig {
   aether:    { vault_path: string; exe_path?: string }
   kosmos:    { data_path: string; archive_path: string; exe_path?: string }
   ogma:      { data_path: string; exe_path?: string }
-  mnemosyne: { index_paths: string[]; exe_path?: string }
+  mnemosyne: { watched_dir?: string; vault_dir?: string; chroma_dir?: string; extra_dirs?: string[]; index_paths?: string[]; exe_path?: string }
   hermes:    { exe_path?: string }
   akasha:    { base_url?: string; exe_path?: string }
   hub:       { data_path: string }

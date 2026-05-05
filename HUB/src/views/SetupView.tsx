@@ -6,6 +6,7 @@
    ============================================================ */
 
 import { useEffect, useState } from 'react'
+import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import * as cmd from '../lib/tauri'
 import type { EcosystemConfig } from '../types'
 
@@ -43,6 +44,27 @@ const DATA_FIELDS: PathField[] = [
     field: 'data_path',
     label: 'OGMA — Dados',
     placeholder: 'Caminho da pasta data do OGMA…',
+    validateAs: 'dir',
+  },
+  {
+    key: 'mnemosyne',
+    field: 'watched_dir',
+    label: 'Mnemosyne — Biblioteca',
+    placeholder: 'Pasta principal monitorada pelo Mnemosyne…',
+    validateAs: 'dir',
+  },
+  {
+    key: 'mnemosyne',
+    field: 'vault_dir',
+    label: 'Mnemosyne — Vault (opcional)',
+    placeholder: 'Pasta de notas/vault a indexar junto…',
+    validateAs: 'dir',
+  },
+  {
+    key: 'mnemosyne',
+    field: 'chroma_dir',
+    label: 'Mnemosyne — ChromaDB',
+    placeholder: 'Pasta onde o banco vetorial é armazenado…',
     validateAs: 'dir',
   },
 ]
@@ -114,6 +136,7 @@ export function SetupView({ onBack }: SetupViewProps) {
   const [syncRoot, setSyncRoot] = useState('')
   const [applyingSync, setApplyingSync] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const [extraDirs, setExtraDirs] = useState<string[]>([])
 
   // Carrega valores atuais do ecosystem.json
   useEffect(() => {
@@ -127,6 +150,8 @@ export function SetupView({ onBack }: SetupViewProps) {
       }
       setValues(initial)
       setSyncRoot(String(eco['sync_root'] ?? ''))
+      const mnem = eco['mnemosyne'] as Record<string, unknown> | undefined
+      setExtraDirs((mnem?.['extra_dirs'] as string[] | undefined) ?? [])
     })
   }, [])
 
@@ -210,6 +235,16 @@ export function SetupView({ onBack }: SetupViewProps) {
     }
   }
 
+  async function handleAddExtraDir() {
+    const dir = await openDialog({ directory: true, multiple: false })
+    if (typeof dir === 'string' && dir && !extraDirs.includes(dir))
+      setExtraDirs(prev => [...prev, dir])
+  }
+
+  function handleRemoveExtraDir(idx: number) {
+    setExtraDirs(prev => prev.filter((_, i) => i !== idx))
+  }
+
   async function handleSave() {
     setSaving(true)
     setError('')
@@ -225,6 +260,11 @@ export function SetupView({ onBack }: SetupViewProps) {
       }
     }
 
+    // extra_dirs do Mnemosyne — persiste mesmo quando vazio (sobrescreve lista anterior)
+    const mnemSection = ((updates as Record<string, unknown>)['mnemosyne'] ?? {}) as Record<string, unknown>
+    mnemSection['extra_dirs'] = extraDirs
+    ;(updates as Record<string, unknown>)['mnemosyne'] = mnemSection
+
     const result = await cmd.saveEcosystemConfig(updates)
     setSaving(false)
 
@@ -234,7 +274,6 @@ export function SetupView({ onBack }: SetupViewProps) {
     }
 
     setSavedMsg('Configuração salva. Reinicie cada app para aplicar os novos caminhos.')
-    onSaved()
   }
 
   function validityIcon(compositeKey: string): string {
@@ -422,9 +461,52 @@ export function SetupView({ onBack }: SetupViewProps) {
         >
           Caminhos de dados
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 40 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 32 }}>
           {DATA_FIELDS.map(f => renderField(f))}
         </div>
+
+        {/* Pastas extras do Mnemosyne */}
+        <label
+          style={{
+            display: 'block',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: 'var(--ink-ghost)',
+            marginBottom: 8,
+          }}
+        >
+          Mnemosyne — Pastas extras para indexação
+        </label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+          {extraDirs.length === 0 && (
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)', fontStyle: 'italic', margin: 0 }}>
+              Nenhuma pasta extra configurada.
+            </p>
+          )}
+          {extraDirs.map((dir, idx) => (
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink)', padding: '4px 8px', background: 'var(--paper-dark)', borderRadius: 'var(--radius)', border: '1px solid var(--rule)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {dir}
+              </span>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => handleRemoveExtraDir(idx)}
+                style={{ flexShrink: 0, fontSize: 11, padding: '2px 8px', color: 'var(--ribbon)' }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={handleAddExtraDir}
+          style={{ fontSize: 10, padding: '4px 10px', marginBottom: 40 }}
+        >
+          + Adicionar pasta
+        </button>
 
         {/* Seção: executáveis */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>

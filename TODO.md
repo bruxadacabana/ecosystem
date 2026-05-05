@@ -3944,3 +3944,27 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `utm_*`). Se já arquivado pelo KOSMOS, retornar o path existente em vez de re-arquivar.
 
 ## Melhorias, correções e atualizações
+
+### Caminhos do Mnemosyne: configuração no HUB + editabilidade no próprio app | 2026-05-04
+
+> Contexto: item 0.9 tornou os caminhos do Mnemosyne (watched_dir, vault_dir, chroma_dir)
+> somente-leitura no SetupDialog, mas a configuração equivalente ainda não existe no HUB.
+> Resultado: não há como definir ou alterar esses caminhos de lugar nenhum.
+> extra_dirs também deve ser persistido no ecosystem.json.
+
+#### HUB
+- [x] `src/types/index.ts` — atualizar `EcosystemConfig.mnemosyne` para incluir
+      `watched_dir`, `vault_dir`, `chroma_dir` (strings) e `extra_dirs` (string[])
+- [x] `src/views/SetupView.tsx` — adicionar campos do Mnemosyne em DATA_FIELDS:
+      watched_dir ("Mnemosyne — Biblioteca"), vault_dir ("Mnemosyne — Vault"),
+      chroma_dir ("Mnemosyne — ChromaDB"); e lista editável de extra_dirs
+      (componente separado com add/remove, abaixo dos campos simples)
+
+#### Mnemosyne
+- [ ] `gui/main_window.py` — SetupDialog: tornar watched_dir, vault_dir e chroma_dir
+      editáveis (QLineEdit + botão de seleção de pasta); ao salvar, chamar
+      `write_section("mnemosyne", {watched_dir, vault_dir, chroma_dir, extra_dirs})`
+      via ecosystem_client — sobrescreve o ecosystem.json
+- [ ] `gui/main_window.py` — ao salvar extra_dirs, incluí-las também no ecosystem.json
+      (campo `extra_dirs: list[str]`) para que o HUB e outros apps saibam quais pastas
+      o Mnemosyne está monitorando
