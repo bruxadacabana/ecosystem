@@ -3,11 +3,53 @@ QA: recupera chunks relevantes e gera resposta via Ollama.
 """
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
+import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
+
+log = logging.getLogger("mnemosyne.rag")
+
+# Limiares para monitoramento do índice ChromaDB.
+# Quando excedidos, um log.warning é emitido sugerindo migração para Qdrant.
+_RAM_WARN_GB  = 4.0        # RSS do processo acima disso → Qdrant + quantização int8
+_LAT_WARN_MS  = 50.0       # latência de busca acima disso → monitorar crescimento
+_CORPUS_WARN  = 1_000_000  # chunks acima disso → Qdrant inevitável no Windows 10
+_HEALTH_EVERY = 50         # verificar RAM/corpus a cada N queries (psutil tem overhead)
+
+_query_count = 0
+
+
+def _check_index_health(vectorstore: Any) -> None:
+    """Verifica RAM do processo e tamanho do corpus; emite warning nos limiares."""
+    try:
+        import psutil
+        rss_gb = psutil.Process().memory_info().rss / (1024 ** 3)
+        if rss_gb > _RAM_WARN_GB:
+            log.warning(
+                "RAM Mnemosyne = %.1f GB > limiar %.0f GB — "
+                "considerar migração ChromaDB → Qdrant (quantização int8, 4× compressão).",
+                rss_gb, _RAM_WARN_GB,
+            )
+        else:
+            log.debug("RAM processo: %.2f GB", rss_gb)
+    except Exception:
+        pass
+    try:
+        count = vectorstore._collection.count()
+        if count > _CORPUS_WARN:
+            log.warning(
+                "Corpus ChromaDB = %d chunks > limiar %d — "
+                "índice HNSW pode saturar RAM; considerar Qdrant.",
+                count, _CORPUS_WARN,
+            )
+        else:
+            log.debug("Corpus ChromaDB: %d chunks", count)
+    except Exception:
+        pass
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -668,9 +710,13 @@ def prepare_ask(
     Raises:
         QueryError: se a busca vetorial falhar.
     """
+    global _query_count
+    _query_count += 1
+
     # Reranking activo: buscar 30 candidatos; sem reranking: k+2 como antes
     candidate_k = _RERANK_CANDIDATE_K if config.reranking_enabled else config.retriever_k + 2
 
+    t0 = time.monotonic()
     try:
         if iterative_retrieval:
             docs = _iterative_retrieve(
@@ -694,6 +740,17 @@ def prepare_ask(
         raise
     except Exception as exc:
         raise QueryError(f"Falha na recuperação: {exc}") from exc
+
+    lat_ms = (time.monotonic() - t0) * 1000
+    log.debug("latência de recuperação: %.1f ms", lat_ms)
+    if lat_ms > _LAT_WARN_MS:
+        log.warning(
+            "latência de busca = %.1f ms > limiar %.0f ms — "
+            "corpus pode estar crescendo; monitorar tendência.",
+            lat_ms, _LAT_WARN_MS,
+        )
+    if _query_count % _HEALTH_EVERY == 0:
+        _check_index_health(vectorstore)
 
     # Compressão contextual: filtrar chunks irrelevantes via LLM
     docs = _contextual_compress(docs, question, config.llm_model)

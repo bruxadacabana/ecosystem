@@ -3270,7 +3270,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
      buscar 20 queries manuais e comparar top-5 com dim=768 vs dim=256
 
 
-- [ ] Monitorar RAM consumida pelo índice ChromaDB e definir gatilho de migração para Qdrant:
+- [x] Monitorar RAM consumida pelo índice ChromaDB e definir gatilho de migração para Qdrant:
   **Motivo:** ChromaDB usa HNSW (hnswlib) — todo o índice fica em RAM em float32. Para 1M vetores
   em dim=768: ~3 GB RAM só do índice. Se o Mnemosyne crescer para cobrir toda a biblioteca AKASHA,
   o índice pode saturar a RAM do Windows 10 (8 GB total). Qdrant oferece quantização scalar
@@ -3722,7 +3722,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias baseadas em pesquisas para o ecossistema
 
-### RAG Aprendente: Reflexão de Conhecimento e Retrieval Iterativo
+### Pesquisa: RAG Auto-Aprendizagem, Reflexão de Conhecimento e Estado da Arte em Retrieval Aumentado
 
 > **Contexto e motivação:** O RAG convencional armazena fragmentos brutos do corpus e recupera por
 > similaridade cosine. A literatura de 2024-2025 (Self-RAG, CRAG, RAPTOR, Knowledge Reflection,
@@ -3730,7 +3730,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > superam em 5-27% o RAG vanilla nos principais benchmarks. As técnicas abaixo foram selecionadas
 > pelo critério de viabilidade no hardware disponível (sem fine-tuning de LLM, sem GPU obrigatória).
 
-#### 11.1 — Knowledge Reflection: síntese ativa durante indexação
+#### Knowledge Reflection: síntese ativa durante indexação
 
 > **Por que fazer:** RAG convencional responde mal a perguntas conceituais/abstratas (ex: "qual a
 > visão geral sobre X?") porque recupera fragmentos textuais brutos, que raramente contêm sínteses
@@ -3782,7 +3782,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ---
 
-#### 11.2 — Retrieval iterativo com enriquecimento de query (ITER-RETGEN)
+#### Retrieval iterativo com enriquecimento de query (ITER-RETGEN)
 
 > **Por que fazer:** perguntas vagas ou mal formuladas produzem retrieval ruim porque a query
 > original não captura os termos que aparecem nos documentos relevantes. ITER-RETGEN (Shao et al.,
@@ -3809,7 +3809,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ---
 
-#### 11.3 — Avaliação automatizada do pipeline (RAGAS)
+#### Avaliação automatizada do pipeline (RAGAS)
 
 > **Por que fazer:** as otimizações das Fases 8, 9, 10, 11.1 e 11.2 mudam o pipeline de formas
 > que podem melhorar uma métrica e piorar outra. Sem avaliação objetiva, é impossível saber se
@@ -3839,7 +3839,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ---
 
-#### 11.4 — Pesquisas pendentes (RAG avançado, longo prazo)
+#### Pesquisas pendentes (RAG avançado, longo prazo)
 
 > Itens abaixo requerem pesquisa adicional antes de qualquer decisão de implementação.
 > Não implementar sem ordem explícita.
