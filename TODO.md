@@ -1733,9 +1733,14 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 ### Decisões de design
 - **Escopo do crawler**: mesmo domínio + subdomínios selecionados pelo usuário
 - **Profundidade default**: 2 (configurável em `/settings`)
-- **Re-crawl**: manual (botão) + automático junto ao monitoramento da biblioteca (loop horário)
+- **Re-crawl**: manual (botão) + automático a cada 7 dias (`crawl_pending_sites()` no loop horário)
 - **Interface de busca**: checkboxes na barra — `□ Web  □ Ecossistema  □ Sites pessoais`
 - **Acesso ao conteúdo**: apenas via busca (ver Planos Futuros para navegação inline)
+
+> **Nota de implementação (2026-05-06):** os routes foram implementados em `/library` em vez de
+> `/sites` como planejado aqui. "Sites" e "Biblioteca" foram unificados numa única aba chamada
+> Biblioteca (`routers/crawler.py`). O path `/sites` não existe no código — substituir mentalmente
+> por `/library` ao ler os itens abaixo.
 
 ### Banco de dados
 
@@ -1843,9 +1848,8 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       condicional — se `src_web` está off, passa `asyncio.sleep(0, result=[])` no slot.
       Reduz latência de ~1 s para ~400 ms.
 
-- [x] **`check_overdue` e `list_entries` sem `content_md`** — `services/library.py`:
-      `_LIST_COLS` sem `content_md`; `_row_to_entry` aceita rows de 13 ou 14 colunas.
-      `scrape_and_store` mantém `SELECT *` pois precisa do conteúdo para calcular diff.
+- ~~[x] **`check_overdue` e `list_entries` sem `content_md`** — `services/library.py`~~
+  **Falso positivo — `services/library.py` nunca foi criado (Fase 7 abandonada).**
 
 #### Média prioridade (reduz lock contention no crawler)
 
