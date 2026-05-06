@@ -76,6 +76,7 @@ _DEFAULTS: dict = {
     "reranking_enabled": True,
     "reranking_top_n": 6,
     "iterative_retrieval_enabled": False,
+    "embedding_truncate_dim": None,
 }
 
 
@@ -99,6 +100,7 @@ class AppConfig:
     reranking_enabled: bool = True
     reranking_top_n: int = 6
     iterative_retrieval_enabled: bool = False
+    embedding_truncate_dim: int | None = None
     # Populados em runtime a partir do ecosystem.json — nunca persistidos
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""
@@ -307,6 +309,7 @@ def load_config() -> AppConfig:
         reranking_enabled=bool(data.get("reranking_enabled", True)),
         reranking_top_n=int(data.get("reranking_top_n", 6)),
         iterative_retrieval_enabled=bool(data.get("iterative_retrieval_enabled", False)),
+        embedding_truncate_dim=int(td) if (td := data.get("embedding_truncate_dim")) else None,
     )
     config = _apply_logos_recommendations(config, _saved_keys)
 
@@ -339,6 +342,7 @@ def save_config(config: AppConfig) -> None:
         "reranking_enabled": config.reranking_enabled,
         "reranking_top_n": config.reranking_top_n,
         "iterative_retrieval_enabled": config.iterative_retrieval_enabled,
+        "embedding_truncate_dim": config.embedding_truncate_dim,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

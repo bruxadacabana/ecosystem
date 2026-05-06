@@ -113,19 +113,34 @@ class IndexCheckpoint:
         return (Path(mnemosyne_dir) / cls._FILENAME).exists()
 
 
-def _embed_batch(texts: list[str], model: str, base_url: str = _OLLAMA_BASE) -> list[list[float]]:
+def _embed_batch(
+    texts: list[str],
+    model: str,
+    base_url: str = _OLLAMA_BASE,
+    truncate_dim: int | None = None,
+) -> list[list[float]]:
     """Chama /api/embed do Ollama com um lote de textos — 1 HTTP por lote.
 
-    Muito mais eficiente que OllamaEmbeddings (que faz 1 chamada por texto).
+    truncate_dim: quando definido, passa ao Ollama para truncar embeddings via MRL
+    (Matryoshka). Se o Ollama instalado não suportar o parâmetro, faz fallback
+    silencioso sem truncamento.
     """
     import httpx
-    resp = httpx.post(
-        f"{base_url}/api/embed",
-        json={"model": model, "input": texts},
-        timeout=120.0,
-    )
-    resp.raise_for_status()
-    return resp.json()["embeddings"]
+    payload: dict = {"model": model, "input": texts}
+    if truncate_dim:
+        payload["truncate_dim"] = truncate_dim
+    try:
+        resp = httpx.post(f"{base_url}/api/embed", json=payload, timeout=120.0)
+        resp.raise_for_status()
+        return resp.json()["embeddings"]
+    except Exception:
+        if truncate_dim:
+            # Ollama sem suporte a truncate_dim — retry sem o parâmetro
+            payload.pop("truncate_dim", None)
+            resp = httpx.post(f"{base_url}/api/embed", json=payload, timeout=120.0)
+            resp.raise_for_status()
+            return resp.json()["embeddings"]
+        raise
 
 
 CHUNK_PARAMS: dict[str, dict[str, int]] = {
@@ -237,10 +252,11 @@ def _add_reflection_to_index(
     bm25_idx: BM25Index,
     reflection: Document,
     embed_model: str,
+    truncate_dim: int | None = None,
 ) -> None:
     """Embeda e persiste uma reflexão no ChromaDB e no BM25Index."""
     import uuid
-    embs = _embed_batch([reflection.page_content], embed_model)
+    embs = _embed_batch([reflection.page_content], embed_model, truncate_dim=truncate_dim)
     vs._collection.add(
         ids=[str(uuid.uuid4())],
         documents=[reflection.page_content],
@@ -287,7 +303,8 @@ def _generate_and_index_reflections(
         # modificar/deletar o arquivo.
         reflection.metadata["source"] = source_file
 
-        _add_reflection_to_index(vs, bm25_idx, reflection, config.embed_model)
+        _add_reflection_to_index(vs, bm25_idx, reflection, config.embed_model,
+                                  truncate_dim=config.embedding_truncate_dim)
 
         theme = reflection.metadata.get("theme", "unknown")
         counts[theme] = counts.get(theme, 0) + 1
@@ -343,7 +360,8 @@ def create_vectorstore(
         )
         for start in range(0, len(chunks), _BATCH):
             batch = chunks[start : start + _BATCH]
-            embs = _embed_batch([c.page_content for c in batch], config.embed_model)
+            embs = _embed_batch([c.page_content for c in batch], config.embed_model,
+                                truncate_dim=config.embedding_truncate_dim)
             vs._collection.add(
                 ids=[str(uuid.uuid4()) for _ in batch],
                 documents=[c.page_content for c in batch],
@@ -395,7 +413,8 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
         _BATCH, _SLEEP = _detect_batch_config()
         batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
         for b_idx, batch in enumerate(batch_list):
-            embs = _embed_batch([c.page_content for c in batch], config.embed_model)
+            embs = _embed_batch([c.page_content for c in batch], config.embed_model,
+                                truncate_dim=config.embedding_truncate_dim)
             vs._collection.add(
                 ids=[str(uuid.uuid4()) for _ in batch],
                 documents=[c.page_content for c in batch],
@@ -483,7 +502,8 @@ def update_vectorstore(
         """Adiciona lista de chunks ao vectorstore via _embed_batch (sem OllamaEmbeddings)."""
         batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
         for b_idx, batch in enumerate(batch_list):
-            embs = _embed_batch([c.page_content for c in batch], embed_model)
+            embs = _embed_batch([c.page_content for c in batch], embed_model,
+                                truncate_dim=config.embedding_truncate_dim)
             vs._collection.add(
                 ids=[str(uuid.uuid4()) for _ in batch],
                 documents=[c.page_content for c in batch],
