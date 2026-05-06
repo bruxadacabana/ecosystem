@@ -18,7 +18,8 @@ from langchain_community.document_loaders import (
 from .errors import DocumentLoadError, FrontmatterParseError, UnsupportedFormatError
 
 
-_SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".epub"}
+_SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".epub",
+                         ".mobi", ".azw", ".azw3"}
 
 # Cobre os 4 formatos de wikilink do Obsidian:
 # [[nota]], [[nota|alias]], [[nota#secção]], [[nota#secção|alias]]
@@ -102,6 +103,8 @@ def _load_file(file_path: str, source_type: str = "library") -> list[Document]:
                 docs = TextLoader(file_path, encoding="utf-8").load()
         elif ext == ".epub":
             docs = _load_epub(file_path)
+        elif ext in (".mobi", ".azw", ".azw3"):
+            docs = _load_mobi(file_path)
         else:
             raise UnsupportedFormatError(file_path)
     except (DocumentLoadError, UnsupportedFormatError):
@@ -245,6 +248,104 @@ def _split_by_heading(text: str, fallback_title: str) -> list[tuple[str, str]]:
         sections.append((current_title, "\n".join(current_lines)))
 
     return sections if sections else [(fallback_title, text)]
+
+
+def _load_mobi(file_path: str) -> list[Document]:
+    """
+    Carrega MOBI, AZW ou AZW3 via biblioteca `mobi` (KindleUnpack).
+
+    A saída da extração pode ser:
+      - index.html (MOBI puro) → BeautifulSoup
+      - *.epub (AZW3/KF8)     → reutiliza _load_epub()
+      - *.pdf (Print Replica) → PyPDFLoader
+
+    Arquivos com DRM ativo geram output corrompido; deteta-se pelo tamanho
+    do texto extraído e retorna DocumentLoadError informativo.
+
+    Raises:
+        DocumentLoadError: se `mobi` não estiver instalado, DRM detectado, ou falha de leitura.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    try:
+        import mobi as _mobi  # type: ignore[import]
+    except ImportError as exc:
+        raise DocumentLoadError(
+            file_path,
+            "Dependência em falta para MOBI/AZW: mobi. Instale com: pip install mobi",
+        ) from exc
+
+    title = _Path(file_path).stem
+    author = ""
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            _, result_path = _mobi.extract(file_path, tmpdir)
+        except Exception as exc:
+            raise DocumentLoadError(file_path, f"Falha ao extrair MOBI/AZW: {exc}") from exc
+
+        result = _Path(result_path)
+
+        # AZW3/KF8 → EPUB gerado dentro do tmpdir
+        epub_files = list(result.parent.glob("**/*.epub"))
+        if epub_files:
+            try:
+                return _load_epub(str(epub_files[0]))
+            except DocumentLoadError as exc:
+                raise DocumentLoadError(file_path, str(exc)) from exc
+
+        # Print Replica AZW → PDF
+        pdf_files = list(result.parent.glob("**/*.pdf"))
+        if pdf_files:
+            return _load_pdf(str(pdf_files[0]))
+
+        # MOBI puro → index.html
+        html_candidates = [result] if result.suffix.lower() in (".html", ".htm") else []
+        if not html_candidates:
+            html_candidates = list(result.parent.glob("**/index.html"))
+        if not html_candidates:
+            html_candidates = list(result.parent.glob("**/*.html"))
+        if not html_candidates:
+            raise DocumentLoadError(
+                file_path,
+                "Nenhum conteúdo extraído — arquivo provavelmente protegido por DRM.",
+            )
+
+        html_path = html_candidates[0]
+        raw_html = html_path.read_text(encoding="utf-8", errors="ignore")
+
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError as exc:
+            raise DocumentLoadError(
+                file_path, "beautifulsoup4 não instalado: pip install beautifulsoup4"
+            ) from exc
+
+        soup = BeautifulSoup(raw_html, "lxml")
+        text = soup.get_text(separator="\n", strip=True)
+
+        if len(text) < 50:
+            raise DocumentLoadError(
+                file_path,
+                "Texto extraído muito curto — arquivo provavelmente protegido por DRM.",
+            )
+
+        # Tentar extrair título/autor das meta tags
+        meta_title = soup.find("meta", attrs={"name": "title"})
+        if meta_title:
+            title = meta_title.get("content", title) or title
+        title_tag = soup.find("title")
+        if title_tag and title_tag.string:
+            title = title_tag.string.strip() or title
+        meta_author = soup.find("meta", attrs={"name": "author"})
+        if meta_author:
+            author = meta_author.get("content", "") or ""
+
+        return [Document(
+            page_content=text,
+            metadata={"source": file_path, "title": title, "author": author},
+        )]
 
 
 def _load_epub(file_path: str) -> list[Document]:

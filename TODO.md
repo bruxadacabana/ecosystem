@@ -4735,3 +4735,27 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   excluindo `*.db`, `*.db-wal`, `*.db-shm`. Syncthing cuida de Markdown, JSON de config,
   pesquisas.md, TODO.md e outros arquivos de texto. Bancos ficam locais por máquina.
   Instalar como serviço ou daemon; configurar par de dispositivos (Windows ↔ CachyOS).
+
+### Mnemosyne: novos formatos de entrada — Kindle e imagens | 2026-05-06
+> Contexto: pesquisa sobre eBook Kindle (AZW/AZW3/MOBI) e leitura de imagens em pipeline RAG
+> revelou opções viáveis sem dependências pesadas. AZW/MOBI via `mobi` (PyPI, sem nativas);
+> imagens via Tesseract local + fallback Ollama vision.
+
+#### Mnemosyne
+- [x] **Suporte a `.azw`, `.azw3`, `.mobi` em `core/loaders.py`** — adicionar função `_load_mobi()`
+  que usa `mobi.extract(file_path, tmpdir)` num `tempfile.TemporaryDirectory`. A saída pode ser:
+  HTML (MOBI) → BeautifulSoup como no EPUB; EPUB (AZW3) → reutilizar `_load_epub()`; PDF
+  (AZW Print Replica) → reutilizar `PyPDFLoader`. Adicionar `.azw`, `.azw3`, `.mobi` em
+  `_SUPPORTED_EXTENSIONS`. Em caso de DRM detectado (output vazio ou corrompido), retornar
+  `DocumentLoadError` com mensagem "arquivo com DRM — não é possível indexar". Dependência:
+  `pip install mobi`.
+
+- [ ] **Suporte a imagens (`.jpg`, `.jpeg`, `.png`, `.webp`) em `core/loaders.py`** — adicionar
+  função `_load_image()` com duas camadas: (1) Tesseract via `pytesseract` + `Pillow` como
+  caminho principal (rápido, sem GPU, compatível com i5-3470); (2) fallback para Ollama vision
+  (`/api/generate` com `images: [base64]`) usando o modelo configurado em `config.image_ocr_model`
+  (default vazio = Tesseract only). Texto extraído vira um `Document` com metadata `source`,
+  `source_type` e `ocr_engine` ("tesseract" ou "ollama:{model}"). Adicionar `.jpg`, `.jpeg`,
+  `.png`, `.webp` em `_SUPPORTED_EXTENSIONS`. Dependência: `pip install pytesseract Pillow`
+  + Tesseract instalado no sistema (instrução no README). Campo `image_ocr_model` em
+  `AppConfig` e `SetupDialog` (QLineEdit, opcional, placeholder "ex: moondream2").
