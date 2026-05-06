@@ -2188,7 +2188,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
   ```
   Como é uma virtual table, recriar exige reindexar — executar `index_local_files()` no próximo startup.
 
-- [ ] AKASHA: deduplicação de conteúdo crawlado por hash SHA-256:
+- [x] AKASHA: deduplicação de conteúdo crawlado por hash SHA-256:
   **Motivo:** o crawler normaliza URLs mas não detecta conteúdo duplicado entre URLs diferentes
   (syndication, mirrors, redirects resolvidos). Dois artigos com mesmo conteúdo são indexados
   e buscados duplicadamente, poluindo os resultados.
@@ -2199,7 +2199,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
   3. `SELECT id FROM crawled_pages WHERE content_hash = ?` — se existir: ignorar URL, não re-indexar
   4. Adicionar index em `content_hash` para a query ser O(1)
 
-- [ ] AKASHA: ETag/Last-Modified no crawler para não re-crawlar páginas sem mudança:
+- [x] AKASHA: ETag/Last-Modified no crawler para não re-crawlar páginas sem mudança:
   **Motivo:** o crawler re-crawla todas as URLs a cada ciclo, mesmo que o conteúdo não tenha
   mudado. Servidores que suportam cache HTTP retornam 304 Not Modified com ETag/Last-Modified,
   evitando download e parsing do HTML inteiro.

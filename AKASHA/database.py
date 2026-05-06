@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -119,15 +119,22 @@ CREATE TABLE IF NOT EXISTS crawl_sites (
 
 _CREATE_CRAWL_PAGES = """
 CREATE TABLE IF NOT EXISTS crawl_pages (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    site_id      INTEGER NOT NULL REFERENCES crawl_sites(id) ON DELETE CASCADE,
-    url          TEXT    NOT NULL UNIQUE,
-    title        TEXT    NOT NULL DEFAULT '',
-    content_md   TEXT    NOT NULL DEFAULT '',
-    content_hash TEXT    NOT NULL DEFAULT '',
-    http_status  INTEGER NOT NULL DEFAULT 0,
-    crawled_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id       INTEGER NOT NULL REFERENCES crawl_sites(id) ON DELETE CASCADE,
+    url           TEXT    NOT NULL UNIQUE,
+    title         TEXT    NOT NULL DEFAULT '',
+    content_md    TEXT    NOT NULL DEFAULT '',
+    content_hash  TEXT    NOT NULL DEFAULT '',
+    http_status   INTEGER NOT NULL DEFAULT 0,
+    etag          TEXT    NOT NULL DEFAULT '',
+    last_modified TEXT    NOT NULL DEFAULT '',
+    crawled_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+"""
+
+_CREATE_IDX_CRAWL_PAGES_HASH = """
+CREATE INDEX IF NOT EXISTS idx_crawl_pages_hash
+    ON crawl_pages(content_hash) WHERE content_hash != '';
 """
 
 _CREATE_CRAWL_FTS = """
@@ -209,6 +216,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_CRAWL_PAGES)
         await db.execute(_CREATE_CRAWL_FTS)
         await db.execute(_CREATE_IDX_CRAWL_PAGES_SITE)
+        await db.execute(_CREATE_IDX_CRAWL_PAGES_HASH)
         await db.execute(_CREATE_WATCH_LATER)
         await db.execute(_CREATE_WATCH_LATER_FTS)
         await db.execute(_CREATE_ACTIVITY_LOG)
@@ -325,6 +333,21 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             FROM crawl_pages
             WHERE content_md != ''
         """)
+
+    if from_version < 15:
+        # Adiciona colunas HTTP cache e índice para deduplicação por hash.
+        try:
+            await db.execute("ALTER TABLE crawl_pages ADD COLUMN etag TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # coluna já existe em banco recém-criado
+        try:
+            await db.execute("ALTER TABLE crawl_pages ADD COLUMN last_modified TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crawl_pages_hash "
+            "ON crawl_pages(content_hash) WHERE content_hash != ''"
+        )
 
     if from_version < 14:
         # Recriar local_fts com tokenizer unicode61 remove_diacritics=2.

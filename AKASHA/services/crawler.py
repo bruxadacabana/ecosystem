@@ -250,21 +250,40 @@ def _hamming(a: int, b: int) -> int:
     return bin(a ^ b).count("1")
 
 
-async def _fetch_page(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
-    """Retorna (html, http_status). Mede response_time e atualiza throttle adaptativo."""
+async def _fetch_page(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    etag: str = "",
+    last_modified: str = "",
+) -> tuple[str, int, str, str]:
+    """Retorna (html, http_status, new_etag, new_last_modified).
+
+    Passa headers condicionais If-None-Match / If-Modified-Since quando disponíveis.
+    Status 304 → html vazio, sem re-parse necessário.
+    """
     domain = urlparse(url).netloc
+    headers: dict[str, str] = {}
+    if etag:
+        headers["If-None-Match"] = etag
+    if last_modified:
+        headers["If-Modified-Since"] = last_modified
     t0 = time.monotonic()
     try:
-        resp = await client.get(url)
+        resp = await client.get(url, headers=headers)
         dt = time.monotonic() - t0
         _update_throttle(domain, dt, resp.status_code)
+        if resp.status_code == 304:
+            return "", 304, etag, last_modified
         if resp.status_code == 429:
             log.warning("429 Too Many Requests: %s", url)
-            return "", 429
-        return resp.text, resp.status_code
+            return "", 429, "", ""
+        new_etag = resp.headers.get("ETag", "")
+        new_lm   = resp.headers.get("Last-Modified", "")
+        return resp.text, resp.status_code, new_etag, new_lm
     except Exception as exc:
         log.debug("crawl fetch error %s: %s", url, exc)
-        return "", 0
+        return "", 0, "", ""
 
 
 async def _upsert_page(
@@ -276,6 +295,8 @@ async def _upsert_page(
     content_hash: str,
     http_status: int,
     now: str,
+    etag: str = "",
+    last_modified: str = "",
 ) -> None:
     # Verifica hash atual antes de tocar o FTS — re-indexar texto idêntico é
     # o principal custo de re-crawl em sites que não mudaram.
@@ -286,13 +307,15 @@ async def _upsert_page(
 
     await db.execute(
         """INSERT INTO crawl_pages
-               (site_id, url, title, content_md, content_hash, http_status, crawled_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+               (site_id, url, title, content_md, content_hash, http_status,
+                etag, last_modified, crawled_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(url) DO UPDATE SET
                title=excluded.title, content_md=excluded.content_md,
                content_hash=excluded.content_hash, http_status=excluded.http_status,
+               etag=excluded.etag, last_modified=excluded.last_modified,
                crawled_at=excluded.crawled_at""",
-        (site_id, url, title, content_md, content_hash, http_status, now),
+        (site_id, url, title, content_md, content_hash, http_status, etag, last_modified, now),
     )
     # Sync FTS5 manualmente — skip se conteúdo idêntico
     if fts_changed:
@@ -352,8 +375,21 @@ async def crawl_site(site_id: int) -> int:
                 log.debug("robots.txt: bloqueado %s", url)
                 return []
             await _rate_limit(urlparse(url).netloc)
+
+            # Busca ETag/Last-Modified armazenados para cache HTTP condicional
+            stored = await (await db.execute(
+                "SELECT etag, last_modified FROM crawl_pages WHERE url = ?", (url,)
+            )).fetchone()
+            stored_etag = stored[0] if stored else ""
+            stored_lm   = stored[1] if stored else ""
+
             async with sem:
-                html, status = await _fetch_page(client, url)
+                html, status, new_etag, new_lm = await _fetch_page(
+                    client, url, etag=stored_etag, last_modified=stored_lm
+                )
+            if status == 304:
+                log.debug("304 Not Modified — sem mudança: %s", url)
+                return []
             if not html:
                 return []
 
@@ -361,6 +397,16 @@ async def crawl_site(site_id: int) -> int:
             t = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
             title = t.group(1).strip() if t else urlparse(url).path or url
             chash = _hash(content_md)
+
+            # Deduplicação exata por hash SHA-256 cross-URL
+            if chash and content_md:
+                dup = await (await db.execute(
+                    "SELECT 1 FROM crawl_pages WHERE content_hash = ? AND url != ? LIMIT 1",
+                    (chash, url),
+                )).fetchone()
+                if dup:
+                    log.debug("conteúdo duplicado ignorado: %s", url)
+                    return []
 
             # Near-duplicate detection: pula páginas com conteúdo quase idêntico
             if content_md:
@@ -370,7 +416,10 @@ async def crawl_site(site_id: int) -> int:
                     return []
                 seen_simhashes.append(sim)
 
-            await _upsert_page(db, site_id, url, title, content_md, chash, status, now)
+            await _upsert_page(
+                db, site_id, url, title, content_md, chash, status, now,
+                etag=new_etag, last_modified=new_lm,
+            )
             await db.commit()
 
             if depth >= max_depth:
