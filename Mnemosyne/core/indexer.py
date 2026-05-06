@@ -20,7 +20,7 @@ from langchain_ollama import OllamaEmbeddings
 from .bm25_index import BM25Index
 from .config import AppConfig
 from .errors import EmptyDirectoryError, IndexBuildError, VectorstoreNotFoundError
-from .loaders import load_documents, load_single_file
+from .loaders import load_documents, load_single_file, is_transcript_file
 from .ollama_client import _BASE_URL as _OLLAMA_BASE
 from .reflection import generate_reflection, MIN_CHUNKS
 from .tracker import FileTracker
@@ -373,6 +373,8 @@ _DOCUMENT_EXTS   = frozenset({".pdf", ".epub", ".docx"})
 
 def _chunk_type_for(source_type: str, file_path: str = "") -> str:
     """Detecta o tipo lógico de conteúdo para selecionar parâmetros de chunking."""
+    if source_type == "transcript":
+        return "transcript"
     ext = os.path.splitext(file_path.lower())[1] if file_path else ""
     if ext in _TRANSCRIPT_EXTS:
         return "transcript"
@@ -380,6 +382,8 @@ def _chunk_type_for(source_type: str, file_path: str = "") -> str:
         return "note"
     if ext in _DOCUMENT_EXTS:
         return "document"
+    if ext in (".md", ".txt") and file_path and is_transcript_file(file_path):
+        return "transcript"
     return "article"  # .md/.txt em library → artigos scraped
 
 
@@ -564,8 +568,23 @@ def create_vectorstore(
         raise EmptyDirectoryError(config.watched_dir)
 
     embeddings = _get_embeddings(config)
-    splitter = _get_splitter(config, embeddings, source_type=config.collection_type)
-    chunks = splitter.split_documents(documents)
+    if config.semantic_chunking:
+        splitter = _get_splitter(config, embeddings, source_type=config.collection_type)
+        chunks = splitter.split_documents(documents)
+    else:
+        _splitter_cache: dict[str, RecursiveCharacterTextSplitter] = {}
+        chunks = []
+        for doc in documents:
+            src = doc.metadata.get("source_type", config.collection_type)
+            ctype = _chunk_type_for(src, doc.metadata.get("source", ""))
+            if ctype not in _splitter_cache:
+                params = CHUNK_PARAMS.get(ctype, CHUNK_PARAMS["document"])
+                _splitter_cache[ctype] = RecursiveCharacterTextSplitter(
+                    chunk_size=params["chunk_size"],
+                    chunk_overlap=params["chunk_overlap"],
+                    separators=["\n\n", "\n", ". ", " ", ""],
+                )
+            chunks.extend(_splitter_cache[ctype].split_documents([doc]))
 
     _BATCH, _SLEEP = _detect_batch_config()
     try:
@@ -785,3 +804,57 @@ def load_vectorstore(config: AppConfig) -> Chroma:
         embedding_function=_get_embeddings(config),
         collection_metadata={"hnsw:space": "cosine"},
     )
+
+
+def reindex_transcripts(
+    config: AppConfig,
+    progress_cb: Callable[[str], None] | None = None,
+) -> int:
+    """
+    Varre watched_dir e extra_dirs, detecta transcrições e re-indexa apenas
+    esses arquivos com chunking específico para transcrições (400/60).
+    Não requer re-indexação completa do vectorstore.
+
+    Retorna o número de arquivos re-indexados com sucesso.
+
+    Raises:
+        VectorstoreNotFoundError: se não houver vectorstore.
+    """
+    vs = load_vectorstore(config)
+    bm25_idx = BM25Index.load(config.mnemosyne_dir)
+    chunk_store = ChunkHashStore(config.persist_dir)
+    _BATCH, _SLEEP = _detect_batch_config()
+    splitter = _get_splitter(config, source_type="transcript")
+
+    dirs: list[tuple[str, str]] = [(config.watched_dir, config.collection_type)]
+    for extra_dir in config.extra_dirs:
+        if os.path.isdir(extra_dir):
+            dirs.append((extra_dir, "library"))
+
+    count = 0
+    for directory, src_type in dirs:
+        if not os.path.isdir(directory):
+            continue
+        for root, _, files in os.walk(directory):
+            for filename in sorted(files):
+                file_path = os.path.join(root, filename)
+                if not is_transcript_file(file_path):
+                    continue
+                try:
+                    if progress_cb:
+                        progress_cb(f"Transcrição: {filename}")
+                    docs = load_single_file(file_path, source_type=src_type,
+                                            ocr_model=config.image_ocr_model)
+                    chunks = splitter.split_documents(docs)
+                    _incremental_update(
+                        vs, bm25_idx, chunk_store, file_path, chunks,
+                        config.embed_model, config.embedding_truncate_dim,
+                        _BATCH, _SLEEP, node_type_model="",
+                    )
+                    count += 1
+                except Exception:
+                    pass
+
+    chunk_store.close()
+    bm25_idx.save()
+    return count

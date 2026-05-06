@@ -59,6 +59,7 @@ from gui.workers import (
     IndexFileWorker,
     IndexWorker,
     OllamaCheckWorker,
+    ReindexTranscriptsWorker,
     ResumeIndexWorker,
     StudioWorker,
     SummarizeWorker,
@@ -1053,6 +1054,12 @@ class MainWindow(QMainWindow):
         self.update_index_btn.setEnabled(False)
         self.update_index_btn.setToolTip("Indexa apenas arquivos novos ou modificados")
         self.update_index_btn.clicked.connect(self.start_update_index)
+        self.reindex_transcripts_btn = QPushButton("Re-indexar transcrições")
+        self.reindex_transcripts_btn.setEnabled(False)
+        self.reindex_transcripts_btn.setToolTip(
+            "Re-indexa apenas arquivos de transcrição com chunking otimizado (sem apagar o restante do índice)"
+        )
+        self.reindex_transcripts_btn.clicked.connect(self.start_reindex_transcripts)
         self.toggle_watcher_btn = QPushButton("Pausar watcher")
         self.toggle_watcher_btn.setEnabled(False)
         self.toggle_watcher_btn.clicked.connect(self._toggle_watcher)
@@ -1061,6 +1068,7 @@ class MainWindow(QMainWindow):
         self.clear_index_btn.clicked.connect(self.clear_index)
         actions.addWidget(self.refresh_manage_btn)
         actions.addWidget(self.update_index_btn)
+        actions.addWidget(self.reindex_transcripts_btn)
         actions.addWidget(self.toggle_watcher_btn)
         actions.addWidget(self.clear_index_btn)
         layout.addLayout(actions)
@@ -1544,6 +1552,35 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Erro", str(exc))
         else:
             self.update_index_btn.setEnabled(True)
+            QMessageBox.warning(self, "Aviso", message)
+        self.statusBar().showMessage(message)
+
+    def start_reindex_transcripts(self) -> None:
+        self.reindex_transcripts_btn.setEnabled(False)
+        self.update_index_btn.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self.progress_file_label.setVisible(True)
+        self.statusBar().showMessage("Buscando e re-indexando transcrições…")
+        self._log_event("Iniciando re-indexação de transcrições.")
+
+        self._reindex_transcripts_worker = ReindexTranscriptsWorker(self.config)
+        self._reindex_transcripts_worker.progress.connect(self.progress_file_label.setText)
+        self._reindex_transcripts_worker.finished.connect(self._on_reindex_transcripts_finished)
+        self._reindex_transcripts_worker.start()
+
+    def _on_reindex_transcripts_finished(self, success: bool, message: str) -> None:
+        self.progress.setVisible(False)
+        self.progress_file_label.setVisible(False)
+        self.reindex_transcripts_btn.setEnabled(True)
+        self.update_index_btn.setEnabled(True)
+        self._log_event(message)
+        if success:
+            try:
+                self.vectorstore = load_vectorstore(self.config)
+            except VectorstoreNotFoundError:
+                pass
+        else:
             QMessageBox.warning(self, "Aviso", message)
         self.statusBar().showMessage(message)
 
@@ -2431,6 +2468,7 @@ class MainWindow(QMainWindow):
         self.faq_btn.setEnabled(True)
         self.clear_index_btn.setEnabled(True)
         self.update_index_btn.setEnabled(True)
+        self.reindex_transcripts_btn.setEnabled(True)
         self.guide_refresh_btn.setEnabled(True)
         self.studio_generate_btn.setEnabled(True)
 
@@ -2439,6 +2477,7 @@ class MainWindow(QMainWindow):
         self.summary_btn.setEnabled(False)
         self.faq_btn.setEnabled(False)
         self.update_index_btn.setEnabled(False)
+        self.reindex_transcripts_btn.setEnabled(False)
         self.guide_refresh_btn.setEnabled(False)
         self.studio_generate_btn.setEnabled(False)
 

@@ -1,7 +1,8 @@
 """
 Carregadores de documentos para diferentes formatos.
-Suporta: PDF, DOCX, TXT, MD, EPUB.
+Suporta: PDF, DOCX, TXT, MD, EPUB, VTT, SRT.
 Para .md em vault Obsidian: extrai frontmatter YAML e wikilinks.
+Para .vtt/.srt e .md/.txt do Hermes: detectado como transcrição automaticamente.
 """
 from __future__ import annotations
 
@@ -20,9 +21,11 @@ from .errors import DocumentLoadError, FrontmatterParseError, UnsupportedFormatE
 
 _SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".epub",
                          ".mobi", ".azw", ".azw3",
-                         ".jpg", ".jpeg", ".png", ".webp"}
+                         ".jpg", ".jpeg", ".png", ".webp",
+                         ".vtt", ".srt"}
 
-_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+_IMAGE_EXTENSIONS      = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+_TRANSCRIPT_FILE_EXTS  = frozenset({".vtt", ".srt"})
 
 # Cobre os 4 formatos de wikilink do Obsidian:
 # [[nota]], [[nota|alias]], [[nota#secção]], [[nota#secção|alias]]
@@ -30,6 +33,73 @@ _WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]")
 
 # Diretórios a ignorar ao percorrer um vault Obsidian
 _OBSIDIAN_IGNORE = {".obsidian", "templates", "attachments", ".trash"}
+
+# Detecta linha de timing VTT (00:00:00.000 --> ...) e SRT (00:00:00,000 --> ...)
+_VTT_TIMING_RE  = re.compile(r"^\d{1,2}:\d{2}[:.]\d{2}[,.]\d{3}\s+-->")
+_VTT_CUE_NUM_RE = re.compile(r"^\d+$")
+# Detecta timestamp inline Hermes: **[MM:SS]** texto
+_HERMES_STAMP_RE = re.compile(r"^\*\*\[\d{2}:\d{2}\]\*\*")
+
+
+def is_transcript_file(file_path: str) -> bool:
+    """Detecta se um arquivo é uma transcrição (Hermes .md/.txt ou legendas .vtt/.srt).
+
+    Critérios para .md/.txt:
+    - Frontmatter YAML com chave ``duration:`` (padrão Hermes)
+    - Heading ``## Transcrição``
+    - 3 ou mais linhas com timestamps ``**[MM:SS]**``
+    """
+    ext = os.path.splitext(file_path.lower())[1]
+    if ext in _TRANSCRIPT_FILE_EXTS:
+        return True
+    if ext not in (".md", ".txt"):
+        return False
+    try:
+        with open(file_path, encoding="utf-8", errors="ignore") as fh:
+            lines = [fh.readline() for _ in range(50)]
+    except OSError:
+        return False
+    in_fm = bool(lines) and lines[0].strip() == "---"
+    fm_closed = False
+    stamp_count = 0
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if i == 0 and s == "---":
+            continue
+        if in_fm and not fm_closed:
+            if s == "---":
+                fm_closed = True
+            elif s.startswith("duration:"):
+                return True
+            continue
+        if s == "## Transcrição":
+            return True
+        if _HERMES_STAMP_RE.match(s):
+            stamp_count += 1
+            if stamp_count >= 3:
+                return True
+    return False
+
+
+def _load_vtt(file_path: str) -> list[Document]:
+    """Carrega .vtt ou .srt extraindo apenas o texto dos cues, sem timestamps."""
+    try:
+        raw = open(file_path, encoding="utf-8", errors="ignore").read()
+    except OSError as exc:
+        raise DocumentLoadError(file_path, str(exc)) from exc
+    text_lines: list[str] = []
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s == "WEBVTT" or _VTT_TIMING_RE.match(s) or _VTT_CUE_NUM_RE.match(s):
+            continue
+        cleaned = re.sub(r"<[^>]+>", "", s)
+        if cleaned:
+            text_lines.append(cleaned)
+    title = os.path.splitext(os.path.basename(file_path))[0]
+    return [Document(
+        page_content="\n".join(text_lines),
+        metadata={"source": file_path, "title": title},
+    )]
 
 
 def load_documents(
@@ -110,11 +180,16 @@ def _load_file(
             docs = _load_pdf(file_path)
         elif ext == ".docx":
             docs = _load_docx(file_path)
+        elif ext in _TRANSCRIPT_FILE_EXTS:
+            docs = _load_vtt(file_path)
+            source_type = "transcript"
         elif ext in (".txt", ".md"):
             if source_type == "vault":
                 docs = _load_obsidian_note(file_path)
             else:
                 docs = TextLoader(file_path, encoding="utf-8").load()
+                if is_transcript_file(file_path):
+                    source_type = "transcript"
         elif ext == ".epub":
             docs = _load_epub(file_path)
         elif ext in (".mobi", ".azw", ".azw3"):

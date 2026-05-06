@@ -24,6 +24,7 @@ from core.indexer import (
     create_vectorstore,
     index_single_file,
     load_vectorstore,
+    reindex_transcripts,
     update_vectorstore,
     _detect_batch_config,
     _embed_batch,
@@ -439,6 +440,29 @@ class UpdateIndexWorker(QThread):
             self.finished.emit(False, str(exc))
         except Exception as exc:
             self.finished.emit(False, f"Erro ao actualizar índice: {exc}")
+
+
+class ReindexTranscriptsWorker(QThread):
+    """Varre os diretórios e re-indexa apenas arquivos de transcrição."""
+
+    progress = Signal(str)          # mensagem de progresso por arquivo
+    finished = Signal(bool, str)    # sucesso, mensagem final
+
+    def __init__(self, config: AppConfig) -> None:
+        super().__init__()
+        self.config = config
+
+    def start(self, priority: QThread.Priority = QThread.Priority.LowPriority) -> None:
+        super().start(priority)
+
+    def run(self) -> None:
+        try:
+            count = reindex_transcripts(self.config, progress_cb=self.progress.emit)
+            self.finished.emit(True, f"{count} transcrição(ões) re-indexada(s).")
+        except VectorstoreNotFoundError:
+            self.finished.emit(False, "Nenhum índice encontrado. Use 'Indexar tudo' primeiro.")
+        except Exception as exc:
+            self.finished.emit(False, f"Erro ao re-indexar transcrições: {exc}")
 
 
 class IndexFileWorker(QThread):
