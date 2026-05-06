@@ -4221,14 +4221,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   resultados para: [query corrigida]" no response. Latência: < 1ms após carga do dicionário
   em memória. Carregar dicionário no startup do app (uma vez).
 
-- [ ] **Preset "apenas artigos científicos" na rota de busca**
+- [x] **Preset "apenas artigos científicos" na rota de busca**
   (`routers/search.py`, template `search.html`). Aceitar `?mode=papers` na rota `/search`
   que force `src_papers=True` e todos os outros sources desligados. Na UI, adicionar botão
   "Buscar artigos" ao lado do campo de busca principal (ou atalho de teclado). Permite busca
   exclusiva em Semantic Scholar + arXiv sem passar por DDG/FTS5 local/sites. Abre caminho
   para presets futuros (ex: `?mode=local`, `?mode=archive`).
 
-- [ ] **OpenAlex como terceira fonte na busca científica**
+- [x] **OpenAlex como terceira fonte na busca científica**
   (`services/paper_search.py`). Integrar OpenAlex via `pip install pyalex`. OpenAlex cobre
   250M+ artigos (mais abrangente que Semantic Scholar), é gratuito com chave de email,
   retorna abstracts completos e links de acesso aberto. Adicionar ao gather paralelo em
@@ -4343,6 +4343,91 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   quando Ollama estiver rodando". Nunca bloquear a busca FTS5 por falta de LLM.
 
 ## Melhorias, correções e atualizações
+
+### Mnemosyne + AKASHA: tratamento diferenciado por tipo de fonte | 2026-05-06
+> Contexto: diferentes fontes têm densidade informacional, perspectiva e objetivo distintos —
+> notas pessoais são opinião da usuária, transcrições são linguagem falada informal, artigos
+> web são resumos curados, livros são conteúdo desenvolvido, artigos científicos são o mais
+> denso e autoritativo. O pipeline de RAG deve refletir essas diferenças em chunking,
+> recuperação e apresentação dos resultados.
+
+#### Mnemosyne
+- [ ] **[P1] Framing por tipo no prompt de RAG (`core/rag.py`)** — quando montar o contexto
+  enviado ao LLM, incluir o rótulo legível do `source_type` de cada chunk: "Nota pessoal",
+  "Transcrição", "Artigo web", "Livro", "Artigo científico". Notas pessoais devem ser
+  explicitamente marcadas como opinião da usuária ("este trecho vem das suas notas pessoais")
+  para que o LLM não as trate como fato externo. Científicos como "artigo peer-reviewed".
+  Mudança pequena, alto impacto — o LLM passa a raciocinar diferente sobre cada fonte.
+
+- [ ] **[P2] Peso por tipo de fonte na recuperação híbrida (`core/rag.py`)** — adicionar dict
+  `SOURCE_WEIGHTS: dict[str, float]` (ex: `{"scientific": 1.4, "book": 1.2, "library": 1.0,
+  "transcript": 0.9, "vault": 1.0}`). Ao fazer o merge BM25 + semântico, multiplicar o score
+  pelo peso da fonte antes do ranking final. Notas pessoais têm peso neutro (1.0) — são
+  relevantes quando a pergunta é sobre a opinião da usuária, não quando é sobre fatos.
+  Transcrições de YouTube/TikTok pesam menos que livros no mesmo tema.
+
+- [ ] **[P3] Separadores de chunk específicos por tipo (`core/indexer.py`)** — em
+  `_get_splitter()`, além do `chunk_size`/`overlap`, usar separadores adequados ao conteúdo:
+  notas → `["\n## ", "\n\n", "\n"]`; livros → `["\n# ", "\n## ", "\n\n", "\n"]`;
+  científicos → `["\n## ", "\n\n", ". ", "\n"]` (seções como Abstract/Métodos/Resultados);
+  transcrições → `[". ", "! ", "? ", "\n"]` (sem cabeçalhos markdown, fala é contínua);
+  artigos web → `["\n\n", "\n", ". "]`. Atualizar `CHUNK_PARAMS` para incluir `separators`.
+
+- [ ] **[P4] Detecção e chunk params de artigo científico** — adicionar tipo `"scientific"` em
+  `CHUNK_PARAMS` (chunk_size 400, overlap 80 — denso, precisa de mais overlap para não cortar
+  mid-argumento). Em `_chunk_type_for()`, detectar via `is_scientific_paper(file_path)`:
+  checar frontmatter por `type: scientific` (adicionado pelo AKASHA — ver item AKASHA abaixo),
+  ou por presença de seções `Abstract`, `References`/`Referências`, `DOI:` no corpo.
+
+#### AKASHA
+- [ ] **[P4] Marcar artigos científicos no frontmatter ao arquivar (`services/crawler.py` ou
+  `routers/crawler.py`)** — quando o AKASHA fizer download via arxiv (`aioarxiv`) ou de URL
+  com indicadores científicos (domínio `arxiv.org`, `pubmed`, `doi.org`, `scholar`, extensão
+  `.pdf` com metadados de autor/abstract), adicionar `type: scientific` no frontmatter YAML
+  do arquivo `.md` gerado. Isso permite que o Mnemosyne identifique a fonte sem depender de
+  subpasta. Verificar onde o AKASHA gera os arquivos `.md` do archive e adicionar o campo lá.
+
+### AKASHA + Mnemosyne: metadados ricos no frontmatter do archive | 2026-05-06
+> Contexto: ao arquivar conteúdo, o AKASHA deve incluir metadados estruturados no frontmatter
+> YAML dos arquivos .md gerados. Esses metadados são consumidos pelo Mnemosyne para framing
+> no prompt, citação correta nas respostas e futura filtragem por tipo/data/idioma.
+
+#### AKASHA
+- [ ] **Campos universais em todos os arquivos arquivados** — ao gerar o frontmatter .md no
+  archive, sempre incluir: `title`, `author` (quando disponível na página/PDF), `date`
+  (data de publicação do conteúdo, não de download — formato `YYYY-MM-DD`), `language`
+  (`pt`/`en`/etc. — detectar via `langdetect` já no requirements do KOSMOS, ou pelo
+  `Content-Language` do HTTP), `source_url` (URL original de onde foi baixado). Esses campos
+  são os mais usados pelo Mnemosyne para framing e citação.
+
+- [ ] **Campos específicos para artigos científicos** — quando a fonte for identificada como
+  científica (arxiv, DOI, Semantic Scholar, OpenAlex), incluir adicionalmente no frontmatter:
+  `doi` (ex: `10.48550/arXiv.1706.03762`), `arxiv_id` (quando aplicável, ex: `1706.03762`),
+  `journal` (nome do periódico ou `arXiv preprint`), `abstract` (primeiros 500 chars do
+  abstract — indexado separadamente melhora a recuperação pois resume o artigo inteiro),
+  `keywords` (lista de palavras-chave quando disponíveis). `doi` e `arxiv_id` também servem
+  para deduplicação: antes de baixar, verificar se já existe arquivo com o mesmo DOI no
+  archive.
+
+- [ ] **Campos específicos para PDFs de livros** — quando processar PDF com `pymupdf4llm`,
+  extrair metadados nativos do PDF (já acessíveis via `fitz.open(path).metadata`): `isbn`,
+  `publisher`, `year`. Incluir no frontmatter apenas quando não-vazios. `year` complementa
+  `date` para livros onde só o ano é conhecido.
+
+#### Hermes
+- [ ] **Campos adicionais no frontmatter de transcrições** — `build_mnemosyne_markdown()` em
+  `hermes.py` já inclui `title`, `date`, `source`, `duration`. Adicionar: `platform`
+  (`youtube`/`tiktok`/`podcast`/`local` — inferir da URL ou marcar "local" quando arquivo
+  local), `channel` (nome do canal/criador quando disponível via yt-dlp `info["uploader"]`
+  ou `info["channel"]`). `platform` permite ao Mnemosyne diferenciar um podcast técnico de
+  um vídeo de TikTok na hora de pesar a fonte.
+
+#### Mnemosyne
+- [ ] **Usar `date`, `author`, `language` do frontmatter na detecção e no framing** — em
+  `core/loaders.py`, ao carregar arquivos .md, extrair esses campos do frontmatter e
+  propagá-los para `doc.metadata`. Em `core/rag.py`, usar `author` e `date` ao montar o
+  rótulo de cada chunk no prompt (ex: "Vaswani et al., 2017 — Artigo científico"). Depende
+  dos itens AKASHA acima.
 
 ### Mnemosyne: auditoria de funcionalidades atuais | 2026-05-06
 > Contexto: antes de redesenhar a UI e adicionar novas features, verificar o estado real
