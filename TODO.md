@@ -4141,6 +4141,20 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### Mnemosyne: reestruturação urgente da UI | 2026-05-06
+> Contexto: a UI atual do Mnemosyne não está intuitiva nem clara para a usuária.
+> A referência de design é o NotebookLM (Google) — paradigma tri-pane (Fontes / Chat / Workspace)
+> com ancoragem de citações e estado separado por painel. Requer redesign profundo antes de
+> continuar adicionando features ao app. Pesquisa de UI/UX em andamento (ver pesquisas.md).
+
+#### Mnemosyne
+- [ ] **[URGENTE] Redesenhar a UI completa do Mnemosyne** seguindo o paradigma tri-pane do
+  NotebookLM: (1) painel esquerdo de fontes/coleções com status de indexação por item,
+  (2) painel central de chat RAG com citações clicáveis, (3) painel direito de notas
+  persistentes onde respostas do chat podem ser "promovidas" para registro permanente.
+  Antes de implementar: definir o layout alvo com a usuária. A pesquisa de referência
+  está em `pesquisas.md` (seções NotebookLM 2026-04-10 e 2026-04-20, e nova sessão 2026-05-06).
+
 ### AKASHA: remoção de dead code da Fase 7 (library_urls) e re-crawl periódico | 2026-05-05
 > Contexto: o conceito original de "Biblioteca de URLs" (Fase 7) foi supersedido pelo crawler BFS
 > da Fase 10. As tabelas library_urls/library_diffs/library_fts nunca foram populadas mas ainda
