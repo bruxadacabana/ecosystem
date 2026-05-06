@@ -1,6 +1,6 @@
 # Pesquisas do Ecossistema
 
-> Última atualização: 2026-05-05
+> Última atualização: 2026-05-06
 
 ---
 
@@ -8586,4 +8586,551 @@ Acesso em: 05 mai. 2026.
 
 ========================================================
 FIM DA PESQUISA — Whisper sem AVX2: Alternativas Locais para Windows i5-3470
+
+========================================================
+
+# PESQUISA — Assistente de Pesquisa Inteligente: LLM-Augmented Search e Query Understanding
+
+Data: 2026-05-06
+
+Contexto: O AKASHA é um buscador pessoal baseado em FTS5/SQLite com re-ranking FlashRank e
+integração opcional com ChromaDB. Esta pesquisa cobre as lacunas necessárias para evoluí-lo em
+direção a um assistente de pesquisa com suporte a LLM local (Ollama), abordando os padrões
+arquiteturais de sistemas como Perplexity AI e Kagi Assistant, técnicas de entendimento de
+queries, busca conversacional, síntese de múltiplos documentos, recomendações proativas e
+inferência local eficiente.
+
+---
+
+## 1. LLM-Augmented Search: Arquitetura de Sistemas Reais
+
+### 1.1 Perplexity AI — Arquitetura e Pipeline Interno
+
+O Perplexity AI representa o estado da arte mais documentado publicamente em sistemas de busca
+aumentados por LLM. Em 2025, a plataforma reportava 22 milhões de usuários ativos e 400 milhões
+de queries mensais, o que confere credibilidade industrial às escolhas arquiteturais documentadas
+(ByteByteGo, 2025; Vespa.ai, 2025).
+
+O pipeline do Perplexity opera em estágios sequenciais bem definidos. A etapa inicial consiste em
+**Query Intent Parsing**: um LLM analisa a query do usuário para obter compreensão semântica
+profunda além de palavras-chave isoladas. Esse parse de intenção guia todo o processo subsequente
+de recuperação e síntese. Em seguida, o sistema executa recuperação híbrida sobre um índice
+construído sobre a plataforma Vespa.ai, que unifica recuperação vetorial densa (para matching
+semântico), recuperação esparsa lexical com BM25 (para precisão em termos raros e específicos),
+filtragem estruturada, e ranking com aprendizado de máquina combinando múltiplos sinais — escore
+de relevância lexical, similaridade vetorial, autoridade do documento e freshness. O índice opera
+em escala de mais de 200 bilhões de URLs únicos com processamento de dezenas de milhares de
+atualizações por segundo.
+
+O rankeamento acontece em múltiplos estágios: recuperação inicial densa + esparsa, seguida de
+machine-learned reranking que combina todos os sinais mencionados. Os documentos são indexados em
+granularidade fina — divididos em chunks menores em vez de páginas inteiras — o que permite
+recuperação mais precisa de passagens específicas.
+
+A síntese é feita por uma camada de orquestração agnóstica de modelo que roteia queries para
+modelos "Sonar" próprios (fine-tuned para eficiência de custo) ou modelos frontier de terceiros
+(GPT, Claude) via Amazon Bedrock, com seleção baseada em complexidade da query por classificadores
+pequenos. O princípio arquitetural nuclear é: "you are not supposed to say anything that you
+didn't retrieve" — todo conteúdo gerado deve ser fundamentado em documentos recuperados, com
+citações inline ligando de volta às fontes. O sistema foi construído sobre um motor de inferência
+próprio chamado ROSE, em Python/PyTorch com componentes críticos em Rust.
+
+Para contexto conversacional, o Perplexity mantém o estado da conversa em andamento e, quando
+follow-ups chegam, refina respostas combinando contexto conversacional existente com novas
+buscas iterativas, efetivamente re-executando o pipeline completo a cada turno com o histórico
+acrescido ao contexto.
+
+### 1.2 Kagi Assistant — Abordagem de Grounding com Foco em Qualidade
+
+O Kagi Assistant difere do Perplexity em sua filosofia central: em vez de priorizar escala de
+índice, enfatiza qualidade de resultados e controle do usuário. O sistema combina LLMs de topo
+com resultados opcionais do índice de busca do Kagi, cujos resultados são deliberadamente menos
+ruidosos que os de grandes motores comerciais. Benchmarks internos do Kagi mostram que um modelo
+relativamente fraco como Gemini 2.0 Flash, quando fundamentado em boas fontes via Kagi Search,
+atinge 83% em tarefas factuais — comparado a 85% para GPT-4o-mini + Kagi Search e 91% para
+Claude com Kagi Search (Kagi, 2025).
+
+A principal força declarada do sistema é pesquisa: identificar o que buscar, executar múltiplas
+buscas simultâneas (inclusive em diferentes idiomas), e sintetizar resultados. Isso evidencia um
+padrão arquitetural distinto — o LLM não apenas consome resultados, mas age como agente de
+pesquisa que decide quais queries executar.
+
+### 1.3 Padrão Arquitetural Geral de LLM-Augmented Search
+
+A literatura e os sistemas em produção convergem para um padrão de cinco fases, descrito no
+survey de Otimização de Queries em LLMs (Zhang et al., 2024) como Query Optimization Lifecycle
+(QOL):
+
+1. **Intent Recognition** — compreensão da necessidade informacional subjacente à query
+2. **Query Transformation** — aplicação de operações de otimização (expansão, reescrita,
+   decomposição)
+3. **Retrieval Execution** — busca em fontes de conhecimento com estratégia adaptada ao tipo de
+   query
+4. **Evidence Integration** — agregação e filtragem dos resultados recuperados
+5. **Response Synthesis** — geração de resposta fundamentada nos documentos coletados
+
+Este modelo de ciclo de vida é mais completo que o RAG ingênuo (retrieve → augment → generate)
+porque trata cada fase como um problema com técnicas próprias, em vez de assumir que a query do
+usuário já está em forma adequada para recuperação direta.
+
+---
+
+## 2. Query Understanding para Buscadores Pessoais
+
+### 2.1 Classificação de Intenção
+
+A taxonomia canônica de intenção de busca remonta a Broder (2002), que distingue três classes:
+navegacional (alcançar um recurso específico), transacional (iniciar uma ação, como download) e
+informacional (adquirir conhecimento). Trabalhos posteriores refinam a classe informacional em
+subclasses funcionalmente distintas: factual (lookup de fato específico), instrumental (how-to,
+conselho, procedimento), e exploratória (ill-defined, sem resposta determinística) (Yadav et al.,
+2024; Topical Map, 2026).
+
+A distinção entre fact-seeking e exploratory é particularmente relevante para um buscador pessoal
+porque implica estratégias de síntese muito diferentes: queries factuais beneficiam de recuperação
+precisa e resposta concisa com citação da fonte; queries exploratórias beneficiam de sumarização
+temática de múltiplos documentos e organização por aspectos. Em NLP, classificadores baseados em
+LLM com alguns exemplos (few-shot) superam abordagens de supervisão fraca para classificação de
+intent em queries curtas (arXiv:2504.21398, 2025).
+
+A classificação de intenção pode ser implementada como pré-processamento leve — usando um SLM
+(small language model) como classificador — antes de decidir qual estratégia de query
+transformation aplicar na próxima fase.
+
+### 2.2 Expansão de Query: Técnicas e Comparações
+
+A expansão de query enriquece a query original com termos adicionais para melhorar a cobertura
+de recuperação. As abordagens podem ser organizadas em dois eixos: internas (usando conhecimento
+paramétrico do LLM) e externas (incorporando vocabulário do corpus-alvo).
+
+**Pseudo-Relevance Feedback (PRF) clássico — RM3**: A abordagem RM3 assume que os primeiros K
+documentos recuperados são relevantes e usa seus termos para expandir a query. É computacionalmente
+eficiente, mas falha em domínios heterogêneos: estudos de reprodutibilidade mostram que RM3 não
+melhora a query original em média no benchmark BEIR (Mackie et al., 2023; arXiv:2604.27421).
+A efetividade do RM3 é condicionada à precisão dos primeiros resultados: quando a precisão inicial
+é alta, RM3 supera expansão generativa; quando é baixa, o LLM supera.
+
+**HyDE (Hypothetical Document Embeddings)**: Proposto por Gao et al. (2022), o HyDE instrui um
+LLM a gerar um documento hipotético como resposta à query, depois usa o embedding desse documento
+(em vez da query) para recuperação densa. O insight central é que documentos hipotéticos capturam
+padrões estruturais de documentos relevantes mesmo quando factualmente incorretos — o "espaço de
+assinaturas semânticas" se alinha ao corpus alvo. Nos benchmarks TREC DL-19/20, HyDE atingiu
+nDCG@10 = 61.3 em DL-20, comparado a 44.5 para o recuperador Contriever sem fine-tuning,
+aproximando-se de recuperadores fine-tuned sem qualquer label de relevância (ACL Anthology, 2023).
+
+**Enriquecimento Lexical com LLM**: Em vez de gerar documentos hipotéticos, prompts específicos
+extraem e expandem termos relevantes — corrigindo typos, reduzindo ruído, acrescentando sinônimos.
+Testes com Elasticsearch mostraram +1 ponto NDCG@10 com esse método (Elastic, 2025). A abordagem
+mais robusta usa a query expandida como cláusula SHOULD (boost de score) mantendo a query
+original como cláusula MUST, evitando drift de resultado.
+
+**Geração de Pseudo-Resposta (Pseudo-Answer Generation)**: O LLM é instruído a gerar respostas
+possíveis à query. Para queries factuais, gera respostas reais; para queries opinativas, gera
+títulos de documentos hipotéticos. Esta técnica maximiza o recall em pipelines multi-estágio
+(retrieve → rerank) e é a mais efetiva das três para busca lexical (Elastic, 2025).
+
+**Step-Back Prompting**: Eleva a query a uma representação conceitual de nível superior antes de
+recuperar princípios gerais, que em seguida são usados como contexto para a query específica
+(Zhang et al., 2024). É particularmente efetivo para queries que exigem raciocínio sobre princípios
+antes de aplicação contextual.
+
+**Modelo's Choice (Abordagem Híbrida)**: O LLM seleciona entre os métodos acima com explicação
+de seu raciocínio. Obtém desempenho comparável à geração de pseudo-resposta em benchmarks, com
+vantagem de adaptabilidade a tipos diferentes de query.
+
+Um achado importante é que modelos pequenos (SLMs) são viáveis para expansão de query: Claude 3.5
+Haiku obteve NDCG@10 = 0.368 vs. 0.364 do Sonnet, com custo 80% menor por token de saída (Elastic,
+2025). Isso sugere que a expansão pode ser delegada a modelos leves sem penalidade significativa
+de qualidade.
+
+### 2.3 Decomposição de Query e Multi-hop
+
+Queries complexas que requerem múltiplos passos de raciocínio (multi-hop) são tratadas por
+decomposição em sub-queries atômicas. O sistema LevelRAG (arXiv:2502.18139, 2025) formaliza isso
+em uma hierarquia de dois níveis: um high-level searcher decompõe, sumariza, verifica e
+suplementa; e low-level searchers especializados (esparso, denso, web) recebem as sub-queries
+atômicas e aplicam reescrita específica para cada recuperador. No benchmark PopQA, o LevelRAG
+atingiu 85.42% de taxa de sucesso, superando GPT-4o em vários benchmarks sem fine-tuning
+adicional.
+
+O survey de Zhang et al. (2024) identifica o "compositionality gap" — mesmo quando LLMs respondem
+corretamente sub-queries individuais, frequentemente falham em compor as respostas no todo. Isso
+justifica que a decomposição explícita, com verificação intermediária, seja superior à abordagem
+end-to-end de query complexa direta.
+
+---
+
+## 3. Conversational Search e Sessões de Pesquisa
+
+### 3.1 O Paradigma de Busca Conversacional
+
+Conversational Search é o paradigma de recuperação de informação que substitui a interação
+transacional (uma query → uma página de resultados) por diálogos sustentados, com múltiplos
+turnos, onde cada turno pode refinar, expandir ou bifurcar a necessidade informacional anterior.
+O survey de ACM TOIS (arXiv:2410.15576, 2024) define o campo como abrangendo quatro subproblemas
+inter-relacionados: reformulação de query conversacional, clarificação de busca, modelagem de
+contexto conversacional, e geração de resposta.
+
+O desafio central é a resolução de anáfora e elipse — pronomes e informações omitidas que
+referem turnos anteriores. Uma query como "e as obras dele?" só tem sentido dentro do contexto
+da conversa precedente. Mecanismos de retrieval tradicionais baseados em BM25 falham
+sistematicamente nesse caso porque operam sobre a query em isolamento.
+
+### 3.2 Reformulação de Query Conversacional (CQR)
+
+A Conversational Query Reformulation (CQR) transforma queries dependentes de contexto em queries
+autônomas que podem ser processadas por qualquer retriever padrão. Abordagens incluem:
+
+**Expansão de contexto**: adiciona termos relevantes do histórico conversacional à query atual,
+usando técnicas de part-of-speech e classificação de relevância de termos.
+
+**Reescrita completa (rewrite)**: transforma toda a sequência conversacional em uma query
+standalone. Modelos seq2seq treinados em dados de conversas (CANARD, QReCC) foram os primeiros
+a abordar isso; hoje, LLMs com prompts few-shot superam essas abordagens sem necessidade de
+fine-tuning adicional.
+
+**Abordagens híbridas**: combinam material de expansão com queries reescritas, usando LLMs tanto
+para gerar respostas hipotéticas como material de expansão quanto para reescrever a query. O survey
+identifica que estas abordagens híbridas têm obtido os melhores resultados nos benchmarks TREC CAsT
+(Conversational Assistance Track).
+
+### 3.3 ConvDR e Recuperação Densa Conversacional
+
+O ConvDR (Conversational Dense Retriever) é fine-tuned a partir do ANCE (Approximate Nearest
+Neighbor Negative Contrastive Estimation) por imitação de representações de reescritas humanas.
+Em vez de reescrever explicitamente a query, o ConvDR aprende a codificar sessões de conversa
+diretamente em vetores de consulta que capturam a intenção acumulada. Este approach elimina o
+passo de reescrita explícita mas requer dados de treinamento com reescritas humanas de referência
+(anotações do dataset TREC CAsT).
+
+Para sistemas pessoais sem dados de treinamento específicos, a reescrita explícita via LLM é mais
+acessível que o ConvDR — não requer fine-tuning e pode ser parametrizada com prompts.
+
+### 3.4 CoSearcher e Clarificação
+
+O CoSearcher (Springer, 2022) estudou o efeito de perguntas de clarificação no contexto de
+diálogos completos gerados por simulação de usuário parametrizável. O achado central é que
+clarificação é mais efetiva quando avaliada no contexto de diálogos completos (não turnos
+isolados), e que a efetividade varia com o grau de ambiguidade da query inicial. Sistemas que
+fazem clarificação proativa antes de recuperar obtêm ganhos substanciais em queries ambíguas,
+mas introduzem latência percebida pelo usuário — um trade-off relevante para design de UX.
+
+### 3.5 Detecção de Sessão de Pesquisa
+
+A segmentação de logs de queries em sessões topicamente coerentes é um problema clássico de IR
+com literatura dedicada (Jones et al., 2008; ScienceDirect, 2010). As abordagens principais são:
+
+**Timeout temporal simples**: usa um gap de tempo fixo (tipicamente 30 minutos) para delimitar
+sessões. É o método mais amplamente implementado por motores comerciais, mas ignora a semântica
+das queries.
+
+**Similaridade léxica + temporal**: combina gap temporal com sobreposição de termos entre queries
+consecutivas. Um método geométrico interpreta o gap temporal e a similaridade de termos como
+coordenadas e detecta mudança de tópico quando o vetor cruza um limiar.
+
+**Similaridade semântica com embeddings**: versões modernas substituem sobreposição de termos por
+similaridade de embeddings (FastText, sentence transformers), capturando relações semânticas entre
+queries mesmo sem sobreposição lexical. Esta abordagem não foi avaliada em benchmarks dedicados
+tão amplamente quanto as léxicas, mas supera o baseline em análises qualitativas.
+
+A combinação de pistas temporais, lexicais e tópicas (topic shift detection) é considerada o
+estado da arte para segmentação de sessões sem dados de treinamento rotulados.
+
+### 3.6 Gerenciamento de Estado em Contexto Multi-turn
+
+Sistemas conversacionais em produção mantêm estado da sessão com três componentes: histórico de
+queries (lista de turnos anteriores), documentos recuperados acumulados (contexto de evidências),
+e estado de refinamento (quais aspectos já foram cobertos). Esse estado é passado ao LLM como
+parte do prompt de síntese, usando janela de contexto suficiente para incluir turnos recentes.
+
+A gestão de timeout — quando considerar que uma sessão nova começou — é crítica: sessões longas
+acumulam contexto obsoleto que pode degradar a qualidade de queries subsequentes. Estratégias
+incluem sumarização compressiva do histórico (em vez de incluir turnos raw) e janela deslizante
+de K turnos mais recentes.
+
+---
+
+## 4. Síntese de Resultados: Sumarização Multi-documento
+
+### 4.1 O Problema da Síntese Fiel
+
+A síntese de múltiplos documentos recuperados em uma resposta coerente é o componente mais
+crítico de sistemas RAG para qualidade final percebida pelo usuário. O desafio duplo é: (a)
+obter uma síntese completa e informativa, e (b) garantir que cada afirmação seja rastreável a um
+documento fonte, permitindo verificação. A literatura de 2024-2025 evidencia que citações
+automáticas não garantem fidelidade: estudos empíricos encontraram que até 57% das citações em
+sistemas RAG são post-rationalized — o modelo gera a afirmação e depois escolhe uma fonte que
+pareça plausível, sem que a fonte realmente suporte a afirmação (arXiv:2412.18004, 2024).
+
+### 4.2 Estratégias de Sumarização Multi-documento com LLM
+
+**Stuff (contexto direto)**: todos os documentos recuperados são concatenados e passados
+diretamente ao LLM em uma única chamada. Funciona bem quando o contexto total cabe na janela
+do modelo, mas escala pobremente: atenção full quadrática é O(n²) em tokens, tornando-se
+impraticável para corpora de 40.000–160.000 tokens (Galileo AI, 2025).
+
+**Map-Reduce**: divide o corpus em chunks gerenciáveis; na fase Map, o LLM sumariza cada chunk
+independentemente e em paralelo; na fase Reduce, os sumários parciais são combinados iterativamente
+até produzir uma resposta única. Recomenda-se 10% de overlap entre chunks para preservar contexto
+nas fronteiras. Sumarização hierárquica com Map-Reduce pode igualar ou superar levemente o
+processamento full-context com custo substancialmente menor (Galileo AI, 2025).
+
+**GraphRAG (Map-Reduce sobre grafo de entidades)**: proposto por Edge et al. (2024), o GraphRAG
+usa detecção de comunidades pelo algoritmo de Leiden para particionar o grafo de entidades em
+grupos hierárquicos. Na fase Map, sumários de comunidades geram respostas parciais para a query
+independentemente, com pontuação de utilidade 0–100 para filtrar contribuições irrelevantes. Na
+fase Reduce, respostas parciais são ordenadas por utilidade e adicionadas iterativamente ao
+contexto até o limite de tokens. Em testes com corpora de um milhão de tokens, o GraphRAG obteve
+72–83% de taxa de vitória sobre RAG vetorial em compreensividade, e 75–82% em diversidade.
+Crucialmente, sumários de nível raiz exigiram 97% menos tokens que abordagens de texto-fonte
+completo, mantendo vantagem sobre busca semântica simples. O sistema de atribuição de fontes usa
+IDs de registro estruturados: "Entidade X [Dados: Entidades (5,7); Relações (23)]", rastreando
+afirmações aos documentos originais mesmo após múltiplas camadas de sumarização.
+
+**Refine (refinamento iterativo)**: o LLM processa um documento por vez, refinando uma resposta
+acumulada. Preserva melhor a coerência narrativa que Map-Reduce, mas não paraleliza e acumula
+erros em sequências longas.
+
+**Chunking semântico**: em vez de dividir por limites de token arbitrários, divide por fronteiras
+topicais. Produz chunks mais coerentes e sumarizações mais consistentes que chunking fixo (Galileo
+AI, 2025).
+
+### 4.3 Atribuição de Fontes e Verificação de Grounding
+
+A atribuição de fontes confiável é o problema mais aberto na área. Abordagens de produção incluem:
+
+**Citações inline na geração**: o prompt instrui o LLM a incluir marcadores de citação (ex: [1],
+[2]) no texto gerado, referenciando documentos da lista de contexto. Esta abordagem é a mais
+usada por sistemas como Perplexity, mas a fidelidade não é garantida — como evidenciado pela taxa
+de post-rationalization.
+
+**Decompose-then-verify**: a resposta gerada é decomposta em afirmações atômicas
+independentemente verificáveis, e cada afirmação é checada contra os documentos-fonte usando
+modelos de inferência de linguagem natural (NLI). Este é o método mais rigoroso disponível e
+fornece interpretabilidade a nível de sentença.
+
+**FACTUM (2025)**: abordagem mecanística que analisa dois caminhos internos do transformer para
+detectar alucinações de citação — o pathway de atenção (Context Alignment Score, Beginning-of-
+Sentence Attention Score) e o pathway FFN (Parametric Force Score, Pathway Alignment Score). O
+FACTUM melhora a precisão de detecção em 66% sobre baselines em modelos 8B. Um achado contraintuitivo
+é que estratégias de coordenação entre pathways dependem do tamanho do modelo: modelos 3B
+requerem alta coordenação (alta PAS) para citações corretas, enquanto modelos 8B usam componentes
+especializados com informação não-redundante entre pathways.
+
+**GINGER (arXiv:2503.18174, 2025)**: Grounded Information Nugget-Based Generation of Responses.
+Decompõe documentos em "nuggets" de informação granulares, gera respostas referenciando nuggets
+específicos, e permite verificação nugget-a-nugget.
+
+---
+
+## 5. Recomendações Proativas e Descoberta de Conteúdo
+
+### 5.1 O Problema do Filter Bubble em Busca Pessoal
+
+Sistemas de recomendação tradicionais operam reativamente — sugerem conteúdo similar ao que o
+usuário já consumiu, reforçando bolhas de interesse e polarização de opinião. A literatura recente
+distingue dois objetivos: maximizar relevância imediata (conservative) vs. guiar o usuário em
+direção a novos interesses (proactive). O IPG (Iterative Preference Guidance), apresentado no
+WWW 2024, propõe um framework pós-processamento que classifica itens por um score IPG combinando
+probabilidade de interação e "guiding value" — quão efetivamente um item conduz o usuário em
+direção a um interesse-alvo desejado (arXiv:2403.07571, 2024). O IPG usa representações de
+usuário atualizadas iterativamente com as interações mais recentes, permitindo adaptação ao
+comportamento em evolução.
+
+### 5.2 Busca Proativa vs. Recomendação Passiva
+
+A busca proativa pode ser decomposta em dois subproblemas distintos: recomendação de leituras
+relacionadas ao histórico de sessão atual (relevância de curto prazo) e descoberta de conteúdo
+relevante não-buscado com base em padrões de interesse de longo prazo (diversificação de longo
+prazo). A primeira é mais diretamente implementável em um buscador pessoal: após a query do
+usuário e exibição de resultados, o sistema pode executar queries derivadas automaticamente (usando
+entidades extraídas, termos relacionados no vocabulário do índice) e sugerir documentos do índice
+pessoal que tangenciam o tópico sem ter sido diretamente buscados.
+
+Sistemas como o Google Search Console (2024) introduziram recomendações baseadas em padrões de
+uso, mas a lógica permanece proprietária. Na literatura acadêmica, abordagens baseadas em grafos
+de co-ocorrência de termos, histórico de sessão e modelos de tópico (LDA, NMF) são os mecanismos
+mais estudados para descoberta não-guiada.
+
+### 5.3 Sinais Disponíveis em um Buscador Pessoal
+
+Um buscador pessoal tem acesso a sinais que sistemas de busca pública não têm: histórico completo
+de todas as queries realizadas, tempo gasto em cada resultado, documentos acessados em sequência
+na mesma sessão, e taxa de retorno ao buscador após visitar um resultado (indicador de
+insatisfação). Esses sinais permitem construir perfis de interesse mais precisos que os de
+motores públicos que inferem interesse apenas por cliques agregados.
+
+---
+
+## 6. Arquiteturas Leves para Inferência Local
+
+### 6.1 Viabilidade de Modelos 3B–7B para Assistência de Pesquisa
+
+A expansão do ecossistema de modelos compactos entre 2023 e 2025 alterou substancialmente o
+cenário de inferência local. Dados de benchmarking consolidados indicam que modelos locais são
+capazes de responder corretamente a 88.7% de queries de chat single-turn e raciocínio, com
+cobertura de queries "localmente atendíveis" crescendo de 23.2% para 71.3% entre 2023 e 2025
+(arXiv:2510.06126, 2025). Este progresso torna a abordagem Perplexity-like com LLMs locais
+genuinamente viável para buscadores pessoais.
+
+### 6.2 Métricas de Latência e Throughput
+
+Dois segmentos de latência são relevantes para streaming de resposta:
+
+**TTFT (Time to First Token)**: mede o tempo desde o envio da query até o primeiro token ser
+gerado. Inclui tempo de fila, prefill e latência de rede. Benchmarks em Llama 3.1 8B em hardware
+de referência mostraram TTFT médio de 162.67 ms, com mínimo de 93.92 ms e máximo de 232.43 ms
+(rumn.medium.com, 2024). Para um buscador pessoal com poucos usuários simultâneos, TTFT abaixo
+de 500 ms é considerado imperceptível; abaixo de 2 segundos é aceitável.
+
+**Throughput de geração (tokens/seg)**: a fase de decodificação autoregressive determina a
+velocidade perceptível de streaming. Benchmarks em GPUs de 8 GB com Q4_K_M:
+
+- Llama 3.1 8B em RTX 4060 (8 GB): ~42 tok/s
+- Llama 3.2 3B em RTX 2060 (6 GB): ~50.41 tok/s
+- Qwen 2.5 7B em M1 Max 64 GB (MLX): 63.7 tok/s; em Ollama (GGUF): 40.75 tok/s
+
+A velocidade de leitura humana confortável é ~5–10 tok/s (250–500 palavras por minuto). Taxas
+de 40–50 tok/s significam que o streaming entrega tokens 5–8x mais rápido que a leitura — na
+prática, o usuário perceberá a resposta como "instantânea" se o TTFT for baixo, independente do
+throughput. A recomendação para GPUs 8 GB consumer é mirar 40–50 tok/s como baseline; valores
+abaixo de 30 tok/s indicam problemas de configuração (CraftRigs.com, 2024).
+
+**AMD ROCm**: dados específicos para RX 6600 com ROCm são escassos em benchmarks públicos
+consolidados. O suporte ROCm no Ollama é funcional para RDNA2/3. Dados de llama.cpp com ROCm
+sugerem que GPUs AMD RDNA2 ficam 10–20% abaixo de GPUs NVIDIA equivalentes em VRAM devido a
+diferenças no hardware de compute (knightli.com, 2026), mas ainda atingem velocidades adequadas
+para uso interativo.
+
+### 6.3 Quantização: Trade-offs Qualidade vs. Velocidade
+
+A quantização reduz precisão dos pesos para diminuir uso de memória e aumentar throughput.
+Formatos GGUF (llama.cpp/Ollama):
+
+- **Q4_K_M**: "sweet spot" para 8 GB VRAM — ~75% menor que full precision, perda de qualidade
+  mínima. Um modelo 7B requer ~4–5 GB VRAM em Q4_K_M, deixando margem para KV cache. Velocidade
+  ~50–80% superior ao Q8 em GPUs com largura de banda de memória limitante.
+- **Q5_K_M**: balanço intermediário, ~65% menor, qualidade ligeiramente superior ao Q4.
+- **Q8_0**: qualidade próxima de float16, mas requer o dobro de VRAM vs. Q4.
+- **AWQ/GPTQ int4**: alternativas com calibração por ativação, mantêm qualidade superior ao GGUF
+  Q4 em tarefas de instrução complexas, mas menos suportadas em backends locais.
+
+Para Q4_K_M, um modelo 7B lê aproximadamente 4.5 GB de dados por token gerado; a velocidade de
+geração é limitada pela largura de banda de memória da GPU, não pela capacidade computacional
+(aritmética de ponto flutuante). Por isso, GPUs com alta largura de banda relativa ao VRAM
+(como a série RDNA3) têm vantagem desproporcional.
+
+### 6.4 Streaming e Redução de Latência Percebida
+
+O streaming de tokens — envio de cada token assim que gerado, em vez de aguardar a resposta
+completa — é a técnica mais impactante para latência percebida em assistentes de pesquisa. Com
+streaming habilitado e TTFT baixo, o usuário começa a ler em menos de 1 segundo enquanto o
+modelo ainda está gerando. O Ollama expõe streaming via `stream: true` no body da requisição à
+API `/api/generate` ou `/api/chat`, que retorna Server-Sent Events (SSE) com tokens individuais.
+
+Outras técnicas de redução de latência no Ollama:
+
+- **`num_batch` reduzido (256 vs. 512 padrão)**: diminui pico de VRAM na fase de prefill em ~20%,
+  permitindo que o TTFT seja menor sob pressão de memória.
+- **`num_ctx` ajustado ao necessário**: dobrar o contexto dobra o uso de KV cache; para síntese
+  de busca, contextos de 4.096–8.192 tokens costumam ser suficientes.
+- **`keep_alive=-1`** para sessões ativas: mantém o modelo carregado em VRAM, eliminando
+  cold-start de 2–5 segundos por query.
+- **`low_vram: true`**: move KV cache para RAM do sistema, sacrificando velocidade para evitar
+  OOM em modelos maiores.
+
+### 6.5 Arquitetura Perplexity-like com Inferência Local
+
+A implementação de um pipeline LLM-augmented search com modelos locais requer atenção a latência
+de ponta a ponta. Um pipeline mínimo viável consiste em: (1) classificação de intenção — opcional,
+com SLM 3B; (2) expansão de query — 1 chamada ao LLM, ~1–2 segundos; (3) recuperação FTS5 + vetorial
+— sub-100 ms para índices de tamanho médio; (4) reranking FlashRank — sub-500 ms para top-50; (5)
+síntese com citações — 1 chamada principal ao LLM em streaming, TTFT < 2 seg. A latência total
+esperada para a primeira resposta visível ao usuário (TTFT do streaming) é de 4–8 segundos em
+hardware como RX 6600 com modelos 7B Q4_K_M, redutível a 2–4 segundos com modelos 3B.
+
+---
+
+## Fontes — ABNT
+
+BRODER, Andrei. **A taxonomy of web search**. ACM SIGIR Forum, v. 36, n. 2, p. 3–10, 2002.
+Disponível em: <https://dl.acm.org/doi/10.1145/792550.792552>. Acesso em: 06 mai. 2026.
+
+BYTEBYTEGO. **How Perplexity Built an AI Google**. ByteByteGo Newsletter, 2025. Disponível em:
+<https://blog.bytebytego.com/p/how-perplexity-built-an-ai-google>. Acesso em: 06 mai. 2026.
+
+CRAFTRIGS.COM. **Decode Speed Explained: Tokens Per Second in Local LLMs**. 2024. Disponível em:
+<https://craftrigs.com/guides/decode-speed-tokens-per-second-local-llm/>. Acesso em: 06 mai. 2026.
+
+EDGE, Darren et al. **From Local to Global: A Graph RAG Approach to Query-Focused Summarization**.
+arXiv:2404.16130, 2024. Disponível em: <https://arxiv.org/abs/2404.16130>. Acesso em: 06 mai. 2026.
+
+ELASTIC. **Query rewriting strategies for LLMs & search engines**. Elasticsearch Labs Blog, 2025.
+Disponível em: <https://www.elastic.co/search-labs/blog/query-rewriting-llm-search-improve>.
+Acesso em: 06 mai. 2026.
+
+GALILEO AI. **Master LLM Summarization Strategies and their Implementations**. Galileo.ai Blog,
+2025. Disponível em: <https://galileo.ai/blog/llm-summarization-strategies>. Acesso em: 06 mai.
+2026.
+
+GAO, Luyu et al. **Precise Zero-Shot Dense Retrieval without Relevance Labels**. ACL Anthology,
+2023 (ACL 2023). arXiv:2212.10496. Disponível em: <https://aclanthology.org/2023.acl-long.99/>.
+Acesso em: 06 mai. 2026.
+
+JONES, Rosie; KLINKNER, Kristina L. **Beyond the session timeout: automatic hierarchical
+segmentation of search topics in query logs**. In: Proceedings of the 17th ACM CIKM. 2008.
+p. 699–708.
+
+KAGI. **Kagi's approach to AI in search**. Kagi Blog, 2025. Disponível em:
+<https://blog.kagi.com/kagi-ai-search>. Acesso em: 06 mai. 2026.
+
+KNIGHTLI.COM. **llama.cpp GPU Performance Ranking: Full CUDA, ROCm, and Vulkan Scoreboards**.
+2026. Disponível em: <https://www.knightli.com/en/2026/04/23/llama-cpp-gpu-benchmark-cuda-rocm-vulkan-scoreboard/>.
+Acesso em: 06 mai. 2026.
+
+LIAO, Jian et al. **FACTUM: Mechanistic Detection of Citation Hallucination in Long-Form RAG**.
+arXiv:2601.05866, 2025. Disponível em: <https://arxiv.org/abs/2601.05866>. Acesso em: 06 mai.
+2026.
+
+LM-METER. **Unveiling Runtime Inference Latency for On-Device Language Models**. arXiv:2510.06126,
+2025. Disponível em: <https://arxiv.org/abs/2510.06126>. Acesso em: 06 mai. 2026.
+
+MACKIE, Iain et al. **A Reproducibility Study of LLM-Based Query Reformulation**. arXiv:2604.27421,
+2026. Disponível em: <https://arxiv.org/abs/2604.27421>. Acesso em: 06 mai. 2026.
+
+RUMN. **Benchmarking LLM Performance: Token Per Second (TPS), Time to First Token (TTFT), and GPU
+Usage**. Medium, 2024. Disponível em:
+<https://rumn.medium.com/benchmarking-llm-performance-token-per-second-tps-time-to-first-token-ttft-and-gpu-usage-8c50ee8387fa>.
+Acesso em: 06 mai. 2026.
+
+SURVEY CONVERSATIONAL SEARCH. **A Survey of Conversational Search**. ACM Transactions on
+Information Systems, 2024. arXiv:2410.15576. Disponível em: <https://arxiv.org/abs/2410.15576>.
+Acesso em: 06 mai. 2026.
+
+VESPA.AI. **How Perplexity uses Vespa.ai to power fast, accurate, and trusted answers**.
+Vespa.ai, 2025. Disponível em: <https://vespa.ai/perplexity/>. Acesso em: 06 mai. 2026.
+
+WANG, Hao et al. **Proactive Recommendation with Iterative Preference Guidance**. In: Proceedings
+of WWW 2024 (Short Papers). arXiv:2403.07571. Disponível em: <https://arxiv.org/abs/2403.07571>.
+Acesso em: 06 mai. 2026.
+
+WHYAITECH. **Why Citation-Based RAG Still Hallucinates**. whyaitech.com Notes, 2025. Disponível
+em: <https://www.whyaitech.com/notes/systems-note-002.html>. Acesso em: 06 mai. 2026.
+
+YADAV, Vivek et al. **In a Few Words: Comparing Weak Supervision and LLMs for Short Query Intent
+Classification**. arXiv:2504.21398, 2025. Disponível em: <https://arxiv.org/abs/2504.21398>.
+Acesso em: 06 mai. 2026.
+
+ZHANG, Minghan et al. **A Survey of Query Optimization in Large Language Models**.
+arXiv:2412.17558, 2024. Disponível em: <https://arxiv.org/abs/2412.17558>. Acesso em: 06 mai.
+2026.
+
+ZHONG, Tian et al. **LevelRAG: Enhancing Retrieval-Augmented Generation with Multi-hop Logic
+Planning over Rewriting Augmented Searchers**. arXiv:2502.18139, 2025. Disponível em:
+<https://arxiv.org/abs/2502.18139>. Acesso em: 06 mai. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Assistente de Pesquisa Inteligente: LLM-Augmented Search e Query Understanding
 ========================================================

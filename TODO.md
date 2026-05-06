@@ -3919,6 +3919,80 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ---
 
+### Pesquisa: Assistente de Pesquisa Inteligente — LLM-Augmented Search e Query Understanding | 2026-05-06
+> Contexto: pesquisa sobre como transformar o AKASHA de buscador pessoal em assistente de
+> pesquisa com LLM local. Cobre arquitetura de sistemas como Perplexity AI e Kagi Assistant,
+> query understanding (classificação de intenção, expansão HyDE, reescrita conversacional),
+> síntese multi-documento Map-Reduce, e latência de inferência local com Ollama na RX 6600.
+
+#### AKASHA
+- [ ] **Classificador de intenção leve antes do pipeline de busca** (`routers/search.py` ou
+  `services/query_understanding.py`). Antes de executar busca, chamar Ollama (modelo 3B, ex:
+  Qwen2.5-3B) com prompt minimal para classificar a query em três tipos:
+  `fact-seeking` (resposta direta com citação), `exploratory` (síntese temática multi-doc),
+  `navigational` (link direto sem síntese). Cada tipo ativa um pipeline diferente:
+  fact-seeking → busca FTS5 + resposta grounded; exploratory → Map-Reduce + síntese;
+  navigational → resultado top-1. Latência do classificador: ~200ms com 3B Q4.
+
+- [ ] **Expansão HyDE para busca vetorial no ChromaDB/Mnemosyne** (`services/local_search.py`,
+  `_search_chroma()`). Ao chamar ChromaDB com a query, gerar primeiro um "documento hipotético"
+  via Ollama (`"Escreva um parágrafo que responderia a: {query}"`), usar o embedding do
+  documento hipotético como query vector em vez do embedding direto da query.
+  Ganho documentado: +38% em nDCG@10 sobre embedding direto de query (HyDE, SIGIR 2023).
+  Custo: uma call Ollama extra de ~500ms. Ativar só quando mnemosyne está disponível.
+
+- [ ] **Template MUST+SHOULD para expansão de query no FTS5** (`services/local_search.py`,
+  `_search_fts()`). Ao expandir query com LLM (após HyDE ou classificação), estruturar
+  a query FTS5 como: `query_original MUST_NEAR termos_expandidos` ou usar duas buscas:
+  (1) FTS5 com query original; (2) FTS5 com termos expandidos pelo LLM. Combinar com RRF.
+  Padrão evita "query drift" onde expansão LLM retorna documentos irrelevantes que substituem
+  os relevantes. A query original permanece âncora; expansão só adiciona recall.
+
+- [ ] **Reescrita de query conversacional por turno** (`routers/search.py`, `services/search_session.py`).
+  Ao detectar anáfora na query ("isso", "esse assunto", "ele", pronomes relativos) ou query
+  muito curta (< 3 tokens) em sessão ativa, chamar Ollama para reescrever como query autônoma
+  usando o contexto dos últimos K turnos. Prompt: `"Reescreva como busca independente: '{query}'.
+  Contexto recente: {últimas queries}."` Exibir a query reescrita na UI (transparência).
+  Implementar sem fine-tuning — LLMs 7B few-shot superam modelos ConvDR treinados em CANARD.
+
+- [ ] **Detecção de sessão de pesquisa** (`services/search_session.py`). Agrupar queries
+  consecutivas em sessão se: gap temporal < 30 minutos E similaridade de embedding entre
+  queries > 0.65. Manter estado de sessão em memória do processo FastAPI (dict por IP/cookie).
+  Sessão acumula: queries anteriores (últimas K), documentos recuperados, entidades extraídas.
+  Exibir na UI um badge "Sessão ativa: N queries" com botão para limpar. A sessão é o contexto
+  para reescrita de query e para síntese final.
+
+- [ ] **Pipeline Map-Reduce para síntese de resultados** (`services/synthesis.py`).
+  Para queries `exploratory`: (1) Map — chamar Ollama para sumarizar cada um dos top-5
+  documentos recuperados em 2–3 frases, com ID de fonte; (2) Reduce — chamar Ollama para
+  sintetizar os 5 sumários em resposta coerente com marcadores de citação `[1]...[5]`.
+  Exibir na UI como bloco colapsável "Síntese assistida" acima dos cards normais.
+  Latência total com Qwen2.5-7B Q4_K_M na RX 6600: ~4–8 segundos. Streaming obrigatório.
+  Ativar via checkbox "Síntese" na interface — não obrigatório para todas as buscas.
+
+- [ ] **Citações inline com verificação básica** (`services/synthesis.py`). Após gerar síntese
+  Map-Reduce, verificar cada citação `[N]`: extrair a afirmação adjacente ao marcador,
+  checar overlap de unigrams com o documento-fonte citado (threshold: ≥ 2 termos comuns).
+  Se overlap zero: marcar citação como `[N?]` na UI com tooltip "Citação não verificada".
+  Mecanismo leve, sem modelo NLI — evita os 57% de post-rationalized citations documentados
+  na literatura (WHYAITECH, 2025). Custo: string matching puro, < 5ms.
+
+- [ ] **`keep_alive=-1` no cliente Ollama durante sessão ativa** (`services/synthesis.py`
+  ou `services/query_understanding.py`). Ao iniciar uma sessão de pesquisa (primeira query
+  classificada como não-navigational), chamar `/api/generate` ou `/api/chat` com
+  `keep_alive: -1` (manter modelo em VRAM indefinidamente). Ao encerrar sessão (timeout
+  30min ou botão "Encerrar sessão"): chamar com `keep_alive: 0` para liberar VRAM.
+  Elimina cold-start de 2–5 segundos por query na RX 6600. Custo de manter 7B Q4_K_M:
+  ~4 GB VRAM ocupados — aceitável se o usuário está em sessão ativa.
+
+- [ ] **Leituras relacionadas derivadas dos resultados** (`routers/search.py`, template
+  `search.html`). Após retornar resultados top-K, extrair as 3–5 entidades mais salientes
+  (TF-IDF sobre os snippets recuperados vs. o corpus crawleado) e executar buscas FTS5
+  silenciosas adicionais. Exibir na UI uma seção "Explorar também:" com cards compactos
+  dos documentos adicionais encontrados. Sem chamada LLM — puramente textual, latência
+  < 100ms. Implementação: função `suggest_related(snippets, fts_conn, n=5)` em
+  `services/local_search.py`.
+
 ### Pesquisa: Integração KOSMOS-AKASHA — Padrões RSS Reader + Web Archiver | 2026-05-04
 > Contexto: Pesquisa sobre padrões de integração entre leitores RSS e arquivadores web
 > (FreshRSS+Wallabag, Miniflux+integrações, ArchiveBox). Objetivo: interligar KOSMOS
