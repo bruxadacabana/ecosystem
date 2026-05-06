@@ -112,8 +112,9 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
   3. **Manter o índice atualizado** — adicionar entrada para a nova sessão no índice do início do arquivo.
   4. **Ordem cronológica crescente** — novas sessões sempre no final do arquivo.
   5. **Apresentar no chat** um resumo médio-detalhado (1–2 minutos de leitura) cobrindo achados principais e implicações práticas, **seguido de lista separada de mudanças/melhorias sugeridas**.
-  6. Sugestões e melhorias vão no **chat e no TODO**, nunca no `pesquisas.md`.
-  7. **Nunca usar "HUB/LOGOS"** — HUB é o programa, LOGOS é apenas um subprograma dele.
+  6. **Pedir permissão** antes de adicionar qualquer sugestão ao TODO — a usuária decide o rumo do projeto, não o Claude. Nunca adicionar ao TODO por iniciativa própria.
+  7. Sugestões aprovadas vão no **TODO**, nunca no `pesquisas.md`.
+  8. **Nunca usar "HUB/LOGOS"** — HUB é o programa, LOGOS é apenas um subprograma dele.
 - **Estrutura obrigatória do TODO.md para melhorias:**
   Existem duas seções fixas no `TODO.md` raiz. Cada sessão de trabalho (pesquisa, correção, conjunto de melhorias) cria um **novo `###` header** dentro da seção correta — nunca acrescenta itens em headers de sessões anteriores.
 
