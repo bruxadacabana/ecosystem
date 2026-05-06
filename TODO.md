@@ -4080,3 +4080,296 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] `gui/main_window.py` — ao salvar extra_dirs, incluí-las também no ecosystem.json
       (campo `extra_dirs: list[str]`) para que o HUB e outros apps saibam quais pastas
       o Mnemosyne está monitorando
+
+### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
+> Contexto: leitura completa de pesquisas.md comparada ao TODO revelou 47 lacunas —
+> achados de pesquisas anteriores que nunca foram transcritos como itens acionáveis.
+
+#### Mnemosyne
+- [ ] **[CRÍTICO] Mudar distância ChromaDB de L2 para cosine em todas as coleções**
+  (`core/indexer.py`, todos os pontos onde `Chroma(...)` é criado). Adicionar
+  `collection_metadata={"hnsw:space": "cosine"}` em cada criação de coleção.
+  Para texto, cosine mede direção semântica — L2 mede distância absoluta, o que é
+  incorreto para embeddings normalizados. Impacto documentado: até 10× de melhoria
+  na qualidade de recuperação. O IndexWorker já apaga e recria o persist_dir, então
+  a correção se aplica automaticamente na próxima reindexação. Custo: ~30 min.
+
+- [ ] **[CRÍTICO] Aumentar chunk size de 800 → 1800 chars, overlap 100 → 250**
+  (`core/config.py`, `RecursiveCharacterTextSplitter`). O valor atual de 800 chars ≈
+  200 tokens está abaixo do range recomendado por benchmarks 2025–2026 (Vecta, NAACL
+  2025/Vectara: 400–512 tokens). Trocar para `chunk_size=1800, chunk_overlap=250`.
+  Ganho documentado: +20pp de acurácia em RAG geral. Requer re-indexação completa.
+  Chunking semântico continua desativado (correto — benchmarks mostram fixed-size
+  superior para RAG de propósito geral).
+
+- [ ] **FlashRank reranking no `prepare_ask()` — pipeline dois estágios**
+  (`core/rag.py` ou `core/indexer.py`). Substituir recuperador único por:
+  (1) recuperar top-30 por híbrido BM25+cosine; (2) re-rankear com
+  `FlashrankRerank(model="ms-marco-MultiBERT-L-12", top_n=5)` de
+  `langchain_community.document_compressors`. `pip install flashrank`. Modelo ONNX
+  de ~4MB, sem PyTorch, 15–30ms em CPU. Reduz alucinações garantindo que o LLM
+  recebe os 5 documentos genuinamente mais relevantes em vez dos 5 melhores por
+  similaridade vetorial pura.
+
+- [ ] **Deep Research Mode — integração Mnemosyne + AKASHA**
+  (novo `core/akasha_client.py` + `core/session_indexer.py` + `gui/workers.py`).
+  Quando corpus local insuficiente para responder a query, expandir para web via
+  AKASHA: (A) chamar `GET /search/json?q=&max=5` do AKASHA, (B) buscar conteúdo
+  de cada URL via `GET /fetch?url=`, (C) indexar transientemente em ChromaDB
+  EphemeralClient, (D) RAG sobre corpus local + web combinados, (E) mostrar badges
+  de fonte (local vs web) na resposta. Pré-requisito: endpoints `/search/json` e
+  `/fetch` no AKASHA (ver itens AKASHA abaixo). ~450 linhas no total.
+
+- [ ] **Notebook Guide — sumário + perguntas sugeridas ao indexar documento**
+  (`core/indexer.py`, `gui/` componente de detalhe de documento). Ao finalizar
+  indexação de um arquivo, chamar LLM para gerar: (a) sumário de 3–5 frases,
+  (b) 3–5 perguntas que o usuário poderia fazer sobre o documento. Armazenar em
+  metadata do ChromaDB. Exibir na view de detalhe da coleção. Uma call LLM por
+  documento no momento da indexação; resultado cacheado. Inspirado no NotebookLM
+  "Notebook Guide".
+
+- [ ] **Mermaid como MVP do Mind Map (abrir no browser)**
+  (`core/mindmap.py`, botão na UI). LLM gera JSON estruturado de temas → converter
+  para sintaxe Mermaid → salvar como `.md` → abrir via `webbrowser.open()`. Sem
+  dependência de Qt graphics ou graphviz. Compatível com Obsidian. Graphviz/QGraphicsView
+  como melhoria posterior. Esta é a decisão de implementação documentada na pesquisa
+  NotebookLM — o TODO tem "mind map" mas sem especificar o caminho de implementação.
+
+- [ ] **Relatório de Pesquisa estruturado em 8 seções**
+  (`core/report.py`). Implementar relatório Map-Reduce: (1) Título/escopo, (2) Sumário
+  executivo, (3) Temas principais, (4) Análise por fonte, (5) Convergências e
+  divergências entre fontes, (6) Lacunas identificadas, (7) Recomendações,
+  (8) Referências. Abordagem: LLM por seção (Map) → síntese final (Reduce).
+  Export para Markdown; PDF opcional via `pandoc` ou `weasyprint`.
+
+- [ ] **Knowledge Reflection — gerar e indexar artefatos de síntese durante indexação**
+  (`core/indexer.py`). Após indexar chunks de cada documento, chamar LLM para gerar
+  uma "reflexão" — síntese dos top-5 chunks. Armazenar no ChromaDB com
+  `metadata["type"]="reflection"` e `metadata["boost"]=1.5`. Durante retrieval em
+  `prepare_ask()`, aplicar score boost para documentos de reflexão. Meta-reflexões
+  (síntese de 3+ reflexões sobre o mesmo tema) recebem boost 1.8×.
+
+- [ ] **`index.json` leve por coleção — metadados sempre em memória**
+  (`core/indexer.py`, `core/config.py`). Ao lado do ChromaDB, manter
+  `{persist_dir}/index.json` com: `name`, `path`, `total_chunks`, `last_indexed`,
+  `file_types` (contagens), `summary` (1 frase gerada por LLM). Carregar no startup
+  sem acessar ChromaDB. Usado pela UI para mostrar overview da coleção em <1ms.
+  Atualizar a cada operação de indexação.
+
+- [ ] **Lock de máquina de indexação — desabilitar indexação em máquinas secundárias**
+  (`core/config.py`, `gui/main_window.py`). Adicionar campo `indexing_machine: str`
+  ao config (preenchido com hostname na primeira indexação bem-sucedida). Na
+  inicialização, se `hostname != indexing_machine`: desabilitar botões de indexação
+  e exibir mensagem "Índice construído em [outra máquina]. Consultas disponíveis."
+  Enforça arquitetura "indexar no CachyOS, consultar no Windows".
+
+- [ ] **`potion-multilingual-128M` (model2vec) como fallback de embedding no Windows**
+  (`core/config.py`, `core/indexer.py`, `gui/main_window.py`). Expor como terceira
+  opção de embedding em Settings ao lado de bge-m3 e qwen3-embedding:0.6b.
+  `pip install model2vec langchain-community`. Sem dependência de Ollama, sem AVX2,
+  ~50ms por chunk. MTEB 47.31 — suficiente para RAG pessoal. Útil quando Ollama
+  não está disponível no Windows de trabalho.
+
+- [ ] **`qwen3-embedding:0.6b` como opção intermediária de embedding**
+  (`core/config.py`, `gui/main_window.py`). Adicionar `qwen3-embedding:0.6b`
+  (639MB, Q8_0, multilíngue, MTEB ~50–60) como opção selecionável entre bge-m3
+  (qualidade) e potion-multilingual-128M (velocidade). Útil no laptop MX150 onde
+  bge-m3 cabe em 2GB VRAM mas não deixa espaço para contexto. `ollama pull
+  qwen3-embedding:0.6b`, depois `OllamaEmbeddings(model="qwen3-embedding:0.6b")`.
+
+- [ ] **`num_thread` por requisição no OllamaEmbeddings (workaround OLLAMA_NUM_THREAD)**
+  (`core/indexer.py`). `OLLAMA_NUM_THREAD` é ignorado no Ollama 0.6.6+ (issue #10476).
+  Usar parâmetro por requisição: `OllamaEmbeddings(model=..., num_thread=2)` no
+  IndexWorker da máquina Windows. Combinado com `QThread.Priority.IdlePriority`.
+  Workaround documentado até correção oficial no Ollama.
+
+- [ ] **Detecção dinâmica de modelos Ollama no startup (`GET /api/tags`)**
+  (`gui/main_window.py`, SetupDialog). Ao iniciar, chamar
+  `GET http://localhost:11434/api/tags` (ou via LOGOS se disponível) para listar
+  modelos locais. Filtrar em candidatos de embedding (nomic-embed-text*, bge-m3,
+  qwen3-embedding*) e chat (llama*, qwen*, mistral*, gemma*). Apresentar listas
+  filtradas nos dropdowns de Settings em vez de campos de texto livre. Se Ollama
+  não estiver rodando: mostrar aviso e desabilitar features de IA graciosamente.
+
+- [ ] **`session_memory.json` — histórico de queries e documentos úteis por coleção**
+  (`core/memory.py` ou novo `core/session_memory.py`). Armazenar por coleção as
+  últimas N queries, quais documentos foram recuperados e se a resposta foi útil.
+  Mostrar na UI "Você perguntou algo parecido antes…". Campos por documento:
+  `score_relevância_médio` das últimas N queries, `última_vez_retornado`. Implementa
+  "Camada 2" da arquitetura de memória de 3 níveis documentada na pesquisa.
+
+- [ ] **Slide deck export (PPTX) a partir de coleção**
+  (`core/slidemaker.py`). LLM gera outline (título + 5–7 bullet points por slide
+  para cada tema principal) → `python-pptx` monta o arquivo .pptx. `pip install
+  python-pptx`. Exportar via botão na área de Relatórios.
+
+- [ ] **FAIR-RAG: feedback implícito — boost/penalizar documentos por utilidade da resposta**
+  (`core/rag.py`, `gui/` botão de feedback). Após cada resposta RAG, permitir ao
+  usuário marcar como útil/inútil. Se útil: aumentar score de recuperação dos
+  documentos usados (média móvel exponencial). Se inútil: penalizar. Armazenar
+  ajustes por documento em metadata. O índice melhora gradualmente com o uso.
+
+#### AKASHA
+- [ ] **Endpoint `GET /fetch?url=` — busca transiente sem salvar em disco**
+  (`routers/search.py` ou novo `routers/fetch.py`). Buscar e extrair conteúdo de
+  uma URL como Markdown e retornar em JSON sem salvar no archive. Equivale ao
+  `archiver.py` sem o `dest_path.write_text()`. ~30 linhas. Necessário para o
+  Deep Research Mode do Mnemosyne e para qualquer consumidor programático que
+  precise do conteúdo sem poluir o archive.
+
+- [ ] **Endpoint `GET /search/json?q=&max=` — busca retornando JSON estruturado**
+  (`routers/search.py`). A rota `/search` atual retorna HTML (Jinja2). Adicionar
+  rota `/search/json` que retorna `[{title, url, snippet, source, date}]` como JSON,
+  reutilizando a lógica existente de `search_web()` e `search_local()`. ~20 linhas.
+  Necessário para integração com Mnemosyne (Deep Research Mode) e KOSMOS.
+
+- [ ] **Propagação de tags do feed para o archive ao auto-arquivar do KOSMOS**
+  (`routers/search.py`, endpoint `POST /archive`). Ao receber requisição de
+  auto-arquivamento do KOSMOS, aceitar campo `tags: list[str]` no body. KOSMOS
+  deve incluir a categoria do feed como tag. Armazenar no frontmatter do arquivo
+  Markdown arquivado. Complemento ao item `POST /archive` já rastreado no TODO.
+
+- [ ] **URL normalization antes de inserir no crawl_pages e archive**
+  (`services/archiver.py`, `services/crawler.py`). Normalizar URL com
+  `pip install url-normalize` antes de inserir: lowercase scheme+host, remover
+  default ports, remover parâmetros de rastreamento (`utm_*`, `fbclid`, `gclid`,
+  `ref`, `source`), ordenar query params. Evita arquivar a mesma página com
+  tracking params diferentes como documentos separados.
+
+#### KOSMOS
+- [ ] **Streaming JSON parcial com field-order optimization (json-stream / ijson)**
+  (`app/ui/workers.py`, `_AnalyzeWorker`). Usar `stream=True` com o cliente Ollama
+  e parsear a resposta com `pip install json-stream`. Reordenar campos do schema
+  para que campos rápidos (tags, sentiment, clickbait_score) venham antes dos lentos
+  (entities, five_ws) — XGrammar/Outlines segue a ordem de declaração. A UI pode
+  exibir campos rápidos em 0.5–1.5s, antes do JSON completo. Melhor custo-benefício
+  que split de calls para este caso.
+
+- [ ] **SpaCy para extração de entidades em vez de LLM (pt_core_news_lg)**
+  (`app/core/analyzer.py` ou equivalente). Para o campo `entities`, substituir ou
+  complementar a call LLM com SpaCy `pt_core_news_lg` (~250MB). Roda totalmente em
+  CPU, trata PER/ORG/LOC/MISC em português, dramaticamente mais rápido que LLM para
+  NER. O LLM mantém responsabilidade sobre semantic classification (sentiment, tags,
+  clickbait). Resolve a perda de fidelidade de 3–8% documentada em modelos Q4 para
+  tarefas de cópia de span como NER. `pip install spacy` +
+  `python -m spacy download pt_core_news_lg`.
+
+- [ ] **Heartbeat timeout para análises travadas (`analysis_started_at` + reset no startup)**
+  (`app/utils/db.py` ou equivalente). Adicionar coluna `analysis_started_at DATETIME`
+  na tabela de artigos. No startup, resetar para `pending` todos os artigos com
+  `status = 'in_progress'` e `analysis_started_at < now - 5 minutes`. Evita artigos
+  eternamente presos em `in_progress` após kill do processo ou crash.
+
+- [ ] **Deduplicação de análise por content hash (SHA-256 de texto normalizado)**
+  (`app/core/analyzer.py`, `app/utils/db.py`). Antes de chamar LLM para análise,
+  calcular SHA-256 do conteúdo normalizado (minúsculas, sem pontuação/espaços extras).
+  Checar se outro artigo tem o mesmo hash — se sim, copiar campos `ai_*` existentes
+  em vez de re-chamar o LLM. Adicionar coluna `content_hash TEXT` com índice UNIQUE
+  parcial. Economiza calls LLM para artigos cross-posted/espelhados.
+
+- [ ] **Índice parcial SQLite para fila de análise pendente**
+  (`app/utils/db.py`, na criação do schema). Adicionar:
+  `CREATE INDEX idx_pending_analysis ON articles(feed_id, published_at DESC)
+  WHERE analysis_status IN ('pending', 'failed')`.
+  SQLite suporta partial indexes desde 3.8.0. Para tabela com 10k artigos onde 95%
+  estão analisados, o índice cobre ~500 linhas — query da fila de background passa
+  de O(log 10000) para O(log 500).
+
+- [ ] **TTL de campos pesados: nullar five_ws e entities para artigos > 6 meses**
+  (`app/core/maintenance.py` ou job periódico). Query mensal:
+  `UPDATE articles SET ai_five_ws = NULL, ai_entities = NULL
+  WHERE published_at < date('now', '-6 months') AND ai_five_ws IS NOT NULL`.
+  Manter ai_tags e ai_sentiment (úteis para filtragem histórica). Seguido de
+  `VACUUM` + `ANALYZE`. Mantém o DB SQLite em tamanho gerenciável conforme
+  artigos acumulam na casa dos milhares.
+
+- [ ] **Politeness: delay mínimo de 2s por domínio no scraping de artigos**
+  (`app/core/scraper.py` ou `ArticleScraper`). Manter dict
+  `{domain: last_access_time}` e impor delay de 2s entre requisições ao mesmo
+  domínio durante scraping em background. Tratar HTTP 429 com backoff exponencial
+  (`base * 2^attempt`, max 60s, ±50% jitter). Sem isso, scraping de 10 artigos do
+  mesmo blog em sequência rápida pode disparar bloqueio de IP.
+
+- [ ] **`analysis_schema_version` para invalidação de cache de análise LLM**
+  (`app/utils/db.py`, `app/core/analyzer.py`). Adicionar coluna
+  `analysis_schema_version INTEGER DEFAULT 0` na tabela de artigos. Definir
+  constante `ANALYSIS_VERSION = 1` no código. Incrementar ao mudar prompts ou
+  schema. No startup, enfileirar para re-análise todos os artigos com
+  `analysis_schema_version < ANALYSIS_VERSION`. Invalida cache sistematicamente
+  sem precisar de processo manual.
+
+#### LOGOS / HUB
+- [ ] **`OLLAMA_GPU_OVERHEAD=0` no perfil RX 6600 com ROCm**
+  (`HUB/src-tauri/src/logos.rs` ou arquivo de configuração de perfil de hardware).
+  Com ROCm na RX 6600, `OLLAMA_GPU_OVERHEAD=524288000` (500MB padrão) pode fazer
+  o Ollama recusar carregar modelos que caberiam na VRAM. Definir
+  `OLLAMA_GPU_OVERHEAD=0` para o perfil `main_pc` — deixar o OOM handler do ROCm
+  atuar em vez da estimativa conservadora do Ollama.
+
+- [ ] **Política de bateria em 3 níveis no LOGOS (Normal / Economia / Crítico)**
+  (`HUB/src-tauri/src/logos.rs`, módulo de monitoramento de bateria). O TODO tem
+  suspensão de P3 em bateria, mas a pesquisa documenta 3 níveis:
+  Normal (AC ou bateria >80%): P3 ativo, comportamento padrão.
+  Economia (bateria 30–80% ou TimeToEmpty <120min): P3 suspenso, batch P2
+  reduzido 64→16, keep_alive P2 "10m"→"2m".
+  Crítico (bateria <30% ou TimeToEmpty <60min): P2 também suspenso, apenas P1,
+  num_thread=2. Polling UPower a cada 30 segundos.
+
+- [ ] **Detecção de AVX2 no perfil de hardware (i5-3470 sem AVX2)**
+  (`HUB/src-tauri/src/logos.rs`, detecção de hardware no startup). Checar presença
+  de AVX2 via `/proc/cpuinfo` (Linux) ou cpuid (Windows). Se ausente: forçar perfil
+  low com `num_ctx=512`, `num_batch=128`, `num_thread=2`. O i5-3470 é 30–50% mais
+  lento que CPUs com AVX2 em inferência INT4 — o perfil deve refletir isso
+  explicitamente.
+
+- [ ] **Microbenchmark de startup (20 tokens) para medir t/s real do hardware**
+  (`HUB/src-tauri/src/logos.rs`, inicialização do LOGOS). Em vez de inferir
+  capacidade do hardware por specs, executar geração de 20 tokens com SmolLM2 1.7B
+  no startup. Leva <5 segundos, produz medição direta de tokens/segundo para seleção
+  de perfil. Armazenar resultado em config para evitar repetir a cada startup.
+
+- [ ] **Proteção contra thermal throttling da RX 6600 (pausar P3 acima de 85°C)**
+  (`HUB/src-tauri/src/logos.rs`). Durante workloads P3 longos, monitorar temperatura
+  da GPU via `sysinfo` crate (campo `gpu_temperature` disponível no sysinfo 0.30+).
+  Se temperatura > 85°C: pausar P3 automaticamente. Evita depender exclusivamente
+  do throttling do driver a 95°C.
+
+- [ ] **`num_gpu` dinâmico por requisição no perfil MX150 (baseado em tamanho do contexto)**
+  (`HUB/src-tauri/src/logos.rs`, dispatch de requisições P1). Para o laptop MX150
+  (2GB VRAM), ajustar `num_gpu` dinamicamente: `num_gpu=16–20` para contextos curtos
+  (<2048 tokens), `num_gpu=10–12` para contextos longos. LOGOS injeta este parâmetro
+  por requisição em vez de usar valor fixo do perfil.
+
+- [ ] **Badge "performance reduzida pelo SO" quando ppd está em power-saver**
+  (`HUB/src/` componente LogosPanel). Detectar perfil ativo do Power Profiles Daemon
+  (`ppd`). Se `power-saver` ativo: exibir badge no LogosPanel explicando que a
+  resposta lenta do LLM é causada pelo modo de economia do sistema operacional, não
+  por bug. Evita confusão do usuário quando o laptop está limitado pelo SO.
+
+#### ecosystem_scraper.py
+- [ ] **Throttle adaptativo por domínio — delay mínimo de 2s entre requisições**
+  (`ecosystem_scraper.py`). Adicionar dict de módulo `{domain: last_request_time}`
+  e impor delay configurável (padrão 2s) entre requisições ao mesmo domínio.
+  Constante `CRAWL_DELAY` exportável. Como AKASHA archiver e KOSMOS ArticleScraper
+  usam este módulo, a politeness é adicionada uma vez e aplica-se a ambos.
+
+- [ ] **HTTP 429 com backoff exponencial + leitura do header Retry-After**
+  (`ecosystem_scraper.py`). Detectar resposta HTTP 429 → ler header `Retry-After`
+  → backoff `max(Retry-After, min(base * 2^attempt, 60))` com ±50% de jitter
+  multiplicativo → retry até `max_retries=3`. Atualmente o módulo não trata 429 —
+  retornaria vazio ou lançaria exceção.
+
+#### Hermes
+- [ ] **Parâmetros otimizados do faster-whisper: `vad_filter=True`, `beam_size=1`, `language="pt"`**
+  (`hermes.py` ou `TranscribeWorker`). A migração para faster-whisper está concluída
+  (`[x]`), mas os parâmetros de otimização não foram registrados: `vad_filter=True`
+  filtra silêncio antes da transcrição (grande melhoria de velocidade para vídeos
+  com pausas), `beam_size=1` reduz memória e tempo (padrão é 5), `language="pt"`
+  elimina overhead de detecção de idioma (~1s por segmento). Definir como defaults
+  em `TranscribeWorker`.
+
+- [ ] **Cache do `WhisperModel` entre transcrições (instanciar uma vez por sessão)**
+  (`hermes.py`). O `WhisperModel` pode ser instanciado uma vez e reutilizado entre
+  transcrições (diferente do openai-whisper que recarregava por chamada). Armazenar
+  como atributo de classe ou singleton de módulo. Economiza 5–15s de carregamento
+  de modelo a cada nova transcrição.
