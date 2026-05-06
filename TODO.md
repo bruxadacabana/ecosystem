@@ -4238,6 +4238,111 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   pós-processamento: dado um DOI, consultar `api.unpaywall.org/v2/{doi}?email=...`
   para obter link PDF de acesso aberto quando disponível.
 
+### Pesquisa: AKASHA como Assistente de Pesquisa — Técnicas Além de LLMs | 2026-05-06
+> Contexto: pesquisa sobre PKM (Zotero, DEVONthink, Readwise), workflows reais de pesquisadores
+> (Berrypicking, Information Foraging Theory), técnicas de "inteligência" sem LLM (usage-based
+> ranking, co-reading, annotation density, TF-IDF local), sistema de anotação web (W3C WADM),
+> progressive disclosure e quando LLM faz sentido vs. quando piora. Objetivo: transformar o
+> AKASHA em assistente de pesquisa produtivo sem depender de Ollama como fundação.
+
+#### AKASHA
+- [ ] **Tabela de histórico de acessos** (`database.py`). Criar tabela `doc_accesses(id, url,
+  accessed_at DATETIME)` e registrar cada abertura de documento arquivado. Sem UI extra — apenas
+  INSERT silencioso ao abrir um documento. Pré-requisito para usage-based ranking, co-reading
+  patterns e annotation density. Nenhuma nova dependência.
+
+- [ ] **Usage-based ranking** (`services/local_search.py`, função `rank_combined` ou novo
+  `services/ranking.py`). Combinar BM25 com frequência de acesso e decaimento temporal:
+  `score_final = α × bm25 + (1-α) × (access_count × exp(-λ × days_since_last_access))`.
+  Parâmetro `α` configurável em `/settings` (default 0.7 BM25, 0.3 uso). Consultar tabela
+  `doc_accesses` com GROUP BY url para obter contagem e último acesso. Sem nova dependência.
+
+- [ ] **Tabela de highlights e indexação FTS5 separada** (`database.py`,
+  `services/archiver.py`). Criar tabela `highlights(id, url, exact TEXT, prefix TEXT,
+  suffix TEXT, note TEXT, created_at DATETIME)` seguindo W3C Web Annotation Data Model
+  (TextQuoteSelector: exact = trecho destacado, prefix = 32 chars antes, suffix = 32 chars
+  depois). Criar virtual table `highlights_fts(rowid, exact, note)`. Ao buscar, incluir
+  resultados de highlights_fts com badge "HIGHLIGHT". Buscas em anotações pessoais retornam
+  resultados mais precisos que buscas no corpo completo do documento.
+
+- [ ] **Query autocomplete por histórico pessoal** (`routers/search.py` ou via endpoint
+  HTMX `GET /search/suggest?q=`). Criar tabela `search_history(query TEXT UNIQUE,
+  count INT, last_used DATETIME)` e registrar cada query ao executar busca. Endpoint de
+  sugestão: `SELECT query FROM search_history WHERE query LIKE :prefix ORDER BY count DESC,
+  last_used DESC LIMIT 10`. Expor como dropdown no campo de busca via HTMX. Sem nova
+  dependência — FTS5 puro.
+
+- [ ] **Faceted search** (`routers/search.py`, `templates/search.html`). Após executar
+  a query FTS5, calcular distribuição dos resultados por: domínio (extrair netloc da URL),
+  ano de archivamento, tipo de conteúdo (detectado no archive), idioma. Retornar como
+  JSON extra no contexto do template. Exibir como checkboxes de filtro na sidebar dos
+  resultados. Segunda query com WHERE adicional quando filtro ativo. Implementação pura
+  em SQLite com GROUP BY — sem nova dependência.
+
+- [ ] **Co-reading patterns single-user** (`services/local_search.py` ou
+  `services/ranking.py`). Ao exibir um documento, consultar `doc_accesses` para encontrar
+  outros URLs acessados dentro de uma janela de 2 horas antes e depois. Exibir seção
+  "Visto na mesma sessão de pesquisa:" com cards compactos. Captura relações semânticas
+  que similaridade de texto não captura (dois documentos sobre temas diferentes mas lidos
+  juntos no contexto de uma pesquisa). Implementação: SQL com `ABS(strftime('%s', a1.accessed_at)
+  - strftime('%s', a2.accessed_at)) < 7200`. Sem nova dependência.
+
+- [ ] **Annotation density como sinal de ranking** (`services/local_search.py`). Ao
+  ranquear resultados, incluir contagem de highlights por URL como sinal adicional: documentos
+  com mais highlights do usuário sobem no ranking. Consulta: `SELECT COUNT(*) FROM highlights
+  WHERE url = :url`. Integrar ao score final como `score += β × log(1 + highlight_count)`,
+  com `β` configurável (default 0.1). Pré-requisito: tabela de highlights (item acima).
+
+- [ ] **Lenses pessoais** (`database.py`, `routers/search.py`, `templates/base.html`).
+  Criar tabela `lenses(id, name TEXT, domains TEXT, tags TEXT, content_types TEXT,
+  date_from TEXT, date_to TEXT)`. UI: botão "Lenses" na nav, tela de gestão de lenses
+  (criar, editar, deletar). Quando uma lens está ativa, adicionar WHERE clauses à query
+  FTS5. Inspirado em Kagi lenses — filtros nomeados que persistem entre sessões e podem
+  ser ativados com um clique.
+
+- [ ] **TF-IDF local para documentos relacionados** (`services/local_search.py`,
+  nova função `find_related(url, n=5)`). Ao exibir um documento arquivado, calcular TF-IDF
+  do seu conteúdo contra o corpus indexado no FTS5 (extrair termos discriminantes via
+  `SELECT bm25(local_fts) ...`) e fazer nova busca FTS5 com esses termos, excluindo o
+  próprio documento. Exibir seção "Documentos relacionados:" com até 5 cards. Sem LLM,
+  sem nova dependência — FTS5 puro.
+
+- [ ] **Progressive disclosure na UI de resultados** (`templates/search.html`). Estruturar
+  cards de resultado em 3 camadas acessíveis progressivamente: (1) título + snippet 30-50
+  palavras + ícones de highlights e tags; (2) preview expansível ao clicar "▸" com todos
+  os highlights do documento + metadados completos (autor, data, domínio, idioma, word count);
+  (3) link "Abrir documento completo" para visualização com modo de anotação. Reduz carga
+  cognitiva na lista de resultados sem esconder informação relevante.
+
+- [ ] **Citation graph local para papers** (`database.py`, `services/archiver.py`,
+  `services/paper_search.py`). Criar tabela `doc_citations(citing_url TEXT, cited_doi TEXT,
+  cited_title TEXT)`. Ao arquivar um documento que contém DOIs nas referências (detectar
+  por regex `10\.\d{4,}/\S+`), consultar CrossRef REST API (`api.crossref.org/works/{doi}`)
+  para enriquecer metadados e salvar em `doc_citations`. Na tela do documento, exibir
+  seção "Citado por documentos neste arquivo:" via query de bibliographic coupling. CrossRef
+  é gratuito sem autenticação para consultas moderadas.
+
+- [ ] **"Mais deste domínio/autor neste período"** (`services/local_search.py`,
+  `templates/archive_view.html`). Na tela de visualização de um documento arquivado,
+  exibir seção "Mais de [domínio]:" com até 5 documentos do mesmo netloc arquivados
+  próximos à mesma data. Implementa o padrão "journal run" de Bates (1989): vasculhar
+  o mesmo veículo/autor em busca de contexto. Query SQL: `WHERE url LIKE :domain_pattern
+  AND ABS(julianday(archived_at) - julianday(:doc_date)) < 90 LIMIT 5`.
+
+- [ ] **Tag co-ocorrência para sugestão** (`services/archiver.py`, `routers/search.py`).
+  Ao exibir filtros de tag nos resultados de busca, ordenar tags relacionadas por co-ocorrência
+  com a tag selecionada: `SELECT tag_b, COUNT(*) FROM tag_pairs WHERE tag_a = :active GROUP
+  BY tag_b ORDER BY COUNT(*) DESC`. Popular tabela `tag_pairs` ao salvar/atualizar tags de
+  um documento. Tags que co-ocorrem frequentemente são sugeridas automaticamente ao criar
+  novos highlights ou arquivar documentos.
+
+- [ ] **Degradação graciosa quando Ollama offline** (`services/local_search.py`,
+  `routers/search.py`). Qualquer feature que depende de Ollama (reranking LLM, síntese
+  Map-Reduce, HyDE) deve ter um estado funcional alternativo quando `http://localhost:11434`
+  não responde. Padrão: verificar Ollama no startup, setar flag `_ollama_available` global.
+  Se False: desabilitar features LLM na UI com tooltip "Ollama offline — feature disponível
+  quando Ollama estiver rodando". Nunca bloquear a busca FTS5 por falta de LLM.
+
 ## Melhorias, correções e atualizações
 
 ### Mnemosyne: auditoria de funcionalidades atuais | 2026-05-06
