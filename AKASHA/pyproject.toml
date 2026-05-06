@@ -20,6 +20,7 @@ dependencies = [
     "markdown>=3.7",
     "aioarxiv>=0.2",
     "pymupdf4llm>=0.0.17",
+    "filelock>=3.13",
 ]
 
 [build-system]
