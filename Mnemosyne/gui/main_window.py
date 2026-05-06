@@ -225,6 +225,11 @@ class SetupDialog(QDialog):
         self.reranking_check = QCheckBox("Reranking semântico (FlashRank) — melhora precisão, usa ~200 MB RAM extra")
         self.reranking_check.setChecked(current.reranking_enabled)
         opts_layout.addWidget(self.reranking_check)
+        self.matryoshka_check = QCheckBox(
+            "Matryoshka dim=256 — embeddings 3× menores em disco/RAM (requer re-indexação)"
+        )
+        self.matryoshka_check.setChecked(current.embedding_truncate_dim == 256)
+        opts_layout.addWidget(self.matryoshka_check)
         layout.addWidget(opts_group)
 
         btns = QDialogButtonBox(
@@ -261,8 +266,8 @@ class SetupDialog(QDialog):
         if row >= 0:
             self.extra_dirs_list.takeItem(row)
 
-    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool]:
-        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled)."""
+    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None]:
+        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim)."""
         extra_dirs = [self.extra_dirs_list.item(i).text()
                       for i in range(self.extra_dirs_list.count())]
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
@@ -275,6 +280,7 @@ class SetupDialog(QDialog):
             self.embed_combo.currentText(),
             eco_enabled,
             self.reranking_check.isChecked(),
+            256 if self.matryoshka_check.isChecked() else None,
         )
 
 
@@ -1204,8 +1210,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -1213,8 +1219,8 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             self._log_event("Configuração atualizada.")
@@ -1225,6 +1231,7 @@ class MainWindow(QMainWindow):
         watched_dir: str, vault_dir: str, chroma_dir: str,
         extra_dirs: list[str], llm: str, embed: str,
         eco_enabled: dict[str, bool], reranking_enabled: bool = True,
+        embedding_truncate_dim: int | None = None,
     ) -> None:
         """Aplica os valores do SetupDialog ao config e guarda."""
         if watched_dir:
@@ -1238,6 +1245,7 @@ class MainWindow(QMainWindow):
         self.config.extra_dirs = extra_dirs
         self.config.ecosystem_enabled.update(eco_enabled)
         self.config.reranking_enabled = reranking_enabled
+        self.config.embedding_truncate_dim = embedding_truncate_dim
         save_config(self.config)
         try:
             from pathlib import Path as _Path
