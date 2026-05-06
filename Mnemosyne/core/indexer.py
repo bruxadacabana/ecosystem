@@ -187,6 +187,50 @@ class ChunkHashStore:
             pass
 
 
+_NODE_TYPES = frozenset({"article", "entity", "topic", "claim", "source"})
+
+_NODE_TYPE_PROMPT = (
+    "Classifica cada trecho em uma categoria: "
+    "article (texto informativo), claim (afirmação ou opinião do autor), "
+    "entity (pessoa/lugar/objeto específico), topic (introdução de tema), "
+    "source (referência, citação ou URL).\n"
+    "Responde APENAS com as categorias, uma por linha, sem mais texto.\n\n"
+    "Trechos:\n{items}"
+)
+
+
+def _classify_node_types(
+    chunks: list[Document],
+    model: str,
+    base_url: str = _OLLAMA_BASE,
+    batch_size: int = 10,
+) -> None:
+    """
+    Classifica chunks em tipos de nó e define metadata["node_type"] in-place.
+    Usa prompt batch para minimizar chamadas HTTP; fallback para "article".
+    """
+    import httpx
+
+    for start in range(0, len(chunks), batch_size):
+        batch = chunks[start : start + batch_size]
+        items = "\n".join(f"[{i+1}] {c.page_content[:300]}" for i, c in enumerate(batch))
+        prompt = _NODE_TYPE_PROMPT.format(items=items)
+        labels: list[str] = []
+        try:
+            resp = httpx.post(
+                f"{base_url}/api/generate",
+                json={"model": model, "prompt": prompt, "stream": False, "temperature": 0},
+                timeout=60.0,
+            )
+            resp.raise_for_status()
+            lines = [l.strip().lower() for l in resp.json()["response"].splitlines() if l.strip()]
+            labels = [l for l in lines if l in _NODE_TYPES]
+        except Exception:
+            pass
+        for j, chunk in enumerate(batch):
+            chunk.metadata["node_type"] = labels[j] if j < len(labels) else "article"
+
+
 def _incremental_update(
     vs: Chroma,
     bm25_idx: BM25Index,
@@ -197,6 +241,7 @@ def _incremental_update(
     truncate_dim: int | None,
     batch_size: int,
     sleep_s: float,
+    node_type_model: str = "",
 ) -> ChangeLevel:
     """
     Atualiza o índice com delta mínimo de chunks.
@@ -246,6 +291,10 @@ def _incremental_update(
 
     if ids_to_delete:
         vs._collection.delete(ids=ids_to_delete)
+
+    # Classificar node_type dos chunks a adicionar (FULL ou STRUCTURAL)
+    if node_type_model and chunks_to_add:
+        _classify_node_types(chunks_to_add, node_type_model)
 
     # Embedar apenas os chunks novos/alterados
     new_records: list[tuple[str, str, str]] = []
@@ -593,7 +642,8 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
         bm25_idx = BM25Index.load(config.mnemosyne_dir)
         _incremental_update(vs, bm25_idx, chunk_store, file_path, chunks,
                             config.embed_model, config.embedding_truncate_dim,
-                            _BATCH, _SLEEP)
+                            _BATCH, _SLEEP,
+                            node_type_model=config.node_type_model if config.node_type_classification else "")
         chunk_store.close()
     except Exception as exc:
         raise IndexBuildError(f"Falha ao adicionar ao vectorstore: {exc}") from exc
@@ -674,6 +724,7 @@ def update_vectorstore(
             level = _incremental_update(
                 vs, bm25_idx, chunk_store, file_path, chunks,
                 config.embed_model, config.embedding_truncate_dim, _BATCH, _SLEEP,
+                node_type_model=config.node_type_model if config.node_type_classification else "",
             )
             tracker.mark_indexed(file_path)
             if level == ChangeLevel.COSMETIC:
@@ -696,6 +747,7 @@ def update_vectorstore(
             _incremental_update(
                 vs, bm25_idx, chunk_store, file_path, chunks,
                 config.embed_model, config.embedding_truncate_dim, _BATCH, _SLEEP,
+                node_type_model=config.node_type_model if config.node_type_classification else "",
             )
             tracker.mark_indexed(file_path)
             stats["new"] += 1

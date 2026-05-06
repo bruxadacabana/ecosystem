@@ -3984,7 +3984,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > existentes na Fase 11.3 do Mnemosyne (GraphRAG/LightRAG) — ver nota em cada item.
 
 #### Mnemosyne
-- [ ] **Classificação de chunks por tipo de nó durante indexação** (`core/indexer.py`,
+- [x] **Classificação de chunks por tipo de nó durante indexação** (`core/indexer.py`,
   `core/config.py`, `core/rag.py`). Adicionar metadado `node_type` a cada chunk com
   valores possíveis: `article` (texto corrido), `entity` (pessoa/lugar/objeto nomeado),
   `topic` (tema recorrente), `claim` (afirmação factual), `source` (referência externa).

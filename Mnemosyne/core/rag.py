@@ -241,9 +241,10 @@ def strip_think(text: str) -> str:
 def _build_where_filter(
     source_type: str | None,
     source_files: list[str] | None,
+    node_types: list[str] | None = None,
 ) -> dict | None:
     """
-    Constrói o filtro ChromaDB `where` combinando source_type e source_files.
+    Constrói o filtro ChromaDB `where` combinando source_type, source_files e node_types.
     Retorna None se nenhum filtro for necessário.
     """
     conditions: list[dict] = []
@@ -251,6 +252,8 @@ def _build_where_filter(
         conditions.append({"source_type": {"$eq": source_type}})
     if source_files:
         conditions.append({"source": {"$in": source_files}})
+    if node_types:
+        conditions.append({"node_type": {"$in": node_types}})
     if not conditions:
         return None
     if len(conditions) == 1:
@@ -265,6 +268,7 @@ def _hybrid_retrieve(
     source_type: str | None = None,
     source_files: list[str] | None = None,
     bm25_index: BM25Index | None = None,
+    node_types: list[str] | None = None,
 ) -> list[Document]:
     """
     Hybrid retrieval com RRF real quando bm25_index fornecido (corpus completo),
@@ -279,7 +283,7 @@ def _hybrid_retrieve(
     candidate_n = max(k * 3, 50)
 
     search_kwargs: dict = {"k": candidate_n if bm25_index else k * 2}
-    where = _build_where_filter(source_type, source_files)
+    where = _build_where_filter(source_type, source_files, node_types)
     if where:
         search_kwargs["filter"] = where
     try:
@@ -313,6 +317,10 @@ def _hybrid_retrieve(
         if source_type:
             bm25_results = [(r, d) for r, d in bm25_results
                             if d.metadata.get("source_type") == source_type]
+        if node_types:
+            node_set = set(node_types)
+            bm25_results = [(r, d) for r, d in bm25_results
+                            if d.metadata.get("node_type") in node_set]
 
         rrf_scores: dict[str, float] = {}
         doc_map: dict[str, Document] = {}
@@ -412,6 +420,7 @@ def _multi_query_retrieve(
     source_files: list[str] | None = None,
     n_variants: int = 3,
     bm25_index: BM25Index | None = None,
+    node_types: list[str] | None = None,
 ) -> list[Document]:
     """
     Reformula a pergunta em n variações, faz retrieval para cada uma e
@@ -438,7 +447,7 @@ def _multi_query_retrieve(
 
     for q in queries:
         try:
-            docs = _hybrid_retrieve(vectorstore, q, k, source_type, source_files, bm25_index)
+            docs = _hybrid_retrieve(vectorstore, q, k, source_type, source_files, bm25_index, node_types)
         except QueryError:
             continue
         for doc in docs:
@@ -447,7 +456,7 @@ def _multi_query_retrieve(
                 seen.add(key)
                 results.append(doc)
 
-    return results[:k] if results else _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index)
+    return results[:k] if results else _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index, node_types)
 
 
 def _hyde_retrieve(
@@ -458,6 +467,7 @@ def _hyde_retrieve(
     source_type: str | None = None,
     source_files: list[str] | None = None,
     bm25_index: BM25Index | None = None,
+    node_types: list[str] | None = None,
 ) -> list[Document]:
     """
     HyDE: gera uma resposta hipotética à pergunta e usa o seu embedding
@@ -471,9 +481,9 @@ def _hyde_retrieve(
         ))
         if not hypothetical.strip():
             raise ValueError("Resposta hipotética vazia")
-        return _hybrid_retrieve(vectorstore, hypothetical, k, source_type, source_files, bm25_index)
+        return _hybrid_retrieve(vectorstore, hypothetical, k, source_type, source_files, bm25_index, node_types)
     except Exception:
-        return _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index)
+        return _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index, node_types)
 
 
 _RERANK_CANDIDATE_K = 30
@@ -495,6 +505,7 @@ def _iterative_retrieve(
     source_type: str | None = None,
     source_files: list[str] | None = None,
     bm25_index: BM25Index | None = None,
+    node_types: list[str] | None = None,
 ) -> list[Document]:
     """
     Retrieval em 2 iterações (ITER-RETGEN simplificado).
@@ -506,7 +517,7 @@ def _iterative_retrieve(
     Retorna iter1 + extras; prepare_ask limita ao retriever_k configurado.
     Fallback silencioso para iter1 se a geração provisória falhar.
     """
-    iter1 = _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index)
+    iter1 = _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index, node_types)
     if not iter1:
         return iter1
 
@@ -528,7 +539,7 @@ def _iterative_retrieve(
     try:
         iter2 = _hybrid_retrieve(
             vectorstore, provisional, extra_k * 2,
-            source_type, source_files, bm25_index,
+            source_type, source_files, bm25_index, node_types,
         )
     except QueryError:
         return iter1
@@ -691,6 +702,7 @@ def prepare_ask(
     collection_type: str = "library",
     bm25_index: BM25Index | None = None,
     iterative_retrieval: bool = False,
+    node_types: list[str] | None = None,
 ) -> tuple[list[BaseMessage], list[SourceRecord]]:
     """
     Recupera documentos relevantes e retorna (prompt, sources).
@@ -721,21 +733,21 @@ def prepare_ask(
         if iterative_retrieval:
             docs = _iterative_retrieve(
                 vectorstore, question, candidate_k, config.llm_model,
-                source_type, source_files, bm25_index,
+                source_type, source_files, bm25_index, node_types,
             )
         elif retrieval_mode == "multi_query":
             docs = _multi_query_retrieve(
                 vectorstore, question, candidate_k, config.llm_model, source_type, source_files,
-                bm25_index=bm25_index,
+                bm25_index=bm25_index, node_types=node_types,
             )
         elif retrieval_mode == "hyde":
             docs = _hyde_retrieve(
                 vectorstore, question, candidate_k, config.llm_model, source_type, source_files,
-                bm25_index=bm25_index,
+                bm25_index=bm25_index, node_types=node_types,
             )
         else:
             docs = _hybrid_retrieve(vectorstore, question, candidate_k, source_type, source_files,
-                                    bm25_index)
+                                    bm25_index, node_types)
     except QueryError:
         raise
     except Exception as exc:
