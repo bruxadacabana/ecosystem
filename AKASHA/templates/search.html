@@ -84,7 +84,7 @@
       {% if paper_results %}
       <section class="results-section">
         <h3 class="results-section-title">Artigos científicos</h3>
-        <p class="results-meta">{{ paper_results | length }} resultado{% if paper_results | length != 1 %}s{% endif %} em Semantic Scholar e arXiv</p>
+        <p class="results-meta">{{ paper_results | length }} resultado{% if paper_results | length != 1 %}s{% endif %} em Semantic Scholar, arXiv e OpenAlex</p>
         <ol class="results-list">
           {% for r in paper_results %}{{ paper_card(r) }}{% endfor %}
         </ol>

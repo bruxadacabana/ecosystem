@@ -240,12 +240,16 @@ async def _enrich_unpaywall(results: list[PaperResult]) -> None:
 # Função pública
 # ---------------------------------------------------------------------------
 
-async def search_papers(query: str, max_results: int = 10) -> list[PaperResult]:
+_PER_SOURCE  = 25   # resultados pedidos por fonte
+_TOTAL_MAX   = 50   # cap após deduplicação
+
+
+async def search_papers(query: str, max_results: int = _TOTAL_MAX) -> list[PaperResult]:
     """Busca paralela em Semantic Scholar + arXiv + OpenAlex; deduplica e enriquece com Unpaywall."""
     ss_res, ax_res, oa_res = await asyncio.gather(
-        _search_semantic_scholar(query, max_results),
-        _search_arxiv(query, max(max_results // 2, 5)),
-        _search_openalex(query, max_results),
+        _search_semantic_scholar(query, _PER_SOURCE),
+        _search_arxiv(query, _PER_SOURCE),
+        _search_openalex(query, _PER_SOURCE),
         return_exceptions=True,
     )
 
@@ -254,16 +258,26 @@ async def search_papers(query: str, max_results: int = 10) -> list[PaperResult]:
     if isinstance(ax_res, list): combined.extend(ax_res)
     if isinstance(oa_res, list): combined.extend(oa_res)
 
-    seen_arxiv: set[str] = set()
-    seen_doi:   set[str] = set()
-    deduped: list[PaperResult] = []
+    # Dedup por arxiv_id e DOI — quando um duplicado tem PDF e o original não,
+    # transfere o pdf_url para não perder links de download (bug anterior).
+    by_arxiv: dict[str, PaperResult] = {}
+    by_doi:   dict[str, PaperResult] = {}
+    deduped:  list[PaperResult]      = []
+
     for r in combined:
-        if r.arxiv_id and r.arxiv_id in seen_arxiv:
+        key_ax  = r.arxiv_id or ""
+        key_doi = r.doi or ""
+
+        existing = (key_ax and by_arxiv.get(key_ax)) or (key_doi and by_doi.get(key_doi))
+        if existing:
+            # Enriquece o original com PDF se o duplicado tiver e o original não
+            if r.pdf_url and not existing.pdf_url:
+                existing.pdf_url = r.pdf_url
+                existing.has_pdf = True
             continue
-        if r.doi and r.doi in seen_doi:
-            continue
-        if r.arxiv_id: seen_arxiv.add(r.arxiv_id)
-        if r.doi:      seen_doi.add(r.doi)
+
+        if key_ax:  by_arxiv[key_ax]   = r
+        if key_doi: by_doi[key_doi]    = r
         deduped.append(r)
 
     deduped = deduped[:max_results]
