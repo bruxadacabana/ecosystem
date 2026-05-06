@@ -3863,6 +3863,105 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias baseadas em pesquisas para o ecossistema
 
+### Pesquisa: Arquitetura de UI para Research Workbench — NotebookLM e Referências | 2026-05-06
+> Contexto: pesquisa sobre o paradigma tri-pane (Sources / Chat / Workspace), citation anchoring,
+> gerenciamento de estado entre painéis em Qt, padrão fleeting/permanent notes e referências
+> alternativas (Zotero 7, Logseq, AnythingLLM). Base para o redesign completo do Mnemosyne.
+
+#### Mnemosyne
+- [ ] **Layout tri-pane com QSplitter aninhados** (`gui/main_window.py`). Substituir o layout
+  atual por três painéis horizontais via `QSplitter` aninhados: (1) painel esquerdo de fontes
+  e coleções (proporção 25%), (2) painel central de chat RAG (50%), (3) painel direito de
+  notas persistentes (25%). Salvar e restaurar proporções entre sessões via `QSettings` com
+  `QSplitter.saveState()` e `restoreState()`. O painel esquerdo lista coleções e seus
+  documentos; o central é a interface de chat com o LLM; o direito é uma área editável onde
+  respostas podem ser salvas como notas permanentes. Esta é a estrutura base sobre a qual
+  todos os outros itens desta sessão se constroem.
+
+- [ ] **`AppState` central como `QObject` com signals tipados** (`gui/app_state.py`, novo
+  arquivo). Criar um objeto de estado compartilhado — padrão documentado no JabRef — que todos
+  os painéis recebem na construção mas nunca referenciam diretamente entre si. Signals
+  obrigatórios: `source_selected(collection_id: str, doc_id: str)`,
+  `chunk_cited(collection_id: str, doc_path: str, start_char: int, end_char: int)`,
+  `note_promoted(text: str, citations: list[dict])`, `query_submitted(text: str)`,
+  `response_token_received(token: str)`. Cada painel conecta apenas os signals relevantes
+  para si. Isso elimina o problema atual de widgets que se referenciam diretamente e quebram
+  quando o layout muda.
+
+- [ ] **Metadados de chunk enriquecidos com offsets de texto** (`core/indexer.py`). Ao chunkar
+  documentos e inserir no ChromaDB, adicionar aos metadados de cada chunk: `start_char` (int),
+  `end_char` (int), `prefix_quote` (string: 30 chars antes do chunk para desambiguação),
+  `suffix_quote` (string: 30 chars depois), `page_num` (int, quando disponível — PDFs).
+  Esses campos são o pré-requisito para citation anchoring funcionar. Padrão documentado pelo
+  Hypothes.is: três seletores redundantes garantem que a âncora sobreviva a pequenas
+  modificações no documento. Requer re-indexação completa após implementação.
+
+- [ ] **Citation anchoring via `QTextCursor`** (`gui/main_window.py` ou novo
+  `gui/source_viewer.py`). Quando o chat retorna uma resposta com citação, emitir
+  `AppState.chunk_cited(collection_id, doc_path, start_char, end_char)`. O painel de fontes
+  captura o signal, carrega o documento no `QTextBrowser` (se não estiver aberto), cria um
+  `QTextCursor`, chama `cursor.setPosition(start_char)` seguido de
+  `cursor.setPosition(end_char, QTextCursor.KeepAnchor)`, aplica `QTextCharFormat` com
+  `background = QColor("#F5C518")` (amarelo suave compatível com o tema sépia), e chama
+  `source_browser.setTextCursor(cursor)` + `source_browser.ensureCursorVisible()`. Resultado:
+  clicar em `[1]` na resposta do chat rola automaticamente o painel de fontes até o trecho
+  exato usado pelo LLM — funcionalidade ausente em todos os apps RAG open source atuais.
+
+- [ ] **Painel de fontes com status de indexação por item** (`gui/main_window.py` ou
+  `gui/collection_panel.py`). No painel esquerdo, cada documento na `QListWidget` deve exibir
+  seu status de indexação via delegate customizado (`QStyledItemDelegate`). Estados possíveis:
+  `pending` (cinza, ícone de relógio), `indexing` (animação de spinner via `QTimer`),
+  `indexed` (verde, ícone de check), `error` (vermelho, ícone de exclamação). O delegate
+  lê o status do item via `Qt.UserRole` e renderiza o ícone/cor apropriado no método
+  `paint()`. Permite que o usuário veja em tempo real quais documentos já estão disponíveis
+  para RAG — atualmente não há feedback visual por documento, apenas por coleção inteira.
+
+- [ ] **Botão "Salvar como Nota" em cada resposta do chat** (`gui/chat_widget.py` ou equivalente).
+  Cada bloco de resposta do LLM no painel de chat deve ter um botão discreto (ícone de
+  marcador, canto superior direito do card de resposta) que, ao ser clicado, promove o
+  conteúdo para o painel de notas com: título editável pré-preenchido com os primeiros
+  60 chars da resposta, conteúdo completo em Markdown, e lista de citações associadas
+  preservadas como metadados. A promoção é explícita (não auto-save) e reversível (botão
+  "Remover nota" no painel direito). Padrão documentado no Zettelkasten/Logseq: a nota
+  efêmera vira permanente só por ação deliberada do usuário.
+
+- [ ] **Distinção visual entre rascunho e nota permanente + histórico de revisão simples**
+  (`gui/notes_panel.py` ou equivalente). No painel de notas direito: notas salvas usam
+  `QTextEdit` com `QTextDocument.setMarkdown()` para edição direta em Markdown (Qt 6.x tem
+  suporte nativo). Distinguir visualmente notas confirmadas (borda verde sutil, fundo sépia
+  normal) de rascunhos não confirmados (borda tracejada, fundo levemente diferente). Cada
+  nota deve manter um histórico simples de revisões (lista de strings com timestamp) para
+  undo básico. Persistir notas em `{vault_dir}/notes/YYYY-MM-DD_HH-MM.md` com frontmatter
+  YAML contendo `created_at`, `sources`, `citations`.
+
+- [ ] **Sidebar direito dinâmico para contexto paralelo** (`gui/main_window.py`). Adicionar
+  a capacidade de abrir qualquer documento do painel esquerdo em um "painel de contexto
+  paralelo" dentro do sidebar direito sem fechar o painel de notas — padrão documentado no
+  Logseq. Implementação: o painel direito usa um `QTabWidget` ou `QStackedWidget` com abas
+  "Notas" e "Fonte: [nome]". Ao clicar em "Abrir ao lado" num documento, uma nova aba abre
+  com `QTextBrowser` mostrando o conteúdo do arquivo. Útil quando o usuário quer consultar
+  dois documentos em paralelo durante uma sessão de pesquisa sem perder o chat central.
+
+- [ ] **Streaming de resposta do Ollama via `QThread` com signal por token**
+  (`core/rag.py`, `gui/workers.py`). Encapsular a chamada ao Ollama (ou LangChain) em um
+  `QThread` que emite `response_token_received(str)` para cada token recebido via streaming.
+  O painel de chat conecta esse signal a um slot que appenda o token ao `QTextBrowser` atual
+  sem bloquear o event loop do Qt. Resultado: a resposta aparece progressivamente na UI,
+  token por token, como no ChatGPT — elimina a espera silenciosa atual onde a UI trava até
+  a resposta completa chegar. Verificar se `core/rag.py` já tem suporte a streaming no
+  LangChain (`stream=True` na chain); se sim, o trabalho é principalmente no side da UI.
+
+- [ ] **`QTextEdit` com Markdown nativo para notas; `QTextBrowser` para chat**
+  (`gui/notes_panel.py`, `gui/chat_widget.py`). Usar widgets distintos para contextos
+  distintos: `QTextBrowser` (read-only, suporta HTML e links clicáveis) para o histórico
+  de chat e visualização de fontes; `QTextEdit` com `document().setMarkdown(text)` e
+  `toMarkdown()` para o painel de notas onde o usuário edita. O Qt 6.x implementa
+  `QTextDocument.setMarkdown()` e `toMarkdown()` nativamente — não requer biblioteca
+  externa de parsing. Verificar versão mínima do PySide6 no `pyproject.toml` do Mnemosyne
+  para garantir Qt 6.4+ (onde suporte Markdown é estável).
+
+---
+
 ### Pesquisa: Whisper sem AVX2 — faster-whisper como backend local | 2026-05-05
 > Contexto: openai-whisper usa PyTorch 2.x que exige AVX2 no Windows (WinError 1114).
 > O i5-3470 tem AVX e SSE4.1 mas não AVX2. faster-whisper usa CTranslate2 com
@@ -4140,6 +4239,23 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   para obter link PDF de acesso aberto quando disponível.
 
 ## Melhorias, correções e atualizações
+
+### Mnemosyne: auditoria de funcionalidades atuais | 2026-05-06
+> Contexto: antes de redesenhar a UI e adicionar novas features, verificar o estado real
+> de cada funcionalidade existente no código — quais funcionam, quais estão incompletas,
+> quais estão quebradas. Evita assumir que itens marcados [x] no TODO estão operacionais.
+
+#### Mnemosyne
+- [ ] **Auditar cada funcionalidade existente do Mnemosyne contra o código real**
+  (`Mnemosyne/` — todos os arquivos). Para cada item marcado `[x]` nas Fases do TODO do
+  Mnemosyne, verificar no código se: (a) está implementado, (b) é chamado corretamente,
+  (c) funciona no fluxo real do app. Registrar resultado como: ✓ funcional / ⚠ parcial
+  (descrever o que falta) / ✗ quebrado / ✗ nunca implementado (falso positivo como na
+  Fase 7 do AKASHA). Áreas críticas a checar: indexação (IndexWorker), busca RAG
+  (`prepare_ask()`), reranking (FlashRank), relatório, mind map, Deep Research Mode,
+  Notebook Guide, Knowledge Reflection, session_memory, detecção dinâmica de modelos
+  Ollama. Resultado da auditoria orienta o redesign da UI — inútil redesenhar em torno
+  de features que não funcionam.
 
 ### Mnemosyne: reestruturação urgente da UI | 2026-05-06
 > Contexto: a UI atual do Mnemosyne não está intuitiva nem clara para a usuária.
