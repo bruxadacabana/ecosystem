@@ -1,6 +1,6 @@
 """
 AKASHA — Busca de artigos científicos
-Semantic Scholar + arXiv em paralelo; retorna PaperResult.
+Semantic Scholar + arXiv + OpenAlex em paralelo; Unpaywall para PDFs abertos.
 """
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import httpx
 from pydantic import BaseModel
 
 from services.web_search import SearchResult
+
+_UNPAYWALL_EMAIL = "jenmangelo@gmail.com"
 
 # ---------------------------------------------------------------------------
 # Modelo
@@ -130,21 +132,127 @@ async def _search_arxiv(query: str, max_results: int) -> list[PaperResult]:
 
 
 # ---------------------------------------------------------------------------
+# OpenAlex
+# ---------------------------------------------------------------------------
+
+_OA_BASE   = "https://api.openalex.org"
+_OA_SELECT = "id,doi,display_name,authorships,publication_year,abstract_inverted_index,primary_location,open_access"
+
+
+async def _search_openalex(query: str, max_results: int) -> list[PaperResult]:
+    params = {
+        "search":   query,
+        "per_page": min(max_results, 25),
+        "select":   _OA_SELECT,
+        "mailto":   _UNPAYWALL_EMAIL,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.get(f"{_OA_BASE}/works", params=params)
+            resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return []
+
+    results: list[PaperResult] = []
+    for work in data.get("results", []):
+        doi_url = work.get("doi") or ""
+        doi     = doi_url.replace("https://doi.org/", "") or None
+
+        title = work.get("display_name") or "(sem título)"
+        year  = work.get("publication_year")
+
+        authorships  = work.get("authorships") or []
+        author_names = [
+            a.get("author", {}).get("display_name", "")
+            for a in authorships[:3] if a.get("author")
+        ]
+        authors_str = ", ".join(filter(None, author_names))
+        if len(authorships) > 3:
+            authors_str += " et al."
+
+        inv = work.get("abstract_inverted_index") or {}
+        abstract = ""
+        if inv:
+            pos_map: dict[int, str] = {}
+            for word, positions in inv.items():
+                for p in positions:
+                    pos_map[p] = word
+            abstract = " ".join(pos_map[i] for i in sorted(pos_map))[:300]
+
+        primary  = work.get("primary_location") or {}
+        landing  = primary.get("landing_page_url") or (f"https://doi.org/{doi}" if doi else "")
+        pdf_url  = primary.get("pdf_url") or (work.get("open_access") or {}).get("oa_url")
+
+        arxiv_id = None
+        if doi and "arxiv" in doi.lower():
+            arxiv_id = doi.split("/")[-1]
+
+        if not landing:
+            continue
+
+        results.append(PaperResult(
+            title=title,
+            url=landing,
+            snippet=abstract,
+            doi=doi,
+            arxiv_id=arxiv_id,
+            authors=authors_str,
+            year=year,
+            date=str(year) if year else None,
+            has_pdf=bool(pdf_url),
+            pdf_url=pdf_url or None,
+            source="OPENALEX",
+        ))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Unpaywall — enriquecimento de PDF aberto por DOI
+# ---------------------------------------------------------------------------
+
+async def _enrich_unpaywall(results: list[PaperResult]) -> None:
+    """Acrescenta PDF de acesso aberto via Unpaywall para resultados sem PDF. In-place."""
+    needs = [r for r in results if r.doi and not r.pdf_url]
+    if not needs:
+        return
+
+    async def _fetch(r: PaperResult) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(
+                    f"https://api.unpaywall.org/v2/{r.doi}",
+                    params={"email": _UNPAYWALL_EMAIL},
+                )
+                if resp.status_code == 200:
+                    best = resp.json().get("best_oa_location") or {}
+                    pdf  = best.get("url_for_pdf") or best.get("url")
+                    if pdf:
+                        r.pdf_url = pdf
+                        r.has_pdf = True
+        except Exception:
+            pass
+
+    await asyncio.gather(*[_fetch(r) for r in needs])
+
+
+# ---------------------------------------------------------------------------
 # Função pública
 # ---------------------------------------------------------------------------
 
 async def search_papers(query: str, max_results: int = 10) -> list[PaperResult]:
-    """Busca paralela em Semantic Scholar + arXiv; deduplica por arXiv ID e DOI."""
-    ss_task = _search_semantic_scholar(query, max_results)
-    ax_task = _search_arxiv(query, max(max_results // 2, 5))
-
-    ss_res, ax_res = await asyncio.gather(ss_task, ax_task, return_exceptions=True)
+    """Busca paralela em Semantic Scholar + arXiv + OpenAlex; deduplica e enriquece com Unpaywall."""
+    ss_res, ax_res, oa_res = await asyncio.gather(
+        _search_semantic_scholar(query, max_results),
+        _search_arxiv(query, max(max_results // 2, 5)),
+        _search_openalex(query, max_results),
+        return_exceptions=True,
+    )
 
     combined: list[PaperResult] = []
-    if isinstance(ss_res, list):
-        combined.extend(ss_res)
-    if isinstance(ax_res, list):
-        combined.extend(ax_res)
+    if isinstance(ss_res, list): combined.extend(ss_res)
+    if isinstance(ax_res, list): combined.extend(ax_res)
+    if isinstance(oa_res, list): combined.extend(oa_res)
 
     seen_arxiv: set[str] = set()
     seen_doi:   set[str] = set()
@@ -154,10 +262,10 @@ async def search_papers(query: str, max_results: int = 10) -> list[PaperResult]:
             continue
         if r.doi and r.doi in seen_doi:
             continue
-        if r.arxiv_id:
-            seen_arxiv.add(r.arxiv_id)
-        if r.doi:
-            seen_doi.add(r.doi)
+        if r.arxiv_id: seen_arxiv.add(r.arxiv_id)
+        if r.doi:      seen_doi.add(r.doi)
         deduped.append(r)
 
-    return deduped[:max_results]
+    deduped = deduped[:max_results]
+    await _enrich_unpaywall(deduped)
+    return deduped

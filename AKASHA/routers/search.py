@@ -74,16 +74,23 @@ async def search(
     src_sites:  str = "",
     src_papers: str = "",
     filetype:   str = "",   # ex: "pdf", "epub" — acrescenta ao query DDG
+    mode:       str = "",   # preset: "papers" | "local" | "archive"
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
+    # Presets de modo — forçam combinação de sources
+    if mode == "papers":
+        src_papers, src_web, src_eco, src_sites = "on", "", "", ""
+    elif mode == "local":
+        src_eco, src_web, src_papers, src_sites = "on", "", "", ""
+
     # Retrocompat: mapeia ?sources=all|web|local para os novos params
     if sources and not any([src_web, src_eco, src_sites]):
         src_web   = "on" if sources in ("web",   "all") else ""
         src_eco   = "on" if sources in ("local", "all") else ""
 
     # Padrão: web + eco + sites quando nada selecionado
-    if not any([src_web, src_eco, src_sites]):
+    if not any([src_web, src_eco, src_sites, src_papers]):
         src_web = src_eco = src_sites = "on"
 
     web_results:         list[SearchResult] = []

@@ -63,6 +63,10 @@
                  {% if src_papers is defined and src_papers %}checked{% endif %} hidden>
           papers
         </label>
+        <button type="button" class="tag tag-preset" title="Buscar só em Semantic Scholar, arXiv e OpenAlex (Alt+P)"
+                onclick="var q=document.querySelector('[name=q]').value,u='/search?mode=papers'+(q?'&q='+encodeURIComponent(q):'');htmx.ajax('GET',u,{target:'#main-content',swap:'outerHTML',select:'#main-content'});history.pushState({},'',u)">
+          só artigos
+        </button>
         <select name="filetype" id="sel-filetype" class="filetype-select"
                 onchange="this.form.requestSubmit()">
           <option value=""      {% if not filetype or filetype == '' %}selected{% endif %}>todos os formatos</option>
@@ -188,6 +192,18 @@
         e.target.closest('form').requestSubmit();
       });
     })();
+  </script>
+  <script>
+    // Alt+P → preset "só artigos"
+    document.addEventListener('keydown', function(e) {
+      if (e.altKey && e.key === 'p') {
+        e.preventDefault();
+        var q = document.querySelector('[name=q]').value;
+        var u = '/search?mode=papers' + (q ? '&q=' + encodeURIComponent(q) : '');
+        htmx.ajax('GET', u, {target: '#main-content', swap: 'outerHTML', select: '#main-content'});
+        history.pushState({}, '', u);
+      }
+    });
   </script>
   {% block scripts %}{% endblock %}
 </body>
