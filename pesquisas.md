@@ -15,6 +15,7 @@
 | LLM-Augmented Search e Query Understanding                                       | AKASHA    | 2026-05-06 |
 | Arquitetura de UI para Research Workbench: NotebookLM e Referências Alternativas | Mnemosyne | 2026-05-06 |
 | Assistentes de Pesquisa Pessoal — Técnicas Além de LLMs                          | AKASHA    | 2026-05-06 |
+| Formatos eBook Kindle (AZW/AZW3/MOBI) e Leitura de Imagens em RAG               | Mnemosyne | 2026-05-06 |
 
 ---
 
@@ -7399,13 +7400,13 @@ KARPATHY, Andrej. **LLM Wiki Pattern (gist)**. GitHub, 2024. Disponível em:
 FIM DA PESQUISA — Understand-Anything (Plugin de Grafo de Conhecimento)
 ========================================================
 
-================================================================================
-PESQUISA — EXPANSÃO: Pipeline LLM para RSS Reader — Constrained Decoding, Batching e Scraping
+
+# PESQUISA — EXPANSÃO: Pipeline LLM para RSS Reader — Constrained Decoding, Batching e Scraping
 Data: 2026-05-05
 Contexto: expansão académica dos tópicos cobertos nas pesquisas de abril/2026 sobre
 KOSMOS: constrained decoding JSON, modelos 1B-3B, background analysis, scraping de
 Medium/Substack e padrões de concorrência com Ollama.
-================================================================================
+
 
 1. ANÁLISE COMPARATIVA DE MODELOS PEQUENOS PARA NER E EXTRAÇÃO ESTRUTURADA
 
@@ -7921,8 +7922,8 @@ GitHub, 2023. Disponível em: <https://github.com/zilliztech/GPTCache>. Acesso e
 FIM DA PESQUISA — Expansão: Pipeline LLM para RSS Reader
 ========================================================
 
-================================================================================
-PESQUISA — EXPANSÃO: Otimização de LLM Local e Arquitetura do LOGOS — Tópicos Aprofundados
+
+# PESQUISA — EXPANSÃO: Otimização de LLM Local e Arquitetura do LOGOS — Tópicos Aprofundados
 Data: 2026-05-05
 Contexto: expansão académica dos tópicos cobertos na pesquisa de 2026-04-26 sobre
 otimização de Ollama, scheduling, RAG, embeddings e hardware para o ecossistema.
@@ -11275,5 +11276,120 @@ ZOTERO. **Zotero 7: Zotero, redesigned**. Zotero Blog, 2024. Disponível em:
 ========================================================
 FIM DA PESQUISA — Assistentes de Pesquisa Pessoal: Técnicas Além de LLMs
 ========================================================
+
+---
+
+========================================================
+PESQUISA — Formatos eBook Kindle (AZW/AZW3/MOBI) e Leitura de Imagens em RAG
+Data: 2026-05-06
+App: Mnemosyne
+========================================================
+
+## Contexto
+
+O Mnemosyne é um sistema RAG local-first que atualmente indexa PDF, DOCX, TXT, MD e EPUB. Esta pesquisa investiga a viabilidade de adicionar suporte a formatos Kindle (AZW, AZW3, MOBI) e a imagens (OCR e Vision LLMs), com ênfase no hardware disponível: Windows 10 i5-3470 sem GPU e CachyOS com AMD Ryzen 5 4600G + RX 6600 8 GB VRAM.
+
+---
+
+## Parte 1 — Formatos Kindle: AZW, AZW3, MOBI
+
+### Contexto dos formatos
+
+Os formatos Kindle da Amazon apresentam uma hierarquia técnica que importa para a extração de texto. O MOBI (Mobipocket) é o mais antigo e tecnicamente o mais simples: encapsula HTML comprimido via PalmDOC/zlib, sem criptografia obrigatória. O AZW é essencialmente um MOBI com DRM opcional da Amazon. O AZW3 (também chamado KF8, Kindle Format 8) é o formato moderno, compatível com EPUB3 internamente: usa HTML5, CSS3, e encapsula o conteúdo como um ZIP com estrutura próxima ao EPUB. Livros adquiridos na Amazon têm DRM ativo por padrão; arquivos pessoais enviados via "Send to Kindle" ou convertidos pelo Calibre pessoalmente não têm DRM.
+
+### Biblioteca `mobi` (PyPI)
+
+A biblioteca `mobi` (disponível em pypi.org/project/mobi/) é um fork atualizado do KindleUnpack e representa a opção mais prática para integração Python. Instalação: `pip install mobi`. Não possui dependências nativas — funciona identicamente em Windows 10 e Linux/CachyOS. O fluxo de extração é simples: `mobi.extract(input_path, output_dir)`, que gera um diretório com `index.html` e as imagens embutidas. Para MOBI, o HTML gerado corresponde ao conteúdo do livro; para AZW3, a biblioteca converte internamente para EPUB (v2, v3 ou auto-detect), cujo texto pode então ser extraído com o parser já existente no Mnemosyne (`ebooklib` + `BeautifulSoup`). Para AZW (Print Replica, usado em livros técnicos com layout fixo), a saída é um PDF, que pode ser passado ao `PyPDFLoader` já existente.
+
+A principal limitação é técnica e não contornável por software: arquivos com DRM Amazon ativo resultam em saída corrompida ou erro silencioso. A solução correta é detectar a falha e retornar `DocumentLoadError` com mensagem informativa.
+
+### KindleUnpack (GitHub)
+
+O `KindleUnpack` original (github.com/kevinhendricks/KindleUnpack) é um script Python standalone mais utilizado como CLI do que como biblioteca. Produz os mesmos resultados que o `mobi` (do qual é o ancestral), mas requer mais código de integração. Sem vantagem sobre `mobi` para uso embarcado.
+
+### Calibre `ebook-convert` (CLI fallback)
+
+O Calibre inclui o utilitário `ebook-convert` que suporta conversão de e para dezenas de formatos, incluindo AZW3 → EPUB, MOBI → TXT, etc. É robusto e amplamente testado. A desvantagem é o peso (~200–400 MB de instalação) e a necessidade de chamar um processo externo via `subprocess`. Pode ser um fallback útil para casos onde `mobi` falha (ex: AZW3 muito recente), mas não é recomendado como caminho principal por introduzir dependência do sistema operacional e latência de processo.
+
+### Situação do DRM
+
+A presença de DRM é detectável antes de tentar a extração: arquivos DRM-locked têm uma seção específica no cabeçalho MOBI/AZW (`EXTH` record type 208/209 com flag `drm_size > 0`). A biblioteca `mobi` falha silenciosamente ou gera HTML sem texto nesse caso. A prática correta é capturar a exceção ou verificar o tamanho do output e retornar `UnsupportedFormatError` com mensagem clara ao usuário.
+
+### Integração com o código existente
+
+O loader existente em `core/loaders.py` já tem `_load_epub()` que usa `ebooklib` + `BeautifulSoup`. A função `_load_mobi()` pode extrair para um diretório temporário com `tempfile.TemporaryDirectory()`, detectar a saída (`.html` → BeautifulSoup, `.pdf` → PyPDFLoader, `.epub` → `_load_epub()`), e limpar automaticamente ao sair do contexto. A extensão `.azw` e `.azw3` podem ser mapeadas para o mesmo `_load_mobi()`, já que a biblioteca `mobi` aceita todos os três formatos pelo conteúdo do arquivo, não pela extensão.
+
+---
+
+## Parte 2 — Leitura de Imagens em Pipeline RAG
+
+### Abordagens principais
+
+Há duas estratégias distintas para incorporar imagens num pipeline RAG: OCR puro (extrai texto da imagem, descarta a imagem) e Vision LLMs (geram uma descrição contextual que inclui texto mais interpretação semântica). Cada uma tem trade-offs específicos para o hardware disponível.
+
+### OCR Puro: Tesseract, EasyOCR, PaddleOCR
+
+**Tesseract** (via `pytesseract`) é o motor de OCR open-source mais maduro. Acurácia típica: 70–75% em documentos impressos limpos, degradando para 40–50% em imagens ruidosas ou manuscritas. Footprint muito baixo: ~10 MB de binários + <100 MB RAM em execução. Não requer GPU. Instalação em Windows: .msi do UB Mannheim (github.com/UB-Mannheim/tesseract/wiki) + `pip install pytesseract Pillow`. Em CachyOS: `pacman -S tesseract tesseract-data-por tesseract-data-eng`. Compatível com i5-3470 sem AVX2. Velocidade: ~9.8 páginas/segundo em CPU.
+
+**EasyOCR** tem melhor acurácia que Tesseract (~79%) e lida melhor com imagens ruidosas e texto manuscrito. A desvantagem é o peso: ~500 MB de modelos + 1.8 GB RAM em execução, o que pode saturar o Windows 10 com 8 GB RAM quando outros processos estão ativos. Instalação: `pip install easyocr`.
+
+**PaddleOCR** apresenta performance SOTA em documentos estruturados (tabelas, formulários, layouts complexos): acurácia de 77–80% em benchmarks gerais, superior em documentos técnicos. Footprint: ~100–400 MB de modelos, ~950 MB RAM. A versão multimodal **PaddleOCR-VL** (0.9B e 1.5B parâmetros) é distribuída via Ollama (`ollama pull MedAIBase/PaddleOCR-VL:0.9b`) e representa o estado da arte em document parsing estruturado em 2026. Requer 2–3 GB VRAM para a versão 0.9B; na RX 6600 com ROCm seria a escolha técnica mais acertada para documentos com tabelas e gráficos.
+
+### Vision LLMs via Ollama
+
+A API do Ollama para modelos multimodais recebe imagens em base64 via campo `images` no payload do `/api/generate`. Isso significa que a integração com o código existente (que já usa `httpx.post` para `/api/generate`) é direta, sem nova infraestrutura.
+
+**moondream2** (1.9B parâmetros, ~4 GB VRAM) é o modelo vision mais leve disponível no Ollama. Produz descrições contextuais de imagens em 1–2 segundos de latência para o primeiro token na RX 6600. Limitado em OCR de texto denso, mas excelente para imagens semânticas (fotos, infográficos, capturas de interface).
+
+**LLaVA 1.6** (7B, ~7 GB VRAM) tem qualidade de OCR significativamente superior ao moondream2 e é recomendado quando a VRAM permitir. Na RX 6600 com 8 GB, deixa ~1 GB de margem.
+
+**Qwen2.5-VL** (7B) é considerado SOTA em document parsing em 2026 pela combinação de alta acurácia OCR e compreensão de layouts complexos, segundo benchmarks publicados pelo PaddleOCR Team (AMD Developer Resources, 2026). Requer 7+ GB VRAM.
+
+### Insight crítico: qualidade OCR vs. estratégia de retrieval
+
+Um benchmark publicado pela MixedBread (2025) testou o impacto da qualidade do OCR na acurácia RAG em documentação técnica. Trocar Tesseract por PaddleOCR-VL melhorou a acurácia RAG em ~5%. Implementar retrieval multimodal (image embedding via CLIP) melhorou em ~50%. A conclusão é que a estratégia de retrieval é muito mais determinante que a qualidade do OCR. Para o Mnemosyne, isso implica que implementar Tesseract com fallback Ollama cobre a maioria dos casos; a prioridade técnica seria o embedding da imagem para retrieval, não o motor OCR.
+
+### Formatos suportados
+
+Para imagens standalone (não dentro de EPUB/PDF): JPG, PNG, WebP, TIFF são aceitos por Pillow (usada pelo pytesseract e pelos modelos Ollama). O Ollama aceita JPEG e PNG via base64; conversão de outros formatos com `PIL.Image.save(BytesIO(), format='PNG')` antes de enviar é trivial.
+
+### Considerações de hardware
+
+No Windows 10 i5-3470 (8 GB RAM, sem GPU): Tesseract é viável diretamente (~0.5–2s por página). PaddleOCR-VL via CPU levaria ~30 segundos por imagem — funcional apenas em background (P3 no LOGOS). Vision LLMs maiores (LLaVA, moondream2) são inviáveis localmente; seriam chamados via API do CachyOS se os dois computadores estiverem em rede local.
+
+No CachyOS RX 6600 (16 GB RAM, 8 GB VRAM): todas as opções são viáveis. Tesseract trivial. PaddleOCR-VL 0.9B: 2–3 GB VRAM, 1–3s por imagem — recomendado. moondream2: 4 GB VRAM, viável com `keep_alive=0` entre requisições para liberar VRAM. LLaVA 1.6 ou Qwen2.5-VL (7B): 7+ GB VRAM, deixam ~1 GB de margem — usar somente se PaddleOCR-VL for insuficiente para o caso de uso.
+
+---
+
+## Fontes
+
+AMAZON. **Kindle File Format (AZW3/KF8)**. Amazon Developer Services Portal. Disponível em: <https://kdp.amazon.com/en_US/help/topic/G201606460>. Acesso em: 06 mai. 2026.
+
+AMD DEVELOPER RESOURCES. **Unlocking High-Performance Document Parsing of PaddleOCR-VL-1.5**. AMD, 2026. Disponível em: <https://www.amd.com/en/developer/resources/technical-articles/2026/unlocking-high-performance-document-parsing-of-paddleocr-vl-1-5-.html>. Acesso em: 06 mai. 2026.
+
+HENDERSON, Kevin. **KindleUnpack**. GitHub, 2023. Disponível em: <https://github.com/kevinhendricks/KindleUnpack>. Acesso em: 06 mai. 2026.
+
+KOVID GOYAL. **Calibre ebook-convert CLI**. Calibre Manual, 2025. Disponível em: <https://manual.calibre-ebook.com/generated/en/ebook-convert.html>. Acesso em: 06 mai. 2026.
+
+MARKAICODE. **Build an OCR System with Ollama Vision Models**. MarkAICode, 2025. Disponível em: <https://markaicode.com/build-ocr-system-ollama-vision-models/>. Acesso em: 06 mai. 2026.
+
+MIXEDBREAD. **The Hidden Ceiling: OCR Quality Limits RAG Performance**. MixedBread Blog, 2025. Disponível em: <https://www.mixedbread.com/blog/the-hidden-ceiling>. Acesso em: 06 mai. 2026.
+
+MOBI. **mobi — Python library for Kindle format**. PyPI, 2024. Disponível em: <https://pypi.org/project/mobi/>. Acesso em: 06 mai. 2026.
+
+MOONDREAM. **moondream — Tiny Vision Language Model**. Moondream AI, 2025. Disponível em: <https://moondream.ai/>. Acesso em: 06 mai. 2026.
+
+PADDLEOCR TEAM. **PaddleOCR-VL Usage Tutorial**. PaddleOCR Docs, 2026. Disponível em: <https://www.paddleocr.ai/latest/en/version3.x/pipeline_usage/PaddleOCR-VL.html>. Acesso em: 06 mai. 2026.
+
+SHAH, Vansh. **Comparison of OCR Techniques: EasyOCR vs KerasOCR vs PaddleOCR vs pytesseract vs OpenCV**. Medium, 2024. Disponível em: <https://medium.com/@shah.vansh132/comparison-of-text-detection-techniques-easyocr-vs-kerasocr-vs-paddleocr-vs-pytesseract-vs-opencv-44c2bc22b133>. Acesso em: 06 mai. 2026.
+
+TILDALICE. **OCR Benchmark: Tesseract, EasyOCR, PaddleOCR**. TildaLice, 2025. Disponível em: <https://tildalice.io/ocr-tesseract-easyocr-paddleocr-benchmark/>. Acesso em: 06 mai. 2026.
+
+UB MANNHEIM. **Tesseract at UB Mannheim**. GitHub, 2025. Disponível em: <https://github.com/UB-Mannheim/tesseract/wiki>. Acesso em: 06 mai. 2026.
+
+========================================================
+FIM DA PESQUISA — Formatos eBook Kindle (AZW/AZW3/MOBI) e Leitura de Imagens em RAG
+========================================================
+
 
 
