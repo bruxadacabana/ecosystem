@@ -1059,7 +1059,10 @@ class MainWindow(QMainWindow):
             path_item = QTableWidgetItem(coll.path)
             path_item.setToolTip(coll.path)
 
-            indexed = os.path.isdir(coll.persist_dir) if coll.persist_dir else False
+            effective_dir = self.config.ecosystem_chroma_dir or coll.persist_dir
+            indexed = bool(effective_dir) and os.path.isfile(
+                os.path.join(effective_dir, "chroma.sqlite3")
+            )
             state_item = QTableWidgetItem("✔ indexada" if indexed else "— sem índice")
 
             for col, item in enumerate((name_item, type_item, path_item, state_item)):
