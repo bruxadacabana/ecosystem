@@ -4,9 +4,12 @@ ecosystem_scraper.py — Extrator de conteúdo web compartilhado.
 Utilizado pelo KOSMOS e pelo AKASHA. Recebe HTML já baixado pelo chamador
 (sem I/O próprio) e retorna texto extraído no formato solicitado.
 
-Cascata: newspaper4k → trafilatura → readability-lxml → inscriptis → BeautifulSoup
+Cascata: trafilatura → newspaper4k → readability-lxml → inscriptis → BeautifulSoup
 Limiar : primeiro extrator a retornar ≥ 100 palavras vence.
 Fallback: resultado mais longo entre os parciais, ou string vazia.
+
+Trafilatura é o primeiro estágio por ter o melhor F1 documentado (0.945 vs
+0.665 do BeautifulSoup) em benchmarks de extração de artigos web.
 
 Todos os imports de extratores são opcionais — ImportError é silenciado
 para que cada app instale apenas o subconjunto que funciona no seu ambiente.
@@ -183,8 +186,8 @@ def extract(html: str, url: str, output_format: str = "markdown") -> str:
         return ""
 
     extractors = [
-        lambda: _ext_newspaper(html, url, output_format),
         lambda: _ext_trafilatura(html, url, output_format),
+        lambda: _ext_newspaper(html, url, output_format),
         lambda: _ext_readability(html, output_format),
         lambda: _ext_inscriptis(html, output_format),
         lambda: _ext_bs4(html, output_format),

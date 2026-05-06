@@ -1585,7 +1585,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 > Pré-requisito do usuário: qBittorrent rodando com Web UI ativo (porta 8080);
 > Prowlarr (9696) ou Jackett (9117) instalado e com indexadores configurados.
 
-### 6.1 — Configuração
+#### 6.1 — Configuração
 
 - [ ] Adicionar campos na tabela `settings` (migration nova):
       `qbt_host` (default: localhost), `qbt_port` (default: 8080),
@@ -1593,7 +1593,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       `jackett_host`, `jackett_port` (9117), `jackett_apikey`
 - [ ] Adicionar estes campos à página `/settings` existente
 
-### 6.2 — Cliente qBittorrent
+#### 6.2 — Cliente qBittorrent
 
 - [ ] `services/qbt_client.py` — usa `httpx` direto (sem dep qbittorrent-api):
       - `_get_session()` → faz POST /auth/login e retorna cookie SID
@@ -1609,7 +1609,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       - `async def delete_torrent(info_hash: str, delete_files: bool = False) -> None`
       - Raises `QbtOfflineError(Exception)` se inacessível
 
-### 6.3 — Busca de Torrents (Prowlarr + Jackett)
+#### 6.3 — Busca de Torrents (Prowlarr + Jackett)
 
 - [ ] `services/torrent_search.py`:
       - `async def search_prowlarr(query, apikey, host, port, categories="") -> list[TorrentResult]`
@@ -1624,7 +1624,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       - Dataclass `TorrentResult`: title, seeders, leechers, size_bytes, size_fmt,
         magnet_url, torrent_url, indexer, pub_date
 
-### 6.4 — Router
+#### 6.4 — Router
 
 - [ ] `routers/torrents.py`:
       - `GET /torrents` → página principal (formulário de busca + ativos + histórico)
@@ -1635,7 +1635,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       - `POST /torrents/{hash}/pause`, `/resume`, `/delete`
       - Todos retornam banner gracioso se `QbtOfflineError` ou `TorrentSearchOfflineError`
 
-### 6.5 — Templates
+#### 6.5 — Templates
 
 - [ ] `templates/torrents.html` — página principal:
       - Formulário de busca (campo q + select de categoria)
@@ -1646,7 +1646,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 - [ ] `templates/_torrent_results.html` — fragmento: cards de resultado com título,
       seeders/leechers, tamanho, indexer, botão "↓ baixar"
 
-### 6.6 — CSS e nav
+#### 6.6 — CSS e nav
 
 - [ ] Adicionar estilos `.torrent-card`, `.torrent-table`, `.seed-count`, `.leech-count`
       a `static/style.css`
@@ -1682,7 +1682,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
-### Fase 7.5 — Lista negra de domínios
+#### Fase 7.5 — Lista negra de domínios
 
 > Entrega: domínios bloqueados nunca aparecem nos resultados de busca web.
 
@@ -2231,7 +2231,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
      - `dt_avg ≥ 2s` → delay = 2× dt_avg, reduzir concorrência para 2
   4. Em 429 (Too Many Requests): backoff exponencial `2^n × delay_base + jitter`
 
-- [ ] AKASHA: Trafilatura como primeiro estágio de extração (substituição em ecosystem_scraper.py):
+- [x] AKASHA: Trafilatura como primeiro estágio de extração (substituição em ecosystem_scraper.py):
   **Motivo:** idêntico ao KOSMOS — F1=0.945 do Trafilatura vs F1=0.665 do BeautifulSoup.
   Conteúdo mais limpo no índice FTS5 do AKASHA = busca mais precisa, menos falsos positivos.
   Ver item equivalente em PENDÊNCIAS — KOSMOS para implementação detalhada (compartilham
