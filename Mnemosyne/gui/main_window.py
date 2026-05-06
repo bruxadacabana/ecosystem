@@ -243,6 +243,12 @@ class SetupDialog(QDialog):
         opts_layout.addLayout(node_type_model_row)
         self.node_type_check.toggled.connect(self.node_type_model_edit.setEnabled)
         self.node_type_model_edit.setEnabled(current.node_type_classification)
+        image_ocr_row = QHBoxLayout()
+        image_ocr_row.addWidget(QLabel("OCR de imagens (modelo Ollama):"))
+        self.image_ocr_model_edit = QLineEdit(current.image_ocr_model or "")
+        self.image_ocr_model_edit.setPlaceholderText("ex: moondream2 (vazio = Tesseract local)")
+        image_ocr_row.addWidget(self.image_ocr_model_edit, 1)
+        opts_layout.addLayout(image_ocr_row)
         layout.addWidget(opts_group)
 
         btns = QDialogButtonBox(
@@ -279,8 +285,8 @@ class SetupDialog(QDialog):
         if row >= 0:
             self.extra_dirs_list.takeItem(row)
 
-    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None, bool, str]:
-        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model)."""
+    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None, bool, str, str]:
+        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, image_ocr_model)."""
         extra_dirs = [self.extra_dirs_list.item(i).text()
                       for i in range(self.extra_dirs_list.count())]
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
@@ -296,6 +302,7 @@ class SetupDialog(QDialog):
             256 if self.matryoshka_check.isChecked() else None,
             self.node_type_check.isChecked(),
             self.node_type_model_edit.text().strip(),
+            self.image_ocr_model_edit.text().strip(),
         )
 
 
@@ -1225,8 +1232,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -1234,8 +1241,8 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             self._log_event("Configuração atualizada.")
@@ -1249,6 +1256,7 @@ class MainWindow(QMainWindow):
         embedding_truncate_dim: int | None = None,
         node_type_classification: bool = False,
         node_type_model: str = "",
+        image_ocr_model: str = "",
     ) -> None:
         """Aplica os valores do SetupDialog ao config e guarda."""
         if watched_dir:
@@ -1265,6 +1273,7 @@ class MainWindow(QMainWindow):
         self.config.embedding_truncate_dim = embedding_truncate_dim
         self.config.node_type_classification = node_type_classification
         self.config.node_type_model = node_type_model
+        self.config.image_ocr_model = image_ocr_model
         save_config(self.config)
         try:
             from pathlib import Path as _Path

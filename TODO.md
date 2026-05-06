@@ -4750,7 +4750,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `DocumentLoadError` com mensagem "arquivo com DRM — não é possível indexar". Dependência:
   `pip install mobi`.
 
-- [ ] **Suporte a imagens (`.jpg`, `.jpeg`, `.png`, `.webp`) em `core/loaders.py`** — adicionar
+- [x] **Suporte a imagens (`.jpg`, `.jpeg`, `.png`, `.webp`) em `core/loaders.py`** — adicionar
   função `_load_image()` com duas camadas: (1) Tesseract via `pytesseract` + `Pillow` como
   caminho principal (rápido, sem GPU, compatível com i5-3470); (2) fallback para Ollama vision
   (`/api/generate` com `images: [base64]`) usando o modelo configurado em `config.image_ocr_model`

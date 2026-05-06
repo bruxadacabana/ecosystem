@@ -19,7 +19,10 @@ from .errors import DocumentLoadError, FrontmatterParseError, UnsupportedFormatE
 
 
 _SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".epub",
-                         ".mobi", ".azw", ".azw3"}
+                         ".mobi", ".azw", ".azw3",
+                         ".jpg", ".jpeg", ".png", ".webp"}
+
+_IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 
 # Cobre os 4 formatos de wikilink do Obsidian:
 # [[nota]], [[nota|alias]], [[nota#secção]], [[nota#secção|alias]]
@@ -32,10 +35,12 @@ _OBSIDIAN_IGNORE = {".obsidian", "templates", "attachments", ".trash"}
 def load_documents(
     directory: str,
     source_type: str = "library",
+    ocr_model: str = "",
 ) -> tuple[list[Document], list[DocumentLoadError]]:
     """
     Carrega todos os documentos suportados de um diretório (recursivo).
     source_type "vault" ativa o loader Obsidian para arquivos .md.
+    ocr_model: modelo Ollama vision para fallback OCR de imagens (vazio = Tesseract only).
 
     Retorna (documentos_carregados, erros_por_arquivo).
     """
@@ -57,7 +62,7 @@ def load_documents(
                 continue
             file_path = os.path.join(root, filename)
             try:
-                docs = _load_file(file_path, source_type=source_type)
+                docs = _load_file(file_path, source_type=source_type, ocr_model=ocr_model)
                 documents.extend(docs)
             except DocumentLoadError as exc:
                 errors.append(exc)
@@ -66,10 +71,13 @@ def load_documents(
 
 
 def load_single_file(
-    file_path: str, source_type: str = "library"
+    file_path: str,
+    source_type: str = "library",
+    ocr_model: str = "",
 ) -> list[Document]:
     """
     Carrega um único arquivo.
+    ocr_model: modelo Ollama vision para fallback OCR de imagens (vazio = Tesseract only).
 
     Raises:
         FileNotFoundError: se o arquivo não existir.
@@ -78,12 +86,18 @@ def load_single_file(
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Arquivo não encontrado: {file_path}")
-    return _load_file(file_path, source_type=source_type)
+    return _load_file(file_path, source_type=source_type, ocr_model=ocr_model)
 
 
-def _load_file(file_path: str, source_type: str = "library") -> list[Document]:
+def _load_file(
+    file_path: str,
+    source_type: str = "library",
+    ocr_model: str = "",
+) -> list[Document]:
     """
     Despacha para o loader correto e define source_type no metadata.
+
+    ocr_model: modelo Ollama vision para fallback OCR de imagens (vazio = Tesseract only).
 
     Raises:
         UnsupportedFormatError: se a extensão não for suportada.
@@ -105,6 +119,8 @@ def _load_file(file_path: str, source_type: str = "library") -> list[Document]:
             docs = _load_epub(file_path)
         elif ext in (".mobi", ".azw", ".azw3"):
             docs = _load_mobi(file_path)
+        elif ext in _IMAGE_EXTENSIONS:
+            docs = _load_image(file_path, ocr_model=ocr_model)
         else:
             raise UnsupportedFormatError(file_path)
     except (DocumentLoadError, UnsupportedFormatError):
@@ -248,6 +264,90 @@ def _split_by_heading(text: str, fallback_title: str) -> list[tuple[str, str]]:
         sections.append((current_title, "\n".join(current_lines)))
 
     return sections if sections else [(fallback_title, text)]
+
+
+def _load_image(file_path: str, ocr_model: str = "") -> list[Document]:
+    """
+    Extrai texto de uma imagem (JPG, PNG, WebP) para indexação RAG.
+
+    Estratégia em duas camadas:
+      1. Tesseract via pytesseract (rápido, sem GPU, <100 MB RAM) — caminho principal.
+      2. Fallback para Ollama vision via /api/generate com imagem em base64,
+         usado quando Tesseract falha ou quando ocr_model está configurado.
+
+    O texto extraído vira um Document com metadata ocr_engine informando qual
+    camada foi usada ("tesseract" ou "ollama:{model}").
+
+    Raises:
+        DocumentLoadError: se ambas as camadas falharem ou nenhuma estiver disponível.
+    """
+    import base64
+    from pathlib import Path as _Path
+
+    title = _Path(file_path).stem
+    text = ""
+    engine = ""
+
+    # Camada 1: Tesseract
+    try:
+        import pytesseract  # type: ignore[import]
+        from PIL import Image  # type: ignore[import]
+
+        img = Image.open(file_path)
+        # Converter para RGB se necessário (PNG com canal alfa não aceite pelo Tesseract)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        text = pytesseract.image_to_string(img, lang="por+eng")
+        engine = "tesseract"
+    except ImportError:
+        pass  # pytesseract/Pillow não instalado — tentar Ollama
+    except Exception:
+        pass  # Tesseract falhou na imagem específica — tentar Ollama
+
+    # Camada 2: Ollama vision — usado se Tesseract falhou OU se ocr_model configurado
+    if (not text.strip() or ocr_model) and ocr_model:
+        try:
+            import httpx
+            from .ollama_client import _BASE_URL as _OLLAMA_BASE
+
+            with open(file_path, "rb") as fh:
+                img_b64 = base64.b64encode(fh.read()).decode()
+
+            resp = httpx.post(
+                f"{_OLLAMA_BASE}/api/generate",
+                json={
+                    "model": ocr_model,
+                    "prompt": (
+                        "Extraia TODO o texto visível nesta imagem. "
+                        "Se houver tabelas, preserva a estrutura em Markdown. "
+                        "Se não houver texto, descreve o conteúdo da imagem em português."
+                    ),
+                    "images": [img_b64],
+                    "stream": False,
+                    "temperature": 0,
+                    "keep_alive": "10m",
+                },
+                timeout=120.0,
+            )
+            resp.raise_for_status()
+            ollama_text = resp.json().get("response", "").strip()
+            if ollama_text:
+                text = ollama_text
+                engine = f"ollama:{ocr_model}"
+        except Exception:
+            pass
+
+    if not text.strip():
+        raise DocumentLoadError(
+            file_path,
+            "Não foi possível extrair texto da imagem. "
+            "Verifique se pytesseract está instalado ou configure image_ocr_model.",
+        )
+
+    return [Document(
+        page_content=text.strip(),
+        metadata={"source": file_path, "title": title, "ocr_engine": engine},
+    )]
 
 
 def _load_mobi(file_path: str) -> list[Document]:

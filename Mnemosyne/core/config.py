@@ -77,6 +77,9 @@ _DEFAULTS: dict = {
     "reranking_top_n": 6,
     "iterative_retrieval_enabled": False,
     "embedding_truncate_dim": None,
+    "node_type_classification": False,
+    "node_type_model": "",
+    "image_ocr_model": "",
 }
 
 
@@ -101,6 +104,9 @@ class AppConfig:
     reranking_top_n: int = 6
     iterative_retrieval_enabled: bool = False
     embedding_truncate_dim: int | None = None
+    node_type_classification: bool = False
+    node_type_model: str = ""
+    image_ocr_model: str = ""
     # Populados em runtime a partir do ecosystem.json — nunca persistidos
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""
@@ -310,6 +316,9 @@ def load_config() -> AppConfig:
         reranking_top_n=int(data.get("reranking_top_n", 6)),
         iterative_retrieval_enabled=bool(data.get("iterative_retrieval_enabled", False)),
         embedding_truncate_dim=int(td) if (td := data.get("embedding_truncate_dim")) else None,
+        node_type_classification=bool(data.get("node_type_classification", False)),
+        node_type_model=str(data.get("node_type_model", "")),
+        image_ocr_model=str(data.get("image_ocr_model", "")),
     )
     config = _apply_logos_recommendations(config, _saved_keys)
 
@@ -343,6 +352,9 @@ def save_config(config: AppConfig) -> None:
         "reranking_top_n": config.reranking_top_n,
         "iterative_retrieval_enabled": config.iterative_retrieval_enabled,
         "embedding_truncate_dim": config.embedding_truncate_dim,
+        "node_type_classification": config.node_type_classification,
+        "node_type_model": config.node_type_model,
+        "image_ocr_model": config.image_ocr_model,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

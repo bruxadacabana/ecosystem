@@ -551,11 +551,13 @@ def create_vectorstore(
         IndexBuildError: se a criação do Chroma falhar.
     """
     source_type = config.collection_type  # "vault" or "library"
-    documents, _ = load_documents(config.watched_dir, source_type=source_type)
+    documents, _ = load_documents(config.watched_dir, source_type=source_type,
+                                   ocr_model=config.image_ocr_model)
 
     for extra_dir in config.extra_dirs:
         if os.path.isdir(extra_dir):
-            extra_docs, _ = load_documents(extra_dir, source_type="library")
+            extra_docs, _ = load_documents(extra_dir, source_type="library",
+                                           ocr_model=config.image_ocr_model)
             documents.extend(extra_docs)
 
     if not documents:
@@ -622,7 +624,8 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
         DocumentLoadError: se o arquivo não puder ser carregado.
         IndexBuildError: se a atualização do Chroma falhar.
     """
-    docs = load_single_file(file_path, source_type=config.collection_type)
+    docs = load_single_file(file_path, source_type=config.collection_type,
+                            ocr_model=config.image_ocr_model)
     if not docs:
         return load_vectorstore(config)
 
@@ -718,7 +721,8 @@ def update_vectorstore(
     # Modificados: indexação incremental — só re-embeda chunks que mudaram.
     for file_path, source_type in modified_files:
         try:
-            docs = load_single_file(file_path, source_type=source_type)
+            docs = load_single_file(file_path, source_type=source_type,
+                                    ocr_model=config.image_ocr_model)
             splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
             level = _incremental_update(
@@ -741,7 +745,8 @@ def update_vectorstore(
     # Novos
     for file_path, source_type in new_files:
         try:
-            docs = load_single_file(file_path, source_type=source_type)
+            docs = load_single_file(file_path, source_type=source_type,
+                                    ocr_model=config.image_ocr_model)
             splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
             _incremental_update(
