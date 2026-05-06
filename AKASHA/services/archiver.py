@@ -99,7 +99,7 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         timeout=30,
         headers={"User-Agent": "Mozilla/5.0 (compatible; AKASHA-archiver/1.0)"},
     ) as client:
-        # Tenta cada URL candidata em ordem (relevante para Medium: freedium → scribe → original)
+        # 1. Tenta proxies HTML em ordem (Medium: freedium → original)
         html = ""
         last_exc: Exception | None = None
         for fetch_url in _get_fetch_url_fallbacks(url):
@@ -111,16 +111,24 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
             except Exception as exc:
                 last_exc = exc
                 continue
-        if not html:
-            raise last_exc or httpx.RequestError(f"Nenhum proxy respondeu para {url}")
 
-        metadata = trafilatura.extract_metadata(html, default_url=url)
-        title:    str = (metadata and metadata.title)                      or _url_fallback_title(url)
-        author:   str = (metadata and metadata.author)                     or ""
-        language: str = (metadata and getattr(metadata, "language", ""))   or ""
+        # 2. Extrai metadados e conteúdo do HTML obtido (se houver)
+        title:    str = _url_fallback_title(url)
+        author:   str = ""
+        language: str = ""
+        content:  str = ""
 
-        content: str = _cascade_extract(html, url, output_format="markdown")
+        if html:
+            metadata  = trafilatura.extract_metadata(html, default_url=url)
+            title     = (metadata and metadata.title)                    or title
+            author    = (metadata and metadata.author)                   or ""
+            language  = (metadata and getattr(metadata, "language", "")) or ""
+            content   = _cascade_extract(html, url, output_format="markdown")
 
+        # 3. Jina Reader como fallback — acionado quando:
+        #    (a) todos os proxies falharam (content == "") OU
+        #    (b) conteúdo extraído insuficiente (< 100 palavras)
+        #    Colocado ANTES de lançar exceção para dar chance ao Jina mesmo sem HTML.
         if len(content.split()) < 100:
             try:
                 jina_resp = await client.get(
@@ -132,8 +140,18 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
                 jina_text = jina_resp.text.strip()
                 if len(jina_text.split()) > len(content.split()):
                     content = jina_text
+                    # Jina retorna "Title: ..." nas primeiras linhas quando extrai com sucesso
+                    if title == _url_fallback_title(url):
+                        for line in jina_text.splitlines()[:6]:
+                            if line.startswith("Title:"):
+                                title = line.removeprefix("Title:").strip()
+                                break
             except Exception:
-                pass  # Jina indisponível — mantém resultado local
+                pass  # Jina indisponível — mantém resultado parcial
+
+        # 4. Só levanta se não obtivemos nenhum conteúdo de nenhuma fonte
+        if not content and not html:
+            raise last_exc or httpx.RequestError(f"Nenhuma fonte retornou conteúdo para {url}")
 
     words = content.split()
     if max_words > 0 and len(words) > max_words:
