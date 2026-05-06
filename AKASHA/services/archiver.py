@@ -50,6 +50,35 @@ def _url_fallback_title(url: str) -> str:
     return parsed.netloc
 
 
+# Domínios cujos conteúdos são considerados artigos científicos
+_SCIENTIFIC_DOMAINS: frozenset[str] = frozenset({
+    "arxiv.org", "ar5iv.org",
+    "pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov", "pmc.ncbi.nlm.nih.gov",
+    "doi.org", "semanticscholar.org",
+    "biorxiv.org", "medrxiv.org", "chemrxiv.org", "ssrn.com", "papers.ssrn.com",
+    "plos.org", "journals.plos.org", "plosone.org",
+    "nature.com", "science.org", "cell.com",
+    "sciencedirect.com", "springer.com", "link.springer.com",
+    "wiley.com", "onlinelibrary.wiley.com",
+    "acs.org", "pubs.acs.org",
+    "thelancet.com", "bmj.com", "nejm.org", "jama.jamanetwork.com",
+    "academic.oup.com", "dl.acm.org", "ieeexplore.ieee.org",
+    "researchgate.net", "zenodo.org",
+    "scholar.google.com",
+})
+
+
+def _is_scientific_url(url: str) -> bool:
+    """Retorna True se a URL pertence a um domínio de publicação científica."""
+    try:
+        hostname = (urlparse(url).hostname or "").removeprefix("www.").lower()
+        if hostname in _SCIENTIFIC_DOMAINS:
+            return True
+        return any(hostname.endswith("." + d) for d in _SCIENTIFIC_DOMAINS)
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Tipos
 # ---------------------------------------------------------------------------
@@ -197,7 +226,7 @@ async def archive_pdf(
         f'url: {source_url}\n'
         f'language: \n'
         f'word_count: {len(content_md.split())}\n'
-        f'type: paper\n'
+        f'type: scientific\n'
     )
     if doi:
         frontmatter += f'doi: "{_yaml_str(doi)}"\n'
@@ -249,6 +278,7 @@ async def archive_url(
     now      = datetime.now()
     date_str = now.strftime("%Y-%m-%d %H:%M")
     domain   = urlparse(url).netloc
+    type_line = "type: scientific\n" if _is_scientific_url(url) else ""
 
     body = (
         f'---\n'
@@ -259,6 +289,7 @@ async def archive_url(
         f'url: {url}\n'
         f'language: {page.language}\n'
         f'word_count: {page.word_count}\n'
+        f'{type_line}'
         f'tags: {_yaml_tags(tags)}\n'
         f'notes: "{_yaml_str(notes)}"\n'
         f'---\n\n'

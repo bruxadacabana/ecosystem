@@ -4380,7 +4380,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   ou por presença de seções `Abstract`, `References`/`Referências`, `DOI:` no corpo.
 
 #### AKASHA
-- [ ] **[P4] Marcar artigos científicos no frontmatter ao arquivar (`services/crawler.py` ou
+- [x] **[P4] Marcar artigos científicos no frontmatter ao arquivar (`services/crawler.py` ou
   `routers/crawler.py`)** — quando o AKASHA fizer download via arxiv (`aioarxiv`) ou de URL
   com indicadores científicos (domínio `arxiv.org`, `pubmed`, `doi.org`, `scholar`, extensão
   `.pdf` com metadados de autor/abstract), adicionar `type: scientific` no frontmatter YAML
