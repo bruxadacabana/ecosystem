@@ -4717,3 +4717,22 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   transcrições (diferente do openai-whisper que recarregava por chamada). Armazenar
   como atributo de classe ou singleton de módulo. Economiza 5–15s de carregamento
   de modelo a cada nova transcrição.
+### Infraestrutura: config por dispositivo e sync do ecossistema | 2026-05-06
+> Contexto: ecosystem.json é sincronizado via Proton Drive entre máquinas, mas contém
+> paths absolutos que diferem entre Windows e Linux. A solução é separar preferências
+> (compartilhadas) de paths (locais por máquina).
+
+#### HUB
+- [ ] **Dividir ecosystem.json em duas camadas: compartilhada e local por máquina**
+  Separar o `ecosystem.json` atual em dois arquivos:
+  - `ecosystem.json` — preferências e flags (sem paths absolutos); sincronizado via Proton Drive entre máquinas.
+  - `ecosystem.local.json` — paths absolutos específicos da máquina (ex: `kosmos_archive`, `hermes_output`, `mnemosyne_watched`); **não sincronizado**, fica só na máquina local.
+  Na leitura de configuração, mesclar os dois: `.local.json` tem precedência sobre `.json`.
+  Adicionar `ecosystem.local.json` ao `.gitignore` e ao `.stignore` do Syncthing.
+  Arquivo `.local.json` de exemplo (com paths comentados) pode ser versionado para documentação.
+
+- [ ] **Migrar sync de SQLite (banco do HUB e bancos dos apps) para Syncthing**
+  O Proton Drive conflita com SQLite (lock de arquivo / WAL). Usar Syncthing com `.stignore`
+  excluindo `*.db`, `*.db-wal`, `*.db-shm`. Syncthing cuida de Markdown, JSON de config,
+  pesquisas.md, TODO.md e outros arquivos de texto. Bancos ficam locais por máquina.
+  Instalar como serviço ou daemon; configurar par de dispositivos (Windows ↔ CachyOS).
