@@ -24,6 +24,14 @@ try:
 except ImportError:
     _CHROMA_AVAILABLE = False
 
+_chroma_clients: dict[str, object] = {}
+
+
+def _get_chroma_client(index_path: str) -> object:
+    if index_path not in _chroma_clients:
+        _chroma_clients[index_path] = _chromadb.PersistentClient(path=index_path)
+    return _chroma_clients[index_path]
+
 
 # ---------------------------------------------------------------------------
 # Frontmatter (YAML simples: chave: valor)
@@ -218,7 +226,7 @@ async def _search_chroma(query: str) -> list[SearchResult]:
     results: list[SearchResult] = []
     try:
         for index_path in config.mnemosyne_indices:
-            client = _chromadb.PersistentClient(path=index_path)
+            client = _get_chroma_client(index_path)
             for col in client.list_collections():
                 collection = client.get_collection(col.name)
                 qr = collection.query(query_texts=[query], n_results=5)

@@ -2126,7 +2126,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 ### Busca Local Avançada — Pendências Técnicas
 
 
-- [ ] Bug: `_search_chroma()` cria novo `PersistentClient` a cada query — cachear como singleton:
+- [x] Bug: `_search_chroma()` cria novo `PersistentClient` a cada query — cachear como singleton:
   **Motivo:** `AKASHA/services/local_search.py` linha ~247 faz
   `client = _chromadb.PersistentClient(path=index_path)` dentro da função de busca.
   Abrir um PersistentClient abre o SQLite subjacente do ChromaDB e carrega metadados — custo
