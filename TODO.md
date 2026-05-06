@@ -4102,7 +4102,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Chunking semântico continua desativado (correto — benchmarks mostram fixed-size
   superior para RAG de propósito geral).
 
-- [ ] **FlashRank reranking no `prepare_ask()` — pipeline dois estágios**
+- [x] **FlashRank reranking no `prepare_ask()` — pipeline dois estágios**
   (`core/rag.py` ou `core/indexer.py`). Substituir recuperador único por:
   (1) recuperar top-30 por híbrido BM25+cosine; (2) re-rankear com
   `FlashrankRerank(model="ms-marco-MultiBERT-L-12", top_n=5)` de
@@ -4111,7 +4111,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   recebe os 5 documentos genuinamente mais relevantes em vez dos 5 melhores por
   similaridade vetorial pura.
 
-- [ ] **Deep Research Mode — integração Mnemosyne + AKASHA**
+- [x] **Deep Research Mode — integração Mnemosyne + AKASHA**
   (novo `core/akasha_client.py` + `core/session_indexer.py` + `gui/workers.py`).
   Quando corpus local insuficiente para responder a query, expandir para web via
   AKASHA: (A) chamar `GET /search/json?q=&max=5` do AKASHA, (B) buscar conteúdo
@@ -4120,7 +4120,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   de fonte (local vs web) na resposta. Pré-requisito: endpoints `/search/json` e
   `/fetch` no AKASHA (ver itens AKASHA abaixo). ~450 linhas no total.
 
-- [ ] **Notebook Guide — sumário + perguntas sugeridas ao indexar documento**
+- [x] **Notebook Guide — sumário + perguntas sugeridas ao indexar documento**
   (`core/indexer.py`, `gui/` componente de detalhe de documento). Ao finalizar
   indexação de um arquivo, chamar LLM para gerar: (a) sumário de 3–5 frases,
   (b) 3–5 perguntas que o usuário poderia fazer sobre o documento. Armazenar em
@@ -4128,7 +4128,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   documento no momento da indexação; resultado cacheado. Inspirado no NotebookLM
   "Notebook Guide".
 
-- [ ] **Mermaid como MVP do Mind Map (abrir no browser)**
+- [x] **Mermaid como MVP do Mind Map (abrir no browser)**
   (`core/mindmap.py`, botão na UI). LLM gera JSON estruturado de temas → converter
   para sintaxe Mermaid → salvar como `.md` → abrir via `webbrowser.open()`. Sem
   dependência de Qt graphics ou graphviz. Compatível com Obsidian. Graphviz/QGraphicsView
@@ -4136,20 +4136,21 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   NotebookLM — o TODO tem "mind map" mas sem especificar o caminho de implementação.
 
 - [ ] **Relatório de Pesquisa estruturado em 8 seções**
+  > Parcialmente implementado: `core/report.py` existe com 6 seções (faltam "Análise por fonte" e "Convergências/divergências"). Expandir para 8 conforme especificado.
   (`core/report.py`). Implementar relatório Map-Reduce: (1) Título/escopo, (2) Sumário
   executivo, (3) Temas principais, (4) Análise por fonte, (5) Convergências e
   divergências entre fontes, (6) Lacunas identificadas, (7) Recomendações,
   (8) Referências. Abordagem: LLM por seção (Map) → síntese final (Reduce).
   Export para Markdown; PDF opcional via `pandoc` ou `weasyprint`.
 
-- [ ] **Knowledge Reflection — gerar e indexar artefatos de síntese durante indexação**
+- [x] **Knowledge Reflection — gerar e indexar artefatos de síntese durante indexação**
   (`core/indexer.py`). Após indexar chunks de cada documento, chamar LLM para gerar
   uma "reflexão" — síntese dos top-5 chunks. Armazenar no ChromaDB com
   `metadata["type"]="reflection"` e `metadata["boost"]=1.5`. Durante retrieval em
   `prepare_ask()`, aplicar score boost para documentos de reflexão. Meta-reflexões
   (síntese de 3+ reflexões sobre o mesmo tema) recebem boost 1.8×.
 
-- [ ] **`index.json` leve por coleção — metadados sempre em memória**
+- [x] **`index.json` leve por coleção — metadados sempre em memória**
   (`core/indexer.py`, `core/config.py`). Ao lado do ChromaDB, manter
   `{persist_dir}/index.json` com: `name`, `path`, `total_chunks`, `last_indexed`,
   `file_types` (contagens), `summary` (1 frase gerada por LLM). Carregar no startup
@@ -4183,7 +4184,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   IndexWorker da máquina Windows. Combinado com `QThread.Priority.IdlePriority`.
   Workaround documentado até correção oficial no Ollama.
 
-- [ ] **Detecção dinâmica de modelos Ollama no startup (`GET /api/tags`)**
+- [x] **Detecção dinâmica de modelos Ollama no startup (`GET /api/tags`)**
   (`gui/main_window.py`, SetupDialog). Ao iniciar, chamar
   `GET http://localhost:11434/api/tags` (ou via LOGOS se disponível) para listar
   modelos locais. Filtrar em candidatos de embedding (nomic-embed-text*, bge-m3,
@@ -4192,6 +4193,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   não estiver rodando: mostrar aviso e desabilitar features de IA graciosamente.
 
 - [ ] **`session_memory.json` — histórico de queries e documentos úteis por coleção**
+  > Parcialmente implementado: `core/memory.py` existe mas armazena apenas histórico de conversa (mensagens user/assistant), não rastreia documentos recuperados nem utilidade. Implementar o rastreamento de documentos e score de relevância conforme especificado.
   (`core/memory.py` ou novo `core/session_memory.py`). Armazenar por coleção as
   últimas N queries, quais documentos foram recuperados e se a resposta foi útil.
   Mostrar na UI "Você perguntou algo parecido antes…". Campos por documento:
@@ -4211,25 +4213,27 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### AKASHA
 - [ ] **Endpoint `GET /fetch?url=` — busca transiente sem salvar em disco**
+  > Parcialmente implementado: existe `POST /fetch` (com body JSON), não `GET /fetch?url=`. Adicionar a variante GET com query param para compatibilidade com clientes simples.
   (`routers/search.py` ou novo `routers/fetch.py`). Buscar e extrair conteúdo de
   uma URL como Markdown e retornar em JSON sem salvar no archive. Equivale ao
   `archiver.py` sem o `dest_path.write_text()`. ~30 linhas. Necessário para o
   Deep Research Mode do Mnemosyne e para qualquer consumidor programático que
   precise do conteúdo sem poluir o archive.
 
-- [ ] **Endpoint `GET /search/json?q=&max=` — busca retornando JSON estruturado**
+- [x] **Endpoint `GET /search/json?q=&max=` — busca retornando JSON estruturado**
   (`routers/search.py`). A rota `/search` atual retorna HTML (Jinja2). Adicionar
   rota `/search/json` que retorna `[{title, url, snippet, source, date}]` como JSON,
   reutilizando a lógica existente de `search_web()` e `search_local()`. ~20 linhas.
   Necessário para integração com Mnemosyne (Deep Research Mode) e KOSMOS.
 
-- [ ] **Propagação de tags do feed para o archive ao auto-arquivar do KOSMOS**
+- [x] **Propagação de tags do feed para o archive ao auto-arquivar do KOSMOS**
   (`routers/search.py`, endpoint `POST /archive`). Ao receber requisição de
   auto-arquivamento do KOSMOS, aceitar campo `tags: list[str]` no body. KOSMOS
   deve incluir a categoria do feed como tag. Armazenar no frontmatter do arquivo
   Markdown arquivado. Complemento ao item `POST /archive` já rastreado no TODO.
 
 - [ ] **URL normalization antes de inserir no crawl_pages e archive**
+  > Parcialmente implementado: `services/crawler.py` já normaliza URLs (lowercase, remove trailing slash). `services/archiver.py` não normaliza — é onde a deduplicação por tracking params faz mais diferença. Implementar em `archiver.py` com remoção de `utm_*`, `fbclid`, `gclid`, `ref`, `source`.
   (`services/archiver.py`, `services/crawler.py`). Normalizar URL com
   `pip install url-normalize` antes de inserir: lowercase scheme+host, remover
   default ports, remover parâmetros de rastreamento (`utm_*`, `fbclid`, `gclid`,
@@ -4260,7 +4264,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `status = 'in_progress'` e `analysis_started_at < now - 5 minutes`. Evita artigos
   eternamente presos em `in_progress` após kill do processo ou crash.
 
-- [ ] **Deduplicação de análise por content hash (SHA-256 de texto normalizado)**
+- [x] **Deduplicação de análise por content hash (SHA-256 de texto normalizado)**
   (`app/core/analyzer.py`, `app/utils/db.py`). Antes de chamar LLM para análise,
   calcular SHA-256 do conteúdo normalizado (minúsculas, sem pontuação/espaços extras).
   Checar se outro artigo tem o mesmo hash — se sim, copiar campos `ai_*` existentes
@@ -4300,6 +4304,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### LOGOS / HUB
 - [ ] **`OLLAMA_GPU_OVERHEAD=0` no perfil RX 6600 com ROCm**
+  > Parcialmente implementado: `OLLAMA_GPU_OVERHEAD` já está definido em `logos.rs` mas com valor 524288000 (524MB), não 0. Avaliar se o OOM handler do ROCm é suficientemente confiável para usar 0, ou se o valor atual é intencional.
   (`HUB/src-tauri/src/logos.rs` ou arquivo de configuração de perfil de hardware).
   Com ROCm na RX 6600, `OLLAMA_GPU_OVERHEAD=524288000` (500MB padrão) pode fazer
   o Ollama recusar carregar modelos que caberiam na VRAM. Definir
@@ -4307,6 +4312,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   atuar em vez da estimativa conservadora do Ollama.
 
 - [ ] **Política de bateria em 3 níveis no LOGOS (Normal / Economia / Crítico)**
+  > Parcialmente implementado: lógica de bateria existe mas é binária (AC vs bateria) — sem distinção entre Economia e Crítico. Expandir para 3 níveis com os thresholds documentados.
   (`HUB/src-tauri/src/logos.rs`, módulo de monitoramento de bateria). O TODO tem
   suspensão de P3 em bateria, mas a pesquisa documenta 3 níveis:
   Normal (AC ou bateria >80%): P3 ativo, comportamento padrão.
@@ -4335,6 +4341,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   do throttling do driver a 95°C.
 
 - [ ] **`num_gpu` dinâmico por requisição no perfil MX150 (baseado em tamanho do contexto)**
+  > Parcialmente implementado: `num_gpu` está definido no perfil MX150 mas como valor estático. Adicionar lógica de seleção por tamanho de contexto conforme documentado.
   (`HUB/src-tauri/src/logos.rs`, dispatch de requisições P1). Para o laptop MX150
   (2GB VRAM), ajustar `num_gpu` dinamicamente: `num_gpu=16–20` para contextos curtos
   (<2048 tokens), `num_gpu=10–12` para contextos longos. LOGOS injeta este parâmetro
@@ -4361,6 +4368,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Hermes
 - [ ] **Parâmetros otimizados do faster-whisper: `vad_filter=True`, `beam_size=1`, `language="pt"`**
+  > Parcialmente implementado: `vad_filter=True` e `beam_size=1` já estão configurados em `TranscribeWorker`. Falta `language="pt"` — ainda usa detecção automática. Adicionar `language="pt"` como default para eliminar ~1s de overhead por segmento.
   (`hermes.py` ou `TranscribeWorker`). A migração para faster-whisper está concluída
   (`[x]`), mas os parâmetros de otimização não foram registrados: `vad_filter=True`
   filtra silêncio antes da transcrição (grande melhoria de velocidade para vídeos
@@ -4369,6 +4377,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   em `TranscribeWorker`.
 
 - [ ] **Cache do `WhisperModel` entre transcrições (instanciar uma vez por sessão)**
+  > Parcialmente implementado: `WhisperModel` é cacheado por instância de `TranscribeWorker`, mas cada nova transcrição cria um novo Worker (e um novo modelo). Mover o cache para nível de módulo ou singleton para compartilhar entre Workers.
   (`hermes.py`). O `WhisperModel` pode ser instanciado uma vez e reutilizado entre
   transcrições (diferente do openai-whisper que recarregava por chamada). Armazenar
   como atributo de classe ou singleton de módulo. Economiza 5–15s de carregamento
