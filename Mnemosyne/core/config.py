@@ -125,6 +125,21 @@ class AppConfig:
         coll = self.active_coll
         return coll.path if coll else ""
 
+    @watched_dir.setter
+    def watched_dir(self, value: str) -> None:
+        if self.ecosystem_watched_dir:
+            self.ecosystem_watched_dir = value
+            return
+        for c in self.collections:
+            if c.source == "user" and c.type == CollectionType.LIBRARY:
+                c.path = value
+                return
+        new_coll = CollectionConfig(
+            name="Biblioteca", path=value, type=CollectionType.LIBRARY
+        )
+        self.collections.insert(0, new_coll)
+        self.active_collection = "Biblioteca"
+
     @property
     def vault_dir(self) -> str:
         """Path da coleção ativa se for VAULT, senão vazio."""
@@ -133,12 +148,30 @@ class AppConfig:
         coll = self.active_coll
         return coll.path if coll and coll.type == CollectionType.VAULT else ""
 
+    @vault_dir.setter
+    def vault_dir(self, value: str) -> None:
+        if self.ecosystem_vault_dir:
+            self.ecosystem_vault_dir = value
+            return
+        for c in self.collections:
+            if c.source == "user" and c.type == CollectionType.VAULT:
+                c.path = value
+                return
+        new_coll = CollectionConfig(
+            name="Vault Obsidian", path=value, type=CollectionType.VAULT
+        )
+        self.collections.append(new_coll)
+
     @property
     def persist_dir(self) -> str:
         if self.ecosystem_chroma_dir:
             return self.ecosystem_chroma_dir
         coll = self.active_coll
         return coll.persist_dir if coll else ""
+
+    @persist_dir.setter
+    def persist_dir(self, value: str) -> None:
+        self.ecosystem_chroma_dir = value
 
     @property
     def mnemosyne_dir(self) -> str:
