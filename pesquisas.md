@@ -2,59 +2,67 @@
 
 > Última atualização: 2026-05-06
 
+## Índice de sessões
+
+| Sessão                                                                           | App       | Data       |
+| -------------------------------------------------------------------------------- | --------- | ---------- |
+| Otimização, Gerenciamento de Recursos e Adaptabilidade do Ecossistema            | HUB/LOGOS | 2026-04-26 |
+| Funcionamento, Otimização e Gerenciamento em Buscadores                          | AKASHA    | 2026-04-24 |
+| Artigos Científicos — Busca, Download e Extração                                 | AKASHA    | 2026-04-24 |
+| Medium e Substack — Scraping e Extração de Conteúdo                              | AKASHA    | 2026-04-24 |
+| Busca e Integração de Torrents — Prowlarr, Jackett, qBittorrent                  | AKASHA    | 2026-04-25 |
+| Motores de Busca Pessoais, Ranking de Relevância e Busca Híbrida                 | AKASHA    | 2026-05-04 |
+| LLM-Augmented Search e Query Understanding                                       | AKASHA    | 2026-05-06 |
+| Arquitetura de UI para Research Workbench: NotebookLM e Referências Alternativas | Mnemosyne | 2026-05-06 |
+| Assistentes de Pesquisa Pessoal — Técnicas Além de LLMs                          | AKASHA    | 2026-05-06 |
+
 ---
 
-## HUB
+# Pesquisa: Otimização, Gerenciamento de Recursos e Adaptabilidade do Ecossistema
 
-# HUB — Pesquisa: Otimização, Gerenciamento de Recursos e Adaptabilidade do Ecossistema
 Última atualização: 2026-04-26 (versão expandida com literatura científica)
-Contexto: como otimizar LOGOS/HUB/Mnemosyne/KOSMOS/Hermes em CPU, RAM, VRAM e
+**Contexto**: como otimizar LOGOS/HUB/Mnemosyne/KOSMOS/Hermes em CPU, RAM, VRAM e
 produtividade, com adaptação a múltiplas máquinas (RX 6600, MX150, i5-3470 sem GPU).
-
----
 
 ## 1. Controle de recursos do Ollama — variáveis de ambiente
 
 Fonte canônica: github.com/ollama/ollama/blob/main/envconfig/config.go
 
-| Variável                   | Padrão    | Descrição                                                      |
-|---------------------------|-----------|----------------------------------------------------------------|
-| OLLAMA_NUM_PARALLEL        | 1         | Máximo de requisições em paralelo por modelo                   |
-| OLLAMA_MAX_LOADED_MODELS   | 0 (=3×GPU)| Máximo de modelos em memória simultaneamente                   |
-| OLLAMA_KEEP_ALIVE          | 5m        | Tempo de retenção do modelo após ociosidade                    |
-| OLLAMA_MAX_QUEUE           | 512       | Máximo de requisições na fila antes de 503                     |
-| OLLAMA_GPU_OVERHEAD        | 0 bytes   | Reserva de VRAM por GPU para evitar OOM                        |
-| OLLAMA_CONTEXT_LENGTH      | 0 (auto)  | Janela de contexto global                                      |
-| OLLAMA_FLASH_ATTENTION     | false     | Flash Attention (reduz VRAM em contextos longos)               |
-| OLLAMA_SCHED_SPREAD        | false     | Distribui modelo por todas as GPUs disponíveis                 |
-| OLLAMA_LOAD_TIMEOUT        | 5m        | Timeout de carregamento de modelo                              |
-| HSA_OVERRIDE_GFX_VERSION   | —         | AMD ROCm para GPUs sem suporte oficial (RX 6600: "10.3.0")     |
+| Variável                 | Padrão     | Descrição                                                  |
+| ------------------------ | ---------- | ---------------------------------------------------------- |
+| OLLAMA_NUM_PARALLEL      | 1          | Máximo de requisições em paralelo por modelo               |
+| OLLAMA_MAX_LOADED_MODELS | 0 (=3×GPU) | Máximo de modelos em memória simultaneamente               |
+| OLLAMA_KEEP_ALIVE        | 5m         | Tempo de retenção do modelo após ociosidade                |
+| OLLAMA_MAX_QUEUE         | 512        | Máximo de requisições na fila antes de 503                 |
+| OLLAMA_GPU_OVERHEAD      | 0 bytes    | Reserva de VRAM por GPU para evitar OOM                    |
+| OLLAMA_CONTEXT_LENGTH    | 0 (auto)   | Janela de contexto global                                  |
+| OLLAMA_FLASH_ATTENTION   | false      | Flash Attention (reduz VRAM em contextos longos)           |
+| OLLAMA_SCHED_SPREAD      | false      | Distribui modelo por todas as GPUs disponíveis             |
+| OLLAMA_LOAD_TIMEOUT      | 5m         | Timeout de carregamento de modelo                          |
+| HSA_OVERRIDE_GFX_VERSION | —          | AMD ROCm para GPUs sem suporte oficial (RX 6600: "10.3.0") |
 
 OLLAMA_NUM_THREADS e OLLAMA_MAX_VRAM NÃO existem como variáveis de ambiente.
 Controle de threads: parâmetro `num_thread` no body da requisição ou na Modelfile.
 Fonte: markaicode.com/ollama-environment-variables-configuration-guide
-
----
 
 ## 2. keep_alive por requisição — gestão granular de memória
 
 O parâmetro keep_alive pode ser passado individualmente em cada request /api/chat ou /api/generate,
 sobrescrevendo o OLLAMA_KEEP_ALIVE global. Ollama rastreia expiração por modelo individualmente.
 
-| Valor   | Comportamento                                          |
-|---------|--------------------------------------------------------|
-| "0"     | Descarrega imediatamente após a resposta               |
-| "-1"    | Nunca descarrega (mantém sempre aquecido)              |
-| "5m"    | Descarrega 5 minutos após o último uso                 |
-| "10m"   | Mantém por 10 minutos                                  |
+| Valor | Comportamento                             |
+| ----- | ----------------------------------------- |
+| "0"   | Descarrega imediatamente após a resposta  |
+| "-1"  | Nunca descarrega (mantém sempre aquecido) |
+| "5m"  | Descarrega 5 minutos após o último uso    |
+| "10m" | Mantém por 10 minutos                     |
 
 Estratégia recomendada por prioridade no LOGOS:
+
 - P1 (chat HUB, escrita AETHER): keep_alive=-1 enquanto sessão ativa; 0 ao fechar
 - P2 (Mnemosyne RAG): keep_alive="10m"
 - P3 (KOSMOS background, embeddings idle): keep_alive="0" — carrega, processa, libera
-Fonte: markaicode.com/ollama-keep-alive-memory-management; docs.ollama.com/faq
-
----
+  Fonte: markaicode.com/ollama-keep-alive-memory-management; docs.ollama.com/faq
 
 ## 3. Comportamento de paralelismo e fila do Ollama
 
@@ -62,21 +70,20 @@ Fontes: glukhov.org/post/2025/05/how-ollama-handles-parallel-requests; Ollama FA
 
 - Fila FIFO: quando parallelism está esgotado, novas requisições aguardam.
 - Modelos diferentes competem por VRAM: Ollama descarrega ociosos para carregar novos.
-- Este comportamento não tem conceito de prioridade — LOGOS como proxy (porta 7072) é a
-  única forma de impor prioridade real P1 > P2 > P3.
+- Este comportamento não tem conceito de prioridade — LOGOS como proxy (porta 7072) é a única forma de impor prioridade real P1 > P2 > P3.
 
 Parâmetros úteis do Ollama no body da requisição (não variáveis de ambiente):
+
 - num_thread: limitar CPU por prioridade (ex: 2 para P3, null para P1/P2)
 - num_batch: tamanho do batch de prefill (padrão 512; reduzir p/ 256 → −20% VRAM pico)
 - num_gpu: camadas na GPU (não "quantidade de GPUs")
 - low_vram: move KV cache para RAM do sistema (economiza VRAM, reduz velocidade)
 - num_ctx: janela de contexto; dobrar = dobrar uso de KV cache
 
----
-
 ## 4. Agendamento com prioridade e preempção — estado da arte científico
 
 ### PagedAttention / vLLM (SOSP 2023)
+
 Paper: arxiv.org/abs/2309.06180
 Técnica fundamental da área. PagedAttention armazena o KV cache em blocos não-contíguos
 (análogo à memória virtual de SO), eliminando fragmentação de memória. Continuous batching
@@ -86,15 +93,18 @@ Implicação para o ecossistema: o LOGOS pode implementar preempção com lógic
 ao receber P1, suspende P3 no meio do streaming e realoca a GPU.
 
 ### Priority-Aware Preemptive Scheduling para inferência mista (março 2025)
+
 Paper: arxiv.org/html/2503.09304
 Sistemas reais separam workloads em dois tipos:
+
 - High-priority (latência crítica): tempo-para-primeiro-token (TTFT) e turnaround rápidos
 - Low-priority (best-effort): throughput máximo mas interrompíveis
-O scheduler monitora memória disponível e suspende jobs low-priority ao detectar pressão,
-sem cancelá-los — os suspende no KV cache e retoma quando a GPU liberar.
-Implicação: LOGOS P3 pode ser suspenso (não cancelado) ao chegar P1.
+  O scheduler monitora memória disponível e suspende jobs low-priority ao detectar pressão,
+  sem cancelá-los — os suspende no KV cache e retoma quando a GPU liberar.
+  Implicação: LOGOS P3 pode ser suspenso (não cancelado) ao chegar P1.
 
 ### Topology-aware Preemptive Scheduling (novembro 2024)
+
 Paper: arxiv.org/html/2411.11560
 Mostra que preempção mal projetada desperdiça recursos: ao libertar a GPU para P1,
 se a memória liberada pela P3 não é suficiente para carregar o modelo P1, há perda dupla.
@@ -102,6 +112,7 @@ Solução: calcular quanto VRAM P1 precisa antes de decidir preemptar quem.
 Implicação: LOGOS deve conhecer o tamanho estimado do modelo P1 antes de silenciar P3.
 
 ### NEO: CPU Offloading para KV Cache (novembro 2024)
+
 Paper: arxiv.org/abs/2411.01142
 Descarrega atenção e KV cache para CPU/DRAM via pipeline assimétrico GPU-CPU,
 usando load-aware scheduling para balancear carga entre os dois processadores.
@@ -111,12 +122,11 @@ para RAM (11 GB disponíveis) pode permitir modelos maiores do que o esperado.
 Ollama já tem num_gpu e low_vram para controle parcial disso.
 
 ### APEX: CPU-GPU Parallelism para inferência restrita (2026)
+
 Paper: arxiv.org/html/2506.03296
 Estratégia de escalonamento informada por profiling — prevê tempo de execução de subtarefas
 CPU e GPU e despacha dinamicamente. Resultado: 84–96% de melhoria de throughput em T4.
 Implicação: modelos menores no laptop (MX150 2 GB) se beneficiam de offload inteligente.
-
----
 
 ## 5. KV Cache — otimização e compressão
 
@@ -131,11 +141,13 @@ c) Low-rank decomposition: compressão por decomposição matricial
 d) Offload hierárquico: GPU HBM → CPU DRAM → NVMe SSD
 
 ### KVSwap (novembro 2024)
+
 Paper: arxiv.org/html/2511.11907
 Primeiro sistema projetado especificamente para offload para disco em dispositivos
 com recursos limitados. Relevante para o laptop com MX150 (2 GB VRAM).
 
 ### LMCache (outubro 2024)
+
 Paper: arxiv.org/pdf/2510.09665
 Suporta armazenamento em múltiplos tiers: GPU → CPU DRAM → disco local.
 Permite reuso de KV cache entre turns de conversa (shared-prefix) — relevante
@@ -143,6 +155,7 @@ para chats longos no Mnemosyne onde o contexto do documento raramente muda.
 NVIDIA reporta: KV cache offload → 14× TTFT mais rápido para sequências longas.
 
 ### Flash Attention (2023) e impacto no ROCm
+
 Paper original: dao-ailab/flash-attention; Port ROCm: github.com/ROCm/flash-attention
 Flash Attention usa tiling para melhorar localidade de memória no cálculo de atenção
 (MHA, GQA, MQA). Disponível no ROCm via backend CK (Composable Kernel) e Triton.
@@ -150,92 +163,104 @@ A partir do PyTorch 2.3 para ROCm, está integrado ao F.scaled_dot_product_atten
 RDNA GPUs (RX 6600 é RDNA2) são suportadas via backend Triton.
 Ativar OLLAMA_FLASH_ATTENTION=1 já usa isso automaticamente no Ollama.
 
----
-
 ## 6. Quantização — benchmarks científicos
 
 ### Resultados de qualidade por formato (2025)
+
 Benchmark avaliou Qwen2.5, DeepSeek, Mistral, LLaMA 3.3 em MMLU, GSM8K, BBH, C-Eval, IFEval:
+
 - FP16: referência (100%)
+
 - GPTQ-INT8: mais estável, 95–99% da qualidade original; melhor quando acurácia > velocidade
+
 - Q5_K_M / Q8_0: ~95–99% qualidade, boa portabilidade; sweet spot para produção
+
 - Q4_K_M: 1–3% degradação em MMLU (7B: 71–72% vs 73% no FP16), aceitável para chat
+  
          perdas maiores em C-Eval e IFEval — problemático para tarefas seguindo instruções
+
 - AWQ: similar a Q4_K_M em qualidade; mais rápido em GPUs com kernels dedicados
 
 Fonte: jarvislabs.ai/blog/vllm-quantization-complete-guide-benchmarks;
        ionio.ai/blog/llm-quantize-analysis; localllm.in/blog/quantization-explained
 
 ### GGUF Q4_K_M vs Q8_0 — decisão prática para o ecossistema
+
 Para chat (Mnemosyne, HUB): Q5_K_M ou Q8_0 se VRAM permitir.
 Para análise background (KOSMOS P3): Q4_K_M é aceitável — resultado não é crítico.
 Para embeddings (nomic-embed-text): já é pequeno, não precisa quantizar mais.
 
 ### Parâmetros por modelo no request body (não variáveis de ambiente)
+
 - quantize: pode ser passado na Modelfile para forçar quantização específica
 - num_batch: 512 default; reduzir para 256 → -20% VRAM pico, pequena perda de throughput
-
----
 
 ## 7. Inferência CPU-only — limites reais e técnicas
 
 ### llama.cpp em CPU — benchmarks
+
 Paper: arxiv.org/html/2505.06461 (CPUs outperforming GPUs in mobile inference, 2025)
 Fontes: clarifai.com/blog/ilama.cpp; github.com/ggml-org/llama.cpp
 
 Números reais por hardware:
+
 - 2-core CPU + 8 GB DDR2: ~2 tokens/s em modelos 4B Q4
 - i5-3470 (4 cores, sem AVX2, DDR3): estimado 1–2 tokens/s em 3B Q4; modelos >7B impraticáveis
 - i7-8550U (AVX2): estimado 4–8 tokens/s em 3B Q4 com CPU-only
 - iPhone 15 Pro (CPU-only, F16): 17 tokens/s em 1B; supera GPU (12.8 t/s) por overhead de transfer
 
 Gargalo principal: largura de banda de memória (memory bandwidth), não FLOPS.
+
 - Dobrar os canais de memória = dobrar performance (llama.cpp)
 - AVX2: matriz-vetor otimizada via SIMD; sem AVX2 (i5-3470 Ivy Bridge) → fallback genérico
 
 ### Instrução sem AVX2 (i5-3470 / Ivy Bridge) — implicações
+
 - llama.cpp compila e roda sem AVX2, mas usa fallback menos otimizado
 - Limite prático: SmolLM2 1.7B Q4 (< 1.5 GB RAM) a ~1–2 tokens/s
 - Embeddings CPU-only: modelos ≤ 300 M params via sentence-transformers são viáveis
 
 ### Otimização de threads no CPU
+
 - Diminishing returns além de 8–16 threads para modelos pequenos
 - Regra: num_thread = número de cores físicos (não threads lógicos)
 - Para i5-3470: num_thread=4; para i7-8550U: num_thread=4 (4 cores físicos, 8 threads)
 
 ### CPU vs GPU — quando CPU vence
+
 - Modelos pequenos (1–3B) com GPU de baixa bandwidth (MX150 2 GB DDR5 ~60 GB/s):
   o overhead de PCIe e gerenciamento de VRAM pode superar o benefício de SIMD da GPU
 - MX150: VRAM pequena força offload constante CPU←→GPU → pode ser melhor ficar no CPU
 
----
-
 ## 8. Estratégias de RAG — chunking
 
 Papers:
+
 - arxiv.org/abs/2504.19754 (Reconstructing Context: Advanced Chunking Strategies, 2025)
 - pmc.ncbi.nlm.nih.gov/articles/PMC12649634 (Chunking for Clinical Decision Support, 2025)
 - aclanthology.org/2025.icnlsp-1.15.pdf (Semantic Chunking, 2025)
 
 ### Estratégias comparadas
 
-| Estratégia             | Como funciona                                    | Prós                              | Contras                          |
-|----------------------|--------------------------------------------------|-----------------------------------|----------------------------------|
-| Fixed-size (padrão)  | Divide por número fixo de tokens                 | Simples, rápido                   | Pode cortar conceitos no meio    |
-| Recursive             | Divide por separadores hierárquicos (\n\n, \n, ) | Melhor que fixed; preserva §      | Ainda pode misturar conceitos    |
-| Semantic              | Agrupa por similaridade de embedding             | Alta coerência semântica          | Lento (requer embedding no index)|
-| Proposition-based     | Extrai proposições atômicas via LLM              | Máxima granularidade              | Muito lento, custo alto          |
-| Contextual retrieval  | Adiciona contexto do documento a cada chunk via LLM | Melhor recall, coerência global | Custo computacional alto         |
-| Late chunking         | Chunka após embeddings do documento inteiro      | Eficiente, preserva contexto      | Sacrifica completude             |
-| Adaptive              | Alinha a fronteiras de seção + embedding cosine  | Variável, domínio-aware           | Mais complexo de implementar     |
+| Estratégia           | Como funciona                                       | Prós                            | Contras                           |
+| -------------------- | --------------------------------------------------- | ------------------------------- | --------------------------------- |
+| Fixed-size (padrão)  | Divide por número fixo de tokens                    | Simples, rápido                 | Pode cortar conceitos no meio     |
+| Recursive            | Divide por separadores hierárquicos (\n\n, \n, )    | Melhor que fixed; preserva §    | Ainda pode misturar conceitos     |
+| Semantic             | Agrupa por similaridade de embedding                | Alta coerência semântica        | Lento (requer embedding no index) |
+| Proposition-based    | Extrai proposições atômicas via LLM                 | Máxima granularidade            | Muito lento, custo alto           |
+| Contextual retrieval | Adiciona contexto do documento a cada chunk via LLM | Melhor recall, coerência global | Custo computacional alto          |
+| Late chunking        | Chunka após embeddings do documento inteiro         | Eficiente, preserva contexto    | Sacrifica completude              |
+| Adaptive             | Alinha a fronteiras de seção + embedding cosine     | Variável, domínio-aware         | Mais complexo de implementar      |
 
 ### Resultados empíricos (2025)
+
 - Contextual retrieval: preserva coerência semântica, melhor recall; mais caro computacionalmente
 - Late chunking: mais eficiente, mas sacrifica relevância e completude
 - Adaptive chunking: melhor balanço geral para documentos estruturados (artigos, papers)
 - Proposition-based: máxima qualidade mas impraticável para indexação em background (muito lento)
 
 ### Tamanhos de chunk por domínio (empiricamente validado)
+
 - Artigos científicos / notícias (KOSMOS): 512–1024 tokens; preservar parágrafos completos
 - Transcrições de vídeo (Hermes): 300–600 tokens; preservar frases completas
 - Documentos longos / notas (Mnemosyne geral): 256–512 tokens com 50–100 tokens de overlap
@@ -243,28 +268,29 @@ Papers:
 - Chat logs / trechos curtos: 200–400 tokens
 
 ### Overlap como mecanismo de continuidade
+
 - 10–15% de overlap entre chunks adjacentes é o padrão que minimiza informação perdida
   sem aumentar muito o número de chunks (e portanto o custo de embedding)
-
----
 
 ## 9. Recuperação híbrida — BM25 + dense + sparse neural
 
 Papers:
+
 - arxiv.org/html/2604.01733 (BM25 to Corrective RAG benchmark, 2025)
 - arxiv.org/html/2404.07220 (Blended RAG, 2024)
 - arxiv.org/pdf/2503.23013 (DAT: Dynamic Alpha Tuning, 2025)
 
 ### Por que híbrida?
 
-| Tipo            | Pontos fortes                                 | Pontos fracos                              |
-|----------------|-----------------------------------------------|--------------------------------------------|
-| BM25 (sparse)  | Rápido, sem GPU, funciona para nomes próprios | Sem semântica; miss em paráfrases          |
-| Dense (vector) | Semântico; pega paráfrases e sinonímia        | Miss em queries com termos exatos raros    |
-| SPLADE (sparse neural) | Semântico + expande termos           | Lento na indexação, >RAM que BM25          |
-| Híbrido        | Cobre falhas de cada método                   | Requer tuning do alpha de fusão            |
+| Tipo                   | Pontos fortes                                 | Pontos fracos                           |
+| ---------------------- | --------------------------------------------- | --------------------------------------- |
+| BM25 (sparse)          | Rápido, sem GPU, funciona para nomes próprios | Sem semântica; miss em paráfrases       |
+| Dense (vector)         | Semântico; pega paráfrases e sinonímia        | Miss em queries com termos exatos raros |
+| SPLADE (sparse neural) | Semântico + expande termos                    | Lento na indexação, >RAM que BM25       |
+| Híbrido                | Cobre falhas de cada método                   | Requer tuning do alpha de fusão         |
 
 ### Resultados benchmark (2025)
+
 - Pipeline dois estágios: hybrid retrieval + neural reranking:
   Recall@5 = 0.816 e MRR@3 = 0.605 em benchmark financeiro de 23k queries
   Supera todos os métodos de estágio único por margem significativa.
@@ -272,59 +298,65 @@ Papers:
 - SPLADE vs BM25 no Amazon ESCI: SPLADE fine-tuned nDCG@10=0.388 vs BM25=0.301
 
 ### DAT — Dynamic Alpha Tuning (2025, under review)
+
 Usa LLM para avaliar top-1 de cada método e calibrar o peso (alpha) entre BM25 e dense
 dinamicamente por query. Mais inteligente que alpha fixo (geralmente 0.5).
 
 ### SPLADE — Sparse Neural
+
 - Converte queries em vetores esparsos de alta dimensão com termos expandidos semanticamente
 - Eficiente via índice invertido (mesma infra de BM25), mas com qualidade neural
 - Custo: indexação mais lenta que BM25; inferência comparável se bem otimizado (< 4ms/query)
 - BM42 (Qdrant, 2025): versão leve de SPLADE sem fine-tuning, pronta para uso
 
 ### Implementação prática para Mnemosyne
+
 Mnemosyne usa ChromaDB (dense-only). Para implementar híbrido:
+
 1. Adicionar BM25 paralelo (rank_bm25 Python): leve, sem dependências pesadas
 2. Fusão por Reciprocal Rank Fusion (RRF): fórmula simples, sem parâmetros
 3. Opcional: SPLADE via Qdrant se migrar do ChromaDB
-
----
 
 ## 10. Reranking — duas etapas de recuperação
 
 Fontes: pinecone.io/learn/series/rag/rerankers; arxiv.org/html/2507.05577; zeroentropy.dev
 
 ### Arquitetura dois estágios
+
 1. Fast retriever (BM25 ou dense): recupera 50–100 candidatos priorizando recall
 2. Cross-encoder reranker: avalia cada par (query, doc) com forward pass completo do transformer
    → retorna 5–10 melhores para o LLM
 
 ### Ganhos de qualidade
+
 - +10 nDCG points sobre bi-encoders em MS MARCO
 - +28% NDCG@10 sobre baseline retriever (média across benchmarks)
 - 15–30% melhoria de precisão de recuperação em sistemas enterprise
 - Cohere Rerank 3.5: 23.4% sobre hybrid search; reduz irrelevantes de 30–40% para <10%
 
 ### Latência
+
 - Cross-encoder em ~30 candidatos: 100–200ms por query (CPU)
 - Cross-encoder em GPU: <50ms
 - Para o Mnemosyne RAG interativo (P2): aceitável se reranker for leve (ms-marco-MiniLM)
 - Modelos leves de reranking: ms-marco-MiniLM-L-6-v2, BGE-reranker-base
 
 ### FlashRank — reranking ultraleve sem GPU
+
 Biblioteca Python que usa modelos ONNX quantizados para reranking, sem GPU, ~10ms/query em CPU.
 Ideal para máquinas sem GPU discreta (Windows 10) ou para não usar a VRAM do modelo principal.
-
----
 
 ## 11. Embeddings — eficiência vs qualidade
 
 Papers:
+
 - arxiv.org/abs/2205.13147 (Matryoshka Representation Learning — NeurIPS 2022)
 - arxiv.org/abs/2510.12474 (SMEC: Sequential Matryoshka, 2024)
 - arxiv.org/abs/2505.02266 (Parameter-Efficient Transformer Embeddings, 2025)
 - arxiv.org/html/2406.01607 (MTEB survey, 2024)
 
 ### Matryoshka Representation Learning (MRL)
+
 Treina embeddings que funcionam bem em múltiplas dimensões (1024, 512, 256, 128...).
 Permite usar dim=128 (muito rápido, baixo RAM) ou dim=768 (máxima qualidade) dependendo do contexto.
 Resultado: até 14× menor embedding para a mesma acurácia em ImageNet-1K.
@@ -333,15 +365,16 @@ para busca inicial (mais rápido, menos RAM) e dim=768 para reranking.
 
 ### Modelos recomendados por perfil de hardware
 
-| Perfil   | Modelo                          | Params  | Dimensão | Nota                                     |
-|---------|---------------------------------|---------|----------|------------------------------------------|
-| high    | nomic-embed-text v1.5           | 137M    | 768/128* | MRL, multilingual, via Ollama            |
-| medium  | nomic-embed-text v1.5           | 137M    | 768/128* | Mesma via Ollama (MX150 aguenta)         |
-| low     | EmbeddingGemma (Google, 2025)   | 308M    | 256      | <200MB quant, CPU puro, 100+ línguas     |
-| low     | paraphrase-multilingual-miniLM  | 117M    | 384      | Via Ollama; alternativa leve             |
-*MRL: pode usar dim reduzida
+| Perfil                       | Modelo                         | Params | Dimensão | Nota                                 |
+| ---------------------------- | ------------------------------ | ------ | -------- | ------------------------------------ |
+| high                         | nomic-embed-text v1.5          | 137M   | 768/128* | MRL, multilingual, via Ollama        |
+| medium                       | nomic-embed-text v1.5          | 137M   | 768/128* | Mesma via Ollama (MX150 aguenta)     |
+| low                          | EmbeddingGemma (Google, 2025)  | 308M   | 256      | <200MB quant, CPU puro, 100+ línguas |
+| low                          | paraphrase-multilingual-miniLM | 117M   | 384      | Via Ollama; alternativa leve         |
+| *MRL: pode usar dim reduzida |                                |        |          |                                      |
 
 ### EmbeddingGemma (Google, 2025)
+
 - 308 M parâmetros, <200 MB quantizado, CPU-only com <200 MB de RAM
 - Multilingual (100+ línguas), baseado em Gemma 3
 - Compatível com sentence-transformers, Ollama, LangChain, llama.cpp
@@ -349,18 +382,18 @@ para busca inicial (mais rápido, menos RAM) e dim=768 para reranking.
 - VERIFICAR: se requer AVX2 antes de adotar no perfil low
 
 ### KaLM-Embedding-V2 (2025)
+
 State-of-the-art com <0.5B parâmetros, compete com modelos 3–26× maiores em MTEB.
 Demonstra que compacidade + dados de qualidade supera escala bruta.
 
 ### Overhead LangChain vs chamada direta
+
 - OllamaEmbeddings (langchain_community): 1000–2000ms por chamada
 - Chamada direta /api/embed: 200–300ms, utilização GPU 70–80%
 - /api/embed aceita array de strings em uma única chamada HTTP:
   {"model": "nomic-embed-text", "input": ["texto1", "texto2", ...]}
 - Impacto no ecossistema: index_single_file() deve usar /api/embed diretamente, não add_documents()
-Fonte: github.com/ollama/ollama/issues/7400
-
----
+  Fonte: github.com/ollama/ollama/issues/7400
 
 ## 12. Quantização do índice vetorial — redução de memória
 
@@ -369,25 +402,26 @@ Fontes: huggingface.co/blog/embedding-quantization; qdrant.tech/articles/what-is
 
 ### Tipos de quantização vetorial
 
-| Tipo       | Redução de memória | Qualidade retida | Método de compensação     |
-|-----------|---------------------|------------------|---------------------------|
-| float32   | 1× (referência)     | 100%             | —                         |
-| float16   | 2×                  | ~100%            | —                         |
-| int8 (scalar) | 4×             | 99%+             | Rescoring automático      |
-| int4      | 8×                  | 95–98%           | Rescoring recomendado     |
-| binary    | 32×                 | 95% com rescoring| Rescoring obrigatório     |
+| Tipo          | Redução de memória | Qualidade retida  | Método de compensação |
+| ------------- | ------------------ | ----------------- | --------------------- |
+| float32       | 1× (referência)    | 100%              | —                     |
+| float16       | 2×                 | ~100%             | —                     |
+| int8 (scalar) | 4×                 | 99%+              | Rescoring automático  |
+| int4          | 8×                 | 95–98%            | Rescoring recomendado |
+| binary        | 32×                | 95% com rescoring | Rescoring obrigatório |
 
 ### Binary Quantization + Rescoring (MongoDB Atlas, 2025)
+
 96% menos memória com 95% de precisão de busca retida via rescoring automático.
 ChromaDB 2025 (Rust rewrite): ainda não tem quantização nativa documentada.
 Qdrant: quantização scalar e binary nativas com rescoring automático.
 
 ### Implicação para Mnemosyne (ChromaDB)
+
 O ChromaDB atual armazena float32. Para Mnemosyne com índice grande, considerar:
+
 1. Migrar para Qdrant (em disco, com quantização nativa) se o índice ultrapassar 10M vetores
 2. Ou usar dim=256 (MRL) para reduzir tamanho sem perda de qualidade relevante
-
----
 
 ## 13. Índices vetoriais — HNSW vs FAISS — benchmarks
 
@@ -395,27 +429,30 @@ Fontes: vectroid.com/resources/hnsw-vs-faiss; zilliz.com/blog/faiss-vs-hnswlib;
         arxiv.org/pdf/2602.11443; mdpi.com/2076-3417/15/19/10554
 
 ### HNSW (Hierarchical Navigable Small Worlds)
+
 - Melhor para queries em tempo real (< 10ms em SIFT1M, ~95% recall@10)
 - HNSWlib: tudo em RAM, sem GPU, muito rápido no CPU; sem suporte a GPU
 - Construção lenta (CPU): horas para índices grandes (100M+ vetores)
 - ChromaDB usa HNSW (via hnswlib); Qdrant usa HNSW customizado
 
 ### FAISS + CAGRA (GPU)
+
 - CAGRA (NVIDIA, GPU): construção 12× mais rápida que HNSW no CPU
 - Queries: CAGRA supera HNSW em throughput batch em GPU
 - CPU-only FAISS (IVFFlat): inferior ao HNSW em recall/throughput para queries pontuais
 - Para o ecossistema (desktop, sem servidor): HNSW é a escolha certa
 
 ### pgvectorscale (benchmarks maio 2025)
+
 471 QPS a 99% recall em 50M vetores — 11.4× melhor que Qdrant (41 QPS).
 Relevante se o ecossistema migrar para PostgreSQL como backend.
 
 ### Recomendação prática
+
 Para o volume atual do Mnemosyne (< 10M documentos):
+
 - ChromaDB (HNSW, in-process) é suficiente e sem overhead de servidor
 - Se RAM do índice > 8 GB ou latência > 50ms: migrar para Qdrant (quantização scalar)
-
----
 
 ## 14. Batching — throughput vs latência
 
@@ -423,27 +460,29 @@ Papers: arxiv.org/pdf/2010.13103 (LazyBatching); mdpi.com/1424-8220/26/4/1101 (I
         arxiv.org/html/2510.14392 (FairBatching); baseten.co/blog/continuous-vs-dynamic-batching
 
 ### Static vs Continuous batching
+
 - Static: batch todo junto, espera todos finalizarem; melhor para offline (4–8× throughput)
 - Continuous: cada sequência termina independentemente, substitui imediatamente novo request
   → 2–3× throughput em cargas mistas; ideal para chat interativo (P1/P2)
   → benefício real proporcional à variância de tamanho de output
 
 Para o ecossistema:
+
 - P1 (chat) e P2 (RAG): continuous batching (Ollama já faz isso internamente)
 - P3 (embeddings background): static batching com batch grande = mais throughput
 
 ### Batch size ótimo para embeddings
+
 - Throughput cresce com batch size até saturar a banda de memória
 - Para nomic-embed-text em RX 6600 (8 GB): batch de 64–128 chunks por chamada /api/embed
 - Para nomic-embed-text em CPU (i5-3470): batch de 8–16 chunks (limitação de RAM bandwidth)
 - Regra: medir experimentalmente, returns diminuem após 64 em GPUs de consumo
 
 ### Dynamic batching adaptativo (2024–2025)
+
 Monitora latência e memória em tempo real, ajusta batch size dinamicamente.
 Resultado: 8–28% ganho de throughput vs batching estático; 22% ganho de capacidade.
 Implementação simples: expor batch_size como configuração por perfil no LOGOS.
-
----
 
 ## 15. Scheduling e prioridade de processos — nível de OS
 
@@ -453,27 +492,28 @@ Fontes: scoutapm.com/blog/restricting-process-cpu-usage;
 
 ### Linux: nice, ionice, cgroups, cpulimit, systemd
 
-| Mecanismo     | O que faz                                          | Granularidade           |
-|--------------|----------------------------------------------------|-------------------------|
-| nice          | Prioridade de escalonamento CPU (−20 a +19)        | Processo                |
-| ionice        | Prioridade de I/O (classe idle, best-effort, RT)   | Processo                |
-| cpulimit      | Limita CPU por % via SIGSTOP/SIGCONT              | Processo, preciso       |
-| cgroups v2    | Controle hierárquico de CPU, RAM, I/O, GPU         | Grupo de processos      |
-| systemd unit  | Nice=15, IOSchedulingClass=idle, CPUQuota=30%      | Serviço managed         |
+| Mecanismo    | O que faz                                        | Granularidade      |
+| ------------ | ------------------------------------------------ | ------------------ |
+| nice         | Prioridade de escalonamento CPU (−20 a +19)      | Processo           |
+| ionice       | Prioridade de I/O (classe idle, best-effort, RT) | Processo           |
+| cpulimit     | Limita CPU por % via SIGSTOP/SIGCONT             | Processo, preciso  |
+| cgroups v2   | Controle hierárquico de CPU, RAM, I/O, GPU       | Grupo de processos |
+| systemd unit | Nice=15, IOSchedulingClass=idle, CPUQuota=30%    | Serviço managed    |
 
 ### Estratégia para o ecossistema
+
 - Ollama em P3: lançar com `nice -n 10 ollama serve` ou `renice 10 $(pgrep ollama)`
 - Python KOSMOS background: `os.nice(10)` no worker thread
 - Mnemosyne idle indexer: `os.nice(15)` + `ionice -c 3` no processo de indexação
 - Windows: `SetPriorityClass(ABOVE_NORMAL → BELOW_NORMAL)` via ctypes; sem ionice
 
 ### Linux cgroups para o Ollama
+
 Criar grupo específico para P3:
+
 - CPU: `CPUWeight=20` (vs 100 para P1)
 - MemoryMax: limitar RAM total disponível para Ollama em P3
-Vantagem: controle sem monitoramento ativo — o kernel faz o enforcement.
-
----
+  Vantagem: controle sem monitoramento ativo — o kernel faz o enforcement.
 
 ## 16. mmap — carregamento rápido de modelos
 
@@ -482,22 +522,23 @@ Fontes: markaicode.com/memory-mapped-models-load-large-llms-faster;
         justine.lol/mmap (Edge AI Just Got Faster)
 
 ### Como funciona
+
 mmap carrega pesos via virtual memory mapping: o OS faz page-in apenas das páginas
 acessadas, evitando leitura completa do arquivo. O kernel evicta páginas sob pressão
 em vez de matar o processo.
 
 ### Performance
+
 - llama.cpp com mmap: até 100× mais rápido para carregar o modelo vs leitura C++ padrão
 - Usa metade da RAM vs carregamento completo (páginas compartilhadas entre processos)
 - ServerlessLLM: 6–8× mais rápido que PyTorch/Safetensors para modelos grandes
 
 ### Caveats importantes (2025)
+
 Em alguns sistemas (DGX Spark com kernel recente), mmap é 2–4× mais lento que não-mmap.
 Depende fortemente do filesystem e versão do kernel. Em SSDs NVME rápidos (ecossistema):
 mmap tende a ser melhor para modelos grandes (Llama 3 8B); indiferente para modelos pequenos.
 Ollama usa mmap por padrão quando disponível.
-
----
 
 ## 17. Disk offload — swap de pesos para NVMe
 
@@ -512,30 +553,29 @@ Para MX150 (2 GB VRAM): disk offload de pesos é viável para modelos 3B Q4 (~2 
 se o SSD for NVMe rápido. Com SSDs SATA (500 MB/s), impraticável.
 Configuração Ollama: num_gpu=0 (CPU-only) ou num_gpu=N (partial offload) por modelo.
 
----
-
 ## 18. Bateria e gerenciamento de energia
 
 Fontes: phoronix.com/news/Power-Profiles-Daemon-0.21; wikipedia.org/wiki/UPower;
         arxiv.org/html/2603.19584 (PowerLens, 2026)
 
 ### UPower / DBus (Linux)
+
 Interface: org.freedesktop.UPower no barramento de sistema.
 Campos: OnBattery (bool), Percentage (float), TimeToEmpty (int), State (enum).
 Crate Rust: `battery` (cross-platform) ou `zbus` (para DBus raw).
 Power Profiles Daemon v0.21: ajusta perfil de CPU automaticamente por AC/bateria.
 
 ### PowerLens — LLM para gerenciamento de energia (2025)
+
 Pesquisa: usa LLM como agente de gerenciamento de recursos em nível de sistema.
 38.8% de economia de energia vs padrão Android mantendo satisfação de usuário > 4.3/5.
 Relevante como referência de abordagem; não é implementação direta para o ecossistema.
 
 ### Estratégia para laptop Lenovo (MX150)
+
 - OnBattery=true: suspender P3 completamente; keep_alive="0" em todo request; num_thread=2
 - LOGOS muda para "Modo Bateria": badge no LogosPanel, nenhuma indexação automática
 - OnBattery=false: comportamento normal
-
----
 
 ## 19. Speculative decoding — aceleração de inferência
 
@@ -548,17 +588,17 @@ em batch. Se o draft estava correto, todos N tokens são aceitos em 1 forward pa
 Speedup típico: 2–3× sem perda de qualidade (a verificação garante equivalência exata).
 
 ### Condições de eficácia
+
 - Draft model deve ser ≥ 10× menor que o modelo alvo
 - Batch size pequeno: draft model pequeno > draft model grande (bottleneck é peso, não KV)
 - Tokenização idêntica entre draft e target é necessária
 
 ### Aplicabilidade ao ecossistema
+
 Para RX 6600 com Llama 3 8B: usar SmolLM2 1.7B como draft model.
 Ollama não suporta speculative decoding nativamente ainda (2026-04).
 llama.cpp suporta via --draft-model. Para o ecossistema, viável apenas se chamar llama.cpp
 diretamente (bypass Ollama) para sessões longas de chat (P1).
-
----
 
 ## 20. Adaptabilidade multi-hardware — perfil automático
 
@@ -567,23 +607,21 @@ Fontes: dasroot.net/posts/2026/04/mapping-local-llm-landscape-2025
 
 ### Matriz de perfis para o ecossistema
 
-| Perfil  | Máquina               | Modelo chat     | Embedding              | P3 threshold               |
-|--------|-----------------------|-----------------|------------------------|----------------------------|
-| high   | RX 6600 8GB, 16GB RAM | Llama 3.2 3B    | nomic-embed-text v1.5  | VRAM>85%, CPU>85%, RAM<1.5G|
-| medium | MX150 2GB, 11GB RAM   | SmolLM2 1.7B    | nomic-embed-text v1.5  | VRAM>75%, bateria, CPU>80% |
-| low    | i5-3470, 8GB, sem GPU | SmolLM2 1.7B CPU| EmbeddingGemma (CPU)   | CPU>70%, RAM<1.5GB         |
+| Perfil | Máquina               | Modelo chat      | Embedding             | P3 threshold                |
+| ------ | --------------------- | ---------------- | --------------------- | --------------------------- |
+| high   | RX 6600 8GB, 16GB RAM | Llama 3.2 3B     | nomic-embed-text v1.5 | VRAM>85%, CPU>85%, RAM<1.5G |
+| medium | MX150 2GB, 11GB RAM   | SmolLM2 1.7B     | nomic-embed-text v1.5 | VRAM>75%, bateria, CPU>80%  |
+| low    | i5-3470, 8GB, sem GPU | SmolLM2 1.7B CPU | EmbeddingGemma (CPU)  | CPU>70%, RAM<1.5GB          |
 
 ### Parâmetros Ollama por perfil (a configurar no startup do LOGOS)
 
-| Env var                    | high      | medium    | low       |
-|---------------------------|-----------|-----------|-----------|
-| OLLAMA_MAX_LOADED_MODELS   | 2         | 1         | 1         |
-| OLLAMA_GPU_OVERHEAD (bytes)| 524288000 | 209715200 | 0         |
-| OLLAMA_FLASH_ATTENTION     | true      | true      | false*    |
-| OLLAMA_NUM_PARALLEL        | 2         | 1         | 1         |
-*low não tem GPU, flash attention não se aplica
-
----
+| Env var                                         | high      | medium    | low    |
+| ----------------------------------------------- | --------- | --------- | ------ |
+| OLLAMA_MAX_LOADED_MODELS                        | 2         | 1         | 1      |
+| OLLAMA_GPU_OVERHEAD (bytes)                     | 524288000 | 209715200 | 0      |
+| OLLAMA_FLASH_ATTENTION                          | true      | true      | false* |
+| OLLAMA_NUM_PARALLEL                             | 2         | 1         | 1      |
+| *low não tem GPU, flash attention não se aplica |           |           |        |
 
 ## 21. ChromaDB vs Qdrant — decisão para Mnemosyne
 
@@ -591,29 +629,31 @@ Fontes: airbyte.com/data-engineering-resources/chroma-db-vs-qdrant;
         qdrant.tech/benchmarks; liquidmetal.ai/casesAndBlogs/vector-comparison
 
 ### ChromaDB (atual Mnemosyne)
+
 - Simples, embedded in-process (sem servidor separado), API Python idiomática
 - 2025: rewrite em Rust entregou 4× faster writes/queries, multithreading real
 - Sem quantização nativa documentada, sem filtros escaláveis
 - Adequado para < 10M vetores — ecossistema atual
 
 ### Qdrant
+
 - Rust nativo, server-based (separado do processo Python)
 - Quantização scalar (4×) e binary (32×) nativas com rescoring automático
 - Filtros avançados com payload indexing
 - Melhor para > 10M vetores ou quando RAM do índice for gargalo
 
 ### Recomendação
+
 Manter ChromaDB enquanto o índice ficar em < 10M vetores.
 Gatilho para migrar para Qdrant: index RAM > 4 GB ou latência P50 > 50ms.
 Versão futura: Qdrant embedded (sem servidor) disponível — mesma API local do ChromaDB.
-
----
 
 ## 22. Fontes — artigos científicos e documentação primária
 
 ### Papers arXiv / ACM / USENIX (por tema)
 
 Scheduling e memória de inferência:
+
 - https://arxiv.org/abs/2309.06180 — PagedAttention / vLLM (SOSP 2023)
 - https://arxiv.org/abs/2411.01142 — NEO: CPU Offloading for LLM Inference (2024)
 - https://arxiv.org/html/2506.03296 — APEX: Async CPU-GPU Execution (2026)
@@ -624,6 +664,7 @@ Scheduling e memória de inferência:
 - https://arxiv.org/html/2508.08448 — GPU Multitasking in the Era of LLM (2025)
 
 KV Cache:
+
 - https://arxiv.org/abs/2412.19442 — Survey on KV Cache Management (2024)
 - https://arxiv.org/pdf/2510.09665 — LMCache (2024)
 - https://arxiv.org/html/2604.19769 — TTKV: Temporal-Tiered KV Cache (2025)
@@ -631,12 +672,14 @@ KV Cache:
 - https://arxiv.org/abs/2511.11907 — KVSwap: Disk-based KV Cache Offloading (2024)
 
 Quantização e hardware:
+
 - https://arxiv.org/html/2505.06461 — CPUs Outperforming GPUs (2025)
 - https://arxiv.org/html/2311.00502 — Efficient LLM Inference on CPUs (2023)
 - https://arxiv.org/html/2410.04466 — Hardware Perspective Survey (2024)
 - https://arxiv.org/html/2604.18529 — HybridGen: CPU-GPU Hybrid (2026)
 
 RAG e Chunking:
+
 - https://arxiv.org/abs/2504.19754 — Advanced Chunking Strategies (2025)
 - https://arxiv.org/html/2604.01733 — BM25 to Corrective RAG (2025)
 - https://arxiv.org/html/2404.07220 — Blended RAG (2024)
@@ -645,6 +688,7 @@ RAG e Chunking:
 - https://aclanthology.org/2025.icnlsp-1.15.pdf — Semantic Chunking (2025)
 
 Embeddings:
+
 - https://arxiv.org/abs/2205.13147 — Matryoshka Representation Learning (NeurIPS 2022)
 - https://arxiv.org/abs/2510.12474 — SMEC: Sequential Matryoshka (2024)
 - https://arxiv.org/abs/2505.02266 — Parameter-Efficient Transformer Embeddings (2025)
@@ -653,16 +697,19 @@ Embeddings:
 - https://arxiv.org/html/2503.01776 — Beyond Matryoshka: Sparse Coding (2025)
 
 Speculative decoding:
+
 - https://arxiv.org/abs/2402.01528 — Decoding Speculative Decoding (2025)
 - https://arxiv.org/html/2504.06419 — SPIRe (2025)
 - https://arxiv.org/html/2312.11462 — Cascade Speculative Drafting (2025)
 
 Retrieval sparse/hybrid:
+
 - https://arxiv.org/html/2511.22263 — SPLADE on Billion-Scale (2024)
 - https://dl.acm.org/doi/10.1145/3634912 — Effective Sparse Neural Retrieval (2024)
 - https://arxiv.org/html/2508.17694 — Semantic Search Survey (2025)
 
 Outras fontes técnicas:
+
 - https://github.com/ollama/ollama/blob/main/envconfig/config.go
 - https://github.com/ollama/ollama/issues/7400 — Embedding overhead LangChain
 - https://docs.rs/sysinfo/latest/sysinfo/ — Crate sysinfo (Rust)
@@ -671,8 +718,6 @@ Outras fontes técnicas:
 - https://huggingface.co/blog/embedding-quantization
 - https://www.glukhov.org/post/2025/05/how-ollama-handles-parallel-requests/
 - https://dasroot.net/posts/2026/01/ollama-performance-tuning-gpu-acceleration-model-quantization/
-
----
 
 ## 23. KOSMOS — otimizações específicas
 
@@ -693,9 +738,11 @@ c) Nenhum `os.nice()` nos workers de background:
    O `IdlePriority` do Qt afeta apenas o GIL Python, não o scheduler do kernel.
 
 ### Trafilatura vs BeautifulSoup — extração de conteúdo
+
 Fontes: trafilatura.readthedocs.io/en/latest/evaluation; github.com/scrapinghub/article-extraction-benchmark
 
 Benchmark ScrapingHub (artigos de notícias, corpus 2024):
+
 - Trafilatura 0.5+: F1 = 0.945 ± 0.009, precisão = 0.925, recall = 0.966
 - BeautifulSoup 4.13: F1 = 0.665 ± 0.015, precisão = 0.499, recall = 0.994
 - Newspaper4k: F1 intermediário (~0.78)
@@ -709,21 +756,25 @@ Conteúdo limpo = menos tokens = embedding de maior qualidade = análise de IA m
 etapa do cascade por Trafilatura melhora qualidade sem mudar a arquitetura.
 
 ### Deduplicação de artigos RSS — fingerprint de conteúdo
+
 Fonte: postly.ai/rss-feed/filtering-deduplication; FeedHash Corpus 2024 (12.7M itens)
 
 Problema: 29% de feeds RSS emitem GUIDs duplicados ou incorretos. GUID sozinho é insuficiente.
 Solução robusta: SHA-256 de (title_normalizado + pubDate_ISO + link_canônico).
 Resultados empiricamente validados:
+
 - Redução de 92–100% em ingestão de duplicatas (147 feeds monitorados, FeedOps Benchmark 2024)
 - Redução de 11–19% em uso de CPU de background
 
 Estratégia de fallback em camadas:
+
 1. GUID exato → mais rápido, mas 29% de feeds têm GUIDs problemáticos
 2. URL canônica normalizada (strip utm_*, lowercase hostname, strip trailing slash)
 3. SHA-256 de (title_norm + date_ISO + url_norm) → 99.98% de resistência a colisões
 4. SimHash do body do artigo → para detectar re-publicações com título diferente
 
 ### SimHash para detecção de near-duplicatas
+
 Fontes: github.com/scrapinghub/python-simhash; spotintelligence.com/simhash
 
 SimHash: fingerprint de 64 bits onde documentos similares têm hashes similares (distância de Hamming).
@@ -735,6 +786,7 @@ Custo: O(n×k) para n artigos e k shingles por artigo — escalável até 100k a
 Armazenamento: 8 bytes por artigo (uint64) no SQLite.
 
 ### ETag / Last-Modified para feeds RSS
+
 O FeedFetcher do KOSMOS deve enviar `If-None-Match` / `If-Modified-Since` em requests RSS.
 Servidores RSS que suportam cache HTTP retornam 304 Not Modified se sem novidades.
 Economia: 40–60% menos bandwidth e CPU de parsing em feeds frequentes.
@@ -762,6 +814,7 @@ c) `_extract_kosmos()` e `_extract_aether()` truncam o body em 8000 caracteres p
    FTS5 com content table (externa) pode indexar o texto completo sem duplicar storage.
 
 ### SQLite FTS5 — otimizações disponíveis
+
 Fonte: sqlite.org/fts5.html; thelinuxcode.com/sqlite-full-text-search-fts5
 
 BM25 built-in: AKASHA já usa `ORDER BY bm25(local_fts, 0, 10, 1, 0)` — correto.
@@ -769,6 +822,7 @@ Pesos de coluna: o segundo argumento do bm25() é peso por coluna; os pesos atua
 priorizam title corretamente.
 
 Otimizações disponíveis não exploradas:
+
 - `prefix="2 3 4"` na criação da tabela FTS: índice de prefixo para autocomplete sem varredura
 - `content=tabela_externa`: FTS sem duplicar o texto (só o índice invertido), economizando disco
 - `columnsize=0`: remove tabela de estatísticas de tamanho de coluna (économise espaço se não usar BM25 ponderado por comprimento — mas AKASHA usa BM25, então manter)
@@ -777,25 +831,31 @@ Otimizações disponíveis não exploradas:
   "açaí" corresponde a "acai" — relevante para corpus em português
 
 ### Crawler — conteúdo duplicado e ETag
+
 O crawler do AKASHA (`services/crawler.py`) usa URL normalizada como dedup, mas não:
+
 - Verifica ETag/Last-Modified (re-crawla páginas sem mudança desperdiçando requests)
 - Deduplica por hash de conteúdo (duas URLs diferentes com mesmo conteúdo são indexadas duas vezes)
 
 Fix:
+
 - Armazenar ETag e Last-Modified junto à URL crawlada; enviar If-None-Match/If-Modified-Since no re-crawl
 - Calcular SHA-256 do conteúdo extraído; salvar na tabela; recusar URLs que já têm esse hash
 
 ### Trafilatura para o AKASHA
+
 Mesma lógica do KOSMOS: `ecosystem_scraper.extract` usa cascade com BeautifulSoup como fallback.
 Para o AKASHA, páginas de biblioteca/pessoais têm estrutura variada — Trafilatura lida melhor.
 Benefício adicional: menos boilerplate nos artigos indexados pelo FTS = busca mais precisa.
 
 ### Crawling adaptativo por resposta do servidor
+
 Fonte: zyte.com/blog/how-to-crawl-the-web-politely; substack.thewebscraping.club/p/rate-limit-scraping-exponential-backoff
 
 `_CRAWL_CONCURRENCY = 4` é fixo. AutoThrottle (Scrapy) usa a fórmula:
   delay_atual = response_time / AUTOTHROTTLE_TARGET_CONCURRENCY
 Adaptação simples para o crawler AKASHA:
+
 - Se response_time > 2s: reduzir concorrência para 2
 - Se response_time < 500ms: aumentar até 8
 - Backoff exponencial em 429/503: base_delay * 2^n_retries + jitter
@@ -823,13 +883,15 @@ Data: 2026-04-24
 Contexto: informar melhorias no AKASHA (FastAPI + SQLite FTS5 + crawler BFS próprio)
 
 ================================================================================
+
 1. ARQUITETURA GERAL DE BUSCADORES (Google e equivalentes)
-================================================================================
+   ================================================================================
 
 Os grandes buscadores funcionam em três estágios encadeados:
-
 1a. CRAWLING
+
 ------------
+
 Um agente automatizado (Googlebot, no caso do Google) descobre URLs de três formas:
 páginas já conhecidas, links extraídos de páginas visitadas, e sitemaps enviados
 explicitamente. Desde julho de 2024, o Google usa exclusivamente o smartphone
@@ -837,41 +899,48 @@ crawler (mobile-first indexing completo).
 
 O crawler opera com um "crawl budget" por site — limite de tempo e recursos que o
 Google dedica a rastrear um domínio. É determinado por dois fatores:
-  - crawl capacity limit: quanto o servidor do site aguenta sem degradar
-  - crawl demand: quão popular/frequentemente atualizado é o conteúdo
+
+- crawl capacity limit: quanto o servidor do site aguenta sem degradar
+- crawl demand: quão popular/frequentemente atualizado é o conteúdo
 
 Otimizações relevantes:
-  - robots.txt bloqueia seções irrelevantes (não use para redirecionar budget)
-  - sitemaps devem listar apenas URLs canônicas e desejadas para indexação
-  - links internos sinalizam importância: páginas ligadas de nós de alta autoridade
-    recebem mais atenção do crawler
-  - conteúdo duplicado (sem canonical) desperdiça budget: o crawler processa a página
-    mas não a indexa
+
+- robots.txt bloqueia seções irrelevantes (não use para redirecionar budget)
+- sitemaps devem listar apenas URLs canônicas e desejadas para indexação
+- links internos sinalizam importância: páginas ligadas de nós de alta autoridade
+  recebem mais atenção do crawler
+- conteúdo duplicado (sem canonical) desperdiça budget: o crawler processa a página
+  mas não a indexa
 
 1b. INDEXAÇÃO
 -------------
+
 Após o crawl, o conteúdo é analisado e armazenado no índice invertido.
 O Google mantém múltiplos tiers de índice com prioridades e frequências de
 atualização diferentes — não existe um índice único.
 
 Processos na indexação:
-  - canonicalização: identificar qual URL representa o "grupo" de páginas similares
-  - deduplicação near-duplicate: fingerprinting para detectar conteúdo quase-idêntico
-  - extração de metadata: título, autor, data, entidades, idioma
-  - construção do inverted index: mapa de termos → lista de documentos + posições
+
+- canonicalização: identificar qual URL representa o "grupo" de páginas similares
+- deduplicação near-duplicate: fingerprinting para detectar conteúdo quase-idêntico
+- extração de metadata: título, autor, data, entidades, idioma
+- construção do inverted index: mapa de termos → lista de documentos + posições
 
 1c. RANKING
 -----------
+
 O sistema de ranking atual (pós-2024) usa múltiplas camadas:
-  - Ascorer: avaliação primária (vazado nas Google API Leaks 2024)
-  - BERT/MUM: compreensão semântica de query e documento
-  - RankBrain: aprendizado de máquina para queries nunca vistas antes
-  - Twiddlers: ajustes baseados em sinais adicionais (freshness, localidade, etc.)
-  - Core Web Vitals: métricas de UX incluindo INP (Interaction to Next Paint)
-    substituiu FID como métrica oficial em março de 2024
+
+- Ascorer: avaliação primária (vazado nas Google API Leaks 2024)
+- BERT/MUM: compreensão semântica de query e documento
+- RankBrain: aprendizado de máquina para queries nunca vistas antes
+- Twiddlers: ajustes baseados em sinais adicionais (freshness, localidade, etc.)
+- Core Web Vitals: métricas de UX incluindo INP (Interaction to Next Paint)
+  substituiu FID como métrica oficial em março de 2024
 
 1d. ANÁLISE CRÍTICA DO MODELO DE TRÊS ESTÁGIOS
 ------------------------------------------------
+
 A divisão clássica em crawling, indexação e ranking, embora didaticamente útil, obscurece o grau em que esses estágios se retroalimentam em sistemas de produção modernos. O crawl budget, por exemplo, não é uma decisão unilateral do crawler: ele é informado por sinais do índice (quão frequentemente o conteúdo de um domínio muda, medido por comparação de hashes) e por sinais de ranking (domínios com PageRank elevado recebem budget maior). Da mesma forma, o ranqueamento de um documento começa na fase de indexação, com a extração de sinais estáticos como PageRank e autoridade de domínio, que seriam computacionalmente inviáveis de calcular em tempo de query.
 
 Para um buscador pessoal como o AKASHA, essa interdependência tem implicações concretas. O crawler BFS atual opera de forma relativamente autônoma em relação ao índice: uma vez que uma URL entra na fila, ela é processada sem considerar quão valioso seu conteúdo seria para o corpus existente. Em sistemas de maior escala, essa desconexão seria tratada com técnicas de crawl prioritization baseadas em learning-to-crawl — o crawler aprende, a partir do histórico de indexação, quais domínios produzem conteúdo de alta qualidade e ajusta seu budget accordingly. Para o AKASHA, uma heurística simples mas eficaz seria priorizar URLs cujos domínios já produziram páginas com alta densidade de conteúdo (medida em palavras por página) nas sessões de crawl anteriores, desfavorecendo domínios com histórico de conteúdo escasso ou duplicado.
@@ -887,69 +956,78 @@ para listas de postings (IDs de documentos + posições). Em escala, essas lista
 contêm bilhões de inteiros.
 
 Técnicas de compressão de posting lists:
-  - d-gaps (delta encoding): armazenar diferenças entre IDs consecutivos em vez dos
-    IDs absolutos (IDs são monotonicamente crescentes, então as diferenças são pequenas)
-  - Elias-Fano: estrutura quasi-sucinta; busca em tempo O(1) amortizado; uso de memória
-    próximo ao ótimo teórico. Usado em sistemas de produção
-  - PFOR (PForDelta): compressão de blocos de 128 inteiros; bom trade-off entre
-    taxa de compressão e velocidade de decodificação
-  - BIC (Binary Interpolative Code): maior eficiência de espaço, próxima à entropia
-    teórica; mais lento que PFOR
+
+- d-gaps (delta encoding): armazenar diferenças entre IDs consecutivos em vez dos
+  IDs absolutos (IDs são monotonicamente crescentes, então as diferenças são pequenas)
+- Elias-Fano: estrutura quasi-sucinta; busca em tempo O(1) amortizado; uso de memória
+  próximo ao ótimo teórico. Usado em sistemas de produção
+- PFOR (PForDelta): compressão de blocos de 128 inteiros; bom trade-off entre
+  taxa de compressão e velocidade de decodificação
+- BIC (Binary Interpolative Code): maior eficiência de espaço, próxima à entropia
+  teórica; mais lento que PFOR
 
 RAM vs disco:
-  - RAM é centenas de vezes mais cara que disco: boa compressão é essencial para
-    manter índices hot em memória
-  - Record-level vs word-level: record-level indexa apenas quais documentos contêm
-    o termo; word-level adiciona posições → permite busca por frase, mais memória
+
+- RAM é centenas de vezes mais cara que disco: boa compressão é essencial para
+  manter índices hot em memória
+- Record-level vs word-level: record-level indexa apenas quais documentos contêm
+  o termo; word-level adiciona posições → permite busca por frase, mais memória
 
 Aplicabilidade ao AKASHA:
-  - SQLite FTS5 já usa um inverted index internamente com compressão própria
-  - Ao criar tabelas FTS5, usar `columnsize=0` (omite backing table de tamanhos de
-    coluna) se não precisar de score por coluna — economiza espaço
-  - Usar external-content tables para evitar dados duplicados (FTS aponta para a
-    tabela principal em vez de guardar cópia do conteúdo)
+
+- SQLite FTS5 já usa um inverted index internamente com compressão própria
+- Ao criar tabelas FTS5, usar `columnsize=0` (omite backing table de tamanhos de
+  coluna) se não precisar de score por coluna — economiza espaço
+- Usar external-content tables para evitar dados duplicados (FTS aponta para a
+  tabela principal em vez de guardar cópia do conteúdo)
 
 ================================================================================
 3. GERENCIAMENTO DE CRAWL BUDGET E POLITENESS
 ================================================================================
 
 Para um crawler pessoal, as boas práticas de "politeness" são:
-
 3a. ROBOTS.TXT
+
 --------------
-  - Sempre buscar e respeitar {domínio}/robots.txt antes de crawlar
-  - Campos relevantes: User-agent, Disallow, Allow, Crawl-delay, Sitemap
-  - Importante: Google e Bing NÃO respeitam Crawl-delay no robots.txt dos sites
-    que visitam — isso é específico de crawlers menores; mas um crawler pessoal
-    DEVE respeitar para não sobrecarregar servidores pequenos
-  - Implementar cache do robots.txt por domínio (TTL: 24h) para não re-buscar
+
+- Sempre buscar e respeitar {domínio}/robots.txt antes de crawlar
+- Campos relevantes: User-agent, Disallow, Allow, Crawl-delay, Sitemap
+- Importante: Google e Bing NÃO respeitam Crawl-delay no robots.txt dos sites
+  que visitam — isso é específico de crawlers menores; mas um crawler pessoal
+  DEVE respeitar para não sobrecarregar servidores pequenos
+- Implementar cache do robots.txt por domínio (TTL: 24h) para não re-buscar
 
 3b. RATE LIMITING POR DOMÍNIO
 ------------------------------
-  - Registrar timestamp do último request por domínio
-  - Só liberar próxima URL do mesmo domínio após elapsed >= crawl_delay
-  - Default recomendado se robots.txt não especifica: 10-15s para sites pequenos,
-    1-2s para sites com permissão explícita ou grandes
-  - Abordagem proativa: fila priorizada com "earliest_available_at" por domínio
+
+- Registrar timestamp do último request por domínio
+- Só liberar próxima URL do mesmo domínio após elapsed >= crawl_delay
+- Default recomendado se robots.txt não especifica: 10-15s para sites pequenos,
+  1-2s para sites com permissão explícita ou grandes
+- Abordagem proativa: fila priorizada com "earliest_available_at" por domínio
 
 3c. BFS COM PRIORIDADE
 -----------------------
-  - BFS puro é adequado para corpus pequeno (< 10k páginas)
-  - Para sites maiores, adicionar score de prioridade baseado em:
-    - profundidade da URL (URLs mais rasas têm mais valor)
-    - PageRank interno estimado (número de links apontando para a URL)
-    - data de modificação se disponível no HTTP header (Last-Modified)
-  - Limitar profundidade por site para não se perder em sites infinitos
+
+- BFS puro é adequado para corpus pequeno (< 10k páginas)
+- Para sites maiores, adicionar score de prioridade baseado em:
+  - profundidade da URL (URLs mais rasas têm mais valor)
+  - PageRank interno estimado (número de links apontando para a URL)
+  - data de modificação se disponível no HTTP header (Last-Modified)
+- Limitar profundidade por site para não se perder em sites infinitos
 
 3d. APLICABILIDADE AO AKASHA
 ------------------------------
+
   O AKASHA já respeita depth limit e sitemap discovery. Melhorias possíveis:
-  - Implementar per-domain rate limiting com fila priorizada (não apenas delay global)
-  - Cache de robots.txt com TTL por domínio
-  - Priorizar URLs rasas e ligadas de várias páginas do mesmo site
+
+- Implementar per-domain rate limiting com fila priorizada (não apenas delay global)
+- Cache de robots.txt com TTL por domínio
+- Priorizar URLs rasas e ligadas de várias páginas do mesmo site
 
 3e. DIMENSÃO ÉTICA E TÉCNICA DA POLITENESS EM CRAWLERS PESSOAIS
 -----------------------------------------------------------------
+
 O conceito de politeness em crawlers vai além de uma convenção técnica: trata-se de uma questão de responsabilidade distribuída na infraestrutura da web. Quando um crawler pessoal ignora o Crawl-delay ou não respeita o robots.txt, o impacto individual pode parecer negligenciável, mas o efeito agregado de milhares de crawlers mal configurados causa degradação real de servidores, especialmente em sites de menor porte que operam com infraestrutura compartilhada. A literatura sobre ética de web crawling (Thelwall, 2001; Olston & Najork, 2010) estabelece que a responsabilidade de politeness recai sobre o operador do crawler, não sobre o servidor-alvo, porque o servidor não pode distinguir facilmente entre um bot legítimo e abusivo sem custo computacional adicional.
 
 Do ponto de vista técnico, a implementação correta de politeness em um crawler assíncrono — como o AKASHA, que usa asyncio — apresenta um desafio específico: garantir que o rate limiting por domínio seja respeitado mesmo quando múltiplas corrotinas estão processando URLs de domínios diferentes em paralelo. A abordagem ingênua de um sleep global serializa o crawler desnecessariamente, degradando throughput para domínios distintos. A solução robusta é manter um dicionário de asyncio.Lock() ou asyncio.Event() por domínio, combinado com um registro de next_available_at (timestamp), de forma que corrotinas que processam o mesmo domínio aguardem na fila enquanto as de outros domínios avançam livremente. Essa arquitetura permite paralelismo máximo entre domínios com politeness completa dentro de cada domínio.
@@ -959,47 +1037,54 @@ Outro aspecto frequentemente negligenciado é o tratamento de redirecionamentos 
 ================================================================================
 4. DEDUPLICAÇÃO — SIMHASH, MINHASH, CANONICAL
 ================================================================================
-
 4a. SIMHASH (Google)
+
 --------------------
+
 Algoritmo de fingerprinting de 64 bits para near-duplicate detection:
-  1. Tokenizar o documento em n-gramas de palavras
-  2. Para cada token, calcular hash binário de 64 bits
-  3. Acumular: soma vetorial dos hashes (ponderada por frequência)
-  4. Resultado: 64 bits onde cada bit é o sinal da soma acumulada
+
+1. Tokenizar o documento em n-gramas de palavras
+2. Para cada token, calcular hash binário de 64 bits
+3. Acumular: soma vetorial dos hashes (ponderada por frequência)
+4. Resultado: 64 bits onde cada bit é o sinal da soma acumulada
 
 Dois documentos near-duplicados têm SimHashes que diferem em poucos bits
 (distância de Hamming baixa). Threshold típico: < 3 bits diferentes → duplicata.
 
 Muito eficiente: comparação de dois SimHashes = XOR + popcount → O(1).
 Escala bem: Google usa SimHash para deduplicar bilhões de páginas.
-
 4b. MINHASH (AltaVista, depois Yahoo)
+
 --------------------------------------
+
 Estima a similaridade de Jaccard entre dois conjuntos de n-gramas.
 Mais adequado para comparar conjuntos ("estes dois documentos falam dos mesmos
 tópicos?") do que detectar quase-cópias textuais.
 Mais pesado que SimHash para o mesmo propósito de deduplicação exata.
-
 4c. CANONICAL URLS
+
 ------------------
+
 Um cluster canonical agrupa URLs com conteúdo idêntico ou muito similar sob uma
 URL canônica. Idealmente, os clusters de canonical e os de SimHash devem coincidir.
 
 Casos comuns de duplicação no crawler pessoal:
-  - www.exemplo.com vs exemplo.com
-  - http vs https
-  - URLs com parâmetros de tracking (?utm_source=..., ?ref=...)
-  - Trailing slash: /pagina vs /pagina/
+
+- www.exemplo.com vs exemplo.com
+- http vs https
+- URLs com parâmetros de tracking (?utm_source=..., ?ref=...)
+- Trailing slash: /pagina vs /pagina/
 
 Normalização de URL a aplicar ANTES de qualquer lookup:
-  - lowercased scheme + hostname
-  - remover fragmento (#...)
-  - remover parâmetros de tracking (lista: utm_*, ref, fbclid, gclid, etc.)
-  - normalizar trailing slash consistentemente
+
+- lowercased scheme + hostname
+- remover fragmento (#...)
+- remover parâmetros de tracking (lista: utm_*, ref, fbclid, gclid, etc.)
+- normalizar trailing slash consistentemente
 
 4d. APLICABILIDADE AO AKASHA
 ------------------------------
+
   Atualmente o AKASHA usa content_hash (SHA-256) para detectar páginas idênticas.
   Melhoria: adicionar SimHash de 64 bits para detectar near-duplicates
   (páginas com 95%+ do conteúdo igual mas com timestamps ou menus diferentes).
@@ -1007,11 +1092,12 @@ Normalização de URL a aplicar ANTES de qualquer lookup:
   Implementação Python simples de SimHash:
     pip install simhash  # ou implementação manual (~30 linhas)
 
-  Ao indexar nova página: calcular SimHash, comparar com hashes já indexados do
+Ao indexar nova página: calcular SimHash, comparar com hashes já indexados do
   mesmo domínio. Se distância Hamming < 3: skip ou substituir a versão mais antiga.
-
 4e. DEDUPLICAÇÃO COMO PROBLEMA DE QUALIDADE DE CORPUS
+
 -------------------------------------------------------
+
 É importante contextualizar a deduplicação não apenas como uma otimização de espaço em disco, mas como uma questão fundamental de qualidade do corpus. Em recuperação de informação, a presença de documentos near-duplicates no índice produz dois efeitos adversos distintos. O primeiro é o viés de frequência: termos que aparecem em conteúdo amplamente replicado (ex.: boilerplate de copyright, navbars padronizadas, conteúdo sindicado) recebem IDF artificialmente baixo, degradando a capacidade do BM25 de distinguir termos genuinamente raros e informativos. O segundo efeito é a inflação de resultado: o usuário que busca por um termo específico recebe múltiplas variações da mesma página, o que degrada a utilidade percebida do buscador sem adicionar informação nova.
 
 A escolha entre SimHash e MinhHash reflete uma distinção epistemológica relevante: SimHash detecta similaridade textual posicional (quase-cópias com pequenas alterações como datas, menus e rodapés), enquanto MinHash estima similaridade temática via Jaccard (dois textos que tratam dos mesmos assuntos, mas com redação distinta). Para o AKASHA, o problema dominante é o primeiro tipo — páginas da mesma URL coletadas em datas distintas, ou URLs com parâmetros de tracking que geram cópias idênticas. SimHash é, portanto, a ferramenta epistemicamente correta para esse contexto.
@@ -1024,9 +1110,10 @@ A escolha entre SimHash e MinhHash reflete uma distinção epistemológica relev
 
 O SQLite FTS5 já usa BM25 internamente — um dos melhores algoritmos de ranking
 léxico. Optimizações pouco usadas mas relevantes:
-
 5a. BM25 COM PESOS DE COLUNA
+
 ------------------------------
+
   bm25(tabela, w0, w1, w2, ...) permite ponderar colunas:
     SELECT * FROM crawl_fts WHERE crawl_fts MATCH 'python'
     ORDER BY bm25(crawl_fts, 10, 1)  -- título vale 10x mais que body
@@ -1035,44 +1122,49 @@ léxico. Optimizações pouco usadas mas relevantes:
   Sempre usar: ORDER BY bm25(crawl_fts, 10, 1) (sem DESC no SQLite FTS5,
   pois scores negativos são usados — menor = mais relevante).
 
-  Verificar: alguns wrappers precisam de negação: ORDER BY -bm25(...) DESC
-
+Verificar: alguns wrappers precisam de negação: ORDER BY -bm25(...) DESC
 5b. PREFIX INDEXES
+
 -------------------
-  Adicionar `prefix="2,3"` na criação da tabela FTS5 pré-computa índices para
+
+Adicionar `prefix="2,3"` na criação da tabela FTS5 pré-computa índices para
   prefixos de 2 e 3 caracteres — acelera muito queries com * (auto-complete):
     CREATE VIRTUAL TABLE crawl_fts USING fts5(
       title, content_md,
       prefix="2,3",
       content=crawl_pages, content_rowid=id
     );
-
 5c. EXTERNAL CONTENT TABLE
+
 ----------------------------
+
   Evitar duplicação de dados: FTS5 como external-content table aponta para a
   tabela principal em vez de guardar cópia. Requer 3 triggers (INSERT/UPDATE/DELETE)
   para manter o índice sincronizado.
 
-  Já usado no AKASHA (crawl_fts aponta para crawl_pages) — correto.
-
+Já usado no AKASHA (crawl_fts aponta para crawl_pages) — correto.
 5d. VACUUM E REBUILD
+
 ---------------------
+
   Após muitas inserções/deletions fragmentadas, o índice FTS5 degrada.
   Executar periodicamente:
     INSERT INTO crawl_fts(crawl_fts) VALUES('rebuild');  -- reconstrói
     INSERT INTO crawl_fts(crawl_fts) VALUES('optimize'); -- merge de segmentos
 
-  O 'optimize' é equivalente ao merge do índice delta — consolida fragmentos sem
+O 'optimize' é equivalente ao merge do índice delta — consolida fragmentos sem
   rebuild completo.
-
 5e. LIMITAÇÕES DO FTS5 vs ALTERNATIVAS
+
 ----------------------------------------
+
   SQLite FTS5 não suporta busca semântica (vetorial). Para corpus pessoal onde
   a qualidade de ranking importa mais que a escala, vale considerar:
-  - Meilisearch: busca por typo-tolerance, faceted search, ranking configurável
-    (~10MB RAM idle, bom para corpus até ~1M documentos pequenos)
-  - Tantivy (Rust): núcleo do Quickwit e Meilisearch; porta BM25 + mais opções
-  - Para AKASHA atual: FTS5 é adequado e evita dependências externas
+
+- Meilisearch: busca por typo-tolerance, faceted search, ranking configurável
+  (~10MB RAM idle, bom para corpus até ~1M documentos pequenos)
+- Tantivy (Rust): núcleo do Quickwit e Meilisearch; porta BM25 + mais opções
+- Para AKASHA atual: FTS5 é adequado e evita dependências externas
 
 ================================================================================
 6. BLOOM FILTER — DEDUPLICAÇÃO DE URLs NO CRAWLER
@@ -1082,24 +1174,27 @@ Problema: verificar se uma URL já foi visitada. Com milhões de URLs, um set em
 Python usa ~100 bytes/URL = 100MB para 1M URLs.
 
 Bloom filter: estrutura probabilística baseada em array de bits + k funções hash.
-  - Nunca produz falsos negativos (se diz "não visto" é garantido)
-  - Pode produzir falsos positivos (diz "visto" quando não foi — configura-se a taxa)
-  - 90% menos memória: 1.2GB vs 12GB+ para 1 bilhão de URLs (com Redis)
-  - Para crawlers pessoais (< 500k URLs): ~600KB para falso-positivo de 1%
+
+- Nunca produz falsos negativos (se diz "não visto" é garantido)
+- Pode produzir falsos positivos (diz "visto" quando não foi — configura-se a taxa)
+- 90% menos memória: 1.2GB vs 12GB+ para 1 bilhão de URLs (com Redis)
+- Para crawlers pessoais (< 500k URLs): ~600KB para falso-positivo de 1%
 
 Implementação Python:
   pip install pybloom-live  # ou mmh3 + bitarray para implementação manual
 
 Parâmetros de calibração:
-  - n (itens esperados) × p (taxa de falso positivo) → tamanho do bit array
-  - n=100_000, p=0.01 → ~120KB; n=1_000_000, p=0.01 → ~1.2MB
+
+- n (itens esperados) × p (taxa de falso positivo) → tamanho do bit array
+- n=100_000, p=0.01 → ~120KB; n=1_000_000, p=0.01 → ~1.2MB
 
 Para o AKASHA: o volume atual (< 100k URLs por site) não justifica implementação
 de Bloom filter — o set em memória / lookup em crawl_pages é suficiente. Mas se
 o corpus crescer para múltiplos sites com 100k+ páginas cada, vale implementar.
-
 BLOOM FILTER — FUNDAMENTOS TEÓRICOS E TRADE-OFFS DE PROJETO
+
 -------------------------------------------------------------
+
 O Bloom filter, proposto por Burton Howard Bloom em 1970, representa uma das soluções mais elegantes para o problema de membership testing em espaço sublinear. Sua propriedade fundamental — ausência garantida de falsos negativos combinada com uma taxa configurável de falsos positivos — decorre diretamente da sua estrutura: um array de m bits inicializado em zero e k funções hash independentes que mapeiam cada elemento para k posições do array. Para verificar se um elemento foi inserido, basta checar se todas as k posições correspondentes estão em 1; se qualquer uma estiver em 0, o elemento definitivamente não está no conjunto. A consequência matemática dessa assimetria é que o filtro pode "lembrar" que viu uma URL que na verdade nunca visitou (falso positivo), mas nunca "esquece" uma URL que de fato visitou (sem falso negativo).
 
 A relação entre os parâmetros m (tamanho do array em bits), n (número esperado de elementos) e p (taxa de falso positivo desejada) é determinada pela equação m = -n·ln(p) / (ln 2)², com o número ótimo de funções hash k = (m/n)·ln 2. Esse relacionamento matemático preciso torna o Bloom filter incomum entre estruturas de dados: seu comportamento em espaço e acurácia é analiticamente previsível antes da implementação, sem necessidade de benchmarking empírico para calibração inicial.
@@ -1111,8 +1206,9 @@ Para o contexto específico de um crawler, o trade-off relevante não é apenas 
 ================================================================================
 
 O padrão "main + delta" resolve o problema de atualizar um índice sem rebuild:
-  - main index: corpus estável, indexado completamente
-  - delta index: apenas documentos novos/modificados desde o último merge
+
+- main index: corpus estável, indexado completamente
+- delta index: apenas documentos novos/modificados desde o último merge
 
 Delta pode ser reindexado a cada minuto; merge com o main ocorre periodicamente.
 
@@ -1124,12 +1220,14 @@ Solr delta updates: a cada ~5 minutos
 Manticore Search: delta index com merge configurável
 
 Aplicabilidade ao AKASHA:
-  - FTS5 já usa segmentos internos similares a este padrão
-  - O 'optimize' periódico (seção 5d) é o equivalente do merge
-  - Para crawl_fts: executar optimize após cada batch de crawl grande (> 500 páginas)
+
+- FTS5 já usa segmentos internos similares a este padrão
+- O 'optimize' periódico (seção 5d) é o equivalente do merge
+- Para crawl_fts: executar optimize após cada batch de crawl grande (> 500 páginas)
 
 INDEXAÇÃO INCREMENTAL — CONTEXTO TEÓRICO E IMPLICAÇÕES PARA SISTEMAS EMBARCADOS
 ---------------------------------------------------------------------------------
+
 O problema da indexação incremental surge de uma tensão fundamental em sistemas de recuperação de informação: índices invertidos são estruturas otimizadas para leitura, mas a web é um corpus essencialmente dinâmico. A solução clássica de rebuildar o índice completo a cada atualização é impraticável em escala, razão pela qual o padrão main + delta foi desenvolvido como um compromisso engenhoso entre frescor do índice e eficiência computacional.
 
 A fragmentação progressiva que ocorre sem merge periódico tem uma explicação estrutural clara: cada batch de documentos novos gera um segmento independente do índice, e uma query full-text precisa, na ausência de merge, percorrer todos os segmentos ativos em paralelo e consolidar os resultados antes de ranquear. Quanto mais segmentos existem, maior o overhead de I/O e de fusão de posting lists — o que degrada a latência de query de forma aproximadamente linear com o número de segmentos não consolidados. O merge periódico reconstrói um segmento único a partir de todos os fragmentos, restaurando a latência ótima de consulta.
@@ -1143,24 +1241,27 @@ Vale notar que a indexação incremental introduz uma assimetria temporal: docum
 ================================================================================
 
 Benchmark (Bevendorff et al. 2023, comparação de extratores web):
-  - Trafilatura: melhor F1 médio (0.883) entre ferramentas open-source testadas
-  - Segundo lugar: newspaper4k / readability-lxml (mas bloqueados por lxml 5.x/Python 3.14)
-  - Terceiro: BeautifulSoup + markdownify (fallback manual)
+
+- Trafilatura: melhor F1 médio (0.883) entre ferramentas open-source testadas
+- Segundo lugar: newspaper4k / readability-lxml (mas bloqueados por lxml 5.x/Python 3.14)
+- Terceiro: BeautifulSoup + markdownify (fallback manual)
 
 Trafilatura é usado em produção por: HuggingFace, IBM Research, Microsoft Research,
 Allen Institute, Stanford, Tokyo Institute of Technology.
 
 Melhorias no uso atual do AKASHA:
-  - trafilatura.extract() com include_links=False e include_images=False reduz ruído
-    em conteúdo Markdown (links de navegação, alts de imagem)
-  - trafilatura.extract() com favor_precision=True (padrão) prioriza precisão;
-    usar favor_recall=True para páginas com muito JavaScript que truncam o conteúdo
-  - Para páginas JS-heavy onde trafilatura retorna < 50 palavras: Jina Reader
-    já implementado como fallback — correto
-  - Adicionar include_comments=False explicitamente (já é o padrão mas deixar claro)
+
+- trafilatura.extract() com include_links=False e include_images=False reduz ruído
+  em conteúdo Markdown (links de navegação, alts de imagem)
+- trafilatura.extract() com favor_precision=True (padrão) prioriza precisão;
+  usar favor_recall=True para páginas com muito JavaScript que truncam o conteúdo
+- Para páginas JS-heavy onde trafilatura retorna < 50 palavras: Jina Reader
+  já implementado como fallback — correto
+- Adicionar include_comments=False explicitamente (já é o padrão mas deixar claro)
 
 TRAFILATURA — FUNDAMENTOS DO PROBLEMA DE EXTRAÇÃO DE CONTEÚDO PRINCIPAL
 -------------------------------------------------------------------------
+
 A extração de conteúdo principal (main content extraction ou boilerplate removal) é um problema fundamentalmente ambíguo: a distinção entre "conteúdo relevante" e "ruído estrutural" (navegação, rodapés, sidebars, anúncios, comentários) não tem uma definição matemática precisa e varia com o propósito do extrator. Um leitor humano reconhece intuitivamente o que é conteúdo principal, mas formalizar esse julgamento em regras computacionais é não-trivial. A maioria dos extratores adota uma ou mais das seguintes heurísticas: densidade textual por bloco HTML (razão palavras/tags), distância do nó DOM da raiz da página, presença de elementos semânticos HTML5 (article, main, section), e análise comparativa de blocos repetidos entre páginas do mesmo domínio.
 
 O Trafilatura combina múltiplas dessas heurísticas com um componente de aprendizado estatístico treinado em corpus anotados manualmente, o que explica sua superioridade no benchmark de Bevendorff et al. (2023) em relação a extratores puramente rule-based como o Readability (derivado do algoritmo original da Mozilla, que é baseado exclusivamente em densidade textual e presença de classes CSS heurísticas). O F1 de 0.883 do Trafilatura precisa ser contextualizado: ele é medido sobre um corpus de páginas em inglês e alemão, predominantemente notícias e artigos de blog, que são os gêneros textuais mais favoráveis à extração baseada em densidade. Para gêneros com estrutura diferente — documentação técnica, wikis, páginas de e-commerce — a performance tende a ser menor, e o ajuste de favor_precision vs. favor_recall torna-se mais significativo.
@@ -1225,6 +1326,7 @@ Contexto: integrar busca e arquivamento de papers no AKASHA; indexação no Mnem
 ================================================================================
 
 1. APIs DE BUSCA ACADÊMICA
+
 ---------------------------
 
 a) SEMANTIC SCHOLAR
@@ -1264,6 +1366,7 @@ e) CROSSREF (habanero)
   Útil como camada de enriquecimento de metadados quando se tem o DOI
 
 2. DOWNLOAD LEGAL DE PDFs
+
 --------------------------
 
 a) UNPAYWALL (lib: `unpywall`)
@@ -1284,12 +1387,17 @@ d) CORE
   Retorna bytes do PDF diretamente via API (quando full-text disponível)
 
 FLUXO RECOMENDADO (dado um DOI):
-  1. Tentar OpenAlex oa_url (se tiver key)
-  2. Tentar Unpaywall (sempre grátis)
-  3. Tentar arXiv direto (se externalId inclui arXiv ID)
-  4. Tentar CORE (se tiver key)
 
-3. EXTRAÇÃO DE TEXTO DE PDFs
+1. Tentar OpenAlex oa_url (se tiver key)
+
+2. Tentar Unpaywall (sempre grátis)
+
+3. Tentar arXiv direto (se externalId inclui arXiv ID)
+
+4. Tentar CORE (se tiver key)
+
+5. EXTRAÇÃO DE TEXTO DE PDFs
+
 ------------------------------
 
 a) PYMUPDF4LLM (recomendado)
@@ -1313,28 +1421,33 @@ c) PYPDF
   Fallback quando pymupdf4llm não consegue parsear um PDF
 
 4. INTEGRAÇÃO AKASHA ↔ MNEMOSYNE
+
 -----------------------------------
 
 Fluxo completo:
-  1. AKASHA busca: Semantic Scholar / arXiv → lista de papers com metadados
-  2. Usuário escolhe paper → AKASHA baixa PDF (Unpaywall → arXiv → CORE)
-  3. AKASHA extrai Markdown com pymupdf4llm
-  4. AKASHA arquiva em data/archive/Papers/{YYYY-MM-DD}_{slug}.md (mesmo padrão do Web/)
-  5. Mnemosyne indexa automaticamente via watched_dir — sem mudanças necessárias no Mnemosyne
+
+1. AKASHA busca: Semantic Scholar / arXiv → lista de papers com metadados
+2. Usuário escolhe paper → AKASHA baixa PDF (Unpaywall → arXiv → CORE)
+3. AKASHA extrai Markdown com pymupdf4llm
+4. AKASHA arquiva em data/archive/Papers/{YYYY-MM-DD}_{slug}.md (mesmo padrão do Web/)
+5. Mnemosyne indexa automaticamente via watched_dir — sem mudanças necessárias no Mnemosyne
 
 Sem dependência de Mnemosyne na cadeia de busca — papers ficam disponíveis
 na busca local do AKASHA (local_fts) logo após o arquivamento.
 
 5. DEPENDÊNCIAS NOVAS
+
 ----------------------
-  - `aioarxiv` — busca async arXiv (≈ 20KB, sem deps pesadas)
-  - `unpywall` — Unpaywall PDF links por DOI (≈ 30KB)
-  - `pymupdf4llm` — extração PDF → Markdown (depende de pymupdf ≈ 15MB)
-  - httpx direto para Semantic Scholar e CORE (sem lib extra)
-  - `pyalex` opcional para OpenAlex (requer key desde fev/2026)
+
+- `aioarxiv` — busca async arXiv (≈ 20KB, sem deps pesadas)
+- `unpywall` — Unpaywall PDF links por DOI (≈ 30KB)
+- `pymupdf4llm` — extração PDF → Markdown (depende de pymupdf ≈ 15MB)
+- httpx direto para Semantic Scholar e CORE (sem lib extra)
+- `pyalex` opcional para OpenAlex (requer key desde fev/2026)
 
 FONTES
 -------
+
 - Semantic Scholar API: https://www.semanticscholar.org/product/api
 - OpenAlex docs: https://docs.openalex.org/
 - pyalex GitHub: https://github.com/J535D165/pyalex
@@ -1353,7 +1466,9 @@ Contexto: corrigir falha de extração no AKASHA (fetch_and_extract) e KOSMOS (A
 ================================================================================
 
 1. POR QUE MEDIUM FALHA
+
 ------------------------
+
 Medium usa paywall em duas camadas:
   a) Soft paywall (JS overlay): conteúdo presente no HTML mas ocultado por JS.
      Trafilatura pode extrair o texto, mas a requisição HTTP retorna conteúdo
@@ -1365,7 +1480,9 @@ Adicionalmente, Medium detecta User-Agents de scrapers e pode retornar 403 ou
 HTML vazio mesmo para artigos gratuitos, mesmo com headers realistas.
 
 2. SOLUÇÃO PARA MEDIUM — FREEDIUM
+
 -----------------------------------
+
 Freedium (freedium.cfd) é um proxy open-source que acessa Medium via contas
 com assinatura paga e serve o conteúdo sem paywall.
 
@@ -1377,20 +1494,24 @@ O HTML retornado pelo Freedium é estático e processável por trafilatura norma
 Nenhuma mudança na camada de extração do ecosystem_scraper é necessária.
 
 Ordem de fallbacks (Medium):
-  1. Freedium (fetch via proxy)
-  2. Jina Reader r.jina.ai/{url} (já implementado no AKASHA para < 100 palavras)
-  3. Direto (resultado parcial ou vazio)
+
+1. Freedium (fetch via proxy)
+2. Jina Reader r.jina.ai/{url} (já implementado no AKASHA para < 100 palavras)
+3. Direto (resultado parcial ou vazio)
 
 Limitações:
-  - Freedium pode estar indisponível (tratar como timeout, continuar cascata)
-  - Uso pessoal tolerado; não usar para automação em massa
 
+- Freedium pode estar indisponível (tratar como timeout, continuar cascata)
+- Uso pessoal tolerado; não usar para automação em massa
 3. SUBSTACK — ESTRUTURA HTML
+
 ------------------------------
+
 Substack é significativamente mais fácil de extrair que Medium:
-  - Sem paywall JS — artigos livres têm HTML completo na resposta
-  - Conteúdo principal em <div class="available-content"> ou <div class="body markup">
-  - Artigos pagos: servidor retorna HTML sem o corpo (esperado, não é bug)
+
+- Sem paywall JS — artigos livres têm HTML completo na resposta
+- Conteúdo principal em <div class="available-content"> ou <div class="body markup">
+- Artigos pagos: servidor retorna HTML sem o corpo (esperado, não é bug)
 
 Trafilatura com favor_recall=True (já ativo no ecosystem_scraper) extrai
 corretamente artigos Substack gratuitos na maioria dos casos.
@@ -1404,7 +1525,9 @@ Fix: adicionar class_="available-content" e class_="post-content" como candidato
 no _ext_bs4, antes do fallback para <body>.
 
 4. READABILITY-LXML vs TRAFILATURA vs PUPPETEER
+
 -------------------------------------------------
+
 Tanto trafilatura quanto readability falham da mesma forma no hard paywall
 (conteúdo ausente no HTML recebido). Puppeteer/Playwright headless funcionaria
 pois executa JS e pode fazer login, mas é impraticável no hardware alvo
@@ -1413,7 +1536,9 @@ pois executa JS e pode fazer login, mas é impraticável no hardware alvo
 Trafilatura com favor_recall=True já é a melhor opção estática disponível.
 
 5. IMPLICAÇÕES PRÁTICAS
+
 -------------------------
+
 A correção vive em dois níveis:
   a) ecosystem_scraper.py:
      - Nova função pública get_fetch_url(url) → Freedium para medium.com
@@ -1421,9 +1546,10 @@ A correção vive em dois níveis:
   b) Callers:
      - AKASHA/services/archiver.py: usar get_fetch_url() antes do fetch httpx
      - KOSMOS/app/core/article_scraper.py: usar get_fetch_url() em _fetch_html()
-
 FONTES
+
 -------
+
 - Freedium GitHub: https://github.com/Freedium-cfd
 - Jina Reader API: https://jina.ai/reader/
 - Trafilatura Settings: https://trafilatura.readthedocs.io/en/latest/settings.html
@@ -1437,7 +1563,7 @@ Contexto: Fase 6 AKASHA — pesquisa de torrents + envio ao qBittorrent
 ================================================================================
 
 1. JACKETT — AGREGADOR DE INDEXADORES (LEGADO)
-================================================
+   ================================================
 
 Jackett atua como proxy: recebe queries no formato Torznab e as converte para requests
 específicos de cada tracker. Roda localmente na porta 9117.
@@ -1473,7 +1599,7 @@ AUTENTICAÇÃO: apenas via parâmetro apikey na URL (sem header).
 STATUS: projeto estável mas em manutenção. Prowlarr é o substituto ativo.
 
 2. PROWLARR — AGREGADOR MODERNO (RECOMENDADO)
-==============================================
+   ==============================================
 
 Prowlarr é o substituto moderno do Jackett, desenvolvido pelo mesmo time que
 Sonarr/Radarr. Possui integração nativa com o ecossistema *arr, mas também
@@ -1515,7 +1641,7 @@ DIFERENÇA JACKETT vs PROWLARR:
   Para AKASHA: suportar ambos — Prowlarr prioritário, Jackett como fallback.
 
 3. qBITTORRENT WEB API
-=======================
+   =======================
 
 qBittorrent expõe uma API REST na porta 8080 (configurável). Todas as rotas
 precisam de autenticação via cookie SID, exceto /auth/login.
@@ -1571,7 +1697,7 @@ CANCELAR/PAUSAR:
   POST /api/v2/torrents/delete → body: hashes=<hash>&deleteFiles=false
 
 4. LIBRARY PYTHON: qbittorrent-api
-====================================
+   ====================================
 
 Lib PyPI oficial: `qbittorrent-api` (rmartin16/qbittorrent-api)
 Suporta qBittorrent v4.1+ / Web API v2.x até v2.11.4 (qBittorrent v5.1.4, nov 2025)
@@ -1593,38 +1719,41 @@ Suporte async via `qbittorrentapi.Client` + `asyncio.to_thread`.
 ALTERNATIVA: usar httpx diretamente com cookie SID — mais leve, sem dep extra.
 
 5. FLUXO END-TO-END RECOMENDADO
-================================
-
-  1. Usuário digita termo na aba "Torrents" do AKASHA
-  2. AKASHA chama Prowlarr GET /api/v1/search (ou Jackett como fallback)
-  3. Resultados mostrados: título, seeders/leechers, tamanho, indexer, data
-  4. Usuário clica "↓ baixar" num resultado
-  5. AKASHA extrai magnetUrl (ou downloadUrl) e envia para qBittorrent
-     via POST /api/v2/torrents/add
-  6. qBittorrent aparece na seção "Torrents ativos" com polling SSE ou
-     HTMX polling a cada 5s mostrando progress/speed/eta
+   ================================
+   
+   1. Usuário digita termo na aba "Torrents" do AKASHA
+   2. AKASHA chama Prowlarr GET /api/v1/search (ou Jackett como fallback)
+   3. Resultados mostrados: título, seeders/leechers, tamanho, indexer, data
+   4. Usuário clica "↓ baixar" num resultado
+   5. AKASHA extrai magnetUrl (ou downloadUrl) e envia para qBittorrent
+      via POST /api/v2/torrents/add
+   6. qBittorrent aparece na seção "Torrents ativos" com polling SSE ou
+      HTMX polling a cada 5s mostrando progress/speed/eta
 
 6. CATEGORIAS TORZNAB RELEVANTES
-==================================
-  2000 = Filmes
-  3000 = Áudio / Música
-  4000 = PC (software, jogos)
-  5000 = TV
-  6000 = XXX (ignorar ou bloquear)
-  7000 = Livros / eBooks
-  8000 = Outros
-  Usar cat=2000,3000,4000,5000,7000 para excluir categorias indesejadas.
+   ==================================
+   
+   2000 = Filmes
+   3000 = Áudio / Música
+   4000 = PC (software, jogos)
+   5000 = TV
+   6000 = XXX (ignorar ou bloquear)
+   7000 = Livros / eBooks
+   8000 = Outros
+   Usar cat=2000,3000,4000,5000,7000 para excluir categorias indesejadas.
 
 7. CONSIDERAÇÕES
-=================
-  - qBittorrent só precisa estar rodando localmente; sem config extra com bypass
-  - Prowlarr/Jackett precisam ser instalados e configurados pelo usuário
-  - AKASHA deve verificar conexão e mostrar banner gracioso se offline
-  - Preferir magnetUrl sobre downloadUrl para privacidade
-  - Salvar config (hosts, ports, apikeys) na tabela settings do SQLite
+   =================
+   
+   - qBittorrent só precisa estar rodando localmente; sem config extra com bypass
+   - Prowlarr/Jackett precisam ser instalados e configurados pelo usuário
+   - AKASHA deve verificar conexão e mostrar banner gracioso se offline
+   - Preferir magnetUrl sobre downloadUrl para privacidade
+   - Salvar config (hosts, ports, apikeys) na tabela settings do SQLite
 
 FONTES
 -------
+
 - qBittorrent Web API (4.1): https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.1)
 - qbittorrent-api PyPI: https://pypi.org/project/qbittorrent-api/
 - qbittorrent-api docs (Torrents): https://qbittorrent-api.readthedocs.io/en/latest/apidoc/torrents.html
@@ -1648,26 +1777,30 @@ extração de snippets, busca híbrida, query understanding, deduplicação near
 ================================================================================
 
 ================================================================================
+
 1. SQLite FTS5 — FUNCIONALIDADES AVANÇADAS
-================================================================================
+   ================================================================================
 
 1.1. BM25 BUILT-IN — IMPLEMENTAÇÃO E PARÂMETROS
 ------------------------------------------------
+
 FTS5 inclui BM25 (Best Match 25) nativo. Parâmetros k1=1.2 e b=0.75 são hard-coded
 e não podem ser alterados. A fórmula:
 
   Score(D,Q) = -1 + Σ[ IDF(qi) × (f(qi,D) × (k1+1)) / (f(qi,D) + k1×(1 − b + b×|D|/avgdl)) ]
 
 Onde:
-  - |D| = número de tokens no documento atual
-  - avgdl = média de tokens em todos os documentos
-  - IDF(qi) = inverse-document-frequency da frase i
-  - f(qi,D) = frequência da frase i no documento D
+
+- |D| = número de tokens no documento atual
+- avgdl = média de tokens em todos os documentos
+- IDF(qi) = inverse-document-frequency da frase i
+- f(qi,D) = frequência da frase i no documento D
 
 Retorna valor NEGATIVO — quanto menor, mais relevante. Usar ORDER BY bm25(tabela).
-
 1.2. FUNÇÃO bm25() COM PESOS POR COLUNA
+
 -----------------------------------------
+
 Sintaxe: bm25(tabela, peso_col0, peso_col1, peso_col2, ...)
 
 Exemplo para tabela com colunas (path, title, body, source):
@@ -1684,25 +1817,27 @@ Override por query (três formas equivalentes):
   SELECT * FROM ft WHERE ft MATCH ? AND rank MATCH 'bm25(10.0, 5.0)' ORDER BY rank
   SELECT * FROM ft WHERE ft = ? AND rank = 'bm25(10.0, 5.0)' ORDER BY rank
   SELECT * FROM ft(?, 'bm25(10.0, 5.0)') ORDER BY rank
-
 1.3. FUNÇÕES AUXILIARES BUILT-IN
+
 ----------------------------------
 
 snippet(tabela, col_index, markup_ini, markup_fim, elipse, max_tokens)
-  - col_index: índice da coluna (0 = primeira); -1 = selecionar melhor automaticamente
-  - max_tokens: máximo de tokens no snippet (range: 1–64)
-  - Algoritmo: prioriza início de coluna, após "." ou ":", maximiza termos distintos
+
+- col_index: índice da coluna (0 = primeira); -1 = selecionar melhor automaticamente
+- max_tokens: máximo de tokens no snippet (range: 1–64)
+- Algoritmo: prioriza início de coluna, após "." ou ":", maximiza termos distintos
   Exemplo: snippet(local_fts, 2, '<b>', '</b>', '…', 30)
 
 highlight(tabela, col_index, markup_ini, markup_fim)
-  - Retorna texto completo da coluna com termos marcados
-  - Frases sobrepostas recebem um único par de marcadores
+
+- Retorna texto completo da coluna com termos marcados
+- Frases sobrepostas recebem um único par de marcadores
   Exemplo: highlight(local_fts, 1, '<mark>', '</mark>')
 
 Nota: FTS5 NÃO tem matchinfo() — essa função existe no FTS3/FTS4. Em FTS5, usar
 bm25() e funções auxiliares personalizadas para obter métricas equivalentes.
-
 1.4. QUERIES AVANÇADAS
+
 ------------------------
 
 Prefix query (asterisco FORA de aspas):
@@ -1729,35 +1864,39 @@ Filtro por coluna:
 Prefix indexes para acelerar queries de prefixo:
   CREATE VIRTUAL TABLE ft USING fts5(a, b, prefix='2 3')
   -- Cria índices para prefixos de 2 e 3 caracteres → consultas prefix mais rápidas
-
 1.5. TOKENIZADORES
+
 -------------------
 
 unicode61 (padrão):
-  - Case-insensitive por Unicode 6.1
-  - Por padrão remove diacríticos de caracteres latinos (À=A, ê=e, etc.)
-  - Opções:
-      remove_diacritics 0|1|2   (0=preserva, 1=remove parcial, 2=remove correto)
-      tokenchars '-_'           (trata hífens e underscores como parte do token)
-      separators '.'            (ponto como separador adicional)
-      categories 'L* N* Co'     (classes Unicode tratadas como tokens)
+
+- Case-insensitive por Unicode 6.1
+- Por padrão remove diacríticos de caracteres latinos (À=A, ê=e, etc.)
+- Opções:
+    remove_diacritics 0|1|2   (0=preserva, 1=remove parcial, 2=remove correto)
+    tokenchars '-_'           (trata hífens e underscores como parte do token)
+    separators '.'            (ponto como separador adicional)
+    categories 'L* N* Co'     (classes Unicode tratadas como tokens)
   Exemplo: tokenize="unicode61 remove_diacritics 2 tokenchars '-'"
 
 porter (stemming inglês):
-  - Wrapper sobre outro tokenizer, aplica algoritmo Porter Stemmer
-  - "correction" → "correct" → matches "correcting", "corrected"
-  - Apenas inglês; não afeta português
+
+- Wrapper sobre outro tokenizer, aplica algoritmo Porter Stemmer
+- "correction" → "correct" → matches "correcting", "corrected"
+- Apenas inglês; não afeta português
   Exemplo: tokenize='porter unicode61 remove_diacritics 1'
 
 ascii:
-  - Não-ASCII (>127) sempre tokenizados; case-fold apenas ASCII
-  - Sem suporte a diacríticos; Ã e ã são tokens distintos
+
+- Não-ASCII (>127) sempre tokenizados; case-fold apenas ASCII
+- Sem suporte a diacríticos; Ã e ã são tokens distintos
 
 Estratégia para AKASHA (PT+EN):
-  - tokenize='unicode61 remove_diacritics 2' garante que buscas sem acento
-    encontrem conteúdo com acento (buscar "pagina" encontra "página")
-  - porter não é adequado para português; stemming PT deve ser feito em
-    pré-processamento (ver seção 7)
+
+- tokenize='unicode61 remove_diacritics 2' garante que buscas sem acento
+  encontrem conteúdo com acento (buscar "pagina" encontra "página")
+- porter não é adequado para português; stemming PT deve ser feito em
+  pré-processamento (ver seção 7)
 
 1.6. OPÇÕES DE COLUNA E ÍNDICE
 --------------------------------
@@ -1767,12 +1906,14 @@ UNINDEXED: armazena valor mas não indexa para MATCH
   -- url pode ser recuperado mas não buscado via FTS
 
 detail=none/column/full: controla granularidade do índice
-  - full (padrão): armazena posições de tokens → suporta snippets e phrase queries
-  - column: armazena por coluna, não posição → phrase queries limitadas
-  - none: apenas saber se termo existe → mais compacto, sem snippets precisos
+
+- full (padrão): armazena posições de tokens → suporta snippets e phrase queries
+- column: armazena por coluna, não posição → phrase queries limitadas
+- none: apenas saber se termo existe → mais compacto, sem snippets precisos
 
 1.7. FUNÇÕES AUXILIARES CUSTOMIZADAS
 --------------------------------------
+
 É possível registrar funções C customizadas via fts5_api (xCreateFunction).
 Em Python, a biblioteca sqlitefts (PyPI) permite adicionar funções auxiliares
 Python ao FTS5. Complexidade alta; raramente necessário além de bm25/snippet.
@@ -1780,16 +1921,16 @@ Python ao FTS5. Complexidade alta; raramente necessário além de bm25/snippet.
 ================================================================================
 2. RANKING ALÉM DO BM25 — VARIANTES E ABORDAGENS
 ================================================================================
-
 2.1. VARIANTES DO BM25
+
 ------------------------
 
-| Variante  | Diferença principal                                           | Comportamento        |
-|-----------|---------------------------------------------------------------|----------------------|
-| BM25      | Implementação padrão Okapi                                    | IDF pode ser negativo|
-| BM25+     | Adiciona floor positivo quando termo ocorre ≥1 vez            | Sempre contribui     |
-| BM25L     | Modifica TF para penalizar menos documentos longos            | Favorece docs longos |
-| BM25-Adpt | Adapta k1 por termo (não por coleção)                         | Mais preciso         |
+| Variante  | Diferença principal                                | Comportamento         |
+| --------- | -------------------------------------------------- | --------------------- |
+| BM25      | Implementação padrão Okapi                         | IDF pode ser negativo |
+| BM25+     | Adiciona floor positivo quando termo ocorre ≥1 vez | Sempre contribui      |
+| BM25L     | Modifica TF para penalizar menos documentos longos | Favorece docs longos  |
+| BM25-Adpt | Adapta k1 por termo (não por coleção)              | Mais preciso          |
 
 Estudos empíricos (SIGIR, PMC 2020): diferenças de efetividade entre variantes são
 mínimas quando parâmetros são otimizados. SQLite FTS5 usa BM25 padrão com k1=1.2.
@@ -1798,22 +1939,25 @@ Python: rank_bm25 (pip install rank-bm25) — BM25Okapi, BM25Plus, BM25L dispon�
         bm25s (pip install bm25s) — 100–500x mais rápido que rank_bm25 via scipy sparse
 
 BM25S:
-  - Pré-computa scores de relevância em matriz esparsa (scipy)
-  - Apenas dependências: numpy + scipy
-  - Throughput: ordem de magnitude superior para corpus > 100k documentos
-  - Ideal para re-score out-of-SQLite quando FTS5 não é suficiente
+
+- Pré-computa scores de relevância em matriz esparsa (scipy)
+- Apenas dependências: numpy + scipy
+- Throughput: ordem de magnitude superior para corpus > 100k documentos
+- Ideal para re-score out-of-SQLite quando FTS5 não é suficiente
 
 2.2. TF-IDF CLÁSSICO E VARIANTES
 ----------------------------------
+
 TF-IDF é a base conceitual do BM25. Diferença chave: BM25 satura o TF (evita
 que um termo que aparece 1000x valha 1000x mais que um que aparece 10x) e
 normaliza por comprimento do documento de forma probabilística.
 
 Para uso em Python standalone: sklearn.feature_extraction.text.TfidfVectorizer
 Útil para re-ranking como segundo passo após FTS5 (AKASHA já usa FTS5 primário).
-
 2.3. LEARNING TO RANK (L2R) LEVE PARA USO LOCAL
+
 --------------------------------------------------
+
 L2R usa ML para combinar múltiplos sinais de relevância em um score final.
 Abordagens por complexidade crescente:
 
@@ -1829,20 +1973,23 @@ c) Listwise:
    Otimiza NDCG diretamente sobre listas; mais complexo.
 
 Para AKASHA (uso pessoal, sem corpus de treino anotado):
-  - L2R supervisionado é impraticável sem dados de relevância.
-  - Alternativa: usar cliclagens implícitas (tempo na página, re-visita) como sinal.
-  - Mínimo viável: combinar BM25 + boost por domínio favorito + recência de indexação.
+
+- L2R supervisionado é impraticável sem dados de relevância.
+- Alternativa: usar cliclagens implícitas (tempo na página, re-visita) como sinal.
+- Mínimo viável: combinar BM25 + boost por domínio favorito + recência de indexação.
 
 2.4. RE-RANKING COM CROSS-ENCODERS PEQUENOS
 --------------------------------------------
+
 Cross-encoders recebem (query, documento) como par e retornam score de relevância.
 São mais precisos que bi-encoders mas não escalam para corpus inteiro — usar para
 re-rankear top-K (ex: top-20 resultados FTS5 → re-rank com cross-encoder).
 
 Modelos leves:
-  - cross-encoder/ms-marco-MiniLM-L-6-v2 (~22MB): BEIR benchmark competitivo
-  - FlashRank (pip install flashrank): wrapper ultra-leve com modelos embutidos ~4MB
-  - rerankers (pip install rerankers): API unificada para múltiplos rerankers
+
+- cross-encoder/ms-marco-MiniLM-L-6-v2 (~22MB): BEIR benchmark competitivo
+- FlashRank (pip install flashrank): wrapper ultra-leve com modelos embutidos ~4MB
+- rerankers (pip install rerankers): API unificada para múltiplos rerankers
 
 FlashRank é o mais prático para uso local (AKASHA): sem deps pesadas, funciona CPU.
 Cross-encoder/ms-marco-MiniLM-L-6-v2 via sentence-transformers: ~22MB, rápido em CPU.
@@ -1852,9 +1999,10 @@ Custo: para top-20 documentos, re-ranking demora ~200ms em CPU típico — aceit
 ================================================================================
 3. MOTORES DE BUSCA PESSOAIS / SELF-HOSTED
 ================================================================================
-
 3.1. MARGINALIA SEARCH
+
 ------------------------
+
 Criado por Viktor Lofgren (Suécia, 2021). Java, código aberto.
 GitHub: github.com/MarginaliaSearch/MarginaliaSearch
 
@@ -1862,57 +2010,65 @@ Foco: web pequena, sites text-heavy, não-comerciais. Favorece conteúdo sem
 rastreadores, sem cookies, sem newsletters. Indexa ~100M páginas.
 
 Arquitetura:
-  - Crawler próprio + BFS
-  - Índice invertido customizado (não Lucene, não SQLite)
-  - Ranking: BM25 + sinais de qualidade proprietários
-  - Pode ser usado como white-label para dados próprios (via side-loading)
-  - Requer ~32GB RAM para ambiente produção-like; menor com índice menor
-  - Hardware mínimo possível via limitação de tamanho do índice
+
+- Crawler próprio + BFS
+- Índice invertido customizado (não Lucene, não SQLite)
+- Ranking: BM25 + sinais de qualidade proprietários
+- Pode ser usado como white-label para dados próprios (via side-loading)
+- Requer ~32GB RAM para ambiente produção-like; menor com índice menor
+- Hardware mínimo possível via limitação de tamanho do índice
 
 Relevante para AKASHA: arquitetura de side-loading (importar URLs já coletadas)
 é o modelo mais próximo do que AKASHA precisa.
-
 3.2. MWMBL
+
 -----------
+
 Python (Django + FastAPI + scikit-learn). GitHub: github.com/mwmbl/mwmbl
 
 Características:
-  - TinyIndex: estrutura hash customizada (não inverted index clássico)
-  - Crawling distribuído pela comunidade; indexação central
-  - ~500M URLs únicas indexadas (mai. 2026)
-  - Usa jusText para extração de conteúdo
-  - Ranking: sinais comunitários (votos, curações)
-  - Não é adequado para self-hosting pessoal (depende de comunidade)
+
+- TinyIndex: estrutura hash customizada (não inverted index clássico)
+- Crawling distribuído pela comunidade; indexação central
+- ~500M URLs únicas indexadas (mai. 2026)
+- Usa jusText para extração de conteúdo
+- Ranking: sinais comunitários (votos, curações)
+- Não é adequado para self-hosting pessoal (depende de comunidade)
 
 3.3. STRACT
 -----------
+
 Rust, open source, desenvolvido por Mikkel Denker. https://stract.com
 
 Características:
-  - "Optics": instruções customizáveis que filtram/reordenam resultados por tipo
-  - Usuário pode bloquear domínios, desfavorecer sites com muitos anúncios
-  - Crawler web próprio (não ideal para arquivos pessoais)
-  - Roda em servidor único (basement server); ~1000 buscas/hora no exemplo do criador
-  - Self-hosting: possível mas projetado para busca web pública, não arquivo pessoal
+
+- "Optics": instruções customizáveis que filtram/reordenam resultados por tipo
+- Usuário pode bloquear domínios, desfavorecer sites com muitos anúncios
+- Crawler web próprio (não ideal para arquivos pessoais)
+- Roda em servidor único (basement server); ~1000 buscas/hora no exemplo do criador
+- Self-hosting: possível mas projetado para busca web pública, não arquivo pessoal
 
 3.4. YaCy
 ----------
+
 Java, P2P, criado em 2003 por Michael Christen. https://yacy.net
 
 Arquitetura:
-  - Distributed Hash Table (DHT) para distribuição do índice entre peers
-  - Reverse Word Indexing (RWI)
-  - Pode operar em modo intranet (isolado da rede P2P) — adequado para uso pessoal
-  - Web interface em http://localhost:8090
-  - Disponível como pacote Linux/Windows/Mac e imagem Docker
-  - RAM: mínimo funcional ~512MB; recomendado ≥1GB para indexação ativa
+
+- Distributed Hash Table (DHT) para distribuição do índice entre peers
+- Reverse Word Indexing (RWI)
+- Pode operar em modo intranet (isolado da rede P2P) — adequado para uso pessoal
+- Web interface em http://localhost:8090
+- Disponível como pacote Linux/Windows/Mac e imagem Docker
+- RAM: mínimo funcional ~512MB; recomendado ≥1GB para indexação ativa
 
 Para AKASHA: YaCy no modo intranet pode indexar arquivos locais via file:// e
 servir busca full-text, mas integração com Python é via HTTP API básica.
 Desvantagem: JVM; overhead maior que SQLite FTS5.
-
 3.5. SEARXNG
+
 ------------
+
 Python, metabuscador (agrega resultados de 70+ engines). https://searxng.org
 
 Diferença fundamental: SearXNG NÃO rastreia nem indexa — apenas agrega resultados
@@ -1921,17 +2077,18 @@ de outros buscadores (Google, Bing, DuckDuckGo, etc.) sem repassar dados do usu�
 Não é adequado para buscar em arquivo pessoal local.
 Uso para AKASHA: poderia ser integrado como fonte de busca web externa (complementar
 à busca local FTS5), agregando resultados de múltiplos buscadores públicos.
-
 3.6. ANÁLISE COMPARATIVA PARA AKASHA
+
 --------------------------------------
-| Motor      | Linguagem | Arquivo local | Ranking     | Self-host | Relevância p/AKASHA |
-|------------|-----------|---------------|-------------|-----------|---------------------|
-| SQLite FTS5| C (embutido)| Nativo       | BM25        | Embutido  | ALTO — já em uso    |
-| Marginalia | Java      | Via side-load | BM25 + sinais| Sim (RAM) | MÉDIO — referência  |
-| YaCy       | Java      | Sim (intranet)| BM25 + links| Sim (JVM) | BAIXO — overhead    |
-| Stract     | Rust      | Não nativo    | Custom      | Sim       | BAIXO — web-focused |
-| Mwmbl      | Python    | Não           | TinyIndex   | Não real  | BAIXO               |
-| SearXNG    | Python    | Não           | Agrega      | Sim       | COMPLEMENTAR (web)  |
+
+| Motor       | Linguagem    | Arquivo local  | Ranking       | Self-host | Relevância p/AKASHA |
+| ----------- | ------------ | -------------- | ------------- | --------- | ------------------- |
+| SQLite FTS5 | C (embutido) | Nativo         | BM25          | Embutido  | ALTO — já em uso    |
+| Marginalia  | Java         | Via side-load  | BM25 + sinais | Sim (RAM) | MÉDIO — referência  |
+| YaCy        | Java         | Sim (intranet) | BM25 + links  | Sim (JVM) | BAIXO — overhead    |
+| Stract      | Rust         | Não nativo     | Custom        | Sim       | BAIXO — web-focused |
+| Mwmbl       | Python       | Não            | TinyIndex     | Não real  | BAIXO               |
+| SearXNG     | Python       | Não            | Agrega        | Sim       | COMPLEMENTAR (web)  |
 
 Conclusão: SQLite FTS5 + sqlite-vec é a stack ideal para AKASHA. Marginalia é
 referência de arquitetura; YaCy pode ser curiosidade para modo intranet.
@@ -1939,9 +2096,10 @@ referência de arquitetura; YaCy pode ser curiosidade para modo intranet.
 ================================================================================
 4. BUSCA DE ARTIGOS CIENTÍFICOS — APIs GRATUITAS
 ================================================================================
-
 4.1. OPENALEX
+
 --------------
+
 Mantido pela OurResearch (nonprofit). Sem fins lucrativos; 250M+ works indexados.
 Documentação: https://developers.openalex.org/
 
@@ -1949,45 +2107,50 @@ Desde fev/2026: API key obrigatória (GRATUITA — basta cadastro).
 Rate limit: 100k requests/dia com key.
 
 Metadados retornados (Work object, 50+ campos top-level):
-  - id, doi, title, display_name
-  - publication_year, publication_date, language
-  - type (journal-article, book-chapter, dataset, etc.)
-  - abstract_inverted_index (abstract como mapa invertido — pyalex converte para texto)
-  - open_access: {is_oa, oa_status, oa_url}
-  - authorships: [{author, institutions, affiliations}]
-  - cited_by_count, citations_normalized_percentile
-  - topics, concepts, keywords
-  - locations: [{source, landing_page_url, pdf_url, is_oa}]
-  - referenced_works, related_works (IDs OpenAlex)
+
+- id, doi, title, display_name
+- publication_year, publication_date, language
+- type (journal-article, book-chapter, dataset, etc.)
+- abstract_inverted_index (abstract como mapa invertido — pyalex converte para texto)
+- open_access: {is_oa, oa_status, oa_url}
+- authorships: [{author, institutions, affiliations}]
+- cited_by_count, citations_normalized_percentile
+- topics, concepts, keywords
+- locations: [{source, landing_page_url, pdf_url, is_oa}]
+- referenced_works, related_works (IDs OpenAlex)
 
 Python: pip install pyalex
   from pyalex import Works
   works = Works().search("machine learning").filter(publication_year=2024).get()
-  # Converte abstract automaticamente: w.abstract (property calculada)
+
+# Converte abstract automaticamente: w.abstract (property calculada)
 
 Endpoints úteis:
   GET https://api.openalex.org/works?search=query&filter=is_oa:true,year:2024
   GET https://api.openalex.org/works/{openalex_id}
   GET https://api.openalex.org/works?filter=doi:10.xxxx/yyyy
-
 4.2. SEMANTIC SCHOLAR
+
 ----------------------
+
 Allen Institute for AI. 200M+ papers. API key opcional mas recomendada (grátis).
 API docs: https://api.semanticscholar.org/api-docs/
 
 Rate limits:
-  - Sem key: 100 requests/5 minutos (compartilhados entre todos os anônimos)
-  - Com key: 1 request/segundo (suficiente para uso pessoal)
-  - Bulk/batch endpoints: usar em vez de relevance search (menos resource-intensive)
+
+- Sem key: 100 requests/5 minutos (compartilhados entre todos os anônimos)
+- Com key: 1 request/segundo (suficiente para uso pessoal)
+- Bulk/batch endpoints: usar em vez de relevance search (menos resource-intensive)
 
 Metadados:
-  - paperId (S2 ID), externalIds (DOI, ArXiv, PubMed, etc.)
-  - title, abstract, year, venue, authors
-  - citationCount, referenceCount, influentialCitationCount
-  - isOpenAccess, openAccessPdf: {url, status}
-  - fieldsOfStudy, s2FieldsOfStudy
-  - tldr (AI-generated summary — único entre as APIs)
-  - embedding.specter_v2 (384-dim vetor disponível via API)
+
+- paperId (S2 ID), externalIds (DOI, ArXiv, PubMed, etc.)
+- title, abstract, year, venue, authors
+- citationCount, referenceCount, influentialCitationCount
+- isOpenAccess, openAccessPdf: {url, status}
+- fieldsOfStudy, s2FieldsOfStudy
+- tldr (AI-generated summary — único entre as APIs)
+- embedding.specter_v2 (384-dim vetor disponível via API)
 
 Endpoints chave:
   POST https://api.semanticscholar.org/graph/v1/paper/batch  (bulk por IDs)
@@ -1999,9 +2162,10 @@ Endpoints chave:
 Parâmetro fields: especificar apenas campos necessários (ex: ?fields=title,abstract,year)
 
 Python: httpx direto (sem lib dedicada madura); ou semanticscholar PyPI (informal).
-
 4.3. ARXIV
+
 -----------
+
 Cornell University. Apenas preprints (CS, Física, Matemática, Economia, etc.).
 API REST v2: https://arxiv.org/search/
 
@@ -2015,23 +2179,26 @@ Python oficial: pip install arxiv (lukasschwab/arxiv.py)
       print(r.title, r.pdf_url, r.entry_id, r.categories)
 
 Metadados disponíveis:
-  - entry_id (URL canônica: https://arxiv.org/abs/xxxx.xxxxx)
-  - title, summary (abstract), authors
-  - published, updated (datetime)
-  - primary_category, categories (lista)
-  - pdf_url (link direto para PDF — sem paywall)
-  - doi (quando disponível)
-  - journal_ref (quando publicado em journal)
+
+- entry_id (URL canônica: https://arxiv.org/abs/xxxx.xxxxx)
+- title, summary (abstract), authors
+- published, updated (datetime)
+- primary_category, categories (lista)
+- pdf_url (link direto para PDF — sem paywall)
+- doi (quando disponível)
+- journal_ref (quando publicado em journal)
 
 Categorias relevantes para AKASHA: cs.IR (Information Retrieval), cs.DB (Databases).
 arXiv PDFs são sempre open access — Unpaywall não necessário para arXiv.
 
 Busca por campos:
   arxiv.Search(query="ti:sqlite AND ab:full-text")  # título e abstract
-  # Prefixos: ti: (título), au: (autor), ab: (abstract), cat: (categoria)
+
+# Prefixos: ti: (título), au: (autor), ab: (abstract), cat: (categoria)
 
 4.4. CROSSREF
 --------------
+
 Agência oficial de registro de DOI. 150M+ obras. Sem key necessária.
 Endpoint: https://api.crossref.org/works
 
@@ -2040,9 +2207,10 @@ Rate limit: liberal sem key; adicionar email no User-Agent para aumentar limite.
   GET https://api.crossref.org/works/{doi}
 
 Metadados:
-  - DOI, título, autores, publisher, ISSN/ISBN
-  - data de publicação, tipo de obra
-  - URL da versão registrada
+
+- DOI, título, autores, publisher, ISSN/ISBN
+- data de publicação, tipo de obra
+- URL da versão registrada
   Nota: NÃO retorna abstracts diretamente (limitação da Crossref)
 
 Python: pip install habanero (wrapper Crossref)
@@ -2051,31 +2219,36 @@ Python: pip install habanero (wrapper Crossref)
   results = cr.works(query="full text search sqlite", limit=10)
 
 Melhor uso: lookup de metadados por DOI quando já se tem o DOI.
-
 4.5. UNPAYWALL
+
 ---------------
+
 OurResearch. Indexa localização open access de 50M+ artigos com DOI.
 Endpoint: GET https://api.unpaywall.org/v2/{doi}?email={seu_email}
 
 Rate limit: 100k calls/dia.
 
 Retorna:
-  - is_oa (boolean)
-  - oa_status: "gold" | "green" | "hybrid" | "bronze" | "closed"
-  - best_oa_location: {url, url_for_pdf, host_type, version}
-  - all_oa_locations: lista completa de localizações OA
+
+- is_oa (boolean)
+- oa_status: "gold" | "green" | "hybrid" | "bronze" | "closed"
+- best_oa_location: {url, url_for_pdf, host_type, version}
+- all_oa_locations: lista completa de localizações OA
 
 Python: pip install unpywall
   from unpywall import Unpywall
   df = Unpywall.doi(dois=['10.xxxx/yyyy'])
-  # Ou download direto:
+
+# Ou download direto:
+
   Unpywall.download_pdf(dois=['10.xxxx/yyyy'], directory='/tmp')
 
 Estratégia para AKASHA: ao ter um DOI (de Crossref, S2, ou OpenAlex),
 consultar Unpaywall para obter PDF gratuito quando disponível.
-
 4.6. FLUXO INTEGRADO RECOMENDADO PARA AKASHA
+
 ---------------------------------------------
+
 1. Busca por query → Semantic Scholar bulk search (metadados + tldr + OA flag)
 2. Para papers relevantes com DOI → Unpaywall para PDF open access
 3. Para papers arXiv (cat: cs.*) → arxiv.py direto (sempre OA)
@@ -2087,33 +2260,38 @@ consultar Unpaywall para obter PDF gratuito quando disponível.
 ================================================================================
 5. EXTRAÇÃO DE SNIPPETS / EXCERPTS
 ================================================================================
-
 5.1. SNIPPET FTS5 BUILT-IN
+
 ---------------------------
+
 A função snippet() do FTS5 é adequada para uso imediato:
   snippet(local_fts, -1, '<b>', '</b>', '…', 40)
 
 Limitações:
-  - max_tokens: teto de 64 tokens (documentação oficial)
-  - Seleção do snippet é heurística (início, após pontuação, máximo de termos)
-  - Não usa semântica — apenas contagem de termos
+
+- max_tokens: teto de 64 tokens (documentação oficial)
+- Seleção do snippet é heurística (início, após pontuação, máximo de termos)
+- Não usa semântica — apenas contagem de termos
 
 Para snippets mais longos ou melhor qualidade: pós-processamento Python.
-
 5.2. TRAFILATURA — EXTRAÇÃO DE CONTEÚDO WEB
+
 --------------------------------------------
+
 pip install trafilatura
 
 Melhor ferramenta única para HTML → texto limpo + metadata:
   import trafilatura
   text = trafilatura.extract(html_content)
-  # Opções de formato: txt, markdown, json, csv, xml
+
+# Opções de formato: txt, markdown, json, csv, xml
 
 Benchmarks (ScrapingHub 2022, SIGIR 2023):
-  - F1 score: 0.945 (melhor overall no benchmark ScrapingHub com 640k páginas)
-  - Melhor média geral (F1 = 0.883) no benchmark combinado SIGIR 2023
-  - Readability tem mediana mais alta (0.970) — melhor em artigos padrão
-  - jusText: F1 = 0.802 (mais conservador, preserva apenas texto com sentenças)
+
+- F1 score: 0.945 (melhor overall no benchmark ScrapingHub com 640k páginas)
+- Melhor média geral (F1 = 0.883) no benchmark combinado SIGIR 2023
+- Readability tem mediana mais alta (0.970) — melhor em artigos padrão
+- jusText: F1 = 0.802 (mais conservador, preserva apenas texto com sentenças)
 
 Arquitetura interna: usa readability-lxml como fallback #1, jusText como fallback #2.
 Quando extração inicial é curta/ruidosa, tenta automaticamente os fallbacks.
@@ -2123,9 +2301,10 @@ Output como JSON incluindo todos os metadados + texto:
   result = trafilatura.extract(html, output_format='json', include_metadata=True)
 
 Adotado por HuggingFace, IBM, Microsoft Research, Allen Institute, Stanford.
-
 5.3. EXTRAÇÃO DE PASSAGENS RELEVANTES (PASSAGE RETRIEVAL)
+
 ----------------------------------------------------------
+
 Para melhorar snippets além do FTS5, abordagens em ordem crescente de complexidade:
 
 a) Janela deslizante simples:
@@ -2149,9 +2328,10 @@ Para AKASHA: (b) BM25 por parágrafo é o melhor custo-benefício para snippets 
 ================================================================================
 6. BUSCA HÍBRIDA — FTS5 BM25 + SIMILARIDADE VETORIAL
 ================================================================================
-
 6.1. SQLITE-VEC — EXTENSÃO VETORIAL PARA SQLITE
+
 -------------------------------------------------
+
 pip install sqlite-vec
 Desenvolvida por Alex Garcia. Escrita em C puro, sem dependências, MIT/Apache-2.0.
 Stable desde agosto/2024 (v0.1.0).
@@ -2165,21 +2345,24 @@ Cria virtual tables para KNN search:
 Integração com Python:
   import sqlite_vec
   sqlite_vec.load(conn)  # carrega extensão
-  # vectors como list[float] → serialize_float32()
+
+# vectors como list[float] → serialize_float32()
 
 Funciona no mesmo arquivo .db que FTS5 → sem servidor separado.
 Limitação: busca KNN exata (não aproximada); para corpora < 100k documentos, adequado.
-
 6.2. RECIPROCAL RANK FUSION (RRF)
+
 ----------------------------------
+
 Fórmula padrão para combinar rankings sem normalização de scores:
 
   RRF_score(d) = Σ_i  1 / (k + rank_i(d))
 
 Onde:
-  - k = 60 (padrão empírico; valor menor dá mais peso ao topo do ranking)
-  - rank_i(d) = posição do documento d no ranking i (começa em 1)
-  - Soma sobre todos os sistemas de recuperação (ex: FTS5 + vetorial)
+
+- k = 60 (padrão empírico; valor menor dá mais peso ao topo do ranking)
+- rank_i(d) = posição do documento d no ranking i (começa em 1)
+- Soma sobre todos os sistemas de recuperação (ex: FTS5 + vetorial)
 
 Python (implementação mínima):
   def rrf(rankings: list[list], k=60) -> list:
@@ -2194,9 +2377,10 @@ similarity (0–1) sem normalização. Documentos que aparecem em ambos os siste
 sobem naturalmente.
 
 Variação de k:
-  - k=20–40: topo do ranking tem influência muito maior
-  - k=60: valor padrão, balanceado
-  - k=80–100: distribuição mais uniforme; top ranks têm menos vantagem
+
+- k=20–40: topo do ranking tem influência muito maior
+- k=60: valor padrão, balanceado
+- k=80–100: distribuição mais uniforme; top ranks têm menos vantagem
 
 6.3. IMPLEMENTAÇÃO CONCRETA PARA AKASHA (FTS5 + sqlite-vec + RRF)
 -------------------------------------------------------------------
@@ -2219,14 +2403,16 @@ Passo 4: buscar metadados dos IDs finais:
   SELECT title, body, path FROM docs WHERE rowid IN (...)
 
 Quando híbrido ajuda:
-  - Termos técnicos/acrônimos + queries conceituais → BM25 pega exatos, vetor pega semânticos
-  - Arquivos com conteúdo misturado PT/EN
-  - Queries ambíguas onde termos exatos nem sempre estão presentes
+
+- Termos técnicos/acrônimos + queries conceituais → BM25 pega exatos, vetor pega semânticos
+- Arquivos com conteúdo misturado PT/EN
+- Queries ambíguas onde termos exatos nem sempre estão presentes
 
 Quando híbrido não ajuda (apenas BM25 é suficiente):
-  - Queries por título exato ou URL
-  - Corpus pequeno (<10k documentos) onde BM25 já ranqueia bem
-  - Quando custo de embedding é proibitivo para hardware alvo
+
+- Queries por título exato ou URL
+- Corpus pequeno (<10k documentos) onde BM25 já ranqueia bem
+- Quando custo de embedding é proibitivo para hardware alvo
 
 Chroma já no ecossistema (Mnemosyne): o _search_chroma() em local_search.py já
 consulta ChromaDB. Aplicar RRF entre resultados FTS5 e Chroma seria melhoria direta.
@@ -2234,60 +2420,68 @@ consulta ChromaDB. Aplicar RRF entre resultados FTS5 e Chroma seria melhoria dir
 ================================================================================
 7. QUERY UNDERSTANDING — EXPANSÃO, STEMMING, SPELL CORRECTION
 ================================================================================
-
 7.1. STEMMING PARA PORTUGUÊS E INGLÊS
+
 ---------------------------------------
 
 RSLP Stemmer (Português):
-  - RSLP = Removedor de Sufixos da Língua Portuguesa
-  - Disponível em NLTK: from nltk.stem import RSLPStemmer
-  - Baseado em regras para português; produz stems válidos
-  - "buscando" → "busc", "arquivos" → "arq"
+
+- RSLP = Removedor de Sufixos da Língua Portuguesa
+- Disponível em NLTK: from nltk.stem import RSLPStemmer
+- Baseado em regras para português; produz stems válidos
+- "buscando" → "busc", "arquivos" → "arq"
 
 Snowball Stemmer (multi-idioma):
-  - Suporta português: from nltk.stem import SnowballStemmer; s = SnowballStemmer("portuguese")
-  - Também inglês, espanhol, alemão, francês, etc.
-  - Levemente diferente do RSLP em casos edge
+
+- Suporta português: from nltk.stem import SnowballStemmer; s = SnowballStemmer("portuguese")
+- Também inglês, espanhol, alemão, francês, etc.
+- Levemente diferente do RSLP em casos edge
 
 spaCy (lemmatização):
-  - pt_core_news_sm/lg: modelos para português (pip install spacy + python -m spacy download pt_core_news_sm)
-  - Lemmatização > stemming: "foi" → "ser", "buscando" → "buscar"
-  - Mais preciso mas ~100MB download por modelo
+
+- pt_core_news_sm/lg: modelos para português (pip install spacy + python -m spacy download pt_core_news_sm)
+- Lemmatização > stemming: "foi" → "ser", "buscando" → "buscar"
+- Mais preciso mas ~100MB download por modelo
 
 Estratégia para AKASHA (PT+EN bilíngue):
-  - Detecção de idioma: langdetect (pip install langdetect) — ~1ms por query
-  - PT: RSLP ou Snowball("portuguese")
-  - EN: porter (já disponível no FTS5 tokenizer) ou Snowball("english")
-  - Pré-processar query antes de passar ao FTS5 para melhorar recall
+
+- Detecção de idioma: langdetect (pip install langdetect) — ~1ms por query
+- PT: RSLP ou Snowball("portuguese")
+- EN: porter (já disponível no FTS5 tokenizer) ou Snowball("english")
+- Pré-processar query antes de passar ao FTS5 para melhorar recall
 
 Atenção: unicode61 com remove_diacritics 2 no FTS5 já resolve "pagina"→"página".
 Stemming adicional aumenta recall mas pode reduzir precisão.
-
 7.2. SPELL CORRECTION LEVE
+
 ----------------------------
 
 pyspellchecker (pip install pyspellchecker):
-  - Puro Python, baseado em frequências de palavras
-  - Algoritmo: permutações por distância de Levenshtein ≤2
-  - Suporta PT: spell = SpellChecker(language='pt')
-  - Simples; lento para queries longas; sem "did you mean?" sofisticado
+
+- Puro Python, baseado em frequências de palavras
+- Algoritmo: permutações por distância de Levenshtein ≤2
+- Suporta PT: spell = SpellChecker(language='pt')
+- Simples; lento para queries longas; sem "did you mean?" sofisticado
 
 symspellpy (pip install symspellpy):
-  - Port Python do SymSpell (C#)
-  - 1M+ palavras/segundo via tabela hash pre-computada de variantes
-  - Muito mais rápido que pyspellchecker para correção em tempo real
-  - Suporte multilíngue via dicionários de frequência customizáveis
+
+- Port Python do SymSpell (C#)
+- 1M+ palavras/segundo via tabela hash pre-computada de variantes
+- Muito mais rápido que pyspellchecker para correção em tempo real
+- Suporte multilíngue via dicionários de frequência customizáveis
 
 Embedding-based correction (2024):
-  - Melhor recall que Hunspell/pyspellchecker para queries de busca
-  - Custo: requer modelo de embedding rodando → overhead maior
-  - Referência: Embedding-based Query Spelling Correction (CEUR-WS 2024)
+
+- Melhor recall que Hunspell/pyspellchecker para queries de busca
+- Custo: requer modelo de embedding rodando → overhead maior
+- Referência: Embedding-based Query Spelling Correction (CEUR-WS 2024)
 
 Recomendação para AKASHA: symspellpy com dicionários PT+EN pré-compilados.
 Latência < 1ms por query; adequado para uso local.
-
 7.3. QUERY EXPANSION
+
 ---------------------
+
 Técnicas de query expansion adicionam sinônimos/termos relacionados para aumentar recall:
 
 a) Expansão via dicionário (simples):
@@ -2298,9 +2492,10 @@ b) Expansão via embedding:
    Custo: requer modelo de embedding.
 
 c) Expansão via pseudo-relevance feedback (PRF):
-   1. Rodar query original, pegar top-K documentos.
-   2. Extrair termos mais frequentes nesses documentos.
-   3. Re-rodar query expandida com esses termos.
+
+1. Rodar query original, pegar top-K documentos.
+2. Extrair termos mais frequentes nesses documentos.
+3. Re-rodar query expandida com esses termos.
    Limitação: pode amplificar erros de relevância do primeiro passo.
 
 d) Expansão via LLM local:
@@ -2314,29 +2509,33 @@ Alternativa simples sem LLM: stemming + expansão com OR no FTS5.
 ================================================================================
 8. DEDUPLICAÇÃO NEAR-DUPLICATE
 ================================================================================
-
 8.1. SIMHASH
+
 ------------
+
 Algoritmo de Charikar (2002), usado pelo Google Crawler para deduplicação.
 Gera fingerprint de 64 bits (hash) tal que documentos similares têm fingerprints
 próximos em distância de Hamming.
 
 Processo:
-  1. Tokenizar documento em n-grams ou palavras
-  2. Para cada token: gerar hash normal e somá-los ponderados
-  3. Binarizar: bit final = 1 se soma positiva, 0 se negativa
-  Resultado: fingerprint de 64 bits; distância Hamming ≤ 3 → near-duplicate
+
+1. Tokenizar documento em n-grams ou palavras
+2. Para cada token: gerar hash normal e somá-los ponderados
+3. Binarizar: bit final = 1 se soma positiva, 0 se negativa
+   Resultado: fingerprint de 64 bits; distância Hamming ≤ 3 → near-duplicate
 
 Python: pip install simhash (scrapinghub/python-simhash)
   from simhash import Simhash, SimhashIndex
   hash = Simhash(texto.split())
-  # Busca eficiente: SimhashIndex para múltiplos documentos
+
+# Busca eficiente: SimhashIndex para múltiplos documentos
 
 Complexidade: O(n) para gerar; O(1) para comparar (XOR + popcount).
 Limitação: funciona melhor para textos ≥ algumas centenas de palavras.
-
 8.2. MINHASH + LSH
+
 ------------------
+
 MinHash: estima similaridade de Jaccard entre dois conjuntos (ex: shingling).
 LSH (Locality-Sensitive Hashing): agrupa candidatos similares sem comparação exaustiva.
 
@@ -2352,36 +2551,41 @@ num_perm: compromisso precisão×velocidade (128 é padrão; diminuir→ menos p
 threshold: 0.8 = 80% Jaccard similarity → near-duplicate
 
 Quando usar MinHash vs SimHash:
-  - SimHash: melhor para texto longo; detecta duplicação de conteúdo
-  - MinHash+LSH: melhor para conjuntos (shingling); mais configurável em threshold
-  - SimHash é mais rápido para comparação par-a-par
-  - MinHash+LSH escala melhor para corpus grande via sub-linear query
+
+- SimHash: melhor para texto longo; detecta duplicação de conteúdo
+- MinHash+LSH: melhor para conjuntos (shingling); mais configurável em threshold
+- SimHash é mais rápido para comparação par-a-par
+- MinHash+LSH escala melhor para corpus grande via sub-linear query
 
 8.3. URL NORMALIZATION
 -----------------------
+
 Antes da deduplicação de conteúdo, normalizar URLs para detectar duplicatas triviais.
 
 Python: pip install url-normalize
   from url_normalize import url_normalize
   url_normalize("HTTP://EXAMPLE.COM/path?b=2&a=1")
-  # → "https://example.com/path?a=1&b=2"
+
+# → "https://example.com/path?a=1&b=2"
 
 Regras de normalização canônica:
-  - Lowercasing do scheme e host
-  - Remoção de fragmento (#anchor) — ignorado por servidores
-  - Ordenação alfabética de parâmetros query
-  - Normalização de path (../., trailing slash por convenção)
-  - Conversão HTTP → HTTPS
-  - Tratamento de IDN (domínios internacionalizados)
+
+- Lowercasing do scheme e host
+- Remoção de fragmento (#anchor) — ignorado por servidores
+- Ordenação alfabética de parâmetros query
+- Normalização de path (../., trailing slash por convenção)
+- Conversão HTTP → HTTPS
+- Tratamento de IDN (domínios internacionalizados)
 
 Biblioteca urlcanon (IIPC): canonicalização nível Web Archive, com SSURT
 (serialização adequada para sorting e prefix-matching).
 
 Para AKASHA: url_normalize antes de inserir no índice; SimHash sobre conteúdo
 extraído para detectar near-duplicates entre páginas diferentes.
-
 8.4. ESTRATÉGIA COMPLETA DE DEDUPLICAÇÃO PARA AKASHA
+
 ------------------------------------------------------
+
 Nível 1 — URL exata: normalizar URL e checar duplicata no DB (já implícito na chave primária).
 Nível 2 — URL near-duplicate: comparar URL normalizada via heurísticas
   (ex: session_id=xxx → remover params conhecidos de tracking).
@@ -2505,6 +2709,7 @@ FIM DA PESQUISA — Motores de Busca, Ranking e Busca Híbrida (AKASHA)
 
 PESQUISA — KOSMOS
 ================================================================================
+
 OTIMIZAÇÕES DE PIPELINE LLM LOCAL (OLLAMA) PARA ANÁLISE DE ARTIGOS
 Data: 2026-04-25
 Contexto: _AnalyzeWorker — 1 call JSON ao abrir artigo; extrai tags, sentiment,
@@ -2512,59 +2717,68 @@ clickbait, five_ws e entities; conteúdo truncado a 3000 chars; hardware: RX 660
 ================================================================================
 
 1. SAÍDA ESTRUTURADA JSON — CONSTRAINED DECODING vs PROMPT ENGINEERING
+
 ------------------------------------------------------------------------
+
 Ollama usa XGrammar como engine de constrained decoding por baixo do capô quando
 format="json" é passado. XGrammar é também o padrão no vLLM desde 2025.
 
 Mecanismo:
-  - O JSON Schema é compilado em um finite state machine (FSM)
-  - A cada step de token, logits de tokens inválidos são zerados (→ -inf)
-  - Garantia matemática de JSON válido, não estatística
-  - Vocabulário é particionado em tokens context-independent (pré-computados) e
-    context-dependent (validados em tempo real)
-  - Custo: ~50–200ms de compilação do FSM na 1ª requisição; requests subsequentes
-    com mesmo schema usam cache → overhead ≈ zero
+
+- O JSON Schema é compilado em um finite state machine (FSM)
+- A cada step de token, logits de tokens inválidos são zerados (→ -inf)
+- Garantia matemática de JSON válido, não estatística
+- Vocabulário é particionado em tokens context-independent (pré-computados) e
+  context-dependent (validados em tempo real)
+- Custo: ~50–200ms de compilação do FSM na 1ª requisição; requests subsequentes
+  com mesmo schema usam cache → overhead ≈ zero
 
 Performance XGrammar vs alternativas:
-  - Geração de máscara por token: <40 microsegundos (sub-milissegundo)
-  - Até 3.5× mais rápido que Outlines para JSON schema
-  - Mais de 10× mais rápido que llama-cpp para CFGs complexas
-  - End-to-end com Llama-3-8B no H100: 14× mais rápido que engines anteriores
-    para JSON schema, 80× para CFG
+
+- Geração de máscara por token: <40 microsegundos (sub-milissegundo)
+- Até 3.5× mais rápido que Outlines para JSON schema
+- Mais de 10× mais rápido que llama-cpp para CFGs complexas
+- End-to-end com Llama-3-8B no H100: 14× mais rápido que engines anteriores
+  para JSON schema, 80× para CFG
 
 Overhead vs texto livre:
-  - Constrained decoding NÃO aumenta latência em condições normais — o overhead
-    de masking é sub-milissegundo por token
-  - Benchmark do paper "Generating Structured Outputs" (arXiv 2501.10868):
-    constrained decoding reduz latência em ~50% vs unconstrained (Guidance: 6–9ms/token
-    vs geração livre: 15–16ms/token)
-  - Surpreendente: constrained decoding melhora acurácia de tarefa em ~3%
-    (o modelo converge mais rápido para resposta correta quando tokens inválidos são
-    eliminados)
-  - Outlines: overhead alto de compilação (3–12s por schema); evitar
-  - Guidance: compilação quase instantânea, melhor qualidade, mas não integrado ao Ollama
-  - Ollama com format="json": usa XGrammar internamente → overhead mínimo, OK para produção
+
+- Constrained decoding NÃO aumenta latência em condições normais — o overhead
+  de masking é sub-milissegundo por token
+- Benchmark do paper "Generating Structured Outputs" (arXiv 2501.10868):
+  constrained decoding reduz latência em ~50% vs unconstrained (Guidance: 6–9ms/token
+  vs geração livre: 15–16ms/token)
+- Surpreendente: constrained decoding melhora acurácia de tarefa em ~3%
+  (o modelo converge mais rápido para resposta correta quando tokens inválidos são
+  eliminados)
+- Outlines: overhead alto de compilação (3–12s por schema); evitar
+- Guidance: compilação quase instantânea, melhor qualidade, mas não integrado ao Ollama
+- Ollama com format="json": usa XGrammar internamente → overhead mínimo, OK para produção
 
 Observação sobre format="json" (genérico) vs JSON Schema (estruturado):
-  - Ollama aceita ambos: format: "json" (força JSON válido sem schema) e
-    format: {schema JSON} (constrained decoding com schema específico)
-  - O _AnalyzeWorker atual usa format="json" genérico — funciona, mas não garante
-    os campos específicos do schema
-  - Passar o JSON Schema real (com tipos e campos obrigatórios) aumenta confiabilidade
-    e elimina necessidade de fallback de parsing
+
+- Ollama aceita ambos: format: "json" (força JSON válido sem schema) e
+  format: {schema JSON} (constrained decoding com schema específico)
+- O _AnalyzeWorker atual usa format="json" genérico — funciona, mas não garante
+  os campos específicos do schema
+- Passar o JSON Schema real (com tipos e campos obrigatórios) aumenta confiabilidade
+  e elimina necessidade de fallback de parsing
 
 Limitação conhecida (2025): ao usar gemma4 com format + think=false, o constraint
 é silenciosamente ignorado. Outros modelos (qwen2.5, llama3.2) não têm esse problema.
 
 2. MODELOS MENORES (1B–3B) PARA CLASSIFICAÇÃO
+
 ----------------------------------------------
+
 Viabilidade geral:
-  - Modelos 1B–3B são viáveis para tarefas de classificação e extração estruturada
-  - Penalised logistic regression sobre embeddings de modelos pequenos frequentemente
-    iguala ou supera modelos grandes em classification tasks com poucas amostras
-  - Qwen2.5: "0.5B, 1.5B, 3B mantêm performance forte em quase todos os benchmarks"
-    (relatório técnico oficial Qwen)
-  - Qwen2.5-3B é comparável ao Qwen2-7B em benchmarks gerais
+
+- Modelos 1B–3B são viáveis para tarefas de classificação e extração estruturada
+- Penalised logistic regression sobre embeddings de modelos pequenos frequentemente
+  iguala ou supera modelos grandes em classification tasks com poucas amostras
+- Qwen2.5: "0.5B, 1.5B, 3B mantêm performance forte em quase todos os benchmarks"
+  (relatório técnico oficial Qwen)
+- Qwen2.5-3B é comparável ao Qwen2-7B em benchmarks gerais
 
 Benchmark de extração de entidades (10 amostras, Analytics Vidhya 2025):
   | Modelo         | Projetos | Empresas | Pessoas | Média |
@@ -2601,11 +2815,12 @@ Velocidade de inferência (tokens/segundo):
   diferença vem da camada Go de serialização do Ollama.
 
 Qualidade para as tarefas do KOSMOS:
-  - Sentiment (binário/escalar): altamente resiliente — mesmo modelos 1B acertam bem
-  - Clickbait (float 0–1): tarefa de classificação simples, 3B suficiente
-  - Tags (3–5 palavras-chave): tarefa de extração leve, 3B adequado
-  - Entities (NER): tarefa mais exigente — Gemma 2B > Llama 3.2 3B > Llama 3.2 1B
-  - Five_Ws (extração de quem/o quê/quando/onde/por quê): mais difícil, prefere 7B
+
+- Sentiment (binário/escalar): altamente resiliente — mesmo modelos 1B acertam bem
+- Clickbait (float 0–1): tarefa de classificação simples, 3B suficiente
+- Tags (3–5 palavras-chave): tarefa de extração leve, 3B adequado
+- Entities (NER): tarefa mais exigente — Gemma 2B > Llama 3.2 3B > Llama 3.2 1B
+- Five_Ws (extração de quem/o quê/quando/onde/por quê): mais difícil, prefere 7B
 
 Aprofundamento — Arquitetura, Quantização e Validade Ecológica dos Benchmarks:
 
@@ -2648,17 +2863,19 @@ modelo para NER não deveria ser feita exclusivamente com base nesse benchmark, 
 complementada por avaliação empírica sobre o próprio corpus de artigos RSS em
 português e inglês efetivamente processados pelo sistema.
 
-
 Conclusão: usar modelo 3B (ex: qwen2.5:3b, gemma2:2b) somente para as tarefas leves
 (tags, sentiment, clickbait) é viável com ~15–20% de degradação vs 7B. Para five_ws
 e entities, degradação maior.
 
 3. PRÉ-ANÁLISE EM BACKGROUND
+
 ------------------------------
+
 Estratégia geral:
-  - Processar artigos recém-recebidos do feed antes de serem abertos
-  - Objetivo: quando usuário abrir, resultado já está cacheado em DB
-  - Não travar GUI, não saturar Ollama, respeitar limites de VRAM
+
+- Processar artigos recém-recebidos do feed antes de serem abertos
+- Objetivo: quando usuário abrir, resultado já está cacheado em DB
+- Não travar GUI, não saturar Ollama, respeitar limites de VRAM
 
 Padrão recomendado para PyQt6:
   asyncio.PriorityQueue + QThread worker ou asyncio com qasync:
@@ -2721,38 +2938,45 @@ status "análise_falhou" — evitando que o mesmo artigo com conteúdo defeituos
 em loop infinito na fila e bloqueie o processamento dos demais.
 
 4. BATCHING DE MÚLTIPLOS ARTIGOS
+
 ----------------------------------
+
 Viabilidade:
-  - Tecnicamente possível: incluir N artigos num único prompt com JSON array na resposta
-  - Reduz overhead de round-trip HTTP e carregamento de contexto do sistema
+
+- Tecnicamente possível: incluir N artigos num único prompt com JSON array na resposta
+- Reduz overhead de round-trip HTTP e carregamento de contexto do sistema
 
 Dados do paper arXiv 2604.03684 ("Researchers waste 80% of LLM annotation costs
 by classifying one text at a time"):
-  - Batch sizes de 25–100 são seguros para a maioria dos LLMs com perda de acurácia
-    menor que 2 pontos percentuais
-  - Batch size 100: ~84% de economia de tokens vs 1 chamada por artigo
-  - Variável stacking (múltiplas tarefas no mesmo prompt): até 10 dimensões produz
-    resultados dentro de 2.2pp do baseline single-variable para 7 de 8 modelos
-  - Degradação depende mais da complexidade da tarefa que do comprimento do prompt
-  - Tarefas estruturais e determinísticas (JSON, classificação binária de sentimento)
-    são as mais resilientes ao batching
-  - Tarefas semânticas finas (análise de emoção, extração de tópico) degradam mais
+
+- Batch sizes de 25–100 são seguros para a maioria dos LLMs com perda de acurácia
+  menor que 2 pontos percentuais
+- Batch size 100: ~84% de economia de tokens vs 1 chamada por artigo
+- Variável stacking (múltiplas tarefas no mesmo prompt): até 10 dimensões produz
+  resultados dentro de 2.2pp do baseline single-variable para 7 de 8 modelos
+- Degradação depende mais da complexidade da tarefa que do comprimento do prompt
+- Tarefas estruturais e determinísticas (JSON, classificação binária de sentimento)
+  são as mais resilientes ao batching
+- Tarefas semânticas finas (análise de emoção, extração de tópico) degradam mais
 
 Limitações do batching para o KOSMOS:
-  - Contexto total: 10 artigos × 3000 chars = 30.000 chars → pode exceder contexto
-    padrão de 4096 tokens; requer num_ctx maior (8192–16384)
-  - Num_ctx maior → mais VRAM por parallel slot
-  - Resposta em JSON array mais difícil de parsear (índice pode não corresponder
-    ao artigo correto se modelo pular item)
-  - Para análise on-demand (artigo aberto pelo usuário): batching não ajuda
-  - Para background: batching de 5–10 artigos por call é viável e pode economizar
-    30–60% do tempo total vs calls sequenciais
+
+- Contexto total: 10 artigos × 3000 chars = 30.000 chars → pode exceder contexto
+  padrão de 4096 tokens; requer num_ctx maior (8192–16384)
+- Num_ctx maior → mais VRAM por parallel slot
+- Resposta em JSON array mais difícil de parsear (índice pode não corresponder
+  ao artigo correto se modelo pular item)
+- Para análise on-demand (artigo aberto pelo usuário): batching não ajuda
+- Para background: batching de 5–10 artigos por call é viável e pode economizar
+  30–60% do tempo total vs calls sequenciais
 
 Recomendação: batching de 5–10 artigos é interessante APENAS para processamento
 background; análise interativa (ao abrir artigo) deve permanecer 1 call.
 
 5. SPLIT DE ANÁLISE — 2 CALLS EM PARALELO
+
 -------------------------------------------
+
 Proposta: dividir o único call atual em:
   Call A (rápido): tags + sentiment + clickbait (3 campos simples)
   Call B (pesado): five_ws + entities (2 campos complexos)
@@ -2784,62 +3008,72 @@ Análise de custo/benefício:
   Requer parser JSON incremental (ex: biblioteca json-stream).
 
 6. CONCORRÊNCIA NO OLLAMA
+
 ---------------------------
+
 Comportamento padrão (OLLAMA_NUM_PARALLEL=1):
-  - Ollama processa requests em fila FIFO para o mesmo modelo
-  - Uma request executa, as demais aguardam
-  - Latência por request: mínima (sem contenção de VRAM)
-  - Para single-user: padrão correto
+
+- Ollama processa requests em fila FIFO para o mesmo modelo
+- Uma request executa, as demais aguardam
+- Latência por request: mínima (sem contenção de VRAM)
+- Para single-user: padrão correto
 
 OLLAMA_NUM_PARALLEL > 1:
-  - Múltiplas requests executam simultaneamente no mesmo modelo
-  - VRAM aumenta linearmente: cada slot paralelo adiciona ~15–25% do VRAM base
-    do modelo (ex: modelo 7B Q4_K_M ~4.5GB; com 2 parallel slots → ~5.5–6GB)
-  - Contexto efetivo: OLLAMA_NUM_PARALLEL × num_ctx
-    (ex: 4 parallel × 4096 ctx = 16384 ctx worth of VRAM)
-  - Latência por request com 4 parallel: +20–40% vs serial
-  - Throughput: 3–4× maior com 4 parallel
+
+- Múltiplas requests executam simultaneamente no mesmo modelo
+- VRAM aumenta linearmente: cada slot paralelo adiciona ~15–25% do VRAM base
+  do modelo (ex: modelo 7B Q4_K_M ~4.5GB; com 2 parallel slots → ~5.5–6GB)
+- Contexto efetivo: OLLAMA_NUM_PARALLEL × num_ctx
+  (ex: 4 parallel × 4096 ctx = 16384 ctx worth of VRAM)
+- Latência por request com 4 parallel: +20–40% vs serial
+- Throughput: 3–4× maior com 4 parallel
 
 Configuração para RX 6600 (8GB VRAM):
-  - Com qwen2.5:7b Q4_K_M (~4.5GB): OLLAMA_NUM_PARALLEL=1 é o mais seguro
-    (margem de ~2.5GB para KV cache e overhead)
-  - Com qwen2.5:3b Q4_K_M (~2.5GB): OLLAMA_NUM_PARALLEL=2 é viável
-    (deixa ~3GB livre para 2 slots de KV cache)
-  - Configurar via: export OLLAMA_NUM_PARALLEL=2 antes de ollama serve
-  - No systemd: adicionar Environment=OLLAMA_NUM_PARALLEL=2 no service
+
+- Com qwen2.5:7b Q4_K_M (~4.5GB): OLLAMA_NUM_PARALLEL=1 é o mais seguro
+  (margem de ~2.5GB para KV cache e overhead)
+- Com qwen2.5:3b Q4_K_M (~2.5GB): OLLAMA_NUM_PARALLEL=2 é viável
+  (deixa ~3GB livre para 2 slots de KV cache)
+- Configurar via: export OLLAMA_NUM_PARALLEL=2 antes de ollama serve
+- No systemd: adicionar Environment=OLLAMA_NUM_PARALLEL=2 no service
 
 OLLAMA_KEEP_ALIVE (crítico para latência):
-  - Default: 5 minutos — modelo é descarregado da VRAM após 5min de inatividade
-  - Cold start (carregar modelo do disco para VRAM): 3–10 segundos para 7B
-  - Warm request (modelo já na VRAM): overhead ≈ zero
-  - Para KOSMOS: definir OLLAMA_KEEP_ALIVE=30m ou -1 (nunca descarregar)
-  - Ou passar keep_alive=-1 em cada request via API para manter modelo carregado
+
+- Default: 5 minutos — modelo é descarregado da VRAM após 5min de inatividade
+- Cold start (carregar modelo do disco para VRAM): 3–10 segundos para 7B
+- Warm request (modelo já na VRAM): overhead ≈ zero
+- Para KOSMOS: definir OLLAMA_KEEP_ALIVE=30m ou -1 (nunca descarregar)
+- Ou passar keep_alive=-1 em cada request via API para manter modelo carregado
 
 KV Cache prefix reuse (prompt caching):
-  - Ollama reutiliza KV cache automaticamente quando requests compartilham o
-    mesmo prefixo de tokens (byte-for-byte idêntico)
-  - Ganho medido: 17.7× mais rápido no processamento do prompt na 2ª request
-    (54ms vs 962ms para o mesmo system prompt)
-  - Requisitos: (a) modelo deve estar na VRAM (keep_alive); (b) system prompt
-    idêntico byte-for-byte; (c) num_ctx consistente entre requests
-  - O _AnalyzeWorker atual usa system prompt fixo → se keep_alive configurado,
-    todas as análises subsequentes se beneficiam do cache do system prompt
-  - num_ctx deve ser passado explicitamente e constante (não variar entre calls)
+
+- Ollama reutiliza KV cache automaticamente quando requests compartilham o
+  mesmo prefixo de tokens (byte-for-byte idêntico)
+- Ganho medido: 17.7× mais rápido no processamento do prompt na 2ª request
+  (54ms vs 962ms para o mesmo system prompt)
+- Requisitos: (a) modelo deve estar na VRAM (keep_alive); (b) system prompt
+  idêntico byte-for-byte; (c) num_ctx consistente entre requests
+- O _AnalyzeWorker atual usa system prompt fixo → se keep_alive configurado,
+  todas as análises subsequentes se beneficiam do cache do system prompt
+- num_ctx deve ser passado explicitamente e constante (não variar entre calls)
 
 KV Cache Quantization (OLLAMA_KV_CACHE_TYPE):
-  - Default: f16 (16 bits por valor de KV cache)
-  - q8_0: ~50% menos VRAM para KV cache, perda de precisão mínima
-  - q4_0: ~75% menos VRAM, perda mensurável mas aceitável para classificação
-  - Configurar: export OLLAMA_KV_CACHE_TYPE=q8_0
-  - Permite aumentar num_ctx ou OLLAMA_NUM_PARALLEL sem OOM
+
+- Default: f16 (16 bits por valor de KV cache)
+- q8_0: ~50% menos VRAM para KV cache, perda de precisão mínima
+- q4_0: ~75% menos VRAM, perda mensurável mas aceitável para classificação
+- Configurar: export OLLAMA_KV_CACHE_TYPE=q8_0
+- Permite aumentar num_ctx ou OLLAMA_NUM_PARALLEL sem OOM
 
 OLLAMA_MAX_LOADED_MODELS:
-  - Default: 3 × número de GPUs (= 3 para 1 GPU)
-  - Para KOSMOS: 2 é suficiente (gen_model + embed_model)
-  - Reduzir para 2 se houver pressão de VRAM: export OLLAMA_MAX_LOADED_MODELS=2
+
+- Default: 3 × número de GPUs (= 3 para 1 GPU)
+- Para KOSMOS: 2 é suficiente (gen_model + embed_model)
+- Reduzir para 2 se houver pressão de VRAM: export OLLAMA_MAX_LOADED_MODELS=2
 
 FONTES
 -------
+
 - Ollama Structured Outputs (docs): https://docs.ollama.com/capabilities/structured-outputs
 - Ollama Structured Outputs (blog): https://ollama.com/blog/structured-outputs
 - XGrammar paper (arXiv): https://arxiv.org/pdf/2411.15100
@@ -2869,7 +3103,9 @@ Contexto: corrigir falha de extração no ArticleScraper do KOSMOS (leitor de ar
 ================================================================================
 
 1. POR QUE MEDIUM FALHA
+
 ------------------------
+
 Medium usa paywall em duas camadas:
   a) Soft paywall (JS overlay): conteúdo presente no HTML mas ocultado por JS.
      Trafilatura pode extrair o texto, mas a requisição HTTP retorna conteúdo
@@ -2880,7 +3116,9 @@ Medium também detecta User-Agents automáticos e pode retornar 403 mesmo para
 artigos gratuitos.
 
 2. SOLUÇÃO — FREEDIUM
+
 -----------------------
+
 Freedium (freedium.cfd) é um proxy open-source que acessa Medium via assinatura
 e serve o conteúdo completo sem paywall.
 
@@ -2892,7 +3130,9 @@ HTML retornado é estático; ecosystem_scraper processa normalmente sem mudança
 Freedium pode estar offline — tratar como falha de rede, não erro fatal.
 
 3. SUBSTACK — ESTRUTURA HTML
+
 ------------------------------
+
 Artigos gratuitos do Substack: HTML completo, trafilatura extrai corretamente.
 Artigos pagos: servidor omite o corpo (comportamento esperado, não é bug).
 
@@ -2901,13 +3141,17 @@ O fallback BS4 do ecosystem_scraper precisa conhecer esses seletores; sem isso
 cai em <body> e captura navegação junto com o texto.
 
 4. IMPLICAÇÕES PRÁTICAS
+
 -------------------------
+
 Mudança em KOSMOS/app/core/article_scraper.py:
-  - Importar get_fetch_url do ecosystem_scraper
-  - Em _fetch_html(): usar get_fetch_url(url) como URL efetiva de fetch
+
+- Importar get_fetch_url do ecosystem_scraper
+- Em _fetch_html(): usar get_fetch_url(url) como URL efetiva de fetch
 
 FONTES
 -------
+
 - Freedium GitHub: https://github.com/Freedium-cfd
 - Trafilatura Settings: https://trafilatura.readthedocs.io/en/latest/settings.html
 - Substack scraping 2026: https://dev.to/agenthustler/how-to-scrape-substack-newsletters-in-2026-a-complete-guide-2lce
@@ -2922,6 +3166,7 @@ Sessão: 2026-03-31
 ========================================================
 
 --------------------------------------------------------
+
 # Pesquisa: Personal Context Management para LLMs
 
 > Investigação sobre técnicas, arquitecturas e estado da arte para gerir grandes
@@ -2952,13 +3197,13 @@ A descoberta central da investigação recente é:
 
 ### Os cinco pilares do Context Engineering
 
-| Pilar | O que resolve |
-|---|---|
-| **Retrieval** | Buscar apenas o que é relevante agora |
-| **Memory** | Lembrar interacções passadas entre sessões |
-| **Compression** | Reduzir ruído antes de enviar ao modelo |
-| **Structure** | Organizar a informação de forma que o modelo processe bem |
-| **Coordination** | Gerir múltiplas fontes de contexto em simultâneo |
+| Pilar            | O que resolve                                             |
+| ---------------- | --------------------------------------------------------- |
+| **Retrieval**    | Buscar apenas o que é relevante agora                     |
+| **Memory**       | Lembrar interacções passadas entre sessões                |
+| **Compression**  | Reduzir ruído antes de enviar ao modelo                   |
+| **Structure**    | Organizar a informação de forma que o modelo processe bem |
+| **Coordination** | Gerir múltiplas fontes de contexto em simultâneo          |
 
 ---
 
@@ -3148,15 +3393,15 @@ no meio de contextos longos, focando-se no início e no fim.
 
 ## 5. GraphRAG vs. Vector RAG
 
-| Dimensão | Vector RAG (actual Mnemosyne) | GraphRAG |
-|---|---|---|
-| **Representação** | Embeddings de similaridade semântica | Nós e arestas (entidades e relações) |
-| **Pergunta ideal** | "O que diz o documento X sobre Y?" | "Como X se relaciona com Y?" |
-| **Multi-hop** | Fraco | Excelente |
-| **Setup** | Baixo | Alto (construção do grafo) |
-| **Escalabilidade** | Muito boa | Boa |
-| **Alucinação** | Moderada | Menor (estrutura determina contexto) |
-| **Biblioteca pessoal** | Suficiente para começar | Ideal a longo prazo |
+| Dimensão               | Vector RAG (actual Mnemosyne)        | GraphRAG                             |
+| ---------------------- | ------------------------------------ | ------------------------------------ |
+| **Representação**      | Embeddings de similaridade semântica | Nós e arestas (entidades e relações) |
+| **Pergunta ideal**     | "O que diz o documento X sobre Y?"   | "Como X se relaciona com Y?"         |
+| **Multi-hop**          | Fraco                                | Excelente                            |
+| **Setup**              | Baixo                                | Alto (construção do grafo)           |
+| **Escalabilidade**     | Muito boa                            | Boa                                  |
+| **Alucinação**         | Moderada                             | Menor (estrutura determina contexto) |
+| **Biblioteca pessoal** | Suficiente para começar              | Ideal a longo prazo                  |
 
 **Conclusão:** para o Mnemosyne no estado actual, Vector RAG é adequado. A
 transição para GraphRAG faria sentido quando a biblioteca crescer e as perguntas
@@ -3179,10 +3424,12 @@ impacto/complexidade:
 **A. Sumarização Map-Reduce**
 Substituir o truncamento ingénuo de 20k chars por uma cadeia map-reduce. O
 LangChain já tem isto pronto:
+
 ```python
 from langchain.chains.summarize import load_summarize_chain
 chain = load_summarize_chain(llm, chain_type="map_reduce")
 ```
+
 Elimina a limitação de tamanho de corpus e produz resumos muito mais coerentes.
 
 **B. Compressão Contextual no RAG**
@@ -3242,52 +3489,60 @@ Sessão: 2026-04-09
 ========================================================
 
 --------------------------------------------------------
+
 1. PERSONAL CONTEXT MANAGEMENT (PCM)
+
 --------------------------------------------------------
 
 Conceito emergente na intersecção de:
-  - Context Engineering para LLMs (otimizar o que entra na janela de contexto)
-  - Personal Memory Layers (sistemas persistentes de info do usuário entre sessões)
+
+- Context Engineering para LLMs (otimizar o que entra na janela de contexto)
+- Personal Memory Layers (sistemas persistentes de info do usuário entre sessões)
 
 Diferença de PKM:
-  - PKM = coleta, organiza e recupera conhecimento PARA o usuário
-  - PCM = gerencia o que o AI acessa do seu conhecimento pessoal
+
+- PKM = coleta, organiza e recupera conhecimento PARA o usuário
+- PCM = gerencia o que o AI acessa do seu conhecimento pessoal
   O PKM é a fonte; o PCM é a camada de entrega ao LLM via RAG ou memória.
 
 Protocolos relevantes:
-  - MCP (Model Context Protocol, Anthropic): padrão para conectar fontes
-    pessoais (email, docs, tools) diretamente a sistemas de AI.
-    OpenMemory MCP, SuperMemory MCP, mem-agent-mcp implementam isso.
+
+- MCP (Model Context Protocol, Anthropic): padrão para conectar fontes
+  pessoais (email, docs, tools) diretamente a sistemas de AI.
+  OpenMemory MCP, SuperMemory MCP, mem-agent-mcp implementam isso.
 
 Arquitetura de 3 camadas de memória em AI:
-  1. Short-term / Context Window — memória de trabalho da sessão atual
-  2. Session Memory — persiste durante interação multi-etapas
-  3. Long-term Memory — persiste indefinidamente em vector DB ou storage externo
+
+1. Short-term / Context Window — memória de trabalho da sessão atual
+2. Session Memory — persiste durante interação multi-etapas
+3. Long-term Memory — persiste indefinidamente em vector DB ou storage externo
 
 Padrões de design para RAG pessoal:
-  - Hybrid Retrieval: combinar busca por palavras-chave (TF-IDF) + semântica
-    (embeddings). Melhora relevância para conexões explícitas e implícitas.
-  - Auditabilidade: citar fontes, rastrear resposta até documento específico.
-    Constrói confiança — crucial para sistema de conhecimento pessoal.
-  - Local-First: OpenMemory, SuperMemory, MCP enfatizam dados locais,
-    não na nuvem, para privacidade e controle.
-  - Selective Context Retrieval: incluir só documentos relevantes.
-    Contexto menor e focado > contexto grande e barulhento.
-  - Persistent Evolving Context: manter metadados sobre consultas feitas,
-    documentos relevantes, evolução do entendimento. Sistema "aprende".
-  - Long-term Memory Integration: além do RAG, camada de memória que armazena
-    fatos, preferências e insights extraídos dos documentos.
+
+- Hybrid Retrieval: combinar busca por palavras-chave (TF-IDF) + semântica
+  (embeddings). Melhora relevância para conexões explícitas e implícitas.
+- Auditabilidade: citar fontes, rastrear resposta até documento específico.
+  Constrói confiança — crucial para sistema de conhecimento pessoal.
+- Local-First: OpenMemory, SuperMemory, MCP enfatizam dados locais,
+  não na nuvem, para privacidade e controle.
+- Selective Context Retrieval: incluir só documentos relevantes.
+  Contexto menor e focado > contexto grande e barulhento.
+- Persistent Evolving Context: manter metadados sobre consultas feitas,
+  documentos relevantes, evolução do entendimento. Sistema "aprende".
+- Long-term Memory Integration: além do RAG, camada de memória que armazena
+  fatos, preferências e insights extraídos dos documentos.
 
 O desafio central do PCM:
   Como colocar a informação pessoal certa na janela de contexto do LLM
   no momento certo, sem sobrecarregar com ruído nem violar privacidade?
 
 Referências:
-  - JetBrains Research: Smarter Context Management for LLM-Powered Agents
-  - Weaviate: Context Engineering — LLM Memory and Retrieval for AI Agents
-  - Cognee: Model Context Protocol + LLM Memory
-  - mem0.ai: OpenMemory MCP
-  - Medium: Smart PKM with RAG and Knowledge Graphs
+
+- JetBrains Research: Smarter Context Management for LLM-Powered Agents
+- Weaviate: Context Engineering — LLM Memory and Retrieval for AI Agents
+- Cognee: Model Context Protocol + LLM Memory
+- mem0.ai: OpenMemory MCP
+- Medium: Smart PKM with RAG and Knowledge Graphs
 
 ========================================================
 PESQUISA PARA O MNEMOSYNE
@@ -3295,7 +3550,9 @@ Sessão: 2026-04-10
 ========================================================
 
 --------------------------------------------------------
+
 2. MODELOS LLM PARA RAG LOCAL — RX 6600 (8GB VRAM) + ROCm
+
 --------------------------------------------------------
 
 Hardware de referência: AMD RX 6600 (8GB VRAM), 16GB RAM, CachyOS (Arch Linux)
@@ -3314,8 +3571,9 @@ confiável para a maioria das operações no Linux. Em Windows, o workaround
 NÃO funciona via WSL2 de forma confiável.
 
 No CachyOS (Arch Linux), o workaround funciona bem. Pode-se persistir com:
-  - Variável de ambiente no /etc/environment ou ~/.config/fish/config.fish
-  - Opção rocmOverrideGfx no systemd service do Ollama
+
+- Variável de ambiente no /etc/environment ou ~/.config/fish/config.fish
+- Opção rocmOverrideGfx no systemd service do Ollama
 
 Limitação importante: sem o override, o Ollama usa CPU (muito mais lento).
 Com o override, o desempenho é comparável a GPUs RDNA2 oficialmente suportadas.
@@ -3323,10 +3581,11 @@ Com o override, o desempenho é comparável a GPUs RDNA2 oficialmente suportadas
 --- LIMITE PRÁTICO DE PARÂMETROS PARA 8GB VRAM ---
 
 Regra geral para Ollama com GGUF:
-  - Até 8B parâmetros (Q4_K_M): cabe inteiro na VRAM (~5-6 GB de modelo)
-  - Até 8B parâmetros (Q8_0): VRAM no limite (~8-9 GB — pode não caber)
-  - 14B parâmetros (Q4_K_M): ~8.3 GB de modelo — excede VRAM, layers em RAM
-  - 14B parâmetros em 8GB: velocidade cai para 4-11 tokens/segundo
+
+- Até 8B parâmetros (Q4_K_M): cabe inteiro na VRAM (~5-6 GB de modelo)
+- Até 8B parâmetros (Q8_0): VRAM no limite (~8-9 GB — pode não caber)
+- 14B parâmetros (Q4_K_M): ~8.3 GB de modelo — excede VRAM, layers em RAM
+- 14B parâmetros em 8GB: velocidade cai para 4-11 tokens/segundo
 
 Fórmula aproximada para VRAM de modelo:
   VRAM (GB) ≈ (parâmetros_B × bits_quantização / 8) × 1.1
@@ -3340,22 +3599,23 @@ Recomendação de sweet spot para 8GB VRAM: modelos de 7B-8B em Q4_K_M.
 
 --- TABELA DE VRAM POR MODELO E QUANTIZAÇÃO ---
 
-Modelo           | Parâm | Q4_K_M  | Q8_0    | Obs
------------------|-------|---------|---------|----------------------------------
-Qwen3 4B         | 4B    | ~2.5 GB | ~4.5 GB | Cabe com folga; ótimo para context longo
-Qwen3 8B         | 8B    | ~4.6 GB | ~8.5 GB | Q4_K_M ideal; Q8_0 no limite
-Qwen3 14B        | 14B   | ~8.3 GB | ~15 GB  | Q4_K_M estoura; spill para RAM
-Llama 3.1 8B     | 8B    | ~4.9 GB | ~9 GB   | Q4_K_M confortável; Q8_0 não cabe
-Mistral 7B       | 7B    | ~4.0 GB | ~7.5 GB | Compacto, mas português fraco
-Phi-4 mini       | 3.8B  | ~2.1 GB | ~3.8 GB | Muito eficiente; contexto 16K
-Gemma3 4B        | 4B    | ~3.0 GB | ~5.5 GB | 140+ idiomas, 128K context
-Gemma3 12B       | 12B   | ~6.7 GB | ~12 GB  | Q4_K_M cabe; melhor qualidade
+| Modelo       | Parâm | Q4_K_M  | Q8_0    | Obs                                      |
+| ------------ | ----- | ------- | ------- | ---------------------------------------- |
+| Qwen3 4B     | 4B    | ~2.5 GB | ~4.5 GB | Cabe com folga; ótimo para context longo |
+| Qwen3 8B     | 8B    | ~4.6 GB | ~8.5 GB | Q4_K_M ideal; Q8_0 no limite             |
+| Qwen3 14B    | 14B   | ~8.3 GB | ~15 GB  | Q4_K_M estoura; spill para RAM           |
+| Llama 3.1 8B | 8B    | ~4.9 GB | ~9 GB   | Q4_K_M confortável; Q8_0 não cabe        |
+| Mistral 7B   | 7B    | ~4.0 GB | ~7.5 GB | Compacto, mas português fraco            |
+| Phi-4 mini   | 3.8B  | ~2.1 GB | ~3.8 GB | Muito eficiente; contexto 16K            |
+| Gemma3 4B    | 4B    | ~3.0 GB | ~5.5 GB | 140+ idiomas, 128K context               |
+| Gemma3 12B   | 12B   | ~6.7 GB | ~12 GB  | Q4_K_M cabe; melhor qualidade            |
 
 Obs: valores incluem apenas pesos. KV cache é adicional (~1-2 GB para 8K ctx).
 
 --- MODELOS DE CHAT/QA — AVALIAÇÃO PARA RAG EM PORTUGUÊS ---
 
 1. QWEN3 8B (recomendação principal)
+   
    - 100+ idiomas incluindo português; excelente instruction following
    - 8B parâmetros, context nativo 32K (YaRN até 131K)
    - Q4_K_M: ~4.6 GB VRAM — sobra ~3 GB para KV cache (context confortável)
@@ -3365,6 +3625,7 @@ Obs: valores incluem apenas pesos. KV cache é adicional (~1-2 GB para 8K ctx).
    - MELHOR ESCOLHA para RAG português no hardware disponível
 
 2. GEMMA3 4B
+   
    - 140+ idiomas; instruction tuning excelente (competitivo com Gemma2-27B)
    - 128K context nativo — muito útil para RAG com documentos longos
    - Q4_K_M: ~3.0 GB VRAM — sobra muito espaço para context longo
@@ -3372,29 +3633,34 @@ Obs: valores incluem apenas pesos. KV cache é adicional (~1-2 GB para 8K ctx).
    - BOA OPÇÃO ALTERNATIVA, especialmente para context window grande
 
 3. GEMMA3 12B (se aceitar velocidade menor)
+   
    - Q4_K_M: ~6.7 GB VRAM — ainda cabe com ~1.3 GB para KV cache
    - Muito mais capaz que o 4B; português mais fluente
    - Velocidade menor (mais layers, mais processamento)
    - RECOMENDADO se prioridade for qualidade sobre velocidade
 
 4. LLAMA 3.1 8B
+   
    - Boa qualidade geral; português decente mas não nativo
    - Q4_K_M: ~4.9 GB — comparável ao Qwen3 8B
    - Context 128K; forte em instruction following
    - Menos otimizado para português que Qwen3
 
 5. MISTRAL 7B / MISTRAL NEMO
+   
    - Português fraco — treinado com foco em inglês e francês
    - Boa velocidade, mas não ideal para uso em PT-BR
    - Não recomendado como modelo principal para Mnemosyne
 
 6. PHI-4 MINI (3.8B)
+   
    - Excelente eficiência; 2.1 GB Q4_K_M
    - Context 16K — limitado para RAG com documentos grandes
    - Instruction following forte; português razoável
    - Útil se o hardware estiver sobrecarregado com embedding + chat
 
 7. QWEN3 14B
+   
    - Q4_K_M: ~8.3 GB — excede VRAM de 8 GB
    - Spill para RAM = 4-11 tokens/s (lento demais para uso interativo)
    - Não recomendado para RX 6600 8GB
@@ -3406,6 +3672,7 @@ essencialmente inglês-only. Recall@1 < 0.16 em tarefas multilíngues.
 NÃO usar como embedding principal se os documentos forem em português.
 
 1. BGE-M3 (recomendação principal)
+   
    - BAAI; 568M parâmetros; 100+ idiomas incluindo português
    - 8192 tokens de context (ideal para chunking de documentos longos)
    - 1024 dimensões de embedding
@@ -3416,6 +3683,7 @@ NÃO usar como embedding principal se os documentos forem em português.
    - MELHOR ESCOLHA para Mnemosyne com documentos em português
 
 2. NOMIC-EMBED-TEXT-V2-MoE (alternativa multilíngue)
+   
    - Novo modelo MoE da Nomic AI; ~100 idiomas
    - Treinado em 1.6B pares contrastivos multilíngues
    - Mais leve que BGE-M3; boa opção se VRAM for limitada
@@ -3423,6 +3691,7 @@ NÃO usar como embedding principal se os documentos forem em português.
    - Performance multilíngue muito superior ao v1
 
 3. QWEN3-EMBEDDING 8B (se quiser máxima qualidade)
+   
    - Melhor MTEB multilíngue disponível no Ollama
    - ~4.6 GB VRAM adicionais — soma com o modelo de chat
    - PROBLEMA: com Qwen3 8B chat + Qwen3 Embedding 8B = ~9 GB VRAM total
@@ -3430,6 +3699,7 @@ NÃO usar como embedding principal se os documentos forem em português.
    - Disponível: ollama pull dengcao/Qwen3-Embedding-8B
 
 4. NOMIC-EMBED-TEXT v1 / MXBAI-EMBED-LARGE
+   
    - EVITAR para documentos em português
    - Funcionam bem apenas para inglês
    - mxbai: 335M params, 1GB VRAM; nomic: 137M params, ~275 MB VRAM
@@ -3470,22 +3740,24 @@ Configuração no LangChain (Mnemosyne):
   Qwen3 14B Q4_K_M: ~4-11 tokens/s   (spill para RAM)
 
 Referências:
-  - https://localllm.in/blog/best-local-llms-8gb-vram-2025
-  - https://willitrunai.com/blog/qwen-3-gpu-requirements
-  - https://major.io/p/ollama-with-amd-radeon-6600xt/
-  - https://tkamucheka.github.io/blog/2026/02/08/ollama-dual-rocm-gpu/
-  - https://www.morphllm.com/ollama-embedding-models
-  - https://milvus.io/blog/choose-embedding-model-rag-2026.md
-  - https://huggingface.co/BAAI/bge-m3
-  - https://apxml.com/models/qwen3-8b
-  - https://ollama.com/library/qwen3:8b
-  - https://ollama.com/library/bge-m3
-  - https://www.glukhov.org/rag/embeddings/qwen3-embedding-qwen3-reranker-on-ollama/
-  - https://github.com/ollama/ollama/issues/3781
 
+- https://localllm.in/blog/best-local-llms-8gb-vram-2025
+- https://willitrunai.com/blog/qwen-3-gpu-requirements
+- https://major.io/p/ollama-with-amd-radeon-6600xt/
+- https://tkamucheka.github.io/blog/2026/02/08/ollama-dual-rocm-gpu/
+- https://www.morphllm.com/ollama-embedding-models
+- https://milvus.io/blog/choose-embedding-model-rag-2026.md
+- https://huggingface.co/BAAI/bge-m3
+- https://apxml.com/models/qwen3-8b
+- https://ollama.com/library/qwen3:8b
+- https://ollama.com/library/bge-m3
+- https://www.glukhov.org/rag/embeddings/qwen3-embedding-qwen3-reranker-on-ollama/
+- https://github.com/ollama/ollama/issues/3781
 
 --------------------------------------------------------
+
 2. COMO O CLAUDE CODE GERENCIA MEMÓRIA E CONTEXTO
+
 --------------------------------------------------------
 
 Sistema de memória dual:
@@ -3518,18 +3790,20 @@ Estrutura de arquivos:
     Conteúdo em markdown...
 
 Tipos de memória:
-  - user: perfil, preferências, nível técnico
-  - project: arquitetura, estado, integrações
-  - feedback: correções importantes, requisitos inegociáveis
-  - reference: onde encontrar informações em sistemas externos
+
+- user: perfil, preferências, nível técnico
+- project: arquitetura, estado, integrações
+- feedback: correções importantes, requisitos inegociáveis
+- reference: onde encontrar informações em sistemas externos
 
 Como carrega no startup:
-  1. System prompt (4.2KB) — sempre
-  2. Auto memory MEMORY.md (primeiras 200 linhas/25KB)
-  3. Environment info (OS, shell, diretório)
-  4. CLAUDE.md (raiz do projeto e ancestrais)
-  5. Nested CLAUDE.md (subdiretórios, sob demanda)
-  6. Rules (.claude/rules/) — carregados por matching de path
+
+1. System prompt (4.2KB) — sempre
+2. Auto memory MEMORY.md (primeiras 200 linhas/25KB)
+3. Environment info (OS, shell, diretório)
+4. CLAUDE.md (raiz do projeto e ancestrais)
+5. Nested CLAUDE.md (subdiretórios, sob demanda)
+6. Rules (.claude/rules/) — carregados por matching de path
 
 O que persiste entre sessões:
   ✅ CLAUDE.md (relido do disco)
@@ -3543,12 +3817,13 @@ Recuperação semântica — sem banco de dados:
   É matching semântico baseado em entendimento da tarefa atual.
 
 Gestão da janela de contexto:
-  - Budget reservado: ~5-10KB no startup
-  - Compactação (/compact): histórico de conversa resumido por AI
-    Antes: [System | Memory | Conversa 1-100]
-    Depois: [System | Memory | Conversa 1-49 | Resumo AI de 50-100]
-  - CLAUDE.md é re-injetado após compactação
-  - Nested CLAUDE.md NÃO é re-injetado automaticamente
+
+- Budget reservado: ~5-10KB no startup
+- Compactação (/compact): histórico de conversa resumido por AI
+  Antes: [System | Memory | Conversa 1-100]
+  Depois: [System | Memory | Conversa 1-49 | Resumo AI de 50-100]
+- CLAUDE.md é re-injetado após compactação
+- Nested CLAUDE.md NÃO é re-injetado automaticamente
 
 CLAUDE.md vs Auto Memory:
   CLAUDE.md                    Auto Memory
@@ -3570,9 +3845,10 @@ O que vale salvar em memória:
   ❌ Conhecimento genérico (Claude já sabe)
   ❌ Soluções temporárias
 
-
 --------------------------------------------------------
+
 3. INSIGHTS PARA APLICAR NO MNEMOSYNE
+
 --------------------------------------------------------
 
 Do PCM:
@@ -3632,7 +3908,6 @@ Ollama — detecção dinâmica de modelos:
 FIM DA PESQUISA
 ========================================================
 
-
 ========================================================
 PESQUISA — NotebookLM (Google)
 Sessão: 2026-04-10
@@ -3641,7 +3916,9 @@ Sessão: 2026-04-10
 Referência: app RAG local do Google, cloud-only, concorrente/inspiração para Mnemosyne.
 
 --------------------------------------------------------
+
 1. INGESTÃO DE FONTES
+
 --------------------------------------------------------
 
 Formatos de arquivo:
@@ -3661,23 +3938,27 @@ Limites:
   Plus: 100 fontes | Ultra: 600 fontes
 
 --------------------------------------------------------
+
 2. CONSULTA E CITAÇÃO
---------------------------------------------------------
-
-  - Responde APENAS com base nas fontes carregadas (sem alucinação por design)
-  - Toda resposta inclui citações inline numeradas
-  - Clicar/hover na citação mostra o trecho exato do documento original
-  - Seleção granular de fontes: ativar/desativar fontes por consulta
-  - Comparação entre documentos: identifica conceitos em múltiplas fontes e compara
-  - Menção do nome do documento na query afina a busca
-  - Três modos de chat:
-      Default: pesquisa e brainstorming geral
-      Learning Guide: tutoria passo a passo, perguntas socráticas
-      Custom: persona, tom e estilo definidos pelo usuário
-  - Contexto: janela de 1 milhão de tokens
 
 --------------------------------------------------------
+
+- Responde APENAS com base nas fontes carregadas (sem alucinação por design)
+- Toda resposta inclui citações inline numeradas
+- Clicar/hover na citação mostra o trecho exato do documento original
+- Seleção granular de fontes: ativar/desativar fontes por consulta
+- Comparação entre documentos: identifica conceitos em múltiplas fontes e compara
+- Menção do nome do documento na query afina a busca
+- Três modos de chat:
+    Default: pesquisa e brainstorming geral
+    Learning Guide: tutoria passo a passo, perguntas socráticas
+    Custom: persona, tom e estilo definidos pelo usuário
+- Contexto: janela de 1 milhão de tokens
+
+--------------------------------------------------------
+
 3. FORMATOS DE OUTPUT
+
 --------------------------------------------------------
 
   Audio Overview (Podcast):
@@ -3702,7 +3983,9 @@ Limites:
     - Mapa mental interativo de conceitos e conexões entre fontes
 
 --------------------------------------------------------
+
 4. FERRAMENTAS DE ESTUDO
+
 --------------------------------------------------------
 
   Notebook Guide (automático ao carregar fontes):
@@ -3729,27 +4012,33 @@ Limites:
   Learning Guide Mode: tutoria socrática — faz perguntas antes de revelar respostas
 
 --------------------------------------------------------
+
 5. COLABORAÇÃO
---------------------------------------------------------
-
-  - Compartilhamento por link (viewer ou editor)
-  - Edição simultânea em tempo real (tipo Google Docs)
-  - Modo chat-only para colaboração sem acesso completo ao notebook
-  - Analytics de uso dos últimos 7 dias por notebook
 
 --------------------------------------------------------
+
+- Compartilhamento por link (viewer ou editor)
+- Edição simultânea em tempo real (tipo Google Docs)
+- Modo chat-only para colaboração sem acesso completo ao notebook
+- Analytics de uso dos últimos 7 dias por notebook
+
+--------------------------------------------------------
+
 6. DEEP RESEARCH (pesquisa autônoma web)
---------------------------------------------------------
-
-  - Agente que cria plano de pesquisa e navega centenas de sites
-  - Dois modos: Deep Research (20+ fontes) e Fast Research (acesso rápido)
-  - Prioriza fontes confiáveis, filtra baixa qualidade
-  - Roda em background enquanto usuário trabalha
-  - Gera citações automáticas de todos os sites visitados
-  - Fontes adicionadas diretamente ao notebook
 
 --------------------------------------------------------
+
+- Agente que cria plano de pesquisa e navega centenas de sites
+- Dois modos: Deep Research (20+ fontes) e Fast Research (acesso rápido)
+- Prioriza fontes confiáveis, filtra baixa qualidade
+- Roda em background enquanto usuário trabalha
+- Gera citações automáticas de todos os sites visitados
+- Fontes adicionadas diretamente ao notebook
+
+--------------------------------------------------------
+
 7. LIMITAÇÕES (relevantes para Mnemosyne)
+
 --------------------------------------------------------
 
   Cloud-only — sem processamento local, sem modo offline
@@ -3760,7 +4049,9 @@ Limites:
   Vídeo/podcast dependem de legenda disponível
 
 --------------------------------------------------------
+
 8. FEATURES INTERESSANTES PARA INSPIRAR MNEMOSYNE
+
 --------------------------------------------------------
 
   Citação precisa com trecho exato visível — muito além de só listar o arquivo
@@ -3777,7 +4068,6 @@ Limites:
 FIM DA PESQUISA — NotebookLM
 ========================================================
 
-
 ========================================================
 PESQUISA — LLMs ideais para RAG local (RX 6600 + ROCm)
 Sessão: 2026-04-10
@@ -3790,12 +4080,13 @@ Hardware da usuária:
   Suporte: ROCm (não CUDA)
 
 --------------------------------------------------------
+
 1. SUPORTE ROCm NO RX 6600
+
 --------------------------------------------------------
 
   RX 6600 NÃO está na lista oficial do ROCm (gfx1032).
   Workaround estável e amplamente usado no Linux:
-
     HSA_OVERRIDE_GFX_VERSION=10.3.0 ollama serve
 
   Isso mapeia a GPU para gfx1030 (suportada). Funciona de forma
@@ -3805,7 +4096,9 @@ Hardware da usuária:
   Sem o workaround: Ollama cai para CPU.
 
 --------------------------------------------------------
+
 2. LIMITE PRÁTICO — 8GB VRAM
+
 --------------------------------------------------------
 
   Sweet spot: modelos de 7B-8B em Q4_K_M.
@@ -3816,7 +4109,9 @@ Hardware da usuária:
   KV cache adiciona ~1-2 GB além dos pesos (context 8K).
 
 --------------------------------------------------------
+
 3. VRAM POR MODELO E QUANTIZAÇÃO
+
 --------------------------------------------------------
 
   Modelo          Parâm  Q4_K_M   Q8_0    Obs
@@ -3830,10 +4125,12 @@ Hardware da usuária:
   Gemma3 4B       4B     ~3.0 GB  ~5.5 GB 140 idiomas, 128K ctx
   Gemma3 12B      12B    ~6.7 GB  ~12 GB  Maior qualidade
 
-  * Valores são só de pesos. KV cache é adicional.
+* Valores são só de pesos. KV cache é adicional.
 
 --------------------------------------------------------
+
 4. MODELOS DE CHAT/QA — RECOMENDAÇÕES
+
 --------------------------------------------------------
 
   MELHOR BALANÇO: Qwen3 8B Q4_K_M
@@ -3859,7 +4156,9 @@ Hardware da usuária:
     Qwen3 14B — spill para RAM, muito lento
 
 --------------------------------------------------------
+
 5. MODELOS DE EMBEDDING — RECOMENDAÇÕES
+
 --------------------------------------------------------
 
   ATENÇÃO: nomic-embed-text v1 e mxbai-embed-large são
@@ -3885,7 +4184,9 @@ Hardware da usuária:
     Problema: ~4.6 GB VRAM adicionais
 
 --------------------------------------------------------
+
 6. CONFIGURAÇÃO RECOMENDADA PARA O MNEMOSYNE
+
 --------------------------------------------------------
 
   SETUP PRIMÁRIO (melhor balanço):
@@ -3908,7 +4209,9 @@ Hardware da usuária:
     (em ~/.config/fish/config.fish, antes de subir o ollama)
 
 --------------------------------------------------------
+
 7. VELOCIDADE ESTIMADA (RX 6600 + workaround ROCm)
+
 --------------------------------------------------------
 
   Gemma3 4B Q4_K_M   → ~50-70 tokens/s
@@ -3953,66 +4256,76 @@ DEEPSEEK:
 
   Preparei um guia completo para você começar, dividido em dois passos principais:
 
-  ### 🏗️ Passo 1: Configurando a Infraestrutura Local (O "Motor")
+### 🏗️ Passo 1: Configurando a Infraestrutura Local (O "Motor")
 
   Existem algumas soluções prontas que fazem todo o trabalho pesado de configuração para você. 
 
   ---
 
-  ### ✍️ Passo 2: Criando os Prompts para Diferentes Funcionalidades (O "Combustível")
+### ✍️ Passo 2: Criando os Prompts para Diferentes Funcionalidades (O "Combustível")
 
   Com o sistema rodando, a IA precisa de instruções claras. A eficiência do seu "NotebookLM Local" depende muito da qualidade dos seus prompts. Aqui está uma coleção de templates para você começar a usar agora:
 
-  #### 📝 Para Análise e Síntese de Documentos
+#### 📝 Para Análise e Síntese de Documentos
 
   **1. Sumário Executivo (Visão Geral)**
-  > **Prompt:** `Aja como um assistente de pesquisa de alto nível. Analise minuciosamente o(s) seguinte(s) documento(s) e forneça um sumário executivo. Sua resposta deve conter: 1) A Tese Principal (em 1-2 frases); 2) Os 5 pontos-chave mais importantes; e 3) As Principais Conclusões ou Recomendações. Seja conciso e direto.`
+
+> **Prompt:** `Aja como um assistente de pesquisa de alto nível. Analise minuciosamente o(s) seguinte(s) documento(s) e forneça um sumário executivo. Sua resposta deve conter: 1) A Tese Principal (em 1-2 frases); 2) Os 5 pontos-chave mais importantes; e 3) As Principais Conclusões ou Recomendações. Seja conciso e direto.`
 
   **2. Identificando "Pérolas" Escondidas**
-  > **Prompt:** `Examine os documentos fornecidos e identifique os 3 fatos, dados ou insights mais surpreendentes, contraintuitivos ou únicos. Para cada um, forneça uma citação direta do texto como evidência e explique por que você considerou essa informação tão notável ou interessante.`
+
+> **Prompt:** `Examine os documentos fornecidos e identifique os 3 fatos, dados ou insights mais surpreendentes, contraintuitivos ou únicos. Para cada um, forneça uma citação direta do texto como evidência e explique por que você considerou essa informação tão notável ou interessante.`
 
   **3. Questionando o Material (Leitura Crítica)**
-  > **Prompt:** `Com base apenas no conteúdo destes documentos, elabore uma lista de 5 perguntas essenciais que, se respondidas, permitiriam a alguém compreender a essência e a estrutura lógica do material. Não responda às perguntas, apenas as formule.`
 
-  #### 🔎 Para Pesquisa e Questionamento (RAG)
+> **Prompt:** `Com base apenas no conteúdo destes documentos, elabore uma lista de 5 perguntas essenciais que, se respondidas, permitiriam a alguém compreender a essência e a estrutura lógica do material. Não responda às perguntas, apenas as formule.`
+
+#### 🔎 Para Pesquisa e Questionamento (RAG)
 
   **4. Pergunta e Resposta com Fontes (QA com Citações)**
-  > **Prompt do Sistema (System Prompt):** `Você é um assistente de IA especializado em responder perguntas com base exclusivamente nos documentos fornecidos. Se a resposta não puder ser encontrada no contexto, diga claramente: "Não encontrei informações suficientes nos documentos fornecidos para responder a essa pergunta." Sempre cite a fonte da sua resposta, indicando o nome do documento ou o trecho relevante.`
-  >
-  > **Prompt do Usuário (User Prompt):** `Contexto: {contexto_dos_documentos} \n\n Pergunta: {pergunta_do_usuário} \n\n Resposta:`
+
+> **Prompt do Sistema (System Prompt):** `Você é um assistente de IA especializado em responder perguntas com base exclusivamente nos documentos fornecidos. Se a resposta não puder ser encontrada no contexto, diga claramente: "Não encontrei informações suficientes nos documentos fornecidos para responder a essa pergunta." Sempre cite a fonte da sua resposta, indicando o nome do documento ou o trecho relevante.`
+> 
+> **Prompt do Usuário (User Prompt):** `Contexto: {contexto_dos_documentos} \n\n Pergunta: {pergunta_do_usuário} \n\n Resposta:`
 
   **5. Comparação entre Múltiplos Documentos**
-  > **Prompt:** `Considere os documentos [Nome do Documento A] e [Nome do Documento B]. Compare e contraste os dois textos, focando especificamente em [inserir aqui o tema ou critério de comparação, ex: metodologia, conclusões, público-alvo]. Apresente as semelhanças e diferenças em uma lista com marcadores (bullet points).`
 
-  #### 🎙️ Para Criação de Conteúdo (como Podcasts e Relatórios)
+> **Prompt:** `Considere os documentos [Nome do Documento A] e [Nome do Documento B]. Compare e contraste os dois textos, focando especificamente em [inserir aqui o tema ou critério de comparação, ex: metodologia, conclusões, público-alvo]. Apresente as semelhanças e diferenças em uma lista com marcadores (bullet points).`
+
+#### 🎙️ Para Criação de Conteúdo (como Podcasts e Relatórios)
 
   **6. Roteiro para Podcast (Diálogo)**
-  > **Prompt:** `Aja como um roteirista. Crie um diálogo envolvente para um podcast entre dois especialistas, chamados [Nome do Apresentador] e [Nome do Especialista], sobre o tema central dos documentos. O diálogo deve ter duração aproximada de 10 minutos. Comece com uma introdução cativante, explore os pontos principais do material de forma conversacional e termine com uma conclusão que resuma a discussão.`
+
+> **Prompt:** `Aja como um roteirista. Crie um diálogo envolvente para um podcast entre dois especialistas, chamados [Nome do Apresentador] e [Nome do Especialista], sobre o tema central dos documentos. O diálogo deve ter duração aproximada de 10 minutos. Comece com uma introdução cativante, explore os pontos principais do material de forma conversacional e termine com uma conclusão que resuma a discussão.`
 
   **7. Estrutura para um Relatório Detalhado**
-  > **Prompt:** `Com base nos documentos fornecidos, gere um esboço detalhado para um relatório abrangente. O esboço deve incluir: Título do Relatório, Resumo Executivo, Introdução, e pelo menos 4 seções principais com títulos e subtítulos, além de uma Conclusão e espaço para Referências. Para cada seção, adicione uma breve descrição (1-2 frases) do que ela deve conter.`
 
-  #### ⚙️ Para Aprendizado e Organização Pessoal
+> **Prompt:** `Com base nos documentos fornecidos, gere um esboço detalhado para um relatório abrangente. O esboço deve incluir: Título do Relatório, Resumo Executivo, Introdução, e pelo menos 4 seções principais com títulos e subtítulos, além de uma Conclusão e espaço para Referências. Para cada seção, adicione uma breve descrição (1-2 frases) do que ela deve conter.`
+
+#### ⚙️ Para Aprendizado e Organização Pessoal
 
   **8. Criando um Roteiro de Estudos**
-  > **Prompt:** `Com base no material fornecido, crie um roteiro de estudos estruturado para um iniciante que deseja aprender sobre [insira o tópico geral dos documentos]. Divida o aprendizado em 3 fases (Básico, Intermediário, Avançado). Para cada fase, liste os principais conceitos a serem dominados e sugira uma ordem lógica para estudá-los.`
+
+> **Prompt:** `Com base no material fornecido, crie um roteiro de estudos estruturado para um iniciante que deseja aprender sobre [insira o tópico geral dos documentos]. Divida o aprendizado em 3 fases (Básico, Intermediário, Avançado). Para cada fase, liste os principais conceitos a serem dominados e sugira uma ordem lógica para estudá-los.`
 
   **9. Mapa Mental (em formato de lista)**
-  > **Prompt:** `Analise o documento e crie a estrutura para um mapa mental sobre o tema central. Sua resposta deve ser uma lista hierárquica (com marcadores) que represente os ramos principais do mapa. Comece com o Tópico Central, depois liste os Conceitos-Chave e, abaixo de cada um, os Detalhes de Apoio e Exemplos encontrados no texto.`
+
+> **Prompt:** `Analise o documento e crie a estrutura para um mapa mental sobre o tema central. Sua resposta deve ser uma lista hierárquica (com marcadores) que represente os ramos principais do mapa. Comece com o Tópico Central, depois liste os Conceitos-Chave e, abaixo de cada um, os Detalhes de Apoio e Exemplos encontrados no texto.`
 
   **10. Gerando Flashcards para Memorização**
-  > **Prompt:** `Aja como um especialista em educação. A partir dos documentos fornecidos, crie um conjunto de 10 flashcards no formato "Pergunta / Resposta". As perguntas devem focar nos conceitos, definições e fatos mais importantes do texto. Formato: \n\n Frente do Card 1: [Pergunta] \n Verso do Card 1: [Resposta]`
+
+> **Prompt:** `Aja como um especialista em educação. A partir dos documentos fornecidos, crie um conjunto de 10 flashcards no formato "Pergunta / Resposta". As perguntas devem focar nos conceitos, definições e fatos mais importantes do texto. Formato: \n\n Frente do Card 1: [Pergunta] \n Verso do Card 1: [Resposta]`
 
   ---
 
-  ### 💎 Resumo e Recomendações
+### 💎 Resumo e Recomendações
 
   Combinar uma ferramenta como o **Open Notebook** ou o **SurfSense** com esses templates de prompt é o caminho mais rápido para ter seu próprio assistente de pesquisa com IA, privado e eficiente.
 
   **Meu conselho prático:**
-  1.  Comece com o **Open Notebook** se você busca uma experiência mais próxima da interface original do Google NotebookLM.
-  2.  Escolha o **SurfSense** se a sua prioridade for máxima flexibilidade e o suporte a uma vasta gama de formatos de arquivo.
 
+1. Comece com o **Open Notebook** se você busca uma experiência mais próxima da interface original do Google NotebookLM.
+2. Escolha o **SurfSense** se a sua prioridade for máxima flexibilidade e o suporte a uma vasta gama de formatos de arquivo.
 
 CLAUDE:
   O insight mais importante — arquitectura
@@ -4025,118 +4338,120 @@ CLAUDE:
   Modos de consulta diferentes trocando só o system prompt
   Isso é uma melhoria arquitectural para o rag.py que vale entrar no TODO antes dos modos configuráveis da Fase 4.6.
 
-
 DEEPSEEK:
   Você está absolutamente correto e fez uma observação cirúrgica. Esse é **o** insight que separa um protótipo funcional de uma arquitetura robusta e escalável para um assistente pessoal de pesquisa.
 
   Enquanto o modelo de **completion** trata tudo como um grande bloco de texto (perdendo a nuance de "instrução permanente" vs "contexto dinâmico"), o modelo de **chat** nos permite construir uma **"Máscara de Personalidade"** persistente.
 
-  ### 🏛️ Por que isso é fundamental para o Mnemosyne (seu NotebookLM)?
+### 🏛️ Por que isso é fundamental para o Mnemosyne (seu NotebookLM)?
 
   No seu `rag.py`, misturar a persona ("Você é um curador de conhecimento...") com o chunk do documento toda vez que o usuário pergunta causa dois problemas:
 
-  1.  **Custo Computacional (Tokens):** Você envia a persona do zero a cada pergunta.
-  2.  **Instabilidade:** Em modelos locais menores (7B-14B), o *contexto de recuperação* pode "empurrar" a *persona* para fora da janela de atenção da IA. Resultado: na quinta pergunta, ele esquece que deveria ser formal e começa a responder como um robô genérico.
+1. **Custo Computacional (Tokens):** Você envia a persona do zero a cada pergunta.
 
-  Migrar para **ChatOllama** com `SystemMessage` e `HumanMessage` resolve isso de forma elegante.
+2. **Instabilidade:** Em modelos locais menores (7B-14B), o *contexto de recuperação* pode "empurrar" a *persona* para fora da janela de atenção da IA. Resultado: na quinta pergunta, ele esquece que deveria ser formal e começa a responder como um robô genérico.
+   Migrar para **ChatOllama** com `SystemMessage` e `HumanMessage` resolve isso de forma elegante.
+   
+   ### 🛠️ Refatoração Prática: De `OllamaLLM` para `ChatOllama`
+   
+   Aqui está o esqueleto de como seu `rag.py` deve ser ajustado. Esse código já incorpora a lógica de "Modos Configuráveis" (Fase 4.6) de forma natural.
+   
+   #### 1. Definição das Personas (O Coração do NotebookLM Local)
+   
+   Crie um dicionário de `System Prompts`. Isso permite trocar a "máscara" da IA com uma simples variável.
+   
+   ```python
+   PERSONAS = {
+   "curador": """Você é o Mnemosyne, um curador de conhecimento pessoal e assistente de pesquisa. 
+   Sua função é analisar documentos com rigor acadêmico, mas explicar de forma clara e acessível.
+   Sempre cite a fonte (nome do documento) ao fornecer informações.
+   Se não souber a resposta, diga: "Não encontrei essa informação nos meus arquivos locais."
+   Nunca invente dados. Seja preciso e conciso.""",
+   
+   "podcaster": """Você é um roteirista criativo especializado em transformar textos densos em diálogos envolventes.
+   Seu estilo é conversacional, levemente informal, e você adora fazer perguntas retóricas para engajar o ouvinte.
+   Sempre use o conteúdo fornecido como base, mas sinta-se à vontade para reformular analogias.""",
+   
+   "critico": """Você é um revisor implacável. Seu objetivo é encontrar contradições lógicas, lacunas de informação ou suposições não comprovadas nos documentos fornecidos.
+   Seja cético. Aponte o que falta. Questione as conclusões do autor."""
+   }
+   ```
+   
+   #### 2. O Novo Motor de Consulta (Usando LangChain ou Chamada Direta)
+   
+   **Opção A: Usando LangChain (Recomendado para projetos estruturados)**
+   
+   ```python
+   from langchain_ollama import ChatOllama
+   from langchain_core.messages import SystemMessage, HumanMessage
+   
+   def consultar_documento(modo, pergunta_usuario, contexto_rag, modelo="qwen3:8b"):
+   # 1. Seleciona a Persona
+   system_prompt = PERSONAS.get(modo, PERSONAS["curador"])
+   
+   # 2. Inicializa o modelo de CHAT (não de completion)
+   llm = ChatOllama(model=modelo, temperature=0.2)
+   
+   # 3. Monta a estrutura de mensagens (Aqui está a mágica da separação)
+   messages = [
+       SystemMessage(content=system_prompt),
+       HumanMessage(content=f"""Contexto dos Documentos Recuperados (use apenas isso para responder):
+   ```
+   
+   ---
 
-  ### 🛠️ Refatoração Prática: De `OllamaLLM` para `ChatOllama`
-
-  Aqui está o esqueleto de como seu `rag.py` deve ser ajustado. Esse código já incorpora a lógica de "Modos Configuráveis" (Fase 4.6) de forma natural.
-
-  #### 1. Definição das Personas (O Coração do NotebookLM Local)
-
-  Crie um dicionário de `System Prompts`. Isso permite trocar a "máscara" da IA com uma simples variável.
-
-  ```python
-  PERSONAS = {
-      "curador": """Você é o Mnemosyne, um curador de conhecimento pessoal e assistente de pesquisa. 
-  Sua função é analisar documentos com rigor acadêmico, mas explicar de forma clara e acessível.
-  Sempre cite a fonte (nome do documento) ao fornecer informações.
-  Se não souber a resposta, diga: "Não encontrei essa informação nos meus arquivos locais."
-  Nunca invente dados. Seja preciso e conciso.""",
-
-      "podcaster": """Você é um roteirista criativo especializado em transformar textos densos em diálogos envolventes.
-  Seu estilo é conversacional, levemente informal, e você adora fazer perguntas retóricas para engajar o ouvinte.
-  Sempre use o conteúdo fornecido como base, mas sinta-se à vontade para reformular analogias.""",
-
-      "critico": """Você é um revisor implacável. Seu objetivo é encontrar contradições lógicas, lacunas de informação ou suposições não comprovadas nos documentos fornecidos.
-  Seja cético. Aponte o que falta. Questione as conclusões do autor."""
-  }
-  ```
-
-  #### 2. O Novo Motor de Consulta (Usando LangChain ou Chamada Direta)
-
-  **Opção A: Usando LangChain (Recomendado para projetos estruturados)**
-
-  ```python
-  from langchain_ollama import ChatOllama
-  from langchain_core.messages import SystemMessage, HumanMessage
-
-  def consultar_documento(modo, pergunta_usuario, contexto_rag, modelo="qwen3:8b"):
-      # 1. Seleciona a Persona
-      system_prompt = PERSONAS.get(modo, PERSONAS["curador"])
-      
-      # 2. Inicializa o modelo de CHAT (não de completion)
-      llm = ChatOllama(model=modelo, temperature=0.2)
-      
-      # 3. Monta a estrutura de mensagens (Aqui está a mágica da separação)
-      messages = [
-          SystemMessage(content=system_prompt),
-          HumanMessage(content=f"""Contexto dos Documentos Recuperados (use apenas isso para responder):
-  ---
-  {contexto_rag}
-  ---
+{contexto_rag}
+---
 
   Pergunta do Usuário: {pergunta_usuario}""")
       ]
-      
       # 4. Invoca
       resposta = llm.invoke(messages)
       return resposta.content
-  ```
 
-  **Opção B: Usando API Direta do Ollama (Sem LangChain, mais controle)**
+```
 
-  ```python
-  import requests
-  import json
+**Opção B: Usando API Direta do Ollama (Sem LangChain, mais controle)**
 
-  def consultar_documento_direto(modo, pergunta_usuario, contexto_rag, modelo="qwen3:8b"):
-      system_prompt = PERSONAS.get(modo, PERSONAS["curador"])
-      
-      payload = {
-          "model": modelo,
-          "messages": [
-              {"role": "system", "content": system_prompt},
-              {"role": "user", "content": f"Contexto:\n{contexto_rag}\n\nPergunta: {pergunta_usuario}"}
-          ],
-          "stream": False,
-          "options": {
-              "temperature": 0.2,
-              "num_ctx": 8192  # Ajuste conforme sua memória/GPU
-          }
-      }
-      
-      response = requests.post("http://localhost:11434/api/chat", json=payload)
-      return response.json()["message"]["content"]
-  ```
+```python
+import requests
+import json
 
-  ### 📋 Impacto no TODO List (Fase 4.6)
+def consultar_documento_direto(modo, pergunta_usuario, contexto_rag, modelo="qwen3:8b"):
+    system_prompt = PERSONAS.get(modo, PERSONAS["curador"])
+
+    payload = {
+        "model": modelo,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Contexto:\n{contexto_rag}\n\nPergunta: {pergunta_usuario}"}
+        ],
+        "stream": False,
+        "options": {
+            "temperature": 0.2,
+            "num_ctx": 8192  # Ajuste conforme sua memória/GPU
+        }
+    }
+
+    response = requests.post("http://localhost:11434/api/chat", json=payload)
+    return response.json()["message"]["content"]
+```
+
+### 📋 Impacto no TODO List (Fase 4.6)
 
   Com essa refatoração, a **Fase 4.6 (Modos Configuráveis)** deixa de ser uma feature complexa e vira uma consequência trivial da arquitetura.
 
   **Antes:** Você precisaria de lógica de *parsing* de string para tentar enfiar a persona no meio do prompt.
   **Agora:** Você simplesmente adiciona um parâmetro `modo` na interface (CLI ou futura UI) e o `rag.py` escolhe a chave do dicionário `PERSONAS`.
 
-  ### 🚀 Próximos Passos Imediatos
+### 🚀 Próximos Passos Imediatos
 
-  1.  **Troque a Dependência:** Substitua `OllamaLLM` por `ChatOllama` no seu `requirements.txt` ou import.
-  2.  **Refatore a Função de Query:** Implemente o código acima.
-  3.  **Teste com `kimi-k2.5:cloud`:** O `qwen3:8b` é excelente, mas o **Kimi** (modelo da Moonshot AI) tem uma janela de contexto colossal (128k+). Se você tem memória RAM/VRAM suficiente para rodá-lo localmente via Ollama, ele é **perfeito** para RAG porque pode engolir documentos enormes sem perder a persona no *System Prompt*.
+1. **Troque a Dependência:** Substitua `OllamaLLM` por `ChatOllama` no seu `requirements.txt` ou import.
 
-  **Sua observação sobre a arquitetura está 100% correta e é, de fato, o pré-requisito para tudo que vem depois. Parabéns pelo diagnóstico preciso.**
+2. **Refatore a Função de Query:** Implemente o código acima.
 
+3. **Teste com `kimi-k2.5:cloud`:** O `qwen3:8b` é excelente, mas o **Kimi** (modelo da Moonshot AI) tem uma janela de contexto colossal (128k+). Se você tem memória RAM/VRAM suficiente para rodá-lo localmente via Ollama, ele é **perfeito** para RAG porque pode engolir documentos enormes sem perder a persona no *System Prompt*.
+   **Sua observação sobre a arquitetura está 100% correta e é, de fato, o pré-requisito para tudo que vem depois. Parabéns pelo diagnóstico preciso.**
 
 USER: sent the TODO file
 
@@ -4145,113 +4460,112 @@ DEEPSEEK:
 
   Você está absolutamente correto sobre a importância do item **4.0**. Ele não é "mais uma feature". É a correção de um débito técnico fundacional que, se ignorado, sabotará a qualidade de todas as features subsequentes que dependem de personalidade (4.6, 4.8, etc.).
 
-  ### 🎯 Recomendação Estratégica: Priorização da Fase 4.0
+### 🎯 Recomendação Estratégica: Priorização da Fase 4.0
 
   Dado que você já identificou o gargalo arquitetural, sugiro tratar o item **4.0** como a **próxima ação imediata**, mesmo que ele esteja listado formalmente na Fase 4. O motivo é simples:
 
-  - **Impacto Transversal:** Ele muda a forma como o `rag.py` e o `workers.py` se comunicam com o LLM. Quanto mais código você escrever em cima do `OllamaLLM` antigo, mais trabalho terá para refatorar depois.
-  - **Base para a Fase 2 (Memória):** O sistema de `memory.json` que você desenhou (instruções de coleção vs. fatos de sessão) será muito mais eficaz se o *System Prompt* for imutável e o *Human Prompt* for o único a carregar o contexto dinâmico.
+- **Impacto Transversal:** Ele muda a forma como o `rag.py` e o `workers.py` se comunicam com o LLM. Quanto mais código você escrever em cima do `OllamaLLM` antigo, mais trabalho terá para refatorar depois.
 
+- **Base para a Fase 2 (Memória):** O sistema de `memory.json` que você desenhou (instruções de coleção vs. fatos de sessão) será muito mais eficaz se o *System Prompt* for imutável e o *Human Prompt* for o único a carregar o contexto dinâmico.
+  
   ### 🛠️ Anotações Técnicas para a Execução do TODO
-
+  
   Enquanto você avança, separei algumas "dicas de implementação" para itens específicos do seu TODO que podem evitar dores de cabeça futuras.
-
+  
   #### 1. Item 4.0 — Migração para `ChatOllama` (O Insight Arquitetural)
-
+  
   Além da separação de `SystemMessage` e `HumanMessage`, há um detalhe técnico crucial que você já anotou no TODO:
-
+  
   > *"com `ChatOllama`, o `chunk` em `llm.stream()` é `AIMessageChunk`; usar `chunk.content` nos workers"*
-
+  
   Isso é crítico para não quebrar a UI de streaming na aba **Perguntar**. Aqui está um snippet de como ficará a adaptação no seu `AskWorker` (atualmente usando `OllamaLLM`):
-
+  
   ```python
   # Dentro do loop de streaming no AskWorker
   for chunk in self.llm.stream(messages):
-      # Mudança principal: de chunk (string) para chunk.content (str)
-      if chunk.content:
-          self.signals.new_token.emit(chunk.content)
+    # Mudança principal: de chunk (string) para chunk.content (str)
+    if chunk.content:
+        self.signals.new_token.emit(chunk.content)
   ```
-
+  
   #### 2. Item Fase 2 — `core/tracker.py` e `update_vectorstore()` Incremental
-
+  
   Você listou corretamente o problema de **arquivos modificados**: como evitar duplicatas no ChromaDB ao reindexar.
-
   **Estratégia Sugerida (usando metadados do ChromaDB):**
-
   Em vez de manter um índice paralelo complexo para saber quais IDs deletar, use os **metadados do próprio ChromaDB**.
+1. **Na Indexação Inicial:**
+   
+   ```python
+   # Para cada chunk
+   metadata = {
+       "source": filepath,
+       "file_hash": hash_atual_do_arquivo
+   }
+   vectorstore.add_documents([doc], ids=[f"{filepath}_{chunk_index}"])
+   ```
 
-  1.  **Na Indexação Inicial:**
-      ```python
-      # Para cada chunk
-      metadata = {
-          "source": filepath,
-          "file_hash": hash_atual_do_arquivo
-      }
-      vectorstore.add_documents([doc], ids=[f"{filepath}_{chunk_index}"])
-      ```
-
-  2.  **No `update_vectorstore()` (Incremental):**
-      ```python
-      # 1. Use o tracker para saber se o arquivo mudou (hash diferente)
-      if hash_mudou:
-          # 2. Delete TODOS os chunks antigos daquele arquivo usando o filtro 'where'
-          collection = vectorstore._collection
-          collection.delete(where={"source": filepath})
-          
-          # 3. Reindexe o arquivo (como se fosse novo)
-          index_single_file(filepath)
-      ```
-
-  Isso resolve o problema de duplicatas de forma elegante, usando a capacidade de consulta do banco de vetores.
-
-  #### 3. Item Fase 2 — `memory.py` Reescrito (Arquitetura em Camadas)
-
-  A sua visão de `history.jsonl` + `memory.json` é brilhante. Para a implementação, sugiro este fluxo para o `compact_session_memory()`:
-
-  ```python
-  def compact_session_memory(history_jsonl_path, memory_json_path):
-      # 1. Ler as últimas N interações do history.jsonl (ex: últimas 10)
-      recent_turns = read_last_turns(history_jsonl_path, limit=10)
-      
-      # 2. Prompt de Sistema (Especializado para extração de fatos)
-      system_prompt = """Você é um extrator de fatos. Analise a conversa e extraia:
-      1. Novos tópicos de interesse do usuário.
-      2. Preferências de estilo de resposta.
-      3. Conclusões ou decisões tomadas.
-      Retorne apenas um JSON válido com as chaves: 'interests', 'preferences', 'conclusions'."""
-      
-      # 3. Chamada ao LLM (sem contexto RAG, apenas a conversa)
-      # ...
-      
-      # 4. Atualizar apenas a seção 'session' do memory.json
-      # (A seção 'collection' é editada manualmente pelo usuário na UI)
-  ```
-
-  #### 4. Item Fase 6 — Coleções Duais (Obsidian Vault)
-
-  A distinção epistêmica entre **Vault** (Eu) e **Biblioteca** (Eles) é o diferencial filosófico do Mnemosyne. Um cuidado técnico aqui: ao parsear o Vault do Obsidian, os **wikilinks** (`[[nota]]`) são valiosos, mas fáceis de quebrar.
-
-  **Regex robusta para wikilinks (incluindo alias com `|`):**
-  ```python
-  import re
-  WIKILINK_PATTERN = r'\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]'
-
-  def extract_links(content):
-      links = []
-      for match in re.finditer(WIKILINK_PATTERN, content):
-          target = match.group(1).strip()
-          alias = match.group(2).strip() if match.group(2) else target
-          links.append({"target": target, "alias": alias})
-      return links
-  ```
-
-  ### 🗺️ Próximo Passo Recomendado
-
-  Você está no caminho certo para construir uma ferramenta que é, ao mesmo tempo, tecnicamente robusta e profundamente humana na sua interação.
-
-  Se precisar de sparring técnico para algum desses itens específicos (como a implementação do *Hybrid Retrieval* com BM25 ou o Map-Reduce sem langchain depreciado), estou à disposição.
-
-  ========================================================
+2. **No `update_vectorstore()` (Incremental):**
+   
+   ```python
+   # 1. Use o tracker para saber se o arquivo mudou (hash diferente)
+   if hash_mudou:
+       # 2. Delete TODOS os chunks antigos daquele arquivo usando o filtro 'where'
+       collection = vectorstore._collection
+       collection.delete(where={"source": filepath})
+   
+       # 3. Reindexe o arquivo (como se fosse novo)
+       index_single_file(filepath)
+   ```
+   
+   Isso resolve o problema de duplicatas de forma elegante, usando a capacidade de consulta do banco de vetores.
+   
+   #### 3. Item Fase 2 — `memory.py` Reescrito (Arquitetura em Camadas)
+   
+   A sua visão de `history.jsonl` + `memory.json` é brilhante. Para a implementação, sugiro este fluxo para o `compact_session_memory()`:
+   
+   ```python
+   def compact_session_memory(history_jsonl_path, memory_json_path):
+   # 1. Ler as últimas N interações do history.jsonl (ex: últimas 10)
+   recent_turns = read_last_turns(history_jsonl_path, limit=10)
+   
+   # 2. Prompt de Sistema (Especializado para extração de fatos)
+   system_prompt = """Você é um extrator de fatos. Analise a conversa e extraia:
+   1. Novos tópicos de interesse do usuário.
+   2. Preferências de estilo de resposta.
+   3. Conclusões ou decisões tomadas.
+   Retorne apenas um JSON válido com as chaves: 'interests', 'preferences', 'conclusions'."""
+   
+   # 3. Chamada ao LLM (sem contexto RAG, apenas a conversa)
+   # ...
+   
+   # 4. Atualizar apenas a seção 'session' do memory.json
+   # (A seção 'collection' é editada manualmente pelo usuário na UI)
+   ```
+   
+   #### 4. Item Fase 6 — Coleções Duais (Obsidian Vault)
+   
+   A distinção epistêmica entre **Vault** (Eu) e **Biblioteca** (Eles) é o diferencial filosófico do Mnemosyne. Um cuidado técnico aqui: ao parsear o Vault do Obsidian, os **wikilinks** (`[[nota]]`) são valiosos, mas fáceis de quebrar.
+   **Regex robusta para wikilinks (incluindo alias com `|`):**
+   
+   ```python
+   import re
+   WIKILINK_PATTERN = r'\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]'
+   
+   def extract_links(content):
+   links = []
+   for match in re.finditer(WIKILINK_PATTERN, content):
+       target = match.group(1).strip()
+       alias = match.group(2).strip() if match.group(2) else target
+       links.append({"target": target, "alias": alias})
+   return links
+   ```
+   
+   ### 🗺️ Próximo Passo Recomendado
+   
+   Você está no caminho certo para construir uma ferramenta que é, ao mesmo tempo, tecnicamente robusta e profundamente humana na sua interação.
+   
+   Se precisar de sparring técnico para algum desses itens específicos (como a implementação do *Hybrid Retrieval* com BM25 ou o Map-Reduce sem langchain depreciado), estou à disposição.
+   ========================================================
 
 ========================================================
 PESQUISA — Performance de Indexação em Hardware Limitado
@@ -4273,31 +4587,37 @@ Hardware de casa (CachyOS):
   Armazenamento: ~2 TB (3 SSDs)
 
 --------------------------------------------------------
+
 1. DIAGNÓSTICO CRÍTICO — i5-3470 (Ivy Bridge)
+
 --------------------------------------------------------
 
 O i5-3470 tem AVX mas NÃO tem AVX2.
 AVX2 foi introduzido na 4ª geração Intel (Haswell). O i5-3470 é 3ª geração.
 
 Impacto no Ollama/GGUF:
-  - Ollama detecta e usa AVX quando disponível, mas o caminho de código AVX2
-    (instruções de 256 bits com inteiros) é 2-4x mais rápido para inferência GGUF
-  - Sem AVX2: Ollama funciona, mas cada batch de embedding é muito mais lento
-  - bge-m3 com 568M parâmetros em AVX-only = saturação total do CPU por minutos
+
+- Ollama detecta e usa AVX quando disponível, mas o caminho de código AVX2
+  (instruções de 256 bits com inteiros) é 2-4x mais rápido para inferência GGUF
+- Sem AVX2: Ollama funciona, mas cada batch de embedding é muito mais lento
+- bge-m3 com 568M parâmetros em AVX-only = saturação total do CPU por minutos
 
 Outros fatores agravantes no hardware de trabalho:
-  - 8 GB RAM: com OS + Ollama + bge-m3 (F16: ~1GB, Q8: ~635MB) + ChromaDB
-    em memória = muito pouco espaço. Pressão de memória causa paginação (swap)
-    que destrói a performance.
-  - Intel HD 32MB: completamente inutilizável para ML (memória de display, não VRAM)
-  - 4 cores sem hyperthreading: bge-m3 usa todos os 4 cores sem deixar nada
-    para o OS/UI → computador parece travado
+
+- 8 GB RAM: com OS + Ollama + bge-m3 (F16: ~1GB, Q8: ~635MB) + ChromaDB
+  em memória = muito pouco espaço. Pressão de memória causa paginação (swap)
+  que destrói a performance.
+- Intel HD 32MB: completamente inutilizável para ML (memória de display, não VRAM)
+- 4 cores sem hyperthreading: bge-m3 usa todos os 4 cores sem deixar nada
+  para o OS/UI → computador parece travado
 
 Conclusão: bge-m3 não é adequado para este hardware. É overkill até para o
 hardware de casa, mas com a GPU RX 6600 é viável. No i5-3470, é inviável.
 
 --------------------------------------------------------
+
 2. SOLUÇÃO ARQUITETURAL RECOMENDADA — "Indexar uma vez, usar em qualquer lugar"
+
 --------------------------------------------------------
 
 Premissa: ChromaDB persiste dados em arquivos SQLite + binários no persist_directory.
@@ -4305,20 +4625,22 @@ Esses arquivos podem ser COPIADOS entre máquinas. Se apenas uma máquina escrev
 e a outra só lê, não há problema de corrupção.
 
 Estratégia:
-  1. INDEXAÇÃO: ocorre APENAS no CachyOS (casa), com bge-m3 + RX 6600 via ROCm.
-     Rápido, eficiente, sem travar nada.
-  2. SYNC: o persist_directory do ChromaDB é sincronizado via Proton Drive
-     (junto com akasha.db e outros dados do ecossistema).
-  3. CONSULTAS: Windows abre o vectorstore em modo leitura. Não indexa nada.
-     Usa o índice já construído pela máquina de casa.
+
+1. INDEXAÇÃO: ocorre APENAS no CachyOS (casa), com bge-m3 + RX 6600 via ROCm.
+   Rápido, eficiente, sem travar nada.
+2. SYNC: o persist_directory do ChromaDB é sincronizado via Proton Drive
+   (junto com akasha.db e outros dados do ecossistema).
+3. CONSULTAS: Windows abre o vectorstore em modo leitura. Não indexa nada.
+   Usa o índice já construído pela máquina de casa.
 
 Implementação no Mnemosyne:
-  - Detectar se Ollama está disponível localmente
-  - Se sim: permitir indexação (botão habilitado)
-  - Se não (Ollama ausente ou muito lento): mostrar aviso "indexação disponível
-    apenas no computador principal" e desabilitar botão Indexar
-  - Consultas (aba Perguntar) funcionam em ambas as máquinas, desde que o
-    vectorstore sincronizado esteja disponível no persist_directory configurado
+
+- Detectar se Ollama está disponível localmente
+- Se sim: permitir indexação (botão habilitado)
+- Se não (Ollama ausente ou muito lento): mostrar aviso "indexação disponível
+  apenas no computador principal" e desabilitar botão Indexar
+- Consultas (aba Perguntar) funcionam em ambas as máquinas, desde que o
+  vectorstore sincronizado esteja disponível no persist_directory configurado
 
 Compatibilidade do vectorstore:
   CRÍTICO: o modelo de embedding DEVE ser o mesmo na máquina que indexou
@@ -4327,12 +4649,15 @@ Compatibilidade do vectorstore:
   Alternativa: usar um modelo disponível nas duas máquinas.
 
 Limitações:
-  - SQLite não suporta acesso de escrita simultâneo por múltiplas máquinas.
-    A estratégia funciona apenas com write exclusivo em uma máquina.
-  - Não é adequado para atualizações em tempo real no trabalho (ok para o caso de uso).
+
+- SQLite não suporta acesso de escrita simultâneo por múltiplas máquinas.
+  A estratégia funciona apenas com write exclusivo em uma máquina.
+- Não é adequado para atualizações em tempo real no trabalho (ok para o caso de uso).
 
 --------------------------------------------------------
+
 3. MODELOS DE EMBEDDING ALTERNATIVOS PARA CPU FRACO
+
 --------------------------------------------------------
 
 --- 3.1 qwen3-embedding:0.6b (VIA OLLAMA — recomendado) ---
@@ -4390,7 +4715,9 @@ Recomendação para o hardware de trabalho (i5-3470):
   Opção intermediária: qwen3-embedding:0.6b (ainda via Ollama, mas muito menor)
 
 --------------------------------------------------------
+
 4. CONFIGURAÇÕES DE THROTTLING (QUANDO O OLLAMA FOR NECESSÁRIO)
+
 --------------------------------------------------------
 
 --- 4.1 Variável de ambiente OLLAMA_NUM_THREAD ---
@@ -4407,7 +4734,6 @@ Recomendação para o hardware de trabalho (i5-3470):
 --- 4.2 Per-request num_thread (LangChain) ---
 
   OllamaEmbeddings aceita num_thread como parâmetro:
-
     from langchain_ollama import OllamaEmbeddings
     embeddings = OllamaEmbeddings(
         model="qwen3-embedding:0.6b",
@@ -4420,10 +4746,8 @@ Recomendação para o hardware de trabalho (i5-3470):
 --- 4.3 QThread.Priority para IndexWorker ---
 
   Ceder prioridade de CPU ao OS durante indexação:
-
     # Em workers.py, no método run() do IndexWorker:
     # ... não aplicável diretamente, mas pode usar start() com priority:
-
     # No código que inicia o worker:
     worker = IndexWorker(config)
     worker.start(QThread.Priority.IdlePriority)  # PySide6
@@ -4452,7 +4776,9 @@ Recomendação para o hardware de trabalho (i5-3470):
     Hardware forte (com GPU ROCm/CUDA): batch=50, sleep=0.05
 
 --------------------------------------------------------
+
 5. DETECÇÃO AUTOMÁTICA DE HARDWARE (PROPOSTA PARA O MNEMOSYNE)
+
 --------------------------------------------------------
 
 Ao iniciar o IndexWorker, detectar hardware e ajustar parâmetros:
@@ -4465,7 +4791,6 @@ Ao iniciar o IndexWorker, detectar hardware e ajustar parâmetros:
       import psutil
       ram_gb = psutil.virtual_memory().total / (1024**3)
       cpu_count = os.cpu_count() or 4
-
       # Verificar se Ollama está em GPU (via response time ou flags)
       # Heurística simples: se RAM < 12GB e sem GPU conhecida → hardware fraco
       if ram_gb < 10:
@@ -4478,7 +4803,9 @@ Ao iniciar o IndexWorker, detectar hardware e ajustar parâmetros:
   Nota: psutil já é uma dependência comum; verificar se está no requirements.
 
 --------------------------------------------------------
+
 6. COMPATIBILIDADE DE VECTORSTORE ENTRE MÁQUINAS
+
 --------------------------------------------------------
 
 Estrutura do persist_directory (ChromaDB):
@@ -4497,9 +4824,10 @@ Regras de sincronização via Proton Drive:
   ❌ Abrir para escrita enquanto em sync (arquivo em uso) → erro
 
 Estratégia recomendada no código:
-  - Adicionar campo "indexing_machine" no config.json ou .mnemosyne/config.json
-  - Se a máquina atual != indexing_machine: desabilitar botões de indexação
-  - Mostrar mensagem: "Índice construído em [outra máquina]. Consultas disponíveis."
+
+- Adicionar campo "indexing_machine" no config.json ou .mnemosyne/config.json
+- Se a máquina atual != indexing_machine: desabilitar botões de indexação
+- Mostrar mensagem: "Índice construído em [outra máquina]. Consultas disponíveis."
 
 ChromaDB em modo só-leitura (API):
   Não existe um "modo read-only" oficial na API Python do ChromaDB.
@@ -4519,7 +4847,9 @@ Fontes consultadas: Ollama GitHub Issues, HuggingFace, LangChain docs,
 glukhov.org, BentoML blog, OpenBenchmarking.org, Intel ARK.
 
 --------------------------------------------------------
+
 1. POR QUE O i5-3470 NÃO TEM AVX2 — E O QUE ISSO SIGNIFICA
+
 --------------------------------------------------------
 
 O Intel Core i5-3470 é arquitetura Ivy Bridge (3ª geração, 2012).
@@ -4529,10 +4859,11 @@ NÃO suporta: AVX2, AVX-512, FMA.
 AVX2 foi introduzido no Haswell (4ª geração, 2013). É o conjunto de instruções
 que os runtimes GGUF (llama.cpp, usado pelo Ollama) usam como alvo principal.
 Sem AVX2:
-  - Ollama usa o caminho de código AVX (mais lento, ~2-4x)
-  - Modelos GGUF ainda rodam, mas lentamente
-  - bge-m3 com 568M parâmetros em AVX-only: cada batch de 50 chunks
-    pode levar minutos em vez de segundos
+
+- Ollama usa o caminho de código AVX (mais lento, ~2-4x)
+- Modelos GGUF ainda rodam, mas lentamente
+- bge-m3 com 568M parâmetros em AVX-only: cada batch de 50 chunks
+  pode levar minutos em vez de segundos
 
 Fonte: Intel ARK, OpenBenchmarking.org (i5-3470 benchmarks),
 Ollama GitHub issues #2524 e #2281.
@@ -4542,7 +4873,9 @@ A solução não é só trocar o modelo — é não usar Ollama nesse hardware p
 indexação, ou usar embeddings estáticos que não dependem do Ollama.
 
 --------------------------------------------------------
+
 2. OLLAMA_NUM_THREAD — O QUE FAZ, COMO CONFIGURA, LIMITAÇÕES
+
 --------------------------------------------------------
 
 OLLAMA_NUM_THREAD é uma variável de ambiente que define quantos threads
@@ -4573,7 +4906,9 @@ OLLAMA_NUM_PARALLEL (diferente de NUM_THREAD):
 Fonte: Ollama GitHub Issues #2496, #9784, #10476, LangChain reference docs.
 
 --------------------------------------------------------
+
 3. MODELOS DE EMBEDDING ALTERNATIVOS — PESQUISA APROFUNDADA
+
 --------------------------------------------------------
 
 --- 3.1 potion-multilingual-128M (model2vec) ---
@@ -4584,23 +4919,26 @@ converte qualquer sentence transformer em um modelo de embeddings estáticos.
 como tabela de lookup. Não há inferência neural em tempo real.
 
 Como funciona:
-  1. O modelo pai (ex: BGE-M3) é executado uma vez em um corpus de treino
-  2. Os embeddings de cada token são registrados e comprimidos (PCA)
-  3. O "modelo" resultante é uma tabela de vetores por token (lookup table)
-  4. Inferência = somar vetores dos tokens da frase (sem transformers, sem GPU)
+
+1. O modelo pai (ex: BGE-M3) é executado uma vez em um corpus de treino
+2. Os embeddings de cada token são registrados e comprimidos (PCA)
+3. O "modelo" resultante é uma tabela de vetores por token (lookup table)
+4. Inferência = somar vetores dos tokens da frase (sem transformers, sem GPU)
 
 Por que é tão rápido:
-  - Sem atenção (attention), sem camadas transformers, sem gradientes
-  - Operação = tokenização + soma de vetores = quase instantâneo em CPU
-  - "Até 500x mais rápido que sentence-transformers em CPU" (MinishLab GitHub)
+
+- Sem atenção (attention), sem camadas transformers, sem gradientes
+- Operação = tokenização + soma de vetores = quase instantâneo em CPU
+- "Até 500x mais rápido que sentence-transformers em CPU" (MinishLab GitHub)
 
 Especificações (potion-multilingual-128M):
-  - Parâmetros: 128M (parâmetros do modelo PAI — o modelo distilado é muito menor)
-  - Dimensão de saída: 256 (vs 1024 do bge-m3)
-  - Idiomas: 101 (treinado em C4 dataset com temperature-smoothed sampling)
-  - Contexto: teoricamente ilimitado (sem janela de contexto de transformers)
-  - Descarregável do HuggingFace (~50-100 MB de modelo efetivo)
-  - 92.000 downloads/mês (HuggingFace, abril 2026)
+
+- Parâmetros: 128M (parâmetros do modelo PAI — o modelo distilado é muito menor)
+- Dimensão de saída: 256 (vs 1024 do bge-m3)
+- Idiomas: 101 (treinado em C4 dataset com temperature-smoothed sampling)
+- Contexto: teoricamente ilimitado (sem janela de contexto de transformers)
+- Descarregável do HuggingFace (~50-100 MB de modelo efetivo)
+- 92.000 downloads/mês (HuggingFace, abril 2026)
 
 Qualidade (MTEB benchmark):
   potion-multilingual-128M: 47.31 média — 90.86% do desempenho do LaBSE
@@ -4613,8 +4951,10 @@ Qualidade (MTEB benchmark):
 Integração com LangChain (verificada na documentação):
   from langchain_community.embeddings import Model2vecEmbeddings
   embeddings = Model2vecEmbeddings("minishlab/potion-multilingual-128M")
-  # Compatível com Chroma, FAISS, qualquer vector store que use o protocolo
-  # Embeddings do LangChain. Sem Ollama, sem servidor.
+
+# Compatível com Chroma, FAISS, qualquer vector store que use o protocolo
+
+# Embeddings do LangChain. Sem Ollama, sem servidor.
 
 Fonte: MinishLab GitHub (model2vec), HuggingFace potion-multilingual-128M,
 LangChain docs (model2vec integration).
@@ -4638,9 +4978,10 @@ Qualidade MTEB:
   comparable a bge-m3 para português.
 
 Por que é melhor que bge-m3 para hardware limitado:
-  - 639 MB vs ~1 GB do bge-m3 F16 (ou ~635 MB do bge-m3 Q8)
-  - Família mais nova (2025 vs 2023) — melhor eficiência por parâmetro
-  - Português: Qwen3 foi treinado com ênfase em múltiplos idiomas incluindo PT-BR
+
+- 639 MB vs ~1 GB do bge-m3 F16 (ou ~635 MB do bge-m3 Q8)
+- Família mais nova (2025 vs 2023) — melhor eficiência por parâmetro
+- Português: Qwen3 foi treinado com ênfase em múltiplos idiomas incluindo PT-BR
 
 Limitação no i5-3470:
   Ainda roda via Ollama (processo HTTP), ainda sofre com ausência de AVX2.
@@ -4661,37 +5002,44 @@ A investigar no futuro se precisar de modelo ainda menor que potion.
 Fonte: Google Developers Blog "Introducing EmbeddingGemma".
 
 --------------------------------------------------------
+
 4. SEMANTIC CHUNKER — O QUE É E QUANDO VALE A PENA
+
 --------------------------------------------------------
 
 SemanticChunker (langchain-experimental) usa o próprio modelo de embedding
 para detectar "fronteiras semânticas" no texto:
 
 Como funciona:
-  1. Divide o texto em sentenças (por pontuação)
-  2. Computa embedding de cada par de sentenças adjacentes
-  3. Calcula similaridade coseno entre pares
-  4. Quebra onde a similaridade cai abaixo de um threshold
-     (breakpoint_threshold_type="percentile", padrão 95º percentil)
+
+1. Divide o texto em sentenças (por pontuação)
+2. Computa embedding de cada par de sentenças adjacentes
+3. Calcula similaridade coseno entre pares
+4. Quebra onde a similaridade cai abaixo de um threshold
+   (breakpoint_threshold_type="percentile", padrão 95º percentil)
 
 Por que produz chunks melhores:
-  - RecursiveCharacterTextSplitter quebra por tamanho fixo, potencialmente
-    no meio de um argumento ou parágrafo coeso
-  - SemanticChunker garante que cada chunk contém uma unidade de sentido completa
-  - Especialmente valioso para: EPUBs, PDFs acadêmicos, notas Obsidian longas
+
+- RecursiveCharacterTextSplitter quebra por tamanho fixo, potencialmente
+  no meio de um argumento ou parágrafo coeso
+- SemanticChunker garante que cada chunk contém uma unidade de sentido completa
+- Especialmente valioso para: EPUBs, PDFs acadêmicos, notas Obsidian longas
 
 Custo:
-  - Faz chamadas de embedding durante o split (não só durante a indexação)
-  - Dobra o número de chamadas ao Ollama: uma para split, uma para Chroma
-  - Só justifica em hardware com GPU (CachyOS, não trabalho)
-  - Configurável via AppConfig.semantic_chunking = True (opt-in, padrão False)
+
+- Faz chamadas de embedding durante o split (não só durante a indexação)
+- Dobra o número de chamadas ao Ollama: uma para split, uma para Chroma
+- Só justifica em hardware com GPU (CachyOS, não trabalho)
+- Configurável via AppConfig.semantic_chunking = True (opt-in, padrão False)
 
 Não tem chunk_size nem chunk_overlap — o tamanho emerge da estrutura semântica.
 
 Fonte: LangChain experimental docs, langchain-experimental PyPI.
 
 --------------------------------------------------------
+
 5. QTHREAD.PRIORITY — COMO O SCHEDULER DO OS INTERPRETA
+
 --------------------------------------------------------
 
 QThread.Priority é passado diretamente ao scheduler de threads do OS:
@@ -4707,11 +5055,12 @@ QThread.Priority é passado diretamente ao scheduler de threads do OS:
     LowPriority     → nice +10
 
 Implicação prática para IndexWorker com IdlePriority:
-  - O OS nunca sacrifica threads interativas (UI, browser) pelo IndexWorker
-  - Indexação ocorre nos ciclos de CPU que ninguém mais quer
-  - No Windows com i5-3470: ainda pode ser lento se o Ollama saturar os 4 cores
-    (o Ollama roda como processo separado com prioridade Normal)
-  - Combinação ideal: IdlePriority + OLLAMA_NUM_THREAD=2
+
+- O OS nunca sacrifica threads interativas (UI, browser) pelo IndexWorker
+- Indexação ocorre nos ciclos de CPU que ninguém mais quer
+- No Windows com i5-3470: ainda pode ser lento se o Ollama saturar os 4 cores
+  (o Ollama roda como processo separado com prioridade Normal)
+- Combinação ideal: IdlePriority + OLLAMA_NUM_THREAD=2
 
 Nota da documentação Qt: "o efeito da prioridade depende da política de
 scheduling do OS e pode ser ignorado em sistemas que não suportam".
@@ -4720,7 +5069,6 @@ Fonte: Qt for Python docs (QThread), bogotobogo.com Qt5 QThread Priority.
 
 ========================================================
 FIM DA PESQUISA — Modelos Leves + Ollama CPU Tuning
-
 
 ========================================================
 4. NOTEBOOKLM — FUNCIONALIDADES RELEVANTES PARA MNEMOSYNE
@@ -4832,21 +5180,17 @@ SOBRE REPORTS:
   existente mas com schema rígido de saída
 
 Fontes consultadas:
-  - NotebookLM blog oficial (blog.google/innovation-and-ai)
-  - workspaceupdates.googleblog.com
-  - learnprompting.org/blog/notebooklm-guide
-  - support.google.com/notebooklm
 
-========================================================
+- NotebookLM blog oficial (blog.google/innovation-and-ai)
+- workspaceupdates.googleblog.com
+- learnprompting.org/blog/notebooklm-guide
+- support.google.com/notebooklm
 
-
-========================================================
-5. DEEP RESEARCH AGENTS — ESTADO DA ARTE E REPLICAÇÃO OFFLINE
+# DEEP RESEARCH AGENTS — ESTADO DA ARTE E REPLICAÇÃO OFFLINE
    (pesquisado em 2026-04-21)
-========================================================
 
-VISÃO GERAL DO CONCEITO
------------------------
+## VISÃO GERAL DO CONCEITO
+
 "Deep Research" é uma categoria de agente de IA que, dado um tema ou pergunta
 complexa, executa automaticamente um ciclo de planejamento → busca iterativa →
 leitura → síntese → relatório com citações. A diferença em relação ao RAG
@@ -4855,11 +5199,12 @@ queries lançar a seguir com base no que aprendeu nas etapas anteriores, de form
 similar a como um pesquisador humano revisita e refina suas buscas.
 
 O pipeline canônico é:
-  1. Receber a pergunta do utilizador
-  2. Planejar: decompor em sub-questões (query planning)
-  3. Para cada sub-questão: buscar → ler e extrair informação relevante
-  4. Re-avaliar: "o que ainda falta saber?" → gerar novas queries se necessário
-  5. Sintetizar: produzir relatório estruturado com citações rastreáveis
+
+1. Receber a pergunta do utilizador
+2. Planejar: decompor em sub-questões (query planning)
+3. Para cada sub-questão: buscar → ler e extrair informação relevante
+4. Re-avaliar: "o que ainda falta saber?" → gerar novas queries se necessário
+5. Sintetizar: produzir relatório estruturado com citações rastreáveis
 
 ---
 
@@ -5004,16 +5349,18 @@ em larga escala.
 ABORDAGEM PRAGMÁTICA PARA O MNEMOSYNE:
 
 Estratégia "Deep RAG Iterativo" (sem acesso web):
-  - Rodada 1: query original → retrieval híbrido → LLM responde E lista
-    explicitamente o que ficou sem resposta
-  - Rodada 2: para cada lacuna listada → nova query → retrieval → adiciona
-    ao contexto
-  - Rodada 3 (opcional): sintetizar tudo em relatório estruturado
-  - Máximo de 2–3 rodadas para não sobrecarregar CPU do i5-3470
+
+- Rodada 1: query original → retrieval híbrido → LLM responde E lista
+  explicitamente o que ficou sem resposta
+- Rodada 2: para cada lacuna listada → nova query → retrieval → adiciona
+  ao contexto
+- Rodada 3 (opcional): sintetizar tudo em relatório estruturado
+- Máximo de 2–3 rodadas para não sobrecarregar CPU do i5-3470
 
 Estratégia "Deep RAG + Web" (com AKASHA como backend de busca):
-  - Funciona como acima mas permite buscar via DuckDuckGo quando o corpus
-    local não tem resposta — ver Seção 6 deste documento para análise completa
+
+- Funciona como acima mas permite buscar via DuckDuckGo quando o corpus
+  local não tem resposta — ver Seção 6 deste documento para análise completa
 
 BIBLIOTECAS PYTHON ÚTEIS PARA IMPLEMENTAÇÃO LOCAL:
   · `rank_bm25` — já usada no Mnemosyne (BM25Okapi em rag.py)
@@ -5036,39 +5383,40 @@ LIMITAÇÕES NO HARDWARE DE TRABALHO (i5-3470, 8GB, Windows):
 ---
 
 Fontes consultadas:
-  - github.com/assafelovic/gpt-researcher
-  - github.com/langchain-ai/open_deep_research
-  - github.com/stanford-oval/storm
-  - storm-project.stanford.edu
-  - pypi.org/project/local-deep-research
-  - openai.com/index/introducing-deep-research/
-  - perplexity.ai/hub/blog/introducing-perplexity-deep-research
-  - techcrunch.com/2025/11/13 (NotebookLM Deep Research)
-  - blog.google/innovation-and-ai/models-and-research/google-labs/notebooklm-deep-research-file-types/
-  - docs.tavily.com/examples/open-sources/gpt-researcher
-  - medium.com/@leucopsis (open-source deep research assistants overview)
-  - blog.bytebytego.com/p/how-openai-gemini-and-claude-use
+
+- github.com/assafelovic/gpt-researcher
+- github.com/langchain-ai/open_deep_research
+- github.com/stanford-oval/storm
+- storm-project.stanford.edu
+- pypi.org/project/local-deep-research
+- openai.com/index/introducing-deep-research/
+- perplexity.ai/hub/blog/introducing-perplexity-deep-research
+- techcrunch.com/2025/11/13 (NotebookLM Deep Research)
+- blog.google/innovation-and-ai/models-and-research/google-labs/notebooklm-deep-research-file-types/
+- docs.tavily.com/examples/open-sources/gpt-researcher
+- medium.com/@leucopsis (open-source deep research assistants overview)
+- blog.bytebytego.com/p/how-openai-gemini-and-claude-use
 
 ========================================================
 FIM DA PESQUISA — Deep Research Agents
-
 
 ========================================================
 6. INTEGRAÇÃO MNEMOSYNE + AKASHA — ANÁLISE DE VIABILIDADE
    (pesquisado em 2026-04-21)
 ========================================================
-
 CONTEXTO E PROPOSTA
+
 -------------------
+
 A proposta é um "Modo de Pesquisa Profunda" que conecta os dois apps:
 
-  1. Utilizadora faz uma pergunta de pesquisa no Mnemosyne
-  2. Mnemosyne detecta que precisa de mais contexto do que a biblioteca local tem
-  3. Consulta AKASHA: busca DDG pelo tema → crawla/arquiva top-5 páginas →
-     retorna conteúdo como Markdown
-  4. Mnemosyne indexa temporariamente esse conteúdo como "sessão de pesquisa"
-     (sem poluir o vectorstore permanente)
-  5. RAG responde combinando biblioteca local + páginas buscadas agora
+1. Utilizadora faz uma pergunta de pesquisa no Mnemosyne
+2. Mnemosyne detecta que precisa de mais contexto do que a biblioteca local tem
+3. Consulta AKASHA: busca DDG pelo tema → crawla/arquiva top-5 páginas →
+   retorna conteúdo como Markdown
+4. Mnemosyne indexa temporariamente esse conteúdo como "sessão de pesquisa"
+   (sem poluir o vectorstore permanente)
+5. RAG responde combinando biblioteca local + páginas buscadas agora
 
 ---
 
@@ -5361,12 +5709,13 @@ ESFORÇO ESTIMADO DE IMPLEMENTAÇÃO:
     em gui/main_window.py e gui/workers.py
 
 RECOMENDAÇÃO DE IMPLEMENTAÇÃO (ordem de dependência):
-  1. Endpoint GET /search/json no AKASHA (desbloqueia todo o resto)
-  2. Endpoint GET /fetch?url= no AKASHA
-  3. AkashaClient em Mnemosyne (com verificação de health)
-  4. SessionIndexer com EphemeralClient
-  5. DeepResearchWorker em gui/workers.py (orquestra 1–4)
-  6. UI: botão + progresso + indicadores de fonte
+
+1. Endpoint GET /search/json no AKASHA (desbloqueia todo o resto)
+2. Endpoint GET /fetch?url= no AKASHA
+3. AkashaClient em Mnemosyne (com verificação de health)
+4. SessionIndexer com EphemeralClient
+5. DeepResearchWorker em gui/workers.py (orquestra 1–4)
+6. UI: botão + progresso + indicadores de fonte
 
 RECOMENDAÇÃO DE ARQUITETURA:
   · Comunicação: REST polling (Opção A) — mais simples para MVP
@@ -5377,52 +5726,45 @@ RECOMENDAÇÃO DE ARQUITETURA:
 ---
 
 Fontes consultadas (além da inspeção direta do código dos dois apps):
-  - docs.trychroma.com/docs/run-chroma/ephemeral-client
-  - docs.trychroma.com/reference/python/client
-  - cookbook.chromadb.dev/core/clients/
-  - github.com/chroma-core/chroma/issues/1976 (comportamento de persistência)
-  - trafilatura.readthedocs.io/en/latest/evaluation.html (benchmarks de extração)
-  - adrien.barbaresi.eu/blog/web-scraping-trafilatura-faster.html
-  - github.com/open-webui/open-webui/discussions/6624 (DDG rate limiting)
-  - github.com/crewAIInc/crewAI/issues/136 (DDG rate limiting em agentes)
-  - fastapi.tiangolo.com/async/ (latência async vs sync)
 
-========================================================
-FIM DA PESQUISA — Integração Mnemosyne + AKASHA
-FIM DA PESQUISA — NotebookLM Features
-========================================================
+- docs.trychroma.com/docs/run-chroma/ephemeral-client
+- docs.trychroma.com/reference/python/client
+- cookbook.chromadb.dev/core/clients/
+- github.com/chroma-core/chroma/issues/1976 (comportamento de persistência)
+- trafilatura.readthedocs.io/en/latest/evaluation.html (benchmarks de extração)
+- adrien.barbaresi.eu/blog/web-scraping-trafilatura-faster.html
+- github.com/open-webui/open-webui/discussions/6624 (DDG rate limiting)
+- github.com/crewAIInc/crewAI/issues/136 (DDG rate limiting em agentes)
+- fastapi.tiangolo.com/async/ (latência async vs sync)
 
-========================================================
-PESQUISA PARA O MNEMOSYNE
+
+# Otimização, Chunking, Reranking, Avaliação RAG
 Sessão: 2026-04-23
-Tema: Otimização, Chunking, Reranking, Avaliação RAG
-========================================================
 
---------------------------------------------------------
-1. CHROMADB — MÉTRICA DE DISTÂNCIA (BUG CRÍTICO)
---------------------------------------------------------
+## 1. CHROMADB — MÉTRICA DE DISTÂNCIA (BUG CRÍTICO)
 
 O Mnemosyne usa ChromaDB com a métrica padrão: L2 (distância euclidiana ao
 quadrado). Para embeddings de texto, isso é subótimo.
 
-POR QUE COSINE É MELHOR PARA TEXTO:
-  - Cosine mede o ângulo entre vetores (direção = significado semântico)
-  - L2 mede distância absoluta incluindo magnitude
-  - Modelos de embedding de texto (Sentence Transformers, nomic-embed, etc.)
-    produzem vetores normalizados — L2 nestes vetores mede diferenças mínimas
-    de dimensão que não refletem similaridade semântica
-  - Impacto documentado: trocar L2 → cosine pode melhorar resultados em 10x
-    em buscas semânticas de texto
+### POR QUE COSINE É MELHOR PARA TEXTO:
 
-SITUAÇÃO ATUAL NO MNEMOSYNE:
-  - core/indexer.py: `Chroma(persist_directory=..., embedding_function=...)`
-    → sem especificar métrica → L2 por padrão
-  - Afeta: create_vectorstore(), index_single_file(), update_vectorstore(),
-    load_vectorstore(), IndexWorker.run()
+- Cosine mede o ângulo entre vetores (direção = significado semântico)
+- L2 mede distância absoluta incluindo magnitude
+- Modelos de embedding de texto (Sentence Transformers, nomic-embed, etc.)
+  produzem vetores normalizados — L2 nestes vetores mede diferenças mínimas
+  de dimensão que não refletem similaridade semântica
+- Impacto documentado: trocar L2 → cosine pode melhorar resultados em 10x
+  em buscas semânticas de texto
 
-COMO CORRIGIR:
+### SITUAÇÃO ATUAL NO MNEMOSYNE:
+
+- core/indexer.py: `Chroma(persist_directory=..., embedding_function=...)`
+  → sem especificar métrica → L2 por padrão
+- Afeta: create_vectorstore(), index_single_file(), update_vectorstore(),
+  load_vectorstore(), IndexWorker.run()
+
+### COMO CORRIGIR:
   No LangChain, passa-se via collection_metadata:
-
     Chroma(
         persist_directory=config.persist_dir,
         embedding_function=embeddings,
@@ -5430,7 +5772,6 @@ COMO CORRIGIR:
     )
 
   Ou via API direta do ChromaDB (nova sintaxe preferida):
-
     client.create_collection(
         name="...",
         configuration={"hnsw": {"space": "cosine"}}
@@ -5444,53 +5785,57 @@ COMO CORRIGIR:
   O campo "hnsw:space" aceita: "l2" (padrão), "cosine", "ip" (inner product).
   Para embeddings de texto: sempre usar "cosine".
 
-Fontes:
-  - razikus.substack.com/p/chromadb-defaults-to-l2-distance
-  - community.sap.com: "Why Cosine Similarity > L2 Distance for RAG Systems"
-  - milvus.io/ai-quick-reference/how-does-the-distance-metric-used-cosine-vs-l2...
-  - docs.trychroma.com/docs/collections/configure
+### Fontes:
 
---------------------------------------------------------
-2. TAMANHO DE CHUNK — SITUAÇÃO ATUAL E RECOMENDAÇÃO
---------------------------------------------------------
+- razikus.substack.com/p/chromadb-defaults-to-l2-distance
+- community.sap.com: "Why Cosine Similarity > L2 Distance for RAG Systems"
+- milvus.io/ai-quick-reference/how-does-the-distance-metric-used-cosine-vs-l2...
+- docs.trychroma.com/docs/collections/configure
 
-SITUAÇÃO ATUAL NO MNEMOSYNE:
-  - chunk_size = 800 (caracteres, não tokens — RecursiveCharacterTextSplitter)
-  - chunk_overlap = 100 (12.5% de overlap — dentro do range recomendado)
+
+## 2. TAMANHO DE CHUNK — SITUAÇÃO ATUAL E RECOMENDAÇÃO
+
+### SITUAÇÃO ATUAL NO MNEMOSYNE:
+
+- chunk_size = 800 (caracteres, não tokens — RecursiveCharacterTextSplitter)
+- chunk_overlap = 100 (12.5% de overlap — dentro do range recomendado)
 
 NOTA IMPORTANTE: RecursiveCharacterTextSplitter usa CARACTERES, não tokens.
   800 chars ≈ 200-250 tokens (dependendo do idioma).
   O range recomendado de 400-512 TOKENS ≈ 1600-2048 caracteres.
   Portanto, o chunk_size atual de 800 chars está ABAIXO do ótimo recomendado.
 
-BENCHMARKS 2025-2026:
-  - Vecta (fev/2026), 50 papers: recursive 512-token = 69% accuracy (1º lugar)
-    Semantic chunking = 54% accuracy (15 pontos abaixo — PIOR que recursivo)
-  - NAACL 2025 (Vectara): fixed-size supera semantic chunking em retrieval,
-    evidence retrieval E answer generation
-  - A pesquisa mostra: chunks semânticos muito pequenos (~43 tokens médios)
-    recuperam bem isolados mas dão contexto insuficiente ao LLM → perda na
-    geração da resposta
-  - Exceção: domínio clínico com chunking adaptativo por tópico lógico →
-    87% accuracy vs 13% para fixed-size (muito específico de domínio)
+### BENCHMARKS 2025-2026:
 
-CONCLUSÃO PARA O MNEMOSYNE:
-  - semantic_chunking=False (padrão atual) está correto — não mudar
-  - chunk_size de 800 chars é baixo; subir para 1600-2000 chars (≈ 400-512 tok)
-  - chunk_overlap manter em ~15% do novo chunk_size → ~240-300 chars
-  - Exemplo: chunk_size=1800, chunk_overlap=250
+- Vecta (fev/2026), 50 papers: recursive 512-token = 69% accuracy (1º lugar)
+  Semantic chunking = 54% accuracy (15 pontos abaixo — PIOR que recursivo)
+- NAACL 2025 (Vectara): fixed-size supera semantic chunking em retrieval,
+  evidence retrieval E answer generation
+- A pesquisa mostra: chunks semânticos muito pequenos (~43 tokens médios)
+  recuperam bem isolados mas dão contexto insuficiente ao LLM → perda na
+  geração da resposta
+- Exceção: domínio clínico com chunking adaptativo por tópico lógico →
+  87% accuracy vs 13% para fixed-size (muito específico de domínio)
 
-Fontes:
-  - firecrawl.dev/blog/best-chunking-strategies-rag
-  - ragaboutit.com: "The 2026 RAG Performance Paradox..."
-  - blog.premai.io/rag-chunking-strategies-the-2026-benchmark-guide/
-  - langcopilot.com: "Document Chunking for RAG: 9 Strategies Tested"
+### CONCLUSÃO PARA O MNEMOSYNE:
 
---------------------------------------------------------
-3. RERANKING COM FLASHRANK — MELHORIA DE PRECISÃO SEM TORCH
---------------------------------------------------------
+- semantic_chunking=False (padrão atual) está correto — não mudar
+- chunk_size de 800 chars é baixo; subir para 1600-2000 chars (≈ 400-512 tok)
+- chunk_overlap manter em ~15% do novo chunk_size → ~240-300 chars
+- Exemplo: chunk_size=1800, chunk_overlap=250
 
-CONCEITO — RETRIEVAL EM DOIS ESTÁGIOS:
+### Fontes:
+
+- firecrawl.dev/blog/best-chunking-strategies-rag
+- ragaboutit.com: "The 2026 RAG Performance Paradox..."
+- blog.premai.io/rag-chunking-strategies-the-2026-benchmark-guide/
+- langcopilot.com: "Document Chunking for RAG: 9 Strategies Tested"
+
+
+## 3. RERANKING COM FLASHRANK — MELHORIA DE PRECISÃO SEM TORCH
+
+
+### CONCEITO — RETRIEVAL EM DOIS ESTÁGIOS:
   Etapa 1 (Retrieve amplo): busca vetorial com k=30-50 candidatos
   Etapa 2 (Rerank preciso): cross-encoder pontua cada par (query, doc)
                             e reordena os candidatos → top 5-10 para o LLM
@@ -5499,15 +5844,21 @@ CONCEITO — RETRIEVAL EM DOIS ESTÁGIOS:
   É mais lento que bi-encoder (embedding vetorial) mas muito mais preciso,
   pois vê o contexto da query ao avaliar cada documento.
 
-FLASHRANK — POR QUE É IDEAL PARA O MNEMOSYNE:
-  - Modelo mais leve do mundo para reranking: ~4MB
-  - Sem dependência de PyTorch ou Transformers (usa ONNX Runtime)
-  - Latência no CPU: 15-30ms para 50 candidatos (via FlashRank)
-                    100-250ms para 50 candidatos (via MiniLM cross-encoder)
-  - Instalação: pip install flashrank
-  - Funciona 100% offline
+### FLASHRANK — POR QUE É IDEAL PARA O MNEMOSYNE:
 
-INTEGRAÇÃO COM LANGCHAIN:
+- Modelo mais leve do mundo para reranking: ~4MB
+
+- Sem dependência de PyTorch ou Transformers (usa ONNX Runtime)
+
+- Latência no CPU: 15-30ms para 50 candidatos (via FlashRank)
+  
+                  100-250ms para 50 candidatos (via MiniLM cross-encoder)
+
+- Instalação: pip install flashrank
+
+- Funciona 100% offline
+
+### INTEGRAÇÃO COM LANGCHAIN:
   from langchain.retrievers import ContextualCompressionRetriever
   from langchain.retrievers.document_compressors import FlashrankRerank
 
@@ -5524,41 +5875,42 @@ INTEGRAÇÃO COM LANGCHAIN:
     - "ms-marco-MultiBERT-L-12" (multilíngue — melhor para PT)
     - "rank-T5-flan" (alternativa leve)
 
-IMPACTO ESPERADO:
+### IMPACTO ESPERADO:
   A adição de reranking é a melhoria com maior ROI num pipeline RAG maduro:
-  - Aumenta precision nos top-k documentos passados ao LLM
-  - Reduz alucinações (LLM recebe documentos mais relevantes)
-  - Custo: +15-30ms em CPU (imperceptível dado que o LLM já demora segundos)
 
-ONDE IMPLEMENTAR NO MNEMOSYNE:
+- Aumenta precision nos top-k documentos passados ao LLM
+- Reduz alucinações (LLM recebe documentos mais relevantes)
+- Custo: +15-30ms em CPU (imperceptível dado que o LLM já demora segundos)
+
+### ONDE IMPLEMENTAR NO MNEMOSYNE:
   core/rag.py → função prepare_ask() → substituir o retriever base por
   ContextualCompressionRetriever com FlashrankRerank.
 
-Fontes:
-  - github.com/PrithivirajDamodaran/FlashRank
-  - docs.langchain.com/oss/python/integrations/retrievers/flashrank-reranker
-  - api.python.langchain.com: FlashrankRerank
-  - thegeocommunity.com: "Reranking for RAG: Cross-Encoders vs LLM Rerankers"
-  - medium.com/@vaibhav-p-dixit: "Reranking in RAG: Cross-Encoders, FlashRank"
+### Fontes:
 
---------------------------------------------------------
-4. RAGAS — AVALIAÇÃO DO PIPELINE SEM GROUND TRUTH
---------------------------------------------------------
+- github.com/PrithivirajDamodaran/FlashRank
+- docs.langchain.com/oss/python/integrations/retrievers/flashrank-reranker
+- api.python.langchain.com: FlashrankRerank
+- thegeocommunity.com: "Reranking for RAG: Cross-Encoders vs LLM Rerankers"
+- medium.com/@vaibhav-p-dixit: "Reranking in RAG: Cross-Encoders, FlashRank"
 
-CONCEITO:
+## 4. RAGAS — AVALIAÇÃO DO PIPELINE SEM GROUND TRUTH
+
+### CONCEITO:
   RAGAS (Retrieval Augmented Generation Assessment) é um framework de avaliação
   de pipelines RAG que NÃO requer ground truth (anotações humanas).
   Avalia automaticamente múltiplas dimensões do pipeline.
 
-MÉTRICAS PRINCIPAIS (sem ground truth):
-  - Faithfulness: a resposta é fiel aos documentos recuperados?
-    (detecta alucinações — resposta com info não presente nos docs)
-  - Answer Relevancy: a resposta responde à pergunta feita?
-  - Context Precision: os docs recuperados são relevantes para a query?
-  - Context Recall: os docs mais importantes foram recuperados?
-  - Noise Sensitivity: o sistema se distrai com docs irrelevantes?
+### MÉTRICAS PRINCIPAIS (sem ground truth):
 
-COMO FUNCIONA SEM GROUND TRUTH:
+- Faithfulness: a resposta é fiel aos documentos recuperados?
+  (detecta alucinações — resposta com info não presente nos docs)
+- Answer Relevancy: a resposta responde à pergunta feita?
+- Context Precision: os docs recuperados são relevantes para a query?
+- Context Recall: os docs mais importantes foram recuperados?
+- Noise Sensitivity: o sistema se distrai com docs irrelevantes?
+
+### COMO FUNCIONA SEM GROUND TRUTH:
   RAGAS usa o próprio LLM como juiz para avaliar as métricas.
   Para uso local: configurar o LLM avaliador para Ollama em vez de OpenAI.
   Exemplo com Ollama:
@@ -5567,27 +5919,29 @@ COMO FUNCIONA SEM GROUND TRUTH:
   from langchain_ollama import ChatOllama
   evaluator_llm = LangchainLLMWrapper(ChatOllama(model="qwen2.5:7b"))
 
-UTILIDADE PARA O MNEMOSYNE:
-  - Antes/depois de mudanças (ex: cosine vs L2, chunk size): medir impacto real
-  - Identificar quais perguntas o sistema responde mal e por quê
-  - Dado o hardware (não precisa de GPU para avaliação, só Ollama rodando)
+### UTILIDADE PARA O MNEMOSYNE:
 
-LIMITAÇÃO:
-  - RAGAS é uma biblioteca, não plataforma — sem UI embutida
-  - Avaliação usa LLM → é lenta para corpus grande
-  - Requer o LLM estar rodando durante a avaliação
+- Antes/depois de mudanças (ex: cosine vs L2, chunk size): medir impacto real
+- Identificar quais perguntas o sistema responde mal e por quê
+- Dado o hardware (não precisa de GPU para avaliação, só Ollama rodando)
 
-Fontes:
-  - arxiv.org/abs/2309.15217 (paper original RAGAS)
-  - braintrust.dev/articles/best-rag-evaluation-tools
-  - dev.to/kuldeep_paul: "Top 5 RAG Evaluation Platforms in 2025"
-  - haystack.deepset.ai/cookbook/rag_eval_ragas
+### LIMITAÇÃO:
 
---------------------------------------------------------
-5. LIGHTRAG E GRAFOS DE CONHECIMENTO — VIABILIDADE LOCAL
---------------------------------------------------------
+- RAGAS é uma biblioteca, não plataforma — sem UI embutida
+- Avaliação usa LLM → é lenta para corpus grande
+- Requer o LLM estar rodando durante a avaliação
 
-LIGHTRAG:
+### Fontes:
+
+- arxiv.org/abs/2309.15217 (paper original RAGAS)
+- braintrust.dev/articles/best-rag-evaluation-tools
+- dev.to/kuldeep_paul: "Top 5 RAG Evaluation Platforms in 2025"
+- haystack.deepset.ai/cookbook/rag_eval_ragas
+
+
+## 5. LIGHTRAG E GRAFOS DE CONHECIMENTO — VIABILIDADE LOCAL
+
+### LIGHTRAG:
   Sistema RAG com grafo de conhecimento integrado (EMNLP 2025).
   Extrai entidades e relações dos documentos, constrói grafo, usa busca
   dual (vetorial + grafo) para recuperação mais rica.
@@ -5596,7 +5950,7 @@ LIGHTRAG:
   Suporte nativo a Ollama (LLM + embeddings → 100% offline)
   Novidade: reranker integrado (agosto 2025) + avaliação via RAGAS
 
-LIMITAÇÃO CRÍTICA PARA O MNEMOSYNE:
+### LIMITAÇÃO CRÍTICA PARA O MNEMOSYNE:
   LightRAG recomenda ≥ 32B parâmetros para extração eficaz de grafo.
   Modelos menores (7B-14B) extraem entidades mas perdem relações complexas.
   Com RX 6600 (8GB VRAM), o máximo prático é ~8B Q4_K_M (4.4 GB de modelo).
@@ -5606,22 +5960,24 @@ LIMITAÇÃO CRÍTICA PARA O MNEMOSYNE:
   Alternativa futura: construir grafo com modelo 8B em CPU (lento mas possível)
   e usar grafo apenas como índice suplementar, não para extração em tempo real.
 
-ZEP — MEMÓRIA TEMPORAL EM GRAFO (referência para Fase 6):
+### ZEP — MEMÓRIA TEMPORAL EM GRAFO (referência para Fase 6):
   Zep usa grafo de conhecimento temporal para memória de agentes:
-  - "Episodes" = unidades de dado (texto, JSON, mensagens)
-  - Extrai entidades e datas relativas ("na semana passada", "próxima quinta")
-  - Preserva como a informação está conectada temporalmente
+
+- "Episodes" = unidades de dado (texto, JSON, mensagens)
+- Extrai entidades e datas relativas ("na semana passada", "próxima quinta")
+- Preserva como a informação está conectada temporalmente
   Não é diretamente utilizável offline hoje mas a arquitetura é referência.
 
-Fontes:
-  - github.com/HKUDS/LightRAG
-  - stable-learn.com/en/lightrag-introduction/
-  - arxiv.org/html/2501.13956v1 (Zep: Temporal Knowledge Graph)
-  - arxiv.org/html/2602.05665v1 (Graph-Based Agent Memory)
+### Fontes:
 
---------------------------------------------------------
-6. RESUMO — IMPACTO VS. ESFORÇO PARA O MNEMOSYNE
---------------------------------------------------------
+- github.com/HKUDS/LightRAG
+- stable-learn.com/en/lightrag-introduction/
+- arxiv.org/html/2501.13956v1 (Zep: Temporal Knowledge Graph)
+- arxiv.org/html/2602.05665v1 (Graph-Based Agent Memory)
+
+
+## 6. RESUMO — IMPACTO VS. ESFORÇO PARA O MNEMOSYNE
+
 
   ALTA PRIORIDADE (esforço baixo, impacto alto):
 
@@ -5654,27 +6010,14 @@ Fontes:
       Impacto: retrieval muito mais rico para perguntas relacionais
       Risco: requer ≥ 32B parâmetros para resultados bons → hardware insuficiente
 
-========================================================
-FIM DA PESQUISA — Otimização, Chunking, Reranking, Avaliação
-========================================================
 
----
-
-========================================================
-PESQUISA PARA O MNEMOSYNE
+# RAG Auto-Aprendizagem, Reflexão de Conhecimento e Estado da Arte em Retrieval Aumentado
 Sessão: 2026-04-30
-Tema: RAG Auto-Aprendizagem, Reflexão de Conhecimento e Estado da Arte em Retrieval Aumentado
-========================================================
-
---------------------------------------------------------
-# Pesquisa: Self-Learning RAG, Knowledge Reflection e Arquiteturas Avançadas de Retrieval
-
 > Investigação abrangente sobre sistemas RAG com capacidade de auto-aprendizagem,
 > reflexão de conhecimento, avaliação adaptativa de recuperação e técnicas emergentes
 > em retrieval aumentado por geração. Cobertura do estado da arte até 2025.
---------------------------------------------------------
 
----
+
 
 ## 1. CONTEXTUALIZAÇÃO: O PROBLEMA DO RAG ESTÁTICO
 
@@ -5702,7 +6045,6 @@ variantes de RAG em quatro eixos: retrieval timing, retrieval mechanism, augment
 strategy e generation paradigm. O trabalho identifica que menos de 20% dos sistemas
 revisados incorporam qualquer forma de feedback sobre qualidade do retrieval.
 
----
 
 ## 2. SELF-RAG: REFLEXÃO INTEGRADA AO MODELO
 
@@ -5715,16 +6057,17 @@ a resposta gerada é factualmente consistente.
 
 **Tokens de reflexão definidos no Self-RAG:**
 
-| Token     | Função                                                       | Valores possíveis                          |
-|-----------|--------------------------------------------------------------|--------------------------------------------|
-| [Retrieve]| Decide se recuperação é necessária                           | `yes`, `no`, `continue`                    |
-| [IsRel]   | Avalia se o documento recuperado é relevante à pergunta      | `relevant`, `irrelevant`                   |
-| [IsSup]   | Verifica se o segmento gerado é suportado pelo documento     | `fully supported`, `partially`, `no support`|
-| [IsUse]   | Avalia utilidade geral da resposta gerada                    | escala 1-5                                 |
+| Token      | Função                                                   | Valores possíveis                            |
+| ---------- | -------------------------------------------------------- | -------------------------------------------- |
+| [Retrieve] | Decide se recuperação é necessária                       | `yes`, `no`, `continue`                      |
+| [IsRel]    | Avalia se o documento recuperado é relevante à pergunta  | `relevant`, `irrelevant`                     |
+| [IsSup]    | Verifica se o segmento gerado é suportado pelo documento | `fully supported`, `partially`, `no support` |
+| [IsUse]    | Avalia utilidade geral da resposta gerada                | escala 1-5                                   |
 
 ### 2.2 Treinamento
 
 O modelo Self-RAG foi treinado em dois estágios:
+
 1. **Geração de dados sintéticos:** um modelo crítico (GPT-4) gera reflexões para
    pares (pergunta, documento, resposta), produzindo ~150.000 exemplos anotados.
 2. **Fine-tuning supervisionado:** o modelo base (Llama 2-7B e 13B) é ajustado para
@@ -5737,12 +6080,12 @@ inferência — o próprio modelo avalia sua recuperação.
 
 Benchmarks reportados por Asai et al. (2023):
 
-| Benchmark    | Métrica         | RAG vanilla | Self-RAG 7B | Self-RAG 13B |
-|-------------|-----------------|-------------|-------------|--------------|
-| PopQA        | Accuracy        | 49.4%       | 54.9%       | 56.8%        |
-| TriviaQA     | Accuracy        | 63.8%       | 66.4%       | 67.1%        |
-| FactScore    | Factual score   | 71.3%       | 81.2%       | 82.0%        |
-| ASQA (str)  | F1              | 41.3%       | 46.8%       | 48.2%        |
+| Benchmark  | Métrica       | RAG vanilla | Self-RAG 7B | Self-RAG 13B |
+| ---------- | ------------- | ----------- | ----------- | ------------ |
+| PopQA      | Accuracy      | 49.4%       | 54.9%       | 56.8%        |
+| TriviaQA   | Accuracy      | 63.8%       | 66.4%       | 67.1%        |
+| FactScore  | Factual score | 71.3%       | 81.2%       | 82.0%        |
+| ASQA (str) | F1            | 41.3%       | 46.8%       | 48.2%        |
 
 Self-RAG 13B supera ChatGPT (FactScore 71.3% → 82.0%) e Llama2-Chat 13B em todos
 os benchmarks, com retrieval adaptativo reduzindo chamadas ao retriever em ~30% nos
@@ -5755,7 +6098,6 @@ casos onde recuperação não é necessária.
 - Custo computacional elevado para gerar dados de treino (requer GPT-4 ou equivalente)
 - Tokens de reflexão em inglês; generalização multilíngue não testada amplamente
 
----
 
 ## 3. CRAG: CORRECTIVE RAG — AVALIAÇÃO EXTERNA E REFINAMENTO
 
@@ -5766,6 +6108,7 @@ introduz um **evaluator leve e plugável** (T5-large, 770M parâmetros) que clas
 a qualidade dos documentos recuperados e aciona mecanismos corretivos.
 
 **Pipeline CRAG:**
+
 ```
 Pergunta → Retriever → k documentos → Evaluator (T5-large)
     ↓
@@ -5797,17 +6140,16 @@ mesmo pipeline de decompose-then-recompose antes de serem usados.
 
 ### 3.4 Resultados
 
-| Dataset      | Métrica   | Naive RAG | CRAG     | Melhoria |
-|-------------|-----------|-----------|----------|----------|
-| PopQA        | Accuracy  | 49.4%     | 54.9%    | +5.5 pp  |
-| PubHealth    | Accuracy  | 52.1%     | 59.5%    | +7.4 pp  |
-| ARC-Challenge| Accuracy  | 70.8%     | 74.1%    | +3.3 pp  |
-| Biography    | FactScore | 68.2%     | 73.4%    | +5.2 pp  |
+| Dataset       | Métrica   | Naive RAG | CRAG  | Melhoria |
+| ------------- | --------- | --------- | ----- | -------- |
+| PopQA         | Accuracy  | 49.4%     | 54.9% | +5.5 pp  |
+| PubHealth     | Accuracy  | 52.1%     | 59.5% | +7.4 pp  |
+| ARC-Challenge | Accuracy  | 70.8%     | 74.1% | +3.3 pp  |
+| Biography     | FactScore | 68.2%     | 73.4% | +5.2 pp  |
 
 CRAG é plug-and-play (não requer mudanças no LLM base), mas adiciona latência:
 ~150-300ms por consulta para execução do evaluator T5-large.
 
----
 
 ## 4. KNOWLEDGE REFLECTION: SÍNTESE ATIVA NO ÍNDICE
 
@@ -5836,6 +6178,7 @@ temporal), o sistema:
 ### 4.3 Consolidação periódica
 
 O sistema não apenas gera reflexões individuais, mas as consolida:
+
 - **Trigger:** a cada 3 novas reflexões sobre o mesmo tema, uma meta-reflexão é gerada
 - **Meta-reflexão:** sintetiza as 3 reflexões anteriores em representação de segunda ordem
 - **Boost acumulado:** meta-reflexões recebem `score = score_base × 1.5 × 1.2 = 1.8×`
@@ -5870,17 +6213,18 @@ def apply_reflection_boost(docs_with_scores):
 ### 4.5 Trade-offs
 
 **Vantagens:**
+
 - Melhora retrieval para perguntas que requerem síntese de múltiplos documentos
 - Reduz necessidade de raciocínio do LLM em tempo de inferência
 - Perguntas abstratas/conceituais são melhor atendidas
 
 **Desvantagens:**
+
 - Custo de geração: cada conjunto de chunks exige uma chamada LLM durante indexação
 - Risco de reflexões incorretas: o LLM pode introduzir erros nas sínteses
 - Índice maior: reflexões ocupam espaço adicional
 - Latência de indexação: aumenta proporcionalmente ao número de reflexões geradas
 
----
 
 ## 5. RAPTOR: RECURSIVE ABSTRACTIVE PROCESSING FOR TREE-ORGANIZED RETRIEVAL
 
@@ -5911,6 +6255,7 @@ Re-clustering + re-sumarização → "nós de nível 2"
 ```
 
 O retrieval pode ser feito de dois modos:
+
 - **Tree traversal:** percorre a árvore top-down, expandindo apenas ramos relevantes
 - **Collapsed tree retrieval:** todos os nós (folhas e internos) são indexados juntos;
   retrieval por similaridade como de costume, mas com cobertura em múltiplos níveis
@@ -5921,12 +6266,12 @@ O retrieval pode ser feito de dois modos:
 Sarthi et al. (2024) reportam no benchmark QuALITY (questões de compreensão de
 textos longos):
 
-| Método              | QuALITY Acc | QASPER F1 |
-|--------------------|-------------|-----------|
-| RAG vanilla (DPR)  | 56.2%       | 35.0%     |
-| Long Context (4K)  | 63.1%       | 39.2%     |
-| RAPTOR             | 76.8%       | 55.7%     |
-| GPT-4 (full doc)   | 82.1%       | 63.2%     |
+| Método            | QuALITY Acc | QASPER F1 |
+| ----------------- | ----------- | --------- |
+| RAG vanilla (DPR) | 56.2%       | 35.0%     |
+| Long Context (4K) | 63.1%       | 39.2%     |
+| RAPTOR            | 76.8%       | 55.7%     |
+| GPT-4 (full doc)  | 82.1%       | 63.2%     |
 
 RAPTOR supera em +20 pp o RAG convencional em QuALITY. Em QASPER, +20.7 pp.
 Em benchmarks NarrativeQA e SCROLLS, ganhos de 15-25%.
@@ -5938,7 +6283,6 @@ Em benchmarks NarrativeQA e SCROLLS, ganhos de 15-25%.
 - Overhead de armazenamento: +60-80% sobre índice vanilla (nós intermediários)
 - Retrieval: sem overhead significativo vs RAG vanilla no modo collapsed tree
 
----
 
 ## 6. AGENTIC RAG: RETRIEVAL COMO FERRAMENTA DE AGENTES AUTÔNOMOS
 
@@ -5947,12 +6291,12 @@ Em benchmarks NarrativeQA e SCROLLS, ganhos de 15-25%.
 Agentic RAG (Han et al., 2024; survey de 250+ papers) classifica sistemas em
 quatro categorias evolutivas:
 
-| Nível      | Descrição                                                          | Exemplos             |
-|------------|-------------------------------------------------------------------|----------------------|
-| Naive RAG  | Pipeline fixo: retrieve → generate                                | RAG vanilla          |
-| Advanced   | Módulos especializados: reranking, HyDE, query expansion          | CRAG, Self-RAG       |
-| Modular    | Componentes intercambiáveis e configuráveis                       | LangChain, LlamaIndex|
-| Agentic    | LLM como agente que usa retrieval como uma ferramenta             | AutoRAG, ReAct+RAG   |
+| Nível     | Descrição                                                | Exemplos              |
+| --------- | -------------------------------------------------------- | --------------------- |
+| Naive RAG | Pipeline fixo: retrieve → generate                       | RAG vanilla           |
+| Advanced  | Módulos especializados: reranking, HyDE, query expansion | CRAG, Self-RAG        |
+| Modular   | Componentes intercambiáveis e configuráveis              | LangChain, LlamaIndex |
+| Agentic   | LLM como agente que usa retrieval como uma ferramenta    | AutoRAG, ReAct+RAG    |
 
 ### 6.2 Capacidades dos agentes RAG
 
@@ -5990,7 +6334,6 @@ Answer: X aconteceu em Y.
 ReAct reduz alucinações em tarefas de multi-hop QA (HotpotQA: +12% vs CoT sem
 retrieval; +8% vs RAG vanilla com retrieval único).
 
----
 
 ## 7. GRAPHRAG E LIGHTRAG: RECUPERAÇÃO BASEADA EM GRAFOS
 
@@ -6002,6 +6345,7 @@ extraídas pelo LLM. O retrieval usa este grafo em vez de (ou além de) similari
 vetorial.
 
 **Pipeline GraphRAG:**
+
 1. Extração de entidades e relações por LLM (costoso, feito offline)
 2. Detecção de comunidades no grafo (algoritmo de Leiden)
 3. Geração de sumários de comunidades por LLM
@@ -6009,10 +6353,10 @@ vetorial.
 
 **Resultado benchmark Microsoft (2024):**
 
-| Método    | Comprehensiveness | Diversity | Empowerment | Win Rate vs Baseline |
-|-----------|------------------|-----------|-------------|----------------------|
-| Baseline  | 32%              | 47%       | 40%         | —                    |
-| GraphRAG  | 86%              | 72%       | 81%         | 72%                  |
+| Método   | Comprehensiveness | Diversity | Empowerment | Win Rate vs Baseline |
+| -------- | ----------------- | --------- | ----------- | -------------------- |
+| Baseline | 32%               | 47%       | 40%         | —                    |
+| GraphRAG | 86%               | 72%       | 81%         | 72%                  |
 
 Em análises de grandes corpora (relatórios anuais, conjuntos de notícias), GraphRAG
 supera naive RAG em 72% das comparações por avaliadores humanos.
@@ -6035,7 +6379,6 @@ LightRAG combina ambos os modos e usa grafo mais leve (sem detecção de comunid
 obrigatória), reduzindo custo de indexação em ~60% vs GraphRAG enquanto mantém
 resultados comparáveis em benchmarks de QA.
 
----
 
 ## 8. RAG-RL: APRENDIZADO POR REFORÇO APLICADO AO RETRIEVAL
 
@@ -6051,6 +6394,7 @@ específico de saber quando e o que recuperar.
 RAG-RL é o primeiro modelo de linguagem treinado especificamente para RAG via RL:
 
 **Arquitetura:**
+
 - Modelo base: Qwen2.5-7B (instruct)
 - Algoritmo RL: GRPO com reward function composta:
   - Reward de formato (resposta segue estrutura esperada)
@@ -6061,17 +6405,16 @@ RAG-RL é o primeiro modelo de linguagem treinado especificamente para RAG via R
 
 **Resultados em benchmarks de multi-hop QA:**
 
-| Benchmark   | Naive RAG | RAG-RL    | Melhoria |
-|-------------|-----------|-----------|----------|
-| HotpotQA    | 58.3%     | 67.1%     | +8.8 pp  |
-| MuSiQue     | 41.2%     | 52.8%     | +11.6 pp |
-| 2WikiMQA    | 63.5%     | 72.4%     | +8.9 pp  |
-| IIRC        | 47.8%     | 58.9%     | +11.1 pp |
+| Benchmark | Naive RAG | RAG-RL | Melhoria |
+| --------- | --------- | ------ | -------- |
+| HotpotQA  | 58.3%     | 67.1%  | +8.8 pp  |
+| MuSiQue   | 41.2%     | 52.8%  | +11.6 pp |
+| 2WikiMQA  | 63.5%     | 72.4%  | +8.9 pp  |
+| IIRC      | 47.8%     | 58.9%  | +11.1 pp |
 
 RAG-RL reduz chamadas desnecessárias ao retriever em 34% vs Self-RAG (que às vezes
 recupera mesmo quando desnecessário após fine-tuning).
 
----
 
 ## 9. DRAG: DISTILLATION-ENHANCED RAG
 
@@ -6084,6 +6427,7 @@ Models), onde modelos gigantes de teacher não podem ser executados diretamente.
 ### 9.2 Mecanismo de destilação
 
 O pipeline DRAG:
+
 1. **Teacher LLM** (modelo grande, ex: GPT-4 ou Llama 70B) processa a query com
    documentos recuperados e gera:
    - Resposta correta
@@ -6096,16 +6440,15 @@ O pipeline DRAG:
 
 Comparado com MiniRAG (baseline para SLMs em RAG, Qiu et al., 2025):
 
-| Dataset    | MiniRAG  | DRAG     | Melhoria |
-|------------|----------|----------|----------|
-| PopQA      | 41.2%    | 52.7%    | +27.7%   |
-| TriviaQA   | 56.3%    | 68.9%    | +22.4%   |
-| NQ         | 38.1%    | 47.8%    | +25.5%   |
+| Dataset  | MiniRAG | DRAG  | Melhoria |
+| -------- | ------- | ----- | -------- |
+| PopQA    | 41.2%   | 52.7% | +27.7%   |
+| TriviaQA | 56.3%   | 68.9% | +22.4%   |
+| NQ       | 38.1%   | 47.8% | +25.5%   |
 
 DRAG permite que SLMs de 1-3B parâmetros atinjam desempenho próximo a LLMs de
 7-13B em tarefas RAG, tornando-o relevante para deployments em hardware restrito.
 
----
 
 ## 10. ITERATIVE RETRIEVAL E REFINAMENTO
 
@@ -6132,6 +6475,7 @@ geração inicial captura conceitos relevantes que a pergunta original não capt
 ### 10.2 IRCoT (Interleaving Retrieval with Chain-of-Thought, Press et al., 2023)
 
 IRCoT intercala cadeia de pensamento com recuperação:
+
 - A cada passo de raciocínio, o modelo decide se precisa recuperar nova informação
 - A query para o próximo retrieval é derivada do raciocínio parcial atual
 - Útil para perguntas que requerem múltiplos "saltos" de raciocínio (multi-hop QA)
@@ -6139,7 +6483,6 @@ IRCoT intercala cadeia de pensamento com recuperação:
 HotpotQA: IRCoT 71.4% vs CoT-solo 49.8% vs RAG-vanilla 60.1%.
 2WikiMultiHopQA: IRCoT 80.8% vs CoT 57.2% vs RAG 67.3%.
 
----
 
 ## 11. FAIR-RAG: AVALIAÇÃO E CALIBRAÇÃO
 
@@ -6152,6 +6495,7 @@ torna difícil definir thresholds confiáveis para filtrar documentos ruins.
 ### 11.2 FAIR-RAG (Feedback-based Adaptive and Iterative Retrieval)
 
 FAIR-RAG propõe calibrar scores de retrieval usando feedback implícito do uso:
+
 - Quando a resposta gerada é marcada como correta (por usuário ou por verificador
   automático), os documentos usados naquela resposta recebem boost de score futuro
 - Quando incorreta, os documentos recebem penalização
@@ -6163,17 +6507,16 @@ Este mecanismo cria um loop de melhoria contínua: o índice aprende com o uso.
 
 RAGAS (Evaluation Framework for RAG, Es et al., 2023) define métricas padronizadas:
 
-| Métrica              | O que mede                                                       |
-|---------------------|------------------------------------------------------------------|
-| Faithfulness         | % de claims na resposta que são suportadas pelos documentos      |
-| Answer Relevancy     | Relevância da resposta à pergunta (independente de factualidade) |
-| Context Precision    | % dos documentos recuperados que são realmente relevantes        |
-| Context Recall       | % de informações necessárias que estavam nos documentos          |
+| Métrica           | O que mede                                                       |
+| ----------------- | ---------------------------------------------------------------- |
+| Faithfulness      | % de claims na resposta que são suportadas pelos documentos      |
+| Answer Relevancy  | Relevância da resposta à pergunta (independente de factualidade) |
+| Context Precision | % dos documentos recuperados que são realmente relevantes        |
+| Context Recall    | % de informações necessárias que estavam nos documentos          |
 
 RAGAS usa LLM (GPT-4 ou equivalente) para calcular estas métricas, permitindo
 avaliação sem ground truth manual.
 
----
 
 ## 12. HYBRID RETRIEVAL: BM25 + DENSE (ESTADO DA ARTE)
 
@@ -6181,14 +6524,14 @@ avaliação sem ground truth manual.
 
 Dense retrieval (embeddings) e sparse retrieval (BM25) são complementares:
 
-| Característica           | BM25                          | Dense (embeddings)           |
-|-------------------------|-------------------------------|------------------------------|
-| Correspondência exata   | Excelente                     | Fraco                        |
-| Correspondência semântica| Fraco                        | Excelente                    |
-| Termos raros/técnicos   | Bom (TF-IDF natural)          | Fraco (OOV no embedding space)|
-| Latência                | Muito baixo (<10ms)           | Variável (10-100ms)          |
-| Sem GPU                  | Sim                           | Lento sem GPU                |
-| Interpretabilidade       | Alta                          | Baixa                        |
+| Característica            | BM25                 | Dense (embeddings)             |
+| ------------------------- | -------------------- | ------------------------------ |
+| Correspondência exata     | Excelente            | Fraco                          |
+| Correspondência semântica | Fraco                | Excelente                      |
+| Termos raros/técnicos     | Bom (TF-IDF natural) | Fraco (OOV no embedding space) |
+| Latência                  | Muito baixo (<10ms)  | Variável (10-100ms)            |
+| Sem GPU                   | Sim                  | Lento sem GPU                  |
+| Interpretabilidade        | Alta                 | Baixa                          |
 
 ### 12.2 Reciprocal Rank Fusion (RRF)
 
@@ -6203,6 +6546,7 @@ O valor k=60 foi selecionado empiricamente por Cormack et al. e manteve-se robus
 em múltiplos domínios desde 2009.
 
 Vantagens do RRF sobre score fusion linear:
+
 - Invariante à escala de scores (não precisa normalizar BM25 e cosine)
 - Robusto a outliers (um documento com score muito alto em um ranker não domina)
 - Computacionalmente trivial
@@ -6212,11 +6556,11 @@ Vantagens do RRF sobre score fusion linear:
 Luan et al. (2021) em BEIR (Benchmarking IR):
 
 | Método      | nDCG@10 médio (18 datasets) |
-|-------------|----------------------------|
-| BM25        | 43.0                       |
-| Dense (DPR) | 37.9                       |
-| Híbrido RRF | 48.1                       |
-| BM25+sparse | 45.2                       |
+| ----------- | --------------------------- |
+| BM25        | 43.0                        |
+| Dense (DPR) | 37.9                        |
+| Híbrido RRF | 48.1                        |
+| BM25+sparse | 45.2                        |
 
 O híbrido RRF supera ambos os métodos individuais em 16 dos 18 datasets do BEIR.
 
@@ -6231,7 +6575,6 @@ O híbrido RRF supera ambos os métodos individuais em 16 dos 18 datasets do BEI
 Para deployments locais com recursos limitados, BM25+dense RRF continua sendo
 o trade-off mais equilibrado (2024-2025).
 
----
 
 ## 13. FONTES
 
@@ -6312,15 +6655,6 @@ FREECODECAMP. **How to Build a Self-Learning RAG System with Knowledge Reflectio
 <https://www.freecodecamp.org/news/how-to-build-a-self-learning-rag-system-with-knowledge-reflection/>.
 Acesso em: 30 abr. 2026.
 
----
-
-========================================================
-FIM DA PESQUISA — Self-Learning RAG, Knowledge Reflection e Arquiteturas Avançadas
-========================================================
-
----
-
-## Referências Externas — Ferramentas e Projetos
 
 # Pesquisa: Understand-Anything — Plugin de Grafo de Conhecimento para Codebases
 
@@ -6387,6 +6721,7 @@ O comando principal `/understand` orquestra **6 agentes especializados** em fase
 com paralelismo interno na fase 2:
 
 ### Fase 0 — Pre-flight (Preflight)
+
 - Resolução do `PROJECT_ROOT` (argumento ou CWD)
 - Verificação e build do pacote `@understand-anything/core` se dist/ não existir
 - Leitura do hash git atual (`git rev-parse HEAD`)
@@ -6403,11 +6738,13 @@ com paralelismo interno na fase 2:
 - Coleta de contexto do projeto: README (3000 chars), manifest, árvore de diretórios, entry point
 
 ### Fase 0.5 — Ignore Configuration
+
 - Verifica existência de `.understand-anything/.understandignore`
 - Se ausente: gera arquivo de sugestões via script Node.js inline (lê `.gitignore`, detecta diretórios comuns)
 - **Aguarda confirmação do usuário antes de prosseguir**
 
 ### Fase 1 — SCAN (agente `project-scanner`)
+
 - Descobre todos os arquivos do projeto (via `git ls-files` ou listagem recursiva com exclusões)
 - Aplica exclusões hardcoded: `node_modules/`, `.git/`, `dist/`, `build/`, `*.lock`, assets binários, etc.
 - Aplica filtros do `.understandignore` (via `@understand-anything/core` `createIgnoreFilter`)
@@ -6420,6 +6757,7 @@ com paralelismo interno na fase 2:
 - **Gate:** se >100 arquivos, informa o usuário e aguarda confirmação
 
 ### Fase 2 — ANALYZE (agente `file-analyzer`, paralelo)
+
 - Agrupa arquivos em lotes de 20-30 (target ~25 por lote), com arquivos relacionados juntos
 - Despacha até **5 subagentes concorrentes** para processar lotes em paralelo
 - **Por lote — Fase 2A (extração estrutural):**
@@ -6446,12 +6784,14 @@ com paralelismo interno na fase 2:
   - Produz `assembled-graph.json`
 
 ### Fase 3 — ASSEMBLE REVIEW (agente `assemble-reviewer`)
+
 - Recebe o grafo montado + report do merge script + importMap
 - Verifica integridade referencial cross-batch
 - Adiciona notas de warning ao `$PHASE_WARNINGS`
 - Escreve `assemble-review.json`
 
 ### Fase 4 — ARCHITECTURE (agente `architecture-analyzer`)
+
 - Recebe nós de nível de arquivo, arestas de importação, todas as arestas
 - Recebe contexto de linguagem (arquivos `languages/*.md`) e framework (arquivos `frameworks/*.md`)
 - Identifica camadas arquiteturais (API, Service, Data, UI, Utility, etc.)
@@ -6460,6 +6800,7 @@ com paralelismo interno na fase 2:
 - Escreve `layers.json` (array de `{id, name, description, nodeIds[]}`)
 
 ### Fase 5 — TOUR (agente `tour-builder`)
+
 - Recebe todos os nós de nível de arquivo, camadas, todas as arestas
 - Recebe README (3000 chars) e entry point do projeto
 - Gera walkthrough guiado ordenado por dependência
@@ -6467,6 +6808,7 @@ com paralelismo interno na fase 2:
 - Escreve `tour.json` (array de `{order, title, description, nodeIds[], languageLesson?}`)
 
 ### Fase 6 — REVIEW (validação)
+
 - Monta o objeto `KnowledgeGraph` final com `version`, `project`, `nodes`, `edges`, `layers`, `tour`
 - **Caminho padrão (inline deterministic):** executa script Node.js gerado dinamicamente que valida:
   - `nodes` e `edges` são arrays
@@ -6481,6 +6823,7 @@ com paralelismo interno na fase 2:
 - Aplicação de fixes automáticos para issues menores
 
 ### Fase 7 — SAVE
+
 - Escreve `knowledge-graph.json` (grafo final)
 - Escreve `meta.json` (timestamp, hash, versão, contagem de arquivos)
 - Gera fingerprints estruturais (`fingerprints.json`) para baseline de atualizações futuras
@@ -6493,9 +6836,11 @@ com paralelismo interno na fase 2:
 ## 4. Skills/Comandos Disponíveis
 
 ### /understand [path] [--full|--auto-update|--no-auto-update|--review]
+
 Pipeline completo de análise descrito acima. Produz `.understand-anything/knowledge-graph.json`.
 
 ### /understand-dashboard [project-path]
+
 - Inicia servidor Vite dev com o dashboard React
 - Passa `GRAPH_DIR` via variável de ambiente para apontar ao projeto
 - Gera token aleatório por sessão (32 hex chars via `crypto.randomBytes(16)`)
@@ -6507,28 +6852,33 @@ Pipeline completo de análise descrito acima. Produz `.understand-anything/knowl
 - Sanitiza file paths absolutos antes de servir (converte para relativos ao project root)
 
 ### /understand-chat [query]
+
 - Responde perguntas sobre o codebase usando o grafo existente
 - Usa grep no JSON para encontrar nós relevantes (não carrega grafo inteiro em contexto)
 - Segue arestas 1-hop para encontrar componentes conectados
 - Suporta busca por nome, summary, e tags
 
 ### /understand-diff
+
 - Analisa mudanças git atuais contra o grafo
 - Identifica: componentes mudados, componentes afetados (1-hop), camadas afetadas
 - Calcula blast radius baseado em complexidade e cross-layer edges
 - Escreve `diff-overlay.json` para visualização no dashboard
 
 ### /understand-explain [file-path]
+
 - Deep-dive em um arquivo ou função específico
 - Lê o código-fonte + nó correspondente + vizinhança no grafo
 - Explica: papel arquitetural, estrutura interna, conexões externas, fluxo de dados
 
 ### /understand-onboard
+
 - Gera guia de onboarding em Markdown
 - Seções: Project Overview, Architecture Layers, Key Concepts, Guided Tour, File Map, Complexity Hotspots
 - Oferece salvar em `docs/ONBOARDING.md`
 
 ### /understand-domain [--full]
+
 - Extrai conhecimento de domínio de negócio
 - Se grafo existente: deriva a partir dele (barato, sem scan de arquivos)
 - Se `--full` ou sem grafo: scan leve via `extract-domain-context.py` (tree de arquivos, entry points, assinaturas)
@@ -6537,6 +6887,7 @@ Pipeline completo de análise descrito acima. Produz `.understand-anything/knowl
 - Lança dashboard automaticamente
 
 ### /understand-knowledge [wiki-directory]
+
 - Analisa wikis no padrão Karpathy (raw sources + wiki markdown + schema)
 - **Fase 1 (determinística):** `parse-knowledge-base.py` extrai wikilinks, headings, categorias do `index.md`
 - **Fase 2:** batches de 10-15 artigos por agente `article-analyzer` (máximo 3 concurrent)
@@ -6550,6 +6901,7 @@ Pipeline completo de análise descrito acima. Produz `.understand-anything/knowl
 ## 5. Schema do KnowledgeGraph (tipos TypeScript)
 
 ### KnowledgeGraph (raiz)
+
 ```typescript
 interface KnowledgeGraph {
   version: string;           // "1.0.0"
@@ -6563,47 +6915,51 @@ interface KnowledgeGraph {
 ```
 
 ### Tipos de Nó (21 total)
-| Categoria | Tipo | Convenção de ID | Descrição |
-|-----------|------|-----------------|-----------|
-| Código | `file` | `file:<path>` | Arquivo de código-fonte |
-| Código | `function` | `function:<path>:<name>` | Função ou método |
-| Código | `class` | `class:<path>:<name>` | Classe, interface ou tipo |
-| Código | `module` | `module:<name>` | Módulo ou pacote lógico |
-| Código | `concept` | `concept:<name>` | Conceito abstrato ou padrão |
-| Não-código | `config` | `config:<path>` | Arquivo de configuração |
-| Não-código | `document` | `document:<path>` | Arquivo de documentação |
-| Não-código | `service` | `service:<path>` | Serviço implantável (Docker, K8s) |
-| Não-código | `table` | `table:<path>:<table-name>` | Tabela de banco de dados |
-| Não-código | `endpoint` | `endpoint:<path>:<name>` | Endpoint de API |
-| Não-código | `pipeline` | `pipeline:<path>` | Pipeline CI/CD |
-| Não-código | `schema` | `schema:<path>` | Schema (GraphQL, Protobuf, Prisma) |
-| Não-código | `resource` | `resource:<path>` | Recurso de infraestrutura (Terraform) |
-| Domínio | `domain` | — | Domínio de negócio |
-| Domínio | `flow` | — | Fluxo de negócio |
-| Domínio | `step` | — | Passo de processo |
-| Conhecimento | `article` | — | Artigo de wiki |
-| Conhecimento | `entity` | — | Entidade extraída |
-| Conhecimento | `topic` | — | Tópico ou categoria |
-| Conhecimento | `claim` | — | Afirmação ou decisão |
-| Conhecimento | `source` | — | Fonte ou documento raw |
+
+| Categoria    | Tipo       | Convenção de ID             | Descrição                             |
+| ------------ | ---------- | --------------------------- | ------------------------------------- |
+| Código       | `file`     | `file:<path>`               | Arquivo de código-fonte               |
+| Código       | `function` | `function:<path>:<name>`    | Função ou método                      |
+| Código       | `class`    | `class:<path>:<name>`       | Classe, interface ou tipo             |
+| Código       | `module`   | `module:<name>`             | Módulo ou pacote lógico               |
+| Código       | `concept`  | `concept:<name>`            | Conceito abstrato ou padrão           |
+| Não-código   | `config`   | `config:<path>`             | Arquivo de configuração               |
+| Não-código   | `document` | `document:<path>`           | Arquivo de documentação               |
+| Não-código   | `service`  | `service:<path>`            | Serviço implantável (Docker, K8s)     |
+| Não-código   | `table`    | `table:<path>:<table-name>` | Tabela de banco de dados              |
+| Não-código   | `endpoint` | `endpoint:<path>:<name>`    | Endpoint de API                       |
+| Não-código   | `pipeline` | `pipeline:<path>`           | Pipeline CI/CD                        |
+| Não-código   | `schema`   | `schema:<path>`             | Schema (GraphQL, Protobuf, Prisma)    |
+| Não-código   | `resource` | `resource:<path>`           | Recurso de infraestrutura (Terraform) |
+| Domínio      | `domain`   | —                           | Domínio de negócio                    |
+| Domínio      | `flow`     | —                           | Fluxo de negócio                      |
+| Domínio      | `step`     | —                           | Passo de processo                     |
+| Conhecimento | `article`  | —                           | Artigo de wiki                        |
+| Conhecimento | `entity`   | —                           | Entidade extraída                     |
+| Conhecimento | `topic`    | —                           | Tópico ou categoria                   |
+| Conhecimento | `claim`    | —                           | Afirmação ou decisão                  |
+| Conhecimento | `source`   | —                           | Fonte ou documento raw                |
 
 ### Tipos de Aresta (35 total, 8 categorias)
-| Categoria | Tipos |
-|-----------|-------|
-| Structural | `imports`, `exports`, `contains`, `inherits`, `implements` |
-| Behavioral | `calls`, `subscribes`, `publishes`, `middleware` |
-| Data flow | `reads_from`, `writes_to`, `transforms`, `validates` |
-| Dependencies | `depends_on`, `tested_by`, `configures` |
-| Semantic | `related`, `similar_to` |
+
+| Categoria      | Tipos                                                                                              |
+| -------------- | -------------------------------------------------------------------------------------------------- |
+| Structural     | `imports`, `exports`, `contains`, `inherits`, `implements`                                         |
+| Behavioral     | `calls`, `subscribes`, `publishes`, `middleware`                                                   |
+| Data flow      | `reads_from`, `writes_to`, `transforms`, `validates`                                               |
+| Dependencies   | `depends_on`, `tested_by`, `configures`                                                            |
+| Semantic       | `related`, `similar_to`                                                                            |
 | Infrastructure | `deploys`, `serves`, `provisions`, `triggers`, `migrates`, `documents`, `routes`, `defines_schema` |
-| Domain | `contains_flow`, `flow_step`, `cross_domain` |
-| Knowledge | `cites`, `contradicts`, `builds_on`, `exemplifies`, `categorized_under`, `authored_by` |
+| Domain         | `contains_flow`, `flow_step`, `cross_domain`                                                       |
+| Knowledge      | `cites`, `contradicts`, `builds_on`, `exemplifies`, `categorized_under`, `authored_by`             |
 
 ### Pesos de Aresta
+
 `contains`: 1.0 | `inherits/implements`: 0.9 | `calls/exports/defines_schema`: 0.8 |
 `imports/deploys/migrates`: 0.7 | `depends_on/configures/triggers`: 0.6 | demais: 0.5
 
 ### GraphNode (campos)
+
 ```typescript
 interface GraphNode {
   id: string;
@@ -6621,6 +6977,7 @@ interface GraphNode {
 ```
 
 ### GraphEdge (campos)
+
 ```typescript
 interface GraphEdge {
   source: string;
@@ -6640,27 +6997,29 @@ interface GraphEdge {
 **Localização:** `understand-anything-plugin/packages/core/`
 
 ### Dependências principais
-| Pacote | Versão | Função |
-|--------|--------|--------|
-| `web-tree-sitter` | ^0.26.6 | Parser AST para análise estrutural de código |
-| `tree-sitter-typescript` | ^0.23.2 | Gramática TypeScript/JavaScript |
-| `tree-sitter-python` | ^0.25.0 | Gramática Python |
-| `tree-sitter-go` | ^0.25.0 | Gramática Go |
-| `tree-sitter-rust` | ^0.24.0 | Gramática Rust |
-| `tree-sitter-java` | ^0.23.5 | Gramática Java |
-| `tree-sitter-ruby` | ^0.23.1 | Gramática Ruby |
-| `tree-sitter-php` | ^0.23.11 | Gramática PHP |
-| `tree-sitter-cpp` | ^0.23.4 | Gramática C/C++ |
-| `tree-sitter-c-sharp` | ^0.23.1 | Gramática C# |
-| `tree-sitter-javascript` | ^0.25.0 | Gramática JavaScript (redundante com typescript) |
-| `fuse.js` | ^7.1.0 | Busca fuzzy (FTS) nos nós do grafo |
-| `ignore` | ^7.0.5 | Filtragem .gitignore-compatible para .understandignore |
-| `yaml` | ^2.8.3 | Parsing de arquivos YAML |
-| `zod` | ^4.3.6 | Validação de schema em runtime |
+
+| Pacote                   | Versão   | Função                                                 |
+| ------------------------ | -------- | ------------------------------------------------------ |
+| `web-tree-sitter`        | ^0.26.6  | Parser AST para análise estrutural de código           |
+| `tree-sitter-typescript` | ^0.23.2  | Gramática TypeScript/JavaScript                        |
+| `tree-sitter-python`     | ^0.25.0  | Gramática Python                                       |
+| `tree-sitter-go`         | ^0.25.0  | Gramática Go                                           |
+| `tree-sitter-rust`       | ^0.24.0  | Gramática Rust                                         |
+| `tree-sitter-java`       | ^0.23.5  | Gramática Java                                         |
+| `tree-sitter-ruby`       | ^0.23.1  | Gramática Ruby                                         |
+| `tree-sitter-php`        | ^0.23.11 | Gramática PHP                                          |
+| `tree-sitter-cpp`        | ^0.23.4  | Gramática C/C++                                        |
+| `tree-sitter-c-sharp`    | ^0.23.1  | Gramática C#                                           |
+| `tree-sitter-javascript` | ^0.25.0  | Gramática JavaScript (redundante com typescript)       |
+| `fuse.js`                | ^7.1.0   | Busca fuzzy (FTS) nos nós do grafo                     |
+| `ignore`                 | ^7.0.5   | Filtragem .gitignore-compatible para .understandignore |
+| `yaml`                   | ^2.8.3   | Parsing de arquivos YAML                               |
+| `zod`                    | ^4.3.6   | Validação de schema em runtime                         |
 
 **DevDependencies:** TypeScript 5.7, Vitest 3.1, @vitest/coverage-v8 3.2.4
 
 ### Módulos exportados
+
 - `@understand-anything/core` — exports principais (GraphBuilder, tipos, fingerprints, staleness)
 - `@understand-anything/core/search` — motor de busca fuzzy (Fuse.js)
 - `@understand-anything/core/types` — interfaces TypeScript
@@ -6668,12 +7027,15 @@ interface GraphEdge {
 - `@understand-anything/core/languages` — LanguageRegistry, LanguageConfig
 
 ### TreeSitterPlugin
+
 Plugin de análise estrutural usando web-tree-sitter. Suporta:
+
 - TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C++, C# (tree-sitter completo)
 - Swift, Kotlin (sem tree-sitter — métricas básicas + LLM supplementa)
 - Extrai: funções (nome, params, returnType, lineRange), classes (nome, methods, properties, lineRange), imports (source, specifiers, lineNumber), exports (nome, lineNumber), call graph
 
 ### SearchEngine (Fuse.js)
+
 ```typescript
 const FUSE_OPTIONS = {
   keys: [
@@ -6688,10 +7050,13 @@ const FUSE_OPTIONS = {
   useExtendedSearch: true,
 };
 ```
+
 Extended search: tokens separados por espaço viram OR implícito (`"auth contrl"` → `"auth | contrl"`).
 
 ### SemanticSearchEngine
+
 Engine de busca semântica por cosine similarity sobre vetores pre-computados. Interface:
+
 ```typescript
 class SemanticSearchEngine {
   search(queryEmbedding: number[], options?: SemanticSearchOptions): SearchResult[]
@@ -6699,21 +7064,26 @@ class SemanticSearchEngine {
   addEmbedding(nodeId: string, embedding: number[]): void
 }
 ```
+
 **Nota:** o engine existe mas o pipeline principal NÃO gera embeddings automaticamente — os embeddings
 precisam ser injetados externamente. A busca por padrão usa Fuse.js fuzzy.
 
 ### FingerprintEngine
+
 Sistema de fingerprinting estrutural para detecção inteligente de mudanças:
+
 - **Níveis de mudança:** `NONE` (hash idêntico), `COSMETIC` (conteúdo diferente, estrutura igual), `STRUCTURAL` (assinatura mudou)
 - **Critérios de STRUCTURAL:** funções adicionadas/removidas, params mudados, return type mudado, export status mudado, mudança >50% no tamanho de função, classes adicionadas/removidas, methods/properties mudados, imports/exports mudados
 - **Decisão de update baseada em mudanças:**
   - Todas `NONE`/`COSMETIC` → SKIP
   - Algumas `STRUCTURAL`, mesmos diretórios → PARTIAL_UPDATE
   - Novos/deletados diretórios ou >10 arquivos estruturais → ARCHITECTURE_UPDATE
-  - >30 arquivos estruturais ou >50% do total → FULL_UPDATE
+  - > 30 arquivos estruturais ou >50% do total → FULL_UPDATE
 
 ### LanguageRegistry
+
 Registry de configurações de linguagens. Cada `LanguageConfig` contém:
+
 - `id`, `displayName`, `extensions`, `filenames?`
 - `treeSitter?` (`wasmPackage`, `wasmFile`)
 - `concepts[]` — padrões de linguagem relevantes
@@ -6725,6 +7095,7 @@ Dockerfile, Makefile, Jenkinsfile, Shell, Batch, PowerShell, Docker Compose, Kub
 GitHub Actions, env, CSV, OpenAPI, JSON Schema
 
 ### FrameworkRegistry
+
 Configurações de frameworks com: `id`, `displayName`, `languages`, `detectionKeywords`,
 `manifestFiles`, `promptSnippetPath`, `entryPoints?`, `layerHints?`
 
@@ -6738,24 +7109,27 @@ Frameworks configurados: Django, Flask, FastAPI, Express, Next.js, React, Vue, G
 **Stack:** React 19, Vite 6, TypeScript 5.7, TailwindCSS v4, Zustand 5
 
 ### Dependências principais
-| Pacote | Versão | Função |
-|--------|--------|--------|
-| `@xyflow/react` | ^12.0.0 | Renderização de grafos interativos (nodes + edges) |
-| `@dagrejs/dagre` | ^2.0.4 | Layout hierárquico (structural view) |
-| `elkjs` | ^0.9.3 | Layout ELK (Eclipse Layout Kernel) — escalável para grafos grandes |
-| `d3-force` | ^3.0.0 | Layout force-directed (knowledge/domain view) |
-| `graphology` | ^0.25.4 | Estrutura de dados de grafo genérica |
-| `graphology-communities-louvain` | ^2.0.1 | Detecção de comunidades (Louvain algorithm) |
-| `zustand` | ^5.0.0 | State management |
-| `react-markdown` | ^10.1.0 | Renderização de Markdown nos summaries |
-| `prism-react-renderer` | ^2.4.1 | Syntax highlighting no visualizador de código |
+
+| Pacote                           | Versão  | Função                                                             |
+| -------------------------------- | ------- | ------------------------------------------------------------------ |
+| `@xyflow/react`                  | ^12.0.0 | Renderização de grafos interativos (nodes + edges)                 |
+| `@dagrejs/dagre`                 | ^2.0.4  | Layout hierárquico (structural view)                               |
+| `elkjs`                          | ^0.9.3  | Layout ELK (Eclipse Layout Kernel) — escalável para grafos grandes |
+| `d3-force`                       | ^3.0.0  | Layout force-directed (knowledge/domain view)                      |
+| `graphology`                     | ^0.25.4 | Estrutura de dados de grafo genérica                               |
+| `graphology-communities-louvain` | ^2.0.1  | Detecção de comunidades (Louvain algorithm)                        |
+| `zustand`                        | ^5.0.0  | State management                                                   |
+| `react-markdown`                 | ^10.1.0 | Renderização de Markdown nos summaries                             |
+| `prism-react-renderer`           | ^2.4.1  | Syntax highlighting no visualizador de código                      |
 
 ### Modos de Visualização (ViewMode)
+
 - **structural:** grafo hierárquico com dagre/ELK, color-coded por camada arquitetural
 - **domain:** grafo horizontal de fluxos de negócio (domains → flows → steps)
 - **knowledge:** grafo force-directed com clustering Louvain para wikis
 
 ### Algoritmos de Layout
+
 - **Dagre:** layout hierárquico primário para structural view
 - **ELK:** fallback/alternativa para grafos maiores, com reparo automático de input inválido
 - **D3-Force:** force simulation para knowledge/domain views
@@ -6763,6 +7137,7 @@ Frameworks configurados: Django, Flask, FastAPI, Express, Next.js, React, Vue, G
 - Web Worker dedicado para cálculos de layout pesados (não bloqueia UI)
 
 ### Funcionalidades do Dashboard
+
 - **Navegação por camadas:** drilldown em camada específica (NavigationLevel: overview | layer-detail)
 - **Busca:** fuzzy (Fuse.js, modo "fuzzy") e semântica (cosine similarity, modo "semantic")
 - **Filtros:** por nodeType (21 tipos), complexity (simple/moderate/complex), layerId, edgeCategory (8 categorias)
@@ -6778,7 +7153,9 @@ Frameworks configurados: Django, Flask, FastAPI, Express, Next.js, React, Vue, G
 - **TokenGate:** bloqueia acesso sem token de sessão (segurança)
 
 ### Sistema de Temas
+
 6 presets predefinidos:
+
 - **dark-gold** (padrão escuro, accent gold `#d4a574`)
 - **dark-ocean** (escuro, accent ocean `#5ba4cf`)
 - **dark-forest**
@@ -6790,6 +7167,7 @@ Cada preset tem 8 accent swatches intercambiáveis. Cores de nó por tipo são d
 (ex: `node-file`, `node-function`, `node-class`, `node-config`, etc. — 13 tipos de nó com cor distinta).
 
 ### Segurança do Servidor Vite
+
 - Token de sessão aleatório (32 hex chars) gerado ao iniciar
 - Bind exclusivo em `127.0.0.1` (nunca `0.0.0.0`)
 - Todos os endpoints de dados exigem `?token=<TOKEN>` (HTTP 403 sem token)
@@ -6804,9 +7182,11 @@ Cada preset tem 8 accent swatches intercambiáveis. Cores de nó por tipo são d
 ## 8. Sistema de Hooks e Auto-Update
 
 ### hooks.json
+
 Dois hooks registrados:
 
 **PostToolUse (Bash):**
+
 ```bash
 # Detecta commits git e, se auto-update estiver habilitado e grafo existir,
 # injeta instrução para executar auto-update-prompt.md
@@ -6818,6 +7198,7 @@ echo "[understand-anything] Commit detected..."
 ```
 
 **SessionStart:**
+
 ```bash
 # Na abertura de sessão, verifica se grafo está desatualizado
 [ -f .understand-anything/config.json ] && grep -q '"autoUpdate".*true' ... && \
@@ -6826,7 +7207,9 @@ echo "[understand-anything] Knowledge graph is stale..."
 ```
 
 ### auto-update-prompt.md
+
 Define o fluxo de atualização incremental automática após commits:
+
 1. Lê fingerprints existentes
 2. Analisa arquivos mudados com `analyzeChanges()`
 3. Classifica o tipo de update necessário (`classifyUpdate()`)
@@ -6837,33 +7220,37 @@ Define o fluxo de atualização incremental automática após commits:
 ## 9. Linguagens e Frameworks Suportados
 
 ### Linguagens com tree-sitter (extração estrutural completa)
+
 TypeScript, JavaScript, Python, Go, Rust, Java, Ruby, PHP, C, C++, C#
 
 ### Linguagens com suporte parcial (métricas básicas, LLM supplementa)
+
 Swift, Kotlin
 
 ### Linguagens/formatos não-código com parsers dedicados (packages/core/src/plugins/parsers/)
+
 Dockerfile, env, GraphQL, JSON, Makefile, Markdown, Protobuf, Shell, SQL, Terraform, TOML, YAML
 
 ### Frameworks com context injection no pipeline
+
 Django, Flask, FastAPI, Express, Next.js, React, Vue, Gin, Rails, Spring
 
 ---
 
 ## 10. Compatibilidade Multi-Plataforma
 
-| Plataforma | Status | Método de Instalação |
-|------------|--------|----------------------|
-| Claude Code | Nativo | `/plugin marketplace add Lum1104/Understand-Anything` |
-| Codex | Suportado | AI-driven install via INSTALL.md |
-| OpenCode | Suportado | AI-driven install via INSTALL.md |
-| OpenClaw | Suportado | AI-driven install via INSTALL.md |
-| Cursor | Suportado | Auto-discovery via `.cursor-plugin/plugin.json` |
-| VS Code + GitHub Copilot | Suportado | Auto-discovery via `.copilot-plugin/plugin.json` |
-| Copilot CLI | Suportado | `copilot plugin install Lum1104/Understand-Anything:understand-anything-plugin` |
-| Antigravity | Suportado | AI-driven install via INSTALL.md |
-| Gemini CLI | Suportado | AI-driven install via INSTALL.md |
-| Pi Agent | Suportado | AI-driven install via INSTALL.md |
+| Plataforma               | Status    | Método de Instalação                                                            |
+| ------------------------ | --------- | ------------------------------------------------------------------------------- |
+| Claude Code              | Nativo    | `/plugin marketplace add Lum1104/Understand-Anything`                           |
+| Codex                    | Suportado | AI-driven install via INSTALL.md                                                |
+| OpenCode                 | Suportado | AI-driven install via INSTALL.md                                                |
+| OpenClaw                 | Suportado | AI-driven install via INSTALL.md                                                |
+| Cursor                   | Suportado | Auto-discovery via `.cursor-plugin/plugin.json`                                 |
+| VS Code + GitHub Copilot | Suportado | Auto-discovery via `.copilot-plugin/plugin.json`                                |
+| Copilot CLI              | Suportado | `copilot plugin install Lum1104/Understand-Anything:understand-anything-plugin` |
+| Antigravity              | Suportado | AI-driven install via INSTALL.md                                                |
+| Gemini CLI               | Suportado | AI-driven install via INSTALL.md                                                |
+| Pi Agent                 | Suportado | AI-driven install via INSTALL.md                                                |
 
 Cada plataforma tem seu diretório de instalação: `~/.agents/skills/`, `~/.copilot/skills/`,
 `~/.codex/understand-anything/`, etc. O plugin resolve seu próprio root path via resolução de symlinks.
@@ -6873,6 +7260,7 @@ Cada plataforma tem seu diretório de instalação: `~/.agents/skills/`, `~/.cop
 ## 11. Requisitos de Sistema
 
 ### Requisitos Mínimos
+
 - **Node.js:** >= 22 (desenvolvido em v24)
 - **pnpm:** >= 10.6.2 (pinned via `packageManager` em `package.json`)
 - **RAM:** não documentado explicitamente
@@ -6880,11 +7268,13 @@ Cada plataforma tem seu diretório de instalação: `~/.agents/skills/`, `~/.cop
 - **LLM externo:** o pipeline usa o agente LLM que executa a skill (Claude Code, Codex, etc.) para análise semântica; não há inferência local de ML
 
 ### Requisitos de Build
+
 - TypeScript compilado via `tsc` (tsconfig por pacote)
 - `pnpm install --frozen-lockfile` para dependências
 - Build do core: `pnpm --filter @understand-anything/core build` (obrigatório antes do dashboard)
 
 ### Performance Observada / Benchmarks
+
 - Lotes de 20-30 arquivos por agente, 5 agentes concorrentes (até 150 arquivos em paralelo)
 - Gate de 100 arquivos para confirmação manual antes de análise completa
 - Tree-sitter: análise estrutural determinística sem chamadas LLM (rápida)
@@ -6894,6 +7284,7 @@ Cada plataforma tem seu diretório de instalação: `~/.agents/skills/`, `~/.cop
 - Bundle splitting: react-vendor, xyflow, elk, graphology, graph-layout, markdown (chunks separados)
 
 ### Limitações Documentadas
+
 - Swift e Kotlin sem extração tree-sitter (métricas básicas apenas, LLM supplementa)
 - Busca semântica (cosine similarity) requer embeddings externos — não gerados automaticamente
 - Projetos >100 arquivos requerem confirmação explícita
@@ -6907,6 +7298,7 @@ Cada plataforma tem seu diretório de instalação: `~/.agents/skills/`, `~/.cop
 ## 12. Formato de Armazenamento
 
 ### Diretório `.understand-anything/` (por projeto)
+
 ```
 .understand-anything/
 ├── knowledge-graph.json    # Grafo principal (versionável)
@@ -6919,12 +7311,14 @@ Cada plataforma tem seu diretório de instalação: `~/.agents/skills/`, `~/.cop
 ```
 
 **Recomendação de gitignore:**
+
 ```gitignore
 .understand-anything/intermediate/
 .understand-anything/diff-overlay.json
 ```
 
 ### knowledge-graph.json — Estrutura de alto nível
+
 ```json
 {
   "version": "1.0.0",
@@ -7005,7 +7399,6 @@ KARPATHY, Andrej. **LLM Wiki Pattern (gist)**. GitHub, 2024. Disponível em:
 FIM DA PESQUISA — Understand-Anything (Plugin de Grafo de Conhecimento)
 ========================================================
 
-
 ================================================================================
 PESQUISA — EXPANSÃO: Pipeline LLM para RSS Reader — Constrained Decoding, Batching e Scraping
 Data: 2026-05-05
@@ -7014,8 +7407,8 @@ KOSMOS: constrained decoding JSON, modelos 1B-3B, background analysis, scraping 
 Medium/Substack e padrões de concorrência com Ollama.
 ================================================================================
 
-
 1. ANÁLISE COMPARATIVA DE MODELOS PEQUENOS PARA NER E EXTRAÇÃO ESTRUTURADA
+
 ---------------------------------------------------------------------------
 
 1.1 O problema da escala reversa em NER
@@ -7108,8 +7501,8 @@ quando, onde, por quê), aceitar a limitação de modelos < 7B e tratar o output
 "melhor esforço", com fallback para "não disponível" quando o modelo retorna
 strings vazias ou malformadas.
 
-
 2. STREAMING PARCIAL DE JSON COMO ALTERNATIVA AO SPLIT DE CALLS
+
 ---------------------------------------------------------------
 
 2.1 O problema da latência percebida
@@ -7140,7 +7533,6 @@ de latência por call individual devido à contenção de VRAM e memory bandwidt
 
 Quando Ollama recebe uma request com stream=true, retorna server-sent events
 (SSE) com um chunk de JSON por linha no formato:
-
     {"model":"qwen2.5:7b","created_at":"...","message":{"role":"assistant",
      "content":"{\n  \"tags\": [\"IA"},"done":false}
 
@@ -7160,7 +7552,6 @@ chegam, permitindo extrair valores de campos específicos antes do JSON estar
 completo.
 
 O padrão de implementação para o KOSMOS seria:
-
     async def _stream_analyze(self, content: str) -> AsyncIterator[dict]:
         buffer = ""
         async for chunk in ollama_client.chat(stream=True, ...):
@@ -7209,8 +7600,8 @@ interno (usando asyncio.run()) e emite sinais Qt a cada campo disponível no
 stream. Isso evita misturar asyncio com Qt event loop, que tem interações
 documentadamente problemáticas a menos que se use a biblioteca qasync.
 
-
 3. POLITENESS E RATE-LIMITING NO SCRAPING DE FEEDS RSS
+
 ------------------------------------------------------
 
 3.1 O conceito de politeness em web crawling
@@ -7266,11 +7657,9 @@ e, antes de cada requisição, adquirir o lock do domínio, calcular o tempo des
 last_access_time, dormir pelo restante do crawl_delay se necessário, e então
 fazer a requisição. Isso garante serialização de requisições por domínio sem
 bloquear o event loop para outros domínios:
-
     _domain_locks: dict[str, asyncio.Lock] = {}
     _domain_last: dict[str, float] = {}
     CRAWL_DELAY = 2.0  # segundos entre requests ao mesmo domínio
-
     async def polite_get(url: str, session: aiohttp.ClientSession) -> str:
         domain = urlparse(url).netloc
         if domain not in _domain_locks:
@@ -7301,7 +7690,6 @@ O algoritmo padrão de backoff exponencial com jitter (decorrelado ou full) é
 descrito no paper "Exponential Backoff And Jitter" (Amazon AWS Engineering Blog,
 2015, Marc Brooker) e adotado amplamente em SDKs de cloud. Para o KOSMOS, o
 padrão mais simples que resolve o problema é:
-
     base_delay = 1.0
     max_delay = 60.0
     attempt = 0
@@ -7333,8 +7721,8 @@ Paralelamente, enviar o header Accept: text/html,application/xhtml+xml e
 Accept-Language: pt-BR,pt;q=0.9,en;q=0.8 simula requisições legítimas de browser
 e aumenta a taxa de sucesso na maioria dos servidores.
 
-
 4. ESTRATÉGIAS DE CACHING DE ANÁLISE LLM NO BANCO DE DADOS LOCAL
+
 -----------------------------------------------------------------
 
 4.1 O problema do re-processamento e a semântica do cache
@@ -7425,7 +7813,6 @@ O SQLite do KOSMOS precisa suportar três queries frequentes relacionadas ao cac
 (3) "artigo com este hash de conteúdo já existe?" para detecção de duplicatas.
 
 Para (1) e (2), um índice parcial é mais eficiente que um índice completo:
-
     CREATE INDEX idx_pending_analysis
     ON articles(feed_id, published_at DESC)
     WHERE analysis_status IN ('pending', 'failed');
@@ -7437,7 +7824,6 @@ e acelerando tanto inserts quanto queries. Para uma tabela com 10.000 artigos on
 busca por artigos pendentes praticamente instantânea (O(log 500) vs O(log 10.000)).
 
 Para (3), um índice UNIQUE na coluna de hash é suficiente:
-
     CREATE UNIQUE INDEX idx_content_hash ON articles(content_hash)
     WHERE content_hash IS NOT NULL;
 
@@ -7457,7 +7843,6 @@ de tempo (ex: 6 meses), uma política razoável é:
 
 Isso pode ser implementado como uma tarefa de manutenção mensal (trigger SQLite
 baseado em tempo ou job Python agendado) que executa:
-
     UPDATE articles
     SET ai_five_ws = NULL, ai_entities = NULL
     WHERE published_at < date('now', '-6 months')
@@ -7468,9 +7853,8 @@ espaço de linhas deletadas/atualizadas) e ANALYZE (para atualizar estatísticas
 query planner). Para bancos de dados de até 100MB — tamanho típico de um KOSMOS
 com 50.000 artigos e campos de texto completo — VACUUM leva < 5 segundos e pode
 ser executado no startup após verificação de tamanho do arquivo.
-
-
 FONTES
+
 -------
 
 ANALYTICSVIDHYA. **Gemma 2B vs Llama 3.2 vs Qwen 7B: which small LLM is best
@@ -8176,6 +8560,7 @@ Scrapy usa `DOWNLOAD_DELAY` por domínio e `CONCURRENT_REQUESTS_PER_DOMAIN=1` po
 O Heritrix usa "URI frontier" com persistência em BDB (Berkeley DB) para crawls longos.
 
 Para crawlers de domínio único (caso do AKASHA), o padrão adequado é Scrapy-like com:
+
 - Set de URLs visitadas em memória (ou SQLite para persistência entre sessões)
 - Delay de 1–2s entre requests ao mesmo domínio
 - Respeito ao robots.txt (via `robotparser` do stdlib Python)
@@ -8309,16 +8694,16 @@ RRF é suficiente para a maioria dos casos e tem overhead < 1ms.
 
 ## 7. Benchmarks e Métricas Relevantes
 
-| Métrica | Valor | Fonte |
-|---------|-------|-------|
-| SQLite FTS5 query latência (10k docs) | 5–15ms | SQLite docs |
-| SQLite FTS5 query latência (100k docs) | 15–50ms | benchmarks comunitários |
-| HTTP localhost round-trip | < 5ms | medições típicas |
-| SimHash overhead por documento (1k palavras) | ~1ms | biblioteca simhash |
-| Wallabag fetch timeout | 10s | código fonte |
-| Meilisearch RAM idle | ~50MB | documentação oficial |
-| Cross-encoder reranking (20 docs, MiniLM) | 50ms i7 | sentence-transformers |
-| RRF fusion overhead | < 1ms | implementação manual |
+| Métrica                                      | Valor   | Fonte                   |
+| -------------------------------------------- | ------- | ----------------------- |
+| SQLite FTS5 query latência (10k docs)        | 5–15ms  | SQLite docs             |
+| SQLite FTS5 query latência (100k docs)       | 15–50ms | benchmarks comunitários |
+| HTTP localhost round-trip                    | < 5ms   | medições típicas        |
+| SimHash overhead por documento (1k palavras) | ~1ms    | biblioteca simhash      |
+| Wallabag fetch timeout                       | 10s     | código fonte            |
+| Meilisearch RAM idle                         | ~50MB   | documentação oficial    |
+| Cross-encoder reranking (20 docs, MiniLM)    | 50ms i7 | sentence-transformers   |
+| RRF fusion overhead                          | < 1ms   | implementação manual    |
 
 ---
 
@@ -8433,6 +8818,7 @@ for seg in segments:
 ```
 
 Parâmetros relevantes para o ecossistema:
+
 - `compute_type="int8"`: quantização INT8, 2–4× mais rápido que float32 em CPU, sem perda
   significativa de qualidade para transcrição; requer apenas SSE4.1
 - `compute_type="int8_float16"`: mixed; funciona apenas em GPUs (não aplicável aqui)
@@ -8443,7 +8829,7 @@ Parâmetros relevantes para o ecossistema:
 ### 2.4 Modelos e velocidade estimada no i5-3470 (SSE4.1, INT8)
 
 | Modelo | Tamanho | VRAM/RAM | Velocidade relativa | Qualidade |
-|--------|---------|----------|---------------------|-----------|
+| ------ | ------- | -------- | ------------------- | --------- |
 | tiny   | 39 MB   | ~1 GB    | ~10× realtime       | Básica    |
 | base   | 141 MB  | ~1 GB    | ~5× realtime        | Boa       |
 | small  | 465 MB  | ~2 GB    | ~2× realtime        | Muito boa |
@@ -8455,15 +8841,15 @@ Para o Hermes, `base` com `compute_type="int8"` é o equilíbrio adequado.
 
 ### 2.5 Diferenças de API em relação ao openai-whisper
 
-| Aspecto | openai-whisper | faster-whisper |
-|---------|---------------|----------------|
-| Import | `import whisper` | `from faster_whisper import WhisperModel` |
-| Carregar modelo | `whisper.load_model("base")` | `WhisperModel("base", device="cpu", compute_type="int8")` |
-| Transcrever | `model.transcribe(path)` retorna dict com "text" | `model.transcribe(path)` retorna `(segments_generator, info)` |
-| Texto completo | `result["text"]` | `" ".join(seg.text for seg in segments)` |
-| Timestamp | `result["segments"]` lista | Iterador de `Segment(start, end, text)` |
-| Idioma | `language="pt"` | `language="pt"` (igual) |
-| Progresso | Não nativo | Não nativo; monitorar com gerador |
+| Aspecto         | openai-whisper                                   | faster-whisper                                                |
+| --------------- | ------------------------------------------------ | ------------------------------------------------------------- |
+| Import          | `import whisper`                                 | `from faster_whisper import WhisperModel`                     |
+| Carregar modelo | `whisper.load_model("base")`                     | `WhisperModel("base", device="cpu", compute_type="int8")`     |
+| Transcrever     | `model.transcribe(path)` retorna dict com "text" | `model.transcribe(path)` retorna `(segments_generator, info)` |
+| Texto completo  | `result["text"]`                                 | `" ".join(seg.text for seg in segments)`                      |
+| Timestamp       | `result["segments"]` lista                       | Iterador de `Segment(start, end, text)`                       |
+| Idioma          | `language="pt"`                                  | `language="pt"` (igual)                                       |
+| Progresso       | Não nativo                                       | Não nativo; monitorar com gerador                             |
 
 A migração do Hermes requer adaptar `TranscribeWorker._run_local()` e `_run_url()` para o
 novo padrão de `(segments, info)` em vez de `{"text": ..., "segments": [...]}`.
@@ -8479,26 +8865,32 @@ novo padrão de `(segments, info)` em vez de `{"text": ..., "segments": [...]}`.
 ### 3.1 Compatibilidade com CPUs sem AVX2
 
 whisper.cpp compila com flags de CPU configuráveis:
+
 ```
 cmake .. -DGGML_AVX2=OFF -DGGML_AVX=ON -DGGML_F16C=OFF
 ```
+
 O i5-3470 tem AVX (mas não AVX2 nem F16C), portanto esse conjunto de flags gera binário
 compatível. O resultado usa kernels AVX de 256 bits para matrizes float.
 
 ### 3.2 Python bindings disponíveis
 
 **pywhispercpp** (https://github.com/abdeladim-s/pywhispercpp):
+
 ```bash
 pip install pywhispercpp
 ```
+
 Fornece wheels pré-compilados para Windows x86_64. A questão é se o wheel padrão tem AVX2
 compilado; se sim, a compilação manual é necessária. Não há documentação clara sobre qual ISA
 mínimo os wheels oficiais requerem — isso é o principal risco dessa opção.
 
 **whisper-cpp-python** (https://github.com/carloscdias/whisper-cpp-python):
+
 ```bash
 pip install whisper-cpp-python
 ```
+
 Wheels mais antigos podem ter menos otimizações AVX2. Projeto menos ativo.
 
 ```python
@@ -8528,16 +8920,16 @@ em CPUs vintage com AVX, single-threaded.
 
 ## 4. Comparativo das opções locais gratuitas
 
-| Critério | faster-whisper | pywhispercpp |
-|----------|---------------|--------------|
-| Instalação | `pip install faster-whisper` | `pip install pywhispercpp` |
-| Risco de AVX2 | Nenhum (dispatch dinâmico) | Possível (depende do wheel) |
-| Integração Python | Nativa, Pythônica | Wrapper C, menos ergonômica |
-| Qualidade de saída | Mesma do openai-whisper | Mesma do whisper.cpp |
-| Progresso/streaming | Via gerador de segmentos | Callbacks |
-| Suporte a formatos | MP3/WAV/M4A via ffmpeg | WAV nativo; outros via ffmpeg |
-| Manutenção ativa | Sim (SYSTRAN) | Moderada |
-| **Recomendação** | **PRIMEIRA ESCOLHA** | Fallback |
+| Critério            | faster-whisper               | pywhispercpp                  |
+| ------------------- | ---------------------------- | ----------------------------- |
+| Instalação          | `pip install faster-whisper` | `pip install pywhispercpp`    |
+| Risco de AVX2       | Nenhum (dispatch dinâmico)   | Possível (depende do wheel)   |
+| Integração Python   | Nativa, Pythônica            | Wrapper C, menos ergonômica   |
+| Qualidade de saída  | Mesma do openai-whisper      | Mesma do whisper.cpp          |
+| Progresso/streaming | Via gerador de segmentos     | Callbacks                     |
+| Suporte a formatos  | MP3/WAV/M4A via ffmpeg       | WAV nativo; outros via ffmpeg |
+| Manutenção ativa    | Sim (SYSTRAN)                | Moderada                      |
+| **Recomendação**    | **PRIMEIRA ESCOLHA**         | Fallback                      |
 
 ---
 
@@ -8548,6 +8940,7 @@ nos workers `TranscribeWorker` e `BatchTranscribeWorker`. A lógica de download 
 permanece igual; apenas a etapa de transcrição muda.
 
 Pontos de atenção para a migração:
+
 1. `WhisperModel.transcribe()` retorna um **gerador** — consumir com `list()` ou iterar
 2. `compute_type="int8"` é obrigatório para CPU (float32 é 4× mais lento)
 3. `vad_filter=True` melhora muito a velocidade em vídeos (filtra silêncio)
@@ -9575,6 +9968,7 @@ A tabela a seguir mapeia as necessidades funcionais de cada painel de um researc
 para os widgets Qt mais adequados:
 
 **Painel de Fontes (Sources, esquerda):**
+
 - Lista de fontes navegável: `QListWidget` (simples) ou `QTreeWidget` (com agrupamento por
   coleção/tag). Para drag-and-drop de fontes, `QListWidget` com `setDragDropMode()`.
 - Preview de metadados: `QLabel` com texto estático ou `QTextBrowser` para HTML.
@@ -9582,6 +9976,7 @@ para os widgets Qt mais adequados:
 - Indicador de status de indexação por fonte: delegates customizados em `QListWidget`.
 
 **Painel de Chat (centro):**
+
 - Histórico de conversa: `QScrollArea` com `QVBoxLayout` dinâmico de widgets de mensagem, ou
   `QTextBrowser` para renderização de Markdown/HTML com links. A abordagem de widgets
   individuais por mensagem é mais flexível para UI customizada (bolhas de chat, ícones);
@@ -9592,6 +9987,7 @@ para os widgets Qt mais adequados:
   via `QThread` + signals para evitar bloquear o event loop.
 
 **Painel de Studio/Notes (direita):**
+
 - Lista de notas salvas: `QListWidget` com items nomeados.
 - Editor de nota selecionada: `QTextEdit` com suporte a Markdown básico ou rich text.
 - Botões de promoção: "Save Chat Response as Note" como `QPushButton` no rodapé do painel
@@ -9824,3 +10220,1060 @@ ZOTERO. **Zotero 7: Zotero, redesigned**. Zotero Blog, 2024. Disponível em:
 ========================================================
 FIM DA PESQUISA — Arquitetura de UI para Research Workbench: NotebookLM e Referências Alternativas
 ========================================================
+
+---
+
+================================================================================
+PESQUISA — Assistentes de Pesquisa Pessoal: Técnicas Além de LLMs
+Data: 2026-05-06
+Contexto: informar o desenvolvimento do AKASHA (FastAPI + HTMX + SQLite FTS5 + ChromaDB)
+com técnicas de PKM, comportamento real de pesquisadores, sinais implícitos de relevância,
+sistemas de anotação web e arquitetura de informação para busca exploratória.
+================================================================================
+
+================================================================================
+
+1. FERRAMENTAS DE PKM — O QUE FAZEM SEM LLM
+   ================================================================================
+
+1.1. ZOTERO — MODELO DE RELACIONAMENTOS E BUSCA
+------------------------------------------------
+
+O Zotero é o gerenciador de referências acadêmicas mais usado no mundo e oferece
+um conjunto de funcionalidades de relacionamento de documentos que opera inteiramente
+sem modelos de linguagem. Para compreender suas técnicas, é necessário distinguir
+dois mecanismos distintos que frequentemente são confundidos: o sistema de "Related
+Items" manual e a possibilidade de enriquecimento via APIs externas.
+
+O sistema de "Related Items" nativo do Zotero é explicitamente manual: o usuário
+estabelece relações bidirecionais entre itens da biblioteca clicando em "Add Related"
+na aba "Related" de um item. O Zotero não infere automaticamente relações semânticas
+entre documentos — esse foi um debate recorrente nos fóruns do Zotero por mais de uma
+década, com usuários requisitando sugestões automáticas de relacionados. A resposta dos
+desenvolvedores tem sido consistente: o Zotero não faz isso nativamente, sendo possível
+obter comportamento similar apenas via plugins de terceiros ou exportando para ferramentas
+como Connected Papers ou VOSviewer. Essa decisão de design é deliberada: o Zotero prioriza
+a agência do usuário sobre a inferência automática, o que garante que as relações
+registradas têm significado explicitamente atribuído pelo pesquisador.
+
+O que o Zotero oferece em termos de "relacionamento" automático é, na prática, a
+coincidência de metadados: itens que compartilham os mesmos autores, o mesmo journal,
+as mesmas tags, ou que aparecem na mesma coleção são implicitamente relacionados pela
+estrutura de dados. A busca avançada do Zotero permite queries do tipo "todos os itens
+com tag X e autor Y publicados entre 2020 e 2024" — uma forma de faceted search que não
+exige nenhum cálculo de similaridade, apenas indexação de metadados estruturados.
+
+Para relacionamentos baseados em co-citação, o Zotero depende de fontes externas:
+o plugin Zotero Connector pode detectar referências cruzadas entre itens já presentes
+na biblioteca quando um novo item é salvo. Mais relevante para sistemas como o AKASHA é
+a API do Semantic Scholar, que oferece SPECTER embeddings — vetores de documentos treinados
+especificamente na estrutura do grafo de citações acadêmicas. Dois papers com muitas
+citações em comum (bibliographic coupling) ou que são frequentemente citados juntos
+(co-citation) terão embeddings SPECTER mais próximos no espaço vetorial do que dois
+papers semanticamente similares em texto mas com grafos de citação não sobrepostos.
+Essa é a distinção fundamental: SPECTER captura a estrutura da conversa científica,
+não apenas a semelhança de conteúdo.
+
+A importância bibliométrica do conceito de co-citação remonta a Henry Small (1973):
+dois documentos são co-citados quando um terceiro documento os cita simultaneamente.
+A frequência com que isso ocorre no corpus global é usada como medida de sua
+proximidade intelectual. Bibliographic coupling (Kessler, 1963) funciona na direção
+inversa: dois documentos são bibliograficamente acoplados quando têm referências em
+comum, independentemente de qualquer outro documento que os cite. A ferramenta
+Connected Papers, que usa o corpus do Semantic Scholar, implementa exatamente essa
+ideia: para um paper semente, constrói um grafo onde o peso de cada aresta é calculado
+a partir de co-citação e bibliographic coupling, e usa um Force Directed Graph para
+posicionar visualmente os documentos de modo que papers relacionados se agrupem.
+
+Para o AKASHA, a implicação é: se o sistema indexar papers com DOI ou arXiv ID, é
+possível enriquecer os metadados com as referências desses papers via CrossRef ou
+Semantic Scholar e construir localmente um micro-grafo de co-citação para o corpus
+pessoal do usuário. Dois documentos que o usuário salvou e que se citam mutuamente
+(ou que compartilham referências) são candidatos fortes a "relacionados" sem nenhuma
+computação de LLM.
+
+O Zotero 7 (lançado em 2024) introduziu um leitor de PDF integrado com suporte a
+highlights e anotações persistentes. Highlights são armazenados na biblioteca como
+itens filhos do documento, com metadados de cor, posição no PDF (número de página,
+coordenadas de bounding box) e texto selecionado. Esse modelo de dados é relevante:
+highlights como itens indexáveis separados do documento pai transformam a anotação
+em um sinal de relevância computável. Um documento com muitos highlights é,
+inferidamente, um documento que o usuário considerou importante o suficiente para
+marcar múltiplas passagens — informação que nenhum algoritmo de ranking baseado em
+texto consegue capturar sem esse sinal explícito.
+1.2. DEVONTHINK — A "IA" PRÉ-LLM COMO MODELO DE DESIGN
+
+--------------------------------------------------------
+
+O DEVONthink merece atenção especial por ser, possivelmente, o sistema comercial de
+gerenciamento de conhecimento pessoal mais sofisticado que não usa LLMs para suas
+funcionalidades principais de relacionamento. Seu "AI engine" — chamado assim pela
+empresa desde a versão 1.0 (anterior a 2000) — é na verdade um sistema de
+similaridade textual baseado em comparação de frequências de termos entre documentos.
+
+A documentação oficial do DEVONthink descreve o funcionamento da seguinte forma: o
+motor analisa os conteúdos e localizações de todos os documentos na base de dados e
+estabelece conexões entre eles. A inspeção de See Also & Classify exibe uma lista
+ponderada por rank de documentos relacionados ao documento atual. O que a empresa
+nunca divulgou publicamente é a equação exata, mas análises de usuários avançados
+(incluindo discussões no fórum oficial) convergem para a conclusão de que o sistema
+usa uma variante de cosine similarity entre vetores TF-IDF dos documentos — ou seja,
+a mesma técnica que estava na vanguarda da Information Retrieval nos anos 1990, antes
+do advento de modelos de linguagem.
+
+A distinção fundamental que o DEVONthink oferece — e que é pedagogicamente relevante
+para o design do AKASHA — está na separação entre See Also e Classify:
+
+- **See Also**: compara o conteúdo do documento atual com todos os outros documentos
+  na base de dados para encontrar os mais similares em termos de vocabulário. O
+  resultado é uma lista de documentos com scores de relevância.
+
+- **Classify**: usa a mesma engine, mas ao invés de comparar documentos entre si,
+  compara o documento atual com grupos (pastas). O algoritmo infere em qual grupo o
+  documento "melhor se encaixa" com base no vocabulário médio dos documentos já
+  naquele grupo. Isso é essencialmente k-nearest neighbor no espaço de representação
+  TF-IDF, onde os "vizinhos" são centróides de grupos.
+
+O DEVONthink 4 (2025) adicionou integração com LLMs externos via API (OpenAI, Claude),
+mas manteve o motor de See Also/Classify local como a funcionalidade principal. Isso
+confirma a posição da empresa: LLMs são complementares, não substitutos, para a
+funcionalidade central de relacionamento de documentos baseada em conteúdo.
+
+Um conceito particular do DEVONthink que não tem paralelo direto em outros sistemas
+é o "replicant": um único documento que existe simultaneamente em múltiplos grupos sem
+duplicar seus dados. Replicants são a implementação de um modelo de conhecimento que
+reconhece que um documento pode ser relevante para múltiplos contextos sem pertencer
+exclusivamente a nenhum. Isso contrasta com sistemas de hierarquia rígida e com o
+modelo de tags puro — é uma alternativa que preserva a semântica contextual de onde
+um documento "vive" no espaço de conhecimento do usuário.
+1.3. READWISE READER — HIGHLIGHT COMO DADO ESTRUTURAL
+
+------------------------------------------------------
+
+O Readwise Reader representa um design filosoficamente diferente dos outros sistemas:
+ao invés de organizar documentos por estrutura (DEVONthink) ou por metadados
+bibliográficos (Zotero), ele organiza o processo de leitura em si como a unidade
+central de design. O highlight é o objeto primitivo do sistema, não o documento.
+
+O sistema de resurfacing do Readwise é baseado em um algoritmo de decaimento de
+probabilidade, não em datas fixas como o Anki. Cada highlight recebe uma probabilidade
+de resurfacing que decai exponencialmente ao longo do tempo segundo uma meia-vida
+configurável. O nível de prioridade definido pelo usuário ("logo", "eventualmente",
+"algum dia") determina a meia-vida inicial: 7 dias para "logo", 14 dias para
+"eventualmente", 28 dias para "algum dia". Quando a probabilidade de recordação decai
+a 50% ou abaixo, o highlight torna-se candidato à reapresentação no Daily Review.
+
+A Daily Review é dividida em dois segmentos: a primeira metade mostra highlights
+não processados aleatoriamente (ponderados pelo peso de probabilidade de cada livro/artigo,
+que o usuário pode ajustar manualmente); a segunda metade apresenta "Mastery Cards" —
+highlights que já passaram por pelo menos uma revisão e estão sendo gerenciados pelo
+algoritmo de spaced repetition. A resposta do usuário em cada revisão de Mastery Card
+("Logo" ou "Eventualmente") retroalimenta o algoritmo, ajustando a próxima meia-vida.
+
+Do ponto de vista de design de sistema, o que o Readwise faz é transformar highlights
+em objetos com um ciclo de vida temporal: criação → revisão aleatória → candidato a
+Mastery Card → resurfacing por spaced repetition → eventual estabilização. Cada etapa
+desse ciclo produz metadados (data de criação, data da última revisão, score de
+recall, peso do livro-pai) que seriam sinais poderosos para um sistema de busca
+pessoal. Um highlight que sobreviveu múltiplos ciclos de spaced repetition e que o
+usuário consistentemente marcou como "logo relevante" é claramente um fragmento de
+conhecimento de alta importância para aquele usuário — informação que o AKASHA poderia
+usar para ranquear documentos contendo textos similares mais alto.
+1.4. RAINDROP.IO — TAGGING, COLEÇÕES E DEDUPLICAÇÃO
+
+----------------------------------------------------
+
+O Raindrop.io é um gerenciador de bookmarks que implementa busca de texto completo
+sobre o conteúdo cacheado de páginas salvas, tagging hierárquico via coleções, e
+detecção automática de duplicatas e links quebrados. Do ponto de vista técnico,
+sua arquitetura é a mais próxima do AKASHA entre as ferramentas analisadas: guarda
+conteúdo cacheado de páginas web, indexa para busca full-text, e organiza por
+coleções (análogo às categorias/fontes do AKASHA) e tags.
+
+A detecção de duplicatas no Raindrop usa URL normalizada como sinal primário: duas
+entradas com a mesma URL canônica são detectadas como duplicatas. O sistema também
+identifica links quebrados através de verificação periódica de disponibilidade. O que
+o Raindrop não oferece nativamente é near-duplicate detection por conteúdo — duas
+páginas diferentes com o mesmo artigo (sindicalizado ou re-publicado) não seriam
+detectadas como duplicatas sem análise de conteúdo.
+
+O sistema de tagging do Raindrop permite hierarquia (coleções aninhadas) e tags livres,
+com busca unificada sobre títulos, descrições, tags, highlights e conteúdo completo
+cacheado. O comportamento de sugestão de tags é baseado em co-ocorrência: ao adicionar
+uma tag a um bookmark, o sistema sugere outras tags frequentemente usadas em
+conjunto com ela nos bookmarks anteriores do usuário. Essa co-ocorrência de tags é
+a técnica algorítmica mais simples possível para recomendação de tags sem LLM:
+uma matriz de co-ocorrência tag × tag construída a partir do histórico pessoal.
+1.5. KAGI — PERSONALIZAÇÃO COMO FILTRO ESTRUTURAL
+
+--------------------------------------------------
+
+O Kagi Search representa uma abordagem diferente de personalização: ao invés de
+adaptar o ranking implicitamente com base em histórico de cliques (como o Google),
+oferece controles explícitos que funcionam como filtros estruturais sobre os resultados.
+
+Os mecanismos principais são:
+
+- **Boosting e blocking de domínios**: o usuário pode elevar ou suprimir completamente
+  domínios específicos de seus resultados. Matematicamente, blocking é um hard filter
+  (probabilidade = 0 para resultados do domínio bloqueado), enquanto boosting é uma
+  modificação do score de ranking (multiplicador > 1 para resultados do domínio
+  favorecido).
+- **Lenses**: conjuntos reutilizáveis de filtros que combinam inclusão/exclusão de até
+  10 domínios, palavras-chave obrigatórias ou excluídas, tipo de arquivo e intervalo
+  de datas. Lenses são ativadas por toggle antes de uma busca e podem ser criadas e
+  compartilhadas. O Kagi fornece lenses pré-definidas (Fóruns, Acadêmico, Programação)
+  e permite criar lenses customizadas.
+- **Saved Searches**: combinações salvas de query + lens para re-executar rapidamente.
+
+Do ponto de vista de arquitetura de IR, o que o Kagi faz com lenses é equivalent a
+um índice virtual filtrado: ao ativar uma lens de "Programação", o usuário está
+efetivamente executando sua query apenas sobre um subconjunto do índice delimitado por
+domínios conhecidos (Stack Overflow, GitHub, documentações técnicas). Isso é análogo
+a faceted search, mas onde as facetas são configuradas pelo usuário e persistem entre
+sessões.
+
+A implicação para o AKASHA é direta: um sistema de "lenses" pessoais permitiria ao
+usuário criar perfis de busca nomeados — por exemplo, "Busca Acadêmica" (apenas
+documentos PDFs do arxiv e de repositórios institucionais), "Busca Web Curada"
+(apenas domínios marcados como favoritos), "Busca Local" (apenas arquivos indexados
+localmente). Essas lenses funcionariam como filtros pré-definidos sem nenhum
+componente de LLM.
+
+================================================================================
+2. WORKFLOWS REAIS DE PESQUISADORES
+================================================================================
+2.1. FASES DO PROCESSO DE PESQUISA ACADÊMICA
+
+---------------------------------------------
+
+A literatura de Information Science descreve o processo de pesquisa em termos de
+modelos teóricos que, embora elaborados originalmente para sistemas de busca em
+bibliotecas, permanecem altamente relevantes para o design de sistemas de IR pessoal.
+
+O modelo de Berrypicking de Marcia Bates (1989) é possivelmente o mais citado para
+descrever como pesquisadores realmente se comportam, em contraste com o modelo
+idealizado de "query → ranked list → done". Bates observou que pesquisadores raramente
+chegam com uma query completa e buscam uma lista de resultados: em vez disso, eles
+começam com uma ideia vaga, encontram alguns documentos, reformulam a ideia, encontram
+mais documentos via múltiplas técnicas diferentes, e gradualmente acumulam um corpus
+relevante. O processo é evolutivo — a "query" muda a cada iteração, e a coleção de
+documentos relevantes é construída bit a bit (daí "berrypicking", como coletar
+amoras uma a uma). As técnicas que Bates catalogou incluem: footnote chasing
+(seguir as referências bibliográficas de um documento), citation searching (buscar
+quem citou um documento), journal run (ler todos os artigos de um determinado journal
+em um período), area scanning (examinar fisicamente uma seção de estantes ou uma
+lista de resultados em sequência), subject searching em bibliografias e bases, e
+author searching.
+
+O modelo de Information Foraging Theory de Pirolli e Card (1999), derivado da teoria
+evolucionária da dieta animal, descreve o comportamento de busca em termos de
+"patches" de informação: o pesquisador explora uma fonte (um patch) até que o custo
+marginal de continuar nela exceda o custo de mover para outra fonte, momento em
+que ele parte em busca de um novo patch. A taxa de coleta de informação relevante
+decresce dentro de um patch à medida que o material mais denso é consumido primeiro.
+Essa dinâmica explica por que pesquisadores tendem a explorar muitas fontes superficialmente
+antes de aprofundar em algumas — comportamento que foi codificado na heurística de
+"abstract scanning before full reading" que está na raiz de como as bases de dados
+acadêmicas são projetadas.
+
+O modelo de Sensemaking de Klein et al. (2006) formaliza o que acontece após a
+coleta: o pesquisador constrói um "data frame" — uma estrutura mental que organiza
+os fragmentos coletados em uma narrativa coerente. Quando o frame não consegue
+acomodar novos dados, ocorre um "frame break" e o pesquisador reconstrói o frame.
+Esse processo iterativo de coleta → síntese → revisão do frame é a razão pela qual
+ferramentas que suportam apenas busca (coleta) sem suporte à síntese (organização,
+anotação, conexão) são percebidas como insuficientes por pesquisadores sérios.
+
+LitForager (2025, arXiv), uma ferramenta experimental para exploração de literatura
+em ambientes imersivos, aplicou explicitamente esses dois modelos teóricos ao design
+de uma interface para busca de papers: o sistema suporta tanto o foraging loop
+(busca, filtragem, coleta) quanto o synthesis loop (análise, conexão, narração),
+combinando visualização de rede de citações com espaço de anotação.
+2.2. FASES PRÁTICAS E FERRAMENTAS POR FASE
+
+-------------------------------------------
+
+A partir da literatura e da observação de workflows publicados por pesquisadores
+(Phelan, 2023; Tay, 2021; Matuschak, 2024), é possível mapear as fases práticas
+de um processo de pesquisa e as ferramentas associadas:
+
+**Fase 1 — Exploração Inicial**: definição imprecisa do problema, busca ampla para
+entender o espaço do tema. Ferramentas dominantes: buscadores acadêmicos (Google
+Scholar, Semantic Scholar), Connected Papers, ResearchRabbit. Comportamento central:
+busca por termos amplos, scanning de abstracts, download seletivo de papers. Duração
+típica: horas a dias.
+
+**Fase 2 — Coleta Estruturada**: identificação dos papers centrais do campo,
+snowball sampling (seguir referências de referências). Ferramentas: Zotero para
+organização, Semantic Scholar para descoberta por co-citação, Litmaps para
+visualização da rede de citações ao longo do tempo. Comportamento: leitura de
+introduções e conclusões, catalogação no gerenciador de referências, criação de
+coleções temáticas.
+
+**Fase 3 — Leitura Profunda**: leitura completa dos papers mais relevantes,
+anotação, highlight de passagens-chave. Ferramentas: Zotero PDF Reader,
+DEVONthink, Readwise/Reader, Obsidian com plugin Zotero Bridge.
+Comportamento: highlights, notas marginais, ligações explícitas entre conceitos.
+
+**Fase 4 — Síntese**: integração do conhecimento coletado em uma narrativa coerente.
+Ferramentas: Obsidian (grafo de notas), Roam Research, Logseq, DEVONthink.
+Comportamento: escrita de notas permanentes (evergreen notes), conexão de conceitos
+via links bidirecionais, identificação de contradições entre fontes.
+
+**Fase 5 — Escrita**: produção do texto final. Ferramentas: Zotero para citações,
+Overleaf ou Word/LaTeX para escrita. Comportamento: consulta frequente às notas e
+highlights, inserção de citações.
+
+O que torna uma ferramenta "indispensável" versus "descartável" para pesquisadores
+é, consistentemente, a integração entre fases. Ferramentas que suportam apenas uma
+fase são usadas e abandonadas. O Zotero é indispensável porque conecta coleta (salvar
+papers) com leitura (PDF reader com highlights) com escrita (plugin Word/LibreOffice).
+O DEVONthink é indispensável para quem acumula grandes bases de conhecimento pessoal
+porque conecta coleta (importação) com descoberta (See Also) com síntese (escrita
+livre). O Readwise é indispensável para quem destaca muito porque fecha o ciclo entre
+leitura (highlights) e revisão (spaced repetition).
+2.3. READING SESSIONS VS. SEARCH SESSIONS
+
+------------------------------------------
+
+Uma distinção importante para o design de sistemas como o AKASHA é a diferença entre
+uma sessão de leitura e uma sessão de busca. Elas têm objetivos, comportamentos e
+contextos temporais distintos.
+
+Uma **sessão de busca** é orientada por uma query: o usuário tem uma pergunta e quer
+encontrar documentos que respondam a ela. O sucesso é medido por precisão e recall —
+os documentos certos foram encontrados? A sessão é curta (segundos a minutos), a
+interação é iterativa (reformular query, clicar em resultados, voltar), e o estado
+mental é convergente (afunilando para uma resposta).
+
+Uma **sessão de leitura** é orientada por um documento: o usuário tem um texto à
+frente e o lê em sequência, possivelmente produzindo anotações. O sucesso é medido
+pela qualidade da compreensão e dos artefatos produzidos (highlights, notas). A sessão
+é mais longa (minutos a horas), a interação é sequencial, e o estado mental é
+divergente durante a leitura (gerando conexões, questões, insights) antes de se tornar
+convergente na anotação.
+
+Essa distinção tem implicações diretas de design: uma interface otimizada para sessões
+de busca (resultado rápido, snippet informativo, filtros) é diferente de uma interface
+otimizada para sessões de leitura (visualização do documento completo, modo anotação,
+navegação por highlights). Sistemas que tentam ser os dois (NotebookLM, Readwise Reader,
+DEVONthink) fazem escolhas explícitas sobre qual contexto priorizar em cada tela.
+
+Para o AKASHA, a questão prática é: a lista de resultados de busca é uma interface
+para sessões de busca. A visualização de um documento arquivado (tela de detalhes)
+poderia ser uma interface para sessões de leitura, incluindo highlights e anotações.
+
+================================================================================
+3. TÉCNICAS NÃO-LLM PARA "INTELIGÊNCIA" EM SISTEMAS DE BUSCA
+================================================================================
+3.1. USAGE-BASED RANKING
+
+--------------------------
+
+O ranqueamento baseado em uso é a forma mais antiga e robusta de personalização em
+sistemas de IR: documentos mais acessados pelo usuário são ranqueados mais alto para
+queries relevantes. A técnica existe desde os primeiros experimentos com IR pessoal
+nos anos 1990 e precede LLMs por décadas.
+
+A literatura distingue vários sinais de uso relevantes:
+
+**Dwell time** é o tempo que o usuário passa visualizando um documento após
+selecioná-lo nos resultados. Xu et al. (2011, IJCAI) demonstraram que dwell times
+de resultados clicados anteriormente são sinais valiosos para estimar relevância.
+A intuição é clara: se o usuário abriu um documento e ficou 10 minutos lendo-o, ele
+era relevante para a query; se ficou 3 segundos e fechou, provavelmente não era.
+O dwell time é um proxy de relevância mais confiável que o simples clique porque
+é mais difícil de "acidentar".
+
+**Temporal decay** é a redução do peso de um sinal de uso ao longo do tempo. Um
+documento que o usuário leu 5 vezes no último mês é mais relevante hoje do que um
+que foi lido 20 vezes há 3 anos. A fórmula clássica usa decaimento exponencial:
+weight(t) = frequency × exp(-λ × Δt), onde λ é o parâmetro de decaimento e Δt é o
+tempo decorrido desde o último acesso. O valor de λ precisa ser calibrado para o
+domínio — para pesquisa acadêmica, onde papers podem permanecer relevantes por anos,
+λ deve ser pequeno (decaimento lento).
+
+**Access frequency** é simplesmente a contagem de quantas vezes um documento foi
+aberto, sem considerar o tempo. É o sinal mais simples, mas também o mais ruidoso:
+um documento pode ter sido aberto muitas vezes por razões não relacionadas à
+relevância (edição, verificação de citação, etc.).
+
+Para o AKASHA, implementar usage-based ranking requer apenas registrar, na tabela
+de documentos ou em uma tabela separada, o timestamp de cada acesso por document_id.
+Um campo derivado "relevance_score" poderia combinar o score BM25 da query com o
+score de uso pessoal: score_final = α × bm25_score + (1-α) × usage_score, onde
+usage_score = frequency × exp(-λ × days_since_last_access).
+3.2. CO-READING PATTERNS PARA SINGLE USER
+
+-------------------------------------------
+
+Em sistemas de recomendação colaborativa, "usuários que leram A também leram B"
+é a base do collaborative filtering. Para um sistema single-user como o AKASHA,
+o equivalente é temporal: "você que leu A também leu B em outra sessão".
+
+A lógica é que documentos lidos em sequência temporal próxima tendem a compartilhar
+contexto semântico: o usuário estava estudando um tema específico e consultou
+múltiplos documentos naquela mesma sessão de pesquisa. Dois documentos lidos com
+30 minutos de intervalo em uma tarde têm muito mais chance de estar relacionados do
+que dois documentos lidos com 6 meses de intervalo.
+
+A implementação é simples: a tabela de acessos registra (doc_id, timestamp). Para
+encontrar documentos relacionados a um documento X por co-reading, basta encontrar
+todos os documentos acessados dentro de uma janela temporal W (ex: 2 horas) de
+qualquer acesso a X. Documentos que aparecem frequentemente nessa janela são
+candidatos fortes a "relacionados" para X.
+
+Esse sinal é particularmente valioso porque captura relações que nenhum algoritmo
+baseado em conteúdo consegue: dois documentos sobre temas complementares (ex: um
+paper sobre teoria e outro com implementação prática da mesma técnica) podem ter
+pouca sobreposição de vocabulário mas serem sistematicamente co-lidos pelo usuário
+porque formam um par conceitual indissociável em seu workflow.
+3.3. CITATION GRAPHS LOCAIS SEM LLM
+
+-------------------------------------
+
+A extração de referências bibliográficas de PDFs sem LLM é um problema
+suficientemente maduro para ter soluções robustas baseadas em regras e modelos
+tradicionais de ML.
+
+A biblioteca **GROBID** (Machine Learning Library for Extracting Information from
+Scholarly Documents) extrai referências de PDFs usando Conditional Random Fields e
+modelos sequenciais leves. Ela opera localmente, via servidor Docker, e retorna as
+referências estruturadas em formato TEI-XML com campos separados (autor, título,
+ano, journal, etc.). A precisão de extração de referências do GROBID para papers
+em inglês está na faixa de 90–95% para campos principais (título, autores, ano).
+
+Para o AKASHA, uma abordagem mais leve que o GROBID seria usar a API do CrossRef para
+enriquecimento de metadados quando o DOI já é conhecido (caso frequente para papers
+acadêmicos). O CrossRef oferece acesso gratuito sem chave de API (com limitação de
+taxa), retornando JSON completo com metadados bibliográficos incluindo a lista de
+referências do paper (quando disponível). O "polite pool" do CrossRef — que garante
+menor latência para clientes que incluem um endereço de email no header User-Agent —
+é especialmente adequado para uso pessoal.
+
+A API do Semantic Scholar oferece, além de metadados, os campos "references" e
+"citations" para cada paper, permitindo navegar o grafo de citações sem processar
+PDFs diretamente. Para um corpus pessoal de papers com DOI ou arXiv ID, é
+possível construir um grafo de citações local usando apenas chamadas de API.
+
+Do ponto de vista de persistência, um grafo de citações local pode ser armazenado
+no SQLite com duas tabelas simples: `documents` (id, title, doi, arxiv_id) e
+`citations` (citing_doc_id, cited_doc_id). Consultas para encontrar documentos
+relacionados por bibliographic coupling seriam:
+
+  SELECT d.title, COUNT(*) as shared_refs
+  FROM citations c1
+  JOIN citations c2 ON c1.cited_doc_id = c2.cited_doc_id
+  JOIN documents d ON d.id = c2.citing_doc_id
+  WHERE c1.citing_doc_id = :target_doc_id
+    AND c2.citing_doc_id != :target_doc_id
+  GROUP BY d.id
+  ORDER BY shared_refs DESC
+  LIMIT 10
+
+Essa query retorna os 10 documentos que têm mais referências em comum com o documento
+alvo — uma implementação direta de bibliographic coupling sem nenhum cálculo de
+embedding ou chamada a LLM.
+3.4. TAG PROPAGATION E CO-OCORRÊNCIA
+
+--------------------------------------
+
+Sistemas de tagging produzem dados estruturais ricos que podem ser explorados para
+recomendação e descoberta sem modelos de linguagem. O mecanismo fundamental é a
+matriz de co-ocorrência tag × tag: uma tabela onde a célula (i, j) conta quantos
+documentos receberam simultaneamente as tags i e j.
+
+A partir dessa matriz, três operações úteis emergem:
+
+1. **Sugestão de tags**: ao adicionar uma tag a um documento, sugerir as tags que
+   mais frequentemente co-ocorrem com ela no corpus pessoal. Isso é análogo a
+   autocomplete baseado em frequência e não requer nenhum entendimento semântico.
+
+2. **Navegação por tags relacionadas**: ao visualizar todos os documentos com a tag
+   "machine learning", mostrar quais outras tags aparecem frequentemente nesse
+   conjunto — "python", "neural networks", "pytorch" — como facetas de refinamento.
+
+3. **Propagação transitiva**: se o usuário busca por "redes neurais" e esse termo
+   não existe como tag mas existe "deep learning" (que co-ocorre muito com "neural
+   networks" em inglês), o sistema pode expandir a busca para incluir documentos com
+   "deep learning". Essa é uma forma rudimentar de expansão de query baseada em
+   co-ocorrência, sem semântica LLM.
+
+Jäschke et al. (2008) demonstraram que tag co-occurrence é um sinal eficaz para
+recomendação em sistemas de social bookmarking (Delicious, BibSonomy). Para sistemas
+single-user, onde a densidade de dados é menor, a co-ocorrência ainda funciona mas
+exige um corpus minimamente populado para produzir sugestões estatisticamente
+significativas.
+3.5. ANNOTATION DENSITY COMO PROXY DE IMPORTÂNCIA
+
+---------------------------------------------------
+
+A quantidade de highlights e anotações que um usuário faz em um documento é um
+sinal direto de sua importância para aquele usuário. Documentos que o usuário
+considerou dignos de marcar múltiplas passagens são, por definição, documentos que
+ele considerou mais ricos em conteúdo relevante.
+
+Esse princípio é utilizado implicitamente em sistemas como o Readwise (que pondera
+highlights na Daily Review pela frequência de reviews anteriores) e explicitamente
+em pesquisas sobre "information value" de documentos anotados.
+
+Para o AKASHA, implementar annotation density como sinal de ranqueamento requer:
+
+1. Armazenar highlights como registros associados a documentos (tabela highlights
+   com doc_id, text, position, created_at).
+2. Calcular um "annotation score" por documento: annotation_score = count(highlights)
+   ou uma versão ponderada que considera a "diversidade" das posições (highlights
+   distribuídos pelo documento indicam relevância uniforme; highlights concentrados
+   no início podem indicar que o usuário parou de ler).
+3. Incorporar annotation_score ao cálculo de relevância, com peso menor que o score
+   textual BM25 mas maior que zero.
+
+3.6. NAMED ENTITY RECOGNITION LEVE PARA GRAFO DE CONCEITOS LOCAL
+------------------------------------------------------------------
+
+O spaCy e o Stanza oferecem modelos pré-treinados de NER que operam localmente,
+sem chamadas a APIs, com latência de milissegundos por documento. Para português,
+o spaCy oferece modelos treinados nos corpora do Universal Dependencies
+(pt_core_news_sm, pt_core_news_md, pt_core_news_lg), e o Stanza suporta
+português e inglês com alta qualidade.
+
+O pipeline básico para construir um grafo de conceitos local seria:
+
+1. Para cada documento indexado, executar NER e extrair entidades (pessoas,
+   organizações, lugares, conceitos técnicos com o modelo adequado).
+2. Armazenar entidades na tabela `entities` (doc_id, entity_text, entity_type).
+3. Construir um grafo onde nós são entidades e arestas representam co-ocorrência
+   dentro do mesmo documento.
+4. Usar esse grafo para query expansion: ao buscar por "Python", expandir para
+   documentos que mencionam entidades frequentemente co-citadas com "Python" nos
+   documentos já anotados.
+
+A precisão do NER para português com o spaCy (modelo md) está na faixa de 85–90%
+para entidades formais (pessoas, organizações, lugares) e significativamente menor
+para conceitos técnicos, que requerem fine-tuning no domínio específico. A extração
+de relações semânticas entre entidades (triplas sujeito-predicado-objeto) sem LLM
+é mais complexa, mas é viável com as ferramentas de dependency parsing do spaCy,
+que identifica verbos transitivos e seus argumentos com cerca de 94% da qualidade
+de abordagens LLM-based em benchmarks recentes (arXiv 2507.03226, 2025).
+
+================================================================================
+4. SISTEMAS DE ANOTAÇÃO E HIGHLIGHTING EM FERRAMENTAS WEB
+================================================================================
+4.1. W3C WEB ANNOTATION DATA MODEL
+
+-------------------------------------
+
+O W3C Web Annotation Data Model (WADM, Recomendação W3C 2017) é o padrão técnico
+para representar anotações sobre recursos web de forma interoperável. Sua adoção
+pelo Hypothesis, Readium, e outros sistemas confirma sua maturidade como solução
+para persistência de highlights.
+
+A estrutura central do modelo é um objeto JSON-LD com três componentes:
+
+- **body**: o conteúdo da anotação (o texto do highlight, uma nota, uma tag)
+- **target**: o recurso anotado e a parte específica que foi selecionada
+- **@context**: referência ao vocabulário WADM
+
+O target usa "Selectors" para localizar a parte específica do recurso anotado.
+Para páginas web HTML, três tipos de selector são relevantes:
+
+**RangeSelector**: define o início e o fim da seleção usando XPath. Cada extremo
+tem um XPath apontando para o elemento DOM e um offset de caractere dentro desse
+elemento. É o selector mais preciso, mas o mais frágil: qualquer mudança na estrutura
+HTML da página (adição de um elemento antes da seleção, mudança de IDs) invalida o
+XPath e o highlight fica "órfão".
+
+**TextPositionSelector**: define a seleção como offsets de caractere no texto linear
+do documento (ignorando tags HTML). É mais robusto que o RangeSelector para mudanças
+de estrutura HTML, mas falha quando o texto do documento é editado antes da posição
+da anotação.
+
+**TextQuoteSelector**: armazena três strings — o texto exato selecionado (exact),
+o texto imediatamente antes (prefix, tipicamente 32 caracteres) e o texto
+imediatamente depois (suffix, tipicamente 32 caracteres). É o selector mais robusto
+para mudanças de layout porque tenta encontrar o texto pela sua identidade contextual,
+não pela sua posição. Mesmo que a estrutura do DOM mude completamente, enquanto o
+texto e seu contexto imediato permanecerem, a anotação pode ser re-ancorada.
+4.2. HYPOTHESIS — FUZZY ANCHORING
+
+-----------------------------------
+
+O Hypothesis é o principal sistema open-source de anotação web e implementa o WADM
+em produção. Sua inovação mais significativa é o sistema de "fuzzy anchoring", que
+combina os três tipos de selector em uma estratégia de fallback em cascata.
+
+Quando uma anotação é criada, o Hypothesis salva simultaneamente os três selectors:
+RangeSelector (XPath), TextPositionSelector (offsets de caractere) e TextQuoteSelector
+(texto com contexto). Quando a anotação precisa ser re-ancorada (na próxima visita à
+página), o sistema tenta quatro estratégias em sequência:
+
+1. **Range-based**: busca os elementos DOM via XPath armazenado e verifica se o texto
+   entre eles corresponde ao texto salvo. Rápido, mas frágil.
+2. **Position-based**: usa os offsets de caractere do TextPositionSelector. Funciona
+   quando a estrutura HTML mudou mas o texto permanece igual.
+3. **Context-first fuzzy matching**: usa o TextQuoteSelector para localizar o
+   prefix e o suffix via matching fuzzy, depois valida o texto entre eles.
+   O Hypothesis usa uma versão modificada da biblioteca google-diff-match-patch,
+   que implementa o algoritmo Bitap (shift-and), para realizar o matching
+   aproximado com tolerância a edições menores.
+4. **Text-only fuzzy matching**: fallback final que busca apenas o texto exato
+   salvo no documento completo. Se encontrado, re-ancora; se não encontrado,
+   a anotação é marcada como "órfã" (orphaned) mas ainda visível nos metadados.
+
+Para o AKASHA, esse modelo de seletores em cascata é diretamente aplicável ao
+armazenamento de highlights em páginas web arquivadas. A implementação mínima
+viável seria: ao criar um highlight em uma página, salvar TextQuoteSelector (exact,
+prefix, suffix) no banco de dados. Ao re-exibir a página arquivada, usar JavaScript
+para localizar o texto via matching de strings e aplicar a marcação visual. O
+TextQuoteSelector é suficiente para a maioria dos casos porque páginas arquivadas
+localmente não mudam tão frequentemente quanto páginas web ao vivo.
+4.3. ARMAZENAMENTO E INDEXAÇÃO DE HIGHLIGHTS
+
+----------------------------------------------
+
+Do ponto de vista de banco de dados, highlights devem ser armazenados como objetos
+separados dos documentos-pai, com referência ao documento via chave estrangeira.
+A estrutura mínima para uma tabela de highlights no AKASHA seria:
+
+  CREATE TABLE highlights (
+    id INTEGER PRIMARY KEY,
+    doc_id INTEGER REFERENCES documents(id),
+    text TEXT NOT NULL,               -- texto selecionado
+    prefix TEXT,                      -- 32 chars antes (TextQuoteSelector)
+    suffix TEXT,                      -- 32 chars depois (TextQuoteSelector)
+    note TEXT,                        -- anotação opcional do usuário
+    color TEXT DEFAULT 'yellow',      -- cor do highlight
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE VIRTUAL TABLE highlights_fts USING fts5(
+    text, note,
+    content=highlights,
+    tokenize='unicode61 remove_diacritics 2'
+  );
+
+Indexar highlights separadamente dos documentos tem três benefícios:
+
+1. Busca por highlights retorna resultados mais precisos (o texto exato do highlight
+   é mais relevante para a query do que o documento completo).
+2. Highlights com notas do usuário funcionam como "documentos sintéticos" — fragmentos
+   do texto original enriquecidos com o contexto interpretativo do usuário.
+3. A contagem de highlights por documento fornece o annotation density score descrito
+   na seção 3.5.
+
+Na interface de resultados de busca, quando a query match ocorre em um highlight,
+deve-se mostrar o snippet do highlight com o contexto (prefix e suffix) e um link
+para o documento-pai, não apenas o nome do documento. Isso implementa a relação
+"highlight como documento separado no índice, relacionado ao documento-pai na UI".
+
+================================================================================
+5. PROGRESSIVE DISCLOSURE E ARQUITETURA DE INFORMAÇÃO
+================================================================================
+5.1. O PRINCÍPIO DA REVELAÇÃO PROGRESSIVA EM SISTEMAS DE BUSCA
+
+----------------------------------------------------------------
+
+Progressive disclosure (Nielsen Norman Group, clássico de HCI) é o princípio de
+design que recomenda revelar complexidade gradualmente, apresentando primeiro as
+informações mais críticas e deferindo detalhes para interações subsequentes. Em
+sistemas de busca, isso se manifesta na hierarquia: título → snippet → documento
+completo.
+
+A pesquisa de Algolia sobre density e progressive disclosure em UX de busca
+(Algolia Engineering Blog, 2024) demonstrou que interfaces que expõem muita
+informação simultaneamente aumentam a carga cognitiva e reduzem a taxa de
+cliques nos resultados corretos. A solução não é simplificar drasticamente, mas
+estruturar a informação em camadas acessíveis: a primeira camada (título + snippet)
+deve ser suficiente para a maioria das decisões de clique; a segunda camada
+(preview do documento, metadados completos) serve para decisões de alta importância;
+a terceira camada (documento completo com highlights) é o destino final.
+
+Para o AKASHA, uma arquitetura de três camadas seria:
+
+**Camada 1 (resultado na lista)**: título do documento, snippet de 30–50 palavras
+com termos da query marcados, URL/fonte, data, tipo de conteúdo (página, PDF, paper),
+indicação visual de highlights existentes (ex: um ícone de marcador se o documento
+tem highlights salvos).
+
+**Camada 2 (preview ao hover ou clique secundário)**: resumo mais longo (primeiros
+200 caracteres do documento ou extrato manual), todos os highlights existentes no
+documento, metadados completos (autor, coleções/tags, data de indexação).
+
+**Camada 3 (documento completo)**: visualização do conteúdo arquivado com highlights
+visíveis, modo de anotação ativável, navegação por highlights, link para URL original.
+5.2. SERENDIPITOUS DISCOVERY — COMO SISTEMAS AJUDAM A ENCONTRAR O INESPERADO
+
+-------------------------------------------------------------------------------
+
+Serendipity em sistemas de IR é definida como a descoberta de informação valiosa
+que o usuário não estava ativamente buscando. Não é acidental — sistemas bem
+projetados criam condições para que descobertas úteis ocorram com maior frequência.
+
+A pesquisa publicada no Journal of Visualization (2022) sobre Interactive Visual
+Facets para exploração fluida identificou que a serendipidade ocorre mais
+frequentemente quando o sistema:
+
+1. Mostra a distribuição do corpus (quantos documentos existem por data, por tag,
+   por fonte) antes da query, não apenas depois.
+2. Permite transições rápidas entre critérios de exploração sem perder o contexto.
+3. Expõe "adjacências inesperadas" — documentos que não são exatamente sobre o
+   que o usuário buscou, mas que compartilham o mesmo tempo/contexto/tags.
+
+Para o AKASHA, implementar serendipity sem LLM passa por três mecanismos:
+
+**"Também lido nessa sessão"**: ao exibir os resultados de uma busca ou ao abrir
+um documento, mostrar outros documentos acessados temporalmente próximos (co-reading
+patterns da seção 3.2). Esses documentos não foram selecionados por relevância à
+query atual, mas pela co-ocorrência temporal — o que os torna candidatos a relevância
+contextual.
+
+**"Relacionados por tag"**: ao visualizar um documento, mostrar outros documentos
+que compartilham tags com ele, ordenados por número de tags em comum. Isso é uma
+forma de "vizinhos no espaço de tags" sem cálculo vetorial.
+
+**"Do mesmo domínio nesse período"**: ao visualizar um paper de um determinado
+jornal ou de um determinado autor, mostrar outros papers do mesmo jornal/autor
+indexados no corpus. Isso implementa o "journal run" de Bates sem qualquer
+computação de similaridade.
+5.3. FACETED SEARCH SEM LLM
+
+-----------------------------
+
+Faceted search (busca facetada) é uma técnica de navegação que permite ao usuário
+refinar progressivamente um conjunto de resultados através da aplicação de filtros
+em múltiplas dimensões (facetas). No contexto do AKASHA, as facetas naturais do corpus
+são: data de indexação (intervalo), domínio/fonte, tipo de conteúdo, idioma,
+status de leitura (lido/não lido), presença de highlights.
+
+A implementação de faceted search em SQLite é direta: cada faceta corresponde a
+uma cláusula WHERE adicional na query, e os valores disponíveis de cada faceta são
+calculados como contagens agregadas sobre os resultados da query base. O esquema:
+
+  SELECT source_domain, COUNT(*) as count
+  FROM documents
+  WHERE rowid IN (SELECT rowid FROM local_fts WHERE local_fts MATCH :query)
+  GROUP BY source_domain
+  ORDER BY count DESC
+
+Isso retorna a distribuição por domínio dos resultados da query, sem nenhuma
+computação extra. O usuário pode então clicar em um domínio para adicionar
+`AND source_domain = :domain` à query original.
+
+Para filtros de data, o SQLite suporta funções de data nativas:
+  WHERE created_at >= date('now', '-30 days')  -- últimos 30 dias
+  WHERE strftime('%Y', created_at) = '2024'   -- ano específico
+5.4. QUERY AUTOCOMPLETE BASEADO EM HISTÓRICO PESSOAL
+
+-----------------------------------------------------
+
+Query autocomplete baseado no histórico de buscas do usuário é uma das formas mais
+simples e eficazes de personalização sem LLM. O algoritmo fundamental é um trie
+(prefix tree) construído sobre as queries anteriores, que permite completar
+prefixos em O(k) onde k é o comprimento do prefixo.
+
+Para um sistema pessoal com histórico limitado (centenas a alguns milhares de queries),
+uma abordagem mais simples que um trie é viável: uma tabela SQLite de histórico de
+queries com contagem de uso e timestamp da última utilização:
+
+  CREATE TABLE search_history (
+    query TEXT PRIMARY KEY,
+    count INTEGER DEFAULT 1,
+    last_used DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  SELECT query FROM search_history
+  WHERE query LIKE :prefix || '%'
+  ORDER BY count DESC, last_used DESC
+  LIMIT 5;
+
+Essa query retorna as 5 sugestões mais usadas que começam com o prefixo digitado,
+ranqueadas por frequência e recência. Não requer embeddings, não requer LLM, e
+funciona completamente offline. Para um corpus pessoal de busca, isso é mais
+relevante do que autocomplete baseado em corpus global, porque reflete o vocabulário
+específico do usuário e seus temas de interesse.
+
+O sistema da Vinted (2026) demonstrou que para autocompletar em escala de e-commerce,
+uma segunda camada de re-ranking com LightGBM (Learning-to-Rank) melhora a relevância,
+mas para corpora pessoais a frequência simples é suficiente.
+5.5. READING LIST COMO FILA COM PRIORIDADE
+
+--------------------------------------------
+
+A "reading list" (fila de leitura) é uma estrutura presente em todos os sistemas
+de PKM — Pocket, Instapaper, Raindrop, Readwise Reader — mas implementada de formas
+substancialmente diferentes. A distinção conceitual mais importante é entre uma
+**pilha** (LIFO: o mais recentemente adicionado é lido primeiro), uma **fila** (FIFO:
+o mais antigo é lido primeiro), e uma **fila de prioridade** (o item mais relevante
+ou urgente é lido primeiro, independentemente da ordem de adição).
+
+A maioria dos sistemas implementa algo entre pilha e fila com pouca estrutura de
+prioridade — o usuário visualiza todos os itens, possivelmente filtrados por tag
+ou data, e escolhe manualmente o que ler. Readwise Reader é uma exceção parcial:
+seu "queue" permite marcar itens como "queued" (na fila imediata) versus "archive"
+(lido) versus "later" (numa pilha de prioridade baixa), mas ainda é manual.
+
+Uma leitura da literatura de PKM sugere que a gestão da fila de leitura é um dos
+maiores pontos de atrito para pesquisadores: adicionar itens é fácil, mas a fila
+cresce mais rápido do que é consumida, gerando "toread debt". Sistemas que ajudam
+a priorizar (não apenas armazenar) a fila de leitura são percebidos como mais
+valiosos.
+
+Para o AKASHA, uma abordagem não-LLM para priorização da fila seria combinar três
+sinais: **recência** (itens adicionados recentemente são mais urgentes), **tamanho**
+(itens menores têm menor custo de leitura e poderiam ser priorizados para "leituras
+rápidas"), e **densidades de tags com itens recentes** (se o usuário está lendo muito
+sobre "transformers" nas últimas semanas, itens na fila com a tag "transformers"
+deveriam ser priorizados).
+
+================================================================================
+6. QUANDO LLM FAZ SENTIDO (E QUANDO NÃO FAZ)
+================================================================================
+6.1. OPERAÇÕES QUE SE BENEFICIAM DE LLM EM PKM
+
+------------------------------------------------
+
+Existem operações em sistemas de PKM onde LLMs oferecem valor genuíno e difícil
+de replicar com técnicas não-LLM:
+
+**Síntese e sumarização**: gerar um resumo coerente de múltiplos documentos sobre
+um tema não é trivial sem LLM. Técnicas de sumarização extrativa (selecionar as
+frases mais representativas) existem sem LLM (TextRank, LexRank), mas produzem
+textos fragmentados. A sumarização realmente útil para pesquisa requer integração
+semântica que LLMs fazem bem.
+
+**Query expansion semântica**: expandir "redes neurais profundas" para incluir
+"deep learning", "convolutional networks", "transformer architecture" requer
+conhecimento semântico que modelos TF-IDF não têm. HyDE (Hypothetical Document
+Embeddings) e técnicas similares demonstraram ganhos reais de recall em corpora
+acadêmicos. Porém, a latência (2–10s) é proibitiva para busca interativa.
+
+**Classificação de intenção de query**: distinguir se "python" na query significa
+a linguagem de programação ou o animal requer desambiguação contextual que LLMs
+fazem com alta precisão. Modelos tradicionais de desambiguação (entity linking via
+Knowledge Bases) são mais complexos de implantar.
+
+**Geração de perguntas e flashcards a partir de highlights**: transformar um
+highlight em uma pergunta de revisão ("Qual é a diferença entre X e Y?") é uma
+tarefa que LLMs fazem bem e que é difícil sem LLM.
+6.2. OPERAÇÕES QUE SÃO PIORES COM LLM EM PKM
+
+Existem operações onde adicionar um LLM ao pipeline degrada o sistema, não melhora:
+
+**Busca por termos exatos**: nomes próprios, identificadores (DOIs, IDs), nomes de
+bibliotecas e frameworks são recuperados com 100% de precisão por FTS5/BM25 e com
+precisão potencialmente menor por modelos de embedding, que podem confundir entidades
+similares. "PyTorch 2.1" e "TensorFlow 2.1" têm embeddings próximos no espaço
+vetorial, o que é um problema para buscas por identificadores específicos.
+
+**Recuperação de conteúdo com baixa latência**: latências de LLM (2–10s para
+síntese, 500ms–2s para reranking leve) são inaceitáveis para interação direta com
+resultados de busca, onde o usuário espera feedback em < 300ms. BM25 via SQLite FTS5
+retorna resultados em < 10ms para corpora de milhões de documentos.
+
+**Detecção de duplicatas**: SHA-256 de conteúdo normalizado é 100% preciso e
+instantâneo. Um LLM para deduplicação seria lento, caro e introduziria incerteza onde
+não existe ambiguidade genuína.
+
+**Tagging e organização por metadados estruturados**: se os metadados já existem
+(data, domínio, tipo de arquivo), filtrar e organizar por eles não requer LLM.
+6.3. PADRÕES DE DEGRADAÇÃO GRACEFUL
+
+
+A questão de "o que sobrevive quando o LLM está offline" é estrategicamente importante
+para sistemas locais como o AKASHA. A resposta depende de como as funcionalidades
+são arquitetadas:
+
+**Funcionalidades 100% sobreviventes sem LLM** (baseadas em índices locais):
+
+- Busca FTS5 com BM25 e pesos por coluna
+- Busca vetorial com ChromaDB (embeddings pré-computados)
+- Busca híbrida FTS5 + ChromaDB com RRF
+- Faceted search por data, domínio, tipo, status
+- Query autocomplete por histórico pessoal
+- Reading list e gestão de fila de leitura
+- Highlights e anotações (criação, busca, visualização)
+- Related items por co-reading patterns (temporal)
+- Related items por tag co-ocorrência
+- Citation graphs locais (se já indexados)
+- Usage-based ranking (se scores já calculados)
+
+**Funcionalidades degradadas sem LLM** (requerem LLM mas têm fallback):
+
+- Síntese de múltiplos resultados → mostrar snippets individuais em vez de síntese
+- HyDE query expansion → usar query original sem expansão
+- Reranking semântico → usar ranking BM25 puro
+- Classificação de intenção → tratar todas as queries como lookup
+
+**Funcionalidades indisponíveis sem LLM** (sem fallback razoável):
+
+- Sumarização de novo conteúdo não indexado
+- Geração de flashcards
+- Resposta a perguntas sobre o corpus (RAG)
+
+6.4. THRESHOLDS DE LATÊNCIA ACEITÁVEIS
+
+A literatura de HCI e os benchmarks industriais convergem para uma taxonomia de
+thresholds de latência percebida pelo usuário:
+
+**< 100ms**: imperceptível. Interações que se enquadram aqui são percebidas como
+instantâneas. FTS5 BM25 em corpora de até 1M documentos opera nessa faixa.
+
+**100ms – 300ms**: perceptível mas confortável. Ainda sente-se como resposta imediata.
+Busca vetorial com ChromaDB (HNSW em RAM) para corpora de até 500k documentos opera
+nessa faixa. É o threshold para interações que ocorrem "enquanto o usuário digita"
+(autocomplete, preview de resultados).
+
+**300ms – 1s**: claramente perceptível mas ainda aceitável para resultados de busca.
+A maioria dos usuários aceita esse delay para resultados de uma query explícita. Busca
+híbrida FTS5 + vetorial + RRF opera tipicamente nessa faixa.
+
+**1s – 3s**: aceitável para operações que o usuário iniciou conscientemente e para
+as quais esperaria um momento. Reranking com cross-encoder leve (FlashRank, ONNX)
+opera nessa faixa em CPU sem GPU. É o threshold para "processamento de query".
+
+**3s – 10s**: aceitável apenas para operações explicitamente assíncronas, onde
+uma barra de progresso ou estado de loading é mostrado. Geração de síntese via LLM
+local (Ollama + Llama 3.2 3B) opera nessa faixa. O usuário precisa ser informado
+que a operação está em andamento.
+
+**> 10s**: apenas para operações de background que não bloqueiam a interação.
+Indexação, análise de corpus, geração de embeddings para novos documentos.
+
+A implicação para o AKASHA é direta: funcionalidades com latência > 300ms não devem
+bloquear a interface. O padrão correto é mostrar resultados FTS5 (< 100ms)
+imediatamente e atualizar com resultados aprimorados (reranking, expansão semântica)
+progressivamente, como os resultados assíncronos de um search-as-you-type.
+
+================================================================================
+FONTES
+================================================================================
+
+BATES, Marcia J. **The Design of Browsing and Berrypicking Techniques for the Online
+Search Interface**. Online Review, v. 13, n. 5, p. 407–424, 1989. Disponível em:
+<https://pages.gseis.ucla.edu/faculty/bates/articles/berrypicking.pdf>.
+Acesso em: 06 mai. 2026.
+
+CONNECTED PAPERS. **Announcing Connected Papers — a visual tool for researchers to
+find and explore academic papers**. Medium, Connected Papers, 2022. Disponível em:
+<https://medium.com/connectedpapers/announcing-connected-papers-a-visual-tool-for-researchers-to-find-and-explore-academic-papers-89146a54c7d4>.
+Acesso em: 06 mai. 2026.
+
+CROSSREF. **REST API Documentation**. Crossref, 2024. Disponível em:
+<https://www.crossref.org/documentation/retrieve-metadata/rest-api/>.
+Acesso em: 06 mai. 2026.
+
+DEVONTECHNOLOGIES. **See Also & Classify Inspector**. DEVONthink 3.8.2 Help,
+DEVONtechnologies, 2024. Disponível em:
+<https://download.devontechnologies.com/download/devonthink/3.8.2/DEVONthink.help/Contents/Resources/pgs/inspectors-seealso.html>.
+Acesso em: 06 mai. 2026.
+
+DEVONTECHNOLOGIES. **Is DEVONthink an AI application?** DEVONtechnologies Blog,
+2025. Disponível em: <https://www.devontechnologies.com/blog/20250717-devonthink-ai-app>.
+Acesso em: 06 mai. 2026.
+
+EXPLOSION AI. **spaCy: Industrial-Strength Natural Language Processing**. Explosion
+AI, 2024. Disponível em: <https://spacy.io/>. Acesso em: 06 mai. 2026.
+
+HYPOTHESIS. **Fuzzy Anchoring**. Hypothesis Blog, 2015. Disponível em:
+<https://web.hypothes.is/blog/fuzzy-anchoring/>. Acesso em: 06 mai. 2026.
+
+HYPOTHESIS. **GitHub — hypothesis/client: The Hypothesis web-based annotation
+client**. GitHub, 2024. Disponível em: <https://github.com/hypothesis/client>.
+Acesso em: 06 mai. 2026.
+
+HUVILA, Isto et al. **Trends in information behavior research, 2016–2022**.
+Journal of the Association for Information Science and Technology, 2025.
+Disponível em: <https://asistdl.onlinelibrary.wiley.com/doi/10.1002/asi.24943>.
+Acesso em: 06 mai. 2026.
+
+JÄSCHKE, Robert et al. **Tag Recommendations in Social Bookmarking Systems**.
+AI Communications, v. 21, n. 4, p. 231–247, 2008. Disponível em:
+<https://journals.sagepub.com/doi/abs/10.3233/AIC-2008-0438>.
+Acesso em: 06 mai. 2026.
+
+KAGI. **Lenses Documentation**. Kagi Docs, 2024. Disponível em:
+<https://help.kagi.com/kagi/features/lenses.html>. Acesso em: 06 mai. 2026.
+
+KESSLER, M. M. **Bibliographic Coupling between Scientific Papers**. American
+Documentation, v. 14, n. 1, p. 10–25, 1963.
+
+KLEIN, Gary et al. **A Data-Frame Theory of Sensemaking**. In: SALAS, E.;
+KLEIN, G. (Eds.). Linking Expertise and Naturalistic Decision Making. Lawrence
+Erlbaum Associates, 2001. p. 113–155.
+
+LITFORAGER. **LitForager: Exploring Multimodal Literature Foraging Strategies in
+Immersive Sensemaking**. arXiv:2508.15043, 2025. Disponível em:
+<https://arxiv.org/abs/2508.15043>. Acesso em: 06 mai. 2026.
+
+MARCHIONINI, Gary. **Exploratory Search: From Finding to Understanding**.
+Communications of the ACM, v. 49, n. 4, p. 41–46, 2006.
+
+NIELSEN NORMAN GROUP. **Progressive Disclosure**. NN/G, 2006. Disponível em:
+<https://www.nngroup.com/articles/progressive-disclosure/>.
+Acesso em: 06 mai. 2026.
+
+PHELAN, Alexandra. **An Updated Academic Workflow: Zotero & Obsidian**. Medium,
+2023. Disponível em:
+<https://medium.com/@alexandraphelan/an-updated-academic-workflow-zotero-obsidian-cffef080addd>.
+Acesso em: 06 mai. 2026.
+
+PIROLLI, Peter; CARD, Stuart. **Information Foraging**. Psychological Review,
+v. 106, n. 4, p. 643–675, 1999.
+
+RAINDROP.IO. **Search Documentation**. Raindrop.io Help, 2024. Disponível em:
+<https://help.raindrop.io/using-search>. Acesso em: 06 mai. 2026.
+
+READWISE. **How does the Readwise spaced repetition algorithm work?**
+Readwise Documentation, 2024. Disponível em:
+<https://docs.readwise.io/readwise/docs/faqs/reviewing-highlights>.
+Acesso em: 06 mai. 2026.
+
+READWISE. **Using Spaced Repetition and Active Recall to Hack Your Brain**. Readwise
+Blog, 2019. Disponível em:
+<https://blog.readwise.io/hack-your-brain-with-spaced-repetition-and-active-recall/>.
+Acesso em: 06 mai. 2026.
+
+SEMANTIC SCHOLAR. **SPECTER: Document-level Representation Learning using
+Citation-informed Transformers**. arXiv:2004.07180, 2020. Disponível em:
+<https://arxiv.org/abs/2004.07180>. Acesso em: 06 mai. 2026.
+
+SMALL, Henry. **Co-citation in the Scientific Literature: A New Measure of the
+Relationship Between Two Documents**. Journal of the American Society for Information
+Science, v. 24, n. 4, p. 265–269, 1973.
+
+SPRING, Nicolas et al. **Towards Practical GraphRAG: Efficient Knowledge Graph
+Construction and Hybrid Retrieval from Unstructured Text**. arXiv:2507.03226, 2025.
+Disponível em: <https://arxiv.org/pdf/2507.03226>. Acesso em: 06 mai. 2026.
+
+VISUAL FACETS JOURNAL. **Interactive Visual Facets to Support Fluid Exploratory
+Search**. Journal of Visualization, v. 25, 2022. Disponível em:
+<https://link.springer.com/article/10.1007/s12650-022-00865-4>.
+Acesso em: 06 mai. 2026.
+
+VINTED ENGINEERING. **How Vinted Serves Personalised Search Autocomplete**. Vinted
+Engineering Blog, 2026. Disponível em:
+<https://vinted.engineering/2026/04/22/personalized-search-autocomplete/>.
+Acesso em: 06 mai. 2026.
+
+W3C. **Web Annotation Data Model**. W3C Recommendation, 2017. Disponível em:
+<https://www.w3.org/TR/annotation-model/>. Acesso em: 06 mai. 2026.
+
+XU, Songhua et al. **Mining User Dwell Time for Personalized Web Search
+Re-Ranking**. IJCAI 2011 Proceedings, 2011. Disponível em:
+<https://www.ijcai.org/Proceedings/11/Papers/394.pdf>.
+Acesso em: 06 mai. 2026.
+
+ZOTERO. **Related Items Documentation**. Zotero Support, 2024. Disponível em:
+<https://www.zotero.org/support/related>. Acesso em: 06 mai. 2026.
+
+ZOTERO. **Zotero 7: Zotero, redesigned**. Zotero Blog, 2024. Disponível em:
+<https://www.zotero.org/blog/zotero-7/>. Acesso em: 06 mai. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Assistentes de Pesquisa Pessoal: Técnicas Além de LLMs
+========================================================
+
+
