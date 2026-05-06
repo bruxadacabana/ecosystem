@@ -19,3 +19,4 @@ rapidfuzz
 inscriptis
 markdownify
 filelock>=3.13
+psutil>=5.9

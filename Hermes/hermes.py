@@ -137,6 +137,28 @@ def detect_device() -> tuple[str, str]:
     return "cpu", "CPU"
 
 
+# RAM mínima por tamanho de modelo (MB) — estimativa conservadora para int8 em CPU
+_MODEL_RAM_MB: dict[str, int] = {
+    "tiny":    400,
+    "base":    600,
+    "small":  1100,
+    "medium": 2600,
+    "large":  5500,
+    "large-v2": 5500,
+    "large-v3": 5500,
+}
+
+def _check_ram(model_size: str) -> tuple[bool, int, int]:
+    """Retorna (ok, available_mb, required_mb). Nunca lança exceção."""
+    required = _MODEL_RAM_MB.get(model_size.lower(), 1000)
+    try:
+        import psutil
+        available = psutil.virtual_memory().available // (1024 * 1024)
+    except Exception:
+        return True, -1, required  # se não conseguir verificar, tenta mesmo assim
+    return available >= required, available, required
+
+
 def is_playlist_url(url: str) -> bool:
     return bool(re.search(
         r"(playlist|list="                               # YouTube playlist params
@@ -505,9 +527,19 @@ class TranscribeWorker(QThread):
         compute_type = "float16" if device == "cuda" else "int8"
         cache_key = (self.model_size, device)
         if not self._model_cache or self._model_cache[0][0] != cache_key:
+            ram_ok, ram_avail, ram_req = _check_ram(self.model_size)
+            if not ram_ok:
+                raise MemoryError(
+                    f"RAM insuficiente para o modelo {self.model_size}: "
+                    f"{ram_avail} MB disponíveis, {ram_req} MB necessários. "
+                    "Feche outros aplicativos ou escolha um modelo menor."
+                )
             self.log.emit(
                 f"Carregando modelo Whisper ({self.model_size}) em {device_label}…", "")
-            model = WhisperModel(self.model_size, device=device, compute_type=compute_type)
+            model = WhisperModel(
+                self.model_size, device=device, compute_type=compute_type,
+                num_workers=1,
+            )
             self._model_cache.clear()
             self._model_cache.append((cache_key, model))
         else:
@@ -592,9 +624,21 @@ class BatchTranscribeWorker(QThread):
         self._apply_cpu_limit()
         device, device_label = detect_device()
         compute_type = "float16" if device == "cuda" else "int8"
+        ram_ok, ram_avail, ram_req = _check_ram(self.model_size)
+        if not ram_ok:
+            self.log.emit(
+                f"RAM insuficiente para o modelo {self.model_size}: "
+                f"{ram_avail} MB disponíveis, {ram_req} MB necessários. "
+                "Feche outros aplicativos ou escolha um modelo menor.", "err"
+            )
+            self.finished.emit(0, len(self.entries))
+            return
         self.log.emit(f"Carregando modelo {self.model_size} em {device_label}…", "")
         try:
-            model = WhisperModel(self.model_size, device=device, compute_type=compute_type)
+            model = WhisperModel(
+                self.model_size, device=device, compute_type=compute_type,
+                num_workers=1,
+            )
         except Exception as e:
             self.log.emit(f"Erro ao carregar modelo: {e}", "err")
             self.finished.emit(0, len(self.entries))
