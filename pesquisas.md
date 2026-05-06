@@ -9134,3 +9134,693 @@ Planning over Rewriting Augmented Searchers**. arXiv:2502.18139, 2025. Disponív
 ========================================================
 FIM DA PESQUISA — Assistente de Pesquisa Inteligente: LLM-Augmented Search e Query Understanding
 ========================================================
+
+## Mnemosyne (UI Redesign)
+
+# PESQUISA — Arquitetura de UI para Research Workbench: NotebookLM e Referências Alternativas
+
+Data: 2026-05-06
+
+Contexto: O Mnemosyne é um app RAG local (Python + PySide6 + LangChain + ChromaDB + Ollama) com UI
+insatisfatória. Esta pesquisa cobre os fundamentos históricos, técnicos e de UX do paradigma
+"research workbench" com layout tri-painel — especificamente o modelo Fontes / Chat / Workspace
+popularizado pelo NotebookLM — com ênfase em precedentes históricos, implementação Qt, citation
+anchoring, gerenciamento de estado entre painéis, e alternativas open source.
+
+---
+
+## 1. Arquitetura de Layout Tri-Painel: Origens e Precedentes Históricos
+
+O paradigma de interface em três painéis que o NotebookLM tornou amplamente reconhecível na
+comunidade de IA não é uma invenção sua. Trata-se da consolidação de décadas de evolução em
+design de software de gestão de conhecimento, desenvolvimento integrado e navegação hierárquica.
+Compreender essa genealogia é essencial para projetar interfaces que explorem os princípios bem
+estabelecidos em vez de reinventar soluções já validadas.
+
+### 1.1 Miller Columns (1980): O Ancestral Direto
+
+O ancestral conceitual mais direto do layout tri-painel para gestão de conteúdo hierárquico são
+as Miller Columns, desenvolvidas de forma independente por Mark S. Miller em 1980 na
+Universidade de Yale, no contexto do projeto Xanadu. A técnica permite navegar por estruturas
+hierárquicas com múltiplos níveis abertos simultaneamente, fornecendo representação visual da
+localização atual do usuário dentro da hierarquia. Cada coluna exibe o conteúdo de um nível da
+hierarquia, e a seleção em uma coluna preenche a coluna à direita com os filhos do item
+selecionado.
+
+A genealogia dessa interface é rastreável diretamente até o macOS moderno: o NeXTSTEP File
+Viewer, desenvolvido por Steve Jobs e a equipe da NeXT a partir de 1986, adotou Miller Columns,
+e quando a Apple adquiriu a NeXT em 1997, esse padrão migrou para o Finder do Mac OS X como
+a "Column View" — onde persiste até hoje (Wikipedia, 2025). A limitação conhecida do paradigma
+é o colapso de legibilidade em hierarquias muito profundas: ao navegar por muitos níveis, as
+colunas se tornam estreitas demais para leitura sem scroll horizontal, o que motivou adaptações
+em aplicações modernas que limitam o layout a dois ou três painéis fixos.
+
+### 1.2 IDEs: VS Code, JetBrains e o Paradigma Explorer-Editor-Painel
+
+Os ambientes de desenvolvimento integrado estabeleceram ao longo dos anos 1990 e 2000 o layout
+que mais influencia interfaces complexas de desktop atualmente. O Visual Studio Code, por
+exemplo, organiza sua interface em camadas funcionalmente distintas: a Activity Bar (extrema
+esquerda), o Primary Side Bar (explorador de arquivos, busca, controle de versão, extensões),
+a Editor Region (conteúdo principal, podendo ser dividido horizontalmente ou verticalmente em
+múltiplos grupos), e o Panel (inferior, contendo terminal, problemas, saída e debug). Uma
+Secondary Sidebar opcional pode ser ativada à direita para views adicionais (VS Code Docs,
+2024).
+
+O princípio organizador é a separação entre **contexto** (o que existe no projeto, navegável na
+sidebar), **conteúdo** (o arquivo atualmente editado, no editor) e **output** (o resultado de
+ações, no painel inferior). Essa tripartição espelha diretamente o modelo Sources / Chat / Studio
+do NotebookLM: a sidebar esquerda como contexto persistente, o centro como espaço de trabalho
+ativo, e o painel direito ou inferior como output gerado.
+
+Os IDEs JetBrains (IntelliJ IDEA, PyCharm) replicam essa lógica com variações: tool windows
+(painéis dockáveis) à esquerda e à direita, editor central, e painéis inferiores para
+consoles e testes. A característica chave dos IDEs modernos é a **dockabilidade** — painéis
+podem ser movidos, desacoplados como janelas flutuantes, minimizados como abas laterais ou
+descartados — o que é implementado no Qt pelo `QDockWidget` e, com maior sofisticação, pela
+biblioteca Qt Advanced Docking System.
+
+### 1.3 Gestores de Referências: Zotero, JabRef e o Layout Biblioteca-Documento-Metadados
+
+O Zotero 7 representa o estado da arte em interfaces tri-pane para pesquisa acadêmica. Sua
+interface é composta por três regiões principais: o painel esquerdo (coleções e grupos da
+biblioteca), a lista central de itens (a tabela principal navegável), e o painel direito (info
+do item selecionado com seções colapsáveis verticais, que em versões anteriores eram abas
+horizontais). Ao abrir um PDF ou EPUB, o Zotero apresenta um leitor embutido com sua própria
+divisão tri-pane: sidebar esquerdo de anotações, a página do documento ao centro, e barra de
+navegação e notas à direita (Zotero, 2024).
+
+O JabRef — gestor de referências BibTeX de código aberto em Java/JavaFX — documenta
+explicitamente sua arquitetura tri-pane no Developer Docs: cada tab de banco de dados é um
+`BasePanel` contendo uma `SearchBar` no topo, uma `MainTable` ao centro e, na parte inferior,
+ou um `PreviewPanel` (citação formatada) ou um `EntryEditor` (editor dos campos). A
+comunicação entre esses painéis é feita por um **event bus interno** — publicação e subscrição
+de eventos que permitem ao `MainTable` notificar o `PreviewPanel` de mudanças de seleção sem
+acoplamento direto. O `BibDatabaseContext` é o objeto de estado compartilhado, contendo o
+`BibDatabase` (lista de entradas) e `MetaData`. Regra de dependência explícita: classes `model`
+não dependem de outras classes JabRef; classes `logic` dependem apenas de `model` (JabRef Dev
+Docs, 2025).
+
+### 1.4 Ferramentas de Gestão de Conhecimento: DEVONthink, Obsidian, Logseq
+
+O DEVONthink é historicamente associado ao paradigma tri-pane para gestão de documentos,
+embora sua história com esse layout seja ambígua: versões anteriores (DT3) tinham uma visão
+tri-pane mostrando grupos e subgrupos, documentos do grupo selecionado, e um preview — mas a
+proporção de usuários que achavam essa visão confusa superou os que a apreciavam, levando a
+mudanças. O DEVONthink 4 (2024) adota uma arquitetura de quatro sidebars alternáveis
+(Navigate, Reading List, Import, Extras), com a empresa reconhecendo explicitamente que sua
+interface "não é uma das mais minimalistas" (DEVONtechnologies, 2023). O DEVONthink 4 integra
+IA generativa para análise e sumarização de documentos, aproximando-se funcionalmente do
+paradigma NotebookLM.
+
+O Logseq organiza seu espaço de trabalho com um painel principal (editor de blocos ou grafo), um
+sidebar esquerdo (lista de páginas e navegação) e um sidebar direito dinâmico. O sidebar direito
+do Logseq é funcionalmente único: permite abrir qualquer bloco, página ou conjunto de referências
+vinculadas nesse painel sem navegar para fora da visualização principal — efetivamente um
+"painel de contexto paralelo" que o usuário controla manualmente. Usuários podem comparar e
+contrastar informações de diferentes partes da base de conhecimento sem trocar de página, o que
+é a mesma necessidade que justifica o painel Sources do NotebookLM.
+
+O Obsidian Canvas implementa um paradigma diferente: em vez de painéis fixos, oferece uma
+superfície 2D infinita onde notas existentes do vault podem ser dispostas como cartões, conectados
+por linhas com rótulos de relacionamento. Plugins como Advanced Canvas adicionam formas
+customizáveis, portais para embeds de outros canvas, e modo de apresentação. O Canvas não
+substitui o paradigma tri-pane — é uma camada de síntese visual construída sobre o vault, útil
+na fase de mapeamento conceitual, enquanto os painéis são mais adequados para fluxo de trabalho
+linear de pesquisa-consulta-anotação.
+
+### 1.5 NotebookLM: Consolidação do Paradigma
+
+O NotebookLM do Google formalizou o paradigma tri-pane para RAG de forma que tornou-se a
+referência da categoria. Em dezembro de 2024, o Google redesenhou a interface (antes
+bi-painel) para um layout tri-painel explícito: painel esquerdo "Sources" (gerenciamento de
+todas as fontes do notebook), painel central "Chat" (interação conversacional com citações),
+e painel direito "Studio" (geração de artefatos: Study Guide, Briefing Doc, Mind Maps,
+Audio Overview). A divisão funcional é precisa: Sources é contexto persistente, Chat é
+processo efêmero, Studio é output persistido (Google Blog, 2024; UX Collective, 2026).
+
+A análise de UX do NotebookLM identifica três princípios de design centrais: (1) Context-First
+— a interface começa com o conteúdo do usuário, não com uma caixa de entrada em branco; (2)
+Multi-Modal Integration — leitura, escrita e escuta como modos intercambiáveis; (3) Progressive
+Engagement — a profundidade de funcionalidades se revela gradualmente (Medium Design Bootcamp,
+2025). O painel Studio representa a formalização do padrão de "staging area e promoção" — as
+respostas do chat permanecem efêmeras até serem explicitamente salvas como nota ou artefato
+no Studio.
+
+A evolução do paradigma tri-pane em interfaces de IA pode ser datada: Anthropic lançou
+Artifacts em junho de 2024 (painel lateral para renderização de código/documentos ao lado do
+chat); OpenAI lançou Canvas em outubro de 2024 (editor de documento em split-screen); Google
+lançou Deep Research em dezembro de 2024 (agente multi-etapas com painel de plano e progresso
+visível). Essas variações todas convergem para o mesmo princípio: separar o espaço de input
+conversacional do espaço de output persistido (UX Collective, 2026).
+
+---
+
+## 2. Citation Anchoring e Destaque de Texto em Apps de RAG
+
+A capacidade de clicar em uma citação e ser transportado para o trecho exato no documento
+original é tecnicamente conhecida como **citation anchoring** ou **source grounding**. É um
+problema de engenharia com dimensões distintas: armazenamento de posição, recuperação de
+posição, e renderização de destaque visual. Cada dimensão tem soluções estabelecidas que
+informam a implementação em um contexto Qt/Python.
+
+### 2.1 O Sistema de Âncoras do Hypothesis: Referência Canônica
+
+O Hypothesis (web annotation layer sobre PDF.js e páginas HTML) representa o sistema de
+citation anchoring de código aberto mais bem documentado e testado em produção. O sistema
+armazena posições usando **três seletores complementares**, o que confere robustez:
+
+1. **RangeSelector**: expressões XPath apontando para elementos do DOM e offsets de string
+   dentro desses elementos — funciona enquanto a estrutura do documento não muda.
+2. **TextPositionSelector**: um par de offsets de caracteres (start, end) na representação em
+   string do documento inteiro — funciona quando a estrutura muda mas o conteúdo permanece
+   estável.
+3. **TextQuoteSelector**: preserva o texto selecionado exato, mais 32 caracteres de prefixo e
+   sufixo — funciona quando ambos estrutura e conteúdo foram modificados, via busca fuzzy.
+
+A recuperação de âncoras segue quatro estratégias em cascata: (1) re-aplicar os XPaths exatos;
+(2) usar os offsets de caracteres; (3) busca fuzzy em prefixo e sufixo; (4) busca fuzzy no
+texto exato. O Hypothesis mantém internamente um mapeamento bidirecional completo entre
+elementos DOM e a string de texto do documento, o que permite transitar entre a representação
+estruturada (para XPath) e a representação plana (para offsets) de forma eficiente (Hypothesis
+Blog, 2020).
+
+Para um contexto de RAG local como o Mnemosyne, a lição central do Hypothesis é: **armazenar
+redundância de localização desde o chunking**. Quando um documento é processado em chunks para
+o ChromaDB, cada chunk deve ter seus metadados enriquecidos com: (a) offset de início em
+caracteres no texto completo do documento; (b) offset de fim; (c) quote de prefixo e sufixo
+(~30 caracteres cada); (d) número de página estimado, se aplicável. Esses quatro campos
+permitem localizar o trecho mesmo se o documento for re-processado com parâmetros ligeiramente
+diferentes.
+
+### 2.2 Sistemas RAG com Citation Anchoring: PaperQA e LangChain
+
+O PaperQA2 (Future House, 2024) é o projeto open source mais completo em termos de citation
+anchoring para documentos científicos. Sua arquitetura usa objetos `Text` para rastrear chunks,
+cada um mantendo referência ao objeto `Doc` pai com metadados (nome do documento, citação, URL
+ou path). Na fase "Gather Evidence", chunks relevantes são recuperados e classificados, e cada
+chunk mantém sua relação com o documento original para gerar citações no formato
+"(Autor2024 páginas 3-4)". O sistema registra números de página dos PDFs via leitores que
+reportam estrutura de página (PaperQA GitHub, 2025). A versão PaperQA2 removeu a dependência
+do LangChain em favor de LiteLLM + Pydantic puro, tornando a arquitetura de rastreamento de
+citações mais explícita e inspectionável.
+
+O LangChain oferece suporte nativo a citações via `with_structured_output` e chains
+especializadas que instruem o LLM a retornar não apenas a resposta mas os IDs dos chunks
+utilizados para gerá-la. A documentação oficial demonstra o padrão de extração de citações onde
+o modelo retorna uma lista de `quote` + `source_id` como parte da resposta estruturada
+(LangChain Docs, 2025). Essa abordagem é complementar ao armazenamento de offsets: o LLM
+identifica quais chunks usou, e o sistema usa os offsets armazenados nos metadados do
+ChromaDB para localizar e destacar os trechos.
+
+### 2.3 Semantic Highlight em RAG
+
+A Zilliz (desenvolvedora do Milvus) publicou um modelo semântico de highlight que identifica e
+destaca automaticamente as sentenças semanticamente mais relevantes em chunks recuperados,
+baseado em compreensão semântica — não apenas matching exato de palavras-chave (Hugging Face
+Blog, 2024). Isso é relevante para o Mnemosyne porque a resposta do LLM pode ser gerada a
+partir de um chunk de 500 tokens, mas apenas 3-4 sentenças dentro desse chunk são diretamente
+relevantes à pergunta. O modelo de semantic highlight permite destacar apenas essas sentenças,
+em vez de iluminar o chunk inteiro — o que melhora a experiência de verificação de fonte.
+
+### 2.4 Translação para Qt/PySide6
+
+Em PySide6, a implementação de citation anchoring em um `QTextBrowser` ou `QTextEdit` baseia-se
+em `QTextCursor`, a API de manipulação programática do documento de texto. O fluxo é:
+(1) obter o cursor do widget (`cursor = textBrowser.textCursor()`); (2) posicionar o cursor
+pelo offset de caracteres de início (`cursor.setPosition(start_offset)`); (3) estender a
+seleção até o offset de fim (`cursor.setPosition(end_offset, QTextCursor.KeepAnchor)`);
+(4) aplicar formatação de destaque via `QTextCharFormat` com `setBackground(QColor(...))`);
+(5) rolar o widget para tornar o cursor visível (`textBrowser.ensureCursorVisible()`).
+Para âncoras em HTML, o `QTextBrowser.scrollToAnchor(name)` rola automaticamente até o
+elemento com o `id` correspondente, o que é útil se os documentos são renderizados como HTML
+com `<a id="chunk-N">` inserido em cada chunk durante o processamento.
+
+A `QTextBrowser` é adequada para documentos somente-leitura com suporte a HTML básico e links
+internos. Para documentos editáveis com mais controle de formatação, `QTextEdit` oferece as
+mesmas APIs de `QTextCursor`. Para documentos Markdown complexos com imagens, a combinação
+`QTextEdit` + `QTextDocument::setMarkdown()` é recomendada no Qt 6.x.
+
+---
+
+## 3. Gerenciamento de Estado entre Painéis em Apps Desktop Multi-Painel
+
+A sincronia de estado entre painéis independentes em aplicações desktop multi-painel é um
+problema de arquitetura com soluções bem estabelecidas, especialmente documentadas no
+ecossistema Qt e em aplicações de referência como JabRef e Zotero.
+
+### 3.1 O Padrão Event Bus no Qt
+
+O Qt implementa nativamente o padrão de comunicação por eventos via **signals e slots**, que é
+funcionalmente equivalente ao padrão Event Bus descrito na literatura de arquitetura de software
+(O'Reilly Software Architecture Patterns, 2015). Cada componente publica eventos (emite signals)
+sem saber quem vai consumir, e componentes interessados registram handlers (slots) para eventos
+específicos. Isso garante que os painéis permaneçam desacoplados: o painel de fontes não
+conhece o painel de chat, mas ambos podem emitir e consumir events de um objeto de estado
+central (QObjects, 2024).
+
+O JabRef usa explicitamente esse padrão: um `EventBusSystem` centraliza a publicação e
+subscrição de eventos entre componentes desacoplados. A regra de dependência do JabRef — camada
+`model` sem dependências de outras camadas — é diretamente implementável em Python com um
+objeto `AppState` (dataclass ou `QObject` com properties observáveis) que serve como única
+fonte da verdade para o estado compartilhado entre painéis.
+
+### 3.2 Objeto de Estado Compartilhado (Shared State Object)
+
+O padrão mais simples e adequado para um app como o Mnemosyne é um `AppState` centralizado —
+um `QObject` com `pyqtSignal`/`Signal` para cada mudança de estado relevante. Quando o usuário
+seleciona uma fonte no painel esquerdo, o `AppState.source_selected` signal é emitido com o
+ID da fonte. O painel de chat e o painel de visualização de documento subscrevem esse signal
+e atualizam seu conteúdo independentemente. Isso espelha o padrão `BibDatabaseContext` do
+JabRef, onde o contexto do banco de dados é o objeto de estado que transita entre as camadas.
+
+A diferença entre signals/slots nativos do Qt e um Event Bus externo é de granularidade:
+signals/slots são point-to-point tipados (fortemente acoplados por tipo de dado); um Event Bus
+(como `blinker` ou `PyDispatcher` em Python) permite publicação por string de tópico sem
+conexão prévia, o que é mais flexível mas perde a verificação de tipo em tempo de compilação.
+Para o Mnemosyne, signals/slots nativos são suficientes e preferíveis pela integração com o
+Qt.
+
+### 3.3 Persistência de Layout com QSplitter
+
+O `QSplitter` do Qt permite criar painéis laterais redimensionáveis com handles arrastáveis,
+em qualquer orientação (horizontal ou vertical). Para um layout tri-painel, o padrão mais
+comum é um `QSplitter` horizontal externo contendo o painel esquerdo e outro `QSplitter`
+horizontal (ou o painel central + painel direito). O estado dos splitters pode ser serializado
+via `saveState()` → `QByteArray` e restaurado via `restoreState(byteArray)`, geralmente
+integrado com `QSettings` para persistência entre sessões (Qt Docs, 2024).
+
+Para layouts mais sofisticados — painéis destacáveis, auto-hide, perspectivas salvas — a
+biblioteca **Qt Advanced Docking System (ADS)** é a referência. Adotada pelo Qt Creator a
+partir da versão 4.12, o ADS permite docking em qualquer borda, grupos de abas arrastáveis,
+sidebars com auto-hide animado, e o salvamento de "perspectivas" (configurações completas de
+layout nomeadas). Bindings Python estão disponíveis via `pip install PySide6-QtAds`
+(PyPI, 2024). A principal vantagem do ADS sobre `QDockWidget` nativo é que o ADS não requer
+um "widget central" fixo — qualquer painel pode ser o foco em qualquer momento, o que é mais
+adequado para um workbench de pesquisa onde o usuário pode querer maximizar temporariamente
+o painel de fontes ou o painel de notas.
+
+### 3.4 Como Aplicações Reais Gerenciam o Estado
+
+O Zotero gerencia estado entre sua biblioteca e o leitor de PDF via seleção de item: ao
+selecionar um item na lista central, o painel direito atualiza metadados; ao abrir o PDF
+embutido, o leitor carrega o documento e o sidebar de anotações sincroniza com as anotações
+armazenadas no banco SQLite do Zotero para aquele item. As anotações são armazenadas
+separadamente do PDF (no banco de dados do Zotero), vinculadas por item ID — um padrão que
+desacopla o documento do estado de anotação e permite sincronização sem modificar o arquivo
+original (Zotero Docs, 2024).
+
+O DEVONthink gerencia estado com um modelo de quatro sidebars alternáveis que compartilham
+o item atualmente selecionado como âncora. Cada sidebar apresenta uma perspectiva diferente
+do mesmo item: navigate, reading list, import, extras. Esse modelo de "múltiplas perspectivas
+sobre um item selecionado" é uma alternativa ao tri-pane fixo que pode ser considerada para
+workbenches com espaço de tela limitado.
+
+---
+
+## 4. Staging Area e Promoção de Conteúdo Efêmero
+
+O padrão de "capturar algo temporariamente e depois decidir se vai se tornar permanente" é
+um dos mais estudados em ferramentas de gestão de conhecimento pessoal (PKM), e se manifesta
+de formas diversas em diferentes aplicações.
+
+### 4.1 O Zettelkasten e a Taxonomia Fleeting / Literature / Permanent Notes
+
+A metodologia Zettelkasten, sistematizada por Niklas Luhmann e popularizada por Sönke Ahrens
+no livro "How to Take Smart Notes", distingue três tipos de notas com ciclos de vida diferentes:
+**fleeting notes** (capturas rápidas e descartáveis, análogas a post-its — precisam ser
+processadas ou descartadas em horas ou dias), **literature notes** (resumo do que se leu,
+vinculado à fonte), e **permanent notes** (ideias trabalhadas em linguagem própria, conectadas
+ao resto da base de conhecimento). O fluxo de promoção é explícito: `fleeting → literature →
+permanent`, com descarte dos efêmeros após processamento.
+
+Essa taxonomia é implementada diretamente no Roam Research e no Logseq via daily notes: a
+nota diária funciona como inbox — qualquer pensamento vai ali, sem fricção de "onde colocar".
+As notas em blocos da daily note são então processadas: vinculadas a páginas existentes via
+`[[links]]`, transformadas em notas permanentes via heading próprio, ou descartadas (forum
+Roam Research, 2024; Eugene Yan, PKM Review, 2023).
+
+### 4.2 Daily Notes como Inbox: Redução de Fricção de Captura
+
+A insight central do paradigma daily notes é que a pergunta "onde devo colocar esta
+informação?" é a maior fonte de fricção no processo de captura. Ao eliminar essa decisão —
+"tudo vai na nota de hoje" — o custo de captura cai para próximo de zero. O custo de
+organização é diferido para o momento de processamento, que acontece em contexto mais
+adequado (quando o usuário tem tempo e energia para conectar ideias).
+
+Em interfaces de RAG como o NotebookLM, o painel de Chat cumpre essa função: as respostas
+geradas são efêmeras por padrão. O usuário pode ler, copiar, ou promover para o Studio (onde
+se tornam notas salvas). Essa distinção — efêmero visível no chat, permanente no Studio —
+é a implementação do padrão fleeting/permanent no contexto de um assistente de pesquisa com
+IA.
+
+### 4.3 Padrões de UX para Tornar a Transição Clara
+
+A literatura de UX identifica que a transição entre estados efêmeros e persistidos deve ser
+**explícita, reversível e visualmente distinguível** para não criar ansiedade no usuário
+(NN/g Research, passim). Padrões concretos observados em aplicações:
+
+- **Botão de promoção explícito**: "Save to Notes" ou "Add to Workspace" como ação
+  deliberada — não auto-save silencioso. O NotebookLM usa ícones de pin/save no painel
+  Studio. O Obsidian usa o conceito de "draft" apenas via plugins, mas o vault em si é
+  permanente por design.
+- **Distinção visual de confiança**: Logseq distingue blocos de journal (com data, efêmeros
+  por intenção) de páginas nomeadas (permanentes e indexadas). A coloração, a hierarquia
+  de navegação, e a posição na interface comunicam o nível de permanência.
+- **Undo profundo como safety net**: Roam Research mantém histórico de versões de blocos,
+  o que torna a "promoção" menos aterrorizante — o usuário sabe que pode desfazer. Isso
+  é especialmente relevante em interfaces onde "promover" implica deletar o rascunho
+  original.
+- **Staging area explícita como painel**: apps de edição de vídeo como DaVinci Resolve
+  usam um painel "Media Pool" (fontes brutas) → "Timeline" (composição) → "Deliver" (output)
+  como metáfora de staging. O mesmo padrão se aplica a research workbenches: fontes brutas
+  → chat/análise → notas finais.
+
+---
+
+## 5. Alternativas e Referências Além do NotebookLM
+
+### 5.1 Perplexity Spaces
+
+O Perplexity Spaces é um paradigma de organização de pesquisa que funciona como "hub de
+conhecimento com chat contextual". Cada Space é configurável com instruções de sistema
+personalizadas, suporte a upload de arquivos (PDF, Word, Excel, PowerPoint, CSV), e capacidade
+de buscar tanto nos documentos do Space quanto na web, com citações em todas as respostas.
+O layout é essencialmente dual-pane: sidebar de Spaces (navegação entre projetos) à esquerda
+e interface de chat com fontes citadas ao centro-direita. Spaces carecem de um painel de
+workspace/studio equivalente ao NotebookLM — as notas são resultado de threads de conversa
+sem promoção explícita para artefatos estruturados (Perplexity Help Center, 2025).
+
+### 5.2 Zotero 7 como Research Workbench Completo
+
+O Zotero 7 (2024) é o exemplo mais completo de research workbench não-IA com layout
+multi-painel. A interface integra: biblioteca hierárquica de itens (esquerda), lista de
+resultados filtráveis (centro), painel de metadados com seções colapsáveis (direita), e um
+leitor de PDF/EPUB embutido com seu próprio tri-pane interno. O leitor embutido suporta
+highlight com caneta, sublinhado e texto, anotações de texto, e notas vinculadas, com todas
+as anotações armazenadas no banco de dados do Zotero (não no PDF), tornando-as pesquisáveis.
+O Zotero 7 adicionou um popup de referência inteligente ao passar o mouse sobre citações ou
+links internos, mostrando a entrada bibliográfica sem navegar para fora do documento (Zotero
+Blog, 2024). A integração entre o leitor de PDF e o editor de notas é particularmente
+relevante: anotações podem ser arrastadas do sidebar de anotações para o editor de notas,
+efetivamente promovendo observações efêmeras (highlights sobre o documento) para notas
+elaboradas (output permanente).
+
+### 5.3 AnythingLLM e Open WebUI: RAG Local com Interface Web
+
+O AnythingLLM organiza sua interface ao redor do conceito de "workspaces" — ambientes
+isolados cada um com seus próprios documentos, configuração de modelo e histórico de
+conversas, funcionando como pastas de projeto para chat de IA. A UI é dual-pane: sidebar
+esquerdo (lista de workspaces + botão de upload de documentos) e área central de chat. O
+painel de documentos é destacado como ponto forte: visibilidade de quais documentos foram
+embedded, quantos vetores foram gerados, e capacidade de deletar/re-embed documentos
+individuais (HouseOfFoss, 2025). O AnythingLLM não tem um painel de studio/workspace
+equivalente ao NotebookLM.
+
+O Open WebUI adota uma arquitetura inspirada na interface do ChatGPT — sidebar esquerdo para
+histórico de conversas, seletor de modelo no topo, área de chat ao centro. O sidebar funciona
+como portal para modelos, prompts e documentos via um conceito de "Workspace" acessível pela
+navegação lateral. Suporte a upload de documentos, busca na web, e tool calls via ícone de
+adição na área de input. A Open WebUI foi documentada academicamente em paper no arXiv
+(arXiv:2510.02546, 2025), destacando sua extensibilidade via plugins (Open WebUI, 2025).
+Nenhum dos dois apps tem citation anchoring que vincule respostas a posições específicas nos
+documentos originais.
+
+### 5.4 DEVONthink 4
+
+O DEVONthink 4 (2024) integrou suporte a modelos de linguagem generativos para análise de
+documentos, sumarização e adição de tags, além de versionamento automático e revisão
+de bancos de dados. É o exemplo mais sofisticado de um knowledge manager desktop que
+incorporou capacidades de IA sem abandonar sua arquitetura de gestão de documentos primária.
+A UI do DEVONthink não foi projetada em torno do chat — o chat é uma feature adicional sobre
+uma base de navegação e organização de documentos — o que representa uma abordagem oposta à
+do NotebookLM, onde o chat é o paradigma central e as fontes são o contexto.
+
+### 5.5 Logseq como Reference para Graph-Based Sidebars
+
+O Logseq implementa o conceito de "right sidebar como painel de contexto paralelo": ao clicar
+no contador de referências de qualquer bloco ou página, as referências vinculadas abrem no
+sidebar direito sem perder a visualização principal. Isso permite que o usuário consulte
+contexto relacionado sem navegar para fora do documento em edição — funcionalidade especialmente
+útil em um workbench de pesquisa onde diferentes fontes precisam ser consultadas em paralelo
+(Logseq Docs, 2024). O Logseq também implementa "Journal Workflow" — daily notes como
+inbox — que é o exemplo mais documentado do padrão fleeting notes em ferramentas PKM.
+
+---
+
+## 6. Implementação em PySide6/PyQt6
+
+### 6.1 Widgets Qt para Cada Painel do Paradigma Tri-Painel
+
+A tabela a seguir mapeia as necessidades funcionais de cada painel de um research workbench
+para os widgets Qt mais adequados:
+
+**Painel de Fontes (Sources, esquerda):**
+- Lista de fontes navegável: `QListWidget` (simples) ou `QTreeWidget` (com agrupamento por
+  coleção/tag). Para drag-and-drop de fontes, `QListWidget` com `setDragDropMode()`.
+- Preview de metadados: `QLabel` com texto estático ou `QTextBrowser` para HTML.
+- Upload de documentos: `QPushButton` + `QFileDialog`.
+- Indicador de status de indexação por fonte: delegates customizados em `QListWidget`.
+
+**Painel de Chat (centro):**
+- Histórico de conversa: `QScrollArea` com `QVBoxLayout` dinâmico de widgets de mensagem, ou
+  `QTextBrowser` para renderização de Markdown/HTML com links. A abordagem de widgets
+  individuais por mensagem é mais flexível para UI customizada (bolhas de chat, ícones);
+  `QTextBrowser` é mais simples para texto puro com Markdown.
+- Input do usuário: `QTextEdit` com `setAcceptRichText(False)` para entrada de texto puro,
+  com `returnPressed` ou `Ctrl+Enter` como atalho de envio.
+- Streaming de resposta: atualizar o `QTextBrowser` incrementalmente via `QTimer` ou
+  via `QThread` + signals para evitar bloquear o event loop.
+
+**Painel de Studio/Notes (direita):**
+- Lista de notas salvas: `QListWidget` com items nomeados.
+- Editor de nota selecionada: `QTextEdit` com suporte a Markdown básico ou rich text.
+- Botões de promoção: "Save Chat Response as Note" como `QPushButton` no rodapé do painel
+  de chat, que instancia um item no painel de notas.
+
+### 6.2 QSplitter para Layout Tri-Painel
+
+A implementação padrão de tri-painel com `QSplitter`:
+
+```python
+# Splitter externo: divide esquerda (fontes) da área direita
+outer_splitter = QSplitter(Qt.Horizontal)
+sources_panel = SourcesPanel()
+outer_splitter.addWidget(sources_panel)
+
+# Splitter interno: divide chat (centro) das notas (direita)
+inner_splitter = QSplitter(Qt.Horizontal)
+chat_panel = ChatPanel()
+notes_panel = NotesPanel()
+inner_splitter.addWidget(chat_panel)
+inner_splitter.addWidget(notes_panel)
+
+outer_splitter.addWidget(inner_splitter)
+
+# Proporção inicial: 1/4 fontes, 2/4 chat, 1/4 notas
+outer_splitter.setSizes([250, 750])
+inner_splitter.setSizes([550, 250])
+
+# Persistência entre sessões
+settings = QSettings("Mnemosyne", "UI")
+outer_splitter.restoreState(settings.value("outer_splitter"))
+inner_splitter.restoreState(settings.value("inner_splitter"))
+```
+
+O método `saveState()` retorna `QByteArray` que pode ser armazenado diretamente em
+`QSettings`. O `setCollapsible(index, False)` pode ser usado para impedir que um painel
+seja colapsado completamente ao arrastar o handle até o limite.
+
+### 6.3 Implementação de Citation Anchoring em QTextBrowser
+
+Para exibir documentos com destaque de chunks citados:
+
+```python
+def highlight_chunk(self, text_browser: QTextBrowser,
+                    start_offset: int, end_offset: int):
+    """Destaca o trecho [start_offset, end_offset] em amarelo."""
+    # 1. Obter cursor
+    cursor = text_browser.textCursor()
+    # 2. Limpar formatações de destaque anteriores
+    fmt_clear = QTextCharFormat()
+    cursor.setPosition(0)
+    cursor.setPosition(len(text_browser.toPlainText()),
+                       QTextCursor.KeepAnchor)
+    cursor.setCharFormat(fmt_clear)
+    # 3. Posicionar e selecionar o chunk
+    cursor.setPosition(start_offset)
+    cursor.setPosition(end_offset, QTextCursor.KeepAnchor)
+    # 4. Aplicar destaque
+    fmt = QTextCharFormat()
+    fmt.setBackground(QColor("#FFF176"))  # amarelo suave
+    cursor.setCharFormat(fmt)
+    # 5. Mover o cursor visível para a seleção e rolar
+    text_browser.setTextCursor(cursor)
+    text_browser.ensureCursorVisible()
+```
+
+Para âncoras HTML (quando o documento é renderizado como HTML com IDs por chunk):
+
+```python
+text_browser.setHtml(document_html_with_anchors)
+text_browser.scrollToAnchor(f"chunk-{chunk_id}")
+```
+
+O `scrollToAnchor()` funciona apenas com anchoragens HTML (`<a id="chunk-5">`). Para texto
+puro com offsets numéricos, o fluxo com `QTextCursor` é necessário.
+
+### 6.4 Arquitetura de Estado para Mnemosyne
+
+A arquitetura recomendada para o Mnemosyne é um `AppState` central como `QObject`:
+
+```python
+class AppState(QObject):
+    source_selected = Signal(str)           # source_id
+    chunk_cited = Signal(str, int, int)     # source_id, start, end
+    note_promoted = Signal(str, str)        # note_id, content
+    query_submitted = Signal(str)           # query_text
+    response_token_received = Signal(str)   # token
+
+    def __init__(self):
+        super().__init__()
+        self.active_source_id: str | None = None
+        self.active_note_id: str | None = None
+        self.sources: list[SourceMeta] = []
+        self.notes: list[NoteMeta] = []
+```
+
+Cada painel recebe uma referência ao `AppState` e conecta seus signals aos handlers internos:
+
+```python
+# No SourcesPanel.__init__:
+app_state.source_selected.connect(self._on_source_selected)
+
+# No ChatPanel.__init__:
+app_state.chunk_cited.connect(self._scroll_to_chunk)
+app_state.query_submitted.connect(self._start_rag_query)
+```
+
+Esse padrão garante que os painéis não se referenciem diretamente — toda comunicação passa
+pelo `AppState` — o que facilita testes unitários de cada painel de forma isolada e
+permite adicionar novos painéis sem modificar os existentes.
+
+### 6.5 Qt Advanced Docking System (ADS) como Alternativa
+
+Para um workbench com requisito de alta flexibilidade de layout (painéis destacáveis,
+auto-hide, perspectivas salvas), o **Qt Advanced Docking System** (`PySide6-QtAds`) é a
+solução mais adequada. Usado no Qt Creator e no Qt Design Studio desde a versão 4.12, o ADS
+permite: docking em qualquer borda sem widget central fixo, grupos de tabs arrastáveis entre
+dock areas, sidebars com auto-hide animado, e o conceito de "perspectives" — snapshots
+nomeados de toda a configuração de layout que podem ser salvos e restaurados instantaneamente.
+A instalação é `pip install PySide6-QtAds` e os bindings são mantidos ativamente com
+compatibilidade com PySide6 moderno (GitHub, 2025).
+
+---
+
+## Fontes — ABNT NBR 6023
+
+DEVONTECHNOLOGIES. **Understanding DEVONthink's Interface**. Devonian Times Blog, 2023.
+Disponível em: <https://www.devontechnologies.com/blog/20230228-devonthink-interface>.
+Acesso em: 06 mai. 2026.
+
+DEVONTECHNOLOGIES. **New in DEVONthink 4**. DEVONtechnologies, 2024. Disponível em:
+<https://www.devontechnologies.com/apps/devonthink/new>. Acesso em: 06 mai. 2026.
+
+FUTURE-HOUSE. **paper-qa: High accuracy RAG for answering questions from scientific documents
+with citations**. GitHub, 2025. Disponível em: <https://github.com/Future-House/paper-qa>.
+Acesso em: 06 mai. 2026.
+
+GITHUBUSER0XFFFF. **Qt Advanced Docking System — README**. GitHub, 2025. Disponível em:
+<https://github.com/githubuser0xFFFF/Qt-Advanced-Docking-System/blob/master/README.md>.
+Acesso em: 06 mai. 2026.
+
+GOOGLE. **NotebookLM gets a new look, audio interactivity and a premium version**. Google
+Blog, 2024. Disponível em:
+<https://blog.google/technology/google-labs/notebooklm-new-features-december-2024/>.
+Acesso em: 06 mai. 2026.
+
+HYPOTHESIS. **Fuzzy Anchoring**. Hypothesis Blog, 2020. Disponível em:
+<https://web.hypothes.is/blog/fuzzy-anchoring/>. Acesso em: 06 mai. 2026.
+
+HYPOTHESIS. **PDF.js + Hypothes.is viewer/annotator**. GitHub, 2025. Disponível em:
+<https://github.com/hypothesis/pdf.js-hypothes.is>. Acesso em: 06 mai. 2026.
+
+HOUSEFOSS. **Open WebUI vs Anything LLM 2025: Choosing the Perfect AI Interface for
+Self-Hosted LLMs**. House of FOSS Blog, 2025. Disponível em:
+<https://blog.houseoffoss.com/post/open-webui-vs-anything-llm-2025-choosing-the-perfect-ai-interface-for-self-hosted-llms>.
+Acesso em: 06 mai. 2026.
+
+JABREF. **Architecture and Components**. JabRef Developer Documentation, 2025. Disponível
+em: <https://devdocs.jabref.org/architecture-and-components.html>. Acesso em: 06 mai. 2026.
+
+LANGCHAIN. **How to get a RAG application to add citations**. LangChain Documentation,
+2025. Disponível em: <https://python.langchain.com/docs/how_to/qa_citations/>.
+Acesso em: 06 mai. 2026.
+
+LEVIIM, Adi. **The chat box isn't a UI paradigm. It's what shipped**. UX Collective /
+Medium, abr. 2026. Disponível em:
+<https://uxdesign.cc/the-chat-box-isnt-a-ui-paradigm-it-s-what-shipped-96e931d92769>.
+Acesso em: 06 mai. 2026.
+
+LEVY, Adrian. **Why NotebookLM shows us the future of AI-native UX design**. Medium /
+Design Bootcamp, 2025. Disponível em:
+<https://medium.com/design-bootcamp/why-notebooklm-shows-us-the-future-of-ai-native-ux-design-88c6883ade63>.
+Acesso em: 06 mai. 2026.
+
+LOGSEQ. **How to work with Logseq's right-hand sidebar**. Logseq Community Documentation,
+2024. Disponível em:
+<https://discuss.logseq.com/t/how-to-work-with-logseqs-right-hand-sidebar/8461>.
+Acesso em: 06 mai. 2026.
+
+MILLER, Mark S. **Miller Columns**. Wikipedia. Disponível em:
+<https://en.wikipedia.org/wiki/Miller_columns>. Acesso em: 06 mai. 2026.
+
+O'REILLY. **Event-Driven Architecture**. In: Software Architecture Patterns. O'Reilly
+Media, 2015. Disponível em:
+<https://www.oreilly.com/library/view/software-architecture-patterns/9781491971437/ch02.html>.
+Acesso em: 06 mai. 2026.
+
+OPEN WEBUI. **Open WebUI: An Open, Extensible, and Usable Interface for AI Interaction**.
+arXiv:2510.02546, 2025. Disponível em: <https://arxiv.org/html/2510.02546v1>.
+Acesso em: 06 mai. 2026.
+
+PERPLEXITY. **What are Spaces?**. Perplexity Help Center, 2025. Disponível em:
+<https://www.perplexity.ai/help-center/en/articles/10352961-what-are-spaces>.
+Acesso em: 06 mai. 2026.
+
+QT. **QSplitter — Qt for Python**. Qt Documentation, 2024. Disponível em:
+<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QSplitter.html>.
+Acesso em: 06 mai. 2026.
+
+QT. **QTextBrowser — Qt for Python**. Qt Documentation, 2024. Disponível em:
+<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QTextBrowser.html>.
+Acesso em: 06 mai. 2026.
+
+QT. **QTextCursor — Qt for Python**. Qt Documentation, 2024. Disponível em:
+<https://doc.qt.io/qtforpython-6/PySide6/QtGui/QTextCursor.html>.
+Acesso em: 06 mai. 2026.
+
+QT. **Custom Layout**. Visual Studio Code Documentation, 2024. Disponível em:
+<https://code.visualstudio.com/docs/configure/custom-layout>.
+Acesso em: 06 mai. 2026.
+
+ROAM RESEARCH FORUM. **What's your workflow for turning your daily notes into Evergreen
+Notes?** Forum Roam Research, 2024. Disponível em:
+<https://forum.roamresearch.com/t/whats-your-workflow-for-turning-you-daily-notes-into-evergreen-notes/1361>.
+Acesso em: 06 mai. 2026.
+
+ZILLIZ. **How We Built a Semantic Highlight Model To Save Token Cost for RAG**. Hugging Face
+Blog, 2024. Disponível em:
+<https://huggingface.co/blog/zilliz/zilliz-semantic-highlight-model>.
+Acesso em: 06 mai. 2026.
+
+ZOTERO. **The Zotero PDF Reader and Note Editor**. Zotero Documentation, 2024. Disponível
+em: <https://www.zotero.org/support/pdf_reader>. Acesso em: 06 mai. 2026.
+
+ZOTERO. **Zotero 7: Zotero, redesigned**. Zotero Blog, 2024. Disponível em:
+<https://www.zotero.org/blog/zotero-7/>. Acesso em: 06 mai. 2026.
+
+---
+
+========================================================
+FIM DA PESQUISA — Arquitetura de UI para Research Workbench: NotebookLM e Referências Alternativas
+========================================================
