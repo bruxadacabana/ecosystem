@@ -2218,7 +2218,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
      lm   = resp.headers.get("Last-Modified")
      ```
 
-- [ ] AKASHA: throttle adaptativo no crawler baseado em tempo de resposta do servidor:
+- [x] AKASHA: throttle adaptativo no crawler baseado em tempo de resposta do servidor:
   **Motivo:** `_CRAWL_CONCURRENCY = 4` é fixo e não reflete a capacidade real do servidor alvo.
   Servidores lentos (resposta > 2s) ficam sobrecarregados; servidores rápidos são sub-utilizados.
   Scrapy AutoThrottle usa `delay = response_time / target_concurrency` como heurística.

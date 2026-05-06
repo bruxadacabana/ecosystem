@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import random
 import re
 import sys
 import time
@@ -26,6 +27,15 @@ log = logging.getLogger("akasha.crawler")
 _CRAWL_CONCURRENCY = 4
 _CRAWL_TIMEOUT = 20
 
+# Throttle adaptativo por domínio
+_MIN_DELAY  = 0.5   # delay mínimo entre requests ao mesmo domínio (servidores rápidos)
+_MAX_DELAY  = 30.0  # teto de delay (backoff em 429 ou servidores muito lentos)
+_RT_WINDOW  = 5     # janela da média móvel de response_time (últimas N respostas)
+
+_domain_rt:    dict[str, deque] = {}   # janela de response_times por domínio
+_domain_delay: dict[str, float] = {}   # delay atual por domínio
+_domain_429n:  dict[str, int]   = {}   # contador consecutivo de 429 por domínio
+
 _ASSET_EXTS = re.compile(
     r"\.(css|js|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|eot|pdf|zip|gz|tar"
     r"|mp3|mp4|avi|mov|mkv|exe|dmg|apk)$",
@@ -42,19 +52,44 @@ _TRACKING_PARAMS = re.compile(
 _robots_cache: dict[str, tuple[set[str], float]] = {}
 _ROBOTS_TTL = 86400.0  # 24h
 
-# Rate limiting por domínio: máx. 1 req/s por host
-_DOMAIN_RATE = 1.0
 _domain_locks: dict[str, asyncio.Lock] = {}
 _domain_last_req: dict[str, float] = {}
 
 
+def _update_throttle(domain: str, dt: float, status: int) -> None:
+    """Atualiza o delay adaptativo do `domain` com base em response_time e status HTTP."""
+    if status == 429:
+        n = _domain_429n.get(domain, 0) + 1
+        _domain_429n[domain] = n
+        backoff = min((2 ** n) * _MIN_DELAY + random.uniform(0, 1), _MAX_DELAY)
+        _domain_delay[domain] = backoff
+        log.debug("429 em %s — backoff %.1fs (tentativa %d)", domain, backoff, n)
+        return
+
+    _domain_429n.pop(domain, None)
+    win = _domain_rt.setdefault(domain, deque(maxlen=_RT_WINDOW))
+    win.append(dt)
+    avg = sum(win) / len(win)
+
+    if avg < 0.5:
+        delay = _MIN_DELAY          # servidor rápido — delay mínimo
+    elif avg < 2.0:
+        delay = avg                 # politeness simples: aguarda tempo de resposta
+    else:
+        delay = min(avg * 2.0, _MAX_DELAY)  # servidor lento — delay dobrado
+
+    _domain_delay[domain] = delay
+    log.debug("throttle %s: avg_rt=%.2fs → delay=%.2fs", domain, avg, delay)
+
+
 async def _rate_limit(domain: str) -> None:
-    """Garante intervalo mínimo de _DOMAIN_RATE segundos entre requests ao mesmo domínio."""
+    """Garante intervalo mínimo adaptativo entre requests ao mesmo domínio."""
     if domain not in _domain_locks:
         _domain_locks[domain] = asyncio.Lock()
     async with _domain_locks[domain]:
+        delay = _domain_delay.get(domain, _MIN_DELAY)
         now = time.monotonic()
-        wait = _DOMAIN_RATE - (now - _domain_last_req.get(domain, 0.0))
+        wait = delay - (now - _domain_last_req.get(domain, 0.0))
         if wait > 0:
             await asyncio.sleep(wait)
         _domain_last_req[domain] = time.monotonic()
@@ -216,9 +251,16 @@ def _hamming(a: int, b: int) -> int:
 
 
 async def _fetch_page(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
-    """Retorna (html, http_status). html vazio em caso de erro."""
+    """Retorna (html, http_status). Mede response_time e atualiza throttle adaptativo."""
+    domain = urlparse(url).netloc
+    t0 = time.monotonic()
     try:
         resp = await client.get(url)
+        dt = time.monotonic() - t0
+        _update_throttle(domain, dt, resp.status_code)
+        if resp.status_code == 429:
+            log.warning("429 Too Many Requests: %s", url)
+            return "", 429
         return resp.text, resp.status_code
     except Exception as exc:
         log.debug("crawl fetch error %s: %s", url, exc)
