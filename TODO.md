@@ -1654,25 +1654,31 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
-### Fase 7 — Biblioteca de URLs
+### Fase 7 — Biblioteca de URLs ~~(CONCEITO ABANDONADO)~~
 
-> Entrega: biblioteca pessoal de sites com scraping periódico e versionamento por diff.
+> ~~Entrega: biblioteca pessoal de sites com scraping periódico e versionamento por diff.~~
+>
+> **Conceito original abandonado em 2026-05-05.** O propósito da Biblioteca é ser um buscador
+> pessoal sobre domínios curados — o mesmo objetivo da Fase 10 (crawler BFS). A distinção
+> entre "URL individual com diff" e "domínio crawleado" foi descartada: a Fase 10 cobre
+> o escopo completo. Os itens abaixo foram marcados como `[x]` incorretamente; na prática
+> apenas o schema foi criado e nunca populado. Migration v13 (`database.py`) dropa as
+> tabelas orphaned (`library_urls`, `library_diffs`, `library_fts`).
 
-- [x] Migration v5: tabelas `library_urls` (url, title, snippet, content_md, content_hash,
-      language, word_count, tags_json, notes, check_interval_days, last_checked_at, status)
-      + `library_diffs` (url_id, diff_text, scraped_at) + FTS5 `library_fts`
-- [x] `services/library.py` — `add_url()`, `scrape_and_store()` (trafilatura + metadados:
-      language, word_count); `check_overdue()`; `compute_diff()` via `difflib.unified_diff()`
-- [x] `routers/library.py` — `GET /library?tag=&lang=`; `POST /library/add`
-      (body: `{url, interval_days, tags?, notes?}`); `PATCH /library/{id}`;
-      `POST /library/refresh/{id}`; `DELETE /library/{id}`
-- [x] `templates/library.html` — cards com título, snippet, idioma, contagem de palavras,
-      tags, data do último scrape, badge de intervalo, campo de notas inline (HTMX `hx-patch`),
-      badge "mudou" se diff recente; filtro por tag e idioma no topo
-- [x] Background task no lifespan: acorda a cada hora, re-scrape URLs vencidas silenciosamente
-- [x] Busca local `/search?sources=local` inclui conteúdo da `library_fts`
-- [x] Botão `+` em cada card de resultado `WEB`: enfileira URL na biblioteca via `POST /library/add-quick`
-      (sem scrape imediato — status='pending', loop horário faz o scrape); toast de confirmação
+- ~~[x] Migration v5: tabelas `library_urls` / `library_diffs` / `library_fts`~~
+  **Nunca populadas. Dropadas pela migration v13.**
+- ~~[x] `services/library.py` — `add_url()`, `scrape_and_store()`, `check_overdue()`, `compute_diff()`~~
+  **Nunca implementado.**
+- ~~[x] `routers/library.py` — rotas de monitoramento de URLs individuais~~
+  **Nunca implementado. As rotas `/library` existentes são da Fase 10 (crawler BFS).**
+- ~~[x] `templates/library.html` — UI de monitoramento com diff e notas~~
+  **O template existente é da Fase 10, não deste conceito.**
+- ~~[x] Background task: re-scrape periódico de URLs vencidas~~
+  **Nunca implementado. O loop horário da Fase 10 cobre re-crawl de domínios.**
+- ~~[x] Busca local inclui `library_fts`~~
+  **Removido em 2026-05-05 (dead code — tabela nunca populada).**
+- ~~[x] Botão `+` para enfileirar URL na biblioteca~~
+  **Reaproveitado na Fase 10 como quick-add de domínio (`POST /library/add-quick`).**
 
 ---
 
