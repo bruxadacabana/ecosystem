@@ -2171,7 +2171,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
   `search_local()`. A função `rank_combined()` pode ser mantida como fallback para resultados
   de fontes sem ranking explícito (web results, etc.).
 
-- [ ] AKASHA: FTS5 com tokenizer `unicode61 remove_diacritics=2` para busca acentuada:
+- [x] AKASHA: FTS5 com tokenizer `unicode61 remove_diacritics=2` para busca acentuada:
   **Motivo:** a tabela `local_fts` usa o tokenizer padrão do FTS5 (`unicode61`), que por padrão
   trata "açaí" diferente de "acai". Com `remove_diacritics=2`, "cafe" encontra "café" e
   "musica" encontra "música" — essencial para corpus em português.

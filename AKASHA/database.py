@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -71,7 +71,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS local_fts USING fts5(
     path   UNINDEXED,
     title,
     body,
-    source UNINDEXED
+    source UNINDEXED,
+    tokenize = 'unicode61 remove_diacritics 2'
 );
 """
 
@@ -324,6 +325,22 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             FROM crawl_pages
             WHERE content_md != ''
         """)
+
+    if from_version < 14:
+        # Recriar local_fts com tokenizer unicode61 remove_diacritics=2.
+        # FTS5 não suporta ALTER TABLE — drop + recreate é o único caminho.
+        # local_index_meta é limpo para forçar reindexação completa no próximo startup.
+        await db.execute("DROP TABLE IF EXISTS local_fts")
+        await db.execute("""
+            CREATE VIRTUAL TABLE local_fts USING fts5(
+                path   UNINDEXED,
+                title,
+                body,
+                source UNINDEXED,
+                tokenize = 'unicode61 remove_diacritics 2'
+            )
+        """)
+        await db.execute("DELETE FROM local_index_meta")
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
