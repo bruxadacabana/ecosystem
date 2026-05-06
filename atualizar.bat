@@ -80,12 +80,12 @@ if %errorlevel% neq 0 (
 )
 
 "%PIP%" uninstall torch openai-whisper -y --quiet 2>nul
-"%PIP%" install --upgrade yt-dlp faster-whisper --quiet
+"%PIP%" install -r "%ROOT%\Hermes\requirements.txt" --quiet
 if %errorlevel% neq 0 (
     echo   ERRO: Hermes -- pip install falhou
     set /a ERROS+=1
 ) else (
-    echo   OK: Hermes (yt-dlp + faster-whisper)
+    echo   OK: Hermes
 )
 
 REM ── Node (AETHER . HUB . OGMA) ────────────────────────────────────────────────

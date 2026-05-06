@@ -74,8 +74,8 @@ if [ -n "$VENV" ] && [ -d "$VENV" ]; then
     fi
 
     "$PIP" uninstall torch openai-whisper -y --quiet 2>/dev/null || true
-    if "$PIP" install --upgrade yt-dlp faster-whisper --quiet; then
-        ok "Hermes (yt-dlp + faster-whisper) OK"
+    if "$PIP" install -r "$ROOT/Hermes/requirements.txt" --quiet; then
+        ok "Hermes OK"
     else
         fail "Hermes — pip install falhou"
     fi
