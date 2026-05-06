@@ -248,6 +248,20 @@ async def _search_chroma(query: str) -> list[SearchResult]:
 # Merge e ranking combinado
 # ---------------------------------------------------------------------------
 
+def _rrf(rankings: list[list[SearchResult]], k: int = 60) -> list[SearchResult]:
+    scores: dict[str, float]        = {}
+    by_url: dict[str, SearchResult] = {}
+    for ranking in rankings:
+        for rank, result in enumerate(ranking):
+            key = result.url.lower().rstrip("/")
+            if not key:
+                continue
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+            by_url[key] = result
+    ordered = sorted(scores, key=scores.__getitem__, reverse=True)
+    return [by_url[key] for key in ordered]
+
+
 def _score(result: SearchResult, terms: list[str]) -> int:
     t = result.title.lower()
     s = result.snippet.lower()
@@ -259,7 +273,7 @@ def rank_combined(
     query: str,
     max_results: int = 500,
 ) -> list[SearchResult]:
-    """Deduplica por URL/path e ordena por relevância de termos."""
+    """Deduplica por URL/path e ordena por relevância de termos. Usado para fontes sem ranking explícito."""
     seen: set[str] = set()
     unique: list[SearchResult] = []
     for r in results:
@@ -277,7 +291,7 @@ def rank_combined(
 # ---------------------------------------------------------------------------
 
 async def search_local(query: str, max_results: int = 500) -> list[SearchResult]:
-    """Busca local: FTS5 + ChromaDB (opcional)."""
-    fts_results = await _search_fts(query, max_results)
+    """Busca local: FTS5 + ChromaDB fundidos via Reciprocal Rank Fusion."""
+    fts_results    = await _search_fts(query, max_results)
     chroma_results = await _search_chroma(query)
-    return rank_combined(fts_results + chroma_results, query, max_results)
+    return _rrf([fts_results, chroma_results])[:max_results]

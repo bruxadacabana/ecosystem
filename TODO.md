@@ -2144,7 +2144,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
   `client = _get_chroma_client(index_path)` em `_search_chroma()`.
   Resultado: latência de busca local reduzida; sem impacto em corretude.
 
-- [ ] AKASHA: substituir `rank_combined()` por Reciprocal Rank Fusion (RRF):
+- [x] AKASHA: substituir `rank_combined()` por Reciprocal Rank Fusion (RRF):
   **Motivo:** `rank_combined()` usa `_score()` — contagem simples de keywords nos campos title e
   snippet. Isso descarta os scores de relevância reais de cada método:
   - FTS5 retorna resultados já ordenados por bm25() (score real de relevância lexical)
