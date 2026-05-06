@@ -75,6 +75,12 @@ Isso garante que ambas as instâncias do Claude Code estejam na mesma página so
 - Porta real do servidor: **7071** (não 7070)
 - Router principal: `AKASHA/routers/crawler.py` (gerencia `/library`)
 
+### Isolamento de dados do AETHER
+
+**Os dados do AETHER não devem ser lidos por nenhum app do ecossistema exceto o OGMA.**
+O vault do AETHER contém escrita criativa pessoal. Nunca incluir `aether_vault` como fonte de indexação em AKASHA (`local_search.py`), Mnemosyne (`watched_dir`), ou qualquer outro app.
+OGMA é o único com acesso autorizado aos dados do AETHER.
+
 ### HUB / LOGOS
 
 **O HUB ESTÁ SEMPRE ABERTO.** É o centro do ecossistema: gerencia o funcionamento de todos os outros apps, é através dele que os demais programas são abertos e monitorados. Nunca listar "exige HUB rodando" como desvantagem — isso é uma premissa arquitetural, não uma restrição.

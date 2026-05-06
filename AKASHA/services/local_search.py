@@ -61,15 +61,6 @@ def _extract_kosmos(path: Path) -> tuple[str, str]:
     return title, body[:8000]
 
 
-def _extract_aether(path: Path) -> tuple[str, str]:
-    text = path.read_text(encoding="utf-8", errors="ignore")
-    title = _stem_to_title(path.stem)
-    for line in text.splitlines():
-        if line.startswith("# "):
-            title = line[2:].strip()
-            break
-    return title, text[:8000]
-
 
 # ---------------------------------------------------------------------------
 # Acesso ao banco
@@ -161,10 +152,6 @@ async def index_local_files() -> None:
         await _index_directory(
             Path(config.kosmos_archive), "KOSMOS", "**/*.md", _extract_kosmos
         )
-    if config.aether_vault:
-        await _index_directory(
-            Path(config.aether_vault), "AETHER", "*/chapters/*.md", _extract_aether
-        )
     await _index_directory(
         config.ARCHIVE_PATH, "AKASHA", "**/*.md", _extract_kosmos
     )
@@ -199,7 +186,7 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
     if not fts_query:
         return []
     results: list[SearchResult] = []
-    # Busca em arquivos locais (KOSMOS, AETHER, MNEMOSYNE)
+    # Busca em arquivos locais (KOSMOS, AETHER, MNEMOSYNE, AKASHA archive, HERMES)
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             rows = await (await db.execute(
@@ -215,24 +202,6 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
         results.extend(
             SearchResult(title=row[1], url=Path(row[0]).as_uri(), snippet=row[2], source=row[3])
             for row in rows
-        )
-    except Exception:
-        pass
-    # Busca na Biblioteca de URLs
-    try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            lib_rows = await (await db.execute(
-                """SELECT url, title,
-                          snippet(library_fts, 3, '', '', '…', 40)
-                   FROM library_fts
-                   WHERE library_fts MATCH ?
-                   ORDER BY bm25(library_fts, 0, 0, 10, 1)
-                   LIMIT ?""",
-                (fts_query, max_results),
-            )).fetchall()
-        results.extend(
-            SearchResult(title=row[1], url=row[0], snippet=row[2], source="BIBLIOTECA")
-            for row in lib_rows
         )
     except Exception:
         pass

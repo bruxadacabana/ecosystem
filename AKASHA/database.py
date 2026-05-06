@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -83,42 +83,6 @@ CREATE TABLE IF NOT EXISTS local_index_meta (
 );
 """
 
-_CREATE_LIBRARY_URLS = """
-CREATE TABLE IF NOT EXISTS library_urls (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    url                 TEXT    NOT NULL UNIQUE,
-    title               TEXT    NOT NULL DEFAULT '',
-    snippet             TEXT    NOT NULL DEFAULT '',
-    content_md          TEXT    NOT NULL DEFAULT '',
-    content_hash        TEXT    NOT NULL DEFAULT '',
-    language            TEXT    NOT NULL DEFAULT '',
-    word_count          INTEGER NOT NULL DEFAULT 0,
-    tags_json           TEXT    NOT NULL DEFAULT '[]',
-    notes               TEXT    NOT NULL DEFAULT '',
-    check_interval_days INTEGER NOT NULL DEFAULT 7,
-    last_checked_at     TEXT,
-    status              TEXT    NOT NULL DEFAULT 'pending',
-    created_at          TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-"""
-
-_CREATE_LIBRARY_DIFFS = """
-CREATE TABLE IF NOT EXISTS library_diffs (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    url_id     INTEGER NOT NULL REFERENCES library_urls(id) ON DELETE CASCADE,
-    diff_text  TEXT    NOT NULL,
-    scraped_at TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-"""
-
-_CREATE_LIBRARY_FTS = """
-CREATE VIRTUAL TABLE IF NOT EXISTS library_fts USING fts5(
-    url_id UNINDEXED,
-    url    UNINDEXED,
-    title,
-    body
-);
-"""
 
 _CREATE_BLOCKED_DOMAINS = """
 CREATE TABLE IF NOT EXISTS blocked_domains (
@@ -179,9 +143,6 @@ _CREATE_IDX_CRAWL_PAGES_SITE = """
 CREATE INDEX IF NOT EXISTS idx_crawl_pages_site ON crawl_pages(site_id);
 """
 
-_CREATE_IDX_LIBRARY_DIFFS_URL = """
-CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id);
-"""
 
 _CREATE_WATCH_LATER = """
 CREATE TABLE IF NOT EXISTS watch_later (
@@ -241,16 +202,12 @@ async def init_db() -> None:
         await db.execute(_CREATE_IDX_CACHE)
         await db.execute(_CREATE_LOCAL_FTS)
         await db.execute(_CREATE_LOCAL_META)
-        await db.execute(_CREATE_LIBRARY_URLS)
-        await db.execute(_CREATE_LIBRARY_DIFFS)
-        await db.execute(_CREATE_LIBRARY_FTS)
         await db.execute(_CREATE_BLOCKED_DOMAINS)
         await db.execute(_CREATE_FAVORITE_DOMAINS)
         await db.execute(_CREATE_CRAWL_SITES)
         await db.execute(_CREATE_CRAWL_PAGES)
         await db.execute(_CREATE_CRAWL_FTS)
         await db.execute(_CREATE_IDX_CRAWL_PAGES_SITE)
-        await db.execute(_CREATE_IDX_LIBRARY_DIFFS_URL)
         await db.execute(_CREATE_WATCH_LATER)
         await db.execute(_CREATE_WATCH_LATER_FTS)
         await db.execute(_CREATE_ACTIVITY_LOG)
@@ -339,6 +296,14 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
                 added_at       TEXT    NOT NULL DEFAULT (datetime('now'))
             )
         """)
+
+    if from_version < 13:
+        # Fase 7 (URL monitoring com diffs) foi substituída pela Fase 10 (crawler BFS).
+        # As tabelas nunca foram populadas; removê-las elimina dead schema e o índice órfão.
+        await db.execute("DROP TABLE IF EXISTS library_diffs")
+        await db.execute("DROP TABLE IF EXISTS library_urls")
+        await db.execute("DROP TABLE IF EXISTS library_fts")
+        await db.execute("DROP INDEX IF EXISTS idx_library_diffs_url")
 
     if from_version < 11:
         # Recriar crawl_fts com prefix='2 3' para acelerar buscas de prefixo.

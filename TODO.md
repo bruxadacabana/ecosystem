@@ -4057,6 +4057,22 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### AKASHA: remoção de dead code da Fase 7 (library_urls) e re-crawl periódico | 2026-05-05
+> Contexto: o conceito original de "Biblioteca de URLs" (Fase 7) foi supersedido pelo crawler BFS
+> da Fase 10. As tabelas library_urls/library_diffs/library_fts nunca foram populadas mas ainda
+> existem no schema e geram uma query morta em toda busca local. Além disso, crawl_pending_sites()
+> só crawla sites nunca visitados — não re-crawla sites desatualizados.
+
+#### AKASHA
+- [x] Remover query morta de library_fts de `services/local_search.py` — `_search_fts()` fazia
+      uma segunda query contra `library_fts` (nunca populada) retornando source="BIBLIOTECA";
+      essa query executava em toda busca local sem retornar nada útil.
+- [x] Adicionar migration v13 em `database.py`: DROP TABLE library_urls, library_diffs, library_fts
+      e DROP INDEX idx_library_diffs_url. Remover os DDL constants e chamadas de init_db().
+      SCHEMA_VERSION: 12 → 13.
+- [x] Estender `crawl_pending_sites()` em `services/crawler.py` para também re-crawlar sites com
+      last_crawled_at anterior a 7 dias — hoje a função só processa sites com last_crawled_at IS NULL.
+
 ### Caminhos do Mnemosyne: configuração no HUB + editabilidade no próprio app | 2026-05-04
 
 > Contexto: item 0.9 tornou os caminhos do Mnemosyne (watched_dir, vault_dir, chroma_dir)
