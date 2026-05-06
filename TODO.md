@@ -3995,7 +3995,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   em perguntas como "o que eu afirmo sobre X?". Requer `iterative_retrieval_enabled` já
   implementado na Fase 11.2 para não duplicar infra de LLM local.
 
-- [ ] **Indexação incremental em 4 níveis** (`core/indexer.py`). Substituir a detecção
+- [x] **Indexação incremental em 4 níveis** (`core/indexer.py`). Substituir a detecção
   binária (hash mudou → re-indexa tudo) por 4 níveis inspirados no FingerprintEngine do
   Understand-Anything: NONE (nenhuma mudança), COSMETIC (espaços/formatação — hash de
   texto normalizado igual), STRUCTURAL (conteúdo semântico alterado — re-indexa só chunks

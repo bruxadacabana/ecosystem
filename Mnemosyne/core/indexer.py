@@ -3,9 +3,12 @@ Indexing e vectorstore: divide documentos em chunks e persiste com Chroma.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import sqlite3
+from enum import Enum
 from pathlib import Path
 from typing import Callable
 
@@ -111,6 +114,171 @@ class IndexCheckpoint:
     def exists(cls, mnemosyne_dir: str) -> bool:
         """True se existe checkpoint de indexação interrompida."""
         return (Path(mnemosyne_dir) / cls._FILENAME).exists()
+
+
+# ---------------------------------------------------------------------------
+# Indexação incremental em 4 níveis
+# ---------------------------------------------------------------------------
+
+class ChangeLevel(Enum):
+    COSMETIC   = "cosmetic"    # só espaços/capitalização — sem re-embedding
+    STRUCTURAL = "structural"  # chunks específicos mudaram — delta mínimo
+    FULL       = "full"        # arquivo novo (sem histórico) — indexação completa
+
+
+def _ch(text: str) -> str:
+    """Hash bruto do chunk — detecta mudanças semânticas."""
+    return hashlib.sha256(text.encode()).hexdigest()[:32]
+
+
+def _nh(text: str) -> str:
+    """Hash normalizado — ignora espaços e capitalização (detecção cosmética)."""
+    normalized = re.sub(r"\s+", " ", text.lower().strip())
+    return hashlib.sha256(normalized.encode()).hexdigest()[:32]
+
+
+class ChunkHashStore:
+    """
+    Persiste (content_hash, norm_hash, chroma_id) por arquivo em
+    {persist_dir}/.chunk_hashes.db. Permite identificar exatamente quais
+    chunks mudaram sem re-embelar todo o arquivo.
+    """
+    _FILENAME = ".chunk_hashes.db"
+
+    def __init__(self, persist_dir: str) -> None:
+        db_path = Path(persist_dir) / self._FILENAME
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(db_path))
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS chunk_hashes (
+                file_path    TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                norm_hash    TEXT NOT NULL,
+                chroma_id    TEXT NOT NULL,
+                PRIMARY KEY (file_path, content_hash)
+            )
+        """)
+        self._conn.commit()
+
+    def get_file_records(self, file_path: str) -> list[tuple[str, str, str]]:
+        rows = self._conn.execute(
+            "SELECT content_hash, norm_hash, chroma_id FROM chunk_hashes WHERE file_path = ?",
+            (file_path,),
+        ).fetchall()
+        return [(r[0], r[1], r[2]) for r in rows]
+
+    def save_file_records(self, file_path: str, records: list[tuple[str, str, str]]) -> None:
+        self._conn.execute("DELETE FROM chunk_hashes WHERE file_path = ?", (file_path,))
+        self._conn.executemany(
+            "INSERT INTO chunk_hashes (file_path, content_hash, norm_hash, chroma_id) "
+            "VALUES (?, ?, ?, ?)",
+            [(file_path, h, nh, cid) for h, nh, cid in records],
+        )
+        self._conn.commit()
+
+    def delete_file(self, file_path: str) -> None:
+        self._conn.execute("DELETE FROM chunk_hashes WHERE file_path = ?", (file_path,))
+        self._conn.commit()
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+
+def _incremental_update(
+    vs: Chroma,
+    bm25_idx: BM25Index,
+    store: ChunkHashStore,
+    file_path: str,
+    new_chunks: list[Document],
+    embed_model: str,
+    truncate_dim: int | None,
+    batch_size: int,
+    sleep_s: float,
+) -> ChangeLevel:
+    """
+    Atualiza o índice com delta mínimo de chunks.
+
+    FULL       — arquivo novo: embeda tudo.
+    STRUCTURAL — alguns chunks mudaram: só re-embeda os diferentes.
+    COSMETIC   — só espaços/capitalização: não toca o ChromaDB.
+
+    Retorna o nível de mudança detectado.
+    """
+    import time as _time
+    import uuid
+
+    old_records = store.get_file_records(file_path)
+    new_ch_map: dict[str, Document] = {_ch(c.page_content): c for c in new_chunks}
+    new_nh_set: set[str] = {_nh(c.page_content) for c in new_chunks}
+
+    if not old_records:
+        level = ChangeLevel.FULL
+        old_ch_to_rec: dict[str, tuple[str, str, str]] = {}
+    else:
+        old_ch_to_rec = {h: (h, nh, cid) for h, nh, cid in old_records}
+        old_nh_set: set[str] = {nh for _, nh, _ in old_records}
+        if new_nh_set == old_nh_set:
+            return ChangeLevel.COSMETIC
+        level = ChangeLevel.STRUCTURAL
+
+    # Quais chunks adicionar e quais IDs deletar
+    if level == ChangeLevel.FULL:
+        chunks_to_add = new_chunks
+        ids_to_delete: list[str] = []
+    else:
+        old_ch_set = set(old_ch_to_rec)
+        new_ch_set = set(new_ch_map)
+        chunks_to_add = [new_ch_map[h] for h in new_ch_set - old_ch_set]
+        ids_to_delete = [old_ch_to_rec[h][2] for h in old_ch_set - new_ch_set]
+
+    # Deletar reflexões antigas do arquivo (serão regeneradas pelo chamador)
+    if level != ChangeLevel.COSMETIC:
+        try:
+            vs._collection.delete(
+                where={"$and": [{"source": {"$eq": file_path}},
+                                {"type":   {"$eq": "reflection"}}]}
+            )
+        except Exception:
+            pass
+
+    if ids_to_delete:
+        vs._collection.delete(ids=ids_to_delete)
+
+    # Embedar apenas os chunks novos/alterados
+    new_records: list[tuple[str, str, str]] = []
+    for start in range(0, len(chunks_to_add), batch_size):
+        batch = chunks_to_add[start : start + batch_size]
+        embs = _embed_batch([c.page_content for c in batch], embed_model,
+                            truncate_dim=truncate_dim)
+        ids = [str(uuid.uuid4()) for _ in batch]
+        vs._collection.add(
+            ids=ids,
+            documents=[c.page_content for c in batch],
+            embeddings=embs,
+            metadatas=[c.metadata or {} for c in batch],
+        )
+        for chunk, cid in zip(batch, ids):
+            new_records.append((_ch(chunk.page_content), _nh(chunk.page_content), cid))
+        if start + batch_size < len(chunks_to_add):
+            _time.sleep(sleep_s)
+
+    # Preservar registros dos chunks não-alterados (STRUCTURAL)
+    if level == ChangeLevel.STRUCTURAL:
+        kept_ch = set(new_ch_map) & set(old_ch_to_rec) - {_ch(c.page_content) for c in chunks_to_add}
+        for h in kept_ch:
+            new_records.append(old_ch_to_rec[h])
+
+    store.save_file_records(file_path, new_records)
+
+    # BM25: rebuild do arquivo (não tem índice incremental eficiente)
+    bm25_idx.remove_source(file_path)
+    if new_chunks:
+        bm25_idx.add_documents(new_chunks)
+
+    return level
 
 
 def _embed_batch(
@@ -358,18 +526,30 @@ def create_vectorstore(
             embedding_function=embeddings,
             collection_metadata={"hnsw:space": "cosine"},
         )
+        chunk_store = ChunkHashStore(config.persist_dir)
+        records_by_src: dict[str, list[tuple[str, str, str]]] = {}
         for start in range(0, len(chunks), _BATCH):
             batch = chunks[start : start + _BATCH]
             embs = _embed_batch([c.page_content for c in batch], config.embed_model,
                                 truncate_dim=config.embedding_truncate_dim)
+            ids = [str(uuid.uuid4()) for _ in batch]
             vs._collection.add(
-                ids=[str(uuid.uuid4()) for _ in batch],
+                ids=ids,
                 documents=[c.page_content for c in batch],
                 embeddings=embs,
                 metadatas=[c.metadata or {} for c in batch],
             )
+            for chunk, cid in zip(batch, ids):
+                src = chunk.metadata.get("source", "")
+                if src:
+                    records_by_src.setdefault(src, []).append(
+                        (_ch(chunk.page_content), _nh(chunk.page_content), cid)
+                    )
             if start + _BATCH < len(chunks):
                 time.sleep(_SLEEP)
+        for src, recs in records_by_src.items():
+            chunk_store.save_file_records(src, recs)
+        chunk_store.close()
     except Exception as exc:
         raise IndexBuildError(f"Falha ao criar vectorstore: {exc}") from exc
 
@@ -401,8 +581,6 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
     chunks = splitter.split_documents(docs)
 
     try:
-        import time
-        import uuid
         os.makedirs(config.persist_dir, exist_ok=True)
         _clear_orphan_wal(config.persist_dir)
         vs = Chroma(
@@ -411,25 +589,16 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
             collection_metadata={"hnsw:space": "cosine"},
         )
         _BATCH, _SLEEP = _detect_batch_config()
-        batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
-        for b_idx, batch in enumerate(batch_list):
-            embs = _embed_batch([c.page_content for c in batch], config.embed_model,
-                                truncate_dim=config.embedding_truncate_dim)
-            vs._collection.add(
-                ids=[str(uuid.uuid4()) for _ in batch],
-                documents=[c.page_content for c in batch],
-                embeddings=embs,
-                metadatas=[c.metadata or {} for c in batch],
-            )
-            if b_idx + 1 < len(batch_list):
-                time.sleep(_SLEEP)
+        chunk_store = ChunkHashStore(config.persist_dir)
+        bm25_idx = BM25Index.load(config.mnemosyne_dir)
+        _incremental_update(vs, bm25_idx, chunk_store, file_path, chunks,
+                            config.embed_model, config.embedding_truncate_dim,
+                            _BATCH, _SLEEP)
+        chunk_store.close()
     except Exception as exc:
         raise IndexBuildError(f"Falha ao adicionar ao vectorstore: {exc}") from exc
 
-    bm25_idx = BM25Index.load(config.mnemosyne_dir)
-    bm25_idx.add_documents(chunks)
     bm25_idx.save()
-
     return vs
 
 
@@ -484,53 +653,37 @@ def update_vectorstore(
         deleted_files.extend(d)
 
     _BATCH, _SLEEP = _detect_batch_config()
-    stats = {"new": 0, "modified": 0, "deleted": 0, "errors": 0, "reflections": 0}
+    stats = {"new": 0, "modified": 0, "cosmetic": 0, "deleted": 0, "errors": 0, "reflections": 0}
     bm25_idx = BM25Index.load(config.mnemosyne_dir)
+    chunk_store = ChunkHashStore(config.persist_dir)
 
-    # Deletados: _delete_file_chunks e remove_source apagam tanto chunks quanto
-    # reflexões, pois reflexões têm metadata["source"] = file_path.
+    # Deletados: remove todos os chunks e reflexões do arquivo e limpa hash store.
     for file_path in deleted_files:
         _delete_file_chunks(vs, file_path)
         bm25_idx.remove_source(file_path)
+        chunk_store.delete_file(file_path)
         tracker.remove(file_path)
         stats["deleted"] += 1
 
-    import time
-    import uuid
-
-    def _add_chunks(vs: Chroma, chunks: list, embed_model: str) -> None:
-        """Adiciona lista de chunks ao vectorstore via _embed_batch (sem OllamaEmbeddings)."""
-        batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
-        for b_idx, batch in enumerate(batch_list):
-            embs = _embed_batch([c.page_content for c in batch], embed_model,
-                                truncate_dim=config.embedding_truncate_dim)
-            vs._collection.add(
-                ids=[str(uuid.uuid4()) for _ in batch],
-                documents=[c.page_content for c in batch],
-                embeddings=embs,
-                metadatas=[c.metadata or {} for c in batch],
-            )
-            if b_idx + 1 < len(batch_list):
-                time.sleep(_SLEEP)
-
-    # Modificados: remove chunks e reflexões antigas (pelo source), re-indexa.
-    # A deleção das reflexões é automática via _delete_file_chunks + remove_source.
+    # Modificados: indexação incremental — só re-embeda chunks que mudaram.
     for file_path, source_type in modified_files:
-        _delete_file_chunks(vs, file_path)
-        bm25_idx.remove_source(file_path)
         try:
             docs = load_single_file(file_path, source_type=source_type)
             splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
-            _add_chunks(vs, chunks, config.embed_model)
-            bm25_idx.add_documents(chunks)
-            tracker.mark_indexed(file_path)
-            stats["modified"] += 1
-            # Gerar reflexão para o arquivo reindexado
-            n = _generate_and_index_reflections(
-                {file_path: chunks}, vs, bm25_idx, config, progress_cb
+            level = _incremental_update(
+                vs, bm25_idx, chunk_store, file_path, chunks,
+                config.embed_model, config.embedding_truncate_dim, _BATCH, _SLEEP,
             )
-            stats["reflections"] += n
+            tracker.mark_indexed(file_path)
+            if level == ChangeLevel.COSMETIC:
+                stats["cosmetic"] += 1
+            else:
+                stats["modified"] += 1
+                n = _generate_and_index_reflections(
+                    {file_path: chunks}, vs, bm25_idx, config, progress_cb
+                )
+                stats["reflections"] += n
         except Exception:
             stats["errors"] += 1
 
@@ -540,17 +693,20 @@ def update_vectorstore(
             docs = load_single_file(file_path, source_type=source_type)
             splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
-            _add_chunks(vs, chunks, config.embed_model)
-            bm25_idx.add_documents(chunks)
+            _incremental_update(
+                vs, bm25_idx, chunk_store, file_path, chunks,
+                config.embed_model, config.embedding_truncate_dim, _BATCH, _SLEEP,
+            )
             tracker.mark_indexed(file_path)
             stats["new"] += 1
-            # Gerar reflexão para o arquivo novo
             n = _generate_and_index_reflections(
                 {file_path: chunks}, vs, bm25_idx, config, progress_cb
             )
             stats["reflections"] += n
         except Exception:
             stats["errors"] += 1
+
+    chunk_store.close()
 
     bm25_idx.save()
     return vs, stats
