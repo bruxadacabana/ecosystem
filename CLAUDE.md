@@ -102,6 +102,7 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 - **Pesquisas:** regras obrigatórias ao realizar qualquer pesquisa (WebSearch, WebFetch, Agent):
   1. **Reler o `pesquisas.md`** (raiz do ecossistema) antes de iniciar, para não duplicar pesquisa já feita.
   2. **Salvar em `pesquisas.md`** (raiz) em **ordem cronológica crescente** — novas sessões sempre no final do arquivo, sem seções por app. Formato: bloco com cabeçalho `PESQUISA — <Título>` + `Data: YYYY-MM-DD`, conteúdo completo e detalhado cobrindo todos os aspectos do tema — mesmo os não imediatamente aplicáveis — com exemplos, métricas, benchmarks e **fontes em formato ABNT** ao final. O conteúdo não deve ser filtrado pela relevância atual para o ecossistema. **Nunca incluir sugestões ou melhorias.**
+     **Estilo obrigatório:** tom acadêmico, semelhante a pesquisa de faculdade — parágrafos explicativos e bem estruturados, não bullet points secos; contextualizar cada conceito antes de detalhar; interpretar os achados; anotar limitações e comparações; não truncar para brevidade. O objetivo é um documento de referência consultável, não notas rápidas.
   3. **Manter o índice atualizado** — adicionar entrada para a nova sessão no índice do início do arquivo.
   4. **Ordem cronológica crescente** — novas sessões sempre no final do arquivo.
   5. **Apresentar no chat** um resumo médio-detalhado (1–2 minutos de leitura) cobrindo achados principais e implicações práticas, **seguido de lista separada de mudanças/melhorias sugeridas**.

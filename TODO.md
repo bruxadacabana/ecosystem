@@ -4086,7 +4086,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > achados de pesquisas anteriores que nunca foram transcritos como itens acionáveis.
 
 #### Mnemosyne
-- [ ] **[CRÍTICO] Mudar distância ChromaDB de L2 para cosine em todas as coleções**
+- [x] **[CRÍTICO] Mudar distância ChromaDB de L2 para cosine em todas as coleções**
   (`core/indexer.py`, todos os pontos onde `Chroma(...)` é criado). Adicionar
   `collection_metadata={"hnsw:space": "cosine"}` em cada criação de coleção.
   Para texto, cosine mede direção semântica — L2 mede distância absoluta, o que é
@@ -4094,7 +4094,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   na qualidade de recuperação. O IndexWorker já apaga e recria o persist_dir, então
   a correção se aplica automaticamente na próxima reindexação. Custo: ~30 min.
 
-- [ ] **[CRÍTICO] Aumentar chunk size de 800 → 1800 chars, overlap 100 → 250**
+- [x] **[CRÍTICO] Aumentar chunk size de 800 → 1800 chars, overlap 100 → 250**
   (`core/config.py`, `RecursiveCharacterTextSplitter`). O valor atual de 800 chars ≈
   200 tokens está abaixo do range recomendado por benchmarks 2025–2026 (Vecta, NAACL
   2025/Vectara: 400–512 tokens). Trocar para `chunk_size=1800, chunk_overlap=250`.
