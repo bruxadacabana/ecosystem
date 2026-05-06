@@ -307,7 +307,7 @@ class FeedManager:
                     title        = title,
                     url          = url or None,
                     author       = data.get("author"),
-                    published_at = pub_date or None,
+                    published_at = pub_dt or None,
                     summary      = data.get("summary"),
                     content_full = data.get("content"),
                     language     = lang,
