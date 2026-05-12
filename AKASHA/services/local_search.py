@@ -203,7 +203,7 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
                           source
                    FROM local_fts
                    WHERE local_fts MATCH ?
-                   ORDER BY bm25(local_fts, 0, 10, 1, 0)
+                   ORDER BY rank
                    LIMIT ?""",
                 (fts_query, max_results),
             )).fetchall()

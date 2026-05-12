@@ -503,7 +503,7 @@ async def search_sites(query: str, max_results: int = 500) -> list:
                           snippet(crawl_fts, 3, '', '', '…', 40)
                    FROM crawl_fts
                    WHERE crawl_fts MATCH ?
-                   ORDER BY bm25(crawl_fts, 0, 0, 10, 1)
+                   ORDER BY rank
                    LIMIT ?""",
                 (fts_query, max_results),
             )).fetchall()

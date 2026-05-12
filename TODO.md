@@ -4146,7 +4146,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > e deduplicação near-duplicate — tudo aplicado ao AKASHA (FastAPI + SQLite FTS5 + ChromaDB).
 
 #### AKASHA
-- [ ] **Configurar pesos de coluna BM25 persistentes via `INSERT INTO tabela(tabela, rank)`**
+- [x] **Configurar pesos de coluna BM25 persistentes via `INSERT INTO tabela(tabela, rank)`**
   (`database.py` ou função de inicialização do DB). Atualmente os pesos são passados
   explicitamente em cada query (ex: `bm25(local_fts, 0, 10, 1, 0)`). Usar a configuração
   persistente do FTS5: `INSERT INTO local_fts(local_fts, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)')`

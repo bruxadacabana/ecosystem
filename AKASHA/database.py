@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -209,12 +209,18 @@ async def init_db() -> None:
         await db.execute(_CREATE_SEARCH_CACHE)
         await db.execute(_CREATE_IDX_CACHE)
         await db.execute(_CREATE_LOCAL_FTS)
+        await db.execute(
+            "INSERT INTO local_fts(local_fts, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)')"
+        )
         await db.execute(_CREATE_LOCAL_META)
         await db.execute(_CREATE_BLOCKED_DOMAINS)
         await db.execute(_CREATE_FAVORITE_DOMAINS)
         await db.execute(_CREATE_CRAWL_SITES)
         await db.execute(_CREATE_CRAWL_PAGES)
         await db.execute(_CREATE_CRAWL_FTS)
+        await db.execute(
+            "INSERT INTO crawl_fts(crawl_fts, rank) VALUES('rank', 'bm25(0, 0, 10.0, 1.0)')"
+        )
         await db.execute(_CREATE_IDX_CRAWL_PAGES_SITE)
         await db.execute(_CREATE_IDX_CRAWL_PAGES_HASH)
         await db.execute(_CREATE_WATCH_LATER)
@@ -364,6 +370,18 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             )
         """)
         await db.execute("DELETE FROM local_index_meta")
+
+    if from_version < 16:
+        # Configura pesos BM25 persistentes nas tabelas FTS5.
+        # local_fts: title×10 > body×1 (path e source são UNINDEXED → peso 0).
+        # crawl_fts: title×10 > content_md×1 (site_id e url são UNINDEXED → peso 0).
+        # Permite usar ORDER BY rank nos SELECTs em vez de repetir bm25(...) em cada query.
+        await db.execute(
+            "INSERT INTO local_fts(local_fts, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)')"
+        )
+        await db.execute(
+            "INSERT INTO crawl_fts(crawl_fts, rank) VALUES('rank', 'bm25(0, 0, 10.0, 1.0)')"
+        )
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
