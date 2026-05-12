@@ -30,6 +30,36 @@ except ImportError:
     _BM25S_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
+# Detecção de idioma + stemming (langdetect + NLTK SnowballStemmer)
+# Ambos são opcionais — fallback silencioso se não estiverem instalados.
+# ---------------------------------------------------------------------------
+
+try:
+    from langdetect import detect as _langdetect  # type: ignore
+    _LANGDETECT_AVAILABLE = True
+except ImportError:
+    _LANGDETECT_AVAILABLE = False
+
+try:
+    from nltk.stem import SnowballStemmer as _SnowballStemmer  # type: ignore
+    _NLTK_AVAILABLE = True
+except ImportError:
+    _NLTK_AVAILABLE = False
+
+_stemmers: dict[str, object] = {}
+
+_STEM_LANG_MAP: dict[str, str] = {
+    "pt": "portuguese",
+    "en": "english",
+}
+
+
+def _get_stemmer(lang: str) -> object:
+    if lang not in _stemmers:
+        _stemmers[lang] = _SnowballStemmer(lang)  # type: ignore[operator]
+    return _stemmers[lang]
+
+# ---------------------------------------------------------------------------
 # ChromaDB — import opcional
 # ---------------------------------------------------------------------------
 
@@ -225,8 +255,59 @@ def _best_paragraph(body: str, query: str, max_chars: int = 400) -> str:
 # Busca FTS5
 # ---------------------------------------------------------------------------
 
-_PHRASE_RE    = re.compile(r'"([^"]+)"')
-_FTS_STRIP    = re.compile(r"['\(\)\:\^]")
+_PHRASE_RE = re.compile(r'"([^"]+)"')
+_FTS_STRIP = re.compile(r"['\(\)\:\^]")
+
+
+def _expand_token(token: str, lang: str) -> str:
+    """Expande 'token' para '(token OR stem*)' se o stem for diferente do token.
+
+    Tokens com * (prefix já explícito) e tokens com < 4 chars não são expandidos
+    para evitar ruído. O stem mínimo é 3 chars — abaixo disso o OR seria muito amplo.
+    """
+    if not _NLTK_AVAILABLE or token.endswith("*") or len(token) < 4:
+        return token
+    try:
+        stemmer = _get_stemmer(lang)
+        stem = stemmer.stem(token)  # type: ignore[union-attr]
+        if stem and stem != token and len(stem) >= 3:
+            return f"({token} OR {stem}*)"
+        return token
+    except Exception:
+        return token
+
+
+def _expand_query_stems(fts_query: str, original_query: str) -> str:
+    """Detecta idioma da query e expande tokens com suas raízes morfológicas.
+
+    Exemplo: query='buscando artigos' (PT detectado) →
+             '(buscando OR busc*) (artigos OR artig*)'
+    Phrase queries entre aspas não são expandidas.
+    Retorna fts_query inalterado se langdetect ou nltk não estiverem disponíveis
+    ou se o idioma detectado não for PT nem EN.
+    """
+    if not _LANGDETECT_AVAILABLE or not _NLTK_AVAILABLE:
+        return fts_query
+    try:
+        code = _langdetect(original_query)
+        lang = _STEM_LANG_MAP.get(code)
+        if not lang:
+            return fts_query
+    except Exception:
+        return fts_query
+
+    parts: list[str] = []
+    cursor = 0
+    for m in _PHRASE_RE.finditer(fts_query):
+        before = fts_query[cursor:m.start()].strip()
+        if before:
+            parts.extend(_expand_token(t, lang) for t in before.split())
+        parts.append(m.group(0))  # phrase inalterada
+        cursor = m.end()
+    tail = fts_query[cursor:].strip()
+    if tail:
+        parts.extend(_expand_token(t, lang) for t in tail.split())
+    return " ".join(parts)
 
 
 def _plain_tokens(text: str) -> list[str]:
@@ -277,6 +358,7 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
     fts_query = _sanitize_fts(query)
     if not fts_query:
         return []
+    fts_query = _expand_query_stems(fts_query, query)
     results: list[SearchResult] = []
     use_para = SNIPPET_MODE == "paragraph_bm25" and _BM25S_AVAILABLE
     try:

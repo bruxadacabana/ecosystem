@@ -4181,7 +4181,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   os sistemas sobem no ranking sem precisar normalizar scores incompatíveis.
   Implementação: ~15 linhas de Python. Nenhuma nova dependência.
 
-- [ ] **Adicionar detecção de idioma + stemming PT/EN na query antes do FTS5**
+- [x] **Adicionar detecção de idioma + stemming PT/EN na query antes do FTS5**
   (`services/local_search.py`). Integrar langdetect (pip install langdetect) para detectar
   idioma da query. Se PT: aplicar NLTK RSLPStemmer ou SnowballStemmer("portuguese"). Se EN:
   aplicar SnowballStemmer("english"). Expandir query FTS5 com stems via OR: ex, "buscando" →

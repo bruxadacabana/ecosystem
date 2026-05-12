@@ -22,6 +22,8 @@ dependencies = [
     "pymupdf4llm>=0.0.17",
     "filelock>=3.13",
     "bm25s>=0.2",
+    "langdetect>=1.0",
+    "nltk>=3.8",
 ]
 
 [build-system]
