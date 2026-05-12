@@ -4342,6 +4342,45 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Se False: desabilitar features LLM na UI com tooltip "Ollama offline — feature disponível
   quando Ollama estiver rodando". Nunca bloquear a busca FTS5 por falta de LLM.
 
+### Pesquisa: LLMs Locais para Dispatcher/Skill Routing — achados para Mnemosyne e KOSMOS | 2026-05-12
+> Contexto: pesquisa sobre arquitetura multi-agente e comparação de LLMs locais para instruction
+> following revelou implicações práticas para o Mnemosyne (RAG com citação, janela de contexto,
+> ordering de chunks) e para o KOSMOS (modelos mais capazes dentro da mesma limitação de VRAM).
+
+#### Mnemosyne
+- [ ] **Command R 7B como opção de modelo para RAG** — o Command R 7B (Cohere, via `ollama pull
+  command-r`) é o único modelo sub-10B com treinamento explícito para grounded generation com
+  citação de fontes (grounding spans). Adicionar como opção de `qa_model` na `SetupDialog` do
+  Mnemosyne com tooltip explicando a especialização. Consumo: ~5 GB VRAM Q4_K_M, cabe na RX 6600.
+  Para respostas que incluam citações precisas ("conforme [fonte], [trecho]"), esse modelo
+  supera Llama/Qwen no critério de fidelidade de atribuição.
+
+- [ ] **Reordenação de chunks para mitigar "lost in the middle"** — todos os modelos LLM exibem
+  viés posicional em multi-document RAG: chunks no meio do contexto são menos utilizados que
+  os do início e do fim. Em `core/rag.py`, ao montar o contexto final, reordenar os N chunks
+  recuperados colocando os de maior score RRF alternadamente no início e no final (ex: rank 1
+  → posição 0, rank 2 → posição N-1, rank 3 → posição 1, rank 4 → posição N-2). Mudança
+  pequena em `_build_context()` com impacto documentado de qualidade de resposta.
+
+- [ ] **Nota sobre janela de contexto por modelo** — documentar no `SetupDialog` (tooltip em
+  `qa_model`) que Qwen2.5-7B-Instruct suporta 128K tokens de contexto enquanto Llama 3.1 8B
+  suporta apenas 16K. Para coleções com documentos longos ou muitos chunks recuperados, o
+  Qwen2.5-7B é preferível. Adicionar verificação em `core/rag.py`: se `qa_model` contiver
+  "llama" e o contexto montado exceder ~12K tokens, logar aviso "contexto próximo do limite
+  do modelo — considere usar Qwen2.5-7B".
+
+#### KOSMOS
+- [ ] **Avaliar Phi-4 Mini 3.8B como modelo principal do KOSMOS** — o Phi-4 Mini 3.8B tem MMLU
+  equivalente ao Llama 3.1 8B (73%), consome ~3 GB em Q4_K_M e roda a ~60-120 t/s na RX 6600.
+  Em CPU puro (i5-3470, Windows 10), cabe em RAM com offload e é significativamente mais capaz
+  que o SmolLM2 1.7B atual. Testar: `ollama pull phi4-mini` e avaliar qualidade de respostas
+  nas tarefas típicas do KOSMOS (síntese de artigo, extração de conceitos, geração de notas).
+
+- [ ] **Avaliar Gemma 3 4B para hardware limitado (MX150/i5-3470)** — o Gemma 3 4B cabe inteiro
+  na MX150 (2 GB VRAM) em Q4_K_M (~2,5 GB) e representa upgrade significativo sobre modelos 1-2B.
+  Testar: `ollama pull gemma3:4b`. Candidato a modelo padrão do KOSMOS no laptop e no Windows
+  de trabalho onde a MX150 não está disponível mas a RAM permite offload de 4B.
+
 ## Melhorias, correções e atualizações
 
 ### Mnemosyne + AKASHA: tratamento diferenciado por tipo de fonte | 2026-05-06

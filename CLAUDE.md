@@ -98,7 +98,10 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 
 ## Workflow
 
-- **`DESIGN_BIBLE.txt` e `GUIDE.md` (raiz) devem ser mantidos atualizados como prioridade permanente.** Toda implementação — sem exceção — deve ser documentada no `GUIDE.md` na mesma resposta (ou ao menos sinalizar que precisa de atualização). Não esperar a usuária pedir.
+- **`DESIGN_BIBLE.md`, `GUIDE.md` e `pesquisas.md` foram movidos para fora do repositório.** Os caminhos por máquina estão abaixo — usar esses caminhos ao ler ou editar. Nunca recriar esses arquivos na raiz do repo.
+  - **Windows 10:** `C:\Users\USUARIO\Desktop\p\My files\backup\notebook\03_Recursos\ecosystem\`
+  - **CachyOS (principal / laptop):** *(a registrar quando estiver nessa máquina)*
+- **`DESIGN_BIBLE.md` e `GUIDE.md` devem ser mantidos atualizados como prioridade permanente.** Toda implementação — sem exceção — deve ser documentada no `GUIDE.md` na mesma resposta (ou ao menos sinalizar que precisa de atualização). Não esperar a usuária pedir.
 - **Tom obrigatório do `GUIDE.md`:** perspectiva de engenheiro de software escrevendo para um programador iniciante/intermediário — didático, detalhado, contextualiza cada conceito antes de detalhar, explica o "por que" além do "como". Nunca bullet points secos; parágrafos explicativos. Toda nova seção adicionada ao GUIDE deve seguir esse mesmo padrão.
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado.
 - **Marcar item como `[x]` no TODO imediatamente após concluí-lo** — não acumular para marcar depois, não esperar o fim da sessão.
@@ -108,8 +111,8 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 - **Nunca avançar de um item para o próximo no TODO sem ordem explícita.** "Continue" sem especificar o quê não é autorização para implementar.
 - **Após concluir cada item: parar, resumir o que foi feito, e aguardar permissão explícita para prosseguir.** Implementar vários itens seguidos numa mesma resposta só é permitido se a usuária disser explicitamente "faça o bloco inteiro" ou equivalente.
 - **Pesquisas:** regras obrigatórias ao realizar qualquer pesquisa (WebSearch, WebFetch, Agent):
-  1. **Reler o `pesquisas.md`** (raiz do ecossistema) antes de iniciar, para não duplicar pesquisa já feita.
-  2. **Salvar em `pesquisas.md`** (raiz) em **ordem cronológica crescente** — novas sessões sempre no final do arquivo, sem seções por app. Formato: bloco com cabeçalho `PESQUISA — <Título>` + `Data: YYYY-MM-DD`, conteúdo completo e detalhado cobrindo todos os aspectos do tema — mesmo os não imediatamente aplicáveis — com exemplos, métricas, benchmarks e **fontes em formato ABNT** ao final. O conteúdo não deve ser filtrado pela relevância atual para o ecossistema. **Nunca incluir sugestões ou melhorias.**
+  1. **Reler o `pesquisas.md`** (ver caminho por máquina na seção Workflow acima) antes de iniciar, para não duplicar pesquisa já feita.
+  2. **Salvar em `pesquisas.md`** (ver caminho por máquina) em **ordem cronológica crescente** — novas sessões sempre no final do arquivo, sem seções por app. Formato: bloco com cabeçalho `PESQUISA — <Título>` + `Data: YYYY-MM-DD`, conteúdo completo e detalhado cobrindo todos os aspectos do tema — mesmo os não imediatamente aplicáveis — com exemplos, métricas, benchmarks e **fontes em formato ABNT** ao final. O conteúdo não deve ser filtrado pela relevância atual para o ecossistema. **Nunca incluir sugestões ou melhorias.**
      **Estilo obrigatório:** tom acadêmico, semelhante a pesquisa de faculdade — parágrafos explicativos e bem estruturados, não bullet points secos; contextualizar cada conceito antes de detalhar; interpretar os achados; anotar limitações e comparações; não truncar para brevidade. O objetivo é um documento de referência consultável, não notas rápidas.
   3. **Manter o índice atualizado** — adicionar entrada para a nova sessão no índice do início do arquivo.
   4. **Ordem cronológica crescente** — novas sessões sempre no final do arquivo.
