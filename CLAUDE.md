@@ -99,7 +99,7 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 ## Workflow
 
 - **`DESIGN_BIBLE.md`, `GUIDE.md` e `pesquisas.md` foram movidos para fora do repositório.** Os caminhos por máquina estão abaixo — usar esses caminhos ao ler ou editar. Nunca recriar esses arquivos na raiz do repo.
-  - **Windows 10:** `C:\Users\USUARIO\Desktop\p\My files\backup\notebook\03_Recursos\ecosystem\`
+  - **Windows 10:** `C:\Users\USUARIO\Desktop\p\My files\backup\notebook\01_Projetos\ecosystem\`
   - **CachyOS (principal / laptop):** *(a registrar quando estiver nessa máquina)*
 - **`DESIGN_BIBLE.md` e `GUIDE.md` devem ser mantidos atualizados como prioridade permanente.** Toda implementação — sem exceção — deve ser documentada no `GUIDE.md` na mesma resposta (ou ao menos sinalizar que precisa de atualização). Não esperar a usuária pedir.
 - **Tom obrigatório do `GUIDE.md`:** perspectiva de engenheiro de software escrevendo para um programador iniciante/intermediário — didático, detalhado, contextualiza cada conceito antes de detalhar, explica o "por que" além do "como". Nunca bullet points secos; parágrafos explicativos. Toda nova seção adicionada ao GUIDE deve seguir esse mesmo padrão.
