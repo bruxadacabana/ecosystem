@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -208,6 +208,18 @@ _CREATE_IDX_ARCHIVE_SIMHASHES = """
 CREATE INDEX IF NOT EXISTS idx_archive_simhashes ON archive_simhashes(simhash);
 """
 
+_CREATE_DOC_ACCESSES = """
+CREATE TABLE IF NOT EXISTS doc_accesses (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    url         TEXT    NOT NULL,
+    accessed_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_IDX_DOC_ACCESSES_URL = """
+CREATE INDEX IF NOT EXISTS idx_doc_accesses_url ON doc_accesses(url);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -251,6 +263,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_LOCAL_VEC_PATHS)
         await db.execute(_CREATE_ARCHIVE_SIMHASHES)
         await db.execute(_CREATE_IDX_ARCHIVE_SIMHASHES)
+        await db.execute(_CREATE_DOC_ACCESSES)
+        await db.execute(_CREATE_IDX_DOC_ACCESSES_URL)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -451,6 +465,18 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         """)
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_archive_simhashes ON archive_simhashes(simhash)"
+        )
+
+    if from_version < 20:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS doc_accesses (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                url         TEXT    NOT NULL,
+                accessed_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_doc_accesses_url ON doc_accesses(url)"
         )
 
     await db.execute(
@@ -881,3 +907,28 @@ async def store_archive_simhash(simhash_val: int, path: str, url: str) -> None:
             (simhash_val, path, url),
         )
         await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Doc accesses helpers (usage-based ranking)
+# ---------------------------------------------------------------------------
+
+async def record_doc_access(url: str) -> None:
+    """Registra abertura de documento. Chamado fire-and-forget no /open-file."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("INSERT INTO doc_accesses (url) VALUES (?)", (url,))
+        await db.commit()
+
+
+async def get_access_stats(urls: list[str]) -> dict[str, tuple[int, str]]:
+    """Retorna {url: (access_count, last_accessed_iso)} para os URLs fornecidos."""
+    if not urls:
+        return {}
+    placeholders = ",".join("?" * len(urls))
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            f"SELECT url, COUNT(*) AS cnt, MAX(accessed_at) AS last "
+            f"FROM doc_accesses WHERE url IN ({placeholders}) GROUP BY url",
+            urls,
+        )).fetchall()
+    return {row[0]: (row[1], row[2]) for row in rows}

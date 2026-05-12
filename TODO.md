@@ -4245,12 +4245,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > AKASHA em assistente de pesquisa produtivo sem depender de Ollama como fundação.
 
 #### AKASHA
-- [ ] **Tabela de histórico de acessos** (`database.py`). Criar tabela `doc_accesses(id, url,
+- [x] **Tabela de histórico de acessos** (`database.py`). Criar tabela `doc_accesses(id, url,
   accessed_at DATETIME)` e registrar cada abertura de documento arquivado. Sem UI extra — apenas
   INSERT silencioso ao abrir um documento. Pré-requisito para usage-based ranking, co-reading
   patterns e annotation density. Nenhuma nova dependência.
 
-- [ ] **Usage-based ranking** (`services/local_search.py`, função `rank_combined` ou novo
+- [x] **Usage-based ranking** (`services/local_search.py`, função `rank_combined` ou novo
   `services/ranking.py`). Combinar BM25 com frequência de acesso e decaimento temporal:
   `score_final = α × bm25 + (1-α) × (access_count × exp(-λ × days_since_last_access))`.
   Parâmetro `α` configurável em `/settings` (default 0.7 BM25, 0.3 uso). Consultar tabela

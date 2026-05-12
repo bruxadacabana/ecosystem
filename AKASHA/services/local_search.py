@@ -6,6 +6,7 @@ ChromaDB (Mnemosyne) é opcional — importação com graceful fallback.
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 from pathlib import Path
 
@@ -48,6 +49,17 @@ RERANK_MODEL:      str  = "ms-marco-TinyBERT-L-2-v2"
 
 VECTOR_SEARCH_ENABLED: bool = False
 VEC_EMBED_MODEL:       str  = "all-MiniLM-L6-v2"
+
+# ---------------------------------------------------------------------------
+# Usage-based ranking — desativado por padrão
+# Combina posição RRF com frequência de acesso + decaimento temporal.
+# α (USAGE_RANKING_ALPHA): peso do ranking posicional (1-α = peso do uso).
+# λ (USAGE_RANKING_DECAY): taxa de decaimento diário (0.1 = -10%/dia).
+# ---------------------------------------------------------------------------
+
+USAGE_RANKING_ENABLED: bool  = True
+USAGE_RANKING_ALPHA:   float = 0.7
+USAGE_RANKING_DECAY:   float = 0.1
 
 # ---------------------------------------------------------------------------
 # Correção ortográfica (symspellpy) — desativada por padrão
@@ -753,11 +765,55 @@ async def _search_vec(query: str, max_results: int) -> list[SearchResult]:
 
 
 # ---------------------------------------------------------------------------
+# Usage-based ranking
+# ---------------------------------------------------------------------------
+
+async def _apply_usage_boost(results: list[SearchResult]) -> list[SearchResult]:
+    """Reordena resultados combinando posição RRF com frequência + decaimento temporal.
+
+    score = α × (1 / (rank + 1))  +  (1-α) × access_count × exp(-λ × days_since_last)
+
+    Retorna a lista original se USAGE_RANKING_ENABLED=False ou sem dados de acesso.
+    """
+    if not USAGE_RANKING_ENABLED or not results:
+        return results
+    import database as _db
+    from datetime import datetime, timezone
+
+    urls = [r.url for r in results]
+    stats = await _db.get_access_stats(urls)
+    if not stats:
+        return results
+
+    now = datetime.now(timezone.utc)
+
+    def _usage(url: str) -> float:
+        if url not in stats:
+            return 0.0
+        count, last_str = stats[url]
+        try:
+            last = datetime.fromisoformat(last_str)
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            days = max(0.0, (now - last).total_seconds() / 86400)
+        except Exception:
+            days = 0.0
+        return count * math.exp(-USAGE_RANKING_DECAY * days)
+
+    scored = [
+        (USAGE_RANKING_ALPHA * (1.0 / (i + 1)) + (1.0 - USAGE_RANKING_ALPHA) * _usage(r.url), i, r)
+        for i, r in enumerate(results)
+    ]
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [item[2] for item in scored]
+
+
+# ---------------------------------------------------------------------------
 # Função pública
 # ---------------------------------------------------------------------------
 
 async def search_local(query: str, max_results: int = 500) -> list[SearchResult]:
-    """Busca local: FTS5 + ChromaDB + sqlite-vec fundidos via RRF, com re-ranking opcional."""
+    """Busca local: FTS5 + ChromaDB + sqlite-vec fundidos via RRF, com re-ranking e usage boost."""
     fts_results    = await _search_fts(query, max_results)
     chroma_results = await _search_chroma(query)
     vec_results    = await _search_vec(query, max_results)
@@ -766,4 +822,5 @@ async def search_local(query: str, max_results: int = 500) -> list[SearchResult]
         top    = _rerank(combined[:RERANK_TOP_K], query)
         rest   = combined[RERANK_TOP_K:]
         combined = top + rest
+    combined = await _apply_usage_boost(combined)
     return combined

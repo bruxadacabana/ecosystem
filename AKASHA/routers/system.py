@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+import database
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
@@ -58,6 +59,7 @@ async def open_file(url: str = Query(...)) -> Response:
             err = await _xdg_open(str(path))
             if err:
                 return Response(content=err, status_code=500)
+        asyncio.create_task(database.record_doc_access(url))
         return Response(content="ok", status_code=200)
     except asyncio.TimeoutError:
         return Response(content="ok", status_code=200)
