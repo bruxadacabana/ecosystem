@@ -4901,6 +4901,18 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   o Command R 7B esteja disponível via Ollama (`ollama pull command-r`). Consumo: ~5 GB VRAM
   em Q4_K_M — cabe na RX 6600 com margem.
 
+### AKASHA: responsividade CSS e frontmatter enriquecido | 2026-05-12
+> Contexto: o AKASHA usava apenas breakpoints de pixels fixos no CSS — comportamento quebrando em janelas de tamanhos intermediários não convencionais. Além disso, o frontmatter gerado nos arquivos arquivados carecia de campos essenciais para citação (data de publicação real, idioma, campos científicos completos, metadados de PDF).
+
+#### AKASHA
+- [x] **Responsividade CSS universal** — substituir breakpoints de largura fixa (`max-width: Xpx`) por layout fluido usando `clamp()`, `min()`, percentagens e `flex-wrap` natural. Containers (`search-wrapper`, `container`, `lenses-page`, `history-container`) devem usar `min()` com percentagem + max fixo em vez de `max-width: Npx` rígido. `topbar-search` deve ter `min-width` em percentagem. Eliminar saltos visuais entre breakpoints: o layout deve degradar suavemente em qualquer largura de janela, não só em 3-4 tamanhos canônicos.
+
+- [ ] **Campos universais em todos os arquivos arquivados** — em `archive_url()` em `archiver.py`, renomear `url` para `source_url` no frontmatter, mudar `date` para data de publicação real do conteúdo (trafilatura `metadata.date`, formato `YYYY-MM-DD`) e adicionar campo separado `archived_at` com a data de download. Garantir que `author` e `language` sempre presentes (mesmo que vazios). Em `archive_pdf()`, mesma lógica: `source_url` em vez de `url`, `archived_at` para data de download, `language` detectado via `langdetect.detect(content_md[:2000])`.
+
+- [ ] **Campos específicos para artigos científicos** — em `archive_url()`, quando `is_scientific=True`, incluir no frontmatter: `doi`, `arxiv_id`, `journal`, `abstract` (primeiros 500 chars do abstract extraído), `keywords` (lista quando disponíveis via trafilatura ou metadados OpenGraph). Deduplicação antes de baixar: verificar via `database.get_archived_by_doi(doi)` se já existe arquivo com mesmo DOI; se sim, retornar sem baixar novamente.
+
+- [ ] **Campos específicos para PDFs de livros** — em `archive_pdf()`, usar `fitz.open(path).metadata` (já disponível via pymupdf4llm) para extrair `isbn`, `publisher`, `year`; incluir no frontmatter apenas quando não-vazios. `year` complementa `date` para livros onde só o ano de publicação é conhecido.
+
 ### Mnemosyne: novos formatos de entrada — Kindle e imagens | 2026-05-06
 > Contexto: pesquisa sobre eBook Kindle (AZW/AZW3/MOBI) e leitura de imagens em pipeline RAG
 > revelou opções viáveis sem dependências pesadas. AZW/MOBI via `mobi` (PyPI, sem nativas);
