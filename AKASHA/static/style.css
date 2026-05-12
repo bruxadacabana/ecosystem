@@ -1229,3 +1229,44 @@ a:hover { opacity: 0.75; }
 .badge-queued  { background: rgba(184, 134, 11, 0.12); color: var(--accent); }
 .badge-done    { background: rgba(74, 103, 65, 0.12); color: var(--accent-green); }
 .badge-error   { background: rgba(139, 58, 42, 0.12); color: var(--ribbon); }
+
+/* ── Autocomplete (suggest dropdown) ───────────────────────── */
+
+.suggest-dropdown {
+  position:   absolute;
+  top:        100%;
+  left:       0;
+  right:      0;
+  z-index:    200;
+  margin-top: 2px;
+}
+
+.suggest-list {
+  list-style:    none;
+  margin:        0;
+  padding:       4px 0;
+  background:    var(--paper-dark);
+  border:        1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow:    0 4px 12px rgba(0,0,0,0.2);
+}
+
+.suggest-item {
+  display:    block;
+  width:      100%;
+  padding:    7px 12px;
+  background: none;
+  border:     none;
+  cursor:     pointer;
+  text-align: left;
+  font:       inherit;
+  font-size:  0.875rem;
+  color:      var(--ink);
+}
+
+.suggest-item:hover,
+.suggest-item:focus {
+  background: var(--paper-darker);
+  color:      var(--accent);
+  outline:    none;
+}

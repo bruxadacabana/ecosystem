@@ -4256,7 +4256,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Parâmetro `α` configurável em `/settings` (default 0.7 BM25, 0.3 uso). Consultar tabela
   `doc_accesses` com GROUP BY url para obter contagem e último acesso. Sem nova dependência.
 
-- [ ] **Tabela de highlights e indexação FTS5 separada** (`database.py`,
+- [x] **Tabela de highlights e indexação FTS5 separada** (`database.py`,
   `services/archiver.py`). Criar tabela `highlights(id, url, exact TEXT, prefix TEXT,
   suffix TEXT, note TEXT, created_at DATETIME)` seguindo W3C Web Annotation Data Model
   (TextQuoteSelector: exact = trecho destacado, prefix = 32 chars antes, suffix = 32 chars
@@ -4264,7 +4264,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   resultados de highlights_fts com badge "HIGHLIGHT". Buscas em anotações pessoais retornam
   resultados mais precisos que buscas no corpo completo do documento.
 
-- [ ] **Query autocomplete por histórico pessoal** (`routers/search.py` ou via endpoint
+- [x] **Query autocomplete por histórico pessoal** (`routers/search.py` ou via endpoint
   HTMX `GET /search/suggest?q=`). Criar tabela `search_history(query TEXT UNIQUE,
   count INT, last_used DATETIME)` e registrar cada query ao executar busca. Endpoint de
   sugestão: `SELECT query FROM search_history WHERE query LIKE :prefix ORDER BY count DESC,

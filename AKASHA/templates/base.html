@@ -29,18 +29,24 @@
       hx-push-url="true"
       hx-indicator="#search-indicator, #skeleton-area"
     >
-      <div class="search-wrap">
+      <div class="search-wrap" style="position:relative;">
         <input
           type="text"
           name="q"
+          id="q-input"
           class="input"
           placeholder="buscar…"
           value="{{ query | default('') }}"
           autocomplete="off"
           autofocus
+          hx-get="/search/suggest"
+          hx-trigger="keyup changed delay:250ms"
+          hx-target="#suggest-dropdown"
+          hx-params="q"
         >
         <button type="submit" class="btn btn-primary">&#x2315;</button>
         <span id="search-indicator" class="htmx-indicator search-spinner"></span>
+        <div id="suggest-dropdown" class="suggest-dropdown"></div>
       </div>
       <div class="source-filters" id="source-filters">
         <label class="tag" id="lbl-src-web">
@@ -206,5 +212,15 @@
     });
   </script>
   {% block scripts %}{% endblock %}
+  <script>
+    // Fecha o dropdown de sugestões ao clicar fora do campo de busca
+    document.addEventListener('click', function (e) {
+      var wrap = document.querySelector('.search-wrap');
+      var dd   = document.getElementById('suggest-dropdown');
+      if (dd && wrap && !wrap.contains(e.target)) {
+        dd.innerHTML = '';
+      }
+    });
+  </script>
 </body>
 </html>

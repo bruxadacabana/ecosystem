@@ -1,0 +1,18 @@
+{% if suggestions %}
+<ul class="suggest-list" role="listbox">
+  {% for s in suggestions %}
+  <li role="option">
+    <button
+      type="button"
+      class="suggest-item"
+      onclick="
+        var inp = document.querySelector('[name=q]');
+        inp.value = {{ s | tojson }};
+        document.getElementById('suggest-dropdown').innerHTML = '';
+        inp.closest('form').requestSubmit();
+      "
+    >{{ s }}</button>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

@@ -25,6 +25,8 @@ from database import (
     get_favorite_domains,
     search_watch_later as _db_search_wl,
     log_activity,
+    record_search_query,
+    get_query_suggestions,
 )
 
 router = APIRouter()
@@ -160,6 +162,7 @@ async def search(
         ]))
         import json as _json
         await database.save_search(q, src_label or "web", total)
+        await record_search_query(q)
         await log_activity("search", q, "", _json.dumps({"sources": src_label or "web", "results": total}))
 
     has_sites = src_sites and bool(await get_all_crawl_sites())
@@ -188,6 +191,17 @@ async def search(
             "corrected_query":   corrected_query,
             "active_tab":        "search",
         },
+    )
+
+
+@router.get("/search/suggest", response_class=HTMLResponse)
+async def search_suggest(request: Request, q: str = "") -> HTMLResponse:
+    """Fragmento HTMX: lista de sugestões de autocomplete por histórico pessoal."""
+    suggestions = await get_query_suggestions(q) if q.strip() else []
+    return templates.TemplateResponse(
+        request,
+        "_search_suggest.html",
+        {"suggestions": suggestions, "q": q},
     )
 
 

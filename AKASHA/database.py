@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 22
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -220,6 +220,43 @@ _CREATE_IDX_DOC_ACCESSES_URL = """
 CREATE INDEX IF NOT EXISTS idx_doc_accesses_url ON doc_accesses(url);
 """
 
+_CREATE_HIGHLIGHTS = """
+CREATE TABLE IF NOT EXISTS highlights (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    url        TEXT    NOT NULL,
+    exact      TEXT    NOT NULL,
+    prefix     TEXT    NOT NULL DEFAULT '',
+    suffix     TEXT    NOT NULL DEFAULT '',
+    note       TEXT    NOT NULL DEFAULT '',
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_HIGHLIGHTS_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS highlights_fts USING fts5(
+    rowid  UNINDEXED,
+    exact,
+    note,
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+"""
+
+_CREATE_IDX_HIGHLIGHTS_URL = """
+CREATE INDEX IF NOT EXISTS idx_highlights_url ON highlights(url);
+"""
+
+_CREATE_SEARCH_HISTORY = """
+CREATE TABLE IF NOT EXISTS search_history (
+    query     TEXT    NOT NULL UNIQUE,
+    count     INTEGER NOT NULL DEFAULT 1,
+    last_used TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_IDX_SEARCH_HISTORY = """
+CREATE INDEX IF NOT EXISTS idx_search_history_last ON search_history(last_used DESC);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -265,6 +302,11 @@ async def init_db() -> None:
         await db.execute(_CREATE_IDX_ARCHIVE_SIMHASHES)
         await db.execute(_CREATE_DOC_ACCESSES)
         await db.execute(_CREATE_IDX_DOC_ACCESSES_URL)
+        await db.execute(_CREATE_HIGHLIGHTS)
+        await db.execute(_CREATE_HIGHLIGHTS_FTS)
+        await db.execute(_CREATE_IDX_HIGHLIGHTS_URL)
+        await db.execute(_CREATE_SEARCH_HISTORY)
+        await db.execute(_CREATE_IDX_SEARCH_HISTORY)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -477,6 +519,42 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         """)
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_doc_accesses_url ON doc_accesses(url)"
+        )
+
+    if from_version < 21:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS highlights (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                url        TEXT    NOT NULL,
+                exact      TEXT    NOT NULL,
+                prefix     TEXT    NOT NULL DEFAULT '',
+                suffix     TEXT    NOT NULL DEFAULT '',
+                note       TEXT    NOT NULL DEFAULT '',
+                created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS highlights_fts USING fts5(
+                rowid  UNINDEXED,
+                exact,
+                note,
+                tokenize = 'unicode61 remove_diacritics 2'
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_highlights_url ON highlights(url)"
+        )
+
+    if from_version < 22:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS search_history (
+                query     TEXT    NOT NULL UNIQUE,
+                count     INTEGER NOT NULL DEFAULT 1,
+                last_used TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_search_history_last ON search_history(last_used DESC)"
         )
 
     await db.execute(
@@ -932,3 +1010,118 @@ async def get_access_stats(urls: list[str]) -> dict[str, tuple[int, str]]:
             urls,
         )).fetchall()
     return {row[0]: (row[1], row[2]) for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# Highlights helpers (W3C Web Annotation Data Model — TextQuoteSelector)
+# ---------------------------------------------------------------------------
+
+async def add_highlight(
+    url: str,
+    exact: str,
+    prefix: str = "",
+    suffix: str = "",
+    note: str = "",
+) -> int:
+    """Cria highlight e indexa no FTS5. Retorna id do novo registro."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO highlights (url, exact, prefix, suffix, note) VALUES (?, ?, ?, ?, ?)",
+            (url, exact, prefix, suffix, note),
+        )
+        highlight_id = cur.lastrowid or 0
+        if highlight_id:
+            await db.execute(
+                "INSERT INTO highlights_fts (rowid, exact, note) VALUES (?, ?, ?)",
+                (highlight_id, exact, note),
+            )
+        await db.commit()
+    return highlight_id
+
+
+async def get_highlights_for_url(url: str) -> list[tuple]:
+    """Retorna highlights de um documento: (id, exact, prefix, suffix, note, created_at)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT id, exact, prefix, suffix, note, created_at "
+            "FROM highlights WHERE url = ? ORDER BY created_at",
+            (url,),
+        )).fetchall()
+    return list(rows)
+
+
+async def delete_highlight(highlight_id: int) -> None:
+    """Remove highlight e sua entrada no FTS5."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM highlights_fts WHERE rowid = ?", (highlight_id,))
+        await db.execute("DELETE FROM highlights WHERE id = ?", (highlight_id,))
+        await db.commit()
+
+
+async def search_highlights(query: str, limit: int = 20) -> list[tuple]:
+    """Busca FTS5 em highlights. Retorna (highlight_id, url, exact, note)."""
+    import re
+    cleaned = re.sub(r'["\'\(\)\*\:\^]', " ", query).strip()
+    if not cleaned:
+        return []
+    fts_q = " ".join(f"{t}*" for t in cleaned.split() if t)
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                """SELECT h.id, h.url, h.exact, h.note
+                   FROM highlights_fts f
+                   JOIN highlights h ON h.id = f.rowid
+                   WHERE highlights_fts MATCH ?
+                   ORDER BY rank
+                   LIMIT ?""",
+                (fts_q, limit),
+            )).fetchall()
+        return list(rows)
+    except Exception:
+        return []
+
+
+async def count_highlights_for_url(url: str) -> int:
+    """Conta highlights de um documento (usado para annotation density)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT COUNT(*) FROM highlights WHERE url = ?", (url,)
+        )).fetchone()
+    return row[0] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# Search history helpers (autocomplete)
+# ---------------------------------------------------------------------------
+
+async def record_search_query(query: str) -> None:
+    """Registra ou incrementa query no histórico de buscas (para autocomplete)."""
+    query = query.strip()
+    if not query:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO search_history (query, count, last_used)
+               VALUES (?, 1, datetime('now'))
+               ON CONFLICT(query) DO UPDATE SET
+                   count    = count + 1,
+                   last_used = datetime('now')""",
+            (query,),
+        )
+        await db.commit()
+
+
+async def get_query_suggestions(prefix: str, limit: int = 10) -> list[str]:
+    """Retorna queries do histórico que começam com prefix, ordenadas por frequência."""
+    if not prefix.strip():
+        return []
+    pattern = f"{prefix.strip()}%"
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT query FROM search_history "
+            "WHERE query LIKE ? "
+            "ORDER BY count DESC, last_used DESC "
+            "LIMIT ?",
+            (pattern, limit),
+        )).fetchall()
+    return [r[0] for r in rows]

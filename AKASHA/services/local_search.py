@@ -812,12 +812,29 @@ async def _apply_usage_boost(results: list[SearchResult]) -> list[SearchResult]:
 # Função pública
 # ---------------------------------------------------------------------------
 
+async def _search_highlights(query: str) -> list[SearchResult]:
+    """Busca FTS5 em highlights pessoais. Resultados têm source='HIGHLIGHT'."""
+    import database as _db
+    rows = await _db.search_highlights(query)
+    results: list[SearchResult] = []
+    for _, url, exact, note in rows:
+        snippet = note if note else exact[:200]
+        results.append(SearchResult(
+            title=exact[:80],
+            url=url,
+            snippet=snippet,
+            source="HIGHLIGHT",
+        ))
+    return results
+
+
 async def search_local(query: str, max_results: int = 500) -> list[SearchResult]:
-    """Busca local: FTS5 + ChromaDB + sqlite-vec fundidos via RRF, com re-ranking e usage boost."""
-    fts_results    = await _search_fts(query, max_results)
-    chroma_results = await _search_chroma(query)
-    vec_results    = await _search_vec(query, max_results)
-    combined = _rrf([fts_results, chroma_results, vec_results])[:max_results]
+    """Busca local: FTS5 + ChromaDB + sqlite-vec + highlights fundidos via RRF, com re-ranking e usage boost."""
+    fts_results       = await _search_fts(query, max_results)
+    chroma_results    = await _search_chroma(query)
+    vec_results       = await _search_vec(query, max_results)
+    highlight_results = await _search_highlights(query)
+    combined = _rrf([fts_results, chroma_results, vec_results, highlight_results])[:max_results]
     if RERANKING_ENABLED and len(combined) > 1:
         top    = _rerank(combined[:RERANK_TOP_K], query)
         rest   = combined[RERANK_TOP_K:]
