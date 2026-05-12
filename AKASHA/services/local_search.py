@@ -49,6 +49,14 @@ RERANK_MODEL:      str  = "ms-marco-TinyBERT-L-2-v2"
 VECTOR_SEARCH_ENABLED: bool = False
 VEC_EMBED_MODEL:       str  = "all-MiniLM-L6-v2"
 
+# ---------------------------------------------------------------------------
+# Correção ortográfica (symspellpy) — desativada por padrão
+# Quando ativada, queries curtas (≤ 2 tokens) com zero resultados locais são
+# corrigidas automaticamente e reexecutadas. Latência: < 1ms após carga.
+# ---------------------------------------------------------------------------
+
+SPELL_CORRECTION_ENABLED: bool = False
+
 try:
     import bm25s as _bm25s
     _BM25S_AVAILABLE = True
@@ -72,6 +80,12 @@ try:
     _ST_AVAILABLE = True
 except ImportError:
     _ST_AVAILABLE = False
+
+try:
+    from symspellpy import SymSpell as _SymSpell, Verbosity as _Verbosity  # type: ignore
+    _SYMSPELL_AVAILABLE = True
+except ImportError:
+    _SYMSPELL_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Detecção de idioma + stemming (langdetect + NLTK SnowballStemmer)
@@ -156,6 +170,50 @@ def _embed_sync(text: str) -> bytes | None:
         return _sqlite_vec.serialize_float32(arr.tolist())     # type: ignore[union-attr]
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Correção ortográfica (symspellpy)
+# ---------------------------------------------------------------------------
+
+_sym_spell: object | None = None
+
+
+def init_spell_checker() -> None:
+    """Carrega o dicionário EN em memória (síncrono, ~3ms). Chamado no startup."""
+    global _sym_spell
+    if not SPELL_CORRECTION_ENABLED or not _SYMSPELL_AVAILABLE:
+        return
+    try:
+        import os
+        import symspellpy as _symspellpy_pkg  # type: ignore
+        sym = _SymSpell(max_dictionary_edit_distance=2, prefix_length=7)  # type: ignore[operator]
+        dict_path = os.path.join(
+            os.path.dirname(_symspellpy_pkg.__file__),
+            "frequency_dictionary_en_82_765.txt",
+        )
+        sym.load_dictionary(dict_path, term_index=0, count_index=1)
+        _sym_spell = sym
+    except Exception:
+        pass
+
+
+def correct_query(query: str) -> str | None:
+    """Retorna versão corrigida da query ou None se já estiver correta / não aplicável.
+
+    Só corrige queries de ≤ 2 tokens (buscas mais longas raramente são typos isolados).
+    """
+    if not SPELL_CORRECTION_ENABLED or not _SYMSPELL_AVAILABLE or _sym_spell is None:
+        return None
+    if len(query.split()) > 2:
+        return None
+    try:
+        suggestions = _sym_spell.lookup_compound(query, max_edit_distance=2)  # type: ignore[union-attr]
+        if suggestions and suggestions[0].term.lower() != query.lower():
+            return suggestions[0].term
+    except Exception:
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------

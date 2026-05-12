@@ -4214,7 +4214,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Atenção: MX150 tem 2GB VRAM — usar modelo de embedding ≤ 80MB; i5-3470 sem AVX2
   pode ser lento para embeddings, considerar indexar só em CachyOS.
 
-- [ ] **Spell correction de queries com symspellpy**
+- [x] **Spell correction de queries com symspellpy**
   (`services/local_search.py`, antes da query FTS5). Integrar symspellpy (pip install
   symspellpy) com dicionários de frequência PT+EN pré-compilados. Se query tem ≤ 2 tokens
   com baixo score BM25 (< resultados esperados), tentar corrigir. Mostrar "Mostrando

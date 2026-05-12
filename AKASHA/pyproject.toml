@@ -29,6 +29,7 @@ dependencies = [
     "flashrank>=0.2",
     "sqlite-vec>=0.1",
     "sentence-transformers>=3.0",
+    "symspellpy>=6.7",
 ]
 
 [build-system]

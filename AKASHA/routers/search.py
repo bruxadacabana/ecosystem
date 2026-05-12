@@ -17,7 +17,7 @@ import config
 import database
 from services.archiver import archive_url, fetch_and_extract, NearDuplicateError
 from services.web_search import SearchResult, search_web
-from services.local_search import search_local
+from services.local_search import search_local, correct_query
 from services.crawler import search_sites, index_visited_page
 from services.paper_search import PaperResult, search_papers
 from database import (
@@ -102,6 +102,7 @@ async def search(
     watch_later_results: list[SearchResult] = []
     paper_results:       list[PaperResult]  = []
     error: str | None = None
+    corrected_query: str | None = None
 
     if q:
         try:
@@ -129,6 +130,16 @@ async def search(
                     break
         except Exception as exc:
             error = str(exc)
+
+        # Correção ortográfica: tenta reexecutar busca local com query corrigida
+        if src_eco and isinstance(eco_r, list) and not eco_r and len(q.split()) <= 2:
+            cq = correct_query(q)
+            if cq:
+                corrected_query = cq
+                try:
+                    local_results = await search_local(cq)
+                except Exception:
+                    local_results = []
 
         # Separar web_results em P2 (favoritos) e P3 (restante)
         if web_results:
@@ -172,9 +183,10 @@ async def search(
             "src_papers":    bool(src_papers),
             "filetype":      filetype,
             "has_sites":     has_sites,
-            "recent":        recent,
-            "error":         error,
-            "active_tab":    "search",
+            "recent":            recent,
+            "error":             error,
+            "corrected_query":   corrected_query,
+            "active_tab":        "search",
         },
     )
 
