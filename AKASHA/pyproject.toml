@@ -26,6 +26,7 @@ dependencies = [
     "nltk>=3.8",
     "simhash>=2.1",
     "url-normalize>=1.4",
+    "flashrank>=0.2",
 ]
 
 [build-system]

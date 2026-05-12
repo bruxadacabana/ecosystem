@@ -4197,7 +4197,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Também normalizar URL antes de inserir (pip install url-normalize) para deduplicação
   de URLs equivalentes (tracking params, HTTP→HTTPS, trailing slash).
 
-- [ ] **Re-ranking cross-encoder para top-K resultados de busca**
+- [x] **Re-ranking cross-encoder para top-K resultados de busca**
   (`services/local_search.py`). Após FTS5 retornar resultados, aplicar re-ranking com
   FlashRank (pip install flashrank) nos top-20 resultados. FlashRank usa modelos embutidos
   (~4MB) e funciona puramente em CPU sem GPU. Latência estimada: ~200ms para 20 docs

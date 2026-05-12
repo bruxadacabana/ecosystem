@@ -23,11 +23,31 @@ from services.web_search import SearchResult
 
 SNIPPET_MODE: str = "fts5"
 
+# ---------------------------------------------------------------------------
+# Re-ranking cross-encoder (FlashRank) — desativado por padrão
+# Quando ativado, os top-RERANK_TOP_K resultados FTS5+RRF são re-ordenados
+# por um modelo cross-encoder leve (~4MB, CPU-only).
+# Latência estimada: ~200ms/20 docs em CPU moderno; pode ser mais lento em
+# máquinas antigas (ex: i5-3470 sem AVX2) — habilitar só se aceitável.
+# Modelos disponíveis: "ms-marco-TinyBERT-L-2-v2" (4MB, rápido),
+#                      "ms-marco-MiniLM-L-12-v2" (80MB, mais preciso).
+# ---------------------------------------------------------------------------
+
+RERANKING_ENABLED: bool = False
+RERANK_TOP_K:      int  = 20
+RERANK_MODEL:      str  = "ms-marco-TinyBERT-L-2-v2"
+
 try:
     import bm25s as _bm25s
     _BM25S_AVAILABLE = True
 except ImportError:
     _BM25S_AVAILABLE = False
+
+try:
+    from flashrank import Ranker as _Ranker, RerankRequest as _RerankRequest  # type: ignore
+    _FLASHRANK_AVAILABLE = True
+except ImportError:
+    _FLASHRANK_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Detecção de idioma + stemming (langdetect + NLTK SnowballStemmer)
@@ -249,6 +269,47 @@ def _best_paragraph(body: str, query: str, max_chars: int = 400) -> str:
         return str(results[0][0])[:max_chars]
     except Exception:
         return paragraphs[0][:max_chars]
+
+
+# ---------------------------------------------------------------------------
+# Re-ranking cross-encoder (FlashRank)
+# ---------------------------------------------------------------------------
+
+_ranker: object | None = None
+
+
+def _get_ranker() -> object | None:
+    """Retorna instância singleton do Ranker (carregado na primeira chamada)."""
+    global _ranker
+    if _ranker is None and _FLASHRANK_AVAILABLE:
+        try:
+            _ranker = _Ranker(model_name=RERANK_MODEL)  # type: ignore[operator]
+        except Exception:
+            pass
+    return _ranker
+
+
+def _rerank(results: list[SearchResult], query: str) -> list[SearchResult]:
+    """
+    Re-ordena resultados usando cross-encoder FlashRank.
+    Retorna a lista original inalterada se FlashRank não estiver disponível
+    ou se ocorrer qualquer erro durante o re-ranking.
+    """
+    if not RERANKING_ENABLED or not _FLASHRANK_AVAILABLE:
+        return results
+    ranker = _get_ranker()
+    if ranker is None or not results:
+        return results
+    try:
+        passages = [
+            {"id": i, "text": f"{r.title}. {r.snippet}"}
+            for i, r in enumerate(results)
+        ]
+        request = _RerankRequest(query=query, passages=passages)  # type: ignore[operator]
+        reranked = ranker.rerank(request)  # type: ignore[union-attr]
+        return [results[item["id"]] for item in reranked]
+    except Exception:
+        return results
 
 
 # ---------------------------------------------------------------------------
@@ -476,7 +537,12 @@ def rank_combined(
 # ---------------------------------------------------------------------------
 
 async def search_local(query: str, max_results: int = 500) -> list[SearchResult]:
-    """Busca local: FTS5 + ChromaDB fundidos via Reciprocal Rank Fusion."""
+    """Busca local: FTS5 + ChromaDB fundidos via RRF, com re-ranking opcional."""
     fts_results    = await _search_fts(query, max_results)
     chroma_results = await _search_chroma(query)
-    return _rrf([fts_results, chroma_results])[:max_results]
+    combined = _rrf([fts_results, chroma_results])[:max_results]
+    if RERANKING_ENABLED and len(combined) > 1:
+        top    = _rerank(combined[:RERANK_TOP_K], query)
+        rest   = combined[RERANK_TOP_K:]
+        combined = top + rest
+    return combined
