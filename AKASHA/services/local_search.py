@@ -858,6 +858,73 @@ async def _search_highlights(query: str) -> list[SearchResult]:
     return results
 
 
+async def find_related(url: str, n: int = 5) -> list[SearchResult]:
+    """Encontra documentos relacionados via TF simplificado sobre FTS5.
+
+    Extrai os termos mais discriminantes do documento apontado por url (frequência
+    de palavras no corpo), executa nova busca FTS5 com esses termos, e exclui o
+    próprio documento do resultado. Sem dependências externas — FTS5 puro.
+    """
+    import sys as _sys
+    from urllib.parse import unquote as _unquote, urlparse as _urlparse
+
+    parsed = _urlparse(url)
+    if parsed.scheme != "file":
+        return []
+    raw = _unquote(parsed.path)
+    if _sys.platform == "win32" and raw.startswith("/"):
+        raw = raw[1:]
+    path_str = str(Path(raw))
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT title, body FROM local_fts WHERE path = ?",
+            (path_str,),
+        )).fetchone()
+    if not row:
+        return []
+
+    text = f"{row[0] or ''} {row[1] or ''}"
+
+    _STOPWORDS = frozenset({
+        "a", "o", "e", "de", "da", "do", "em", "no", "na", "para", "por", "com",
+        "que", "se", "não", "um", "uma", "os", "as", "ao", "dos", "das", "é",
+        "the", "and", "or", "of", "to", "in", "is", "it", "for", "on", "at",
+        "this", "that", "with", "from", "an", "are", "was", "be", "but", "have",
+        "mais", "sua", "seu", "ser", "são", "como", "mas", "foi", "pela", "pelo",
+    })
+    words = re.findall(r"[a-zA-ZÀ-ÿ]{4,}", text.lower())
+    freq: dict[str, int] = {}
+    for w in words:
+        if w not in _STOPWORDS:
+            freq[w] = freq.get(w, 0) + 1
+    if not freq:
+        return []
+
+    top_terms = sorted(freq, key=freq.__getitem__, reverse=True)[:8]
+    fts_query = " OR ".join(top_terms)
+
+    results: list[SearchResult] = []
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                """SELECT path, title, snippet(local_fts, 2, '', '', '…', 30), source
+                   FROM local_fts
+                   WHERE local_fts MATCH ?
+                   ORDER BY rank
+                   LIMIT ?""",
+                (fts_query, n + 1),
+            )).fetchall()
+        results = [
+            SearchResult(title=row[1], url=Path(row[0]).as_uri(), snippet=row[2], source=row[3])
+            for row in rows
+            if row[0] != path_str
+        ][:n]
+    except Exception:
+        pass
+    return results
+
+
 async def search_local(query: str, max_results: int = 500) -> list[SearchResult]:
     """Busca local: FTS5 + ChromaDB + sqlite-vec + highlights fundidos via RRF, com re-ranking e usage boost."""
     fts_results       = await _search_fts(query, max_results)

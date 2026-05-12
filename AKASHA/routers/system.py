@@ -75,7 +75,15 @@ async def open_file(url: str = Query(...)) -> Response:
 async def coread(request: Request, url: str = Query(...)) -> HTMLResponse:
     """HTMX fragment: documentos lidos na mesma sessão de pesquisa que url."""
     results = await database.get_coread_urls(url)
-    return _templates.TemplateResponse(request, "_coread.html", {"results": results})
+    return _templates.TemplateResponse(request, "_coread.html", {"results": results, "doc_url": url})
+
+
+@router.get("/related", response_class=HTMLResponse)
+async def related(request: Request, url: str = Query(...)) -> HTMLResponse:
+    """HTMX fragment: documentos relacionados por conteúdo (TF/FTS5) ao url dado."""
+    from services.local_search import find_related
+    results = await find_related(url)
+    return _templates.TemplateResponse(request, "_related.html", {"results": results, "doc_url": url})
 
 
 async def _xdg_open(path: str) -> str | None:

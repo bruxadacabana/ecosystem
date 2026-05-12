@@ -4299,14 +4299,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   FTS5. Inspirado em Kagi lenses — filtros nomeados que persistem entre sessões e podem
   ser ativados com um clique.
 
-- [ ] **TF-IDF local para documentos relacionados** (`services/local_search.py`,
+- [x] **TF-IDF local para documentos relacionados** (`services/local_search.py`,
   nova função `find_related(url, n=5)`). Ao exibir um documento arquivado, calcular TF-IDF
   do seu conteúdo contra o corpus indexado no FTS5 (extrair termos discriminantes via
   `SELECT bm25(local_fts) ...`) e fazer nova busca FTS5 com esses termos, excluindo o
   próprio documento. Exibir seção "Documentos relacionados:" com até 5 cards. Sem LLM,
   sem nova dependência — FTS5 puro.
 
-- [ ] **Progressive disclosure na UI de resultados** (`templates/search.html`). Estruturar
+- [x] **Progressive disclosure na UI de resultados** (`templates/search.html`). Estruturar
   cards de resultado em 3 camadas acessíveis progressivamente: (1) título + snippet 30-50
   palavras + ícones de highlights e tags; (2) preview expansível ao clicar "▸" com todos
   os highlights do documento + metadados completos (autor, data, domínio, idioma, word count);

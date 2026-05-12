@@ -1348,6 +1348,49 @@ a:hover { opacity: 0.75; }
   font-style: italic;
 }
 
+.coread-toggles {
+  display:     flex;
+  gap:         0.25rem;
+  padding:     0.3rem 0 0.1rem;
+}
+
+.coread-toggle-active {
+  color:            var(--accent);
+  border-color:     var(--accent);
+  background-color: transparent;
+}
+
+/* ── Progressive disclosure ────────────────────────────────── */
+
+.result-details {
+  margin:     0.2rem 0 0;
+  border-top: 1px solid var(--rule-light);
+  padding-top: 0.25rem;
+}
+
+.result-details-summary {
+  font-size:   0.78rem;
+  color:       var(--ink-ghost);
+  cursor:      pointer;
+  user-select: none;
+  list-style:  none;
+  padding:     0.15rem 0;
+}
+
+.result-details-summary::-webkit-details-marker { display: none; }
+
+.result-details[open] .result-details-summary {
+  color: var(--ink-light);
+}
+
+.result-snippet-full {
+  font-size:   0.85rem;
+  color:       var(--ink-light);
+  line-height: 1.55;
+  margin:      0.4rem 0 0.2rem;
+  white-space: pre-wrap;
+}
+
 /* ── Lenses pessoais ───────────────────────────────────────── */
 
 .lenses-page {

@@ -40,6 +40,7 @@
 
 {% macro result_card(r) %}
 <li class="card result-card">
+  <!-- Layer 1: cabeçalho + título + snippet curto -->
   <div class="result-header">
     <span class="badge badge-{{ r.source | lower }}">{{ r.source }}</span>
     {% if r.date %}<time class="result-date">{{ r.date }}</time>{% endif %}
@@ -52,8 +53,18 @@
     {% endif %}
   </h2>
   {% if r.snippet %}
-    <p class="result-snippet">{{ r.snippet }}</p>
+    <p class="result-snippet">{{ r.snippet | truncate(220, true, '…') }}</p>
   {% endif %}
+
+  <!-- Layer 2: snippet completo expansível (só renderiza se houver conteúdo extra) -->
+  {% if r.snippet and r.snippet | length > 220 %}
+  <details class="result-details">
+    <summary class="result-details-summary">&#x25B8; <span class="btn-label">expandir</span></summary>
+    <p class="result-snippet-full">{{ r.snippet }}</p>
+  </details>
+  {% endif %}
+
+  <!-- Layer 3: rodapé com URL + ações (inclui "abrir" para arquivos locais) -->
   <div class="result-footer">
     <span class="result-url">{{ r.url }}</span>
     <div class="result-actions">
@@ -64,12 +75,6 @@
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Abrindo arquivo…' : 'Erro ao abrir', event.detail.successful ? 'success' : 'error')"
         title="Abrir com o app padrão do sistema">&#x2197; <span class="btn-label">abrir</span></button>
-      <button
-        class="btn btn-ghost btn-sm coread-toggle"
-        hx-get="/coread?url={{ r.url | urlencode }}"
-        hx-target="closest .coread-area"
-        hx-swap="innerHTML"
-        title="Documentos lidos na mesma sessão de pesquisa">&#x223C; <span class="btn-label">sessão</span></button>
       {% else %}
       <a href="{{ r.url }}" download class="btn btn-ghost btn-sm" title="Baixar arquivo">&#x21A7; <span class="btn-label">baixar</span></a>
       {% endif %}
@@ -119,7 +124,7 @@
         hx-vals='{"url": "{{ r.url }}", "title": "{{ r.title | replace('"', '&quot;') }}", "snippet": "{{ r.snippet | replace('"', '&quot;') | truncate(200, true, '') }}"}'
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Salvo para depois!' : 'Erro ao salvar', event.detail.successful ? 'success' : 'error')"
-      >☆</button>
+      >&#x2606;</button>
       <button
         class="btn btn-ghost card-action-icon card-action-block"
         title="Bloquear domínio"
@@ -127,12 +132,27 @@
         hx-vals='{"url": "{{ r.url }}"}'
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Domínio bloqueado' : 'Erro ao bloquear', event.detail.successful ? 'info' : 'error')"
-      >−</button>
+      >&#x2212;</button>
       {% endif %}
     </div>
   </div>
+
+  <!-- Área de contexto expandível: sessão de leitura e documentos relacionados (só para arquivos locais) -->
   {% if r.url.startswith('file://') %}
-  <div class="coread-area"></div>
+  <div class="coread-area">
+    <div class="coread-toggles">
+      <button class="btn btn-ghost btn-sm"
+              hx-get="/coread?url={{ r.url | urlencode }}"
+              hx-target="closest .coread-area"
+              hx-swap="innerHTML"
+              title="Documentos lidos na mesma sessão de pesquisa">&#x223C; <span class="btn-label">sessão</span></button>
+      <button class="btn btn-ghost btn-sm"
+              hx-get="/related?url={{ r.url | urlencode }}"
+              hx-target="closest .coread-area"
+              hx-swap="innerHTML"
+              title="Documentos relacionados por conteúdo">&#x223F; <span class="btn-label">relacionados</span></button>
+    </div>
+  </div>
   {% endif %}
 </li>
 {% endmacro %}
