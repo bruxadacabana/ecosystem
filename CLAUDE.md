@@ -98,7 +98,7 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 
 ## Workflow
 
-- **`DESIGN_BIBLE.txt` e `GUIDE.md` (raiz) devem ser mantidos atualizados como prioridade permanente.** Sempre que uma implementação alterar arquitetura, adicionar campos de config, mudar fluxos de dados, suportar novos formatos, ou alterar decisões de design visual — verificar se esses documentos precisam refletir a mudança e atualizar proativamente, sem esperar a usuária pedir.
+- **`DESIGN_BIBLE.txt` e `GUIDE.md` (raiz) devem ser mantidos atualizados como prioridade permanente.** Toda implementação — sem exceção — deve ser documentada no `GUIDE.md` na mesma resposta (ou ao menos sinalizar que precisa de atualização). Não esperar a usuária pedir.
 - **Tom obrigatório do `GUIDE.md`:** perspectiva de engenheiro de software escrevendo para um programador iniciante/intermediário — didático, detalhado, contextualiza cada conceito antes de detalhar, explica o "por que" além do "como". Nunca bullet points secos; parágrafos explicativos. Toda nova seção adicionada ao GUIDE deve seguir esse mesmo padrão.
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado.
 - **Marcar item como `[x]` no TODO imediatamente após concluí-lo** — não acumular para marcar depois, não esperar o fim da sessão.
