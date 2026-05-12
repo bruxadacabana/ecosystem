@@ -15,6 +15,21 @@ from config import DB_PATH
 from services.web_search import SearchResult
 
 # ---------------------------------------------------------------------------
+# Modo de snippet — 'fts5' (padrão) ou 'paragraph_bm25'
+# 'paragraph_bm25': divide o body em parágrafos e retorna o mais relevante
+# usando BM25 local (pip install bm25s). Produz snippets mais coerentes que
+# o snippet() do FTS5 (limitado a 64 tokens, heurística simples).
+# ---------------------------------------------------------------------------
+
+SNIPPET_MODE: str = "fts5"
+
+try:
+    import bm25s as _bm25s
+    _BM25S_AVAILABLE = True
+except ImportError:
+    _BM25S_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
 # ChromaDB — import opcional
 # ---------------------------------------------------------------------------
 
@@ -179,6 +194,34 @@ async def index_local_files() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Snippet por parágrafo (BM25)
+# ---------------------------------------------------------------------------
+
+def _best_paragraph(body: str, query: str, max_chars: int = 400) -> str:
+    """Retorna o parágrafo de body mais relevante para query via BM25.
+
+    Usado quando SNIPPET_MODE == 'paragraph_bm25'. Fallback para os primeiros
+    max_chars do body se bm25s não estiver disponível ou body tiver ≤ 1 parágrafo.
+    """
+    if not _BM25S_AVAILABLE:
+        return body[:max_chars]
+
+    paragraphs = [p.strip() for p in body.split("\n\n") if len(p.strip()) > 30]
+    if len(paragraphs) <= 1:
+        return (paragraphs[0] if paragraphs else body)[:max_chars]
+
+    try:
+        corpus_tokens = _bm25s.tokenize(paragraphs, show_progress=False)
+        query_tokens  = _bm25s.tokenize([query],    show_progress=False)
+        retriever = _bm25s.BM25()
+        retriever.index(corpus_tokens)
+        results, _ = retriever.retrieve(query_tokens, corpus=paragraphs, k=1)
+        return str(results[0][0])[:max_chars]
+    except Exception:
+        return paragraphs[0][:max_chars]
+
+
+# ---------------------------------------------------------------------------
 # Busca FTS5
 # ---------------------------------------------------------------------------
 
@@ -194,23 +237,42 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
     if not fts_query:
         return []
     results: list[SearchResult] = []
-    # Busca em arquivos locais (KOSMOS, AETHER, MNEMOSYNE, AKASHA archive, HERMES)
+    use_para = SNIPPET_MODE == "paragraph_bm25" and _BM25S_AVAILABLE
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            rows = await (await db.execute(
-                """SELECT path, title,
-                          snippet(local_fts, 2, '', '', '…', 40),
-                          source
-                   FROM local_fts
-                   WHERE local_fts MATCH ?
-                   ORDER BY rank
-                   LIMIT ?""",
-                (fts_query, max_results),
-            )).fetchall()
-        results.extend(
-            SearchResult(title=row[1], url=Path(row[0]).as_uri(), snippet=row[2], source=row[3])
-            for row in rows
-        )
+            if use_para:
+                rows = await (await db.execute(
+                    """SELECT path, title, body, source
+                       FROM local_fts
+                       WHERE local_fts MATCH ?
+                       ORDER BY rank
+                       LIMIT ?""",
+                    (fts_query, max_results),
+                )).fetchall()
+                results.extend(
+                    SearchResult(
+                        title=row[1],
+                        url=Path(row[0]).as_uri(),
+                        snippet=_best_paragraph(row[2] or "", query),
+                        source=row[3],
+                    )
+                    for row in rows
+                )
+            else:
+                rows = await (await db.execute(
+                    """SELECT path, title,
+                              snippet(local_fts, 2, '', '', '…', 40),
+                              source
+                       FROM local_fts
+                       WHERE local_fts MATCH ?
+                       ORDER BY rank
+                       LIMIT ?""",
+                    (fts_query, max_results),
+                )).fetchall()
+                results.extend(
+                    SearchResult(title=row[1], url=Path(row[0]).as_uri(), snippet=row[2], source=row[3])
+                    for row in rows
+                )
     except Exception:
         pass
     return results

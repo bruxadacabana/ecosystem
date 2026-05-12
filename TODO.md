@@ -4153,7 +4153,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   na criação da tabela. Isso permite usar `ORDER BY rank` em vez de repetir os pesos em
   cada query, e facilita ajuste de pesos sem alterar código de busca.
 
-- [ ] **Implementar snippets por parágrafo como alternativa ao snippet() FTS5**
+- [x] **Implementar snippets por parágrafo como alternativa ao snippet() FTS5**
   (`services/local_search.py`). A função snippet() FTS5 é limitada a 64 tokens e usa
   heurística simples. Para resultados de melhor qualidade: dividir o body do documento
   em parágrafos, aplicar BM25 (bm25s ou rank_bm25) para rankear parágrafos contra a query,
