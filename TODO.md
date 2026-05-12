@@ -4821,6 +4821,47 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   pesquisas.md, TODO.md e outros arquivos de texto. Bancos ficam locais por máquina.
   Instalar como serviço ou daemon; configurar par de dispositivos (Windows ↔ CachyOS).
 
+### LOGOS: arquitetura de skill routing multi-agente via arquivos .md | 2026-05-12
+> Contexto: pesquisa sobre o padrão Agent Skills Specification (Anthropic, out/2025) e
+> arquitetura two-model router (RouteLLM, arXiv:2406.18665) revelou um caminho viável para
+> o LOGOS orquestrar tarefas por tipo usando arquivos .md como definição de habilidades.
+> Dispatcher pequeno (3B, sempre aquecido) + executor maior (7B+) por skill.
+
+#### LOGOS
+- [ ] **Estrutura `logos/skills/` com SKILL.md por tipo de tarefa** — criar diretório
+  `logos/skills/` no HUB. Cada skill é um arquivo `<nome>.md` com frontmatter YAML obrigatório:
+  `name` (slug, max 64 chars) e `description` (max 1024 chars — descreve QUANDO usar o skill,
+  não apenas o que faz; é o único campo lido pelo dispatcher na fase de seleção). Corpo Markdown
+  com: (a) instruções completas de execução; (b) 2-4 pares few-shot input→output; (c) output
+  format especificado explicitamente com exemplo de JSON; (d) instrução final "responda APENAS
+  no formato especificado". Skills iniciais: `rag-query.md`, `synthesis.md`,
+  `entity-extraction.md`, `chunk-classification.md`. Padrão diretamente compatível com
+  Agent Skills Specification (agentskills.io).
+
+- [ ] **Dispatcher com dois modelos** — implementar `logos/dispatcher.py`: modelo router 3B
+  (ex: Llama 3.2 3B Instruct) sempre aquecido em memória (`keep_alive: -1` via Ollama) recebe
+  o request e retorna JSON `{"skill": "<nome>", "confidence": 0.0-1.0}`. Usar Pydantic +
+  `format=SkillSelection.model_json_schema()` no Ollama Python SDK para forçar enum de skill
+  names válidos e garantir JSON válido. Fallback para skill genérico se `confidence < 0.7`.
+  Modelo executor 7B+ carregado sob demanda com `keep_alive` curto conforme prioridade LOGOS
+  (P1/P2/P3). Overhead do dispatcher: 200–600 ms; latência total com modelos aquecidos: 1–3 s.
+  Basear na arquitetura RouteLLM (arXiv:2406.18665, ICLR 2025).
+
+- [ ] **Routing 3-tier para minimizar overhead de LLM** — antes de acionar o dispatcher LLM,
+  implementar dois filtros mais rápidos: (1) regex/keyword matching para requests triviais e
+  repetitivos (~80% dos casos, latência ~0 ms — ex: "resuma esse texto" → sempre `synthesis`);
+  (2) embedding similarity contra embeddings pré-computados dos campos `description` de cada
+  skill (para requests ambíguos mas estruturados, latência ~50 ms); (3) LLM dispatcher apenas
+  para casos que passem pelos dois filtros anteriores. Essa cadeia elimina o overhead do LLM
+  para a maioria dos requests, reduzindo latência média do sistema.
+
+- [ ] **Command R 7B como executor do skill `rag-query`** — o Command R 7B (Cohere) é o único
+  modelo sub-10B com treinamento explícito para grounded generation com citação de fontes
+  (grounding spans). Configurar o LOGOS para usar Command R 7B especificamente quando o
+  dispatcher selecionar o skill `rag-query`, em vez do modelo executor padrão. Requer que
+  o Command R 7B esteja disponível via Ollama (`ollama pull command-r`). Consumo: ~5 GB VRAM
+  em Q4_K_M — cabe na RX 6600 com margem.
+
 ### Mnemosyne: novos formatos de entrada — Kindle e imagens | 2026-05-06
 > Contexto: pesquisa sobre eBook Kindle (AZW/AZW3/MOBI) e leitura de imagens em pipeline RAG
 > revelou opções viáveis sem dependências pesadas. AZW/MOBI via `mobi` (PyPI, sem nativas);
