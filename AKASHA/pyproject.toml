@@ -24,6 +24,8 @@ dependencies = [
     "bm25s>=0.2",
     "langdetect>=1.0",
     "nltk>=3.8",
+    "simhash>=2.1",
+    "url-normalize>=1.4",
 ]
 
 [build-system]

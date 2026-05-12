@@ -10,10 +10,26 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse, urlencode, parse_qsl
 
 import httpx
 import trafilatura
+
+# ---------------------------------------------------------------------------
+# Imports opcionais — deduplicação e normalização de URL
+# ---------------------------------------------------------------------------
+
+try:
+    from url_normalize import url_normalize as _url_normalize_lib
+    _URL_NORMALIZE_AVAILABLE = True
+except ImportError:
+    _URL_NORMALIZE_AVAILABLE = False
+
+try:
+    from simhash import Simhash as _Simhash
+    _SIMHASH_AVAILABLE = True
+except ImportError:
+    _SIMHASH_AVAILABLE = False
 
 # Módulo compartilhado do ecossistema
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -77,6 +93,55 @@ def _is_scientific_url(url: str) -> bool:
         return any(hostname.endswith("." + d) for d in _SCIENTIFIC_DOMAINS)
     except Exception:
         return False
+
+
+# Parâmetros de rastreamento a remover na normalização de URL
+_TRACKING_PARAMS: frozenset[str] = frozenset({
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "utm_id", "fbclid", "gclid", "msclkid", "mc_cid", "mc_eid",
+})
+
+
+# ---------------------------------------------------------------------------
+# Deduplicação near-duplicate (SimHash + normalização de URL)
+# ---------------------------------------------------------------------------
+
+class NearDuplicateError(Exception):
+    """Levantada quando o conteúdo a arquivar é near-duplicate de documento já existente."""
+    def __init__(self, existing_url: str, existing_path: str) -> None:
+        self.existing_url = existing_url
+        self.existing_path = existing_path
+        super().__init__(f"Near-duplicate de: {existing_url}")
+
+
+def _normalize_url(url: str) -> str:
+    """
+    Normaliza URL para forma canônica:
+      - lowercase scheme + host (via url-normalize se disponível)
+      - remove parâmetros de rastreamento (utm_*, fbclid, etc.)
+      - ordena os query params restantes para forma estável
+    """
+    try:
+        if _URL_NORMALIZE_AVAILABLE:
+            url = _url_normalize_lib(url)
+        parsed = urlparse(url)
+        clean_params = sorted(
+            (k, v) for k, v in parse_qsl(parsed.query)
+            if k.lower() not in _TRACKING_PARAMS
+        )
+        return urlunparse(parsed._replace(query=urlencode(clean_params)))
+    except Exception:
+        return url
+
+
+def _compute_simhash(text: str) -> int | None:
+    """Calcula SimHash do texto. Retorna None se a biblioteca não estiver disponível."""
+    if not _SIMHASH_AVAILABLE or not text:
+        return None
+    try:
+        return _Simhash(text).value
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +338,18 @@ async def archive_url(
     """
     tags = tags or []
 
+    # Normaliza URL antes de tudo: remove tracking params, lowercase scheme+host
+    url = _normalize_url(url)
+
     page = await fetch_and_extract(url)  # sem truncamento — arquivo completo
+
+    # Near-duplicate check via SimHash (distância de Hamming ≤ 3 → rejeitar)
+    simhash_val = _compute_simhash(page.content_md)
+    if simhash_val is not None:
+        import database as _db
+        dup = await _db.find_near_duplicate(simhash_val)
+        if dup:
+            raise NearDuplicateError(existing_url=dup[0], existing_path=dup[1])
 
     now      = datetime.now()
     date_str = now.strftime("%Y-%m-%d %H:%M")
@@ -313,6 +389,11 @@ async def archive_url(
         dest_path.write_text(body, encoding="utf-8")
     except OSError as exc:
         raise RuntimeError(f"Não foi possível salvar o arquivo: {exc}") from exc
+
+    # Persiste SimHash para deduplicação de arquivamentos futuros
+    if simhash_val is not None:
+        import database as _db
+        await _db.store_archive_simhash(simhash_val, str(dest_path), url)
 
     return ArchivedPage(
         title=page.title, source=domain, author=page.author, date=date_str,

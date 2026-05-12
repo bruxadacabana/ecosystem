@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -188,6 +188,19 @@ _CREATE_IDX_ACTIVITY_LOG = """
 CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC);
 """
 
+_CREATE_ARCHIVE_SIMHASHES = """
+CREATE TABLE IF NOT EXISTS archive_simhashes (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    simhash INTEGER NOT NULL,
+    path    TEXT    NOT NULL UNIQUE,
+    url     TEXT    NOT NULL
+);
+"""
+
+_CREATE_IDX_ARCHIVE_SIMHASHES = """
+CREATE INDEX IF NOT EXISTS idx_archive_simhashes ON archive_simhashes(simhash);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -228,6 +241,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_WATCH_LATER_FTS)
         await db.execute(_CREATE_ACTIVITY_LOG)
         await db.execute(_CREATE_IDX_ACTIVITY_LOG)
+        await db.execute(_CREATE_ARCHIVE_SIMHASHES)
+        await db.execute(_CREATE_IDX_ARCHIVE_SIMHASHES)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -407,6 +422,19 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         )
         await db.execute(
             "INSERT INTO crawl_fts(crawl_fts, rank) VALUES('rank', 'bm25(0, 0, 10.0, 1.0)')"
+        )
+
+    if from_version < 18:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS archive_simhashes (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                simhash INTEGER NOT NULL,
+                path    TEXT    NOT NULL UNIQUE,
+                url     TEXT    NOT NULL
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_archive_simhashes ON archive_simhashes(simhash)"
         )
 
     await db.execute(
@@ -804,3 +832,36 @@ async def get_active_downloads() -> list[tuple]:
             "FROM downloads WHERE status IN ('queued', 'active') ORDER BY created_at ASC",
         )).fetchall()
     return list(rows)
+
+
+# ---------------------------------------------------------------------------
+# SimHash helpers (archive deduplication)
+# ---------------------------------------------------------------------------
+
+async def find_near_duplicate(simhash_val: int, threshold: int = 3) -> tuple[str, str] | None:
+    """
+    Busca near-duplicate por distância de Hamming entre SimHashes.
+    Retorna (url, path) do primeiro documento arquivado dentro do threshold, ou None.
+    Distância de Hamming: número de bits diferentes entre os dois hashes de 64 bits.
+    """
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                "SELECT simhash, url, path FROM archive_simhashes"
+            )).fetchall()
+        for stored_hash, stored_url, stored_path in rows:
+            if bin(simhash_val ^ stored_hash).count("1") <= threshold:
+                return stored_url, stored_path
+    except Exception:
+        pass
+    return None
+
+
+async def store_archive_simhash(simhash_val: int, path: str, url: str) -> None:
+    """Armazena ou atualiza o SimHash de um documento arquivado."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO archive_simhashes (simhash, path, url) VALUES (?, ?, ?)",
+            (simhash_val, path, url),
+        )
+        await db.commit()

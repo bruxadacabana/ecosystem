@@ -4189,7 +4189,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   estar em diferentes formas morfológicas. Atenção: unicode61 remove_diacritics já cobre
   variações de acento — stemming é complementar.
 
-- [ ] **Implementar deduplicação near-duplicate via SimHash no archiver**
+- [x] **Implementar deduplicação near-duplicate via SimHash no archiver**
   (`services/archiver.py` ou `services/library.py`). Ao arquivar nova URL, calcular SimHash
   do texto extraído (pip install simhash). Comparar com SimHashes de documentos já indexados
   armazenados em coluna da tabela de metadados (distância Hamming ≤ 3 → near-duplicate).
