@@ -4173,7 +4173,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Isso garante que buscar "pagina" encontre "página", "cafe" encontre "café", etc.
   Melhoria de recall para PT+EN sem custo adicional.
 
-- [ ] **Implementar RRF (Reciprocal Rank Fusion) entre FTS5 e ChromaDB**
+- [x] **Implementar RRF (Reciprocal Rank Fusion) entre FTS5 e ChromaDB**
   (`services/local_search.py`, função `rank_combined`). O `rank_combined()` atual usa
   re-scoring simples por contagem de termos. Substituir por RRF: (1) FTS5 retorna lista
   ranqueada por BM25; (2) ChromaDB retorna lista por cosine similarity; (3) RRF combina
