@@ -4167,7 +4167,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   asterisco no final de tokens (prefix), (c) remover apenas chars que causam erros de sintaxe
   FTS5. Adicionar detecção de intenção: se query contém aspas, tratá-la como phrase query.
 
-- [ ] **Configurar tokenizer unicode61 com remove_diacritics 2 nas tabelas FTS5**
+- [x] **Configurar tokenizer unicode61 com remove_diacritics 2 nas tabelas FTS5**
   (`database.py` na criação das tabelas). Atualmente as tabelas FTS5 usam o tokenizer padrão.
   Adicionar `tokenize='unicode61 remove_diacritics 2'` na criação de local_fts e library_fts.
   Isso garante que buscar "pagina" encontre "página", "cafe" encontre "café", etc.

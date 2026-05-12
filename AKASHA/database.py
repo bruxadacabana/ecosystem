@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -143,7 +143,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS crawl_fts USING fts5(
     url        UNINDEXED,
     title,
     content_md,
-    prefix = '2 3'
+    prefix   = '2 3',
+    tokenize = 'unicode61 remove_diacritics 2'
 );
 """
 
@@ -370,6 +371,31 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             )
         """)
         await db.execute("DELETE FROM local_index_meta")
+
+    if from_version < 17:
+        # Recriar crawl_fts com tokenizer unicode61 remove_diacritics=2.
+        # Garante que buscar "pagina" encontre "página", "cafe" encontre "café", etc.
+        # FTS5 não suporta ALTER TABLE — drop + recreate + repopulate.
+        await db.execute("DROP TABLE IF EXISTS crawl_fts")
+        await db.execute("""
+            CREATE VIRTUAL TABLE crawl_fts USING fts5(
+                site_id    UNINDEXED,
+                url        UNINDEXED,
+                title,
+                content_md,
+                prefix   = '2 3',
+                tokenize = 'unicode61 remove_diacritics 2'
+            )
+        """)
+        await db.execute("""
+            INSERT INTO crawl_fts (site_id, url, title, content_md)
+            SELECT CAST(site_id AS TEXT), url, title, substr(content_md, 1, 12000)
+            FROM crawl_pages
+            WHERE content_md != ''
+        """)
+        await db.execute(
+            "INSERT INTO crawl_fts(crawl_fts, rank) VALUES('rank', 'bm25(0, 0, 10.0, 1.0)')"
+        )
 
     if from_version < 16:
         # Configura pesos BM25 persistentes nas tabelas FTS5.
