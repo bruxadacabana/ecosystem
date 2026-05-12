@@ -1,19 +1,19 @@
 <div class="coread-toggles">
-  <button class="btn btn-ghost btn-sm coread-toggle-active"
+  <button class="btn btn-ghost btn-sm"
           hx-get="/coread?url={{ doc_url | urlencode }}"
           hx-target="closest .coread-area"
           hx-swap="innerHTML"
-          title="Recarregar documentos da sessão">&#x223C; <span class="btn-label">sessão</span></button>
+          title="Documentos lidos na mesma sessão de pesquisa">&#x223C; <span class="btn-label">sessão</span></button>
   <button class="btn btn-ghost btn-sm"
           hx-get="/related?url={{ doc_url | urlencode }}"
           hx-target="closest .coread-area"
           hx-swap="innerHTML"
           title="Documentos relacionados por conteúdo">&#x223F; <span class="btn-label">relacionados</span></button>
-  <button class="btn btn-ghost btn-sm"
+  <button class="btn btn-ghost btn-sm coread-toggle-active"
           hx-get="/citations?url={{ doc_url | urlencode }}"
           hx-target="closest .coread-area"
           hx-swap="innerHTML"
-          title="Documentos com referências em comum">&#x2042; <span class="btn-label">citações</span></button>
+          title="Recarregar documentos com referências em comum">&#x2042; <span class="btn-label">citações</span></button>
   <button class="btn btn-ghost btn-sm"
           hx-get="/more-from-source?url={{ doc_url | urlencode }}"
           hx-target="closest .coread-area"
@@ -22,23 +22,23 @@
 </div>
 {% if results %}
 <section class="coread-section">
-  <p class="coread-title">Visto na mesma sessão de pesquisa</p>
+  <p class="coread-title">Documentos com referências em comum</p>
   <ul class="coread-list">
-    {% for url, name, count in results %}
+    {% for file_uri, title, shared in results %}
     <li class="coread-item">
       <button
         class="btn btn-ghost btn-sm"
-        hx-get="/open-file?url={{ url | urlencode }}"
+        hx-get="/open-file?url={{ file_uri | urlencode }}"
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Abrindo…' : 'Erro ao abrir', event.detail.successful ? 'success' : 'error')"
         title="Abrir arquivo"
       >&#x2197;</button>
-      <span class="coread-name" title="{{ url }}">{{ name }}</span>
-      {% if count > 1 %}<span class="coread-count">&#x00D7;{{ count }}</span>{% endif %}
+      <span class="coread-name" title="{{ file_uri }}">{{ title }}</span>
+      <span class="coread-count" title="DOIs em comum">&#x2042;{{ shared }}</span>
     </li>
     {% endfor %}
   </ul>
 </section>
 {% else %}
-<span class="coread-empty">Nenhum documento lido junto nesta janela de tempo.</span>
+<span class="coread-empty">Nenhuma referência em comum encontrada (o documento precisa conter DOIs).</span>
 {% endif %}

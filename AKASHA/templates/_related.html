@@ -9,6 +9,16 @@
           hx-target="closest .coread-area"
           hx-swap="innerHTML"
           title="Recarregar documentos relacionados">&#x223F; <span class="btn-label">relacionados</span></button>
+  <button class="btn btn-ghost btn-sm"
+          hx-get="/citations?url={{ doc_url | urlencode }}"
+          hx-target="closest .coread-area"
+          hx-swap="innerHTML"
+          title="Documentos com referências em comum">&#x2042; <span class="btn-label">citações</span></button>
+  <button class="btn btn-ghost btn-sm"
+          hx-get="/more-from-source?url={{ doc_url | urlencode }}"
+          hx-target="closest .coread-area"
+          hx-swap="innerHTML"
+          title="Mais documentos deste domínio">&#x2248; <span class="btn-label">domínio</span></button>
 </div>
 {% if results %}
 <section class="coread-section">

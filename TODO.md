@@ -4313,7 +4313,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   (3) link "Abrir documento completo" para visualização com modo de anotação. Reduz carga
   cognitiva na lista de resultados sem esconder informação relevante.
 
-- [ ] **Citation graph local para papers** (`database.py`, `services/archiver.py`,
+- [x] **Citation graph local para papers** (`database.py`, `services/archiver.py`,
   `services/paper_search.py`). Criar tabela `doc_citations(citing_url TEXT, cited_doi TEXT,
   cited_title TEXT)`. Ao arquivar um documento que contém DOIs nas referências (detectar
   por regex `10\.\d{4,}/\S+`), consultar CrossRef REST API (`api.crossref.org/works/{doi}`)
@@ -4321,7 +4321,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   seção "Citado por documentos neste arquivo:" via query de bibliographic coupling. CrossRef
   é gratuito sem autenticação para consultas moderadas.
 
-- [ ] **"Mais deste domínio/autor neste período"** (`services/local_search.py`,
+- [x] **"Mais deste domínio/autor neste período"** (`services/local_search.py`,
   `templates/archive_view.html`). Na tela de visualização de um documento arquivado,
   exibir seção "Mais de [domínio]:" com até 5 documentos do mesmo netloc arquivados
   próximos à mesma data. Implementa o padrão "journal run" de Bates (1989): vasculhar

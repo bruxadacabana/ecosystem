@@ -4,6 +4,7 @@ Fetch via httpx; extração delegada ao ecosystem_scraper (cascata compartilhada
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import sys
 import unicodedata
@@ -395,8 +396,66 @@ async def archive_url(
         import database as _db
         await _db.store_archive_simhash(simhash_val, str(dest_path), url)
 
+    # Fire-and-forget: extrai DOIs e armazena em doc_citations em background
+    asyncio.create_task(_store_dois_background(str(dest_path), page.content_md))
+
     return ArchivedPage(
         title=page.title, source=domain, author=page.author, date=date_str,
         url=url, language=page.language, word_count=page.word_count,
         tags=tags, notes=notes, path=dest_path, content_md=page.content_md,
     )
+
+
+# ---------------------------------------------------------------------------
+# Citation graph — extração de DOIs + enriquecimento CrossRef (background)
+# ---------------------------------------------------------------------------
+
+_DOI_RE = re.compile(r'\b(10\.\d{4,}/\S{3,})')
+_DOI_STRIP = re.compile(r'[.,;:)\]}"\']+$')
+
+
+async def _store_dois_background(path: str, content: str) -> None:
+    """Extrai DOIs do conteúdo e armazena em doc_citations (fire-and-forget).
+
+    Para cada DOI (máx. 8 únicos), tenta enriquecer o título via CrossRef REST API
+    com timeout de 4s. Falhas são silenciosas — os DOIs sem título ainda são salvos.
+    """
+    raw_dois = _DOI_RE.findall(content)
+    # Limpa trailing punctuation e deduplica preservando ordem
+    seen: set[str] = set()
+    dois: list[str] = []
+    for d in raw_dois:
+        d = _DOI_STRIP.sub("", d)
+        if d and d not in seen:
+            seen.add(d)
+            dois.append(d)
+        if len(dois) >= 8:
+            break
+    if not dois:
+        return
+
+    citations: list[tuple[str, str]] = []
+    try:
+        async with httpx.AsyncClient(
+            timeout=4.0,
+            headers={"User-Agent": "AKASHA-archiver/1.0 (mailto:akasha@local)"},
+        ) as client:
+            for doi in dois:
+                title = ""
+                try:
+                    r = await client.get(f"https://api.crossref.org/works/{doi}")
+                    if r.status_code == 200:
+                        msg = r.json().get("message", {})
+                        titles = msg.get("title", [])
+                        title = titles[0] if titles else ""
+                except Exception:
+                    pass
+                citations.append((doi, title))
+    except Exception:
+        citations = [(d, "") for d in dois]
+
+    try:
+        import database as _db
+        await _db.store_citations(path, citations)
+    except Exception:
+        pass

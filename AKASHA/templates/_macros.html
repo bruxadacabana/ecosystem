@@ -151,6 +151,16 @@
               hx-target="closest .coread-area"
               hx-swap="innerHTML"
               title="Documentos relacionados por conteúdo">&#x223F; <span class="btn-label">relacionados</span></button>
+      <button class="btn btn-ghost btn-sm"
+              hx-get="/citations?url={{ r.url | urlencode }}"
+              hx-target="closest .coread-area"
+              hx-swap="innerHTML"
+              title="Documentos com referências em comum (bibliographic coupling)">&#x2042; <span class="btn-label">citações</span></button>
+      <button class="btn btn-ghost btn-sm"
+              hx-get="/more-from-source?url={{ r.url | urlencode }}"
+              hx-target="closest .coread-area"
+              hx-swap="innerHTML"
+              title="Mais documentos arquivados deste domínio">&#x2248; <span class="btn-label">domínio</span></button>
     </div>
   </div>
   {% endif %}

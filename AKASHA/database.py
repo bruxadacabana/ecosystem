@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -270,6 +270,20 @@ CREATE TABLE IF NOT EXISTS lenses (
 );
 """
 
+_CREATE_DOC_CITATIONS = """
+CREATE TABLE IF NOT EXISTS doc_citations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    citing_url  TEXT    NOT NULL,
+    cited_doi   TEXT    NOT NULL,
+    cited_title TEXT    NOT NULL DEFAULT '',
+    UNIQUE(citing_url, cited_doi)
+);
+"""
+
+_CREATE_IDX_DOC_CITATIONS_DOI = """
+CREATE INDEX IF NOT EXISTS idx_doc_citations_doi ON doc_citations(cited_doi);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -321,6 +335,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_SEARCH_HISTORY)
         await db.execute(_CREATE_IDX_SEARCH_HISTORY)
         await db.execute(_CREATE_LENSES)
+        await db.execute(_CREATE_DOC_CITATIONS)
+        await db.execute(_CREATE_IDX_DOC_CITATIONS_DOI)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -584,6 +600,20 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
                 created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
             )
         """)
+
+    if from_version < 24:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS doc_citations (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                citing_url  TEXT    NOT NULL,
+                cited_doi   TEXT    NOT NULL,
+                cited_title TEXT    NOT NULL DEFAULT '',
+                UNIQUE(citing_url, cited_doi)
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_doc_citations_doi ON doc_citations(cited_doi)"
+        )
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -1282,3 +1312,103 @@ async def delete_lens(lens_id: int) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM lenses WHERE id = ?", (lens_id,))
         await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Citation graph helpers (bibliographic coupling)
+# ---------------------------------------------------------------------------
+
+async def store_citations(path: str, dois: list[tuple[str, str]]) -> None:
+    """Armazena DOIs encontrados num documento arquivado.
+
+    path: caminho de filesystem do arquivo (mesmo formato que local_fts.path).
+    dois: lista de (doi, title) — title pode ser vazio se CrossRef não respondeu.
+    Usa INSERT OR IGNORE para ser idempotente em re-arquivamentos.
+    """
+    if not dois:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            "INSERT OR IGNORE INTO doc_citations (citing_url, cited_doi, cited_title) "
+            "VALUES (?, ?, ?)",
+            [(path, doi, title) for doi, title in dois],
+        )
+        await db.commit()
+
+
+async def get_coupled_docs(
+    path: str, limit: int = 5
+) -> list[tuple[str, str, int]]:
+    """Documentos do arquivo que citam os mesmos trabalhos que path (bibliographic coupling).
+
+    Retorna lista de (path, title, shared_doi_count) ordenada por shared_doi_count desc.
+    Apenas documentos com pelo menos 1 DOI em comum.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            """SELECT dc2.citing_url, COUNT(dc2.cited_doi) AS shared
+               FROM doc_citations dc1
+               JOIN doc_citations dc2 ON dc1.cited_doi = dc2.cited_doi
+               WHERE dc1.citing_url = ? AND dc2.citing_url != ?
+               GROUP BY dc2.citing_url
+               ORDER BY shared DESC
+               LIMIT ?""",
+            (path, path, limit),
+        )).fetchall()
+    if not rows:
+        return []
+    results: list[tuple[str, str, int]] = []
+    async with aiosqlite.connect(DB_PATH) as db:
+        for (coupled_path, shared) in rows:
+            title_row = await (await db.execute(
+                "SELECT title FROM local_fts WHERE path = ? LIMIT 1",
+                (coupled_path,),
+            )).fetchone()
+            title = title_row[0] if title_row else coupled_path
+            results.append((coupled_path, title, shared))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# More-from-source helpers ("Mais deste domínio")
+# ---------------------------------------------------------------------------
+
+async def get_more_from_source(path: str, n: int = 5) -> list[tuple[str, str]]:
+    """Documentos arquivados do mesmo domínio, ordenados por data de arquivamento.
+
+    Usa archive_simhashes (tem URL original + path) para descobrir o netloc do
+    documento atual, depois busca outros docs com mesmo netloc na URL original.
+    Retorna lista de (path, title).
+    """
+    from urllib.parse import urlparse
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Descobre URL original do documento atual
+        row = await (await db.execute(
+            "SELECT url FROM archive_simhashes WHERE path = ?",
+            (path,),
+        )).fetchone()
+    if not row:
+        return []
+
+    netloc = urlparse(row[0]).netloc
+    if not netloc:
+        return []
+
+    # Busca outros arquivamentos excluindo o atual (limite conservador para pessoal)
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            """SELECT asim.path, lf.title, asim.url
+               FROM archive_simhashes asim
+               LEFT JOIN local_fts lf ON lf.path = asim.path
+               WHERE asim.path != ?
+               ORDER BY asim.id DESC
+               LIMIT 300""",
+            (path,),
+        )).fetchall()
+
+    return [
+        (r[0], r[1] or r[0])
+        for r in rows
+        if urlparse(r[2]).netloc == netloc
+    ][:n]

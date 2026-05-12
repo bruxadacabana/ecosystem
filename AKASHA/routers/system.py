@@ -86,6 +86,43 @@ async def related(request: Request, url: str = Query(...)) -> HTMLResponse:
     return _templates.TemplateResponse(request, "_related.html", {"results": results, "doc_url": url})
 
 
+def _file_url_to_path(url: str) -> str | None:
+    """Converte file:// URI para caminho de filesystem. Retorna None se não for file://."""
+    parsed = urlparse(url)
+    if parsed.scheme != "file":
+        return None
+    raw = unquote(parsed.path)
+    if sys.platform == "win32" and raw.startswith("/"):
+        raw = raw[1:]
+    return raw
+
+
+@router.get("/citations", response_class=HTMLResponse)
+async def citations(request: Request, url: str = Query(...)) -> HTMLResponse:
+    """HTMX fragment: documentos do arquivo que citam os mesmos trabalhos (bibliographic coupling)."""
+    path = _file_url_to_path(url)
+    if not path:
+        results: list = []
+    else:
+        raw = await database.get_coupled_docs(path)
+        results = [(Path(p).as_uri(), title, shared) for p, title, shared in raw]
+    return _templates.TemplateResponse(request, "_citations.html", {"results": results, "doc_url": url})
+
+
+@router.get("/more-from-source", response_class=HTMLResponse)
+async def more_from_source(request: Request, url: str = Query(...)) -> HTMLResponse:
+    """HTMX fragment: outros documentos arquivados do mesmo domínio."""
+    path = _file_url_to_path(url)
+    if not path:
+        results_mfs: list = []
+    else:
+        raw = await database.get_more_from_source(path)
+        results_mfs = [(Path(p).as_uri(), title) for p, title in raw]
+    return _templates.TemplateResponse(
+        request, "_more_from_source.html", {"results": results_mfs, "doc_url": url}
+    )
+
+
 async def _xdg_open(path: str) -> str | None:
     """Tenta abrir um arquivo com xdg-open; fallback para gio open.
     Retorna mensagem de erro se ambos falharem, ou None se bem-sucedido.
