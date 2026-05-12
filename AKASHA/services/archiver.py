@@ -32,6 +32,12 @@ try:
 except ImportError:
     _SIMHASH_AVAILABLE = False
 
+try:
+    from langdetect import detect as _langdetect
+    _LANGDETECT_AVAILABLE = True
+except ImportError:
+    _LANGDETECT_AVAILABLE = False
+
 # Módulo compartilhado do ecossistema
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from ecosystem_scraper import extract as _cascade_extract, get_fetch_url as _get_fetch_url, get_fetch_url_fallbacks as _get_fetch_url_fallbacks
@@ -156,23 +162,25 @@ class FetchedPage:
     title: str
     content_md: str
     word_count: int
-    author: str = field(default="")
+    author:   str = field(default="")
     language: str = field(default="")
+    pub_date: str = field(default="")  # data de publicação (trafilatura metadata.date)
 
 
 @dataclass
 class ArchivedPage:
-    title:      str
-    source:     str
-    author:     str
-    date:       str
-    url:        str
-    language:   str
-    word_count: int
-    tags:       list[str]
-    notes:      str
-    path:       Path
-    content_md: str = field(default="")
+    title:       str
+    source:      str
+    author:      str
+    pub_date:    str        # data de publicação do conteúdo (YYYY-MM-DD ou vazio)
+    archived_at: str        # data/hora do download (YYYY-MM-DD HH:MM)
+    source_url:  str        # URL original
+    language:    str
+    word_count:  int
+    tags:        list[str]
+    notes:       str
+    path:        Path
+    content_md:  str = field(default="")
 
 
 # ---------------------------------------------------------------------------
@@ -213,11 +221,13 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         language: str = ""
         content:  str = ""
 
+        pub_date: str = ""
         if html:
             metadata  = trafilatura.extract_metadata(html, default_url=url)
             title     = (metadata and metadata.title)                    or title
             author    = (metadata and metadata.author)                   or ""
             language  = (metadata and getattr(metadata, "language", "")) or ""
+            pub_date  = (metadata and getattr(metadata, "date", ""))     or ""
             content   = _cascade_extract(html, url, output_format="markdown")
 
         # 3. Jina Reader como fallback — acionado quando:
@@ -259,6 +269,7 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         word_count=len(words),
         author=author,
         language=language,
+        pub_date=pub_date,
     )
 
 
@@ -280,17 +291,28 @@ async def archive_pdf(
     Levanta:
         OSError — falha ao gravar no disco.
     """
-    now      = datetime.now()
-    date_str = now.strftime("%Y-%m-%d %H:%M")
+    now         = datetime.now()
+    archived_at = now.strftime("%Y-%m-%d")
+    pub_date    = str(year) if year else ""
+
+    language = ""
+    if _LANGDETECT_AVAILABLE:
+        try:
+            sample = content_md[:2000].strip()
+            if sample:
+                language = _langdetect(sample)
+        except Exception:
+            pass
 
     frontmatter = (
         f'---\n'
         f'title: "{_yaml_str(title)}"\n'
         f'source: "paper"\n'
-        f'date: {date_str}\n'
+        f'source_url: {source_url}\n'
+        f'date: {pub_date}\n'
+        f'archived_at: {archived_at}\n'
         f'author: "{_yaml_str(authors)}"\n'
-        f'url: {source_url}\n'
-        f'language: \n'
+        f'language: {language}\n'
         f'word_count: {len(content_md.split())}\n'
         f'type: scientific\n'
     )
@@ -298,8 +320,6 @@ async def archive_pdf(
         frontmatter += f'doi: "{_yaml_str(doi)}"\n'
     if arxiv_id:
         frontmatter += f'arxiv_id: {arxiv_id}\n'
-    if year:
-        frontmatter += f'year: {year}\n'
     frontmatter += 'tags: []\nnotes: ""\n---\n\n'
 
     body = frontmatter + f'# {title}\n\n'
@@ -352,18 +372,20 @@ async def archive_url(
         if dup:
             raise NearDuplicateError(existing_url=dup[0], existing_path=dup[1])
 
-    now      = datetime.now()
-    date_str = now.strftime("%Y-%m-%d %H:%M")
-    domain   = urlparse(url).netloc
-    type_line = "type: scientific\n" if _is_scientific_url(url) else ""
+    now         = datetime.now()
+    archived_at = now.strftime("%Y-%m-%d %H:%M")
+    domain      = urlparse(url).netloc
+    type_line   = "type: scientific\n" if _is_scientific_url(url) else ""
+    pub_date    = page.pub_date or ""
 
     body = (
         f'---\n'
         f'title: "{_yaml_str(page.title)}"\n'
         f'source: "{_yaml_str(domain)}"\n'
-        f'date: {date_str}\n'
+        f'source_url: {url}\n'
+        f'date: {pub_date}\n'
+        f'archived_at: {archived_at}\n'
         f'author: "{_yaml_str(page.author)}"\n'
-        f'url: {url}\n'
         f'language: {page.language}\n'
         f'word_count: {page.word_count}\n'
         f'{type_line}'
@@ -400,8 +422,9 @@ async def archive_url(
     asyncio.create_task(_store_dois_background(str(dest_path), page.content_md))
 
     return ArchivedPage(
-        title=page.title, source=domain, author=page.author, date=date_str,
-        url=url, language=page.language, word_count=page.word_count,
+        title=page.title, source=domain, author=page.author,
+        pub_date=pub_date, archived_at=archived_at,
+        source_url=url, language=page.language, word_count=page.word_count,
         tags=tags, notes=notes, path=dest_path, content_md=page.content_md,
     )
 
