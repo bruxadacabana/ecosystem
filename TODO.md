@@ -4160,7 +4160,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   retornar o parágrafo mais relevante como snippet. Implementar como opção configurável
   (snippet_mode: 'fts5' | 'paragraph_bm25'). Dependência: pip install bm25s.
 
-- [ ] **Adicionar suporte a prefix queries e phrase queries na sanitização FTS5**
+- [x] **Adicionar suporte a prefix queries e phrase queries na sanitização FTS5**
   (`services/local_search.py`, função `_sanitize_fts`). Atualmente `_sanitize_fts()` remove
   `*` e `"` da query, perdendo prefix queries (ex: "searc*") e phrase queries (ex: `"machine
   learning"`). Melhorar sanitização para: (a) manter aspas duplas válidas (phrase), (b) manter

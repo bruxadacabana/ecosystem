@@ -484,9 +484,44 @@ async def crawl_site(site_id: int) -> int:
 # search_sites
 # ---------------------------------------------------------------------------
 
+_PHRASE_RE = re.compile(r'"([^"]+)"')
+_FTS_STRIP  = re.compile(r"['\(\)\:\^]")
+
+
+def _plain_tokens(text: str) -> list[str]:
+    cleaned = _FTS_STRIP.sub(" ", text)
+    tokens: list[str] = []
+    for tok in cleaned.split():
+        if tok.endswith("*"):
+            base = tok[:-1].replace("*", "")
+            if base:
+                tokens.append(base + "*")
+        else:
+            tok_clean = tok.replace("*", "")
+            if tok_clean:
+                tokens.append(tok_clean)
+    return tokens
+
+
 def _sanitize_fts(query: str) -> str:
-    cleaned = re.sub(r'["\'\(\)\*\:\^]', " ", query)
-    return " ".join(cleaned.split())
+    """Sanitiza query FTS5 preservando phrase queries ("...") e prefix queries (tok*)."""
+    query = query.strip()
+    if not query:
+        return ""
+    parts: list[str] = []
+    cursor = 0
+    for m in _PHRASE_RE.finditer(query):
+        before = query[cursor:m.start()]
+        if before.strip():
+            parts.extend(_plain_tokens(before))
+        phrase = m.group(1).strip()
+        if phrase:
+            parts.append(f'"{phrase}"')
+        cursor = m.end()
+    tail = query[cursor:]
+    if tail.strip():
+        parts.extend(_plain_tokens(tail))
+    return " ".join(parts)
 
 
 async def search_sites(query: str, max_results: int = 500) -> list:
