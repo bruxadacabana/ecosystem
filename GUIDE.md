@@ -1418,3 +1418,582 @@ A complexidade do KOSMOS real (BackgroundUpdater, feedparser, artigos, highlight
 ---
 
 *Anexo gerado em 2026-05-11. Atualizar conforme o ecossistema evolui.*
+
+---
+
+## Anexo B — Inventário Técnico e Funcional Completo
+
+> **Como usar este inventário:** Pense em cada biblioteca como uma ferramenta numa oficina. Aqui você aprende o nome de cada chave de fenda, para que parafuso ela serve e onde no código ela é encaixada. Quando uma biblioteca quebrar, mudar de versão ou precisar ser substituída, você saberá exatamente o impacto.
+>
+> **Fonte:** Extraído diretamente dos arquivos `pyproject.toml`, `requirements.txt`, `package.json` e `Cargo.toml` de cada app. Versões verificadas em 2026-05-11.
+
+---
+
+### B.1 — Stack Python
+
+As bibliotecas Python são compartilhadas ou específicas por app. As utilitárias (`ecosystem_client.py`, `ecosystem_scraper.py`) ficam na raiz e são importadas por todos os apps Python.
+
+#### AKASHA — FastAPI + SQLite assíncrono
+
+Fonte: [AKASHA/pyproject.toml](AKASHA/pyproject.toml)
+
+| Biblioteca | O que é | O que faz no AKASHA | Como é usada na prática |
+|---|---|---|---|
+| **fastapi** | Framework web assíncrono | Define as rotas HTTP e valida parâmetros automaticamente usando tipos Python | `@router.get("/search")` — o FastAPI lê a anotação de tipo e rejeita parâmetros inválidos antes do código rodar |
+| **uvicorn[standard]** | Servidor ASGI (Asynchronous Server Gateway Interface) | É o processo que "liga a luz" — escuta na porta 7071 e passa requisições ao FastAPI | Chamado em `main.py` com `uvicorn.run(app, host="0.0.0.0", port=7071)`. O `[standard]` inclui suporte a WebSockets e HTTP/2 |
+| **aiosqlite** | SQLite assíncrono | Permite consultas ao banco sem bloquear o servidor enquanto espera o disco | `async with aiosqlite.connect(DB_PATH) as db:` — sem isso, uma busca lenta travaria todos os outros requests |
+| **httpx** | Cliente HTTP assíncrono | Faz chamadas HTTP para outros apps (KOSMOS, Ollama) sem bloquear o event loop | `async with httpx.AsyncClient() as client: await client.post(kosmos_url, json=data)` |
+| **jinja2** | Template engine | Converte dados Python + templates HTML em páginas web completas enviadas ao browser | `templates.TemplateResponse("search.html", {"request": req, "results": results})` |
+| **python-multipart** | Parser de formulário HTTP | Lê dados de formulários HTML (POST com campos de texto ou upload de arquivo) | Dependência interna do FastAPI — necessária para `Form(...)` nos endpoints |
+| **ddgs** | DuckDuckGo Search (sem API key) | Faz buscas no DuckDuckGo programaticamente sem precisar de conta ou chave | `DDGS().text(query, max_results=10)` — em `services/web_search.py`. Retorna título, URL, snippet |
+| **trafilatura** | Extrator de conteúdo web | Dado o HTML de uma página, extrai só o texto do artigo, removendo nav, ads, footer, scripts | `trafilatura.extract(html, output_format="markdown")` — extractor primário em `ecosystem_scraper.py` |
+| **inscriptis** | HTML → texto estruturado | Converte HTML para texto preservando layout de tabelas e indentação | Usado como 4º fallback em `ecosystem_scraper.py` quando trafilatura, newspaper4k e readability falham |
+| **markdownify** | HTML → Markdown | Converte HTML para Markdown com links, negrito e itálico preservados | Para arquivar artigos em formato legível por humanos e LLMs |
+| **beautifulsoup4** | Parser e navegador de HTML | "Navega" pela árvore de elementos HTML para extrair tags específicas | `BeautifulSoup(html, "lxml").find("article")` — fallback final em `ecosystem_scraper.py` |
+| **markdown** | Renderizador Markdown → HTML | Converte arquivos `.md` do arquivo local para HTML nos templates | `markdown.markdown(content)` — para exibir arquivos Markdown arquivados na interface |
+| **aioarxiv** | Cliente arXiv assíncrono | Busca papers científicos no arXiv por query, categoria, data, autores | `await aioarxiv.Search(query=q, max_results=20).results()` — em `services/paper_search.py` |
+| **pymupdf4llm** | PDF → Markdown otimizado para LLM | Extrai texto de PDFs preservando estrutura de tabelas, colunas e fórmulas matemáticas | Para indexar PDFs arquivados na busca local FTS5 |
+| **qbittorrent-api** | Cliente REST do qBittorrent | Controla o qBittorrent remotamente: lista torrents, pausa, resume, verifica progresso | `qbt_client = qbittorrentapi.Client(host=...) ; qbt_client.torrents_info()` — em `services/downloader.py` |
+| **filelock** | Lock de arquivo multiplataforma | Previne race condition ao escrever no `ecosystem.json` quando dois apps iniciam simultaneamente | `with FileLock(".ecosystem.lock", timeout=10): write_section(...)` — via `ecosystem_client.py` |
+
+---
+
+#### KOSMOS — PyQt6 + SQLAlchemy
+
+Fonte: [KOSMOS/requirements.txt](KOSMOS/requirements.txt)
+
+| Biblioteca | O que é | O que faz no KOSMOS | Como é usada na prática |
+|---|---|---|---|
+| **PyQt6** | Bindings Python da biblioteca Qt 6 | Cria a janela do aplicativo, todos os painéis, listas, botões e menus | `QMainWindow`, `QTabWidget`, `QListWidget`, `QSplitter` — a UI inteira |
+| **PyQt6-WebEngine** | Chromium embutido no Qt 6 | Renderiza HTML rico de artigos dentro da janela do KOSMOS, com CSS e JavaScript | `QWebEngineView.setHtml(article_html)` — o painel de leitura de artigos |
+| **SQLAlchemy 2.0** | ORM (Object-Relational Mapper) | Converte classes Python (`Feed`, `Article`, `Tag`) em tabelas SQL e consultas | `session.query(Article).filter(Article.read == False).order_by(Article.published_at.desc()).all()` |
+| **feedparser** | Parser universal de feeds | Lê o XML/JSON de feeds RSS, Atom, RDF e extrai título, link, data, conteúdo, autor | `feedparser.parse(url)["entries"]` — em `core/feed_fetcher.py`. Detecta tipo de feed automaticamente |
+| **requests** | Cliente HTTP síncrono | Baixa o conteúdo dos feeds HTTP com suporte a etag e last-modified para evitar re-download | `requests.get(url, headers={"If-None-Match": stored_etag}, timeout=30)` |
+| **beautifulsoup4** | Parser HTML | Extrai metadata de páginas (og:title, og:description, favicon) ao adicionar novos feeds | `BeautifulSoup(html, "lxml").find("link", rel="alternate")` — descoberta de feeds |
+| **lxml** | Parser XML/HTML em C | Backend mais rápido para BeautifulSoup e feedparser. Usado implicitamente como parser | `BeautifulSoup(html, "lxml")` — o segundo argumento seleciona o backend |
+| **newspaper4k** | Extrator de artigos de notícia | Extrai texto completo + metadados (autor, data, imagem de capa) de artigos de jornal | `Article(url); article.download(); article.parse(); article.text` — em `core/article_scraper.py` |
+| **praw** | Python Reddit API Wrapper | Importa posts do Reddit como artigos do KOSMOS, incluindo comentários e flairs | `reddit.subreddit("science").hot(limit=25)` — em `core/feed_fetcher.py` para feeds Reddit |
+| **deep-translator** | Cliente de tradução multilíngue | Traduz artigos para português usando Google Translate (ou outros backends) sem API paga | `GoogleTranslator(source="auto", target="pt").translate(text)` — em `core/translator.py` |
+| **langdetect** | Detecção de idioma | Detecta o idioma de um artigo antes de decidir se precisa traduzir | `langdetect.detect(text)` → `"en"`, `"fr"`, `"ja"` etc. — gate antes da tradução |
+| **readability-lxml** | Algoritmo Readability | Implementa o mesmo algoritmo do Firefox "Reader Mode" para extrair artigo limpo | `Document(html).summary()` — 2º extractor em `ecosystem_scraper.py` |
+| **html2text** | HTML → Markdown simples | Converte HTML para Markdown plano, diferente do markdownify que preserva mais formatação | Para exportar artigos como Markdown puro sem links complexos |
+| **trafilatura** | Extrator de conteúdo web | Extrai texto de artigos com alta precisão, remove boilerplate | Compartilhado via `ecosystem_scraper.py` |
+| **inscriptis** | HTML → texto preservando layout | Fallback de extração de texto quando outros falham | Compartilhado via `ecosystem_scraper.py` |
+| **markdownify** | HTML → Markdown | Converte HTML de artigos para arquivamento | Usada no archiver para criar arquivos `.md` |
+| **weasyprint** | HTML → PDF via CSS | Exporta artigos como PDF com formatação completa usando CSS padrão | `HTML(string=article_html).write_pdf("artigo.pdf")` — no diálogo de exportação |
+| **Pillow** | Processamento de imagem | Baixa imagens de capa de artigos e as redimensiona para thumbnails na lista | `Image.open(io.BytesIO(resp.content)).thumbnail((300, 200))` |
+| **matplotlib** | Biblioteca de gráficos | Gera os gráficos da aba de estatísticas (artigos por dia, por feed, frequência de tags) | `plt.bar(feed_names, article_counts)` — em `core/stats.py`, renderizado como imagem no Qt |
+| **rapidfuzz** | Comparação de strings fuzzy | Detecta artigos duplicados mesmo quando títulos têm pequenas variações | `fuzz.ratio(title_a, title_b) > 90` — em `core/content_filter.py` |
+| **filelock** | Lock de arquivo | Previne race condition ao escrever no `ecosystem.json` | Via `ecosystem_client.py` |
+| **psutil** | Métricas do sistema | Monitora RAM e CPU — pode pausar operações pesadas se sistema sobrecarregado | `psutil.virtual_memory().percent` |
+
+---
+
+#### Hermes — PyQt6 + yt-dlp + Whisper
+
+Fonte: [Hermes/requirements.txt](Hermes/requirements.txt)
+
+| Biblioteca | O que é | O que faz no Hermes | Como é usada na prática |
+|---|---|---|---|
+| **PyQt6** | Bindings Python da biblioteca Qt 6 | A janela principal, barra de progresso, log colorido por nível (ok/warn/err) | `QMainWindow`, `QProgressBar`, `QTextEdit` com formatação HTML para cores |
+| **yt-dlp** | Downloader de vídeo/áudio universal | Baixa vídeos e áudios de 1000+ sites: YouTube, Vimeo, Twitter, Instagram, Twitch... | `yt_dlp.YoutubeDL({"format": "bestaudio"}).download([url])` — em `DownloadWorker.run()` |
+| **faster-whisper** | Transcrição de fala com Whisper otimizado | Transcreve áudio para texto com timestamps por segmento, usando CTranslate2 (mais rápido e menos RAM que o Whisper original) | `WhisperModel("base", device="cpu").transcribe(path, language="pt")` — em `TranscribeWorker.run()` |
+| **psutil** | Métricas do sistema | Verifica RAM disponível antes de carregar modelos grandes de Whisper | `psutil.virtual_memory().available > 2 * 1024**3` — guarda para não travar com modelo large |
+| **ffmpeg** | Processamento de áudio/vídeo (runtime, não Python) | Converte formatos, extrai áudio de vídeo, une streams separados de áudio e vídeo | Chamado internamente pelo yt-dlp. Deve estar no PATH — verificado no startup do Hermes |
+
+---
+
+#### Mnemosyne — PySide6 + LangChain + ChromaDB
+
+Fonte: [Mnemosyne/requirements.txt](Mnemosyne/requirements.txt)
+
+| Biblioteca | O que é | O que faz no Mnemosyne | Como é usada na prática |
+|---|---|---|---|
+| **PySide6** | Bindings Python de Qt 6 (versão oficial da The Qt Company) | A UI inteira: abas, campo de pergunta, área de resposta streaming, progress bar, file watcher | `QMainWindow`, `QTabWidget`, `QFileSystemWatcher` (detecta novos arquivos automaticamente) |
+| **langchain** | Framework para pipelines de LLM | Orquestra todo o pipeline RAG: carrega → divide → embeds → busca → monta prompt → LLM | `RetrievalQA`, `ConversationalRetrievalChain` — a "espinha dorsal" da funcionalidade de perguntas |
+| **langchain-community** | Extensões da comunidade para LangChain | Loaders de documentos, retrievers e integrações adicionais que não estão no core do LangChain | `DirectoryLoader`, `UnstructuredMarkdownLoader` — carrega formatos variados de arquivo |
+| **langchain-ollama** | Integração oficial LangChain + Ollama | Conecta o LangChain ao Ollama local para gerar embeddings e respostas | `OllamaEmbeddings(model="bge-m3", base_url=...)`, `ChatOllama(model="qwen2.5:7b")` |
+| **langchain-chroma** | Integração LangChain + ChromaDB | Usa o ChromaDB como vectorstore dentro dos pipelines LangChain | `Chroma(persist_directory=chroma_path, embedding_function=embeddings)` |
+| **langchain-experimental** | Features experimentais do LangChain | Chains avançadas ainda em teste: geração de relatórios, PAL (Program-Aided Language) | Usada em `core/report.py`, `core/slides.py` para geração de documentos estruturados |
+| **chromadb** | Banco de vetores local persistente | Armazena embeddings de texto e permite busca por similaridade semântica (cosine distance) | `collection.add(documents=[...], embeddings=[...], ids=[...])` — índice principal |
+| **rank-bm25** | Implementação do algoritmo BM25 | Busca por palavras-chave (probabilística) — complementa a busca semântica do ChromaDB | `BM25Okapi(tokenized_corpus).get_scores(query_tokens)` — combinado com ChromaDB em `core/rag.py` |
+| **pypdf** | Leitor de PDF puro Python | Extrai texto de arquivos PDF para indexação | `PdfReader(path).pages[i].extract_text()` — em `core/loaders.py` |
+| **python-docx** | Leitor de documentos Word | Extrai texto de arquivos `.docx` para indexação | `docx.Document(path).paragraphs[i].text` — em `core/loaders.py` |
+| **ebooklib** | Leitor de ePub | Extrai texto de livros digitais `.epub` para indexação | `epub.read_epub(path).get_items_of_type(ITEM_DOCUMENT)` — em `core/loaders.py` |
+| **beautifulsoup4** | Parser HTML | Usado pelo ebooklib para extrair texto limpo de capítulos ePub (que são HTML internamente) | `BeautifulSoup(item.get_content(), "lxml").get_text()` |
+| **lxml** | Parser XML/HTML rápido | Backend de parsing para BeautifulSoup no processamento de ePubs | Usado implicitamente |
+| **python-frontmatter** | Parser de frontmatter YAML | Lê metadados YAML de arquivos Markdown (ex: `tags:`, `date:`, `title:` em notas do Obsidian) | `frontmatter.load(path)` → `.metadata["tags"]`, `.content` |
+| **tiktoken** | Tokenizador da OpenAI | Conta tokens antes de enviar ao LLM para garantir que o prompt não excede o contexto | `tiktoken.get_encoding("cl100k_base").encode(text)` — usado para calcular `chunk_size` |
+| **flashrank** | Re-ranker de resultados RAG | Re-ordena os chunks recuperados usando um modelo de re-ranking leve para maior relevância | `Ranker(model_name="ms-marco-MiniLM-L-12-v2").rerank(query, passages)` — opcional |
+| **httpx** | Cliente HTTP assíncrono | Consulta a API do AKASHA para buscar URLs externas e indexá-las como documentos | `httpx.get("http://localhost:7071/api/search", params={"q": query})` — em `core/akasha_client.py` |
+| **filelock** | Lock de arquivo | Previne race condition ao escrever no `ecosystem.json` | Via `ecosystem_client.py` |
+| **psutil** | Métricas do sistema | Monitora RAM antes de iniciar indexação pesada; avisa se RAM < threshold | `psutil.virtual_memory().available` — em `core/indexer.py` para health warnings |
+
+---
+
+### B.2 — Stack Rust (AETHER e HUB)
+
+Rust usa `Cargo.toml` para dependências. Chamadas de "crate" em Rust = biblioteca.
+
+#### AETHER — Crates (Cargo.toml)
+
+| Crate | O que é | O que faz no AETHER | Como aparece no código |
+|---|---|---|---|
+| **tauri 2.x** | Framework de app desktop Rust + WebView | O motor inteiro: une Rust + Chromium nativo + React num único executável | `tauri::Builder::default().invoke_handler(...).run(...)` em `lib.rs` |
+| **serde** (+ feature `derive`) | Serialização/deserialização | Permite converter structs Rust ↔ JSON automaticamente com `#[derive]` | `#[derive(Serialize, Deserialize)]` em todo struct que precisa ir para o frontend |
+| **serde_json** | Manipulação de JSON em Rust | Cria e parseia JSON em runtime (quando o tipo não é conhecido em compile-time) | `serde_json::from_str(&content)` ao ler `project.json` do disco |
+| **thiserror** | Macros para tipos de erro ergonômicos | Gera implementações de `Error` a partir de um enum com mensagens declarativas | `#[derive(Error)] #[error("Projeto não encontrado: {0}")] ProjectNotFound(String)` |
+| **uuid** (+ feature `v4`, `serde`) | Gerador de UUIDs | Gera IDs únicos para projetos, livros, capítulos, personagens, anotações | `Uuid::new_v4().to_string()` — em `commands/project.rs` ao criar projeto |
+| **chrono** (+ feature `serde`) | Data e hora em Rust | Timestamps de criação e modificação, cálculo de streaks de escrita, formatação ISO 8601 | `chrono::Utc::now().to_rfc3339()` — em sessões de escrita e metadados |
+| **dirs** | Caminhos de sistema cross-platform | Retorna diretórios do sistema (`$HOME`, `~/.local/share`, `AppData`) sem hardcode | `dirs::data_local_dir()` — para localizar `ecosystem.json` sem depender do SO |
+| **log** | Facade de logging em Rust | Interface comum de logging — o backend real é configurado pelo Tauri | `log::info!(...)`, `log::error!(...)`, `log::debug!(...)` em toda função importante |
+| **tauri-plugin-log** | Plugin de logging para Tauri | Conecta `log::` ao sistema de logging do Tauri (console de dev + arquivo) | Registrado em `lib.rs` com `.plugin(tauri_plugin_log::Builder::new().build())` |
+| **tauri-plugin-dialog** | Diálogo nativo via Tauri | Abre o seletor de arquivo/pasta nativo do SO (não um diálogo HTML) | `tauri_plugin_dialog::open().directory().call()` — para selecionar o vault do AETHER |
+
+---
+
+#### HUB — Crates adicionais (além dos compartilhados com AETHER)
+
+| Crate | O que é | O que faz no HUB | Como aparece no código |
+|---|---|---|---|
+| **tokio** (+ feature `full`) | Runtime assíncrono para Rust | Permite `async/await` em Rust — necessário para o servidor HTTP do LOGOS | `#[tokio::main]` no `main.rs`. Todo o servidor axum roda em tasks tokio |
+| **axum** (+ feature `json`) | Framework HTTP assíncrono | O servidor HTTP do LOGOS na porta 7072 — roteia requests, desserializa JSON | `Router::new().route("/logos/chat", post(chat_handler)).with_state(state)` |
+| **reqwest** (rustls, sem OpenSSL) | Cliente HTTP assíncrono | O LOGOS usa para fazer as chamadas ao Ollama (`:11434`) | `Client::new().post(ollama_url).json(&payload).send().await` |
+| **sysinfo** (+ feature `system`) | Métricas do sistema operacional | Lê CPU%, RAM livre, lista de processos (para encontrar PID do Ollama) | `System::new_all().global_cpu_usage()` — atualizado a cada request para guards de P3 |
+| **rusqlite** (+ feature `bundled`) | SQLite em Rust (SQLite embutido) | Lê o banco de dados do OGMA (`ogma.db`) diretamente, sem o OGMA precisar estar rodando | `Connection::open(ogma_db_path)?.query_row("SELECT ...")` — em `commands/projects.rs` |
+| **fs2** | Extensões de I/O de arquivo | Lock exclusivo no `.ecosystem.lock` — garante escrita atômica do ecosystem.json | `fs2::FileExt::lock_exclusive(&lockfile)?` em `ecosystem.rs` |
+| **tauri-plugin-notification** | Notificações nativas do sistema | Mostra notificações de desktop (ex: "Análise KOSMOS concluída") | `Notification::new("hub").title("LOGOS").body("Pronto").show()` |
+
+---
+
+### B.3 — Stack TypeScript/JavaScript (AETHER, OGMA, HUB)
+
+#### Ferramentas compartilhadas (presentes nos três apps)
+
+| Pacote | O que é | Papel |
+|---|---|---|
+| **react** / **react-dom** | Framework de UI declarativo | Monta a interface como árvore de componentes; re-renderiza apenas o que mudou |
+| **typescript** | JavaScript com tipos estáticos | Garante que variáveis têm tipos declarados; erros em compile-time, não runtime |
+| **vite** / **@vitejs/plugin-react** | Bundler e servidor de desenvolvimento | Compila TypeScript, serve com hot-reload instantâneo, empacota para produção |
+| **@tauri-apps/api** | API do Tauri para o frontend | `invoke("comando", {args})` — a função principal para chamar o backend Rust | (AETHER e HUB apenas) |
+| **@tauri-apps/plugin-dialog** | Plugin de diálogo (lado npm) | Permite abrir diálogos nativos de seleção de arquivo a partir do frontend React | (AETHER e HUB apenas) |
+| **@types/react** / **@types/react-dom** | Tipos TypeScript para React | Define os tipos de props, hooks e eventos do React — sem isso o TS não reconhece JSX |
+
+---
+
+#### AETHER — Pacotes específicos
+
+| Pacote | O que é | O que faz no AETHER | Como aparece no código |
+|---|---|---|---|
+| **@tiptap/react** | Editor WYSIWYG baseado em ProseMirror | O editor de capítulos com formatação rica (negrito, itálico, listas, cabeçalhos, blocos) | `<EditorContent editor={editor} />` — em `components/Editor.tsx` |
+| **@tiptap/starter-kit** | Bundle das extensões base do Tiptap | Inclui de uma vez: parágrafo, negrito, itálico, listas, código, histórico (undo/redo) | `useEditor({ extensions: [StarterKit, ...] })` |
+| **@tiptap/extension-placeholder** | Extensão de placeholder | Mostra texto cinza "Comece a escrever..." quando o editor está vazio | `Placeholder.configure({ placeholder: "Comece a escrever..." })` |
+| **@tiptap/extension-typography** | Extensão de tipografia inteligente | Substitui automaticamente `--` por `—`, `...` por `…`, aspas simples por curvas | `Typography` — ligaduras tipográficas automáticas ao digitar |
+| **@tiptap/pm** | ProseMirror core (base do Tiptap) | A engine de documento estruturado que o Tiptap usa internamente. Raramente importado diretamente | Dependência indireta — necessária para o Tiptap funcionar |
+| **@tauri-apps/plugin-shell** | Plugin de shell do Tauri | Permite executar comandos do SO a partir do Rust/frontend (ex: abrir arquivo no explorador) | Registrado em `lib.rs`, usado pontualmente para integração com SO |
+| **eslint** / **typescript-eslint** / **eslint-plugin-react-hooks** / **globals** | Linting de TypeScript/React | Ferramentas de análise estática que detectam erros antes de rodar — `npm run lint` | Configuras em `eslint.config.js` — verificam hooks mal usados, tipos errados |
+
+---
+
+#### OGMA — Pacotes específicos
+
+| Pacote | O que é | O que faz no OGMA | Como aparece no código |
+|---|---|---|---|
+| **electron** | Framework de app desktop Node.js | O motor que empacota React + Node.js num executável desktop multi-plataforma | `new BrowserWindow(...)` em `src/main/main.ts` — cria a janela principal |
+| **electron-builder** | Empacotador do Electron | Cria instaladores `.exe`, `.AppImage`, `.deb` para distribuição | `npm run build` — produz o executável final |
+| **better-sqlite3** / **@types/better-sqlite3** | SQLite para Node.js (síncrono) | Acesso direto ao `ogma.db` — toda a persistência do OGMA. Síncrono = mais simples de usar com IPC | `db.prepare("SELECT * FROM projects").all()` — em `src/main/database.ts` |
+| **electron-store** | Armazenamento de preferências JSON | Persiste configurações simples (tema, tamanho de fonte, posição da janela) de forma segura | `store.get("dark_mode")`, `store.set("font_size", "normal")` — em `src/main/settings.ts` |
+| **zustand** | Gerenciamento de estado global React | A "loja" compartilhada entre todos os componentes — evita passar props por 5 níveis | `const { projects, selectProject } = useAppStore()` — em qualquer componente |
+| **neverthrow** | Result<T, E> para TypeScript | Encapsula resultados como `Ok(data)` ou `Err(error)` — sem exceções surpresa no IPC | `Result.match(ok => ..., err => pushToast(err.message))` — em `useAppStore.ts` |
+| **@editorjs/editorjs** | Editor de blocos (block-based editor) | O editor de páginas do OGMA — cada parágrafo/imagem/tabela é um "bloco" JSON independente | `new EditorJS({ holder: "editor", tools: {...} })` — em `src/editor/web/editor.html` |
+| **@editorjs/header** | Plugin de cabeçalho (H1-H6) | Bloco de título com nível configurável | Registrado em `tools` do EditorJS |
+| **@editorjs/list** | Plugin de lista | Listas ordenadas e não-ordenadas como blocos | Registrado em `tools` do EditorJS |
+| **@editorjs/table** | Plugin de tabela | Tabelas criadas visualmente como blocos | Registrado em `tools` do EditorJS |
+| **@editorjs/image** | Plugin de imagem | Imagens anexadas como blocos (upload local) | Registrado em `tools` do EditorJS |
+| **@editorjs/code** | Plugin de código | Bloco de código com highlight | Registrado em `tools` do EditorJS |
+| **@editorjs/quote** | Plugin de citação | Bloco de blockquote com autor | Registrado em `tools` do EditorJS |
+| **@editorjs/delimiter** | Plugin de separador | Linha divisória horizontal entre seções | Registrado em `tools` do EditorJS |
+| **@editorjs/marker** | Plugin de marcador/destaque | Destaca texto em amarelo (como marcador de texto) | Registrado em `tools` do EditorJS |
+| **@editorjs/inline-code** | Plugin de código inline | Código `monospace` dentro de um parágrafo | Registrado em `tools` do EditorJS |
+| **@editorjs/checklist** | Plugin de checklist | Lista de tarefas com checkboxes | Registrado em `tools` do EditorJS |
+| **editorjs-drag-drop** | Plugin de arrastar blocos | Permite reordenar blocos arrastando | Registrado em `tools` do EditorJS |
+| **editorjs-toggle-block** | Plugin de bloco colapsável | Seções que expandem/colapsam como accordion | Registrado em `tools` do EditorJS |
+| **concurrently** | Executor paralelo de comandos | Roda Vite (:5175) e Electron ao mesmo tempo em `npm run dev` | `"dev": "concurrently \"vite\" \"electron .\"` |
+| **wait-on** | Aguarda recurso ficar disponível | Espera o Vite estar pronto na porta 5175 antes de lançar o Electron | `wait-on http://localhost:5175 && electron .` |
+| **@types/node** | Tipos TypeScript para Node.js | Define tipos de `fs`, `path`, `process` etc. para o processo principal | Usado em `src/main/*.ts` que fazem I/O de arquivo |
+
+---
+
+#### HUB — Pacotes específicos
+
+| Pacote | O que é | O que faz no HUB | Como aparece no código |
+|---|---|---|---|
+| **react-markdown** | Renderizador de Markdown em React | Converte o conteúdo Markdown dos capítulos do AETHER para HTML no browser | `<ReactMarkdown>{chapterContent}</ReactMarkdown>` — em `views/ChapterView.tsx` |
+| **@types/node** | Tipos TypeScript para Node.js | Tipos para operações de sistema no processo Tauri/Node | Usado indiretamente |
+
+---
+
+## Anexo C — Arquitetura de Integração LLM
+
+> **Para quem é este anexo:** Para quando você quiser entender como a IA funciona no ecossistema de ponta a ponta — desde o app que faz a pergunta até o Ollama que gera a resposta — e por que cada peça está onde está.
+
+---
+
+### C.1 — Por que centralizamos as chamadas na porta 7072?
+
+Imagine que você tem 4 apps tentando usar o Ollama ao mesmo tempo. Sem coordenação, eles disputam recursos da GPU livremente:
+
+- O KOSMOS pede uma análise de artigo (operação de 30 segundos)
+- No meio disso, você começa a digitar no chat do HUB (precisa de resposta em 2 segundos)
+- O Mnemosyne resolve fazer uma busca RAG
+- O modelo da GPU começa a trocar, a VRAM satura, a GPU para, você espera 40 segundos para ver a primeira palavra no chat
+
+O LOGOS (porta 7072, hospedado no HUB) resolve isso sendo o **único ponto de contato** com o Ollama. Todos os apps Python passam por ele. Nenhum app fala diretamente com o Ollama (exceto em emergência).
+
+**Benefícios concretos:**
+1. **Fila de prioridades:** o chat interativo sempre passa na frente da análise de background
+2. **Keep-alive gerenciado:** o LOGOS decide por quanto tempo cada modelo fica carregado na VRAM — sem desperdiçar e sem recarregar desnecessariamente
+3. **Guard de hardware:** antes de aceitar qualquer tarefa de background, verifica VRAM, CPU e RAM
+4. **Perfis de workflow:** quando você ativa "modo escrita", o LOGOS rebaixa automaticamente as análises do KOSMOS para não interromper
+
+---
+
+### C.2 — A fila de prioridades (P1, P2, P3) — como funciona por dentro
+
+O LOGOS implementa a fila com um **semáforo de 2 permits** em Rust (tokio::sync::Semaphore). Pense no semáforo como um guarda de trânsito com 2 senhas numeradas. Quem tem uma senha pode passar; quem não tem, espera.
+
+```
+Semáforo: [🔑🔑]  ← 2 permits disponíveis
+
+Modelo leve (≤3B parâmetros)  → pede 1 permit → até 2 modelos leves simultâneos
+Modelo pesado (>3B parâmetros) → pede 2 permits → exclusividade total (1 de cada vez)
+```
+
+**As três prioridades e seus comportamentos:**
+
+| Prioridade | Quem usa | Timeout na fila | keep_alive | O que acontece se rejeitado |
+|---|---|---|---|---|
+| **P1 — Crítica** | Chat do HUB, AETHER | **Nenhum** (espera indefinidamente) | `-1` (modelo fica na VRAM para sempre) | Nunca é rejeitada |
+| **P2 — Importante** | Mnemosyne RAG, buscas | 60 segundos | `"10m"` (descarrega após 10 min idle) | Erro 429 após timeout |
+| **P3 — Background** | KOSMOS AI, embeddings | 30 segundos | `0` (descarrega imediatamente) | Erro 429 imediato se VRAM > 85% |
+
+O **`keep_alive`** é injetado automaticamente pelo LOGOS em todo request. Os apps nem sabem disso — eles só mandam o prompt. O LOGOS decide a política de memória.
+
+**Preempção inteligente de P1:** Quando você começa a digitar no chat (P1) e um modelo de análise P3 está carregado na VRAM, o LOGOS:
+1. Calcula: "o modelo P3 ocupa X MB, o modelo P1 precisaria de Y MB — tem espaço?"
+2. Se não tem → envia `keep_alive: 0` para o Ollama (descarrega o P3 imediatamente)
+3. Aguarda até 10 segundos para a VRAM liberar
+4. Só então deixa o P1 entrar
+
+Isso é o que garante que o chat do HUB nunca espera por causa de uma análise de fundo.
+
+**Perfis de workflow (overrides de prioridade):**
+
+```
+Perfil "escrita" (você está escrevendo no AETHER):
+  AETHER/HUB → mantém P1 (foco total na escrita)
+  KOSMOS reader → rebaixado de P1 para P2 (não interrompe)
+  Mnemosyne RAG → rebaixado de P2 para P3 (background)
+
+Perfil "estudo" (você está pesquisando com o Mnemosyne):
+  Mnemosyne RAG → promovido de P2 para P1 (pesquisa é a prioridade)
+  KOSMOS reader → rebaixado de P1 para P2
+
+Perfil "consumo" / "normal":
+  Sem overrides — cada app usa sua prioridade padrão
+```
+
+---
+
+### C.3 — Monitoramento de hardware: como o LOGOS lê a VRAM
+
+O código de monitoramento se adapta automaticamente ao hardware detectado.
+
+**Para GPUs AMD (RX 6600, no PC principal):**
+
+O Ollama com ROCm tem um bug: ele reporta `size_vram = 0` no `/api/ps` para GPUs AMD. Então o LOGOS bypassa o Ollama completamente e lê direto do kernel Linux via sysfs:
+
+```
+/sys/class/drm/card0/device/mem_info_vram_total  → 8589934592 bytes (8 GB)
+/sys/class/drm/card0/device/mem_info_vram_used   → 4294967296 bytes (4 GB)
+→ VRAM usage = 4/8 = 50%
+```
+
+O LOGOS itera `card0` até `card7`, identifica a GPU com maior VRAM total (a discreta, não a integrada) e usa esses valores.
+
+**Para GPUs NVIDIA (MX150, no laptop):**
+
+O Ollama com CUDA reporta `size_vram` corretamente. O LOGOS usa `/api/ps` do Ollama:
+
+```json
+GET http://localhost:11434/api/ps
+→ { "models": [{ "name": "qwen2.5:7b", "size_vram": 4294967296 }] }
+→ VRAM usada = 4 GB
+```
+
+**Detecção automática da máquina:**
+
+No startup do HUB, `detect_hardware_profile()` roda uma única vez:
+
+```
+Windows → WorkPc (compilação condicional #[cfg(target_os = "windows")])
+Linux + nvidia-smi reporta "MX150" → Laptop
+Linux + AMD sysfs VRAM ≥ 4 GB → MainPc
+Fallback → WorkPc
+```
+
+**Thresholds de bloqueio:**
+
+```rust
+const VRAM_P3_BLOCK: f32 = 0.85;   // P3 bloqueado se VRAM > 85%
+const CPU_P3_BLOCK: f32  = 85.0;   // P3 bloqueado se CPU > 85%
+const RAM_P3_BLOCK_MB: u64 = 1_536; // P3 bloqueado se RAM livre < 1.5 GB
+```
+
+**Modo bateria (laptop):**
+
+A cada 60 segundos, o LOGOS lê `/sys/class/power_supply/*/status`. Se qualquer fonte reportar `"Discharging"`, ativa modo bateria:
+- P3: bloqueado completamente (sem análise de background)
+- Embeddings: bloqueados completamente
+- P2: threshold de CPU mais conservador (60% em vez de 85%)
+- keep_alive: forçado a `0` (nenhum modelo fica carregado)
+- P1 e P2: `num_thread=2` para reduzir consumo de energia
+
+---
+
+### C.4 — O lado do cliente: como o ecosystem_client.py envia chamadas
+
+Quando o Mnemosyne (ou KOSMOS) quer gerar um resumo, ele chama `request_llm()` do `ecosystem_client.py`. Aqui está o fluxo completo:
+
+**Passo 1 — Selecionar o modelo:**
+
+Se o chamador não especificar um modelo, `request_llm()` consulta `GET /logos/hardware`:
+
+```python
+profile = get_active_profile()
+# → {"profile": "main_pc", "models": {"llm_mnemosyne": "qwen2.5:7b", "llm_kosmos": "gemma2:2b", ...}}
+model = profile["models"].get("llm_mnemosyne", "smollm2:1.7b")
+```
+
+Isso garante que o modelo escolhido seja o mais capaz que a máquina atual suporta. O Mnemosyne no PC principal usa `qwen2.5:7b`; no laptop, usa `gemma2:2b` (mais leve, cabe nos 2 GB do MX150).
+
+**Passo 2 — Montar o payload:**
+
+```python
+payload = {
+    "app":      "mnemosyne",    # identificação para overrides de perfil
+    "priority": 2,              # P2 = RAG importante mas não interativo
+    "model":    "qwen2.5:7b",
+    "messages": [
+        {"role": "system",  "content": "Você é um assistente..."},
+        {"role": "user",    "content": "O que diz o documento sobre X?"},
+    ],
+    "stream": False,
+}
+```
+
+**Passo 3 — Tentar o LOGOS primeiro:**
+
+```python
+# POST http://127.0.0.1:7072/logos/chat
+try:
+    response = urlopen(logos_request, timeout=300)
+    return json.loads(response.read())
+except HTTPError as e:
+    if e.code == 429:          # fila cheia ou VRAM saturada
+        raise RuntimeError("LOGOS rejeitou: " + e.read())
+    # Outro erro HTTP → tenta fallback
+except OSError:
+    pass  # HUB não está rodando → fallback direto
+```
+
+**Passo 4 — Fallback direto ao Ollama:**
+
+Se o LOGOS não respondeu (HUB fechado) ou retornou erro não-429:
+
+```python
+# Remove campos específicos do LOGOS ("app", "priority") que o Ollama não entende
+direct_payload = {k: v for k, v in payload.items() if k not in ("app", "priority")}
+
+# POST http://localhost:11434/api/chat
+response = urlopen(ollama_direct_request, timeout=300)
+return json.loads(response.read())
+```
+
+**Streaming (request_llm_stream):**
+
+Para o chat do HUB (P1), onde você quer ver tokens chegando em tempo real, `request_llm_stream()` faz o mesmo fluxo mas parseia NDJSON (Newline-Delimited JSON):
+
+```
+{"message": {"content": "O "}, "done": false}
+{"message": {"content": "documento "}, "done": false}
+{"message": {"content": "fala..."}, "done": false}
+{"done": true}
+```
+
+O gerador Python lê linha por linha do response HTTP e faz `yield token` para cada fragmento de texto, permitindo que a UI mostre a resposta sendo escrita em tempo real.
+
+---
+
+### C.5 — Onde a IA é usada no ecossistema
+
+| App | Feature de IA | Prioridade | Modelo | O que gera |
+|---|---|---|---|---|
+| **HUB** (chat) | QuestionsView — chat interativo | **P1** | Configurado pelo LOGOS | Respostas de linguagem natural em stream |
+| **Mnemosyne** | RAG — responde perguntas sobre documentos | **P2** | `qwen2.5:7b` (PC) / `gemma2:2b` (laptop) | Resposta fundamentada em chunks dos documentos |
+| **Mnemosyne** | Sumarização de coleções | P2 | mesmo | Resumo do conteúdo indexado |
+| **KOSMOS** | Análise de artigos (background) | **P3** | `gemma2:2b` / `smollm2:1.7b` | `ai_summary`, `ai_tags`, `ai_sentiment`, `ai_5ws` (who/what/when/where/why) |
+| **KOSMOS** | Tradução de artigos | P3 | (usa deep-translator, não LLM) | Tradução offline sem Ollama |
+| **Mnemosyne** | Embeddings de documentos | P3 | `bge-m3` / `nomic-embed-text` | Vetores para busca semântica no ChromaDB |
+
+---
+
+## Anexo D — Visão de Programadora
+
+> **Para quem é este anexo:** Para raciocinar sobre mudanças antes de fazê-las — entender o impacto de trocar uma biblioteca, e como a tipagem te protege quando usa IA para gerar código.
+
+---
+
+### D.1 — Impacto de trocar uma biblioteca
+
+**Caso concreto: trocar SQLAlchemy por SQLModel no KOSMOS**
+
+SQLModel é uma biblioteca feita pelo mesmo criador do FastAPI que combina SQLAlchemy + Pydantic numa sintaxe mais moderna. Parece uma troca simples, mas tem impactos em camadas.
+
+**O que mudaria:**
+
+Camada 1 — Definição dos modelos (`core/models.py`):
+
+```python
+# SQLAlchemy atual:
+class Article(Base):
+    __tablename__ = "articles"
+    id      = Column(Integer, primary_key=True)
+    title   = Column(String, nullable=False)
+    content = Column(Text)
+
+# SQLModel (novo):
+class Article(SQLModel, table=True):
+    id:      Optional[int] = Field(default=None, primary_key=True)
+    title:   str
+    content: Optional[str] = None
+```
+
+Camada 2 — Sessões (`core/database.py` e `core/feed_manager.py`):
+
+```python
+# SQLAlchemy: sessionmaker(bind=engine)
+# SQLModel: Session(engine) — sintaxe diferente mas comportamento igual
+```
+
+Camada 3 — Queries (espalhadas pelo `FeedManager`):
+
+```python
+# SQLAlchemy:
+session.query(Article).filter(Article.read == False).all()
+
+# SQLModel:
+session.exec(select(Article).where(Article.read == False)).all()
+```
+
+**O que NÃO mudaria:** toda a camada de UI (`ui/`), os sinais e slots, a lógica de background threads, a integração com o ecosystem.json. A separação `core/` vs `ui/` garante que a mudança fica contida.
+
+**Riscos reais:**
+- Queries complexas (joins, subqueries) têm sintaxes diferentes entre SQLAlchemy e SQLModel
+- O KOSMOS usa `session.execute(text("..."))` em alguns lugares — SQL raw funciona igual
+- Relacionamentos M2M (`ArticleTag`) têm anotações diferentes
+- **Custo de migração:** reescrever `models.py` + `feed_manager.py` + testar todas as queries — algumas horas, não dias
+
+**Regra geral para trocar qualquer biblioteca:**
+1. Mapeie todos os arquivos que importam a biblioteca: `grep -r "import sqlalchemy" KOSMOS/`
+2. Leia a documentação de migração (se existir)
+3. Escreva um script de teste mínimo com as queries mais importantes
+4. Faça a troca num commit separado — facilita reverter se algo quebrar
+
+---
+
+### D.2 — Como a tipagem evita "alucinações" da IA no formato de dados
+
+Quando você usa IA para gerar código, o maior risco não é ela inventar lógica errada — é ela inventar **tipos errados**. Um campo com nome diferente, um objeto onde deveria ser array, um campo opcional tratado como obrigatório.
+
+A tipagem rigorosa do ecossistema age como um **filtro automático** nesses casos.
+
+**No Rust (AETHER e HUB) — o compilador rejeita antes de rodar:**
+
+Se a IA gerar código que tenta serializar um struct com um campo que não existe:
+
+```rust
+// Struct real:
+#[derive(Serialize, Deserialize)]
+struct Project {
+    id: String,
+    title: String,
+}
+
+// IA gerou código com campo inventado:
+let p = Project {
+    id: "123".to_string(),
+    title: "Meu projeto".to_string(),
+    author: "Jenifer".to_string(),  // ← campo que não existe
+};
+```
+
+O compilador Rust recusa compilar. A IA gerou código errado, mas o erro aparece **antes de você rodar o programa**. Isso é diferente de Python ou JavaScript puro, onde você só descobriria o problema em runtime (ou nunca, se não tiver testes).
+
+O `serde_json` que serializa os structs Rust para JSON só inclui os campos declarados — nunca campos extras. Então quando o JSON chega ao TypeScript, ele tem exatamente os campos que o TypeScript espera.
+
+**No TypeScript (AETHER, OGMA, HUB) — o compilador recusa acesso a campos não tipados:**
+
+```typescript
+// Tipo real:
+type Project = {
+    id: string
+    title: string
+    // "author" não existe aqui
+}
+
+// IA gerou acesso a campo inventado:
+const project: Project = await loadProject()
+console.log(project.author)  // ← TypeScript: error TS2339: Property 'author' does not exist
+```
+
+Com `strict: true`, o TypeScript não deixa você acessar nenhuma propriedade não declarada. A IA tem que gerar código que respeita os tipos, ou o projeto não compila.
+
+**O padrão `TauriResult<T>` como proteção extra:**
+
+Quando a IA gera código de frontend e esquece de verificar se o resultado é sucesso ou erro:
+
+```typescript
+// IA gerou código ingênuo:
+const project = await call<Project>("get_project", { id })
+console.log(project.title)  // ← TypeScript: error! 'project' é TauriResult<Project>, não Project
+```
+
+O tipo `TauriResult<T> = { ok: true; data: T } | { ok: false; error: AppError }` força o código a verificar `if (result.ok)` antes de acessar os dados. A IA não pode "esquecer" de tratar o erro porque o TypeScript não deixa.
+
+**No Python (classes de exceção tipadas):**
+
+Quando a IA gera um handler que não trata o tipo certo de exceção:
+
+```python
+# IA gerou catch genérico:
+try:
+    result = feed_manager.add_feed(url)
+except Exception as e:
+    print(e)  # ← perde o tipo; código de revisão vai rejeitar isso
+
+# O padrão do ecossistema obriga:
+try:
+    result = feed_manager.add_feed(url)
+except FeedManagerError as e:
+    # e é tipado — você sabe exatamente o que falhou
+    self.show_error(str(e))
+```
+
+O projeto já estabeleceu que `except Exception` genérico é proibido. Isso funciona como um **protocolo de revisão**: quando você (ou a IA) gera código, você sabe que vai ter que checar se os `except` são específicos.
+
+**A regra prática:** Quando usar IA para gerar código, sempre peça que ela respeite os tipos existentes. Se ela gerar um tipo novo (`any`, `object`, `dict` genérico), rejeite. Se ela gerar um `except Exception`, rejeite. Os tipos já foram definidos — a IA tem que usá-los, não contorná-los.
+
+---
+
+*Anexos B, C e D gerados em 2026-05-11. Atualizar conforme o ecossistema evolui.*
