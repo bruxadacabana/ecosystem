@@ -4006,7 +4006,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Armazenar hashes em `{chroma_dir}/.chunk_hashes.json` ou em tabela SQLite auxiliar.
 
 #### HUB (LOGOS)
-- [ ] **Referência arquitetural: pipeline multi-agente via prompts .md** (pesquisa, não
+- [x] **Referência arquitetural: pipeline multi-agente via prompts .md** (pesquisa, não
   implementação imediata). O Understand-Anything orquestra 5 subagentes em paralelo onde
   cada "habilidade" é um arquivo `.md` de prompt — adicionar nova capacidade = criar novo
   arquivo, sem alterar código. Aplicar ao LOGOS: cada tipo de tarefa (RAG query, síntese,

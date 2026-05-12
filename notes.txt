@@ -1,1 +1,0 @@
-1. o mnemosyne está indexando arquivos do ecossistema enquanto já estava indexando arquivos da biblioteca, sendo que era suposto ele indexar arquivos do ecossistema automaticamente apenas enquanto não estivesse trabalhando em algo
