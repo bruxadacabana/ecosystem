@@ -10,6 +10,12 @@
 2. [Mapeamento de Stacks e Estrutura de Diretórios](#2-mapeamento-de-stacks-e-estrutura-de-diretórios)
 3. [Padrões de Código e Boas Práticas](#3-padrões-de-código-e-boas-práticas)
 4. [Guia de Leitura de Código](#4-guia-de-leitura-de-código)
+   - [Roteiro A — Busca no AKASHA](#roteiro-a--busca-no-akasha-do-clique-ao-resultado)
+   - [Roteiro B — Feed do AKASHA para o KOSMOS](#roteiro-b--feed-do-akasha-para-o-kosmos)
+   - [Roteiro C — HUB lendo um capítulo do AETHER](#roteiro-c--hub-lendo-um-capítulo-do-aether)
+   - [Roteiro D — Mnemosyne respondendo uma pergunta](#roteiro-d--mnemosyne-respondendo-uma-pergunta)
+   - [Roteiro E — Como adicionar um novo campo ao ecosystem.json](#roteiro-e--como-adicionar-um-novo-campo-ao-ecosystemjson)
+   - [Roteiro F — Como o Mnemosyne re-indexa um arquivo modificado](#roteiro-f--como-o-mnemosyne-re-indexa-um-arquivo-modificado)
 5. [Workflow de Desenvolvimento](#5-workflow-de-desenvolvimento)
 6. [Anexo — Fundamentos e Mecânica](#anexo--fundamentos-e-mecânica-do-ecossistema)
    - [A.1 — A Razão das Ferramentas (Os "Porquês")](#a1--a-razão-das-ferramentas-os-porquês)
@@ -69,7 +75,13 @@ Este arquivo é o "diretório telefônico" do ecossistema. Quando o AKASHA quer 
   "aether":    { "vault_path": "/caminho/para/vault", "config_path": "" },
   "kosmos":    { "data_path": "", "archive_path": "", "http_port": 8965 },
   "ogma":      { "data_path": "/caminho/para/ogma.db", "config_path": "" },
-  "mnemosyne": { "index_paths": [], "config_path": "" },
+  "mnemosyne": {
+    "watched_dir": "/caminho/para/biblioteca",
+    "vault_dir":   "/caminho/para/obsidian_vault",
+    "chroma_dir":  "/caminho/para/chroma_db",
+    "extra_dirs":  [],
+    "config_path": ""
+  },
   "hub":       { "data_path": "" },
   "hermes":    { "output_dir": "", "config_path": "" },
   "akasha":    { "archive_path": "", "data_path": "", "base_url": "http://localhost:7071" },
@@ -125,7 +137,7 @@ Este arquivo é o "diretório telefônico" do ecossistema. Quando o AKASHA quer 
 | **AETHER** | Vault de escrita criativa. Projetos > Livros > Capítulos. Dados em JSON + Markdown no disco. Acesso exclusivo pelo HUB e pelo próprio AETHER. |
 | **OGMA** | Gerenciador de projetos e notas. Block editor. SQLite local. Pode visualizar projetos do AETHER via `aether_project_id`. |
 | **KOSMOS** | Agregador de RSS/feeds com IA. Lê artigos, cria summaries com LLM, permite busca FTS5. Expõe API HTTP mínima para receber feeds do AKASHA. |
-| **Mnemosyne** | Assistente RAG local. Indexa documentos (PDF, DOCX, MD) em ChromaDB, faz busca híbrida (semântica + BM25), responde perguntas via Ollama. |
+| **Mnemosyne** | Assistente RAG local. Indexa documentos (PDF, DOCX, MD, EPUB, MOBI, AZW/AZW3, imagens) em ChromaDB, faz busca híbrida (semântica + BM25) com re-ranking FlashRank, responde perguntas via Ollama. Suporta coleções LIBRARY e VAULT (Obsidian). |
 | **Hermes** | Downloader e transcritor. Baixa vídeos/áudio com yt-dlp, transcreve com Whisper, salva Markdown. Expõe API HTTP para receber tarefas. |
 | **AKASHA** | Mecanismo de busca pessoal. Busca na web (DuckDuckGo), em arquivos locais (FTS5), em sites crawlados, em papers (arXiv). |
 
@@ -183,14 +195,16 @@ AKASHA/
     └── search.html       ← Página de busca
 ```
 
-**Banco de dados:** SQLite em `{data_path}/akasha.db`. As migrações são aplicadas automaticamente no startup via `database.py`. Para ver o schema completo, leia [AKASHA/database.py](AKASHA/database.py).
+**Banco de dados:** SQLite em `{data_path}/akasha.db`. As migrações são aplicadas automaticamente no startup via `database.py` (versão atual: schema v15). Para ver o schema completo, leia [AKASHA/database.py](AKASHA/database.py).
 
 Tabelas principais:
-- `crawl_pages` — páginas indexadas pelo crawler (com `content_hash` para deduplicação)
+- `crawl_pages` — páginas indexadas pelo crawler. Campos `content_hash` (SHA-256 para deduplicação cross-URL), `etag` e `last_modified` (para requisições HTTP condicionais — evita re-download quando o conteúdo não mudou)
 - `search_cache` — resultados de busca web cacheados por 24h
-- `local_fts` — tabela virtual FTS5 de arquivos locais
-- `crawl_fts` — tabela virtual FTS5 do conteúdo crawlado
+- `local_fts` — tabela virtual FTS5 de arquivos locais com tokenizer `unicode61 remove_diacritics 2` (busca sem acentos: "musica" encontra "música")
+- `crawl_fts` — tabela virtual FTS5 do conteúdo crawlado (mesmo tokenizer)
 - `activity_log` — audit trail de todas as ações
+
+**Busca local híbrida:** `services/local_search.py` combina FTS5 (palavras-chave) + ChromaDB (semântico) usando **RRF** (Reciprocal Rank Fusion) para fundir as duas listas de resultados sem precisar calibrar pesos manuais. O ChromaDB é instanciado uma única vez por caminho via cache de singleton em memória (evita re-abertura custosa a cada busca).
 
 ---
 
@@ -267,16 +281,18 @@ Hermes/
 Mnemosyne/
 ├── main.py              ← Ponto de entrada mínimo.
 ├── core/                ← Toda a lógica de RAG e indexação.
-│   ├── config.py        ← AppConfig dataclass. Caminho: ecosystem.json → local config.json.
+│   ├── config.py        ← AppConfig dataclass. Lê ecosystem.json + settings.json local.
 │   ├── collections.py   ← CollectionConfig: VAULT | LIBRARY, com persist_dir próprio.
 │   ├── errors.py        ← 18 classes de exceção específicas (ver Seção 3).
-│   ├── indexer.py       ← ChromaDB: carrega, indexa, atualiza. Checkpoint em SQLite.
-│   ├── rag.py           ← Chain RAG: recupera chunks → monta prompt → envia ao LLM.
-│   ├── bm25_index.py    ← Busca por palavra-chave (complementa o embedding).
+│   ├── indexer.py       ← ChromaDB: indexa, atualiza incrementalmente, classifica chunks.
+│   ├── rag.py           ← Pipeline RAG: busca híbrida → rerank → prompt → LLM.
+│   ├── bm25_index.py    ← Índice BM25 em memória para busca por palavra-chave.
+│   ├── reflection.py    ← Knowledge Reflection: gera "reflexões" sintéticas sobre chunks.
 │   ├── memory.py        ← Histórico de conversa em history.jsonl + memória em memory.json.
-│   ├── loaders.py       ← Parsers: PDF, DOCX, TXT, Markdown com frontmatter.
-│   ├── tracker.py       ← Hash de arquivos para indexação incremental.
-│   └── watcher.py       ← QFileSystemWatcher — detecta novos arquivos.
+│   ├── loaders.py       ← Parsers: PDF, DOCX, TXT, MD, EPUB, MOBI/AZW/AZW3, imagens (OCR).
+│   ├── tracker.py       ← Hash SHA-256 por arquivo para detecção de mudanças.
+│   ├── ollama_client.py ← Wrappers para /api/embed e /api/generate do Ollama.
+│   └── watcher.py       ← QFileSystemWatcher — detecta novos arquivos no diretório.
 └── gui/
     ├── main_window.py   ← Janela principal com abas: Index, Ask, Summarize, Manage.
     ├── workers.py       ← QThread workers: IndexWorker, AskWorker, SummarizeWorker.
@@ -284,9 +300,40 @@ Mnemosyne/
 ```
 
 **Banco de dados:**
-- ChromaDB em `{collection_path}/.mnemosyne/chroma_db` — um por collection
-- SQLite em `{collection_path}/.mnemosyne/index_checkpoint.db` — rastreia arquivos indexados
-- JSON em `{collection_path}/.mnemosyne/memory.json` — memória de sessão
+- ChromaDB em `{chroma_dir}` (configurado no ecosystem.json) — vetores e metadata dos chunks
+- SQLite `{chroma_dir}/index_checkpoint.db` — rastreia arquivos indexados e hash por arquivo
+- SQLite `{chroma_dir}/.chunk_hashes.db` — hash por chunk individual (indexação incremental em 4 níveis)
+- JSON `{collection_path}/.mnemosyne/memory.json` — memória de sessão do chat
+
+**Coleções: LIBRARY vs VAULT**
+
+O Mnemosyne distingue dois tipos de coleção, configurados em `core/collections.py`:
+
+- **LIBRARY**: documentos para leitura (PDFs, livros, artigos). Usa persona "bibliotecário" no RAG. Chunks tratados como texto externo.
+- **VAULT**: notas pessoais (Obsidian, Markdown). Usa persona "guardiã da memória pessoal". Segue wikilinks `[[nota]]` automaticamente durante o RAG para incluir contexto de notas linkadas.
+
+Cada coleção tem seu próprio ChromaDB persistente. Múltiplas coleções podem estar configuradas; a coleção ativa é selecionada via combo box na UI.
+
+**Campos do AppConfig**
+
+O `AppConfig` (em `core/config.py`) centraliza toda a configuração do app. Campos principais:
+
+| Campo | Tipo | Default | O que controla |
+|---|---|---|---|
+| `llm_model` | str | `"qwen2.5:7b"` | Modelo Ollama para RAG e sumarização |
+| `embed_model` | str | `""` | Modelo de embedding (ex: `nomic-embed-text`) |
+| `chunk_size` | int | 1800 | Tamanho de cada chunk em caracteres |
+| `chunk_overlap` | int | 250 | Sobreposição entre chunks consecutivos |
+| `retriever_k` | int | 4 | Número de chunks retornados ao LLM |
+| `reranking_enabled` | bool | True | Ativa FlashRank re-ranking pós-retrieval |
+| `reranking_top_n` | int | 6 | Quantos chunks manter após re-ranking |
+| `embedding_truncate_dim` | int\|None | None | Matryoshka: trunca embedding para N dims (ex: 256 = 3× menor) |
+| `iterative_retrieval_enabled` | bool | False | Ativa ITER-RETGEN: 2 rodadas de retrieval |
+| `node_type_classification` | bool | False | Classifica cada chunk como article/claim/entity/topic/source durante indexação |
+| `node_type_model` | str | `""` | Modelo LLM para classificação (vazio = usa `llm_model`) |
+| `image_ocr_model` | str | `""` | Modelo Ollama vision para OCR de imagens (vazio = Tesseract local) |
+| `relevance_decay_days` | int | 30 | Penaliza fontes não consultadas há N dias |
+| `semantic_chunking` | bool | False | Chunking semântico (desativado — benchmarks favorecem fixed-size) |
 
 ---
 
@@ -628,11 +675,32 @@ A melhor forma de entender uma feature é seguir o fluxo de uma informação des
 
 **Ordem de leitura:**
 
-1. **[Mnemosyne/gui/main_window.py](Mnemosyne/gui/main_window.py)** — O campo de input da aba "Ask". Quando o usuário confirma, cria um `AskWorker`.
+1. **[Mnemosyne/gui/main_window.py](Mnemosyne/gui/main_window.py)** — O campo de input da aba "Ask". Quando o usuário confirma, cria um `AskWorker`. Parâmetros como `persona`, `retrieval_mode`, `iterative_retrieval` e `node_types` também são lidos da UI aqui.
 
-2. **[Mnemosyne/gui/workers.py](Mnemosyne/gui/workers.py)** — `AskWorker(QThread)`: roda em background para não travar a UI. Chama `rag.ask()`.
+2. **[Mnemosyne/gui/workers.py](Mnemosyne/gui/workers.py)** — `AskWorker(QThread)`: roda em background para não travar a UI. Chama `rag.prepare_ask()` e depois faz streaming do LLM.
 
-3. **[Mnemosyne/core/rag.py](Mnemosyne/core/rag.py)** — A função `ask()`: recupera os chunks mais relevantes do ChromaDB (semântico) + BM25 (keyword), monta o prompt com o contexto, e envia ao LLM.
+3. **[Mnemosyne/core/rag.py](Mnemosyne/core/rag.py)** — O pipeline completo de recuperação, em camadas:
+
+   **Etapa 3a — Retrieval (escolhe um modo):**
+   - `"hybrid"` (padrão): `_hybrid_retrieve()` — combina ChromaDB semântico (cosine similarity) + BM25 via **RRF** (Reciprocal Rank Fusion, `score = 1/(60 + rank + 1)`). O RRF simplesmente soma os scores de rank de duas listas e re-ordena — não precisa normalizar nem calibrar pesos.
+   - `"multi_query"`: `_multi_query_retrieve()` — pede ao LLM 3 reformulações da pergunta, faz retrieval para cada uma, deduplica e une os resultados. Útil para perguntas vagas.
+   - `"hyde"`: `_hyde_retrieve()` — gera uma resposta hipotética com o LLM e usa o embedding *dela* para buscar. Eficaz para perguntas abstratas.
+   - `iterative_retrieval=True`: `_iterative_retrieve()` — ITER-RETGEN simplificado: 2 rodadas. A resposta provisória da iteração 1 vira query adicional da iteração 2. Melhora recall.
+
+   **Etapa 3b — Filtros opcionais no ChromaDB:**
+   `_build_where_filter()` monta um filtro `where` que pode combinar:
+   - `source_type` (`"library"` ou `"vault"`) — separa coleções
+   - `source_files` — restringe a arquivos específicos
+   - `node_types` — restringe por tipo semântico do chunk (`["claim", "article"]`)
+
+   **Etapa 3c — Compressão contextual:**
+   `_contextual_compress()` passa cada chunk por uma pergunta binária ao LLM ("este trecho é relevante?") e descarta os irrelevantes. Reduz ruído antes do re-ranking.
+
+   **Etapa 3d — Re-ranking temporal:**
+   `_apply_time_decay()` penaliza levemente fontes consultadas há muito tempo (usando `FileTracker`), para priorizar material mais recentemente útil.
+
+   **Etapa 3e — FlashRank:**
+   `_flashrank_rerank()` usa o modelo `ms-marco-MultiBERT-L-12` (ONNX, ~4 MB, ~15–30 ms em CPU) para re-ordenar os chunks por relevância semântica real à query, e reduz ao `top_n` configurado.
 
 4. **[Mnemosyne/core/ollama_client.py](Mnemosyne/core/ollama_client.py)** → **[ecosystem_client.py](ecosystem_client.py)** — `request_llm()` tenta primeiro o LOGOS (`:7072`), cai no Ollama direto (`:11434`) se o HUB não estiver rodando.
 
@@ -653,6 +721,40 @@ A melhor forma de entender uma feature é seguir o fluxo de uma informação des
 3. **[AETHER/src-tauri/src/ecosystem.rs](AETHER/src-tauri/src/ecosystem.rs)** — O equivalente em Rust: lê o JSON, atualiza a seção, escreve de volta com lock de arquivo.
 
 4. **[HUB/src-tauri/src/ecosystem.rs](HUB/src-tauri/src/ecosystem.rs)** — Mesmo padrão, para referência.
+
+---
+
+### Roteiro F — Como o Mnemosyne re-indexa um arquivo modificado
+
+**Situação:** Você quer entender por que o Mnemosyne não re-embeda tudo quando você edita uma linha de um documento de 200 páginas.
+
+O `core/indexer.py` implementa **indexação incremental em 4 níveis** via a classe `ChunkHashStore` (SQLite em `.chunk_hashes.db`):
+
+**Passo 1 — Detectar qual arquivo mudou**
+
+`update_vectorstore()` usa o `FileTracker` para comparar hashes SHA-256 dos arquivos no diretório com os hashes salvos na última indexação. Apenas arquivos com hash diferente passam para o próximo passo.
+
+**Passo 2 — Dividir em chunks e calcular hashes**
+
+O arquivo modificado é dividido em chunks pelo `RecursiveCharacterTextSplitter`. Para cada chunk, o indexer calcula dois hashes:
+- `_ch(text)` — hash do conteúdo exato (SHA-256 dos primeiros 32 bytes hexa)
+- `_nh(text)` — hash "normalizado" (lowercase + colapsa espaços) — detecta mudanças puramente cosméticas
+
+**Passo 3 — Determinar o nível de mudança**
+
+| Nível | Condição | Ação |
+|---|---|---|
+| `NONE` | Hashes idênticos | Nada |
+| `COSMETIC` | Hash normalizado igual, exato diferente | Atualiza registro no `ChunkHashStore`, **não re-embeda** |
+| `STRUCTURAL` | Hash normalizado diferente em alguns chunks | Re-embeda só os chunks que mudaram; remove do ChromaDB os deletados |
+| `FULL` | Arquivo novo | Embeda todos os chunks |
+
+**Por que isso importa:** Em um livro de 500 páginas onde você corrigiu uma vírgula, `COSMETIC` garante que nenhum embedding seja recalculado. Em um artigo onde você acrescentou um parágrafo, `STRUCTURAL` re-embeda só o parágrafo novo e seus vizinhos afetados — não o livro inteiro.
+
+**Onde ler no código:**
+
+1. **[Mnemosyne/core/indexer.py](Mnemosyne/core/indexer.py)** — classes `ChangeLevel`, `ChunkHashStore`, função `_incremental_update()`
+2. **[Mnemosyne/core/tracker.py](Mnemosyne/core/tracker.py)** — `FileTracker`: mantém `{file_path: sha256}` persistido em JSON
 
 ---
 
@@ -1519,8 +1621,11 @@ Fonte: [Mnemosyne/requirements.txt](Mnemosyne/requirements.txt)
 | **rank-bm25** | Implementação do algoritmo BM25 | Busca por palavras-chave (probabilística) — complementa a busca semântica do ChromaDB | `BM25Okapi(tokenized_corpus).get_scores(query_tokens)` — combinado com ChromaDB em `core/rag.py` |
 | **pypdf** | Leitor de PDF puro Python | Extrai texto de arquivos PDF para indexação | `PdfReader(path).pages[i].extract_text()` — em `core/loaders.py` |
 | **python-docx** | Leitor de documentos Word | Extrai texto de arquivos `.docx` para indexação | `docx.Document(path).paragraphs[i].text` — em `core/loaders.py` |
-| **ebooklib** | Leitor de ePub | Extrai texto de livros digitais `.epub` para indexação | `epub.read_epub(path).get_items_of_type(ITEM_DOCUMENT)` — em `core/loaders.py` |
-| **beautifulsoup4** | Parser HTML | Usado pelo ebooklib para extrair texto limpo de capítulos ePub (que são HTML internamente) | `BeautifulSoup(item.get_content(), "lxml").get_text()` |
+| **ebooklib** | Leitor de ePub | Extrai texto de livros digitais `.epub` para indexação; também usado internamente por `_load_mobi()` quando AZW3 gera EPUB | `epub.read_epub(path).get_items_of_type(ITEM_DOCUMENT)` — em `core/loaders.py` |
+| **beautifulsoup4** | Parser HTML | Extrai texto limpo de capítulos ePub (HTML internamente) e de MOBI puro (HTML gerado pelo KindleUnpack) | `BeautifulSoup(item.get_content(), "lxml").get_text()` |
+| **mobi** | KindleUnpack para Python | Extrai texto de `.mobi`, `.azw` e `.azw3` para indexação. Sem dependências nativas — funciona igual em Windows e Linux. Arquivos com DRM resultam em `DocumentLoadError` informativo | `mobi.extract(file_path, tmpdir)` — em `core/loaders.py::_load_mobi()` |
+| **pytesseract** (opcional) | Bindings Python do Tesseract OCR | Extrai texto de imagens (JPG, PNG, WebP) para indexação. Requer Tesseract instalado no sistema. Caminho principal do OCR de imagens | `pytesseract.image_to_string(img, lang="por+eng")` — em `core/loaders.py::_load_image()` |
+| **Pillow** (opcional) | Processamento de imagem | Abre imagens e converte para RGB antes de passar ao Tesseract; converte formatos não suportados | `Image.open(path).convert("RGB")` — em `core/loaders.py::_load_image()` |
 | **lxml** | Parser XML/HTML rápido | Backend de parsing para BeautifulSoup no processamento de ePubs | Usado implicitamente |
 | **python-frontmatter** | Parser de frontmatter YAML | Lê metadados YAML de arquivos Markdown (ex: `tags:`, `date:`, `title:` em notas do Obsidian) | `frontmatter.load(path)` → `.metadata["tags"]`, `.content` |
 | **tiktoken** | Tokenizador da OpenAI | Conta tokens antes de enviar ao LLM para garantir que o prompt não excede o contexto | `tiktoken.get_encoding("cl100k_base").encode(text)` — usado para calcular `chunk_size` |
