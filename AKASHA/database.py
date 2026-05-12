@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -188,6 +188,13 @@ _CREATE_IDX_ACTIVITY_LOG = """
 CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC);
 """
 
+_CREATE_LOCAL_VEC_PATHS = """
+CREATE TABLE IF NOT EXISTS local_vec_paths (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT    NOT NULL UNIQUE
+);
+"""
+
 _CREATE_ARCHIVE_SIMHASHES = """
 CREATE TABLE IF NOT EXISTS archive_simhashes (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -241,6 +248,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_WATCH_LATER_FTS)
         await db.execute(_CREATE_ACTIVITY_LOG)
         await db.execute(_CREATE_IDX_ACTIVITY_LOG)
+        await db.execute(_CREATE_LOCAL_VEC_PATHS)
         await db.execute(_CREATE_ARCHIVE_SIMHASHES)
         await db.execute(_CREATE_IDX_ARCHIVE_SIMHASHES)
 
@@ -423,6 +431,14 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         await db.execute(
             "INSERT INTO crawl_fts(crawl_fts, rank) VALUES('rank', 'bm25(0, 0, 10.0, 1.0)')"
         )
+
+    if from_version < 19:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS local_vec_paths (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT    NOT NULL UNIQUE
+            )
+        """)
 
     if from_version < 18:
         await db.execute("""

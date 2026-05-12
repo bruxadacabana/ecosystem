@@ -26,7 +26,7 @@ from routers import kosmos_bridge as kosmos_bridge_router
 from routers import history as history_router
 from routers import papers as papers_router
 from routers import downloads as downloads_router
-from services.local_search import index_local_files
+from services.local_search import index_local_files, init_vec_index
 from services.crawler import crawl_pending_sites
 
 _log = logging.getLogger(__name__)
@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI):
     await database.init_db()
     config.register_akasha()
     await index_local_files()
+    await init_vec_index()
     asyncio.get_running_loop().create_task(_monitor_crawler())
     yield
     # Shutdown — nada a liberar por enquanto

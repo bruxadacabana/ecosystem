@@ -4205,7 +4205,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   em config): usuario pode desativar se latência for problema. Maior ganho para queries
   ambíguas onde BM25 retorna muitos falsos positivos.
 
-- [ ] **sqlite-vec: adicionar busca vetorial nativa no mesmo arquivo .db do FTS5**
+- [x] **sqlite-vec: adicionar busca vetorial nativa no mesmo arquivo .db do FTS5**
   (`database.py`, `services/local_search.py`). Instalar pip install sqlite-vec. Criar
   virtual table `vec_items(rowid, embedding FLOAT[384])` no mesmo arquivo akasha.db.
   No archiver, ao indexar documento, gerar embedding (modelo leve, ex: all-MiniLM-L6-v2

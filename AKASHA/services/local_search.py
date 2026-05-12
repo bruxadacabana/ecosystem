@@ -5,6 +5,7 @@ ChromaDB (Mnemosyne) é opcional — importação com graceful fallback.
 """
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 
@@ -37,6 +38,17 @@ RERANKING_ENABLED: bool = False
 RERANK_TOP_K:      int  = 20
 RERANK_MODEL:      str  = "ms-marco-TinyBERT-L-2-v2"
 
+# ---------------------------------------------------------------------------
+# Busca vetorial (sqlite-vec + sentence-transformers) — desativada por padrão
+# Quando ativada, embeddings são calculados ao indexar e a busca combina
+# FTS5 (BM25) + ChromaDB + sqlite-vec (KNN cosine) via RRF.
+# Modelo: all-MiniLM-L6-v2 (~80MB, 384 dims, CPU-only).
+# Atenção: i5-3470 (sem AVX2) pode ser lento — habilitar só em CachyOS/laptop.
+# ---------------------------------------------------------------------------
+
+VECTOR_SEARCH_ENABLED: bool = False
+VEC_EMBED_MODEL:       str  = "all-MiniLM-L6-v2"
+
 try:
     import bm25s as _bm25s
     _BM25S_AVAILABLE = True
@@ -48,6 +60,18 @@ try:
     _FLASHRANK_AVAILABLE = True
 except ImportError:
     _FLASHRANK_AVAILABLE = False
+
+try:
+    import sqlite_vec as _sqlite_vec  # type: ignore
+    _SQLITE_VEC_AVAILABLE = True
+except ImportError:
+    _SQLITE_VEC_AVAILABLE = False
+
+try:
+    from sentence_transformers import SentenceTransformer as _SentenceTransformer  # type: ignore
+    _ST_AVAILABLE = True
+except ImportError:
+    _ST_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Detecção de idioma + stemming (langdetect + NLTK SnowballStemmer)
@@ -96,6 +120,42 @@ def _get_chroma_client(index_path: str) -> object:
     if index_path not in _chroma_clients:
         _chroma_clients[index_path] = _chromadb.PersistentClient(path=index_path)
     return _chroma_clients[index_path]
+
+
+# ---------------------------------------------------------------------------
+# Embedding vetorial (sentence-transformers + sqlite-vec)
+# ---------------------------------------------------------------------------
+
+_encoder: object | None = None
+
+
+def _get_encoder() -> object | None:
+    global _encoder
+    if _encoder is None and _ST_AVAILABLE:
+        try:
+            _encoder = _SentenceTransformer(VEC_EMBED_MODEL)  # type: ignore[operator]
+        except Exception:
+            pass
+    return _encoder
+
+
+def _load_vec_ext(conn: object) -> None:
+    """Carrega a extensão sqlite-vec numa conexão sqlite3 (chamado via run_sync)."""
+    conn.enable_load_extension(True)   # type: ignore[union-attr]
+    _sqlite_vec.load(conn)             # type: ignore[union-attr]
+    conn.enable_load_extension(False)  # type: ignore[union-attr]
+
+
+def _embed_sync(text: str) -> bytes | None:
+    """Calcula embedding e serializa como float32 bytes para sqlite-vec (síncrono)."""
+    encoder = _get_encoder()
+    if encoder is None:
+        return None
+    try:
+        arr = encoder.encode(text, normalize_embeddings=True)  # type: ignore[union-attr]
+        return _sqlite_vec.serialize_float32(arr.tolist())     # type: ignore[union-attr]
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +208,17 @@ async def _get_stored_mtime(path_str: str) -> str | None:
 
 
 async def _reindex(path_str: str, title: str, body: str, source: str, mtime: str) -> None:
+    # Embedding calculado fora da conexão DB (CPU-bound → não bloqueia event loop)
+    emb: bytes | None = None
+    if VECTOR_SEARCH_ENABLED and _SQLITE_VEC_AVAILABLE and _ST_AVAILABLE:
+        loop = asyncio.get_running_loop()
+        emb = await loop.run_in_executor(
+            None, _embed_sync, f"{title} {body[:2000]}"
+        )
+
     async with aiosqlite.connect(DB_PATH) as db:
+        if emb is not None:
+            await db.run_sync(_load_vec_ext)
         # Remove entrada anterior do FTS (via rowid para evitar scan completo)
         rows = await (await db.execute(
             "SELECT rowid FROM local_fts WHERE path = ?", (path_str,)
@@ -165,6 +235,23 @@ async def _reindex(path_str: str, title: str, body: str, source: str, mtime: str
             "INSERT OR REPLACE INTO local_index_meta (path, source, mtime) VALUES (?, ?, ?)",
             (path_str, source, mtime),
         )
+        # Armazena embedding vetorial
+        if emb is not None:
+            row = await (await db.execute(
+                "SELECT id FROM local_vec_paths WHERE path = ?", (path_str,)
+            )).fetchone()
+            if row:
+                vec_id = row[0]
+            else:
+                cur = await db.execute(
+                    "INSERT OR IGNORE INTO local_vec_paths (path) VALUES (?)", (path_str,)
+                )
+                vec_id = cur.lastrowid
+            if vec_id:
+                await db.execute(
+                    "INSERT OR REPLACE INTO vec_items(rowid, embedding) VALUES (?, ?)",
+                    (vec_id, emb),
+                )
         await db.commit()
 
 
@@ -178,6 +265,11 @@ async def _purge_missing() -> None:
         return
 
     async with aiosqlite.connect(DB_PATH) as db:
+        if VECTOR_SEARCH_ENABLED and _SQLITE_VEC_AVAILABLE:
+            try:
+                await db.run_sync(_load_vec_ext)
+            except Exception:
+                pass
         for path_str in missing:
             fts_rows = await (await db.execute(
                 "SELECT rowid FROM local_fts WHERE path = ?", (path_str,)
@@ -185,6 +277,14 @@ async def _purge_missing() -> None:
             for (rowid,) in fts_rows:
                 await db.execute("DELETE FROM local_fts WHERE rowid = ?", (rowid,))
             await db.execute("DELETE FROM local_index_meta WHERE path = ?", (path_str,))
+            # Limpa entradas vetoriais do arquivo removido
+            if VECTOR_SEARCH_ENABLED and _SQLITE_VEC_AVAILABLE:
+                vp_row = await (await db.execute(
+                    "SELECT id FROM local_vec_paths WHERE path = ?", (path_str,)
+                )).fetchone()
+                if vp_row:
+                    await db.execute("DELETE FROM vec_items WHERE rowid = ?", (vp_row[0],))
+                    await db.execute("DELETE FROM local_vec_paths WHERE path = ?", (path_str,))
         await db.commit()
 
 
@@ -241,6 +341,29 @@ async def index_local_files() -> None:
             Path(config.hermes_output), "HERMES", "**/*.md", _extract_kosmos
         )
     await _purge_missing()
+
+
+async def init_vec_index() -> None:
+    """
+    Cria a virtual table vec_items (sqlite-vec) se a extensão estiver disponível.
+    Deve ser chamada no startup após init_db().
+    Se VECTOR_SEARCH_ENABLED=False ou sqlite-vec não estiver instalado, é no-op.
+    """
+    if not VECTOR_SEARCH_ENABLED or not _SQLITE_VEC_AVAILABLE:
+        return
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.run_sync(_load_vec_ext)
+            await db.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(embedding FLOAT[384])"
+            )
+            await db.commit()
+        # Pré-aquece o encoder para que a primeira busca não seja lenta
+        if _ST_AVAILABLE:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, _get_encoder)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -533,14 +656,54 @@ def rank_combined(
 
 
 # ---------------------------------------------------------------------------
+# Busca vetorial (sqlite-vec KNN)
+# ---------------------------------------------------------------------------
+
+async def _search_vec(query: str, max_results: int) -> list[SearchResult]:
+    """KNN por embedding no vec_items. Retorna lista vazia se vec não estiver ativo."""
+    if not VECTOR_SEARCH_ENABLED or not _SQLITE_VEC_AVAILABLE or not _ST_AVAILABLE:
+        return []
+    loop = asyncio.get_running_loop()
+    emb = await loop.run_in_executor(None, _embed_sync, query)
+    if emb is None:
+        return []
+    results: list[SearchResult] = []
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.run_sync(_load_vec_ext)
+            rows = await (await db.execute(
+                """SELECT p.path, COALESCE(m.source, 'AKASHA')
+                   FROM vec_items v
+                   JOIN local_vec_paths p ON p.id = v.rowid
+                   LEFT JOIN local_index_meta m ON m.path = p.path
+                   WHERE v.embedding MATCH ?
+                   AND k = ?
+                   ORDER BY v.distance""",
+                (emb, max_results),
+            )).fetchall()
+        for path_str, source in rows:
+            path = Path(path_str)
+            results.append(SearchResult(
+                title=_stem_to_title(path.stem),
+                url=path.as_uri(),
+                snippet="",
+                source=source,
+            ))
+    except Exception:
+        pass
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Função pública
 # ---------------------------------------------------------------------------
 
 async def search_local(query: str, max_results: int = 500) -> list[SearchResult]:
-    """Busca local: FTS5 + ChromaDB fundidos via RRF, com re-ranking opcional."""
+    """Busca local: FTS5 + ChromaDB + sqlite-vec fundidos via RRF, com re-ranking opcional."""
     fts_results    = await _search_fts(query, max_results)
     chroma_results = await _search_chroma(query)
-    combined = _rrf([fts_results, chroma_results])[:max_results]
+    vec_results    = await _search_vec(query, max_results)
+    combined = _rrf([fts_results, chroma_results, vec_results])[:max_results]
     if RERANKING_ENABLED and len(combined) > 1:
         top    = _rerank(combined[:RERANK_TOP_K], query)
         rest   = combined[RERANK_TOP_K:]
