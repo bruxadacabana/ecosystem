@@ -92,6 +92,7 @@
       <a href="/downloads" class="nav-link {% if active_tab == 'downloads' %}nav-link-active{% endif %}">downloads</a>
       <a href="/torrents" class="nav-link {% if active_tab == 'torrents' %}nav-link-active{% endif %}">torrents</a>
       <a href="/favorites" class="nav-link {% if active_tab == 'favorites' %}nav-link-active{% endif %}">favoritos</a>
+      <a href="/lenses" class="nav-link {% if active_tab == 'lenses' %}nav-link-active{% endif %}">lenses</a>
       <a href="/domains" class="nav-link {% if active_tab == 'domains' %}nav-link-active{% endif %}">lista negra</a>
     </nav>
 
@@ -212,6 +213,21 @@
     });
   </script>
   {% block scripts %}{% endblock %}
+  <script>
+    // Preserva lens_id no form de busca se estiver na URL atual
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var lensId = params.get('lens_id');
+      if (lensId && lensId !== '0') {
+        var form = document.querySelector('.topbar-search');
+        if (form && !form.querySelector('[name=lens_id]')) {
+          var h = document.createElement('input');
+          h.type = 'hidden'; h.name = 'lens_id'; h.value = lensId;
+          form.appendChild(h);
+        }
+      }
+    })();
+  </script>
   <script>
     // Fecha o dropdown de sugestões ao clicar fora do campo de busca
     document.addEventListener('click', function (e) {

@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -257,6 +257,19 @@ _CREATE_IDX_SEARCH_HISTORY = """
 CREATE INDEX IF NOT EXISTS idx_search_history_last ON search_history(last_used DESC);
 """
 
+_CREATE_LENSES = """
+CREATE TABLE IF NOT EXISTS lenses (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL,
+    domains       TEXT    NOT NULL DEFAULT '',
+    tags          TEXT    NOT NULL DEFAULT '',
+    content_types TEXT    NOT NULL DEFAULT '',
+    date_from     TEXT    NOT NULL DEFAULT '',
+    date_to       TEXT    NOT NULL DEFAULT '',
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -307,6 +320,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_IDX_HIGHLIGHTS_URL)
         await db.execute(_CREATE_SEARCH_HISTORY)
         await db.execute(_CREATE_IDX_SEARCH_HISTORY)
+        await db.execute(_CREATE_LENSES)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -556,6 +570,20 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_search_history_last ON search_history(last_used DESC)"
         )
+
+    if from_version < 23:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS lenses (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                name          TEXT    NOT NULL,
+                domains       TEXT    NOT NULL DEFAULT '',
+                tags          TEXT    NOT NULL DEFAULT '',
+                content_types TEXT    NOT NULL DEFAULT '',
+                date_from     TEXT    NOT NULL DEFAULT '',
+                date_to       TEXT    NOT NULL DEFAULT '',
+                created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -1131,6 +1159,19 @@ async def get_query_suggestions(prefix: str, limit: int = 10) -> list[str]:
 # Co-reading patterns helpers
 # ---------------------------------------------------------------------------
 
+async def get_highlight_counts(urls: list[str]) -> dict[str, int]:
+    """Retorna {url: highlight_count} para os URLs fornecidos (batch query)."""
+    if not urls:
+        return {}
+    placeholders = ",".join("?" * len(urls))
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            f"SELECT url, COUNT(*) FROM highlights WHERE url IN ({placeholders}) GROUP BY url",
+            urls,
+        )).fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
 async def get_coread_urls(
     url: str,
     window_seconds: int = 7200,
@@ -1165,3 +1206,79 @@ async def get_coread_urls(
         name = PurePosixPath(raw).name or raw
         result.append((row_url, name, count))
     return result
+
+
+# ---------------------------------------------------------------------------
+# Lenses helpers (filtros nomeados persistentes)
+# ---------------------------------------------------------------------------
+
+def _row_to_lens(row: tuple) -> dict:
+    return {
+        "id": row[0], "name": row[1], "domains": row[2],
+        "tags": row[3], "content_types": row[4],
+        "date_from": row[5], "date_to": row[6], "created_at": row[7],
+    }
+
+
+async def create_lens(
+    name: str,
+    domains: str = "",
+    tags: str = "",
+    content_types: str = "",
+    date_from: str = "",
+    date_to: str = "",
+) -> int:
+    """Cria uma nova lens. Retorna o id gerado."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO lenses (name, domains, tags, content_types, date_from, date_to) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (name, domains, tags, content_types, date_from, date_to),
+        )
+        await db.commit()
+        return cur.lastrowid or 0
+
+
+async def list_lenses() -> list[dict]:
+    """Retorna todas as lenses ordenadas da mais recente para a mais antiga."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT id, name, domains, tags, content_types, date_from, date_to, created_at "
+            "FROM lenses ORDER BY created_at DESC"
+        )).fetchall()
+    return [_row_to_lens(r) for r in rows]
+
+
+async def get_lens(lens_id: int) -> dict | None:
+    """Retorna uma lens por id, ou None se não existir."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT id, name, domains, tags, content_types, date_from, date_to, created_at "
+            "FROM lenses WHERE id = ?",
+            (lens_id,),
+        )).fetchone()
+    return _row_to_lens(row) if row else None
+
+
+async def update_lens(
+    lens_id: int,
+    name: str,
+    domains: str = "",
+    tags: str = "",
+    content_types: str = "",
+    date_from: str = "",
+    date_to: str = "",
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE lenses SET name=?, domains=?, tags=?, content_types=?, date_from=?, date_to=? "
+            "WHERE id=?",
+            (name, domains, tags, content_types, date_from, date_to, lens_id),
+        )
+        await db.commit()
+
+
+async def delete_lens(lens_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM lenses WHERE id = ?", (lens_id,))
+        await db.commit()

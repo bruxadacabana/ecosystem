@@ -22,6 +22,19 @@
 <!-- ─── Resultados ──────────────────────────────────────────────── -->
 {% elif web_results or local_results or site_results or watch_later_results or paper_results %}
 
+{% if active_lens %}
+<div class="lens-banner">
+  <span class="lens-banner-icon">&#x25CE;</span>
+  <strong class="lens-banner-name">{{ active_lens.name }}</strong>
+  {% if active_lens.domains %}<span class="lens-banner-detail">&#x2316; {{ active_lens.domains }}</span>{% endif %}
+  {% if active_lens.content_types %}<span class="lens-banner-detail">.{{ active_lens.content_types }}</span>{% endif %}
+  <a href="/search?q={{ query | urlencode }}{% if src_web %}&src_web=on{% endif %}{% if src_eco %}&src_eco=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}"
+     class="lens-banner-clear"
+     hx-get="/search?q={{ query | urlencode }}{% if src_web %}&src_web=on{% endif %}{% if src_eco %}&src_eco=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}"
+     hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+  >× remover lens</a>
+</div>
+{% endif %}
 {% if corrected_query %}
   <p style="padding: 0.5rem 0; color: var(--muted); font-size: 0.875rem;">
     Mostrando resultados para: <strong>{{ corrected_query }}</strong>
@@ -108,16 +121,16 @@
         {% if local_facets and local_facets | length > 1 %}
         <div class="facets-bar">
           {% for ext, count in local_facets.items() %}
-          <a href="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}&facet_ext={{ ext }}"
+          <a href="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}{% if lens_id %}&lens_id={{ lens_id }}{% endif %}&facet_ext={{ ext }}"
              class="tag {% if facet_ext == ext %}tag-active{% endif %}"
-             hx-get="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}&facet_ext={{ ext }}"
+             hx-get="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}{% if lens_id %}&lens_id={{ lens_id }}{% endif %}&facet_ext={{ ext }}"
              hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
           >.{{ ext }} <span class="facet-count">{{ count }}</span></a>
           {% endfor %}
           {% if facet_ext %}
-          <a href="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}"
+          <a href="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}{% if lens_id %}&lens_id={{ lens_id }}{% endif %}"
              class="tag"
-             hx-get="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}"
+             hx-get="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}{% if lens_id %}&lens_id={{ lens_id }}{% endif %}"
              hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
           >× limpar</a>
           {% endif %}

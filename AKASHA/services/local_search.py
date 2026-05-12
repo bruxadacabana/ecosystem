@@ -62,6 +62,17 @@ USAGE_RANKING_ALPHA:   float = 0.7
 USAGE_RANKING_DECAY:   float = 0.1
 
 # ---------------------------------------------------------------------------
+# Annotation density como sinal de ranking — ativado por padrão
+# Documentos com mais highlights pessoais sobem no ranking.
+# β (ANNOTATION_DENSITY_BETA): peso da anotação. Default 0.1 — modesto para
+# não deslocar documentos relevantes sem anotações, mas discernível.
+# Fórmula: β × log(1 + highlight_count) somado ao score de uso.
+# ---------------------------------------------------------------------------
+
+ANNOTATION_DENSITY_ENABLED: bool  = True
+ANNOTATION_DENSITY_BETA:    float = 0.1
+
+# ---------------------------------------------------------------------------
 # Correção ortográfica (symspellpy) — desativada por padrão
 # Quando ativada, queries curtas (≤ 2 tokens) com zero resultados locais são
 # corrigidas automaticamente e reexecutadas. Latência: < 1ms após carga.
@@ -769,20 +780,24 @@ async def _search_vec(query: str, max_results: int) -> list[SearchResult]:
 # ---------------------------------------------------------------------------
 
 async def _apply_usage_boost(results: list[SearchResult]) -> list[SearchResult]:
-    """Reordena resultados combinando posição RRF com frequência + decaimento temporal.
+    """Reordena resultados combinando posição RRF com uso histórico e densidade de anotações.
 
-    score = α × (1 / (rank + 1))  +  (1-α) × access_count × exp(-λ × days_since_last)
+    score = α × (1 / (rank + 1))
+          + (1-α) × access_count × exp(-λ × days_since_last)   [se USAGE_RANKING_ENABLED]
+          + β × log(1 + highlight_count)                        [se ANNOTATION_DENSITY_ENABLED]
 
-    Retorna a lista original se USAGE_RANKING_ENABLED=False ou sem dados de acesso.
+    Retorna a lista original se nenhum dos dois sinais estiver habilitado.
     """
-    if not USAGE_RANKING_ENABLED or not results:
+    if not (USAGE_RANKING_ENABLED or ANNOTATION_DENSITY_ENABLED) or not results:
         return results
     import database as _db
     from datetime import datetime, timezone
 
     urls = [r.url for r in results]
-    stats = await _db.get_access_stats(urls)
-    if not stats:
+    stats           = await _db.get_access_stats(urls)    if USAGE_RANKING_ENABLED  else {}
+    highlight_counts = await _db.get_highlight_counts(urls) if ANNOTATION_DENSITY_ENABLED else {}
+
+    if not stats and not highlight_counts:
         return results
 
     now = datetime.now(timezone.utc)
@@ -800,10 +815,25 @@ async def _apply_usage_boost(results: list[SearchResult]) -> list[SearchResult]:
             days = 0.0
         return count * math.exp(-USAGE_RANKING_DECAY * days)
 
-    scored = [
-        (USAGE_RANKING_ALPHA * (1.0 / (i + 1)) + (1.0 - USAGE_RANKING_ALPHA) * _usage(r.url), i, r)
-        for i, r in enumerate(results)
-    ]
+    def _annotation(url: str) -> float:
+        return ANNOTATION_DENSITY_BETA * math.log1p(highlight_counts.get(url, 0))
+
+    if USAGE_RANKING_ENABLED:
+        scored = [
+            (
+                USAGE_RANKING_ALPHA * (1.0 / (i + 1))
+                + (1.0 - USAGE_RANKING_ALPHA) * _usage(r.url)
+                + _annotation(r.url),
+                i, r,
+            )
+            for i, r in enumerate(results)
+        ]
+    else:
+        # Só annotation density: combina com score posicional básico
+        scored = [
+            ((1.0 / (i + 1)) + _annotation(r.url), i, r)
+            for i, r in enumerate(results)
+        ]
     scored.sort(key=lambda x: (-x[0], x[1]))
     return [item[2] for item in scored]
 

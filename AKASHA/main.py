@@ -27,6 +27,7 @@ from routers import history as history_router
 from routers import papers as papers_router
 from routers import downloads as downloads_router
 from routers import highlights as highlights_router
+from routers import lenses as lenses_router
 from services.local_search import index_local_files, init_vec_index, init_spell_checker
 from services.crawler import crawl_pending_sites
 
@@ -102,6 +103,7 @@ app.include_router(history_router.router)
 app.include_router(papers_router.router)
 app.include_router(downloads_router.router)
 app.include_router(highlights_router.router)
+app.include_router(lenses_router.router)
 
 # ---------------------------------------------------------------------------
 # Rotas principais (Fase 1 — estrutura)
@@ -132,6 +134,10 @@ async def index(request: Request) -> HTMLResponse:
             "recent":           recent,
             "error":            None,
             "corrected_query":  None,
+            "local_facets":     {},
+            "facet_ext":        "",
+            "active_lens":      None,
+            "lens_id":          0,
             "active_tab":       "search",
         },
     )

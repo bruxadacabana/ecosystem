@@ -1347,3 +1347,146 @@ a:hover { opacity: 0.75; }
   color:     var(--ink-ghost);
   font-style: italic;
 }
+
+/* ── Lenses pessoais ───────────────────────────────────────── */
+
+.lenses-page {
+  max-width:  820px;
+  margin:     0 auto;
+  padding:    1.5rem 1rem;
+}
+
+.lenses-header { margin-bottom: 1.5rem; }
+
+.page-title {
+  font-family: var(--font-display);
+  font-size:   1.5rem;
+  margin:      0 0 0.4rem;
+  color:       var(--ink);
+}
+
+.page-desc {
+  color:       var(--ink-ghost);
+  font-size:   0.875rem;
+  margin:      0;
+}
+
+.lenses-section-title {
+  font-size:     1rem;
+  font-family:   var(--font-mono);
+  letter-spacing: 0.04em;
+  margin:        0 0 1rem;
+  color:         var(--ink-light);
+}
+
+.lenses-create {
+  margin-bottom: 2rem;
+}
+
+.lenses-form-grid {
+  display:               grid;
+  grid-template-columns: 1fr 1fr;
+  gap:                   0.75rem;
+  margin-bottom:         1rem;
+}
+
+.lenses-field-name {
+  grid-column: 1 / -1;
+}
+
+.lenses-field {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.3rem;
+}
+
+.lenses-label {
+  font-size:   0.8rem;
+  color:       var(--ink-light);
+  font-weight: 600;
+}
+
+.lenses-required { color: var(--ribbon); }
+
+.lenses-hint {
+  font-size:  0.7rem;
+  color:      var(--ink-ghost);
+  font-style: italic;
+}
+
+.lenses-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.lens-card { padding: 1rem 1.25rem; }
+
+.lens-header { margin-bottom: 0.5rem; }
+
+.lens-name {
+  font-size:   1rem;
+  font-family: var(--font-mono);
+  color:       var(--ink);
+}
+
+.lens-meta {
+  display:     flex;
+  flex-wrap:   wrap;
+  gap:         0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.lens-pill {
+  display:       inline-block;
+  padding:       2px 8px;
+  background:    var(--paper-darker);
+  border:        1px solid var(--rule);
+  border-radius: 2px;
+  font-size:     0.75rem;
+  color:         var(--ink-light);
+}
+
+.lens-pill-empty {
+  color:     var(--ink-ghost);
+  font-style: italic;
+}
+
+.lens-actions {
+  display: flex;
+  gap:     0.5rem;
+}
+
+/* ── Lens banner na página de busca ───────────────────────── */
+
+.lens-banner {
+  display:       flex;
+  align-items:   center;
+  gap:           0.6rem;
+  flex-wrap:     wrap;
+  padding:       0.5rem 0.75rem;
+  background:    rgba(184, 134, 11, 0.08);
+  border:        1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+  font-size:     0.875rem;
+}
+
+.lens-banner-icon { color: var(--accent); }
+
+.lens-banner-name { color: var(--ink); font-weight: 600; }
+
+.lens-banner-detail {
+  color:      var(--ink-ghost);
+  font-size:  0.8rem;
+}
+
+.lens-banner-clear {
+  margin-left: auto;
+  color:       var(--ink-ghost);
+  font-size:   0.8rem;
+  text-decoration: none;
+}
+
+.lens-banner-clear:hover { color: var(--ribbon); }
+
+@media (max-width: 600px) {
+  .lenses-form-grid { grid-template-columns: 1fr; }
+  .lenses-field-name { grid-column: 1; }
+}

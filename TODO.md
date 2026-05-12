@@ -4286,13 +4286,13 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   juntos no contexto de uma pesquisa). Implementação: SQL com `ABS(strftime('%s', a1.accessed_at)
   - strftime('%s', a2.accessed_at)) < 7200`. Sem nova dependência.
 
-- [ ] **Annotation density como sinal de ranking** (`services/local_search.py`). Ao
+- [x] **Annotation density como sinal de ranking** (`services/local_search.py`). Ao
   ranquear resultados, incluir contagem de highlights por URL como sinal adicional: documentos
   com mais highlights do usuário sobem no ranking. Consulta: `SELECT COUNT(*) FROM highlights
   WHERE url = :url`. Integrar ao score final como `score += β × log(1 + highlight_count)`,
   com `β` configurável (default 0.1). Pré-requisito: tabela de highlights (item acima).
 
-- [ ] **Lenses pessoais** (`database.py`, `routers/search.py`, `templates/base.html`).
+- [x] **Lenses pessoais** (`database.py`, `routers/search.py`, `templates/base.html`).
   Criar tabela `lenses(id, name TEXT, domains TEXT, tags TEXT, content_types TEXT,
   date_from TEXT, date_to TEXT)`. UI: botão "Lenses" na nav, tela de gestão de lenses
   (criar, editar, deletar). Quando uma lens está ativa, adicionar WHERE clauses à query

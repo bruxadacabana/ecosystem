@@ -90,6 +90,7 @@ async def search(
     filetype:   str = "",   # ex: "pdf", "epub" — acrescenta ao query DDG
     mode:       str = "",   # preset: "papers" | "local" | "archive"
     facet_ext:  str = "",   # filtro de extensão de arquivo para resultados locais
+    lens_id:    int = 0,    # id de lens pessoal a aplicar (0 = sem lens)
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -117,6 +118,7 @@ async def search(
     error: str | None = None
     corrected_query: str | None = None
     local_facets: dict[str, int] = {}
+    active_lens: dict | None = None
 
     if q:
         try:
@@ -154,6 +156,19 @@ async def search(
                     local_results = await search_local(cq)
                 except Exception:
                     local_results = []
+
+        # Lens pessoal — filtrar resultados por domínio e tipo de arquivo
+        if lens_id:
+            active_lens = await database.get_lens(lens_id)
+        if active_lens:
+            domain_list = [d.strip() for d in active_lens["domains"].split(",") if d.strip()]
+            ext_list    = [e.strip().lstrip(".").lower() for e in active_lens["content_types"].split(",") if e.strip()]
+            if domain_list:
+                local_results = [r for r in local_results if any(d in r.url for d in domain_list)]
+                site_results  = [r for r in site_results  if any(d in r.url for d in domain_list)]
+                web_results   = [r for r in web_results   if any(d in r.url for d in domain_list)]
+            if ext_list:
+                local_results = [r for r in local_results if not r.url.startswith("file://") or _local_ext(r.url) in ext_list]
 
         # Faceted search: distribuição por extensão de arquivo nos resultados locais
         for r in local_results:
@@ -214,6 +229,8 @@ async def search(
             "corrected_query":   corrected_query,
             "local_facets":      local_facets,
             "facet_ext":         facet_ext,
+            "active_lens":       active_lens,
+            "lens_id":           lens_id,
             "active_tab":        "search",
         },
     )

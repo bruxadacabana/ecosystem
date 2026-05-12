@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Lenses — AKASHA{% endblock %}
+
+{% block content %}
+<div class="lenses-page">
+
+  <header class="lenses-header">
+    <h1 class="page-title">Lenses pessoais</h1>
+    <p class="page-desc">Filtros nomeados que podem ser ativados com um clique na busca. Combine domínios, tipos de arquivo e intervalos de data para criar perspectivas reutilizáveis.</p>
+  </header>
+
+  <!-- ── Criar nova lens ─────────────────────────────────── -->
+  <section class="card lenses-create">
+    <h2 class="lenses-section-title">Nova lens</h2>
+    <form method="post" action="/lenses"
+          hx-post="/lenses"
+          hx-target=".lenses-page"
+          hx-swap="outerHTML"
+          hx-select=".lenses-page">
+      <div class="lenses-form-grid">
+        <label class="lenses-field lenses-field-name">
+          <span class="lenses-label">Nome <span class="lenses-required">*</span></span>
+          <input type="text" name="name" class="input" required placeholder="ex: Artigos científicos, Pesquisa ML…">
+        </label>
+        <label class="lenses-field">
+          <span class="lenses-label">Domínios / subcaminhos</span>
+          <input type="text" name="domains" class="input" placeholder="ex: arxiv.org, /Documentos/Pesquisa">
+          <span class="lenses-hint">Substring da URL — separar por vírgula</span>
+        </label>
+        <label class="lenses-field">
+          <span class="lenses-label">Tipos de arquivo</span>
+          <input type="text" name="content_types" class="input" placeholder="ex: pdf, epub, md">
+          <span class="lenses-hint">Extensões sem ponto — separar por vírgula</span>
+        </label>
+        <label class="lenses-field">
+          <span class="lenses-label">Data desde</span>
+          <input type="date" name="date_from" class="input">
+        </label>
+        <label class="lenses-field">
+          <span class="lenses-label">Data até</span>
+          <input type="date" name="date_to" class="input">
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary">Criar lens</button>
+    </form>
+  </section>
+
+  <!-- ── Lista de lenses ─────────────────────────────────── -->
+  {% if lenses %}
+  <section class="lenses-list">
+    <h2 class="lenses-section-title">Lenses salvas</h2>
+    {% for lens in lenses %}
+    <div class="card lens-card" id="lens-{{ lens.id }}">
+      <div class="lens-header">
+        <strong class="lens-name">{{ lens.name }}</strong>
+      </div>
+      <div class="lens-meta">
+        {% if lens.domains %}
+        <span class="lens-pill">&#x2316; {{ lens.domains }}</span>
+        {% endif %}
+        {% if lens.content_types %}
+        <span class="lens-pill">.{{ lens.content_types | replace(',', ' .') }}</span>
+        {% endif %}
+        {% if lens.date_from or lens.date_to %}
+        <span class="lens-pill">&#x1F4C5; {{ lens.date_from or '…' }} → {{ lens.date_to or '…' }}</span>
+        {% endif %}
+        {% if not lens.domains and not lens.content_types and not lens.date_from and not lens.date_to %}
+        <span class="lens-pill lens-pill-empty">sem filtros</span>
+        {% endif %}
+      </div>
+      <div class="lens-actions">
+        <a href="/search?lens_id={{ lens.id }}"
+           class="btn btn-primary btn-sm"
+           hx-get="/search?lens_id={{ lens.id }}"
+           hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+        >&#x25B6; Aplicar na busca</a>
+        <button
+          class="btn btn-ghost btn-sm"
+          hx-delete="/lenses/{{ lens.id }}"
+          hx-target="#lens-{{ lens.id }}"
+          hx-swap="outerHTML"
+          hx-confirm="Excluir a lens '{{ lens.name }}'?"
+        >Excluir</button>
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="empty-state" style="margin-top: 2rem;">
+    <p class="empty-icon">&#x25CE;</p>
+    <p class="empty-title">Nenhuma lens criada</p>
+    <p class="empty-hint">Crie uma lens acima para salvar filtros de busca reutilizáveis.</p>
+  </section>
+  {% endif %}
+
+</div>
+{% endblock %}
