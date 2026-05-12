@@ -1270,3 +1270,80 @@ a:hover { opacity: 0.75; }
   color:      var(--accent);
   outline:    none;
 }
+
+/* ── Faceted search ────────────────────────────────────────── */
+
+.facets-bar {
+  display:     flex;
+  flex-wrap:   wrap;
+  gap:         0.35rem;
+  margin:      0.5rem 0 0.75rem;
+}
+
+.facet-count {
+  display:       inline-block;
+  padding:       0 4px;
+  background:    rgba(0,0,0,0.08);
+  border-radius: 2px;
+  font-size:     0.75em;
+  margin-left:   2px;
+}
+
+/* ── Co-reading patterns ───────────────────────────────────── */
+
+.coread-area {
+  border-top:  1px solid var(--rule-light);
+  margin-top:  0.5rem;
+  padding-top: 0.5rem;
+  min-height:  0;
+}
+
+.coread-area:empty { display: none; }
+
+.coread-section {
+  padding: 0.25rem 0;
+}
+
+.coread-title {
+  font-size:   0.75rem;
+  color:       var(--ink-ghost);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin:      0 0 0.4rem;
+}
+
+.coread-list {
+  list-style: none;
+  margin:     0;
+  padding:    0;
+  display:    flex;
+  flex-direction: column;
+  gap:        0.3rem;
+}
+
+.coread-item {
+  display:     flex;
+  align-items: center;
+  gap:         0.4rem;
+}
+
+.coread-name {
+  font-size:     0.8rem;
+  color:         var(--ink-light);
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+  flex:          1;
+}
+
+.coread-count {
+  font-size:  0.7rem;
+  color:      var(--ink-ghost);
+  flex-shrink: 0;
+}
+
+.coread-empty {
+  font-size: 0.8rem;
+  color:     var(--ink-ghost);
+  font-style: italic;
+}

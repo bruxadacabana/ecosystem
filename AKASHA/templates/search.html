@@ -105,7 +105,25 @@
     <div class="{% if two_col %}search-col-local{% endif %}">
       <section class="results-section">
         <h3 class="results-section-title">No meu ecossistema</h3>
-        <p class="results-meta">{{ local_results | length }} resultado{% if local_results | length != 1 %}s{% endif %}</p>
+        {% if local_facets and local_facets | length > 1 %}
+        <div class="facets-bar">
+          {% for ext, count in local_facets.items() %}
+          <a href="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}&facet_ext={{ ext }}"
+             class="tag {% if facet_ext == ext %}tag-active{% endif %}"
+             hx-get="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}&facet_ext={{ ext }}"
+             hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+          >.{{ ext }} <span class="facet-count">{{ count }}</span></a>
+          {% endfor %}
+          {% if facet_ext %}
+          <a href="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}"
+             class="tag"
+             hx-get="/search?q={{ query | urlencode }}&src_eco=on{% if src_web %}&src_web=on{% endif %}{% if src_sites %}&src_sites=on{% endif %}{% if src_papers %}&src_papers=on{% endif %}"
+             hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+          >× limpar</a>
+          {% endif %}
+        </div>
+        {% endif %}
+        <p class="results-meta">{{ local_results | length }} resultado{% if local_results | length != 1 %}s{% endif %}{% if facet_ext %} (.{{ facet_ext }}){% endif %}</p>
         <ol class="results-list">
           {% for r in local_results %}{{ result_card(r) }}{% endfor %}
         </ol>

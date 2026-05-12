@@ -4271,14 +4271,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   last_used DESC LIMIT 10`. Expor como dropdown no campo de busca via HTMX. Sem nova
   dependência — FTS5 puro.
 
-- [ ] **Faceted search** (`routers/search.py`, `templates/search.html`). Após executar
+- [x] **Faceted search** (`routers/search.py`, `templates/search.html`). Após executar
   a query FTS5, calcular distribuição dos resultados por: domínio (extrair netloc da URL),
   ano de archivamento, tipo de conteúdo (detectado no archive), idioma. Retornar como
   JSON extra no contexto do template. Exibir como checkboxes de filtro na sidebar dos
   resultados. Segunda query com WHERE adicional quando filtro ativo. Implementação pura
   em SQLite com GROUP BY — sem nova dependência.
 
-- [ ] **Co-reading patterns single-user** (`services/local_search.py` ou
+- [x] **Co-reading patterns single-user** (`services/local_search.py` ou
   `services/ranking.py`). Ao exibir um documento, consultar `doc_accesses` para encontrar
   outros URLs acessados dentro de uma janela de 2 horas antes e depois. Exibir seção
   "Visto na mesma sessão de pesquisa:" com cards compactos. Captura relações semânticas

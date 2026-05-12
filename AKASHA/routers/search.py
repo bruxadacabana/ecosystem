@@ -5,7 +5,8 @@ GET /search?q=&sources=all|web|local → renderiza search.html
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from urllib.parse import unquote, urlparse
 
 import httpx
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -33,6 +34,15 @@ router = APIRouter()
 
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
+
+
+def _local_ext(url: str) -> str:
+    """Extrai extensão de arquivo (sem ponto, minúscula) de uma URL file://."""
+    if not url.startswith("file://"):
+        return ""
+    path = unquote(urlparse(url).path)
+    ext = PurePosixPath(path).suffix.lower().lstrip(".")
+    return ext if ext else "outros"
 
 
 @router.post("/archive")
@@ -79,6 +89,7 @@ async def search(
     src_papers: str = "",
     filetype:   str = "",   # ex: "pdf", "epub" — acrescenta ao query DDG
     mode:       str = "",   # preset: "papers" | "local" | "archive"
+    facet_ext:  str = "",   # filtro de extensão de arquivo para resultados locais
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -105,6 +116,7 @@ async def search(
     paper_results:       list[PaperResult]  = []
     error: str | None = None
     corrected_query: str | None = None
+    local_facets: dict[str, int] = {}
 
     if q:
         try:
@@ -142,6 +154,17 @@ async def search(
                     local_results = await search_local(cq)
                 except Exception:
                     local_results = []
+
+        # Faceted search: distribuição por extensão de arquivo nos resultados locais
+        for r in local_results:
+            ext = _local_ext(r.url)
+            if ext:
+                local_facets[ext] = local_facets.get(ext, 0) + 1
+        local_facets = dict(sorted(local_facets.items(), key=lambda x: -x[1]))
+
+        # Aplicar filtro de faceta (após calcular a distribuição completa)
+        if facet_ext and local_results:
+            local_results = [r for r in local_results if _local_ext(r.url) == facet_ext]
 
         # Separar web_results em P2 (favoritos) e P3 (restante)
         if web_results:
@@ -189,6 +212,8 @@ async def search(
             "recent":            recent,
             "error":             error,
             "corrected_query":   corrected_query,
+            "local_facets":      local_facets,
+            "facet_ext":         facet_ext,
             "active_tab":        "search",
         },
     )

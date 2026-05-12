@@ -1125,3 +1125,43 @@ async def get_query_suggestions(prefix: str, limit: int = 10) -> list[str]:
             (pattern, limit),
         )).fetchall()
     return [r[0] for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Co-reading patterns helpers
+# ---------------------------------------------------------------------------
+
+async def get_coread_urls(
+    url: str,
+    window_seconds: int = 7200,
+    limit: int = 8,
+) -> list[tuple[str, str, int]]:
+    """Retorna documentos lidos na mesma janela temporal que url.
+
+    Usa self-join em doc_accesses: dois acessos são "co-leitura" quando a
+    diferença absoluta de tempo entre eles é menor que window_seconds (padrão 2h).
+    Retorna lista de (url, display_name, co_count) ordenada por co_count DESC.
+    """
+    from urllib.parse import unquote
+    from pathlib import PurePosixPath
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            """SELECT a2.url, COUNT(*) AS co_count
+               FROM doc_accesses a1
+               JOIN doc_accesses a2
+                 ON ABS(strftime('%s', a1.accessed_at) - strftime('%s', a2.accessed_at)) < ?
+                AND a2.url != a1.url
+               WHERE a1.url = ?
+               GROUP BY a2.url
+               ORDER BY co_count DESC
+               LIMIT ?""",
+            (window_seconds, url, limit),
+        )).fetchall()
+
+    result: list[tuple[str, str, int]] = []
+    for row_url, count in rows:
+        raw = unquote(row_url)
+        name = PurePosixPath(raw).name or raw
+        result.append((row_url, name, count))
+    return result

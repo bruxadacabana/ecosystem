@@ -64,6 +64,12 @@
         hx-swap="none"
         hx-on::after-request="showToast(event.detail.successful ? 'Abrindo arquivo…' : 'Erro ao abrir', event.detail.successful ? 'success' : 'error')"
         title="Abrir com o app padrão do sistema">&#x2197; <span class="btn-label">abrir</span></button>
+      <button
+        class="btn btn-ghost btn-sm coread-toggle"
+        hx-get="/coread?url={{ r.url | urlencode }}"
+        hx-target="closest .coread-area"
+        hx-swap="innerHTML"
+        title="Documentos lidos na mesma sessão de pesquisa">&#x223C; <span class="btn-label">sessão</span></button>
       {% else %}
       <a href="{{ r.url }}" download class="btn btn-ghost btn-sm" title="Baixar arquivo">&#x21A7; <span class="btn-label">baixar</span></a>
       {% endif %}
@@ -125,5 +131,8 @@
       {% endif %}
     </div>
   </div>
+  {% if r.url.startswith('file://') %}
+  <div class="coread-area"></div>
+  {% endif %}
 </li>
 {% endmacro %}

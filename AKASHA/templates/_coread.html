@@ -1,0 +1,22 @@
+{% if results %}
+<section class="coread-section">
+  <p class="coread-title">Visto na mesma sessão de pesquisa</p>
+  <ul class="coread-list">
+    {% for url, name, count in results %}
+    <li class="coread-item">
+      <button
+        class="btn btn-ghost btn-sm"
+        hx-get="/open-file?url={{ url | urlencode }}"
+        hx-swap="none"
+        hx-on::after-request="showToast(event.detail.successful ? 'Abrindo…' : 'Erro ao abrir', event.detail.successful ? 'success' : 'error')"
+        title="Abrir arquivo"
+      >&#x2197;</button>
+      <span class="coread-name" title="{{ url }}">{{ name }}</span>
+      {% if count > 1 %}<span class="coread-count">×{{ count }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% else %}
+<span class="coread-empty">Nenhum documento lido junto nesta janela de tempo.</span>
+{% endif %}

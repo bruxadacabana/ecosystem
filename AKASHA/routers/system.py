@@ -14,11 +14,14 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import database
-from fastapi import APIRouter, Query
-from fastapi.responses import Response
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import HTMLResponse, Response
+from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
+_BASE_DIR = Path(__file__).parent.parent
+_templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
 
 @router.post("/shutdown")
@@ -66,6 +69,13 @@ async def open_file(url: str = Query(...)) -> Response:
     except Exception as exc:
         _log.error("open-file falhou: %s", exc)
         return Response(content=str(exc), status_code=500)
+
+
+@router.get("/coread", response_class=HTMLResponse)
+async def coread(request: Request, url: str = Query(...)) -> HTMLResponse:
+    """HTMX fragment: documentos lidos na mesma sessão de pesquisa que url."""
+    results = await database.get_coread_urls(url)
+    return _templates.TemplateResponse(request, "_coread.html", {"results": results})
 
 
 async def _xdg_open(path: str) -> str | None:
