@@ -4867,7 +4867,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Dispatcher pequeno (3B, sempre aquecido) + executor maior (7B+) por skill.
 
 #### LOGOS
-- [ ] **Estrutura `logos/skills/` com SKILL.md por tipo de tarefa** â€” criar diretÃ³rio
+- [x] **Estrutura `logos/skills/` com SKILL.md por tipo de tarefa** â€” criar diretÃ³rio
   `logos/skills/` no HUB. Cada skill Ã© um arquivo `<nome>.md` com frontmatter YAML obrigatÃ³rio:
   `name` (slug, max 64 chars) e `description` (max 1024 chars â€” descreve QUANDO usar o skill,
   nÃ£o apenas o que faz; Ã© o Ãºnico campo lido pelo dispatcher na fase de seleÃ§Ã£o). Corpo Markdown
@@ -4877,7 +4877,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `entity-extraction.md`, `chunk-classification.md`. PadrÃ£o diretamente compatÃ­vel com
   Agent Skills Specification (agentskills.io).
 
-- [ ] **Dispatcher com dois modelos** â€” implementar `logos/dispatcher.py`: modelo router 3B
+- [x] **Dispatcher com dois modelos** â€” implementar `logos/dispatcher.py`: modelo router 3B
   (ex: Llama 3.2 3B Instruct) sempre aquecido em memÃ³ria (`keep_alive: -1` via Ollama) recebe
   o request e retorna JSON `{"skill": "<nome>", "confidence": 0.0-1.0}`. Usar Pydantic +
   `format=SkillSelection.model_json_schema()` no Ollama Python SDK para forÃ§ar enum de skill
