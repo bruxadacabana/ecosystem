@@ -283,6 +283,18 @@ pub struct OllamaModelInfo {
     pub size_vram_mb: u64,
 }
 
+/// Entrada de modelo para listagem completa (instalados + status de carregamento).
+#[derive(Serialize, Clone)]
+pub struct OllamaModelEntry {
+    pub name: String,
+    /// "active" = carregado na VRAM; "available" = instalado mas não carregado
+    pub status: String,
+    /// VRAM em uso em MB — 0 quando não carregado
+    pub size_vram_mb: u64,
+    /// Tamanho em disco em MB (de /api/tags)
+    pub size_disk_mb: u64,
+}
+
 #[derive(Serialize)]
 pub struct HardwareResponse {
     pub profile:         &'static str,
@@ -885,6 +897,78 @@ pub async fn do_set_profile(s: &LogosState, profile: String) -> String {
 /// Wrapper público de `list_ollama_models` para uso nos Tauri commands.
 pub async fn do_list_models(s: &LogosState) -> Vec<OllamaModelInfo> {
     list_ollama_models(&s.0.client, &s.0.ollama_url).await
+}
+
+/// Retorna todos os modelos instalados com seu status de carregamento.
+/// Combina /api/ps (carregados na VRAM) e /api/tags (todos instalados).
+pub async fn do_list_all_models(s: &LogosState) -> Vec<OllamaModelEntry> {
+    let base = &s.0.ollama_url;
+    let client = &s.0.client;
+
+    // Modelos carregados na VRAM → mapa name → size_vram_mb
+    // .json() retorna um Future — precisa de .await antes de .ok()
+    let loaded: std::collections::HashMap<String, u64> = {
+        let ps_val = client
+            .get(format!("{base}/api/ps"))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .ok();
+        if let Some(resp) = ps_val {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                json["models"].as_array()
+                    .map(|arr| {
+                        arr.iter().filter_map(|m| {
+                            let name = m["name"].as_str()?.to_string();
+                            let vram = m["size_vram"].as_u64().unwrap_or(0) / 1_000_000;
+                            Some((name, vram))
+                        }).collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                Default::default()
+            }
+        } else {
+            Default::default()
+        }
+    };
+
+    // Todos os modelos instalados em disco
+    let all_json: Option<serde_json::Value> = {
+        let tags_val = client
+            .get(format!("{base}/api/tags"))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .ok();
+        if let Some(resp) = tags_val {
+            resp.json::<serde_json::Value>().await.ok()
+        } else {
+            None
+        }
+    };
+
+    let Some(all) = all_json else { return vec![] };
+    let Some(models) = all["models"].as_array() else { return vec![] };
+
+    let mut entries: Vec<OllamaModelEntry> = models.iter().filter_map(|m| {
+        let name = m["name"].as_str()?.to_string();
+        let size_disk_mb = m["size"].as_u64().unwrap_or(0) / 1_000_000;
+        let size_vram_mb = loaded.get(&name).copied().unwrap_or(0);
+        let status = if loaded.contains_key(&name) { "active" } else { "available" };
+        Some(OllamaModelEntry {
+            name,
+            status: status.to_string(),
+            size_vram_mb,
+            size_disk_mb,
+        })
+    }).collect();
+
+    // Modelos ativos primeiro, depois por nome
+    entries.sort_by(|a, b| {
+        b.status.cmp(&a.status).then(a.name.cmp(&b.name))
+    });
+    entries
 }
 
 /// Aplica override de prioridade baseado no perfil ativo e no app requisitante.

@@ -62,6 +62,8 @@ pub fn run() {
             commands::reading::toggle_read,
             commands::projects::list_ogma_projects,
             commands::projects::list_project_pages,
+            commands::launcher::launch_ollama,
+            commands::launcher::stop_ollama,
             commands::launcher::launch_app,
             commands::launcher::is_app_running,
             commands::launcher::get_all_app_statuses,
@@ -73,6 +75,7 @@ pub fn run() {
             commands::logos::logos_set_profile,
             commands::logos::logos_list_models,
             commands::logos::logos_unload_model,
+            commands::logos::logos_list_all_models,
             commands::config::set_window_compact,
             commands::notify::send_notification,
         ])

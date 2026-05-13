@@ -3,7 +3,7 @@
 //  Tauri IPC commands para o frontend consultar e controlar o LOGOS.
 // ============================================================
 
-use crate::logos::{LogosState, OllamaModelInfo, StatusResponse};
+use crate::logos::{LogosState, OllamaModelEntry, OllamaModelInfo, StatusResponse};
 
 /// Retorna o status atual do LOGOS: prioridade ativa, fila e VRAM.
 #[tauri::command]
@@ -47,4 +47,13 @@ pub async fn logos_unload_model(
     model: String,
 ) -> Result<bool, String> {
     Ok(crate::logos::do_unload_model(&state, &model).await)
+}
+
+/// Lista todos os modelos instalados com status de carregamento (active/available).
+/// Combina /api/ps (VRAM) e /api/tags (disco).
+#[tauri::command]
+pub async fn logos_list_all_models(
+    state: tauri::State<'_, LogosState>,
+) -> Result<Vec<OllamaModelEntry>, String> {
+    Ok(crate::logos::do_list_all_models(&state).await)
 }

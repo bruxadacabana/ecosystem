@@ -157,6 +157,16 @@ export interface OllamaModelInfo {
   size_vram_mb: number
 }
 
+export interface OllamaModelEntry {
+  name:          string
+  /** "active" = carregado na VRAM; "available" = instalado mas não carregado */
+  status:        'active' | 'available'
+  /** VRAM em uso em MB; 0 se não carregado */
+  size_vram_mb:  number
+  /** Tamanho em disco em MB */
+  size_disk_mb:  number
+}
+
 // ----------------------------------------------------------
 //  HUB Navigation
 // ----------------------------------------------------------

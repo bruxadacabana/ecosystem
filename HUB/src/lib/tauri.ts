@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry } from '../types'
 
 async function call<T>(
   command: string,
@@ -105,6 +105,12 @@ export const listProjectPages = (
 //  Módulo Launcher — apps externos
 // ----------------------------------------------------------
 
+export const launchOllama = (): Promise<TauriResult<string>> =>
+  call<string>('launch_ollama')
+
+export const stopOllama = (): Promise<TauriResult<void>> =>
+  call<void>('stop_ollama')
+
 export const launchApp = (exePath: string): Promise<TauriResult<void>> =>
   call<void>('launch_app', { exePath })
 
@@ -143,6 +149,9 @@ export const logosListModels = (): Promise<TauriResult<OllamaModelInfo[]>> =>
 
 export const logosUnloadModel = (model: string): Promise<TauriResult<boolean>> =>
   call<boolean>('logos_unload_model', { model })
+
+export const logosListAllModels = (): Promise<TauriResult<OllamaModelEntry[]>> =>
+  call<OllamaModelEntry[]>('logos_list_all_models')
 
 // ----------------------------------------------------------
 //  Janela — modo compacto

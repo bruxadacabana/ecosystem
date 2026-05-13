@@ -6,7 +6,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import * as cmd from '../lib/tauri'
-import type { LogosStatus, OllamaModelInfo } from '../types'
+import { listModels } from '../lib/ollama'
+import type { LogosStatus, OllamaModelInfo, OllamaModelEntry } from '../types'
 
 const PROFILES = [
   { id: 'normal',  label: 'Normal',  tip: 'Prioridades padrão de cada app'                       },
@@ -26,11 +27,15 @@ interface LogosViewProps {
 }
 
 export function LogosView({ onOpenChat }: LogosViewProps) {
-  const [status,    setStatus]    = useState<LogosStatus | null>(null)
-  const [profile,   setProfile]   = useState('normal')
-  const [models,    setModels]    = useState<OllamaModelInfo[]>([])
-  const [silencing, setSilencing] = useState(false)
-  const [unloading, setUnloading] = useState<string | null>(null)
+  const [status,       setStatus]       = useState<LogosStatus | null>(null)
+  const [profile,      setProfile]      = useState('normal')
+  const [models,       setModels]       = useState<OllamaModelInfo[]>([])
+  const [allModels,    setAllModels]    = useState<OllamaModelEntry[]>([])
+  const [silencing,    setSilencing]    = useState(false)
+  const [unloading,    setUnloading]    = useState<string | null>(null)
+  const [stopping,     setStopping]     = useState(false)
+  const [ollamaOnline, setOllamaOnline] = useState<boolean | null>(null)
+  const [launchStatus, setLaunchStatus] = useState<'idle' | 'starting' | 'error'>('idle')
 
   const fetchStatus = useCallback(() => {
     cmd.logosGetStatus().then(r => {
@@ -44,15 +49,26 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
     cmd.logosListModels().then(r => {
       if (r.ok) setModels(r.data)
     })
+    cmd.logosListAllModels().then(r => {
+      if (r.ok) setAllModels(r.data)
+    })
+  }, [])
+
+  const checkOllama = useCallback(() => {
+    listModels()
+      .then(() => setOllamaOnline(true))
+      .catch(() => setOllamaOnline(false))
   }, [])
 
   useEffect(() => {
     fetchStatus()
     fetchModels()
+    checkOllama()
     const sid = setInterval(fetchStatus, 4_000)
     const mid = setInterval(fetchModels, 8_000)
-    return () => { clearInterval(sid); clearInterval(mid) }
-  }, [fetchStatus, fetchModels])
+    const oid = setInterval(checkOllama, 4_000)
+    return () => { clearInterval(sid); clearInterval(mid); clearInterval(oid) }
+  }, [fetchStatus, fetchModels, checkOllama])
 
   async function handleProfile(id: string) {
     setProfile(id)
@@ -64,6 +80,29 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
     await cmd.logosSilence()
     setSilencing(false)
     fetchModels()
+  }
+
+  async function handleLaunchOllama() {
+    setLaunchStatus('starting')
+    const r = await cmd.launchOllama()
+    if (r.ok) {
+      setLaunchStatus('idle')
+      setTimeout(checkOllama, 1_500)
+      setTimeout(checkOllama, 3_500)
+    } else {
+      setLaunchStatus('error')
+      setTimeout(() => setLaunchStatus('idle'), 3_000)
+    }
+  }
+
+  async function handleStopOllama() {
+    setStopping(true)
+    await cmd.stopOllama()
+    setTimeout(() => {
+      checkOllama()
+      fetchModels()
+      setStopping(false)
+    }, 1_500)
   }
 
   async function handleUnload(name: string) {
@@ -264,62 +303,86 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
         </Note>
       </section>
 
-      {/* ── Modelos carregados ────────────────────────── */}
+      {/* ── Modelos Ollama ────────────────────────────── */}
       <section>
-        <Label>Modelos na memória</Label>
-        {models.length === 0 ? (
+        <Label>Modelos Ollama</Label>
+        {!ollamaOnline ? (
           <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)', margin: 0 }}>
-            Nenhum modelo carregado
+            {ollamaOnline === null ? '…' : 'Ollama offline'}
+          </p>
+        ) : allModels.length === 0 ? (
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)', margin: 0 }}>
+            Nenhum modelo instalado
           </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {models.map(m => (
-              <div
-                key={m.name}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '6px 12px',
-                  border: '1px solid var(--rule)',
-                  borderRadius: 'var(--radius)',
-                }}
-              >
-                <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink)' }}>
-                  {m.name}
-                </span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)' }}>
-                  {m.size_vram_mb >= 1000
-                    ? `${(m.size_vram_mb / 1000).toFixed(1)} GB`
-                    : `${m.size_vram_mb} MB`}
-                </span>
-                <button
-                  disabled={unloading === m.name}
-                  onClick={() => handleUnload(m.name)}
-                  title="Descarregar da VRAM"
+            {allModels.map(m => {
+              const isActive = m.status === 'active'
+              const dotColor = isActive ? 'var(--accent-green)' : 'var(--accent)'
+              return (
+                <div
+                  key={m.name}
                   style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 10,
-                    padding: '3px 10px',
-                    background: 'transparent',
-                    color: 'var(--ink-ghost)',
-                    border: '1px solid var(--rule)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '6px 12px',
+                    border: `1px solid ${isActive ? 'var(--accent-green)30' : 'var(--rule)'}`,
                     borderRadius: 'var(--radius)',
-                    cursor: unloading === m.name ? 'wait' : 'pointer',
-                    opacity: unloading === m.name ? 0.5 : 1,
-                    transition: 'all 150ms ease',
+                    background: isActive ? 'var(--accent-green)08' : 'transparent',
+                    transition: 'all 200ms ease',
                   }}
                 >
-                  {unloading === m.name ? '…' : 'descarregar'}
-                </button>
-              </div>
-            ))}
+                  {/* Indicador de status */}
+                  <span
+                    title={isActive ? 'Ativo na VRAM' : 'Disponível'}
+                    style={{
+                      width: 7, height: 7, borderRadius: '50%',
+                      background: dotColor,
+                      boxShadow: isActive ? `0 0 5px ${dotColor}` : 'none',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink)' }}>
+                    {m.name}
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', minWidth: 52, textAlign: 'right' }}>
+                    {isActive && m.size_vram_mb > 0
+                      ? `${m.size_vram_mb >= 1000 ? `${(m.size_vram_mb / 1000).toFixed(1)} GB` : `${m.size_vram_mb} MB`} VRAM`
+                      : m.size_disk_mb >= 1000
+                        ? `${(m.size_disk_mb / 1000).toFixed(1)} GB`
+                        : `${m.size_disk_mb} MB`}
+                  </span>
+                  {isActive && (
+                    <button
+                      disabled={unloading === m.name}
+                      onClick={() => handleUnload(m.name)}
+                      title="Descarregar da VRAM"
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 10,
+                        padding: '3px 10px',
+                        background: 'transparent',
+                        color: 'var(--ink-ghost)',
+                        border: '1px solid var(--rule)',
+                        borderRadius: 'var(--radius)',
+                        cursor: unloading === m.name ? 'wait' : 'pointer',
+                        opacity: unloading === m.name ? 0.5 : 1,
+                        transition: 'all 150ms ease',
+                      }}
+                    >
+                      {unloading === m.name ? '…' : 'descarregar'}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </section>
 
       {/* ── Ações ─────────────────────────────────────── */}
-      <section style={{ display: 'flex', gap: 10 }}>
+      <section style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <button
           className="btn btn-ghost btn-sm"
           onClick={onOpenChat}
@@ -336,6 +399,52 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
         >
           {silencing ? '…' : 'Silenciar Ollama'}
         </button>
+        {ollamaOnline === false && (
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={launchStatus === 'starting'}
+            onClick={handleLaunchOllama}
+            title="Iniciar o servidor Ollama com as flags de hardware corretas"
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              color: launchStatus === 'error' ? 'var(--ribbon)' : 'var(--accent-green)',
+              borderColor: launchStatus === 'error' ? 'var(--ribbon)' : 'var(--accent-green)',
+              opacity: launchStatus === 'starting' ? 0.6 : 1,
+            }}
+          >
+            {launchStatus === 'starting' ? 'Iniciando…'
+             : launchStatus === 'error'   ? 'Erro — tentar novamente'
+             : 'Iniciar Ollama'}
+          </button>
+        )}
+        {ollamaOnline === true && (
+          <>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--accent-green)',
+              opacity: 0.7,
+            }}>
+              Ollama ativo
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={stopping}
+              onClick={handleStopOllama}
+              title="Encerrar o processo Ollama"
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: stopping ? 'var(--ink-ghost)' : 'var(--ribbon)',
+                borderColor: stopping ? 'var(--rule)' : 'var(--ribbon)',
+                opacity: stopping ? 0.5 : 1,
+              }}
+            >
+              {stopping ? '…' : 'Parar Ollama'}
+            </button>
+          </>
+        )}
       </section>
     </div>
   )

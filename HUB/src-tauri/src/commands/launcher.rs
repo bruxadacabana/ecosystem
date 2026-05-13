@@ -17,6 +17,95 @@ use crate::AppError;
 //  Comandos IPC
 // ----------------------------------------------------------
 
+/// Lança o servidor Ollama com as flags corretas para o hardware detectado.
+///
+/// Lógica de detecção de hardware:
+/// - Windows → `ollama serve` (CPU-only, sem flags)
+/// - Linux com `/dev/kfd` presente (AMD ROCm) →
+///     `HSA_OVERRIDE_GFX_VERSION=<env ou 10.3.0> ollama serve`
+/// - Linux sem `/dev/kfd` (NVIDIA ou CPU) → `ollama serve`
+///
+/// Verifica se Ollama já está respondendo antes de tentar lançar.
+/// Retorna `"already_running"` ou `"launched"`.
+#[tauri::command]
+pub async fn launch_ollama() -> Result<String, AppError> {
+    if ollama_responding().await {
+        return Ok("already_running".into());
+    }
+
+    #[allow(unused_mut)]
+    let mut cmd = build_ollama_serve_command();
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    cmd.spawn()
+        .map(|_| "launched".to_string())
+        .map_err(|e| AppError::Io(format!("Não foi possível iniciar o Ollama: {e}")))
+}
+
+/// Testa se o Ollama já está respondendo na porta padrão (timeout 500 ms).
+async fn ollama_responding() -> bool {
+    reqwest::Client::new()
+        .get("http://localhost:11434/api/tags")
+        .timeout(std::time::Duration::from_millis(500))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
+/// Constrói o `Command` para `ollama serve` com variáveis de ambiente e prioridade
+/// de CPU adequadas ao hardware detectado em tempo de execução.
+///
+/// Windows: usa `cmd /C start "" /belownormal /B ollama serve` para lançar o processo
+/// já com prioridade BELOW_NORMAL, sem precisar do crate windows-sys.
+/// Linux + AMD (/dev/kfd): injeta HSA_OVERRIDE_GFX_VERSION automaticamente.
+fn build_ollama_serve_command() -> Command {
+    #[cfg(target_os = "windows")]
+    {
+        // start "" /belownormal /B =  título vazio, prioridade abaixo do normal, sem janela
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "start", "", "/belownormal", "/B", "ollama", "serve"]);
+        cmd
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let mut cmd = Command::new("ollama");
+        cmd.arg("serve");
+        // /dev/kfd é o device node do AMD ROCm — presente em CachyOS com GPU AMD.
+        if std::path::Path::new("/dev/kfd").exists() {
+            let gfx = std::env::var("HSA_OVERRIDE_GFX_VERSION")
+                .unwrap_or_else(|_| "10.3.0".to_string());
+            cmd.env("HSA_OVERRIDE_GFX_VERSION", gfx);
+        }
+        cmd
+    }
+}
+
+/// Para o processo do servidor Ollama.
+/// Windows: `taskkill /F /IM ollama.exe /T` (encerra o processo e filhos).
+/// Linux: `pkill -f "ollama serve"`.
+#[tauri::command]
+pub fn stop_ollama() -> Result<(), AppError> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("taskkill")
+            .args(["/F", "/IM", "ollama.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| AppError::Io(format!("taskkill falhou: {e}")))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Command::new("pkill")
+            .args(["-f", "ollama serve"])
+            .spawn()
+            .map_err(|e| AppError::Io(format!("pkill falhou: {e}")))?;
+    }
+    Ok(())
+}
+
 /// Inicia um app externo pelo caminho do executável.
 /// No Windows, scripts `.sh` são automaticamente envolvidos com `bash`.
 #[tauri::command]
