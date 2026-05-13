@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSettings, QTimer
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QStyledItemDelegate,
     QMenu,
     QMessageBox,
     QProgressBar,
@@ -383,6 +384,59 @@ class NewCollectionDialog(QDialog):
         return self.name_edit.text().strip(), self.path_edit.text().strip(), coll_type
 
 
+# ── Status de indexação por arquivo ──────────────────────────────────────────
+_IDX_STATUS_ROLE = Qt.ItemDataRole.UserRole + 1
+_IDX_PENDING  = 0
+_IDX_INDEXING = 1
+_IDX_INDEXED  = 2
+_IDX_ERROR    = 3
+_SPINNER_FRAMES = "⣾⣽⣻⢿⡿⣟⣯⣷"
+
+
+class IndexStatusDelegate(QStyledItemDelegate):
+    """
+    Delegate que desenha um indicador colorido de status de indexação
+    no lado direito de cada item do file_list_widget.
+
+    Estados:
+      pending  → círculo cinza   (arquivo ainda não indexado)
+      indexing → spinner dourado (indexando agora — animado via QTimer no MainWindow)
+      indexed  → ponto verde     (indexado com sucesso)
+      error    → "!" vermelho    (falha na indexação)
+
+    O status é lido via Qt.ItemDataRole.UserRole+1 em cada QListWidgetItem.
+    O spinner é compartilhado via `spinner_ref` (lista de 1 int), mutável pelo
+    MainWindow sem precisar referenciar o delegate.
+    """
+
+    def __init__(self, spinner_ref: list, parent=None) -> None:
+        super().__init__(parent)
+        self._sp = spinner_ref
+
+    def paint(self, painter, option, index) -> None:
+        super().paint(painter, option, index)
+        status = index.data(_IDX_STATUS_ROLE)
+        if status is None:
+            return
+        if status == _IDX_PENDING:
+            color, char = "#7C828E", "○"
+        elif status == _IDX_INDEXING:
+            color = "#D4A820"
+            char  = _SPINNER_FRAMES[self._sp[0] % len(_SPINNER_FRAMES)]
+        elif status == _IDX_INDEXED:
+            color, char = "#4A9950", "●"
+        else:
+            color, char = "#C45A40", "!"
+        painter.save()
+        painter.setPen(QColor(color))
+        fm  = painter.fontMetrics()
+        r   = option.rect
+        x   = r.right() - fm.horizontalAdvance(char) - 5
+        y   = r.center().y() + fm.ascent() // 2 - 1
+        painter.drawText(x, y, char)
+        painter.restore()
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -413,6 +467,12 @@ class MainWindow(QMainWindow):
         self._studio_table_data: tuple[list[str], list[list[str]]] | None = None
 
         self._current_sources: list = []
+
+        self._spinner_ref: list = [0]
+        self._currently_indexing: str | None = None
+        self._spinner_timer = QTimer(self)
+        self._spinner_timer.setInterval(120)
+        self._spinner_timer.timeout.connect(self._on_spinner_tick)
 
         self._retry_timer = QTimer(self)
         self._retry_timer.setInterval(30_000)  # 30 segundos
@@ -618,6 +678,7 @@ class MainWindow(QMainWindow):
         self.file_list_widget = QListWidget()
         self.file_list_widget.setMaximumHeight(96)
         self.file_list_widget.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.file_list_widget.setItemDelegate(IndexStatusDelegate(self._spinner_ref))
         ff_layout.addWidget(self.file_list_widget)
         sb.addWidget(self.file_filter_box)
 
@@ -723,6 +784,9 @@ class MainWindow(QMainWindow):
         if saved_state:
             self._main_splitter.restoreState(saved_state)
 
+        # Conectar signal de promoção de nota (emitido pelo chat, recebido pelo notes pane)
+        self.app_state.note_promoted.connect(self._on_note_promoted)
+
     def _build_notes_pane(self) -> QWidget:
         """Painel direito de notas persistentes (tri-pane layout)."""
         pane = QWidget()
@@ -778,6 +842,19 @@ class MainWindow(QMainWindow):
         self.similar_label.setObjectName("similarLabel")
         self.similar_label.setVisible(False)
         layout.addWidget(self.similar_label)
+
+        # Header da área de resposta com botão "Salvar como Nota"
+        answer_header = QHBoxLayout()
+        answer_header.setContentsMargins(0, 0, 0, 0)
+        answer_header.setSpacing(4)
+        answer_header.addStretch()
+        self._save_note_btn = QPushButton("📌 Salvar como Nota")
+        self._save_note_btn.setObjectName("saveNoteBtn")
+        self._save_note_btn.setEnabled(False)
+        self._save_note_btn.setToolTip("Promove esta resposta para o painel de Notas (lado direito)")
+        self._save_note_btn.clicked.connect(self._on_save_note)
+        answer_header.addWidget(self._save_note_btn)
+        layout.addLayout(answer_header)
 
         self.answer_text = QTextEdit()
         self.answer_text.setObjectName("answerText")
@@ -1688,7 +1765,23 @@ class MainWindow(QMainWindow):
             self.progress.setValue(pos)
         self.statusBar().showMessage(f"Indexando {name}… ({pos}/{total})")
 
+        # Atualizar indicadores de status (ignora emissões "Incorporando X")
+        clean_name = name[len("Incorporando "):] if name.startswith("Incorporando ") else name
+        if not name.startswith("Incorporando "):
+            if self._currently_indexing and self._currently_indexing != clean_name:
+                self._update_file_status(self._currently_indexing, _IDX_INDEXED)
+            self._currently_indexing = clean_name
+            self._update_file_status(clean_name, _IDX_INDEXING)
+            if not self._spinner_timer.isActive():
+                self._spinner_timer.start()
+
     def _on_index_finished(self, success: bool, message: str) -> None:
+        self._spinner_timer.stop()
+        if self._currently_indexing:
+            self._update_file_status(
+                self._currently_indexing, _IDX_INDEXED if success else _IDX_ERROR
+            )
+            self._currently_indexing = None
         self.index_btn.setEnabled(True)
         self.progress.setVisible(False)
         self.progress_file_label.setVisible(False)
@@ -1744,6 +1837,12 @@ class MainWindow(QMainWindow):
         self._resume_worker.start()
 
     def _on_resume_finished(self, success: bool, message: str) -> None:
+        self._spinner_timer.stop()
+        if self._currently_indexing:
+            self._update_file_status(
+                self._currently_indexing, _IDX_INDEXED if success else _IDX_ERROR
+            )
+            self._currently_indexing = None
         self.index_btn.setEnabled(True)
         self.progress.setVisible(False)
         self.progress_file_label.setVisible(False)
@@ -2132,12 +2231,15 @@ class MainWindow(QMainWindow):
                     if ext in supported:
                         paths.append(os.path.join(root, f))
 
+        tracked = self._file_tracker.records if self._file_tracker else {}
         for path in paths:
             item = QListWidgetItem(os.path.basename(path))
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Checked)
             item.setData(Qt.ItemDataRole.UserRole, path)
             item.setToolTip(path)
+            status = _IDX_INDEXED if path in tracked else _IDX_PENDING
+            item.setData(_IDX_STATUS_ROLE, status)
             self.file_list_widget.addItem(item)
 
         if not paths:
@@ -2329,6 +2431,7 @@ class MainWindow(QMainWindow):
 
     def _on_answer(self, success: bool, text: str, sources: list, updated_history: list) -> None:
         self.cancel_btn.setVisible(False)
+        self._save_note_btn.setEnabled(success and bool(text))
         if success:
             self.answer_text.setPlainText(text)
             self._chat_history = updated_history
@@ -2373,6 +2476,7 @@ class MainWindow(QMainWindow):
     def _on_deep_answer(self, success: bool, text: str, sources: list) -> None:
         """Slot para DeepResearchWorker.finished — sem updated_history."""
         self.cancel_btn.setVisible(False)
+        self._save_note_btn.setEnabled(success and bool(text))
         if success:
             self.answer_text.setPlainText(text)
             self._session_memory.save_query(
@@ -2405,6 +2509,56 @@ class MainWindow(QMainWindow):
             self.sources_text.clear()
         self.ask_btn.setEnabled(True)
         self.statusBar().showMessage("Pronto." if success else "Interrompido.")
+
+    # ── Spinner de indexação ──────────────────────────────────────────────────
+
+    def _on_spinner_tick(self) -> None:
+        """Avança um frame do spinner e repinta a lista."""
+        self._spinner_ref[0] += 1
+        self.file_list_widget.viewport().update()
+
+    def _update_file_status(self, name: str, status: int) -> None:
+        """Define o status de indexação do item cujo basename coincide com `name`."""
+        for i in range(self.file_list_widget.count()):
+            item = self.file_list_widget.item(i)
+            if item is None:
+                continue
+            path = item.data(Qt.ItemDataRole.UserRole)
+            if path and os.path.basename(path) == name:
+                item.setData(_IDX_STATUS_ROLE, status)
+                break
+
+    # ── Salvar resposta como nota ─────────────────────────────────────────────
+
+    def _on_save_note(self) -> None:
+        """Promove a resposta atual para o painel de Notas via AppState."""
+        text = self._raw_answer.strip()
+        if not text:
+            return
+        citations = [
+            {"path": s.get("path", ""), "excerpt": s.get("excerpt", "")}
+            for s in self._current_sources
+        ]
+        self.app_state.note_promoted.emit(text, citations)
+
+    def _on_note_promoted(self, text: str, citations: list) -> None:
+        """Recebe a nota promovida e a adiciona ao painel de Notas."""
+        header = text[:60].replace("\n", " ")
+        if len(text) > 60:
+            header += "…"
+        note_md = f"## {header}\n\n{text}"
+        if citations:
+            note_md += "\n\n**Fontes:**"
+            for c in citations:
+                path = c.get("path", "")
+                name = os.path.basename(path) if path and not path.startswith("http") else path
+                note_md += f"\n- {name}"
+        current = self._notes_edit.toPlainText().strip()
+        separator = "\n\n---\n\n" if current else ""
+        self._notes_edit.setPlainText(current + separator + note_md)
+        sb = self._notes_edit.verticalScrollBar()
+        sb.setValue(sb.maximum())
+        self.statusBar().showMessage("Nota salva no painel direito.", 2000)
 
     # ── Sessões de chat ───────────────────────────────────────────────────────
 
@@ -2440,6 +2594,7 @@ class MainWindow(QMainWindow):
         self.sources_text.clear()
         self.similar_label.setVisible(False)
         self.question_edit.clear()
+        self._save_note_btn.setEnabled(False)
         self._refresh_sessions_list()
         self._log_event("Nova sessão iniciada.")
 

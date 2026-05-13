@@ -286,6 +286,26 @@ QPushButton#sendBtn {
     padding: 5px 18px;
 }
 
+QPushButton#saveNoteBtn {
+    background-color: transparent;
+    color: #9A9080;
+    border: 1px solid #2A3148;
+    border-radius: 2px;
+    font-size: 11px;
+    padding: 2px 8px;
+}
+
+QPushButton#saveNoteBtn:hover {
+    background-color: #1E2433;
+    color: #C8B99A;
+    border-color: #D4A820;
+}
+
+QPushButton#saveNoteBtn:disabled {
+    color: #3A3F50;
+    border-color: #1E2433;
+}
+
 QPushButton#sendBtn:hover {
     background-color: #E8C040;
     border-color: #E8C040;

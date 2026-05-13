@@ -3906,7 +3906,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   clicar em `[1]` na resposta do chat rola automaticamente o painel de fontes atÃ© o trecho
   exato usado pelo LLM â€” funcionalidade ausente em todos os apps RAG open source atuais.
 
-- [ ] **Painel de fontes com status de indexaÃ§Ã£o por item** (`gui/main_window.py` ou
+- [x] **Painel de fontes com status de indexaÃ§Ã£o por item** (`gui/main_window.py` ou
   `gui/collection_panel.py`). No painel esquerdo, cada documento na `QListWidget` deve exibir
   seu status de indexaÃ§Ã£o via delegate customizado (`QStyledItemDelegate`). Estados possÃ­veis:
   `pending` (cinza, Ã­cone de relÃ³gio), `indexing` (animaÃ§Ã£o de spinner via `QTimer`),
@@ -3915,7 +3915,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `paint()`. Permite que o usuÃ¡rio veja em tempo real quais documentos jÃ¡ estÃ£o disponÃ­veis
   para RAG â€” atualmente nÃ£o hÃ¡ feedback visual por documento, apenas por coleÃ§Ã£o inteira.
 
-- [ ] **BotÃ£o "Salvar como Nota" em cada resposta do chat** (`gui/chat_widget.py` ou equivalente).
+- [x] **Botão "Salvar como Nota" em cada resposta do chat** (`gui/chat_widget.py` ou equivalente).
   Cada bloco de resposta do LLM no painel de chat deve ter um botÃ£o discreto (Ã­cone de
   marcador, canto superior direito do card de resposta) que, ao ser clicado, promove o
   conteÃºdo para o painel de notas com: tÃ­tulo editÃ¡vel prÃ©-preenchido com os primeiros
