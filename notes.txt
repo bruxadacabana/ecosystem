@@ -1,4 +1,4 @@
-vamos terminar de implementar ### Pesquisa: Arquitetura de UI para Research Workbench — NotebookLM e Referências | 2026-05-06
+vamos prosseguir com a implementação de ### AKASHA + Mnemosyne: metadados ricos no frontmatter do archive | 2026-05-06
 
 
 1: implemente dois itens de cada vez (implemente, marque feito no TODO, commite, resuma no chat (não precisa aprofundar muito, mas sempre explique o que foi implementado e o porquê de forma didática) e peça permissão antes de implementar a próxima dupla). Cada item = 1 TODO (- [ ]).
@@ -9,9 +9,7 @@ vamos terminar de implementar ### Pesquisa: Arquitetura de UI para Research Work
 
 depois:
 
-### AKASHA + Mnemosyne: metadados ricos no frontmatter do archive | 2026-05-06
+### Auditoria pesquisas.md â†’ itens nÃ£o registrados no TODO | 2026-05-05
 
-### Pesquisa: LLMs Locais para Dispatcher/Skill Routing — achados para Mnemosyne e KOSMOS | 2026-05-12
-
-### Mnemosyne + AKASHA: tratamento diferenciado por tipo de fonte | 2026-05-06
+### Infraestrutura: config por dispositivo e sync do ecossistema | 2026-05-06
 
