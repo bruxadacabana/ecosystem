@@ -40,7 +40,7 @@ async def _search_semantic_scholar(query: str, max_results: int) -> list[PaperRe
     params = {
         "query":  query,
         "fields": _SS_FIELDS,
-        "limit":  min(max_results, 10),
+        "limit":  min(max_results, 100),
     }
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
