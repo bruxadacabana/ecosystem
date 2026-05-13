@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings as LCEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
@@ -28,6 +29,40 @@ from .tracker import FileTracker
 # Arquivo JSON que contabiliza reflexões geradas por tema — usado pelo
 # mecanismo de meta-reflexão para detectar quando consolidar 3 reflexões.
 _REFLECTION_META_FILE = "reflection_meta.json"
+
+# Identificador do modelo de embedding estático (model2vec — sem Ollama, sem AVX2).
+# Útil no Windows de trabalho (i5-3470, sem GPU) onde bge-m3 satura o CPU.
+_POTION_MODEL_NAME = "potion-multilingual-128M"
+
+# Cache singleton do StaticModel — carregado uma vez por processo, reutilizado.
+_model2vec_instance: object | None = None
+
+
+class _Model2VecEmbeddings(LCEmbeddings):
+    """Wrapper LangChain para model2vec (StaticModel).
+
+    Carrega o modelo na primeira chamada e o mantém em memória. Não depende do
+    Ollama — embeddings gerados localmente via model2vec em ~50ms por chunk.
+    """
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return _embed_batch_model2vec(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        return _embed_batch_model2vec([text])[0]
+
+
+def _embed_batch_model2vec(texts: list[str]) -> list[list[float]]:
+    global _model2vec_instance
+    if _model2vec_instance is None:
+        try:
+            from model2vec import StaticModel  # type: ignore[import]
+            _model2vec_instance = StaticModel.from_pretrained(_POTION_MODEL_NAME)
+        except ImportError as exc:
+            raise IndexBuildError(
+                "model2vec não instalado. Execute: pip install model2vec"
+            ) from exc
+    return _model2vec_instance.encode(texts).tolist()  # type: ignore[union-attr]
 
 
 def _clear_orphan_wal(persist_dir: str) -> None:
@@ -336,12 +371,17 @@ def _embed_batch(
     base_url: str = _OLLAMA_BASE,
     truncate_dim: int | None = None,
 ) -> list[list[float]]:
-    """Chama /api/embed do Ollama com um lote de textos — 1 HTTP por lote.
+    """Gera embeddings para um lote de textos.
 
-    truncate_dim: quando definido, passa ao Ollama para truncar embeddings via MRL
-    (Matryoshka). Se o Ollama instalado não suportar o parâmetro, faz fallback
-    silencioso sem truncamento.
+    Para modelos Ollama: chama /api/embed — 1 HTTP por lote.
+    Para potion-multilingual-128M: usa model2vec local (sem Ollama, sem AVX2).
+
+    truncate_dim: passado ao Ollama para truncar embeddings via MRL (Matryoshka).
+    Ignorado para model2vec. Se o Ollama não suportar, faz fallback silencioso.
     """
+    if model == _POTION_MODEL_NAME:
+        return _embed_batch_model2vec(texts)
+
     import httpx
     payload: dict = {"model": model, "input": texts}
     if truncate_dim:
@@ -446,7 +486,7 @@ def _detect_batch_config() -> tuple[int, float]:
 
 def _get_splitter(
     config: AppConfig,
-    embeddings: OllamaEmbeddings | None = None,
+    embeddings: LCEmbeddings | None = None,
     source_type: str = "",
     file_path: str = "",
 ):
@@ -524,7 +564,9 @@ def _enrich_chunk_offsets(
             chunk.metadata["page_num"] = int(chunk.metadata["page"])
 
 
-def _get_embeddings(config: AppConfig) -> OllamaEmbeddings:
+def _get_embeddings(config: AppConfig) -> LCEmbeddings:
+    if config.embed_model == _POTION_MODEL_NAME:
+        return _Model2VecEmbeddings()
     return OllamaEmbeddings(model=config.embed_model, base_url="http://localhost:7072")
 
 

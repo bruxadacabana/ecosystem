@@ -176,11 +176,20 @@ class SetupDialog(QDialog):
             self.embed_combo.addItem(m.name)
         if not embed_models:
             self.embed_combo.addItem("(nenhum modelo de embedding encontrado)")
+        # potion-multilingual-128M: embedding estático via model2vec — sem Ollama, sem AVX2.
+        # Sempre disponível como fallback para hardware limitado (i5-3470, Windows CPU-only).
+        from core.indexer import _POTION_MODEL_NAME as _POTION
+        if self.embed_combo.findText(_POTION) < 0:
+            self.embed_combo.addItem(_POTION)
         if current.embed_model:
             idx = self.embed_combo.findText(current.embed_model)
             if idx >= 0:
                 self.embed_combo.setCurrentIndex(idx)
-        self.embed_combo.setToolTip("Usado na indexação — roda na sua máquina via Ollama")
+        self.embed_combo.setToolTip(
+            "Usado na indexação. Modelos Ollama: requerem Ollama rodando. "
+            "potion-multilingual-128M: roda direto em Python, sem Ollama, sem AVX2 "
+            "(útil no Windows de trabalho)."
+        )
         embed_row = QHBoxLayout()
         embed_row.setContentsMargins(0, 0, 0, 0)
         embed_row.addWidget(self.embed_combo, 1)

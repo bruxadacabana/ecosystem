@@ -1,4 +1,4 @@
-﻿﻿# TODO â€” Ecossistema
+﻿﻿﻿﻿# TODO â€” Ecossistema
 
 > Consolidado em 2026-04-27. Fonte Ãºnica de verdade â€” arquivos individuais removidos.
 
@@ -4622,14 +4622,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   e exibir mensagem "Ãndice construÃ­do em [outra mÃ¡quina]. Consultas disponÃ­veis."
   EnforÃ§a arquitetura "indexar no CachyOS, consultar no Windows".
 
-- [ ] **`potion-multilingual-128M` (model2vec) como fallback de embedding no Windows**
+- [x] **`potion-multilingual-128M` (model2vec) como fallback de embedding no Windows**
   (`core/config.py`, `core/indexer.py`, `gui/main_window.py`). Expor como terceira
   opÃ§Ã£o de embedding em Settings ao lado de bge-m3 e qwen3-embedding:0.6b.
   `pip install model2vec langchain-community`. Sem dependÃªncia de Ollama, sem AVX2,
   ~50ms por chunk. MTEB 47.31 â€” suficiente para RAG pessoal. Ãštil quando Ollama
   nÃ£o estÃ¡ disponÃ­vel no Windows de trabalho.
 
-- [ ] **`qwen3-embedding:0.6b` como opÃ§Ã£o intermediÃ¡ria de embedding**
+- [x] **`qwen3-embedding:0.6b` como opÃ§Ã£o intermediÃ¡ria de embedding**
   (`core/config.py`, `gui/main_window.py`). Adicionar `qwen3-embedding:0.6b`
   (639MB, Q8_0, multilÃ­ngue, MTEB ~50â€“60) como opÃ§Ã£o selecionÃ¡vel entre bge-m3
   (qualidade) e potion-multilingual-128M (velocidade). Ãštil no laptop MX150 onde
@@ -4938,6 +4938,21 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   + Tesseract instalado no sistema (instruÃ§Ã£o no README). Campo `image_ocr_model` em
   `AppConfig` e `SetupDialog` (QLineEdit, opcional, placeholder "ex: moondream2").
 
+### LOGOS: pull de modelo recomendado direto do HUB | 2026-05-13
+> Contexto: o LOGOS detecta hardware e recomenda modelos (via /logos/hardware), mas não
+> oferece forma de baixar o modelo caso ele ainda não esteja instalado no Ollama local.
+
+#### HUB
+- [ ] **Comando Tauri pull_model(model_name) em src-tauri/src/logos.rs** — executar
+  ollama pull <model> como processo filho e emitir evento Tauri pull_progress com
+  cada linha de stdout (progresso em tempo real). Retornar erro tipado se Ollama não
+  estiver rodando ou se o nome do modelo for inválido.
+
+- [ ] **Botão "Baixar modelo" na LogosView** — quando o LOGOS recomendar um modelo via
+  /logos/hardware que não constar em GET /api/tags do Ollama local, exibir botão
+  "⬇ Baixar [nome]" ao lado da recomendação. Ao clicar: invocar pull_model, exibir
+  barra de progresso com texto da linha atual do ollama pull, desabilitar o botão
+  durante o download.
 ### HUB: botÃ£o Iniciar Ollama com flags de hardware | 2026-05-13
 > Contexto: o LOGOS jÃ¡ gerencia o Ollama apÃ³s iniciado, mas o usuÃ¡rio precisa iniciar o processo manualmente antes de usar o ecossistema. O HUB deve detectar o hardware e lanÃ§ar o Ollama com as variÃ¡veis de ambiente corretas por plataforma â€” AMD ROCm no CachyOS, CUDA/sem flags no laptop NVIDIA e no Windows CPU-only.
 
