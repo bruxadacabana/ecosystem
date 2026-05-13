@@ -4886,7 +4886,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   (P1/P2/P3). Overhead do dispatcher: 200â€“600 ms; latÃªncia total com modelos aquecidos: 1â€“3 s.
   Basear na arquitetura RouteLLM (arXiv:2406.18665, ICLR 2025).
 
-- [ ] **Routing 3-tier para minimizar overhead de LLM** â€” antes de acionar o dispatcher LLM,
+- [x] **Routing 3-tier para minimizar overhead de LLM** â€” antes de acionar o dispatcher LLM,
   implementar dois filtros mais rÃ¡pidos: (1) regex/keyword matching para requests triviais e
   repetitivos (~80% dos casos, latÃªncia ~0 ms â€” ex: "resuma esse texto" â†’ sempre `synthesis`);
   (2) embedding similarity contra embeddings prÃ©-computados dos campos `description` de cada
@@ -4894,7 +4894,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   para casos que passem pelos dois filtros anteriores. Essa cadeia elimina o overhead do LLM
   para a maioria dos requests, reduzindo latÃªncia mÃ©dia do sistema.
 
-- [ ] **Command R 7B como executor do skill `rag-query`** â€” o Command R 7B (Cohere) Ã© o Ãºnico
+- [x] **Command R 7B como executor do skill `rag-query`** â€” o Command R 7B (Cohere) Ã© o Ãºnico
   modelo sub-10B com treinamento explÃ­cito para grounded generation com citaÃ§Ã£o de fontes
   (grounding spans). Configurar o LOGOS para usar Command R 7B especificamente quando o
   dispatcher selecionar o skill `rag-query`, em vez do modelo executor padrÃ£o. Requer que
