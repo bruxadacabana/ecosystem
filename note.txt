@@ -1,33 +1,3 @@
-Antes de prosseguir com esses, faça primeiro:
-
-1- verifique a responsividade do AKASHA, ainda não está totalmente otimizado para tamanho de janelas menores. Não considere apenas tamanhos fixos como celular e tablet, faça com que seja mais universal, talvez usando porcentagens nos tamanhos. [FEITO]
-
-2- implemente:
-#### AKASHA
-- [x] **Campos universais em todos os arquivos arquivados** — ao gerar o frontmatter .md no
-  archive, sempre incluir: `title`, `author` (quando disponível na página/PDF), `date`
-  (data de publicação do conteúdo, não de download — formato `YYYY-MM-DD`), `language`
-  (`pt`/`en`/etc. — detectar via `langdetect` já no requirements do KOSMOS, ou pelo
-  `Content-Language` do HTTP), `source_url` (URL original de onde foi baixado). Esses campos
-  são os mais usados pelo Mnemosyne para framing e citação.
-  [FEITO, PORÉM acrescente: description , sitename , tags]
-
-- [ ] **Campos específicos para artigos científicos** — quando a fonte for identificada como
-  científica (arxiv, DOI, Semantic Scholar, OpenAlex), incluir adicionalmente no frontmatter:
-  `doi` (ex: `10.48550/arXiv.1706.03762`), `arxiv_id` (quando aplicável, ex: `1706.03762`),
-  `journal` (nome do periódico ou `arXiv preprint`), `abstract` (primeiros 500 chars do
-  abstract — indexado separadamente melhora a recuperação pois resume o artigo inteiro),
-  `keywords` (lista de palavras-chave quando disponíveis). `doi` e `arxiv_id` também servem
-  para deduplicação: antes de baixar, verificar se já existe arquivo com o mesmo DOI no
-  archive.
-
-- [ ] **Campos específicos para PDFs de livros** — quando processar PDF com `pymupdf4llm`,
-  extrair metadados nativos do PDF (já acessíveis via `fitz.open(path).metadata`): `isbn`,
-  `publisher`, `year`. Incluir no frontmatter apenas quando não-vazios. `year` complementa
-  `date` para livros onde só o ano é conhecido.
-
-  ================================================
-
 estamos implementando todos os items de ### Pesquisa: AKASHA como Assistente de Pesquisa — Técnicas Além de LLMs | 2026-05-06
 
 1: implemente dois itens de cada vez (implemente, marque feito no TODO, commite, resuma no chat (não precisa aprofundar muito, mas sempre explique o que foi implementado e o porquê de forma didática) e peça permissão antes de implementar a próxima dupla). Cada item = 1 TODO (- [ ]).
