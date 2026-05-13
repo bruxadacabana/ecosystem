@@ -5037,15 +5037,9 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Antes de pesquisar, catalogar os modelos instalados em cada maquina.
 
 #### HUB
-- [ ] **Inventario Windows 10 (WorkPc):** ja catalogado -- all-minilm:latest, smollm2:1.7b, qwen2.5:0.5b
-- [ ] **Inventario CachyOS principal (MainPc):** catalogar -- NAME                 ID              SIZE      MODIFIED    
-qwen2.5:0.5b         a8b0c5157701    397 MB    6 days ago     
-smollm2:1.7b         cef4a1e09247    1.8 GB    7 days ago     
-all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar no contexto da pesquisa
-- [ ] **Inventario Laptop:** catalogar -- NAME                 ID              SIZE      MODIFIED    
-qwen2.5:0.5b         a8b0c5157701    397 MB    6 days ago     
-smollm2:1.7b         cef4a1e09247    1.8 GB    7 days ago     
-all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar no contexto da pesquisa
+- [x] **Inventario Windows 10 (WorkPc):** all-minilm:latest (45 MB), smollm2:1.7b (1.8 GB), qwen2.5:0.5b (397 MB)
+- [x] **Inventario CachyOS principal (MainPc):** phi3.5:latest (2.2 GB), gemma2:2b (1.6 GB), qwen2.5:7b (4.7 GB), llama3.1:8b (4.9 GB), bge-m3:latest (1.2 GB)
+- [x] **Inventario Laptop (i7-8550U, MX150 2GB):** nomic-embed-text:latest (274 MB), SmolLM2:1.7B (1.8 GB), gemma2:2b (1.6 GB)
 - [ ] **Pesquisar LLMs para RAG (Mnemosyne)** -- sintese multi-doc, context window, portugues;
   garantir que os modelos escolhidos por hardware sejam compativeis (mesma familia ou instruction format)
 - [ ] **Pesquisar LLMs para analise/sumarizacao (KOSMOS e AKASHA)** -- artigos longos, velocidade
