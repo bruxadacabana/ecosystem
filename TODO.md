@@ -4405,14 +4405,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   relevantes quando a pergunta Ã© sobre a opiniÃ£o da usuÃ¡ria, nÃ£o quando Ã© sobre fatos.
   TranscriÃ§Ãµes de YouTube/TikTok pesam menos que livros no mesmo tema.
 
-- [ ] **[P3] Separadores de chunk especÃ­ficos por tipo (`core/indexer.py`)** â€” em
+- [x] **[P3] Separadores de chunk especÃ­ficos por tipo (`core/indexer.py`)** â€” em
   `_get_splitter()`, alÃ©m do `chunk_size`/`overlap`, usar separadores adequados ao conteÃºdo:
   notas â†’ `["\n## ", "\n\n", "\n"]`; livros â†’ `["\n# ", "\n## ", "\n\n", "\n"]`;
   cientÃ­ficos â†’ `["\n## ", "\n\n", ". ", "\n"]` (seÃ§Ãµes como Abstract/MÃ©todos/Resultados);
   transcriÃ§Ãµes â†’ `[". ", "! ", "? ", "\n"]` (sem cabeÃ§alhos markdown, fala Ã© contÃ­nua);
   artigos web â†’ `["\n\n", "\n", ". "]`. Atualizar `CHUNK_PARAMS` para incluir `separators`.
 
-- [ ] **[P4] DetecÃ§Ã£o e chunk params de artigo cientÃ­fico** â€” adicionar tipo `"scientific"` em
+- [x] **[P4] DetecÃ§Ã£o e chunk params de artigo cientÃ­fico** â€” adicionar tipo `"scientific"` em
   `CHUNK_PARAMS` (chunk_size 400, overlap 80 â€” denso, precisa de mais overlap para nÃ£o cortar
   mid-argumento). Em `_chunk_type_for()`, detectar via `is_scientific_paper(file_path)`:
   checar frontmatter por `type: scientific` (adicionado pelo AKASHA â€” ver item AKASHA abaixo),

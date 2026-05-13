@@ -360,15 +360,51 @@ def _embed_batch(
         raise
 
 
-CHUNK_PARAMS: dict[str, dict[str, int]] = {
-    "article":    {"chunk_size": 768,  "chunk_overlap": 100},
-    "transcript": {"chunk_size": 400,  "chunk_overlap": 60},
-    "note":       {"chunk_size": 384,  "chunk_overlap": 50},
-    "document":   {"chunk_size": 512,  "chunk_overlap": 75},
+# Separadores por tipo: refletem a estrutura natural de cada formato
+# notas/vault    → seções markdown (##) antes de parágrafos
+# livros/docs    → capítulos (#) e seções (##) antes de parágrafos
+# científicos    → seções (##) + parágrafos + frases (texto denso, mais overlap)
+# transcrições   → fala contínua, sem markdown: dividir por pontuação
+# artigos web    → parágrafos antes de frases (sem hierarquia de capítulos)
+CHUNK_PARAMS: dict[str, dict] = {
+    "article":    {"chunk_size": 768, "chunk_overlap": 100,
+                   "separators": ["\n\n", "\n", ". "]},
+    "transcript": {"chunk_size": 400, "chunk_overlap": 60,
+                   "separators": [". ", "! ", "? ", "\n"]},
+    "note":       {"chunk_size": 384, "chunk_overlap": 50,
+                   "separators": ["\n## ", "\n\n", "\n"]},
+    "document":   {"chunk_size": 512, "chunk_overlap": 75,
+                   "separators": ["\n# ", "\n## ", "\n\n", "\n"]},
+    "scientific": {"chunk_size": 400, "chunk_overlap": 80,
+                   "separators": ["\n## ", "\n\n", ". ", "\n"]},
 }
 
 _TRANSCRIPT_EXTS = frozenset({".vtt", ".srt"})
 _DOCUMENT_EXTS   = frozenset({".pdf", ".epub", ".docx"})
+
+# Detecta marcadores estruturais de artigos científicos
+_SCIENTIFIC_MARKERS_RE = re.compile(
+    r"^(abstract|references|referências|bibliography|doi:\s*\S|arxiv:\s*\S)",
+    re.I | re.M,
+)
+
+
+def is_scientific_paper(file_path: str) -> bool:
+    """
+    Detecta se um arquivo .md é um artigo científico.
+    Critérios (or):
+      1. Frontmatter YAML com 'type: scientific' (gerado pelo AKASHA)
+      2. Pelo menos 2 marcadores estruturais: Abstract, References/Referências, DOI:, arXiv:
+    Lê apenas os primeiros 4 KB para manter latência baixa.
+    """
+    try:
+        with open(file_path, encoding="utf-8", errors="ignore") as fh:
+            head = fh.read(4096)
+    except OSError:
+        return False
+    if re.search(r"^type:\s*scientific", head, re.M):
+        return True
+    return len(_SCIENTIFIC_MARKERS_RE.findall(head)) >= 2
 
 
 def _chunk_type_for(source_type: str, file_path: str = "") -> str:
@@ -382,8 +418,11 @@ def _chunk_type_for(source_type: str, file_path: str = "") -> str:
         return "note"
     if ext in _DOCUMENT_EXTS:
         return "document"
-    if ext in (".md", ".txt") and file_path and is_transcript_file(file_path):
-        return "transcript"
+    if ext in (".md", ".txt") and file_path:
+        if is_transcript_file(file_path):
+            return "transcript"
+        if is_scientific_paper(file_path):
+            return "scientific"
     return "article"  # .md/.txt em library → artigos scraped
 
 
@@ -434,7 +473,7 @@ def _get_splitter(
     return RecursiveCharacterTextSplitter(
         chunk_size=params["chunk_size"],
         chunk_overlap=params["chunk_overlap"],
-        separators=["\n\n", "\n", ". ", " ", ""],
+        separators=params.get("separators", ["\n\n", "\n", ". ", " ", ""]),
         add_start_index=True,
     )
 
@@ -642,7 +681,7 @@ def create_vectorstore(
                 _splitter_cache[ctype] = RecursiveCharacterTextSplitter(
                     chunk_size=params["chunk_size"],
                     chunk_overlap=params["chunk_overlap"],
-                    separators=["\n\n", "\n", ". ", " ", ""],
+                    separators=params.get("separators", ["\n\n", "\n", ". ", " ", ""]),
                     add_start_index=True,
                 )
             chunks.extend(_splitter_cache[ctype].split_documents([doc]))
