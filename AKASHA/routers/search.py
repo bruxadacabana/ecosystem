@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 import config
 import database
-from services.archiver import archive_url, fetch_and_extract, NearDuplicateError
+from services.archiver import archive_url, fetch_and_extract, NearDuplicateError, DoiDuplicateError
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local, correct_query
 from services.crawler import search_sites, index_visited_page
@@ -57,6 +57,8 @@ async def archive(
         page = await archive_url(url, str(config.ARCHIVE_PATH), tags=tag_list, notes=notes)
     except NearDuplicateError as exc:
         raise HTTPException(status_code=409, detail=f"Near-duplicate de documento já arquivado: {exc.existing_url}")
+    except DoiDuplicateError as exc:
+        raise HTTPException(status_code=409, detail=f"Artigo já arquivado com este DOI ({exc.doi}): {exc.existing_url}")
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=502, detail=f"Erro HTTP ao buscar URL: {exc.response.status_code}")
     except httpx.RequestError as exc:

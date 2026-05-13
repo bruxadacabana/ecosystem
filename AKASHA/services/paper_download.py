@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
@@ -17,10 +18,26 @@ _UNPAYWALL_EMAIL = os.environ.get("UNPAYWALL_EMAIL", "")
 _TIMEOUT_PDF     = 40.0
 
 
+_ISBN_RE = re.compile(
+    r'(?:ISBN[-‐]?(?:13|10)?[:\s]?)?'
+    r'(97[89][-\s]?\d[-\s]?\d{2,7}[-\s]?\d{1,7}[-\s]?\d'
+    r'|\d{9}[\dXx])'
+)
+_PDF_DATE_RE = re.compile(r'D:(\d{4})')
+
+
 @dataclass
 class PdfResult:
     pdf_bytes: bytes
     source:    str   # "direct" | "arxiv" | "unpaywall"
+
+
+@dataclass
+class PdfNativeMetadata:
+    """Metadados extraídos dos campos nativos do PDF via PyMuPDF (fitz)."""
+    isbn:      str       = field(default="")
+    publisher: str       = field(default="")
+    year:      int | None = field(default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +113,78 @@ async def download_pdf(
                 return PdfResult(pdf_bytes=data, source="unpaywall")
 
     raise RuntimeError("PDF não disponível em acesso aberto para este artigo.")
+
+
+# ---------------------------------------------------------------------------
+# Metadados nativos do PDF (isbn, publisher, year)
+# ---------------------------------------------------------------------------
+
+def pdf_get_native_metadata(pdf_bytes: bytes) -> PdfNativeMetadata:
+    """
+    Extrai metadados nativos do PDF via fitz (PyMuPDF).
+
+    O formato PDF armazena metadados num dicionário acessível via
+    fitz.Document().metadata. Os campos disponíveis são: title, author,
+    subject, keywords, creator, producer, creationDate, modDate.
+    Nenhum deles tem um campo dedicado para ISBN ou publisher, então:
+    - isbn: busca regex em subject, keywords e title
+    - publisher: campo creator quando parece nome de editora, senão subject
+    - year: extraído de creationDate (formato PDF: "D:YYYYMMDDHHMMSS")
+
+    Retorna PdfNativeMetadata com campos vazios/None se fitz não estiver
+    disponível ou se o PDF não tiver os metadados.
+    """
+    try:
+        import fitz  # PyMuPDF — instalado como dependência do pymupdf4llm
+    except ImportError:
+        return PdfNativeMetadata()
+
+    tmp_path: Path | None = None
+    try:
+        import io
+        doc = fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf")
+        meta = doc.metadata or {}
+        doc.close()
+    except Exception:
+        return PdfNativeMetadata()
+    finally:
+        if tmp_path:
+            tmp_path.unlink(missing_ok=True)
+
+    isbn = ""
+    publisher = ""
+    year: int | None = None
+
+    # Busca ISBN nos campos de texto livre
+    for field_name in ("subject", "keywords", "title"):
+        text = meta.get(field_name, "") or ""
+        m = _ISBN_RE.search(text)
+        if m:
+            isbn = re.sub(r"[-\s]", "", m.group(1))
+            break
+
+    # Publisher: creator quando não é software (não contém "Acrobat", "Word", etc.)
+    _SOFTWARE_KEYWORDS = {"acrobat", "word", "latex", "tex", "libre", "open", "foxit", "pdfmaker"}
+    creator = (meta.get("creator", "") or "").strip()
+    if creator and not any(sw in creator.lower() for sw in _SOFTWARE_KEYWORDS):
+        publisher = creator
+    else:
+        # Tenta extrair de subject (ex: "Publisher: Springer Nature")
+        subject = (meta.get("subject", "") or "").strip()
+        pub_m = re.search(r'publisher[:\s]+(.+?)(?:\.|,|;|$)', subject, re.IGNORECASE)
+        if pub_m:
+            publisher = pub_m.group(1).strip()
+
+    # Ano: de creationDate no formato PDF "D:YYYYMMDD..."
+    creation_date = (meta.get("creationDate", "") or "").strip()
+    m_year = _PDF_DATE_RE.search(creation_date)
+    if m_year:
+        try:
+            year = int(m_year.group(1))
+        except ValueError:
+            pass
+
+    return PdfNativeMetadata(isbn=isbn, publisher=publisher, year=year)
 
 
 # ---------------------------------------------------------------------------

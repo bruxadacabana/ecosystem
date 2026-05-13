@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -201,6 +201,16 @@ CREATE TABLE IF NOT EXISTS archive_simhashes (
     simhash INTEGER NOT NULL,
     path    TEXT    NOT NULL UNIQUE,
     url     TEXT    NOT NULL
+);
+"""
+
+_CREATE_ARCHIVE_DOIS = """
+CREATE TABLE IF NOT EXISTS archive_dois (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    doi       TEXT    NOT NULL UNIQUE,
+    arxiv_id  TEXT,
+    path      TEXT    NOT NULL,
+    url       TEXT    NOT NULL
 );
 """
 
@@ -614,6 +624,9 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_doc_citations_doi ON doc_citations(cited_doi)"
         )
+
+    if from_version < 25:
+        await db.execute(_CREATE_ARCHIVE_DOIS)
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -1043,6 +1056,38 @@ async def store_archive_simhash(simhash_val: int, path: str, url: str) -> None:
             (simhash_val, path, url),
         )
         await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# DOI helpers (archive deduplication by DOI/arXiv ID)
+# ---------------------------------------------------------------------------
+
+async def find_archive_by_doi(doi: str) -> tuple[str, str] | None:
+    """
+    Retorna (path, url) do documento arquivado com esse DOI, ou None.
+    Usado para deduplicação antes de baixar artigos científicos.
+    """
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            row = await (await db.execute(
+                "SELECT path, url FROM archive_dois WHERE doi = ?", (doi,)
+            )).fetchone()
+        return (row[0], row[1]) if row else None
+    except Exception:
+        return None
+
+
+async def store_archive_doi(doi: str, arxiv_id: str | None, path: str, url: str) -> None:
+    """Armazena o mapeamento DOI → arquivo arquivado."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO archive_dois (doi, arxiv_id, path, url) VALUES (?, ?, ?, ?)",
+                (doi, arxiv_id, path, url),
+            )
+            await db.commit()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

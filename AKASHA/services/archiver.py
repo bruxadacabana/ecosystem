@@ -102,11 +102,38 @@ def _is_scientific_url(url: str) -> bool:
         return False
 
 
+# Regex para extrair arxiv_id de URLs arxiv.org/abs/ ou arxiv.org/pdf/
+_ARXIV_ID_RE = re.compile(r'/(?:abs|pdf)/(\d{4}\.\d{4,5})')
+
 # Parâmetros de rastreamento a remover na normalização de URL
 _TRACKING_PARAMS: frozenset[str] = frozenset({
     "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
     "utm_id", "fbclid", "gclid", "msclkid", "mc_cid", "mc_eid",
 })
+
+
+def _extract_doi_and_arxiv(url: str) -> tuple[str | None, str | None]:
+    """
+    Extrai (doi, arxiv_id) diretamente da URL, sem precisar buscar o conteúdo.
+    Funciona para arxiv.org e doi.org; retorna (None, None) para outros domínios.
+    """
+    try:
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").removeprefix("www.").lower()
+
+        if hostname in ("arxiv.org", "ar5iv.org"):
+            m = _ARXIV_ID_RE.search(parsed.path)
+            if m:
+                arxiv_id = m.group(1)
+                return f"10.48550/arXiv.{arxiv_id}", arxiv_id
+
+        if hostname == "doi.org":
+            doi_path = parsed.path.lstrip("/")
+            if doi_path.startswith("10."):
+                return doi_path, None
+    except Exception:
+        pass
+    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +146,15 @@ class NearDuplicateError(Exception):
         self.existing_url = existing_url
         self.existing_path = existing_path
         super().__init__(f"Near-duplicate de: {existing_url}")
+
+
+class DoiDuplicateError(Exception):
+    """Levantada quando já existe um arquivo arquivado com o mesmo DOI."""
+    def __init__(self, doi: str, existing_path: str, existing_url: str) -> None:
+        self.doi = doi
+        self.existing_path = existing_path
+        self.existing_url = existing_url
+        super().__init__(f"DOI já arquivado: {doi}")
 
 
 def _normalize_url(url: str) -> str:
@@ -162,11 +198,12 @@ class FetchedPage:
     title: str
     content_md: str
     word_count: int
-    author:      str = field(default="")
-    language:    str = field(default="")
-    pub_date:    str = field(default="")  # data de publicação (trafilatura metadata.date)
-    description: str = field(default="")  # meta description da página
-    sitename:    str = field(default="")  # nome do site (trafilatura metadata.sitename)
+    author:      str       = field(default="")
+    language:    str       = field(default="")
+    pub_date:    str       = field(default="")   # data de publicação (trafilatura metadata.date)
+    description: str       = field(default="")   # meta description da página
+    sitename:    str       = field(default="")   # nome do site (trafilatura metadata.sitename)
+    keywords:    list[str] = field(default_factory=list)  # meta keywords
 
 
 @dataclass
@@ -234,6 +271,8 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
             pub_date    = (metadata and getattr(metadata, "date", ""))         or ""
             description = (metadata and getattr(metadata, "description", "")) or ""
             sitename    = (metadata and getattr(metadata, "sitename", ""))     or ""
+            _raw_tags   = (metadata and getattr(metadata, "tags", ""))         or ""
+            keywords    = [k.strip() for k in _raw_tags.split(",") if k.strip()] if isinstance(_raw_tags, str) else list(_raw_tags)
             content     = _cascade_extract(html, url, output_format="markdown")
 
         # 3. Jina Reader como fallback — acionado quando:
@@ -278,19 +317,27 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         pub_date=pub_date,
         description=description,
         sitename=sitename,
+        keywords=keywords,
     )
 
 
 async def archive_pdf(
     *,
-    content_md:  str,
-    title:       str,
-    authors:     str,
-    year:        int | None,
-    doi:         str | None,
-    arxiv_id:    str | None,
-    source_url:  str,
+    content_md:   str,
+    title:        str,
+    authors:      str,
+    year:         int | None,
+    doi:          str | None,
+    arxiv_id:     str | None,
+    source_url:   str,
     archive_path: str,
+    # campos científicos extras (artigos)
+    journal:      str | None = None,
+    abstract:     str | None = None,
+    keywords:     list[str] | None = None,
+    # campos de livros extraídos dos metadados nativos do PDF
+    isbn:         str | None = None,
+    publisher:    str | None = None,
 ) -> Path:
     """
     Salva Markdown extraído de um PDF em:
@@ -328,6 +375,16 @@ async def archive_pdf(
         frontmatter += f'doi: "{_yaml_str(doi)}"\n'
     if arxiv_id:
         frontmatter += f'arxiv_id: {arxiv_id}\n'
+    if journal:
+        frontmatter += f'journal: "{_yaml_str(journal)}"\n'
+    if abstract:
+        frontmatter += f'abstract: "{_yaml_str(abstract[:500])}"\n'
+    if keywords:
+        frontmatter += f'keywords: {_yaml_tags(keywords)}\n'
+    if isbn:
+        frontmatter += f'isbn: "{_yaml_str(isbn)}"\n'
+    if publisher:
+        frontmatter += f'publisher: "{_yaml_str(publisher)}"\n'
     frontmatter += 'tags: []\nnotes: ""\n---\n\n'
 
     body = frontmatter + f'# {title}\n\n'
@@ -347,6 +404,12 @@ async def archive_pdf(
         counter += 1
 
     dest_path.write_text(body, encoding="utf-8")
+
+    # Persiste DOI para deduplicação de arquivamentos futuros
+    if doi:
+        import database as _db
+        await _db.store_archive_doi(doi, arxiv_id, str(dest_path), source_url)
+
     return dest_path
 
 
@@ -370,6 +433,15 @@ async def archive_url(
     # Normaliza URL antes de tudo: remove tracking params, lowercase scheme+host
     url = _normalize_url(url)
 
+    # Deduplicação por DOI para URLs científicas identificáveis sem fetch
+    # (arxiv.org e doi.org — o DOI é parte da URL)
+    doi_from_url, arxiv_id_from_url = _extract_doi_and_arxiv(url)
+    if doi_from_url:
+        import database as _db
+        doi_dup = await _db.find_archive_by_doi(doi_from_url)
+        if doi_dup:
+            raise DoiDuplicateError(doi=doi_from_url, existing_path=doi_dup[0], existing_url=doi_dup[1])
+
     page = await fetch_and_extract(url)  # sem truncamento — arquivo completo
 
     # Near-duplicate check via SimHash (distância de Hamming ≤ 3 → rejeitar)
@@ -383,8 +455,39 @@ async def archive_url(
     now         = datetime.now()
     archived_at = now.strftime("%Y-%m-%d %H:%M")
     domain      = urlparse(url).netloc
-    type_line   = "type: scientific\n" if _is_scientific_url(url) else ""
+    is_sci      = _is_scientific_url(url)
+    type_line   = "type: scientific\n" if is_sci else ""
     pub_date    = page.pub_date or ""
+
+    # Campos extras para artigos científicos
+    sci_block = ""
+    stored_doi: str | None = doi_from_url
+    stored_arxiv: str | None = arxiv_id_from_url
+    if is_sci:
+        # Se o DOI não veio da URL, tenta extrair do conteúdo
+        if not stored_doi:
+            doi_match = _DOI_RE.search(page.content_md)
+            if doi_match:
+                candidate = _DOI_STRIP.sub("", doi_match.group(1))
+                if candidate:
+                    import database as _db
+                    doi_dup = await _db.find_archive_by_doi(candidate)
+                    if doi_dup:
+                        raise DoiDuplicateError(doi=candidate, existing_path=doi_dup[0], existing_url=doi_dup[1])
+                    stored_doi = candidate
+
+        journal = page.sitename or domain
+        abstract = (page.description or page.content_md)[:500]
+        keywords_sci = page.keywords
+
+        if stored_doi:
+            sci_block += f'doi: "{_yaml_str(stored_doi)}"\n'
+        if stored_arxiv:
+            sci_block += f'arxiv_id: {stored_arxiv}\n'
+        sci_block += f'journal: "{_yaml_str(journal)}"\n'
+        sci_block += f'abstract: "{_yaml_str(abstract)}"\n'
+        if keywords_sci:
+            sci_block += f'keywords: {_yaml_tags(keywords_sci)}\n'
 
     body = (
         f'---\n'
@@ -399,6 +502,7 @@ async def archive_url(
         f'language: {page.language}\n'
         f'word_count: {page.word_count}\n'
         f'{type_line}'
+        f'{sci_block}'
         f'tags: {_yaml_tags(tags)}\n'
         f'notes: "{_yaml_str(notes)}"\n'
         f'---\n\n'
@@ -427,6 +531,11 @@ async def archive_url(
     if simhash_val is not None:
         import database as _db
         await _db.store_archive_simhash(simhash_val, str(dest_path), url)
+
+    # Persiste DOI para deduplicação de artigos científicos
+    if stored_doi:
+        import database as _db
+        await _db.store_archive_doi(stored_doi, stored_arxiv, str(dest_path), url)
 
     # Fire-and-forget: extrai DOIs e armazena em doc_citations em background
     asyncio.create_task(_store_dois_background(str(dest_path), page.content_md))
