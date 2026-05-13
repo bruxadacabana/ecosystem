@@ -105,6 +105,24 @@ QLabel#bgIndexLabel {
     background: transparent;
 }
 
+QPushButton#reflectionBadgeBtn {
+    background-color: transparent;
+    border: none;
+    border-left: 2px solid #4A5568;
+    border-radius: 0px;
+    padding: 3px 8px;
+    text-align: left;
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 10px;
+    color: #7C9AAF;
+}
+
+QPushButton#reflectionBadgeBtn:hover {
+    background-color: #1E2433;
+    color: #A8C0D0;
+    border-left-color: #7C9AAF;
+}
+
 /* ----------------------------------------------------------
    NAV BUTTONS (sidebar)
 ---------------------------------------------------------- */

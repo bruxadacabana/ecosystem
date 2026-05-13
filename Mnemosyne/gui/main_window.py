@@ -645,6 +645,13 @@ class MainWindow(QMainWindow):
         self.badge_label.setVisible(False)
         sb.addWidget(self.badge_label)
 
+        self.reflection_badge_btn = QPushButton()
+        self.reflection_badge_btn.setObjectName("reflectionBadgeBtn")
+        self.reflection_badge_btn.setVisible(False)
+        self.reflection_badge_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.reflection_badge_btn.clicked.connect(self._show_reflection_list)
+        sb.addWidget(self.reflection_badge_btn)
+
         self.progress_file_label = QLabel()
         self.progress_file_label.setObjectName("progressFileLabel")
         self.progress_file_label.setWordWrap(False)
@@ -1357,6 +1364,7 @@ class MainWindow(QMainWindow):
         try:
             self.vectorstore = load_vectorstore(self.config)
             self._enable_query_buttons()
+            self._update_reflection_badge()
             self.statusBar().showMessage("Memória carregada.")
             self._log_event("Vectorstore carregado com sucesso.")
         except VectorstoreNotFoundError:
@@ -1533,6 +1541,7 @@ class MainWindow(QMainWindow):
 
         self._update_worker = UpdateIndexWorker(self.config)
         self._update_worker.finished.connect(self._on_update_index_finished)
+        self._update_worker.reflection_progress.connect(self.progress_file_label.setText)
         self._update_worker.start()
 
     def _on_update_index_finished(self, success: bool, message: str) -> None:
@@ -1547,6 +1556,7 @@ class MainWindow(QMainWindow):
             try:
                 self.vectorstore = load_vectorstore(self.config)
                 self._enable_query_buttons()
+                self._update_reflection_badge()
                 self.refresh_manage_info()
             except VectorstoreNotFoundError as exc:
                 QMessageBox.critical(self, "Erro", str(exc))
@@ -1614,6 +1624,7 @@ class MainWindow(QMainWindow):
             try:
                 self.vectorstore = load_vectorstore(self.config)
                 self._enable_query_buttons()
+                self._update_reflection_badge()
                 self.refresh_manage_info()
             except VectorstoreNotFoundError as exc:
                 QMessageBox.critical(self, "Erro", str(exc))
@@ -1668,6 +1679,7 @@ class MainWindow(QMainWindow):
             try:
                 self.vectorstore = load_vectorstore(self.config)
                 self._enable_query_buttons()
+                self._update_reflection_badge()
                 self.refresh_manage_info()
             except VectorstoreNotFoundError as exc:
                 QMessageBox.critical(self, "Erro", str(exc))
@@ -1737,6 +1749,79 @@ class MainWindow(QMainWindow):
                 "background: #b8860b; color: #F5F0E8;"
             )
         self.badge_label.setVisible(True)
+
+    def _update_reflection_badge(self) -> None:
+        """Conta reflexões no vectorstore e atualiza o badge na sidebar."""
+        if self.vectorstore is None:
+            self.reflection_badge_btn.setVisible(False)
+            return
+        try:
+            result = self.vectorstore._collection.get(
+                where={"type": {"$eq": "reflection"}},
+                include=["metadatas"],
+            )
+            ids = result.get("ids", [])
+            count = len(ids)
+        except Exception:
+            self.reflection_badge_btn.setVisible(False)
+            return
+
+        if count == 0:
+            self.reflection_badge_btn.setVisible(False)
+            return
+
+        self.reflection_badge_btn.setText(f"◈  {count} reflexão(ões) no índice")
+        self.reflection_badge_btn.setVisible(True)
+
+    def _show_reflection_list(self) -> None:
+        """Abre diálogo com a lista de reflexões presentes no índice."""
+        if self.vectorstore is None:
+            return
+        try:
+            result = self.vectorstore._collection.get(
+                where={"type": {"$eq": "reflection"}},
+                include=["metadatas", "documents"],
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Reflexões", f"Erro ao listar reflexões: {exc}")
+            return
+
+        ids       = result.get("ids", [])
+        docs      = result.get("documents", []) or []
+        metas     = result.get("metadatas", []) or []
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Reflexões no índice ({len(ids)})")
+        dlg.setMinimumSize(560, 420)
+        layout = QVBoxLayout(dlg)
+
+        table = QTableWidget(len(ids), 4)
+        table.setHorizontalHeaderLabels(["Tema", "Ordem", "Conteúdo (início)", "Fontes"])
+        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        for row, (doc, meta) in enumerate(zip(docs, metas)):
+            theme  = meta.get("theme", "—")
+            order  = str(meta.get("order", 1))
+            snippet = (doc[:80] + "…") if len(doc) > 80 else doc
+            sources = ", ".join(
+                Path(s).name for s in (meta.get("source_files") or [])
+            ) or meta.get("source", "—")
+            table.setItem(row, 0, QTableWidgetItem(theme))
+            table.setItem(row, 1, QTableWidgetItem(order))
+            table.setItem(row, 2, QTableWidgetItem(snippet))
+            table.setItem(row, 3, QTableWidgetItem(sources))
+
+        table.resizeColumnToContents(0)
+        table.resizeColumnToContents(1)
+        table.resizeColumnToContents(3)
+        layout.addWidget(table)
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        btn_box.rejected.connect(dlg.reject)
+        layout.addWidget(btn_box)
+        dlg.exec()
 
     # ── FAQ Generator ─────────────────────────────────────────────────────────
 

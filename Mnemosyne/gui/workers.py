@@ -413,7 +413,8 @@ class ResumeIndexWorker(QThread):
 class UpdateIndexWorker(QThread):
     """Actualiza o vectorstore incrementalmente via FileTracker."""
 
-    finished = Signal(bool, str)  # sucesso, mensagem com stats
+    finished  = Signal(bool, str)  # sucesso, mensagem com stats
+    reflection_progress = Signal(str)  # mensagem de progresso de reflexão
 
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
@@ -424,13 +425,15 @@ class UpdateIndexWorker(QThread):
 
     def run(self) -> None:
         try:
-            _, stats = update_vectorstore(self.config)
+            _, stats = update_vectorstore(self.config, progress_cb=self.reflection_progress.emit)
             msg = (
                 f"Índice actualizado — "
                 f"{stats['new']} novo(s), "
                 f"{stats['modified']} modificado(s), "
                 f"{stats['deleted']} removido(s)."
             )
+            if stats.get("reflections"):
+                msg += f" {stats['reflections']} reflexão(ões) gerada(s)."
             if stats["errors"]:
                 msg += f" {stats['errors']} erro(s) ignorado(s)."
             self.finished.emit(True, msg)

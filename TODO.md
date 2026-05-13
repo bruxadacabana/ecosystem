@@ -3775,7 +3775,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   - Testar: perguntas abstratas ("o que este corpus diz sobre X?") devem puxar reflexões;
     perguntas específicas ("qual o valor de Y na tabela Z?") devem puxar chunks brutos
 
-- [ ] `gui/main_window.py` — feedback de reflexões na UI:
+- [x] `gui/main_window.py` — feedback de reflexões na UI:
   - Badge na sidebar: "N reflexões no índice" (clicável para ver lista)
   - Durante indexação com reflexões: emitir progresso separado ("Gerando reflexões…") após
     o progresso de chunks, para não confundir as duas fases
