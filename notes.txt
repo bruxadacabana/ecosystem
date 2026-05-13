@@ -12,3 +12,41 @@ depois:
 - leia tudo que ainda não está marcado como completo no TODO e sugira os próximos passos
 
 
+==============
+Os passos práticos, em ordem:
+
+1. Instalar o Syncthing nas duas máquinas
+
+Windows 10: winget install Syncthing.Syncthing (ou baixar o .exe em syncthing.net)
+CachyOS: sudo pacman -S syncthing
+2. Iniciar o Syncthing
+
+Windows: executar syncthing.exe — vai abrir a UI em http://localhost:8384
+CachyOS: systemctl --user enable --now syncthing (roda como serviço de usuário)
+3. Adicionar a pasta do ecossistema em cada máquina
+
+Na UI (localhost:8384), clicar em Add Folder:
+
+Windows: D:\windows\ProgramFiles\ecosystem
+CachyOS: o caminho equivalente nessa máquina
+O .stignore já está dentro da pasta (commitado), então o Syncthing vai encontrá-lo automaticamente e ignorar *.db, .venv/, target/, etc.
+
+4. Parear as máquinas
+
+Na UI de cada máquina, copiar o Device ID (Actions → Show ID)
+Na outra máquina: Add Remote Device → colar o ID
+Aceitar a solicitação de compartilhamento da pasta quando aparecer
+5. Migrar o ecosystem.json para o modelo de duas camadas
+
+Antes de ativar o sync, separar o que está no ecosystem.json atual:
+
+Mover os paths absolutos para ecosystem.local.json nesta máquina (usando ecosystem.local.example.json como guia)
+Deixar no ecosystem.json apenas o que é igual nas duas máquinas (portas, URLs de API)
+6. Parar o Proton Drive de sincronizar a pasta do ecossistema
+
+No cliente Proton Drive, remover ou pausar a pasta ecosystem da sincronização. Do contrário, Proton Drive e Syncthing vão sincronizar o mesmo diretório ao mesmo tempo e criar conflitos.
+
+O que o Syncthing vai sincronizar: ecosystem.json, TODO.md, CLAUDE.md, arquivos .md do archive, código-fonte, .stignore.
+
+O que vai ficar local por máquina: *.db, *.db-wal, *.db-shm, ecosystem.local.json, .venv/, target/, node_modules/, pastas data/ de cada app.
+

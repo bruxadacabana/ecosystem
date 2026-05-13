@@ -736,6 +736,12 @@ class MainWindow(QMainWindow):
         self.index_btn.clicked.connect(self.start_indexing)
         sb.addWidget(self.index_btn)
 
+        self._machine_lock_label = QLabel()
+        self._machine_lock_label.setObjectName("machineLockLabel")
+        self._machine_lock_label.setWordWrap(True)
+        self._machine_lock_label.setVisible(False)
+        sb.addWidget(self._machine_lock_label)
+
         self.resume_btn = QPushButton("↩  Retomar indexação")
         self.resume_btn.setObjectName("resumeBtn")
         self.resume_btn.setToolTip("Continua a indexação interrompida sem apagar o progresso")
@@ -1600,6 +1606,7 @@ class MainWindow(QMainWindow):
         self._populate_file_list()
         self._load_guide_into_ui()
         self.index_btn.setEnabled(True)
+        self._apply_indexing_machine_lock()
         self._check_resume_available()
         self._refresh_collections_table()
         self.refresh_manage_info()
@@ -1611,6 +1618,30 @@ class MainWindow(QMainWindow):
             self._start_idle_indexer()
 
         self._check_akasha_availability()
+
+    def _apply_indexing_machine_lock(self) -> None:
+        """Desabilita indexação se o índice foi construído em outra máquina.
+
+        Quando indexing_machine está definido no config e não coincide com o
+        hostname atual, esta máquina opera em modo somente-consulta. Isso
+        reforça a arquitetura 'indexar no CachyOS, consultar no Windows'.
+        """
+        import socket
+        machine = self.config.indexing_machine
+        if not machine or machine == socket.gethostname():
+            return
+        for btn in (
+            self.index_btn,
+            self.update_index_btn,
+            self.reindex_transcripts_btn,
+            self.clear_index_btn,
+            self.resume_btn,
+        ):
+            btn.setEnabled(False)
+        self._machine_lock_label.setText(
+            f"Índice construído em '{machine}'. Consultas disponíveis."
+        )
+        self._machine_lock_label.setVisible(True)
 
     def _check_akasha_availability(self) -> None:
         try:
@@ -1869,10 +1900,24 @@ class MainWindow(QMainWindow):
             except VectorstoreNotFoundError as exc:
                 QMessageBox.critical(self, "Erro", str(exc))
             self._start_guide_generation()
+            self._register_indexing_machine()
         else:
             self._log_event("Indexação interrompida — clique 'Retomar indexação' para continuar.")
 
         self.statusBar().showMessage(message)
+
+    def _register_indexing_machine(self) -> None:
+        """Registra o hostname desta máquina como a máquina de indexação no config."""
+        import socket
+        from core.config import save_config
+        hostname = socket.gethostname()
+        if self.config.indexing_machine == hostname:
+            return
+        self.config.indexing_machine = hostname
+        try:
+            save_config(self.config)
+        except Exception:
+            pass
 
     def _check_resume_available(self) -> None:
         """Mostra o botão 'Retomar' se há checkpoint de indexação interrompida."""

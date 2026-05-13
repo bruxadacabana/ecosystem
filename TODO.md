@@ -1,4 +1,4 @@
-﻿# TODO â€” Ecossistema
+﻿﻿# TODO â€” Ecossistema
 
 > Consolidado em 2026-04-27. Fonte Ãºnica de verdade â€” arquivos individuais removidos.
 
@@ -4593,7 +4593,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   como melhoria posterior. Esta Ã© a decisÃ£o de implementaÃ§Ã£o documentada na pesquisa
   NotebookLM â€” o TODO tem "mind map" mas sem especificar o caminho de implementaÃ§Ã£o.
 
-- [ ] **RelatÃ³rio de Pesquisa estruturado em 8 seÃ§Ãµes**
+- [x] **RelatÃ³rio de Pesquisa estruturado em 8 seÃ§Ãµes**
   > Parcialmente implementado: `core/report.py` existe com 6 seÃ§Ãµes (faltam "AnÃ¡lise por fonte" e "ConvergÃªncias/divergÃªncias"). Expandir para 8 conforme especificado.
   (`core/report.py`). Implementar relatÃ³rio Map-Reduce: (1) TÃ­tulo/escopo, (2) SumÃ¡rio
   executivo, (3) Temas principais, (4) AnÃ¡lise por fonte, (5) ConvergÃªncias e
@@ -4615,7 +4615,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   sem acessar ChromaDB. Usado pela UI para mostrar overview da coleÃ§Ã£o em <1ms.
   Atualizar a cada operaÃ§Ã£o de indexaÃ§Ã£o.
 
-- [ ] **Lock de mÃ¡quina de indexaÃ§Ã£o â€” desabilitar indexaÃ§Ã£o em mÃ¡quinas secundÃ¡rias**
+- [x] **Lock de mÃ¡quina de indexaÃ§Ã£o â€” desabilitar indexaÃ§Ã£o em mÃ¡quinas secundÃ¡rias**
   (`core/config.py`, `gui/main_window.py`). Adicionar campo `indexing_machine: str`
   ao config (preenchido com hostname na primeira indexaÃ§Ã£o bem-sucedida). Na
   inicializaÃ§Ã£o, se `hostname != indexing_machine`: desabilitar botÃµes de indexaÃ§Ã£o

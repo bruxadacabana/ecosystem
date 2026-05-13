@@ -1,13 +1,15 @@
 """
 Relatório de Pesquisa Completo — geração multi-seção via Map-Reduce.
 
-Seções fixas (6):
-  1. Sumário Executivo
-  2. Principais Temas e Findings
-  3. Análise por Fonte
-  4. Convergências e Divergências
-  5. Lacunas Identificadas
-  6. Referências
+Seções fixas (8):
+  1. Título e Escopo
+  2. Sumário Executivo
+  3. Principais Temas e Findings
+  4. Análise por Fonte
+  5. Convergências e Divergências
+  6. Lacunas Identificadas
+  7. Recomendações
+  8. Referências
 
 Para coleções pequenas usa "stuff" (um único prompt).
 Para coleções grandes usa Map-Reduce: extrai metadados por fonte na fase Map,
@@ -47,40 +49,48 @@ _MAP_PROMPT = (
 
 _REDUCE_PROMPT = (
     "Você recebeu extrações detalhadas de múltiplas fontes de uma coleção de pesquisa.\n"
-    "Gere um Relatório de Pesquisa Completo em Markdown com exatamente estas seis seções:\n\n"
-    "## 1. Sumário Executivo\n"
-    "(2-3 parágrafos resumindo o escopo, os achados centrais e as conclusões principais)\n\n"
-    "## 2. Principais Temas e Findings\n"
+    "Gere um Relatório de Pesquisa Completo em Markdown com exatamente estas oito seções:\n\n"
+    "## 1. Título e Escopo\n"
+    "(título descritivo do relatório + 1 parágrafo delimitando o tema, período e tipo de fontes analisadas)\n\n"
+    "## 2. Sumário Executivo\n"
+    "(2-3 parágrafos resumindo os achados centrais e as conclusões principais)\n\n"
+    "## 3. Principais Temas e Findings\n"
     "(para cada tema recorrente: título do tema + bullet points com os achados específicos)\n\n"
-    "## 3. Análise por Fonte\n"
+    "## 4. Análise por Fonte\n"
     "(para cada fonte identificada: nome/título + contribuição principal em 2-3 frases)\n\n"
-    "## 4. Convergências e Divergências\n"
+    "## 5. Convergências e Divergências\n"
     "(onde as fontes concordam vs. onde apresentam perspectivas opostas ou complementares)\n\n"
-    "## 5. Lacunas Identificadas\n"
+    "## 6. Lacunas Identificadas\n"
     "(o que está ausente, pouco desenvolvido ou que mereceria investigação adicional)\n\n"
-    "## 6. Referências\n"
+    "## 7. Recomendações\n"
+    "(3-5 ações concretas ou direções de pesquisa sugeridas com base nos achados e lacunas)\n\n"
+    "## 8. Referências\n"
     "(lista das fontes identificadas com trecho representativo de cada uma)\n\n"
-    "Seja analítico e preciso. Use bullet points nas seções 2-5. Responda em português.\n\n"
+    "Seja analítico e preciso. Use bullet points nas seções 3-7. Responda em português.\n\n"
     "Extrações:\n{extractions}\n\n"
     "Relatório:"
 )
 
 _STUFF_PROMPT = (
     "Analise os trechos abaixo e gere um Relatório de Pesquisa Completo em Markdown "
-    "com exatamente estas seis seções:\n\n"
-    "## 1. Sumário Executivo\n"
-    "(2-3 parágrafos resumindo o escopo, os achados centrais e as conclusões principais)\n\n"
-    "## 2. Principais Temas e Findings\n"
+    "com exatamente estas oito seções:\n\n"
+    "## 1. Título e Escopo\n"
+    "(título descritivo do relatório + 1 parágrafo delimitando o tema, período e tipo de fontes analisadas)\n\n"
+    "## 2. Sumário Executivo\n"
+    "(2-3 parágrafos resumindo os achados centrais e as conclusões principais)\n\n"
+    "## 3. Principais Temas e Findings\n"
     "(para cada tema recorrente: título do tema + bullet points com os achados específicos)\n\n"
-    "## 3. Análise por Fonte\n"
+    "## 4. Análise por Fonte\n"
     "(para cada fonte identificada: nome/título + contribuição principal em 2-3 frases)\n\n"
-    "## 4. Convergências e Divergências\n"
+    "## 5. Convergências e Divergências\n"
     "(onde as fontes concordam vs. onde apresentam perspectivas opostas ou complementares)\n\n"
-    "## 5. Lacunas Identificadas\n"
+    "## 6. Lacunas Identificadas\n"
     "(o que está ausente, pouco desenvolvido ou que mereceria investigação adicional)\n\n"
-    "## 6. Referências\n"
+    "## 7. Recomendações\n"
+    "(3-5 ações concretas ou direções de pesquisa sugeridas com base nos achados e lacunas)\n\n"
+    "## 8. Referências\n"
     "(lista das fontes identificadas com trecho representativo de cada uma)\n\n"
-    "Seja analítico e preciso. Use bullet points nas seções 2-5. Responda em português.\n\n"
+    "Seja analítico e preciso. Use bullet points nas seções 3-7. Responda em português.\n\n"
     "Trechos:\n{context}\n\n"
     "Relatório:"
 )

@@ -94,6 +94,7 @@ _DEFAULTS: dict = {
     "relevance_decay_days": 30,
     "semantic_chunking": False,
     "indexing_only": False,
+    "indexing_machine": "",
     "dark_mode": True,
     "reranking_enabled": True,
     "reranking_top_n": 6,
@@ -121,6 +122,7 @@ class AppConfig:
     relevance_decay_days: int = 30
     semantic_chunking: bool = False
     indexing_only: bool = False
+    indexing_machine: str = ""
     dark_mode: bool = True
     reranking_enabled: bool = True
     reranking_top_n: int = 6
@@ -333,6 +335,7 @@ def load_config() -> AppConfig:
         relevance_decay_days=int(data.get("relevance_decay_days", 30)),
         semantic_chunking=bool(data.get("semantic_chunking", False)),
         indexing_only=bool(data.get("indexing_only", False)),
+        indexing_machine=str(data.get("indexing_machine", "")),
         dark_mode=bool(data.get("dark_mode", True)),
         reranking_enabled=bool(data.get("reranking_enabled", True)),
         reranking_top_n=int(data.get("reranking_top_n", 6)),
@@ -369,6 +372,7 @@ def save_config(config: AppConfig) -> None:
         "relevance_decay_days": config.relevance_decay_days,
         "semantic_chunking": config.semantic_chunking,
         "indexing_only": config.indexing_only,
+        "indexing_machine": config.indexing_machine,
         "dark_mode": config.dark_mode,
         "reranking_enabled": config.reranking_enabled,
         "reranking_top_n": config.reranking_top_n,
