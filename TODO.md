@@ -4362,7 +4362,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   â†’ posiÃ§Ã£o 0, rank 2 â†’ posiÃ§Ã£o N-1, rank 3 â†’ posiÃ§Ã£o 1, rank 4 â†’ posiÃ§Ã£o N-2). MudanÃ§a
   pequena em `_build_context()` com impacto documentado de qualidade de resposta.
 
-- [ ] **Nota sobre janela de contexto por modelo** â€” documentar no `SetupDialog` (tooltip em
+- [x] **Nota sobre janela de contexto por modelo** â€” documentar no `SetupDialog` (tooltip em
   `qa_model`) que Qwen2.5-7B-Instruct suporta 128K tokens de contexto enquanto Llama 3.1 8B
   suporta apenas 16K. Para coleÃ§Ãµes com documentos longos ou muitos chunks recuperados, o
   Qwen2.5-7B Ã© preferÃ­vel. Adicionar verificaÃ§Ã£o em `core/rag.py`: se `qa_model` contiver

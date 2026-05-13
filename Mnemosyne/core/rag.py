@@ -836,6 +836,16 @@ def prepare_ask(
         f"{_chunk_label(doc)}{doc.page_content}" for doc in docs
     )
 
+    # Aviso de janela de contexto: Llama 3.x suporta ~16K tokens (~12K chars úteis)
+    # Estimativa: 1 token ≈ 4 chars; 12K tokens ≈ 48K chars
+    _CTX_LLAMA_WARN = 48_000
+    if "llama" in config.llm_model.lower() and len(context) > _CTX_LLAMA_WARN:
+        log.warning(
+            "contexto montado (%d chars ≈ %d tokens) próximo do limite do Llama (~16K tokens) "
+            "— considere usar Qwen2.5-7B (128K tokens) ou reduzir retriever_k.",
+            len(context), len(context) // 4,
+        )
+
     # Follow wikilinks for vault collections: include linked note excerpts
     secondary_context = ""
     if collection_type == "vault" and config.watched_dir:
