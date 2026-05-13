@@ -162,6 +162,14 @@ class SetupDialog(QDialog):
         llm_row.addWidget(llm_rec_btn)
         form.addRow("Modelo LLM:", llm_row)
 
+        # Hint dinâmico: texto informativo muda conforme o modelo selecionado
+        self._llm_hint_label = QLabel()
+        self._llm_hint_label.setWordWrap(True)
+        self._llm_hint_label.setStyleSheet("color: #7C828E; font-size: 11px; font-style: italic;")
+        form.addRow("", self._llm_hint_label)
+        self.llm_combo.currentTextChanged.connect(self._update_llm_hint)
+        self._update_llm_hint(self.llm_combo.currentText())
+
         # Modelo embedding
         self.embed_combo = QComboBox()
         for m in embed_models:
@@ -261,6 +269,28 @@ class SetupDialog(QDialog):
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
+
+    def _update_llm_hint(self, model_name: str) -> None:
+        """Atualiza o label de dica abaixo do combo de modelo LLM."""
+        name = model_name.lower()
+        if "command-r" in name or "command_r" in name:
+            hint = (
+                "Especializado em grounded generation: cita fontes com precisão "
+                "(grounding spans). Recomendado para RAG com citação. ~5 GB VRAM."
+            )
+        elif "qwen" in name:
+            ctx = "128K" if "2.5" in name else "32K"
+            hint = f"Janela de contexto {ctx} tokens — ideal para documentos longos ou muitos chunks."
+        elif "llama" in name:
+            hint = "Janela de contexto 16K tokens — evite coleções com documentos muito longos."
+        elif "phi" in name:
+            hint = "Modelo compacto (~3 GB VRAM) — boa capacidade para hardware limitado."
+        elif "gemma" in name:
+            hint = "Modelo compacto — adequado para GPU com pouca VRAM (ex: MX150, 2 GB)."
+        else:
+            hint = ""
+        self._llm_hint_label.setText(hint)
+        self._llm_hint_label.setVisible(bool(hint))
 
     def _use_logos_llm(self) -> None:
         if not self._logos_llm:

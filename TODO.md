@@ -4348,14 +4348,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > ordering de chunks) e para o KOSMOS (modelos mais capazes dentro da mesma limitaÃ§Ã£o de VRAM).
 
 #### Mnemosyne
-- [ ] **Command R 7B como opÃ§Ã£o de modelo para RAG** â€” o Command R 7B (Cohere, via `ollama pull
+- [x] **Command R 7B como opção de modelo para RAG** â€” o Command R 7B (Cohere, via `ollama pull
   command-r`) Ã© o Ãºnico modelo sub-10B com treinamento explÃ­cito para grounded generation com
   citaÃ§Ã£o de fontes (grounding spans). Adicionar como opÃ§Ã£o de `qa_model` na `SetupDialog` do
   Mnemosyne com tooltip explicando a especializaÃ§Ã£o. Consumo: ~5 GB VRAM Q4_K_M, cabe na RX 6600.
   Para respostas que incluam citaÃ§Ãµes precisas ("conforme [fonte], [trecho]"), esse modelo
   supera Llama/Qwen no critÃ©rio de fidelidade de atribuiÃ§Ã£o.
 
-- [ ] **ReordenaÃ§Ã£o de chunks para mitigar "lost in the middle"** â€” todos os modelos LLM exibem
+- [x] **Reordenação de chunks para mitigar "lost in the middle"** â€” todos os modelos LLM exibem
   viÃ©s posicional em multi-document RAG: chunks no meio do contexto sÃ£o menos utilizados que
   os do inÃ­cio e do fim. Em `core/rag.py`, ao montar o contexto final, reordenar os N chunks
   recuperados colocando os de maior score RRF alternadamente no inÃ­cio e no final (ex: rank 1

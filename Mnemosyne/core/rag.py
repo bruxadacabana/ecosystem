@@ -614,6 +614,28 @@ def _contextual_compress(
         return docs  # fallback total se o LLM não estiver disponível
 
 
+def _reorder_lost_in_middle(docs: list[Document]) -> list[Document]:
+    """
+    Mitiga 'lost in the middle': LLMs tendem a ignorar chunks no centro do contexto.
+    Reordena intercalando início/fim: rank 1→pos 0, rank 2→pos N-1, rank 3→pos 1, ...
+    Resultado: os chunks mais relevantes ficam nas extremidades do contexto.
+    Não altera listas com ≤ 2 documentos.
+    """
+    n = len(docs)
+    if n <= 2:
+        return docs
+    result: list[Document | None] = [None] * n
+    left, right = 0, n - 1
+    for i, doc in enumerate(docs):
+        if i % 2 == 0:
+            result[left] = doc
+            left += 1
+        else:
+            result[right] = doc
+            right -= 1
+    return [d for d in result if d is not None]
+
+
 def _chunk_label(doc: Document) -> str:
     """
     Monta um rótulo de atribuição para o chunk: 'Autor, Ano — Tipo'.
@@ -807,6 +829,8 @@ def prepare_ask(
     elif iterative_retrieval:
         # Retrieval iterativo expande o pool além de candidate_k — limitar ao configurado
         docs = docs[:config.retriever_k]
+
+    docs = _reorder_lost_in_middle(docs)
 
     context = "\n\n---\n".join(
         f"{_chunk_label(doc)}{doc.page_content}" for doc in docs
