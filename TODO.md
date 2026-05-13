@@ -4328,14 +4328,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   o mesmo veículo/autor em busca de contexto. Query SQL: `WHERE url LIKE :domain_pattern
   AND ABS(julianday(archived_at) - julianday(:doc_date)) < 90 LIMIT 5`.
 
-- [ ] **Tag co-ocorrência para sugestão** (`services/archiver.py`, `routers/search.py`).
+- [x] **Tag co-ocorrência para sugestão** (`services/archiver.py`, `routers/search.py`).
   Ao exibir filtros de tag nos resultados de busca, ordenar tags relacionadas por co-ocorrência
   com a tag selecionada: `SELECT tag_b, COUNT(*) FROM tag_pairs WHERE tag_a = :active GROUP
   BY tag_b ORDER BY COUNT(*) DESC`. Popular tabela `tag_pairs` ao salvar/atualizar tags de
   um documento. Tags que co-ocorrem frequentemente são sugeridas automaticamente ao criar
   novos highlights ou arquivar documentos.
 
-- [ ] **Degradação graciosa quando Ollama offline** (`services/local_search.py`,
+- [x] **Degradação graciosa quando Ollama offline** (`services/local_search.py`,
   `routers/search.py`). Qualquer feature que depende de Ollama (reranking LLM, síntese
   Map-Reduce, HyDE) deve ter um estado funcional alternativo quando `http://localhost:11434`
   não responde. Padrão: verificar Ollama no startup, setar flag `_ollama_available` global.

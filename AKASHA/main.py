@@ -28,7 +28,7 @@ from routers import papers as papers_router
 from routers import downloads as downloads_router
 from routers import highlights as highlights_router
 from routers import lenses as lenses_router
-from services.local_search import index_local_files, init_vec_index, init_spell_checker
+from services.local_search import index_local_files, init_vec_index, init_spell_checker, check_ollama_available
 from services.crawler import crawl_pending_sites
 
 _log = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ _log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 async def _monitor_crawler() -> None:
-    """Acorda a cada hora: crawla sites pendentes e limpa search_cache > 24h."""
+    """Acorda a cada hora: crawla sites pendentes, limpa search_cache e reverifica Ollama."""
     while True:
         await asyncio.sleep(3600)
         try:
@@ -56,6 +56,10 @@ async def _monitor_crawler() -> None:
                 await db.commit()
         except Exception as exc:
             _log.warning("monitor: erro ao limpar search_cache: %s", exc)
+        try:
+            await check_ollama_available()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +74,7 @@ async def lifespan(app: FastAPI):
     await index_local_files()
     await init_vec_index()
     init_spell_checker()
+    await check_ollama_available()
     asyncio.get_running_loop().create_task(_monitor_crawler())
     yield
     # Shutdown — nada a liberar por enquanto

@@ -281,6 +281,17 @@ a:hover { opacity: 0.75; }
   border-color: #c0392b;
 }
 
+.ollama-badge {
+  font-size:    11px;
+  color:        #c0392b;
+  border:       1px solid #c0392b;
+  border-radius: var(--radius);
+  padding:      2px 6px;
+  white-space:  nowrap;
+  opacity:      0.8;
+  flex-shrink:  0;
+}
+
 /* ── Área principal ─────────────────────────────────────── */
 
 .main {

@@ -12,7 +12,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -211,6 +211,15 @@ CREATE TABLE IF NOT EXISTS archive_dois (
     arxiv_id  TEXT,
     path      TEXT    NOT NULL,
     url       TEXT    NOT NULL
+);
+"""
+
+_CREATE_TAG_PAIRS = """
+CREATE TABLE IF NOT EXISTS tag_pairs (
+    tag_a TEXT NOT NULL,
+    tag_b TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (tag_a, tag_b)
 );
 """
 
@@ -627,6 +636,9 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
 
     if from_version < 25:
         await db.execute(_CREATE_ARCHIVE_DOIS)
+
+    if from_version < 26:
+        await db.execute(_CREATE_TAG_PAIRS)
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -1088,6 +1100,48 @@ async def store_archive_doi(doi: str, arxiv_id: str | None, path: str, url: str)
             await db.commit()
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Tag co-occurrence helpers
+# ---------------------------------------------------------------------------
+
+async def store_tag_pairs(tags: list[str]) -> None:
+    """
+    Registra todas as co-ocorrências entre as tags de um documento.
+    Armazena (a, b) e (b, a) para que qualquer tag sirva como chave de busca.
+    """
+    if len(tags) < 2:
+        return
+    pairs: list[tuple[str, str]] = []
+    for i, a in enumerate(tags):
+        for b in tags[i + 1:]:
+            pairs.append((a, b))
+            pairs.append((b, a))
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            for tag_a, tag_b in pairs:
+                await db.execute(
+                    """INSERT INTO tag_pairs (tag_a, tag_b, count) VALUES (?, ?, 1)
+                       ON CONFLICT(tag_a, tag_b) DO UPDATE SET count = count + 1""",
+                    (tag_a, tag_b),
+                )
+            await db.commit()
+    except Exception:
+        pass
+
+
+async def get_suggested_tags(active_tag: str, limit: int = 8) -> list[str]:
+    """Retorna tags que mais co-ocorrem com active_tag, ordenadas por frequência."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                "SELECT tag_b FROM tag_pairs WHERE tag_a = ? ORDER BY count DESC LIMIT ?",
+                (active_tag, limit),
+            )).fetchall()
+        return [row[0] for row in rows]
+    except Exception:
+        return []
 
 
 # ---------------------------------------------------------------------------

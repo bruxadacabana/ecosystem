@@ -111,6 +111,34 @@ except ImportError:
     _SYMSPELL_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
+# Estado de disponibilidade do Ollama
+# Verificado no startup e atualizado periodicamente pelo monitor.
+# Qualquer feature LLM (HyDE, síntese, reranking LLM) deve checar essa flag
+# antes de tentar se conectar — nunca bloquear o path FTS5 por falta de LLM.
+# ---------------------------------------------------------------------------
+
+_ollama_available: bool = False
+
+
+async def check_ollama_available() -> bool:
+    """Tenta conectar ao Ollama local. Atualiza e retorna o flag global."""
+    global _ollama_available
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get("http://localhost:11434/api/tags")
+            _ollama_available = r.status_code == 200
+    except Exception:
+        _ollama_available = False
+    return _ollama_available
+
+
+def get_ollama_status() -> bool:
+    """Retorna o último estado conhecido do Ollama (sem fazer nova requisição)."""
+    return _ollama_available
+
+
+# ---------------------------------------------------------------------------
 # Detecção de idioma + stemming (langdetect + NLTK SnowballStemmer)
 # Ambos são opcionais — fallback silencioso se não estiverem instalados.
 # ---------------------------------------------------------------------------

@@ -537,6 +537,11 @@ async def archive_url(
         import database as _db
         await _db.store_archive_doi(stored_doi, stored_arxiv, str(dest_path), url)
 
+    # Persiste co-ocorrência de tags para sugestão futura
+    if len(tags) >= 2:
+        import database as _db
+        asyncio.create_task(_db.store_tag_pairs(tags))
+
     # Fire-and-forget: extrai DOIs e armazena em doc_citations em background
     asyncio.create_task(_store_dois_background(str(dest_path), page.content_md))
 

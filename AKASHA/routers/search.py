@@ -18,7 +18,7 @@ import config
 import database
 from services.archiver import archive_url, fetch_and_extract, NearDuplicateError, DoiDuplicateError
 from services.web_search import SearchResult, search_web
-from services.local_search import search_local, correct_query
+from services.local_search import search_local, correct_query, get_ollama_status
 from services.crawler import search_sites, index_visited_page
 from services.paper_search import PaperResult, search_papers
 from database import (
@@ -28,6 +28,7 @@ from database import (
     log_activity,
     record_search_query,
     get_query_suggestions,
+    get_suggested_tags,
 )
 
 router = APIRouter()
@@ -234,6 +235,7 @@ async def search(
             "active_lens":       active_lens,
             "lens_id":           lens_id,
             "active_tab":        "search",
+            "ollama_available":  get_ollama_status(),
         },
     )
 
@@ -247,6 +249,14 @@ async def search_suggest(request: Request, q: str = "") -> HTMLResponse:
         "_search_suggest.html",
         {"suggestions": suggestions, "q": q},
     )
+
+
+@router.get("/tags/suggest")
+async def tags_suggest(tag: str = "") -> list[str]:
+    """Retorna tags que co-ocorrem com `tag`, ordenadas por frequência. Usado por UIs de input."""
+    if not tag.strip():
+        return []
+    return await get_suggested_tags(tag.strip())
 
 
 @router.get("/search/json")
