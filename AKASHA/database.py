@@ -253,7 +253,6 @@ CREATE TABLE IF NOT EXISTS highlights (
 
 _CREATE_HIGHLIGHTS_FTS = """
 CREATE VIRTUAL TABLE IF NOT EXISTS highlights_fts USING fts5(
-    rowid  UNINDEXED,
     exact,
     note,
     tokenize = 'unicode61 remove_diacritics 2'
@@ -584,7 +583,6 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         """)
         await db.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS highlights_fts USING fts5(
-                rowid  UNINDEXED,
                 exact,
                 note,
                 tokenize = 'unicode61 remove_diacritics 2'
