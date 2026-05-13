@@ -4846,7 +4846,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > (compartilhadas) de paths (locais por mÃ¡quina).
 
 #### HUB
-- [ ] **Dividir ecosystem.json em duas camadas: compartilhada e local por mÃ¡quina**
+- [x] **Dividir ecosystem.json em duas camadas: compartilhada e local por mÃ¡quina**
   Separar o `ecosystem.json` atual em dois arquivos:
   - `ecosystem.json` â€” preferÃªncias e flags (sem paths absolutos); sincronizado via Proton Drive entre mÃ¡quinas.
   - `ecosystem.local.json` â€” paths absolutos especÃ­ficos da mÃ¡quina (ex: `kosmos_archive`, `hermes_output`, `mnemosyne_watched`); **nÃ£o sincronizado**, fica sÃ³ na mÃ¡quina local.
@@ -4854,7 +4854,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Adicionar `ecosystem.local.json` ao `.gitignore` e ao `.stignore` do Syncthing.
   Arquivo `.local.json` de exemplo (com paths comentados) pode ser versionado para documentaÃ§Ã£o.
 
-- [ ] **Migrar sync de SQLite (banco do HUB e bancos dos apps) para Syncthing**
+- [x] **Migrar sync de SQLite (banco do HUB e bancos dos apps) para Syncthing**
   O Proton Drive conflita com SQLite (lock de arquivo / WAL). Usar Syncthing com `.stignore`
   excluindo `*.db`, `*.db-wal`, `*.db-shm`. Syncthing cuida de Markdown, JSON de config,
   pesquisas.md, TODO.md e outros arquivos de texto. Bancos ficam locais por mÃ¡quina.

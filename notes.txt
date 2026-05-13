@@ -9,5 +9,6 @@ vamos prosseguir com a implementação de ### Auditoria pesquisas.md â†’ it
 
 depois:
 
+- leia tudo que ainda não está marcado como completo no TODO e sugira os próximos passos
 
 

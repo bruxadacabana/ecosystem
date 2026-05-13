@@ -11,44 +11,66 @@ from .collections import CollectionConfig, CollectionType, sync_ecosystem_collec
 from .errors import ConfigError
 
 
+def _read_ecosystem_merged() -> dict:
+    """Lê ecosystem.json mesclado com ecosystem.local.json.
+
+    ecosystem.local.json (paths absolutos por máquina) tem precedência sobre
+    ecosystem.json (preferências compartilhadas). Deep merge em objetos aninhados.
+    Retorna {} se nenhum arquivo for encontrado.
+    """
+    import os as _os
+
+    appdata = _os.environ.get("APPDATA", "")
+    eco_dir_candidates = [
+        Path(appdata) / "ecosystem",
+        Path.home() / ".local" / "share" / "ecosystem",
+    ]
+
+    def _read_one(path: Path) -> dict:
+        try:
+            return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except Exception:
+            return {}
+
+    def _deep_merge(base: dict, overlay: dict) -> dict:
+        result = dict(base)
+        for k, v in overlay.items():
+            if isinstance(v, dict) and isinstance(result.get(k), dict):
+                result[k] = _deep_merge(result[k], v)
+            else:
+                result[k] = v
+        return result
+
+    for eco_dir in eco_dir_candidates:
+        base = _read_one(eco_dir / "ecosystem.json")
+        local = _read_one(eco_dir / "ecosystem.local.json")
+        if base or local:
+            return _deep_merge(base, local)
+    return {}
+
+
 def _read_ecosystem_primary_paths() -> tuple[str, str, str]:
-    """Retorna (watched_dir, vault_dir, chroma_dir) da seção mnemosyne do ecosystem.json."""
+    """Retorna (watched_dir, vault_dir, chroma_dir) da seção mnemosyne do ecosystem mesclado."""
     try:
-        import os as _os
-        appdata = _os.environ.get("APPDATA", "")
-        candidates = [
-            Path(appdata) / "ecosystem" / "ecosystem.json",
-            Path.home() / ".local" / "share" / "ecosystem" / "ecosystem.json",
-        ]
-        for eco_path in candidates:
-            if eco_path.exists():
-                data = json.loads(eco_path.read_text(encoding="utf-8"))
-                m = data.get("mnemosyne", {})
-                return (
-                    m.get("watched_dir", ""),
-                    m.get("vault_dir", ""),
-                    m.get("chroma_dir", ""),
-                )
+        data = _read_ecosystem_merged()
+        m = data.get("mnemosyne", {})
+        return (
+            m.get("watched_dir", ""),
+            m.get("vault_dir", ""),
+            m.get("chroma_dir", ""),
+        )
     except Exception:
         pass
     return ("", "", "")
 
 
 def _resolve_config_path() -> Path:
-    """Retorna {mnemosyne.config_path}/settings.json se definido no ecosystem.json."""
+    """Retorna {mnemosyne.config_path}/settings.json se definido no ecosystem mesclado."""
     try:
-        import os as _os
-        appdata = _os.environ.get("APPDATA", "")
-        candidates = [
-            Path(appdata) / "ecosystem" / "ecosystem.json",
-            Path.home() / ".local" / "share" / "ecosystem" / "ecosystem.json",
-        ]
-        for eco_path in candidates:
-            if eco_path.exists():
-                data = json.loads(eco_path.read_text(encoding="utf-8"))
-                config_dir = data.get("mnemosyne", {}).get("config_path", "")
-                if config_dir:
-                    return Path(config_dir) / "settings.json"
+        data = _read_ecosystem_merged()
+        config_dir = data.get("mnemosyne", {}).get("config_path", "")
+        if config_dir:
+            return Path(config_dir) / "settings.json"
     except Exception:
         pass
     return Path(__file__).parent.parent / "config.json"

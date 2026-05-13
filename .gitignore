@@ -52,6 +52,7 @@ Mnemosyne/logs/
 # Configurações locais de máquina (modelo LLM, caminhos absolutos — variam por computador)
 Mnemosyne/config.json
 Hermes/.prefs.json
+ecosystem.local.json
 
 # Bancos de dados de runtime
 AKASHA/akasha.db

@@ -1,0 +1,31 @@
+// Syncthing ignore file — ecossistema
+// Coloque uma cópia deste arquivo na raiz da pasta sincronizada pelo Syncthing.
+
+// Bancos de dados SQLite — ficam locais por máquina (lock de arquivo / WAL incompatíveis com sync)
+*.db
+*.db-wal
+*.db-shm
+
+// Config de paths por máquina — nunca sincronizado
+ecosystem.local.json
+
+// Ambientes virtuais e artefatos de build — grandes e regeneráveis
+.venv/
+node_modules/
+target/
+dist/
+build/
+__pycache__/
+*.pyc
+
+// Dados gerados em runtime — não sincronizados
+KOSMOS/data/
+Mnemosyne/data/
+OGMA/data/
+AETHER/data/
+Hermes/data/
+transcriber/data/
+
+// Logs
+*.log
+Mnemosyne/logs/

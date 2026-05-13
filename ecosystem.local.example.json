@@ -1,0 +1,22 @@
+{
+  "_comment": "Copie este arquivo para %APPDATA%\\ecosystem\\ecosystem.local.json (Windows) ou ~/.local/share/ecosystem/ecosystem.local.json (Linux) e preencha os paths desta máquina. Este arquivo NÃO é sincronizado entre máquinas.",
+  "akasha": {
+    "data_path": "C:/Users/USUARIO/AppData/Roaming/ecosystem/akasha",
+    "archive_path": "C:/Users/USUARIO/Documents/archive"
+  },
+  "mnemosyne": {
+    "watched_dir": "C:/Users/USUARIO/Documents/library",
+    "vault_dir": "C:/Users/USUARIO/Documents/vault",
+    "chroma_dir": "C:/Users/USUARIO/AppData/Roaming/ecosystem/mnemosyne/chroma",
+    "config_path": "C:/Users/USUARIO/AppData/Roaming/ecosystem/mnemosyne"
+  },
+  "kosmos": {
+    "archive_path": "C:/Users/USUARIO/Documents/kosmos"
+  },
+  "hermes": {
+    "output_dir": "C:/Users/USUARIO/Documents/hermes"
+  },
+  "aether": {
+    "vault_path": "C:/Users/USUARIO/Documents/aether"
+  }
+}
