@@ -34,6 +34,7 @@ if %errorlevel% neq 0 (
     set /a ERROS+=1
 ) else (
     cd /d "%ROOT%\AKASHA"
+    set UV_LINK_MODE=copy
     uv sync
     if %errorlevel% neq 0 (
         echo   ERRO: uv sync falhou
