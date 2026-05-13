@@ -162,9 +162,11 @@ class FetchedPage:
     title: str
     content_md: str
     word_count: int
-    author:   str = field(default="")
-    language: str = field(default="")
-    pub_date: str = field(default="")  # data de publicação (trafilatura metadata.date)
+    author:      str = field(default="")
+    language:    str = field(default="")
+    pub_date:    str = field(default="")  # data de publicação (trafilatura metadata.date)
+    description: str = field(default="")  # meta description da página
+    sitename:    str = field(default="")  # nome do site (trafilatura metadata.sitename)
 
 
 @dataclass
@@ -216,19 +218,23 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
                 continue
 
         # 2. Extrai metadados e conteúdo do HTML obtido (se houver)
-        title:    str = _url_fallback_title(url)
-        author:   str = ""
-        language: str = ""
-        content:  str = ""
+        title:       str = _url_fallback_title(url)
+        author:      str = ""
+        language:    str = ""
+        content:     str = ""
+        pub_date:    str = ""
+        description: str = ""
+        sitename:    str = ""
 
-        pub_date: str = ""
         if html:
-            metadata  = trafilatura.extract_metadata(html, default_url=url)
-            title     = (metadata and metadata.title)                    or title
-            author    = (metadata and metadata.author)                   or ""
-            language  = (metadata and getattr(metadata, "language", "")) or ""
-            pub_date  = (metadata and getattr(metadata, "date", ""))     or ""
-            content   = _cascade_extract(html, url, output_format="markdown")
+            metadata    = trafilatura.extract_metadata(html, default_url=url)
+            title       = (metadata and metadata.title)                        or title
+            author      = (metadata and metadata.author)                       or ""
+            language    = (metadata and getattr(metadata, "language", ""))     or ""
+            pub_date    = (metadata and getattr(metadata, "date", ""))         or ""
+            description = (metadata and getattr(metadata, "description", "")) or ""
+            sitename    = (metadata and getattr(metadata, "sitename", ""))     or ""
+            content     = _cascade_extract(html, url, output_format="markdown")
 
         # 3. Jina Reader como fallback — acionado quando:
         #    (a) todos os proxies falharam (content == "") OU
@@ -270,6 +276,8 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         author=author,
         language=language,
         pub_date=pub_date,
+        description=description,
+        sitename=sitename,
     )
 
 
@@ -382,10 +390,12 @@ async def archive_url(
         f'---\n'
         f'title: "{_yaml_str(page.title)}"\n'
         f'source: "{_yaml_str(domain)}"\n'
+        f'sitename: "{_yaml_str(page.sitename)}"\n'
         f'source_url: {url}\n'
         f'date: {pub_date}\n'
         f'archived_at: {archived_at}\n'
         f'author: "{_yaml_str(page.author)}"\n'
+        f'description: "{_yaml_str(page.description)}"\n'
         f'language: {page.language}\n'
         f'word_count: {page.word_count}\n'
         f'{type_line}'
