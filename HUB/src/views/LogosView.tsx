@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as cmd from '../lib/tauri'
 import { listModels } from '../lib/ollama'
-import type { LogosStatus, OllamaModelInfo, OllamaModelEntry } from '../types'
+import type { LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment } from '../types'
 
 const PROFILES = [
   { id: 'normal',  label: 'Normal',  tip: 'Prioridades padrão de cada app'                       },
@@ -33,9 +33,11 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
   const [allModels,    setAllModels]    = useState<OllamaModelEntry[]>([])
   const [silencing,    setSilencing]    = useState(false)
   const [unloading,    setUnloading]    = useState<string | null>(null)
-  const [stopping,     setStopping]     = useState(false)
-  const [ollamaOnline, setOllamaOnline] = useState<boolean | null>(null)
-  const [launchStatus, setLaunchStatus] = useState<'idle' | 'starting' | 'error'>('idle')
+  const [stopping,       setStopping]       = useState(false)
+  const [ollamaOnline,   setOllamaOnline]   = useState<boolean | null>(null)
+  const [launchStatus,   setLaunchStatus]   = useState<'idle' | 'starting' | 'error'>('idle')
+  const [assignments,    setAssignments]    = useState<ModelAssignment[]>([])
+  const [editingSlot,    setEditingSlot]    = useState<string | null>(null) // "app_type" key
 
   const fetchStatus = useCallback(() => {
     cmd.logosGetStatus().then(r => {
@@ -51,6 +53,9 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
     })
     cmd.logosListAllModels().then(r => {
       if (r.ok) setAllModels(r.data)
+    })
+    cmd.logosGetModelAssignments().then(r => {
+      if (r.ok) setAssignments(r.data)
     })
   }, [])
 
@@ -93,6 +98,12 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
       setLaunchStatus('error')
       setTimeout(() => setLaunchStatus('idle'), 3_000)
     }
+  }
+
+  async function handleSetModel(app: string, modelType: string, model: string) {
+    await cmd.logosSetModelAssignment(app, modelType, model)
+    setEditingSlot(null)
+    cmd.logosGetModelAssignments().then(r => { if (r.ok) setAssignments(r.data) })
   }
 
   async function handleStopOllama() {
@@ -302,6 +313,127 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
             : 'RX 6600 · 8 GB VRAM · HSA_OVERRIDE_GFX_VERSION=10.3.0'}
         </Note>
       </section>
+
+      {/* ── Modelos por app ──────────────────────────── */}
+      {assignments.length > 0 && (
+        <section>
+          <Label>Modelos por app</Label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {assignments.map(a => {
+              const slotKey = `${a.app}_${a.model_type}`
+              const isEditing = editingSlot === slotKey
+              const fitColor = a.fits_hardware
+                ? 'var(--accent-green)'
+                : 'var(--ribbon)'
+              const fitTitle = a.fits_hardware
+                ? `Estimado: ~${a.vram_required_mb} MB · Disponível: ${a.vram_budget_mb} MB`
+                : `Não cabe: precisa ~${a.vram_required_mb} MB · Disponível: ${a.vram_budget_mb} MB`
+              return (
+                <div
+                  key={slotKey}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                    padding: '8px 12px',
+                    border: '1px solid var(--rule)',
+                    borderRadius: 'var(--radius)',
+                  }}
+                >
+                  {/* Linha principal */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', minWidth: 160 }}>
+                      {a.label}
+                    </span>
+                    {!isEditing ? (
+                      <>
+                        <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink)' }}>
+                          {a.current_model}
+                        </span>
+                        {!a.is_custom && (
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent-green)', border: '1px solid var(--accent-green)40', borderRadius: 10, padding: '1px 6px' }}>
+                            recomendado
+                          </span>
+                        )}
+                        {/* Indicador de compatibilidade */}
+                        <span
+                          title={fitTitle}
+                          style={{
+                            width: 7, height: 7, borderRadius: '50%',
+                            background: fitColor,
+                            flexShrink: 0,
+                            cursor: 'help',
+                          }}
+                        />
+                        <button
+                          onClick={() => setEditingSlot(slotKey)}
+                          style={{
+                            fontFamily: 'var(--font-mono)', fontSize: 10,
+                            padding: '2px 8px', background: 'transparent',
+                            color: 'var(--ink-ghost)', border: '1px solid var(--rule)',
+                            borderRadius: 'var(--radius)', cursor: 'pointer',
+                          }}
+                        >
+                          editar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <select
+                          defaultValue={a.current_model}
+                          onChange={e => handleSetModel(a.app, a.model_type, e.target.value)}
+                          style={{
+                            flex: 1, fontFamily: 'var(--font-mono)', fontSize: 11,
+                            background: 'var(--paper)', color: 'var(--ink)',
+                            border: '1px solid var(--accent)', borderRadius: 'var(--radius)',
+                            padding: '3px 6px', cursor: 'pointer',
+                          }}
+                        >
+                          {/* Recomendado primeiro */}
+                          <option value={a.recommended_model}>
+                            {a.recommended_model} (recomendado)
+                          </option>
+                          {allModels
+                            .filter(m => m.name !== a.recommended_model)
+                            .map(m => (
+                              <option key={m.name} value={m.name}>{m.name}</option>
+                            ))}
+                        </select>
+                        <button
+                          onClick={() => setEditingSlot(null)}
+                          style={{
+                            fontFamily: 'var(--font-mono)', fontSize: 10,
+                            padding: '2px 8px', background: 'transparent',
+                            color: 'var(--ink-ghost)', border: '1px solid var(--rule)',
+                            borderRadius: 'var(--radius)', cursor: 'pointer',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {/* Botão "usar recomendado" quando customizado */}
+                  {a.is_custom && !isEditing && (
+                    <button
+                      onClick={() => handleSetModel(a.app, a.model_type, a.recommended_model)}
+                      style={{
+                        fontFamily: 'var(--font-mono)', fontSize: 9,
+                        padding: '2px 8px', background: 'transparent',
+                        color: 'var(--ink-ghost)', border: '1px solid var(--rule)',
+                        borderRadius: 'var(--radius)', cursor: 'pointer',
+                        alignSelf: 'flex-start',
+                      }}
+                    >
+                      ↩ usar recomendado ({a.recommended_model})
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {/* ── Modelos Ollama ────────────────────────────── */}
       <section>

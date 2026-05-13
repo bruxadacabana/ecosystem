@@ -4997,3 +4997,20 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **LogosView.tsx: lista de todos os modelos com bolinha colorida** â€” substituir a seÃ§Ã£o "Modelos na memÃ³ria" por "Modelos Ollama" que usa `logosListAllModels()` (polling a cada 4s). Cada linha: `â—` colorido (verde `var(--accent-green)` se "active", amarelo `var(--accent)` se "available") + nome + tamanho em disco + VRAM usada se "active". BotÃ£o "descarregar" mantido para modelos "active".
 - [ ] **LogosView.tsx: botÃ£o "Parar Ollama"** â€” visÃ­vel apenas quando `ollamaOnline === true`. Clique chama `stopOllama()`, aguarda 1s e atualiza `checkOllama()`. Colocar na seÃ§Ã£o AÃ§Ãµes junto ao "Iniciar Ollama".
 
+
+### HUB LOGOS: configuração de modelos por app com recomendação de hardware | 2026-05-13
+> Contexto: o LOGOS já detecta o hardware e define perfis de modelo padrão (ex: qwen2.5:7b para Mnemosyne no PC principal). Mas não há UI para a usuária sobrescrever essas escolhas diretamente no LOGOS, nem indicador de "compatibilidade" entre o modelo escolhido e o hardware disponível. A usuária quer poder ver e editar os modelos de cada app no LOGOS, com o recomendado como padrão, e o LOGOS deve calcular se o modelo escolhido cabe no hardware atual.
+
+#### HUB — Backend Rust
+- [x] **Struct `ModelAssignment` em `logos.rs`** — campos: `app: String`, `model: String`, `model_type: String` ("llm" | "embed"), `recommended: String` (modelo recomendado pelo perfil), `is_custom: bool` (true se a usuária substituiu o recomendado), `fits_hardware: bool` (calculado), `vram_required_mb: u64` (estimado), `vram_available_mb: u64` (do hardware atual). Serializado para o frontend.
+- [x] **Endpoint `GET /logos/model-assignments` no servidor Axum** — retorna `Vec<ModelAssignment>` com todas as atribuições atuais (LLM e embedding de cada app). Calcula `fits_hardware` comparando o tamanho em disco do modelo (de `/api/tags`) com a VRAM disponível (de `vram_usage()`), usando a heurística: VRAM_necessária ≈ size_disk_mb × 0.6 para Q4 (índice de compressão típico). `fits_hardware = vram_required_mb <= vram_available_mb - 500` (500 MB de buffer).
+- [x] **Endpoint `POST /logos/model-assignments` no servidor Axum** — recebe `{ app, model_type, model }` e sobrescreve a atribuição para aquele app. Persiste em `ecosystem.json` na seção `logos.model_overrides: { [app_model_type]: model }` (ex: `mnemosyne_llm`, `kosmos_embed`). Se o modelo recebido for igual ao recomendado, remove o override (volta ao padrão).
+- [x] **Tauri commands `logos_get_model_assignments` e `logos_set_model_assignment`** — wrappers IPC que chamam os endpoints do servidor Axum (ou acessam o estado interno diretamente, sem HTTP).
+- [x] **Registrar comandos em `lib.rs`**.
+
+#### HUB — Frontend TypeScript
+- [x] **Interface `ModelAssignment` em `types/index.ts`** — espelha o struct Rust.
+- [x] **Wrappers `logosGetModelAssignments` e `logosSetModelAssignment` em `lib/tauri.ts`**.
+- [x] **Seção "Modelos por app" na `LogosView.tsx`** — lista cada app (Mnemosyne LLM, Mnemosyne Embedding, KOSMOS LLM, KOSMOS Embedding) com: nome do modelo atual + badge "recomendado" se `!is_custom`; indicador de compatibilidade (✓ verde se `fits_hardware`, ✗ vermelho com tooltip de VRAM necessária vs disponível se não couber); botão "editar" que abre um `<select>` com todos os modelos instalados (de `logosListAllModels()`); botão "usar recomendado" visível apenas quando `is_custom === true`.
+
+

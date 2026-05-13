@@ -167,6 +167,24 @@ export interface OllamaModelEntry {
   size_disk_mb:  number
 }
 
+export interface ModelAssignment {
+  /** "mnemosyne" | "kosmos" | "embed" */
+  app:               string
+  /** "llm" | "embed" */
+  model_type:        string
+  /** Label legível para a UI */
+  label:             string
+  current_model:     string
+  recommended_model: string
+  /** True se a usuária sobrescreveu o recomendado */
+  is_custom:         boolean
+  /** VRAM estimada em MB (0 se modelo não instalado) */
+  vram_required_mb:  number
+  /** VRAM/RAM disponível no hardware atual em MB */
+  vram_budget_mb:    number
+  fits_hardware:     boolean
+}
+
 // ----------------------------------------------------------
 //  HUB Navigation
 // ----------------------------------------------------------

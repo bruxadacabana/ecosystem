@@ -40,6 +40,7 @@ use axum::{
 };
 use reqwest::Client;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use sysinfo::{ProcessesToUpdate, System};
@@ -118,6 +119,39 @@ pub struct ModelProfile {
     pub llm_mnemosyne: &'static str,
     pub llm_kosmos:    &'static str,
     pub embed:         &'static str,
+}
+
+/// Atribuição de modelo para um app+tipo específico.
+/// Enviada ao frontend para exibir configuração e indicador de compatibilidade.
+#[derive(Serialize, Clone)]
+pub struct ModelAssignment {
+    /// Identificador do app: "mnemosyne", "kosmos", "embed"
+    pub app: String,
+    /// "llm" | "embed"
+    pub model_type: String,
+    /// Label legível: "Mnemosyne — LLM", "KOSMOS — LLM", "Embedding (todos os apps)"
+    pub label: String,
+    /// Modelo atualmente atribuído (override se `is_custom`, senão `recommended_model`)
+    pub current_model: String,
+    /// Modelo recomendado pelo perfil de hardware
+    pub recommended_model: String,
+    /// True se a usuária sobrescreveu o recomendado
+    pub is_custom: bool,
+    /// VRAM estimada em MB (size_disco × 0.65 para modelos Q4); 0 se não instalado
+    pub vram_required_mb: u64,
+    /// VRAM ou RAM disponível para inferência no hardware atual (MB)
+    pub vram_budget_mb: u64,
+    /// True se `vram_required_mb <= vram_budget_mb`
+    pub fits_hardware: bool,
+}
+
+/// Retorna o orçamento de VRAM/RAM disponível para inferência por hardware (MB).
+fn vram_budget_for_profile(profile: HardwareProfile) -> u64 {
+    match profile {
+        HardwareProfile::MainPc  => 7_500,  // RX 6600 8 GB, buffer de 500 MB
+        HardwareProfile::Laptop  => 1_800,  // MX150 2 GB, buffer de 200 MB
+        HardwareProfile::WorkPc  => 4_000,  // CPU-only, ~4 GB RAM para inferência
+    }
 }
 
 /// Detecta o perfil de hardware em runtime via fingerprint de GPU.
@@ -199,6 +233,10 @@ struct Inner {
     /// PID do processo Ollama detectado em runtime.
     /// None se o Ollama ainda não foi encontrado ou reiniciou.
     ollama_pid: Mutex<Option<u32>>,
+    /// Substituições de modelo definidas pela usuária.
+    /// Chave: "mnemosyne_llm", "kosmos_llm", "embed". Valor: nome do modelo.
+    /// Vazio = usar recomendado do perfil de hardware.
+    model_overrides: Mutex<HashMap<String, String>>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -237,6 +275,7 @@ impl LogosState {
             on_battery: Mutex::new(is_on_battery()),
             preempted_count: Mutex::new(0),
             ollama_pid: Mutex::new(None),
+            model_overrides: Mutex::new(HashMap::new()),
         }))
     }
 }
@@ -969,6 +1008,85 @@ pub async fn do_list_all_models(s: &LogosState) -> Vec<OllamaModelEntry> {
         b.status.cmp(&a.status).then(a.name.cmp(&b.name))
     });
     entries
+}
+
+/// Retorna as atribuições de modelo atuais para cada app+tipo.
+/// Combina recomendações do perfil de hardware com overrides da usuária.
+/// Calcula compatibilidade com o hardware disponível.
+pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
+    let profile = s.0.hardware_profile.model_profile();
+    let budget  = vram_budget_for_profile(s.0.hardware_profile);
+    let overrides = s.0.model_overrides.lock().await.clone();
+
+    // Mapa de tamanho em disco por modelo instalado (para estimativa de VRAM)
+    let size_map: HashMap<String, u64> = {
+        let tags = s.0.client
+            .get(format!("{}/api/tags", s.0.ollama_url))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .ok();
+        if let Some(resp) = tags {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                json["models"].as_array()
+                    .map(|arr| arr.iter().filter_map(|m| {
+                        let name = m["name"].as_str()?.to_string();
+                        let size_mb = m["size"].as_u64().unwrap_or(0) / 1_000_000;
+                        Some((name, size_mb))
+                    }).collect())
+                    .unwrap_or_default()
+            } else { Default::default() }
+        } else { Default::default() }
+    };
+
+    // Definição de todos os slots de modelo configuráveis
+    let slots: &[(&str, &str, &str, &str)] = &[
+        // (app, model_type, label, recommended)
+        ("mnemosyne", "llm",   "Mnemosyne — LLM",              profile.llm_mnemosyne),
+        ("kosmos",    "llm",   "KOSMOS — LLM",                  profile.llm_kosmos),
+        ("embed",     "embed", "Embedding (todos os apps)",     profile.embed),
+    ];
+
+    slots.iter().map(|(app, model_type, label, recommended)| {
+        let key = format!("{}_{}", app, model_type);
+        let current = overrides.get(&key).map(String::as_str).unwrap_or(recommended);
+        let is_custom = overrides.contains_key(&key);
+        // Heurística: VRAM ≈ 65% do tamanho em disco (típico para Q4)
+        let vram_required_mb = size_map.get(current).map(|&s| s * 65 / 100).unwrap_or(0);
+        let fits_hardware = vram_required_mb == 0 || vram_required_mb <= budget;
+        ModelAssignment {
+            app: app.to_string(),
+            model_type: model_type.to_string(),
+            label: label.to_string(),
+            current_model: current.to_string(),
+            recommended_model: recommended.to_string(),
+            is_custom,
+            vram_required_mb,
+            vram_budget_mb: budget,
+            fits_hardware,
+        }
+    }).collect()
+}
+
+/// Sobrescreve o modelo atribuído a um slot (app + model_type).
+/// Passar o próprio modelo recomendado remove o override (volta ao padrão).
+pub async fn do_set_model_assignment(s: &LogosState, app: &str, model_type: &str, model: &str) {
+    let key = format!("{}_{}", app, model_type);
+    let recommended = {
+        let profile = s.0.hardware_profile.model_profile();
+        match (app, model_type) {
+            ("mnemosyne", "llm")   => profile.llm_mnemosyne.to_string(),
+            ("kosmos",    "llm")   => profile.llm_kosmos.to_string(),
+            ("embed",     "embed") => profile.embed.to_string(),
+            _ => String::new(),
+        }
+    };
+    let mut overrides = s.0.model_overrides.lock().await;
+    if model == recommended || model.is_empty() {
+        overrides.remove(&key);
+    } else {
+        overrides.insert(key, model.to_string());
+    }
 }
 
 /// Aplica override de prioridade baseado no perfil ativo e no app requisitante.

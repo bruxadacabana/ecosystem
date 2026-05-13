@@ -76,6 +76,8 @@ pub fn run() {
             commands::logos::logos_list_models,
             commands::logos::logos_unload_model,
             commands::logos::logos_list_all_models,
+            commands::logos::logos_get_model_assignments,
+            commands::logos::logos_set_model_assignment,
             commands::config::set_window_compact,
             commands::notify::send_notification,
         ])

@@ -3,7 +3,7 @@
 //  Tauri IPC commands para o frontend consultar e controlar o LOGOS.
 // ============================================================
 
-use crate::logos::{LogosState, OllamaModelEntry, OllamaModelInfo, StatusResponse};
+use crate::logos::{LogosState, ModelAssignment, OllamaModelEntry, OllamaModelInfo, StatusResponse};
 
 /// Retorna o status atual do LOGOS: prioridade ativa, fila e VRAM.
 #[tauri::command]
@@ -56,4 +56,25 @@ pub async fn logos_list_all_models(
     state: tauri::State<'_, LogosState>,
 ) -> Result<Vec<OllamaModelEntry>, String> {
     Ok(crate::logos::do_list_all_models(&state).await)
+}
+
+/// Retorna as atribuições de modelo atuais com indicadores de compatibilidade de hardware.
+#[tauri::command]
+pub async fn logos_get_model_assignments(
+    state: tauri::State<'_, LogosState>,
+) -> Result<Vec<ModelAssignment>, String> {
+    Ok(crate::logos::do_get_model_assignments(&state).await)
+}
+
+/// Sobrescreve o modelo de um slot específico (app + model_type).
+/// Passar o modelo recomendado remove o override (restaura padrão).
+#[tauri::command]
+pub async fn logos_set_model_assignment(
+    state: tauri::State<'_, LogosState>,
+    app: String,
+    model_type: String,
+    model: String,
+) -> Result<(), String> {
+    crate::logos::do_set_model_assignment(&state, &app, &model_type, &model).await;
+    Ok(())
 }
