@@ -53,6 +53,21 @@ QWidget#sidebar {
     border-right: 1px solid #2A3148;
 }
 
+QWidget#notesPane {
+    background-color: #181D28;
+    border-left: 1px solid #2A3148;
+}
+
+QTextEdit#notesEdit {
+    background-color: #1A1F2E;
+    border: 1px solid #2A3148;
+    border-radius: 3px;
+    color: #C8B99A;
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 11px;
+    padding: 6px;
+}
+
 QLabel#sidebarBrand {
     font-family: "IM Fell English", Georgia, serif;
     font-style: italic;

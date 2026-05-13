@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QSettings, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -388,7 +388,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Mnemosyne — Seu Bibliotecário Celeste")
         self.setMinimumSize(900, 650)
 
+        from gui.app_state import AppState
+        self.app_state = AppState()
+
         self.vectorstore = None
+        self._main_splitter: QSplitter | None = None
         self._akasha_available = False
         self._available_models: list[OllamaModel] = []
         self._session_memory = SessionMemory()
@@ -482,15 +486,17 @@ class MainWindow(QMainWindow):
         self.ollama_banner.setVisible(False)
         root.addWidget(self.ollama_banner)
 
-        # ── Splitter principal ──────────────────────────────────────
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setObjectName("mainSplitter")
-        splitter.setHandleWidth(1)
+        # ── Splitter principal tri-pane ─────────────────────────────
+        self._main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._main_splitter.setObjectName("mainSplitter")
+        self._main_splitter.setHandleWidth(1)
+        splitter = self._main_splitter  # alias local para o restante do bloco
 
-        # ── Sidebar ─────────────────────────────────────────────────
+        # ── Sidebar (painel esquerdo — fontes e controles) ──────────
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(234)
+        sidebar.setMinimumWidth(160)
+        sidebar.setMaximumWidth(360)
         sb = QVBoxLayout(sidebar)
         sb.setContentsMargins(14, 18, 14, 14)
         sb.setSpacing(4)
@@ -696,10 +702,55 @@ class MainWindow(QMainWindow):
         self._build_page_manage()
 
         splitter.addWidget(self._content_stack)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
+
+        # ── Painel direito — notas persistentes ──────────────────────
+        self._notes_pane = self._build_notes_pane()
+        splitter.addWidget(self._notes_pane)
+
+        # Proporções padrão: left 25%, center 50%, right 25%
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        splitter.setStretchFactor(2, 1)
 
         root.addWidget(splitter)
+
+        # Restaurar proporções salvas (após addWidget, antes de show)
+        settings = QSettings("ecosystem", "Mnemosyne")
+        saved_state = settings.value("mainSplitter/state")
+        if saved_state:
+            self._main_splitter.restoreState(saved_state)
+
+    def _build_notes_pane(self) -> QWidget:
+        """Painel direito de notas persistentes (tri-pane layout)."""
+        pane = QWidget()
+        pane.setObjectName("notesPane")
+        pane.setMinimumWidth(120)
+        layout = QVBoxLayout(pane)
+        layout.setContentsMargins(10, 14, 10, 10)
+        layout.setSpacing(6)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        notes_lbl = QLabel("NOTAS")
+        notes_lbl.setObjectName("sidebarLabel")
+        header_row.addWidget(notes_lbl)
+        header_row.addStretch()
+        clear_notes_btn = QPushButton("✕")
+        clear_notes_btn.setFixedSize(18, 18)
+        clear_notes_btn.setToolTip("Limpar notas da sessão")
+        clear_notes_btn.clicked.connect(lambda: self._notes_edit.clear())
+        header_row.addWidget(clear_notes_btn)
+        layout.addLayout(header_row)
+
+        self._notes_edit = QTextEdit()
+        self._notes_edit.setObjectName("notesEdit")
+        self._notes_edit.setPlaceholderText(
+            "Notas da sessão…\n\n"
+            "Respostas do chat podem ser promovidas aqui."
+        )
+        layout.addWidget(self._notes_edit)
+
+        return pane
 
     def _add_sidebar_rule(self, layout: QVBoxLayout) -> None:
         rule = QLabel()
@@ -2499,9 +2550,13 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """
-        Ao fechar: se houver histórico na sessão, oferece compactar e guardar
-        na memória persistida antes de encerrar.
+        Ao fechar: salva proporções do splitter e, se houver histórico na sessão,
+        oferece compactar e guardar na memória persistida antes de encerrar.
         """
+        if self._main_splitter is not None:
+            settings = QSettings("ecosystem", "Mnemosyne")
+            settings.setValue("mainSplitter/state", self._main_splitter.saveState())
+
         idle: object = getattr(self, "_idle_indexer", None)
         if idle is not None:
             idle.stop()  # type: ignore[union-attr]

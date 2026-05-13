@@ -3868,7 +3868,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > alternativas (Zotero 7, Logseq, AnythingLLM). Base para o redesign completo do Mnemosyne.
 
 #### Mnemosyne
-- [ ] **Layout tri-pane com QSplitter aninhados** (`gui/main_window.py`). Substituir o layout
+- [x] **Layout tri-pane com QSplitter aninhados** (`gui/main_window.py`). Substituir o layout
   atual por três painéis horizontais via `QSplitter` aninhados: (1) painel esquerdo de fontes
   e coleções (proporção 25%), (2) painel central de chat RAG (50%), (3) painel direito de
   notas persistentes (25%). Salvar e restaurar proporções entre sessões via `QSettings` com
@@ -3877,7 +3877,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   respostas podem ser salvas como notas permanentes. Esta é a estrutura base sobre a qual
   todos os outros itens desta sessão se constroem.
 
-- [ ] **`AppState` central como `QObject` com signals tipados** (`gui/app_state.py`, novo
+- [x] **`AppState` central como `QObject` com signals tipados** (`gui/app_state.py`, novo
   arquivo). Criar um objeto de estado compartilhado — padrão documentado no JabRef — que todos
   os painéis recebem na construção mas nunca referenciam diretamente entre si. Signals
   obrigatórios: `source_selected(collection_id: str, doc_id: str)`,
