@@ -4391,14 +4391,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > recuperaÃ§Ã£o e apresentaÃ§Ã£o dos resultados.
 
 #### Mnemosyne
-- [ ] **[P1] Framing por tipo no prompt de RAG (`core/rag.py`)** â€” quando montar o contexto
+- [x] **[P1] Framing por tipo no prompt de RAG (`core/rag.py`)** â€” quando montar o contexto
   enviado ao LLM, incluir o rÃ³tulo legÃ­vel do `source_type` de cada chunk: "Nota pessoal",
   "TranscriÃ§Ã£o", "Artigo web", "Livro", "Artigo cientÃ­fico". Notas pessoais devem ser
   explicitamente marcadas como opiniÃ£o da usuÃ¡ria ("este trecho vem das suas notas pessoais")
   para que o LLM nÃ£o as trate como fato externo. CientÃ­ficos como "artigo peer-reviewed".
   MudanÃ§a pequena, alto impacto â€” o LLM passa a raciocinar diferente sobre cada fonte.
 
-- [ ] **[P2] Peso por tipo de fonte na recuperaÃ§Ã£o hÃ­brida (`core/rag.py`)** â€” adicionar dict
+- [x] **[P2] Peso por tipo de fonte na recuperaÃ§Ã£o hÃ­brida (`core/rag.py`)** â€” adicionar dict
   `SOURCE_WEIGHTS: dict[str, float]` (ex: `{"scientific": 1.4, "book": 1.2, "library": 1.0,
   "transcript": 0.9, "vault": 1.0}`). Ao fazer o merge BM25 + semÃ¢ntico, multiplicar o score
   pelo peso da fonte antes do ranking final. Notas pessoais tÃªm peso neutro (1.0) â€” sÃ£o

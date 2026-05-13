@@ -339,9 +339,13 @@ def _hybrid_retrieve(
             if key not in doc_map:
                 doc_map[key] = doc
 
-        # Aplicar boost e filtro cosine para reflexões antes do sort final
+        # Aplicar boost de reflexão, filtro cosine e peso por tipo de fonte
         to_remove: list[str] = []
         for key, doc in doc_map.items():
+            # Peso por tipo de fonte (scientific > book > library/vault > transcript)
+            src_weight = SOURCE_WEIGHTS.get(_effective_source_type(doc), 1.0)
+            rrf_scores[key] *= src_weight
+
             if doc.metadata.get("type") != "reflection":
                 continue
             sim = cosine_sim.get(key, 0.0)
@@ -380,7 +384,8 @@ def _hybrid_retrieve(
             boost = doc.metadata.get("boost", 1.0)
         else:
             boost = 1.0
-        score = (0.6 * (1.0 - i / n) + 0.4 * normalized[i]) * boost
+        src_weight = SOURCE_WEIGHTS.get(_effective_source_type(doc), 1.0)
+        score = (0.6 * (1.0 - i / n) + 0.4 * normalized[i]) * boost * src_weight
         combined.append((score, i))
 
     combined.sort(key=lambda x: x[0], reverse=True)
@@ -636,30 +641,73 @@ def _reorder_lost_in_middle(docs: list[Document]) -> list[Document]:
     return [d for d in result if d is not None]
 
 
-def _chunk_label(doc: Document) -> str:
+# ---------------------------------------------------------------------------
+# Framing e pesos por tipo de fonte
+# ---------------------------------------------------------------------------
+
+# Rótulos legíveis por source_type — usados no contexto enviado ao LLM
+_SOURCE_TYPE_LABELS: dict[str, str] = {
+    "vault":      "Nota pessoal (opinião da usuária)",
+    "transcript": "Transcrição",
+    "library":    "Artigo web",
+    "book":       "Livro",
+}
+
+# Multiplicadores de score por tipo de fonte — aplicados no ranking híbrido
+# scientific > book > library/vault > transcript (linguagem informal, menor densidade)
+SOURCE_WEIGHTS: dict[str, float] = {
+    "scientific": 1.4,
+    "book":       1.2,
+    "library":    1.0,
+    "vault":      1.0,
+    "transcript": 0.9,
+}
+
+
+def _effective_source_type(doc: Document) -> str:
     """
-    Monta um rótulo de atribuição para o chunk: 'Autor, Ano — Tipo'.
-    Retorna string vazia quando não há metadados relevantes.
+    Retorna o tipo efetivo do documento para fins de label e peso.
+    doc_type=='scientific' tem prioridade sobre source_type (artigo científico
+    arquivado pelo AKASHA tem source_type='library' mas doc_type='scientific').
     """
     meta     = doc.metadata
-    author   = str(meta.get("author", "")).strip()
-    date     = str(meta.get("date", "")).strip()
     doc_type = str(meta.get("doc_type", "")).strip()
+    if doc_type == "scientific":
+        return "scientific"
+    return str(meta.get("source_type", "")).strip()
 
-    parts: list[str] = []
+
+def _chunk_label(doc: Document) -> str:
+    """
+    Monta rótulo de atribuição + framing de tipo para o chunk.
+    Formato: '[Autor, Ano — Tipo legível]\\n'
+    Retorna string vazia quando não há metadados relevantes.
+    """
+    meta        = doc.metadata
+    author      = str(meta.get("author", "")).strip()
+    date        = str(meta.get("date", "")).strip()
+    eff_type    = _effective_source_type(doc)
+
+    if eff_type == "scientific":
+        type_label = "Artigo científico (peer-reviewed)"
+    else:
+        type_label = _SOURCE_TYPE_LABELS.get(eff_type, "")
+
+    attribution_parts: list[str] = []
     if author:
-        parts.append(author)
+        attribution_parts.append(author)
     if date:
         year = date[:4]
         if year.isdigit():
-            parts.append(year)
+            attribution_parts.append(year)
 
-    label = ", ".join(parts)
-    if doc_type == "scientific":
-        suffix = " — Artigo científico"
-        label  = label + suffix if label else "Artigo científico"
-    elif doc_type and label:
-        label = f"{label} — {doc_type}"
+    attribution = ", ".join(attribution_parts)
+    if attribution and type_label:
+        label = f"{attribution} — {type_label}"
+    elif attribution:
+        label = attribution
+    else:
+        label = type_label
 
     return f"[{label}]\n" if label else ""
 
