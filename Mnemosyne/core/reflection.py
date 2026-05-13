@@ -19,11 +19,15 @@ import hashlib
 import re
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from langchain_core.documents import Document
 
 from .config import AppConfig
+
+if TYPE_CHECKING:
+    from langchain_chroma import Chroma
+    from .bm25_index import BM25Index
 
 
 def _strip_think(text: str) -> str:
@@ -231,5 +235,97 @@ def generate_meta_reflection(
             "source_chunks": all_source_chunks,
             "source_files": all_source_files,
             "theme": theme,
+            "source": "__meta_reflection__",
         },
     )
+
+
+def maybe_consolidate(
+    theme: str,
+    config: AppConfig,
+    vs: "Chroma",
+    bm25_idx: "BM25Index",
+    *,
+    progress_cb: Callable[[str], None] | None = None,
+) -> Document | None:
+    """
+    Verifica se há ≥ 3 reflexões de ordem 1 do tema `theme` no vectorstore e,
+    se sim, gera uma meta-reflexão (ordem 2) consolidando-as.
+
+    Fluxo:
+      1. Busca reflexões order=1, theme=theme no ChromaDB.
+      2. Se < 3: retorna None.
+      3. Verifica similaridade cosine mínima entre elas (≥ REFLECTION_COSINE_THRESHOLD).
+         Se abaixo do threshold: retorna None (reflexões muito díspares — não consolidar).
+      4. Gera meta-reflexão via generate_meta_reflection().
+      5. Remove as 3 reflexões originais do ChromaDB e do BM25Index.
+      6. Retorna o Document da meta-reflexão (sem indexá-lo — responsabilidade do caller).
+
+    Raises:
+        Nunca — erros internos retornam None silenciosamente.
+    """
+    # 1. Buscar reflexões order=1 deste tema no ChromaDB
+    try:
+        results = vs._collection.get(
+            where={"$and": [
+                {"type":  {"$eq": "reflection"}},
+                {"order": {"$eq": 1}},
+                {"theme": {"$eq": theme}},
+            ]},
+            include=["documents", "metadatas", "embeddings"],
+        )
+    except Exception:
+        return None
+
+    ids       = results.get("ids", [])
+    docs_text = results.get("documents", [])
+    metas     = results.get("metadatas", []) or []
+    embeddings = results.get("embeddings") or []
+
+    if len(ids) < 3:
+        return None
+
+    # Trabalha apenas com as 3 primeiras reflexões encontradas
+    ids_to_remove = ids[:3]
+    embs          = embeddings[:3] if embeddings else []
+
+    # 3. Verificar similaridade cosine como guard adicional
+    if embs and len(embs) == 3 and all(e is not None for e in embs):
+        try:
+            import numpy as _np
+            vecs = [_np.array(e, dtype=float) for e in embs]
+            ok = True
+            for i in range(len(vecs)):
+                for j in range(i + 1, len(vecs)):
+                    a, b = vecs[i], vecs[j]
+                    na, nb = _np.linalg.norm(a), _np.linalg.norm(b)
+                    if na > 0 and nb > 0:
+                        sim = float(_np.dot(a, b) / (na * nb))
+                        if sim < REFLECTION_COSINE_THRESHOLD:
+                            ok = False
+                            break
+                if not ok:
+                    break
+            if not ok:
+                return None
+        except Exception:
+            pass  # numpy indisponível ou erro de forma — prossegue sem o check
+
+    # 4. Montar Document objects e gerar meta-reflexão
+    reflections = [
+        Document(page_content=docs_text[i], metadata=metas[i] if i < len(metas) else {})
+        for i in range(3)
+    ]
+    meta = generate_meta_reflection(reflections, config, progress_cb=progress_cb)
+    if meta is None:
+        return None
+
+    # 5. Remover reflexões originais do ChromaDB e do BM25
+    try:
+        vs._collection.delete(ids=ids_to_remove)
+    except Exception:
+        pass
+
+    bm25_idx.remove_matching(type="reflection", order=1, theme=theme)
+
+    return meta

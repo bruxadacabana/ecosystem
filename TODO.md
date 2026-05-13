@@ -3760,7 +3760,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   - Se reflexão gerada: adicioná-la ao ChromaDB e ao BM25Index como documento extra
   - Guardar contador de reflexões por tema em metadata da coleção (para trigger de meta-reflexão)
 
-- [ ] `core/reflection.py` — meta-reflexão (consolidação de 3 em 1):
+- [x] `core/reflection.py` — meta-reflexão (consolidação de 3 em 1):
   - `maybe_consolidate(theme: str, config: AppConfig, vectorstore) -> Document | None`
   - Busca reflexões de ordem 1 sobre o mesmo tema (by `metadata["theme"]` e `metadata["order"] == 1`)
   - Se ≥ 3 reflexões encontradas: gera meta-reflexão (ordem 2) com boost 1.8×

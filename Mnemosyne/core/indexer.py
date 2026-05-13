@@ -22,7 +22,7 @@ from .config import AppConfig
 from .errors import EmptyDirectoryError, IndexBuildError, VectorstoreNotFoundError
 from .loaders import load_documents, load_single_file, is_transcript_file
 from .ollama_client import _BASE_URL as _OLLAMA_BASE
-from .reflection import generate_reflection, MIN_CHUNKS
+from .reflection import generate_reflection, maybe_consolidate, MIN_CHUNKS
 from .tracker import FileTracker
 
 # Arquivo JSON que contabiliza reflexões geradas por tema — usado pelo
@@ -533,6 +533,19 @@ def _generate_and_index_reflections(
 
     if n_generated:
         _save_reflection_counts(config.mnemosyne_dir, counts)
+
+    # Tentar consolidar temas que atingiram ≥ 3 reflexões de ordem 1
+    consolidated_themes: set[str] = set()
+    for theme, total in counts.items():
+        if total >= 3 and theme not in consolidated_themes:
+            meta = maybe_consolidate(
+                theme, config, vs, bm25_idx, progress_cb=progress_cb
+            )
+            if meta is not None:
+                _add_reflection_to_index(vs, bm25_idx, meta, config.embed_model,
+                                          truncate_dim=config.embedding_truncate_dim)
+                bm25_idx.save()
+                consolidated_themes.add(theme)
 
     return n_generated
 

@@ -60,6 +60,28 @@ class BM25Index:
             self._docs, self._metas = [], []
         self._bm25 = None
 
+    def remove_matching(self, **kwargs: object) -> int:
+        """
+        Remove documentos cujo metadata satisfaz TODAS as condições kwargs.
+        Retorna o número de documentos removidos.
+
+        Exemplo: bm25_idx.remove_matching(type="reflection", order=1, theme="cap3")
+        """
+        keep_docs:  list[str]  = []
+        keep_metas: list[dict] = []
+        removed = 0
+        for doc, meta in zip(self._docs, self._metas):
+            if all(meta.get(k) == v for k, v in kwargs.items()):
+                removed += 1
+            else:
+                keep_docs.append(doc)
+                keep_metas.append(meta)
+        self._docs  = keep_docs
+        self._metas = keep_metas
+        if removed:
+            self._bm25 = None
+        return removed
+
     def clear(self) -> None:
         self._docs, self._metas, self._bm25 = [], [], None
 
