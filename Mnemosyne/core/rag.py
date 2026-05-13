@@ -66,10 +66,13 @@ if TYPE_CHECKING:
     from .tracker import FileTracker
 
 
-class SourceRecord(TypedDict):
-    path: str     # absolute file path
-    excerpt: str  # first ~250 chars of best chunk from this source
-    score: float  # combined relevance score [0.0, 1.0]
+class SourceRecord(TypedDict, total=False):
+    path: str       # absolute file path
+    excerpt: str    # first ~250 chars of best chunk from this source
+    score: float    # combined relevance score [0.0, 1.0]
+    start_char: int | None   # offset de início do chunk no texto (para citation anchoring)
+    end_char: int | None     # offset de fim (exclusive)
+    page_num: int | None     # número de página para PDFs
 
 
 class AskResult(TypedDict):
@@ -793,7 +796,14 @@ def prepare_ask(
             seen.add(src)
             score = max(0.0, 1.0 - rank / max(n_docs, 1))
             excerpt = doc.page_content[:250].strip().replace("\n", " ")
-            sources.append(SourceRecord(path=src, excerpt=excerpt, score=score))
+            sources.append(SourceRecord(
+                path=src,
+                excerpt=excerpt,
+                score=score,
+                start_char=doc.metadata.get("start_char"),
+                end_char=doc.metadata.get("end_char"),
+                page_num=doc.metadata.get("page_num"),
+            ))
 
     messages = _build_messages(
         context, question, chat_history or [], persona, collection_type, secondary_context

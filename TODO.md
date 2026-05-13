@@ -3887,7 +3887,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   para si. Isso elimina o problema atual de widgets que se referenciam diretamente e quebram
   quando o layout muda.
 
-- [ ] **Metadados de chunk enriquecidos com offsets de texto** (`core/indexer.py`). Ao chunkar
+- [x] **Metadados de chunk enriquecidos com offsets de texto** (`core/indexer.py`). Ao chunkar
   documentos e inserir no ChromaDB, adicionar aos metadados de cada chunk: `start_char` (int),
   `end_char` (int), `prefix_quote` (string: 30 chars antes do chunk para desambiguação),
   `suffix_quote` (string: 30 chars depois), `page_num` (int, quando disponível — PDFs).
@@ -3895,7 +3895,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Hypothes.is: três seletores redundantes garantem que a âncora sobreviva a pequenas
   modificações no documento. Requer re-indexação completa após implementação.
 
-- [ ] **Citation anchoring via `QTextCursor`** (`gui/main_window.py` ou novo
+- [x] **Citation anchoring via `QTextCursor`** (`gui/main_window.py` ou novo
   `gui/source_viewer.py`). Quando o chat retorna uma resposta com citação, emitir
   `AppState.chunk_cited(collection_id, doc_path, start_char, end_char)`. O painel de fontes
   captura o signal, carrega o documento no `QTextBrowser` (se não estiver aberto), cria um

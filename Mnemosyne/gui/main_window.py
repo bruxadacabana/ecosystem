@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTextBrowser,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -411,6 +412,8 @@ class MainWindow(QMainWindow):
         self._studio_worker: StudioWorker | None = None
         self._studio_table_data: tuple[list[str], list[list[str]]] | None = None
 
+        self._current_sources: list = []
+
         self._retry_timer = QTimer(self)
         self._retry_timer.setInterval(30_000)  # 30 segundos
         self._retry_timer.timeout.connect(self._retry_ollama_check)
@@ -782,15 +785,40 @@ class MainWindow(QMainWindow):
         self.answer_text.setPlaceholderText("A resposta aparecerá aqui…")
         layout.addWidget(self.answer_text, 1)
 
-        # Fontes
+        # Fontes (QTextBrowser para links clicáveis)
         sources_lbl = QLabel("Fontes:")
         sources_lbl.setObjectName("sectionLabel")
         layout.addWidget(sources_lbl)
-        self.sources_text = QTextEdit()
+        self.sources_text = QTextBrowser()
         self.sources_text.setObjectName("sourcesText")
-        self.sources_text.setReadOnly(True)
         self.sources_text.setMaximumHeight(130)
+        self.sources_text.setOpenLinks(False)
+        self.sources_text.anchorClicked.connect(self._on_source_anchor_clicked)
         layout.addWidget(self.sources_text)
+
+        # Viewer de citação — mostra o documento e destaca o trecho citado
+        src_viewer_header = QHBoxLayout()
+        src_viewer_header.setContentsMargins(0, 4, 0, 0)
+        self._source_viewer_lbl = QLabel("Fonte:")
+        self._source_viewer_lbl.setObjectName("sectionLabel")
+        src_viewer_header.addWidget(self._source_viewer_lbl, 1)
+        src_viewer_close = QPushButton("✕")
+        src_viewer_close.setFixedSize(18, 18)
+        src_viewer_close.setToolTip("Fechar visualizador")
+        src_viewer_close.clicked.connect(self._close_source_viewer)
+        src_viewer_header.addWidget(src_viewer_close)
+        self._source_viewer_header = QWidget()
+        self._source_viewer_header.setLayout(src_viewer_header)
+        self._source_viewer_header.setVisible(False)
+        layout.addWidget(self._source_viewer_header)
+
+        self._source_viewer = QTextBrowser()
+        self._source_viewer.setObjectName("sourceViewerText")
+        self._source_viewer.setVisible(False)
+        self._source_viewer.setOpenLinks(False)
+        layout.addWidget(self._source_viewer, 2)
+
+        self.app_state.chunk_cited.connect(self._on_chunk_cited)
 
         # Modo de consulta
         mode_row = QHBoxLayout()
@@ -2229,6 +2257,70 @@ class MainWindow(QMainWindow):
             self._ask_worker.finished.connect(self._on_answer)
         self._ask_worker.start()
 
+    def _close_source_viewer(self) -> None:
+        self._source_viewer.setVisible(False)
+        self._source_viewer_header.setVisible(False)
+
+    def _on_source_anchor_clicked(self, url) -> None:
+        """Clique num link de fonte → emite chunk_cited para abrir o viewer."""
+        from PySide6.QtCore import QUrl
+        url = url if isinstance(url, QUrl) else QUrl(url)
+        if url.scheme() != "cite":
+            return
+        try:
+            idx = int(url.host())
+        except (ValueError, AttributeError):
+            return
+        if 0 <= idx < len(self._current_sources):
+            s = self._current_sources[idx]
+            self.app_state.chunk_cited.emit(
+                self.config.active_collection or "",
+                s.get("path", ""),
+                s.get("start_char") or 0,
+                s.get("end_char") or 0,
+            )
+
+    def _on_chunk_cited(self, _coll_id: str, doc_path: str, start_char: int, end_char: int) -> None:
+        """Carrega o documento no viewer e destaca o trecho citado em amarelo."""
+        from pathlib import Path as _Path
+        from PySide6.QtGui import QTextCursor, QTextCharFormat, QColor
+
+        if doc_path.startswith("http://") or doc_path.startswith("https://"):
+            return
+
+        ext = _Path(doc_path).suffix.lower()
+        content: str | None = None
+        try:
+            if ext == ".pdf":
+                try:
+                    import fitz  # PyMuPDF
+                    pdoc = fitz.open(doc_path)
+                    content = "\n\n".join(page.get_text() for page in pdoc)
+                    pdoc.close()
+                except Exception:
+                    pass
+            if content is None:
+                content = _Path(doc_path).read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return
+
+        self._source_viewer_lbl.setText(f"Fonte: {_Path(doc_path).name}")
+        self._source_viewer.setPlainText(content)
+        self._source_viewer_header.setVisible(True)
+        self._source_viewer.setVisible(True)
+
+        if 0 < start_char < end_char <= len(content):
+            fmt = QTextCharFormat()
+            fmt.setBackground(QColor("#F5C518"))
+            cursor = QTextCursor(self._source_viewer.document())
+            cursor.setPosition(start_char)
+            cursor.setPosition(end_char, QTextCursor.MoveMode.KeepAnchor)
+            cursor.mergeCharFormat(fmt)
+            nav = QTextCursor(self._source_viewer.document())
+            nav.setPosition(start_char)
+            self._source_viewer.setTextCursor(nav)
+            self._source_viewer.ensureCursorVisible()
+
     def _on_ask_token(self, chunk: str) -> None:
         self._raw_answer += chunk
         self.answer_text.setPlainText(self._raw_answer)
@@ -2250,9 +2342,10 @@ class MainWindow(QMainWindow):
                 self.question_edit.text().strip(), text,
                 [s["path"] for s in sources],
             )
+            self._current_sources = sources
             if sources:
-                lines = []
-                for s in sources:
+                html_parts = []
+                for i, s in enumerate(sources):
                     is_web = s["path"].startswith("http://") or s["path"].startswith("https://")
                     name   = s["path"] if is_web else os.path.basename(s["path"])
                     badge  = "[WEB] " if is_web else ""
@@ -2262,8 +2355,12 @@ class MainWindow(QMainWindow):
                     excerpt = s["excerpt"]
                     if len(excerpt) > 180:
                         excerpt = excerpt[:180] + "…"
-                    lines.append(f"• {badge}{name}  {bar} {pct}%\n  \"{excerpt}\"")
-                self.sources_text.setPlainText("\n\n".join(lines))
+                    link = f'<a href="cite://{i}">{badge}{name}</a>'
+                    html_parts.append(
+                        f'• {link}&nbsp;&nbsp;{bar} {pct}%<br>'
+                        f'&nbsp;&nbsp;<i>"{excerpt}"</i>'
+                    )
+                self.sources_text.setHtml("<br><br>".join(html_parts))
             else:
                 self.sources_text.setPlainText("(nenhuma fonte identificada)")
         else:
@@ -2282,9 +2379,10 @@ class MainWindow(QMainWindow):
                 self.question_edit.text().strip(), text,
                 [s["path"] for s in sources],
             )
+            self._current_sources = sources
             if sources:
-                lines = []
-                for s in sources:
+                html_parts = []
+                for i, s in enumerate(sources):
                     is_web = s["path"].startswith("http://") or s["path"].startswith("https://")
                     name   = s["path"] if is_web else os.path.basename(s["path"])
                     badge  = "[WEB] " if is_web else ""
@@ -2294,8 +2392,12 @@ class MainWindow(QMainWindow):
                     excerpt = s["excerpt"]
                     if len(excerpt) > 180:
                         excerpt = excerpt[:180] + "…"
-                    lines.append(f"• {badge}{name}  {bar} {pct}%\n  \"{excerpt}\"")
-                self.sources_text.setPlainText("\n\n".join(lines))
+                    link = f'<a href="cite://{i}">{badge}{name}</a>'
+                    html_parts.append(
+                        f'• {link}&nbsp;&nbsp;{bar} {pct}%<br>'
+                        f'&nbsp;&nbsp;<i>"{excerpt}"</i>'
+                    )
+                self.sources_text.setHtml("<br><br>".join(html_parts))
             else:
                 self.sources_text.setPlainText("(nenhuma fonte identificada)")
         else:

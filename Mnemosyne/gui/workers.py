@@ -28,6 +28,7 @@ from core.indexer import (
     update_vectorstore,
     _detect_batch_config,
     _embed_batch,
+    _enrich_chunk_offsets,
     _get_splitter,
     _clear_orphan_wal,
     _OLLAMA_BASE,
@@ -161,6 +162,7 @@ class IndexWorker(QThread):
             try:
                 docs = load_single_file(file_path)
                 chunks = splitter.split_documents(docs)
+                _enrich_chunk_offsets(chunks, docs)
             except MnemosyneError as exc:
                 errors.append(str(exc))
                 checkpoint.record(file_path, "error")
@@ -362,6 +364,7 @@ class ResumeIndexWorker(QThread):
             try:
                 docs = load_single_file(file_path)
                 chunks = splitter.split_documents(docs)
+                _enrich_chunk_offsets(chunks, docs)
             except MnemosyneError as exc:
                 errors.append(str(exc))
                 checkpoint.record(file_path, "error")

@@ -435,7 +435,54 @@ def _get_splitter(
         chunk_size=params["chunk_size"],
         chunk_overlap=params["chunk_overlap"],
         separators=["\n\n", "\n", ". ", " ", ""],
+        add_start_index=True,
     )
+
+
+def _enrich_chunk_offsets(
+    chunks: list[Document],
+    source_docs: list[Document],
+) -> None:
+    """
+    Enriquece metadados de chunks com campos de ancoramento de citação. In-place.
+
+    Campos adicionados:
+      start_char   — offset do início do chunk no texto da página/arquivo de origem
+      end_char     — offset do fim (exclusive)
+      prefix_quote — 30 chars antes (desambiguação, padrão Hypothes.is)
+      suffix_quote — 30 chars depois
+      page_num     — número de página para PDFs (do metadata["page"] do PyPDFLoader)
+
+    Requer splitter criado com add_start_index=True.
+    SemanticChunker não suporta add_start_index — este método vira no-op nesses casos.
+    """
+    # Mapa (source_path, page_str) → texto do documento/página para prefix/suffix
+    # page_str = "" para arquivos não-PDF (um único Document por arquivo)
+    page_texts: dict[tuple[str, str], str] = {}
+    for doc in source_docs:
+        src = doc.metadata.get("source", "")
+        page = str(doc.metadata.get("page", ""))
+        if src:
+            key = (src, page)
+            page_texts[key] = page_texts.get(key, "") + doc.page_content
+
+    for chunk in chunks:
+        start = chunk.metadata.get("start_index")
+        if start is None:
+            continue
+        end = start + len(chunk.page_content)
+        chunk.metadata["start_char"] = start
+        chunk.metadata["end_char"] = end
+
+        src = chunk.metadata.get("source", "")
+        page = str(chunk.metadata.get("page", ""))
+        page_text = page_texts.get((src, page), "")
+        if page_text:
+            chunk.metadata["prefix_quote"] = page_text[max(0, start - 30) : start]
+            chunk.metadata["suffix_quote"] = page_text[end : end + 30]
+
+        if "page" in chunk.metadata:
+            chunk.metadata["page_num"] = int(chunk.metadata["page"])
 
 
 def _get_embeddings(config: AppConfig) -> OllamaEmbeddings:
@@ -596,8 +643,10 @@ def create_vectorstore(
                     chunk_size=params["chunk_size"],
                     chunk_overlap=params["chunk_overlap"],
                     separators=["\n\n", "\n", ". ", " ", ""],
+                    add_start_index=True,
                 )
             chunks.extend(_splitter_cache[ctype].split_documents([doc]))
+        _enrich_chunk_offsets(chunks, documents)
 
     _BATCH, _SLEEP = _detect_batch_config()
     try:
@@ -663,6 +712,7 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
 
     splitter = _get_splitter(config, source_type=config.collection_type, file_path=file_path)
     chunks = splitter.split_documents(docs)
+    _enrich_chunk_offsets(chunks, docs)
 
     try:
         os.makedirs(config.persist_dir, exist_ok=True)
@@ -757,6 +807,7 @@ def update_vectorstore(
                                     ocr_model=config.image_ocr_model)
             splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
+            _enrich_chunk_offsets(chunks, docs)
             level = _incremental_update(
                 vs, bm25_idx, chunk_store, file_path, chunks,
                 config.embed_model, config.embedding_truncate_dim, _BATCH, _SLEEP,
@@ -781,6 +832,7 @@ def update_vectorstore(
                                     ocr_model=config.image_ocr_model)
             splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
+            _enrich_chunk_offsets(chunks, docs)
             _incremental_update(
                 vs, bm25_idx, chunk_store, file_path, chunks,
                 config.embed_model, config.embedding_truncate_dim, _BATCH, _SLEEP,
