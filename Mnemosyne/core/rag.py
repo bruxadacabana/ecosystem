@@ -614,6 +614,34 @@ def _contextual_compress(
         return docs  # fallback total se o LLM não estiver disponível
 
 
+def _chunk_label(doc: Document) -> str:
+    """
+    Monta um rótulo de atribuição para o chunk: 'Autor, Ano — Tipo'.
+    Retorna string vazia quando não há metadados relevantes.
+    """
+    meta     = doc.metadata
+    author   = str(meta.get("author", "")).strip()
+    date     = str(meta.get("date", "")).strip()
+    doc_type = str(meta.get("doc_type", "")).strip()
+
+    parts: list[str] = []
+    if author:
+        parts.append(author)
+    if date:
+        year = date[:4]
+        if year.isdigit():
+            parts.append(year)
+
+    label = ", ".join(parts)
+    if doc_type == "scientific":
+        suffix = " — Artigo científico"
+        label  = label + suffix if label else "Artigo científico"
+    elif doc_type and label:
+        label = f"{label} — {doc_type}"
+
+    return f"[{label}]\n" if label else ""
+
+
 def _apply_time_decay(
     docs: list[Document],
     tracker: FileTracker | None,
@@ -780,7 +808,9 @@ def prepare_ask(
         # Retrieval iterativo expande o pool além de candidate_k — limitar ao configurado
         docs = docs[:config.retriever_k]
 
-    context = "\n\n---\n".join(doc.page_content for doc in docs)
+    context = "\n\n---\n".join(
+        f"{_chunk_label(doc)}{doc.page_content}" for doc in docs
+    )
 
     # Follow wikilinks for vault collections: include linked note excerpts
     secondary_context = ""

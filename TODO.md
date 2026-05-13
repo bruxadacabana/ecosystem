@@ -4454,7 +4454,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `date` para livros onde sÃ³ o ano Ã© conhecido.
 
 #### Hermes
-- [ ] **Campos adicionais no frontmatter de transcriÃ§Ãµes** â€” `build_mnemosyne_markdown()` em
+- [x] **Campos adicionais no frontmatter de transcrições** â€” `build_mnemosyne_markdown()` em
   `hermes.py` jÃ¡ inclui `title`, `date`, `source`, `duration`. Adicionar: `platform`
   (`youtube`/`tiktok`/`podcast`/`local` â€” inferir da URL ou marcar "local" quando arquivo
   local), `channel` (nome do canal/criador quando disponÃ­vel via yt-dlp `info["uploader"]`
@@ -4462,7 +4462,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   um vÃ­deo de TikTok na hora de pesar a fonte.
 
 #### Mnemosyne
-- [ ] **Usar `date`, `author`, `language` do frontmatter na detecÃ§Ã£o e no framing** â€” em
+- [x] **Usar `date`, `author`, `language` do frontmatter na detecção e no framing** â€” em
   `core/loaders.py`, ao carregar arquivos .md, extrair esses campos do frontmatter e
   propagÃ¡-los para `doc.metadata`. Em `core/rag.py`, usar `author` e `date` ao montar o
   rÃ³tulo de cada chunk no prompt (ex: "Vaswani et al., 2017 â€” Artigo cientÃ­fico"). Depende

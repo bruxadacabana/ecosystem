@@ -248,12 +248,32 @@ def build_markdown(title: str, url: str, info: dict, segments: list,
 
 
 # ── Utilitários — markdown Mnemosyne ─────────────────────────────────────────
+def _infer_platform(url: str) -> str:
+    """Infere a plataforma de origem a partir da URL ou caminho."""
+    if not url or not url.startswith("http"):
+        return "local"
+    if "youtube.com" in url or "youtu.be" in url:
+        return "youtube"
+    if "tiktok.com" in url:
+        return "tiktok"
+    if any(x in url for x in ("spotify.com", "anchor.fm", "buzzsprout.com",
+                               "podbean.com", "soundcloud.com")):
+        return "podcast"
+    return "web"
+
+
 def build_mnemosyne_markdown(title: str, url: str, duration: str, full_md: str) -> str:
     """Markdown com frontmatter YAML para indexação pelo Mnemosyne.
     Remove timestamps e cabeçalhos do markdown completo, deixando
     apenas o texto limpo da transcrição."""
     date       = datetime.now().strftime("%Y-%m-%d")
     title_safe = title.replace('"', '\\"')
+
+    # Extrai canal do full_md (gerado por build_markdown como "> **Canal:** nome")
+    channel_match = re.search(r">\s*\*\*Canal:\*\*\s*(.+)", full_md)
+    channel = channel_match.group(1).strip() if channel_match else ""
+
+    platform = _infer_platform(url)
 
     clean_lines: list[str] = []
     for line in full_md.splitlines():
@@ -269,16 +289,19 @@ def build_mnemosyne_markdown(title: str, url: str, duration: str, full_md: str) 
 
     body = "\n".join(clean_lines).strip()
 
-    return "\n".join([
+    frontmatter = [
         "---",
         f'title: "{title_safe}"',
         f"date: {date}",
         f"source: {url}",
         f"duration: {duration}",
-        "---",
-        "",
-        body,
-    ])
+        f"platform: {platform}",
+    ]
+    if channel:
+        frontmatter.append(f'channel: "{channel}"')
+    frontmatter += ["---", "", body]
+
+    return "\n".join(frontmatter)
 
 
 # ── Workers ───────────────────────────────────────────────────────────────────

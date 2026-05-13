@@ -187,9 +187,13 @@ def _load_file(
             if source_type == "vault":
                 docs = _load_obsidian_note(file_path)
             else:
-                docs = TextLoader(file_path, encoding="utf-8").load()
                 if is_transcript_file(file_path):
                     source_type = "transcript"
+                    docs = TextLoader(file_path, encoding="utf-8").load()
+                elif ext == ".md":
+                    docs = _load_library_md(file_path)
+                else:
+                    docs = TextLoader(file_path, encoding="utf-8").load()
         elif ext == ".epub":
             docs = _load_epub(file_path)
         elif ext in (".mobi", ".azw", ".azw3"):
@@ -521,6 +525,46 @@ def _load_mobi(file_path: str) -> list[Document]:
             page_content=text,
             metadata={"source": file_path, "title": title, "author": author},
         )]
+
+
+def _load_library_md(file_path: str) -> list[Document]:
+    """
+    Carrega arquivo .md da biblioteca (AKASHA/Hermes) extraindo campos do frontmatter YAML.
+    Separa o bloco YAML do corpo — page_content recebe apenas o texto, sem os metadados.
+    Campos extraídos: title, author, date, language, doc_type (= campo `type` do frontmatter).
+    """
+    try:
+        raw_text = open(file_path, encoding="utf-8", errors="ignore").read()
+    except OSError as exc:
+        raise DocumentLoadError(file_path, str(exc)) from exc
+
+    fm: dict = {}
+    body = raw_text
+    try:
+        import frontmatter as _fm
+        post = _fm.loads(raw_text)
+        fm   = dict(post.metadata)
+        body = post.content
+    except Exception:
+        pass  # sem frontmatter válido — usa texto bruto
+
+    title    = str(fm.get("title", ""))    or os.path.splitext(os.path.basename(file_path))[0]
+    author   = str(fm.get("author", ""))
+    date     = str(fm.get("date", ""))
+    language = str(fm.get("language", ""))
+    doc_type = str(fm.get("type", ""))
+
+    return [Document(
+        page_content=body.strip() or raw_text,
+        metadata={
+            "source":   file_path,
+            "title":    title,
+            "author":   author,
+            "date":     date,
+            "language": language,
+            "doc_type": doc_type,
+        },
+    )]
 
 
 def _load_epub(file_path: str) -> list[Document]:
