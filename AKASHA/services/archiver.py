@@ -278,6 +278,15 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
             keywords    = [k.strip() for k in _raw_tags.split(",") if k.strip()] if isinstance(_raw_tags, str) else list(_raw_tags)
             content     = _cascade_extract(html, url, output_format="markdown")
 
+        # Fallback de idioma: langdetect quando trafilatura não detectou language
+        if not language and _LANGDETECT_AVAILABLE:
+            sample = (content or "")[:2000].strip()
+            if sample:
+                try:
+                    language = _langdetect(sample)
+                except Exception:
+                    pass
+
         # 3. Jina Reader como fallback — acionado quando:
         #    (a) todos os proxies falharam (content == "") OU
         #    (b) conteúdo extraído insuficiente (< 100 palavras)

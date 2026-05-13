@@ -4432,14 +4432,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > no prompt, citaÃ§Ã£o correta nas respostas e futura filtragem por tipo/data/idioma.
 
 #### AKASHA
-- [ ] **Campos universais em todos os arquivos arquivados** â€” ao gerar o frontmatter .md no
+- [x] **Campos universais em todos os arquivos arquivados** â€” ao gerar o frontmatter .md no
   archive, sempre incluir: `title`, `author` (quando disponÃ­vel na pÃ¡gina/PDF), `date`
   (data de publicaÃ§Ã£o do conteÃºdo, nÃ£o de download â€” formato `YYYY-MM-DD`), `language`
   (`pt`/`en`/etc. â€” detectar via `langdetect` jÃ¡ no requirements do KOSMOS, ou pelo
   `Content-Language` do HTTP), `source_url` (URL original de onde foi baixado). Esses campos
   sÃ£o os mais usados pelo Mnemosyne para framing e citaÃ§Ã£o.
 
-- [ ] **Campos especÃ­ficos para artigos cientÃ­ficos** â€” quando a fonte for identificada como
+- [x] **Campos específicos para artigos científicos** â€” quando a fonte for identificada como
   cientÃ­fica (arxiv, DOI, Semantic Scholar, OpenAlex), incluir adicionalmente no frontmatter:
   `doi` (ex: `10.48550/arXiv.1706.03762`), `arxiv_id` (quando aplicÃ¡vel, ex: `1706.03762`),
   `journal` (nome do periÃ³dico ou `arXiv preprint`), `abstract` (primeiros 500 chars do
@@ -4448,7 +4448,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   para deduplicaÃ§Ã£o: antes de baixar, verificar se jÃ¡ existe arquivo com o mesmo DOI no
   archive.
 
-- [ ] **Campos especÃ­ficos para PDFs de livros** â€” quando processar PDF com `pymupdf4llm`,
+- [x] **Campos específicos para PDFs de livros** â€” quando processar PDF com `pymupdf4llm`,
   extrair metadados nativos do PDF (jÃ¡ acessÃ­veis via `fitz.open(path).metadata`): `isbn`,
   `publisher`, `year`. Incluir no frontmatter apenas quando nÃ£o-vazios. `year` complementa
   `date` para livros onde sÃ³ o ano Ã© conhecido.
