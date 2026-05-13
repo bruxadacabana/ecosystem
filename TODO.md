@@ -5029,3 +5029,28 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **Seção "Modelos por app" na `LogosView.tsx`** — lista cada app (Mnemosyne LLM, Mnemosyne Embedding, KOSMOS LLM, KOSMOS Embedding) com: nome do modelo atual + badge "recomendado" se `!is_custom`; indicador de compatibilidade (✓ verde se `fits_hardware`, ✗ vermelho com tooltip de VRAM necessária vs disponível se não couber); botão "editar" que abre um `<select>` com todos os modelos instalados (de `logosListAllModels()`); botão "usar recomendado" visível apenas quando `is_custom === true`.
 
 
+### LOGOS: pesquisa de LLMs por funcionalidade e hardware | 2026-05-13
+> Contexto: os modelos recomendados no LOGOS devem ser escolhidos com base no que
+> cada funcionalidade precisa (RAG multi-doc no Mnemosyne, analise de artigos no KOSMOS,
+> extracao de conteudo no AKASHA, embedding multilingue) e no que o hardware suporta,
+> garantindo que o mesmo app funcione bem em todos os computadores com modelos compativeis.
+> Antes de pesquisar, catalogar os modelos instalados em cada maquina.
+
+#### HUB
+- [ ] **Inventario Windows 10 (WorkPc):** ja catalogado -- all-minilm:latest, smollm2:1.7b, qwen2.5:0.5b
+- [ ] **Inventario CachyOS principal (MainPc):** catalogar -- NAME                 ID              SIZE      MODIFIED    
+qwen2.5:0.5b         a8b0c5157701    397 MB    6 days ago     
+smollm2:1.7b         cef4a1e09247    1.8 GB    7 days ago     
+all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar no contexto da pesquisa
+- [ ] **Inventario Laptop:** catalogar -- NAME                 ID              SIZE      MODIFIED    
+qwen2.5:0.5b         a8b0c5157701    397 MB    6 days ago     
+smollm2:1.7b         cef4a1e09247    1.8 GB    7 days ago     
+all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar no contexto da pesquisa
+- [ ] **Pesquisar LLMs para RAG (Mnemosyne)** -- sintese multi-doc, context window, portugues;
+  garantir que os modelos escolhidos por hardware sejam compativeis (mesma familia ou instruction format)
+- [ ] **Pesquisar LLMs para analise/sumarizacao (KOSMOS e AKASHA)** -- artigos longos, velocidade
+  de streaming; no MainPc o modelo KOSMOS pode ser diferente do Mnemosyne para rodar simultaneamente
+- [ ] **Pesquisar modelos de embedding multilingues** -- qualidade pt/en, velocidade por hardware;
+  bge-m3 vs nomic-embed-text vs all-minilm vs potion-multilingual-128M
+- [ ] **Atualizar perfis em ** apos pesquisa -- 
+  e ; possivelmente adicionar slot AKASHA
