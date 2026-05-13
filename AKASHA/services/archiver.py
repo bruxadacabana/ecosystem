@@ -215,6 +215,8 @@ class ArchivedPage:
     archived_at: str        # data/hora do download (YYYY-MM-DD HH:MM)
     source_url:  str        # URL original
     language:    str
+    description: str
+    sitename:    str
     word_count:  int
     tags:        list[str]
     notes:       str
@@ -255,13 +257,14 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
                 continue
 
         # 2. Extrai metadados e conteúdo do HTML obtido (se houver)
-        title:       str = _url_fallback_title(url)
-        author:      str = ""
-        language:    str = ""
-        content:     str = ""
-        pub_date:    str = ""
-        description: str = ""
-        sitename:    str = ""
+        title:       str       = _url_fallback_title(url)
+        author:      str       = ""
+        language:    str       = ""
+        content:     str       = ""
+        pub_date:    str       = ""
+        description: str       = ""
+        sitename:    str       = ""
+        keywords:    list[str] = []
 
         if html:
             metadata    = trafilatura.extract_metadata(html, default_url=url)
@@ -548,7 +551,9 @@ async def archive_url(
     return ArchivedPage(
         title=page.title, source=domain, author=page.author,
         pub_date=pub_date, archived_at=archived_at,
-        source_url=url, language=page.language, word_count=page.word_count,
+        source_url=url, language=page.language,
+        description=page.description, sitename=page.sitename,
+        word_count=page.word_count,
         tags=tags, notes=notes, path=dest_path, content_md=page.content_md,
     )
 
