@@ -55,9 +55,9 @@ QWidget#sidebar {
 
 QWidget#notesPane {
     background-color: #181D28;
-    border-left: 1px solid #2A3148;
 }
 
+/* Nota confirmada — borda verde sutil */
 QTextEdit#notesEdit {
     background-color: #1A1F2E;
     border: 1px solid #2A3148;
@@ -66,6 +66,44 @@ QTextEdit#notesEdit {
     font-family: "Courier Prime", "Courier New", monospace;
     font-size: 11px;
     padding: 6px;
+}
+
+/* Rascunho não confirmado — borda tracejada dourada + fundo levemente diferente */
+QTextEdit#notesEditDraft {
+    background-color: #181820;
+    border: 2px dashed #5C4A10;
+    border-radius: 3px;
+    color: #C8B99A;
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 11px;
+    padding: 5px;
+}
+
+/* QTabWidget do painel direito */
+QTabWidget#rightTabs::pane {
+    border: none;
+    background-color: #181D28;
+}
+
+QTabWidget#rightTabs > QTabBar::tab {
+    background-color: #1E2433;
+    color: #9A9080;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 4px 10px;
+    font-size: 11px;
+    min-width: 60px;
+}
+
+QTabWidget#rightTabs > QTabBar::tab:selected {
+    background-color: #181D28;
+    color: #E8DFC8;
+    border-bottom: 2px solid #D4A820;
+}
+
+QTabWidget#rightTabs > QTabBar::tab:hover {
+    background-color: #252B3A;
+    color: #C8B99A;
 }
 
 QLabel#sidebarBrand {

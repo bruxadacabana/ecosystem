@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QTextBrowser,
     QTextEdit,
     QVBoxLayout,
@@ -470,6 +471,12 @@ class MainWindow(QMainWindow):
 
         self._spinner_ref: list = [0]
         self._currently_indexing: str | None = None
+        self._notes_confirmed: bool = False
+        self._notes_history: list[tuple[str, str]] = []   # [(iso_timestamp, markdown_content)]
+        self._notes_last_citations: list[dict] = []
+        self._confirm_btn: QPushButton | None = None
+        self._undo_btn: QPushButton | None = None
+        self._right_tabs: QTabWidget | None = None
         self._spinner_timer = QTimer(self)
         self._spinner_timer.setInterval(120)
         self._spinner_timer.timeout.connect(self._on_spinner_tick)
@@ -679,6 +686,8 @@ class MainWindow(QMainWindow):
         self.file_list_widget.setMaximumHeight(96)
         self.file_list_widget.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         self.file_list_widget.setItemDelegate(IndexStatusDelegate(self._spinner_ref))
+        self.file_list_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.file_list_widget.customContextMenuRequested.connect(self._show_file_beside_menu)
         ff_layout.addWidget(self.file_list_widget)
         sb.addWidget(self.file_filter_box)
 
@@ -787,13 +796,23 @@ class MainWindow(QMainWindow):
         # Conectar signal de promoção de nota (emitido pelo chat, recebido pelo notes pane)
         self.app_state.note_promoted.connect(self._on_note_promoted)
 
-    def _build_notes_pane(self) -> QWidget:
-        """Painel direito de notas persistentes (tri-pane layout)."""
-        pane = QWidget()
-        pane.setObjectName("notesPane")
-        pane.setMinimumWidth(120)
-        layout = QVBoxLayout(pane)
-        layout.setContentsMargins(10, 14, 10, 10)
+    def _build_notes_pane(self) -> QTabWidget:
+        """
+        Painel direito com QTabWidget:
+          - Tab 0 (fixo): área de Notas editável (rascunho / confirmado)
+          - Tabs 1..N (fecháveis): visualizadores de fontes abertas 'ao lado'
+        """
+        self._right_tabs = QTabWidget()
+        self._right_tabs.setObjectName("rightTabs")
+        self._right_tabs.setMinimumWidth(120)
+        self._right_tabs.setTabsClosable(True)
+        self._right_tabs.tabCloseRequested.connect(self._on_right_tab_close)
+
+        # ── Tab 0: Notas ──────────────────────────────────────────────
+        notes_widget = QWidget()
+        notes_widget.setObjectName("notesPane")
+        layout = QVBoxLayout(notes_widget)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
 
         header_row = QHBoxLayout()
@@ -802,22 +821,41 @@ class MainWindow(QMainWindow):
         notes_lbl.setObjectName("sidebarLabel")
         header_row.addWidget(notes_lbl)
         header_row.addStretch()
+
+        self._undo_btn = QPushButton("↩")
+        self._undo_btn.setFixedSize(22, 22)
+        self._undo_btn.setToolTip("Restaurar versão anterior confirmada")
+        self._undo_btn.setEnabled(False)
+        self._undo_btn.clicked.connect(self._on_undo_note)
+        header_row.addWidget(self._undo_btn)
+
+        self._confirm_btn = QPushButton("💾")
+        self._confirm_btn.setFixedSize(22, 22)
+        self._confirm_btn.setToolTip("Confirmar nota — salva em arquivo .md no vault")
+        self._confirm_btn.setEnabled(False)
+        self._confirm_btn.clicked.connect(self._on_confirm_note)
+        header_row.addWidget(self._confirm_btn)
+
         clear_notes_btn = QPushButton("✕")
         clear_notes_btn.setFixedSize(18, 18)
         clear_notes_btn.setToolTip("Limpar notas da sessão")
-        clear_notes_btn.clicked.connect(lambda: self._notes_edit.clear())
+        clear_notes_btn.clicked.connect(self._clear_notes)
         header_row.addWidget(clear_notes_btn)
         layout.addLayout(header_row)
 
         self._notes_edit = QTextEdit()
         self._notes_edit.setObjectName("notesEdit")
         self._notes_edit.setPlaceholderText(
-            "Notas da sessão…\n\n"
-            "Respostas do chat podem ser promovidas aqui."
+            "Notas da sessão…\n\nRespostas do chat podem ser promovidas aqui."
         )
+        self._notes_edit.textChanged.connect(self._on_notes_text_changed)
         layout.addWidget(self._notes_edit)
 
-        return pane
+        self._right_tabs.addTab(notes_widget, "📝 Notas")
+        # Remove o botão de fechar da tab de Notas (índice 0 — não deve ser fechável)
+        self._right_tabs.tabBar().setTabButton(0, self._right_tabs.tabBar().ButtonPosition.RightSide, None)
+
+        return self._right_tabs
 
     def _add_sidebar_rule(self, layout: QVBoxLayout) -> None:
         rule = QLabel()
@@ -2542,7 +2580,8 @@ class MainWindow(QMainWindow):
         self.app_state.note_promoted.emit(text, citations)
 
     def _on_note_promoted(self, text: str, citations: list) -> None:
-        """Recebe a nota promovida e a adiciona ao painel de Notas."""
+        """Recebe a nota promovida e a adiciona ao painel de Notas como rascunho."""
+        self._notes_last_citations = citations
         header = text[:60].replace("\n", " ")
         if len(text) > 60:
             header += "…"
@@ -2553,12 +2592,145 @@ class MainWindow(QMainWindow):
                 path = c.get("path", "")
                 name = os.path.basename(path) if path and not path.startswith("http") else path
                 note_md += f"\n- {name}"
-        current = self._notes_edit.toPlainText().strip()
+        current = self._notes_edit.document().toMarkdown().strip()
         separator = "\n\n---\n\n" if current else ""
-        self._notes_edit.setPlainText(current + separator + note_md)
+        combined = current + separator + note_md
+        self._notes_edit.document().setMarkdown(combined)
         sb = self._notes_edit.verticalScrollBar()
         sb.setValue(sb.maximum())
-        self.statusBar().showMessage("Nota salva no painel direito.", 2000)
+        self._set_notes_draft(True)
+        # Muda para a tab de Notas se outra estiver ativa
+        if self._right_tabs and self._right_tabs.currentIndex() != 0:
+            self._right_tabs.setCurrentIndex(0)
+        self.statusBar().showMessage("Nota no rascunho — clique 💾 para confirmar.", 3000)
+
+    # ── Estado visual rascunho / confirmado ──────────────────────────────────
+
+    def _set_notes_draft(self, is_draft: bool) -> None:
+        """Alterna o objectName do editor para disparar CSS diferente."""
+        name = "notesEditDraft" if is_draft else "notesEdit"
+        if self._notes_edit.objectName() != name:
+            self._notes_edit.setObjectName(name)
+            self._notes_edit.style().unpolish(self._notes_edit)
+            self._notes_edit.style().polish(self._notes_edit)
+        self._notes_confirmed = not is_draft
+        if self._confirm_btn:
+            self._confirm_btn.setEnabled(is_draft)
+        if self._undo_btn:
+            self._undo_btn.setEnabled(bool(self._notes_history))
+
+    def _on_notes_text_changed(self) -> None:
+        """Se o usuário edita uma nota já confirmada, volta ao estado de rascunho."""
+        if self._notes_confirmed:
+            self._set_notes_draft(True)
+
+    def _on_confirm_note(self) -> None:
+        """Salva o conteúdo atual em {vault_dir}/notes/YYYY-MM-DD_HH-MM.md."""
+        from datetime import datetime
+        content_md = self._notes_edit.document().toMarkdown().strip()
+        if not content_md:
+            return
+        # Guardar revisão anterior no histórico (máx 5)
+        self._notes_history.append((datetime.now().isoformat(), content_md))
+        self._notes_history = self._notes_history[-5:]
+        # Salvar em disco se vault_dir configurado
+        vault = self.config.vault_dir if self.config else ""
+        if vault:
+            try:
+                import pathlib
+                notes_dir = pathlib.Path(vault) / "notes"
+                notes_dir.mkdir(parents=True, exist_ok=True)
+                stamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+                base = notes_dir / f"{stamp}.md"
+                # Evitar sobrescrever se já existe (mesmo minuto)
+                if base.exists():
+                    for i in range(2, 99):
+                        candidate = notes_dir / f"{stamp}_{i}.md"
+                        if not candidate.exists():
+                            base = candidate
+                            break
+                sources = [c.get("path", "") for c in self._notes_last_citations if c.get("path")]
+                frontmatter = "---\n"
+                frontmatter += f"created_at: {datetime.now().isoformat()}\n"
+                if sources:
+                    frontmatter += "sources:\n"
+                    for s in sources:
+                        frontmatter += f"  - {s}\n"
+                frontmatter += "---\n\n"
+                base.write_text(frontmatter + content_md, encoding="utf-8")
+                self.statusBar().showMessage(f"Nota confirmada: {base.name}", 3000)
+            except OSError as e:
+                self.statusBar().showMessage(f"Erro ao salvar nota: {e}", 4000)
+        else:
+            self.statusBar().showMessage("Nota confirmada (vault não configurado — não salva em disco).", 3000)
+        self._set_notes_draft(False)
+
+    def _on_undo_note(self) -> None:
+        """Restaura a versão anterior confirmada do histórico."""
+        if not self._notes_history:
+            return
+        _ts, content = self._notes_history.pop()
+        self._notes_edit.document().setMarkdown(content)
+        self._set_notes_draft(False)
+        if self._undo_btn:
+            self._undo_btn.setEnabled(bool(self._notes_history))
+
+    def _clear_notes(self) -> None:
+        self._notes_edit.clear()
+        self._set_notes_draft(False)
+        self._notes_last_citations = []
+
+    # ── Sidebar direito — Abrir ao lado ──────────────────────────────────────
+
+    def _on_right_tab_close(self, index: int) -> None:
+        """Fecha tabs de fonte; nunca fecha a tab de Notas (índice 0)."""
+        if index > 0:
+            self._right_tabs.removeTab(index)
+
+    def _show_file_beside_menu(self, pos) -> None:
+        """Context menu no file_list_widget com opção 'Abrir ao lado'."""
+        item = self.file_list_widget.itemAt(pos)
+        if not item:
+            return
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if not path:
+            return
+        menu = QMenu(self)
+        act = menu.addAction("📄  Abrir ao lado")
+        act.triggered.connect(lambda: self._open_source_beside(path))
+        menu.exec(self.file_list_widget.viewport().mapToGlobal(pos))
+
+    def _open_source_beside(self, path: str) -> None:
+        """Abre o arquivo em uma nova tab no painel direito."""
+        if not self._right_tabs:
+            return
+        fname = os.path.basename(path)
+        # Se já existe uma tab com esse arquivo, apenas ativa-a
+        for i in range(1, self._right_tabs.count()):
+            if self._right_tabs.tabToolTip(i) == path:
+                self._right_tabs.setCurrentIndex(i)
+                return
+        # Carrega conteúdo
+        ext = os.path.splitext(path.lower())[1]
+        try:
+            if ext in (".md", ".txt"):
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    raw = f.read()
+            else:
+                raw = f"[Visualizador de texto não disponível para {ext}]\n\nCaminho: {path}"
+        except OSError as e:
+            raw = f"[Erro ao abrir arquivo: {e}]"
+        browser = QTextBrowser()
+        browser.setObjectName("sourceViewerText")
+        browser.setOpenLinks(False)
+        if ext == ".md":
+            browser.setMarkdown(raw)
+        else:
+            browser.setPlainText(raw)
+        label = fname[:20] + "…" if len(fname) > 22 else fname
+        idx = self._right_tabs.addTab(browser, f"📄 {label}")
+        self._right_tabs.setTabToolTip(idx, path)
+        self._right_tabs.setCurrentIndex(idx)
 
     # ── Sessões de chat ───────────────────────────────────────────────────────
 

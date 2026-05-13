@@ -3924,7 +3924,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   "Remover nota" no painel direito). PadrÃ£o documentado no Zettelkasten/Logseq: a nota
   efÃªmera vira permanente sÃ³ por aÃ§Ã£o deliberada do usuÃ¡rio.
 
-- [ ] **DistinÃ§Ã£o visual entre rascunho e nota permanente + histÃ³rico de revisÃ£o simples**
+- [x] **Distinção visual entre rascunho e nota permanente + histÃ³rico de revisÃ£o simples**
   (`gui/notes_panel.py` ou equivalente). No painel de notas direito: notas salvas usam
   `QTextEdit` com `QTextDocument.setMarkdown()` para ediÃ§Ã£o direta em Markdown (Qt 6.x tem
   suporte nativo). Distinguir visualmente notas confirmadas (borda verde sutil, fundo sÃ©pia
@@ -3933,7 +3933,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   undo bÃ¡sico. Persistir notas em `{vault_dir}/notes/YYYY-MM-DD_HH-MM.md` com frontmatter
   YAML contendo `created_at`, `sources`, `citations`.
 
-- [ ] **Sidebar direito dinÃ¢mico para contexto paralelo** (`gui/main_window.py`). Adicionar
+- [x] **Sidebar direito dinÃ¢mico para contexto paralelo** (`gui/main_window.py`). Adicionar
   a capacidade de abrir qualquer documento do painel esquerdo em um "painel de contexto
   paralelo" dentro do sidebar direito sem fechar o painel de notas â€” padrÃ£o documentado no
   Logseq. ImplementaÃ§Ã£o: o painel direito usa um `QTabWidget` ou `QStackedWidget` com abas
