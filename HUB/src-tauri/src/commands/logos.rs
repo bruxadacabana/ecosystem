@@ -3,7 +3,9 @@
 //  Tauri IPC commands para o frontend consultar e controlar o LOGOS.
 // ============================================================
 
-use crate::logos::{LogosState, ModelAssignment, OllamaModelEntry, OllamaModelInfo, StatusResponse};
+use std::time::Duration;
+use tauri::Emitter;
+use crate::logos::{LogosState, ModelAssignment, OllamaModelEntry, OllamaModelInfo, PullProgress, RecommendedModel, StatusResponse};
 
 /// Retorna o status atual do LOGOS: prioridade ativa, fila e VRAM.
 #[tauri::command]
@@ -76,5 +78,77 @@ pub async fn logos_set_model_assignment(
     model: String,
 ) -> Result<(), String> {
     crate::logos::do_set_model_assignment(&state, &app, &model_type, &model).await;
+    Ok(())
+}
+
+/// Retorna todos os modelos recomendados compilados de todos os perfis de hardware,
+/// com status de instalação e justificativas.
+#[tauri::command]
+pub async fn logos_get_recommended_models(
+    state: tauri::State<'_, LogosState>,
+) -> Result<Vec<RecommendedModel>, String> {
+    Ok(crate::logos::do_get_recommended_models(&state).await)
+}
+
+/// Inicia o download de um modelo via Ollama pull.
+/// Emite eventos "logos-pull-progress" com PullProgress durante o download.
+#[tauri::command]
+pub async fn logos_pull_model(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LogosState>,
+    model: String,
+) -> Result<(), String> {
+    let ollama_url = crate::logos::collect_status(&state).await.ollama_url;
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3600))
+        .build()
+        .unwrap_or_default();
+
+    let resp = client
+        .post(format!("{ollama_url}/api/pull"))
+        .json(&serde_json::json!({ "model": model, "stream": true }))
+        .send()
+        .await
+        .map_err(|e| format!("Ollama indisponível: {e}"))?;
+
+    if !resp.status().is_success() {
+        let code = resp.status().as_u16();
+        return Err(format!("Ollama retornou {code}"));
+    }
+
+    let mut resp = resp;
+    let mut buf  = String::new();
+    let model_str = model.clone();
+
+    loop {
+        let chunk = resp.chunk().await.map_err(|e| format!("Erro ao ler stream: {e}"))?;
+        let Some(bytes) = chunk else { break };
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+
+        while let Some(pos) = buf.find('\n') {
+            let line = buf[..pos].trim().to_string();
+            buf.drain(..=pos);
+            if line.is_empty() { continue; }
+            if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) {
+                let status_str = obj["status"].as_str().unwrap_or("").to_string();
+                let done       = status_str == "success";
+                let _ = app.emit("logos-pull-progress", PullProgress {
+                    model:     model_str.clone(),
+                    status:    status_str,
+                    completed: obj["completed"].as_u64(),
+                    total:     obj["total"].as_u64(),
+                    done,
+                    error:     None,
+                });
+                if done { return Ok(()); }
+            }
+        }
+    }
+
+    let _ = app.emit("logos-pull-progress", PullProgress {
+        model: model_str, status: "success".to_string(),
+        completed: None, total: None, done: true, error: None,
+    });
     Ok(())
 }

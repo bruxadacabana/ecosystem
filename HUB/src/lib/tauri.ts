@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel } from '../types'
 
 async function call<T>(
   command: string,
@@ -162,6 +162,12 @@ export const logosSetModelAssignment = (
   model: string,
 ): Promise<TauriResult<void>> =>
   call<void>('logos_set_model_assignment', { app, modelType, model })
+
+export const logosGetRecommendedModels = (): Promise<TauriResult<RecommendedModel[]>> =>
+  call<RecommendedModel[]>('logos_get_recommended_models')
+
+export const logosPullModel = (model: string): Promise<TauriResult<void>> =>
+  call<void>('logos_pull_model', { model })
 
 // ----------------------------------------------------------
 //  Janela — modo compacto

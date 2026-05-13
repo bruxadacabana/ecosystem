@@ -336,9 +336,50 @@ pub struct OllamaModelEntry {
 
 #[derive(Serialize)]
 pub struct HardwareResponse {
-    pub profile:         &'static str,
-    pub profile_display: &'static str,
-    pub models:          ModelProfile,
+    pub profile:              &'static str,
+    pub profile_display:      &'static str,
+    pub models:               ModelProfile,
+    /// Máximo de modelos que podem rodar simultaneamente neste hardware
+    pub max_concurrent:       u32,
+}
+
+/// Slot de modelo — app + tipo + label legível.
+#[derive(Serialize, Clone)]
+pub struct ModelSlot {
+    pub app:        String,
+    pub model_type: String,
+    pub label:      String,
+}
+
+/// Modelo recomendado para instalação — compilado de todos os perfis de hardware.
+#[derive(Serialize, Clone)]
+pub struct RecommendedModel {
+    pub model_name:          String,
+    /// Slots que este modelo serve (pode ser o mesmo modelo em múltiplos apps/perfis)
+    pub slots:               Vec<ModelSlot>,
+    /// Perfis de hardware que recomendam este modelo
+    pub for_profiles:        Vec<String>,
+    /// True se o perfil atual recomenda este modelo para algum slot
+    pub for_current_profile: bool,
+    /// Instalado no Ollama
+    pub is_installed:        bool,
+    /// Modelo estático (model2vec, não-Ollama) — download automático no primeiro uso
+    pub is_static:           bool,
+    /// Tamanho em disco em MB (0 se não instalado ou estático)
+    pub size_disk_mb:        u64,
+    /// Justificativa de recurso: tamanho, VRAM, pontos fortes
+    pub rationale:           String,
+}
+
+/// Progresso de download de um modelo via Ollama pull.
+#[derive(Serialize, Clone)]
+pub struct PullProgress {
+    pub model:     String,
+    pub status:    String,
+    pub completed: Option<u64>,
+    pub total:     Option<u64>,
+    pub done:      bool,
+    pub error:     Option<String>,
 }
 
 // ── Router ────────────────────────────────────────────────────
@@ -821,10 +862,20 @@ async fn models_handler(State(s): State<LogosState>) -> Response {
 async fn hardware_handler(State(s): State<LogosState>) -> Json<HardwareResponse> {
     let hw = s.0.hardware_profile;
     Json(HardwareResponse {
-        profile:         hw.as_str(),
-        profile_display: hw.display(),
-        models:          hw.model_profile(),
+        profile:          hw.as_str(),
+        profile_display:  hw.display(),
+        models:           hw.model_profile(),
+        max_concurrent:   max_concurrent_for_profile(hw),
     })
+}
+
+fn max_concurrent_for_profile(profile: HardwareProfile) -> u32 {
+    match profile {
+        // RX 6600 tem 8 GB — permite 2 modelos leves (≤3B) simultâneos
+        HardwareProfile::MainPc => 2,
+        // MX150 2 GB e WorkPc CPU-only: apenas 1 modelo por vez
+        HardwareProfile::Laptop | HardwareProfile::WorkPc => 1,
+    }
 }
 
 // ── Lógica pública (usada também pelos Tauri commands) ────────
@@ -1087,6 +1138,122 @@ pub async fn do_set_model_assignment(s: &LogosState, app: &str, model_type: &str
     } else {
         overrides.insert(key, model.to_string());
     }
+}
+
+fn rationale_for_model(name: &str) -> &'static str {
+    match name {
+        "qwen2.5:7b"               => "7B · ~4.5 GB VRAM · síntese multi-doc, RAG longo",
+        "gemma2:2b"                => "2B · ~1.5 GB VRAM · rápido, streaming ágil",
+        "smollm2:1.7b"             => "1.7B · ~1 GB RAM · CPU-only, resposta leve",
+        "bge-m3"                   => "embed multilíngue SOTA · 8 GB VRAM",
+        "nomic-embed-text"         => "embed compacto · boa qualidade · 2 GB VRAM",
+        "all-minilm"               => "embed 384-dim · muito leve · CPU-only",
+        "potion-multilingual-128M" => "embed estático · ~50ms/chunk · sem GPU · sem Ollama",
+        _                          => "",
+    }
+}
+
+/// Retorna todos os modelos recomendados compilados de todos os perfis de hardware,
+/// com status de instalação e justificativas de uso.
+pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> {
+    let current = s.0.hardware_profile;
+    let all_profiles = [HardwareProfile::MainPc, HardwareProfile::Laptop, HardwareProfile::WorkPc];
+
+    // Definição dos slots: (app, model_type, label)
+    let slot_defs: &[(&str, &str, &str)] = &[
+        ("mnemosyne", "llm",   "Mnemosyne — LLM"),
+        ("kosmos",    "llm",   "KOSMOS — LLM"),
+        ("embed",     "embed", "Embedding (todos os apps)"),
+    ];
+
+    // Constrói mapa: model_name → (slots únicos, perfis únicos)
+    let mut map: HashMap<String, (Vec<ModelSlot>, Vec<String>)> = HashMap::new();
+
+    for profile in all_profiles {
+        let mp  = profile.model_profile();
+        let models_for_profile = [mp.llm_mnemosyne, mp.llm_kosmos, mp.embed];
+        for (slot_def, model_name) in slot_defs.iter().zip(models_for_profile.iter()) {
+            let (app, model_type, label) = slot_def;
+            let entry = map.entry(model_name.to_string()).or_insert_with(|| (vec![], vec![]));
+            if !entry.0.iter().any(|sl: &ModelSlot| sl.app == *app && sl.model_type == *model_type) {
+                entry.0.push(ModelSlot {
+                    app:        app.to_string(),
+                    model_type: model_type.to_string(),
+                    label:      label.to_string(),
+                });
+            }
+            let ps = profile.as_str().to_string();
+            if !entry.1.contains(&ps) {
+                entry.1.push(ps);
+            }
+        }
+    }
+
+    // Modelos do perfil atual
+    let current_mp = current.model_profile();
+    let current_models: std::collections::HashSet<String> = [
+        current_mp.llm_mnemosyne, current_mp.llm_kosmos, current_mp.embed,
+    ].iter().map(|s| s.to_string()).collect();
+
+    // Status de instalação via /api/tags
+    let size_map: HashMap<String, u64> = {
+        let tags = s.0.client
+            .get(format!("{}/api/tags", s.0.ollama_url))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .ok();
+        if let Some(resp) = tags {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                json["models"].as_array()
+                    .map(|arr| arr.iter().filter_map(|m| {
+                        let name = m["name"].as_str()?.to_string();
+                        let size_mb = m["size"].as_u64().unwrap_or(0) / 1_000_000;
+                        Some((name, size_mb))
+                    }).collect())
+                    .unwrap_or_default()
+            } else { Default::default() }
+        } else { Default::default() }
+    };
+
+    let mut result: Vec<RecommendedModel> = map.into_iter().map(|(model_name, (slots, for_profiles))| {
+        let is_installed         = size_map.contains_key(&model_name);
+        let size_disk_mb         = size_map.get(&model_name).copied().unwrap_or(0);
+        let for_current_profile  = current_models.contains(&model_name);
+        RecommendedModel {
+            rationale: rationale_for_model(&model_name).to_string(),
+            for_current_profile,
+            is_installed,
+            is_static: false,
+            size_disk_mb,
+            model_name,
+            slots,
+            for_profiles,
+        }
+    }).collect();
+
+    // potion: modelo estático (não-Ollama), disponível para todos os perfis
+    result.push(RecommendedModel {
+        model_name:          "potion-multilingual-128M".to_string(),
+        slots:               vec![ModelSlot {
+            app:        "embed".to_string(),
+            model_type: "embed".to_string(),
+            label:      "Embedding (todos os apps)".to_string(),
+        }],
+        for_profiles:        all_profiles.iter().map(|p| p.as_str().to_string()).collect(),
+        for_current_profile: true,
+        is_installed:        false, // model2vec baixa automaticamente no primeiro uso
+        is_static:           true,
+        size_disk_mb:        0,
+        rationale:           rationale_for_model("potion-multilingual-128M").to_string(),
+    });
+
+    // Perfil atual primeiro, depois alfabético
+    result.sort_by(|a, b| {
+        b.for_current_profile.cmp(&a.for_current_profile)
+            .then(a.model_name.cmp(&b.model_name))
+    });
+    result
 }
 
 /// Aplica override de prioridade baseado no perfil ativo e no app requisitante.

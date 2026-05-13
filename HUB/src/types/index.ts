@@ -167,6 +167,33 @@ export interface OllamaModelEntry {
   size_disk_mb:  number
 }
 
+export interface ModelSlot {
+  app:        string
+  model_type: string
+  label:      string
+}
+
+export interface RecommendedModel {
+  model_name:          string
+  slots:               ModelSlot[]
+  for_profiles:        string[]
+  for_current_profile: boolean
+  is_installed:        boolean
+  /** Modelo estático (model2vec) — não requer Ollama */
+  is_static:           boolean
+  size_disk_mb:        number
+  rationale:           string
+}
+
+export interface PullProgress {
+  model:     string
+  status:    string
+  completed: number | null
+  total:     number | null
+  done:      boolean
+  error:     string | null
+}
+
 export interface ModelAssignment {
   /** "mnemosyne" | "kosmos" | "embed" */
   app:               string
