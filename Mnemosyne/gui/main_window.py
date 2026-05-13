@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSettings, QTimer
-from PySide6.QtGui import QCloseEvent, QColor
+from PySide6.QtGui import QCloseEvent, QColor, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -894,9 +894,9 @@ class MainWindow(QMainWindow):
         answer_header.addWidget(self._save_note_btn)
         layout.addLayout(answer_header)
 
-        self.answer_text = QTextEdit()
+        self.answer_text = QTextBrowser()
         self.answer_text.setObjectName("answerText")
-        self.answer_text.setReadOnly(True)
+        self.answer_text.setOpenLinks(False)
         self.answer_text.setPlaceholderText("A resposta aparecerá aqui…")
         layout.addWidget(self.answer_text, 1)
 
@@ -2463,15 +2463,17 @@ class MainWindow(QMainWindow):
 
     def _on_ask_token(self, chunk: str) -> None:
         self._raw_answer += chunk
-        self.answer_text.setPlainText(self._raw_answer)
-        sb = self.answer_text.verticalScrollBar()
-        sb.setValue(sb.maximum())
+        cursor = self.answer_text.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText(chunk)
+        self.answer_text.setTextCursor(cursor)
+        self.answer_text.ensureCursorVisible()
 
     def _on_answer(self, success: bool, text: str, sources: list, updated_history: list) -> None:
         self.cancel_btn.setVisible(False)
         self._save_note_btn.setEnabled(success and bool(text))
         if success:
-            self.answer_text.setPlainText(text)
+            self.answer_text.document().setMarkdown(text)
             self._chat_history = updated_history
             # Persistir turno do assistente
             if self._current_session and self._session_manager:
@@ -2516,7 +2518,7 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setVisible(False)
         self._save_note_btn.setEnabled(success and bool(text))
         if success:
-            self.answer_text.setPlainText(text)
+            self.answer_text.document().setMarkdown(text)
             self._session_memory.save_query(
                 self.question_edit.text().strip(), text,
                 [s["path"] for s in sources],

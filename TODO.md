@@ -3941,7 +3941,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   com `QTextBrowser` mostrando o conteÃºdo do arquivo. Ãštil quando o usuÃ¡rio quer consultar
   dois documentos em paralelo durante uma sessÃ£o de pesquisa sem perder o chat central.
 
-- [ ] **Streaming de resposta do Ollama via `QThread` com signal por token**
+- [x] **Streaming de resposta do Ollama via `QThread` com signal por token**
   (`core/rag.py`, `gui/workers.py`). Encapsular a chamada ao Ollama (ou LangChain) em um
   `QThread` que emite `response_token_received(str)` para cada token recebido via streaming.
   O painel de chat conecta esse signal a um slot que appenda o token ao `QTextBrowser` atual
@@ -3950,7 +3950,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   a resposta completa chegar. Verificar se `core/rag.py` jÃ¡ tem suporte a streaming no
   LangChain (`stream=True` na chain); se sim, o trabalho Ã© principalmente no side da UI.
 
-- [ ] **`QTextEdit` com Markdown nativo para notas; `QTextBrowser` para chat**
+- [x] **`QTextEdit` com Markdown nativo para notas; `QTextBrowser` para chat**
   (`gui/notes_panel.py`, `gui/chat_widget.py`). Usar widgets distintos para contextos
   distintos: `QTextBrowser` (read-only, suporta HTML e links clicÃ¡veis) para o histÃ³rico
   de chat e visualizaÃ§Ã£o de fontes; `QTextEdit` com `document().setMarkdown(text)` e
