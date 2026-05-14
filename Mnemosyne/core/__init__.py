@@ -18,4 +18,4 @@ from .rag import ask, prepare_ask, strip_think, AskResult, SourceRecord, PERSONA
 from .reflection import generate_reflection, generate_meta_reflection, MIN_CHUNKS, REFLECTION_BOOST, META_REFLECTION_BOOST, REFLECTION_COSINE_THRESHOLD
 from .summarizer import summarize_all, prepare_summary
 from .tracker import FileTracker, FileRecord
-from .memory import MemoryStore, SessionMemory, Turn, CollectionIndex, CollectionInfo, QueryRecord
+from .memory import MemoryStore, SessionMemory, PersistentQueryStore, Turn, CollectionIndex, CollectionInfo, QueryRecord

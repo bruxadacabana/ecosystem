@@ -527,3 +527,71 @@ class SessionMemory:
                 Turn(role="assistant", content=r.answer, sources=r.sources, ts=r.timestamp)
             )
         return turns
+
+
+# ── PersistentQueryStore — queries + documentos recuperados, persiste em disco ──
+
+
+class PersistentQueryStore:
+    """
+    Persiste histórico de queries RAG em <mnemosyne_dir>/session_memory.json.
+
+    Cada entrada armazena a query e os documentos efetivamente recuperados (com
+    seus scores de relevância), permitindo detectar perguntas similares em sessões
+    futuras ("Você perguntou algo parecido antes...") e calcular score_relevância
+    médio por documento ao longo do tempo.
+
+    Complementa o FileTracker (que agrega na granularidade do arquivo) com rastreamento
+    na granularidade da query.
+    """
+
+    _MAX_ENTRIES = 100
+
+    def __init__(self, mnemosyne_dir: str) -> None:
+        self._path = Path(mnemosyne_dir) / "session_memory.json"
+        self._entries: list[dict[str, Any]] = []
+        self._load()
+
+    def _load(self) -> None:
+        if not self._path.exists():
+            return
+        try:
+            with self._path.open(encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                self._entries = data
+        except (json.JSONDecodeError, OSError):
+            self._entries = []
+
+    def _save(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._path.open("w", encoding="utf-8") as f:
+            json.dump(self._entries, f, indent=2, ensure_ascii=False)
+
+    def save_query(self, question: str, sources: list[dict[str, Any]]) -> None:
+        """Persiste uma query com os documentos recuperados (cada source tem path e score)."""
+        entry: dict[str, Any] = {
+            "question": question,
+            "sources": [
+                {"path": str(s.get("path", "")), "score": float(s.get("score", 0.0))}
+                for s in sources
+            ],
+            "timestamp": datetime.now().isoformat(),
+        }
+        self._entries.append(entry)
+        if len(self._entries) > self._MAX_ENTRIES:
+            self._entries = self._entries[-self._MAX_ENTRIES:]
+        self._save()
+
+    def find_similar(self, question: str, min_overlap: int = 2) -> dict[str, Any] | None:
+        """Retorna a entrada mais similar por sobreposição de tokens, ou None."""
+        tokens = set(question.lower().split())
+        best: dict[str, Any] | None = None
+        best_score = 0
+        for entry in reversed(self._entries):
+            prev_tokens = set(entry["question"].lower().split())
+            overlap = len(tokens & prev_tokens)
+            if overlap >= min_overlap and overlap > best_score:
+                best = entry
+                best_score = overlap
+        return best

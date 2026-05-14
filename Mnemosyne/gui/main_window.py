@@ -47,6 +47,7 @@ from core.memory import (
     CollectionIndex,
     CollectionInfo,
     MemoryStore,
+    PersistentQueryStore,
     SessionManager,
     SessionMemory,
     Turn,
@@ -491,6 +492,7 @@ class MainWindow(QMainWindow):
         self._akasha_available = False
         self._available_models: list[OllamaModel] = []
         self._session_memory = SessionMemory()
+        self._query_store: PersistentQueryStore | None = None
         self._chat_history: list[Turn] = []
         self._collection_index: CollectionIndex | None = None
         self._file_tracker: FileTracker | None = None
@@ -1590,6 +1592,7 @@ class MainWindow(QMainWindow):
             self._file_tracker = FileTracker(self.config.mnemosyne_dir)
             self._memory_store = MemoryStore(self.config.mnemosyne_dir)
             self._session_manager = SessionManager(self.config.mnemosyne_dir)
+            self._query_store = PersistentQueryStore(self.config.mnemosyne_dir)
             sessions = self._session_manager.list_sessions()
             if not sessions:
                 self._current_session = self._session_manager.new_session()
@@ -2429,9 +2432,18 @@ class MainWindow(QMainWindow):
                 self._current_session.id, Turn(role="user", content=question)
             )
 
-        similar = self._session_memory.find_similar(question)
-        if similar:
-            preview = similar.question[:60]
+        # Procura pergunta similar primeiro na sessão atual (in-memory), depois
+        # no histórico persistente de sessões anteriores.
+        similar_text: str | None = None
+        similar_mem = self._session_memory.find_similar(question)
+        if similar_mem:
+            similar_text = similar_mem.question
+        elif self._query_store:
+            past = self._query_store.find_similar(question)
+            if past:
+                similar_text = past["question"]
+        if similar_text:
+            preview = similar_text[:60]
             self.similar_label.setText(f'Pergunta similar encontrada: "{preview}…"')
             self.similar_label.setVisible(True)
         else:
@@ -2565,10 +2577,10 @@ class MainWindow(QMainWindow):
                     self._current_session.id,
                     Turn(role="assistant", content=text, sources=[s["path"] for s in sources]),
                 )
-            self._session_memory.save_query(
-                self.question_edit.text().strip(), text,
-                [s["path"] for s in sources],
-            )
+            _q = self.question_edit.text().strip()
+            self._session_memory.save_query(_q, text, [s["path"] for s in sources])
+            if self._query_store:
+                self._query_store.save_query(_q, sources)
             self._current_sources = sources
             if sources:
                 html_parts = []
@@ -2603,10 +2615,10 @@ class MainWindow(QMainWindow):
         self._save_note_btn.setEnabled(success and bool(text))
         if success:
             self.answer_text.document().setMarkdown(text)
-            self._session_memory.save_query(
-                self.question_edit.text().strip(), text,
-                [s["path"] for s in sources],
-            )
+            _q = self.question_edit.text().strip()
+            self._session_memory.save_query(_q, text, [s["path"] for s in sources])
+            if self._query_store:
+                self._query_store.save_query(_q, sources)
             self._current_sources = sources
             if sources:
                 html_parts = []

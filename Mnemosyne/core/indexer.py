@@ -567,7 +567,12 @@ def _enrich_chunk_offsets(
 def _get_embeddings(config: AppConfig) -> LCEmbeddings:
     if config.embed_model == _POTION_MODEL_NAME:
         return _Model2VecEmbeddings()
-    return OllamaEmbeddings(model=config.embed_model, base_url="http://localhost:7072")
+    # No Windows (CPU-only, sem GPU), OLLAMA_NUM_THREAD é ignorado pelo Ollama 0.6.6+
+    # (issue #10476). Passar num_thread por requisição é o workaround documentado até
+    # correção oficial. Valor 2 evita que o Ollama monopolize o i5-3470 durante indexação.
+    import sys as _sys
+    extra: dict = {"num_thread": 2} if _sys.platform == "win32" else {}
+    return OllamaEmbeddings(model=config.embed_model, base_url="http://localhost:7072", **extra)
 
 
 def _load_reflection_counts(mnemosyne_dir: str) -> dict[str, int]:

@@ -4686,7 +4686,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   bge-m3 cabe em 2GB VRAM mas nÃ£o deixa espaÃ§o para contexto. `ollama pull
   qwen3-embedding:0.6b`, depois `OllamaEmbeddings(model="qwen3-embedding:0.6b")`.
 
-- [ ] **`num_thread` por requisiÃ§Ã£o no OllamaEmbeddings (workaround OLLAMA_NUM_THREAD)**
+- [x] **`num_thread` por requisiÃ§Ã£o no OllamaEmbeddings (workaround OLLAMA_NUM_THREAD)**
   (`core/indexer.py`). `OLLAMA_NUM_THREAD` Ã© ignorado no Ollama 0.6.6+ (issue #10476).
   Usar parÃ¢metro por requisiÃ§Ã£o: `OllamaEmbeddings(model=..., num_thread=2)` no
   IndexWorker da mÃ¡quina Windows. Combinado com `QThread.Priority.IdlePriority`.
@@ -4700,7 +4700,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   filtradas nos dropdowns de Settings em vez de campos de texto livre. Se Ollama
   nÃ£o estiver rodando: mostrar aviso e desabilitar features de IA graciosamente.
 
-- [ ] **`session_memory.json` â€” histÃ³rico de queries e documentos Ãºteis por coleÃ§Ã£o**
+- [x] **`session_memory.json` â€” histÃ³rico de queries e documentos Ãºteis por coleÃ§Ã£o**
   > Parcialmente implementado: `core/memory.py` existe mas armazena apenas histÃ³rico de conversa (mensagens user/assistant), nÃ£o rastreia documentos recuperados nem utilidade. Implementar o rastreamento de documentos e score de relevÃ¢ncia conforme especificado.
   (`core/memory.py` ou novo `core/session_memory.py`). Armazenar por coleÃ§Ã£o as
   Ãºltimas N queries, quais documentos foram recuperados e se a resposta foi Ãºtil.
