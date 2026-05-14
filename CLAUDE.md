@@ -69,6 +69,22 @@ Isso garante que ambas as instâncias do Claude Code estejam na mesma página so
 
 ## Contexto do projeto
 
+### Mnemosyne
+
+**Chat = Notebook — decisão arquitetural definitiva (2026-05-14).**
+No Mnemosyne, cada conversa se chama **notebook**, não "chat". Notebooks são temáticos, sempre salvos automaticamente e persistem entre sessões. Nunca chamar de "chat", "sessão" ou "conversa" no código, UI ou documentação — o termo correto é **notebook**.
+
+Cada notebook tem diretório próprio em `{data_dir}/notebooks/{id}/` com `metadata.json`, `history.jsonl` (mensagens append-only), `memory.json` (contexto RAG) e `studio/` (outputs do Studio do notebook). Um notebook pode filtrar quais coleções consulta — se a lista `collection_names` estiver vazia, usa todas as coleções habilitadas.
+
+**Studio outputs = "pensamentos" da Mnemosyne.**
+Outputs gerados pelo Studio são salvos como arquivos `.md` com frontmatter `source: mnemosyne_studio`. O indexador reconhece esse metadado e atribui `source_type = "thought"` com peso próprio em `SOURCE_WEIGHTS`, para que o RAG saiba que está citando análises feitas pela própria Mnemosyne — e não uma fonte externa.
+
+**Aba Análise — estrutura atual (não redesenhada ainda):**
+A aba tem 4 sub-páginas: Resumo, FAQ, Guide e Studio. O redesign planejado no TODO unifica Resumo e FAQ como tipos do Studio e converte o Studio num painel de tiles persistentes. Até lá, a estrutura antiga permanece funcional.
+
+**Query multi-coleção (implementado 2026-05-14):**
+O Mnemosyne consulta **todas** as coleções habilitadas simultaneamente via `MultiVectorstore` (proxy Chroma). Nunca há "coleção ativa" para queries — apenas `coll.enabled` controla inclusão/exclusão. O botão "Ativar" foi renomeado para "Habilitar/Desabilitar".
+
 ### AKASHA
 
 - `/library` = crawler de domínios — "Sites" e "Biblioteca" foram **unificados** numa única seção chamada Biblioteca
