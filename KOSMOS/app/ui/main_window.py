@@ -367,6 +367,14 @@ class MainWindow(QMainWindow):
     def _on_reader_back(self) -> None:
         self._title_translator.resume()
         self._stack.setCurrentWidget(self._reader_source)
+        # Reaplica traduções em cache à view de origem — garante que cards que
+        # tiveram seus widgets recriados enquanto o reader estava aberto (ex: ao
+        # navegar pela sidebar durante a leitura) mostrem títulos traduzidos
+        # imediatamente, sem esperar o worker processar a fila.
+        if hasattr(self._reader_source, "get_article_ids"):
+            ids = self._reader_source.get_article_ids()
+            if ids:
+                self._title_translator.reapply_cache(ids)
 
     def _on_reader_article_changed(self, article_id: int) -> None:
         """Atualiza o card correspondente na lista."""

@@ -102,6 +102,16 @@ class TitleTranslator(QThread):
         """Retoma traduções após fechar o reader."""
         self._paused = False
 
+    def reapply_cache(self, article_ids: "list[int]") -> None:
+        """Re-emite traduções em cache para os IDs fornecidos (chamado ao voltar do reader).
+
+        Opera na thread principal — as emissões são diretas (sem fila), garantindo
+        que os cards recebam títulos traduzidos antes de serem exibidos ao usuário.
+        """
+        for article_id in article_ids:
+            if article_id in self._cache:
+                self.title_translated.emit(article_id, self._cache[article_id])
+
     def stop(self) -> None:
         self._running = False
         self._queue.put(_SENTINEL)

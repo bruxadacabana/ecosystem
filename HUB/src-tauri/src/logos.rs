@@ -1293,9 +1293,9 @@ fn apply_profile_priority(profile: &str, app: &str, requested: u8) -> u8 {
 /// Modelos pesados adquirem 2 permits → exclusividade total.
 fn is_light_model(model: &str) -> bool {
     let lower = model.to_lowercase();
-    // Detecta tamanho pelo tag: "gemma2:2b", "qwen2.5:3b", "llama3.2:1b-instruct"
-    [":0.5b", ":1b", ":1.5b", ":2b", ":3b",
-     "-0.5b", "-1b", "-1.5b", "-2b", "-3b"]
+    // Detecta tamanho pelo tag: "gemma2:2b", "qwen2.5:3b", "smollm2:1.7b", "llama3.2:1b-instruct"
+    [":0.5b", ":1b", ":1.3b", ":1.5b", ":1.7b", ":2b", ":3b",
+     "-0.5b", "-1b", "-1.3b", "-1.5b", "-1.7b", "-2b", "-3b"]
         .iter()
         .any(|p| lower.contains(p))
 }
