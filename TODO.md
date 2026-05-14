@@ -4985,6 +4985,9 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   artigos acumulam na casa dos milhares.
 
 - [ ] **Politeness: delay mínimo de 2s por domínio no scraping de artigos**
+  > Coberto pelos dois itens `ecosystem_scraper.py` desta seção (throttle adaptativo +
+  > HTTP 429), que se aplicam ao KOSMOS ArticleScraper via módulo compartilhado.
+  > Implementar apenas se `ArticleScraper` não usar `ecosystem_scraper.py` diretamente.
   (`app/core/scraper.py` ou `ArticleScraper`). Manter dict
   `{domain: last_access_time}` e impor delay de 2s entre requisições ao mesmo
   domínio durante scraping em background. Tratar HTTP 429 com backoff exponencial
@@ -5182,12 +5185,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > oferece forma de baixar o modelo caso ele ainda não esteja instalado no Ollama local.
 
 #### HUB
-- [ ] **Comando Tauri pull_model(model_name) em src-tauri/src/logos.rs** — executar
+- [x] **Comando Tauri pull_model(model_name) em src-tauri/src/logos.rs** — executar
   ollama pull <model> como processo filho e emitir evento Tauri pull_progress com
   cada linha de stdout (progresso em tempo real). Retornar erro tipado se Ollama não
   estiver rodando ou se o nome do modelo for inválido.
 
-- [ ] **Botão "Baixar modelo" na LogosView** — quando o LOGOS recomendar um modelo via
+- [x] **Botão "Baixar modelo" na LogosView** — quando o LOGOS recomendar um modelo via
   /logos/hardware que não constar em GET /api/tags do Ollama local, exibir botão
   "⬇ Baixar [nome]" ao lado da recomendação. Ao clicar: invocar pull_model, exibir
   barra de progresso com texto da linha atual do ollama pull, desabilitar o botão
@@ -5199,7 +5202,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **`launch_ollama()` em `commands/launcher.rs`** — comando Tauri assíncrono que: (1) verifica se o Ollama já responde em `localhost:11434/api/tags` (reqwest, timeout 500ms); se sim, retorna `"already_running"`. (2) Constrói o `Command` com as flags de hardware: Windows → `ollama serve` (sem flags); Linux com `/dev/kfd` presente (AMD ROCm) → `ollama serve` com `env("HSA_OVERRIDE_GFX_VERSION", valor_da_env_ou_"10.3.0")`; Linux sem `/dev/kfd` (NVIDIA ou CPU) → `ollama serve` sem flags. (3) Spawn sem janela (`CREATE_NO_WINDOW` no Windows). Retorna `"launched"` ou `AppError::Io`.
 - [x] **Registrar `launch_ollama` em `lib.rs`** — adicionar ao `tauri::generate_handler![]`.
 - [x] **`launchOllama()` em `src/lib/tauri.ts`** — wrapper tipado: `call<string>('launch_ollama')`.
-- [ ] **Botão na `LogosView.tsx`** — adicionar estado `ollamaOnline: boolean | null` (derivado de polling direto a `localhost:11434/api/tags` via `listModels()` do `ollama.ts`, a cada 4s); estado `launchStatus: 'idle' | 'starting' | 'error'`. Renderizar botão "Iniciar Ollama" visível apenas quando `ollamaOnline === false`; durante `starting` mostra "Iniciando…" e fica desabilitado; erro volta para "Iniciar Ollama" após 3s. Posicionar na seção "Ações" ao lado do botão "Silenciar Ollama".
+- [x] **Botão na `LogosView.tsx`** — adicionar estado `ollamaOnline: boolean | null` (derivado de polling direto a `localhost:11434/api/tags` via `listModels()` do `ollama.ts`, a cada 4s); estado `launchStatus: 'idle' | 'starting' | 'error'`. Renderizar botão "Iniciar Ollama" visível apenas quando `ollamaOnline === false`; durante `starting` mostra "Iniciando…" e fica desabilitado; erro volta para "Iniciar Ollama" após 3s. Posicionar na seção "Ações" ao lado do botão "Silenciar Ollama".
 
 ### CODEX — Leitor centralizado do ecossistema | 2026-05-13
 > Contexto: leitor read-only centralizado que suporta todos os formatos do ecossistema e centraliza highlights, notas e citações em markdown. Inspirado no leitor do KOSMOS, mas KOSMOS mantém seu próprio leitor. Apps como AKASHA e Mnemosyne podem abrir arquivos diretamente no CODEX. Deve ter versão Android no futuro — por isso a stack é **Tauri v2 + React + Rust** (mesma do HUB, toolchain já disponível). Sem edição de texto — apenas leitura, comentários, highlights e exportação de citações em MD.
@@ -5285,8 +5288,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   de streaming; no MainPc o modelo KOSMOS pode ser diferente do Mnemosyne para rodar simultaneamente
 - [x] **Pesquisar modelos de embedding multilingues** -- qualidade pt/en, velocidade por hardware;
   bge-m3 vs nomic-embed-text vs all-minilm vs potion-multilingual-128M
-- [ ] **Atualizar perfis em ** apos pesquisa -- 
-  e ; possivelmente adicionar slot AKASHA
+- [ ] **Pesquisar LLMs para extração de conteúdo (AKASHA)** — AKASHA não tem slot LLM ainda;
+  avaliar se precisa e qual seria o modelo (extração de metadados, resumo de página web).
+  A pesquisa de sumarização acima cobre parcialmente — registrar decisão explícita de
+  incluir ou não um slot AKASHA nos perfis do LOGOS.
+- [ ] **Atualizar perfis em `logos.rs`** após pesquisa — `rationale_for_model()`; possivelmente
+  adicionar slot AKASHA; garantir que modelos escolhidos para o mesmo app em diferentes
+  hardwares sejam da mesma família ou arquitetura compatível (ex: todos Qwen, todos Gemma,
+  ou todos instruction-tuned com mesmo prompt format)
 
 ### KOSMOS: análise em background não atualiza cards + bugs de silêncio | 2026-05-14
 > Contexto: usuária deixou KOSMOS aberto por horas e nenhum card exibiu resultado de análise.
@@ -5400,41 +5409,6 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **`core/watcher.py` / `core/idle_indexer.py` — watcher multi-coleção** — o watcher atual
   monitora só `config.watched_dir` (coleção ativa). Atualizar para monitorar os paths de
   todas as coleções habilitadas. Cada arquivo novo recebe `source_type` da sua coleção.
-
-### LOGOS: pesquisa de LLMs por funcionalidade e hardware | 2026-05-13
-> Contexto: os modelos recomendados no LOGOS devem ser escolhidos com base no que
-> cada funcionalidade precisa (RAG multi-doc no Mnemosyne, análise de artigos no KOSMOS,
-> extração de conteúdo no AKASHA, embedding multilíngue) e no que o hardware suporta,
-> garantindo que o mesmo app funcione bem em todos os computadores com modelos compatíveis.
-> Antes de pesquisar, catalogar os modelos instalados em cada máquina.
-
-#### Inventário de modelos instalados (preencher antes da pesquisa)
-- [ ] **Windows 10 (WorkPc):** já catalogado — all-minilm:latest, smollm2:1.7b, qwen2.5:0.5b
-- [ ] **CachyOS principal (MainPc):** catalogar — NAME                 ID              SIZE      MODIFIED    
-qwen2.5:0.5b         a8b0c5157701    397 MB    6 days ago     
-smollm2:1.7b         cef4a1e09247    1.8 GB    7 days ago     
-all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar aqui
-- [ ] **Laptop (Laptop):** catalogar — NAME                 ID              SIZE      MODIFIED    
-qwen2.5:0.5b         a8b0c5157701    397 MB    7 days ago     
-smollm2:1.7b         cef4a1e09247    1.8 GB    8 days ago     
-all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar aqui
-
-#### Pesquisa e atualização de perfis
-- [ ] **Pesquisar LLMs para RAG (Mnemosyne)** — síntese multi-doc longa, context window, português;
-  comparar qwen2.5:7b (MainPc), gemma2:2b (Laptop), smollm2:1.7b (WorkPc): são compatíveis
-  na saída? O mesmo prompt funciona em todos os tamanhos?
-- [ ] **Pesquisar LLMs para análise/sumarização (KOSMOS)** — artigos longos, velocidade de
-  streaming, capacidade de extrair pontos principais; validar se modelo KOSMOS pode ser
-  diferente do modelo Mnemosyne para permitir execução simultânea no MainPc (2 permits)
-- [ ] **Pesquisar LLMs para extração de conteúdo (AKASHA)** — AKASHA não tem slot LLM ainda;
-  avaliar se precisa e qual seria o modelo (extração de metadados, resumo de página web)
-- [ ] **Pesquisar modelos de embedding multilíngues leves** — compatibilidade portugues/inglês,
-  qualidade vs velocidade por hardware; comparar bge-m3 vs nomic-embed-text vs all-minilm
-  vs potion-multilingual-128M — devem produzir espaços vetoriais comparáveis?
-- [ ] **Atualizar perfis em ** após pesquisa —  e
-  rationale_for_model(); possivelmente adicionar slot AKASHA; garantir que modelos escolhidos
-  para o mesmo app em diferentes hardwares sejam da mesma família ou arquitetura compatível
-  (ex: todos Qwen, todos Gemma, ou todos instruction-tuned com mesmo prompt format)
 
 ### Pesquisa: Extração de Temas, Visualização Interativa, Perguntas Follow-up e Persona RAG | 2026-05-14
 > Contexto: funcionalidades de descoberta de conhecimento e experiência de usuário para o Mnemosyne:
@@ -5646,3 +5620,140 @@ all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar aqui
   com `content` = HTML. Ao abrir o tile, exibe o HTML num `QWebEngineView` dentro do
   `StudioOutputDialog`. Exporta como `.html`. Não depende de modelos de geração de imagem —
   é puramente texto estruturado + CSS visual.
+
+### HERMES: extrator de receitas de vídeo | 2026-05-14
+> Contexto: nova aba no HERMES para extrair receitas estruturadas de vídeos online (YouTube
+> e outros sites suportados pelo yt-dlp). Fluxo: URL → yt-dlp (info + legendas ou áudio) →
+> Whisper como fallback de transcrição → LLM extrai ingredientes/preparo/dicas → salva como
+> Markdown com frontmatter YAML incluindo `type: recipe` para identificação pelo ecossistema.
+
+#### HERMES
+
+- [ ] **`services/recipe_extractor.py` — pipeline de extração** — criar módulo com função
+  `extract_recipe(url: str, config: AppConfig) → RecipeResult`. Passo 1: chamar yt-dlp
+  (`yt_dlp.YoutubeDL`) para extrair metadados do vídeo (título, channel, duration, upload_date,
+  thumbnail, webpage_url, extractor_key) e tentar baixar legendas automáticas/manuais
+  (`writesubtitles=True, writeautomaticsub=True, subtitleslangs=["pt","en","*"]`) sem baixar
+  o vídeo (`skip_download=True`). Passo 2: se legenda encontrada, usar como transcrição direta;
+  se não, baixar áudio (`format="bestaudio"`) e transcrever com `WhisperModel` (reuso do
+  modelo já instanciado no HERMES — singleton de módulo, conforme item de cache já no TODO).
+  Passo 3: chamar LLM via Ollama com prompt de extração estruturada (JSON schema:
+  `{ingredients: list[str], steps: list[str], tips: list[str], recipe_name: str}`).
+  Temperatura 0.2 para minimizar alucinações. Passo 4: montar `RecipeResult` com todos os
+  campos. Tratar `except DownloadError` e `except json.JSONDecodeError` com tipagem explícita.
+
+- [ ] **`services/recipe_extractor.py` — suporte a playlists** — `RecipePlaylistExtractor`
+  que usa `yt_dlp.YoutubeDL` com `extract_flat=True` para listar entradas da playlist sem
+  baixar. Retorna `list[str]` de URLs individuais. O worker GUI itera sobre elas chamando
+  `extract_recipe()` por item, emitindo `progress(current, total, current_title)` a cada
+  conclusão. Falhas por item são registradas como `RecipeResult(error=str)` e não abortam
+  o lote — todos os vídeos são processados independentemente.
+
+- [ ] **Output Markdown com frontmatter `type: recipe`** — o `RecipeResult` é serializado
+  por função `to_markdown(result) → str`. Frontmatter YAML obrigatório:
+  `type: recipe` (identificador para o ecossistema), `title`, `source_url`, `source_platform`
+  (valor de `extractor_key` do yt-dlp, ex: `"youtube"`), `channel`, `duration_seconds`,
+  `language` (idioma detectado na transcrição), `published_date` (formato `YYYY-MM-DD` do
+  `upload_date` do yt-dlp), `thumbnail`, `extracted_at` (data ISO 8601 local).
+  Corpo Markdown com seções: `## Ingredientes` (lista `- item`), `## Modo de Preparo`
+  (lista numerada `1. passo`), `## Dicas` (lista `- dica`, omitida se vazia).
+  Arquivo salvo como `{slug-do-titulo}-{YYYYMMDD}.md` em `config.recipes_dir`.
+
+- [ ] **`gui/recipe_tab.py` — aba "Receitas" no HERMES** — nova `QWidget` adicionada ao
+  `QTabWidget` principal do HERMES. Componentes: `QLineEdit` para URL com placeholder
+  "Cole a URL do vídeo ou playlist…" + botão "Extrair"; label de status que aparece após
+  colar URL ("YouTube · Identificado: [Título]" ou "Playlist: N vídeos detectados") via
+  chamada prévia ao yt-dlp com `extract_flat=True` e timeout 5s; `QProgressBar` visível
+  durante extração (modo indeterminado para vídeo único, determinado para playlist com
+  current/total); `QTextEdit` read-only com preview do Markdown gerado após conclusão;
+  botão "Salvar" ativo após extração bem-sucedida (salva em `config.recipes_dir`); botão
+  "Limpar" reseta tudo. Para playlists, exibir lista de resultados com status por item
+  (✓ / ✗) num `QListWidget` acima do preview.
+
+- [ ] **`gui/workers.py` — `RecipeExtractWorker(QThread)`** — worker que encapsula
+  `extract_recipe()` (vídeo único) ou `RecipePlaylistExtractor` (playlist). Sinais:
+  `progress(int, int, str)` (atual, total, título), `recipe_ready(RecipeResult)` (por
+  item concluído), `finished()`, `error(str)`. Rodando com `QThread.Priority.LowPriority`
+  para não bloquear a UI. Conectar `started` e `finished` aos botões da aba
+  (desabilitar "Extrair" durante processamento).
+
+- [ ] **`core/config.py` — campo `recipes_dir: str`** — adicionar ao `AppConfig` com
+  default `str(Path.home() / "hermes_recipes")`. Expor no `SetupDialog` do HERMES como
+  campo editável com botão de seleção de pasta. Também registrar em `ecosystem.json`
+  na seção `hermes` para que outros apps saibam onde estão as receitas.
+
+#### HUB
+- [ ] **`src/views/SetupView.tsx` — campo "HERMES — Pasta de Receitas"** — adicionar
+  `hermes.recipes_dir` ao `DATA_FIELDS` do SetupView, label "HERMES — Receitas",
+  tipo `path`. Segue o mesmo padrão dos outros campos de path do Hermes já presentes.
+
+### AKASHA + KOSMOS: dados configurados pelo usuário em JSON (resilência a crash do DB) | 2026-05-14
+> Contexto: quando o banco SQLite corrompe, o usuário perde toda a lista de sites, favoritos,
+> lista negra e fontes do KOSMOS — dados insubstituíveis que precisariam ser recadastrados
+> manualmente. Solução: separar "dados configurados pelo usuário" (imutáveis, preciosos) de
+> "dados derivados" (indexados, crawleados, analisados — podem ser reconstruídos). Os dados
+> configurados vivem em arquivos JSON versionados pelo Syncthing/Proton Drive; o banco é
+> populado a partir deles no startup e funciona como cache de trabalho.
+
+#### AKASHA
+
+- [ ] **`services/user_data.py` — camada de persistência JSON para dados configurados** —
+  criar módulo com classe `UserData` responsável por ler e escrever os 5 arquivos JSON de
+  dados do usuário em `{data_dir}/`:
+  `sites.json` (lista de sites da Biblioteca — campos de `crawl_sites`: `base_url`, `label`,
+  `crawl_depth`, `subdomains`, `created_at`),
+  `blocked_domains.json` (lista negra — campo `domain` com `added_at`),
+  `favorites.json` (domínios favoritos — campo `domain` com `added_at`),
+  `lenses.json` (lentes de busca configuradas — campos `name`, `description`, `filters_json`),
+  `watch_later.json` (lista de URLs para ler depois — campos `url`, `title`, `added_at`).
+  Cada arquivo é um array JSON raiz. Métodos `load_{entity}() → list[dict]` e
+  `save_{entity}(items: list[dict])` para cada tipo. Escrita atômica: escrever em `.tmp`,
+  depois `os.replace()` para evitar corrupção parcial. `save_*` é chamado sempre que o
+  usuário adiciona, edita ou remove um item — antes de qualquer operação no banco.
+
+- [ ] **`database.py` — `populate_from_user_data()` no startup** — nova função assíncrona
+  chamada em `init_db()` após criar as tabelas. Carrega cada JSON via `UserData.load_*()` e
+  faz `INSERT OR IGNORE` (por `base_url`/`domain`/`name` como chave de unicidade) em
+  `crawl_sites`, `blocked_domains`, `favorite_domains`, `lenses` e `watch_later`.
+  Direção única: JSON → DB (o banco nunca sobrescreve o JSON no startup). Isso garante que
+  mesmo após deletar o banco, todos os dados configurados pelo usuário ressurgem na próxima
+  abertura.
+
+- [ ] **`routers/crawler.py` e `routers/library.py` — escrever JSON em toda mutação** —
+  em cada endpoint que adiciona, edita ou remove sites (`POST /library/sites`,
+  `DELETE /library/sites/{id}`, `PATCH /library/sites/{id}`), chamar
+  `await UserData.save_sites(await get_all_sites_as_dicts())` após a operação no banco.
+  Mesma lógica para endpoints de blacklist (`/settings/blocked`), favoritos
+  (`/settings/favorites`), lentes (`/lenses`) e watch_later (`/watch-later`).
+  Padrão: banco é atualizado primeiro; se sucesso, JSON é atualizado; se JSON falhar,
+  logar warning mas não reverter a operação do banco (o banco é a fonte de verdade em runtime).
+
+- [ ] **Migração única: exportar DB existente para JSON na primeira abertura** — em
+  `populate_from_user_data()`, verificar se cada arquivo JSON já existe; se **não** existir
+  e a tabela correspondente tiver dados no banco, exportar para JSON (sensu inverso). Isso
+  garante que usuários com banco funcional não percam dados na transição — os JSONs são
+  criados automaticamente na primeira abertura com a nova versão do código.
+
+#### KOSMOS
+
+- [ ] **`app/core/feed_store.py` — persistência JSON para feeds e categorias** — criar módulo
+  `FeedStore` com dois arquivos JSON em `{data_dir}/`:
+  `feeds.json` (array de objetos com campos: `url`, `title`, `category_name`, `update_interval`,
+  `enabled`, `added_at`),
+  `categories.json` (array de objetos com: `name`, `color`, `order`).
+  Métodos: `load_feeds() → list[dict]`, `save_feeds(feeds: list[dict])`,
+  `load_categories() → list[dict]`, `save_categories(cats: list[dict])`.
+  Escrita atômica via `.tmp` + `os.replace()`. `save_feeds` é chamado após toda operação de
+  adicionar/editar/remover feed; `save_categories` idem para categorias.
+
+- [ ] **`app/core/database.py` — `populate_feeds_from_store()` no startup** — após
+  `Base.metadata.create_all()`, chamar função que lê `FeedStore.load_feeds()` e
+  `FeedStore.load_categories()` e faz `INSERT OR IGNORE` (por `url` como chave única para
+  feeds, `name` para categorias) nas tabelas ORM correspondentes. Garante que feeds
+  sobrevivem a qualquer corrupção ou deleção do banco SQLite.
+
+- [ ] **`app/core/feed_manager.py` — escrever JSON em toda mutação de feed** — em cada
+  método que adiciona, edita ou remove feeds (`add_feed()`, `remove_feed()`,
+  `update_feed()`) e categorias (`add_category()`, `remove_category()`), chamar
+  `FeedStore.save_feeds()` / `FeedStore.save_categories()` após a operação no banco.
+  Mesmo padrão do AKASHA: banco primeiro, JSON depois.

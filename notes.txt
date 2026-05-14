@@ -1,127 +1,6 @@
-# notes
-
-
-- eu quero criar um pequeno programa no ecossistema, ou dentro do HERMES, que receba um vídeo (ou playlist) especificamente de receita e extraia a transcrição e depois organize/edite os dados (ingredientes, modo de preparo e quaisquer dicas extras). É importante que ele suporte diversas fontes e inclua metadados.
-- pesquisar como buscar outras notícias sobre o mesmo tópico quando o resultado do botão de buscar notícia completa retornar "scraping parcial - tentar novamente".
-- AKASHA não abriu:
-[AKASHA] Sincronizando dependencias...
-[AKASHA] Iniciando servidor na porta 7071...
-[AKASHA] Abrindo http://localhost:7071 no navegador...
-resource module not available on Windows
-INFO:     Started server process [10824]
-INFO:     Waiting for application startup.
-ERROR:    Traceback (most recent call last):
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\starlette\routing.py", line 638, in lifespan
-    async with self.lifespan_context(app) as maybe_state:
-               ~~~~~~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\fastapi\routing.py", line 216, in merged_lifespan
-    async with original_context(app) as maybe_original_state:
-               ~~~~~~~~~~~~~~~~^^^^^
-  File "C:\Python314\Lib\contextlib.py", line 214, in __aenter__
-    return await anext(self.gen)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\main.py", line 74, in lifespan
-    await index_local_files()
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\services\local_search.py", line 434, in index_local_files
-    await _index_directory(
-        Path(config.kosmos_archive), "KOSMOS", "**/*.md", _extract_kosmos
-    )
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\services\local_search.py", line 423, in _index_directory
-    await _reindex(str(path), title, body, source, mtime)
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\services\local_search.py", line 332, in _reindex
-    rows = await (await db.execute(
-                  ^^^^^^^^^^^^^^^^^
-        "SELECT rowid FROM local_fts WHERE path = ?", (path_str,)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )).fetchall()
-    ^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\aiosqlite\core.py", line 223, in execute
-    cursor = await self._execute(self._conn.execute, sql, parameters)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\aiosqlite\core.py", line 160, in _execute
-    return await future
-           ^^^^^^^^^^^^
-  File "D:\windows\ProgramFiles\ecosystem\AKASHA\.venv\Lib\site-packages\aiosqlite\core.py", line 63, in _connection_worker_thread
-    result = function()
-sqlite3.DatabaseError: database disk image is malformed
-
-ERROR:    Application startup failed. Exiting.
-Pressione qualquer tecla para continuar. . .
-
-
 ========================================
 
-- implemente ### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
-
+implemente ### Pesquisa: Extração de Temas, Visualização Interativa, Perguntas Follow-up e Persona RAG | 2026-05-14
 
 1: implemente dois itens de cada vez (implemente, marque feito no TODO, commite, resuma no chat (não precisa aprofundar muito, mas sempre explique o que foi implementado e o porquê de forma didática) e peça permissão antes de implementar a próxima dupla). Cada item = 1 TODO (- [ ]).
 2: sempre mantenha atualizado o GUIDE e o DESIGN BIBLE, inclusive listando TODAS as ferramentas e bibliotecas necessárias para o funcionamento do ecossistema. Sempre com o tom de tutor especialista em engenharia de software explicando para um programador iniciante, de forma didática e detalhada. Lembre-se que o GUIDE tem como objetivo guiar novos desenvolvedores que foram trabalhar no ecossistema.
@@ -129,6 +8,9 @@ Pressione qualquer tecla para continuar. . .
 ======
 
 próximo:
+
+### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
+
 
 ### LOGOS: pull de modelo recomendado direto do HUB | 2026-05-13
 
