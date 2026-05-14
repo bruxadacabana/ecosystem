@@ -5326,23 +5326,23 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > identificadas durante a implementação dos fixes de análise e I.3.
 
 #### KOSMOS
-- [ ] **Barra de status no rodapé do KOSMOS** — adicionar `QStatusBar` ou widget fixo no rodapé
+- [x] **Barra de status no rodapé do KOSMOS** — adicionar `QStatusBar` ou widget fixo no rodapé
   da `MainWindow` para exibir progresso e erros. Deve mostrar: "Analisando X artigos…" durante
   análise em background; "Traduzindo títulos…" durante tradução; erros de Ollama como
   "⚠ Falha ao analisar artigo 42: conexão recusada" (com timestamp); "✓ N artigos analisados"
   ao concluir lote. O `BackgroundAnalyzer` deve emitir sinais de progresso (`progress(int, int)`
   para atual/total) além do `article_analyzed`. O `TitleTranslator` idem. A barra some após
   alguns segundos de inatividade (QTimer de 5s para limpar mensagens de conclusão).
-- [ ] **Persistência das traduções de títulos** — salvar `dict[article_id, translated_title]`
+- [x] **Persistência das traduções de títulos** — salvar `dict[article_id, translated_title]`
   em `data/title_cache_{lang}.json` ao fechar o app (serializar `TitleTranslator._cache`).
   Carregar no startup em `TitleTranslator.__init__()`. Assim traduções já feitas não repetem
   chamadas à API ao reabrir o KOSMOS. Invalidar entradas para artigos deletados periodicamente
   (cruzar com IDs da DB a cada startup).
-- [ ] **Pausar tradução ao abrir artigo, retomar ao fechar** — em `MainWindow`, ao navegar
+- [x] **Pausar tradução ao abrir artigo, retomar ao fechar** — em `MainWindow`, ao navegar
   para o reader (`_on_article_clicked`, `_on_unified_article_clicked`, etc.), chamar
   `self._title_translator.pause()`; ao voltar (`_on_reader_back`), chamar
   `self._title_translator.resume()`. Isso libera recursos de rede enquanto o reader está ativo.
-- [ ] **Enfileirar tradução e análise de novos artigos baixados** — em `_on_feed_updated()`,
+- [x] **Enfileirar tradução e análise de novos artigos baixados** — em `_on_feed_updated()`,
   além de enfileirar análise (já feito), também enfileirar tradução dos novos artigos:
   buscar os artigos recém-baixados pelo feed_id, construir a lista de `(id, title, language)`
   e chamar `_on_translation_requested()` diretamente (sem depender de `_populate_cards` ser
