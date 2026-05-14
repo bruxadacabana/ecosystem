@@ -1,12 +1,4 @@
-1:
-
-2: releia os itens do TODO em 
-### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
-e
-### Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
-verifique se há itens duplicados, incorretos ou desnecessários.
-
-=====================
+====================
 
 vamos prosseguir com a implementação de ### Auditoria pesquisas.md â†’ itens nÃ£o registrados no TODO | 2026-05-05
 
@@ -38,6 +30,8 @@ Descoberta crítica: nomic-embed-text v1.5 (instalado no Laptop) é inglês-only
 depois:
 
 ### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
+
+### Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
 
 
 - leia tudo que ainda não está marcado como completo no TODO e sugira os próximos passos

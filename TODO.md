@@ -4388,14 +4388,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Achados completos em pesquisas.md (sessão 2026-05-13). LLMs recomendados devem aparecer na UI do LOGOS
 > com opção de download para modelos não instalados.
 
-#### HUB — LOGOS: recomendações de modelos por hardware com opção de download
-- [ ] Atualizar `do_get_recommended_models()` em `HUB/src-tauri/src/logos.rs` com os modelos validados
-  pela pesquisa, separados por perfil de hardware (`MainPc`, `Laptop`, `WorkPc`). **MainPc:** RAG primário
-  = `qwen2.5:7b` (128K ctx, 4,7 GB, IFEval 87,3), alternativa com citação = `command-r7b` (grounded
-  generation nativa), chat = `gemma3:4b`; **Laptop:** RAG = `phi3.5:mini` (128K ctx, 2,2 GB, IFEval 59,0)
-  ou `gemma2:2b` (8K ctx, 1,6 GB), chat = `smollm2:1.7b`; **WorkPc:** sem LLM local (CPU Ivy Bridge sem
-  AVX2 — mostrar mensagem explicativa em vez de lista de modelos). Cada entrada da struct deve conter
-  `name`, `description`, `size_gb`, `ifeval_score`, `context_window`, `hardware_profile`.
+#### HUB — LOGOS: botão de download de modelos recomendados
 - [ ] Adicionar em `LogosView.tsx` (HUB) botão "Baixar" ao lado de cada modelo recomendado que não
   estiver instalado. Usar o endpoint `/api/logos/pull` já existente com streaming NDJSON. O botão deve
   exibir progress bar durante pull e sumir ao concluir. Modelos já instalados mantêm apenas o botão
@@ -4408,28 +4401,20 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   roda na MX150. **Atenção crítica:** trocar embedding exige reindex completo do ChromaDB (dimensão muda
   de 768 → 1024 dims — coleção incompatível). Limpar a coleção antes de reindexar. Documentar a troca
   no GUIDE.md do Mnemosyne.
-- [ ] Avaliar `potion-multilingual-128M` (Model2Vec, não via Ollama — pip install model2vec) como
-  fallback no WorkPc e Laptop em bateria. É embedding estático (lookup de dicionário, sem GPU, sem
-  inferência de transformer), 100–500× mais rápido em CPU, 128 dims, 27 MB. Limitação: dimensão baixa
-  pode reduzir recall. Testar recall MTEB pt antes de adotar em produção.
+- [x] Avaliar `potion-multilingual-128M` (Model2Vec, não via Ollama — pip install model2vec) como
+  fallback no WorkPc. Decisão tomada na sessão 2026-05-14: adotar no WorkPc (256 dims, estático,
+  27 MB, 500× mais rápido em CPU); índice separado do MainPc/Laptop por incompatibilidade de dims.
+  Detalhes e itens de implementação na seção 2026-05-14.
 
 #### Mnemosyne — LLM RAG por máquina: alinhamento com perfis do LOGOS
-- [ ] **MainPc:** confirmar `qwen2.5:7b` como LLM de RAG primário. Vantagens: 128K ctx (crucial para
-  RAG multi-doc), IFEval 87,3 (melhor instruction following do inventário), 4,7 GB VRAM (dentro dos
-  8 GB da RX 6600). Configurar em `Mnemosyne/config.py` ou no painel de configuração da SetupDialog.
-- [ ] **MainPc:** testar `command-r7b` (Cohere, 8B, 3,9 GB, 128K ctx) para RAG com citação explícita.
-  É o único modelo do inventário com `grounded generation` nativa — retorna grounding spans exatos do
-  documento. Útil quando o Mnemosyne precisar referenciar trechos específicos nas respostas.
-- [ ] **Laptop:** confirmar `phi3.5:mini` (Microsoft, 3,8B, 2,2 GB, 128K ctx) como LLM RAG primário.
-  Alternativa se VRAM insuficiente: `gemma2:2b` (1,6 GB, 8K ctx — contexto menor, usar só para chunks
-  curtos). `smollm2:1.7b` já instalado é adequado para chat leve mas não para RAG multi-doc.
-
-#### WorkPc — estratégia consolidada de IA
-- [ ] Documentar no GUIDE.md e no painel LOGOS (WorkPc) que o WorkPc usa estratégia embedding-only:
-  sem LLM local (CPU Ivy Bridge i5-3470 sem AVX2 torna inferência de qualquer LLM impraticável).
-  O WorkPc indexa conteúdo com `potion-multilingual-128M` (estático, sem GPU) e delega geração de
-  texto para API externa ou sessão remota no MainPc. No LOGOS, mostrar mensagem explicativa em vez
-  de lista de modelos para o perfil WorkPc.
+- [x] **MainPc:** `qwen2.5:7b` confirmado como LLM de RAG primário na sessão 2026-05-14. Perfil
+  detalhado com todos os slots (rag/analysis/query/embed) registrado na seção 2026-05-14.
+- [ ] **MainPc:** avaliar `command-r7b` (Cohere, 8B, 3,9 GB, 128K ctx) para RAG com citação explícita.
+  Único modelo com `grounded generation` nativa — retorna grounding spans exatos do documento. Útil
+  quando o Mnemosyne precisar referenciar trechos específicos. Não está no inventário atual — requer
+  download antes de testar.
+- [x] **Laptop:** `phi3.5:mini` descartado — 2,2 GB excede os 2 GB VRAM da MX150. LLM RAG do Laptop
+  é `gemma2:2b` (1,6 GB Q4), conforme corrigido na seção 2026-05-14.
 
 ### Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
 > Contexto: pesquisa sobre (1) modelos ideais por funcionalidade do ecossistema (Mnemosyne-RAG,
