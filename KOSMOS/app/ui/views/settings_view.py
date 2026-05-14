@@ -7,7 +7,7 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QGroupBox,
@@ -21,6 +21,23 @@ if TYPE_CHECKING:
     from app.utils.config import Config
 
 log = logging.getLogger("kosmos.ui.settings")
+
+
+class _OllamaCheckWorker(QThread):
+    """Verifica disponibilidade do Ollama em background (não bloqueia a UI)."""
+
+    result = pyqtSignal(bool, str)  # (available, active_model_name)
+
+    def __init__(self, endpoint: str, model: str) -> None:
+        super().__init__()
+        self._endpoint = endpoint
+        self._model    = model
+
+    def run(self) -> None:
+        from app.core.ai_bridge import AiBridge
+        bridge = AiBridge(endpoint=self._endpoint)
+        self.result.emit(bridge.is_available(), self._model)
+
 
 # Opções dos combos
 _UPDATE_OPTIONS  = [("15 minutos", 15), ("30 minutos", 30),
@@ -289,6 +306,12 @@ class SettingsView(QWidget):
         box.setFont(self._mono(10))
         layout = QVBoxLayout(box)
         layout.setSpacing(12)
+
+        # Label de status persistente da conexão com Ollama
+        self._ollama_conn_lbl = QLabel("○  verificando…")
+        self._ollama_conn_lbl.setObjectName("ollamaUnknown")
+        self._ollama_conn_lbl.setFont(self._mono(11))
+        layout.addWidget(self._ollama_conn_lbl)
 
         self._ai_enable = QCheckBox("Habilitar IA local  (requer Ollama rodando)")
         self._ai_enable.setFont(self._mono(12))
@@ -628,6 +651,39 @@ class SettingsView(QWidget):
         self._cfg.set("theme", new_theme)
         self._refresh_appearance_widgets()
         self.theme_changed.emit(new_theme)
+
+    # ------------------------------------------------------------------
+    # Verificação de status do Ollama (H.1)
+    # ------------------------------------------------------------------
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._check_ollama_status()
+
+    def _check_ollama_status(self) -> None:
+        if hasattr(self, "_ollama_check_worker") and self._ollama_check_worker.isRunning():
+            return
+        endpoint = self._cfg.get("ai_endpoint", "http://localhost:7072")
+        model    = str(self._cfg.get("ai_gen_model", ""))
+        self._ollama_conn_lbl.setText("○  verificando…")
+        self._ollama_conn_lbl.setObjectName("ollamaUnknown")
+        self._ollama_conn_lbl.style().unpolish(self._ollama_conn_lbl)
+        self._ollama_conn_lbl.style().polish(self._ollama_conn_lbl)
+        self._ollama_check_worker = _OllamaCheckWorker(str(endpoint), model)
+        self._ollama_check_worker.result.connect(self._on_ollama_check_done)
+        self._ollama_check_worker.start()
+
+    def _on_ollama_check_done(self, available: bool, model: str) -> None:
+        lbl = self._ollama_conn_lbl
+        if available:
+            suffix = f"  ·  {model}" if model else ""
+            lbl.setText(f"●  Ollama conectado{suffix}")
+            lbl.setObjectName("ollamaOnline")
+        else:
+            lbl.setText("○  Ollama offline")
+            lbl.setObjectName("ollamaOffline")
+        lbl.style().unpolish(lbl)
+        lbl.style().polish(lbl)
 
     def _on_font_size_changed(self, index: int) -> None:
         size = _FONT_SIZES[index]

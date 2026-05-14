@@ -1057,3 +1057,8 @@ QFrame#statCard:hover {
     background-color: #1E2433;
     border-color: #7A7260;
 }
+
+/* --- Ollama status badge / label (H.4 / H.1) ----------------------- */
+QLabel#ollamaOnline  { color: #6AAA6A; font-size: 11px; }
+QLabel#ollamaOffline { color: #C07070; font-size: 11px; }
+QLabel#ollamaUnknown { color: #6A6058; font-size: 11px; }

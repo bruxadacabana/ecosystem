@@ -1899,7 +1899,8 @@ class ReaderView(QWidget):
 
         # Iniciar worker
         self._summary_panel.show()
-        self._summary_text.setPlainText("")
+        self._summary_text.setPlainText("⟳  Aguardando Ollama…")
+        self._summary_waiting = True
         self._summarize_btn.setText("○ Resumindo…")
         self._summarize_btn.setEnabled(False)
 
@@ -1915,6 +1916,9 @@ class ReaderView(QWidget):
         self._summarize_worker.start()
 
     def _on_summary_token(self, token: str) -> None:
+        if getattr(self, "_summary_waiting", False):
+            self._summary_text.setPlainText("")
+            self._summary_waiting = False
         cursor = self._summary_text.textCursor()
         from PyQt6.QtGui import QTextCursor
         cursor.movePosition(QTextCursor.MoveOperation.End)

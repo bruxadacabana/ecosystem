@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QThread, Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QHBoxLayout, QMainWindow,
@@ -19,8 +19,24 @@ if TYPE_CHECKING:
     from app.utils.config import Config
     from app.theme.theme_manager import ThemeManager
 
+from PyQt6.QtCore import pyqtSignal as _pyqtSignal
+
 from app.core.background_analyzer import BackgroundAnalyzer
 from app.core.title_translator import TitleTranslator
+
+
+class _OllamaPoller(QThread):
+    """Verificação pontual de disponibilidade do Ollama (não bloqueia a UI)."""
+
+    result = _pyqtSignal(bool)
+
+    def __init__(self, endpoint: str) -> None:
+        super().__init__()
+        self._endpoint = endpoint
+
+    def run(self) -> None:
+        from app.core.ai_bridge import AiBridge
+        self.result.emit(AiBridge(endpoint=self._endpoint).is_available())
 
 log = logging.getLogger("kosmos.ui")
 
@@ -56,6 +72,21 @@ class MainWindow(QMainWindow):
         self._status_clear_timer.setSingleShot(True)
         self._status_clear_timer.setInterval(6000)
         self._status_clear_timer.timeout.connect(self._status_bar.clearMessage)
+
+        # Badge de status global do Ollama (H.4)
+        from PyQt6.QtWidgets import QLabel
+        self._ollama_badge = QLabel("○  Ollama")
+        self._ollama_badge.setObjectName("ollamaUnknown")
+        self._ollama_badge.setContentsMargins(8, 0, 8, 0)
+        self._status_bar.addPermanentWidget(self._ollama_badge)
+        # Polling leve a cada 60s
+        self._ollama_poll_timer = QTimer(self)
+        self._ollama_poll_timer.setInterval(60_000)
+        self._ollama_poll_timer.timeout.connect(self._poll_ollama_status)
+        self._ollama_poll_timer.start()
+        self._ollama_poller: _OllamaPoller | None = None
+        # Verificação inicial (roda assim que o event loop começa)
+        QTimer.singleShot(500, self._poll_ollama_status)
 
         # Carregar feeds na sidebar e stats do dashboard
         self._sidebar.refresh_feeds()
@@ -443,6 +474,25 @@ class MainWindow(QMainWindow):
         self._feed_list.update_card_title(article_id, translated)
         self._unified_feed.update_card_title(article_id, translated)
 
+    def _poll_ollama_status(self) -> None:
+        if self._ollama_poller and self._ollama_poller.isRunning():
+            return
+        endpoint = str(self._config.get("ai_endpoint", "http://localhost:7072"))
+        self._ollama_poller = _OllamaPoller(endpoint)
+        self._ollama_poller.result.connect(self._on_ollama_polled)
+        self._ollama_poller.start()
+
+    def _on_ollama_polled(self, available: bool) -> None:
+        badge = self._ollama_badge
+        if available:
+            badge.setText("●  Ollama")
+            badge.setObjectName("ollamaOnline")
+        else:
+            badge.setText("○  Ollama")
+            badge.setObjectName("ollamaOffline")
+        badge.style().unpolish(badge)
+        badge.style().polish(badge)
+
     def _on_status_message(self, message: str) -> None:
         self._status_bar.showMessage(message)
         # Mensagens de conclusão (✓) e de progresso simples somem após 6s
@@ -456,6 +506,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self._retry_timer.stop()
+        self._ollama_poll_timer.stop()
         self._title_translator.save_cache()
         self._updater.stop()
         self._bg_analyzer.stop()

@@ -71,13 +71,13 @@ O HUB deriva e aplica todos os caminhos de uma vez. Cada app respeita o caminho 
 
 ```
 ProtonDrive/ecosystem/
-├── aether/        â† vault_path
-├── kosmos/        â† archive_path
+├── aether/        ← vault_path
+├── kosmos/        ← archive_path
 ├── mnemosyne/
-│   ├── docs/      â† watched_dir
-│   └── chroma_db/ â† persist_dir (ChromaDB sincronizado)
-├── hermes/        â† output_dir
-└── akasha/        â† archive_path
+│   ├── docs/      ← watched_dir
+│   └── chroma_db/ ← persist_dir (ChromaDB sincronizado)
+├── hermes/        ← output_dir
+└── akasha/        ← archive_path
 ```
 
 - [x] **`ecosystem_client.py`** — adicionar `derive_paths(sync_root)` e campo `sync_root` no schema
@@ -235,7 +235,7 @@ Estrutura confirmada: `{sync_root}/{app}/.config/settings.json` para todos os ap
 ```
 {sync_root}/
 ├── ogma/
-│   ├── ogma.db          â† banco SQLite (já feito no 0.6)
+│   ├── ogma.db          ← banco SQLite (já feito no 0.6)
 │   ├── uploads/
 │   ├── exports/
 │   └── .config/
@@ -282,7 +282,7 @@ no ecosystem.json, com fallback para o arquivo local atual.
 
 ##### Passo A — Renomear tipo `creative` → `writing` no OGMA
 - [x] `src/renderer/types/index.ts`: alterar `ProjectType` union, SUBCATEGORIES,
-      PROJECT_TYPE_LABELS ('Escrita'), PROJECT_TYPE_ICONS ('âœï¸' mantém),
+      PROJECT_TYPE_LABELS ('Escrita'), PROJECT_TYPE_ICONS ('✍️' mantém),
       PROJECT_TYPE_DESCRIPTIONS
 - [x] `src/renderer/components/Projects/NewProjectModal.tsx`: atualizar array TYPES
 - [x] `src/renderer/views/ProjectDashboard/ProjectLocalDashboard.tsx`:
@@ -374,7 +374,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 ---
 
 ### FASE 3 — Android (APK)
-> ⚠ï¸ **SUSPENSA PARA REPLANEJAMENTO.** O HUB passou a ter papel de LOGOS (orquestrador de IA), mudando seu foco principal.
+> ⚠️ **SUSPENSA PARA REPLANEJAMENTO.** O HUB passou a ter papel de LOGOS (orquestrador de IA), mudando seu foco principal.
 > A necessidade de acesso ao ecossistema no Android continua existindo, mas a abordagem precisa ser repensada
 > — provavelmente um app separado ou solução diferente do HUB. Itens abaixo mantidos como referência histórica.
 
@@ -450,7 +450,7 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
                     Itens abertos da Fase 10 (FTS5/Turso, testes offline)
                     são qualidade/teste — não bloqueiam integração.
   KOSMOS        ✅  archive_manager.py funcional. Pronto para integração.
-  Mnemosyne     ⚠ï¸  Protótipo incompleto. core/rag.py vazio. Usa HuggingFace
+  Mnemosyne     ⚠️  Protótipo incompleto. core/rag.py vazio. Usa HuggingFace
                     em vez de Ollama (inconsistente com o ecossistema).
                     Design diverge do sistema visual. Precisa de
                     desenvolvimento antes de entrar no hub.
@@ -461,9 +461,9 @@ Objetivo: eliminar a duplicação de código da cascata de extração web.
 
   Fase 0: ✅ Base concluída (0–0.5). Items 0.6–0.9 em andamento (sync + integrações)
   Fase 1: ✅ Concluída — 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 1.9 concluídas
-            ⚠ï¸  Item pendente: 1.2 — verificar botão "Arquivar" no KOSMOS
+            ⚠️  Item pendente: 1.2 — verificar botão "Arquivar" no KOSMOS
   Fase 2: ✅ Concluída — 2.1, 2.2, 2.3, 2.4, 2.5 e 2.6 concluídas
-  Fase 3: ⚠ï¸ suspensa — HUB agora é LOGOS; acesso Android a repensar separadamente
+  Fase 3: ⚠️ suspensa — HUB agora é LOGOS; acesso Android a repensar separadamente
   Fase 4: não iniciada
 
 ---
@@ -636,7 +636,7 @@ precisa ser reimaginada como um dashboard desktop (Tauri).
   **Implementação — Rust (`HUB/src-tauri/src/logos.rs` + `Cargo.toml`):**
   1. Adicionar ao `Cargo.toml`: `sysinfo = { version = "0.32", features = ["cpu"] }`
   2. Adicionar campo `sys: sysinfo::System` ao struct `Inner`, inicializado com `System::new_all()`
-     CRÃTICO: manter a mesma instância entre leituras — CPU% é calculado como delta entre
+     CRÍTICO: manter a mesma instância entre leituras — CPU% é calculado como delta entre
      duas leituras consecutivas. Criar nova instância a cada poll retorna sempre 0%.
   3. No loop de `collect_status()`: chamar `inner.sys.refresh_cpu_all()` e
      `inner.sys.refresh_memory()` antes de ler os valores
@@ -1259,7 +1259,7 @@ mesma paleta sépia, mesma tipografia, mesmas regras de sombra, animações e co
 
 - [x] 1.7 Layout principal do projeto
   - Painel binder lateral: árvore Livros > Capítulos
-  - Ãrea central: editor de texto
+  - Área central: editor de texto
   - Criar/renomear/deletar livros e capítulos pelo binder
   - Reordenar capítulos via drag & drop
 
@@ -1814,7 +1814,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       (20/pág) de páginas do site; suporte a filtro por `q` (título/url); retorna fragment
       HTMX `_site_pages.html`
 - [x] `templates/page_reader.html` — layout reader mode: cabeçalho com título, URL original
-      (link externo ↗), data de crawl, botão "â† Voltar"; conteúdo HTML do markdown com
+      (link externo ↗), data de crawl, botão "← Voltar"; conteúdo HTML do markdown com
       tipografia IM Fell English; compatível com tema sépia/noturno
 - [x] `templates/_site_pages.html` — fragment HTMX: lista de cards de página (título, URL
       abreviada, data, badge de status HTTP); botão "Ler" abre `/library/reader?url=...`;
@@ -1839,7 +1839,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       WAL elimina lock de leitura durante writes — crítico para crawl + busca simultâneos.
       Hoje reads e writes se bloqueiam mutuamente porque o modo padrão é DELETE.
 
-- [x] **Ãndices ausentes** — `database.py`: migration v8:
+- [x] **Índices ausentes** — `database.py`: migration v8:
       `CREATE INDEX IF NOT EXISTS idx_crawl_pages_site ON crawl_pages(site_id)` e
       `CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id)`.
       Sem eles, `get_crawl_pages_by_site` e `_recent_diff_ids` fazem full-table scan.
@@ -2049,7 +2049,7 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
       `pip install simhash`; reduz ruído no índice sem hashing exato
       (`services/crawler.py` + `database.py`)
 
-- [x] **[G] Ãndice de prefixo FTS5** — adicionar `prefix="2,3"` na criação de `crawl_fts`
+- [x] **[G] Índice de prefixo FTS5** — adicionar `prefix="2,3"` na criação de `crawl_fts`
       para acelerar buscas com autocompletar e queries de prefixo parcial
       (`database.py` — migration necessária)
 
@@ -2344,7 +2344,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 - [ ] Animações: fade-in 150ms nos cards, slide 200ms no leitor, expand/collapse 120ms na sidebar
 - [ ] Cursor piscante dourado (`#b8860b`) em campos de texto (QTimer 530ms)
 - [ ] Cantos dobrados decorativos (SVG 20×20px)
-- [ ] Ãcone do app (`.ico` Windows, `.png` Linux)
+- [ ] Ícone do app (`.ico` Windows, `.png` Linux)
 - [ ] `iniciar.sh` e `iniciar.bat` com setup automático do venv
 - [ ] Revisar todos os caminhos com `pathlib.Path` (sem strings hardcoded)
 - [ ] Testes em Windows 10 (WeasyPrint + GTK3, QWebEngineView, VC++ Redist)
@@ -2414,7 +2414,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 - [x] Migration: coluna `ai_sentiment REAL` (-1.0 negativo ↔ +1.0 positivo) em `articles`
 - [x] Score gerado pelo `_AnalyzeWorker` ao abrir artigo; salvo em cache
 - [x] Borda colorida esquerda nos article cards (verde/vermelho, configurável nas Settings)
-- [x] Indicador `â— tom positivo/negativo/neutro` na meta bar do leitor
+- [x] Indicador `● tom positivo/negativo/neutro` na meta bar do leitor
 - [ ] Filtro por tom na unified feed view
 - [x] Gráfico de tendência de sentimento no `stats_view` (linha colorida por segmento, área preenchida)
 
@@ -2475,33 +2475,28 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 ### H.1 — Indicador na janela de Configurações
 
-- [ ] `settings_dialog.py` → seção IA: substituir ou complementar o botão "Testar conexão"
-      por um label de status persistente que atualiza ao abrir a seção:
-      `"â— Ollama conectado — qwen2.5:7b"` (verde) ou `"○ Ollama offline"` (vermelho)
-- [ ] Verificação assíncrona via `ai_bridge.is_available()` ao exibir a seção de IA;
-      não bloquear a abertura das Configurações
+- [x] `settings_view.py` → seção IA: `_ollama_conn_lbl` no topo da seção;
+      `"● Ollama conectado · qwen2.5:7b"` (verde) ou `"○ Ollama offline"` (vermelho)
+- [x] Verificação assíncrona via `_OllamaCheckWorker(QThread)` disparada no `showEvent`;
+      não bloqueia a abertura das Configurações
 
 ### H.2 — Spinner antes do streaming do Resumo
 
-- [ ] `reader_view.py` → painel de resumo: exibir `"⟳ Aguardando Ollama…"` (label + spinner animado)
-      entre o clique do botão "Resumir" e o primeiro token recebido;
-      substituído pelo streaming assim que o primeiro token chega
+- [x] `reader_view.py` → painel de resumo: exibe `"⟳  Aguardando Ollama…"` até o primeiro
+      token chegar; substituído pelo streaming no `_on_summary_token` com flag `_summary_waiting`
 
 ### H.3 — Feedback durante análise em background
 
-- [ ] `reader_view.py` → meta bar: exibir `"⟳ analisando…"` como placeholder
-      na seção de tags e/ou 5Ws enquanto `_AnalyzeWorker` está rodando;
-      hoje essa seção fica vazia e silenciosa até o resultado chegar
-- [ ] Ao término (sucesso ou erro), substituir pelo resultado ou por mensagem de erro
-      discreta (`"IA indisponível"`) sem bloquear a leitura
+- [x] `reader_view.py` → meta bar: `_update_analysis_status("running")` já exibe
+      `"⟳  analisando…"` via `_analysis_status_lbl` na indicators row
+- [x] Ao término: `"done"` → `"✓  análise concluída"`, `"error"` → `"!  erro na análise"`
 
 ### H.4 — Badge de status global (sidebar ou statusbar)
 
-- [ ] Adicionar indicador global discreto (ex: ponto colorido na sidebar ou
-      `QStatusBar` no rodapé da janela principal): verde quando Ollama disponível,
-      cinza quando não verificado, vermelho quando offline
-- [ ] Polling leve a cada 60s via `QTimer` usando `ai_bridge.is_available()`;
-      nenhum retry automático — apenas atualiza o indicador
+- [x] `_ollama_badge` QLabel como widget permanente no `QStatusBar` (direita):
+      `"●  Ollama"` (verde) / `"○  Ollama"` (cinza/vermelho) via object names CSS
+- [x] Polling a cada 60s via `_ollama_poll_timer` + `_OllamaPoller(QThread)`;
+      verificação inicial 500ms após startup
 
 ---
 
@@ -2845,7 +2840,7 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 #### Table of Contents
 - [x] `core/toc.py` — `iter_toc()`: fase Map lista temas por fonte; fase Reduce consolida em hierarquia `## Tema > - Subtema > - Tópico` com máximo 8 temas principais; stuff ou map-reduce
-- [x] Integrar no Studio Panel como tipo `"Ãndice de Temas"` — via `_STUDIO_DISPATCH`
+- [x] Integrar no Studio Panel como tipo `"Índice de Temas"` — via `_STUDIO_DISPATCH`
 
 #### Timeline
 - [x] `core/timeline.py` — `iter_timeline()`: fase Map extrai eventos datados por fonte; fase Reduce consolida e ordena cronologicamente; formato `- **[data]** — [evento]`; query de retrieval favorece docs com datas; temperatura 0.0 para precisão factual
@@ -3621,18 +3616,18 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] Testar funcionamento offline — embedded replica lê do disco local; `client.sync()` falha silenciosamente sem rede (offline-first por design)
 - [ ] Testar sync entre dois dispositivos — requer hardware; `client.sync()` confirmado funcional neste dispositivo
 
-### Ãcone da aplicação
+### Ícone da aplicação
 
-- [x] Ãcone temporário criado (`assets/ogma.ico`) — design: fundo castanho escuro, símbolo ✦ dourado, estrelas cosmos, texto "OGMA"
-- [x] Ãcone aplicado ao `BrowserWindow` (`icon: ICON_PATH` em `src/main/main.ts`)
-- [x] Ãcone configurado no `electron-builder` (`build.win.icon`)
+- [x] Ícone temporário criado (`assets/ogma.ico`) — design: fundo castanho escuro, símbolo ✦ dourado, estrelas cosmos, texto "OGMA"
+- [x] Ícone aplicado ao `BrowserWindow` (`icon: ICON_PATH` em `src/main/main.ts`)
+- [x] Ícone configurado no `electron-builder` (`build.win.icon`)
 - [x] Atalhos Windows atualizados com `IconLocation` para o `.ico`
 
 ---
 
 ### Fase 11 — Polimento
 
-- [x] Ãcone do app (temporário) — ver secção "Ãcone da aplicação" acima
+- [x] Ícone do app (temporário) — ver secção "Ícone da aplicação" acima
 - [x] Decoração cósmica completa, animações
 
 ---
@@ -3641,12 +3636,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 - [x] Pico de Produtividade: "Você é uma criatura da [Manhã/Noite]", baseaddefinitivoo no horário em que a maioria das páginas é editada.
 - [x] Taxa de Absorção Literária: Quantos recursos (livros/artigos) foram concluídos no mês vs. adicionados à lista de leitura.
-- [ ] Páginas por "Ãrea do Conhecimento": Um gráfico de pizza ou barras mostrando se você está dedicando mais tempo a Letras, Cibersegurança ou Hobbies Manuais.
+- [ ] Páginas por "Área do Conhecimento": Um gráfico de pizza ou barras mostrando se você está dedicando mais tempo a Letras, Cibersegurança ou Hobbies Manuais.
 - [x] Produtividade por Fase Lunar: Uma estatística curiosa mostrando em qual fase da lua você costuma concluir mais tarefas (ex: "Sua produtividade aumenta 20% na Lua Crescente").
 - [ ] Progresso da Estação: Quanto falta para o próximo Sabá (já existe na Roda, mas pode ser um valor percentual de "Preparação para o Equinócio/Solstício").
 - [x] Horas de Voo (Deep Work): Total de horas logadas nos work_blocks do Planner.
 - [x] Velocidade de Leitura: Média de páginas lidas por dia nos últimos 7 dias.
-- [x] Radar de Polímata (Equilíbrio de Ãreas): Já que você tem diferentes project_type (Acadêmico, Escrita, Cibersegurança, etc.), essa métrica mostra para onde sua energia está indo. **O que medir:** Porcentagem de tarefas concluídas ou tempo logado por categoria de projeto. **Estética**: Um gráfico de radar ou uma lista simples: "Este mês, sua mente esteve 40% em Letras, 30% em Cibersegurança e 30% em Hobbies" **Objetivo**: Garantir que nenhum pilar seja esquecido.
+- [x] Radar de Polímata (Equilíbrio de Áreas): Já que você tem diferentes project_type (Acadêmico, Escrita, Cibersegurança, etc.), essa métrica mostra para onde sua energia está indo. **O que medir:** Porcentagem de tarefas concluídas ou tempo logado por categoria de projeto. **Estética**: Um gráfico de radar ou uma lista simples: "Este mês, sua mente esteve 40% em Letras, 30% em Cibersegurança e 30% em Hobbies" **Objetivo**: Garantir que nenhum pilar seja esquecido.
 
 ### Por projeto / académico
 - [ ] **Horas por projecto** — gráfico de barras com `work_blocks` agrupados por projecto
@@ -4689,7 +4684,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Mnemosyne, verificar no código se: (a) está implementado, (b) é chamado corretamente,
   (c) funciona no fluxo real do app. Registrar resultado como: ✓ funcional / ⚠ parcial
   (descrever o que falta) / ✗ quebrado / ✗ nunca implementado (falso positivo como na
-  Fase 7 do AKASHA). Ãreas críticas a checar: indexação (IndexWorker), busca RAG
+  Fase 7 do AKASHA). Áreas críticas a checar: indexação (IndexWorker), busca RAG
   (`prepare_ask()`), reranking (FlashRank), relatório, mind map, Deep Research Mode,
   Notebook Guide, Knowledge Reflection, session_memory, detecção dinâmica de modelos
   Ollama. Resultado da auditoria orienta o redesign da UI — inútil redesenhar em torno
@@ -4754,7 +4749,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > achados de pesquisas anteriores que nunca foram transcritos como itens acionáveis.
 
 #### Mnemosyne
-- [x] **[CRÃTICO] Mudar distância ChromaDB de L2 para cosine em todas as coleções**
+- [x] **[CRÍTICO] Mudar distância ChromaDB de L2 para cosine em todas as coleções**
   (`core/indexer.py`, todos os pontos onde `Chroma(...)` é criado). Adicionar
   `collection_metadata={"hnsw:space": "cosine"}` em cada criação de coleção.
   Para texto, cosine mede direção semântica — L2 mede distância absoluta, o que é
@@ -4762,7 +4757,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   na qualidade de recuperação. O IndexWorker já apaga e recria o persist_dir, então
   a correção se aplica automaticamente na próxima reindexação. Custo: ~30 min.
 
-- [x] **[CRÃTICO] Aumentar chunk size de 800 → 1800 chars, overlap 100 → 250**
+- [x] **[CRÍTICO] Aumentar chunk size de 800 → 1800 chars, overlap 100 → 250**
   (`core/config.py`, `RecursiveCharacterTextSplitter`). O valor atual de 800 chars ≈
   200 tokens está abaixo do range recomendado por benchmarks 2025–2026 (Vecta, NAACL
   2025/Vectara: 400–512 tokens). Trocar para `chunk_size=1800, chunk_overlap=250`.
@@ -4829,7 +4824,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   (`core/config.py`, `gui/main_window.py`). Adicionar campo `indexing_machine: str`
   ao config (preenchido com hostname na primeira indexação bem-sucedida). Na
   inicialização, se `hostname != indexing_machine`: desabilitar botões de indexação
-  e exibir mensagem "Ãndice construído em [outra máquina]. Consultas disponíveis."
+  e exibir mensagem "Índice construído em [outra máquina]. Consultas disponíveis."
   Enforça arquitetura "indexar no CachyOS, consultar no Windows".
 
 - [x] **`potion-multilingual-128M` (model2vec) como fallback de embedding no Windows**
@@ -4939,7 +4934,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   em vez de re-chamar o LLM. Adicionar coluna `content_hash TEXT` com índice UNIQUE
   parcial. Economiza calls LLM para artigos cross-posted/espelhados.
 
-- [ ] **Ãndice parcial SQLite para fila de análise pendente**
+- [ ] **Índice parcial SQLite para fila de análise pendente**
   (`app/utils/db.py`, na criação do schema). Adicionar:
   `CREATE INDEX idx_pending_analysis ON articles(feed_id, published_at DESC)
   WHERE analysis_status IN ('pending', 'failed')`.
@@ -5219,7 +5214,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **Registrar novos comandos em `lib.rs`** — adicionar `logos_list_all_models` e `stop_ollama` ao `generate_handler![]`.
 - [x] **`OllamaModelEntry` em `types/index.ts`** — interface TypeScript espelhando o struct Rust.
 - [x] **`logosListAllModels()` e `stopOllama()` em `lib/tauri.ts`** — wrappers tipados.
-- [x] **LogosView.tsx: lista de todos os modelos com bolinha colorida** — substituir a seção "Modelos na memória" por "Modelos Ollama" que usa `logosListAllModels()` (polling a cada 4s). Cada linha: `â—` colorido (verde `var(--accent-green)` se "active", amarelo `var(--accent)` se "available") + nome + tamanho em disco + VRAM usada se "active". Botão "descarregar" mantido para modelos "active".
+- [x] **LogosView.tsx: lista de todos os modelos com bolinha colorida** — substituir a seção "Modelos na memória" por "Modelos Ollama" que usa `logosListAllModels()` (polling a cada 4s). Cada linha: `●` colorido (verde `var(--accent-green)` se "active", amarelo `var(--accent)` se "available") + nome + tamanho em disco + VRAM usada se "active". Botão "descarregar" mantido para modelos "active".
 - [ ] **LogosView.tsx: botão "Parar Ollama"** — visível apenas quando `ollamaOnline === true`. Clique chama `stopOllama()`, aguarda 1s e atualiza `checkOllama()`. Colocar na seção Ações junto ao "Iniciar Ollama".
 
 
