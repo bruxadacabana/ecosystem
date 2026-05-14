@@ -4381,6 +4381,56 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Testar: `ollama pull gemma3:4b`. Candidato a modelo padrÃ£o do KOSMOS no laptop e no Windows
   de trabalho onde a MX150 nÃ£o estÃ¡ disponÃ­vel mas a RAM permite offload de 4B.
 
+### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
+> Contexto: pesquisa comparativa de LLMs locais (via Ollama) para RAG multi-doc (Mnemosyne) e sumarização
+> de artigos (KOSMOS), e de modelos de embedding para indexação multilíngue pt/en. Hardware real: MainPc
+> (RX 6600 8 GB VRAM, ROCm), Laptop (MX150 2 GB CUDA, i7 AVX2), WorkPc (i5-3470 sem AVX2, sem GPU).
+> Achados completos em pesquisas.md (sessão 2026-05-13). LLMs recomendados devem aparecer na UI do LOGOS
+> com opção de download para modelos não instalados.
+
+#### HUB — LOGOS: recomendações de modelos por hardware com opção de download
+- [ ] Atualizar `do_get_recommended_models()` em `HUB/src-tauri/src/logos.rs` com os modelos validados
+  pela pesquisa, separados por perfil de hardware (`MainPc`, `Laptop`, `WorkPc`). **MainPc:** RAG primário
+  = `qwen2.5:7b` (128K ctx, 4,7 GB, IFEval 87,3), alternativa com citação = `command-r7b` (grounded
+  generation nativa), chat = `gemma3:4b`; **Laptop:** RAG = `phi3.5:mini` (128K ctx, 2,2 GB, IFEval 59,0)
+  ou `gemma2:2b` (8K ctx, 1,6 GB), chat = `smollm2:1.7b`; **WorkPc:** sem LLM local (CPU Ivy Bridge sem
+  AVX2 — mostrar mensagem explicativa em vez de lista de modelos). Cada entrada da struct deve conter
+  `name`, `description`, `size_gb`, `ifeval_score`, `context_window`, `hardware_profile`.
+- [ ] Adicionar em `LogosView.tsx` (HUB) botão "Baixar" ao lado de cada modelo recomendado que não
+  estiver instalado. Usar o endpoint `/api/logos/pull` já existente com streaming NDJSON. O botão deve
+  exibir progress bar durante pull e sumir ao concluir. Modelos já instalados mantêm apenas o botão
+  "Ativar" existente. Verificar lista de instalados via `logos_list_local_models` (já em `logos.rs`).
+
+#### Mnemosyne — embedding no Laptop: nomic-embed-text é inglês-only
+- [ ] Substituir `nomic-embed-text` por `bge-m3` (via Ollama) no Laptop. `nomic-embed-text v1.5` é
+  treinado exclusivamente em inglês e degrada indexação de conteúdo português — confirmado por benchmarks
+  MTEB (arXiv:2402.03216). `bge-m3` (BAAI) suporta 100+ línguas, 1024 dims, 570M params, ~1.3 GB VRAM,
+  roda na MX150. **Atenção crítica:** trocar embedding exige reindex completo do ChromaDB (dimensão muda
+  de 768 → 1024 dims — coleção incompatível). Limpar a coleção antes de reindexar. Documentar a troca
+  no GUIDE.md do Mnemosyne.
+- [ ] Avaliar `potion-multilingual-128M` (Model2Vec, não via Ollama — pip install model2vec) como
+  fallback no WorkPc e Laptop em bateria. É embedding estático (lookup de dicionário, sem GPU, sem
+  inferência de transformer), 100–500× mais rápido em CPU, 128 dims, 27 MB. Limitação: dimensão baixa
+  pode reduzir recall. Testar recall MTEB pt antes de adotar em produção.
+
+#### Mnemosyne — LLM RAG por máquina: alinhamento com perfis do LOGOS
+- [ ] **MainPc:** confirmar `qwen2.5:7b` como LLM de RAG primário. Vantagens: 128K ctx (crucial para
+  RAG multi-doc), IFEval 87,3 (melhor instruction following do inventário), 4,7 GB VRAM (dentro dos
+  8 GB da RX 6600). Configurar em `Mnemosyne/config.py` ou no painel de configuração da SetupDialog.
+- [ ] **MainPc:** testar `command-r7b` (Cohere, 8B, 3,9 GB, 128K ctx) para RAG com citação explícita.
+  É o único modelo do inventário com `grounded generation` nativa — retorna grounding spans exatos do
+  documento. Útil quando o Mnemosyne precisar referenciar trechos específicos nas respostas.
+- [ ] **Laptop:** confirmar `phi3.5:mini` (Microsoft, 3,8B, 2,2 GB, 128K ctx) como LLM RAG primário.
+  Alternativa se VRAM insuficiente: `gemma2:2b` (1,6 GB, 8K ctx — contexto menor, usar só para chunks
+  curtos). `smollm2:1.7b` já instalado é adequado para chat leve mas não para RAG multi-doc.
+
+#### WorkPc — estratégia consolidada de IA
+- [ ] Documentar no GUIDE.md e no painel LOGOS (WorkPc) que o WorkPc usa estratégia embedding-only:
+  sem LLM local (CPU Ivy Bridge i5-3470 sem AVX2 torna inferência de qualquer LLM impraticável).
+  O WorkPc indexa conteúdo com `potion-multilingual-128M` (estático, sem GPU) e delega geração de
+  texto para API externa ou sessão remota no MainPc. No LOGOS, mostrar mensagem explicativa em vez
+  de lista de modelos para o perfil WorkPc.
+
 ## Melhorias, correÃ§Ãµes e atualizaÃ§Ãµes
 
 ### Mnemosyne + AKASHA: tratamento diferenciado por tipo de fonte | 2026-05-06
