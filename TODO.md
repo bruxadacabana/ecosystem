@@ -5435,3 +5435,85 @@ all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar aqui
   rationale_for_model(); possivelmente adicionar slot AKASHA; garantir que modelos escolhidos
   para o mesmo app em diferentes hardwares sejam da mesma família ou arquitetura compatível
   (ex: todos Qwen, todos Gemma, ou todos instruction-tuned com mesmo prompt format)
+
+### Pesquisa: Extração de Temas, Visualização Interativa, Perguntas Follow-up e Persona RAG | 2026-05-14
+> Contexto: funcionalidades de descoberta de conhecimento e experiência de usuário para o Mnemosyne:
+> (1) extrair temas dos documentos indexados e exibi-los como nuvem de palavras e mapa mental
+> interativo clicável; (2) sugerir perguntas de follow-up após cada resposta; (3) mecanismos de
+> aprendizado além do Knowledge Reflection existente; (4) persona de bibliotecária especialista.
+
+#### Mnemosyne
+
+- [ ] **`core/topic_extractor.py` — extração de temas com BERTopic + KeyBERT** — criar módulo
+  `TopicExtractor` que recupera embeddings e textos do ChromaDB via
+  `collection.get(include=["embeddings","documents","metadatas"])` (reutilizando os vetores já
+  calculados, sem reprocessar arquivos), aplica UMAP + HDBSCAN + c-TF-IDF (pipeline BERTopic)
+  para extrair tópicos do corpus inteiro, e KeyBERT por documento para keywords individuais.
+  Para corpora < 30 documentos, usar só c-TF-IDF sem clustering (mais estável). Parâmetro
+  `min_cluster_size = max(2, len(docs)//50)`. Salvar resultado em
+  `{coll.mnemosyne_dir}/topics.json` com: lista de tópicos (top-10 palavras + scores), mapeamento
+  `doc_id → topic_id`, e keywords por documento. Dependências: `bertopic`, `keybert[base]`
+  (Model2Vec, sem PyTorch), `umap-learn`, `hdbscan`. Disparar após indexação completa e ao
+  clicar em botão "Atualizar temas" na aba Temas.
+
+- [ ] **`gui/topics_view.py` — aba "Temas" com nuvem de palavras clicável** — nova aba no
+  `QStackedWidget` principal. Sub-modo "Nuvem": gera imagem via `wordcloud.WordCloud
+  .generate_from_frequencies(freq_dict).to_image()`, converte para `QPixmap` e exibe em
+  `QLabel`. Overlay de clique: usar `WordCloud.layout_` para mapear coordenadas de cada
+  palavra na imagem, sobrepor `QGraphicsScene` transparente com `QGraphicsRectItem` invisíveis
+  nas bounding boxes; `mousePressEvent` detecta qual palavra foi clicada e emite sinal
+  `theme_clicked(str)`. A `MainWindow` conecta `theme_clicked` → disparar query no chat
+  "Fale sobre [tema]: o que os documentos do acervo dizem?".
+
+- [ ] **`gui/topics_view.py` — mapa mental interativo com QGraphicsScene + NetworkX** — sub-modo
+  "Mapa" na mesma aba: construir grafo NetworkX com nós de tópico (cor azul) e nós de documento
+  (cor cinza), arestas indicando pertencimento ao cluster. Calcular posições via
+  `nx.kamada_kawai_layout()`. Renderizar no `QGraphicsScene`: nós como `QGraphicsEllipseItem`
+  com label `QGraphicsTextItem`, arestas como `QGraphicsLineItem`. Nós respondem a clique via
+  `mousePressEvent` em subclasse de `QGraphicsEllipseItem`: nós de tópico → disparam query
+  no chat; nós de documento → abrem o arquivo no gerenciador de arquivos (`os.startfile` no
+  Windows, `xdg-open` no Linux). Não usar pyvis/WebEngine para evitar dependência extra de
+  ~100 MB. Usar `QGraphicsView` com zoom via `wheelEvent` (fator 1.15×) e pan via drag com
+  botão do meio.
+
+- [ ] **`gui/workers.py` — `SuggestQuestionsWorker(QThread)` para perguntas follow-up** — worker
+  separado que inicia logo após o `AskWorker` terminar (conectar ao sinal `finished` do
+  AskWorker no `main_window.py`). Recebe: pergunta do usuário, resposta gerada, e os 3
+  primeiros chunks recuperados (contexto). Monta prompt pedindo 3 perguntas de aprofundamento
+  que: explorem aspectos não cobertos, conectem com outros documentos, ou peçam exemplos.
+  Temperatura 0.9. Emite `questions_ready(list[str])`. Só executa se `suggest_questions: bool`
+  estiver True na config. Timeout de 30s: se o worker demorar mais, as sugestões são descartadas
+  silenciosamente.
+
+- [ ] **`gui/main_window.py` — exibir chips de perguntas sugeridas no chat** — ao receber
+  `questions_ready(list[str])`, criar 3 `QPushButton` compactos com `setObjectName("chip")`
+  e CSS rounded (border-radius 12px, padding 4px 10px) logo abaixo da última resposta no
+  `QScrollArea` do chat. Ao clicar, inserir texto no campo de input e submeter. Remover os
+  chips via `QTimer.singleShot(30_000, chips_widget.deleteLater)`. Adicionar toggle
+  `suggest_questions` nas Settings (padrão: False — opt-in).
+
+- [ ] **`core/knowledge_graph.py` — grafo de conhecimento inter-documentos** — módulo
+  `KnowledgeGraph` que extrai entidades de cada chunk indexado usando KeyBERT (top-5 keywords
+  por chunk) e constrói um grafo de co-ocorrência com NetworkX: nós são entidades/keywords,
+  arestas são documentos que compartilham a mesma entidade com peso = número de documentos
+  em comum. Persistir em `{coll.mnemosyne_dir}/knowledge_graph.json` (nodes + edges como
+  JSON serializable). Método `KnowledgeGraph.score(query_keywords, docs)` re-ranqueia
+  candidatos do retrieval somando grau de conectividade das entidades da query com cada
+  documento — documentos mais "centrais" na rede de conhecimento recebem boost. Método
+  `KnowledgeGraph.get_neighbors(entity)` retorna documentos e entidades relacionadas (para
+  o mapa mental). Disparar `KnowledgeGraph.update(new_chunks)` no `_on_index_finished`.
+
+- [ ] **`core/config.py` — campo `persona_prompt: str` com persona da bibliotecária** — adicionar
+  campo ao `AppConfig` com default sendo o prompt completo da Mnemê (ver texto na pesquisa
+  em `pesquisas.md`). Persistir em `local_config.json`. Em `core/rag.py`, injetar
+  `config.persona_prompt` como primeira seção do system message em todos os chains
+  (`AskWorker`, `SummarizeWorker`, `FAQWorker`, `GuideWorker`). A seção de persona precede
+  a instrução de formato e o contexto RAG — nunca sobrescrever instruções de formato com
+  a persona.
+
+- [ ] **`gui/settings_view.py` — editor de persona nas Settings** — adicionar `QTextEdit`
+  expansível (min 120px height) com label "Personalidade do assistente" na seção de
+  configurações LLM. Botão "Restaurar padrão" restaura o prompt da bibliotecária. A edição
+  é salva imediatamente em `local_config.json` via `config.set("persona_prompt", text)`.
+  Exibir preview: ao clicar "Testar persona", disparar uma query de teste ("Olá, apresente-se")
+  e exibir a resposta numa caixa de diálogo.
