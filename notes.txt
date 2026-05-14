@@ -1,13 +1,21 @@
 ========================================
 
-implemente ### Pesquisa: Extração de Temas, Visualização Interativa, Perguntas Follow-up e Persona RAG | 2026-05-14
+vamos prosseguir com a implementação de ### Pesquisa: Extração de Temas, Visualização Interativa, Perguntas Follow-up e Persona RAG | 2026-05-14
 
-1: implemente dois itens de cada vez (implemente, marque feito no TODO, commite, resuma no chat (não precisa aprofundar muito, mas sempre explique o que foi implementado e o porquê de forma didática) e peça permissão antes de implementar a próxima dupla). Cada item = 1 TODO (- [ ]).
+1: implemente um item de cada vez (implemente, marque feito no TODO, commite, resuma no chat (não precisa aprofundar muito, mas sempre explique o que foi implementado e o porquê de forma didática) e peça permissão antes de implementar o próximo). Cada item = 1 TODO (- [ ]).
 2: sempre mantenha atualizado o GUIDE e o DESIGN BIBLE, inclusive listando TODAS as ferramentas e bibliotecas necessárias para o funcionamento do ecossistema. Sempre com o tom de tutor especialista em engenharia de software explicando para um programador iniciante, de forma didática e detalhada. Lembre-se que o GUIDE tem como objetivo guiar novos desenvolvedores que foram trabalhar no ecossistema.
 
 ======
 
 próximo:
+
+### AKASHA + KOSMOS: dados configurados pelo usuário em JSON (resilência a crash do DB) | 2026-05-14
+
+
+### Pesquisa: NotebookLM — Funcionalidades e Evolução 2025–2026 | 2026-05-14
+
+### HERMES: extrator de receitas de vídeo | 2026-05-14
+
 
 ### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
 

@@ -5418,7 +5418,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Mnemosyne
 
-- [ ] **`core/topic_extractor.py` — extração de temas com BERTopic + KeyBERT** — criar módulo
+- [x] **`core/topic_extractor.py` — extração de temas com BERTopic + KeyBERT** — criar módulo
   `TopicExtractor` que recupera embeddings e textos do ChromaDB via
   `collection.get(include=["embeddings","documents","metadatas"])` (reutilizando os vetores já
   calculados, sem reprocessar arquivos), aplica UMAP + HDBSCAN + c-TF-IDF (pipeline BERTopic)

@@ -17,3 +17,7 @@ langchain-experimental>=0.3.0
 python-frontmatter>=1.1.0
 flashrank>=0.2.0
 httpx>=0.27.0
+bertopic>=0.16
+umap-learn>=0.5
+hdbscan>=0.8
+scikit-learn>=1.0
