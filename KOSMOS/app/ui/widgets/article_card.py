@@ -61,6 +61,7 @@ class ArticleCard(QWidget):
         self._ai_sentiment = ai_sentiment
         self._ai_clickbait = ai_clickbait
         self._user_tags    = list(user_tags)
+        self._language     = article.language  # código ISO 639-1 ou None
 
         self.setObjectName("articleCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -107,7 +108,7 @@ class ArticleCard(QWidget):
         self._title_lbl.setFont(title_font)
         content.addWidget(self._title_lbl)
 
-        # Metadados (fonte · autor · tempo)
+        # Metadados (fonte · autor · tempo) + badge de idioma
         meta_parts: list[str] = []
         if self._feed_name:
             meta_parts.append(self._feed_name)
@@ -116,14 +117,28 @@ class ArticleCard(QWidget):
         meta_parts.append(time_ago(article.published_at) or "")
         meta_text = "  ·  ".join(p for p in meta_parts if p)
 
-        self._meta_lbl = QLabel(meta_text)
-        self._meta_lbl.setObjectName("cardMeta")
         meta_font = QFont("Courier Prime")
         if not meta_font.exactMatch():
             meta_font = QFont("Courier New")
         meta_font.setPointSize(10)
+
+        self._meta_lbl = QLabel(meta_text)
+        self._meta_lbl.setObjectName("cardMeta")
         self._meta_lbl.setFont(meta_font)
-        content.addWidget(self._meta_lbl)
+
+        meta_row = QHBoxLayout()
+        meta_row.setSpacing(6)
+        meta_row.setContentsMargins(0, 0, 0, 0)
+        meta_row.addWidget(self._meta_lbl)
+
+        if self._language:
+            lang_lbl = QLabel(self._language.upper()[:5])
+            lang_lbl.setObjectName("langBadge")
+            lang_lbl.setFont(meta_font)
+            meta_row.addWidget(lang_lbl)
+
+        meta_row.addStretch()
+        content.addLayout(meta_row)
 
         # Tags aprovadas pelo usuário
         if self._user_tags:

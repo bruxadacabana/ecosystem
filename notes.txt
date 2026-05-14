@@ -1,10 +1,10 @@
 ====================
 
-vamos prosseguir com a implementação de ### Auditoria pesquisas.md â†’ itens nÃ£o registrados no TODO | 2026-05-05
+- implemente ### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
 
 
 1: implemente dois itens de cada vez (implemente, marque feito no TODO, commite, resuma no chat (não precisa aprofundar muito, mas sempre explique o que foi implementado e o porquê de forma didática) e peça permissão antes de implementar a próxima dupla). Cada item = 1 TODO (- [ ]).
-2: sempre mantenha atualizado o GUIDE e o DESIGN BIBLE, inclusive listando TODAS as ferramentas e bibliotecas necessárias para o funcionamento do ecossistema. Sempre com o tom de tutor especialista em engenharia de software explicando para um programador iniciante, de forma didática e detalhada.
+2: sempre mantenha atualizado o GUIDE e o DESIGN BIBLE, inclusive listando TODAS as ferramentas e bibliotecas necessárias para o funcionamento do ecossistema. Sempre com o tom de tutor especialista em engenharia de software explicando para um programador iniciante, de forma didática e detalhada. Lembre-se que o GUIDE tem como objetivo guiar novos desenvolvedores que foram trabalhar no ecossistema.
 
 ========================
 
@@ -29,9 +29,20 @@ Descoberta crítica: nomic-embed-text v1.5 (instalado no Laptop) é inglês-only
 
 depois:
 
+### LOGOS: pull de modelo recomendado direto do HUB | 2026-05-13
+
+
 ### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
 
 ### Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
+
+### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
+
+
+### Pesquisa: Assistente de Pesquisa Inteligente — LLM-Augmented Search e Query Understanding | 2026-05-06
+
+### Pesquisa: Integração KOSMOS-AKASHA — Padrões RSS Reader + Web Archiver | 2026-05-04
+
 
 
 - leia tudo que ainda não está marcado como completo no TODO e sugira os próximos passos

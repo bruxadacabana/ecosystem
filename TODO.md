@@ -2509,33 +2509,34 @@ Referência de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 ### I.1 — Detectar e persistir idioma de cada artigo
 
-- [ ] `models.py` — verificar se coluna `language` já existe em `Article`
-      (foi adicionada no filtro de idioma da Fase C); se não, adicionar migration
-- [ ] `feed_manager.py` / `scraper.py` — garantir que `language` é detectado via
-      `langdetect` no momento do save e persistido; artigos sem idioma ficam como `None`
-- [ ] `article_card.py` — exibir badge pequeno com o idioma original do artigo
-      (ex: `EN`, `PT`, `ES`) na meta row, visível em todas as views de lista
+- [x] `models.py` — coluna `language TEXT` já existe em `Article` (foi adicionada
+      na Fase C + migration em `database.py`)
+- [x] `feed_manager.py` — `_detect_lang()` via langdetect já existe e é chamado
+      em `save_articles()`; artigos sem idioma ficam `None`
+- [x] `article_card.py` — `langBadge` QLabel adicionado à meta row: exibe código ISO
+      em maiúsculas (ex: `EN`, `PT`, `ZH`); CSS em day.qss e night.qss
 
 ### I.2 — Configuração de idioma de exibição
 
-- [ ] `config.py` — adicionar campo `display_language: str = ""` (vazio = sem tradução)
-- [ ] `settings_view.py` — seção "Idioma de exibição": QComboBox com idiomas comuns
-      (Português, English, Español, Français, Deutsch, 中文, …) + opção "Original (sem tradução)"
-- [ ] Ao mudar, salvar em `settings.json` via `_cfg.set("display_language", code)`
+- [x] `config.py` — `"display_language": ""` já existe nos DEFAULTS
+- [x] `settings_view.py` — QComboBox "Idioma dos cards" na seção Aparência com
+      idiomas comuns + "Original (sem tradução)"
+- [x] Salvo via `_cfg.set("display_language", code)` no `_on_display_lang_changed`
 
 ### I.3 — Tradução automática dos títulos na exibição
 
-- [ ] `article_card.py` — se `display_language` configurado e `article.language != display_language`,
-      chamar `deep-translator` para traduzir o título antes de exibir no card
-- [ ] Cache de traduções em memória (dict `{article_id: translated_title}`) para evitar
-      re-traduzir ao rolar a lista; cache descartado ao mudar o idioma de exibição
-- [ ] Tradução assíncrona: mostrar título original enquanto traduz, substituir ao concluir
-      (para não travar o scroll); usar `QThread` ou `asyncio` conforme o contexto
+- [x] `TitleTranslator(QThread)` em `core/title_translator.py` enfileira traduções
+      via `deep-translator`; emite `title_translated(article_id, text)`
+- [x] Cache persistente por idioma em `data/title_cache_{lang}.json`; carregado
+      no startup e salvo no `closeEvent`
+- [x] Tradução assíncrona: título original exibido imediatamente, substituído ao
+      chegar o sinal `title_translated` → `update_card_title()`
 
 ### I.4 — Tradução no reader (opcional / fase posterior)
 
-- [ ] Botão "Traduzir" na toolbar do leitor já existe — verificar se usa `display_language`
-      como destino automático ao invés de pedir confirmação; ajustar se necessário
+- [x] `reader_view.py` — `_on_translate()` verifica `display_language` e usa como
+      destino automático quando configurado (sem abrir o menu); menu só aparece
+      quando `display_language` vazio ou artigo já está no idioma configurado
 
 ---
 

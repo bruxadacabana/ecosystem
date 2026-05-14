@@ -1062,3 +1062,12 @@ QFrame#statCard:hover {
 QLabel#ollamaOnline  { color: #6AAA6A; font-size: 11px; }
 QLabel#ollamaOffline { color: #C07070; font-size: 11px; }
 QLabel#ollamaUnknown { color: #6A6058; font-size: 11px; }
+
+/* --- Language badge on article cards (I.1) ------------------------- */
+QLabel#langBadge {
+    color: #6A6058;
+    border: 1px solid #3A3830;
+    border-radius: 2px;
+    padding: 0px 3px;
+    font-size: 9px;
+}

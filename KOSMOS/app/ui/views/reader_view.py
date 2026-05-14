@@ -1628,20 +1628,27 @@ class ReaderView(QWidget):
             self._load_content()
             return
 
-        # Mostrar menu de idiomas
-        from app.core.translator import TARGET_LANGUAGE_NAMES
-        menu = QMenu(self)
-        for code, name in TARGET_LANGUAGE_NAMES.items():
-            action = menu.addAction(name)
-            action.setData(code)
+        # Se display_language está configurado e é diferente do idioma do artigo,
+        # usar como destino automático — sem mostrar o menu de seleção.
+        display_lang = str(self._config.get("display_language", "")).strip().lower()[:2]
+        article_lang = (self._article.language or "").strip().lower()[:2]
+        if display_lang and (not article_lang or article_lang != display_lang):
+            to_code = display_lang
+        else:
+            # Mostrar menu de idiomas quando display_language não está configurado
+            # ou quando o artigo já está no idioma de exibição configurado.
+            from app.core.translator import TARGET_LANGUAGE_NAMES
+            menu = QMenu(self)
+            for code, name in TARGET_LANGUAGE_NAMES.items():
+                action = menu.addAction(name)
+                action.setData(code)
 
-        sender = self.sender()
-        pos = sender.mapToGlobal(sender.rect().bottomLeft()) if sender else self._translate_btn.mapToGlobal(self._translate_btn.rect().bottomLeft())
-        chosen = menu.exec(pos)
-        if chosen is None:
-            return
-
-        to_code = chosen.data()
+            sender = self.sender()
+            pos = sender.mapToGlobal(sender.rect().bottomLeft()) if sender else self._translate_btn.mapToGlobal(self._translate_btn.rect().bottomLeft())
+            chosen = menu.exec(pos)
+            if chosen is None:
+                return
+            to_code = chosen.data()
         self._translate_to_code = to_code
         content = self._article.content_full or self._article.summary or ""
         if not content:
