@@ -5482,15 +5482,16 @@ all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar aqui
   primeiros chunks recuperados (contexto). Monta prompt pedindo 3 perguntas de aprofundamento
   que: explorem aspectos não cobertos, conectem com outros documentos, ou peçam exemplos.
   Temperatura 0.9. Emite `questions_ready(list[str])`. Só executa se `suggest_questions: bool`
-  estiver True na config. Timeout de 30s: se o worker demorar mais, as sugestões são descartadas
-  silenciosamente.
+  estiver True na config.
 
 - [ ] **`gui/main_window.py` — exibir chips de perguntas sugeridas no chat** — ao receber
   `questions_ready(list[str])`, criar 3 `QPushButton` compactos com `setObjectName("chip")`
   e CSS rounded (border-radius 12px, padding 4px 10px) logo abaixo da última resposta no
-  `QScrollArea` do chat. Ao clicar, inserir texto no campo de input e submeter. Remover os
-  chips via `QTimer.singleShot(30_000, chips_widget.deleteLater)`. Adicionar toggle
-  `suggest_questions` nas Settings (padrão: False — opt-in).
+  `QScrollArea` do chat. Ao clicar, inserir texto no campo de input e submeter. Os chips são
+  **persistentes** — não têm timer e não somem automaticamente; são removidos apenas quando
+  o usuário envia uma nova mensagem manualmente (o `QWidget` dos chips da mensagem anterior
+  é destruído quando a próxima resposta chega). Comportamento idêntico ao NotebookLM. Adicionar
+  toggle `suggest_questions` nas Settings (padrão: False — opt-in).
 
 - [ ] **`core/knowledge_graph.py` — grafo de conhecimento inter-documentos** — módulo
   `KnowledgeGraph` que extrai entidades de cada chunk indexado usando KeyBERT (top-5 keywords
@@ -5503,17 +5504,18 @@ all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar aqui
   `KnowledgeGraph.get_neighbors(entity)` retorna documentos e entidades relacionadas (para
   o mapa mental). Disparar `KnowledgeGraph.update(new_chunks)` no `_on_index_finished`.
 
-- [ ] **`core/config.py` — campo `persona_prompt: str` com persona da bibliotecária** — adicionar
-  campo ao `AppConfig` com default sendo o prompt completo da Mnemê (ver texto na pesquisa
-  em `pesquisas.md`). Persistir em `local_config.json`. Em `core/rag.py`, injetar
-  `config.persona_prompt` como primeira seção do system message em todos os chains
-  (`AskWorker`, `SummarizeWorker`, `FAQWorker`, `GuideWorker`). A seção de persona precede
-  a instrução de formato e o contexto RAG — nunca sobrescrever instruções de formato com
-  a persona.
+- [ ] **`core/config.py` — campo `persona_prompt: str` com persona Mnemosyne** — adicionar
+  campo ao `AppConfig` com default sendo o prompt completo da assistente Mnemosyne (ver texto
+  na pesquisa em `pesquisas.md` — sessão "Extração de Temas..." de 2026-05-14, seção 5.2).
+  O nome da assistente é **Mnemosyne** (não "Mnemê"). Persistir em `local_config.json`. Em
+  `core/rag.py`, injetar `config.persona_prompt` como primeira seção do system message em
+  todos os chains (`AskWorker`, `SummarizeWorker`, `FAQWorker`, `GuideWorker`). A seção de
+  persona precede a instrução de formato e o contexto RAG — nunca sobrescrever instruções de
+  formato com a persona.
 
 - [ ] **`gui/settings_view.py` — editor de persona nas Settings** — adicionar `QTextEdit`
   expansível (min 120px height) com label "Personalidade do assistente" na seção de
-  configurações LLM. Botão "Restaurar padrão" restaura o prompt da bibliotecária. A edição
+  configurações LLM. Botão "Restaurar padrão" restaura o prompt da Mnemosyne. A edição
   é salva imediatamente em `local_config.json` via `config.set("persona_prompt", text)`.
   Exibir preview: ao clicar "Testar persona", disparar uma query de teste ("Olá, apresente-se")
   e exibir a resposta numa caixa de diálogo.
