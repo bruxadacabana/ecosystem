@@ -1,7 +1,5 @@
 # notes
 
-- o botão de reindexar transcrições no mnemosyne não está funcionando
-- não entendo bem a função de "ativar uma biblioteca" dentro do mnemosyne
 - quero que o mnemosyne tenha uma área com "temas" que extraia diferentes temas dos arquivos indexados. Talvezpossamos criar uma nuvem de palavras e mapas mentais gigantes com essa informação. É necessário eu poder clicar no tema ou nódulo no mapa e o mnemosyne falar sobre o assunto. É importante ele poder sugerir perguntas baseado na pergunta anterior e na resposta que ele deu. É importante que o Mnemosyne aprenda com os arquivos que indexou. É importante que o Mnemosyne funcione quase como uma pessoa, talvez com a personalidade de uma bibliotecária ansiã, sábia, onipotente, pesquisadora e cientista. Ela sempre deve usar um tom didático, explicativo e detalhado.
 - eu quero criar um pequeno programa no ecossistema, ou dentro do HERMES, que receba um vídeo (ou playlist) especificamente de receita e extraia a transcrição e depois organize/edite os dados (ingredientes, modo de preparo e quaisquer dicas extras). É importante que ele suporte diversas fontes e inclua metadados.
 - pesquisar como buscar outras notícias sobre o mesmo tópico quando o resultado do botão de buscar notícia completa retornar "scraping parcial - tentar novamente".

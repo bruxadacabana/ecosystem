@@ -957,6 +957,50 @@ def load_vectorstore(config: AppConfig) -> Chroma:
     )
 
 
+def load_all_vectorstores(config: AppConfig) -> list[tuple[Chroma, "CollectionConfig"]]:
+    """
+    Carrega vectorstores de todas as coleções habilitadas com índice no disco.
+
+    Se ecosystem_chroma_dir estiver configurado (índice centralizado), carrega
+    apenas esse único vectorstore vinculado à coleção ativa.
+
+    Returns:
+        Lista de (Chroma, CollectionConfig). Vazia se nenhum índice existir.
+    """
+    from .collections import CollectionConfig  # noqa: F401 (type hint only)
+
+    # Índice centralizado: todas as coleções compartilham o mesmo persist_dir
+    if config.ecosystem_chroma_dir:
+        try:
+            vs = load_vectorstore(config)
+            active = config.active_coll
+            if active:
+                return [(vs, active)]
+        except VectorstoreNotFoundError:
+            pass
+        return []
+
+    embeddings = _get_embeddings(config)
+    result: list[tuple[Chroma, CollectionConfig]] = []
+    for coll in config.collections:
+        if not coll.enabled or not coll.exists:
+            continue
+        persist_dir = coll.persist_dir
+        if not persist_dir or not os.path.exists(persist_dir):
+            continue
+        try:
+            _clear_orphan_wal(persist_dir)
+            vs = Chroma(
+                persist_directory=persist_dir,
+                embedding_function=embeddings,
+                collection_metadata={"hnsw:space": "cosine"},
+            )
+            result.append((vs, coll))
+        except Exception:
+            pass
+    return result
+
+
 def reindex_transcripts(
     config: AppConfig,
     progress_cb: Callable[[str], None] | None = None,

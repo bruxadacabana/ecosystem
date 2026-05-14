@@ -5364,6 +5364,43 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   com `(article_id, title, article.language)` de cada artigo. MainWindow conecta esse sinal
   ao `TitleTranslator.enqueue_batch()`.
 
+### Mnemosyne: multi-coleção com query unificada | 2026-05-14
+> Contexto: o modelo atual de "coleção ativa" faz o RAG consultar apenas uma fonte por vez.
+> O comportamento correto é consultar todas as coleções habilitadas simultaneamente e rankear
+> os resultados pelos pesos de source_type já existentes (scientific > book > library > transcript).
+
+#### Mnemosyne
+- [x] **`core/indexer.py` — `load_all_vectorstores(config)`** — nova função que retorna
+  `list[tuple[Chroma, CollectionConfig]]` para todas as coleções habilitadas (`coll.enabled`
+  e `coll.exists`). Substituir o uso de `load_vectorstore(config)` (single-active) por esta
+  função nos workers de query. Manter `load_vectorstore` para compatibilidade com indexação.
+
+- [x] **`core/rag.py` — retrieval multi-vectorstore** — modificar `query_rag()` e as funções
+  internas `_hybrid_retrieve`, `_multi_query_retrieve`, `_hyde_retrieve`, `_iterative_retrieve`
+  para aceitar `vectorstores: list[tuple[Chroma, CollectionConfig]]` em vez de um único `Chroma`.
+  Lógica: rodar retrieval em cada vectorstore separadamente, juntar os candidatos, deduplicar
+  por conteúdo idêntico (`doc.page_content`), aplicar os pesos de `SOURCE_WEIGHTS` existentes
+  no ranking final. BM25 continua sendo um índice único por coleção — agregar scores ponderados.
+
+- [x] **`gui/main_window.py` — carregar todos os vectorstores no init** — em `_post_config_init`,
+  substituir `load_vectorstore(config)` por `load_all_vectorstores(config)` e armazenar em
+  `self.vectorstores: list[tuple[Chroma, CollectionConfig]]`. Passar a lista para todos os
+  workers de query (AskWorker, SummaryWorker, FAQWorker etc.).
+
+- [x] **`gui/main_window.py` — "Indexar tudo"** — o botão deve: (1) iterar sobre todas as
+  coleções habilitadas, (2) deletar o `chroma_db` de cada uma (`shutil.rmtree(coll.persist_dir,
+  ignore_errors=True)`), (3) re-indexar cada uma sequencialmente chamando `build_vectorstore`
+  para cada coleção com seu `watched_dir` e `persist_dir` respectivos.
+
+- [x] **`gui/main_window.py` — botão "Ativar" → "Habilitar/Desabilitar"** — renomear e mudar
+  comportamento: em vez de setar `active_collection`, faz toggle em `coll.enabled` e salva
+  config. Coleções desabilitadas são excluídas da query unificada. Remover toda lógica de
+  `active_collection` da query (manter apenas para fallback de indexação).
+
+- [x] **`core/watcher.py` / `core/idle_indexer.py` — watcher multi-coleção** — o watcher atual
+  monitora só `config.watched_dir` (coleção ativa). Atualizar para monitorar os paths de
+  todas as coleções habilitadas. Cada arquivo novo recebe `source_type` da sua coleção.
+
 ### LOGOS: pesquisa de LLMs por funcionalidade e hardware | 2026-05-13
 > Contexto: os modelos recomendados no LOGOS devem ser escolhidos com base no que
 > cada funcionalidade precisa (RAG multi-doc no Mnemosyne, análise de artigos no KOSMOS,

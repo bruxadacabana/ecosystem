@@ -41,7 +41,8 @@ from PySide6.QtWidgets import (
 
 from core.config import AppConfig, load_config, save_config
 from core.errors import ConfigError, VectorstoreNotFoundError
-from core.indexer import IndexCheckpoint, load_vectorstore
+from core.indexer import IndexCheckpoint, load_all_vectorstores
+from core.rag import MultiVectorstore
 from core.memory import (
     ChatSession,
     CollectionIndex,
@@ -487,7 +488,7 @@ class MainWindow(QMainWindow):
         from gui.app_state import AppState
         self.app_state = AppState()
 
-        self.vectorstore = None
+        self.vectorstore: MultiVectorstore = MultiVectorstore([])
         self._main_splitter: QSplitter | None = None
         self._akasha_available = False
         self._available_models: list[OllamaModel] = []
@@ -505,6 +506,7 @@ class MainWindow(QMainWindow):
         self._raw_summary = ""
         self._raw_faq = ""
         self._studio_raw = ""
+        self._collections_to_index: list = []  # fila para "Indexar tudo" em cadeia
         self._studio_worker: StudioWorker | None = None
         self._studio_table_data: tuple[list[str], list[list[str]]] | None = None
 
@@ -1260,8 +1262,8 @@ class MainWindow(QMainWindow):
         colls_layout.addWidget(self.collections_table)
 
         colls_btns = QHBoxLayout()
-        self.coll_activate_btn = QPushButton("Ativar")
-        self.coll_activate_btn.setToolTip("Definir como coleção ativa")
+        self.coll_activate_btn = QPushButton("Habilitar/Desabilitar")
+        self.coll_activate_btn.setToolTip("Incluir ou excluir esta coleção das queries")
         self.coll_activate_btn.setEnabled(False)
         self.coll_activate_btn.clicked.connect(self._on_coll_activate)
         self.coll_index_now_btn = QPushButton("Indexar agora")
@@ -1335,8 +1337,8 @@ class MainWindow(QMainWindow):
             row = self.collections_table.rowCount()
             self.collections_table.insertRow(row)
 
-            active_mark = " ★" if coll.name == self.config.active_collection else ""
-            name_item = QTableWidgetItem(coll.name + active_mark)
+            enabled_mark = " ✔" if coll.enabled else " ✗"
+            name_item = QTableWidgetItem(coll.name + enabled_mark)
             type_item = QTableWidgetItem(
                 "🔮 Vault" if coll.type.value == "vault" else "📚 Biblioteca"
             )
@@ -1375,16 +1377,25 @@ class MainWindow(QMainWindow):
         return items[0].data(Qt.ItemDataRole.UserRole) or ""
 
     def _on_coll_activate(self) -> None:
+        """Toggle habilitado/desabilitado da coleção selecionada."""
         name = self._selected_coll_name()
-        if not name or name == self.config.active_collection:
+        if not name:
             return
-        self.config.active_collection = name
+        coll = next((c for c in self.config.collections if c.name == name), None)
+        if not coll:
+            return
+        coll.enabled = not coll.enabled
         save_config(self.config)
-        self.vectorstore = None
-        self._disable_query_buttons()
-        self._post_config_init()
-        self._reset_conversation()
-        self._log_event(f"Coleção ativada: {name}")
+        self._refresh_collections_table()
+        stores = load_all_vectorstores(self.config)
+        self.vectorstore = MultiVectorstore(stores)
+        if self.vectorstore:
+            self._enable_query_buttons()
+        else:
+            self._disable_query_buttons()
+        state = "habilitada" if coll.enabled else "desabilitada"
+        self._log_event(f"Coleção {state}: {name}")
+        self.statusBar().showMessage(f"Coleção '{name}' {state}.")
 
     def _on_coll_index_now(self) -> None:
         name = self._selected_coll_name()
@@ -1567,7 +1578,7 @@ class MainWindow(QMainWindow):
         self.collection_combo.blockSignals(False)
 
     def _on_collection_changed(self, index: int) -> None:
-        """Troca a coleção ativa, recarrega o vectorstore e reseta o chat."""
+        """Atualiza active_collection (usada para indexação incremental individual)."""
         if index < 0:
             return
         name = self.collection_combo.itemData(index)
@@ -1575,11 +1586,7 @@ class MainWindow(QMainWindow):
             return
         self.config.active_collection = name
         save_config(self.config)
-        self.vectorstore = None
-        self._disable_query_buttons()
-        self._post_config_init()
-        self._reset_conversation()
-        self._log_event(f"Coleção ativa: {name}")
+        self._log_event(f"Coleção selecionada para indexação: {name}")
 
     def _post_config_init(self) -> None:
         """Chamado após configuração válida estar disponível."""
@@ -1603,16 +1610,14 @@ class MainWindow(QMainWindow):
 
         self._update_badge()
 
-        try:
-            self.vectorstore = load_vectorstore(self.config)
+        self.vectorstore = MultiVectorstore(load_all_vectorstores(self.config))
+        if self.vectorstore:
             self._enable_query_buttons()
             self._update_reflection_badge()
             self.statusBar().showMessage("Memória carregada.")
-            self._log_event("Vectorstore carregado com sucesso.")
-        except VectorstoreNotFoundError:
-            self.statusBar().showMessage(
-                "Nenhum índice encontrado. Use 'Indexar tudo'."
-            )
+            self._log_event("Vectorstore(s) carregado(s).")
+        else:
+            self.statusBar().showMessage("Nenhum índice encontrado. Use 'Indexar tudo'.")
             self._log_event("Nenhum índice encontrado — use 'Indexar tudo'.")
 
         self._populate_file_list()
@@ -1676,10 +1681,21 @@ class MainWindow(QMainWindow):
         self._watcher = FolderWatcher(self)
         self._watcher.file_added.connect(self._on_file_added)
         self._watcher.file_removed.connect(self._on_file_removed)
-        self._watcher.watch(self.config.watched_dir)
+
+        # Monitora todos os paths de coleções user-defined habilitadas
+        watched_paths: list[str] = []
+        for coll in self.config.collections:
+            if coll.source == "user" and coll.enabled and coll.exists:
+                watched_paths.append(coll.path)
+        if not watched_paths and self.config.watched_dir:
+            watched_paths = [self.config.watched_dir]
+
+        for path in watched_paths:
+            self._watcher.watch(path)
+
         self.toggle_watcher_btn.setEnabled(True)
         self._update_watcher_label()
-        self._log_event(f"Watcher ativo em: {self.config.watched_dir}")
+        self._log_event(f"Watcher ativo em: {', '.join(watched_paths)}")
 
     def _update_watcher_label(self) -> None:
         watcher = getattr(self, "_watcher", None)
@@ -1729,12 +1745,10 @@ class MainWindow(QMainWindow):
         self._log_event(message)
         if success:
             self._populate_file_list()
-            try:
-                self.vectorstore = load_vectorstore(self.config)
+            self.vectorstore = MultiVectorstore(load_all_vectorstores(self.config))
+            if self.vectorstore:
                 self._enable_query_buttons()
-                self.refresh_manage_info()
-            except VectorstoreNotFoundError:
-                pass
+            self.refresh_manage_info()
         self.statusBar().showMessage(message)
 
     # ── Indexador idle (ecossistema) ──────────────────────────────────────────
@@ -1775,11 +1789,21 @@ class MainWindow(QMainWindow):
     # ── Indexação ─────────────────────────────────────────────────────────────
 
     def start_indexing(self) -> None:
-        if not self.config.watched_dir or not os.path.isdir(self.config.watched_dir):
-            QMessageBox.warning(
-                self, "Aviso", "Pasta monitorada inválida. Configure primeiro."
-            )
+        from core.idle_indexer import _make_config_for_collection
+
+        # Coleta todas as coleções habilitadas com pasta válida
+        enabled = [
+            c for c in self.config.collections
+            if c.enabled and c.exists
+        ]
+        if not enabled:
+            QMessageBox.warning(self, "Aviso", "Nenhuma coleção habilitada. Configure primeiro.")
             return
+
+        # Armazena as demais coleções na fila; começa pela primeira
+        first = enabled[0]
+        self._collections_to_index = enabled[1:]
+        proxy_config = _make_config_for_collection(self.config, first)
 
         self.index_btn.setEnabled(False)
         self.progress.setVisible(True)
@@ -1787,10 +1811,13 @@ class MainWindow(QMainWindow):
         self.progress_file_label.setText("Iniciando…")
         self.progress_file_label.setVisible(True)
         self.cancel_btn.setVisible(True)
-        self.statusBar().showMessage("Indexando documentos…")
-        self._log_event(f"Iniciando indexação de: {self.config.watched_dir}")
+        n_total = len(enabled)
+        n_done = 0
+        label = f"[{n_done + 1}/{n_total}] {first.name}…"
+        self.statusBar().showMessage(f"Indexando {label}")
+        self._log_event(f"Iniciando indexação de todas as coleções ({n_total}).")
 
-        self._index_worker = IndexWorker(self.config)
+        self._index_worker = IndexWorker(proxy_config)
         self._index_worker.finished.connect(self._on_index_finished)
         self._index_worker.progress.connect(self._on_index_progress)
         self._index_worker.start()
@@ -1820,13 +1847,11 @@ class MainWindow(QMainWindow):
         if success:
             self._update_badge()
             self._populate_file_list()
-            try:
-                self.vectorstore = load_vectorstore(self.config)
+            self.vectorstore = MultiVectorstore(load_all_vectorstores(self.config))
+            if self.vectorstore:
                 self._enable_query_buttons()
                 self._update_reflection_badge()
-                self.refresh_manage_info()
-            except VectorstoreNotFoundError as exc:
-                QMessageBox.critical(self, "Erro", str(exc))
+            self.refresh_manage_info()
         else:
             self.update_index_btn.setEnabled(True)
             QMessageBox.warning(self, "Aviso", message)
@@ -1853,10 +1878,7 @@ class MainWindow(QMainWindow):
         self.update_index_btn.setEnabled(True)
         self._log_event(message)
         if success:
-            try:
-                self.vectorstore = load_vectorstore(self.config)
-            except VectorstoreNotFoundError:
-                pass
+            self.vectorstore = MultiVectorstore(load_all_vectorstores(self.config))
         else:
             QMessageBox.warning(self, "Aviso", message)
         self.statusBar().showMessage(message)
@@ -1887,30 +1909,44 @@ class MainWindow(QMainWindow):
                 self._spinner_timer.start()
 
     def _on_index_finished(self, success: bool, message: str) -> None:
+        from core.idle_indexer import _make_config_for_collection
+
         self._spinner_timer.stop()
         if self._currently_indexing:
             self._update_file_status(
                 self._currently_indexing, _IDX_INDEXED if success else _IDX_ERROR
             )
             self._currently_indexing = None
+        self._log_event(message)
+        self._check_resume_available()
+
+        if success and self._collections_to_index:
+            # Ainda há coleções na fila — indexar a próxima sem re-habilitar o botão
+            next_coll = self._collections_to_index.pop(0)
+            proxy_config = _make_config_for_collection(self.config, next_coll)
+            self.statusBar().showMessage(f"Indexando {next_coll.name}…")
+            self._log_event(f"Avançando para coleção: {next_coll.name}")
+            self._index_worker = IndexWorker(proxy_config)
+            self._index_worker.finished.connect(self._on_index_finished)
+            self._index_worker.progress.connect(self._on_index_progress)
+            self._index_worker.start()
+            return
+
+        # Todas as coleções foram indexadas (ou houve erro)
         self.index_btn.setEnabled(True)
         self.progress.setVisible(False)
         self.progress_file_label.setVisible(False)
         self.cancel_btn.setVisible(False)
-        self._log_event(message)
-        self._check_resume_available()
 
         if success:
             self._update_collection_index()
             self._update_badge()
             self._populate_file_list()
-            try:
-                self.vectorstore = load_vectorstore(self.config)
+            self.vectorstore = MultiVectorstore(load_all_vectorstores(self.config))
+            if self.vectorstore:
                 self._enable_query_buttons()
                 self._update_reflection_badge()
-                self.refresh_manage_info()
-            except VectorstoreNotFoundError as exc:
-                QMessageBox.critical(self, "Erro", str(exc))
+            self.refresh_manage_info()
             self._start_guide_generation()
             self._register_indexing_machine()
         else:
@@ -1979,13 +2015,11 @@ class MainWindow(QMainWindow):
             self._update_collection_index()
             self._update_badge()
             self._populate_file_list()
-            try:
-                self.vectorstore = load_vectorstore(self.config)
+            self.vectorstore = MultiVectorstore(load_all_vectorstores(self.config))
+            if self.vectorstore:
                 self._enable_query_buttons()
                 self._update_reflection_badge()
-                self.refresh_manage_info()
-            except VectorstoreNotFoundError as exc:
-                QMessageBox.critical(self, "Erro", str(exc))
+            self.refresh_manage_info()
             self._start_guide_generation()
         else:
             self._log_event("Retomada interrompida — clique 'Retomar indexação' para continuar.")
@@ -2055,7 +2089,7 @@ class MainWindow(QMainWindow):
 
     def _update_reflection_badge(self) -> None:
         """Conta reflexões no vectorstore e atualiza o badge na sidebar."""
-        if self.vectorstore is None:
+        if not self.vectorstore:
             self.reflection_badge_btn.setVisible(False)
             return
         try:
@@ -2078,7 +2112,7 @@ class MainWindow(QMainWindow):
 
     def _show_reflection_list(self) -> None:
         """Abre diálogo com a lista de reflexões presentes no índice."""
-        if self.vectorstore is None:
+        if not self.vectorstore:
             return
         try:
             result = self.vectorstore._collection.get(
@@ -2130,7 +2164,7 @@ class MainWindow(QMainWindow):
 
     def _start_faq_generation(self) -> None:
         """Inicia geração do FAQ em background com streaming."""
-        if self.vectorstore is None:
+        if not self.vectorstore:
             return
         self.faq_btn.setEnabled(False)
         self.faq_text.clear()
@@ -2148,7 +2182,7 @@ class MainWindow(QMainWindow):
         sb.setValue(sb.maximum())
 
     def _on_faq_finished(self, success: bool, error: str, items: list) -> None:
-        self.faq_btn.setEnabled(self.vectorstore is not None)
+        self.faq_btn.setEnabled(bool(self.vectorstore))
         if success:
             lines = []
             for i, item in enumerate(items, 1):
@@ -2165,7 +2199,7 @@ class MainWindow(QMainWindow):
 
     def _start_guide_generation(self) -> None:
         """Inicia geração do Notebook Guide em background."""
-        if self.vectorstore is None or not self.config.mnemosyne_dir:
+        if not self.vectorstore or not self.config.mnemosyne_dir:
             return
         self.guide_refresh_btn.setEnabled(False)
         self._log_event("Gerando Notebook Guide…")
@@ -2179,7 +2213,7 @@ class MainWindow(QMainWindow):
         self._log_event(message)
         if success:
             self._load_guide_into_ui()
-        self.guide_refresh_btn.setEnabled(self.vectorstore is not None)
+        self.guide_refresh_btn.setEnabled(bool(self.vectorstore))
 
     def _load_guide_into_ui(self) -> None:
         """Carrega guide.json e preenche os widgets do painel Guide."""
@@ -2230,7 +2264,7 @@ class MainWindow(QMainWindow):
         self.studio_export_csv_btn.setVisible(is_table)
 
     def _start_studio_generation(self) -> None:
-        if self.vectorstore is None:
+        if not self.vectorstore:
             return
         doc_type = self.studio_type_combo.currentText()
         self.studio_generate_btn.setEnabled(False)
@@ -2259,7 +2293,7 @@ class MainWindow(QMainWindow):
         sb.setValue(sb.maximum())
 
     def _on_studio_finished(self, success: bool, text: str) -> None:
-        self.studio_generate_btn.setEnabled(self.vectorstore is not None)
+        self.studio_generate_btn.setEnabled(bool(self.vectorstore))
         doc_type = self.studio_type_combo.currentText()
         if success:
             if doc_type == "Tabela de Dados":
@@ -2405,7 +2439,7 @@ class MainWindow(QMainWindow):
     # ── Consulta ──────────────────────────────────────────────────────────────
 
     def ask_question(self) -> None:
-        if self.vectorstore is None:
+        if not self.vectorstore:
             QMessageBox.warning(
                 self, "Aviso", "Nenhuma memória indexada. Indexe primeiro."
             )
@@ -2962,7 +2996,7 @@ class MainWindow(QMainWindow):
     # ── Resumo ────────────────────────────────────────────────────────────────
 
     def summarize(self) -> None:
-        if self.vectorstore is None:
+        if not self.vectorstore:
             QMessageBox.warning(
                 self, "Aviso", "Nenhuma memória indexada. Indexe primeiro."
             )
@@ -3062,7 +3096,7 @@ class MainWindow(QMainWindow):
         if persist_dir and os.path.exists(persist_dir):
             try:
                 shutil.rmtree(persist_dir)
-                self.vectorstore = None
+                self.vectorstore: MultiVectorstore = MultiVectorstore([])
                 self._disable_query_buttons()
                 self.clear_index_btn.setEnabled(False)
                 self._log_event("Índice removido.")

@@ -64,6 +64,7 @@ from .reflection import REFLECTION_COSINE_THRESHOLD
 
 if TYPE_CHECKING:
     from .tracker import FileTracker
+    from .collections import CollectionConfig
 
 
 class SourceRecord(TypedDict, total=False):
@@ -664,6 +665,206 @@ SOURCE_WEIGHTS: dict[str, float] = {
 }
 
 
+class MultiVectorstore:
+    """
+    Proxy que unifica múltiplos Chroma vectorstores em uma interface única.
+
+    Permite que funções que aceitam um único vectorstore (summarizer, faq, guide,
+    studio) funcionem sem alteração quando todas as coleções estão habilitadas.
+
+    Para queries RAG completas (prepare_ask), use _retrieve_multi_strategy diretamente —
+    ele faz hybrid retrieval com BM25 por coleção antes de mesclar.
+    """
+
+    def __init__(self, stores: "list[tuple[Any, CollectionConfig]]") -> None:
+        self._stores = stores
+
+    def __bool__(self) -> bool:
+        return bool(self._stores)
+
+    @property
+    def stores(self) -> "list[tuple[Any, CollectionConfig]]":
+        return self._stores
+
+    def similarity_search(self, query: str, k: int = 4, **kwargs) -> list[Document]:
+        """Busca semântica pura em todos os stores — usada por summarizer/faq/guide."""
+        _RRF_K = 60
+        rrf_scores: dict[str, float] = {}
+        doc_map: dict[str, Document] = {}
+        fetch_k = max(k, k * 2 // max(len(self._stores), 1) + 4)
+        for vs, _ in self._stores:
+            try:
+                docs = vs.similarity_search(query, k=fetch_k, **kwargs)
+            except Exception:
+                continue
+            for rank, doc in enumerate(docs):
+                key = doc.page_content[:200]
+                rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank + 1)
+                if key not in doc_map:
+                    doc_map[key] = doc
+        sorted_keys = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
+        return [doc_map[ky] for ky in sorted_keys[:k]]
+
+    def similarity_search_with_score(
+        self, query: str, k: int = 4, **kwargs
+    ) -> list[tuple[Document, float]]:
+        """similarity_search_with_score para compatibilidade com código legado."""
+        docs = self.similarity_search(query, k=k, **kwargs)
+        return [(doc, 0.0) for doc in docs]
+
+    def get(self, **kwargs) -> dict:
+        """Agrega get() de todos os stores, deduplicando por ID."""
+        all_docs: list[str] = []
+        all_ids: list[str] = []
+        all_metas: list[dict] = []
+        seen_ids: set[str] = set()
+        for vs, _ in self._stores:
+            try:
+                result = vs.get(**kwargs)
+            except Exception:
+                continue
+            docs = result.get("documents") or []
+            ids = result.get("ids") or []
+            metas = result.get("metadatas") or []
+            for doc, id_, meta in zip(docs, ids, metas):
+                if id_ not in seen_ids:
+                    seen_ids.add(id_)
+                    all_docs.append(doc)
+                    all_ids.append(id_)
+                    all_metas.append(meta or {})
+        return {"documents": all_docs, "ids": all_ids, "metadatas": all_metas}
+
+    @property
+    def _collection(self):
+        """Proxy para _collection — usa o primeiro store (para badges e contagens)."""
+        if self._stores:
+            return self._stores[0][0]._collection
+        raise AttributeError("MultiVectorstore sem stores carregados")
+
+
+def _retrieve_multi(
+    stores: "list[tuple[Any, CollectionConfig]]",
+    question: str,
+    k: int,
+    source_type: str | None = None,
+    source_files: list[str] | None = None,
+    node_types: list[str] | None = None,
+) -> list[Document]:
+    """
+    Hybrid retrieval em todos os stores: faz _hybrid_retrieve com BM25 por coleção,
+    mescla os resultados via RRF e devolve top-k documentos deduplicados.
+    """
+    _RRF_K = 60
+    rrf_scores: dict[str, float] = {}
+    doc_map: dict[str, Document] = {}
+
+    for vs, coll in stores:
+        bm25_idx = BM25Index.load(coll.mnemosyne_dir)
+        try:
+            docs = _hybrid_retrieve(
+                vs, question, k * 2,
+                source_type=source_type,
+                source_files=source_files,
+                bm25_index=bm25_idx,
+                node_types=node_types,
+            )
+        except QueryError:
+            continue
+        for rank, doc in enumerate(docs):
+            key = doc.page_content[:200]
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (_RRF_K + rank + 1)
+            if key not in doc_map:
+                doc_map[key] = doc
+
+    sorted_keys = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
+    return [doc_map[ky] for ky in sorted_keys[:k]]
+
+
+def _retrieve_multi_strategy(
+    stores: "list[tuple[Any, CollectionConfig]]",
+    question: str,
+    k: int,
+    strategy: str = "hybrid",
+    llm_model: str = "",
+    source_type: str | None = None,
+    source_files: list[str] | None = None,
+    node_types: list[str] | None = None,
+    iterative: bool = False,
+) -> list[Document]:
+    """
+    Seleciona estratégia de retrieval (hybrid/multi_query/hyde/iterative) para
+    múltiplos vectorstores e retorna docs combinados.
+    """
+    if iterative:
+        iter1 = _retrieve_multi(stores, question, k, source_type, source_files, node_types)
+        if not iter1 or not llm_model:
+            return iter1
+        provisional = ""
+        try:
+            context_preview = "\n\n---\n".join(doc.page_content[:400] for doc in iter1[:5])
+            prompt = _ITER_PROVISIONAL_PROMPT.format(context=context_preview, question=question)
+            llm = OllamaLLM(model=llm_model, temperature=0.0, timeout=30)
+            provisional = strip_think(llm.invoke(prompt)).strip()
+        except Exception:
+            pass
+        if not provisional:
+            return iter1
+        extra_k = max(1, k // 2)
+        seen: set[str] = {doc.page_content[:100] for doc in iter1}
+        try:
+            iter2 = _retrieve_multi(
+                stores, provisional, extra_k * 2, source_type, source_files, node_types
+            )
+        except Exception:
+            return iter1
+        extra = [doc for doc in iter2 if doc.page_content[:100] not in seen][:extra_k]
+        return iter1 + extra
+
+    if strategy == "multi_query":
+        queries = [question]
+        try:
+            llm = OllamaLLM(model=llm_model, temperature=0.5, timeout=30)
+            raw = strip_think(
+                llm.invoke(_MULTI_QUERY_PROMPT.format(n=3, question=question))
+            )
+            for line in raw.splitlines():
+                line = line.strip()
+                if line and line != question:
+                    queries.append(line)
+                if len(queries) >= 4:
+                    break
+        except Exception:
+            pass
+        seen_keys: set[str] = set()
+        results: list[Document] = []
+        for q in queries:
+            for doc in _retrieve_multi(stores, q, k, source_type, source_files, node_types):
+                key = doc.page_content[:200]
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    results.append(doc)
+        return results[:k] if results else _retrieve_multi(
+            stores, question, k, source_type, source_files, node_types
+        )
+
+    if strategy == "hyde":
+        try:
+            llm = OllamaLLM(model=llm_model, temperature=0.3, timeout=30)
+            hypothetical = strip_think(
+                llm.invoke(_HYDE_PROMPT.format(question=question))
+            )
+            if hypothetical.strip():
+                return _retrieve_multi(
+                    stores, hypothetical, k, source_type, source_files, node_types
+                )
+        except Exception:
+            pass
+        return _retrieve_multi(stores, question, k, source_type, source_files, node_types)
+
+    # hybrid (padrão)
+    return _retrieve_multi(stores, question, k, source_type, source_files, node_types)
+
+
 def _effective_source_type(doc: Document) -> str:
     """
     Retorna o tipo efetivo do documento para fins de label e peso.
@@ -829,9 +1030,31 @@ def prepare_ask(
     # Reranking activo: buscar 30 candidatos; sem reranking: k+2 como antes
     candidate_k = _RERANK_CANDIDATE_K if config.reranking_enabled else config.retriever_k + 2
 
+    # Multi-vs mode: vectorstore é um MultiVectorstore com múltiplas coleções
+    _multi_mode = isinstance(vectorstore, MultiVectorstore)
+    if _multi_mode:
+        # Persona: vault apenas se TODAS as coleções forem vault
+        collection_type = (
+            "vault"
+            if vectorstore.stores and all(
+                coll.type.value == "vault" for _, coll in vectorstore.stores
+            )
+            else "library"
+        )
+
     t0 = time.monotonic()
     try:
-        if iterative_retrieval:
+        if _multi_mode:
+            docs = _retrieve_multi_strategy(
+                vectorstore.stores, question, candidate_k,
+                strategy=retrieval_mode,
+                llm_model=config.llm_model,
+                source_type=source_type,
+                source_files=source_files,
+                node_types=node_types,
+                iterative=iterative_retrieval,
+            )
+        elif iterative_retrieval:
             docs = _iterative_retrieve(
                 vectorstore, question, candidate_k, config.llm_model,
                 source_type, source_files, bm25_index, node_types,
@@ -863,7 +1086,8 @@ def prepare_ask(
             lat_ms, _LAT_WARN_MS,
         )
     if _query_count % _HEALTH_EVERY == 0:
-        _check_index_health(vectorstore)
+        health_vs = vectorstore.stores[0][0] if _multi_mode and vectorstore.stores else vectorstore
+        _check_index_health(health_vs)
 
     # Compressão contextual: filtrar chunks irrelevantes via LLM
     docs = _contextual_compress(docs, question, config.llm_model)
