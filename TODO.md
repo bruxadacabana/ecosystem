@@ -5040,11 +5040,11 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **Inventario Windows 10 (WorkPc):** all-minilm:latest (45 MB), smollm2:1.7b (1.8 GB), qwen2.5:0.5b (397 MB)
 - [x] **Inventario CachyOS principal (MainPc):** phi3.5:latest (2.2 GB), gemma2:2b (1.6 GB), qwen2.5:7b (4.7 GB), llama3.1:8b (4.9 GB), bge-m3:latest (1.2 GB)
 - [x] **Inventario Laptop (i7-8550U, MX150 2GB):** nomic-embed-text:latest (274 MB), SmolLM2:1.7B (1.8 GB), gemma2:2b (1.6 GB)
-- [ ] **Pesquisar LLMs para RAG (Mnemosyne)** -- sintese multi-doc, context window, portugues;
+- [x] **Pesquisar LLMs para RAG (Mnemosyne)** -- sintese multi-doc, context window, portugues;
   garantir que os modelos escolhidos por hardware sejam compativeis (mesma familia ou instruction format)
-- [ ] **Pesquisar LLMs para analise/sumarizacao (KOSMOS e AKASHA)** -- artigos longos, velocidade
+- [x] **Pesquisar LLMs para analise/sumarizacao (KOSMOS e AKASHA)** -- artigos longos, velocidade
   de streaming; no MainPc o modelo KOSMOS pode ser diferente do Mnemosyne para rodar simultaneamente
-- [ ] **Pesquisar modelos de embedding multilingues** -- qualidade pt/en, velocidade por hardware;
+- [x] **Pesquisar modelos de embedding multilingues** -- qualidade pt/en, velocidade por hardware;
   bge-m3 vs nomic-embed-text vs all-minilm vs potion-multilingual-128M
 - [ ] **Atualizar perfis em ** apos pesquisa -- 
   e ; possivelmente adicionar slot AKASHA
