@@ -4431,6 +4431,181 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   texto para API externa ou sessão remota no MainPc. No LOGOS, mostrar mensagem explicativa em vez
   de lista de modelos para o perfil WorkPc.
 
+### Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
+> Contexto: pesquisa sobre (1) modelos ideais por funcionalidade do ecossistema (Mnemosyne-RAG,
+> KOSMOS-análise, AKASHA-query) cruzados com cada perfil de hardware real; (2) controle configurável
+> de consumo de CPU/VRAM no LOGOS para prevenir travamentos; (3) gerenciamento do ciclo de vida do
+> Ollama (iniciar, parar, pausar, interromper); (4) compatibilidade de saídas cross-machine
+> (embeddings, JSON estruturado). Achados completos em pesquisas.md (sessão 2026-05-14).
+> **ATENÇÃO:** a seção anterior (2026-05-13) contém item incorreto sobre WorkPc ("sem LLM local") —
+> o WorkPc TEM smollm2:1.7b e qwen2.5:0.5b funcionais a 2–5 tok/s. Os itens desta seção prevalecem.
+
+#### HUB — LOGOS: corrigir perfis de modelo por funcionalidade e hardware
+- [ ] Atualizar `HardwareProfile::model_profile()` em `HUB/src-tauri/src/logos.rs` com tabela corrigida
+  por funcionalidade. O campo `model_type` deve distinguir entre `llm_rag` (Mnemosyne), `llm_analysis`
+  (KOSMOS), `llm_query` (AKASHA — dispatcher leve) e `embed` (embedding):
+  - **MainPc** (RX 6600 8 GB): llm_rag=`qwen2.5:7b` (128K ctx, 4,7 GB, IFEval 87,3, multilíngue);
+    llm_analysis=`gemma2:2b` (8K ctx, 1,6 GB — permite concorrência simultânea com qwen2.5:7b dentro
+    dos 8 GB: 4,7+1,6=6,3 GB < 8 GB); llm_query=`smollm2:1.7b` (1 GB, manter sempre aquecido via
+    keep_alive=-1); embed=`bge-m3` (0,6 GB Q4, 1024 dims, 100+ línguas).
+  - **Laptop** (MX150 2 GB): llm_rag=`gemma2:2b` (1,6 GB Q4 — único modelo viável na MX150 para RAG,
+    8K ctx é suficiente para corpus pequeno); llm_analysis=`smollm2:1.7b` (1 GB, análise básica);
+    llm_query=`smollm2:1.7b`; embed=`bge-m3` (0,6 GB Q4 — mesmas 1024 dims do MainPc, índice
+    ChromaDB compatível e sincronizável via Proton Drive).
+  - **WorkPc** (i5-3470 CPU, sem AVX2): llm_rag=`smollm2:1.7b` (1 GB Q4, 2–5 tok/s — lento mas
+    funcional); llm_analysis=`qwen2.5:0.5b` (400 MB Q4, ~5–10 tok/s, para artigos curtos);
+    llm_query=`qwen2.5:0.5b` (dispatcher mais leve); embed=`potion-multilingual-128M` (NÃO via
+    Ollama — instalado via `pip install model2vec`, estático, 27 MB, 256 dims, 101 línguas, 500×
+    mais rápido que bge-m3 em CPU — NÃO usar o mesmo ChromaDB que MainPc/Laptop pois 256≠1024 dims).
+- [ ] Adicionar campo `slot_label` à struct `ModelSlot` em `logos.rs` para exibir nome amigável na
+  UI: `llm_rag` → "RAG/chat (Mnemosyne)", `llm_analysis` → "Análise de artigos (KOSMOS)",
+  `llm_query` → "Busca inteligente (AKASHA)", `embed` → "Embedding". Substituir o campo genérico
+  `model_type` na exibição da `LogosView.tsx`.
+- [ ] Adicionar campo `expected_speed_note` à struct `RecommendedModel` para o WorkPc com string
+  descritiva (ex: "~3 tok/s — adequado para background, lento em chat interativo"). Exibir na UI
+  do LOGOS ao lado dos modelos do WorkPc para que a usuária entenda o comportamento esperado.
+
+#### HUB — LOGOS: controle configurável de VRAM e CPU por percentual
+- [ ] Implementar controle de percentual máximo de VRAM. O Ollama não tem variável de limite por
+  percentagem — a implementação deve ser no LOGOS: (a) `HardwareProfile` já tem `vram_total_mb`;
+  (b) calcular `vram_limit_bytes = vram_total_mb * 1024 * 1024 * vram_limit_pct / 100`; (c) antes
+  de ativar novo modelo, consultar `GET /api/ps` (retorna modelos carregados com VRAM em bytes por
+  modelo); (d) se `vram_em_uso + vram_do_modelo_novo > vram_limit_bytes`, descarregar o modelo com
+  menor prioridade (P3 primeiro) via `POST /api/generate { "model": X, "keep_alive": 0 }`; (e)
+  persistir `logos.vram_limit_pct` (padrão: 85) no `ecosystem.json`. Expor na UI como slider.
+- [ ] Ao iniciar o servidor Ollama (subprocesso), injetar no ambiente: `OLLAMA_GPU_OVERHEAD` por
+  perfil (MainPc: 838860800 bytes = ~800 MB = 10% de 8 GB; Laptop: 209715200 = ~200 MB = 10% de
+  2 GB; WorkPc: 0); `OLLAMA_FLASH_ATTENTION=1` em todos os perfis (reduz KV cache VRAM em 20–40%
+  sem custo de qualidade, compatível com ROCm e CUDA); `OLLAMA_MAX_LOADED_MODELS` por perfil
+  (MainPc: 3, Laptop: 2, WorkPc: 1); `OLLAMA_KEEP_ALIVE=5m` como padrão global (sobrescrito por
+  keep_alive por requisição quando necessário). Usar `std::process::Command::envs(...)` em Rust.
+- [ ] Implementar controle de `num_thread` de CPU por tipo de tarefa para o WorkPc. O parâmetro
+  `num_thread` é passado por requisição individual (não é variável de ambiente). Tarefas P3/batch
+  (KOSMOS análise em background): `num_thread=3` (deixa 1 core livre para o SO). Tarefas P2/
+  interativas (Mnemosyne RAG): `num_thread=4` (maximiza velocidade de resposta). Adaptar a função
+  de geração de requisições no `logos.rs` para incluir `num_thread` baseado na prioridade da tarefa.
+- [ ] Adicionar painel de configuração de limites na `LogosView.tsx`: slider "Limite de VRAM (%)"
+  (padrão 85, range 50–95); campo "Threads CPU" para WorkPc (2/3/4 threads); toggle
+  "FlashAttention" (padrão: ligado). Persistir via `save_ecosystem_config()` já existente no HUB.
+
+#### HUB — LOGOS: gerenciamento do ciclo de vida do Ollama (iniciar / parar / abortar)
+- [ ] Implementar `logos_start_ollama()` Tauri command em `commands/logos.rs`. Lógica: detectar
+  se Ollama já está rodando via `GET http://localhost:11434/`; se não, iniciar subprocesso:
+  Windows — `Command::new("ollama").arg("serve")` com variáveis de ambiente do perfil (ver item
+  acima); Linux — tentar `systemctl start ollama.service` primeiro; se falhar, fallback para
+  subprocesso direto. Após spawn, fazer polling em `GET /` a cada 500ms por até 30s; emitir evento
+  `logos-ollama-status { running: bool }` quando pronto ou em timeout. Guardar handle do processo
+  para uso posterior no stop.
+- [ ] Implementar `logos_stop_ollama()` com comportamento correto por SO e por contexto de execução:
+  - **Windows sem app.exe:** executar `taskkill /IM ollama.exe /F` via `Command`.
+  - **Windows com app.exe rodando** (detectável via `tasklist | grep "ollama app.exe"`): retornar
+    erro ao frontend com mensagem "O app do Ollama está na bandeja do sistema e irá reiniciar o
+    servidor. Feche-o antes de parar." Não tentar matar o processo — seria inútil.
+  - **Linux:** `systemctl stop ollama.service` ou `pkill -f "ollama serve"` como fallback.
+  - Se o LOGOS foi quem iniciou o processo (handle disponível), usar `child.kill()` em Rust (mais
+    limpo que taskkill). Emitir `logos-ollama-status { running: false }` após confirmação.
+- [ ] Implementar `logos_abort_model_inference()` para cancelar geração em andamento sem descarregar
+  o modelo. Mecanismo: manter um `HashMap<String, tokio::task::AbortHandle>` no `LogosState` com
+  handle por modelo ativo. Ao chamar abort, acionar `handle.abort()` — o futuro Rust é dropado, a
+  conexão HTTP é fechada, e o Ollama para de gerar automaticamente quando detecta cliente
+  desconectado. O modelo permanece aquecido em VRAM (comportamento desejado para retomada rápida).
+- [ ] Documentar limitação de cancelamento de pull na `LogosView.tsx`: quando clicar "Cancelar"
+  durante pull em andamento, exibir aviso: "O Ollama continuará o download em background mesmo após
+  cancelar aqui. Para interromper de fato, pare o servidor Ollama." Limitação conhecida do Ollama
+  (issue #13142 — sem endpoint REST para cancelar pull).
+
+#### HUB — LOGOS: compatibilidade de embeddings e strategy de índice único
+- [ ] Implementar detecção de mudança de modelo de embedding em `logos.rs`. Se o modelo configurado
+  em `embed` do perfil for diferente do que gerou o índice ChromaDB existente (checar via metadados
+  salvos na coleção), alertar via evento Tauri: "Trocar embedding de [modelo_antigo] para
+  [modelo_novo] exige reindexação completa — os vetores atuais são incompatíveis (dims:
+  [antiga] → [nova]). Confirmar?" Bloquear uso do Mnemosyne até reindexação ou reverter a escolha.
+- [ ] Implementar flag `indexing_enabled` por perfil no `ecosystem.json`. WorkPc deve ter
+  `indexing_enabled: false` por padrão — consume o índice bge-m3 sincronizado pelo MainPc via
+  Proton Drive, sem gerar índice local com potion-multilingual-128M (dims incompatíveis). O
+  Mnemosyne deve verificar essa flag no startup e exibir "Indexação desativada neste computador —
+  usando índice sincronizado do computador principal" se `false`.
+
+#### KOSMOS — JSON schema enforcement para análise cross-machine
+- [ ] Garantir que o prompt de análise do KOSMOS inclua o schema JSON de saída explicitamente para
+  todos os campos (5W: quem, o quê, quando, onde, por quê; entidades; resumo; tags) e passe
+  `"format": "json"` na requisição Ollama. Para modelos pequenos (smollm2:1.7b no WorkPc e
+  qwen2.5:0.5b), adicionar 2–3 pares de exemplos few-shot no system prompt — modelos sub-2B não
+  seguem schemas sem exemplos. Implementar pipeline de validação: parsear o JSON retornado; se
+  falhar, reenviar ao modelo com mensagem de erro + instrução "Corrija o JSON inválido mantendo os
+  mesmos campos". Isso garante que análises de artigos geradas por qualquer máquina tenham formato
+  idêntico e possam ser sincronizadas via Proton Drive sem conversão.
+
+### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
+> Contexto: pesquisa sobre as melhores abordagens para RAG com corpus em múltiplos idiomas
+> (português, inglês e mandarim). Cobre: estratégias de pipeline (tRAG, MultiRAG, CrossRAG,
+> QTT-RAG), language drift em geração multilíngue, viés de idioma no reranking, chunking para
+> chinês, detecção de idioma por chunk e compatibilidade com bge-m3. Achados completos em
+> pesquisas.md (sessão 2026-05-14).
+
+#### Mnemosyne
+- [ ] **Chunking por contagem de caracteres Unicode** — substituir a contagem de palavras/espaços
+  por `len(text)` em caracteres Unicode ao definir `chunk_size` e `overlap` em `core/indexer.py`.
+  Razão: chinês não tem espaços entre palavras — um chunker baseado em whitespace cria chunks
+  gigantes ou quebra no meio de palavras. Limiar recomendado: ~1000–1200 chars por chunk (equivale
+  a ~300–400 words em pt/en e ~500–600 caracteres zh significativos). Manter overlap em ~15% do
+  tamanho. Essa mudança melhora qualidade para todos os idiomas, não só zh.
+- [ ] **Metadado `language` por chunk na indexação** — em `core/loaders.py` ou `core/indexer.py`,
+  após carregar cada documento, detectar o idioma do texto via `lingua-py`
+  (`pip install lingua-language-detector`) e adicionar `metadata["language"]` com o código ISO
+  (ex: `"pt"`, `"en"`, `"zh"`) a cada chunk. Usar `lingua-py` em vez de `langdetect` — superior
+  para textos curtos e para distinguir idiomas próximos (pt vs es). Configurar o detector para
+  reconhecer pelo menos: `Language.PORTUGUESE`, `Language.ENGLISH`, `Language.CHINESE`. Esse
+  metadado habilita filtragem futura, estatísticas do índice e diversidade no reranking.
+- [ ] **Language instruction no system prompt** — adicionar instrução explícita de idioma de
+  resposta ao system prompt em `core/rag.py`: `"Responda sempre em português, independentemente
+  do idioma dos documentos recuperados."` Razão: fenômeno de language drift documentado —
+  quando os chunks recuperados estão em idioma diferente do esperado (especialmente chinês),
+  o LLM tende a responder no idioma do contexto. Chinês é o caso mais severo (consistência
+  cai de 92% para 68%). Instrução explícita resolve sem exigir acesso a logits (que o Ollama
+  não expõe via API).
+- [ ] **Diversidade de idioma antes do reranking** — em `core/rag.py`, após recuperação híbrida
+  (BM25 + semântica) e antes de passar os chunks ao LLM, garantir que os top-k resultados não
+  sejam todos no mesmo idioma. Estratégia simples: se >70% dos chunks recuperados forem em inglês
+  e houver candidatos em pt/zh com score ≥ 0.7× do melhor inglês, promovê-los ao top-k
+  substituindo duplicatas de baixa margem. Razão: rerankers têm viés documentado (benchmark
+  LAURA, arXiv:2604.20199) — colocam >70% dos docs em inglês mesmo em corpus multilíngue.
+- [ ] **Prefixo do título do documento em cada chunk** — ao montar o chunk para indexação em
+  `core/indexer.py`, prefixar o texto com o título do documento fonte (do frontmatter ou do
+  nome do arquivo): ex: `"[Título do artigo]\n\n{texto do chunk}"`. Melhora recall no RAG
+  porque o título frequentemente contém as palavras-chave da query — sem o prefixo, chunks de
+  seções internas de um artigo longo ficam sem âncora léxica ao seu tema principal.
+
+#### KOSMOS
+- [ ] **Chunking por caractere Unicode ao processar artigos** — aplicar a mesma lógica do item
+  Mnemosyne acima ao processamento de artigos do KOSMOS. Se o KOSMOS usa `RecursiveCharacterTextSplitter`
+  do LangChain, verificar se o parâmetro `length_function` está como `len` (padrão correto) e
+  não como algum tokenizador customizado que ignore caracteres zh. Para artigos em chinês,
+  considerar separadores `["。", "！", "？", "\n\n", "\n"]` em vez dos separadores europeus
+  (`[". ", "! ", "? "]`) que não existem em chinês.
+- [ ] **Language instruction no prompt de análise** — adicionar ao system prompt do KOSMOS
+  instrução: `"Responda em português. Os campos textuais do JSON devem estar em português,
+  mesmo que o artigo original esteja em outro idioma."` Razão: sem instrução, contexto em
+  chinês pode causar output em chinês, quebrando o schema e a legibilidade das análises
+  sincronizadas entre máquinas.
+
+#### AKASHA
+- [ ] **Chunking Unicode e detecção de idioma desde o início da implementação** — quando
+  implementar o pipeline de indexação do AKASHA, usar desde a primeira versão: (a) chunker
+  por contagem de caracteres Unicode (ver item Mnemosyne acima); (b) `lingua-py` para
+  detectar idioma por chunk e armazenar `metadata["language"]`; (c) language instruction no
+  system prompt para evitar drift. Anotar no `GUIDE.md` do AKASHA que o corpus é multilíngue
+  por design (pt + en + zh) e que essas três práticas são obrigatórias, não opcionais.
+
+#### HUB — LOGOS
+- [ ] **Registrar qwen2.5 como preferido para contexto em chinês nas atribuições de modelo** —
+  em `logos.rs`, ao definir os perfis de modelo por funcionalidade e hardware (ver item
+  "corrigir perfis" na seção anterior), adicionar campo `language_affinity: Option<Vec<String>>`
+  à struct `ModelSlot` indicando para quais idiomas o modelo tem treinamento especializado.
+  qwen2.5:7b (MainPc) e qwen2.5:0.5b (WorkPc): `["zh", "en"]`. smollm2:1.7b e gemma2:2b: `["en"]`.
+  O LOGOS pode usar isso futuramente para rotear queries com contexto em zh preferencialmente
+  para qwen2.5. Por ora, exibir na `LogosView.tsx` como informação ao usuário junto ao modelo.
+
 ## Melhorias, correÃ§Ãµes e atualizaÃ§Ãµes
 
 ### Mnemosyne + AKASHA: tratamento diferenciado por tipo de fonte | 2026-05-06
@@ -5098,3 +5273,79 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   bge-m3 vs nomic-embed-text vs all-minilm vs potion-multilingual-128M
 - [ ] **Atualizar perfis em ** apos pesquisa -- 
   e ; possivelmente adicionar slot AKASHA
+
+### KOSMOS: análise em background não atualiza cards + bugs de silêncio | 2026-05-14
+> Contexto: usuária deixou KOSMOS aberto por horas e nenhum card exibiu resultado de análise.
+> Investigação revelou dois bugs estruturais e um comportamento de retry ausente.
+
+#### KOSMOS
+- [x] **Conectar sinal `article_analyzed` na MainWindow** — o `BackgroundAnalyzer` emite
+  `article_analyzed(article_id, data)` após cada análise bem-sucedida, mas o sinal nunca foi
+  conectado a nada. Cards nunca se atualizam em tempo real. Fix: em `main_window.py`, após
+  `_bg_analyzer.start()`, conectar `_bg_analyzer.article_analyzed` a um handler que chame
+  `_feed_list.update_card_analysis(article_id, data)` e
+  `_unified_feed.update_card_analysis(article_id, data)`. Ambas as views precisam do método
+  `update_card_analysis()` que encontra o card pelo ID e chama `card.update_analysis()`.
+  O `ArticleCard` precisa dos métodos `update_analysis(sentiment, clickbait, relevance, tags)`
+  e `update_title(text)` para atualizar badges/estilo sem reconstruir o widget.
+- [x] **Mudar `log.debug()` para `log.warning()` nas falhas de análise** — em
+  `background_analyzer.py` linhas 159 e 264, erros de análise (Ollama offline, JSON inválido,
+  timeout) são registrados como DEBUG. Se o nível de log for INFO ou superior (padrão comum),
+  nenhuma falha aparece. Mudar para `log.warning()` para que falhas fiquem visíveis no log.
+- [x] **Retry periódico de artigos não analisados** — `get_unanalyzed_article_ids()` só é
+  chamado no startup e em `feed_updated`. Se Ollama estava offline no startup e voltou depois,
+  os artigos ficam pendentes para sempre. Fix: adicionar `QTimer` em `main_window.py` que
+  dispara a cada 5 minutos, chama `get_unanalyzed_article_ids(limit=50)` e enfileira no
+  `_bg_analyzer` se houver pendentes e IA estiver habilitada.
+
+### KOSMOS: barra de status, persistência de traduções e integração com novos downloads | 2026-05-14
+> Contexto: melhorias de UX e robustez no fluxo de análise e tradução em background do KOSMOS,
+> identificadas durante a implementação dos fixes de análise e I.3.
+
+#### KOSMOS
+- [ ] **Barra de status no rodapé do KOSMOS** — adicionar `QStatusBar` ou widget fixo no rodapé
+  da `MainWindow` para exibir progresso e erros. Deve mostrar: "Analisando X artigos…" durante
+  análise em background; "Traduzindo títulos…" durante tradução; erros de Ollama como
+  "⚠ Falha ao analisar artigo 42: conexão recusada" (com timestamp); "✓ N artigos analisados"
+  ao concluir lote. O `BackgroundAnalyzer` deve emitir sinais de progresso (`progress(int, int)`
+  para atual/total) além do `article_analyzed`. O `TitleTranslator` idem. A barra some após
+  alguns segundos de inatividade (QTimer de 5s para limpar mensagens de conclusão).
+- [ ] **Persistência das traduções de títulos** — salvar `dict[article_id, translated_title]`
+  em `data/title_cache_{lang}.json` ao fechar o app (serializar `TitleTranslator._cache`).
+  Carregar no startup em `TitleTranslator.__init__()`. Assim traduções já feitas não repetem
+  chamadas à API ao reabrir o KOSMOS. Invalidar entradas para artigos deletados periodicamente
+  (cruzar com IDs da DB a cada startup).
+- [ ] **Pausar tradução ao abrir artigo, retomar ao fechar** — em `MainWindow`, ao navegar
+  para o reader (`_on_article_clicked`, `_on_unified_article_clicked`, etc.), chamar
+  `self._title_translator.pause()`; ao voltar (`_on_reader_back`), chamar
+  `self._title_translator.resume()`. Isso libera recursos de rede enquanto o reader está ativo.
+- [ ] **Enfileirar tradução e análise de novos artigos baixados** — em `_on_feed_updated()`,
+  além de enfileirar análise (já feito), também enfileirar tradução dos novos artigos:
+  buscar os artigos recém-baixados pelo feed_id, construir a lista de `(id, title, language)`
+  e chamar `_on_translation_requested()` diretamente (sem depender de `_populate_cards` ser
+  chamado, pois a view pode não estar visível no momento).
+
+### KOSMOS: I.3 — Tradução automática dos títulos nos cards | 2026-05-14
+> Contexto: implementação da funcionalidade de tradução de títulos dos cards conforme TODO I.3.
+> Cards devem mostrar títulos no idioma configurado em `display_language`; tradução ocorre
+> em background ao abrir o feed, sem bloquear a UI.
+
+#### KOSMOS
+- [x] **Adicionar campo `display_language: ""` ao `config.py`** — string vazia significa sem
+  tradução; qualquer código ISO (ex: `"pt"`, `"en"`) ativa a tradução dos títulos dos cards
+  para aquele idioma. Distinto de `default_translation_lang` que é do reader.
+- [x] **Criar `app/core/title_translator.py`** — `TitleTranslator(QThread)` com fila e cache
+  em memória (`dict[article_id, translated_title]`). Emite `title_translated(int, str)`.
+  Ao mudar `target_lang`, limpa o cache. Roda com prioridade BELOW_NORMAL. Se artigo já está
+  no idioma alvo (detectado via `article.language` do frontmatter ou código do feed), emite
+  o título original sem chamar a API.
+- [x] **Adicionar seletor de `display_language` na `settings_view.py`** — combo com opções:
+  "Original (sem tradução)" + idiomas de `TARGET_LANGUAGE_NAMES` do `translator.py`. Persiste
+  em `config.set("display_language", code)`.
+- [x] **Atualizar cards em tempo real durante tradução** — `ArticleCard.update_title(text)`
+  atualiza `self._title_lbl.setText(text)`. Views (`feed_list_view`, `unified_feed_view`)
+  expõem `update_card_title(article_id, translated)` para o handler do sinal.
+- [x] **Iniciar tradução ao carregar cards** — em `_populate_cards()` de ambas as views,
+  após criar os cards, emitir sinal `translation_requested(list[tuple[int,str,str|None]])`
+  com `(article_id, title, article.language)` de cada artigo. MainWindow conecta esse sinal
+  ao `TitleTranslator.enqueue_batch()`.

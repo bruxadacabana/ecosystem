@@ -47,9 +47,11 @@ class BackgroundAnalyzer(QThread):
 
     Sinais:
         article_analyzed(int, dict): emitido após análise bem-sucedida.
+        status_message(str):         mensagem de progresso/erro para a barra de status.
     """
 
     article_analyzed = pyqtSignal(int, dict)
+    status_message   = pyqtSignal(str)
 
     def __init__(self, fm: "FeedManager", config: "Config") -> None:
         super().__init__()
@@ -144,6 +146,7 @@ class BackgroundAnalyzer(QThread):
 
         prompt = self._build_single_prompt(title, content)
         try:
+            self.status_message.emit(f"Analisando artigo {article_id}…")
             raw  = bridge.generate(
                 prompt,
                 system=_SYSTEM,
@@ -156,7 +159,8 @@ class BackgroundAnalyzer(QThread):
                 self._persist(article_id, data)
                 self.article_analyzed.emit(article_id, data)
         except (OllamaError, json.JSONDecodeError, Exception) as exc:
-            log.debug("Análise individual falhou (artigo %d): %s", article_id, exc)
+            log.warning("Análise individual falhou (artigo %d): %s", article_id, exc)
+            self.status_message.emit(f"⚠ Falha ao analisar artigo {article_id}: {exc}")
 
     # ------------------------------------------------------------------
     # Análise em batch (LOW priority)
@@ -245,6 +249,8 @@ class BackgroundAnalyzer(QThread):
         }
 
         try:
+            n = len(resolved)
+            self.status_message.emit(f"Analisando {n} artigo{'s' if n > 1 else ''}…")
             raw  = bridge.generate(
                 batch_prompt,
                 system=_SYSTEM,
@@ -255,13 +261,17 @@ class BackgroundAnalyzer(QThread):
             data = json.loads(raw)
             if not isinstance(data, dict):
                 return
+            done = 0
             for idx, (article_id, _, _) in enumerate(resolved):
                 item = data.get(str(idx))
                 if isinstance(item, dict):
                     self._persist(article_id, item)
                     self.article_analyzed.emit(article_id, item)
+                    done += 1
+            self.status_message.emit(f"✓ {done} artigo{'s' if done != 1 else ''} analisado{'s' if done != 1 else ''}")
         except (OllamaError, json.JSONDecodeError, Exception) as exc:
-            log.debug("Análise batch falhou (%d artigos): %s", len(resolved), exc)
+            log.warning("Análise batch falhou (%d artigos): %s", len(resolved), exc)
+            self.status_message.emit(f"⚠ Falha na análise em lote: {exc}")
             # Fallback: tentar individualmente
             for article_id, title, content in resolved:
                 self._analyze_single(article_id, title, content)

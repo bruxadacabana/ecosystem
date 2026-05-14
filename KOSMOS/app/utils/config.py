@@ -19,6 +19,7 @@ DEFAULTS: dict[str, Any] = {
     "purge_unread_days":        90,
     "auto_scrape":              False,
     "default_translation_lang": "pt",
+    "display_language":         "",     # "" = sem tradução de títulos; "pt", "en", etc.
     "reddit_client_id":         "",
     "reddit_client_secret":     "",
     "reddit_user_agent":        "KOSMOS/1.0",

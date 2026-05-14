@@ -158,6 +158,26 @@ class SettingsView(QWidget):
         row2.addStretch()
         layout.addLayout(row2)
 
+        # Idioma de exibição dos títulos (tradução dos cards)
+        row3 = QHBoxLayout()
+        row3.addWidget(self._label("Idioma dos cards:"))
+        self._display_lang_combo = QComboBox()
+        self._display_lang_combo.setFont(self._mono(11))
+        self._display_lang_combo.setFixedWidth(200)
+        self._display_lang_combo.addItem("Original (sem tradução)", "")
+        from app.core.translator import TARGET_LANGUAGE_NAMES
+        for code, name in TARGET_LANGUAGE_NAMES.items():
+            self._display_lang_combo.addItem(name, code)
+        current_lang = self._cfg.get("display_language", "")
+        for i in range(self._display_lang_combo.count()):
+            if self._display_lang_combo.itemData(i) == current_lang:
+                self._display_lang_combo.setCurrentIndex(i)
+                break
+        self._display_lang_combo.currentIndexChanged.connect(self._on_display_lang_changed)
+        row3.addWidget(self._display_lang_combo)
+        row3.addStretch()
+        layout.addLayout(row3)
+
         self._refresh_appearance_widgets()
         return box
 
@@ -613,6 +633,10 @@ class SettingsView(QWidget):
         size = _FONT_SIZES[index]
         self._cfg.set("reader_font_size", size)
         self._font_size_lbl.setText(f"{size}px")
+
+    def _on_display_lang_changed(self, _index: int) -> None:
+        lang = self._display_lang_combo.currentData()
+        self._cfg.set("display_language", lang or "")
 
     def _on_save_blocklist(self) -> None:
         raw   = self._blocklist_edit.toPlainText()

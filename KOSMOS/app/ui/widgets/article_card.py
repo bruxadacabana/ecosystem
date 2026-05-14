@@ -66,6 +66,11 @@ class ArticleCard(QWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
+        # Refs para widgets atualizáveis em tempo real (preenchidos em _build)
+        self._title_lbl:       "QLabel | None" = None  # type: ignore[assignment]
+        self._relevance_badge: "QLabel | None" = None  # type: ignore[assignment]
+        self._clickbait_badge: "QLabel | None" = None  # type: ignore[assignment]
+
         self._build(article)
         self._apply_read_style()
         self._apply_sentiment_style()
@@ -91,7 +96,7 @@ class ArticleCard(QWidget):
         content.setSpacing(3)
         content.setContentsMargins(0, 0, 0, 0)
 
-        # Título
+        # Título (referência guardada para update_title)
         self._title_lbl = QLabel(_truncate(article.title, 120))
         self._title_lbl.setObjectName("cardTitle")
         self._title_lbl.setWordWrap(True)
@@ -165,22 +170,21 @@ class ArticleCard(QWidget):
             star.setAlignment(Qt.AlignmentFlag.AlignHCenter)
             right_col.addWidget(star)
 
-        if self._ai_relevance is not None and self._ai_relevance >= 0.65:
-            badge = QLabel("◆")
-            badge.setObjectName("relevanceBadge")
-            badge.setFixedWidth(16)
-            badge.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            pct = int(self._ai_relevance * 100)
-            badge.setToolTip(f"Relevância estimada: {pct}%")
-            right_col.addWidget(badge)
+        # Badge de relevância — sempre criado, exibido/ocultado via setVisible
+        self._relevance_badge = QLabel("◆")
+        self._relevance_badge.setObjectName("relevanceBadge")
+        self._relevance_badge.setFixedWidth(16)
+        self._relevance_badge.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        right_col.addWidget(self._relevance_badge)
+        self._update_relevance_badge()
 
-        if self._ai_clickbait is not None and self._ai_clickbait >= 0.6:
-            warn = QLabel("⚠")
-            warn.setObjectName("clickbaitBadge")
-            warn.setFixedWidth(16)
-            warn.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            warn.setToolTip(f"Clickbait: {int(self._ai_clickbait * 100)}%")
-            right_col.addWidget(warn)
+        # Badge de clickbait — sempre criado, exibido/ocultado via setVisible
+        self._clickbait_badge = QLabel("⚠")
+        self._clickbait_badge.setObjectName("clickbaitBadge")
+        self._clickbait_badge.setFixedWidth(16)
+        self._clickbait_badge.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        right_col.addWidget(self._clickbait_badge)
+        self._update_clickbait_badge()
 
         right_col.addStretch()
         outer.addLayout(right_col, 0)
@@ -217,6 +221,50 @@ class ArticleCard(QWidget):
         self.setProperty("sentiment", val)
         self.style().unpolish(self)
         self.style().polish(self)
+
+    def _update_relevance_badge(self) -> None:
+        if self._relevance_badge is None:
+            return
+        visible = self._ai_relevance is not None and self._ai_relevance >= 0.65
+        self._relevance_badge.setVisible(visible)
+        if visible:
+            pct = int(self._ai_relevance * 100)  # type: ignore[operator]
+            self._relevance_badge.setToolTip(f"Relevância estimada: {pct}%")
+
+    def _update_clickbait_badge(self) -> None:
+        if self._clickbait_badge is None:
+            return
+        visible = self._ai_clickbait is not None and self._ai_clickbait >= 0.6
+        self._clickbait_badge.setVisible(visible)
+        if visible:
+            pct = int(self._ai_clickbait * 100)  # type: ignore[operator]
+            self._clickbait_badge.setToolTip(f"Clickbait: {pct}%")
+
+    def update_title(self, text: str) -> None:
+        """Substitui o título exibido (usado pela tradução assíncrona)."""
+        if self._title_lbl is not None:
+            self._title_lbl.setText(_truncate(text, 120))
+
+    def update_analysis(
+        self,
+        sentiment: float | None,
+        clickbait: float | None,
+        relevance: float | None,
+        tags:      list[str],
+    ) -> None:
+        """Atualiza badges e estilo de sentimento em tempo real, sem reconstruir o card."""
+        changed = False
+        if sentiment is not None:
+            self._ai_sentiment = sentiment
+            changed = True
+        if clickbait is not None:
+            self._ai_clickbait = clickbait
+            self._update_clickbait_badge()
+        if relevance is not None:
+            self._ai_relevance = relevance
+            self._update_relevance_badge()
+        if changed:
+            self._apply_sentiment_style()
 
     # ------------------------------------------------------------------
     # Eventos de mouse

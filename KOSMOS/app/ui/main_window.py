@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QHBoxLayout, QMainWindow,
     QSplitter, QStackedWidget, QWidget,
+    QStatusBar,
 )
 
 if TYPE_CHECKING:
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from app.theme.theme_manager import ThemeManager
 
 from app.core.background_analyzer import BackgroundAnalyzer
+from app.core.title_translator import TitleTranslator
 
 log = logging.getLogger("kosmos.ui")
 
@@ -46,6 +48,15 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect_signals()
 
+        # Barra de status para progresso e erros de background
+        self._status_bar = QStatusBar()
+        self._status_bar.setSizeGripEnabled(False)
+        self.setStatusBar(self._status_bar)
+        self._status_clear_timer = QTimer(self)
+        self._status_clear_timer.setSingleShot(True)
+        self._status_clear_timer.setInterval(6000)
+        self._status_clear_timer.timeout.connect(self._status_bar.clearMessage)
+
         # Carregar feeds na sidebar e stats do dashboard
         self._sidebar.refresh_feeds()
         self._dashboard.load(self._fm)
@@ -55,11 +66,29 @@ class MainWindow(QMainWindow):
 
         # Iniciar pré-análise em background
         self._bg_analyzer = BackgroundAnalyzer(self._fm, self._config)
+        self._bg_analyzer.article_analyzed.connect(self._on_article_analyzed)
         self._bg_analyzer.start()
         # Enfileira artigos sem análise que já existem no banco
         unanalyzed = self._fm.get_unanalyzed_article_ids(limit=100)
         if unanalyzed:
             self._bg_analyzer.enqueue_background(unanalyzed)
+
+        # Retry: re-enfileira pendentes a cada 5 min (cobre caso Ollama offline no startup)
+        self._retry_timer = QTimer(self)
+        self._retry_timer.setInterval(5 * 60 * 1000)
+        self._retry_timer.timeout.connect(self._on_retry_unanalyzed)
+        self._retry_timer.start()
+
+        # Tradutor de títulos dos cards
+        self._title_translator = TitleTranslator()
+        self._title_translator.title_translated.connect(self._on_title_translated)
+        self._title_translator.status_message.connect(self._on_status_message)
+        self._bg_analyzer.status_message.connect(self._on_status_message)
+        # Carregar idioma configurado (carrega cache do disco)
+        lang = str(self._config.get("display_language", ""))
+        if lang:
+            self._title_translator.set_target_lang(lang)
+        self._title_translator.start()
 
     def _migrate_saved_to_archive(self) -> None:
         """Exporta artigos com is_saved=1 que ainda não têm .md em data/archive/."""
@@ -187,11 +216,13 @@ class MainWindow(QMainWindow):
         self._feed_list.back_requested.connect(self._on_back)
         self._feed_list.article_clicked.connect(self._on_article_clicked)
         self._feed_list.unread_changed.connect(self._sidebar.update_badge)
+        self._feed_list.translation_requested.connect(self._on_translation_requested)
 
         # Unified feed view
         self._unified_feed.back_requested.connect(self._on_back)
         self._unified_feed.article_clicked.connect(self._on_unified_article_clicked)
         self._unified_feed.unread_changed.connect(self._sidebar.update_all_badges)
+        self._unified_feed.translation_requested.connect(self._on_translation_requested)
 
         # Reader view
         self._reader.back_requested.connect(self._on_reader_back)
@@ -250,6 +281,7 @@ class MainWindow(QMainWindow):
         article_ids   = self._unified_feed.get_article_ids()
         current_index = self._unified_feed.get_article_index(article_id)
         self._reader_source = self._unified_feed
+        self._title_translator.pause()
         self._reader.open_article(
             article=article,
             feed=feed,
@@ -277,6 +309,7 @@ class MainWindow(QMainWindow):
         article_ids   = self._feed_list.get_article_ids()
         current_index = self._feed_list.get_article_index(article_id)
         self._reader_source = self._feed_list
+        self._title_translator.pause()
         self._reader.open_article(
             article=article,
             feed=feed,
@@ -301,6 +334,7 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentWidget(self._reader)
 
     def _on_reader_back(self) -> None:
+        self._title_translator.resume()
         self._stack.setCurrentWidget(self._reader_source)
 
     def _on_reader_article_changed(self, article_id: int) -> None:
@@ -358,11 +392,18 @@ class MainWindow(QMainWindow):
         ):
             self._feed_list.refresh()
 
-        # Enfileirar novos artigos para pré-análise em background
+        # Enfileirar novos artigos para análise e tradução em background
         if new_count > 0:
             new_ids = self._fm.get_unanalyzed_article_ids(limit=new_count + 5)
             if new_ids:
                 self._bg_analyzer.enqueue_background(new_ids)
+            # Tradução: buscar artigos recém-baixados e enfileirar títulos
+            lang = str(self._config.get("display_language", ""))
+            if lang:
+                articles = self._fm.get_articles(feed_id, limit=new_count + 5)
+                items = [(a.id, a.title or "", getattr(a, "language", None)) for a in articles]
+                if items:
+                    self._on_translation_requested(items)
 
     def _on_force_refresh(self) -> None:
         """Limpa cache de etag de todos os feeds e dispara ciclo imediato.
@@ -376,12 +417,49 @@ class MainWindow(QMainWindow):
     def _on_update_error(self, feed_id: int, message: str) -> None:
         log.warning("Erro ao atualizar feed %d: %s", feed_id, message)
 
+    def _on_article_analyzed(self, article_id: int, data: dict) -> None:
+        """Atualiza cards em tempo real quando análise em background conclui."""
+        self._feed_list.update_card_analysis(article_id, data)
+        self._unified_feed.update_card_analysis(article_id, data)
+
+    def _on_retry_unanalyzed(self) -> None:
+        """Re-enfileira artigos pendentes (cobre caso Ollama offline no startup)."""
+        if not self._config.get("ai_enabled", False):
+            return
+        pending = self._fm.get_unanalyzed_article_ids(limit=50)
+        if pending:
+            self._bg_analyzer.enqueue_background(pending)
+
+    def _on_translation_requested(
+        self, items: list  # list[tuple[int, str, str | None]]
+    ) -> None:
+        lang = str(self._config.get("display_language", ""))
+        if not lang:
+            return
+        self._title_translator.set_target_lang(lang)
+        self._title_translator.enqueue_batch(items)
+
+    def _on_title_translated(self, article_id: int, translated: str) -> None:
+        self._feed_list.update_card_title(article_id, translated)
+        self._unified_feed.update_card_title(article_id, translated)
+
+    def _on_status_message(self, message: str) -> None:
+        self._status_bar.showMessage(message)
+        # Mensagens de conclusão (✓) e de progresso simples somem após 6s
+        # Mensagens de erro (⚠) ficam até a próxima mensagem
+        if not message.startswith("⚠"):
+            self._status_clear_timer.start()
+
     # ------------------------------------------------------------------
     # Ciclo de vida
     # ------------------------------------------------------------------
 
     def closeEvent(self, event) -> None:
+        self._retry_timer.stop()
+        self._title_translator.save_cache()
         self._updater.stop()
         self._bg_analyzer.stop()
         self._bg_analyzer.wait(2000)
+        self._title_translator.stop()
+        self._title_translator.wait(2000)
         super().closeEvent(event)

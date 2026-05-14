@@ -30,14 +30,16 @@ class FeedListView(QWidget):
         unread_changed(feed_id, new_count) — não lidos do feed mudaram.
     """
 
-    article_clicked = pyqtSignal(int)
-    back_requested  = pyqtSignal()
-    unread_changed  = pyqtSignal(int, int)
+    article_clicked      = pyqtSignal(int)
+    back_requested       = pyqtSignal()
+    unread_changed       = pyqtSignal(int, int)
+    translation_requested = pyqtSignal(list)  # list[tuple[int, str, str | None]]
 
     def __init__(self, feed_manager: "FeedManager", parent=None) -> None:
         super().__init__(parent)
         self._fm         = feed_manager
         self._feed_id: int | None = None
+        self._card_map:  dict[int, "ArticleCard"] = {}  # article_id → card
         self.setObjectName("feedListView")
         self._build_ui()
 
@@ -163,6 +165,7 @@ class FeedListView(QWidget):
             item = self._cards_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        self._card_map.clear()
 
         if not articles:
             empty = QLabel("Nenhum artigo encontrado.")
@@ -173,9 +176,12 @@ class FeedListView(QWidget):
             return
 
         tags_by_id = self._fm.get_tags_for_articles([a.id for a in articles])
+        translation_items: list[tuple[int, str, "str | None"]] = []
         for article in articles:
             card = ArticleCard(article, user_tags=tags_by_id.get(article.id, []))
             card.clicked.connect(self._on_card_clicked)
+            self._card_map[article.id] = card
+            translation_items.append((article.id, article.title or "", getattr(article, "language", None)))
 
             sep = QFrame()
             sep.setFrameShape(QFrame.Shape.HLine)
@@ -184,6 +190,9 @@ class FeedListView(QWidget):
             idx = self._cards_layout.count() - 1  # before stretch
             self._cards_layout.insertWidget(idx, card)
             self._cards_layout.insertWidget(idx + 1, sep)
+
+        if translation_items:
+            self.translation_requested.emit(translation_items)
 
     # ------------------------------------------------------------------
     # Acções
@@ -200,15 +209,29 @@ class FeedListView(QWidget):
         self._mark_card_read(article_id)
         self._emit_unread_count()
 
+    def update_card_analysis(self, article_id: int, data: dict) -> None:
+        """Atualiza badges do card em tempo real após análise em background."""
+        card = self._card_map.get(article_id)
+        if card is None:
+            return
+        card.update_analysis(
+            sentiment=data.get("sentiment"),
+            clickbait=data.get("clickbait"),
+            relevance=data.get("relevance"),
+            tags=data.get("tags", []),
+        )
+
+    def update_card_title(self, article_id: int, translated: str) -> None:
+        """Substitui o título do card com a versão traduzida."""
+        card = self._card_map.get(article_id)
+        if card is not None:
+            card.update_title(translated)
+
     def _mark_card_read(self, article_id: int) -> None:
         """Atualiza o visual do card correspondente para 'lido'."""
-        for i in range(self._cards_layout.count()):
-            item = self._cards_layout.itemAt(i)
-            if item and isinstance(item.widget(), ArticleCard):
-                card: ArticleCard = item.widget()  # type: ignore
-                if card._article_id == article_id:
-                    card.mark_read()
-                    break
+        card = self._card_map.get(article_id)
+        if card is not None:
+            card.mark_read()
 
     def _on_mark_all_read(self) -> None:
         if self._feed_id is None:
