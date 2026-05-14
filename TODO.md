@@ -4587,6 +4587,39 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   O LOGOS pode usar isso futuramente para rotear queries com contexto em zh preferencialmente
   para qwen2.5. Por ora, exibir na `LogosView.tsx` como informação ao usuário junto ao modelo.
 
+### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
+> Contexto: pesquisa sobre como identificar automaticamente que artigos de fontes diferentes cobrem
+> o mesmo evento do mesmo dia. Cobre: TDT (Topic Detection and Tracking), clustering incremental
+> com janela temporal, threshold de similaridade cosseno, SimHash/MinHash para deduplicação prévia,
+> NER como filtro adicional, algoritmos DBSCAN/BIRCH, implementações de referência (Feedly, NewSloth)
+> e compatibilidade por hardware (MainPc/Laptop/WorkPc). Achados completos em pesquisas.md (sessão 2026-05-14).
+
+#### KOSMOS
+- [ ] **Event clustering incremental com janela temporal** — implementar pipeline de dois estágios
+  em `app/core/event_clustering.py` (novo módulo). Estágio 1 já existe (deduplicação por
+  `content_hash` e `rapidfuzz`). Estágio 2: para cada artigo não-duplicata salvo nas últimas
+  48h, calcular embedding do título com `paraphrase-multilingual-MiniLM-L12-v2` (50+ idiomas,
+  ~115MB, viável em CPU); comparar com centróides de clusters ativos via similaridade cosseno;
+  se cosseno ≥ 0.80 → atribuir ao cluster mais próximo (atualizar centróide como média); se
+  nenhum cluster ≥ 0.80 → criar novo cluster. Criar tabela `event_clusters(id, anchor_article_id,
+  created_at, last_updated_at)` e campo `event_cluster_id` em `articles`. Processar em background
+  thread após cada ciclo de fetch, não em tempo real por artigo. Modelo recomendado para cada
+  máquina: MainPc → `bge-m3`; Laptop → `paraphrase-multilingual-MiniLM-L12-v2`; WorkPc →
+  fallback léxico (ver próximo item).
+- [ ] **Fallback léxico de clustering para WorkPc (sem AVX2, sem GPU)** — quando nenhum modelo
+  de embedding estiver disponível (detectável por `sentence-transformers` não instalado ou
+  `KOSMOS_EMBEDDING_DISABLED=1`), usar clustering léxico simples como substituto: normalizar
+  título (lowercase, remover pontuação e stopwords), calcular Jaccard de bigrams entre títulos
+  de artigos publicados no mesmo dia, threshold 0.55. Implementar em `event_clustering.py` como
+  `_cluster_lexical(articles)` chamado quando `_cluster_semantic()` não estiver disponível.
+  Não é tão preciso quanto o semântico, mas evita artigos completamente avulsos sem agrupamento.
+- [ ] **Exibição de cluster na feed list** — após implementação do clustering, agrupar artigos
+  do mesmo evento visualmente na `FeedListView`: mostrar o artigo âncora (o mais antigo do
+  cluster, ou o que tiver maior completude de conteúdo) com um badge discreto "N fontes"
+  ao lado da data. Os demais artigos do cluster ficam recolhidos por padrão e expansíveis
+  com clique no badge. Isso reduz a densidade visual da feed em eventos com alta cobertura
+  (ex: um lançamento de produto coberto por 15 sites) sem esconder nenhuma perspectiva.
+
 ## Melhorias, correções e atualizações
 
 ### Mnemosyne + AKASHA: tratamento diferenciado por tipo de fonte | 2026-05-06
@@ -5330,3 +5363,38 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   após criar os cards, emitir sinal `translation_requested(list[tuple[int,str,str|None]])`
   com `(article_id, title, article.language)` de cada artigo. MainWindow conecta esse sinal
   ao `TitleTranslator.enqueue_batch()`.
+
+### LOGOS: pesquisa de LLMs por funcionalidade e hardware | 2026-05-13
+> Contexto: os modelos recomendados no LOGOS devem ser escolhidos com base no que
+> cada funcionalidade precisa (RAG multi-doc no Mnemosyne, análise de artigos no KOSMOS,
+> extração de conteúdo no AKASHA, embedding multilíngue) e no que o hardware suporta,
+> garantindo que o mesmo app funcione bem em todos os computadores com modelos compatíveis.
+> Antes de pesquisar, catalogar os modelos instalados em cada máquina.
+
+#### Inventário de modelos instalados (preencher antes da pesquisa)
+- [ ] **Windows 10 (WorkPc):** já catalogado — all-minilm:latest, smollm2:1.7b, qwen2.5:0.5b
+- [ ] **CachyOS principal (MainPc):** catalogar — NAME                 ID              SIZE      MODIFIED    
+qwen2.5:0.5b         a8b0c5157701    397 MB    6 days ago     
+smollm2:1.7b         cef4a1e09247    1.8 GB    7 days ago     
+all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar aqui
+- [ ] **Laptop (Laptop):** catalogar — NAME                 ID              SIZE      MODIFIED    
+qwen2.5:0.5b         a8b0c5157701    397 MB    7 days ago     
+smollm2:1.7b         cef4a1e09247    1.8 GB    8 days ago     
+all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar aqui
+
+#### Pesquisa e atualização de perfis
+- [ ] **Pesquisar LLMs para RAG (Mnemosyne)** — síntese multi-doc longa, context window, português;
+  comparar qwen2.5:7b (MainPc), gemma2:2b (Laptop), smollm2:1.7b (WorkPc): são compatíveis
+  na saída? O mesmo prompt funciona em todos os tamanhos?
+- [ ] **Pesquisar LLMs para análise/sumarização (KOSMOS)** — artigos longos, velocidade de
+  streaming, capacidade de extrair pontos principais; validar se modelo KOSMOS pode ser
+  diferente do modelo Mnemosyne para permitir execução simultânea no MainPc (2 permits)
+- [ ] **Pesquisar LLMs para extração de conteúdo (AKASHA)** — AKASHA não tem slot LLM ainda;
+  avaliar se precisa e qual seria o modelo (extração de metadados, resumo de página web)
+- [ ] **Pesquisar modelos de embedding multilíngues leves** — compatibilidade portugues/inglês,
+  qualidade vs velocidade por hardware; comparar bge-m3 vs nomic-embed-text vs all-minilm
+  vs potion-multilingual-128M — devem produzir espaços vetoriais comparáveis?
+- [ ] **Atualizar perfis em ** após pesquisa —  e
+  rationale_for_model(); possivelmente adicionar slot AKASHA; garantir que modelos escolhidos
+  para o mesmo app em diferentes hardwares sejam da mesma família ou arquitetura compatível
+  (ex: todos Qwen, todos Gemma, ou todos instruction-tuned com mesmo prompt format)
