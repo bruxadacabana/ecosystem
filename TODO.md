@@ -5519,3 +5519,130 @@ all-minilm:latest    1b226e2802db    45 MB     2 weeks ago     e anotar aqui
   é salva imediatamente em `local_config.json` via `config.set("persona_prompt", text)`.
   Exibir preview: ao clicar "Testar persona", disparar uma query de teste ("Olá, apresente-se")
   e exibir a resposta numa caixa de diálogo.
+
+### Pesquisa: NotebookLM — Funcionalidades e Evolução 2025–2026 | 2026-05-14
+> Contexto: pesquisa do NotebookLM revelou três problemas no Mnemosyne: (1) Studio volátil —
+> outputs sobrescrevem uns aos outros e somem ao fechar; (2) fragmentação — Resumo/FAQ/Guide
+> são sub-páginas separadas mas são todos outputs gerados por LLM, deveriam ser tipos do Studio;
+> (3) chat sem persistência — conversas se perdem ao fechar o app. Decisão arquitetural:
+> chat = notebook, sempre salvo. Studio outputs = arquivos independentes com metadados de
+> autoria (Mnemosyne os trata como "reflexões próprias" e o ecossistema pode indexá-los).
+
+#### Mnemosyne
+
+- [ ] **`core/studio_output.py` — dataclass `StudioOutput` com persistência como arquivo** —
+  criar dataclass com campos: `id: str` (UUID4), `type: str` (Briefing/FAQ/Guide/Flashcards/etc.),
+  `title: str` (gerado ou editável), `content: str`, `table_data: list[list[str]] | None`,
+  `created_at: str` (ISO 8601), `collection_name: str`, `notebook_id: str | None`. Método
+  `to_markdown_file(path)` salva em `{coll.mnemosyne_dir}/studio/{id}.md` com frontmatter YAML:
+  `source: mnemosyne_studio`, `type: studio_output`, `studio_type: {type}`, `collection: {name}`,
+  `created_at: {dt}`, `notebook_id: {id}`. O frontmatter marca o arquivo como gerado pela própria
+  Mnemosyne — o indexador deve reconhecer `source: mnemosyne_studio` e atribuir `source_type`
+  especial (ex: `"thought"`) com weight próprio em `SOURCE_WEIGHTS`, para que a Mnemosyne saiba
+  que está consultando seus próprios "pensamentos" e não uma fonte externa.
+
+- [ ] **`core/studio_store.py` — camada de persistência dos outputs do Studio** — `StudioStore`
+  com métodos: `save(output: StudioOutput)`, `load_all(collection_name) → list[StudioOutput]`,
+  `delete(id)`, `get(id) → StudioOutput`. Lê/escreve de `{coll.mnemosyne_dir}/studio/`. Ao
+  carregar, lê os arquivos `.md` e faz parse do frontmatter YAML. O diretório é criado
+  automaticamente se não existir. `load_all` retorna lista ordenada por `created_at` decrescente.
+
+- [ ] **`gui/studio_tile_widget.py` — card de output do Studio** — `StudioTileWidget(QWidget)`
+  exibindo: badge colorido com o tipo (cor diferente por tipo — Briefing azul, FAQ verde,
+  Guide roxo, Flashcards laranja, etc.), título truncado em 1 linha, preview das primeiras
+  80 chars do conteúdo, data/hora. Dois botões no hover: ✏ abrir output completo (abre
+  `StudioOutputDialog`), 🗑 deletar (confirmação). Emite `output_opened(StudioOutput)` e
+  `output_deleted(str)`.
+
+- [ ] **`gui/main_window.py` — Studio tab redesenhado como galeria de tiles** — substituir o
+  `studio_result_text` (`QTextEdit` único) por um `QScrollArea` com `QFlowLayout` (ou
+  `QVBoxLayout`) de `StudioTileWidget`. Os controles de geração (combo tipo + botão Gerar)
+  permanecem no topo. Ao clicar "Gerar": (1) executa `StudioWorker` como antes; (2) ao
+  terminar, cria `StudioOutput`, persiste via `StudioStore`, adiciona novo tile no topo
+  da galeria. Ao inicializar, carrega tiles existentes via `StudioStore.load_all()`. Remover
+  os botões "Exportar .md" e "Exportar CSV" da area central — movê-los para o `StudioOutputDialog`.
+
+- [ ] **`gui/main_window.py` — unificar Resumo e FAQ como tipos do Studio** — mover as
+  sub-páginas "Resumo" e "FAQ" da aba Análise para dentro do Studio como tipos no combo:
+  adicionar "Resumo" e "FAQ" ao `studio_type_combo`. Remover as sub-páginas separadas
+  `_pill_summary` e `_pill_faq` e seus respectivos `QTextEdit`. O conteúdo gerado passa
+  a persistir como `StudioOutput` como qualquer outro tipo. A sub-página "Guide" permanece
+  separada por ter comportamento interativo próprio (perguntas clicáveis + pérolas
+  escondidas), mas ganha também um botão "Salvar no Studio" que cria um `StudioOutput`
+  do tipo Guide com o conteúdo gerado.
+
+- [ ] **`core/rag.py` / `core/indexer.py` — reconhecer outputs do Studio como fonte especial** —
+  adicionar `"thought"` a `SOURCE_WEIGHTS` (ex: 1.3 — acima de transcript, abaixo de book)
+  e ao fallback de `source_type` no loader. No `MnemosyneLoaders`, arquivos com frontmatter
+  `source: mnemosyne_studio` recebem `metadata["source_type"] = "thought"` automaticamente.
+  Isso permite que respostas do RAG possam citar "Conforme anotado na análise anterior…"
+  ao recuperar um output do Studio — a Mnemosyne fica "ciente" de seus próprios pensamentos.
+
+- [ ] **`gui/main_window.py` — botão "Salvar no Studio" nas respostas do chat** — cada bloco
+  de resposta da Mnemosyne no `QScrollArea` do chat recebe um botão compacto "⊕ Studio" no
+  canto inferior direito. Ao clicar, abre diálogo com combo de tipo (Análise, Citação,
+  Anotação) e campo de título editável. Confirmar cria `StudioOutput` com o texto da resposta
+  e salva via `StudioStore`. O tile aparece imediatamente na galeria do Studio.
+
+- [ ] **`gui/main_window.py` — Flashcards como tipo do Studio com progresso** — adicionar
+  "Flashcards" ao `studio_type_combo`. O `StudioWorker` para tipo Flashcards manda prompt
+  ao LLM pedindo 10-15 pares pergunta/resposta sobre os documentos indexados (formato JSON).
+  O `StudioOutput` para Flashcards guarda `content` como JSON de cards e `table_data` como
+  `progress: {card_id: "correct"|"wrong"|"unseen"}`. Ao abrir um tile de Flashcards, exibe
+  `FlashcardsDialog`: cards um por vez com `QStackedWidget` (frente = pergunta, verso =
+  resposta), botões "Acertei ✓" e "Errei ✗" que atualizam o progresso e salvam via
+  `StudioStore.save()`, shuffle do deck, filtro "Só erros". Progresso persiste entre sessões.
+
+- [ ] **`gui/main_window.py` — Guide como tipo do Studio** — adicionar "Guide" ao
+  `studio_type_combo` (além de manter a sub-página Guide da Análise). Ao gerar, cria
+  `StudioOutput` do tipo Guide com o conteúdo completo (resumo + perguntas + pérolas).
+  O tile do Guide, ao ser aberto, exibe as perguntas como chips clicáveis que disparam
+  query no chat — mesma interatividade da sub-página Guide, mas agora persistindo o
+  conteúdo entre sessões.
+
+- [ ] **`core/notebook_store.py` + `core/notebook.py` — notebooks temáticos persistentes** —
+  Decisão arquitetural: **chat = notebook**. Cada notebook é uma conversa temática salva.
+  Dataclass `Notebook`: `id: str` (UUID4), `name: str`, `created_at: str`, `updated_at: str`,
+  `collection_names: list[str]` (coleções que este notebook consulta; vazio = todas habilitadas),
+  `description: str`. Cada notebook tem diretório próprio em
+  `{data_dir}/notebooks/{id}/` com: `metadata.json`, `history.jsonl` (mensagens), `memory.json`
+  (contexto de sessão). Os outputs do Studio de um notebook ficam em
+  `{data_dir}/notebooks/{id}/studio/`. `NotebookStore` com: `create(name, collections) → Notebook`,
+  `list_all() → list[Notebook]`, `load(id) → Notebook`, `save(notebook)`, `delete(id)`.
+
+- [ ] **`gui/notebooks_panel.py` — painel de notebooks na sidebar** — `NotebooksPanel(QWidget)`
+  exibido na parte superior (ou como seção colapsável) da sidebar esquerda. Mostra lista de
+  notebooks como itens clicáveis com nome + data da última mensagem. Botão "+" cria novo
+  notebook (pede nome; default "Notebook {data}"). Clique num notebook: `MainWindow` carrega
+  o notebook selecionado (muda histórico do chat, memória, tiles do Studio). Ícone de lixeira
+  por item (com confirmação). O notebook ativo fica destacado com cor de seleção.
+
+- [ ] **`gui/main_window.py` — carregar/salvar histórico do chat por notebook** — ao trocar de
+  notebook: (1) salvar `history.jsonl` e `memory.json` do notebook atual antes de trocar;
+  (2) carregar `history.jsonl` do novo notebook e renderizar as mensagens no `QScrollArea`
+  do chat; (3) carregar `memory.json` e repassar ao contexto de memória do RAG; (4) recarregar
+  tiles do Studio do notebook novo. A cada nova mensagem enviada/recebida, acrescentar linha
+  ao `history.jsonl` do notebook ativo (append-only, nunca sobrescrever). Ao fechar o app
+  (`closeEvent`), salvar estado final.
+
+- [ ] **`gui/main_window.py` — painel de histórico navegável** — botão "Histórico" ou ícone
+  no chat que abre um `QDialog` listando todas as mensagens do notebook atual agrupadas por
+  data. Filtro de busca por texto. Clicar numa mensagem rola o `QScrollArea` do chat até
+  aquela mensagem (scroll to anchor). Não é necessário "restaurar" sessões antigas — o
+  histórico inteiro já está no scroll do chat.
+
+- [ ] **`core/loaders.py` — suporte a EPUB** — adicionar `EpubLoader` usando a biblioteca
+  `ebooklib`. Extrai capítulos como documentos separados (um `Document` por capítulo) com
+  metadados de frontmatter: `title` (livro), `chapter` (nome do capítulo), `author`,
+  `source_type: "book"`. HTML de cada capítulo é limpo via BeautifulSoup antes de chunking.
+  Registrar `.epub` na lista de extensões suportadas em `loaders.py` e no `IndexWorker`.
+  Dependências: `ebooklib`, `beautifulsoup4` (já deve estar instalado).
+
+- [ ] **Studio — tipo "Infográfico" (estruturado)** — adicionar "Infográfico" ao
+  `studio_type_combo`. O `StudioWorker` para tipo Infográfico manda prompt ao LLM pedindo
+  extração estruturada dos dados principais em formato adequado para visualização: estatísticas
+  chave, lista de entidades com atributos, relações causais, linha do tempo. O output é
+  renderizado como HTML estático (template com CSS grid/flexbox) e salvo como `StudioOutput`
+  com `content` = HTML. Ao abrir o tile, exibe o HTML num `QWebEngineView` dentro do
+  `StudioOutputDialog`. Exporta como `.html`. Não depende de modelos de geração de imagem —
+  é puramente texto estruturado + CSS visual.
