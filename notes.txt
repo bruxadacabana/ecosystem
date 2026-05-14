@@ -27,6 +27,9 @@ Descoberta crítica: nomic-embed-text v1.5 (instalado no Laptop) é inglês-only
 
 depois:
 
+### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
+
+
 - leia tudo que ainda não está marcado como completo no TODO e sugira os próximos passos
 
 
