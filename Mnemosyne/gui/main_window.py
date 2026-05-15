@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QStackedWidget,
     QTableWidget,
@@ -41,6 +42,9 @@ from PySide6.QtWidgets import (
 
 from core.config import AppConfig, DEFAULT_PERSONA_PROMPT, load_config, save_config
 from core.errors import ConfigError, VectorstoreNotFoundError
+from core.studio_output import StudioOutput
+from core.studio_store import StudioStore
+from gui.studio_tile_widget import StudioTileWidget
 from core.indexer import IndexCheckpoint, load_all_vectorstores
 from core.rag import MultiVectorstore
 from core.memory import (
@@ -598,7 +602,7 @@ class MainWindow(QMainWindow):
         self._studio_raw = ""
         self._collections_to_index: list = []  # fila para "Indexar tudo" em cadeia
         self._studio_worker: StudioWorker | None = None
-        self._studio_table_data: tuple[list[str], list[list[str]]] | None = None
+        self._studio_store: StudioStore | None = None
 
         self._current_sources: list = []
 
@@ -1307,33 +1311,26 @@ class MainWindow(QMainWindow):
         self._studio_schema_widget.setVisible(False)
         stl.addWidget(self._studio_schema_widget)
 
-        self.studio_result_text = QTextEdit()
-        self.studio_result_text.setReadOnly(True)
-        self.studio_result_text.setPlaceholderText(
-            "Selecione o tipo de documento e clique em Gerar…"
+        # Área de tiles persistentes
+        self._studio_scroll = QScrollArea()
+        self._studio_scroll.setWidgetResizable(True)
+        self._studio_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        stl.addWidget(self.studio_result_text, 1)
+        self._studio_scroll.setObjectName("studioScrollArea")
+        self._studio_tiles_container = QWidget()
+        self._studio_tiles_container.setObjectName("studioTilesContainer")
+        self._studio_tiles_layout = QVBoxLayout(self._studio_tiles_container)
+        self._studio_tiles_layout.setContentsMargins(0, 0, 0, 0)
+        self._studio_tiles_layout.setSpacing(6)
+        self._studio_tiles_layout.addStretch()
+        self._studio_scroll.setWidget(self._studio_tiles_container)
+        stl.addWidget(self._studio_scroll, 1)
 
-        # Tabela — visível apenas para "Tabela de Dados" após geração
-        self.studio_table = QTableWidget()
-        self.studio_table.setVisible(False)
-        self.studio_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
-        stl.addWidget(self.studio_table, 1)
-
-        export_row = QHBoxLayout()
-        export_row.addStretch()
-        self.studio_export_csv_btn = QPushButton("Exportar CSV")
-        self.studio_export_csv_btn.setEnabled(False)
-        self.studio_export_csv_btn.setVisible(False)
-        self.studio_export_csv_btn.clicked.connect(self._studio_export_csv)
-        export_row.addWidget(self.studio_export_csv_btn)
-        self.studio_export_btn = QPushButton("Exportar .md")
-        self.studio_export_btn.setEnabled(False)
-        self.studio_export_btn.clicked.connect(self._studio_export_md)
-        export_row.addWidget(self.studio_export_btn)
-        stl.addLayout(export_row)
+        self._studio_empty_lbl = QLabel("Nenhum output gerado ainda. Selecione um tipo e clique em Gerar.")
+        self._studio_empty_lbl.setObjectName("studioEmptyLabel")
+        self._studio_empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        stl.addWidget(self._studio_empty_lbl)
 
         self.studio_type_combo.currentTextChanged.connect(self._on_studio_type_changed)
 
@@ -1794,6 +1791,9 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("Nenhum índice encontrado. Use 'Indexar tudo'.")
             self._log_event("Nenhum índice encontrado — use 'Indexar tudo'.")
+
+        self._init_studio_store()
+        self._load_studio_tiles()
 
         self._populate_file_list()
         self._load_guide_into_ui()
@@ -2436,19 +2436,12 @@ class MainWindow(QMainWindow):
     def _on_studio_type_changed(self, doc_type: str) -> None:
         is_table = doc_type == "Tabela de Dados"
         self._studio_schema_widget.setVisible(is_table)
-        self.studio_table.setVisible(False)
-        self.studio_result_text.setVisible(not is_table)
-        self.studio_export_csv_btn.setVisible(is_table)
 
     def _start_studio_generation(self) -> None:
         if not self.vectorstore:
             return
         doc_type = self.studio_type_combo.currentText()
         self.studio_generate_btn.setEnabled(False)
-        self.studio_export_btn.setEnabled(False)
-        self.studio_export_csv_btn.setEnabled(False)
-        self.studio_result_text.setPlainText("")
-        self.studio_table.setVisible(False)
         self._studio_raw = ""
         self.statusBar().showMessage(f"Gerando {doc_type}…")
 
@@ -2465,90 +2458,166 @@ class MainWindow(QMainWindow):
 
     def _on_studio_token(self, chunk: str) -> None:
         self._studio_raw += chunk
-        self.studio_result_text.setPlainText(self._studio_raw)
-        sb = self.studio_result_text.verticalScrollBar()
-        sb.setValue(sb.maximum())
 
     def _on_studio_finished(self, success: bool, text: str) -> None:
         self.studio_generate_btn.setEnabled(bool(self.vectorstore))
         doc_type = self.studio_type_combo.currentText()
-        if success:
-            if doc_type == "Tabela de Dados":
-                self.studio_result_text.setVisible(False)
-                self._studio_populate_table(text)
-                self.studio_export_csv_btn.setEnabled(True)
-            else:
-                self.studio_result_text.setPlainText(text)
-            self.studio_export_btn.setEnabled(bool(text))
-            self.statusBar().showMessage("Documento gerado.")
-        else:
-            self.studio_result_text.setVisible(True)
-            self.studio_result_text.setPlainText(f"Erro: {text}")
+        if not success:
             self.statusBar().showMessage("Erro ao gerar documento.")
+            QMessageBox.warning(self, "Erro no Studio", text)
+            return
 
-    def _studio_populate_table(self, markdown_table: str) -> None:
-        """Parseia tabela Markdown e preenche o QTableWidget."""
+        table_data: list[list[str]] | None = None
+        if doc_type == "Tabela de Dados":
+            table_data = self._parse_markdown_table(text)
+
+        coll_name = self.config.active_collection or ""
+        output = StudioOutput(
+            type=doc_type,
+            content=text,
+            collection_name=coll_name,
+            table_data=table_data,
+        )
+        if self._studio_store:
+            try:
+                self._studio_store.save(output)
+            except OSError as exc:
+                QMessageBox.warning(self, "Erro ao salvar output", str(exc))
+        self._add_studio_tile(output)
+        self.statusBar().showMessage("Documento gerado.")
+
+    def _parse_markdown_table(self, markdown_table: str) -> list[list[str]] | None:
+        """Parseia tabela Markdown e retorna lista de linhas (cabeçalho + dados)."""
         lines = [
             ln.strip() for ln in markdown_table.splitlines()
             if ln.strip().startswith("|") and "---" not in ln
         ]
         if not lines:
-            self.studio_result_text.setVisible(True)
-            self.studio_result_text.setPlainText(markdown_table)
-            return
+            return None
 
         def parse_row(line: str) -> list[str]:
             return [cell.strip() for cell in line.strip("|").split("|")]
 
-        headers = parse_row(lines[0])
-        rows = [parse_row(ln) for ln in lines[1:]]
+        return [parse_row(ln) for ln in lines]
 
-        self.studio_table.clear()
-        self.studio_table.setColumnCount(len(headers))
-        self.studio_table.setRowCount(len(rows))
-        self.studio_table.setHorizontalHeaderLabels(headers)
-        for r, row in enumerate(rows):
-            for c, cell in enumerate(row):
-                if c < len(headers):
-                    self.studio_table.setItem(r, c, QTableWidgetItem(cell))
-        self.studio_table.setVisible(True)
-        self._studio_table_data = (headers, rows)
+    # ── Studio Store e tiles ──────────────────────────────────────────────────
 
-    def _studio_export_md(self) -> None:
-        text = self.studio_result_text.toPlainText()
-        if not text:
+    def _init_studio_store(self) -> None:
+        if self.config.mnemosyne_dir:
+            self._studio_store = StudioStore(self.config.mnemosyne_dir)
+        else:
+            self._studio_store = None
+
+    def _load_studio_tiles(self) -> None:
+        """Carrega outputs persistentes e popula a área de tiles."""
+        layout = self._studio_tiles_layout
+        while layout.count() > 1:
+            item = layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+
+        if not self._studio_store:
+            self._studio_empty_lbl.setVisible(True)
             return
-        doc_type = self.studio_type_combo.currentText()
-        default_name = doc_type.lower().replace(" ", "_") + ".md"
+
+        coll_name = self.config.active_collection or ""
+        outputs = self._studio_store.load_all(coll_name)
+        self._studio_empty_lbl.setVisible(not outputs)
+        for output in outputs:
+            tile = StudioTileWidget(output)
+            tile.output_opened.connect(self._on_tile_opened)
+            tile.output_deleted.connect(self._on_tile_deleted)
+            layout.insertWidget(layout.count() - 1, tile)
+
+    def _add_studio_tile(self, output: StudioOutput) -> None:
+        """Insere um novo tile no topo da área de tiles."""
+        tile = StudioTileWidget(output)
+        tile.output_opened.connect(self._on_tile_opened)
+        tile.output_deleted.connect(self._on_tile_deleted)
+        self._studio_tiles_layout.insertWidget(0, tile)
+        self._studio_empty_lbl.setVisible(False)
+
+    def _on_tile_opened(self, output: StudioOutput) -> None:
+        """Exibe o conteúdo completo de um output em diálogo."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(output.title or output.type)
+        dlg.resize(700, 500)
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        header = QHBoxLayout()
+        type_lbl = QLabel(output.type)
+        type_lbl.setObjectName("studioBadge")
+        header.addWidget(type_lbl)
+        if output.title:
+            title_lbl = QLabel(output.title)
+            title_lbl.setObjectName("studioTileTitle")
+            header.addWidget(title_lbl, 1)
+        date_lbl = QLabel(output.created_at[:16].replace("T", " "))
+        date_lbl.setObjectName("studioTileDate")
+        header.addWidget(date_lbl)
+        layout.addLayout(header)
+
+        content_edit = QTextEdit()
+        content_edit.setReadOnly(True)
+        content_edit.setPlainText(output.content)
+        layout.addWidget(content_edit, 1)
+
+        close_btn = QPushButton("Fechar")
+        close_btn.clicked.connect(dlg.accept)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        export_btn = QPushButton("Exportar .md")
+        export_btn.clicked.connect(lambda: self._export_output_md(output))
+        btn_row.addWidget(export_btn)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        dlg.exec()
+
+    def _export_output_md(self, output: StudioOutput) -> None:
+        doc_type = output.type.lower().replace(" ", "_")
+        default_name = f"{doc_type}.md"
         path, _ = QFileDialog.getSaveFileName(
             self, "Exportar como Markdown", default_name, "Markdown (*.md)"
         )
         if path:
             try:
                 with open(path, "w", encoding="utf-8") as f:
-                    f.write(text)
+                    if output.title:
+                        f.write(f"# {output.title}\n\n")
+                    f.write(output.content)
                 self.statusBar().showMessage(f"Exportado: {path}")
             except OSError as exc:
                 QMessageBox.warning(self, "Erro ao exportar", str(exc))
 
-    def _studio_export_csv(self) -> None:
-        data = getattr(self, "_studio_table_data", None)
-        if not data:
-            return
-        headers, rows = data
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Exportar como CSV", "tabela.csv", "CSV (*.csv)"
-        )
-        if path:
+    def _on_tile_deleted(self, output_id: str) -> None:
+        """Remove output do store e o tile da UI."""
+        if self._studio_store:
             try:
-                import csv
-                with open(path, "w", encoding="utf-8", newline="") as f:
-                    writer = csv.writer(f)
-                    writer.writerow(headers)
-                    writer.writerows(rows)
-                self.statusBar().showMessage(f"CSV exportado: {path}")
+                self._studio_store.delete(output_id)
             except OSError as exc:
-                QMessageBox.warning(self, "Erro ao exportar", str(exc))
+                QMessageBox.warning(self, "Erro ao apagar", str(exc))
+                return
+
+        layout = self._studio_tiles_layout
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item and isinstance(item.widget(), StudioTileWidget):
+                tile = item.widget()
+                if tile.output.id == output_id:
+                    layout.takeAt(i)
+                    tile.deleteLater()
+                    break
+
+        has_tiles = any(
+            isinstance(self._studio_tiles_layout.itemAt(i).widget(), StudioTileWidget)
+            for i in range(self._studio_tiles_layout.count())
+            if self._studio_tiles_layout.itemAt(i).widget()
+        )
+        self._studio_empty_lbl.setVisible(not has_tiles)
 
     # ── Seleção de arquivos ───────────────────────────────────────────────────
 

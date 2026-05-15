@@ -760,3 +760,61 @@ QPushButton#chip:hover {
 QPushButton#chip:pressed {
     background: rgba(74, 144, 217, 0.30);
 }
+
+/* ----------------------------------------------------------
+   STUDIO TILES
+---------------------------------------------------------- */
+
+QWidget#studioTile {
+    background-color: #181D28;
+    border: 1px solid #2A3148;
+    border-radius: 6px;
+}
+
+QWidget#studioTile:hover {
+    background-color: #1E2433;
+    border-color: #3A4160;
+}
+
+QLabel#studioTileTitle {
+    color: #E8DFC8;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+QLabel#studioTilePreview {
+    color: #9A9080;
+    font-size: 12px;
+}
+
+QLabel#studioTileDate {
+    color: #7C828E;
+    font-size: 11px;
+}
+
+QPushButton#studioTileBtn {
+    background: transparent;
+    border: none;
+    color: #9A9080;
+    font-size: 14px;
+    padding: 2px;
+}
+
+QPushButton#studioTileBtn:hover {
+    color: #D4A820;
+}
+
+QLabel#studioEmptyLabel {
+    color: #7C828E;
+    font-size: 13px;
+    padding: 24px;
+}
+
+QScrollArea#studioScrollArea {
+    border: none;
+    background: transparent;
+}
+
+QWidget#studioTilesContainer {
+    background: transparent;
+}
