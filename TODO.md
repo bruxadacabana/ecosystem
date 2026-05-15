@@ -5746,13 +5746,13 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Escrita atômica via `.tmp` + `os.replace()`. `save_feeds` é chamado após toda operação de
   adicionar/editar/remover feed; `save_categories` idem para categorias.
 
-- [ ] **`app/core/database.py` — `populate_feeds_from_store()` no startup** — após
+- [x] **`app/core/database.py` — `populate_feeds_from_store()` no startup** — após
   `Base.metadata.create_all()`, chamar função que lê `FeedStore.load_feeds()` e
   `FeedStore.load_categories()` e faz `INSERT OR IGNORE` (por `url` como chave única para
   feeds, `name` para categorias) nas tabelas ORM correspondentes. Garante que feeds
   sobrevivem a qualquer corrupção ou deleção do banco SQLite.
 
-- [ ] **`app/core/feed_manager.py` — escrever JSON em toda mutação de feed** — em cada
+- [x] **`app/core/feed_manager.py` — escrever JSON em toda mutação de feed** — em cada
   método que adiciona, edita ou remove feeds (`add_feed()`, `remove_feed()`,
   `update_feed()`) e categorias (`add_category()`, `remove_category()`), chamar
   `FeedStore.save_feeds()` / `FeedStore.save_categories()` após a operação no banco.

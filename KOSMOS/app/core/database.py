@@ -63,6 +63,7 @@ def init_database() -> None:
 
     _engine = engine
     _SessionLocal = sessionmaker(bind=engine)
+    populate_feeds_from_store()
     log.info("Banco de dados pronto: %s", db_path)
 
 
@@ -94,6 +95,53 @@ def session_scope() -> Generator[Session, None, None]:
     except Exception:
         session.rollback()
         raise
+    finally:
+        session.close()
+
+
+def populate_feeds_from_store() -> None:
+    """Sincroniza DB com os JSONs de feeds e categorias (fonte de verdade).
+
+    Chamado em init_database() após migrations. Cria apenas o que não existe
+    ainda — nunca sobrescreve dados do banco, apenas preenche lacunas.
+    """
+    from app.core.feed_store import load_categories, load_feeds
+    from app.core.models import Category, Feed
+
+    session = get_session()
+    try:
+        name_to_id: dict[str, int] = {}
+
+        for cat_data in load_categories():
+            name = cat_data.get("name", "").strip()
+            if not name:
+                continue
+            cat = session.query(Category).filter_by(name=name).first()
+            if cat is None:
+                cat = Category(name=name, position=cat_data.get("position", 0))
+                session.add(cat)
+                session.flush()
+            name_to_id[name] = cat.id
+
+        for feed_data in load_feeds():
+            url = feed_data.get("url", "").strip()
+            if not url:
+                continue
+            if session.query(Feed.id).filter_by(url=url).first():
+                continue
+            cat_name = feed_data.get("category_name", "")
+            session.add(Feed(
+                url=url,
+                name=feed_data.get("name", url),
+                feed_type=feed_data.get("feed_type", "rss"),
+                category_id=name_to_id.get(cat_name),
+                active=feed_data.get("active", 1),
+            ))
+
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        log.warning("populate_feeds_from_store: %s", exc)
     finally:
         session.close()
 
