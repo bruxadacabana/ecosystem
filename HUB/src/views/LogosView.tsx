@@ -605,6 +605,15 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
                       {m.rationale}
                     </span>
                   )}
+                  {/* Nota de velocidade — WorkPc only */}
+                  {m.expected_speed_note && (
+                    <span style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 9,
+                      color: 'var(--ribbon)', opacity: 0.85, paddingLeft: 15,
+                    }}>
+                      {m.expected_speed_note}
+                    </span>
+                  )}
                   {/* Barra de progresso durante pull */}
                   {isPulling && pct !== null && (
                     <div style={{ height: 3, background: 'var(--rule)', borderRadius: 2, marginTop: 2 }}>

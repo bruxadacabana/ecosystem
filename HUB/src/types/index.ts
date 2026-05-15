@@ -186,6 +186,8 @@ export interface RecommendedModel {
   is_static:           boolean
   size_disk_mb:        number
   rationale:           string
+  /** Velocidade esperada no WorkPc. null nos demais perfis. */
+  expected_speed_note: string | null
 }
 
 export interface PullProgress {

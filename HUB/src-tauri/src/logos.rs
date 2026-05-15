@@ -393,6 +393,9 @@ pub struct RecommendedModel {
     pub size_disk_mb:        u64,
     /// Justificativa de recurso: tamanho, VRAM, pontos fortes
     pub rationale:           String,
+    /// Nota de velocidade esperada (apenas WorkPc). Ex: "~3 tok/s — adequado para background".
+    /// None nos demais perfis.
+    pub expected_speed_note: Option<String>,
 }
 
 /// Progresso de download de um modelo via Ollama pull.
@@ -1166,6 +1169,17 @@ pub async fn do_set_model_assignment(s: &LogosState, app: &str, model_type: &str
     }
 }
 
+/// Nota de velocidade esperada no WorkPc (i5-3470, sem AVX2).
+/// None para modelos não usados no WorkPc ou perfis com GPU.
+fn speed_note_workpc(model: &str) -> Option<&'static str> {
+    match model {
+        "smollm2:1.7b"             => Some("~3–5 tok/s (WorkPc) — adequado para background, lento em chat interativo"),
+        "qwen2.5:0.5b"             => Some("~5–8 tok/s (WorkPc) — extração JSON leve, sem AVX2"),
+        "potion-multilingual-128M" => Some("~500 ms/chunk (WorkPc) — modelo estático CPU-only, sem Ollama"),
+        _                          => None,
+    }
+}
+
 fn rationale_for_model(name: &str) -> &'static str {
     match name {
         "qwen2.5:7b"               => "7B · ~4.5 GB VRAM · síntese multi-doc, RAG longo · JSON 92%",
@@ -1256,12 +1270,18 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
                                 .copied()
                                 .unwrap_or(0);
         let for_current_profile  = current_models.contains(&model_name);
+        let expected_speed_note = if for_profiles.contains(&"work_pc".to_string()) {
+            speed_note_workpc(&model_name).map(str::to_string)
+        } else {
+            None
+        };
         RecommendedModel {
             rationale: rationale_for_model(&model_name).to_string(),
             for_current_profile,
             is_installed,
             is_static: false,
             size_disk_mb,
+            expected_speed_note,
             model_name,
             slots,
             for_profiles,
@@ -1283,6 +1303,7 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
         is_static:           true,
         size_disk_mb:        0,
         rationale:           rationale_for_model("potion-multilingual-128M").to_string(),
+        expected_speed_note: speed_note_workpc("potion-multilingual-128M").map(str::to_string),
     });
 
     // Perfil atual primeiro, depois alfabético

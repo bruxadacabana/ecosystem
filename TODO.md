@@ -4442,7 +4442,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   UI: `llm_rag` → "RAG/chat (Mnemosyne)", `llm_analysis` → "Análise de artigos (KOSMOS)",
   `llm_query` → "Busca inteligente (AKASHA)", `embed` → "Embedding". Substituir o campo genérico
   `model_type` na exibição da `LogosView.tsx`.
-- [ ] Adicionar campo `expected_speed_note` à struct `RecommendedModel` para o WorkPc com string
+- [x] Adicionar campo `expected_speed_note` à struct `RecommendedModel` para o WorkPc com string
   descritiva (ex: "~3 tok/s — adequado para background, lento em chat interativo"). Exibir na UI
   do LOGOS ao lado dos modelos do WorkPc para que a usuária entenda o comportamento esperado.
 
