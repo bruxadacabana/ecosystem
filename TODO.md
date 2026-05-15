@@ -5574,7 +5574,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   query no chat — mesma interatividade da sub-página Guide, mas agora persistindo o
   conteúdo entre sessões.
 
-- [ ] **`core/notebook_store.py` + `core/notebook.py` — notebooks temáticos persistentes** —
+- [x] **`core/notebook_store.py` + `core/notebook.py` — notebooks temáticos persistentes** —
   Decisão arquitetural: **chat = notebook**. Cada notebook é uma conversa temática salva.
   Dataclass `Notebook`: `id: str` (UUID4), `name: str`, `created_at: str`, `updated_at: str`,
   `collection_names: list[str]` (coleções que este notebook consulta; vazio = todas habilitadas),
@@ -5584,7 +5584,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `{data_dir}/notebooks/{id}/studio/`. `NotebookStore` com: `create(name, collections) → Notebook`,
   `list_all() → list[Notebook]`, `load(id) → Notebook`, `save(notebook)`, `delete(id)`.
 
-- [ ] **`gui/notebooks_panel.py` — painel de notebooks na sidebar** — `NotebooksPanel(QWidget)`
+- [x] **`gui/notebooks_panel.py` — painel de notebooks na sidebar** — `NotebooksPanel(QWidget)`
   exibido na parte superior (ou como seção colapsável) da sidebar esquerda. Mostra lista de
   notebooks como itens clicáveis com nome + data da última mensagem. Botão "+" cria novo
   notebook (pede nome; default "Notebook {data}"). Clique num notebook: `MainWindow` carrega

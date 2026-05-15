@@ -531,6 +531,60 @@ QListWidget#sessionsList::item:hover {
 }
 
 /* ----------------------------------------------------------
+   NOTEBOOKS PANEL (sidebar)
+---------------------------------------------------------- */
+
+QListWidget#notebooksList {
+    background-color: #181D28;
+    border: 1px solid #2A3148;
+    border-radius: 2px;
+}
+
+QListWidget#notebooksList::item {
+    border-bottom: 1px solid #2A3148;
+    padding: 0px;
+}
+
+QListWidget#notebooksList::item:selected {
+    background-color: #252B3A;
+}
+
+QListWidget#notebooksList::item:hover {
+    background-color: #1E2433;
+}
+
+QLabel#notebookItemName {
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 11px;
+    color: #C8B99A;
+    background: transparent;
+}
+
+QLabel#notebookItemName[active="true"] {
+    color: #D4A820;
+    font-weight: bold;
+}
+
+QLabel#notebookItemDate {
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 9px;
+    color: #6A7080;
+    background: transparent;
+}
+
+QPushButton#notebookDeleteBtn {
+    background: transparent;
+    border: none;
+    color: #4A5060;
+    font-size: 11px;
+    padding: 0px;
+}
+
+QPushButton#notebookDeleteBtn:hover {
+    color: #C0392B;
+}
+
+/* ----------------------------------------------------------
    TABLE WIDGET (coleções)
 ---------------------------------------------------------- */
 

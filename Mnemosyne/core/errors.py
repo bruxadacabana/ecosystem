@@ -106,3 +106,7 @@ class AkashaFetchError(MnemosyneError):
 
 class ReflectionError(MnemosyneError):
     """Falha ao gerar artefato de reflexão de conhecimento."""
+
+
+class NotebookStoreError(MnemosyneError):
+    """Falha de leitura/escrita no NotebookStore."""

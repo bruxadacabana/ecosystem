@@ -4,11 +4,31 @@ Configuração do Mnemosyne — lê config.json, usa defaults se ausente.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .collections import CollectionConfig, CollectionType, sync_ecosystem_collections
 from .errors import ConfigError
+
+
+def get_app_data_dir() -> Path:
+    """Retorna o diretório de dados persistentes do Mnemosyne na máquina local.
+
+    Segue as convenções de cada plataforma:
+    - Windows: %APPDATA%/mnemosyne
+    - Linux/macOS: ~/.local/share/mnemosyne
+
+    Este diretório é independente de coleções e serve como raiz para dados
+    globais do app — atualmente, a pasta de notebooks.
+    """
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        base = Path(appdata) / "mnemosyne"
+    else:
+        base = Path.home() / ".local" / "share" / "mnemosyne"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
 
 def _read_ecosystem_merged() -> dict:
