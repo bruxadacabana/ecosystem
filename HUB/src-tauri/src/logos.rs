@@ -1217,8 +1217,15 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
     };
 
     let mut result: Vec<RecommendedModel> = map.into_iter().map(|(model_name, (slots, for_profiles))| {
-        let is_installed         = size_map.contains_key(&model_name);
-        let size_disk_mb         = size_map.get(&model_name).copied().unwrap_or(0);
+        // Ollama armazena modelos sem tag explícita com ":latest" (ex: "bge-m3" → "bge-m3:latest").
+        // Verificar ambas as formas para não mostrar botão de download em modelos já instalados.
+        let name_latest          = format!("{}:latest", model_name);
+        let is_installed         = size_map.contains_key(&model_name)
+                                || size_map.contains_key(&name_latest);
+        let size_disk_mb         = size_map.get(&model_name)
+                                .or_else(|| size_map.get(&name_latest))
+                                .copied()
+                                .unwrap_or(0);
         let for_current_profile  = current_models.contains(&model_name);
         RecommendedModel {
             rationale: rationale_for_model(&model_name).to_string(),
