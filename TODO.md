@@ -5521,14 +5521,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   carregar, lê os arquivos `.md` e faz parse do frontmatter YAML. O diretório é criado
   automaticamente se não existir. `load_all` retorna lista ordenada por `created_at` decrescente.
 
-- [ ] **`gui/studio_tile_widget.py` — card de output do Studio** — `StudioTileWidget(QWidget)`
+- [x] **`gui/studio_tile_widget.py` — card de output do Studio** — `StudioTileWidget(QWidget)`
   exibindo: badge colorido com o tipo (cor diferente por tipo — Briefing azul, FAQ verde,
   Guide roxo, Flashcards laranja, etc.), título truncado em 1 linha, preview das primeiras
   80 chars do conteúdo, data/hora. Dois botões no hover: ✏ abrir output completo (abre
   `StudioOutputDialog`), 🗑 deletar (confirmação). Emite `output_opened(StudioOutput)` e
   `output_deleted(str)`.
 
-- [ ] **`gui/main_window.py` — Studio tab redesenhado como galeria de tiles** — substituir o
+- [x] **`gui/main_window.py` — Studio tab redesenhado como galeria de tiles** — substituir o
   `studio_result_text` (`QTextEdit` único) por um `QScrollArea` com `QFlowLayout` (ou
   `QVBoxLayout`) de `StudioTileWidget`. Os controles de geração (combo tipo + botão Gerar)
   permanecem no topo. Ao clicar "Gerar": (1) executa `StudioWorker` como antes; (2) ao
