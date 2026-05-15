@@ -133,19 +133,48 @@ class AiBridge:
         if num_ctx is not None:
             options["options"] = {"num_ctx": num_ctx}
 
-        try:
-            result = _request_llm(
-                messages,
-                app="kosmos",
-                model=self._gen_model,
-                priority=priority,
-                stream=False,
-                ollama_base=self._endpoint,
-                **options,
-            )
-            return result.get("message", {}).get("content", "")
-        except RuntimeError as exc:
-            raise OllamaError(str(exc)) from exc
+        needs_json = json_schema is not None or json_format
+        text = ""
+        for attempt in range(2):  # máx 1 retentativa
+            try:
+                result = _request_llm(
+                    messages,
+                    app="kosmos",
+                    model=self._gen_model,
+                    priority=priority,
+                    stream=False,
+                    ollama_base=self._endpoint,
+                    **options,
+                )
+                text = result.get("message", {}).get("content", "")
+            except RuntimeError as exc:
+                raise OllamaError(str(exc)) from exc
+
+            if not needs_json:
+                return text
+
+            try:
+                json.loads(text)
+                return text  # JSON válido — retorna imediatamente
+            except json.JSONDecodeError as exc:
+                if attempt >= 1:
+                    log.warning(
+                        "JSON inválido após retentativa (modelo %s): %s",
+                        self._gen_model, exc,
+                    )
+                    return text
+                # Solicita correção mantendo os mesmos campos
+                messages.append({"role": "assistant", "content": text})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"JSON inválido: {exc}. "
+                        "Corrija retornando APENAS JSON válido com os mesmos campos, "
+                        "sem texto adicional antes ou depois."
+                    ),
+                })
+
+        return text
 
     def generate_stream(
         self,

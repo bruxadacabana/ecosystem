@@ -4508,7 +4508,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   usando índice sincronizado do computador principal" se `false`.
 
 #### KOSMOS — JSON schema enforcement para análise cross-machine
-- [ ] Garantir que o prompt de análise do KOSMOS inclua o schema JSON de saída explicitamente para
+- [x] Garantir que o prompt de análise do KOSMOS inclua o schema JSON de saída explicitamente para
   todos os campos (5W: quem, o quê, quando, onde, por quê; entidades; resumo; tags) e passe
   `"format": "json"` na requisição Ollama. Para modelos pequenos (smollm2:1.7b no WorkPc e
   qwen2.5:0.5b), adicionar 2–3 pares de exemplos few-shot no system prompt — modelos sub-2B não

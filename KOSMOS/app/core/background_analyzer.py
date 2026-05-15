@@ -41,6 +41,39 @@ _SYSTEM = (
     'O primeiro caractere deve ser "{".'
 )
 
+# Para modelos sub-2B (smollm2:1.7b, qwen2.5:0.5b): sistema com schema explícito
+# e 2 exemplos few-shot. Modelos pequenos não seguem schemas sem exemplos concretos.
+_SYSTEM_FEW_SHOT = (
+    'Você é uma API JSON. Responda APENAS com JSON válido seguindo este schema:\n'
+    '{"tags":["string"],"sentiment":float,"clickbait":float,'
+    '"five_ws":{"who":"","what":"","when":"","where":"","why":""},'
+    '"entities":{"people":[],"orgs":[],"places":[]}}\n\n'
+    'Exemplo 1 (inglês, tecnologia):\n'
+    'Título: "Google Announces Gemini 2.0 AI Model"\n'
+    'Resultado: {"tags":["google","gemini","artificial intelligence"],'
+    '"sentiment":0.7,"clickbait":0.1,'
+    '"five_ws":{"who":"Google","what":"Released Gemini 2.0 multimodal AI model",'
+    '"when":"Recently","where":"United States","why":"Advance AI capabilities"},'
+    '"entities":{"people":[],"orgs":["Google"],"places":["United States"]}}\n\n'
+    'Exemplo 2 (português, clickbait):\n'
+    'Título: "Você não vai acreditar no que o governo fez!"\n'
+    'Resultado: {"tags":["governo","economia","fiscal"],'
+    '"sentiment":-0.6,"clickbait":0.9,'
+    '"five_ws":{"who":"Governo federal","what":"Divulgou relatório fiscal com déficit",'
+    '"when":"Esta semana","where":"Brasil","why":"Transparência sobre gastos públicos"},'
+    '"entities":{"people":[],"orgs":["Ministério da Fazenda"],"places":["Brasil"]}}\n\n'
+    'Responda APENAS com JSON. O primeiro caractere deve ser "{".'
+)
+
+
+def _is_small_model(model_name: str) -> bool:
+    """Retorna True para modelos sub-2B que precisam de few-shot para JSON confiável."""
+    lower = model_name.lower()
+    return any(
+        tag in lower
+        for tag in (":0.5b", ":1b", ":1.3b", ":1.5b", ":1.7b", "-0.5b", "-1b", "-1.7b")
+    )
+
 
 class BackgroundAnalyzer(QThread):
     """Worker de pré-análise em background.
@@ -144,12 +177,13 @@ class BackgroundAnalyzer(QThread):
         num_ctx   = int(self._config.get("ai_num_ctx", 4096))
         bridge    = AiBridge(endpoint=endpoint, gen_model=gen_model)
 
+        system = _SYSTEM_FEW_SHOT if _is_small_model(gen_model) else _SYSTEM
         prompt = self._build_single_prompt(title, content)
         try:
             self.status_message.emit(f"Analisando artigo {article_id}…")
             raw  = bridge.generate(
                 prompt,
-                system=_SYSTEM,
+                system=system,
                 json_schema=_AnalyzeWorker._JSON_SCHEMA,
                 num_ctx=num_ctx,
                 priority=1,  # P1 — interativo
@@ -248,12 +282,13 @@ class BackgroundAnalyzer(QThread):
             "required": [str(i) for i in range(n)],
         }
 
+        system = _SYSTEM_FEW_SHOT if _is_small_model(gen_model) else _SYSTEM
         try:
             n = len(resolved)
             self.status_message.emit(f"Analisando {n} artigo{'s' if n > 1 else ''}…")
             raw  = bridge.generate(
                 batch_prompt,
-                system=_SYSTEM,
+                system=system,
                 json_schema=batch_schema,
                 num_ctx=8192,   # batch requer janela maior
                 priority=3,     # P3 — background
