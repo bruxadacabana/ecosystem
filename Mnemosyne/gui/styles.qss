@@ -738,3 +738,25 @@ QFormLayout QLabel {
     color: #9A9080;
     font-size: 11px;
 }
+
+/* ----------------------------------------------------------
+   CHIPS — perguntas sugeridas no chat
+---------------------------------------------------------- */
+
+QPushButton#chip {
+    border: 1px solid #4A90D9;
+    border-radius: 12px;
+    padding: 4px 10px;
+    color: #4A90D9;
+    background: transparent;
+    font-size: 12px;
+    text-align: left;
+}
+
+QPushButton#chip:hover {
+    background: rgba(74, 144, 217, 0.15);
+}
+
+QPushButton#chip:pressed {
+    background: rgba(74, 144, 217, 0.30);
+}

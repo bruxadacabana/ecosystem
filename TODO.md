@@ -5458,7 +5458,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Temperatura 0.9. Emite `questions_ready(list[str])`. Só executa se `suggest_questions: bool`
   estiver True na config.
 
-- [ ] **`gui/main_window.py` — exibir chips de perguntas sugeridas no chat** — ao receber
+- [x] **`gui/main_window.py` — exibir chips de perguntas sugeridas no chat** — ao receber
   `questions_ready(list[str])`, criar 3 `QPushButton` compactos com `setObjectName("chip")`
   e CSS rounded (border-radius 12px, padding 4px 10px) logo abaixo da última resposta no
   `QScrollArea` do chat. Ao clicar, inserir texto no campo de input e submeter. Os chips são
@@ -5467,7 +5467,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   é destruído quando a próxima resposta chega). Comportamento idêntico ao NotebookLM. Adicionar
   toggle `suggest_questions` nas Settings (padrão: False — opt-in).
 
-- [ ] **`core/knowledge_graph.py` — grafo de conhecimento inter-documentos** — módulo
+- [x] **`core/knowledge_graph.py` — grafo de conhecimento inter-documentos** — módulo
   `KnowledgeGraph` que extrai entidades de cada chunk indexado usando KeyBERT (top-5 keywords
   por chunk) e constrói um grafo de co-ocorrência com NetworkX: nós são entidades/keywords,
   arestas são documentos que compartilham a mesma entidade com peso = número de documentos

@@ -67,6 +67,7 @@ from gui.workers import (
     OllamaCheckWorker,
     ReindexTranscriptsWorker,
     ResumeIndexWorker,
+    KnowledgeGraphWorker,
     StudioWorker,
     SuggestQuestionsWorker,
     SummarizeWorker,
@@ -275,6 +276,11 @@ class SetupDialog(QDialog):
         self.image_ocr_model_edit.setPlaceholderText("ex: moondream2 (vazio = Tesseract local)")
         image_ocr_row.addWidget(self.image_ocr_model_edit, 1)
         opts_layout.addLayout(image_ocr_row)
+        self.suggest_questions_check = QCheckBox(
+            "Sugerir perguntas de aprofundamento após cada resposta (opt-in, usa LLM)"
+        )
+        self.suggest_questions_check.setChecked(current.suggest_questions)
+        opts_layout.addWidget(self.suggest_questions_check)
         layout.addWidget(opts_group)
 
         btns = QDialogButtonBox(
@@ -333,8 +339,8 @@ class SetupDialog(QDialog):
         if row >= 0:
             self.extra_dirs_list.takeItem(row)
 
-    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None, bool, str, str]:
-        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, image_ocr_model)."""
+    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None, bool, str, str, bool]:
+        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, image_ocr_model, suggest_questions)."""
         extra_dirs = [self.extra_dirs_list.item(i).text()
                       for i in range(self.extra_dirs_list.count())]
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
@@ -351,6 +357,7 @@ class SetupDialog(QDialog):
             self.node_type_check.isChecked(),
             self.node_type_model_edit.text().strip(),
             self.image_ocr_model_edit.text().strip(),
+            self.suggest_questions_check.isChecked(),
         )
 
 
@@ -498,6 +505,8 @@ class MainWindow(QMainWindow):
         self._session_memory = SessionMemory()
         self._query_store: PersistentQueryStore | None = None
         self._topics_worker: TopicsWorker | None = None
+        self._suggest_worker: SuggestQuestionsWorker | None = None
+        self._kg_worker: KnowledgeGraphWorker | None = None
         self._chat_history: list[Turn] = []
         self._collection_index: CollectionIndex | None = None
         self._file_tracker: FileTracker | None = None
@@ -973,6 +982,15 @@ class MainWindow(QMainWindow):
         self.sources_text.anchorClicked.connect(self._on_source_anchor_clicked)
         layout.addWidget(self.sources_text)
 
+        # Chips de perguntas sugeridas (visíveis só quando suggest_questions está ativo)
+        self._chips_widget = QWidget()
+        self._chips_widget.setObjectName("chipsContainer")
+        self._chips_layout = QHBoxLayout(self._chips_widget)
+        self._chips_layout.setContentsMargins(0, 4, 0, 4)
+        self._chips_layout.setSpacing(8)
+        self._chips_widget.setVisible(False)
+        layout.addWidget(self._chips_widget)
+
         # Viewer de citação — mostra o documento e destaca o trecho citado
         src_viewer_header = QHBoxLayout()
         src_viewer_header.setContentsMargins(0, 4, 0, 0)
@@ -1376,6 +1394,17 @@ class MainWindow(QMainWindow):
                 "Não foi possível extrair temas — corpus muito pequeno ou dependências ausentes."
             )
 
+    def _start_kg_bg(self) -> None:
+        """Constrói knowledge_graph.json em background após indexação."""
+        if not self.vectorstore or not self.vectorstore.stores:
+            return
+        vs, _coll = self.vectorstore.stores[0]
+        mnemosyne_dir = self.config.mnemosyne_dir
+        if not mnemosyne_dir:
+            return
+        self._kg_worker = KnowledgeGraphWorker(vs, mnemosyne_dir)
+        self._kg_worker.start(KnowledgeGraphWorker.Priority.LowestPriority)
+
     def _load_topics_from_disk(self) -> None:
         """Carrega topics.json da coleção ativa se existir; senão, não exibe nada."""
         if not self.config:
@@ -1564,8 +1593,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -1573,8 +1602,8 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             self._log_event("Configuração atualizada.")
@@ -1589,6 +1618,7 @@ class MainWindow(QMainWindow):
         node_type_classification: bool = False,
         node_type_model: str = "",
         image_ocr_model: str = "",
+        suggest_questions: bool = False,
     ) -> None:
         """Aplica os valores do SetupDialog ao config e guarda."""
         if watched_dir:
@@ -1606,6 +1636,7 @@ class MainWindow(QMainWindow):
         self.config.node_type_classification = node_type_classification
         self.config.node_type_model = node_type_model
         self.config.image_ocr_model = image_ocr_model
+        self.config.suggest_questions = suggest_questions
         save_config(self.config)
         try:
             from pathlib import Path as _Path
@@ -2012,6 +2043,7 @@ class MainWindow(QMainWindow):
                 self._enable_query_buttons()
                 self._update_reflection_badge()
                 self._extract_topics_bg()  # atualiza nuvem de temas após indexação
+                self._start_kg_bg()        # reconstrói grafo de conhecimento
             self.refresh_manage_info()
             self._start_guide_generation()
             self._register_indexing_machine()
@@ -2549,6 +2581,7 @@ class MainWindow(QMainWindow):
         else:
             self.similar_label.setVisible(False)
 
+        self._clear_chips()
         self.ask_btn.setEnabled(False)
         self._raw_answer = ""
         self.answer_text.setPlainText("")
@@ -2682,6 +2715,8 @@ class MainWindow(QMainWindow):
             if self._query_store:
                 self._query_store.save_query(_q, sources)
             self._current_sources = sources
+            if self.config.suggest_questions:
+                self._start_suggest_questions(_q, text, sources)
             if sources:
                 html_parts = []
                 for i, s in enumerate(sources):
@@ -2708,6 +2743,41 @@ class MainWindow(QMainWindow):
 
         self.ask_btn.setEnabled(True)
         self.statusBar().showMessage("Pronto." if success else "Interrompido.")
+
+    # ── Perguntas sugeridas ───────────────────────────────────────────────
+
+    def _start_suggest_questions(self, question: str, answer: str, sources: list) -> None:
+        """Inicia SuggestQuestionsWorker em background após cada resposta."""
+        self._suggest_worker = SuggestQuestionsWorker(question, answer, sources, self.config)
+        self._suggest_worker.questions_ready.connect(self._on_questions_ready)
+        self._suggest_worker.start(SuggestQuestionsWorker.Priority.LowestPriority)
+
+    def _on_questions_ready(self, questions: list) -> None:
+        """Exibe chips de perguntas sugeridas abaixo das fontes."""
+        self._clear_chips()
+        if not questions:
+            return
+        for q in questions:
+            btn = QPushButton(q)
+            btn.setObjectName("chip")
+            btn.setToolTip("Clique para perguntar")
+            btn.clicked.connect(lambda checked=False, text=q: self._submit_chip(text))
+            self._chips_layout.addWidget(btn)
+        self._chips_layout.addStretch()
+        self._chips_widget.setVisible(True)
+
+    def _clear_chips(self) -> None:
+        """Remove chips de sessão anterior e esconde o container."""
+        while self._chips_layout.count():
+            item = self._chips_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._chips_widget.setVisible(False)
+
+    def _submit_chip(self, text: str) -> None:
+        """Preenche o campo de input e submete a pergunta do chip."""
+        self.question_edit.setText(text)
+        self.ask_question()
 
     def _on_deep_answer(self, success: bool, text: str, sources: list) -> None:
         """Slot para DeepResearchWorker.finished — sem updated_history."""
