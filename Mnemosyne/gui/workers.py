@@ -927,6 +927,8 @@ class GuideWorker(QThread):
 # Mapa de tipo de documento → módulo e função geradora
 # Cada módulo expõe iter_*(vectorstore, config) → Iterator[str]
 _STUDIO_DISPATCH: dict[str, tuple[str, str]] = {
+    "Resumo":         ("core.summarizer",  "iter_summary"),
+    "FAQ":            ("core.faq",         "iter_faq"),
     "Briefing":       ("core.briefing",    "iter_briefing"),
     "Relatório":      ("core.report",      "iter_report"),
     "Guia de Estudo": ("core.study_guide", "iter_study_guide"),

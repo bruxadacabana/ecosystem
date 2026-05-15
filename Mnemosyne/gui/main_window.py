@@ -64,7 +64,6 @@ from gui.workers import (
     AskWorker,
     DeepResearchWorker,
     CompactMemoryWorker,
-    FaqWorker,
     GuideWorker,
     IndexFileWorker,
     IndexWorker,
@@ -74,7 +73,6 @@ from gui.workers import (
     KnowledgeGraphWorker,
     StudioWorker,
     SuggestQuestionsWorker,
-    SummarizeWorker,
     TopicsWorker,
     UpdateIndexWorker,
 )
@@ -597,8 +595,6 @@ class MainWindow(QMainWindow):
         self._updating_sessions = False
         self._ollama_ok = False
         self._raw_answer = ""
-        self._raw_summary = ""
-        self._raw_faq = ""
         self._studio_raw = ""
         self._collections_to_index: list = []  # fila para "Indexar tudo" em cadeia
         self._studio_worker: StudioWorker | None = None
@@ -1176,47 +1172,14 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(lambda: self._switch_analysis(idx))
             return btn
 
-        self._pill_summary = make_pill("Resumo", 0)
-        self._pill_faq     = make_pill("FAQ", 1)
-        self._pill_guide   = make_pill("Guide", 2)
-        self._pill_studio  = make_pill("Studio", 3)
-        self._pill_summary.setChecked(True)
-        for btn in (self._pill_summary, self._pill_faq, self._pill_guide, self._pill_studio):
+        self._pill_guide  = make_pill("Guide", 0)
+        self._pill_studio = make_pill("Studio", 1)
+        self._pill_guide.setChecked(True)
+        for btn in (self._pill_guide, self._pill_studio):
             pill_row.addWidget(btn)
         pill_row.addStretch()
         outer.addLayout(pill_row)
         outer.addWidget(self._analysis_stack, 1)
-
-        # ── Sub-página: Resumo ──────────────────────────────────────
-        summary_page = QWidget()
-        sl = QVBoxLayout(summary_page)
-        sl.setContentsMargins(0, 0, 0, 0)
-        sl.setSpacing(8)
-        self.summary_btn = QPushButton("Gerar resumo geral")
-        self.summary_btn.setEnabled(False)
-        self.summary_btn.clicked.connect(self.summarize)
-        sl.addWidget(self.summary_btn)
-        self.summary_text = QTextEdit()
-        self.summary_text.setReadOnly(True)
-        self.summary_text.setPlaceholderText("Clique em 'Gerar resumo geral' para resumir a coleção indexada…")
-        sl.addWidget(self.summary_text, 1)
-        self._analysis_stack.addWidget(summary_page)
-
-        # ── Sub-página: FAQ ─────────────────────────────────────────
-        faq_page = QWidget()
-        fl = QVBoxLayout(faq_page)
-        fl.setContentsMargins(0, 0, 0, 0)
-        fl.setSpacing(8)
-        self.faq_btn = QPushButton("Gerar FAQ")
-        self.faq_btn.setEnabled(False)
-        self.faq_btn.setToolTip("Gera perguntas frequentes com respostas a partir dos documentos indexados")
-        self.faq_btn.clicked.connect(self._start_faq_generation)
-        fl.addWidget(self.faq_btn)
-        self.faq_text = QTextEdit()
-        self.faq_text.setReadOnly(True)
-        self.faq_text.setPlaceholderText("Clique em 'Gerar FAQ' para criar perguntas frequentes sobre os documentos indexados…")
-        fl.addWidget(self.faq_text, 1)
-        self._analysis_stack.addWidget(faq_page)
 
         # ── Sub-página: Guide ───────────────────────────────────────
         guide_page = QWidget()
@@ -1250,11 +1213,20 @@ class MainWindow(QMainWindow):
         self.guide_gems_text.setMaximumHeight(100)
         gl.addWidget(self.guide_gems_text)
 
+        guide_btns = QHBoxLayout()
+        guide_btns.setSpacing(8)
         self.guide_refresh_btn = QPushButton("Atualizar Guide")
         self.guide_refresh_btn.setEnabled(False)
         self.guide_refresh_btn.setToolTip("Regenera o Notebook Guide para a coleção actual")
         self.guide_refresh_btn.clicked.connect(self._start_guide_generation)
-        gl.addWidget(self.guide_refresh_btn)
+        guide_btns.addWidget(self.guide_refresh_btn)
+        self.guide_save_studio_btn = QPushButton("Salvar no Studio")
+        self.guide_save_studio_btn.setEnabled(False)
+        self.guide_save_studio_btn.setToolTip("Salva o conteúdo do Guide como output persistente do Studio")
+        self.guide_save_studio_btn.clicked.connect(self._save_guide_to_studio)
+        guide_btns.addWidget(self.guide_save_studio_btn)
+        guide_btns.addStretch()
+        gl.addLayout(guide_btns)
         gl.addStretch()
         self._analysis_stack.addWidget(guide_page)
 
@@ -1268,6 +1240,8 @@ class MainWindow(QMainWindow):
         ctrl_row.setSpacing(8)
         self.studio_type_combo = QComboBox()
         self.studio_type_combo.addItems([
+            "Resumo",
+            "FAQ",
             "Briefing",
             "Relatório",
             "Guia de Estudo",
@@ -1279,6 +1253,8 @@ class MainWindow(QMainWindow):
             "Slides",
         ])
         self.studio_type_combo.setToolTip(
+            "Resumo: síntese geral da coleção indexada\n"
+            "FAQ: perguntas frequentes com respostas sobre os documentos\n"
             "Briefing: sumário executivo com temas, achados e insights acionáveis\n"
             "Relatório: relatório multi-seção completo via Map-Reduce\n"
             "Guia de Estudo: conceitos-chave, termos e questões de revisão\n"
@@ -1340,7 +1316,7 @@ class MainWindow(QMainWindow):
 
     def _switch_analysis(self, index: int) -> None:
         self._analysis_stack.setCurrentIndex(index)
-        for i, btn in enumerate((self._pill_summary, self._pill_faq, self._pill_guide, self._pill_studio)):
+        for i, btn in enumerate((self._pill_guide, self._pill_studio)):
             btn.setChecked(i == index)
 
     def _build_page_manage(self) -> None:
@@ -2337,41 +2313,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(btn_box)
         dlg.exec()
 
-    # ── FAQ Generator ─────────────────────────────────────────────────────────
-
-    def _start_faq_generation(self) -> None:
-        """Inicia geração do FAQ em background com streaming."""
-        if not self.vectorstore:
-            return
-        self.faq_btn.setEnabled(False)
-        self.faq_text.clear()
-        self._raw_faq = ""
-        self._log_event("Gerando FAQ…")
-        self._faq_worker = FaqWorker(self.vectorstore, self.config)
-        self._faq_worker.token.connect(self._on_faq_token)
-        self._faq_worker.finished.connect(self._on_faq_finished)
-        self._faq_worker.start()
-
-    def _on_faq_token(self, chunk: str) -> None:
-        self._raw_faq += chunk
-        self.faq_text.setPlainText(self._raw_faq)
-        sb = self.faq_text.verticalScrollBar()
-        sb.setValue(sb.maximum())
-
-    def _on_faq_finished(self, success: bool, error: str, items: list) -> None:
-        self.faq_btn.setEnabled(bool(self.vectorstore))
-        if success:
-            lines = []
-            for i, item in enumerate(items, 1):
-                lines.append(f"P{i}: {item['question']}")
-                lines.append(f"R: {item['answer']}")
-                lines.append("")
-            self.faq_text.setPlainText("\n".join(lines).strip())
-            self._log_event(f"FAQ gerado — {len(items)} pergunta(s).")
-        else:
-            self.faq_text.setPlainText(f"Erro: {error}")
-            self._log_event(f"Erro ao gerar FAQ: {error}")
-
     # ── Notebook Guide ────────────────────────────────────────────────────────
 
     def _start_guide_generation(self) -> None:
@@ -2391,6 +2332,46 @@ class MainWindow(QMainWindow):
         if success:
             self._load_guide_into_ui()
         self.guide_refresh_btn.setEnabled(bool(self.vectorstore))
+
+    def _save_guide_to_studio(self) -> None:
+        """Salva o conteúdo atual do Guide como output persistente no Studio."""
+        summary = self.guide_summary_text.toPlainText().strip()
+        if not summary:
+            QMessageBox.information(self, "Guide vazio", "Gere o Guide antes de salvar.")
+            return
+
+        lines = ["## Resumo da Coleção\n", summary]
+
+        questions = [
+            self.guide_questions_list.item(i).text()
+            for i in range(self.guide_questions_list.count())
+        ]
+        if questions:
+            lines.append("\n\n## Perguntas Sugeridas\n")
+            lines.extend(f"- {q}" for q in questions)
+
+        gems = self.guide_gems_text.toPlainText().strip()
+        if gems:
+            lines.append("\n\n## Pérolas Escondidas\n")
+            lines.append(gems)
+
+        content = "\n".join(lines)
+        coll_name = self.config.active_collection or ""
+        output = StudioOutput(
+            type="Guide",
+            content=content,
+            collection_name=coll_name,
+            title=f"Guide — {coll_name}" if coll_name else "Guide",
+        )
+        if self._studio_store:
+            try:
+                self._studio_store.save(output)
+            except OSError as exc:
+                QMessageBox.warning(self, "Erro ao salvar", str(exc))
+                return
+        self._add_studio_tile(output)
+        self._switch_analysis(1)
+        self.statusBar().showMessage("Guide salvo no Studio.")
 
     def _load_guide_into_ui(self) -> None:
         """Carrega guide.json e preenche os widgets do painel Guide."""
@@ -3277,40 +3258,6 @@ class MainWindow(QMainWindow):
     def _reset_conversation(self) -> None:
         self._on_new_session()
 
-    # ── Resumo ────────────────────────────────────────────────────────────────
-
-    def summarize(self) -> None:
-        if not self.vectorstore:
-            QMessageBox.warning(
-                self, "Aviso", "Nenhuma memória indexada. Indexe primeiro."
-            )
-            return
-        self.summary_btn.setEnabled(False)
-        self._raw_summary = ""
-        self.summary_text.setPlainText("")
-        self.progress.setVisible(True)
-        self.progress.setRange(0, 0)
-        self.cancel_btn.setVisible(True)
-        self.statusBar().showMessage("Sintetizando documentos…")
-
-        self._summary_worker = SummarizeWorker(self.vectorstore, self.config)
-        self._summary_worker.token.connect(self._on_summary_token)
-        self._summary_worker.finished.connect(self._on_summary)
-        self._summary_worker.start()
-
-    def _on_summary_token(self, chunk: str) -> None:
-        self._raw_summary += chunk
-        self.summary_text.setPlainText(self._raw_summary)
-        sb = self.summary_text.verticalScrollBar()
-        sb.setValue(sb.maximum())
-
-    def _on_summary(self, success: bool, text: str) -> None:
-        self.progress.setVisible(False)
-        self.cancel_btn.setVisible(False)
-        self.summary_text.setPlainText(text if success else f"Erro: {text}")
-        self.summary_btn.setEnabled(True)
-        self.statusBar().showMessage("Pronto." if success else "Interrompido.")
-
     # ── Tab Gerenciar ─────────────────────────────────────────────────────────
 
     def refresh_manage_info(self) -> None:
@@ -3441,7 +3388,7 @@ class MainWindow(QMainWindow):
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _cancel_worker(self) -> None:
-        for attr in ("_index_worker", "_resume_worker", "_ask_worker", "_summary_worker"):
+        for attr in ("_index_worker", "_resume_worker", "_ask_worker", "_studio_worker"):
             worker = getattr(self, attr, None)
             if worker and worker.isRunning():
                 worker.requestInterruption()
@@ -3449,22 +3396,20 @@ class MainWindow(QMainWindow):
 
     def _enable_query_buttons(self) -> None:
         self.ask_btn.setEnabled(True)
-        self.summary_btn.setEnabled(True)
-        self.faq_btn.setEnabled(True)
         self.clear_index_btn.setEnabled(True)
         self.update_index_btn.setEnabled(True)
         self.reindex_transcripts_btn.setEnabled(True)
         self.guide_refresh_btn.setEnabled(True)
+        self.guide_save_studio_btn.setEnabled(True)
         self.studio_generate_btn.setEnabled(True)
         self._load_topics_from_disk()
 
     def _disable_query_buttons(self) -> None:
         self.ask_btn.setEnabled(False)
-        self.summary_btn.setEnabled(False)
-        self.faq_btn.setEnabled(False)
         self.update_index_btn.setEnabled(False)
         self.reindex_transcripts_btn.setEnabled(False)
         self.guide_refresh_btn.setEnabled(False)
+        self.guide_save_studio_btn.setEnabled(False)
         self.studio_generate_btn.setEnabled(False)
 
     def _log_event(self, message: str) -> None:
