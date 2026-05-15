@@ -400,23 +400,23 @@ def _embed_batch(
         raise
 
 
-# Separadores por tipo: refletem a estrutura natural de cada formato
-# notas/vault    → seções markdown (##) antes de parágrafos
-# livros/docs    → capítulos (#) e seções (##) antes de parágrafos
-# científicos    → seções (##) + parágrafos + frases (texto denso, mais overlap)
-# transcrições   → fala contínua, sem markdown: dividir por pontuação
-# artigos web    → parágrafos antes de frases (sem hierarquia de capítulos)
+# Separadores por tipo: refletem a estrutura natural de cada formato.
+# Separadores Unicode zh (。！？) incluídos em todos os tipos — sem custo para
+# corpora pt/en (simplesmente não encontrados); essenciais para chinês que não
+# usa espaços entre palavras. chunk_size em caracteres Unicode (length_function=len).
+# Tamanhos: ~1000–1200 chars ≈ 300–400 words em pt/en ≈ 500–600 chars zh úteis.
+# Overlap: ~15% do chunk_size.
 CHUNK_PARAMS: dict[str, dict] = {
-    "article":    {"chunk_size": 768, "chunk_overlap": 100,
-                   "separators": ["\n\n", "\n", ". "]},
-    "transcript": {"chunk_size": 400, "chunk_overlap": 60,
-                   "separators": [". ", "! ", "? ", "\n"]},
-    "note":       {"chunk_size": 384, "chunk_overlap": 50,
-                   "separators": ["\n## ", "\n\n", "\n"]},
-    "document":   {"chunk_size": 512, "chunk_overlap": 75,
-                   "separators": ["\n# ", "\n## ", "\n\n", "\n"]},
-    "scientific": {"chunk_size": 400, "chunk_overlap": 80,
-                   "separators": ["\n## ", "\n\n", ". ", "\n"]},
+    "article":    {"chunk_size": 1200, "chunk_overlap": 180,
+                   "separators": ["\n\n", "\n", "。", "！", "？", ". ", " ", ""]},
+    "transcript": {"chunk_size": 600,  "chunk_overlap": 90,
+                   "separators": ["。", "！", "？", ". ", "! ", "? ", "\n", ""]},
+    "note":       {"chunk_size": 800,  "chunk_overlap": 120,
+                   "separators": ["\n## ", "\n\n", "\n", "。", "！", "？", ". ", ""]},
+    "document":   {"chunk_size": 1000, "chunk_overlap": 150,
+                   "separators": ["\n# ", "\n## ", "\n\n", "\n", "。", "！", "？", ". ", ""]},
+    "scientific": {"chunk_size": 1000, "chunk_overlap": 150,
+                   "separators": ["\n## ", "\n\n", "。", "！", "？", ". ", "\n", ""]},
 }
 
 _TRANSCRIPT_EXTS = frozenset({".vtt", ".srt"})
@@ -513,7 +513,8 @@ def _get_splitter(
     return RecursiveCharacterTextSplitter(
         chunk_size=params["chunk_size"],
         chunk_overlap=params["chunk_overlap"],
-        separators=params.get("separators", ["\n\n", "\n", ". ", " ", ""]),
+        separators=params.get("separators", ["\n\n", "\n", "。", "！", "？", ". ", " ", ""]),
+        length_function=len,
         add_start_index=True,
     )
 
@@ -751,7 +752,8 @@ def create_vectorstore(
                 _splitter_cache[ctype] = RecursiveCharacterTextSplitter(
                     chunk_size=params["chunk_size"],
                     chunk_overlap=params["chunk_overlap"],
-                    separators=params.get("separators", ["\n\n", "\n", ". ", " ", ""]),
+                    separators=params.get("separators", ["\n\n", "\n", "。", "！", "？", ". ", " ", ""]),
+                    length_function=len,
                     add_start_index=True,
                 )
             chunks.extend(_splitter_cache[ctype].split_documents([doc]))

@@ -4525,7 +4525,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > pesquisas.md (sessão 2026-05-14).
 
 #### Mnemosyne
-- [ ] **Chunking por contagem de caracteres Unicode** — substituir a contagem de palavras/espaços
+- [x] **Chunking por contagem de caracteres Unicode** — substituir a contagem de palavras/espaços
   por `len(text)` em caracteres Unicode ao definir `chunk_size` e `overlap` em `core/indexer.py`.
   Razão: chinês não tem espaços entre palavras — um chunker baseado em whitespace cria chunks
   gigantes ou quebra no meio de palavras. Limiar recomendado: ~1000–1200 chars por chunk (equivale
