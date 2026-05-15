@@ -614,6 +614,54 @@ def _prepend_titles(chunks: list[Document]) -> None:
             chunk.page_content = prefix + chunk.page_content
 
 
+_lingua_detector_instance: object | None = None
+
+
+def _get_lingua_detector():
+    """Retorna o detector de idioma (singleton), ou None se não instalado."""
+    global _lingua_detector_instance
+    if _lingua_detector_instance is not None:
+        return _lingua_detector_instance
+    try:
+        from lingua import Language, LanguageDetectorBuilder
+        _lingua_detector_instance = (
+            LanguageDetectorBuilder
+            .from_languages(Language.PORTUGUESE, Language.ENGLISH, Language.CHINESE)
+            .build()
+        )
+        return _lingua_detector_instance
+    except ImportError:
+        return None
+
+
+def _add_language_metadata(chunks: list[Document]) -> None:
+    """Detecta o idioma de cada chunk e grava em metadata["language"] (ISO 639-1).
+
+    Usa a amostra após o prefixo de título para não distorcer a detecção.
+    Reflexões são ignoradas. Degradação graciosa se lingua não estiver instalado.
+    """
+    detector = _get_lingua_detector()
+    if detector is None:
+        return
+    for chunk in chunks:
+        if chunk.metadata.get("type") == "reflection":
+            continue
+        if "language" in chunk.metadata:
+            continue
+        text = chunk.page_content
+        if text.startswith("[") and "]\n\n" in text[:100]:
+            _, _, text = text.partition("]\n\n")
+        sample = text[:300].strip()
+        if not sample:
+            continue
+        try:
+            result = detector.detect_language_of(sample)
+            if result is not None:
+                chunk.metadata["language"] = result.iso_code_639_1.name.lower()
+        except Exception:
+            pass
+
+
 def _group_by_source(chunks: list[Document]) -> dict[str, list[Document]]:
     """Agrupa chunks por arquivo-fonte (metadata["source"])."""
     groups: dict[str, list[Document]] = {}
@@ -741,6 +789,7 @@ def create_vectorstore(
         splitter = _get_splitter(config, embeddings, source_type=config.collection_type)
         chunks = splitter.split_documents(documents)
         _prepend_titles(chunks)
+        _add_language_metadata(chunks)
     else:
         _splitter_cache: dict[str, RecursiveCharacterTextSplitter] = {}
         chunks = []
@@ -759,6 +808,7 @@ def create_vectorstore(
             chunks.extend(_splitter_cache[ctype].split_documents([doc]))
         _enrich_chunk_offsets(chunks, documents)
         _prepend_titles(chunks)
+        _add_language_metadata(chunks)
 
     _BATCH, _SLEEP = _detect_batch_config()
     try:
@@ -826,6 +876,7 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
     chunks = splitter.split_documents(docs)
     _enrich_chunk_offsets(chunks, docs)
     _prepend_titles(chunks)
+    _add_language_metadata(chunks)
 
     try:
         os.makedirs(config.persist_dir, exist_ok=True)
@@ -922,6 +973,7 @@ def update_vectorstore(
             chunks = splitter.split_documents(docs)
             _enrich_chunk_offsets(chunks, docs)
             _prepend_titles(chunks)
+            _add_language_metadata(chunks)
             level = _incremental_update(
                 vs, bm25_idx, chunk_store, file_path, chunks,
                 config.embed_model, config.embedding_truncate_dim, _BATCH, _SLEEP,
@@ -1070,6 +1122,7 @@ def reindex_transcripts(
                                             ocr_model=config.image_ocr_model)
                     chunks = splitter.split_documents(docs)
                     _prepend_titles(chunks)
+                    _add_language_metadata(chunks)
                     _incremental_update(
                         vs, bm25_idx, chunk_store, file_path, chunks,
                         config.embed_model, config.embedding_truncate_dim,

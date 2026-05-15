@@ -4531,7 +4531,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   gigantes ou quebra no meio de palavras. Limiar recomendado: ~1000–1200 chars por chunk (equivale
   a ~300–400 words em pt/en e ~500–600 caracteres zh significativos). Manter overlap em ~15% do
   tamanho. Essa mudança melhora qualidade para todos os idiomas, não só zh.
-- [ ] **Metadado `language` por chunk na indexação** — em `core/loaders.py` ou `core/indexer.py`,
+- [x] **Metadado `language` por chunk na indexação** — em `core/loaders.py` ou `core/indexer.py`,
   após carregar cada documento, detectar o idioma do texto via `lingua-py`
   (`pip install lingua-language-detector`) e adicionar `metadata["language"]` com o código ISO
   (ex: `"pt"`, `"en"`, `"zh"`) a cada chunk. Usar `lingua-py` em vez de `langdetect` — superior
@@ -4545,7 +4545,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   o LLM tende a responder no idioma do contexto. Chinês é o caso mais severo (consistência
   cai de 92% para 68%). Instrução explícita resolve sem exigir acesso a logits (que o Ollama
   não expõe via API).
-- [ ] **Diversidade de idioma antes do reranking** — em `core/rag.py`, após recuperação híbrida
+- [x] **Diversidade de idioma antes do reranking** — em `core/rag.py`, após recuperação híbrida
   (BM25 + semântica) e antes de passar os chunks ao LLM, garantir que os top-k resultados não
   sejam todos no mesmo idioma. Estratégia simples: se >70% dos chunks recuperados forem em inglês
   e houver candidatos em pt/zh com score ≥ 0.7× do melhor inglês, promovê-los ao top-k

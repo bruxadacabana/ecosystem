@@ -1,9 +1,6 @@
-vamos prosseguir com a implementação:
+## Implementação atual:
+
 ### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
-
-- [ ] Metadado language por chunk — Mnemosyne (lingua-py) — adiciona metadata["language"] por chunk durante indexação. Nova dependência lingua-language-detector. Habilita o item seguinte.
-
-- [ ] Diversidade de idioma antes do reranking — Mnemosyne (core/rag.py) — depende do metadado language acima. Promove chunks pt/zh quando top-k tem >70% em inglês.
 
 - [ ] language_affinity em ModelSlot — HUB/LOGOS — campo informacional em logos.rs indicando afinidade linguística dos modelos (qwen2.5 → zh/en, gemma2 → en). Exibe na LogosView.
 

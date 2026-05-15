@@ -176,6 +176,9 @@ _LANGUAGE_INSTRUCTION = (
     "Responda sempre em português, independentemente do idioma dos documentos recuperados."
 )
 
+_LANG_EN_THRESHOLD  = 0.70   # se >70 % dos docs são "en", promover pt/zh do fundo
+_LANG_MAX_PROMOTIONS = 2     # máximo de chunks promovidos por query
+
 _VAULT_IGNORE = {".obsidian", "templates", "attachments", ".trash", ".mnemosyne"}
 
 
@@ -964,6 +967,55 @@ def _apply_time_decay(
     return [docs[i] for _, i in scored]
 
 
+def _diversify_languages(docs: list[Document]) -> list[Document]:
+    """Promove chunks pt/zh do fundo da lista quando inglês domina (>70 %).
+
+    Quando a grande maioria dos chunks recuperados é em inglês, a resposta tende a
+    derivar para inglês mesmo com a instrução de sistema. Esta função troca os chunks
+    pt/zh de mais baixo ranking com os chunks "en" de mais baixo ranking no topo,
+    sem remover nenhum documento — apenas reordena.
+
+    Depende de metadata["language"] gerado por _add_language_metadata (indexer.py).
+    Se nenhum chunk tiver esse metadado, retorna a lista inalterada.
+    """
+    if not docs:
+        return docs
+
+    langs = [d.metadata.get("language", "") for d in docs]
+    if not any(langs):
+        return docs
+
+    n = len(docs)
+    en_count = langs.count("en")
+    if en_count / n <= _LANG_EN_THRESHOLD:
+        return docs
+
+    # Identificar chunks pt/zh na metade inferior que podem subir
+    half = n // 2
+    candidates: list[int] = [
+        i for i in range(half, n)
+        if langs[i] in ("pt", "zh")
+    ]
+    # Identificar chunks en na metade superior que podem descer
+    en_top: list[int] = [
+        i for i in range(half)
+        if langs[i] == "en"
+    ]
+
+    promotions = min(len(candidates), len(en_top), _LANG_MAX_PROMOTIONS)
+    if promotions == 0:
+        return docs
+
+    result = list(docs)
+    # Trocar: os últimos en do topo com os primeiros pt/zh do fundo
+    for k in range(promotions):
+        top_idx  = en_top[-(k + 1)]   # en mais baixo no topo
+        bot_idx  = candidates[k]       # pt/zh mais alto no fundo
+        result[top_idx], result[bot_idx] = result[bot_idx], result[top_idx]
+
+    return result
+
+
 def _build_messages(
     context: str,
     question: str,
@@ -1110,6 +1162,9 @@ def prepare_ask(
 
     # Re-ranking por time-decay: penaliza fontes consultadas há muito tempo
     docs = _apply_time_decay(docs, tracker, config.relevance_decay_days)
+
+    # Diversidade de idioma: promove chunks pt/zh quando inglês domina o pool
+    docs = _diversify_languages(docs)
 
     # FlashRank: reordena por relevância semântica e reduz ao top_n configurado
     if config.reranking_enabled:
