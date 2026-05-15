@@ -1744,31 +1744,38 @@ pub fn apply_ollama_nice() {
 /// Retorna as variáveis de ambiente recomendadas para o Ollama
 /// conforme o perfil de hardware detectado.
 ///
-/// | Variável                   | high (RX 6600) | medium (MX150) | low (i5-3470) |
-/// |---------------------------|----------------|----------------|---------------|
-/// | OLLAMA_MAX_LOADED_MODELS   | 2              | 1              | 1             |
-/// | OLLAMA_GPU_OVERHEAD (bytes)| 524 288 000    | 209 715 200    | 0             |
-/// | OLLAMA_FLASH_ATTENTION     | 1              | 1              | 0 (sem GPU)   |
-/// | OLLAMA_NUM_PARALLEL        | 2              | 1              | 1             |
-fn ollama_env_for_profile(profile: HardwareProfile) -> Vec<(&'static str, String)> {
+/// | Variável                   | MainPc (RX 6600) | Laptop (MX150) | WorkPc (i5-3470) |
+/// |---------------------------|------------------|----------------|------------------|
+/// | OLLAMA_MAX_LOADED_MODELS   | 3                | 1              | 1                |
+/// | OLLAMA_GPU_OVERHEAD (bytes)| 838 860 800 (~800MB) | 209 715 200 (~200MB) | 0      |
+/// | OLLAMA_FLASH_ATTENTION     | 1                | 1              | 0 (sem GPU)      |
+/// | OLLAMA_NUM_PARALLEL        | 2                | 1              | 1                |
+/// | OLLAMA_KEEP_ALIVE          | 5m               | 5m             | 5m               |
+///
+/// OLLAMA_KEEP_ALIVE=5m é um default global — sobrescrito por keep_alive por requisição
+/// quando o LOGOS injeta valores específicos (P1=-1, P2=10m, P3=0).
+pub fn ollama_env_for_profile(profile: HardwareProfile) -> Vec<(&'static str, String)> {
     match profile {
         HardwareProfile::MainPc => vec![
-            ("OLLAMA_MAX_LOADED_MODELS", "2".into()),
-            ("OLLAMA_GPU_OVERHEAD",      "524288000".into()),
+            ("OLLAMA_MAX_LOADED_MODELS", "3".into()),
+            ("OLLAMA_GPU_OVERHEAD",      "838860800".into()),
             ("OLLAMA_FLASH_ATTENTION",   "1".into()),
             ("OLLAMA_NUM_PARALLEL",      "2".into()),
+            ("OLLAMA_KEEP_ALIVE",        "5m".into()),
         ],
         HardwareProfile::Laptop => vec![
             ("OLLAMA_MAX_LOADED_MODELS", "1".into()),
             ("OLLAMA_GPU_OVERHEAD",      "209715200".into()),
             ("OLLAMA_FLASH_ATTENTION",   "1".into()),
             ("OLLAMA_NUM_PARALLEL",      "1".into()),
+            ("OLLAMA_KEEP_ALIVE",        "5m".into()),
         ],
         HardwareProfile::WorkPc => vec![
             ("OLLAMA_MAX_LOADED_MODELS", "1".into()),
             ("OLLAMA_GPU_OVERHEAD",      "0".into()),
             ("OLLAMA_FLASH_ATTENTION",   "0".into()),
             ("OLLAMA_NUM_PARALLEL",      "1".into()),
+            ("OLLAMA_KEEP_ALIVE",        "5m".into()),
         ],
     }
 }

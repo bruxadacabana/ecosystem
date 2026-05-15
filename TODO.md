@@ -4454,7 +4454,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   modelo); (d) se `vram_em_uso + vram_do_modelo_novo > vram_limit_bytes`, descarregar o modelo com
   menor prioridade (P3 primeiro) via `POST /api/generate { "model": X, "keep_alive": 0 }`; (e)
   persistir `logos.vram_limit_pct` (padrão: 85) no `ecosystem.json`. Expor na UI como slider.
-- [ ] Ao iniciar o servidor Ollama (subprocesso), injetar no ambiente: `OLLAMA_GPU_OVERHEAD` por
+- [x] Ao iniciar o servidor Ollama (subprocesso), injetar no ambiente: `OLLAMA_GPU_OVERHEAD` por
   perfil (MainPc: 838860800 bytes = ~800 MB = 10% de 8 GB; Laptop: 209715200 = ~200 MB = 10% de
   2 GB; WorkPc: 0); `OLLAMA_FLASH_ATTENTION=1` em todos os perfis (reduz KV cache VRAM em 20–40%
   sem custo de qualidade, compatível com ROCm e CUDA); `OLLAMA_MAX_LOADED_MODELS` por perfil

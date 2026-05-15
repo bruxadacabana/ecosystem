@@ -11,6 +11,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+use crate::logos::{detect_hardware_profile, ollama_env_for_profile};
 use crate::AppError;
 
 // ----------------------------------------------------------
@@ -59,14 +60,22 @@ async fn ollama_responding() -> bool {
 /// de CPU adequadas ao hardware detectado em tempo de execução.
 ///
 /// Windows: usa `cmd /C start "" /belownormal /B ollama serve` para lançar o processo
-/// já com prioridade BELOW_NORMAL, sem precisar do crate windows-sys.
+/// já com prioridade BELOW_NORMAL. As env vars são injetadas no `cmd` pai — o `start`
+/// herda o ambiente do `cmd`, que é herdado pelo processo `ollama` filho.
 /// Linux + AMD (/dev/kfd): injeta HSA_OVERRIDE_GFX_VERSION automaticamente.
 fn build_ollama_serve_command() -> Command {
+    let profile = detect_hardware_profile();
+    let env_vars = ollama_env_for_profile(profile);
+
     #[cfg(target_os = "windows")]
     {
-        // start "" /belownormal /B =  título vazio, prioridade abaixo do normal, sem janela
+        // start "" /belownormal /B = título vazio, prioridade abaixo do normal, sem janela
         let mut cmd = Command::new("cmd");
         cmd.args(["/C", "start", "", "/belownormal", "/B", "ollama", "serve"]);
+        // Injeta no cmd — herdado pelo ollama via start /B (mesmo ambiente do processo pai)
+        for (k, v) in &env_vars {
+            cmd.env(k, v);
+        }
         cmd
     }
     #[cfg(not(target_os = "windows"))]
@@ -78,6 +87,9 @@ fn build_ollama_serve_command() -> Command {
             let gfx = std::env::var("HSA_OVERRIDE_GFX_VERSION")
                 .unwrap_or_else(|_| "10.3.0".to_string());
             cmd.env("HSA_OVERRIDE_GFX_VERSION", gfx);
+        }
+        for (k, v) in &env_vars {
+            cmd.env(k, v);
         }
         cmd
     }
