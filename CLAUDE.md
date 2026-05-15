@@ -114,7 +114,7 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 
 ## Workflow
 
-- **`DESIGN_BIBLE.md`, `GUIDE.md` e `pesquisas.md` foram movidos para fora do repositório.** Os caminhos por máquina estão abaixo — usar esses caminhos ao ler ou editar. Nunca recriar esses arquivos na raiz do repo.
+- **`DESIGN_BIBLE.md`, `GUIDE.md` e `pesquisas.md` ficam no repositório `notebook`** (repositório Git separado, sincronizado via Proton Drive). Os caminhos por máquina estão abaixo — usar esses caminhos ao ler ou editar. Para commitar mudanças nesses arquivos, `cd` para o diretório raiz do repo `notebook` e usar `git commit` normalmente — não é necessário `git add` se o arquivo já é rastreado. Nunca recriar esses arquivos na raiz do repo do ecossistema.
   - **Windows 10:** `C:\Users\USUARIO\Desktop\p\My files\backup\notebook\01_Projetos\ecosystem\`
   - **CachyOS principal:** `/mnt/archive1/proton/backup/notebook/01_Projetos/ecosystem/`
   - **Laptop:** `/home/spacewitch/Documents/proton/notebook/01_Projetos/ecosystem/`
