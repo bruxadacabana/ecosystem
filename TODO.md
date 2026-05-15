@@ -5439,7 +5439,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `theme_clicked(str)`. A `MainWindow` conecta `theme_clicked` → disparar query no chat
   "Fale sobre [tema]: o que os documentos do acervo dizem?".
 
-- [ ] **`gui/topics_view.py` — mapa mental interativo com QGraphicsScene + NetworkX** — sub-modo
+- [x] **`gui/topics_view.py` — mapa mental interativo com QGraphicsScene + NetworkX** — sub-modo
   "Mapa" na mesma aba: construir grafo NetworkX com nós de tópico (cor azul) e nós de documento
   (cor cinza), arestas indicando pertencimento ao cluster. Calcular posições via
   `nx.kamada_kawai_layout()`. Renderizar no `QGraphicsScene`: nós como `QGraphicsEllipseItem`

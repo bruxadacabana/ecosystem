@@ -56,18 +56,22 @@ def extract_topics(vs: "Chroma", coll: "CollectionConfig") -> dict:
     ids: list[str]              = raw.get("ids") or []
     docs: list[str]             = raw.get("documents") or []
     embeddings: list | None     = raw.get("embeddings")
+    metadatas: list | None      = raw.get("metadatas")
 
     # Filtra entradas com texto vazio
-    valid = [(i, d, (embeddings[idx] if embeddings else None))
-             for idx, (i, d) in enumerate(zip(ids, docs)) if d and d.strip()]
+    valid = [
+        (i, d, (embeddings[idx] if embeddings else None), (metadatas[idx] if metadatas else {}))
+        for idx, (i, d) in enumerate(zip(ids, docs)) if d and d.strip()
+    ]
 
     if not valid:
         log.warning("ChromaDB vazio — nenhum tópico extraído.")
         return {}
 
-    valid_ids, valid_docs, valid_embs = zip(*valid)
-    valid_ids  = list(valid_ids)
-    valid_docs = list(valid_docs)
+    valid_ids, valid_docs, valid_embs, valid_metas = zip(*valid)
+    valid_ids   = list(valid_ids)
+    valid_docs  = list(valid_docs)
+    valid_metas = list(valid_metas)
 
     n = len(valid_docs)
     log.info("Extraindo temas de %d documentos…", n)
@@ -90,6 +94,7 @@ def extract_topics(vs: "Chroma", coll: "CollectionConfig") -> dict:
         "topics":       topics_list,
         "doc_topic":    {valid_ids[i]: doc_topic_list[i] for i in range(n)},
         "doc_keywords": {valid_ids[i]: doc_keywords[i]  for i in range(n)},
+        "doc_sources":  {valid_ids[i]: (valid_metas[i] or {}).get("source", "") for i in range(n)},
     }
 
     if coll.mnemosyne_dir:
