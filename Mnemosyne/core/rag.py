@@ -652,13 +652,17 @@ _SOURCE_TYPE_LABELS: dict[str, str] = {
     "transcript": "Transcrição",
     "library":    "Artigo web",
     "book":       "Livro",
+    "thought":    "Análise anterior da Mnemosyne",
 }
 
 # Multiplicadores de score por tipo de fonte — aplicados no ranking híbrido
-# scientific > book > library/vault > transcript (linguagem informal, menor densidade)
+# scientific > book > thought > library/vault > transcript
+# "thought" recebe 1.3 — outputs do Studio são sínteses densas da própria Mnemosyne;
+# ficam acima de fontes externas brutas mas abaixo de livros e artigos científicos.
 SOURCE_WEIGHTS: dict[str, float] = {
     "scientific": 1.4,
     "book":       1.2,
+    "thought":    1.3,
     "library":    1.0,
     "vault":      1.0,
     "transcript": 0.9,

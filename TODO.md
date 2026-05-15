@@ -5545,7 +5545,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   escondidas), mas ganha também um botão "Salvar no Studio" que cria um `StudioOutput`
   do tipo Guide com o conteúdo gerado.
 
-- [ ] **`core/rag.py` / `core/indexer.py` — reconhecer outputs do Studio como fonte especial** —
+- [x] **`core/rag.py` / `core/indexer.py` — reconhecer outputs do Studio como fonte especial** —
   adicionar `"thought"` a `SOURCE_WEIGHTS` (ex: 1.3 — acima de transcript, abaixo de book)
   e ao fallback de `source_type` no loader. No `MnemosyneLoaders`, arquivos com frontmatter
   `source: mnemosyne_studio` recebem `metadata["source_type"] = "thought"` automaticamente.

@@ -1,6 +1,7 @@
 ========================================
 
-vamos prosseguir com a implementação de ### AKASHA + KOSMOS: dados configurados pelo usuário em JSON (resilência a crash do DB) | 2026-05-14
+vamos prosseguir com a implementação de ### Pesquisa: NotebookLM — Funcionalidades e Evolução 2025–2026 | 2026-05-14
+
 
 
 1: implemente um item de cada vez (implemente, marque feito no TODO, commite, resuma no chat (não precisa aprofundar muito, mas sempre explique o que foi implementado e o porquê de forma didática) e peça permissão antes de implementar o próximo). Cada item = 1 TODO (- [ ]).
@@ -9,8 +10,6 @@ vamos prosseguir com a implementação de ### AKASHA + KOSMOS: dados configurado
 ======
 
 próximo:
-
-### Pesquisa: NotebookLM — Funcionalidades e Evolução 2025–2026 | 2026-05-14
 
 ### HERMES: extrator de receitas de vídeo | 2026-05-14
 

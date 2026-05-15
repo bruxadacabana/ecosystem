@@ -192,6 +192,9 @@ def _load_file(
                     docs = TextLoader(file_path, encoding="utf-8").load()
                 elif ext == ".md":
                     docs = _load_library_md(file_path)
+                    # Outputs do Studio têm frontmatter `source: mnemosyne_studio`
+                    if docs and docs[0].metadata.get("fm_source") == "mnemosyne_studio":
+                        source_type = "thought"
                 else:
                     docs = TextLoader(file_path, encoding="utf-8").load()
         elif ext == ".epub":
@@ -548,21 +551,23 @@ def _load_library_md(file_path: str) -> list[Document]:
     except Exception:
         pass  # sem frontmatter válido — usa texto bruto
 
-    title    = str(fm.get("title", ""))    or os.path.splitext(os.path.basename(file_path))[0]
-    author   = str(fm.get("author", ""))
-    date     = str(fm.get("date", ""))
-    language = str(fm.get("language", ""))
-    doc_type = str(fm.get("type", ""))
+    title          = str(fm.get("title", ""))    or os.path.splitext(os.path.basename(file_path))[0]
+    author         = str(fm.get("author", ""))
+    date           = str(fm.get("date", ""))
+    language       = str(fm.get("language", ""))
+    doc_type       = str(fm.get("type", ""))
+    fm_source      = str(fm.get("source", ""))   # "mnemosyne_studio" para outputs do Studio
 
     return [Document(
         page_content=body.strip() or raw_text,
         metadata={
-            "source":   file_path,
-            "title":    title,
-            "author":   author,
-            "date":     date,
-            "language": language,
-            "doc_type": doc_type,
+            "source":        file_path,
+            "title":         title,
+            "author":        author,
+            "date":          date,
+            "language":      language,
+            "doc_type":      doc_type,
+            "fm_source":     fm_source,
         },
     )]
 
