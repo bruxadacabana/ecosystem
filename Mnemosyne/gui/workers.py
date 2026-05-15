@@ -1028,6 +1028,33 @@ class TopicsWorker(QThread):
             self.finished.emit({})
 
 
+class KnowledgeGraphWorker(QThread):
+    """
+    Constrói o grafo de conhecimento inter-documentos em background.
+
+    Chama KnowledgeGraph.update(vs) que extrai keywords via TF-IDF de todos
+    os chunks do ChromaDB e salva knowledge_graph.json em mnemosyne_dir.
+    Emite finished(bool) ao concluir (True = sucesso, False = erro).
+    """
+
+    finished = Signal(bool)
+
+    def __init__(self, vs, mnemosyne_dir: str) -> None:
+        super().__init__()
+        self._vs           = vs
+        self._mnemosyne_dir = mnemosyne_dir
+
+    def run(self) -> None:
+        from core.knowledge_graph import KnowledgeGraph
+        try:
+            kg = KnowledgeGraph(self._mnemosyne_dir)
+            kg.update(self._vs)
+            kg.save()
+            self.finished.emit(True)
+        except Exception:
+            self.finished.emit(False)
+
+
 def _parse_numbered_questions(text: str) -> list[str]:
     """Extrai perguntas numeradas de 1 a 3 do output do LLM."""
     import re
