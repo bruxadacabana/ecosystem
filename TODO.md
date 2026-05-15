@@ -4490,7 +4490,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   handle por modelo ativo. Ao chamar abort, acionar `handle.abort()` — o futuro Rust é dropado, a
   conexão HTTP é fechada, e o Ollama para de gerar automaticamente quando detecta cliente
   desconectado. O modelo permanece aquecido em VRAM (comportamento desejado para retomada rápida).
-- [ ] Documentar limitação de cancelamento de pull na `LogosView.tsx`: quando clicar "Cancelar"
+- [x] Documentar limitação de cancelamento de pull na `LogosView.tsx`: quando clicar "Cancelar"
   durante pull em andamento, exibir aviso: "O Ollama continuará o download em background mesmo após
   cancelar aqui. Para interromper de fato, pare o servidor Ollama." Limitação conhecida do Ollama
   (issue #13142 — sem endpoint REST para cancelar pull).

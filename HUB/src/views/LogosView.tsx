@@ -46,7 +46,8 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
   const [cpuThreads,        setCpuThreads]        = useState<number>(4)
   const [flashAttention,    setFlashAttention]    = useState<boolean>(true)
   const vramLimitSynced = useRef(false)
-  const [embedWarning, setEmbedWarning] = useState<EmbedCompatWarning | null>(null)
+  const [embedWarning,    setEmbedWarning]    = useState<EmbedCompatWarning | null>(null)
+  const [cancelledPulls, setCancelledPulls] = useState<Set<string>>(new Set())
 
   const fetchStatus = useCallback(() => {
     cmd.logosGetStatus().then(r => {
@@ -113,6 +114,7 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
           next.delete(p.model)
           if (p.done) {
             setPulling(s => { const n = new Set(s); n.delete(p.model); return n })
+            setCancelledPulls(s => { const n = new Set(s); n.delete(p.model); return n })
             fetchModels()
           }
         } else {
@@ -717,23 +719,38 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
                           : `${m.size_disk_mb} MB`}
                       </span>
                     )}
-                    {/* Botão de download */}
+                    {/* Botão de download / Cancelar */}
                     {!m.is_static && !m.is_installed && m.for_current_profile && (
-                      <button
-                        disabled={isPulling}
-                        onClick={() => handlePullModel(m.model_name)}
-                        style={{
-                          fontFamily: 'var(--font-mono)', fontSize: 10,
-                          padding: '2px 10px', background: 'transparent',
-                          color: isPulling ? 'var(--ink-ghost)' : 'var(--accent-green)',
-                          border: `1px solid ${isPulling ? 'var(--rule)' : 'var(--accent-green)'}`,
-                          borderRadius: 'var(--radius)', cursor: isPulling ? 'wait' : 'pointer',
-                          opacity: isPulling ? 0.6 : 1,
-                          transition: 'all 150ms ease', marginLeft: 'auto',
-                        }}
-                      >
-                        {isPulling ? 'baixando…' : 'baixar'}
-                      </button>
+                      <>
+                        <button
+                          disabled={isPulling}
+                          onClick={() => handlePullModel(m.model_name)}
+                          style={{
+                            fontFamily: 'var(--font-mono)', fontSize: 10,
+                            padding: '2px 10px', background: 'transparent',
+                            color: isPulling ? 'var(--ink-ghost)' : 'var(--accent-green)',
+                            border: `1px solid ${isPulling ? 'var(--rule)' : 'var(--accent-green)'}`,
+                            borderRadius: 'var(--radius)', cursor: isPulling ? 'wait' : 'pointer',
+                            opacity: isPulling ? 0.6 : 1,
+                            transition: 'all 150ms ease', marginLeft: 'auto',
+                          }}
+                        >
+                          {isPulling ? 'baixando…' : 'baixar'}
+                        </button>
+                        {isPulling && !cancelledPulls.has(m.model_name) && (
+                          <button
+                            onClick={() => setCancelledPulls(s => new Set(s).add(m.model_name))}
+                            style={{
+                              fontFamily: 'var(--font-mono)', fontSize: 10,
+                              padding: '2px 8px', background: 'transparent',
+                              color: 'var(--ink-ghost)', border: '1px solid var(--rule)',
+                              borderRadius: 'var(--radius)', cursor: 'pointer',
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                        )}
+                      </>
                     )}
                     {m.is_static && (
                       <span style={{
@@ -775,6 +792,16 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
                   {isPulling && prog && !pct && (
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent-green)', paddingLeft: 15 }}>
                       {prog.status}
+                    </span>
+                  )}
+                  {/* Aviso de cancelamento: Ollama continua em background (limitação conhecida) */}
+                  {isPulling && cancelledPulls.has(m.model_name) && (
+                    <span style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 9,
+                      color: 'var(--accent)', paddingLeft: 15, lineHeight: 1.6,
+                    }}>
+                      O Ollama continuará o download em background mesmo após cancelar aqui.
+                      Para interromper de fato, pare o servidor Ollama.
                     </span>
                   )}
                 </div>
