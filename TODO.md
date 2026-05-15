@@ -4485,7 +4485,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   - **Linux:** `systemctl stop ollama.service` ou `pkill -f "ollama serve"` como fallback.
   - Se o LOGOS foi quem iniciou o processo (handle disponível), usar `child.kill()` em Rust (mais
     limpo que taskkill). Emitir `logos-ollama-status { running: false }` após confirmação.
-- [ ] Implementar `logos_abort_model_inference()` para cancelar geração em andamento sem descarregar
+- [x] Implementar `logos_abort_model_inference()` para cancelar geração em andamento sem descarregar
   o modelo. Mecanismo: manter um `HashMap<String, tokio::task::AbortHandle>` no `LogosState` com
   handle por modelo ativo. Ao chamar abort, acionar `handle.abort()` — o futuro Rust é dropado, a
   conexão HTTP é fechada, e o Ollama para de gerar automaticamente quando detecta cliente

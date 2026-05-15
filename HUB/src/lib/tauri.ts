@@ -178,6 +178,9 @@ export const logosStartOllama = (): Promise<TauriResult<void>> =>
 export const logosStopOllama = (): Promise<TauriResult<void>> =>
   call<void>('logos_stop_ollama')
 
+export const logosAbortModelInference = (model: string): Promise<TauriResult<boolean>> =>
+  call<boolean>('logos_abort_model_inference', { model })
+
 // ----------------------------------------------------------
 //  Janela — modo compacto
 // ----------------------------------------------------------

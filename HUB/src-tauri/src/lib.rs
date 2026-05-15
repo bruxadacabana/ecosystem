@@ -83,6 +83,7 @@ pub fn run() {
             commands::logos::logos_start_ollama,
             commands::logos::logos_stop_ollama,
             commands::logos::logos_set_vram_limit_pct,
+            commands::logos::logos_abort_model_inference,
             commands::config::set_window_compact,
             commands::notify::send_notification,
         ])

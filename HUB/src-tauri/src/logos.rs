@@ -254,6 +254,9 @@ struct Inner {
     /// Percentual máximo de VRAM permitido antes de bloquear P3.
     /// Padrão: 85. Persistido em ecosystem.json como logos.vram_limit_pct.
     vram_limit_pct: Mutex<f32>,
+    /// Handles de abort para inferências em andamento, indexados por nome de modelo.
+    /// Permite cancelar uma geração sem descarregar o modelo da VRAM.
+    pub(crate) active_inferences: Mutex<HashMap<String, tokio::task::AbortHandle>>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -270,6 +273,17 @@ impl LogosState {
     /// Atualiza o limite de VRAM em memória (não persiste — persistência fica em logos_set_vram_limit_pct).
     pub(crate) async fn set_vram_limit_pct(&self, pct: f32) {
         *self.0.vram_limit_pct.lock().await = pct.clamp(50.0, 95.0);
+    }
+
+    /// Aborta a inferência em andamento para o modelo especificado.
+    /// O modelo permanece aquecido em VRAM. Retorna true se havia inferência ativa.
+    pub(crate) async fn abort_inference(&self, model: &str) -> bool {
+        if let Some(handle) = self.0.active_inferences.lock().await.remove(model) {
+            handle.abort();
+            true
+        } else {
+            false
+        }
     }
 
     /// Mata o processo Ollama guardado (se houver). Retorna true se havia child para matar.
@@ -323,6 +337,7 @@ impl LogosState {
             model_overrides: Mutex::new(HashMap::new()),
             ollama_child: Mutex::new(None),
             vram_limit_pct: Mutex::new(vram_limit_pct),
+            active_inferences: Mutex::new(HashMap::new()),
         }))
     }
 }
@@ -698,9 +713,26 @@ async fn queue_and_forward(
         }
     }
 
-    // Encaminha ao Ollama
+    // Encaminha ao Ollama como tarefa abortável.
+    // AbortHandle armazenado em active_inferences para cancelamento via logos_abort_model_inference.
     let url = format!("{}/{ollama_target}", s.0.ollama_url);
-    let result = s.0.client.post(&url).json(&ollama_payload).send().await;
+    let client_clone = s.0.client.clone();
+    let payload_clone = ollama_payload.clone();
+    let task = tokio::spawn(async move {
+        let resp = client_clone.post(&url).json(&payload_clone).send().await
+            .map_err(|e| format!("Ollama indisponível: {e}"))?;
+        let status = resp.status();
+        let bytes  = resp.bytes().await
+            .map_err(|e| format!("Erro ao ler resposta: {e}"))?;
+        Ok::<_, String>((status, bytes))
+    });
+    if !model_name.is_empty() {
+        s.0.active_inferences.lock().await.insert(model_name.clone(), task.abort_handle());
+    }
+    let task_result = task.await;
+    if !model_name.is_empty() {
+        s.0.active_inferences.lock().await.remove(&model_name);
+    }
 
     // Restaura prioridade de background do Ollama após P1
     if priority == 1 {
@@ -715,22 +747,20 @@ async fn queue_and_forward(
     *s.0.active_app.lock().await         = None;
     drop(_permit);
 
-    match result {
-        Ok(resp) => {
-            let status = resp.status();
-            match resp.bytes().await {
-                Ok(bytes) => axum::http::Response::builder()
-                    .status(status)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(axum::body::Body::from(bytes))
-                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
-            }
-        }
-        Err(e) => (
-            StatusCode::BAD_GATEWAY,
-            Json(serde_json::json!({ "error": format!("Ollama indisponível: {e}") })),
+    match task_result {
+        Err(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "Geração abortada" })),
         ).into_response(),
+        Ok(Err(e)) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({ "error": e })),
+        ).into_response(),
+        Ok(Ok((status, bytes))) => axum::http::Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(bytes))
+            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
     }
 }
 

@@ -192,6 +192,16 @@ pub async fn logos_pull_model(
     Ok(())
 }
 
+/// Cancela a geração em andamento para um modelo específico sem descarregá-lo da VRAM.
+/// Retorna true se havia uma inferência ativa para esse modelo.
+#[tauri::command]
+pub async fn logos_abort_model_inference(
+    state: tauri::State<'_, LogosState>,
+    model: String,
+) -> Result<bool, String> {
+    Ok(state.abort_inference(&model).await)
+}
+
 /// Define o percentual máximo de VRAM permitido antes de bloquear tarefas P3.
 /// Persiste em ecosystem.json como logos.vram_limit_pct. Faixa válida: 50–95.
 #[tauri::command]
