@@ -5612,7 +5612,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Registrar `.epub` na lista de extensões suportadas em `loaders.py` e no `IndexWorker`.
   Dependências: `ebooklib`, `beautifulsoup4` (já deve estar instalado).
 
-- [ ] **Studio — tipo "Infográfico" (estruturado)** — adicionar "Infográfico" ao
+- [x] **Studio — tipo "Infográfico" (estruturado)** — adicionar "Infográfico" ao
   `studio_type_combo`. O `StudioWorker` para tipo Infográfico manda prompt ao LLM pedindo
   extração estruturada dos dados principais em formato adequado para visualização: estatísticas
   chave, lista de entidades com atributos, relações causais, linha do tempo. O output é

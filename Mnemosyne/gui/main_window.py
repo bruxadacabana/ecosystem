@@ -1284,6 +1284,7 @@ class MainWindow(QMainWindow):
             "Slides",
             "Flashcards",
             "Guide",
+            "Infográfico",
         ])
         self.studio_type_combo.setToolTip(
             "Resumo: síntese geral da coleção indexada\n"
@@ -1298,7 +1299,8 @@ class MainWindow(QMainWindow):
             "Tabela de Dados: extração de entidades em tabela estruturada\n"
             "Slides: apresentação em Markdown (Marp/reveal.js)\n"
             "Flashcards: 12 pares pergunta/resposta para estudo ativo com progresso\n"
-            "Guide: resumo + perguntas sugeridas + pérolas escondidas (persistente)"
+            "Guide: resumo + perguntas sugeridas + pérolas escondidas (persistente)\n"
+            "Infográfico: extração estruturada — estatísticas, entidades, relações e timeline em HTML"
         )
         self.studio_generate_btn = QPushButton("Gerar")
         self.studio_generate_btn.setObjectName("sendBtn")
@@ -2655,6 +2657,10 @@ class MainWindow(QMainWindow):
             self._open_guide_output(output)
             return
 
+        if output.type == "Infográfico":
+            self._open_infographic_output(output)
+            return
+
         dlg = QDialog(self)
         dlg.setWindowTitle(output.title or output.type)
         dlg.resize(700, 500)
@@ -2777,6 +2783,63 @@ class MainWindow(QMainWindow):
         vl.addLayout(footer)
 
         dlg.exec()
+
+    def _open_infographic_output(self, output: StudioOutput) -> None:
+        """Exibe infográfico HTML em QWebEngineView (fallback: QTextBrowser)."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(output.title or "Infográfico")
+        dlg.resize(780, 560)
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        html = output.content
+
+        # Tenta QWebEngineView (PySide6-QtWebEngine); cai para QTextBrowser se ausente
+        web_ok = False
+        try:
+            from PySide6.QtWebEngineWidgets import QWebEngineView
+            view = QWebEngineView()
+            view.setHtml(html)
+            layout.addWidget(view, 1)
+            web_ok = True
+        except ImportError:
+            pass
+
+        if not web_ok:
+            tb = QTextBrowser()
+            tb.setHtml(html)
+            layout.addWidget(tb, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(12, 8, 12, 8)
+        btn_row.addStretch()
+        export_btn = QPushButton("Exportar .html")
+        export_btn.clicked.connect(lambda: self._export_output_html(output))
+        btn_row.addWidget(export_btn)
+        close_btn = QPushButton("Fechar")
+        close_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(close_btn)
+        btn_widget = QWidget()
+        btn_widget.setLayout(btn_row)
+        layout.addWidget(btn_widget)
+
+        dlg.exec()
+
+    def _export_output_html(self, output: StudioOutput) -> None:
+        """Salva conteúdo HTML do infográfico como arquivo .html."""
+        default_name = "infografico.html"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar HTML", default_name, "HTML (*.html)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(output.content)
+            self._log_event(f"Infográfico exportado: {path}")
+        except OSError as exc:
+            QMessageBox.warning(self, "Erro", f"Não foi possível exportar:\n{exc}")
 
     def _export_output_md(self, output: StudioOutput) -> None:
         doc_type = output.type.lower().replace(" ", "_")
