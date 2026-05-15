@@ -16,6 +16,8 @@ próximo:
 
 ### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
 
+### Pesquisa: Assistente de Pesquisa Inteligente — LLM-Augmented Search e Query Understanding | 2026-05-06
+
 ### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
 
 

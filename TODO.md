@@ -4422,7 +4422,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > o WorkPc TEM smollm2:1.7b e qwen2.5:0.5b funcionais a 2–5 tok/s. Os itens desta seção prevalecem.
 
 #### HUB — LOGOS: corrigir perfis de modelo por funcionalidade e hardware
-- [ ] Atualizar `HardwareProfile::model_profile()` em `HUB/src-tauri/src/logos.rs` com tabela corrigida
+- [x] Atualizar `HardwareProfile::model_profile()` em `HUB/src-tauri/src/logos.rs` com tabela corrigida
   por funcionalidade. O campo `model_type` deve distinguir entre `llm_rag` (Mnemosyne), `llm_analysis`
   (KOSMOS), `llm_query` (AKASHA — dispatcher leve) e `embed` (embedding):
   - **MainPc** (RX 6600 8 GB): llm_rag=`qwen2.5:7b` (128K ctx, 4,7 GB, IFEval 87,3, multilíngue);
