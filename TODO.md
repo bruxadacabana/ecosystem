@@ -4589,7 +4589,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   por design (pt + en + zh) e que essas três práticas são obrigatórias, não opcionais.
 
 #### HUB — LOGOS
-- [ ] **Registrar qwen2.5 como preferido para contexto em chinês nas atribuições de modelo** —
+- [x] **Registrar qwen2.5 como preferido para contexto em chinês nas atribuições de modelo** —
   em `logos.rs`, ao definir os perfis de modelo por funcionalidade e hardware (ver item
   "corrigir perfis" na seção anterior), adicionar campo `language_affinity: Option<Vec<String>>`
   à struct `ModelSlot` indicando para quais idiomas o modelo tem treinamento especializado.

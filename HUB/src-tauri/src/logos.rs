@@ -416,6 +416,9 @@ pub struct ModelSlot {
     pub label:      String,
     /// Label conciso derivado do model_type: "RAG/chat (Mnemosyne)", "Análise de artigos (KOSMOS)", etc.
     pub slot_label: String,
+    /// Idiomas com melhor desempenho documentado, ex: ["zh", "en"] para qwen2.5.
+    /// None = sem afinidade específica conhecida.
+    pub language_affinity: Option<Vec<String>>,
 }
 
 fn slot_label_for(model_type: &str) -> &'static str {
@@ -425,6 +428,20 @@ fn slot_label_for(model_type: &str) -> &'static str {
         "llm_query"    => "Busca inteligente (AKASHA)",
         "embed"        => "Embedding",
         _              => "—",
+    }
+}
+
+/// Retorna os idiomas com melhor desempenho documentado para o modelo, se conhecido.
+fn language_affinity_for(model_name: &str) -> Option<Vec<String>> {
+    let lower = model_name.to_lowercase();
+    if lower.contains("qwen") {
+        Some(vec!["zh".into(), "en".into()])
+    } else if lower.contains("gemma") || lower.contains("llama") || lower.contains("smollm") {
+        Some(vec!["en".into()])
+    } else if lower.contains("mistral") || lower.contains("phi") {
+        Some(vec!["en".into()])
+    } else {
+        None
     }
 }
 
@@ -1300,10 +1317,11 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
             let entry = map.entry(model_name.to_string()).or_insert_with(|| (vec![], vec![]));
             if !entry.0.iter().any(|sl: &ModelSlot| sl.app == *app && sl.model_type == *model_type) {
                 entry.0.push(ModelSlot {
-                    app:        app.to_string(),
-                    model_type: model_type.to_string(),
-                    label:      label.to_string(),
-                    slot_label: slot_label_for(model_type).to_string(),
+                    app:               app.to_string(),
+                    model_type:        model_type.to_string(),
+                    label:             label.to_string(),
+                    slot_label:        slot_label_for(model_type).to_string(),
+                    language_affinity: language_affinity_for(model_name),
                 });
             }
             let ps = profile.as_str().to_string();
@@ -1373,10 +1391,11 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
     result.push(RecommendedModel {
         model_name:          "potion-multilingual-128M".to_string(),
         slots:               vec![ModelSlot {
-            app:        "embed".to_string(),
-            model_type: "embed".to_string(),
-            label:      "Embedding (todos os apps)".to_string(),
-            slot_label: slot_label_for("embed").to_string(),
+            app:               "embed".to_string(),
+            model_type:        "embed".to_string(),
+            label:             "Embedding (todos os apps)".to_string(),
+            slot_label:        slot_label_for("embed").to_string(),
+            language_affinity: Some(vec!["pt".into(), "en".into(), "zh".into()]),
         }],
         for_profiles:        all_profiles.iter().map(|p| p.as_str().to_string()).collect(),
         for_current_profile: true,

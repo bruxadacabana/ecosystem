@@ -177,6 +177,8 @@ export interface ModelSlot {
   label:      string
   /** Label conciso do tipo funcional: "RAG/chat (Mnemosyne)", "Análise de artigos (KOSMOS)", etc. */
   slot_label: string
+  /** Idiomas com melhor desempenho documentado, ex: ["zh","en"] para qwen2.5. Null = sem afinidade conhecida. */
+  language_affinity: string[] | null
 }
 
 export interface RecommendedModel {

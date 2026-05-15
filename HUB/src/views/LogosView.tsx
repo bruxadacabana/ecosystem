@@ -707,6 +707,19 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
                         {sl.slot_label}
                       </span>
                     ))}
+                    {/* Afinidade linguística */}
+                    {(() => {
+                      const langs = [...new Set(m.slots.flatMap(sl => sl.language_affinity ?? []))]
+                      if (!langs.length) return null
+                      return (
+                        <span title="Idiomas com melhor desempenho documentado" style={{
+                          fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 6px',
+                          border: '1px solid var(--rule)', borderRadius: 10, color: 'var(--ink-ghost)',
+                        }}>
+                          {langs.join('·')}
+                        </span>
+                      )
+                    })()}
                     {/* Badge estático */}
                     {m.is_static && (
                       <span style={{
