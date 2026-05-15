@@ -4622,6 +4622,20 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### HUB — desinstalar modelos Ollama pelo LOGOS | 2026-05-15
+> Contexto: a LogosView já permite baixar, ativar e descarregar modelos da VRAM, mas não há como
+> remover um modelo do disco pelo HUB — a usuária precisa usar a CLI (`ollama rm`). Adicionar
+> botão "Remover" para modelos instalados mas não ativos.
+
+#### HUB
+- [x] Implementar `logos_delete_model(model: String)` em `commands/logos.rs`. Chama
+  `DELETE /api/delete` no Ollama com body `{"name": model}`. Retorna `Ok(())` em sucesso ou
+  `Err(String)` com mensagem de erro. Registrar em `lib.rs` e expor em `lib/tauri.ts`.
+- [x] Adicionar botão "Remover" na seção "Modelos Ollama" da `LogosView.tsx` para modelos com
+  status `available` (não ativos na VRAM). Modelos ativos devem ser descarregados primeiro —
+  mostrar mensagem "Descarregue o modelo antes de remover" se o usuário tentar. Confirmar a
+  ação com `window.confirm()` antes de chamar o comando. Atualizar a lista após remoção.
+
 ### Mnemosyne + AKASHA: tratamento diferenciado por tipo de fonte | 2026-05-06
 > Contexto: diferentes fontes têm densidade informacional, perspectiva e objetivo distintos —
 > notas pessoais são opinião da usuária, transcrições são linguagem falada informal, artigos

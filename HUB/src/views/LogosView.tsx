@@ -48,6 +48,7 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
   const vramLimitSynced = useRef(false)
   const [embedWarning,    setEmbedWarning]    = useState<EmbedCompatWarning | null>(null)
   const [cancelledPulls, setCancelledPulls] = useState<Set<string>>(new Set())
+  const [deleting,       setDeleting]       = useState<string | null>(null)
 
   const fetchStatus = useCallback(() => {
     cmd.logosGetStatus().then(r => {
@@ -185,6 +186,19 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
       setPulling(s => { const n = new Set(s); n.delete(model); return n })
       setPullProgress(prev => { const n = new Map(prev); n.delete(model); return n })
     }, 3_000)
+  }
+
+  async function handleDeleteModel(name: string) {
+    if (!window.confirm(`Remover "${name}" do Ollama? Esta ação apaga o modelo do disco.`)) return
+    setDeleting(name)
+    const r = await cmd.logosDeleteModel(name)
+    setDeleting(null)
+    if (r.ok) {
+      fetchModels()
+    } else {
+      const msg = r.error?.message ?? 'Erro desconhecido'
+      window.alert(`Não foi possível remover: ${msg}`)
+    }
   }
 
   async function handleUnload(name: string) {
@@ -861,7 +875,7 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
                         ? `${(m.size_disk_mb / 1000).toFixed(1)} GB`
                         : `${m.size_disk_mb} MB`}
                   </span>
-                  {isActive && (
+                  {isActive ? (
                     <button
                       disabled={unloading === m.name}
                       onClick={() => handleUnload(m.name)}
@@ -880,6 +894,26 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
                       }}
                     >
                       {unloading === m.name ? '…' : 'descarregar'}
+                    </button>
+                  ) : (
+                    <button
+                      disabled={deleting === m.name}
+                      onClick={() => handleDeleteModel(m.name)}
+                      title="Remover modelo do disco"
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 10,
+                        padding: '3px 10px',
+                        background: 'transparent',
+                        color: deleting === m.name ? 'var(--ink-ghost)' : 'var(--ribbon)',
+                        border: `1px solid ${deleting === m.name ? 'var(--rule)' : 'var(--ribbon)40'}`,
+                        borderRadius: 'var(--radius)',
+                        cursor: deleting === m.name ? 'wait' : 'pointer',
+                        opacity: deleting === m.name ? 0.5 : 1,
+                        transition: 'all 150ms ease',
+                      }}
+                    >
+                      {deleting === m.name ? '…' : 'remover'}
                     </button>
                   )}
                 </div>

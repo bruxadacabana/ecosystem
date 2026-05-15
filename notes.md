@@ -1,35 +1,35 @@
-# Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
+vamos prosseguir com a implementação:
+### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
 
-Total: 6 itens pendentes. Os mais críticos para funcionamento cotidiano são o 9 (stop) e o 4 (controle de VRAM). Os itens 10, 11 e 12 são mais de polimento/segurança.
+- [ ] Language instruction no system prompt — Mnemosyne (core/rag.py) — 1 linha, corrige language drift para todo corpus multilíngue, sem dependências novas.
 
-## P3 — Importante mas não bloqueia uso:
+- [ ] Language instruction no prompt de análise — KOSMOS — mesma correção, garante que o JSON de análise sempre saia em português mesmo com artigos em zh/en.
 
-- [x] Item 4 — Controle de % máximo de VRAM — o VRAM_P3_BLOCK = 0.85 já protege P3; o controle configurável via slider é uma melhoria de conforto.
+- [ ] Prefixo do título em cada chunk — Mnemosyne (core/indexer.py) — sem dep nova, melhora recall em queries de palavras-chave que aparecem no título mas não no corpo do chunk.
 
-- [ ] Item 12 — Detecção de mudança de embedding — proteção contra corrupção de índice ChromaDB; importante mas só dispara se a usuária mudar o modelo de embedding manualmente.
+- [ ] Chunking por caracteres Unicode — Mnemosyne (core/indexer.py) — substitui contagem de palavras por len(text), chunk_size ~1200 chars. Melhora todos os idiomas; exige reindex após a mudança.
 
-## P4 — Conforto/polish:
+- [ ] Chunking Unicode ao processar artigos — KOSMOS — mesma lógica, verificar separadores zh (。！？) no splitter.
 
-- [x] Item 9 — logos_stop_ollama() — útil, mas parar o Ollama manualmente é raro.
-- [ ] Item 10 — logos_abort_model_inference() — boa UX mas não bloqueia nada.
-- [ ] Item 11 — Aviso de cancelamento de pull — cosmético.
-- [ ] Item 7 — Painel de configuração na UI — depende dos itens 4/5/6 estarem implementados primeiro.
+- [ ] Metadado language por chunk — Mnemosyne (lingua-py) — adiciona metadata["language"] por chunk durante indexação. Nova dependência lingua-language-detector. Habilita o item seguinte.
 
-========================================
+- [ ] Diversidade de idioma antes do reranking — Mnemosyne (core/rag.py) — depende do metadado language acima. Promove chunks pt/zh quando top-k tem >70% em inglês.
 
-vamos prosseguir com a implementação de ### Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
+- [ ] language_affinity em ModelSlot — HUB/LOGOS — campo informacional em logos.rs indicando afinidade linguística dos modelos (qwen2.5 → zh/en, gemma2 → en). Exibe na LogosView.
+
+- [ ] Chunking Unicode e language no AKASHA desde a primeira implementação — placeholder a anotar quando o pipeline de indexação do AKASHA for construído.
+
+---
+
+## Regras
 
 
 1: implemente um item de cada vez (implemente, marque feito no TODO, commite, resuma no chat (não precisa aprofundar muito, mas sempre explique o que foi implementado e o porquê de forma didática) e peça permissão antes de implementar o próximo). Cada item = 1 TODO (- [ ]).
 2: sempre mantenha atualizado o GUIDE e o DESIGN BIBLE, inclusive listando TODAS as ferramentas e bibliotecas necessárias para o funcionamento do ecossistema. Sempre com o tom de tutor especialista em engenharia de software explicando para um programador iniciante, de forma didática e detalhada. Lembre-se que o GUIDE tem como objetivo guiar novos desenvolvedores que foram trabalhar no ecossistema.
 
-======
+---
 
-próximo:
-
-### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
-
-### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
+## próximo:
 
 ### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
 
@@ -43,7 +43,7 @@ depois:
 - leia tudo que ainda não está marcado como completo no TODO e sugira os próximos passos
 
 
-========================
+---
 
 
 Resumo dos achados principais:
@@ -60,7 +60,7 @@ Embeddings
 
 Descoberta crítica: nomic-embed-text v1.5 (instalado no Laptop) é inglês-only — para conteúdo em português, a qualidade de retrieval é degradada. O all-minilm (WorkPc) também é inglês-only. O bge-m3 (MainPc) é o único dos quatro com suporte real a 100+ idiomas e alta qualidade. O potion-multilingual-128M (já no Mnemosyne) é a solução correta para WorkPc e para Laptop quando velocidade é prioritária: 100–500× mais rápido que transformers em CPU, 101 idiomas, derivado do bge-m3 por destilação.   
 
-================
+---
 
 
 Os passos práticos, em ordem:

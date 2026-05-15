@@ -192,6 +192,30 @@ pub async fn logos_pull_model(
     Ok(())
 }
 
+/// Remove um modelo do disco via DELETE /api/delete do Ollama.
+/// O modelo não deve estar ativo na VRAM — descarregue antes de remover.
+#[tauri::command]
+pub async fn logos_delete_model(
+    state: tauri::State<'_, LogosState>,
+    model: String,
+) -> Result<(), String> {
+    let ollama_url = crate::logos::collect_status(&state).await.ollama_url;
+    let client = reqwest::Client::new();
+    let resp = client
+        .delete(format!("{ollama_url}/api/delete"))
+        .json(&serde_json::json!({ "name": model }))
+        .send()
+        .await
+        .map_err(|e| format!("Ollama indisponível: {e}"))?;
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        let code = resp.status().as_u16();
+        let body = resp.text().await.unwrap_or_default();
+        Err(format!("Erro {code}: {body}"))
+    }
+}
+
 /// Cancela a geração em andamento para um modelo específico sem descarregá-lo da VRAM.
 /// Retorna true se havia uma inferência ativa para esse modelo.
 #[tauri::command]
