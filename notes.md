@@ -29,8 +29,6 @@
 - [ ] Item 7 — Painel de configuração na UI — depende dos itens 4/5/6 estarem implementados primeiro.
 
 
-Minha recomendação de sequência mínima para "mínimo funcionando": 6 → 5 → 14 → 13. Os itens 8/9/10/11 e o painel de UI (7) podem ficar para depois. O que acha?
-
 Dos itens restantes da sessão de pesquisa, os próximos pela ordem de prioridade são:
 
 Item 4 — limite de VRAM em % no LOGOS (evict automático)
