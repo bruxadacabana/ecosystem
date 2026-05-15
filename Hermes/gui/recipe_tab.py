@@ -106,6 +106,7 @@ class RecipeTab(QWidget):
         self._preview = QTextEdit()
         self._preview.setReadOnly(True)
         self._preview.setPlaceholderText("O Markdown da receita aparecerá aqui após a extração…")
+        self._preview.setMinimumHeight(60)
         self._preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self._preview)
 

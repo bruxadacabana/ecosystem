@@ -1,3 +1,7 @@
+
+
+---
+
 # Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
 
 

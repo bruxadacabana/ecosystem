@@ -739,7 +739,6 @@ class HermesApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Hermes")
-        self.resize(920, 820)
 
         self._prefs           = load_prefs()
         self._formats: list          = []
@@ -759,6 +758,13 @@ class HermesApp(QMainWindow):
         self._build_ui()
         self._load_prefs()
         self._load_history()
+
+        # Clamp à tela disponível — nunca abrir maior do que o monitor permite
+        screen = QApplication.primaryScreen().availableGeometry()
+        self.resize(
+            min(920, screen.width()  - 40),
+            min(820, screen.height() - 60),
+        )
 
         self._api_port   = self._prefs.get("api_port", 7072)
         self._api_bridge = ApiSignalBridge(self)
@@ -800,14 +806,14 @@ class HermesApp(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(32, 24, 32, 20)
+        root.setContentsMargins(24, 12, 24, 12)
         root.setSpacing(0)
 
         # Cabeçalho
         root.addLayout(self._build_header())
-        root.addSpacing(16)
+        root.addSpacing(10)
         root.addWidget(self._rule())
-        root.addSpacing(14)
+        root.addSpacing(8)
 
         # URL (compartilhada)
         root.addWidget(self._section_label("ENDEREÇO DO VÍDEO OU PLAYLIST"))
@@ -827,7 +833,7 @@ class HermesApp(QMainWindow):
         self.paste_btn.clicked.connect(self._paste_url)
         url_row.addWidget(self.paste_btn)
         root.addLayout(url_row)
-        root.addSpacing(14)
+        root.addSpacing(8)
 
         # Tabs
         self.tabs = QTabWidget()
@@ -837,11 +843,11 @@ class HermesApp(QMainWindow):
         self._recipe_tab.log_message.connect(self._log)
         self.tabs.addTab(self._recipe_tab, "RECEITAS")
         root.addWidget(self.tabs)
-        root.addSpacing(12)
+        root.addSpacing(6)
 
         # Output dir
         root.addWidget(self._rule())
-        root.addSpacing(10)
+        root.addSpacing(6)
         out_row = QHBoxLayout()
         out_row.addWidget(self._section_label("PASTA DE SAÍDA"))
         out_row.addSpacing(8)
@@ -858,7 +864,7 @@ class HermesApp(QMainWindow):
         out_row.addWidget(browse_btn)
         self.outdir_edit.textChanged.connect(self._load_history)
         root.addLayout(out_row)
-        root.addSpacing(6)
+        root.addSpacing(4)
 
         # Pasta de receitas
         rec_row = QHBoxLayout()
@@ -874,17 +880,17 @@ class HermesApp(QMainWindow):
         rec_row.addWidget(rec_browse_btn)
         self.recipes_dir_edit.textChanged.connect(self._on_recipes_dir_changed)
         root.addLayout(rec_row)
-        root.addSpacing(12)
+        root.addSpacing(6)
 
         # Log
         root.addWidget(self._section_label("REGISTRO"))
         root.addSpacing(4)
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
-        self.log_box.setMinimumHeight(120)
-        self.log_box.setMaximumHeight(180)
+        self.log_box.setMinimumHeight(60)
+        self.log_box.setMaximumHeight(140)
         root.addWidget(self.log_box)
-        root.addSpacing(10)
+        root.addSpacing(6)
 
         # Rodapé
         footer = QHBoxLayout()
@@ -1081,13 +1087,15 @@ class HermesApp(QMainWindow):
         self.md_preview = QTextEdit()
         self.md_preview.setReadOnly(True)
         self.md_preview.setPlaceholderText("A transcrição gerada aparecerá aqui…")
+        self.md_preview.setMinimumHeight(60)
         layout.addWidget(self.md_preview)
 
         # Histórico de transcrições
-        layout.addSpacing(6)
+        layout.addSpacing(4)
         layout.addWidget(self._section_label("HISTÓRICO DE TRANSCRIÇÕES"))
         self.history_list = QListWidget()
-        self.history_list.setMaximumHeight(110)
+        self.history_list.setMinimumHeight(0)
+        self.history_list.setMaximumHeight(100)
         self.history_list.setToolTip("Clique num item para carregar na prévia")
         self.history_list.itemClicked.connect(self._on_history_select)
         layout.addWidget(self.history_list)
