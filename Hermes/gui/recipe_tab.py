@@ -29,7 +29,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..services.recipe_extractor import RecipeResult, to_markdown
+from services.recipe_extractor import RecipeResult, to_markdown
 
 
 class RecipeTab(QWidget):
@@ -247,7 +247,7 @@ class RecipeTab(QWidget):
             if not save_dir:
                 return
         if self._last_result:
-            from ..services.recipe_extractor import to_markdown as _save_md  # noqa: PLC0415
+            from services.recipe_extractor import to_markdown as _save_md  # noqa: PLC0415
             _save_md(self._last_result, recipes_dir=save_dir)
             self._result_lbl.setText(f"Salvo em: {save_dir}")
             self.log_message.emit(f"Receita salva em {save_dir}", "ok")

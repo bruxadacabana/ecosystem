@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from ..services.recipe_extractor import (
+from services.recipe_extractor import (
     RecipePlaylistExtractor,
     RecipeResult,
     extract_recipe,
