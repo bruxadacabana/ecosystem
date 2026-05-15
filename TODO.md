@@ -4056,20 +4056,9 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Exibir na UI um badge "Sessão ativa: N queries" com botão para limpar. A sessão é o contexto
   para reescrita de query e para síntese final.
 
-- [ ] **Pipeline Map-Reduce para síntese de resultados** (`services/synthesis.py`).
-  Para queries `exploratory`: (1) Map — chamar Ollama para sumarizar cada um dos top-5
-  documentos recuperados em 2–3 frases, com ID de fonte; (2) Reduce — chamar Ollama para
-  sintetizar os 5 sumários em resposta coerente com marcadores de citação `[1]...[5]`.
-  Exibir na UI como bloco colapsável "Síntese assistida" acima dos cards normais.
-  Latência total com Qwen2.5-7B Q4_K_M na RX 6600: ~4–8 segundos. Streaming obrigatório.
-  Ativar via checkbox "Síntese" na interface — não obrigatório para todas as buscas.
+- [-] ~~**Pipeline Map-Reduce para síntese de resultados**~~ *(descartado — o AKASHA não sintetiza nem interpreta resultados; o LLM atua apenas na camada de query, não na de apresentação; veja pesquisa "LLMs como Amplificadores de Pesquisa" 2026-05-15)*
 
-- [ ] **Citações inline com verificação básica** (`services/synthesis.py`). Após gerar síntese
-  Map-Reduce, verificar cada citação `[N]`: extrair a afirmação adjacente ao marcador,
-  checar overlap de unigrams com o documento-fonte citado (threshold: ≥ 2 termos comuns).
-  Se overlap zero: marcar citação como `[N?]` na UI com tooltip "Citação não verificada".
-  Mecanismo leve, sem modelo NLI — evita os 57% de post-rationalized citations documentados
-  na literatura (WHYAITECH, 2025). Custo: string matching puro, < 5ms.
+- [-] ~~**Citações inline com verificação básica**~~ *(descartado — depende do Map-Reduce, que foi removido)*
 
 - [x] **`keep_alive=-1` no cliente Ollama durante sessão ativa** (`services/synthesis.py`
   ou `services/query_understanding.py`). Ao iniciar uma sessão de pesquisa (primeira query
@@ -4086,6 +4075,28 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   dos documentos adicionais encontrados. Sem chamada LLM — puramente textual, latência
   < 100ms. Implementação: função `suggest_related(snippets, fts_conn, n=5)` em
   `services/local_search.py`.
+
+### Pesquisa: LLMs como Amplificadores de Pesquisa — Augmentação sem Substituição do Raciocínio | 2026-05-15
+> Contexto: pesquisa sobre como LLMs podem auxiliar a pesquisa sem pensar pelo usuário —
+> paradigma de amplificação (melhorar o que se encontra) vs. paradigma de answer engine
+> (sintetizar o que foi encontrado). Cobre information foraging, query expansion com
+> ancoragem a corpus, transparência de expansão na UI, e intent classification híbrido.
+
+#### AKASHA
+- [ ] **Ancoragem da expansão de query ao vocabulário do corpus** (`services/local_search.py`,
+  função de expansão FTS5 — implementar junto com o item MUST+SHOULD). Ao gerar termos
+  de expansão via LLM, filtrar o output para manter apenas termos que já aparecem no
+  índice FTS5 (`SELECT term FROM fts_vocab WHERE term IN (...)`). Evita *query drift*:
+  o LLM pode gerar entidades plausíveis mas inexistentes no arquivo pessoal (documentado
+  em arXiv:2505.12694). A query original permanece âncora obrigatória; expansão só
+  adiciona recall, nunca substitui.
+
+- [ ] **Exibir query expandida na UI antes de executar** (`templates/search.html`,
+  `routers/search.py`). Quando o LLM expandir a query (MUST+SHOULD ou reescrita
+  conversacional), mostrar os termos adicionados num badge abaixo do campo de busca:
+  "Expandido com: *machine learning, aprendizado de máquina, ML*". Manter botão para
+  desfazer a expansão e executar a query original. Princípio de Human-in-the-loop:
+  o usuário vê e controla o que o sistema fez antes de ver os resultados.
 
 ### Pesquisa: Integração KOSMOS-AKASHA — Padrões RSS Reader + Web Archiver | 2026-05-04
 > Contexto: Pesquisa sobre padrões de integração entre leitores RSS e arquivadores web
