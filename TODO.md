@@ -4447,7 +4447,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   do LOGOS ao lado dos modelos do WorkPc para que a usuária entenda o comportamento esperado.
 
 #### HUB — LOGOS: controle configurável de VRAM e CPU por percentual
-- [ ] Implementar controle de percentual máximo de VRAM. O Ollama não tem variável de limite por
+- [x] Implementar controle de percentual máximo de VRAM. O Ollama não tem variável de limite por
   percentagem — a implementação deve ser no LOGOS: (a) `HardwareProfile` já tem `vram_total_mb`;
   (b) calcular `vram_limit_bytes = vram_total_mb * 1024 * 1024 * vram_limit_pct / 100`; (c) antes
   de ativar novo modelo, consultar `GET /api/ps` (retorna modelos carregados com VRAM em bytes por
@@ -4477,7 +4477,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   subprocesso direto. Após spawn, fazer polling em `GET /` a cada 500ms por até 30s; emitir evento
   `logos-ollama-status { running: bool }` quando pronto ou em timeout. Guardar handle do processo
   para uso posterior no stop.
-- [ ] Implementar `logos_stop_ollama()` com comportamento correto por SO e por contexto de execução:
+- [x] Implementar `logos_stop_ollama()` com comportamento correto por SO e por contexto de execução:
   - **Windows sem app.exe:** executar `taskkill /IM ollama.exe /F` via `Command`.
   - **Windows com app.exe rodando** (detectável via `tasklist | grep "ollama app.exe"`): retornar
     erro ao frontend com mensagem "O app do Ollama está na bandeja do sistema e irá reiniciar o

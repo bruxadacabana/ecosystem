@@ -251,6 +251,9 @@ struct Inner {
     /// Handle do processo Ollama se foi o LOGOS que o iniciou via logos_start_ollama.
     /// None se o Ollama estava em execução antes do HUB ou foi iniciado via systemctl.
     pub(crate) ollama_child: Mutex<Option<std::process::Child>>,
+    /// Percentual máximo de VRAM permitido antes de bloquear P3.
+    /// Padrão: 85. Persistido em ecosystem.json como logos.vram_limit_pct.
+    vram_limit_pct: Mutex<f32>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -264,11 +267,34 @@ impl LogosState {
         *self.0.ollama_child.lock().await = Some(child);
     }
 
+    /// Atualiza o limite de VRAM em memória (não persiste — persistência fica em logos_set_vram_limit_pct).
+    pub(crate) async fn set_vram_limit_pct(&self, pct: f32) {
+        *self.0.vram_limit_pct.lock().await = pct.clamp(50.0, 95.0);
+    }
+
+    /// Mata o processo Ollama guardado (se houver). Retorna true se havia child para matar.
+    pub(crate) async fn kill_ollama_child(&self) -> bool {
+        let mut guard = self.0.ollama_child.lock().await;
+        if let Some(child) = guard.as_mut() {
+            let _ = child.kill();
+            *guard = None;
+            return true;
+        }
+        false
+    }
+
     pub fn new(ollama_url: impl Into<String>) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(300))
             .build()
             .unwrap_or_default();
+        let vram_limit_pct = {
+            let eco = crate::ecosystem::read_json();
+            eco["logos"]["vram_limit_pct"]
+                .as_f64()
+                .map(|v| (v as f32).clamp(50.0, 95.0))
+                .unwrap_or(85.0)
+        };
         let hardware_mode = if cfg!(target_os = "windows") {
             "sobrevivencia".to_string()
         } else {
@@ -296,6 +322,7 @@ impl LogosState {
             ollama_pid: Mutex::new(None),
             model_overrides: Mutex::new(HashMap::new()),
             ollama_child: Mutex::new(None),
+            vram_limit_pct: Mutex::new(vram_limit_pct),
         }))
     }
 }
@@ -334,6 +361,8 @@ pub struct StatusResponse {
     pub on_battery: bool,
     /// Requests P3 preemptados por P1 desde o startup
     pub preempted_count: u32,
+    /// Limite de VRAM configurado (0–100). P3 bloqueado acima deste percentual.
+    pub vram_limit_pct: f32,
 }
 
 #[derive(Serialize, Clone)]
@@ -578,12 +607,14 @@ async fn queue_and_forward(
             ).into_response();
         }
         // Normal: rejeita P3 se VRAM saturada
+        let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
         if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url).await {
-            if pct > VRAM_P3_BLOCK {
+            if pct > vram_block {
+                let pct_cfg = (vram_block * 100.0) as u32;
                 return (
                     StatusCode::TOO_MANY_REQUESTS,
                     Json(serde_json::json!({
-                        "error": "VRAM > 85% — tarefa P3 adiada; tente novamente mais tarde"
+                        "error": format!("VRAM > {pct_cfg}% — tarefa P3 adiada; tente novamente mais tarde")
                     })),
                 ).into_response();
             }
@@ -763,10 +794,12 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
         }))).into_response();
     }
 
+    let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
     if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url).await {
-        if pct > VRAM_P3_BLOCK {
+        if pct > vram_block {
+            let pct_cfg = (vram_block * 100.0) as u32;
             return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
-                "error": "VRAM > 85% — embedding adiado"
+                "error": format!("VRAM > {pct_cfg}% — embedding adiado")
             }))).into_response();
         }
     }
@@ -934,8 +967,9 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let queue = *s.0.queue_counts.lock().await;
     let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, &s.0.ollama_url).await;
     let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
-    let on_battery     = *s.0.on_battery.lock().await;
+    let on_battery      = *s.0.on_battery.lock().await;
     let preempted_count = *s.0.preempted_count.lock().await;
+    let vram_limit_pct  = *s.0.vram_limit_pct.lock().await;
     StatusResponse {
         active_priority,
         active_model_class,
@@ -953,6 +987,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         ram_total_mb,
         on_battery,
         preempted_count,
+        vram_limit_pct,
     }
 }
 

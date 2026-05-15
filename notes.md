@@ -1,45 +1,19 @@
-
-
----
-
 # Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
 
-
-## P1 — Sem isso o LOGOS não funciona corretamente hoje:
-
-- [x] Item 6 — num_thread por tipo de tarefa (WorkPc) — já existe código de inject_efficiency_params mas os valores precisam de ajuste. Baixo risco, alto impacto no WorkPc que é o hardware mais fraco. Já tem infraestrutura pronta.
-
-- [x] Item 5 — Injetar env vars do Ollama no startup — OLLAMA_FLASH_ATTENTION, OLLAMA_MAX_LOADED_MODELS, OLLAMA_GPU_OVERHEAD. Já existe configure_ollama_env() em logos.rs que escreve o arquivo — falta só o subprocesso usar essas vars ao dar spawn. Sem isso o Ollama ignora os limites de memória.
-
-## P2 — Funciona hoje, mas vai travar em uso real:
-
-- [x] Item 14 — JSON schema enforcement no KOSMOS — sem isso o WorkPc (smollm2/qwen2.5:0.5b) vai gerar JSON inválido e o KOSMOS vai quebrar em produção. Afeta diretamente a usabilidade do app.
-
-- [x] Item 8 — logos_start_ollama() — hoje o botão "Iniciar Ollama" na UI chama algo, mas sem as env vars do perfil injetadas no spawn o item 5 fica incompleto. Dependência do item 5.
+Total: 6 itens pendentes. Os mais críticos para funcionamento cotidiano são o 9 (stop) e o 4 (controle de VRAM). Os itens 10, 11 e 12 são mais de polimento/segurança.
 
 ## P3 — Importante mas não bloqueia uso:
 
-- [ ] Item 4 — Controle de % máximo de VRAM — o VRAM_P3_BLOCK = 0.85 já protege P3; o controle configurável via slider é uma melhoria de conforto.
-
-- [x] Item 13 — indexing_enabled flag — necessário para o WorkPc não tentar reindexar com dims incompatíveis (256 vs 1024), mas só bloqueia quando a usuária ativar indexação no WorkPc.
+- [x] Item 4 — Controle de % máximo de VRAM — o VRAM_P3_BLOCK = 0.85 já protege P3; o controle configurável via slider é uma melhoria de conforto.
 
 - [ ] Item 12 — Detecção de mudança de embedding — proteção contra corrupção de índice ChromaDB; importante mas só dispara se a usuária mudar o modelo de embedding manualmente.
 
 ## P4 — Conforto/polish:
 
-- [ ] Item 9 — logos_stop_ollama() — útil, mas parar o Ollama manualmente é raro.
+- [x] Item 9 — logos_stop_ollama() — útil, mas parar o Ollama manualmente é raro.
 - [ ] Item 10 — logos_abort_model_inference() — boa UX mas não bloqueia nada.
 - [ ] Item 11 — Aviso de cancelamento de pull — cosmético.
 - [ ] Item 7 — Painel de configuração na UI — depende dos itens 4/5/6 estarem implementados primeiro.
-
-
-Dos itens restantes da sessão de pesquisa, os próximos pela ordem de prioridade são:
-
-Item 4 — limite de VRAM em % no LOGOS (evict automático)
-Item 8/9 — logos_start_ollama() / logos_stop_ollama() como comandos Tauri
-Item 10/11 — cancelamento de inferência em andamento
-Item 7 — painel de configuração no LogosView (slider VRAM, threads, FlashAttention)
-Item 12 — detecção de troca de modelo de embedding
 
 ========================================
 

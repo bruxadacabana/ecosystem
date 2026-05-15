@@ -153,6 +153,19 @@ pub async fn logos_pull_model(
     Ok(())
 }
 
+/// Define o percentual máximo de VRAM permitido antes de bloquear tarefas P3.
+/// Persiste em ecosystem.json como logos.vram_limit_pct. Faixa válida: 50–95.
+#[tauri::command]
+pub async fn logos_set_vram_limit_pct(
+    state: tauri::State<'_, LogosState>,
+    pct: f32,
+) -> Result<(), String> {
+    let clamped = pct.clamp(50.0, 95.0);
+    state.set_vram_limit_pct(clamped).await;
+    crate::ecosystem::write_section("logos", serde_json::json!({ "vram_limit_pct": clamped }))
+        .map_err(|e| format!("Erro ao salvar vram_limit_pct: {e}"))
+}
+
 /// Inicia o servidor Ollama com variáveis de ambiente corretas para o hardware.
 ///
 /// Comportamento:
@@ -246,4 +259,100 @@ async fn poll_ollama_ready(app: tauri::AppHandle, url: &str) -> Result<(), Strin
         message: "Timeout aguardando Ollama (30 s).".into(),
     });
     Err("Timeout aguardando Ollama (30 s).".into())
+}
+
+/// Para o servidor Ollama.
+///
+/// Prioridade de parada:
+/// 1. Se o LOGOS iniciou o processo (handle disponível): `child.kill()` — mais limpo.
+/// 2. Windows: verifica se "Ollama app.exe" está na bandeja do sistema via tasklist.
+///    Se sim, retorna erro explicativo (o app reinstanciaria o servidor imediatamente).
+///    Se não, executa `taskkill /F /IM ollama.exe /T`.
+/// 3. Linux: tenta `systemctl stop ollama.service`; fallback para `pkill -f "ollama serve"`.
+///
+/// Emite `logos-ollama-status { running: false }` após confirmar que o Ollama parou (até 5 s).
+#[tauri::command]
+pub async fn logos_stop_ollama(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LogosState>,
+) -> Result<(), String> {
+    let ollama_url = crate::logos::collect_status(&state).await.ollama_url;
+
+    // Prioridade 1: matar o child que o LOGOS iniciou
+    if state.kill_ollama_child().await {
+        wait_ollama_down(&app, &ollama_url).await;
+        return Ok(());
+    }
+
+    // Prioridade 2/3: SO-específico
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        // Detectar se "Ollama app.exe" (bandeja do sistema) está rodando
+        let tasklist = std::process::Command::new("tasklist")
+            .args(["/FI", "IMAGENAME eq ollama app.exe", "/NH", "/FO", "CSV"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase())
+            .unwrap_or_default();
+        if tasklist.contains("ollama app.exe") {
+            return Err(
+                "O app do Ollama está na bandeja do sistema e reiniciaria o servidor automaticamente. \
+                 Feche-o antes de parar.".to_string()
+            );
+        }
+
+        std::process::Command::new("taskkill")
+            .args(["/F", "/IM", "ollama.exe", "/T"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("taskkill falhou: {e}"))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let systemctl_ok = tokio::process::Command::new("systemctl")
+            .args(["stop", "ollama.service"])
+            .output()
+            .await
+            .map(|out| out.status.success())
+            .unwrap_or(false);
+        if !systemctl_ok {
+            tokio::process::Command::new("pkill")
+                .args(["-f", "ollama serve"])
+                .spawn()
+                .map_err(|e| format!("pkill falhou: {e}"))?;
+        }
+    }
+
+    wait_ollama_down(&app, &ollama_url).await;
+    Ok(())
+}
+
+/// Polling até 5 s: aguarda o Ollama parar de responder antes de emitir o evento final.
+async fn wait_ollama_down(app: &tauri::AppHandle, ollama_url: &str) {
+    let check_url = if ollama_url.contains("7072") {
+        // LOGOS proxy — checar diretamente o Ollama na 11434
+        "http://localhost:11434/api/tags".to_string()
+    } else {
+        format!("{ollama_url}/api/tags")
+    };
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let still_up = reqwest::Client::new()
+            .get(&check_url)
+            .timeout(Duration::from_millis(400))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+        if !still_up {
+            break;
+        }
+    }
+    let _ = app.emit("logos-ollama-status", OllamaStatus {
+        running: false,
+        message: "Ollama encerrado.".into(),
+    });
 }

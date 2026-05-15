@@ -81,6 +81,8 @@ pub fn run() {
             commands::logos::logos_get_recommended_models,
             commands::logos::logos_pull_model,
             commands::logos::logos_start_ollama,
+            commands::logos::logos_stop_ollama,
+            commands::logos::logos_set_vram_limit_pct,
             commands::config::set_window_compact,
             commands::notify::send_notification,
         ])
