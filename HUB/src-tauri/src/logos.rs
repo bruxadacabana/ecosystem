@@ -1461,12 +1461,14 @@ fn is_on_battery() -> bool {
 
 /// Injeta parâmetros de eficiência no objeto `options` do body conforme prioridade e hardware.
 ///
-/// P1 normal: sem injeção (máxima performance, app decide).
-/// P1 bateria: num_thread=2 (reduzir consumo energético do CPU).
+/// P1 normal:   sem injeção (máxima performance, app decide).
+/// P1 bateria:  num_thread=2 (reduzir consumo energético do CPU).
 /// P1 survival: num_thread=3 (i5-3470: 4 cores, deixa 1 livre para o SO).
-/// P2: num_batch=256 (preservar RAM); em bateria: num_thread=2 adicional.
-/// P3: num_thread=2, num_batch=256, num_ctx=2048 (impacto mínimo no sistema).
-/// P3 laptop (MX150 2 GB): num_gpu=0 adicional (background roda só na CPU, preserva VRAM).
+/// P2 normal:   num_batch=256 (preservar RAM); em bateria: num_thread=2 adicional.
+/// P2 survival: num_thread=4 (usa todos os 4 cores — usuária esperando resposta).
+/// P3 normal:   num_thread=2, num_batch=256, num_ctx=2048 (impacto mínimo no sistema).
+/// P3 survival: num_thread=3 (background usa 3 cores; 1 livre para o SO e apps ativos).
+/// P3 laptop:   num_gpu=0 adicional (background roda só na CPU, preserva VRAM da MX150).
 fn inject_efficiency_params(
     body: &mut serde_json::Map<String, serde_json::Value>,
     priority: u8,
@@ -1492,12 +1494,17 @@ fn inject_efficiency_params(
     match priority {
         2 => {
             o.entry("num_batch").or_insert(serde_json::json!(256));
-            if on_battery {
+            if is_survival {
+                // WorkPc: resposta interativa — usa todos os 4 cores do i5-3470
+                o.entry("num_thread").or_insert(serde_json::json!(4));
+            } else if on_battery {
                 o.entry("num_thread").or_insert(serde_json::json!(2));
             }
         }
         _ => {
-            o.entry("num_thread").or_insert(serde_json::json!(2));
+            // P3 survival: 3 cores (deixa 1 para o SO); demais: 2 (impacto mínimo)
+            let threads = if is_survival { 3 } else { 2 };
+            o.entry("num_thread").or_insert(serde_json::json!(threads));
             o.entry("num_batch").or_insert(serde_json::json!(256));
             o.entry("num_ctx").or_insert(serde_json::json!(2048));
             if hw == HardwareProfile::Laptop {

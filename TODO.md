@@ -4460,7 +4460,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   sem custo de qualidade, compatível com ROCm e CUDA); `OLLAMA_MAX_LOADED_MODELS` por perfil
   (MainPc: 3, Laptop: 2, WorkPc: 1); `OLLAMA_KEEP_ALIVE=5m` como padrão global (sobrescrito por
   keep_alive por requisição quando necessário). Usar `std::process::Command::envs(...)` em Rust.
-- [ ] Implementar controle de `num_thread` de CPU por tipo de tarefa para o WorkPc. O parâmetro
+- [x] Implementar controle de `num_thread` de CPU por tipo de tarefa para o WorkPc. O parâmetro
   `num_thread` é passado por requisição individual (não é variável de ambiente). Tarefas P3/batch
   (KOSMOS análise em background): `num_thread=3` (deixa 1 core livre para o SO). Tarefas P2/
   interativas (Mnemosyne RAG): `num_thread=4` (maximiza velocidade de resposta). Adaptar a função
