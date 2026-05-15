@@ -66,9 +66,30 @@ async def _monitor_crawler() -> None:
 # Lifespan
 # ---------------------------------------------------------------------------
 
+async def _ensure_db_healthy() -> None:
+    """Verifica integridade do banco antes de usar. Apaga e recria se corrompido."""
+    import aiosqlite
+    from config import DB_PATH
+    if not DB_PATH.exists():
+        return
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            row = await (await db.execute("PRAGMA integrity_check")).fetchone()
+            if row and row[0] != "ok":
+                raise Exception(f"integrity_check: {row[0]}")
+    except Exception as exc:
+        _log.warning("Banco de dados corrompido — apagando e recriando: %s", exc)
+        DB_PATH.unlink(missing_ok=True)
+        for suffix in ("-wal", "-shm"):
+            sib = DB_PATH.parent / (DB_PATH.name + suffix)
+            if sib.exists():
+                sib.unlink()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    await _ensure_db_healthy()
     await database.init_db()
     config.register_akasha()
     await index_local_files()

@@ -15,4 +15,3 @@ echo [AKASHA] Abrindo http://localhost:7071 no navegador...
 start "" "http://localhost:7071"
 
 uv run python main.py
-pause
