@@ -63,7 +63,7 @@ async fn ollama_responding() -> bool {
 /// já com prioridade BELOW_NORMAL. As env vars são injetadas no `cmd` pai — o `start`
 /// herda o ambiente do `cmd`, que é herdado pelo processo `ollama` filho.
 /// Linux + AMD (/dev/kfd): injeta HSA_OVERRIDE_GFX_VERSION automaticamente.
-fn build_ollama_serve_command() -> Command {
+pub(crate) fn build_ollama_serve_command() -> Command {
     let profile = detect_hardware_profile();
     let env_vars = ollama_env_for_profile(profile);
 

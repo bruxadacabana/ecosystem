@@ -11,7 +11,7 @@
 
 - [x] Item 14 — JSON schema enforcement no KOSMOS — sem isso o WorkPc (smollm2/qwen2.5:0.5b) vai gerar JSON inválido e o KOSMOS vai quebrar em produção. Afeta diretamente a usabilidade do app.
 
-- [ ] Item 8 — logos_start_ollama() — hoje o botão "Iniciar Ollama" na UI chama algo, mas sem as env vars do perfil injetadas no spawn o item 5 fica incompleto. Dependência do item 5.
+- [x] Item 8 — logos_start_ollama() — hoje o botão "Iniciar Ollama" na UI chama algo, mas sem as env vars do perfil injetadas no spawn o item 5 fica incompleto. Dependência do item 5.
 
 ## P3 — Importante mas não bloqueia uso:
 
@@ -30,6 +30,14 @@
 
 
 Minha recomendação de sequência mínima para "mínimo funcionando": 6 → 5 → 14 → 13. Os itens 8/9/10/11 e o painel de UI (7) podem ficar para depois. O que acha?
+
+Dos itens restantes da sessão de pesquisa, os próximos pela ordem de prioridade são:
+
+Item 4 — limite de VRAM em % no LOGOS (evict automático)
+Item 8/9 — logos_start_ollama() / logos_stop_ollama() como comandos Tauri
+Item 10/11 — cancelamento de inferência em andamento
+Item 7 — painel de configuração no LogosView (slider VRAM, threads, FlashAttention)
+Item 12 — detecção de troca de modelo de embedding
 
 ========================================
 

@@ -4470,7 +4470,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   "FlashAttention" (padrão: ligado). Persistir via `save_ecosystem_config()` já existente no HUB.
 
 #### HUB — LOGOS: gerenciamento do ciclo de vida do Ollama (iniciar / parar / abortar)
-- [ ] Implementar `logos_start_ollama()` Tauri command em `commands/logos.rs`. Lógica: detectar
+- [x] Implementar `logos_start_ollama()` Tauri command em `commands/logos.rs`. Lógica: detectar
   se Ollama já está rodando via `GET http://localhost:11434/`; se não, iniciar subprocesso:
   Windows — `Command::new("ollama").arg("serve")` com variáveis de ambiente do perfil (ver item
   acima); Linux — tentar `systemctl start ollama.service` primeiro; se falhar, fallback para

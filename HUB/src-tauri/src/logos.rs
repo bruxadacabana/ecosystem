@@ -248,6 +248,9 @@ struct Inner {
     /// Chave: "mnemosyne_llm_rag", "kosmos_llm_analysis", "akasha_llm_query", "embed_embed". Valor: nome do modelo.
     /// Vazio = usar recomendado do perfil de hardware.
     model_overrides: Mutex<HashMap<String, String>>,
+    /// Handle do processo Ollama se foi o LOGOS que o iniciou via logos_start_ollama.
+    /// None se o Ollama estava em execução antes do HUB ou foi iniciado via systemctl.
+    pub(crate) ollama_child: Mutex<Option<std::process::Child>>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -256,6 +259,11 @@ struct Inner {
 pub struct LogosState(Arc<Inner>);
 
 impl LogosState {
+    /// Guarda o handle do subprocesso Ollama iniciado pelo LOGOS.
+    pub(crate) async fn store_ollama_child(&self, child: std::process::Child) {
+        *self.0.ollama_child.lock().await = Some(child);
+    }
+
     pub fn new(ollama_url: impl Into<String>) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(300))
@@ -287,6 +295,7 @@ impl LogosState {
             preempted_count: Mutex::new(0),
             ollama_pid: Mutex::new(None),
             model_overrides: Mutex::new(HashMap::new()),
+            ollama_child: Mutex::new(None),
         }))
     }
 }
@@ -407,6 +416,13 @@ pub struct PullProgress {
     pub total:     Option<u64>,
     pub done:      bool,
     pub error:     Option<String>,
+}
+
+/// Evento emitido pelo ciclo de vida do Ollama (logos-ollama-status).
+#[derive(Serialize, Clone)]
+pub struct OllamaStatus {
+    pub running: bool,
+    pub message: String,
 }
 
 // ── Router ────────────────────────────────────────────────────

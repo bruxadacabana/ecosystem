@@ -80,6 +80,7 @@ pub fn run() {
             commands::logos::logos_set_model_assignment,
             commands::logos::logos_get_recommended_models,
             commands::logos::logos_pull_model,
+            commands::logos::logos_start_ollama,
             commands::config::set_window_compact,
             commands::notify::send_notification,
         ])
