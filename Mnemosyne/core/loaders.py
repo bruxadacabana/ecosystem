@@ -199,6 +199,7 @@ def _load_file(
                     docs = TextLoader(file_path, encoding="utf-8").load()
         elif ext == ".epub":
             docs = _load_epub(file_path)
+            source_type = "book"
         elif ext in (".mobi", ".azw", ".azw3"):
             docs = _load_mobi(file_path)
         elif ext in _IMAGE_EXTENSIONS:
@@ -622,10 +623,12 @@ def _load_epub(file_path: str) -> list[Document]:
             continue
 
         chapter_num += 1
-        chapter_title = ""
+        chapter_name = ""
         heading = soup.find(["h1", "h2", "h3"])
         if heading:
-            chapter_title = heading.get_text(strip=True)
+            chapter_name = heading.get_text(strip=True)
+        if not chapter_name:
+            chapter_name = f"Capítulo {chapter_num}"
 
         documents.append(
             Document(
@@ -634,8 +637,8 @@ def _load_epub(file_path: str) -> list[Document]:
                     "source": file_path,
                     "title": title,
                     "author": author,
-                    "chapter": chapter_num,
-                    "chapter_title": chapter_title,
+                    "chapter": chapter_name,
+                    "chapter_num": chapter_num,
                 },
             )
         )

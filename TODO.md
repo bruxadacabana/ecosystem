@@ -5605,7 +5605,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   aquela mensagem (scroll to anchor). Não é necessário "restaurar" sessões antigas — o
   histórico inteiro já está no scroll do chat.
 
-- [ ] **`core/loaders.py` — suporte a EPUB** — adicionar `EpubLoader` usando a biblioteca
+- [x] **`core/loaders.py` — suporte a EPUB** — adicionar `EpubLoader` usando a biblioteca
   `ebooklib`. Extrai capítulos como documentos separados (um `Document` por capítulo) com
   metadados de frontmatter: `title` (livro), `chapter` (nome do capítulo), `author`,
   `source_type: "book"`. HTML de cada capítulo é limpo via BeautifulSoup antes de chunking.
