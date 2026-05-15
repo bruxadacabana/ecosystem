@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 
 from api_server import ApiSignalBridge, HermesApiServer
+from gui.recipe_tab import RecipeTab
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -779,6 +780,9 @@ class HermesApp(QMainWindow):
             outdir = self._prefs.get("outdir", "")
             if outdir:
                 data["output_dir"] = outdir
+            recipes_dir = self._prefs.get("recipes_dir", "")
+            if recipes_dir:
+                data["recipes_dir"] = recipes_dir
             write_section("hermes", data)
         except Exception:
             pass
@@ -829,6 +833,9 @@ class HermesApp(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_download_tab(), "BAIXAR")
         self.tabs.addTab(self._build_transcribe_tab(), "TRANSCREVER")
+        self._recipe_tab = RecipeTab()
+        self._recipe_tab.log_message.connect(self._log)
+        self.tabs.addTab(self._recipe_tab, "RECEITAS")
         root.addWidget(self.tabs)
         root.addSpacing(12)
 
@@ -851,6 +858,22 @@ class HermesApp(QMainWindow):
         out_row.addWidget(browse_btn)
         self.outdir_edit.textChanged.connect(self._load_history)
         root.addLayout(out_row)
+        root.addSpacing(6)
+
+        # Pasta de receitas
+        rec_row = QHBoxLayout()
+        rec_row.addWidget(self._section_label("PASTA DE RECEITAS"))
+        rec_row.addSpacing(8)
+        self.recipes_dir_edit = QLineEdit()
+        self.recipes_dir_edit.setPlaceholderText(
+            "Pasta onde as receitas extraídas serão salvas…")
+        rec_row.addWidget(self.recipes_dir_edit)
+        rec_browse_btn = QPushButton("…")
+        rec_browse_btn.setFixedWidth(36)
+        rec_browse_btn.clicked.connect(self._pick_recipes_dir)
+        rec_row.addWidget(rec_browse_btn)
+        self.recipes_dir_edit.textChanged.connect(self._on_recipes_dir_changed)
+        root.addLayout(rec_row)
         root.addSpacing(12)
 
         # Log
@@ -1126,15 +1149,27 @@ class HermesApp(QMainWindow):
                 pass
         if self._prefs.get("mnemo_check") and self.mnemo_dir_edit.text().strip():
             self.mnemo_check.setChecked(True)
+        # Pasta de receitas: preferência salva > padrão em ~/ hermes_recipes
+        if "recipes_dir" in self._prefs:
+            self.recipes_dir_edit.setText(self._prefs["recipes_dir"])
+        else:
+            try:
+                eco_recipes = read_ecosystem().get("hermes", {}).get("recipes_dir", "")
+                if eco_recipes:
+                    self.recipes_dir_edit.setText(eco_recipes)
+            except Exception:
+                pass
+        self._sync_recipe_tab()
 
     def _save_prefs(self):
         save_prefs({
-            "outdir":      self.outdir_edit.text(),
-            "model":       self.model_combo.currentText(),
-            "lang_idx":    self.lang_combo.currentIndex(),
-            "cpu_limit":   self.cpu_combo.currentText(),
-            "mnemo_dir":   self.mnemo_dir_edit.text(),
-            "mnemo_check": self.mnemo_check.isChecked(),
+            "outdir":       self.outdir_edit.text(),
+            "model":        self.model_combo.currentText(),
+            "lang_idx":     self.lang_combo.currentIndex(),
+            "cpu_limit":    self.cpu_combo.currentText(),
+            "mnemo_dir":    self.mnemo_dir_edit.text(),
+            "mnemo_check":  self.mnemo_check.isChecked(),
+            "recipes_dir":  self.recipes_dir_edit.text(),
         })
 
     def closeEvent(self, event):
@@ -1150,8 +1185,12 @@ class HermesApp(QMainWindow):
             self.url_edit.setText(text)
 
     def _on_url_enter(self):
-        if self.tabs.currentIndex() == 0:
+        idx = self.tabs.currentIndex()
+        if idx == 0:
             self._inspect()
+        elif idx == 2:
+            self._recipe_tab.paste_url(self.url_edit.text().strip())
+            self._recipe_tab._on_extract()
         else:
             self._start_transcribe()
 
@@ -1176,6 +1215,24 @@ class HermesApp(QMainWindow):
         d = QFileDialog.getExistingDirectory(self, "Pasta monitorada pelo Mnemosyne", current)
         if d:
             self.mnemo_dir_edit.setText(d)
+
+    def _pick_recipes_dir(self):
+        current = self.recipes_dir_edit.text() or str(Path.home() / "hermes_recipes")
+        d = QFileDialog.getExistingDirectory(self, "Pasta de receitas", current)
+        if d:
+            self.recipes_dir_edit.setText(d)
+
+    def _on_recipes_dir_changed(self, value: str) -> None:
+        self._sync_recipe_tab()
+
+    def _sync_recipe_tab(self) -> None:
+        """Repassa recipes_dir e config atual para a RecipeTab."""
+        self._recipe_tab.set_config(
+            recipes_dir=self.recipes_dir_edit.text(),
+            model_size=self.model_combo.currentText(),
+            language=LANG_CODES[self.lang_combo.currentIndex()],
+            ollama_model="qwen2.5:7b",
+        )
 
     def _on_mnemo_dir_changed(self, text: str):
         enabled = bool(text.strip())
