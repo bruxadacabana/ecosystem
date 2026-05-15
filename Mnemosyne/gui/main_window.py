@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.config import AppConfig, DEFAULT_PERSONA_PROMPT, load_config, save_config
+from core.config import AppConfig, DEFAULT_PERSONA_PROMPT, get_app_data_dir, load_config, save_config
 from core.errors import ConfigError, VectorstoreNotFoundError
 from core.studio_output import StudioOutput
 from core.studio_store import StudioStore
@@ -57,8 +57,10 @@ from core.memory import (
     SessionMemory,
     Turn,
 )
+from core.notebook_store import NotebookStore
 from core.ollama_client import OllamaModel, filter_chat_models, filter_embed_models
 from core.tracker import FileTracker
+from gui.notebooks_panel import NotebooksPanel
 from gui.topics_view import TopicsView
 from gui.workers import (
     AskWorker,
@@ -599,6 +601,10 @@ class MainWindow(QMainWindow):
         self._collections_to_index: list = []  # fila para "Indexar tudo" em cadeia
         self._studio_worker: StudioWorker | None = None
         self._studio_store: StudioStore | None = None
+        self._notebook_store: NotebookStore | None = None
+        self._active_notebook_id: str | None = None
+        self._notebook_memory: MemoryStore | None = None
+        self._notebooks_panel: NotebooksPanel | None = None
 
         self._current_sources: list = []
 
@@ -748,6 +754,17 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(lambda checked, i=idx: self._switch_page(i))
             sb.addWidget(btn)
         self._nav_chat_btn.setChecked(True)
+
+        # Notebooks panel
+        sb.addSpacing(8)
+        self._add_sidebar_rule(sb)
+        sb.addSpacing(4)
+        self._notebook_store = NotebookStore(get_app_data_dir())
+        self._notebooks_panel = NotebooksPanel(self._notebook_store, parent=sidebar)
+        self._notebooks_panel.notebook_selected.connect(self._on_notebook_selected)
+        self._notebooks_panel.notebook_created.connect(self._on_notebook_created)
+        self._notebooks_panel.notebook_deleted.connect(self._on_notebook_deleted)
+        sb.addWidget(self._notebooks_panel)
 
         # Sessions panel
         sb.addSpacing(8)
@@ -2493,6 +2510,96 @@ class MainWindow(QMainWindow):
         else:
             self._studio_store = None
 
+    # ── Gestão de notebooks ───────────────────────────────────────────────────
+
+    def _save_current_notebook(self) -> None:
+        """Persiste estado do notebook ativo (history + memory) antes de trocar."""
+        if self._active_notebook_id is None or self._notebook_store is None:
+            return
+        if self._notebook_memory is None:
+            return
+        # history.jsonl é append-only; já foi escrito incrementalmente em ask_question/_on_answer.
+        # memory.json: não há lógica de compactação automática aqui — o closeEvent cuida disso.
+        # Atualiza updated_at do notebook para refletir última interação.
+        try:
+            nb = self._notebook_store.load(self._active_notebook_id)
+            self._notebook_store.save(nb)
+            if self._notebooks_panel:
+                self._notebooks_panel.refresh()
+        except Exception:
+            pass
+
+    def _load_notebook(self, notebook_id: str) -> None:
+        """Carrega notebook: histórico, memória e tiles do Studio.
+
+        Salva o estado do notebook anterior antes de trocar.
+        """
+        if self._notebook_store is None:
+            return
+
+        # Salva estado atual antes de trocar
+        self._save_current_notebook()
+
+        self._active_notebook_id = notebook_id
+        nb_dir = self._notebook_store._nb_dir(notebook_id)
+
+        # Memória do notebook — lê/escreve history.jsonl e memory.json do notebook
+        self._notebook_memory = MemoryStore(str(nb_dir))
+
+        # Histórico da conversa
+        turns = self._notebook_memory.load_history()
+        self._chat_history = turns
+
+        # Atualiza session_memory em memória (para busca de similar no turno atual)
+        self._session_memory.clear()
+        i = 0
+        while i < len(turns) - 1:
+            if turns[i].role == "user" and turns[i + 1].role == "assistant":
+                self._session_memory.save_query(
+                    turns[i].content, turns[i + 1].content, turns[i + 1].sources
+                )
+                i += 2
+            else:
+                i += 1
+
+        # Limpa área de chat e mostra última resposta
+        self.answer_text.clear()
+        self.sources_text.clear()
+        self.similar_label.setVisible(False)
+        self.question_edit.clear()
+        for turn in reversed(turns):
+            if turn.role == "assistant":
+                self.answer_text.document().setMarkdown(turn.content)
+                break
+
+        # Recarrega tiles do Studio do notebook
+        self._studio_store = StudioStore(str(nb_dir))
+        self._load_studio_tiles()
+
+        try:
+            nb = self._notebook_store.load(notebook_id)
+            self._log_event(f'Notebook carregado: "{nb.name}"')
+        except Exception:
+            pass
+
+    def _on_notebook_selected(self, notebook_id: str) -> None:
+        self._load_notebook(notebook_id)
+
+    def _on_notebook_created(self, notebook_id: str) -> None:
+        self._load_notebook(notebook_id)
+
+    def _on_notebook_deleted(self, notebook_id: str) -> None:
+        if self._active_notebook_id == notebook_id:
+            self._active_notebook_id = None
+            self._notebook_memory = None
+            self._chat_history = []
+            self.answer_text.clear()
+            self.sources_text.clear()
+            self.question_edit.clear()
+            # Restaura StudioStore da coleção ativa
+            self._init_studio_store()
+            self._load_studio_tiles()
+
     def _load_studio_tiles(self) -> None:
         """Carrega outputs persistentes e popula a área de tiles."""
         layout = self._studio_tiles_layout
@@ -2791,6 +2898,8 @@ class MainWindow(QMainWindow):
             self._session_manager.append_turn(
                 self._current_session.id, Turn(role="user", content=question)
             )
+        if self._notebook_memory is not None:
+            self._notebook_memory.append_turn(Turn(role="user", content=question))
 
         # Procura pergunta similar primeiro na sessão atual (in-memory), depois
         # no histórico persistente de sessões anteriores.
@@ -2938,6 +3047,20 @@ class MainWindow(QMainWindow):
                     self._current_session.id,
                     Turn(role="assistant", content=text, sources=[s["path"] for s in sources]),
                 )
+            if self._notebook_memory is not None:
+                self._notebook_memory.append_turn(
+                    Turn(role="assistant", content=text, sources=[s["path"] for s in sources])
+                )
+                # Atualiza updated_at do notebook no índice
+                if self._active_notebook_id and self._notebook_store:
+                    try:
+                        nb = self._notebook_store.load(self._active_notebook_id)
+                        self._notebook_store.save(nb)
+                        if self._notebooks_panel:
+                            self._notebooks_panel.refresh()
+                            self._notebooks_panel.set_active(self._active_notebook_id)
+                    except Exception:
+                        pass
             _q = self.question_edit.text().strip()
             self._session_memory.save_query(_q, text, [s["path"] for s in sources])
             if self._query_store:
@@ -3451,6 +3574,9 @@ class MainWindow(QMainWindow):
         idle: object = getattr(self, "_idle_indexer", None)
         if idle is not None:
             idle.stop()  # type: ignore[union-attr]
+
+        # Persiste estado final do notebook ativo
+        self._save_current_notebook()
 
         if not self._chat_history or self._memory_store is None:
             event.accept()

@@ -5591,7 +5591,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   o notebook selecionado (muda histórico do chat, memória, tiles do Studio). Ícone de lixeira
   por item (com confirmação). O notebook ativo fica destacado com cor de seleção.
 
-- [ ] **`gui/main_window.py` — carregar/salvar histórico do chat por notebook** — ao trocar de
+- [x] **`gui/main_window.py` — carregar/salvar histórico do chat por notebook** — ao trocar de
   notebook: (1) salvar `history.jsonl` e `memory.json` do notebook atual antes de trocar;
   (2) carregar `history.jsonl` do novo notebook e renderizar as mensagens no `QScrollArea`
   do chat; (3) carregar `memory.json` e repassar ao contexto de memória do RAG; (4) recarregar
