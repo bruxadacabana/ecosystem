@@ -5697,7 +5697,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### AKASHA
 
-- [ ] **`services/user_data.py` — camada de persistência JSON para dados configurados** —
+- [x] **`services/user_data.py` — camada de persistência JSON para dados configurados** —
   criar módulo com classe `UserData` responsável por ler e escrever os 5 arquivos JSON de
   dados do usuário em `{data_dir}/`:
   `sites.json` (lista de sites da Biblioteca — campos de `crawl_sites`: `base_url`, `label`,
@@ -5711,7 +5711,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   depois `os.replace()` para evitar corrupção parcial. `save_*` é chamado sempre que o
   usuário adiciona, edita ou remove um item — antes de qualquer operação no banco.
 
-- [ ] **`database.py` — `populate_from_user_data()` no startup** — nova função assíncrona
+- [x] **`database.py` — `populate_from_user_data()` no startup** — nova função assíncrona
   chamada em `init_db()` após criar as tabelas. Carrega cada JSON via `UserData.load_*()` e
   faz `INSERT OR IGNORE` (por `base_url`/`domain`/`name` como chave de unicidade) em
   `crawl_sites`, `blocked_domains`, `favorite_domains`, `lenses` e `watch_later`.
@@ -5728,7 +5728,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Padrão: banco é atualizado primeiro; se sucesso, JSON é atualizado; se JSON falhar,
   logar warning mas não reverter a operação do banco (o banco é a fonte de verdade em runtime).
 
-- [ ] **Migração única: exportar DB existente para JSON na primeira abertura** — em
+- [x] **Migração única: exportar DB existente para JSON na primeira abertura** — em
   `populate_from_user_data()`, verificar se cada arquivo JSON já existe; se **não** existir
   e a tabela correspondente tiver dados no banco, exportar para JSON (sensu inverso). Isso
   garante que usuários com banco funcional não percam dados na transição — os JSONs são

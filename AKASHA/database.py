@@ -4,6 +4,8 @@ Schema, migrations e função de inicialização.
 """
 from __future__ import annotations
 
+import json
+
 import aiosqlite
 
 from config import DB_PATH
@@ -12,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -365,6 +367,7 @@ async def init_db() -> None:
         if current < SCHEMA_VERSION:
             await _migrate(db, current)
 
+        await populate_from_user_data(db)
         await db.commit()
 
 
@@ -638,10 +641,123 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
     if from_version < 26:
         await db.execute(_CREATE_TAG_PAIRS)
 
+    if from_version < 27:
+        from services.user_data import (
+            SITES_FILE,
+            save_sites, save_blocked_domains,
+            save_favorites, save_lenses, save_watch_later,
+        )
+        # Migração única: exporta DB existente → JSON na primeira abertura.
+        # Condição: sites.json não existe (proxy para "JSONs ainda não criados").
+        if not SITES_FILE.exists():
+            rows = await (await db.execute(
+                "SELECT base_url, label, crawl_depth, subdomains_json, created_at "
+                "FROM crawl_sites"
+            )).fetchall()
+            save_sites([{
+                "base_url": r[0], "label": r[1], "crawl_depth": r[2],
+                "subdomains": json.loads(r[3] or "[]"), "created_at": r[4],
+            } for r in rows])
+
+            rows = await (await db.execute(
+                "SELECT domain, added_at FROM blocked_domains"
+            )).fetchall()
+            save_blocked_domains([{"domain": r[0], "added_at": r[1]} for r in rows])
+
+            rows = await (await db.execute(
+                "SELECT domain, label, priority_score, added_at FROM favorite_domains"
+            )).fetchall()
+            save_favorites([{
+                "domain": r[0], "label": r[1], "priority_score": r[2], "added_at": r[3],
+            } for r in rows])
+
+            rows = await (await db.execute(
+                "SELECT name, domains, tags, content_types, date_from, date_to, created_at "
+                "FROM lenses"
+            )).fetchall()
+            save_lenses([{
+                "name": r[0], "domains": r[1], "tags": r[2],
+                "content_types": r[3], "date_from": r[4], "date_to": r[5], "created_at": r[6],
+            } for r in rows])
+
+            rows = await (await db.execute(
+                "SELECT url, title, snippet, notes, added_at FROM watch_later"
+            )).fetchall()
+            save_watch_later([{
+                "url": r[0], "title": r[1], "snippet": r[2],
+                "notes": r[3], "added_at": r[4],
+            } for r in rows])
+
+        # Índice UNIQUE em lenses.name — necessário para INSERT OR IGNORE funcionar.
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_lenses_name ON lenses(name)"
+        )
+
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
         (str(SCHEMA_VERSION),),
     )
+
+# ---------------------------------------------------------------------------
+# População a partir dos JSONs de dados do usuário
+# ---------------------------------------------------------------------------
+
+async def populate_from_user_data(db: aiosqlite.Connection) -> None:
+    """Sincroniza DB com os JSONs de dados do usuário (fonte de verdade).
+
+    Chamado a cada startup, após migrations. INSERT OR IGNORE em todas as
+    entidades garante idempotência — nunca cria duplicatas se os dados já
+    estiverem no banco.
+    """
+    from services.user_data import (
+        load_sites, load_blocked_domains, load_favorites,
+        load_lenses, load_watch_later,
+    )
+
+    for site in load_sites():
+        await db.execute(
+            "INSERT OR IGNORE INTO crawl_sites "
+            "(base_url, label, crawl_depth, subdomains_json) VALUES (?, ?, ?, ?)",
+            (
+                site["base_url"], site.get("label", ""), site.get("crawl_depth", 2),
+                json.dumps(site.get("subdomains", [])),
+            ),
+        )
+
+    for item in load_blocked_domains():
+        await db.execute(
+            "INSERT OR IGNORE INTO blocked_domains (domain) VALUES (?)",
+            (item["domain"],),
+        )
+
+    for item in load_favorites():
+        await db.execute(
+            "INSERT OR IGNORE INTO favorite_domains (domain, label, priority_score) "
+            "VALUES (?, ?, ?)",
+            (item["domain"], item.get("label", ""), item.get("priority_score", 10)),
+        )
+
+    for lens in load_lenses():
+        await db.execute(
+            "INSERT OR IGNORE INTO lenses "
+            "(name, domains, tags, content_types, date_from, date_to) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                lens["name"], lens.get("domains", ""), lens.get("tags", ""),
+                lens.get("content_types", ""), lens.get("date_from", ""), lens.get("date_to", ""),
+            ),
+        )
+
+    for item in load_watch_later():
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO watch_later (url, title, snippet, notes) VALUES (?, ?, ?, ?)",
+            (item["url"], item.get("title", ""), item.get("snippet", ""), item.get("notes", "")),
+        )
+        if cursor.lastrowid:
+            await db.execute(
+                "INSERT INTO watch_later_fts (id, url, title, notes) VALUES (?, ?, ?, ?)",
+                (cursor.lastrowid, item["url"], item.get("title", ""), item.get("notes", "")),
+            )
+
 
 # ---------------------------------------------------------------------------
 # Helpers de acesso (usados pelos routers)
