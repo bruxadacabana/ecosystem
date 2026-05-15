@@ -4391,7 +4391,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   "Ativar" existente. Verificar lista de instalados via `logos_list_local_models` (já em `logos.rs`).
 
 #### Mnemosyne — embedding no Laptop: nomic-embed-text é inglês-only
-- [ ] Substituir `nomic-embed-text` por `bge-m3` (via Ollama) no Laptop. `nomic-embed-text v1.5` é
+- [x] Substituir `nomic-embed-text` por `bge-m3` (via Ollama) no Laptop. `nomic-embed-text v1.5` é
   treinado exclusivamente em inglês e degrada indexação de conteúdo português — confirmado por benchmarks
   MTEB (arXiv:2402.03216). `bge-m3` (BAAI) suporta 100+ línguas, 1024 dims, 570M params, ~1.3 GB VRAM,
   roda na MX150. **Atenção crítica:** trocar embedding exige reindex completo do ChromaDB (dimensão muda

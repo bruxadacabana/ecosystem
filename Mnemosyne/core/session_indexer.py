@@ -27,7 +27,7 @@ class SessionIndexer:
     Criar uma instância por sessão; chamar clear() após receber a resposta.
 
     Exemplo:
-        indexer = SessionIndexer(embed_model="nomic-embed-text")
+        indexer = SessionIndexer(embed_model="bge-m3")
         indexer.add_pages(pages)
         docs = indexer.search("minha pergunta", k=5)
         indexer.clear()

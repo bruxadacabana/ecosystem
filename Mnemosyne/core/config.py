@@ -110,7 +110,7 @@ DEFAULT_PERSONA_PROMPT: str = (
 
 _DEFAULTS: dict = {
     "llm_model": "qwen2.5:7b",    # RAG: qualidade adequada para síntese de documentos longos
-    "embed_model": "",
+    "embed_model": "bge-m3",      # multilíngue SOTA (100+ línguas, 1024 dims); WorkPc usa potion via model2vec
     "chunk_size": 1800,
     "chunk_overlap": 250,
     "retriever_k": 4,

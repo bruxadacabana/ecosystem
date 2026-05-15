@@ -204,7 +204,7 @@ QMainWindow {
   Inicie o servidor com `ollama serve` em um terminal separado. O app detecta automaticamente quando voltar a ficar disponível ao reiniciar.
 
 - **Nenhum modelo aparece no diálogo de configuração**  
-  Verifique se há modelos instalados com `ollama list`. Instale com `ollama pull qwen3.5:9b` e `ollama pull nomic-embed-text` (ou qualquer outro de sua preferência).
+  Verifique se há modelos instalados com `ollama list`. Instale com `ollama pull qwen3:8b-q4_K_M` e `ollama pull bge-m3` (ou qualquer outro de sua preferência).
 
 - **A interface fica congelada**  
   As operações demoradas rodam em threads separadas. Se mesmo assim travar, pode ser um problema de recursos. Tente reduzir o `chunk_size` ou o número de documentos.
