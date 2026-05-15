@@ -1057,6 +1057,13 @@ class MainWindow(QMainWindow):
         self._save_note_btn.setToolTip("Promove esta resposta para o painel de Notas (lado direito)")
         self._save_note_btn.clicked.connect(self._on_save_note)
         answer_header.addWidget(self._save_note_btn)
+
+        self._save_studio_btn = QPushButton("⊕ Studio")
+        self._save_studio_btn.setObjectName("saveStudioBtn")
+        self._save_studio_btn.setEnabled(False)
+        self._save_studio_btn.setToolTip("Salvar esta resposta como tile do Studio")
+        self._save_studio_btn.clicked.connect(self._on_save_to_studio)
+        answer_header.addWidget(self._save_studio_btn)
         layout.addLayout(answer_header)
 
         self.answer_text = QTextBrowser()
@@ -3038,6 +3045,7 @@ class MainWindow(QMainWindow):
     def _on_answer(self, success: bool, text: str, sources: list, updated_history: list) -> None:
         self.cancel_btn.setVisible(False)
         self._save_note_btn.setEnabled(success and bool(text))
+        self._save_studio_btn.setEnabled(success and bool(text))
         if success:
             self.answer_text.document().setMarkdown(text)
             self._chat_history = updated_history
@@ -3134,6 +3142,7 @@ class MainWindow(QMainWindow):
         """Slot para DeepResearchWorker.finished — sem updated_history."""
         self.cancel_btn.setVisible(False)
         self._save_note_btn.setEnabled(success and bool(text))
+        self._save_studio_btn.setEnabled(success and bool(text))
         if success:
             self.answer_text.document().setMarkdown(text)
             _q = self.question_edit.text().strip()
@@ -3197,6 +3206,68 @@ class MainWindow(QMainWindow):
             for s in self._current_sources
         ]
         self.app_state.note_promoted.emit(text, citations)
+
+    def _on_save_to_studio(self) -> None:
+        """Salva a resposta atual como tile do Studio via diálogo de confirmação."""
+        text = self._raw_answer.strip()
+        if not text:
+            return
+
+        store = self._studio_store
+        if store is None:
+            QMessageBox.warning(
+                self,
+                "Studio indisponível",
+                "Configure e indexe uma coleção antes de salvar no Studio.",
+            )
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Salvar no Studio")
+        dlg.setMinimumWidth(360)
+        form_layout = QVBoxLayout(dlg)
+        form_layout.setSpacing(10)
+
+        type_combo = QComboBox()
+        type_combo.addItems(["Análise", "Citação", "Anotação"])
+        form_layout.addWidget(QLabel("Tipo:"))
+        form_layout.addWidget(type_combo)
+
+        title_edit = QLineEdit()
+        title_edit.setPlaceholderText("Título do tile (opcional)")
+        default_title = text[:60].replace("\n", " ")
+        if len(text) > 60:
+            default_title += "…"
+        title_edit.setText(default_title)
+        form_layout.addWidget(QLabel("Título:"))
+        form_layout.addWidget(title_edit)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        form_layout.addWidget(btns)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        coll_name = self.config.active_collection or ""
+        output = StudioOutput(
+            type=type_combo.currentText(),
+            content=text,
+            collection_name=coll_name,
+            title=title_edit.text().strip(),
+            notebook_id=self._active_notebook_id,
+        )
+        try:
+            store.save(output)
+        except OSError as exc:
+            QMessageBox.warning(self, "Erro", f"Não foi possível salvar:\n{exc}")
+            return
+
+        self._load_studio_tiles()
+        self._log_event(f'Resposta salva no Studio como "{output.title or output.type}".')
 
     def _on_note_promoted(self, text: str, citations: list) -> None:
         """Recebe a nota promovida e a adiciona ao painel de Notas como rascunho."""
@@ -3386,6 +3457,7 @@ class MainWindow(QMainWindow):
         self.similar_label.setVisible(False)
         self.question_edit.clear()
         self._save_note_btn.setEnabled(False)
+        self._save_studio_btn.setEnabled(False)
         self._refresh_sessions_list()
         self._log_event("Nova sessão iniciada.")
 

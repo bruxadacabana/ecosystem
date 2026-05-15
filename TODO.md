@@ -5552,7 +5552,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Isso permite que respostas do RAG possam citar "Conforme anotado na análise anterior…"
   ao recuperar um output do Studio — a Mnemosyne fica "ciente" de seus próprios pensamentos.
 
-- [ ] **`gui/main_window.py` — botão "Salvar no Studio" nas respostas do chat** — cada bloco
+- [x] **`gui/main_window.py` — botão "Salvar no Studio" nas respostas do chat** — cada bloco
   de resposta da Mnemosyne no `QScrollArea` do chat recebe um botão compacto "⊕ Studio" no
   canto inferior direito. Ao clicar, abre diálogo com combo de tipo (Análise, Citação,
   Anotação) e campo de título editável. Confirmar cria `StudioOutput` com o texto da resposta
