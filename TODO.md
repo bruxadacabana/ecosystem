@@ -5719,7 +5719,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   mesmo após deletar o banco, todos os dados configurados pelo usuário ressurgem na próxima
   abertura.
 
-- [ ] **`routers/crawler.py` e `routers/library.py` — escrever JSON em toda mutação** —
+- [x] **`routers/crawler.py` e `routers/library.py` — escrever JSON em toda mutação** —
   em cada endpoint que adiciona, edita ou remove sites (`POST /library/sites`,
   `DELETE /library/sites/{id}`, `PATCH /library/sites/{id}`), chamar
   `await UserData.save_sites(await get_all_sites_as_dicts())` após a operação no banco.
@@ -5736,7 +5736,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### KOSMOS
 
-- [ ] **`app/core/feed_store.py` — persistência JSON para feeds e categorias** — criar módulo
+- [x] **`app/core/feed_store.py` — persistência JSON para feeds e categorias** — criar módulo
   `FeedStore` com dois arquivos JSON em `{data_dir}/`:
   `feeds.json` (array de objetos com campos: `url`, `title`, `category_name`, `update_interval`,
   `enabled`, `added_at`),
