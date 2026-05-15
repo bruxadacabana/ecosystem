@@ -5478,7 +5478,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `KnowledgeGraph.get_neighbors(entity)` retorna documentos e entidades relacionadas (para
   o mapa mental). Disparar `KnowledgeGraph.update(new_chunks)` no `_on_index_finished`.
 
-- [ ] **`core/config.py` — campo `persona_prompt: str` com persona Mnemosyne** — adicionar
+- [x] **`core/config.py` — campo `persona_prompt: str` com persona Mnemosyne** — adicionar
   campo ao `AppConfig` com default sendo o prompt completo da assistente Mnemosyne (ver texto
   na pesquisa em `pesquisas.md` — sessão "Extração de Temas..." de 2026-05-14, seção 5.2).
   O nome da assistente é **Mnemosyne** (não "Mnemê"). Persistir em `local_config.json`. Em
@@ -5487,7 +5487,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   persona precede a instrução de formato e o contexto RAG — nunca sobrescrever instruções de
   formato com a persona.
 
-- [ ] **`gui/settings_view.py` — editor de persona nas Settings** — adicionar `QTextEdit`
+- [x] **`gui/settings_view.py` — editor de persona nas Settings** — adicionar `QTextEdit`
   expansível (min 120px height) com label "Personalidade do assistente" na seção de
   configurações LLM. Botão "Restaurar padrão" restaura o prompt da Mnemosyne. A edição
   é salva imediatamente em `local_config.json` via `config.set("persona_prompt", text)`.

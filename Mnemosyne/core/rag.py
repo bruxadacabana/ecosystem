@@ -963,6 +963,7 @@ def _build_messages(
     persona: str = "curador",
     collection_type: str = "library",
     secondary_context: str = "",
+    persona_prompt: str = "",
 ) -> list[BaseMessage]:
     """
     Constrói a lista de mensagens para ChatOllama com roles separados:
@@ -971,9 +972,14 @@ def _build_messages(
       AIMessage      — respostas anteriores do assistente
       HumanMessage   — trechos RAG + pergunta actual (mensagem final)
     Usa PERSONAS_VAULT para coleções VAULT, PERSONAS para LIBRARY.
+    Se persona_prompt for não-vazio e o modo for "curador", substitui o texto
+    padrão da curador — permite personalização sem alterar os outros modos.
     """
     persona_map = PERSONAS_VAULT if collection_type == "vault" else PERSONAS
-    system_text = persona_map.get(persona, persona_map["curador"])
+    if persona == "curador" and persona_prompt:
+        system_text = persona_prompt
+    else:
+        system_text = persona_map.get(persona, persona_map["curador"])
     messages: list[BaseMessage] = [SystemMessage(content=system_text)]
 
     for turn in history[-_HISTORY_TURNS:]:
@@ -1142,7 +1148,8 @@ def prepare_ask(
             ))
 
     messages = _build_messages(
-        context, question, chat_history or [], persona, collection_type, secondary_context
+        context, question, chat_history or [], persona, collection_type, secondary_context,
+        persona_prompt=config.persona_prompt,
     )
     return messages, sources
 

@@ -79,6 +79,15 @@ def _resolve_config_path() -> Path:
 _CONFIG_PATH = _resolve_config_path()
 _LEGACY_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
 
+DEFAULT_PERSONA_PROMPT: str = (
+    "Você é Mnemosyne, um bibliotecário celeste e guardião de documentos pessoais. "
+    "Quando citar um texto, mencione o título da obra e o autor se disponível — "
+    "ex: 'Em *Título* de Autor, …'. Se autores divergirem, apresente as perspectivas. "
+    "Responda apenas com base nos trechos fornecidos. "
+    "Se a informação não estiver nos trechos, diga que não encontrou nos documentos indexados. "
+    "Responda sempre em português."
+)
+
 _DEFAULTS: dict = {
     "llm_model": "qwen2.5:7b",    # RAG: qualidade adequada para síntese de documentos longos
     "embed_model": "",
@@ -104,6 +113,7 @@ _DEFAULTS: dict = {
     "node_type_model": "",
     "image_ocr_model": "",
     "suggest_questions": False,
+    "persona_prompt": "",
 }
 
 
@@ -133,6 +143,7 @@ class AppConfig:
     node_type_model: str = ""
     image_ocr_model: str = ""
     suggest_questions: bool = False
+    persona_prompt: str = ""
     # Populados em runtime a partir do ecosystem.json — nunca persistidos
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""
@@ -347,6 +358,7 @@ def load_config() -> AppConfig:
         node_type_model=str(data.get("node_type_model", "")),
         image_ocr_model=str(data.get("image_ocr_model", "")),
         suggest_questions=bool(data.get("suggest_questions", False)),
+        persona_prompt=str(data.get("persona_prompt", "")),
     )
     config = _apply_logos_recommendations(config, _saved_keys)
 
@@ -385,6 +397,7 @@ def save_config(config: AppConfig) -> None:
         "node_type_model": config.node_type_model,
         "image_ocr_model": config.image_ocr_model,
         "suggest_questions": config.suggest_questions,
+        "persona_prompt": config.persona_prompt,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
