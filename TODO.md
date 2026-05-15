@@ -5677,7 +5677,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   para não bloquear a UI. Conectar `started` e `finished` aos botões da aba
   (desabilitar "Extrair" durante processamento).
 
-- [ ] **`core/config.py` — campo `recipes_dir: str`** — adicionar ao `AppConfig` com
+- [x] **`core/config.py` — campo `recipes_dir: str`** — adicionar ao `AppConfig` com
   default `str(Path.home() / "hermes_recipes")`. Expor no `SetupDialog` do HERMES como
   campo editável com botão de seleção de pasta. Também registrar em `ecosystem.json`
   na seção `hermes` para que outros apps saibam onde estão as receitas.
