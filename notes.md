@@ -46,6 +46,8 @@ Os itens de MUST+SHOULD, ancoragem e exibição na UI são na prática uma únic
 
 ## próximo:
 
+faça uma nova auditoria no pesquisas.md (leia o arquivo e verifique se tem coisas lá que não constam no TODO. Se existir algo faltando, acrescente em '### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05' e atualize a data
+
 ### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
 
 ### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
