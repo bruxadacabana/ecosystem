@@ -5683,7 +5683,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   na seção `hermes` para que outros apps saibam onde estão as receitas.
 
 #### HUB
-- [ ] **`src/views/SetupView.tsx` — campo "HERMES — Pasta de Receitas"** — adicionar
+- [x] **`src/views/SetupView.tsx` — campo "HERMES — Pasta de Receitas"** — adicionar
   `hermes.recipes_dir` ao `DATA_FIELDS` do SetupView, label "HERMES — Receitas",
   tipo `path`. Segue o mesmo padrão dos outros campos de path do Hermes já presentes.
 

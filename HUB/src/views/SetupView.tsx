@@ -67,6 +67,13 @@ const DATA_FIELDS: PathField[] = [
     placeholder: 'Pasta onde o banco vetorial é armazenado…',
     validateAs: 'dir',
   },
+  {
+    key: 'hermes',
+    field: 'recipes_dir',
+    label: 'HERMES — Receitas',
+    placeholder: 'Pasta onde as receitas extraídas são salvas…',
+    validateAs: 'dir',
+  },
 ]
 
 const EXE_FIELDS: PathField[] = [
