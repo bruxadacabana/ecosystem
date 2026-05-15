@@ -4556,7 +4556,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   nome do arquivo): ex: `"[Título do artigo]\n\n{texto do chunk}"`. Melhora recall no RAG
   porque o título frequentemente contém as palavras-chave da query — sem o prefixo, chunks de
   seções internas de um artigo longo ficam sem âncora léxica ao seu tema principal.
-- [ ] **Detector de idioma dinâmico com notificação ao usuário** — expandir `_get_lingua_detector()`
+- [x] **Detector de idioma dinâmico com notificação ao usuário** — expandir `_get_lingua_detector()`
   em `core/indexer.py` para usar `from_all_languages()` em vez de lista fixa pt/en/zh. Ao
   indexar, usar `.compute_language_confidence_values()` para obter confiança; se o melhor
   resultado ficar abaixo de ~0.5, gravar `language: "unknown"` no metadata e acumular os

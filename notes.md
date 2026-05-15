@@ -1,10 +1,6 @@
 ## Implementação atual:
 
-### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
 
-- [x] language_affinity em ModelSlot — HUB/LOGOS — campo informacional em logos.rs indicando afinidade linguística dos modelos (qwen2.5 → zh/en, gemma2 → en). Exibe na LogosView.
-
-- [ ] Chunking Unicode e language no AKASHA desde a primeira implementação — placeholder a anotar quando o pipeline de indexação do AKASHA for construído.
 
 ---
 

@@ -616,17 +616,27 @@ def _prepend_titles(chunks: list[Document]) -> None:
 
 _lingua_detector_instance: object | None = None
 
+# Fontes com idioma não reconhecido na indexação corrente — limpo por
+# get_and_clear_unknown_sources() após cada sessão de indexação.
+_unknown_language_sources: set[str] = set()
+
 
 def _get_lingua_detector():
-    """Retorna o detector de idioma (singleton), ou None se não instalado."""
+    """Retorna o detector de idioma (singleton), ou None se não instalado.
+
+    Usa from_all_languages() para cobrir os 75 idiomas da biblioteca sem precisar
+    configurar uma lista estática. with_minimum_relative_distance(0.25) garante que
+    detecções ambíguas retornem None em vez de um palpite incorreto.
+    """
     global _lingua_detector_instance
     if _lingua_detector_instance is not None:
         return _lingua_detector_instance
     try:
-        from lingua import Language, LanguageDetectorBuilder
+        from lingua import LanguageDetectorBuilder
         _lingua_detector_instance = (
             LanguageDetectorBuilder
-            .from_languages(Language.PORTUGUESE, Language.ENGLISH, Language.CHINESE)
+            .from_all_languages()
+            .with_minimum_relative_distance(0.25)
             .build()
         )
         return _lingua_detector_instance
@@ -634,10 +644,24 @@ def _get_lingua_detector():
         return None
 
 
+def get_and_clear_unknown_sources() -> list[str]:
+    """Retorna e limpa a lista de fontes com idioma não reconhecido.
+
+    Chamado pelos workers após o fim da indexação para emitir o sinal
+    languages_unknown. Thread-safe para uso single-threaded (GIL Python).
+    """
+    global _unknown_language_sources
+    result = sorted(_unknown_language_sources)
+    _unknown_language_sources = set()
+    return result
+
+
 def _add_language_metadata(chunks: list[Document]) -> None:
     """Detecta o idioma de cada chunk e grava em metadata["language"] (ISO 639-1).
 
     Usa a amostra após o prefixo de título para não distorcer a detecção.
+    Quando a detecção retorna None (confiança abaixo do limiar), grava "unknown"
+    e acumula o arquivo-fonte em _unknown_language_sources para notificação na UI.
     Reflexões são ignoradas. Degradação graciosa se lingua não estiver instalado.
     """
     detector = _get_lingua_detector()
@@ -658,6 +682,11 @@ def _add_language_metadata(chunks: list[Document]) -> None:
             result = detector.detect_language_of(sample)
             if result is not None:
                 chunk.metadata["language"] = result.iso_code_639_1.name.lower()
+            else:
+                chunk.metadata["language"] = "unknown"
+                src = chunk.metadata.get("source", "")
+                if src:
+                    _unknown_language_sources.add(src)
         except Exception:
             pass
 

@@ -1936,6 +1936,7 @@ class MainWindow(QMainWindow):
 
         self._file_worker = IndexFileWorker(file_path, self.config)
         self._file_worker.finished.connect(self._on_file_indexed)
+        self._file_worker.languages_unknown.connect(self._on_languages_unknown)
         self._file_worker.start()
 
     def _on_file_removed(self, file_path: str) -> None:
@@ -1953,6 +1954,15 @@ class MainWindow(QMainWindow):
                 self._enable_query_buttons()
             self.refresh_manage_info()
         self.statusBar().showMessage(message)
+
+    def _on_languages_unknown(self, files: list) -> None:
+        """Notifica na barra de status quando idiomas não reconhecidos são encontrados."""
+        n = len(files)
+        self.statusBar().showMessage(
+            f"⚠ {n} arquivo(s) em idioma não reconhecido na indexação. "
+            "Verifique o conteúdo ou aguarde suporte a novos idiomas.",
+            10_000,  # desaparece após 10 s
+        )
 
     # ── Indexador idle (ecossistema) ──────────────────────────────────────────
 
@@ -2023,6 +2033,7 @@ class MainWindow(QMainWindow):
         self._index_worker = IndexWorker(proxy_config)
         self._index_worker.finished.connect(self._on_index_finished)
         self._index_worker.progress.connect(self._on_index_progress)
+        self._index_worker.languages_unknown.connect(self._on_languages_unknown)
         self._index_worker.start()
 
     def start_update_index(self) -> None:
@@ -2039,6 +2050,7 @@ class MainWindow(QMainWindow):
         self._update_worker = UpdateIndexWorker(self.config)
         self._update_worker.finished.connect(self._on_update_index_finished)
         self._update_worker.reflection_progress.connect(self.progress_file_label.setText)
+        self._update_worker.languages_unknown.connect(self._on_languages_unknown)
         self._update_worker.start()
 
     def _on_update_index_finished(self, success: bool, message: str) -> None:
@@ -2200,6 +2212,7 @@ class MainWindow(QMainWindow):
         self._resume_worker = ResumeIndexWorker(self.config)
         self._resume_worker.finished.connect(self._on_resume_finished)
         self._resume_worker.progress.connect(self._on_index_progress)
+        self._resume_worker.languages_unknown.connect(self._on_languages_unknown)
         self._resume_worker.start()
 
     def _on_resume_finished(self, success: bool, message: str) -> None:

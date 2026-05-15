@@ -26,9 +26,12 @@ from core.indexer import (
     load_vectorstore,
     reindex_transcripts,
     update_vectorstore,
+    get_and_clear_unknown_sources,
     _detect_batch_config,
     _embed_batch,
     _enrich_chunk_offsets,
+    _prepend_titles,
+    _add_language_metadata,
     _get_splitter,
     _clear_orphan_wal,
     _OLLAMA_BASE,
@@ -73,8 +76,9 @@ class IndexWorker(QThread):
       verificar compatibilidade ao atualizar o pacote chromadb)
     """
 
-    finished = Signal(bool, str)
-    progress = Signal(str, int, int)  # label, posição, total
+    finished           = Signal(bool, str)
+    progress           = Signal(str, int, int)  # label, posição, total
+    languages_unknown  = Signal(list)            # list[str] — arquivos com idioma não reconhecido
 
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
@@ -93,6 +97,7 @@ class IndexWorker(QThread):
         from langchain_ollama import OllamaEmbeddings
 
         _SUPPORTED = {".pdf", ".docx", ".txt", ".md", ".epub"}
+        get_and_clear_unknown_sources()  # limpar acumulador de sessão anterior
 
         # ── 1. Coletar lista de arquivos ──────────────────────────────────────
         files: list[str] = []
@@ -163,6 +168,8 @@ class IndexWorker(QThread):
                 docs = load_single_file(file_path)
                 chunks = splitter.split_documents(docs)
                 _enrich_chunk_offsets(chunks, docs)
+                _prepend_titles(chunks)
+                _add_language_metadata(chunks)
             except MnemosyneError as exc:
                 errors.append(str(exc))
                 checkpoint.record(file_path, "error")
@@ -260,6 +267,9 @@ class IndexWorker(QThread):
         bm25_idx.save()
         # Apagar checkpoint: indexação concluída — botão "Retomar" não deve aparecer
         checkpoint.delete()
+        unknown = get_and_clear_unknown_sources()
+        if unknown:
+            self.languages_unknown.emit(unknown)
         msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
         if errors:
             msg += f" {len(errors)} erro(s) ignorado(s)."
@@ -274,8 +284,9 @@ class ResumeIndexWorker(QThread):
     Deleta o checkpoint ao concluir com sucesso.
     """
 
-    finished = Signal(bool, str)
-    progress = Signal(str, int, int)
+    finished           = Signal(bool, str)
+    progress           = Signal(str, int, int)
+    languages_unknown  = Signal(list)
 
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
@@ -292,6 +303,7 @@ class ResumeIndexWorker(QThread):
         _SUPPORTED = {".pdf", ".docx", ".txt", ".md", ".epub"}
         from langchain_chroma import Chroma
         from langchain_ollama import OllamaEmbeddings
+        get_and_clear_unknown_sources()  # limpar acumulador de sessão anterior
 
         # ── 1. Coletar todos os arquivos ──────────────────────────────────────
         files: list[str] = []
@@ -365,6 +377,8 @@ class ResumeIndexWorker(QThread):
                 docs = load_single_file(file_path)
                 chunks = splitter.split_documents(docs)
                 _enrich_chunk_offsets(chunks, docs)
+                _prepend_titles(chunks)
+                _add_language_metadata(chunks)
             except MnemosyneError as exc:
                 errors.append(str(exc))
                 checkpoint.record(file_path, "error")
@@ -407,6 +421,9 @@ class ResumeIndexWorker(QThread):
 
         bm25_idx.save()
         checkpoint.delete()
+        unknown = get_and_clear_unknown_sources()
+        if unknown:
+            self.languages_unknown.emit(unknown)
         msg = f"Retomada concluída — {already_done} já indexados, {total} processados agora."
         if errors:
             msg += f" {len(errors)} erro(s) ignorado(s)."
@@ -416,8 +433,9 @@ class ResumeIndexWorker(QThread):
 class UpdateIndexWorker(QThread):
     """Actualiza o vectorstore incrementalmente via FileTracker."""
 
-    finished  = Signal(bool, str)  # sucesso, mensagem com stats
-    reflection_progress = Signal(str)  # mensagem de progresso de reflexão
+    finished            = Signal(bool, str)  # sucesso, mensagem com stats
+    reflection_progress = Signal(str)        # mensagem de progresso de reflexão
+    languages_unknown   = Signal(list)       # list[str] — arquivos com idioma não reconhecido
 
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
@@ -427,8 +445,12 @@ class UpdateIndexWorker(QThread):
         super().start(priority)
 
     def run(self) -> None:
+        get_and_clear_unknown_sources()  # limpar acumulador de sessão anterior
         try:
             _, stats = update_vectorstore(self.config, progress_cb=self.reflection_progress.emit)
+            unknown = get_and_clear_unknown_sources()
+            if unknown:
+                self.languages_unknown.emit(unknown)
             msg = (
                 f"Índice actualizado — "
                 f"{stats['new']} novo(s), "
@@ -474,7 +496,8 @@ class ReindexTranscriptsWorker(QThread):
 class IndexFileWorker(QThread):
     """Indexa um único arquivo — usado pelo watcher de pasta."""
 
-    finished = Signal(bool, str)  # sucesso, mensagem
+    finished           = Signal(bool, str)  # sucesso, mensagem
+    languages_unknown  = Signal(list)        # list[str] — arquivos com idioma não reconhecido
 
     def __init__(self, file_path: str, config: AppConfig) -> None:
         super().__init__()
@@ -487,8 +510,12 @@ class IndexFileWorker(QThread):
     def run(self) -> None:
         import os
 
+        get_and_clear_unknown_sources()  # limpar acumulador de sessão anterior
         try:
             index_single_file(self.file_path, self.config)
+            unknown = get_and_clear_unknown_sources()
+            if unknown:
+                self.languages_unknown.emit(unknown)
             name = os.path.basename(self.file_path)
             self.finished.emit(True, f"'{name}' indexado.")
         except DocumentLoadError as exc:
