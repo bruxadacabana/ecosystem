@@ -364,6 +364,45 @@ QPushButton#saveStudioBtn:disabled {
     border-color: #1E2433;
 }
 
+QPushButton#historyBtn {
+    background-color: transparent;
+    color: #7A8090;
+    border: 1px solid #2A3148;
+    border-radius: 2px;
+    font-size: 11px;
+    padding: 2px 8px;
+}
+
+QPushButton#historyBtn:hover {
+    background-color: #1E2433;
+    color: #C8B99A;
+    border-color: #4A5270;
+}
+
+QListWidget#historyList {
+    background-color: #181D28;
+    border: 1px solid #2A3148;
+    font-family: "Courier Prime", "Courier New", monospace;
+    font-size: 11px;
+    color: #C8B99A;
+}
+
+QListWidget#historyList::item:selected {
+    background-color: #252B3A;
+    color: #D4A820;
+}
+
+QListWidget#historyList::item:hover {
+    background-color: #1E2433;
+}
+
+QTextBrowser#historyPreview {
+    background-color: #181D28;
+    border: 1px solid #2A3148;
+    font-size: 11px;
+    color: #C8B99A;
+}
+
 QPushButton#sendBtn:hover {
     background-color: #E8C040;
     border-color: #E8C040;

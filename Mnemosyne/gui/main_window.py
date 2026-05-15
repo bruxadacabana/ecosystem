@@ -1050,6 +1050,13 @@ class MainWindow(QMainWindow):
         answer_header = QHBoxLayout()
         answer_header.setContentsMargins(0, 0, 0, 0)
         answer_header.setSpacing(4)
+
+        self._history_btn = QPushButton("☰ Histórico")
+        self._history_btn.setObjectName("historyBtn")
+        self._history_btn.setToolTip("Ver histórico de mensagens do notebook ativo")
+        self._history_btn.clicked.connect(self._on_show_history)
+        answer_header.addWidget(self._history_btn)
+
         answer_header.addStretch()
         self._save_note_btn = QPushButton("📌 Salvar como Nota")
         self._save_note_btn.setObjectName("saveNoteBtn")
@@ -3206,6 +3213,121 @@ class MainWindow(QMainWindow):
             for s in self._current_sources
         ]
         self.app_state.note_promoted.emit(text, citations)
+
+    def _on_show_history(self) -> None:
+        """Abre diálogo de histórico navegável do notebook/sessão ativo."""
+        # Prefere histórico completo do notebook; cai para _chat_history da sessão
+        if self._notebook_memory is not None:
+            turns = self._notebook_memory.load_history()
+        else:
+            turns = list(self._chat_history)
+
+        if not turns:
+            QMessageBox.information(self, "Histórico", "Nenhuma mensagem no histórico.")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Histórico de Mensagens")
+        dlg.setMinimumSize(520, 480)
+        root = QVBoxLayout(dlg)
+        root.setSpacing(6)
+
+        # Filtro de busca
+        search_edit = QLineEdit()
+        search_edit.setPlaceholderText("Filtrar por texto…")
+        search_edit.setObjectName("historySearch")
+        root.addWidget(search_edit)
+
+        # Lista de mensagens
+        from PySide6.QtWidgets import QListWidget, QListWidgetItem
+        from PySide6.QtCore import Qt as _Qt
+        msg_list = QListWidget()
+        msg_list.setObjectName("historyList")
+        root.addWidget(msg_list, 1)
+
+        # Área de prévia da mensagem selecionada
+        preview = QTextBrowser()
+        preview.setObjectName("historyPreview")
+        preview.setMaximumHeight(140)
+        preview.setOpenLinks(False)
+        root.addWidget(preview)
+
+        # Botão "Abrir no Chat"
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        open_btn = QPushButton("Abrir no Chat")
+        open_btn.setEnabled(False)
+        btn_row.addWidget(open_btn)
+        close_btn = QPushButton("Fechar")
+        close_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(close_btn)
+        root.addLayout(btn_row)
+
+        # Popula lista agrupando por data
+        def _populate(filter_text: str = "") -> None:
+            msg_list.clear()
+            ft = filter_text.lower()
+            current_date = ""
+            for turn in turns:
+                content = turn.content
+                if ft and ft not in content.lower():
+                    continue
+                # Cabeçalho de data
+                date_str = turn.ts[:10] if turn.ts else "—"
+                if date_str != current_date:
+                    current_date = date_str
+                    sep = QListWidgetItem(f"── {date_str} ──")
+                    sep.setFlags(_Qt.ItemFlag.NoItemFlags)
+                    sep.setForeground(_Qt.GlobalColor.darkGray)
+                    msg_list.addItem(sep)
+                # Item da mensagem
+                icon = "👤" if turn.role == "user" else "🧿"
+                preview_text = content.replace("\n", " ")[:80]
+                if len(content) > 80:
+                    preview_text += "…"
+                item = QListWidgetItem(f"{icon} {preview_text}")
+                item.setData(_Qt.ItemDataRole.UserRole, content)
+                item.setData(_Qt.ItemDataRole.UserRole + 1, turn.role)
+                msg_list.addItem(item)
+
+        _populate()
+
+        def _on_filter(text: str) -> None:
+            _populate(text)
+            open_btn.setEnabled(False)
+            preview.clear()
+
+        def _on_selection() -> None:
+            item = msg_list.currentItem()
+            if item is None:
+                return
+            content = item.data(_Qt.ItemDataRole.UserRole)
+            if content is None:
+                return
+            preview.document().setMarkdown(content)
+            open_btn.setEnabled(True)
+
+        def _on_open() -> None:
+            item = msg_list.currentItem()
+            if item is None:
+                return
+            content = item.data(_Qt.ItemDataRole.UserRole)
+            role = item.data(_Qt.ItemDataRole.UserRole + 1)
+            if content and role == "assistant":
+                self.answer_text.document().setMarkdown(content)
+                self._raw_answer = content
+                self._save_note_btn.setEnabled(True)
+                self._save_studio_btn.setEnabled(True)
+            elif content:
+                self.question_edit.setText(content)
+            dlg.accept()
+
+        search_edit.textChanged.connect(_on_filter)
+        msg_list.currentItemChanged.connect(lambda *_: _on_selection())
+        msg_list.itemDoubleClicked.connect(lambda *_: _on_open())
+        open_btn.clicked.connect(_on_open)
+
+        dlg.exec()
 
     def _on_save_to_studio(self) -> None:
         """Salva a resposta atual como tile do Studio via diálogo de confirmação."""

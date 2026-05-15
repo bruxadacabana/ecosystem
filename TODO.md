@@ -5599,7 +5599,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   ao `history.jsonl` do notebook ativo (append-only, nunca sobrescrever). Ao fechar o app
   (`closeEvent`), salvar estado final.
 
-- [ ] **`gui/main_window.py` — painel de histórico navegável** — botão "Histórico" ou ícone
+- [x] **`gui/main_window.py` — painel de histórico navegável** — botão "Histórico" ou ícone
   no chat que abre um `QDialog` listando todas as mensagens do notebook atual agrupadas por
   data. Filtro de busca por texto. Clicar numa mensagem rola o `QScrollArea` do chat até
   aquela mensagem (scroll to anchor). Não é necessário "restaurar" sessões antigas — o
