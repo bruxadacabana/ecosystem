@@ -4465,7 +4465,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   (KOSMOS análise em background): `num_thread=3` (deixa 1 core livre para o SO). Tarefas P2/
   interativas (Mnemosyne RAG): `num_thread=4` (maximiza velocidade de resposta). Adaptar a função
   de geração de requisições no `logos.rs` para incluir `num_thread` baseado na prioridade da tarefa.
-- [ ] Adicionar painel de configuração de limites na `LogosView.tsx`: slider "Limite de VRAM (%)"
+- [x] Adicionar painel de configuração de limites na `LogosView.tsx`: slider "Limite de VRAM (%)"
   (padrão 85, range 50–95); campo "Threads CPU" para WorkPc (2/3/4 threads); toggle
   "FlashAttention" (padrão: ligado). Persistir via `save_ecosystem_config()` já existente no HUB.
 

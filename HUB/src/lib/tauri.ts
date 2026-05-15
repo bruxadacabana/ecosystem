@@ -169,6 +169,15 @@ export const logosGetRecommendedModels = (): Promise<TauriResult<RecommendedMode
 export const logosPullModel = (model: string): Promise<TauriResult<void>> =>
   call<void>('logos_pull_model', { model })
 
+export const logosSetVramLimitPct = (pct: number): Promise<TauriResult<void>> =>
+  call<void>('logos_set_vram_limit_pct', { pct })
+
+export const logosStartOllama = (): Promise<TauriResult<void>> =>
+  call<void>('logos_start_ollama')
+
+export const logosStopOllama = (): Promise<TauriResult<void>> =>
+  call<void>('logos_stop_ollama')
+
 // ----------------------------------------------------------
 //  Janela — modo compacto
 // ----------------------------------------------------------

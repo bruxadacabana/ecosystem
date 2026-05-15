@@ -27,6 +27,7 @@ export interface EcosystemConfig {
   hermes:    { exe_path?: string }
   akasha:    { base_url?: string; exe_path?: string }
   hub:       { data_path: string }
+  logos?:    { vram_limit_pct?: number; cpu_threads?: number; flash_attention?: boolean }
 }
 
 export type AppName = 'aether' | 'ogma' | 'kosmos' | 'mnemosyne' | 'hermes' | 'akasha'
@@ -150,6 +151,8 @@ export interface LogosStatus {
   on_battery:         boolean
   /** Requests P3 preemptados por P1 desde o startup */
   preempted_count:    number
+  /** Limite de VRAM (%) para bloquear P3 — configurável, padrão 85 */
+  vram_limit_pct:     number
 }
 
 export interface OllamaModelInfo {

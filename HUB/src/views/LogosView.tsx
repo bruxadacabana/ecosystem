@@ -4,7 +4,7 @@
    painel de gerenciamento de modelos Ollama.
    ============================================================ */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import * as cmd from '../lib/tauri'
 import { listModels } from '../lib/ollama'
@@ -42,12 +42,20 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
   const [recommended,       setRecommended]       = useState<RecommendedModel[]>([])
   const [pullProgress,      setPullProgress]      = useState<Map<string, PullProgress>>(new Map())
   const [pulling,           setPulling]           = useState<Set<string>>(new Set())
+  const [vramLimit,         setVramLimit]         = useState<number>(85)
+  const [cpuThreads,        setCpuThreads]        = useState<number>(4)
+  const [flashAttention,    setFlashAttention]    = useState<boolean>(true)
+  const vramLimitSynced = useRef(false)
 
   const fetchStatus = useCallback(() => {
     cmd.logosGetStatus().then(r => {
       if (!r.ok) return
       setStatus(r.data)
       setProfile(r.data.current_profile)
+      if (!vramLimitSynced.current) {
+        vramLimitSynced.current = true
+        setVramLimit(r.data.vram_limit_pct ?? 85)
+      }
     })
   }, [])
 
@@ -74,6 +82,16 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
     return () => { clearInterval(sid); clearInterval(mid); clearInterval(oid) }
   }, [fetchStatus, fetchModels, checkOllama])
 
+  // Carrega configurações de recursos do ecosystem.json uma vez ao montar
+  useEffect(() => {
+    cmd.readEcosystemConfig().then(r => {
+      if (!r.ok) return
+      const logos = (r.data as { logos?: { cpu_threads?: number; flash_attention?: boolean } }).logos
+      if (logos?.cpu_threads   != null) setCpuThreads(logos.cpu_threads)
+      if (logos?.flash_attention != null) setFlashAttention(logos.flash_attention)
+    })
+  }, [])
+
   // Escuta eventos de progresso de pull do Ollama
   useEffect(() => {
     let unlisten: (() => void) | undefined
@@ -95,6 +113,16 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
     }).then(fn => { unlisten = fn })
     return () => { unlisten?.() }
   }, [fetchModels])
+
+  async function handleCpuThreads(n: number) {
+    setCpuThreads(n)
+    await cmd.saveEcosystemConfig({ logos: { cpu_threads: n } })
+  }
+
+  async function handleFlashAttention(enabled: boolean) {
+    setFlashAttention(enabled)
+    await cmd.saveEcosystemConfig({ logos: { flash_attention: enabled } })
+  }
 
   async function handleProfile(id: string) {
     setProfile(id)
@@ -348,6 +376,81 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
               ? `${hwDisplay} · ${maxConcurrent === 2 ? 'até 2 modelos leves (≤3B) simultâneos' : '1 modelo por vez'}`
               : '—'}
         </Note>
+      </section>
+
+      {/* ── Configurações de recursos ─────────────────── */}
+      <section>
+        <Label>Configurações de recursos</Label>
+
+        {/* Slider de limite de VRAM */}
+        <div style={{ marginBottom: 16, maxWidth: 400 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)' }}>
+              Limite de VRAM (%)
+            </span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink)' }}>
+              {vramLimit}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min={50}
+            max={95}
+            step={1}
+            value={vramLimit}
+            onChange={e => setVramLimit(Number(e.target.value))}
+            onPointerUp={() => cmd.logosSetVramLimitPct(vramLimit)}
+            style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }}
+          />
+          <Note>Tarefas P3 bloqueadas quando VRAM ultrapassar este limite</Note>
+        </div>
+
+        {/* Threads CPU — apenas WorkPc (modo sobrevivência) */}
+        {isSurvival && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)' }}>
+              Threads CPU
+            </span>
+            <select
+              value={cpuThreads}
+              onChange={e => handleCpuThreads(Number(e.target.value))}
+              style={{
+                fontFamily: 'var(--font-mono)', fontSize: 11,
+                background: 'var(--paper)', color: 'var(--ink)',
+                border: '1px solid var(--rule)', borderRadius: 'var(--radius)',
+                padding: '3px 8px', cursor: 'pointer',
+              }}
+            >
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+              <option value={4}>4</option>
+            </select>
+          </div>
+        )}
+
+        {/* Toggle FlashAttention */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)' }}>
+            FlashAttention
+          </span>
+          <button
+            onClick={() => handleFlashAttention(!flashAttention)}
+            style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10,
+              padding: '3px 12px',
+              background: flashAttention ? 'var(--accent)' : 'transparent',
+              color: flashAttention ? 'var(--paper)' : 'var(--ink-ghost)',
+              border: `1px solid ${flashAttention ? 'var(--accent)' : 'var(--rule)'}`,
+              borderRadius: 'var(--radius)', cursor: 'pointer',
+              transition: 'all 150ms ease',
+            }}
+          >
+            {flashAttention ? 'Ligado' : 'Desligado'}
+          </button>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', opacity: 0.6 }}>
+            Otimização de atenção com GPU
+          </span>
+        </div>
       </section>
 
       {/* ── Modelos por app ──────────────────────────── */}
