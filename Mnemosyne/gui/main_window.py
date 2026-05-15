@@ -55,6 +55,7 @@ from core.memory import (
 )
 from core.ollama_client import OllamaModel, filter_chat_models, filter_embed_models
 from core.tracker import FileTracker
+from gui.topics_view import TopicsView
 from gui.workers import (
     AskWorker,
     DeepResearchWorker,
@@ -68,6 +69,7 @@ from gui.workers import (
     ResumeIndexWorker,
     StudioWorker,
     SummarizeWorker,
+    TopicsWorker,
     UpdateIndexWorker,
 )
 
@@ -494,6 +496,7 @@ class MainWindow(QMainWindow):
         self._available_models: list[OllamaModel] = []
         self._session_memory = SessionMemory()
         self._query_store: PersistentQueryStore | None = None
+        self._topics_worker: TopicsWorker | None = None
         self._chat_history: list[Turn] = []
         self._collection_index: CollectionIndex | None = None
         self._file_tracker: FileTracker | None = None
@@ -647,7 +650,12 @@ class MainWindow(QMainWindow):
         self._nav_chat_btn     = QPushButton("Chat")
         self._nav_analysis_btn = QPushButton("Análise")
         self._nav_manage_btn   = QPushButton("Gerenciar")
-        for idx, btn in enumerate((self._nav_chat_btn, self._nav_analysis_btn, self._nav_manage_btn)):
+        self._nav_topics_btn   = QPushButton("Temas")
+        _nav_btns = (
+            self._nav_chat_btn, self._nav_analysis_btn,
+            self._nav_manage_btn, self._nav_topics_btn,
+        )
+        for idx, btn in enumerate(_nav_btns):
             btn.setObjectName("navBtn")
             btn.setCheckable(True)
             btn.clicked.connect(lambda checked, i=idx: self._switch_page(i))
@@ -822,6 +830,7 @@ class MainWindow(QMainWindow):
         self._build_page_chat()
         self._build_page_analysis()
         self._build_page_manage()
+        self._build_page_topics()
 
         splitter.addWidget(self._content_stack)
 
@@ -914,7 +923,10 @@ class MainWindow(QMainWindow):
 
     def _switch_page(self, index: int) -> None:
         self._content_stack.setCurrentIndex(index)
-        for i, btn in enumerate((self._nav_chat_btn, self._nav_analysis_btn, self._nav_manage_btn)):
+        for i, btn in enumerate((
+            self._nav_chat_btn, self._nav_analysis_btn,
+            self._nav_manage_btn, self._nav_topics_btn,
+        )):
             btn.setChecked(i == index)
 
     def _build_page_chat(self) -> None:
@@ -1329,6 +1341,58 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.event_log)
 
         self._content_stack.addWidget(tab)
+
+    def _build_page_topics(self) -> None:
+        """Constrói a aba 'Temas' (índice 3 do content_stack)."""
+        self._topics_view = TopicsView()
+        self._topics_view.theme_clicked.connect(self._ask_from_theme)
+        self._topics_view.set_refresh_callback(self._extract_topics_bg)
+
+        wrapper = QWidget()
+        wrapper.setObjectName("contentPage")
+        lay = QVBoxLayout(wrapper)
+        lay.setContentsMargins(20, 16, 20, 16)
+        lay.addWidget(self._topics_view)
+        self._content_stack.addWidget(wrapper)
+
+    def _extract_topics_bg(self) -> None:
+        """Extrai temas do corpus em background e atualiza a TopicsView."""
+        if not self.vectorstore or not self.vectorstore.stores:
+            return
+        vs, coll = self.vectorstore.stores[0]
+        self._topics_worker = TopicsWorker(vs, coll)
+        self._topics_worker.finished.connect(self._on_topics_ready)
+        self._topics_worker.start()
+        self._topics_view._status_label.setText("Extraindo temas…")
+        self._topics_view._refresh_btn.setEnabled(False)
+
+    def _on_topics_ready(self, data: dict) -> None:
+        self._topics_view._refresh_btn.setEnabled(True)
+        if data:
+            self._topics_view.set_topics(data)
+        else:
+            self._topics_view._status_label.setText(
+                "Não foi possível extrair temas — corpus muito pequeno ou dependências ausentes."
+            )
+
+    def _load_topics_from_disk(self) -> None:
+        """Carrega topics.json da coleção ativa se existir; senão, não exibe nada."""
+        if not self.config:
+            return
+        coll = self.config.active_coll
+        if coll and coll.mnemosyne_dir:
+            from core.topic_extractor import load_topics
+            data = load_topics(coll.mnemosyne_dir)
+            if data:
+                self._topics_view.set_topics(data)
+
+    def _ask_from_theme(self, word: str) -> None:
+        """Ao clicar numa palavra da nuvem: vai para o Chat e submete query sobre o tema."""
+        self._switch_page(0)
+        self.question_edit.setText(
+            f'Fale sobre "{word}": o que os documentos do acervo dizem?'
+        )
+        self.ask_question()
 
     def _refresh_collections_table(self) -> None:
         """Preenche a tabela de coleções com o estado actual do config."""
@@ -1946,6 +2010,7 @@ class MainWindow(QMainWindow):
             if self.vectorstore:
                 self._enable_query_buttons()
                 self._update_reflection_badge()
+                self._extract_topics_bg()  # atualiza nuvem de temas após indexação
             self.refresh_manage_info()
             self._start_guide_generation()
             self._register_indexing_machine()
@@ -3172,6 +3237,7 @@ class MainWindow(QMainWindow):
         self.reindex_transcripts_btn.setEnabled(True)
         self.guide_refresh_btn.setEnabled(True)
         self.studio_generate_btn.setEnabled(True)
+        self._load_topics_from_disk()
 
     def _disable_query_buttons(self) -> None:
         self.ask_btn.setEnabled(False)

@@ -998,3 +998,31 @@ class StudioWorker(QThread):
             self.finished.emit(False, str(exc))
         except Exception as exc:
             self.finished.emit(False, f"Erro ao gerar {self.doc_type}: {exc}")
+
+
+class TopicsWorker(QThread):
+    """
+    Extrai temas do corpus em background via topic_extractor.py.
+
+    Recebe um único par (Chroma vectorstore, CollectionConfig) e chama
+    extract_topics(), que reutiliza os embeddings já existentes no ChromaDB —
+    sem reprocessar arquivos ou chamar o modelo de embedding novamente.
+
+    Emite finished(dict) com o resultado de topics.json (pode ser {} em caso
+    de erro ou corpus vazio).
+    """
+
+    finished = Signal(dict)
+
+    def __init__(self, vs, coll) -> None:
+        super().__init__()
+        self._vs   = vs
+        self._coll = coll
+
+    def run(self) -> None:
+        from core.topic_extractor import extract_topics
+        try:
+            result = extract_topics(self._vs, self._coll)
+            self.finished.emit(result or {})
+        except Exception:
+            self.finished.emit({})

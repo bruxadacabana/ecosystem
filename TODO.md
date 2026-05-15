@@ -5430,7 +5430,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   (Model2Vec, sem PyTorch), `umap-learn`, `hdbscan`. Disparar após indexação completa e ao
   clicar em botão "Atualizar temas" na aba Temas.
 
-- [ ] **`gui/topics_view.py` — aba "Temas" com nuvem de palavras clicável** — nova aba no
+- [x] **`gui/topics_view.py` — aba "Temas" com nuvem de palavras clicável** — nova aba no
   `QStackedWidget` principal. Sub-modo "Nuvem": gera imagem via `wordcloud.WordCloud
   .generate_from_frequencies(freq_dict).to_image()`, converte para `QPixmap` e exibe em
   `QLabel`. Overlay de clique: usar `WordCloud.layout_` para mapear coordenadas de cada
