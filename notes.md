@@ -1,6 +1,29 @@
 ## Implementação atual:
+### Pesquisa: Assistente de Pesquisa Inteligente — LLM-Augmented Search e Query Understanding | 2026-05-06
+
+#### Fase 1 — MVP: o AKASHA vira um assistente
+Esses 4 itens juntos entregam a diferença perceptível: síntese com citações e sem cold-start.
+
+- [x] **keep_alive=-1 no cliente Ollama durante sessão ativa**:	Sem isso, cada query tem 2–5s de cold-start. É pré-requisito de UX para qualquer feature LLM. Implementação trivial.
+- [ ] **Classificador de intenção leve antes do pipeline de busca** Roteador central — define qual pipeline ativar. Sem ele, tudo roda igual para qualquer query. Tudo nas fases 2+ depende dele.
+- [ ] **Pipeline Map-Reduce para síntese de resultados** É o "assistente" propriamente dito. Sem síntese, o AKASHA ainda é só um buscador.
+- [ ] **Citações inline com verificação básica**: Complemento direto do Map-Reduce. Síntese sem verificação vira confabulation sem aviso. Custo zero (string matching).
 
 
+#### Fase 2 — Qualidade de retrieval
+Melhoram a base de busca sem exigir sessão.
+
+- [ ] **Leituras relacionadas derivadas dos resultados**: Sem LLM, < 100ms. Alta relação esforço/benefício — aparece na UI mesmo sem síntese ativa.
+- [ ] **Template MUST+SHOULD para expansão de query no FTS5**: Evita query drift. Melhora recall sem mudar a arquitetura, aplicável mesmo sem sessão.
+- [ ] **Expansão HyDE para busca vetorial no ChromaDB/Mnemosyne**: Depende do Mnemosyne estar disponível. +38% nDCG documentado — mas só se o usuário tiver o Mnemosyne indexado.
+
+
+#### Fase 3 — Contexto conversacional
+Depende de infraestrutura de sessão — a detecção de sessão é pré-requisito da reescrita.
+
+- [ ] **Detecção de sessão de pesquisa**: Pré-requisito obrigatório para a reescrita de query. Sem sessão não há contexto de turnos.
+- [ ] **Reescrita de query conversacional por turno**: Depende diretamente da Fase 3/item 8. Implementar antes seria construir sobre areia.
+Pronto para começar pela Fase 1 na ordem que você preferir. Ou se quiser ajustar a priorização antes de implementar, é só falar.
 
 ---
 
@@ -15,8 +38,6 @@
 ## próximo:
 
 ### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
-
-### Pesquisa: Assistente de Pesquisa Inteligente — LLM-Augmented Search e Query Understanding | 2026-05-06
 
 ### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
 

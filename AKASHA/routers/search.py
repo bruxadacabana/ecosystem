@@ -19,6 +19,7 @@ import database
 from services.archiver import archive_url, fetch_and_extract, NearDuplicateError, DoiDuplicateError
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local, correct_query, get_ollama_status
+from services.query_understanding import pin_model
 from services.crawler import search_sites, index_visited_page
 from services.paper_search import PaperResult, search_papers
 from database import (
@@ -124,6 +125,11 @@ async def search(
     active_lens: dict | None = None
 
     if q:
+        # Fixar modelo em VRAM enquanto a sessão está ativa — elimina cold-start.
+        # Fire-and-forget: não bloqueia a busca se o Ollama estiver offline.
+        if get_ollama_status():
+            asyncio.ensure_future(pin_model())
+
         try:
             tasks = await asyncio.gather(
                 search_web(q, max_results=_PAGE_SIZE, filetype=filetype) if src_web    else asyncio.sleep(0, result=[]),
@@ -238,6 +244,15 @@ async def search(
             "ollama_available":  get_ollama_status(),
         },
     )
+
+
+@router.post("/search/release-model")
+async def search_release_model() -> dict:
+    """Libera o modelo LLM da VRAM explicitamente (botão 'Encerrar sessão')."""
+    from services.query_understanding import release_model, get_pinned_model
+    model = get_pinned_model()
+    await release_model()
+    return {"released": model}
 
 
 @router.get("/search/suggest", response_class=HTMLResponse)

@@ -4071,7 +4071,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Mecanismo leve, sem modelo NLI — evita os 57% de post-rationalized citations documentados
   na literatura (WHYAITECH, 2025). Custo: string matching puro, < 5ms.
 
-- [ ] **`keep_alive=-1` no cliente Ollama durante sessão ativa** (`services/synthesis.py`
+- [x] **`keep_alive=-1` no cliente Ollama durante sessão ativa** (`services/synthesis.py`
   ou `services/query_understanding.py`). Ao iniciar uma sessão de pesquisa (primeira query
   classificada como não-navigational), chamar `/api/generate` ou `/api/chat` com
   `keep_alive: -1` (manter modelo em VRAM indefinidamente). Ao encerrar sessão (timeout
