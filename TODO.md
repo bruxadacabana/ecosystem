@@ -4643,6 +4643,27 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### AKASHA — integração com LOGOS e ecosystem_client | 2026-05-15
+> Contexto: o AKASHA chama o Ollama diretamente, sem passar pelo LOGOS. Isso significa que
+> o classificador de intenção e o pin_model() ignoram coordenação de VRAM e prioridade com
+> os outros apps. Além disso, DEFAULT_LLM_MODEL = "" deixa o pin_model() inoperante.
+> Análogo ao que foi corrigido no KOSMOS e Mnemosyne anteriormente.
+
+#### AKASHA
+- [ ] **Migrar AKASHA para `ecosystem_client.request_llm()`** (`services/query_understanding.py`,
+  qualquer serviço que chame Ollama diretamente). O AKASHA hoje chama o Ollama na porta 11434
+  sem passar pelo LOGOS (porta 7072). Isso bypassa o controle de prioridade (P1/P2/P3),
+  a injeção de keep_alive automática e o Hardware Guard de VRAM. Usar
+  `ecosystem_client.get_ollama_url()` que já retorna 7072 se LOGOS acessível, 11434 como
+  fallback — mesma lógica implementada no KOSMOS e Mnemosyne.
+
+- [ ] **`query_understanding.py` ler modelo `llm_query` do perfil ativo do LOGOS**
+  (`services/query_understanding.py`, `DEFAULT_LLM_MODEL`). O valor atual `DEFAULT_LLM_MODEL = ""`
+  torna o `pin_model()` um no-op — sem nome de modelo, nenhum modelo é fixado em VRAM e o
+  keep_alive=-1 nunca é enviado. Ler o modelo via `ecosystem_client.get_active_profile()`
+  e usar o campo `llm_query` do perfil: smollm2:1.7b (MainPc), smollm2:1.7b (Laptop),
+  qwen2.5:0.5b (WorkPc). Depende do item anterior (precisa que as chamadas passem pelo LOGOS).
+
 ### HUB — desinstalar modelos Ollama pelo LOGOS | 2026-05-15
 > Contexto: a LogosView já permite baixar, ativar e descarregar modelos da VRAM, mas não há como
 > remover um modelo do disco pelo HUB — a usuária precisa usar a CLI (`ollama rm`). Adicionar
