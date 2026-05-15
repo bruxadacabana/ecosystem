@@ -5504,7 +5504,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Mnemosyne
 
-- [ ] **`core/studio_output.py` — dataclass `StudioOutput` com persistência como arquivo** —
+- [x] **`core/studio_output.py` — dataclass `StudioOutput` com persistência como arquivo** —
   criar dataclass com campos: `id: str` (UUID4), `type: str` (Briefing/FAQ/Guide/Flashcards/etc.),
   `title: str` (gerado ou editável), `content: str`, `table_data: list[list[str]] | None`,
   `created_at: str` (ISO 8601), `collection_name: str`, `notebook_id: str | None`. Método
@@ -5515,7 +5515,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   especial (ex: `"thought"`) com weight próprio em `SOURCE_WEIGHTS`, para que a Mnemosyne saiba
   que está consultando seus próprios "pensamentos" e não uma fonte externa.
 
-- [ ] **`core/studio_store.py` — camada de persistência dos outputs do Studio** — `StudioStore`
+- [x] **`core/studio_store.py` — camada de persistência dos outputs do Studio** — `StudioStore`
   com métodos: `save(output: StudioOutput)`, `load_all(collection_name) → list[StudioOutput]`,
   `delete(id)`, `get(id) → StudioOutput`. Lê/escreve de `{coll.mnemosyne_dir}/studio/`. Ao
   carregar, lê os arquivos `.md` e faz parse do frontmatter YAML. O diretório é criado
