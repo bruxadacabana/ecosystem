@@ -5536,7 +5536,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   da galeria. Ao inicializar, carrega tiles existentes via `StudioStore.load_all()`. Remover
   os botões "Exportar .md" e "Exportar CSV" da area central — movê-los para o `StudioOutputDialog`.
 
-- [ ] **`gui/main_window.py` — unificar Resumo e FAQ como tipos do Studio** — mover as
+- [x] **`gui/main_window.py` — unificar Resumo e FAQ como tipos do Studio** — mover as
   sub-páginas "Resumo" e "FAQ" da aba Análise para dentro do Studio como tipos no combo:
   adicionar "Resumo" e "FAQ" ao `studio_type_combo`. Remover as sub-páginas separadas
   `_pill_summary` e `_pill_faq` e seus respectivos `QTextEdit`. O conteúdo gerado passa
