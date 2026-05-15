@@ -4385,7 +4385,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > com opção de download para modelos não instalados.
 
 #### HUB — LOGOS: botão de download de modelos recomendados
-- [ ] Adicionar em `LogosView.tsx` (HUB) botão "Baixar" ao lado de cada modelo recomendado que não
+- [x] Adicionar em `LogosView.tsx` (HUB) botão "Baixar" ao lado de cada modelo recomendado que não
   estiver instalado. Usar o endpoint `/api/logos/pull` já existente com streaming NDJSON. O botão deve
   exibir progress bar durante pull e sumir ao concluir. Modelos já instalados mantêm apenas o botão
   "Ativar" existente. Verificar lista de instalados via `logos_list_local_models` (já em `logos.rs`).
