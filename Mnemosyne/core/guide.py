@@ -189,3 +189,32 @@ def load_guide(mnemosyne_dir: str) -> GuideResult | None:
         )
     except (json.JSONDecodeError, KeyError) as exc:
         raise GuideError(f"guide.json inválido: {exc}") from exc
+
+
+def iter_guide(vectorstore: Any, config: AppConfig):  # -> Iterator[str]
+    """Gera Guide como output do Studio (compatível com StudioWorker/dispatch).
+
+    Formata o resultado como Markdown com seções Resumo, Perguntas Sugeridas e
+    Pérolas Escondidas — mesmo formato do _save_guide_to_studio na MainWindow.
+
+    Yields:
+        Um único chunk com o conteúdo Markdown completo.
+
+    Raises:
+        GuideError: se a geração falhar.
+    """
+    result = generate_guide(vectorstore, config)
+    lines = ["## Resumo da Coleção\n", result["summary"]]
+    if result["questions"]:
+        lines.append("\n\n## Perguntas Sugeridas\n")
+        lines.extend(f"- {q}" for q in result["questions"])
+    gems = result.get("hidden_gems", [])
+    if gems:
+        lines.append("\n\n## Pérolas Escondidas\n")
+        for gem in gems:
+            fact     = gem.get("fact", "")
+            citation = gem.get("citation", "")
+            lines.append(f"**{fact}**")
+            if citation:
+                lines.append(f"> {citation}")
+    yield "\n".join(lines)

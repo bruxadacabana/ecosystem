@@ -938,6 +938,8 @@ _STUDIO_DISPATCH: dict[str, tuple[str, str]] = {
     "Mind Map":       ("core.mindmap",     "iter_mindmap"),
     "Tabela de Dados":("core.tables",      "iter_tables"),
     "Slides":         ("core.slides",      "iter_slides"),
+    "Flashcards":     ("core.flashcards",  "iter_flashcards"),
+    "Guide":          ("core.guide",       "iter_guide"),
 }
 
 

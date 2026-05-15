@@ -5558,7 +5558,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Anotação) e campo de título editável. Confirmar cria `StudioOutput` com o texto da resposta
   e salva via `StudioStore`. O tile aparece imediatamente na galeria do Studio.
 
-- [ ] **`gui/main_window.py` — Flashcards como tipo do Studio com progresso** — adicionar
+- [x] **`gui/main_window.py` — Flashcards como tipo do Studio com progresso** — adicionar
   "Flashcards" ao `studio_type_combo`. O `StudioWorker` para tipo Flashcards manda prompt
   ao LLM pedindo 10-15 pares pergunta/resposta sobre os documentos indexados (formato JSON).
   O `StudioOutput` para Flashcards guarda `content` como JSON de cards e `table_data` como
@@ -5567,7 +5567,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   resposta), botões "Acertei ✓" e "Errei ✗" que atualizam o progresso e salvam via
   `StudioStore.save()`, shuffle do deck, filtro "Só erros". Progresso persiste entre sessões.
 
-- [ ] **`gui/main_window.py` — Guide como tipo do Studio** — adicionar "Guide" ao
+- [x] **`gui/main_window.py` — Guide como tipo do Studio** — adicionar "Guide" ao
   `studio_type_combo` (além de manter a sub-página Guide da Análise). Ao gerar, cria
   `StudioOutput` do tipo Guide com o conteúdo completo (resumo + perguntas + pérolas).
   O tile do Guide, ao ser aberto, exibe as perguntas como chips clicáveis que disparam

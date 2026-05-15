@@ -1251,6 +1251,8 @@ class MainWindow(QMainWindow):
             "Mind Map",
             "Tabela de Dados",
             "Slides",
+            "Flashcards",
+            "Guide",
         ])
         self.studio_type_combo.setToolTip(
             "Resumo: síntese geral da coleção indexada\n"
@@ -1263,7 +1265,9 @@ class MainWindow(QMainWindow):
             "Blog Post: texto narrativo acessível sobre o conteúdo\n"
             "Mind Map: estrutura hierárquica em sintaxe Mermaid\n"
             "Tabela de Dados: extração de entidades em tabela estruturada\n"
-            "Slides: apresentação em Markdown (Marp/reveal.js)"
+            "Slides: apresentação em Markdown (Marp/reveal.js)\n"
+            "Flashcards: 12 pares pergunta/resposta para estudo ativo com progresso\n"
+            "Guide: resumo + perguntas sugeridas + pérolas escondidas (persistente)"
         )
         self.studio_generate_btn = QPushButton("Gerar")
         self.studio_generate_btn.setObjectName("sendBtn")
@@ -2520,6 +2524,16 @@ class MainWindow(QMainWindow):
 
     def _on_tile_opened(self, output: StudioOutput) -> None:
         """Exibe o conteúdo completo de um output em diálogo."""
+        if output.type == "Flashcards":
+            from gui.flashcards_dialog import FlashcardsDialog
+            dlg = FlashcardsDialog(output, self._studio_store, parent=self)
+            dlg.exec()
+            return
+
+        if output.type == "Guide":
+            self._open_guide_output(output)
+            return
+
         dlg = QDialog(self)
         dlg.setWindowTitle(output.title or output.type)
         dlg.resize(700, 500)
@@ -2555,6 +2569,91 @@ class MainWindow(QMainWindow):
         btn_row.addWidget(export_btn)
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
+
+        dlg.exec()
+
+    def _open_guide_output(self, output: StudioOutput) -> None:
+        """Abre output do tipo Guide mostrando perguntas como chips clicáveis."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(output.title or "Guide")
+        dlg.resize(700, 520)
+        vl = QVBoxLayout(dlg)
+        vl.setContentsMargins(16, 16, 16, 16)
+        vl.setSpacing(10)
+
+        # Parseia seções do Markdown salvo pelo _save_guide_to_studio
+        summary = ""
+        questions: list[str] = []
+        gems = ""
+        section = ""
+        for line in output.content.splitlines():
+            if line.startswith("## Resumo"):
+                section = "summary"
+            elif line.startswith("## Perguntas"):
+                section = "questions"
+            elif line.startswith("## Pérolas"):
+                section = "gems"
+            elif section == "summary":
+                summary += line + "\n"
+            elif section == "questions" and line.startswith("- "):
+                questions.append(line[2:].strip())
+            elif section == "gems":
+                gems += line + "\n"
+
+        if summary.strip():
+            lbl = QLabel("Resumo")
+            lbl.setObjectName("sectionLabel")
+            vl.addWidget(lbl)
+            summary_edit = QTextEdit()
+            summary_edit.setReadOnly(True)
+            summary_edit.setPlainText(summary.strip())
+            summary_edit.setMaximumHeight(120)
+            vl.addWidget(summary_edit)
+
+        if questions:
+            lbl_q = QLabel("Perguntas sugeridas (clique para perguntar):")
+            lbl_q.setObjectName("sectionLabel")
+            vl.addWidget(lbl_q)
+            chips_w = QWidget()
+            chips_l = QVBoxLayout(chips_w)
+            chips_l.setContentsMargins(0, 0, 0, 0)
+            chips_l.setSpacing(4)
+            for q in questions:
+                btn = QPushButton(q)
+                btn.setObjectName("chip")
+                btn.setStyleSheet(
+                    "QPushButton#chip { border-radius:12px; padding:4px 10px;"
+                    " text-align:left; }"
+                )
+
+                def _ask(question=q) -> None:
+                    self.question_input.setText(question)
+                    dlg.accept()
+                    self._submit_question()
+
+                btn.clicked.connect(_ask)
+                chips_l.addWidget(btn)
+            vl.addWidget(chips_w)
+
+        if gems.strip():
+            lbl_g = QLabel("Pérolas escondidas")
+            lbl_g.setObjectName("sectionLabel")
+            vl.addWidget(lbl_g)
+            gems_edit = QTextEdit()
+            gems_edit.setReadOnly(True)
+            gems_edit.setPlainText(gems.strip())
+            gems_edit.setMaximumHeight(100)
+            vl.addWidget(gems_edit)
+
+        footer = QHBoxLayout()
+        footer.addStretch()
+        export_btn = QPushButton("Exportar .md")
+        export_btn.clicked.connect(lambda: self._export_output_md(output))
+        footer.addWidget(export_btn)
+        close_btn = QPushButton("Fechar")
+        close_btn.clicked.connect(dlg.accept)
+        footer.addWidget(close_btn)
+        vl.addLayout(footer)
 
         dlg.exec()
 
