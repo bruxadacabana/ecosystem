@@ -121,6 +121,7 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 - **`DESIGN_BIBLE.md` e `GUIDE.md` devem ser mantidos atualizados como prioridade permanente.** Toda implementação — sem exceção — deve ser documentada no `GUIDE.md` na mesma resposta (ou ao menos sinalizar que precisa de atualização). Não esperar a usuária pedir.
 - **Tom obrigatório do `GUIDE.md`:** perspectiva de engenheiro de software escrevendo para um programador iniciante/intermediário — didático, detalhado, contextualiza cada conceito antes de detalhar, explica o "por que" além do "como". Nunca bullet points secos; parágrafos explicativos. Toda nova seção adicionada ao GUIDE deve seguir esse mesmo padrão.
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado.
+- **`notes.md` é arquivo de organização pessoal da usuária — nunca editá-lo.** Apenas lê-lo quando necessário para entender o contexto. Todo rastreamento de progresso vai no `TODO.md`.
 - **Marcar item como `[x]` no TODO imediatamente após concluí-lo** — não acumular para marcar depois, não esperar o fim da sessão.
 - **Antes de implementar qualquer coisa que não esteja no TODO: primeiro acrescentar o item ao TODO (com descrição), depois implementar.** Nunca implementar algo não registrado.
 - Commit por item individual concluído
