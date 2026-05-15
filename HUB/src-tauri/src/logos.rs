@@ -354,12 +354,25 @@ pub struct HardwareResponse {
     pub max_concurrent:       u32,
 }
 
-/// Slot de modelo — app + tipo + label legível.
+/// Slot de modelo — app + tipo + labels legíveis.
 #[derive(Serialize, Clone)]
 pub struct ModelSlot {
     pub app:        String,
     pub model_type: String,
+    /// Label completo: "Mnemosyne — RAG", "KOSMOS — Análise", etc.
     pub label:      String,
+    /// Label conciso derivado do model_type: "RAG/chat (Mnemosyne)", "Análise de artigos (KOSMOS)", etc.
+    pub slot_label: String,
+}
+
+fn slot_label_for(model_type: &str) -> &'static str {
+    match model_type {
+        "llm_rag"      => "RAG/chat (Mnemosyne)",
+        "llm_analysis" => "Análise de artigos (KOSMOS)",
+        "llm_query"    => "Busca inteligente (AKASHA)",
+        "embed"        => "Embedding",
+        _              => "—",
+    }
 }
 
 /// Modelo recomendado para instalação — compilado de todos os perfis de hardware.
@@ -1195,6 +1208,7 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
                     app:        app.to_string(),
                     model_type: model_type.to_string(),
                     label:      label.to_string(),
+                    slot_label: slot_label_for(model_type).to_string(),
                 });
             }
             let ps = profile.as_str().to_string();
@@ -1261,6 +1275,7 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
             app:        "embed".to_string(),
             model_type: "embed".to_string(),
             label:      "Embedding (todos os apps)".to_string(),
+            slot_label: slot_label_for("embed").to_string(),
         }],
         for_profiles:        all_profiles.iter().map(|p| p.as_str().to_string()).collect(),
         for_current_profile: true,

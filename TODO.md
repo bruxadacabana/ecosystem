@@ -4438,7 +4438,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
     llm_query=`qwen2.5:0.5b` (dispatcher mais leve); embed=`potion-multilingual-128M` (NÃO via
     Ollama — instalado via `pip install model2vec`, estático, 27 MB, 256 dims, 101 línguas, 500×
     mais rápido que bge-m3 em CPU — NÃO usar o mesmo ChromaDB que MainPc/Laptop pois 256≠1024 dims).
-- [ ] Adicionar campo `slot_label` à struct `ModelSlot` em `logos.rs` para exibir nome amigável na
+- [x] Adicionar campo `slot_label` à struct `ModelSlot` em `logos.rs` para exibir nome amigável na
   UI: `llm_rag` → "RAG/chat (Mnemosyne)", `llm_analysis` → "Análise de artigos (KOSMOS)",
   `llm_query` → "Busca inteligente (AKASHA)", `embed` → "Embedding". Substituir o campo genérico
   `model_type` na exibição da `LogosView.tsx`.

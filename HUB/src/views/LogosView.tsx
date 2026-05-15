@@ -535,12 +535,12 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
                     </span>
                     {/* Slots */}
                     {m.slots.map(sl => (
-                      <span key={`${sl.app}_${sl.model_type}`} style={{
+                      <span key={`${sl.app}_${sl.model_type}`} title={sl.label} style={{
                         fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 6px',
                         border: '1px solid var(--rule)', borderRadius: 10,
                         color: 'var(--ink-ghost)',
                       }}>
-                        {sl.label}
+                        {sl.slot_label}
                       </span>
                     ))}
                     {/* Badge estático */}

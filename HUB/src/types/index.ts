@@ -170,7 +170,10 @@ export interface OllamaModelEntry {
 export interface ModelSlot {
   app:        string
   model_type: string
+  /** Label completo: "Mnemosyne — RAG", "KOSMOS — Análise", etc. */
   label:      string
+  /** Label conciso do tipo funcional: "RAG/chat (Mnemosyne)", "Análise de artigos (KOSMOS)", etc. */
+  slot_label: string
 }
 
 export interface RecommendedModel {
@@ -195,9 +198,9 @@ export interface PullProgress {
 }
 
 export interface ModelAssignment {
-  /** "mnemosyne" | "kosmos" | "embed" */
+  /** "mnemosyne" | "kosmos" | "akasha" | "embed" */
   app:               string
-  /** "llm" | "embed" */
+  /** "llm_rag" | "llm_analysis" | "llm_query" | "embed" */
   model_type:        string
   /** Label legível para a UI */
   label:             string
