@@ -591,6 +591,28 @@ def _save_reflection_counts(mnemosyne_dir: str, counts: dict[str, int]) -> None:
     path.write_text(json.dumps(counts, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _prepend_titles(chunks: list[Document]) -> None:
+    """Prefixa cada chunk com o título do documento-fonte para melhorar recall.
+
+    Título vem de metadata["title"]; fallback para o stem do caminho.
+    Reflexões são ignoradas (já têm conteúdo estruturado próprio).
+    Idempotente: não duplica o prefixo se já estiver presente.
+    """
+    for chunk in chunks:
+        if chunk.metadata.get("type") == "reflection":
+            continue
+        title = str(chunk.metadata.get("title", "")).strip()
+        if not title:
+            source = chunk.metadata.get("source", "")
+            if source:
+                title = Path(source).stem
+        if not title:
+            continue
+        prefix = f"[{title}]\n\n"
+        if not chunk.page_content.startswith(prefix):
+            chunk.page_content = prefix + chunk.page_content
+
+
 def _group_by_source(chunks: list[Document]) -> dict[str, list[Document]]:
     """Agrupa chunks por arquivo-fonte (metadata["source"])."""
     groups: dict[str, list[Document]] = {}
@@ -717,6 +739,7 @@ def create_vectorstore(
     if config.semantic_chunking:
         splitter = _get_splitter(config, embeddings, source_type=config.collection_type)
         chunks = splitter.split_documents(documents)
+        _prepend_titles(chunks)
     else:
         _splitter_cache: dict[str, RecursiveCharacterTextSplitter] = {}
         chunks = []
@@ -733,6 +756,7 @@ def create_vectorstore(
                 )
             chunks.extend(_splitter_cache[ctype].split_documents([doc]))
         _enrich_chunk_offsets(chunks, documents)
+        _prepend_titles(chunks)
 
     _BATCH, _SLEEP = _detect_batch_config()
     try:
@@ -799,6 +823,7 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
     splitter = _get_splitter(config, source_type=config.collection_type, file_path=file_path)
     chunks = splitter.split_documents(docs)
     _enrich_chunk_offsets(chunks, docs)
+    _prepend_titles(chunks)
 
     try:
         os.makedirs(config.persist_dir, exist_ok=True)
@@ -894,6 +919,7 @@ def update_vectorstore(
             splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
             chunks = splitter.split_documents(docs)
             _enrich_chunk_offsets(chunks, docs)
+            _prepend_titles(chunks)
             level = _incremental_update(
                 vs, bm25_idx, chunk_store, file_path, chunks,
                 config.embed_model, config.embedding_truncate_dim, _BATCH, _SLEEP,
@@ -1041,6 +1067,7 @@ def reindex_transcripts(
                     docs = load_single_file(file_path, source_type=src_type,
                                             ocr_model=config.image_ocr_model)
                     chunks = splitter.split_documents(docs)
+                    _prepend_titles(chunks)
                     _incremental_update(
                         vs, bm25_idx, chunk_store, file_path, chunks,
                         config.embed_model, config.embedding_truncate_dim,

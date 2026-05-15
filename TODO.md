@@ -4551,7 +4551,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   e houver candidatos em pt/zh com score ≥ 0.7× do melhor inglês, promovê-los ao top-k
   substituindo duplicatas de baixa margem. Razão: rerankers têm viés documentado (benchmark
   LAURA, arXiv:2604.20199) — colocam >70% dos docs em inglês mesmo em corpus multilíngue.
-- [ ] **Prefixo do título do documento em cada chunk** — ao montar o chunk para indexação em
+- [x] **Prefixo do título do documento em cada chunk** — ao montar o chunk para indexação em
   `core/indexer.py`, prefixar o texto com o título do documento fonte (do frontmatter ou do
   nome do arquivo): ex: `"[Título do artigo]\n\n{texto do chunk}"`. Melhora recall no RAG
   porque o título frequentemente contém as palavras-chave da query — sem o prefixo, chunks de

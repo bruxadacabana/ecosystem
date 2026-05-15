@@ -1,8 +1,6 @@
 vamos prosseguir com a implementação:
 ### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
 
-- [ ] Prefixo do título em cada chunk — Mnemosyne (core/indexer.py) — sem dep nova, melhora recall em queries de palavras-chave que aparecem no título mas não no corpo do chunk.
-
 - [ ] Chunking por caracteres Unicode — Mnemosyne (core/indexer.py) — substitui contagem de palavras por len(text), chunk_size ~1200 chars. Melhora todos os idiomas; exige reindex após a mudança.
 
 - [ ] Chunking Unicode ao processar artigos — KOSMOS — mesma lógica, verificar separadores zh (。！？) no splitter.
