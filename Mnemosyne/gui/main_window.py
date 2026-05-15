@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.config import AppConfig, load_config, save_config
+from core.config import AppConfig, DEFAULT_PERSONA_PROMPT, load_config, save_config
 from core.errors import ConfigError, VectorstoreNotFoundError
 from core.indexer import IndexCheckpoint, load_all_vectorstores
 from core.rag import MultiVectorstore
@@ -283,6 +283,34 @@ class SetupDialog(QDialog):
         opts_layout.addWidget(self.suggest_questions_check)
         layout.addWidget(opts_group)
 
+        # Personalidade do assistente (curador customizável)
+        persona_group = QGroupBox("Personalidade do assistente")
+        persona_layout = QVBoxLayout(persona_group)
+        persona_layout.addWidget(QLabel(
+            "Texto de sistema para o modo 'Curador' (afeta todas as consultas RAG):"
+        ))
+        self.persona_edit = QTextEdit()
+        self.persona_edit.setMinimumHeight(120)
+        self.persona_edit.setPlaceholderText("Deixe vazio para usar o padrão do Mnemosyne…")
+        self.persona_edit.setPlainText(current.persona_prompt or DEFAULT_PERSONA_PROMPT)
+        persona_layout.addWidget(self.persona_edit)
+        persona_btn_row = QHBoxLayout()
+        restore_btn = QPushButton("Restaurar padrão")
+        restore_btn.setToolTip("Restaura o prompt de curador original do Mnemosyne")
+        restore_btn.clicked.connect(
+            lambda: self.persona_edit.setPlainText(DEFAULT_PERSONA_PROMPT)
+        )
+        self._test_persona_btn = QPushButton("Testar persona")
+        self._test_persona_btn.setToolTip(
+            "Envia 'Olá, apresente-se' ao LLM com esta persona e exibe a resposta"
+        )
+        self._test_persona_btn.clicked.connect(self._test_persona)
+        persona_btn_row.addWidget(restore_btn)
+        persona_btn_row.addWidget(self._test_persona_btn)
+        persona_btn_row.addStretch()
+        persona_layout.addLayout(persona_btn_row)
+        layout.addWidget(persona_group)
+
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -312,6 +340,53 @@ class SetupDialog(QDialog):
         self._llm_hint_label.setText(hint)
         self._llm_hint_label.setVisible(bool(hint))
 
+    def _test_persona(self) -> None:
+        """Envia 'Olá, apresente-se' ao LLM com a persona atual e exibe o resultado."""
+        prompt = self.persona_edit.toPlainText().strip()
+        if not prompt:
+            QMessageBox.warning(self, "Aviso", "O campo de persona está vazio.")
+            return
+        llm_model = self.llm_combo.currentText()
+        if not llm_model or "nenhum" in llm_model.lower():
+            QMessageBox.warning(self, "Aviso", "Selecione um modelo LLM primeiro.")
+            return
+
+        self._test_persona_btn.setEnabled(False)
+        self._test_persona_btn.setText("Testando…")
+
+        from PySide6.QtCore import QThread, Signal as _Signal
+
+        class _TestWorker(QThread):
+            done = _Signal(str)
+
+            def __init__(self, model: str, persona: str) -> None:
+                super().__init__()
+                self._model  = model
+                self._persona = persona
+
+            def run(self) -> None:
+                try:
+                    from langchain_ollama import ChatOllama
+                    from langchain_core.messages import SystemMessage, HumanMessage
+                    llm  = ChatOllama(model=self._model, temperature=0.5)
+                    msgs = [
+                        SystemMessage(content=self._persona),
+                        HumanMessage(content="Olá, apresente-se brevemente."),
+                    ]
+                    result = llm.invoke(msgs)
+                    self.done.emit(str(result.content))
+                except Exception as exc:
+                    self.done.emit(f"Erro: {exc}")
+
+        self._persona_worker = _TestWorker(llm_model, prompt)
+        self._persona_worker.done.connect(self._on_test_persona_done)
+        self._persona_worker.start()
+
+    def _on_test_persona_done(self, result: str) -> None:
+        self._test_persona_btn.setEnabled(True)
+        self._test_persona_btn.setText("Testar persona")
+        QMessageBox.information(self, "Resultado da persona", result)
+
     def _use_logos_llm(self) -> None:
         if not self._logos_llm:
             return
@@ -339,11 +414,12 @@ class SetupDialog(QDialog):
         if row >= 0:
             self.extra_dirs_list.takeItem(row)
 
-    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None, bool, str, str, bool]:
-        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, image_ocr_model, suggest_questions)."""
+    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None, bool, str, str, bool, str]:
+        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, image_ocr_model, suggest_questions, persona_prompt)."""
         extra_dirs = [self.extra_dirs_list.item(i).text()
                       for i in range(self.extra_dirs_list.count())]
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
+        persona = self.persona_edit.toPlainText().strip()
         return (
             self.watched_edit.text().strip(),
             self.vault_edit.text().strip(),
@@ -358,6 +434,7 @@ class SetupDialog(QDialog):
             self.node_type_model_edit.text().strip(),
             self.image_ocr_model_edit.text().strip(),
             self.suggest_questions_check.isChecked(),
+            persona if persona != DEFAULT_PERSONA_PROMPT else "",
         )
 
 
@@ -1593,8 +1670,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -1602,8 +1679,8 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             self._log_event("Configuração atualizada.")
@@ -1619,6 +1696,7 @@ class MainWindow(QMainWindow):
         node_type_model: str = "",
         image_ocr_model: str = "",
         suggest_questions: bool = False,
+        persona_prompt: str = "",
     ) -> None:
         """Aplica os valores do SetupDialog ao config e guarda."""
         if watched_dir:
@@ -1637,6 +1715,7 @@ class MainWindow(QMainWindow):
         self.config.node_type_model = node_type_model
         self.config.image_ocr_model = image_ocr_model
         self.config.suggest_questions = suggest_questions
+        self.config.persona_prompt = persona_prompt
         save_config(self.config)
         try:
             from pathlib import Path as _Path
