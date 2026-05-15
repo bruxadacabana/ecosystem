@@ -235,7 +235,9 @@ class _AnalyzeWorker(QThread):
 
     _SYSTEM = (
         'Você é uma API JSON. Responda APENAS com JSON válido. '
-        'O primeiro caractere deve ser "{".'
+        'O primeiro caractere deve ser "{". '
+        'Os campos textuais do JSON (five_ws) devem estar em português, '
+        'mesmo que o artigo original esteja em outro idioma.'
     )
 
     # JSON Schema completo para constrained decoding — garante campos obrigatórios
@@ -303,7 +305,7 @@ class _AnalyzeWorker(QThread):
                 f"- tags: 3 a 5 palavras-chave em letras minúsculas, no idioma do artigo\n"
                 f"- sentiment: -1.0 (muito negativo) até +1.0 (muito positivo)\n"
                 f"- clickbait: 0.0 (sem clickbait) até 1.0 (clickbait puro)\n"
-                f"- five_ws: respostas concisas (máximo 2 frases), no idioma do artigo\n"
+                f"- five_ws: respostas concisas (máximo 2 frases), em português\n"
                 f"- entities: nomes próprios de pessoas, organizações e lugares "
                 f"(listas vazias se não houver)"
             )

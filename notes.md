@@ -1,10 +1,6 @@
 vamos prosseguir com a implementação:
 ### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
 
-- [ ] Language instruction no system prompt — Mnemosyne (core/rag.py) — 1 linha, corrige language drift para todo corpus multilíngue, sem dependências novas.
-
-- [ ] Language instruction no prompt de análise — KOSMOS — mesma correção, garante que o JSON de análise sempre saia em português mesmo com artigos em zh/en.
-
 - [ ] Prefixo do título em cada chunk — Mnemosyne (core/indexer.py) — sem dep nova, melhora recall em queries de palavras-chave que aparecem no título mas não no corpo do chunk.
 
 - [ ] Chunking por caracteres Unicode — Mnemosyne (core/indexer.py) — substitui contagem de palavras por len(text), chunk_size ~1200 chars. Melhora todos os idiomas; exige reindex após a mudança.

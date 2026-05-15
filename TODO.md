@@ -4564,7 +4564,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   não como algum tokenizador customizado que ignore caracteres zh. Para artigos em chinês,
   considerar separadores `["。", "！", "？", "\n\n", "\n"]` em vez dos separadores europeus
   (`[". ", "! ", "? "]`) que não existem em chinês.
-- [ ] **Language instruction no prompt de análise** — adicionar ao system prompt do KOSMOS
+- [x] **Language instruction no prompt de análise** — adicionar ao system prompt do KOSMOS
   instrução: `"Responda em português. Os campos textuais do JSON devem estar em português,
   mesmo que o artigo original esteja em outro idioma."` Razão: sem instrução, contexto em
   chinês pode causar output em chinês, quebrando o schema e a legibilidade das análises

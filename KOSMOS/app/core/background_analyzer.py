@@ -38,7 +38,9 @@ _BATCH_SIZE = 5    # artigos por call LLM no modo batch
 # Sistema de instrução fixo — idêntico ao _AnalyzeWorker para aproveitar KV cache
 _SYSTEM = (
     'Você é uma API JSON. Responda APENAS com JSON válido. '
-    'O primeiro caractere deve ser "{".'
+    'O primeiro caractere deve ser "{". '
+    'Os campos textuais do JSON (five_ws) devem estar em português, '
+    'mesmo que o artigo original esteja em outro idioma.'
 )
 
 # Para modelos sub-2B (smollm2:1.7b, qwen2.5:0.5b): sistema com schema explícito
@@ -47,14 +49,15 @@ _SYSTEM_FEW_SHOT = (
     'Você é uma API JSON. Responda APENAS com JSON válido seguindo este schema:\n'
     '{"tags":["string"],"sentiment":float,"clickbait":float,'
     '"five_ws":{"who":"","what":"","when":"","where":"","why":""},'
-    '"entities":{"people":[],"orgs":[],"places":[]}}\n\n'
+    '"entities":{"people":[],"orgs":[],"places":[]}}\n'
+    'Os campos textuais (five_ws) devem estar em português, mesmo que o artigo esteja em outro idioma.\n\n'
     'Exemplo 1 (inglês, tecnologia):\n'
     'Título: "Google Announces Gemini 2.0 AI Model"\n'
     'Resultado: {"tags":["google","gemini","artificial intelligence"],'
     '"sentiment":0.7,"clickbait":0.1,'
-    '"five_ws":{"who":"Google","what":"Released Gemini 2.0 multimodal AI model",'
-    '"when":"Recently","where":"United States","why":"Advance AI capabilities"},'
-    '"entities":{"people":[],"orgs":["Google"],"places":["United States"]}}\n\n'
+    '"five_ws":{"who":"Google","what":"Lançou o modelo de IA multimodal Gemini 2.0",'
+    '"when":"Recentemente","where":"Estados Unidos","why":"Avançar capacidades de IA"},'
+    '"entities":{"people":[],"orgs":["Google"],"places":["Estados Unidos"]}}\n\n'
     'Exemplo 2 (português, clickbait):\n'
     'Título: "Você não vai acreditar no que o governo fez!"\n'
     'Resultado: {"tags":["governo","economia","fiscal"],'
@@ -343,7 +346,7 @@ class BackgroundAnalyzer(QThread):
             f"- tags: 3 a 5 palavras-chave em letras minúsculas, no idioma do artigo\n"
             f"- sentiment: -1.0 (muito negativo) até +1.0 (muito positivo)\n"
             f"- clickbait: 0.0 (sem clickbait) até 1.0 (clickbait puro)\n"
-            f"- five_ws: respostas concisas (máximo 2 frases), no idioma do artigo\n"
+            f"- five_ws: respostas concisas (máximo 2 frases), em português\n"
             f"- entities: nomes próprios de pessoas, organizações e lugares "
             f"(listas vazias se não houver)"
         )
