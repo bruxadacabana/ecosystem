@@ -5659,7 +5659,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   (lista numerada `1. passo`), `## Dicas` (lista `- dica`, omitida se vazia).
   Arquivo salvo como `{slug-do-titulo}-{YYYYMMDD}.md` em `config.recipes_dir`.
 
-- [ ] **`gui/recipe_tab.py` — aba "Receitas" no HERMES** — nova `QWidget` adicionada ao
+- [x] **`gui/recipe_tab.py` — aba "Receitas" no HERMES** — nova `QWidget` adicionada ao
   `QTabWidget` principal do HERMES. Componentes: `QLineEdit` para URL com placeholder
   "Cole a URL do vídeo ou playlist…" + botão "Extrair"; label de status que aparece após
   colar URL ("YouTube · Identificado: [Título]" ou "Playlist: N vídeos detectados") via
@@ -5670,7 +5670,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   "Limpar" reseta tudo. Para playlists, exibir lista de resultados com status por item
   (✓ / ✗) num `QListWidget` acima do preview.
 
-- [ ] **`gui/workers.py` — `RecipeExtractWorker(QThread)`** — worker que encapsula
+- [x] **`gui/workers.py` — `RecipeExtractWorker(QThread)`** — worker que encapsula
   `extract_recipe()` (vídeo único) ou `RecipePlaylistExtractor` (playlist). Sinais:
   `progress(int, int, str)` (atual, total, título), `recipe_ready(RecipeResult)` (por
   item concluído), `finished()`, `error(str)`. Rodando com `QThread.Priority.LowPriority`
