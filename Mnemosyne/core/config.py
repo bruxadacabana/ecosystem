@@ -124,6 +124,7 @@ _DEFAULTS: dict = {
     "semantic_chunking": False,
     "indexing_only": False,
     "indexing_machine": "",
+    "indexing_enabled": True,
     "dark_mode": True,
     "reranking_enabled": True,
     "reranking_top_n": 6,
@@ -154,6 +155,8 @@ class AppConfig:
     semantic_chunking: bool = False
     indexing_only: bool = False
     indexing_machine: str = ""
+    # False no WorkPc — consome índice sincronizado pelo MainPc, não gera índice local
+    indexing_enabled: bool = True
     dark_mode: bool = True
     reranking_enabled: bool = True
     reranking_top_n: int = 6
@@ -302,13 +305,18 @@ def _apply_logos_recommendations(config: "AppConfig", saved_keys: "set[str]") ->
         _models = _profile.get("models", {})
         _changes: dict = {}
         if "llm_model" not in saved_keys:
-            _llm = _models.get("llm_mnemosyne", "")
+            _llm = _models.get("llm_rag", "")  # campo renomeado de llm_mnemosyne
             if _llm:
                 _changes["llm_model"] = _llm
         if not config.embed_model:
             _embed = _models.get("embed", "")
             if _embed:
                 _changes["embed_model"] = _embed
+        # WorkPc: indexação desabilitada por padrão — usa índice bge-m3 sincronizado
+        # pelo MainPc via Proton Drive (dims incompatíveis com potion-multilingual-128M)
+        if "indexing_enabled" not in saved_keys:
+            if _profile.get("profile") == "work_pc":
+                _changes["indexing_enabled"] = False
         return _replace(config, **_changes) if _changes else config
     except Exception:
         return config
@@ -369,6 +377,7 @@ def load_config() -> AppConfig:
         semantic_chunking=bool(data.get("semantic_chunking", False)),
         indexing_only=bool(data.get("indexing_only", False)),
         indexing_machine=str(data.get("indexing_machine", "")),
+        indexing_enabled=bool(data.get("indexing_enabled", True)),
         dark_mode=bool(data.get("dark_mode", True)),
         reranking_enabled=bool(data.get("reranking_enabled", True)),
         reranking_top_n=int(data.get("reranking_top_n", 6)),
@@ -408,6 +417,7 @@ def save_config(config: AppConfig) -> None:
         "semantic_chunking": config.semantic_chunking,
         "indexing_only": config.indexing_only,
         "indexing_machine": config.indexing_machine,
+        "indexing_enabled": config.indexing_enabled,
         "dark_mode": config.dark_mode,
         "reranking_enabled": config.reranking_enabled,
         "reranking_top_n": config.reranking_top_n,

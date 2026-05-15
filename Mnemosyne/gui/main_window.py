@@ -1819,29 +1819,44 @@ class MainWindow(QMainWindow):
         if self.config.auto_index_on_change:
             self._start_watcher()
 
-        if self.config.background_index_enabled:
+        if self.config.background_index_enabled and self.config.indexing_enabled:
             self._start_idle_indexer()
 
         self._check_akasha_availability()
 
     def _apply_indexing_machine_lock(self) -> None:
-        """Desabilita indexação se o índice foi construído em outra máquina.
+        """Desabilita indexação se o índice foi construído em outra máquina,
+        ou se indexing_enabled=False (WorkPc usando índice sincronizado).
 
-        Quando indexing_machine está definido no config e não coincide com o
-        hostname atual, esta máquina opera em modo somente-consulta. Isso
-        reforça a arquitetura 'indexar no CachyOS, consultar no Windows'.
+        Dois motivos para desabilitar:
+        1. indexing_machine definido e diferente do hostname atual.
+        2. indexing_enabled=False — perfil WorkPc sem GPU, usa índice bge-m3
+           sincronizado pelo MainPc via Proton Drive (dims incompatíveis).
         """
         import socket
-        machine = self.config.indexing_machine
-        if not machine or machine == socket.gethostname():
-            return
-        for btn in (
+
+        indexing_buttons = (
             self.index_btn,
             self.update_index_btn,
             self.reindex_transcripts_btn,
             self.clear_index_btn,
             self.resume_btn,
-        ):
+        )
+
+        if not self.config.indexing_enabled:
+            for btn in indexing_buttons:
+                btn.setEnabled(False)
+            self._machine_lock_label.setText(
+                "Indexação desativada neste computador — "
+                "usando índice sincronizado do computador principal."
+            )
+            self._machine_lock_label.setVisible(True)
+            return
+
+        machine = self.config.indexing_machine
+        if not machine or machine == socket.gethostname():
+            return
+        for btn in indexing_buttons:
             btn.setEnabled(False)
         self._machine_lock_label.setText(
             f"Índice construído em '{machine}'. Consultas disponíveis."

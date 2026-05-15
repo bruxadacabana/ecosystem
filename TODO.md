@@ -4501,7 +4501,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   salvos na coleção), alertar via evento Tauri: "Trocar embedding de [modelo_antigo] para
   [modelo_novo] exige reindexação completa — os vetores atuais são incompatíveis (dims:
   [antiga] → [nova]). Confirmar?" Bloquear uso do Mnemosyne até reindexação ou reverter a escolha.
-- [ ] Implementar flag `indexing_enabled` por perfil no `ecosystem.json`. WorkPc deve ter
+- [x] Implementar flag `indexing_enabled` por perfil no `ecosystem.json`. WorkPc deve ter
   `indexing_enabled: false` por padrão — consume o índice bge-m3 sincronizado pelo MainPc via
   Proton Drive, sem gerar índice local com potion-multilingual-128M (dims incompatíveis). O
   Mnemosyne deve verificar essa flag no startup e exibir "Indexação desativada neste computador —
