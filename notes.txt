@@ -1,6 +1,7 @@
 ========================================
 
-vamos prosseguir com a implementação de ### Pesquisa: NotebookLM — Funcionalidades e Evolução 2025–2026 | 2026-05-14
+vamos prosseguir com a implementação de ### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
+
 
 
 
@@ -11,25 +12,16 @@ vamos prosseguir com a implementação de ### Pesquisa: NotebookLM — Funcional
 
 próximo:
 
-### HERMES: extrator de receitas de vídeo | 2026-05-14
-
-
-### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
-
-
-### LOGOS: pull de modelo recomendado direto do HUB | 2026-05-13
-
-### KOSMOS: barra de status, persistência de traduções e integração com novos downloads | 2026-05-14
-
-### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
-
 ### Pesquisa: LLMs por Funcionalidade e Hardware — Controle de Recursos e Compatibilidade | 2026-05-14
+
+
+### Pesquisa: LLMs para RAG/Sumarização e Embeddings Multilíngues — Seleção por Hardware | 2026-05-13
 
 ### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
 
-### Pesquisa: Assistente de Pesquisa Inteligente — LLM-Augmented Search e Query Understanding | 2026-05-06
+### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
 
-### Pesquisa: Integração KOSMOS-AKASHA — Padrões RSS Reader + Web Archiver | 2026-05-04
+### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
 
 
 depois:

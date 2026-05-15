@@ -5629,7 +5629,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### HERMES
 
-- [ ] **`services/recipe_extractor.py` — pipeline de extração** — criar módulo com função
+- [x] **`services/recipe_extractor.py` — pipeline de extração** — criar módulo com função
   `extract_recipe(url: str, config: AppConfig) → RecipeResult`. Passo 1: chamar yt-dlp
   (`yt_dlp.YoutubeDL`) para extrair metadados do vídeo (título, channel, duration, upload_date,
   thumbnail, webpage_url, extractor_key) e tentar baixar legendas automáticas/manuais
@@ -5642,14 +5642,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Temperatura 0.2 para minimizar alucinações. Passo 4: montar `RecipeResult` com todos os
   campos. Tratar `except DownloadError` e `except json.JSONDecodeError` com tipagem explícita.
 
-- [ ] **`services/recipe_extractor.py` — suporte a playlists** — `RecipePlaylistExtractor`
+- [x] **`services/recipe_extractor.py` — suporte a playlists** — `RecipePlaylistExtractor`
   que usa `yt_dlp.YoutubeDL` com `extract_flat=True` para listar entradas da playlist sem
   baixar. Retorna `list[str]` de URLs individuais. O worker GUI itera sobre elas chamando
   `extract_recipe()` por item, emitindo `progress(current, total, current_title)` a cada
   conclusão. Falhas por item são registradas como `RecipeResult(error=str)` e não abortam
   o lote — todos os vídeos são processados independentemente.
 
-- [ ] **Output Markdown com frontmatter `type: recipe`** — o `RecipeResult` é serializado
+- [x] **Output Markdown com frontmatter `type: recipe`** — o `RecipeResult` é serializado
   por função `to_markdown(result) → str`. Frontmatter YAML obrigatório:
   `type: recipe` (identificador para o ecossistema), `title`, `source_url`, `source_platform`
   (valor de `extractor_key` do yt-dlp, ex: `"youtube"`), `channel`, `duration_seconds`,
