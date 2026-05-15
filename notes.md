@@ -1,8 +1,6 @@
 vamos prosseguir com a implementação:
 ### Pesquisa: RAG Multilíngue — Estratégias de Pipeline, Indexação e Geração Cross-lingual | 2026-05-14
 
-- [ ] Chunking Unicode ao processar artigos — KOSMOS — mesma lógica, verificar separadores zh (。！？) no splitter.
-
 - [ ] Metadado language por chunk — Mnemosyne (lingua-py) — adiciona metadata["language"] por chunk durante indexação. Nova dependência lingua-language-detector. Habilita o item seguinte.
 
 - [ ] Diversidade de idioma antes do reranking — Mnemosyne (core/rag.py) — depende do metadado language acima. Promove chunks pt/zh quando top-k tem >70% em inglês.

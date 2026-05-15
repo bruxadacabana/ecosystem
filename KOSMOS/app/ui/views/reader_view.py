@@ -1214,7 +1214,7 @@ class ReaderView(QWidget):
         raw = self._article.content_full or self._article.summary or ""
         try:
             from bs4 import BeautifulSoup
-            content = BeautifulSoup(raw, "html.parser").get_text(" ", strip=True)
+            content = BeautifulSoup(raw, "html.parser").get_text("\n", strip=True)
         except Exception:
             content = re.sub(r"<[^>]+>", " ", raw)
         content = content[:num_ctx * 3]  # ~3 chars/token
@@ -1341,7 +1341,7 @@ class ReaderView(QWidget):
         content = self._article.content_full or self._article.summary or ""
         try:
             from bs4 import BeautifulSoup
-            content = BeautifulSoup(content, "html.parser").get_text(" ", strip=True)
+            content = BeautifulSoup(content, "html.parser").get_text("\n", strip=True)
         except Exception:
             pass
         text = f"{title}\n\n{content[:2000]}"

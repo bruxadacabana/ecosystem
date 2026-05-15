@@ -328,7 +328,7 @@ class BackgroundAnalyzer(QThread):
         raw = article.content_full or article.summary or ""
         try:
             from bs4 import BeautifulSoup
-            text = BeautifulSoup(raw, "html.parser").get_text(" ", strip=True)
+            text = BeautifulSoup(raw, "html.parser").get_text("\n", strip=True)
         except Exception:
             import re
             text = re.sub(r"<[^>]+>", " ", raw)

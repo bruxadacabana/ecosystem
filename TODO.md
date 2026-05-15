@@ -4558,7 +4558,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   seções internas de um artigo longo ficam sem âncora léxica ao seu tema principal.
 
 #### KOSMOS
-- [ ] **Chunking por caractere Unicode ao processar artigos** — aplicar a mesma lógica do item
+- [x] **Chunking por caractere Unicode ao processar artigos** — aplicar a mesma lógica do item
   Mnemosyne acima ao processamento de artigos do KOSMOS. Se o KOSMOS usa `RecursiveCharacterTextSplitter`
   do LangChain, verificar se o parâmetro `length_function` está como `len` (padrão correto) e
   não como algum tokenizador customizado que ignore caracteres zh. Para artigos em chinês,
