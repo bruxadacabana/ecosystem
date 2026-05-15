@@ -172,6 +172,10 @@ PERSONAS_VAULT: dict[str, str] = {
 }
 
 
+_LANGUAGE_INSTRUCTION = (
+    "Responda sempre em português, independentemente do idioma dos documentos recuperados."
+)
+
 _VAULT_IGNORE = {".obsidian", "templates", "attachments", ".trash", ".mnemosyne"}
 
 
@@ -984,6 +988,8 @@ def _build_messages(
         system_text = persona_prompt
     else:
         system_text = persona_map.get(persona, persona_map["curador"])
+    if _LANGUAGE_INSTRUCTION not in system_text:
+        system_text = system_text.rstrip() + "\n" + _LANGUAGE_INSTRUCTION
     messages: list[BaseMessage] = [SystemMessage(content=system_text)]
 
     for turn in history[-_HISTORY_TURNS:]:

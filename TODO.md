@@ -4538,7 +4538,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   para textos curtos e para distinguir idiomas próximos (pt vs es). Configurar o detector para
   reconhecer pelo menos: `Language.PORTUGUESE`, `Language.ENGLISH`, `Language.CHINESE`. Esse
   metadado habilita filtragem futura, estatísticas do índice e diversidade no reranking.
-- [ ] **Language instruction no system prompt** — adicionar instrução explícita de idioma de
+- [x] **Language instruction no system prompt** — adicionar instrução explícita de idioma de
   resposta ao system prompt em `core/rag.py`: `"Responda sempre em português, independentemente
   do idioma dos documentos recuperados."` Razão: fenômeno de language drift documentado —
   quando os chunks recuperados estão em idioma diferente do esperado (especialmente chinês),
