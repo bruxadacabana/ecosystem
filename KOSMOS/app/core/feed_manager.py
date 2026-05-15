@@ -18,6 +18,41 @@ from app.core.models import Article, ArticleTag, Category, Feed, Highlight, Read
 log = logging.getLogger("kosmos.feed_manager")
 
 
+def _snapshot_categories() -> None:
+    try:
+        from app.core.feed_store import save_categories
+        session = get_session()
+        try:
+            cats = session.query(Category).order_by(Category.position, Category.name).all()
+            data = [{"name": c.name, "position": c.position} for c in cats]
+        finally:
+            session.close()
+        save_categories(data)
+    except Exception as exc:
+        log.warning("feed_store save_categories: %s", exc)
+
+
+def _snapshot_feeds() -> None:
+    try:
+        from app.core.feed_store import save_feeds
+        session = get_session()
+        try:
+            cats = {c.id: c.name for c in session.query(Category).all()}
+            feeds = session.query(Feed).order_by(Feed.position, Feed.name).all()
+            data = [{
+                "url": f.url,
+                "name": f.name,
+                "feed_type": f.feed_type,
+                "category_name": cats.get(f.category_id, "") if f.category_id else "",
+                "active": f.active,
+            } for f in feeds]
+        finally:
+            session.close()
+        save_feeds(data)
+    except Exception as exc:
+        log.warning("feed_store save_feeds: %s", exc)
+
+
 def _article_fingerprint(title: str, pub_date: str, url: str) -> str:
     """SHA-256 de (título normalizado + data ISO[:10] + URL normalizada).
 
@@ -81,6 +116,7 @@ class FeedManager:
             session.refresh(cat)   # recarrega id e campos gerados pelo DB
             session.expunge(cat)
             log.info("Categoria criada: %r", cat.name)
+            _snapshot_categories()
             return cat
         except SQLAlchemyError as exc:
             session.rollback()
@@ -96,6 +132,7 @@ class FeedManager:
                 raise FeedManagerError(f"Categoria {category_id} não encontrada.")
             cat.name = name.strip()
             session.commit()
+            _snapshot_categories()
         except SQLAlchemyError as exc:
             session.rollback()
             raise FeedManagerError(f"Erro ao renomear categoria: {exc}") from exc
@@ -112,6 +149,7 @@ class FeedManager:
             session.delete(cat)
             session.commit()
             log.info("Categoria removida: id=%d", category_id)
+            _snapshot_categories()
         except SQLAlchemyError as exc:
             session.rollback()
             raise FeedManagerError(f"Erro ao excluir categoria: {exc}") from exc
@@ -180,6 +218,7 @@ class FeedManager:
             session.refresh(feed)
             session.expunge(feed)
             log.info("Feed adicionado: %r (%s)", feed.name, feed.feed_type)
+            _snapshot_feeds()
             return feed
         except SQLAlchemyError as exc:
             session.rollback()
@@ -197,6 +236,7 @@ class FeedManager:
             session.delete(feed)
             session.commit()
             log.info("Feed removido: id=%d", feed_id)
+            _snapshot_feeds()
         except SQLAlchemyError as exc:
             session.rollback()
             raise FeedManagerError(f"Erro ao excluir feed: {exc}") from exc
@@ -213,6 +253,7 @@ class FeedManager:
             feed.active = 1 if active else 0
             session.commit()
             log.info("Feed %d: active=%s", feed_id, active)
+            _snapshot_feeds()
         except SQLAlchemyError as exc:
             session.rollback()
             raise FeedManagerError(f"Erro ao alterar feed: {exc}") from exc
