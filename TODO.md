@@ -5288,11 +5288,11 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   de streaming; no MainPc o modelo KOSMOS pode ser diferente do Mnemosyne para rodar simultaneamente
 - [x] **Pesquisar modelos de embedding multilingues** -- qualidade pt/en, velocidade por hardware;
   bge-m3 vs nomic-embed-text vs all-minilm vs potion-multilingual-128M
-- [ ] **Pesquisar LLMs para extração de conteúdo (AKASHA)** — AKASHA não tem slot LLM ainda;
+- [x] **Pesquisar LLMs para extração de conteúdo (AKASHA)** — AKASHA não tem slot LLM ainda;
   avaliar se precisa e qual seria o modelo (extração de metadados, resumo de página web).
   A pesquisa de sumarização acima cobre parcialmente — registrar decisão explícita de
   incluir ou não um slot AKASHA nos perfis do LOGOS.
-- [ ] **Atualizar perfis em `logos.rs`** após pesquisa — `rationale_for_model()`; possivelmente
+- [x] **Atualizar perfis em `logos.rs`** após pesquisa — `rationale_for_model()`; possivelmente
   adicionar slot AKASHA; garantir que modelos escolhidos para o mesmo app em diferentes
   hardwares sejam da mesma família ou arquitetura compatível (ex: todos Qwen, todos Gemma,
   ou todos instruction-tuned com mesmo prompt format)

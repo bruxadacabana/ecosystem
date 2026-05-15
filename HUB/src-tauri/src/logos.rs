@@ -96,16 +96,22 @@ impl HardwareProfile {
             HardwareProfile::MainPc => ModelProfile {
                 llm_mnemosyne: "qwen2.5:7b",
                 llm_kosmos:    "gemma2:2b",
+                // gemma2:2b coexiste com qwen2.5:7b na VRAM (1.6 + 4.7 = ~6.3 GB < 7.5 GB)
+                llm_akasha:    "gemma2:2b",
                 embed:         "bge-m3",
             },
             HardwareProfile::Laptop => ModelProfile {
                 llm_mnemosyne: "gemma2:2b",
-                llm_kosmos:    "smollm2:1.7b",
+                // smollm2:1.7b tinha JSON parse rate 26% — inutilizável para análise estruturada
+                llm_kosmos:    "gemma2:2b",
+                llm_akasha:    "gemma2:2b",
                 embed:         "nomic-embed-text",
             },
             HardwareProfile::WorkPc => ModelProfile {
                 llm_mnemosyne: "smollm2:1.7b",
                 llm_kosmos:    "smollm2:1.7b",
+                // qwen2.5:0.5b tem JSON parse rate 61% vs smollm2 26% — melhor para extração
+                llm_akasha:    "qwen2.5:0.5b",
                 embed:         "all-minilm",
             },
         }
@@ -118,6 +124,9 @@ impl HardwareProfile {
 pub struct ModelProfile {
     pub llm_mnemosyne: &'static str,
     pub llm_kosmos:    &'static str,
+    /// LLM para extração de metadados e expansão de query do AKASHA.
+    /// Modelo mais leve que o Mnemosyne — tarefas de extração JSON on-demand.
+    pub llm_akasha:    &'static str,
     pub embed:         &'static str,
 }
 
@@ -1093,9 +1102,10 @@ pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
     // Definição de todos os slots de modelo configuráveis
     let slots: &[(&str, &str, &str, &str)] = &[
         // (app, model_type, label, recommended)
-        ("mnemosyne", "llm",   "Mnemosyne — LLM",              profile.llm_mnemosyne),
-        ("kosmos",    "llm",   "KOSMOS — LLM",                  profile.llm_kosmos),
-        ("embed",     "embed", "Embedding (todos os apps)",     profile.embed),
+        ("mnemosyne", "llm",   "Mnemosyne — LLM",                   profile.llm_mnemosyne),
+        ("kosmos",    "llm",   "KOSMOS — LLM",                       profile.llm_kosmos),
+        ("akasha",    "llm",   "AKASHA — LLM (extração/query)",      profile.llm_akasha),
+        ("embed",     "embed", "Embedding (todos os apps)",          profile.embed),
     ];
 
     slots.iter().map(|(app, model_type, label, recommended)| {
@@ -1128,6 +1138,7 @@ pub async fn do_set_model_assignment(s: &LogosState, app: &str, model_type: &str
         match (app, model_type) {
             ("mnemosyne", "llm")   => profile.llm_mnemosyne.to_string(),
             ("kosmos",    "llm")   => profile.llm_kosmos.to_string(),
+            ("akasha",    "llm")   => profile.llm_akasha.to_string(),
             ("embed",     "embed") => profile.embed.to_string(),
             _ => String::new(),
         }
@@ -1142,9 +1153,10 @@ pub async fn do_set_model_assignment(s: &LogosState, app: &str, model_type: &str
 
 fn rationale_for_model(name: &str) -> &'static str {
     match name {
-        "qwen2.5:7b"               => "7B · ~4.5 GB VRAM · síntese multi-doc, RAG longo",
-        "gemma2:2b"                => "2B · ~1.5 GB VRAM · rápido, streaming ágil",
-        "smollm2:1.7b"             => "1.7B · ~1 GB RAM · CPU-only, resposta leve",
+        "qwen2.5:7b"               => "7B · ~4.5 GB VRAM · síntese multi-doc, RAG longo · JSON 92%",
+        "gemma2:2b"                => "2B · ~1.5 GB VRAM · rápido, streaming ágil · JSON 74%",
+        "smollm2:1.7b"             => "1.7B · ~1 GB RAM · CPU-only, geração de texto · JSON 26% (não usar para extração estruturada)",
+        "qwen2.5:0.5b"             => "0.5B · ~400 MB RAM · CPU-only, extração JSON · JSON 61% (melhor que smollm2 para schema)",
         "bge-m3"                   => "embed multilíngue SOTA · 8 GB VRAM",
         "nomic-embed-text"         => "embed compacto · boa qualidade · 2 GB VRAM",
         "all-minilm"               => "embed 384-dim · muito leve · CPU-only",
@@ -1163,6 +1175,7 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
     let slot_defs: &[(&str, &str, &str)] = &[
         ("mnemosyne", "llm",   "Mnemosyne — LLM"),
         ("kosmos",    "llm",   "KOSMOS — LLM"),
+        ("akasha",    "llm",   "AKASHA — LLM (extração/query)"),
         ("embed",     "embed", "Embedding (todos os apps)"),
     ];
 
@@ -1171,7 +1184,7 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
 
     for profile in all_profiles {
         let mp  = profile.model_profile();
-        let models_for_profile = [mp.llm_mnemosyne, mp.llm_kosmos, mp.embed];
+        let models_for_profile = [mp.llm_mnemosyne, mp.llm_kosmos, mp.llm_akasha, mp.embed];
         for (slot_def, model_name) in slot_defs.iter().zip(models_for_profile.iter()) {
             let (app, model_type, label) = slot_def;
             let entry = map.entry(model_name.to_string()).or_insert_with(|| (vec![], vec![]));
@@ -1192,7 +1205,7 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
     // Modelos do perfil atual
     let current_mp = current.model_profile();
     let current_models: std::collections::HashSet<String> = [
-        current_mp.llm_mnemosyne, current_mp.llm_kosmos, current_mp.embed,
+        current_mp.llm_mnemosyne, current_mp.llm_kosmos, current_mp.llm_akasha, current_mp.embed,
     ].iter().map(|s| s.to_string()).collect();
 
     // Status de instalação via /api/tags
