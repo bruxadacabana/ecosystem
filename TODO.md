@@ -4496,7 +4496,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   (issue #13142 — sem endpoint REST para cancelar pull).
 
 #### HUB — LOGOS: compatibilidade de embeddings e strategy de índice único
-- [ ] Implementar detecção de mudança de modelo de embedding em `logos.rs`. Se o modelo configurado
+- [x] Implementar detecção de mudança de modelo de embedding em `logos.rs`. Se o modelo configurado
   em `embed` do perfil for diferente do que gerou o índice ChromaDB existente (checar via metadados
   salvos na coleção), alertar via evento Tauri: "Trocar embedding de [modelo_antigo] para
   [modelo_novo] exige reindexação completa — os vetores atuais são incompatíveis (dims:

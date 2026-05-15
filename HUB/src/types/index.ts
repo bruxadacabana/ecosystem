@@ -202,6 +202,13 @@ export interface PullProgress {
   error:     string | null
 }
 
+export interface EmbedCompatWarning {
+  old_model: string
+  new_model: string
+  old_dims:  number
+  new_dims:  number
+}
+
 export interface ModelAssignment {
   /** "mnemosyne" | "kosmos" | "akasha" | "embed" */
   app:               string

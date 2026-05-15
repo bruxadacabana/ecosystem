@@ -5,7 +5,25 @@
 
 use std::time::Duration;
 use tauri::Emitter;
+use serde::Serialize;
 use crate::logos::{LogosState, ModelAssignment, OllamaModelEntry, OllamaModelInfo, OllamaStatus, PullProgress, RecommendedModel, StatusResponse};
+
+#[derive(Serialize, Clone)]
+struct EmbedCompatWarning {
+    old_model: String,
+    new_model: String,
+    old_dims:  u32,
+    new_dims:  u32,
+}
+
+fn embed_dims(model: &str) -> Option<u32> {
+    let m = model.to_lowercase();
+    if m.contains("bge-m3")      { return Some(1024) }
+    if m.contains("nomic-embed") { return Some(768)  }
+    if m.contains("all-minilm")  { return Some(384)  }
+    if m.contains("potion")      { return Some(256)  }
+    None
+}
 
 /// Retorna o status atual do LOGOS: prioridade ativa, fila e VRAM.
 #[tauri::command]
@@ -70,13 +88,34 @@ pub async fn logos_get_model_assignments(
 
 /// Sobrescreve o modelo de um slot específico (app + model_type).
 /// Passar o modelo recomendado remove o override (restaura padrão).
+/// Se o slot for "embed" e as dimensões do novo modelo diferirem do atual,
+/// emite `logos-embed-compat-warning` antes de aplicar a troca.
 #[tauri::command]
 pub async fn logos_set_model_assignment(
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, LogosState>,
     app: String,
     model_type: String,
     model: String,
 ) -> Result<(), String> {
+    if model_type == "embed" {
+        let assignments = crate::logos::do_get_model_assignments(&state).await;
+        if let Some(current) = assignments.iter().find(|a| a.app == "embed" && a.model_type == "embed") {
+            let old = &current.current_model;
+            if old != &model {
+                if let (Some(old_dims), Some(new_dims)) = (embed_dims(old), embed_dims(&model)) {
+                    if old_dims != new_dims {
+                        let _ = app_handle.emit("logos-embed-compat-warning", EmbedCompatWarning {
+                            old_model: old.clone(),
+                            new_model: model.clone(),
+                            old_dims,
+                            new_dims,
+                        });
+                    }
+                }
+            }
+        }
+    }
     crate::logos::do_set_model_assignment(&state, &app, &model_type, &model).await;
     Ok(())
 }

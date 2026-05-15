@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import * as cmd from '../lib/tauri'
 import { listModels } from '../lib/ollama'
-import type { LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, PullProgress } from '../types'
+import type { LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, PullProgress, EmbedCompatWarning } from '../types'
 
 const PROFILES = [
   { id: 'normal',  label: 'Normal',  tip: 'Prioridades padrão de cada app'                       },
@@ -46,6 +46,7 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
   const [cpuThreads,        setCpuThreads]        = useState<number>(4)
   const [flashAttention,    setFlashAttention]    = useState<boolean>(true)
   const vramLimitSynced = useRef(false)
+  const [embedWarning, setEmbedWarning] = useState<EmbedCompatWarning | null>(null)
 
   const fetchStatus = useCallback(() => {
     cmd.logosGetStatus().then(r => {
@@ -81,6 +82,15 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
     const oid = setInterval(checkOllama, 4_000)
     return () => { clearInterval(sid); clearInterval(mid); clearInterval(oid) }
   }, [fetchStatus, fetchModels, checkOllama])
+
+  // Escuta aviso de incompatibilidade de embedding
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    listen<EmbedCompatWarning>('logos-embed-compat-warning', ev => {
+      setEmbedWarning(ev.payload)
+    }).then(fn => { unlisten = fn })
+    return () => { unlisten?.() }
+  }, [])
 
   // Carrega configurações de recursos do ecosystem.json uma vez ao montar
   useEffect(() => {
@@ -452,6 +462,41 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
           </span>
         </div>
       </section>
+
+      {/* ── Aviso de incompatibilidade de embedding ───── */}
+      {embedWarning && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          padding: '12px 14px',
+          border: '1px solid var(--ribbon)',
+          borderRadius: 'var(--radius)',
+          background: 'var(--ribbon)10',
+        }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ribbon)' }}>
+            Atenção: incompatibilidade de embedding detectada
+          </span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', lineHeight: 1.6 }}>
+            Trocar de <strong>{embedWarning.old_model}</strong> ({embedWarning.old_dims} dims) para{' '}
+            <strong>{embedWarning.new_model}</strong> ({embedWarning.new_dims} dims) exige reindexação
+            completa — os vetores atuais são incompatíveis. Limpe a coleção no Mnemosyne e
+            reindexe antes de usar o RAG.
+          </span>
+          <button
+            onClick={() => setEmbedWarning(null)}
+            style={{
+              alignSelf: 'flex-start',
+              fontFamily: 'var(--font-mono)', fontSize: 10,
+              padding: '2px 10px', background: 'transparent',
+              color: 'var(--ink-ghost)', border: '1px solid var(--rule)',
+              borderRadius: 'var(--radius)', cursor: 'pointer',
+            }}
+          >
+            Entendido
+          </button>
+        </div>
+      )}
 
       {/* ── Modelos por app ──────────────────────────── */}
       {assignments.length > 0 && (
