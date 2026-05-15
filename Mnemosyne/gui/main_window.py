@@ -68,6 +68,7 @@ from gui.workers import (
     ReindexTranscriptsWorker,
     ResumeIndexWorker,
     StudioWorker,
+    SuggestQuestionsWorker,
     SummarizeWorker,
     TopicsWorker,
     UpdateIndexWorker,

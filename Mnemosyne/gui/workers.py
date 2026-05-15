@@ -1026,3 +1026,80 @@ class TopicsWorker(QThread):
             self.finished.emit(result or {})
         except Exception:
             self.finished.emit({})
+
+
+def _parse_numbered_questions(text: str) -> list[str]:
+    """Extrai perguntas numeradas de 1 a 3 do output do LLM."""
+    import re
+    questions: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r"^[1-9][.):\-]\s*(.+)", line)
+        if m:
+            questions.append(m.group(1).strip())
+        elif "?" in line and len(questions) < 3:
+            # Linha sem prefixo numérico mas contém "?" — aceita como pergunta
+            questions.append(line)
+    return questions[:3]
+
+
+class SuggestQuestionsWorker(QThread):
+    """Gera 3 perguntas de aprofundamento após o AskWorker terminar.
+
+    Recebe a pergunta original, a resposta gerada e os primeiros chunks de
+    fonte para contexto; monta um prompt pedindo questões que explorem aspectos
+    não cobertos, conectem diferentes documentos ou peçam exemplos concretos.
+    Usa temperatura 0.9 para diversidade. Emite questions_ready(list[str]).
+
+    O chamador (MainWindow) deve verificar config.suggest_questions antes de
+    instanciar este worker — o worker em si não aborta se a flag for False.
+    """
+
+    questions_ready = Signal(list)  # list[str]
+
+    def __init__(
+        self,
+        question: str,
+        answer: str,
+        sources: list[dict],
+        config: AppConfig,
+    ) -> None:
+        super().__init__()
+        self._question = question
+        self._answer   = answer
+        self._sources  = sources[:3]
+        self._config   = config
+
+    def run(self) -> None:
+        try:
+            validate_model(self._config.llm_model)
+        except (ModelNotFoundError, OllamaUnavailableError):
+            self.questions_ready.emit([])
+            return
+
+        context_snippets = "\n".join(
+            f"- {s.get('excerpt', s.get('path', ''))[:200]}"
+            for s in self._sources
+        )
+
+        prompt = (
+            "Leia a pergunta e a resposta abaixo, além dos trechos de fonte.\n"
+            "Gere exatamente 3 perguntas de aprofundamento em português que:\n"
+            "  1. Explorem aspectos ainda não cobertos pela resposta;\n"
+            "  2. Conectem diferentes documentos ou perspectivas do acervo;\n"
+            "  3. Ou peçam exemplos, evidências ou comparações concretas.\n\n"
+            f"Pergunta original: {self._question}\n\n"
+            f"Resposta gerada:\n{self._answer[:800]}\n\n"
+            f"Trechos de fonte:\n{context_snippets}\n\n"
+            "Responda APENAS com as 3 perguntas, uma por linha, numeradas de 1 a 3. "
+            "Sem introdução, sem explicação."
+        )
+
+        try:
+            llm = OllamaLLM(model=self._config.llm_model, temperature=0.9)
+            raw = llm.invoke(prompt)
+            self.questions_ready.emit(_parse_numbered_questions(str(raw)))
+        except Exception:
+            self.questions_ready.emit([])

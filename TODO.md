@@ -5450,7 +5450,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   ~100 MB. Usar `QGraphicsView` com zoom via `wheelEvent` (fator 1.15×) e pan via drag com
   botão do meio.
 
-- [ ] **`gui/workers.py` — `SuggestQuestionsWorker(QThread)` para perguntas follow-up** — worker
+- [x] **`gui/workers.py` — `SuggestQuestionsWorker(QThread)` para perguntas follow-up** — worker
   separado que inicia logo após o `AskWorker` terminar (conectar ao sinal `finished` do
   AskWorker no `main_window.py`). Recebe: pergunta do usuário, resposta gerada, e os 3
   primeiros chunks recuperados (contexto). Monta prompt pedindo 3 perguntas de aprofundamento

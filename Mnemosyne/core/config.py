@@ -103,6 +103,7 @@ _DEFAULTS: dict = {
     "node_type_classification": False,
     "node_type_model": "",
     "image_ocr_model": "",
+    "suggest_questions": False,
 }
 
 
@@ -131,6 +132,7 @@ class AppConfig:
     node_type_classification: bool = False
     node_type_model: str = ""
     image_ocr_model: str = ""
+    suggest_questions: bool = False
     # Populados em runtime a partir do ecosystem.json — nunca persistidos
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""
@@ -344,6 +346,7 @@ def load_config() -> AppConfig:
         node_type_classification=bool(data.get("node_type_classification", False)),
         node_type_model=str(data.get("node_type_model", "")),
         image_ocr_model=str(data.get("image_ocr_model", "")),
+        suggest_questions=bool(data.get("suggest_questions", False)),
     )
     config = _apply_logos_recommendations(config, _saved_keys)
 
@@ -381,6 +384,7 @@ def save_config(config: AppConfig) -> None:
         "node_type_classification": config.node_type_classification,
         "node_type_model": config.node_type_model,
         "image_ocr_model": config.image_ocr_model,
+        "suggest_questions": config.suggest_questions,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
