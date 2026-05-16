@@ -4035,7 +4035,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Ganho documentado: +38% em nDCG@10 sobre embedding direto de query (HyDE, SIGIR 2023).
   Custo: uma call Ollama extra de ~500ms. Ativar só quando mnemosyne está disponível.
 
-- [ ] **Template MUST+SHOULD para expansão de query no FTS5** (`services/local_search.py`,
+- [x] **Template MUST+SHOULD para expansão de query no FTS5** (`services/local_search.py`,
   `_search_fts()`). Ao expandir query com LLM (após HyDE ou classificação), estruturar
   a query FTS5 como: `query_original MUST_NEAR termos_expandidos` ou usar duas buscas:
   (1) FTS5 com query original; (2) FTS5 com termos expandidos pelo LLM. Combinar com RRF.

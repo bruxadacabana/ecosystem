@@ -80,6 +80,20 @@ ANNOTATION_DENSITY_BETA:    float = 0.1
 
 SPELL_CORRECTION_ENABLED: bool = False
 
+# ---------------------------------------------------------------------------
+# Expansão de query via LLM (padrão MUST+SHOULD) — ativada por padrão
+# Quando o Ollama está disponível, gera 3–5 termos sinônimos/relacionados via
+# LLM leve e executa uma segunda busca FTS5 com esses termos. Os dois conjuntos
+# de resultados são combinados via RRF: a query original permanece âncora
+# (MUST), os termos expandidos são aditivos (SHOULD) — evita query drift.
+# Latência extra: ~LLM_time - main_searches_time (rodando em paralelo).
+# ---------------------------------------------------------------------------
+
+FTS_EXPANSION_ENABLED: bool = True
+FTS_EXPANSION_MODEL:   str  = ""   # vazio = usa primeiro modelo disponível no Ollama
+
+_expansion_model_cache: str = ""
+
 try:
     import bm25s as _bm25s
     _BM25S_AVAILABLE = True
@@ -545,6 +559,77 @@ def _rerank(results: list[SearchResult], query: str) -> list[SearchResult]:
 
 
 # ---------------------------------------------------------------------------
+# Expansão de query via LLM (MUST+SHOULD)
+# ---------------------------------------------------------------------------
+
+async def _get_expansion_model() -> str:
+    """Retorna modelo Ollama a usar para expansão. Resultado cacheado em memória."""
+    global _expansion_model_cache
+    if _expansion_model_cache:
+        return _expansion_model_cache
+    if FTS_EXPANSION_MODEL:
+        _expansion_model_cache = FTS_EXPANSION_MODEL
+        return _expansion_model_cache
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=2.0) as client:
+            r = await client.get("http://localhost:11434/api/tags")
+            if r.status_code == 200:
+                models = r.json().get("models", [])
+                if models:
+                    _expansion_model_cache = models[0]["name"]
+    except Exception:
+        pass
+    return _expansion_model_cache
+
+
+async def _expand_query_llm(query: str) -> list[str]:
+    """Gera termos de expansão para a query via LLM local (Ollama).
+
+    Retorna lista de termos adicionais — sem repetir a query original. Retorna []
+    em qualquer falha (Ollama fora do ar, timeout, output malformado).
+    Roda em paralelo com as buscas FTS5 principais para não adicionar latência.
+    """
+    if not _ollama_available:
+        return []
+    model = await _get_expansion_model()
+    if not model:
+        return []
+    try:
+        import httpx as _httpx
+        prompt = (
+            f'Busca: "{query}"\n'
+            "Liste 3 a 5 termos sinônimos ou fortemente relacionados, separados por vírgula. "
+            "Apenas os termos, sem explicação, sem numeração."
+        )
+        async with _httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model":       model,
+                    "prompt":      prompt,
+                    "stream":      False,
+                    "num_predict": 40,
+                    "temperature": 0.2,
+                },
+            )
+        if r.status_code != 200:
+            return []
+        text = r.json().get("response", "").strip()
+        raw = [t.strip() for t in re.split(r"[,\n]", text) if t.strip()]
+        # Filtra: só palavras/frases curtas (máx 2 tokens), sem pontuação estranha
+        terms = [
+            t.lower() for t in raw
+            if re.match(r"^[a-zA-ZÀ-ÿ][a-zA-ZÀ-ÿ\s]{1,29}$", t)
+            and len(t.split()) <= 2
+            and t.lower() not in query.lower()
+        ]
+        return terms[:5]
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Busca FTS5
 # ---------------------------------------------------------------------------
 
@@ -954,12 +1039,35 @@ async def find_related(url: str, n: int = 5) -> list[SearchResult]:
 
 
 async def search_local(query: str, max_results: int = 500) -> list[SearchResult]:
-    """Busca local: FTS5 + ChromaDB + sqlite-vec + highlights fundidos via RRF, com re-ranking e usage boost."""
+    """Busca local: FTS5 + ChromaDB + sqlite-vec + highlights fundidos via RRF, com re-ranking e usage boost.
+
+    Padrão MUST+SHOULD: a query original é a âncora (FTS obrigatório); termos
+    gerados via LLM são aditivos (segundo FTS rodando em paralelo, combinado via RRF).
+    """
+    # Inicia expansão LLM em paralelo com as buscas principais
+    expand_task = None
+    if FTS_EXPANSION_ENABLED and _ollama_available:
+        expand_task = asyncio.ensure_future(_expand_query_llm(query))
+
     fts_results       = await _search_fts(query, max_results)
     chroma_results    = await _search_chroma(query)
     vec_results       = await _search_vec(query, max_results)
     highlight_results = await _search_highlights(query)
-    combined = _rrf([fts_results, chroma_results, vec_results, highlight_results])[:max_results]
+
+    # MUST+SHOULD: aguarda expansão (modelo já estava rodando em paralelo)
+    fts_expanded: list[SearchResult] = []
+    if expand_task is not None:
+        try:
+            expanded_terms = await asyncio.wait_for(asyncio.shield(expand_task), timeout=3.0)
+            if expanded_terms:
+                sanitized = [_sanitize_fts(t) for t in expanded_terms]
+                exp_query = " OR ".join(t for t in sanitized if t)
+                if exp_query:
+                    fts_expanded = await _search_fts(exp_query, max_results)
+        except (asyncio.TimeoutError, Exception):
+            expand_task.cancel()
+
+    combined = _rrf([fts_results, fts_expanded, chroma_results, vec_results, highlight_results])[:max_results]
     if RERANKING_ENABLED and len(combined) > 1:
         top    = _rerank(combined[:RERANK_TOP_K], query)
         rest   = combined[RERANK_TOP_K:]
