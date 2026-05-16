@@ -5875,3 +5875,88 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `update_feed()`) e categorias (`add_category()`, `remove_category()`), chamar
   `FeedStore.save_feeds()` / `FeedStore.save_categories()` após a operação no banco.
   Mesmo padrão do AKASHA: banco primeiro, JSON depois.
+
+### AKASHA + Mnemosyne: inteligência evolutiva e diálogo inter-app | 2026-05-16
+> Contexto: o AKASHA aprende com o conteúdo que indexa e constrói uma persona interna; a
+> Mnemosyne idem com o vault. Ambos expõem essa inteligência num "diálogo visível" (estilo
+> chain-of-thought) quando a usuária pedir — o AKASHA pensa em voz alta sobre o que encontrou,
+> a Mnemosyne interpola com o vault, o stream aparece em tempo real na UI da Mnemosyne.
+
+#### AKASHA
+
+- [ ] **SOURCE_WEIGHTS — sistema de pesos por fonte** (`services/local_search.py`). Adicionar
+  dict `SOURCE_WEIGHTS: dict[str, float]` com: PAPER=2.0, HIGHLIGHT=1.6, AKASHA=1.4,
+  KOSMOS=1.2, OBSIDIAN=1.2, MNEMOSYNE=1.1, HERMES=1.0, DEPOIS=1.0. Modificar `_rrf()` para
+  receber `weight_fn: Callable[[SearchResult], float]` e multiplicar o score RRF acumulado
+  pelo peso da fonte antes de ordenar. `search_local()` passa
+  `weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0)`. Artigos científicos (PAPER)
+  têm o peso máximo porque são fontes primárias com maior densidade informacional.
+
+- [ ] **KnowledgeWorker — inteligência passiva em background** (`services/knowledge_worker.py`
+  novo; `database.py` SCHEMA_VERSION 30; `main.py`; `routers/crawler.py`;
+  `routers/search.py`; `services/local_search.py`).
+  Novas tabelas: `page_knowledge (url PK, title, summary, topics JSON, entities JSON,
+  source_type, processed_at)` e `topic_interest_profile (topic PK, score REAL, query_count,
+  last_updated)`. Módulo `knowledge_worker.py`: `KnowledgeQueue` (`asyncio.Queue maxsize=200`);
+  `schedule_page(url, title, content, source_type)` enfileira sem bloquear; `process_queue()`
+  loop background (P3 — pausa se Ollama ocupado) que chama Ollama com prompt estruturado
+  `{"summary": "1-2 frases", "topics": [...], "entities": [...]}` e armazena em
+  `page_knowledge`; `_update_interest_profile(topics)` incrementa scores com TF-IDF simples;
+  `schedule_search_update(query, snippets)` extrai tópicos da busca sem LLM e atualiza perfil;
+  `apply_knowledge_boost(results, query)` boost de resultados cujos tópicos em `page_knowledge`
+  se sobrepõem à query (multiplicador sobre score existente). Integrações: `crawler.py`
+  chama `schedule_page()` pós-crawl; `search.py` chama `schedule_page()` pós-archive e
+  `schedule_search_update()` pós-busca; `search_local()` chama `apply_knowledge_boost()` após
+  RRF + usage boost. `main.py`: `asyncio.create_task(process_queue())` no lifespan.
+
+- [ ] **Persona persistente — AKASHA** (`services/persona.py` novo; `database.py`
+  SCHEMA_VERSION 31; `services/local_search.py`). Tabela `persona (key PK, value, updated_at)`.
+  Dataclass `AppPersona(self_description: str, expertise_topics: list[str],
+  interaction_style: str, formed_at: str)`. Job diário (`_rebuild_persona()`) que lê
+  `topic_interest_profile` top-10 e chama Ollama com prompt: "Com base nesses tópicos e
+  frequências, descreva em 3 frases quem você é como sistema de busca, em primeira pessoa."
+  — resultado armazenado como `self_description`. `get_persona() -> AppPersona` expõe o
+  estado atual. Injetar persona no prompt de `_expand_query_llm()` como prefixo: "Contexto:
+  {self_description}. " — apenas quando persona estiver formada (não vazia).
+
+- [ ] **Endpoint de diálogo** (`routers/dialogue.py` novo; registrar em `main.py`).
+  `POST /dialogue/turn` recebe `{question: str, context: list[str], turn_index: int}` da
+  Mnemosyne via `ecosystem_client`. Executa: FTS5 search na query + lookup em `page_knowledge`
+  pelos tópicos relevantes + carrega persona. Gera stream SSE de "thought fragments" curtos
+  (1-3 frases cada) via Ollama — o AKASHA "pensa em voz alta" sobre o que encontrou, sempre
+  ancorando em fontes reais. Retorna também `sources: list[{url, title}]` junto com o stream.
+  Exceção controlada ao princípio de amplificador: o AKASHA gera texto neste endpoint, mas
+  para a Mnemosyne (não para a usuária diretamente); todo texto é ancorado em snippets reais
+  do índice, sem especulação. Comentário explícito no código documenta essa exceção.
+
+#### Mnemosyne
+
+- [ ] **Persona persistente — Mnemosyne** (`core/persona.py` novo; banco de dados da
+  Mnemosyne). Mesmo padrão do AKASHA: tabela `persona`, dataclass `AppPersona`. Job que
+  roda após cada lote de Knowledge Reflection — lê as reflexões recentes e atualiza
+  `self_description` via Ollama: "Com base nestas sínteses do vault, descreva em 3 frases
+  quem você é como assistente de pesquisa, em primeira pessoa." Injetar `self_description`
+  no system prompt de todas as chamadas LLM em `core/rag.py` — precede o prompt de
+  sistema existente. Isso molda o tom das respostas da Mnemosyne sem alterar o pipeline RAG.
+
+- [ ] **Diálogo "pensa em voz alta"** (`core/dialogue.py` novo; `gui/dialogue_panel.py`
+  novo; `gui/main_window.py`). `core/dialogue.py`: orquestrador assíncrono, máx 5 turnos.
+  Cada turno: (1) Mnemosyne busca no vault RAG com a query/contexto atual → extrai 2-3
+  fragmentos relevantes → gera um "thought fragment" curto via Ollama (1-3 frases, marcado
+  com ◇); (2) chama `ecosystem_client.consult_akasha(question, context)` → recebe stream
+  SSE do AKASHA (marcado com ⬡); (3) decide via LLM se continua (pergunta seguinte) ou
+  encerra (síntese final). `gui/dialogue_panel.py`: canvas de streaming único — linhas
+  chegam character-by-character, cada linha prefixada com ⬡ (AKASHA, cor fria) ou ◇
+  (Mnemosyne, cor quente); sources do AKASHA aparecem como links colapsáveis após o
+  fragmento. Input: campo de texto + botão "Iniciar diálogo". `gui/main_window.py`:
+  integrar painel como nova aba na área de análise do notebook ativo, acionada pelo botão
+  "⬡ Consultar AKASHA" no header.
+
+#### ecosystem_client
+
+- [ ] **`consult_akasha(question: str, context: list[str]) -> AsyncIterator[str]`** —
+  nova função em `ecosystem_client.py`. Lê `base_url` do AKASHA do `ecosystem.json`
+  (`eco["akasha"]["base_url"]`). Chama `POST {base_url}/dialogue/turn` com o payload e
+  faz parsing do stream SSE, yielding cada `thought fragment` conforme chega. Timeout de
+  30s por turno. Retorna generator vazio (sem exceção) se AKASHA offline ou base_url não
+  configurada — a Mnemosyne degrada graciosamente mostrando só o próprio vault.
