@@ -4133,7 +4133,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   sempre as fontes usadas na síntese. Modelo: assistente que o chefe pede "me dê um overview"
   — responde e mostra de onde tirou.
 
-- [ ] **Personalidade como estilo de comunicação** (`templates/search.html`, `static/style.css`,
+- [x] **Personalidade como estilo de comunicação** (`templates/search.html`, `static/style.css`,
   `services/query_understanding.py`). A "personalidade" do AKASHA é o tom dos elementos
   de interface: texto dos badges de intenção, mensagens de estado durante busca
   ("buscando em 3 fontes…", "nada encontrado — tente reformular"), texto das perguntas

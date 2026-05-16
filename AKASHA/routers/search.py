@@ -45,6 +45,30 @@ _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
 
+def _voice_texts() -> dict[str, str]:
+    """Retorna textos de interface segundo AKASHA_VOICE configurado em config.py."""
+    from config import AKASHA_VOICE
+    if AKASHA_VOICE == "assistente":
+        return {
+            "intent_nav":       "Navegação — fui direto ao ponto",
+            "intent_fact":      "Factual — priorizei seu arquivo",
+            "empty_title":      "Não encontrei nada",
+            "empty_hint":       "Tente reformular — posso ter mais sorte.",
+            "expand_label":     "Também explorei:",
+            "related_label":    "Talvez interesse também:",
+            "session_label":    "Sessão ativa:",
+        }
+    return {  # neutro (padrão)
+        "intent_nav":       "Navegação — melhor resultado",
+        "intent_fact":      "Factual — priorizando arquivo local",
+        "empty_title":      "Nenhum resultado",
+        "empty_hint":       "Tente termos diferentes ou verifique a ortografia.",
+        "expand_label":     "Expandido com:",
+        "related_label":    "Explorar também",
+        "session_label":    "Sessão:",
+    }
+
+
 def _local_ext(url: str) -> str:
     """Extrai extensão de arquivo (sem ponto, minúscula) de uma URL file://."""
     if not url.startswith("file://"):
@@ -365,6 +389,7 @@ async def search(
             "related_docs":      related_docs,
             "related_queries":   related_queries,
             "session":           _active_session,
+            "voice":             _voice_texts(),
         },
     )
     if _new_cookie:

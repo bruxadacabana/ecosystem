@@ -64,8 +64,8 @@
   {% if src_papers %}{% set _base = _base ~ "&src_papers=on" %}{% endif %}
   {% if lens_id %}{%  set _base = _base ~ "&lens_id=" ~ lens_id %}{% endif %}
   <p class="intent-badge intent-{{ intent | replace('-', '') }}">
-    {% if intent == "navigational" %}&#x21B3; Navegação — melhor resultado
-    {% elif intent == "fact-seeking" %}&#x2315; Factual — priorizando arquivo local
+    {% if intent == "navigational" %}&#x21B3; {{ voice.intent_nav }}
+    {% elif intent == "fact-seeking" %}&#x2315; {{ voice.intent_fact }}
     {% endif %}
     {% if not intent_forced %}
     <a class="intent-reset"
@@ -86,7 +86,7 @@
   {% if lens_id %}{% set _ebase = _ebase ~ "&lens_id=" ~ lens_id %}{% endif %}
   {% if intent and intent_forced %}{% set _ebase = _ebase ~ "&intent=" ~ intent %}{% endif %}
   <p class="expansion-badge">
-    &#x21C4; Expandido com:
+    &#x21C4; {{ voice.expand_label }}
     {% for t in expanded_terms %}<em>{{ t }}</em>{% if not loop.last %}, {% endif %}{% endfor %}
     <a class="expansion-reset"
        href="{{ _ebase }}&no_expansion=on"
@@ -105,7 +105,7 @@
 
 {% if session and session.query_count > 1 %}
   <p id="session-badge" class="session-badge">
-    &#x25CE; Sessão: {{ session.query_count }} queries
+    &#x25CE; {{ voice.session_label }} {{ session.query_count }} queries
     <a class="session-clear"
        hx-post="/search/session/clear"
        hx-target="#session-badge"
@@ -242,7 +242,7 @@
 <div class="related-area">
   {% if related_docs %}
   <section class="related-section">
-    <h4 class="related-title">Explorar também</h4>
+    <h4 class="related-title">{{ voice.related_label }}</h4>
     <ul class="related-list">
       {% for r in related_docs %}
       <li>
@@ -278,8 +278,8 @@
   <!-- ─── Estado vazio — busca sem resultado ─────────────────────── -->
   <section class="empty-state">
     <p class="empty-icon">&#x2205;</p>
-    <p class="empty-title">Nenhum resultado para <em>{{ query }}</em></p>
-    <p class="empty-hint">Tente termos diferentes ou verifique a ortografia.</p>
+    <p class="empty-title">{{ voice.empty_title }} para <em>{{ query }}</em></p>
+    <p class="empty-hint">{{ voice.empty_hint }}</p>
   </section>
 
 {% else %}

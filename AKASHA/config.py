@@ -28,6 +28,11 @@ except ImportError:
 AKASHA_PORT: int = 7071
 AKASHA_BASE_URL: str = f"http://localhost:{AKASHA_PORT}"
 
+# Modo de voz da interface: "neutro" (padrão técnico) ou "assistente" (mais natural).
+# Controla textos dos badges de intenção, mensagens de estado e labels de botões.
+# Não gera conteúdo — apenas comunica processo.
+AKASHA_VOICE: str = "neutro"
+
 _AKASHA_DIR = Path(__file__).parent
 
 # Lido do ecosystem.json se disponível; senão usa pasta local
