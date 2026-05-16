@@ -1,40 +1,8 @@
 ## Implementação atual:
-### Pesquisa: Assistente de Pesquisa Inteligente — LLM-Augmented Search e Query Understanding | 2026-05-06 
-### Pesquisa: LLMs como Amplificadores de Pesquisa — Augmentação sem Substituição do Raciocínio | 2026-05-15
-
-#### Fase 1 — Roteamento
-(pré-requisito lógico: define o que o pipeline faz com cada query)
-- [ ] Classificador de intenção leve antes do pipeline de busca
-
-#### Fase 2 — Qualidade de retrieval
-(melhoram o que é encontrado; independentes entre si, sem exigir sessão)
-
- - [ ] Leituras relacionadas derivadas dos resultados (sem LLM — puro TF-IDF)
- - [ ] Template MUST+SHOULD para expansão de query no FTS5
- - [ ] Ancoragem da expansão de query ao vocabulário do corpus (junto com MUST+SHOULD — é uma constraint da implementação, não um item separado)
- - [ ] Exibir query expandida na UI antes de executar (UX layer do MUST+SHOULD — implementar na mesma entrega)
- - [ ] Expansão HyDE para busca vetorial no ChromaDB/Mnemosyne (depende do Mnemosyne estar disponível)
-
-#### Fase 3 — Contexto conversacional
-(depende de infraestrutura de sessão — a reescrita é bloqueada pela detecção)
-
- - [ ] Detecção de sessão de pesquisa (pré-requisito obrigatório do item abaixo)
- - [ ] Reescrita de query conversacional por turno
+### AKASHA + Mnemosyne: inteligência evolutiva e diálogo inter-app | 2026-05-16
+### AKASHA: chat direto e iniciativa de diálogo | 2026-05-16
 
 
-#### Fase Extra
-AKASHA ↔ LOGOS (gerenciamento de modelo)
-
- - [ ] Migrar AKASHA para ecosystem_client.request_llm() — sem isso, o classificador e qualquer call LLM do AKASHA vão direto ao Ollama sem passar pelo LOGOS, ignorando coordenação de VRAM e prioridade com os outros apps. Análogo ao que já foi feito com KOSMOS e Mnemosyne.
- - [ ] query_understanding.py ler modelo llm_query do perfil ativo do LOGOS — o DEFAULT_LLM_MODEL = "" atual é hardcoded vazio, o que torna o pin_model() um no-op (não faz nada). O modelo correto por máquina está nas pesquisas: Qwen2.5-7B no MainPc, Phi-3.5 Mini no Laptop, SmolLM2 1.7B no WorkPc. Depende do item anterior (precisa do ecosystem_client).
- - [ ] Chunking Unicode e detecção de idioma no pipeline de indexação do AKASHA — análogo ao que foi implementado no Mnemosyne com lingua-language-detector. Placeholder: só vira código quando o pipeline de indexação do AKASHA for construído; hoje o AKASHA ainda não tem esse pipeline.
-
-
-#### Nota
-Os itens de MUST+SHOULD, ancoragem e exibição na UI são na prática uma única entrega (a expansão de query completa com todas suas partes). Já o HyDE é independente e pode ser implementado antes ou depois dos outros da Fase 2, dependendo de quando o Mnemosyne estiver disponível.
-
-
----
 
 ## Anotações
 Você escreveu "Mnemosyne pensa sobre seu conhecimento indexado, AKASHA pensa sobre o que você está buscando agora." E eles "conversam"/se comunicam entre si.
@@ -49,6 +17,8 @@ Você escreveu "Mnemosyne pensa sobre seu conhecimento indexado, AKASHA pensa so
 ---
 
 ## próximo:
+
+### HUB — monitoramento git do sync_root | 2026-05-16
 
 faça uma nova auditoria no pesquisas.md (leia o arquivo e verifique se tem coisas lá que não constam no TODO. Se existir algo faltando, acrescente em '### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05' e atualize a data
 
