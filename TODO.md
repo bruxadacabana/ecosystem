@@ -4083,7 +4083,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > ancoragem a corpus, transparência de expansão na UI, e intent classification híbrido.
 
 #### AKASHA
-- [ ] **Ancoragem da expansão de query ao vocabulário do corpus** (`services/local_search.py`,
+- [x] **Ancoragem da expansão de query ao vocabulário do corpus** (`services/local_search.py`,
   função de expansão FTS5 — implementar junto com o item MUST+SHOULD). Ao gerar termos
   de expansão via LLM, filtrar o output para manter apenas termos que já aparecem no
   índice FTS5 (`SELECT term FROM fts_vocab WHERE term IN (...)`). Evita *query drift*:
@@ -4091,7 +4091,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   em arXiv:2505.12694). A query original permanece âncora obrigatória; expansão só
   adiciona recall, nunca substitui.
 
-- [ ] **Exibir query expandida na UI antes de executar** (`templates/search.html`,
+- [x] **Exibir query expandida na UI antes de executar** (`templates/search.html`,
   `routers/search.py`). Quando o LLM expandir a query (MUST+SHOULD ou reescrita
   conversacional), mostrar os termos adicionados num badge abaixo do campo de busca:
   "Expandido com: *machine learning, aprendizado de máquina, ML*". Manter botão para

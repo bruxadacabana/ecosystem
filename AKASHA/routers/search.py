@@ -95,7 +95,8 @@ async def search(
     mode:       str = "",   # preset: "papers" | "local" | "archive"
     facet_ext:  str = "",   # filtro de extensão de arquivo para resultados locais
     lens_id:    int = 0,    # id de lens pessoal a aplicar (0 = sem lens)
-    intent:     str = "",   # sobrescreve o classificador: navigational|fact-seeking|exploratory
+    intent:       str = "",   # sobrescreve o classificador: navigational|fact-seeking|exploratory
+    no_expansion: str = "",   # "on" = desativa expansão LLM para esta busca
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -124,6 +125,7 @@ async def search(
     corrected_query: str | None = None
     local_facets: dict[str, int] = {}
     active_lens: dict | None = None
+    _eco_expanded: list[str] = []
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -136,10 +138,13 @@ async def search(
             if not _intent_forced:
                 intent_future = asyncio.ensure_future(classify_intent(q))
 
+        _use_expansion = not bool(no_expansion)
         try:
             tasks = await asyncio.gather(
                 search_web(q, max_results=_PAGE_SIZE, filetype=filetype) if src_web    else asyncio.sleep(0, result=[]),
-                search_local(q)                                           if src_eco    else asyncio.sleep(0, result=[]),
+                search_local(q, expand=_use_expansion,
+                             expansion_log=_eco_expanded if _use_expansion else None)
+                                                                          if src_eco    else asyncio.sleep(0, result=[]),
                 search_sites(q)                                           if src_sites  else asyncio.sleep(0, result=[]),
                 search_papers(q)                                          if src_papers else asyncio.sleep(0, result=[]),
                 _db_search_wl(q),
@@ -276,6 +281,8 @@ async def search(
             "ollama_available":  get_ollama_status(),
             "intent":            intent,
             "intent_forced":     _intent_forced,
+            "expanded_terms":    _eco_expanded,
+            "no_expansion":      bool(no_expansion),
         },
     )
 

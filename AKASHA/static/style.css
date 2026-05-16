@@ -1575,6 +1575,31 @@ a:hover { opacity: 0.75; }
 }
 .intent-reset:hover { opacity: 1; text-decoration: underline; }
 
+/* ── Expansion badge ─────────────────────────────── */
+.expansion-badge {
+  display:       inline-block;
+  padding:       0.2rem 0.6rem;
+  border-radius: var(--radius);
+  font-size:     0.8rem;
+  color:         #fcd34d;
+  background:    var(--surface-2, rgba(255,255,255,0.04));
+  border:        1px solid rgba(251, 191, 36, 0.22);
+  margin-bottom: 0.5rem;
+}
+.expansion-badge em {
+  font-style:  normal;
+  font-weight: 500;
+  color:       var(--text);
+}
+.expansion-reset {
+  margin-left:     0.6rem;
+  font-size:       0.75rem;
+  opacity:         0.6;
+  color:           inherit;
+  text-decoration: none;
+}
+.expansion-reset:hover { opacity: 1; text-decoration: underline; }
+
 @media (max-width: 600px) {
   .lenses-form-grid { grid-template-columns: 1fr; }
   .lenses-field-name { grid-column: 1; }

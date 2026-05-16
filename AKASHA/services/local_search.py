@@ -583,6 +583,36 @@ async def _get_expansion_model() -> str:
     return _expansion_model_cache
 
 
+async def _anchor_to_corpus(terms: list[str]) -> list[str]:
+    """Filtra termos que existem no índice FTS5.
+
+    Evita query drift: termos gerados pelo LLM mas ausentes no arquivo pessoal
+    retornam 0 resultados — descartá-los antecipadamente economiza a busca FTS5
+    e garante que a expansão só adiciona recall real.
+    """
+    if not terms:
+        return []
+    anchored: list[str] = []
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            for term in terms:
+                fts_term = _sanitize_fts(term)
+                if not fts_term:
+                    continue
+                try:
+                    row = await (await db.execute(
+                        "SELECT 1 FROM local_fts WHERE local_fts MATCH ? LIMIT 1",
+                        (fts_term,),
+                    )).fetchone()
+                    if row:
+                        anchored.append(term)
+                except Exception:
+                    pass
+    except Exception:
+        return terms  # fallback: usa todos se DB inacessível
+    return anchored
+
+
 async def _expand_query_llm(query: str) -> list[str]:
     """Gera termos de expansão para a query via LLM local (Ollama).
 
@@ -1038,15 +1068,27 @@ async def find_related(url: str, n: int = 5) -> list[SearchResult]:
     return results
 
 
-async def search_local(query: str, max_results: int = 500) -> list[SearchResult]:
+async def search_local(
+    query: str,
+    max_results: int = 500,
+    expand: bool = True,
+    expansion_log: list | None = None,
+) -> list[SearchResult]:
     """Busca local: FTS5 + ChromaDB + sqlite-vec + highlights fundidos via RRF, com re-ranking e usage boost.
 
     Padrão MUST+SHOULD: a query original é a âncora (FTS obrigatório); termos
     gerados via LLM são aditivos (segundo FTS rodando em paralelo, combinado via RRF).
+    Termos expandidos são ancorados ao vocabulário do corpus antes de usar — evita
+    query drift por termos plausíveis mas ausentes no arquivo pessoal.
+
+    Args:
+        expand: se False, desativa expansão LLM (ex: usuário clicou "desfazer").
+        expansion_log: lista mutável; se fornecida, os termos anchorados usados
+            são adicionados via .extend() para o chamador exibir na UI.
     """
     # Inicia expansão LLM em paralelo com as buscas principais
     expand_task = None
-    if FTS_EXPANSION_ENABLED and _ollama_available:
+    if expand and FTS_EXPANSION_ENABLED and _ollama_available:
         expand_task = asyncio.ensure_future(_expand_query_llm(query))
 
     fts_results       = await _search_fts(query, max_results)
@@ -1054,16 +1096,20 @@ async def search_local(query: str, max_results: int = 500) -> list[SearchResult]
     vec_results       = await _search_vec(query, max_results)
     highlight_results = await _search_highlights(query)
 
-    # MUST+SHOULD: aguarda expansão (modelo já estava rodando em paralelo)
+    # MUST+SHOULD: ancora termos ao corpus e executa segunda busca FTS5 aditiva
     fts_expanded: list[SearchResult] = []
     if expand_task is not None:
         try:
-            expanded_terms = await asyncio.wait_for(asyncio.shield(expand_task), timeout=3.0)
-            if expanded_terms:
-                sanitized = [_sanitize_fts(t) for t in expanded_terms]
-                exp_query = " OR ".join(t for t in sanitized if t)
-                if exp_query:
-                    fts_expanded = await _search_fts(exp_query, max_results)
+            raw_terms = await asyncio.wait_for(asyncio.shield(expand_task), timeout=3.0)
+            if raw_terms:
+                anchored = await _anchor_to_corpus(raw_terms)
+                if anchored:
+                    if expansion_log is not None:
+                        expansion_log.extend(anchored)
+                    sanitized = [_sanitize_fts(t) for t in anchored]
+                    exp_query = " OR ".join(t for t in sanitized if t)
+                    if exp_query:
+                        fts_expanded = await _search_fts(exp_query, max_results)
         except (asyncio.TimeoutError, Exception):
             expand_task.cancel()
 

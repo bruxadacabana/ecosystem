@@ -61,6 +61,25 @@
   </p>
 {% endif %}
 
+{% if expanded_terms %}
+  {% set _ebase = "/search?q=" ~ (query | urlencode) %}
+  {% if src_web %}{% set _ebase = _ebase ~ "&src_web=on" %}{% endif %}
+  {% if src_eco %}{% set _ebase = _ebase ~ "&src_eco=on" %}{% endif %}
+  {% if src_sites %}{% set _ebase = _ebase ~ "&src_sites=on" %}{% endif %}
+  {% if src_papers %}{% set _ebase = _ebase ~ "&src_papers=on" %}{% endif %}
+  {% if lens_id %}{% set _ebase = _ebase ~ "&lens_id=" ~ lens_id %}{% endif %}
+  {% if intent and intent_forced %}{% set _ebase = _ebase ~ "&intent=" ~ intent %}{% endif %}
+  <p class="expansion-badge">
+    &#x21C4; Expandido com:
+    {% for t in expanded_terms %}<em>{{ t }}</em>{% if not loop.last %}, {% endif %}{% endfor %}
+    <a class="expansion-reset"
+       href="{{ _ebase }}&no_expansion=on"
+       hx-get="{{ _ebase }}&no_expansion=on"
+       hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+       title="Executar busca sem expansão de termos">× desfazer expansão</a>
+  </p>
+{% endif %}
+
 {% set has_main   = web_results or fav_results or site_results or watch_later_results or paper_results %}
 {% set has_eco    = local_results %}
 {% set two_col    = has_main and has_eco %}
