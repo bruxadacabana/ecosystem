@@ -5960,3 +5960,45 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   faz parsing do stream SSE, yielding cada `thought fragment` conforme chega. Timeout de
   30s por turno. Retorna generator vazio (sem exceção) se AKASHA offline ou base_url não
   configurada — a Mnemosyne degrada graciosamente mostrando só o próprio vault.
+
+### AKASHA: chat direto e iniciativa de diálogo | 2026-05-16
+> Contexto: o AKASHA passa a ser parceiro de pesquisa além de amplificador — a usuária
+> pode conversar com ele diretamente (RAG sobre page_knowledge), e ele pode iniciar
+> diálogos com a Mnemosyne quando descobrir algo relevante em background.
+
+#### AKASHA
+
+- [ ] **Chat direto com AKASHA** (`routers/chat.py` novo; `templates/chat.html` novo;
+  `templates/_chat_message.html` novo; `static/style.css`; registrar router em `main.py`).
+  Nova aba "Conversa" no web UI. Endpoint `POST /chat/message` recebe `{message: str,
+  history: list[{role, content}]}` e retorna SSE stream. Pipeline: (1) FTS5 search da
+  mensagem no `local_fts`; (2) lookup em `page_knowledge` pelos tópicos relevantes via
+  sobreposição de termos; (3) monta contexto com até 5 snippets reais + persona do AKASHA;
+  (4) Ollama gera resposta em streaming, ancorada exclusivamente nas fontes — nunca
+  especula além do que está no índice; (5) cada resposta inclui lista de fontes citadas.
+  Regra invariável: se a pergunta não tem cobertura no índice, o AKASHA diz que não sabe
+  em vez de gerar texto não ancorado. Histórico da conversa mantido em memória por sessão
+  (cookie), não persistido entre sessões (diferente da Mnemosyne cujos notebooks persistem).
+
+- [ ] **AKASHA-initiated dialogue** (`services/knowledge_worker.py` — função
+  `_check_discoveries()`; `ecosystem_client.py` — `notify_mnemosyne_insight()`).
+  Ao final de cada lote processado pelo KnowledgeWorker, `_check_discoveries()` calcula
+  sobreposição entre os tópicos novos em `page_knowledge` e o `topic_interest_profile`
+  existente. Se sobreposição ≥ threshold configurável (default: 3 tópicos coincidentes com
+  score > 0.6), chama `ecosystem_client.notify_mnemosyne_insight()` com payload
+  `{topics: list[str], summary: str, sources: list[{url, title}]}`. Essa função POST para
+  `{mnemosyne_url}/insights/receive` lido do `ecosystem.json`. Fallback silencioso se
+  Mnemosyne offline. Frequência máxima: 1 notificação por hora (cooldown em memória) para
+  evitar spam de descobertas triviais.
+
+#### Mnemosyne
+
+- [ ] **Receber insights do AKASHA e convidar para diálogo** (`core/insights.py` novo;
+  endpoint `POST /insights/receive`; `gui/main_window.py`). Endpoint recebe o payload do
+  AKASHA e armazena em tabela `incoming_insights (id PK, topics JSON, summary, sources JSON,
+  received_at, seen BOOL DEFAULT 0)`. A `MainWindow` tem um método `_poll_insights()`
+  chamado a cada 60s via `QTimer` que consulta insights não vistos. Quando há insight novo:
+  exibe badge discreto no botão de análise ou header — sem pop-up, sem som, sem interrupção
+  do fluxo. Badge mostra "⬡" com número de insights pendentes. Ao clicar: abre painel de
+  diálogo com o AKASHA fazendo a abertura (usando o tópico do insight como ponto de partida),
+  e marca o insight como visto. Insights vistos ficam acessíveis por 7 dias antes de expirar.
