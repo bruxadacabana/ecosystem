@@ -186,6 +186,42 @@
   </div>
 </div>
 
+{% if related_docs or related_queries %}
+<div class="related-area">
+  {% if related_docs %}
+  <section class="related-section">
+    <h4 class="related-title">Explorar também</h4>
+    <ul class="related-list">
+      {% for r in related_docs %}
+      <li>
+        <a href="{{ r.url }}" class="related-link">{{ r.title }}</a>
+        <span class="tag">{{ r.source }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% if related_queries %}
+  <div class="related-queries-bar">
+    <span class="related-queries-label">Pesquisar também:</span>
+    {% for qs in related_queries %}
+    {% set _qurl = "/search?q=" ~ (qs | urlencode) %}
+    {% if src_web %}{% set _qurl = _qurl ~ "&src_web=on" %}{% endif %}
+    {% if src_eco %}{% set _qurl = _qurl ~ "&src_eco=on" %}{% endif %}
+    {% if src_sites %}{% set _qurl = _qurl ~ "&src_sites=on" %}{% endif %}
+    {% if src_papers %}{% set _qurl = _qurl ~ "&src_papers=on" %}{% endif %}
+    <a href="{{ _qurl }}"
+       class="related-chip"
+       hx-get="{{ _qurl }}"
+       hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true">
+      {{ qs }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 {% elif query and not error %}
   <!-- ─── Estado vazio — busca sem resultado ─────────────────────── -->
   <section class="empty-state">

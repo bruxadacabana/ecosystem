@@ -18,7 +18,10 @@ import config
 import database
 from services.archiver import archive_url, fetch_and_extract, NearDuplicateError, DoiDuplicateError
 from services.web_search import SearchResult, search_web
-from services.local_search import search_local, correct_query, get_ollama_status
+from services.local_search import (
+    search_local, correct_query, get_ollama_status,
+    suggest_related_docs, suggest_related_queries,
+)
 from services.query_understanding import pin_model, classify_intent
 from services.crawler import search_sites, index_visited_page
 from services.paper_search import PaperResult, search_papers
@@ -125,7 +128,9 @@ async def search(
     corrected_query: str | None = None
     local_facets: dict[str, int] = {}
     active_lens: dict | None = None
-    _eco_expanded: list[str] = []
+    _eco_expanded:    list[str]          = []
+    related_docs:     list[SearchResult] = []
+    related_queries:  list[str]          = []
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -249,6 +254,12 @@ async def search(
         await record_search_query(q)
         await log_activity("search", q, "", _json.dumps({"sources": src_label or "web", "results": total}))
 
+        # Leituras e queries relacionadas (TF-IDF sobre snippets, sem LLM)
+        _src_related = (local_results + web_results + fav_results + site_results)[:20]
+        if _src_related:
+            related_docs    = await suggest_related_docs(_src_related, n=5)
+            related_queries = suggest_related_queries(q, _src_related, n=3)
+
     has_sites = src_sites and bool(await get_all_crawl_sites())
     recent = await database.recent_searches()
 
@@ -283,6 +294,8 @@ async def search(
             "intent_forced":     _intent_forced,
             "expanded_terms":    _eco_expanded,
             "no_expansion":      bool(no_expansion),
+            "related_docs":      related_docs,
+            "related_queries":   related_queries,
         },
     )
 

@@ -4068,7 +4068,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Elimina cold-start de 2–5 segundos por query na RX 6600. Custo de manter 7B Q4_K_M:
   ~4 GB VRAM ocupados — aceitável se o usuário está em sessão ativa.
 
-- [ ] **Leituras relacionadas derivadas dos resultados** (`routers/search.py`, template
+- [x] **Leituras relacionadas derivadas dos resultados** (`routers/search.py`, template
   `search.html`). Após retornar resultados top-K, extrair as 3–5 entidades mais salientes
   (TF-IDF sobre os snippets recuperados vs. o corpus crawleado) e executar buscas FTS5
   silenciosas adicionais. Exibir na UI uma seção "Explorar também:" com cards compactos
@@ -4142,7 +4142,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   (mensagens mais naturais e contextualizadas). Não gera conteúdo — apenas comunica
   processo.
 
-- [ ] **Queries relacionadas sugeridas após resultados** (`routers/search.py`,
+- [x] **Queries relacionadas sugeridas após resultados** (`routers/search.py`,
   `templates/search.html`). Após retornar resultados, exibir 2-3 reformulações sugeridas
   baseadas nos termos dos snippets recuperados (TF-IDF sobre os snippets vs. a query original
   — sem chamada LLM, puramente textual, < 50ms). Exibir como chips clicáveis abaixo dos

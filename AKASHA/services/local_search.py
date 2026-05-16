@@ -1001,6 +1001,89 @@ async def _search_highlights(query: str) -> list[SearchResult]:
     return results
 
 
+# ---------------------------------------------------------------------------
+# TF-IDF textual — funções de sugestão (sem LLM)
+# ---------------------------------------------------------------------------
+
+_STOPWORDS: frozenset[str] = frozenset({
+    "a", "o", "e", "de", "da", "do", "em", "no", "na", "para", "por", "com",
+    "que", "se", "não", "um", "uma", "os", "as", "ao", "dos", "das", "é",
+    "the", "and", "or", "of", "to", "in", "is", "it", "for", "on", "at",
+    "this", "that", "with", "from", "an", "are", "was", "be", "but", "have",
+    "mais", "sua", "seu", "ser", "são", "como", "mas", "foi", "pela", "pelo",
+})
+
+
+def _top_terms(text: str, n: int, exclude: set[str] | None = None) -> list[str]:
+    """Extrai os N termos mais frequentes de text, filtrando stopwords e exclude."""
+    words = re.findall(r"[a-zA-ZÀ-ÿ]{4,}", text.lower())
+    freq: dict[str, int] = {}
+    for w in words:
+        if w not in _STOPWORDS and (exclude is None or w not in exclude):
+            freq[w] = freq.get(w, 0) + 1
+    return sorted(freq, key=freq.__getitem__, reverse=True)[:n]
+
+
+async def suggest_related_docs(
+    results: list[SearchResult],
+    n: int = 5,
+) -> list[SearchResult]:
+    """Retorna documentos do corpus relacionados aos resultados atuais.
+
+    Extrai os termos mais salientes dos snippets/títulos dos resultados via
+    frequência de palavras, executa busca FTS5 silenciosa e retorna documentos
+    não presentes nos resultados originais. Sem LLM — puramente textual, < 100ms.
+    """
+    if not results:
+        return []
+    text = " ".join(f"{r.title} {r.snippet}" for r in results)
+    top = _top_terms(text, 8)
+    if not top:
+        return []
+    fts_query = " OR ".join(top)
+    existing = {r.url.lower().rstrip("/") for r in results}
+    related: list[SearchResult] = []
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                """SELECT path, title, snippet(local_fts, 2, '', '', '…', 30), source
+                   FROM local_fts
+                   WHERE local_fts MATCH ?
+                   ORDER BY rank
+                   LIMIT ?""",
+                (fts_query, n + len(results)),
+            )).fetchall()
+        for row in rows:
+            url = Path(row[0]).as_uri()
+            if url.lower().rstrip("/") not in existing:
+                related.append(SearchResult(
+                    title=row[1], url=url, snippet=row[2], source=row[3],
+                ))
+            if len(related) >= n:
+                break
+    except Exception:
+        pass
+    return related
+
+
+def suggest_related_queries(
+    query: str,
+    results: list[SearchResult],
+    n: int = 3,
+) -> list[str]:
+    """Sugere tópicos relacionados derivados dos snippets dos resultados atuais.
+
+    Extrai termos salientes dos snippets que não aparecem na query original.
+    Retorna como sugestões standalone — o usuário decide se quer explorar.
+    Sem LLM — puramente TF-IDF, < 50ms.
+    """
+    if not results or not query.strip():
+        return []
+    query_words = set(re.findall(r"[a-zA-ZÀ-ÿ]{3,}", query.lower()))
+    text = " ".join(f"{r.title} {r.snippet}" for r in results)
+    return _top_terms(text, n * 2, exclude=query_words)[:n]
+
+
 async def find_related(url: str, n: int = 5) -> list[SearchResult]:
     """Encontra documentos relacionados via TF simplificado sobre FTS5.
 
@@ -1028,23 +1111,9 @@ async def find_related(url: str, n: int = 5) -> list[SearchResult]:
         return []
 
     text = f"{row[0] or ''} {row[1] or ''}"
-
-    _STOPWORDS = frozenset({
-        "a", "o", "e", "de", "da", "do", "em", "no", "na", "para", "por", "com",
-        "que", "se", "não", "um", "uma", "os", "as", "ao", "dos", "das", "é",
-        "the", "and", "or", "of", "to", "in", "is", "it", "for", "on", "at",
-        "this", "that", "with", "from", "an", "are", "was", "be", "but", "have",
-        "mais", "sua", "seu", "ser", "são", "como", "mas", "foi", "pela", "pelo",
-    })
-    words = re.findall(r"[a-zA-ZÀ-ÿ]{4,}", text.lower())
-    freq: dict[str, int] = {}
-    for w in words:
-        if w not in _STOPWORDS:
-            freq[w] = freq.get(w, 0) + 1
-    if not freq:
+    top_terms = _top_terms(text, 8)
+    if not top_terms:
         return []
-
-    top_terms = sorted(freq, key=freq.__getitem__, reverse=True)[:8]
     fts_query = " OR ".join(top_terms)
 
     results: list[SearchResult] = []
