@@ -1566,6 +1566,15 @@ a:hover { opacity: 0.75; }
 .intent-navigational { border-color: rgba(59, 130, 246, 0.3); color: #93c5fd; }
 .intent-factseeking  { border-color: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
 
+.intent-reset {
+  margin-left:     0.6rem;
+  font-size:       0.75rem;
+  opacity:         0.6;
+  color:           inherit;
+  text-decoration: none;
+}
+.intent-reset:hover { opacity: 1; text-decoration: underline; }
+
 @media (max-width: 600px) {
   .lenses-form-grid { grid-template-columns: 1fr; }
   .lenses-field-name { grid-column: 1; }

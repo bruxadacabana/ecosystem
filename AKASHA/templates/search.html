@@ -41,8 +41,23 @@
   </p>
 {% endif %}
 {% if intent and intent != "exploratory" %}
+  {% set _base = "/search?q=" ~ (query | urlencode) %}
+  {% if src_web %}{%  set _base = _base ~ "&src_web=on"    %}{% endif %}
+  {% if src_eco %}{%  set _base = _base ~ "&src_eco=on"    %}{% endif %}
+  {% if src_sites %}{% set _base = _base ~ "&src_sites=on"  %}{% endif %}
+  {% if src_papers %}{% set _base = _base ~ "&src_papers=on" %}{% endif %}
+  {% if lens_id %}{%  set _base = _base ~ "&lens_id=" ~ lens_id %}{% endif %}
   <p class="intent-badge intent-{{ intent | replace('-', '') }}">
-    {% if intent == "navigational" %}&#x21B3; Navegação — melhor resultado{% elif intent == "fact-seeking" %}&#x2315; Factual — priorizando arquivo local{% endif %}
+    {% if intent == "navigational" %}&#x21B3; Navegação — melhor resultado
+    {% elif intent == "fact-seeking" %}&#x2315; Factual — priorizando arquivo local
+    {% endif %}
+    {% if not intent_forced %}
+    <a class="intent-reset"
+       href="{{ _base }}&intent=exploratory"
+       hx-get="{{ _base }}&intent=exploratory"
+       hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+       title="Executar busca completa ignorando classificação automática">× busca completa</a>
+    {% endif %}
   </p>
 {% endif %}
 

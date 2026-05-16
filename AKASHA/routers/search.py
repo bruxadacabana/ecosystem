@@ -95,6 +95,7 @@ async def search(
     mode:       str = "",   # preset: "papers" | "local" | "archive"
     facet_ext:  str = "",   # filtro de extensão de arquivo para resultados locais
     lens_id:    int = 0,    # id de lens pessoal a aplicar (0 = sem lens)
+    intent:     str = "",   # sobrescreve o classificador: navigational|fact-seeking|exploratory
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -123,15 +124,17 @@ async def search(
     corrected_query: str | None = None
     local_facets: dict[str, int] = {}
     active_lens: dict | None = None
-    intent: str = ""
+    # intent pode vir da URL (override manual) ou do classificador automático
+    _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
     if q:
         # Fixar modelo em VRAM + classificar intenção em paralelo com as buscas.
-        # Ambas são fire-and-forget se Ollama estiver offline.
+        # Classificador é ignorado se intent foi passado explicitamente na URL.
         intent_future = None
         if get_ollama_status():
             asyncio.ensure_future(pin_model())
-            intent_future = asyncio.ensure_future(classify_intent(q))
+            if not _intent_forced:
+                intent_future = asyncio.ensure_future(classify_intent(q))
 
         try:
             tasks = await asyncio.gather(
@@ -159,12 +162,16 @@ async def search(
         except Exception as exc:
             error = str(exc)
 
-        # Resolver intenção (já rodou em paralelo com as buscas)
-        if intent_future:
+        # Resolver intenção — usa override da URL ou aguarda classificador paralelo
+        if _intent_forced:
+            pass  # intent já está definido pelo query param
+        elif intent_future:
             try:
                 intent = await asyncio.wait_for(asyncio.shield(intent_future), timeout=0.1)
             except (asyncio.TimeoutError, Exception):
                 intent = "exploratory"
+        else:
+            intent = "exploratory"
 
         # Roteamento por intenção — apenas ajusta quantidade/prioridade de resultados;
         # nunca sintetiza nem interpreta conteúdo (AKASHA é amplificador, não respondedor).
@@ -268,6 +275,7 @@ async def search(
             "active_tab":        "search",
             "ollama_available":  get_ollama_status(),
             "intent":            intent,
+            "intent_forced":     _intent_forced,
         },
     )
 
