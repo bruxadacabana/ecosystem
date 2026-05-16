@@ -4049,7 +4049,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Contexto recente: {últimas queries}."` Exibir a query reescrita na UI (transparência).
   Implementar sem fine-tuning — LLMs 7B few-shot superam modelos ConvDR treinados em CANARD.
 
-- [ ] **Detecção de sessão de pesquisa** (`services/search_session.py`). Agrupar queries
+- [x] **Detecção de sessão de pesquisa** (`services/search_session.py`). Agrupar queries
   consecutivas em sessão se: gap temporal < 30 minutos E similaridade de embedding entre
   queries > 0.65. Manter estado de sessão em memória do processo FastAPI (dict por IP/cookie).
   Sessão acumula: queries anteriores (últimas K), documentos recuperados, entidades extraídas.
@@ -4645,7 +4645,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   sincronizadas entre máquinas.
 
 #### AKASHA
-- [ ] **Chunking Unicode e detecção de idioma no pipeline de indexação** (`services/local_search.py`,
+- [x] **Chunking Unicode e detecção de idioma no pipeline de indexação** (`services/local_search.py`,
   funções `_extract_kosmos()` e `_reindex()`). O pipeline já existe — o placeholder anterior
   está resolvido. Hoje `_extract_kosmos()` lê o arquivo inteiro e trunca em 8000 chars com
   `body[:8000]`, sem considerar limites Unicode ou idioma. Implementar: (a) substituir o

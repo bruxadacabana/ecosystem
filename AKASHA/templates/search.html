@@ -80,6 +80,17 @@
   </p>
 {% endif %}
 
+{% if session and session.query_count > 1 %}
+  <p id="session-badge" class="session-badge">
+    &#x25CE; Sessão: {{ session.query_count }} queries
+    <a class="session-clear"
+       hx-post="/search/session/clear"
+       hx-target="#session-badge"
+       hx-swap="delete"
+       title="Encerrar sessão de pesquisa">× encerrar</a>
+  </p>
+{% endif %}
+
 {% set has_main   = web_results or fav_results or site_results or watch_later_results or paper_results %}
 {% set has_eco    = local_results %}
 {% set two_col    = has_main and has_eco %}

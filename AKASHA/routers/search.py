@@ -5,6 +5,7 @@ GET /search?q=&sources=all|web|local → renderiza search.html
 from __future__ import annotations
 
 import asyncio
+import secrets
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
 
@@ -13,6 +14,8 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+
+from services import search_session as _session_svc
 
 import config
 import database
@@ -133,6 +136,11 @@ async def search(
     related_queries:  list[str]          = []
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
+
+    # Sessão de pesquisa — cookie identifica o browser; gerado se ausente
+    _session_id = request.cookies.get("akasha_session") or secrets.token_urlsafe(16)
+    _new_cookie = not request.cookies.get("akasha_session")
+    _active_session: _session_svc.SearchSession | None = _session_svc.get_session(_session_id)
 
     if q:
         # Fixar modelo em VRAM + classificar intenção em paralelo com as buscas.
@@ -260,10 +268,14 @@ async def search(
             related_docs    = await suggest_related_docs(_src_related, n=5)
             related_queries = suggest_related_queries(q, _src_related, n=3)
 
+        # Atualiza sessão de pesquisa com query atual e URLs recuperados
+        _all_urls = [r.url for r in (local_results + web_results + fav_results + site_results)]
+        _active_session = _session_svc.update_session(_session_id, q, _all_urls)
+
     has_sites = src_sites and bool(await get_all_crawl_sites())
     recent = await database.recent_searches()
 
-    return templates.TemplateResponse(
+    _response = templates.TemplateResponse(
         request,
         "search.html",
         {
@@ -296,8 +308,24 @@ async def search(
             "no_expansion":      bool(no_expansion),
             "related_docs":      related_docs,
             "related_queries":   related_queries,
+            "session":           _active_session,
         },
     )
+    if _new_cookie:
+        _response.set_cookie(
+            "akasha_session", _session_id,
+            max_age=86400 * 7, httponly=True, samesite="lax",
+        )
+    return _response
+
+
+@router.post("/search/session/clear")
+async def search_session_clear(request: Request) -> Response:
+    """Encerra a sessão de pesquisa atual (botão 'encerrar' na UI)."""
+    session_id = request.cookies.get("akasha_session", "")
+    if session_id:
+        _session_svc.clear_session(session_id)
+    return Response(status_code=200)
 
 
 @router.post("/search/release-model")

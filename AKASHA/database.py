@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -82,7 +82,8 @@ _CREATE_LOCAL_META = """
 CREATE TABLE IF NOT EXISTS local_index_meta (
     path   TEXT PRIMARY KEY,
     source TEXT NOT NULL,
-    mtime  TEXT NOT NULL
+    mtime  TEXT NOT NULL,
+    lang   TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -692,6 +693,15 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         await db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_lenses_name ON lenses(name)"
         )
+
+    if from_version < 28:
+        # Adiciona coluna lang ao índice local para suporte multilíngue (pt/en/zh).
+        try:
+            await db.execute(
+                "ALTER TABLE local_index_meta ADD COLUMN lang TEXT NOT NULL DEFAULT ''"
+            )
+        except Exception:
+            pass  # coluna já existe em banco criado com este schema
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",

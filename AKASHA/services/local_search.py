@@ -139,6 +139,27 @@ try:
 except ImportError:
     _SYMSPELL_AVAILABLE = False
 
+try:
+    from lingua import Language as _LinguaLang, LanguageDetectorBuilder as _LinguaBuilder  # type: ignore
+    _LINGUA_AVAILABLE = True
+except ImportError:
+    _LINGUA_AVAILABLE = False
+
+_lingua_detector_inst: object | None = None
+
+
+def _get_lingua_detector() -> object | None:
+    """Lazy init do detector lingua-py; carrega modelos só na primeira chamada."""
+    global _lingua_detector_inst
+    if _lingua_detector_inst is None and _LINGUA_AVAILABLE:
+        try:
+            _lingua_detector_inst = _LinguaBuilder.from_languages(  # type: ignore[union-attr]
+                _LinguaLang.PORTUGUESE, _LinguaLang.ENGLISH, _LinguaLang.CHINESE,  # type: ignore[union-attr]
+            ).build()
+        except Exception:
+            pass
+    return _lingua_detector_inst
+
 # ---------------------------------------------------------------------------
 # Estado de disponibilidade do Ollama
 # Verificado no startup e atualizado periodicamente pelo monitor.
@@ -305,6 +326,46 @@ def correct_query(query: str) -> str | None:
 # Frontmatter (YAML simples: chave: valor)
 # ---------------------------------------------------------------------------
 
+def _unicode_chunk(text: str, max_chars: int = 8000) -> str:
+    """Trunca text em max_chars respeitando limites de parágrafo e palavra.
+
+    Python str é codepoint-safe — slice nunca corta no meio de um char multibyte.
+    Prefere cortar em \\n\\n (parágrafo) ou espaço (palavra) antes do truncamento exato.
+    """
+    if len(text) <= max_chars:
+        return text
+    idx = text.rfind("\n\n", 0, max_chars)
+    if idx > max_chars // 2:
+        return text[:idx]
+    idx = text.rfind(" ", 0, max_chars)
+    if idx > 0:
+        return text[:idx]
+    return text[:max_chars]
+
+
+def _detect_lang(text: str) -> str:
+    """Detecta idioma de text (amostra de 500 chars). Retorna código ISO 639-1 ou ''.
+
+    Usa lingua-py se instalado (mais preciso), fallback para langdetect.
+    Corpus alvo: pt + en + zh.
+    """
+    sample = text[:500]
+    detector = _get_lingua_detector()
+    if detector is not None:
+        try:
+            lang = detector.detect_language_of(sample)  # type: ignore[union-attr]
+            if lang is not None:
+                return lang.iso_code_639_1.name.lower()  # type: ignore[union-attr]
+        except Exception:
+            pass
+    if _LANGDETECT_AVAILABLE:
+        try:
+            return _langdetect(sample)
+        except Exception:
+            pass
+    return ""
+
+
 def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
     """Extrai frontmatter YAML simples entre --- delimiters."""
     if not text.startswith("---"):
@@ -334,7 +395,7 @@ def _extract_kosmos(path: Path) -> tuple[str, str]:
     text = path.read_text(encoding="utf-8", errors="ignore")
     fm, body = _parse_frontmatter(text)
     title = fm.get("title") or _stem_to_title(path.stem)
-    return title, body[:8000]
+    return title, _unicode_chunk(body, 8000)
 
 
 
@@ -351,6 +412,7 @@ async def _get_stored_mtime(path_str: str) -> str | None:
 
 
 async def _reindex(path_str: str, title: str, body: str, source: str, mtime: str) -> None:
+    lang = _detect_lang(body)
     # Embedding calculado fora da conexão DB (CPU-bound → não bloqueia event loop)
     emb: bytes | None = None
     if VECTOR_SEARCH_ENABLED and _SQLITE_VEC_AVAILABLE and _ST_AVAILABLE:
@@ -373,10 +435,10 @@ async def _reindex(path_str: str, title: str, body: str, source: str, mtime: str
             "INSERT INTO local_fts (path, title, body, source) VALUES (?, ?, ?, ?)",
             (path_str, title, body, source),
         )
-        # Atualiza meta
+        # Atualiza meta (inclui lang para suporte multilíngue)
         await db.execute(
-            "INSERT OR REPLACE INTO local_index_meta (path, source, mtime) VALUES (?, ?, ?)",
-            (path_str, source, mtime),
+            "INSERT OR REPLACE INTO local_index_meta (path, source, mtime, lang) VALUES (?, ?, ?, ?)",
+            (path_str, source, mtime, lang),
         )
         # Armazena embedding vetorial
         if emb is not None:
@@ -655,10 +717,21 @@ async def _expand_query_llm(query: str) -> list[str]:
         return []
     try:
         import httpx as _httpx
+        # Detecta idioma da query para instrução no prompt (corpus multilíngue pt/en/zh)
+        _lang_hint = ""
+        if _LANGDETECT_AVAILABLE:
+            try:
+                _qlang = _langdetect(query)
+                if _qlang == "pt":
+                    _lang_hint = " Os termos devem estar em português."
+                elif _qlang in ("zh-cn", "zh-tw", "zh"):
+                    _lang_hint = " Os termos devem estar em chinês."
+            except Exception:
+                pass
         prompt = (
             f'Busca: "{query}"\n'
-            "Liste 3 a 5 termos sinônimos ou fortemente relacionados, separados por vírgula. "
-            "Apenas os termos, sem explicação, sem numeração."
+            f"Liste 3 a 5 termos sinônimos ou fortemente relacionados, separados por vírgula."
+            f"{_lang_hint} Apenas os termos, sem explicação, sem numeração."
         )
         async with _httpx.AsyncClient(timeout=5.0) as client:
             r = await client.post(
@@ -675,10 +748,10 @@ async def _expand_query_llm(query: str) -> list[str]:
             return []
         text = r.json().get("response", "").strip()
         raw = [t.strip() for t in re.split(r"[,\n]", text) if t.strip()]
-        # Filtra: só palavras/frases curtas (máx 2 tokens), sem pontuação estranha
+        # Regex estendido para pt/en (À-ÿ) e zh (CJK U+4E00–U+9FFF)
         terms = [
             t.lower() for t in raw
-            if re.match(r"^[a-zA-ZÀ-ÿ][a-zA-ZÀ-ÿ\s]{1,29}$", t)
+            if re.match(r"^[a-zA-ZÀ-ÿ一-鿿][a-zA-ZÀ-ÿ一-鿿\s]{1,29}$", t)
             and len(t.split()) <= 2
             and t.lower() not in query.lower()
         ]

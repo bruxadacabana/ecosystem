@@ -1600,6 +1600,25 @@ a:hover { opacity: 0.75; }
 }
 .expansion-reset:hover { opacity: 1; text-decoration: underline; }
 
+/* ── Sessão de pesquisa ── */
+.session-badge {
+  display:     inline-flex;
+  align-items: center;
+  gap:         0.5rem;
+  font-size:   0.8rem;
+  color:       var(--muted);
+  padding:     0.2rem 0;
+  margin-bottom: 0.4rem;
+}
+.session-clear {
+  font-size:       0.75rem;
+  color:           var(--accent);
+  opacity:         0.65;
+  text-decoration: none;
+  cursor:          pointer;
+}
+.session-clear:hover { opacity: 1; }
+
 /* ── Related area (Explorar também + Pesquisar também) ── */
 .related-area {
   margin-top:  1.5rem;
