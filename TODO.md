@@ -4645,12 +4645,16 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   sincronizadas entre máquinas.
 
 #### AKASHA
-- [ ] **Chunking Unicode e detecção de idioma desde o início da implementação** — quando
-  implementar o pipeline de indexação do AKASHA, usar desde a primeira versão: (a) chunker
-  por contagem de caracteres Unicode (ver item Mnemosyne acima); (b) `lingua-py` para
-  detectar idioma por chunk e armazenar `metadata["language"]`; (c) language instruction no
-  system prompt para evitar drift. Anotar no `GUIDE.md` do AKASHA que o corpus é multilíngue
-  por design (pt + en + zh) e que essas três práticas são obrigatórias, não opcionais.
+- [ ] **Chunking Unicode e detecção de idioma no pipeline de indexação** (`services/local_search.py`,
+  funções `_extract_kosmos()` e `_reindex()`). O pipeline já existe — o placeholder anterior
+  está resolvido. Hoje `_extract_kosmos()` lê o arquivo inteiro e trunca em 8000 chars com
+  `body[:8000]`, sem considerar limites Unicode ou idioma. Implementar: (a) substituir o
+  truncamento cru por um chunker por contagem de caracteres Unicode (análogo ao Mnemosyne)
+  para não cortar no meio de um caractere multibyte; (b) usar `lingua-py` para detectar
+  idioma do chunk e armazenar no índice FTS5 como coluna adicional ou em `local_index_meta`;
+  (c) adicionar language instruction no system prompt de qualquer chamada LLM que use o
+  conteúdo indexado. O corpus é multilíngue por design (pt + en + zh) — essas práticas
+  são obrigatórias, não opcionais. Registrar no `GUIDE.md` do AKASHA.
 
 #### HUB — LOGOS
 - [x] **Registrar qwen2.5 como preferido para contexto em chinês nas atribuições de modelo** —
@@ -4704,18 +4708,23 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### AKASHA
 - [ ] **Migrar AKASHA para `ecosystem_client.request_llm()`** (`services/query_understanding.py`,
-  qualquer serviço que chame Ollama diretamente). O AKASHA hoje chama o Ollama na porta 11434
-  sem passar pelo LOGOS (porta 7072). Isso bypassa o controle de prioridade (P1/P2/P3),
-  a injeção de keep_alive automática e o Hardware Guard de VRAM. Usar
-  `ecosystem_client.get_ollama_url()` que já retorna 7072 se LOGOS acessível, 11434 como
-  fallback — mesma lógica implementada no KOSMOS e Mnemosyne.
+  `services/local_search.py` — função `_expand_query_llm()`). O AKASHA hoje chama o Ollama
+  na porta 11434 sem passar pelo LOGOS (porta 7072) em dois lugares: `query_understanding.py`
+  (`pin_model`, `release_model`, `classify_intent`) e `local_search._expand_query_llm()`.
+  Ambos devem usar `ecosystem_client.get_ollama_url()` como base URL — retorna 7072 se LOGOS
+  acessível, 11434 como fallback. Isso garante que todas as chamadas LLM do AKASHA passem
+  pelo controle de prioridade (P1/P2/P3), keep_alive automático e Hardware Guard de VRAM.
 
-- [ ] **`query_understanding.py` ler modelo `llm_query` do perfil ativo do LOGOS**
-  (`services/query_understanding.py`, `DEFAULT_LLM_MODEL`). O valor atual `DEFAULT_LLM_MODEL = ""`
-  torna o `pin_model()` um no-op — sem nome de modelo, nenhum modelo é fixado em VRAM e o
-  keep_alive=-1 nunca é enviado. Ler o modelo via `ecosystem_client.get_active_profile()`
-  e usar o campo `llm_query` do perfil: smollm2:1.7b (MainPc), smollm2:1.7b (Laptop),
-  qwen2.5:0.5b (WorkPc). Depende do item anterior (precisa que as chamadas passem pelo LOGOS).
+- [ ] **`query_understanding.py` resolver modelo via perfil ativo do LOGOS**
+  (`services/query_understanding.py`, `DEFAULT_LLM_MODEL`; `ecosystem_client.py`,
+  `_APP_MODEL_KEY`). O valor atual `DEFAULT_LLM_MODEL = ""` torna `pin_model()` um no-op —
+  sem nome de modelo, nenhum modelo é fixado em VRAM e o keep_alive=-1 nunca é enviado.
+  Correção: (1) adicionar `"akasha": "llm_kosmos"` ao dict `_APP_MODEL_KEY` em
+  `ecosystem_client.py` — o AKASHA usa o mesmo modelo leve do KOSMOS, resolvido por máquina
+  via perfil LOGOS; (2) em `query_understanding.py`, popular `DEFAULT_LLM_MODEL` no startup
+  via `ecosystem_client.get_active_profile()["models"]["llm_kosmos"]` (com fallback
+  para `smollm2:1.7b`). Nota: a chave `llm_query` não existe — apps não listados em
+  `_APP_MODEL_KEY` já usam `"llm_kosmos"` como fallback automático. Depende do item anterior.
 
 ### HUB — desinstalar modelos Ollama pelo LOGOS | 2026-05-15
 > Contexto: a LogosView já permite baixar, ativar e descarregar modelos da VRAM, mas não há como
