@@ -1,33 +1,42 @@
 """
 AKASHA — Query Understanding e gerenciamento de ciclo de vida do modelo LLM.
 
-Responsabilidades atuais:
+Responsabilidades:
   - pin_model() / release_model(): mantém o modelo em VRAM durante uma sessão
     de pesquisa ativa, eliminando o cold-start de 2–5 s por query.
   - Temporizador de inatividade: libera VRAM automaticamente após SESSION_IDLE_S
     segundos sem atividade.
+  - classify_intent(): classifica a intenção da query em fact-seeking, exploratory
+    ou navigational via chamada Ollama rápida (~200ms com modelo 3B Q4).
 
 Integração:
-  - routers/search.py chama pin_model() no início de cada busca que usa LLM.
+  - routers/search.py chama pin_model() e classify_intent() no início de cada busca.
   - release_model() é chamado automaticamente pelo timer ou por endpoint explícito.
-  - Os módulos synthesis.py e classificador (a implementar) usam este módulo como
-    ponto central de configuração do modelo LLM.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Literal
 
 import httpx
 
 log = logging.getLogger("akasha.query_understanding")
 
 # ---------------------------------------------------------------------------
+# Tipos
+# ---------------------------------------------------------------------------
+
+IntentType = Literal["fact-seeking", "exploratory", "navigational"]
+
+# ---------------------------------------------------------------------------
 # Configuração
 # ---------------------------------------------------------------------------
 
-OLLAMA_BASE_URL:   str = "http://localhost:11434"
-SESSION_IDLE_S:    int = 1800   # 30 min sem atividade → libera VRAM
+OLLAMA_BASE_URL:        str = "http://localhost:11434"
+SESSION_IDLE_S:         int = 1800   # 30 min sem atividade → libera VRAM
+INTENT_CLASSIFY_MODEL:  str = ""     # sobrescrito por ecosystem.json; vazio = usa DEFAULT_LLM_MODEL
+INTENT_TIMEOUT_S:       float = 5.0  # timeout da classificação; fallback para "exploratory"
 
 # Modelo padrão para síntese e classificação. Vazio = Ollama usa o que estiver
 # carregado. Será sobrescrito por ecosystem.json quando o LOGOS for consultado.
@@ -92,6 +101,61 @@ async def release_model(model: str = "") -> None:
 def get_pinned_model() -> str | None:
     """Retorna o modelo atualmente fixado em VRAM, ou None."""
     return _pinned_model
+
+
+async def classify_intent(query: str, model: str = "") -> IntentType:
+    """Classifica a intenção da query via Ollama em ~200ms.
+
+    Retorna um de três tipos:
+      - "navigational" — usuária quer um URL/página específica (ex: "github anthropic")
+      - "fact-seeking" — usuária quer um dado factual pontual (ex: "capital do Brasil")
+      - "exploratory" — usuária quer pesquisar um tema amplo (ex: "machine learning intro")
+
+    O classificador age APENAS na camada de roteamento de busca — não sintetiza
+    respostas nem interpreta resultados. Se Ollama não responder em INTENT_TIMEOUT_S
+    segundos, retorna "exploratory" (comportamento padrão da busca) sem bloquear.
+
+    Raises: nunca — todos os erros são absorvidos e retornam "exploratory".
+    """
+    model = model or INTENT_CLASSIFY_MODEL or DEFAULT_LLM_MODEL
+    if not model:
+        return "exploratory"
+
+    prompt = (
+        "Classify this search query into exactly one category:\n"
+        "- navigational: looking for a specific website, URL, or known page\n"
+        "- fact-seeking: looking for a specific fact, number, or quick answer\n"
+        "- exploratory: researching a broad topic, concept, or idea\n\n"
+        f'Query: "{query}"\n\n'
+        "Answer with one word only: navigational, fact-seeking, or exploratory."
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=INTENT_TIMEOUT_S) as client:
+            resp = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 8, "temperature": 0},
+                },
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "").strip().lower()
+    except (httpx.HTTPError, httpx.TimeoutException, KeyError, ValueError) as exc:
+        log.debug("classify_intent falhou (%s) — usando 'exploratory'.", exc)
+        return "exploratory"
+
+    if "navigational" in raw:
+        return "navigational"
+    if "fact" in raw:
+        return "fact-seeking"
+    if "exploratory" in raw:
+        return "exploratory"
+
+    log.debug("classify_intent resposta inesperada %r — usando 'exploratory'.", raw)
+    return "exploratory"
 
 
 # ---------------------------------------------------------------------------

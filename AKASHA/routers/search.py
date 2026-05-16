@@ -19,7 +19,7 @@ import database
 from services.archiver import archive_url, fetch_and_extract, NearDuplicateError, DoiDuplicateError
 from services.web_search import SearchResult, search_web
 from services.local_search import search_local, correct_query, get_ollama_status
-from services.query_understanding import pin_model
+from services.query_understanding import pin_model, classify_intent
 from services.crawler import search_sites, index_visited_page
 from services.paper_search import PaperResult, search_papers
 from database import (
@@ -123,12 +123,15 @@ async def search(
     corrected_query: str | None = None
     local_facets: dict[str, int] = {}
     active_lens: dict | None = None
+    intent: str = ""
 
     if q:
-        # Fixar modelo em VRAM enquanto a sessão está ativa — elimina cold-start.
-        # Fire-and-forget: não bloqueia a busca se o Ollama estiver offline.
+        # Fixar modelo em VRAM + classificar intenção em paralelo com as buscas.
+        # Ambas são fire-and-forget se Ollama estiver offline.
+        intent_future = None
         if get_ollama_status():
             asyncio.ensure_future(pin_model())
+            intent_future = asyncio.ensure_future(classify_intent(q))
 
         try:
             tasks = await asyncio.gather(
@@ -155,6 +158,28 @@ async def search(
                     break
         except Exception as exc:
             error = str(exc)
+
+        # Resolver intenção (já rodou em paralelo com as buscas)
+        if intent_future:
+            try:
+                intent = await asyncio.wait_for(asyncio.shield(intent_future), timeout=0.1)
+            except (asyncio.TimeoutError, Exception):
+                intent = "exploratory"
+
+        # Roteamento por intenção — apenas ajusta quantidade/prioridade de resultados;
+        # nunca sintetiza nem interpreta conteúdo (AKASHA é amplificador, não respondedor).
+        if intent == "navigational":
+            # Usuária sabe o que quer — retorna o melhor resultado de cada fonte
+            web_results    = web_results[:1]
+            fav_results    = fav_results[:1]
+            local_results  = local_results[:1]
+            site_results   = site_results[:1]
+            paper_results  = paper_results[:1]
+        elif intent == "fact-seeking":
+            # Prioriza fontes locais (arquivo pessoal é mais preciso para fatos conhecidos)
+            if not src_eco:
+                local_results = await search_local(q)
+                local_results = local_results[:5]
 
         # Correção ortográfica: tenta reexecutar busca local com query corrigida
         if src_eco and isinstance(eco_r, list) and not eco_r and len(q.split()) <= 2:
@@ -242,6 +267,7 @@ async def search(
             "lens_id":           lens_id,
             "active_tab":        "search",
             "ollama_available":  get_ollama_status(),
+            "intent":            intent,
         },
     )
 

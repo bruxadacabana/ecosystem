@@ -40,6 +40,11 @@
     Mostrando resultados para: <strong>{{ corrected_query }}</strong>
   </p>
 {% endif %}
+{% if intent and intent != "exploratory" %}
+  <p class="intent-badge intent-{{ intent | replace('-', '') }}">
+    {% if intent == "navigational" %}&#x21B3; Navegação — melhor resultado{% elif intent == "fact-seeking" %}&#x2315; Factual — priorizando arquivo local{% endif %}
+  </p>
+{% endif %}
 
 {% set has_main   = web_results or fav_results or site_results or watch_later_results or paper_results %}
 {% set has_eco    = local_results %}

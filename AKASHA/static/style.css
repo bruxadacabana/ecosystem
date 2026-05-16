@@ -1552,6 +1552,20 @@ a:hover { opacity: 0.75; }
 
 .lens-banner-clear:hover { color: var(--ribbon); }
 
+/* ── Intent badge ──────────────────────────────────── */
+.intent-badge {
+  display:       inline-block;
+  padding:       0.2rem 0.6rem;
+  border-radius: var(--radius);
+  font-size:     0.8rem;
+  color:         var(--muted);
+  background:    var(--surface-2, rgba(255,255,255,0.04));
+  border:        1px solid var(--border, rgba(255,255,255,0.08));
+  margin-bottom: 0.5rem;
+}
+.intent-navigational { border-color: rgba(59, 130, 246, 0.3); color: #93c5fd; }
+.intent-factseeking  { border-color: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+
 @media (max-width: 600px) {
   .lenses-form-grid { grid-template-columns: 1fr; }
   .lenses-field-name { grid-column: 1; }
