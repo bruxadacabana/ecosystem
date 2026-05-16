@@ -79,8 +79,8 @@ Cada notebook tem diretório próprio em `{data_dir}/notebooks/{id}/` com `metad
 **Studio outputs = "pensamentos" da Mnemosyne.**
 Outputs gerados pelo Studio são salvos como arquivos `.md` com frontmatter `source: mnemosyne_studio`. O indexador reconhece esse metadado e atribui `source_type = "thought"` com peso próprio em `SOURCE_WEIGHTS`, para que o RAG saiba que está citando análises feitas pela própria Mnemosyne — e não uma fonte externa.
 
-**Aba Análise — estrutura atual (não redesenhada ainda):**
-A aba tem 4 sub-páginas: Resumo, FAQ, Guide e Studio. O redesign planejado no TODO unifica Resumo e FAQ como tipos do Studio e converte o Studio num painel de tiles persistentes. Até lá, a estrutura antiga permanece funcional.
+**Aba Análise — estrutura atual (redesenhada em 2026-05-14):**
+A aba tem 2 pills: **Guide** (index 0) e **Studio** (index 1). Resumo e FAQ foram unificados como tipos do combo `studio_type_combo` — gerados via `StudioWorker` como qualquer outro tipo e persistidos como `StudioOutput`. O Studio é agora uma galeria de tiles persistentes (`StudioTileWidget`) em `QScrollArea`. Não existe mais `summary_btn`, `faq_btn`, `studio_result_text` ou `studio_table` separados.
 
 **Query multi-coleção (implementado 2026-05-14):**
 O Mnemosyne consulta **todas** as coleções habilitadas simultaneamente via `MultiVectorstore` (proxy Chroma). Nunca há "coleção ativa" para queries — apenas `coll.enabled` controla inclusão/exclusão. O botão "Ativar" foi renomeado para "Habilitar/Desabilitar".
