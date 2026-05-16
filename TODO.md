@@ -6016,3 +6016,42 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   e passa `--open-insights` como argumento CLI; a Mnemosyne detecta esse flag no startup e
   abre diretamente o painel de diálogo com o insight mais recente. Badge desaparece quando
   `pending_insights` volta a 0 (Mnemosyne atualiza o campo após marcar insights como vistos).
+
+### HUB — monitoramento git do sync_root | 2026-05-16
+> Contexto: a pasta `sync_root` configurada no HUB é a pasta central do ecossistema,
+> sincronizada via Proton Drive e agora também via repositório git remoto recém-criado.
+> O LOGOS/HUB deve monitorar essa pasta via git automaticamente e expor operações manuais
+> na UI para que a usuária possa ver o status e disparar sync sem abrir terminal.
+
+#### HUB
+
+- [ ] **Backend Rust — módulo `commands/git_sync.rs`**: Implementar as funções Tauri:
+  `git_status(sync_root: String) -> Result<GitStatus, AppError>` — retorna struct com campos:
+  `branch: String`, `ahead: u32`, `behind: u32`, `staged: Vec<String>`, `unstaged: Vec<String>`,
+  `untracked: Vec<String>`, `last_commit_msg: String`, `last_commit_date: String`.
+  `git_fetch(sync_root: String) -> Result<String, AppError>` — executa `git fetch --all`; retorna output.
+  `git_pull(sync_root: String) -> Result<String, AppError>` — executa `git pull`; retorna output.
+  `git_push(sync_root: String) -> Result<String, AppError>` — executa `git push`; retorna output.
+  `git_commit_all(sync_root: String, message: String) -> Result<String, AppError>` — executa
+  `git add -A && git commit -m <message>`; retorna output.
+  `git_log(sync_root: String, n: u32) -> Result<Vec<GitCommit>, AppError>` — retorna últimos N commits
+  (hash curto, mensagem, autor, data). Todas as funções usam `std::process::Command` para invocar
+  o `git` do sistema; nunca usam `git2` (dependência pesada). Registrar todos em `lib.rs`
+  `invoke_handler`. Usar `AppError` existente do projeto para erros tipados.
+
+- [ ] **Monitoramento automático — evento periódico**: No frontend, `setInterval` a cada 60s
+  chama `git_status(syncRoot)` e atualiza o estado React. O `syncRoot` é lido do `ecosystem.json`
+  (já disponível via `useEcosystem` hook ou equivalente). Quando `ahead > 0` ou `behind > 0`
+  ou `unstaged.length > 0`, exibe badge de atenção discreto na `Sidebar` ou no ícone de sync —
+  sem pop-up, sem som. O badge desaparece quando o status voltar a limpo.
+
+- [ ] **UI — painel Git Sync na `SetupView` ou nova aba dedicada**: Exibir:
+  — Status atual: branch, N ahead / N behind, N alterações (staged + unstaged + untracked).
+  — Último commit: mensagem e data.
+  — Log dos últimos 5 commits (lista simples: hash, mensagem, data).
+  — Botões de ação: **Fetch** · **Pull** · **Push** · **Commit & Push** (abre input de mensagem
+    antes de executar). Cada botão desabilita durante execução e exibe spinner.
+  — Área de output: mostra stdout/stderr do último comando executado (scroll).
+  — Botão **Atualizar** para forçar refresh manual do status.
+  Usar os mesmos tokens de design do `DESIGN_BIBLE.md` (paleta "Atlas Astronômico à Meia-Noite").
+  Tipos TypeScript para `GitStatus` e `GitCommit` em `src/types/`.
