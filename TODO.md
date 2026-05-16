@@ -5998,7 +5998,21 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   AKASHA e armazena em tabela `incoming_insights (id PK, topics JSON, summary, sources JSON,
   received_at, seen BOOL DEFAULT 0)`. A `MainWindow` tem um método `_poll_insights()`
   chamado a cada 60s via `QTimer` que consulta insights não vistos. Quando há insight novo:
-  exibe badge discreto no botão de análise ou header — sem pop-up, sem som, sem interrupção
-  do fluxo. Badge mostra "⬡" com número de insights pendentes. Ao clicar: abre painel de
-  diálogo com o AKASHA fazendo a abertura (usando o tópico do insight como ponto de partida),
-  e marca o insight como visto. Insights vistos ficam acessíveis por 7 dias antes de expirar.
+  exibe badge discreto "⬡ N" no header da MainWindow — sem pop-up, sem som, sem interrupção
+  do fluxo. Ao clicar no badge: abre painel de diálogo com o AKASHA fazendo a abertura
+  (usando o tópico do insight como ponto de partida), e marca o insight como visto. Insights
+  vistos ficam acessíveis por 7 dias antes de expirar. Além do badge interno, a Mnemosyne
+  escreveu o count de insights não vistos em `ecosystem.json` (`mnemosyne.pending_insights: int`)
+  a cada atualização — o HUB lê esse campo para exibir o badge centralizado (ver item HUB abaixo).
+
+#### HUB
+
+- [ ] **Badge de insights AKASHA→Mnemosyne no HUB** (`src/components/AppCard.tsx` ou
+  equivalente na barra de apps; `src-tauri/src/commands/ecosystem.rs`). O HUB lê
+  `ecosystem.json` periodicamente (a cada 60s via `setInterval` no frontend ou comando Tauri
+  agendado). Quando `mnemosyne.pending_insights > 0`, exibe badge "⬡ N" sobre o ícone ou
+  card da Mnemosyne na barra de apps do HUB — mesmo estilo visual dos outros badges de status
+  (ex: badge de Ollama offline). Clicar no badge lança a Mnemosyne (se não estiver aberta)
+  e passa `--open-insights` como argumento CLI; a Mnemosyne detecta esse flag no startup e
+  abre diretamente o painel de diálogo com o insight mais recente. Badge desaparece quando
+  `pending_insights` volta a 0 (Mnemosyne atualiza o campo após marcar insights como vistos).
