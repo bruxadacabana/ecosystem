@@ -1620,6 +1620,43 @@ a:hover { opacity: 0.75; }
 }
 .rewrite-reset:hover { opacity: 1; text-decoration: underline; }
 
+/* ── Clarificação seletiva ── */
+.clarification-banner {
+  display:       flex;
+  align-items:   center;
+  gap:           0.75rem;
+  padding:       0.6rem 0.8rem;
+  border-radius: var(--radius);
+  border:        1px solid rgba(251, 191, 36, 0.3);
+  background:    rgba(251, 191, 36, 0.06);
+  margin-bottom: 0.75rem;
+  flex-wrap:     wrap;
+}
+.clarification-icon { font-size: 1rem; flex-shrink: 0; }
+.clarification-q {
+  font-size:  0.875rem;
+  color:      var(--text);
+  margin:     0;
+  flex:       1 1 auto;
+}
+.clarification-form {
+  display:    flex;
+  gap:        0.4rem;
+  flex:       1 1 240px;
+  min-width:  0;
+}
+.clarification-input {
+  flex:         1 1 0;
+  min-width:    0;
+  padding:      0.3rem 0.6rem;
+  font-size:    0.875rem;
+  border:       1px solid var(--border, rgba(255,255,255,0.15));
+  border-radius: var(--radius);
+  background:   var(--surface-1, transparent);
+  color:        var(--text);
+}
+.clarification-btn { flex-shrink: 0; }
+
 /* ── Sessão de pesquisa ── */
 .session-badge {
   display:     inline-flex;

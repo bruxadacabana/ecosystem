@@ -23,9 +23,10 @@ MAX_RESULT_URLS:      int   = 20     # URLs de resultado acumuladas (contexto pa
 
 @dataclass
 class SearchSession:
-    queries:     list[str] = field(default_factory=list)
-    result_urls: list[str] = field(default_factory=list)
-    last_at:     float     = field(default_factory=time.time)
+    queries:              list[str] = field(default_factory=list)
+    result_urls:          list[str] = field(default_factory=list)
+    last_at:              float     = field(default_factory=time.time)
+    asked_clarification:  bool      = False   # máx 1 pergunta de clarificação por sessão
 
     @property
     def active(self) -> bool:

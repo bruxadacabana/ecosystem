@@ -4105,7 +4105,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > AKASHA e Mnemosyne são complementares: AKASHA traz material bruto, Mnemosyne processa em profundidade.
 
 #### AKASHA
-- [ ] **Clarificação seletiva de query** (`services/query_understanding.py`, `routers/search.py`,
+- [x] **Clarificação seletiva de query** (`services/query_understanding.py`, `routers/search.py`,
   `templates/search.html`). Antes de executar a busca, detectar ambiguidade via LLM leve
   (score 1-4; perguntar apenas quando score ≥ 3). Máximo 1 pergunta por sessão. A pergunta
   deve ser sempre específica sobre o atributo ambíguo ("Java a linguagem ou o país?" em vez de

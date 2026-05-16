@@ -107,6 +107,24 @@
   </p>
 {% endif %}
 
+{% if clarification_question %}
+<div class="clarification-banner">
+  <span class="clarification-icon">&#x2753;</span>
+  <p class="clarification-q">{{ clarification_question }}</p>
+  <form class="clarification-form"
+        hx-get="/search"
+        hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true">
+    {% if src_web %}<input type="hidden" name="src_web" value="on">{% endif %}
+    {% if src_eco %}<input type="hidden" name="src_eco" value="on">{% endif %}
+    {% if src_sites %}<input type="hidden" name="src_sites" value="on">{% endif %}
+    {% if src_papers %}<input type="hidden" name="src_papers" value="on">{% endif %}
+    {% if lens_id %}<input type="hidden" name="lens_id" value="{{ lens_id }}">{% endif %}
+    <input class="clarification-input" type="text" name="q" placeholder="Refine sua busca…" autofocus>
+    <button class="btn btn-ghost clarification-btn" type="submit">→</button>
+  </form>
+</div>
+{% endif %}
+
 {% set has_main   = web_results or fav_results or site_results or watch_later_results or paper_results %}
 {% set has_eco    = local_results %}
 {% set two_col    = has_main and has_eco %}

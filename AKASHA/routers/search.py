@@ -25,7 +25,7 @@ from services.local_search import (
     search_local, correct_query, get_ollama_status,
     suggest_related_docs, suggest_related_queries,
 )
-from services.query_understanding import pin_model, classify_intent, needs_rewrite, rewrite_query
+from services.query_understanding import pin_model, classify_intent, needs_rewrite, rewrite_query, score_ambiguity
 from services.crawler import search_sites, index_visited_page
 from services.paper_search import PaperResult, search_papers
 from database import (
@@ -132,9 +132,10 @@ async def search(
     corrected_query: str | None = None
     local_facets: dict[str, int] = {}
     active_lens: dict | None = None
-    _eco_expanded:    list[str]          = []
-    related_docs:     list[SearchResult] = []
-    related_queries:  list[str]          = []
+    _eco_expanded:           list[str]          = []
+    related_docs:            list[SearchResult] = []
+    related_queries:         list[str]          = []
+    _clarification_question: str               = ""
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -169,10 +170,14 @@ async def search(
         # Fixar modelo em VRAM + classificar intenção em paralelo com as buscas.
         # Classificador usa _effective_query (pode ser a query reescrita).
         intent_future = None
+        _ambiguity_future = None
         if get_ollama_status():
             asyncio.ensure_future(pin_model())
             if not _intent_forced:
                 intent_future = asyncio.ensure_future(classify_intent(_effective_query))
+            # Clarificação seletiva: avalia ambiguidade em paralelo (máx 1 pergunta/sessão)
+            if _active_session is not None and not _active_session.asked_clarification:
+                _ambiguity_future = asyncio.ensure_future(score_ambiguity(_effective_query))
 
         _use_expansion = not bool(no_expansion)
         try:
@@ -285,6 +290,19 @@ async def search(
         await record_search_query(q)
         await log_activity("search", q, "", _json.dumps({"sources": src_label or "web", "results": total}))
 
+        # Clarificação seletiva: resolve resultado paralelo, marca sessão se perguntou
+        _clarification_question: str = ""
+        if _ambiguity_future is not None:
+            try:
+                _amb_score, _amb_q = await asyncio.wait_for(
+                    asyncio.shield(_ambiguity_future), timeout=0.1
+                )
+                if _amb_q and _active_session is not None:
+                    _clarification_question = _amb_q
+                    _active_session.asked_clarification = True
+            except (asyncio.TimeoutError, Exception):
+                _ambiguity_future.cancel()
+
         # Leituras e queries relacionadas (TF-IDF sobre snippets, sem LLM)
         _src_related = (local_results + web_results + fav_results + site_results)[:20]
         if _src_related:
@@ -329,8 +347,9 @@ async def search(
             "intent_forced":     _intent_forced,
             "expanded_terms":    _eco_expanded,
             "no_expansion":      bool(no_expansion),
-            "rewritten_query":   _rewritten_query if q else "",
-            "no_rewrite":        bool(no_rewrite),
+            "rewritten_query":         _rewritten_query if q else "",
+            "no_rewrite":              bool(no_rewrite),
+            "clarification_question":  _clarification_question if q else "",
             "related_docs":      related_docs,
             "related_queries":   related_queries,
             "session":           _active_session,

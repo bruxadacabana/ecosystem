@@ -113,6 +113,64 @@ async def rewrite_query(query: str, context: list[str], model: str = "") -> str:
     return ""
 
 # ---------------------------------------------------------------------------
+# Clarificação seletiva
+# ---------------------------------------------------------------------------
+
+async def score_ambiguity(query: str, model: str = "") -> tuple[int, str]:
+    """Avalia ambiguidade da query e gera pergunta de clarificação quando necessário.
+
+    Score 1-4 (1=clara, 4=muito ambígua). Pergunta exibida apenas quando score ≥ 3.
+    A pergunta deve ser específica sobre o atributo ambíguo — nunca genérica.
+    Retorna (1, "") em qualquer falha. Nunca levanta exceção.
+    """
+    model = model or INTENT_CLASSIFY_MODEL or DEFAULT_LLM_MODEL
+    if not model:
+        return 1, ""
+
+    prompt = (
+        f'Query de busca: "{query}"\n\n'
+        "Avalie a ambiguidade de 1 a 4:\n"
+        "1 = clara (ex: 'capital do Brasil')\n"
+        "2 = levemente ambígua\n"
+        "3 = ambígua (ex: 'Java' — linguagem ou país?)\n"
+        "4 = muito ambígua (ex: 'como funciona')\n\n"
+        "Se score ≥ 3, escreva UMA pergunta específica sobre o atributo ambíguo.\n"
+        "Formato obrigatório:\n"
+        "SCORE: N\n"
+        "PERGUNTA: texto (vazio se score < 3)"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=INTENT_TIMEOUT_S) as client:
+            resp = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 60, "temperature": 0},
+                },
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "").strip()
+
+        score = 1
+        question = ""
+        for line in raw.splitlines():
+            u = line.upper()
+            if u.startswith("SCORE:"):
+                try:
+                    score = max(1, min(4, int(line.split(":", 1)[1].strip())))
+                except ValueError:
+                    pass
+            elif u.startswith("PERGUNTA:"):
+                question = line.split(":", 1)[1].strip()
+
+        return score, question if score >= 3 and question else ""
+    except Exception as exc:
+        log.debug("score_ambiguity falhou (%s).", exc)
+        return 1, ""
+
+# ---------------------------------------------------------------------------
 # Estado interno
 # ---------------------------------------------------------------------------
 
