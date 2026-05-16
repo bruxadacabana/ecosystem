@@ -1,0 +1,16 @@
+{% if summary %}
+<div class="summary-card">
+  <p class="summary-label">&#x2728; Orientação de leitura para <em>{{ query }}</em></p>
+  <div class="summary-text">{{ summary }}</div>
+  {% if snippets %}
+  <p class="summary-sources-label">Fontes consultadas:</p>
+  <ol class="summary-sources">
+    {% for s in snippets %}
+    <li class="summary-source">{{ s[:80] }}{% if s | length > 80 %}…{% endif %}</li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+</div>
+{% else %}
+<p class="summary-error">Não foi possível gerar a síntese. Verifique se o Ollama está disponível.</p>
+{% endif %}

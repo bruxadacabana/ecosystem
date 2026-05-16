@@ -238,6 +238,23 @@
   </div>
 </div>
 
+{% set _summarizable = (local_results + fav_results + web_results + site_results) | selectattr("snippet") | list %}
+{% if _summarizable and ollama_available and query %}
+<div id="summary-area">
+  <form class="summary-form"
+        hx-post="/search/summarize"
+        hx-target="#summary-area"
+        hx-swap="innerHTML"
+        hx-indicator="#summary-area">
+    <input type="hidden" name="q" value="{{ query | e }}">
+    {% for r in _summarizable[:6] %}
+    <input type="hidden" name="snippet" value="{{ r.snippet | e }}">
+    {% endfor %}
+    <button type="submit" class="btn btn-ghost summary-btn">&#x2728; Resumir resultados</button>
+  </form>
+</div>
+{% endif %}
+
 {% if related_docs or related_queries %}
 <div class="related-area">
   {% if related_docs %}

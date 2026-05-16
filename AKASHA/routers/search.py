@@ -26,7 +26,7 @@ from services.local_search import (
     search_local, correct_query, get_ollama_status,
     suggest_related_docs, suggest_related_queries,
 )
-from services.query_understanding import pin_model, classify_intent, needs_rewrite, rewrite_query, score_ambiguity
+from services.query_understanding import pin_model, classify_intent, needs_rewrite, rewrite_query, score_ambiguity, summarize_snippets
 from services.crawler import search_sites, index_visited_page
 from services.paper_search import PaperResult, search_papers
 from database import (
@@ -431,6 +431,29 @@ async def search_session_clear(request: Request) -> Response:
     if session_id:
         _session_svc.clear_session(session_id)
     return Response(status_code=200)
+
+
+@router.post("/search/summarize", response_class=HTMLResponse)
+async def search_summarize(
+    request:  Request,
+    q:        str       = Form(""),
+    snippet:  list[str] = Form(default=[]),
+) -> HTMLResponse:
+    """Fragmento HTMX: síntese opcional de snippets via LLM.
+
+    Chamado apenas por ação explícita da usuária — nunca automaticamente.
+    O LLM lê os snippets passados via form e gera orientação de leitura;
+    nunca sintetiza além do que já está nos trechos recuperados.
+    """
+    from services.query_understanding import DEFAULT_LLM_MODEL
+    summary = ""
+    if q and snippet and DEFAULT_LLM_MODEL:
+        summary = await summarize_snippets(q, snippet)
+    return templates.TemplateResponse(
+        request,
+        "_search_summary.html",
+        {"summary": summary, "query": q, "snippets": snippet[:8]},
+    )
 
 
 @router.post("/search/release-model")

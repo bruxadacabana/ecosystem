@@ -171,6 +171,49 @@ async def score_ambiguity(query: str, model: str = "") -> tuple[int, str]:
         return 1, ""
 
 # ---------------------------------------------------------------------------
+# Síntese opcional de snippets
+# ---------------------------------------------------------------------------
+
+async def summarize_snippets(query: str, snippets: list[str], model: str = "") -> str:
+    """Gera 1-2 parágrafos de orientação de leitura sobre os snippets recuperados.
+
+    Nunca substitui os links — apenas orienta. Retorna "" em qualquer falha.
+    Chamado apenas por ação explícita da usuária (botão), nunca automaticamente.
+    """
+    model = model or INTENT_CLASSIFY_MODEL or DEFAULT_LLM_MODEL
+    if not model or not snippets:
+        return ""
+
+    _snips = [s[:300] for s in snippets[:8]]
+    snips_text = "\n\n".join(f"[{i + 1}] {s}" for i, s in enumerate(_snips))
+
+    prompt = (
+        f'A usuária buscou por: "{query}"\n\n'
+        f"Trechos recuperados:\n{snips_text}\n\n"
+        "Escreva 1-2 parágrafos orientando a leitura — o que cada fonte aborda e como "
+        "pode ajudar a responder a busca. Use [N] para referenciar os trechos. "
+        "Não invente informações além dos trechos fornecidos. Responda em português."
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 300, "temperature": 0.3},
+                },
+            )
+            resp.raise_for_status()
+            return resp.json().get("response", "").strip()
+    except Exception as exc:
+        log.debug("summarize_snippets falhou (%s).", exc)
+        return ""
+
+
+# ---------------------------------------------------------------------------
 # Estado interno
 # ---------------------------------------------------------------------------
 

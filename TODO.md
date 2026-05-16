@@ -4125,7 +4125,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   O perfil é opt-in e o usuário vê exatamente o que está sendo aplicado (badge "Usando perfil:
   prefere fontes acadêmicas").
 
-- [ ] **Síntese de resultados como feature opcional explícita** (`routers/search.py`,
+- [x] **Síntese de resultados como feature opcional explícita** (`routers/search.py`,
   `services/query_understanding.py`, `templates/search.html`). Adicionar botão "Resumir
   resultados" que aparece após retornar os snippets. Ao clicar, LLM lê os snippets recuperados
   (sem fetch adicional) e gera 1-2 parágrafos de orientação — nunca substitui os links,
