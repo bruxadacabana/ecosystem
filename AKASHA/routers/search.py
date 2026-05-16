@@ -25,7 +25,7 @@ from services.local_search import (
     search_local, correct_query, get_ollama_status,
     suggest_related_docs, suggest_related_queries,
 )
-from services.query_understanding import pin_model, classify_intent
+from services.query_understanding import pin_model, classify_intent, needs_rewrite, rewrite_query
 from services.crawler import search_sites, index_visited_page
 from services.paper_search import PaperResult, search_papers
 from database import (
@@ -103,6 +103,7 @@ async def search(
     lens_id:    int = 0,    # id de lens pessoal a aplicar (0 = sem lens)
     intent:       str = "",   # sobrescreve o classificador: navigational|fact-seeking|exploratory
     no_expansion: str = "",   # "on" = desativa expansão LLM para esta busca
+    no_rewrite:   str = "",   # "on" = desativa reescrita conversacional para esta busca
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -143,24 +144,46 @@ async def search(
     _active_session: _session_svc.SearchSession | None = _session_svc.get_session(_session_id)
 
     if q:
+        # Reescrita conversacional: reescreve anáforas/queries curtas usando contexto da sessão.
+        # Acontece antes das buscas — _effective_query é o que realmente buscamos.
+        _rewritten_query: str = ""
+        _effective_query: str = q
+        if (
+            not no_rewrite
+            and _active_session is not None
+            and _active_session.context_queries(q)
+            and needs_rewrite(q)
+            and get_ollama_status()
+        ):
+            try:
+                _rw = await asyncio.wait_for(
+                    rewrite_query(q, _active_session.context_queries(q)),
+                    timeout=3.0,
+                )
+                if _rw:
+                    _rewritten_query = _rw
+                    _effective_query = _rw
+            except (asyncio.TimeoutError, Exception):
+                pass
+
         # Fixar modelo em VRAM + classificar intenção em paralelo com as buscas.
-        # Classificador é ignorado se intent foi passado explicitamente na URL.
+        # Classificador usa _effective_query (pode ser a query reescrita).
         intent_future = None
         if get_ollama_status():
             asyncio.ensure_future(pin_model())
             if not _intent_forced:
-                intent_future = asyncio.ensure_future(classify_intent(q))
+                intent_future = asyncio.ensure_future(classify_intent(_effective_query))
 
         _use_expansion = not bool(no_expansion)
         try:
             tasks = await asyncio.gather(
-                search_web(q, max_results=_PAGE_SIZE, filetype=filetype) if src_web    else asyncio.sleep(0, result=[]),
-                search_local(q, expand=_use_expansion,
+                search_web(_effective_query, max_results=_PAGE_SIZE, filetype=filetype) if src_web    else asyncio.sleep(0, result=[]),
+                search_local(_effective_query, expand=_use_expansion,
                              expansion_log=_eco_expanded if _use_expansion else None)
-                                                                          if src_eco    else asyncio.sleep(0, result=[]),
-                search_sites(q)                                           if src_sites  else asyncio.sleep(0, result=[]),
-                search_papers(q)                                          if src_papers else asyncio.sleep(0, result=[]),
-                _db_search_wl(q),
+                                                                                         if src_eco    else asyncio.sleep(0, result=[]),
+                search_sites(_effective_query)                                            if src_sites  else asyncio.sleep(0, result=[]),
+                search_papers(_effective_query)                                           if src_papers else asyncio.sleep(0, result=[]),
+                _db_search_wl(_effective_query),
                 return_exceptions=True,
             )
             web_r, eco_r, sites_r, papers_r, wl_r = tasks
@@ -203,12 +226,12 @@ async def search(
         elif intent == "fact-seeking":
             # Prioriza fontes locais (arquivo pessoal é mais preciso para fatos conhecidos)
             if not src_eco:
-                local_results = await search_local(q)
+                local_results = await search_local(_effective_query)
                 local_results = local_results[:5]
 
         # Correção ortográfica: tenta reexecutar busca local com query corrigida
-        if src_eco and isinstance(eco_r, list) and not eco_r and len(q.split()) <= 2:
-            cq = correct_query(q)
+        if src_eco and isinstance(eco_r, list) and not eco_r and len(_effective_query.split()) <= 2:
+            cq = correct_query(_effective_query)
             if cq:
                 corrected_query = cq
                 try:
@@ -306,6 +329,8 @@ async def search(
             "intent_forced":     _intent_forced,
             "expanded_terms":    _eco_expanded,
             "no_expansion":      bool(no_expansion),
+            "rewritten_query":   _rewritten_query if q else "",
+            "no_rewrite":        bool(no_rewrite),
             "related_docs":      related_docs,
             "related_queries":   related_queries,
             "session":           _active_session,

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Literal
 
 import httpx
@@ -53,6 +54,63 @@ except Exception:
     DEFAULT_LLM_MODEL = ""
 
 OLLAMA_BASE_URL: str = _OLLAMA_BASE  # alias público (retrocompat)
+
+# ---------------------------------------------------------------------------
+# Reescrita conversacional — anáforas detectadas
+# ---------------------------------------------------------------------------
+
+_ANAPHORA_RE = re.compile(
+    r"\b(isso|esse|essa|esses|essas|ele|ela|eles|elas|aquilo|aqueles|aquelas|"
+    r"este|esta|estes|estas|daí|lá|ali|"
+    r"this|that|it|they|them|those|these|here|there)\b",
+    re.IGNORECASE,
+)
+
+
+def needs_rewrite(query: str) -> bool:
+    """True se a query provavelmente precisa de reescrita conversacional.
+
+    Critérios: muito curta (< 3 tokens) OU contém anáfora pt/en.
+    """
+    if len(query.split()) < 3:
+        return True
+    return bool(_ANAPHORA_RE.search(query))
+
+
+async def rewrite_query(query: str, context: list[str], model: str = "") -> str:
+    """Reescreve query anafórica ou curta como busca autônoma usando contexto da sessão.
+
+    Retorna a query reescrita ou "" se não aplicável / falhou.
+    Nunca levanta exceção — falha silenciosa usa query original.
+    """
+    model = model or INTENT_CLASSIFY_MODEL or DEFAULT_LLM_MODEL
+    if not model or not context:
+        return ""
+
+    context_str = " → ".join(context[-3:])
+    prompt = (
+        f'Reescreva como busca independente e específica: "{query}"\n'
+        f"Contexto recente: {context_str}\n"
+        "Responda apenas com a busca reescrita. Uma linha, sem explicação."
+    )
+    try:
+        async with httpx.AsyncClient(timeout=INTENT_TIMEOUT_S) as client:
+            resp = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 30, "temperature": 0.1},
+                },
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "").strip().strip("\"'")
+            if raw and len(raw) <= 200 and raw.lower() != query.lower():
+                return raw
+    except Exception as exc:
+        log.debug("rewrite_query falhou (%s) — usando query original.", exc)
+    return ""
 
 # ---------------------------------------------------------------------------
 # Estado interno

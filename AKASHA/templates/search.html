@@ -40,6 +40,22 @@
     Mostrando resultados para: <strong>{{ corrected_query }}</strong>
   </p>
 {% endif %}
+{% if rewritten_query %}
+  {% set _rwbase = "/search?q=" ~ (query | urlencode) %}
+  {% if src_web %}{% set _rwbase = _rwbase ~ "&src_web=on" %}{% endif %}
+  {% if src_eco %}{% set _rwbase = _rwbase ~ "&src_eco=on" %}{% endif %}
+  {% if src_sites %}{% set _rwbase = _rwbase ~ "&src_sites=on" %}{% endif %}
+  {% if src_papers %}{% set _rwbase = _rwbase ~ "&src_papers=on" %}{% endif %}
+  {% if lens_id %}{% set _rwbase = _rwbase ~ "&lens_id=" ~ lens_id %}{% endif %}
+  <p class="rewrite-badge">
+    &#x21AA; Buscando por: <strong>{{ rewritten_query }}</strong>
+    <a class="rewrite-reset"
+       href="{{ _rwbase }}&no_rewrite=on"
+       hx-get="{{ _rwbase }}&no_rewrite=on"
+       hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+       title="Executar busca com a query original sem reescrita">× usar original</a>
+  </p>
+{% endif %}
 {% if intent and intent != "exploratory" %}
   {% set _base = "/search?q=" ~ (query | urlencode) %}
   {% if src_web %}{%  set _base = _base ~ "&src_web=on"    %}{% endif %}

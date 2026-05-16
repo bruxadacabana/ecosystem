@@ -4042,7 +4042,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Padrão evita "query drift" onde expansão LLM retorna documentos irrelevantes que substituem
   os relevantes. A query original permanece âncora; expansão só adiciona recall.
 
-- [ ] **Reescrita de query conversacional por turno** (`routers/search.py`, `services/search_session.py`).
+- [x] **Reescrita de query conversacional por turno** (`routers/search.py`, `services/search_session.py`).
   Ao detectar anáfora na query ("isso", "esse assunto", "ele", pronomes relativos) ou query
   muito curta (< 3 tokens) em sessão ativa, chamar Ollama para reescrever como query autônoma
   usando o contexto dos últimos K turnos. Prompt: `"Reescreva como busca independente: '{query}'.
