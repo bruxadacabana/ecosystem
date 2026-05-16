@@ -1203,10 +1203,11 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(lambda: self._switch_analysis(idx))
             return btn
 
-        self._pill_guide  = make_pill("Guide", 0)
-        self._pill_studio = make_pill("Studio", 1)
+        self._pill_guide    = make_pill("Guide", 0)
+        self._pill_studio   = make_pill("Studio", 1)
+        self._pill_dialogue = make_pill("⬡ AKASHA", 2)
         self._pill_guide.setChecked(True)
-        for btn in (self._pill_guide, self._pill_studio):
+        for btn in (self._pill_guide, self._pill_studio, self._pill_dialogue):
             pill_row.addWidget(btn)
         pill_row.addStretch()
         outer.addLayout(pill_row)
@@ -1349,12 +1350,19 @@ class MainWindow(QMainWindow):
 
         self._analysis_stack.addWidget(studio_page)
 
+        # ── Sub-página: Diálogo AKASHA ──────────────────────────────────
+        from gui.dialogue_panel import DialoguePanel
+        self._dialogue_panel = DialoguePanel()
+        self._analysis_stack.addWidget(self._dialogue_panel)
+
         self._content_stack.addWidget(page)
 
     def _switch_analysis(self, index: int) -> None:
         self._analysis_stack.setCurrentIndex(index)
-        for i, btn in enumerate((self._pill_guide, self._pill_studio)):
+        for i, btn in enumerate((self._pill_guide, self._pill_studio, self._pill_dialogue)):
             btn.setChecked(i == index)
+        if index == 2 and hasattr(self, "_dialogue_panel"):
+            self._dialogue_panel.set_context(self.vectorstore, self.config)
 
     def _build_page_manage(self) -> None:
         tab = QWidget()
