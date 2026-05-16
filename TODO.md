@@ -5954,7 +5954,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### ecosystem_client
 
-- [ ] **`consult_akasha(question: str, context: list[str]) -> AsyncIterator[str]`** —
+- [x] **`consult_akasha(question: str, context: list[str]) -> AsyncIterator[str]`** —
   nova função em `ecosystem_client.py`. Lê `base_url` do AKASHA do `ecosystem.json`
   (`eco["akasha"]["base_url"]`). Chama `POST {base_url}/dialogue/turn` com o payload e
   faz parsing do stream SSE, yielding cada `thought fragment` conforme chega. Timeout de

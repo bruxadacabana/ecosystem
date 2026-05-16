@@ -381,6 +381,108 @@ def _lock_path() -> Path:
     return ecosystem_path().parent / ".ecosystem.lock"
 
 
+def consult_akasha(
+    question: str,
+    context: list[str],
+    turn_index: int = 0,
+    timeout: float = 30.0,
+) -> list[tuple[str, list[dict]]]:
+    """
+    Chama POST {akasha_base_url}/dialogue/turn e retorna os fragmentos recebidos.
+
+    Retorna lista de (text, sources) onde sources é [] para fragmentos intermediários
+    e preenchida no evento final. Retorna [] silenciosamente se AKASHA estiver offline
+    ou base_url não configurada — a Mnemosyne degrada mostrando só o vault.
+
+    Nota: versão síncrona usando urllib (sem httpx) para compatibilidade com ambientes
+    que não têm asyncio rodando (Qt workers). Para SSE streaming character-by-character
+    use AkashaClient.dialogue_turn() em core/akasha_client.py.
+    """
+    import urllib.error
+    import urllib.request
+
+    eco = read_ecosystem()
+    base_url = eco.get("akasha", {}).get("base_url", "").rstrip("/")
+    if not base_url:
+        return []
+
+    payload_bytes = json.dumps(
+        {"question": question, "context": context, "turn_index": turn_index},
+        ensure_ascii=False,
+    ).encode()
+
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/dialogue/turn",
+            data=payload_bytes,
+            headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+            method="POST",
+        )
+        fragments: list[tuple[str, list[dict]]] = []
+        current_sources: list[dict] = []
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            for raw in resp:
+                line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                if not line.startswith("data:"):
+                    continue
+                payload_str = line[5:].strip()
+                if payload_str == "[DONE]":
+                    break
+                try:
+                    event = json.loads(payload_str)
+                except (ValueError, TypeError):
+                    continue
+                if event.get("type") == "fragment":
+                    text = event.get("text", "")
+                    if text:
+                        fragments.append((text, []))
+                elif event.get("type") == "sources":
+                    current_sources = event.get("sources", [])
+        if fragments and current_sources:
+            last_text, _ = fragments[-1]
+            fragments[-1] = (last_text, current_sources)
+        return fragments
+    except (urllib.error.URLError, OSError, TimeoutError):
+        return []
+
+
+def notify_mnemosyne_insight(
+    topics: list[str],
+    summary: str,
+    sources: list[dict],
+    timeout: float = 5.0,
+) -> None:
+    """
+    Envia notificação de insight do AKASHA para a Mnemosyne via POST /insights/receive.
+
+    Lê mnemosyne.base_url do ecosystem.json. Falha silenciosamente se Mnemosyne
+    estiver offline ou base_url não configurada.
+    """
+    import urllib.error
+    import urllib.request
+
+    eco = read_ecosystem()
+    base_url = eco.get("mnemosyne", {}).get("base_url", "").rstrip("/")
+    if not base_url:
+        return
+
+    payload_bytes = json.dumps(
+        {"topics": topics, "summary": summary, "sources": sources},
+        ensure_ascii=False,
+    ).encode()
+
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/insights/receive",
+            data=payload_bytes,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=timeout)
+    except (urllib.error.URLError, OSError, TimeoutError):
+        pass
+
+
 def write_section(app: str, section: dict[str, Any]) -> None:
     """
     Atualiza apenas a seção `app` do ecosystem.json, preservando as demais.
