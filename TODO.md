@@ -5919,7 +5919,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   estado atual. Injetar persona no prompt de `_expand_query_llm()` como prefixo: "Contexto:
   {self_description}. " — apenas quando persona estiver formada (não vazia).
 
-- [ ] **Endpoint de diálogo** (`routers/dialogue.py` novo; registrar em `main.py`).
+- [x] **Endpoint de diálogo** (`routers/dialogue.py` novo; registrar em `main.py`).
   `POST /dialogue/turn` recebe `{question: str, context: list[str], turn_index: int}` da
   Mnemosyne via `ecosystem_client`. Executa: FTS5 search na query + lookup em `page_knowledge`
   pelos tópicos relevantes + carrega persona. Gera stream SSE de "thought fragments" curtos
