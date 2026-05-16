@@ -4028,7 +4028,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   fact-seeking → busca FTS5 + resposta grounded; exploratory → Map-Reduce + síntese;
   navigational → resultado top-1. Latência do classificador: ~200ms com 3B Q4.
 
-- [ ] **Expansão HyDE para busca vetorial no ChromaDB/Mnemosyne** (`services/local_search.py`,
+- [x] **Expansão HyDE para busca vetorial no ChromaDB/Mnemosyne** (`services/local_search.py`,
   `_search_chroma()`). Ao chamar ChromaDB com a query, gerar primeiro um "documento hipotético"
   via Ollama (`"Escreva um parágrafo que responderia a: {query}"`), usar o embedding do
   documento hipotético como query vector em vez do embedding direto da query.

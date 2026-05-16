@@ -92,6 +92,15 @@ SPELL_CORRECTION_ENABLED: bool = False
 FTS_EXPANSION_ENABLED: bool = True
 FTS_EXPANSION_MODEL:   str  = ""   # vazio = usa primeiro modelo disponível no Ollama
 
+# ---------------------------------------------------------------------------
+# HyDE — Hypothetical Document Embeddings para busca ChromaDB/Mnemosyne
+# Ativado por padrão; produz efeito apenas quando Mnemosyne está disponível.
+# Ganho documentado: +38% nDCG@10 vs embedding direto de query (SIGIR 2023).
+# Custo: ~500ms extra de inferência Ollama (paralelo à busca FTS5).
+# ---------------------------------------------------------------------------
+
+HYDE_ENABLED: bool = True
+
 _expansion_model_cache: str = ""
 
 # LOGOS-first: URL do Ollama e modelo padrão resolvidos no startup via ecosystem_client.
@@ -914,16 +923,55 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
 # Busca ChromaDB (Mnemosyne) — opcional
 # ---------------------------------------------------------------------------
 
+async def _generate_hyde(query: str) -> str:
+    """Gera documento hipotético (HyDE) para melhorar busca semântica no ChromaDB.
+
+    O embedding do documento hipotético como vetor de busca reduz o gap semântico
+    entre a query curta e os documentos longos armazenados no Mnemosyne.
+    Retorna "" em qualquer falha — busca cai de volta ao embedding direto da query.
+    """
+    if not _ollama_available:
+        return ""
+    model = await _get_expansion_model()
+    if not model:
+        return ""
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=4.0) as client:
+            r = await client.post(
+                f"{_ollama_base_url}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": f"Escreva 2-3 frases que responderiam à busca: {query}",
+                    "stream": False,
+                    "options": {"num_predict": 80, "temperature": 0.3},
+                },
+            )
+        if r.status_code == 200:
+            return r.json().get("response", "").strip()
+    except Exception:
+        pass
+    return ""
+
+
 async def _search_chroma(query: str) -> list[SearchResult]:
     if not _CHROMA_AVAILABLE or not config.mnemosyne_indices:
         return []
+
+    # HyDE: usa documento hipotético como query vector quando Ollama disponível
+    effective_query = query
+    if HYDE_ENABLED and _ollama_available:
+        hyde_doc = await _generate_hyde(query)
+        if hyde_doc:
+            effective_query = hyde_doc
+
     results: list[SearchResult] = []
     try:
         for index_path in config.mnemosyne_indices:
             client = _get_chroma_client(index_path)
             for col in client.list_collections():
                 collection = client.get_collection(col.name)
-                qr = collection.query(query_texts=[query], n_results=5)
+                qr = collection.query(query_texts=[effective_query], n_results=5)
                 docs: list[str] = qr.get("documents", [[]])[0]
                 metas: list[dict] = qr.get("metadatas", [[]])[0]
                 for doc, meta in zip(docs, metas):
