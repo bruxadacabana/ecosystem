@@ -4707,7 +4707,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Análogo ao que foi corrigido no KOSMOS e Mnemosyne anteriormente.
 
 #### AKASHA
-- [ ] **Migrar AKASHA para `ecosystem_client.request_llm()`** (`services/query_understanding.py`,
+- [x] **Migrar AKASHA para `ecosystem_client.request_llm()`** (`services/query_understanding.py`,
   `services/local_search.py` — função `_expand_query_llm()`). O AKASHA hoje chama o Ollama
   na porta 11434 sem passar pelo LOGOS (porta 7072) em dois lugares: `query_understanding.py`
   (`pin_model`, `release_model`, `classify_intent`) e `local_search._expand_query_llm()`.
@@ -4715,7 +4715,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   acessível, 11434 como fallback. Isso garante que todas as chamadas LLM do AKASHA passem
   pelo controle de prioridade (P1/P2/P3), keep_alive automático e Hardware Guard de VRAM.
 
-- [ ] **`query_understanding.py` resolver modelo via perfil ativo do LOGOS**
+- [x] **`query_understanding.py` resolver modelo via perfil ativo do LOGOS**
   (`services/query_understanding.py`, `DEFAULT_LLM_MODEL`; `ecosystem_client.py`,
   `_APP_MODEL_KEY`). O valor atual `DEFAULT_LLM_MODEL = ""` torna `pin_model()` um no-op —
   sem nome de modelo, nenhum modelo é fixado em VRAM e o keep_alive=-1 nunca é enviado.

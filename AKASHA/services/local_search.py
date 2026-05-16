@@ -94,6 +94,21 @@ FTS_EXPANSION_MODEL:   str  = ""   # vazio = usa primeiro modelo disponível no 
 
 _expansion_model_cache: str = ""
 
+# LOGOS-first: URL do Ollama e modelo padrão resolvidos no startup via ecosystem_client.
+# get_ollama_url() retorna 7072 (LOGOS proxy) se disponível, 11434 direto como fallback.
+# check_ollama_available() atualiza _ollama_base_url em runtime.
+try:
+    from ecosystem_client import (
+        get_ollama_url    as _ec_ollama_url,
+        get_active_profile as _ec_profile,
+    )
+    _ollama_base_url: str = _ec_ollama_url()
+    _p = _ec_profile()
+    _expansion_default_model: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
+except Exception:
+    _ollama_base_url         = "http://localhost:11434"
+    _expansion_default_model = ""
+
 try:
     import bm25s as _bm25s
     _BM25S_AVAILABLE = True
@@ -135,12 +150,17 @@ _ollama_available: bool = False
 
 
 async def check_ollama_available() -> bool:
-    """Tenta conectar ao Ollama local. Atualiza e retorna o flag global."""
-    global _ollama_available
+    """Tenta conectar ao Ollama via LOGOS (7072) ou direto (11434). Atualiza URL e flag global."""
+    global _ollama_available, _ollama_base_url
+    try:
+        from ecosystem_client import get_ollama_url as _get_url
+        _ollama_base_url = _get_url()  # atualiza LOGOS vs direto em runtime
+    except Exception:
+        pass
     try:
         import httpx as _httpx
         async with _httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.get("http://localhost:11434/api/tags")
+            r = await client.get(f"{_ollama_base_url}/api/tags")
             _ollama_available = r.status_code == 200
     except Exception:
         _ollama_available = False
@@ -563,17 +583,25 @@ def _rerank(results: list[SearchResult], query: str) -> list[SearchResult]:
 # ---------------------------------------------------------------------------
 
 async def _get_expansion_model() -> str:
-    """Retorna modelo Ollama a usar para expansão. Resultado cacheado em memória."""
+    """Retorna modelo Ollama a usar para expansão. Resultado cacheado em memória.
+
+    Prioridade: FTS_EXPANSION_MODEL explícito → perfil LOGOS (llm_kosmos) → primeiro
+    modelo disponível via /api/tags. LOGOS resolve o melhor modelo para o hardware ativo.
+    """
     global _expansion_model_cache
     if _expansion_model_cache:
         return _expansion_model_cache
     if FTS_EXPANSION_MODEL:
         _expansion_model_cache = FTS_EXPANSION_MODEL
         return _expansion_model_cache
+    if _expansion_default_model:
+        _expansion_model_cache = _expansion_default_model
+        return _expansion_model_cache
+    # Fallback: primeiro modelo disponível no Ollama (LOGOS ou direto)
     try:
         import httpx as _httpx
         async with _httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get("http://localhost:11434/api/tags")
+            r = await client.get(f"{_ollama_base_url}/api/tags")
             if r.status_code == 200:
                 models = r.json().get("models", [])
                 if models:
@@ -634,7 +662,7 @@ async def _expand_query_llm(query: str) -> list[str]:
         )
         async with _httpx.AsyncClient(timeout=5.0) as client:
             r = await client.post(
-                "http://localhost:11434/api/generate",
+                f"{_ollama_base_url}/api/generate",
                 json={
                     "model":       model,
                     "prompt":      prompt,

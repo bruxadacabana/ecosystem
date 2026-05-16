@@ -199,6 +199,7 @@ def logos_silence() -> bool:
 _APP_MODEL_KEY: "dict[str, str]" = {
     "mnemosyne": "llm_mnemosyne",
     "kosmos":    "llm_kosmos",
+    "akasha":    "llm_kosmos",   # mesmo modelo leve do KOSMOS — dispatcher de query
 }
 
 # Modelo usado se LOGOS não estiver rodando e model não for especificado.

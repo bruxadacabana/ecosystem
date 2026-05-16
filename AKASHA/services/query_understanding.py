@@ -33,14 +33,26 @@ IntentType = Literal["fact-seeking", "exploratory", "navigational"]
 # Configuração
 # ---------------------------------------------------------------------------
 
-OLLAMA_BASE_URL:        str = "http://localhost:11434"
-SESSION_IDLE_S:         int = 1800   # 30 min sem atividade → libera VRAM
-INTENT_CLASSIFY_MODEL:  str = ""     # sobrescrito por ecosystem.json; vazio = usa DEFAULT_LLM_MODEL
-INTENT_TIMEOUT_S:       float = 5.0  # timeout da classificação; fallback para "exploratory"
+SESSION_IDLE_S:        int   = 1800   # 30 min sem atividade → libera VRAM
+INTENT_CLASSIFY_MODEL: str   = ""     # sobrescrito por ecosystem.json; vazio = usa DEFAULT_LLM_MODEL
+INTENT_TIMEOUT_S:      float = 5.0   # timeout da classificação; fallback para "exploratory"
 
-# Modelo padrão para síntese e classificação. Vazio = Ollama usa o que estiver
-# carregado. Será sobrescrito por ecosystem.json quando o LOGOS for consultado.
-DEFAULT_LLM_MODEL: str = ""
+# Resolvidos no startup via ecosystem_client:
+#   _OLLAMA_BASE     → LOGOS (7072) se disponível, Ollama direto (11434) como fallback
+#   DEFAULT_LLM_MODEL → modelo llm_kosmos do perfil ativo; "" se LOGOS não estiver rodando
+try:
+    from ecosystem_client import (
+        get_ollama_url    as _ec_ollama_url,
+        get_active_profile as _ec_profile,
+    )
+    _OLLAMA_BASE: str = _ec_ollama_url()
+    _p = _ec_profile()
+    DEFAULT_LLM_MODEL: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
+except Exception:
+    _OLLAMA_BASE      = "http://localhost:11434"
+    DEFAULT_LLM_MODEL = ""
+
+OLLAMA_BASE_URL: str = _OLLAMA_BASE  # alias público (retrocompat)
 
 # ---------------------------------------------------------------------------
 # Estado interno
