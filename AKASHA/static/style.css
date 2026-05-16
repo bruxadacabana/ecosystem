@@ -1600,6 +1600,23 @@ a:hover { opacity: 0.75; }
 }
 .expansion-reset:hover { opacity: 1; text-decoration: underline; }
 
+/* ── Perfil de preferências ── */
+.profile-badge {
+  font-size:   0.8rem;
+  color:       var(--muted);
+  padding:     0.2rem 0;
+  margin-bottom: 0.4rem;
+}
+.profile-badge em { font-style: normal; color: var(--text); }
+.profile-edit {
+  margin-left:     0.5rem;
+  font-size:       0.75rem;
+  color:           var(--accent);
+  text-decoration: none;
+  opacity:         0.7;
+}
+.profile-edit:hover { opacity: 1; }
+
 /* ── Reescrita conversacional ── */
 .rewrite-badge {
   display:       inline-block;

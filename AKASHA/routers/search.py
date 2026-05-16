@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from services import search_session as _session_svc
+from services.search_profile import load_profile, apply_to_sources as _apply_profile
 
 import config
 import database
@@ -117,6 +118,15 @@ async def search(
     if sources and not any([src_web, src_eco, src_sites]):
         src_web   = "on" if sources in ("web",   "all") else ""
         src_eco   = "on" if sources in ("local", "all") else ""
+
+    # Perfil persistente: aplicado quando usuária não escolheu fontes explicitamente
+    _user_explicit = any([src_web, src_eco, src_sites, src_papers])
+    _profile = await load_profile()
+    _profile_applied = False
+    if not _user_explicit:
+        src_web, src_eco, src_sites, src_papers, _profile_applied = _apply_profile(
+            _profile, src_web, src_eco, src_sites, src_papers, _user_explicit
+        )
 
     # Padrão: web + eco + sites quando nada selecionado
     if not any([src_web, src_eco, src_sites, src_papers]):
@@ -350,6 +360,8 @@ async def search(
             "rewritten_query":         _rewritten_query if q else "",
             "no_rewrite":              bool(no_rewrite),
             "clarification_question":  _clarification_question if q else "",
+            "profile_applied":         _profile_applied,
+            "profile_source_label":    _profile.source_label if _profile_applied else "",
             "related_docs":      related_docs,
             "related_queries":   related_queries,
             "session":           _active_session,
@@ -361,6 +373,30 @@ async def search(
             max_age=86400 * 7, httponly=True, samesite="lax",
         )
     return _response
+
+
+@router.get("/profile", response_class=HTMLResponse)
+async def profile_page(request: Request) -> HTMLResponse:
+    """Página de edição do perfil de preferências de busca."""
+    from services.search_profile import load_profile as _load
+    prof = await _load()
+    return templates.TemplateResponse(
+        request, "profile.html",
+        {"profile": prof, "active_tab": "profile"},
+    )
+
+
+@router.post("/profile")
+async def profile_save(
+    request: Request,
+    preferred_sources: list[str] = Form(default=[]),
+) -> Response:
+    """Salva preferências de fonte do perfil e redireciona de volta."""
+    from fastapi.responses import RedirectResponse
+    from services.search_profile import save_preferred_sources as _save
+    valid = [s for s in preferred_sources if s in ("eco", "web", "sites", "papers")]
+    await _save(valid)
+    return RedirectResponse("/profile", status_code=303)
 
 
 @router.post("/search/session/clear")

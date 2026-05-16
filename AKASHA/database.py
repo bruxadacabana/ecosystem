@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 29
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -217,6 +217,14 @@ CREATE TABLE IF NOT EXISTS archive_dois (
 );
 """
 
+_CREATE_SEARCH_PROFILE = """
+CREATE TABLE IF NOT EXISTS search_profile (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 _CREATE_TAG_PAIRS = """
 CREATE TABLE IF NOT EXISTS tag_pairs (
     tag_a TEXT NOT NULL,
@@ -358,6 +366,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_LENSES)
         await db.execute(_CREATE_DOC_CITATIONS)
         await db.execute(_CREATE_IDX_DOC_CITATIONS_DOI)
+        await db.execute(_CREATE_SEARCH_PROFILE)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -702,6 +711,9 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             )
         except Exception:
             pass  # coluna já existe em banco criado com este schema
+
+    if from_version < 29:
+        await db.execute(_CREATE_SEARCH_PROFILE)
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -1635,3 +1647,36 @@ async def get_more_from_source(path: str, n: int = 5) -> list[tuple[str, str]]:
         for r in rows
         if urlparse(r[2]).netloc == netloc
     ][:n]
+
+
+# ---------------------------------------------------------------------------
+# Perfil persistente de preferências de busca
+# ---------------------------------------------------------------------------
+
+async def get_profile_value(key: str, default: str = "") -> str:
+    """Lê um valor do perfil de preferências de busca."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT value FROM search_profile WHERE key = ?", (key,)
+        )).fetchone()
+    return row[0] if row else default
+
+
+async def set_profile_value(key: str, value: str) -> None:
+    """Escreve um valor no perfil de preferências de busca."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO search_profile (key, value, updated_at) "
+            "VALUES (?, ?, datetime('now'))",
+            (key, value),
+        )
+        await db.commit()
+
+
+async def get_full_profile() -> dict[str, str]:
+    """Retorna o perfil completo como dicionário {key: value}."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT key, value FROM search_profile"
+        )).fetchall()
+    return {r[0]: r[1] for r in rows}

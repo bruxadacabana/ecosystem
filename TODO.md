@@ -4115,7 +4115,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   não perguntar (Zou et al. 2022, IPM). A pergunta aparece como um banner interativo no topo
   dos resultados, não como bloqueador de busca.
 
-- [ ] **Perfil persistente de preferências de busca** (`services/search_profile.py` — novo módulo,
+- [x] **Perfil persistente de preferências de busca** (`services/search_profile.py` — novo módulo,
   `database.py` — nova tabela `search_profile`). Armazenar preferências de domínio (boost/block
   explícito pelo usuário, semelhante ao Kagi), tipos de fonte preferidos (arquivo local vs web vs
   papers), e sinais de re-busca (mesma query reformulada em < 5 minutos = insatisfação com

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Perfil de busca — AKASHA{% endblock %}
+
+{% block content %}
+<div style="max-width: 560px; margin: 2rem auto; padding: 0 1rem;">
+  <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">Perfil de preferências de busca</h2>
+  <p style="font-size: 0.875rem; color: var(--muted); margin-bottom: 1.5rem;">
+    As preferências são aplicadas automaticamente quando você não seleciona fontes manualmente.
+    O efeito fica visível no badge "Usando perfil:" nos resultados.
+  </p>
+
+  <form method="POST" action="/profile">
+    <fieldset style="border: 1px solid var(--rule); border-radius: var(--radius); padding: 1rem; margin-bottom: 1.5rem;">
+      <legend style="font-size: 0.875rem; font-weight: 600; padding: 0 0.4rem;">Fontes preferidas</legend>
+      <p style="font-size: 0.8rem; color: var(--muted); margin: 0 0 0.75rem;">
+        Deixe tudo desmarcado para usar o padrão (web + local + biblioteca).
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+        {% set src_pref = profile.preferred_sources %}
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="preferred_sources" value="eco"
+                 {% if "eco" in src_pref %}checked{% endif %}>
+          <span>Arquivo local (ecossistema)</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="preferred_sources" value="web"
+                 {% if "web" in src_pref %}checked{% endif %}>
+          <span>Web</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="preferred_sources" value="sites"
+                 {% if "sites" in src_pref %}checked{% endif %}>
+          <span>Biblioteca (sites crawleados)</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" name="preferred_sources" value="papers"
+                 {% if "papers" in src_pref %}checked{% endif %}>
+          <span>Artigos científicos</span>
+        </label>
+      </div>
+    </fieldset>
+
+    <button class="btn btn-primary" type="submit">Salvar preferências</button>
+    <a href="/search" class="btn btn-ghost" style="margin-left: 0.5rem;">Cancelar</a>
+  </form>
+</div>
+{% endblock %}

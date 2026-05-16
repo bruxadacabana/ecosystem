@@ -96,6 +96,13 @@
   </p>
 {% endif %}
 
+{% if profile_applied and profile_source_label %}
+  <p class="profile-badge">
+    &#x25A3; Usando perfil: prefere <em>{{ profile_source_label }}</em>
+    <a class="profile-edit" href="/profile" title="Editar preferências de busca">editar</a>
+  </p>
+{% endif %}
+
 {% if session and session.query_count > 1 %}
   <p id="session-badge" class="session-badge">
     &#x25CE; Sessão: {{ session.query_count }} queries
