@@ -5884,7 +5884,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### AKASHA
 
-- [ ] **SOURCE_WEIGHTS — sistema de pesos por fonte** (`services/local_search.py`). Adicionar
+- [x] **SOURCE_WEIGHTS — sistema de pesos por fonte** (`services/local_search.py`). Adicionar
   dict `SOURCE_WEIGHTS: dict[str, float]` com: PAPER=2.0, HIGHLIGHT=1.6, AKASHA=1.4,
   KOSMOS=1.2, OBSIDIAN=1.2, MNEMOSYNE=1.1, HERMES=1.0, DEPOIS=1.0. Modificar `_rrf()` para
   receber `weight_fn: Callable[[SearchResult], float]` e multiplicar o score RRF acumulado

@@ -101,6 +101,24 @@ FTS_EXPANSION_MODEL:   str  = ""   # vazio = usa primeiro modelo disponível no 
 
 HYDE_ENABLED: bool = True
 
+# ---------------------------------------------------------------------------
+# Pesos por fonte — aplicados ao score RRF antes da ordenação final.
+# Artigos científicos têm peso máximo por serem fontes primárias de maior
+# densidade informacional; highlights têm peso alto por serem marcações
+# explícitas da usuária; conteúdo arquivado intencionalmente > geral.
+# ---------------------------------------------------------------------------
+
+SOURCE_WEIGHTS: dict[str, float] = {
+    "PAPER":     2.0,   # artigos científicos (Semantic Scholar, arXiv, OpenAlex)
+    "HIGHLIGHT": 1.6,   # trechos destacados explicitamente pela usuária
+    "AKASHA":    1.4,   # páginas arquivadas intencionalmente
+    "KOSMOS":    1.2,   # arquivo pessoal do KOSMOS
+    "OBSIDIAN":  1.2,   # vault do Obsidian / Mnemosyne
+    "MNEMOSYNE": 1.1,   # busca semântica ChromaDB
+    "HERMES":    1.0,   # transcrições automáticas
+    "DEPOIS":    1.0,   # salvo para ler depois
+}
+
 _expansion_model_cache: str = ""
 
 # LOGOS-first: URL do Ollama e modelo padrão resolvidos no startup via ecosystem_client.
@@ -990,7 +1008,16 @@ async def _search_chroma(query: str) -> list[SearchResult]:
 # Merge e ranking combinado
 # ---------------------------------------------------------------------------
 
-def _rrf(rankings: list[list[SearchResult]], k: int = 60) -> list[SearchResult]:
+def _rrf(
+    rankings: list[list[SearchResult]],
+    k: int = 60,
+    weight_fn: object = None,
+) -> list[SearchResult]:
+    """Reciprocal Rank Fusion com peso opcional por fonte.
+
+    weight_fn: callable(SearchResult) -> float — multiplica o score acumulado
+    pelo peso da fonte antes da ordenação final. Sem weight_fn: pesos uniformes.
+    """
     scores: dict[str, float]        = {}
     by_url: dict[str, SearchResult] = {}
     for ranking in rankings:
@@ -1000,6 +1027,11 @@ def _rrf(rankings: list[list[SearchResult]], k: int = 60) -> list[SearchResult]:
                 continue
             scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
             by_url[key] = result
+    if weight_fn is not None:
+        scores = {
+            key: score * weight_fn(by_url[key])  # type: ignore[operator]
+            for key, score in scores.items()
+        }
     ordered = sorted(scores, key=scores.__getitem__, reverse=True)
     return [by_url[key] for key in ordered]
 
@@ -1331,7 +1363,10 @@ async def search_local(
         except (asyncio.TimeoutError, Exception):
             expand_task.cancel()
 
-    combined = _rrf([fts_results, fts_expanded, chroma_results, vec_results, highlight_results])[:max_results]
+    combined = _rrf(
+        [fts_results, fts_expanded, chroma_results, vec_results, highlight_results],
+        weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0),
+    )[:max_results]
     if RERANKING_ENABLED and len(combined) > 1:
         top    = _rerank(combined[:RERANK_TOP_K], query)
         rest   = combined[RERANK_TOP_K:]
