@@ -91,6 +91,9 @@ O Mnemosyne consulta **todas** as coleções habilitadas simultaneamente via `Mu
 - Porta real do servidor: **7071** (não 7070)
 - Router principal: `AKASHA/routers/crawler.py` (gerencia `/library`)
 
+**Princípio arquitetural do AKASHA: amplificador de pesquisa, não respondedor.**
+O LLM no AKASHA age APENAS na camada de query (classificação de intenção, expansão de termos, reescrita conversacional). Nunca sintetiza, interpreta ou gera texto como resultado. O AKASHA devolve links, trechos e documentos — a usuária pensa, o sistema amplifica o alcance da busca. Isso descartou o Map-Reduce/síntese permanentemente. Todo código de query understanding deve respeitar esse princípio.
+
 ### Isolamento de dados do AETHER
 
 **Os dados do AETHER não devem ser lidos por nenhum app do ecossistema exceto o OGMA.**
