@@ -5909,7 +5909,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `schedule_search_update()` pós-busca; `search_local()` chama `apply_knowledge_boost()` após
   RRF + usage boost. `main.py`: `asyncio.create_task(process_queue())` no lifespan.
 
-- [ ] **Persona persistente — AKASHA** (`services/persona.py` novo; `database.py`
+- [x] **Persona persistente — AKASHA** (`services/persona.py` novo; `database.py`
   SCHEMA_VERSION 31; `services/local_search.py`). Tabela `persona (key PK, value, updated_at)`.
   Dataclass `AppPersona(self_description: str, expertise_topics: list[str],
   interaction_style: str, formed_at: str)`. Job diário (`_rebuild_persona()`) que lê

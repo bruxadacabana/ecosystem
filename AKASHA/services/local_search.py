@@ -755,7 +755,13 @@ async def _expand_query_llm(query: str) -> list[str]:
                     _lang_hint = " Os termos devem estar em chinês."
             except Exception:
                 pass
+        try:
+            from services.persona import get_persona as _get_persona
+            _persona_prefix = _get_persona().as_prompt_prefix()
+        except Exception:
+            _persona_prefix = ""
         prompt = (
+            f"{_persona_prefix}"
             f'Busca: "{query}"\n'
             f"Liste 3 a 5 termos sinônimos ou fortemente relacionados, separados por vírgula."
             f"{_lang_hint} Apenas os termos, sem explicação, sem numeração."
