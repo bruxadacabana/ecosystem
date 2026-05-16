@@ -36,6 +36,10 @@ Os itens de MUST+SHOULD, ancoragem e exibição na UI são na prática uma únic
 
 ---
 
+## Anotações
+Você escreveu "Mnemosyne pensa sobre seu conhecimento indexado, AKASHA pensa sobre o que você está buscando agora." E eles "conversam"/se comunicam entre si.
+
+
 ## Regras
 
 
