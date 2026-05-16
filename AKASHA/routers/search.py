@@ -101,6 +101,10 @@ async def archive(
     import json as _json
     await log_activity("archive", url, url, _json.dumps({"tags": tag_list}))
 
+    # Agenda extração de conhecimento em background (P3)
+    from services.knowledge_worker import schedule_page as _schedule_page
+    _schedule_page(url, page.title, page.content_md, "archived")
+
     # Se o domínio é favorito, indexa a página no crawl_fts em background
     from urllib.parse import urlparse as _up
     _domain = (_up(url).hostname or "").removeprefix("www.").lower()
@@ -346,6 +350,11 @@ async def search(
         # Atualiza sessão de pesquisa com query atual e URLs recuperados
         _all_urls = [r.url for r in (local_results + web_results + fav_results + site_results)]
         _active_session = _session_svc.update_session(_session_id, q, _all_urls)
+
+        # Atualiza perfil de interesse com tópicos desta busca (sem LLM, fire-and-forget)
+        from services.knowledge_worker import schedule_search_update as _sched_search_update
+        _all_snippets = [r.snippet for r in (local_results + web_results + fav_results)[:8] if r.snippet]
+        _sched_search_update(q, _all_snippets)
 
     has_sites = src_sites and bool(await get_all_crawl_sites())
     recent = await database.recent_searches()

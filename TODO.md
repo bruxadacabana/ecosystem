@@ -5892,7 +5892,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0)`. Artigos científicos (PAPER)
   têm o peso máximo porque são fontes primárias com maior densidade informacional.
 
-- [ ] **KnowledgeWorker — inteligência passiva em background** (`services/knowledge_worker.py`
+- [x] **KnowledgeWorker — inteligência passiva em background** (`services/knowledge_worker.py`
   novo; `database.py` SCHEMA_VERSION 30; `main.py`; `routers/crawler.py`;
   `routers/search.py`; `services/local_search.py`).
   Novas tabelas: `page_knowledge (url PK, title, summary, topics JSON, entities JSON,

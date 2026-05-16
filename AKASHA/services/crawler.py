@@ -422,6 +422,14 @@ async def crawl_site(site_id: int) -> int:
             )
             await db.commit()
 
+            # Agenda extração de conhecimento em background (P3, fire-and-forget)
+            if content_md:
+                try:
+                    from services.knowledge_worker import schedule_page as _sched
+                    _sched(url, title, content_md, "crawled")
+                except Exception:
+                    pass
+
             if depth >= max_depth:
                 return []
             return [

@@ -30,6 +30,7 @@ from routers import highlights as highlights_router
 from routers import lenses as lenses_router
 from services.local_search import index_local_files, init_vec_index, init_spell_checker, check_ollama_available
 from services.crawler import crawl_pending_sites
+from services.knowledge_worker import process_queue as _knowledge_process_queue
 
 _log = logging.getLogger(__name__)
 
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI):
     init_spell_checker()
     await check_ollama_available()
     asyncio.get_running_loop().create_task(_monitor_crawler())
+    asyncio.get_running_loop().create_task(_knowledge_process_queue())
     yield
     # Shutdown — nada a liberar por enquanto
 

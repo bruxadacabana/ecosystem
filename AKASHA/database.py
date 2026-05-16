@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 29
+SCHEMA_VERSION = 30
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -225,6 +225,27 @@ CREATE TABLE IF NOT EXISTS search_profile (
 );
 """
 
+_CREATE_PAGE_KNOWLEDGE = """
+CREATE TABLE IF NOT EXISTS page_knowledge (
+    url          TEXT PRIMARY KEY,
+    title        TEXT NOT NULL DEFAULT '',
+    summary      TEXT NOT NULL DEFAULT '',
+    topics       TEXT NOT NULL DEFAULT '[]',
+    entities     TEXT NOT NULL DEFAULT '[]',
+    source_type  TEXT NOT NULL DEFAULT '',
+    processed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_TOPIC_INTEREST_PROFILE = """
+CREATE TABLE IF NOT EXISTS topic_interest_profile (
+    topic        TEXT PRIMARY KEY,
+    score        REAL NOT NULL DEFAULT 1.0,
+    query_count  INTEGER NOT NULL DEFAULT 1,
+    last_updated TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 _CREATE_TAG_PAIRS = """
 CREATE TABLE IF NOT EXISTS tag_pairs (
     tag_a TEXT NOT NULL,
@@ -367,6 +388,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_DOC_CITATIONS)
         await db.execute(_CREATE_IDX_DOC_CITATIONS_DOI)
         await db.execute(_CREATE_SEARCH_PROFILE)
+        await db.execute(_CREATE_PAGE_KNOWLEDGE)
+        await db.execute(_CREATE_TOPIC_INTEREST_PROFILE)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -714,6 +737,10 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
 
     if from_version < 29:
         await db.execute(_CREATE_SEARCH_PROFILE)
+
+    if from_version < 30:
+        await db.execute(_CREATE_PAGE_KNOWLEDGE)
+        await db.execute(_CREATE_TOPIC_INTEREST_PROFILE)
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -1680,3 +1707,81 @@ async def get_full_profile() -> dict[str, str]:
             "SELECT key, value FROM search_profile"
         )).fetchall()
     return {r[0]: r[1] for r in rows}
+
+
+# ---------------------------------------------------------------------------
+# KnowledgeWorker helpers (page_knowledge + topic_interest_profile)
+# ---------------------------------------------------------------------------
+
+async def save_page_knowledge(
+    url: str,
+    title: str,
+    summary: str,
+    topics: list[str],
+    entities: list[str],
+    source_type: str,
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO page_knowledge
+               (url, title, summary, topics, entities, source_type, processed_at)
+               VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+            (url, title, summary, json.dumps(topics), json.dumps(entities), source_type),
+        )
+        await db.commit()
+
+
+async def get_page_knowledge(url: str) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT url, title, summary, topics, entities, source_type, processed_at "
+            "FROM page_knowledge WHERE url = ?",
+            (url,),
+        )).fetchone()
+    if not row:
+        return None
+    return {
+        "url": row[0], "title": row[1], "summary": row[2],
+        "topics": json.loads(row[3] or "[]"),
+        "entities": json.loads(row[4] or "[]"),
+        "source_type": row[5], "processed_at": row[6],
+    }
+
+
+async def get_page_knowledge_batch(urls: list[str]) -> dict[str, dict]:
+    """Retorna {url: knowledge_dict} para os URLs fornecidos."""
+    if not urls:
+        return {}
+    placeholders = ",".join("?" * len(urls))
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            f"SELECT url, topics FROM page_knowledge WHERE url IN ({placeholders})",
+            urls,
+        )).fetchall()
+    return {r[0]: json.loads(r[1] or "[]") for r in rows}
+
+
+async def update_topic_score(topic: str, delta: float = 1.0) -> None:
+    """Incrementa score de um tópico no perfil de interesse."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO topic_interest_profile (topic, score, query_count, last_updated)
+               VALUES (?, ?, 1, datetime('now'))
+               ON CONFLICT(topic) DO UPDATE SET
+                   score        = score + ?,
+                   query_count  = query_count + 1,
+                   last_updated = datetime('now')""",
+            (topic, delta, delta),
+        )
+        await db.commit()
+
+
+async def get_top_topics(n: int = 10) -> list[tuple[str, float]]:
+    """Retorna os N tópicos com maior score, em ordem decrescente."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT topic, score FROM topic_interest_profile "
+            "ORDER BY score DESC LIMIT ?",
+            (n,),
+        )).fetchall()
+    return [(r[0], r[1]) for r in rows]

@@ -1367,6 +1367,11 @@ async def search_local(
         [fts_results, fts_expanded, chroma_results, vec_results, highlight_results],
         weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0),
     )[:max_results]
+    try:
+        from services.knowledge_worker import apply_knowledge_boost as _kb_boost
+        combined = await _kb_boost(combined, query)
+    except Exception:
+        pass
     if RERANKING_ENABLED and len(combined) > 1:
         top    = _rerank(combined[:RERANK_TOP_K], query)
         rest   = combined[RERANK_TOP_K:]
