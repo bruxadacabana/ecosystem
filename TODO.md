@@ -4098,6 +4098,59 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   desfazer a expansão e executar a query original. Princípio de Human-in-the-loop:
   o usuário vê e controla o que o sistema fez antes de ver os resultados.
 
+### Pesquisa: Sistemas de Busca Interativos com LLM — Clarificação, Personalidade e Aprendizado | 2026-05-15
+> Contexto: pesquisa sobre como transformar o AKASHA num assistente de execução inteligente —
+> modelo "assistente real que acompanha o chefe": clarifica quando há dúvida genuína de caminho,
+> lembra preferências, sugere expansões, nunca interpreta nem conclui pelo usuário.
+> AKASHA e Mnemosyne são complementares: AKASHA traz material bruto, Mnemosyne processa em profundidade.
+
+#### AKASHA
+- [ ] **Clarificação seletiva de query** (`services/query_understanding.py`, `routers/search.py`,
+  `templates/search.html`). Antes de executar a busca, detectar ambiguidade via LLM leve
+  (score 1-4; perguntar apenas quando score ≥ 3). Máximo 1 pergunta por sessão. A pergunta
+  deve ser sempre específica sobre o atributo ambíguo ("Java a linguagem ou o país?" em vez de
+  "o que você quer dizer?"). Mostrar resultados parciais enquanto aguarda resposta — o usuário
+  decide se quer refinar ou não. Usar classificador de qualidade de pergunta (EACL 2024) para
+  filtrar perguntas ruins antes de exibir: perguntas de baixa qualidade perturbam mais do que
+  não perguntar (Zou et al. 2022, IPM). A pergunta aparece como um banner interativo no topo
+  dos resultados, não como bloqueador de busca.
+
+- [ ] **Perfil persistente de preferências de busca** (`services/search_profile.py` — novo módulo,
+  `database.py` — nova tabela `search_profile`). Armazenar preferências de domínio (boost/block
+  explícito pelo usuário, semelhante ao Kagi), tipos de fonte preferidos (arquivo local vs web vs
+  papers), e sinais de re-busca (mesma query reformulada em < 5 minutos = insatisfação com
+  resultados anteriores). Usar para personalização pré-retrieval: modificar a query antes de
+  buscar com base no perfil (+10% R@5 em queries ambíguas, PBR arXiv:2510.08935). Tornar o
+  perfil transparente e editável via página de configuração (`/settings` ou novo `/profile`).
+  O perfil é opt-in e o usuário vê exatamente o que está sendo aplicado (badge "Usando perfil:
+  prefere fontes acadêmicas").
+
+- [ ] **Síntese de resultados como feature opcional explícita** (`routers/search.py`,
+  `services/query_understanding.py`, `templates/search.html`). Adicionar botão "Resumir
+  resultados" que aparece após retornar os snippets. Ao clicar, LLM lê os snippets recuperados
+  (sem fetch adicional) e gera 1-2 parágrafos de orientação — nunca substitui os links,
+  apenas orienta a leitura. Não ativado automaticamente em nenhuma circunstância. Exibe
+  sempre as fontes usadas na síntese. Modelo: assistente que o chefe pede "me dê um overview"
+  — responde e mostra de onde tirou.
+
+- [ ] **Personalidade como estilo de comunicação** (`templates/search.html`, `static/style.css`,
+  `services/query_understanding.py`). A "personalidade" do AKASHA é o tom dos elementos
+  de interface: texto dos badges de intenção, mensagens de estado durante busca
+  ("buscando em 3 fontes…", "nada encontrado — tente reformular"), texto das perguntas
+  de clarificação, e labels dos botões. Criar constante de estilo configurável
+  (`AKASHA_VOICE: str` em `config.py`) com dois modos: "neutro" (atual) e "assistente"
+  (mensagens mais naturais e contextualizadas). Não gera conteúdo — apenas comunica
+  processo.
+
+- [ ] **Queries relacionadas sugeridas após resultados** (`routers/search.py`,
+  `templates/search.html`). Após retornar resultados, exibir 2-3 reformulações sugeridas
+  baseadas nos termos dos snippets recuperados (TF-IDF sobre os snippets vs. a query original
+  — sem chamada LLM, puramente textual, < 50ms). Exibir como chips clicáveis abaixo dos
+  resultados: "Pesquisar também: [machine learning intro] [ML supervised learning] [deep
+  learning basics]". Ao clicar, executa nova busca. Inspirado no sucesso das "Related
+  Questions" do Perplexity (40% das queries em 2024 vieram de sugestões). Implementar em
+  `services/local_search.py` como `suggest_related_queries(query, snippets) -> list[str]`.
+
 ### Pesquisa: Integração KOSMOS-AKASHA — Padrões RSS Reader + Web Archiver | 2026-05-04
 > Contexto: Pesquisa sobre padrões de integração entre leitores RSS e arquivadores web
 > (FreshRSS+Wallabag, Miniflux+integrações, ArchiveBox). Objetivo: interligar KOSMOS
