@@ -1775,6 +1775,11 @@ class MainWindow(QMainWindow):
 
     def _post_config_init(self) -> None:
         """Chamado após configuração válida estar disponível."""
+        try:
+            from core.persona import load_persona as _load_persona
+            _load_persona()
+        except Exception:
+            pass
         self._populate_collection_combo()
         self.folder_label.setText(self.config.watched_dir or "Pasta não configurada")
         self.manage_path_label.setText(self.config.watched_dir or "—")

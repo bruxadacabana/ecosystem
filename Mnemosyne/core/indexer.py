@@ -743,6 +743,7 @@ def _generate_and_index_reflections(
     counts = _load_reflection_counts(config.mnemosyne_dir)
     total = len(eligible)
     n_generated = 0
+    _reflection_texts: list[str] = []
 
     for idx, (source_file, chunks) in enumerate(eligible.items(), 1):
         label = f"{idx}/{total}"
@@ -763,6 +764,7 @@ def _generate_and_index_reflections(
         theme = reflection.metadata.get("theme", "unknown")
         counts[theme] = counts.get(theme, 0) + 1
         n_generated += 1
+        _reflection_texts.append(reflection.page_content)
 
     if n_generated:
         _save_reflection_counts(config.mnemosyne_dir, counts)
@@ -779,6 +781,14 @@ def _generate_and_index_reflections(
                                           truncate_dim=config.embedding_truncate_dim)
                 bm25_idx.save()
                 consolidated_themes.add(theme)
+                _reflection_texts.append(meta.page_content)
+
+    if _reflection_texts:
+        try:
+            from .persona import rebuild_persona_from_texts as _rebuild_persona
+            _rebuild_persona(_reflection_texts, config.llm_model)
+        except Exception:
+            pass
 
     return n_generated
 

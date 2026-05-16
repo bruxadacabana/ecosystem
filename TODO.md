@@ -5931,7 +5931,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Mnemosyne
 
-- [ ] **Persona persistente — Mnemosyne** (`core/persona.py` novo; banco de dados da
+- [x] **Persona persistente — Mnemosyne** (`core/persona.py` novo; banco de dados da
   Mnemosyne). Mesmo padrão do AKASHA: tabela `persona`, dataclass `AppPersona`. Job que
   roda após cada lote de Knowledge Reflection — lê as reflexões recentes e atualiza
   `self_description` via Ollama: "Com base nestas sínteses do vault, descreva em 3 frases

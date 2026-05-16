@@ -1042,6 +1042,13 @@ def _build_messages(
         system_text = persona_map.get(persona, persona_map["curador"])
     if _LANGUAGE_INSTRUCTION not in system_text:
         system_text = system_text.rstrip() + "\n" + _LANGUAGE_INSTRUCTION
+    try:
+        from .persona import get_persona as _get_persona
+        _self_prefix = _get_persona().as_prompt_prefix()
+        if _self_prefix:
+            system_text = _self_prefix + system_text
+    except Exception:
+        pass
     messages: list[BaseMessage] = [SystemMessage(content=system_text)]
 
     for turn in history[-_HISTORY_TURNS:]:
