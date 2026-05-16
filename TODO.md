@@ -4020,7 +4020,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > síntese multi-documento Map-Reduce, e latência de inferência local com Ollama na RX 6600.
 
 #### AKASHA
-- [ ] **Classificador de intenção leve antes do pipeline de busca** (`routers/search.py` ou
+- [x] **Classificador de intenção leve antes do pipeline de busca** (`routers/search.py` ou
   `services/query_understanding.py`). Antes de executar busca, chamar Ollama (modelo 3B, ex:
   Qwen2.5-3B) com prompt minimal para classificar a query em três tipos:
   `fact-seeking` (resposta direta com citação), `exploratory` (síntese temática multi-doc),
