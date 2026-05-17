@@ -392,8 +392,17 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
     overlap = [t for t in topics if t in known]
     mem_type = "connection" if len(overlap) >= 2 else "surprise"
 
+    from services.personal_memory import save_memory, get_context_memories
+    context_memories = await get_context_memories(4)
+    context_text = ""
+    if context_memories:
+        confirmed = [m for m in context_memories if m.get("feedback") == "confirmed"]
+        if confirmed:
+            context_text = "O que já notei antes:\n" + "\n".join(f"- {m['content']}" for m in confirmed[:2]) + "\n\n"
+
     prompt = (
         f"{personality}\n\n"
+        f"{context_text}"
         f"Você acabou de encontrar e processar o seguinte conteúdo:\n"
         f"Título: {title}\n"
         f"Resumo: {summary or '(sem resumo)'}\n"
@@ -422,6 +431,5 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
     if not raw or len(raw) < 10:
         return
 
-    from services.personal_memory import save_memory
-    save_memory(type=mem_type, content=raw, tags=["event_discovery", title[:40]])
+    await save_memory(type=mem_type, content=raw, tags=["event_discovery", title[:40]])
     log.debug("knowledge_worker: nota pessoal salva (type=%s, %d chars).", mem_type, len(raw))

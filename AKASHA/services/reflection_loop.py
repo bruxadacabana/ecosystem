@@ -75,8 +75,23 @@ async def _run_reflection() -> None:
 
     topics_str = ", ".join(t for t, _ in top_topics) or "Sem tópicos registrados."
 
+    from services.personal_memory import save_memory, get_context_memories
+    context_memories = await get_context_memories(5)
+    context_text = ""
+    if context_memories:
+        confirmed = [m for m in context_memories if m.get("feedback") == "confirmed"]
+        neutral   = [m for m in context_memories if not m.get("feedback")]
+        parts: list[str] = []
+        if confirmed:
+            parts.append("Memórias confirmadas:\n" + "\n".join(f"- {m['content']}" for m in confirmed[:3]))
+        if neutral:
+            parts.append("Reflexões anteriores:\n" + "\n".join(f"- {m['content']}" for m in neutral[:2]))
+        if parts:
+            context_text = "\n\n".join(parts) + "\n\n"
+
     prompt = (
         f"{personality}\n\n"
+        f"{context_text}"
         f"Tópicos de interesse acumulados: {topics_str}\n\n"
         f"Páginas processadas recentemente:\n{pages_summary}\n\n"
         f"Olhando para esses dados, há algo que vale registrar na sua memória pessoal? "
@@ -92,8 +107,7 @@ async def _run_reflection() -> None:
         log.debug("reflection_loop: resposta descartada (genérica): %r", raw[:60])
         return
 
-    from services.personal_memory import save_memory
-    save_memory(type="reflection", content=raw, tags=["loop_periodico"])
+    await save_memory(type="reflection", content=raw, tags=["loop_periodico"])
     log.info("reflection_loop: reflexão salva (%d chars).", len(raw))
 
 

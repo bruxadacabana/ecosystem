@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 31
+SCHEMA_VERSION = 32
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -340,7 +340,8 @@ CREATE TABLE IF NOT EXISTS personal_memory (
     created_at TEXT    NOT NULL DEFAULT (datetime('now')),
     type       TEXT    NOT NULL,
     content    TEXT    NOT NULL,
-    tags       TEXT    NOT NULL DEFAULT '[]'
+    tags       TEXT    NOT NULL DEFAULT '[]',
+    feedback   TEXT             DEFAULT NULL
 );
 """
 
@@ -755,6 +756,14 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
 
     if from_version < 31:
         await db.execute(_CREATE_PERSONAL_MEMORY)
+
+    if from_version < 32:
+        try:
+            await db.execute(
+                "ALTER TABLE personal_memory ADD COLUMN feedback TEXT DEFAULT NULL"
+            )
+        except Exception:
+            pass  # coluna já existe em DBs novos criados com o DDL atualizado
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
