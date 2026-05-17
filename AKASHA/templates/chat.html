@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Conversa — AKASHA{% endblock %}
+
+{% block head %}
+<style>
+  #chat-canvas { display:flex; flex-direction:column; gap:1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="chat-layout">
+
+  <div class="chat-header">
+    <span class="chat-title">⬡ Conversa</span>
+    <button class="btn btn-ghost chat-clear-btn"
+            hx-post="/chat/clear"
+            hx-swap="none"
+            onclick="document.getElementById('chat-canvas').innerHTML=''"
+            title="Limpar conversa">✕ limpar</button>
+  </div>
+
+  <div id="chat-canvas" class="chat-canvas">
+    {% for turn in history %}
+      {% if turn.role == 'user' %}
+        <div class="chat-bubble chat-bubble-user">{{ turn.content }}</div>
+      {% elif turn.role == 'assistant' %}
+        <div class="chat-bubble chat-bubble-akasha">{{ turn.content }}</div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="chat-input-area">
+    <div id="chat-sources" class="chat-sources"></div>
+    <form id="chat-form" class="chat-form" onsubmit="sendMessage(event)">
+      <textarea
+        id="chat-input"
+        class="chat-input"
+        placeholder="Pergunte algo sobre o seu índice…"
+        rows="2"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();document.getElementById('chat-form').dispatchEvent(new Event('submit'));}"
+      ></textarea>
+      <button type="submit" id="chat-send-btn" class="btn btn-primary chat-send-btn">&#x27A4;</button>
+    </form>
+  </div>
+
+</div>
+
+<script>
+let _history = {{ history | tojson }};
+
+function appendBubble(role, text, clear) {
+  const canvas = document.getElementById('chat-canvas');
+  let bubble = (role === '_stream')
+    ? document.getElementById('chat-stream-bubble')
+    : null;
+
+  if (!bubble) {
+    bubble = document.createElement('div');
+    bubble.className = 'chat-bubble ' + (role === 'user' ? 'chat-bubble-user' : 'chat-bubble-akasha');
+    if (role !== 'user') bubble.id = 'chat-stream-bubble';
+    canvas.appendChild(bubble);
+  }
+  if (clear) bubble.textContent = '';
+  bubble.textContent += text;
+  canvas.scrollTop = canvas.scrollHeight;
+  return bubble;
+}
+
+function showSources(sources) {
+  const box = document.getElementById('chat-sources');
+  if (!sources.length) { box.innerHTML = ''; return; }
+  const links = sources
+    .filter(s => s.title || s.url)
+    .map((s, i) => {
+      const label = (s.title || s.url).slice(0, 60);
+      return s.url
+        ? `<a class="chat-source-link" href="${s.url}" target="_blank">[${i+1}] ${label}</a>`
+        : `<span class="chat-source-link">[${i+1}] ${label}</span>`;
+    }).join('');
+  box.innerHTML = '<span class="chat-sources-label">Fontes: </span>' + links;
+}
+
+async function sendMessage(e) {
+  e.preventDefault();
+  const input  = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send-btn');
+  const message = input.value.trim();
+  if (!message) return;
+
+  input.value = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
+  document.getElementById('chat-sources').innerHTML = '';
+
+  appendBubble('user', message, false);
+  _history.push({role: 'user', content: message});
+
+  const streamBubble = appendBubble('akasha', '', false);
+  streamBubble.id = 'chat-stream-bubble';
+  let fullText = '';
+
+  try {
+    const resp = await fetch('/chat/message', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message, history: _history.slice(-10)}),
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const raw = line.slice(5).trim();
+        if (raw === '[DONE]') break;
+        try {
+          const ev = JSON.parse(raw);
+          if (ev.type === 'fragment') {
+            fullText += ev.text;
+            streamBubble.textContent = fullText;
+            document.getElementById('chat-canvas').scrollTop = 9999;
+          } else if (ev.type === 'sources') {
+            showSources(ev.sources || []);
+          }
+        } catch {}
+      }
+    }
+
+    streamBubble.removeAttribute('id');
+    _history.push({role: 'assistant', content: fullText});
+  } catch(err) {
+    streamBubble.textContent = 'Erro ao conectar com o AKASHA.';
+  } finally {
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+</script>
+{% endblock %}

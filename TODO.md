@@ -5968,7 +5968,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### AKASHA
 
-- [ ] **Chat direto com AKASHA** (`routers/chat.py` novo; `templates/chat.html` novo;
+- [x] **Chat direto com AKASHA** (`routers/chat.py` novo; `templates/chat.html` novo;
   `templates/_chat_message.html` novo; `static/style.css`; registrar router em `main.py`).
   Nova aba "Conversa" no web UI. Endpoint `POST /chat/message` recebe `{message: str,
   history: list[{role, content}]}` e retorna SSE stream. Pipeline: (1) FTS5 search da
