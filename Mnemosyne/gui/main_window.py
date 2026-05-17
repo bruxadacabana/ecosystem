@@ -94,11 +94,30 @@ class SetupDialog(QDialog):
         self.setWindowTitle("Configuração do Mnemosyne")
         self.setMinimumWidth(460)
 
-        from PySide6.QtWidgets import QCheckBox, QScrollArea
+        from PySide6.QtWidgets import QCheckBox, QScrollArea, QFrame, QApplication
         from core.collections import available_ecosystem_paths
 
+        # Limitar altura ao tamanho disponível da tela
+        _screen = QApplication.primaryScreen()
+        if _screen:
+            self.setMaximumHeight(int(_screen.availableGeometry().height() * 0.9))
+
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Configure o Mnemosyne.\nAs configurações são salvas em config.json."))
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Todo o conteúdo do formulário vai dentro de um QScrollArea
+        _scroll_widget = QWidget()
+        content_layout = QVBoxLayout(_scroll_widget)
+        content_layout.setContentsMargins(12, 12, 12, 8)
+        _scroll = QScrollArea()
+        _scroll.setWidget(_scroll_widget)
+        _scroll.setWidgetResizable(True)
+        _scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        _scroll.setFrameShape(QFrame.Shape.NoFrame)
+        layout.addWidget(_scroll, 1)
+
+        content_layout.addWidget(QLabel("Configure o Mnemosyne.\nAs configurações são salvas em config.json."))
 
         # Caminhos do ecossistema (editáveis — gravam no ecosystem.json)
         paths_group = QGroupBox("Caminhos do ecossistema")
@@ -125,7 +144,7 @@ class SetupDialog(QDialog):
         paths_form.addRow("Biblioteca:", watched_row)
         paths_form.addRow("Vault:", vault_row)
         paths_form.addRow("ChromaDB:", chroma_row)
-        layout.addWidget(paths_group)
+        content_layout.addWidget(paths_group)
 
         form = QFormLayout()
 
@@ -214,7 +233,7 @@ class SetupDialog(QDialog):
         embed_row.addWidget(embed_rec_btn)
         form.addRow("Modelo de embedding:", embed_row)
 
-        layout.addLayout(form)
+        content_layout.addLayout(form)
 
         # Integrações do ecossistema (toggles por fonte detectada)
         eco_paths = available_ecosystem_paths()
@@ -230,7 +249,7 @@ class SetupDialog(QDialog):
                 cb.setChecked(current.ecosystem_enabled.get(eco_key, True))
                 eco_layout.addWidget(cb)
                 self._eco_checkboxes[eco_key] = cb
-            layout.addWidget(eco_group)
+            content_layout.addWidget(eco_group)
 
         # Pastas extras para indexação
         extra_group = QGroupBox("Pastas extras para indexação")
@@ -249,7 +268,7 @@ class SetupDialog(QDialog):
         extra_btns.addWidget(extra_rm_btn)
         extra_btns.addStretch()
         extra_layout.addLayout(extra_btns)
-        layout.addWidget(extra_group)
+        content_layout.addWidget(extra_group)
 
         # Opções de qualidade
         opts_group = QGroupBox("Opções de qualidade")
@@ -286,7 +305,7 @@ class SetupDialog(QDialog):
         )
         self.suggest_questions_check.setChecked(current.suggest_questions)
         opts_layout.addWidget(self.suggest_questions_check)
-        layout.addWidget(opts_group)
+        content_layout.addWidget(opts_group)
 
         # Personalidade do assistente (curador customizável)
         persona_group = QGroupBox("Personalidade do assistente")
@@ -314,14 +333,21 @@ class SetupDialog(QDialog):
         persona_btn_row.addWidget(self._test_persona_btn)
         persona_btn_row.addStretch()
         persona_layout.addLayout(persona_btn_row)
-        layout.addWidget(persona_group)
+        content_layout.addWidget(persona_group)
+        content_layout.addStretch()
 
+        # Botões fixos fora do scroll — sempre visíveis
+        btns_wrapper = QWidget()
+        btns_wrapper.setContentsMargins(12, 6, 12, 8)
+        btns_layout = QVBoxLayout(btns_wrapper)
+        btns_layout.setContentsMargins(0, 0, 0, 0)
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
-        layout.addWidget(btns)
+        btns_layout.addWidget(btns)
+        layout.addWidget(btns_wrapper)
 
     def _update_llm_hint(self, model_name: str) -> None:
         """Atualiza o label de dica abaixo do combo de modelo LLM."""
