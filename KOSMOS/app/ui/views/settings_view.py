@@ -379,6 +379,12 @@ class SettingsView(QWidget):
         self._ai_embed_combo.activated.connect(self._on_ai_embed_selected)
         self._ai_embed_combo.lineEdit().editingFinished.connect(self._on_ai_embed_selected)
         row_emb.addWidget(self._ai_embed_combo, 1)
+        _logos_emb_btn = QPushButton("↩ Recomendado")
+        _logos_emb_btn.setFont(self._mono(11))
+        _logos_emb_btn.setFixedWidth(130)
+        _logos_emb_btn.setToolTip("Aplicar modelo de embedding recomendado pelo LOGOS para esta máquina")
+        _logos_emb_btn.clicked.connect(self._on_use_logos_embed)
+        row_emb.addWidget(_logos_emb_btn)
         layout.addLayout(row_emb)
 
         self._ai_status = QLabel("")
@@ -823,6 +829,28 @@ class SettingsView(QWidget):
         val = self._ai_embed_combo.currentText().strip()
         if val:
             self._cfg.set("ai_embed_model", val)
+
+    def _on_use_logos_embed(self) -> None:
+        try:
+            from pathlib import Path as _Path
+            _root = str(_Path(__file__).parent.parent.parent.parent.parent)
+            if _root not in sys.path:
+                sys.path.insert(0, _root)
+            from ecosystem_client import get_active_profile as _get
+            profile = _get()
+            if profile:
+                model = profile.get("models", {}).get("embed", "")
+                display = profile.get("profile_display", "LOGOS")
+                if model:
+                    if self._ai_embed_combo.findText(model) < 0:
+                        self._ai_embed_combo.insertItem(0, model)
+                    self._ai_embed_combo.setCurrentText(model)
+                    self._cfg.set("ai_embed_model", model)
+                    self._ai_status.setText(f"✓ Embedding recomendado aplicado: {model}  ({display})")
+                    return
+            self._ai_status.setText("LOGOS não disponível — execute o HUB primeiro.")
+        except ValueError as exc:
+            self._ai_status.setText(f"Erro ao consultar LOGOS: {exc}")
 
     def _on_test_reddit(self) -> None:
         client_id     = self._reddit_id.text().strip()

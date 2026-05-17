@@ -178,7 +178,13 @@ class FeedListView(QWidget):
         tags_by_id = self._fm.get_tags_for_articles([a.id for a in articles])
         translation_items: list[tuple[int, str, "str | None"]] = []
         for article in articles:
-            card = ArticleCard(article, user_tags=tags_by_id.get(article.id, []))
+            card = ArticleCard(
+                article,
+                ai_sentiment = article.ai_sentiment,
+                ai_clickbait = article.ai_clickbait,
+                ai_relevance = article.ai_relevance,
+                user_tags    = tags_by_id.get(article.id, []),
+            )
             card.clicked.connect(self._on_card_clicked)
             self._card_map[article.id] = card
             translation_items.append((article.id, article.title or "", getattr(article, "language", None)))
