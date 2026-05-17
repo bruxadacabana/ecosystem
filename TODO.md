@@ -5993,7 +5993,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Mnemosyne
 
-- [ ] **Receber insights do AKASHA e convidar para diálogo** (`core/insights.py` novo;
+- [x] **Receber insights do AKASHA e convidar para diálogo** (`core/insights.py` novo;
   endpoint `POST /insights/receive`; `gui/main_window.py`). Endpoint recebe o payload do
   AKASHA e armazena em tabela `incoming_insights (id PK, topics JSON, summary, sources JSON,
   received_at, seen BOOL DEFAULT 0)`. A `MainWindow` tem um método `_poll_insights()`

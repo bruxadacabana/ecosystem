@@ -931,3 +931,17 @@ QScrollArea#studioScrollArea {
 QWidget#studioTilesContainer {
     background: transparent;
 }
+
+QPushButton#insightsBadgeBtn {
+    background:    #1B3A4B;
+    color:         #4FC3F7;
+    border:        1px solid #4FC3F7;
+    border-radius: 10px;
+    padding:       3px 10px;
+    font-size:     12px;
+    font-weight:   bold;
+    margin-top:    6px;
+}
+QPushButton#insightsBadgeBtn:hover {
+    background: #234F6A;
+}

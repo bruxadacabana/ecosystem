@@ -624,6 +624,11 @@ class MainWindow(QMainWindow):
         self._retry_timer.setInterval(30_000)  # 30 segundos
         self._retry_timer.timeout.connect(self._retry_ollama_check)
 
+        self._insights_timer = QTimer(self)
+        self._insights_timer.setInterval(60_000)  # 60 segundos
+        self._insights_timer.timeout.connect(self._poll_insights)
+        self._insights_badge_btn: QPushButton | None = None
+
         try:
             self.config = load_config()
         except ConfigError as exc:
@@ -927,6 +932,13 @@ class MainWindow(QMainWindow):
         self._theme_btn.clicked.connect(self._toggle_theme)
         sb.addWidget(self._theme_btn)
         self._update_theme_btn_label()
+
+        # Badge de insights do AKASHA (oculto até haver insights)
+        self._insights_badge_btn = QPushButton("⬡ 0")
+        self._insights_badge_btn.setObjectName("insightsBadgeBtn")
+        self._insights_badge_btn.setVisible(False)
+        self._insights_badge_btn.clicked.connect(self._on_insights_badge_clicked)
+        sb.addWidget(self._insights_badge_btn)
 
         splitter.addWidget(sidebar)
 
@@ -1683,6 +1695,49 @@ class MainWindow(QMainWindow):
         # Manter referência para evitar GC prematuro
         self._retry_worker = worker
 
+    # ── Insights do AKASHA ───────────────────────────────────────────────────
+
+    def _poll_insights(self) -> None:
+        """Lê insights pendentes do ecosystem.json e atualiza o badge."""
+        try:
+            from core.insights import poll_and_store, write_pending_count_to_ecosystem
+            count = poll_and_store()
+            write_pending_count_to_ecosystem(count)
+            self._update_insights_badge(count)
+        except Exception:
+            pass
+
+    def _update_insights_badge(self, count: int) -> None:
+        if self._insights_badge_btn is None:
+            return
+        if count > 0:
+            self._insights_badge_btn.setText(f"⬡ {count}")
+            self._insights_badge_btn.setVisible(True)
+        else:
+            self._insights_badge_btn.setVisible(False)
+
+    def _on_insights_badge_clicked(self) -> None:
+        """Abre o painel de diálogo com o tópico do insight mais recente."""
+        try:
+            from core.insights import get_latest_unseen, mark_seen, count_unseen, write_pending_count_to_ecosystem
+            insight = get_latest_unseen()
+            if insight is None:
+                self._update_insights_badge(0)
+                return
+            mark_seen(insight["id"])
+            remaining = count_unseen()
+            write_pending_count_to_ecosystem(remaining)
+            self._update_insights_badge(remaining)
+
+            # Muda para a aba Análise > pill ⬡ AKASHA e inicia diálogo
+            self._switch_page(1)   # aba Análise
+            self._switch_analysis(2)  # pill ⬡ AKASHA
+            if hasattr(self, "_dialogue_panel") and insight.get("topics"):
+                question = f"Encontrei algo relevante sobre: {', '.join(insight['topics'][:3])}. {insight.get('summary', '')}"
+                self._dialogue_panel.start_with_question(question.strip())
+        except Exception:
+            pass
+
     # ── Configuração ─────────────────────────────────────────────────────────
 
     def _show_setup_dialog(self) -> None:
@@ -1788,6 +1843,8 @@ class MainWindow(QMainWindow):
             _load_persona()
         except Exception:
             pass
+        self._insights_timer.start()
+        self._poll_insights()
         self._populate_collection_combo()
         self.folder_label.setText(self.config.watched_dir or "Pasta não configurada")
         self.manage_path_label.setText(self.config.watched_dir or "—")
