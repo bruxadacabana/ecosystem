@@ -38,7 +38,7 @@
         class="chat-input"
         placeholder="Pergunte algo sobre o seu índice…"
         rows="2"
-        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();document.getElementById('chat-form').dispatchEvent(new Event('submit'));}"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(event);}"
       ></textarea>
       <button type="submit" id="chat-send-btn" class="btn btn-primary chat-send-btn">&#x27A4;</button>
     </form>

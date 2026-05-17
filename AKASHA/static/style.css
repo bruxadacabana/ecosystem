@@ -1858,15 +1858,15 @@ a:hover { opacity: 0.75; }
 }
 .chat-bubble-user {
   align-self:                flex-end;
-  background:                var(--surface2, #1e2432);
-  color:                     var(--text);
+  background:                var(--paper-darker);
+  color:                     var(--ink);
   border-bottom-right-radius: 2px;
 }
 .chat-bubble-akasha {
   align-self:   flex-start;
   background:   transparent;
-  color:        var(--text);
-  border-left:  2px solid #4FC3F7;
+  color:        var(--ink);
+  border-left:  2px solid var(--accent);
   border-radius: 0 6px 6px 0;
   padding-left: 0.75rem;
 }
@@ -1877,7 +1877,7 @@ a:hover { opacity: 0.75; }
 }
 .chat-sources {
   font-size:   0.72rem;
-  color:       var(--muted);
+  color:       var(--ink-ghost);
   min-height:  1.2rem;
   display:     flex;
   flex-wrap:   wrap;
@@ -1886,7 +1886,7 @@ a:hover { opacity: 0.75; }
 }
 .chat-sources-label { font-weight: 600; }
 .chat-source-link {
-  color:           var(--muted);
+  color:           var(--ink-ghost);
   text-decoration: none;
 }
 .chat-source-link:hover { color: var(--accent); }
@@ -1897,10 +1897,10 @@ a:hover { opacity: 0.75; }
 }
 .chat-input {
   flex:         1;
-  background:   var(--surface, #1a1f2e);
-  border:       1px solid var(--border, #2a3040);
+  background:   var(--paper-dark);
+  border:       1px solid var(--rule);
   border-radius: 6px;
-  color:        var(--text);
+  color:        var(--ink);
   padding:      0.5rem 0.75rem;
   font-family:  var(--font-mono);
   font-size:    0.85rem;
