@@ -6029,7 +6029,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Mnemosyne
 
-- [ ] **Auditoria e correção de responsividade dos layouts Qt** (`gui/main_window.py`, `gui/styles.qss`). Localizar todos os `setFixedWidth()`, `setFixedHeight()` e `setMinimumWidth()` que impedem redimensionamento. Substituir por `setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)` onde aplicável. Verificar que `QSplitter` é usado nas divisões horizontais principais (sidebar ↔ área de conteúdo). Testar com janela ~900×600 — todos os painéis (chat, análise, coleções) devem ser acessíveis sem precisar de tela cheia.
+- [x] **Auditoria e correção de responsividade dos layouts Qt** (`gui/main_window.py`, `gui/styles.qss`). Localizar todos os `setFixedWidth()`, `setFixedHeight()` e `setMinimumWidth()` que impedem redimensionamento. Substituir por `setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)` onde aplicável. Verificar que `QSplitter` é usado nas divisões horizontais principais (sidebar ↔ área de conteúdo). Testar com janela ~900×600 — todos os painéis (chat, análise, coleções) devem ser acessíveis sem precisar de tela cheia.
 
 #### HUB
 

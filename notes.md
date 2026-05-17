@@ -1,11 +1,7 @@
 ## Implementação atual:
-### AKASHA + Mnemosyne: inteligência evolutiva e diálogo inter-app | 2026-05-16
-### AKASHA: chat direto e iniciativa de diálogo | 2026-05-16
-
 
 
 ## Anotações
-Você escreveu "Mnemosyne pensa sobre seu conhecimento indexado, AKASHA pensa sobre o que você está buscando agora." E eles "conversam"/se comunicam entre si.
 
 
 ## Regras
@@ -17,8 +13,6 @@ Você escreveu "Mnemosyne pensa sobre seu conhecimento indexado, AKASHA pensa so
 ---
 
 ## próximo:
-
-### HUB — monitoramento git do sync_root | 2026-05-16
 
 faça uma nova auditoria no pesquisas.md (leia o arquivo e verifique se tem coisas lá que não constam no TODO. Se existir algo faltando, acrescente em '### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05' e atualize a data
 
