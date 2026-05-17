@@ -715,6 +715,28 @@ class FeedManager:
         finally:
             session.close()
 
+    def delete_unarchived_articles(self) -> int:
+        """Apaga todos os artigos que não foram arquivados (is_saved = 0).
+
+        Retorna o número de artigos apagados.
+        """
+        session = get_session()
+        try:
+            deleted = (
+                session.query(Article)
+                .filter(Article.is_saved == 0)
+                .delete(synchronize_session=False)
+            )
+            session.commit()
+            log.info("Apagados %d artigos não arquivados.", deleted)
+            return deleted
+        except SQLAlchemyError as exc:
+            session.rollback()
+            log.error("Erro ao apagar artigos não arquivados: %s", exc)
+            return 0
+        finally:
+            session.close()
+
     def save_ai_tags_json(self, article_id: int, tags: list[str]) -> None:
         """Persiste tags geradas por IA no campo ai_tags (JSON) do artigo."""
         import json as _j

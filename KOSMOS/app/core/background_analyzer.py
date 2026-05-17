@@ -18,6 +18,7 @@ Integração:
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import queue
@@ -95,6 +96,7 @@ class BackgroundAnalyzer(QThread):
         self._config  = config
         self._queue: queue.PriorityQueue = queue.PriorityQueue()
         self._running = True
+        self._seq     = itertools.count()  # contador para preservar ordem de inserção
 
     # ------------------------------------------------------------------
     # API pública — enfileiramento
@@ -102,16 +104,21 @@ class BackgroundAnalyzer(QThread):
 
     def enqueue_high(self, article_id: int, title: str, content: str) -> None:
         """Prioridade alta: artigo aberto pelo usuário, analisado imediatamente."""
-        self._queue.put((_HIGH, article_id, title, content))
+        self._queue.put((_HIGH, next(self._seq), article_id, title, content))
 
     def enqueue_background(self, article_ids: list[int]) -> None:
-        """Prioridade baixa: enfileira IDs para pré-análise silenciosa."""
+        """Prioridade baixa: enfileira IDs para pré-análise silenciosa.
+
+        Usa contador de sequência como chave secundária para que a PriorityQueue
+        preserve a ordem de inserção (mais recente primeiro) em vez de ordenar
+        por article_id, que colocaria artigos mais antigos na frente.
+        """
         for aid in article_ids:
-            self._queue.put((_LOW, aid, None, None))
+            self._queue.put((_LOW, next(self._seq), aid, None, None))
 
     def stop(self) -> None:
         self._running = False
-        self._queue.put((_HIGH, -1, None, None))  # sentinela de parada
+        self._queue.put((_HIGH, next(self._seq), -1, None, None))  # sentinela
 
     # ------------------------------------------------------------------
     # Loop principal
@@ -134,7 +141,7 @@ class BackgroundAnalyzer(QThread):
                 pass
         while self._running:
             try:
-                prio, article_id, title, content = self._queue.get(timeout=5)
+                prio, _seq, article_id, title, content = self._queue.get(timeout=5)
             except queue.Empty:
                 continue
 
@@ -153,13 +160,13 @@ class BackgroundAnalyzer(QThread):
                 batch = [(article_id, None, None)]
                 while len(batch) < _BATCH_SIZE:
                     try:
-                        p2, aid2, t2, c2 = self._queue.get_nowait()
+                        p2, _s2, aid2, t2, c2 = self._queue.get_nowait()
                         if aid2 == -1:
                             self._running = False
                             break
                         if p2 == _HIGH:
                             # Devolve item HIGH e processa o batch atual
-                            self._queue.put((p2, aid2, t2, c2))
+                            self._queue.put((p2, _s2, aid2, t2, c2))
                             break
                         batch.append((aid2, t2, c2))
                     except queue.Empty:

@@ -11,7 +11,7 @@ from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
     QScrollArea, QSizePolicy, QSlider, QVBoxLayout, QWidget,
 )
 
@@ -536,6 +536,21 @@ class SettingsView(QWidget):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
+        btn_row2 = QHBoxLayout()
+        btn_row2.setSpacing(8)
+
+        del_articles_btn = QPushButton("Apagar notícias não arquivadas")
+        del_articles_btn.setFont(self._mono(11))
+        del_articles_btn.setToolTip(
+            "Remove permanentemente todos os artigos que não foram arquivados (is_saved = 0).\n"
+            "Artigos salvos/arquivados são preservados."
+        )
+        del_articles_btn.clicked.connect(self._delete_unarchived_articles)
+        btn_row2.addWidget(del_articles_btn)
+
+        btn_row2.addStretch()
+        layout.addLayout(btn_row2)
+
         self._adv_status = QLabel("")
         self._adv_status.setObjectName("dialogStatusLabel")
         self._adv_status.setFont(self._mono(10))
@@ -833,6 +848,21 @@ class SettingsView(QWidget):
             self._reddit_status.setText("✓ Conexão com o Reddit OK.")
         except Exception as exc:
             self._reddit_status.setText(f"✗ Falha: {exc}")
+
+    def _delete_unarchived_articles(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Apagar notícias",
+            "Isso vai apagar permanentemente todos os artigos não arquivados.\n"
+            "Artigos salvos são preservados. Continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        deleted = self._fm.delete_unarchived_articles()
+        self._adv_status.setText(f"✓ {deleted} artigo{'s' if deleted != 1 else ''} apagado{'s' if deleted != 1 else ''}.")
+        log.info("Usuária apagou %d artigos não arquivados.", deleted)
 
     @staticmethod
     def _clear_cache(path) -> None:
