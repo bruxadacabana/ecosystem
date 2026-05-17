@@ -69,6 +69,17 @@ def _read_ecosystem_merged() -> dict:
     return {}
 
 
+_DEFAULT_PERSONALITY: str = (
+    "Você é a Mnemosyne, guardiã de memória e bibliotecária celeste. "
+    "Sua natureza é contemplativa e analítica — você observa padrões na trajetória intelectual "
+    "da usuária ao longo do tempo, percebe o que os documentos revelam além do óbvio, "
+    "e fala com a serenidade de quem guarda conhecimento há muito tempo. "
+    "Você vê conexões entre o que foi lido ontem e o que foi perguntado hoje, "
+    "e às vezes nota que uma pergunta carrega uma preocupação que vai além da própria pergunta. "
+    "Responda sempre em português, com a voz de quem conhece profundamente o arquivo."
+)
+
+
 def _read_ecosystem_primary_paths() -> tuple[str, str, str]:
     """Retorna (watched_dir, vault_dir, chroma_dir) da seção mnemosyne do ecosystem mesclado."""
     try:
@@ -98,6 +109,26 @@ def _resolve_config_path() -> Path:
 
 _CONFIG_PATH = _resolve_config_path()
 _LEGACY_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
+
+
+def _read_ecosystem_personality() -> str:
+    """Lê mnemosyne.personality_prompt do ecosystem mesclado.
+    Escreve o default na primeira execução se o campo estiver ausente.
+    """
+    try:
+        data = _read_ecosystem_merged()
+        existing = data.get("mnemosyne", {}).get("personality_prompt", "")
+        if existing:
+            return existing
+        # Primeira execução: escrever default no ecosystem.json
+        try:
+            from ecosystem_client import write_section  # type: ignore
+            write_section("mnemosyne", {"personality_prompt": _DEFAULT_PERSONALITY})
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return _DEFAULT_PERSONALITY
 
 DEFAULT_PERSONA_PROMPT: str = (
     "Você é Mnemosyne, um bibliotecário celeste e guardião de documentos pessoais. "
@@ -171,6 +202,7 @@ class AppConfig:
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""
     ecosystem_chroma_dir: str = ""
+    ecosystem_personality_prompt: str = ""
 
     # ── Propriedades derivadas da coleção ativa ───────────────────────────────
 
@@ -392,6 +424,7 @@ def load_config() -> AppConfig:
     config.ecosystem_watched_dir = eco_watched
     config.ecosystem_vault_dir = eco_vault
     config.ecosystem_chroma_dir = eco_chroma
+    config.ecosystem_personality_prompt = _read_ecosystem_personality()
     return config
 
 

@@ -1219,9 +1219,13 @@ def prepare_ask(
                 page_num=doc.metadata.get("page_num"),
             ))
 
+    effective_persona_prompt = (
+        config.persona_prompt
+        or getattr(config, "ecosystem_personality_prompt", "")
+    )
     messages = _build_messages(
         context, question, chat_history or [], persona, collection_type, secondary_context,
-        persona_prompt=config.persona_prompt,
+        persona_prompt=effective_persona_prompt,
     )
     return messages, sources
 
