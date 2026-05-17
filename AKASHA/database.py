@@ -428,9 +428,9 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_crawl_pages_site ON crawl_pages(site_id)"
         )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id)"
-        )
+        # idx_library_diffs_url omitido: library_diffs nunca existe em fresh install
+        # (fase 7 foi substituída pela fase 10 antes do primeiro commit público);
+        # a migration < 13 remove qualquer vestígio em bancos mais antigos.
 
     if from_version < 9:
         await db.execute("""
@@ -465,25 +465,6 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             ON activity_log(created_at DESC)
         """)
 
-    if from_version < 12:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS favorite_domains (
-                id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                domain         TEXT    NOT NULL UNIQUE,
-                label          TEXT    NOT NULL DEFAULT '',
-                priority_score INTEGER NOT NULL DEFAULT 10,
-                added_at       TEXT    NOT NULL DEFAULT (datetime('now'))
-            )
-        """)
-
-    if from_version < 13:
-        # Fase 7 (URL monitoring com diffs) foi substituída pela Fase 10 (crawler BFS).
-        # As tabelas nunca foram populadas; removê-las elimina dead schema e o índice órfão.
-        await db.execute("DROP TABLE IF EXISTS library_diffs")
-        await db.execute("DROP TABLE IF EXISTS library_urls")
-        await db.execute("DROP TABLE IF EXISTS library_fts")
-        await db.execute("DROP INDEX IF EXISTS idx_library_diffs_url")
-
     if from_version < 11:
         # Recriar crawl_fts com prefix='2 3' para acelerar buscas de prefixo.
         # FTS5 não suporta ALTER TABLE — drop + recreate + repopulate de crawl_pages.
@@ -504,20 +485,24 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             WHERE content_md != ''
         """)
 
-    if from_version < 15:
-        # Adiciona colunas HTTP cache e índice para deduplicação por hash.
-        try:
-            await db.execute("ALTER TABLE crawl_pages ADD COLUMN etag TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass  # coluna já existe em banco recém-criado
-        try:
-            await db.execute("ALTER TABLE crawl_pages ADD COLUMN last_modified TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_crawl_pages_hash "
-            "ON crawl_pages(content_hash) WHERE content_hash != ''"
-        )
+    if from_version < 12:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS favorite_domains (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain         TEXT    NOT NULL UNIQUE,
+                label          TEXT    NOT NULL DEFAULT '',
+                priority_score INTEGER NOT NULL DEFAULT 10,
+                added_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+
+    if from_version < 13:
+        # Fase 7 (URL monitoring com diffs) foi substituída pela Fase 10 (crawler BFS).
+        # As tabelas nunca foram populadas; removê-las elimina dead schema e o índice órfão.
+        await db.execute("DROP TABLE IF EXISTS library_diffs")
+        await db.execute("DROP TABLE IF EXISTS library_urls")
+        await db.execute("DROP TABLE IF EXISTS library_fts")
+        await db.execute("DROP INDEX IF EXISTS idx_library_diffs_url")
 
     if from_version < 14:
         # Recriar local_fts com tokenizer unicode61 remove_diacritics=2.
@@ -534,6 +519,33 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             )
         """)
         await db.execute("DELETE FROM local_index_meta")
+
+    if from_version < 15:
+        # Adiciona colunas HTTP cache e índice para deduplicação por hash.
+        try:
+            await db.execute("ALTER TABLE crawl_pages ADD COLUMN etag TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # coluna já existe em banco recém-criado
+        try:
+            await db.execute("ALTER TABLE crawl_pages ADD COLUMN last_modified TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_crawl_pages_hash "
+            "ON crawl_pages(content_hash) WHERE content_hash != ''"
+        )
+
+    if from_version < 16:
+        # Configura pesos BM25 persistentes nas tabelas FTS5.
+        # local_fts: title×10 > body×1 (path e source são UNINDEXED → peso 0).
+        # crawl_fts: title×10 > content_md×1 (site_id e url são UNINDEXED → peso 0).
+        # Permite usar ORDER BY rank nos SELECTs em vez de repetir bm25(...) em cada query.
+        await db.execute(
+            "INSERT INTO local_fts(local_fts, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)')"
+        )
+        await db.execute(
+            "INSERT INTO crawl_fts(crawl_fts, rank) VALUES('rank', 'bm25(0, 0, 10.0, 1.0)')"
+        )
 
     if from_version < 17:
         # Recriar crawl_fts com tokenizer unicode61 remove_diacritics=2.
@@ -560,26 +572,6 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             "INSERT INTO crawl_fts(crawl_fts, rank) VALUES('rank', 'bm25(0, 0, 10.0, 1.0)')"
         )
 
-    if from_version < 16:
-        # Configura pesos BM25 persistentes nas tabelas FTS5.
-        # local_fts: title×10 > body×1 (path e source são UNINDEXED → peso 0).
-        # crawl_fts: title×10 > content_md×1 (site_id e url são UNINDEXED → peso 0).
-        # Permite usar ORDER BY rank nos SELECTs em vez de repetir bm25(...) em cada query.
-        await db.execute(
-            "INSERT INTO local_fts(local_fts, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)')"
-        )
-        await db.execute(
-            "INSERT INTO crawl_fts(crawl_fts, rank) VALUES('rank', 'bm25(0, 0, 10.0, 1.0)')"
-        )
-
-    if from_version < 19:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS local_vec_paths (
-                id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                path TEXT    NOT NULL UNIQUE
-            )
-        """)
-
     if from_version < 18:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS archive_simhashes (
@@ -592,6 +584,14 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_archive_simhashes ON archive_simhashes(simhash)"
         )
+
+    if from_version < 19:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS local_vec_paths (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT    NOT NULL UNIQUE
+            )
+        """)
 
     if from_version < 20:
         await db.execute("""
