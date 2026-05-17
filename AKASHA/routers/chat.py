@@ -2,25 +2,21 @@
 AKASHA — Chat direto via RAG sobre page_knowledge e local_fts.
 
 GET  /chat            → renderiza chat.html
-POST /chat/message    → SSE stream com resposta ancorada em fontes reais
+POST /chat/message    → SSE stream stateless (sem histórico persistido)
 
-Regra invariável: se a pergunta não tem cobertura no índice, o AKASHA diz
-que não sabe em vez de gerar texto não ancorado.
-
-Histórico mantido em memória por session_id (cookie UUID). Não persiste
-entre sessões — diferente da Mnemosyne cujos notebooks persistem.
+O AKASHA responde com personalidade e ancora respostas factuais nas fontes
+do índice. Conversação casual (saudações etc.) é tratada naturalmente.
 """
 from __future__ import annotations
 
 import json
 import logging
 import re
-import uuid
 from pathlib import Path
 from typing import AsyncIterator
 
 import httpx
-from fastapi import APIRouter, Cookie, Request, Response
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -32,9 +28,6 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 _BASE_DIR   = Path(__file__).parent.parent
 templates   = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
-# Histórico em memória: {session_id: list[{role, content}]}
-_sessions: dict[str, list[dict]] = {}
-_MAX_HISTORY = 10   # últimas N mensagens enviadas ao LLM
 _MAX_SNIPPETS = 5
 
 # LOGOS-first
@@ -56,7 +49,6 @@ _CHAT_TIMEOUT_S = 60.0
 
 class ChatMessage(BaseModel):
     message: str
-    history: list[dict] = []   # [{role, content}] — enviado pelo cliente
 
 
 # ---------------------------------------------------------------------------
@@ -77,41 +69,33 @@ async def _get_model() -> str:
     return ""
 
 
+_IDENTITY = (
+    "Você é o AKASHA, assistente de pesquisa pessoal. "
+    "Seu papel é ajudar a encontrar e conectar informações do índice local. "
+    "Responda de forma direta e natural. "
+    "Para saudações e conversação casual, responda com personalidade — não precisa referenciar fontes. "
+    "Para perguntas factuais, use as fontes do índice quando disponíveis e cite [N] ao usá-las."
+)
+
+
 def _build_prompt(
     question: str,
     snippets: list[dict],
     persona_prefix: str,
-    history: list[dict],
 ) -> list[dict]:
     """Monta messages list para Ollama /api/chat."""
-    system_parts = []
+    parts = [_IDENTITY]
     if persona_prefix:
-        system_parts.append(persona_prefix.rstrip())
+        parts.append(persona_prefix.rstrip())
 
     if snippets:
         refs = "\n\n".join(
             f"[{i+1}] {s['title']}\n{s['snippet'][:350]}"
             for i, s in enumerate(snippets)
         )
-        system_parts.append(
-            f"Fontes encontradas no índice:\n{refs}\n\n"
-            "Responda APENAS com base nas fontes acima. "
-            "Cite os números [N] quando usar informações delas. "
-            "Se a pergunta não tiver cobertura nas fontes, diga claramente que não encontrou "
-            "informação sobre isso no índice — nunca especule nem use conhecimento externo."
-        )
-    else:
-        system_parts.append(
-            "Nenhuma fonte relevante foi encontrada no índice para esta pergunta. "
-            "Informe a usuária que não há cobertura sobre esse tema no índice do AKASHA. "
-            "Não gere conteúdo fora das fontes indexadas."
-        )
+        parts.append(f"Fontes encontradas no índice:\n{refs}")
 
-    messages: list[dict] = [{"role": "system", "content": "\n\n".join(system_parts)}]
-    for turn in history[-_MAX_HISTORY:]:
-        role = turn.get("role", "user")
-        if role in ("user", "assistant"):
-            messages.append({"role": role, "content": turn.get("content", "")})
+    messages: list[dict] = [{"role": "system", "content": "\n\n".join(parts)}]
     messages.append({"role": "user", "content": question})
     return messages
 
@@ -199,39 +183,29 @@ async def _filter_thinking(
 # ---------------------------------------------------------------------------
 
 @router.get("")
-async def chat_page(
-    request: Request,
-    chat_session: str | None = Cookie(default=None),
-) -> Response:
-    session_id = chat_session or str(uuid.uuid4())
-    history = _sessions.get(session_id, [])
-    resp = templates.TemplateResponse(
+async def chat_page(request: Request) -> Response:
+    return templates.TemplateResponse(
         request,
         "chat.html",
-        {"active_tab": "chat", "history": history},
+        {"active_tab": "chat"},
     )
-    resp.set_cookie("chat_session", session_id, httponly=True, samesite="lax")
-    return resp
 
 
 @router.post("/message")
-async def chat_message(
-    body: ChatMessage,
-    chat_session: str | None = Cookie(default=None),
-) -> StreamingResponse:
+async def chat_message(body: ChatMessage) -> StreamingResponse:
     """
     Recebe mensagem da usuária, executa pipeline RAG e retorna SSE stream.
+    Stateless — sem histórico de conversa persistido.
 
     Protocolo SSE:
       data: {"type": "fragment", "text": "..."}
+      data: {"type": "thinking", "text": "..."}
       data: {"type": "sources",  "sources": [...]}
       data: [DONE]
     """
     from services.local_search import search_local, get_ollama_status
     from services.persona import get_persona
     import database as _db
-
-    session_id = chat_session or str(uuid.uuid4())
 
     if not get_ollama_status():
         async def _offline() -> AsyncIterator[bytes]:
@@ -260,38 +234,21 @@ async def chat_message(
 
     sources = [{"url": s["url"], "title": s["title"]} for s in snippets]
     persona_prefix = get_persona().as_prompt_prefix()
-    messages = _build_prompt(body.message, snippets, persona_prefix, body.history)
-
-    # Atualiza histórico em memória
-    hist = _sessions.setdefault(session_id, [])
-    hist.append({"role": "user", "content": body.message})
-    if len(hist) > _MAX_HISTORY * 2:
-        _sessions[session_id] = hist[-(  _MAX_HISTORY * 2):]
-
-    assistant_buf: list[str] = []
+    messages = _build_prompt(body.message, snippets, persona_prefix)
 
     async def _event_stream() -> AsyncIterator[bytes]:
         async for typ, text in _filter_thinking(_stream_chat(messages, model)):
-            if typ == "fragment":
-                assistant_buf.append(text)
             payload = json.dumps({"type": typ, "text": text}, ensure_ascii=False)
             yield f"data: {payload}\n\n".encode()
-
-        full_answer = "".join(assistant_buf)
-        hist.append({"role": "assistant", "content": full_answer})
 
         src_payload = json.dumps({"type": "sources", "sources": sources}, ensure_ascii=False)
         yield f"data: {src_payload}\n\n".encode()
         yield b"data: [DONE]\n\n"
 
-    resp = StreamingResponse(_event_stream(), media_type="text/event-stream")
-    resp.set_cookie("chat_session", session_id, httponly=True, samesite="lax")
-    return resp
+    return StreamingResponse(_event_stream(), media_type="text/event-stream")
 
 
 @router.post("/clear")
-async def chat_clear(chat_session: str | None = Cookie(default=None)) -> dict:
-    """Limpa o histórico da sessão atual."""
-    if chat_session and chat_session in _sessions:
-        _sessions[chat_session] = []
+async def chat_clear() -> dict:
+    """Sem histórico persistido — apenas confirma para o cliente limpar o canvas."""
     return {"ok": True}

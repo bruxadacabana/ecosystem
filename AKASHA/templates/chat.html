@@ -20,15 +20,7 @@
             title="Limpar conversa">✕ limpar</button>
   </div>
 
-  <div id="chat-canvas" class="chat-canvas">
-    {% for turn in history %}
-      {% if turn.role == 'user' %}
-        <div class="chat-bubble chat-bubble-user">{{ turn.content | e | replace('\n', '<br>') | safe }}</div>
-      {% elif turn.role == 'assistant' %}
-        <div class="chat-bubble chat-bubble-akasha">{{ turn.content | e | replace('\n', '<br>') | safe }}</div>
-      {% endif %}
-    {% endfor %}
-  </div>
+  <div id="chat-canvas" class="chat-canvas"></div>
 
   <div class="chat-input-area">
     <div id="chat-sources" class="chat-sources"></div>
@@ -47,8 +39,6 @@
 </div>
 
 <script>
-let _history = {{ history | tojson }};
-
 /* Markdown básico: escapa HTML, formata bold/italic/code/newlines */
 function renderText(text) {
   return text
@@ -127,8 +117,6 @@ async function sendMessage(e) {
   canvas.appendChild(userBubble);
   canvas.scrollTop = canvas.scrollHeight;
 
-  _history.push({role: 'user', content: message});
-
   const { wrapper, thinking, thinkContent, bubble } = createAkashaMessage();
   let fullText  = '';
   let thinkText = '';
@@ -137,7 +125,7 @@ async function sendMessage(e) {
     const resp = await fetch('/chat/message', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({message, history: _history.slice(-10)}),
+      body: JSON.stringify({message}),
     });
 
     const reader  = resp.body.getReader();
@@ -174,7 +162,6 @@ async function sendMessage(e) {
     wrapper.removeAttribute('id');
     bubble.removeAttribute('id');
     thinkContent.removeAttribute('id');
-    _history.push({role: 'assistant', content: fullText});
   } catch(err) {
     bubble.textContent = 'Erro ao conectar com o AKASHA.';
   } finally {
