@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 31
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -334,6 +334,16 @@ _CREATE_IDX_DOC_CITATIONS_DOI = """
 CREATE INDEX IF NOT EXISTS idx_doc_citations_doi ON doc_citations(cited_doi);
 """
 
+_CREATE_PERSONAL_MEMORY = """
+CREATE TABLE IF NOT EXISTS personal_memory (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    type       TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    tags       TEXT    NOT NULL DEFAULT '[]'
+);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -390,6 +400,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_SEARCH_PROFILE)
         await db.execute(_CREATE_PAGE_KNOWLEDGE)
         await db.execute(_CREATE_TOPIC_INTEREST_PROFILE)
+        await db.execute(_CREATE_PERSONAL_MEMORY)
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -741,6 +752,9 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
     if from_version < 30:
         await db.execute(_CREATE_PAGE_KNOWLEDGE)
         await db.execute(_CREATE_TOPIC_INTEREST_PROFILE)
+
+    if from_version < 31:
+        await db.execute(_CREATE_PERSONAL_MEMORY)
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
