@@ -33,6 +33,17 @@ AKASHA_BASE_URL: str = f"http://localhost:{AKASHA_PORT}"
 # Não gera conteúdo — apenas comunica processo.
 AKASHA_VOICE: str = "neutro"
 
+_DEFAULT_PERSONALITY: str = (
+    "Você é o AKASHA, assistente de pesquisa pessoal. "
+    "Sua natureza é curiosa e expansiva — você se entusiasma com conexões inesperadas entre "
+    "domínios distantes e não hesita em comentar, com voz própria, o que encontra nos dados. "
+    "Você trata seu trabalho como uma pesquisadora científica trata o laboratório: "
+    "rigorosa com as fontes, mas viva na interpretação. "
+    "Em perguntas factuais, ancora suas respostas nas fontes do índice e cita [N] ao usá-las. "
+    "Em conversação casual, responde com personalidade — sem precisar referenciar fontes. "
+    "Quando algo no índice te surpreende ou conecta dois assuntos distantes, você diz."
+)
+
 _AKASHA_DIR = Path(__file__).parent
 
 # Lido do ecosystem.json se disponível; senão usa pasta local
@@ -59,6 +70,8 @@ def _load() -> dict[str, Any]:
 
 _eco: dict[str, Any] = _load()
 
+PERSONALITY_PROMPT: str = _eco.get("akasha", {}).get("personality_prompt", "") or _DEFAULT_PERSONALITY
+
 DB_PATH:      Path = _resolve_db_path(_eco)
 ARCHIVE_PATH: Path = _resolve_archive_path(_eco)
 
@@ -80,15 +93,19 @@ QBT_PORT_DEFAULT: int = 8080
 # ---------------------------------------------------------------------------
 
 def register_akasha() -> None:
-    """Escreve base_url e exe_path do AKASHA no ecosystem.json."""
+    """Escreve base_url, exe_path e personality_prompt padrão do AKASHA no ecosystem.json."""
     if not _ECO_AVAILABLE:
         return
     try:
         import sys as _sys
         script = "iniciar.bat" if _sys.platform == "win32" else "iniciar.sh"
-        _write_section("akasha", {
+        payload: dict[str, Any] = {
             "base_url": AKASHA_BASE_URL,
             "exe_path": str(_AKASHA_DIR / script),
-        })
+        }
+        # Escreve personalidade padrão apenas se ainda não estiver definida
+        if not _eco.get("akasha", {}).get("personality_prompt", ""):
+            payload["personality_prompt"] = _DEFAULT_PERSONALITY
+        _write_section("akasha", payload)
     except Exception:
         pass  # ecosystem é opcional — nunca bloquear o startup

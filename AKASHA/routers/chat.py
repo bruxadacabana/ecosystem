@@ -21,6 +21,8 @@ from fastapi.responses import StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+import config as _config
+
 log = logging.getLogger("akasha.chat")
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -69,22 +71,13 @@ async def _get_model() -> str:
     return ""
 
 
-_IDENTITY = (
-    "Você é o AKASHA, assistente de pesquisa pessoal. "
-    "Seu papel é ajudar a encontrar e conectar informações do índice local. "
-    "Responda de forma direta e natural. "
-    "Para saudações e conversação casual, responda com personalidade — não precisa referenciar fontes. "
-    "Para perguntas factuais, use as fontes do índice quando disponíveis e cite [N] ao usá-las."
-)
-
-
 def _build_prompt(
     question: str,
     snippets: list[dict],
     persona_prefix: str,
 ) -> list[dict]:
     """Monta messages list para Ollama /api/chat."""
-    parts = [_IDENTITY]
+    parts = [_config.PERSONALITY_PROMPT]
     if persona_prefix:
         parts.append(persona_prefix.rstrip())
 
