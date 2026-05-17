@@ -184,14 +184,14 @@ async def chat_message(
 
     if not get_ollama_status():
         async def _offline() -> AsyncIterator[bytes]:
-            yield b'data: {"type":"fragment","text":"Ollama indisponível."}\n\n'
+            yield 'data: {"type":"fragment","text":"Ollama indisponível."}\n\n'.encode()
             yield b"data: [DONE]\n\n"
         return StreamingResponse(_offline(), media_type="text/event-stream")
 
     model = await _get_model()
     if not model:
         async def _no_model() -> AsyncIterator[bytes]:
-            yield b'data: {"type":"fragment","text":"Nenhum modelo disponível."}\n\n'
+            yield 'data: {"type":"fragment","text":"Nenhum modelo disponível."}\n\n'.encode()
             yield b"data: [DONE]\n\n"
         return StreamingResponse(_no_model(), media_type="text/event-stream")
 
