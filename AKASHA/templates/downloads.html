@@ -45,6 +45,7 @@
 {% if downloads %}
 <section class="dl-history">
   <h2 class="section-title">Histórico</h2>
+  <div style="overflow-x:auto;">
   <table class="dl-table">
     <thead>
       <tr>
@@ -77,6 +78,7 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 
   <!-- Paginação -->
   {% if total_pages > 1 %}

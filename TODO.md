@@ -6016,3 +6016,25 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   e passa `--open-insights` como argumento CLI; a Mnemosyne detecta esse flag no startup e
   abre diretamente o painel de diálogo com o insight mais recente. Badge desaparece quando
   `pending_insights` volta a 0 (Mnemosyne atualiza o campo após marcar insights como vistos).
+
+---
+
+### Responsividade das janelas do ecossistema | 2026-05-17
+
+> Contexto: elementos com tamanho fixo em pixels fazem com que partes da UI desapareçam ou fiquem inacessíveis quando a janela não está em tela cheia. A maioria dos apps usa frações do tamanho da tela — todo elemento deve ser visível e utilizável a partir de ~800×600.
+
+#### AKASHA
+
+- [x] **Auditoria e correção de responsividade do CSS** (`static/style.css` + templates). Substituir `width` fixo em pixels por `max-width` + `min-width` ou `clamp()`. Adicionar `overflow-x: auto` em tabelas e listas de resultados. Usar `flex-wrap: wrap` nos containers que alinham elementos side-by-side (barra de filtros, chips de fontes, etc.). Garantir que o layout funcione a partir de ~800px de largura sem perda de elementos visíveis. Testar cada template: `search.html`, `library.html`, `chat.html`, `profile.html`, `base.html` (navbar).
+
+#### Mnemosyne
+
+- [ ] **Auditoria e correção de responsividade dos layouts Qt** (`gui/main_window.py`, `gui/styles.qss`). Localizar todos os `setFixedWidth()`, `setFixedHeight()` e `setMinimumWidth()` que impedem redimensionamento. Substituir por `setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)` onde aplicável. Verificar que `QSplitter` é usado nas divisões horizontais principais (sidebar ↔ área de conteúdo). Testar com janela ~900×600 — todos os painéis (chat, análise, coleções) devem ser acessíveis sem precisar de tela cheia.
+
+#### HUB
+
+- [ ] **Auditoria e correção de responsividade do CSS/React** (`src/components/`, estilos inline). Auditar valores inline em pixels nos componentes principais (AppBar, LogosView, painéis de status). Converter para `minWidth`/`maxWidth` e unidades relativas onde fizer sentido. Garantir que o modo compacto (~640×440) não esconde elementos críticos.
+
+#### KOSMOS e Hermes
+
+- [ ] **Responsividade dos layouts Qt** (PyQt6). Mesma abordagem do Mnemosyne: remover tamanhos fixos, adicionar size policies corretas, verificar comportamento em janela menor que a tela cheia.

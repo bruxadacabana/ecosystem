@@ -134,9 +134,10 @@ a:hover { opacity: 0.75; }
   border-bottom: 1px solid var(--rule);
   min-height:    48px;
   display:       flex;
+  flex-wrap:     wrap;             /* reflow natural a qualquer largura */
   align-items:   center;
-  gap:           clamp(8px, 1.5vw, 20px);
-  padding:       8px clamp(12px, 2.5vw, 20px);
+  gap:           clamp(4px, 1vw, 14px);
+  padding:       8px clamp(10px, 2vw, 20px);
   flex-shrink:   0;
   position:      sticky;
   top:           0;
@@ -954,8 +955,8 @@ a:hover { opacity: 0.75; }
   border-left:  1px solid var(--rule);
   padding-left: 20px;
   position:     sticky;
-  top:          68px;
-  max-height:   calc(100vh - 80px);
+  top:          var(--topbar-h, 68px);
+  max-height:   calc(100vh - var(--topbar-h, 80px) - 12px);
   overflow-y:   auto;
 }
 
@@ -985,45 +986,49 @@ a:hover { opacity: 0.75; }
 
 /* ── Responsividade da topbar ─────────────────────────────── */
 
-/* Tablet / janela estreita: nav desce para segunda linha */
-@media (max-width: 860px) {
+/*
+  Com flex-wrap sempre ativo na topbar, os elementos refluem
+  naturalmente. Abaixo de 1100px a nav desce para linha própria
+  (evita que 10 links comprimam a barra de busca).
+*/
+@media (max-width: 1100px) {
   .topbar {
-    flex-wrap:   wrap;
-    column-gap:  8px;
-    row-gap:     0;        /* nav controla seu próprio espaço com margin-top */
-    padding:     8px 14px;
+    column-gap:  6px;
+    row-gap:     0;
+    padding:     7px clamp(10px, 2vw, 16px);
     align-items: center;
   }
 
   .topbar-brand  { order: 1; }
-  .topbar-search { order: 2; flex: 1; min-width: min(160px, 35%); }
+  .topbar-search { order: 2; flex: 1; min-width: clamp(120px, 25%, 320px); }
   .theme-toggle  { order: 3; flex-shrink: 0; }
   .shutdown-btn  { order: 4; flex-shrink: 0; }
+  .ollama-badge  { order: 5; flex-shrink: 0; }
 
   .topbar-nav {
-    order:       10;
-    flex-basis:  100%;
-    flex-wrap:   wrap;
-    gap:         2px;
-    margin-top:  4px;
-    padding-top: 4px;
-    border-top:  1px solid var(--rule);
+    order:        10;
+    flex-basis:   100%;
+    flex-wrap:    wrap;
+    gap:          2px;
+    margin-top:   4px;
+    padding-top:  4px;
+    border-top:   1px solid var(--rule);
   }
 }
 
-/* Mobile: busca desce para linha própria entre brand e nav */
+/* Janela muito estreita: busca desce para linha própria */
 @media (max-width: 540px) {
   .topbar {
-    column-gap: 6px;
-    row-gap:    0;
-    padding:    7px 12px;
+    column-gap: 5px;
+    padding:    6px 10px;
   }
 
   .topbar-brand  { order: 1; }
   .theme-toggle  { order: 2; margin-left: auto; }
   .shutdown-btn  { order: 3; }
+  .ollama-badge  { order: 4; flex-basis: 100%; text-align: center; }
   .topbar-search {
-    order:      4;
+    order:      5;
     flex-basis: 100%;
     flex:       none;
   }
@@ -1032,7 +1037,7 @@ a:hover { opacity: 0.75; }
   .nav-link, .topbar-link {
     font-size:      8px;
     padding:        3px 7px;
-    letter-spacing: 0.10em;
+    letter-spacing: 0.08em;
   }
 }
 
@@ -1812,10 +1817,10 @@ a:hover { opacity: 0.75; }
 .chat-layout {
   display:        flex;
   flex-direction: column;
-  height:         calc(100vh - var(--topbar-h, 52px) - 2rem);
+  height:         calc(100vh - var(--topbar-h, 80px) - 2rem);
   max-width:      760px;
   margin:         0 auto;
-  padding:        1rem 0;
+  padding:        1rem clamp(0px, 2vw, 12px);
   gap:            0.75rem;
 }
 .chat-header {

@@ -243,5 +243,22 @@
       }
     });
   </script>
+  <script>
+    // Mede altura real da topbar e atualiza --topbar-h para que
+    // sticky offsets e chat-layout usem o valor correto após wrap.
+    (function () {
+      var topbar = document.querySelector('.topbar');
+      if (!topbar) return;
+      function setTopbarH() {
+        document.documentElement.style.setProperty('--topbar-h', topbar.offsetHeight + 'px');
+      }
+      setTopbarH();
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(setTopbarH).observe(topbar);
+      } else {
+        window.addEventListener('resize', setTopbarH);
+      }
+    })();
+  </script>
 </body>
 </html>
