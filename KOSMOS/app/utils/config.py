@@ -102,7 +102,8 @@ class Config:
 
     def set(self, key: str, value: Any) -> None:
         self._data[key] = value
-        self._save()
+        if key not in _RUNTIME_KEYS:
+            self._save()
 
     def get_all(self) -> dict[str, Any]:
         return dict(self._data)

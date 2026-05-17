@@ -6109,12 +6109,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### KOSMOS
 
-- [ ] **Herdar modelos do HUB no startup** (`app/core/llm_manager.py` ou onde modelos são lidos). No startup, ler `ecosystem_client.get_active_profile()` para obter os modelos configurados (`llm_analysis`, `embed`, etc.). Usar esses valores como padrão da sessão. Qualquer alteração feita pelo usuário dentro do app vale apenas para aquela sessão — não persistir em arquivo local. Na próxima abertura, volta a ler do HUB.
+- [x] **Herdar modelos do HUB no startup** (`app/utils/config.py`). `_RUNTIME_KEYS = {"ai_gen_model"}` excluído do `_user_set_keys` no load — LOGOS sempre vence no startup. `set()` não grava runtime keys em disco — troca durante a sessão é só em memória.
 
 #### Mnemosyne
 
-- [ ] **Herdar modelos do HUB no startup** (`core/config.py` — `AppConfig`). Ao construir `AppConfig`, ler `ecosystem_client.get_active_profile()` e usar os modelos (`llm_rag`, `embed`) como padrão. Alterações feitas via UI de configuração da Mnemosyne durante a sessão são temporárias — não sobrescrever o ecosystem.json com a escolha local. Separar claramente "modelo da sessão" de "modelo configurado no HUB".
+- [x] **Herdar modelos do HUB no startup** (`core/config.py`). `_apply_logos_recommendations()` sempre aplica `llm_model`/`embed_model` do LOGOS independente do arquivo salvo. `save_config()` não grava `llm_model`/`embed_model` em disco — valores vêm sempre do LOGOS no startup.
 
 #### AKASHA
 
-- [ ] **Herdar modelos do HUB no startup** (`config.py`; `services/knowledge_worker.py`; `routers/chat.py`). Os módulos que resolvem modelo hoje (`_get_url()`, `_DEFAULT_MODEL`) já usam `ecosystem_client.get_active_profile()` — verificar que todos os pontos de uso fazem isso consistentemente e que nenhum persiste override local. Confirmar que `llm_kosmos` (modelo de análise/query) e `llm_rag` (se definido) são os padrões.
+- [x] **Herdar modelos do HUB no startup** (`services/knowledge_worker.py`, `chat.py`, `persona.py`, `query_understanding.py`, `local_search.py`). Todos os pontos leem `get_active_profile()` no import. Nenhum persiste override local. Verificado.

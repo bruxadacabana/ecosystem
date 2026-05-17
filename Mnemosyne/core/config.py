@@ -399,8 +399,6 @@ def save_config(config: AppConfig) -> None:
     """Persiste AppConfig em settings.json (ou config.json legado)."""
     _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     data = {
-        "llm_model": config.llm_model,
-        "embed_model": config.embed_model,
         "chunk_size": config.chunk_size,
         "chunk_overlap": config.chunk_overlap,
         "retriever_k": config.retriever_k,
