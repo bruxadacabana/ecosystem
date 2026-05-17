@@ -1112,6 +1112,25 @@ class MainWindow(QMainWindow):
         answer_header.addWidget(self._save_studio_btn)
         layout.addLayout(answer_header)
 
+        # Área de pensamento colapsável (oculta até o modelo começar a pensar)
+        self._think_container = QWidget()
+        self._think_container.setObjectName("thinkContainer")
+        think_layout = QVBoxLayout(self._think_container)
+        think_layout.setContentsMargins(0, 2, 0, 4)
+        think_layout.setSpacing(2)
+        self._think_toggle_btn = QPushButton("▾ pensando em voz alta")
+        self._think_toggle_btn.setObjectName("thinkToggleBtn")
+        self._think_toggle_btn.setFlat(True)
+        self._think_toggle_btn.clicked.connect(self._on_think_toggle)
+        think_layout.addWidget(self._think_toggle_btn)
+        self._think_text = QTextEdit()
+        self._think_text.setObjectName("thinkText")
+        self._think_text.setReadOnly(True)
+        self._think_text.setMaximumHeight(120)
+        think_layout.addWidget(self._think_text)
+        self._think_container.setVisible(False)
+        layout.addWidget(self._think_container)
+
         self.answer_text = QTextBrowser()
         self.answer_text.setObjectName("answerText")
         self.answer_text.setOpenLinks(False)
@@ -3150,6 +3169,8 @@ class MainWindow(QMainWindow):
         self._raw_answer = ""
         self.answer_text.setPlainText("")
         self.sources_text.clear()
+        self._think_container.setVisible(False)
+        self._think_text.setPlainText("")
         self.cancel_btn.setVisible(True)
         self.statusBar().showMessage("Consultando Mnemosyne…")
 
@@ -3187,6 +3208,7 @@ class MainWindow(QMainWindow):
                 iterative_retrieval=self._iterative_toggle.isChecked(),
             )
             self._ask_worker.token.connect(self._on_ask_token)
+            self._ask_worker.thinking.connect(self._on_think_token)
             self._ask_worker.finished.connect(self._on_answer)
         self._ask_worker.start()
 
@@ -3262,10 +3284,32 @@ class MainWindow(QMainWindow):
         self.answer_text.setTextCursor(cursor)
         self.answer_text.ensureCursorVisible()
 
+    def _on_think_token(self, chunk: str) -> None:
+        if not self._think_container.isVisible():
+            self._think_container.setVisible(True)
+            self._think_text.setVisible(True)
+            self._think_toggle_btn.setText("▾ pensando em voz alta")
+        cursor = self._think_text.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText(chunk)
+        self._think_text.setTextCursor(cursor)
+        self._think_text.ensureCursorVisible()
+
+    def _on_think_toggle(self) -> None:
+        visible = self._think_text.isVisible()
+        self._think_text.setVisible(not visible)
+        self._think_toggle_btn.setText(
+            "▾ pensando em voz alta" if not visible else "▸ pensando em voz alta"
+        )
+
     def _on_answer(self, success: bool, text: str, sources: list, updated_history: list) -> None:
         self.cancel_btn.setVisible(False)
         self._save_note_btn.setEnabled(success and bool(text))
         self._save_studio_btn.setEnabled(success and bool(text))
+        # Auto-colapsa pensamento ao receber resposta final
+        if self._think_container.isVisible():
+            self._think_text.setVisible(False)
+            self._think_toggle_btn.setText("▸ pensando em voz alta")
         if success:
             self.answer_text.document().setMarkdown(text)
             self._chat_history = updated_history

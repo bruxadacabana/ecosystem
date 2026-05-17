@@ -40,9 +40,17 @@ from core.indexer import (
 from core.loaders import load_documents, load_single_file
 from core.memory import MemoryStore, Turn
 from core.ollama_client import list_models, validate_model
-from core.rag import prepare_ask, strip_think, AskResult, SourceRecord
+from core.rag import prepare_ask, AskResult, SourceRecord
 from core.summarizer import iter_summary
 from core.tracker import FileTracker
+
+
+def _trim_partial_think(text: str, tag: str) -> int:
+    """Índice até onde é seguro emitir sem cortar uma tag parcial no final do buffer."""
+    for i in range(len(tag) - 1, 0, -1):
+        if text.endswith(tag[:i]):
+            return max(0, len(text) - i)
+    return len(text)
 
 
 class OllamaCheckWorker(QThread):
@@ -558,8 +566,9 @@ class CompactMemoryWorker(QThread):
 class AskWorker(QThread):
     """Executa uma consulta RAG com streaming token a token."""
 
-    token = Signal(str)                       # token recebido durante streaming
-    finished = Signal(bool, str, list, list)  # sucesso, resposta/erro, fontes, turns_updated
+    token    = Signal(str)                     # token de resposta durante streaming
+    thinking = Signal(str)                     # conteúdo <think>…</think> — exibido separado
+    finished = Signal(bool, str, list, list)   # sucesso, resposta/erro, fontes, turns_updated
 
     def __init__(
         self,
@@ -618,15 +627,49 @@ class AskWorker(QThread):
         try:
             llm = ChatOllama(model=self.config.llm_model, temperature=0, num_ctx=8192)
             full = ""
+            buf = ""
+            in_think = False
             for chunk in llm.stream(messages):
                 if self.isInterruptionRequested():
                     self.finished.emit(False, "Interrompido.", [], self.chat_history)
                     return
-                # AIMessageChunk: chunks de metadata chegam com content="" — ignorar
-                if chunk.content:
-                    self.token.emit(chunk.content)
-                    full += chunk.content
-            answer = strip_think(full)
+                if not chunk.content:
+                    continue
+                buf += chunk.content
+                while True:
+                    if not in_think:
+                        idx = buf.find("<think>")
+                        if idx == -1:
+                            safe = _trim_partial_think(buf, "<think>")
+                            if safe:
+                                self.token.emit(buf[:safe])
+                                full += buf[:safe]
+                                buf = buf[safe:]
+                            break
+                        if idx > 0:
+                            self.token.emit(buf[:idx])
+                            full += buf[:idx]
+                        buf = buf[idx + len("<think>"):]
+                        in_think = True
+                    else:
+                        idx = buf.find("</think>")
+                        if idx == -1:
+                            safe = _trim_partial_think(buf, "</think>")
+                            if safe:
+                                self.thinking.emit(buf[:safe])
+                                buf = buf[safe:]
+                            break
+                        if idx > 0:
+                            self.thinking.emit(buf[:idx])
+                        buf = buf[idx + len("</think>"):]
+                        in_think = False
+            if buf.strip():
+                if in_think:
+                    self.thinking.emit(buf)
+                else:
+                    self.token.emit(buf)
+                    full += buf
+            answer = full.strip()
             source_paths = [s["path"] for s in sources]
             updated = list(self.chat_history) + [
                 Turn(role="user", content=self.question),

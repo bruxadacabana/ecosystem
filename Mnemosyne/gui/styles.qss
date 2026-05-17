@@ -456,6 +456,29 @@ QLineEdit#questionInput {
     border-radius: 2px;
 }
 
+QPushButton#thinkToggleBtn {
+    font-family: "Courier New", monospace;
+    font-size: 10px;
+    color: #6A7090;
+    text-align: left;
+    padding: 0px;
+    border: none;
+    background: transparent;
+}
+QPushButton#thinkToggleBtn:hover {
+    color: #9A9BB0;
+}
+
+QTextEdit#thinkText {
+    font-family: "Courier New", monospace;
+    font-size: 10px;
+    color: #6A7090;
+    background: #161A26;
+    border: 1px solid #1E2436;
+    border-left: 2px solid #2A3148;
+    line-height: 1.5;
+}
+
 QTextEdit#answerText {
     font-family: "IM Fell English", Georgia, serif;
     font-size: 15px;
