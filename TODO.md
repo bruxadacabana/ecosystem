@@ -6038,3 +6038,83 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 #### KOSMOS e Hermes
 
 - [ ] **Responsividade dos layouts Qt** (PyQt6). Mesma abordagem do Mnemosyne: remover tamanhos fixos, adicionar size policies corretas, verificar comportamento em janela menor que a tela cheia.
+
+---
+
+### Personalidade e memória própria — AKASHA e Mnemosyne | 2026-05-17
+
+> Contexto: decisão arquitetural de separar camada de conhecimento (indexação, RAG, crawling — impessoal, sem personalidade) da camada de personalidade+memória privada de cada IA. AKASHA = assistente de pesquisa científica, curiosa e expansiva, busca conexões entre domínios. Mnemosyne = anciã contemplativa e analítica, vê padrões ao longo do tempo. Cada uma lê o conhecimento disponível e forma perspectivas próprias armazenadas em store isolado — nunca indexado, nunca lido por outras apps. Prompt base editável no HUB. Memória acumulada pode ser apagada ("reiniciar") sem afetar o prompt base. Funciona mesmo quando já existem dados disponíveis (cold start): a reflexão lê o que existe.
+
+#### Fase A — Fundação
+
+##### AKASHA
+
+- [ ] **Store de memória pessoal** (`services/personal_memory.py` novo; `database.py`). Criar tabela `personal_memory (id INTEGER PK, created_at TIMESTAMP, type TEXT, content TEXT, tags TEXT)` no banco SQLite existente. Tipos: `observation` (padrão da usuária), `connection` (link entre domínios), `surprise` (algo inesperado), `reflection` (pensamento amplo). Isolada — nunca exposta por API pública, nunca indexada no vectorstore. Módulo com: `save_memory(type, content, tags=[])`, `get_recent(n=10)`, `get_all()`, `clear_all()`. Conteúdo é texto livre na voz da AKASHA.
+
+- [ ] **Prompt base de personalidade** (`config.py`). Adicionar campo `personality_prompt` ao ecosystem.json em `akasha.personality_prompt`. Valor padrão hardcoded: AKASHA como assistente de pesquisa científica — curiosa, expansiva, entusiasta com conexões inesperadas entre domínios distantes, comenta com voz própria o que encontra. Lido via `ecosystem_client.read_ecosystem()` no startup. Injetado no início de todos os prompts LLM do AKASHA (chat + reflexão). Fallback para o default se ausente.
+
+##### Mnemosyne
+
+- [ ] **Store de memória pessoal** (`core/personal_memory.py` novo). SQLite dedicado `personal_memory.db` em `{mnemosyne_dir}/` — separado do Chroma e BM25. Schema: `personal_memory (id, created_at, type TEXT, content TEXT, tags TEXT)`. Mesmos tipos do AKASHA. `save_memory()`, `get_recent()`, `get_all()`, `clear_all()`. Nunca indexado no RAG de coleções. Conteúdo na voz da Mnemosyne (anciã contemplativa, analítica).
+
+- [ ] **Prompt base de personalidade** (`core/config.py`). Campo `mnemosyne.personality_prompt` no ecosystem.json. Default: Mnemosyne como anciã sábia — contemplativa, analítica, vê padrões na trajetória intelectual da usuária ao longo do tempo, observa o que os documentos revelam além do óbvio. Injetado no início de todos os prompts RAG/chat. Fallback para default se ausente.
+
+##### HUB
+
+- [ ] **Editor de personalidade + botão Reiniciar no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `DELETE /memory/clear` no AKASHA e equivalente no Mnemosyne). Expandir a aba Monitor: para cada app, adicionar campo de texto editável com o `personality_prompt` atual (lido do ecosystem.json), botão "Salvar" (escreve via `saveEcosystemConfig()`), e botão "Reiniciar memória" que chama o endpoint de limpeza do app. Reiniciar apaga apenas a memória acumulada — o `personality_prompt` não é afetado.
+
+#### Fase B — Loops de reflexão (background P3, nunca bloqueante)
+
+##### AKASHA
+
+- [ ] **Loop de reflexão periódico + cold start** (`services/reflection_loop.py` novo; `main.py` — registrar como task P3). A cada 24h, lê últimos registros de `page_knowledge` e `topic_interest_profile`. Monta prompt: personality_prompt + resumo dos dados recentes + "há algo que vale registrar na sua memória pessoal?". Chama Ollama (`temperature=0.7`). Se resposta não vazia e não genérica, salva em `personal_memory`. Cold start: se `personal_memory` está vazia mas `page_knowledge` tem registros, rodar reflexão inicial imediatamente no startup (sem esperar 24h). Fire-and-forget via `asyncio.create_task()`.
+
+- [ ] **Reflexão orientada a evento** (`services/knowledge_worker.py` — ao final de `_extract_and_store()`). Após gerar nota de insight para a Mnemosyne, gerar também nota pessoal da AKASHA: prompt curto "você acabou de encontrar X — o que você pensa sobre isso, em uma frase, na sua voz?". Salvar em `personal_memory` com type=`connection` ou `surprise`. Fire-and-forget, sem bloquear o worker.
+
+##### Mnemosyne
+
+- [ ] **Loop de reflexão pós-notebook** (`gui/workers.py` — novo `PersonalReflectionWorker`; `gui/main_window.py`). Ao fechar um notebook ou após sessão com ≥3 trocas, disparar `PersonalReflectionWorker` em `IdlePriority`. Lê histórico da sessão + StudioOutputs gerados. Prompt: personality_prompt + resumo da sessão + "o que você observou que vale lembrar?". Salva nota na voz da Mnemosyne em `personal_memory`.
+
+- [ ] **Reflexão periódica + cold start** (`gui/workers.py` — `PersonalReflectionWorker` ou novo worker). Na inicialização com `personal_memory` vazia mas coleções indexadas: rodar reflexão inicial em `IdlePriority` lendo amostra de chunks das coleções ativas. Depois: reflexão diária lendo StudioOutputs recentes e entradas recentes de `history.jsonl` dos notebooks. Toda operação em `QThread`, nunca no main thread.
+
+#### Fase C — HUB: viewer de memória pessoal
+
+##### HUB
+
+- [ ] **Viewer de memória no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `GET /memory/entries` no AKASHA e equivalente no Mnemosyne). Adicionar seção expansível nos cards de AKASHA e Mnemosyne: lista de entradas da `personal_memory` em ordem cronológica reversa — data, type (badge colorido), conteúdo. Botão deletar por entrada. Carregado sob demanda ao expandir (não polling).
+
+#### Fase D — Pop-up de insight da AKASHA durante pesquisa
+
+##### AKASHA
+
+- [ ] **Rastreamento de session queries** (`routers/search.py` ou `services/session_insight.py`). Manter lista em RAM das últimas queries da sessão atual (sem persistir). A cada nova busca: se ≥4 queries na sessão E há overlap temático entre elas (tokens em comum), agendar geração de session insight via `asyncio.create_task()`.
+
+- [ ] **Geração e exibição do session insight** (`services/session_insight.py`; `templates/search.html` ou `static/js/`). Task P3: prompt com personality_prompt + queries recentes + trechos dos resultados + "o que você comentaria sobre o que a usuária está explorando? 1-2 frases na sua voz, sem explicar o conteúdo — apenas seu comentário pessoal". Resultado servido via `GET /insight/current` (polling leve, ~10s). Frontend: overlay não-bloqueante no canto inferior direito, dispensável com clique, nunca interrompe a busca.
+
+#### Fase E — Comunicação AKASHA↔Mnemosyne com pensamento próprio
+
+##### AKASHA
+
+- [ ] **Upgrade do notify_mnemosyne_insight** (`ecosystem_client.py`). Incluir campo `akasha_thought: str` no payload de notificação — a nota pessoal gerada na Fase B. Se nenhuma nota foi gerada para aquela descoberta, omitir o campo.
+
+##### Mnemosyne
+
+- [ ] **Receber e processar pensamento da AKASHA** (`core/insights.py`). Ao receber payload de insight, verificar `akasha_thought`. Se presente: exibir separado do dado bruto no painel de diálogo (label "AKASHA pensa:"), e injetar no prompt da Mnemosyne como contexto adicional — não como determinante, mas como perspectiva de igual que ela pode considerar ou discordar.
+
+---
+
+### LLMs padrão do HUB — todos os apps devem herdar os modelos configurados | 2026-05-17
+
+> Contexto: atualmente cada app que usa IA (KOSMOS, Mnemosyne, AKASHA) tem seus modelos configurados localmente. O HUB já define modelos recomendados via LOGOS. Os apps devem ler os modelos do ecosystem.json no startup e usar esses como padrão — sem persistir a escolha localmente entre sessões, para que o HUB seja sempre a fonte de verdade. A usuária pode alterar o modelo durante uma sessão do app, mas na próxima abertura o app volta ao padrão do HUB.
+
+#### KOSMOS
+
+- [ ] **Herdar modelos do HUB no startup** (`app/core/llm_manager.py` ou onde modelos são lidos). No startup, ler `ecosystem_client.get_active_profile()` para obter os modelos configurados (`llm_analysis`, `embed`, etc.). Usar esses valores como padrão da sessão. Qualquer alteração feita pelo usuário dentro do app vale apenas para aquela sessão — não persistir em arquivo local. Na próxima abertura, volta a ler do HUB.
+
+#### Mnemosyne
+
+- [ ] **Herdar modelos do HUB no startup** (`core/config.py` — `AppConfig`). Ao construir `AppConfig`, ler `ecosystem_client.get_active_profile()` e usar os modelos (`llm_rag`, `embed`) como padrão. Alterações feitas via UI de configuração da Mnemosyne durante a sessão são temporárias — não sobrescrever o ecosystem.json com a escolha local. Separar claramente "modelo da sessão" de "modelo configurado no HUB".
+
+#### AKASHA
+
+- [ ] **Herdar modelos do HUB no startup** (`config.py`; `services/knowledge_worker.py`; `routers/chat.py`). Os módulos que resolvem modelo hoje (`_get_url()`, `_DEFAULT_MODEL`) já usam `ecosystem_client.get_active_profile()` — verificar que todos os pontos de uso fazem isso consistentemente e que nenhum persiste override local. Confirmar que `llm_kosmos` (modelo de análise/query) e `llm_rag` (se definido) são os padrões.

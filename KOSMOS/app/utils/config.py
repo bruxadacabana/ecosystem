@@ -11,6 +11,10 @@ from app.utils.paths import Paths
 
 log = logging.getLogger("kosmos.config")
 
+# Chaves cujo valor é sempre determinado pelo LOGOS/HUB — nunca persistido entre sessões.
+# O usuário pode alterar durante a sessão, mas no próximo startup o HUB volta a ser a fonte.
+_RUNTIME_KEYS: frozenset[str] = frozenset({"ai_gen_model"})
+
 DEFAULTS: dict[str, Any] = {
     "theme":                    "day",
     "reader_font_size":         18,
@@ -66,7 +70,8 @@ class Config:
                     if not isinstance(loaded, dict):
                         raise ConfigError("settings.json não contém um objeto JSON válido.")
                     self._data = loaded
-                    self._user_set_keys = set(loaded.keys())
+                    # Runtime keys são sempre determinadas pelo LOGOS — excluir do user_set
+                    self._user_set_keys = set(loaded.keys()) - _RUNTIME_KEYS
                 except json.JSONDecodeError as exc:
                     log.warning("settings.json corrompido, usando padrões. Detalhe: %s", exc)
                     self._data = {}

@@ -290,10 +290,9 @@ def _migrate_legacy(data: dict) -> dict:
 
 
 def _apply_logos_recommendations(config: "AppConfig", saved_keys: "set[str]") -> "AppConfig":
-    """Aplica modelos recomendados pelo LOGOS para campos não configurados pelo usuário.
-
-    Nunca sobrescreve chaves presentes no arquivo salvo (override explícito do usuário).
-    `embed_model` vazio é sempre preenchido se o LOGOS tiver uma recomendação.
+    """Aplica modelos recomendados pelo LOGOS. O HUB é sempre a fonte de verdade para modelos:
+    llm_model e embed_model são sempre sobrescritos pelo perfil ativo, independente do que
+    estava salvo. O usuário pode alterar durante a sessão, mas o próximo startup volta ao padrão.
     Silencioso se o HUB/LOGOS não estiver rodando.
     """
     try:
@@ -304,14 +303,12 @@ def _apply_logos_recommendations(config: "AppConfig", saved_keys: "set[str]") ->
             _profile = _json.loads(_resp.read())
         _models = _profile.get("models", {})
         _changes: dict = {}
-        if "llm_model" not in saved_keys:
-            _llm = _models.get("llm_rag", "")  # campo renomeado de llm_mnemosyne
-            if _llm:
-                _changes["llm_model"] = _llm
-        if not config.embed_model:
-            _embed = _models.get("embed", "")
-            if _embed:
-                _changes["embed_model"] = _embed
+        _llm = _models.get("llm_rag", "")
+        if _llm:
+            _changes["llm_model"] = _llm
+        _embed = _models.get("embed", "")
+        if _embed:
+            _changes["embed_model"] = _embed
         # WorkPc: indexação desabilitada por padrão — usa índice bge-m3 sincronizado
         # pelo MainPc via Proton Drive (dims incompatíveis com potion-multilingual-128M)
         if "indexing_enabled" not in saved_keys:

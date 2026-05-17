@@ -100,6 +100,19 @@ O LLM no AKASHA age APENAS na camada de query (classificação de intenção, ex
 O vault do AETHER contém escrita criativa pessoal. Nunca incluir `aether_vault` como fonte de indexação em AKASHA (`local_search.py`), Mnemosyne (`watched_dir`), ou qualquer outro app.
 OGMA é o único com acesso autorizado aos dados do AETHER.
 
+### Isolamento da memória pessoal das IAs
+
+**A memória pessoal, pensamentos e vida interior de cada IA são privados — nunca indexados, nunca lidos por outras apps.**
+
+Arquitetura de duas camadas:
+- **Conhecimento** (impessoal): indexação, RAG, crawling, embeddings — sem personalidade, sem interpretação. Compartilhável via protocolo explícito (ex: `notify_mnemosyne_insight`).
+- **Personalidade + memória** (privada): o que cada IA pensa e lembra a partir do conhecimento. Armazenado em store isolado (tabela/arquivo separado), nunca exposto ao RAG de coleções, nunca lido por outra app.
+
+AKASHA: store em tabela `personal_memory` no SQLite próprio. Mnemosyne: store em `personal_memory.db` separado do Chroma/BM25.
+O prompt base de personalidade de cada IA fica em `ecosystem.json` (`akasha.personality_prompt`, `mnemosyne.personality_prompt`), editável via HUB.
+"Reiniciar" apaga a memória acumulada mas preserva o prompt base de personalidade.
+Comunicação entre AKASHA e Mnemosyne pode incluir pensamento próprio junto ao dado bruto — mas continua sendo troca explícita, não indexação cruzada.
+
 ### HUB / LOGOS
 
 **O HUB ESTÁ SEMPRE ABERTO.** É o centro do ecossistema: gerencia o funcionamento de todos os outros apps, é através dele que os demais programas são abertos e monitorados. Nunca listar "exige HUB rodando" como desvantagem — isso é uma premissa arquitetural, não uma restrição.
