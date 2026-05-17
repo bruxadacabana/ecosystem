@@ -5980,7 +5980,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   em vez de gerar texto não ancorado. Histórico da conversa mantido em memória por sessão
   (cookie), não persistido entre sessões (diferente da Mnemosyne cujos notebooks persistem).
 
-- [ ] **AKASHA-initiated dialogue** (`services/knowledge_worker.py` — função
+- [x] **AKASHA-initiated dialogue** (`services/knowledge_worker.py` — função
   `_check_discoveries()`; `ecosystem_client.py` — `notify_mnemosyne_insight()`).
   Ao final de cada lote processado pelo KnowledgeWorker, `_check_discoveries()` calcula
   sobreposição entre os tópicos novos em `page_knowledge` e o `topic_interest_profile`

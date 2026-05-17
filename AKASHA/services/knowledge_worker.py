@@ -49,6 +49,13 @@ class _KnowledgeTask:
 _queue: asyncio.Queue[_KnowledgeTask] = asyncio.Queue(maxsize=_QUEUE_MAX)
 _worker_started: bool = False
 
+# Cooldown de notificação de insights (evita spam)
+import time as _time
+_last_insight_at: float    = 0.0
+_INSIGHT_COOLDOWN_S: float = 3600.0   # 1 hora entre notificações
+_INSIGHT_TOPIC_THRESHOLD: int   = 3   # sobreposição mínima de tópicos
+_INSIGHT_SCORE_MIN: float       = 0.6 # score mínimo no topic_interest_profile
+
 # Resolução de URL do Ollama (LOGOS-first)
 try:
     from ecosystem_client import get_ollama_url as _get_ollama_url, get_active_profile as _get_profile
@@ -218,6 +225,57 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
             await _db.update_topic_score(t, delta=0.5)
 
     log.debug("knowledge_worker: processado %s (%d tópicos)", task.url, len(topics))
+
+    await _check_discoveries(
+        url=task.url,
+        title=task.title,
+        new_topics=[str(t).strip().lower() for t in topics if str(t).strip()],
+        summary=summary,
+    )
+
+
+async def _check_discoveries(
+    url: str,
+    title: str,
+    new_topics: list[str],
+    summary: str,
+) -> None:
+    """
+    Verifica se os tópicos recém-extraídos têm sobreposição relevante com o
+    perfil de interesse acumulado. Se sim e o cooldown passou, notifica a Mnemosyne.
+
+    Frequência máxima: 1 notificação por hora.
+    Threshold: ≥ _INSIGHT_TOPIC_THRESHOLD tópicos em common com score > _INSIGHT_SCORE_MIN.
+    """
+    global _last_insight_at
+
+    if not new_topics:
+        return
+    if _time.monotonic() - _last_insight_at < _INSIGHT_COOLDOWN_S:
+        return
+
+    import database as _db
+    top = await _db.get_top_topics(20)
+    high_score = {t for t, score in top if score > _INSIGHT_SCORE_MIN}
+    if not high_score:
+        return
+
+    overlap = [t for t in new_topics if t in high_score]
+    if len(overlap) < _INSIGHT_TOPIC_THRESHOLD:
+        return
+
+    _last_insight_at = _time.monotonic()
+
+    try:
+        from ecosystem_client import notify_mnemosyne_insight  # type: ignore
+        notify_mnemosyne_insight(
+            topics=overlap[:8],
+            summary=summary or f"Nova página relevante: {title}",
+            sources=[{"url": url, "title": title}],
+        )
+        log.info("knowledge_worker: insight notificado (%d tópicos comuns).", len(overlap))
+    except Exception as exc:
+        log.debug("knowledge_worker: notify_mnemosyne_insight falhou: %s", exc)
 
 
 async def _call_ollama_extract(title: str, content: str) -> dict | None:
