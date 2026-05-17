@@ -142,6 +142,25 @@ def expire_old() -> None:
         log.debug("insights: expire_old falhou: %s", exc)
 
 
+def check_reset_command() -> None:
+    """
+    Verifica se o HUB solicitou reset da memória pessoal via ecosystem.json.
+    Se mnemosyne.cmd_reset_memory == True, apaga toda a personal_memory e
+    escreve False de volta para confirmar execução.
+    Chamado na mesma periodicidade que poll_and_store (60s).
+    """
+    try:
+        from ecosystem_client import read_ecosystem, write_section  # type: ignore
+        eco = read_ecosystem()
+        if eco.get("mnemosyne", {}).get("cmd_reset_memory", False):
+            from .personal_memory import clear_all
+            clear_all()
+            write_section("mnemosyne", {"cmd_reset_memory": False})
+            log.info("insights: memória pessoal apagada via comando do HUB")
+    except Exception as exc:
+        log.debug("insights: check_reset_command falhou: %s", exc)
+
+
 def write_pending_count_to_ecosystem(count: int) -> None:
     """
     Escreve pending_insights no ecosystem.json para o HUB exibir o badge.

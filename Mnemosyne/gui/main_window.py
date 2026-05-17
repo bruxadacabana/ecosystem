@@ -1726,7 +1726,8 @@ class MainWindow(QMainWindow):
     def _poll_insights(self) -> None:
         """Lê insights pendentes do ecosystem.json e atualiza o badge."""
         try:
-            from core.insights import poll_and_store, write_pending_count_to_ecosystem
+            from core.insights import poll_and_store, write_pending_count_to_ecosystem, check_reset_command
+            check_reset_command()
             count = poll_and_store()
             write_pending_count_to_ecosystem(count)
             self._update_insights_badge(count)
