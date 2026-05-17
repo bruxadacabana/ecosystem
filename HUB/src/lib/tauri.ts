@@ -114,6 +114,9 @@ export const stopOllama = (): Promise<TauriResult<void>> =>
 export const launchApp = (exePath: string): Promise<TauriResult<void>> =>
   call<void>('launch_app', { exePath })
 
+export const launchAppWithArgs = (exePath: string, args: string[]): Promise<TauriResult<void>> =>
+  call<void>('launch_app_with_args', { exePath, args })
+
 export const isAppRunning = (exePath: string): Promise<TauriResult<boolean>> =>
   call<boolean>('is_app_running', { exePath })
 

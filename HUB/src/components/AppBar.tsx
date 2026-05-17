@@ -9,6 +9,8 @@ import { useEffect, useRef, useState } from 'react'
 import * as cmd from '../lib/tauri'
 import type { AppName } from '../types'
 
+const INSIGHTS_POLL_INTERVAL_MS = 60_000
+
 interface AppDef {
   name: AppName
   sigla: string
@@ -67,7 +69,9 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
   const [statuses, setStatuses] = useState<Partial<Record<AppName, boolean>>>({})
   const [pulsing, setPulsing] = useState<Partial<Record<AppName, boolean>>>({})
   const [akashaBaseUrl, setAkashaBaseUrl] = useState('')
+  const [pendingInsights, setPendingInsights] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const insightsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ----------------------------------------------------------
   //  Carrega exe_paths do ecosystem.json
@@ -89,6 +93,17 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
   }
 
   // ----------------------------------------------------------
+  //  Polling de insights pendentes (a cada 60s)
+  // ----------------------------------------------------------
+  function pollInsights() {
+    cmd.readEcosystemConfig().then(result => {
+      if (!result.ok) return
+      const count = result.data.mnemosyne?.pending_insights ?? 0
+      setPendingInsights(count)
+    })
+  }
+
+  // ----------------------------------------------------------
   //  Polling de status (a cada 5s)
   // ----------------------------------------------------------
   function pollStatuses(paths: Partial<Record<AppName, string>>) {
@@ -106,6 +121,11 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
 
   useEffect(() => {
     loadExePaths()
+    pollInsights()
+    insightsIntervalRef.current = setInterval(pollInsights, INSIGHTS_POLL_INTERVAL_MS)
+    return () => {
+      if (insightsIntervalRef.current) clearInterval(insightsIntervalRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -151,6 +171,18 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
     setTimeout(() => setPulsing(p => ({ ...p, [name]: false })), 700)
   }
 
+  async function handleInsightsBadgeClick() {
+    const path = exePaths['mnemosyne']
+    if (!path) return
+    if (!statuses['mnemosyne']) {
+      triggerPulse('mnemosyne')
+      await cmd.launchAppWithArgs(path, ['--open-insights'])
+      setTimeout(() => pollStatuses(exePaths), 1500)
+    }
+    // Se já está rodando: a Mnemosyne detecta pending_insights via seu próprio QTimer —
+    // não há IPC direto para forçar o painel. O badge permanece visível.
+  }
+
   async function stopAkasha() {
     const base = akashaBaseUrl || 'http://localhost:7071'
     try {
@@ -191,8 +223,10 @@ export function AppBar({ onConfigNeeded }: AppBarProps) {
             running={running}
             configured={configured}
             pulsing={isPulsing}
+            pendingInsights={app.name === 'mnemosyne' ? pendingInsights : 0}
             onClick={() => handleClick(app)}
             onStop={app.name === 'akasha' ? stopAkasha : undefined}
+            onInsightsBadge={app.name === 'mnemosyne' ? handleInsightsBadgeClick : undefined}
           />
         )
       })}
@@ -209,11 +243,13 @@ interface AppButtonProps {
   running: boolean
   configured: boolean
   pulsing: boolean
+  pendingInsights: number
   onClick: () => void
   onStop?: () => void
+  onInsightsBadge?: () => void
 }
 
-function AppButton({ app, running, configured, pulsing, onClick, onStop }: AppButtonProps) {
+function AppButton({ app, running, configured, pulsing, pendingInsights, onClick, onStop, onInsightsBadge }: AppButtonProps) {
   const [hovered, setHovered] = useState(false)
   const showStop = hovered && running && !!onStop
 
@@ -297,6 +333,36 @@ function AppButton({ app, running, configured, pulsing, onClick, onStop }: AppBu
           }}
         >
           ✕
+        </button>
+      )}
+
+      {/* Badge de insights AKASHA→Mnemosyne */}
+      {pendingInsights > 0 && !!onInsightsBadge && (
+        <button
+          title={`${pendingInsights} insight${pendingInsights > 1 ? 's' : ''} do AKASHA — clique para abrir`}
+          onClick={e => { e.stopPropagation(); onInsightsBadge() }}
+          style={{
+            position: 'absolute',
+            bottom: 2,
+            right: -4,
+            minWidth: 16,
+            height: 16,
+            borderRadius: 8,
+            background: '#1B3A4B',
+            border: '1px solid #4FC3F7',
+            color: '#4FC3F7',
+            fontSize: 8,
+            fontFamily: 'monospace',
+            lineHeight: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            padding: '0 3px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          ⬡ {pendingInsights}
         </button>
       )}
     </div>

@@ -4072,4 +4072,8 @@ def run() -> None:
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
+    if "--open-insights" in sys.argv:
+        # Abre o painel de insights assim que o event loop estiver pronto
+        from PySide6.QtCore import QTimer as _QTimer
+        _QTimer.singleShot(500, window._on_insights_badge_clicked)
     sys.exit(app.exec())

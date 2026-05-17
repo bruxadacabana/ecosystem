@@ -134,6 +134,23 @@ pub fn launch_app(exe_path: String) -> Result<(), AppError> {
         .map_err(|e| AppError::Io(format!("Não foi possível iniciar '{}': {}", exe_path, e)))
 }
 
+/// Inicia um app externo com argumentos adicionais de linha de comando.
+/// Usado para passar flags como `--open-insights` ao lançar a Mnemosyne.
+#[tauri::command]
+pub fn launch_app_with_args(exe_path: String, args: Vec<String>) -> Result<(), AppError> {
+    if exe_path.trim().is_empty() {
+        return Err(AppError::InvalidPath(
+            "Caminho do executável não configurado.".into(),
+        ));
+    }
+
+    let mut cmd = build_launch_command(&exe_path);
+    cmd.args(&args);
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| AppError::Io(format!("Não foi possível iniciar '{}': {}", exe_path, e)))
+}
+
 /// Constrói o Command correto dependendo do tipo de script e plataforma.
 /// - Windows + .sh → `bash <path>`
 /// - Windows + .bat/.cmd → `cmd /C <path>`  (deixa o cmd resolver o ambiente)

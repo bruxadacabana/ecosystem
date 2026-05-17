@@ -6007,7 +6007,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### HUB
 
-- [ ] **Badge de insights AKASHA→Mnemosyne no HUB** (`src/components/AppCard.tsx` ou
+- [x] **Badge de insights AKASHA→Mnemosyne no HUB** (`src/components/AppCard.tsx` ou
   equivalente na barra de apps; `src-tauri/src/commands/ecosystem.rs`). O HUB lê
   `ecosystem.json` periodicamente (a cada 60s via `setInterval` no frontend ou comando Tauri
   agendado). Quando `mnemosyne.pending_insights > 0`, exibe badge "⬡ N" sobre o ícone ou

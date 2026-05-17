@@ -65,6 +65,7 @@ pub fn run() {
             commands::launcher::launch_ollama,
             commands::launcher::stop_ollama,
             commands::launcher::launch_app,
+            commands::launcher::launch_app_with_args,
             commands::launcher::is_app_running,
             commands::launcher::get_all_app_statuses,
             commands::launcher::validate_exe_path,
