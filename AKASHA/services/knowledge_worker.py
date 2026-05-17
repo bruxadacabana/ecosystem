@@ -151,6 +151,14 @@ async def get_profile_context(n: int = 5) -> str:
     return f"Tópicos de interesse da usuária: {topics_str}."
 
 
+def get_status() -> dict:
+    """Estado atual do worker — para monitoramento externo (HUB)."""
+    return {
+        "knowledge_extraction": _queue.qsize(),
+        "worker_active": _worker_started,
+    }
+
+
 async def process_queue() -> None:
     """Loop background: processa uma task por vez com cooldown entre elas.
 

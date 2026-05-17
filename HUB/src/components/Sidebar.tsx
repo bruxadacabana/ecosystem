@@ -6,10 +6,11 @@
 import type { HubSection } from '../types'
 
 const SECTIONS: { id: HubSection; symbol: string; label: string }[] = [
-  { id: 'home',      symbol: '◎', label: 'Home'    },
-  { id: 'logos',     symbol: 'Λ', label: 'LOGOS'   },
-  { id: 'atividade', symbol: '≋', label: 'Feed'    },
-  { id: 'config',    symbol: '⚙', label: 'Config'  },
+  { id: 'home',          symbol: '◎', label: 'Home'      },
+  { id: 'logos',         symbol: 'Λ', label: 'LOGOS'     },
+  { id: 'atividade',     symbol: '≋', label: 'Feed'      },
+  { id: 'monitoramento', symbol: '⬡', label: 'Monitor'   },
+  { id: 'config',        symbol: '⚙', label: 'Config'    },
 ]
 
 interface SidebarProps {

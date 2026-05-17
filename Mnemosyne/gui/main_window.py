@@ -2128,6 +2128,13 @@ class MainWindow(QMainWindow):
         self.progress_file_label.setVisible(False)
         self.cancel_btn.setVisible(False)
         self.index_btn.setEnabled(True)
+        try:
+            from ecosystem_client import write_section as _ws  # type: ignore
+            _ws("mnemosyne", {"bg_processing": {
+                "indexing": False, "files_pending": 0, "current_file": None,
+            }})
+        except Exception:
+            pass
         self._log_event(message)
         if success:
             self._update_badge()
@@ -2182,6 +2189,15 @@ class MainWindow(QMainWindow):
             self.progress.setRange(0, total)
             self.progress.setValue(pos)
         self.statusBar().showMessage(f"Indexando {name}… ({pos}/{total})")
+        try:
+            from ecosystem_client import write_section as _ws  # type: ignore
+            _ws("mnemosyne", {"bg_processing": {
+                "indexing":      True,
+                "files_pending": max(0, total - pos),
+                "current_file":  name,
+            }})
+        except Exception:
+            pass
 
         # Atualizar indicadores de status (ignora emissões "Incorporando X")
         clean_name = name[len("Incorporando "):] if name.startswith("Incorporando ") else name
@@ -2222,6 +2238,15 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         self.progress_file_label.setVisible(False)
         self.cancel_btn.setVisible(False)
+        try:
+            from ecosystem_client import write_section as _ws  # type: ignore
+            _ws("mnemosyne", {"bg_processing": {
+                "indexing":      False,
+                "files_pending": 0,
+                "current_file":  None,
+            }})
+        except Exception:
+            pass
 
         if success:
             self._update_collection_index()

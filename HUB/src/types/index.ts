@@ -23,9 +23,9 @@ export interface EcosystemConfig {
   aether:    { vault_path: string; exe_path?: string }
   kosmos:    { data_path: string; archive_path: string; exe_path?: string }
   ogma:      { data_path: string; exe_path?: string }
-  mnemosyne: { watched_dir?: string; vault_dir?: string; chroma_dir?: string; extra_dirs?: string[]; index_paths?: string[]; exe_path?: string; pending_insights?: number }
+  mnemosyne: { watched_dir?: string; vault_dir?: string; chroma_dir?: string; extra_dirs?: string[]; index_paths?: string[]; exe_path?: string; pending_insights?: number; bg_processing?: { indexing?: boolean; files_pending?: number; current_file?: string | null } }
   hermes:    { exe_path?: string }
-  akasha:    { base_url?: string; exe_path?: string }
+  akasha:    { base_url?: string; exe_path?: string; bg_processing?: { knowledge_extraction?: number; worker_active?: boolean } }
   hub:       { data_path: string }
   logos?:    { vram_limit_pct?: number; cpu_threads?: number; flash_attention?: boolean }
 }
@@ -235,7 +235,7 @@ export interface ModelAssignment {
 
 export type HubView = 'home' | 'writing' | 'reading' | 'projects' | 'questions'
 
-export type HubSection = 'home' | 'logos' | 'atividade' | 'config'
+export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'config'
 
 export interface ModuleCard {
   id: HubView

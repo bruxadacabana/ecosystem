@@ -42,6 +42,34 @@ _log = logging.getLogger(__name__)
 # Background: monitoramento de URLs da biblioteca
 # ---------------------------------------------------------------------------
 
+async def _status_writer() -> None:
+    """Escreve status do processamento em background no ecosystem.json a cada 30s."""
+    try:
+        import sys as _sys
+        _root = str(Path(__file__).parent.parent)
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        from ecosystem_client import write_section as _ws  # noqa: F401
+    except ImportError:
+        return
+
+    from ecosystem_client import write_section
+    from services.knowledge_worker import get_status
+
+    while True:
+        try:
+            st = get_status()
+            write_section("akasha", {
+                "bg_processing": {
+                    "knowledge_extraction": st["knowledge_extraction"],
+                    "worker_active":        st["worker_active"],
+                }
+            })
+        except Exception as exc:
+            _log.debug("_status_writer: %s", exc)
+        await asyncio.sleep(30)
+
+
 async def _monitor_crawler() -> None:
     """Acorda a cada hora: crawla sites pendentes, limpa search_cache e reverifica Ollama."""
     while True:
@@ -100,6 +128,7 @@ async def lifespan(app: FastAPI):
     await init_vec_index()
     init_spell_checker()
     await check_ollama_available()
+    asyncio.get_running_loop().create_task(_status_writer())
     asyncio.get_running_loop().create_task(_monitor_crawler())
     asyncio.get_running_loop().create_task(_knowledge_process_queue())
     asyncio.get_running_loop().create_task(_persona_loop())

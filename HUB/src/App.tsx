@@ -23,6 +23,7 @@ import { ArticleView } from './views/ArticleView'
 import { ProjectsView } from './views/ProjectsView'
 import { PageView } from './views/PageView'
 import { QuestionsView } from './views/QuestionsView'
+import { MonitoramentoView } from './views/MonitoramentoView'
 import * as cmd from './lib/tauri'
 import type { HubSection, HubView, Project, Book, ChapterMeta, ArticleMeta, OgmaProject } from './types'
 
@@ -190,6 +191,8 @@ export default function App() {
         )
       case 'atividade':
         return <AtividadeView />
+      case 'monitoramento':
+        return <MonitoramentoView />
       case 'config':
         return (
           <SetupView
