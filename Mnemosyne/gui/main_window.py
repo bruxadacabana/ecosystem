@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QSizePolicy,
     QStyledItemDelegate,
     QMenu,
     QMessageBox,
@@ -91,7 +92,7 @@ class SetupDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Configuração do Mnemosyne")
-        self.setMinimumWidth(540)
+        self.setMinimumWidth(460)
 
         from PySide6.QtWidgets import QCheckBox, QScrollArea
         from core.collections import available_ecosystem_paths
@@ -449,7 +450,7 @@ class NewCollectionDialog(QDialog):
         super().__init__(parent)
         from PySide6.QtWidgets import QButtonGroup, QRadioButton
         self.setWindowTitle("Nova Coleção")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(380)
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -1236,26 +1237,26 @@ class MainWindow(QMainWindow):
         gl.addWidget(lbl_gs)
         self.guide_summary_text = QTextEdit()
         self.guide_summary_text.setReadOnly(True)
-        self.guide_summary_text.setMaximumHeight(100)
         self.guide_summary_text.setPlaceholderText("Indexe documentos para gerar o guide…")
-        gl.addWidget(self.guide_summary_text)
+        self.guide_summary_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        gl.addWidget(self.guide_summary_text, 2)
 
         lbl_gq = QLabel("Perguntas sugeridas (duplo clique para perguntar):")
         lbl_gq.setObjectName("sectionLabel")
         gl.addWidget(lbl_gq)
         self.guide_questions_list = QListWidget()
-        self.guide_questions_list.setMaximumHeight(120)
         self.guide_questions_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.guide_questions_list.itemDoubleClicked.connect(self._on_guide_question_clicked)
-        gl.addWidget(self.guide_questions_list)
+        self.guide_questions_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        gl.addWidget(self.guide_questions_list, 2)
 
         lbl_gg = QLabel("Pérolas escondidas:")
         lbl_gg.setObjectName("sectionLabel")
         gl.addWidget(lbl_gg)
         self.guide_gems_text = QTextEdit()
         self.guide_gems_text.setReadOnly(True)
-        self.guide_gems_text.setMaximumHeight(100)
-        gl.addWidget(self.guide_gems_text)
+        self.guide_gems_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        gl.addWidget(self.guide_gems_text, 1)
 
         guide_btns = QHBoxLayout()
         guide_btns.setSpacing(8)
@@ -1271,7 +1272,6 @@ class MainWindow(QMainWindow):
         guide_btns.addWidget(self.guide_save_studio_btn)
         guide_btns.addStretch()
         gl.addLayout(guide_btns)
-        gl.addStretch()
         self._analysis_stack.addWidget(guide_page)
 
         # ── Sub-página: Studio Panel ────────────────────────────────
