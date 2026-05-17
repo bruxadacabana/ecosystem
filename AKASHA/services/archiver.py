@@ -5,6 +5,7 @@ Fetch via httpx; extração delegada ao ecosystem_scraper (cascata compartilhada
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import sys
 import unicodedata
@@ -41,6 +42,8 @@ except ImportError:
 # Módulo compartilhado do ecossistema
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from ecosystem_scraper import extract as _cascade_extract, get_fetch_url as _get_fetch_url, get_fetch_url_fallbacks as _get_fetch_url_fallbacks
+
+log = logging.getLogger("akasha.archiver")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -267,15 +270,18 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         keywords:    list[str] = []
 
         if html:
-            metadata    = trafilatura.extract_metadata(html, default_url=url)
-            title       = (metadata and metadata.title)                        or title
-            author      = (metadata and metadata.author)                       or ""
-            language    = (metadata and getattr(metadata, "language", ""))     or ""
-            pub_date    = (metadata and getattr(metadata, "date", ""))         or ""
-            description = (metadata and getattr(metadata, "description", "")) or ""
-            sitename    = (metadata and getattr(metadata, "sitename", ""))     or ""
-            _raw_tags   = (metadata and getattr(metadata, "tags", ""))         or ""
-            keywords    = [k.strip() for k in _raw_tags.split(",") if k.strip()] if isinstance(_raw_tags, str) else list(_raw_tags)
+            try:
+                metadata    = trafilatura.extract_metadata(html, default_url=url)
+                title       = (metadata and metadata.title)                        or title
+                author      = (metadata and metadata.author)                       or ""
+                language    = (metadata and getattr(metadata, "language", ""))     or ""
+                pub_date    = (metadata and getattr(metadata, "date", ""))         or ""
+                description = (metadata and getattr(metadata, "description", "")) or ""
+                sitename    = (metadata and getattr(metadata, "sitename", ""))     or ""
+                _raw_tags   = (metadata and getattr(metadata, "tags", ""))         or ""
+                keywords    = [k.strip() for k in _raw_tags.split(",") if k.strip()] if isinstance(_raw_tags, str) else list(_raw_tags)
+            except Exception:
+                pass  # mantém valores padrão se trafilatura falhar nos metadados
             content     = _cascade_extract(html, url, output_format="markdown")
 
         # Fallback de idioma: langdetect quando trafilatura não detectou language
@@ -541,13 +547,19 @@ async def archive_url(
 
     # Persiste SimHash para deduplicação de arquivamentos futuros
     if simhash_val is not None:
-        import database as _db
-        await _db.store_archive_simhash(simhash_val, str(dest_path), url)
+        try:
+            import database as _db
+            await _db.store_archive_simhash(simhash_val, str(dest_path), url)
+        except Exception as exc:
+            log.warning("archive: store_archive_simhash falhou para %s: %s", url, exc)
 
     # Persiste DOI para deduplicação de artigos científicos
     if stored_doi:
-        import database as _db
-        await _db.store_archive_doi(stored_doi, stored_arxiv, str(dest_path), url)
+        try:
+            import database as _db
+            await _db.store_archive_doi(stored_doi, stored_arxiv, str(dest_path), url)
+        except Exception as exc:
+            log.warning("archive: store_archive_doi falhou para %s: %s", url, exc)
 
     # Persiste co-ocorrência de tags para sugestão futura
     if len(tags) >= 2:

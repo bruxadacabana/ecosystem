@@ -5,6 +5,7 @@ GET /search?q=&sources=all|web|local → renderiza search.html
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
@@ -40,6 +41,7 @@ from database import (
 )
 
 router = APIRouter()
+log = logging.getLogger("akasha.search")
 
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
@@ -98,19 +100,29 @@ async def archive(
         raise HTTPException(status_code=502, detail=f"Falha de rede: {exc}")
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as exc:
+        log.error("archive: exceção inesperada para %s: %s", url, exc)
+        raise HTTPException(status_code=500, detail=f"Erro inesperado: {exc}")
+
     import json as _json
-    await log_activity("archive", url, url, _json.dumps({"tags": tag_list}))
+    try:
+        await log_activity("archive", url, url, _json.dumps({"tags": tag_list}))
+    except Exception as exc:
+        log.warning("archive: log_activity falhou para %s: %s", url, exc)
 
     # Agenda extração de conhecimento em background (P3)
     from services.knowledge_worker import schedule_page as _schedule_page
     _schedule_page(url, page.title, page.content_md, "archived")
 
     # Se o domínio é favorito, indexa a página no crawl_fts em background
-    from urllib.parse import urlparse as _up
-    _domain = (_up(url).hostname or "").removeprefix("www.").lower()
-    fav_domains = await get_favorite_domains()
-    if _domain in fav_domains:
-        asyncio.create_task(index_visited_page(url, page.title, page.content_md))
+    try:
+        from urllib.parse import urlparse as _up
+        _domain = (_up(url).hostname or "").removeprefix("www.").lower()
+        fav_domains = await get_favorite_domains()
+        if _domain in fav_domains:
+            asyncio.create_task(index_visited_page(url, page.title, page.content_md))
+    except Exception as exc:
+        log.warning("archive: verificação de favoritos falhou para %s: %s", url, exc)
 
     return Response(status_code=200)
 
