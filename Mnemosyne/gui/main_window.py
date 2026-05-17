@@ -71,6 +71,8 @@ from gui.workers import (
     IndexFileWorker,
     IndexWorker,
     OllamaCheckWorker,
+    PersonalReflectionWorker,
+    PeriodicReflectionWorker,
     ReindexTranscriptsWorker,
     ResumeIndexWorker,
     KnowledgeGraphWorker,
@@ -656,6 +658,13 @@ class MainWindow(QMainWindow):
         self._insights_timer.timeout.connect(self._poll_insights)
         self._insights_badge_btn: QPushButton | None = None
 
+        self._reflection_timer = QTimer(self)
+        self._reflection_timer.setInterval(86_400_000)  # 24h
+        self._reflection_timer.timeout.connect(self._run_periodic_reflection)
+        self._post_nb_reflection_worker: PersonalReflectionWorker | None = None
+        self._periodic_reflection_worker: PeriodicReflectionWorker | None = None
+        self._reflection_memory_id: int = 0
+
         try:
             self.config = load_config()
         except ConfigError as exc:
@@ -1156,6 +1165,41 @@ class MainWindow(QMainWindow):
         self._chips_layout.setSpacing(8)
         self._chips_widget.setVisible(False)
         layout.addWidget(self._chips_widget)
+
+        # Notificação de reflexão pessoal pós-notebook
+        self._reflection_widget = QWidget()
+        self._reflection_widget.setObjectName("reflectionNotif")
+        _rlay = QVBoxLayout(self._reflection_widget)
+        _rlay.setContentsMargins(8, 6, 8, 6)
+        _rlay.setSpacing(4)
+        self._reflection_label = QLabel()
+        self._reflection_label.setObjectName("reflectionLabel")
+        self._reflection_label.setWordWrap(True)
+        _rlay.addWidget(self._reflection_label)
+        _rbrow = QHBoxLayout()
+        _rbrow.setSpacing(6)
+        self._reflection_confirm_btn = QPushButton("✓")
+        self._reflection_confirm_btn.setObjectName("reflectionConfirm")
+        self._reflection_confirm_btn.setToolTip("Confirmar — relevante")
+        self._reflection_confirm_btn.setFixedWidth(28)
+        self._reflection_confirm_btn.clicked.connect(self._on_reflection_confirmed)
+        _rbrow.addWidget(self._reflection_confirm_btn)
+        self._reflection_dismiss_btn = QPushButton("✗")
+        self._reflection_dismiss_btn.setObjectName("reflectionDismiss")
+        self._reflection_dismiss_btn.setToolTip("Descartar")
+        self._reflection_dismiss_btn.setFixedWidth(28)
+        self._reflection_dismiss_btn.clicked.connect(self._on_reflection_dismissed)
+        _rbrow.addWidget(self._reflection_dismiss_btn)
+        self._reflection_ask_btn = QPushButton("?")
+        self._reflection_ask_btn.setObjectName("reflectionAsk")
+        self._reflection_ask_btn.setToolTip("Perguntar sobre isso")
+        self._reflection_ask_btn.setFixedWidth(28)
+        self._reflection_ask_btn.clicked.connect(self._on_reflection_ask)
+        _rbrow.addWidget(self._reflection_ask_btn)
+        _rbrow.addStretch()
+        _rlay.addLayout(_rbrow)
+        self._reflection_widget.setVisible(False)
+        layout.addWidget(self._reflection_widget)
 
         # Viewer de citação — mostra o documento e destaca o trecho citado
         src_viewer_header = QHBoxLayout()
@@ -1762,6 +1806,62 @@ class MainWindow(QMainWindow):
         else:
             self._insights_badge_btn.setVisible(False)
 
+    # ── Reflexão pessoal ─────────────────────────────────────────────────────
+
+    def _check_reflection_cold_start(self) -> None:
+        """Cold start: roda reflexão periódica se personal_memory vazia mas há notebooks."""
+        if self._notebook_store is None:
+            return
+        if self._periodic_reflection_worker and self._periodic_reflection_worker.isRunning():
+            return
+        try:
+            from core.personal_memory import get_all
+            if get_all():
+                return  # já tem memórias — não é cold start
+            notebooks = self._notebook_store.list_all()
+            if not notebooks:
+                return
+            self._periodic_reflection_worker = PeriodicReflectionWorker(
+                self._notebook_store, self.config
+            )
+            self._periodic_reflection_worker.start()
+        except Exception:
+            pass
+
+    def _run_periodic_reflection(self) -> None:
+        """Disparado pelo timer de 24h."""
+        if self._notebook_store is None:
+            return
+        if self._periodic_reflection_worker and self._periodic_reflection_worker.isRunning():
+            return
+        self._periodic_reflection_worker = PeriodicReflectionWorker(
+            self._notebook_store, self.config
+        )
+        self._periodic_reflection_worker.start()
+
+    def _on_reflection_ready(self, memory_id: int, content: str) -> None:
+        """Exibe notificação de reflexão pós-notebook com ações inline."""
+        self._reflection_memory_id = memory_id
+        self._reflection_label.setText(f"⟳ {content}")
+        self._reflection_widget.setVisible(True)
+        QTimer.singleShot(60_000, lambda: self._reflection_widget.setVisible(False))
+
+    def _on_reflection_confirmed(self) -> None:
+        from core.personal_memory import set_feedback
+        set_feedback(self._reflection_memory_id, "confirmed")
+        self._reflection_widget.setVisible(False)
+
+    def _on_reflection_dismissed(self) -> None:
+        from core.personal_memory import set_feedback
+        set_feedback(self._reflection_memory_id, "dismissed")
+        self._reflection_widget.setVisible(False)
+
+    def _on_reflection_ask(self) -> None:
+        text = self._reflection_label.text().replace("⟳ ", "")
+        self.question_edit.setText(f"Sobre isso que você pensou: {text[:200]}")
+        self.question_edit.setFocus()
+        self._reflection_widget.setVisible(False)
+
     def _on_insights_badge_clicked(self) -> None:
         """Abre o painel de diálogo com o tópico do insight mais recente."""
         try:
@@ -1891,6 +1991,8 @@ class MainWindow(QMainWindow):
             pass
         self._insights_timer.start()
         self._poll_insights()
+        self._reflection_timer.start()
+        self._check_reflection_cold_start()
         self._populate_collection_combo()
         self.folder_label.setText(self.config.watched_dir or "Pasta não configurada")
         self.manage_path_label.setText(self.config.watched_dir or "—")
@@ -2713,6 +2815,27 @@ class MainWindow(QMainWindow):
                 self._notebooks_panel.refresh()
         except Exception:
             pass
+
+        # Reflexão pós-notebook: disparar se sessão tem ≥3 trocas
+        if (
+            self._chat_history
+            and len(self._chat_history) >= 6
+            and (
+                self._post_nb_reflection_worker is None
+                or not self._post_nb_reflection_worker.isRunning()
+            )
+        ):
+            studio_titles: list[str] = []
+            if self._studio_store:
+                try:
+                    studio_titles = [o.title for o in self._studio_store.load_all()[:5] if o.title]
+                except Exception:
+                    pass
+            self._post_nb_reflection_worker = PersonalReflectionWorker(
+                self._chat_history, studio_titles, self.config
+            )
+            self._post_nb_reflection_worker.reflection_ready.connect(self._on_reflection_ready)
+            self._post_nb_reflection_worker.start()
 
     def _load_notebook(self, notebook_id: str) -> None:
         """Carrega notebook: histórico, memória e tiles do Studio.

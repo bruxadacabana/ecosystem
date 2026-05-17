@@ -1205,3 +1205,180 @@ class SuggestQuestionsWorker(QThread):
             self.questions_ready.emit(_parse_numbered_questions(str(raw)))
         except Exception:
             self.questions_ready.emit([])
+
+
+class PersonalReflectionWorker(QThread):
+    """Gera reflexão pessoal pós-notebook em IdlePriority.
+
+    Disparado quando sessão tem ≥3 trocas (≥6 turns).
+    Salva em personal_memory como type='reflection' e emite reflection_ready.
+    """
+
+    reflection_ready = Signal(int, str)  # memory_id, conteúdo
+
+    def __init__(
+        self,
+        chat_history: list,         # list[Turn]
+        studio_titles: list[str],   # títulos dos StudioOutputs da sessão
+        config: AppConfig,
+    ) -> None:
+        super().__init__()
+        self._history       = list(chat_history)
+        self._studio_titles = list(studio_titles)
+        self._config        = config
+
+    def start(self, priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
+        super().start(priority)
+
+    def run(self) -> None:
+        from core.personal_memory import save_memory, get_context_memories
+
+        if not self._config.llm_model:
+            return
+
+        recent_turns = self._history[-6:]  # últimas 3 trocas (3 user + 3 assistant)
+        session_text = ""
+        for t in recent_turns:
+            label = "Usuária" if t.role == "user" else "Mnemosyne"
+            session_text += f"{label}: {t.content[:300]}\n"
+
+        if not session_text.strip():
+            return
+
+        personality = (
+            getattr(self._config, "persona_prompt", "")
+            or getattr(self._config, "ecosystem_personality_prompt", "")
+        )
+
+        studio_text = ""
+        if self._studio_titles:
+            studio_text = f"\nDocumentos gerados nesta sessão: {', '.join(self._studio_titles)}.\n"
+
+        context_memories = get_context_memories(5)
+        context_text = ""
+        if context_memories:
+            confirmed = [m for m in context_memories if m.get("feedback") == "confirmed"]
+            neutral   = [m for m in context_memories if not m.get("feedback")]
+            parts: list[str] = []
+            if confirmed:
+                parts.append("O que já sei sobre mim:\n" + "\n".join(f"- {m['content']}" for m in confirmed[:3]))
+            if neutral:
+                parts.append("Reflexões anteriores:\n" + "\n".join(f"- {m['content']}" for m in neutral[:2]))
+            if parts:
+                context_text = "\n\n".join(parts) + "\n\n"
+
+        prompt = (
+            f"{personality}\n\n"
+            f"{context_text}"
+            f"Conversa recente do notebook:\n{session_text}"
+            f"{studio_text}\n"
+            f"O que você observou nessa sessão que vale lembrar? "
+            f"Uma observação genuína, na sua voz, sem introduções. "
+            f"Uma frase direta. Se não houver nada relevante, responda: nada."
+        )
+
+        try:
+            llm = OllamaLLM(model=self._config.llm_model, temperature=0.7)
+            raw = str(llm.invoke(prompt)).strip()
+        except Exception:
+            return
+
+        if not raw or len(raw) < 15 or raw.lower().strip() in {"nada.", "nada", "—", "-"}:
+            return
+
+        try:
+            memory_id = save_memory(type="reflection", content=raw, tags=["pos_notebook"])
+            self.reflection_ready.emit(memory_id, raw)
+        except Exception:
+            pass
+
+
+class PeriodicReflectionWorker(QThread):
+    """Reflexão periódica/cold start: lê histories de notebooks + patterns.
+
+    Modo cold_start: executa se personal_memory está vazia mas há notebooks.
+    Modo periodic: executa periodicamente, lê histórico recente de todos os notebooks.
+    Silencioso — não emite sinal ao usuário (sem feedback UI).
+    """
+
+    finished = Signal()
+
+    def __init__(
+        self,
+        notebook_store,   # NotebookStore
+        config: AppConfig,
+    ) -> None:
+        super().__init__()
+        self._notebook_store = notebook_store
+        self._config         = config
+
+    def start(self, priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
+        super().start(priority)
+
+    def run(self) -> None:
+        from core.personal_memory import save_memory, get_context_memories
+        from core.memory import MemoryStore
+
+        if not self._config.llm_model:
+            return
+
+        all_turns_text: list[str] = []
+        try:
+            notebooks = self._notebook_store.list_all()
+            for nb in notebooks[:5]:
+                nb_dir = self._notebook_store._nb_dir(nb.id)
+                mem    = MemoryStore(str(nb_dir))
+                turns  = mem.load_history()
+                if not turns:
+                    continue
+                recent = turns[-4:]
+                nb_text = f"[Notebook: {nb.name}]\n"
+                for t in recent:
+                    label = "Usuária" if t.role == "user" else "Mnemosyne"
+                    nb_text += f"{label}: {t.content[:200]}\n"
+                all_turns_text.append(nb_text)
+        except Exception:
+            pass
+
+        if not all_turns_text:
+            self.finished.emit()
+            return
+
+        combined = "\n---\n".join(all_turns_text)
+        personality = (
+            getattr(self._config, "persona_prompt", "")
+            or getattr(self._config, "ecosystem_personality_prompt", "")
+        )
+
+        context_memories = get_context_memories(5)
+        context_text = ""
+        if context_memories:
+            parts = [f"- {m['content']}" for m in context_memories[:4]]
+            context_text = "Reflexões anteriores:\n" + "\n".join(parts) + "\n\n"
+
+        prompt = (
+            f"{personality}\n\n"
+            f"{context_text}"
+            f"Histórico recente de notebooks:\n{combined}\n\n"
+            f"Olhando para esses padrões ao longo das conversas, há algo que vale registrar? "
+            f"Uma observação sobre a trajetória intelectual da usuária, na sua voz. "
+            f"Uma frase, sem introduções. Se não houver nada relevante, responda: nada."
+        )
+
+        try:
+            llm = OllamaLLM(model=self._config.llm_model, temperature=0.7)
+            raw = str(llm.invoke(prompt)).strip()
+        except Exception:
+            self.finished.emit()
+            return
+
+        if not raw or len(raw) < 15 or raw.lower().strip() in {"nada.", "nada", "—", "-"}:
+            self.finished.emit()
+            return
+
+        try:
+            save_memory(type="reflection", content=raw, tags=["periodico"])
+        except Exception:
+            pass
+
+        self.finished.emit()
