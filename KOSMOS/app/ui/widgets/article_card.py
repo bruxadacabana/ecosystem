@@ -7,7 +7,7 @@ import re
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QFontMetrics
 from PyQt6.QtWidgets import (
     QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
 )
@@ -106,6 +106,10 @@ class ArticleCard(QWidget):
             title_font = QFont("Courier New")
         title_font.setPointSize(13)
         self._title_lbl.setFont(title_font)
+        # Fixar altura a 2 linhas para evitar reflow do layout quando
+        # update_title() é chamado pela tradução assíncrona de títulos.
+        _fm = QFontMetrics(title_font)
+        self._title_lbl.setMaximumHeight(_fm.lineSpacing() * 2 + 4)
         content.addWidget(self._title_lbl)
 
         # Metadados (fonte · autor · tempo) + badge de idioma
