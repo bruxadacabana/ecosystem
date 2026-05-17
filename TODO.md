@@ -4700,6 +4700,13 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### Mnemosyne — exibir pensamentos `<think>` no chat | 2026-05-17
+> Contexto: o AKASHA já diferencia pensamentos (bloco colapsável) e fala (resposta final) via máquina de estados no stream. O Mnemosyne usa `strip_think()` — remove as tags silenciosamente, o usuário nunca vê o raciocínio. E durante o stream os tokens `<think>` vazam diretamente para o `answer_text`, desaparecendo só no final.
+
+#### Mnemosyne
+- [x] **Filtro de pensamento no AskWorker** (`gui/workers.py`). Adicionar `thinking = Signal(str)`. Substituir o loop de stream raw pela mesma máquina de estados do AKASHA: buffer acumulador + flag `in_think`, emite `self.thinking` para conteúdo `<think>` e `self.token` apenas para resposta limpa. `full` acumula só conteúdo não-think — remover `strip_think(full)` no final.
+- [x] **Área colapsável de pensamento no chat** (`gui/main_window.py`). Em `_build_page_chat()`, adicionar `_think_container` (QWidget oculto) com toggle button "▾ pensando em voz alta" e `_think_text` (QTextEdit read-only, monospace, max 120px). Conectar `AskWorker.thinking` a `_on_think_token`. Mostrar container ao primeiro token de pensamento, auto-colapsar ao receber resposta final. Limpar ao iniciar nova pergunta.
+
 ### AKASHA — integração com LOGOS e ecosystem_client | 2026-05-15
 > Contexto: o AKASHA chama o Ollama diretamente, sem passar pelo LOGOS. Isso significa que
 > o classificador de intenção e o pin_model() ignoram coordenação de VRAM e prioridade com
@@ -6049,33 +6056,35 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ##### AKASHA
 
-- [ ] **Store de memória pessoal** (`services/personal_memory.py` novo; `database.py`). Criar tabela `personal_memory (id INTEGER PK, created_at TIMESTAMP, type TEXT, content TEXT, tags TEXT)` no banco SQLite existente. Tipos: `observation` (padrão da usuária), `connection` (link entre domínios), `surprise` (algo inesperado), `reflection` (pensamento amplo). Isolada — nunca exposta por API pública, nunca indexada no vectorstore. Módulo com: `save_memory(type, content, tags=[])`, `get_recent(n=10)`, `get_all()`, `clear_all()`. Conteúdo é texto livre na voz da AKASHA.
+- [x] **Store de memória pessoal** (`services/personal_memory.py` novo; `database.py`). Criar tabela `personal_memory (id INTEGER PK, created_at TIMESTAMP, type TEXT, content TEXT, tags TEXT)` no banco SQLite existente. Tipos: `observation` (padrão da usuária), `connection` (link entre domínios), `surprise` (algo inesperado), `reflection` (pensamento amplo). Isolada — nunca exposta por API pública, nunca indexada no vectorstore. Módulo com: `save_memory(type, content, tags=[])`, `get_recent(n=10)`, `get_all()`, `clear_all()`. Conteúdo é texto livre na voz da AKASHA.
 
-- [ ] **Prompt base de personalidade** (`config.py`). Adicionar campo `personality_prompt` ao ecosystem.json em `akasha.personality_prompt`. Valor padrão hardcoded: AKASHA como assistente de pesquisa científica — curiosa, expansiva, entusiasta com conexões inesperadas entre domínios distantes, comenta com voz própria o que encontra. Lido via `ecosystem_client.read_ecosystem()` no startup. Injetado no início de todos os prompts LLM do AKASHA (chat + reflexão). Fallback para o default se ausente.
+- [x] **Prompt base de personalidade** (`config.py`). Adicionar campo `personality_prompt` ao ecosystem.json em `akasha.personality_prompt`. Valor padrão hardcoded: AKASHA como assistente de pesquisa científica — curiosa, expansiva, entusiasta com conexões inesperadas entre domínios distantes, comenta com voz própria o que encontra. Lido via `ecosystem_client.read_ecosystem()` no startup. Injetado no início de todos os prompts LLM do AKASHA (chat + reflexão). Fallback para o default se ausente.
 
 ##### Mnemosyne
 
-- [ ] **Store de memória pessoal** (`core/personal_memory.py` novo). SQLite dedicado `personal_memory.db` em `{mnemosyne_dir}/` — separado do Chroma e BM25. Schema: `personal_memory (id, created_at, type TEXT, content TEXT, tags TEXT)`. Mesmos tipos do AKASHA. `save_memory()`, `get_recent()`, `get_all()`, `clear_all()`. Nunca indexado no RAG de coleções. Conteúdo na voz da Mnemosyne (anciã contemplativa, analítica).
+- [x] **Store de memória pessoal** (`core/personal_memory.py` novo). SQLite dedicado `personal_memory.db` em `{mnemosyne_dir}/` — separado do Chroma e BM25. Schema: `personal_memory (id, created_at, type TEXT, content TEXT, tags TEXT)`. Mesmos tipos do AKASHA. `save_memory()`, `get_recent()`, `get_all()`, `clear_all()`. Nunca indexado no RAG de coleções. Conteúdo na voz da Mnemosyne (anciã contemplativa, analítica).
 
-- [ ] **Prompt base de personalidade** (`core/config.py`). Campo `mnemosyne.personality_prompt` no ecosystem.json. Default: Mnemosyne como anciã sábia — contemplativa, analítica, vê padrões na trajetória intelectual da usuária ao longo do tempo, observa o que os documentos revelam além do óbvio. Injetado no início de todos os prompts RAG/chat. Fallback para default se ausente.
+- [x] **Prompt base de personalidade** (`core/config.py`). Campo `mnemosyne.personality_prompt` no ecosystem.json. Default: Mnemosyne como anciã sábia — contemplativa, analítica, vê padrões na trajetória intelectual da usuária ao longo do tempo, observa o que os documentos revelam além do óbvio. Injetado no início de todos os prompts RAG/chat. Fallback para default se ausente.
 
 ##### HUB
 
-- [ ] **Editor de personalidade + botão Reiniciar no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `DELETE /memory/clear` no AKASHA e equivalente no Mnemosyne). Expandir a aba Monitor: para cada app, adicionar campo de texto editável com o `personality_prompt` atual (lido do ecosystem.json), botão "Salvar" (escreve via `saveEcosystemConfig()`), e botão "Reiniciar memória" que chama o endpoint de limpeza do app. Reiniciar apaga apenas a memória acumulada — o `personality_prompt` não é afetado.
+- [x] **Editor de personalidade + botão Reiniciar no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `DELETE /memory/clear` no AKASHA e equivalente no Mnemosyne). Expandir a aba Monitor: para cada app, adicionar campo de texto editável com o `personality_prompt` atual (lido do ecosystem.json), botão "Salvar" (escreve via `saveEcosystemConfig()`), e botão "Reiniciar memória" que chama o endpoint de limpeza do app. Reiniciar apaga apenas a memória acumulada — o `personality_prompt` não é afetado.
 
 #### Fase B — Loops de reflexão (background P3, nunca bloqueante)
 
 ##### AKASHA
 
-- [ ] **Loop de reflexão periódico + cold start** (`services/reflection_loop.py` novo; `main.py` — registrar como task P3). A cada 24h, lê últimos registros de `page_knowledge` e `topic_interest_profile`. Monta prompt: personality_prompt + resumo dos dados recentes + "há algo que vale registrar na sua memória pessoal?". Chama Ollama (`temperature=0.7`). Se resposta não vazia e não genérica, salva em `personal_memory`. Cold start: se `personal_memory` está vazia mas `page_knowledge` tem registros, rodar reflexão inicial imediatamente no startup (sem esperar 24h). Fire-and-forget via `asyncio.create_task()`.
+- [x] **Loop de reflexão periódico + cold start** (`services/reflection_loop.py` novo; `main.py` — registrar como task P3). A cada 24h, lê últimos registros de `page_knowledge` e `topic_interest_profile`. Monta prompt: personality_prompt + resumo dos dados recentes + "há algo que vale registrar na sua memória pessoal?". Chama Ollama (`temperature=0.7`). Se resposta não vazia e não genérica, salva em `personal_memory`. Cold start: se `personal_memory` está vazia mas `page_knowledge` tem registros, rodar reflexão inicial imediatamente no startup (sem esperar 24h). Fire-and-forget via `asyncio.create_task()`.
 
-- [ ] **Reflexão orientada a evento** (`services/knowledge_worker.py` — ao final de `_extract_and_store()`). Após gerar nota de insight para a Mnemosyne, gerar também nota pessoal da AKASHA: prompt curto "você acabou de encontrar X — o que você pensa sobre isso, em uma frase, na sua voz?". Salvar em `personal_memory` com type=`connection` ou `surprise`. Fire-and-forget, sem bloquear o worker.
+- [x] **Reflexão orientada a evento** (`services/knowledge_worker.py` — ao final de `_extract_and_store()`). Após gerar nota de insight para a Mnemosyne, gerar também nota pessoal da AKASHA: prompt curto "você acabou de encontrar X — o que você pensa sobre isso, em uma frase, na sua voz?". Salvar em `personal_memory` com type=`connection` ou `surprise`. Fire-and-forget, sem bloquear o worker.
 
 ##### Mnemosyne
 
 - [ ] **Loop de reflexão pós-notebook** (`gui/workers.py` — novo `PersonalReflectionWorker`; `gui/main_window.py`). Ao fechar um notebook ou após sessão com ≥3 trocas, disparar `PersonalReflectionWorker` em `IdlePriority`. Lê histórico da sessão + StudioOutputs gerados. Prompt: personality_prompt + resumo da sessão + "o que você observou que vale lembrar?". Salva nota na voz da Mnemosyne em `personal_memory`.
 
 - [ ] **Reflexão periódica + cold start** (`gui/workers.py` — `PersonalReflectionWorker` ou novo worker). Na inicialização com `personal_memory` vazia mas coleções indexadas: rodar reflexão inicial em `IdlePriority` lendo amostra de chunks das coleções ativas. Depois: reflexão diária lendo StudioOutputs recentes e entradas recentes de `history.jsonl` dos notebooks. Toda operação em `QThread`, nunca no main thread.
+
+- [ ] **Sistema de feedback de insights** (AKASHA: `routers/chat.py` + `services/personal_memory.py`; Mnemosyne: `core/personal_memory.py` + UI de insights). Toda entrada de `personal_memory` compartilhada com a usuária (via badge ⬡ no AKASHA ou diálogo no Mnemosyne) deve ter 3 ações inline: **confirmar** (✓ — registra `feedback="confirmed"` na entrada), **rejeitar** (✗ — registra `feedback="dismissed"`), e **perguntar** (abre campo de texto livre que vai direto ao chat com a IA como mensagem, precedida pelo contexto do insight). A `personal_memory` ganha coluna `feedback TEXT DEFAULT NULL` para armazenar esse sinal. Os loops de reflexão da Fase B devem ler o feedback ao gerar novas reflexões — insights confirmados têm peso maior como contexto, dismisseds são excluídos do contexto de próximas reflexões.
 
 #### Fase C — HUB: viewer de memória pessoal
 

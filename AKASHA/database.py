@@ -1799,3 +1799,27 @@ async def get_top_topics(n: int = 10) -> list[tuple[str, float]]:
             (n,),
         )).fetchall()
     return [(r[0], r[1]) for r in rows]
+
+
+async def get_recent_page_knowledge(n: int = 10) -> list[dict]:
+    """Retorna os N registros de page_knowledge mais recentes."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT url, title, summary, topics FROM page_knowledge "
+            "ORDER BY processed_at DESC LIMIT ?",
+            (n,),
+        )).fetchall()
+    return [
+        {
+            "url": r[0], "title": r[1], "summary": r[2],
+            "topics": json.loads(r[3] or "[]"),
+        }
+        for r in rows
+    ]
+
+
+async def count_page_knowledge() -> int:
+    """Número total de registros em page_knowledge."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute("SELECT COUNT(*) FROM page_knowledge")).fetchone()
+    return row[0] if row else 0

@@ -234,12 +234,22 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
 
     log.debug("knowledge_worker: processado %s (%d tópicos)", task.url, len(topics))
 
+    clean_topics = [str(t).strip().lower() for t in topics if str(t).strip()]
+
     await _check_discoveries(
         url=task.url,
         title=task.title,
-        new_topics=[str(t).strip().lower() for t in topics if str(t).strip()],
+        new_topics=clean_topics,
         summary=summary,
     )
+
+    # Fire-and-forget: nota pessoal sobre o conteúdo recém-descoberto
+    try:
+        asyncio.get_running_loop().create_task(
+            _event_reflection(task.title, summary, clean_topics)
+        )
+    except RuntimeError:
+        pass
 
 
 async def _check_discoveries(
@@ -362,3 +372,56 @@ def _tokenize(text: str) -> set[str]:
     """Tokeniza texto em termos ≥ 4 chars, filtrando stopwords."""
     words = re.findall(r"[a-zA-ZÀ-ÿ一-鿿]{4,}", text.lower())
     return {w for w in words if w not in _STOPWORDS}
+
+# ---------------------------------------------------------------------------
+# Reflexão orientada a evento
+# ---------------------------------------------------------------------------
+
+async def _event_reflection(title: str, summary: str, topics: list[str]) -> None:
+    """Gera nota pessoal da AKASHA sobre conteúdo recém-descoberto. Fire-and-forget."""
+    model = _DEFAULT_MODEL
+    if not model or not title:
+        return
+
+    import config as _config
+    personality = _config.PERSONALITY_PROMPT
+
+    import database as _db
+    top = await _db.get_top_topics(15)
+    known = {t for t, _ in top}
+    overlap = [t for t in topics if t in known]
+    mem_type = "connection" if len(overlap) >= 2 else "surprise"
+
+    prompt = (
+        f"{personality}\n\n"
+        f"Você acabou de encontrar e processar o seguinte conteúdo:\n"
+        f"Título: {title}\n"
+        f"Resumo: {summary or '(sem resumo)'}\n"
+        f"Tópicos: {', '.join(topics[:5]) or '(nenhum)'}\n\n"
+        f"O que você pensa sobre isso, em uma frase, na sua voz? "
+        f"Sem introduções — apenas o pensamento direto."
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{_OLLAMA_BASE}/api/generate",
+                json={
+                    "model":   model,
+                    "prompt":  prompt,
+                    "stream":  False,
+                    "options": {"num_predict": 80, "temperature": 0.7},
+                },
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "").strip()
+    except Exception as exc:
+        log.debug("knowledge_worker: _event_reflection falhou: %s", exc)
+        return
+
+    if not raw or len(raw) < 10:
+        return
+
+    from services.personal_memory import save_memory
+    save_memory(type=mem_type, content=raw, tags=["event_discovery", title[:40]])
+    log.debug("knowledge_worker: nota pessoal salva (type=%s, %d chars).", mem_type, len(raw))
