@@ -143,6 +143,57 @@ async def _stream_chat(messages: list[dict], model: str) -> AsyncIterator[str]:
         log.debug("chat: stream Ollama falhou: %s", exc)
 
 
+def _trim_partial(text: str, tag: str) -> int:
+    """Índice até onde é seguro emitir sem cortar uma tag parcial no final do buffer."""
+    for i in range(len(tag) - 1, 0, -1):
+        if text.endswith(tag[:i]):
+            return max(0, len(text) - i)
+    return len(text)
+
+
+async def _filter_thinking(
+    source: AsyncIterator[str],
+) -> AsyncIterator[tuple[str, str]]:
+    """
+    Separa blocos <think>…</think> do stream principal.
+    Yielda (tipo, texto) onde tipo ∈ {'fragment', 'thinking'}.
+    Funciona mesmo quando as tags são partidas entre chunks.
+    """
+    buf = ""
+    in_think = False
+
+    async for chunk in source:
+        buf += chunk
+        while True:
+            if not in_think:
+                idx = buf.find("<think>")
+                if idx == -1:
+                    safe = _trim_partial(buf, "<think>")
+                    if safe:
+                        yield ("fragment", buf[:safe])
+                        buf = buf[safe:]
+                    break
+                if idx > 0:
+                    yield ("fragment", buf[:idx])
+                buf = buf[idx + len("<think>"):]
+                in_think = True
+            else:
+                idx = buf.find("</think>")
+                if idx == -1:
+                    safe = _trim_partial(buf, "</think>")
+                    if safe:
+                        yield ("thinking", buf[:safe])
+                        buf = buf[safe:]
+                    break
+                if idx > 0:
+                    yield ("thinking", buf[:idx])
+                buf = buf[idx + len("</think>"):]
+                in_think = False
+
+    if buf.strip():
+        yield ("thinking" if in_think else "fragment", buf)
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -220,9 +271,10 @@ async def chat_message(
     assistant_buf: list[str] = []
 
     async def _event_stream() -> AsyncIterator[bytes]:
-        async for text in _stream_chat(messages, model):
-            assistant_buf.append(text)
-            payload = json.dumps({"type": "fragment", "text": text}, ensure_ascii=False)
+        async for typ, text in _filter_thinking(_stream_chat(messages, model)):
+            if typ == "fragment":
+                assistant_buf.append(text)
+            payload = json.dumps({"type": typ, "text": text}, ensure_ascii=False)
             yield f"data: {payload}\n\n".encode()
 
         full_answer = "".join(assistant_buf)

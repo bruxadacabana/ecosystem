@@ -1853,7 +1853,6 @@ a:hover { opacity: 0.75; }
   border-radius: 6px;
   font-size:    0.88rem;
   line-height:  1.6;
-  white-space:  pre-wrap;
   word-break:   break-word;
 }
 .chat-bubble-user {
@@ -1916,4 +1915,48 @@ a:hover { opacity: 0.75; }
   font-size:   1rem;
   align-self:  flex-end;
   flex-shrink: 0;
+}
+
+/* Wrapper de mensagem AKASHA (thinking + bubble) */
+.chat-message-akasha {
+  display:        flex;
+  flex-direction: column;
+  gap:            0.3rem;
+  align-self:     flex-start;
+  max-width:      82%;
+}
+
+/* Bloco de raciocínio — expansível, estilo sutil */
+.chat-thinking {
+  font-family:  var(--font-mono);
+  font-size:    0.72rem;
+  color:        var(--ink-ghost);
+  border-left:  1px solid var(--rule);
+  padding-left: 0.6rem;
+}
+.chat-thinking-summary {
+  cursor:      pointer;
+  user-select: none;
+  list-style:  none;
+  opacity:     0.65;
+  letter-spacing: 0.04em;
+}
+.chat-thinking-summary::-webkit-details-marker { display: none; }
+.chat-thinking[open] .chat-thinking-summary { opacity: 0.9; }
+.chat-thinking-content {
+  margin-top:  0.3rem;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  opacity:     0.7;
+}
+
+/* Estilos inline para markdown básico dentro das bubbles */
+.chat-bubble strong { font-weight: 700; }
+.chat-bubble em     { font-style:  italic; }
+.chat-bubble code   {
+  font-family: var(--font-mono);
+  font-size:   0.82em;
+  background:  var(--paper-darker);
+  padding:     0.1em 0.3em;
+  border-radius: 3px;
 }
