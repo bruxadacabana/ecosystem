@@ -1,10 +1,10 @@
 /* ============================================================
    HUB — MonitoramentoView
-   Painel de processamento em background dos apps do ecossistema.
+   Painel de processamento em background + editor de personalidade.
    Lê campos bg_processing do ecosystem.json a cada 5s.
    ============================================================ */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as cmd from '../lib/tauri'
 import type { EcosystemConfig } from '../types'
 
@@ -67,6 +67,162 @@ function StatusRow({
   )
 }
 
+// ── Editor de personalidade ───────────────────────────────────
+
+function PersonalityEditor({
+  initialValue,
+  onSave,
+  onReset,
+  resetLabel,
+  resetMsg,
+}: {
+  initialValue: string
+  onSave:       (v: string) => Promise<void>
+  onReset:      () => Promise<void>
+  resetLabel:   string
+  resetMsg:     string
+}) {
+  const [value,   setValue]   = useState(initialValue)
+  const [saving,  setSaving]  = useState(false)
+  const [msg,     setMsg]     = useState<string | null>(null)
+  const [open,    setOpen]    = useState(false)
+
+  // Sincroniza se valor externo mudar (poll atualizou o ecosystem)
+  const prevInitial = useRef(initialValue)
+  useEffect(() => {
+    if (prevInitial.current !== initialValue && !open) {
+      setValue(initialValue)
+      prevInitial.current = initialValue
+    }
+  }, [initialValue, open])
+
+  async function handleSave() {
+    setSaving(true)
+    setMsg(null)
+    try {
+      await onSave(value)
+      setMsg('Salvo.')
+    } catch {
+      setMsg('Erro ao salvar.')
+    } finally {
+      setSaving(false)
+      setTimeout(() => setMsg(null), 2500)
+    }
+  }
+
+  async function handleReset() {
+    setSaving(true)
+    setMsg(null)
+    try {
+      await onReset()
+      setMsg(resetMsg)
+    } catch {
+      setMsg('Erro ao reiniciar.')
+    } finally {
+      setSaving(false)
+      setTimeout(() => setMsg(null), 3500)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      {/* Toggle */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background:    'none',
+          border:        'none',
+          cursor:        'pointer',
+          fontFamily:    'var(--font-mono)',
+          fontSize:      10,
+          color:         'var(--ink-ghost)',
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          padding:       '4px 0',
+          opacity:       0.7,
+        }}
+      >
+        {open ? '▾ personalidade' : '▸ personalidade'}
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 6 }}>
+          <textarea
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            rows={4}
+            style={{
+              width:       '100%',
+              boxSizing:   'border-box',
+              background:  'var(--paper-darker)',
+              border:      '1px solid var(--rule)',
+              borderRadius: 4,
+              color:       'var(--ink)',
+              fontFamily:  'var(--font-mono)',
+              fontSize:    11,
+              lineHeight:  1.55,
+              padding:     '6px 8px',
+              resize:      'vertical',
+              outline:     'none',
+            }}
+          />
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center' }}>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                fontFamily:    'var(--font-mono)',
+                fontSize:      11,
+                padding:       '4px 12px',
+                background:    'var(--accent)',
+                color:         'var(--paper-dark)',
+                border:        'none',
+                borderRadius:  4,
+                cursor:        saving ? 'default' : 'pointer',
+                opacity:       saving ? 0.6 : 1,
+              }}
+            >
+              Salvar
+            </button>
+
+            <button
+              onClick={handleReset}
+              disabled={saving}
+              style={{
+                fontFamily:    'var(--font-mono)',
+                fontSize:      11,
+                padding:       '4px 12px',
+                background:    'transparent',
+                color:         'var(--ink-ghost)',
+                border:        '1px solid var(--rule)',
+                borderRadius:  4,
+                cursor:        saving ? 'default' : 'pointer',
+                opacity:       saving ? 0.6 : 1,
+              }}
+            >
+              {resetLabel}
+            </button>
+
+            {msg && (
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize:   10,
+                  color:      'var(--ink-ghost)',
+                  opacity:    0.8,
+                }}
+              >
+                {msg}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Componente de card de app ────────────────────────────────
 
 function AppBlock({
@@ -90,12 +246,12 @@ function AppBlock({
     >
       <div
         style={{
-          display:        'flex',
-          alignItems:     'center',
-          gap:            8,
-          marginBottom:   12,
-          paddingBottom:  8,
-          borderBottom:   '1px solid var(--rule)',
+          display:       'flex',
+          alignItems:    'center',
+          gap:           8,
+          marginBottom:  12,
+          paddingBottom: 8,
+          borderBottom:  '1px solid var(--rule)',
         }}
       >
         <span
@@ -129,8 +285,8 @@ function AppBlock({
 // ── View principal ───────────────────────────────────────────
 
 export function MonitoramentoView() {
-  const [eco,       setEco]       = useState<EcosystemConfig | null>(null)
-  const [lastPoll,  setLastPoll]  = useState<Date | null>(null)
+  const [eco,      setEco]      = useState<EcosystemConfig | null>(null)
+  const [lastPoll, setLastPoll] = useState<Date | null>(null)
 
   async function poll() {
     const result = await cmd.readEcosystemConfig()
@@ -146,21 +302,42 @@ export function MonitoramentoView() {
     return () => clearInterval(id)
   }, [])
 
-  const akashaBg:    AkashaBg    | undefined = (eco?.akasha as any)?.bg_processing
-  const mnemosyne:   MnemosyneBg | undefined = (eco?.mnemosyne as any)?.bg_processing
+  const akashaBg:  AkashaBg    | undefined = (eco?.akasha  as any)?.bg_processing
+  const mnemosyne: MnemosyneBg | undefined = (eco?.mnemosyne as any)?.bg_processing
 
-  const akashaActive    = akashaBg?.worker_active   ?? false
-  const mnemosyneActive = mnemosyne?.indexing         ?? false
+  const akashaActive    = akashaBg?.worker_active ?? false
+  const mnemosyneActive = mnemosyne?.indexing      ?? false
+
+  const akashaBaseUrl        = eco?.akasha?.base_url    ?? 'http://localhost:7071'
+  const akashaPersonality    = eco?.akasha?.personality_prompt    ?? ''
+  const mnemosynePersonality = eco?.mnemosyne?.personality_prompt ?? ''
+
+  async function saveAkashaPersonality(v: string) {
+    await cmd.saveEcosystemConfig({ akasha: { personality_prompt: v } as any })
+  }
+
+  async function resetAkashaMemory() {
+    const res = await fetch(`${akashaBaseUrl}/memory/clear`, { method: 'DELETE' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  }
+
+  async function saveMnemosynePersonality(v: string) {
+    await cmd.saveEcosystemConfig({ mnemosyne: { personality_prompt: v } as any })
+  }
+
+  async function resetMnemosyneMemory() {
+    await cmd.saveEcosystemConfig({ mnemosyne: { cmd_reset_memory: true } as any })
+  }
 
   return (
     <div
       style={{
-        flex:           1,
-        display:        'flex',
-        flexDirection:  'column',
-        padding:        '24px 28px',
-        gap:            20,
-        overflowY:      'auto',
+        flex:          1,
+        display:       'flex',
+        flexDirection: 'column',
+        padding:       '24px 28px',
+        gap:           20,
+        overflowY:     'auto',
       }}
     >
       {/* Cabeçalho */}
@@ -215,6 +392,13 @@ export function MonitoramentoView() {
           value={akashaBg ? (akashaActive ? 'ativo' : 'parado') : '—'}
           dim={!akashaActive}
         />
+        <PersonalityEditor
+          initialValue={akashaPersonality}
+          onSave={saveAkashaPersonality}
+          onReset={resetAkashaMemory}
+          resetLabel="Reiniciar memória"
+          resetMsg="Memória apagada."
+        />
       </AppBlock>
 
       {/* Mnemosyne */}
@@ -249,6 +433,13 @@ export function MonitoramentoView() {
             }
           />
         )}
+        <PersonalityEditor
+          initialValue={mnemosynePersonality}
+          onSave={saveMnemosynePersonality}
+          onReset={resetMnemosyneMemory}
+          resetLabel="Reiniciar memória"
+          resetMsg="Solicitado — processará em até 60s."
+        />
       </AppBlock>
 
       {/* Nota de rodapé */}

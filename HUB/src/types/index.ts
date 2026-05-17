@@ -23,9 +23,9 @@ export interface EcosystemConfig {
   aether:    { vault_path: string; exe_path?: string }
   kosmos:    { data_path: string; archive_path: string; exe_path?: string }
   ogma:      { data_path: string; exe_path?: string }
-  mnemosyne: { watched_dir?: string; vault_dir?: string; chroma_dir?: string; extra_dirs?: string[]; index_paths?: string[]; exe_path?: string; pending_insights?: number; bg_processing?: { indexing?: boolean; files_pending?: number; current_file?: string | null } }
+  mnemosyne: { watched_dir?: string; vault_dir?: string; chroma_dir?: string; extra_dirs?: string[]; index_paths?: string[]; exe_path?: string; pending_insights?: number; bg_processing?: { indexing?: boolean; files_pending?: number; current_file?: string | null }; personality_prompt?: string; cmd_reset_memory?: boolean }
   hermes:    { exe_path?: string }
-  akasha:    { base_url?: string; exe_path?: string; bg_processing?: { knowledge_extraction?: number; worker_active?: boolean } }
+  akasha:    { base_url?: string; exe_path?: string; bg_processing?: { knowledge_extraction?: number; worker_active?: boolean }; personality_prompt?: string }
   hub:       { data_path: string }
   logos?:    { vram_limit_pct?: number; cpu_threads?: number; flash_attention?: boolean }
 }
