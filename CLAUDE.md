@@ -113,6 +113,17 @@ O prompt base de personalidade de cada IA fica em `ecosystem.json` (`akasha.pers
 "Reiniciar" apaga a memória acumulada mas preserva o prompt base de personalidade.
 Comunicação entre AKASHA e Mnemosyne pode incluir pensamento próprio junto ao dado bruto — mas continua sendo troca explícita, não indexação cruzada.
 
+### Sync do ecossistema — Syncthing
+
+O `sync_root` do ecossistema foi migrado do Proton Drive para o **Syncthing** em 2026-05-18. O Syncthing é iniciado manualmente e gerenciado via painel no HUB.
+
+**Caminho do `sync_root` por máquina:**
+- **CachyOS principal:** `/home/spacewitch/Documents/ecosystem_root`
+- **Windows 10:** (a definir após configuração do Syncthing)
+- **Laptop:** (a definir após configuração do Syncthing)
+
+O `sync_root` é lido em runtime por todos os apps via `ecosystem_client` — nunca hardcodar esse caminho. O HUB gerencia o `ecosystem.json` que contém esse campo. Caminho antigo (Proton Drive, inválido): `/mnt/archive1/proton/backup/ecosystem`.
+
 ### HUB / LOGOS
 
 **O HUB ESTÁ SEMPRE ABERTO.** É o centro do ecossistema: gerencia o funcionamento de todos os outros apps, é através dele que os demais programas são abertos e monitorados. Nunca listar "exige HUB rodando" como desvantagem — isso é uma premissa arquitetural, não uma restrição.
