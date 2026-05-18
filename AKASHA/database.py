@@ -1568,11 +1568,24 @@ async def record_search_query(query: str) -> None:
 
 
 async def get_query_suggestions(prefix: str, limit: int = 10) -> list[str]:
-    """Retorna queries do histórico que começam com prefix, ordenadas por frequência."""
+    """Retorna sugestões de autocomplete combinando histórico e corpus indexado.
+
+    Prioridade:
+      1. search_history   — queries já feitas, ordenadas por frequência
+      2. topic_interest_profile — tópicos aprendidos, ordenados por score
+      3. page_knowledge topics  — tópicos extraídos por página (json_each)
+      4. crawl_pages titles     — títulos de páginas indexadas
+
+    Deduplica (case-insensitive) e limita a `limit` itens totais.
+    """
     if not prefix.strip():
         return []
-    pattern = f"{prefix.strip()}%"
+    p_lower   = prefix.strip().lower()
+    pattern   = f"{prefix.strip()}%"
+    pat_lower = f"{p_lower}%"
+
     async with aiosqlite.connect(DB_PATH) as db:
+        # 1. Histórico
         rows = await (await db.execute(
             "SELECT query FROM search_history "
             "WHERE query LIKE ? "
@@ -1580,7 +1593,58 @@ async def get_query_suggestions(prefix: str, limit: int = 10) -> list[str]:
             "LIMIT ?",
             (pattern, limit),
         )).fetchall()
-    return [r[0] for r in rows]
+        seen: set[str] = {r[0].lower() for r in rows}
+        results: list[str] = [r[0] for r in rows]
+
+        # 2. Tópicos do perfil de interesse (por score)
+        if len(results) < limit:
+            cap = (limit - len(results)) * 2
+            rows2 = await (await db.execute(
+                "SELECT topic FROM topic_interest_profile "
+                "WHERE LOWER(topic) LIKE ? "
+                "ORDER BY score DESC LIMIT ?",
+                (pat_lower, cap),
+            )).fetchall()
+            for (t,) in rows2:
+                if len(results) >= limit:
+                    break
+                if t.lower() not in seen:
+                    seen.add(t.lower())
+                    results.append(t)
+
+        # 3. Tópicos de page_knowledge (json_each — requer SQLite ≥ 3.9)
+        if len(results) < limit:
+            cap = (limit - len(results)) * 2
+            try:
+                rows3 = await (await db.execute(
+                    "SELECT DISTINCT value FROM page_knowledge, "
+                    "json_each(page_knowledge.topics) "
+                    "WHERE LOWER(value) LIKE ? LIMIT ?",
+                    (pat_lower, cap),
+                )).fetchall()
+                for (t,) in rows3:
+                    if len(results) >= limit:
+                        break
+                    if t and t.lower() not in seen:
+                        seen.add(t.lower())
+                        results.append(t)
+            except Exception:
+                pass  # json_each indisponível nesta versão do SQLite
+
+        # 4. Títulos de crawl_pages
+        if len(results) < limit:
+            cap = limit - len(results)
+            rows4 = await (await db.execute(
+                "SELECT DISTINCT title FROM crawl_pages "
+                "WHERE title IS NOT NULL AND LOWER(title) LIKE ? LIMIT ?",
+                (pat_lower, cap),
+            )).fetchall()
+            for (t,) in rows4:
+                if t and t.lower() not in seen:
+                    seen.add(t.lower())
+                    results.append(t)
+
+    return results[:limit]
 
 
 # ---------------------------------------------------------------------------
