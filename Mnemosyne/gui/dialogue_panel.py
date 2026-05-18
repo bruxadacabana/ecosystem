@@ -127,6 +127,18 @@ class DialoguePanel(QWidget):
         self._input.setText(question)
         self._start()
 
+    def start_with_thought(self, question: str, akasha_thought: str) -> None:
+        """Inicia diálogo mostrando primeiro o pensamento pessoal do AKASHA."""
+        self._canvas.clear()
+        self._pending_sources.clear()
+        # Exibe o pensamento do AKASHA antes de iniciar o diálogo
+        self._append_prefix("⬡", _COLOR_AKASHA)
+        self._append_text(f" AKASHA pensa: ", _COLOR_AKASHA)
+        self._append_text(f"{akasha_thought}\n\n", _COLOR_SOURCES)
+        # Agora inicia o diálogo normalmente
+        self._input.setText(question)
+        self._start()
+
     # ------------------------------------------------------------------
     # Internos
     # ------------------------------------------------------------------

@@ -1907,7 +1907,11 @@ class MainWindow(QMainWindow):
             self._switch_analysis(2)  # pill ⬡ AKASHA
             if hasattr(self, "_dialogue_panel") and insight.get("topics"):
                 question = f"Encontrei algo relevante sobre: {', '.join(insight['topics'][:3])}. {insight.get('summary', '')}"
-                self._dialogue_panel.start_with_question(question.strip())
+                _thought = insight.get("akasha_thought")
+                if _thought:
+                    self._dialogue_panel.start_with_thought(question.strip(), _thought)
+                else:
+                    self._dialogue_panel.start_with_question(question.strip())
         except Exception:
             pass
 

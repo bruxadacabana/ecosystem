@@ -35,14 +35,20 @@ def _get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(_db_path()))
     conn.execute(
         """CREATE TABLE IF NOT EXISTS incoming_insights (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            topics      TEXT    NOT NULL DEFAULT '[]',
-            summary     TEXT    NOT NULL DEFAULT '',
-            sources     TEXT    NOT NULL DEFAULT '[]',
-            received_at TEXT    NOT NULL,
-            seen        INTEGER NOT NULL DEFAULT 0
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            topics         TEXT    NOT NULL DEFAULT '[]',
+            summary        TEXT    NOT NULL DEFAULT '',
+            sources        TEXT    NOT NULL DEFAULT '[]',
+            received_at    TEXT    NOT NULL,
+            seen           INTEGER NOT NULL DEFAULT 0,
+            akasha_thought TEXT             DEFAULT NULL
         )"""
     )
+    # Migration: adiciona coluna em DBs anteriores (ignorar se já existir)
+    try:
+        conn.execute("ALTER TABLE incoming_insights ADD COLUMN akasha_thought TEXT DEFAULT NULL")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 
@@ -64,14 +70,16 @@ def poll_and_store() -> int:
         if incoming:
             with _get_conn() as conn:
                 for item in incoming:
-                    topics      = json.dumps(item.get("topics", []), ensure_ascii=False)
-                    summary     = item.get("summary", "")
-                    sources     = json.dumps(item.get("sources", []), ensure_ascii=False)
-                    received_at = item.get("received_at", datetime.now(timezone.utc).isoformat())
+                    topics         = json.dumps(item.get("topics", []), ensure_ascii=False)
+                    summary        = item.get("summary", "")
+                    sources        = json.dumps(item.get("sources", []), ensure_ascii=False)
+                    received_at    = item.get("received_at", datetime.now(timezone.utc).isoformat())
+                    akasha_thought = item.get("akasha_thought") or None
                     conn.execute(
-                        "INSERT INTO incoming_insights (topics, summary, sources, received_at) "
-                        "VALUES (?, ?, ?, ?)",
-                        (topics, summary, sources, received_at),
+                        "INSERT INTO incoming_insights "
+                        "(topics, summary, sources, received_at, akasha_thought) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (topics, summary, sources, received_at, akasha_thought),
                     )
                 conn.commit()
             # Limpa incoming_insights do ecosystem.json após mover para SQLite
@@ -99,18 +107,19 @@ def get_latest_unseen() -> dict | None:
     try:
         with _get_conn() as conn:
             row = conn.execute(
-                "SELECT id, topics, summary, sources, received_at "
+                "SELECT id, topics, summary, sources, received_at, akasha_thought "
                 "FROM incoming_insights WHERE seen = 0 "
                 "ORDER BY id DESC LIMIT 1"
             ).fetchone()
         if not row:
             return None
         return {
-            "id":          row[0],
-            "topics":      json.loads(row[1]),
-            "summary":     row[2],
-            "sources":     json.loads(row[3]),
-            "received_at": row[4],
+            "id":             row[0],
+            "topics":         json.loads(row[1]),
+            "summary":        row[2],
+            "sources":        json.loads(row[3]),
+            "received_at":    row[4],
+            "akasha_thought": row[5],
         }
     except Exception:
         return None

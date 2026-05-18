@@ -457,7 +457,8 @@ def notify_mnemosyne_insight(
     topics: list[str],
     summary: str,
     sources: list[dict],
-    timeout: float = 5.0,  # mantido por compatibilidade de assinatura
+    timeout: float = 5.0,          # mantido por compatibilidade de assinatura
+    akasha_thought: str | None = None,
 ) -> None:
     """
     Deposita insight do AKASHA no ecosystem.json para ser lido pela Mnemosyne.
@@ -466,18 +467,25 @@ def notify_mnemosyne_insight(
     Escreve em mnemosyne.incoming_insights (lista FIFO de até 20 entradas).
     A Mnemosyne lê via QTimer a cada 60s, move para SQLite local e limpa o campo.
     Falha silenciosamente em caso de erro de IO.
+
+    akasha_thought: nota pessoal do AKASHA sobre a descoberta (opcional). Se
+    presente, a Mnemosyne a exibe separada como "AKASHA pensa:" no painel de
+    diálogo e a injeta como contexto no prompt.
     """
     import datetime as _dt
 
     try:
         data = read_ecosystem()
         incoming: list[dict] = data.get("mnemosyne", {}).get("incoming_insights", [])
-        incoming.append({
+        entry: dict = {
             "topics":      topics,
             "summary":     summary,
             "sources":     sources,
             "received_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-        })
+        }
+        if akasha_thought:
+            entry["akasha_thought"] = akasha_thought
+        incoming.append(entry)
         incoming = incoming[-20:]  # FIFO com limite de 20
         write_section("mnemosyne", {"incoming_insights": incoming})
     except Exception:

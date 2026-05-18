@@ -284,12 +284,23 @@ async def _check_discoveries(
 
     _last_insight_at = _time.monotonic()
 
+    # Pega a nota pessoal mais recente do AKASHA (se houver) para enviar à Mnemosyne
+    _akasha_thought: str | None = None
+    try:
+        from services.personal_memory import get_recent as _get_mem
+        recent_mems = await _get_mem(1)
+        if recent_mems:
+            _akasha_thought = recent_mems[0].get("content")
+    except Exception:
+        pass
+
     try:
         from ecosystem_client import notify_mnemosyne_insight  # type: ignore
         notify_mnemosyne_insight(
             topics=overlap[:8],
             summary=summary or f"Nova página relevante: {title}",
             sources=[{"url": url, "title": title}],
+            akasha_thought=_akasha_thought,
         )
         log.info("knowledge_worker: insight notificado (%d tópicos comuns).", len(overlap))
     except Exception as exc:

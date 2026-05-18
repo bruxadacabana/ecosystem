@@ -6126,11 +6126,11 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ##### AKASHA
 
-- [ ] **Upgrade do notify_mnemosyne_insight** (`ecosystem_client.py`). Incluir campo `akasha_thought: str` no payload de notificação — a nota pessoal gerada na Fase B. Se nenhuma nota foi gerada para aquela descoberta, omitir o campo.
+- [x] **Upgrade do notify_mnemosyne_insight** (`ecosystem_client.py`). Incluir campo `akasha_thought: str` no payload de notificação — a nota pessoal gerada na Fase B. Se nenhuma nota foi gerada para aquela descoberta, omitir o campo.
 
 ##### Mnemosyne
 
-- [ ] **Receber e processar pensamento da AKASHA** (`core/insights.py`). Ao receber payload de insight, verificar `akasha_thought`. Se presente: exibir separado do dado bruto no painel de diálogo (label "AKASHA pensa:"), e injetar no prompt da Mnemosyne como contexto adicional — não como determinante, mas como perspectiva de igual que ela pode considerar ou discordar.
+- [x] **Receber e processar pensamento da AKASHA** (`core/insights.py`). Ao receber payload de insight, verificar `akasha_thought`. Se presente: exibir separado do dado bruto no painel de diálogo (label "AKASHA pensa:"), e injetar no prompt da Mnemosyne como contexto adicional — não como determinante, mas como perspectiva de igual que ela pode considerar ou discordar.
 
 ---
 
