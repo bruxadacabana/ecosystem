@@ -132,10 +132,12 @@ async def apply_knowledge_boost(
     results: list,
     query: str,
 ) -> list:
-    """Boost de resultados cujos tópicos em page_knowledge se sobrepõem à query.
+    """Boost de resultados baseado em dois sinais:
 
-    Multiplica o score implícito reordenando: resultados com tópicos relevantes
-    sobem. Retorna a lista reordenada. Nunca remove resultados.
+    1. Sobreposição de tópicos da página com termos da query (relevância temática).
+    2. Score de interesse acumulado da usuária para os tópicos da página (personalização).
+
+    Retorna a lista reordenada. Nunca remove resultados.
     """
     if not results:
         return results
@@ -151,15 +153,32 @@ async def apply_knowledge_boost(
     if not topics_by_url:
         return results
 
+    # Perfil de interesse da usuária: {topic_lower: normalized_score}
+    interest_profile: dict[str, float] = {}
+    try:
+        raw_interests = await _db.get_top_topics(20)
+        if raw_interests:
+            max_score = max(s for _, s in raw_interests)
+            if max_score > 0:
+                interest_profile = {t.lower().strip(): s / max_score for t, s in raw_interests}
+    except Exception:
+        pass
+
     def _boost(r: object) -> float:
         topics = topics_by_url.get(r.url, [])  # type: ignore[union-attr]
         if not topics:
             return 0.0
-        topic_terms = set()
+        topic_terms: set[str] = set()
+        interest_bonus = 0.0
         for t in topics:
             topic_terms.update(_tokenize(t))
+            t_key = t.lower().strip()
+            if t_key in interest_profile:
+                interest_bonus += interest_profile[t_key] * 0.3
         overlap = len(query_terms & topic_terms)
-        return overlap * 0.15  # cada tópico sobreposto vale +0.15
+        # Sinal 1: sobreposição query-tópico (+0.15 por tópico)
+        # Sinal 2: interesse acumulado da usuária (máx +0.6 para não engolir a relevância)
+        return overlap * 0.15 + min(interest_bonus, 0.6)
 
     scored = [(i, _boost(r), r) for i, r in enumerate(results)]
     scored.sort(key=lambda x: (-x[1], x[0]))

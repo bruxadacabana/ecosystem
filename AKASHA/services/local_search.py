@@ -700,6 +700,33 @@ async def _get_expansion_model() -> str:
     return _expansion_model_cache
 
 
+async def _expand_query_entities(query: str) -> list[str]:
+    """Expansão de query baseada no entity_graph do AKASHA.
+
+    Para cada token da query, busca entidades co-ocorrentes confirmadas pela usuária
+    (peso >= 2.0 = apareceram juntas em >= 2 documentos aprovados).
+    Retorna até 5 entidades vizinhas — sem LLM, puro SQL.
+    """
+    tokens = [t.lower() for t in query.split() if len(t) >= 3]
+    if not tokens:
+        return []
+    try:
+        from database import get_entity_neighbors as _neighbors
+        seen: set[str] = set(tokens)
+        collected: list[tuple[str, float]] = []
+        for tok in tokens[:5]:  # limita a 5 tokens para não sobrecarregar
+            pairs = await _neighbors(tok, n=5)
+            for entity, weight in pairs:
+                if weight >= 2.0 and entity not in seen:
+                    seen.add(entity)
+                    collected.append((entity, weight))
+        # Ordena por peso e retorna os top-5
+        collected.sort(key=lambda x: -x[1])
+        return [e for e, _ in collected[:5]]
+    except Exception:
+        return []
+
+
 async def _anchor_to_corpus(terms: list[str]) -> list[str]:
     """Filtra termos que existem no índice FTS5.
 
@@ -1342,10 +1369,11 @@ async def search_local(
         expansion_log: lista mutável; se fornecida, os termos anchorados usados
             são adicionados via .extend() para o chamador exibir na UI.
     """
-    # Inicia expansão LLM em paralelo com as buscas principais
+    # Inicia expansão LLM e expansão por entidades em paralelo com as buscas principais
     expand_task = None
     if expand and FTS_EXPANSION_ENABLED and _ollama_available:
         expand_task = asyncio.ensure_future(_expand_query_llm(query))
+    entity_task = asyncio.ensure_future(_expand_query_entities(query))
 
     fts_results       = await _search_fts(query, max_results)
     chroma_results    = await _search_chroma(query)
@@ -1369,8 +1397,22 @@ async def search_local(
         except (asyncio.TimeoutError, Exception):
             expand_task.cancel()
 
+    # Expansão por entity_graph: termos co-ocorrentes confirmados pela usuária (sem LLM)
+    fts_entity: list[SearchResult] = []
+    try:
+        entity_terms = await asyncio.wait_for(entity_task, timeout=1.0)
+        if entity_terms:
+            anchored_ents = await _anchor_to_corpus(entity_terms)
+            if anchored_ents:
+                sanitized_ents = [_sanitize_fts(t) for t in anchored_ents if t]
+                ent_query = " OR ".join(t for t in sanitized_ents if t)
+                if ent_query:
+                    fts_entity = await _search_fts(ent_query, max_results // 2)
+    except (asyncio.TimeoutError, Exception):
+        entity_task.cancel()
+
     combined = _rrf(
-        [fts_results, fts_expanded, chroma_results, vec_results, highlight_results],
+        [fts_results, fts_expanded, fts_entity, chroma_results, vec_results, highlight_results],
         weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0),
     )[:max_results]
     try:

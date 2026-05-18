@@ -3732,6 +3732,24 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias baseadas em pesquisas para o ecossistema
 
+### Melhorias derivadas das pesquisas de Aprendizado de Preferência e RAPTOR/LightRAG | 2026-05-18
+> Contexto: o entity_graph e os topic_interest_scores estavam sendo preenchidos mas nunca usados
+> durante a busca. Implementadas duas melhorias de personalização no pipeline de busca local do AKASHA.
+
+#### AKASHA
+- [x] **Expansão de query por entity_graph** (`services/local_search.py`). Nova função
+  `_expand_query_entities(query)`: tokeniza a query, consulta `get_entity_neighbors()` para
+  cada token (limite: peso ≥ 2.0, top-5 vizinhos), ancora os termos no corpus e executa
+  terceiro FTS5 aditivo (`fts_entity`) combinado via RRF. Sem LLM — puro SQL. Quando a usuária
+  busca "Rust ownership" e o grafo confirma "borrow checker" + "memory safety" como co-entidades,
+  esses termos enriquecem automaticamente a busca.
+
+- [x] **Boost por topic_interest_profile no re-ranking** (`services/knowledge_worker.py`).
+  `apply_knowledge_boost()` agora usa dois sinais: (1) sobreposição tópico-query (+0.15/tópico,
+  existente) e (2) score de interesse acumulado da usuária para os tópicos da página
+  (normalizado, máx +0.6 para não engolir relevância). Resultados sobre tópicos com alto
+  interesse pessoal sobem no ranking mesmo quando a sobreposição literal com a query é baixa.
+
 ### Pesquisa: RAPTOR e LightRAG — Indexação Hierárquica e RAG por Grafos | 2026-05-18
 > Contexto: investigação sobre dois sistemas de RAG avançado que resolvem lacunas do RAG flat clássico.
 > RAPTOR resolve síntese multi-escala (+20pp no QuALITY benchmark); LightRAG resolve perguntas
