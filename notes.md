@@ -1,4 +1,6 @@
 ## Implementação atual:
+### Sincronização de dados do ecossistema via Syncthing + git offline | 2026-05-17
+
 ### Personalidade e memória própria — AKASHA e Mnemosyne | 2026-05-17
 
 
