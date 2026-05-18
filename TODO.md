@@ -4700,6 +4700,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### AKASHA — backfill de conhecimento para dados anteriores | 2026-05-18
+> Contexto: o knowledge_worker só processa páginas que chegam à fila durante a sessão atual. Arquivos já salvos em `ARCHIVE_PATH/Web/` e páginas em `crawl_pages` sem entrada em `page_knowledge` nunca foram processados — a AKASHA não tem visão do histórico completo, o que empobrece o perfil de interesse e a memória pessoal.
+
+#### AKASHA
+- [x] **Backfill de conhecimento no startup** (`services/knowledge_worker.py` + `main.py`). Função `backfill_knowledge(archive_path)` chamada no lifespan após o worker iniciar: (1) lê arquivos `.md` em `ARCHIVE_PATH` com frontmatter YAML, filtra os que já têm entrada em `page_knowledge`, enfileira os restantes; (2) lê `crawl_pages` sem entrada em `page_knowledge`, enfileira. Ritmo controlado: aguarda se fila > 50 itens para não sobrepor processamento novo.
+
 ### KOSMOS — análises falhando: VRAM timeout e numpy inhomogeneous | 2026-05-17
 > Contexto: dois bugs observados no terminal. (1) `_AnalyzeWorker` falha com "Timeout aguardando LOGOS — sistema sobrecarregado" porque o LOGOS rejeita P3 imediatamente se VRAM > 85%, o que ocorre durante o carregamento do modelo. O worker não tenta de novo — emite `failed` na primeira rejeição. (2) `ClusterWorker` falha com numpy "inhomogeneous shape" porque o banco tem embeddings de dimensões diferentes (gerados com modelos distintos ao longo do tempo) e `np.array(vecs)` exige comprimento uniforme.
 

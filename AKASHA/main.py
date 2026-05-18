@@ -33,7 +33,7 @@ from routers import chat as chat_router
 from routers import memory as memory_router
 from services.local_search import index_local_files, init_vec_index, init_spell_checker, check_ollama_available
 from services.crawler import crawl_pending_sites
-from services.knowledge_worker import process_queue as _knowledge_process_queue
+from services.knowledge_worker import process_queue as _knowledge_process_queue, backfill_knowledge as _backfill_knowledge
 from services.persona import load_persona as _load_persona, persona_rebuild_loop as _persona_loop
 from services.reflection_loop import run_reflection_loop as _reflection_loop
 
@@ -133,6 +133,7 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_status_writer())
     asyncio.get_running_loop().create_task(_monitor_crawler())
     asyncio.get_running_loop().create_task(_knowledge_process_queue())
+    asyncio.get_running_loop().create_task(_backfill_knowledge(config.ARCHIVE_PATH))
     asyncio.get_running_loop().create_task(_persona_loop())
     asyncio.get_running_loop().create_task(_reflection_loop())
     yield

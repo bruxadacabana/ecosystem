@@ -444,3 +444,96 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
 
     await save_memory(type=mem_type, content=raw, tags=["event_discovery", title[:40]])
     log.debug("knowledge_worker: nota pessoal salva (type=%s, %d chars).", mem_type, len(raw))
+
+
+# ---------------------------------------------------------------------------
+# Backfill — processa dados anteriores ao startup do worker
+# ---------------------------------------------------------------------------
+
+def _parse_archive_md(path: "Path") -> tuple[str, str, str]:
+    """Extrai (url, title, content) de um arquivo .md arquivado pelo AKASHA."""
+    from pathlib import Path as _Path
+    try:
+        text = _Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "", "", ""
+
+    if not text.startswith("---"):
+        return "", "", ""
+
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return "", "", ""
+
+    url = title = ""
+    for line in parts[1].splitlines():
+        low = line.strip()
+        if low.startswith("url:"):
+            url = low[4:].strip().strip("\"'")
+        elif low.startswith("title:"):
+            title = low[6:].strip().strip("\"'")
+
+    content = parts[2].strip()
+    return url, title, content[:800]
+
+
+async def backfill_knowledge(archive_path: "Path") -> None:
+    """Enfileira para extração páginas já existentes que ainda não foram processadas.
+
+    Chamada no lifespan após process_queue() ser iniciado. Aguarda 15s para dar
+    tempo ao worker e ao DB inicializarem. Ritmo controlado: pausa quando a fila
+    fica com > 50 itens para não bloquear processamento de novas páginas.
+    """
+    from pathlib import Path as _Path
+    import database as _db
+
+    await asyncio.sleep(15)   # aguarda worker + DB prontos
+
+    async def _wait_queue_drain(threshold: int = 50) -> None:
+        while _queue.qsize() > threshold:
+            await asyncio.sleep(5)
+
+    total_enqueued = 0
+
+    # ── 1. Arquivos arquivados manualmente (ARCHIVE_PATH/*.md) ──────────────
+    archive_dir = _Path(archive_path)
+    if archive_dir.is_dir():
+        md_files = sorted(archive_dir.glob("*.md"))
+        log.info("backfill: %d arquivo(s) em %s", len(md_files), archive_dir)
+        for md_file in md_files:
+            url, title, content = _parse_archive_md(md_file)
+            if not url or not content:
+                continue
+            existing = await _db.get_page_knowledge(url)
+            if existing:
+                continue
+            await _wait_queue_drain()
+            schedule_page(url, title or md_file.stem, content, "archived")
+            total_enqueued += 1
+
+    # ── 2. Páginas crawleadas da Biblioteca sem extração ───────────────────
+    try:
+        import aiosqlite
+        from config import DB_PATH
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                "SELECT cp.url, cp.title, cp.content_md "
+                "FROM crawl_pages cp "
+                "WHERE cp.url NOT IN (SELECT url FROM page_knowledge) "
+                "  AND cp.content_md != '' "
+                "ORDER BY cp.crawled_at DESC"
+            )).fetchall()
+        log.info("backfill: %d página(s) de crawl_pages sem extração", len(rows))
+        for url, title, content_md in rows:
+            if not url or not content_md:
+                continue
+            await _wait_queue_drain()
+            schedule_page(url, title or url, content_md[:800], "crawled")
+            total_enqueued += 1
+    except Exception as exc:
+        log.warning("backfill: erro ao ler crawl_pages: %s", exc)
+
+    if total_enqueued:
+        log.info("backfill: %d página(s) enfileiradas para extração de conhecimento.", total_enqueued)
+    else:
+        log.info("backfill: nenhuma página nova para processar.")
