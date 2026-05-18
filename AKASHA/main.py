@@ -16,6 +16,10 @@ from fastapi.templating import Jinja2Templates
 
 import config
 import database
+from services.log_buffer import attach_to_root as _attach_log_buffer
+
+_attach_log_buffer()  # buffer circular ativo desde o startup
+
 from routers import search as search_router
 from routers import system as system_router
 from routers import domains as domains_router

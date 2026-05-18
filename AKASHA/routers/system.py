@@ -15,7 +15,7 @@ from urllib.parse import unquote, urlparse
 
 import database
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
@@ -121,6 +121,16 @@ async def more_from_source(request: Request, url: str = Query(...)) -> HTMLRespo
     return _templates.TemplateResponse(
         request, "_more_from_source.html", {"results": results_mfs, "doc_url": url}
     )
+
+
+@router.get("/system/logs")
+async def get_logs(n: int = Query(default=100, ge=1, le=500)) -> JSONResponse:
+    """Retorna as últimas n linhas de log do AKASHA (buffer em memória).
+
+    Usado pelo HUB para exibir logs em tempo real no monitor.
+    """
+    from services.log_buffer import get_lines
+    return JSONResponse({"lines": get_lines(n)})
 
 
 async def _xdg_open(path: str) -> str | None:
