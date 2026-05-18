@@ -51,6 +51,9 @@ export const saveEcosystemConfig = (
 export const applySyncRoot = (syncRoot: string): Promise<TauriResult<void>> =>
   call<void>('apply_sync_root', { syncRoot })
 
+export const gitInitSyncRoot = (): Promise<TauriResult<void>> =>
+  call<void>('git_init_sync_root')
+
 // ----------------------------------------------------------
 //  Módulo Escrita — vault AETHER
 // ----------------------------------------------------------

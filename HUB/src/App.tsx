@@ -75,6 +75,16 @@ export default function App() {
     })
   }, [ready])
 
+  // Assim que sync_root está confirmado, garante que o repo git existe
+  useEffect(() => {
+    if (!syncRootReady) return
+    cmd.gitInitSyncRoot().then(result => {
+      if (!result.ok) {
+        console.warn('[HUB] git init sync_root falhou:', result.error.message)
+      }
+    })
+  }, [syncRootReady])
+
   // ── Navegação ──────────────────────────────────────────────
 
   function handleSection(s: HubSection) {

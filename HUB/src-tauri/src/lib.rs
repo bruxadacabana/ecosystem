@@ -50,6 +50,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            commands::git::git_init_sync_root,
             commands::config::read_ecosystem_config,
             commands::config::validate_path,
             commands::config::save_ecosystem_config,

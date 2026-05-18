@@ -1,4 +1,5 @@
 pub mod config;
+pub mod git;
 pub mod launcher;
 pub mod logos;
 pub mod notify;
