@@ -428,6 +428,30 @@ def load_config() -> AppConfig:
     return config
 
 
+def _export_collections_backup(config: "AppConfig") -> None:
+    """Escreve collections.json em {backup_dir}/mnemosyne/ (fire-and-forget)."""
+    try:
+        import sys as _sys
+        _root = str(Path(__file__).parent.parent.parent)
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        from ecosystem_client import get_backup_dir  # type: ignore
+        d = get_backup_dir()
+        if d is None:
+            return
+        backup_dir = d / "mnemosyne"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        tmp = backup_dir / "collections.json.tmp"
+        tmp.write_text(
+            json.dumps([c.to_dict() for c in config.collections],
+                       indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        os.replace(tmp, backup_dir / "collections.json")
+    except Exception:
+        pass
+
+
 def save_config(config: AppConfig) -> None:
     """Persiste AppConfig em settings.json (ou config.json legado)."""
     _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -459,3 +483,4 @@ def save_config(config: AppConfig) -> None:
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+    _export_collections_backup(config)
