@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import * as cmd from '../lib/tauri'
-import type { GitFileStatus, GitLogEntry } from '../types'
+import type { GitFileStatus, GitLogEntry, GitIncomingInfo } from '../types'
 
 // ----------------------------------------------------------
 //  Helpers de status
@@ -50,8 +50,11 @@ export function GitView() {
   const [diff,         setDiff]         = useState('')
   const [loadingDiff,  setLoadingDiff]  = useState(false)
   const [polling,      setPolling]      = useState(false)
+  // Item 7 — commits recebidos via Syncthing desde a última sessão
+  const [incoming,     setIncoming]     = useState<GitIncomingInfo | null>(null)
+  const [showIncoming, setShowIncoming] = useState(true)
 
-  // Detecção de commits externos: hash HEAD no mount
+  // Detecção de commits externos nesta sessão: hash HEAD no mount
   const startupHashRef  = useRef<string>('')
   const ownCommitsRef   = useRef<Set<string>>(new Set())
   const [externalCount, setExternalCount] = useState(0)
@@ -101,6 +104,13 @@ export function GitView() {
     refresh()
     const id = setInterval(() => refresh(true), 5_000)
     return () => clearInterval(id)
+  }, [])
+
+  // Item 7 — verifica commits recebidos via Syncthing (cross-session)
+  useEffect(() => {
+    cmd.gitCheckIncoming().then(res => {
+      if (res.ok && res.data.count > 0) setIncoming(res.data)
+    })
   }, [])
 
   // ----------------------------------------------------------
@@ -271,6 +281,28 @@ export function GitView() {
           </button>
         </div>
       </div>
+
+      {/* Item 7 — Banner de commits recebidos via Syncthing */}
+      {incoming && incoming.count > 0 && showIncoming && (
+        <div style={styles.incomingBanner}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' as const }}>
+            <span style={{ color: '#2C5F8A', fontWeight: 700 }}>
+              ⎇ {incoming.count} commit{incoming.count > 1 ? 's' : ''} recebido{incoming.count > 1 ? 's' : ''} desde a última sessão
+            </span>
+            <span style={{ color: 'var(--ink-ghost)', fontSize: 10 }}>
+              — {incoming.entries.slice(0, 3).map(e => e.hash).join(', ')}
+              {incoming.count > 3 ? ` + ${incoming.count - 3}…` : ''}
+            </span>
+          </div>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowIncoming(false)}
+            style={{ fontSize: 10, padding: '2px 6px', flexShrink: 0 }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Corpo: status (esquerda) + log (direita) */}
       <div style={styles.body}>
@@ -481,6 +513,17 @@ const styles = {
     fontFamily: 'var(--font-mono)',
     fontSize: 11,
     borderBottom: '1px solid var(--rule)',
+  },
+  incomingBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '8px 20px',
+    background: 'rgba(44,95,138,0.08)',
+    borderBottom: '1px solid rgba(44,95,138,0.25)',
+    flexShrink: 0,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 11,
   },
   externalNote: {
     fontFamily: 'var(--font-mono)',

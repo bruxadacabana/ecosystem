@@ -6,7 +6,7 @@
    (acessíveis via cards do dashboard ou seção LOGOS).
    ============================================================ */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ToastContainer, useToast } from './components/Toast'
 import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
@@ -84,6 +84,86 @@ export default function App() {
         console.warn('[HUB] git init sync_root falhou:', result.error.message)
       }
     })
+  }, [syncRootReady])
+
+  // Watcher: detecta fechamento de apps e faz auto-commit após 3 s
+  const prevRunningRef = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    if (!syncRootReady) return
+    const WATCHED = ['akasha', 'mnemosyne', 'kosmos', 'hermes'] as const
+
+    async function pollApps() {
+      const cfgRes = await cmd.readEcosystemConfig()
+      if (!cfgRes.ok) return
+      const eco = cfgRes.data as Record<string, Record<string, string>>
+
+      const exePaths: Record<string, string> = {}
+      for (const app of WATCHED) {
+        const p = eco[app]?.exe_path
+        if (p) exePaths[app] = p
+      }
+      if (Object.keys(exePaths).length === 0) return
+
+      const statusRes = await cmd.getAllAppStatuses(exePaths)
+      if (!statusRes.ok) return
+      const current = statusRes.data
+
+      const prev = prevRunningRef.current
+      if (prev !== null) {
+        for (const app of WATCHED) {
+          const wasRunning = prev.has(app)
+          const isRunning  = Boolean(current[app])
+          if (wasRunning && !isRunning) {
+            // App fechou — aguarda gravações finalizarem e commita
+            setTimeout(() => {
+              cmd.gitCommitForApp(app).then(res => {
+                if (res.ok && res.data !== 'nothing') {
+                  console.info(`[HUB] auto-commit: ${app} → ${res.data}`)
+                }
+              })
+            }, 3_000)
+          }
+        }
+      }
+
+      const next = new Set<string>()
+      for (const app of WATCHED) {
+        if (current[app]) next.add(app)
+      }
+      prevRunningRef.current = next
+    }
+
+    pollApps()
+    const id = setInterval(pollApps, 10_000)
+    return () => clearInterval(id)
+  }, [syncRootReady])
+
+  // Item 6 — Commit agendado a cada 60 min: commita apenas apps fechados
+  useEffect(() => {
+    if (!syncRootReady) return
+
+    async function scheduledCommit() {
+      const cfgRes = await cmd.readEcosystemConfig()
+      if (!cfgRes.ok) return
+      const eco      = cfgRes.data as Record<string, Record<string, string>>
+      const exePaths: Record<string, string> = {}
+      for (const app of ['akasha', 'mnemosyne', 'kosmos', 'hermes'] as const) {
+        const p = eco[app]?.exe_path
+        if (p) exePaths[app] = p
+      }
+      const statusRes  = await cmd.getAllAppStatuses(exePaths)
+      const runningApps = statusRes.ok
+        ? Object.entries(statusRes.data).filter(([, v]) => v).map(([k]) => k)
+        : []
+      cmd.gitScheduledCommit(runningApps).then(res => {
+        if (res.ok && res.data !== 'nothing') {
+          console.info(`[HUB] scheduled commit: ${res.data}`)
+        }
+      })
+    }
+
+    const id = setInterval(scheduledCommit, 60 * 60 * 1_000)
+    return () => clearInterval(id)
   }, [syncRootReady])
 
   // ── Navegação ──────────────────────────────────────────────

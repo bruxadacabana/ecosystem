@@ -55,6 +55,9 @@ pub fn run() {
             commands::git::git_commit,
             commands::git::git_log,
             commands::git::git_diff,
+            commands::git::git_commit_for_app,
+            commands::git::git_scheduled_commit,
+            commands::git::git_check_incoming,
             commands::config::read_ecosystem_config,
             commands::config::validate_path,
             commands::config::save_ecosystem_config,
@@ -138,6 +141,15 @@ pub fn run() {
                             });
                         }
                         "quit" => {
+                            // Commit do HUB + salva HEAD antes de sair
+                            let eco = ecosystem::read_json();
+                            if let Some(sr) = eco["sync_root"].as_str() {
+                                let root = std::path::Path::new(sr);
+                                if root.is_dir() {
+                                    let _ = commands::git::git_commit_hub_close(root);
+                                    let _ = commands::git::save_git_head(root);
+                                }
+                            }
                             app.exit(0);
                         }
                         _ => {}

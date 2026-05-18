@@ -251,6 +251,11 @@ export interface GitLogEntry {
   author:  string
 }
 
+export interface GitIncomingInfo {
+  count:   number
+  entries: GitLogEntry[]
+}
+
 // ----------------------------------------------------------
 //  HUB Navigation
 // ----------------------------------------------------------
