@@ -11,15 +11,48 @@ import json
 import sqlite3
 from pathlib import Path
 
+import shutil
+import sys
+
 from .config import get_app_data_dir
 
 _DB_PATH: Path | None = None
 
 
+def _resolve_pm_db() -> Path:
+    """Resolve caminho de personal_memory.db.
+
+    Prefere {ai_private_dir}/mnemosyne/personal_memory.db quando sync_root
+    configurado. Na primeira execução com novo caminho, copia o arquivo
+    antigo para o novo local e renomeia o original para .db.bak.
+    """
+    try:
+        _root = str(Path(__file__).parent.parent.parent)
+        if _root not in sys.path:
+            sys.path.insert(0, _root)
+        from ecosystem_client import get_ai_private_dir  # type: ignore
+        d = get_ai_private_dir()
+        if d is not None:
+            new_dir = d / "mnemosyne"
+            new_dir.mkdir(parents=True, exist_ok=True)
+            new_path = new_dir / "personal_memory.db"
+            old_path = get_app_data_dir() / "personal_memory.db"
+            if not new_path.exists() and old_path.exists():
+                shutil.copy2(str(old_path), str(new_path))
+                try:
+                    old_path.rename(old_path.with_suffix(".db.bak"))
+                except OSError:
+                    pass
+            return new_path
+    except Exception:
+        pass
+    return get_app_data_dir() / "personal_memory.db"
+
+
 def _get_db() -> Path:
     global _DB_PATH
     if _DB_PATH is None:
-        _DB_PATH = get_app_data_dir() / "personal_memory.db"
+        _DB_PATH = _resolve_pm_db()
     return _DB_PATH
 
 
