@@ -57,6 +57,76 @@ _domain_last_req: dict[str, float] = {}
 
 _crawl_paused: bool = False
 
+# ---------------------------------------------------------------------------
+# Jina Reader fallback — rate limiter global (20 RPM anônimo, usamos 15)
+# ---------------------------------------------------------------------------
+
+_JINA_MAX_RPM = 15       # margem de segurança abaixo do limite anônimo de 20 RPM
+_JINA_WINDOW  = 60.0     # janela deslizante em segundos
+_jina_lock = asyncio.Lock()
+_jina_timestamps: deque[float] = deque()
+
+# Marcadores que identificam challenge Cloudflare num body HTTP 200
+_CF_MARKERS = (
+    "_cf_chl_opt",
+    "Just a moment",
+    "cf-browser-verification",
+    "Checking if the site connection is secure",
+)
+
+
+def _is_cf_challenge(html: str) -> bool:
+    return any(m in html for m in _CF_MARKERS)
+
+
+async def _jina_rate_limit() -> None:
+    """Sliding-window: bloqueia até que haja espaço para mais um request ao Jina."""
+    async with _jina_lock:
+        now = time.monotonic()
+        while _jina_timestamps and now - _jina_timestamps[0] > _JINA_WINDOW:
+            _jina_timestamps.popleft()
+        if len(_jina_timestamps) >= _JINA_MAX_RPM:
+            wait = _JINA_WINDOW - (now - _jina_timestamps[0])
+            if wait > 0:
+                log.debug("jina: rate limit atingido — aguardando %.1fs", wait)
+                await asyncio.sleep(wait)
+            now = time.monotonic()
+            while _jina_timestamps and now - _jina_timestamps[0] > _JINA_WINDOW:
+                _jina_timestamps.popleft()
+        _jina_timestamps.append(time.monotonic())
+
+
+async def _fetch_via_jina(url: str) -> str:
+    """Busca `url` via r.jina.ai e retorna Markdown. Retorna '' se falhar.
+
+    Jina retorna HTTP 200 mesmo quando a página está bloqueada — verifica
+    conteúdo mínimo (< 50 palavras) como heurística de falha silenciosa.
+    """
+    await _jina_rate_limit()
+    jina_url = f"https://r.jina.ai/{url}"
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=20.0,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; AKASHA-crawler/1.0)",
+                "Accept": "text/plain",
+                "X-Return-Format": "markdown",
+            },
+        ) as client:
+            resp = await client.get(jina_url)
+    except Exception as exc:
+        log.debug("jina: erro de conexão em %s — %s", url, exc)
+        return ""
+    if resp.status_code != 200:
+        log.debug("jina: status %d para %s", resp.status_code, url)
+        return ""
+    text = resp.text.strip()
+    if len(text.split()) < 50:
+        log.debug("jina: conteúdo insuficiente para %s (%d palavras)", url, len(text.split()))
+        return ""
+    return text
+
 
 def is_crawl_paused() -> bool:
     return _crawl_paused
@@ -267,11 +337,13 @@ async def _fetch_page(
     *,
     etag: str = "",
     last_modified: str = "",
-) -> tuple[str, int, str, str]:
-    """Retorna (html, http_status, new_etag, new_last_modified).
+) -> tuple[str, int, str, str, bool]:
+    """Retorna (content, http_status, new_etag, new_last_modified, from_jina).
 
     Passa headers condicionais If-None-Match / If-Modified-Since quando disponíveis.
-    Status 304 → html vazio, sem re-parse necessário.
+    Status 304 → content vazio, sem re-parse necessário.
+    from_jina=True indica que content é Markdown pré-processado pelo Jina Reader
+    (não deve ser passado ao _cascade_extract).
     """
     domain = urlparse(url).netloc
     headers: dict[str, str] = {}
@@ -285,16 +357,22 @@ async def _fetch_page(
         dt = time.monotonic() - t0
         _update_throttle(domain, dt, resp.status_code)
         if resp.status_code == 304:
-            return "", 304, etag, last_modified
+            return "", 304, etag, last_modified, False
         if resp.status_code == 429:
             log.warning("429 Too Many Requests: %s", url)
-            return "", 429, "", ""
+            return "", 429, "", "", False
+        if resp.status_code == 403 or _is_cf_challenge(resp.text):
+            log.info("jina fallback: %s (status=%d)", url, resp.status_code)
+            jina_md = await _fetch_via_jina(url)
+            if jina_md:
+                return jina_md, 200, "", "", True
+            return "", resp.status_code, "", "", False
         new_etag = resp.headers.get("ETag", "")
         new_lm   = resp.headers.get("Last-Modified", "")
-        return resp.text, resp.status_code, new_etag, new_lm
+        return resp.text, resp.status_code, new_etag, new_lm, False
     except Exception as exc:
         log.debug("crawl fetch error %s: %s", url, exc)
-        return "", 0, "", ""
+        return "", 0, "", "", False
 
 
 async def _upsert_page(
@@ -395,7 +473,7 @@ async def crawl_site(site_id: int) -> int:
             stored_lm   = stored[1] if stored else ""
 
             async with sem:
-                html, status, new_etag, new_lm = await _fetch_page(
+                html, status, new_etag, new_lm, from_jina = await _fetch_page(
                     client, url, etag=stored_etag, last_modified=stored_lm
                 )
             if status == 304:
@@ -404,9 +482,21 @@ async def crawl_site(site_id: int) -> int:
             if not html:
                 return []
 
-            content_md = _cascade_extract(html, url, output_format="markdown")
-            t = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
-            title = t.group(1).strip() if t else urlparse(url).path or url
+            if from_jina:
+                # Jina já retorna Markdown; separar cabeçalho do conteúdo real.
+                # Formato: "Title: ...\nURL Source: ...\nMarkdown Content:\n..."
+                title = urlparse(url).path or url
+                for line in html.splitlines()[:6]:
+                    if line.startswith("Title:"):
+                        title = line[6:].strip()
+                        break
+                marker = "Markdown Content:\n"
+                idx = html.find(marker)
+                content_md = html[idx + len(marker):].strip() if idx != -1 else html
+            else:
+                content_md = _cascade_extract(html, url, output_format="markdown")
+                t = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
+                title = t.group(1).strip() if t else urlparse(url).path or url
             chash = _hash(content_md)
 
             # Deduplicação exata por hash SHA-256 cross-URL
