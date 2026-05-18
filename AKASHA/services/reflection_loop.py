@@ -67,6 +67,8 @@ async def _run_reflection() -> None:
     if not model:
         return
 
+    log.info("reflection_loop: iniciando reflexão periódica (modelo: %s)", model)
+
     import database as _db
     recent_pages   = await _db.get_recent_page_knowledge(10)
     top_topics     = await _db.get_top_topics(8)

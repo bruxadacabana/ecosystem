@@ -263,6 +263,7 @@ async def process_queue() -> None:
                 _queue.task_done()
                 continue
 
+            log.info("knowledge_worker: extraindo '%s' [%s]", task.title[:60] or task.url[:60], task.source_type)
             await _extract_and_store(task)
             _queue.task_done()
             await asyncio.sleep(_COOLDOWN_S)
@@ -270,7 +271,7 @@ async def process_queue() -> None:
         except asyncio.CancelledError:
             break
         except Exception as exc:
-            log.debug("knowledge_worker: erro inesperado: %s", exc)
+            log.warning("knowledge_worker: erro inesperado: %s", exc)
             await asyncio.sleep(_COOLDOWN_S)
 
 # ---------------------------------------------------------------------------
@@ -289,8 +290,8 @@ async def _process_dismissed_feedback(memory_id: int) -> None:
     for term in list(terms)[:8]:
         await _db.update_topic_score(term, delta=-0.5)
 
-    log.debug(
-        "knowledge_worker: penalidade aplicada em %d tópico(s) (dismissed memory_id=%d).",
+    log.info(
+        "knowledge_worker.dismissed: penalidade em %d tópico(s) (memória #%d).",
         len(terms), memory_id,
     )
 
@@ -351,9 +352,9 @@ async def _process_confirmed_feedback(memory_id: int) -> None:
         content=proposition,
         tags=["episodic_confirmed", f"source:{memory_id}"],
     )
-    log.debug(
-        "knowledge_worker: memória episódica salva (source memory_id=%d, %d chars).",
-        memory_id, len(proposition),
+    log.info(
+        "knowledge_worker.confirmed: memória episódica salva (fonte memória #%d).",
+        memory_id,
     )
 
 
@@ -386,7 +387,7 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
         if t and len(t) >= 3:
             await _db.update_topic_score(t, delta=0.5)
 
-    log.debug("knowledge_worker: processado %s (%d tópicos)", task.url, len(topics))
+    log.info("knowledge_worker: concluído '%s' — %d tópico(s), %d entidade(s)", task.title[:60] or task.url[:60], len(topics), len(entities))
 
     clean_topics = [str(t).strip().lower() for t in topics if str(t).strip()]
 
@@ -549,6 +550,8 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
     if not model or not title:
         return
 
+    log.info("knowledge_worker.reflection: gerando nota sobre '%s'", title[:60])
+
     import config as _config
     personality = _config.PERSONALITY_PROMPT
 
@@ -598,7 +601,7 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
         return
 
     await save_memory(type=mem_type, content=raw, tags=["event_discovery", title[:40]])
-    log.debug("knowledge_worker: nota pessoal salva (type=%s, %d chars).", mem_type, len(raw))
+    log.info("knowledge_worker.reflection: nota salva (type=%s) sobre '%s'", mem_type, title[:60])
 
 
 # ---------------------------------------------------------------------------

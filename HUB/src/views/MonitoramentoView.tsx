@@ -11,44 +11,58 @@ import type { EcosystemConfig, MemoryEntry } from '../types'
 // ── Faixa de logs em tempo real ────────────────────────────────
 
 function LogStrip({ lines }: { lines: string[] }) {
+  const [expanded, setExpanded] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
+
+  const visible = expanded ? lines.slice(-10) : lines.slice(-5)
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [lines])
+  }, [visible])
 
   return (
-    <div style={{
-      marginTop: 10,
-      background: 'var(--paper)',
-      border: '1px solid var(--rule)',
-      borderRadius: 4,
-      padding: '5px 8px',
-      maxHeight: 130,
-      overflowY: 'auto',
-    }}>
-      {lines.length === 0
-        ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', opacity: 0.5 }}>sem logs</span>
-        : lines.map((l, i) => {
-            const level = l.match(/\[(ERROR|WARNING|WARN)\]/) ? 'error'
-              : l.match(/\[(WARNING|WARN)\]/) ? 'warn' : 'normal'
-            return (
-              <div key={i} style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                lineHeight: 1.5,
-                color: level === 'error' ? '#c0392b'
-                  : level === 'warn' ? '#b8860b'
-                  : 'var(--ink-ghost)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }} title={l}>
-                {l}
-              </div>
-            )
-          })
-      }
-      <div ref={endRef} />
+    <div style={{ marginTop: 10 }}>
+      <div style={{
+        background: 'var(--paper)',
+        border: '1px solid var(--rule)',
+        borderRadius: 4,
+        padding: '5px 8px',
+      }}>
+        {visible.length === 0
+          ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', opacity: 0.5 }}>sem logs</span>
+          : visible.map((l, i) => {
+              const isError = /\[(ERROR)\]/.test(l)
+              const isWarn  = /\[(WARNING|WARN)\]/.test(l)
+              return (
+                <div key={i} style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  lineHeight: 1.5,
+                  color: isError ? '#c0392b' : isWarn ? '#b8860b' : 'var(--ink-ghost)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }} title={l}>
+                  {l}
+                </div>
+              )
+            })
+        }
+        <div ref={endRef} />
+      </div>
+      {lines.length > 5 && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontFamily: 'var(--font-mono)', fontSize: 9,
+            color: 'var(--ink-ghost)', opacity: 0.5,
+            padding: '2px 0', marginTop: 2,
+          }}
+        >
+          {expanded ? '▴ menos' : `▾ exibir mais (${Math.min(lines.length, 10)})`}
+        </button>
+      )}
     </div>
   )
 }
@@ -81,6 +95,21 @@ function useMnemosyneLogs() {
       const res = await cmd.readAppLog('mnemosyne', 10)
       if (running && res.ok) setLines(res.data)
       if (running) setTimeout(poll, 3000)
+    }
+    poll()
+    return () => { running = false }
+  }, [])
+  return lines
+}
+
+function useKosmosLogs() {
+  const [lines, setLines] = useState<string[]>([])
+  useEffect(() => {
+    let running = true
+    async function poll() {
+      const res = await cmd.readAppLog('kosmos', 10)
+      if (running && res.ok) setLines(res.data)
+      if (running) setTimeout(poll, 5000)
     }
     poll()
     return () => { running = false }
@@ -556,8 +585,9 @@ export function MonitoramentoView() {
     await cmd.saveEcosystemConfig({ mnemosyne: { cmd_reset_memory: true } as any })
   }
 
-  const akashaLogs   = useAkashaLogs(akashaBaseUrl, akashaActive)
+  const akashaLogs    = useAkashaLogs(akashaBaseUrl, akashaActive)
   const mnemosyneLogs = useMnemosyneLogs()
+  const kosmosLogs    = useKosmosLogs()
 
   // Porcentagem de artigos analisados
   const kosmosAnalyzedPct = kosmosStats?.available && kosmosStats.total
@@ -657,6 +687,7 @@ export function MonitoramentoView() {
             : '—'}
           dim={!kosmosBg || kosmosBg.pending === 0}
         />
+        <LogStrip lines={kosmosLogs} />
         {kosmosStats?.available && (
           <>
             <StatusRow

@@ -22,14 +22,21 @@ _INSIGHT_COOLDOWN_S:         float = 180.0   # 3 min entre insights na mesma ses
 _INSIGHT_MAX_AGE_S:          float = 1800.0  # insight expira após 30 min
 _GENERATE_TIMEOUT:           float = 25.0
 
-try:
-    from ecosystem_client import get_ollama_url as _get_ollama_url, get_active_profile as _get_profile
-    _OLLAMA_BASE: str = _get_ollama_url()
-    _p = _get_profile()
-    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
-except Exception:
-    _OLLAMA_BASE   = "http://localhost:11434"
-    _DEFAULT_MODEL = ""
+def _get_ollama_base() -> str:
+    try:
+        from ecosystem_client import get_ollama_url as _get_url
+        return _get_url()
+    except Exception:
+        return "http://localhost:11434"
+
+
+def _get_model() -> str:
+    try:
+        from ecosystem_client import get_active_profile as _get_profile
+        p = _get_profile()
+        return ((p or {}).get("models", {}) or {}).get("llm_query", "") if p else ""
+    except Exception:
+        return ""
 
 # {session_id: {"text": str, "memory_id": int | None, "generated_at": float}}
 _current:  dict[str, dict[str, Any]] = {}
@@ -45,7 +52,7 @@ def maybe_schedule(
     """Agenda geração de insight se condições forem satisfeitas. Fire-and-forget."""
     if len(queries) < SESSION_INSIGHT_MIN_QUERIES:
         return
-    if not _DEFAULT_MODEL:
+    if not _get_model():
         return
     now = time.time()
     if now - _last_gen.get(session_id, 0) < _INSIGHT_COOLDOWN_S:
@@ -78,9 +85,11 @@ async def _generate(session_id: str, queries: list[str], snippets: list[str]) ->
     """Gera insight em background (P3) e armazena para polling."""
     import config as _config
 
-    model = _DEFAULT_MODEL
+    model = _get_model()
     if not model:
         return
+
+    log.info("session_insight: gerando insight (sessão %.8s…, %d queries)", session_id, len(queries))
 
     personality  = _config.PERSONALITY_PROMPT
     queries_text = "\n".join(f"- {q}" for q in queries[-6:])
@@ -98,11 +107,11 @@ async def _generate(session_id: str, queries: list[str], snippets: list[str]) ->
     try:
         async with httpx.AsyncClient(timeout=_GENERATE_TIMEOUT) as client:
             resp = await client.post(
-                f"{_OLLAMA_BASE}/api/generate",
+                f"{_get_ollama_base()}/api/generate",
                 json={
-                    "model":   model,
-                    "prompt":  prompt,
-                    "stream":  False,
+                    "model":  model,
+                    "prompt": prompt,
+                    "stream": False,
                     "options": {"num_predict": 60, "temperature": 0.65},
                 },
             )
@@ -128,4 +137,4 @@ async def _generate(session_id: str, queries: list[str], snippets: list[str]) ->
         "memory_id":    memory_id,
         "generated_at": time.time(),
     }
-    log.debug("session_insight: insight gerado (memory_id=%s) para sessão %.8s…", memory_id, session_id)
+    log.info("session_insight: insight salvo (memória #%s) para sessão %.8s…", memory_id, session_id)

@@ -120,6 +120,8 @@ async def _rebuild_persona() -> None:
     if not model:
         return
 
+    log.info("persona: reconstruindo self_description com %d tópico(s) (modelo: %s)", len(topics), model)
+
     prompt = (
         f"Tópicos mais frequentes no índice deste sistema de busca: {topics_str}.\n\n"
         "Com base nesses tópicos, escreva em 2-3 frases curtas quem você é como sistema "
