@@ -171,6 +171,37 @@ def get_status() -> dict:
     }
 
 
+async def _apply_interest_seeds() -> None:
+    """Pré-popula topic_interest_profile com seeds definidas pela usuária no HUB.
+
+    Lê `akasha.interest_seeds` do ecosystem.json. Seeds recebem score inicial 1.0
+    apenas se o tópico ainda não existir no perfil — não sobrescreve histórico acumulado.
+    """
+    try:
+        from ecosystem_client import read_ecosystem  # type: ignore
+        eco = read_ecosystem()
+        seeds: list[str] = (eco.get("akasha") or {}).get("interest_seeds") or []
+    except Exception:
+        seeds = []
+
+    if not seeds:
+        return
+
+    import database as _db
+    count = 0
+    for seed in seeds:
+        topic = seed.strip().lower()
+        if not topic or len(topic) < 3:
+            continue
+        existing = await _db.get_topic_score(topic)
+        if existing is None:
+            await _db.update_topic_score(topic, delta=1.0)
+            count += 1
+
+    if count:
+        log.info("knowledge_worker: %d seed(s) de interesse pré-populados.", count)
+
+
 async def process_queue() -> None:
     """Loop background: processa uma task por vez com cooldown entre elas.
 
@@ -179,6 +210,7 @@ async def process_queue() -> None:
     """
     global _worker_started
     _worker_started = True
+    await _apply_interest_seeds()
     log.info("knowledge_worker: iniciado.")
     while True:
         try:

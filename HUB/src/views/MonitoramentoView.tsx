@@ -402,6 +402,73 @@ function PersonalityEditor({
   )
 }
 
+// ── Editor de seeds de interesse ─────────────────────────────
+
+function SeedsEditor({ initialValue, onSave }: { initialValue: string; onSave: (v: string) => Promise<void> }) {
+  const [value,  setValue]  = useState(initialValue)
+  const [saving, setSaving] = useState(false)
+  const [msg,    setMsg]    = useState<string | null>(null)
+  const [open,   setOpen]   = useState(false)
+
+  const prevInitial = useRef(initialValue)
+  useEffect(() => {
+    if (prevInitial.current !== initialValue && !open) {
+      setValue(initialValue)
+      prevInitial.current = initialValue
+    }
+  }, [initialValue, open])
+
+  async function handleSave() {
+    setSaving(true); setMsg(null)
+    try { await onSave(value); setMsg('Salvo.') }
+    catch { setMsg('Erro ao salvar.') }
+    finally { setSaving(false); setTimeout(() => setMsg(null), 2500) }
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)',
+          letterSpacing: '0.06em', textTransform: 'uppercase', padding: '4px 0', opacity: 0.7,
+        }}
+      >
+        {open ? '▾ temas de interesse' : '▸ temas de interesse'}
+      </button>
+      {open && (
+        <div style={{ marginTop: 6 }}>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', margin: '0 0 6px', opacity: 0.8 }}>
+            Tópicos separados por vírgula. Pré-populam o perfil de interesse antes de haver histórico suficiente.
+          </p>
+          <textarea
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            rows={3}
+            placeholder="machine learning, filosofia, rust, biologia..."
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              background: 'var(--paper-darker)', border: '1px solid var(--rule)',
+              borderRadius: 4, color: 'var(--ink)', fontFamily: 'var(--font-mono)',
+              fontSize: 11, lineHeight: 1.55, padding: '6px 8px',
+              resize: 'vertical', outline: 'none',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center' }}>
+            <button onClick={handleSave} disabled={saving} style={{
+              fontFamily: 'var(--font-mono)', fontSize: 11, padding: '4px 12px',
+              background: 'var(--accent)', color: 'var(--paper-dark)', border: 'none',
+              borderRadius: 4, cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1,
+            }}>Salvar</button>
+            {msg && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', opacity: 0.8 }}>{msg}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Card de app ───────────────────────────────────────────────
 
 function AppBlock({ sigla, active, children }: { sigla: string; active: boolean; children: React.ReactNode }) {
@@ -468,10 +535,15 @@ export function MonitoramentoView() {
 
   const akashaBaseUrl        = eco?.akasha?.base_url          ?? 'http://localhost:7071'
   const akashaPersonality    = eco?.akasha?.personality_prompt    ?? ''
+  const akashaSeeds          = (eco?.akasha?.interest_seeds ?? []).join(', ')
   const mnemosynePersonality = eco?.mnemosyne?.personality_prompt ?? ''
 
   async function saveAkashaPersonality(v: string) {
     await cmd.saveEcosystemConfig({ akasha: { personality_prompt: v } as any })
+  }
+  async function saveAkashaSeeds(v: string) {
+    const seeds = v.split(',').map(s => s.trim()).filter(Boolean)
+    await cmd.saveEcosystemConfig({ akasha: { interest_seeds: seeds } as any })
   }
   async function resetAkashaMemory() {
     const res = await fetch(`${akashaBaseUrl}/memory/clear`, { method: 'DELETE' })
@@ -533,6 +605,7 @@ export function MonitoramentoView() {
           resetLabel="Reiniciar memória"
           resetMsg="Memória apagada."
         />
+        <SeedsEditor initialValue={akashaSeeds} onSave={saveAkashaSeeds} />
         <MemoryViewer app="akasha" />
         <LogStrip lines={akashaLogs} />
       </AppBlock>

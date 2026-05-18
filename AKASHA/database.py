@@ -1861,6 +1861,15 @@ async def update_topic_score(topic: str, delta: float = 1.0) -> None:
         await db.commit()
 
 
+async def get_topic_score(topic: str) -> float | None:
+    """Retorna o score atual de um tópico, ou None se não existir."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT score FROM topic_interest_profile WHERE topic = ?", (topic,)
+        )).fetchone()
+    return row[0] if row else None
+
+
 async def get_top_topics(n: int = 10) -> list[tuple[str, float]]:
     """Retorna os N tópicos com maior score, em ordem decrescente."""
     async with aiosqlite.connect(DB_PATH) as db:
