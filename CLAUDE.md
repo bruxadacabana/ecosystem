@@ -126,6 +126,12 @@ O LOGOS gerencia prioridades de execução de IA:
 
 Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é** um app Android — a Fase 3 (Android APK) está suspensa para replanejamento.
 
+**O HUB é a fonte de verdade para todos os apps.** Nenhum app deve configurar ou consultar por conta própria:
+- **Caminhos de dados**: lidos via `ecosystem.json` / `ecosystem_client`
+- **Qual LLM usar**: campo específico por função no perfil ativo do LOGOS — `llm_rag` (Mnemosyne), `llm_analysis` (KOSMOS), `llm_query` (AKASHA), `embed` (embeddings). Lido via `ecosystem_client.get_active_profile()` em **runtime**, nunca em import time.
+- **Qual embedding usar**: idem — nunca hardcoded no app
+- **Toda comunicação com o Ollama**: deve passar pelo LOGOS (porta 7072) via `ecosystem_client.get_ollama_url()`. Fallback direto (11434) é automático quando LOGOS offline — nunca hardcodar a porta.
+
 ---
 
 ## Workflow
