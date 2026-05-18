@@ -76,6 +76,18 @@ async def _status_writer() -> None:
         await asyncio.sleep(30)
 
 
+async def _decay_scores_loop() -> None:
+    """Job diário: aplica fator de decaimento EMA nos tópicos inativos há > 7 dias."""
+    while True:
+        await asyncio.sleep(86400)
+        try:
+            affected = await database.decay_old_topic_scores()
+            if affected:
+                _log.info("decay_scores: %d tópico(s) com score decaído.", affected)
+        except Exception as exc:
+            _log.warning("decay_scores: erro: %s", exc)
+
+
 async def _monitor_crawler() -> None:
     """Acorda a cada hora: crawla sites pendentes, limpa search_cache e reverifica Ollama."""
     while True:
@@ -140,6 +152,7 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_backfill_knowledge(config.ARCHIVE_PATH))
     asyncio.get_running_loop().create_task(_persona_loop())
     asyncio.get_running_loop().create_task(_reflection_loop())
+    asyncio.get_running_loop().create_task(_decay_scores_loop())
     yield
     # Shutdown — nada a liberar por enquanto
 

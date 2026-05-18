@@ -246,6 +246,16 @@ CREATE TABLE IF NOT EXISTS topic_interest_profile (
 );
 """
 
+_CREATE_ENTITY_GRAPH = """
+CREATE TABLE IF NOT EXISTS entity_graph (
+    entity     TEXT NOT NULL,
+    co_entity  TEXT NOT NULL,
+    weight     REAL NOT NULL DEFAULT 1.0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (entity, co_entity)
+);
+"""
+
 _CREATE_TAG_PAIRS = """
 CREATE TABLE IF NOT EXISTS tag_pairs (
     tag_a TEXT NOT NULL,
@@ -401,6 +411,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_SEARCH_PROFILE)
         await db.execute(_CREATE_PAGE_KNOWLEDGE)
         await db.execute(_CREATE_TOPIC_INTEREST_PROFILE)
+        await db.execute(_CREATE_ENTITY_GRAPH)
         # personal_memory agora vive em arquivo separado — ver init_pm_db()
 
         # Verifica versão atual do schema
@@ -1907,6 +1918,61 @@ async def get_recent_search_history(n: int = 20) -> list[dict]:
             (n,),
         )).fetchall()
     return [{"query": r[0], "count": r[1], "last_used": r[2]} for r in rows]
+
+
+async def decay_old_topic_scores(days_inactive: int = 7, factor: float = 0.97) -> int:
+    """Aplica decaimento EMA em tópicos sem atualização há mais de `days_inactive` dias.
+
+    Remove tópicos com score abaixo de 0.01 para evitar acúmulo de ruído.
+    Retorna o número de tópicos afetados.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            f"""UPDATE topic_interest_profile
+                SET score = score * ?
+                WHERE last_updated < datetime('now', '-{days_inactive} days')""",
+            (factor,),
+        )
+        affected = cur.rowcount
+        await db.execute(
+            "DELETE FROM topic_interest_profile WHERE score < 0.01"
+        )
+        await db.commit()
+    return affected
+
+
+async def upsert_entity_pair(entity: str, co_entity: str, delta: float = 1.0) -> None:
+    """Incrementa peso do par (entity, co_entity) no entity_graph.
+
+    Garante ordem canônica (alfabética) para evitar pares duplicados invertidos.
+    """
+    a, b = sorted([entity.strip().lower(), co_entity.strip().lower()])
+    if a == b:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO entity_graph (entity, co_entity, weight, updated_at)
+               VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(entity, co_entity) DO UPDATE SET
+                   weight     = weight + ?,
+                   updated_at = datetime('now')""",
+            (a, b, delta, delta),
+        )
+        await db.commit()
+
+
+async def get_entity_neighbors(entity: str, n: int = 10) -> list[tuple[str, float]]:
+    """Retorna os N co-entes com maior peso associados a `entity`."""
+    e = entity.strip().lower()
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            """SELECT co_entity, weight FROM entity_graph WHERE entity = ?
+               UNION ALL
+               SELECT entity, weight FROM entity_graph WHERE co_entity = ?
+               ORDER BY weight DESC LIMIT ?""",
+            (e, e, n),
+        )).fetchall()
+    return [(r[0], r[1]) for r in rows]
 
 
 async def count_page_knowledge() -> int:
