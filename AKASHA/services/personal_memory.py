@@ -121,6 +121,23 @@ async def set_feedback(memory_id: int, feedback: str | None) -> None:
         await db.commit()
 
 
+async def get_by_id(memory_id: int) -> dict | None:
+    """Retorna uma entrada pelo id, ou None se não encontrada."""
+    async with aiosqlite.connect(_get_pm_db()) as db:
+        row = await (await db.execute(
+            "SELECT id, created_at, type, content, tags, feedback "
+            "FROM personal_memory WHERE id = ?",
+            (memory_id,),
+        )).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0], "created_at": row[1], "type": row[2],
+        "content": row[3], "tags": json.loads(row[4] or "[]"),
+        "feedback": row[5],
+    }
+
+
 async def get_context_memories(n: int = 8) -> list[dict]:
     """Memórias para uso como contexto em reflexões.
 

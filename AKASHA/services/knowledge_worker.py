@@ -163,6 +163,20 @@ async def get_profile_context(n: int = 5) -> str:
     return f"Tópicos de interesse da usuária: {topics_str}."
 
 
+def on_feedback_confirmed(memory_id: int) -> None:
+    """Fire-and-forget: cria memória episódica quando usuária confirma (✓) um insight.
+
+    Incrementa topic scores (delta=1.0) e salva proposição sintetizada em
+    personal_memory com tag 'episodic_confirmed'. Usa LLM se disponível;
+    cai para template determinístico caso contrário.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_process_confirmed_feedback(memory_id))
+    except RuntimeError:
+        pass
+
+
 def get_status() -> dict:
     """Estado atual do worker — para monitoramento externo (HUB)."""
     return {
@@ -249,6 +263,68 @@ async def process_queue() -> None:
 # ---------------------------------------------------------------------------
 # Extração via Ollama
 # ---------------------------------------------------------------------------
+
+async def _process_confirmed_feedback(memory_id: int) -> None:
+    """Gera entrada episódica a partir de um insight confirmado pela usuária."""
+    from services.personal_memory import get_by_id, save_memory as _save
+    entry = await get_by_id(memory_id)
+    if not entry:
+        return
+
+    content = entry["content"]
+
+    # Incrementa scores dos termos presentes no insight (sinal forte — confirmação explícita)
+    import database as _db
+    terms = _tokenize(content)
+    for term in list(terms)[:8]:
+        await _db.update_topic_score(term, delta=1.0)
+
+    # Tenta síntese via LLM; cai para template determinístico
+    model = _get_llm_query_model()
+    proposition: str | None = None
+
+    if model:
+        prompt = (
+            f"Sintetize em uma proposição factual o que esta observação revela "
+            f"sobre os interesses da usuária:\n\n\"{content}\"\n\n"
+            f"Apenas a proposição, sem introdução. Exemplo: "
+            f"\"Usuária tem interesse em aprendizado de máquina aplicado a texto.\""
+        )
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    f"{_get_ollama_base()}/api/generate",
+                    json={
+                        "model":   model,
+                        "prompt":  prompt,
+                        "stream":  False,
+                        "options": {"num_predict": 60, "temperature": 0.2},
+                    },
+                )
+                resp.raise_for_status()
+                raw = resp.json().get("response", "").strip()
+                if raw and len(raw) >= 10:
+                    proposition = raw
+        except Exception as exc:
+            log.debug("knowledge_worker: síntese episódica falhou: %s", exc)
+
+    if not proposition:
+        top_terms = sorted(terms, key=lambda t: len(t), reverse=True)[:5]
+        if top_terms:
+            proposition = f"Usuária confirmou interesse em: {', '.join(top_terms)}"
+        else:
+            proposition = f"Usuária confirmou: \"{content[:80]}\""
+
+    await _save(
+        type="observation",
+        content=proposition,
+        tags=["episodic_confirmed", f"source:{memory_id}"],
+    )
+    log.debug(
+        "knowledge_worker: memória episódica salva (source memory_id=%d, %d chars).",
+        memory_id, len(proposition),
+    )
+
 
 async def _extract_and_store(task: _KnowledgeTask) -> None:
     """Chama Ollama para extrair resumo + tópicos + entidades; armazena no DB."""

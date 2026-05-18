@@ -616,8 +616,10 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
     if body.feedback not in {"confirmed", "dismissed"}:
         raise HTTPException(status_code=422, detail="feedback deve ser 'confirmed' ou 'dismissed'")
     await _set_feedback(body.memory_id, body.feedback)
-    # Se dispensado, remove do estado da sessão para esconder o overlay
-    if body.feedback == "dismissed":
+    if body.feedback == "confirmed":
+        from services.knowledge_worker import on_feedback_confirmed as _on_confirmed
+        _on_confirmed(body.memory_id)
+    elif body.feedback == "dismissed":
         session_id = request.cookies.get("akasha_session", "")
         if session_id:
             _si.dismiss(session_id)

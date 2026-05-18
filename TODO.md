@@ -3738,7 +3738,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > ser corrigidas sem fine-tuning e sem GPU dedicada.
 
 #### AKASHA
-- [ ] **Memórias episódicas estruturadas para feedback confirmado** (`services/personal_memory.py`,
+- [x] **Memórias episódicas estruturadas para feedback confirmado** (`services/personal_memory.py`,
   `services/knowledge_worker.py`). Quando a usuária confirma (✓) uma nota da AKASHA, além de
   incrementar o score do tópico, salvar uma entrada episódica em linguagem natural no
   `personal_memory`: a proposição sintetizada + tópicos associados + timestamp. No MainPc,
