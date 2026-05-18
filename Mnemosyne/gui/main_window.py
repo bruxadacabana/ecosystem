@@ -42,6 +42,33 @@ from PySide6.QtWidgets import (
 )
 
 from core.config import AppConfig, DEFAULT_PERSONA_PROMPT, get_app_data_dir, load_config, save_config
+
+
+def _resolve_notebooks_base() -> Path:
+    """Resolve diretório base para NotebookStore.
+
+    Prefere {ai_private_dir}/mnemosyne quando sync_root configurado.
+    Na primeira execução com novo caminho, move conteúdo de notebooks/
+    do local antigo para o novo (shutil.move).
+    """
+    try:
+        _root = str(Path(__file__).parent.parent.parent)
+        if _root not in sys.path:
+            sys.path.insert(0, _root)
+        from ecosystem_client import get_ai_private_dir  # type: ignore
+        d = get_ai_private_dir()
+        if d is not None:
+            new_base = d / "mnemosyne"
+            new_base.mkdir(parents=True, exist_ok=True)
+            new_nb_dir = new_base / "notebooks"
+            old_nb_dir = get_app_data_dir() / "notebooks"
+            if old_nb_dir.exists() and not new_nb_dir.exists():
+                import shutil
+                shutil.move(str(old_nb_dir), str(new_nb_dir))
+            return new_base
+    except Exception:
+        pass
+    return get_app_data_dir()
 from core.errors import ConfigError, VectorstoreNotFoundError
 from core.studio_output import StudioOutput
 from core.studio_store import StudioStore
@@ -800,7 +827,7 @@ class MainWindow(QMainWindow):
         sb.addSpacing(8)
         self._add_sidebar_rule(sb)
         sb.addSpacing(4)
-        self._notebook_store = NotebookStore(get_app_data_dir())
+        self._notebook_store = NotebookStore(_resolve_notebooks_base())
         self._notebooks_panel = NotebooksPanel(self._notebook_store, parent=sidebar)
         self._notebooks_panel.notebook_selected.connect(self._on_notebook_selected)
         self._notebooks_panel.notebook_created.connect(self._on_notebook_created)
