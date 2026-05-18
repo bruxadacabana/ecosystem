@@ -4700,6 +4700,15 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### HUB — tratamento de conflitos git | 2026-05-17
+> Contexto: o HUB commita localmente mas nunca faz pull/merge. Se o Syncthing sincronizar a pasta `.git/` entre duas máquinas e ambas tiverem commits, os históricos divergem em silêncio. O `git_check_incoming` detecta commits recebidos mas não os integra. Três abordagens foram levantadas — decidir qual adotar antes de implementar.
+
+#### HUB
+- [ ] **[DISCUSSÃO] Definir estratégia de conflito git cross-machine.** Três opções:
+  1. **Excluir `.git/` do Syncthing** — cada máquina tem histórico local independente; Syncthing sincroniza só arquivos de dados; `git_check_incoming` deixa de funcionar entre máquinas mas o risco de corrupção desaparece.
+  2. **`git pull --rebase` automático** — quando o HUB detecta HEAD mudou (commits chegaram via Syncthing), tenta `git pull --rebase`; se falhar (conflito de merge), detecta estado `REBASE_HEAD`, aborta e alerta a usuária via toast/banner no GitView.
+  3. **Uma máquina como "origem"** — apenas o computador principal commita; o de trabalho recebe via Syncthing e nunca escreve no git; elimina divergência mas exige disciplina de uso.
+
 ### Mnemosyne — exibir pensamentos `<think>` no chat | 2026-05-17
 > Contexto: o AKASHA já diferencia pensamentos (bloco colapsável) e fala (resposta final) via máquina de estados no stream. O Mnemosyne usa `strip_think()` — remove as tags silenciosamente, o usuário nunca vê o raciocínio. E durante o stream os tokens `<think>` vazam diretamente para o `answer_text`, desaparecendo só no final.
 
