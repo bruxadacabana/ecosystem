@@ -3746,7 +3746,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   No WorkPc/Laptop, usar template determinístico: `"Usuária confirmou interesse em: {tópicos}"`.
   Objetivo: permitir recuperação semântica posterior do que foi aprendido, não apenas contagem.
 
-- [ ] **Penalidade ativa em feedback dismissed** (`services/personal_memory.py`,
+- [x] **Penalidade ativa em feedback dismissed** (`services/personal_memory.py`,
   `services/knowledge_worker.py`). Quando a usuária descarta (✗) uma nota, aplicar delta
   negativo nos scores dos tópicos associados (`update_topic_score(topic, delta=-0.5)`).
   Hoje o dismiss provavelmente ignora o evento ou aplica delta mínimo — isso faz tópicos

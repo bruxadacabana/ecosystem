@@ -623,6 +623,8 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
         session_id = request.cookies.get("akasha_session", "")
         if session_id:
             _si.dismiss(session_id)
+        from services.knowledge_worker import on_feedback_dismissed as _on_dismissed
+        _on_dismissed(body.memory_id)
     return {"ok": True}
 
 

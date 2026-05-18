@@ -163,6 +163,19 @@ async def get_profile_context(n: int = 5) -> str:
     return f"Tópicos de interesse da usuária: {topics_str}."
 
 
+def on_feedback_dismissed(memory_id: int) -> None:
+    """Fire-and-forget: aplica penalidade de score quando usuária descarta (✗) um insight.
+
+    Decrementa topic scores (delta=-0.5) dos termos presentes no conteúdo descartado,
+    acelerando a convergência do perfil de interesse ao remover ruído explicitamente.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_process_dismissed_feedback(memory_id))
+    except RuntimeError:
+        pass
+
+
 def on_feedback_confirmed(memory_id: int) -> None:
     """Fire-and-forget: cria memória episódica quando usuária confirma (✓) um insight.
 
@@ -263,6 +276,24 @@ async def process_queue() -> None:
 # ---------------------------------------------------------------------------
 # Extração via Ollama
 # ---------------------------------------------------------------------------
+
+async def _process_dismissed_feedback(memory_id: int) -> None:
+    """Aplica delta negativo nos tópicos de um insight descartado."""
+    from services.personal_memory import get_by_id
+    entry = await get_by_id(memory_id)
+    if not entry:
+        return
+
+    terms = _tokenize(entry["content"])
+    import database as _db
+    for term in list(terms)[:8]:
+        await _db.update_topic_score(term, delta=-0.5)
+
+    log.debug(
+        "knowledge_worker: penalidade aplicada em %d tópico(s) (dismissed memory_id=%d).",
+        len(terms), memory_id,
+    )
+
 
 async def _process_confirmed_feedback(memory_id: int) -> None:
     """Gera entrada episódica a partir de um insight confirmado pela usuária."""
