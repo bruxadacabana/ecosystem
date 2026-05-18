@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 33
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -401,7 +401,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_SEARCH_PROFILE)
         await db.execute(_CREATE_PAGE_KNOWLEDGE)
         await db.execute(_CREATE_TOPIC_INTEREST_PROFILE)
-        await db.execute(_CREATE_PERSONAL_MEMORY)
+        # personal_memory agora vive em arquivo separado — ver init_pm_db()
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -414,6 +414,9 @@ async def init_db() -> None:
 
         await populate_from_user_data(db)
         await db.commit()
+
+    from services import personal_memory as _pm
+    await _pm.init_pm_db()
 
 
 async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
@@ -765,6 +768,44 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         except Exception:
             pass  # coluna já existe em DBs novos criados com o DDL atualizado
 
+    if from_version < 33:
+        import asyncio as _asyncio
+        from services import personal_memory as _pm
+        # Copia dados existentes do main DB para personal_memory.db separado
+        try:
+            rows = await (await db.execute(
+                "SELECT id, created_at, type, content, tags, feedback FROM personal_memory"
+            )).fetchall()
+        except Exception:
+            rows = []
+        if rows:
+            pm_path = _pm._get_pm_db()
+            pm_path.parent.mkdir(parents=True, exist_ok=True)
+
+            def _do_migrate(path: str, data: list) -> None:
+                import sqlite3
+                con = sqlite3.connect(path)
+                con.execute("""CREATE TABLE IF NOT EXISTS personal_memory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    feedback TEXT DEFAULT NULL
+                )""")
+                con.executemany(
+                    "INSERT OR IGNORE INTO personal_memory "
+                    "(id, created_at, type, content, tags, feedback) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    data,
+                )
+                con.commit()
+                con.close()
+
+            await _asyncio.to_thread(_do_migrate, str(pm_path), rows)
+        # Remove a tabela do DB principal (agora vive em arquivo separado)
+        await db.execute("DROP TABLE IF EXISTS personal_memory")
+
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
         (str(SCHEMA_VERSION),),
@@ -779,11 +820,11 @@ async def populate_from_user_data(db: aiosqlite.Connection) -> None:
 
     Chamado a cada startup, após migrations. INSERT OR IGNORE em todas as
     entidades garante idempotência — nunca cria duplicatas se os dados já
-    estiverem no banco.
+    estiverem no banco. Lê de .backup/akasha/ se disponível, senão de userdata/.
     """
-    from services.user_data import (
+    from services.list_sync import (
         load_sites, load_blocked_domains, load_favorites,
-        load_lenses, load_watch_later,
+        load_lenses, load_watch_later, load_highlights, load_papers,
     )
 
     for site in load_sites():
@@ -829,6 +870,27 @@ async def populate_from_user_data(db: aiosqlite.Connection) -> None:
                 "INSERT INTO watch_later_fts (id, url, title, notes) VALUES (?, ?, ?, ?)",
                 (cursor.lastrowid, item["url"], item.get("title", ""), item.get("notes", "")),
             )
+
+    for item in load_highlights():
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO highlights (url, exact, prefix, suffix, note) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                item["url"], item["exact"],
+                item.get("prefix", ""), item.get("suffix", ""), item.get("note", ""),
+            ),
+        )
+        if cursor.lastrowid:
+            await db.execute(
+                "INSERT INTO highlights_fts (rowid, exact, note) VALUES (?, ?, ?)",
+                (cursor.lastrowid, item["exact"], item.get("note", "")),
+            )
+
+    for item in load_papers():
+        await db.execute(
+            "INSERT OR IGNORE INTO archive_dois (doi, arxiv_id, path, url) VALUES (?, ?, ?, ?)",
+            (item["doi"], item.get("arxiv_id"), item.get("path", ""), item.get("url", "")),
+        )
 
 
 # ---------------------------------------------------------------------------
