@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -116,6 +117,18 @@ async def _monitor_crawler() -> None:
 # Lifespan
 # ---------------------------------------------------------------------------
 
+async def _startup_crawl() -> None:
+    """Crawla sites pendentes imediatamente no startup (sem esperar o ciclo horário).
+
+    Isso garante que sites com last_crawled_at IS NULL (incluindo os que foram
+    resetados de 'crawling') sejam rastreados assim que o app inicia.
+    """
+    try:
+        await crawl_pending_sites()
+    except Exception as exc:
+        _log.warning("startup_crawl: %s", exc)
+
+
 async def _ensure_db_healthy() -> None:
     """Verifica integridade do banco antes de usar. Apaga e recria se corrompido."""
     import aiosqlite
@@ -145,6 +158,12 @@ async def lifespan(app: FastAPI):
     logging.getLogger().setLevel(logging.INFO)
     await _ensure_db_healthy()
     await database.init_db()
+    # Sites presos em 'crawling' de um run anterior (processo encerrado antes do reset)
+    # são resetados para 'idle'; em seguida dispara crawl_pending_sites() para que
+    # os sites nunca rastreados (last_crawled_at IS NULL) sejam crawleados imediatamente.
+    reset_count = await database.reset_stuck_crawling_sites()
+    if reset_count:
+        _log.info("startup: %d site(s) resetados de 'crawling' para 'idle'", reset_count)
     config.register_akasha()
     await index_local_files()
     await init_vec_index()
@@ -152,6 +171,7 @@ async def lifespan(app: FastAPI):
     await check_ollama_available()
     asyncio.get_running_loop().create_task(_status_writer())
     asyncio.get_running_loop().create_task(_monitor_crawler())
+    asyncio.get_running_loop().create_task(_startup_crawl())
     asyncio.get_running_loop().create_task(_knowledge_process_queue())
     asyncio.get_running_loop().create_task(_backfill_knowledge(config.ARCHIVE_PATH))
     asyncio.get_running_loop().create_task(_persona_loop())
@@ -170,6 +190,19 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
     docs_url="/docs",
+)
+
+# CORS para o HUB (Tauri webview): origens localhost em dev e produção.
+# Sem isso, fetch() do webview para o AKASHA é bloqueado pelo browser.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",    # Tauri dev (Vite)
+        "https://tauri.localhost",  # Tauri produção Windows/Linux
+        "tauri://localhost",        # Tauri produção macOS
+    ],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["*"],
 )
 
 _BASE_DIR = Path(__file__).parent

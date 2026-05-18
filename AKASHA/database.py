@@ -1047,6 +1047,21 @@ async def add_crawl_site(
         return cursor.lastrowid or 0
 
 
+async def reset_stuck_crawling_sites() -> int:
+    """Reseta sites presos em status='crawling' de uma execução anterior para 'idle'.
+
+    Sites ficam presos quando o processo é encerrado abruptamente durante um crawl.
+    Chamado no startup antes de qualquer tarefa de background.
+    Retorna o número de sites resetados.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE crawl_sites SET status='idle' WHERE status='crawling'"
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
 async def update_crawl_site(
     site_id: int,
     label: str,
