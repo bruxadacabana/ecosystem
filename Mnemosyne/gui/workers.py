@@ -1,6 +1,8 @@
 # Threads para indexação, consultas e resumos.
 from __future__ import annotations
 
+import logging
+
 from langchain_ollama import ChatOllama, OllamaLLM
 from PySide6.QtCore import QThread, Signal
 
@@ -43,6 +45,8 @@ from core.ollama_client import list_models, validate_model
 from core.rag import prepare_ask, AskResult, SourceRecord
 from core.summarizer import iter_summary
 from core.tracker import FileTracker
+
+log = logging.getLogger(__name__)
 
 
 def _trim_partial_think(text: str, tag: str) -> int:
@@ -107,6 +111,8 @@ class IndexWorker(QThread):
         _SUPPORTED = {".pdf", ".docx", ".txt", ".md", ".epub"}
         get_and_clear_unknown_sources()  # limpar acumulador de sessão anterior
 
+        log.info("IndexWorker iniciado — pasta: %s", self.config.watched_dir)
+
         # ── 1. Coletar lista de arquivos ──────────────────────────────────────
         files: list[str] = []
         try:
@@ -117,6 +123,7 @@ class IndexWorker(QThread):
                     if ext in _SUPPORTED:
                         files.append(os.path.join(root, f))
         except FileNotFoundError as exc:
+            log.error("IndexWorker: pasta não encontrada: %s", exc)
             self.finished.emit(False, f"Pasta não encontrada: {exc}")
             return
 
@@ -140,6 +147,7 @@ class IndexWorker(QThread):
             try:
                 os.rename(mnemosyne_dir, bak_dir)
             except OSError as exc:
+                log.error("IndexWorker: falha ao criar backup do índice: %s", exc)
                 self.finished.emit(False, f"Erro ao criar backup do índice anterior: {exc}")
                 return
         try:
@@ -150,6 +158,7 @@ class IndexWorker(QThread):
                     os.rename(bak_dir, mnemosyne_dir)
                 except OSError:
                     pass
+            log.error("IndexWorker: falha ao criar diretório de índice: %s", exc)
             self.finished.emit(False, f"Erro ao criar diretório: {exc}")
             return
 
@@ -170,8 +179,11 @@ class IndexWorker(QThread):
                 collection_metadata={"hnsw:space": "cosine"},
             )
         except Exception as exc:
+            log.exception("IndexWorker: erro ao criar vectorstore")
             self.finished.emit(False, f"Erro ao criar vectorstore: {exc}")
             return
+
+        log.info("IndexWorker: %d arquivos a indexar", len(files))
 
         # ── 4. Processar arquivo por arquivo ──────────────────────────────────
         # Probe de GPU no primeiro batch; progresso salvo no tracker após cada
@@ -194,6 +206,7 @@ class IndexWorker(QThread):
                 _prepend_titles(chunks)
                 _add_language_metadata(chunks)
             except MnemosyneError as exc:
+                log.warning("IndexWorker: erro ao processar '%s': %s", name, exc)
                 errors.append(str(exc))
                 checkpoint.record(file_path, "error")
                 continue
@@ -224,6 +237,7 @@ class IndexWorker(QThread):
                     use_parallel = t_probe < 2.0 and _BATCH >= 50
                     probe_done = True
                 except Exception as exc:
+                    log.exception("IndexWorker: erro fatal no probe de embedding")
                     self.finished.emit(False, f"Erro ao criar vectorstore: {exc}")
                     return
                 remaining = chunks[len(probe_batch):]
@@ -279,6 +293,7 @@ class IndexWorker(QThread):
                             if b_idx + 1 < n_batches:
                                 time.sleep(_SLEEP)
                 except Exception as exc:
+                    log.warning("IndexWorker: erro ao embedar '%s': %s", name, exc)
                     errors.append(f"{name}: {exc}")
                     checkpoint.record(file_path, "error")
                     continue
@@ -299,6 +314,7 @@ class IndexWorker(QThread):
         msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
         if errors:
             msg += f" {len(errors)} erro(s) ignorado(s)."
+        log.info("IndexWorker concluído — %d arquivo(s), %d erro(s)", total, len(errors))
         self.finished.emit(True, msg)
 
 
@@ -331,6 +347,8 @@ class ResumeIndexWorker(QThread):
         from langchain_ollama import OllamaEmbeddings
         get_and_clear_unknown_sources()  # limpar acumulador de sessão anterior
 
+        log.info("ResumeIndexWorker iniciado — pasta: %s", self.config.watched_dir)
+
         # ── 1. Coletar todos os arquivos ──────────────────────────────────────
         files: list[str] = []
         try:
@@ -341,6 +359,7 @@ class ResumeIndexWorker(QThread):
                     if ext in _SUPPORTED:
                         files.append(os.path.join(root, f))
         except FileNotFoundError as exc:
+            log.error("ResumeIndexWorker: pasta não encontrada: %s", exc)
             self.finished.emit(False, f"Pasta não encontrada: {exc}")
             return
 
@@ -384,9 +403,12 @@ class ResumeIndexWorker(QThread):
                 collection_metadata={"hnsw:space": "cosine"},
             )
         except Exception as exc:
+            log.exception("ResumeIndexWorker: erro ao abrir vectorstore")
             checkpoint.close()
             self.finished.emit(False, f"Erro ao abrir vectorstore: {exc}")
             return
+
+        log.info("ResumeIndexWorker: %d arquivo(s) pendentes de %d total", len(pending), total_all)
 
         # ── 4. Processar arquivos pendentes ───────────────────────────────────
         total = len(pending)
@@ -406,6 +428,7 @@ class ResumeIndexWorker(QThread):
                 _prepend_titles(chunks)
                 _add_language_metadata(chunks)
             except MnemosyneError as exc:
+                log.warning("ResumeIndexWorker: erro ao processar '%s': %s", name, exc)
                 errors.append(str(exc))
                 checkpoint.record(file_path, "error")
                 continue
@@ -438,6 +461,7 @@ class ResumeIndexWorker(QThread):
                     if b_idx + 1 < len(batch_list):
                         time.sleep(_SLEEP)
             except Exception as exc:
+                log.warning("ResumeIndexWorker: erro ao embedar '%s': %s", name, exc)
                 errors.append(f"{name}: {exc}")
                 checkpoint.record(file_path, "error")
                 continue
@@ -453,6 +477,7 @@ class ResumeIndexWorker(QThread):
         msg = f"Retomada concluída — {already_done} já indexados, {total} processados agora."
         if errors:
             msg += f" {len(errors)} erro(s) ignorado(s)."
+        log.info("ResumeIndexWorker concluído — %d processados, %d erro(s)", total, len(errors))
         self.finished.emit(True, msg)
 
 
@@ -491,8 +516,10 @@ class UpdateIndexWorker(QThread):
         except VectorstoreNotFoundError:
             self.finished.emit(False, "Nenhum índice encontrado. Use 'Indexar tudo' primeiro.")
         except MnemosyneError as exc:
+            log.error("UpdateIndexWorker: %s", exc)
             self.finished.emit(False, str(exc))
         except Exception as exc:
+            log.exception("UpdateIndexWorker: erro inesperado")
             self.finished.emit(False, f"Erro ao actualizar índice: {exc}")
 
 
@@ -516,6 +543,7 @@ class ReindexTranscriptsWorker(QThread):
         except VectorstoreNotFoundError:
             self.finished.emit(False, "Nenhum índice encontrado. Use 'Indexar tudo' primeiro.")
         except Exception as exc:
+            log.exception("ReindexTranscriptsWorker: erro inesperado")
             self.finished.emit(False, f"Erro ao re-indexar transcrições: {exc}")
 
 
@@ -545,10 +573,13 @@ class IndexFileWorker(QThread):
             name = os.path.basename(self.file_path)
             self.finished.emit(True, f"'{name}' indexado.")
         except DocumentLoadError as exc:
+            log.error("IndexFileWorker: erro ao carregar '%s': %s", self.file_path, exc)
             self.finished.emit(False, f"Erro ao carregar arquivo: {exc}")
         except IndexBuildError as exc:
+            log.error("IndexFileWorker: erro na indexação de '%s': %s", self.file_path, exc)
             self.finished.emit(False, f"Erro na indexação: {exc}")
         except MnemosyneError as exc:
+            log.error("IndexFileWorker: %s", exc)
             self.finished.emit(False, str(exc))
 
 
@@ -576,8 +607,10 @@ class CompactMemoryWorker(QThread):
             facts = self.memory_store.compact_session_memory(self.llm_model, self.turns)
             self.finished.emit(True, f"Memória guardada ({len(facts)} chars).")
         except RuntimeError as exc:
+            log.error("CompactMemoryWorker: %s", exc)
             self.finished.emit(False, str(exc))
         except Exception as exc:
+            log.exception("CompactMemoryWorker: erro inesperado")
             self.finished.emit(False, f"Erro inesperado ao compactar: {exc}")
 
 
@@ -627,9 +660,11 @@ class AskWorker(QThread):
                 iterative_retrieval=self.iterative_retrieval,
             )
         except QueryError as exc:
+            log.error("AskWorker: erro na recuperação: %s", exc)
             self.finished.emit(False, str(exc), [], self.chat_history)
             return
         except Exception as exc:
+            log.exception("AskWorker: erro inesperado na recuperação")
             self.finished.emit(False, f"Erro na recuperação: {exc}", [], self.chat_history)
             return
 
@@ -699,6 +734,7 @@ class AskWorker(QThread):
                     self.tracker.update_retrieved(src["path"], score)
             self.finished.emit(True, answer, sources, updated)
         except Exception as exc:
+            log.exception("AskWorker: erro durante streaming")
             self.finished.emit(False, f"Erro na consulta: {exc}", [], self.chat_history)
 
 
