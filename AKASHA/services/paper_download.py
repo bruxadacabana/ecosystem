@@ -48,7 +48,11 @@ async def _fetch_url(url: str, client: httpx.AsyncClient) -> bytes | None:
     try:
         resp = await client.get(url, follow_redirects=True, timeout=_TIMEOUT_PDF)
         ct   = resp.headers.get("content-type", "")
-        if resp.status_code == 200 and ("pdf" in ct or url.lower().endswith(".pdf")):
+        if resp.status_code == 200 and (
+            "pdf" in ct
+            or url.lower().endswith(".pdf")
+            or resp.content[:4] == b"%PDF"
+        ):
             return resp.content
     except httpx.RequestError:
         pass

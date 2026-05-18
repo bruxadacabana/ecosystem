@@ -23,6 +23,17 @@ function toggleSiteEdit(btn, siteId) {
   sec.style.display = visible ? 'none' : 'block';
   btn.classList.toggle('tag-active', !visible);
 }
+function updateCrawlBtn(paused) {
+  var btn = document.getElementById('crawl-pause-btn');
+  var ind = document.getElementById('crawl-status-ind');
+  if (!btn) return;
+  btn.textContent = paused ? '▶ retomar crawling' : '⏸ pausar crawling';
+  btn.classList.toggle('tag-active', paused);
+  if (ind) ind.textContent = paused ? 'pausado' : 'ativo';
+}
+document.addEventListener('DOMContentLoaded', function() {
+  fetch('/library/crawl/status').then(function(r){return r.json();}).then(function(d){updateCrawlBtn(d.paused);}).catch(function(){});
+});
 </script>
 {% endblock %}
 
@@ -51,14 +62,24 @@ function toggleSiteEdit(btn, siteId) {
 
   <!-- ─── Lista de sites cadastrados ───────────────────────── -->
   <section>
-    <h2 class="results-section-title" style="margin-bottom:1rem;">
-      Sites cadastrados
-      {% if sites %}
-        <span class="meta" style="font-size:11px;font-weight:normal;margin-left:.5rem;">
-          {{ sites | length }} site{{ 's' if sites | length != 1 else '' }}
-        </span>
-      {% endif %}
-    </h2>
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
+      <h2 class="results-section-title" style="margin:0;">
+        Sites cadastrados
+        {% if sites %}
+          <span class="meta" style="font-size:11px;font-weight:normal;margin-left:.5rem;">
+            {{ sites | length }} site{{ 's' if sites | length != 1 else '' }}
+          </span>
+        {% endif %}
+      </h2>
+      <span class="meta" style="font-size:11px;">crawling: <span id="crawl-status-ind">ativo</span></span>
+      <button
+        id="crawl-pause-btn"
+        class="btn btn-ghost btn-sm tag"
+        hx-post="/library/crawl/pause"
+        hx-swap="none"
+        hx-on::after-request="if(event.detail.successful){var d=JSON.parse(event.detail.xhr.responseText);updateCrawlBtn(d.paused);this.setAttribute('hx-post', d.paused ? '/library/crawl/resume' : '/library/crawl/pause');htmx.process(this);showToast(d.paused?'Crawling pausado.':'Crawling retomado.','info');}"
+      >⏸ pausar crawling</button>
+    </div>
 
     {% include "_library_list.html" %}
   </section>

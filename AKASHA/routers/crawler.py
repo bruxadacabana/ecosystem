@@ -20,7 +20,7 @@ from database import (
     get_crawl_page_by_url, get_crawl_pages_by_site, get_crawl_site,
     update_crawl_site,
 )
-from services.crawler import crawl_site, discover_subdomains
+from services.crawler import crawl_site, discover_subdomains, is_crawl_paused, set_crawl_paused
 from services import list_sync as _ls
 
 router = APIRouter()
@@ -150,6 +150,29 @@ async def library_add_quick(url: str = Form(...)) -> Response:
         asyncio.get_running_loop().create_task(_bg_crawl(site_id))
         asyncio.create_task(_ls.write_json("sites"))
     return Response(status_code=200)
+
+
+# ---------------------------------------------------------------------------
+# GET /library/crawl/status · POST /library/crawl/pause · /resume
+# ---------------------------------------------------------------------------
+
+@router.get("/library/crawl/status")
+async def crawl_status_api() -> dict:
+    return {"paused": is_crawl_paused()}
+
+
+@router.post("/library/crawl/pause")
+async def crawl_pause_api() -> dict:
+    set_crawl_paused(True)
+    _log.info("crawling pausado pela usuária.")
+    return {"paused": True}
+
+
+@router.post("/library/crawl/resume")
+async def crawl_resume_api() -> dict:
+    set_crawl_paused(False)
+    _log.info("crawling retomado pela usuária.")
+    return {"paused": False}
 
 
 # ---------------------------------------------------------------------------

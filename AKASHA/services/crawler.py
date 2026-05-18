@@ -55,6 +55,17 @@ _ROBOTS_TTL = 86400.0  # 24h
 _domain_locks: dict[str, asyncio.Lock] = {}
 _domain_last_req: dict[str, float] = {}
 
+_crawl_paused: bool = False
+
+
+def is_crawl_paused() -> bool:
+    return _crawl_paused
+
+
+def set_crawl_paused(paused: bool) -> None:
+    global _crawl_paused
+    _crawl_paused = paused
+
 
 def _update_throttle(domain: str, dt: float, status: int) -> None:
     """Atualiza o delay adaptativo do `domain` com base em response_time e status HTTP."""
@@ -601,6 +612,10 @@ async def crawl_pending_sites() -> None:
     crawl_interval_days (padrão 7); o recrawl acontece quando
     last_crawled_at < now - crawl_interval_days.
     """
+    if _crawl_paused:
+        log.info("crawl_pending_sites: crawling pausado — ignorando ciclo.")
+        return
+
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await (await db.execute(
             """SELECT id, base_url FROM crawl_sites
