@@ -1,0 +1,14 @@
+{% if pages %}
+<p class="graph-sidebar-topic">{{ topic }}</p>
+<ul class="graph-pages-list">
+  {% for p in pages %}
+  <li>
+    <a href="/library/reader?url={{ p.url | urlencode }}" target="_blank" class="graph-page-link" title="{{ p.url }}">
+      {{ p.title }}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="graph-sidebar-empty">Nenhuma página indexada para <em>{{ topic }}</em>.</p>
+{% endif %}

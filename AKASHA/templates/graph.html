@@ -1,0 +1,619 @@
+{% extends "base.html" %}
+{% block title %}Conexões — AKASHA{% endblock %}
+
+{% block scripts %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  #graph-wrap {
+    display: flex;
+    height: calc(100vh - 56px);
+    overflow: hidden;
+  }
+
+  #graph-canvas {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #graph-svg {
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+  }
+  #graph-svg:active { cursor: grabbing; }
+
+  .g-link {
+    stroke-opacity: 0.55;
+    stroke-linecap: round;
+    transition: stroke-opacity 0.2s;
+  }
+  .g-link:hover { stroke-opacity: 0.9; }
+  .g-link.dismissed { stroke-opacity: 0.12; stroke-dasharray: 3 3; }
+  .g-link.confirmed { stroke-opacity: 0.85; }
+
+  .g-node circle {
+    cursor: pointer;
+    stroke-width: 1.5;
+    transition: r 0.15s, stroke-width 0.15s;
+  }
+  .g-node circle:hover { stroke-width: 3; }
+  .g-node.selected circle { stroke-width: 3; }
+  .g-node.dismissed circle { opacity: 0.25; }
+
+  .g-label {
+    font-family: var(--font-mono);
+    pointer-events: none;
+    user-select: none;
+    paint-order: stroke fill;
+  }
+
+  /* Tooltip de aresta */
+  #edge-tooltip {
+    position: absolute;
+    background: var(--paper-dark);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink);
+    pointer-events: none;
+    display: none;
+    z-index: 20;
+    max-width: 260px;
+  }
+
+  /* Toolbar */
+  #graph-toolbar {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: flex;
+    gap: 6px;
+    z-index: 10;
+    flex-wrap: wrap;
+  }
+  .gtb-btn {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    background: var(--paper-dark);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    color: var(--ink-ghost);
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .gtb-btn:hover { color: var(--ink); border-color: var(--accent); }
+  .gtb-btn.active { color: var(--accent); border-color: var(--accent); }
+
+  #graph-legend {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-ghost);
+    display: flex;
+    gap: 12px;
+    z-index: 10;
+    background: var(--paper-dark);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 5px 10px;
+    flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-dot  { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Sidebar */
+  #graph-sidebar {
+    width: 280px;
+    min-width: 200px;
+    max-width: 360px;
+    border-left: 1px solid var(--rule);
+    background: var(--paper-dark);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #sidebar-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  #sidebar-node-name {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink);
+    font-weight: bold;
+    word-break: break-word;
+  }
+
+  #sidebar-feedback-btns {
+    display: flex;
+    gap: 6px;
+  }
+  .fb-btn {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 3px 9px;
+    border-radius: 3px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-ghost);
+    cursor: pointer;
+    letter-spacing: 0.06em;
+  }
+  .fb-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .fb-btn.active-confirm { border-color: var(--accent-green); color: var(--accent-green); background: color-mix(in srgb, var(--accent-green) 12%, transparent); }
+  .fb-btn.active-dismiss { border-color: #8B3A2A; color: #8B3A2A; background: color-mix(in srgb, #8B3A2A 12%, transparent); }
+
+  #sidebar-body {
+    padding: 12px 16px;
+    flex: 1;
+  }
+
+  .graph-sidebar-topic {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-ghost);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 8px;
+  }
+
+  .graph-pages-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .graph-page-link {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink);
+    text-decoration: none;
+    padding: 5px 8px;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--paper);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .graph-page-link:hover { border-color: var(--accent); color: var(--accent); }
+
+  .graph-sidebar-empty {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-ghost);
+    font-style: italic;
+    margin: 0;
+  }
+
+  #sidebar-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 24px;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-ghost);
+    opacity: 0.5;
+  }
+
+  #graph-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-ghost);
+    z-index: 5;
+  }
+
+  #edge-ctx-menu {
+    position: absolute;
+    background: var(--paper-dark);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 4px 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    z-index: 30;
+    min-width: 160px;
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.15);
+    display: none;
+  }
+  .ctx-item {
+    padding: 6px 14px;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .ctx-item:hover { background: var(--paper-darker); }
+  .ctx-item.danger { color: #8B3A2A; }
+  .ctx-item.confirm { color: var(--accent-green); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="graph-wrap">
+
+  <!-- Área do grafo -->
+  <div id="graph-canvas">
+    <div id="graph-loading">carregando grafo…</div>
+
+    <div id="graph-toolbar">
+      <button class="gtb-btn active" id="tb-show-dismissed" title="Alternar visibilidade de conexões descartadas">mostrar descartadas</button>
+      <button class="gtb-btn" id="tb-reset-zoom">⊕ centralizar</button>
+    </div>
+
+    <svg id="graph-svg">
+      <defs>
+        <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L6,3 z" fill="var(--rule)" />
+        </marker>
+      </defs>
+      <g id="graph-root"></g>
+    </svg>
+
+    <div id="edge-tooltip"></div>
+    <div id="edge-ctx-menu">
+      <div class="ctx-item confirm" id="ctx-confirm">✓ confirmar conexão</div>
+      <div class="ctx-item danger"  id="ctx-dismiss">✗ descartar conexão</div>
+      <div class="ctx-item"        id="ctx-clear">  · limpar feedback</div>
+    </div>
+
+    <div id="graph-legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span> tópico</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--accent-green)"></span> confirmado</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#8B3A2A"></span> descartado</span>
+      <span class="legend-item" style="opacity:.6">clique = páginas · clique-direito na aresta = feedback</span>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div id="graph-sidebar">
+    <div id="sidebar-placeholder">Clique num nó para ver as páginas relacionadas.</div>
+    <div id="sidebar-content" style="display:none; flex-direction:column; flex:1;">
+      <div id="sidebar-header">
+        <div id="sidebar-node-name"></div>
+        <div id="sidebar-node-meta" style="font-family:var(--font-mono);font-size:10px;color:var(--ink-ghost);"></div>
+        <div id="sidebar-feedback-btns"></div>
+      </div>
+      <div id="sidebar-body"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function() {
+  const svg    = d3.select('#graph-svg')
+  const root   = d3.select('#graph-root')
+  const tt     = document.getElementById('edge-tooltip')
+  const ctxMenu= document.getElementById('edge-ctx-menu')
+  const loading= document.getElementById('graph-loading')
+
+  let showDismissed = true
+  let _ctxEdge = null   // aresta em edição via context menu
+  let _selectedNode = null
+
+  // ── Paleta ──────────────────────────────────────────────────
+  const cs = getComputedStyle(document.documentElement)
+  const C = {
+    accent:       cs.getPropertyValue('--accent').trim()       || '#b8860b',
+    accentGreen:  cs.getPropertyValue('--accent-green').trim() || '#4A6741',
+    danger:       '#8B3A2A',
+    rule:         cs.getPropertyValue('--rule').trim()         || '#D4C9B0',
+    inkGhost:     cs.getPropertyValue('--ink-ghost').trim()    || '#746455',
+    ink:          cs.getPropertyValue('--ink').trim()          || '#2C2416',
+    paper:        cs.getPropertyValue('--paper').trim()        || '#F5F0E8',
+  }
+
+  function nodeColor(d) {
+    if (d._feedback === 'dismissed') return C.danger
+    if (d._feedback === 'confirmed') return C.accentGreen
+    return C.accent
+  }
+
+  function linkColor(d) {
+    if (d.feedback === 'dismissed') return C.danger
+    if (d.feedback === 'confirmed') return C.accentGreen
+    return C.rule
+  }
+
+  function nodeRadius(d) {
+    const base = 5
+    const w = Math.min(d.weight || 1, 50)
+    return base + Math.sqrt(w) * 1.2
+  }
+
+  // ── Zoom ────────────────────────────────────────────────────
+  const zoom = d3.zoom().scaleExtent([0.08, 6]).on('zoom', e => {
+    root.attr('transform', e.transform)
+  })
+  svg.call(zoom)
+
+  document.getElementById('tb-reset-zoom').addEventListener('click', () => {
+    svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity)
+  })
+
+  // ── Toggle mostrar descartadas ───────────────────────────────
+  document.getElementById('tb-show-dismissed').addEventListener('click', function() {
+    showDismissed = !showDismissed
+    this.classList.toggle('active', showDismissed)
+    this.textContent = showDismissed ? 'mostrar descartadas' : 'ocultar descartadas'
+    applyVisibility()
+  })
+
+  function applyVisibility() {
+    root.selectAll('.g-link').style('display', d =>
+      !showDismissed && d.feedback === 'dismissed' ? 'none' : null
+    )
+    root.selectAll('.g-node').style('display', d =>
+      !showDismissed && d._feedback === 'dismissed' ? 'none' : null
+    )
+    root.selectAll('.g-label').style('display', d =>
+      !showDismissed && d._feedback === 'dismissed' ? 'none' : null
+    )
+  }
+
+  // ── Carregar e renderizar ────────────────────────────────────
+  fetch('/graph/data')
+    .then(r => r.json())
+    .then(data => {
+      loading.style.display = 'none'
+      if (!data.nodes || data.nodes.length === 0) {
+        loading.style.display = 'flex'
+        loading.textContent = 'Nenhuma conexão ainda — aguarde o processamento de páginas.'
+        return
+      }
+      renderGraph(data)
+    })
+    .catch(() => {
+      loading.textContent = 'Erro ao carregar grafo.'
+    })
+
+  function renderGraph({ nodes, edges }) {
+    const W = document.getElementById('graph-canvas').clientWidth
+    const H = document.getElementById('graph-canvas').clientHeight
+
+    // Indexa feedback de arestas por nó
+    const nodeFeedback = {}
+    edges.forEach(e => {
+      if (e.feedback === 'confirmed') {
+        nodeFeedback[e.source] = nodeFeedback[e.source] === 'dismissed' ? 'dismissed' : 'confirmed'
+        nodeFeedback[e.target] = nodeFeedback[e.target] === 'dismissed' ? 'dismissed' : 'confirmed'
+      }
+    })
+    nodes.forEach(n => { n._feedback = nodeFeedback[n.id] || null })
+
+    // Normaliza pesos de link para espessura visual
+    const maxW = d3.max(edges, e => e.weight) || 1
+
+    // Simulação
+    const sim = d3.forceSimulation(nodes)
+      .force('link',   d3.forceLink(edges).id(d => d.id).distance(d => 60 + 80 / (d.weight / maxW + 0.1)))
+      .force('charge', d3.forceManyBody().strength(-120))
+      .force('center', d3.forceCenter(W / 2, H / 2))
+      .force('collide', d3.forceCollide().radius(d => nodeRadius(d) + 4))
+
+    // Links
+    const link = root.append('g').attr('class', 'links')
+      .selectAll('line')
+      .data(edges)
+      .join('line')
+        .attr('class', d => `g-link${d.feedback ? ' ' + d.feedback : ''}`)
+        .attr('stroke', linkColor)
+        .attr('stroke-width', d => Math.max(1, Math.sqrt(d.weight / maxW) * 4))
+        .on('contextmenu', onEdgeContextMenu)
+        .on('mouseenter', (e, d) => {
+          tt.style.display = 'block'
+          tt.innerHTML = `<strong>${d.source.id || d.source}</strong> ↔ <strong>${d.target.id || d.target}</strong><br>peso: ${d.weight.toFixed(1)}${d.feedback ? '<br>feedback: ' + d.feedback : ''}`
+        })
+        .on('mousemove', e => {
+          tt.style.left = (e.offsetX + 12) + 'px'
+          tt.style.top  = (e.offsetY + 8)  + 'px'
+        })
+        .on('mouseleave', () => { tt.style.display = 'none' })
+
+    // Nós
+    const node = root.append('g').attr('class', 'nodes')
+      .selectAll('g')
+      .data(nodes)
+      .join('g')
+        .attr('class', d => `g-node${d._feedback ? ' ' + d._feedback : ''}`)
+        .call(d3.drag()
+          .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y })
+          .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y })
+          .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null })
+        )
+        .on('click', onNodeClick)
+
+    node.append('circle')
+      .attr('r', nodeRadius)
+      .attr('fill', nodeColor)
+      .attr('stroke', d => d3.color(nodeColor(d))?.darker(0.6)?.toString() || C.rule)
+      .attr('fill-opacity', 0.82)
+
+    // Labels (só para nós maiores)
+    root.append('g').attr('class', 'labels')
+      .selectAll('text')
+      .data(nodes.filter(d => nodeRadius(d) >= 7))
+      .join('text')
+        .attr('class', 'g-label')
+        .attr('dy', d => nodeRadius(d) + 10)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', d => Math.min(11, 8 + nodeRadius(d) * 0.2))
+        .attr('fill', C.inkGhost)
+        .attr('stroke', C.paper)
+        .attr('stroke-width', 2.5)
+        .text(d => d.id.length > 20 ? d.id.slice(0, 18) + '…' : d.id)
+
+    // Tick
+    sim.on('tick', () => {
+      link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x).attr('y2', d => d.target.y)
+      node.attr('transform', d => `translate(${d.x},${d.y})`)
+      root.selectAll('.g-label')
+          .attr('x', d => d.x)
+          .attr('y', d => d.y)
+    })
+
+    applyVisibility()
+
+    // Guarda referências para feedback
+    window._graphNodes = nodes
+    window._graphEdges = edges
+    window._graphLink  = link
+    window._graphNode  = node
+  }
+
+  // ── Clique em nó → sidebar ────────────────────────────────────
+  function onNodeClick(e, d) {
+    e.stopPropagation()
+    _selectedNode = d.id
+    d3.selectAll('.g-node').classed('selected', n => n.id === d.id)
+
+    const ph   = document.getElementById('sidebar-placeholder')
+    const cont = document.getElementById('sidebar-content')
+    ph.style.display = 'none'
+    cont.style.display = 'flex'
+
+    document.getElementById('sidebar-node-name').textContent = d.id
+    document.getElementById('sidebar-node-meta').textContent =
+      `peso total: ${(d.weight || 0).toFixed(1)}  ·  interesse: ${(d.interest || 0).toFixed(2)}`
+
+    // Botões de feedback do nó (afeta todas as arestas do nó)
+    const fbDiv = document.getElementById('sidebar-feedback-btns')
+    const curFb = d._feedback
+    fbDiv.innerHTML = `
+      <button class="fb-btn${curFb === 'confirmed' ? ' active-confirm' : ''}" data-fb="confirmed" data-node="${d.id}">✓ confirmar</button>
+      <button class="fb-btn${curFb === 'dismissed' ? ' active-dismiss' : ''}" data-fb="dismissed" data-node="${d.id}">✗ descartar</button>
+      <button class="fb-btn" data-fb="null" data-node="${d.id}">· limpar</button>
+    `
+    fbDiv.querySelectorAll('.fb-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const fb   = btn.dataset.fb === 'null' ? null : btn.dataset.fb
+        const nId  = btn.dataset.node
+        setNodeFeedback(nId, fb)
+      })
+    })
+
+    // Páginas relacionadas via HTMX manual
+    const body = document.getElementById('sidebar-body')
+    body.innerHTML = '<p class="graph-sidebar-empty">carregando…</p>'
+    fetch(`/graph/pages?topic=${encodeURIComponent(d.id)}`)
+      .then(r => r.text())
+      .then(html => { body.innerHTML = html || '<p class="graph-sidebar-empty">Nenhuma página encontrada.</p>' })
+      .catch(() => { body.innerHTML = '<p class="graph-sidebar-empty">Erro ao buscar páginas.</p>' })
+  }
+
+  // Clique fora de nó fecha o menu de contexto
+  document.addEventListener('click', () => { ctxMenu.style.display = 'none' })
+
+  // ── Context menu de aresta ────────────────────────────────────
+  function onEdgeContextMenu(e, d) {
+    e.preventDefault()
+    e.stopPropagation()
+    _ctxEdge = d
+    ctxMenu.style.left = e.clientX + 'px'
+    ctxMenu.style.top  = e.clientY + 'px'
+    ctxMenu.style.display = 'block'
+  }
+
+  document.getElementById('ctx-confirm').addEventListener('click', () => {
+    if (_ctxEdge) setEdgeFeedback(_ctxEdge, 'confirmed')
+  })
+  document.getElementById('ctx-dismiss').addEventListener('click', () => {
+    if (_ctxEdge) setEdgeFeedback(_ctxEdge, 'dismissed')
+  })
+  document.getElementById('ctx-clear').addEventListener('click', () => {
+    if (_ctxEdge) setEdgeFeedback(_ctxEdge, null)
+  })
+
+  // ── Feedback de aresta ────────────────────────────────────────
+  function setEdgeFeedback(edge, feedback) {
+    const a = edge.source.id || edge.source
+    const b = edge.target.id || edge.target
+    fetch('/graph/edge/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ a, b, feedback }),
+    }).then(r => r.json()).then(data => {
+      if (!data.ok) return
+      edge.feedback = feedback
+      d3.selectAll('.g-link')
+        .filter(d => d === edge)
+        .attr('class', `g-link${feedback ? ' ' + feedback : ''}`)
+        .attr('stroke', linkColor(edge))
+      ctxMenu.style.display = 'none'
+    })
+  }
+
+  // ── Feedback de nó (afeta todas as arestas conectadas) ────────
+  function setNodeFeedback(nodeId, feedback) {
+    const edges = (window._graphEdges || []).filter(e => {
+      const s = e.source.id || e.source
+      const t = e.target.id || e.target
+      return s === nodeId || t === nodeId
+    })
+    const promises = edges.map(edge => {
+      const a = edge.source.id || edge.source
+      const b = edge.target.id || edge.target
+      return fetch('/graph/edge/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ a, b, feedback }),
+      }).then(r => r.json()).then(data => {
+        if (data.ok) edge.feedback = feedback
+      })
+    })
+    Promise.all(promises).then(() => {
+      // Atualiza visual dos links
+      d3.selectAll('.g-link')
+        .attr('class', d => `g-link${d.feedback ? ' ' + d.feedback : ''}`)
+        .attr('stroke', linkColor)
+      // Atualiza feedback do nó
+      const n = (window._graphNodes || []).find(n => n.id === nodeId)
+      if (n) {
+        n._feedback = feedback
+        d3.selectAll('.g-node')
+          .filter(d => d.id === nodeId)
+          .attr('class', d => `g-node${d._feedback ? ' ' + d._feedback : ''}`)
+          .select('circle')
+            .attr('fill', nodeColor)
+            .attr('stroke', d => d3.color(nodeColor(d))?.darker(0.6)?.toString() || C.rule)
+      }
+      // Refresh botões no sidebar
+      if (_selectedNode === nodeId) {
+        const fbDiv = document.getElementById('sidebar-feedback-btns')
+        fbDiv.querySelectorAll('.fb-btn').forEach(btn => {
+          btn.classList.remove('active-confirm', 'active-dismiss')
+          if (feedback === 'confirmed' && btn.dataset.fb === 'confirmed') btn.classList.add('active-confirm')
+          if (feedback === 'dismissed' && btn.dataset.fb === 'dismissed') btn.classList.add('active-dismiss')
+        })
+      }
+      applyVisibility()
+    })
+  }
+
+})()
+</script>
+{% endblock %}

@@ -36,6 +36,7 @@ from routers import lenses as lenses_router
 from routers import dialogue as dialogue_router
 from routers import chat as chat_router
 from routers import memory as memory_router
+from routers import graph as graph_router
 from services.local_search import index_local_files, init_vec_index, init_spell_checker, check_ollama_available
 from services.crawler import crawl_pending_sites
 from services.knowledge_worker import process_queue as _knowledge_process_queue, backfill_knowledge as _backfill_knowledge
@@ -226,6 +227,7 @@ app.include_router(lenses_router.router)
 app.include_router(dialogue_router.router)
 app.include_router(chat_router.router)
 app.include_router(memory_router.router)
+app.include_router(graph_router.router)
 
 # ---------------------------------------------------------------------------
 # Rotas principais (Fase 1 — estrutura)

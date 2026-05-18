@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 34
+SCHEMA_VERSION = 35
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -779,6 +779,14 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             )
         except Exception:
             pass  # coluna já existe em DBs novos criados com o DDL atualizado
+
+    if from_version < 35:
+        try:
+            await db.execute(
+                "ALTER TABLE entity_graph ADD COLUMN feedback TEXT DEFAULT NULL"
+            )
+        except Exception:
+            pass  # coluna já existe em DBs novos
 
     if from_version < 34:
         try:
@@ -2077,6 +2085,100 @@ async def get_entity_neighbors(entity: str, n: int = 10) -> list[tuple[str, floa
             (e, e, n),
         )).fetchall()
     return [(r[0], r[1]) for r in rows]
+
+
+async def get_graph_data(node_limit: int = 80, edge_limit: int = 250) -> dict:
+    """Retorna nós e arestas do entity_graph para visualização.
+
+    Nós: top-N entidades por peso total acumulado (soma das arestas).
+    Arestas: top-M pares por peso, filtradas para conter apenas nós do conjunto acima.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Nós: peso total = soma de todos os pesos das arestas incidentes
+        node_rows = await (await db.execute(
+            """SELECT entity, SUM(weight) AS total
+               FROM (
+                 SELECT entity, weight FROM entity_graph
+                 UNION ALL
+                 SELECT co_entity AS entity, weight FROM entity_graph
+               )
+               GROUP BY entity
+               ORDER BY total DESC
+               LIMIT ?""",
+            (node_limit,),
+        )).fetchall()
+
+        node_ids = {r[0] for r in node_rows}
+
+        # Scores de interesse para dimensionar nós
+        score_rows = await (await db.execute(
+            "SELECT topic, score FROM topic_interest_profile"
+        )).fetchall()
+        interest: dict[str, float] = {r[0]: r[1] for r in score_rows}
+
+        nodes = [
+            {
+                "id":       r[0],
+                "weight":   r[1],
+                "interest": interest.get(r[0], 0.0),
+            }
+            for r in node_rows
+        ]
+
+        # Arestas: apenas entre nós no conjunto acima
+        edge_rows = await (await db.execute(
+            """SELECT entity, co_entity, weight, feedback
+               FROM entity_graph
+               ORDER BY weight DESC
+               LIMIT ?""",
+            (edge_limit * 3,),  # busca extra; filtra abaixo
+        )).fetchall()
+
+        edges = [
+            {
+                "source":   r[0],
+                "target":   r[1],
+                "weight":   r[2],
+                "feedback": r[3],
+            }
+            for r in edge_rows
+            if r[0] in node_ids and r[1] in node_ids
+        ][:edge_limit]
+
+    return {"nodes": nodes, "edges": edges}
+
+
+async def get_pages_for_topic(topic: str, limit: int = 12) -> list[dict]:
+    """Retorna páginas de crawl_pages cujo page_knowledge menciona o tópico/entidade."""
+    t = topic.strip().lower()
+    async with aiosqlite.connect(DB_PATH) as db:
+        try:
+            rows = await (await db.execute(
+                """SELECT DISTINCT cp.url, cp.title
+                   FROM crawl_pages cp
+                   JOIN page_knowledge pk ON cp.url = pk.url
+                   WHERE EXISTS (
+                       SELECT 1 FROM json_each(pk.topics)   WHERE LOWER(value) = ?
+                   ) OR EXISTS (
+                       SELECT 1 FROM json_each(pk.entities) WHERE LOWER(value) = ?
+                   )
+                   LIMIT ?""",
+                (t, t, limit),
+            )).fetchall()
+        except Exception:
+            rows = []
+    return [{"url": r[0], "title": r[1] or r[0]} for r in rows]
+
+
+async def set_edge_feedback(a: str, b: str, feedback: str | None) -> None:
+    """Define feedback (confirmed/dismissed/None) para uma aresta do grafo."""
+    na, nb = sorted([a.strip().lower(), b.strip().lower()])
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE entity_graph SET feedback = ? WHERE entity = ? AND co_entity = ?",
+            (feedback, na, nb),
+        )
+        await db.commit()
 
 
 async def count_page_knowledge() -> int:

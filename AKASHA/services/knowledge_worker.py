@@ -445,6 +445,12 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
 
     clean_topics = [str(t).strip().lower() for t in topics if str(t).strip()]
 
+    # Adiciona pares de tópicos ao grafo de conexões (peso menor que entidades nomeadas)
+    if len(clean_topics) >= 2:
+        asyncio.get_running_loop().create_task(
+            _update_entity_graph(clean_topics, delta=0.3)
+        )
+
     await _check_discoveries(
         url=task.url,
         title=task.title,
@@ -653,17 +659,18 @@ def _extract_entities_regex(text: str) -> list[str]:
     return result[:12]
 
 
-async def _update_entity_graph(entities: list[str]) -> None:
+async def _update_entity_graph(entities: list[str], delta: float = 1.0) -> None:
     """Registra pares de co-ocorrência no entity_graph."""
     if len(entities) < 2:
         return
     import database as _db
     from itertools import combinations
-    for a, b in combinations(entities, 2):
-        await _db.upsert_entity_pair(a, b)
+    pairs = list(combinations(entities, 2))
+    for a, b in pairs:
+        await _db.upsert_entity_pair(a, b, delta=delta)
     log.info(
-        "knowledge_worker.entity_graph: %d entidade(s), %d par(es) registrado(s).",
-        len(entities), len(list(combinations(entities, 2))),
+        "knowledge_worker.entity_graph: %d item(s), %d par(es) registrado(s).",
+        len(entities), len(pairs),
     )
 
 
