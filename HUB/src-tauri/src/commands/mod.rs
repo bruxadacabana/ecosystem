@@ -6,4 +6,5 @@ pub mod memory;
 pub mod notify;
 pub mod projects;
 pub mod reading;
+pub mod syncthing;
 pub mod writing;

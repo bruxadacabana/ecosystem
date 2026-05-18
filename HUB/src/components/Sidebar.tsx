@@ -11,6 +11,7 @@ const SECTIONS: { id: HubSection; symbol: string; label: string }[] = [
   { id: 'atividade',     symbol: '≋', label: 'Feed'      },
   { id: 'monitoramento', symbol: '⬡', label: 'Monitor'   },
   { id: 'git',           symbol: '⎇', label: 'Git'       },
+  { id: 'sync',          symbol: '⇄', label: 'Sync'      },
   { id: 'config',        symbol: '⚙', label: 'Config'    },
 ]
 

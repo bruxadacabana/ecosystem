@@ -250,3 +250,40 @@ export const setWindowCompact = (compact: boolean): Promise<TauriResult<void>> =
 
 export const readAppLog = (app: string, n: number): Promise<TauriResult<string[]>> =>
   call<string[]>('read_app_log', { app, n })
+
+// ----------------------------------------------------------
+//  Syncthing
+// ----------------------------------------------------------
+
+export interface SyncFolder {
+  id:            string
+  label:         string
+  path:          string
+  paused:        boolean
+  state:         string
+  need_bytes:    number
+  in_sync_bytes: number
+}
+
+export interface SyncDevice {
+  device_id: string
+  name:      string
+  connected: boolean
+  last_seen: string
+}
+
+export interface SyncStatus {
+  running: boolean
+  my_id:   string
+  folders: SyncFolder[]
+  devices: SyncDevice[]
+}
+
+export const syncthingStatus    = ():                      Promise<TauriResult<SyncStatus>> => call<SyncStatus>('syncthing_status')
+export const syncthingStart     = ():                      Promise<TauriResult<void>>       => call<void>('syncthing_start')
+export const syncthingShutdown  = ():                      Promise<TauriResult<void>>       => call<void>('syncthing_shutdown')
+export const syncthingPauseAll  = ():                      Promise<TauriResult<void>>       => call<void>('syncthing_pause_all')
+export const syncthingResumeAll = ():                      Promise<TauriResult<void>>       => call<void>('syncthing_resume_all')
+export const syncthingRescan    = (folderId: string):      Promise<TauriResult<void>>       => call<void>('syncthing_rescan', { folderId })
+export const syncthingGetPaused = ():                      Promise<TauriResult<boolean>>    => call<boolean>('syncthing_get_paused')
+export const syncthingSetPaused = (paused: boolean):       Promise<TauriResult<void>>       => call<void>('syncthing_set_paused', { paused })

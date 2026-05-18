@@ -102,6 +102,14 @@ pub fn run() {
             commands::config::set_window_compact,
             commands::config::read_app_log,
             commands::notify::send_notification,
+            commands::syncthing::syncthing_status,
+            commands::syncthing::syncthing_start,
+            commands::syncthing::syncthing_shutdown,
+            commands::syncthing::syncthing_pause_all,
+            commands::syncthing::syncthing_resume_all,
+            commands::syncthing::syncthing_rescan,
+            commands::syncthing::syncthing_get_paused,
+            commands::syncthing::syncthing_set_paused,
         ])
         .setup(|app| {
             // Inicializar LOGOS antes do logging para ter o estado pronto

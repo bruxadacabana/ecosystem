@@ -4776,6 +4776,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 #### AKASHA
 - [x] **Backfill de conhecimento no startup** (`services/knowledge_worker.py` + `main.py`). Função `backfill_knowledge(archive_path)` chamada no lifespan após o worker iniciar: (1) lê arquivos `.md` em `ARCHIVE_PATH` com frontmatter YAML, filtra os que já têm entrada em `page_knowledge`, enfileira os restantes; (2) lê `crawl_pages` sem entrada em `page_knowledge`, enfileira. Ritmo controlado: aguarda se fila > 50 itens para não sobrepor processamento novo.
 
+### HUB — aba Sync para gerenciamento do Syncthing | 2026-05-18
+> Contexto: migração do sync_root do Proton Drive para o Syncthing. O HUB precisa de uma aba dedicada para iniciar/parar o Syncthing, ver status das pastas e dispositivos, forçar rescan e pausar automaticamente a sincronização enquanto apps com bancos de dados (AKASHA, Mnemosyne, KOSMOS) estiverem em uso.
+
+#### HUB
+- [x] **`commands/syncthing.rs`** — comandos Tauri: `syncthing_status()` (estado geral + folders + devices), `syncthing_start()` (spawn processo), `syncthing_shutdown()` (POST /rest/system/shutdown), `syncthing_pause_all()` / `syncthing_resume_all()` (pause/resume todas as pastas via API), `syncthing_rescan(folder_id)`, `syncthing_get_paused()` / `syncthing_set_paused()` (pausa manual persistida em ecosystem.json["hub"]["syncthing_paused"])
+- [x] **`SyncView.tsx`** — UI: status online/offline com botões Iniciar/Parar, lista de folders com estado/bytes pendentes/rescan, lista de dispositivos, toggle de pausa manual
+- [x] **Auto-pausa enquanto apps estão rodando** — em `App.tsx`, no `pollApps` loop: se qualquer app DB-heavy (AKASHA/Mnemosyne/KOSMOS) estiver rodando, pausar Syncthing via API; quando todos fecharem e não houver pausa manual, retomar sincronização
+
 ### AKASHA — bugs de UX e contagem de fila | 2026-05-18
 > Contexto: dois bugs observados em uso. (1) Estado de navegação perdido ao trocar de aba — corrigido com sessionStorage. (2) Fila de extração sempre mostra ≥ 50 itens e nunca decresce — suspeita de LIMIT 50 na query de contagem em vez de COUNT real.
 

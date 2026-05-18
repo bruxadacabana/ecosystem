@@ -275,7 +275,7 @@ export interface MemoryEntry {
 
 export type HubView = 'home' | 'writing' | 'reading' | 'projects' | 'questions'
 
-export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'config'
+export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'config'
 
 export interface ModuleCard {
   id: HubView

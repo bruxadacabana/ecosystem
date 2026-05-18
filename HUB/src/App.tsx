@@ -26,6 +26,7 @@ import { PageView } from './views/PageView'
 import { QuestionsView } from './views/QuestionsView'
 import { MonitoramentoView } from './views/MonitoramentoView'
 import { GitView } from './views/GitView'
+import { SyncView } from './views/SyncView'
 import * as cmd from './lib/tauri'
 import type { HubSection, HubView, Project, Book, ChapterMeta, ArticleMeta, OgmaProject } from './types'
 
@@ -55,6 +56,10 @@ export default function App() {
   // Git pause state — persiste em ecosystem.json["hub"]["git_paused"]
   const [gitPaused,    setGitPaused]    = useState(false)
   const gitPausedRef = useRef(false)
+
+  // Syncthing pause state
+  const [syncthingManualPaused, setSyncthingManualPaused] = useState(false)
+  const syncthingAutoPaused = useRef(false)   // auto-pausado pelo HUB (apps com DB rodando)
 
   // Carrega caminhos uma vez ao iniciar (e ao voltar ao home via seção)
   function loadPaths() {
@@ -93,6 +98,9 @@ export default function App() {
         setGitPaused(res.data)
         gitPausedRef.current = res.data
       }
+    })
+    cmd.syncthingGetPaused().then(res => {
+      if (res.ok) setSyncthingManualPaused(res.data)
     })
   }, [syncRootReady])
 
@@ -150,6 +158,17 @@ export default function App() {
         if (current[app]) next.add(app)
       }
       prevRunningRef.current = next
+
+      // Auto-pausa do Syncthing enquanto apps com banco de dados estão rodando
+      const DB_APPS = ['akasha', 'mnemosyne', 'kosmos'] as const
+      const anyDbRunning = DB_APPS.some(a => Boolean(current[a]))
+      if (anyDbRunning && !syncthingAutoPaused.current) {
+        syncthingAutoPaused.current = true
+        cmd.syncthingPauseAll().catch(() => {})
+      } else if (!anyDbRunning && syncthingAutoPaused.current && !syncthingManualPaused) {
+        syncthingAutoPaused.current = false
+        cmd.syncthingResumeAll().catch(() => {})
+      }
     }
 
     pollApps()
@@ -320,6 +339,8 @@ export default function App() {
         return <MonitoramentoView />
       case 'git':
         return <GitView paused={gitPaused} onTogglePaused={handleToggleGitPaused} />
+      case 'sync':
+        return <SyncView autoPaused={syncthingAutoPaused.current} />
       case 'config':
         return (
           <SetupView
