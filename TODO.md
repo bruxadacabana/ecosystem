@@ -3732,6 +3732,42 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias baseadas em pesquisas para o ecossistema
 
+### Pesquisa: RAPTOR e LightRAG — Indexação Hierárquica e RAG por Grafos | 2026-05-18
+> Contexto: investigação sobre dois sistemas de RAG avançado que resolvem lacunas do RAG flat clássico.
+> RAPTOR resolve síntese multi-escala (+20pp no QuALITY benchmark); LightRAG resolve perguntas
+> relacionais entre entidades com 6000x menos custo que GraphRAG. Ambos rodam localmente com qwen2.5:7b.
+> Decisão: LightRAG primeiro (coleção dinâmica); RAPTOR depois, específico para Papers/.
+
+#### Mnemosyne
+- [ ] **LightRAG — grafo de conhecimento paralelo ao ChromaDB** (`core/indexer.py`,
+  `core/rag.py`, novo `core/lightrag_graph.py`). Instalar `lightrag-hku` (PyPI). Durante
+  a indexação (`update_vectorstore`), além de inserir chunks no ChromaDB, enviar o mesmo
+  texto ao LightRAG para extração de entidades (qwen2.5:7b via Ollama). LightRAG persiste
+  grafo NetworkX + índice SQLite em `{chroma_dir}/lightrag/`. Adicionar modo de consulta
+  `hybrid` ao `VectorQueryWorker`: se a query contiver termos que remetem a entidades
+  (`_looks_relational(query) -> bool`, heurística por presença de nomes próprios/tecnologias),
+  usar `lightrag.query(query, mode="hybrid")`; caso contrário, usar RAG ChromaDB normal.
+  Inserção incremental: `lightrag.insert_custom_kg()` por documento novo — sem reconstrução total.
+  Requisito: apenas no MainPc (qwen2.5:7b); WorkPc e Laptop usam o grafo pré-sincronizado (somente leitura).
+
+- [ ] **RAPTOR — índice hierárquico para a coleção Papers/** (`core/raptor_index.py`, novo módulo).
+  Instalar `llama-index-packs-raptor`. Ao indexar documentos com `source_type == "paper"`,
+  rodar o pipeline RAPTOR (UMAP + GMM clustering + sumarização com qwen2.5:7b) para gerar
+  a árvore de sumários. Usar modo "collapsed tree" (índice flat com todos os níveis).
+  Persistir índice em `{chroma_dir}/raptor_papers/`. No `VectorQueryWorker`, detectar se a
+  query é do tipo síntese ("quais são os temas", "resumo de", "visão geral") via classificador
+  simples de intenção (lista de palavras-gatilho) e rotear para o índice RAPTOR.
+  Índice RAPTOR é somente para Papers/ — não aplicar à coleção geral (custo de reconstrução).
+  Rodas de clustering: 3 (padrão adequado para < 500 papers). Custo estimado: ~100-120 chamadas
+  LLM para 1000 chunks na RX 6600 ≈ 15-20 minutos offline.
+
+- [ ] **Sincronização dos artefatos de grafo e RAPTOR entre máquinas** (documentação em GUIDE.md).
+  Os artefatos `{chroma_dir}/lightrag/` e `{chroma_dir}/raptor_papers/` devem ser incluídos
+  no sync via Proton Drive — são arquivos SQLite/JSON transferíveis. Documentar no GUIDE.md
+  que WorkPc e Laptop devem montar esses diretórios como somente leitura e nunca acionar
+  indexação nesses hardware. Adicionar aviso na SetupDialog do Mnemosyne se `chroma_dir`
+  não tiver os artefatos: "Índice avançado não encontrado — indexação disponível apenas no MainPc."
+
 ### Pesquisa: Aprendizado de Preferência Pessoal para Assistentes Locais | 2026-05-18
 > Contexto: investigação sobre alternativas e complementos ao topic frequency counting do AKASHA.
 > Conclusão: modelo atual é sólido como baseline; quatro lacunas concretas identificadas que podem
@@ -3896,16 +3932,17 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Pesquisar se existe versão menor (T5-small, 60M) com qualidade aceitável. Registrar resultado
   no `pesquisas.md`.
 
-- [ ] **Pesquisar RAPTOR para corpora com documentos longos:** RAPTOR é relevante quando o corpus
+- [x] **Pesquisar RAPTOR para corpora com documentos longos:** RAPTOR é relevante quando o corpus
   inclui livros inteiros ou textos muito longos (> 50 páginas). A indexação RAPTOR requer LLM de
   boa qualidade para sumarização de clusters — viável com Llama 3.2 3B ou Qwen2.5 7B no CachyOS.
   Investigar custo de indexação em corpus de 100 documentos médios e overhead de armazenamento.
-  Inviável no i5-3470.
+  Inviável no i5-3470. → **Pesquisa concluída em 2026-05-18. Ver pesquisas.md.**
 
-- [ ] **Pesquisar GraphRAG leve (LightRAG) para corpus relacional:** relevante quando o corpus
+- [x] **Pesquisar GraphRAG leve (LightRAG) para corpus relacional:** relevante quando o corpus
   tem muitas relações entre entidades (ex: vault Obsidian com wikilinks densos). LightRAG é menos
   custoso que GraphRAG da Microsoft, mas ainda requer extração de entidades via LLM. Investigar
   viabilidade com modelos 7-8B no CachyOS. Registrar no `pesquisas.md`.
+  → **Pesquisa concluída em 2026-05-18. Ver pesquisas.md.**
 
 
 ### Pesquisa: Arquitetura de UI para Research Workbench — NotebookLM e Referências | 2026-05-06
