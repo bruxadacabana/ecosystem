@@ -68,9 +68,10 @@ async def _run_reflection() -> None:
         return
 
     import database as _db
-    recent_pages = await _db.get_recent_page_knowledge(10)
-    top_topics   = await _db.get_top_topics(8)
-    if not recent_pages and not top_topics:
+    recent_pages   = await _db.get_recent_page_knowledge(10)
+    top_topics     = await _db.get_top_topics(8)
+    recent_queries = await _db.get_recent_search_history(20)
+    if not recent_pages and not top_topics and not recent_queries:
         return
 
     import config as _config
@@ -82,6 +83,8 @@ async def _run_reflection() -> None:
     ) or "Sem resumos recentes."
 
     topics_str = ", ".join(t for t, _ in top_topics) or "Sem tópicos registrados."
+
+    queries_str = ", ".join(q["query"] for q in recent_queries) if recent_queries else ""
 
     from services.personal_memory import save_memory, get_context_memories
     context_memories = await get_context_memories(5)
@@ -97,10 +100,13 @@ async def _run_reflection() -> None:
         if parts:
             context_text = "\n\n".join(parts) + "\n\n"
 
+    queries_block = f"Buscas realizadas recentemente: {queries_str}\n\n" if queries_str else ""
+
     prompt = (
         f"{personality}\n\n"
         f"{context_text}"
         f"Tópicos de interesse acumulados: {topics_str}\n\n"
+        f"{queries_block}"
         f"Páginas processadas recentemente:\n{pages_summary}\n\n"
         f"Olhando para esses dados, há algo que vale registrar na sua memória pessoal? "
         f"Alguma conexão, surpresa ou observação genuína que você quer guardar para si? "

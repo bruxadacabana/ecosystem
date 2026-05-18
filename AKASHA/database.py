@@ -1898,6 +1898,17 @@ async def get_recent_page_knowledge(n: int = 10) -> list[dict]:
     ]
 
 
+async def get_recent_search_history(n: int = 20) -> list[dict]:
+    """Retorna as N queries mais recentes do histórico de buscas."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT query, count, last_used FROM search_history "
+            "ORDER BY last_used DESC LIMIT ?",
+            (n,),
+        )).fetchall()
+    return [{"query": r[0], "count": r[1], "last_used": r[2]} for r in rows]
+
+
 async def count_page_knowledge() -> int:
     """Número total de registros em page_knowledge."""
     async with aiosqlite.connect(DB_PATH) as db:
