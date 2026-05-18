@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 33
+SCHEMA_VERSION = 34
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -108,15 +108,16 @@ CREATE TABLE IF NOT EXISTS favorite_domains (
 
 _CREATE_CRAWL_SITES = """
 CREATE TABLE IF NOT EXISTS crawl_sites (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    base_url        TEXT    NOT NULL UNIQUE,
-    label           TEXT    NOT NULL DEFAULT '',
-    crawl_depth     INTEGER NOT NULL DEFAULT 2,
-    subdomains_json TEXT    NOT NULL DEFAULT '[]',
-    page_count      INTEGER NOT NULL DEFAULT 0,
-    last_crawled_at TEXT,
-    status          TEXT    NOT NULL DEFAULT 'idle',
-    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    base_url            TEXT    NOT NULL UNIQUE,
+    label               TEXT    NOT NULL DEFAULT '',
+    crawl_depth         INTEGER NOT NULL DEFAULT 2,
+    subdomains_json     TEXT    NOT NULL DEFAULT '[]',
+    page_count          INTEGER NOT NULL DEFAULT 0,
+    last_crawled_at     TEXT,
+    status              TEXT    NOT NULL DEFAULT 'idle',
+    created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
+    crawl_interval_days INTEGER NOT NULL DEFAULT 7
 );
 """
 
@@ -779,6 +780,14 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         except Exception:
             pass  # coluna já existe em DBs novos criados com o DDL atualizado
 
+    if from_version < 34:
+        try:
+            await db.execute(
+                "ALTER TABLE crawl_sites ADD COLUMN crawl_interval_days INTEGER NOT NULL DEFAULT 7"
+            )
+        except Exception:
+            pass  # coluna já existe em banco criado com este schema
+
     if from_version < 33:
         import asyncio as _asyncio
         from services import personal_memory as _pm
@@ -1036,6 +1045,22 @@ async def add_crawl_site(
         )
         await db.commit()
         return cursor.lastrowid or 0
+
+
+async def update_crawl_site(
+    site_id: int,
+    label: str,
+    crawl_depth: int,
+    crawl_interval_days: int,
+) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """UPDATE crawl_sites
+               SET label = ?, crawl_depth = ?, crawl_interval_days = ?
+               WHERE id = ?""",
+            (label, crawl_depth, crawl_interval_days, site_id),
+        )
+        await db.commit()
 
 
 async def delete_crawl_site(site_id: int) -> None:

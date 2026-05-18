@@ -16,6 +16,8 @@
             <span>·</span>
             <span>profundidade {{ site.crawl_depth }}</span>
             <span>·</span>
+            <span>recrawl a cada {{ site.crawl_interval_days }} dia{{ 's' if site.crawl_interval_days != 1 else '' }}</span>
+            <span>·</span>
             {% if site.last_crawled_at %}
               <span>crawl {{ site.last_crawled_at[:10] }}</span>
             {% else %}
@@ -46,6 +48,11 @@
           </button>
           {% endif %}
           <button class="btn btn-ghost btn-sm"
+            onclick="toggleSiteEdit(this, {{ site.id }})"
+            title="Editar configurações">
+            &#x2699;
+          </button>
+          <button class="btn btn-ghost btn-sm"
             hx-post="/library/{{ site.id }}/crawl"
             hx-swap="none"
             hx-on::after-request="showToast(event.detail.successful ? 'Crawl iniciado!' : 'Erro ao iniciar', event.detail.successful ? 'success' : 'error')"
@@ -62,6 +69,44 @@
           </button>
         </div>
 
+      </div>
+
+      <!-- ─ Formulário de edição (toggled pelo ⚙) ─ -->
+      <div id="edit-section-{{ site.id }}" style="display:none;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border,#2a2f3a);">
+        <form
+          hx-patch="/library/{{ site.id }}"
+          hx-target="#library-sites-list"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful){document.getElementById('edit-section-{{ site.id }}')&&(document.getElementById('edit-section-{{ site.id }}').style.display='none');showToast('Configurações salvas','success')}else{showToast('Erro ao salvar','error')}"
+          style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:.75rem;">
+
+          <div style="display:flex;flex-direction:column;gap:.25rem;min-width:140px;flex:1;">
+            <label style="font-size:11px;color:var(--text-muted,#8892a4);">Nome / label</label>
+            <input type="text" name="label" class="input" style="padding:.35rem .6rem;font-size:13px;"
+              value="{{ site.label or site.base_url }}" required>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:.25rem;width:90px;">
+            <label style="font-size:11px;color:var(--text-muted,#8892a4);">Profundidade</label>
+            <input type="number" name="crawl_depth" class="input" style="padding:.35rem .6rem;font-size:13px;"
+              value="{{ site.crawl_depth }}" min="1" max="10" required>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:.25rem;width:110px;">
+            <label style="font-size:11px;color:var(--text-muted,#8892a4);">Recrawl (dias)</label>
+            <input type="number" name="crawl_interval_days" class="input" style="padding:.35rem .6rem;font-size:13px;"
+              value="{{ site.crawl_interval_days }}" min="1" max="365" required>
+          </div>
+
+          <div style="display:flex;gap:.5rem;">
+            <button type="submit" class="btn btn-primary btn-sm">Salvar</button>
+            <button type="button" class="btn btn-ghost btn-sm"
+              onclick="document.getElementById('edit-section-{{ site.id }}').style.display='none'">
+              Cancelar
+            </button>
+          </div>
+
+        </form>
       </div>
 
       <!-- ─ Páginas crawleadas (expande ao clicar no botão acima) ─ -->

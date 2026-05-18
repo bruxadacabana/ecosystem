@@ -16,6 +16,13 @@ function toggleSitePages(btn, siteId) {
     btn.classList.add('tag-active');
   }
 }
+function toggleSiteEdit(btn, siteId) {
+  var sec = document.getElementById('edit-section-' + siteId);
+  if (!sec) return;
+  var visible = sec.style.display !== 'none';
+  sec.style.display = visible ? 'none' : 'block';
+  btn.classList.toggle('tag-active', !visible);
+}
 </script>
 {% endblock %}
 

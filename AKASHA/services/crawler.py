@@ -594,21 +594,19 @@ async def index_visited_page(url: str, title: str, content_md: str) -> None:
 # crawl_pending_sites
 # ---------------------------------------------------------------------------
 
-_RECRAWL_DAYS = 7  # re-crawl automático após N dias sem atualização
-
-
 async def crawl_pending_sites() -> None:
-    """Crawla sites nunca rastreados ou com last_crawled_at anterior a _RECRAWL_DAYS dias.
+    """Crawla sites nunca rastreados ou com last_crawled_at anterior ao intervalo por site.
 
-    Chamado pelo loop horário do lifespan.
+    Chamado pelo loop horário do lifespan. Cada site define seu próprio
+    crawl_interval_days (padrão 7); o recrawl acontece quando
+    last_crawled_at < now - crawl_interval_days.
     """
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await (await db.execute(
             """SELECT id, base_url FROM crawl_sites
                WHERE status = 'idle'
                  AND (last_crawled_at IS NULL
-                      OR last_crawled_at < datetime('now', ? || ' days'))""",
-            (f"-{_RECRAWL_DAYS}",),
+                      OR last_crawled_at < datetime('now', '-' || crawl_interval_days || ' days'))""",
         )).fetchall()
 
     for site_id, base_url in rows:

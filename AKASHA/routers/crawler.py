@@ -17,7 +17,8 @@ import markdown as _md
 
 from database import (
     add_crawl_site, delete_crawl_site, get_all_crawl_sites,
-    get_crawl_page_by_url, get_crawl_pages_by_site,
+    get_crawl_page_by_url, get_crawl_pages_by_site, get_crawl_site,
+    update_crawl_site,
 )
 from services.crawler import crawl_site, discover_subdomains
 from services import list_sync as _ls
@@ -35,17 +36,16 @@ templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
 @dataclass
 class CrawlSite:
-    id:              int
-    base_url:        str
-    label:           str
-    crawl_depth:     int
-    subdomains:      list[str]
-    page_count:      int
-    last_crawled_at: str | None
-    status:          str
-    created_at:      str
-
-
+    id:                  int
+    base_url:            str
+    label:               str
+    crawl_depth:         int
+    subdomains:          list[str]
+    page_count:          int
+    last_crawled_at:     str | None
+    status:              str
+    created_at:          str
+    crawl_interval_days: int = 7
 
 
 def _row_to_site(row: tuple) -> CrawlSite:
@@ -55,6 +55,7 @@ def _row_to_site(row: tuple) -> CrawlSite:
         subdomains=json.loads(row[4] or "[]"),
         page_count=row[5], last_crawled_at=row[6],
         status=row[7], created_at=row[8],
+        crawl_interval_days=row[9] if len(row) > 9 else 7,
     )
 
 
@@ -149,6 +150,28 @@ async def library_add_quick(url: str = Form(...)) -> Response:
         asyncio.get_running_loop().create_task(_bg_crawl(site_id))
         asyncio.create_task(_ls.write_json("sites"))
     return Response(status_code=200)
+
+
+# ---------------------------------------------------------------------------
+# PATCH /library/{site_id} — atualiza configurações do site
+# ---------------------------------------------------------------------------
+
+@router.patch("/library/{site_id}", response_class=HTMLResponse)
+async def library_update(
+    request: Request,
+    site_id: int,
+    label:               str = Form(...),
+    crawl_depth:         int = Form(2),
+    crawl_interval_days: int = Form(7),
+) -> HTMLResponse:
+    """Atualiza label, profundidade e intervalo de recrawl de um site já cadastrado."""
+    crawl_depth         = max(1, min(crawl_depth, 10))
+    crawl_interval_days = max(1, min(crawl_interval_days, 365))
+    await update_crawl_site(site_id, label, crawl_depth, crawl_interval_days)
+    asyncio.create_task(_ls.write_json("sites"))
+    rows  = await get_all_crawl_sites()
+    sites = [_row_to_site(r) for r in rows]
+    return templates.TemplateResponse(request, "_library_list.html", {"sites": sites})
 
 
 # ---------------------------------------------------------------------------

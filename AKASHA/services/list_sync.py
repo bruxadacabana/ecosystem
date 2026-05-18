@@ -122,13 +122,14 @@ async def write_json(list_name: str) -> None:
         async with aiosqlite.connect(DB_PATH) as db:
             if list_name == "sites":
                 rows = await (await db.execute(
-                    "SELECT base_url, label, crawl_depth, subdomains_json, created_at "
-                    "FROM crawl_sites ORDER BY created_at"
+                    "SELECT base_url, label, crawl_depth, subdomains_json, created_at, "
+                    "crawl_interval_days FROM crawl_sites ORDER BY created_at"
                 )).fetchall()
                 items = [
                     {
                         "base_url": r[0], "label": r[1], "crawl_depth": r[2],
                         "subdomains": json.loads(r[3] or "[]"), "created_at": r[4],
+                        "crawl_interval_days": r[5] if r[5] is not None else 7,
                     }
                     for r in rows
                 ]
