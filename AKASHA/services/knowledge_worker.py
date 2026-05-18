@@ -498,7 +498,7 @@ async def backfill_knowledge(archive_path: "Path") -> None:
     # ── 1. Arquivos arquivados manualmente (ARCHIVE_PATH/*.md) ──────────────
     archive_dir = _Path(archive_path)
     if archive_dir.is_dir():
-        md_files = sorted(archive_dir.glob("*.md"))
+        md_files = sorted(archive_dir.rglob("*.md"))
         log.info("backfill: %d arquivo(s) em %s", len(md_files), archive_dir)
         for md_file in md_files:
             url, title, content = _parse_archive_md(md_file)
