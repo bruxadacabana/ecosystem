@@ -1164,6 +1164,32 @@ def prepare_ask(
         health_vs = vectorstore.stores[0][0] if _multi_mode and vectorstore.stores else vectorstore
         _check_index_health(health_vs)
 
+    # LightRAG: contexto adicional para perguntas relacionais (entidades, autores…)
+    _lightrag_context = ""
+    if getattr(config, "lightrag_enabled", False):
+        try:
+            from .lightrag_graph import _looks_relational, query_hybrid as _lg_query
+            if _looks_relational(question):
+                import asyncio as _asyncio
+                _lightrag_context = _asyncio.run(_lg_query(question, config))
+                if _lightrag_context:
+                    log.info("lightrag: contexto adicional obtido (%d chars)", len(_lightrag_context))
+        except Exception as _lg_exc:
+            log.debug("lightrag.prepare_ask: %s", _lg_exc)
+
+    # RAPTOR: sumários hierárquicos para perguntas de síntese temática
+    _raptor_context = ""
+    if getattr(config, "raptor_enabled", False):
+        try:
+            from .raptor_index import _is_synthesis_query, query_raptor as _rq
+            if _is_synthesis_query(question):
+                summaries = _rq(question, config)
+                if summaries:
+                    _raptor_context = "\n\n---\n".join(summaries)
+                    log.info("raptor: %d sumários recuperados para síntese", len(summaries))
+        except Exception as _rp_exc:
+            log.debug("raptor.prepare_ask: %s", _rp_exc)
+
     # Compressão contextual: filtrar chunks irrelevantes via LLM
     docs = _contextual_compress(docs, question, config.llm_model)
 
@@ -1185,6 +1211,14 @@ def prepare_ask(
     context = "\n\n---\n".join(
         f"{_chunk_label(doc)}{doc.page_content}" for doc in docs
     )
+
+    # Prefixa contexto RAPTOR (síntese hierárquica) antes dos chunks detalhados
+    if _raptor_context:
+        context = f"[Síntese temática dos artigos]\n{_raptor_context}\n\n---\n{context}"
+
+    # Prefixa contexto LightRAG (relações entre entidades)
+    if _lightrag_context:
+        context = f"[Relações entre entidades]\n{_lightrag_context}\n\n---\n{context}"
 
     # Aviso de janela de contexto: Llama 3.x suporta ~16K tokens (~12K chars úteis)
     # Estimativa: 1 token ≈ 4 chars; 12K tokens ≈ 48K chars

@@ -338,6 +338,44 @@ class SetupDialog(QDialog):
         opts_layout.addWidget(self.suggest_questions_check)
         content_layout.addWidget(opts_group)
 
+        # Índices avançados (LightRAG + RAPTOR) — apenas MainPc
+        adv_group = QGroupBox("Índices avançados (somente MainPc — requer qwen2.5:7b)")
+        adv_layout = QVBoxLayout(adv_group)
+        self.lightrag_check = QCheckBox(
+            "LightRAG — grafo de conhecimento para perguntas relacionais\n"
+            "(instale lightrag-hku antes de ativar)"
+        )
+        self.lightrag_check.setChecked(getattr(current, "lightrag_enabled", False))
+        self.raptor_check = QCheckBox(
+            "RAPTOR — indexação hierárquica de PDFs para perguntas de síntese\n"
+            "(10–20 min de indexação offline por 1000 chunks)"
+        )
+        self.raptor_check.setChecked(getattr(current, "raptor_enabled", False))
+        adv_layout.addWidget(self.lightrag_check)
+        adv_layout.addWidget(self.raptor_check)
+
+        # Aviso se índice não encontrado
+        _adv_warning = QLabel()
+        _adv_warning.setWordWrap(True)
+        _adv_warning.setStyleSheet("color: #C89B3C; font-size: 11px;")
+        _missing: list[str] = []
+        try:
+            from core.lightrag_graph import has_index as _lg_has
+            from core.raptor_index import has_index as _rp_has
+            if getattr(current, "lightrag_enabled", False) and not _lg_has(current):
+                _missing.append("LightRAG (execute uma indexação no MainPc para construir o grafo)")
+            if getattr(current, "raptor_enabled", False) and not _rp_has(current):
+                _missing.append("RAPTOR (execute uma indexação no MainPc para construir o índice)")
+        except Exception:
+            pass
+        if _missing:
+            _adv_warning.setText(
+                "Índice avançado não encontrado — indexação disponível apenas no MainPc:\n• "
+                + "\n• ".join(_missing)
+            )
+            adv_layout.addWidget(_adv_warning)
+        content_layout.addWidget(adv_group)
+
         # Personalidade do assistente (curador customizável)
         persona_group = QGroupBox("Personalidade do assistente")
         persona_layout = QVBoxLayout(persona_group)
@@ -476,8 +514,8 @@ class SetupDialog(QDialog):
         if row >= 0:
             self.extra_dirs_list.takeItem(row)
 
-    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None, bool, str, str, bool, str]:
-        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, image_ocr_model, suggest_questions, persona_prompt)."""
+    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None, bool, str, str, bool, str, bool, bool]:
+        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, image_ocr_model, suggest_questions, persona_prompt, lightrag_enabled, raptor_enabled)."""
         extra_dirs = [self.extra_dirs_list.item(i).text()
                       for i in range(self.extra_dirs_list.count())]
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
@@ -497,6 +535,8 @@ class SetupDialog(QDialog):
             self.image_ocr_model_edit.text().strip(),
             self.suggest_questions_check.isChecked(),
             persona if persona != DEFAULT_PERSONA_PROMPT else "",
+            self.lightrag_check.isChecked(),
+            self.raptor_check.isChecked(),
         )
 
 
@@ -1922,8 +1962,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p, lightrag_en, raptor_en = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p, lightrag_en, raptor_en)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -1931,8 +1971,8 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p)
+            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p, lightrag_en, raptor_en = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p, lightrag_en, raptor_en)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             self._log_event("Configuração atualizada.")
@@ -1949,6 +1989,8 @@ class MainWindow(QMainWindow):
         image_ocr_model: str = "",
         suggest_questions: bool = False,
         persona_prompt: str = "",
+        lightrag_enabled: bool = False,
+        raptor_enabled: bool = False,
     ) -> None:
         """Aplica os valores do SetupDialog ao config e guarda."""
         if watched_dir:
@@ -1968,6 +2010,8 @@ class MainWindow(QMainWindow):
         self.config.image_ocr_model = image_ocr_model
         self.config.suggest_questions = suggest_questions
         self.config.persona_prompt = persona_prompt
+        self.config.lightrag_enabled = lightrag_enabled
+        self.config.raptor_enabled = raptor_enabled
         save_config(self.config)
         try:
             from pathlib import Path as _Path

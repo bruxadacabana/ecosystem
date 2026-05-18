@@ -166,6 +166,8 @@ _DEFAULTS: dict = {
     "image_ocr_model": "",
     "suggest_questions": False,
     "persona_prompt": "",
+    "lightrag_enabled": False,
+    "raptor_enabled": False,
 }
 
 
@@ -198,6 +200,9 @@ class AppConfig:
     image_ocr_model: str = ""
     suggest_questions: bool = False
     persona_prompt: str = ""
+    # Índices avançados — apenas no MainPc (RX 6600, qwen2.5:7b)
+    lightrag_enabled: bool = False  # grafo de conhecimento paralelo ao ChromaDB
+    raptor_enabled: bool = False    # indexação hierárquica para PDFs (papers)
     # Populados em runtime a partir do ecosystem.json — nunca persistidos
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""

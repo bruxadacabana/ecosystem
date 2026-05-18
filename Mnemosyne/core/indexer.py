@@ -1031,6 +1031,8 @@ def update_vectorstore(
             stats["errors"] += 1
 
     # Novos
+    _lightrag_texts: list[str] = []   # acumulados para inserção async ao final
+    _pdf_changed = False              # flag para trigger do RAPTOR
     for file_path, source_type in new_files:
         try:
             docs = load_single_file(file_path, source_type=source_type,
@@ -1049,13 +1051,64 @@ def update_vectorstore(
                 {file_path: chunks}, vs, bm25_idx, config, progress_cb
             )
             stats["reflections"] += n
+            # LightRAG: acumula texto completo do documento para extração de entidades
+            if config.lightrag_enabled:
+                _lightrag_texts.append("\n\n".join(c.page_content for c in chunks))
+            if str(file_path).lower().endswith(".pdf"):
+                _pdf_changed = True
         except Exception:
             stats["errors"] += 1
+
+    # LightRAG: processa inserções acumuladas (sync wrapper — roda no thread do indexer)
+    if _lightrag_texts and config.lightrag_enabled and config.indexing_enabled:
+        _run_lightrag_inserts(_lightrag_texts, config, progress_cb)
+
+    # RAPTOR: rebuild se algum PDF mudou e o índice não existe ou está desatualizado
+    if _pdf_changed and config.raptor_enabled and config.indexing_enabled:
+        _schedule_raptor_rebuild(vs, config, progress_cb)
 
     chunk_store.close()
 
     bm25_idx.save()
     return vs, stats
+
+
+def _run_lightrag_inserts(
+    texts: list[str],
+    config: "AppConfig",
+    progress_cb: "Callable[[str], None] | None",
+) -> None:
+    """Insere textos no LightRAG de forma síncrona (asyncio.run em thread do indexer)."""
+    try:
+        import asyncio
+        from .lightrag_graph import insert_text as _lg_insert
+
+        async def _insert_all() -> None:
+            for i, text in enumerate(texts):
+                if progress_cb:
+                    progress_cb(f"LightRAG: inserindo documento {i + 1}/{len(texts)}…")
+                await _lg_insert(text, config)
+
+        asyncio.run(_insert_all())
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger("mnemosyne.indexer").warning("lightrag insert: %s", exc)
+
+
+def _schedule_raptor_rebuild(
+    vs: "Chroma",
+    config: "AppConfig",
+    progress_cb: "Callable[[str], None] | None",
+) -> None:
+    """Reconstrói índice RAPTOR de forma síncrona (asyncio.run em thread do indexer)."""
+    try:
+        import asyncio
+        from .raptor_index import build_raptor_index as _build
+
+        asyncio.run(_build(config, vs, progress_cb=progress_cb))
+    except Exception as exc:
+        import logging as _log
+        _log.getLogger("mnemosyne.indexer").warning("raptor rebuild: %s", exc)
 
 
 def load_vectorstore(config: AppConfig) -> Chroma:

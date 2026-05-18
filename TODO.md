@@ -3757,7 +3757,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Decisão: LightRAG primeiro (coleção dinâmica); RAPTOR depois, específico para Papers/.
 
 #### Mnemosyne
-- [ ] **LightRAG — grafo de conhecimento paralelo ao ChromaDB** (`core/indexer.py`,
+- [x] **LightRAG — grafo de conhecimento paralelo ao ChromaDB** (`core/indexer.py`,
   `core/rag.py`, novo `core/lightrag_graph.py`). Instalar `lightrag-hku` (PyPI). Durante
   a indexação (`update_vectorstore`), além de inserir chunks no ChromaDB, enviar o mesmo
   texto ao LightRAG para extração de entidades (qwen2.5:7b via Ollama). LightRAG persiste
@@ -3768,7 +3768,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Inserção incremental: `lightrag.insert_custom_kg()` por documento novo — sem reconstrução total.
   Requisito: apenas no MainPc (qwen2.5:7b); WorkPc e Laptop usam o grafo pré-sincronizado (somente leitura).
 
-- [ ] **RAPTOR — índice hierárquico para a coleção Papers/** (`core/raptor_index.py`, novo módulo).
+- [x] **RAPTOR — índice hierárquico para a coleção Papers/** (`core/raptor_index.py`, novo módulo).
   Instalar `llama-index-packs-raptor`. Ao indexar documentos com `source_type == "paper"`,
   rodar o pipeline RAPTOR (UMAP + GMM clustering + sumarização com qwen2.5:7b) para gerar
   a árvore de sumários. Usar modo "collapsed tree" (índice flat com todos os níveis).
@@ -3779,7 +3779,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Rodas de clustering: 3 (padrão adequado para < 500 papers). Custo estimado: ~100-120 chamadas
   LLM para 1000 chunks na RX 6600 ≈ 15-20 minutos offline.
 
-- [ ] **Sincronização dos artefatos de grafo e RAPTOR entre máquinas** (documentação em GUIDE.md).
+- [x] **Sincronização dos artefatos de grafo e RAPTOR entre máquinas** (documentação em GUIDE.md).
   Os artefatos `{chroma_dir}/lightrag/` e `{chroma_dir}/raptor_papers/` devem ser incluídos
   no sync via Proton Drive — são arquivos SQLite/JSON transferíveis. Documentar no GUIDE.md
   que WorkPc e Laptop devem montar esses diretórios como somente leitura e nunca acionar

@@ -25,3 +25,4 @@ wordcloud>=1.9.3
 numpy>=1.26
 networkx>=3.0
 lingua-language-detector>=2.0
+lightrag-hku>=1.0
