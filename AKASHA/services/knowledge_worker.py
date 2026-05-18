@@ -468,7 +468,10 @@ def _parse_archive_md(path: "Path") -> tuple[str, str, str]:
     url = title = ""
     for line in parts[1].splitlines():
         low = line.strip()
-        if low.startswith("url:"):
+        if low.startswith("source_url:"):
+            # papers usam source_url (não url)
+            url = low[11:].strip().strip("\"'")
+        elif low.startswith("url:") and not url:
             url = low[4:].strip().strip("\"'")
         elif low.startswith("title:"):
             title = low[6:].strip().strip("\"'")
@@ -508,7 +511,8 @@ async def backfill_knowledge(archive_path: "Path") -> None:
             if existing:
                 continue
             await _wait_queue_drain()
-            schedule_page(url, title or md_file.stem, content, "archived")
+            src_type = "paper" if "Papers" in md_file.parts else "archived"
+            schedule_page(url, title or md_file.stem, content, src_type)
             total_enqueued += 1
 
     # ── 2. Páginas crawleadas da Biblioteca sem extração ───────────────────
