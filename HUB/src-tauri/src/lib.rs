@@ -58,6 +58,8 @@ pub fn run() {
             commands::git::git_commit_for_app,
             commands::git::git_scheduled_commit,
             commands::git::git_check_incoming,
+            commands::git::git_get_paused,
+            commands::git::git_set_paused,
             commands::config::read_ecosystem_config,
             commands::config::validate_path,
             commands::config::save_ecosystem_config,

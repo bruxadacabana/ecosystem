@@ -39,7 +39,12 @@ function statusMeta(code: string): StatusMeta {
 //  Componente principal
 // ----------------------------------------------------------
 
-export function GitView() {
+interface GitViewProps {
+  paused: boolean
+  onTogglePaused: () => void
+}
+
+export function GitView({ paused, onTogglePaused }: GitViewProps) {
   const [status,       setStatus]       = useState<GitFileStatus[]>([])
   const [log,          setLog]          = useState<GitLogEntry[]>([])
   const [commitMsg,    setCommitMsg]    = useState('')
@@ -264,13 +269,31 @@ export function GitView() {
     <div style={styles.root}>
       {/* Header */}
       <div style={styles.header}>
-        <span style={styles.headerTitle}>Repositório offline</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={styles.headerTitle}>Repositório offline</span>
+          {paused && (
+            <span style={styles.pausedBadge}>⏸ pausado</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {externalCount > 0 && (
             <span style={styles.externalBadge}>
               ⎇ {externalCount} commit{externalCount > 1 ? 's' : ''} externo{externalCount > 1 ? 's' : ''}
             </span>
           )}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={onTogglePaused}
+            style={{
+              fontSize: 10,
+              padding: '2px 8px',
+              color: paused ? '#b8860b' : 'var(--ink-ghost)',
+              borderColor: paused ? '#b8860b55' : undefined,
+            }}
+            title={paused ? 'Auto-commits pausados — clique para retomar' : 'Pausar auto-commits'}
+          >
+            {paused ? '▶ retomar' : '⏸ pausar'}
+          </button>
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => refresh()}
@@ -397,6 +420,15 @@ const styles = {
     color: '#2C5F8A',
     background: 'rgba(44,95,138,0.1)',
     border: '1px solid rgba(44,95,138,0.3)',
+    borderRadius: 'var(--radius)',
+    padding: '2px 8px',
+  },
+  pausedBadge: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10,
+    color: '#b8860b',
+    background: 'rgba(184,134,11,0.1)',
+    border: '1px solid rgba(184,134,11,0.35)',
     borderRadius: 'var(--radius)',
     padding: '2px 8px',
   },

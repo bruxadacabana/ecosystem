@@ -75,6 +75,12 @@ export const gitScheduledCommit = (runningApps: string[]): Promise<TauriResult<s
 export const gitCheckIncoming = (): Promise<TauriResult<GitIncomingInfo>> =>
   call<GitIncomingInfo>('git_check_incoming')
 
+export const gitGetPaused = (): Promise<TauriResult<boolean>> =>
+  call<boolean>('git_get_paused')
+
+export const gitSetPaused = (paused: boolean): Promise<TauriResult<void>> =>
+  call<void>('git_set_paused', { paused })
+
 // ----------------------------------------------------------
 //  Módulo Escrita — vault AETHER
 // ----------------------------------------------------------

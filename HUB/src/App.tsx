@@ -52,6 +52,10 @@ export default function App() {
 
   const toast = useToast()
 
+  // Git pause state — persiste em ecosystem.json["hub"]["git_paused"]
+  const [gitPaused,    setGitPaused]    = useState(false)
+  const gitPausedRef = useRef(false)
+
   // Carrega caminhos uma vez ao iniciar (e ao voltar ao home via seção)
   function loadPaths() {
     cmd.readEcosystemConfig().then(result => {
@@ -76,7 +80,7 @@ export default function App() {
     })
   }, [ready])
 
-  // Assim que sync_root está confirmado, garante que o repo git existe
+  // Assim que sync_root está confirmado, garante que o repo git existe e carrega estado de pause
   useEffect(() => {
     if (!syncRootReady) return
     cmd.gitInitSyncRoot().then(result => {
@@ -84,7 +88,22 @@ export default function App() {
         console.warn('[HUB] git init sync_root falhou:', result.error.message)
       }
     })
+    cmd.gitGetPaused().then(res => {
+      if (res.ok) {
+        setGitPaused(res.data)
+        gitPausedRef.current = res.data
+      }
+    })
   }, [syncRootReady])
+
+  async function handleToggleGitPaused() {
+    const next = !gitPaused
+    const res = await cmd.gitSetPaused(next)
+    if (res.ok) {
+      setGitPaused(next)
+      gitPausedRef.current = next
+    }
+  }
 
   // Watcher: detecta fechamento de apps e faz auto-commit após 3 s
   const prevRunningRef = useRef<Set<string> | null>(null)
@@ -113,7 +132,7 @@ export default function App() {
         for (const app of WATCHED) {
           const wasRunning = prev.has(app)
           const isRunning  = Boolean(current[app])
-          if (wasRunning && !isRunning) {
+          if (wasRunning && !isRunning && !gitPausedRef.current) {
             // App fechou — aguarda gravações finalizarem e commita
             setTimeout(() => {
               cmd.gitCommitForApp(app).then(res => {
@@ -143,6 +162,7 @@ export default function App() {
     if (!syncRootReady) return
 
     async function scheduledCommit() {
+      if (gitPausedRef.current) return
       const cfgRes = await cmd.readEcosystemConfig()
       if (!cfgRes.ok) return
       const eco      = cfgRes.data as Record<string, Record<string, string>>
@@ -299,7 +319,7 @@ export default function App() {
       case 'monitoramento':
         return <MonitoramentoView />
       case 'git':
-        return <GitView />
+        return <GitView paused={gitPaused} onTogglePaused={handleToggleGitPaused} />
       case 'config':
         return (
           <SetupView

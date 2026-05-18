@@ -286,6 +286,19 @@ pub fn git_check_incoming() -> Result<GitIncomingInfo, AppError> {
     Ok(GitIncomingInfo { count, entries })
 }
 
+/// Retorna se os auto-commits estão pausados (`hub.git_paused` no ecosystem.json).
+#[tauri::command]
+pub fn git_get_paused() -> bool {
+    let eco = ecosystem::read_json();
+    eco["hub"]["git_paused"].as_bool().unwrap_or(false)
+}
+
+/// Pausa ou retoma os auto-commits do HUB.
+#[tauri::command]
+pub fn git_set_paused(paused: bool) -> Result<(), AppError> {
+    ecosystem::write_section("hub", serde_json::json!({ "git_paused": paused }))
+}
+
 /// Item 7 — Salva HEAD atual em `ecosystem.json["hub"]["last_git_head"]`.
 /// Chamado no quit após o commit final da sessão.
 pub fn save_git_head(root: &std::path::Path) -> Result<(), AppError> {
