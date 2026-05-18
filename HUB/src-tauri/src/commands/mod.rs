@@ -2,6 +2,7 @@ pub mod config;
 pub mod git;
 pub mod launcher;
 pub mod logos;
+pub mod memory;
 pub mod notify;
 pub mod projects;
 pub mod reading;

@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry } from '../types'
 
 async function call<T>(
   command: string,
@@ -216,6 +216,26 @@ export const logosAbortModelInference = (model: string): Promise<TauriResult<boo
 
 export const logosDeleteModel = (model: string): Promise<TauriResult<void>> =>
   call<void>('logos_delete_model', { model })
+
+// ----------------------------------------------------------
+//  Memória pessoal — AKASHA e Mnemosyne
+// ----------------------------------------------------------
+
+export const memoryGetEntries = (app: string, n: number): Promise<TauriResult<MemoryEntry[]>> =>
+  call<MemoryEntry[]>('memory_get_entries', { app, n })
+
+export const memoryDeleteEntry = (app: string, entryId: number): Promise<TauriResult<void>> =>
+  call<void>('memory_delete_entry', { app, entryId })
+
+export interface KosmosAnalysisStats {
+  available: boolean
+  total?:    number
+  pending?:  number
+  analyzed?: number
+}
+
+export const kosmosGetAnalysisStats = (): Promise<TauriResult<KosmosAnalysisStats>> =>
+  call<KosmosAnalysisStats>('kosmos_get_analysis_stats')
 
 // ----------------------------------------------------------
 //  Janela — modo compacto

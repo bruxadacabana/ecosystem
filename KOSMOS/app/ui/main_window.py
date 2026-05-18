@@ -110,6 +110,13 @@ class MainWindow(QMainWindow):
         self._retry_timer.timeout.connect(self._on_retry_unanalyzed)
         self._retry_timer.start()
 
+        # Status writer: publica bg_processing no ecosystem.json para o HUB a cada 30s
+        self._status_writer_timer = QTimer(self)
+        self._status_writer_timer.setInterval(30_000)
+        self._status_writer_timer.timeout.connect(self._write_bg_status)
+        self._status_writer_timer.start()
+        self._write_bg_status()  # escrita inicial imediata
+
         # Tradutor de títulos dos cards
         self._title_translator = TitleTranslator()
         self._title_translator.title_translated.connect(self._on_title_translated)
@@ -500,6 +507,23 @@ class MainWindow(QMainWindow):
             badge.setObjectName("ollamaOffline")
         badge.style().unpolish(badge)
         badge.style().polish(badge)
+
+    def _write_bg_status(self) -> None:
+        """Publica estado do bg_analyzer no ecosystem.json para o HUB."""
+        try:
+            import sys as _sys
+            _root = str(__import__("pathlib").Path(__file__).parent.parent.parent.parent)
+            if _root not in _sys.path:
+                _sys.path.insert(0, _root)
+            from ecosystem_client import write_section  # type: ignore
+            write_section("kosmos", {
+                "bg_processing": {
+                    "pending":       self._bg_analyzer.queue_size(),
+                    "worker_active": self._bg_analyzer.isRunning(),
+                }
+            })
+        except Exception:
+            pass
 
     def _on_status_message(self, message: str) -> None:
         self._status_bar.showMessage(message)

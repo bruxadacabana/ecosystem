@@ -120,6 +120,10 @@ class BackgroundAnalyzer(QThread):
         self._running = False
         self._queue.put((_HIGH, next(self._seq), -1, None, None))  # sentinela
 
+    def queue_size(self) -> int:
+        """Retorna o número de itens aguardando na fila (aproximado, thread-safe)."""
+        return self._queue.qsize()
+
     # ------------------------------------------------------------------
     # Loop principal
     # ------------------------------------------------------------------

@@ -257,6 +257,19 @@ export interface GitIncomingInfo {
 }
 
 // ----------------------------------------------------------
+//  Memória pessoal
+// ----------------------------------------------------------
+
+export interface MemoryEntry {
+  id:         number
+  created_at: string
+  type:       string
+  content:    string
+  tags:       string[]
+  feedback:   string | null
+}
+
+// ----------------------------------------------------------
 //  HUB Navigation
 // ----------------------------------------------------------
 
