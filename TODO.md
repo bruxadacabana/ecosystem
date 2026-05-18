@@ -6127,3 +6127,51 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 #### AKASHA
 
 - [x] **Herdar modelos do HUB no startup** (`services/knowledge_worker.py`, `chat.py`, `persona.py`, `query_understanding.py`, `local_search.py`). Todos os pontos leem `get_active_profile()` no import. Nenhum persiste override local. Verificado.
+
+---
+
+### Sincronização de dados do ecossistema via Syncthing + git offline | 2026-05-17
+
+> Contexto: dados pessoais (memória das IAs, notebooks, listas curadas, transcrições) precisam sincronizar entre CachyOS principal, laptop e WorkPC via Syncthing. O HUB gerencia a pasta sincronizada como repo git offline para garantir integridade e histórico. Dados das IAs ficam em `.ai_private/` (nunca indexado); backups e fontes de verdade em `.backup/` (nunca indexado). A pasta raiz (`sync_root`) é configurada pelo usuário no HUB na primeira execução.
+
+#### ecosystem_client
+
+- [x] **`sync_root` como campo top-level + funções auxiliares** (`ecosystem_client.py`). Adicionar `"sync_root": ""` ao `_DEFAULTS` (campo top-level, não nested em app); corrigir lógica de merge em `read_ecosystem()` para tratar strings (não apenas dict/list); adicionar `write_top_level(key, value)` para escrever campo top-level atomicamente; adicionar `get_sync_root() → Path | None` (retorna `None` se vazio), `get_ai_private_dir() → Path | None` (`{sync_root}/.ai_private/`), `get_backup_dir() → Path | None` (`{sync_root}/.backup/`).
+
+#### HUB
+
+- [ ] **Tela de setup de `sync_root`** (`src/views/SyncSetupView.tsx`; `src/lib/tauri.ts`; `src-tauri/src/`). Se `ecosystem.json` não tiver `sync_root` configurado ao abrir o HUB, exibir tela de primeiro uso com seletor de pasta (dialog nativo Tauri) e botão confirmar; ao confirmar, chamar `write_top_level("sync_root", path)` e recarregar o app; só mostrar a UI principal após configuração. Se já configurado, pular direto.
+
+- [ ] **Git init na pasta sync_root** (`src-tauri/src/`; Tauri command `git_init_sync_root()`). No startup do HUB, se `sync_root` configurado e `{sync_root}/.git/` não existir: executar `git init`; criar `{sync_root}/.gitignore` com `*.db-wal` e `*.db-shm`; criar `{sync_root}/.stignore` (Syncthing) com os mesmos padrões mais `*.tmp`; fazer commit inicial vazio `"init: ecosystem sync root"`; se `.git/` já existir, apenas verificar que `.gitignore` tem as entradas.
+
+- [ ] **Aba Git no HUB** (`src/views/GitView.tsx`; Tauri commands `git_status()`, `git_commit(message)`, `git_log(n)`, `git_diff()`). Nova aba na sidebar do HUB. Exibe: status em tempo real (polling 5s — lista de arquivos modificados/não-rastreados com ícone de estado); botão "Commit" com campo de mensagem opcional (usa mensagem automática se vazio); log dos últimos 20 commits (hash curto, data, mensagem); seção "diff" expansível por arquivo. Todos os comandos git executados no `sync_root` via `std::process::Command` em Rust. Indicar visualmente se há commits não-vistos (recebidos via Syncthing desde último startup).
+
+- [ ] **Auto-commit quando app fecha** (`src-tauri/src/`; integrar ao monitor de processos existente). Quando HUB detecta que um app do ecossistema fechou (AKASHA, Mnemosyne, KOSMOS, HERMES): aguardar 3s para gravações finalizarem; executar `git add -A -- {arquivos_do_app}` e `git commit -m "auto: {app} closed — {descrição}"`. Mensagens por app: AKASHA → `"library and memory synced"`; Mnemosyne → `"notebooks and memory updated"`; KOSMOS → `"sources updated"`; HERMES → `"transcriptions saved"`. Não commitar se o app ainda estiver rodando. O HUB também commita seus próprios arquivos ao fechar: `"auto: hub closed — ecosystem snapshot"`.
+
+- [ ] **Auto-commit agendado** (`src-tauri/src/`). A cada 60 minutos (timer interno no HUB): se houver mudanças não-commitadas em arquivos de apps que NÃO estejam rodando no momento, executar `git add -A` e `git commit -m "auto: hub scheduled — {N} files changed"`. Nunca commitar arquivos de um app que esteja aberto (verificar via lista de processos monitorados).
+
+- [ ] **Detectar commits recebidos via Syncthing** (`src-tauri/src/`; `GitView.tsx`). No startup do HUB, ler o hash HEAD antes e depois de qualquer atualização do Syncthing (comparar com hash salvo na sessão anterior em `ecosystem.json["hub"]["last_git_head"]`). Se diferente, exibir na aba Git: `"N commits recebidos desde a última sessão"` com lista dos arquivos alterados.
+
+#### AKASHA
+
+- [ ] **Separar `personal_memory` para arquivo próprio** (`services/personal_memory.py`; `database.py` — SCHEMA_VERSION 33). Mover a tabela `personal_memory` do `akasha.db` para `{get_ai_private_dir()}/akasha/personal_memory.db` — arquivo SQLite independente. `personal_memory.py` passa a usar o novo caminho (cria o diretório se não existir; fallback para `~/.local/share/akasha/personal_memory.db` se `sync_root` não configurado). Migration v33: copiar dados existentes para o novo arquivo e fazer DROP TABLE no akasha.db original.
+
+- [ ] **Listas do AKASHA como fonte de verdade (leitura)** (`services/list_sync.py` — novo; `main.py` — chamar no lifespan após `init_db()`). No startup, ler os JSONs em `{get_backup_dir()}/akasha/`: `sites.json`, `favorites.json`, `blocklist.json`, `watch_later.json`, `lenses.json`, `papers.json`, `highlights.json`. Para cada arquivo: se existir e DB estiver vazio (tabela sem linhas), importar os dados do JSON para o DB. Se DB já tiver dados, comparar e aplicar diff (adicionar entradas ausentes, não sobrescrever modificações locais recentes). Criar os arquivos JSON vazios se não existirem.
+
+- [ ] **Listas do AKASHA como fonte de verdade (escrita)** (`routers/crawler.py`, `routers/favorites.py`, `routers/highlights.py`, `routers/papers.py`, `routers/lenses.py`, `routers/watch_later.py`). Após cada operação de criação/edição/remoção em qualquer das listas, chamar `list_sync.write_json(list_name)` que serializa a tabela inteira para o JSON correspondente em `.backup/akasha/`. Fire-and-forget via `asyncio.create_task()` para não bloquear a resposta HTTP.
+
+#### Mnemosyne
+
+- [ ] **Mover `personal_memory.db` para `sync_root`** (`core/personal_memory.py`). Alterar `_get_db()` para retornar `get_ai_private_dir() / "mnemosyne" / "personal_memory.db"` quando `sync_root` configurado; criar diretório se não existir. Na primeira execução com novo caminho: se arquivo existir em `get_app_data_dir() / "personal_memory.db"`, copiar para o novo local e manter o antigo como `.bak` (não deletar).
+
+- [ ] **Mover `notebooks/` para `sync_root`** (`gui/main_window.py` — init do `NotebookStore`). Alterar criação do `NotebookStore` para usar `get_ai_private_dir() / "mnemosyne" / "notebooks"` quando `sync_root` configurado; fallback para `get_app_data_dir() / "notebooks"`. Na primeira execução com novo caminho: se pasta existir no local antigo e novo estiver vazia, mover (`shutil.move`) todo o conteúdo.
+
+- [ ] **Exportar `collections.json` para `.backup/`** (`core/config.py` — `save_config()`; `gui/main_window.py` — `_apply_setup_values()`). Após cada `save_config()`, serializar a lista de coleções ativas (watched_dirs, collection_type, enabled, nome) para `{get_backup_dir()}/mnemosyne/collections.json`. Também escrever no startup para manter atualizado.
+
+#### KOSMOS
+
+- [ ] **`sources.json` em `.backup/` como fonte de verdade** (`app/utils/config.py` ou módulo equivalente de fontes). Ler fontes de `{get_backup_dir()}/kosmos/sources.json` no startup se arquivo existir; escrever a cada adição/remoção de fonte. Se `sync_root` não configurado, usar caminho local atual sem mudança.
+
+#### HERMES
+
+- [ ] **`settings.json` e transcrições em `.backup/`** (`core/config.py` ou equivalente do Hermes; callback pós-transcrição). Copiar `settings.json` para `{get_backup_dir()}/hermes/settings.json` a cada salvar de config. Após cada transcrição concluída, copiar o arquivo de texto gerado para `{get_backup_dir()}/hermes/transcriptions/{nome_arquivo}.txt`.

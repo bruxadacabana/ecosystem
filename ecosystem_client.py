@@ -30,6 +30,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 _DEFAULTS: dict[str, Any] = {
+    "sync_root": "",
     "aether":    {"vault_path": "", "config_path": ""},
     "kosmos":    {"data_path": "", "archive_path": "", "config_path": "", "http_port": 8965},
     "ogma":      {"data_path": "", "config_path": ""},
@@ -58,26 +59,32 @@ def read_ecosystem() -> dict[str, Any]:
     """
     path = ecosystem_path()
     if not path.exists():
-        return {k: dict(v) if isinstance(v, dict) else list(v)
-                for k, v in _DEFAULTS.items()}
+        return {
+            k: dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v
+            for k, v in _DEFAULTS.items()
+        }
     try:
         with path.open(encoding="utf-8") as f:
             data = json.load(f)
         # Merge: garante que todas as seções existam mesmo em arquivos antigos
         result: dict[str, Any] = {}
-        # Preserva campos extras do arquivo que não estão em _DEFAULTS (ex: sync_root)
+        # Preserva campos extras do arquivo que não estão em _DEFAULTS
         for key, value in data.items():
             if key not in _DEFAULTS:
                 result[key] = value
         for key, default in _DEFAULTS.items():
             if isinstance(default, dict):
                 result[key] = {**default, **data.get(key, {})}
-            else:
+            elif isinstance(default, list):
                 result[key] = data.get(key, list(default))
+            else:
+                result[key] = data.get(key, default)
         return result
     except (json.JSONDecodeError, OSError):
-        return {k: dict(v) if isinstance(v, dict) else list(v)
-                for k, v in _DEFAULTS.items()}
+        return {
+            k: dict(v) if isinstance(v, dict) else list(v) if isinstance(v, list) else v
+            for k, v in _DEFAULTS.items()
+        }
 
 
 def derive_paths(sync_root: str) -> dict[str, Any]:
@@ -475,6 +482,57 @@ def notify_mnemosyne_insight(
         write_section("mnemosyne", {"incoming_insights": incoming})
     except Exception:
         pass
+
+
+def write_top_level(key: str, value: Any) -> None:
+    """
+    Atualiza um campo top-level do ecosystem.json (ex: sync_root).
+    Escrita atômica + lock exclusivo para evitar race condition entre processos.
+
+    Raises:
+        OSError: se a escrita falhar.
+    """
+    path = ecosystem_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _do_write() -> None:
+        data = read_ecosystem()
+        data[key] = value
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, path)
+        except OSError:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    if _HAS_FILELOCK:
+        with _FileLock(str(_lock_path()), timeout=10):
+            _do_write()
+    else:
+        _do_write()
+
+
+def get_sync_root() -> Path | None:
+    """Retorna sync_root configurado no ecosystem.json. None se não configurado."""
+    raw = read_ecosystem().get("sync_root", "")
+    return Path(raw) if raw else None
+
+
+def get_ai_private_dir() -> Path | None:
+    """Retorna {sync_root}/.ai_private/. None se sync_root não configurado."""
+    root = get_sync_root()
+    return (root / ".ai_private") if root is not None else None
+
+
+def get_backup_dir() -> Path | None:
+    """Retorna {sync_root}/.backup/. None se sync_root não configurado."""
+    root = get_sync_root()
+    return (root / ".backup") if root is not None else None
 
 
 def write_section(app: str, section: dict[str, Any]) -> None:
