@@ -1092,6 +1092,9 @@ def load_all_vectorstores(config: AppConfig) -> list[tuple[Chroma, "CollectionCo
     if config.ecosystem_chroma_dir:
         try:
             vs = load_vectorstore(config)
+            if vs._collection.count() == 0:
+                # ChromaDB existe mas está vazio — tratar como não-indexado
+                return []
             active = config.active_coll
             if active:
                 return [(vs, active)]
@@ -1114,6 +1117,8 @@ def load_all_vectorstores(config: AppConfig) -> list[tuple[Chroma, "CollectionCo
                 embedding_function=embeddings,
                 collection_metadata={"hnsw:space": "cosine"},
             )
+            if vs._collection.count() == 0:
+                continue
             result.append((vs, coll))
         except Exception:
             pass

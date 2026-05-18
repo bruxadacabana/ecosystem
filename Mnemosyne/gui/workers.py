@@ -124,17 +124,32 @@ class IndexWorker(QThread):
             self.finished.emit(False, str(EmptyDirectoryError(self.config.watched_dir)))
             return
 
-        # ── 2. Limpar toda a pasta .mnemosyne (parte do zero) ────────────────
+        # ── 2. Mover diretório anterior para backup seguro ────────────────────
+        # Renomeia em vez de deletar: o .bak só é apagado após sucesso completo.
+        # Se a nova indexação falhar ou for interrompida, o dado anterior sobrevive.
         mnemosyne_dir = self.config.mnemosyne_dir
+        bak_dir = mnemosyne_dir + ".bak" if mnemosyne_dir else ""
+
+        if bak_dir and os.path.exists(bak_dir):
+            try:
+                shutil.rmtree(bak_dir)
+            except OSError:
+                pass  # .bak de sessão anterior — ignorar falha de remoção
+
         if mnemosyne_dir and os.path.exists(mnemosyne_dir):
             try:
-                shutil.rmtree(mnemosyne_dir)
+                os.rename(mnemosyne_dir, bak_dir)
             except OSError as exc:
-                self.finished.emit(False, f"Erro ao limpar estado anterior: {exc}")
+                self.finished.emit(False, f"Erro ao criar backup do índice anterior: {exc}")
                 return
         try:
             os.makedirs(self.config.persist_dir, exist_ok=True)
         except OSError as exc:
+            if bak_dir and os.path.exists(bak_dir):
+                try:
+                    os.rename(bak_dir, mnemosyne_dir)
+                except OSError:
+                    pass
             self.finished.emit(False, f"Erro ao criar diretório: {exc}")
             return
 
@@ -273,8 +288,11 @@ class IndexWorker(QThread):
             checkpoint.record(file_path, "ok")
 
         bm25_idx.save()
-        # Apagar checkpoint: indexação concluída — botão "Retomar" não deve aparecer
         checkpoint.delete()
+        # Indexação concluída com sucesso — remover backup anterior
+        bak_dir = self.config.mnemosyne_dir + ".bak"
+        if os.path.exists(bak_dir):
+            shutil.rmtree(bak_dir, ignore_errors=True)
         unknown = get_and_clear_unknown_sources()
         if unknown:
             self.languages_unknown.emit(unknown)

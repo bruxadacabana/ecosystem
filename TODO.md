@@ -6218,6 +6218,24 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 - [x] **`settings.json` e transcrições em `.backup/`** (`hermes.py`). Copiar `settings.json` para `{get_backup_dir()}/hermes/settings.json` a cada salvar de config. Após cada transcrição concluída, copiar o arquivo de texto gerado para `{get_backup_dir()}/hermes/transcriptions/{nome_arquivo}.txt`.
 
+### Diagnóstico Mnemosyne — integridade de dados, logs e paths | 2026-05-18
+> Contexto: investigação do ChromaDB vazio revelou dois bugs estruturais no Mnemosyne. O IndexWorker usa shutil.rmtree antes de garantir sucesso da nova indexação, causando perda irreversível de dados. O tracker.json reporta tudo como indexado mesmo com ChromaDB vazio, enganando a usuária. Adicionalmente: watched_dir local no settings.json aponta para caminho antigo; falta sistema de logs que teria revelado o problema mais cedo.
+
+#### Mnemosyne
+- [x] **Bug 1 — IndexWorker destrói dados sem backup** (`gui/workers.py`). Substituir `shutil.rmtree(mnemosyne_dir)` por `os.rename(mnemosyne_dir, mnemosyne_dir + ".bak")`. Deletar o `.bak` apenas após `finished.emit(True, ...)`. Em caso de falha ou interrupção, o `.bak` permanece para recuperação manual.
+- [x] **Bug 2 — ChromaDB vazio mas UI reporta "indexado"** (`core/indexer.py`). Em `load_all_vectorstores()`, após abrir cada vectorstore, verificar `vs._collection.count()`. Se count == 0, não incluir no resultado — vectorstore tratado como inexistente. O UI mostrará "Nenhum índice encontrado" em vez de enganosamente mostrar "indexado".
+- [ ] **Corrigir caminho errado de watched_dir** (`core/config.py`; `.config/settings.json`). A coleção "Biblioteca" em settings.json aponta para `/home/spacewitch/Documents/biblioteca` (caminho antigo/errado). Em `load_config()`, quando `ecosystem_watched_dir` estiver definido, atualizar o path da coleção ativa correspondente e salvar com `save_config()` para manter consistência — evita exibir o caminho errado na UI e em funções que usam `coll.path` diretamente.
+- [ ] **Verificação cruzada de integridade no startup** (`gui/main_window.py`). Após `load_all_vectorstores()` retornar vazio, verificar se `_collection_index` indica indexação recente. Se sim, exibir dialog explicativo: "ChromaDB sem embeddings apesar de indexação registrada — re-indexação necessária" com botão direto para "Indexar tudo".
+- [ ] **Sistema de logs robusto** (`core/logger.py` — novo arquivo; `gui/workers.py`; `gui/main_window.py`). Configurar `RotatingFileHandler` apontando para `{sync_root}/mnemosyne/mnemosyne.log` (max 5 MB, 3 backups). Workers devem logar: início de operação com contagem de arquivos, cada arquivo processado (nível DEBUG), exceções capturadas silenciosamente (nível ERROR com traceback), e término com resumo. Erros genéricos como `except Exception: stats["errors"] += 1` devem chamar `log.exception(...)`.
+
+#### AKASHA
+- [ ] **Sistema de logs robusto** (`services/log_buffer.py` — novo; `routers/system.py`). Adicionar `logging.Handler` com buffer circular em memória (500 linhas) no root logger do AKASHA no startup. Expor via `GET /system/logs?n=100` retornando JSON `{"lines": [...]}`. Logar erros silenciosos nos workers e routers críticos que atualmente swallowam exceções.
+
+#### HUB
+- [ ] **Log viewer no monitor** (`src/views/MonitoramentoView.tsx`). Adicionar componente `LogViewer` expansível em cada AppBlock. AKASHA: polling `GET {akashaBaseUrl}/system/logs` a cada 3s quando expandido. Mnemosyne: Tauri command `read_app_log("mnemosyne")` lendo as últimas N linhas do arquivo de log. Exibir em `<pre>` monoespaçado com scroll automático para o final.
+
+---
+
 ### AKASHA — perfil de interesse e aprendizado | 2026-05-18
 > Contexto: discussão sobre o perfil de interesse da AKASHA (topic_interest_profile) e se o aprendizado atual (contagem de frequência de tópicos + RAG) é suficientemente real. Dois itens levantados: seeds manuais de interesse e pesquisa sobre abordagens mais sofisticadas.
 
