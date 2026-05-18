@@ -43,6 +43,11 @@ def setup_logger(level: int = logging.INFO) -> None:
     Prioridade de destino:
       1. {sync_root}/mnemosyne/mnemosyne.log — onde o HUB pode ler
       2. Mnemosyne/logs/mnemosyne.log        — fallback local
+
+    Usa configuração direta do root logger em vez de basicConfig() para
+    garantir que os handlers sejam aplicados mesmo se alguma biblioteca
+    já tiver chamado basicConfig() antes (que tornaria uma segunda chamada
+    um no-op silencioso).
     """
     log_dir = _resolve_log_dir()
     try:
@@ -53,20 +58,24 @@ def setup_logger(level: int = logging.INFO) -> None:
 
     log_file = log_dir / "mnemosyne.log"
 
-    fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    logging.basicConfig(
-        level=level,
-        format=fmt,
-        handlers=[
-            logging.handlers.RotatingFileHandler(
-                log_file,
-                maxBytes=5 * 1024 * 1024,
-                backupCount=3,
-                encoding="utf-8",
-            ),
-            logging.StreamHandler(),
-        ],
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_file,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
     )
+    file_handler.setFormatter(fmt)
+
+    stderr_handler = logging.StreamHandler()
+    stderr_handler.setFormatter(fmt)
+
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+    root.addHandler(file_handler)
+    root.addHandler(stderr_handler)
 
     for noisy_lib in ("chromadb", "httpx", "httpcore", "urllib3", "sentence_transformers"):
         logging.getLogger(noisy_lib).setLevel(logging.WARNING)
