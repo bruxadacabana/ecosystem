@@ -139,6 +139,10 @@ async def _ensure_db_healthy() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    # Re-registra o handler após uvicorn.config.dictConfig() ter reconfigurado o logging
+    # (dictConfig reseta o root logger para WARNING, bloqueando INFO dos serviços)
+    _attach_log_buffer()
+    logging.getLogger().setLevel(logging.INFO)
     await _ensure_db_healthy()
     await database.init_db()
     config.register_akasha()

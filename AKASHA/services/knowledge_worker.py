@@ -128,6 +128,11 @@ def schedule_search_update(query: str, snippets: list[str]) -> None:
         pass
 
 
+_interests_cache: dict[str, float] = {}
+_interests_cache_at: float = 0.0
+_INTERESTS_CACHE_TTL: float = 60.0  # atualiza no máximo uma vez por minuto
+
+
 async def apply_knowledge_boost(
     results: list,
     query: str,
@@ -153,16 +158,21 @@ async def apply_knowledge_boost(
     if not topics_by_url:
         return results
 
-    # Perfil de interesse da usuária: {topic_lower: normalized_score}
-    interest_profile: dict[str, float] = {}
-    try:
-        raw_interests = await _db.get_top_topics(20)
-        if raw_interests:
-            max_score = max(s for _, s in raw_interests)
-            if max_score > 0:
-                interest_profile = {t.lower().strip(): s / max_score for t, s in raw_interests}
-    except Exception:
-        pass
+    # Perfil de interesse da usuária: cached {topic_lower: normalized_score}
+    global _interests_cache, _interests_cache_at
+    import time as _time
+    now = _time.monotonic()
+    if now - _interests_cache_at >= _INTERESTS_CACHE_TTL:
+        try:
+            raw_interests = await _db.get_top_topics(20)
+            if raw_interests:
+                max_score = max(s for _, s in raw_interests)
+                if max_score > 0:
+                    _interests_cache = {t.lower().strip(): s / max_score for t, s in raw_interests}
+        except Exception:
+            pass
+        _interests_cache_at = now
+    interest_profile = _interests_cache
 
     def _boost(r: object) -> float:
         topics = topics_by_url.get(r.url, [])  # type: ignore[union-attr]

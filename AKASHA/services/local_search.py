@@ -131,7 +131,7 @@ try:
     )
     _ollama_base_url: str = _ec_ollama_url()
     _p = _ec_profile()
-    _expansion_default_model: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
+    _expansion_default_model: str = (_p or {}).get("models", {}).get("llm_query", "") if _p else ""
 except Exception:
     _ollama_base_url         = "http://localhost:11434"
     _expansion_default_model = ""
@@ -195,6 +195,27 @@ def _get_lingua_detector() -> object | None:
 # ---------------------------------------------------------------------------
 
 _ollama_available: bool = False
+
+# Cache para presença de dados no entity_graph — evita 5 queries DB por busca quando vazio
+_entity_graph_checked_at: float = 0.0
+_entity_graph_has_rows: bool = False
+
+
+async def _has_entity_graph() -> bool:
+    """Retorna True se o entity_graph tem pelo menos uma linha. Cache de 2 minutos."""
+    global _entity_graph_checked_at, _entity_graph_has_rows
+    import time as _time
+    now = _time.monotonic()
+    if now - _entity_graph_checked_at < 120.0:
+        return _entity_graph_has_rows
+    try:
+        async with aiosqlite.connect(DB_PATH) as _db:
+            row = await (await _db.execute("SELECT 1 FROM entity_graph LIMIT 1")).fetchone()
+            _entity_graph_has_rows = row is not None
+    except Exception:
+        _entity_graph_has_rows = False
+    _entity_graph_checked_at = now
+    return _entity_graph_has_rows
 
 
 async def check_ollama_available() -> bool:
@@ -707,6 +728,8 @@ async def _expand_query_entities(query: str) -> list[str]:
     (peso >= 2.0 = apareceram juntas em >= 2 documentos aprovados).
     Retorna até 5 entidades vizinhas — sem LLM, puro SQL.
     """
+    if not await _has_entity_graph():
+        return []
     tokens = [t.lower() for t in query.split() if len(t) >= 3]
     if not tokens:
         return []
