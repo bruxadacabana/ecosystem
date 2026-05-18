@@ -51,6 +51,10 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             commands::git::git_init_sync_root,
+            commands::git::git_status,
+            commands::git::git_commit,
+            commands::git::git_log,
+            commands::git::git_diff,
             commands::config::read_ecosystem_config,
             commands::config::validate_path,
             commands::config::save_ecosystem_config,

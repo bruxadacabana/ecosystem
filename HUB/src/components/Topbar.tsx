@@ -9,10 +9,12 @@ import * as cmd from '../lib/tauri'
 import type { HubSection, AppName } from '../types'
 
 const SECTION_TITLES: Record<HubSection, string> = {
-  home:      'Ecossistema',
-  logos:     'LOGOS',
-  atividade: 'Atividade',
-  config:    'Configuração',
+  home:          'Ecossistema',
+  logos:         'LOGOS',
+  atividade:     'Atividade',
+  monitoramento: 'Monitor',
+  git:           'Git',
+  config:        'Configuração',
 }
 
 const ALL_APPS: AppName[] = ['aether', 'ogma', 'kosmos', 'mnemosyne', 'hermes', 'akasha']

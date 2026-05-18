@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry } from '../types'
 
 async function call<T>(
   command: string,
@@ -53,6 +53,18 @@ export const applySyncRoot = (syncRoot: string): Promise<TauriResult<void>> =>
 
 export const gitInitSyncRoot = (): Promise<TauriResult<void>> =>
   call<void>('git_init_sync_root')
+
+export const gitStatus = (): Promise<TauriResult<GitFileStatus[]>> =>
+  call<GitFileStatus[]>('git_status')
+
+export const gitCommit = (message?: string): Promise<TauriResult<string>> =>
+  call<string>('git_commit', { message: message ?? null })
+
+export const gitLog = (n: number): Promise<TauriResult<GitLogEntry[]>> =>
+  call<GitLogEntry[]>('git_log', { n })
+
+export const gitDiff = (path?: string): Promise<TauriResult<string>> =>
+  call<string>('git_diff', { path: path ?? null })
 
 // ----------------------------------------------------------
 //  Módulo Escrita — vault AETHER

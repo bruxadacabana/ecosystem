@@ -233,9 +233,31 @@ export interface ModelAssignment {
 //  HUB Navigation
 // ----------------------------------------------------------
 
+// ----------------------------------------------------------
+//  Git — status e log da sync_root
+// ----------------------------------------------------------
+
+export interface GitFileStatus {
+  /** Caminho relativo ao sync_root */
+  path: string
+  /** Código porcelain de 2 chars: "M ", " M", "??", "A ", "D ", etc. */
+  status: string
+}
+
+export interface GitLogEntry {
+  hash:    string
+  date:    string
+  message: string
+  author:  string
+}
+
+// ----------------------------------------------------------
+//  HUB Navigation
+// ----------------------------------------------------------
+
 export type HubView = 'home' | 'writing' | 'reading' | 'projects' | 'questions'
 
-export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'config'
+export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'config'
 
 export interface ModuleCard {
   id: HubView
