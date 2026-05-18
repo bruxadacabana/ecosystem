@@ -1,5 +1,9 @@
 ## Implementação atual:
 
+### AKASHA — Funcionalidades da assistente | 2026-05-18
+
+### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
+
 
 
 

@@ -1883,63 +1883,8 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ---
 
-### Fase 12 — Extensão Firefox (Zen Browser)
+### ~~Fase 12 — Extensão Firefox (Zen Browser)~~ *(substituída pela pesquisa "Contexto em Tempo Real" — 2026-05-18 — ver "## Melhorias baseadas em pesquisas")*
 
-> Extensão Manifest V3 que conecta o browser ao AKASHA local. Ponto de entrada para
-> arquivamento, captura de highlights, contexto de busca e integração com o Hermes —
-> tudo sem sair da página atual. Requer AKASHA rodando em `localhost:7071`.
-
-#### Infraestrutura base (pré-requisito de todas as funcionalidades)
-- [ ] `extension/manifest.json` — Manifest V3; permissões: `activeTab`, `storage`,
-      `http://localhost:7071/*`; action com ícones active/inactive (cinza quando AKASHA
-      offline); background service worker; popup e content script declarados
-- [ ] `extension/icons/` — ícone 16/32/48/128px nos dois estados (active e greyscale)
-- [ ] `extension/background.js` — verifica se AKASHA está online (`GET /health`) a cada
-      30s e ao trocar de aba; atualiza ícone active/inactive conforme resultado; armazena
-      estado em `chrome.storage.session`
-- [ ] `extension/README.md` — instruções: `about:debugging` → "Este Firefox" →
-      "Carregar extensão temporária" → selecionar `extension/manifest.json`
-
-#### Funcionalidade 1 — Arquivamento rápido
-- [ ] **Popup: arquivar página atual** (`extension/popup/`) — URL pré-preenchida com a aba
-      atual; campo de tags (autocomplete via `GET /tags/suggest`); botão "Arquivar" faz
-      `POST /archive`; feedback inline (sucesso / duplicata / AKASHA offline). Substitui
-      o fluxo atual de copiar URL → abrir AKASHA → colar → confirmar.
-- [ ] **Atalho de teclado** — `Ctrl+Shift+S` abre o popup de arquivamento direto
-
-#### Funcionalidade 2 — Salvar para depois
-- [ ] **Popup: salvar para Ver Depois** — botão "Ver Depois" no popup envia
-      `POST /watch-later` com a URL atual; confirmação visual; nenhuma extração de
-      conteúdo neste momento (só marca para retomar)
-
-#### Funcionalidade 3 — Painel de contexto (sidebar)
-- [ ] **`extension/sidebar/sidebar.html`** — sidebar lateral que mostra, para a página
-      atual: se já está arquivada (badge ✓), documentos relacionados no arquivo local
-      (`GET /search/json?q=<título>&sources=eco,sites`), highlights salvos para aquela
-      URL (`GET /highlights?url=<url>`). Abre via botão no popup ou atalho `Ctrl+Shift+A`.
-- [ ] **Content script passivo** — injeta botão flutuante discreto na página para abrir
-      a sidebar sem precisar clicar no ícone da extensão (desativável nas configurações)
-
-#### Funcionalidade 4 — Highlights in-page
-- [ ] **Content script de seleção** (`extension/content.js`) — ao selecionar texto na
-      página e usar atalho (ou botão flutuante), envia `POST /highlights` com
-      `{url, text, note?}`; salva highlight associado à URL mesmo que a página não esteja
-      arquivada; feedback visual: trecho fica marcado até recarregar
-
-#### Funcionalidade 5 — Download e transcrição via Hermes
-- [ ] **Popup: detectar vídeo** — `background.js` verifica se a URL pertence a site
-      suportado pelo yt-dlp (YouTube, Vimeo, Twitch, Twitter/X, TikTok, Reddit,
-      Dailymotion, Bilibili, Niconico); habilita botões "⬇ Baixar" e "◉ Transcrever"
-      somente nesses domínios
-- [ ] **Backend AKASHA** — `routers/hermes_bridge.py`: `POST /api/hermes/download`
-      (body: `url`, `mode: "download"|"transcribe"`, `format?`):
-      1. Lê `hermes.api_port` do ecosystem.json
-      2. Tenta `GET /health` no Hermes — se offline: lê `hermes.exe_path`, verifica
-         via `psutil` se processo está rodando, dispara `Popen(exe_path)` se não estiver,
-         aguarda `/health` com polling (timeout 30s); retorna 503 se não subir
-      3. Delega via `httpx.AsyncClient` para `/download` ou `/transcribe`
-      Adicionar `psutil` ao `pyproject.toml` se não presente
-- [ ] Registrar `hermes_bridge` router em `main.py`
 ---
 
 #### Fase 12.5 — Aba "Ver Mais Tarde"
@@ -3731,6 +3676,26 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 
 ## Melhorias baseadas em pesquisas para o ecossistema
+
+### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
+> Contexto: AKASHA como secretária precisa saber o que está sendo lido agora. A extensão monitora páginas abertas a partir dos resultados do AKASHA e injeta uma barra de ação discreta com arquivar / ver depois / rastrear site. Clipboard monitor cobre URLs encontradas fora do AKASHA. Opção B (interceptar clique no AKASHA) é redundante com a extensão em funcionamento, mas trivial como fallback — adicionada no mesmo escopo.
+
+#### AKASHA — Backend
+- [ ] **CORS middleware** (`main.py`) — adicionar `CORSMiddleware` com `allow_origins=["*"]` para aceitar fetch da extensão (pages externas → localhost:7071). Sem `allow_credentials` para evitar bloqueio dos browsers.
+- [ ] **`POST /context/push`** (`routers/context.py` novo) — recebe `{url, title, selected_text?, source}` da extensão ou clipboard monitor. Armazena em `services/realtime_context.py` (dict em memória por sessão, TTL 30min). Aciona `session_insight.maybe_schedule()` com contexto enriquecido pelo snippet do índice local se a URL já estiver indexada.
+- [ ] **`GET /context/status?url=`** — retorna se a URL já está arquivada, se está na biblioteca e contagem de resultados relacionados no índice. Usado pelo popup da extensão para mostrar estado.
+- [ ] **Clipboard monitor** (`services/clipboard_monitor.py` novo; `main.py` — task P3) — polling assíncrono a cada 1.5s via `run_in_executor`; detecta URLs no clipboard via regex; ignora `localhost`/`127.0.0.1`; deduplicação (ignora se mesma URL nos últimos 5min); envia para `push_context()`. Dependência: `pyperclip` (já compatível com Windows e Linux).
+
+#### AKASHA — Extensão (`AKASHA/extension/`)
+- [ ] **`manifest.json`** — MV3; permissões: `tabs`, `storage`, `activeTab`; `host_permissions`: `http://localhost:7071/*`; background event page (`background.js`); content script em `<all_urls>` run_at `document_end`; action com popup; `commands` para atalho `Ctrl+Shift+S`.
+- [ ] **`icons/`** — ícone SVG único em dois estados: active (hexágono dourado ⬡) e inactive (cinza); 16, 48, 128px PNG gerados a partir de SVG base.
+- [ ] **`background.js`** — rastreia abas abertas a partir do AKASHA (via `tabs.onCreated` com `openerTabId` cujo URL contém `localhost:7071`); ao carregar (`tabs.onUpdated status=complete`), faz `POST /context/push`; verifica saúde AKASHA a cada 30s e atualiza ícone active/inactive; `browser.commands.onCommand` para abrir popup via atalho.
+- [ ] **`content.js`** — ao carregar: verifica com o background se a aba foi aberta pelo AKASHA; se sim, injeta barra de ação discreta no rodapé da página (não-bloqueante, Z-index alto, dispensável com ×) com 3 botões: "⬡ Arquivar", "🕐 Ver depois", "🔍 Rastrear site"; cada botão faz fetch para o endpoint correspondente e mostra feedback inline.
+- [ ] **`popup/popup.html + popup.js + popup.css`** — popup da extensão acessível pelo ícone na barra do browser ou atalho Ctrl+Shift+S. Mostra: status AKASHA (dot colorido online/offline); URL e título da aba atual; estado da página (arquivada ✓ / na biblioteca ✓ / não catalogada); botões de ação: "⬡ Arquivar", "🕐 Ver depois", "🔍 Rastrear site"; spinner durante fetch; feedback inline (sucesso/erro). Estilo minimalista alinhado com o visual do AKASHA (fonte mono, paleta escura, bordas finas). Funciona em qualquer aba — não exige que a aba tenha sido aberta pelo AKASHA.
+- [ ] **`README.md`** — instruções de instalação: `about:debugging` → Este Firefox → Carregar extensão temporária → selecionar `manifest.json`; nota sobre reinstalação ao reiniciar o Firefox; atalho de teclado disponível.
+
+#### AKASHA — Opção B (interceptar clique nos resultados, fallback sem extensão)
+- [ ] **`templates/search.html` e `templates/_result_item.html`** — adicionar `data-url` e listener de clique nos links de resultado; ao clicar, fazer `fetch('/context/push', ...)` com a URL + título + snippet antes de navegar (não bloqueia a navegação).
 
 ### Melhorias derivadas das pesquisas de Aprendizado de Preferência e RAPTOR/LightRAG | 2026-05-18
 > Contexto: o entity_graph e os topic_interest_scores estavam sendo preenchidos mas nunca usados
