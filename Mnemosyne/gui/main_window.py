@@ -2055,6 +2055,7 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("Nenhum índice encontrado. Use 'Indexar tudo'.")
             self._log_event("Nenhum índice encontrado — use 'Indexar tudo'.")
+            self._warn_if_index_inconsistent()
 
         self._init_studio_store()
         self._load_studio_tiles()
@@ -4088,6 +4089,36 @@ class MainWindow(QMainWindow):
         self._on_new_session()
 
     # ── Tab Gerenciar ─────────────────────────────────────────────────────────
+
+    def _warn_if_index_inconsistent(self) -> None:
+        """Avisa se o tracker indica indexação recente mas o ChromaDB está vazio.
+
+        Isso acontece quando o IndexWorker apagou o índice anterior e o novo
+        não foi persistido a tempo (e.g. processo encerrado antes do flush).
+        """
+        if not self._collection_index or not self.config.watched_dir:
+            return
+        info = self._collection_index.get(self.config.watched_dir)
+        if not info or not info.last_indexed or not info.total_files:
+            return
+        try:
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(info.last_indexed)
+            age_h = (datetime.now(tz=timezone.utc) - dt.replace(tzinfo=timezone.utc)).total_seconds() / 3600
+            if age_h > 72:
+                return  # indexação muito antiga — não é uma inconsistência relevante
+        except (ValueError, TypeError):
+            return
+
+        msg = (
+            f"O banco de dados de embeddings está vazio, mas o histórico indica que\n"
+            f"{info.total_files} arquivo(s) foram indexados em "
+            f"{info.last_indexed[:16].replace('T', ' ')}.\n\n"
+            "Isso pode ocorrer quando o processo foi encerrado antes de o ChromaDB\n"
+            "gravar os dados em disco.\n\n"
+            "É necessário re-indexar. Clique em 'Indexar tudo' para reconstruir o índice."
+        )
+        QMessageBox.warning(self, "Índice inconsistente", msg)
 
     def refresh_manage_info(self) -> None:
         if not self.config.persist_dir:

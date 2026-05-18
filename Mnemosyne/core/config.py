@@ -425,6 +425,20 @@ def load_config() -> AppConfig:
     config.ecosystem_vault_dir = eco_vault
     config.ecosystem_chroma_dir = eco_chroma
     config.ecosystem_personality_prompt = _read_ecosystem_personality()
+
+    # Sincronizar coleção ativa com ecosystem_watched_dir para manter
+    # config.active_coll.path consistente com o caminho real configurado no HUB.
+    if eco_watched:
+        for coll in config.collections:
+            if coll.source == "user" and coll.type == CollectionType.LIBRARY:
+                if coll.path != eco_watched:
+                    coll.path = eco_watched
+                    try:
+                        save_config(config)
+                    except Exception:
+                        pass
+                break
+
     return config
 
 
