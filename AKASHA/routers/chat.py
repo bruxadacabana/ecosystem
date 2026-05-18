@@ -37,10 +37,14 @@ try:
     from ecosystem_client import get_ollama_url as _get_url, get_active_profile as _get_profile
     _OLLAMA_BASE: str = _get_url()
     _p = _get_profile()
-    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
+    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_query", "") if _p else ""
 except Exception:
     _OLLAMA_BASE   = "http://localhost:11434"
     _DEFAULT_MODEL = ""
+
+# Padrões de nome que identificam modelos de embedding (não geração de texto).
+# Usados para filtrar o fallback automático de _get_model().
+_EMBED_NAME_PATTERNS = ("embed", "minilm", "nomic", "bge-", "e5-", "all-mini")
 
 _CHAT_TIMEOUT_S = 60.0
 
@@ -58,14 +62,30 @@ class ChatMessage(BaseModel):
 # ---------------------------------------------------------------------------
 
 async def _get_model() -> str:
+    """Retorna o modelo configurado para chat ou o primeiro modelo generativo disponível.
+
+    Filtra modelos de embedding (minilm, nomic, bge...) que não servem para geração
+    de texto — tentar usá-los para chat trava o stream sem retornar nada.
+    """
     if _DEFAULT_MODEL:
         return _DEFAULT_MODEL
+    try:
+        from ecosystem_client import get_ollama_url as _gu, get_active_profile as _gp
+        base = _gu()
+        p = _gp()
+        configured = (p or {}).get("models", {}).get("llm_query", "") if p else ""
+        if configured:
+            return configured
+    except Exception:
+        base = _OLLAMA_BASE
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
             r = await client.get(f"{_OLLAMA_BASE}/api/tags")
             models = r.json().get("models", [])
-            if models:
-                return models[0]["name"]
+            for m in models:
+                name = m["name"].lower()
+                if not any(pat in name for pat in _EMBED_NAME_PATTERNS):
+                    return m["name"]
     except Exception:
         pass
     return ""
