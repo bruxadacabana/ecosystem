@@ -16,7 +16,7 @@
     <button class="btn btn-ghost chat-clear-btn"
             hx-post="/chat/clear"
             hx-swap="none"
-            onclick="document.getElementById('chat-canvas').innerHTML=''"
+            onclick="document.getElementById('chat-canvas').innerHTML='';document.getElementById('chat-sources').innerHTML='';sessionStorage.removeItem('akasha-chat-session')"
             title="Limpar conversa">✕ limpar</button>
   </div>
 
@@ -39,6 +39,43 @@
 </div>
 
 <script>
+// ── Persistência da conversa na sessão ──────────────────────────
+// O chat-canvas é DOM puro — destruído ao navegar para outra aba.
+// Salvamos no sessionStorage (apagado ao fechar o browser/aba) e
+// restauramos ao carregar a página de conversa novamente.
+(function () {
+  var KEY = 'akasha-chat-session';
+
+  window._saveChatSession = function () {
+    var canvas = document.getElementById('chat-canvas');
+    // Clona para remover IDs de streaming sem alterar o DOM ao vivo
+    var clone = canvas.cloneNode(true);
+    ['chat-stream-wrapper', 'chat-stream-bubble', 'chat-think-content'].forEach(function (id) {
+      var el = clone.querySelector('#' + id);
+      if (el) el.removeAttribute('id');
+    });
+    sessionStorage.setItem(KEY, JSON.stringify({
+      html:        clone.innerHTML,
+      sourcesHtml: (document.getElementById('chat-sources') || {}).innerHTML || '',
+    }));
+  };
+
+  // Restaura ao carregar a página
+  var saved = sessionStorage.getItem(KEY);
+  if (saved) {
+    try {
+      var data   = JSON.parse(saved);
+      var canvas = document.getElementById('chat-canvas');
+      if (data.html) {
+        canvas.innerHTML = data.html;
+        canvas.scrollTop = canvas.scrollHeight;
+      }
+      var sources = document.getElementById('chat-sources');
+      if (sources && data.sourcesHtml) sources.innerHTML = data.sourcesHtml;
+    } catch (e) { /* sessão corrompida — ignora */ }
+  }
+})();
+
 /* Markdown básico: escapa HTML, formata bold/italic/code/newlines */
 function renderText(text) {
   return text
@@ -164,10 +201,14 @@ async function sendMessage(e) {
     thinkContent.removeAttribute('id');
   } catch(err) {
     bubble.textContent = 'Erro ao conectar com o AKASHA.';
+    wrapper.removeAttribute('id');
+    bubble.removeAttribute('id');
+    thinkContent.removeAttribute('id');
   } finally {
     input.disabled = false;
     sendBtn.disabled = false;
     input.focus();
+    window._saveChatSession();
   }
 }
 </script>

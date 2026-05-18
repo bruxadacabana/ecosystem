@@ -4776,6 +4776,13 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 #### AKASHA
 - [x] **Backfill de conhecimento no startup** (`services/knowledge_worker.py` + `main.py`). Função `backfill_knowledge(archive_path)` chamada no lifespan após o worker iniciar: (1) lê arquivos `.md` em `ARCHIVE_PATH` com frontmatter YAML, filtra os que já têm entrada em `page_knowledge`, enfileira os restantes; (2) lê `crawl_pages` sem entrada em `page_knowledge`, enfileira. Ritmo controlado: aguarda se fila > 50 itens para não sobrepor processamento novo.
 
+### AKASHA — bugs de UX e contagem de fila | 2026-05-18
+> Contexto: dois bugs observados em uso. (1) Estado de navegação perdido ao trocar de aba — corrigido com sessionStorage. (2) Fila de extração sempre mostra ≥ 50 itens e nunca decresce — suspeita de LIMIT 50 na query de contagem em vez de COUNT real.
+
+#### AKASHA
+- [x] **Persistência de busca e conversa na sessão** — ao navegar para outra aba e voltar, a última busca e a conversa eram perdidas. Corrigido: sessionStorage salva a última URL de busca (restaurada ao clicar em "busca") e o HTML do chat-canvas (restaurado ao carregar /chat). O botão "limpar" apaga a sessão salva.
+- [ ] **Bug: fila de extração sempre ≥ 50** — o painel do HUB mostra `knowledge_extraction` sempre em 50 ou mais, nunca decresce abaixo disso. Verificar `get_status()` em `services/knowledge_worker.py`: suspeita de que a query de contagem usa `LIMIT 50` em vez de `COUNT(*)`, retornando o número de linhas da query (50) e não o total real de pendentes.
+
 ### KOSMOS — análises falhando: VRAM timeout e numpy inhomogeneous | 2026-05-17
 > Contexto: dois bugs observados no terminal. (1) `_AnalyzeWorker` falha com "Timeout aguardando LOGOS — sistema sobrecarregado" porque o LOGOS rejeita P3 imediatamente se VRAM > 85%, o que ocorre durante o carregamento do modelo. O worker não tenta de novo — emite `failed` na primeira rejeição. (2) `ClusterWorker` falha com numpy "inhomogeneous shape" porque o banco tem embeddings de dimensões diferentes (gerados com modelos distintos ao longo do tempo) e `np.array(vecs)` exige comprimento uniforme.
 

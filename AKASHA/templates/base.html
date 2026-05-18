@@ -308,6 +308,37 @@
     });
   </script>
   <script>
+    // ── Persistência da última busca ────────────────────────────
+    // Salva a URL atual quando é uma busca com query, e restaura ao clicar
+    // no link "busca" da nav em vez de ir para a página inicial vazia.
+    (function () {
+      var SEARCH_KEY = 'akasha-last-search';
+
+      function maybeSaveSearch() {
+        if (window.location.pathname === '/search') {
+          var q = new URLSearchParams(window.location.search).get('q');
+          if (q) sessionStorage.setItem(SEARCH_KEY, window.location.href);
+        }
+      }
+
+      // Salva ao carregar a página (navegação normal)
+      maybeSaveSearch();
+      // Salva após navegação HTMX (busca via form hx-push-url)
+      document.addEventListener('htmx:pushedIntoHistory', maybeSaveSearch);
+
+      // Intercepta clique no link "busca" (href="/") para restaurar última busca
+      document.addEventListener('click', function (e) {
+        var a = e.target.closest('a[href="/"]');
+        if (!a) return;
+        var last = sessionStorage.getItem(SEARCH_KEY);
+        if (last) {
+          e.preventDefault();
+          window.location.href = last;
+        }
+      });
+    })();
+  </script>
+  <script>
     // Mede altura real da topbar e atualiza --topbar-h para que
     // sticky offsets e chat-layout usem o valor correto após wrap.
     (function () {
