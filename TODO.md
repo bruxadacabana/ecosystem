@@ -3732,6 +3732,42 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias baseadas em pesquisas para o ecossistema
 
+### Pesquisa: Aprendizado de Preferência Pessoal para Assistentes Locais | 2026-05-18
+> Contexto: investigação sobre alternativas e complementos ao topic frequency counting do AKASHA.
+> Conclusão: modelo atual é sólido como baseline; quatro lacunas concretas identificadas que podem
+> ser corrigidas sem fine-tuning e sem GPU dedicada.
+
+#### AKASHA
+- [ ] **Memórias episódicas estruturadas para feedback confirmado** (`services/personal_memory.py`,
+  `services/knowledge_worker.py`). Quando a usuária confirma (✓) uma nota da AKASHA, além de
+  incrementar o score do tópico, salvar uma entrada episódica em linguagem natural no
+  `personal_memory`: a proposição sintetizada + tópicos associados + timestamp. No MainPc,
+  usar Qwen2.5-7B (P3 background) para sintetizar a proposição a partir do insight + summary.
+  No WorkPc/Laptop, usar template determinístico: `"Usuária confirmou interesse em: {tópicos}"`.
+  Objetivo: permitir recuperação semântica posterior do que foi aprendido, não apenas contagem.
+
+- [ ] **Penalidade ativa em feedback dismissed** (`services/personal_memory.py`,
+  `services/knowledge_worker.py`). Quando a usuária descarta (✗) uma nota, aplicar delta
+  negativo nos scores dos tópicos associados (`update_topic_score(topic, delta=-0.5)`).
+  Hoje o dismiss provavelmente ignora o evento ou aplica delta mínimo — isso faz tópicos
+  irrelevantes acumularem score por co-ocorrência sem penalidade. O sinal negativo explícito
+  é o que mais acelera a convergência do perfil de interesse (VARS, arXiv:2603.20939).
+
+- [ ] **Decaimento temporal de scores (EMA)** (`database.py`, job periódico em `main.py`).
+  Scores muito antigos inflam artificialmente o perfil. Implementar job diário (no lifespan
+  do FastAPI, via `asyncio.sleep`) que aplica fator de decaimento nos tópicos inativos:
+  `score = score * 0.97` para tópicos sem atualização há > 7 dias. Custo: puro SQL UPDATE,
+  zero ML. Inspirado em Preference-Aware Memory Update (arXiv:2510.09720, EMA dual-perspective).
+
+- [ ] **Rastreamento de entidades nomeadas em documentos confirmados** (`database.py`,
+  `services/knowledge_worker.py`). Criar tabela `entity_graph (entity, co_entity, weight)`
+  — pares de entidades que aparecem juntas em documentos cujos insights foram confirmados.
+  No MainPc: extrair via Qwen2.5-7B (P3, prompt minimal: "Liste as entidades principais: nome
+  de pessoas, tecnologias, conceitos — sem explicações"). No WorkPc/Laptop: regex sobre
+  termos capitalizados e nomes de linguagens/frameworks conhecidos do corpus. O grafo permite
+  inferir que interesse em "ownership" implica interesse em "Rust" sem esse tópico ter score
+  próprio. Schema simples em SQLite — sem Neo4j, sem infraestrutura externa.
+
 ### Pesquisa: RAG Auto-Aprendizagem, Reflexão de Conhecimento e Estado da Arte em Retrieval Aumentado
 
 > **Contexto e motivação:** O RAG convencional armazena fragmentos brutos do corpus e recupera por
