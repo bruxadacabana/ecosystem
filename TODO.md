@@ -6162,16 +6162,16 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Mnemosyne
 
-- [ ] **Mover `personal_memory.db` para `sync_root`** (`core/personal_memory.py`). Alterar `_get_db()` para retornar `get_ai_private_dir() / "mnemosyne" / "personal_memory.db"` quando `sync_root` configurado; criar diretório se não existir. Na primeira execução com novo caminho: se arquivo existir em `get_app_data_dir() / "personal_memory.db"`, copiar para o novo local e manter o antigo como `.bak` (não deletar).
+- [x] **Mover `personal_memory.db` para `sync_root`** (`core/personal_memory.py`). Alterar `_get_db()` para retornar `get_ai_private_dir() / "mnemosyne" / "personal_memory.db"` quando `sync_root` configurado; criar diretório se não existir. Na primeira execução com novo caminho: se arquivo existir em `get_app_data_dir() / "personal_memory.db"`, copiar para o novo local e manter o antigo como `.bak` (não deletar).
 
-- [ ] **Mover `notebooks/` para `sync_root`** (`gui/main_window.py` — init do `NotebookStore`). Alterar criação do `NotebookStore` para usar `get_ai_private_dir() / "mnemosyne" / "notebooks"` quando `sync_root` configurado; fallback para `get_app_data_dir() / "notebooks"`. Na primeira execução com novo caminho: se pasta existir no local antigo e novo estiver vazia, mover (`shutil.move`) todo o conteúdo.
+- [x] **Mover `notebooks/` para `sync_root`** (`gui/main_window.py` — init do `NotebookStore`). Alterar criação do `NotebookStore` para usar `get_ai_private_dir() / "mnemosyne" / "notebooks"` quando `sync_root` configurado; fallback para `get_app_data_dir() / "notebooks"`. Na primeira execução com novo caminho: se pasta existir no local antigo e novo estiver vazia, mover (`shutil.move`) todo o conteúdo.
 
-- [ ] **Exportar `collections.json` para `.backup/`** (`core/config.py` — `save_config()`; `gui/main_window.py` — `_apply_setup_values()`). Após cada `save_config()`, serializar a lista de coleções ativas (watched_dirs, collection_type, enabled, nome) para `{get_backup_dir()}/mnemosyne/collections.json`. Também escrever no startup para manter atualizado.
+- [x] **Exportar `collections.json` para `.backup/`** (`core/config.py` — `save_config()`). Após cada `save_config()`, serializar a lista de coleções ativas (watched_dirs, collection_type, enabled, nome) para `{get_backup_dir()}/mnemosyne/collections.json`. Também escrever no startup para manter atualizado.
 
 #### KOSMOS
 
-- [ ] **`sources.json` em `.backup/` como fonte de verdade** (`app/utils/config.py` ou módulo equivalente de fontes). Ler fontes de `{get_backup_dir()}/kosmos/sources.json` no startup se arquivo existir; escrever a cada adição/remoção de fonte. Se `sync_root` não configurado, usar caminho local atual sem mudança.
+- [x] **`sources.json` em `.backup/` como fonte de verdade** (`app/core/feed_store.py`). Ler fontes de `{get_backup_dir()}/kosmos/sources.json` no startup se arquivo existir; escrever a cada adição/remoção de fonte. Se `sync_root` não configurado, usar caminho local atual sem mudança.
 
 #### HERMES
 
-- [ ] **`settings.json` e transcrições em `.backup/`** (`core/config.py` ou equivalente do Hermes; callback pós-transcrição). Copiar `settings.json` para `{get_backup_dir()}/hermes/settings.json` a cada salvar de config. Após cada transcrição concluída, copiar o arquivo de texto gerado para `{get_backup_dir()}/hermes/transcriptions/{nome_arquivo}.txt`.
+- [x] **`settings.json` e transcrições em `.backup/`** (`hermes.py`). Copiar `settings.json` para `{get_backup_dir()}/hermes/settings.json` a cada salvar de config. Após cada transcrição concluída, copiar o arquivo de texto gerado para `{get_backup_dir()}/hermes/transcriptions/{nome_arquivo}.txt`.
