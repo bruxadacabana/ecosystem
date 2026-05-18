@@ -6217,3 +6217,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 #### HERMES
 
 - [x] **`settings.json` e transcrições em `.backup/`** (`hermes.py`). Copiar `settings.json` para `{get_backup_dir()}/hermes/settings.json` a cada salvar de config. Após cada transcrição concluída, copiar o arquivo de texto gerado para `{get_backup_dir()}/hermes/transcriptions/{nome_arquivo}.txt`.
+
+### AKASHA — perfil de interesse e aprendizado | 2026-05-18
+> Contexto: discussão sobre o perfil de interesse da AKASHA (topic_interest_profile) e se o aprendizado atual (contagem de frequência de tópicos + RAG) é suficientemente real. Dois itens levantados: seeds manuais de interesse e pesquisa sobre abordagens mais sofisticadas.
+
+#### AKASHA
+- [ ] **Seeds manuais de interesse no HUB** (`ecosystem.json` — nova chave `akasha.interest_seeds: list[str]`; HUB — painel de configuração da AKASHA com campo de edição de lista; `services/knowledge_worker.py` — ao iniciar o worker, ler `interest_seeds` do ecosystem.json e pré-popular `topic_interest_profile` com frequência inicial 1 para cada seed). Permite à usuária definir temas de interesse antes de a AKASHA acumular histórico suficiente para inferir sozinha.
+
+#### Ecossistema (pesquisa)
+- [ ] **Pesquisar: sistemas de aprendizado de preferência pessoal para assistentes locais** — investigar alternativas ao topic frequency counting: grafos de conhecimento (entidades + relações tipadas), memória episódica estruturada, preference learning com feedback explícito (confirmed/dismissed já implementado), e abordagens de long-term memory para LLMs locais. Avaliar o que é viável sem fine-tuning em hardware da usuária (sem GPU dedicada no Windows, RX 6600 no principal). Objetivo: decidir se o modelo atual precisa ser substituído ou só complementado.
