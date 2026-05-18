@@ -456,6 +456,10 @@ async def crawl_site(site_id: int) -> int:
                 headers={"User-Agent": "Mozilla/5.0 (compatible; AKASHA-crawler/1.0)"},
             ) as client:
                 while queue:
+                    if _crawl_paused:
+                        log.info("crawl_site: crawling pausado — interrompendo BFS.")
+                        break
+
                     batch: list[tuple[str, int]] = []
                     while queue and len(batch) < _CRAWL_CONCURRENCY:
                         url, depth = queue.popleft()

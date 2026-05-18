@@ -10,11 +10,19 @@ import type { EcosystemConfig, MemoryEntry } from '../types'
 
 // ── Faixa de logs em tempo real ────────────────────────────────
 
+// Extrai timestamp (HH:MM:SS) e mensagem de uma linha de log formatada
+function parseLogLine(line: string): { ts: string; msg: string } {
+  // Formato: "2026-05-18 16:53:44,067 [INFO] akasha.crawler: ..."
+  const m = line.match(/^\d{4}-\d{2}-\d{2} (\d{2}:\d{2}:\d{2})/)
+  if (m) return { ts: m[1], msg: line.slice(m[0].length).trim() }
+  return { ts: '', msg: line }
+}
+
 function LogStrip({ lines }: { lines: string[] }) {
   const [expanded, setExpanded] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
 
-  const visible = expanded ? lines.slice(-10) : lines.slice(-5)
+  const visible = expanded ? lines.slice(-20) : lines.slice(-5)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'nearest' })
@@ -27,23 +35,35 @@ function LogStrip({ lines }: { lines: string[] }) {
         border: '1px solid var(--rule)',
         borderRadius: 4,
         padding: '5px 8px',
+        maxHeight: expanded ? 220 : 'none',
+        overflowY: expanded ? 'auto' : 'visible',
       }}>
         {visible.length === 0
           ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', opacity: 0.5 }}>sem logs</span>
           : visible.map((l, i) => {
               const isError = /\[(ERROR)\]/.test(l)
               const isWarn  = /\[(WARNING|WARN)\]/.test(l)
+              const { ts, msg } = parseLogLine(l)
               return (
                 <div key={i} style={{
                   fontFamily: 'var(--font-mono)',
                   fontSize: 10,
                   lineHeight: 1.5,
+                  display: 'flex',
+                  gap: 6,
                   color: isError ? '#c0392b' : isWarn ? '#b8860b' : 'var(--ink-ghost)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
                 }} title={l}>
-                  {l}
+                  {ts && (
+                    <span style={{ flexShrink: 0, opacity: 0.5, color: 'var(--ink-ghost)' }}>{ts}</span>
+                  )}
+                  <span style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}>
+                    {msg || l}
+                  </span>
                 </div>
               )
             })
@@ -60,7 +80,7 @@ function LogStrip({ lines }: { lines: string[] }) {
             padding: '2px 0', marginTop: 2,
           }}
         >
-          {expanded ? '▴ menos' : `▾ exibir mais (${Math.min(lines.length, 10)})`}
+          {expanded ? '▴ menos' : `▾ exibir mais (${Math.min(lines.length, 20)})`}
         </button>
       )}
     </div>

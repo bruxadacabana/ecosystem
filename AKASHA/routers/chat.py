@@ -48,6 +48,9 @@ _EMBED_NAME_PATTERNS = ("embed", "minilm", "nomic", "bge-", "e5-", "all-mini")
 
 _CHAT_TIMEOUT_S = 60.0
 
+# Cache do modelo para não requerir Ollama a cada mensagem
+_cached_model: str = ""
+
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -66,25 +69,36 @@ async def _get_model() -> str:
 
     Filtra modelos de embedding (minilm, nomic, bge...) que não servem para geração
     de texto — tentar usá-los para chat trava o stream sem retornar nada.
+
+    Resultado cacheado em _cached_model para evitar round-trip ao Ollama a cada mensagem.
     """
+    global _cached_model
     if _DEFAULT_MODEL:
         return _DEFAULT_MODEL
+    if _cached_model:
+        return _cached_model
+
+    # Tenta ler modelo configurado no perfil ativo (runtime, não import-time)
+    base = _OLLAMA_BASE
     try:
         from ecosystem_client import get_ollama_url as _gu, get_active_profile as _gp
         base = _gu()
         p = _gp()
         configured = (p or {}).get("models", {}).get("llm_query", "") if p else ""
         if configured:
+            _cached_model = configured
             return configured
     except Exception:
-        base = _OLLAMA_BASE
+        pass
+
+    # Fallback: usa primeiro modelo generativo disponível no Ollama
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get(f"{_OLLAMA_BASE}/api/tags")
-            models = r.json().get("models", [])
-            for m in models:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(f"{base}/api/tags")
+            for m in r.json().get("models", []):
                 name = m["name"].lower()
                 if not any(pat in name for pat in _EMBED_NAME_PATTERNS):
+                    _cached_model = m["name"]
                     return m["name"]
     except Exception:
         pass
