@@ -56,15 +56,27 @@ _INSIGHT_COOLDOWN_S: float = 3600.0   # 1 hora entre notificações
 _INSIGHT_TOPIC_THRESHOLD: int   = 3   # sobreposição mínima de tópicos
 _INSIGHT_SCORE_MIN: float       = 0.6 # score mínimo no topic_interest_profile
 
-# Resolução de URL do Ollama (LOGOS-first)
-try:
-    from ecosystem_client import get_ollama_url as _get_ollama_url, get_active_profile as _get_profile
-    _OLLAMA_BASE: str = _get_ollama_url()
-    _p = _get_profile()
-    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
-except Exception:
-    _OLLAMA_BASE    = "http://localhost:11434"
-    _DEFAULT_MODEL  = ""
+# URL base do Ollama — resolvida dinamicamente em runtime via _get_ollama_base()
+_OLLAMA_BASE: str = "http://localhost:11434"
+
+
+def _get_ollama_base() -> str:
+    """Retorna URL do Ollama em runtime (LOGOS 7072 se disponível, direto 11434)."""
+    try:
+        from ecosystem_client import get_ollama_url as _get_url  # type: ignore
+        return _get_url()
+    except Exception:
+        return "http://localhost:11434"
+
+
+def _get_llm_query_model() -> str:
+    """Lê o modelo llm_query do perfil ativo do LOGOS em runtime."""
+    try:
+        from ecosystem_client import get_active_profile as _get_profile  # type: ignore
+        p = _get_profile()
+        return ((p or {}).get("models", {}) or {}).get("llm_query", "") if p else ""
+    except Exception:
+        return ""
 
 # ---------------------------------------------------------------------------
 # API pública
@@ -172,15 +184,18 @@ async def process_queue() -> None:
         try:
             task = await _queue.get()
             # Verifica se Ollama está disponível antes de tentar
-            from services.local_search import get_ollama_status
+            from services.local_search import get_ollama_status, check_ollama_available
             if not get_ollama_status():
-                # Recoloca na fila e aguarda — Ollama pode ficar disponível depois
-                try:
-                    _queue.put_nowait(task)
-                except asyncio.QueueFull:
-                    pass
-                await asyncio.sleep(60)
-                continue
+                # Re-verifica em tempo real antes de desistir
+                await check_ollama_available()
+                if not get_ollama_status():
+                    # Recoloca na fila e aguarda — Ollama pode ficar disponível depois
+                    try:
+                        _queue.put_nowait(task)
+                    except asyncio.QueueFull:
+                        pass
+                    await asyncio.sleep(60)
+                    continue
 
             # Verifica se já processamos esta URL recentemente
             import database as _db
@@ -309,8 +324,9 @@ async def _check_discoveries(
 
 async def _call_ollama_extract(title: str, content: str) -> dict | None:
     """Chama Ollama pedindo JSON estruturado com summary, topics, entities."""
-    model = _DEFAULT_MODEL
+    model = _get_llm_query_model()
     if not model:
+        log.debug("knowledge_worker: llm_query não configurado no perfil do LOGOS — extração ignorada.")
         return None
 
     prompt = (
@@ -324,7 +340,7 @@ async def _call_ollama_extract(title: str, content: str) -> dict | None:
     try:
         async with httpx.AsyncClient(timeout=_EXTRACT_TIMEOUT) as client:
             resp = await client.post(
-                f"{_OLLAMA_BASE}/api/generate",
+                f"{_get_ollama_base()}/api/generate",
                 json={
                     "model":   model,
                     "prompt":  prompt,
@@ -390,7 +406,7 @@ def _tokenize(text: str) -> set[str]:
 
 async def _event_reflection(title: str, summary: str, topics: list[str]) -> None:
     """Gera nota pessoal da AKASHA sobre conteúdo recém-descoberto. Fire-and-forget."""
-    model = _DEFAULT_MODEL
+    model = _get_llm_query_model()
     if not model or not title:
         return
 
@@ -425,7 +441,7 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
-                f"{_OLLAMA_BASE}/api/generate",
+                f"{_get_ollama_base()}/api/generate",
                 json={
                     "model":   model,
                     "prompt":  prompt,
