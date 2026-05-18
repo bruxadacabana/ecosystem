@@ -1885,47 +1885,61 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv · Porta 7071.
 
 ### Fase 12 — Extensão Firefox (Zen Browser)
 
-> Entrega: extensão Manifest V3 que detecta URLs de vídeo na aba atual e delega o download
-> ao Hermes via AKASHA com um clique. Requer Fase 3 do Hermes (mini API HTTP).
+> Extensão Manifest V3 que conecta o browser ao AKASHA local. Ponto de entrada para
+> arquivamento, captura de highlights, contexto de busca e integração com o Hermes —
+> tudo sem sair da página atual. Requer AKASHA rodando em `localhost:7071`.
 
-#### Estrutura de arquivos
-- [ ] `extension/manifest.json` — Manifest V3; permissões: `activeTab`,
-      `http://localhost:7071/*`; action com ícones active/inactive;
-      background service worker; popup declarado
+#### Infraestrutura base (pré-requisito de todas as funcionalidades)
+- [ ] `extension/manifest.json` — Manifest V3; permissões: `activeTab`, `storage`,
+      `http://localhost:7071/*`; action com ícones active/inactive (cinza quando AKASHA
+      offline); background service worker; popup e content script declarados
 - [ ] `extension/icons/` — ícone 16/32/48/128px nos dois estados (active e greyscale)
-- [ ] `extension/popup/popup.html` + `popup.css` + `popup.js` — UI mínima:
-      URL atual, dois botões: "⬇ Baixar vídeo" e "ðŸ“ Transcrever";
-      ambos rodam em segundo plano via Hermes; feedback de estado
-      (aguardando / na fila / erro Hermes offline / erro AKASHA offline)
-
-#### Background script
-- [ ] `extension/background.js` — ao mudar de aba ou navegar, verificar se a URL
-      pertence a site de vídeo suportado pelo yt-dlp (YouTube, Vimeo, Twitch,
-      Twitter/X, TikTok, Reddit, Dailymotion, Bilibili, Niconico, etc.);
-      habilitar/desabilitar ícone da action conforme resultado
-- [ ] `extension/background.js` — ao receber mensagem `{action: "download"|"transcribe", url}`
-      do popup, fazer `POST http://localhost:7071/api/hermes/download` com `{url, mode}`;
-      retornar `{ok, error?}` ao popup; fechar popup após confirmação (roda em bg)
-
-#### Backend AKASHA
-- [ ] `routers/hermes_bridge.py` — `POST /api/hermes/download`
-      (body Pydantic: `url: str`, `mode: Literal["download","transcribe"] = "download"`,
-      `format: str | None = None`):
-      1. Lê `hermes.api_port` do ecosystem.json
-      2. Tenta `GET /health` no Hermes — se falhar (offline):
-         a. Lê `hermes.exe_path` do ecosystem.json
-         b. Verifica via `psutil` se processo Hermes está rodando
-         c. Se não estiver, dispara `subprocess.Popen(exe_path)`
-         d. Aguarda `/health` responder com polling (timeout 30s, intervalo 1s)
-         e. Se não subir no timeout, retorna 503 com mensagem clara
-      3. Delega via `httpx.AsyncClient` para `/download` ou `/transcribe`
-      Adicionar `psutil` ao `pyproject.toml` se não presente
-- [ ] Registrar `hermes_bridge` router em `main.py`
-
-#### Instalação (desenvolvimento)
+- [ ] `extension/background.js` — verifica se AKASHA está online (`GET /health`) a cada
+      30s e ao trocar de aba; atualiza ícone active/inactive conforme resultado; armazena
+      estado em `chrome.storage.session`
 - [ ] `extension/README.md` — instruções: `about:debugging` → "Este Firefox" →
       "Carregar extensão temporária" → selecionar `extension/manifest.json`
 
+#### Funcionalidade 1 — Arquivamento rápido
+- [ ] **Popup: arquivar página atual** (`extension/popup/`) — URL pré-preenchida com a aba
+      atual; campo de tags (autocomplete via `GET /tags/suggest`); botão "Arquivar" faz
+      `POST /archive`; feedback inline (sucesso / duplicata / AKASHA offline). Substitui
+      o fluxo atual de copiar URL → abrir AKASHA → colar → confirmar.
+- [ ] **Atalho de teclado** — `Ctrl+Shift+S` abre o popup de arquivamento direto
+
+#### Funcionalidade 2 — Salvar para depois
+- [ ] **Popup: salvar para Ver Depois** — botão "Ver Depois" no popup envia
+      `POST /watch-later` com a URL atual; confirmação visual; nenhuma extração de
+      conteúdo neste momento (só marca para retomar)
+
+#### Funcionalidade 3 — Painel de contexto (sidebar)
+- [ ] **`extension/sidebar/sidebar.html`** — sidebar lateral que mostra, para a página
+      atual: se já está arquivada (badge ✓), documentos relacionados no arquivo local
+      (`GET /search/json?q=<título>&sources=eco,sites`), highlights salvos para aquela
+      URL (`GET /highlights?url=<url>`). Abre via botão no popup ou atalho `Ctrl+Shift+A`.
+- [ ] **Content script passivo** — injeta botão flutuante discreto na página para abrir
+      a sidebar sem precisar clicar no ícone da extensão (desativável nas configurações)
+
+#### Funcionalidade 4 — Highlights in-page
+- [ ] **Content script de seleção** (`extension/content.js`) — ao selecionar texto na
+      página e usar atalho (ou botão flutuante), envia `POST /highlights` com
+      `{url, text, note?}`; salva highlight associado à URL mesmo que a página não esteja
+      arquivada; feedback visual: trecho fica marcado até recarregar
+
+#### Funcionalidade 5 — Download e transcrição via Hermes
+- [ ] **Popup: detectar vídeo** — `background.js` verifica se a URL pertence a site
+      suportado pelo yt-dlp (YouTube, Vimeo, Twitch, Twitter/X, TikTok, Reddit,
+      Dailymotion, Bilibili, Niconico); habilita botões "⬇ Baixar" e "◉ Transcrever"
+      somente nesses domínios
+- [ ] **Backend AKASHA** — `routers/hermes_bridge.py`: `POST /api/hermes/download`
+      (body: `url`, `mode: "download"|"transcribe"`, `format?`):
+      1. Lê `hermes.api_port` do ecosystem.json
+      2. Tenta `GET /health` no Hermes — se offline: lê `hermes.exe_path`, verifica
+         via `psutil` se processo está rodando, dispara `Popen(exe_path)` se não estiver,
+         aguarda `/health` com polling (timeout 30s); retorna 503 se não subir
+      3. Delega via `httpx.AsyncClient` para `/download` ou `/transcribe`
+      Adicionar `psutil` ao `pyproject.toml` se não presente
+- [ ] Registrar `hermes_bridge` router em `main.py`
 ---
 
 #### Fase 12.5 — Aba "Ver Mais Tarde"
