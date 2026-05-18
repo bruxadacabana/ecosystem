@@ -3753,13 +3753,13 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   irrelevantes acumularem score por co-ocorrência sem penalidade. O sinal negativo explícito
   é o que mais acelera a convergência do perfil de interesse (VARS, arXiv:2603.20939).
 
-- [ ] **Decaimento temporal de scores (EMA)** (`database.py`, job periódico em `main.py`).
+- [x] **Decaimento temporal de scores (EMA)** (`database.py`, job periódico em `main.py`).
   Scores muito antigos inflam artificialmente o perfil. Implementar job diário (no lifespan
   do FastAPI, via `asyncio.sleep`) que aplica fator de decaimento nos tópicos inativos:
   `score = score * 0.97` para tópicos sem atualização há > 7 dias. Custo: puro SQL UPDATE,
   zero ML. Inspirado em Preference-Aware Memory Update (arXiv:2510.09720, EMA dual-perspective).
 
-- [ ] **Rastreamento de entidades nomeadas em documentos confirmados** (`database.py`,
+- [x] **Rastreamento de entidades nomeadas em documentos confirmados** (`database.py`,
   `services/knowledge_worker.py`). Criar tabela `entity_graph (entity, co_entity, weight)`
   — pares de entidades que aparecem juntas em documentos cujos insights foram confirmados.
   No MainPc: extrair via Qwen2.5-7B (P3, prompt minimal: "Liste as entidades principais: nome

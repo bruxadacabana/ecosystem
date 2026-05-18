@@ -35,6 +35,19 @@ _STOPWORDS: frozenset[str] = frozenset({
     "sobre", "also", "when", "which", "were", "has", "had", "will", "than",
 })
 
+# Termos técnicos conhecidos para extração de entidades sem LLM
+_KNOWN_TECH: frozenset[str] = frozenset({
+    "rust", "python", "typescript", "javascript", "go", "kotlin", "swift",
+    "java", "cpp", "c++", "haskell", "erlang", "elixir", "ocaml", "scala",
+    "react", "vue", "svelte", "nextjs", "tauri", "fastapi", "django", "flask",
+    "pytorch", "tensorflow", "jax", "ollama", "llama", "mistral", "gemma",
+    "chromadb", "sqlite", "postgres", "redis", "kafka", "docker", "kubernetes",
+    "linux", "nixos", "arch", "debian", "ubuntu", "windows", "macos",
+    "rocm", "cuda", "opengl", "vulkan", "webgpu",
+    "transformer", "embedding", "rag", "llm", "nlp", "gpt", "bert",
+    "attention", "diffusion", "stable diffusion", "gan", "vae",
+})
+
 # ---------------------------------------------------------------------------
 # Estado interno
 # ---------------------------------------------------------------------------
@@ -357,6 +370,14 @@ async def _process_confirmed_feedback(memory_id: int) -> None:
         memory_id,
     )
 
+    # Extrai entidades e atualiza grafo de co-ocorrência
+    if model:
+        entities = await _extract_entities_llm(content, model)
+    else:
+        entities = _extract_entities_regex(content)
+    if entities:
+        await _update_entity_graph(entities)
+
 
 async def _extract_and_store(task: _KnowledgeTask) -> None:
     """Chama Ollama para extrair resumo + tópicos + entidades; armazena no DB."""
@@ -539,6 +560,79 @@ def _tokenize(text: str) -> set[str]:
     """Tokeniza texto em termos ≥ 4 chars, filtrando stopwords."""
     words = re.findall(r"[a-zA-ZÀ-ÿ一-鿿]{4,}", text.lower())
     return {w for w in words if w not in _STOPWORDS}
+
+# ---------------------------------------------------------------------------
+# Extração de entidades + grafo de co-ocorrência
+# ---------------------------------------------------------------------------
+
+async def _extract_entities_llm(text: str, model: str) -> list[str]:
+    """Extrai entidades via LLM (P3). Retorna lista vazia em falha."""
+    prompt = (
+        f"Liste as entidades principais do texto abaixo: nomes de pessoas, tecnologias, "
+        f"linguagens, conceitos, frameworks ou organizações. Uma por linha, sem explicações.\n\n"
+        f"Texto: {text[:500]}\n\nEntidades:"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            resp = await client.post(
+                f"{_get_ollama_base()}/api/generate",
+                json={
+                    "model":   model,
+                    "prompt":  prompt,
+                    "stream":  False,
+                    "options": {"num_predict": 80, "temperature": 0.1},
+                },
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "")
+    except Exception as exc:
+        log.debug("knowledge_worker: extração de entidades LLM falhou: %s", exc)
+        return []
+
+    entities: list[str] = []
+    for line in raw.splitlines():
+        e = re.sub(r"^[\-\*\d\.\)]+\s*", "", line).strip().lower()
+        if 2 < len(e) < 60:
+            entities.append(e)
+    return entities[:12]
+
+
+def _extract_entities_regex(text: str) -> list[str]:
+    """Fallback: extrai entidades via termos técnicos conhecidos + palavras capitalizadas."""
+    found: list[str] = []
+    text_lower = text.lower()
+
+    # Termos técnicos conhecidos
+    for tech in _KNOWN_TECH:
+        if tech in text_lower:
+            found.append(tech)
+
+    # Palavras capitalizadas em mid-sentence (exceto início de frase)
+    caps = re.findall(r"(?<=[a-záéíóúàãõ,;]\s)([A-Z][a-zA-Z]{2,})", text)
+    found.extend(c.lower() for c in caps if c.lower() not in _STOPWORDS)
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for e in found:
+        if e not in seen:
+            seen.add(e)
+            result.append(e)
+    return result[:12]
+
+
+async def _update_entity_graph(entities: list[str]) -> None:
+    """Registra pares de co-ocorrência no entity_graph."""
+    if len(entities) < 2:
+        return
+    import database as _db
+    from itertools import combinations
+    for a, b in combinations(entities, 2):
+        await _db.upsert_entity_pair(a, b)
+    log.info(
+        "knowledge_worker.entity_graph: %d entidade(s), %d par(es) registrado(s).",
+        len(entities), len(list(combinations(entities, 2))),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Reflexão orientada a evento
