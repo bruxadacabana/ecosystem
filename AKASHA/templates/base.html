@@ -134,7 +134,10 @@
       <span class="insight-label">⬡ AKASHA</span>
       <p class="insight-text" id="insight-text"></p>
     </div>
-    <button class="insight-close" title="Dispensar" onclick="dismissInsight()">×</button>
+    <div class="insight-actions">
+      <button class="insight-feedback-btn insight-confirm" title="Relevante" onclick="feedbackInsight('confirmed')">✓</button>
+      <button class="insight-feedback-btn insight-dismiss" title="Dispensar" onclick="feedbackInsight('dismissed')">✗</button>
+    </div>
   </div>
 
   <!-- ─── Scripts ──────────────────────────────────────────────── -->
@@ -231,14 +234,28 @@
   <script>
     // ── Session Insight polling ──────────────────────────────────
     (function () {
-      var _shownText = null;
+      var _shownText   = null;
+      var _memoryId    = null;
 
-      function dismissInsight() {
+      function hideOverlay() {
         document.getElementById('insight-overlay').style.display = 'none';
         _shownText = null;
-        fetch('/insight/dismiss', {method: 'POST'}).catch(function(){});
+        _memoryId  = null;
       }
-      window.dismissInsight = dismissInsight;
+
+      function feedbackInsight(feedback) {
+        hideOverlay();
+        if (_memoryId === null) return;
+        fetch('/insight/feedback', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({memory_id: _memoryId, feedback: feedback}),
+        }).catch(function(){});
+        if (feedback === 'dismissed') {
+          fetch('/insight/dismiss', {method: 'POST'}).catch(function(){});
+        }
+      }
+      window.feedbackInsight = feedbackInsight;
 
       function pollInsight() {
         fetch('/insight/current')
@@ -247,11 +264,11 @@
             var text = data && data.text;
             if (text && text !== _shownText) {
               _shownText = text;
+              _memoryId  = (data.memory_id != null) ? data.memory_id : null;
               document.getElementById('insight-text').textContent = text;
               document.getElementById('insight-overlay').style.display = 'flex';
             } else if (!text) {
-              document.getElementById('insight-overlay').style.display = 'none';
-              _shownText = null;
+              hideOverlay();
             }
           })
           .catch(function(){});

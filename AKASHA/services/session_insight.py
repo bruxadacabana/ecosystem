@@ -31,7 +31,7 @@ except Exception:
     _OLLAMA_BASE   = "http://localhost:11434"
     _DEFAULT_MODEL = ""
 
-# {session_id: {"text": str, "generated_at": float}}
+# {session_id: {"text": str, "memory_id": int | None, "generated_at": float}}
 _current:  dict[str, dict[str, Any]] = {}
 # timestamp da última geração iniciada por sessão (para cooldown)
 _last_gen: dict[str, float]           = {}
@@ -58,15 +58,15 @@ def maybe_schedule(
         pass
 
 
-def get_current(session_id: str) -> str | None:
-    """Retorna texto do insight atual ou None se ausente/expirado."""
+def get_current(session_id: str) -> dict[str, Any] | None:
+    """Retorna {"text": str, "memory_id": int | None} ou None se ausente/expirado."""
     entry = _current.get(session_id)
     if not entry:
         return None
     if time.time() - entry["generated_at"] > _INSIGHT_MAX_AGE_S:
         _current.pop(session_id, None)
         return None
-    return entry["text"]
+    return {"text": entry["text"], "memory_id": entry.get("memory_id")}
 
 
 def dismiss(session_id: str) -> None:
@@ -88,11 +88,11 @@ async def _generate(session_id: str, queries: list[str], snippets: list[str]) ->
 
     prompt = (
         f"{personality}\n\n"
-        f"A usuária está pesquisando sobre:\n{queries_text}\n"
-        + (f"\nAlguns trechos encontrados:\n{snippets_text}\n" if snippets_text else "")
-        + "\nO que você comentaria sobre o que ela está explorando? "
-        "Responda em 1-2 frases na sua voz, sem explicar o conteúdo — "
-        "apenas seu comentário pessoal."
+        f"Contexto: a usuária pesquisou:\n{queries_text}\n"
+        + (f"\nTrechos encontrados:\n{snippets_text}\n\n" if snippets_text else "\n")
+        + "Escreva UMA frase — apenas uma — na sua voz, sobre o que você nota "
+        "nessa pesquisa. Não explique o tema. Não faça conexões com outros assuntos. "
+        "Não apresente você mesma. Apenas a observação, direta."
     )
 
     try:
@@ -103,7 +103,7 @@ async def _generate(session_id: str, queries: list[str], snippets: list[str]) ->
                     "model":   model,
                     "prompt":  prompt,
                     "stream":  False,
-                    "options": {"num_predict": 100, "temperature": 0.75},
+                    "options": {"num_predict": 60, "temperature": 0.65},
                 },
             )
             resp.raise_for_status()
@@ -112,8 +112,20 @@ async def _generate(session_id: str, queries: list[str], snippets: list[str]) ->
         log.debug("session_insight: Ollama falhou: %s", exc)
         return
 
-    if not text or len(text) < 15:
+    if not text or len(text) < 10:
         return
 
-    _current[session_id] = {"text": text, "generated_at": time.time()}
-    log.debug("session_insight: insight gerado para sessão %.8s…", session_id)
+    # Salva na memória pessoal para que a usuária possa dar feedback
+    memory_id: int | None = None
+    try:
+        from services.personal_memory import save_memory as _save_memory
+        memory_id = await _save_memory("observation", text, tags=["session_insight"])
+    except Exception as exc:
+        log.debug("session_insight: falha ao salvar em personal_memory: %s", exc)
+
+    _current[session_id] = {
+        "text":         text,
+        "memory_id":    memory_id,
+        "generated_at": time.time(),
+    }
+    log.debug("session_insight: insight gerado (memory_id=%s) para sessão %.8s…", memory_id, session_id)

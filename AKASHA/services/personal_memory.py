@@ -59,18 +59,19 @@ async def save_memory(
     type: str,
     content: str,
     tags: list[str] | None = None,
-) -> None:
-    """Salva entrada de memória pessoal. type deve ser um dos _VALID_TYPES."""
+) -> int:
+    """Salva entrada de memória pessoal. Retorna o id da nova entrada."""
     if type not in _VALID_TYPES:
         type = "observation"
     if tags is None:
         tags = []
     async with aiosqlite.connect(_get_pm_db()) as db:
-        await db.execute(
+        cur = await db.execute(
             "INSERT INTO personal_memory (type, content, tags) VALUES (?, ?, ?)",
             (type, content, json.dumps(tags, ensure_ascii=False)),
         )
         await db.commit()
+        return cur.lastrowid  # type: ignore[return-value]
 
 
 async def get_recent(n: int = 10) -> list[dict]:

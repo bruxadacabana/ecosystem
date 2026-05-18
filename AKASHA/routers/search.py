@@ -587,8 +587,10 @@ async def insight_current(request: Request) -> dict:
     """Retorna o insight atual para a sessão (polling leve do frontend, ~10 s)."""
     from services import session_insight as _si
     session_id = request.cookies.get("akasha_session", "")
-    text = _si.get_current(session_id) if session_id else None
-    return {"text": text}
+    entry = _si.get_current(session_id) if session_id else None
+    if entry:
+        return {"text": entry["text"], "memory_id": entry["memory_id"]}
+    return {"text": None, "memory_id": None}
 
 
 @router.post("/insight/dismiss")
@@ -598,6 +600,27 @@ async def insight_dismiss(request: Request) -> dict:
     session_id = request.cookies.get("akasha_session", "")
     if session_id:
         _si.dismiss(session_id)
+    return {"ok": True}
+
+
+class _InsightFeedbackBody(BaseModel):
+    memory_id: int
+    feedback:  str   # "confirmed" | "dismissed"
+
+
+@router.post("/insight/feedback")
+async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict:
+    """Registra feedback (✓/✗) num insight já salvo em personal_memory."""
+    from services import session_insight as _si
+    from services.personal_memory import set_feedback as _set_feedback
+    if body.feedback not in {"confirmed", "dismissed"}:
+        raise HTTPException(status_code=422, detail="feedback deve ser 'confirmed' ou 'dismissed'")
+    await _set_feedback(body.memory_id, body.feedback)
+    # Se dispensado, remove do estado da sessão para esconder o overlay
+    if body.feedback == "dismissed":
+        session_id = request.cookies.get("akasha_session", "")
+        if session_id:
+            _si.dismiss(session_id)
     return {"ok": True}
 
 
