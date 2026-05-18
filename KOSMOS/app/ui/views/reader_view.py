@@ -292,35 +292,57 @@ class _AnalyzeWorker(QThread):
         self._content   = content
         self._num_ctx   = num_ctx
 
+    # Mensagens que indicam sobrecarga temporária — vale tentar de novo.
+    _RETRYABLE = ("VRAM", "sobrecarregado", "Timeout aguardando LOGOS")
+
     def run(self) -> None:
-        try:
-            import json as _json
-            from app.core.ai_bridge import AiBridge
-            bridge = AiBridge(endpoint=self._endpoint, gen_model=self._gen_model)
-            prompt = (
-                f"Analise este artigo.\n\n"
-                f"Título: {self._title}\n\n"
-                f"{self._content}\n\n"
-                f"Regras:\n"
-                f"- tags: 3 a 5 palavras-chave em letras minúsculas, no idioma do artigo\n"
-                f"- sentiment: -1.0 (muito negativo) até +1.0 (muito positivo)\n"
-                f"- clickbait: 0.0 (sem clickbait) até 1.0 (clickbait puro)\n"
-                f"- five_ws: respostas concisas (máximo 2 frases), em português\n"
-                f"- entities: nomes próprios de pessoas, organizações e lugares "
-                f"(listas vazias se não houver)"
-            )
-            result = bridge.generate(
-                prompt,
-                system=self._SYSTEM,
-                json_schema=self._JSON_SCHEMA,
-                num_ctx=self._num_ctx,
-            )
-            data = _json.loads(result)
-            if isinstance(data, dict):
-                self.done.emit(data)
-        except Exception as exc:
-            log.error("Análise de artigo falhou: %s", exc)
-            self.failed.emit(str(exc))
+        import json as _json
+        import time as _time
+        from app.core.ai_bridge import AiBridge, OllamaError
+        bridge = AiBridge(endpoint=self._endpoint, gen_model=self._gen_model)
+        prompt = (
+            f"Analise este artigo.\n\n"
+            f"Título: {self._title}\n\n"
+            f"{self._content}\n\n"
+            f"Regras:\n"
+            f"- tags: 3 a 5 palavras-chave em letras minúsculas, no idioma do artigo\n"
+            f"- sentiment: -1.0 (muito negativo) até +1.0 (muito positivo)\n"
+            f"- clickbait: 0.0 (sem clickbait) até 1.0 (clickbait puro)\n"
+            f"- five_ws: respostas concisas (máximo 2 frases), em português\n"
+            f"- entities: nomes próprios de pessoas, organizações e lugares "
+            f"(listas vazias se não houver)"
+        )
+
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                result = bridge.generate(
+                    prompt,
+                    system=self._SYSTEM,
+                    json_schema=self._JSON_SCHEMA,
+                    num_ctx=self._num_ctx,
+                )
+                data = _json.loads(result)
+                if isinstance(data, dict):
+                    self.done.emit(data)
+                return
+            except OllamaError as exc:
+                last_exc = exc
+                msg = str(exc)
+                if any(kw in msg for kw in self._RETRYABLE) and attempt < 2:
+                    log.warning(
+                        "Análise adiada (tentativa %d/3): %s — aguardando 20 s", attempt + 1, msg
+                    )
+                    _time.sleep(20)
+                    continue
+                break
+            except Exception as exc:
+                last_exc = exc
+                break
+
+        err = str(last_exc) if last_exc else "erro desconhecido"
+        log.error("Análise de artigo falhou: %s", err)
+        self.failed.emit(err)
 
 
 class _EmbedWorker(QThread):

@@ -4700,6 +4700,13 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### KOSMOS — análises falhando: VRAM timeout e numpy inhomogeneous | 2026-05-17
+> Contexto: dois bugs observados no terminal. (1) `_AnalyzeWorker` falha com "Timeout aguardando LOGOS — sistema sobrecarregado" porque o LOGOS rejeita P3 imediatamente se VRAM > 85%, o que ocorre durante o carregamento do modelo. O worker não tenta de novo — emite `failed` na primeira rejeição. (2) `ClusterWorker` falha com numpy "inhomogeneous shape" porque o banco tem embeddings de dimensões diferentes (gerados com modelos distintos ao longo do tempo) e `np.array(vecs)` exige comprimento uniforme.
+
+#### KOSMOS
+- [x] **Retry automático no `_AnalyzeWorker`** (`app/ui/views/reader_view.py`): ao receber `OllamaError` com mensagem contendo "VRAM", "sobrecarregado" ou "Timeout aguardando LOGOS", esperar 20 s e tentar até 3 vezes antes de emitir `failed`. Usar `time.sleep()` dentro do `run()` — não bloqueia a UI pois roda em `QThread`.
+- [x] **Filtrar embeddings por comprimento mais comum no ClusterWorker** (`app/core/stats.py`, função `get_article_clusters()`): após montar a lista `vecs`, calcular a dimensão mais frequente com `collections.Counter` e descartar vetores com comprimento diferente antes de chamar `np.array(vecs, dtype=np.float32)`. Logar quantos foram descartados.
+
 ### HUB — tratamento de conflitos git | 2026-05-17
 > Contexto: o HUB commita localmente mas nunca faz pull/merge. Se o Syncthing sincronizar a pasta `.git/` entre duas máquinas e ambas tiverem commits, os históricos divergem em silêncio. O `git_check_incoming` detecta commits recebidos mas não os integra. Três abordagens foram levantadas — decidir qual adotar antes de implementar.
 

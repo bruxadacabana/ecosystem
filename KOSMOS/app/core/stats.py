@@ -490,6 +490,22 @@ def get_article_clusters(days: int = 90) -> list[ArticleCluster]:
     if len(vecs) < 6:
         return []
 
+    # Embeddings salvos com modelos distintos podem ter dimensões diferentes.
+    # Manter apenas os vetores com o comprimento mais comum antes de montar a matriz.
+    from collections import Counter as _Counter
+    dim_counts = _Counter(len(v) for v in vecs)
+    dominant_dim, _ = dim_counts.most_common(1)[0]
+    filtered = [(i, t, v) for i, t, v in zip(ids, titles, vecs) if len(v) == dominant_dim]
+    discarded = len(vecs) - len(filtered)
+    if discarded:
+        log.warning("Clustering: %d embedding(s) descartado(s) por dimensão inconsistente "
+                    "(esperado %d, %d dimensões únicas no banco)", discarded, dominant_dim, len(dim_counts))
+    if len(filtered) < 6:
+        return []
+    ids    = [r[0] for r in filtered]
+    titles = [r[1] for r in filtered]
+    vecs   = [r[2] for r in filtered]
+
     X = np.array(vecs, dtype=np.float32)
     # Normalizar para cosine similarity via distância euclidiana
     norms = np.linalg.norm(X, axis=1, keepdims=True)
