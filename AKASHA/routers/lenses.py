@@ -14,21 +14,15 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
+import asyncio
+
 import database
-from services import user_data as _ud
+from services import list_sync as _ls
 
 router = APIRouter()
 _log = logging.getLogger("akasha.user_data")
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
-
-
-async def _snapshot_lenses() -> None:
-    try:
-        lenses = await database.list_lenses()
-        _ud.save_lenses(lenses)
-    except Exception as exc:
-        _log.warning("save_lenses: %s", exc)
 
 
 @router.get("/lenses", response_class=HTMLResponse)
@@ -54,7 +48,7 @@ async def create_lens(
             name.strip(), domains.strip(), tags.strip(),
             content_types.strip(), date_from.strip(), date_to.strip(),
         )
-        await _snapshot_lenses()
+        asyncio.create_task(_ls.write_json("lenses"))
     lenses = await database.list_lenses()
     return templates.TemplateResponse(
         request, "lenses.html", {"lenses": lenses, "active_tab": "lenses"}

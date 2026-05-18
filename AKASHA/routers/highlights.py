@@ -6,10 +6,13 @@ DELETE /highlights/{id} — remove highlight
 """
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import database
+from services import list_sync as _ls
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
 
@@ -33,6 +36,7 @@ async def create_highlight(body: HighlightIn) -> dict:
         suffix=body.suffix,
         note=body.note,
     )
+    asyncio.create_task(_ls.write_json("highlights"))
     return {"id": hid}
 
 
@@ -50,4 +54,5 @@ async def list_highlights(url: str = "") -> list[dict]:
 @router.delete("/{highlight_id}")
 async def delete_highlight(highlight_id: int) -> dict:
     await database.delete_highlight(highlight_id)
+    asyncio.create_task(_ls.write_json("highlights"))
     return {"ok": True}

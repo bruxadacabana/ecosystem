@@ -20,7 +20,7 @@ from database import (
     get_crawl_page_by_url, get_crawl_pages_by_site,
 )
 from services.crawler import crawl_site, discover_subdomains
-from services import user_data as _ud
+from services import list_sync as _ls
 
 router = APIRouter()
 _log = logging.getLogger("akasha.user_data")
@@ -46,15 +46,6 @@ class CrawlSite:
     created_at:      str
 
 
-async def _snapshot_sites() -> None:
-    try:
-        rows = await get_all_crawl_sites()
-        _ud.save_sites([{
-            "base_url": r[1], "label": r[2], "crawl_depth": r[3],
-            "subdomains": json.loads(r[4] or "[]"), "created_at": r[8],
-        } for r in rows])
-    except Exception as exc:
-        _log.warning("save_sites: %s", exc)
 
 
 def _row_to_site(row: tuple) -> CrawlSite:
@@ -130,7 +121,7 @@ async def library_add(
     )
     if site_id:
         asyncio.get_running_loop().create_task(_bg_crawl(site_id))
-        await _snapshot_sites()
+        asyncio.create_task(_ls.write_json("sites"))
 
     rows  = await get_all_crawl_sites()
     sites = [_row_to_site(r) for r in rows]
@@ -156,7 +147,7 @@ async def library_add_quick(url: str = Form(...)) -> Response:
     site_id = await add_crawl_site(base_url, base_url, crawl_depth=2, subdomains_json="[]")
     if site_id:
         asyncio.get_running_loop().create_task(_bg_crawl(site_id))
-        await _snapshot_sites()
+        asyncio.create_task(_ls.write_json("sites"))
     return Response(status_code=200)
 
 
@@ -168,7 +159,7 @@ async def library_add_quick(url: str = Form(...)) -> Response:
 async def library_delete(site_id: int) -> Response:
     """Remove site e todas as páginas indexadas (cascade)."""
     await delete_crawl_site(site_id)
-    await _snapshot_sites()
+    asyncio.create_task(_ls.write_json("sites"))
     return Response(status_code=200)
 
 
