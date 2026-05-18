@@ -368,6 +368,10 @@ async def search(
         _all_snippets = [r.snippet for r in (local_results + web_results + fav_results)[:8] if r.snippet]
         _sched_search_update(q, _all_snippets)
 
+        # Session insight: agenda observação espontânea quando ≥4 queries acumuladas
+        from services import session_insight as _si
+        _si.maybe_schedule(_session_id, _active_session.queries, _all_snippets[:6])
+
     has_sites = src_sites and bool(await get_all_crawl_sites())
     recent = await database.recent_searches()
 
@@ -576,6 +580,25 @@ async def fetch(body: _FetchBody) -> _FetchResponse:
             url=body.url, title="", content_md="", word_count=0,
             error=f"Erro de rede: {exc}",
         )
+
+
+@router.get("/insight/current")
+async def insight_current(request: Request) -> dict:
+    """Retorna o insight atual para a sessão (polling leve do frontend, ~10 s)."""
+    from services import session_insight as _si
+    session_id = request.cookies.get("akasha_session", "")
+    text = _si.get_current(session_id) if session_id else None
+    return {"text": text}
+
+
+@router.post("/insight/dismiss")
+async def insight_dismiss(request: Request) -> dict:
+    """Descarta o insight atual (botão × no overlay)."""
+    from services import session_insight as _si
+    session_id = request.cookies.get("akasha_session", "")
+    if session_id:
+        _si.dismiss(session_id)
+    return {"ok": True}
 
 
 @router.get("/search/more", response_class=HTMLResponse)

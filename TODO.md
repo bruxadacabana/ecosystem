@@ -6106,15 +6106,21 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ##### HUB
 
-- [ ] **Viewer de memória no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `GET /memory/entries` no AKASHA e equivalente no Mnemosyne). Adicionar seção expansível nos cards de AKASHA e Mnemosyne: lista de entradas da `personal_memory` em ordem cronológica reversa — data, type (badge colorido), conteúdo. Botão deletar por entrada. Carregado sob demanda ao expandir (não polling).
+- [x] **Viewer de memória no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `GET /memory/entries` no AKASHA e equivalente no Mnemosyne). Adicionar seção expansível nos cards de AKASHA e Mnemosyne: lista de entradas da `personal_memory` em ordem cronológica reversa — data, type (badge colorido), conteúdo. Botão deletar por entrada. Carregado sob demanda ao expandir (não polling).
+
+#### Fase F — HUB: monitoramento do KOSMOS
+
+##### HUB
+
+- [x] **Card KOSMOS no Monitor** (`src/views/MonitoramentoView.tsx`; KOSMOS expõe `bg_processing` via ecosystem.json). Adicionar card "KOSMOS" no MonitoramentoView análogo ao AKASHA/Mnemosyne: mostra status da análise de artigos em background (`bg_analyzer`) — fila de artigos pendentes, worker ativo/parado, taxa de análise (artigos/h se disponível), e último artigo analisado. KOSMOS não tem memória pessoal — o card não precisa de editor de personalidade nem de viewer de memória.
 
 #### Fase D — Pop-up de insight da AKASHA durante pesquisa
 
 ##### AKASHA
 
-- [ ] **Rastreamento de session queries** (`routers/search.py` ou `services/session_insight.py`). Manter lista em RAM das últimas queries da sessão atual (sem persistir). A cada nova busca: se ≥4 queries na sessão E há overlap temático entre elas (tokens em comum), agendar geração de session insight via `asyncio.create_task()`.
+- [x] **Rastreamento de session queries** (`routers/search.py` ou `services/session_insight.py`). Manter lista em RAM das últimas queries da sessão atual (sem persistir). A cada nova busca: se ≥4 queries na sessão E há overlap temático entre elas (tokens em comum), agendar geração de session insight via `asyncio.create_task()`.
 
-- [ ] **Geração e exibição do session insight** (`services/session_insight.py`; `templates/search.html` ou `static/js/`). Task P3: prompt com personality_prompt + queries recentes + trechos dos resultados + "o que você comentaria sobre o que a usuária está explorando? 1-2 frases na sua voz, sem explicar o conteúdo — apenas seu comentário pessoal". Resultado servido via `GET /insight/current` (polling leve, ~10s). Frontend: overlay não-bloqueante no canto inferior direito, dispensável com clique, nunca interrompe a busca.
+- [x] **Geração e exibição do session insight** (`services/session_insight.py`; `templates/search.html` ou `static/js/`). Task P3: prompt com personality_prompt + queries recentes + trechos dos resultados + "o que você comentaria sobre o que a usuária está explorando? 1-2 frases na sua voz, sem explicar o conteúdo — apenas seu comentário pessoal". Resultado servido via `GET /insight/current` (polling leve, ~10s). Frontend: overlay não-bloqueante no canto inferior direito, dispensável com clique, nunca interrompe a busca.
 
 #### Fase E — Comunicação AKASHA↔Mnemosyne com pensamento próprio
 

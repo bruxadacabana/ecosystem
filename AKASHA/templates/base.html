@@ -127,6 +127,15 @@
   <!-- ─── Toast container ──────────────────────────────────────── -->
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
+  <!-- ─── Session Insight overlay ─────────────────────────────── -->
+  <div id="insight-overlay" class="insight-overlay" style="display:none" role="status" aria-live="polite">
+    <div class="insight-body">
+      <span class="insight-label">⬡ AKASHA</span>
+      <p class="insight-text" id="insight-text"></p>
+    </div>
+    <button class="insight-close" title="Dispensar" onclick="dismissInsight()">×</button>
+  </div>
+
   <!-- ─── Scripts ──────────────────────────────────────────────── -->
   <script>
     // ── Tema ────────────────────────────────────────────────────
@@ -218,6 +227,42 @@
     });
   </script>
   {% block scripts %}{% endblock %}
+  <script>
+    // ── Session Insight polling ──────────────────────────────────
+    (function () {
+      var _shownText = null;
+
+      function dismissInsight() {
+        document.getElementById('insight-overlay').style.display = 'none';
+        _shownText = null;
+        fetch('/insight/dismiss', {method: 'POST'}).catch(function(){});
+      }
+      window.dismissInsight = dismissInsight;
+
+      function pollInsight() {
+        fetch('/insight/current')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var text = data && data.text;
+            if (text && text !== _shownText) {
+              _shownText = text;
+              document.getElementById('insight-text').textContent = text;
+              document.getElementById('insight-overlay').style.display = 'flex';
+            } else if (!text) {
+              document.getElementById('insight-overlay').style.display = 'none';
+              _shownText = null;
+            }
+          })
+          .catch(function(){});
+      }
+
+      // Poll a cada 10s; iniciar após 15s (dar tempo ao servidor inicializar)
+      setTimeout(function() {
+        pollInsight();
+        setInterval(pollInsight, 10000);
+      }, 15000);
+    })();
+  </script>
   <script>
     // Preserva lens_id no form de busca se estiver na URL atual
     (function () {
