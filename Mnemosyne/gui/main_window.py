@@ -121,15 +121,17 @@ class SetupDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Configuração do Mnemosyne")
-        self.setMinimumWidth(460)
+        self.setMinimumSize(500, 600)
 
         from PySide6.QtWidgets import QCheckBox, QScrollArea, QFrame, QApplication
         from core.collections import available_ecosystem_paths
 
-        # Limitar altura ao tamanho disponível da tela
+        # Limitar altura ao tamanho disponível da tela e definir tamanho inicial
         _screen = QApplication.primaryScreen()
         if _screen:
-            self.setMaximumHeight(int(_screen.availableGeometry().height() * 0.9))
+            _geo = _screen.availableGeometry()
+            self.setMaximumHeight(int(_geo.height() * 0.9))
+            self.resize(min(600, int(_geo.width() * 0.55)), min(780, int(_geo.height() * 0.85)))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
