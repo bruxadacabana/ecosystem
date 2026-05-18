@@ -243,3 +243,10 @@ export const kosmosGetAnalysisStats = (): Promise<TauriResult<KosmosAnalysisStat
 
 export const setWindowCompact = (compact: boolean): Promise<TauriResult<void>> =>
   call<void>('set_window_compact', { compact })
+
+// ----------------------------------------------------------
+//  Logs de apps externos
+// ----------------------------------------------------------
+
+export const readAppLog = (app: string, n: number): Promise<TauriResult<string[]>> =>
+  call<string[]>('read_app_log', { app, n })

@@ -114,6 +114,39 @@ pub fn save_ecosystem_config(updates: Value) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Lê as últimas `n` linhas do log de um app (ex: "mnemosyne").
+///
+/// O log fica em `{sync_root}/{app}/{app}.log`.
+/// Retorna lista de strings vazia se o arquivo não existir.
+#[tauri::command]
+pub fn read_app_log(app: String, n: u32) -> Result<Vec<String>, AppError> {
+    use std::io::{BufRead, BufReader};
+
+    let eco = ecosystem::read_json();
+    let sync_root = eco["sync_root"].as_str().unwrap_or("").to_string();
+    if sync_root.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let log_path = std::path::Path::new(&sync_root)
+        .join(&app)
+        .join(format!("{app}.log"));
+
+    if !log_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let file = std::fs::File::open(&log_path)?;
+    let reader = BufReader::new(file);
+    let all: Vec<String> = reader.lines().map_while(Result::ok).collect();
+    let n = n as usize;
+    if all.len() > n {
+        Ok(all[all.len() - n..].to_vec())
+    } else {
+        Ok(all)
+    }
+}
+
 /// Alterna entre modo compacto (~640×440) e expandido (~1280×800).
 #[tauri::command]
 pub fn set_window_compact(

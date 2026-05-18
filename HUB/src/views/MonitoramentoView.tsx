@@ -8,6 +8,86 @@ import { useEffect, useRef, useState } from 'react'
 import * as cmd from '../lib/tauri'
 import type { EcosystemConfig, MemoryEntry } from '../types'
 
+// ── Faixa de logs em tempo real ────────────────────────────────
+
+function LogStrip({ lines }: { lines: string[] }) {
+  const endRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [lines])
+
+  return (
+    <div style={{
+      marginTop: 10,
+      background: 'var(--paper)',
+      border: '1px solid var(--rule)',
+      borderRadius: 4,
+      padding: '5px 8px',
+      maxHeight: 130,
+      overflowY: 'auto',
+    }}>
+      {lines.length === 0
+        ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', opacity: 0.5 }}>sem logs</span>
+        : lines.map((l, i) => {
+            const level = l.match(/\[(ERROR|WARNING|WARN)\]/) ? 'error'
+              : l.match(/\[(WARNING|WARN)\]/) ? 'warn' : 'normal'
+            return (
+              <div key={i} style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                lineHeight: 1.5,
+                color: level === 'error' ? '#c0392b'
+                  : level === 'warn' ? '#b8860b'
+                  : 'var(--ink-ghost)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }} title={l}>
+                {l}
+              </div>
+            )
+          })
+      }
+      <div ref={endRef} />
+    </div>
+  )
+}
+
+function useAkashaLogs(baseUrl: string, active: boolean) {
+  const [lines, setLines] = useState<string[]>([])
+  useEffect(() => {
+    let running = true
+    async function poll() {
+      try {
+        const res = await fetch(`${baseUrl}/system/logs?n=10`)
+        if (res.ok) {
+          const data = await res.json()
+          if (running) setLines(data.lines ?? [])
+        }
+      } catch { /* AKASHA offline */ }
+      if (running) setTimeout(poll, 3000)
+    }
+    poll()
+    return () => { running = false }
+  }, [baseUrl, active])
+  return lines
+}
+
+function useMnemosyneLogs() {
+  const [lines, setLines] = useState<string[]>([])
+  useEffect(() => {
+    let running = true
+    async function poll() {
+      const res = await cmd.readAppLog('mnemosyne', 10)
+      if (running && res.ok) setLines(res.data)
+      if (running) setTimeout(poll, 3000)
+    }
+    poll()
+    return () => { running = false }
+  }, [])
+  return lines
+}
+
 // ── Tipos locais ──────────────────────────────────────────────
 
 interface AkashaBg {
@@ -404,6 +484,9 @@ export function MonitoramentoView() {
     await cmd.saveEcosystemConfig({ mnemosyne: { cmd_reset_memory: true } as any })
   }
 
+  const akashaLogs   = useAkashaLogs(akashaBaseUrl, akashaActive)
+  const mnemosyneLogs = useMnemosyneLogs()
+
   // Porcentagem de artigos analisados
   const kosmosAnalyzedPct = kosmosStats?.available && kosmosStats.total
     ? Math.round(((kosmosStats.analyzed ?? 0) / kosmosStats.total) * 100)
@@ -451,6 +534,7 @@ export function MonitoramentoView() {
           resetMsg="Memória apagada."
         />
         <MemoryViewer app="akasha" />
+        <LogStrip lines={akashaLogs} />
       </AppBlock>
 
       {/* Mnemosyne */}
@@ -483,6 +567,7 @@ export function MonitoramentoView() {
           resetMsg="Solicitado — processará em até 60s."
         />
         <MemoryViewer app="mnemosyne" />
+        <LogStrip lines={mnemosyneLogs} />
       </AppBlock>
 
       {/* KOSMOS */}
