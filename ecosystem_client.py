@@ -204,9 +204,9 @@ def logos_silence() -> bool:
 # Mapeamento de nome de app para campo do ModelProfile retornado por /logos/hardware.
 # Apps não listados usam "llm_kosmos" como fallback (modelo mais leve).
 _APP_MODEL_KEY: "dict[str, str]" = {
-    "mnemosyne": "llm_mnemosyne",
-    "kosmos":    "llm_kosmos",
-    "akasha":    "llm_kosmos",   # mesmo modelo leve do KOSMOS — dispatcher de query
+    "mnemosyne": "llm_rag",
+    "kosmos":    "llm_analysis",
+    "akasha":    "llm_query",
 }
 
 # Modelo usado se LOGOS não estiver rodando e model não for especificado.
