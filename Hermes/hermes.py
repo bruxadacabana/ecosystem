@@ -107,6 +107,35 @@ def save_prefs(p: dict):
     try:
         PREFS_FILE.parent.mkdir(parents=True, exist_ok=True)
         PREFS_FILE.write_text(json.dumps(p, indent=2), encoding="utf-8")
+        _backup_hermes_settings()
+    except Exception:
+        pass
+
+
+def _backup_hermes_settings() -> None:
+    """Copia settings.json para {backup_dir}/hermes/ após save. Silencioso em falha."""
+    try:
+        from ecosystem_client import get_backup_dir  # noqa: F401 — já no sys.path
+        d = get_backup_dir()
+        if d is None or not PREFS_FILE.exists():
+            return
+        backup_dir = d / "hermes"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(PREFS_FILE), str(backup_dir / "settings.json"))
+    except Exception:
+        pass
+
+
+def _backup_hermes_transcription(out_path: str) -> None:
+    """Copia arquivo de transcrição para {backup_dir}/hermes/transcriptions/."""
+    try:
+        from ecosystem_client import get_backup_dir  # noqa: F401
+        d = get_backup_dir()
+        if d is None:
+            return
+        backup_dir = d / "hermes" / "transcriptions"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(out_path, str(backup_dir / Path(out_path).name))
     except Exception:
         pass
 
@@ -1464,6 +1493,7 @@ class HermesApp(QMainWindow):
         self.copy_md_btn.setEnabled(True)
         self._log(f"Transcrição salva: {out_path}", "ok")
         self.status_lbl.setText(f"✓ Salvo em {Path(out_path).name}")
+        _backup_hermes_transcription(out_path)
         item = QListWidgetItem(Path(out_path).stem)
         item.setData(Qt.ItemDataRole.UserRole, out_path)
         self.history_list.insertItem(0, item)
