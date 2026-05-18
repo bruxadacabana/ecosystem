@@ -142,6 +142,7 @@ function useKosmosLogs() {
 interface AkashaBg {
   knowledge_extraction: number
   worker_active:        boolean
+  processed_session?:  number
 }
 
 interface MnemosyneBg {
@@ -323,6 +324,101 @@ const sMemory = {
     fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ink-ghost)',
     background: 'var(--rule)', borderRadius: 3, padding: '1px 5px',
   } as const,
+}
+
+// ── Viewer de temas aprendidos (topic_interest_profile) ───────
+
+function TopicsViewer({ baseUrl }: { baseUrl: string }) {
+  const [open,    setOpen]    = useState(false)
+  const [topics,  setTopics]  = useState<{ topic: string; score: number }[]>([])
+  const [loading, setLoading] = useState(false)
+  const [err,     setErr]     = useState<string | null>(null)
+
+  async function load() {
+    setLoading(true); setErr(null)
+    try {
+      const res = await fetch(`${baseUrl}/memory/topics?n=30`)
+      if (res.ok) setTopics(await res.json())
+      else setErr(`HTTP ${res.status}`)
+    } catch {
+      setErr('AKASHA offline')
+    }
+    setLoading(false)
+  }
+
+  function handleOpen() {
+    const next = !open
+    setOpen(next)
+    if (next && topics.length === 0) load()
+  }
+
+  const maxScore = topics[0]?.score ?? 1
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button
+        onClick={handleOpen}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontFamily: 'var(--font-mono)', fontSize: 10,
+          color: 'var(--ink-ghost)', letterSpacing: '0.06em',
+          textTransform: 'uppercase', padding: '4px 0', opacity: 0.7,
+        }}
+      >
+        {open ? '▾ temas aprendidos' : '▸ temas aprendidos'}
+        {topics.length > 0 && ` (${topics.length})`}
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 6 }}>
+          {loading && <p style={sMemory.empty}>carregando…</p>}
+          {err    && <p style={{ ...sMemory.empty, color: '#8B3A2A' }}>{err}</p>}
+          {!loading && !err && topics.length === 0 && (
+            <p style={sMemory.empty}>nenhum tema aprendido ainda.</p>
+          )}
+          {topics.map(({ topic, score }) => (
+            <div key={topic} style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '3px 0', borderBottom: '1px solid var(--rule)',
+            }}>
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 11,
+                color: 'var(--ink)', flex: 1,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {topic}
+              </span>
+              <div style={{ width: 50, height: 3, background: 'var(--rule)', borderRadius: 2, flexShrink: 0 }}>
+                <div style={{
+                  width: `${Math.min(100, (score / maxScore) * 100)}%`,
+                  height: '100%', background: 'var(--accent)', borderRadius: 2,
+                }} />
+              </div>
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 9,
+                color: 'var(--ink-ghost)', opacity: 0.6,
+                minWidth: 28, textAlign: 'right', flexShrink: 0,
+              }}>
+                {score.toFixed(1)}
+              </span>
+            </div>
+          ))}
+          {!loading && topics.length > 0 && (
+            <button
+              onClick={load}
+              style={{
+                fontFamily: 'var(--font-mono)', fontSize: 10,
+                color: 'var(--ink-ghost)', background: 'none',
+                border: 'none', cursor: 'pointer', marginTop: 6, opacity: 0.6,
+              }}
+            >
+              ↻ recarregar
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Componente auxiliar: linha de status ─────────────────────
@@ -637,12 +733,19 @@ export function MonitoramentoView() {
       {/* AKASHA */}
       <AppBlock sigla="AKASHA" active={akashaActive}>
         <StatusRow
-          label="extração de conhecimento"
+          label="fila de extração"
           value={akashaBg
             ? akashaBg.knowledge_extraction > 0 ? `${akashaBg.knowledge_extraction} na fila` : 'fila vazia'
             : '—'}
           dim={!akashaBg || akashaBg.knowledge_extraction === 0}
         />
+        {akashaBg && (akashaBg.processed_session ?? 0) > 0 && (
+          <StatusRow
+            label="processadas (sessão)"
+            value={`${akashaBg.processed_session!.toLocaleString('pt-BR')}`}
+            dim={false}
+          />
+        )}
         <StatusRow
           label="worker"
           value={akashaBg ? (akashaActive ? 'ativo' : 'parado') : '—'}
@@ -656,6 +759,7 @@ export function MonitoramentoView() {
           resetMsg="Memória apagada."
         />
         <SeedsEditor initialValue={akashaSeeds} onSave={saveAkashaSeeds} />
+        <TopicsViewer baseUrl={akashaBaseUrl} />
         <MemoryViewer app="akasha" />
         <LogStrip lines={akashaLogs} />
       </AppBlock>

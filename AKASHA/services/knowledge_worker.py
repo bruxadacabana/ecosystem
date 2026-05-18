@@ -60,7 +60,8 @@ class _KnowledgeTask:
     source_type: str   # "crawled" | "archived" | "paper"
 
 _queue: asyncio.Queue[_KnowledgeTask] = asyncio.Queue(maxsize=_QUEUE_MAX)
-_worker_started: bool = False
+_worker_started:   bool = False
+_total_processed:  int  = 0   # conta páginas processadas com sucesso nesta sessão
 
 # Cooldown de notificação de insights (evita spam)
 import time as _time
@@ -236,7 +237,8 @@ def get_status() -> dict:
     """Estado atual do worker — para monitoramento externo (HUB)."""
     return {
         "knowledge_extraction": _queue.qsize(),
-        "worker_active": _worker_started,
+        "worker_active":        _worker_started,
+        "processed_session":    _total_processed,
     }
 
 
@@ -437,6 +439,8 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
         if t and len(t) >= 3:
             await _db.update_topic_score(t, delta=0.5)
 
+    global _total_processed
+    _total_processed += 1
     log.info("knowledge_worker: concluído '%s' — %d tópico(s), %d entidade(s)", task.title[:60] or task.url[:60], len(topics), len(entities))
 
     clean_topics = [str(t).strip().lower() for t in topics if str(t).strip()]
@@ -541,7 +545,7 @@ async def _call_ollama_extract(title: str, content: str) -> dict | None:
             resp.raise_for_status()
             raw = resp.json().get("response", "").strip()
     except Exception as exc:
-        log.debug("knowledge_worker: Ollama falhou: %s", exc)
+        log.warning("knowledge_worker: Ollama falhou na extração: %s", exc)
         return None
 
     return _parse_json(raw)
@@ -703,8 +707,12 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
         f"Sem introduções — apenas o pensamento direto."
     )
 
+    # Aguarda antes de chamar Ollama — dá tempo à extração concorrente terminar.
+    # Em CPUs lentos (2-5 tok/s) a extração da próxima página já começou; sem este
+    # delay + timeout estendido a reflexão sempre perde a corrida e falha silenciosamente.
+    await asyncio.sleep(5.0)
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             resp = await client.post(
                 f"{_get_ollama_base()}/api/generate",
                 json={
@@ -717,7 +725,7 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
             resp.raise_for_status()
             raw = resp.json().get("response", "").strip()
     except Exception as exc:
-        log.debug("knowledge_worker: _event_reflection falhou: %s", exc)
+        log.warning("knowledge_worker: _event_reflection falhou: %s", exc)
         return
 
     if not raw or len(raw) < 10:

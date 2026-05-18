@@ -45,20 +45,20 @@ async def run_reflection_loop() -> None:
     try:
         from services.personal_memory import get_all
         import database as _db
-        memories   = get_all()
+        memories   = await get_all()
         page_count = await _db.count_page_knowledge()
         if not memories and page_count > 0:
             log.info("reflection_loop: cold start — executando reflexão inicial.")
             await _run_reflection()
     except Exception as exc:
-        log.debug("reflection_loop: cold start falhou: %s", exc)
+        log.warning("reflection_loop: cold start falhou: %s", exc)
 
     while True:
         await asyncio.sleep(_REFLECTION_INTERVAL_S)
         try:
             await _run_reflection()
         except Exception as exc:
-            log.debug("reflection_loop: erro na reflexão periódica: %s", exc)
+            log.warning("reflection_loop: erro na reflexão periódica: %s", exc)
 
 
 async def _run_reflection() -> None:

@@ -74,7 +74,7 @@ async def _status_writer() -> None:
             })
         except Exception as exc:
             _log.debug("_status_writer: %s", exc)
-        await asyncio.sleep(30)
+        await asyncio.sleep(5)
 
 
 async def _decay_scores_loop() -> None:

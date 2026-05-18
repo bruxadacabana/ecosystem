@@ -24,6 +24,14 @@ async def list_entries(n: int = 20) -> list[dict]:
     return await get_recent(n)
 
 
+@router.get("/topics")
+async def list_topics(n: int = 30) -> list[dict]:
+    """Retorna os N tópicos com maior score no topic_interest_profile."""
+    import database as _db
+    rows = await _db.get_top_topics(n)
+    return [{"topic": t, "score": s} for t, s in rows]
+
+
 class _FeedbackBody(BaseModel):
     feedback: str | None  # "confirmed" | "dismissed" | null
 
