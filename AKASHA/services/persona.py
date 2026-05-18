@@ -17,14 +17,21 @@ log = logging.getLogger("akasha.persona")
 _REBUILD_INTERVAL_S: int   = 86400   # 1 vez por dia
 _PERSONA_TIMEOUT_S:  float = 20.0
 
-try:
-    from ecosystem_client import get_ollama_url as _get_url, get_active_profile as _get_profile
-    _OLLAMA_BASE: str = _get_url()
-    _p = _get_profile()
-    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
-except Exception:
-    _OLLAMA_BASE   = "http://localhost:11434"
-    _DEFAULT_MODEL = ""
+def _get_ollama_base() -> str:
+    try:
+        from ecosystem_client import get_ollama_url as _get_url
+        return _get_url()
+    except Exception:
+        return "http://localhost:11434"
+
+
+def _get_model() -> str:
+    try:
+        from ecosystem_client import get_active_profile as _get_profile
+        p = _get_profile()
+        return ((p or {}).get("models", {}) or {}).get("llm_query", "") if p else ""
+    except Exception:
+        return ""
 
 # ---------------------------------------------------------------------------
 # Estrutura
@@ -109,7 +116,7 @@ async def _rebuild_persona() -> None:
     topics = [t for t, _ in top]
     topics_str = ", ".join(topics)
 
-    model = _DEFAULT_MODEL
+    model = _get_model()
     if not model:
         return
 
@@ -123,7 +130,7 @@ async def _rebuild_persona() -> None:
     try:
         async with httpx.AsyncClient(timeout=_PERSONA_TIMEOUT_S) as client:
             resp = await client.post(
-                f"{_OLLAMA_BASE}/api/generate",
+                f"{_get_ollama_base()}/api/generate",
                 json={
                     "model":   model,
                     "prompt":  prompt,

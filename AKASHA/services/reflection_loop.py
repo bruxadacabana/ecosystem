@@ -22,14 +22,21 @@ _GENERIC_PREFIXES = (
     "não é possível",
 )
 
-try:
-    from ecosystem_client import get_ollama_url as _get_ollama_url, get_active_profile as _get_profile
-    _OLLAMA_BASE: str = _get_ollama_url()
-    _p = _get_profile()
-    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
-except Exception:
-    _OLLAMA_BASE   = "http://localhost:11434"
-    _DEFAULT_MODEL = ""
+def _get_ollama_base() -> str:
+    try:
+        from ecosystem_client import get_ollama_url as _get_url
+        return _get_url()
+    except Exception:
+        return "http://localhost:11434"
+
+
+def _get_model() -> str:
+    try:
+        from ecosystem_client import get_active_profile as _get_profile
+        p = _get_profile()
+        return ((p or {}).get("models", {}) or {}).get("llm_query", "") if p else ""
+    except Exception:
+        return ""
 
 
 async def run_reflection_loop() -> None:
@@ -56,7 +63,8 @@ async def run_reflection_loop() -> None:
 
 async def _run_reflection() -> None:
     """Lê dados recentes, chama Ollama, salva reflexão em personal_memory."""
-    if not _DEFAULT_MODEL:
+    model = _get_model()
+    if not model:
         return
 
     import database as _db
@@ -100,7 +108,7 @@ async def _run_reflection() -> None:
         f"Se não houver nada relevante, responda apenas: nada."
     )
 
-    raw = await _call_ollama(prompt)
+    raw = await _call_ollama(prompt, model)
     if not raw:
         return
     if not _is_meaningful(raw):
@@ -111,14 +119,14 @@ async def _run_reflection() -> None:
     log.info("reflection_loop: reflexão salva (%d chars).", len(raw))
 
 
-async def _call_ollama(prompt: str) -> str | None:
+async def _call_ollama(prompt: str, model: str) -> str | None:
     """Chama Ollama com temperature=0.7 para reflexão criativa."""
     try:
         async with httpx.AsyncClient(timeout=_REFLECT_TIMEOUT) as client:
             resp = await client.post(
-                f"{_OLLAMA_BASE}/api/generate",
+                f"{_get_ollama_base()}/api/generate",
                 json={
-                    "model":   _DEFAULT_MODEL,
+                    "model":   model,
                     "prompt":  prompt,
                     "stream":  False,
                     "options": {"num_predict": 120, "temperature": 0.7},
