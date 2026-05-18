@@ -6140,7 +6140,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### HUB
 
-- [ ] **Tela de setup de `sync_root`** (`src/views/SyncSetupView.tsx`; `src/lib/tauri.ts`; `src-tauri/src/`). Se `ecosystem.json` não tiver `sync_root` configurado ao abrir o HUB, exibir tela de primeiro uso com seletor de pasta (dialog nativo Tauri) e botão confirmar; ao confirmar, chamar `write_top_level("sync_root", path)` e recarregar o app; só mostrar a UI principal após configuração. Se já configurado, pular direto.
+- [x] **Tela de setup de `sync_root`** (`src/views/SyncSetupView.tsx`; `src/lib/tauri.ts`; `src-tauri/src/`). Se `ecosystem.json` não tiver `sync_root` configurado ao abrir o HUB, exibir tela de primeiro uso com seletor de pasta (dialog nativo Tauri) e botão confirmar; ao confirmar, chamar `write_top_level("sync_root", path)` e recarregar o app; só mostrar a UI principal após configuração. Se já configurado, pular direto.
 
 - [ ] **Git init na pasta sync_root** (`src-tauri/src/`; Tauri command `git_init_sync_root()`). No startup do HUB, se `sync_root` configurado e `{sync_root}/.git/` não existir: executar `git init`; criar `{sync_root}/.gitignore` com `*.db-wal` e `*.db-shm`; criar `{sync_root}/.stignore` (Syncthing) com os mesmos padrões mais `*.tmp`; fazer commit inicial vazio `"init: ecosystem sync root"`; se `.git/` já existir, apenas verificar que `.gitignore` tem as entradas.
 

@@ -11,6 +11,7 @@ import { ToastContainer, useToast } from './components/Toast'
 import { Sidebar } from './components/Sidebar'
 import { Topbar } from './components/Topbar'
 import { Splash } from './views/Splash'
+import { SyncSetupView } from './views/SyncSetupView'
 import { DashboardView } from './views/DashboardView'
 import { LogosView } from './views/LogosView'
 import { AtividadeView } from './views/AtividadeView'
@@ -28,7 +29,9 @@ import * as cmd from './lib/tauri'
 import type { HubSection, HubView, Project, Book, ChapterMeta, ArticleMeta, OgmaProject } from './types'
 
 export default function App() {
-  const [ready,   setReady]   = useState(false)
+  const [ready,           setReady]           = useState(false)
+  // null = verificando; false = precisa configurar; true = configurado
+  const [syncRootReady,   setSyncRootReady]   = useState<boolean | null>(null)
   const [section, setSection] = useState<HubSection>('home')
   // Módulo aberto sobre a seção atual (null = mostra a seção)
   const [moduleView, setModuleView] = useState<HubView | null>(null)
@@ -60,6 +63,17 @@ export default function App() {
   }
 
   useEffect(() => { loadPaths() }, [])
+
+  // Após o Splash, verifica se sync_root já está configurado
+  useEffect(() => {
+    if (!ready) return
+    cmd.readEcosystemConfig().then(result => {
+      const syncRoot = result.ok
+        ? String((result.data as Record<string, unknown>)['sync_root'] ?? '')
+        : ''
+      setSyncRootReady(syncRoot.trim() !== '')
+    })
+  }, [ready])
 
   // ── Navegação ──────────────────────────────────────────────
 
@@ -212,6 +226,18 @@ export default function App() {
     return (
       <>
         <Splash onDone={() => setReady(true)} />
+        <ToastContainer toasts={toast.toasts} onDismiss={toast.dismiss} />
+      </>
+    )
+  }
+
+  // Aguarda verificação do sync_root (breve) ou exibe tela de primeiro uso
+  if (syncRootReady === null || syncRootReady === false) {
+    return (
+      <>
+        {syncRootReady === false && (
+          <SyncSetupView onDone={() => { loadPaths(); setSyncRootReady(true) }} />
+        )}
         <ToastContainer toasts={toast.toasts} onDismiss={toast.dismiss} />
       </>
     )
