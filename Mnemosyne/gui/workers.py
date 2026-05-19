@@ -248,53 +248,73 @@ class IndexWorker(QThread):
             if remaining:
                 batch_list = [remaining[b : b + _BATCH] for b in range(0, len(remaining), _BATCH)]
                 n_batches = len(batch_list)
-                try:
-                    if use_parallel and n_batches > 1:
-                        # Pipeline: embeda próximo lote enquanto grava o atual
-                        with ThreadPoolExecutor(max_workers=2) as pool:
-                            futures = [
-                                (batch, pool.submit(
-                                    _embed_batch,
-                                    [c.page_content for c in batch],
-                                    self.config.embed_model, _OLLAMA_BASE,
-                                ))
-                                for batch in batch_list
-                            ]
-                            for b_idx, (batch, future) in enumerate(futures):
-                                if self.isInterruptionRequested():
-                                    self.finished.emit(False, "Interrompido.")
-                                    return
+                _embed_failed = False
+                if use_parallel and n_batches > 1:
+                    # Pipeline: embeda próximo lote enquanto grava o atual
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        futures = [
+                            (batch, pool.submit(
+                                _embed_batch,
+                                [c.page_content for c in batch],
+                                self.config.embed_model, _OLLAMA_BASE,
+                            ))
+                            for batch in batch_list
+                        ]
+                        for b_idx, (batch, future) in enumerate(futures):
+                            if self.isInterruptionRequested():
+                                self.finished.emit(False, "Interrompido.")
+                                return
+                            try:
                                 embs = future.result()
+                            except Exception as exc:
+                                log.warning("IndexWorker: erro ao embedar '%s': %s", name, exc)
+                                errors.append(f"{name}: {exc}")
+                                _embed_failed = True
+                                break
+                            try:
                                 vs._collection.add(
                                     ids=[str(uuid.uuid4()) for _ in batch],
                                     documents=[c.page_content for c in batch],
                                     embeddings=embs,
                                     metadatas=[c.metadata or {} for c in batch],
                                 )
-                                self.progress.emit(f"Incorporando {name}", i, total)
-                                if b_idx + 1 < n_batches:
-                                    time.sleep(_SLEEP)
-                    else:
-                        for b_idx, batch in enumerate(batch_list):
-                            if self.isInterruptionRequested():
-                                self.finished.emit(False, "Interrompido.")
+                            except Exception as exc:
+                                log.error("IndexWorker: erro fatal no vectorstore: %s", exc)
+                                self.finished.emit(False, f"Erro ao gravar no índice: {exc}")
                                 return
+                            self.progress.emit(f"Incorporando {name}", i, total)
+                            if b_idx + 1 < n_batches:
+                                time.sleep(_SLEEP)
+                else:
+                    for b_idx, batch in enumerate(batch_list):
+                        if self.isInterruptionRequested():
+                            self.finished.emit(False, "Interrompido.")
+                            return
+                        try:
                             embs = _embed_batch(
                                 [c.page_content for c in batch],
                                 self.config.embed_model, _OLLAMA_BASE,
                             )
+                        except Exception as exc:
+                            log.warning("IndexWorker: erro ao embedar '%s': %s", name, exc)
+                            errors.append(f"{name}: {exc}")
+                            _embed_failed = True
+                            break
+                        try:
                             vs._collection.add(
                                 ids=[str(uuid.uuid4()) for _ in batch],
                                 documents=[c.page_content for c in batch],
                                 embeddings=embs,
                                 metadatas=[c.metadata or {} for c in batch],
                             )
-                            self.progress.emit(f"Incorporando {name}", i, total)
-                            if b_idx + 1 < n_batches:
-                                time.sleep(_SLEEP)
-                except Exception as exc:
-                    log.warning("IndexWorker: erro ao embedar '%s': %s", name, exc)
-                    errors.append(f"{name}: {exc}")
+                        except Exception as exc:
+                            log.error("IndexWorker: erro fatal no vectorstore: %s", exc)
+                            self.finished.emit(False, f"Erro ao gravar no índice: {exc}")
+                            return
+                        self.progress.emit(f"Incorporando {name}", i, total)
+                        if b_idx + 1 < n_batches:
+                            time.sleep(_SLEEP)
+                if _embed_failed:
                     checkpoint.record(file_path, "error")
                     continue
 
@@ -440,29 +460,39 @@ class ResumeIndexWorker(QThread):
 
             bm25_idx.add_documents(chunks)
 
-            try:
-                batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
-                for b_idx, batch in enumerate(batch_list):
-                    if self.isInterruptionRequested():
-                        checkpoint.close()
-                        self.finished.emit(False, "Retomada interrompida.")
-                        return
+            batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
+            _embed_failed = False
+            for b_idx, batch in enumerate(batch_list):
+                if self.isInterruptionRequested():
+                    checkpoint.close()
+                    self.finished.emit(False, "Retomada interrompida.")
+                    return
+                try:
                     embs = _embed_batch(
                         [c.page_content for c in batch],
                         self.config.embed_model, _OLLAMA_BASE,
                     )
+                except Exception as exc:
+                    log.warning("ResumeIndexWorker: erro ao embedar '%s': %s", name, exc)
+                    errors.append(f"{name}: {exc}")
+                    _embed_failed = True
+                    break
+                try:
                     vs._collection.add(
                         ids=[str(uuid.uuid4()) for _ in batch],
                         documents=[c.page_content for c in batch],
                         embeddings=embs,
                         metadatas=[c.metadata or {} for c in batch],
                     )
-                    self.progress.emit(f"Incorporando {name}", already_done + i, total_all)
-                    if b_idx + 1 < len(batch_list):
-                        time.sleep(_SLEEP)
-            except Exception as exc:
-                log.warning("ResumeIndexWorker: erro ao embedar '%s': %s", name, exc)
-                errors.append(f"{name}: {exc}")
+                except Exception as exc:
+                    log.error("ResumeIndexWorker: erro fatal no vectorstore: %s", exc)
+                    checkpoint.close()
+                    self.finished.emit(False, f"Erro ao gravar no índice: {exc}")
+                    return
+                self.progress.emit(f"Incorporando {name}", already_done + i, total_all)
+                if b_idx + 1 < len(batch_list):
+                    time.sleep(_SLEEP)
+            if _embed_failed:
                 checkpoint.record(file_path, "error")
                 continue
 
