@@ -1,4 +1,4 @@
-## Implementação atual:
+## Fila de implementação atual:
 
 ### Bugs no sistema de backup do AKASHA | 2026-05-19
 
@@ -14,6 +14,10 @@
 
 ### CODEX — Leitor centralizado do ecossistema | 2026-05-13
 
+### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
+
+### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
+
 ## Anotações
 
 
@@ -25,19 +29,10 @@
 
 ---
 
-## próximo:
-
-- faça uma nova auditoria no pesquisas.md (leia o arquivo e verifique se tem coisas lá que não constam no TODO. Se existir algo faltando, acrescente em '### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05' e atualize a data
-- algum programa poderia detectar o livro que estou lendo (marcado no OGMA) e notar se esse livro está na biblioteca da Mnemosyne. 
-
-### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
-
-### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
+## próximo: 
 
 
-depois:
 
-- leia tudo que ainda não está marcado como completo no TODO e sugira os próximos passos
 
 
 ---
