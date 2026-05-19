@@ -1,12 +1,15 @@
 ## Implementação atual:
 
+### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
 
-### Bugs e investigações reportados após uso real | 2026-05-18
-
-### AKASHA — Funcionalidades da assistente | 2026-05-18
+### Pop-up espontâneo da Mnemosyne + sistema de feedback | 2026-05-19
 
 ### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
 
+
+### Bugs e investigações reportados após uso real | 2026-05-18
+- [ ] **Investigar: causa raiz do erro "readonly" recorrente no ChromaDB** — não é a primeira vez que ocorre; toda vez exige re-indexação completa. Coletar logs completos na próxima ocorrência. Suspeitas: WAL corrompido (já existe `_clear_orphan_wal()` no código — indício de histórico), dois processos com acesso simultâneo ao mesmo SQLite, ou bug de versão do chromadb. Investigar se o `persist_dir` está em filesystem com limitações (ex: BTRFS + COW + SQLite WAL).
+- [ ] **Documentar no GUIDE.md as features implementadas em 2026-05-18** — as seguintes implementações da sessão de hoje não estão no GUIDE: `IndexReflectionWorker` (pipeline de memória pessoal por arquivo); sinal `file_indexed` no `IndexWorker` + `_analysis_queue` + timer de 30s; FolderWatcher modo notificação (`watcherPendingBtn`); metadados temáticos do notebook (`themes`, `keywords`, `top_sources`) + `update_meta_from_history()`; roteamento de insights AKASHA por overlap temático; `role="akasha_insight"` + `append_akasha_insight()`; bloco de insights no `build_messages()`; extração de temas pós-batch do FolderWatcher.
 
 ## Anotações
 
