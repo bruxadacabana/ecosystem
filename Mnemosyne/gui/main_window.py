@@ -1914,7 +1914,7 @@ class MainWindow(QMainWindow):
                 self._active_insight_popup.close()
             except RuntimeError:
                 pass
-        popup = InsightPopup(text, memory_id, parent=None)
+        popup = InsightPopup(text, memory_id, parent=self)
         popup.confirmed.connect(self._on_insight_confirmed)
         popup.dismissed.connect(self._on_insight_dismissed)
         popup.replied.connect(self._on_insight_replied)

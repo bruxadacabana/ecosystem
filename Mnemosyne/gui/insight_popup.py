@@ -134,19 +134,19 @@ class InsightPopup(QDialog):
         self._auto_timer.start()
 
     def _fade_in(self) -> None:
-        anim = QPropertyAnimation(self, b"windowOpacity", self)
-        anim.setDuration(250)
-        anim.setStartValue(0.0)
-        anim.setEndValue(1.0)
-        anim.start()
+        self._anim = QPropertyAnimation(self, b"windowOpacity", self)
+        self._anim.setDuration(250)
+        self._anim.setStartValue(0.0)
+        self._anim.setEndValue(1.0)
+        self._anim.start()
 
     def _close_anim(self) -> None:
-        anim = QPropertyAnimation(self, b"windowOpacity", self)
-        anim.setDuration(300)
-        anim.setStartValue(self.windowOpacity())
-        anim.setEndValue(0.0)
-        anim.finished.connect(self.close)
-        anim.start()
+        self._anim = QPropertyAnimation(self, b"windowOpacity", self)
+        self._anim.setDuration(300)
+        self._anim.setStartValue(self.windowOpacity())
+        self._anim.setEndValue(0.0)
+        self._anim.finished.connect(self.close)
+        self._anim.start()
 
     def _on_confirm(self) -> None:
         self._auto_timer.stop()
