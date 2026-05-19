@@ -347,9 +347,12 @@ def _hybrid_retrieve(
             if key not in doc_map:
                 doc_map[key] = doc
 
-        # Aplicar boost de reflexão, filtro cosine e peso por tipo de fonte
+        # Aplicar boost de reflexão, filtro cosine, peso por tipo de fonte e soft-delete
         to_remove: list[str] = []
         for key, doc in doc_map.items():
+            if doc.metadata.get("deleted"):
+                rrf_scores[key] *= 0.1
+
             # Peso por tipo de fonte (scientific > book > library/vault > transcript)
             src_weight = SOURCE_WEIGHTS.get(_effective_source_type(doc), 1.0)
             rrf_scores[key] *= src_weight
@@ -392,6 +395,8 @@ def _hybrid_retrieve(
             boost = doc.metadata.get("boost", 1.0)
         else:
             boost = 1.0
+        if doc.metadata.get("deleted"):
+            boost *= 0.1
         src_weight = SOURCE_WEIGHTS.get(_effective_source_type(doc), 1.0)
         score = (0.6 * (1.0 - i / n) + 0.4 * normalized[i]) * boost * src_weight
         combined.append((score, i))

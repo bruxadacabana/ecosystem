@@ -1,4 +1,6 @@
-## Implementação atual:
+## Implementação atual:-
+
+- 
 
 ### Pesquisa: Emoções em Reflexões de IAs e Critérios de Notificação Proativa | 2026-05-19
 
@@ -8,9 +10,7 @@
 - inclua a opção de arquivar sites crawleados no akasha
 - verifique o funcionamento da mnemosyne: nem todo insight/reflexão/pensamento/memória/opnião deve ser um pop-up ou visita, mas devem ser armazenadas na memória pessoal dela. Verifique Akasha também. Verifique também para ambas o que é necessário para gerar um pop-up e o que é necessário para gerar um pensamento/reflexão na memória. Faça pesquisas adicionais se necessário.
 - ainda esto tendo problemas com a exibição de logs da mnemosyne no monitor do hub
-- como é lidado pela Akasha e Mnemosyne quando um arquivo é deletado?
 - o que acontece se a indexação for apagada mas a memória da Mnemosyne não? Precisa haver uma forma dela não refazer o trabalho que ainda estiver disponível.
-- "temas" da mnemosyne deveria carregar em tempo real assim como "conexões" da akasha
 - apesar das trocas de insights não deverem ser indexadas no rag, a akasha e mnemosyne pode usar o insight da outra para refletir e criar conexões com o que já sabe
 
 ### Integração KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19

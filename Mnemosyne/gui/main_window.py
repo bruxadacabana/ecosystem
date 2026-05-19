@@ -2393,6 +2393,37 @@ class MainWindow(QMainWindow):
                 self._watcher_pending_btn.setText(
                     f"⊕  {n} arquivo(s) novo(s) detectado(s) — indexar?"
                 )
+        # Soft-delete: marcar chunks como deleted em vez de remover do índice
+        if getattr(self, "vectorstore", None):
+            from core.rag import MultiVectorstore
+            from core.bm25_index import BM25Index
+            import logging as _log
+            _mlog = _log.getLogger("mnemosyne.main")
+            stores = (
+                self.vectorstore.stores
+                if isinstance(self.vectorstore, MultiVectorstore)
+                else [(self.vectorstore, None)]
+            )
+            for vs, coll in stores:
+                try:
+                    result = vs._collection.get(
+                        where={"source": {"$eq": file_path}},
+                        include=["metadatas"],
+                    )
+                    ids   = result.get("ids") or []
+                    metas = result.get("metadatas") or []
+                    if ids:
+                        updated = [{**m, "deleted": True} for m in metas]
+                        vs._collection.update(ids=ids, metadatas=updated)
+                except Exception as exc:
+                    _mlog.debug("soft-delete ChromaDB falhou para %s: %s", name, exc)
+                if coll is not None:
+                    try:
+                        bm25_idx = BM25Index.load(coll.mnemosyne_dir)
+                        bm25_idx.mark_deleted(file_path)
+                        bm25_idx.save()
+                    except Exception as exc:
+                        _mlog.debug("soft-delete BM25 falhou para %s: %s", name, exc)
         self.refresh_manage_info()
 
     def _on_file_indexed(self, success: bool, message: str) -> None:

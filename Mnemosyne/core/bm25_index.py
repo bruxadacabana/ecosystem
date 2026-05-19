@@ -38,6 +38,7 @@ class BM25Index:
         self._docs:  list[str]  = []
         self._metas: list[dict] = []
         self._bm25:  BM25Okapi | None = None
+        self._deleted_paths: set[str] = set()
 
     # ------------------------------------------------------------------
     # Mutação
@@ -82,8 +83,17 @@ class BM25Index:
             self._bm25 = None
         return removed
 
+    def mark_deleted(self, file_path: str) -> None:
+        """Soft-delete: chunks desta fonte recebem penalidade 0.1× no score."""
+        self._deleted_paths.add(file_path)
+
+    def unmark_deleted(self, file_path: str) -> None:
+        """Desfaz o soft-delete de um arquivo."""
+        self._deleted_paths.discard(file_path)
+
     def clear(self) -> None:
         self._docs, self._metas, self._bm25 = [], [], None
+        self._deleted_paths = set()
 
     # ------------------------------------------------------------------
     # Busca
@@ -99,12 +109,17 @@ class BM25Index:
 
         rank_posição=0 é o melhor resultado BM25.
         Documentos com score zero são excluídos.
+        Chunks de arquivos soft-deleted recebem penalidade de 0.1×.
         """
         if not self._docs:
             return []
         self._ensure_built()
         assert self._bm25 is not None
-        scores = self._bm25.get_scores(query.lower().split())
+        raw = self._bm25.get_scores(query.lower().split())
+        scores = [
+            s * (0.1 if self._metas[i].get("source") in self._deleted_paths else 1.0)
+            for i, s in enumerate(raw)
+        ]
         top_idx = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k]
         return [
             (rank, Document(page_content=self._docs[i], metadata=self._metas[i]))
@@ -124,7 +139,10 @@ class BM25Index:
         """Serializa corpus em disco (pickle protocol 4 — compatível Python 3.8+)."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._path, "wb") as f:
-            pickle.dump({"docs": self._docs, "metas": self._metas}, f, protocol=4)
+            pickle.dump(
+                {"docs": self._docs, "metas": self._metas, "deleted_paths": self._deleted_paths},
+                f, protocol=4,
+            )
 
     @classmethod
     def load(cls, mnemosyne_dir: str) -> "BM25Index":
@@ -134,8 +152,9 @@ class BM25Index:
             try:
                 with open(idx._path, "rb") as f:
                     data = pickle.load(f)
-                idx._docs  = data.get("docs",  [])
-                idx._metas = data.get("metas", [])
+                idx._docs          = data.get("docs",  [])
+                idx._metas         = data.get("metas", [])
+                idx._deleted_paths = set(data.get("deleted_paths", []))
             except Exception:
                 pass  # índice corrompido — começa do zero
         return idx
