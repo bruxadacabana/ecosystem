@@ -1126,6 +1126,16 @@ async def get_crawl_page_by_url(url: str) -> tuple | None:
         )).fetchone()
 
 
+async def get_crawl_page_by_id(page_id: int) -> tuple | None:
+    """Retorna a crawl_page completa (com content_md) para o ID dado."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        return await (await db.execute(
+            "SELECT id, site_id, url, title, content_md, http_status, crawled_at "
+            "FROM crawl_pages WHERE id = ?",
+            (page_id,),
+        )).fetchone()
+
+
 async def get_crawl_pages_by_site(
     site_id: int,
     limit: int = 20,

@@ -92,14 +92,58 @@ def poll_and_store() -> int:
     return count_unseen()
 
 
+_STOP_WORDS_PM = {
+    "sobre", "entre", "quando", "através", "ainda", "muito", "como",
+    "mais", "para", "pela", "pelo", "isso", "esta", "esse", "with",
+    "that", "this", "from", "have", "there", "their", "where", "which",
+    "também", "outro", "outra", "todos", "todas",
+}
+
+
+def _extract_keywords_pm(text: str) -> list[str]:
+    """Extrai até 8 palavras-chave únicas com ≥5 chars."""
+    import re
+    words = re.findall(r"[a-záéíóúàâêîôûãõçüäöë]{5,}", text.lower())
+    seen: set[str] = set()
+    result: list[str] = []
+    for w in words:
+        if w not in _STOP_WORDS_PM and w not in seen:
+            seen.add(w)
+            result.append(w)
+        if len(result) >= 8:
+            break
+    return result
+
+
 def _save_akasha_insight_to_personal_memory(item: dict) -> None:
-    """Salva pensamento do AKASHA em personal_memory — fora do RAG."""
+    """Salva pensamento do AKASHA em personal_memory — fora do RAG.
+
+    Após salvar, verifica sobreposição de keywords com memórias existentes;
+    se ≥2 keywords comuns, registra uma conexão estática.
+    """
     thought = (item.get("akasha_thought") or item.get("summary") or "").strip()
     if not thought or len(thought) < 10:
         return
     try:
-        from .personal_memory import save_memory
+        from .personal_memory import save_memory, get_context_memories
         save_memory("connection", thought, tags=["from_akasha"])
+
+        # Cross-insight: sobreposição com memórias pessoais existentes
+        kws = _extract_keywords_pm(thought)
+        if len(kws) >= 2:
+            memories = get_context_memories(n=20)
+            for mem in memories:
+                mem_text = mem.get("content", "").lower()
+                overlap = [k for k in kws if k in mem_text]
+                if len(overlap) >= 2:
+                    snippet = mem["content"][:80]
+                    cross = (
+                        f"Conexão detectada: insight do AKASHA sobre '{', '.join(overlap[:3])}' "
+                        f"ecoa memória anterior: \"{snippet}\""
+                    )
+                    save_memory("connection", cross, tags=["cross_insight", "from_akasha"])
+                    log.debug("insights: cross-insight gerado com memória id=%s", mem.get("id"))
+                    break  # um cross por insight é suficiente
     except Exception as exc:
         log.debug("insights: save to personal_memory falhou: %s", exc)
 

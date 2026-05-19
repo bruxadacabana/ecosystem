@@ -19,6 +19,61 @@ log = logging.getLogger("akasha.friendship_receiver")
 _POLL_INTERVAL_S: float = 300.0   # 5 min entre verificações
 _MIN_CONTENT_LEN: int   = 10      # descarta entradas muito curtas
 
+_STOP_WORDS = {
+    "sobre", "entre", "quando", "através", "ainda", "muito", "como",
+    "mais", "para", "pela", "pelo", "isso", "esta", "esse", "with",
+    "that", "this", "from", "have", "there", "their", "where", "which",
+    "também", "outro", "outra", "todos", "todas",
+}
+
+
+def _extract_keywords(text: str) -> list[str]:
+    """Extrai até 8 palavras-chave únicas com ≥5 chars."""
+    import re
+    words = re.findall(r"[a-záéíóúàâêîôûãõçüäöë]{5,}", text.lower())
+    seen: set[str] = set()
+    result: list[str] = []
+    for w in words:
+        if w not in _STOP_WORDS and w not in seen:
+            seen.add(w)
+            result.append(w)
+        if len(result) >= 8:
+            break
+    return result
+
+
+async def _find_cross_connection(content: str) -> str | None:
+    """Procura em crawl_pages conteúdo local relacionado ao insight recebido.
+
+    Retorna texto da conexão ou None se não encontrado.
+    """
+    keywords = _extract_keywords(content)
+    if len(keywords) < 2:
+        return None
+    try:
+        import aiosqlite
+        from database import DB_PATH
+        # Testa os dois primeiros keywords no título das páginas crawleadas
+        kw1, kw2 = keywords[0], keywords[1]
+        async with aiosqlite.connect(DB_PATH) as db:
+            row = await (await db.execute(
+                "SELECT cp.title, cp.url FROM crawl_pages cp "
+                "JOIN crawl_sites cs ON cs.id = cp.site_id "
+                "WHERE cs.deleted = 0 AND cp.title IS NOT NULL "
+                "AND (cp.title LIKE ? OR cp.title LIKE ?) LIMIT 1",
+                (f"%{kw1}%", f"%{kw2}%"),
+            )).fetchone()
+        if row:
+            title = (row[0] or row[1])[:80]
+            kw_str = ", ".join(keywords[:3])
+            return (
+                f"Conexão detectada: insight da Mnemosyne sobre '{kw_str}' "
+                f"relaciona-se com conteúdo local indexado: \"{title}\""
+            )
+    except Exception as exc:
+        log.debug("_find_cross_connection: %s", exc)
+    return None
+
 
 def _ensure_ecosystem_client_path() -> None:
     root = str(Path(__file__).parent.parent.parent)
@@ -71,6 +126,15 @@ async def _poll_and_store() -> None:
             saved += 1
         except Exception as exc:
             log.debug("friendship_receiver: save_memory falhou: %s", exc)
+            continue
+        # Cross-insight: verifica sobreposição com conteúdo local
+        try:
+            cross = await _find_cross_connection(content)
+            if cross:
+                await save_memory("connection", cross, tags=["cross_insight", "from_mnemosyne"])
+                log.debug("friendship_receiver: cross-insight gerado para insight recebido")
+        except Exception as exc:
+            log.debug("friendship_receiver: cross-insight falhou: %s", exc)
 
     try:
         write_section("akasha", {"incoming_insights": []})

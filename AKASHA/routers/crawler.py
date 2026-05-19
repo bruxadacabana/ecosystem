@@ -17,8 +17,8 @@ import markdown as _md
 
 from database import (
     add_crawl_site, delete_crawl_site, get_all_crawl_sites,
-    get_crawl_page_by_url, get_crawl_pages_by_site, get_crawl_site,
-    update_crawl_site,
+    get_crawl_page_by_id, get_crawl_page_by_url, get_crawl_pages_by_site,
+    get_crawl_site, update_crawl_site,
 )
 from services.crawler import crawl_site, discover_subdomains, is_crawl_paused, set_crawl_paused
 from services import list_sync as _ls
@@ -272,6 +272,50 @@ async def library_reader(request: Request, url: str = "") -> HTMLResponse:
             "active_tab":   "library",
         },
     )
+
+
+@router.post("/library/{site_id}/pages/{page_id}/archive", response_class=HTMLResponse)
+async def library_archive_page(site_id: int, page_id: int) -> HTMLResponse:
+    """Arquiva conteúdo de uma página crawleada em disco como HTML."""
+    from urllib.parse import urlparse
+    import re
+    from config import ARCHIVE_PATH
+
+    page = await get_crawl_page_by_id(page_id)
+    if not page:
+        return HTMLResponse('<span style="color:var(--error)">Não encontrado</span>', status_code=404)
+
+    # row: id(0) site_id(1) url(2) title(3) content_md(4) http_status(5) crawled_at(6)
+    url      = page[2]
+    title    = page[3] or url
+    content_md = page[4] or ""
+
+    parsed = urlparse(url)
+    domain = parsed.netloc or "unknown"
+    path_part = (parsed.path or "index").strip("/").replace("/", "_") or "index"
+    slug = re.sub(r"[^\w\-]", "_", path_part)[:80]
+
+    content_html = _md.markdown(content_md, extensions=["extra", "toc"])
+    html_doc = (
+        "<!DOCTYPE html><html><head>"
+        f'<meta charset="utf-8"><title>{title}</title>'
+        "</head><body>"
+        f"<h1>{title}</h1>"
+        f'<p><a href="{url}">{url}</a></p>'
+        f"{content_html}"
+        "</body></html>"
+    )
+
+    dest_dir = ARCHIVE_PATH / "sites" / domain
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_file = dest_dir / f"{slug}.html"
+        dest_file.write_text(html_doc, encoding="utf-8")
+    except OSError as exc:
+        _log.warning("archive page %d: %s", page_id, exc)
+        return HTMLResponse('<span style="color:var(--error)">Erro ao salvar</span>')
+
+    return HTMLResponse('<span style="color:var(--success);font-size:11px;">✓</span>')
 
 
 async def _bg_crawl(site_id: int) -> None:

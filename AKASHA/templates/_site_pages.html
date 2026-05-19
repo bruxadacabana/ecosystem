@@ -30,6 +30,9 @@
       <a href="/library/reader?url={{ p[1] | urlencode }}"
          class="btn btn-ghost btn-sm"
          title="Ler no reader mode">Ler</a>
+      <button hx-post="/library/{{ site_id }}/pages/{{ p[0] }}/archive"
+              hx-swap="outerHTML" hx-target="this"
+              class="btn btn-ghost btn-sm" title="Arquivar página">⬇</button>
       <a href="{{ p[1] }}" target="_blank" rel="noopener noreferrer"
          class="btn btn-ghost btn-sm" title="Abrir URL original">↗</a>
     </div>
