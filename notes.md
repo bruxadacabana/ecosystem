@@ -6,6 +6,7 @@
 - verifique se já está implementado para que, se o KOSMOS rodar em o Ollama aberto, no momento que o Ollama abrir ele deve varrer as notícias e começar a análise em segundo plano
 - inclua a opção de arquivar sites crawleados no akasha
 - ainda esto tendo problemas com a exibição de logs da mnemosyne no monitor do hub
+- como é lidado pela Akasha e Mnemosyne quando um arquivo é deletado?
 - o que acontece se a indexação for apagada mas a memória da Mnemosyne não? Precisa haver uma forma dela não refazer o trabalho que ainda estiver disponível.
 - KOSMOS ainda está me dando a opção de alterar o llm sendo que não deveria mais ser possível (tudo sobre o ollama deve ser feito pelo HUB)
 - o mnemosyne tentou exibir um pop mas carregou apenas uma janela transparente e vazia
