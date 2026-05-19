@@ -1306,19 +1306,77 @@ async def suggest_related_docs(
 def suggest_related_queries(
     query: str,
     results: list[SearchResult],
-    n: int = 3,
+    n: int = 5,
+    interest_topics: list[tuple[str, float]] | None = None,
 ) -> list[str]:
-    """Sugere tópicos relacionados derivados dos snippets dos resultados atuais.
+    """Sugere queries relacionadas derivadas dos top-5 resultados, cruzadas com
+    topic_interest_profile para personalização. Sem LLM — TF-IDF + overlap, < 50ms.
 
-    Extrai termos salientes dos snippets que não aparecem na query original.
-    Retorna como sugestões standalone — o usuário decide se quer explorar.
-    Sem LLM — puramente TF-IDF, < 50ms.
+    Termos que coincidem com o perfil de interesse são promovidos como sugestões
+    standalone. Termos apenas dos resultados são combinados com a palavra âncora
+    da query original.
     """
     if not results or not query.strip():
         return []
+
     query_words = set(re.findall(r"[a-zA-ZÀ-ÿ]{3,}", query.lower()))
-    text = " ".join(f"{r.title} {r.snippet}" for r in results)
-    return _top_terms(text, n * 2, exclude=query_words)[:n]
+
+    # Títulos têm peso 3× — mais discriminantes que snippets
+    top5 = results[:5]
+    title_text = (" ".join(r.title for r in top5) + " ") * 3
+    body_text  = " ".join(r.snippet for r in top5 if r.snippet)
+    candidates = _top_terms(title_text + body_text, n * 4, exclude=query_words)
+
+    if not candidates:
+        return []
+
+    # Construir conjunto de tokens do perfil de interesse
+    interest_set: set[str] = set()
+    if interest_topics:
+        for topic, _ in interest_topics:
+            for tok in re.findall(r"[a-zA-ZÀ-ÿ]{3,}", topic.lower()):
+                interest_set.add(tok)
+
+    # Particionar candidatos pelo perfil
+    in_profile:  list[str] = []
+    out_profile: list[str] = []
+    for term in candidates:
+        if term in interest_set:
+            in_profile.append(term)
+        else:
+            out_profile.append(term)
+
+    # Palavra âncora da query (mais saliente, sem stopwords) para combinações
+    q_anchor_words = [w for w in re.findall(r"[a-zA-ZÀ-ÿ]{4,}", query.lower())
+                      if w not in _STOPWORDS]
+    q_anchor = q_anchor_words[0] if q_anchor_words else ""
+
+    suggestions: list[str] = []
+    seen: set[str] = set()
+
+    def _add(s: str) -> bool:
+        s = s.strip()
+        if s and s not in seen and s.lower() not in query.lower():
+            seen.add(s)
+            suggestions.append(s)
+            return True
+        return False
+
+    # 1. Termos do perfil → standalone (tópicos que a usuária já demonstrou interesse)
+    for term in in_profile:
+        _add(term)
+        if len(suggestions) >= n:
+            break
+
+    # 2. Termos dos resultados sem correspondência no perfil → combinar com âncora
+    if len(suggestions) < n:
+        for term in out_profile:
+            candidate = f"{q_anchor} {term}" if q_anchor else term
+            _add(candidate)
+            if len(suggestions) >= n:
+                break
+
+    return suggestions
 
 
 async def find_related(url: str, n: int = 5) -> list[SearchResult]:

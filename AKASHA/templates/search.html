@@ -272,7 +272,7 @@
   {% endif %}
   {% if related_queries %}
   <div class="related-queries-bar">
-    <span class="related-queries-label">Pesquisar também:</span>
+    <span class="related-queries-label">Pesquisas relacionadas:</span>
     {% for qs in related_queries %}
     {% set _qurl = "/search?q=" ~ (qs | urlencode) %}
     {% if src_web %}{% set _qurl = _qurl ~ "&src_web=on" %}{% endif %}

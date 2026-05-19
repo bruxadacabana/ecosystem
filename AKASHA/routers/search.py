@@ -38,6 +38,7 @@ from database import (
     record_search_query,
     get_query_suggestions,
     get_suggested_tags,
+    get_top_topics,
 )
 
 router = APIRouter()
@@ -353,11 +354,14 @@ async def search(
             except (asyncio.TimeoutError, Exception):
                 _ambiguity_future.cancel()
 
-        # Leituras e queries relacionadas (TF-IDF sobre snippets, sem LLM)
+        # Leituras e queries relacionadas (TF-IDF sobre snippets + perfil de interesse, sem LLM)
         _src_related = (local_results + web_results + fav_results + site_results)[:20]
         if _src_related:
+            _interest_topics = await get_top_topics(15)
             related_docs    = await suggest_related_docs(_src_related, n=5)
-            related_queries = suggest_related_queries(q, _src_related, n=3)
+            related_queries = suggest_related_queries(
+                q, _src_related, n=5, interest_topics=_interest_topics
+            )
 
         # Atualiza sessão de pesquisa com query atual e URLs recuperados
         _all_urls = [r.url for r in (local_results + web_results + fav_results + site_results)]
