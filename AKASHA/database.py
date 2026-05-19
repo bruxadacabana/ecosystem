@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 36
+SCHEMA_VERSION = 37
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -790,6 +790,18 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             )
         except Exception:
             pass  # coluna já existe em DBs novos
+
+    if from_version < 37:
+        # Flag de deduplicação desacoplada do conteúdo LLM em page_knowledge.
+        # Permite limpar page_knowledge sem perder o controle de quais páginas
+        # já foram processadas pelo knowledge_worker.
+        try:
+            await db.execute(
+                "ALTER TABLE crawl_pages "
+                "ADD COLUMN knowledge_processed INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass  # coluna já existe
 
     if from_version < 36:
         try:
@@ -2228,3 +2240,27 @@ async def count_page_knowledge() -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         row = await (await db.execute("SELECT COUNT(*) FROM page_knowledge")).fetchone()
     return row[0] if row else 0
+
+
+async def get_crawl_page_processed(url: str) -> bool:
+    """Retorna True se crawl_pages.knowledge_processed = 1 para esta URL."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            row = await (await db.execute(
+                "SELECT knowledge_processed FROM crawl_pages WHERE url = ?", (url,)
+            )).fetchone()
+        return bool(row and row[0])
+    except Exception:
+        return False
+
+
+async def set_crawl_page_processed(url: str) -> None:
+    """Marca crawl_pages.knowledge_processed = 1 para esta URL."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE crawl_pages SET knowledge_processed = 1 WHERE url = ?", (url,)
+            )
+            await db.commit()
+    except Exception:
+        pass

@@ -302,10 +302,17 @@ async def process_queue() -> None:
                     await asyncio.sleep(60)
                     continue
 
-            # Verifica se já processamos esta URL recentemente
+            # Verifica se já processamos esta URL recentemente.
+            # Páginas crawleadas: usa crawl_pages.knowledge_processed (persiste
+            # mesmo se page_knowledge for limpa para re-análise).
+            # Arquivos arquivados/papers: usa page_knowledge como antes.
             import database as _db
-            existing = await _db.get_page_knowledge(task.url)
-            if existing:
+            already_done: bool
+            if task.source_type == "crawled":
+                already_done = await _db.get_crawl_page_processed(task.url)
+            else:
+                already_done = bool(await _db.get_page_knowledge(task.url))
+            if already_done:
                 _queue.task_done()
                 continue
 
@@ -434,6 +441,10 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
         entities=[str(e) for e in entities],
         source_type=task.source_type,
     )
+    # Marca a página crawleada como processada — flag independente do conteúdo LLM,
+    # persiste mesmo se page_knowledge for limpa para re-análise.
+    if task.source_type == "crawled":
+        await _db.set_crawl_page_processed(task.url)
 
     # Atualiza perfil de interesse com os tópicos extraídos
     for topic in topics:
@@ -823,7 +834,7 @@ async def backfill_knowledge(archive_path: "Path") -> None:
             rows = await (await db.execute(
                 "SELECT cp.url, cp.title, cp.content_md "
                 "FROM crawl_pages cp "
-                "WHERE cp.url NOT IN (SELECT url FROM page_knowledge) "
+                "WHERE cp.knowledge_processed = 0 "
                 "  AND cp.content_md != '' "
                 "ORDER BY cp.crawled_at DESC"
             )).fetchall()
