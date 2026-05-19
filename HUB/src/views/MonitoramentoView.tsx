@@ -201,7 +201,103 @@ function TypeBadge({ type }: { type: string }) {
   )
 }
 
-// ── Viewer de memória (carregado sob demanda) ─────────────────
+// ── Labels e cores das categorias de memória ─────────────────
+
+const CATEGORY_LABEL: Record<string, string> = {
+  friendship:  'visitas',
+  about_user:  'sobre mim',
+  interests:   'interesses',
+  reflections: 'reflexões',
+  world:       'mundo',
+}
+
+const CATEGORY_ORDER = ['friendship', 'about_user', 'interests', 'reflections', 'world']
+
+// ── Seção dobrável de uma categoria ──────────────────────────
+
+function MemoryCategorySection({
+  category, entries, onDelete, deleting,
+}: {
+  category: string
+  entries:  MemoryEntry[]
+  onDelete: (id: number) => void
+  deleting: number | null
+}) {
+  const [open, setOpen] = useState(false)
+  const label = CATEGORY_LABEL[category] ?? category
+
+  return (
+    <div style={{ marginBottom: 2 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontFamily: 'var(--font-mono)', fontSize: 10,
+          color: 'var(--ink-ghost)', letterSpacing: '0.06em',
+          textTransform: 'uppercase', padding: '3px 0',
+          display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+        }}
+      >
+        <span style={{ opacity: 0.6 }}>{open ? '▾' : '▸'}</span>
+        <span style={{ opacity: 0.8 }}>{label}</span>
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: 9,
+          color: 'var(--ink-ghost)', opacity: 0.5,
+        }}>
+          {entries.length}
+        </span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 4, marginLeft: 10, maxHeight: 260, overflowY: 'auto', paddingRight: 2 }}>
+          {entries.map(e => (
+            <div key={e.id} style={sMemory.row}>
+              <div style={sMemory.rowTop}>
+                <TypeBadge type={e.type} />
+                <span style={sMemory.date}>
+                  {new Date(e.created_at.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
+                {e.feedback && (
+                  <span style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 9,
+                    color: e.feedback === 'confirmed' ? '#4A6741' : '#8B3A2A',
+                    opacity: 0.7,
+                  }}>
+                    {e.feedback === 'confirmed' ? '✓' : '✗'}
+                  </span>
+                )}
+                <button
+                  onClick={() => onDelete(e.id)}
+                  disabled={deleting === e.id}
+                  style={{
+                    marginLeft: 'auto', background: 'none', border: 'none',
+                    cursor: deleting === e.id ? 'default' : 'pointer',
+                    fontFamily: 'var(--font-mono)', fontSize: 10,
+                    color: 'var(--ink-ghost)', opacity: deleting === e.id ? 0.3 : 0.5,
+                    padding: '0 2px',
+                  }}
+                  title="Apagar entrada"
+                >
+                  ✕
+                </button>
+              </div>
+              <p style={sMemory.content}>{e.content}</p>
+              {e.tags.length > 0 && (
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                  {e.tags.map(t => (
+                    <span key={t} style={sMemory.tag}>{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Viewer de memória agrupada por categoria ──────────────────
 
 function MemoryViewer({ app }: { app: 'akasha' | 'mnemosyne' }) {
   const [open,     setOpen]     = useState(false)
@@ -232,6 +328,25 @@ function MemoryViewer({ app }: { app: 'akasha' | 'mnemosyne' }) {
     if (res.ok) setEntries(prev => prev.filter(e => e.id !== id))
   }
 
+  // Agrupa entradas por categoria, respeitando a ordem canônica
+  const grouped: [string, MemoryEntry[]][] = (() => {
+    const map = new Map<string, MemoryEntry[]>()
+    for (const e of entries) {
+      const cat = e.category ?? 'reflections'
+      if (!map.has(cat)) map.set(cat, [])
+      map.get(cat)!.push(e)
+    }
+    const ordered: [string, MemoryEntry[]][] = []
+    for (const cat of CATEGORY_ORDER) {
+      if (map.has(cat)) ordered.push([cat, map.get(cat)!])
+    }
+    // Categorias desconhecidas no final
+    for (const [cat, list] of map) {
+      if (!CATEGORY_ORDER.includes(cat)) ordered.push([cat, list])
+    }
+    return ordered
+  })()
+
   return (
     <div style={{ marginTop: 10 }}>
       <button
@@ -249,66 +364,27 @@ function MemoryViewer({ app }: { app: 'akasha' | 'mnemosyne' }) {
 
       {open && (
         <div style={{ marginTop: 6 }}>
-          {loading && (
-            <p style={sMemory.empty}>carregando…</p>
-          )}
-          {err && (
-            <p style={{ ...sMemory.empty, color: '#8B3A2A' }}>{err}</p>
-          )}
+          {loading && <p style={sMemory.empty}>carregando…</p>}
+          {err     && <p style={{ ...sMemory.empty, color: '#8B3A2A' }}>{err}</p>}
           {!loading && !err && entries.length === 0 && (
             <p style={sMemory.empty}>nenhuma entrada de memória ainda.</p>
           )}
-          <div style={{ maxHeight: 320, overflowY: 'auto', paddingRight: 2 }}>
-          {entries.map(e => (
-            <div key={e.id} style={sMemory.row}>
-              <div style={sMemory.rowTop}>
-                <TypeBadge type={e.type} />
-                <span style={sMemory.date}>
-                  {new Date(e.created_at.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
-                </span>
-                {e.feedback && (
-                  <span style={{
-                    fontFamily: 'var(--font-mono)', fontSize: 9,
-                    color: e.feedback === 'confirmed' ? '#4A6741' : '#8B3A2A',
-                    opacity: 0.7,
-                  }}>
-                    {e.feedback === 'confirmed' ? '✓' : '✗'}
-                  </span>
-                )}
-                <button
-                  onClick={() => handleDelete(e.id)}
-                  disabled={deleting === e.id}
-                  style={{
-                    marginLeft: 'auto', background: 'none', border: 'none',
-                    cursor: deleting === e.id ? 'default' : 'pointer',
-                    fontFamily: 'var(--font-mono)', fontSize: 10,
-                    color: 'var(--ink-ghost)', opacity: deleting === e.id ? 0.3 : 0.5,
-                    padding: '0 2px',
-                  }}
-                  title="Apagar entrada"
-                >
-                  ✕
-                </button>
-              </div>
-              <p style={sMemory.content}>{e.content}</p>
-              {e.tags.length > 0 && (
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-                  {e.tags.map(t => (
-                    <span key={t} style={sMemory.tag}>{t}</span>
-                  ))}
-                </div>
-              )}
-            </div>
+          {grouped.map(([cat, list]) => (
+            <MemoryCategorySection
+              key={cat}
+              category={cat}
+              entries={list}
+              onDelete={handleDelete}
+              deleting={deleting}
+            />
           ))}
-          </div>
           {!loading && entries.length > 0 && (
             <button
               onClick={load}
               style={{
                 fontFamily: 'var(--font-mono)', fontSize: 10,
                 color: 'var(--ink-ghost)', background: 'none',
-                border: 'none', cursor: 'pointer', marginTop: 6,
-                opacity: 0.6,
+                border: 'none', cursor: 'pointer', marginTop: 6, opacity: 0.6,
               }}
             >
               ↻ recarregar

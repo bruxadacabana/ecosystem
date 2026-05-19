@@ -1,8 +1,5 @@
 ## Implementação atual:
 
-### Memória pessoal das IAs — estrutura temática
-- [ ] **HUB — aba de memória agrupada por category** — exibir memórias em seções dobráveis por categoria, em vez de lista plana.
-
 - verifique se já está implementado para que, se o KOSMOS rodar em o Ollama aberto, no momento que o Ollama abrir ele deve varrer as notícias e começar a análise em segundo plano
 - no momento que mnemosyne terminou de indexar a biblioteca e foi começar a indexar o kosmos, deu erro "Query error: Database error: error returned from database: (code 1032) attempt to write a readonly database"
 - inclua a opção de arquivar sites crawleados no akasha

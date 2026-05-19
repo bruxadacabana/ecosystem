@@ -18,6 +18,7 @@ pub struct MemoryEntry {
     pub content:    String,
     pub tags:       Vec<String>,
     pub feedback:   Option<String>,
+    pub category:   Option<String>,
 }
 
 /// Resolve o caminho de personal_memory.db para `app` ("akasha" ou "mnemosyne").
@@ -70,7 +71,7 @@ pub fn memory_get_entries(app: String, n: u32) -> Result<Vec<MemoryEntry>, AppEr
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, created_at, type, content, tags, feedback \
+            "SELECT id, created_at, type, content, tags, feedback, category \
              FROM personal_memory ORDER BY id DESC LIMIT ?1",
         )
         .map_err(|e| AppError::Io(e.to_string()))?;
@@ -85,14 +86,15 @@ pub fn memory_get_entries(app: String, n: u32) -> Result<Vec<MemoryEntry>, AppEr
                 row.get::<_, String>(3)?,
                 tags_json,
                 row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
             ))
         })
         .map_err(|e| AppError::Io(e.to_string()))?
         .filter_map(|r| r.ok())
-        .map(|(id, created_at, entry_type, content, tags_json, feedback)| {
+        .map(|(id, created_at, entry_type, content, tags_json, feedback, category)| {
             let tags: Vec<String> =
                 serde_json::from_str(&tags_json).unwrap_or_default();
-            MemoryEntry { id, created_at, entry_type, content, tags, feedback }
+            MemoryEntry { id, created_at, entry_type, content, tags, feedback, category }
         })
         .collect();
 
