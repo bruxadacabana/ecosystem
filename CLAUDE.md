@@ -94,8 +94,8 @@ A aba tem 2 pills: **Guide** (index 0) e **Studio** (index 1). Resumo e FAQ fora
 **Query multi-coleção (implementado 2026-05-14):**
 O Mnemosyne consulta **todas** as coleções habilitadas simultaneamente via `MultiVectorstore` (proxy Chroma). Nunca há "coleção ativa" para queries — apenas `coll.enabled` controla inclusão/exclusão. O botão "Ativar" foi renomeado para "Habilitar/Desabilitar".
 
-**Pop-up espontâneo da Mnemosyne + sistema de feedback (PENDENTE — discutido múltiplas vezes):**
-A Mnemosyne deve poder criar pop-ups proativos (semelhante ao `alert()` do JavaScript) para compartilhar insights com a usuária a qualquer momento, sem ser acionada. O pop-up foi a ideia original que gerou o sistema de feedback do ecossistema — são inseparáveis. Junto ao pop-up, a usuária dá thumbs up/down ou comentário breve; esse feedback é salvo na memória pessoal da Mnemosyne (e da AKASHA) e molda a personalidade e interesses de ambas ao longo do tempo. Escopo: (1) dentro da interface do AKASHA imediatamente, (2) extensão de browser futuramente. **Não confundir** com o `notify_mnemosyne_insight()` existente (fluxo AKASHA → Mnemosyne badge) — o pop-up é Mnemosyne → usuária, proativo.
+**Pop-up espontâneo da Mnemosyne + sistema de feedback (implementado 2026-05-19):**
+A Mnemosyne cria pop-ups proativos via `InsightPopup` (PySide6 `QDialog`) acionado pelo `InsightScheduler`. O pop-up aparece no canto da tela com o texto do insight, botões de feedback (✓ / ✗ / comentário) e fecha sozinho após timeout. O feedback é salvo na `personal_memory` com campo `feedback` e molda interesses futuros. O campo `shown_as_popup` em `personal_memory` evita re-exibir o mesmo insight. Insights recebidos da AKASHA via `friendship_receiver` também podem gerar pop-up. Escopo futuro: extensão de browser. **Não confundir** com o `notify_mnemosyne_insight()` (fluxo AKASHA → Mnemosyne badge) — o pop-up é Mnemosyne → usuária, proativo.
 
 ### AKASHA
 
@@ -124,6 +124,11 @@ AKASHA: store em tabela `personal_memory` no SQLite próprio. Mnemosyne: store e
 O prompt base de personalidade de cada IA fica em `ecosystem.json` (`akasha.personality_prompt`, `mnemosyne.personality_prompt`), editável via HUB.
 "Reiniciar" apaga a memória acumulada mas preserva o prompt base de personalidade.
 Comunicação entre AKASHA e Mnemosyne pode incluir pensamento próprio junto ao dado bruto — mas continua sendo troca explícita, não indexação cruzada.
+
+**Comunicação bidirecional AKASHA↔Mnemosyne ("amizade") — implementada 2026-05-19:**
+- Mnemosyne → AKASHA: via `ecosystem_client.send_insight_to_akasha()` — envia insight gerado ao `InsightScheduler` da AKASHA para possível exibição no overlay do browser.
+- AKASHA → Mnemosyne: via `friendship_receiver.py` (task background no `main.py`) — recebe insights da AKASHA, salva na `personal_memory` da Mnemosyne com `role="akasha_insight"`, pode gerar pop-up se relevante. Endpoint: `POST /friendship/insight`.
+A troca é sempre explícita (protocolo definido) — nunca indexação cruzada do RAG.
 
 ### Sync do ecossistema — Syncthing
 
@@ -160,7 +165,7 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 ## Workflow
 
 - **`DESIGN_BIBLE.md`, `GUIDE.md` e `pesquisas.md` ficam no repositório `notebook`** (repositório Git separado, sincronizado via Proton Drive). Os caminhos por máquina estão abaixo — usar esses caminhos ao ler ou editar. **Após editar qualquer um desses arquivos, commitar o repositório `notebook` na mesma resposta** — `cd` para a raiz do repo e `git commit`. O `git add` só é necessário para arquivos não rastreados. Nunca recriar esses arquivos na raiz do repo do ecossistema.
-  - **Windows 10:** `C:\Users\USUARIO\Desktop\p\My files\backup\notebook\` (raiz do repo); arquivos em `01_Projetos\ecosystem\`
+  - **Windows 10:** `D:\windows\documentos\notebook\` (raiz do repo); arquivos em `inbox\ecosystem_notes\`
   - **CachyOS principal:** `/mnt/archive1/proton/backup/notebook/` (raiz do repo); arquivos em `01_Projetos/ecosystem/`
   - **Laptop:** `/home/spacewitch/Documents/proton/notebook/` (raiz do repo); arquivos em `01_Projetos/ecosystem/`
 - **`DESIGN_BIBLE.md` e `GUIDE.md` devem ser mantidos atualizados como prioridade permanente.** Toda implementação — sem exceção — deve ser documentada no `GUIDE.md` na mesma resposta (ou ao menos sinalizar que precisa de atualização). Não esperar a usuária pedir.
