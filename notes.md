@@ -1,5 +1,8 @@
 ## Implementação atual:
 
+### Comunicação bidirecional AKASHA↔Mnemosyne — "amizade" | 2026-05-19
+
+
 ### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
 
 ### Pop-up espontâneo da Mnemosyne + sistema de feedback | 2026-05-19
@@ -10,6 +13,8 @@
 ### Bugs e investigações reportados após uso real | 2026-05-18
 - [ ] **Investigar: causa raiz do erro "readonly" recorrente no ChromaDB** — não é a primeira vez que ocorre; toda vez exige re-indexação completa. Coletar logs completos na próxima ocorrência. Suspeitas: WAL corrompido (já existe `_clear_orphan_wal()` no código — indício de histórico), dois processos com acesso simultâneo ao mesmo SQLite, ou bug de versão do chromadb. Investigar se o `persist_dir` está em filesystem com limitações (ex: BTRFS + COW + SQLite WAL).
 - [ ] **Documentar no GUIDE.md as features implementadas em 2026-05-18** — as seguintes implementações da sessão de hoje não estão no GUIDE: `IndexReflectionWorker` (pipeline de memória pessoal por arquivo); sinal `file_indexed` no `IndexWorker` + `_analysis_queue` + timer de 30s; FolderWatcher modo notificação (`watcherPendingBtn`); metadados temáticos do notebook (`themes`, `keywords`, `top_sources`) + `update_meta_from_history()`; roteamento de insights AKASHA por overlap temático; `role="akasha_insight"` + `append_akasha_insight()`; bloco de insights no `build_messages()`; extração de temas pós-batch do FolderWatcher.
+- [ ] **Bug: logs do Mnemosyne somem no monitor após renomear diretório** — o diretório `ecosystem_root/mnemosyne/` foi renomeado para `mnemosyne.bak/` enquanto Mnemosyne estava rodando. Linux manteve o file handle aberto, então os logs continuaram indo para `mnemosyne.bak/mnemosyne.log`. O HUB (`read_app_log`) lê de `{sync_root}/mnemosyne/mnemosyne.log` (novo path) que não existe. **Solução imediata: reiniciar a Mnemosyne.** Solução estrutural: `read_app_log` no Tauri deve tentar também `{sync_root}/{app}.bak/{app}.log` como fallback, ou Mnemosyne deve escrever o `log_path` atual no ecosystem.json ao iniciar para que o HUB leia de onde o log realmente está.
+
 
 ## Anotações
 

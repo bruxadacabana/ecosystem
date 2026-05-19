@@ -492,6 +492,36 @@ def notify_mnemosyne_insight(
         pass
 
 
+def notify_akasha_insight(
+    content: str,
+    tags: list[str] | None = None,
+) -> None:
+    """
+    Deposita insight da Mnemosyne no ecosystem.json para ser lido pelo AKASHA.
+
+    Escreve em akasha.incoming_insights (lista FIFO de até 20 entradas).
+    O AKASHA lê via loop de background a cada 5min, move para personal_memory
+    com type="connection" e limpa o campo.
+    Falha silenciosamente em caso de erro de IO.
+    """
+    import datetime as _dt
+
+    try:
+        data = read_ecosystem()
+        incoming: list[dict] = data.get("akasha", {}).get("incoming_insights", [])
+        entry: dict = {
+            "content":     content,
+            "received_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        }
+        if tags:
+            entry["tags"] = tags
+        incoming.append(entry)
+        incoming = incoming[-20:]  # FIFO com limite de 20
+        write_section("akasha", {"incoming_insights": incoming})
+    except Exception:
+        pass
+
+
 def write_top_level(key: str, value: Any) -> None:
     """
     Atualiza um campo top-level do ecosystem.json (ex: sync_root).

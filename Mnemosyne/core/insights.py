@@ -81,6 +81,8 @@ def poll_and_store() -> int:
                         "VALUES (?, ?, ?, ?, ?)",
                         (topics, summary, sources, received_at, akasha_thought),
                     )
+                    # Salva pensamento pessoal do AKASHA em personal_memory (fora do RAG)
+                    _save_akasha_insight_to_personal_memory(item)
                 conn.commit()
             # Limpa incoming_insights do ecosystem.json após mover para SQLite
             write_section("mnemosyne", {"incoming_insights": []})
@@ -88,6 +90,18 @@ def poll_and_store() -> int:
         log.debug("insights: poll_and_store falhou: %s", exc)
 
     return count_unseen()
+
+
+def _save_akasha_insight_to_personal_memory(item: dict) -> None:
+    """Salva pensamento do AKASHA em personal_memory — fora do RAG."""
+    thought = (item.get("akasha_thought") or item.get("summary") or "").strip()
+    if not thought or len(thought) < 10:
+        return
+    try:
+        from .personal_memory import save_memory
+        save_memory("connection", thought, tags=["from_akasha"])
+    except Exception as exc:
+        log.debug("insights: save to personal_memory falhou: %s", exc)
 
 
 def count_unseen() -> int:

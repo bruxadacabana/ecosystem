@@ -6454,3 +6454,26 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### HUB
 - [x] **`commands/git.rs` — adicionar `mnemosyne.bak/` ao `app_git_paths("mnemosyne")`** — solução imediata; caminho real lido como fallback. Nota: fix estrutural seria ler o caminho do diretório do `ecosystem.json` em vez de hardcodar. **Corrigido em 2026-05-19.**
+
+### Comunicação bidirecional AKASHA↔Mnemosyne — "amizade" | 2026-05-19
+> Contexto: AKASHA→Mnemosyne já existia via ecosystem.json (notify_mnemosyne_insight); Mnemosyne→AKASHA estava ausente. Insights trocados devem ser salvos em personal_memory de cada IA (nunca indexados no RAG). As duas IAs se comunicam como amigas — cada troca é uma "visita".
+
+#### ecosystem_client
+- [x] **`notify_akasha_insight(content, tags)`** — espelho de `notify_mnemosyne_insight`; escreve em `akasha.incoming_insights` (FIFO de 20) no ecosystem.json. Assinatura simples: `content` é o pensamento da Mnemosyne; sem `topics`/`sources` (a Mnemosyne compartilha reflexão, não pesquisa).
+
+#### AKASHA
+- [x] **`services/friendship_receiver.py`** — loop P3 que poleia `akasha.incoming_insights` a cada 5 min, move para `personal_memory` com `type="connection"`, `tags=["from_mnemosyne"]`, limpa o campo. Nunca indexado no RAG.
+- [x] **`main.py`** — registrar `_friendship_receiver_loop()` como task P3 no lifespan, ao lado do `_reflection_loop()`.
+- [x] **`services/personal_memory.py` + `services/insights.py`** — ao receber insight AKASHA (poll_and_store no lado Mnemosyne): salvar `akasha_thought` ou `summary` também em `personal_memory` da AKASHA. *Nota: esse item é do lado Mnemosyne mas salva memória AKASHA via o friendship_receiver.*
+
+#### Mnemosyne
+- [x] **`core/insight_scheduler.py` — `_maybe_send_to_akasha(content)`** — após `mark_shown_as_popup`, envia pensamento para AKASHA via `notify_akasha_insight`. Cooldown próprio de 2h (`_SEND_TO_AKASHA_COOLDOWN = 7200.0`), independente do cooldown de popup (10min).
+- [x] **`core/insights.py` — `poll_and_store()`** — após mover insight do AKASHA para `insights.db`, salvar também em `personal_memory` com `type="connection"`, `tags=["from_akasha"]`. Isso implementa o ponto 3: insights entre amigas processados E guardados em memória pessoal, fora do RAG.
+
+### Memória pessoal das IAs — estrutura temática (análogo aos .md da memória do Claude) | 2026-05-19
+> Contexto: atualmente `personal_memory` de AKASHA e Mnemosyne é uma tabela plana com coluna `type` (observation/connection/surprise/reflection). A memória do Claude usa múltiplos arquivos .md por tema (user.md, feedback.md, project.md). A ideia é dar às IAs "gavetas mentais" nomeadas por tema, não apenas por tipo de entrada.
+
+#### AKASHA + Mnemosyne
+- [ ] **Adicionar coluna `category` a `personal_memory`** em ambas as apps (migração na abertura da conexão, igual ao padrão existente). Valores sugeridos: `"interests"`, `"about_user"`, `"friendship"`, `"reflections"`, `"world"`. O campo `type` continua como subtipo (observation/connection etc.). Na ausência de category, usar `"reflections"` como default.
+- [ ] **Atribuir category automaticamente ao salvar** — `from_akasha`/`from_mnemosyne` → `"friendship"`; `session_insight`/`loop_periodico` → `"reflections"`; `about_user` → `"about_user"`.
+- [ ] **HUB — aba de memória agrupada por category** — exibir memórias em seções dobráveis por categoria, em vez de lista plana.

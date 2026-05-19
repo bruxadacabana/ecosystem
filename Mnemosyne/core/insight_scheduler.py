@@ -9,18 +9,24 @@ Critérios para disparar:
   - Cooldown mínimo de COOLDOWN_SECONDS entre pop-ups (padrão: 10 min).
   - Entrada não exibida ainda nesta sessão (rastreado por ID).
   - Conteúdo com ≥ MIN_CONTENT_LEN chars.
+
+Após exibir, também envia o pensamento para a AKASHA via notify_akasha_insight,
+com cooldown próprio de 2h (independente do cooldown do popup).
 """
 from __future__ import annotations
 
 import logging
+import sys
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
 log = logging.getLogger("mnemosyne.insight_scheduler")
 
-COOLDOWN_SECONDS: float = 600.0   # 10 min entre pop-ups
-MIN_CONTENT_LEN: int = 20          # descarta memórias muito curtas
+COOLDOWN_SECONDS: float        = 600.0    # 10 min entre pop-ups
+MIN_CONTENT_LEN: int           = 20       # descarta memórias muito curtas
+_SEND_TO_AKASHA_COOLDOWN: float = 7200.0  # 2h entre envios para a AKASHA
 
 
 class InsightScheduler(QObject):
@@ -28,6 +34,9 @@ class InsightScheduler(QObject):
 
     Usa a coluna `shown_as_popup` da personal_memory para rastrear
     entradas já exibidas — persiste entre sessões (não in-memory).
+
+    Após exibir, compartilha o pensamento com a AKASHA como "visita"
+    (cooldown de 2h, independente do popup de 10min).
 
     Uso:
         scheduler = InsightScheduler(parent=self)
@@ -39,7 +48,8 @@ class InsightScheduler(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self._last_shown: float = 0.0
+        self._last_shown: float          = 0.0
+        self._last_sent_to_akasha: float = 0.0
 
     def maybe_show(self) -> None:
         """Verifica se deve mostrar um insight e emite insight_ready se sim.
@@ -81,8 +91,27 @@ class InsightScheduler(QObject):
             mark_shown_as_popup(mid)
         except Exception as exc:
             log.debug("InsightScheduler: erro ao marcar shown: %s", exc)
+
+        self._maybe_send_to_akasha(candidate["content"])
         log.info("InsightScheduler: emitindo insight id=%d", mid)
         self.insight_ready.emit(candidate["content"], mid)
+
+    def _maybe_send_to_akasha(self, content: str) -> None:
+        """Envia pensamento para a AKASHA se o cooldown de 2h tiver passado."""
+        now = time.monotonic()
+        if now - self._last_sent_to_akasha < _SEND_TO_AKASHA_COOLDOWN:
+            log.debug("InsightScheduler: cooldown AKASHA ativo, não enviando.")
+            return
+        self._last_sent_to_akasha = now
+        try:
+            root = str(Path(__file__).parent.parent.parent)
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            from ecosystem_client import notify_akasha_insight  # type: ignore
+            notify_akasha_insight(content, tags=["from_mnemosyne"])
+            log.info("InsightScheduler: pensamento enviado para AKASHA.")
+        except Exception as exc:
+            log.debug("InsightScheduler: falha ao notificar AKASHA: %s", exc)
 
     def reset_cooldown(self) -> None:
         """Reseta o cooldown — útil para testes ou forçar exibição."""
