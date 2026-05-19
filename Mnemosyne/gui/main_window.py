@@ -112,7 +112,8 @@ from gui.workers import (
 
 
 class SetupDialog(QDialog):
-    """Diálogo de configuração — modelos LLM/embedding, pasta biblioteca, toggles de ecossistema."""
+    """Diálogo de configuração — pastas, toggles de ecossistema e opções de qualidade.
+    Modelos LLM/embedding/OCR são gerenciados pelo HUB (LOGOS) e exibidos somente leitura."""
 
     def __init__(
         self,
@@ -178,15 +179,12 @@ class SetupDialog(QDialog):
         paths_form.addRow("ChromaDB:", chroma_row)
         content_layout.addWidget(paths_group)
 
-        form = QFormLayout()
-
-        chat_models = filter_chat_models(models)
-        embed_models = filter_embed_models(models)
-
-        # Perfil de hardware do LOGOS (para botões "Recomendado")
-        self._logos_llm = ""
-        self._logos_embed = ""
-        self._logos_display = ""
+        # Modelos gerenciados pelo HUB (LOGOS) — exibição somente leitura
+        self._current_llm = current.llm_model  # mantido para _test_persona
+        _logos_llm    = current.llm_model    or "—"
+        _logos_embed  = current.embed_model  or "—"
+        _logos_ocr    = current.image_ocr_model or "Tesseract local"
+        _logos_display = ""
         try:
             from pathlib import Path as _Path
             _root = str(_Path(__file__).parent.parent.parent)
@@ -195,77 +193,32 @@ class SetupDialog(QDialog):
             from ecosystem_client import get_active_profile as _get_profile
             _p = _get_profile()
             if _p:
-                self._logos_llm     = _p.get("models", {}).get("llm_rag", "")
-                self._logos_embed   = _p.get("models", {}).get("embed", "")
-                self._logos_display = _p.get("profile_display", "")
+                _logos_display = _p.get("profile_display", "")
+                _logos_llm   = _p.get("models", {}).get("llm_rag",   _logos_llm)
+                _logos_embed = _p.get("models", {}).get("embed",      _logos_embed)
+                _logos_ocr   = _p.get("models", {}).get("image_ocr", "") or "Tesseract local"
+                self._current_llm = _logos_llm
         except Exception:
             pass
 
-        # Modelo LLM
-        self.llm_combo = QComboBox()
-        for m in chat_models:
-            self.llm_combo.addItem(m.name)
-        if not chat_models:
-            self.llm_combo.addItem("(nenhum modelo de chat encontrado)")
-        if current.llm_model:
-            idx = self.llm_combo.findText(current.llm_model)
-            if idx >= 0:
-                self.llm_combo.setCurrentIndex(idx)
-        llm_row = QHBoxLayout()
-        llm_row.setContentsMargins(0, 0, 0, 0)
-        llm_row.addWidget(self.llm_combo, 1)
-        llm_rec_btn = QPushButton("↩ Recomendado")
-        llm_rec_btn.setToolTip(
-            f"Recomendado pelo LOGOS ({self._logos_display}): {self._logos_llm}"
-            if self._logos_llm else "LOGOS não disponível"
+        logos_group = QGroupBox("Modelos — gerenciados pelo HUB (LOGOS)")
+        logos_form = QFormLayout(logos_group)
+        _hint = QLabel(
+            f"Perfil ativo{f': {_logos_display}' if _logos_display else ''}. "
+            "Para alterar, abra o HUB → aba LOGOS → Modelos por app."
         )
-        llm_rec_btn.setEnabled(bool(self._logos_llm))
-        llm_rec_btn.clicked.connect(self._use_logos_llm)
-        llm_row.addWidget(llm_rec_btn)
-        form.addRow("Modelo LLM:", llm_row)
-
-        # Hint dinâmico: texto informativo muda conforme o modelo selecionado
-        self._llm_hint_label = QLabel()
-        self._llm_hint_label.setWordWrap(True)
-        self._llm_hint_label.setStyleSheet("color: #7C828E; font-size: 11px; font-style: italic;")
-        form.addRow("", self._llm_hint_label)
-        self.llm_combo.currentTextChanged.connect(self._update_llm_hint)
-        self._update_llm_hint(self.llm_combo.currentText())
-
-        # Modelo embedding
-        self.embed_combo = QComboBox()
-        for m in embed_models:
-            self.embed_combo.addItem(m.name)
-        if not embed_models:
-            self.embed_combo.addItem("(nenhum modelo de embedding encontrado)")
-        # potion-multilingual-128M: embedding estático via model2vec — sem Ollama, sem AVX2.
-        # Sempre disponível como fallback para hardware limitado (i5-3470, Windows CPU-only).
-        from core.indexer import _POTION_MODEL_NAME as _POTION
-        if self.embed_combo.findText(_POTION) < 0:
-            self.embed_combo.addItem(_POTION)
-        if current.embed_model:
-            idx = self.embed_combo.findText(current.embed_model)
-            if idx >= 0:
-                self.embed_combo.setCurrentIndex(idx)
-        self.embed_combo.setToolTip(
-            "Usado na indexação. Modelos Ollama: requerem Ollama rodando. "
-            "potion-multilingual-128M: roda direto em Python, sem Ollama, sem AVX2 "
-            "(útil no Windows de trabalho)."
-        )
-        embed_row = QHBoxLayout()
-        embed_row.setContentsMargins(0, 0, 0, 0)
-        embed_row.addWidget(self.embed_combo, 1)
-        embed_rec_btn = QPushButton("↩ Recomendado")
-        embed_rec_btn.setToolTip(
-            f"Recomendado pelo LOGOS ({self._logos_display}): {self._logos_embed}"
-            if self._logos_embed else "LOGOS não disponível"
-        )
-        embed_rec_btn.setEnabled(bool(self._logos_embed))
-        embed_rec_btn.clicked.connect(self._use_logos_embed)
-        embed_row.addWidget(embed_rec_btn)
-        form.addRow("Modelo de embedding:", embed_row)
-
-        content_layout.addLayout(form)
+        _hint.setWordWrap(True)
+        _hint.setStyleSheet("color: #7C828E; font-size: 11px;")
+        logos_form.addRow(_hint)
+        for _row_label, _row_val in [
+            ("LLM (RAG):", _logos_llm),
+            ("Embedding:", _logos_embed),
+            ("OCR de imagens:", _logos_ocr),
+        ]:
+            _val_lbl = QLabel(_row_val)
+            _val_lbl.setStyleSheet("font-family: monospace;")
+            logos_form.addRow(_row_label, _val_lbl)
+        content_layout.addWidget(logos_group)
 
         # Integrações do ecossistema (toggles por fonte detectada)
         eco_paths = available_ecosystem_paths()
@@ -326,12 +279,6 @@ class SetupDialog(QDialog):
         opts_layout.addLayout(node_type_model_row)
         self.node_type_check.toggled.connect(self.node_type_model_edit.setEnabled)
         self.node_type_model_edit.setEnabled(current.node_type_classification)
-        image_ocr_row = QHBoxLayout()
-        image_ocr_row.addWidget(QLabel("OCR de imagens (modelo Ollama):"))
-        self.image_ocr_model_edit = QLineEdit(current.image_ocr_model or "")
-        self.image_ocr_model_edit.setPlaceholderText("ex: moondream2 (vazio = Tesseract local)")
-        image_ocr_row.addWidget(self.image_ocr_model_edit, 1)
-        opts_layout.addLayout(image_ocr_row)
         self.suggest_questions_check = QCheckBox(
             "Sugerir perguntas de aprofundamento após cada resposta (opt-in, usa LLM)"
         )
@@ -419,37 +366,15 @@ class SetupDialog(QDialog):
         btns_layout.addWidget(btns)
         layout.addWidget(btns_wrapper)
 
-    def _update_llm_hint(self, model_name: str) -> None:
-        """Atualiza o label de dica abaixo do combo de modelo LLM."""
-        name = model_name.lower()
-        if "command-r" in name or "command_r" in name:
-            hint = (
-                "Especializado em grounded generation: cita fontes com precisão "
-                "(grounding spans). Recomendado para RAG com citação. ~5 GB VRAM."
-            )
-        elif "qwen" in name:
-            ctx = "128K" if "2.5" in name else "32K"
-            hint = f"Janela de contexto {ctx} tokens — ideal para documentos longos ou muitos chunks."
-        elif "llama" in name:
-            hint = "Janela de contexto 16K tokens — evite coleções com documentos muito longos."
-        elif "phi" in name:
-            hint = "Modelo compacto (~3 GB VRAM) — boa capacidade para hardware limitado."
-        elif "gemma" in name:
-            hint = "Modelo compacto — adequado para GPU com pouca VRAM (ex: MX150, 2 GB)."
-        else:
-            hint = ""
-        self._llm_hint_label.setText(hint)
-        self._llm_hint_label.setVisible(bool(hint))
-
     def _test_persona(self) -> None:
         """Envia 'Olá, apresente-se' ao LLM com a persona atual e exibe o resultado."""
         prompt = self.persona_edit.toPlainText().strip()
         if not prompt:
             QMessageBox.warning(self, "Aviso", "O campo de persona está vazio.")
             return
-        llm_model = self.llm_combo.currentText()
-        if not llm_model or "nenhum" in llm_model.lower():
-            QMessageBox.warning(self, "Aviso", "Selecione um modelo LLM primeiro.")
+        llm_model = self._current_llm
+        if not llm_model:
+            QMessageBox.warning(self, "Aviso", "Nenhum modelo LLM configurado no LOGOS.")
             return
 
         self._test_persona_btn.setEnabled(False)
@@ -488,20 +413,6 @@ class SetupDialog(QDialog):
         self._test_persona_btn.setText("Testar persona")
         QMessageBox.information(self, "Resultado da persona", result)
 
-    def _use_logos_llm(self) -> None:
-        if not self._logos_llm:
-            return
-        idx = self.llm_combo.findText(self._logos_llm)
-        if idx >= 0:
-            self.llm_combo.setCurrentIndex(idx)
-
-    def _use_logos_embed(self) -> None:
-        if not self._logos_embed:
-            return
-        idx = self.embed_combo.findText(self._logos_embed)
-        if idx >= 0:
-            self.embed_combo.setCurrentIndex(idx)
-
     def _add_extra_dir(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Selecionar pasta adicional")
         if folder:
@@ -515,8 +426,9 @@ class SetupDialog(QDialog):
         if row >= 0:
             self.extra_dirs_list.takeItem(row)
 
-    def get_values(self) -> tuple[str, str, str, list[str], str, str, dict[str, bool], bool, int | None, bool, str, str, bool, str, bool, bool]:
-        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, llm_model, embed_model, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, image_ocr_model, suggest_questions, persona_prompt, lightrag_enabled, raptor_enabled)."""
+    def get_values(self) -> tuple[str, str, str, list[str], dict[str, bool], bool, int | None, bool, str, bool, str, bool, bool]:
+        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, suggest_questions, persona_prompt, lightrag_enabled, raptor_enabled).
+        Modelos (llm, embed, ocr) são gerenciados pelo LOGOS e não fazem parte desta tupla."""
         extra_dirs = [self.extra_dirs_list.item(i).text()
                       for i in range(self.extra_dirs_list.count())]
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
@@ -526,14 +438,11 @@ class SetupDialog(QDialog):
             self.vault_edit.text().strip(),
             self.chroma_edit.text().strip(),
             extra_dirs,
-            self.llm_combo.currentText(),
-            self.embed_combo.currentText(),
             eco_enabled,
             self.reranking_check.isChecked(),
             256 if self.matryoshka_check.isChecked() else None,
             self.node_type_check.isChecked(),
             self.node_type_model_edit.text().strip(),
-            self.image_ocr_model_edit.text().strip(),
             self.suggest_questions_check.isChecked(),
             persona if persona != DEFAULT_PERSONA_PROMPT else "",
             self.lightrag_check.isChecked(),
@@ -2096,8 +2005,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p, lightrag_en, raptor_en = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p, lightrag_en, raptor_en)
+            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, persona_p, lightrag_en, raptor_en = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, persona_p, lightrag_en, raptor_en)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -2105,8 +2014,8 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p, lightrag_en, raptor_en = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, llm, embed, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, img_ocr, suggest_q, persona_p, lightrag_en, raptor_en)
+            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, persona_p, lightrag_en, raptor_en = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, persona_p, lightrag_en, raptor_en)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             self._log_event("Configuração atualizada.")
@@ -2115,33 +2024,30 @@ class MainWindow(QMainWindow):
     def _apply_setup_values(
         self,
         watched_dir: str, vault_dir: str, chroma_dir: str,
-        extra_dirs: list[str], llm: str, embed: str,
+        extra_dirs: list[str],
         eco_enabled: dict[str, bool], reranking_enabled: bool = True,
         embedding_truncate_dim: int | None = None,
         node_type_classification: bool = False,
         node_type_model: str = "",
-        image_ocr_model: str = "",
         suggest_questions: bool = False,
         persona_prompt: str = "",
         lightrag_enabled: bool = False,
         raptor_enabled: bool = False,
     ) -> None:
-        """Aplica os valores do SetupDialog ao config e guarda."""
+        """Aplica os valores do SetupDialog ao config e guarda.
+        Modelos (llm, embed, ocr) são gerenciados pelo LOGOS — não alterados aqui."""
         if watched_dir:
             self.config.watched_dir = watched_dir
         if vault_dir:
             self.config.vault_dir = vault_dir
         if chroma_dir:
             self.config.persist_dir = chroma_dir
-        self.config.llm_model = llm
-        self.config.embed_model = embed
         self.config.extra_dirs = extra_dirs
         self.config.ecosystem_enabled.update(eco_enabled)
         self.config.reranking_enabled = reranking_enabled
         self.config.embedding_truncate_dim = embedding_truncate_dim
         self.config.node_type_classification = node_type_classification
         self.config.node_type_model = node_type_model
-        self.config.image_ocr_model = image_ocr_model
         self.config.suggest_questions = suggest_questions
         self.config.persona_prompt = persona_prompt
         self.config.lightrag_enabled = lightrag_enabled

@@ -214,7 +214,7 @@ export interface EmbedCompatWarning {
 export interface ModelAssignment {
   /** "mnemosyne" | "kosmos" | "akasha" | "embed" */
   app:               string
-  /** "llm_rag" | "llm_analysis" | "llm_query" | "embed" */
+  /** "llm_rag" | "llm_analysis" | "llm_query" | "embed" | "image_ocr" */
   model_type:        string
   /** Label legível para a UI */
   label:             string
@@ -222,6 +222,8 @@ export interface ModelAssignment {
   recommended_model: string
   /** True se a usuária sobrescreveu o recomendado */
   is_custom:         boolean
+  /** True se o modelo atual está instalado no Ollama */
+  is_installed:      boolean
   /** VRAM estimada em MB (0 se modelo não instalado) */
   vram_required_mb:  number
   /** VRAM/RAM disponível no hardware atual em MB */

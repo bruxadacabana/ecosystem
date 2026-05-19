@@ -30,7 +30,7 @@ interface LogosViewProps {
 export function LogosView({ onOpenChat }: LogosViewProps) {
   const [status,       setStatus]       = useState<LogosStatus | null>(null)
   const [profile,      setProfile]      = useState('normal')
-  const [models,       setModels]       = useState<OllamaModelInfo[]>([])
+  const [,             setModels]       = useState<OllamaModelInfo[]>([])
   const [allModels,    setAllModels]    = useState<OllamaModelEntry[]>([])
   const [silencing,    setSilencing]    = useState(false)
   const [unloading,    setUnloading]    = useState<string | null>(null)
@@ -565,6 +565,27 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
                             cursor: 'help',
                           }}
                         />
+                        {/* Botão baixar — só aparece quando o modelo não está instalado */}
+                        {!a.is_installed && (() => {
+                          const isPullingThis = pulling.has(a.current_model)
+                          return (
+                            <button
+                              disabled={isPullingThis}
+                              onClick={() => handlePullModel(a.current_model)}
+                              style={{
+                                fontFamily: 'var(--font-mono)', fontSize: 10,
+                                padding: '2px 8px', background: 'transparent',
+                                color: isPullingThis ? 'var(--ink-ghost)' : 'var(--accent-green)',
+                                border: `1px solid ${isPullingThis ? 'var(--rule)' : 'var(--accent-green)'}`,
+                                borderRadius: 'var(--radius)',
+                                cursor: isPullingThis ? 'wait' : 'pointer',
+                                opacity: isPullingThis ? 0.6 : 1,
+                              }}
+                            >
+                              {isPullingThis ? 'baixando…' : 'baixar'}
+                            </button>
+                          )
+                        })()}
                         <button
                           onClick={() => setEditingSlot(slotKey)}
                           style={{
@@ -628,6 +649,19 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
                       ↩ usar recomendado ({a.recommended_model})
                     </button>
                   )}
+                  {/* Progresso de download quando baixando via botão desta linha */}
+                  {pulling.has(a.current_model) && (() => {
+                    const prog = pullProgress.get(a.current_model)
+                    const pct  = prog?.total && prog.completed != null ? Math.round((prog.completed / prog.total) * 100) : null
+                    return (
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ink-ghost)' }}>
+                        {pct !== null
+                          ? <><div style={{ height: 3, background: 'var(--rule)', borderRadius: 2, marginTop: 4 }}><div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent-green)', borderRadius: 2, transition: 'width 0.3s' }} /></div><span>{pct}%</span></>
+                          : <span>{prog?.status ?? 'baixando…'}</span>
+                        }
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}

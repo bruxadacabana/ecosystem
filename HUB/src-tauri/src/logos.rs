@@ -100,6 +100,8 @@ impl HardwareProfile {
                 // qwen2.5:3b: generation + JSON + diálogo para AKASHA; ~1.9 GB; coexiste com qwen2.5:7b (4.7+1.9=6.6 GB)
                 llm_query:    "qwen2.5:3b",
                 embed:        "bge-m3",
+                // moondream2: ~1.7 GB VRAM — multimodal compacto; coexiste com qwen2.5:7b (4.7+1.7=6.4 GB < 7.5 GB)
+                image_ocr:    "moondream2",
             },
             HardwareProfile::Laptop => ModelProfile {
                 llm_rag:      "gemma2:2b",
@@ -107,6 +109,8 @@ impl HardwareProfile {
                 llm_analysis: "smollm2:1.7b",
                 llm_query:    "smollm2:1.7b",
                 embed:        "bge-m3",
+                // moondream2: ~1.7 GB — MX150 2 GB mal cabe sozinho; usar isolado (não simultaneamente com outro modelo)
+                image_ocr:    "moondream2",
             },
             HardwareProfile::WorkPc => ModelProfile {
                 llm_rag:      "smollm2:1.7b",
@@ -115,6 +119,8 @@ impl HardwareProfile {
                 llm_query:    "qwen2.5:0.5b",
                 // potion: modelo estático, sem GPU, multilíngue — substitui all-minilm
                 embed:        "potion-multilingual-128M",
+                // WorkPc sem GPU discreta — OCR via Tesseract local apenas
+                image_ocr:    "",
             },
         }
     }
@@ -141,7 +147,7 @@ pub struct ModelProfile {
 pub struct ModelAssignment {
     /// Identificador do app: "mnemosyne", "kosmos", "embed"
     pub app: String,
-    /// "llm" | "embed"
+    /// "llm" | "embed" | "image_ocr"
     pub model_type: String,
     /// Label legível: "Mnemosyne — LLM", "KOSMOS — LLM", "Embedding (todos os apps)"
     pub label: String,
@@ -151,6 +157,8 @@ pub struct ModelAssignment {
     pub recommended_model: String,
     /// True se a usuária sobrescreveu o recomendado
     pub is_custom: bool,
+    /// True se o modelo atual está instalado no Ollama
+    pub is_installed: bool,
     /// VRAM estimada em MB (size_disco × 0.65 para modelos Q4); 0 se não instalado
     pub vram_required_mb: u64,
     /// VRAM ou RAM disponível para inferência no hardware atual (MB)
@@ -1222,17 +1230,23 @@ pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
     let slots: &[(&str, &str, &str, &str)] = &[
         // (app, model_type, label, recommended)
         ("mnemosyne", "llm_rag",      "Mnemosyne — RAG",               profile.llm_rag),
+        ("mnemosyne", "image_ocr",    "Mnemosyne — OCR de imagens",    profile.image_ocr),
         ("kosmos",    "llm_analysis", "KOSMOS — Análise",               profile.llm_analysis),
         ("akasha",    "llm_query",    "AKASHA — Extração/Query",        profile.llm_query),
         ("embed",     "embed",        "Embedding (todos os apps)",      profile.embed),
     ];
 
-    slots.iter().map(|(app, model_type, label, recommended)| {
+    slots.iter().filter(|(_, _, _, recommended)| !recommended.is_empty()).map(|(app, model_type, label, recommended)| {
         let key = format!("{}_{}", app, model_type);
         let current = overrides.get(&key).map(String::as_str).unwrap_or(recommended);
         let is_custom = overrides.contains_key(&key);
         // Heurística: VRAM ≈ 65% do tamanho em disco (típico para Q4)
-        let vram_required_mb = size_map.get(current).map(|&s| s * 65 / 100).unwrap_or(0);
+        let name_latest    = format!("{}:latest", current);
+        let is_installed   = size_map.contains_key(current) || size_map.contains_key(&name_latest);
+        let vram_required_mb = size_map.get(current)
+            .or_else(|| size_map.get(&name_latest))
+            .map(|&s| s * 65 / 100)
+            .unwrap_or(0);
         let fits_hardware = vram_required_mb == 0 || vram_required_mb <= budget;
         ModelAssignment {
             app: app.to_string(),
@@ -1241,6 +1255,7 @@ pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
             current_model: current.to_string(),
             recommended_model: recommended.to_string(),
             is_custom,
+            is_installed,
             vram_required_mb,
             vram_budget_mb: budget,
             fits_hardware,
@@ -1255,7 +1270,8 @@ pub async fn do_set_model_assignment(s: &LogosState, app: &str, model_type: &str
     let recommended = {
         let profile = s.0.hardware_profile.model_profile();
         match (app, model_type) {
-            ("mnemosyne", "llm_rag")      => profile.llm_rag.to_string(),
+            ("mnemosyne", "llm_rag")   => profile.llm_rag.to_string(),
+            ("mnemosyne", "image_ocr") => profile.image_ocr.to_string(),
             ("kosmos",    "llm_analysis") => profile.llm_analysis.to_string(),
             ("akasha",    "llm_query")    => profile.llm_query.to_string(),
             ("embed",     "embed")        => profile.embed.to_string(),
@@ -1288,6 +1304,7 @@ fn rationale_for_model(name: &str) -> &'static str {
         "gemma2:2b"                => "2B · ~1.5 GB VRAM · rápido, streaming ágil · JSON 74%",
         "smollm2:1.7b"             => "1.7B · ~1 GB RAM · CPU-only, geração de texto · JSON 26% (não usar para extração estruturada)",
         "qwen2.5:0.5b"             => "0.5B · ~400 MB RAM · CPU-only, extração JSON · JSON 61% (melhor que smollm2 para schema)",
+        "moondream2"               => "multimodal compacto · ~1.7 GB VRAM · OCR + descrição de imagens · ideal para indexação de PDFs com figuras",
         "bge-m3"                   => "embed multilíngue SOTA · 8 GB VRAM",
         "nomic-embed-text"         => "embed compacto · boa qualidade · 2 GB VRAM",
         "all-minilm"               => "embed 384-dim · muito leve · CPU-only",
@@ -1305,6 +1322,7 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
     // Definição dos slots: (app, model_type, label)
     let slot_defs: &[(&str, &str, &str)] = &[
         ("mnemosyne", "llm_rag",      "Mnemosyne — RAG"),
+        ("mnemosyne", "image_ocr",    "Mnemosyne — OCR de imagens"),
         ("kosmos",    "llm_analysis", "KOSMOS — Análise"),
         ("akasha",    "llm_query",    "AKASHA — Extração/Query"),
         ("embed",     "embed",        "Embedding (todos os apps)"),
@@ -1315,8 +1333,8 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
 
     for profile in all_profiles {
         let mp  = profile.model_profile();
-        let models_for_profile = [mp.llm_rag, mp.llm_analysis, mp.llm_query, mp.embed];
-        for (slot_def, model_name) in slot_defs.iter().zip(models_for_profile.iter()) {
+        let models_for_profile = [mp.llm_rag, mp.image_ocr, mp.llm_analysis, mp.llm_query, mp.embed];
+        for (slot_def, model_name) in slot_defs.iter().zip(models_for_profile.iter()).filter(|(_, m)| !m.is_empty()) {
             let (app, model_type, label) = slot_def;
             let entry = map.entry(model_name.to_string()).or_insert_with(|| (vec![], vec![]));
             if !entry.0.iter().any(|sl: &ModelSlot| sl.app == *app && sl.model_type == *model_type) {
@@ -1338,8 +1356,9 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
     // Modelos do perfil atual
     let current_mp = current.model_profile();
     let current_models: std::collections::HashSet<String> = [
-        current_mp.llm_rag, current_mp.llm_analysis, current_mp.llm_query, current_mp.embed,
-    ].iter().map(|s| s.to_string()).collect();
+        current_mp.llm_rag, current_mp.image_ocr, current_mp.llm_analysis,
+        current_mp.llm_query, current_mp.embed,
+    ].iter().filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
 
     // Status de instalação via /api/tags
     let size_map: HashMap<String, u64> = {
