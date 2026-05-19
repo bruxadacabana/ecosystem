@@ -25,17 +25,24 @@ log = logging.getLogger("akasha.dialogue")
 router = APIRouter(prefix="/dialogue", tags=["dialogue"])
 
 # ---------------------------------------------------------------------------
-# Resolução LOGOS-first (mesma lógica do persona.py e local_search.py)
+# Resolução LOGOS-first em runtime (não import-time — garante URL correta
+# mesmo que HUB inicie depois do AKASHA)
 # ---------------------------------------------------------------------------
 
-try:
-    from ecosystem_client import get_ollama_url as _get_url, get_active_profile as _get_profile
-    _OLLAMA_BASE: str = _get_url()
-    _p = _get_profile()
-    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_query", "") if _p else ""
-except Exception:
-    _OLLAMA_BASE   = "http://localhost:11434"
-    _DEFAULT_MODEL = ""
+def _get_base() -> str:
+    try:
+        from ecosystem_client import get_ollama_url as _u
+        return _u()
+    except Exception:
+        return "http://localhost:11434"
+
+
+def _get_headers() -> "dict[str, str]":
+    try:
+        from ecosystem_client import get_ollama_headers as _h
+        return _h("akasha", 1)
+    except Exception:
+        return {}
 
 _DIALOGUE_TIMEOUT_S: float = 30.0
 _MAX_SNIPPETS:       int   = 5
@@ -103,7 +110,8 @@ async def _stream_ollama(prompt: str, model: str) -> AsyncIterator[str]:
         async with httpx.AsyncClient(timeout=_DIALOGUE_TIMEOUT_S) as client:
             async with client.stream(
                 "POST",
-                f"{_OLLAMA_BASE}/api/generate",
+                f"{_get_base()}/api/generate",
+                headers=_get_headers(),
                 json={
                     "model":   model,
                     "prompt":  prompt,
@@ -129,11 +137,17 @@ async def _stream_ollama(prompt: str, model: str) -> AsyncIterator[str]:
 
 
 async def _get_model() -> str:
-    if _DEFAULT_MODEL:
-        return _DEFAULT_MODEL
+    try:
+        from ecosystem_client import get_active_profile as _gp
+        p = _gp()
+        m = ((p or {}).get("models", {}).get("llm_query", "") if p else "")
+        if m:
+            return m
+    except Exception:
+        pass
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get(f"{_OLLAMA_BASE}/api/tags")
+            r = await client.get(f"{_get_base()}/api/tags")
             models = r.json().get("models", [])
             if models:
                 return models[0]["name"]

@@ -397,7 +397,9 @@ class SetupDialog(QDialog):
                 try:
                     from langchain_ollama import ChatOllama
                     from langchain_core.messages import SystemMessage, HumanMessage
-                    llm  = ChatOllama(model=self._model, temperature=0.5)
+                    from ecosystem_client import get_ollama_url as _u, get_ollama_headers as _h
+                    llm  = ChatOllama(model=self._model, base_url=_u(),
+                                     headers=_h("mnemosyne", 1), temperature=0.5)
                     msgs = [
                         SystemMessage(content=self._persona),
                         HumanMessage(content="Olá, apresente-se brevemente."),

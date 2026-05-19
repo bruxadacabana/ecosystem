@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from langchain_ollama import OllamaLLM
+from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
 
 from .config import AppConfig
 from .errors import GuideError, SummarizationError
@@ -79,7 +80,7 @@ def _sample_context(vectorstore: Any) -> str:
 def _generate_questions(context: str, config: AppConfig) -> list[str]:
     """Gera até 5 perguntas sugeridas sobre o corpus."""
     try:
-        llm = OllamaLLM(model=config.llm_model, temperature=0.4, timeout=60)
+        llm = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.4, timeout=60)
         raw = strip_think(llm.invoke(_QUESTIONS_PROMPT.format(context=context)))
     except Exception as exc:
         raise GuideError(f"Falha ao gerar perguntas: {exc}") from exc
@@ -105,7 +106,7 @@ def _generate_hidden_gems(context: str, config: AppConfig) -> list[GemRecord]:
     Retorna lista vazia em caso de falha (gems são opcionais no guide).
     """
     try:
-        llm = OllamaLLM(model=config.llm_model, temperature=0.3, timeout=90)
+        llm = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.3, timeout=90)
         raw = strip_think(llm.invoke(_GEMS_PROMPT.format(context=context)))
     except Exception:
         return []

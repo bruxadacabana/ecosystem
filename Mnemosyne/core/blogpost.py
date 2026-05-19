@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any, Iterator
 
 from langchain_ollama import OllamaLLM
+from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
 
 from .config import AppConfig
 from .errors import MnemosyneError
@@ -104,7 +105,7 @@ def iter_blogpost(
         raise BlogPostError("Nenhum documento indexado para gerar blog post.")
 
     total_chars = sum(len(content) for _, content in docs)
-    llm_map = OllamaLLM(model=config.llm_model, temperature=0.3, timeout=120)
+    llm_map = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.3, timeout=120)
 
     if total_chars <= _STUFF_CHAR_LIMIT:
         context = "\n\n---\n".join(content for _, content in docs)
@@ -125,5 +126,5 @@ def iter_blogpost(
 
         prompt = _REDUCE_PROMPT.format(points="\n\n---\n".join(points))
 
-    llm_reduce = OllamaLLM(model=config.llm_model, temperature=0.5, timeout=180)
+    llm_reduce = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.5, timeout=180)
     yield from llm_reduce.stream(prompt)

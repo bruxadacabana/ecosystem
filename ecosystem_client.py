@@ -139,6 +139,17 @@ def get_ollama_url() -> str:
     return LOGOS_OLLAMA_BASE if status is not None else OLLAMA_DIRECT
 
 
+def get_ollama_headers(app_name: str, priority: int) -> "dict[str, str]":
+    """Headers HTTP para enviar ao LOGOS com app e prioridade explícitos.
+
+    Prioridades:
+      1 — chat interativo (usuária aguardando resposta em tempo real)
+      2 — operações user-triggered não imediatas (Studio, análise on-demand)
+      3 — background autônomo (indexação, reflexões, transcrições)
+    """
+    return {"X-App": app_name, "X-Priority": str(priority)}
+
+
 def _logos_get(path: str, timeout: float = 3.0) -> "dict[str, Any] | None":
     """GET JSON ao LOGOS. Retorna None se HUB não estiver rodando."""
     import urllib.request as _r

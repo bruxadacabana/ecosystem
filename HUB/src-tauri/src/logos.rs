@@ -1466,8 +1466,8 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
 fn apply_profile_priority(profile: &str, app: &str, requested: u8) -> u8 {
     match profile {
         "escrita" => match (app, requested) {
-            // AETHER e HUB (chat interativo) mantêm prioridade máxima
-            ("aether" | "hub", p) => p,
+            // AETHER, Mnemosyne e AKASHA (conversas interativas) mantêm prioridade máxima
+            ("aether" | "hub" | "mnemosyne" | "akasha", p) => p,
             // KOSMOS reader rebaixado: não interrompe a escrita
             ("kosmos", 1) => 2,
             // Mnemosyne RAG rebaixado para background: escrita em foco

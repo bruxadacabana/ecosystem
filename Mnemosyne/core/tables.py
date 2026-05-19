@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any, Iterator
 
 from langchain_ollama import OllamaLLM
+from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
 
 from .config import AppConfig
 from .errors import MnemosyneError
@@ -109,7 +110,7 @@ def iter_tables(
     if not docs:
         raise TablesError("Nenhum documento indexado para extrair tabela.")
 
-    llm_map = OllamaLLM(model=config.llm_model, temperature=0.0, timeout=120)
+    llm_map = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.0, timeout=120)
 
     all_rows: list[str] = []
     for _, content in docs:
@@ -140,5 +141,5 @@ def iter_tables(
         rows="\n\n---\n".join(all_rows),
     )
 
-    llm_reduce = OllamaLLM(model=config.llm_model, temperature=0.0, timeout=180)
+    llm_reduce = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.0, timeout=180)
     yield from llm_reduce.stream(prompt)

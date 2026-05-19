@@ -38,22 +38,28 @@ SESSION_IDLE_S:        int   = 1800   # 30 min sem atividade → libera VRAM
 INTENT_CLASSIFY_MODEL: str   = ""     # sobrescrito por ecosystem.json; vazio = usa DEFAULT_LLM_MODEL
 INTENT_TIMEOUT_S:      float = 5.0   # timeout da classificação; fallback para "exploratory"
 
-# Resolvidos no startup via ecosystem_client:
-#   _OLLAMA_BASE     → LOGOS (7072) se disponível, Ollama direto (11434) como fallback
-#   DEFAULT_LLM_MODEL → modelo llm_kosmos do perfil ativo; "" se LOGOS não estiver rodando
-try:
-    from ecosystem_client import (
-        get_ollama_url    as _ec_ollama_url,
-        get_active_profile as _ec_profile,
-    )
-    _OLLAMA_BASE: str = _ec_ollama_url()
-    _p = _ec_profile()
-    DEFAULT_LLM_MODEL: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
-except Exception:
-    _OLLAMA_BASE      = "http://localhost:11434"
-    DEFAULT_LLM_MODEL = ""
+# Resolvidos em runtime (não import-time) via ecosystem_client.
+# DEFAULT_LLM_MODEL ainda pode ser sobrescrito em runtime pelo chamador.
+DEFAULT_LLM_MODEL: str = ""
 
-OLLAMA_BASE_URL: str = _OLLAMA_BASE  # alias público (retrocompat)
+
+def _get_base() -> str:
+    try:
+        from ecosystem_client import get_ollama_url as _u
+        return _u()
+    except Exception:
+        return "http://localhost:11434"
+
+
+def _get_headers() -> "dict[str, str]":
+    try:
+        from ecosystem_client import get_ollama_headers as _h
+        return _h("akasha", 2)  # P2: expansão de query é user-triggered, não imediata
+    except Exception:
+        return {}
+
+
+OLLAMA_BASE_URL: str = "http://localhost:11434"  # retrocompat; resolve em runtime nos call sites
 
 # ---------------------------------------------------------------------------
 # Reescrita conversacional — anáforas detectadas
@@ -96,7 +102,8 @@ async def rewrite_query(query: str, context: list[str], model: str = "") -> str:
     try:
         async with httpx.AsyncClient(timeout=INTENT_TIMEOUT_S) as client:
             resp = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
+                f"{_get_base()}/api/generate",
+                headers=_get_headers(),
                 json={
                     "model": model,
                     "prompt": prompt,
@@ -142,7 +149,8 @@ async def score_ambiguity(query: str, model: str = "") -> tuple[int, str]:
     try:
         async with httpx.AsyncClient(timeout=INTENT_TIMEOUT_S) as client:
             resp = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
+                f"{_get_base()}/api/generate",
+                headers=_get_headers(),
                 json={
                     "model": model,
                     "prompt": prompt,
@@ -198,7 +206,8 @@ async def summarize_snippets(query: str, snippets: list[str], model: str = "") -
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
+                f"{_get_base()}/api/generate",
+                headers=_get_headers(),
                 json={
                     "model": model,
                     "prompt": prompt,
@@ -304,7 +313,8 @@ async def classify_intent(query: str, model: str = "") -> IntentType:
     try:
         async with httpx.AsyncClient(timeout=INTENT_TIMEOUT_S) as client:
             resp = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
+                f"{_get_base()}/api/generate",
+                headers=_get_headers(),
                 json={
                     "model": model,
                     "prompt": prompt,
@@ -338,7 +348,7 @@ async def _set_keep_alive(model: str, keep_alive: int) -> None:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
+                f"{_get_base()}/api/generate",
                 json={"model": model, "prompt": "", "keep_alive": keep_alive},
             )
     except Exception as exc:

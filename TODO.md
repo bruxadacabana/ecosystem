@@ -6549,6 +6549,25 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 #### HUB
 - [x] **Remover `QuestionsView` e referências** — apagar `src/views/QuestionsView.tsx`; remover import e renderização em `App.tsx`; remover prop `onOpenChat` de `LogosView.tsx`; remover card "Chat" de `HomeView.tsx`; remover `streamChat` de `src/lib/ollama.ts`; remover `'questions'` do tipo `HubView` em `src/types/index.ts`.
 
+### HUB/LOGOS — priority headers em todos os apps | 2026-05-19
+> Contexto: `extract_app_priority` no LOGOS lê headers `X-App` e `X-Priority` para determinar a prioridade de cada requisição Ollama. Sem esses headers, toda requisição recebe P3 por default — inclusive chat interativo. Além disso, AKASHA tem import-time URL binding: se HUB abrir depois do AKASHA, as chamadas bypassam o LOGOS completamente. Resultado: notebook chat da Mnemosyne e diálogos do AKASHA chegam ao LOGOS como background anônimo P3. O HUB chat foi removido — P1 passa a ser qualquer conversa interativa (Mnemosyne, AKASHA).
+
+#### ecosystem_client
+- [x] **`get_ollama_headers(app_name, priority)` → `dict[str, str]`** — nova função retornando `{"X-App": app_name, "X-Priority": str(priority)}`. Usada por todos os apps ao construir clientes httpx ou instâncias LangChain LLM. Prioridades: 1=chat interativo, 2=Studio/análise user-triggered, 3=background autônomo.
+
+#### AKASHA
+- [x] **`routers/dialogue.py` — fix import-time + headers P1**: `_OLLAMA_BASE` e `_DEFAULT_MODEL` resolvidos em import-time — bypassam LOGOS se HUB abrir depois. Substituir por resolução runtime (`_get_base()`/`_get_headers()`). `_stream_ollama` passa headers `X-App: akasha, X-Priority: 1` — turno de diálogo é P1 (usuária aguardando).
+- [x] **`routers/chat.py` — fix import-time + headers P1**: mesmo problema. `_stream_chat` usa `_OLLAMA_BASE` module-level. Substituir por `_get_base()` runtime. Headers P1.
+- [x] **`services/query_understanding.py` — fix import-time + headers P2**: `_OLLAMA_BASE` module-level. Expansão de query é P2 (user-triggered, não imediata). Resolver runtime + headers.
+
+#### Mnemosyne
+- [x] **`gui/workers.py` — base_url + headers em todos os construtores LLM**: `AskWorker`/`DeepResearchWorker` (P1 — chat interativo); `SuggestQuestionsWorker` (P2); `PersonalReflectionWorker`/`PeriodicReflectionWorker`/`IndexReflectionWorker` (P3). Adicionar `base_url=get_ollama_url()` e `headers=get_ollama_headers("mnemosyne", N)` a cada construtor.
+- [x] **`gui/main_window.py` — ChatOllama live streaming P1**: construtor sem base_url/headers. Adicionar P1.
+- [x] **`core/` Studio files (14 arquivos) — base_url + headers P2**: `faq.py`, `briefing.py`, `study_guide.py`, `toc.py`, `timeline.py`, `blogpost.py`, `mindmap.py`, `tables.py`, `slides.py`, `summarizer.py`, `report.py`, `flashcards.py`, `guide.py`, `infographic.py`. Cada um usa `OllamaLLM` sem `base_url` — chamam Ollama direto em 11434. Adicionar `base_url=get_ollama_url()` e `headers=get_ollama_headers("mnemosyne", 2)`.
+
+#### HUB/LOGOS
+- [x] **`logos.rs` — atualizar comentário de P1**: era "chat interativo do HUB + escrita ativa no AETHER". Passa a ser "qualquer conversa interativa (Mnemosyne notebook, AKASHA chat/diálogo)".
+
 ### HUB/LOGOS — bugs de VRAM guard e inject_efficiency_params | 2026-05-19
 > Contexto: dois bugs detectados na revisão do logos.rs: (1) o guard de VRAM nunca dispara no Laptop porque sysfs é AMD-only e o fallback via /api/ps não tem total_mb para calcular a porcentagem; (2) do_embed_proxy não injeta parâmetros de eficiência (num_gpu: 0 no Laptop), podendo usar MX150 durante P1/P2 ativo.
 

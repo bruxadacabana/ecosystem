@@ -4,6 +4,11 @@ from __future__ import annotations
 import logging
 
 from langchain_ollama import ChatOllama, OllamaLLM
+try:
+    from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
+except ImportError:
+    _ec_url  = lambda: "http://localhost:11434"
+    _ec_hdrs = lambda app, p: {}
 from PySide6.QtCore import QThread, Signal
 
 from core.config import AppConfig
@@ -732,7 +737,8 @@ class AskWorker(QThread):
             return
 
         try:
-            llm = ChatOllama(model=self.config.llm_model, temperature=0, num_ctx=8192)
+            llm = ChatOllama(model=self.config.llm_model, base_url=_ec_url(),
+                             headers=_ec_hdrs("mnemosyne", 1), temperature=0, num_ctx=8192)
             full = ""
             buf = ""
             in_think = False
@@ -982,7 +988,8 @@ class DeepResearchWorker(QThread):
             return
 
         try:
-            llm  = ChatOllama(model=self.config.llm_model, temperature=0, num_ctx=8192)
+            llm  = ChatOllama(model=self.config.llm_model, base_url=_ec_url(),
+                              headers=_ec_hdrs("mnemosyne", 1), temperature=0, num_ctx=8192)
             full = ""
             for chunk in llm.stream([system_msg, human_msg]):
                 if self.isInterruptionRequested():
@@ -1308,7 +1315,8 @@ class SuggestQuestionsWorker(QThread):
         )
 
         try:
-            llm = OllamaLLM(model=self._config.llm_model, temperature=0.9)
+            llm = OllamaLLM(model=self._config.llm_model, base_url=_ec_url(),
+                            headers=_ec_hdrs("mnemosyne", 2), temperature=0.9)
             raw = llm.invoke(prompt)
             self.questions_ready.emit(_parse_numbered_questions(str(raw)))
         except Exception:
@@ -1386,7 +1394,8 @@ class PersonalReflectionWorker(QThread):
         )
 
         try:
-            llm = OllamaLLM(model=self._config.llm_model, temperature=0.7)
+            llm = OllamaLLM(model=self._config.llm_model, base_url=_ec_url(),
+                            headers=_ec_hdrs("mnemosyne", 3), temperature=0.7)
             raw = str(llm.invoke(prompt)).strip()
         except Exception:
             return
@@ -1474,7 +1483,8 @@ class PeriodicReflectionWorker(QThread):
         )
 
         try:
-            llm = OllamaLLM(model=self._config.llm_model, temperature=0.7)
+            llm = OllamaLLM(model=self._config.llm_model, base_url=_ec_url(),
+                            headers=_ec_hdrs("mnemosyne", 3), temperature=0.7)
             raw = str(llm.invoke(prompt)).strip()
         except Exception:
             self.finished.emit()
@@ -1626,7 +1636,8 @@ class IndexReflectionWorker(QThread):
         )
 
         try:
-            llm = OllamaLLM(model=self._config.llm_model, temperature=0.7)
+            llm = OllamaLLM(model=self._config.llm_model, base_url=_ec_url(),
+                            headers=_ec_hdrs("mnemosyne", 3), temperature=0.7)
             reflection = str(llm.invoke(prompt)).strip()
         except Exception as exc:
             log.debug("IndexReflectionWorker: LLM falhou para '%s': %s", name, exc)

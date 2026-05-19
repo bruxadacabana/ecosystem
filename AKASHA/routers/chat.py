@@ -32,15 +32,21 @@ templates   = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
 _MAX_SNIPPETS = 5
 
-# LOGOS-first
-try:
-    from ecosystem_client import get_ollama_url as _get_url, get_active_profile as _get_profile
-    _OLLAMA_BASE: str = _get_url()
-    _p = _get_profile()
-    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_query", "") if _p else ""
-except Exception:
-    _OLLAMA_BASE   = "http://localhost:11434"
-    _DEFAULT_MODEL = ""
+# Resolução LOGOS-first em runtime (não import-time)
+def _get_base() -> str:
+    try:
+        from ecosystem_client import get_ollama_url as _u
+        return _u()
+    except Exception:
+        return "http://localhost:11434"
+
+
+def _get_headers() -> "dict[str, str]":
+    try:
+        from ecosystem_client import get_ollama_headers as _h
+        return _h("akasha", 1)
+    except Exception:
+        return {}
 
 # Padrões de nome que identificam modelos de embedding (não geração de texto).
 # Usados para filtrar o fallback automático de _get_model().
@@ -73,16 +79,11 @@ async def _get_model() -> str:
     Resultado cacheado em _cached_model para evitar round-trip ao Ollama a cada mensagem.
     """
     global _cached_model
-    if _DEFAULT_MODEL:
-        return _DEFAULT_MODEL
     if _cached_model:
         return _cached_model
 
-    # Tenta ler modelo configurado no perfil ativo (runtime, não import-time)
-    base = _OLLAMA_BASE
     try:
-        from ecosystem_client import get_ollama_url as _gu, get_active_profile as _gp
-        base = _gu()
+        from ecosystem_client import get_active_profile as _gp
         p = _gp()
         configured = (p or {}).get("models", {}).get("llm_query", "") if p else ""
         if configured:
@@ -94,7 +95,7 @@ async def _get_model() -> str:
     # Fallback: usa primeiro modelo generativo disponível no Ollama
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(f"{base}/api/tags")
+            r = await client.get(f"{_get_base()}/api/tags")
             for m in r.json().get("models", []):
                 name = m["name"].lower()
                 if not any(pat in name for pat in _EMBED_NAME_PATTERNS):
@@ -133,7 +134,8 @@ async def _stream_chat(messages: list[dict], model: str) -> AsyncIterator[str]:
         async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT_S) as client:
             async with client.stream(
                 "POST",
-                f"{_OLLAMA_BASE}/api/chat",
+                f"{_get_base()}/api/chat",
+                headers=_get_headers(),
                 json={"model": model, "messages": messages, "stream": True,
                       "options": {"num_predict": 400, "temperature": 0.4, "repeat_penalty": 1.1}},
             ) as resp:
