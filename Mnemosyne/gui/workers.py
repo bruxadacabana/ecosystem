@@ -1573,9 +1573,16 @@ class IndexReflectionWorker(QThread):
         known_terms: set[str],
     ) -> None:
         import os
-        from core.personal_memory import save_memory
+        from core.personal_memory import save_memory, has_file_reflection
 
         name = os.path.basename(file_path)
+        tag_name = name[:40]
+        try:
+            if has_file_reflection(tag_name):
+                log.debug("IndexReflectionWorker: '%s' já tem reflexão — pulando", name)
+                return
+        except Exception:
+            pass
         log.debug("IndexReflectionWorker: processando '%s'", name)
 
         try:
@@ -1646,7 +1653,6 @@ class IndexReflectionWorker(QThread):
         if not reflection or len(reflection) < 15 or reflection.lower() in {"nada.", "nada", "—", "-"}:
             return
 
-        tag_name = name[:40]
         try:
             save_memory(type=mem_type, content=reflection, tags=["leitura", tag_name])
             log.info(

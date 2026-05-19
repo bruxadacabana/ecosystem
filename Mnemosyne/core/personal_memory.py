@@ -229,14 +229,31 @@ def get_context_memories(n: int = 8) -> list[dict]:
     ]
 
 
+def has_file_reflection(name_prefix: str) -> bool:
+    """Retorna True se já existe reflexão sobre este arquivo (deduplicação)."""
+    with _conn() as con:
+        row = con.execute(
+            "SELECT 1 FROM personal_memory "
+            "WHERE tags LIKE ? AND tags LIKE ? LIMIT 1",
+            ('%"leitura"%', f'%{name_prefix}%'),
+        ).fetchone()
+    return row is not None
+
+
 def get_unshown_popup_entries(n: int = 5) -> list[dict]:
-    """Retorna entradas ainda não exibidas como popup, mais recentes primeiro."""
+    """Retorna entradas ainda não exibidas como popup, priorizadas por type.
+
+    Ordem: surprise > connection > reflection > demais; empate por id DESC.
+    """
     with _conn() as con:
         rows = con.execute(
             "SELECT id, created_at, type, content, tags, feedback, category "
             "FROM personal_memory "
             "WHERE shown_as_popup = 0 "
-            "ORDER BY id DESC LIMIT ?",
+            "ORDER BY CASE type "
+            "  WHEN 'surprise' THEN 1 WHEN 'connection' THEN 2 "
+            "  WHEN 'reflection' THEN 3 ELSE 4 END ASC, "
+            "id DESC LIMIT ?",
             (n,),
         ).fetchall()
     return [
