@@ -94,6 +94,9 @@ A aba tem 2 pills: **Guide** (index 0) e **Studio** (index 1). Resumo e FAQ fora
 **Query multi-coleção (implementado 2026-05-14):**
 O Mnemosyne consulta **todas** as coleções habilitadas simultaneamente via `MultiVectorstore` (proxy Chroma). Nunca há "coleção ativa" para queries — apenas `coll.enabled` controla inclusão/exclusão. O botão "Ativar" foi renomeado para "Habilitar/Desabilitar".
 
+**Pop-up espontâneo da Mnemosyne + sistema de feedback (PENDENTE — discutido múltiplas vezes):**
+A Mnemosyne deve poder criar pop-ups proativos (semelhante ao `alert()` do JavaScript) para compartilhar insights com a usuária a qualquer momento, sem ser acionada. O pop-up foi a ideia original que gerou o sistema de feedback do ecossistema — são inseparáveis. Junto ao pop-up, a usuária dá thumbs up/down ou comentário breve; esse feedback é salvo na memória pessoal da Mnemosyne (e da AKASHA) e molda a personalidade e interesses de ambas ao longo do tempo. Escopo: (1) dentro da interface do AKASHA imediatamente, (2) extensão de browser futuramente. **Não confundir** com o `notify_mnemosyne_insight()` existente (fluxo AKASHA → Mnemosyne badge) — o pop-up é Mnemosyne → usuária, proativo.
+
 ### AKASHA
 
 - `/library` = crawler de domínios — "Sites" e "Biblioteca" foram **unificados** numa única seção chamada Biblioteca
@@ -163,7 +166,7 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 - **`DESIGN_BIBLE.md` e `GUIDE.md` devem ser mantidos atualizados como prioridade permanente.** Toda implementação — sem exceção — deve ser documentada no `GUIDE.md` na mesma resposta (ou ao menos sinalizar que precisa de atualização). Não esperar a usuária pedir.
 - **Tom obrigatório do `GUIDE.md`:** perspectiva de engenheiro de software escrevendo para um programador iniciante/intermediário — didático, detalhado, contextualiza cada conceito antes de detalhar, explica o "por que" além do "como". Nunca bullet points secos; parágrafos explicativos. Toda nova seção adicionada ao GUIDE deve seguir esse mesmo padrão.
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado.
-- **`notes.md` é arquivo de organização pessoal da usuária — nunca editá-lo.** Apenas lê-lo quando necessário para entender o contexto. Todo rastreamento de progresso vai no `TODO.md`.
+- **`notes.md` é arquivo de organização pessoal da usuária — nunca editá-lo.** Apenas lê-lo quando necessário para entender o contexto. Todo rastreamento de progresso vai no `TODO.md`. **Sempre commitar o `notes.md` quando houver mudanças não commitadas** — verificar `git status notes.md` proativamente a cada sessão.
 - **Marcar item como `[x]` no TODO imediatamente após concluí-lo** — não acumular para marcar depois, não esperar o fim da sessão.
 - **Antes de implementar qualquer coisa que não esteja no TODO: primeiro acrescentar o item ao TODO (com descrição), depois implementar.** Nunca implementar algo não registrado.
 - Commit por item individual concluído
