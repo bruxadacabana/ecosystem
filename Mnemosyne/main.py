@@ -7,5 +7,7 @@ from core.logger import setup_logger
 
 if __name__ == "__main__":
     setup_logger()
+    import logging as _log
+    _log.getLogger("mnemosyne").info("Mnemosyne iniciando…")
     from gui.main_window import run
     run()

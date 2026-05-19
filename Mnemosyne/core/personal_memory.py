@@ -241,18 +241,24 @@ def has_file_reflection(name_prefix: str) -> bool:
 
 
 def get_unshown_popup_entries(n: int = 5) -> list[dict]:
-    """Retorna entradas ainda não exibidas como popup, priorizadas por type.
+    """Retorna entradas candidatas a popup ainda não exibidas.
 
-    Ordem: surprise > connection > reflection > demais; empate por id DESC.
+    Apenas 'surprise' e 'connection' são popup-worthy — 'observation' e
+    'reflection' ficam só na memória, nunca interrompem a usuária.
+    Cross-insights internos (tag 'cross_insight') também excluídos.
+
+    Ordem: surprise > connection; empate por id DESC.
     """
     with _conn() as con:
         rows = con.execute(
             "SELECT id, created_at, type, content, tags, feedback, category "
             "FROM personal_memory "
             "WHERE shown_as_popup = 0 "
+            "AND type IN ('surprise', 'connection') "
+            "AND tags NOT LIKE '%\"cross_insight\"%' "
             "ORDER BY CASE type "
             "  WHEN 'surprise' THEN 1 WHEN 'connection' THEN 2 "
-            "  WHEN 'reflection' THEN 3 ELSE 4 END ASC, "
+            "  ELSE 3 END ASC, "
             "id DESC LIMIT ?",
             (n,),
         ).fetchall()

@@ -138,7 +138,8 @@ pub fn read_app_log(app: String, n: u32) -> Result<Vec<String>, AppError> {
 
     let file = std::fs::File::open(&log_path)?;
     let reader = BufReader::new(file);
-    let all: Vec<String> = reader.lines().map_while(Result::ok).collect();
+    // filter_map para tolerar linhas com encoding inválido sem interromper a leitura
+    let all: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
     let n = n as usize;
     if all.len() > n {
         Ok(all[all.len() - n..].to_vec())
