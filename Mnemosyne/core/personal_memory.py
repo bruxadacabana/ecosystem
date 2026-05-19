@@ -4,6 +4,17 @@ Mnemosyne — Store de memória pessoal.
 Memória interna da Mnemosyne: observações, conexões, surpresas e reflexões
 geradas a partir do conhecimento processado. Separada do Chroma/BM25 e nunca
 indexada no RAG de coleções.
+
+Cada entrada tem um `type` (subtipo da memória) e uma `category` (gaveta
+temática). A category é auto-derivada das tags ao salvar, mas pode ser
+passada explicitamente.
+
+Categories disponíveis:
+  "friendship"   — memórias trocadas com a AKASHA ("visitas")
+  "about_user"   — observações sobre Jenifer e como ela trabalha
+  "interests"    — tópicos que foram marcantes na indexação
+  "reflections"  — pensamentos sobre o próprio conhecimento (default)
+  "world"        — observações gerais sobre o mundo
 """
 from __future__ import annotations
 
@@ -17,6 +28,26 @@ import sys
 from .config import get_app_data_dir
 
 _DB_PATH: Path | None = None
+
+# Mapeamento tag → category (primeiras tags reconhecidas têm prioridade)
+_CATEGORY_FROM_TAG: dict[str, str] = {
+    "from_akasha":     "friendship",
+    "from_mnemosyne":  "friendship",
+    "about_user":      "about_user",
+    "session_insight": "reflections",
+    "loop_periodico":  "reflections",
+}
+
+_VALID_CATEGORIES = {"friendship", "about_user", "interests", "reflections", "world"}
+
+
+def _derive_category(tags: list[str]) -> str:
+    """Deriva category automaticamente das tags. Default: 'reflections'."""
+    for tag in tags:
+        cat = _CATEGORY_FROM_TAG.get(tag)
+        if cat:
+            return cat
+    return "reflections"
 
 
 def _resolve_pm_db() -> Path:
@@ -67,7 +98,8 @@ def _conn() -> sqlite3.Connection:
             content        TEXT    NOT NULL,
             tags           TEXT    NOT NULL DEFAULT '[]',
             feedback       TEXT             DEFAULT NULL,
-            shown_as_popup INTEGER NOT NULL DEFAULT 0
+            shown_as_popup INTEGER NOT NULL DEFAULT 0,
+            category       TEXT    NOT NULL DEFAULT 'reflections'
         )
     """)
     # Migrations para DBs anteriores
@@ -76,6 +108,8 @@ def _conn() -> sqlite3.Connection:
         con.execute("ALTER TABLE personal_memory ADD COLUMN feedback TEXT DEFAULT NULL")
     if "shown_as_popup" not in cols:
         con.execute("ALTER TABLE personal_memory ADD COLUMN shown_as_popup INTEGER NOT NULL DEFAULT 0")
+    if "category" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN category TEXT NOT NULL DEFAULT 'reflections'")
     con.commit()
     return con
 
@@ -87,16 +121,22 @@ def save_memory(
     type: str,
     content: str,
     tags: list[str] | None = None,
+    category: str | None = None,
 ) -> int:
-    """Salva entrada de memória pessoal. Retorna o ID inserido."""
+    """Salva entrada de memória pessoal. Retorna o ID inserido.
+
+    Se `category` não for passado, é derivado automaticamente das tags.
+    """
     if type not in _VALID_TYPES:
         type = "observation"
     if tags is None:
         tags = []
+    if category is None or category not in _VALID_CATEGORIES:
+        category = _derive_category(tags)
     with _conn() as con:
         cursor = con.execute(
-            "INSERT INTO personal_memory (type, content, tags) VALUES (?, ?, ?)",
-            (type, content, json.dumps(tags, ensure_ascii=False)),
+            "INSERT INTO personal_memory (type, content, tags, category) VALUES (?, ?, ?, ?)",
+            (type, content, json.dumps(tags, ensure_ascii=False), category),
         )
         return cursor.lastrowid or 0
 
@@ -105,7 +145,7 @@ def get_recent(n: int = 10) -> list[dict]:
     """Retorna as N entradas mais recentes."""
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, created_at, type, content, tags, feedback "
+            "SELECT id, created_at, type, content, tags, feedback, category "
             "FROM personal_memory ORDER BY id DESC LIMIT ?",
             (n,),
         ).fetchall()
@@ -113,7 +153,7 @@ def get_recent(n: int = 10) -> list[dict]:
         {
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
-            "feedback": r[5],
+            "feedback": r[5], "category": r[6],
         }
         for r in rows
     ]
@@ -123,14 +163,32 @@ def get_all() -> list[dict]:
     """Retorna todas as entradas em ordem decrescente."""
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, created_at, type, content, tags, feedback "
+            "SELECT id, created_at, type, content, tags, feedback, category "
             "FROM personal_memory ORDER BY id DESC",
         ).fetchall()
     return [
         {
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
-            "feedback": r[5],
+            "feedback": r[5], "category": r[6],
+        }
+        for r in rows
+    ]
+
+
+def get_by_category(category: str, n: int = 50) -> list[dict]:
+    """Retorna entradas de uma category específica, mais recentes primeiro."""
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT id, created_at, type, content, tags, feedback, category "
+            "FROM personal_memory WHERE category = ? ORDER BY id DESC LIMIT ?",
+            (category, n),
+        ).fetchall()
+    return [
+        {
+            "id": r[0], "created_at": r[1], "type": r[2],
+            "content": r[3], "tags": json.loads(r[4] or "[]"),
+            "feedback": r[5], "category": r[6],
         }
         for r in rows
     ]
@@ -154,7 +212,7 @@ def get_context_memories(n: int = 8) -> list[dict]:
     """
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, created_at, type, content, tags, feedback "
+            "SELECT id, created_at, type, content, tags, feedback, category "
             "FROM personal_memory "
             "WHERE feedback IS NULL OR feedback = 'confirmed' "
             "ORDER BY CASE WHEN feedback = 'confirmed' THEN 0 ELSE 1 END, id DESC "
@@ -165,7 +223,7 @@ def get_context_memories(n: int = 8) -> list[dict]:
         {
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
-            "feedback": r[5],
+            "feedback": r[5], "category": r[6],
         }
         for r in rows
     ]
@@ -175,7 +233,7 @@ def get_unshown_popup_entries(n: int = 5) -> list[dict]:
     """Retorna entradas ainda não exibidas como popup, mais recentes primeiro."""
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, created_at, type, content, tags, feedback "
+            "SELECT id, created_at, type, content, tags, feedback, category "
             "FROM personal_memory "
             "WHERE shown_as_popup = 0 "
             "ORDER BY id DESC LIMIT ?",
@@ -185,7 +243,7 @@ def get_unshown_popup_entries(n: int = 5) -> list[dict]:
         {
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
-            "feedback": r[5],
+            "feedback": r[5], "category": r[6],
         }
         for r in rows
     ]

@@ -486,7 +486,7 @@ def notify_mnemosyne_insight(
         if akasha_thought:
             entry["akasha_thought"] = akasha_thought
         incoming.append(entry)
-        incoming = incoming[-20:]  # FIFO com limite de 20
+        incoming = incoming[-50:]  # FIFO com limite de 50
         write_section("mnemosyne", {"incoming_insights": incoming})
     except Exception:
         pass
@@ -516,7 +516,7 @@ def notify_akasha_insight(
         if tags:
             entry["tags"] = tags
         incoming.append(entry)
-        incoming = incoming[-20:]  # FIFO com limite de 20
+        incoming = incoming[-50:]  # FIFO com limite de 50
         write_section("akasha", {"incoming_insights": incoming})
     except Exception:
         pass

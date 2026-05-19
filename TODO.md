@@ -6474,6 +6474,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Contexto: atualmente `personal_memory` de AKASHA e Mnemosyne é uma tabela plana com coluna `type` (observation/connection/surprise/reflection). A memória do Claude usa múltiplos arquivos .md por tema (user.md, feedback.md, project.md). A ideia é dar às IAs "gavetas mentais" nomeadas por tema, não apenas por tipo de entrada.
 
 #### AKASHA + Mnemosyne
-- [ ] **Adicionar coluna `category` a `personal_memory`** em ambas as apps (migração na abertura da conexão, igual ao padrão existente). Valores sugeridos: `"interests"`, `"about_user"`, `"friendship"`, `"reflections"`, `"world"`. O campo `type` continua como subtipo (observation/connection etc.). Na ausência de category, usar `"reflections"` como default.
-- [ ] **Atribuir category automaticamente ao salvar** — `from_akasha`/`from_mnemosyne` → `"friendship"`; `session_insight`/`loop_periodico` → `"reflections"`; `about_user` → `"about_user"`.
+- [x] **Adicionar coluna `category` a `personal_memory`** em ambas as apps (migração na abertura da conexão, igual ao padrão existente). Valores: `"interests"`, `"about_user"`, `"friendship"`, `"reflections"`, `"world"`. O campo `type` continua como subtipo (observation/connection etc.). Na ausência de category, usar `"reflections"` como default. **Implementado em 2026-05-19.**
+- [x] **Atribuir category automaticamente ao salvar** — `from_akasha`/`from_mnemosyne` → `"friendship"`; `session_insight`/`loop_periodico` → `"reflections"`; `about_user` → `"about_user"`. Helper `_derive_category(tags)` em ambas as apps. **Implementado em 2026-05-19.**
 - [ ] **HUB — aba de memória agrupada por category** — exibir memórias em seções dobráveis por categoria, em vez de lista plana.
+
+### HUB Monitor — filas de insight AKASHA↔Mnemosyne | 2026-05-19
+> Contexto: os dois FIFOs de troca de insight entre as IAs (mnemosyne.incoming_insights e akasha.incoming_insights no ecosystem.json) são invisíveis — não há como saber se há mensagens pendentes nem o que elas dizem.
+
+#### HUB
+- [x] **Seção "Filas de visita" no monitor** — exibir contagem de pendências e listar itens de `mnemosyne.incoming_insights` e `akasha.incoming_insights` lidos do ecosystem.json, no estilo da seção de memória AKASHA. **Implementado em 2026-05-19.**

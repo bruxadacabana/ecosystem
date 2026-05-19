@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import * as cmd from '../lib/tauri'
-import type { EcosystemConfig, MemoryEntry } from '../types'
+import type { EcosystemConfig, InsightQueueItem, MemoryEntry } from '../types'
 
 // ── Faixa de logs em tempo real ────────────────────────────────
 
@@ -636,6 +636,115 @@ function SeedsEditor({ initialValue, onSave }: { initialValue: string; onSave: (
   )
 }
 
+// ── Viewer de filas de insight ────────────────────────────────
+
+function InsightQueueSection({
+  label,
+  items,
+}: {
+  label:  string
+  items:  InsightQueueItem[]
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div style={{ marginBottom: 2 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontFamily: 'var(--font-mono)', fontSize: 10,
+          color: 'var(--ink-ghost)', letterSpacing: '0.05em',
+          textTransform: 'uppercase', padding: '4px 0',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}
+      >
+        <span style={{ opacity: 0.7 }}>{open ? '▾' : '▸'}</span>
+        <span style={{ opacity: items.length > 0 ? 1 : 0.5 }}>{label}</span>
+        {items.length > 0 && (
+          <span style={{
+            fontFamily:    'var(--font-mono)', fontSize: 9,
+            background:    'var(--accent)', color: 'var(--paper-dark)',
+            borderRadius:  3, padding: '1px 5px',
+          }}>
+            {items.length}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 6, maxHeight: 260, overflowY: 'auto', paddingRight: 2 }}>
+          {items.length === 0 ? (
+            <p style={sMemory.empty}>fila vazia.</p>
+          ) : items.map((item, i) => {
+            const text = item.content ?? item.akasha_thought ?? item.summary ?? ''
+            const ts   = new Date(item.received_at).toLocaleString('pt-BR', {
+              dateStyle: 'short', timeStyle: 'short',
+            })
+            return (
+              <div key={i} style={{
+                ...sMemory.row,
+                borderLeft: '2px solid var(--accent)',
+                paddingLeft: 8,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                  {item.topics && item.topics.length > 0 && item.topics.slice(0, 4).map(t => (
+                    <span key={t} style={sMemory.tag}>{t}</span>
+                  ))}
+                  <span style={{ ...sMemory.date, marginLeft: 'auto' }}>{ts}</span>
+                </div>
+                {text && <p style={sMemory.content}>{text}</p>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InsightQueuesBlock({ eco }: { eco: EcosystemConfig | null }) {
+  const toMnemosyne = eco?.mnemosyne?.incoming_insights ?? []
+  const toAkasha    = eco?.akasha?.incoming_insights    ?? []
+  const total       = toMnemosyne.length + toAkasha.length
+
+  return (
+    <div style={{
+      background: 'var(--paper-dark)',
+      border:     `1px solid ${total > 0 ? 'var(--accent)' : 'var(--rule)'}44`,
+      borderRadius: 'var(--radius)', padding: '14px 18px',
+      transition: 'border-color 300ms ease',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--rule)',
+      }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: total > 0 ? 'var(--accent)' : 'var(--ink-ghost)',
+          flexShrink: 0, opacity: total > 0 ? 1 : 0.3, transition: 'background 300ms',
+        }} />
+        <span style={{
+          fontFamily: 'var(--font-display)', fontStyle: 'italic',
+          fontSize: 15, color: 'var(--ink)', letterSpacing: '0.02em',
+        }}>
+          Filas de visita
+        </span>
+        {total > 0 && (
+          <span style={{
+            fontFamily: 'var(--font-mono)', fontSize: 10, marginLeft: 'auto',
+            color: 'var(--accent)', opacity: 0.8,
+          }}>
+            {total} pendente{total === 1 ? '' : 's'}
+          </span>
+        )}
+      </div>
+      <InsightQueueSection label="AKASHA → Mnemosyne" items={toMnemosyne} />
+      <InsightQueueSection label="Mnemosyne → AKASHA" items={toAkasha} />
+    </div>
+  )
+}
+
 // ── Card de app ───────────────────────────────────────────────
 
 function AppBlock({ sigla, active, children }: { sigla: string; active: boolean; children: React.ReactNode }) {
@@ -822,6 +931,9 @@ export function MonitoramentoView() {
         <MemoryViewer app="mnemosyne" />
         <LogStrip lines={mnemosyneLogs} />
       </AppBlock>
+
+      {/* Filas de visita AKASHA↔Mnemosyne */}
+      <InsightQueuesBlock eco={eco} />
 
       {/* KOSMOS */}
       <AppBlock sigla="KOSMOS" active={kosmosActive}>
