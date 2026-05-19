@@ -6479,7 +6479,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Contexto: bugs encontrados durante testes do ecossistema em 2026-05-19 — readonly database na Mnemosyne, popup transparente, artefatos de streaming no diálogo, chat AKASHA com problemas, KOSMOS exibindo opção de LLM indevidamente.
 
 #### KOSMOS
-- [ ] **Bug: KOSMOS ainda exibe opção de alterar o LLM** — viola a arquitetura: toda configuração de Ollama deve ser feita pelo HUB via perfil LOGOS. Remover seletor de LLM do KOSMOS (SetupDialog ou equivalente); fazer o app ler o modelo via `ecosystem_client.get_active_profile()["llm_analysis"]` em runtime, igual ao refator já feito no Mnemosyne.
+- [x] **Bug: KOSMOS ainda exibe opção de alterar o LLM** — viola a arquitetura: toda configuração de Ollama deve ser feita pelo HUB via perfil LOGOS. Remover seletor de LLM do KOSMOS (SetupDialog ou equivalente); fazer o app ler o modelo via `ecosystem_client.get_active_profile()["llm_analysis"]` em runtime, igual ao refator já feito no Mnemosyne.
 
 #### Mnemosyne
 - [ ] **Bug: "readonly database" (code 1032) ao indexar dados do KOSMOS** — ao finalizar indexação da biblioteca e iniciar indexação de dados do KOSMOS, erro "attempt to write a readonly database". Causa suspeita: dois processos com acesso simultâneo ao mesmo SQLite (KOSMOS + Mnemosyne), WAL mode desativado, ou arquivo de lock orphan (`.db-wal`/`.db-shm`). Investigar: identificar qual DB está sendo acessado (ChromaDB? SQLite próprio?), verificar se `PRAGMA journal_mode=WAL` está ativo, verificar se KOSMOS mantém conexão aberta enquanto Mnemosyne escreve. Coletar logs completos na próxima ocorrência. Relacionado ao item de readonly ChromaDB já registrado na seção de bugs anteriores.

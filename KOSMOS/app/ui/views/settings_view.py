@@ -321,71 +321,21 @@ class SettingsView(QWidget):
         )
         layout.addWidget(self._ai_enable)
 
-        # Endpoint + botão detectar
+        # Endpoint LOGOS (somente leitura — gerenciado pelo HUB)
         row_ep = QHBoxLayout()
-        row_ep.addWidget(self._label("Endpoint:"))
+        row_ep.addWidget(self._label("Endpoint LOGOS:"))
         self._ai_endpoint = QLineEdit(
             self._cfg.get("ai_endpoint", "http://localhost:7072")
         )
         self._ai_endpoint.setFont(self._mono(12))
-        self._ai_endpoint.editingFinished.connect(
-            lambda: self._cfg.set("ai_endpoint", self._ai_endpoint.text().strip())
-        )
+        self._ai_endpoint.setReadOnly(True)
         row_ep.addWidget(self._ai_endpoint, 1)
-        detect_btn = QPushButton("Detectar modelos")
-        detect_btn.setFont(self._mono(11))
-        detect_btn.setFixedWidth(160)
-        detect_btn.clicked.connect(self._on_detect_ai_models)
-        row_ep.addWidget(detect_btn)
         layout.addLayout(row_ep)
 
-        # Modelo de geração (combo editável)
-        row_gen = QHBoxLayout()
-        row_gen.addWidget(self._label("Modelo de geração:"))
-        self._ai_gen_combo = QComboBox()
-        self._ai_gen_combo.setEditable(True)
-        self._ai_gen_combo.setFont(self._mono(12))
-        self._ai_gen_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        current_gen = self._cfg.get("ai_gen_model", "")
-        if current_gen:
-            self._ai_gen_combo.addItem(current_gen)
-            self._ai_gen_combo.setCurrentText(current_gen)
-        else:
-            self._ai_gen_combo.setPlaceholderText("— clique em Detectar modelos —")
-        self._ai_gen_combo.activated.connect(self._on_ai_gen_selected)
-        self._ai_gen_combo.lineEdit().editingFinished.connect(self._on_ai_gen_selected)
-        row_gen.addWidget(self._ai_gen_combo, 1)
-        _logos_gen_btn = QPushButton("↩ Recomendado")
-        _logos_gen_btn.setFont(self._mono(11))
-        _logos_gen_btn.setFixedWidth(130)
-        _logos_gen_btn.setToolTip("Aplicar modelo recomendado pelo LOGOS para esta máquina")
-        _logos_gen_btn.clicked.connect(self._on_use_logos_gen)
-        row_gen.addWidget(_logos_gen_btn)
-        layout.addLayout(row_gen)
-
-        # Modelo de embeddings (combo editável)
-        row_emb = QHBoxLayout()
-        row_emb.addWidget(self._label("Modelo de embeddings:"))
-        self._ai_embed_combo = QComboBox()
-        self._ai_embed_combo.setEditable(True)
-        self._ai_embed_combo.setFont(self._mono(12))
-        self._ai_embed_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        current_emb = self._cfg.get("ai_embed_model", "")
-        if current_emb:
-            self._ai_embed_combo.addItem(current_emb)
-            self._ai_embed_combo.setCurrentText(current_emb)
-        else:
-            self._ai_embed_combo.setPlaceholderText("— clique em Detectar modelos —")
-        self._ai_embed_combo.activated.connect(self._on_ai_embed_selected)
-        self._ai_embed_combo.lineEdit().editingFinished.connect(self._on_ai_embed_selected)
-        row_emb.addWidget(self._ai_embed_combo, 1)
-        _logos_emb_btn = QPushButton("↩ Recomendado")
-        _logos_emb_btn.setFont(self._mono(11))
-        _logos_emb_btn.setFixedWidth(130)
-        _logos_emb_btn.setToolTip("Aplicar modelo de embedding recomendado pelo LOGOS para esta máquina")
-        _logos_emb_btn.clicked.connect(self._on_use_logos_embed)
-        row_emb.addWidget(_logos_emb_btn)
-        layout.addLayout(row_emb)
+        # Modelos ativos (definidos pelo HUB via perfil LOGOS — não editáveis aqui)
+        self._ai_logos_info = QLabel("— modelos definidos pelo HUB —")
+        self._ai_logos_info.setFont(self._mono(11))
+        layout.addWidget(self._ai_logos_info)
 
         self._ai_status = QLabel("")
         self._ai_status.setObjectName("dialogStatusLabel")
@@ -620,14 +570,14 @@ class SettingsView(QWidget):
         self._ai_endpoint.setText(self._cfg.get("ai_endpoint", "http://localhost:7072"))
         gen_val = self._cfg.get("ai_gen_model", "")
         emb_val = self._cfg.get("ai_embed_model", "")
+        parts: list[str] = []
         if gen_val:
-            if self._ai_gen_combo.findText(gen_val) < 0:
-                self._ai_gen_combo.insertItem(0, gen_val)
-            self._ai_gen_combo.setCurrentText(gen_val)
+            parts.append(f"geração: {gen_val}")
         if emb_val:
-            if self._ai_embed_combo.findText(emb_val) < 0:
-                self._ai_embed_combo.insertItem(0, emb_val)
-            self._ai_embed_combo.setCurrentText(emb_val)
+            parts.append(f"embeddings: {emb_val}")
+        self._ai_logos_info.setText(
+            "  ·  ".join(parts) if parts else "— modelos definidos pelo HUB —"
+        )
         self._ai_status.setText("")
         self._ai_relevance_badge.setChecked(bool(self._cfg.get("ai_relevance_badge", False)))
 
@@ -722,135 +672,6 @@ class SettingsView(QWidget):
         n = len(terms)
         self._blocklist_status.setText(f"✓ {n} termo{'s' if n != 1 else ''} salvo{'s' if n != 1 else ''}")
 
-    def _on_detect_ai_models(self) -> None:
-        """Conecta ao Ollama, lista modelos instalados e popula os combos."""
-        from app.core.ai_bridge import AiBridge, OllamaError
-
-        endpoint = self._ai_endpoint.text().strip() or "http://localhost:7072"
-        self._cfg.set("ai_endpoint", endpoint)
-
-        self._ai_status.setText("Conectando…")
-        self._ai_status.repaint()
-
-        bridge = AiBridge(endpoint=endpoint)
-
-        if not bridge.is_available():
-            self._ai_status.setText(
-                "✗ Ollama não acessível.  "
-                "Verifique se o serviço está rodando neste endpoint."
-            )
-            return
-
-        try:
-            all_models = bridge.list_models()
-        except OllamaError as exc:
-            self._ai_status.setText(f"✗ Erro ao listar modelos: {exc}")
-            log.error("Falha ao listar modelos Ollama: %s", exc)
-            return
-
-        if not all_models:
-            self._ai_status.setText(
-                "✓ Ollama acessível, mas nenhum modelo instalado.\n"
-                "Use  ollama pull <modelo>  para instalar."
-            )
-            return
-
-        # Heurística: modelos com "embed" no nome → lista de embeddings;
-        # os demais → lista de geração.  Ambos os combos mostram todos os modelos.
-        embed_models = [m for m in all_models if "embed" in m.lower()]
-        gen_models   = [m for m in all_models if "embed" not in m.lower()]
-
-        prev_gen   = self._ai_gen_combo.currentText().strip()
-        prev_emb   = self._ai_embed_combo.currentText().strip()
-
-        # Repopula combo de geração
-        self._ai_gen_combo.blockSignals(True)
-        self._ai_gen_combo.clear()
-        self._ai_gen_combo.addItems(gen_models)
-        if gen_models and "embed" not in gen_models[0].lower():
-            self._ai_gen_combo.insertSeparator(len(gen_models))
-        self._ai_gen_combo.addItems(embed_models)  # todos disponíveis como fallback
-        if prev_gen and self._ai_gen_combo.findText(prev_gen) >= 0:
-            self._ai_gen_combo.setCurrentText(prev_gen)
-        elif gen_models:
-            self._ai_gen_combo.setCurrentIndex(0)
-        self._ai_gen_combo.blockSignals(False)
-        self._on_ai_gen_selected()
-
-        # Repopula combo de embeddings
-        self._ai_embed_combo.blockSignals(True)
-        self._ai_embed_combo.clear()
-        self._ai_embed_combo.addItems(embed_models)
-        if embed_models:
-            self._ai_embed_combo.insertSeparator(len(embed_models))
-        self._ai_embed_combo.addItems(gen_models)  # todos disponíveis como fallback
-        if prev_emb and self._ai_embed_combo.findText(prev_emb) >= 0:
-            self._ai_embed_combo.setCurrentText(prev_emb)
-        elif embed_models:
-            self._ai_embed_combo.setCurrentIndex(0)
-        self._ai_embed_combo.blockSignals(False)
-        self._on_ai_embed_selected()
-
-        lines = [f"✓ Ollama OK.  {len(all_models)} modelo(s) instalado(s):"]
-        if gen_models:
-            lines.append(f"  Geração:    {',  '.join(gen_models)}")
-        if embed_models:
-            lines.append(f"  Embeddings: {',  '.join(embed_models)}")
-        self._ai_status.setText("\n".join(lines))
-
-    def _on_ai_gen_selected(self) -> None:
-        val = self._ai_gen_combo.currentText().strip()
-        if val:
-            self._cfg.set("ai_gen_model", val)
-
-    def _on_use_logos_gen(self) -> None:
-        try:
-            from pathlib import Path as _Path
-            _root = str(_Path(__file__).parent.parent.parent.parent.parent)
-            if _root not in sys.path:
-                sys.path.insert(0, _root)
-            from ecosystem_client import get_active_profile as _get
-            profile = _get()
-            if profile:
-                model = profile.get("models", {}).get("llm_kosmos", "")
-                display = profile.get("profile_display", "LOGOS")
-                if model:
-                    if self._ai_gen_combo.findText(model) < 0:
-                        self._ai_gen_combo.insertItem(0, model)
-                    self._ai_gen_combo.setCurrentText(model)
-                    self._cfg.set("ai_gen_model", model)
-                    self._ai_status.setText(f"✓ Modelo recomendado aplicado: {model}  ({display})")
-                    return
-            self._ai_status.setText("LOGOS não disponível — execute o HUB primeiro.")
-        except ValueError as exc:
-            self._ai_status.setText(f"Erro ao consultar LOGOS: {exc}")
-
-    def _on_ai_embed_selected(self) -> None:
-        val = self._ai_embed_combo.currentText().strip()
-        if val:
-            self._cfg.set("ai_embed_model", val)
-
-    def _on_use_logos_embed(self) -> None:
-        try:
-            from pathlib import Path as _Path
-            _root = str(_Path(__file__).parent.parent.parent.parent.parent)
-            if _root not in sys.path:
-                sys.path.insert(0, _root)
-            from ecosystem_client import get_active_profile as _get
-            profile = _get()
-            if profile:
-                model = profile.get("models", {}).get("embed", "")
-                display = profile.get("profile_display", "LOGOS")
-                if model:
-                    if self._ai_embed_combo.findText(model) < 0:
-                        self._ai_embed_combo.insertItem(0, model)
-                    self._ai_embed_combo.setCurrentText(model)
-                    self._cfg.set("ai_embed_model", model)
-                    self._ai_status.setText(f"✓ Embedding recomendado aplicado: {model}  ({display})")
-                    return
-            self._ai_status.setText("LOGOS não disponível — execute o HUB primeiro.")
-        except ValueError as exc:
-            self._ai_status.setText(f"Erro ao consultar LOGOS: {exc}")
 
     def _on_test_reddit(self) -> None:
         client_id     = self._reddit_id.text().strip()

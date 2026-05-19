@@ -13,7 +13,7 @@ log = logging.getLogger("kosmos.config")
 
 # Chaves cujo valor é sempre determinado pelo LOGOS/HUB — nunca persistido entre sessões.
 # O usuário pode alterar durante a sessão, mas no próximo startup o HUB volta a ser a fonte.
-_RUNTIME_KEYS: frozenset[str] = frozenset({"ai_gen_model"})
+_RUNTIME_KEYS: frozenset[str] = frozenset({"ai_gen_model", "ai_embed_model"})
 
 DEFAULTS: dict[str, Any] = {
     "theme":                    "day",
@@ -118,3 +118,7 @@ class Config:
             model = models.get("llm_analysis", "")
             if model:
                 self._data["ai_gen_model"] = model
+        if "ai_embed_model" not in self._user_set_keys:
+            model = models.get("embed", "")
+            if model:
+                self._data["ai_embed_model"] = model
