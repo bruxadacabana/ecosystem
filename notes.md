@@ -8,9 +8,9 @@
 
 ### Integração KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19
 
-### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
-
 ### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
+
+### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
 
 ### CODEX — Leitor centralizado do ecossistema | 2026-05-13
 
