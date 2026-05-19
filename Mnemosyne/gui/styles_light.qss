@@ -647,3 +647,59 @@ QFormLayout QLabel {
     color: #6B5C49;
     font-size: 11px;
 }
+
+/* ----------------------------------------------------------
+   INSIGHT POPUP (modo diurno)
+---------------------------------------------------------- */
+
+QWidget#insightCard {
+    background-color: #EDE7D9;
+    border:           1px solid #b8860b;
+    border-radius:    4px;
+}
+
+QLabel#insightEyebrow {
+    font-family:    "Special Elite", "Courier New", monospace;
+    font-size:      10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color:          #b8860b;
+    background:     transparent;
+}
+
+QLabel#insightText {
+    font-family: "IM Fell English", Georgia, serif;
+    font-style:  italic;
+    font-size:   13px;
+    color:       #2C2416;
+    background:  transparent;
+}
+
+QPushButton#insightBtnConfirm {
+    background:    #E0F0D8;
+    color:         #4A6741;
+    border:        1px solid #4A6741;
+    border-radius: 4px;
+    font-size:     13px;
+    font-weight:   bold;
+}
+QPushButton#insightBtnConfirm:hover { background: #D0E8C8; }
+
+QPushButton#insightBtnDismiss {
+    background:    #F0E0D8;
+    color:         #8B3A2A;
+    border:        1px solid #8B3A2A;
+    border-radius: 4px;
+    font-size:     13px;
+    font-weight:   bold;
+}
+QPushButton#insightBtnDismiss:hover { background: #E8D0C8; }
+
+QPushButton#insightBtnReply {
+    background:    #D8E4F0;
+    color:         #2C5F8A;
+    border:        1px solid #2C5F8A;
+    border-radius: 4px;
+    font-size:     13px;
+}
+QPushButton#insightBtnReply:hover { background: #C8D8E8; }

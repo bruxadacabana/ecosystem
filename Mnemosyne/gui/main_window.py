@@ -88,8 +88,10 @@ from core.memory import (
 from core.notebook_store import NotebookStore
 from core.ollama_client import OllamaModel, filter_chat_models, filter_embed_models
 from core.tracker import FileTracker
+from gui.insight_popup import InsightPopup
 from gui.notebooks_panel import NotebooksPanel
 from gui.topics_view import TopicsView
+from core.insight_scheduler import InsightScheduler
 from gui.workers import (
     AskWorker,
     DeepResearchWorker,
@@ -652,6 +654,10 @@ class MainWindow(QMainWindow):
         self._reflection_memory_id: int = 0
         self._pending_watcher_files: list[str] = []
         self._analysis_queue: list[str] = []  # arquivos indexados aguardando reflexão
+
+        self._insight_scheduler = InsightScheduler(self)
+        self._insight_scheduler.insight_ready.connect(self._show_insight_popup)
+        self._active_insight_popup: InsightPopup | None = None
 
         try:
             self.config = load_config()
@@ -1849,6 +1855,7 @@ class MainWindow(QMainWindow):
             "IndexReflectionWorker: processando %d arquivo(s) da fila.", len(batch)
         )
         self._index_reflection_worker = IndexReflectionWorker(batch, self.config)
+        self._index_reflection_worker.finished.connect(self._insight_scheduler.maybe_show)
         self._index_reflection_worker.start()
 
     def _on_reflection_ready(self, memory_id: int, content: str) -> None:
@@ -1871,6 +1878,46 @@ class MainWindow(QMainWindow):
     def _on_reflection_ask(self) -> None:
         text = self._reflection_label.text().replace("⟳ ", "")
         self.question_edit.setText(f"Sobre isso que você pensou: {text[:200]}")
+
+    # ------------------------------------------------------------------
+    # Pop-up de insight espontâneo
+    # ------------------------------------------------------------------
+
+    def _show_insight_popup(self, text: str, memory_id: int) -> None:
+        """Exibe pop-up de insight no canto inferior direito."""
+        if self._active_insight_popup is not None:
+            try:
+                self._active_insight_popup.close()
+            except RuntimeError:
+                pass
+        popup = InsightPopup(text, memory_id, parent=None)
+        popup.confirmed.connect(self._on_insight_confirmed)
+        popup.dismissed.connect(self._on_insight_dismissed)
+        popup.replied.connect(self._on_insight_replied)
+        popup.destroyed.connect(lambda: self._clear_insight_popup(popup))
+        self._active_insight_popup = popup
+        popup.show_in_corner()
+
+    def _clear_insight_popup(self, popup: InsightPopup) -> None:
+        if self._active_insight_popup is popup:
+            self._active_insight_popup = None
+
+    def _on_insight_confirmed(self, memory_id: int) -> None:
+        from core.personal_memory import set_feedback
+        set_feedback(memory_id, "confirmed")
+
+    def _on_insight_dismissed(self, memory_id: int) -> None:
+        from core.personal_memory import set_feedback
+        set_feedback(memory_id, "dismissed")
+
+    def _on_insight_replied(self, text: str) -> None:
+        """Pré-preenche o composer do notebook ativo com o insight."""
+        prefix = f"[Insight: {text[:180]}] "
+        try:
+            self.question_edit.setText(prefix)
+            self.question_edit.setFocus()
+        except AttributeError:
+            pass
         self.question_edit.setFocus()
         self._reflection_widget.setVisible(False)
 
