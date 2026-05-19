@@ -231,6 +231,12 @@ CREATE TABLE IF NOT EXISTS search_profile (
 
 _CREATE_PAGE_KNOWLEDGE = """
 CREATE TABLE IF NOT EXISTS page_knowledge (
+    -- Tabela de METADADOS DE INDEXAÇÃO — não armazena texto narrativo sintetizado por LLM.
+    -- Princípio: AKASHA é amplificador de pesquisa, nunca respondedor.
+    -- topics/entities são rótulos estruturados (JSON arrays de strings) usados para roteamento:
+    --   topics → autocomplete, topic_interest_profile, knowledge_boost em search_local
+    --   entities → entity_graph (grafo de co-ocorrência para busca por entidade)
+    -- O campo summary foi removido na migration v38 por violar esse princípio.
     url          TEXT PRIMARY KEY,
     title        TEXT NOT NULL DEFAULT '',
     topics       TEXT NOT NULL DEFAULT '[]',
