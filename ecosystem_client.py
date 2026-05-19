@@ -187,7 +187,7 @@ def get_active_profile() -> "dict[str, Any] | None":
         {
           "profile": "main_pc" | "laptop" | "work_pc",
           "profile_display": str,
-          "models": {"llm_mnemosyne": str, "llm_kosmos": str, "embed": str}
+          "models": {"llm_rag": str, "llm_analysis": str, "llm_query": str, "embed": str}
         }
 
     Retorna None se o HUB não estiver rodando.

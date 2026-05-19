@@ -115,6 +115,6 @@ class Config:
         """
         models = profile.get("models", {})
         if "ai_gen_model" not in self._user_set_keys:
-            model = models.get("llm_kosmos", "")
+            model = models.get("llm_analysis", "")
             if model:
                 self._data["ai_gen_model"] = model

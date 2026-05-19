@@ -39,10 +39,18 @@ fn read_api_key() -> Result<String, AppError> {
 
 // ── HTTP helpers ────────────────────────────────────────────────
 
+fn st_client() -> Result<reqwest::Client, AppError> {
+    // Syncthing usa HTTPS com certificado auto-assinado no localhost
+    reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|e| AppError::Io(e.to_string()))
+}
+
 async fn st_get(path: &str) -> Result<serde_json::Value, AppError> {
     let key = read_api_key()?;
-    let url = format!("http://127.0.0.1:{PORT}{path}");
-    reqwest::Client::new()
+    let url = format!("https://127.0.0.1:{PORT}{path}");
+    st_client()?
         .get(&url)
         .header("X-API-Key", key)
         .send()
@@ -55,8 +63,8 @@ async fn st_get(path: &str) -> Result<serde_json::Value, AppError> {
 
 async fn st_post(path: &str) -> Result<(), AppError> {
     let key = read_api_key()?;
-    let url = format!("http://127.0.0.1:{PORT}{path}");
-    reqwest::Client::new()
+    let url = format!("https://127.0.0.1:{PORT}{path}");
+    st_client()?
         .post(&url)
         .header("X-API-Key", key)
         .send()

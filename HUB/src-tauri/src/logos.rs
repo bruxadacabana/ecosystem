@@ -97,14 +97,15 @@ impl HardwareProfile {
                 llm_rag:      "qwen2.5:7b",
                 // gemma2:2b coexiste com qwen2.5:7b na VRAM (1.6 + 4.7 = ~6.3 GB < 7.5 GB)
                 llm_analysis: "gemma2:2b",
-                llm_query:    "gemma2:2b",
+                // qwen2.5:3b: generation + JSON + diálogo para AKASHA; ~1.9 GB; coexiste com qwen2.5:7b (4.7+1.9=6.6 GB)
+                llm_query:    "qwen2.5:3b",
                 embed:        "bge-m3",
             },
             HardwareProfile::Laptop => ModelProfile {
                 llm_rag:      "gemma2:2b",
-                // smollm2:1.7b tinha JSON parse rate 26% — inutilizável para análise estruturada
-                llm_analysis: "gemma2:2b",
-                llm_query:    "gemma2:2b",
+                // smollm2:1.7b: análise batch no laptop — JSON 26% tolerável com retry; MX150 não suporta dois modelos >1 GB
+                llm_analysis: "smollm2:1.7b",
+                llm_query:    "smollm2:1.7b",
                 embed:        "bge-m3",
             },
             HardwareProfile::WorkPc => ModelProfile {
@@ -1281,6 +1282,7 @@ fn speed_note_workpc(model: &str) -> Option<&'static str> {
 fn rationale_for_model(name: &str) -> &'static str {
     match name {
         "qwen2.5:7b"               => "7B · ~4.5 GB VRAM · síntese multi-doc, RAG longo · JSON 92%",
+        "qwen2.5:3b"               => "3B · ~1.9 GB VRAM · geração, diálogo e JSON para AKASHA · coexiste com qwen2.5:7b",
         "gemma2:2b"                => "2B · ~1.5 GB VRAM · rápido, streaming ágil · JSON 74%",
         "smollm2:1.7b"             => "1.7B · ~1 GB RAM · CPU-only, geração de texto · JSON 26% (não usar para extração estruturada)",
         "qwen2.5:0.5b"             => "0.5B · ~400 MB RAM · CPU-only, extração JSON · JSON 61% (melhor que smollm2 para schema)",

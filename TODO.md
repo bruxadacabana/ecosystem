@@ -6328,6 +6328,20 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [ ] **Sugestões de pesquisas relacionadas nos resultados** — ao exibir resultados de busca, mostrar seção "Pesquisas relacionadas" com 3-5 queries sugeridas geradas a partir dos tópicos dos resultados e do `topic_interest_profile`. Geração: extrair tópicos dos top-5 resultados, cruzar com `topic_interest_profile`, montar queries sugeridas sem LLM (apenas combinações de termos de alta relevância) para manter latência baixa.
 - [x] **Contexto em tempo real — pesquisar e planejar arquitetura** — o núcleo da AKASHA como secretária de pesquisa é ela poder ler o que a usuária está vendo agora (não apenas o índice histórico). Pesquisar opções viáveis: (a) extensão de browser que envia URL/texto selecionado ao AKASHA via `POST /context/push`; (b) bookmarklet com fetch para o mesmo endpoint; (c) side panel que intercepta cliques em resultados do próprio AKASHA e usa o conteúdo como contexto imediato; (d) clipboard monitor (polling da área de transferência detectando URLs). Avaliar privacidade, latência e facilidade de uso. O overlay de insight (`#insight-overlay`) já existe como output — falta o input em tempo real. Após pesquisa, apresentar opções e aguardar aprovação antes de implementar.
 
+### LLM slots — correção de chaves e modelos distintos por app | 2026-05-18
+> Contexto: KOSMOS e Mnemosyne liam chaves inexistentes do perfil LOGOS (llm_kosmos, llm_mnemosyne) e por isso ignoravam o modelo atribuído, caindo no default local. Além disso, AKASHA e KOSMOS usavam o mesmo modelo (gemma2:2b) desnecessariamente. AKASHA agora usa qwen2.5:3b no MainPc para cobrir suas tarefas mais complexas (JSON extraction, session insights para Mnemosyne, diálogo, reflection loop).
+
+#### KOSMOS
+- [x] **Corrigir chave `llm_kosmos` → `llm_analysis`** em `app/utils/config.py::apply_logos_profile()` — KOSMOS nunca aplicava o modelo atribuído pelo LOGOS por estar lendo uma chave que não existe no perfil retornado por `/logos/hardware`
+
+#### Mnemosyne
+- [x] **Corrigir chave `llm_mnemosyne` → `llm_rag`** em `gui/main_window.py` — combo de modelo na UI do Mnemosyne não preenchia com o modelo do LOGOS pelo mesmo motivo
+
+#### HUB
+- [x] **Atualizar defaults por hardware em `logos.rs`** — MainPc: llm_query (AKASHA) = qwen2.5:3b (era gemma2:2b); Laptop: llm_analysis (KOSMOS) = smollm2:1.7b (era gemma2:2b). WorkPc inalterado. Adicionar rationale para qwen2.5:3b no painel de modelos recomendados.
+- [x] **Corrigir docstring em `ecosystem_client.py`** — `get_active_profile()` documentava chaves antigas (llm_mnemosyne, llm_kosmos) em vez das reais (llm_rag, llm_analysis, llm_query)
+- [x] **Corrigir HTTPS no Syncthing** — `commands/syncthing.rs` usava `http://` mas Syncthing redireciona para `https://` (307). Corrigido para `https://` com `danger_accept_invalid_certs(true)` (certificado auto-assinado do localhost)
+
 ### Jina Reader — rate limiting e detecção de Cloudflare | 2026-05-18
 > Contexto: pesquisa sobre Jina Reader para fallback de 403 revelou rate limit de 20 RPM anônimo e comportamento de falha silenciosa (HTTP 200 com conteúdo < 50 palavras). Challenge Cloudflare detectável por marcadores no HTML body mesmo em respostas HTTP 200. Rate limiter obrigatório para não violar os limites do serviço.
 

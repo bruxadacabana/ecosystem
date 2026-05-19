@@ -194,7 +194,7 @@ class SetupDialog(QDialog):
             from ecosystem_client import get_active_profile as _get_profile
             _p = _get_profile()
             if _p:
-                self._logos_llm     = _p.get("models", {}).get("llm_mnemosyne", "")
+                self._logos_llm     = _p.get("models", {}).get("llm_rag", "")
                 self._logos_embed   = _p.get("models", {}).get("embed", "")
                 self._logos_display = _p.get("profile_display", "")
         except Exception:
