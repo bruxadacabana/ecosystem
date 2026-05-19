@@ -1,30 +1,22 @@
 ## Implementação atual:
 
+### Melhorias — testes em campo | 2026-05-19
+
+### Pesquisa: Emoções em Reflexões de IAs e Critérios de Notificação Proativa | 2026-05-19
+
 ### Bugs e investigações — sessão de testes | 2026-05-19
 - verifique se já está implementado para que, se o KOSMOS rodar em o Ollama aberto, no momento que o Ollama abrir ele deve varrer as notícias e começar a análise em segundo plano
-- no momento que mnemosyne terminou de indexar a biblioteca e foi começar a indexar o kosmos, deu erro "Query error: Database error: error returned from database: (code 1032) attempt to write a readonly database"
 - inclua a opção de arquivar sites crawleados no akasha
 - "2026-05-19 08:21:45,101 [WARNING] gui.workers: IndexWorker: erro ao embedar 'Organização estruturada de computadores (Andrew S. Tanenbaum) (Z-Library).pdf': timed out" como podemos evitar e tentar novamente esse tip ode erro? Talvez o arquivo que der erro entre para a fila de arquivos a serem indexados (como os arquivos novos inseridos nas pastas assistidas) e serem tentados novamente. Mas além disso, precisamos ver porque seu erro e como evitar.
 - verifique o funcionamento da mnemosyne: nem todo insight/reflexão/pensamento/memória/opnião deve ser um pop-up ou visita, mas devem ser armazenadas na memória pessoal dela. Verifique Akasha também. Verifique também para ambas o que é necessário para gerar um pop-up e o que é necessário para gerar um pensamento/reflexão na memória. Faça pesquisas adicionais se necessário.
-- pesquise sobre o uso de emoções nessas reflexões (como está sendo usado "surpresa"), se pode ser útil e como implementar. Expanda essa pesquisa
 - ainda esto tendo problemas com a exibição de logs da mnemosyne no monitor do hub
 - como é lidado pela Akasha e Mnemosyne quando um arquivo é deletado?
 - o chat/conversa diretamente com a Akasha parece não estar funcionando bem
 - o que acontece se a indexação for apagada mas a memória da Mnemosyne não? Precisa haver uma forma dela não refazer o trabalho que ainda estiver disponível.
-- KOSMOS ainda está me dando a opção de alterar o llm sendo que não deveria mais ser possível (tudo sobre o ollama deve ser feito pelo HUB)
-- o mnemosyne tentou exibir um pop mas carregou apenas uma janela transparente e vazia
 - "temas" da mnemosyne deveria carregar em tempo real assim como "conexões" da akasha
 - apesar das trocas de insights não deverem ser indexadas no rag, a akasha e mnemosyne pode usar o insight da outra para refletir e criar conexões com o que já sabe
-- a área do diálogo com akasha no mnemosyne está toda bugada:
-◇ No vault, não há menção direta a budismo, meditação ou felicidade. As entradas se concentram em fundamentos artísticos, harmonia cromática e composição, sem abordar temas espirituais ou filosóficos como o budismo.
-  [1] ART FUNDAMENTALS, TWELFTH EDITION · [2] The Complete Color Harmony · [3] Composition
-⬡
-⬡
-⬡1⬡.⬡ Ab⬡ord⬡a⬡:⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ da⬡ v⬡ida⬡ base⬡ada⬡ em⬡ ident⬡ific⬡ar⬡ ca⬡ó⬡dig⬡os⬡ e⬡ ev⬡itar⬡ o⬡ so⬡f⬡rim⬡ento⬡,⬡ at⬡rav⬡és⬡ de⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ por⬡ res⬡olver⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ (⬡ab⬡ord⬡ag⬡em⬡)⬡
-⬡2⬡.⬡ Ab⬡ord⬡ag⬡em⬡:⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ da⬡ v⬡ida⬡ base⬡ada⬡ em⬡ ident⬡ific⬡ar⬡ ca⬡ó⬡dig⬡os⬡ e⬡ ev⬡itar⬡ o⬡ so⬡f⬡rim⬡ento⬡,⬡ at⬡rav⬡és⬡ de⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ por⬡ res⬡olver⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ (⬡ab⬡ord⬡ag⬡em⬡)⬡
-⬡3⬡.⬡ Ab⬡ord⬡ag⬡em⬡:⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ da⬡ v⬡ida⬡ base⬡ada⬡ em⬡ ident⬡ific⬡ar⬡ ca⬡ó⬡dig⬡os⬡ e⬡ ev⬡itar⬡ o⬡ so⬡f⬡rim⬡ento⬡,⬡ at⬡rav⬡és⬡ de⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ por⬡ res⬡olver⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem
-[Diálogo encerrado]
 
+### Integração KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19
 
 ### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
 

@@ -82,6 +82,7 @@ class DialoguePanel(QWidget):
         self._config      = None
         self._worker: _DialogueWorker | None = None
         self._pending_sources: list[dict] = []   # acumula sources do AKASHA corrente
+        self._in_akasha_turn: bool = False        # evita ⬡ repetido em cada token
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
@@ -152,6 +153,7 @@ class DialoguePanel(QWidget):
 
         self._canvas.clear()
         self._pending_sources.clear()
+        self._in_akasha_turn = False
         self._input.setEnabled(False)
         self._start_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
@@ -177,10 +179,12 @@ class DialoguePanel(QWidget):
     def _on_fragment(self, speaker: str, text: str) -> None:
         if speaker == "mnemosyne":
             self._flush_pending_sources()
+            self._in_akasha_turn = False
             self._append_prefix("◇", _COLOR_MNEMOSYNE)
             self._append_text(f" {text}\n", _COLOR_MNEMOSYNE)
         else:  # akasha
-            if not self._pending_sources and text:
+            if not self._in_akasha_turn:
+                self._in_akasha_turn = True
                 self._append_prefix("⬡", _COLOR_AKASHA)
             self._append_text(text, _COLOR_AKASHA)
 
@@ -195,6 +199,7 @@ class DialoguePanel(QWidget):
             self._append_text("\n", _COLOR_AKASHA)
             self._show_sources(self._pending_sources, _COLOR_AKASHA)
             self._pending_sources.clear()
+        self._in_akasha_turn = False
 
     def _show_sources(self, sources: list[dict], color: str) -> None:
         if not sources:

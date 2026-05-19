@@ -32,7 +32,7 @@ try:
     from ecosystem_client import get_ollama_url as _get_url, get_active_profile as _get_profile
     _OLLAMA_BASE: str = _get_url()
     _p = _get_profile()
-    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_kosmos", "") if _p else ""
+    _DEFAULT_MODEL: str = (_p or {}).get("models", {}).get("llm_query", "") if _p else ""
 except Exception:
     _OLLAMA_BASE   = "http://localhost:11434"
     _DEFAULT_MODEL = ""
@@ -108,7 +108,7 @@ async def _stream_ollama(prompt: str, model: str) -> AsyncIterator[str]:
                     "model":   model,
                     "prompt":  prompt,
                     "stream":  True,
-                    "options": {"num_predict": 200, "temperature": 0.5},
+                    "options": {"num_predict": 200, "temperature": 0.5, "repeat_penalty": 1.1},
                 },
             ) as resp:
                 resp.raise_for_status()

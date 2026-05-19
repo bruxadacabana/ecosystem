@@ -154,7 +154,7 @@ def run_dialogue(
         mne_thought = _build_mnemosyne_thought(current_question, snippets, config)
         if mne_thought:
             fragment_cb("mnemosyne", mne_thought)
-            exchange.append(f"◇ {mne_thought}")
+            exchange.append(mne_thought)
             if snippets:
                 sources_cb("mnemosyne", [{"title": s["title"], "url": ""} for s in snippets])
 
@@ -186,7 +186,7 @@ def run_dialogue(
                 )
                 full_akasha = "".join(akasha_buffer)
                 if full_akasha:
-                    exchange.append(f"⬡ {full_akasha}")
+                    exchange.append(full_akasha)
             except (AkashaOfflineError, AkashaFetchError) as exc:
                 log.debug("dialogue: AKASHA indisponível no turno %d: %s", turn, exc)
                 akasha_available = False
