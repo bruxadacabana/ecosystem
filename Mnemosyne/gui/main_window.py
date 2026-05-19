@@ -798,35 +798,6 @@ class MainWindow(QMainWindow):
         # Sessions panel
         sb.addSpacing(8)
         self._add_sidebar_rule(sb)
-        sb.addSpacing(4)
-
-        sessions_header = QHBoxLayout()
-        sessions_header.setContentsMargins(0, 0, 0, 0)
-        sessions_lbl = QLabel("CONVERSAS")
-        sessions_lbl.setObjectName("sidebarLabel")
-        sessions_header.addWidget(sessions_lbl)
-        sessions_header.addStretch()
-        self._new_session_btn = QPushButton("+")
-        self._new_session_btn.setFixedSize(22, 18)
-        self._new_session_btn.setToolTip("Nova sessão")
-        self._new_session_btn.clicked.connect(self._on_new_session)
-        sessions_header.addWidget(self._new_session_btn)
-        sb.addLayout(sessions_header)
-
-        self._sessions_list = QListWidget()
-        self._sessions_list.setObjectName("sessionsList")
-        self._sessions_list.setMaximumHeight(110)
-        self._sessions_list.itemClicked.connect(self._on_session_item_clicked)
-        self._sessions_list.itemDoubleClicked.connect(self._on_session_double_clicked)
-        self._sessions_list.itemChanged.connect(self._on_session_title_changed)
-        self._sessions_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._sessions_list.customContextMenuRequested.connect(
-            self._show_session_context_menu
-        )
-        sb.addWidget(self._sessions_list)
-
-        sb.addSpacing(8)
-        self._add_sidebar_rule(sb)
         sb.addSpacing(8)
 
         # Modo de recuperação

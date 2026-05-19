@@ -370,6 +370,7 @@ def load_config() -> AppConfig:
     """
     data: dict = dict(_DEFAULTS)
     _saved_keys: set[str] = set()
+    _loaded_from_legacy = False
 
     for candidate in (_CONFIG_PATH, _LEGACY_CONFIG_PATH):
         if candidate.exists():
@@ -380,6 +381,9 @@ def load_config() -> AppConfig:
                     raise ConfigError("settings.json deve ser um objeto JSON.")
                 _saved_keys = set(loaded.keys())
                 data.update(loaded)
+                _loaded_from_legacy = (
+                    candidate == _LEGACY_CONFIG_PATH and _CONFIG_PATH != _LEGACY_CONFIG_PATH
+                )
             except json.JSONDecodeError as exc:
                 raise ConfigError(f"settings.json inválido: {exc}") from exc
             break
@@ -424,6 +428,8 @@ def load_config() -> AppConfig:
         image_ocr_model=str(data.get("image_ocr_model", "")),
         suggest_questions=bool(data.get("suggest_questions", False)),
         persona_prompt=str(data.get("persona_prompt", "")),
+        lightrag_enabled=bool(data.get("lightrag_enabled", False)),
+        raptor_enabled=bool(data.get("raptor_enabled", False)),
     )
     config = _apply_logos_recommendations(config, _saved_keys)
 
@@ -440,11 +446,19 @@ def load_config() -> AppConfig:
             if coll.source == "user" and coll.type == CollectionType.LIBRARY:
                 if coll.path != eco_watched:
                     coll.path = eco_watched
-                    try:
+                    _loaded_from_legacy = True  # precisa salvar no path correto
+                try:
+                    if _loaded_from_legacy:
                         save_config(config)
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
                 break
+    elif _loaded_from_legacy:
+        # Migração: settings.json ainda não existe no novo caminho — criar agora
+        try:
+            save_config(config)
+        except Exception:
+            pass
 
     return config
 
@@ -501,6 +515,8 @@ def save_config(config: AppConfig) -> None:
         "image_ocr_model": config.image_ocr_model,
         "suggest_questions": config.suggest_questions,
         "persona_prompt": config.persona_prompt,
+        "lightrag_enabled": config.lightrag_enabled,
+        "raptor_enabled": config.raptor_enabled,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
