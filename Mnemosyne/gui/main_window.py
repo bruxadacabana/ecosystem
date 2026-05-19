@@ -850,7 +850,7 @@ class MainWindow(QMainWindow):
         # Nav buttons
         self._content_stack = QStackedWidget()
 
-        self._nav_chat_btn     = QPushButton("Chat")
+        self._nav_chat_btn     = QPushButton("Notebook")
         self._nav_analysis_btn = QPushButton("Análise")
         self._nav_manage_btn   = QPushButton("Gerenciar")
         self._nav_topics_btn   = QPushButton("Temas")
@@ -961,8 +961,8 @@ class MainWindow(QMainWindow):
         sb.addSpacing(8)
 
         # Ações
-        self.new_chat_btn = QPushButton("↺  Nova Conversa")
-        self.new_chat_btn.setToolTip("Reseta o histórico da conversa actual")
+        self.new_chat_btn = QPushButton("↺  Novo Notebook")
+        self.new_chat_btn.setToolTip("Inicia um novo notebook, preservando o histórico anterior")
         self.new_chat_btn.clicked.connect(self._reset_conversation)
         sb.addWidget(self.new_chat_btn)
 
@@ -1125,7 +1125,7 @@ class MainWindow(QMainWindow):
         self._notes_edit = QTextEdit()
         self._notes_edit.setObjectName("notesEdit")
         self._notes_edit.setPlaceholderText(
-            "Notas da sessão…\n\nRespostas do chat podem ser promovidas aqui."
+            "Notas do notebook…\n\nRespostas podem ser promovidas aqui."
         )
         self._notes_edit.textChanged.connect(self._on_notes_text_changed)
         layout.addWidget(self._notes_edit)
@@ -1682,7 +1682,7 @@ class MainWindow(QMainWindow):
                 self._topics_view.set_topics(data)
 
     def _ask_from_theme(self, word: str) -> None:
-        """Ao clicar numa palavra da nuvem: vai para o Chat e submete query sobre o tema."""
+        """Ao clicar numa palavra da nuvem: vai para o Notebook e submete query sobre o tema."""
         self._switch_page(0)
         self.question_edit.setText(
             f'Fale sobre "{word}": o que os documentos do acervo dizem?'
@@ -2826,7 +2826,7 @@ class MainWindow(QMainWindow):
             self.guide_gems_text.setPlainText("(nenhuma pérola identificada)")
 
     def _on_guide_question_clicked(self, item: QListWidgetItem) -> None:
-        """Popula o campo de pergunta e muda para a página Chat."""
+        """Popula o campo de pergunta e muda para o Notebook."""
         self.question_edit.setText(item.text())
         self._switch_page(0)
 
@@ -3745,7 +3745,7 @@ class MainWindow(QMainWindow):
         # Botão "Abrir no Chat"
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        open_btn = QPushButton("Abrir no Chat")
+        open_btn = QPushButton("Abrir no Notebook")
         open_btn.setEnabled(False)
         btn_row.addWidget(open_btn)
         close_btn = QPushButton("Fechar")
