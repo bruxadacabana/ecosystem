@@ -131,6 +131,8 @@ pub struct ModelProfile {
     /// LLM leve para extração on-demand e expansão de query (AKASHA) — latência baixa.
     pub llm_query:    &'static str,
     pub embed:        &'static str,
+    /// LLM multimodal para OCR de imagens (Mnemosyne) — "" quando hardware não suporta.
+    pub image_ocr:    &'static str,
 }
 
 /// Atribuição de modelo para um app+tipo específico.
