@@ -1,38 +1,8 @@
 ## Implementação atual:
 
-"alias verifique se está tudo corretamente deletado: deletei manualmente as memórias pessoais da akasha e menosyne e vou reindexar com a mnemosyne depois (porque vamos implementar coisas em seguida que as modificam bastante, então achei melhor começar do zero). 
-Não acho que ha a necessidade de deletar o banco de dados da Akasha, apenas sua memória, já que ela reanalisa tudo."
+### Bugs no sistema de backup do AKASHA | 2026-05-19
 
-
-"Status das deleções
-O que está limpo (confirmado neste machine, espelhado via Syncthing)
-Arquivo	Status
-.ai_private/akasha/personal_memory.db	Ausente ✓
-.ai_private/mnemosyne/personal_memory.db	Ausente ✓
-mnemosyne/index_checkpoint.db	Existe, mas 0 linhas ✓
-AKASHA akasha.db (banco principal)	Intacto, 120 MB ✓
-O index_checkpoint.db com 0 linhas significa que a Mnemosyne vai re-indexar tudo do zero quando iniciar — ótimo para gerar novas reflexões.
-
-Uma ressalva importante sobre a AKASHA
-O banco akasha.db tem uma tabela page_knowledge com 1724 linhas — essa tabela guarda o resumo/tópicos/entidades extraídos de cada URL. É ela que controla o que já foi "analisado" pelo knowledge_worker. Se o worker pula URLs que já estão em page_knowledge, limpar só a personal_memory não vai gerar novas reflexões para essas páginas (porque o knowledge_worker vai considerar que o trabalho já foi feito).
-
-Duas perguntas:
-
-Você sabe se o knowledge_worker re-analisa páginas que já estão em page_knowledge, ou pula?
-Você quer também limpar page_knowledge para ter reflexões completamente novas da AKASHA?
-Se quiser limpar, basta rodar no SQLite (na CachyOS):
-
-
-DELETE FROM page_knowledge;
-DELETE FROM topic_interest_profile;
-Ou posso escrever um endpoint/script para isso. Espero sua decisão antes de fazer qualquer coisa.
-
-Outros itens que existem mas não precisam ser limpos
-insights.db (Mnemosyne, %APPDATA%): 0 linhas no Windows — transiente, não precisa de ação
-Schema da AKASHA: ainda em v35 no banco sincronizado — a migration v36 (colunas deleted, crawl_fail_count) vai rodar automaticamente quando a AKASHA iniciar na CachyOS com o código novo"
-
-
-porque "resumo/tópicos/entidades" é armazenado no banco de dados principal???"
+### page_knowledge — dados de análise LLM no banco principal da AKASHA | 2026-05-19
 
 ### Pesquisa: Emoções em Reflexões de IAs e Critérios de Notificação Proativa | 2026-05-19
 
