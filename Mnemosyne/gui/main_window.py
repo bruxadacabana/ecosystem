@@ -2519,6 +2519,7 @@ class MainWindow(QMainWindow):
             self.refresh_manage_info()
             self._start_guide_generation()
             self._register_indexing_machine()
+            self._run_periodic_reflection()  # reflete sobre conteúdo novo imediatamente
         else:
             self._log_event("Indexação interrompida — clique 'Retomar indexação' para continuar.")
 
