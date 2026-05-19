@@ -37,7 +37,6 @@ from core.indexer import (
     _add_language_metadata,
     _get_splitter,
     _clear_orphan_wal,
-    _OLLAMA_BASE,
     IndexCheckpoint,
 )
 from core.loaders import load_documents, load_single_file
@@ -231,7 +230,7 @@ class IndexWorker(QThread):
                     t0 = time.time()
                     probe_embs = _embed_batch(
                         [c.page_content for c in probe_batch],
-                        self.config.embed_model, _OLLAMA_BASE,
+                        self.config.embed_model,
                     )
                     t_probe = time.time() - t0
                     vs._collection.add(
@@ -262,7 +261,7 @@ class IndexWorker(QThread):
                             (batch, pool.submit(
                                 _embed_batch,
                                 [c.page_content for c in batch],
-                                self.config.embed_model, _OLLAMA_BASE,
+                                self.config.embed_model,
                             ))
                             for batch in batch_list
                         ]
@@ -304,7 +303,7 @@ class IndexWorker(QThread):
                         try:
                             embs = _embed_batch(
                                 [c.page_content for c in batch],
-                                self.config.embed_model, _OLLAMA_BASE,
+                                self.config.embed_model,
                             )
                         except EmbedTimeoutError as exc:
                             log.warning("IndexWorker: timeout ao embedar '%s': %s", name, exc)
@@ -495,7 +494,7 @@ class ResumeIndexWorker(QThread):
                 try:
                     embs = _embed_batch(
                         [c.page_content for c in batch],
-                        self.config.embed_model, _OLLAMA_BASE,
+                        self.config.embed_model,
                     )
                 except Exception as exc:
                     log.warning("ResumeIndexWorker: erro ao embedar '%s': %s", name, exc)

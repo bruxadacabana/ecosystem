@@ -366,13 +366,13 @@ def _incremental_update(
 
 
 _EMBED_TIMEOUT_S   = 120.0   # timeout por tentativa — detecta rápido
-_EMBED_RETRY_WAITS = (30, 60) # aguarda Ollama terminar o LLM ativo antes de re-tentar
+_EMBED_RETRY_WAITS = (30, 60) # aguarda LOGOS/Ollama liberar antes de re-tentar
 
 
 def _embed_batch(
     texts: list[str],
     model: str,
-    base_url: str = _OLLAMA_BASE,
+    base_url: str | None = None,
     truncate_dim: int | None = None,
 ) -> list[list[float]]:
     """Gera embeddings para um lote de textos.
@@ -383,15 +383,29 @@ def _embed_batch(
     truncate_dim: passado ao Ollama para truncar embeddings via MRL (Matryoshka).
     Ignorado para model2vec. Se o Ollama não suportar, faz fallback silencioso.
 
-    Retries automáticos em caso de timeout: o Ollama pode estar ocupado com
-    uma geração LLM ativa (chat, reflexão). Aguarda e tenta novamente até
-    _EMBED_RETRY_WAITS estar esgotado antes de levantar EmbedTimeoutError.
+    Retries automáticos em dois cenários:
+    - Timeout (httpx.TimeoutException): Ollama direto ocupado com LLM ativo.
+    - 429 (LOGOS P3_TIMEOUT): LOGOS retorna 429 quando fila P3 espera >30s
+      atrás de uma geração P1/P2 em andamento.
+    Em ambos os casos: aguarda e tenta novamente até _EMBED_RETRY_WAITS esgotar.
+
+    base_url: resolução em runtime via ecosystem_client para garantir que
+    LOGOS (7072) seja usado mesmo que o HUB tenha iniciado após a Mnemosyne.
     """
     if model == _POTION_MODEL_NAME:
         return _embed_batch_model2vec(texts)
 
     import time
     import httpx
+
+    # Resolve URL em runtime — garante que LOGOS seja usado mesmo se o HUB
+    # iniciou depois da Mnemosyne (quando _OLLAMA_BASE foi setado).
+    if base_url is None:
+        try:
+            from ecosystem_client import get_ollama_url as _get_url  # type: ignore
+            base_url = _get_url()
+        except Exception:
+            base_url = _OLLAMA_BASE
 
     payload: dict = {"model": model, "input": texts}
     if truncate_dim:
@@ -400,12 +414,16 @@ def _embed_batch(
     last_exc: Exception | None = None
     for attempt, wait in enumerate((-1, *_EMBED_RETRY_WAITS)):
         if wait >= 0:
-            log.debug("_embed_batch: timeout na tentativa %d, aguardando %ds…", attempt, wait)
+            log.debug("_embed_batch: ocupado (tentativa %d), aguardando %ds…", attempt, wait)
             time.sleep(wait)
         try:
             resp = httpx.post(
                 f"{base_url}/api/embed", json=payload, timeout=_EMBED_TIMEOUT_S
             )
+            if resp.status_code == 429:
+                # LOGOS: P3 bloqueado por LLM P1/P2 ativo ou hardware saturado
+                last_exc = Exception(f"429 Too Many Requests (LOGOS P3 bloqueado)")
+                continue
             resp.raise_for_status()
             return resp.json()["embeddings"]
         except httpx.TimeoutException as exc:
