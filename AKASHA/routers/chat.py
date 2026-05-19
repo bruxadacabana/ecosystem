@@ -235,7 +235,6 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
     """
     from services.local_search import search_local, get_ollama_status
     from services.persona import get_persona
-    import database as _db
 
     if not get_ollama_status():
         async def _offline() -> AsyncIterator[bytes]:
@@ -253,14 +252,10 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
     # Pipeline RAG
     results = await search_local(body.message, max_results=_MAX_SNIPPETS, expand=False)
 
-    # Enriquece snippets com resumos do page_knowledge quando disponíveis
-    urls = [r.url for r in results[:_MAX_SNIPPETS]]
-    pk_batch = await _db.get_page_knowledge_batch(urls)
-    snippets: list[dict] = []
-    for r in results[:_MAX_SNIPPETS]:
-        pk = pk_batch.get(r.url)
-        snippet = pk.get("summary", r.snippet) if isinstance(pk, dict) and pk.get("summary") else r.snippet
-        snippets.append({"title": r.title, "url": r.url, "snippet": snippet or ""})
+    snippets: list[dict] = [
+        {"title": r.title, "url": r.url, "snippet": r.snippet or ""}
+        for r in results[:_MAX_SNIPPETS]
+    ]
 
     sources = [{"url": s["url"], "title": s["title"]} for s in snippets]
     persona_prefix = get_persona().as_prompt_prefix()

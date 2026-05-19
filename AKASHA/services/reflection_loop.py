@@ -80,9 +80,9 @@ async def _run_reflection() -> None:
     personality = _config.PERSONALITY_PROMPT
 
     pages_summary = "\n".join(
-        f"- {p['title']}: {p['summary']}"
-        for p in recent_pages if p.get("summary")
-    ) or "Sem resumos recentes."
+        f"- {p['title']}" + (f" [{', '.join(p['topics'][:3])}]" if p.get("topics") else "")
+        for p in recent_pages
+    ) or "Sem páginas recentes."
 
     topics_str = ", ".join(t for t, _ in top_topics) or "Sem tópicos registrados."
 

@@ -1,7 +1,5 @@
 ## Fila de implementação atual:
 
-### Bugs no sistema de backup do AKASHA | 2026-05-19
-
 ### page_knowledge — dados de análise LLM no banco principal da AKASHA | 2026-05-19
 
 ### Pesquisa: Emoções em Reflexões de IAs e Critérios de Notificação Proativa | 2026-05-19

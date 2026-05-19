@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 37
+SCHEMA_VERSION = 38
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -233,7 +233,6 @@ _CREATE_PAGE_KNOWLEDGE = """
 CREATE TABLE IF NOT EXISTS page_knowledge (
     url          TEXT PRIMARY KEY,
     title        TEXT NOT NULL DEFAULT '',
-    summary      TEXT NOT NULL DEFAULT '',
     topics       TEXT NOT NULL DEFAULT '[]',
     entities     TEXT NOT NULL DEFAULT '[]',
     source_type  TEXT NOT NULL DEFAULT '',
@@ -790,6 +789,14 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             )
         except Exception:
             pass  # coluna já existe em DBs novos
+
+    if from_version < 38:
+        # Remove summary de page_knowledge — texto sintetizado por LLM viola o
+        # princípio de que AKASHA é amplificador de pesquisa, não respondedor.
+        try:
+            await db.execute("ALTER TABLE page_knowledge DROP COLUMN summary")
+        except Exception:
+            pass  # coluna já removida ou banco novo sem a coluna
 
     if from_version < 37:
         # Flag de deduplicação desacoplada do conteúdo LLM em page_knowledge.
@@ -1975,7 +1982,6 @@ async def get_full_profile() -> dict[str, str]:
 async def save_page_knowledge(
     url: str,
     title: str,
-    summary: str,
     topics: list[str],
     entities: list[str],
     source_type: str,
@@ -1983,9 +1989,9 @@ async def save_page_knowledge(
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO page_knowledge
-               (url, title, summary, topics, entities, source_type, processed_at)
-               VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
-            (url, title, summary, json.dumps(topics), json.dumps(entities), source_type),
+               (url, title, topics, entities, source_type, processed_at)
+               VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+            (url, title, json.dumps(topics), json.dumps(entities), source_type),
         )
         await db.commit()
 
@@ -1993,32 +1999,32 @@ async def save_page_knowledge(
 async def get_page_knowledge(url: str) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as db:
         row = await (await db.execute(
-            "SELECT url, title, summary, topics, entities, source_type, processed_at "
+            "SELECT url, title, topics, entities, source_type, processed_at "
             "FROM page_knowledge WHERE url = ?",
             (url,),
         )).fetchone()
     if not row:
         return None
     return {
-        "url": row[0], "title": row[1], "summary": row[2],
-        "topics": json.loads(row[3] or "[]"),
-        "entities": json.loads(row[4] or "[]"),
-        "source_type": row[5], "processed_at": row[6],
+        "url": row[0], "title": row[1],
+        "topics": json.loads(row[2] or "[]"),
+        "entities": json.loads(row[3] or "[]"),
+        "source_type": row[4], "processed_at": row[5],
     }
 
 
 async def get_page_knowledge_batch(urls: list[str]) -> dict[str, dict]:
-    """Retorna {url: {"summary": str, "topics": list}} para os URLs fornecidos."""
+    """Retorna {url: {"topics": list}} para os URLs fornecidos."""
     if not urls:
         return {}
     placeholders = ",".join("?" * len(urls))
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await (await db.execute(
-            f"SELECT url, summary, topics FROM page_knowledge WHERE url IN ({placeholders})",
+            f"SELECT url, topics FROM page_knowledge WHERE url IN ({placeholders})",
             urls,
         )).fetchall()
     return {
-        r[0]: {"summary": r[1] or "", "topics": json.loads(r[2] or "[]")}
+        r[0]: {"topics": json.loads(r[1] or "[]")}
         for r in rows
     }
 
@@ -2062,14 +2068,14 @@ async def get_recent_page_knowledge(n: int = 10) -> list[dict]:
     """Retorna os N registros de page_knowledge mais recentes."""
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await (await db.execute(
-            "SELECT url, title, summary, topics FROM page_knowledge "
+            "SELECT url, title, topics FROM page_knowledge "
             "ORDER BY processed_at DESC LIMIT ?",
             (n,),
         )).fetchall()
     return [
         {
-            "url": r[0], "title": r[1], "summary": r[2],
-            "topics": json.loads(r[3] or "[]"),
+            "url": r[0], "title": r[1],
+            "topics": json.loads(r[2] or "[]"),
         }
         for r in rows
     ]

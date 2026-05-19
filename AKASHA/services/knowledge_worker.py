@@ -429,14 +429,13 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
     topics   = result.get("topics", [])[:8]
     entities = result.get("entities", [])[:10]
 
-    if not summary and not topics:
+    if not topics:
         return
 
     import database as _db
     await _db.save_page_knowledge(
         url=task.url,
         title=task.title,
-        summary=summary,
         topics=[str(t) for t in topics],
         entities=[str(e) for e in entities],
         source_type=task.source_type,
