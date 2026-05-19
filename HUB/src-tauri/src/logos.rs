@@ -100,8 +100,8 @@ impl HardwareProfile {
                 // qwen2.5:3b: generation + JSON + diálogo para AKASHA; ~1.9 GB; coexiste com qwen2.5:7b (4.7+1.9=6.6 GB)
                 llm_query:    "qwen2.5:3b",
                 embed:        "bge-m3",
-                // moondream2: ~1.7 GB VRAM — multimodal compacto; coexiste com qwen2.5:7b (4.7+1.7=6.4 GB < 7.5 GB)
-                image_ocr:    "moondream2",
+                // moondream: ~1.7 GB VRAM — multimodal compacto; coexiste com qwen2.5:7b (4.7+1.7=6.4 GB < 7.5 GB)
+                image_ocr:    "moondream",
             },
             HardwareProfile::Laptop => ModelProfile {
                 llm_rag:      "gemma2:2b",
@@ -109,8 +109,8 @@ impl HardwareProfile {
                 llm_analysis: "smollm2:1.7b",
                 llm_query:    "smollm2:1.7b",
                 embed:        "bge-m3",
-                // moondream2: ~1.7 GB — MX150 2 GB mal cabe sozinho; usar isolado (não simultaneamente com outro modelo)
-                image_ocr:    "moondream2",
+                // moondream: ~1.7 GB — MX150 2 GB mal cabe sozinho; usar isolado (não simultaneamente com outro modelo)
+                image_ocr:    "moondream",
             },
             HardwareProfile::WorkPc => ModelProfile {
                 llm_rag:      "smollm2:1.7b",
@@ -1304,7 +1304,7 @@ fn rationale_for_model(name: &str) -> &'static str {
         "gemma2:2b"                => "2B · ~1.5 GB VRAM · rápido, streaming ágil · JSON 74%",
         "smollm2:1.7b"             => "1.7B · ~1 GB RAM · CPU-only, geração de texto · JSON 26% (não usar para extração estruturada)",
         "qwen2.5:0.5b"             => "0.5B · ~400 MB RAM · CPU-only, extração JSON · JSON 61% (melhor que smollm2 para schema)",
-        "moondream2"               => "multimodal compacto · ~1.7 GB VRAM · OCR + descrição de imagens · ideal para indexação de PDFs com figuras",
+        "moondream"               => "multimodal compacto · ~1.7 GB VRAM · OCR + descrição de imagens · ideal para indexação de PDFs com figuras",
         "bge-m3"                   => "embed multilíngue SOTA · 8 GB VRAM",
         "nomic-embed-text"         => "embed compacto · boa qualidade · 2 GB VRAM",
         "all-minilm"               => "embed 384-dim · muito leve · CPU-only",
