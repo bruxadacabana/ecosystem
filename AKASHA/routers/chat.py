@@ -135,7 +135,7 @@ async def _stream_chat(messages: list[dict], model: str) -> AsyncIterator[str]:
                 "POST",
                 f"{_OLLAMA_BASE}/api/chat",
                 json={"model": model, "messages": messages, "stream": True,
-                      "options": {"num_predict": 400, "temperature": 0.4}},
+                      "options": {"num_predict": 400, "temperature": 0.4, "repeat_penalty": 1.1}},
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
@@ -151,7 +151,8 @@ async def _stream_chat(messages: list[dict], model: str) -> AsyncIterator[str]:
                     if chunk.get("done"):
                         break
     except Exception as exc:
-        log.debug("chat: stream Ollama falhou: %s", exc)
+        log.warning("chat: stream Ollama falhou: %s", exc)
+        yield f"[Erro ao conectar com Ollama: {exc}]"
 
 
 def _trim_partial(text: str, tag: str) -> int:

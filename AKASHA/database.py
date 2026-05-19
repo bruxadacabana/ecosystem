@@ -1957,16 +1957,19 @@ async def get_page_knowledge(url: str) -> dict | None:
 
 
 async def get_page_knowledge_batch(urls: list[str]) -> dict[str, dict]:
-    """Retorna {url: knowledge_dict} para os URLs fornecidos."""
+    """Retorna {url: {"summary": str, "topics": list}} para os URLs fornecidos."""
     if not urls:
         return {}
     placeholders = ",".join("?" * len(urls))
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await (await db.execute(
-            f"SELECT url, topics FROM page_knowledge WHERE url IN ({placeholders})",
+            f"SELECT url, summary, topics FROM page_knowledge WHERE url IN ({placeholders})",
             urls,
         )).fetchall()
-    return {r[0]: json.loads(r[1] or "[]") for r in rows}
+    return {
+        r[0]: {"summary": r[1] or "", "topics": json.loads(r[2] or "[]")}
+        for r in rows
+    }
 
 
 async def update_topic_score(topic: str, delta: float = 1.0) -> None:

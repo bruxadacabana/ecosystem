@@ -6487,7 +6487,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **Bug: área de diálogo com AKASHA exibe artefatos de streaming** — tokens SSE aparecem separados por "⬡" (delimitador interno vazando para UI), respostas em loop com texto repetido e prefixos "⬡N⬡.⬡". O stream não está sendo reconstituído antes de renderizar. Investigar: (1) o widget de chat usa `insertPlainText()` por token (raw) ou acumula e renderiza ao fim da resposta? (2) verificar se "⬡" é delimitador do protocolo AKASHA→Mnemosyne que não está sendo removido antes de chegar à UI — inspecionar o componente de chat do Mnemosyne e o endpoint de diálogo do AKASHA.
 
 #### AKASHA
-- [ ] **Bug: chat direto com a AKASHA com problemas** — o chat direto com a AKASHA (não via Mnemosyne) apresenta comportamento incorreto. Reproduzir e capturar comportamento exato (resposta vazia, erro de API, loop, resposta incorreta, streaming quebrado). Verificar `routers/chat.py` (ou equivalente), pipeline RAG do chat, injeção de prompt de personalidade da AKASHA.
+- [x] **Bug: chat direto com a AKASHA com problemas** — o chat direto com a AKASHA (não via Mnemosyne) apresenta comportamento incorreto. Reproduzir e capturar comportamento exato (resposta vazia, erro de API, loop, resposta incorreta, streaming quebrado). Verificar `routers/chat.py` (ou equivalente), pipeline RAG do chat, injeção de prompt de personalidade da AKASHA.
 
 ### Melhorias — testes em campo | 2026-05-19
 > Contexto: funcionalidades ausentes e comportamentos a melhorar identificados em testes reais do ecossistema em 2026-05-19.

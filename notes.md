@@ -1,17 +1,16 @@
 ## Implementação atual:
 
-### Melhorias — testes em campo | 2026-05-19
-
 ### Pesquisa: Emoções em Reflexões de IAs e Critérios de Notificação Proativa | 2026-05-19
 
 ### Bugs e investigações — sessão de testes | 2026-05-19
+### Melhorias — testes em campo | 2026-05-19
+
 - verifique se já está implementado para que, se o KOSMOS rodar em o Ollama aberto, no momento que o Ollama abrir ele deve varrer as notícias e começar a análise em segundo plano
 - inclua a opção de arquivar sites crawleados no akasha
 - "2026-05-19 08:21:45,101 [WARNING] gui.workers: IndexWorker: erro ao embedar 'Organização estruturada de computadores (Andrew S. Tanenbaum) (Z-Library).pdf': timed out" como podemos evitar e tentar novamente esse tip ode erro? Talvez o arquivo que der erro entre para a fila de arquivos a serem indexados (como os arquivos novos inseridos nas pastas assistidas) e serem tentados novamente. Mas além disso, precisamos ver porque seu erro e como evitar.
 - verifique o funcionamento da mnemosyne: nem todo insight/reflexão/pensamento/memória/opnião deve ser um pop-up ou visita, mas devem ser armazenadas na memória pessoal dela. Verifique Akasha também. Verifique também para ambas o que é necessário para gerar um pop-up e o que é necessário para gerar um pensamento/reflexão na memória. Faça pesquisas adicionais se necessário.
 - ainda esto tendo problemas com a exibição de logs da mnemosyne no monitor do hub
 - como é lidado pela Akasha e Mnemosyne quando um arquivo é deletado?
-- o chat/conversa diretamente com a Akasha parece não estar funcionando bem
 - o que acontece se a indexação for apagada mas a memória da Mnemosyne não? Precisa haver uma forma dela não refazer o trabalho que ainda estiver disponível.
 - "temas" da mnemosyne deveria carregar em tempo real assim como "conexões" da akasha
 - apesar das trocas de insights não deverem ser indexadas no rag, a akasha e mnemosyne pode usar o insight da outra para refletir e criar conexões com o que já sabe
