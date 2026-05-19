@@ -166,8 +166,8 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 
 - **`DESIGN_BIBLE.md`, `GUIDE.md` e `pesquisas.md` ficam no repositório `notebook`** (repositório Git separado, sincronizado via Proton Drive). Os caminhos por máquina estão abaixo — usar esses caminhos ao ler ou editar. **Após editar qualquer um desses arquivos, commitar o repositório `notebook` na mesma resposta** — `cd` para a raiz do repo e `git commit`. O `git add` só é necessário para arquivos não rastreados. Nunca recriar esses arquivos na raiz do repo do ecossistema.
   - **Windows 10:** `D:\windows\documentos\notebook\` (raiz do repo); arquivos em `inbox\ecosystem_notes\`
-  - **CachyOS principal:** `/mnt/archive1/proton/backup/notebook/` (raiz do repo); arquivos em `01_Projetos/ecosystem/`
-  - **Laptop:** `/home/spacewitch/Documents/proton/notebook/` (raiz do repo); arquivos em `01_Projetos/ecosystem/`
+  - **CachyOS principal:** `/home/spacewitch/Documents/notebook/` (raiz do repo); arquivos em `inbox/ecosystem_notes/`
+  - **Laptop:** `/home/spacewitch/Documents/proton/notebook/` (raiz do repo); arquivos em `01_Projetos/ecosystem/` (a confirmar)
 - **`DESIGN_BIBLE.md` e `GUIDE.md` devem ser mantidos atualizados como prioridade permanente.** Toda implementação — sem exceção — deve ser documentada no `GUIDE.md` na mesma resposta (ou ao menos sinalizar que precisa de atualização). Não esperar a usuária pedir.
 - **Tom obrigatório do `GUIDE.md`:** perspectiva de engenheiro de software escrevendo para um programador iniciante/intermediário — didático, detalhado, contextualiza cada conceito antes de detalhar, explica o "por que" além do "como". Nunca bullet points secos; parágrafos explicativos. Toda nova seção adicionada ao GUIDE deve seguir esse mesmo padrão.
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado.
