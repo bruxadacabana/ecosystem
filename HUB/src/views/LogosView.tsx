@@ -23,11 +23,7 @@ const P_COLORS: Record<number, string> = {
   3: 'var(--ink-faint)',
 }
 
-interface LogosViewProps {
-  onOpenChat: () => void
-}
-
-export function LogosView({ onOpenChat }: LogosViewProps) {
+export function LogosView() {
   const [status,       setStatus]       = useState<LogosStatus | null>(null)
   const [profile,      setProfile]      = useState('normal')
   const [,             setModels]       = useState<OllamaModelInfo[]>([])
@@ -972,13 +968,6 @@ export function LogosView({ onOpenChat }: LogosViewProps) {
 
       {/* ── Ações ─────────────────────────────────────── */}
       <section style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={onOpenChat}
-          style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
-        >
-          Abrir chat →
-        </button>
         <button
           className="btn btn-ghost btn-sm"
           disabled={silencing}

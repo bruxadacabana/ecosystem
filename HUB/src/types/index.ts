@@ -290,7 +290,7 @@ export interface InsightQueueItem {
 //  HUB Navigation
 // ----------------------------------------------------------
 
-export type HubView = 'home' | 'writing' | 'reading' | 'projects' | 'questions'
+export type HubView = 'home' | 'writing' | 'reading' | 'projects'
 
 export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'config'
 

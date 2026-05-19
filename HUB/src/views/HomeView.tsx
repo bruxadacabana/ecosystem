@@ -40,14 +40,6 @@ const MODULES: ModuleCard[] = [
     configKey: 'ogma',
     configField: 'data_path',
   },
-  {
-    id: 'questions',
-    label: 'Perguntas',
-    description: 'Chat com modelos do Ollama',
-    seed: 99,
-    configKey: 'ogma',  // não requer config específica — sempre disponível se Ollama rodar
-    configField: '',
-  },
 ]
 
 export function HomeView({ onNavigate, onSetup }: HomeViewProps) {
@@ -60,8 +52,6 @@ export function HomeView({ onNavigate, onSetup }: HomeViewProps) {
   }, [])
 
   function isEnabled(m: ModuleCard): boolean {
-    // Módulo Perguntas está sempre disponível
-    if (m.id === 'questions') return true
     if (!m.configField) return true
     const section = eco[m.configKey] as Record<string, string> | undefined
     return Boolean(section?.[m.configField]?.trim())

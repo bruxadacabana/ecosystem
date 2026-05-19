@@ -2,8 +2,8 @@
    HUB — App Router
    Splash → Layout com Sidebar (seções) + Topbar + Content.
    Seções: Home (dashboard) · LOGOS · Atividade · Configuração.
-   Módulos: WritingView · ReadingView · ProjectsView · QuestionsView
-   (acessíveis via cards do dashboard ou seção LOGOS).
+   Módulos: WritingView · ReadingView · ProjectsView
+   (acessíveis via cards do dashboard).
    ============================================================ */
 
 import { useEffect, useRef, useState } from 'react'
@@ -23,7 +23,6 @@ import { ReadingView } from './views/ReadingView'
 import { ArticleView } from './views/ArticleView'
 import { ProjectsView } from './views/ProjectsView'
 import { PageView } from './views/PageView'
-import { QuestionsView } from './views/QuestionsView'
 import { MonitoramentoView } from './views/MonitoramentoView'
 import { GitView } from './views/GitView'
 import { SyncView } from './views/SyncView'
@@ -319,20 +318,12 @@ export default function App() {
       )
     }
 
-    if (moduleView === 'questions') {
-      return <QuestionsView onBack={handleCloseModule} />
-    }
-
     // Seções principais
     switch (section) {
       case 'home':
         return <DashboardView onOpenModule={handleOpenModule} />
       case 'logos':
-        return (
-          <LogosView
-            onOpenChat={() => handleOpenModule('questions')}
-          />
-        )
+        return <LogosView />
       case 'atividade':
         return <AtividadeView />
       case 'monitoramento':

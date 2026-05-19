@@ -6543,6 +6543,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 - [ ] **7. HUB: aba "Interesses" — visualizar e editar perfil de interesse** — nova aba no HUB exibindo o conteúdo de `interests.json`. Lista os tópicos com: nome, peso (barra ou número), badges de origem (*biblioteca* / *reflexões* / *manual*), ícone de fixar (pin) e botão de excluir. Permite: editar peso manualmente, adicionar tópico manual, fixar (impede sobrescrita automática), excluir (marca `excluded=True` — apps ignoram ao escrever). Botão "Atualizar agora" dispara re-derivação: chama `GET /library/topics` no AKASHA e re-lê `interests.json` da Mnemosyne. Salva via `ecosystem_client.update_interests()` a cada edição.
 
+### HUB — remoção do chat interno | 2026-05-19
+> Contexto: o chat dentro do HUB nunca foi usado na prática. O chat interativo fica na Mnemosyne (notebook). Remover a funcionalidade simplifica o HUB e elimina a razão original para P1 ser "chat do HUB" — P1 passa a ser qualquer conversa interativa (Mnemosyne, AKASHA).
+
+#### HUB
+- [x] **Remover `QuestionsView` e referências** — apagar `src/views/QuestionsView.tsx`; remover import e renderização em `App.tsx`; remover prop `onOpenChat` de `LogosView.tsx`; remover card "Chat" de `HomeView.tsx`; remover `streamChat` de `src/lib/ollama.ts`; remover `'questions'` do tipo `HubView` em `src/types/index.ts`.
+
 ### HUB/LOGOS — bugs de VRAM guard e inject_efficiency_params | 2026-05-19
 > Contexto: dois bugs detectados na revisão do logos.rs: (1) o guard de VRAM nunca dispara no Laptop porque sysfs é AMD-only e o fallback via /api/ps não tem total_mb para calcular a porcentagem; (2) do_embed_proxy não injeta parâmetros de eficiência (num_gpu: 0 no Laptop), podendo usar MX150 durante P1/P2 ativo.
 
