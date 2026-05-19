@@ -123,7 +123,8 @@ async def write_json(list_name: str) -> None:
             if list_name == "sites":
                 rows = await (await db.execute(
                     "SELECT base_url, label, crawl_depth, subdomains_json, created_at, "
-                    "crawl_interval_days FROM crawl_sites ORDER BY created_at"
+                    "crawl_interval_days FROM crawl_sites "
+                    "WHERE deleted = 0 ORDER BY created_at"
                 )).fetchall()
                 items = [
                     {

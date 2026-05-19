@@ -1430,7 +1430,7 @@ async def find_archive_by_doi(doi: str) -> tuple[str, str] | None:
 
 
 async def store_archive_doi(doi: str, arxiv_id: str | None, path: str, url: str) -> None:
-    """Armazena o mapeamento DOI → arquivo arquivado."""
+    """Armazena o mapeamento DOI → arquivo arquivado e aciona backup JSON."""
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
@@ -1438,6 +1438,12 @@ async def store_archive_doi(doi: str, arxiv_id: str | None, path: str, url: str)
                 (doi, arxiv_id, path, url),
             )
             await db.commit()
+    except Exception:
+        return
+    try:
+        import asyncio as _asyncio
+        from services.list_sync import write_json as _write_json
+        _asyncio.create_task(_write_json("papers"))
     except Exception:
         pass
 
