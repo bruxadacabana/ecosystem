@@ -365,6 +365,10 @@ def _incremental_update(
     return level
 
 
+_EMBED_TIMEOUT_S   = 120.0   # timeout por tentativa — detecta rápido
+_EMBED_RETRY_WAITS = (30, 60) # aguarda Ollama terminar o LLM ativo antes de re-tentar
+
+
 def _embed_batch(
     texts: list[str],
     model: str,
@@ -378,30 +382,50 @@ def _embed_batch(
 
     truncate_dim: passado ao Ollama para truncar embeddings via MRL (Matryoshka).
     Ignorado para model2vec. Se o Ollama não suportar, faz fallback silencioso.
+
+    Retries automáticos em caso de timeout: o Ollama pode estar ocupado com
+    uma geração LLM ativa (chat, reflexão). Aguarda e tenta novamente até
+    _EMBED_RETRY_WAITS estar esgotado antes de levantar EmbedTimeoutError.
     """
     if model == _POTION_MODEL_NAME:
         return _embed_batch_model2vec(texts)
 
+    import time
     import httpx
+
     payload: dict = {"model": model, "input": texts}
     if truncate_dim:
         payload["truncate_dim"] = truncate_dim
-    try:
-        resp = httpx.post(f"{base_url}/api/embed", json=payload, timeout=300.0)
-        resp.raise_for_status()
-        return resp.json()["embeddings"]
-    except httpx.TimeoutException as exc:
-        raise EmbedTimeoutError(
-            f"timed out ({len(texts)} chunks, modelo {model})"
-        ) from exc
-    except Exception:
-        if truncate_dim:
-            # Ollama sem suporte a truncate_dim — retry sem o parâmetro
-            payload.pop("truncate_dim", None)
-            resp = httpx.post(f"{base_url}/api/embed", json=payload, timeout=300.0)
+
+    last_exc: Exception | None = None
+    for attempt, wait in enumerate((-1, *_EMBED_RETRY_WAITS)):
+        if wait >= 0:
+            log.debug("_embed_batch: timeout na tentativa %d, aguardando %ds…", attempt, wait)
+            time.sleep(wait)
+        try:
+            resp = httpx.post(
+                f"{base_url}/api/embed", json=payload, timeout=_EMBED_TIMEOUT_S
+            )
             resp.raise_for_status()
             return resp.json()["embeddings"]
-        raise
+        except httpx.TimeoutException as exc:
+            last_exc = exc
+            continue
+        except Exception:
+            if truncate_dim:
+                # Ollama sem suporte a truncate_dim — retry sem o parâmetro
+                payload.pop("truncate_dim", None)
+                resp = httpx.post(
+                    f"{base_url}/api/embed", json=payload, timeout=_EMBED_TIMEOUT_S
+                )
+                resp.raise_for_status()
+                return resp.json()["embeddings"]
+            raise
+
+    raise EmbedTimeoutError(
+        f"timed out após {1 + len(_EMBED_RETRY_WAITS)} tentativas "
+        f"({len(texts)} chunks, modelo {model})"
+    ) from last_exc
 
 
 # Separadores por tipo: refletem a estrutura natural de cada formato.
