@@ -12,6 +12,7 @@ from core.errors import (
     OllamaUnavailableError,
     ModelNotFoundError,
     DocumentLoadError,
+    EmbedTimeoutError,
     IndexBuildError,
     EmptyDirectoryError,
     QueryError,
@@ -88,10 +89,11 @@ class IndexWorker(QThread):
       verificar compatibilidade ao atualizar o pacote chromadb)
     """
 
-    finished           = Signal(bool, str)
-    progress           = Signal(str, int, int)  # label, posição, total
-    languages_unknown  = Signal(list)            # list[str] — arquivos com idioma não reconhecido
-    file_indexed       = Signal(str)             # path do arquivo recém-indexado com sucesso
+    finished              = Signal(bool, str)
+    progress              = Signal(str, int, int)  # label, posição, total
+    languages_unknown     = Signal(list)            # list[str] — arquivos com idioma não reconhecido
+    file_indexed          = Signal(str)             # path do arquivo recém-indexado com sucesso
+    embed_timeout_files   = Signal(list)            # list[str] — arquivos que falharam por timeout
 
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
@@ -173,6 +175,7 @@ class IndexWorker(QThread):
         bm25_idx = BM25Index(self.config.mnemosyne_dir)
         total = len(files)
         errors: list[str] = []
+        timeout_files: list[str] = []
 
         # ── 3. Abrir Chroma vazio ─────────────────────────────────────────────
         try:
@@ -269,6 +272,11 @@ class IndexWorker(QThread):
                                 return
                             try:
                                 embs = future.result()
+                            except EmbedTimeoutError as exc:
+                                log.warning("IndexWorker: timeout ao embedar '%s': %s", name, exc)
+                                timeout_files.append(file_path)
+                                _embed_failed = True
+                                break
                             except Exception as exc:
                                 log.warning("IndexWorker: erro ao embedar '%s': %s", name, exc)
                                 errors.append(f"{name}: {exc}")
@@ -298,6 +306,11 @@ class IndexWorker(QThread):
                                 [c.page_content for c in batch],
                                 self.config.embed_model, _OLLAMA_BASE,
                             )
+                        except EmbedTimeoutError as exc:
+                            log.warning("IndexWorker: timeout ao embedar '%s': %s", name, exc)
+                            timeout_files.append(file_path)
+                            _embed_failed = True
+                            break
                         except Exception as exc:
                             log.warning("IndexWorker: erro ao embedar '%s': %s", name, exc)
                             errors.append(f"{name}: {exc}")
@@ -335,10 +348,16 @@ class IndexWorker(QThread):
         unknown = get_and_clear_unknown_sources()
         if unknown:
             self.languages_unknown.emit(unknown)
+        if timeout_files:
+            self.embed_timeout_files.emit(timeout_files)
         msg = f"Indexação concluída — {total} arquivo(s) processado(s)."
-        if errors:
-            msg += f" {len(errors)} erro(s) ignorado(s)."
-        log.info("IndexWorker concluído — %d arquivo(s), %d erro(s)", total, len(errors))
+        n_errs = len(errors) + len(timeout_files)
+        if n_errs:
+            msg += f" {n_errs} erro(s) ignorado(s)."
+        if timeout_files:
+            msg += f" {len(timeout_files)} arquivo(s) com timeout — aguardando re-tentativa."
+        log.info("IndexWorker concluído — %d arquivo(s), %d erro(s), %d timeout(s)",
+                 total, len(errors), len(timeout_files))
         self.finished.emit(True, msg)
 
 

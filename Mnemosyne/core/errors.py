@@ -44,6 +44,10 @@ class IndexBuildError(MnemosyneError):
     """Falha durante a criação ou atualização do vectorstore."""
 
 
+class EmbedTimeoutError(IndexBuildError):
+    """Timeout ao chamar Ollama /api/embed para um arquivo específico."""
+
+
 class EmptyDirectoryError(IndexBuildError):
     """Diretório não contém documentos suportados."""
 

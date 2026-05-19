@@ -1698,6 +1698,7 @@ class MainWindow(QMainWindow):
         self._index_worker.progress.connect(self._on_index_progress)
         self._index_worker.languages_unknown.connect(self._on_languages_unknown)
         self._index_worker.file_indexed.connect(self._on_file_queued_for_analysis)
+        self._index_worker.embed_timeout_files.connect(self._on_embed_timeout_files)
         self._index_worker.start()
 
     def _on_coll_remove(self) -> None:
@@ -2318,6 +2319,21 @@ class MainWindow(QMainWindow):
         state = "retomado" if watcher.is_enabled else "pausado"
         self._log_event(f"Watcher {state}.")
 
+    def _on_embed_timeout_files(self, paths: list) -> None:
+        """Recebe arquivos que falharam por timeout de embedding e os re-enfileira."""
+        new = [p for p in paths if p not in self._pending_watcher_files]
+        if not new:
+            return
+        for p in new:
+            self._pending_watcher_files.append(p)
+        n = len(self._pending_watcher_files)
+        names = ", ".join(os.path.basename(p) for p in new)
+        self._log_event(f"Timeout de embedding em {len(new)} arquivo(s): {names}. Aguardando re-tentativa.")
+        self._watcher_pending_btn.setText(
+            f"⊕  {n} arquivo(s) aguardando indexação (inclui retry de timeout)"
+        )
+        self._watcher_pending_btn.setVisible(True)
+
     def _on_file_added(self, file_path: str) -> None:
         """Acumula arquivos detectados pelo watcher e exibe botão de confirmação."""
         name = os.path.basename(file_path)
@@ -2466,6 +2482,7 @@ class MainWindow(QMainWindow):
         self._index_worker.progress.connect(self._on_index_progress)
         self._index_worker.languages_unknown.connect(self._on_languages_unknown)
         self._index_worker.file_indexed.connect(self._on_file_queued_for_analysis)
+        self._index_worker.embed_timeout_files.connect(self._on_embed_timeout_files)
         self._index_worker.start()
 
     def start_update_index(self) -> None:

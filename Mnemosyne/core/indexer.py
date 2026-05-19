@@ -20,7 +20,7 @@ from langchain_ollama import OllamaEmbeddings
 
 from .bm25_index import BM25Index
 from .config import AppConfig
-from .errors import EmptyDirectoryError, IndexBuildError, VectorstoreNotFoundError
+from .errors import EmptyDirectoryError, EmbedTimeoutError, IndexBuildError, VectorstoreNotFoundError
 from .loaders import load_documents, load_single_file, is_transcript_file
 from .ollama_client import _BASE_URL as _OLLAMA_BASE
 from .reflection import generate_reflection, maybe_consolidate, MIN_CHUNKS
@@ -387,14 +387,18 @@ def _embed_batch(
     if truncate_dim:
         payload["truncate_dim"] = truncate_dim
     try:
-        resp = httpx.post(f"{base_url}/api/embed", json=payload, timeout=120.0)
+        resp = httpx.post(f"{base_url}/api/embed", json=payload, timeout=300.0)
         resp.raise_for_status()
         return resp.json()["embeddings"]
+    except httpx.TimeoutException as exc:
+        raise EmbedTimeoutError(
+            f"timed out ({len(texts)} chunks, modelo {model})"
+        ) from exc
     except Exception:
         if truncate_dim:
             # Ollama sem suporte a truncate_dim — retry sem o parâmetro
             payload.pop("truncate_dim", None)
-            resp = httpx.post(f"{base_url}/api/embed", json=payload, timeout=120.0)
+            resp = httpx.post(f"{base_url}/api/embed", json=payload, timeout=300.0)
             resp.raise_for_status()
             return resp.json()["embeddings"]
         raise
