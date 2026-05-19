@@ -20,24 +20,39 @@ function parseLogLine(line: string): { ts: string; msg: string } {
 
 function LogStrip({ lines }: { lines: string[] }) {
   const [expanded, setExpanded] = useState(false)
-  const endRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const atBottomRef  = useRef(true)
 
   const visible = expanded ? lines.slice(-20) : lines.slice(-5)
 
+  function handleScroll() {
+    const el = containerRef.current
+    if (!el) return
+    atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 4
+  }
+
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'nearest' })
-  }, [visible])
+    // Quando não expandido não há contêiner com scroll próprio — nunca rolar a página.
+    // Quando expandido, só rolar internamente se o usuário já estava no final.
+    if (!expanded || !atBottomRef.current) return
+    const el = containerRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [visible, expanded])
 
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{
-        background: 'var(--paper)',
-        border: '1px solid var(--rule)',
-        borderRadius: 4,
-        padding: '5px 8px',
-        maxHeight: expanded ? 220 : 'none',
-        overflowY: expanded ? 'auto' : 'visible',
-      }}>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        style={{
+          background: 'var(--paper)',
+          border: '1px solid var(--rule)',
+          borderRadius: 4,
+          padding: '5px 8px',
+          maxHeight: expanded ? 220 : 'none',
+          overflowY: expanded ? 'auto' : 'visible',
+        }}
+      >
         {visible.length === 0
           ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', opacity: 0.5 }}>sem logs</span>
           : visible.map((l, i) => {
@@ -68,7 +83,6 @@ function LogStrip({ lines }: { lines: string[] }) {
               )
             })
         }
-        <div ref={endRef} />
       </div>
       {lines.length > 5 && (
         <button
@@ -96,7 +110,9 @@ function useAkashaLogs(baseUrl: string, active: boolean) {
         const res = await fetch(`${baseUrl}/system/logs?n=10`)
         if (res.ok) {
           const data = await res.json()
-          if (running) setLines(data.lines ?? [])
+          const fresh: string[] = data.lines ?? []
+          // Só atualiza se houver linhas — evita "sem logs" durante rotação do arquivo
+          if (running && fresh.length > 0) setLines(fresh)
         }
       } catch { /* AKASHA offline */ }
       if (running) setTimeout(poll, 3000)
@@ -113,7 +129,8 @@ function useMnemosyneLogs() {
     let running = true
     async function poll() {
       const res = await cmd.readAppLog('mnemosyne', 10)
-      if (running && res.ok) setLines(res.data)
+      // Só atualiza se houver linhas — evita "sem logs" durante rotação do arquivo de log
+      if (running && res.ok && res.data.length > 0) setLines(res.data)
       if (running) setTimeout(poll, 3000)
     }
     poll()
@@ -128,7 +145,7 @@ function useKosmosLogs() {
     let running = true
     async function poll() {
       const res = await cmd.readAppLog('kosmos', 10)
-      if (running && res.ok) setLines(res.data)
+      if (running && res.ok && res.data.length > 0) setLines(res.data)
       if (running) setTimeout(poll, 5000)
     }
     poll()
