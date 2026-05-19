@@ -47,6 +47,15 @@ Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRA
 
 ---
 
+## Bugs detectados durante o trabalho
+
+**Todo bug ou erro detectado deve ser reportado — nunca ignorado silenciosamente.**
+
+- Se puder corrigir imediatamente → corrigir e reportar na mesma resposta.
+- Se não puder corrigir imediatamente → anotar no TODO (seção `#### <App>` dentro do `### Bugs e investigações reportados após uso real`) **e avisar a usuária explicitamente** na mesma resposta.
+
+---
+
 ## Princípio de erros
 
 **Tratamento de erros com tipagem é prioridade absoluta em todo o ecossistema.**

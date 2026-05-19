@@ -14,6 +14,7 @@ const SECTION_TITLES: Record<HubSection, string> = {
   atividade:     'Atividade',
   monitoramento: 'Monitor',
   git:           'Git',
+  sync:          'Sync',
   config:        'Configuração',
 }
 
