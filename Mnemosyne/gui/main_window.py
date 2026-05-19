@@ -651,6 +651,11 @@ class MainWindow(QMainWindow):
         self._analysis_drain_timer.setInterval(30_000)
         self._analysis_drain_timer.timeout.connect(self._drain_analysis_queue)
         self._analysis_drain_timer.start()
+
+        # Timer de atualização periódica de temas (a cada 5 min)
+        self._topics_refresh_timer = QTimer(self)
+        self._topics_refresh_timer.setInterval(300_000)
+        self._topics_refresh_timer.timeout.connect(self._extract_topics_bg)
         self._post_nb_reflection_worker: PersonalReflectionWorker | None = None
         self._periodic_reflection_worker: PeriodicReflectionWorker | None = None
         self._index_reflection_worker: IndexReflectionWorker | None = None
@@ -1562,6 +1567,8 @@ class MainWindow(QMainWindow):
         """Extrai temas do corpus em background e atualiza a TopicsView."""
         if not self.vectorstore or not self.vectorstore.stores:
             return
+        if self._topics_worker and self._topics_worker.isRunning():
+            return
         vs, coll = self.vectorstore.stores[0]
         self._topics_worker = TopicsWorker(vs, coll)
         self._topics_worker.finished.connect(self._on_topics_ready)
@@ -2165,6 +2172,7 @@ class MainWindow(QMainWindow):
         self._insights_timer.start()
         self._poll_insights()
         self._reflection_timer.start()
+        self._topics_refresh_timer.start()
         self._check_reflection_cold_start()
         self._populate_collection_combo()
         self.folder_label.setText(self.config.watched_dir or "Pasta não configurada")
