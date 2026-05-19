@@ -5,6 +5,7 @@
 
 - verifique se já está implementado para que, se o KOSMOS rodar em o Ollama aberto, no momento que o Ollama abrir ele deve varrer as notícias e começar a análise em segundo plano
 - inclua a opção de arquivar sites crawleados no akasha
+- "2026-05-19 08:21:45,101 [WARNING] gui.workers: IndexWorker: erro ao embedar 'Organização estruturada de computadores (Andrew S. Tanenbaum) (Z-Library).pdf': timed out" como podemos evitar e tentar novamente esse tip ode erro?
 - ainda esto tendo problemas com a exibição de logs da mnemosyne no monitor do hub
 - como é lidado pela Akasha e Mnemosyne quando um arquivo é deletado?
 - o chat/conversa diretamente com a Akasha parece não estar funcionando bem
