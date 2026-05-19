@@ -109,6 +109,8 @@ class IndexWorker(QThread):
         from langchain_ollama import OllamaEmbeddings
 
         _SUPPORTED = {".pdf", ".docx", ".txt", ".md", ".epub"}
+        if self.config.image_ocr_model:
+            _SUPPORTED |= {".jpg", ".jpeg", ".png", ".webp"}
         get_and_clear_unknown_sources()  # limpar acumulador de sessão anterior
 
         log.info("IndexWorker iniciado — pasta: %s", self.config.watched_dir)
@@ -363,6 +365,8 @@ class ResumeIndexWorker(QThread):
         import uuid
 
         _SUPPORTED = {".pdf", ".docx", ".txt", ".md", ".epub"}
+        if self.config.image_ocr_model:
+            _SUPPORTED |= {".jpg", ".jpeg", ".png", ".webp"}
         from langchain_chroma import Chroma
         from langchain_ollama import OllamaEmbeddings
         get_and_clear_unknown_sources()  # limpar acumulador de sessão anterior
