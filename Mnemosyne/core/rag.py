@@ -1051,15 +1051,21 @@ def _build_messages(
         pass
     messages: list[BaseMessage] = [SystemMessage(content=system_text)]
 
+    akasha_insights: list[str] = []
     for turn in history[-_HISTORY_TURNS:]:
         if turn.role == "user":
             messages.append(HumanMessage(content=turn.content))
         elif turn.role == "assistant":
             messages.append(AIMessage(content=turn.content))
+        elif turn.role == "akasha_insight":
+            akasha_insights.append(turn.content)
 
     user_content = f"Trechos relevantes:\n{context}"
     if secondary_context:
         user_content += f"\n\nNotas ligadas (contexto adicional):\n{secondary_context}"
+    if akasha_insights:
+        insights_block = "\n".join(f"- {i}" for i in akasha_insights[-3:])
+        user_content += f"\n\nInsights recebidos da AKASHA (contexto de menor peso — pode ser irrelevante para a pergunta atual):\n{insights_block}"
     user_content += f"\n\nPergunta: {question}"
 
     messages.append(HumanMessage(content=user_content))

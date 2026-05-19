@@ -96,6 +96,7 @@ from gui.workers import (
     CompactMemoryWorker,
     GuideWorker,
     IndexFileWorker,
+    IndexReflectionWorker,
     IndexWorker,
     OllamaCheckWorker,
     PersonalReflectionWorker,
@@ -730,9 +731,18 @@ class MainWindow(QMainWindow):
         self._reflection_timer = QTimer(self)
         self._reflection_timer.setInterval(86_400_000)  # 24h
         self._reflection_timer.timeout.connect(self._run_periodic_reflection)
+
+        # Timer que drena a fila de análise pós-indexação (a cada 30s)
+        self._analysis_drain_timer = QTimer(self)
+        self._analysis_drain_timer.setInterval(30_000)
+        self._analysis_drain_timer.timeout.connect(self._drain_analysis_queue)
+        self._analysis_drain_timer.start()
         self._post_nb_reflection_worker: PersonalReflectionWorker | None = None
         self._periodic_reflection_worker: PeriodicReflectionWorker | None = None
+        self._index_reflection_worker: IndexReflectionWorker | None = None
         self._reflection_memory_id: int = 0
+        self._pending_watcher_files: list[str] = []
+        self._analysis_queue: list[str] = []  # arquivos indexados aguardando reflexão
 
         try:
             self.config = load_config()
@@ -983,6 +993,12 @@ class MainWindow(QMainWindow):
         self.resume_btn.setVisible(False)
         self.resume_btn.clicked.connect(self.start_resume_indexing)
         sb.addWidget(self.resume_btn)
+
+        self._watcher_pending_btn = QPushButton()
+        self._watcher_pending_btn.setObjectName("watcherPendingBtn")
+        self._watcher_pending_btn.setVisible(False)
+        self._watcher_pending_btn.clicked.connect(self._index_pending_watcher_files)
+        sb.addWidget(self._watcher_pending_btn)
 
         self.config_btn = QPushButton("⚙  Configurar")
         self.config_btn.setEnabled(False)
@@ -1244,7 +1260,19 @@ class MainWindow(QMainWindow):
         self._reflection_label = QLabel()
         self._reflection_label.setObjectName("reflectionLabel")
         self._reflection_label.setWordWrap(True)
-        _rlay.addWidget(self._reflection_label)
+        self._reflection_label.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
+        _rlabel_scroll = QScrollArea()
+        _rlabel_scroll.setObjectName("reflectionScroll")
+        _rlabel_scroll.setWidget(self._reflection_label)
+        _rlabel_scroll.setWidgetResizable(True)
+        _rlabel_scroll.setMaximumHeight(90)
+        _rlabel_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        _rlabel_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        _rlay.addWidget(_rlabel_scroll)
         _rbrow = QHBoxLayout()
         _rbrow.setSpacing(6)
         self._reflection_confirm_btn = QPushButton("✓")
@@ -1780,6 +1808,7 @@ class MainWindow(QMainWindow):
         self._index_worker.finished.connect(self._on_index_finished)
         self._index_worker.progress.connect(self._on_index_progress)
         self._index_worker.languages_unknown.connect(self._on_languages_unknown)
+        self._index_worker.file_indexed.connect(self._on_file_queued_for_analysis)
         self._index_worker.start()
 
     def _on_coll_remove(self) -> None:
@@ -1922,6 +1951,26 @@ class MainWindow(QMainWindow):
         )
         self._periodic_reflection_worker.start()
 
+    def _on_file_queued_for_analysis(self, file_path: str) -> None:
+        """Recebe arquivo recém-indexado e enfileira para reflexão pessoal."""
+        if file_path not in self._analysis_queue:
+            self._analysis_queue.append(file_path)
+
+    def _drain_analysis_queue(self) -> None:
+        """Drena a fila de análise: inicia IndexReflectionWorker se há arquivos pendentes."""
+        if not self._analysis_queue:
+            return
+        if self._index_reflection_worker and self._index_reflection_worker.isRunning():
+            return
+        batch = list(self._analysis_queue)
+        self._analysis_queue.clear()
+        import logging
+        logging.getLogger("mnemosyne.main").info(
+            "IndexReflectionWorker: processando %d arquivo(s) da fila.", len(batch)
+        )
+        self._index_reflection_worker = IndexReflectionWorker(batch, self.config)
+        self._index_reflection_worker.start()
+
     def _on_reflection_ready(self, memory_id: int, content: str) -> None:
         """Exibe notificação de reflexão pós-notebook com ações inline."""
         self._reflection_memory_id = memory_id
@@ -1986,8 +2035,61 @@ class MainWindow(QMainWindow):
                 remaining = count_unseen()
                 write_pending_count_to_ecosystem(remaining)
                 self._update_insights_badge(remaining)
+
+                self._persist_akasha_insight_to_notebook(summary, topics, _thought or "")
         except Exception:
             pass
+
+    def _persist_akasha_insight_to_notebook(
+        self, summary: str, topics: list[str], thought: str
+    ) -> None:
+        """Salva o insight da AKASHA no notebook com maior overlap temático.
+
+        Compara os tópicos do insight com os themes+keywords de cada notebook.
+        Usa o notebook ativo como fallback quando nenhum tem overlap > 0.
+        Loga o roteamento para rastreabilidade.
+        """
+        import logging
+        log = logging.getLogger("mnemosyne.main")
+
+        if self._notebook_store is None:
+            return
+
+        target_nb_id: str | None = None
+        best_score = 0
+
+        if topics:
+            insight_terms = {t.lower() for t in topics}
+            try:
+                for nb in self._notebook_store.list_all():
+                    nb_terms = set()
+                    nb_terms.update(t.lower() for t in nb.themes)
+                    nb_terms.update(k.lower() for k in nb.keywords)
+                    nb_terms.update(nb.name.lower().split())
+                    score = len(insight_terms & nb_terms)
+                    if score > best_score:
+                        best_score = score
+                        target_nb_id = nb.id
+            except Exception as exc:
+                log.warning("_persist_akasha_insight_to_notebook: falha ao listar notebooks: %s", exc)
+
+        if target_nb_id is None:
+            target_nb_id = self._active_notebook_id
+
+        if target_nb_id is None:
+            log.debug("_persist_akasha_insight_to_notebook: nenhum notebook ativo, insight não persistido.")
+            return
+
+        try:
+            nb_dir = str(self._notebook_store._nb_dir(target_nb_id))
+            from core.memory import MemoryStore as _MS
+            _MS(nb_dir).append_akasha_insight(summary=summary, topics=topics, thought=thought)
+            log.info(
+                "Insight AKASHA persistido em notebook '%s' (score=%d, tópicos=%s).",
+                target_nb_id, best_score, topics,
+            )
+        except Exception as exc:
+            log.warning("_persist_akasha_insight_to_notebook: falha ao salvar: %s", exc)
 
     # ── Configuração ─────────────────────────────────────────────────────────
 
@@ -2258,10 +2360,36 @@ class MainWindow(QMainWindow):
         self._log_event(f"Watcher {state}.")
 
     def _on_file_added(self, file_path: str) -> None:
+        """Acumula arquivos detectados pelo watcher e exibe botão de confirmação."""
         name = os.path.basename(file_path)
-        self.statusBar().showMessage(f"Novo arquivo: {name} — indexando…")
         self._log_event(f"Novo arquivo detectado: {name}")
+        if file_path not in self._pending_watcher_files:
+            self._pending_watcher_files.append(file_path)
+        n = len(self._pending_watcher_files)
+        self._watcher_pending_btn.setText(
+            f"⊕  {n} arquivo(s) novo(s) detectado(s) — indexar?"
+        )
+        self._watcher_pending_btn.setVisible(True)
+        self.statusBar().showMessage(f"{n} arquivo(s) novo(s) aguardando indexação.")
 
+    def _index_pending_watcher_files(self) -> None:
+        """Inicia indexação dos arquivos acumulados pelo watcher."""
+        if not self._pending_watcher_files:
+            self._watcher_pending_btn.setVisible(False)
+            return
+        self._watcher_pending_btn.setVisible(False)
+        # Indexa um a um usando IndexFileWorker encadeado via fila interna
+        self._watcher_queue = list(self._pending_watcher_files)
+        self._pending_watcher_files.clear()
+        self._index_next_watcher_file()
+
+    def _index_next_watcher_file(self) -> None:
+        if not getattr(self, "_watcher_queue", None):
+            return
+        file_path = self._watcher_queue.pop(0)
+        name = os.path.basename(file_path)
+        self.statusBar().showMessage(f"Indexando: {name}…")
+        self._log_event(f"Indexando arquivo detectado: {name}")
         self._file_worker = IndexFileWorker(file_path, self.config)
         self._file_worker.finished.connect(self._on_file_indexed)
         self._file_worker.languages_unknown.connect(self._on_languages_unknown)
@@ -2271,6 +2399,15 @@ class MainWindow(QMainWindow):
         import os
         name = os.path.basename(file_path)
         self._log_event(f"Arquivo removido/renomeado: {name}")
+        if file_path in self._pending_watcher_files:
+            self._pending_watcher_files.remove(file_path)
+            n = len(self._pending_watcher_files)
+            if n == 0:
+                self._watcher_pending_btn.setVisible(False)
+            else:
+                self._watcher_pending_btn.setText(
+                    f"⊕  {n} arquivo(s) novo(s) detectado(s) — indexar?"
+                )
         self.refresh_manage_info()
 
     def _on_file_indexed(self, success: bool, message: str) -> None:
@@ -2282,6 +2419,13 @@ class MainWindow(QMainWindow):
                 self._enable_query_buttons()
             self.refresh_manage_info()
         self.statusBar().showMessage(message)
+        # Continua a fila de arquivos pendentes do watcher
+        if getattr(self, "_watcher_queue", None):
+            self._index_next_watcher_file()
+        else:
+            # Fila esgotada: extrair temas com os novos arquivos
+            if success and self.vectorstore:
+                self._extract_topics_bg()
 
     def _on_languages_unknown(self, files: list) -> None:
         """Notifica na barra de status quando idiomas não reconhecidos são encontrados."""
@@ -2362,6 +2506,7 @@ class MainWindow(QMainWindow):
         self._index_worker.finished.connect(self._on_index_finished)
         self._index_worker.progress.connect(self._on_index_progress)
         self._index_worker.languages_unknown.connect(self._on_languages_unknown)
+        self._index_worker.file_indexed.connect(self._on_file_queued_for_analysis)
         self._index_worker.start()
 
     def start_update_index(self) -> None:
@@ -2488,6 +2633,7 @@ class MainWindow(QMainWindow):
             self._index_worker = IndexWorker(proxy_config)
             self._index_worker.finished.connect(self._on_index_finished)
             self._index_worker.progress.connect(self._on_index_progress)
+            self._index_worker.file_indexed.connect(self._on_file_queued_for_analysis)
             self._index_worker.start()
             return
 
@@ -2924,6 +3070,12 @@ class MainWindow(QMainWindow):
             self._notebook_store.save(nb)
             if self._notebooks_panel:
                 self._notebooks_panel.refresh()
+        except Exception:
+            pass
+
+        # Atualiza metadados temáticos do notebook (keywords, themes, top_sources)
+        try:
+            self._notebook_store.update_meta_from_history(self._active_notebook_id)
         except Exception:
             pass
 
@@ -3772,11 +3924,16 @@ class MainWindow(QMainWindow):
                     sep.setForeground(_Qt.GlobalColor.darkGray)
                     msg_list.addItem(sep)
                 # Item da mensagem
-                icon = "👤" if turn.role == "user" else "🧿"
+                if turn.role == "user":
+                    icon = "👤"
+                elif turn.role == "akasha_insight":
+                    icon = "◉ AKASHA"
+                else:
+                    icon = "🧿 Mnemosyne"
                 preview_text = content.replace("\n", " ")[:80]
                 if len(content) > 80:
                     preview_text += "…"
-                item = QListWidgetItem(f"{icon} {preview_text}")
+                item = QListWidgetItem(f"{icon}  {preview_text}")
                 item.setData(_Qt.ItemDataRole.UserRole, content)
                 item.setData(_Qt.ItemDataRole.UserRole + 1, turn.role)
                 msg_list.addItem(item)
@@ -3809,9 +3966,13 @@ class MainWindow(QMainWindow):
                 self._raw_answer = content
                 self._save_note_btn.setEnabled(True)
                 self._save_studio_btn.setEnabled(True)
+                dlg.accept()
+            elif content and role == "akasha_insight":
+                self.question_edit.setText(content)
+                dlg.accept()
             elif content:
                 self.question_edit.setText(content)
-            dlg.accept()
+                dlg.accept()
 
         search_edit.textChanged.connect(_on_filter)
         msg_list.currentItemChanged.connect(lambda *_: _on_selection())

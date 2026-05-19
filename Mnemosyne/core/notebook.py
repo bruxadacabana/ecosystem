@@ -49,6 +49,17 @@ class Notebook:
     updated_at: str
     collection_names: list[str]
     description: str = ""
+    themes: list[str] = None       # type: ignore[assignment]
+    keywords: list[str] = None     # type: ignore[assignment]
+    top_sources: list[str] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.themes is None:
+            self.themes = []
+        if self.keywords is None:
+            self.keywords = []
+        if self.top_sources is None:
+            self.top_sources = []
 
     # ------------------------------------------------------------------
     # Serialização
@@ -62,6 +73,9 @@ class Notebook:
             "updated_at": self.updated_at,
             "collection_names": self.collection_names,
             "description": self.description,
+            "themes": self.themes,
+            "keywords": self.keywords,
+            "top_sources": self.top_sources,
         }
 
     @classmethod
@@ -73,6 +87,9 @@ class Notebook:
             updated_at=str(data.get("updated_at", "")),
             collection_names=list(data.get("collection_names", [])),
             description=str(data.get("description", "")),
+            themes=list(data.get("themes", [])),
+            keywords=list(data.get("keywords", [])),
+            top_sources=list(data.get("top_sources", [])),
         )
 
     @classmethod

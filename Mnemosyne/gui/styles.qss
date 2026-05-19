@@ -837,6 +837,16 @@ QStatusBar {
     font-size: 10px;
 }
 
+QPushButton#watcherPendingBtn {
+    background:    #1E2D1E;
+    color:         #6EBF6E;
+    border:        1px solid #4A8A4A;
+    border-radius: 4px;
+    padding:       2px 8px;
+    font-size:     10px;
+}
+QPushButton#watcherPendingBtn:hover { background: #263B26; }
+
 /* ----------------------------------------------------------
    MENU
 ---------------------------------------------------------- */
@@ -975,6 +985,14 @@ QWidget#reflectionNotif {
     border:        1px solid #2E3444;
     border-radius: 6px;
     margin-top:    4px;
+}
+
+QScrollArea#reflectionScroll {
+    background: transparent;
+    border:     none;
+}
+QScrollArea#reflectionScroll > QWidget > QWidget {
+    background: transparent;
 }
 
 QLabel#reflectionLabel {

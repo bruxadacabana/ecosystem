@@ -134,6 +134,88 @@ class NotebookStore:
                 f"Não foi possível apagar notebook '{notebook_id}': {exc}"
             ) from exc
 
+    def update_meta_from_history(self, notebook_id: str) -> None:
+        """Extrai e persiste themes, keywords e top_sources a partir do histórico.
+
+        Lê history.jsonl do notebook, roda TF-IDF sobre o texto das mensagens
+        e acumula fontes citadas pelos turnos do assistente. Silencioso em caso
+        de erro para não interromper o fluxo de salvamento do notebook.
+        """
+        import logging
+        log = logging.getLogger("mnemosyne.notebook_store")
+        try:
+            nb = self.load(notebook_id)
+        except Exception:
+            return
+
+        history_path = self.history_path(notebook_id)
+        if not history_path.exists():
+            return
+
+        import json as _json
+        texts: list[str] = []
+        sources_counter: dict[str, int] = {}
+
+        try:
+            with history_path.open(encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        turn = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+                    role = turn.get("role", "")
+                    content = turn.get("content", "")
+                    if role in ("user", "assistant") and content:
+                        texts.append(content)
+                    if role == "assistant":
+                        for src in turn.get("sources", []):
+                            if src:
+                                sources_counter[src] = sources_counter.get(src, 0) + 1
+        except OSError as exc:
+            log.warning("update_meta_from_history: erro ao ler histórico: %s", exc)
+            return
+
+        if not texts:
+            return
+
+        # Extração de keywords via TF-IDF
+        keywords: list[str] = []
+        try:
+            import numpy as np
+            from sklearn.feature_extraction.text import TfidfVectorizer
+
+            vectorizer = TfidfVectorizer(max_features=200, min_df=1, sublinear_tf=True)
+            matrix = vectorizer.fit_transform(texts)
+            scores = np.asarray(matrix.sum(axis=0)).flatten()
+            terms = vectorizer.get_feature_names_out()
+            top_idx = np.argsort(scores)[::-1][:20]
+            keywords = [terms[i] for i in top_idx if scores[i] > 0]
+        except Exception as exc:
+            log.debug("update_meta_from_history: TF-IDF falhou: %s", exc)
+
+        # Temas = nome do notebook + keywords de alta frequência (primeiros 5)
+        themes = [nb.name.lower()] + keywords[:5]
+
+        # Top sources ordenadas por frequência de citação
+        top_sources = [
+            src for src, _ in sorted(sources_counter.items(), key=lambda x: -x[1])
+        ][:10]
+
+        nb.themes = themes
+        nb.keywords = keywords
+        nb.top_sources = top_sources
+        try:
+            self._write_meta(nb)
+            log.debug(
+                "update_meta_from_history: notebook '%s' — %d keywords, %d fontes.",
+                notebook_id, len(keywords), len(top_sources),
+            )
+        except Exception as exc:
+            log.warning("update_meta_from_history: falha ao salvar metadados: %s", exc)
+
     # ------------------------------------------------------------------
     # Interno
     # ------------------------------------------------------------------

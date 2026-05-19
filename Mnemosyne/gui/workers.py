@@ -91,6 +91,7 @@ class IndexWorker(QThread):
     finished           = Signal(bool, str)
     progress           = Signal(str, int, int)  # label, posição, total
     languages_unknown  = Signal(list)            # list[str] — arquivos com idioma não reconhecido
+    file_indexed       = Signal(str)             # path do arquivo recém-indexado com sucesso
 
     def __init__(self, config: AppConfig) -> None:
         super().__init__()
@@ -323,6 +324,7 @@ class IndexWorker(QThread):
             # Salvar progresso no tracker e no checkpoint após cada arquivo
             tracker.mark_indexed(file_path)
             checkpoint.record(file_path, "ok")
+            self.file_indexed.emit(file_path)
 
         bm25_idx.save()
         checkpoint.delete()
@@ -1470,3 +1472,160 @@ class PeriodicReflectionWorker(QThread):
             pass
 
         self.finished.emit()
+
+
+class IndexReflectionWorker(QThread):
+    """Gera memória pessoal da Mnemosyne sobre cada arquivo indexado.
+
+    Espelha o padrão de AKASHA._event_reflection: para cada arquivo, extrai
+    keywords/tópicos, compara com memórias existentes e salva em personal_memory
+    como type='connection' (≥2 tópicos em comum) ou type='surprise'.
+
+    Roda em IdlePriority e processa a fila de arquivos sem bloquear a indexação —
+    o IndexWorker emite file_indexed por arquivo, a main_window acumula na fila
+    e dispara este worker periodicamente.
+    """
+
+    finished = Signal()
+
+    def __init__(self, file_paths: list[str], config: AppConfig) -> None:
+        super().__init__()
+        self._file_paths = list(file_paths)
+        self._config = config
+
+    def start(self, priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
+        super().start(priority)
+
+    def run(self) -> None:
+        from core.personal_memory import save_memory, get_context_memories
+        from langchain_chroma import Chroma
+
+        if not self._config.llm_model or not self._file_paths:
+            self.finished.emit()
+            return
+
+        personality = (
+            getattr(self._config, "persona_prompt", "")
+            or getattr(self._config, "ecosystem_personality_prompt", "")
+        )
+
+        # Carregar memórias existentes para detectar conexões
+        known_terms: set[str] = set()
+        try:
+            existing = get_context_memories(20)
+            for mem in existing:
+                known_terms.update(mem.get("content", "").lower().split())
+        except Exception:
+            pass
+
+        try:
+            from langchain_ollama import OllamaEmbeddings
+            embeddings = OllamaEmbeddings(model=self._config.embed_model)
+            vs = Chroma(
+                persist_directory=self._config.persist_dir,
+                embedding_function=embeddings,
+            )
+        except Exception as exc:
+            log.warning("IndexReflectionWorker: falha ao abrir vectorstore: %s", exc)
+            self.finished.emit()
+            return
+
+        for file_path in self._file_paths:
+            if self.isInterruptionRequested():
+                break
+            self._process_file(file_path, vs, personality, known_terms)
+
+        self.finished.emit()
+
+    def _process_file(
+        self,
+        file_path: str,
+        vs: object,
+        personality: str,
+        known_terms: set[str],
+    ) -> None:
+        import os
+        from core.personal_memory import save_memory
+
+        name = os.path.basename(file_path)
+        log.debug("IndexReflectionWorker: processando '%s'", name)
+
+        try:
+            raw_data = vs._collection.get(
+                where={"source": file_path},
+                include=["documents", "metadatas"],
+                limit=10,
+            )
+        except Exception as exc:
+            log.debug("IndexReflectionWorker: falha ao buscar chunks de '%s': %s", name, exc)
+            return
+
+        docs: list[str] = raw_data.get("documents") or []
+        metas: list[dict] = raw_data.get("metadatas") or []
+        if not docs:
+            return
+
+        # Extrair keywords dos metadados ou via TF-IDF simples
+        keywords: list[str] = []
+        for meta in metas:
+            if isinstance(meta, dict) and meta.get("keywords"):
+                raw_kw = meta["keywords"]
+                if isinstance(raw_kw, list):
+                    keywords.extend(raw_kw)
+                elif isinstance(raw_kw, str):
+                    keywords.extend(raw_kw.split(","))
+
+        if not keywords and docs:
+            try:
+                import numpy as np
+                from sklearn.feature_extraction.text import TfidfVectorizer
+                vec = TfidfVectorizer(max_features=50, min_df=1, sublinear_tf=True)
+                mat = vec.fit_transform(docs)
+                scores = np.asarray(mat.sum(axis=0)).flatten()
+                terms = vec.get_feature_names_out()
+                top_idx = np.argsort(scores)[::-1][:8]
+                keywords = [terms[i] for i in top_idx if scores[i] > 0]
+            except Exception:
+                pass
+
+        keywords = [k.strip().lower() for k in keywords if k.strip()]
+
+        # Detectar sobreposição com memórias conhecidas
+        overlap = [k for k in keywords if k in known_terms]
+        mem_type = "connection" if len(overlap) >= 2 else "surprise"
+
+        # Fragmento representativo para o prompt
+        snippet = docs[0][:400] if docs else ""
+
+        prompt = (
+            f"{personality}\n\n"
+            f"Você acabou de indexar um novo texto no seu acervo.\n"
+            f"Título/arquivo: {name}\n"
+            f"Trecho: {snippet}\n"
+            f"Palavras-chave: {', '.join(keywords[:8]) if keywords else '(não extraídas)'}\n\n"
+            f"O que você pensa sobre esse texto, em uma frase, na sua voz? "
+            f"Sem introduções, sem 'Eu acho'. Uma observação genuína."
+        )
+
+        try:
+            llm = OllamaLLM(model=self._config.llm_model, temperature=0.7)
+            reflection = str(llm.invoke(prompt)).strip()
+        except Exception as exc:
+            log.debug("IndexReflectionWorker: LLM falhou para '%s': %s", name, exc)
+            return
+
+        if not reflection or len(reflection) < 15 or reflection.lower() in {"nada.", "nada", "—", "-"}:
+            return
+
+        tag_name = name[:40]
+        try:
+            save_memory(type=mem_type, content=reflection, tags=["leitura", tag_name])
+            log.info(
+                "IndexReflectionWorker: %s sobre '%s' — type=%s, overlap=%s",
+                "conexão" if mem_type == "connection" else "surpresa",
+                name, mem_type, overlap,
+            )
+            # Atualiza termos conhecidos para as próximas iterações da mesma sessão
+            known_terms.update(reflection.lower().split())
+        except Exception as exc:
+            log.warning("IndexReflectionWorker: falha ao salvar memória: %s", exc)

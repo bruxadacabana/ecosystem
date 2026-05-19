@@ -182,6 +182,22 @@ class MemoryStore:
         with self._history_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(turn.to_dict(), ensure_ascii=False) + "\n")
 
+    def append_akasha_insight(self, summary: str, topics: list[str], thought: str = "") -> None:
+        """Persiste um insight recebido do AKASHA no histórico do notebook.
+
+        Usa role='akasha_insight' — distinguido visualmente na UI e incluído
+        como bloco de contexto leve (menor peso) no prompt de rag.build_messages.
+        """
+        parts = []
+        if topics:
+            parts.append(f"Tópicos: {', '.join(topics[:5])}")
+        if summary:
+            parts.append(summary)
+        if thought:
+            parts.append(f"[AKASHA]: {thought}")
+        content = " | ".join(parts) if parts else summary
+        self.append_turn(Turn(role="akasha_insight", content=content))
+
     def load_history(self) -> list[Turn]:
         """Carrega todos os turnos do histórico."""
         if not self._history_path.exists():
