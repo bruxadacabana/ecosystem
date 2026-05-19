@@ -1939,21 +1939,39 @@ class MainWindow(QMainWindow):
             if insight is None:
                 self._update_insights_badge(0)
                 return
-            mark_seen(insight["id"])
-            remaining = count_unseen()
-            write_pending_count_to_ecosystem(remaining)
-            self._update_insights_badge(remaining)
 
-            # Muda para a aba Análise > pill ⬡ AKASHA e inicia diálogo
-            self._switch_page(1)   # aba Análise
-            self._switch_analysis(2)  # pill ⬡ AKASHA
-            if hasattr(self, "_dialogue_panel") and insight.get("topics"):
-                question = f"Encontrei algo relevante sobre: {', '.join(insight['topics'][:3])}. {insight.get('summary', '')}"
-                _thought = insight.get("akasha_thought")
+            topics = insight.get("topics") or []
+            summary = insight.get("summary", "")
+            if topics:
+                question = f"Encontrei algo relevante sobre: {', '.join(topics[:3])}. {summary}"
+            else:
+                question = summary or "AKASHA enviou um novo insight."
+            question = question.strip()
+            _thought = insight.get("akasha_thought")
+
+            displayed = False
+            if hasattr(self, "_dialogue_panel") and self.vectorstore is not None:
+                self._switch_page(1)
+                self._switch_analysis(2)
                 if _thought:
-                    self._dialogue_panel.start_with_thought(question.strip(), _thought)
+                    self._dialogue_panel.start_with_thought(question, _thought)
                 else:
-                    self._dialogue_panel.start_with_question(question.strip())
+                    self._dialogue_panel.start_with_question(question)
+                displayed = True
+
+            if not displayed:
+                from PySide6.QtWidgets import QMessageBox
+                body = question
+                if _thought:
+                    body += f"\n\nPensamento da AKASHA: {_thought}"
+                QMessageBox.information(self, "Insight do AKASHA", body)
+                displayed = True
+
+            if displayed:
+                mark_seen(insight["id"])
+                remaining = count_unseen()
+                write_pending_count_to_ecosystem(remaining)
+                self._update_insights_badge(remaining)
         except Exception:
             pass
 
