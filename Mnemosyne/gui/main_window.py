@@ -1,6 +1,7 @@
 # Janela principal do Mnemosyne
 from __future__ import annotations
 
+import gc
 import os
 import sys
 from pathlib import Path
@@ -2588,6 +2589,11 @@ class MainWindow(QMainWindow):
             proxy_config = _make_config_for_collection(self.config, next_coll)
             self.statusBar().showMessage(f"Indexando {next_coll.name}…")
             self._log_event(f"Avançando para coleção: {next_coll.name}")
+            # Libera conexões SQLite do vectorstore antes de o IndexWorker renomear
+            # .mnemosyne → .mnemosyne.bak. Sem isso, o SQLite detecta o arquivo
+            # movido e retorna SQLITE_READONLY_DBMOVED (código 1032).
+            self.vectorstore = MultiVectorstore([])
+            gc.collect()
             self._index_worker = IndexWorker(proxy_config)
             self._index_worker.finished.connect(self._on_index_finished)
             self._index_worker.progress.connect(self._on_index_progress)
