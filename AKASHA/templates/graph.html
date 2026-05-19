@@ -261,6 +261,7 @@
     <div id="graph-toolbar">
       <button class="gtb-btn active" id="tb-show-dismissed" title="Alternar visibilidade de conexões descartadas">mostrar descartadas</button>
       <button class="gtb-btn" id="tb-reset-zoom">⊕ centralizar</button>
+      <button class="gtb-btn" id="tb-refresh" title="Recarregar dados do grafo">↻ atualizar</button>
     </div>
 
     <svg id="graph-svg">
@@ -313,6 +314,7 @@
   let showDismissed = true
   let _ctxEdge = null   // aresta em edição via context menu
   let _selectedNode = null
+  let _retryTimer = null
 
   // ── Paleta ──────────────────────────────────────────────────
   const cs = getComputedStyle(document.documentElement)
@@ -354,6 +356,8 @@
     svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity)
   })
 
+  document.getElementById('tb-refresh').addEventListener('click', loadGraph)
+
   // ── Toggle mostrar descartadas ───────────────────────────────
   document.getElementById('tb-show-dismissed').addEventListener('click', function() {
     showDismissed = !showDismissed
@@ -375,20 +379,30 @@
   }
 
   // ── Carregar e renderizar ────────────────────────────────────
-  fetch('/graph/data')
-    .then(r => r.json())
-    .then(data => {
-      loading.style.display = 'none'
-      if (!data.nodes || data.nodes.length === 0) {
-        loading.style.display = 'flex'
-        loading.textContent = 'Nenhuma conexão ainda — aguarde o processamento de páginas.'
-        return
-      }
-      renderGraph(data)
-    })
-    .catch(() => {
-      loading.textContent = 'Erro ao carregar grafo.'
-    })
+  function loadGraph() {
+    if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null }
+    loading.style.display = 'flex'
+    loading.textContent = 'carregando grafo…'
+    root.selectAll('*').remove()
+    fetch('/graph/data')
+      .then(r => r.json())
+      .then(data => {
+        loading.style.display = 'none'
+        if (!data.nodes || data.nodes.length === 0) {
+          loading.style.display = 'flex'
+          loading.textContent = 'Nenhuma conexão ainda — aguarde o processamento de páginas.'
+          // Retenta automaticamente a cada 30s enquanto não houver dados
+          _retryTimer = setTimeout(loadGraph, 30_000)
+          return
+        }
+        renderGraph(data)
+      })
+      .catch(() => {
+        loading.textContent = 'Erro ao carregar grafo.'
+      })
+  }
+
+  loadGraph()
 
   function renderGraph({ nodes, edges }) {
     const W = document.getElementById('graph-canvas').clientWidth

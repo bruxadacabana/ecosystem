@@ -62,6 +62,7 @@ class _KnowledgeTask:
 _queue: asyncio.Queue[_KnowledgeTask] = asyncio.Queue(maxsize=_QUEUE_MAX)
 _worker_started:   bool = False
 _total_processed:  int  = 0   # conta páginas processadas com sucesso nesta sessão
+_backfill_running: bool = False  # True enquanto backfill inicial estiver em andamento
 
 # Cooldown de notificação de insights (evita spam)
 import time as _time
@@ -239,6 +240,7 @@ def get_status() -> dict:
         "knowledge_extraction": _queue.qsize(),
         "worker_active":        _worker_started,
         "processed_session":    _total_processed,
+        "backfill_running":     _backfill_running,
     }
 
 
@@ -783,10 +785,12 @@ async def backfill_knowledge(archive_path: "Path") -> None:
     tempo ao worker e ao DB inicializarem. Ritmo controlado: pausa quando a fila
     fica com > 50 itens para não bloquear processamento de novas páginas.
     """
+    global _backfill_running
     from pathlib import Path as _Path
     import database as _db
 
     await asyncio.sleep(15)   # aguarda worker + DB prontos
+    _backfill_running = True
 
     async def _wait_queue_drain(threshold: int = 50) -> None:
         while _queue.qsize() > threshold:
@@ -837,3 +841,4 @@ async def backfill_knowledge(archive_path: "Path") -> None:
         log.info("backfill: %d página(s) enfileiradas para extração de conhecimento.", total_enqueued)
     else:
         log.info("backfill: nenhuma página nova para processar.")
+    _backfill_running = False

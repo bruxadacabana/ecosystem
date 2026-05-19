@@ -160,6 +160,7 @@ interface AkashaBg {
   knowledge_extraction: number
   worker_active:        boolean
   processed_session?:  number
+  backfill_running?:   boolean
 }
 
 interface MnemosyneBg {
@@ -257,6 +258,7 @@ function MemoryViewer({ app }: { app: 'akasha' | 'mnemosyne' }) {
           {!loading && !err && entries.length === 0 && (
             <p style={sMemory.empty}>nenhuma entrada de memória ainda.</p>
           )}
+          <div style={{ maxHeight: 320, overflowY: 'auto', paddingRight: 2 }}>
           {entries.map(e => (
             <div key={e.id} style={sMemory.row}>
               <div style={sMemory.rowTop}>
@@ -298,6 +300,7 @@ function MemoryViewer({ app }: { app: 'akasha' | 'mnemosyne' }) {
               )}
             </div>
           ))}
+          </div>
           {!loading && entries.length > 0 && (
             <button
               onClick={load}
@@ -752,7 +755,11 @@ export function MonitoramentoView() {
         <StatusRow
           label="fila de extração"
           value={akashaBg
-            ? akashaBg.knowledge_extraction > 0 ? `${akashaBg.knowledge_extraction} na fila` : 'fila vazia'
+            ? akashaBg.knowledge_extraction > 0
+              ? akashaBg.backfill_running
+                ? `${akashaBg.knowledge_extraction} em fila · backfill ativo`
+                : `${akashaBg.knowledge_extraction} na fila`
+              : 'fila vazia'
             : '—'}
           dim={!akashaBg || akashaBg.knowledge_extraction === 0}
         />
