@@ -658,6 +658,8 @@ class MainWindow(QMainWindow):
         self._insight_scheduler = InsightScheduler(self)
         self._insight_scheduler.insight_ready.connect(self._show_insight_popup)
         self._active_insight_popup: InsightPopup | None = None
+        self._last_akasha_insight_count: int = 0
+        self._shown_akasha_popup_ids: set[int] = set()
 
         try:
             self.config = load_config()
@@ -1785,13 +1787,34 @@ class MainWindow(QMainWindow):
     # ── Insights do AKASHA ───────────────────────────────────────────────────
 
     def _poll_insights(self) -> None:
-        """Lê insights pendentes do ecosystem.json e atualiza o badge."""
+        """Lê insights pendentes do ecosystem.json e atualiza o badge.
+
+        Quando chegam insights novos do AKASHA, exibe pop-up além do badge.
+        """
         try:
-            from core.insights import poll_and_store, write_pending_count_to_ecosystem, check_reset_command
+            from core.insights import (
+                poll_and_store, write_pending_count_to_ecosystem,
+                check_reset_command, get_latest_unseen,
+            )
             check_reset_command()
             count = poll_and_store()
             write_pending_count_to_ecosystem(count)
             self._update_insights_badge(count)
+
+            # Popup para insight novo do AKASHA
+            if count > 0 and count >= self._last_akasha_insight_count:
+                latest = get_latest_unseen()
+                if latest:
+                    mid = latest.get("id", 0)
+                    if mid not in self._shown_akasha_popup_ids:
+                        self._shown_akasha_popup_ids.add(mid)
+                        # Usa akasha_thought se disponível, senão summary
+                        text = latest.get("akasha_thought") or latest.get("summary", "")
+                        if text:
+                            # ID negativo = insight do AKASHA (distingue de personal_memory)
+                            self._show_insight_popup(text, -mid)
+
+            self._last_akasha_insight_count = count
         except Exception:
             pass
 
@@ -1903,12 +1926,23 @@ class MainWindow(QMainWindow):
             self._active_insight_popup = None
 
     def _on_insight_confirmed(self, memory_id: int) -> None:
-        from core.personal_memory import set_feedback
-        set_feedback(memory_id, "confirmed")
+        if memory_id < 0:
+            # Insight do AKASHA — marca como visto em insights.db
+            from core.insights import mark_seen
+            mark_seen(-memory_id)
+            self._update_insights_badge(0)
+        else:
+            from core.personal_memory import set_feedback
+            set_feedback(memory_id, "confirmed")
 
     def _on_insight_dismissed(self, memory_id: int) -> None:
-        from core.personal_memory import set_feedback
-        set_feedback(memory_id, "dismissed")
+        if memory_id < 0:
+            from core.insights import mark_seen
+            mark_seen(-memory_id)
+            self._update_insights_badge(0)
+        else:
+            from core.personal_memory import set_feedback
+            set_feedback(memory_id, "dismissed")
 
     def _on_insight_replied(self, text: str) -> None:
         """Pré-preenche o composer do notebook ativo com o insight."""

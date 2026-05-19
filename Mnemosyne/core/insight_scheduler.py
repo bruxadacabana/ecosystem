@@ -26,10 +26,12 @@ MIN_CONTENT_LEN: int = 20          # descarta memórias muito curtas
 class InsightScheduler(QObject):
     """Avalia se um insight deve ser exibido e emite o sinal quando sim.
 
+    Usa a coluna `shown_as_popup` da personal_memory para rastrear
+    entradas já exibidas — persiste entre sessões (não in-memory).
+
     Uso:
         scheduler = InsightScheduler(parent=self)
         scheduler.insight_ready.connect(self._show_insight_popup)
-        # conectar ao finished do IndexReflectionWorker:
         worker.finished.connect(scheduler.maybe_show)
     """
 
@@ -38,7 +40,6 @@ class InsightScheduler(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._last_shown: float = 0.0
-        self._shown_ids: set[int] = set()
 
     def maybe_show(self) -> None:
         """Verifica se deve mostrar um insight e emite insight_ready se sim.
@@ -56,17 +57,14 @@ class InsightScheduler(QObject):
             return
 
         try:
-            from core.personal_memory import get_recent
-            entries = get_recent(5)
+            from core.personal_memory import get_unshown_popup_entries
+            entries = get_unshown_popup_entries(5)
         except Exception as exc:
             log.debug("InsightScheduler: erro ao ler memórias: %s", exc)
             return
 
         candidate: dict | None = None
         for entry in entries:
-            mid = int(entry.get("id") or 0)
-            if mid in self._shown_ids:
-                continue
             content = entry.get("content", "")
             if len(content) >= MIN_CONTENT_LEN:
                 candidate = entry
@@ -78,7 +76,11 @@ class InsightScheduler(QObject):
 
         mid = int(candidate["id"])
         self._last_shown = now
-        self._shown_ids.add(mid)
+        try:
+            from core.personal_memory import mark_shown_as_popup
+            mark_shown_as_popup(mid)
+        except Exception as exc:
+            log.debug("InsightScheduler: erro ao marcar shown: %s", exc)
         log.info("InsightScheduler: emitindo insight id=%d", mid)
         self.insight_ready.emit(candidate["content"], mid)
 

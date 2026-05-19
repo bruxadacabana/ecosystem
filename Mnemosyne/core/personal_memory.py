@@ -61,18 +61,21 @@ def _conn() -> sqlite3.Connection:
     con = sqlite3.connect(db)
     con.execute("""
         CREATE TABLE IF NOT EXISTS personal_memory (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT    NOT NULL DEFAULT (datetime('now')),
-            type       TEXT    NOT NULL,
-            content    TEXT    NOT NULL,
-            tags       TEXT    NOT NULL DEFAULT '[]',
-            feedback   TEXT             DEFAULT NULL
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+            type           TEXT    NOT NULL,
+            content        TEXT    NOT NULL,
+            tags           TEXT    NOT NULL DEFAULT '[]',
+            feedback       TEXT             DEFAULT NULL,
+            shown_as_popup INTEGER NOT NULL DEFAULT 0
         )
     """)
-    # Migration: adiciona coluna feedback em DBs criados antes da v2
+    # Migrations para DBs anteriores
     cols = {row[1] for row in con.execute("PRAGMA table_info(personal_memory)").fetchall()}
     if "feedback" not in cols:
         con.execute("ALTER TABLE personal_memory ADD COLUMN feedback TEXT DEFAULT NULL")
+    if "shown_as_popup" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN shown_as_popup INTEGER NOT NULL DEFAULT 0")
     con.commit()
     return con
 
@@ -166,6 +169,35 @@ def get_context_memories(n: int = 8) -> list[dict]:
         }
         for r in rows
     ]
+
+
+def get_unshown_popup_entries(n: int = 5) -> list[dict]:
+    """Retorna entradas ainda não exibidas como popup, mais recentes primeiro."""
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT id, created_at, type, content, tags, feedback "
+            "FROM personal_memory "
+            "WHERE shown_as_popup = 0 "
+            "ORDER BY id DESC LIMIT ?",
+            (n,),
+        ).fetchall()
+    return [
+        {
+            "id": r[0], "created_at": r[1], "type": r[2],
+            "content": r[3], "tags": json.loads(r[4] or "[]"),
+            "feedback": r[5],
+        }
+        for r in rows
+    ]
+
+
+def mark_shown_as_popup(memory_id: int) -> None:
+    """Marca uma entrada como já exibida como popup — persiste entre sessões."""
+    with _conn() as con:
+        con.execute(
+            "UPDATE personal_memory SET shown_as_popup = 1 WHERE id = ?",
+            (memory_id,),
+        )
 
 
 def clear_all() -> None:

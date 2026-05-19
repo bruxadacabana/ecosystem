@@ -407,7 +407,7 @@ pub fn git_init_sync_root() -> Result<(), AppError> {
 fn app_git_paths(app: &str) -> &'static [&'static str] {
     match app {
         "akasha"    => &["akasha/", ".ai_private/akasha/"],
-        "mnemosyne" => &["mnemosyne/", ".ai_private/mnemosyne/"],
+        "mnemosyne" => &["mnemosyne/", "mnemosyne.bak/", ".ai_private/mnemosyne/"],
         "kosmos"    => &["kosmos/", ".backup/kosmos/"],
         "hermes"    => &["hermes/", ".backup/hermes/"],
         _           => &[],
