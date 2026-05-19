@@ -85,6 +85,7 @@ class MainWindow(QMainWindow):
         self._ollama_poll_timer.timeout.connect(self._poll_ollama_status)
         self._ollama_poll_timer.start()
         self._ollama_poller: _OllamaPoller | None = None
+        self._ollama_was_available: bool = False
         # Verificação inicial (roda assim que o event loop começa)
         QTimer.singleShot(500, self._poll_ollama_status)
 
@@ -507,6 +508,10 @@ class MainWindow(QMainWindow):
             badge.setObjectName("ollamaOffline")
         badge.style().unpolish(badge)
         badge.style().polish(badge)
+
+        if available and not self._ollama_was_available:
+            self._on_retry_unanalyzed()
+        self._ollama_was_available = available
 
     def _write_bg_status(self) -> None:
         """Publica estado do bg_analyzer no ecosystem.json para o HUB."""
