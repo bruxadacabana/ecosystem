@@ -91,6 +91,16 @@ impl HardwareProfile {
         }
     }
 
+    /// VRAM total em MB da GPU discreta, conforme especificação de hardware.
+    /// Usado como fallback em plataformas onde sysfs AMD não está disponível (NVIDIA/Windows).
+    pub fn vram_total_mb(self) -> Option<u64> {
+        match self {
+            HardwareProfile::MainPc => Some(8_192),  // RX 6600 8 GB
+            HardwareProfile::Laptop => Some(2_048),  // MX150 2 GB
+            HardwareProfile::WorkPc => None,         // sem GPU discreta
+        }
+    }
+
     pub fn model_profile(self) -> ModelProfile {
         match self {
             HardwareProfile::MainPc => ModelProfile {
@@ -651,7 +661,7 @@ async fn queue_and_forward(
         }
         // Normal: rejeita P3 se VRAM saturada
         let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
-        if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url).await {
+        if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url, s.0.hardware_profile).await {
             if pct > vram_block {
                 let pct_cfg = (vram_block * 100.0) as u32;
                 return (
@@ -853,7 +863,7 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
     }
 
     let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
-    if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url).await {
+    if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url, s.0.hardware_profile).await {
         if pct > vram_block {
             let pct_cfg = (vram_block * 100.0) as u32;
             return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
@@ -890,11 +900,20 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
     *s.0.active_priority.lock().await = Some(3);
     *s.0.active_app.lock().await = Some(app_name);
 
+    // Injeta parâmetros de eficiência P3 — inclui num_gpu: 0 no Laptop
+    // para evitar que embedding use MX150 enquanto P1/P2 ocupa a GPU.
+    let embed_body: Vec<u8> =
+        if let Ok(mut m) = serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&body) {
+            inject_efficiency_params(&mut m, 3, s.0.hardware_profile, is_survival, on_battery);
+            serde_json::to_vec(&m).unwrap_or_else(|_| body.to_vec())
+        } else {
+            body.to_vec()
+        };
     let url = format!("{}/{target}", s.0.ollama_url);
     let result = s.0.client
         .post(&url)
         .header(header::CONTENT_TYPE, "application/json")
-        .body(body)
+        .body(embed_body)
         .send()
         .await;
 
@@ -1023,7 +1042,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let hardware_profile          = s.0.hardware_profile.as_str().to_string();
     let hardware_profile_display  = s.0.hardware_profile.display().to_string();
     let queue = *s.0.queue_counts.lock().await;
-    let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, &s.0.ollama_url).await;
+    let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, &s.0.ollama_url, s.0.hardware_profile).await;
     let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
     let on_battery      = *s.0.on_battery.lock().await;
     let preempted_count = *s.0.preempted_count.lock().await;
@@ -1483,11 +1502,11 @@ fn is_light_model(model: &str) -> bool {
 
 // ── VRAM helpers ──────────────────────────────────────────────
 
-async fn vram_pct(client: &Client, ollama_url: &str) -> Option<f32> {
-    vram_usage(client, ollama_url).await.1
+async fn vram_pct(client: &Client, ollama_url: &str, hw: HardwareProfile) -> Option<f32> {
+    vram_usage(client, ollama_url, hw).await.1
 }
 
-async fn vram_usage(client: &Client, ollama_url: &str) -> (Option<u64>, Option<f32>) {
+async fn vram_usage(client: &Client, ollama_url: &str, hw: HardwareProfile) -> (Option<u64>, Option<f32>) {
     // No Linux, sysfs é a fonte correta para AMD/ROCm —
     // o Ollama reporta size_vram=0 para GPUs AMD, tornando /api/ps inútil para VRAM.
     #[cfg(target_os = "linux")]
@@ -1515,7 +1534,8 @@ async fn vram_usage(client: &Client, ollama_url: &str) -> (Option<u64>, Option<f
         .filter_map(|m| m["size_vram"].as_u64())
         .sum();
     let used_mb = used_bytes / 1_000_000;
-    let total_mb = sysfs_vram_mb().map(|(t, _)| t);
+    // sysfs é AMD-only; para NVIDIA (Laptop), usar total do HardwareProfile como fallback
+    let total_mb = sysfs_vram_mb().map(|(t, _)| t).or_else(|| hw.vram_total_mb());
     let pct = total_mb.filter(|&t| t > 0).map(|t| used_mb as f32 / t as f32);
     (Some(used_mb), pct)
 }
