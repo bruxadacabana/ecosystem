@@ -4244,10 +4244,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `requests.post("http://localhost:7071/archive", data={"url": url}, timeout=3)` em
   thread separada.
 
-- [ ] **Busca unificada KOSMOS + AKASHA** (`app/ui/views/unified_feed_view.py` ou novo
-  `SearchView`). Ao pesquisar no KOSMOS, consultar também `GET http://localhost:7071/
-  search?q=<termo>` (AKASHA FTS5) e mesclar resultados com indicador de fonte (RSS vs
-  AKASHA). Evita abrir dois apps para pesquisar conteúdo relacionado.
+- [x] ~~**Busca unificada KOSMOS + AKASHA**~~ — *supersedido: decisão arquitetural de 2026-05-19 inverte a direção — AKASHA consulta o KOSMOS automaticamente em toda busca, não o contrário. Ver item 5 em "### Integração KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19".*
 
 #### AKASHA
 - [ ] **Endpoint `POST /archive` para receber URLs de outros apps** (`routers/crawler.py`
@@ -4256,13 +4253,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   Autenticação: nenhuma (local-only, 127.0.0.1). Documentar no `CLAUDE.md` como contrato
   de API. O KOSMOS e potencialmente outros apps do ecossistema usarão esse endpoint.
 
-- [ ] **Crawling incremental a partir dos feeds do KOSMOS** (`services/crawler.py` ou
-  novo `services/feed_crawler.py`). Padrão ArchiveBox: ao adicionar um feed ao KOSMOS,
-  notificar AKASHA (via `POST /add-source`) com o domínio raiz para crawl periódico.
-  AKASHA adiciona o domínio à lista de sites monitorados. Implementação: KOSMOS lê
-  `akasha.base_url` do ecosystem.json; ao criar feed, faz `POST /add-source?url=<domínio>
-  &name=<nome_feed>`. Evita que artigos de domínios monitorados existam só como resumo
-  RSS — a versão completa fica no AKASHA.
+- [x] ~~**Crawling incremental a partir dos feeds do KOSMOS**~~ — *supersedido: decisão arquitetural de 2026-05-19 centraliza a classificação Biblioteca/Feed no HUB — o usuário decide explicitamente por domínio, KOSMOS não notifica AKASHA automaticamente. Ver item 6 em "### Integração KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19".*
 
 - [ ] **Deduplicação entre arquivo AKASHA e artigos KOSMOS** (`services/library.py`).
   Ao arquivar uma URL que já existe no archive do KOSMOS (`kosmos.archive_path`), criar
@@ -6534,3 +6525,20 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [ ] **`InsightScheduler`: priorizar popup por `arousal × importance` em vez de FIFO** — `InsightScheduler.maybe_show()` (`core/insight_scheduler.py:54`) usa FIFO puro. Substituir `get_unshown_popup_entries` por query ordenada por `arousal * importance DESC NULLS LAST, type ASC` (com `surprise` = 1, `connection` = 2, `reflection` = 3 para ordenação quando campos são NULL). Insights de alta intensidade chegam ao usuário primeiro.
 - [ ] **`InsightScheduler`: penalidade de cooldown por rejeição** — ao receber feedback negativo (botão ✗ no `InsightPopup`), além de salvar o feedback em `personal_memory`, aumentar o cooldown base do `InsightScheduler` em +30s (acumulativo até o máximo de 2× o cooldown padrão). Resetar ao receber feedback positivo (botão ✓). Implementação: campo `_rejection_streak: int` no `InsightScheduler`; `cooldown_effective = cooldown_base + rejection_streak × 30`.
 - [ ] **`IndexReflectionWorker`: pontuar `importance` via LLM no momento da reflexão** — ao gerar reflexão de arquivo em `_process_file()` (`workers.py:1540`), incluir no prompt de geração de memória a instrução de auto-avaliação de importância (1-10). Salvar resultado no campo `importance` da tabela `personal_memory`. Sem chamada extra ao LOGOS — aproveitar a resposta já estruturada do LLM adicionando campo JSON ao output esperado.
+
+### Integração KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19
+> Contexto: decisão arquitetural de tornar o KOSMOS uma ferramenta da AKASHA. Os artigos analisados pelo KOSMOS devem ser pesquisáveis automaticamente nas buscas do AKASHA por sobreposição de tópicos. Um perfil de interesse compartilhado (interests.json no sync_root) é lido por todos os apps e gerenciado pelo HUB. A gestão de fontes (Biblioteca vs Feed) também centralizada no HUB. Itens em ordem sequencial de implementação — cada item depende do anterior.
+
+- [ ] **1. `interests.json`: definir schema e suporte no `ecosystem_client`** — criar arquivo `{sync_root}/interests.json` com schema: `{ "topics": [{ "name": str, "weight": float, "sources": ["akasha_library"|"mnemosyne_reflections"|"manual"], "pinned": bool, "excluded": bool }], "updated_at": str }`. Adicionar ao `ecosystem_client`: `get_interests() → list[dict]`, `update_interests(topics: list[dict])` (lê o arquivo, faz merge por `name`, salva). Se o arquivo não existir, retornar lista vazia sem erro. Todos os apps leem via `ecosystem_client` — nunca acessam o arquivo diretamente.
+
+- [ ] **2. AKASHA → `interests.json`: exportar top_topics após re-indexação** — ao final de cada ciclo de re-indexação local (`local_search.py` ou `services/knowledge_worker.py`), chamar `get_top_topics(30)` e escrever os resultados no `interests.json` via `ecosystem_client.update_interests()`, marcando `source="akasha_library"`. Não sobrescrever entradas com `source="manual"` ou `pinned=True`. Frequência: uma vez por ciclo de indexação completo, não por arquivo.
+
+- [ ] **3. Mnemosyne → `interests.json`: exportar tópicos após reflexões** — ao final do processamento de reflexões em `IndexReflectionWorker` (ou no `TopicsWorker` existente), extrair os tópicos mais frequentes das últimas N reflexões e escrever no `interests.json` via `ecosystem_client.update_interests()`, marcando `source="mnemosyne_reflections"`. Fazer merge com entradas já existentes (não apagar tópicos do AKASHA). Frequência: após cada batch de reflexões concluído.
+
+- [ ] **4. KOSMOS: ler `interests.json` para priorizar fila do `BackgroundAnalyzer`** — ao enfileirar artigos para análise em `BackgroundAnalyzer` (`app/ui/main_window.py`), carregar o `interests.json` via `ecosystem_client.get_interests()` e computar overlap entre as `ai_tags` já existentes do artigo (ou keywords do título/fonte se `ai_tags` ainda for NULL) e os tópicos de interesse. Artigos com overlap alto recebem prioridade maior na `PriorityQueue`. Artigos sem overlap ficam na prioridade padrão — nunca descartados, apenas postergados. Recarregar o perfil a cada N horas (não por artigo, para evitar I/O excessivo).
+
+- [ ] **5. AKASHA: busca automática em `kosmos.db` por sobreposição de tags** — em toda query recebida pela AKASHA (`routers/search.py` ou equivalente), além dos resultados da biblioteca local, executar query adicional em `kosmos.db`: `SELECT id, title, url, summary, ai_tags, published_at FROM articles WHERE ai_tags IS NOT NULL` e filtrar em Python os artigos cujas `ai_tags` (JSON) se sobrepõem com os termos da query ou com os `interests.json`. Retornar os top-K artigos KOSMOS com score ponderado (fator 0.6× em relação a itens da biblioteca — aparecem mas não dominam). Caminho de `kosmos.db` lido via `ecosystem.json["kosmos"]["db_path"]`. Se arquivo não existir ou KOSMOS não configurado, ignorar silenciosamente sem erro.
+
+- [ ] **6. HUB: aba "Fontes" — gestão unificada de domínios (Biblioteca / Feed)** — nova aba no HUB listando todos os domínios conhecidos pelo ecossistema: união dos domínios crawleados pelo AKASHA (via `GET http://localhost:7071/library`) e dos feeds do KOSMOS (via leitura direta de `kosmos.db` tabela `feeds`). Cada domínio exibe dois toggles: *Biblioteca* (AKASHA crawlea profundamente) e *Feed* (KOSMOS monitora por artigos novos). Estado salvo em `ecosystem.json["sources"]` como `{ "domínio": { "library": bool, "feed": bool } }`. HUB lê e escreve esse campo; AKASHA e KOSMOS consultam em runtime para saber se devem processar cada domínio.
+
+- [ ] **7. HUB: aba "Interesses" — visualizar e editar perfil de interesse** — nova aba no HUB exibindo o conteúdo de `interests.json`. Lista os tópicos com: nome, peso (barra ou número), badges de origem (*biblioteca* / *reflexões* / *manual*), ícone de fixar (pin) e botão de excluir. Permite: editar peso manualmente, adicionar tópico manual, fixar (impede sobrescrita automática), excluir (marca `excluded=True` — apps ignoram ao escrever). Botão "Atualizar agora" dispara re-derivação: chama `GET /library/topics` no AKASHA e re-lê `interests.json` da Mnemosyne. Salva via `ecosystem_client.update_interests()` a cada edição.
