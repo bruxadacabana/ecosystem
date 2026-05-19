@@ -7,7 +7,6 @@
 - ainda esto tendo problemas com a exibição de logs da mnemosyne no monitor do hub
 - o que acontece se a indexação for apagada mas a memória da Mnemosyne não? Precisa haver uma forma dela não refazer o trabalho que ainda estiver disponível.
 - KOSMOS ainda está me dando a opção de alterar o llm sendo que não deveria mais ser possível (tudo sobre o ollama deve ser feito pelo HUB)
-- como eu desativo a opção "só papers" durante uma pesquisa no akasha?
 - o mnemosyne tentou exibir um pop mas carregou apenas uma janela transparente e vazia
 - "temas" da mnemosyne deveria carregar em tempo real assim como "conexões" da akasha
 - apesar das trocas de insights não deverem ser indexadas no rag, a akasha e mnemosyne pode usar o insight da outra para refletir e criar conexões com o que já sabe
@@ -25,6 +24,8 @@
 ### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
 
 ### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
+
+### CODEX — Leitor centralizado do ecossistema | 2026-05-13
 
 ### Bugs e investigações reportados após uso real | 2026-05-18
 - [ ] **Investigar: causa raiz do erro "readonly" recorrente no ChromaDB** — não é a primeira vez que ocorre; toda vez exige re-indexação completa. Coletar logs completos na próxima ocorrência. Suspeitas: WAL corrompido (já existe `_clear_orphan_wal()` no código — indício de histórico), dois processos com acesso simultâneo ao mesmo SQLite, ou bug de versão do chromadb. Investigar se o `persist_dir` está em filesystem com limitações (ex: BTRFS + COW + SQLite WAL).
