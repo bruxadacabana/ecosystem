@@ -3,6 +3,25 @@
 ### Memória pessoal das IAs — estrutura temática
 - [ ] **HUB — aba de memória agrupada por category** — exibir memórias em seções dobráveis por categoria, em vez de lista plana.
 
+- verifique se já está implementado para que, se o KOSMOS rodar em o Ollama aberto, no momento que o Ollama abrir ele deve varrer as notícias e começar a análise em segundo plano
+- ainda esto tendo problemas com a exibição de logs da mnemosyne no monitor do hub
+- o que acontece se a indexação for apagada mas a memória da Mnemosyne não? Precisa haver uma forma dela não refazer o trabalho que ainda estiver disponível.
+- KOSMOS ainda está me dando a opção de alterar o llm sendo que não deveria mais ser possível (tudo sobre o ollama deve ser feito pelo HUB)
+- como eu desativo a opção "só papers" durante uma pesquisa no akasha?
+- o mnemosyne tentou exibir um pop mas carregou apenas uma janela transparente e vazia
+- "temas" da mnemosyne deveria carregar em tempo real assim como "conexões" da akasha
+- apesar das trocas de insights não deverem ser indexadas no rag, a akasha e mnemosyne pode usar o insight da outra para refletir e criar conexões com o que já sabe
+- a área do diálogo com akasha no mnemosyne está toda bugada:
+◇ No vault, não há menção direta a budismo, meditação ou felicidade. As entradas se concentram em fundamentos artísticos, harmonia cromática e composição, sem abordar temas espirituais ou filosóficos como o budismo.
+  [1] ART FUNDAMENTALS, TWELFTH EDITION · [2] The Complete Color Harmony · [3] Composition
+⬡
+⬡
+⬡1⬡.⬡ Ab⬡ord⬡a⬡:⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ da⬡ v⬡ida⬡ base⬡ada⬡ em⬡ ident⬡ific⬡ar⬡ ca⬡ó⬡dig⬡os⬡ e⬡ ev⬡itar⬡ o⬡ so⬡f⬡rim⬡ento⬡,⬡ at⬡rav⬡és⬡ de⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ por⬡ res⬡olver⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ (⬡ab⬡ord⬡ag⬡em⬡)⬡
+⬡2⬡.⬡ Ab⬡ord⬡ag⬡em⬡:⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ da⬡ v⬡ida⬡ base⬡ada⬡ em⬡ ident⬡ific⬡ar⬡ ca⬡ó⬡dig⬡os⬡ e⬡ ev⬡itar⬡ o⬡ so⬡f⬡rim⬡ento⬡,⬡ at⬡rav⬡és⬡ de⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ por⬡ res⬡olver⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ (⬡ab⬡ord⬡ag⬡em⬡)⬡
+⬡3⬡.⬡ Ab⬡ord⬡ag⬡em⬡:⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem⬡as⬡ da⬡ v⬡ida⬡ base⬡ada⬡ em⬡ ident⬡ific⬡ar⬡ ca⬡ó⬡dig⬡os⬡ e⬡ ev⬡itar⬡ o⬡ so⬡f⬡rim⬡ento⬡,⬡ at⬡rav⬡és⬡ de⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ por⬡ res⬡olver⬡ u⬡ma⬡ ab⬡ord⬡ag⬡em⬡ para⬡ res⬡olver⬡ problem
+[Diálogo encerrado]
+
+
 ### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
 
 ### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
