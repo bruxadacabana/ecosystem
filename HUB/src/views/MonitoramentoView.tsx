@@ -213,7 +213,7 @@ function MemoryViewer({ app }: { app: 'akasha' | 'mnemosyne' }) {
   async function load() {
     setLoading(true)
     setErr(null)
-    const res = await cmd.memoryGetEntries(app, 30)
+    const res = await cmd.memoryGetEntries(app, 50)
     setLoading(false)
     if (res.ok) setEntries(res.data)
     else setErr(res.error.message)
@@ -264,7 +264,7 @@ function MemoryViewer({ app }: { app: 'akasha' | 'mnemosyne' }) {
               <div style={sMemory.rowTop}>
                 <TypeBadge type={e.type} />
                 <span style={sMemory.date}>
-                  {e.created_at.slice(0, 16).replace('T', ' ')}
+                  {new Date(e.created_at.replace(' ', 'T') + 'Z').toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
                 </span>
                 {e.feedback && (
                   <span style={{
@@ -357,7 +357,7 @@ function TopicsViewer({ baseUrl }: { baseUrl: string }) {
   async function load() {
     setLoading(true); setErr(null)
     try {
-      const res = await fetch(`${baseUrl}/memory/topics?n=30`)
+      const res = await fetch(`${baseUrl}/memory/topics?n=50`)
       if (res.ok) setTopics(await res.json())
       else setErr(`HTTP ${res.status}`)
     } catch {
@@ -396,6 +396,7 @@ function TopicsViewer({ baseUrl }: { baseUrl: string }) {
           {!loading && !err && topics.length === 0 && (
             <p style={sMemory.empty}>nenhum tema aprendido ainda.</p>
           )}
+          <div style={{ maxHeight: 280, overflowY: 'auto', paddingRight: 2 }}>
           {topics.map(({ topic, score }) => (
             <div key={topic} style={{
               display: 'flex', alignItems: 'center', gap: 8,
@@ -423,6 +424,7 @@ function TopicsViewer({ baseUrl }: { baseUrl: string }) {
               </span>
             </div>
           ))}
+          </div>
           {!loading && topics.length > 0 && (
             <button
               onClick={load}
