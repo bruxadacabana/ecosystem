@@ -1760,13 +1760,27 @@ class MainWindow(QMainWindow):
         name = self._selected_coll_name()
         if not name:
             return
-        if name != self.config.active_collection:
-            self.config.active_collection = name
-            save_config(self.config)
-            self._populate_collection_combo()
-            self._post_config_init()
+        coll = next((c for c in self.config.collections if c.name == name), None)
+        if not coll or not coll.exists:
+            QMessageBox.warning(self, "Aviso", f"Pasta da coleção '{name}' não encontrada.")
+            return
+        from core.idle_indexer import _make_config_for_collection
+        proxy_config = _make_config_for_collection(self.config, coll)
+        self._collections_to_index = []  # só esta coleção; não encadear outras
+        self.index_btn.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self.progress_file_label.setText(f"Indexando {name}…")
+        self.progress_file_label.setVisible(True)
+        self.cancel_btn.setVisible(True)
+        self.statusBar().showMessage(f"Indexando coleção: {name}…")
+        self._log_event(f"Indexando coleção '{name}' individualmente.")
         self._switch_page(0)
-        self.start_indexing()
+        self._index_worker = IndexWorker(proxy_config)
+        self._index_worker.finished.connect(self._on_index_finished)
+        self._index_worker.progress.connect(self._on_index_progress)
+        self._index_worker.languages_unknown.connect(self._on_languages_unknown)
+        self._index_worker.start()
 
     def _on_coll_remove(self) -> None:
         name = self._selected_coll_name()
