@@ -576,16 +576,21 @@ async def crawl_site(site_id: int) -> int:
 
             await db.execute(
                 """UPDATE crawl_sites
-                   SET status='idle', last_crawled_at=?, page_count=(
-                       SELECT COUNT(*) FROM crawl_pages WHERE site_id=?
-                   )
+                   SET status='idle', last_crawled_at=?,
+                       page_count=(SELECT COUNT(*) FROM crawl_pages WHERE site_id=?),
+                       crawl_fail_count=0
                    WHERE id=?""",
                 (now, site_id, site_id),
             )
             await db.commit()
         except Exception:
             await db.execute(
-                "UPDATE crawl_sites SET status='idle' WHERE id=?", (site_id,)
+                """UPDATE crawl_sites
+                   SET status='idle',
+                       crawl_fail_count = crawl_fail_count + 1,
+                       deleted = CASE WHEN crawl_fail_count + 1 >= 3 THEN 1 ELSE deleted END
+                   WHERE id=?""",
+                (site_id,),
             )
             await db.commit()
             raise
@@ -651,6 +656,9 @@ async def search_sites(query: str, max_results: int = 500) -> list:
                           snippet(crawl_fts, 3, '', '', '…', 40)
                    FROM crawl_fts
                    WHERE crawl_fts MATCH ?
+                     AND CAST(site_id AS INTEGER) NOT IN (
+                         SELECT id FROM crawl_sites WHERE deleted=1
+                     )
                    ORDER BY rank
                    LIMIT ?""",
                 (fts_query, max_results),
@@ -713,7 +721,7 @@ async def crawl_pending_sites() -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await (await db.execute(
             """SELECT id, base_url FROM crawl_sites
-               WHERE status = 'idle'
+               WHERE status = 'idle' AND deleted = 0
                  AND (last_crawled_at IS NULL
                       OR last_crawled_at < datetime('now', '-' || crawl_interval_days || ' days'))""",
         )).fetchall()

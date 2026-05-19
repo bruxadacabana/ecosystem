@@ -14,7 +14,7 @@ from config import DB_PATH
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 35
+SCHEMA_VERSION = 36
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -80,10 +80,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS local_fts USING fts5(
 
 _CREATE_LOCAL_META = """
 CREATE TABLE IF NOT EXISTS local_index_meta (
-    path   TEXT PRIMARY KEY,
-    source TEXT NOT NULL,
-    mtime  TEXT NOT NULL,
-    lang   TEXT NOT NULL DEFAULT ''
+    path    TEXT    PRIMARY KEY,
+    source  TEXT    NOT NULL,
+    mtime   TEXT    NOT NULL,
+    lang    TEXT    NOT NULL DEFAULT '',
+    deleted INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -117,7 +118,9 @@ CREATE TABLE IF NOT EXISTS crawl_sites (
     last_crawled_at     TEXT,
     status              TEXT    NOT NULL DEFAULT 'idle',
     created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
-    crawl_interval_days INTEGER NOT NULL DEFAULT 7
+    crawl_interval_days INTEGER NOT NULL DEFAULT 7,
+    deleted             INTEGER NOT NULL DEFAULT 0,
+    crawl_fail_count    INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -788,6 +791,26 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         except Exception:
             pass  # coluna já existe em DBs novos
 
+    if from_version < 36:
+        try:
+            await db.execute(
+                "ALTER TABLE local_index_meta ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass
+        try:
+            await db.execute(
+                "ALTER TABLE crawl_sites ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass
+        try:
+            await db.execute(
+                "ALTER TABLE crawl_sites ADD COLUMN crawl_fail_count INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass
+
     if from_version < 34:
         try:
             await db.execute(
@@ -1027,7 +1050,7 @@ async def recent_searches(limit: int = 10) -> list[str]:
 async def get_all_crawl_sites() -> list[tuple]:
     async with aiosqlite.connect(DB_PATH) as db:
         rows = await (await db.execute(
-            "SELECT * FROM crawl_sites ORDER BY created_at DESC"
+            "SELECT * FROM crawl_sites WHERE deleted=0 ORDER BY created_at DESC"
         )).fetchall()
     return list(rows)
 

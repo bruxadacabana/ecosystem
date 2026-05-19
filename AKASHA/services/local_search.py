@@ -509,35 +509,25 @@ async def _reindex(path_str: str, title: str, body: str, source: str, mtime: str
 
 
 async def _purge_missing() -> None:
-    """Remove do índice entradas cujos arquivos não existem mais."""
+    """Soft-delete de entradas cujos arquivos não existem mais no filesystem.
+
+    Em vez de apagar do índice, marca `deleted=1` em `local_index_meta`.
+    O conteúdo permanece disponível no FTS5 mas é filtrado nas queries de busca.
+    """
     async with aiosqlite.connect(DB_PATH) as db:
-        rows = await (await db.execute("SELECT path FROM local_index_meta")).fetchall()
+        rows = await (await db.execute(
+            "SELECT path FROM local_index_meta WHERE deleted=0"
+        )).fetchall()
 
     missing = [row[0] for row in rows if not Path(row[0]).exists()]
     if not missing:
         return
 
     async with aiosqlite.connect(DB_PATH) as db:
-        if VECTOR_SEARCH_ENABLED and _SQLITE_VEC_AVAILABLE:
-            try:
-                await db.run_sync(_load_vec_ext)
-            except Exception:
-                pass
         for path_str in missing:
-            fts_rows = await (await db.execute(
-                "SELECT rowid FROM local_fts WHERE path = ?", (path_str,)
-            )).fetchall()
-            for (rowid,) in fts_rows:
-                await db.execute("DELETE FROM local_fts WHERE rowid = ?", (rowid,))
-            await db.execute("DELETE FROM local_index_meta WHERE path = ?", (path_str,))
-            # Limpa entradas vetoriais do arquivo removido
-            if VECTOR_SEARCH_ENABLED and _SQLITE_VEC_AVAILABLE:
-                vp_row = await (await db.execute(
-                    "SELECT id FROM local_vec_paths WHERE path = ?", (path_str,)
-                )).fetchone()
-                if vp_row:
-                    await db.execute("DELETE FROM vec_items WHERE rowid = ?", (vp_row[0],))
-                    await db.execute("DELETE FROM local_vec_paths WHERE path = ?", (path_str,))
+            await db.execute(
+                "UPDATE local_index_meta SET deleted=1 WHERE path=?", (path_str,)
+            )
         await db.commit()
 
 
@@ -960,6 +950,9 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
                     """SELECT path, title, body, source
                        FROM local_fts
                        WHERE local_fts MATCH ?
+                         AND path NOT IN (
+                             SELECT path FROM local_index_meta WHERE deleted=1
+                         )
                        ORDER BY rank
                        LIMIT ?""",
                     (fts_query, max_results),
@@ -980,6 +973,9 @@ async def _search_fts(query: str, max_results: int) -> list[SearchResult]:
                               source
                        FROM local_fts
                        WHERE local_fts MATCH ?
+                         AND path NOT IN (
+                             SELECT path FROM local_index_meta WHERE deleted=1
+                         )
                        ORDER BY rank
                        LIMIT ?""",
                     (fts_query, max_results),
