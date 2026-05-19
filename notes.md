@@ -1,14 +1,11 @@
 ## Implementação atual:
 
-### Comunicação bidirecional AKASHA↔Mnemosyne — "amizade" | 2026-05-19
-
+### Memória pessoal das IAs — estrutura temática
+- [ ] **HUB — aba de memória agrupada por category** — exibir memórias em seções dobráveis por categoria, em vez de lista plana.
 
 ### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
 
-### Pop-up espontâneo da Mnemosyne + sistema de feedback | 2026-05-19
-
 ### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
-
 
 ### Bugs e investigações reportados após uso real | 2026-05-18
 - [ ] **Investigar: causa raiz do erro "readonly" recorrente no ChromaDB** — não é a primeira vez que ocorre; toda vez exige re-indexação completa. Coletar logs completos na próxima ocorrência. Suspeitas: WAL corrompido (já existe `_clear_orphan_wal()` no código — indício de histórico), dois processos com acesso simultâneo ao mesmo SQLite, ou bug de versão do chromadb. Investigar se o `persist_dir` está em filesystem com limitações (ex: BTRFS + COW + SQLite WAL).
