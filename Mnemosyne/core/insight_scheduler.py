@@ -38,10 +38,15 @@ class InsightScheduler(QObject):
     Após exibir, compartilha o pensamento com a AKASHA como "visita"
     (cooldown de 2h, independente do popup de 10min).
 
+    Penalidade de rejeição: cada dismiss acumula +30s no cooldown efetivo
+    (máx 2× COOLDOWN_SECONDS). Reseta ao receber feedback positivo.
+
     Uso:
         scheduler = InsightScheduler(parent=self)
         scheduler.insight_ready.connect(self._show_insight_popup)
         worker.finished.connect(scheduler.maybe_show)
+        popup.dismissed.connect(scheduler.on_dismissed)
+        popup.confirmed.connect(scheduler.on_confirmed)
     """
 
     insight_ready = Signal(str, int)  # (content, memory_id)
@@ -50,6 +55,12 @@ class InsightScheduler(QObject):
         super().__init__(parent)
         self._last_shown: float          = 0.0
         self._last_sent_to_akasha: float = 0.0
+        self._rejection_streak: int      = 0   # consecutivos desde último reset
+
+    def _effective_cooldown(self) -> float:
+        """Cooldown efetivo com penalidade de rejeição (máx 2× base)."""
+        penalty = self._rejection_streak * 30
+        return min(COOLDOWN_SECONDS + penalty, COOLDOWN_SECONDS * 2)
 
     def maybe_show(self) -> None:
         """Verifica se deve mostrar um insight e emite insight_ready se sim.
@@ -59,10 +70,11 @@ class InsightScheduler(QObject):
         """
         now = time.monotonic()
         elapsed = now - self._last_shown
-        if elapsed < COOLDOWN_SECONDS:
+        cooldown = self._effective_cooldown()
+        if elapsed < cooldown:
             log.debug(
-                "InsightScheduler: cooldown ativo (%.0fs restantes)",
-                COOLDOWN_SECONDS - elapsed,
+                "InsightScheduler: cooldown ativo (%.0fs restantes, streak=%d)",
+                cooldown - elapsed, self._rejection_streak,
             )
             return
 
@@ -112,6 +124,30 @@ class InsightScheduler(QObject):
             log.info("InsightScheduler: pensamento enviado para AKASHA.")
         except Exception as exc:
             log.debug("InsightScheduler: falha ao notificar AKASHA: %s", exc)
+
+    def on_dismissed(self, memory_id: int) -> None:
+        """Chamado quando a usuária dispensa o popup (✗ ou auto-dismiss).
+
+        Incrementa o streak de rejeição, aumentando o cooldown em +30s.
+        """
+        if memory_id < 0:
+            return  # insight do AKASHA — não afeta o cooldown da Mnemosyne
+        self._rejection_streak += 1
+        log.debug(
+            "InsightScheduler: dismiss recebido — streak=%d cooldown_efetivo=%.0fs",
+            self._rejection_streak, self._effective_cooldown(),
+        )
+
+    def on_confirmed(self, memory_id: int) -> None:
+        """Chamado quando a usuária confirma o popup (✓).
+
+        Reseta o streak de rejeição — feedback positivo indica relevância.
+        """
+        if memory_id < 0:
+            return
+        if self._rejection_streak > 0:
+            log.debug("InsightScheduler: confirmed — streak resetado (era %d)", self._rejection_streak)
+            self._rejection_streak = 0
 
     def reset_cooldown(self) -> None:
         """Reseta o cooldown — útil para testes ou forçar exibição."""

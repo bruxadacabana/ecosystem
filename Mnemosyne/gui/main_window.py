@@ -1987,7 +1987,9 @@ class MainWindow(QMainWindow):
                 pass
         popup = InsightPopup(text, memory_id, parent=self)
         popup.confirmed.connect(self._on_insight_confirmed)
+        popup.confirmed.connect(self._insight_scheduler.on_confirmed)
         popup.dismissed.connect(self._on_insight_dismissed)
+        popup.dismissed.connect(self._insight_scheduler.on_dismissed)
         popup.replied.connect(self._on_insight_replied)
         popup.destroyed.connect(lambda: self._clear_insight_popup(popup))
         self._active_insight_popup = popup
