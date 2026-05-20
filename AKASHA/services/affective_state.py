@@ -352,6 +352,24 @@ async def _get_feedback_stats(recent_n: int = 20) -> dict[str, int]:
                 "all_confirmed": 0, "all_total": 0}
 
 
+async def detect_echo_chamber(recent_n: int = 30, threshold: float = 0.6) -> bool:
+    """Verifica câmara de eco: approval ratio > threshold por ≥ recent_n interações.
+
+    Retorna True apenas quando há dados suficientes (recent_n interações com feedback),
+    evitando falso positivo nas fases iniciais de uso.
+    Usado pelo knowledge_worker para injetar diversidade epistêmica (item [K]).
+    """
+    try:
+        stats = await _get_feedback_stats(recent_n)
+        if stats["recent_total"] < recent_n:
+            return False
+        ratio = stats["recent_confirmed"] / stats["recent_total"]
+        return ratio > threshold
+    except Exception as exc:
+        log.debug("detect_echo_chamber: %s", exc)
+        return False
+
+
 async def record_approval_momentum(recent_n: int = 20) -> None:
     """Calcula approval momentum e registra appraisal se threshold atingido.
 

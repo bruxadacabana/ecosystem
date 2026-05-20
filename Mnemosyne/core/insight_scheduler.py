@@ -55,6 +55,20 @@ class InsightScheduler(QObject):
             log.debug("InsightScheduler: popup já ativo — aguardando fechamento")
             return
 
+        # G(e): arousal alto → adiar popup — evitar sobrecarga em momento de alta ativação
+        try:
+            from core.affective_state import get_current_state
+            _st = get_current_state()
+            _arousal = _st.get("episodic_arousal", 0.0)
+            if _arousal > 0.6:
+                log.debug(
+                    "InsightScheduler: arousal=%.2f > 0.6 — popup adiado até estabilização",
+                    _arousal,
+                )
+                return
+        except Exception:
+            pass
+
         try:
             from core.personal_memory import get_unshown_popup_entries
             entries = get_unshown_popup_entries(5)
@@ -63,10 +77,27 @@ class InsightScheduler(QObject):
             return
 
         candidate: dict | None = None
-        for entry in entries:
-            if len(entry.get("content", "")) >= MIN_CONTENT_LEN:
-                candidate = entry
-                break
+        # K: câmara de eco → epsilon-greedy — 5% de chance de insight divergente (menor saliência)
+        try:
+            import random as _random
+            from core.affective_state import detect_echo_chamber
+            if detect_echo_chamber() and _random.random() < 0.05 and len(entries) > 1:
+                for entry in reversed(entries):
+                    if len(entry.get("content", "")) >= MIN_CONTENT_LEN:
+                        candidate = entry
+                        log.info(
+                            "InsightScheduler: epsilon-greedy diversidade — id=%d",
+                            entry["id"],
+                        )
+                        break
+        except Exception:
+            pass
+
+        if candidate is None:
+            for entry in entries:
+                if len(entry.get("content", "")) >= MIN_CONTENT_LEN:
+                    candidate = entry
+                    break
 
         if candidate is None:
             log.debug("InsightScheduler: nenhuma entrada nova para exibir")

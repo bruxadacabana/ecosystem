@@ -125,7 +125,7 @@ def prepare_summary(vectorstore: Any, config: AppConfig) -> str:
 
 
 def iter_summary(
-    vectorstore: Any, config: AppConfig
+    vectorstore: Any, config: AppConfig, **_kwargs: Any
 ) -> Iterator[str]:
     """
     Gerador que produz tokens do resumo final em streaming.
@@ -164,6 +164,11 @@ def iter_summary(
 
         summaries_text = "\n\n---\n".join(partial_summaries)
         prompt = _REDUCE_PROMPT.format(summaries=summaries_text)
+
+    # G(c,d): tom afetivo baseado no estado VA atual (injetado pelo StudioWorker)
+    va_hint = getattr(config, "va_hint", "")
+    if va_hint:
+        prompt = f"Tom: {va_hint}\n\n{prompt}"
 
     # Fase Reduce (ou Stuff) em streaming
     llm_reduce = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.2, timeout=180)

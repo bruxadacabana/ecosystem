@@ -317,6 +317,22 @@ def _get_feedback_stats(recent_n: int = 20) -> dict[str, int]:
                 "all_confirmed": 0, "all_total": 0}
 
 
+def detect_echo_chamber(recent_n: int = 30, threshold: float = 0.6) -> bool:
+    """Verifica câmara de eco — versão síncrona de AKASHA/services/affective_state.py.
+
+    Retorna True quando approval ratio recente > threshold E há dados suficientes.
+    """
+    try:
+        stats = _get_feedback_stats(recent_n)
+        if stats["recent_total"] < recent_n:
+            return False
+        ratio = stats["recent_confirmed"] / stats["recent_total"]
+        return ratio > threshold
+    except Exception as exc:
+        log.debug("detect_echo_chamber: %s", exc)
+        return False
+
+
 def record_approval_momentum(recent_n: int = 20) -> None:
     """Calcula approval momentum e registra appraisal se threshold atingido.
 

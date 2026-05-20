@@ -1167,6 +1167,30 @@ class StudioWorker(QThread):
             self.finished.emit(False, str(exc))
             return
 
+        # G(d): injetar tom afetivo no config antes de despachar para o gerador
+        try:
+            from core.affective_state import get_current_state as _get_state
+            _st = _get_state()
+            _v  = _st.get("episodic_valence", 0.0)
+            _a  = _st.get("episodic_arousal",  0.0)
+            if _v > 0.5:
+                self.config.va_hint = (
+                    "Explore conexões inesperadas e hipóteses especulativas. "
+                    "Valorize pensamento divergente e associações distantes."
+                )
+            elif _v < -0.3:
+                self.config.va_hint = (
+                    "Seja analítica e crítica. Identifique inconsistências, "
+                    "contradições e limitações. Priorize rigor sobre especulação."
+                )
+            elif _a > 0.7:
+                self.config.va_hint = (
+                    "Use linguagem cuidadosa, com qualificações explícitas "
+                    "onde houver incerteza."
+                )
+        except Exception:
+            pass
+
         dispatch = _STUDIO_DISPATCH.get(self.doc_type)
         if dispatch is None:
             self.finished.emit(False, f"Tipo desconhecido: {self.doc_type}")

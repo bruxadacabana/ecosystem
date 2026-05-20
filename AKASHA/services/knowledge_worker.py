@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 from dataclasses import dataclass
 
@@ -192,6 +193,15 @@ async def apply_knowledge_boost(
         pass
     _valence_factor = round(max(0.7, min(1.3, 1.0 + _ep_valence * 0.3)), 4)
 
+    # G(a): valence > 0.5 → diversity_factor — overlap semântico mais amplo (exploratório)
+    # G(b): valence < -0.3 → depth_factor — relevância exata da query pesa mais (analítico)
+    if _ep_valence > 0.5:
+        _overlap_weight = 0.20
+    elif _ep_valence < -0.3:
+        _overlap_weight = 0.25
+    else:
+        _overlap_weight = 0.15
+
     def _boost(r: object) -> float:
         topics = topics_by_url.get(r.url, [])  # type: ignore[union-attr]
         if not topics:
@@ -204,9 +214,9 @@ async def apply_knowledge_boost(
             if t_key in interest_profile:
                 interest_bonus += interest_profile[t_key] * 0.3
         overlap = len(query_terms & topic_terms)
-        # Sinal 1: sobreposição query-tópico (+0.15 por tópico)
+        # Sinal 1: sobreposição query-tópico (peso modulado por G(a,b))
         # Sinal 2: interesse acumulado × valência episódica (máx +0.6)
-        return overlap * 0.15 + min(interest_bonus * _valence_factor, 0.6)
+        return overlap * _overlap_weight + min(interest_bonus * _valence_factor, 0.6)
 
     scored = [(i, _boost(r), r) for i, r in enumerate(results)]
     scored.sort(key=lambda x: (-x[1], x[0]))
@@ -639,17 +649,26 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
             _update_entity_graph(clean_topics, delta=0.3)
         )
 
+    # K: detectar câmara de eco uma vez por ciclo — passado para descoberta e reflexão
+    _echo = False
+    try:
+        from services.affective_state import detect_echo_chamber as _detect_echo
+        _echo = await _detect_echo()
+    except Exception:
+        pass
+
     await _check_discoveries(
         url=task.url,
         title=task.title,
         new_topics=clean_topics,
         summary=summary,
+        is_echo_chamber=_echo,
     )
 
     # Fire-and-forget: nota pessoal sobre o conteúdo recém-descoberto
     try:
         asyncio.get_running_loop().create_task(
-            _event_reflection(task.title, summary, clean_topics)
+            _event_reflection(task.title, summary, clean_topics, is_echo_chamber=_echo)
         )
     except RuntimeError:
         pass
@@ -699,6 +718,7 @@ async def _check_discoveries(
     title: str,
     new_topics: list[str],
     summary: str,
+    is_echo_chamber: bool = False,
 ) -> None:
     """
     Verifica se os tópicos recém-extraídos têm sobreposição relevante com o
@@ -736,7 +756,19 @@ async def _check_discoveries(
         return
 
     overlap = [t for t in new_topics if t in high_score]
-    if len(overlap) < _INSIGHT_TOPIC_THRESHOLD:
+
+    # K: epsilon-greedy epistêmico — câmara de eco → 5% de chance de tópico divergente
+    _forced_diversity = False
+    if len(overlap) < _INSIGHT_TOPIC_THRESHOLD and is_echo_chamber and random.random() < 0.05:
+        mid_candidates = [t for t, score in top if score > 0.5 and t not in high_score]
+        if mid_candidates:
+            overlap = [random.choice(mid_candidates)]
+            _forced_diversity = True
+            log.info(
+                "knowledge_worker: epsilon-greedy diversidade — tópico='%s'", overlap[0]
+            )
+
+    if len(overlap) < _INSIGHT_TOPIC_THRESHOLD and not _forced_diversity:
         return
 
     _last_insight_at = _time.monotonic()
@@ -920,7 +952,12 @@ async def _update_entity_graph(entities: list[str], delta: float = 1.0) -> None:
 # Reflexão orientada a evento
 # ---------------------------------------------------------------------------
 
-async def _event_reflection(title: str, summary: str, topics: list[str]) -> None:
+async def _event_reflection(
+    title: str,
+    summary: str,
+    topics: list[str],
+    is_echo_chamber: bool = False,
+) -> None:
     """Gera nota pessoal da AKASHA sobre conteúdo recém-descoberto. Fire-and-forget."""
     model = _get_llm_query_model()
     if not model or not title:
@@ -945,9 +982,33 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
         if confirmed:
             context_text = "O que já notei antes:\n" + "\n".join(f"- {m['content']}" for m in confirmed[:2]) + "\n\n"
 
+    # G(a,b,c): tom baseado no estado afetivo atual
+    va_tone = ""
+    try:
+        from services.affective_state import get_current_state as _get_state
+        _st = await _get_state()
+        _v  = _st.get("episodic_valence", 0.0)
+        _a  = _st.get("episodic_arousal",  0.0)
+        if _v > 0.5:
+            va_tone = "Explore conexões inesperadas e hipóteses especulativas. "
+        elif _v < -0.3:
+            va_tone = "Seja analítica e crítica: identifique inconsistências e limitações. "
+        if _a > 0.7:
+            va_tone += "Use linguagem cuidadosa, com qualificações explícitas onde houver incerteza. "
+    except Exception:
+        pass
+
+    # K: modo de diversidade epistêmica — 5% de chance quando câmara de eco detectada
+    _diversity_mode = is_echo_chamber and random.random() < 0.05
+    diversity_hint = (
+        "Modo de exploração: você está num padrão de aprovação consistente. "
+        "Explore uma perspectiva inesperada ou conexão fora dos temas habituais. "
+    ) if _diversity_mode else ""
+
     prompt = (
         f"{personality}\n\n"
         f"{context_text}"
+        f"{va_tone}{diversity_hint}"
         f"Você acabou de encontrar e processar o seguinte conteúdo:\n"
         f"Título: {title}\n"
         f"Resumo: {summary or '(sem resumo)'}\n"
@@ -1004,12 +1065,10 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
     if len(thought) < 10:
         return
 
-    await save_memory(
-        type=mem_type,
-        content=thought,
-        tags=["event_discovery", title[:40]],
-        importance=importance,
-    )
+    tags = ["event_discovery", title[:40]]
+    if _diversity_mode:
+        tags.append("diversity_exploration")
+    await save_memory(type=mem_type, content=thought, tags=tags, importance=importance)
     log.info(
         "knowledge_worker.reflection: nota salva (type=%s, importance=%s) sobre '%s'",
         mem_type, importance, title[:60],
