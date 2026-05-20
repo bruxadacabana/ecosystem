@@ -128,6 +128,85 @@ async def record_appraisal(
     )
 
 
+async def _get_feedback_stats(recent_n: int = 20) -> dict[str, int]:
+    """Contagens de feedback recente e histórico longo — base para o momentum."""
+    try:
+        from services.personal_memory import _get_pm_db
+        async with aiosqlite.connect(_get_pm_db()) as db:
+            rows = await (await db.execute(
+                """SELECT feedback FROM personal_memory
+                   WHERE feedback IN ('confirmed', 'dismissed')
+                   ORDER BY id DESC LIMIT ?""",
+                (recent_n,),
+            )).fetchall()
+            recent_total     = len(rows)
+            recent_confirmed = sum(1 for r in rows if r[0] == "confirmed")
+            row = await (await db.execute(
+                """SELECT
+                     SUM(CASE WHEN feedback='confirmed' THEN 1 ELSE 0 END),
+                     COUNT(*)
+                   FROM personal_memory
+                   WHERE feedback IN ('confirmed', 'dismissed')""",
+            )).fetchone()
+        return {
+            "recent_confirmed": recent_confirmed,
+            "recent_total":     recent_total,
+            "all_confirmed":    int(row[0] or 0),
+            "all_total":        int(row[1] or 0),
+        }
+    except Exception as exc:
+        log.debug("_get_feedback_stats: %s", exc)
+        return {"recent_confirmed": 0, "recent_total": 0,
+                "all_confirmed": 0, "all_total": 0}
+
+
+async def record_approval_momentum(recent_n: int = 20) -> None:
+    """Calcula approval momentum e registra appraisal se threshold atingido.
+
+    Lockwood et al. (PNAS 2022): autoestima funcional derivada do momentum
+    (taxa de mudança do feedback), não da média cumulativa.
+    momentum = ratio_recent(last N) − ratio_baseline(all-time).
+    |momentum| < 0.15 → abaixo do threshold, sem evento.
+    momentum > 0.15   → contentamento leve.
+    momentum < -0.15  → vigilância/remorse leve.
+    Intensidade proporcional ao valor absoluto do momentum.
+    """
+    stats = await _get_feedback_stats(recent_n)
+    if stats["recent_total"] < 5:
+        return  # dados insuficientes para momentum significativo
+    ratio_recent   = stats["recent_confirmed"] / stats["recent_total"]
+    ratio_baseline = (
+        stats["all_confirmed"] / stats["all_total"]
+        if stats["all_total"] > 0 else 0.5
+    )
+    momentum  = ratio_recent - ratio_baseline
+    intensity = abs(momentum)
+    if intensity < 0.15:
+        return
+    if momentum > 0:            # contentamento leve
+        pleasantness     = min(1.0, 0.5 + intensity)
+        coping_potential = min(1.0, 0.6 + intensity * 0.4)
+        goal_relevance   = 0.7
+        novelty          = 0.2
+    else:                       # vigilância / remorse leve
+        pleasantness     = max(0.0, 0.5 - intensity)
+        coping_potential = max(0.1, 0.5 - intensity * 0.4)
+        goal_relevance   = 0.6
+        novelty          = min(1.0, 0.3 + intensity * 0.2)
+    await record_appraisal(
+        "approval_momentum",
+        novelty, pleasantness, goal_relevance, coping_potential,
+        event_ref=(
+            f"momentum={momentum:+.3f} "
+            f"({stats['recent_confirmed']}/{stats['recent_total']} recent)"
+        ),
+    )
+    log.debug(
+        "approval_momentum=%.3f (recent %.2f vs baseline %.2f)",
+        momentum, ratio_recent, ratio_baseline,
+    )
+
+
 async def get_current_state(hours: float = 24.0) -> dict[str, float]:
     """Estado afetivo atual — média simples das últimas `hours` horas.
 

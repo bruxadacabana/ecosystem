@@ -352,6 +352,13 @@ def set_feedback(memory_id: int, feedback: str | None) -> None:
             "UPDATE personal_memory SET feedback = ? WHERE id = ?",
             (feedback, memory_id),
         )
+    if feedback in {"confirmed", "dismissed"}:
+        import threading
+        try:
+            from core.affective_state import record_approval_momentum
+            threading.Thread(target=record_approval_momentum, daemon=True).start()
+        except Exception:
+            pass
 
 
 def get_context_memories(n: int = 8) -> list[dict]:

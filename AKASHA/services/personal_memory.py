@@ -329,6 +329,13 @@ async def set_feedback(memory_id: int, feedback: str | None) -> None:
             (feedback, memory_id),
         )
         await db.commit()
+    if feedback in {"confirmed", "dismissed"}:
+        import asyncio
+        try:
+            from services.affective_state import record_approval_momentum
+            asyncio.create_task(record_approval_momentum())
+        except Exception:
+            pass
 
 
 async def get_by_id(memory_id: int) -> dict | None:
