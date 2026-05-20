@@ -172,3 +172,50 @@ def get_top_topics(n: int = 20) -> list[tuple[str, float]]:
     except Exception as exc:
         log.debug("get_top_topics: %s", exc)
         return []
+
+
+def apply_interest_seeds() -> int:
+    """Importa tópicos de interests.json para topic_interest_profile.
+
+    Lê {sync_root}/interests.json via ecosystem_client. Tópicos excluídos são
+    ignorados. Só inicializa tópicos ainda sem score — nunca sobrescreve
+    histórico acumulado por queries ou feedback confirmado.
+
+    Retorna o número de seeds aplicados (0 se nenhum novo tópico encontrado).
+    """
+    try:
+        from ecosystem_client import get_interests  # type: ignore
+        interests = get_interests()
+    except Exception as exc:
+        log.debug("apply_interest_seeds: get_interests falhou: %s", exc)
+        return 0
+
+    if not interests:
+        return 0
+
+    names = [
+        (entry.get("name") or "").strip().lower()
+        for entry in interests
+        if not entry.get("excluded")
+    ]
+    names = [n for n in names if len(n) >= 3]
+    if not names:
+        return 0
+
+    existing = get_topic_scores_for_list(names)
+    count = 0
+    for entry in interests:
+        if entry.get("excluded"):
+            continue
+        name = (entry.get("name") or "").strip().lower()
+        if len(name) < 3:
+            continue
+        if existing.get(name, 0.0) > 0.0:
+            continue  # já tem histórico acumulado — não sobrescrever
+        weight = max(0.1, float(entry.get("weight") or 1.0))
+        update_topic_score(name, weight, source="seed")
+        count += 1
+
+    if count:
+        log.info("apply_interest_seeds: %d tópico(s) importados de interests.json.", count)
+    return count

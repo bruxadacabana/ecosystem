@@ -656,6 +656,7 @@ class MainWindow(QMainWindow):
         self._topics_refresh_timer = QTimer(self)
         self._topics_refresh_timer.setInterval(300_000)
         self._topics_refresh_timer.timeout.connect(self._extract_topics_bg)
+        self._topics_refresh_timer.timeout.connect(self._export_topic_profile_interests)
         self._post_nb_reflection_worker: PersonalReflectionWorker | None = None
         self._periodic_reflection_worker: PeriodicReflectionWorker | None = None
         self._index_reflection_worker: IndexReflectionWorker | None = None
@@ -1954,6 +1955,71 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=_run, daemon=True).start()
 
+    # ── Sincronização de interesses com o HUB ────────────────────────────────
+
+    def _apply_interest_seeds_bg(self) -> None:
+        """Lê interests.json e popula topic_interest_profile. Background thread."""
+        try:
+            from core.topic_profile import apply_interest_seeds
+            apply_interest_seeds()
+        except Exception:
+            pass
+
+    def _setup_interests_watcher(self) -> None:
+        """Instala QFileSystemWatcher em interests.json para re-seed quando o HUB atualiza."""
+        try:
+            from ecosystem_client import get_sync_root  # type: ignore
+            root = get_sync_root()
+            if root is None:
+                return
+            path = str(root / "interests.json")
+            if not hasattr(self, "_interests_watcher"):
+                from PySide6.QtCore import QFileSystemWatcher
+                self._interests_watcher = QFileSystemWatcher(self)
+                self._interests_watcher.fileChanged.connect(self._on_interests_file_changed)
+            self._interests_watcher.removePaths(self._interests_watcher.files())
+            self._interests_watcher.addPath(path)
+        except Exception:
+            pass
+
+    def _on_interests_file_changed(self, _path: str) -> None:
+        """Callback do QFileSystemWatcher — re-seed quando interests.json muda."""
+        import threading as _threading
+        _threading.Thread(target=self._apply_interest_seeds_bg, daemon=True).start()
+
+    def _export_topic_profile_interests(self) -> None:
+        """Exporta top tópicos do topic_interest_profile para interests.json.
+
+        Chamado a cada tick do _topics_refresh_timer (5 min). Complementa o
+        _export_reflection_interests que exporta frequência de palavras das memórias;
+        este exporta scores acumulados por queries e feedback confirmado.
+        """
+        import threading as _threading
+
+        def _run() -> None:
+            try:
+                from core.topic_profile import get_top_topics
+                from ecosystem_client import update_interests  # type: ignore
+                top = get_top_topics(30)
+                if not top:
+                    return
+                max_score = max(s for _, s in top)
+                if max_score <= 0:
+                    return
+                topics = [
+                    {
+                        "name":    topic,
+                        "weight":  round(score / max_score, 4),
+                        "sources": ["mnemosyne_queries"],
+                    }
+                    for topic, score in top
+                ]
+                update_interests(topics)
+            except Exception:
+                pass
+
+        _threading.Thread(target=_run, daemon=True).start()
+
     def _on_reflection_ready(self, memory_id: int, content: str) -> None:
         """Exibe notificação de reflexão pós-notebook com ações inline."""
         self._reflection_memory_id = memory_id
@@ -2264,6 +2330,11 @@ class MainWindow(QMainWindow):
             self._refresh_sessions_list()
 
         self._update_badge()
+
+        # Seed topic_interest_profile com interesses do HUB (fire-and-forget)
+        import threading as _threading
+        _threading.Thread(target=self._apply_interest_seeds_bg, daemon=True).start()
+        self._setup_interests_watcher()
 
         self.vectorstore = MultiVectorstore(load_all_vectorstores(self.config))
         if self.vectorstore:
