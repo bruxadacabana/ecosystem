@@ -54,16 +54,62 @@ CREATE TABLE IF NOT EXISTS personal_memory (
 );
 """
 
-# ── Cálculo de valência/arousal via VADER (NLTK) ─────────────────────────────
+# ── Cálculo de valência/arousal — backend multilíngue ────────────────────────
+# Prioridade de backend: XLM-RoBERTa → NRC-VAD lexicon → VADER → (None, None)
+#
+# NRC-VAD lexicon (Mohammad 2018): baixar de
+#   https://saifmohammad.com/WebPages/nrc-vad-lexicon.html
+# e colocar em ~/.cache/ecosystem/nrc_vad_lexicon.tsv
+# Formato TSV: Word<TAB>Valence<TAB>Arousal<TAB>Dominance (com cabeçalho)
 
-_sia = None  # lazy init — evita carregamento no import time
+_xlmr_pipe:  object | None = None                    # lazy: transformers pipeline
+_nrc_vad:    dict   | None = None                    # lazy: word → (valence, arousal)
+_sia:        object | None = None                    # lazy: VADER fallback
+_va_backend: str           = ""                      # resolvido na primeira chamada
 
 
-def _get_sia():
-    """Retorna o SentimentIntensityAnalyzer, baixando o léxico se necessário."""
-    global _sia
-    if _sia is not None:
-        return _sia
+def _load_nrc_vad() -> "dict[str, tuple[float, float]] | None":
+    nrc_path = Path.home() / ".cache" / "ecosystem" / "nrc_vad_lexicon.tsv"
+    if not nrc_path.exists():
+        return None
+    try:
+        data: dict[str, tuple[float, float]] = {}
+        with nrc_path.open(encoding="utf-8") as f:
+            next(f, None)  # pula cabeçalho
+            for line in f:
+                parts = line.strip().split("\t")
+                if len(parts) >= 3:
+                    word = parts[0].lower()
+                    data[word] = (float(parts[1]), float(parts[2]))
+        return data or None
+    except Exception as exc:
+        log.debug("NRC-VAD: falha ao carregar: %s", exc)
+        return None
+
+
+def _resolve_va_backend() -> None:
+    global _xlmr_pipe, _nrc_vad, _sia, _va_backend
+
+    try:
+        from transformers import pipeline as _hf_pipeline  # type: ignore[import-untyped]
+        _xlmr_pipe = _hf_pipeline(
+            "text-classification",
+            model="cardiffnlp/twitter-xlm-roberta-base-sentiment",
+            top_k=None,
+            device=-1,  # CPU — GPU reservada para Ollama
+        )
+        _va_backend = "xlm_roberta"
+        log.debug("VA backend: XLM-RoBERTa")
+        return
+    except Exception as exc:
+        log.debug("XLM-RoBERTa indisponível: %s", exc)
+
+    _nrc_vad = _load_nrc_vad()
+    if _nrc_vad:
+        _va_backend = "nrc_vad"
+        log.debug("VA backend: NRC-VAD (%d palavras)", len(_nrc_vad))
+        return
+
     try:
         import nltk
         from nltk.sentiment.vader import SentimentIntensityAnalyzer
@@ -72,27 +118,49 @@ def _get_sia():
         except LookupError:
             nltk.download("vader_lexicon", quiet=True)
             _sia = SentimentIntensityAnalyzer()
+        _va_backend = "vader"
+        log.debug("VA backend: VADER (fallback inglês)")
+        return
     except Exception as exc:
-        log.debug("VADER não disponível: %s", exc)
-    return _sia
+        log.debug("VADER indisponível: %s", exc)
+
+    _va_backend = "none"
 
 
 def _compute_valence_arousal(text: str) -> tuple[float | None, float | None]:
-    """Calcula valence ∈ [−1, 1] e arousal ∈ [0, 1] via VADER compound score.
+    """Valence ∈ [−1, 1] e arousal ∈ [0, 1] via modelo multilíngue.
 
-    valence  = compound (positivo/negativo)
-    arousal  = |compound| (intensidade emocional como proxy de ativação)
-    Retorna (None, None) se VADER não estiver disponível.
+    Backend: XLM-RoBERTa → NRC-VAD lexicon → VADER → (None, None).
     """
-    sia = _get_sia()
-    if sia is None:
-        return None, None
+    if not _va_backend:
+        _resolve_va_backend()
     try:
-        scores = sia.polarity_scores(text)
-        compound = scores["compound"]
-        return round(compound, 4), round(abs(compound), 4)
+        if _va_backend == "xlm_roberta" and _xlmr_pipe is not None:
+            results = _xlmr_pipe(text[:512], truncation=True)  # type: ignore[operator]
+            scores = {r["label"].upper(): r["score"] for r in results[0]}
+            pos = scores.get("POSITIVE", scores.get("POS", 0.0))
+            neg = scores.get("NEGATIVE", scores.get("NEG", 0.0))
+            neu = scores.get("NEUTRAL",  scores.get("NEU", 0.0))
+            return round(pos - neg, 4), round(1.0 - neu, 4)
+
+        if _va_backend == "nrc_vad" and _nrc_vad is not None:
+            vals, arousals = [], []
+            for w in text.lower().split():
+                entry = _nrc_vad.get(w)
+                if entry:
+                    vals.append(entry[0])
+                    arousals.append(entry[1])
+            if vals:
+                # NRC-VAD valence ∈ [0,1] → remapear para [−1,1]
+                return round(sum(vals) / len(vals) * 2.0 - 1.0, 4), round(sum(arousals) / len(arousals), 4)
+            return None, None
+
+        if _va_backend == "vader" and _sia is not None:
+            compound = _sia.polarity_scores(text)["compound"]  # type: ignore[union-attr]
+            return round(compound, 4), round(abs(compound), 4)
     except Exception:
-        return None, None
+        pass
+    return None, None
 
 
 def _derive_category(tags: list[str]) -> str:

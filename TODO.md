@@ -1,331 +1,331 @@
-Ôªø# TODO ‚Äî Ecossistema
+# TODO ó Ecossistema
 
-> Consolidado em 2026-04-27. Fonte √∫nica de verdade ‚Äî arquivos individuais removidos.
+> Consolidado em 2026-04-27. Fonte ˙nica de verdade ó arquivos individuais removidos.
 
 ---
 
-## Padr√µes Obrigat√≥rios
+## Padrıes ObrigatÛrios
 
 
-**HUB √© o primeiro app a rodar.** Centraliza todas as configura√ß√µes comuns do ecossistema e gerencia seu funcionamento.
-Os demais apps leem `ecosystem.json` no startup ‚Äî se n√£o houver valor configurado, usam
-defaults locais. Nunca bloquear o startup por falta de configura√ß√£o do ecosystem.
+**HUB È o primeiro app a rodar.** Centraliza todas as configuraÁıes comuns do ecossistema e gerencia seu funcionamento.
+Os demais apps leem `ecosystem.json` no startup ó se n„o houver valor configurado, usam
+defaults locais. Nunca bloquear o startup por falta de configuraÁ„o do ecosystem.
 
 **Compatibilidade de plataforma: todos os apps devem rodar no Windows 10 e no CachyOS (Linux).**
 
 Isso implica:
-- Sem paths hardcoded com separadores Unix ‚Äî usar APIs de path da linguagem (`Path`, `os.path`, `std::path`)
-- Sem depend√™ncias exclusivas de uma plataforma (ex.: bibliotecas s√≥-Linux ou s√≥-Windows)
-- Testar caminhos com espa√ßos (o diret√≥rio de trabalho da pr√≥pria Jenifer tem espa√ßo no nome)
-- Apps Python: empacotar com `uv` ou fornecer instru√ß√µes expl√≠citas para ambos os SOs
+- Sem paths hardcoded com separadores Unix ó usar APIs de path da linguagem (`Path`, `os.path`, `std::path`)
+- Sem dependÍncias exclusivas de uma plataforma (ex.: bibliotecas sÛ-Linux ou sÛ-Windows)
+- Testar caminhos com espaÁos (o diretÛrio de trabalho da prÛpria Jenifer tem espaÁo no nome)
+- Apps Python: empacotar com `uv` ou fornecer instruÁıes explÌcitas para ambos os SOs
 - Apps Tauri/Rust: garantir que `cargo tauri build` funcione nos dois targets
 
 ---
 
-**Tratamento de erros com tipagem √© prioridade absoluta em todo o ecossistema.**
+**Tratamento de erros com tipagem È prioridade absoluta em todo o ecossistema.**
 
-Isso se aplica a todos os apps existentes e a qualquer c√≥digo novo:
+Isso se aplica a todos os apps existentes e a qualquer cÛdigo novo:
 
-- **Rust (AETHER/Hub):** toda fun√ß√£o fal√≠vel retorna `Result<T, AppError>`.
-  Zero `.unwrap()` ou `.expect()` em produ√ß√£o.
-- **TypeScript (OGMA/Hub):** `strict: true` obrigat√≥rio. Erros tipados com
-  discriminated unions ‚Äî `{ ok: true; data: T } | { ok: false; error: AppError }`.
+- **Rust (AETHER/Hub):** toda funÁ„o falÌvel retorna `Result<T, AppError>`.
+  Zero `.unwrap()` ou `.expect()` em produÁ„o.
+- **TypeScript (OGMA/Hub):** `strict: true` obrigatÛrio. Erros tipados com
+  discriminated unions ó `{ ok: true; data: T } | { ok: false; error: AppError }`.
   Nunca `any`, nunca `catch (e: any)` sem re-tipar.
-- **Python (KOSMOS/Mnemosyne/utilit√°rios):** exce√ß√µes capturadas com tipos
-  expl√≠citos (`except ValueError`, n√£o `except Exception` gen√©rico).
-  Fun√ß√µes cr√≠ticas anotadas com `-> T | None` ou via `Result` pattern.
+- **Python (KOSMOS/Mnemosyne/utilit·rios):** exceÁıes capturadas com tipos
+  explÌcitos (`except ValueError`, n„o `except Exception` genÈrico).
+  FunÁıes crÌticas anotadas com `-> T | None` ou via `Result` pattern.
 
-Nenhuma fase ou feature est√° completa se o caminho de erro n√£o for tratado
-e tipado com a mesma aten√ß√£o que o caminho feliz.
-
----
-
+Nenhuma fase ou feature est· completa se o caminho de erro n„o for tratado
+e tipado com a mesma atenÁ„o que o caminho feliz.
 
 ---
 
-## Ecossistema ‚Äî Integra√ß√£o e Infraestrutura
 
-### FASE 0 ‚Äî Funda√ß√£o do ecossistema
-> Pr√©-requisito para todas as fases seguintes.
+---
 
-> **Decis√£o de caminho (revisada):** O arquivo de contrato foi movido para
+## Ecossistema ó IntegraÁ„o e Infraestrutura
+
+### FASE 0 ó FundaÁ„o do ecossistema
+> PrÈ-requisito para todas as fases seguintes.
+
+> **Decis„o de caminho (revisada):** O arquivo de contrato foi movido para
 > `~/.local/share/ecosystem/ecosystem.json` (Linux) / `%APPDATA%\ecosystem\ecosystem.json` (Windows).
-> Motivo: apps Tauri (AETHER) e Electron (OGMA) n√£o conhecem o caminho de `program files/`
-> em produ√ß√£o. O caminho XDG/AppData √© descoberto automaticamente por todas as linguagens.
+> Motivo: apps Tauri (AETHER) e Electron (OGMA) n„o conhecem o caminho de `program files/`
+> em produÁ„o. O caminho XDG/AppData È descoberto automaticamente por todas as linguagens.
 
 - [x] Criar `ecosystem.json` em `~/.local/share/ecosystem/` com caminhos reais do KOSMOS
-- [x] Criar `ecosystem_client.py` ‚Äî utilit√°rio Python compartilhado (KOSMOS, Mnemosyne, Hermes)
-      Fun√ß√µes: `ecosystem_path()`, `read_ecosystem()`, `write_section()` com escrita at√¥mica
-- [x] Criar `OGMA/src/main/ecosystem.ts` ‚Äî utilit√°rio TypeScript para OGMA
-      Fun√ß√µes: `ecosystemPath()`, `readEcosystem()`, `writeSection()` com escrita at√¥mica
-- [x] Criar `AETHER/src-tauri/src/ecosystem.rs` ‚Äî m√≥dulo Rust para AETHER
-      Fun√ß√µes: `ecosystem_path()`, `write_section()` usando `dirs::data_dir()`
+- [x] Criar `ecosystem_client.py` ó utilit·rio Python compartilhado (KOSMOS, Mnemosyne, Hermes)
+      FunÁıes: `ecosystem_path()`, `read_ecosystem()`, `write_section()` com escrita atÙmica
+- [x] Criar `OGMA/src/main/ecosystem.ts` ó utilit·rio TypeScript para OGMA
+      FunÁıes: `ecosystemPath()`, `readEcosystem()`, `writeSection()` com escrita atÙmica
+- [x] Criar `AETHER/src-tauri/src/ecosystem.rs` ó mÛdulo Rust para AETHER
+      FunÁıes: `ecosystem_path()`, `write_section()` usando `dirs::data_dir()`
 - [x] Adicionar `dirs = "5"` em `AETHER/src-tauri/Cargo.toml`
 - [x] Wiring em `AETHER/src-tauri/src/lib.rs`: escreve `vault_path` no startup (falha silenciosa)
 - [x] Documentar o contrato: quem escreve cada campo, quando, formato
 
-#### 0.5 ‚Äî sync_root: sincroniza√ß√£o via Proton Drive (ou qualquer pasta sync)
+#### 0.5 ó sync_root: sincronizaÁ„o via Proton Drive (ou qualquer pasta sync)
 
 Objetivo: um campo `sync_root` top-level no ecosystem.json aponta para a pasta do Proton Drive.
 O HUB deriva e aplica todos os caminhos de uma vez. Cada app respeita o caminho configurado.
 
 ```
 ProtonDrive/ecosystem/
-‚îú‚îÄ‚îÄ aether/        ‚Üê vault_path
-‚îú‚îÄ‚îÄ kosmos/        ‚Üê archive_path
-‚îú‚îÄ‚îÄ mnemosyne/
-‚îÇ   ‚îú‚îÄ‚îÄ docs/      ‚Üê watched_dir
-‚îÇ   ‚îî‚îÄ‚îÄ chroma_db/ ‚Üê persist_dir (ChromaDB sincronizado)
-‚îú‚îÄ‚îÄ hermes/        ‚Üê output_dir
-‚îî‚îÄ‚îÄ akasha/        ‚Üê archive_path
++-- aether/        ? vault_path
++-- kosmos/        ? archive_path
++-- mnemosyne/
+¶   +-- docs/      ? watched_dir
+¶   +-- chroma_db/ ? persist_dir (ChromaDB sincronizado)
++-- hermes/        ? output_dir
++-- akasha/        ? archive_path
 ```
 
-- [x] **`ecosystem_client.py`** ‚Äî adicionar `derive_paths(sync_root)` e campo `sync_root` no schema
-- [x] **`Mnemosyne/core/config.py`** ‚Äî novo campo `chroma_dir`; `persist_dir` usa-o se definido
-- [x] **`Mnemosyne/gui/main_window.py`** ‚Äî campo "Pasta do ChromaDB" na SetupDialog
-- [x] **`AKASHA/config.py`** ‚Äî `ARCHIVE_PATH` l√™ `akasha.archive_path` do ecosystem.json se dispon√≠vel
-- [x] **`HUB/src-tauri/src/commands/config.rs`** ‚Äî comando `apply_sync_root(sync_root)`
-      Cria subpastas + escreve se√ß√µes no ecosystem.json via `derive_paths`
-- [x] **`HUB/src/views/SetupView.tsx`** ‚Äî se√ß√£o "Sincroniza√ß√£o": campo sync_root + bot√£o "Aplicar"
+- [x] **`ecosystem_client.py`** ó adicionar `derive_paths(sync_root)` e campo `sync_root` no schema
+- [x] **`Mnemosyne/core/config.py`** ó novo campo `chroma_dir`; `persist_dir` usa-o se definido
+- [x] **`Mnemosyne/gui/main_window.py`** ó campo "Pasta do ChromaDB" na SetupDialog
+- [x] **`AKASHA/config.py`** ó `ARCHIVE_PATH` lÍ `akasha.archive_path` do ecosystem.json se disponÌvel
+- [x] **`HUB/src-tauri/src/commands/config.rs`** ó comando `apply_sync_root(sync_root)`
+      Cria subpastas + escreve seÁıes no ecosystem.json via `derive_paths`
+- [x] **`HUB/src/views/SetupView.tsx`** ó seÁ„o "SincronizaÁ„o": campo sync_root + bot„o "Aplicar"
       Aviso: "Mova seus arquivos existentes manualmente antes de aplicar"
 
-- [x] Instalar e configurar Proton Drive entre m√°quinas
+- [x] Instalar e configurar Proton Drive entre m·quinas
       - sync_root aplicado: `C:\Users\USUARIO\Documents\p\My files\backup\ecosystem`
       - Subpastas criadas; ecosystem.json atualizado com todos os caminhos derivados
-      - [x] Testar round-trip: arquivar p√°gina no AKASHA ‚Üí aparece no Proton ‚Üí segunda m√°quina
+      - [x] Testar round-trip: arquivar p·gina no AKASHA ? aparece no Proton ? segunda m·quina
 
-#### 0.6 ‚Äî OGMA: migrar de Turso para Proton Drive (SQLite local)
+#### 0.6 ó OGMA: migrar de Turso para Proton Drive (SQLite local)
 
-Motiva√ß√£o: Proton mant√©m c√≥pias locais em todas as m√°quinas + nuvem, sem depender de
-conta externa. Turso s√≥ mant√©m na nuvem.
+MotivaÁ„o: Proton mantÈm cÛpias locais em todas as m·quinas + nuvem, sem depender de
+conta externa. Turso sÛ mantÈm na nuvem.
 
-- [x] Remover integra√ß√£o Turso do OGMA (`src/main/database.ts` ‚Äî voltar para SQLite puro local)
-      Remover depend√™ncias: `@libsql/client`, `dotenv` e o `.env` com token Turso
+- [x] Remover integraÁ„o Turso do OGMA (`src/main/database.ts` ó voltar para SQLite puro local)
+      Remover dependÍncias: `@libsql/client`, `dotenv` e o `.env` com token Turso
 - [x] Adicionar `ogma/` ao `sync_root` em `apply_sync_root()` (Rust + derive_paths Python)
-      `data_path: {sync_root}/ogma/` ‚Äî inclui `ogma.db`, `uploads/`, `exports/`
+      `data_path: {sync_root}/ogma/` ó inclui `ogma.db`, `uploads/`, `exports/`
 - [x] Atualizar `paths.ts` do OGMA para usar `ogma.data_path` do ecosystem.json (fallback local)
-- [ ] Testar migra√ß√£o: exportar dados do Turso ‚Üí importar no SQLite local antes de remover
+- [ ] Testar migraÁ„o: exportar dados do Turso ? importar no SQLite local antes de remover
 
-#### 0.7 ‚Äî Hermes: usar output_dir do ecosystem.json no startup
+#### 0.7 ó Hermes: usar output_dir do ecosystem.json no startup
 
-Objetivo: Hermes deve ler `hermes.output_dir` do ecosystem.json se `outdir` n√£o estiver
-nas prefs locais ‚Äî o mesmo padr√£o j√° aplicado ao `mnemo_dir`. Ap√≥s `apply_sync_root`,
+Objetivo: Hermes deve ler `hermes.output_dir` do ecosystem.json se `outdir` n„o estiver
+nas prefs locais ó o mesmo padr„o j· aplicado ao `mnemo_dir`. ApÛs `apply_sync_root`,
 Hermes passa a usar `{sync_root}/hermes/` automaticamente.
 
-- [x] `Hermes/hermes.py` ‚Äî `_load_prefs()`: se `outdir` n√£o estiver em prefs, ler
+- [x] `Hermes/hermes.py` ó `_load_prefs()`: se `outdir` n„o estiver em prefs, ler
       `hermes.output_dir` do ecosystem.json como fallback
 
-#### 0.8 ‚Äî AKASHA: integra√ß√£o Hermes + DB no Proton + lista negra + UI
+#### 0.8 ó AKASHA: integraÁ„o Hermes + DB no Proton + lista negra + UI
 
-##### 0.8a ‚Äî AKASHA indexa arquivos do Hermes na busca local
-- [x] `AKASHA/config.py` ‚Äî adicionar `hermes_output: str` lendo `hermes.output_dir` do ecosystem.json
-- [x] `AKASHA/services/local_search.py` ‚Äî adicionar 6¬™ fonte `HERMES` em `index_local_files()`
+##### 0.8a ó AKASHA indexa arquivos do Hermes na busca local
+- [x] `AKASHA/config.py` ó adicionar `hermes_output: str` lendo `hermes.output_dir` do ecosystem.json
+- [x] `AKASHA/services/local_search.py` ó adicionar 6™ fonte `HERMES` em `index_local_files()`
 
-##### 0.8b ‚Äî AKASHA: DB (biblioteca + lista negra) mov√≠vel para Proton
-- [x] `AKASHA/config.py` ‚Äî `DB_PATH` l√™ `akasha.data_path` do ecosystem.json se dispon√≠vel
-- [x] `ecosystem_client.py` ‚Äî `derive_paths()`: adicionar `data_path` √† se√ß√£o `akasha`
-- [x] `HUB/src-tauri/src/commands/config.rs` ‚Äî `apply_sync_root()`: incluir `akasha.data_path`
+##### 0.8b ó AKASHA: DB (biblioteca + lista negra) movÌvel para Proton
+- [x] `AKASHA/config.py` ó `DB_PATH` lÍ `akasha.data_path` do ecosystem.json se disponÌvel
+- [x] `ecosystem_client.py` ó `derive_paths()`: adicionar `data_path` ‡ seÁ„o `akasha`
+- [x] `HUB/src-tauri/src/commands/config.rs` ó `apply_sync_root()`: incluir `akasha.data_path`
 
-##### 0.8c ‚Äî AKASHA: aba "lista negra" no menu
-- [x] `AKASHA/database.py` ‚Äî `get_blocked_domains()` j√° existia (retorna set[str])
-- [x] `AKASHA/routers/domains.py` ‚Äî adicionar rota `GET /domains` com listagem + template
-- [x] `AKASHA/templates/domains.html` ‚Äî nova p√°gina herdando base.html
-- [x] `AKASHA/templates/base.html` ‚Äî adicionar link "lista negra" no nav
+##### 0.8c ó AKASHA: aba "lista negra" no menu
+- [x] `AKASHA/database.py` ó `get_blocked_domains()` j· existia (retorna set[str])
+- [x] `AKASHA/routers/domains.py` ó adicionar rota `GET /domains` com listagem + template
+- [x] `AKASHA/templates/domains.html` ó nova p·gina herdando base.html
+- [x] `AKASHA/templates/base.html` ó adicionar link "lista negra" no nav
 
-#### 0.8d ‚Äî AKASHA: melhorias de UI nos cards e p√°ginas
-- [x] `AKASHA/static/style.css` ‚Äî adicionar classe `.page-subtitle`
-- [x] `AKASHA/templates/library.html` ‚Äî subt√≠tulo descritivo da Biblioteca
-- [x] `AKASHA/templates/sites.html` ‚Äî subt√≠tulo descritivo de Sites
-- [x] `AKASHA/routers/crawler.py` ‚Äî rota `POST /sites/add-quick` (quick-add sem par√¢metros extras)
-- [x] `AKASHA/templates/_macros.html` ‚Äî bot√£o "Adicionar a Sites" nos cards
+#### 0.8d ó AKASHA: melhorias de UI nos cards e p·ginas
+- [x] `AKASHA/static/style.css` ó adicionar classe `.page-subtitle`
+- [x] `AKASHA/templates/library.html` ó subtÌtulo descritivo da Biblioteca
+- [x] `AKASHA/templates/sites.html` ó subtÌtulo descritivo de Sites
+- [x] `AKASHA/routers/crawler.py` ó rota `POST /sites/add-quick` (quick-add sem par‚metros extras)
+- [x] `AKASHA/templates/_macros.html` ó bot„o "Adicionar a Sites" nos cards
 
-#### 0.9 ‚Äî Mnemosyne: caminhos prim√°rios do ecosystem.json + pastas extras
+#### 0.9 ó Mnemosyne: caminhos prim·rios do ecosystem.json + pastas extras
 
-Objetivo: Mnemosyne l√™ `watched_dir`, `vault_dir`, `chroma_dir` do ecosystem.json no
-startup (HUB √© fonte de verdade). SetupDialog exibe esses caminhos como read-only e
-permite adicionar `extra_dirs` para indexa√ß√£o adicional.
+Objetivo: Mnemosyne lÍ `watched_dir`, `vault_dir`, `chroma_dir` do ecosystem.json no
+startup (HUB È fonte de verdade). SetupDialog exibe esses caminhos como read-only e
+permite adicionar `extra_dirs` para indexaÁ„o adicional.
 
-- [x] `Mnemosyne/core/config.py` ‚Äî adicionar `extra_dirs: list[str]`; `load_config()` merge
-      ecosystem.json: watched_dir/vault_dir/chroma_dir do ecosystem t√™m preced√™ncia
-- [x] `Mnemosyne/gui/main_window.py` ‚Äî SetupDialog: caminhos principais viram read-only
-      (vindos do ecosystem); adicionar QListWidget "Pastas extras" com +/‚àí
-- [x] `Mnemosyne/core/` (indexador) ‚Äî loop sobre `[watched_dir] + extra_dirs`
+- [x] `Mnemosyne/core/config.py` ó adicionar `extra_dirs: list[str]`; `load_config()` merge
+      ecosystem.json: watched_dir/vault_dir/chroma_dir do ecosystem tÍm precedÍncia
+- [x] `Mnemosyne/gui/main_window.py` ó SetupDialog: caminhos principais viram read-only
+      (vindos do ecosystem); adicionar QListWidget "Pastas extras" com +/-
+- [x] `Mnemosyne/core/` (indexador) ó loop sobre `[watched_dir] + extra_dirs`
 
-### EXTRAS ‚Äî Utilit√°rios e manuten√ß√£o
+### EXTRAS ó Utilit·rios e manutenÁ„o
 
-#### Script de build de produ√ß√£o
-- [x] `buildar.sh` ‚Äî bash (CachyOS): `cargo tauri build` para AETHER e HUB + `npm run dist:linux` para OGMA; aceita args para buildar s√≥ apps espec√≠ficos
-- [x] `buildar.bat` ‚Äî batch (Windows 10): mesma sequ√™ncia com `npm run dist:win` para OGMA
-- [x] `README.md` ‚Äî se√ß√£o "Build de produ√ß√£o" atualizada com os novos scripts
+#### Script de build de produÁ„o
+- [x] `buildar.sh` ó bash (CachyOS): `cargo tauri build` para AETHER e HUB + `npm run dist:linux` para OGMA; aceita args para buildar sÛ apps especÌficos
+- [x] `buildar.bat` ó batch (Windows 10): mesma sequÍncia com `npm run dist:win` para OGMA
+- [x] `README.md` ó seÁ„o "Build de produÁ„o" atualizada com os novos scripts
 
-#### Scripts de atualiza√ß√£o de depend√™ncias
-- [x] `atualizar.sh` ‚Äî bash (CachyOS): git pull + uv sync (AKASHA) + pip install -r (KOSMOS, Mnemosyne, Hermes) + npm install (AETHER, HUB, OGMA)
-- [x] `atualizar.bat` ‚Äî batch (Windows 10): mesma sequ√™ncia com comandos equivalentes
-- [x] `README.md` ‚Äî se√ß√£o "Atualizar depend√™ncias" adicionada entre "Rodar os apps" e "Build de produ√ß√£o"
+#### Scripts de atualizaÁ„o de dependÍncias
+- [x] `atualizar.sh` ó bash (CachyOS): git pull + uv sync (AKASHA) + pip install -r (KOSMOS, Mnemosyne, Hermes) + npm install (AETHER, HUB, OGMA)
+- [x] `atualizar.bat` ó batch (Windows 10): mesma sequÍncia com comandos equivalentes
+- [x] `README.md` ó seÁ„o "Atualizar dependÍncias" adicionada entre "Rodar os apps" e "Build de produÁ„o"
 
-### EXTRAS ‚Äî Bugs e melhorias urgentes
+### EXTRAS ó Bugs e melhorias urgentes
 
-#### HUB ‚Äî Race condition no ecosystem.json (paths somem √†s vezes)
+#### HUB ó Race condition no ecosystem.json (paths somem ‡s vezes)
 - Causa: `write_section` faz read-modify-write do arquivo inteiro sem lock.
   Se HUB e outro app chamam `write_section` ao mesmo tempo (ex: app abrindo
-  enquanto HUB salva), o √∫ltimo a escrever apaga as mudan√ßas do outro.
-- Solu√ß√£o acordada: **lock file** `.ecosystem.lock` na mesma pasta do JSON.
+  enquanto HUB salva), o ˙ltimo a escrever apaga as mudanÁas do outro.
+- SoluÁ„o acordada: **lock file** `.ecosystem.lock` na mesma pasta do JSON.
   Funciona cross-process e cross-language (Python + Rust + futuro TS) sem
-  depend√™ncia de APIs espec√≠ficas de plataforma.
-- [x] `ecosystem_client.py` ‚Äî usar `filelock.FileLock` (lib `filelock`) em torno
+  dependÍncia de APIs especÌficas de plataforma.
+- [x] `ecosystem_client.py` ó usar `filelock.FileLock` (lib `filelock`) em torno
   do read-modify-write; adicionar `filelock` ao `requirements.txt` de cada app Python
-- [x] `HUB/src-tauri/src/ecosystem.rs` ‚Äî implementar lock file manual:
+- [x] `HUB/src-tauri/src/ecosystem.rs` ó implementar lock file manual:
   `OpenOptions::create + write` em `.ecosystem.lock`, `lock_exclusive` via `fs2`,
-  liberar ap√≥s o `rename`. Adicionar `fs2` ao `Cargo.toml` do HUB.
+  liberar apÛs o `rename`. Adicionar `fs2` ao `Cargo.toml` do HUB.
 
-#### HUB ‚Äî Caminhos n√£o atualizam nos apps sem reiniciar
-- Causa: todos os apps leem ecosystem.json UMA VEZ no startup. N√£o h√° watcher.
-- Solu√ß√£o acordada: **aviso de reinicializa√ß√£o** ap√≥s salvar (op√ß√£o simples).
-  File watcher descartado ‚Äî mudan√ßa de paths em runtime exigiria refatora√ß√£o
-  invasiva em todos os m√≥dulos que cach√™am o valor de Paths.X.
-- [x] `HUB/src/views/SetupView.tsx` ‚Äî exibir mensagem ap√≥s `handleSave()` bem-sucedido:
-  "Configura√ß√£o salva. Reinicie cada app para aplicar os novos caminhos."
-  (mesmo padr√£o do `syncMsg` j√° existente para o sync_root)
+#### HUB ó Caminhos n„o atualizam nos apps sem reiniciar
+- Causa: todos os apps leem ecosystem.json UMA VEZ no startup. N„o h· watcher.
+- SoluÁ„o acordada: **aviso de reinicializaÁ„o** apÛs salvar (opÁ„o simples).
+  File watcher descartado ó mudanÁa de paths em runtime exigiria refatoraÁ„o
+  invasiva em todos os mÛdulos que cachÍam o valor de Paths.X.
+- [x] `HUB/src/views/SetupView.tsx` ó exibir mensagem apÛs `handleSave()` bem-sucedido:
+  "ConfiguraÁ„o salva. Reinicie cada app para aplicar os novos caminhos."
+  (mesmo padr„o do `syncMsg` j· existente para o sync_root)
 
-#### KOSMOS ‚Äî Stats travando e fechando o app
+#### KOSMOS ó Stats travando e fechando o app
 - Bug: `_reload_charts()` roda na thread principal fazendo k-means (numpy)
-  + queries + matplotlib, bloqueando o Qt event loop. Windows marca como "n√£o respondendo".
-- [x] `KOSMOS/app/ui/views/stats_view.py` ‚Äî mover carregamento de dados para `QThread`
-  (StatsLoadWorker); widgets s√£o criados na thread principal ap√≥s o worker terminar
+  + queries + matplotlib, bloqueando o Qt event loop. Windows marca como "n„o respondendo".
+- [x] `KOSMOS/app/ui/views/stats_view.py` ó mover carregamento de dados para `QThread`
+  (StatsLoadWorker); widgets s„o criados na thread principal apÛs o worker terminar
 
-#### KOSMOS ‚Äî Archive_path ignora ecosystem.json
+#### KOSMOS ó Archive_path ignora ecosystem.json
 - Bug: `Paths.ARCHIVE` estava hardcoded como `ROOT/"data"/"archive"`.
   O `archive_path` configurado via HUB (Proton Drive) era ignorado.
-- [x] `KOSMOS/app/utils/paths.py` ‚Äî ler `kosmos.archive_path` do ecosystem.json
-  no startup; usar como `ARCHIVE` se dispon√≠vel (fallback para `DATA/"archive"`)
+- [x] `KOSMOS/app/utils/paths.py` ó ler `kosmos.archive_path` do ecosystem.json
+  no startup; usar como `ARCHIVE` se disponÌvel (fallback para `DATA/"archive"`)
 
-#### Hermes ‚Äî "Descarregar" ‚Üí "Baixar" (portugu√™s do Brasil)
-- "Descarregar" √© PT-Portugal. Renomear para "Baixar" no bot√£o e na aba.
-- [x] `Hermes/hermes.py` ‚Äî renomear label do bot√£o, da aba e do coment√°rio de se√ß√£o
+#### Hermes ó "Descarregar" ? "Baixar" (portuguÍs do Brasil)
+- "Descarregar" È PT-Portugal. Renomear para "Baixar" no bot„o e na aba.
+- [x] `Hermes/hermes.py` ó renomear label do bot„o, da aba e do coment·rio de seÁ„o
 
-#### Hermes ‚Äî UX de playlist confusa: qualidade n√£o aparece ap√≥s carregar lista
-- Ap√≥s carregar a playlist, o usu√°rio n√£o sabe que precisa clicar em um v√≠deo
-  para ver as op√ß√µes de qualidade. A UI n√£o d√° feedback sobre isso.
-- [x] `Hermes/hermes.py` ‚Äî instru√ß√£o visual atualizada: "Selecione um v√≠deo acima
-  para ver as op√ß√µes de qualidade e baixar individualmente."
-- [x] `Hermes/hermes.py` ‚Äî auto-seleciona o primeiro v√≠deo ao carregar playlist
-  ‚Äî flag `_from_playlist_select` mant√©m a lista vis√≠vel ap√≥s selecionar v√≠deo individual
-  ‚Äî `_on_inspect_done` s√≥ esconde o painel de playlist em inspe√ß√µes fora da playlist
+#### Hermes ó UX de playlist confusa: qualidade n„o aparece apÛs carregar lista
+- ApÛs carregar a playlist, o usu·rio n„o sabe que precisa clicar em um vÌdeo
+  para ver as opÁıes de qualidade. A UI n„o d· feedback sobre isso.
+- [x] `Hermes/hermes.py` ó instruÁ„o visual atualizada: "Selecione um vÌdeo acima
+  para ver as opÁıes de qualidade e baixar individualmente."
+- [x] `Hermes/hermes.py` ó auto-seleciona o primeiro vÌdeo ao carregar playlist
+  ó flag `_from_playlist_select` mantÈm a lista visÌvel apÛs selecionar vÌdeo individual
+  ó `_on_inspect_done` sÛ esconde o painel de playlist em inspeÁıes fora da playlist
 
-#### Mnemosyne ‚Äî Indexa√ß√£o trava o computador mesmo com LLM cloud
-- Configura√ß√£o confirmada no Windows 10: LLM = kimi-k2.5:cloud (nuvem, OK), embedding = bge-m3:latest (local, ~570MB)
+#### Mnemosyne ó IndexaÁ„o trava o computador mesmo com LLM cloud
+- ConfiguraÁ„o confirmada no Windows 10: LLM = kimi-k2.5:cloud (nuvem, OK), embedding = bge-m3:latest (local, ~570MB)
 - Causa raiz: `Chroma.from_documents()` envia TODOS os chunks para o Ollama de uma vez,
-  sem pausas. bge-m3 ocupa ~570MB na RAM de GPU/CPU; com muitos arquivos s√£o milhares
-  de chamadas consecutivas sem liberar mem√≥ria ‚Üí travamento.
-- [x] `Mnemosyne/core/indexer.py` ‚Äî processar chunks em lotes (ex: 50 chunks por vez)
+  sem pausas. bge-m3 ocupa ~570MB na RAM de GPU/CPU; com muitos arquivos s„o milhares
+  de chamadas consecutivas sem liberar memÛria ? travamento.
+- [x] `Mnemosyne/core/indexer.py` ó processar chunks em lotes (ex: 50 chunks por vez)
   usando `Chroma.add_documents()` em loop com `time.sleep(0.1)` entre lotes,
-  ao inv√©s de `Chroma.from_documents()` com tudo de uma vez
-- [x] `Mnemosyne/gui/main_window.py` ‚Äî deixar mais claro na SetupDialog que
-  "Modelo de embedding" roda LOCALMENTE (tooltip: "Usado na indexa√ß√£o ‚Äî roda na sua m√°quina via Ollama")
+  ao invÈs de `Chroma.from_documents()` com tudo de uma vez
+- [x] `Mnemosyne/gui/main_window.py` ó deixar mais claro na SetupDialog que
+  "Modelo de embedding" roda LOCALMENTE (tooltip: "Usado na indexaÁ„o ó roda na sua m·quina via Ollama")
 
 ---
 
-#### 0.10 ‚Äî Arquivos de configura√ß√£o de todos os apps no Proton Drive
+#### 0.10 ó Arquivos de configuraÁ„o de todos os apps no Proton Drive
 
-Objetivo: config local de cada app tamb√©m fica na pasta sincronizada, para que as
-prefer√™ncias se propaguem entre m√°quinas sem reconfigurar manualmente.
+Objetivo: config local de cada app tambÈm fica na pasta sincronizada, para que as
+preferÍncias se propaguem entre m·quinas sem reconfigurar manualmente.
 
 Estrutura confirmada: `{sync_root}/{app}/.config/settings.json` para todos os apps.
 
 ```
 {sync_root}/
-‚îú‚îÄ‚îÄ ogma/
-‚îÇ   ‚îú‚îÄ‚îÄ ogma.db          ‚Üê banco SQLite (j√° feito no 0.6)
-‚îÇ   ‚îú‚îÄ‚îÄ uploads/
-‚îÇ   ‚îú‚îÄ‚îÄ exports/
-‚îÇ   ‚îî‚îÄ‚îÄ .config/
-‚îÇ       ‚îî‚îÄ‚îÄ settings.json
-‚îú‚îÄ‚îÄ akasha/
-‚îÇ   ‚îú‚îÄ‚îÄ akasha.db
-‚îÇ   ‚îî‚îÄ‚îÄ .config/
-‚îÇ       ‚îî‚îÄ‚îÄ settings.json
-‚îú‚îÄ‚îÄ hermes/
-‚îÇ   ‚îú‚îÄ‚îÄ (transcri√ß√µes .md)
-‚îÇ   ‚îî‚îÄ‚îÄ .config/
-‚îÇ       ‚îî‚îÄ‚îÄ settings.json
-‚îú‚îÄ‚îÄ mnemosyne/
-‚îÇ   ‚îú‚îÄ‚îÄ docs/
-‚îÇ   ‚îú‚îÄ‚îÄ chroma_db/
-‚îÇ   ‚îî‚îÄ‚îÄ .config/
-‚îÇ       ‚îî‚îÄ‚îÄ settings.json
-‚îú‚îÄ‚îÄ aether/
-‚îÇ   ‚îî‚îÄ‚îÄ .config/
-‚îÇ       ‚îî‚îÄ‚îÄ settings.json
-‚îî‚îÄ‚îÄ kosmos/
-    ‚îî‚îÄ‚îÄ .config/
-        ‚îî‚îÄ‚îÄ settings.json
++-- ogma/
+¶   +-- ogma.db          ? banco SQLite (j· feito no 0.6)
+¶   +-- uploads/
+¶   +-- exports/
+¶   +-- .config/
+¶       +-- settings.json
++-- akasha/
+¶   +-- akasha.db
+¶   +-- .config/
+¶       +-- settings.json
++-- hermes/
+¶   +-- (transcriÁıes .md)
+¶   +-- .config/
+¶       +-- settings.json
++-- mnemosyne/
+¶   +-- docs/
+¶   +-- chroma_db/
+¶   +-- .config/
+¶       +-- settings.json
++-- aether/
+¶   +-- .config/
+¶       +-- settings.json
++-- kosmos/
+    +-- .config/
+        +-- settings.json
 ```
 
-Cada app l√™ `{sync_root}/{app}/.config/settings.json` se `config_path` estiver definido
+Cada app lÍ `{sync_root}/{app}/.config/settings.json` se `config_path` estiver definido
 no ecosystem.json, com fallback para o arquivo local atual.
 
-- [x] **`derive_paths()`** ‚Äî adicionar `config_path: {sync_root}/{app}/.config` para cada app
-- [x] **`apply_sync_root()` (Rust)** ‚Äî criar subpastas `.config/` + escrever `config_path` no ecosystem.json
-- [x] **OGMA** ‚Äî `SETTINGS` em `paths.ts` usa `{ogma.config_path}/settings.json` se dispon√≠vel
-- [x] **Hermes** ‚Äî `_load_prefs()` / `_save_prefs()` usa `{hermes.config_path}/settings.json` se dispon√≠vel
-- [x] **KOSMOS** ‚Äî `Paths.SETTINGS` usa `{kosmos.config_path}/settings.json` se dispon√≠vel
-- [x] **Mnemosyne** ‚Äî `load_config()` / `save_config()` usa `{mnemosyne.config_path}/settings.json` se dispon√≠vel
-- [ ] **AKASHA** ‚Äî sem settings.json pr√≥prio; config est√° no akasha.db (sincronizado via 0.8b)
-- [ ] **AETHER** ‚Äî vault config j√° fica dentro de vault_path (sincronizado); sem settings separado
+- [x] **`derive_paths()`** ó adicionar `config_path: {sync_root}/{app}/.config` para cada app
+- [x] **`apply_sync_root()` (Rust)** ó criar subpastas `.config/` + escrever `config_path` no ecosystem.json
+- [x] **OGMA** ó `SETTINGS` em `paths.ts` usa `{ogma.config_path}/settings.json` se disponÌvel
+- [x] **Hermes** ó `_load_prefs()` / `_save_prefs()` usa `{hermes.config_path}/settings.json` se disponÌvel
+- [x] **KOSMOS** ó `Paths.SETTINGS` usa `{kosmos.config_path}/settings.json` se disponÌvel
+- [x] **Mnemosyne** ó `load_config()` / `save_config()` usa `{mnemosyne.config_path}/settings.json` se disponÌvel
+- [ ] **AKASHA** ó sem settings.json prÛprio; config est· no akasha.db (sincronizado via 0.8b)
+- [ ] **AETHER** ó vault config j· fica dentro de vault_path (sincronizado); sem settings separado
 
 ---
 
-### FASE 1 ‚Äî Interliga√ß√£o dos apps existentes
-> Aproveita o que j√° existe. Mudan√ßas cir√∫rgicas, sem novo app.
+### FASE 1 ó InterligaÁ„o dos apps existentes
+> Aproveita o que j· existe. MudanÁas cir˙rgicas, sem novo app.
 
-#### 1.1 ‚Äî OGMA ‚Üí AETHER (projetos de escrita)
+#### 1.1 ó OGMA ? AETHER (projetos de escrita)
 
-##### Passo A ‚Äî Renomear tipo `creative` ‚Üí `writing` no OGMA
+##### Passo A ó Renomear tipo `creative` ? `writing` no OGMA
 - [x] `src/renderer/types/index.ts`: alterar `ProjectType` union, SUBCATEGORIES,
-      PROJECT_TYPE_LABELS ('Escrita'), PROJECT_TYPE_ICONS ('‚úçÔ∏è' mant√©m),
+      PROJECT_TYPE_LABELS ('Escrita'), PROJECT_TYPE_ICONS ('??' mantÈm),
       PROJECT_TYPE_DESCRIPTIONS
 - [x] `src/renderer/components/Projects/NewProjectModal.tsx`: atualizar array TYPES
 - [x] `src/renderer/views/ProjectDashboard/ProjectLocalDashboard.tsx`:
-      renomear case `'creative'` ‚Üí `'writing'`
-- [x] `src/main/ipc.ts`: renomear todas as ocorr√™ncias do literal `'creative'`
+      renomear case `'creative'` ? `'writing'`
+- [x] `src/main/ipc.ts`: renomear todas as ocorrÍncias do literal `'creative'`
 - [x] `src/main/database.ts`: adicionar migration que faz
       `UPDATE projects SET project_type = 'writing' WHERE project_type = 'creative'`
-      (o campo √© TEXT sem CHECK constraint ‚Äî migration simples)
+      (o campo È TEXT sem CHECK constraint ó migration simples)
 
-##### Passo B ‚Äî Integrar projetos de escrita com o AETHER
+##### Passo B ó Integrar projetos de escrita com o AETHER
 - [x] `src/main/database.ts`: adicionar coluna `aether_project_id TEXT` na tabela
       `projects` (nova migration)
-- [x] OGMA l√™ `aether.vault_path` do `ecosystem.json` na cria√ß√£o de projeto
+- [x] OGMA lÍ `aether.vault_path` do `ecosystem.json` na criaÁ„o de projeto
 - [x] Ao criar projeto com `project_type = 'writing'`, OGMA escreve no vault AETHER:
-      - `{vault}/{uuid}/project.json`  (formato Project do AETHER ‚Äî campos: id, name, project_type, genre, description)
-      - `{vault}/{uuid}/{book_uuid}/book.json`  (livro padr√£o vazio, sem cap√≠tulos)
-- [x] Salvar `aether_project_id` no banco do OGMA para manter o v√≠nculo
-- [x] Bot√£o "Abrir no AETHER" em projetos de escrita (desabilitado se vault n√£o configurado)
+      - `{vault}/{uuid}/project.json`  (formato Project do AETHER ó campos: id, name, project_type, genre, description)
+      - `{vault}/{uuid}/{book_uuid}/book.json`  (livro padr„o vazio, sem capÌtulos)
+- [x] Salvar `aether_project_id` no banco do OGMA para manter o vÌnculo
+- [x] Bot„o "Abrir no AETHER" em projetos de escrita (desabilitado se vault n„o configurado)
 
-#### 1.2 ‚Äî KOSMOS ‚Üí Mnemosyne (artigos salvos)
-- [x] KOSMOS escreve `archive_path` e `data_path` em `ecosystem.json` na inicializa√ß√£o
+#### 1.2 ó KOSMOS ? Mnemosyne (artigos salvos)
+- [x] KOSMOS escreve `archive_path` e `data_path` em `ecosystem.json` na inicializaÁ„o
       via `ecosystem_client.write_section("kosmos", {...})` em `KOSMOS/main.py`
-- [x] Mnemosyne l√™ `ecosystem.json` e oferece o archive do KOSMOS
-      como pasta sugerida na tela de indexa√ß√£o (bot√£o "Sugest√µes do ecossistema" na SetupDialog)
-- [ ] Verificar se o bot√£o "Arquivar" em artigos salvos chama
-      `archive_manager` corretamente ‚Äî garantir que gera `.md` v√°lido
+- [x] Mnemosyne lÍ `ecosystem.json` e oferece o archive do KOSMOS
+      como pasta sugerida na tela de indexaÁ„o (bot„o "Sugestıes do ecossistema" na SetupDialog)
+- [ ] Verificar se o bot„o "Arquivar" em artigos salvos chama
+      `archive_manager` corretamente ó garantir que gera `.md` v·lido
 
-#### 1.3 ‚Äî AETHER ‚Üí Mnemosyne (indexar escritos)
-- [x] AETHER escreve `vault_path` em `ecosystem.json` na inicializa√ß√£o
-      (startup Rust, ap√≥s carregar vault ‚Äî `ecosystem::write_section()` em lib.rs)
-- [x] Mnemosyne oferece vault AETHER como pasta sugerida (bot√£o "Sugest√µes do ecossistema")
-- [ ] Testar indexa√ß√£o dos `.md` de cap√≠tulos pelo Mnemosyne
+#### 1.3 ó AETHER ? Mnemosyne (indexar escritos)
+- [x] AETHER escreve `vault_path` em `ecosystem.json` na inicializaÁ„o
+      (startup Rust, apÛs carregar vault ó `ecosystem::write_section()` em lib.rs)
+- [x] Mnemosyne oferece vault AETHER como pasta sugerida (bot„o "Sugestıes do ecossistema")
+- [ ] Testar indexaÁ„o dos `.md` de capÌtulos pelo Mnemosyne
 
-#### 1.4 ‚Äî Hermes ‚Üí Mnemosyne (transcri√ß√µes index√°veis)
-- [x] Adicionar campo "Pasta de sa√≠da do Mnemosyne" na aba Transcrever do Hermes
-      L√™ `mnemosyne.index_paths[0]` do ecosystem como sugest√£o; desabilitado se vazio
-- [x] Adicionar checkbox "Indexar no Mnemosyne ap√≥s transcrever"
+#### 1.4 ó Hermes ? Mnemosyne (transcriÁıes index·veis)
+- [x] Adicionar campo "Pasta de saÌda do Mnemosyne" na aba Transcrever do Hermes
+      LÍ `mnemosyne.index_paths[0]` do ecosystem como sugest„o; desabilitado se vazio
+- [x] Adicionar checkbox "Indexar no Mnemosyne apÛs transcrever"
       Salva o `.md` diretamente numa das pastas monitoradas pelo Mnemosyne
-- [x] Formato: Markdown limpo com frontmatter m√≠nimo (t√≠tulo, data, fonte/URL, dura√ß√£o)
+- [x] Formato: Markdown limpo com frontmatter mÌnimo (tÌtulo, data, fonte/URL, duraÁ„o)
 
-#### 1.5 ‚Äî Completar contrato ecosystem.json (se√ß√µes faltantes)
+#### 1.5 ó Completar contrato ecosystem.json (seÁıes faltantes)
 
-Cada app deve escrever sua se√ß√£o completa no startup. Schema alvo:
+Cada app deve escrever sua seÁ„o completa no startup. Schema alvo:
 ```json
 {
   "aether":    { "vault_path": "...", "exe_path": "..." },
@@ -337,732 +337,732 @@ Cada app deve escrever sua se√ß√£o completa no startup. Schema alvo:
 }
 ```
 
-- [x] **OGMA** ‚Äî `writeSection("ogma", { data_path, exe_path })` no startup
-      (`writeSection` existe em `ecosystem.ts` mas nunca √© chamado)
-- [x] **Mnemosyne** ‚Äî `write_section("mnemosyne", { watched_dir, vault_dir, index_paths, exe_path })` no startup
-      (paths v√™m do `AppConfig`; `persist_dir` = `{watched_dir}/.mnemosyne/chroma_db`)
-- [x] **Hermes** ‚Äî `write_section("hermes", { output_dir, exe_path })` no startup
-      (`output_dir` = pasta de downloads/transcri√ß√µes configurada na UI)
-- [x] **AKASHA** ‚Äî adicionar `archive_path` √† se√ß√£o j√° escrita por `register_akasha()`
+- [x] **OGMA** ó `writeSection("ogma", { data_path, exe_path })` no startup
+      (`writeSection` existe em `ecosystem.ts` mas nunca È chamado)
+- [x] **Mnemosyne** ó `write_section("mnemosyne", { watched_dir, vault_dir, index_paths, exe_path })` no startup
+      (paths vÍm do `AppConfig`; `persist_dir` = `{watched_dir}/.mnemosyne/chroma_db`)
+- [x] **Hermes** ó `write_section("hermes", { output_dir, exe_path })` no startup
+      (`output_dir` = pasta de downloads/transcriÁıes configurada na UI)
+- [x] **AKASHA** ó adicionar `archive_path` ‡ seÁ„o j· escrita por `register_akasha()`
 
-#### 1.6 ‚Äî Scraper compartilhado: KOSMOS e AKASHA
+#### 1.6 ó Scraper compartilhado: KOSMOS e AKASHA
 
-Objetivo: eliminar a duplica√ß√£o de c√≥digo da cascata de extra√ß√£o web.
-`ecosystem_scraper.py` (raiz do repo) √© o √∫nico ponto de manuten√ß√£o da cascata.
+Objetivo: eliminar a duplicaÁ„o de cÛdigo da cascata de extraÁ„o web.
+`ecosystem_scraper.py` (raiz do repo) È o ˙nico ponto de manutenÁ„o da cascata.
 
-- [x] Criar `ecosystem_scraper.py` ‚Äî cascata newspaper4k ‚Üí trafilatura ‚Üí readability-lxml
-      ‚Üí inscriptis ‚Üí BeautifulSoup; `extract(html, url, output_format)` sem I/O pr√≥prio
-- [x] `AKASHA/services/archiver.py` ‚Äî delegar `_cascade_extract` ao m√≥dulo compartilhado
-- [x] `AKASHA/services/library.py` ‚Äî idem para `_fetch_and_extract`
-- [x] `KOSMOS/app/core/article_scraper.py` ‚Äî simplificar para `_cascade_extract(..., output_format="html")`
-- [x] `KOSMOS/requirements.txt` ‚Äî adicionar `inscriptis` e `markdownify`
+- [x] Criar `ecosystem_scraper.py` ó cascata newspaper4k ? trafilatura ? readability-lxml
+      ? inscriptis ? BeautifulSoup; `extract(html, url, output_format)` sem I/O prÛprio
+- [x] `AKASHA/services/archiver.py` ó delegar `_cascade_extract` ao mÛdulo compartilhado
+- [x] `AKASHA/services/library.py` ó idem para `_fetch_and_extract`
+- [x] `KOSMOS/app/core/article_scraper.py` ó simplificar para `_cascade_extract(..., output_format="html")`
+- [x] `KOSMOS/requirements.txt` ó adicionar `inscriptis` e `markdownify`
 
-#### 1.8 ‚Äî AKASHA: busca local cobre todo o ecossistema
+#### 1.8 ó AKASHA: busca local cobre todo o ecossistema
 
-- [x] Indexar `AKASHA/data/archive/` pr√≥pria no FTS5 (source "AKASHA")
-      (`index_local_files()` em `services/local_search.py` ‚Äî mesmo extractor do KOSMOS)
+- [x] Indexar `AKASHA/data/archive/` prÛpria no FTS5 (source "AKASHA")
+      (`index_local_files()` em `services/local_search.py` ó mesmo extractor do KOSMOS)
 - [x] Ler `mnemosyne.watched_dir` e `mnemosyne.vault_dir` do ecosystem.json em `config.py`
 - [x] Indexar `mnemosyne.watched_dir` no FTS5 (source "MNEMOSYNE")
 - [x] Indexar `mnemosyne.vault_dir` no FTS5 (source "OBSIDIAN")
-      (depende de 1.5 ‚Äî Mnemosyne precisa escrever esses caminhos primeiro)
+      (depende de 1.5 ó Mnemosyne precisa escrever esses caminhos primeiro)
 
-#### 1.9 ‚Äî Mnemosyne: sugest√µes do ecossistema cobrindo todos os archives
+#### 1.9 ó Mnemosyne: sugestıes do ecossistema cobrindo todos os archives
 
-- [x] Adicionar AKASHA archive (`akasha.archive_path`) nas sugest√µes da SetupDialog
-      (depende de 1.5 ‚Äî AKASHA precisa escrever `archive_path` primeiro)
+- [x] Adicionar AKASHA archive (`akasha.archive_path`) nas sugestıes da SetupDialog
+      (depende de 1.5 ó AKASHA precisa escrever `archive_path` primeiro)
 
 ---
 
-### FASE 3 ‚Äî Android (APK)
-> ‚ö†Ô∏è **SUSPENSA PARA REPLANEJAMENTO.** O HUB passou a ter papel de LOGOS (orquestrador de IA), mudando seu foco principal.
+### FASE 3 ó Android (APK)
+> ?? **SUSPENSA PARA REPLANEJAMENTO.** O HUB passou a ter papel de LOGOS (orquestrador de IA), mudando seu foco principal.
 > A necessidade de acesso ao ecossistema no Android continua existindo, mas a abordagem precisa ser repensada
-> ‚Äî provavelmente um app separado ou solu√ß√£o diferente do HUB. Itens abaixo mantidos como refer√™ncia hist√≥rica.
+> ó provavelmente um app separado ou soluÁ„o diferente do HUB. Itens abaixo mantidos como referÍncia histÛrica.
 
-#### 3.1 ‚Äî Build Android do hub
+#### 3.1 ó Build Android do hub
 - [ ] Configurar ambiente Tauri Android:
       - Android Studio + NDK
-      - `cargo install tauri-cli` (j√° deve estar instalado do AETHER)
-- [ ] Adaptar `tauri.conf.json` para Android (permiss√µes de filesystem)
+      - `cargo install tauri-cli` (j· deve estar instalado do AETHER)
+- [ ] Adaptar `tauri.conf.json` para Android (permissıes de filesystem)
 - [ ] Primeiro build de teste no tablet (`cargo tauri android dev`)
-- [ ] Resolver incompatibilidades de UI para toque (bot√µes, scroll)
+- [ ] Resolver incompatibilidades de UI para toque (botıes, scroll)
 - [ ] Build de release (APK assinado)
 
-#### 3.2 ‚Äî Sincroniza√ß√£o de dados
+#### 3.2 ó SincronizaÁ„o de dados
 - [ ] Configurar Syncthing: pastas a sincronizar
       - Vault AETHER completo
       - `kosmos/data/archive/`
       - `hub_read_state.json`
 - [ ] Testar round-trip completo:
-      - Escrever cap√≠tulo no tablet ‚Üí sync ‚Üí abrir no AETHER no PC
-      - Salvar artigo no KOSMOS ‚Üí sync ‚Üí aparecer no hub Android
+      - Escrever capÌtulo no tablet ? sync ? abrir no AETHER no PC
+      - Salvar artigo no KOSMOS ? sync ? aparecer no hub Android
 - [ ] Tratar conflitos de sync (dois dispositivos editam o mesmo arquivo)
 
-#### 3.3 ‚Äî Acesso remoto (fora da rede local)
+#### 3.3 ó Acesso remoto (fora da rede local)
 - [ ] Instalar Tailscale no PC e no tablet
-- [ ] Hub detecta se Ollama est√° acess√≠vel (local ou via Tailscale)
-- [ ] M√≥dulo Projetos: acesso ao `ogma.db` via Tailscale quando remoto
-- [ ] Fallback gracioso: m√≥dulos funcionam offline com dados j√° sincronizados
+- [ ] Hub detecta se Ollama est· acessÌvel (local ou via Tailscale)
+- [ ] MÛdulo Projetos: acesso ao `ogma.db` via Tailscale quando remoto
+- [ ] Fallback gracioso: mÛdulos funcionam offline com dados j· sincronizados
 
 ---
 
-### FASE 4 ‚Äî Features extras
-> Qualidade de vida. S√≥ ap√≥s Fase 3 est√°vel.
+### FASE 4 ó Features extras
+> Qualidade de vida. SÛ apÛs Fase 3 est·vel.
 
-- [x] Verificar sistema de log em todos os apps e criar onde n√£o existir
-      ‚Äî OGMA: ‚úÖ `createLogger` + `setupGlobalErrorHandlers` em main.ts
-      ‚Äî HUB: ‚úÖ `tauri_plugin_log`, arquivo di√°rio, 7 dias de reten√ß√£o
-      ‚Äî AETHER: ‚úÖ `tauri_plugin_log`, arquivo di√°rio, 7 dias de reten√ß√£o
-      ‚Äî KOSMOS: ‚úÖ `setup_logger()` em app/utils/logger.py, arquivo + stderr
-      ‚Äî Mnemosyne: ‚úÖ criado `core/logger.py`, rota√ß√£o di√°ria, 7 backups
-      ‚Äî Hermes: ‚úÖ criado `_setup_logger()` em hermes.py; `_log()` da UI persiste em arquivo
-      ‚Äî AKASHA: pendente ‚Äî criar ao iniciar o desenvolvimento
+- [x] Verificar sistema de log em todos os apps e criar onde n„o existir
+      ó OGMA: ? `createLogger` + `setupGlobalErrorHandlers` em main.ts
+      ó HUB: ? `tauri_plugin_log`, arquivo di·rio, 7 dias de retenÁ„o
+      ó AETHER: ? `tauri_plugin_log`, arquivo di·rio, 7 dias de retenÁ„o
+      ó KOSMOS: ? `setup_logger()` em app/utils/logger.py, arquivo + stderr
+      ó Mnemosyne: ? criado `core/logger.py`, rotaÁ„o di·ria, 7 backups
+      ó Hermes: ? criado `_setup_logger()` em hermes.py; `_log()` da UI persiste em arquivo
+      ó AKASHA: pendente ó criar ao iniciar o desenvolvimento
 - [ ] Integrar AKASHA aos outros apps do ecossistema:
-      ‚Äî OGMA, AETHER, KOSMOS, Mnemosyne, Hermes: sele√ß√£o de texto ‚Üí "Pesquisar no AKASHA"
-        (menu de contexto ou bot√£o flutuante que abre `http://localhost:7071/search?q=<texto>`)
-      ‚Äî HUB: bot√£o/atalho na barra lateral para abrir AKASHA no browser
-      ‚Äî Requisito: AKASHA deve estar rodando para receber a requisi√ß√£o
-- [ ] Quick capture: widget ou atalho Android para adicionar nota r√°pida
+      ó OGMA, AETHER, KOSMOS, Mnemosyne, Hermes: seleÁ„o de texto ? "Pesquisar no AKASHA"
+        (menu de contexto ou bot„o flutuante que abre `http://localhost:7071/search?q=<texto>`)
+      ó HUB: bot„o/atalho na barra lateral para abrir AKASHA no browser
+      ó Requisito: AKASHA deve estar rodando para receber a requisiÁ„o
+- [ ] Quick capture: widget ou atalho Android para adicionar nota r·pida
       ao OGMA sem abrir o app completo
-- [ ] Streak AETHER vis√≠vel no hub (ler `sessions.json` do vault)
-- [ ] Notifica√ß√£o Android: novos artigos no archive do KOSMOS
-- [ ] Busca cross-m√≥dulo: pesquisar em escritos + projetos + artigos
+- [ ] Streak AETHER visÌvel no hub (ler `sessions.json` do vault)
+- [ ] NotificaÁ„o Android: novos artigos no archive do KOSMOS
+- [ ] Busca cross-mÛdulo: pesquisar em escritos + projetos + artigos
 - [ ] stellar-downloader + transcriber integrados (HERMES):
-      - Download ‚Üí transcri√ß√£o autom√°tica ‚Üí salvar no archive
-- [ ] Exporta√ß√£o do hub: cap√≠tulo AETHER ‚Üí PDF/EPUB direto do Android
+      - Download ? transcriÁ„o autom·tica ? salvar no archive
+- [ ] ExportaÁ„o do hub: capÌtulo AETHER ? PDF/EPUB direto do Android
 
 ---
 
-#### Depend√™ncias entre fases
+#### DependÍncias entre fases
 
-  Fase 0 ‚îÄ‚îÄ‚ñ∫ Fase 1 (qualquer sub-item)
-  Fase 0 ‚îÄ‚îÄ‚ñ∫ Fase 2.1
-  Fase 2.1 ‚îÄ‚îÄ‚ñ∫ Fase 2.2, 2.3, 2.4, 2.5 (paralelas)
-  Fase 2 (completa) ‚îÄ‚îÄ‚ñ∫ Fase 3
-  Fase 3 ‚îÄ‚îÄ‚ñ∫ Fase 4
+  Fase 0 --? Fase 1 (qualquer sub-item)
+  Fase 0 --? Fase 2.1
+  Fase 2.1 --? Fase 2.2, 2.3, 2.4, 2.5 (paralelas)
+  Fase 2 (completa) --? Fase 3
+  Fase 3 --? Fase 4
 
 ---
 
-#### Estado dos apps individuais (pr√©-condi√ß√µes para integra√ß√£o)
+#### Estado dos apps individuais (prÈ-condiÁıes para integraÁ„o)
 
-  AETHER        ‚úÖ  Fases 0‚Äì5 completas. Vault format est√°vel. Sem bloqueios.
-  OGMA          ‚úÖ  Schema v2 implementado (database.ts:114). IPC usa
-                    project_properties + page_prop_values em produ√ß√£o.
+  AETHER        ?  Fases 0ñ5 completas. Vault format est·vel. Sem bloqueios.
+  OGMA          ?  Schema v2 implementado (database.ts:114). IPC usa
+                    project_properties + page_prop_values em produÁ„o.
                     Itens abertos da Fase 10 (FTS5/Turso, testes offline)
-                    s√£o qualidade/teste ‚Äî n√£o bloqueiam integra√ß√£o.
-  KOSMOS        ‚úÖ  archive_manager.py funcional. Pronto para integra√ß√£o.
-  Mnemosyne     ‚ö†Ô∏è  Prot√≥tipo incompleto. core/rag.py vazio. Usa HuggingFace
+                    s„o qualidade/teste ó n„o bloqueiam integraÁ„o.
+  KOSMOS        ?  archive_manager.py funcional. Pronto para integraÁ„o.
+  Mnemosyne     ??  ProtÛtipo incompleto. core/rag.py vazio. Usa HuggingFace
                     em vez de Ollama (inconsistente com o ecossistema).
                     Design diverge do sistema visual. Precisa de
                     desenvolvimento antes de entrar no hub.
-  transcriber   ‚úÖ  Utilit√°rio funcional. Mudan√ßa m√≠nima necess√°ria.
-  stellar-dl    ‚úÖ  Utilit√°rio funcional. Mudan√ßa m√≠nima necess√°ria.
+  transcriber   ?  Utilit·rio funcional. MudanÁa mÌnima necess·ria.
+  stellar-dl    ?  Utilit·rio funcional. MudanÁa mÌnima necess·ria.
 
 #### Estado das fases do ecossistema
 
-  Fase 0: ‚úÖ Base conclu√≠da (0‚Äì0.5). Items 0.6‚Äì0.9 em andamento (sync + integra√ß√µes)
-  Fase 1: ‚úÖ Conclu√≠da ‚Äî 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 1.9 conclu√≠das
-            ‚ö†Ô∏è  Item pendente: 1.2 ‚Äî verificar bot√£o "Arquivar" no KOSMOS
-  Fase 2: ‚úÖ Conclu√≠da ‚Äî 2.1, 2.2, 2.3, 2.4, 2.5 e 2.6 conclu√≠das
-  Fase 3: ‚ö†Ô∏è suspensa ‚Äî HUB agora √© LOGOS; acesso Android a repensar separadamente
-  Fase 4: n√£o iniciada
+  Fase 0: ? Base concluÌda (0ñ0.5). Items 0.6ñ0.9 em andamento (sync + integraÁıes)
+  Fase 1: ? ConcluÌda ó 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 1.9 concluÌdas
+            ??  Item pendente: 1.2 ó verificar bot„o "Arquivar" no KOSMOS
+  Fase 2: ? ConcluÌda ó 2.1, 2.2, 2.3, 2.4, 2.5 e 2.6 concluÌdas
+  Fase 3: ?? suspensa ó HUB agora È LOGOS; acesso Android a repensar separadamente
+  Fase 4: n„o iniciada
 
 ---
 
 ---
 
-## HUB ‚Äî Dashboard e Painel de Controle
+## HUB ó Dashboard e Painel de Controle
 
-### Fase 2 ‚Äî Funda√ß√£o e M√≥dulos
-> HUB como dashboard central do ecossistema: lan√ßa apps, centraliza configura√ß√£o, visualiza dados de todos os outros programas e hospeda o LOGOS (proxy de LLM).
-> Stack: Tauri 2 + React + TypeScript. Read-only por padr√£o nos m√≥dulos de visualiza√ß√£o ‚Äî n√£o substitui os editores prim√°rios.
-> M√≥dulos Android originalmente planejados aqui foram movidos para replanejamento separado (ver FASE 3).
+### Fase 2 ó FundaÁ„o e MÛdulos
+> HUB como dashboard central do ecossistema: lanÁa apps, centraliza configuraÁ„o, visualiza dados de todos os outros programas e hospeda o LOGOS (proxy de LLM).
+> Stack: Tauri 2 + React + TypeScript. Read-only por padr„o nos mÛdulos de visualizaÁ„o ó n„o substitui os editores prim·rios.
+> MÛdulos Android originalmente planejados aqui foram movidos para replanejamento separado (ver FASE 3).
 
-### 2.1 ‚Äî Funda√ß√£o + Tela de Configura√ß√£o
+### 2.1 ó FundaÁ„o + Tela de ConfiguraÁ„o
 - [x] Criar projeto Tauri 2 em `program files/HUB/`
-- [x] Copiar design system do AETHER sem modifica√ß√µes:
+- [x] Copiar design system do AETHER sem modificaÁıes:
       `tokens.css`, `animations.css`, `typography.css`, `components.css`
       `CosmosLayer.tsx`, `Toast.tsx`, `ThemeToggle.tsx`
 - [x] Splash screen com typewriter + CosmosLayer
-- [x] Router interno: `splash ‚Üí setup | home`
+- [x] Router interno: `splash ? setup | home`
       `type HubView = 'home' | 'writing' | 'reading' | 'projects' | 'questions'`
-- [x] Tela de configura√ß√£o (SetupView): l√™/edita/valida caminhos do `ecosystem.json`
-      ‚Äî campos: `aether.vault_path`, `kosmos.archive_path`, `ogma.data_path`
-      ‚Äî √≠cone ‚úì/‚úó por campo via IPC `validate_path()`
+- [x] Tela de configuraÁ„o (SetupView): lÍ/edita/valida caminhos do `ecosystem.json`
+      ó campos: `aether.vault_path`, `kosmos.archive_path`, `ogma.data_path`
+      ó Ìcone ?/? por campo via IPC `validate_path()`
 - [x] Dashboard (HomeView): 4 cards com CosmosLayer individual
-      ‚Äî cards desabilitados se caminho n√£o configurado
-- [x] Rust: `commands/config.rs` ‚Äî `read_ecosystem_config`, `validate_path`, `save_ecosystem_config`
+      ó cards desabilitados se caminho n„o configurado
+- [x] Rust: `commands/config.rs` ó `read_ecosystem_config`, `validate_path`, `save_ecosystem_config`
       usando `ecosystem.rs` copiado do AETHER
 
-### 2.2 ‚Äî M√≥dulo Escrita (AETHER vault, read-only)
+### 2.2 ó MÛdulo Escrita (AETHER vault, read-only)
 - [x] Rust `commands/writing.rs`:
-      `list_writing_projects(vault_path)` ‚Äî l√™ todos `{vault}/*/project.json`
-      `list_books(vault_path, project_id)` ‚Äî l√™ `{vault}/{proj}/*/book.json`
-      `read_chapter(vault_path, project_id, book_id, chapter_id)` ‚Äî l√™ `.md`
-- [x] `WritingView.tsx` ‚Äî grade de projetos com CosmosLayer individual
-- [x] `BookView.tsx` ‚Äî √°rvore livros + cap√≠tulos com status e word count
-- [x] `ChapterView.tsx` ‚Äî `react-markdown` renderiza o `.md`
+      `list_writing_projects(vault_path)` ó lÍ todos `{vault}/*/project.json`
+      `list_books(vault_path, project_id)` ó lÍ `{vault}/{proj}/*/book.json`
+      `read_chapter(vault_path, project_id, book_id, chapter_id)` ó lÍ `.md`
+- [x] `WritingView.tsx` ó grade de projetos com CosmosLayer individual
+- [x] `BookView.tsx` ó ·rvore livros + capÌtulos com status e word count
+- [x] `ChapterView.tsx` ó `react-markdown` renderiza o `.md`
 - [x] Tipos `Project`, `Book`, `ChapterMeta` copiados de AETHER
 
-### 2.3 ‚Äî M√≥dulo Leituras (KOSMOS archive, read-only)
+### 2.3 ó MÛdulo Leituras (KOSMOS archive, read-only)
 - [x] Rust `commands/reading.rs`:
-      `list_articles(archive_path)` ‚Äî scan `{archive}/**/*.md`, parseia frontmatter
-      `read_article(path)` ‚Äî separa frontmatter do corpo
-      `toggle_read(archive_path, article_path)` ‚Äî l√™/escreve `hub_read_state.json`
-- [x] `ReadingView.tsx` ‚Äî lista com filtros (fonte, lido/n√£o lido); badge n√£o lidos
-- [x] `ArticleView.tsx` ‚Äî frontmatter em destaque + `react-markdown`
+      `list_articles(archive_path)` ó scan `{archive}/**/*.md`, parseia frontmatter
+      `read_article(path)` ó separa frontmatter do corpo
+      `toggle_read(archive_path, article_path)` ó lÍ/escreve `hub_read_state.json`
+- [x] `ReadingView.tsx` ó lista com filtros (fonte, lido/n„o lido); badge n„o lidos
+- [x] `ArticleView.tsx` ó frontmatter em destaque + `react-markdown`
 
-### 2.4 ‚Äî M√≥dulo Projetos (OGMA, read-only)
+### 2.4 ó MÛdulo Projetos (OGMA, read-only)
 - [x] Adicionar `rusqlite = { version = "0.31", features = ["bundled"] }` ao Cargo.toml
-      (`bundled` compila SQLite est√°tico ‚Äî funciona no Android)
+      (`bundled` compila SQLite est·tico ó funciona no Android)
 - [x] Rust `commands/projects.rs`:
-      `list_ogma_projects(db_path)` ‚Äî SELECT projects WHERE status != 'archived'
-      `list_project_pages(db_path, project_id)` ‚Äî SELECT pages WHERE is_deleted = 0
-- [x] `lib/editorjs-renderer.tsx` ‚Äî renderiza blocos Editor.js (`paragraph`, `header`,
+      `list_ogma_projects(db_path)` ó SELECT projects WHERE status != 'archived'
+      `list_project_pages(db_path, project_id)` ó SELECT pages WHERE is_deleted = 0
+- [x] `lib/editorjs-renderer.tsx` ó renderiza blocos Editor.js (`paragraph`, `header`,
       `list`, `checklist`, `quote`, `code`, `table`, `delimiter`, `columns`)
 - [x] `ProjectsView.tsx` + `PageView.tsx`
 
-### 2.5 ‚Äî M√≥dulo Perguntas (Ollama, sem Rust)
+### 2.5 ó MÛdulo Perguntas (Ollama, sem Rust)
 - [x] `lib/ollama.ts`:
-      `listModels()` ‚Äî GET `localhost:11434/api/tags`
-      `streamChat(model, messages)` ‚Äî POST `/api/chat` com streaming NDJSON
-- [x] `QuestionsView.tsx` ‚Äî seletor de modelo, hist√≥rico de sess√£o, streaming
-      banner "Ollama offline" + bot√£o Tentar novamente
+      `listModels()` ó GET `localhost:11434/api/tags`
+      `streamChat(model, messages)` ó POST `/api/chat` com streaming NDJSON
+- [x] `QuestionsView.tsx` ó seletor de modelo, histÛrico de sess„o, streaming
+      banner "Ollama offline" + bot„o Tentar novamente
 
-### 2.6 ‚Äî Barra de atalhos para apps externos
-> Barra permanente vis√≠vel em todas as views. Lan√ßa os 5 apps e indica se est√£o rodando.
+### 2.6 ó Barra de atalhos para apps externos
+> Barra permanente visÌvel em todas as views. LanÁa os 5 apps e indica se est„o rodando.
 
-- [x] Tela de Setup: adicionar campos de execut√°vel para cada app
-      ‚Äî `aether.exe_path`, `ogma.exe_path`, `kosmos.exe_path`,
+- [x] Tela de Setup: adicionar campos de execut·vel para cada app
+      ó `aether.exe_path`, `ogma.exe_path`, `kosmos.exe_path`,
         `mnemosyne.exe_path`, `hermes.exe_path` em `ecosystem.json`
-      ‚Äî auto-descoberta por nome de processo conhecido como fallback
+      ó auto-descoberta por nome de processo conhecido como fallback
         (ex.: buscar `AETHER.exe` / `aether` no PATH e locais comuns)
-      ‚Äî √≠cone ‚úì/‚úó por campo (reutilizar `validate_path()` existente)
+      ó Ìcone ?/? por campo (reutilizar `validate_path()` existente)
 - [x] Rust `commands/launcher.rs`:
-      `launch_app(exe_path: String) -> Result<(), AppError>` ‚Äî `Command::new(exe_path).spawn()`
-      `is_app_running(process_name: String) -> bool` ‚Äî lista processos do SO
+      `launch_app(exe_path: String) -> Result<(), AppError>` ó `Command::new(exe_path).spawn()`
+      `is_app_running(process_name: String) -> bool` ó lista processos do SO
         (Windows: `tasklist`, Linux: `/proc` ou `pgrep`)
-      `get_all_app_statuses() -> HashMap<String, bool>` ‚Äî chama `is_app_running` para os 5 apps
-- [x] `AppBar.tsx` ‚Äî barra lateral esquerda fixa com 5 bot√µes de app
-      ‚Äî cada bot√£o: sigla em IM Fell English it√°lico + ponto indicador (rodando / parado)
-      ‚Äî clique: chama `launch_app`; se j√° rodando, apenas pulsa o indicador
-      ‚Äî polling a cada 5s via `get_all_app_statuses` para atualizar status
-- [x] Integrar `AppBar` no layout raiz (vis√≠vel em todas as views, inclusive Home)
+      `get_all_app_statuses() -> HashMap<String, bool>` ó chama `is_app_running` para os 5 apps
+- [x] `AppBar.tsx` ó barra lateral esquerda fixa com 5 botıes de app
+      ó cada bot„o: sigla em IM Fell English it·lico + ponto indicador (rodando / parado)
+      ó clique: chama `launch_app`; se j· rodando, apenas pulsa o indicador
+      ó polling a cada 5s via `get_all_app_statuses` para atualizar status
+- [x] Integrar `AppBar` no layout raiz (visÌvel em todas as views, inclusive Home)
 
 ---
 
 ### HUB: redesign da UI como dashboard do ecossistema
 
-O HUB deixou de ser um companion Android e √© agora o **painel de controle central**
-do ecossistema. A UI atual (se existente) foi projetada para outra finalidade ‚Äî
+O HUB deixou de ser um companion Android e È agora o **painel de controle central**
+do ecossistema. A UI atual (se existente) foi projetada para outra finalidade ó
 precisa ser reimaginada como um dashboard desktop (Tauri).
 
-#### Arquitetura de navega√ß√£o
-- [x] Sidebar vertical persistente com 4 se√ß√µes principais:
-  ‚Äî **Home** (dashboard de status dos apps)
-  ‚Äî **LOGOS** (fila de LLM + monitor de VRAM)
-  ‚Äî **Atividade** (feed de eventos cross-app)
-  ‚Äî **Configura√ß√£o** (ecosystem.json + sync_root)
-- [x] Topbar m√≠nima: nome do ecossistema + indicador global de sa√∫de + bot√£o de sil√™ncio
+#### Arquitetura de navegaÁ„o
+- [x] Sidebar vertical persistente com 4 seÁıes principais:
+  ó **Home** (dashboard de status dos apps)
+  ó **LOGOS** (fila de LLM + monitor de VRAM)
+  ó **Atividade** (feed de eventos cross-app)
+  ó **ConfiguraÁ„o** (ecosystem.json + sync_root)
+- [x] Topbar mÌnima: nome do ecossistema + indicador global de sa˙de + bot„o de silÍncio
 
-#### Tela Home ‚Äî status dos apps
-- [x] Card por app do ecossistema (AKASHA ¬∑ KOSMOS ¬∑ AETHER ¬∑ Mnemosyne ¬∑ Hermes ¬∑ OGMA):
-  ‚Äî status ao vivo (running / stopped / erro) via ping peri√≥dico nos `/health` endpoints
-  ‚Äî porta, bot√£o "abrir no browser" (apps web) ou "focar janela" (apps Qt/Tauri)
-  ‚Äî bot√£o de iniciar / encerrar cada app diretamente do HUB
-- [ ] Badge de alerta quando app est√° offline mas deveria estar rodando
-- [ ] Mini-resumo por app (√∫ltima atividade, contagem de arquivos/artigos/etc.)
+#### Tela Home ó status dos apps
+- [x] Card por app do ecossistema (AKASHA ∑ KOSMOS ∑ AETHER ∑ Mnemosyne ∑ Hermes ∑ OGMA):
+  ó status ao vivo (running / stopped / erro) via ping periÛdico nos `/health` endpoints
+  ó porta, bot„o "abrir no browser" (apps web) ou "focar janela" (apps Qt/Tauri)
+  ó bot„o de iniciar / encerrar cada app diretamente do HUB
+- [ ] Badge de alerta quando app est· offline mas deveria estar rodando
+- [ ] Mini-resumo por app (˙ltima atividade, contagem de arquivos/artigos/etc.)
 
-#### Painel de configura√ß√£o do ecossistema
-- [x] Campo `sync_root` com bot√£o "Aplicar" ‚Äî chama `apply_sync_root()` e mostra preview
+#### Painel de configuraÁ„o do ecossistema
+- [x] Campo `sync_root` com bot„o "Aplicar" ó chama `apply_sync_root()` e mostra preview
   dos caminhos derivados por app antes de confirmar
-- [ ] Aviso de migra√ß√£o: se sync_root muda e dados existem no caminho antigo, exibir
-  instru√ß√£o para mover arquivos (ex.: `akasha.db`, archives) antes de reiniciar
-- [ ] Editor visual das se√ß√µes do `ecosystem.json` (alternativa ao JSON bruto):
-  campos por app com labels descritivos e valida√ß√£o de caminhos
+- [ ] Aviso de migraÁ„o: se sync_root muda e dados existem no caminho antigo, exibir
+  instruÁ„o para mover arquivos (ex.: `akasha.db`, archives) antes de reiniciar
+- [ ] Editor visual das seÁıes do `ecosystem.json` (alternativa ao JSON bruto):
+  campos por app com labels descritivos e validaÁ„o de caminhos
 
 #### System tray / always-accessible
-- [x] HUB fica na bandeja do sistema ao minimizar (n√£o fecha, n√£o some da taskbar)
-- [x] Fechar janela (√ó ou Alt+F4) ‚Üí oculta na bandeja em vez de encerrar o processo
-- [x] Menu de contexto na bandeja (clique direito): "Abrir HUB" ¬∑ "Silenciar LOGOS" ¬∑ "Fechar HUB"
-  ‚Äî "Silenciar LOGOS" chama POST /logos/silence diretamente pelo processo do HUB
-  ‚Äî abrir/fechar apps individuais: acess√≠vel via DashboardView (cards da Home)
-- [x] Infraestrutura de notifica√ß√µes nativas (tauri-plugin-notification):
-  ‚Äî comando `send_notification(title, body)` dispon√≠vel para o frontend
-  ‚Äî gatilhos por evento (app offline, VRAM cr√≠tica, etc.) dependem do Feed de Atividade
-- [ ] Notifica√ß√µes autom√°ticas por evento: depende de `activity.jsonl` por app (ver Feed de Atividade)
+- [x] HUB fica na bandeja do sistema ao minimizar (n„o fecha, n„o some da taskbar)
+- [x] Fechar janela (◊ ou Alt+F4) ? oculta na bandeja em vez de encerrar o processo
+- [x] Menu de contexto na bandeja (clique direito): "Abrir HUB" ∑ "Silenciar LOGOS" ∑ "Fechar HUB"
+  ó "Silenciar LOGOS" chama POST /logos/silence diretamente pelo processo do HUB
+  ó abrir/fechar apps individuais: acessÌvel via DashboardView (cards da Home)
+- [x] Infraestrutura de notificaÁıes nativas (tauri-plugin-notification):
+  ó comando `send_notification(title, body)` disponÌvel para o frontend
+  ó gatilhos por evento (app offline, VRAM crÌtica, etc.) dependem do Feed de Atividade
+- [ ] NotificaÁıes autom·ticas por evento: depende de `activity.jsonl` por app (ver Feed de Atividade)
 
 #### Design visual
-- [x] Seguir DESIGN_BIBLE.txt ‚Äî tema padr√£o: "Atlas Astron√¥mico √† Meia-Noite" (`#12161E`)
+- [x] Seguir DESIGN_BIBLE.txt ó tema padr„o: "Atlas AstronÙmico ‡ Meia-Noite" (`#12161E`)
 - [x] Dois modos de janela:
-  ‚Äî **Compacto** (~640√ó440): s√≥ cards de status + bot√µes de a√ß√£o imediata
-  ‚Äî **Expandido** (~1280√ó800): dashboard completo com sidebar + todas as se√ß√µes
+  ó **Compacto** (~640◊440): sÛ cards de status + botıes de aÁ„o imediata
+  ó **Expandido** (~1280◊800): dashboard completo com sidebar + todas as seÁıes
 - [x] Tipografia e paleta consistentes com AETHER/OGMA (tokens compartilhados do ecossistema)
 
 ---
 
-### Pend√™ncias e Features
+### PendÍncias e Features
 
-### Controle de recursos ‚Äî extens√£o do LOGOS
+### Controle de recursos ó extens„o do LOGOS
 
-- [x] Painel de VRAM em tempo real + fila de prioridades vis√≠vel
-  ‚Äî mostrar o que est√° rodando agora em P1/P2/P3 com estimativa de VRAM ocupada
-  ‚Äî Implementado: `HUB/src/components/LogosPanel.tsx` (polling 5s via Tauri IPC)
-  ‚Äî Posicionado como footer do HomeView
-- [x] Bot√£o "Sil√™ncio" ‚Äî pausa instant√¢nea de todas as tarefas P3 para liberar GPU
-  ‚Äî √∫til ao iniciar escrita no AETHER ou chat no HUB
-  ‚Äî Implementado: bot√£o "silenciar" no LogosPanel (chama `logos_silence` Tauri command)
+- [x] Painel de VRAM em tempo real + fila de prioridades visÌvel
+  ó mostrar o que est· rodando agora em P1/P2/P3 com estimativa de VRAM ocupada
+  ó Implementado: `HUB/src/components/LogosPanel.tsx` (polling 5s via Tauri IPC)
+  ó Posicionado como footer do HomeView
+- [x] Bot„o "SilÍncio" ó pausa instant‚nea de todas as tarefas P3 para liberar GPU
+  ó ˙til ao iniciar escrita no AETHER ou chat no HUB
+  ó Implementado: bot„o "silenciar" no LogosPanel (chama `logos_silence` Tauri command)
 - [x] Painel de gerenciamento do Ollama:
-  ‚Äî listar modelos carregados na VRAM com tamanho (GET /logos/models ‚Üí `logosListModels`)
-  ‚Äî ver qual app est√° usando o LOGOS no momento (`active_app` no StatusResponse)
-  ‚Äî for√ßar `keep_alive: 0` por modelo individual (`logosUnloadModel` Tauri command)
+  ó listar modelos carregados na VRAM com tamanho (GET /logos/models ? `logosListModels`)
+  ó ver qual app est· usando o LOGOS no momento (`active_app` no StatusResponse)
+  ó forÁar `keep_alive: 0` por modelo individual (`logosUnloadModel` Tauri command)
 - [x] Perfis de workflow com um clique:
-  ‚Äî "Modo Escrita": AETHER/HUB mant√™m P1; KOSMOS reader ‚Üí P2; Mnemosyne RAG ‚Üí P3
-  ‚Äî "Modo Estudo": Mnemosyne RAG ‚Üí P1; KOSMOS reader ‚Üí P2
-  ‚Äî "Modo Consumo" e "Normal": sem override de prioridade
-  ‚Äî perfil persistido em `LogosState.active_profile`; alterado via POST /logos/profile ou `logosSetProfile`
-- [x] Modo Sobreviv√™ncia (Windows/CPU-only) ‚Äî ativado automaticamente em builds Windows via `cfg!(target_os = "windows")`:
-  ‚Äî `keep_alive: 0` for√ßado em todo request (RAM liberada imediatamente)
-  ‚Äî `num_ctx` limitado a 2048 pelo LOGOS independente do que o app pediu
-  ‚Äî modelos >3B rejeitados com 429 ("apenas modelos ‚â§3B aceitos")
-  ‚Äî requests P3 rejeitados imediatamente (sem an√°lise em background)
-  ‚Äî paralelismo desabilitado (sempre 2 permits, serial mesmo em modelos leves)
-  ‚Äî badge "Modo Sobreviv√™ncia ‚Äî Windows" exibido na LogosView
+  ó "Modo Escrita": AETHER/HUB mantÍm P1; KOSMOS reader ? P2; Mnemosyne RAG ? P3
+  ó "Modo Estudo": Mnemosyne RAG ? P1; KOSMOS reader ? P2
+  ó "Modo Consumo" e "Normal": sem override de prioridade
+  ó perfil persistido em `LogosState.active_profile`; alterado via POST /logos/profile ou `logosSetProfile`
+- [x] Modo SobrevivÍncia (Windows/CPU-only) ó ativado automaticamente em builds Windows via `cfg!(target_os = "windows")`:
+  ó `keep_alive: 0` forÁado em todo request (RAM liberada imediatamente)
+  ó `num_ctx` limitado a 2048 pelo LOGOS independente do que o app pediu
+  ó modelos >3B rejeitados com 429 ("apenas modelos =3B aceitos")
+  ó requests P3 rejeitados imediatamente (sem an·lise em background)
+  ó paralelismo desabilitado (sempre 2 permits, serial mesmo em modelos leves)
+  ó badge "Modo SobrevivÍncia ó Windows" exibido na LogosView
 - [x] Monitoramento de CPU e RAM no painel LOGOS:
-  **Motivo:** a barra de VRAM (j√° implementada via sysfs) s√≥ funciona com GPU discreta AMD/NVIDIA.
+  **Motivo:** a barra de VRAM (j· implementada via sysfs) sÛ funciona com GPU discreta AMD/NVIDIA.
   No Windows 10 (sem GPU) e no laptop (Intel integrada sem ROCm), o painel fica cego. CPU e RAM
-  s√£o os recursos cr√≠ticos nessas m√°quinas. Sem esse monitoramento, P3 pode saturar o CPU a 90%
+  s„o os recursos crÌticos nessas m·quinas. Sem esse monitoramento, P3 pode saturar o CPU a 90%
   sem que o LOGOS perceba (bug confirmado com Mnemosyne idle indexer).
-  Fonte: crates.io/crates/sysinfo ‚Äî cross-platform, Linux + Windows.
-  **Implementa√ß√£o ‚Äî Rust (`HUB/src-tauri/src/logos.rs` + `Cargo.toml`):**
+  Fonte: crates.io/crates/sysinfo ó cross-platform, Linux + Windows.
+  **ImplementaÁ„o ó Rust (`HUB/src-tauri/src/logos.rs` + `Cargo.toml`):**
   1. Adicionar ao `Cargo.toml`: `sysinfo = { version = "0.32", features = ["cpu"] }`
   2. Adicionar campo `sys: sysinfo::System` ao struct `Inner`, inicializado com `System::new_all()`
-     CR√çTICO: manter a mesma inst√¢ncia entre leituras ‚Äî CPU% √© calculado como delta entre
-     duas leituras consecutivas. Criar nova inst√¢ncia a cada poll retorna sempre 0%.
+     CRÕTICO: manter a mesma inst‚ncia entre leituras ó CPU% È calculado como delta entre
+     duas leituras consecutivas. Criar nova inst‚ncia a cada poll retorna sempre 0%.
   3. No loop de `collect_status()`: chamar `inner.sys.refresh_cpu_all()` e
      `inner.sys.refresh_memory()` antes de ler os valores
   4. Adicionar ao `StatusResponse`:
-     `cpu_pct: f32`      ‚Äî de `sys.global_cpu_usage()`
-     `ram_free_mb: u64`  ‚Äî de `sys.available_memory() / 1_048_576`
-  5. Na l√≥gica de bloqueio de P3: adicionar condi√ß√µes ‚Äî bloquear quando `cpu_pct > 85.0`
-     OU `ram_free_mb < 1536` (al√©m do `vram_pct > 0.85` j√° existente)
-  **Implementa√ß√£o ‚Äî TypeScript (`HUB/src/components/LogosPanel.tsx`):**
-  6. Ler `cpu_pct` e `ram_free_mb` do status (j√° chegam via `logosGetStatus`)
-  7. Detectar aus√™ncia de GPU: `vramPct === null` ‚Üí substituir barra de VRAM por barras de CPU e RAM
-     CPU: verde se < 70%, amarelo se 70‚Äì85%, vermelho se > 85%
-     RAM livre: verde se > 4 GB, amarelo se 1.5‚Äì4 GB, vermelho se < 1.5 GB
-  8. Em m√°quinas com GPU: exibir CPU% e RAM como texto compacto ao lado da barra de VRAM
+     `cpu_pct: f32`      ó de `sys.global_cpu_usage()`
+     `ram_free_mb: u64`  ó de `sys.available_memory() / 1_048_576`
+  5. Na lÛgica de bloqueio de P3: adicionar condiÁıes ó bloquear quando `cpu_pct > 85.0`
+     OU `ram_free_mb < 1536` (alÈm do `vram_pct > 0.85` j· existente)
+  **ImplementaÁ„o ó TypeScript (`HUB/src/components/LogosPanel.tsx`):**
+  6. Ler `cpu_pct` e `ram_free_mb` do status (j· chegam via `logosGetStatus`)
+  7. Detectar ausÍncia de GPU: `vramPct === null` ? substituir barra de VRAM por barras de CPU e RAM
+     CPU: verde se < 70%, amarelo se 70ñ85%, vermelho se > 85%
+     RAM livre: verde se > 4 GB, amarelo se 1.5ñ4 GB, vermelho se < 1.5 GB
+  8. Em m·quinas com GPU: exibir CPU% e RAM como texto compacto ao lado da barra de VRAM
   **Tipo do status TS (`HUB/src/types.ts`):**
   9. Adicionar `cpu_pct?: number` e `ram_free_mb?: number` ao tipo `LogosStatus`
 
 - [x] LOGOS: injetar `keep_alive` automaticamente por prioridade no proxy transparente:
-  **Motivo:** por padr√£o o Ollama ret√©m modelos por 5 minutos ap√≥s ociosidade. Um modelo P3
+  **Motivo:** por padr„o o Ollama retÈm modelos por 5 minutos apÛs ociosidade. Um modelo P3
   (KOSMOS background) fica ocupando VRAM 5 minutos depois de terminar, impedindo P1 de usar
-  o hardware. O par√¢metro `keep_alive` por-requisi√ß√£o sobrescreve o global `OLLAMA_KEEP_ALIVE`
-  e √© rastreado por modelo individualmente. Aplicado no proxy, √© completamente transparente para
-  os apps ‚Äî nenhum deles precisa saber do LOGOS.
+  o hardware. O par‚metro `keep_alive` por-requisiÁ„o sobrescreve o global `OLLAMA_KEEP_ALIVE`
+  e È rastreado por modelo individualmente. Aplicado no proxy, È completamente transparente para
+  os apps ó nenhum deles precisa saber do LOGOS.
   Fonte: docs.ollama.com/faq; markaicode.com/ollama-keep-alive-memory-management
-  **Implementa√ß√£o (`HUB/src-tauri/src/logos.rs` ‚Äî handler do proxy `/api/chat` e `/api/generate`):**
-  1. No handler de proxy, ap√≥s receber o body JSON do app cliente:
+  **ImplementaÁ„o (`HUB/src-tauri/src/logos.rs` ó handler do proxy `/api/chat` e `/api/generate`):**
+  1. No handler de proxy, apÛs receber o body JSON do app cliente:
      a. Deserializar: `let mut body: serde_json::Value = serde_json::from_slice(&bytes)?;`
-     b. Determinar a prioridade ‚Äî a partir do header `X-Priority` enviado pelo `ecosystem_client.py`
+     b. Determinar a prioridade ó a partir do header `X-Priority` enviado pelo `ecosystem_client.py`
         ou inferida do `X-App` header (mnemosyne=P2, kosmos=P3, hub=P1)
      c. Injetar conforme prioridade:
-        P1 ‚Üí `body["keep_alive"] = json!(-1)`  (mant√©m aquecido indefinidamente)
-        P2 ‚Üí `body["keep_alive"] = json!("10m")` (libera ap√≥s 10 min de inatividade)
-        P3 ‚Üí `body["keep_alive"] = json!("0")`  (descarrega imediatamente ap√≥s resposta)
+        P1 ? `body["keep_alive"] = json!(-1)`  (mantÈm aquecido indefinidamente)
+        P2 ? `body["keep_alive"] = json!("10m")` (libera apÛs 10 min de inatividade)
+        P3 ? `body["keep_alive"] = json!("0")`  (descarrega imediatamente apÛs resposta)
      d. Reserializar e repassar ao Ollama na porta 11434
-  2. Apps que usam `ecosystem_client.py` ‚Üí `request_llm()` j√° envia `X-App`; basta mapear app‚Üíprioridade
-     no LOGOS (ex: app="mnemosyne" ‚Üí P2)
-  3. Para `/api/embed` (embeddings): sempre P3 ‚Üí `keep_alive: "0"` (embedding models n√£o precisam ficar quentes)
+  2. Apps que usam `ecosystem_client.py` ? `request_llm()` j· envia `X-App`; basta mapear app?prioridade
+     no LOGOS (ex: app="mnemosyne" ? P2)
+  3. Para `/api/embed` (embeddings): sempre P3 ? `keep_alive: "0"` (embedding models n„o precisam ficar quentes)
 
-- [x] LOGOS: configurar vari√°veis de ambiente do Ollama por perfil de hardware no startup:
-  **Motivo:** o Ollama usa configura√ß√µes globais que n√£o distinguem hardware. Sem `OLLAMA_GPU_OVERHEAD`,
+- [x] LOGOS: configurar vari·veis de ambiente do Ollama por perfil de hardware no startup:
+  **Motivo:** o Ollama usa configuraÁıes globais que n„o distinguem hardware. Sem `OLLAMA_GPU_OVERHEAD`,
   a RX 6600 pode sofrer OOM ao carregar dois modelos simultaneamente (ex: nomic-embed-text + llama 3).
-  `OLLAMA_FLASH_ATTENTION=1` ativa tiling de aten√ß√£o que reduz uso de VRAM em contextos longos
+  `OLLAMA_FLASH_ATTENTION=1` ativa tiling de atenÁ„o que reduz uso de VRAM em contextos longos
   (suportado via backend Triton no ROCm para RDNA2/gfx1032 da RX 6600).
-  `OLLAMA_MAX_LOADED_MODELS` impede que o Ollama carregue 3 modelos simult√¢neos (padr√£o) em m√°quinas
+  `OLLAMA_MAX_LOADED_MODELS` impede que o Ollama carregue 3 modelos simult‚neos (padr„o) em m·quinas
   onde nem 2 cabem confortavelmente.
-  Fonte can√¥nica: github.com/ollama/ollama/blob/main/envconfig/config.go
-  **Par√¢metros por perfil:**
-  | Vari√°vel                   | high (RX 6600) | medium (MX150) | low (i5-3470) |
+  Fonte canÙnica: github.com/ollama/ollama/blob/main/envconfig/config.go
+  **Par‚metros por perfil:**
+  | Vari·vel                   | high (RX 6600) | medium (MX150) | low (i5-3470) |
   |---------------------------|----------------|----------------|---------------|
   | OLLAMA_MAX_LOADED_MODELS   | 2              | 1              | 1             |
   | OLLAMA_GPU_OVERHEAD (bytes)| 524 288 000    | 209 715 200    | 0             |
   | OLLAMA_FLASH_ATTENTION     | 1              | 1              | 0 (sem GPU)   |
   | OLLAMA_NUM_PARALLEL        | 2              | 1              | 1             |
-  **Implementa√ß√£o (`HUB/src-tauri/src/logos.rs`):**
-  1. Op√ß√£o A ‚Äî se o LOGOS gerencia o processo Ollama (recomendado):
+  **ImplementaÁ„o (`HUB/src-tauri/src/logos.rs`):**
+  1. OpÁ„o A ó se o LOGOS gerencia o processo Ollama (recomendado):
      Em `Inner::start_ollama()` (ou equivalente), construir o `Command` com `.envs(env_map)`
-     onde `env_map` √© montado a partir do `HardwareProfile` detectado no startup
-  2. Op√ß√£o B ‚Äî se o Ollama roda como servi√ßo do sistema:
-     Escrever as vari√°veis em `~/.config/ollama/ollama_env` e instruir o usu√°rio a configurar
-     o servi√ßo systemd com `EnvironmentFile=%h/.config/ollama/ollama_env`
-     O LOGOS escreve esse arquivo no startup e exibe aviso se o servi√ßo precisar ser reiniciado
-  3. Registrar as vari√°veis ativas no log de startup do LOGOS para debugging
+     onde `env_map` È montado a partir do `HardwareProfile` detectado no startup
+  2. OpÁ„o B ó se o Ollama roda como serviÁo do sistema:
+     Escrever as vari·veis em `~/.config/ollama/ollama_env` e instruir o usu·rio a configurar
+     o serviÁo systemd com `EnvironmentFile=%h/.config/ollama/ollama_env`
+     O LOGOS escreve esse arquivo no startup e exibe aviso se o serviÁo precisar ser reiniciado
+  3. Registrar as vari·veis ativas no log de startup do LOGOS para debugging
 
-- [x] LOGOS: preemp√ß√£o inteligente de P3 ‚Äî suspender (n√£o cancelar) ao detectar P1 sem VRAM:
-  **Motivo:** o bot√£o "silenciar" atual cancela P3 de forma cega. A literatura cient√≠fica
+- [x] LOGOS: preempÁ„o inteligente de P3 ó suspender (n„o cancelar) ao detectar P1 sem VRAM:
+  **Motivo:** o bot„o "silenciar" atual cancela P3 de forma cega. A literatura cientÌfica
   (Priority-Aware Preemptive Scheduling, arxiv 2503.09304; Topology-aware Preemptive Scheduling,
-  arxiv 2411.11560) mostra que o correto √©:
-  a) Calcular se P1 cabe na VRAM dispon√≠vel ANTES de preemptar ‚Äî preemptar sem espa√ßo suficiente
-     desperdi√ßa VRAM e introduz lat√™ncia desnecess√°ria.
-  b) Suspender P3 (keep_alive: "0" for√ßa unload), n√£o cancelar ‚Äî a fila P3 √© mantida e
+  arxiv 2411.11560) mostra que o correto È:
+  a) Calcular se P1 cabe na VRAM disponÌvel ANTES de preemptar ó preemptar sem espaÁo suficiente
+     desperdiÁa VRAM e introduz latÍncia desnecess·ria.
+  b) Suspender P3 (keep_alive: "0" forÁa unload), n„o cancelar ó a fila P3 È mantida e
      retomada quando P1 encerra.
-  **Implementa√ß√£o (`HUB/src-tauri/src/logos.rs`):**
+  **ImplementaÁ„o (`HUB/src-tauri/src/logos.rs`):**
   1. Ao receber request P1 via proxy:
-     a. Verificar se h√° request P3 em execu√ß√£o (`active_priority == 3`)
+     a. Verificar se h· request P3 em execuÁ„o (`active_priority == 3`)
      b. Consultar `/api/tags` para obter `size` estimado do modelo P1 em bytes
      c. Ler VRAM livre atual (sysfs)
      d. Se `vram_livre_mb < modelo_p1_mb + 500` (500 MB de buffer):
-        ‚Äî Enviar `POST /api/chat` com `{"model": modelo_p3, "keep_alive": "0"}` ao Ollama
-          (prompt vazio for√ßa unload imediato sem gerar resposta)
-        ‚Äî Poll de `/api/ps` at√© o modelo P3 desaparecer (timeout 10s)
-        ‚Äî S√≥ ent√£o encaminhar o request P1 ao Ollama
-     e. Se VRAM livre √© suficiente: n√£o preemptar, deixar coexistir
+        ó Enviar `POST /api/chat` com `{"model": modelo_p3, "keep_alive": "0"}` ao Ollama
+          (prompt vazio forÁa unload imediato sem gerar resposta)
+        ó Poll de `/api/ps` atÈ o modelo P3 desaparecer (timeout 10s)
+        ó SÛ ent„o encaminhar o request P1 ao Ollama
+     e. Se VRAM livre È suficiente: n„o preemptar, deixar coexistir
   2. Manter `suspended_p3_queue: VecDeque<PendingRequest>` no `Inner`; ao P1 terminar,
      recolocar os P3 suspensos na fila normal
   3. Adicionar ao `StatusResponse`: `suspended_count: u32` para o LogosPanel mostrar
 
-- [x] LOGOS: injetar par√¢metros de efici√™ncia por prioridade no body dos requests:
-  **Motivo:** `num_thread`, `num_batch` e `num_ctx` s√£o par√¢metros por-requisi√ß√£o aceitos pelo
-  Ollama no body de `/api/chat` e `/api/generate` (n√£o s√£o vari√°veis de ambiente). Injetados
-  pelo proxy, permitem reduzir impacto de P3 no sistema sem mudar os apps. Evid√™ncia emp√≠rica:
-  num_batch 512‚Üí256 reduz VRAM pico em ~20% (eastondev.com/blog/en/posts/ai/ollama-gpu-scheduling).
-  `num_thread` controla quantos cores o Ollama usa para computa√ß√£o ‚Äî limit√°-lo em P3 libera CPU
-  para o sistema e outros apps (literatura de CPU inference: diminishing returns al√©m de 4 threads
+- [x] LOGOS: injetar par‚metros de eficiÍncia por prioridade no body dos requests:
+  **Motivo:** `num_thread`, `num_batch` e `num_ctx` s„o par‚metros por-requisiÁ„o aceitos pelo
+  Ollama no body de `/api/chat` e `/api/generate` (n„o s„o vari·veis de ambiente). Injetados
+  pelo proxy, permitem reduzir impacto de P3 no sistema sem mudar os apps. EvidÍncia empÌrica:
+  num_batch 512?256 reduz VRAM pico em ~20% (eastondev.com/blog/en/posts/ai/ollama-gpu-scheduling).
+  `num_thread` controla quantos cores o Ollama usa para computaÁ„o ó limit·-lo em P3 libera CPU
+  para o sistema e outros apps (literatura de CPU inference: diminishing returns alÈm de 4 threads
   em modelos pequenos, arxiv 2311.00502).
-  **Implementa√ß√£o (`HUB/src-tauri/src/logos.rs` ‚Äî mesmo middleware do `keep_alive`):**
+  **ImplementaÁ„o (`HUB/src-tauri/src/logos.rs` ó mesmo middleware do `keep_alive`):**
   Injetar no body antes de repassar ao Ollama, conforme prioridade:
   ```
   P3: num_thread=2, num_batch=256, num_ctx=2048
   P2: num_batch=256 (preservar RAM), num_ctx=null (app decide)
-  P1: sem inje√ß√£o (m√°xima performance, app decide tudo)
+  P1: sem injeÁ„o (m·xima performance, app decide tudo)
   ```
-  Perfil `low` (CPU-only): P1 ‚Üí num_thread=3 (deixar 1 core livre para o SO)
-  Perfil `medium` (MX150): P3 ‚Üí num_thread=2, num_gpu=0 (for√ßar CPU-only em background)
+  Perfil `low` (CPU-only): P1 ? num_thread=3 (deixar 1 core livre para o SO)
+  Perfil `medium` (MX150): P3 ? num_thread=2, num_gpu=0 (forÁar CPU-only em background)
 
-- [x] LOGOS: consci√™ncia de bateria via UPower/DBus (laptop Lenovo MX150):
-  **Motivo:** indexa√ß√£o idle (P3) em bateria esgota carga e aquece o laptop sem benef√≠cio
-  imediato. UPower √© o padr√£o Linux para gerenciamento de energia (freedesktop.org).
+- [x] LOGOS: consciÍncia de bateria via UPower/DBus (laptop Lenovo MX150):
+  **Motivo:** indexaÁ„o idle (P3) em bateria esgota carga e aquece o laptop sem benefÌcio
+  imediato. UPower È o padr„o Linux para gerenciamento de energia (freedesktop.org).
   Pesquisa relevante: PowerLens (arxiv 2603.19584, 2025) demonstrou 38.8% de economia de
-  energia via gerenciamento adaptativo de recursos em n√≠vel de sistema. Em bateria, a
-  prioridade √© preservar energia, n√£o maximizar throughput de infer√™ncia.
-  **Implementa√ß√£o (`HUB/src-tauri/src/logos.rs`):**
-  1. Adicionar depend√™ncia `battery = "0.7"` ao `Cargo.toml` (cross-platform: Linux + Windows)
+  energia via gerenciamento adaptativo de recursos em nÌvel de sistema. Em bateria, a
+  prioridade È preservar energia, n„o maximizar throughput de inferÍncia.
+  **ImplementaÁ„o (`HUB/src-tauri/src/logos.rs`):**
+  1. Adicionar dependÍncia `battery = "0.7"` ao `Cargo.toml` (cross-platform: Linux + Windows)
      Alternativa Linux-only com mais detalhes: crate `zbus` para ler `org.freedesktop.UPower`
   2. Adicionar campo `on_battery: bool` ao struct `Inner`; atualizar a cada 60s num tokio task
   3. Quando `on_battery = true`, aplicar em cascata:
-     ‚Äî Bloquear todos os requests P3 (retornar 503 com body `{"reason": "on_battery"}`)
-     ‚Äî Injetar `keep_alive: "0"` em P1 e P2 (liberar modelo ap√≥s cada resposta, economizar VRAM)
-     ‚Äî Injetar `num_thread: 2` em P1 e P2 (reduzir consumo de energia do CPU)
-     ‚Äî Threshold de P2 mais conservador: bloquear se CPU > 60% (vs 85% em AC)
+     ó Bloquear todos os requests P3 (retornar 503 com body `{"reason": "on_battery"}`)
+     ó Injetar `keep_alive: "0"` em P1 e P2 (liberar modelo apÛs cada resposta, economizar VRAM)
+     ó Injetar `num_thread: 2` em P1 e P2 (reduzir consumo de energia do CPU)
+     ó Threshold de P2 mais conservador: bloquear se CPU > 60% (vs 85% em AC)
   4. Adicionar ao `StatusResponse`: `on_battery: bool`
   5. Atualizar `LogosStatus` type em `HUB/src/types.ts`
-  6. `LogosPanel.tsx`: exibir badge "‚ö° Bateria" quando `on_battery=true`; colorir P3 de vermelho
+  6. `LogosPanel.tsx`: exibir badge "? Bateria" quando `on_battery=true`; colorir P3 de vermelho
      para indicar bloqueio
 
-### LOGOS ‚Äî scheduling de processos em n√≠vel de SO
+### LOGOS ó scheduling de processos em nÌvel de SO
 
-- [x] Lan√ßar o processo Ollama com prioridade reduzida via `nice` quando gerenciado pelo LOGOS:
-  **Motivo:** `nice` √© a ferramenta padr√£o UNIX para indicar ao scheduler do kernel que um processo
-  deve ceder CPU para outros quando h√° contention. Definir nice=10‚Äì15 para o Ollama em P3 garante
-  que o sistema continue responsivo sem necessitar de polling ativo do LOGOS. Custo de implementa√ß√£o:
-  uma linha. Custo de n√£o implementar: CPU a 90% quando P3 est√° ativo.
-  **Implementa√ß√£o (`HUB/src-tauri/src/logos.rs`):**
-  ‚Äî Linux: `Command::new("nice").args(["-n", "10", "ollama", "serve"])` ao lan√ßar Ollama em P3
-    OU usar `renice(2)` via syscall ap√≥s obter o PID do processo Ollama
-  ‚Äî Windows: `SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS)` via `windows-sys` crate
-  ‚Äî Ao receber P1: temporariamente aumentar prioridade do Ollama (`renice -5 $pid`) para minimizar
-    lat√™ncia, restaurar ap√≥s P1 concluir
+- [x] LanÁar o processo Ollama com prioridade reduzida via `nice` quando gerenciado pelo LOGOS:
+  **Motivo:** `nice` È a ferramenta padr„o UNIX para indicar ao scheduler do kernel que um processo
+  deve ceder CPU para outros quando h· contention. Definir nice=10ñ15 para o Ollama em P3 garante
+  que o sistema continue responsivo sem necessitar de polling ativo do LOGOS. Custo de implementaÁ„o:
+  uma linha. Custo de n„o implementar: CPU a 90% quando P3 est· ativo.
+  **ImplementaÁ„o (`HUB/src-tauri/src/logos.rs`):**
+  ó Linux: `Command::new("nice").args(["-n", "10", "ollama", "serve"])` ao lanÁar Ollama em P3
+    OU usar `renice(2)` via syscall apÛs obter o PID do processo Ollama
+  ó Windows: `SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS)` via `windows-sys` crate
+  ó Ao receber P1: temporariamente aumentar prioridade do Ollama (`renice -5 $pid`) para minimizar
+    latÍncia, restaurar apÛs P1 concluir
 
-- [x] Lan√ßar processos de background do Python (KOSMOS idle analysis, Mnemosyne idle indexer)
+- [x] LanÁar processos de background do Python (KOSMOS idle analysis, Mnemosyne idle indexer)
   com prioridade de SO reduzida:
   **Motivo:** os workers de background Python (`_IndexJobWorker`, `KosmosAnalyzer`) rodam em
-  threads PySide6 com `IdlePriority`, mas isso s√≥ afeta o scheduler do Python (GIL), n√£o o
+  threads PySide6 com `IdlePriority`, mas isso sÛ afeta o scheduler do Python (GIL), n„o o
   scheduler do OS. O OS ainda aloca CPU para o processo Python normalmente. `os.nice()` afeta
-  o processo inteiro ‚Äî deve ser chamado no worker no in√≠cio de sua execu√ß√£o.
-  **Implementa√ß√£o:**
-  ‚Äî `Mnemosyne/core/idle_indexer.py`, no in√≠cio de `_IndexJobWorker.run()`:
+  o processo inteiro ó deve ser chamado no worker no inÌcio de sua execuÁ„o.
+  **ImplementaÁ„o:**
+  ó `Mnemosyne/core/idle_indexer.py`, no inÌcio de `_IndexJobWorker.run()`:
     ```python
     import os, sys
     if sys.platform != "win32":
-        os.nice(15)          # Linux/Mac: nice m√°ximo para background
+        os.nice(15)          # Linux/Mac: nice m·ximo para background
     else:
         import ctypes
         ctypes.windll.kernel32.SetPriorityClass(
             ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
     ```
-  ‚Äî `KOSMOS/app/core/background_worker.py` (ou equivalente): mesma l√≥gica no in√≠cio do worker
-  ‚Äî Resultado: durante idle indexing, o sistema mant√©m 30‚Äì40% de CPU dispon√≠vel para apps ativos
+  ó `KOSMOS/app/core/background_worker.py` (ou equivalente): mesma lÛgica no inÌcio do worker
+  ó Resultado: durante idle indexing, o sistema mantÈm 30ñ40% de CPU disponÌvel para apps ativos
 
-- [x] Configurar cgroup para o Ollama no systemd (Linux ‚Äî m√°quina principal e laptop):
-  **Motivo:** nice afeta prioridade relativa mas n√£o limita CPU absoluto. cgroups v2 (padr√£o
-  no CachyOS/Arch) permitem limitar CPU por quota absoluta (ex: no m√°ximo 50% de um core) e
-  mem√≥ria m√°xima. O systemd usa cgroups nativamente via diretivas de unit file.
-  **Implementa√ß√£o (manual, documentar no README do HUB):**
+- [x] Configurar cgroup para o Ollama no systemd (Linux ó m·quina principal e laptop):
+  **Motivo:** nice afeta prioridade relativa mas n„o limita CPU absoluto. cgroups v2 (padr„o
+  no CachyOS/Arch) permitem limitar CPU por quota absoluta (ex: no m·ximo 50% de um core) e
+  memÛria m·xima. O systemd usa cgroups nativamente via diretivas de unit file.
+  **ImplementaÁ„o (manual, documentar no README do HUB):**
   Criar/editar `~/.config/systemd/user/ollama.service.d/logos-limits.conf`:
   ```ini
   [Service]
-  CPUWeight=20        # vs 100 padr√£o ‚Äî Ollama cede CPU quando h√° contention
+  CPUWeight=20        # vs 100 padr„o ó Ollama cede CPU quando h· contention
   CPUQuota=80%        # nunca exceder 80% de 1 core em P3 (ajustar se multi-GPU)
-  MemoryMax=10G       # n√£o exceder 10 GB de RAM (proteger os 6 GB restantes do sistema)
-  IOSchedulingClass=idle  # I/O em idle ‚Äî n√£o compete com apps ativos em disco
+  MemoryMax=10G       # n„o exceder 10 GB de RAM (proteger os 6 GB restantes do sistema)
+  IOSchedulingClass=idle  # I/O em idle ó n„o compete com apps ativos em disco
   ```
   Reload: `systemctl --user daemon-reload && systemctl --user restart ollama`
-  Este arquivo √© gerenciado pelo HUB: ao detectar perfil `high` ou `medium`, escreve os valores
-  corretos e recarrega o servi√ßo.
+  Este arquivo È gerenciado pelo HUB: ao detectar perfil `high` ou `medium`, escreve os valores
+  corretos e recarrega o serviÁo.
 
 ### Feed de atividade unificado
 
-- [ ] Painel mostrando eventos recentes de todos os apps em ordem cronol√≥gica:
-  ‚Äî KOSMOS: artigos baixados, an√°lises conclu√≠das, erros de scraping
-  ‚Äî Hermes: transcri√ß√µes iniciadas / conclu√≠das
-  ‚Äî Mnemosyne: indexa√ß√µes e re-indexa√ß√µes
-  ‚Äî AETHER: projetos/cap√≠tulos salvos
-  ‚Äî AKASHA: arquivamentos, crawls conclu√≠dos
+- [ ] Painel mostrando eventos recentes de todos os apps em ordem cronolÛgica:
+  ó KOSMOS: artigos baixados, an·lises concluÌdas, erros de scraping
+  ó Hermes: transcriÁıes iniciadas / concluÌdas
+  ó Mnemosyne: indexaÁıes e re-indexaÁıes
+  ó AETHER: projetos/capÌtulos salvos
+  ó AKASHA: arquivamentos, crawls concluÌdos
 - [ ] Filtro por app e por tipo de evento (sucesso / erro / info)
-- [ ] Implementa√ß√£o: cada app escreve eventos num arquivo de log estruturado (JSON Lines)
-  em `{sync_root}/{app}/activity.jsonl`; HUB l√™ e exibe em polling leve
+- [ ] ImplementaÁ„o: cada app escreve eventos num arquivo de log estruturado (JSON Lines)
+  em `{sync_root}/{app}/activity.jsonl`; HUB lÍ e exibe em polling leve
 
 ### Busca global via AKASHA (Mapa de Contexto)
 
 - [ ] Campo de busca no HUB que consulta o AKASHA e retorna resultados cruzados de todas as fontes:
-  ‚Äî Mnemosyne (RAG sem√¢ntico), KOSMOS (artigos), Hermes (transcri√ß√µes), AETHER (notas/cap√≠tulos)
+  ó Mnemosyne (RAG sem‚ntico), KOSMOS (artigos), Hermes (transcriÁıes), AETHER (notas/capÌtulos)
 - [ ] Exibir resultados agrupados por fonte com snippet de contexto
-- [ ] Depende de: AKASHA implementar API de "Mapa de Contexto" (ver PEND√äNCIAS ‚Äî ECOSSISTEMA)
+- [ ] Depende de: AKASHA implementar API de "Mapa de Contexto" (ver PEND NCIAS ó ECOSSISTEMA)
 
 ### Quick capture / inbox
 
-- [ ] Campo de captura r√°pida acess√≠vel sem abrir nenhum app espec√≠fico
-  ‚Äî roteamento autom√°tico por tipo de conte√∫do:
-    - URL de v√≠deo (youtube.com, etc.) ‚Üí dispara Hermes
-    - URL gen√©rica ‚Üí envia para AKASHA arquivar
-    - Texto livre ‚Üí cria nota r√°pida no OGMA
-  ‚Äî feedback visual confirmando para onde o conte√∫do foi roteado
+- [ ] Campo de captura r·pida acessÌvel sem abrir nenhum app especÌfico
+  ó roteamento autom·tico por tipo de conte˙do:
+    - URL de vÌdeo (youtube.com, etc.) ? dispara Hermes
+    - URL genÈrica ? envia para AKASHA arquivar
+    - Texto livre ? cria nota r·pida no OGMA
+  ó feedback visual confirmando para onde o conte˙do foi roteado
 
-### Estat√≠sticas cross-app ("di√°rio de atividade polim√°tica")
+### EstatÌsticas cross-app ("di·rio de atividade polim·tica")
 
-- [ ] Painel de m√©tricas combinadas por per√≠odo (dia / semana / m√™s):
-  ‚Äî artigos lidos (KOSMOS)
-  ‚Äî palavras escritas / sess√µes de escrita (AETHER)
-  ‚Äî documentos indexados (Mnemosyne)
-  ‚Äî v√≠deos transcritos e dura√ß√£o total (Hermes)
-  ‚Äî p√°ginas arquivadas (AKASHA)
-- [ ] Visualiza√ß√£o estilo "mapa de calor" (tipo GitHub contributions) mostrando dias de atividade
-- [ ] Implementa√ß√£o: agregar dados dos logs de atividade de cada app (activity.jsonl)
+- [ ] Painel de mÈtricas combinadas por perÌodo (dia / semana / mÍs):
+  ó artigos lidos (KOSMOS)
+  ó palavras escritas / sessıes de escrita (AETHER)
+  ó documentos indexados (Mnemosyne)
+  ó vÌdeos transcritos e duraÁ„o total (Hermes)
+  ó p·ginas arquivadas (AKASHA)
+- [ ] VisualizaÁ„o estilo "mapa de calor" (tipo GitHub contributions) mostrando dias de atividade
+- [ ] ImplementaÁ„o: agregar dados dos logs de atividade de cada app (activity.jsonl)
 
 ---
 
-> HUB √© Tauri. A interface j√° √© web-based mas deve funcionar em janelas menores.
+> HUB È Tauri. A interface j· È web-based mas deve funcionar em janelas menores.
 
 - [ ] **Auditar grid de cards de apps**
-  ‚Äî De 3 colunas ‚Üí 2 ‚Üí 1 conforme janela estreita (CSS grid `auto-fill`)
-- [ ] **LogosView e pain√©is de status**
-  ‚Äî Verificar que scrollam corretamente quando a janela √© reduzida
-- [ ] **Testar em janela 800√ó600 m√≠nima**
+  ó De 3 colunas ? 2 ? 1 conforme janela estreita (CSS grid `auto-fill`)
+- [ ] **LogosView e painÈis de status**
+  ó Verificar que scrollam corretamente quando a janela È reduzida
+- [ ] **Testar em janela 800◊600 mÌnima**
 
 ---
 
 
-### LOGOS ‚Äî Proxy Inteligente de LLM
+### LOGOS ó Proxy Inteligente de LLM
 
 ### LOGOS: proxy central de LLM (integrado ao HUB)
-- [x] Decidir arquitetura final: LOGOS como parte do backend Rust do HUB vs. servi√ßo separado
-  ‚Äî recomendado: integrado ao HUB (evita ter mais um processo rodando; HUB j√° √© o maestro)
-- [x] Definir protocolo: `POST /logos/chat { app, priority, model, messages, ... }` ‚Üí 200 ou 429
+- [x] Decidir arquitetura final: LOGOS como parte do backend Rust do HUB vs. serviÁo separado
+  ó recomendado: integrado ao HUB (evita ter mais um processo rodando; HUB j· È o maestro)
+- [x] Definir protocolo: `POST /logos/chat { app, priority, model, messages, ... }` ? 200 ou 429
 - [x] Implementar fila de prioridades (`HUB/src-tauri/src/logos.rs`):
   - P1: aguarda indefinidamente (sem timeout)
   - P2: timeout 60s
   - P3: timeout 30s + 429 imediato se VRAM > 85%
 - [x] Hardware Guard: VRAM via Ollama `/api/ps` (sum size_vram) + sysfs Linux para total
-  ‚Äî Linux/CachyOS: `/sys/class/drm/card{n}/device/mem_info_vram_total` (AMD sysfs)
-  ‚Äî Windows: total_vram desconhecido (sem GPU discreta no i5-3470); pct retorna None
-- [x] Cancelamento gracioso: `POST /logos/silence` ‚Üí keep_alive: 0 em todos os modelos carregados
+  ó Linux/CachyOS: `/sys/class/drm/card{n}/device/mem_info_vram_total` (AMD sysfs)
+  ó Windows: total_vram desconhecido (sem GPU discreta no i5-3470); pct retorna None
+- [x] Cancelamento gracioso: `POST /logos/silence` ? keep_alive: 0 em todos os modelos carregados
 - [x] Failsafe implementado em `ecosystem_client.py`:
-  ‚Äî LOGOS online: request roteado com prioridade
-  ‚Äî LOGOS offline: fallback direto ao Ollama (modo emerg√™ncia silencioso)
-  ‚Äî LOGOS retorna 429: RuntimeError propagado ao app chamador
+  ó LOGOS online: request roteado com prioridade
+  ó LOGOS offline: fallback direto ao Ollama (modo emergÍncia silencioso)
+  ó LOGOS retorna 429: RuntimeError propagado ao app chamador
 - [x] Tauri IPC commands: `logos_get_status`, `logos_silence` (para o frontend HUB)
 
 Arquivos:
-  ‚Äî `HUB/src-tauri/src/logos.rs` ‚Äî servidor Axum porta 7072
-  ‚Äî `HUB/src-tauri/src/commands/logos.rs` ‚Äî IPC Tauri
-  ‚Äî `ecosystem_client.py` ‚Äî `request_llm()`, `logos_status()`, `logos_silence()`
+  ó `HUB/src-tauri/src/logos.rs` ó servidor Axum porta 7072
+  ó `HUB/src-tauri/src/commands/logos.rs` ó IPC Tauri
+  ó `ecosystem_client.py` ó `request_llm()`, `logos_status()`, `logos_silence()`
 
-### Gerenciamento de LLM simult√¢neo (Mnemosyne + KOSMOS)
-- [x] Investigar comportamento atual quando os dois apps fazem chamadas simult√¢neas ao Ollama
-  ‚Äî risco: VRAM saturada ‚Üí travamento no Windows 10 (8 GB RAM, GPU integrada)
+### Gerenciamento de LLM simult‚neo (Mnemosyne + KOSMOS)
+- [x] Investigar comportamento atual quando os dois apps fazem chamadas simult‚neas ao Ollama
+  ó risco: VRAM saturada ? travamento no Windows 10 (8 GB RAM, GPU integrada)
 
   **Achados:**
-  ‚Äî KOSMOS: `ai_bridge.py` usa `requests.Session` direto ao `/api/generate`, timeout=120s, sem coordena√ß√£o
-  ‚Äî Mnemosyne: `langchain_ollama` em QThread via `workers.py`, sem coordena√ß√£o
-  ‚Äî Nenhum dos dois usa `ecosystem_client.request_llm()` ‚Üí n√£o passam pelo LOGOS
-  ‚Äî No Windows 10 (8 GB RAM, GPU integrada): chamadas simult√¢neas podem saturar a RAM com dois modelos carregados
-  ‚Äî No CachyOS (RX 6600, 8 GB VRAM): dois modelos 7B simult√¢neos arriscam overflow de VRAM
+  ó KOSMOS: `ai_bridge.py` usa `requests.Session` direto ao `/api/generate`, timeout=120s, sem coordenaÁ„o
+  ó Mnemosyne: `langchain_ollama` em QThread via `workers.py`, sem coordenaÁ„o
+  ó Nenhum dos dois usa `ecosystem_client.request_llm()` ? n„o passam pelo LOGOS
+  ó No Windows 10 (8 GB RAM, GPU integrada): chamadas simult‚neas podem saturar a RAM com dois modelos carregados
+  ó No CachyOS (RX 6600, 8 GB VRAM): dois modelos 7B simult‚neos arriscam overflow de VRAM
 
-  **Solu√ß√£o imediata sem c√≥digo** ‚Äî configurar vari√°veis de ambiente do Ollama:
+  **SoluÁ„o imediata sem cÛdigo** ó configurar vari·veis de ambiente do Ollama:
   ```
-  OLLAMA_NUM_PARALLEL=1        # serializa requisi√ß√µes dentro do Ollama
+  OLLAMA_NUM_PARALLEL=1        # serializa requisiÁıes dentro do Ollama
   OLLAMA_MAX_LOADED_MODELS=1   # descarrega modelo anterior antes de carregar novo
   ```
   No Windows: `setx OLLAMA_NUM_PARALLEL 1` + `setx OLLAMA_MAX_LOADED_MODELS 1` (requer reiniciar Ollama)
-  No CachyOS: adicionar ao `.env` do servi√ßo systemd do Ollama ou ao `~/.config/fish/config.fish`
+  No CachyOS: adicionar ao `.env` do serviÁo systemd do Ollama ou ao `~/.config/fish/config.fish`
 
-- [x] Solu√ß√£o de longo prazo: migrar `KOSMOS/app/core/ai_bridge.py` e `Mnemosyne/core/workers.py`
-  para usar `ecosystem_client.request_llm()` ‚Üí passam pelo LOGOS com controle de prioridade e VRAM
+- [x] SoluÁ„o de longo prazo: migrar `KOSMOS/app/core/ai_bridge.py` e `Mnemosyne/core/workers.py`
+  para usar `ecosystem_client.request_llm()` ? passam pelo LOGOS com controle de prioridade e VRAM
 
-  **Migrado (chamadas s√≠ncronas P3):**
-  ‚Äî KOSMOS `ai_bridge.py`: `generate()` usa `request_llm(priority=3)` via LOGOS; `generate_stream()` e `embed()` permanecem diretos (streaming/embeddings n√£o passam pelo LOGOS)
-  ‚Äî Mnemosyne `memory.py`: `compact_session_memory()` usa `request_llm(priority=3)`
-  ‚Äî Mnemosyne `summarizer.py`: fase Map de `iter_summary()` + `prepare_summary()` + `summarize_all()` usam `request_llm(priority=3)`; fase Reduce (streaming) permanece via LangChain `OllamaLLM.stream()`
+  **Migrado (chamadas sÌncronas P3):**
+  ó KOSMOS `ai_bridge.py`: `generate()` usa `request_llm(priority=3)` via LOGOS; `generate_stream()` e `embed()` permanecem diretos (streaming/embeddings n„o passam pelo LOGOS)
+  ó Mnemosyne `memory.py`: `compact_session_memory()` usa `request_llm(priority=3)`
+  ó Mnemosyne `summarizer.py`: fase Map de `iter_summary()` + `prepare_summary()` + `summarize_all()` usam `request_llm(priority=3)`; fase Reduce (streaming) permanece via LangChain `OllamaLLM.stream()`
 
-  **N√£o migrado (requer suporte a streaming no LOGOS):**
-  ‚Äî Mnemosyne `AskWorker`: `ChatOllama.stream()` ‚Äî RAG interativo
-  ‚Äî Mnemosyne `SummarizeWorker`/`FaqWorker`/`StudioWorker`/`GuideWorker`: usam `iter_*()` com streaming LangChain
+  **N„o migrado (requer suporte a streaming no LOGOS):**
+  ó Mnemosyne `AskWorker`: `ChatOllama.stream()` ó RAG interativo
+  ó Mnemosyne `SummarizeWorker`/`FaqWorker`/`StudioWorker`/`GuideWorker`: usam `iter_*()` com streaming LangChain
 
-### LOGOS: otimiza√ß√µes de configura√ß√£o do Ollama
+### LOGOS: otimizaÁıes de configuraÁ„o do Ollama
 
-Achados de pesquisa `KOSMOS/pesquisa.txt` (2026-04-25) ‚Äî LOGOS √© respons√°vel por configurar e expor essas vari√°veis de ambiente ao Ollama:
+Achados de pesquisa `KOSMOS/pesquisa.txt` (2026-04-25) ó LOGOS È respons·vel por configurar e expor essas vari·veis de ambiente ao Ollama:
 
-- [x] Configurar `OLLAMA_KEEP_ALIVE=-1` via inje√ß√£o autom√°tica no proxy
-  ‚Äî LOGOS injeta `keep_alive: -1` em todo request que n√£o o definiu explicitamente
-  ‚Äî elimina cold start de 3‚Äì10s; modelo permanece carregado na VRAM entre an√°lises
+- [x] Configurar `OLLAMA_KEEP_ALIVE=-1` via injeÁ„o autom·tica no proxy
+  ó LOGOS injeta `keep_alive: -1` em todo request que n„o o definiu explicitamente
+  ó elimina cold start de 3ñ10s; modelo permanece carregado na VRAM entre an·lises
 - [x] Configurar `OLLAMA_KV_CACHE_TYPE=q8_0` no systemd
-  ‚Äî reduz VRAM do KV cache em ~50%; abre espa√ßo para `num_ctx` maior ou NUM_PARALLEL=2
-- [x] Configurar concorr√™ncia din√¢mica baseada no tamanho do modelo
-  ‚Äî LOGOS usa `Semaphore::new(2)` com `acquire_many_owned(permits)`:
-    modelos ‚â§3B adquirem 1 permit ‚Üí at√© 2 rodam em paralelo
-    modelos >3B adquirem 2 permits ‚Üí exclusividade total
-  ‚Äî `LogosPanel` exibe badge "leve" / "pesado" do modelo em execu√ß√£o
+  ó reduz VRAM do KV cache em ~50%; abre espaÁo para `num_ctx` maior ou NUM_PARALLEL=2
+- [x] Configurar concorrÍncia din‚mica baseada no tamanho do modelo
+  ó LOGOS usa `Semaphore::new(2)` com `acquire_many_owned(permits)`:
+    modelos =3B adquirem 1 permit ? atÈ 2 rodam em paralelo
+    modelos >3B adquirem 2 permits ? exclusividade total
+  ó `LogosPanel` exibe badge "leve" / "pesado" do modelo em execuÁ„o
 - [x] Configurar `OLLAMA_NUM_PARALLEL=2` no systemd
-  ‚Äî permite ao Ollama aceitar 2 requests simult√¢neos; necess√°rio para modelos leves rodarem em paralelo via sem√°foro do LOGOS
+  ó permite ao Ollama aceitar 2 requests simult‚neos; necess·rio para modelos leves rodarem em paralelo via sem·foro do LOGOS
 
-### LOGOS: sele√ß√£o e especializa√ß√£o de modelos por app
+### LOGOS: seleÁ„o e especializaÁ„o de modelos por app
 
-- [x] KOSMOS (an√°lise em background): usar Gemma 2 2B (`gemma2:2b`)
-  ‚Äî default `ai_gen_model` em KOSMOS/app/utils/config.py
+- [x] KOSMOS (an·lise em background): usar Gemma 2 2B (`gemma2:2b`)
+  ó default `ai_gen_model` em KOSMOS/app/utils/config.py
 - [x] Mnemosyne (RAG): usar Qwen 2.5 7B (`qwen2.5:7b`)
-  ‚Äî default `llm_model` em Mnemosyne/core/config.py
-- [x] KOSMOS: `num_ctx=4096` expl√≠cito e constante em `_AnalyzeWorker` e `_start_analyze`
-  ‚Äî Mnemosyne AskWorker: `num_ctx=8192`
+  ó default `llm_model` em Mnemosyne/core/config.py
+- [x] KOSMOS: `num_ctx=4096` explÌcito e constante em `_AnalyzeWorker` e `_start_analyze`
+  ó Mnemosyne AskWorker: `num_ctx=8192`
 - [x] KOSMOS: JSON Schema completo no `_AnalyzeWorker` (constrained decoding via XGrammar)
-  ‚Äî `_JSON_SCHEMA` como class constant; `json_schema=` em `ai_bridge.generate()`
-- [x] KOSMOS: pr√©-an√°lise em background ‚Äî `BackgroundAnalyzer` (QThread + PriorityQueue)
-  ‚Äî HIGH (P0): artigo aberto pelo usu√°rio ‚Üí single call imediato
-  ‚Äî LOW (P10): novos artigos do feed ‚Üí enfileirados no startup e em `_on_feed_updated`
-  ‚Äî cache check: artigos com `ai_sentiment IS NOT NULL` s√£o pulados
-- [x] KOSMOS: batching de at√© 5 artigos por call LLM no background
-  ‚Äî schema din√¢mico por lote; fallback individual se batch falhar
-  ‚Äî `num_ctx=8192` para batch; an√°lise interativa permanece `num_ctx=4096`
+  ó `_JSON_SCHEMA` como class constant; `json_schema=` em `ai_bridge.generate()`
+- [x] KOSMOS: prÈ-an·lise em background ó `BackgroundAnalyzer` (QThread + PriorityQueue)
+  ó HIGH (P0): artigo aberto pelo usu·rio ? single call imediato
+  ó LOW (P10): novos artigos do feed ? enfileirados no startup e em `_on_feed_updated`
+  ó cache check: artigos com `ai_sentiment IS NOT NULL` s„o pulados
+- [x] KOSMOS: batching de atÈ 5 artigos por call LLM no background
+  ó schema din‚mico por lote; fallback individual se batch falhar
+  ó `num_ctx=8192` para batch; an·lise interativa permanece `num_ctx=4096`
 
-### LOGOS: perfis de hardware com detec√ß√£o autom√°tica por fingerprint de GPU
+### LOGOS: perfis de hardware com detecÁ„o autom·tica por fingerprint de GPU
 
-Objetivo: ao iniciar, o LOGOS identifica em qual m√°quina est√° rodando via fingerprint de GPU
-e seleciona automaticamente o perfil de modelos adequado ‚Äî sem configura√ß√£o manual por m√°quina.
+Objetivo: ao iniciar, o LOGOS identifica em qual m·quina est· rodando via fingerprint de GPU
+e seleciona automaticamente o perfil de modelos adequado ó sem configuraÁ„o manual por m·quina.
 
 **Perfis definidos:**
 
-| M√°quina | GPU detectada | LLM (Mnemosyne) | LLM (KOSMOS) | Embedding |
+| M·quina | GPU detectada | LLM (Mnemosyne) | LLM (KOSMOS) | Embedding |
 |---|---|---|---|---|
 | PC principal | RX 6600 (AMD sysfs / `rocm-smi`) | qwen2.5:7b | gemma2:2b | bge-m3 |
 | Laptop Ideapad 330 | MX150 via `nvidia-smi` | gemma2:2b | smollm2:1.7b | nomic-embed-text |
 | PC de trabalho (Windows) | nenhuma GPU discreta | (CPU only) modelos leves | smollm2:1.7b | all-minilm |
 
-**L√≥gica de detec√ß√£o (em ordem):**
-1. Tentar `nvidia-smi --query-gpu=name --format=csv,noheader` ‚Üí se retornar "MX150" ‚Üí perfil laptop
-2. Tentar ler `/sys/class/drm/card*/device/mem_info_vram_total` (AMD sysfs) ‚Üí se encontrar RX 6600 ‚Üí perfil principal
-3. Fallback ‚Üí perfil Windows/CPU-only
+**LÛgica de detecÁ„o (em ordem):**
+1. Tentar `nvidia-smi --query-gpu=name --format=csv,noheader` ? se retornar "MX150" ? perfil laptop
+2. Tentar ler `/sys/class/drm/card*/device/mem_info_vram_total` (AMD sysfs) ? se encontrar RX 6600 ? perfil principal
+3. Fallback ? perfil Windows/CPU-only
 
-**Implementa√ß√£o sugerida:**
-- `HUB/src-tauri/src/logos.rs`: fun√ß√£o `detect_hardware_profile() -> HardwareProfile` rodando no startup
+**ImplementaÁ„o sugerida:**
+- `HUB/src-tauri/src/logos.rs`: funÁ„o `detect_hardware_profile() -> HardwareProfile` rodando no startup
 - `HardwareProfile` enum: `MainPc | Laptop | WorkPc`
-- Perfil exposto via `GET /logos/profile` ‚Üí apps l√™em e ajustam modelos dinamicamente
-- `ecosystem_client.py`: `get_active_profile()` ‚Üí retorna o perfil atual do LOGOS
+- Perfil exposto via `GET /logos/profile` ? apps lÍem e ajustam modelos dinamicamente
+- `ecosystem_client.py`: `get_active_profile()` ? retorna o perfil atual do LOGOS
 
-- [x] Implementar `detect_hardware_profile()` em `logos.rs` com as 3 etapas de detec√ß√£o
+- [x] Implementar `detect_hardware_profile()` em `logos.rs` com as 3 etapas de detecÁ„o
 - [x] Definir `HardwareProfile` enum + struct `ModelProfile { llm_mnemosyne, llm_kosmos, embed }`
 - [x] Expor `GET /logos/hardware` no servidor Axum
 - [x] `ecosystem_client.py`: `get_active_profile()` + adaptar `request_llm()` para usar modelo do perfil ativo
-- [x] KOSMOS e Mnemosyne: ler perfil do LOGOS no startup e usar modelos recomendados mas inclua a possibilidade de haver override manual (tornando o recomendado pelo LOGOS sempre como padr√£o)
-- [x] Criar um bot√£o para "usar recomendado" ao lado da configura√ß√£o de LLM no KOSMOS e Mnemosyne
-- [x] HUB LogosPanel: exibir perfil ativo ("PC Principal ¬∑ RX 6600", "Laptop ¬∑ MX150 2 GB", etc.)
+- [x] KOSMOS e Mnemosyne: ler perfil do LOGOS no startup e usar modelos recomendados mas inclua a possibilidade de haver override manual (tornando o recomendado pelo LOGOS sempre como padr„o)
+- [x] Criar um bot„o para "usar recomendado" ao lado da configuraÁ„o de LLM no KOSMOS e Mnemosyne
+- [x] HUB LogosPanel: exibir perfil ativo ("PC Principal ∑ RX 6600", "Laptop ∑ MX150 2 GB", etc.)
 
-### LOGOS: proxy transparente para todas as chamadas ao Ollama (corre√ß√£o arquitetural)
+### LOGOS: proxy transparente para todas as chamadas ao Ollama (correÁ„o arquitetural)
 
-> Contexto: a implementa√ß√£o atual do LOGOS controla apenas chamadas que passam explicitamente
+> Contexto: a implementaÁ„o atual do LOGOS controla apenas chamadas que passam explicitamente
 > por `POST /logos/chat`. Embeddings (LangChain/Chroma), streaming (ChatOllama) e qualquer
-> outra chamada direta ao Ollama (porta 11434) s√£o invis√≠veis ao LOGOS ‚Äî ele n√£o pode gerenciar
-> o que n√£o v√™. O design original previa um proxy transparente: apps apontam para 7072 (LOGOS)
-> em vez de 11434 (Ollama). Enquanto essa corre√ß√£o n√£o for feita, o LOGOS n√£o cumpre seu papel
+> outra chamada direta ao Ollama (porta 11434) s„o invisÌveis ao LOGOS ó ele n„o pode gerenciar
+> o que n„o vÍ. O design original previa um proxy transparente: apps apontam para 7072 (LOGOS)
+> em vez de 11434 (Ollama). Enquanto essa correÁ„o n„o for feita, o LOGOS n„o cumpre seu papel
 > central de gerenciador de hardware e prioridades para todo o ecossistema.
 
-- [x] `HUB/src-tauri/src/logos.rs` ‚Äî implementar rotas de proxy para os endpoints nativos do Ollama:
-  ‚Äî `POST /api/chat` e `POST /api/generate` ‚Üí proxy com fila P1/P2/P3 (mesma l√≥gica do `/logos/chat`)
-  ‚Äî `POST /api/embeddings` e `POST /api/embed` ‚Üí proxy com fila (P3 por padr√£o para embeddings)
-  ‚Äî `GET /api/tags`, `GET /api/ps`, `DELETE /api/delete` ‚Üí proxy direto sem fila (metadados)
-  ‚Äî identifica√ß√£o do app por header `X-App: <nome>` (ex: `mnemosyne`, `kosmos`)
-  ‚Äî keep_alive injetado automaticamente em todas as chamadas de chat/generate que passam pelo proxy
-  ‚Äî Hardware Guard (VRAM, CPU, RAM) aplicado a todos os requests, n√£o s√≥ aos via `/logos/chat`
-- [x] `ecosystem_client.py` ‚Äî `LOGOS_OLLAMA_BASE` aponta para 7072 (LOGOS); `OLLAMA_DIRECT` 11434;
-  `get_ollama_url()` retorna 7072 se LOGOS acess√≠vel, sen√£o 11434
-- [x] `Mnemosyne/core/indexer.py` ‚Äî `OllamaEmbeddings(base_url="http://localhost:7072")`
-- [x] `KOSMOS/app/core/ai_bridge.py` ‚Äî URL base para 7072; header `X-App: kosmos` em embed e generate_stream
+- [x] `HUB/src-tauri/src/logos.rs` ó implementar rotas de proxy para os endpoints nativos do Ollama:
+  ó `POST /api/chat` e `POST /api/generate` ? proxy com fila P1/P2/P3 (mesma lÛgica do `/logos/chat`)
+  ó `POST /api/embeddings` e `POST /api/embed` ? proxy com fila (P3 por padr„o para embeddings)
+  ó `GET /api/tags`, `GET /api/ps`, `DELETE /api/delete` ? proxy direto sem fila (metadados)
+  ó identificaÁ„o do app por header `X-App: <nome>` (ex: `mnemosyne`, `kosmos`)
+  ó keep_alive injetado automaticamente em todas as chamadas de chat/generate que passam pelo proxy
+  ó Hardware Guard (VRAM, CPU, RAM) aplicado a todos os requests, n„o sÛ aos via `/logos/chat`
+- [x] `ecosystem_client.py` ó `LOGOS_OLLAMA_BASE` aponta para 7072 (LOGOS); `OLLAMA_DIRECT` 11434;
+  `get_ollama_url()` retorna 7072 se LOGOS acessÌvel, sen„o 11434
+- [x] `Mnemosyne/core/indexer.py` ó `OllamaEmbeddings(base_url="http://localhost:7072")`
+- [x] `KOSMOS/app/core/ai_bridge.py` ó URL base para 7072; header `X-App: kosmos` em embed e generate_stream
 - [x] Auditar todos os apps em busca de `localhost:11434` hardcoded e substituir pela URL do LOGOS
-- [ ] Testar integra√ß√£o: chat no Mnemosyne (P1) enquanto KOSMOS analisa em background (P3)
-  ‚Üí KOSMOS deve pausar na fila do LOGOS at√© o chat terminar
+- [ ] Testar integraÁ„o: chat no Mnemosyne (P1) enquanto KOSMOS analisa em background (P3)
+  ? KOSMOS deve pausar na fila do LOGOS atÈ o chat terminar
 
-### AKASHA como broker unificado de informa√ß√£o
+### AKASHA como broker unificado de informaÁ„o
 - [ ] Planejar API de "Mapa de Contexto" no AKASHA:
-  ‚Äî dado um termo, retornar resultados cruzados: Mnemosyne (RAG) + KOSMOS (artigos) + Hermes (transcri√ß√µes) + AETHER (notas)
-- [ ] HUB consumir essa API num bot√£o de busca global cross-app
+  ó dado um termo, retornar resultados cruzados: Mnemosyne (RAG) + KOSMOS (artigos) + Hermes (transcriÁıes) + AETHER (notas)
+- [ ] HUB consumir essa API num bot„o de busca global cross-app
 
-### Migra√ß√£o Rust/PyO3 para indexa√ß√£o (longo prazo)
-- [x] Avaliar substitui√ß√£o do indexador Python do AKASHA por m√≥dulo Rust via PyO3
+### MigraÁ„o Rust/PyO3 para indexaÁ„o (longo prazo)
+- [x] Avaliar substituiÁ„o do indexador Python do AKASHA por mÛdulo Rust via PyO3
 
-  **Conclus√£o: n√£o justificada no volume atual ‚Äî adiar indefinidamente.**
+  **Conclus„o: n„o justificada no volume atual ó adiar indefinidamente.**
 
-  An√°lise (2026-04-24):
-  - Volume estimado atual: 5k‚Äì20k documentos; SQLite FTS5 escala at√© ~10M sem degrada√ß√£o
-  - Startup do indexador √© incremental (s√≥ mtime diffs) ‚Äî j√° roda em < 5s
-  - Gargalo real do ecossistema: I/O de rede (crawl BFS) e infer√™ncia LLM (Mnemosyne), n√£o indexa√ß√£o local
-  - Custo: PyO3 introduz build Rust obrigat√≥rio no CI + complexidade de cross-compile (Windows 10 + CachyOS)
-  - tantivy compila sem AVX2 (i5-3470 OK), mas o ganho √© impercept√≠vel na escala atual
+  An·lise (2026-04-24):
+  - Volume estimado atual: 5kñ20k documentos; SQLite FTS5 escala atÈ ~10M sem degradaÁ„o
+  - Startup do indexador È incremental (sÛ mtime diffs) ó j· roda em < 5s
+  - Gargalo real do ecossistema: I/O de rede (crawl BFS) e inferÍncia LLM (Mnemosyne), n„o indexaÁ„o local
+  - Custo: PyO3 introduz build Rust obrigatÛrio no CI + complexidade de cross-compile (Windows 10 + CachyOS)
+  - tantivy compila sem AVX2 (i5-3470 OK), mas o ganho È imperceptÌvel na escala atual
 
   Gatilhos para reavaliar:
-  ‚Äî volume indexado > 500k documentos **ou** startup time > 30s na m√°quina alvo
-  ‚Äî buscas FTS retornando em > 2s de forma consistente
+  ó volume indexado > 500k documentos **ou** startup time > 30s na m·quina alvo
+  ó buscas FTS retornando em > 2s de forma consistente
 
 ---
 
-## AETHER ‚Äî Forja de Mundos
+## AETHER ó Forja de Mundos
 
-### Padr√µes de Desenvolvimento
+### Padrıes de Desenvolvimento
 
-- **Tratamento de erro com tipagem √© prioridade absoluta.**
-  - Rust: toda fun√ß√£o que pode falhar retorna `Result<T, AppError>`. Nunca usar `.unwrap()` ou `.expect()` em c√≥digo de produ√ß√£o.
+- **Tratamento de erro com tipagem È prioridade absoluta.**
+  - Rust: toda funÁ„o que pode falhar retorna `Result<T, AppError>`. Nunca usar `.unwrap()` ou `.expect()` em cÛdigo de produÁ„o.
   - TypeScript: `strict: true` sempre. Erros de comandos Tauri tipados com union types (`type Result<T> = { ok: true; data: T } | { ok: false; error: AppError }`).
-  - Erros devem ser tratados no ponto onde ocorrem ‚Äî sem silenciar, sem propagar cegamente.
+  - Erros devem ser tratados no ponto onde ocorrem ó sem silenciar, sem propagar cegamente.
 
-- **Commit ap√≥s CADA item individual do todo ‚Äî n√£o ap√≥s fases ou grupos.**
+- **Commit apÛs CADA item individual do todo ó n„o apÛs fases ou grupos.**
   - Mensagem de commit referencia o item exato: `feat(fase-0): 0.6 CosmosLayer component`
   - Atualizar o status do item no todo ([x]) ANTES de fazer o commit.
 
-- **Privacidade √© prioridade absoluta.**
-  - O AETHER n√£o coleta, transmite nem registra nenhum dado do usu√°rio.
-  - Zero telemetria, zero analytics, zero conex√µes externas n√£o solicitadas.
-  - Gerenciamento de arquivos e configura√ß√µes no estilo Obsidian:
-    - Tudo vive na pasta raiz escolhida pelo usu√°rio (o "vault")
-    - Configura√ß√µes ficam em `{pasta-raiz}/.aether/` ‚Äî nunca em `~/.aether/` global
-    - O usu√°rio tem controle total sobre onde seus dados ficam
-    - Cada projeto √© uma pasta auto-contida e port√°til
+- **Privacidade È prioridade absoluta.**
+  - O AETHER n„o coleta, transmite nem registra nenhum dado do usu·rio.
+  - Zero telemetria, zero analytics, zero conexıes externas n„o solicitadas.
+  - Gerenciamento de arquivos e configuraÁıes no estilo Obsidian:
+    - Tudo vive na pasta raiz escolhida pelo usu·rio (o "vault")
+    - ConfiguraÁıes ficam em `{pasta-raiz}/.aether/` ó nunca em `~/.aether/` global
+    - O usu·rio tem controle total sobre onde seus dados ficam
+    - Cada projeto È uma pasta auto-contida e port·til
 
 - **Manter `dev_files/dev_bible.txt` atualizado.**
-  - Ao concluir qualquer item que introduza novos arquivos, m√≥dulos, commands ou padr√µes, atualizar o dev_bible.
-  - O dev_bible descreve o estado ATUAL do projeto, n√£o o planejado.
+  - Ao concluir qualquer item que introduza novos arquivos, mÛdulos, commands ou padrıes, atualizar o dev_bible.
+  - O dev_bible descreve o estado ATUAL do projeto, n„o o planejado.
 
-- **Sempre atualizar este arquivo ANTES de come√ßar algo que n√£o est√° listado aqui.**
+- **Sempre atualizar este arquivo ANTES de comeÁar algo que n„o est· listado aqui.**
 
-- **Sempre atualizar o status do item ([ ] ‚Üí [x]) ao conclu√≠-lo.**
+- **Sempre atualizar o status do item ([ ] ? [x]) ao concluÌ-lo.**
 
 ---
 
@@ -1078,91 +1078,91 @@ e seleciona automaticamente o perfil de modelos adequado ‚Äî sem configura√ß√£o 
 ### IDENTIDADE VISUAL
 
 **Nome:** AETHER
-**Subt√≠tulo:** FORJA DE MUNDOS
-**Ecossistema:** OGMA ¬∑ KOSMOS ¬∑ MNEMOSYNE ¬∑ AETHER
+**SubtÌtulo:** FORJA DE MUNDOS
+**Ecossistema:** OGMA ∑ KOSMOS ∑ MNEMOSYNE ∑ AETHER
 
 O AETHER segue o design system do ecossistema (definido no OGMA Design Bible):
-mesma paleta s√©pia, mesma tipografia, mesmas regras de sombra, anima√ß√µes e cosmos.
+mesma paleta sÈpia, mesma tipografia, mesmas regras de sombra, animaÁıes e cosmos.
 
 **Diferencial visual do AETHER dentro do ecossistema:**
-- Anima√ß√£o `pageFloat` ‚Äî folhas de papel caem com rota√ß√£o ao abrir/criar/deletar cap√≠tulos
-- Efeito typewriter ‚Äî texto no splash e em loading states digita caractere por caractere
-- Cursor de editor como `_` piscante (sublinhado), n√£o `|`
-- CosmosLayer com labels mitol√≥gicos nas constela√ß√µes (√ìrion, Cassiopeia, Perseu...)
-- Nebulosas com pulso lento animado (8s) nos headers de projeto ‚Äî o "√©ter" do app
+- AnimaÁ„o `pageFloat` ó folhas de papel caem com rotaÁ„o ao abrir/criar/deletar capÌtulos
+- Efeito typewriter ó texto no splash e em loading states digita caractere por caractere
+- Cursor de editor como `_` piscante (sublinhado), n„o `|`
+- CosmosLayer com labels mitolÛgicos nas constelaÁıes (”rion, Cassiopeia, Perseu...)
+- Nebulosas com pulso lento animado (8s) nos headers de projeto ó o "Èter" do app
 
 ---
 
-### Design Bible v2.0 ‚Äî Audit (2026-04-11)
+### Design Bible v2.0 ó Audit (2026-04-11)
 
-- [x] tokens.css: modo noturno migrado para paleta "Atlas Astron√¥mico √† Meia-Noite"
+- [x] tokens.css: modo noturno migrado para paleta "Atlas AstronÙmico ‡ Meia-Noite"
 - [x] tokens.css: `--sidebar-w` corrigido para 224px (era 260px)
-- [x] typography.css: hierarquia tipogr√°fica alinhada ao bible (t-body 13px, t-btn 11px, t-label 10px, t-section 9px, t-badge 10px, t-meta 9px)
+- [x] typography.css: hierarquia tipogr·fica alinhada ao bible (t-body 13px, t-btn 11px, t-label 10px, t-section 9px, t-badge 10px, t-meta 9px)
 - [x] components.css: `.btn` corrigido para 11px / 5px 14px
-- [x] Splash.tsx: background hardcoded `rgba(26,22,16,0.45)` ‚Üí `var(--paper)`
+- [x] Splash.tsx: background hardcoded `rgba(26,22,16,0.45)` ? `var(--paper)`
 
 ---
 
-### FASE 0 ‚Äî Design System
+### FASE 0 ó Design System
 
-> Entreg√°vel: toda a funda√ß√£o visual implementada. Nenhum componente de UI √© constru√≠do sem isso estar pronto.
+> Entreg·vel: toda a fundaÁ„o visual implementada. Nenhum componente de UI È construÌdo sem isso estar pronto.
 
-- [x] 0.1 Vari√°veis CSS globais (tokens do ecossistema)
+- [x] 0.1 Vari·veis CSS globais (tokens do ecossistema)
   - Paleta completa: `--paper`, `--paper-dark`, `--paper-darker`, `--paper-darkest`
   - Tintas: `--ink`, `--ink-light`, `--ink-faint`, `--ink-ghost`
   - Acento: `--accent` (#b8860b dia / #D4A820 noite), `--cursor-color`
   - Funcionais: `--ribbon`, `--ribbon-light`, `--accent-green`, `--stamp`
   - Linhas: `--rule`, `--margin-line`, `--shadow`
-  - M√©tricas: `--sidebar-w: 260px` (binder mais largo que OGMA), `--topbar-h: 44px`, `--radius: 2px`
-  - Transi√ß√µes: `--transition: 140ms ease`
+  - MÈtricas: `--sidebar-w: 260px` (binder mais largo que OGMA), `--topbar-h: 44px`, `--radius: 2px`
+  - TransiÁıes: `--transition: 140ms ease`
 
-- [x] 0.2 Tipografia ‚Äî carregar e configurar as tr√™s fam√≠lias
-  - `--font-display`: IM Fell English (Google Fonts) ‚Äî t√≠tulos, editor, it√°lico como regra
-  - `--font-mono`: Special Elite (Google Fonts) ‚Äî UI geral, bot√µes, labels
-  - `--font-code`: Courier Prime (Google Fonts) ‚Äî blocos de c√≥digo no editor
-  - Hierarquia tipogr√°fica completa (tamanhos, letter-spacing, pesos)
-  - Regra de it√°lico: IM Fell English √© SEMPRE it√°lico em t√≠tulos e conte√∫do
+- [x] 0.2 Tipografia ó carregar e configurar as trÍs famÌlias
+  - `--font-display`: IM Fell English (Google Fonts) ó tÌtulos, editor, it·lico como regra
+  - `--font-mono`: Special Elite (Google Fonts) ó UI geral, botıes, labels
+  - `--font-code`: Courier Prime (Google Fonts) ó blocos de cÛdigo no editor
+  - Hierarquia tipogr·fica completa (tamanhos, letter-spacing, pesos)
+  - Regra de it·lico: IM Fell English È SEMPRE it·lico em tÌtulos e conte˙do
 
-- [x] 0.3 Anima√ß√µes base (herdadas do ecossistema)
-  - `paperFall` ‚Äî translateY(-14px) + rotate(-0.4deg) ‚Üí 0, 0.22s ease-out
-  - `fadeIn` ‚Äî opacity 0‚Üí1, 0.15‚Äì0.25s ease
-  - `slideIn` ‚Äî translateX(-16px) + opacity, para sidebar/drawers
-  - `blink` ‚Äî opacity 1‚Üí0‚Üí1, 1.2s (loading dots) / 0.6s (editor cursor)
-  - `toastIn` ‚Äî translateY(6px) + opacity, 180ms ease-out
+- [x] 0.3 AnimaÁıes base (herdadas do ecossistema)
+  - `paperFall` ó translateY(-14px) + rotate(-0.4deg) ? 0, 0.22s ease-out
+  - `fadeIn` ó opacity 0?1, 0.15ñ0.25s ease
+  - `slideIn` ó translateX(-16px) + opacity, para sidebar/drawers
+  - `blink` ó opacity 1?0?1, 1.2s (loading dots) / 0.6s (editor cursor)
+  - `toastIn` ó translateY(6px) + opacity, 180ms ease-out
 
-- [x] 0.4 Anima√ß√µes exclusivas do AETHER
-  - `pageFloat` ‚Äî folha retangular cai com rota√ß√£o suave (¬±3deg) e transla√ß√£o diagonal
-    - Variante entrada: cai de cima com rota√ß√£o leve, pousa
-    - Variante sa√≠da (deletar): voa para canto superior direito e desaparece
-  - `typewriterReveal` ‚Äî texto revela caractere por caractere com delay mec√¢nico (30ms/char)
+- [x] 0.4 AnimaÁıes exclusivas do AETHER
+  - `pageFloat` ó folha retangular cai com rotaÁ„o suave (±3deg) e translaÁ„o diagonal
+    - Variante entrada: cai de cima com rotaÁ„o leve, pousa
+    - Variante saÌda (deletar): voa para canto superior direito e desaparece
+  - `typewriterReveal` ó texto revela caractere por caractere com delay mec‚nico (30ms/char)
     - Usado no splash e em loading states
-  - `etherPulse` ‚Äî opacity 0.4‚Üí0.65‚Üí0.4, 8s ease-in-out infinite (nebulosas dos headers)
+  - `etherPulse` ó opacity 0.4?0.65?0.4, 8s ease-in-out infinite (nebulosas dos headers)
 
 - [x] 0.5 Textura de papel
   - `body::after` com SVG `feTurbulence` (baseFrequency: 0.65, numOctaves: 4)
   - Opacity: 30%, pointer-events: none, z-index: 0
-  - Invis√≠vel no modo noturno (intencional)
+  - InvisÌvel no modo noturno (intencional)
 
 - [x] 0.6 Componente `<CosmosLayer>`
-  - SVG procedural determin√≠stico (seed baseado no ID do projeto)
-  - Elementos: nebulosas, estrelas (10 pontas), constela√ß√µes, cometa, lua crescente
-  - **Diferencial AETHER:** labels mitol√≥gicos nas constela√ß√µes (Special Elite, 7px, opacity: 0.35)
+  - SVG procedural determinÌstico (seed baseado no ID do projeto)
+  - Elementos: nebulosas, estrelas (10 pontas), constelaÁıes, cometa, lua crescente
+  - **Diferencial AETHER:** labels mitolÛgicos nas constelaÁıes (Special Elite, 7px, opacity: 0.35)
   - **Diferencial AETHER:** nebulosas com `etherPulse` animado
-  - Densidades: `low` (headers de cap√≠tulo), `medium` (headers de livro), `high` (splash, tela inicial)
-  - Props: `seed`, `density`, `animated` (boolean ‚Äî desativa pulso se false)
+  - Densidades: `low` (headers de capÌtulo), `medium` (headers de livro), `high` (splash, tela inicial)
+  - Props: `seed`, `density`, `animated` (boolean ó desativa pulso se false)
 
 - [x] 0.7 Linha vermelha de margem
-  - `sidebar::before` ‚Äî 1px vertical em left: 48px (ajustado para binder)
+  - `sidebar::before` ó 1px vertical em left: 48px (ajustado para binder)
   - Cor: `--margin-line`
-  - Replicada no splash em mesma posi√ß√£o
+  - Replicada no splash em mesma posiÁ„o
 
 - [x] 0.8 Sistema de sombra flat (sem blur)
-  - Bot√£o: `2px 2px 0 var(--rule)`
-  - Bot√£o primary: `2px 2px 0 var(--stamp)`
+  - Bot„o: `2px 2px 0 var(--rule)`
+  - Bot„o primary: `2px 2px 0 var(--stamp)`
   - Card: `3px 3px 0 var(--paper-darker)`
   - Modal: `6px 6px 0 var(--ink-ghost)`
   - Menu popup: `3px 3px 0 var(--rule)`
-  - `:active` em bot√µes e cards: sombra some + `translate(1px, 1px)`
+  - `:active` em botıes e cards: sombra some + `translate(1px, 1px)`
 
 - [x] 0.9 Scrollbar vintage
   - Width: 6px, border-radius: 2px
@@ -1170,9 +1170,9 @@ mesma paleta s√©pia, mesma tipografia, mesmas regras de sombra, anima√ß√µes e co
 
 - [x] 0.10 Cursor dourado e cursor de editor
   - `caret-color: var(--accent)` em todos os inputs e textareas
-  - No editor de cap√≠tulo: cursor customizado como `_` piscante (via CSS/JS)
+  - No editor de capÌtulo: cursor customizado como `_` piscante (via CSS/JS)
 
-- [x] 0.11 Sele√ß√£o de texto √¢mbar
+- [x] 0.11 SeleÁ„o de texto ‚mbar
   - `::selection { background: rgba(184,134,11,0.25); }`
   - Editor modo escuro: `rgba(212,168,32,0.2)`
 
@@ -1181,54 +1181,54 @@ mesma paleta s√©pia, mesma tipografia, mesmas regras de sombra, anima√ß√µes e co
   - Persiste em localStorage: `aether_theme`
   - Sem flash de tema errado no carregamento (aplicar antes do render)
 
-- [x] 0.13 Sistema de toasts / notifica√ß√µes
+- [x] 0.13 Sistema de toasts / notificaÁıes
   - Tipos: `success`, `error`, `warning`, `info`
-  - Posi√ß√£o: fixed, bottom: 24px, right: 24px
+  - PosiÁ„o: fixed, bottom: 24px, right: 24px
   - Auto-dismiss: error=7s, success=3s, warning=5s, info=4s
-  - Cores dentro da paleta s√©pia (sem branco puro, sem preto puro)
-  - Anima√ß√£o: `toastIn`
+  - Cores dentro da paleta sÈpia (sem branco puro, sem preto puro)
+  - AnimaÁ„o: `toastIn`
 
 - [x] 0.14 Splash screen
-  - Overlay s√©pia (rgba(26,22,16,0.85)) com backdrop blur 2px
-  - Card 520√ó340px, border-radius: 2px, sombra flat 8px
+  - Overlay sÈpia (rgba(26,22,16,0.85)) com backdrop blur 2px
+  - Card 520◊340px, border-radius: 2px, sombra flat 8px
   - `<CosmosLayer density="high" animated={true}>`
   - Linha de margem vermelha (left: 48px)
-  - "AETHER" em IM Fell English 68px it√°lico
+  - "AETHER" em IM Fell English 68px it·lico
   - "FORJA DE MUNDOS" em Special Elite 9px uppercase letter-spacing: 0.22em
-  - Texto de status com `typewriterReveal`: "Iniciando AETHER..." ‚Üí "Abrindo projetos..." ‚Üí "Pronto."
-  - Dots de loading: "¬∑ ¬∑ ¬∑" com `blink` 1.2s
-  - Vers√£o no canto inferior direito (9px)
-  - Fade out ap√≥s "Pronto." com delay 400ms
+  - Texto de status com `typewriterReveal`: "Iniciando AETHER..." ? "Abrindo projetos..." ? "Pronto."
+  - Dots de loading: "∑ ∑ ∑" com `blink` 1.2s
+  - Vers„o no canto inferior direito (9px)
+  - Fade out apÛs "Pronto." com delay 400ms
 
 - [x] 0.15 Componentes base de UI
-  - Bot√µes: `.btn`, `.btn-primary`, `.btn-accent`, `.btn-danger`, `.btn-ghost`, `.btn-sm`, `.btn-icon`
+  - Botıes: `.btn`, `.btn-primary`, `.btn-accent`, `.btn-danger`, `.btn-ghost`, `.btn-sm`, `.btn-icon`
   - Inputs e labels (IM Fell no corpo, Special Elite nos labels)
   - Cards com `paperFall` e sombra flat
-  - Modais com overlay s√©pia e `paperFall`
+  - Modais com overlay sÈpia e `paperFall`
   - Badges / tags (border-radius: 20px para pills)
 
 ---
 
-### FASE 1 ‚Äî Funda√ß√£o (projeto abr√≠vel e edit√°vel)
+### FASE 1 ó FundaÁ„o (projeto abrÌvel e edit·vel)
 
-> Entreg√°vel: abrir o AETHER, criar um projeto, criar cap√≠tulos e escrever texto. Nada mais ‚Äî mas isso funciona.
+> Entreg·vel: abrir o AETHER, criar um projeto, criar capÌtulos e escrever texto. Nada mais ó mas isso funciona.
 
 - [x] 1.1 Scaffold do projeto Tauri + React + TypeScript
   - Vite como bundler, `strict: true` no tsconfig
   - Estrutura de pastas: `src-tauri/` (Rust), `src/` (React)
 
 - [x] 1.2 Definir e implementar estrutura de dados em disco
-  - Modelo Obsidian: usu√°rio escolhe uma pasta raiz ("vault") na primeira abertura
-  - Dois n√≠veis de armazenamento:
+  - Modelo Obsidian: usu·rio escolhe uma pasta raiz ("vault") na primeira abertura
+  - Dois nÌveis de armazenamento:
     1. **AppData do sistema** (`~/.local/share/aether/` no Linux, `%AppData%\aether\` no Windows)
-       - `app.json` ‚Äî caminho do √∫ltimo vault aberto (apenas isso)
+       - `app.json` ó caminho do ˙ltimo vault aberto (apenas isso)
        - Gerenciado pelo Tauri via `tauri::api::path::app_data_dir`
-    2. **Dentro do vault** (port√°til, controlado pelo usu√°rio)
-       - `{vault}/.aether/config.json` ‚Äî tema, fonte, estado da UI, etc.
-       - `{vault}/.aether/` ‚Äî outros dados internos do app (snapshots, cache, etc.)
-       - `{vault}/{projeto}/project.json` ‚Äî metadados do projeto
-       - `{vault}/{projeto}/{livro}/book.json` ‚Äî metadados do livro
-       - `{vault}/{projeto}/{livro}/{capitulo}.md` ‚Äî conte√∫do dos cap√≠tulos
+    2. **Dentro do vault** (port·til, controlado pelo usu·rio)
+       - `{vault}/.aether/config.json` ó tema, fonte, estado da UI, etc.
+       - `{vault}/.aether/` ó outros dados internos do app (snapshots, cache, etc.)
+       - `{vault}/{projeto}/project.json` ó metadados do projeto
+       - `{vault}/{projeto}/{livro}/book.json` ó metadados do livro
+       - `{vault}/{projeto}/{livro}/{capitulo}.md` ó conte˙do dos capÌtulos
   - Tipos Rust: `AppState`, `VaultConfig`, `Project`, `Book`, `Chapter` com `serde` + `serde_json`
   - `AppError` enum cobrindo todos os erros de I/O
 
@@ -1238,7 +1238,7 @@ mesma paleta s√©pia, mesma tipografia, mesmas regras de sombra, anima√ß√µes e co
   - `open_project(id) -> Result<Project, AppError>`
   - `delete_project(id) -> Result<(), AppError>`
 
-- [x] 1.4 Comandos Tauri: livros e cap√≠tulos
+- [x] 1.4 Comandos Tauri: livros e capÌtulos
   - `create_book(project_id, name) -> Result<BookMeta, AppError>`
   - `list_books(project_id) -> Result<Vec<BookMeta>, AppError>`
   - `create_chapter(project_id, book_id, title) -> Result<ChapterMeta, AppError>`
@@ -1252,156 +1252,156 @@ mesma paleta s√©pia, mesma tipografia, mesmas regras de sombra, anima√ß√µes e co
   - `AppError`, `ProjectMeta`, `BookMeta`, `ChapterMeta` como tipos estritos
   - Wrapper tipado para todos os `invoke()` do Tauri
 
-- [x] 1.6 Tela inicial ‚Äî lista de projetos
+- [x] 1.6 Tela inicial ó lista de projetos
   - Criar novo projeto
   - Abrir projeto existente
   - Remover projeto
 
 - [x] 1.7 Layout principal do projeto
-  - Painel binder lateral: √°rvore Livros > Cap√≠tulos
-  - √Årea central: editor de texto
-  - Criar/renomear/deletar livros e cap√≠tulos pelo binder
-  - Reordenar cap√≠tulos via drag & drop
+  - Painel binder lateral: ·rvore Livros > CapÌtulos
+  - ¡rea central: editor de texto
+  - Criar/renomear/deletar livros e capÌtulos pelo binder
+  - Reordenar capÌtulos via drag & drop
 
 - [x] 1.8 Editor de texto WYSIWYG com TipTap
-  - Biblioteca: TipTap (ProseMirror) ‚Äî renderiza√ß√£o em tempo real
-  - Sem "modo leitura": o texto √© SEMPRE renderizado, nunca mostra s√≠mbolos Markdown
-  - Digitar `**texto**` ‚Üí imediatamente vira negrito; `_texto_` ‚Üí it√°lico; etc.
-  - Par√°grafos indentados (text-indent na primeira linha, estilo livro impresso)
-  - Tipografia: IM Fell English it√°lico, 16px, line-height 1.75, coluna centralizada
-  - Cursor estilo m√°quina de escrever: `_` piscante via CSS (substituir cursor padr√£o `|`)
-  - Auto-save com debounce 500ms ap√≥s parar de digitar
-  - Indicador de status "Salvando..." / "Salvo" no rodap√© do editor
-  - Exporta/importa como Markdown puro (compat√≠vel com os .md do vault)
+  - Biblioteca: TipTap (ProseMirror) ó renderizaÁ„o em tempo real
+  - Sem "modo leitura": o texto È SEMPRE renderizado, nunca mostra sÌmbolos Markdown
+  - Digitar `**texto**` ? imediatamente vira negrito; `_texto_` ? it·lico; etc.
+  - Par·grafos indentados (text-indent na primeira linha, estilo livro impresso)
+  - Tipografia: IM Fell English it·lico, 16px, line-height 1.75, coluna centralizada
+  - Cursor estilo m·quina de escrever: `_` piscante via CSS (substituir cursor padr„o `|`)
+  - Auto-save com debounce 500ms apÛs parar de digitar
+  - Indicador de status "Salvando..." / "Salvo" no rodapÈ do editor
+  - Exporta/importa como Markdown puro (compatÌvel com os .md do vault)
 
 ---
 
-### FASE 1.5 ‚Äî Itens pendentes identificados em uso
+### FASE 1.5 ó Itens pendentes identificados em uso
 
 > Itens que surgiram durante os testes da Fase 1. Devem ser feitos antes da Fase 2.
 
-- [x] 1.9 Tipos de projeto: livro √∫nico vs s√©rie
-  - Ao criar projeto, perguntar: "Livro √∫nico" ou "S√©rie"
-  - **Livro √∫nico**: nome do projeto = nome do livro; livro criado automaticamente; binder oculta a camada "livro" e mostra s√≥ cap√≠tulos
-  - **S√©rie**: nome da s√©rie separado do nome dos livros; binder mostra √°rvore S√©rie > Livros > Cap√≠tulos normalmente
+- [x] 1.9 Tipos de projeto: livro ˙nico vs sÈrie
+  - Ao criar projeto, perguntar: "Livro ˙nico" ou "SÈrie"
+  - **Livro ˙nico**: nome do projeto = nome do livro; livro criado automaticamente; binder oculta a camada "livro" e mostra sÛ capÌtulos
+  - **SÈrie**: nome da sÈrie separado do nome dos livros; binder mostra ·rvore SÈrie > Livros > CapÌtulos normalmente
   - Armazenar `project_type: "single" | "series"` em project.json
   - Ajustar Binder para renderizar diferente conforme o tipo
 
-- [x] 1.10 Modal de cria√ß√£o de projeto com metadados
+- [x] 1.10 Modal de criaÁ„o de projeto com metadados
   - Substituir o modal simples atual por um wizard/form mais completo
-  - Campos: tipo (√∫nico/s√©rie), t√≠tulo, subt√≠tulo opcional, descri√ß√£o/sinopse
-  - Metadados de livro: g√™nero, p√∫blico-alvo, idioma, tags livres
-  - Metadados de worldbuilding: sistema de magia (sim/n√£o), n√≠vel tecnol√≥gico, inspira√ß√µes
-  - Todos os campos opcionais exceto t√≠tulo e tipo
+  - Campos: tipo (˙nico/sÈrie), tÌtulo, subtÌtulo opcional, descriÁ„o/sinopse
+  - Metadados de livro: gÍnero, p˙blico-alvo, idioma, tags livres
+  - Metadados de worldbuilding: sistema de magia (sim/n„o), nÌvel tecnolÛgico, inspiraÁıes
+  - Todos os campos opcionais exceto tÌtulo e tipo
   - Salvar em project.json
 
 - [x] 1.11 Dashboard do projeto
-  - Tela inicial ao abrir um projeto (antes de selecionar cap√≠tulo)
+  - Tela inicial ao abrir um projeto (antes de selecionar capÌtulo)
   - CosmosLayer de fundo com seed do projeto
-  - Nome, subt√≠tulo, descri√ß√£o do projeto
-  - Estat√≠sticas: total de palavras, total de cap√≠tulos, data de cria√ß√£o
-  - Widgets expans√≠veis no futuro (metas, personagens, etc.)
+  - Nome, subtÌtulo, descriÁ„o do projeto
+  - EstatÌsticas: total de palavras, total de capÌtulos, data de criaÁ„o
+  - Widgets expansÌveis no futuro (metas, personagens, etc.)
 
 - [x] 1.12 Sistema de logs em arquivo
   - Logs salvos dentro do vault em `{vault}/.aether/logs/aether-YYYY-MM-DD.log`
-  - Rota√ß√£o di√°ria; manter √∫ltimos 7 dias
-  - N√≠vel INFO em produ√ß√£o, DEBUG em dev
-  - Registrar: abertura/fechamento do vault, erros, saves, opera√ß√µes de CRUD
+  - RotaÁ„o di·ria; manter ˙ltimos 7 dias
+  - NÌvel INFO em produÁ„o, DEBUG em dev
+  - Registrar: abertura/fechamento do vault, erros, saves, operaÁıes de CRUD
   - Implementar em Rust via tauri-plugin-log com appender de arquivo
 
 ---
 
-### FASE 2 ‚Äî Experi√™ncia de escrita
+### FASE 2 ó ExperiÍncia de escrita
 
-> Entreg√°vel: escrever com conforto. Foco, tipografia, estat√≠sticas b√°sicas.
+> Entreg·vel: escrever com conforto. Foco, tipografia, estatÌsticas b·sicas.
 
-- [x] 2.1 Temas: claro, escuro, s√©pia
-- [x] 2.2 Tipografia customiz√°vel (fonte, tamanho, espa√ßamento, largura da coluna de texto)
-- [x] 2.3 Modo foco / distraction-free (esconde binder e UI, s√≥ o texto)
+- [x] 2.1 Temas: claro, escuro, sÈpia
+- [x] 2.2 Tipografia customiz·vel (fonte, tamanho, espaÁamento, largura da coluna de texto)
+- [x] 2.3 Modo foco / distraction-free (esconde binder e UI, sÛ o texto)
 - [x] 2.4 Modo typewriter (cursor sempre centralizado verticalmente)
 - [x] 2.5 Tela cheia (F11)
 - [x] 2.6 Contagem de palavras e caracteres em tempo real
-- [x] 2.7 Status por cap√≠tulo (Rascunho / Revis√£o / Final)
-- [x] 2.8 Sinopse por cap√≠tulo (campo no binder ou painel lateral)
-- [x] 2.9 Localizar e substituir no cap√≠tulo atual
+- [x] 2.7 Status por capÌtulo (Rascunho / Revis„o / Final)
+- [x] 2.8 Sinopse por capÌtulo (campo no binder ou painel lateral)
+- [x] 2.9 Localizar e substituir no capÌtulo atual
 
 ---
 
-### FASE 3 ‚Äî Organiza√ß√£o avan√ßada
+### FASE 3 ó OrganizaÁ„o avanÁada
 
-> Entreg√°vel: vis√µes alternativas da estrutura do projeto.
+> Entreg·vel: visıes alternativas da estrutura do projeto.
 
-- [x] 3.1 Vista corkboard (cart√µes de cap√≠tulo com t√≠tulo + sinopse)
+- [x] 3.1 Vista corkboard (cartıes de capÌtulo com tÌtulo + sinopse)
 - [x] 3.2 Vista outline (lista com status, sinopse e contagem de palavras)
-- [x] 3.3 Lixeira ‚Äî cap√≠tulos deletados ficam recuper√°veis
-- [x] 3.4 Scratchpad por cap√≠tulo (bloco de notas lateral)
+- [x] 3.3 Lixeira ó capÌtulos deletados ficam recuper·veis
+- [x] 3.4 Scratchpad por capÌtulo (bloco de notas lateral)
 - [x] 3.5 Modo split: editor + scratchpad/notas lado a lado
 
 ---
 
-### FASE 4 ‚Äî Personagens & Worldbuilding
+### FASE 4 ó Personagens & Worldbuilding
 
-> Entreg√°vel: base de lore do projeto, separada da escrita mas sempre acess√≠vel.
+> Entreg·vel: base de lore do projeto, separada da escrita mas sempre acessÌvel.
 
-- [x] 4.1 Fichas de personagem com campos customiz√°veis
+- [x] 4.1 Fichas de personagem com campos customiz·veis
 - [x] 4.2 Relacionamentos entre personagens (mapa/grafo simples)
-- [x] 4.3 Notas de worldbuilding por categoria (locais, fac√ß√µes, etc.)
+- [x] 4.3 Notas de worldbuilding por categoria (locais, facÁıes, etc.)
 - [x] 4.4 Linha do tempo de eventos
 - [x] 4.5 Anexar imagens a personagens e locais
-- [x] 4.6 Tags ‚Äî cruzar personagens/locais com cap√≠tulos
+- [x] 4.6 Tags ó cruzar personagens/locais com capÌtulos
 
 ---
 
-### FASE 5 ‚Äî Metas & Hist√≥rico
+### FASE 5 ó Metas & HistÛrico
 
-> Entreg√°vel: acompanhar progresso e proteger o trabalho.
+> Entreg·vel: acompanhar progresso e proteger o trabalho.
 
-- [x] 5.1 Meta de palavras por cap√≠tulo e por livro
-- [x] 5.2 Meta de sess√£o de escrita com timer
-- [x] 5.3 Streak di√°rio de escrita
-- [x] 5.4 Painel de estat√≠sticas (palavras totais, ritmo, sess√µes)
-- [x] 5.5 Snapshots de cap√≠tulo (hist√≥rico de vers√µes manual + autom√°tico)
-- [x] 5.6 Coment√°rios/anota√ß√µes inline no texto
+- [x] 5.1 Meta de palavras por capÌtulo e por livro
+- [x] 5.2 Meta de sess„o de escrita com timer
+- [x] 5.3 Streak di·rio de escrita
+- [x] 5.4 Painel de estatÌsticas (palavras totais, ritmo, sessıes)
+- [x] 5.5 Snapshots de capÌtulo (histÛrico de versıes manual + autom·tico)
+- [x] 5.6 Coment·rios/anotaÁıes inline no texto
 
 ---
 
-### FASE 6 ‚Äî Exporta√ß√£o
+### FASE 6 ó ExportaÁ„o
 
-> Entreg√°vel: levar o texto para fora do AETHER.
+> Entreg·vel: levar o texto para fora do AETHER.
 
-- [ ] 6.1 Export por cap√≠tulo individual
-- [ ] 6.2 Export por livro (cap√≠tulos concatenados)
+- [ ] 6.1 Export por capÌtulo individual
+- [ ] 6.2 Export por livro (capÌtulos concatenados)
 - [ ] 6.3 Export do projeto completo
 - [ ] 6.4 Formatos: Markdown, texto plano, DOCX, PDF
 - [ ] 6.5 Formato EPUB
-- [ ] 6.6 Configura√ß√µes de export (incluir/excluir sinopses, metadados, notas)
+- [ ] 6.6 ConfiguraÁıes de export (incluir/excluir sinopses, metadados, notas)
 
 ---
 
-### FASE 7 ‚Äî Polimento & Extras
+### FASE 7 ó Polimento & Extras
 
-> Entreg√°vel: produto refinado.
+> Entreg·vel: produto refinado.
 
-- [x] 7.0 Bot√£o de excluir vis√≠vel para projetos, livros e cap√≠tulos
-      ‚Äî ProjectCard: hover revela bot√£o √ó; confirma√ß√£o 2 passos; sai do modo confirma√ß√£o
-        ao tirar o mouse. Livros e cap√≠tulos: √ó no hover j√° estava implementado.
-        delete_book est√° implementado em Rust + frontend.
-- [ ] 7.1 Atalhos de teclado customiz√°veis
+- [x] 7.0 Bot„o de excluir visÌvel para projetos, livros e capÌtulos
+      ó ProjectCard: hover revela bot„o ◊; confirmaÁ„o 2 passos; sai do modo confirmaÁ„o
+        ao tirar o mouse. Livros e capÌtulos: ◊ no hover j· estava implementado.
+        delete_book est· implementado em Rust + frontend.
+- [ ] 7.1 Atalhos de teclado customiz·veis
 - [ ] 7.2 Gerador de nomes
 - [ ] 7.3 Projetos recentes na tela inicial com preview
 - [ ] 7.4 Onboarding (tela de boas-vindas para primeiro uso)
-- [ ] 7.5 Configura√ß√µes globais (tema padr√£o, pasta de dados, fonte padr√£o)
-- [ ] 7.6 Build de distribui√ß√£o ‚Äî Windows installer + pacote Linux (AppImage/deb)
+- [ ] 7.5 ConfiguraÁıes globais (tema padr„o, pasta de dados, fonte padr„o)
+- [ ] 7.6 Build de distribuiÁ„o ó Windows installer + pacote Linux (AppImage/deb)
 
 ---
 
 ### BACKLOG (futuro, fora do escopo atual)
 
-- Sync opcional com cloud (Google Drive, Dropbox, ou pr√≥prio)
-- Colabora√ß√£o em tempo real
-- Plugin/extens√£o system
-- Integra√ß√£o com ferramentas de revis√£o gramatical
-- Vers√£o mobile (leitura + notas)
+- Sync opcional com cloud (Google Drive, Dropbox, ou prÛprio)
+- ColaboraÁ„o em tempo real
+- Plugin/extens„o system
+- IntegraÁ„o com ferramentas de revis„o gramatical
+- Vers„o mobile (leitura + notas)
 
 
 ---
@@ -1409,194 +1409,194 @@ mesma paleta s√©pia, mesma tipografia, mesmas regras de sombra, anima√ß√µes e co
 
 
 
-### Bug: vault_path n√£o atualiza ap√≥s mudan√ßa no HUB
-- [x] Investigar por que o AETHER continua salvando no caminho antigo mesmo ap√≥s `sync_root` ser atualizado no HUB
-  ‚Äî causa: startup lia app.json local e sobrescrevia o ecosystem.json, ignorando o que o HUB gravou
-  ‚Äî fix: `ecosystem.rs` exp√µe `read_vault_path()`; `lib.rs` compara ecosystem.json vs local e prefere ecosystem.json
-- [ ] Adicionar op√ß√£o de configurar `vault_path` dentro do pr√≥prio AETHER (sem depender exclusivamente do HUB)
+### Bug: vault_path n„o atualiza apÛs mudanÁa no HUB
+- [x] Investigar por que o AETHER continua salvando no caminho antigo mesmo apÛs `sync_root` ser atualizado no HUB
+  ó causa: startup lia app.json local e sobrescrevia o ecosystem.json, ignorando o que o HUB gravou
+  ó fix: `ecosystem.rs` expıe `read_vault_path()`; `lib.rs` compara ecosystem.json vs local e prefere ecosystem.json
+- [ ] Adicionar opÁ„o de configurar `vault_path` dentro do prÛprio AETHER (sem depender exclusivamente do HUB)
 
-### Responsividade ‚Äî AETHER
+### Responsividade ó AETHER
 
-> AETHER √© Tauri (React + CSS). Responsividade significa: a √°rea de edi√ß√£o deve escalar bem
+> AETHER È Tauri (React + CSS). Responsividade significa: a ·rea de ediÁ„o deve escalar bem
 > em janelas menores sem perder usabilidade.
 
-- [ ] **Auditar sidebar de projetos/cap√≠tulos**
-  ‚Äî Em janelas estreitas (~800px) a sidebar pode esconder o editor
-  ‚Äî Fix: `min-width` na sidebar, collaps√≠vel com toggle button abaixo de 900px
+- [ ] **Auditar sidebar de projetos/capÌtulos**
+  ó Em janelas estreitas (~800px) a sidebar pode esconder o editor
+  ó Fix: `min-width` na sidebar, collapsÌvel com toggle button abaixo de 900px
 - [ ] **Barra de ferramentas do editor**
-  ‚Äî Bot√µes de formata√ß√£o podem overflow em janela estreita
-  ‚Äî Fix: ocultar labels de texto, manter apenas √≠cones abaixo de 900px; wrapping se necess√°rio
-- [ ] **Testar em janela 900√ó600 m√≠nima**
+  ó Botıes de formataÁ„o podem overflow em janela estreita
+  ó Fix: ocultar labels de texto, manter apenas Ìcones abaixo de 900px; wrapping se necess·rio
+- [ ] **Testar em janela 900◊600 mÌnima**
 
 ---
 
-### Verifica√ß√£o de formato de sa√≠da
+### VerificaÁ„o de formato de saÌda
 
-- [ ] Verificar se todos os arquivos gerados pelo AETHER (escrita, fichas, worldbuilding) s√£o salvos como `.md`
-  **Motivo:** Markdown garante portabilidade e seguran√ßa dos dados ‚Äî os arquivos devem ser leg√≠veis
-  sem o AETHER, sincroniz√°veis via Proton Drive/git, e compat√≠veis com outros editores (Obsidian, VSCode).
-  Confirmar que nenhum dado fica preso em formato bin√°rio ou JSON opaco n√£o-edit√°vel pelo usu√°rio.
+- [ ] Verificar se todos os arquivos gerados pelo AETHER (escrita, fichas, worldbuilding) s„o salvos como `.md`
+  **Motivo:** Markdown garante portabilidade e seguranÁa dos dados ó os arquivos devem ser legÌveis
+  sem o AETHER, sincroniz·veis via Proton Drive/git, e compatÌveis com outros editores (Obsidian, VSCode).
+  Confirmar que nenhum dado fica preso em formato bin·rio ou JSON opaco n„o-edit·vel pelo usu·rio.
 
 ---
 
 ### Pesquisas pendentes
 
-- [ ] **Acesso remoto ao AETHER** ‚Äî pesquisar abordagens para acessar projetos/vault fora da rede local
-  (Tailscale, self-hosted sync, CRDT via websocket). Ver tamb√©m FASE 3 do HUB (linha ~400 deste arquivo).
+- [ ] **Acesso remoto ao AETHER** ó pesquisar abordagens para acessar projetos/vault fora da rede local
+  (Tailscale, self-hosted sync, CRDT via websocket). Ver tambÈm FASE 3 do HUB (linha ~400 deste arquivo).
 
-- [ ] **Escrita colaborativa em tempo real** ‚Äî pesquisar como m√∫ltiplas pessoas podem escrever simultaneamente
-  no mesmo documento remotamente (refer√™ncias: Ellipsus, Google Docs, Notion).
+- [ ] **Escrita colaborativa em tempo real** ó pesquisar como m˙ltiplas pessoas podem escrever simultaneamente
+  no mesmo documento remotamente (referÍncias: Ellipsus, Google Docs, Notion).
   Tecnologias relevantes: OT (Operational Transformation), CRDT (Yjs/Automerge), WebSocket multiplex.
 
-- [ ] **Vers√£o Android do AETHER** ‚Äî pesquisar viabilidade de Tauri Android para o AETHER
+- [ ] **Vers„o Android do AETHER** ó pesquisar viabilidade de Tauri Android para o AETHER
   (acesso ao vault, editor de markdown, fichas de personagem/worldbuilding no celular).
-  Ver replanejamento da Fase 3 do HUB para contexto sobre o que j√° foi descartado.
+  Ver replanejamento da Fase 3 do HUB para contexto sobre o que j· foi descartado.
 
 ---
 
-## AKASHA ‚Äî Buscador Pessoal
+## AKASHA ó Buscador Pessoal
 
 
-Buscador pessoal local. Agrega resultados da web e do ecossistema numa interface √∫nica,
-com downloads gen√©ricos e integra√ß√£o com qBittorrent.
-Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv ¬∑ Porta 7071.
+Buscador pessoal local. Agrega resultados da web e do ecossistema numa interface ˙nica,
+com downloads genÈricos e integraÁ„o com qBittorrent.
+Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv ∑ Porta 7071.
 
 ---
 
-### Padr√µes de Desenvolvimento
+### Padrıes de Desenvolvimento
 
-- **Tipagem completa:** Pydantic `BaseModel` em todas as rotas; `-> tipo` em todas as fun√ß√µes
-- **Erros expl√≠citos:** `HTTPException` com status code em todos os caminhos de erro
-- **I/O nunca silencioso** fora do bloco de integra√ß√£o com `ecosystem.json`
-- **`uv` obrigat√≥rio:** `pyproject.toml`, nunca `requirements.txt`
-- **Commits por item:** um commit git a cada item conclu√≠do
-- **Atualizar este TODO** antes de implementar qualquer feature n√£o listada
+- **Tipagem completa:** Pydantic `BaseModel` em todas as rotas; `-> tipo` em todas as funÁıes
+- **Erros explÌcitos:** `HTTPException` com status code em todos os caminhos de erro
+- **I/O nunca silencioso** fora do bloco de integraÁ„o com `ecosystem.json`
+- **`uv` obrigatÛrio:** `pyproject.toml`, nunca `requirements.txt`
+- **Commits por item:** um commit git a cada item concluÌdo
+- **Atualizar este TODO** antes de implementar qualquer feature n„o listada
 - **SQLite versionado:** tabela `settings` com campo `schema_version`; migrations numeradas
-- **HTMX:** todo estado mut√°vel via `hx-swap`; todo a√ß√£o tem feedback visual (spinner ou toast)
+- **HTMX:** todo estado mut·vel via `hx-swap`; todo aÁ„o tem feedback visual (spinner ou toast)
 
 ---
 
-### Fase 1 ‚Äî Funda√ß√£o
+### Fase 1 ó FundaÁ„o
 
-> Entrega: servidor sobe na porta 7070, design system completo, p√°gina de busca vazia funcional.
+> Entrega: servidor sobe na porta 7070, design system completo, p·gina de busca vazia funcional.
 
-- [x] `pyproject.toml` ‚Äî depend√™ncias uv: `fastapi`, `uvicorn[standard]`, `aiosqlite`, `httpx`,
+- [x] `pyproject.toml` ó dependÍncias uv: `fastapi`, `uvicorn[standard]`, `aiosqlite`, `httpx`,
       `jinja2`, `python-multipart`, `duckduckgo-search`, `qbittorrent-api`, `trafilatura`
-- [x] `main.py` ‚Äî FastAPI app + lifespan: inicializa DB, escreve `akasha.base_url`
-      em `ecosystem.json` no startup (try/except ‚Äî nunca bloquear)
-- [x] `config.py` ‚Äî l√™ `ecosystem.json` via `ecosystem_client`; exp√µe `kosmos_archive`,
+- [x] `main.py` ó FastAPI app + lifespan: inicializa DB, escreve `akasha.base_url`
+      em `ecosystem.json` no startup (try/except ó nunca bloquear)
+- [x] `config.py` ó lÍ `ecosystem.json` via `ecosystem_client`; expıe `kosmos_archive`,
       `aether_vault`, `mnemosyne_indices`, `qbt_host`, `qbt_port`; fallback silencioso
-- [x] `database.py` ‚Äî schema SQLite + migrations: tabelas `searches`, `downloads`, `settings`
-      (campo `schema_version`); fun√ß√£o `init_db()` chamada no startup
-- [x] `static/style.css` ‚Äî paleta CSS completa (s√©pia diurna + noturno astron√¥mico via
-      `prefers-color-scheme: dark`), tipografia (IM Fell English ¬∑ Special Elite ¬∑ Courier Prime),
+- [x] `database.py` ó schema SQLite + migrations: tabelas `searches`, `downloads`, `settings`
+      (campo `schema_version`); funÁ„o `init_db()` chamada no startup
+- [x] `static/style.css` ó paleta CSS completa (sÈpia diurna + noturno astronÙmico via
+      `prefers-color-scheme: dark`), tipografia (IM Fell English ∑ Special Elite ∑ Courier Prime),
       componentes: `.btn`, `.btn-ghost`, `.card`, `.input`, `.tag`, `.badge`, `.toast`
-- [x] `templates/base.html` ‚Äî layout base: topbar (AKASHA it√°lico 24px, toggle ‚òΩ/‚òÄ),
+- [x] `templates/base.html` ó layout base: topbar (AKASHA it·lico 24px, toggle ?/?),
       search bar com HTMX (`hx-get="/search" hx-trigger="submit"`), nav tabs (Busca / Downloads / Torrents)
-- [x] `templates/search.html` ‚Äî extends base: √°rea de resultados com skeleton loader,
+- [x] `templates/search.html` ó extends base: ·rea de resultados com skeleton loader,
       empty state com buscas recentes
-- [x] `iniciar.sh` ‚Äî detecta `.venv` do ecossistema em `../`; se n√£o existir, cria venv local;
+- [x] `iniciar.sh` ó detecta `.venv` do ecossistema em `../`; se n„o existir, cria venv local;
       `uv sync` e executa `uv run python main.py`; `chmod +x`
 
 ---
 
-### Fase 2 ‚Äî Busca Web
+### Fase 2 ó Busca Web
 
-> Entrega: busca DuckDuckGo funcional com resultados em cards e hist√≥rico persistido.
+> Entrega: busca DuckDuckGo funcional com resultados em cards e histÛrico persistido.
 
-- [x] `services/web_search.py` ‚Äî DuckDuckGo via `duckduckgo-search`; cache em SQLite (TTL 1h);
-      deduplica√ß√£o por URL normalizada; retorna `list[SearchResult]` (Pydantic)
-- [x] `routers/search.py` ‚Äî `GET /search?q=&sources=web` ‚Üí renderiza `search.html` com resultados;
+- [x] `services/web_search.py` ó DuckDuckGo via `duckduckgo-search`; cache em SQLite (TTL 1h);
+      deduplicaÁ„o por URL normalizada; retorna `list[SearchResult]` (Pydantic)
+- [x] `routers/search.py` ó `GET /search?q=&sources=web` ? renderiza `search.html` com resultados;
       salva query + timestamp em `searches`
-- [x] `templates/search.html` ‚Äî cards de resultado: t√≠tulo linkado, snippet, badge de fonte,
+- [x] `templates/search.html` ó cards de resultado: tÌtulo linkado, snippet, badge de fonte,
       data; HTMX `hx-get` no form com indicador de loading
-- [x] Widget "Buscas recentes" no empty state: lista das √∫ltimas 10 queries da tabela `searches`
+- [x] Widget "Buscas recentes" no empty state: lista das ˙ltimas 10 queries da tabela `searches`
 - [x] Filtro de fonte no UI: radio/toggle Web / Local / Todos (query param `sources=`)
-- [x] Bot√£o "Carregar mais" abaixo dos cards de resultado: busca a pr√≥xima p√°gina via `offset`
+- [x] Bot„o "Carregar mais" abaixo dos cards de resultado: busca a prÛxima p·gina via `offset`
       do DuckDuckGo e acrescenta os cards ao final (HTMX `hx-swap="beforeend"`)
 
 ---
 
-### Fase 3 ‚Äî Busca Local
+### Fase 3 ó Busca Local
 
 > Entrega: busca nos arquivos do ecossistema integrada com os resultados web.
 
-- [x] `services/local_search.py` ‚Äî ler KOSMOS archive (`{archive_path}/**/*.md`):
-      parsear frontmatter YAML simples, indexar t√≠tulo + corpo em FTS5
-- [x] `services/local_search.py` ‚Äî ler AETHER vault (`{vault_path}/*/chapters/*.md`):
-      t√≠tulo e conte√∫do dos cap√≠tulos; indexar em FTS5
+- [x] `services/local_search.py` ó ler KOSMOS archive (`{archive_path}/**/*.md`):
+      parsear frontmatter YAML simples, indexar tÌtulo + corpo em FTS5
+- [x] `services/local_search.py` ó ler AETHER vault (`{vault_path}/*/chapters/*.md`):
+      tÌtulo e conte˙do dos capÌtulos; indexar em FTS5
 - [x] FTS5 virtual table `local_index` em SQLite: schema `(path, title, body, source, mtime)`
-- [x] Reindexa√ß√£o autom√°tica no startup se `mtime` dos arquivos mudou desde √∫ltima indexa√ß√£o
-- [x] `services/local_search.py` ‚Äî query ChromaDB do Mnemosyne se `mnemosyne_indices`
-      n√£o vazio (import opcional; graceful fallback se `chromadb` n√£o instalado)
-- [x] Badge de fonte em cada card: `WEB` ¬∑ `KOSMOS` ¬∑ `AETHER` ¬∑ `MNEMOSYNE` com cor distinta
-- [x] **Corre√ß√£o:** `routers/search.py` ‚Äî retornar `web_results` e `local_results` separados no contexto
-- [x] **Corre√ß√£o:** `templates/search.html` ‚Äî se√ß√µes separadas quando `sources=all`: "Resultados web" + "No meu ecossistema"
+- [x] ReindexaÁ„o autom·tica no startup se `mtime` dos arquivos mudou desde ˙ltima indexaÁ„o
+- [x] `services/local_search.py` ó query ChromaDB do Mnemosyne se `mnemosyne_indices`
+      n„o vazio (import opcional; graceful fallback se `chromadb` n„o instalado)
+- [x] Badge de fonte em cada card: `WEB` ∑ `KOSMOS` ∑ `AETHER` ∑ `MNEMOSYNE` com cor distinta
+- [x] **CorreÁ„o:** `routers/search.py` ó retornar `web_results` e `local_results` separados no contexto
+- [x] **CorreÁ„o:** `templates/search.html` ó seÁıes separadas quando `sources=all`: "Resultados web" + "No meu ecossistema"
 
 ---
 
-### Fase 4 ‚Äî Downloads
+### Fase 4 ó Downloads
 
-> Entrega: baixar arquivos gen√©ricos com progresso em tempo real via SSE.
+> Entrega: baixar arquivos genÈricos com progresso em tempo real via SSE.
 
-- [x] `services/downloader.py` ‚Äî download async via `httpx` com streaming; calcula progresso
-      por `Content-Length`; salva em diret√≥rio configur√°vel
-- [x] `routers/downloads.py` ‚Äî `POST /download` (body: `{url, dest_dir}`): inicia download
+- [x] `services/downloader.py` ó download async via `httpx` com streaming; calcula progresso
+      por `Content-Length`; salva em diretÛrio configur·vel
+- [x] `routers/downloads.py` ó `POST /download` (body: `{url, dest_dir}`): inicia download
       em background task; `GET /downloads/active` fragmento HTMX; `POST /downloads/{id}/cancel`
-- [x] `routers/downloads.py` ‚Äî `GET /downloads/progress/{id}` (SSE): emite fragmento HTML
-      de progresso a cada 0.6s at√© concluir ou falhar
-- [x] `routers/downloads.py` ‚Äî `GET /downloads` ‚Äî ativos (polling 3s) + hist√≥rico paginado
-- [x] Migration: tabela `downloads` j√° existia no schema; helpers adicionados em `database.py`
-- [x] `templates/downloads.html` + `_downloads_active.html` ‚Äî barras de progresso SSE,
-      formul√°rio de novo download, hist√≥rico paginado, bot√£o cancelar
-- [x] Bot√£o "‚Üì baixar" nos cards de resultado de busca `WEB` (HTMX `hx-post="/download"`)
+- [x] `routers/downloads.py` ó `GET /downloads/progress/{id}` (SSE): emite fragmento HTML
+      de progresso a cada 0.6s atÈ concluir ou falhar
+- [x] `routers/downloads.py` ó `GET /downloads` ó ativos (polling 3s) + histÛrico paginado
+- [x] Migration: tabela `downloads` j· existia no schema; helpers adicionados em `database.py`
+- [x] `templates/downloads.html` + `_downloads_active.html` ó barras de progresso SSE,
+      formul·rio de novo download, histÛrico paginado, bot„o cancelar
+- [x] Bot„o "? baixar" nos cards de resultado de busca `WEB` (HTMX `hx-post="/download"`)
 
 ---
 
-### Fase 5 ‚Äî Arquiva√ß√£o Web
+### Fase 5 ó ArquivaÁ„o Web
 
-> Entrega: salvar qualquer p√°gina como `.md` no formato KOSMOS direto da busca.
+> Entrega: salvar qualquer p·gina como `.md` no formato KOSMOS direto da busca.
 
-- [x] `services/archiver.py` ‚Äî fetch via `httpx`, extra√ß√£o com `trafilatura`; frontmatter
+- [x] `services/archiver.py` ó fetch via `httpx`, extraÁ„o com `trafilatura`; frontmatter
       KOSMOS estendido: `title`, `source`, `date`, `author`, `url` + `language` (auto),
       `word_count` (auto), `tags` (lista), `notes` (texto livre);
       salva em `{archive_path}/Web/{YYYY-MM-DD}_{slug}.md`; slug max 60 chars
-- [x] `routers/search.py` ‚Äî `POST /archive` (body form: `url`, `tags?`, `notes?`):
-      chama archiver, retorna 200 OK ou 400 se `kosmos_archive` n√£o configurado
-- [x] Bot√£o "arquivar" em cada card de resultado `WEB` (HTMX `hx-post`, toast de confirma√ß√£o)
-- [x] Fallback: se `kosmos_archive` n√£o configurado, retornar erro 400 com mensagem clara
+- [x] `routers/search.py` ó `POST /archive` (body form: `url`, `tags?`, `notes?`):
+      chama archiver, retorna 200 OK ou 400 se `kosmos_archive` n„o configurado
+- [x] Bot„o "arquivar" em cada card de resultado `WEB` (HTMX `hx-post`, toast de confirmaÁ„o)
+- [x] Fallback: se `kosmos_archive` n„o configurado, retornar erro 400 com mensagem clara
       orientando a configurar o caminho em `/settings`
-- [x] **Melhorar extra√ß√£o de conte√∫do:** cascata de extratores em `services/archiver.py`;
-      HTML baixado uma vez, primeiro a retornar ‚â• 100 palavras vence; fallback = mais longo.
-      Cascata implementada (newspaper4k e readability-lxml bloqueados ‚Äî lxml 5.x n√£o compila
-      em Python 3.14; lxml 6.x n√£o √© compat√≠vel com essas libs):
-        1. `newspaper4k`     ‚Äî BLOQUEADO (lxml 5.x / Python 3.14)
-        2. `trafilatura`     ‚Äî markdown nativo, instalado ‚úì
-        3. `readability-lxml`‚Äî BLOQUEADO (lxml 5.x / Python 3.14)
-        4. `inscriptis`      ‚Äî texto estruturado, instalado ‚úì
-        5. `BeautifulSoup`   ‚Äî fallback html.parser + markdownify, instalado ‚úì
-        6. `Jina Reader API` ‚Äî fallback remoto: r.jina.ai/{url} se cascata < 100 palavras ‚úì
+- [x] **Melhorar extraÁ„o de conte˙do:** cascata de extratores em `services/archiver.py`;
+      HTML baixado uma vez, primeiro a retornar = 100 palavras vence; fallback = mais longo.
+      Cascata implementada (newspaper4k e readability-lxml bloqueados ó lxml 5.x n„o compila
+      em Python 3.14; lxml 6.x n„o È compatÌvel com essas libs):
+        1. `newspaper4k`     ó BLOQUEADO (lxml 5.x / Python 3.14)
+        2. `trafilatura`     ó markdown nativo, instalado ?
+        3. `readability-lxml`ó BLOQUEADO (lxml 5.x / Python 3.14)
+        4. `inscriptis`      ó texto estruturado, instalado ?
+        5. `BeautifulSoup`   ó fallback html.parser + markdownify, instalado ?
+        6. `Jina Reader API` ó fallback remoto: r.jina.ai/{url} se cascata < 100 palavras ?
 
 ---
 
-### Fase 6 ‚Äî Torrents (busca + qBittorrent)
+### Fase 6 ó Torrents (busca + qBittorrent)
 
 > Entrega: pesquisar torrents via Prowlarr/Jackett e baixar com qBittorrent diretamente do AKASHA.
-> Pr√©-requisito do usu√°rio: qBittorrent rodando com Web UI ativo (porta 8080);
+> PrÈ-requisito do usu·rio: qBittorrent rodando com Web UI ativo (porta 8080);
 > Prowlarr (9696) ou Jackett (9117) instalado e com indexadores configurados.
 
-#### 6.1 ‚Äî Configura√ß√£o
+#### 6.1 ó ConfiguraÁ„o
 
 - [ ] Adicionar campos na tabela `settings` (migration nova):
       `qbt_host` (default: localhost), `qbt_port` (default: 8080),
       `prowlarr_host`, `prowlarr_port` (9696), `prowlarr_apikey`,
       `jackett_host`, `jackett_port` (9117), `jackett_apikey`
-- [ ] Adicionar estes campos √† p√°gina `/settings` existente
+- [ ] Adicionar estes campos ‡ p·gina `/settings` existente
 
-#### 6.2 ‚Äî Cliente qBittorrent
+#### 6.2 ó Cliente qBittorrent
 
-- [ ] `services/qbt_client.py` ‚Äî usa `httpx` direto (sem dep qbittorrent-api):
-      - `_get_session()` ‚Üí faz POST /auth/login e retorna cookie SID
+- [ ] `services/qbt_client.py` ó usa `httpx` direto (sem dep qbittorrent-api):
+      - `_get_session()` ? faz POST /auth/login e retorna cookie SID
         (se `LocalHostAuth=false`, pular login)
       - `async def list_torrents(filter="all") -> list[TorrentInfo]`
         (GET /api/v2/torrents/info; campos: name, hash, progress, dlspeed,
@@ -1607,9 +1607,9 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv ¬∑ Porta 7071.
       - `async def pause_torrent(info_hash: str) -> None`
       - `async def resume_torrent(info_hash: str) -> None`
       - `async def delete_torrent(info_hash: str, delete_files: bool = False) -> None`
-      - Raises `QbtOfflineError(Exception)` se inacess√≠vel
+      - Raises `QbtOfflineError(Exception)` se inacessÌvel
 
-#### 6.3 ‚Äî Busca de Torrents (Prowlarr + Jackett)
+#### 6.3 ó Busca de Torrents (Prowlarr + Jackett)
 
 - [ ] `services/torrent_search.py`:
       - `async def search_prowlarr(query, apikey, host, port, categories="") -> list[TorrentResult]`
@@ -1624,309 +1624,309 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv ¬∑ Porta 7071.
       - Dataclass `TorrentResult`: title, seeders, leechers, size_bytes, size_fmt,
         magnet_url, torrent_url, indexer, pub_date
 
-#### 6.4 ‚Äî Router
+#### 6.4 ó Router
 
 - [ ] `routers/torrents.py`:
-      - `GET /torrents` ‚Üí p√°gina principal (formul√°rio de busca + ativos + hist√≥rico)
-      - `GET /torrents/search?q=&cat=` ‚Üí HTMX fragment com resultados (hx-get polling)
-      - `GET /torrents/active` ‚Üí HTMX fragment: lista de torrents ativos no qBittorrent
+      - `GET /torrents` ? p·gina principal (formul·rio de busca + ativos + histÛrico)
+      - `GET /torrents/search?q=&cat=` ? HTMX fragment com resultados (hx-get polling)
+      - `GET /torrents/active` ? HTMX fragment: lista de torrents ativos no qBittorrent
         com polling a cada 5s
-      - `POST /torrents/add` (form: magnet= ou file=) ‚Üí adiciona ao qBittorrent
+      - `POST /torrents/add` (form: magnet= ou file=) ? adiciona ao qBittorrent
       - `POST /torrents/{hash}/pause`, `/resume`, `/delete`
       - Todos retornam banner gracioso se `QbtOfflineError` ou `TorrentSearchOfflineError`
 
-#### 6.5 ‚Äî Templates
+#### 6.5 ó Templates
 
-- [ ] `templates/torrents.html` ‚Äî p√°gina principal:
-      - Formul√°rio de busca (campo q + select de categoria)
+- [ ] `templates/torrents.html` ó p·gina principal:
+      - Formul·rio de busca (campo q + select de categoria)
       - Div de resultados: `hx-get="/torrents/search"` com `hx-trigger="submit from:#search-form"`
-      - Se√ß√£o "Ativos": `hx-get="/torrents/active" hx-trigger="every 5s"` (polling HTMX)
-- [ ] `templates/_torrents_active.html` ‚Äî fragmento: tabela com nome, progresso (barra),
-      velocidade, ETA, estado, bot√µes pausa/resume/delete
-- [ ] `templates/_torrent_results.html` ‚Äî fragmento: cards de resultado com t√≠tulo,
-      seeders/leechers, tamanho, indexer, bot√£o "‚Üì baixar"
+      - SeÁ„o "Ativos": `hx-get="/torrents/active" hx-trigger="every 5s"` (polling HTMX)
+- [ ] `templates/_torrents_active.html` ó fragmento: tabela com nome, progresso (barra),
+      velocidade, ETA, estado, botıes pausa/resume/delete
+- [ ] `templates/_torrent_results.html` ó fragmento: cards de resultado com tÌtulo,
+      seeders/leechers, tamanho, indexer, bot„o "? baixar"
 
-#### 6.6 ‚Äî CSS e nav
+#### 6.6 ó CSS e nav
 
 - [ ] Adicionar estilos `.torrent-card`, `.torrent-table`, `.seed-count`, `.leech-count`
       a `static/style.css`
-- [ ] `_macros.html` WEB cards: n√£o adicionar bot√£o torrent (seria scope creep)
+- [ ] `_macros.html` WEB cards: n„o adicionar bot„o torrent (seria scope creep)
 
 ---
 
-### Fase 7 ‚Äî Biblioteca de URLs ~~(CONCEITO ABANDONADO)~~
+### Fase 7 ó Biblioteca de URLs ~~(CONCEITO ABANDONADO)~~
 
-> ~~Entrega: biblioteca pessoal de sites com scraping peri√≥dico e versionamento por diff.~~
+> ~~Entrega: biblioteca pessoal de sites com scraping periÛdico e versionamento por diff.~~
 >
-> **Conceito original abandonado em 2026-05-05.** O prop√≥sito da Biblioteca √© ser um buscador
-> pessoal sobre dom√≠nios curados ‚Äî o mesmo objetivo da Fase 10 (crawler BFS). A distin√ß√£o
-> entre "URL individual com diff" e "dom√≠nio crawleado" foi descartada: a Fase 10 cobre
-> o escopo completo. Os itens abaixo foram marcados como `[x]` incorretamente; na pr√°tica
+> **Conceito original abandonado em 2026-05-05.** O propÛsito da Biblioteca È ser um buscador
+> pessoal sobre domÌnios curados ó o mesmo objetivo da Fase 10 (crawler BFS). A distinÁ„o
+> entre "URL individual com diff" e "domÌnio crawleado" foi descartada: a Fase 10 cobre
+> o escopo completo. Os itens abaixo foram marcados como `[x]` incorretamente; na pr·tica
 > apenas o schema foi criado e nunca populado. Migration v13 (`database.py`) dropa as
 > tabelas orphaned (`library_urls`, `library_diffs`, `library_fts`).
 
 - ~~[x] Migration v5: tabelas `library_urls` / `library_diffs` / `library_fts`~~
   **Nunca populadas. Dropadas pela migration v13.**
-- ~~[x] `services/library.py` ‚Äî `add_url()`, `scrape_and_store()`, `check_overdue()`, `compute_diff()`~~
+- ~~[x] `services/library.py` ó `add_url()`, `scrape_and_store()`, `check_overdue()`, `compute_diff()`~~
   **Nunca implementado.**
-- ~~[x] `routers/library.py` ‚Äî rotas de monitoramento de URLs individuais~~
-  **Nunca implementado. As rotas `/library` existentes s√£o da Fase 10 (crawler BFS).**
-- ~~[x] `templates/library.html` ‚Äî UI de monitoramento com diff e notas~~
-  **O template existente √© da Fase 10, n√£o deste conceito.**
-- ~~[x] Background task: re-scrape peri√≥dico de URLs vencidas~~
-  **Nunca implementado. O loop hor√°rio da Fase 10 cobre re-crawl de dom√≠nios.**
+- ~~[x] `routers/library.py` ó rotas de monitoramento de URLs individuais~~
+  **Nunca implementado. As rotas `/library` existentes s„o da Fase 10 (crawler BFS).**
+- ~~[x] `templates/library.html` ó UI de monitoramento com diff e notas~~
+  **O template existente È da Fase 10, n„o deste conceito.**
+- ~~[x] Background task: re-scrape periÛdico de URLs vencidas~~
+  **Nunca implementado. O loop hor·rio da Fase 10 cobre re-crawl de domÌnios.**
 - ~~[x] Busca local inclui `library_fts`~~
-  **Removido em 2026-05-05 (dead code ‚Äî tabela nunca populada).**
-- ~~[x] Bot√£o `+` para enfileirar URL na biblioteca~~
-  **Reaproveitado na Fase 10 como quick-add de dom√≠nio (`POST /library/add-quick`).**
+  **Removido em 2026-05-05 (dead code ó tabela nunca populada).**
+- ~~[x] Bot„o `+` para enfileirar URL na biblioteca~~
+  **Reaproveitado na Fase 10 como quick-add de domÌnio (`POST /library/add-quick`).**
 
 ---
 
-#### Fase 7.5 ‚Äî Lista negra de dom√≠nios
+#### Fase 7.5 ó Lista negra de domÌnios
 
-> Entrega: dom√≠nios bloqueados nunca aparecem nos resultados de busca web.
+> Entrega: domÌnios bloqueados nunca aparecem nos resultados de busca web.
 
-- [x] Migration v6: tabela `blocked_domains` ‚Äî `id, domain, added_at`
-- [x] `services/web_search.py` ‚Äî filtrar resultados excluindo dom√≠nios em `blocked_domains`
+- [x] Migration v6: tabela `blocked_domains` ó `id, domain, added_at`
+- [x] `services/web_search.py` ó filtrar resultados excluindo domÌnios em `blocked_domains`
       (hostname normalizado sem `www.`); aplicado antes de retornar ao router
-- [x] Bot√£o `‚àí` em cada card de resultado `WEB`: `POST /domains/block`, toast de confirma√ß√£o
-- [x] `routers/domains.py` ‚Äî `POST /domains/block` (extrai dom√≠nio da URL);
+- [x] Bot„o `-` em cada card de resultado `WEB`: `POST /domains/block`, toast de confirmaÁ„o
+- [x] `routers/domains.py` ó `POST /domains/block` (extrai domÌnio da URL);
       `DELETE /domains/block/{domain}` (desbloquear)
-- [x] `templates/domains.html` ‚Äî p√°gina `/domains` dedicada: lista de dom√≠nios bloqueados
-      com bot√£o desbloquear (‚úï) e formul√°rio para adicionar via URL
+- [x] `templates/domains.html` ó p·gina `/domains` dedicada: lista de domÌnios bloqueados
+      com bot„o desbloquear (?) e formul·rio para adicionar via URL
 
 ---
 
-### Fase 8 ‚Äî Hist√≥rico unificado
+### Fase 8 ó HistÛrico unificado
 
-> Entrega: p√°gina `/history` com timeline de todas as atividades.
+> Entrega: p·gina `/history` com timeline de todas as atividades.
 
 - [x] Migration v10: tabela `activity_log` (`id, type, title, url, meta_json, created_at`)
-      onde `type` ‚àà `search|archive|download`
-- [x] `routers/history.py` ‚Äî `GET /history?type=all|search|archive|download&page=1`
+      onde `type` ? `search|archive|download`
+- [x] `routers/history.py` ó `GET /history?type=all|search|archive|download&page=1`
       paginado por data desc
-- [x] `templates/history.html` ‚Äî timeline agrupada por data; √≠cone por tipo;
+- [x] `templates/history.html` ó timeline agrupada por data; Ìcone por tipo;
       filtros por tipo no topo com HTMX
 - [x] Popular `activity_log` nos eventos: `save_search()` e `POST /archive` (sucesso);
-      download: pendente at√© Fase 11 (downloads ainda n√£o implementados)
+      download: pendente atÈ Fase 11 (downloads ainda n„o implementados)
 
 ---
 
-### Fase 9 ‚Äî Polimento e Integra√ß√£o Final
+### Fase 9 ó Polimento e IntegraÁ„o Final
 
-> Entrega: app production-ready, integrado no ecossistema, lan√ß√°vel com um comando.
+> Entrega: app production-ready, integrado no ecossistema, lanÁ·vel com um comando.
 
-- [ ] `iniciar.sh` ‚Äî vers√£o final robusta: verificar uv instalado, `uv sync --frozen`
-- [ ] Escrever `akasha.exe_path` no `ecosystem.json` no startup para o HUB poder lan√ßar
-- [ ] `templates/settings.html` ‚Äî p√°gina `/settings`: caminhos do ecossistema (leitura),
-      pasta padr√£o de download, host/porta qBittorrent, profundidade padr√£o de crawl (default: 2)
-- [ ] Nav: adicionar aba "Biblioteca", "Hist√≥rico" e "Sites" na topbar
-- [ ] `README.md` ‚Äî atualizar se√ß√£o "Estado" para "Implementado ‚Äî Fase 9"
+- [ ] `iniciar.sh` ó vers„o final robusta: verificar uv instalado, `uv sync --frozen`
+- [ ] Escrever `akasha.exe_path` no `ecosystem.json` no startup para o HUB poder lanÁar
+- [ ] `templates/settings.html` ó p·gina `/settings`: caminhos do ecossistema (leitura),
+      pasta padr„o de download, host/porta qBittorrent, profundidade padr„o de crawl (default: 2)
+- [ ] Nav: adicionar aba "Biblioteca", "HistÛrico" e "Sites" na topbar
+- [ ] `README.md` ó atualizar seÁ„o "Estado" para "Implementado ó Fase 9"
 
 ---
 
-### Fase 10 ‚Äî Buscador de Sites Pessoais
+### Fase 10 ó Buscador de Sites Pessoais
 
-> Entrega: motor de busca pr√≥prio sobre dom√≠nios curados. O usu√°rio adiciona sites, o AKASHA
-> faz crawling BFS respeitando profundidade, indexa em FTS5 e exp√µe via checkboxes na busca.
+> Entrega: motor de busca prÛprio sobre domÌnios curados. O usu·rio adiciona sites, o AKASHA
+> faz crawling BFS respeitando profundidade, indexa em FTS5 e expıe via checkboxes na busca.
 
-### Decis√µes de design
-- **Escopo do crawler**: mesmo dom√≠nio + subdom√≠nios selecionados pelo usu√°rio
-- **Profundidade default**: 2 (configur√°vel em `/settings`)
-- **Re-crawl**: manual (bot√£o) + autom√°tico a cada 7 dias (`crawl_pending_sites()` no loop hor√°rio)
-- **Interface de busca**: checkboxes na barra ‚Äî `‚ñ° Web  ‚ñ° Ecossistema  ‚ñ° Sites pessoais`
-- **Acesso ao conte√∫do**: apenas via busca (ver Planos Futuros para navega√ß√£o inline)
+### Decisıes de design
+- **Escopo do crawler**: mesmo domÌnio + subdomÌnios selecionados pelo usu·rio
+- **Profundidade default**: 2 (configur·vel em `/settings`)
+- **Re-crawl**: manual (bot„o) + autom·tico a cada 7 dias (`crawl_pending_sites()` no loop hor·rio)
+- **Interface de busca**: checkboxes na barra ó `? Web  ? Ecossistema  ? Sites pessoais`
+- **Acesso ao conte˙do**: apenas via busca (ver Planos Futuros para navegaÁ„o inline)
 
-> **Nota de implementa√ß√£o (2026-05-06):** os routes foram implementados em `/library` em vez de
-> `/sites` como planejado aqui. "Sites" e "Biblioteca" foram unificados numa √∫nica aba chamada
-> Biblioteca (`routers/crawler.py`). O path `/sites` n√£o existe no c√≥digo ‚Äî substituir mentalmente
+> **Nota de implementaÁ„o (2026-05-06):** os routes foram implementados em `/library` em vez de
+> `/sites` como planejado aqui. "Sites" e "Biblioteca" foram unificados numa ˙nica aba chamada
+> Biblioteca (`routers/crawler.py`). O path `/sites` n„o existe no cÛdigo ó substituir mentalmente
 > por `/library` ao ler os itens abaixo.
 
 ### Banco de dados
 
-- [x] Migration v7: tabela `crawl_sites` ‚Äî
+- [x] Migration v7: tabela `crawl_sites` ó
       `id, base_url, label, crawl_depth, subdomains_json, page_count,
        last_crawled_at, status (idle|crawling|error), created_at`
-- [x] Migration v7: tabela `crawl_pages` ‚Äî
+- [x] Migration v7: tabela `crawl_pages` ó
       `id, site_id, url, title, content_md, content_hash, http_status, crawled_at`
-- [x] Migration v7: FTS5 `crawl_fts` ‚Äî `(site_id UNINDEXED, url UNINDEXED, title, content_md)`
-      sincroniza√ß√£o manual em Python (sem triggers SQL no FTS5)
-- [x] `database.py` ‚Äî helpers: `get_all_crawl_sites()`, `get_crawl_site(id)`
+- [x] Migration v7: FTS5 `crawl_fts` ó `(site_id UNINDEXED, url UNINDEXED, title, content_md)`
+      sincronizaÁ„o manual em Python (sem triggers SQL no FTS5)
+- [x] `database.py` ó helpers: `get_all_crawl_sites()`, `get_crawl_site(id)`
 
 ### Services
 
-- [x] `services/crawler.py` ‚Äî `extract_links(html, base_url) -> list[str]`:
-      extrai links normalizados; descarta √¢ncoras, assets, esquemas n√£o-http
-- [x] `services/crawler.py` ‚Äî `discover_subdomains(base_url) -> list[str]`:
-      GET homepage + tenta sitemap.xml; filtra subdom√≠nios do mesmo dom√≠nio-raiz
-- [x] `services/crawler.py` ‚Äî `crawl_site(site_id) -> int`:
-      BFS async com httpx; delega extra√ß√£o ao ecosystem_scraper; atualiza crawl_pages + crawl_fts
-- [x] `services/crawler.py` ‚Äî `search_sites(query) -> list[SearchResult]`:
+- [x] `services/crawler.py` ó `extract_links(html, base_url) -> list[str]`:
+      extrai links normalizados; descarta ‚ncoras, assets, esquemas n„o-http
+- [x] `services/crawler.py` ó `discover_subdomains(base_url) -> list[str]`:
+      GET homepage + tenta sitemap.xml; filtra subdomÌnios do mesmo domÌnio-raiz
+- [x] `services/crawler.py` ó `crawl_site(site_id) -> int`:
+      BFS async com httpx; delega extraÁ„o ao ecosystem_scraper; atualiza crawl_pages + crawl_fts
+- [x] `services/crawler.py` ó `search_sites(query) -> list[SearchResult]`:
       busca FTS5 em crawl_fts; retorna SearchResult com source="SITES"
-- [x] `services/crawler.py` ‚Äî `crawl_pending_sites()`:
-      crawls sites com last_crawled_at IS NULL; chamado pelo loop hor√°rio
-- [x] Integrar `crawl_pending_sites()` no loop hor√°rio do lifespan (`_monitor_library`)
+- [x] `services/crawler.py` ó `crawl_pending_sites()`:
+      crawls sites com last_crawled_at IS NULL; chamado pelo loop hor·rio
+- [x] Integrar `crawl_pending_sites()` no loop hor·rio do lifespan (`_monitor_library`)
 
 ### Routers
 
-- [x] `routers/crawler.py` ‚Äî `POST /sites/discover` (body: `{url}`):
+- [x] `routers/crawler.py` ó `POST /sites/discover` (body: `{url}`):
       chama `discover_subdomains()`, retorna `{base_url, subdomains: list[str]}`
       para o front perguntar quais incluir (resposta HTMX com checkboxes)
-- [x] `routers/crawler.py` ‚Äî `POST /sites` (body: `{url, label, crawl_depth, subdomains}`):
+- [x] `routers/crawler.py` ó `POST /sites` (body: `{url, label, crawl_depth, subdomains}`):
       cria entrada em `crawl_sites`, dispara `crawl_site()` em background task
-- [x] `routers/crawler.py` ‚Äî `GET /sites` ‚Üí lista de sites com `page_count`,
+- [x] `routers/crawler.py` ó `GET /sites` ? lista de sites com `page_count`,
       `last_crawled_at`, `status`
-- [x] `routers/crawler.py` ‚Äî `DELETE /sites/{id}` ‚Äî remove site e todas as `crawl_pages`
-- [x] `routers/crawler.py` ‚Äî `POST /sites/{id}/crawl` ‚Äî re-crawl manual; retorna toast via HTMX
+- [x] `routers/crawler.py` ó `DELETE /sites/{id}` ó remove site e todas as `crawl_pages`
+- [x] `routers/crawler.py` ó `POST /sites/{id}/crawl` ó re-crawl manual; retorna toast via HTMX
 
-### Integra√ß√£o com busca
+### IntegraÁ„o com busca
 
-- [x] `routers/search.py` ‚Äî novo source `sites`: busca em `crawl_fts`;
+- [x] `routers/search.py` ó novo source `sites`: busca em `crawl_fts`;
       retorna `list[SearchResult]` com `source="SITES"` e badge dourado
-- [x] `templates/search.html` ‚Äî substituir radio de fonte por checkboxes:
-      `‚ñ° Web  ‚ñ° Ecossistema  ‚ñ° Sites pessoais`; persistir escolha em `localStorage`;
+- [x] `templates/search.html` ó substituir radio de fonte por checkboxes:
+      `? Web  ? Ecossistema  ? Sites pessoais`; persistir escolha em `localStorage`;
       quando "Sites pessoais" marcado e sem sites cadastrados, exibir link para `/sites`
-- [x] `templates/search.html` ‚Äî terceira se√ß√£o de resultados "Nos meus sites" quando
-      checkbox marcado e h√° resultados
+- [x] `templates/search.html` ó terceira seÁ„o de resultados "Nos meus sites" quando
+      checkbox marcado e h· resultados
 
 ### Interface de gerenciamento
 
-- [x] `templates/sites.html` ‚Äî lista de sites cadastrados; cada card mostra:
-      label, dom√≠nio, contagem de p√°ginas, data do √∫ltimo crawl, badge de status,
-      subdom√≠nios inclu√≠dos; bot√£o "Re-crawl" e "Remover"
-- [x] `templates/sites.html` ‚Äî formul√°rio "Adicionar site": campo URL ‚Üí bot√£o "Detectar subdom√≠nios"
-      ‚Üí HTMX retorna checkboxes dos subdom√≠nios encontrados ‚Üí campo profundidade ‚Üí "Adicionar"
+- [x] `templates/sites.html` ó lista de sites cadastrados; cada card mostra:
+      label, domÌnio, contagem de p·ginas, data do ˙ltimo crawl, badge de status,
+      subdomÌnios incluÌdos; bot„o "Re-crawl" e "Remover"
+- [x] `templates/sites.html` ó formul·rio "Adicionar site": campo URL ? bot„o "Detectar subdomÌnios"
+      ? HTMX retorna checkboxes dos subdomÌnios encontrados ? campo profundidade ? "Adicionar"
 - [x] Nav: aba "Sites" na topbar
 
 ---
 
-### Fase 10.5 ‚Äî Navega√ß√£o inline de p√°ginas crawleadas
+### Fase 10.5 ó NavegaÁ„o inline de p·ginas crawleadas
 
-> Entrega: reader mode pr√≥prio ‚Äî abrir e ler qualquer `crawl_page` sem sair do AKASHA.
+> Entrega: reader mode prÛprio ó abrir e ler qualquer `crawl_page` sem sair do AKASHA.
 
-- [x] `database.py` ‚Äî helpers `get_crawl_page_by_url(url) -> tuple | None` e
+- [x] `database.py` ó helpers `get_crawl_page_by_url(url) -> tuple | None` e
       `get_crawl_pages_by_site(site_id, limit, offset) -> list[tuple]`
       (retorna `id, url, title, http_status, crawled_at` sem `content_md` para a lista)
-- [x] `routers/crawler.py` ‚Äî `GET /library/reader?url=` ‚Äî busca `crawl_page` por URL via
-      `get_crawl_page_by_url`, converte `content_md` ‚Üí HTML com lib `markdown`,
-      renderiza `page_reader.html`; 404 se n√£o encontrada
-- [x] `routers/crawler.py` ‚Äî `GET /library/{site_id}/pages?q=&page=1` ‚Äî lista paginada
-      (20/p√°g) de p√°ginas do site; suporte a filtro por `q` (t√≠tulo/url); retorna fragment
+- [x] `routers/crawler.py` ó `GET /library/reader?url=` ó busca `crawl_page` por URL via
+      `get_crawl_page_by_url`, converte `content_md` ? HTML com lib `markdown`,
+      renderiza `page_reader.html`; 404 se n„o encontrada
+- [x] `routers/crawler.py` ó `GET /library/{site_id}/pages?q=&page=1` ó lista paginada
+      (20/p·g) de p·ginas do site; suporte a filtro por `q` (tÌtulo/url); retorna fragment
       HTMX `_site_pages.html`
-- [x] `templates/page_reader.html` ‚Äî layout reader mode: cabe√ßalho com t√≠tulo, URL original
-      (link externo ‚Üó), data de crawl, bot√£o "‚Üê Voltar"; conte√∫do HTML do markdown com
-      tipografia IM Fell English; compat√≠vel com tema s√©pia/noturno
-- [x] `templates/_site_pages.html` ‚Äî fragment HTMX: lista de cards de p√°gina (t√≠tulo, URL
-      abreviada, data, badge de status HTTP); bot√£o "Ler" abre `/library/reader?url=...`;
-      pagina√ß√£o "Carregar mais" com `hx-swap="outerHTML"` no load-more li
-- [x] `templates/_library_list.html` ‚Äî bot√£o "√∞≈∏‚Äú‚Äû N p√°ginas" em cada site card que expande
+- [x] `templates/page_reader.html` ó layout reader mode: cabeÁalho com tÌtulo, URL original
+      (link externo ?), data de crawl, bot„o "? Voltar"; conte˙do HTML do markdown com
+      tipografia IM Fell English; compatÌvel com tema sÈpia/noturno
+- [x] `templates/_site_pages.html` ó fragment HTMX: lista de cards de p·gina (tÌtulo, URL
+      abreviada, data, badge de status HTTP); bot„o "Ler" abre `/library/reader?url=...`;
+      paginaÁ„o "Carregar mais" com `hx-swap="outerHTML"` no load-more li
+- [x] `templates/_library_list.html` ó bot„o "üìÑ N p·ginas" em cada site card que expande
       `_site_pages.html` via HTMX (`htmx.ajax GET /library/{id}/pages`);
       colapsar ao clicar de novo (toggleSitePages em library.html)
-- [x] `templates/_macros.html` ‚Äî nos cards de resultado com `source="SITES"`, adicionar
-      bot√£o "Ler" ao lado do link externo que abre `/library/reader?url=...` inline
+- [x] `templates/_macros.html` ó nos cards de resultado com `source="SITES"`, adicionar
+      bot„o "Ler" ao lado do link externo que abre `/library/reader?url=...` inline
 
 ---
 
-### Fase 11 ‚Äî Corre√ß√£o de bugs e melhorias
+### Fase 11 ó CorreÁ„o de bugs e melhorias
 
-> Entrega: app mais r√°pido, sem gargalos de I/O e com SQLite bem configurado.
+> Entrega: app mais r·pido, sem gargalos de I/O e com SQLite bem configurado.
 
-#### Alta prioridade (impacto imediato vis√≠vel)
+#### Alta prioridade (impacto imediato visÌvel)
 
-- [x] **SQLite WAL mode + pragmas** ‚Äî `database.py`: na fun√ß√£o `init_db()`, ap√≥s conectar,
+- [x] **SQLite WAL mode + pragmas** ó `database.py`: na funÁ„o `init_db()`, apÛs conectar,
       executar `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`,
       `PRAGMA cache_size=-8000` (8 MB), `PRAGMA mmap_size=67108864` (64 MB).
-      WAL elimina lock de leitura durante writes ‚Äî cr√≠tico para crawl + busca simult√¢neos.
-      Hoje reads e writes se bloqueiam mutuamente porque o modo padr√£o √© DELETE.
+      WAL elimina lock de leitura durante writes ó crÌtico para crawl + busca simult‚neos.
+      Hoje reads e writes se bloqueiam mutuamente porque o modo padr„o È DELETE.
 
-- [x] **√çndices ausentes** ‚Äî `database.py`: migration v8:
+- [x] **Õndices ausentes** ó `database.py`: migration v8:
       `CREATE INDEX IF NOT EXISTS idx_crawl_pages_site ON crawl_pages(site_id)` e
       `CREATE INDEX IF NOT EXISTS idx_library_diffs_url ON library_diffs(url_id)`.
       Sem eles, `get_crawl_pages_by_site` e `_recent_diff_ids` fazem full-table scan.
 
-- [x] **Busca paralela** ‚Äî `routers/search.py`: `asyncio.gather()` com filtro
-      condicional ‚Äî se `src_web` est√° off, passa `asyncio.sleep(0, result=[])` no slot.
-      Reduz lat√™ncia de ~1 s para ~400 ms.
+- [x] **Busca paralela** ó `routers/search.py`: `asyncio.gather()` com filtro
+      condicional ó se `src_web` est· off, passa `asyncio.sleep(0, result=[])` no slot.
+      Reduz latÍncia de ~1 s para ~400 ms.
 
-- ~~[x] **`check_overdue` e `list_entries` sem `content_md`** ‚Äî `services/library.py`~~
-  **Falso positivo ‚Äî `services/library.py` nunca foi criado (Fase 7 abandonada).**
+- ~~[x] **`check_overdue` e `list_entries` sem `content_md`** ó `services/library.py`~~
+  **Falso positivo ó `services/library.py` nunca foi criado (Fase 7 abandonada).**
 
-#### M√©dia prioridade (reduz lock contention no crawler)
+#### MÈdia prioridade (reduz lock contention no crawler)
 
-- [x] **Crawl com conex√£o √∫nica por sess√£o** ‚Äî `services/crawler.py`: `crawl_site` agora
-      usa 2 conex√µes (leitura inicial + sess√£o BFS completa); `_process_url` captura `db`
-      via closure em vez de abrir nova conex√£o por p√°gina.
+- [x] **Crawl com conex„o ˙nica por sess„o** ó `services/crawler.py`: `crawl_site` agora
+      usa 2 conexıes (leitura inicial + sess„o BFS completa); `_process_url` captura `db`
+      via closure em vez de abrir nova conex„o por p·gina.
 
-- [x] **FTS skip em conte√∫do id√™ntico** ‚Äî `services/crawler.py` ‚Üí `_upsert_page`:
-      consulta `content_hash` atual antes do FTS; pula DELETE + INSERT se hash id√™ntico.
+- [x] **FTS skip em conte˙do idÍntico** ó `services/crawler.py` ? `_upsert_page`:
+      consulta `content_hash` atual antes do FTS; pula DELETE + INSERT se hash idÍntico.
 
-- [x] **`asyncio.get_event_loop()` ‚Üí `asyncio.get_running_loop()`** ‚Äî `routers/crawler.py`
-      (3 ocorr√™ncias) e `main.py` (1 ocorr√™ncia).
+- [x] **`asyncio.get_event_loop()` ? `asyncio.get_running_loop()`** ó `routers/crawler.py`
+      (3 ocorrÍncias) e `main.py` (1 ocorrÍncia).
 
-#### Baixa prioridade (manuten√ß√£o a longo prazo)
+#### Baixa prioridade (manutenÁ„o a longo prazo)
 
-- [x] **Limpeza peri√≥dica do search_cache** ‚Äî `main.py` ‚Üí `_monitor_crawler()`:
+- [x] **Limpeza periÛdica do search_cache** ó `main.py` ? `_monitor_crawler()`:
       ao acordar, executar `DELETE FROM search_cache WHERE created_at < ?` com cutoff
-      de 24 h. Sem essa limpeza o cache cresce indefinidamente ‚Äî cada query √∫nica
-      adiciona uma linha; ap√≥s semanas de uso o arquivo SQLite infla.
+      de 24 h. Sem essa limpeza o cache cresce indefinidamente ó cada query ˙nica
+      adiciona uma linha; apÛs semanas de uso o arquivo SQLite infla.
 
-- [ ] **Monitor de biblioteca com paralelismo controlado** ‚Äî `main.py` ‚Üí `_monitor_library()`:
+- [ ] **Monitor de biblioteca com paralelismo controlado** ó `main.py` ? `_monitor_library()`:
       em vez de re-scrape sequencial das URLs vencidas, usar `asyncio.gather` com
-      `asyncio.Semaphore(3)` ‚Äî m√°ximo 3 scrapes simult√¢neos. Uma biblioteca com 50+
-      URLs vencidas pode travar o event loop por v√°rios minutos em modo sequencial.
-      ‚ö† **BLOQUEADO**: depende de `services/library.py` e `routers/library.py` (Fase 7
-      marcada como conclu√≠da no TODO mas nunca implementada).
+      `asyncio.Semaphore(3)` ó m·ximo 3 scrapes simult‚neos. Uma biblioteca com 50+
+      URLs vencidas pode travar o event loop por v·rios minutos em modo sequencial.
+      ? **BLOQUEADO**: depende de `services/library.py` e `routers/library.py` (Fase 7
+      marcada como concluÌda no TODO mas nunca implementada).
 
-- [x] **Depend√™ncia `markdown`** ‚Äî `pyproject.toml`: adicionar `markdown>=3.7`
-      (necess√°rio para Fase 10.5 ‚Äî converter `content_md` ‚Üí HTML no reader mode).
-      ‚ö† **ADIADO**: adicionar junto com a implementa√ß√£o da Fase 10.5.
-
----
-
-### ~~Fase 12 ‚Äî Extens√£o Firefox (Zen Browser)~~ *(substitu√≠da pela pesquisa "Contexto em Tempo Real" ‚Äî 2026-05-18 ‚Äî ver "## Melhorias baseadas em pesquisas")*
+- [x] **DependÍncia `markdown`** ó `pyproject.toml`: adicionar `markdown>=3.7`
+      (necess·rio para Fase 10.5 ó converter `content_md` ? HTML no reader mode).
+      ? **ADIADO**: adicionar junto com a implementaÁ„o da Fase 10.5.
 
 ---
 
-#### Fase 12.5 ‚Äî Aba "Ver Mais Tarde"
+### ~~Fase 12 ó Extens„o Firefox (Zen Browser)~~ *(substituÌda pela pesquisa "Contexto em Tempo Real" ó 2026-05-18 ó ver "## Melhorias baseadas em pesquisas")*
+
+---
+
+#### Fase 12.5 ó Aba "Ver Mais Tarde"
 
 > Lista interna de URLs para retomar depois, sem arquivar nem monitorar.
-> Vis√≠vel apenas no AKASHA ‚Äî n√£o indexada no `local_fts` nem exportada para o ecossistema.
-> Resultados aparecem na busca global como se√ß√£o separada "Salvo para depois".
+> VisÌvel apenas no AKASHA ó n„o indexada no `local_fts` nem exportada para o ecossistema.
+> Resultados aparecem na busca global como seÁ„o separada "Salvo para depois".
 
 #### Banco de dados
 
-- [x] Migration v9: tabela `watch_later` ‚Äî
+- [x] Migration v9: tabela `watch_later` ó
       `id, url (UNIQUE), title, snippet, notes, added_at`
-- [x] Migration v9: FTS5 `watch_later_fts` ‚Äî `(id UNINDEXED, url UNINDEXED, title, notes)`
+- [x] Migration v9: FTS5 `watch_later_fts` ó `(id UNINDEXED, url UNINDEXED, title, notes)`
       sincronizada manualmente nos helpers
 
 #### Backend
 
-- [x] `database.py` ‚Äî helpers: `add_watch_later(url, title, snippet) -> int`;
+- [x] `database.py` ó helpers: `add_watch_later(url, title, snippet) -> int`;
       `get_all_watch_later() -> list[tuple]`; `delete_watch_later(id) -> None`;
       `search_watch_later(query, limit) -> list[tuple]`
-- [x] `services/local_search.py` ‚Äî fun√ß√£o `search_watch_later(query, max_results)`
+- [x] `services/local_search.py` ó funÁ„o `search_watch_later(query, max_results)`
       que consulta `watch_later_fts`; retorna `list[SearchResult]` com `source="DEPOIS"`;
-      N√ÉO adiciona ao `local_fts` (n√£o vis√≠vel para o ecossistema)
-- [x] `routers/watch_later.py` ‚Äî `GET /watch-later` (p√°gina da lista);
+      N√O adiciona ao `local_fts` (n„o visÌvel para o ecossistema)
+- [x] `routers/watch_later.py` ó `GET /watch-later` (p·gina da lista);
       `POST /watch-later/add` (form: url, title?, snippet?; retorna 200);
       `DELETE /watch-later/{id}` (retorna 200)
 
 #### Templates
 
-- [x] `templates/watch_later.html` ‚Äî lista de itens salvos: t√≠tulo, URL, data,
-      campo notes inline edit√°vel, bot√£o "remover"; empty state com hint
-- [x] `templates/_macros.html` ‚Äî bot√£o `‚òÜ ver depois` (`hx-post="/watch-later/add"`)
-      nos cards de resultado `WEB`, junto com os outros bot√µes de a√ß√£o
-- [x] `templates/base.html` ‚Äî aba "ver depois" na nav entre "sites" e "downloads"
-- [x] `templates/search.html` ‚Äî se√ß√£o "Salvo para depois" (ap√≥s se√ß√£o Sites,
-      antes do empty state); aparece sempre que h√° matches no `watch_later_fts`
+- [x] `templates/watch_later.html` ó lista de itens salvos: tÌtulo, URL, data,
+      campo notes inline edit·vel, bot„o "remover"; empty state com hint
+- [x] `templates/_macros.html` ó bot„o `? ver depois` (`hx-post="/watch-later/add"`)
+      nos cards de resultado `WEB`, junto com os outros botıes de aÁ„o
+- [x] `templates/base.html` ó aba "ver depois" na nav entre "sites" e "downloads"
+- [x] `templates/search.html` ó seÁ„o "Salvo para depois" (apÛs seÁ„o Sites,
+      antes do empty state); aparece sempre que h· matches no `watch_later_fts`
 
-#### Integra√ß√£o com busca
+#### IntegraÁ„o com busca
 
-- [x] `routers/search.py` ‚Äî incluir `search_watch_later(q)` no `asyncio.gather`;
-      passa `watch_later_results` para o template; se√ß√£o vis√≠vel
-      independente dos checkboxes (sempre busca se h√° query)
+- [x] `routers/search.py` ó incluir `search_watch_later(q)` no `asyncio.gather`;
+      passa `watch_later_results` para o template; seÁ„o visÌvel
+      independente dos checkboxes (sempre busca se h· query)
 
 #### TODO update
 
@@ -1934,163 +1934,163 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv ¬∑ Porta 7071.
 
 ---
 
-### Fase 13 ‚Äî API de Pesquisa Profunda (integra√ß√£o com Mnemosyne)
+### Fase 13 ó API de Pesquisa Profunda (integraÁ„o com Mnemosyne)
 
 > Entrega: endpoint JSON que o Mnemosyne pode chamar para buscar + scraping on-demand,
-> permitindo "Modo de Pesquisa Profunda" que combina biblioteca local com conte√∫do web atual.
+> permitindo "Modo de Pesquisa Profunda" que combina biblioteca local com conte˙do web atual.
 
 #### Novos endpoints
 
-- [x] `GET /search/json?q={query}&sources=web,sites&max={n}` ‚Äî retorna resultados de busca
-      como JSON puro (`list[SearchResult]`) em vez de HTML; reutiliza a l√≥gica de
+- [x] `GET /search/json?q={query}&sources=web,sites&max={n}` ó retorna resultados de busca
+      como JSON puro (`list[SearchResult]`) em vez de HTML; reutiliza a lÛgica de
       `routers/search.py` mas com `Response` JSON; usado pelo Mnemosyne para obter URLs relevantes
       sem scraping ainda
 
-- [x] `POST /fetch` (body: `{url: str, max_words: int = 2000}`) ‚Äî fetch + scraping
+- [x] `POST /fetch` (body: `{url: str, max_words: int = 2000}`) ó fetch + scraping
       completo de uma URL usando a cascata do `ecosystem_scraper` + fallback Jina Reader;
-      retorna `{url, title, content_md, word_count, error?}`; n√£o persiste nada ‚Äî resposta
-      ef√™mera para uso imediato pelo Mnemosyne; timeout 30s
+      retorna `{url, title, content_md, word_count, error?}`; n„o persiste nada ó resposta
+      efÍmera para uso imediato pelo Mnemosyne; timeout 30s
 
-#### Notas de implementa√ß√£o
+#### Notas de implementaÁ„o
 
-- Ambos os endpoints s√£o somente-leitura ‚Äî n√£o alteram estado do AKASHA
-- `GET /search/json` pode ser implementado extraindo a l√≥gica de busca de `routers/search.py`
-  para uma fun√ß√£o pura e reutilizando em ambos os handlers (HTML e JSON)
-- `POST /fetch` reutiliza `ecosystem_scraper.extract()` + a l√≥gica de Jina j√° em `archiver.py`
-- Lat√™ncia esperada: `/search/json` ~400ms (DDG cache hit) / ~1.5s (miss); `/fetch` ~2‚Äì8s por URL
+- Ambos os endpoints s„o somente-leitura ó n„o alteram estado do AKASHA
+- `GET /search/json` pode ser implementado extraindo a lÛgica de busca de `routers/search.py`
+  para uma funÁ„o pura e reutilizando em ambos os handlers (HTML e JSON)
+- `POST /fetch` reutiliza `ecosystem_scraper.extract()` + a lÛgica de Jina j· em `archiver.py`
+- LatÍncia esperada: `/search/json` ~400ms (DDG cache hit) / ~1.5s (miss); `/fetch` ~2ñ8s por URL
 
 ---
 
-### Fase 14 ‚Äî Integra√ß√£o KOSMOS nos cards de resultado
+### Fase 14 ó IntegraÁ„o KOSMOS nos cards de resultado
 
-> Bot√£o nos cards de resultado web para adicionar a URL √† lista de fontes do KOSMOS.
+> Bot„o nos cards de resultado web para adicionar a URL ‡ lista de fontes do KOSMOS.
 
-- [x] `templates/_macros.html` ‚Äî bot√£o "K" nos cards `WEB`:
+- [x] `templates/_macros.html` ó bot„o "K" nos cards `WEB`:
       `hx-post="/kosmos/add-source"` com `{"url": "...", "name": "..."}`;
       usa `detect_feed_type()` do KOSMOS para inferir tipo (youtube/rss/etc.)
-- [x] KOSMOS exp√µe `POST /add-source` via `http.server` em thread daemon (porta 8965 por padr√£o)
-- [x] `routers/kosmos_bridge.py` ‚Äî l√™ porta do ecosystem.json, encaminha para KOSMOS; 503 se KOSMOS offline
+- [x] KOSMOS expıe `POST /add-source` via `http.server` em thread daemon (porta 8965 por padr„o)
+- [x] `routers/kosmos_bridge.py` ó lÍ porta do ecosystem.json, encaminha para KOSMOS; 503 se KOSMOS offline
 
 ---
 
-### Fase 15 ‚Äî Qualidade de Busca e Crawl (pesquisa 2026-04-24)
+### Fase 15 ó Qualidade de Busca e Crawl (pesquisa 2026-04-24)
 
-> Melhorias derivadas de pesquisa sobre arquitetura de buscadores, otimiza√ß√£o de √≠ndice invertido
-> e deduplica√ß√£o. Organizadas por prioridade.
+> Melhorias derivadas de pesquisa sobre arquitetura de buscadores, otimizaÁ„o de Ìndice invertido
+> e deduplicaÁ„o. Organizadas por prioridade.
 
 #### Alta prioridade
 
-- [x] **[A] BM25 com pesos por campo** ‚Äî usar `bm25(crawl_fts, 10, 1)` na consulta FTS5
-      para dar peso 10√ó ao t√≠tulo vs. corpo; melhora ranking sem custo computacional
+- [x] **[A] BM25 com pesos por campo** ó usar `bm25(crawl_fts, 10, 1)` na consulta FTS5
+      para dar peso 10◊ ao tÌtulo vs. corpo; melhora ranking sem custo computacional
       (`database.py` / `services/local_search.py`)
 
-- [x] **[B] Normaliza√ß√£o de URL antes de inserir no crawl** ‚Äî remover par√¢metros de tracking
+- [x] **[B] NormalizaÁ„o de URL antes de inserir no crawl** ó remover par‚metros de tracking
       (`utm_*`, `fbclid`, `ref`, etc.) antes de `INSERT` em `crawl_pages`; evita duplicatas
-      por varia√ß√£o de URL (`services/crawler.py` + helper em `database.py`)
+      por variaÁ„o de URL (`services/crawler.py` + helper em `database.py`)
 
-- [x] **[C] FTS5 optimize peri√≥dico p√≥s-crawl** ‚Äî executar
-      `INSERT INTO crawl_fts(crawl_fts) VALUES('optimize')` ap√≥s crawls com > 200 p√°ginas
-      novas; mescla segmentos fragmentados e mant√©m performance de busca est√°vel
+- [x] **[C] FTS5 optimize periÛdico pÛs-crawl** ó executar
+      `INSERT INTO crawl_fts(crawl_fts) VALUES('optimize')` apÛs crawls com > 200 p·ginas
+      novas; mescla segmentos fragmentados e mantÈm performance de busca est·vel
       (`services/crawler.py` ou job agendado em `main.py`)
 
-- [x] **[D] Cache de robots.txt por dom√≠nio (TTL 24h)** ‚Äî armazenar regras de robots.txt
-      em mem√≥ria por dom√≠nio com expira√ß√£o de 24h; evita fetch redundante a cada URL
+- [x] **[D] Cache de robots.txt por domÌnio (TTL 24h)** ó armazenar regras de robots.txt
+      em memÛria por domÌnio com expiraÁ„o de 24h; evita fetch redundante a cada URL
       (`services/crawler.py`)
 
-#### M√©dia prioridade
+#### MÈdia prioridade
 
-- [x] **[E] Rate limiting por dom√≠nio com fila de prioridade** ‚Äî limitar requisi√ß√µes por
-      dom√≠nio (ex: 1 req/s) usando `asyncio.Queue` + sem√°foro por host; evita banimento
+- [x] **[E] Rate limiting por domÌnio com fila de prioridade** ó limitar requisiÁıes por
+      domÌnio (ex: 1 req/s) usando `asyncio.Queue` + sem·foro por host; evita banimento
       e respeita servidores (`services/crawler.py`)
 
-- [x] **[F] SimHash para detec√ß√£o de near-duplicatas** ‚Äî calcular SimHash do conte√∫do
-      extra√≠do; rejeitar p√°ginas com dist√¢ncia Hamming < 3 de p√°ginas j√° indexadas;
-      `pip install simhash`; reduz ru√≠do no √≠ndice sem hashing exato
+- [x] **[F] SimHash para detecÁ„o de near-duplicatas** ó calcular SimHash do conte˙do
+      extraÌdo; rejeitar p·ginas com dist‚ncia Hamming < 3 de p·ginas j· indexadas;
+      `pip install simhash`; reduz ruÌdo no Ìndice sem hashing exato
       (`services/crawler.py` + `database.py`)
 
-- [x] **[G] √çndice de prefixo FTS5** ‚Äî adicionar `prefix="2,3"` na cria√ß√£o de `crawl_fts`
+- [x] **[G] Õndice de prefixo FTS5** ó adicionar `prefix="2,3"` na criaÁ„o de `crawl_fts`
       para acelerar buscas com autocompletar e queries de prefixo parcial
-      (`database.py` ‚Äî migration necess√°ria)
+      (`database.py` ó migration necess·ria)
 
-- [x] **[H] `favor_recall=True` no trafilatura antes do fallback Jina** ‚Äî passar
-      `favor_recall=True` no `ecosystem_scraper` / extra√ß√£o local para aumentar cobertura
-      de conte√∫do antes de recorrer ao Jina Reader externo
+- [x] **[H] `favor_recall=True` no trafilatura antes do fallback Jina** ó passar
+      `favor_recall=True` no `ecosystem_scraper` / extraÁ„o local para aumentar cobertura
+      de conte˙do antes de recorrer ao Jina Reader externo
       (`ecosystem_scraper.py` ou `services/archiver.py`)
 
 #### Baixa prioridade
 
-- [ ] **[I] Campo separado para headings no FTS5** ‚Äî extrair headings (h1‚Äìh3) do HTML
-      e indexar em coluna dedicada com peso ~50√ó; melhora recall para queries de conceito
-      (`database.py` + `services/crawler.py` ‚Äî migration necess√°ria)
+- [ ] **[I] Campo separado para headings no FTS5** ó extrair headings (h1ñh3) do HTML
+      e indexar em coluna dedicada com peso ~50◊; melhora recall para queries de conceito
+      (`database.py` + `services/crawler.py` ó migration necess·ria)
 
-- [ ] **[J] Meilisearch como backend alternativo para corpus grande** ‚Äî avaliar substitui√ß√£o
-      do FTS5 pelo Meilisearch self-hosted quando o corpus ultrapassar ~100k p√°ginas;
-      oferece typo-tolerance, facetas e ranking configur√°vel nativo; requer processo separado
+- [ ] **[J] Meilisearch como backend alternativo para corpus grande** ó avaliar substituiÁ„o
+      do FTS5 pelo Meilisearch self-hosted quando o corpus ultrapassar ~100k p·ginas;
+      oferece typo-tolerance, facetas e ranking configur·vel nativo; requer processo separado
 
 ---
 
-### Fase 16 ‚Äî Corre√ß√£o de Bugs (auditoria 2026-04-24)
+### Fase 16 ó CorreÁ„o de Bugs (auditoria 2026-04-24)
 
-> Bugs encontrados por inspe√ß√£o de c√≥digo. Nenhum requer migration de schema.
+> Bugs encontrados por inspeÁ„o de cÛdigo. Nenhum requer migration de schema.
 
 #### Alta prioridade (funcionalidade quebrada)
 
-- [x] **[BUG-1] `/domains` ‚Äî bloquear/desbloquear n√£o atualiza a lista na UI**
+- [x] **[BUG-1] `/domains` ó bloquear/desbloquear n„o atualiza a lista na UI**
       `routers/domains.py` + `templates/domains.html`: os endpoints `POST /domains/block` e
       `DELETE /domains/block/{domain}` retornam `Response(status_code=200)` com body vazio,
       mas o template usa `hx-select="#domains-list"` esperando receber esse elemento na resposta.
-      HTMX n√£o encontra o seletor ‚Üí lista n√£o atualiza; usu√°ria precisa recarregar a p√°gina.
+      HTMX n„o encontra o seletor ? lista n„o atualiza; usu·ria precisa recarregar a p·gina.
       **Fix:** retornar a lista atualizada como fragment HTML em ambos os endpoints, ou
       mudar para `hx-get="/domains" hx-trigger="revealed"` como follow-up.
 
-- [x] **[BUG-2] `search.html` ‚Äî link "Adicionar sites" aponta para `/sites` que n√£o existe**
-      `templates/search.html:18`: `<a href="/sites">Adicionar sites ‚Üí</a>` causa 404.
-      O gerenciamento dos sites crawleados est√° em `/library`.
+- [x] **[BUG-2] `search.html` ó link "Adicionar sites" aponta para `/sites` que n„o existe**
+      `templates/search.html:18`: `<a href="/sites">Adicionar sites ?</a>` causa 404.
+      O gerenciamento dos sites crawleados est· em `/library`.
       **Fix:** corrigir para `href="/library"`.
 
-- [x] **[BUG-3] `crawl_site` ‚Äî status travado em `'crawling'` quando ocorre exce√ß√£o**
-      `services/crawler.py`: o status √© definido como `'crawling'` antes do BFS, mas s√≥
-      resetado para `'idle'` no final bem-sucedido. Se qualquer exce√ß√£o ocorrer (HTTP, DB,
+- [x] **[BUG-3] `crawl_site` ó status travado em `'crawling'` quando ocorre exceÁ„o**
+      `services/crawler.py`: o status È definido como `'crawling'` antes do BFS, mas sÛ
+      resetado para `'idle'` no final bem-sucedido. Se qualquer exceÁ„o ocorrer (HTTP, DB,
       timeout), o site fica com `status='crawling'` para sempre. `crawl_pending_sites()`
-      filtra por `status='idle'`, logo o site nunca mais √© re-crawlado automaticamente.
+      filtra por `status='idle'`, logo o site nunca mais È re-crawlado automaticamente.
       **Fix:** envolver o BFS em `try/finally` e garantir `UPDATE status='idle'` no `finally`.
 
-#### M√©dia prioridade (inconsist√™ncia / UX)
+#### MÈdia prioridade (inconsistÍncia / UX)
 
-- [x] **[BUG-4] `main.py` `index()` ‚Äî contexto incompleto para `search.html`**
-      `main.py:101`: o handler da rota `/` n√£o passa `site_results`, `has_sites` e
-      `has_more_web` para o template. O Jinja2 n√£o crasha (trata `undefined` como falsy),
-      mas o comportamento √© inconsistente com o handler `/search`.
-      **Fix:** adicionar as chaves faltantes com valores padr√£o (`site_results=[]`,
+- [x] **[BUG-4] `main.py` `index()` ó contexto incompleto para `search.html`**
+      `main.py:101`: o handler da rota `/` n„o passa `site_results`, `has_sites` e
+      `has_more_web` para o template. O Jinja2 n„o crasha (trata `undefined` como falsy),
+      mas o comportamento È inconsistente com o handler `/search`.
+      **Fix:** adicionar as chaves faltantes com valores padr„o (`site_results=[]`,
       `has_sites=False`, `has_more_web=False`, `src_web=True`, `src_eco=True`, `src_sites=False`).
 
-- [x] **[BUG-5] `search.html` ‚Äî aviso "nenhum site cadastrado" dentro do bloco `{% if error %}`**
-      `templates/search.html`: o bloco `{% if src_sites and not has_sites and query %}` est√°
-      aninhado dentro de `{% if error %}`, ent√£o o aviso s√≥ aparece quando h√° erro de busca.
+- [x] **[BUG-5] `search.html` ó aviso "nenhum site cadastrado" dentro do bloco `{% if error %}`**
+      `templates/search.html`: o bloco `{% if src_sites and not has_sites and query %}` est·
+      aninhado dentro de `{% if error %}`, ent„o o aviso sÛ aparece quando h· erro de busca.
       Deveria aparecer independentemente, como estado informativo separado.
-      **Fix:** mover o bloco de aviso para fora do `{% if error %}`, antes ou logo ap√≥s o
+      **Fix:** mover o bloco de aviso para fora do `{% if error %}`, antes ou logo apÛs o
       bloco principal de resultados.
 
-- [x] **[BUG-6] `routers/system.py` ‚Äî `/open-file` nunca reporta erro ao abrir arquivo local**
-      `subprocess.Popen(["xdg-open", path])` √© fire-and-forget: sempre retorna HTTP 200 mesmo
+- [x] **[BUG-6] `routers/system.py` ó `/open-file` nunca reporta erro ao abrir arquivo local**
+      `subprocess.Popen(["xdg-open", path])` È fire-and-forget: sempre retorna HTTP 200 mesmo
       que o xdg-open falhe silenciosamente (comum no CachyOS/Niri/Wayland quando
-      `DBUS_SESSION_BUS_ADDRESS` n√£o est√° dispon√≠vel no processo filho). O toast mostra
-      "Abrindo arquivo‚Ä¶" mesmo que nada abra.
-      **Fix:** usar `asyncio.create_subprocess_exec` para capturar o c√≥digo de retorno;
+      `DBUS_SESSION_BUS_ADDRESS` n„o est· disponÌvel no processo filho). O toast mostra
+      "Abrindo arquivoÖ" mesmo que nada abra.
+      **Fix:** usar `asyncio.create_subprocess_exec` para capturar o cÛdigo de retorno;
       tentar `gio open` como fallback se xdg-open falhar; retornar HTTP 500 com mensagem
-      leg√≠vel se ambos falharem.
+      legÌvel se ambos falharem.
 
 ---
 
-### Busca Local Avan√ßada ‚Äî Pend√™ncias T√©cnicas
+### Busca Local AvanÁada ó PendÍncias TÈcnicas
 
 
-- [x] Bug: `_search_chroma()` cria novo `PersistentClient` a cada query ‚Äî cachear como singleton:
+- [x] Bug: `_search_chroma()` cria novo `PersistentClient` a cada query ó cachear como singleton:
   **Motivo:** `AKASHA/services/local_search.py` linha ~247 faz
-  `client = _chromadb.PersistentClient(path=index_path)` dentro da fun√ß√£o de busca.
-  Abrir um PersistentClient abre o SQLite subjacente do ChromaDB e carrega metadados ‚Äî custo
+  `client = _chromadb.PersistentClient(path=index_path)` dentro da funÁ„o de busca.
+  Abrir um PersistentClient abre o SQLite subjacente do ChromaDB e carrega metadados ó custo
   de I/O repetido desnecessariamente a cada busca interativa.
-  **Implementa√ß√£o (`AKASHA/services/local_search.py`):**
+  **ImplementaÁ„o (`AKASHA/services/local_search.py`):**
   ```python
   _chroma_clients: dict[str, Any] = {}   # module-level cache
 
@@ -2101,21 +2101,21 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv ¬∑ Porta 7071.
   ```
   Substituir `client = _chromadb.PersistentClient(path=index_path)` por
   `client = _get_chroma_client(index_path)` em `_search_chroma()`.
-  Resultado: lat√™ncia de busca local reduzida; sem impacto em corretude.
+  Resultado: latÍncia de busca local reduzida; sem impacto em corretude.
 
 - [x] AKASHA: substituir `rank_combined()` por Reciprocal Rank Fusion (RRF):
-  **Motivo:** `rank_combined()` usa `_score()` ‚Äî contagem simples de keywords nos campos title e
-  snippet. Isso descarta os scores de relev√¢ncia reais de cada m√©todo:
-  - FTS5 retorna resultados j√° ordenados por bm25() (score real de relev√¢ncia lexical)
-  - ChromaDB retorna resultados ordenados por dist√¢ncia euclidiana no espa√ßo de embeddings
-  Ignorar essas ordena√ß√µes e usar contagem de termos √© inferior ao RRF, que considera a posi√ß√£o
+  **Motivo:** `rank_combined()` usa `_score()` ó contagem simples de keywords nos campos title e
+  snippet. Isso descarta os scores de relev‚ncia reais de cada mÈtodo:
+  - FTS5 retorna resultados j· ordenados por bm25() (score real de relev‚ncia lexical)
+  - ChromaDB retorna resultados ordenados por dist‚ncia euclidiana no espaÁo de embeddings
+  Ignorar essas ordenaÁıes e usar contagem de termos È inferior ao RRF, que considera a posiÁ„o
   relativa de cada resultado em cada lista sem precisar dos scores absolutos.
-  A pesquisa confirma: RRF sem par√¢metros supera linear combination com alpha tuning manual
+  A pesquisa confirma: RRF sem par‚metros supera linear combination com alpha tuning manual
   na maioria dos benchmarks (arxiv 2604.01733).
-  **Implementa√ß√£o (`AKASHA/services/local_search.py`):**
+  **ImplementaÁ„o (`AKASHA/services/local_search.py`):**
   ```python
   def _rrf(rankings: list[list[SearchResult]], k: int = 60) -> list[SearchResult]:
-      """Reciprocal Rank Fusion ‚Äî funde m√∫ltiplas listas rankeadas."""
+      """Reciprocal Rank Fusion ó funde m˙ltiplas listas rankeadas."""
       scores: dict[str, float]       = {}
       by_url: dict[str, SearchResult] = {}
       for ranking in rankings:
@@ -2127,15 +2127,15 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv ¬∑ Porta 7071.
       return [by_url[key] for key in ordered]
   ```
   Substituir a chamada a `rank_combined()` por `_rrf([fts_results, chroma_results])` em
-  `search_local()`. A fun√ß√£o `rank_combined()` pode ser mantida como fallback para resultados
-  de fontes sem ranking expl√≠cito (web results, etc.).
+  `search_local()`. A funÁ„o `rank_combined()` pode ser mantida como fallback para resultados
+  de fontes sem ranking explÌcito (web results, etc.).
 
 - [x] AKASHA: FTS5 com tokenizer `unicode61 remove_diacritics=2` para busca acentuada:
-  **Motivo:** a tabela `local_fts` usa o tokenizer padr√£o do FTS5 (`unicode61`), que por padr√£o
-  trata "a√ßa√≠" diferente de "acai". Com `remove_diacritics=2`, "cafe" encontra "caf√©" e
-  "musica" encontra "m√∫sica" ‚Äî essencial para corpus em portugu√™s.
-  **Implementa√ß√£o (`AKASHA/database.py` ‚Äî migration):**
-  Recriar a tabela FTS com o tokenizer correto. As migrations existentes j√° t√™m padr√£o ‚Äî adicionar:
+  **Motivo:** a tabela `local_fts` usa o tokenizer padr„o do FTS5 (`unicode61`), que por padr„o
+  trata "aÁaÌ" diferente de "acai". Com `remove_diacritics=2`, "cafe" encontra "cafÈ" e
+  "musica" encontra "m˙sica" ó essencial para corpus em portuguÍs.
+  **ImplementaÁ„o (`AKASHA/database.py` ó migration):**
+  Recriar a tabela FTS com o tokenizer correto. As migrations existentes j· tÍm padr„o ó adicionar:
   ```sql
   CREATE VIRTUAL TABLE IF NOT EXISTS local_fts USING fts5(
       path UNINDEXED,
@@ -2145,24 +2145,24 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv ¬∑ Porta 7071.
       tokenize = 'unicode61 remove_diacritics 2'
   );
   ```
-  Como √© uma virtual table, recriar exige reindexar ‚Äî executar `index_local_files()` no pr√≥ximo startup.
+  Como È uma virtual table, recriar exige reindexar ó executar `index_local_files()` no prÛximo startup.
 
-- [x] AKASHA: deduplica√ß√£o de conte√∫do crawlado por hash SHA-256:
-  **Motivo:** o crawler normaliza URLs mas n√£o detecta conte√∫do duplicado entre URLs diferentes
-  (syndication, mirrors, redirects resolvidos). Dois artigos com mesmo conte√∫do s√£o indexados
+- [x] AKASHA: deduplicaÁ„o de conte˙do crawlado por hash SHA-256:
+  **Motivo:** o crawler normaliza URLs mas n„o detecta conte˙do duplicado entre URLs diferentes
+  (syndication, mirrors, redirects resolvidos). Dois artigos com mesmo conte˙do s„o indexados
   e buscados duplicadamente, poluindo os resultados.
-  Mesma t√©cnica do KOSMOS: SHA-256 do conte√∫do extra√≠do como guarda de deduplica√ß√£o.
-  **Implementa√ß√£o (`AKASHA/services/crawler.py` + `database.py`):**
-  1. Adicionar coluna `content_hash TEXT` √† tabela que armazena p√°ginas crawladas
-  2. Antes de persistir uma p√°gina: calcular `hashlib.sha256(content.encode()).hexdigest()`
-  3. `SELECT id FROM crawled_pages WHERE content_hash = ?` ‚Äî se existir: ignorar URL, n√£o re-indexar
+  Mesma tÈcnica do KOSMOS: SHA-256 do conte˙do extraÌdo como guarda de deduplicaÁ„o.
+  **ImplementaÁ„o (`AKASHA/services/crawler.py` + `database.py`):**
+  1. Adicionar coluna `content_hash TEXT` ‡ tabela que armazena p·ginas crawladas
+  2. Antes de persistir uma p·gina: calcular `hashlib.sha256(content.encode()).hexdigest()`
+  3. `SELECT id FROM crawled_pages WHERE content_hash = ?` ó se existir: ignorar URL, n„o re-indexar
   4. Adicionar index em `content_hash` para a query ser O(1)
 
-- [x] AKASHA: ETag/Last-Modified no crawler para n√£o re-crawlar p√°ginas sem mudan√ßa:
-  **Motivo:** o crawler re-crawla todas as URLs a cada ciclo, mesmo que o conte√∫do n√£o tenha
+- [x] AKASHA: ETag/Last-Modified no crawler para n„o re-crawlar p·ginas sem mudanÁa:
+  **Motivo:** o crawler re-crawla todas as URLs a cada ciclo, mesmo que o conte˙do n„o tenha
   mudado. Servidores que suportam cache HTTP retornam 304 Not Modified com ETag/Last-Modified,
   evitando download e parsing do HTML inteiro.
-  **Implementa√ß√£o (`AKASHA/services/crawler.py`):**
+  **ImplementaÁ„o (`AKASHA/services/crawler.py`):**
   1. Armazenar `etag` e `last_modified` junto a cada URL crawlada na tabela do banco
   2. No re-crawl, passar os headers condicionais:
      ```python
@@ -2171,350 +2171,350 @@ Stack: FastAPI + HTMX + Jinja2 + SQLite (aiosqlite) + uv ¬∑ Porta 7071.
      if stored_lm:      headers["If-Modified-Since"] = stored_lm
      resp = await client.get(url, headers=headers)
      if resp.status_code == 304:
-         return  # sem mudan√ßa ‚Äî ignorar
-     # sen√£o: processar normalmente e salvar novos etag/last-modified
+         return  # sem mudanÁa ó ignorar
+     # sen„o: processar normalmente e salvar novos etag/last-modified
      etag = resp.headers.get("ETag")
      lm   = resp.headers.get("Last-Modified")
      ```
 
 - [x] AKASHA: throttle adaptativo no crawler baseado em tempo de resposta do servidor:
-  **Motivo:** `_CRAWL_CONCURRENCY = 4` √© fixo e n√£o reflete a capacidade real do servidor alvo.
-  Servidores lentos (resposta > 2s) ficam sobrecarregados; servidores r√°pidos s√£o sub-utilizados.
-  Scrapy AutoThrottle usa `delay = response_time / target_concurrency` como heur√≠stica.
-  **Implementa√ß√£o (`AKASHA/services/crawler.py`):**
+  **Motivo:** `_CRAWL_CONCURRENCY = 4` È fixo e n„o reflete a capacidade real do servidor alvo.
+  Servidores lentos (resposta > 2s) ficam sobrecarregados; servidores r·pidos s„o sub-utilizados.
+  Scrapy AutoThrottle usa `delay = response_time / target_concurrency` como heurÌstica.
+  **ImplementaÁ„o (`AKASHA/services/crawler.py`):**
   1. Medir `response_time` de cada request: `t0 = time.monotonic(); resp = await client.get(url); dt = time.monotonic() - t0`
-  2. Manter m√©dia m√≥vel de response_time por dom√≠nio (janela de 5 requests)
+  2. Manter mÈdia mÛvel de response_time por domÌnio (janela de 5 requests)
   3. Ajustar delay no rate limiter:
-     - `dt_avg < 0.5s` ‚Üí delay m√≠nimo (0.5s) ‚Äî servidor r√°pido
-     - `0.5s ‚â§ dt_avg < 2s` ‚Üí delay = dt_avg (politeness simples)
-     - `dt_avg ‚â• 2s` ‚Üí delay = 2√ó dt_avg, reduzir concorr√™ncia para 2
-  4. Em 429 (Too Many Requests): backoff exponencial `2^n √ó delay_base + jitter`
+     - `dt_avg < 0.5s` ? delay mÌnimo (0.5s) ó servidor r·pido
+     - `0.5s = dt_avg < 2s` ? delay = dt_avg (politeness simples)
+     - `dt_avg = 2s` ? delay = 2◊ dt_avg, reduzir concorrÍncia para 2
+  4. Em 429 (Too Many Requests): backoff exponencial `2^n ◊ delay_base + jitter`
 
-- [x] AKASHA: Trafilatura como primeiro est√°gio de extra√ß√£o (substitui√ß√£o em ecosystem_scraper.py):
-  **Motivo:** id√™ntico ao KOSMOS ‚Äî F1=0.945 do Trafilatura vs F1=0.665 do BeautifulSoup.
-  Conte√∫do mais limpo no √≠ndice FTS5 do AKASHA = busca mais precisa, menos falsos positivos.
-  Ver item equivalente em PEND√äNCIAS ‚Äî KOSMOS para implementa√ß√£o detalhada (compartilham
+- [x] AKASHA: Trafilatura como primeiro est·gio de extraÁ„o (substituiÁ„o em ecosystem_scraper.py):
+  **Motivo:** idÍntico ao KOSMOS ó F1=0.945 do Trafilatura vs F1=0.665 do BeautifulSoup.
+  Conte˙do mais limpo no Ìndice FTS5 do AKASHA = busca mais precisa, menos falsos positivos.
+  Ver item equivalente em PEND NCIAS ó KOSMOS para implementaÁ„o detalhada (compartilham
   o `ecosystem_scraper.py`).
 
 
 ---
 
-## KOSMOS ‚Äî Leitor de Feeds
+## KOSMOS ó Leitor de Feeds
 
-> **Padr√µes obrigat√≥rios (toda sess√£o de desenvolvimento):**
-> - Tipagem completa em todos os par√¢metros e retornos
-> - Erros nunca engolidos silenciosamente ‚Äî propagar, retornar valor verific√°vel ou dar feedback ao usu√°rio
-> - `log.error()` para falhas reais, `log.warning()` s√≥ para condi√ß√µes esperadas/recuper√°veis
+> **Padrıes obrigatÛrios (toda sess„o de desenvolvimento):**
+> - Tipagem completa em todos os par‚metros e retornos
+> - Erros nunca engolidos silenciosamente ó propagar, retornar valor verific·vel ou dar feedback ao usu·rio
+> - `log.error()` para falhas reais, `log.warning()` sÛ para condiÁıes esperadas/recuper·veis
 > - Atualizar este arquivo a cada feature implementada ou pedida
-> - **Commit git a cada funcionalidade conclu√≠da** ‚Äî mensagem descritiva, nunca acumular para o final
+> - **Commit git a cada funcionalidade concluÌda** ó mensagem descritiva, nunca acumular para o final
 
-Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
+ReferÍncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 ---
 
-### Design Bible v2.0 ‚Äî Audit (2026-04-11)
+### Design Bible v2.0 ó Audit (2026-04-11)
 
-- [x] Modo noturno migrado para paleta "Atlas Astron√¥mico √† Meia-Noite" em `night.qss`
+- [x] Modo noturno migrado para paleta "Atlas AstronÙmico ‡ Meia-Noite" em `night.qss`
 - [x] `reader_night.css` atualizado para nova paleta (fundo, bordas, `hr::after`)
-- [x] `splash_screen.py` ‚Äî cores hardcoded noturnas corrigidas
+- [x] `splash_screen.py` ó cores hardcoded noturnas corrigidas
 
 ---
 
-### FASE EXTRA ‚Äî Features de Enriquecimento
-> Funcionalidades al√©m do escopo original. Implementar sequencialmente.
+### FASE EXTRA ó Features de Enriquecimento
+> Funcionalidades alÈm do escopo original. Implementar sequencialmente.
 
 - [x] Filtros de palavra-chave (blocklist)
 - [x] Feeds de busca (Google News RSS por termo)
-- [x] Tags manuais nos artigos ‚Äî chips no leitor, CRUD em `feed_manager.py`
-- [x] Posi√ß√£o de scroll salva ‚Äî `scroll_pos` via `window.scrollY`, restaurado no `loadFinished`
-- [x] Top fontes e t√≥picos no dashboard ‚Äî pain√©is com barras proporcionais
-- [x] Deduplica√ß√£o de artigos similares ‚Äî `duplicate_of`, `rapidfuzz` (85%, 48h, entre feeds)
-- [x] Highlights e anota√ß√µes no leitor ‚Äî `highlights` table, JS injection via `_HIGHLIGHT_SETUP_JS`, chips na barra abaixo das tags, anota√ß√µes via QInputDialog
-- [x] Tradu√ß√£o inline no leitor ‚Äî `deep-translator` (Google Translate), sem dialog extra, menu de idiomas, "Ver original"
-- [x] Scraping multil√≠ngue ‚Äî fallback BS4 para idiomas sem tokenizador
-- [x] Fallback de scraping ‚Äî traduz t√≠tulo para ingl√™s ‚Üí busca Google News RSS ‚Üí tenta scraping do resultado
-- [x] Filtro de idioma na view unificada ‚Äî coluna `language` no modelo, detec√ß√£o via `langdetect` no save
-- [x] T√≠tulo do artigo exibido no leitor (webview) e traduzido junto com o corpo
-- [x] Label de idioma original ‚Üí traduzido na barra inferior do leitor
+- [x] Tags manuais nos artigos ó chips no leitor, CRUD em `feed_manager.py`
+- [x] PosiÁ„o de scroll salva ó `scroll_pos` via `window.scrollY`, restaurado no `loadFinished`
+- [x] Top fontes e tÛpicos no dashboard ó painÈis com barras proporcionais
+- [x] DeduplicaÁ„o de artigos similares ó `duplicate_of`, `rapidfuzz` (85%, 48h, entre feeds)
+- [x] Highlights e anotaÁıes no leitor ó `highlights` table, JS injection via `_HIGHLIGHT_SETUP_JS`, chips na barra abaixo das tags, anotaÁıes via QInputDialog
+- [x] TraduÁ„o inline no leitor ó `deep-translator` (Google Translate), sem dialog extra, menu de idiomas, "Ver original"
+- [x] Scraping multilÌngue ó fallback BS4 para idiomas sem tokenizador
+- [x] Fallback de scraping ó traduz tÌtulo para inglÍs ? busca Google News RSS ? tenta scraping do resultado
+- [x] Filtro de idioma na view unificada ó coluna `language` no modelo, detecÁ„o via `langdetect` no save
+- [x] TÌtulo do artigo exibido no leitor (webview) e traduzido junto com o corpo
+- [x] Label de idioma original ? traduzido na barra inferior do leitor
 - [x] Auto-salvar artigo ao criar primeiro destaque
-- [x] Tratamento de erros: `log.error` para falhas reais, feedback vis√≠vel ao usu√°rio (tag, destaque), tipagem completa nos helpers privados
+- [x] Tratamento de erros: `log.error` para falhas reais, feedback visÌvel ao usu·rio (tag, destaque), tipagem completa nos helpers privados
 
 ---
 
-### FASE A ‚Äî Leitor e Arquivo
+### FASE A ó Leitor e Arquivo
 
-- [x] Navega√ß√£o anterior / pr√≥ximo entre artigos
-- [x] Bot√£o "Buscar artigo completo" (com fallback BS4 multil√≠ngue + fallback por t√≠tulo)
-- [x] Purga√ß√£o autom√°tica de artigos antigos (`purge_old_articles`)
-- [x] `saved_view.py` ‚Äî view de artigos salvos/favoritados
-- [x] `archive_manager.py` ‚Äî exportar artigo para Markdown em `data/archive/`
-- [x] `archive_view.py` ‚Äî browser do arquivo (lista arquivos .md de `data/archive/`)
-- [x] Convers√£o HTML ‚Üí Markdown via `html2text`
+- [x] NavegaÁ„o anterior / prÛximo entre artigos
+- [x] Bot„o "Buscar artigo completo" (com fallback BS4 multilÌngue + fallback por tÌtulo)
+- [x] PurgaÁ„o autom·tica de artigos antigos (`purge_old_articles`)
+- [x] `saved_view.py` ó view de artigos salvos/favoritados
+- [x] `archive_manager.py` ó exportar artigo para Markdown em `data/archive/`
+- [x] `archive_view.py` ó browser do arquivo (lista arquivos .md de `data/archive/`)
+- [x] Convers„o HTML ? Markdown via `html2text`
 
 ---
 
-### FASE B ‚Äî Plataformas Adicionais
+### FASE B ó Plataformas Adicionais
 
 **Reddit:**
-- [ ] `reddit_fetcher.py` ‚Äî wrapper praw 7.x
-- [ ] `add_reddit_dialog.py` ‚Äî adicionar subreddit (requer credenciais)
-- [ ] Configura√ß√µes ‚Üí se√ß√£o Reddit (client_id, client_secret, testar conex√£o)
+- [ ] `reddit_fetcher.py` ó wrapper praw 7.x
+- [ ] `add_reddit_dialog.py` ó adicionar subreddit (requer credenciais)
+- [ ] ConfiguraÁıes ? seÁ„o Reddit (client_id, client_secret, testar conex„o)
 - [ ] Mapeamento de posts para schema de artigos (score, num_comments em `extra_json`)
 
 **YouTube:**
-- [ ] Detec√ß√£o autom√°tica de URL YouTube em `add_feed_dialog.py`
-- [ ] Extra√ß√£o de `channel_id` de URLs `@handle` via requests + BS4
-- [ ] Thumbnail de v√≠deos nos article cards
+- [ ] DetecÁ„o autom·tica de URL YouTube em `add_feed_dialog.py`
+- [ ] ExtraÁ„o de `channel_id` de URLs `@handle` via requests + BS4
+- [ ] Thumbnail de vÌdeos nos article cards
 
-**Outras plataformas (RSS puro ‚Äî feedparser j√° funciona, falta detec√ß√£o):**
-- [ ] Detec√ß√£o autom√°tica: Tumblr, Substack, Mastodon pela URL
+**Outras plataformas (RSS puro ó feedparser j· funciona, falta detecÁ„o):**
+- [ ] DetecÁ„o autom·tica: Tumblr, Substack, Mastodon pela URL
 - [ ] `feed_type` correto salvo no banco para cada plataforma
 
 ---
 
-### FASE C ‚Äî Busca Global
+### FASE C ó Busca Global
 
-- [x] FTS5 virtual table com triggers de sincroniza√ß√£o (`database.py`)
-- [x] `search.py` ‚Äî query FTS5, retorna artigos ranqueados por relev√¢ncia
+- [x] FTS5 virtual table com triggers de sincronizaÁ„o (`database.py`)
+- [x] `search.py` ó query FTS5, retorna artigos ranqueados por relev‚ncia
 - [x] Barra de busca global `Ctrl+K` (overlay flutuante)
 - [x] Resultados com feed de origem e snippet destacado (mark)
 - [x] Clicar no resultado abre o leitor
-- [x] Navega√ß√£o por teclado (‚Üë‚Üì Enter Esc)
+- [x] NavegaÁ„o por teclado (?? Enter Esc)
 
 ---
 
-### FASE D ‚Äî Exporta√ß√£o PDF e Estat√≠sticas
+### FASE D ó ExportaÁ„o PDF e EstatÌsticas
 
-**Exporta√ß√£o PDF:**
-- [ ] `export_pdf.py` ‚Äî WeasyPrint + template s√©pia (`export_template.html`)
-- [ ] `export_dialog.py` ‚Äî seletor de destino (artigo √∫nico ou lista de salvos)
-- [ ] Bot√£o "Exportar PDF" na toolbar do leitor
+**ExportaÁ„o PDF:**
+- [ ] `export_pdf.py` ó WeasyPrint + template sÈpia (`export_template.html`)
+- [ ] `export_dialog.py` ó seletor de destino (artigo ˙nico ou lista de salvos)
+- [ ] Bot„o "Exportar PDF" na toolbar do leitor
 
-**Estat√≠sticas:**
-- [x] `read_sessions` ‚Äî registrar in√≠cio/fim de leitura por artigo
-- [x] `stats.py` ‚Äî agrega√ß√£o por dia, feed, plataforma, salvos por m√™s
-- [x] `stats_view.py` ‚Äî gr√°ficos matplotlib, filtro de per√≠odo
-- [x] Bot√£o "Stats" na sidebar
+**EstatÌsticas:**
+- [x] `read_sessions` ó registrar inÌcio/fim de leitura por artigo
+- [x] `stats.py` ó agregaÁ„o por dia, feed, plataforma, salvos por mÍs
+- [x] `stats_view.py` ó gr·ficos matplotlib, filtro de perÌodo
+- [x] Bot„o "Stats" na sidebar
 
 ---
 
-### FASE E ‚Äî Polimento Final
+### FASE E ó Polimento Final
 
-- [ ] Anima√ß√µes: fade-in 150ms nos cards, slide 200ms no leitor, expand/collapse 120ms na sidebar
+- [ ] AnimaÁıes: fade-in 150ms nos cards, slide 200ms no leitor, expand/collapse 120ms na sidebar
 - [ ] Cursor piscante dourado (`#b8860b`) em campos de texto (QTimer 530ms)
-- [ ] Cantos dobrados decorativos (SVG 20√ó20px)
-- [ ] √çcone do app (`.ico` Windows, `.png` Linux)
-- [ ] `iniciar.sh` e `iniciar.bat` com setup autom√°tico do venv
+- [ ] Cantos dobrados decorativos (SVG 20◊20px)
+- [ ] Õcone do app (`.ico` Windows, `.png` Linux)
+- [ ] `iniciar.sh` e `iniciar.bat` com setup autom·tico do venv
 - [ ] Revisar todos os caminhos com `pathlib.Path` (sem strings hardcoded)
 - [ ] Testes em Windows 10 (WeasyPrint + GTK3, QWebEngineView, VC++ Redist)
 
 ---
 
-### FASE F ‚Äî IA Local (Ollama)
+### FASE F ó IA Local (Ollama)
 
-> Integra√ß√£o com modelos LLM locais via Ollama (http://localhost:11434).
+> IntegraÁ„o com modelos LLM locais via Ollama (http://localhost:11434).
 > Modelos:
-> - `qwen2.5:7b` ‚Äî gera√ß√£o de texto: resumo, extra√ß√£o de tags, an√°lise
-> - `nomic-embed-text` ‚Äî embeddings sem√¢nticos: relev√¢ncia, busca vetorial, similaridade
+> - `qwen2.5:7b` ó geraÁ„o de texto: resumo, extraÁ„o de tags, an·lise
+> - `nomic-embed-text` ó embeddings sem‚nticos: relev‚ncia, busca vetorial, similaridade
 >
-> Toda feature de IA √© opcional e degradada graciosamente se o servi√ßo n√£o estiver dispon√≠vel.
-> Implementar sequencialmente ‚Äî infraestrutura primeiro.
+> Toda feature de IA È opcional e degradada graciosamente se o serviÁo n„o estiver disponÌvel.
+> Implementar sequencialmente ó infraestrutura primeiro.
 
 **Infraestrutura:**
-- [x] `app/core/ai_bridge.py` ‚Äî cliente Ollama: verificar disponibilidade (`/api/tags`), gerar texto (`/api/generate` streaming via `qwen2.5:7b`), gerar embeddings (`/api/embed` via `nomic-embed-text`)
-- [x] Migration: colunas `ai_summary TEXT`, `ai_tags TEXT` (JSON), `embedding BLOB` (768 floats √ó 4 bytes), `ai_relevance REAL` em `articles`
-- [x] Configura√ß√µes ‚Üí se√ß√£o IA: endpoint (padr√£o `http://localhost:11434`), modelo de gera√ß√£o, modelo de embeddings, habilitar/desabilitar, bot√£o "Testar conex√£o"
+- [x] `app/core/ai_bridge.py` ó cliente Ollama: verificar disponibilidade (`/api/tags`), gerar texto (`/api/generate` streaming via `qwen2.5:7b`), gerar embeddings (`/api/embed` via `nomic-embed-text`)
+- [x] Migration: colunas `ai_summary TEXT`, `ai_tags TEXT` (JSON), `embedding BLOB` (768 floats ◊ 4 bytes), `ai_relevance REAL` em `articles`
+- [x] ConfiguraÁıes ? seÁ„o IA: endpoint (padr„o `http://localhost:11434`), modelo de geraÁ„o, modelo de embeddings, habilitar/desabilitar, bot„o "Testar conex„o"
 
 **Resumo de artigos (`qwen2.5:7b`):**
-- [x] Bot√£o "Resumir" na toolbar do leitor ‚Äî aciona `ai_bridge` com o conte√∫do do artigo
-- [x] Painel recolh√≠vel abaixo da meta bar para exibir o resumo (streaming token a token via sinal PyQt)
-- [x] Cache: resumo salvo em `ai_summary`; n√£o regenera se j√° existir (bot√£o vira "Ver resumo")
+- [x] Bot„o "Resumir" na toolbar do leitor ó aciona `ai_bridge` com o conte˙do do artigo
+- [x] Painel recolhÌvel abaixo da meta bar para exibir o resumo (streaming token a token via sinal PyQt)
+- [x] Cache: resumo salvo em `ai_summary`; n„o regenera se j· existir (bot„o vira "Ver resumo")
 
-**Tags autom√°ticas (`qwen2.5:7b`):**
+**Tags autom·ticas (`qwen2.5:7b`):**
 - [x] Ao abrir artigo sem tags, sugerir tags via `format: "json"` do Ollama
-- [x] Chips de sugest√£o em cor distinta na tags row ‚Äî aceitar clicando, descartar com √ó
+- [x] Chips de sugest„o em cor distinta na tags row ó aceitar clicando, descartar com ◊
 
-**Relev√¢ncia via embeddings (`nomic-embed-text`):**
-- [x] Gerar embedding ao salvar/ler artigo em background ‚Äî armazenar em `embedding BLOB`
-- [x] Perfil de interesses: m√©dia dos embeddings dos artigos lidos/salvos (atualizado incrementalmente)
-- [x] Score de relev√¢ncia = cosine similarity(embedding do artigo, perfil) ‚Üí `ai_relevance REAL`
-- [x] Badge de relev√¢ncia opcional nos article cards (configur√°vel nas Settings)
+**Relev‚ncia via embeddings (`nomic-embed-text`):**
+- [x] Gerar embedding ao salvar/ler artigo em background ó armazenar em `embedding BLOB`
+- [x] Perfil de interesses: mÈdia dos embeddings dos artigos lidos/salvos (atualizado incrementalmente)
+- [x] Score de relev‚ncia = cosine similarity(embedding do artigo, perfil) ? `ai_relevance REAL`
+- [x] Badge de relev‚ncia opcional nos article cards (configur·vel nas Settings)
 
-**Busca sem√¢ntica (`bge-m3:latest`):**
-- [x] Toggle na search overlay para alternar entre FTS5 (palavras-chave) e busca vetorial (sem√¢ntica)
-- [x] Embed a query em tempo real ‚Üí retorna top-N artigos por cosine similarity
+**Busca sem‚ntica (`bge-m3:latest`):**
+- [x] Toggle na search overlay para alternar entre FTS5 (palavras-chave) e busca vetorial (sem‚ntica)
+- [x] Embed a query em tempo real ? retorna top-N artigos por cosine similarity
 
-**An√°lise de vi√©s pol√≠tico (`qwen2.5:7b`):**
-- [ ] Migration: colunas `ai_political_economic REAL` (-1.0 esquerda ‚Üî +1.0 direita) e `ai_political_authority REAL` (-1.0 libert√°rio ‚Üî +1.0 autorit√°rio) em `articles`
-- [ ] Bot√£o "Analisar vi√©s" no leitor ‚Äî retorna JSON `{economic_axis, authority_axis, confidence, reasoning}`
-- [ ] B√∫ssola pol√≠tica (widget 2D) no leitor exibindo a posi√ß√£o do artigo
-- [ ] Agrega√ß√£o por feed na `sources_view` ‚Äî posi√ß√£o m√©dia dos artigos analisados de cada fonte
+**An·lise de viÈs polÌtico (`qwen2.5:7b`):**
+- [ ] Migration: colunas `ai_political_economic REAL` (-1.0 esquerda ? +1.0 direita) e `ai_political_authority REAL` (-1.0 libert·rio ? +1.0 autorit·rio) em `articles`
+- [ ] Bot„o "Analisar viÈs" no leitor ó retorna JSON `{economic_axis, authority_axis, confidence, reasoning}`
+- [ ] B˙ssola polÌtica (widget 2D) no leitor exibindo a posiÁ„o do artigo
+- [ ] AgregaÁ„o por feed na `sources_view` ó posiÁ„o mÈdia dos artigos analisados de cada fonte
 
-**Detec√ß√£o de clickbait (`qwen2.5:7b`):**
-- [x] Migration: coluna `ai_clickbait REAL` (0.0 sem clickbait ‚Üî 1.0 clickbait puro) em `articles`
+**DetecÁ„o de clickbait (`qwen2.5:7b`):**
+- [x] Migration: coluna `ai_clickbait REAL` (0.0 sem clickbait ? 1.0 clickbait puro) em `articles`
 - [x] Score gerado pelo `_AnalyzeWorker` ao abrir artigo; salvo em cache
-- [x] Badge `‚ö†` opcional nos article cards quando `ai_clickbait > 0.6` (configur√°vel nas Settings)
-- [x] Indicador `‚ö† clickbait N%` na meta bar do leitor quando > 60%
+- [x] Badge `?` opcional nos article cards quando `ai_clickbait > 0.6` (configur·vel nas Settings)
+- [x] Indicador `? clickbait N%` na meta bar do leitor quando > 60%
 - [ ] Filtro por score de clickbait na unified feed view
 
-**Cita√ß√£o ABNT + an√°lise 5Ws ao salvar artigo:**
-- [x] Painel colaps√≠vel "Cita√ß√£o & 5Ws" exibido ao salvar artigo (‚òÖ)
-- [x] Cita√ß√£o ABNT gerada dos metadados existentes (autor, t√≠tulo, feed, data, URL, data de acesso)
-- [x] 5Ws (Quem/O qu√™/Quando/Onde/Por qu√™) via `_FiveWsWorker` com `json_format=True`; cache em `ai_5ws TEXT`
+**CitaÁ„o ABNT + an·lise 5Ws ao salvar artigo:**
+- [x] Painel colapsÌvel "CitaÁ„o & 5Ws" exibido ao salvar artigo (?)
+- [x] CitaÁ„o ABNT gerada dos metadados existentes (autor, tÌtulo, feed, data, URL, data de acesso)
+- [x] 5Ws (Quem/O quÍ/Quando/Onde/Por quÍ) via `_FiveWsWorker` com `json_format=True`; cache em `ai_5ws TEXT`
 - [x] Autor do artigo exibido em destaque na meta bar do leitor (`QLabel#readerAuthor`)
 
-**Refatora√ß√£o `_AnalyzeWorker` unificado (`qwen2.5:7b`):**
-- [x] Substituir `_TagSuggestWorker` + `_FiveWsWorker` por `_AnalyzeWorker` (JSON √∫nico ao abrir artigo)
-- [x] JSON de resposta: `{tags, sentiment, clickbait, five_ws}` ‚Äî um call, quatro campos
-- [x] `_SummarizeWorker` mantido separado com streaming (bot√£o "Resumir", inalterado)
-- [x] `save_ai_analysis()` em `feed_manager` persiste tudo em uma transa√ß√£o
+**RefatoraÁ„o `_AnalyzeWorker` unificado (`qwen2.5:7b`):**
+- [x] Substituir `_TagSuggestWorker` + `_FiveWsWorker` por `_AnalyzeWorker` (JSON ˙nico ao abrir artigo)
+- [x] JSON de resposta: `{tags, sentiment, clickbait, five_ws}` ó um call, quatro campos
+- [x] `_SummarizeWorker` mantido separado com streaming (bot„o "Resumir", inalterado)
+- [x] `save_ai_analysis()` em `feed_manager` persiste tudo em uma transaÁ„o
 
 **Sentimento e Tom (`qwen2.5:7b`):**
-- [x] Migration: coluna `ai_sentiment REAL` (-1.0 negativo ‚Üî +1.0 positivo) em `articles`
+- [x] Migration: coluna `ai_sentiment REAL` (-1.0 negativo ? +1.0 positivo) em `articles`
 - [x] Score gerado pelo `_AnalyzeWorker` ao abrir artigo; salvo em cache
-- [x] Borda colorida esquerda nos article cards (verde/vermelho, configur√°vel nas Settings)
-- [x] Indicador `‚óè tom positivo/negativo/neutro` na meta bar do leitor
+- [x] Borda colorida esquerda nos article cards (verde/vermelho, configur·vel nas Settings)
+- [x] Indicador `? tom positivo/negativo/neutro` na meta bar do leitor
 - [ ] Filtro por tom na unified feed view
-- [x] Gr√°fico de tend√™ncia de sentimento no `stats_view` (linha colorida por segmento, √°rea preenchida)
+- [x] Gr·fico de tendÍncia de sentimento no `stats_view` (linha colorida por segmento, ·rea preenchida)
 
-**NER ‚Äî Extra√ß√£o de Entidades (`qwen2.5:7b`):**
+**NER ó ExtraÁ„o de Entidades (`qwen2.5:7b`):**
 - [x] Migration: coluna `ai_entities TEXT` (JSON `{people,orgs,places}`) em `articles`
 - [x] Gerado pelo `_AnalyzeWorker` junto com tags/sentiment/clickbait/5ws
-- [x] Tr√™s mini-charts no `stats_view`: top pessoas, organiza√ß√µes e lugares do per√≠odo
+- [x] TrÍs mini-charts no `stats_view`: top pessoas, organizaÁıes e lugares do perÌodo
 
-**Clustering por t√≥pico (embeddings):**
-- [x] K-means numpy sobre embeddings `nomic-embed-text` (k adaptativo, 5 reinicializa√ß√µes)
-- [x] R√≥tulo por extra√ß√£o de palavras-chave dos t√≠tulos do cluster (sem LLM adicional)
-- [x] Cards de t√≥picos no `stats_view` (√∫ltimos 90 dias ou per√≠odo selecionado)
-- [x] Se√ß√£o "T√≥picos em Destaque" no Dashboard ‚Äî atualizada em tempo real via `analysis_done` signal + debounce 8s; t√≠tulos clic√°veis abrem o leitor
-
----
+**Clustering por tÛpico (embeddings):**
+- [x] K-means numpy sobre embeddings `nomic-embed-text` (k adaptativo, 5 reinicializaÁıes)
+- [x] RÛtulo por extraÁ„o de palavras-chave dos tÌtulos do cluster (sem LLM adicional)
+- [x] Cards de tÛpicos no `stats_view` (˙ltimos 90 dias ou perÌodo selecionado)
+- [x] SeÁ„o "TÛpicos em Destaque" no Dashboard ó atualizada em tempo real via `analysis_done` signal + debounce 8s; tÌtulos clic·veis abrem o leitor
 
 ---
 
-### FASE G ‚Äî Unificar "Salvo" e "Arquivo" em um √∫nico conceito: Arquivar
+---
+
+### FASE G ó Unificar "Salvo" e "Arquivo" em um ˙nico conceito: Arquivar
 
 > Objetivo: eliminar o conceito separado de "Salvo" (favorito no banco).
-> Clicar em ‚òÖ / "Arquivar" faz as duas coisas de uma vez: marca `is_saved=1`
-> no banco E exporta o `.md` em `data/archive/`. Um √∫nico gesto, um √∫nico estado.
-> A aba "Salvos" vira "Arquivados" e reflete exatamente o que est√° no sistema de arquivos.
+> Clicar em ? / "Arquivar" faz as duas coisas de uma vez: marca `is_saved=1`
+> no banco E exporta o `.md` em `data/archive/`. Um ˙nico gesto, um ˙nico estado.
+> A aba "Salvos" vira "Arquivados" e reflete exatamente o que est· no sistema de arquivos.
 
-### G.1 ‚Äî Renomear a√ß√£o e bot√£o no leitor
+### G.1 ó Renomear aÁ„o e bot„o no leitor
 
-- [x] `reader_view.py` ‚Äî bot√£o `_save_btn`: texto muda de "‚òÜ Salvar" / "‚òÖ Salvo"
-      para "‚òÜ Arquivar" / "‚òÖ Arquivado"
-- [x] `reader_view.py` ‚Äî `_on_toggle_saved()`: ao marcar como salvo, chamar
+- [x] `reader_view.py` ó bot„o `_save_btn`: texto muda de "? Salvar" / "? Salvo"
+      para "? Arquivar" / "? Arquivado"
+- [x] `reader_view.py` ó `_on_toggle_saved()`: ao marcar como salvo, chamar
       `archive_manager.export_article(article)` junto; ao desmarcar, deletar o `.md`
       correspondente (silenciosamente, com log de erro)
-- [x] Remover bot√£o "Exportar" separado da `_toolbar_row2` (a√ß√£o agora est√° em Arquivar)
+- [x] Remover bot„o "Exportar" separado da `_toolbar_row2` (aÁ„o agora est· em Arquivar)
 
-### G.2 ‚Äî Renomear aba e view "Salvos" ‚Üí "Arquivados"
+### G.2 ó Renomear aba e view "Salvos" ? "Arquivados"
 
-- [x] `sidebar.py` ‚Äî texto do bot√£o de navega√ß√£o: "Salvos" ‚Üí "Arquivados"
-- [x] `saved_view.py` ‚Äî t√≠tulo e strings internas: "Salvos" ‚Üí "Arquivados"
-- [x] `unified_feed_view.py` ‚Äî sem refer√™ncias vis√≠veis ao usu√°rio (verificado)
+- [x] `sidebar.py` ó texto do bot„o de navegaÁ„o: "Salvos" ? "Arquivados"
+- [x] `saved_view.py` ó tÌtulo e strings internas: "Salvos" ? "Arquivados"
+- [x] `unified_feed_view.py` ó sem referÍncias visÌveis ao usu·rio (verificado)
 
-### G.3 ‚Äî Migrar artigos j√° salvos (sem .md) ao iniciar
+### G.3 ó Migrar artigos j· salvos (sem .md) ao iniciar
 
-- [x] `main_window.py` ‚Äî `_migrate_saved_to_archive()` no startup: exporta artigos
-      com `is_saved=1` que ainda n√£o t√™m `.md` correspondente
+- [x] `main_window.py` ó `_migrate_saved_to_archive()` no startup: exporta artigos
+      com `is_saved=1` que ainda n„o tÍm `.md` correspondente
 
-### G.4 ‚Äî Ajustar ArchiveView
+### G.4 ó Ajustar ArchiveView
 
-- [x] `archive_view.py` ‚Äî remover bot√£o "Exportar artigo atual" √≥rf√£o do header
-- [x] `archive_view.py` ‚Äî mensagem de estado vazio atualizada (sem refer√™ncia ao bot√£o Exportar)
-- [x] `archive_manager.py` ‚Äî adicionar `get_archive_path()` e `delete_archive()` helpers
+- [x] `archive_view.py` ó remover bot„o "Exportar artigo atual" Ûrf„o do header
+- [x] `archive_view.py` ó mensagem de estado vazio atualizada (sem referÍncia ao bot„o Exportar)
+- [x] `archive_manager.py` ó adicionar `get_archive_path()` e `delete_archive()` helpers
 
 ---
 
-### FASE H ‚Äî Indicador de Status do Ollama
+### FASE H ó Indicador de Status do Ollama
 
-> Atualmente n√£o h√° feedback visual enquanto o Ollama est√° conectando/processando ‚Äî
-> o usu√°rio n√£o sabe se a requisi√ß√£o est√° pendente antes do streaming come√ßar.
+> Atualmente n„o h· feedback visual enquanto o Ollama est· conectando/processando ó
+> o usu·rio n„o sabe se a requisiÁ„o est· pendente antes do streaming comeÁar.
 
-### H.1 ‚Äî Indicador na janela de Configura√ß√µes
+### H.1 ó Indicador na janela de ConfiguraÁıes
 
-- [x] `settings_view.py` ‚Üí se√ß√£o IA: `_ollama_conn_lbl` no topo da se√ß√£o;
-      `"‚óè Ollama conectado ¬∑ qwen2.5:7b"` (verde) ou `"‚óã Ollama offline"` (vermelho)
-- [x] Verifica√ß√£o ass√≠ncrona via `_OllamaCheckWorker(QThread)` disparada no `showEvent`;
-      n√£o bloqueia a abertura das Configura√ß√µes
+- [x] `settings_view.py` ? seÁ„o IA: `_ollama_conn_lbl` no topo da seÁ„o;
+      `"? Ollama conectado ∑ qwen2.5:7b"` (verde) ou `"? Ollama offline"` (vermelho)
+- [x] VerificaÁ„o assÌncrona via `_OllamaCheckWorker(QThread)` disparada no `showEvent`;
+      n„o bloqueia a abertura das ConfiguraÁıes
 
-### H.2 ‚Äî Spinner antes do streaming do Resumo
+### H.2 ó Spinner antes do streaming do Resumo
 
-- [x] `reader_view.py` ‚Üí painel de resumo: exibe `"‚ü≥  Aguardando Ollama‚Ä¶"` at√© o primeiro
-      token chegar; substitu√≠do pelo streaming no `_on_summary_token` com flag `_summary_waiting`
+- [x] `reader_view.py` ? painel de resumo: exibe `"?  Aguardando OllamaÖ"` atÈ o primeiro
+      token chegar; substituÌdo pelo streaming no `_on_summary_token` com flag `_summary_waiting`
 
-### H.3 ‚Äî Feedback durante an√°lise em background
+### H.3 ó Feedback durante an·lise em background
 
-- [x] `reader_view.py` ‚Üí meta bar: `_update_analysis_status("running")` j√° exibe
-      `"‚ü≥  analisando‚Ä¶"` via `_analysis_status_lbl` na indicators row
-- [x] Ao t√©rmino: `"done"` ‚Üí `"‚úì  an√°lise conclu√≠da"`, `"error"` ‚Üí `"!  erro na an√°lise"`
+- [x] `reader_view.py` ? meta bar: `_update_analysis_status("running")` j· exibe
+      `"?  analisandoÖ"` via `_analysis_status_lbl` na indicators row
+- [x] Ao tÈrmino: `"done"` ? `"?  an·lise concluÌda"`, `"error"` ? `"!  erro na an·lise"`
 
-### H.4 ‚Äî Badge de status global (sidebar ou statusbar)
+### H.4 ó Badge de status global (sidebar ou statusbar)
 
 - [x] `_ollama_badge` QLabel como widget permanente no `QStatusBar` (direita):
-      `"‚óè  Ollama"` (verde) / `"‚óã  Ollama"` (cinza/vermelho) via object names CSS
+      `"?  Ollama"` (verde) / `"?  Ollama"` (cinza/vermelho) via object names CSS
 - [x] Polling a cada 60s via `_ollama_poll_timer` + `_OllamaPoller(QThread)`;
-      verifica√ß√£o inicial 500ms ap√≥s startup
+      verificaÁ„o inicial 500ms apÛs startup
 
 ---
 
-### FASE I ‚Äî Idioma de exibi√ß√£o e detec√ß√£o de idioma nos artigos
+### FASE I ó Idioma de exibiÁ„o e detecÁ„o de idioma nos artigos
 
-> Objetivo: o usu√°rio escolhe um idioma de exibi√ß√£o nas Configura√ß√µes e todos
-> os t√≠tulos e manchetes s√£o traduzidos automaticamente para esse idioma ao
-> serem exibidos. Cada card tamb√©m indica o idioma original do artigo.
-> Usa o mesmo motor de tradu√ß√£o j√° presente (`deep-translator`).
+> Objetivo: o usu·rio escolhe um idioma de exibiÁ„o nas ConfiguraÁıes e todos
+> os tÌtulos e manchetes s„o traduzidos automaticamente para esse idioma ao
+> serem exibidos. Cada card tambÈm indica o idioma original do artigo.
+> Usa o mesmo motor de traduÁ„o j· presente (`deep-translator`).
 
-### I.1 ‚Äî Detectar e persistir idioma de cada artigo
+### I.1 ó Detectar e persistir idioma de cada artigo
 
-- [x] `models.py` ‚Äî coluna `language TEXT` j√° existe em `Article` (foi adicionada
+- [x] `models.py` ó coluna `language TEXT` j· existe em `Article` (foi adicionada
       na Fase C + migration em `database.py`)
-- [x] `feed_manager.py` ‚Äî `_detect_lang()` via langdetect j√° existe e √© chamado
+- [x] `feed_manager.py` ó `_detect_lang()` via langdetect j· existe e È chamado
       em `save_articles()`; artigos sem idioma ficam `None`
-- [x] `article_card.py` ‚Äî `langBadge` QLabel adicionado √† meta row: exibe c√≥digo ISO
-      em mai√∫sculas (ex: `EN`, `PT`, `ZH`); CSS em day.qss e night.qss
+- [x] `article_card.py` ó `langBadge` QLabel adicionado ‡ meta row: exibe cÛdigo ISO
+      em mai˙sculas (ex: `EN`, `PT`, `ZH`); CSS em day.qss e night.qss
 
-### I.2 ‚Äî Configura√ß√£o de idioma de exibi√ß√£o
+### I.2 ó ConfiguraÁ„o de idioma de exibiÁ„o
 
-- [x] `config.py` ‚Äî `"display_language": ""` j√° existe nos DEFAULTS
-- [x] `settings_view.py` ‚Äî QComboBox "Idioma dos cards" na se√ß√£o Apar√™ncia com
-      idiomas comuns + "Original (sem tradu√ß√£o)"
+- [x] `config.py` ó `"display_language": ""` j· existe nos DEFAULTS
+- [x] `settings_view.py` ó QComboBox "Idioma dos cards" na seÁ„o AparÍncia com
+      idiomas comuns + "Original (sem traduÁ„o)"
 - [x] Salvo via `_cfg.set("display_language", code)` no `_on_display_lang_changed`
 
-### I.3 ‚Äî Tradu√ß√£o autom√°tica dos t√≠tulos na exibi√ß√£o
+### I.3 ó TraduÁ„o autom·tica dos tÌtulos na exibiÁ„o
 
-- [x] `TitleTranslator(QThread)` em `core/title_translator.py` enfileira tradu√ß√µes
+- [x] `TitleTranslator(QThread)` em `core/title_translator.py` enfileira traduÁıes
       via `deep-translator`; emite `title_translated(article_id, text)`
 - [x] Cache persistente por idioma em `data/title_cache_{lang}.json`; carregado
       no startup e salvo no `closeEvent`
-- [x] Tradu√ß√£o ass√≠ncrona: t√≠tulo original exibido imediatamente, substitu√≠do ao
-      chegar o sinal `title_translated` ‚Üí `update_card_title()`
+- [x] TraduÁ„o assÌncrona: tÌtulo original exibido imediatamente, substituÌdo ao
+      chegar o sinal `title_translated` ? `update_card_title()`
 
-### I.4 ‚Äî Tradu√ß√£o no reader (opcional / fase posterior)
+### I.4 ó TraduÁ„o no reader (opcional / fase posterior)
 
-- [x] `reader_view.py` ‚Äî `_on_translate()` verifica `display_language` e usa como
-      destino autom√°tico quando configurado (sem abrir o menu); menu s√≥ aparece
-      quando `display_language` vazio ou artigo j√° est√° no idioma configurado
+- [x] `reader_view.py` ó `_on_translate()` verifica `display_language` e usa como
+      destino autom·tico quando configurado (sem abrir o menu); menu sÛ aparece
+      quando `display_language` vazio ou artigo j· est· no idioma configurado
 
 ---
 
 ### IDEIAS
 
-- [ ] **Detec√ß√£o de evento**: identificar automaticamente que artigos de fontes diferentes cobrem exatamente o mesmo evento do mesmo dia ‚Äî requer clustering temporal + sem√¢ntico combinados (embeddings por janela de tempo + similaridade de t√≠tulo/entidades)
+- [ ] **DetecÁ„o de evento**: identificar automaticamente que artigos de fontes diferentes cobrem exatamente o mesmo evento do mesmo dia ó requer clustering temporal + sem‚ntico combinados (embeddings por janela de tempo + similaridade de tÌtulo/entidades)
 
 ---
 
-### FASE Z ‚Äî Futuro
+### FASE Z ó Futuro
 
-- [ ] Twitter/X quando solu√ß√£o gratuita e est√°vel dispon√≠vel
+- [ ] Twitter/X quando soluÁ„o gratuita e est·vel disponÌvel
 - [ ] Playwright para scraping de sites com JavaScript pesado
 - [ ] Importar/exportar feeds via OPML
-- [ ] Notifica√ß√µes nativas (plyer) para feeds priorit√°rios
+- [ ] NotificaÁıes nativas (plyer) para feeds priorit·rios
 - [ ] Subreddit multis
-- [ ] Mastodon com autentica√ß√£o
-- [ ] Suporte a podcasts (RSS de √°udio com player interno)
-- [ ] Integra√ß√£o com OGMA: salvar artigo diretamente
+- [ ] Mastodon com autenticaÁ„o
+- [ ] Suporte a podcasts (RSS de ·udio com player interno)
+- [ ] IntegraÁ„o com OGMA: salvar artigo diretamente
 - [ ] Regras de auto-tag por palavra-chave
 - [ ] Modo leitura offline (download antecipado)
 
@@ -2522,48 +2522,48 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 ---
 
 
-### Verifica√ß√£o de Sincroniza√ß√£o e Marca√ß√£o de Problemas
+### VerificaÁ„o de SincronizaÁ„o e MarcaÁ„o de Problemas
 
-- [ ] Verificar se lista de fontes e artigos baixados est√° sendo salva na pasta compartilhada (Proton Drive)
-  ‚Äî confirmar que `archive_path` e `data_path` apontam para `sync_root/kosmos/`
+- [ ] Verificar se lista de fontes e artigos baixados est· sendo salva na pasta compartilhada (Proton Drive)
+  ó confirmar que `archive_path` e `data_path` apontam para `sync_root/kosmos/`
 
-### Marca√ß√£o de problemas em artigos
+### MarcaÁ„o de problemas em artigos
 - [ ] Criar mecanismo para marcar problemas dentro de um artigo
-  ‚Äî tipos: scraping incompleto, paywall, conte√∫do cortado, outros (campo livre)
-  ‚Äî efeito: diminuir ranking de relev√¢ncia da fonte automaticamente
-  ‚Äî registrar no log para an√°lise futura de poss√≠veis corre√ß√µes
+  ó tipos: scraping incompleto, paywall, conte˙do cortado, outros (campo livre)
+  ó efeito: diminuir ranking de relev‚ncia da fonte automaticamente
+  ó registrar no log para an·lise futura de possÌveis correÁıes
 
 
-### Integra√ß√£o com LOGOS e Qualidade de IA
+### IntegraÁ„o com LOGOS e Qualidade de IA
 
 
-- [x] Bug: `generate_stream()` bypassa o LOGOS ‚Äî chamar via `ecosystem_client`:
+- [x] Bug: `generate_stream()` bypassa o LOGOS ó chamar via `ecosystem_client`:
   **Motivo:** `ai_bridge.py` linha ~162 chama `self._session.post(f"{self._endpoint}/api/generate")`
   diretamente, sem passar por `_request_llm`. Isso significa que leituras de artigo em streaming
-  (P1) n√£o est√£o registradas no LOGOS e n√£o interrompem P3. O sistema de prioridades fica cego
-  para toda intera√ß√£o do usu√°rio com o reader do KOSMOS.
-  **Implementa√ß√£o (`KOSMOS/app/core/ai_bridge.py`):**
+  (P1) n„o est„o registradas no LOGOS e n„o interrompem P3. O sistema de prioridades fica cego
+  para toda interaÁ„o do usu·rio com o reader do KOSMOS.
+  **ImplementaÁ„o (`KOSMOS/app/core/ai_bridge.py`):**
   1. Substituir o bloco `generate_stream()` por uma chamada a `_request_llm(..., stream=True)`
-     que j√° suporta streaming e retorna um generator de tokens
-  2. Garantir que o `priority=1` seja passado para leituras interativas (o usu√°rio abriu o artigo)
+     que j· suporta streaming e retorna um generator de tokens
+  2. Garantir que o `priority=1` seja passado para leituras interativas (o usu·rio abriu o artigo)
   3. Testar que o LogosPanel mostra P1 ativo durante leitura de artigo
 
-- [x] Bug: `embed()` bypassa o LOGOS ‚Äî endpoint hardcoded na porta 11434:
-  **Motivo:** `ai_bridge.py` linha ~207 chama `self._endpoint` diretamente (porta 11434, n√£o 7072).
-  O `keep_alive: "0"` que o LOGOS injetaria para P3 nunca √© aplicado a embeddings do KOSMOS.
-  **Implementa√ß√£o:**
-  1. `AiBridge.__init__()`: usar como padr√£o o endpoint do LOGOS (7072) se dispon√≠vel,
-     configurado via `ecosystem_client.get_logos_url()` ou vari√°vel de ambiente `LOGOS_URL`
+- [x] Bug: `embed()` bypassa o LOGOS ó endpoint hardcoded na porta 11434:
+  **Motivo:** `ai_bridge.py` linha ~207 chama `self._endpoint` diretamente (porta 11434, n„o 7072).
+  O `keep_alive: "0"` que o LOGOS injetaria para P3 nunca È aplicado a embeddings do KOSMOS.
+  **ImplementaÁ„o:**
+  1. `AiBridge.__init__()`: usar como padr„o o endpoint do LOGOS (7072) se disponÌvel,
+     configurado via `ecosystem_client.get_logos_url()` ou vari·vel de ambiente `LOGOS_URL`
   2. Ou: redirecionar os embeddings do KOSMOS via `ecosystem_client.request_embed()` (a criar),
-     que j√° sabe o endpoint correto e injeta headers `X-App: kosmos`
+     que j· sabe o endpoint correto e injeta headers `X-App: kosmos`
 
 - [x] KOSMOS workers de background: definir prioridade de OS com `os.nice()`:
   **Motivo:** `BackgroundUpdater` e `BackgroundAnalyzer` rodam como QThread com `IdlePriority`,
-  mas esse priority afeta apenas o GIL do Python ‚Äî o kernel do OS ainda aloca CPU normalmente.
-  Durante atualiza√ß√£o de feeds + pr√©-an√°lise simult√¢neos, o sistema pode ficar lento.
+  mas esse priority afeta apenas o GIL do Python ó o kernel do OS ainda aloca CPU normalmente.
+  Durante atualizaÁ„o de feeds + prÈ-an·lise simult‚neos, o sistema pode ficar lento.
   Mesmo fix do Mnemosyne idle indexer.
-  **Implementa√ß√£o (`KOSMOS/app/core/background_updater.py` e `background_analyzer.py`):**
-  No in√≠cio do m√©todo `run()` de cada worker:
+  **ImplementaÁ„o (`KOSMOS/app/core/background_updater.py` e `background_analyzer.py`):**
+  No inÌcio do mÈtodo `run()` de cada worker:
   ```python
   import os, sys, ctypes
   if sys.platform != "win32":
@@ -2573,17 +2573,17 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
           ctypes.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
   ```
 
-- [x] KOSMOS: deduplica√ß√£o de artigos RSS por fingerprint de conte√∫do:
+- [x] KOSMOS: deduplicaÁ„o de artigos RSS por fingerprint de conte˙do:
   **Motivo:** 29% de feeds RSS emitem GUIDs duplicados ou incorretos (FeedHash Corpus 2024, 12.7M
-  itens). Artigos re-publicados com t√≠tulo diferente passam pela checagem de GUID. Sem fingerprint
-  de conte√∫do, o KOSMOS armazena e analisa artigos duplicados, desperdi√ßando chamadas ao Ollama.
-  Fingerprint SHA-256 de (title_norm + date_ISO + url_norm) tem 99.98% de resist√™ncia a colis√µes.
-  Resultado: redu√ß√£o de 92‚Äì100% em duplicatas ingeridas e 11‚Äì19% menos CPU em background.
+  itens). Artigos re-publicados com tÌtulo diferente passam pela checagem de GUID. Sem fingerprint
+  de conte˙do, o KOSMOS armazena e analisa artigos duplicados, desperdiÁando chamadas ao Ollama.
+  Fingerprint SHA-256 de (title_norm + date_ISO + url_norm) tem 99.98% de resistÍncia a colisıes.
+  Resultado: reduÁ„o de 92ñ100% em duplicatas ingeridas e 11ñ19% menos CPU em background.
   Fonte: FeedOps Benchmark 2024; postly.ai/rss-feed/filtering-deduplication
-  **Implementa√ß√£o (`KOSMOS/app/core/database.py` + `feed_fetcher.py`):**
-  1. Adicionar coluna `content_hash TEXT` √† tabela `articles` (migration) ‚Äî pode ser NULL em artigos antigos
+  **ImplementaÁ„o (`KOSMOS/app/core/database.py` + `feed_fetcher.py`):**
+  1. Adicionar coluna `content_hash TEXT` ‡ tabela `articles` (migration) ó pode ser NULL em artigos antigos
   2. Adicionar index: `CREATE INDEX IF NOT EXISTS idx_articles_hash ON articles(content_hash)`
-  3. Na inser√ß√£o de novo artigo, calcular:
+  3. Na inserÁ„o de novo artigo, calcular:
      ```python
      import hashlib, re
      def _article_fingerprint(title: str, pub_date: str, url: str) -> str:
@@ -2592,439 +2592,439 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
          raw        = f"{norm_title}|{pub_date[:10]}|{norm_url}"
          return hashlib.sha256(raw.encode()).hexdigest()
      ```
-  4. Antes de inserir: `SELECT id FROM articles WHERE content_hash = ?` ‚Äî se existir, ignorar
-  5. Para near-duplicatas (mesmo conte√∫do, URL diferente): adicionar SimHash do body
-     (`pip install python-simhash`): armazenar simhash int64, rejeitar se dist√¢ncia de Hamming < 8
+  4. Antes de inserir: `SELECT id FROM articles WHERE content_hash = ?` ó se existir, ignorar
+  5. Para near-duplicatas (mesmo conte˙do, URL diferente): adicionar SimHash do body
+     (`pip install python-simhash`): armazenar simhash int64, rejeitar se dist‚ncia de Hamming < 8
 
 - [ ] KOSMOS: caching ETag/Last-Modified nos feeds RSS:
   **Motivo:** o `FeedFetcher` faz GET incondicional nos feeds a cada ciclo. Servidores RSS que
   suportam cache HTTP retornam 304 Not Modified quando sem novidades, economizando bandwidth e
-  parsing. `feedparser` j√° suporta ETag e Last-Modified nativamente.
-  **Implementa√ß√£o (`KOSMOS/app/core/feed_fetcher.py` e `database.py`):**
-  1. Adicionar colunas `etag TEXT` e `last_modified TEXT` √† tabela `feeds`
+  parsing. `feedparser` j· suporta ETag e Last-Modified nativamente.
+  **ImplementaÁ„o (`KOSMOS/app/core/feed_fetcher.py` e `database.py`):**
+  1. Adicionar colunas `etag TEXT` e `last_modified TEXT` ‡ tabela `feeds`
   2. Na busca do feed: `result = feedparser.parse(url, etag=feed.etag, modified=feed.last_modified)`
   3. Se `result.status == 304`: ignorar (sem novidades), retornar imediatamente
-  4. Sen√£o: processar entries normalmente; salvar `result.etag` e `result.modified` no banco
+  4. Sen„o: processar entries normalmente; salvar `result.etag` e `result.modified` no banco
 
-- [ ] KOSMOS: substituir extra√ß√£o de conte√∫do por Trafilatura na cascade do ecosystem_scraper:
+- [ ] KOSMOS: substituir extraÁ„o de conte˙do por Trafilatura na cascade do ecosystem_scraper:
   **Motivo:** Benchmark ScrapingHub (2024): Trafilatura F1=0.945 vs BeautifulSoup F1=0.665.
-  A diferen√ßa de ~28% em F1 significa menos boilerplate (navega√ß√£o, an√∫ncios, rodap√©s) no texto
-  extra√≠do. Texto mais limpo = embedding de maior qualidade = an√°lise de IA mais precisa.
+  A diferenÁa de ~28% em F1 significa menos boilerplate (navegaÁ„o, an˙ncios, rodapÈs) no texto
+  extraÌdo. Texto mais limpo = embedding de maior qualidade = an·lise de IA mais precisa.
   Fonte: trafilatura.readthedocs.io/en/latest/evaluation; github.com/scrapinghub/article-extraction-benchmark
-  **Implementa√ß√£o (`ecosystem_scraper.py` ‚Äî compartilhado com AKASHA):**
-  1. Adicionar `trafilatura` √†s depend√™ncias do `ecosystem_scraper.py` (ou do projeto que o usa)
-  2. Na fun√ß√£o `extract()`, tentar Trafilatura primeiro antes do readability/bs4:
+  **ImplementaÁ„o (`ecosystem_scraper.py` ó compartilhado com AKASHA):**
+  1. Adicionar `trafilatura` ‡s dependÍncias do `ecosystem_scraper.py` (ou do projeto que o usa)
+  2. Na funÁ„o `extract()`, tentar Trafilatura primeiro antes do readability/bs4:
      ```python
      import trafilatura
      def extract(html: str, url: str = "") -> str:
-         # 1. Trafilatura ‚Äî melhor para artigos de not√≠cia
+         # 1. Trafilatura ó melhor para artigos de notÌcia
          text = trafilatura.extract(html, include_comments=False, include_tables=False)
          if text and len(text) > 200:
              return text
-         # 2. Fallback: readability ‚Üí bs4 ‚Üí html2text (cascade atual)
+         # 2. Fallback: readability ? bs4 ? html2text (cascade atual)
          ...
      ```
-  3. Verificar compatibilidade: Trafilatura √© Python puro, sem AVX2, funciona no Windows 10
+  3. Verificar compatibilidade: Trafilatura È Python puro, sem AVX2, funciona no Windows 10
 
 
 ### Responsividade
 
-### Responsividade ‚Äî KOSMOS
+### Responsividade ó KOSMOS
 
-> KOSMOS √© PyQt6. Responsividade significa: layouts que escalam ao redimensionar a janela,
+> KOSMOS È PyQt6. Responsividade significa: layouts que escalam ao redimensionar a janela,
 > sem elementos que cortam ou somem.
 
 - [ ] **Auditar layout principal (splitter horizontal)**
-  ‚Äî O splitter entre sidebar (feeds) e √°rea principal (artigos) deve ter `setMinimumWidth` adequado
-  ‚Äî Abaixo de ~900px total: testar se o painel de artigos fica ileg√≠vel
-- [ ] **ArticleCard ‚Äî chips de tags em janela estreita**
-  ‚Äî Chips `QLabel#aiTagChip` em `QHBoxLayout` overflow se o card √© muito estreito
-  ‚Äî Fix: limitar `max-width` do chip e aplicar `setText(elided_text)` usando `fontMetrics().elidedText()`
-- [ ] **StatsView ‚Äî gr√°ficos matplotlib em janela pequena**
-  ‚Äî Gr√°ficos ficam ileg√≠veis em < 600px de largura (labels sobrepostos)
-  ‚Äî Fix: `tight_layout()` + `subplots_adjust()`; reduzir tamanho de fonte dos eixos dinamicamente
-- [ ] **Testar em janela 800√ó600 m√≠nima**
+  ó O splitter entre sidebar (feeds) e ·rea principal (artigos) deve ter `setMinimumWidth` adequado
+  ó Abaixo de ~900px total: testar se o painel de artigos fica ilegÌvel
+- [ ] **ArticleCard ó chips de tags em janela estreita**
+  ó Chips `QLabel#aiTagChip` em `QHBoxLayout` overflow se o card È muito estreito
+  ó Fix: limitar `max-width` do chip e aplicar `setText(elided_text)` usando `fontMetrics().elidedText()`
+- [ ] **StatsView ó gr·ficos matplotlib em janela pequena**
+  ó Gr·ficos ficam ilegÌveis em < 600px de largura (labels sobrepostos)
+  ó Fix: `tight_layout()` + `subplots_adjust()`; reduzir tamanho de fonte dos eixos dinamicamente
+- [ ] **Testar em janela 800◊600 mÌnima**
 
 ---
 
 ---
 
-## Mnemosyne ‚Äî Mem√≥ria e RAG
+## Mnemosyne ó MemÛria e RAG
 
-### Padr√µes obrigat√≥rios (n√£o negoci√°veis)
+### Padrıes obrigatÛrios (n„o negoci·veis)
 
-- **Tratamento de erros com tipagem √© prioridade absoluta.**
-  Python: nunca `except Exception` sem re-tipar. Retornar `T | None` ou usar exce√ß√µes espec√≠ficas.
-  Nenhum item est√° "pronto" se o caminho de erro n√£o for tratado com o mesmo cuidado que o caminho feliz.
+- **Tratamento de erros com tipagem È prioridade absoluta.**
+  Python: nunca `except Exception` sem re-tipar. Retornar `T | None` ou usar exceÁıes especÌficas.
+  Nenhum item est· "pronto" se o caminho de erro n„o for tratado com o mesmo cuidado que o caminho feliz.
 
 - **Manter este TODO atualizado.**
-  Acrescentar aqui ANTES de implementar qualquer coisa que n√£o conste.
+  Acrescentar aqui ANTES de implementar qualquer coisa que n„o conste.
   Marcar como `[x]` imediatamente ao terminar cada item.
 
-- **Commit ap√≥s cada item individual do TODO.**
+- **Commit apÛs cada item individual do TODO.**
   Ao marcar um item como `[x]`, fazer commit com mensagem clara.
 
-- **Nunca passar de fase sem aprova√ß√£o expl√≠cita.**
-  Ao terminar todos os itens de uma fase, perguntar antes de come√ßar a pr√≥xima.
+- **Nunca passar de fase sem aprovaÁ„o explÌcita.**
+  Ao terminar todos os itens de uma fase, perguntar antes de comeÁar a prÛxima.
 
 ---
 
-### Fase 1 ‚Äî Qualidade e robustez
+### Fase 1 ó Qualidade e robustez
 
-- [x] `core/errors.py` ‚Äî hierarquia de exce√ß√µes tipadas
-- [x] `TODO.md` ‚Äî este arquivo criado com todas as fases
-- [x] `core/config.py` + `config.json` ‚Äî sistema de configura√ß√£o (modelos, pasta)
-- [x] `core/ollama_client.py` ‚Äî detec√ß√£o din√¢mica de modelos dispon√≠veis no Ollama
-- [x] `core/loaders.py` ‚Äî suporte a `.md` + erros tipados (sem `except Exception` gen√©rico)
-- [x] `core/indexer.py` ‚Äî recebe `AppConfig`, erros tipados, `index_single_file()`
-- [x] `core/rag.py` ‚Äî recebe `AppConfig`, retorna `AskResult` tipado
-- [x] `core/summarizer.py` ‚Äî recebe `AppConfig`, erros tipados
-- [x] `core/__init__.py` ‚Äî re-exportar todos os novos tipos
-- [x] `gui/workers.py` ‚Äî `OllamaCheckWorker`, `IndexFileWorker`, erros espec√≠ficos
-- [x] `gui/main_window.py` ‚Äî sele√ß√£o de modelo, pasta via di√°logo, verifica√ß√£o Ollama
-- [x] `requirements.txt` ‚Äî version pinning + depend√™ncias novas (langchain-ollama, rank-bm25)
-- [x] `README.md` ‚Äî corrigir modelo (qwen3.5:9b, n√£o llama3.2)
+- [x] `core/errors.py` ó hierarquia de exceÁıes tipadas
+- [x] `TODO.md` ó este arquivo criado com todas as fases
+- [x] `core/config.py` + `config.json` ó sistema de configuraÁ„o (modelos, pasta)
+- [x] `core/ollama_client.py` ó detecÁ„o din‚mica de modelos disponÌveis no Ollama
+- [x] `core/loaders.py` ó suporte a `.md` + erros tipados (sem `except Exception` genÈrico)
+- [x] `core/indexer.py` ó recebe `AppConfig`, erros tipados, `index_single_file()`
+- [x] `core/rag.py` ó recebe `AppConfig`, retorna `AskResult` tipado
+- [x] `core/summarizer.py` ó recebe `AppConfig`, erros tipados
+- [x] `core/__init__.py` ó re-exportar todos os novos tipos
+- [x] `gui/workers.py` ó `OllamaCheckWorker`, `IndexFileWorker`, erros especÌficos
+- [x] `gui/main_window.py` ó seleÁ„o de modelo, pasta via di·logo, verificaÁ„o Ollama
+- [x] `requirements.txt` ó version pinning + dependÍncias novas (langchain-ollama, rank-bm25)
+- [x] `README.md` ó corrigir modelo (qwen3.5:9b, n„o llama3.2)
 
-### Fase 2 ‚Äî Gerenciamento de Contexto Pessoal (PCM)
+### Fase 2 ó Gerenciamento de Contexto Pessoal (PCM)
 
-- [x] `core/memory.py` ‚Äî `SessionMemory` + `CollectionIndex` *(criado na Fase 1 ‚Äî depend√™ncia de main_window.py)*
-- [x] `core/watcher.py` ‚Äî `FolderWatcher` via `QFileSystemWatcher` *(criado na Fase 1 ‚Äî depend√™ncia de main_window.py)*
-- [x] `core/tracker.py` ‚Äî rastreamento de hashes SHA-256 para indexa√ß√£o incremental
-- [x] `core/rag.py` ‚Äî hybrid retrieval (sem√¢ntico + BM25 via rank-bm25)
-- [x] `gui/main_window.py` ‚Äî expor controle do watcher na UI (Fase 2 refinamentos)
-- [x] `core/watcher.py` ‚Äî detectar remo√ß√£o e renomea√ß√£o de arquivos (emitir signal `file_removed`)
-- [x] `gui/main_window.py` ‚Äî integrar `CollectionIndex` na UI: preencher "√öltima indexa√ß√£o" e metadata reais no tab Gerenciar
-- [x] `gui/main_window.py` ‚Äî retry autom√°tico de conex√£o ao Ollama sem reiniciar o app
-- [x] `core/memory.py` ‚Äî reescrever para arquitetura em camadas: `history.jsonl` (append-only, uma linha JSON por turno) + `memory.json` com se√ß√µes `collection` (instru√ß√µes edit√°veis pelo utilizador sobre a pasta) e `session` (factos extra√≠dos automaticamente pelo LLM); `build_memory_context()` injeta mem√≥ria no prompt RAG; `compact_session_memory()` usa LLM para sintetizar o hist√≥rico em factos compactos
-- [x] `core/rag.py` + `gui/workers.py` ‚Äî hist√≥rico de conversa multi-turno: √∫ltimos 5 turnos (cap 6 000 chars) formatados e injetados no prompt; `AskWorker` acumula `chat_history`; bot√£o "Nova Conversa" na aba Perguntar reseta hist√≥rico e `SessionMemory`
-- [x] `core/loaders.py` ‚Äî suporte a `.epub`: `_load_epub()` com `ebooklib` + `BeautifulSoup`/`lxml`; 1 `Document` por cap√≠tulo com metadata `title`, `author`, `chapter`; ignorar itens com menos de 100 chars (capa, √≠ndice); atualizar `requirements.txt`
-- [x] `core/ollama_client.py` ‚Äî validar exist√™ncia do modelo escolhido antes de lan√ßar qualquer worker; aviso espec√≠fico com nome do modelo em falta em vez de falha silenciosa 10 segundos depois
-- [x] `gui/main_window.py` ‚Äî badge de pendentes: "X novos / X modificados por indexar" (dourado) ou "‚úì √≠ndice actualizado" (verde); actualizar no arranque, ap√≥s indexa√ß√£o e ao mudar de pasta
-- [x] `gui/main_window.py` ‚Äî indicador de progresso por ficheiro na status bar durante indexa√ß√£o (`IndexWorker` emite `Signal(str)` com nome e posi√ß√£o actual, ex: "Indexando cap3.epub‚Ä¶ (3/12)")
-- [x] **Suporte b√°sico ao vault do Obsidian** *(funda√ß√£o para Fase 6)* ‚Äî vectorstore √∫nico com metadata `source_type: "biblioteca" | "vault"`
+- [x] `core/memory.py` ó `SessionMemory` + `CollectionIndex` *(criado na Fase 1 ó dependÍncia de main_window.py)*
+- [x] `core/watcher.py` ó `FolderWatcher` via `QFileSystemWatcher` *(criado na Fase 1 ó dependÍncia de main_window.py)*
+- [x] `core/tracker.py` ó rastreamento de hashes SHA-256 para indexaÁ„o incremental
+- [x] `core/rag.py` ó hybrid retrieval (sem‚ntico + BM25 via rank-bm25)
+- [x] `gui/main_window.py` ó expor controle do watcher na UI (Fase 2 refinamentos)
+- [x] `core/watcher.py` ó detectar remoÁ„o e renomeaÁ„o de arquivos (emitir signal `file_removed`)
+- [x] `gui/main_window.py` ó integrar `CollectionIndex` na UI: preencher "⁄ltima indexaÁ„o" e metadata reais no tab Gerenciar
+- [x] `gui/main_window.py` ó retry autom·tico de conex„o ao Ollama sem reiniciar o app
+- [x] `core/memory.py` ó reescrever para arquitetura em camadas: `history.jsonl` (append-only, uma linha JSON por turno) + `memory.json` com seÁıes `collection` (instruÁıes edit·veis pelo utilizador sobre a pasta) e `session` (factos extraÌdos automaticamente pelo LLM); `build_memory_context()` injeta memÛria no prompt RAG; `compact_session_memory()` usa LLM para sintetizar o histÛrico em factos compactos
+- [x] `core/rag.py` + `gui/workers.py` ó histÛrico de conversa multi-turno: ˙ltimos 5 turnos (cap 6 000 chars) formatados e injetados no prompt; `AskWorker` acumula `chat_history`; bot„o "Nova Conversa" na aba Perguntar reseta histÛrico e `SessionMemory`
+- [x] `core/loaders.py` ó suporte a `.epub`: `_load_epub()` com `ebooklib` + `BeautifulSoup`/`lxml`; 1 `Document` por capÌtulo com metadata `title`, `author`, `chapter`; ignorar itens com menos de 100 chars (capa, Ìndice); atualizar `requirements.txt`
+- [x] `core/ollama_client.py` ó validar existÍncia do modelo escolhido antes de lanÁar qualquer worker; aviso especÌfico com nome do modelo em falta em vez de falha silenciosa 10 segundos depois
+- [x] `gui/main_window.py` ó badge de pendentes: "X novos / X modificados por indexar" (dourado) ou "? Ìndice actualizado" (verde); actualizar no arranque, apÛs indexaÁ„o e ao mudar de pasta
+- [x] `gui/main_window.py` ó indicador de progresso por ficheiro na status bar durante indexaÁ„o (`IndexWorker` emite `Signal(str)` com nome e posiÁ„o actual, ex: "Indexando cap3.epubÖ (3/12)")
+- [x] **Suporte b·sico ao vault do Obsidian** *(fundaÁ„o para Fase 6)* ó vectorstore ˙nico com metadata `source_type: "biblioteca" | "vault"`
   - `config.json`: campo `vault_dir` opcional
   - `core/loaders.py`: adicionar `source_type` ao metadata de cada chunk
-  - `core/indexer.py`: aceitar m√∫ltiplas fontes com tipos distintos, watchers independentes
-  - `core/rag.py`: par√¢metro de filtro por `source_type` via ChromaDB `where`
+  - `core/indexer.py`: aceitar m˙ltiplas fontes com tipos distintos, watchers independentes
+  - `core/rag.py`: par‚metro de filtro por `source_type` via ChromaDB `where`
   - `gui/main_window.py`: segundo picker de pasta na SetupDialog + seletor "Buscar em: Biblioteca / Vault / Ambos"
 
-### Fase 3 ‚Äî Features core
+### Fase 3 ó Features core
 
-- [x] `core/indexer.py` ‚Äî `update_vectorstore()` incremental completo usando tracker
-- [x] `core/indexer.py` ‚Äî remover chunks de arquivos deletados ou renomeados ao atualizar vectorstore (depende de tracker + signal `file_removed`); usar `collection.delete(where={"source": filepath})` via metadata filter ‚Äî **aten√ß√£o:** `_collection` √© atributo privado do ChromaDB, verificar compatibilidade a cada atualiza√ß√£o do pacote
-- [x] `core/indexer.py` ‚Äî tratar arquivos **modificados** no `update_vectorstore()`: remover chunks antigos do arquivo com `collection.delete(where={"source": filepath})` + re-adicionar chunks novos (evita duplicatas no vectorstore ao re-indexar)
-- [x] `gui/main_window.py` ‚Äî bot√£o "Atualizar √≠ndice" (incremental) no tab Gerenciar
-- [x] `core/summarizer.py` ‚Äî Map-Reduce: modo "stuff" para corpora <12k chars; modo Map-Reduce para corpora grandes (fase Map: resumo por documento; fase Reduce: resumo final combinado); implementar via LCEL puro (langchain 1.x n√£o tem `load_summarize_chain`)
-- [x] `core/rag.py` ‚Äî compress√£o contextual: ap√≥s retrieval, filtrar cada chunk com LLM antes de enviar ao modelo principal (reduz alucina√ß√µes 20‚Äì30%); k aumentado de 4 para 6 (mais candidatos); fallback para chunks originais se todos forem descartados
-- [x] `core/rag.py` ‚Äî Multi-Query Retrieval: reformular a pergunta em 3 varia√ß√µes antes do retrieval e deduplicar resultados por `page_content`; melhora recall para perguntas vagas (+1 LLM call leve)
-- [x] `core/rag.py` ‚Äî HyDE (Hypothetical Document Embeddings): gerar resposta hipot√©tica √† pergunta e embedd√°-la em vez da pergunta original; eficaz para perguntas abstractas ("qual a vis√£o de X sobre Y?"); alternativa ao Multi-Query
-- [x] `gui/main_window.py` ‚Äî compacta√ß√£o autom√°tica ao fechar: `closeEvent` ‚Üí di√°logo "Guardar esta conversa na mem√≥ria?" ‚Üí `CompactMemoryWorker`; elimina necessidade de compactar manualmente (depende do `memory.py` reescrito)
-- [x] `core/tracker.py` ‚Äî metadados de relev√¢ncia por documento: `score_avg` (score m√©dio de similaridade nas √∫ltimas N consultas) e `last_retrieved_at` (timestamp da √∫ltima vez que foi retornado como fonte)
-- [x] `core/rag.py` ‚Äî time-decay de relev√¢ncia: penalizar documentos com `last_retrieved_at` muito antigo no ranking final; par√¢metro `relevance_decay_days` configur√°vel em `AppConfig`
+- [x] `core/indexer.py` ó `update_vectorstore()` incremental completo usando tracker
+- [x] `core/indexer.py` ó remover chunks de arquivos deletados ou renomeados ao atualizar vectorstore (depende de tracker + signal `file_removed`); usar `collection.delete(where={"source": filepath})` via metadata filter ó **atenÁ„o:** `_collection` È atributo privado do ChromaDB, verificar compatibilidade a cada atualizaÁ„o do pacote
+- [x] `core/indexer.py` ó tratar arquivos **modificados** no `update_vectorstore()`: remover chunks antigos do arquivo com `collection.delete(where={"source": filepath})` + re-adicionar chunks novos (evita duplicatas no vectorstore ao re-indexar)
+- [x] `gui/main_window.py` ó bot„o "Atualizar Ìndice" (incremental) no tab Gerenciar
+- [x] `core/summarizer.py` ó Map-Reduce: modo "stuff" para corpora <12k chars; modo Map-Reduce para corpora grandes (fase Map: resumo por documento; fase Reduce: resumo final combinado); implementar via LCEL puro (langchain 1.x n„o tem `load_summarize_chain`)
+- [x] `core/rag.py` ó compress„o contextual: apÛs retrieval, filtrar cada chunk com LLM antes de enviar ao modelo principal (reduz alucinaÁıes 20ñ30%); k aumentado de 4 para 6 (mais candidatos); fallback para chunks originais se todos forem descartados
+- [x] `core/rag.py` ó Multi-Query Retrieval: reformular a pergunta em 3 variaÁıes antes do retrieval e deduplicar resultados por `page_content`; melhora recall para perguntas vagas (+1 LLM call leve)
+- [x] `core/rag.py` ó HyDE (Hypothetical Document Embeddings): gerar resposta hipotÈtica ‡ pergunta e embedd·-la em vez da pergunta original; eficaz para perguntas abstractas ("qual a vis„o de X sobre Y?"); alternativa ao Multi-Query
+- [x] `gui/main_window.py` ó compactaÁ„o autom·tica ao fechar: `closeEvent` ? di·logo "Guardar esta conversa na memÛria?" ? `CompactMemoryWorker`; elimina necessidade de compactar manualmente (depende do `memory.py` reescrito)
+- [x] `core/tracker.py` ó metadados de relev‚ncia por documento: `score_avg` (score mÈdio de similaridade nas ˙ltimas N consultas) e `last_retrieved_at` (timestamp da ˙ltima vez que foi retornado como fonte)
+- [x] `core/rag.py` ó time-decay de relev‚ncia: penalizar documentos com `last_retrieved_at` muito antigo no ranking final; par‚metro `relevance_decay_days` configur·vel em `AppConfig`
 
-### Fase 4 ‚Äî Inspirado no NotebookLM
+### Fase 4 ó Inspirado no NotebookLM
 
-### 4.0 Pr√©-requisito arquitectural
-- [x] `core/rag.py` + `gui/workers.py` ‚Äî migrar de `OllamaLLM` para `ChatOllama` com roles separados:
+### 4.0 PrÈ-requisito arquitectural
+- [x] `core/rag.py` + `gui/workers.py` ó migrar de `OllamaLLM` para `ChatOllama` com roles separados:
   - Persona do Mnemosyne fixa no `SystemMessage`; contexto RAG + pergunta no `HumanMessage`
-  - Resolve "persona drift": em modelos 7B-14B, o contexto RAG pode empurrar a persona para fora da janela de aten√ß√£o, causando respostas gen√©ricas a partir da 4¬™-5¬™ pergunta
-  - Implementar dicion√°rio `PERSONAS` em `core/rag.py` com chaves por modo (`"curador"`, `"socr√°tico"`, `"resumido"`, `"compara√ß√£o"`, `"podcaster"`, `"cr√≠tico"`) ‚Äî torna a Fase 4.6 trivial
-  - **Aten√ß√£o:** com `ChatOllama`, o `chunk` em `llm.stream()` √© `AIMessageChunk`; usar `chunk.content` nos workers em vez de `chunk` directamente; adicionar guard `if chunk.content:` pois chunks de metadata chegam com `content=""` e causam emiss√£o de string vazia
+  - Resolve "persona drift": em modelos 7B-14B, o contexto RAG pode empurrar a persona para fora da janela de atenÁ„o, causando respostas genÈricas a partir da 4™-5™ pergunta
+  - Implementar dicion·rio `PERSONAS` em `core/rag.py` com chaves por modo (`"curador"`, `"socr·tico"`, `"resumido"`, `"comparaÁ„o"`, `"podcaster"`, `"crÌtico"`) ó torna a Fase 4.6 trivial
+  - **AtenÁ„o:** com `ChatOllama`, o `chunk` em `llm.stream()` È `AIMessageChunk`; usar `chunk.content` nos workers em vez de `chunk` directamente; adicionar guard `if chunk.content:` pois chunks de metadata chegam com `content=""` e causam emiss„o de string vazia
   - Prerequisito para 4.6
 
-### 4.1 Cita√ß√£o aprimorada
-- [x] `core/rag.py` ‚Äî retornar trecho exato do chunk junto com o nome do arquivo (n√£o s√≥ o path)
-- [x] `gui/main_window.py` ‚Äî exibir fontes com trecho vis√≠vel, n√£o s√≥ nome do arquivo
-- [x] `gui/main_window.py` ‚Äî indicador de relev√¢ncia por fonte (similaridade do chunk)
+### 4.1 CitaÁ„o aprimorada
+- [x] `core/rag.py` ó retornar trecho exato do chunk junto com o nome do arquivo (n„o sÛ o path)
+- [x] `gui/main_window.py` ó exibir fontes com trecho visÌvel, n„o sÛ nome do arquivo
+- [x] `gui/main_window.py` ó indicador de relev‚ncia por fonte (similaridade do chunk)
 
-### 4.2 Sele√ß√£o de fontes por consulta
-- [x] `gui/main_window.py` ‚Äî listar arquivos indexados com checkboxes; query respeita sele√ß√£o
-- [x] `core/rag.py` ‚Äî suporte a filtro por lista de arquivos via ChromaDB `where` metadata
+### 4.2 SeleÁ„o de fontes por consulta
+- [x] `gui/main_window.py` ó listar arquivos indexados com checkboxes; query respeita seleÁ„o
+- [x] `core/rag.py` ó suporte a filtro por lista de arquivos via ChromaDB `where` metadata
 
-### 4.3 Notebook Guide autom√°tico
-- [x] `core/guide.py` ‚Äî ao terminar indexa√ß√£o, gerar automaticamente:
-  - Resumo geral da cole√ß√£o
-  - 5 perguntas sugeridas sobre o conte√∫do
-- [x] `core/guide.py` ‚Äî modo "P√©rolas Escondidas": identificar os 3 fatos mais surpreendentes ou contraintuitivos dos documentos, com cita√ß√£o directa do texto como evid√™ncia
-- [x] `gui/main_window.py` ‚Äî exibir Guide na aba Resumir ou em painel lateral
+### 4.3 Notebook Guide autom·tico
+- [x] `core/guide.py` ó ao terminar indexaÁ„o, gerar automaticamente:
+  - Resumo geral da coleÁ„o
+  - 5 perguntas sugeridas sobre o conte˙do
+- [x] `core/guide.py` ó modo "PÈrolas Escondidas": identificar os 3 fatos mais surpreendentes ou contraintuitivos dos documentos, com citaÁ„o directa do texto como evidÍncia
+- [x] `gui/main_window.py` ó exibir Guide na aba Resumir ou em painel lateral
 
 ### 4.4 FAQ Generator
-- [x] `core/faq.py` ‚Äî gerar lista de perguntas frequentes a partir dos documentos indexados
-- [x] `gui/workers.py` ‚Äî FaqWorker com streaming token a token
-- [x] `gui/main_window.py` ‚Äî bot√£o "Gerar FAQ" na aba Resumir
+- [x] `core/faq.py` ó gerar lista de perguntas frequentes a partir dos documentos indexados
+- [x] `gui/workers.py` ó FaqWorker com streaming token a token
+- [x] `gui/main_window.py` ó bot„o "Gerar FAQ" na aba Resumir
 
 ### 4.5 Flashcards, Quiz e Estudo
-- [ ] `core/flashcards.py` ‚Äî extrair termos-chave, datas e conceitos e formatar como flashcards (frente/verso)
-- [ ] `core/quiz.py` ‚Äî gerar perguntas de m√∫ltipla escolha com gabarito a partir dos documentos
-- [ ] `core/study_plan.py` ‚Äî Roteiro de Estudos: gerar plano de aprendizado em 3 fases (B√°sico / Intermedi√°rio / Avan√ßado) com conceitos-chave por fase e ordem l√≥gica de estudo
-- [ ] `gui/main_window.py` ‚Äî nova aba "Estudar" com modo Flashcard, modo Quiz e modo Roteiro
+- [ ] `core/flashcards.py` ó extrair termos-chave, datas e conceitos e formatar como flashcards (frente/verso)
+- [ ] `core/quiz.py` ó gerar perguntas de m˙ltipla escolha com gabarito a partir dos documentos
+- [ ] `core/study_plan.py` ó Roteiro de Estudos: gerar plano de aprendizado em 3 fases (B·sico / Intermedi·rio / AvanÁado) com conceitos-chave por fase e ordem lÛgica de estudo
+- [ ] `gui/main_window.py` ó nova aba "Estudar" com modo Flashcard, modo Quiz e modo Roteiro
 
-### 4.6 Modos de consulta configur√°veis
-- [x] `core/rag.py` ‚Äî 6 personas via `PERSONAS` dict + `SystemMessage` separado do contexto RAG: `curador` (padr√£o), `socr√°tico`, `resumido`, `compara√ß√£o`, `podcaster`, `cr√≠tico`
-- [x] `gui/main_window.py` ‚Äî `QComboBox` "Modo:" na aba Chat com tooltip descritivo; valor mapeado para `AskWorker(persona=...)`
+### 4.6 Modos de consulta configur·veis
+- [x] `core/rag.py` ó 6 personas via `PERSONAS` dict + `SystemMessage` separado do contexto RAG: `curador` (padr„o), `socr·tico`, `resumido`, `comparaÁ„o`, `podcaster`, `crÌtico`
+- [x] `gui/main_window.py` ó `QComboBox` "Modo:" na aba Chat com tooltip descritivo; valor mapeado para `AskWorker(persona=...)`
 
-### 4.7 Timeline autom√°tica
-- [ ] *(movido para 4.9 Studio Panel ‚Äî tipo "Linha do Tempo")*
+### 4.7 Timeline autom·tica
+- [ ] *(movido para 4.9 Studio Panel ó tipo "Linha do Tempo")*
 
 ### 4.8 Audio Overview
-- [ ] `core/podcast.py` ‚Äî Script de Podcast: gerar di√°logo escrito entre dois "hosts" cobrindo os temas principais dos documentos; implement√°vel sem TTS como passo interm√©dio
-- [ ] `gui/main_window.py` ‚Äî bot√£o "Gerar Script de Podcast" na aba Resumir (exporta como `.md` ou `.txt`)
-- [ ] Pesquisar op√ß√µes de TTS offline (ex: Kokoro, Piper TTS) para converter script em √°udio
-- [ ] `core/audio.py` ‚Äî gerar √°udio a partir do script via TTS local (depende do item anterior)
-- [ ] `gui/main_window.py` ‚Äî bot√£o "Ouvir resumo" com player embutido
+- [ ] `core/podcast.py` ó Script de Podcast: gerar di·logo escrito entre dois "hosts" cobrindo os temas principais dos documentos; implement·vel sem TTS como passo intermÈdio
+- [ ] `gui/main_window.py` ó bot„o "Gerar Script de Podcast" na aba Resumir (exporta como `.md` ou `.txt`)
+- [ ] Pesquisar opÁıes de TTS offline (ex: Kokoro, Piper TTS) para converter script em ·udio
+- [ ] `core/audio.py` ó gerar ·udio a partir do script via TTS local (depende do item anterior)
+- [ ] `gui/main_window.py` ó bot„o "Ouvir resumo" com player embutido
 
-### 4.9 Studio Panel ‚Äî Gera√ß√£o de Documentos
+### 4.9 Studio Panel ó GeraÁ„o de Documentos
 
-> **Conceito:** Um painel √∫nico na aba An√°lise onde a usu√°ria escolhe o *tipo de documento* a gerar e clica em "Gerar". Equivalente ao Studio Panel do NotebookLM. Cada tipo tem seu pr√≥prio `core/*.py` mas todos passam pelo mesmo ponto de entrada na UI.
+> **Conceito:** Um painel ˙nico na aba An·lise onde a usu·ria escolhe o *tipo de documento* a gerar e clica em "Gerar". Equivalente ao Studio Panel do NotebookLM. Cada tipo tem seu prÛprio `core/*.py` mas todos passam pelo mesmo ponto de entrada na UI.
 >
-> **J√° implementado (n√£o entram no Studio Panel, s√£o autom√°ticos):**
-> - `SummarizeWorker` ‚Üí resumo geral (aba Resumir)
-> - `FaqWorker` ‚Üí FAQ (aba Resumir ‚Äî se√ß√£o 4.4)
-> - `GuideWorker` ‚Üí Notebook Guide autom√°tico p√≥s-indexa√ß√£o (resumo + perguntas sugeridas, gerado internamente)
+> **J· implementado (n„o entram no Studio Panel, s„o autom·ticos):**
+> - `SummarizeWorker` ? resumo geral (aba Resumir)
+> - `FaqWorker` ? FAQ (aba Resumir ó seÁ„o 4.4)
+> - `GuideWorker` ? Notebook Guide autom·tico pÛs-indexaÁ„o (resumo + perguntas sugeridas, gerado internamente)
 
 #### UI do Studio Panel
-- [x] `gui/main_window.py` ‚Äî pill "Studio" na aba An√°lise; `QComboBox` com 9 tipos; bot√£o "Gerar" (`sendBtn`); `QTextEdit` read-only com streaming; bot√£o "Exportar .md" com `QFileDialog`; `StudioWorker` em `workers.py` com dispatcher por tipo via lazy import
+- [x] `gui/main_window.py` ó pill "Studio" na aba An·lise; `QComboBox` com 9 tipos; bot„o "Gerar" (`sendBtn`); `QTextEdit` read-only com streaming; bot„o "Exportar .md" com `QFileDialog`; `StudioWorker` em `workers.py` com dispatcher por tipo via lazy import
 
 #### Briefing Document
-- [x] `core/briefing.py` ‚Äî `iter_briefing()`: stuff (<12k chars) ou map-reduce; 4 se√ß√µes fixas: Temas Principais, Achados, Insights Acion√°veis, Diverg√™ncias e Limita√ß√µes; `BriefingError` adicionado a `errors.py`
-- [x] Integrar no Studio Panel como tipo `"Briefing"` ‚Äî via `_STUDIO_DISPATCH` em workers.py
+- [x] `core/briefing.py` ó `iter_briefing()`: stuff (<12k chars) ou map-reduce; 4 seÁıes fixas: Temas Principais, Achados, Insights Acion·veis, DivergÍncias e LimitaÁıes; `BriefingError` adicionado a `errors.py`
+- [x] Integrar no Studio Panel como tipo `"Briefing"` ó via `_STUDIO_DISPATCH` em workers.py
 
-#### Relat√≥rio de Pesquisa Completo
-- [x] `core/report.py` ‚Äî `iter_report()`: stuff (<10k chars) ou map-reduce; fase Map extrai temas/args/dados por fonte; fase Reduce gera 6 se√ß√µes fixas em Markdown: Sum√°rio Executivo, Temas e Findings, An√°lise por Fonte, Converg√™ncias/Diverg√™ncias, Lacunas, Refer√™ncias; `ReportError` definido no pr√≥prio m√≥dulo
-- [x] Integrar no Studio Panel como tipo `"Relat√≥rio"` ‚Äî via `_STUDIO_DISPATCH`
-- [ ] Export PDF via `weasyprint` (pesquisar viabilidade ‚Äî baixa prioridade)
+#### RelatÛrio de Pesquisa Completo
+- [x] `core/report.py` ó `iter_report()`: stuff (<10k chars) ou map-reduce; fase Map extrai temas/args/dados por fonte; fase Reduce gera 6 seÁıes fixas em Markdown: Sum·rio Executivo, Temas e Findings, An·lise por Fonte, ConvergÍncias/DivergÍncias, Lacunas, ReferÍncias; `ReportError` definido no prÛprio mÛdulo
+- [x] Integrar no Studio Panel como tipo `"RelatÛrio"` ó via `_STUDIO_DISPATCH`
+- [ ] Export PDF via `weasyprint` (pesquisar viabilidade ó baixa prioridade)
 
 #### Study Guide Estruturado
-- [x] `core/study_guide.py` ‚Äî `iter_study_guide()`: 4 se√ß√µes ‚Äî Conceitos-Chave (defini√ß√£o 2-3 frases), Termos T√©cnicos (gloss√°rio), Quest√µes de Revis√£o (8-12 perguntas abertas), T√≥picos para Aprofundar; stuff ou map-reduce
-- [x] Integrar no Studio Panel como tipo `"Guia de Estudo"` ‚Äî via `_STUDIO_DISPATCH`
+- [x] `core/study_guide.py` ó `iter_study_guide()`: 4 seÁıes ó Conceitos-Chave (definiÁ„o 2-3 frases), Termos TÈcnicos (gloss·rio), Questıes de Revis„o (8-12 perguntas abertas), TÛpicos para Aprofundar; stuff ou map-reduce
+- [x] Integrar no Studio Panel como tipo `"Guia de Estudo"` ó via `_STUDIO_DISPATCH`
 
 #### Table of Contents
-- [x] `core/toc.py` ‚Äî `iter_toc()`: fase Map lista temas por fonte; fase Reduce consolida em hierarquia `## Tema > - Subtema > - T√≥pico` com m√°ximo 8 temas principais; stuff ou map-reduce
-- [x] Integrar no Studio Panel como tipo `"√çndice de Temas"` ‚Äî via `_STUDIO_DISPATCH`
+- [x] `core/toc.py` ó `iter_toc()`: fase Map lista temas por fonte; fase Reduce consolida em hierarquia `## Tema > - Subtema > - TÛpico` com m·ximo 8 temas principais; stuff ou map-reduce
+- [x] Integrar no Studio Panel como tipo `"Õndice de Temas"` ó via `_STUDIO_DISPATCH`
 
 #### Timeline
-- [x] `core/timeline.py` ‚Äî `iter_timeline()`: fase Map extrai eventos datados por fonte; fase Reduce consolida e ordena cronologicamente; formato `- **[data]** ‚Äî [evento]`; query de retrieval favorece docs com datas; temperatura 0.0 para precis√£o factual
-- [x] Integrar no Studio Panel como tipo `"Linha do Tempo"` ‚Äî via `_STUDIO_DISPATCH`
+- [x] `core/timeline.py` ó `iter_timeline()`: fase Map extrai eventos datados por fonte; fase Reduce consolida e ordena cronologicamente; formato `- **[data]** ó [evento]`; query de retrieval favorece docs com datas; temperatura 0.0 para precis„o factual
+- [x] Integrar no Studio Panel como tipo `"Linha do Tempo"` ó via `_STUDIO_DISPATCH`
 
 #### Blog Post
-- [x] `core/blogpost.py` ‚Äî `iter_blogpost()`: temperatura 0.5 para escrita criativa; fase Map extrai pontos interessantes e exemplos; fase Reduce gera texto corrido com t√≠tulo criativo, introdu√ß√£o, 3-5 par√°grafos de desenvolvimento e conclus√£o ‚Äî sem bullet points
-- [x] Integrar no Studio Panel como tipo `"Blog Post"` ‚Äî via `_STUDIO_DISPATCH`
+- [x] `core/blogpost.py` ó `iter_blogpost()`: temperatura 0.5 para escrita criativa; fase Map extrai pontos interessantes e exemplos; fase Reduce gera texto corrido com tÌtulo criativo, introduÁ„o, 3-5 par·grafos de desenvolvimento e conclus„o ó sem bullet points
+- [x] Integrar no Studio Panel como tipo `"Blog Post"` ó via `_STUDIO_DISPATCH`
 
 #### Mind Map
-- [x] `core/mindmap.py` ‚Äî `iter_mindmap()`: fase Map extrai hierarquia por fonte; fase Reduce gera bloco `\`\`\`mermaid mindmap\`\`\`` com `root((Tema))`, m√°ximo 6 ramos, 3-4 subt√≥picos; pronto para Obsidian/GitHub/VS Code
-- [x] Integrar no Studio Panel como tipo `"Mind Map"` ‚Äî via `_STUDIO_DISPATCH`; export via bot√£o "Exportar .md" j√° existente
-- [ ] `requirements.txt` ‚Äî avaliar `graphviz` para SVG embutido no Qt (baixa prioridade)
+- [x] `core/mindmap.py` ó `iter_mindmap()`: fase Map extrai hierarquia por fonte; fase Reduce gera bloco `\`\`\`mermaid mindmap\`\`\`` com `root((Tema))`, m·ximo 6 ramos, 3-4 subtÛpicos; pronto para Obsidian/GitHub/VS Code
+- [x] Integrar no Studio Panel como tipo `"Mind Map"` ó via `_STUDIO_DISPATCH`; export via bot„o "Exportar .md" j· existente
+- [ ] `requirements.txt` ó avaliar `graphviz` para SVG embutido no Qt (baixa prioridade)
 
 #### Data Tables
-- [x] `core/tables.py` ‚Äî `iter_tables(schema=...)`: sempre map-reduce para cobertura completa; fase Map extrai entidades por fonte conforme schema livre; fase Reduce consolida em tabela Markdown `| col | col |`; temperatura 0.0 para precis√£o; `schema` passado como kwarg pelo StudioWorker
-- [x] Integrar no Studio Panel como tipo `"Tabela de Dados"` ‚Äî campo de schema vis√≠vel s√≥ neste tipo; `QTableWidget` com headers din√¢micos; parser de tabela Markdown; bot√£o "Exportar CSV" via `csv.writer`
+- [x] `core/tables.py` ó `iter_tables(schema=...)`: sempre map-reduce para cobertura completa; fase Map extrai entidades por fonte conforme schema livre; fase Reduce consolida em tabela Markdown `| col | col |`; temperatura 0.0 para precis„o; `schema` passado como kwarg pelo StudioWorker
+- [x] Integrar no Studio Panel como tipo `"Tabela de Dados"` ó campo de schema visÌvel sÛ neste tipo; `QTableWidget` com headers din‚micos; parser de tabela Markdown; bot„o "Exportar CSV" via `csv.writer`
 
 #### Slide Deck (baixa prioridade)
-- [x] `core/slides.py` ‚Äî `iter_slides()`: slides separados por `---`, t√≠tulo `#`, conte√∫do `##` + bullet points; 6-10 slides; compat√≠vel com Marp/reveal.js; stuff ou map-reduce
-- [x] Integrar no Studio Panel como tipo `"Slides"` ‚Äî via `_STUDIO_DISPATCH`
+- [x] `core/slides.py` ó `iter_slides()`: slides separados por `---`, tÌtulo `#`, conte˙do `##` + bullet points; 6-10 slides; compatÌvel com Marp/reveal.js; stuff ou map-reduce
+- [x] Integrar no Studio Panel como tipo `"Slides"` ó via `_STUDIO_DISPATCH`
 
-### Fase 5 ‚Äî UI e design
+### Fase 5 ó UI e design
 
-- [x] `gui/styles.qss` ‚Äî fontes do ecossistema (IM Fell English, Special Elite, Courier Prime)
-- [x] `gui/styles.qss` ‚Äî visual rico: inputs estilo ficha de biblioteca, cards de resultado
-- [x] `gui/styles.qss` ‚Äî Design Bible v2.0: paleta "Papel ao Sol da Manh√£", border-radius 2px, bot√µes/tabs/scrollbars completos
-- [x] `gui/main_window.py` ‚Äî remover hardcodes de cor legados; objectNames para ollamaBanner, folderLabel, cancelBtn, similarLabel; cores din√¢micas de badge/watcher mapeadas para o ecossistema
+- [x] `gui/styles.qss` ó fontes do ecossistema (IM Fell English, Special Elite, Courier Prime)
+- [x] `gui/styles.qss` ó visual rico: inputs estilo ficha de biblioteca, cards de resultado
+- [x] `gui/styles.qss` ó Design Bible v2.0: paleta "Papel ao Sol da Manh„", border-radius 2px, botıes/tabs/scrollbars completos
+- [x] `gui/main_window.py` ó remover hardcodes de cor legados; objectNames para ollamaBanner, folderLabel, cancelBtn, similarLabel; cores din‚micas de badge/watcher mapeadas para o ecossistema
 
-### Fase 6 ‚Äî Cole√ß√µes Duais: Segunda Mem√≥ria & Arquivo
+### Fase 6 ó ColeÁıes Duais: Segunda MemÛria & Arquivo
 
-> **Princ√≠pio central:** Obsidian √© uma extens√£o do teu pr√≥prio c√©rebro ‚Äî notas pessoais, pensamentos em evolu√ß√£o, conhecimento constru√≠do por ti. A Biblioteca √© um arquivo de vozes externas ‚Äî textos escritos por m√∫ltiplas pessoas, com perspectivas possivelmente contradit√≥rias. Esta distin√ß√£o muda a *rela√ß√£o epist√©mica* com o conte√∫do e, portanto, o comportamento do Mnemosyne.
+> **PrincÌpio central:** Obsidian È uma extens„o do teu prÛprio cÈrebro ó notas pessoais, pensamentos em evoluÁ„o, conhecimento construÌdo por ti. A Biblioteca È um arquivo de vozes externas ó textos escritos por m˙ltiplas pessoas, com perspectivas possivelmente contraditÛrias. Esta distinÁ„o muda a *relaÁ„o epistÈmica* com o conte˙do e, portanto, o comportamento do Mnemosyne.
 
-### Arquitetura de Cole√ß√µes
-- [x] `core/collections.py` ‚Äî `CollectionType` (enum: `VAULT` | `LIBRARY`), `CollectionConfig` (dataclass: `name`, `path`, `type`, `enabled`, `source`, `ecosystem_key`); `sync_ecosystem_collections()`, `available_ecosystem_paths()`; migra√ß√£o autom√°tica do formato legado `{watched_dir, vault_dir}`
-- [x] `core/errors.py` ‚Äî exce√ß√µes novas: `CollectionNotFoundError`, `ObsidianVaultError`, `FrontmatterParseError`
+### Arquitetura de ColeÁıes
+- [x] `core/collections.py` ó `CollectionType` (enum: `VAULT` | `LIBRARY`), `CollectionConfig` (dataclass: `name`, `path`, `type`, `enabled`, `source`, `ecosystem_key`); `sync_ecosystem_collections()`, `available_ecosystem_paths()`; migraÁ„o autom·tica do formato legado `{watched_dir, vault_dir}`
+- [x] `core/errors.py` ó exceÁıes novas: `CollectionNotFoundError`, `ObsidianVaultError`, `FrontmatterParseError`
 
-### Vault Obsidian (Segunda Mem√≥ria)
-- [x] `core/loaders.py` ‚Äî loader Obsidian completo: `python-frontmatter` para YAML; metadata por nota: `title`, `tags`, `aliases`, `wikilinks`; regex cobre 4 formatos de wikilink; ignorar `.obsidian/`, `templates/`, `attachments/`, `.trash/`; notas com menos de 50 chars de corpo ignoradas
-- [x] `core/loaders.py` ‚Äî chunking por cabe√ßalho `##` para notas `.md`: `_split_by_heading()` ‚Äî 1 nota = 1 ou N chunks por sec√ß√£o
-- [x] `core/rag.py` ‚Äî seguimento de wiki-links: `_follow_wikilinks()` l√™ notas ligadas e injeta primeiros 300 chars como contexto secund√°rio no prompt
-- [x] `core/rag.py` ‚Äî prompt do Vault: `PERSONAS_VAULT` com tom introspectivo ‚Äî "Nas tuas notas sobre X, escreveste que‚Ä¶"; cita t√≠tulo da nota, n√£o o caminho
-- [x] `core/memory.py` ‚Äî sec√ß√£o `collection` do Vault descreve o *teu estilo de pensar* (temas recorrentes, forma de estruturar ideias, l√≠ngua preferida para reflectir), diferente da Biblioteca que descreve dom√≠nio de conhecimento externo
+### Vault Obsidian (Segunda MemÛria)
+- [x] `core/loaders.py` ó loader Obsidian completo: `python-frontmatter` para YAML; metadata por nota: `title`, `tags`, `aliases`, `wikilinks`; regex cobre 4 formatos de wikilink; ignorar `.obsidian/`, `templates/`, `attachments/`, `.trash/`; notas com menos de 50 chars de corpo ignoradas
+- [x] `core/loaders.py` ó chunking por cabeÁalho `##` para notas `.md`: `_split_by_heading()` ó 1 nota = 1 ou N chunks por secÁ„o
+- [x] `core/rag.py` ó seguimento de wiki-links: `_follow_wikilinks()` lÍ notas ligadas e injeta primeiros 300 chars como contexto secund·rio no prompt
+- [x] `core/rag.py` ó prompt do Vault: `PERSONAS_VAULT` com tom introspectivo ó "Nas tuas notas sobre X, escreveste queÖ"; cita tÌtulo da nota, n„o o caminho
+- [x] `core/memory.py` ó secÁ„o `collection` do Vault descreve o *teu estilo de pensar* (temas recorrentes, forma de estruturar ideias, lÌngua preferida para reflectir), diferente da Biblioteca que descreve domÌnio de conhecimento externo
 
 ### Biblioteca (Arquivo de Vozes Externas)
-- [x] `core/rag.py` ‚Äî prompt da Biblioteca: `PERSONAS` com tom acad√©mico ‚Äî "Em *[T√≠tulo]* de [Autor], encontra-se que‚Ä¶"; se autores divergirem, apresentar perspectivas em confronto
-- [x] `core/loaders.py` ‚Äî garantir metadata `author` e `title` em todos os loaders (PDF, EPUB, DOCX)
+- [x] `core/rag.py` ó prompt da Biblioteca: `PERSONAS` com tom acadÈmico ó "Em *[TÌtulo]* de [Autor], encontra-se queÖ"; se autores divergirem, apresentar perspectivas em confronto
+- [x] `core/loaders.py` ó garantir metadata `author` e `title` em todos os loaders (PDF, EPUB, DOCX)
 
-### Integra√ß√£o autom√°tica do ecossistema
-- [x] `core/collections.py` ‚Äî `ECOSYSTEM_SOURCES` define KOSMOS, AKASHA e Hermes (AETHER exclu√≠do); `sync_ecosystem_collections()` l√™ `ecosystem.json` automaticamente a cada `load_config()`
-- [x] `gui/main_window.py` ‚Äî `SetupDialog` com toggles (checkboxes) por fonte detectada em vez do antigo bot√£o "Sugest√µes do ecossistema"
-- [x] `core/config.py` ‚Äî `ecosystem_enabled: dict[str, bool]` persiste estado ligado/desligado por fonte; `_migrate_legacy()` converte formato antigo para cole√ß√µes
+### IntegraÁ„o autom·tica do ecossistema
+- [x] `core/collections.py` ó `ECOSYSTEM_SOURCES` define KOSMOS, AKASHA e Hermes (AETHER excluÌdo); `sync_ecosystem_collections()` lÍ `ecosystem.json` automaticamente a cada `load_config()`
+- [x] `gui/main_window.py` ó `SetupDialog` com toggles (checkboxes) por fonte detectada em vez do antigo bot„o "Sugestıes do ecossistema"
+- [x] `core/config.py` ó `ecosystem_enabled: dict[str, bool]` persiste estado ligado/desligado por fonte; `_migrate_legacy()` converte formato antigo para coleÁıes
 
-### Interface de Gest√£o de Cole√ß√µes
-- [x] `gui/main_window.py` ‚Äî selector de cole√ß√£o na sidebar: `QComboBox` com √≠cone de tipo (`√∞≈∏‚Äù¬Æ VAULT` / `√∞≈∏‚Äú≈° BIBLIOTECA`); trocar de cole√ß√£o carrega vectorstore + mem√≥ria + reseta `chat_history`
-- [x] `gui/main_window.py` ‚Äî di√°logo "Nova Cole√ß√£o": campos nome, caminho (com bot√£o "‚Ä¶"), tipo (radio Vault/Biblioteca); auto-detectar pasta `.obsidian/` e pr√©-selecionar tipo
-- [x] `gui/main_window.py` ‚Äî aba Cole√ß√µes no tab Gerenciar: lista com nome, tipo, caminho e estado do √≠ndice; bot√µes editar/remover/indexar agora
+### Interface de Gest„o de ColeÁıes
+- [x] `gui/main_window.py` ó selector de coleÁ„o na sidebar: `QComboBox` com Ìcone de tipo (`üîÆ VAULT` / `üìö BIBLIOTECA`); trocar de coleÁ„o carrega vectorstore + memÛria + reseta `chat_history`
+- [x] `gui/main_window.py` ó di·logo "Nova ColeÁ„o": campos nome, caminho (com bot„o "Ö"), tipo (radio Vault/Biblioteca); auto-detectar pasta `.obsidian/` e prÈ-selecionar tipo
+- [x] `gui/main_window.py` ó aba ColeÁıes no tab Gerenciar: lista com nome, tipo, caminho e estado do Ìndice; botıes editar/remover/indexar agora
 
 ---
 
 ### Redesign de Interface
 
-- [x] **Reformula√ß√£o completa da UI** (aprovada) ‚Äî sidebar + painel principal; sem abas; modo escuro (#12161E); fontes do ecossistema aplicadas; design system consistente com DESIGN_BIBLE.txt
-- [x] **Ajuste de legibilidade** ‚Äî fontes aumentadas conforme Design Bible: corpo 13px, inputs/answerText IM Fell English 14‚Äì15px, sidebarBrand 24px, letter-spacing corrigido nos labels e bot√µes
-- [x] **Toggle dia/noite** ‚Äî bot√£o "‚òÄ Modo Dia / ‚òΩ Modo Noite" na sidebar inferior; `styles_light.qss` criado com paleta "Papel ao Sol da Manh√£"; `dark_mode` persistido em config
+- [x] **ReformulaÁ„o completa da UI** (aprovada) ó sidebar + painel principal; sem abas; modo escuro (#12161E); fontes do ecossistema aplicadas; design system consistente com DESIGN_BIBLE.txt
+- [x] **Ajuste de legibilidade** ó fontes aumentadas conforme Design Bible: corpo 13px, inputs/answerText IM Fell English 14ñ15px, sidebarBrand 24px, letter-spacing corrigido nos labels e botıes
+- [x] **Toggle dia/noite** ó bot„o "? Modo Dia / ? Modo Noite" na sidebar inferior; `styles_light.qss` criado com paleta "Papel ao Sol da Manh„"; `dark_mode` persistido em config
 
 ### Barra de progresso e alinhamento visual com o ecossistema
 
-> O Mnemosyne foi feito em PySide6 em vez de PyQt6 (como KOSMOS e Hermes), e usa `styles.qss` pr√≥prio em vez do `ecosystem_qt.py`. A diferen√ßa visual percebida vem principalmente de: (1) o `.qss` do Mnemosyne n√£o partilha o sistema de tokens do `ecosystem_qt.py`; (2) a barra de progresso e os feedbacks de indexa√ß√£o est√£o escondidos na barra inferior da janela (statusBar), que trunca nomes de arquivo longos e n√£o tem indicador visual de avan√ßo real.
+> O Mnemosyne foi feito em PySide6 em vez de PyQt6 (como KOSMOS e Hermes), e usa `styles.qss` prÛprio em vez do `ecosystem_qt.py`. A diferenÁa visual percebida vem principalmente de: (1) o `.qss` do Mnemosyne n„o partilha o sistema de tokens do `ecosystem_qt.py`; (2) a barra de progresso e os feedbacks de indexaÁ„o est„o escondidos na barra inferior da janela (statusBar), que trunca nomes de arquivo longos e n„o tem indicador visual de avanÁo real.
 
-- [x] **Barra de progresso durante indexa√ß√£o** ‚Äî substituir a statusBar por um widget dedicado na sidebar: `QProgressBar` com valor real (x/y arquivos), nome do arquivo atual numa linha acima (com elide no meio para n√£o cortar o nome), e bot√£o "Interromper" vis√≠vel ao lado ‚Äî tudo vis√≠vel sem depender da barra inferior
-- [x] **Redesign completo da UI para paridade com o ecossistema** ‚Äî migrar `styles.qss` do Mnemosyne para usar os mesmos tokens de cor do `ecosystem_qt.py` (`build_qss()`), adaptado para PySide6; aplicar as mesmas fontes, espa√ßamentos e padr√µes visuais dos outros apps; resultado: Mnemosyne visualmente consistente com KOSMOS/Hermes mesmo sendo PySide6 em vez de PyQt6
+- [x] **Barra de progresso durante indexaÁ„o** ó substituir a statusBar por um widget dedicado na sidebar: `QProgressBar` com valor real (x/y arquivos), nome do arquivo atual numa linha acima (com elide no meio para n„o cortar o nome), e bot„o "Interromper" visÌvel ao lado ó tudo visÌvel sem depender da barra inferior
+- [x] **Redesign completo da UI para paridade com o ecossistema** ó migrar `styles.qss` do Mnemosyne para usar os mesmos tokens de cor do `ecosystem_qt.py` (`build_qss()`), adaptado para PySide6; aplicar as mesmas fontes, espaÁamentos e padrıes visuais dos outros apps; resultado: Mnemosyne visualmente consistente com KOSMOS/Hermes mesmo sendo PySide6 em vez de PyQt6
 
-### Sess√µes de Chat Nomeadas
+### Sessıes de Chat Nomeadas
 
-> Contexto: hoje existe apenas um √∫nico chat ativo por vez (`history.jsonl`). N√£o h√° como nomear, salvar ou retomar conversas anteriores.
+> Contexto: hoje existe apenas um ˙nico chat ativo por vez (`history.jsonl`). N„o h· como nomear, salvar ou retomar conversas anteriores.
 
-- [x] `core/memory.py` ‚Äî adicionar conceito de `Session`: cada sess√£o tem id √∫nico (uuid4 curto), t√≠tulo edit√°vel, timestamp de cria√ß√£o/√∫ltima atividade; `history.jsonl` passa a ser `sessions/{id}.jsonl`
-- [x] `core/memory.py` ‚Äî `list_sessions()` retorna sess√µes ordenadas por √∫ltima atividade; `load_session(id)`, `new_session()`, `delete_session(id)`
-- [x] `gui/main_window.py` ‚Äî painel de sess√µes na sidebar: lista de conversas anteriores com t√≠tulo e data; clique carrega sess√£o; bot√£o "+" cria nova; bot√£o lixeira apaga
-- [x] `gui/main_window.py` ‚Äî auto-t√≠tulo da sess√£o: usa a primeira pergunta como t√≠tulo provis√≥rio (truncado a 60 chars); edit√°vel via duplo-clique na sidebar
-
----
+- [x] `core/memory.py` ó adicionar conceito de `Session`: cada sess„o tem id ˙nico (uuid4 curto), tÌtulo edit·vel, timestamp de criaÁ„o/˙ltima atividade; `history.jsonl` passa a ser `sessions/{id}.jsonl`
+- [x] `core/memory.py` ó `list_sessions()` retorna sessıes ordenadas por ˙ltima atividade; `load_session(id)`, `new_session()`, `delete_session(id)`
+- [x] `gui/main_window.py` ó painel de sessıes na sidebar: lista de conversas anteriores com tÌtulo e data; clique carrega sess„o; bot„o "+" cria nova; bot„o lixeira apaga
+- [x] `gui/main_window.py` ó auto-tÌtulo da sess„o: usa a primeira pergunta como tÌtulo provisÛrio (truncado a 60 chars); edit·vel via duplo-clique na sidebar
 
 ---
 
-### Fase 7 ‚Äî Modo de Pesquisa Profunda (integra√ß√£o com AKASHA)
+---
 
-> Combina a biblioteca local do Mnemosyne com conte√∫do web buscado em tempo real pelo AKASHA.
+### Fase 7 ó Modo de Pesquisa Profunda (integraÁ„o com AKASHA)
+
+> Combina a biblioteca local do Mnemosyne com conte˙do web buscado em tempo real pelo AKASHA.
 > Requer que o AKASHA esteja rodando na porta 7071 (Fase 13 do AKASHA: `/search/json` e `/fetch`).
-> Degrada√ß√£o graciosa: se AKASHA offline, bot√£o oculto e aviso ao usu√°rio.
+> DegradaÁ„o graciosa: se AKASHA offline, bot„o oculto e aviso ao usu·rio.
 
 ### AkashaClient
 
-- [x] `core/akasha_client.py` ‚Äî cliente httpx para a API REST do AKASHA:
-      `search(query, max_results) -> list[AkashaResult]` ‚Äî chama `GET /search/json`;
-      `fetch(url) -> FetchResult` ‚Äî chama `POST /fetch`;
-      `is_available() -> bool` ‚Äî `GET /health` com timeout 2s;
+- [x] `core/akasha_client.py` ó cliente httpx para a API REST do AKASHA:
+      `search(query, max_results) -> list[AkashaResult]` ó chama `GET /search/json`;
+      `fetch(url) -> FetchResult` ó chama `POST /fetch`;
+      `is_available() -> bool` ó `GET /health` com timeout 2s;
       tipos: `AkashaResult(url, title, snippet)`, `FetchResult(url, title, content_md, word_count)`;
-      erros espec√≠ficos: `AkashaOfflineError`, `AkashaFetchError`
+      erros especÌficos: `AkashaOfflineError`, `AkashaFetchError`
 
 ### SessionIndexer
 
-- [x] `core/session_indexer.py` ‚Äî indexa√ß√£o tempor√°ria em mem√≥ria para a sess√£o de pesquisa:
-      usa `chromadb.EphemeralClient()` (sem persist√™ncia em disco);
-      `add_pages(pages: list[FetchResult]) -> None` ‚Äî chunka com `RecursiveCharacterTextSplitter`
+- [x] `core/session_indexer.py` ó indexaÁ„o tempor·ria em memÛria para a sess„o de pesquisa:
+      usa `chromadb.EphemeralClient()` (sem persistÍncia em disco);
+      `add_pages(pages: list[FetchResult]) -> None` ó chunka com `RecursiveCharacterTextSplitter`
       e embeda via Ollama; `search(query, k=5) -> list[Document]`; `clear() -> None`;
-      limite de RAM: m√°x 10 p√°ginas por sess√£o (configura¬≠vel); estimativa ~50-100MB por sess√£o
+      limite de RAM: m·x 10 p·ginas por sess„o (configura≠vel); estimativa ~50-100MB por sess„o
 
 ### DeepResearchWorker
 
-- [x] `gui/workers.py` ‚Äî `DeepResearchWorker(QThread)`:
-      sinal `status(str)` para feedback incremental ("Buscando no AKASHA‚Ä¶", "Carregando 3/5‚Ä¶", etc.);
-      sinal `finished(bool, str, list)` ‚Äî sucesso, resposta RAG, fontes (local + web);
+- [x] `gui/workers.py` ó `DeepResearchWorker(QThread)`:
+      sinal `status(str)` para feedback incremental ("Buscando no AKASHAÖ", "Carregando 3/5Ö", etc.);
+      sinal `finished(bool, str, list)` ó sucesso, resposta RAG, fontes (local + web);
       pipeline:
-        1. `AkashaClient.search(query)` ‚Üí lista de URLs candidatas (top 5)
+        1. `AkashaClient.search(query)` ? lista de URLs candidatas (top 5)
         2. Para cada URL: `AkashaClient.fetch(url)` (paralelo com `asyncio.gather` via `asyncio.run`)
-        3. `SessionIndexer.add_pages(pages)` ‚Üí indexa em mem√≥ria
+        3. `SessionIndexer.add_pages(pages)` ? indexa em memÛria
         4. `prepare_ask()` com retriever combinado (vectorstore local + session_indexer)
         5. LLM gera resposta; emite `finished`
-        6. `SessionIndexer.clear()` ap√≥s resposta
+        6. `SessionIndexer.clear()` apÛs resposta
 
 ### Interface
 
-- [x] `gui/main_window.py` ‚Äî toggle "√∞≈∏≈í¬ê Pesquisa Profunda" no painel de perguntas:
-      vis√≠vel apenas se AKASHA dispon√≠vel (verificar `is_available()` no startup);
-      quando ativo, `AskWorker` √© substitu√≠do por `DeepResearchWorker`;
+- [x] `gui/main_window.py` ó toggle "üåê Pesquisa Profunda" no painel de perguntas:
+      visÌvel apenas se AKASHA disponÌvel (verificar `is_available()` no startup);
+      quando ativo, `AskWorker` È substituÌdo por `DeepResearchWorker`;
       status incremental exibido na barra inferior durante a pesquisa;
       citar fontes web com badge `[WEB]` distintos das fontes locais
 
-### Notas de implementa√ß√£o
+### Notas de implementaÁ„o
 
-- Lat√™ncia esperada: 8‚Äì20s em casa (RX 6600), 20‚Äì40s no trabalho (i5-3470, sem AVX2)
-- No i5: limitar a 3 p√°ginas web (n√£o 5) e desativar embedding da session (usar context stuffing)
-  ‚Äî margem de RAM apertada com 8GB; verificar `psutil.virtual_memory().available` antes de embedar
-- `SessionIndexer` usa `EphemeralClient` ‚Äî dados descartados ao chamar `clear()` ou fechar o app
-
----
-
-### Corre√ß√µes de bugs
-
-- [x] `gui/workers.py` ‚Äî `IndexWorker`: limpar `persist_dir` antes de indexar para evitar ac√∫mulo de duplicatas no ChromaDB em execu√ß√µes repetidas
-- [x] `gui/workers.py` ‚Äî `IndexWorker`: chamar `tracker.mark_indexed(file_path)` ap√≥s cada arquivo para salvar progresso; interrup√ß√£o agora permite retomada via "Atualizar √≠ndice"
-- [x] `gui/workers.py` ‚Äî `IndexWorker`: reestruturado para processar arquivo por arquivo (load ‚Üí chunk ‚Üí embed ‚Üí add ‚Üí mark_indexed) em vez de chunkar tudo antes de embedar
-
-*Atualizado em: 2026-04-23 ‚Äî bugs cr√≠ticos do IndexWorker corrigidos.*
+- LatÍncia esperada: 8ñ20s em casa (RX 6600), 20ñ40s no trabalho (i5-3470, sem AVX2)
+- No i5: limitar a 3 p·ginas web (n„o 5) e desativar embedding da session (usar context stuffing)
+  ó margem de RAM apertada com 8GB; verificar `psutil.virtual_memory().available` antes de embedar
+- `SessionIndexer` usa `EphemeralClient` ó dados descartados ao chamar `clear()` ou fechar o app
 
 ---
 
-### Fase 8 ‚Äî Otimiza√ß√µes de RAG 
+### CorreÁıes de bugs
 
-### 8.1 M√©trica cosine no ChromaDB (alta prioridade)
-- [x] `core/indexer.py` ‚Äî adicionar `collection_metadata={"hnsw:space": "cosine"}` em todos os pontos que criam ou abrem o Chroma: `create_vectorstore()`, `index_single_file()`, `update_vectorstore()`, `load_vectorstore()`
-- [x] `gui/workers.py` ‚Äî `IndexWorker.run()`: adicionar `collection_metadata={"hnsw:space": "cosine"}` na cria√ß√£o do `Chroma(persist_directory=...)`
-- [x] Validar que cole√ß√µes existentes s√£o recriadas automaticamente ao rodar "Indexar tudo" (o IndexWorker j√° apaga o persist_dir ‚Äî a m√©trica ser√° aplicada na recria√ß√£o)
+- [x] `gui/workers.py` ó `IndexWorker`: limpar `persist_dir` antes de indexar para evitar ac˙mulo de duplicatas no ChromaDB em execuÁıes repetidas
+- [x] `gui/workers.py` ó `IndexWorker`: chamar `tracker.mark_indexed(file_path)` apÛs cada arquivo para salvar progresso; interrupÁ„o agora permite retomada via "Atualizar Ìndice"
+- [x] `gui/workers.py` ó `IndexWorker`: reestruturado para processar arquivo por arquivo (load ? chunk ? embed ? add ? mark_indexed) em vez de chunkar tudo antes de embedar
+
+*Atualizado em: 2026-04-23 ó bugs crÌticos do IndexWorker corrigidos.*
+
+---
+
+### Fase 8 ó OtimizaÁıes de RAG 
+
+### 8.1 MÈtrica cosine no ChromaDB (alta prioridade)
+- [x] `core/indexer.py` ó adicionar `collection_metadata={"hnsw:space": "cosine"}` em todos os pontos que criam ou abrem o Chroma: `create_vectorstore()`, `index_single_file()`, `update_vectorstore()`, `load_vectorstore()`
+- [x] `gui/workers.py` ó `IndexWorker.run()`: adicionar `collection_metadata={"hnsw:space": "cosine"}` na criaÁ„o do `Chroma(persist_directory=...)`
+- [x] Validar que coleÁıes existentes s„o recriadas automaticamente ao rodar "Indexar tudo" (o IndexWorker j· apaga o persist_dir ó a mÈtrica ser· aplicada na recriaÁ„o)
 
 ### 8.2 Tamanho de chunk (alta prioridade)
-- [x] `core/config.py` ‚Äî alterar defaults: `chunk_size` 800 ‚Üí 1800, `chunk_overlap` 100 ‚Üí 250
-  - Justificativa: 800 chars ‚âà 200 tokens; √≥timo benchmarkado √© 400-512 tokens ‚âà 1600-2000 chars; overlap mant√©m ~14%
+- [x] `core/config.py` ó alterar defaults: `chunk_size` 800 ? 1800, `chunk_overlap` 100 ? 250
+  - Justificativa: 800 chars ò 200 tokens; Ûtimo benchmarkado È 400-512 tokens ò 1600-2000 chars; overlap mantÈm ~14%
 
-### 8.3 FlashRank reranking (m√©dia prioridade)
-- [x] `requirements.txt` ‚Äî adicionar `flashrank`
-- [x] `core/rag.py` ‚Äî envolver o retriever base em `ContextualCompressionRetriever` com `FlashrankRerank`:
+### 8.3 FlashRank reranking (mÈdia prioridade)
+- [x] `requirements.txt` ó adicionar `flashrank`
+- [x] `core/rag.py` ó envolver o retriever base em `ContextualCompressionRetriever` com `FlashrankRerank`:
   - busca vetorial com k=30 candidatos
-  - FlashRank reordena por relev√¢ncia real ‚Üí top 6-8 para o LLM
-  - modelo multil√≠ngue: `"ms-marco-MultiBERT-L-12"` (melhor para PT)
-  - `top_n` configur√°vel em `AppConfig`
-- [x] `core/config.py` ‚Äî campos novos: `reranking_enabled: bool = True`, `reranking_top_n: int = 6`
-- [x] `gui/main_window.py` ‚Äî toggle "Reranking" na SetupDialog (opcional ‚Äî pode ficar para depois)
+  - FlashRank reordena por relev‚ncia real ? top 6-8 para o LLM
+  - modelo multilÌngue: `"ms-marco-MultiBERT-L-12"` (melhor para PT)
+  - `top_n` configur·vel em `AppConfig`
+- [x] `core/config.py` ó campos novos: `reranking_enabled: bool = True`, `reranking_top_n: int = 6`
+- [x] `gui/main_window.py` ó toggle "Reranking" na SetupDialog (opcional ó pode ficar para depois)
 
-### 8.4 RAGAS ‚Äî avalia√ß√£o do pipeline (baixa prioridade)
-- [ ] `eval/ragas_eval.py` ‚Äî script standalone (fora do app) para avaliar faithfulness, context precision e answer relevancy usando Ollama como juiz
-- [ ] Executar antes/depois das mudan√ßas 8.1-8.3 para medir impacto real
+### 8.4 RAGAS ó avaliaÁ„o do pipeline (baixa prioridade)
+- [ ] `eval/ragas_eval.py` ó script standalone (fora do app) para avaliar faithfulness, context precision e answer relevancy usando Ollama como juiz
+- [ ] Executar antes/depois das mudanÁas 8.1-8.3 para medir impacto real
 
-### 8.5 LightRAG ‚Äî grafos de conhecimento (baixa prioridade, hardware limitante)
-- [ ] Pesquisar se modelos 8B s√£o suficientes para extra√ß√£o de grafo em corpus pequeno (~50 docs)
-- [ ] Implementar apenas se hardware futuro permitir (‚â• 32B recomendado para resultados bons)
+### 8.5 LightRAG ó grafos de conhecimento (baixa prioridade, hardware limitante)
+- [ ] Pesquisar se modelos 8B s„o suficientes para extraÁ„o de grafo em corpus pequeno (~50 docs)
+- [ ] Implementar apenas se hardware futuro permitir (= 32B recomendado para resultados bons)
 
-*Atualizado em: 2026-04-23 ‚Äî Fase 8 adicionada (otimiza√ß√µes RAG baseadas em pesquisa).*
-
----
-
-### Fase 9 ‚Äî Robustez do indexador (2026-04-24)
-
-### 9.1 Recupera√ß√£o de readonly ap√≥s interrup√ß√£o
-- [x] `core/indexer.py` ‚Äî `_clear_orphan_wal()`: apaga `chroma.sqlite3-wal` e `chroma.sqlite3-shm` antes de abrir o ChromaDB; chamado em `load_vectorstore()`, `index_single_file()` e `update_vectorstore()`
-
-### 9.2 Indexa√ß√£o retom√°vel
-- [x] `core/indexer.py` ‚Äî `IndexCheckpoint`: SQLite em `{mnemosyne_dir}/index_checkpoint.db`; registra status `'ok'`/`'error'` e mtime por arquivo; deletado ao concluir com sucesso; presen√ßa indica indexa√ß√£o interrompida
-- [x] `gui/workers.py` ‚Äî `IndexWorker.run()`: deleta toda a pasta `.mnemosyne` (n√£o s√≥ `chroma_db`); cria checkpoint; registra cada arquivo; deleta checkpoint ao terminar com sucesso; checkpoint permanece se interrompido
-- [x] `gui/workers.py` ‚Äî `ResumeIndexWorker`: l√™ checkpoint existente, processa apenas arquivos pendentes, atualiza checkpoint e tracker, deleta checkpoint ao concluir
-- [x] `gui/main_window.py` ‚Äî bot√£o "‚Ü© Retomar indexa√ß√£o" na sidebar: vis√≠vel apenas se persist_dir + checkpoint existem; lan√ßa `ResumeIndexWorker`; some ap√≥s conclus√£o bem-sucedida
-- [x] `gui/main_window.py` ‚Äî `_cancel_worker()` corrigido para tamb√©m interromper `_index_worker` e `_resume_worker`
-
-*Atualizado em: 2026-04-25 ‚Äî Fase 9 implementada (readonly fix + retomada via Option B).*
+*Atualizado em: 2026-04-23 ó Fase 8 adicionada (otimizaÁıes RAG baseadas em pesquisa).*
 
 ---
 
-### Fase 10 ‚Äî Indexa√ß√£o incremental autom√°tica do ecossistema (idle indexer) ‚úì
+### Fase 9 ó Robustez do indexador (2026-04-24)
 
-> Objetivo: quando o Mnemosyne n√£o est√° executando uma indexa√ß√£o manual (estado "idle"),
+### 9.1 RecuperaÁ„o de readonly apÛs interrupÁ„o
+- [x] `core/indexer.py` ó `_clear_orphan_wal()`: apaga `chroma.sqlite3-wal` e `chroma.sqlite3-shm` antes de abrir o ChromaDB; chamado em `load_vectorstore()`, `index_single_file()` e `update_vectorstore()`
+
+### 9.2 IndexaÁ„o retom·vel
+- [x] `core/indexer.py` ó `IndexCheckpoint`: SQLite em `{mnemosyne_dir}/index_checkpoint.db`; registra status `'ok'`/`'error'` e mtime por arquivo; deletado ao concluir com sucesso; presenÁa indica indexaÁ„o interrompida
+- [x] `gui/workers.py` ó `IndexWorker.run()`: deleta toda a pasta `.mnemosyne` (n„o sÛ `chroma_db`); cria checkpoint; registra cada arquivo; deleta checkpoint ao terminar com sucesso; checkpoint permanece se interrompido
+- [x] `gui/workers.py` ó `ResumeIndexWorker`: lÍ checkpoint existente, processa apenas arquivos pendentes, atualiza checkpoint e tracker, deleta checkpoint ao concluir
+- [x] `gui/main_window.py` ó bot„o "? Retomar indexaÁ„o" na sidebar: visÌvel apenas se persist_dir + checkpoint existem; lanÁa `ResumeIndexWorker`; some apÛs conclus„o bem-sucedida
+- [x] `gui/main_window.py` ó `_cancel_worker()` corrigido para tambÈm interromper `_index_worker` e `_resume_worker`
+
+*Atualizado em: 2026-04-25 ó Fase 9 implementada (readonly fix + retomada via Option B).*
+
+---
+
+### Fase 10 ó IndexaÁ„o incremental autom·tica do ecossistema (idle indexer) ?
+
+> Objetivo: quando o Mnemosyne n„o est· executando uma indexaÁ„o manual (estado "idle"),
 > monitorar as pastas do ecossistema e indexar automaticamente qualquer arquivo novo ou
 > modificado gerado por AKASHA, KOSMOS, Hermes ou AETHER.
 
-### 10.1 ‚Äî File watcher (detector de novos arquivos)
+### 10.1 ó File watcher (detector de novos arquivos)
 
-- [x] Reutilizado `FolderWatcher` existente (`core/watcher.py`) ‚Äî QFileSystemWatcher por cole√ß√£o de ecossistema
-- [x] `core/idle_indexer.py` ‚Äî monitora cole√ß√µes com `source == "ecosystem"` via `IdleIndexer.setup()`
+- [x] Reutilizado `FolderWatcher` existente (`core/watcher.py`) ó QFileSystemWatcher por coleÁ„o de ecossistema
+- [x] `core/idle_indexer.py` ó monitora coleÁıes com `source == "ecosystem"` via `IdleIndexer.setup()`
 
-### 10.2 ‚Äî Idle detector
+### 10.2 ó Idle detector
 
-- [x] `_is_busy()` lambda em `main_window.py` ‚Äî verifica `_index_worker`, `_resume_worker`, `_update_worker`, `_file_worker`
+- [x] `_is_busy()` lambda em `main_window.py` ó verifica `_index_worker`, `_resume_worker`, `_update_worker`, `_file_worker`
 
-### 10.3 ‚Äî Processador de fila incremental
+### 10.3 ó Processador de fila incremental
 
 - [x] `IdleIndexer` com `QTimer` (30s) + `queue.Queue` thread-safe
-- [x] `_IndexJobWorker(QThread)` em `IdlePriority` ‚Äî chama `index_single_file()` por arquivo
+- [x] `_IndexJobWorker(QThread)` em `IdlePriority` ó chama `index_single_file()` por arquivo
 
-### 10.4 ‚Äî Feedback na UI
+### 10.4 ó Feedback na UI
 
-- [x] `self._bg_label` (`QLabel#bgIndexLabel`) na sidebar ‚Äî "‚ü≥ Indexando N arquivo(s) do ecossistema‚Ä¶"
-- [x] Invis√≠vel quando fila vazia; eventos logados no log de eventos do Mnemosyne
+- [x] `self._bg_label` (`QLabel#bgIndexLabel`) na sidebar ó "? Indexando N arquivo(s) do ecossistemaÖ"
+- [x] InvisÌvel quando fila vazia; eventos logados no log de eventos do Mnemosyne
 
-### 10.5 ‚Äî Configura√ß√£o
+### 10.5 ó ConfiguraÁ„o
 
 - [x] `background_index_enabled: bool = True` em `AppConfig` e `config.py`
 - [x] Idle indexer para no `closeEvent` da janela principal
@@ -3037,28 +3037,28 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
 
 > Causa confirmada de CPU a 90% durante idle indexing de artigos do KOSMOS.
 > `index_single_file()` chama `vs.add_documents(chunks)` com todos os chunks de uma vez,
-> sem pausas ‚Äî ao contr√°rio de `create_vectorstore()` e `IndexWorker`, que usam lotes e sleep.
+> sem pausas ó ao contr·rio de `create_vectorstore()` e `IndexWorker`, que usam lotes e sleep.
 > O IdleIndexer acumula uma fila de artigos do KOSMOS e processa cada um sem throttling,
 > saturando o CPU continuamente.
 
-- [x] `Mnemosyne/core/indexer.py` ‚Äî `index_single_file()`: substituir `vs.add_documents(chunks)`
+- [x] `Mnemosyne/core/indexer.py` ó `index_single_file()`: substituir `vs.add_documents(chunks)`
   por loop com `_detect_batch_config()` (lotes de 25 chunks, sleep 0.3 s entre lotes),
-  id√™ntico ao padr√£o j√° usado em `create_vectorstore()`
+  idÍntico ao padr„o j· usado em `create_vectorstore()`
 
 ---
 
 
-### RAG ‚Äî Embeddings, Recupera√ß√£o e Chunking
+### RAG ó Embeddings, RecuperaÁ„o e Chunking
 
 
 - [x] Mnemosyne: substituir `OllamaEmbeddings.add_documents()` por chamada direta ao `/api/embed`:
   **Motivo:** `OllamaEmbeddings` do LangChain gera 1 chamada HTTP por chunk (overhead de
-  1000‚Äì2000ms cada). O endpoint `/api/embed` do Ollama aceita um array de textos numa √∫nica
-  chamada HTTP (200‚Äì300ms por lote). Com 500 chunks por artigo: 500 √ó 1.5s = 750s vs
-  (500/25) √ó 0.3s = 6s. Esta diferen√ßa de 125√ó √© a causa raiz do CPU a 90% durante idle indexing.
+  1000ñ2000ms cada). O endpoint `/api/embed` do Ollama aceita um array de textos numa ˙nica
+  chamada HTTP (200ñ300ms por lote). Com 500 chunks por artigo: 500 ◊ 1.5s = 750s vs
+  (500/25) ◊ 0.3s = 6s. Esta diferenÁa de 125◊ È a causa raiz do CPU a 90% durante idle indexing.
   Fonte: github.com/ollama/ollama/issues/7400
-  **Implementa√ß√£o (`Mnemosyne/core/indexer.py`):**
-  1. Criar fun√ß√£o utilit√°ria `_embed_batch(texts: list[str], model: str, base_url: str) -> list[list[float]]`:
+  **ImplementaÁ„o (`Mnemosyne/core/indexer.py`):**
+  1. Criar funÁ„o utilit·ria `_embed_batch(texts: list[str], model: str, base_url: str) -> list[list[float]]`:
      ```python
      import httpx
      resp = httpx.post(
@@ -3083,29 +3083,29 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
          )
          time.sleep(sleep_s)
      ```
-  3. Aplicar o mesmo padr√£o em `create_vectorstore()` e `IndexWorker`
-  4. Remover `OllamaEmbeddings` dos caminhos de indexa√ß√£o (manter apenas no path de busca,
-     que j√° faz 1 chamada por query ‚Äî sem problema de volume)
-  5. Adicionar `httpx` como depend√™ncia se n√£o estiver no `pyproject.toml`
+  3. Aplicar o mesmo padr„o em `create_vectorstore()` e `IndexWorker`
+  4. Remover `OllamaEmbeddings` dos caminhos de indexaÁ„o (manter apenas no path de busca,
+     que j· faz 1 chamada por query ó sem problema de volume)
+  5. Adicionar `httpx` como dependÍncia se n„o estiver no `pyproject.toml`
 
 - [ ] Mnemosyne: suporte a EmbeddingGemma via sentence-transformers no perfil `low` (Windows 10):
-  **Motivo:** no i5-3470 (sem GPU, sem AVX2, 8 GB RAM), rodar Ollama para embeddings √© lento
+  **Motivo:** no i5-3470 (sem GPU, sem AVX2, 8 GB RAM), rodar Ollama para embeddings È lento
   e compete com o sistema. EmbeddingGemma (Google, abril 2025) tem 308 M params, <200 MB
-  quantizado, roda em CPU puro com <200 MB de RAM, suporta 100+ l√≠nguas. Elimina a depend√™ncia
-  do Ollama para indexa√ß√£o no Windows, permitindo indexar em background sem saturar o sistema.
+  quantizado, roda em CPU puro com <200 MB de RAM, suporta 100+ lÌnguas. Elimina a dependÍncia
+  do Ollama para indexaÁ„o no Windows, permitindo indexar em background sem saturar o sistema.
   Fonte: developers.googleblog.com/en/introducing-embeddinggemma
-  **PR√â-REQUISITO ‚Äî verificar AVX2 antes de implementar:**
-  O i5-3470 (Ivy Bridge 2012) N√ÉO tem AVX2. EmbeddingGemma pode requerer AVX2 dependendo do
-  backend de quantiza√ß√£o. Testar antes:
+  **PR…-REQUISITO ó verificar AVX2 antes de implementar:**
+  O i5-3470 (Ivy Bridge 2012) N√O tem AVX2. EmbeddingGemma pode requerer AVX2 dependendo do
+  backend de quantizaÁ„o. Testar antes:
   ```python
   from sentence_transformers import SentenceTransformer
   m = SentenceTransformer("google/embedding-gemma-308m-IT-v1")
   print(m.encode(["teste"]))
   ```
-  Se falhar com "Illegal instruction" ‚Üí fallback para `paraphrase-multilingual-MiniLM-L6-v2` (117M,
+  Se falhar com "Illegal instruction" ? fallback para `paraphrase-multilingual-MiniLM-L6-v2` (117M,
   384 dims, sem AVX2, via sentence-transformers).
-  **Implementa√ß√£o (`Mnemosyne/core/indexer.py` + `ecosystem_client.py`):**
-  1. Criar f√°brica `_build_embed_fn(profile: str) -> Callable[[list[str]], list[list[float]]]`:
+  **ImplementaÁ„o (`Mnemosyne/core/indexer.py` + `ecosystem_client.py`):**
+  1. Criar f·brica `_build_embed_fn(profile: str) -> Callable[[list[str]], list[list[float]]]`:
      ```python
      def _build_embed_fn(profile):
          if profile in ("high", "medium"):
@@ -3119,25 +3119,25 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
      ```
   2. No startup do indexer: `profile = ecosystem_client.get_active_profile().hardware_profile`
   3. Usar `_embed_fn = _build_embed_fn(profile)` em todos os pontos de chamada
-  4. Adicionar ao `pyproject.toml`: `sentence-transformers` como depend√™ncia opcional:
+  4. Adicionar ao `pyproject.toml`: `sentence-transformers` como dependÍncia opcional:
      `[tool.uv.optional-dependencies] low-resource = ["sentence-transformers>=3.0"]`
 
-- [x] Mnemosyne: chunking adaptativo em substitui√ß√£o ao fixed-size atual:
-  **Motivo:** chunking fixo (padr√£o) pode cortar conceitos no meio e misturar t√≥picos distintos,
-  reduzindo precis√£o de recupera√ß√£o. Papers de 2025 (arxiv 2504.19754; PMC12649634) mostram que
-  chunking adaptativo ‚Äî que alinha a fronteiras de se√ß√£o e par√°grafos usando similaridade cosine
-  ‚Äî oferece o melhor balan√ßo entre qualidade e custo computacional para documentos estruturados
-  como artigos cient√≠ficos (KOSMOS) e notas (Mnemosyne).
-  **Tamanhos √≥timos por tipo de documento (validados empiricamente):**
-  ‚Äî Artigos cient√≠ficos / not√≠cias (KOSMOS): 512‚Äì1024 tokens; preservar par√°grafos completos
-  ‚Äî Transcri√ß√µes de v√≠deo (Hermes): 300‚Äì600 tokens; preservar frases completas (quebrar em pontua√ß√£o)
-  ‚Äî Notas gerais e documentos longos (Mnemosyne): 256‚Äì512 tokens com 10‚Äì15% de overlap
-  ‚Äî Overlap entre chunks: 50‚Äì100 tokens de sobreposi√ß√£o para evitar perda de informa√ß√£o na fronteira
-  **Implementa√ß√£o (`Mnemosyne/core/indexer.py`):**
+- [x] Mnemosyne: chunking adaptativo em substituiÁ„o ao fixed-size atual:
+  **Motivo:** chunking fixo (padr„o) pode cortar conceitos no meio e misturar tÛpicos distintos,
+  reduzindo precis„o de recuperaÁ„o. Papers de 2025 (arxiv 2504.19754; PMC12649634) mostram que
+  chunking adaptativo ó que alinha a fronteiras de seÁ„o e par·grafos usando similaridade cosine
+  ó oferece o melhor balanÁo entre qualidade e custo computacional para documentos estruturados
+  como artigos cientÌficos (KOSMOS) e notas (Mnemosyne).
+  **Tamanhos Ûtimos por tipo de documento (validados empiricamente):**
+  ó Artigos cientÌficos / notÌcias (KOSMOS): 512ñ1024 tokens; preservar par·grafos completos
+  ó TranscriÁıes de vÌdeo (Hermes): 300ñ600 tokens; preservar frases completas (quebrar em pontuaÁ„o)
+  ó Notas gerais e documentos longos (Mnemosyne): 256ñ512 tokens com 10ñ15% de overlap
+  ó Overlap entre chunks: 50ñ100 tokens de sobreposiÁ„o para evitar perda de informaÁ„o na fronteira
+  **ImplementaÁ„o (`Mnemosyne/core/indexer.py`):**
   1. Adicionar `langchain_experimental.text_splitter.SemanticChunker` ou implementar:
-     Estrat√©gia simples sem LLM extra: usar `RecursiveCharacterTextSplitter` com separadores
-     hier√°rquicos `["\n\n", "\n", ". ", " "]` em vez de chunk fixo ‚Äî j√° melhora sobre o atual
-  2. Par√¢metros configur√°veis por tipo de fonte:
+     EstratÈgia simples sem LLM extra: usar `RecursiveCharacterTextSplitter` com separadores
+     hier·rquicos `["\n\n", "\n", ". ", " "]` em vez de chunk fixo ó j· melhora sobre o atual
+  2. Par‚metros configur·veis por tipo de fonte:
      ```python
      CHUNK_PARAMS = {
          "article":      {"chunk_size": 768,  "chunk_overlap": 100},
@@ -3146,20 +3146,20 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
          "document":     {"chunk_size": 512,  "chunk_overlap": 75},
      }
      ```
-  3. Detectar tipo pela extens√£o/fonte e aplicar par√¢metros correspondentes
+  3. Detectar tipo pela extens„o/fonte e aplicar par‚metros correspondentes
   4. Adicionar campo `source_type` ao metadata de cada chunk para rastreabilidade
 
-- [x] Mnemosyne: recupera√ß√£o h√≠brida BM25 + dense (Reciprocal Rank Fusion):
+- [x] Mnemosyne: recuperaÁ„o hÌbrida BM25 + dense (Reciprocal Rank Fusion):
   **Motivo:** Mnemosyne usa apenas busca densa (embedding vetorial). BM25 (busca lexical) captura
-  termos exatos, nomes pr√≥prios e queries de palavra-chave que o embedding pode errar. Papers
-  confirmam: pipeline h√≠brido supera qualquer m√©todo isolado ‚Äî Recall@5 = 0.816 em benchmark
+  termos exatos, nomes prÛprios e queries de palavra-chave que o embedding pode errar. Papers
+  confirmam: pipeline hÌbrido supera qualquer mÈtodo isolado ó Recall@5 = 0.816 em benchmark
   financeiro de 23k queries vs ~0.65 com dense-only (arxiv 2604.01733). Custo: biblioteca
-  `rank_bm25` (Python puro, sem GPU, sem servidor extra). Fus√£o por RRF n√£o tem par√¢metros
-  e √© robusta por constru√ß√£o.
+  `rank_bm25` (Python puro, sem GPU, sem servidor extra). Fus„o por RRF n„o tem par‚metros
+  e È robusta por construÁ„o.
   Fonte: arxiv 2604.01733; arxiv 2404.07220 (Blended RAG, 2024)
-  **Implementa√ß√£o (`Mnemosyne/core/retriever.py` ou equivalente):**
+  **ImplementaÁ„o (`Mnemosyne/core/retriever.py` ou equivalente):**
   1. Adicionar `rank-bm25` ao `pyproject.toml`
-  2. Na indexa√ß√£o: manter um √≠ndice BM25 paralelo ao ChromaDB:
+  2. Na indexaÁ„o: manter um Ìndice BM25 paralelo ao ChromaDB:
      ```python
      from rank_bm25 import BM25Okapi
      corpus_tokens = [doc.page_content.lower().split() for doc in all_chunks]
@@ -3172,7 +3172,7 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
      bm25_top50    = sorted(range(len(bm25_scores)),
                             key=lambda i: bm25_scores[i], reverse=True)[:50]
      ```
-  4. Fus√£o por Reciprocal Rank Fusion (RRF, k=60):
+  4. Fus„o por Reciprocal Rank Fusion (RRF, k=60):
      ```python
      def rrf(rankings: list[list[int]], k=60):
          scores = {}
@@ -3182,22 +3182,22 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
          return sorted(scores, key=scores.get, reverse=True)
      ```
   5. Retornar top-10 do RRF como resultado final da busca
-  6. Persistir o √≠ndice BM25 serializado (pickle) junto ao vectorstore ChromaDB para evitar
-     reconstru√ß√£o a cada startup
+  6. Persistir o Ìndice BM25 serializado (pickle) junto ao vectorstore ChromaDB para evitar
+     reconstruÁ„o a cada startup
 
 - [x] Mnemosyne: reranking leve com FlashRank (CPU, sem GPU, ~10ms/query):
-  **Motivo:** recupera√ß√£o h√≠brida melhora recall; reranking melhora precis√£o ‚Äî s√£o complementares.
+  **Motivo:** recuperaÁ„o hÌbrida melhora recall; reranking melhora precis„o ó s„o complementares.
   Cross-encoder reranking adiciona +10 nDCG points sobre bi-encoders em MS MARCO (pinecone.io/
   learn/series/rag/rerankers). FlashRank usa modelos ONNX quantizados que rodam em CPU a ~10ms
-  por query ‚Äî vi√°vel mesmo no Windows 10 sem GPU. N√£o usa VRAM, n√£o compete com o modelo de chat.
-  **Implementa√ß√£o (`Mnemosyne/core/retriever.py`):**
+  por query ó vi·vel mesmo no Windows 10 sem GPU. N„o usa VRAM, n„o compete com o modelo de chat.
+  **ImplementaÁ„o (`Mnemosyne/core/retriever.py`):**
   1. Adicionar `flashra1nk` ao `pyproject.toml`
   2. Inicializar (lazy, no primeiro uso):
      ```python
      from flashrank import Ranker, RerankRequest
      _reranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="~/.cache/flashrank")
      ```
-  3. Ap√≥s recupera√ß√£o h√≠brida (top-50), aplicar reranking nos top-20:
+  3. ApÛs recuperaÁ„o hÌbrida (top-50), aplicar reranking nos top-20:
      ```python
      passages = [{"id": i, "text": doc.page_content} for i, doc in enumerate(candidates[:20])]
      request  = RerankRequest(query=query, passages=passages)
@@ -3205,139 +3205,139 @@ Refer√™ncia de arquitetura: `KOSMOS_DEV_BIBLE_1.txt`
      final    = [candidates[r["id"]] for r in results[:5]]
      ```
   4. Retornar os top-5 rerankeados ao LLM
-  5. Tornar reranking opcional via config (desabilitar no perfil `low` se lat√™ncia for cr√≠tica)
+  5. Tornar reranking opcional via config (desabilitar no perfil `low` se latÍncia for crÌtica)
 
-- [x] Mnemosyne: dimens√µes Matryoshka para reduzir tamanho do √≠ndice ChromaDB:
-  **Motivo:** nomic-embed-text v1.5 suporta Matryoshka Representation Learning (MRL) ‚Äî o mesmo
-  modelo funciona bem em m√∫ltiplas dimens√µes (768, 512, 256, 128). O √≠ndice ChromaDB atual
-  armazena float32 em dim=768, usando 3072 bytes/vetor. Com dim=256: 1024 bytes/vetor (3√ó menor),
-  sem mudan√ßa de modelo, sem re-indexar com modelo diferente.
-  Pesquisa: NeurIPS 2022 (arxiv 2205.13147) ‚Äî at√© 14√ó menor embedding para mesma acur√°cia em
-  determinadas tarefas. Matryoshka-Adaptor (arxiv 2407.20243): redu√ß√£o 2‚Äì12√ó sem perda em BEIR.
-  **Implementa√ß√£o (`Mnemosyne/core/indexer.py` + re-indexa√ß√£o necess√°ria):**
+- [x] Mnemosyne: dimensıes Matryoshka para reduzir tamanho do Ìndice ChromaDB:
+  **Motivo:** nomic-embed-text v1.5 suporta Matryoshka Representation Learning (MRL) ó o mesmo
+  modelo funciona bem em m˙ltiplas dimensıes (768, 512, 256, 128). O Ìndice ChromaDB atual
+  armazena float32 em dim=768, usando 3072 bytes/vetor. Com dim=256: 1024 bytes/vetor (3◊ menor),
+  sem mudanÁa de modelo, sem re-indexar com modelo diferente.
+  Pesquisa: NeurIPS 2022 (arxiv 2205.13147) ó atÈ 14◊ menor embedding para mesma acur·cia em
+  determinadas tarefas. Matryoshka-Adaptor (arxiv 2407.20243): reduÁ„o 2ñ12◊ sem perda em BEIR.
+  **ImplementaÁ„o (`Mnemosyne/core/indexer.py` + re-indexaÁ„o necess·ria):**
   1. Passar `truncate_dim=256` ao inicializar o modelo nomic-embed-text:
-     ‚Äî Via Ollama: o endpoint /api/embed aceita `truncate_dim` como par√¢metro
+     ó Via Ollama: o endpoint /api/embed aceita `truncate_dim` como par‚metro
        `{"model": "nomic-embed-text", "input": texts, "truncate_dim": 256}`
-     ‚Äî Verificar se a vers√£o do Ollama instalada suporta `truncate_dim` antes de ativar
-  2. Atualizar configura√ß√£o do ChromaDB para usar `embedding_function` com dim=256
+     ó Verificar se a vers„o do Ollama instalada suporta `truncate_dim` antes de ativar
+  2. Atualizar configuraÁ„o do ChromaDB para usar `embedding_function` com dim=256
   3. Re-indexar o corpus existente (uma vez): marcar documentos com `dim=256` no metadata
-  4. Medir impacto na qualidade de recupera√ß√£o antes de adotar em produ√ß√£o:
+  4. Medir impacto na qualidade de recuperaÁ„o antes de adotar em produÁ„o:
      buscar 20 queries manuais e comparar top-5 com dim=768 vs dim=256
 
 
-- [x] Monitorar RAM consumida pelo √≠ndice ChromaDB e definir gatilho de migra√ß√£o para Qdrant:
-  **Motivo:** ChromaDB usa HNSW (hnswlib) ‚Äî todo o √≠ndice fica em RAM em float32. Para 1M vetores
-  em dim=768: ~3 GB RAM s√≥ do √≠ndice. Se o Mnemosyne crescer para cobrir toda a biblioteca AKASHA,
-  o √≠ndice pode saturar a RAM do Windows 10 (8 GB total). Qdrant oferece quantiza√ß√£o scalar
-  (int8, 4√ó compress√£o, 99%+ qualidade) e binary (32√ó compress√£o, 95%+ com rescoring) de forma
-  nativa ‚Äî sem mudar o modelo de embedding.
+- [x] Monitorar RAM consumida pelo Ìndice ChromaDB e definir gatilho de migraÁ„o para Qdrant:
+  **Motivo:** ChromaDB usa HNSW (hnswlib) ó todo o Ìndice fica em RAM em float32. Para 1M vetores
+  em dim=768: ~3 GB RAM sÛ do Ìndice. Se o Mnemosyne crescer para cobrir toda a biblioteca AKASHA,
+  o Ìndice pode saturar a RAM do Windows 10 (8 GB total). Qdrant oferece quantizaÁ„o scalar
+  (int8, 4◊ compress„o, 99%+ qualidade) e binary (32◊ compress„o, 95%+ com rescoring) de forma
+  nativa ó sem mudar o modelo de embedding.
   Fontes: qdrant.tech/benchmarks; huggingface.co/blog/embedding-quantization
-  **Gatilhos para migrar ChromaDB ‚Üí Qdrant:**
-  ‚Äî RAM do √≠ndice > 4 GB (verificar com `psutil.Process().memory_info().rss`)
-  ‚Äî Lat√™ncia de busca P50 > 50ms (adicionar log de tempo em `retriever.py`)
-  ‚Äî Corpus > 1M chunks
-  **Pr√©-migra√ß√£o ‚Äî ativar agora sem migrar:**
-  ‚Äî Usar dim=256 (Matryoshka) reduz √≠ndice 9√ó vs dim=768 em float32 ‚Äî adia a necessidade
+  **Gatilhos para migrar ChromaDB ? Qdrant:**
+  ó RAM do Ìndice > 4 GB (verificar com `psutil.Process().memory_info().rss`)
+  ó LatÍncia de busca P50 > 50ms (adicionar log de tempo em `retriever.py`)
+  ó Corpus > 1M chunks
+  **PrÈ-migraÁ„o ó ativar agora sem migrar:**
+  ó Usar dim=256 (Matryoshka) reduz Ìndice 9◊ vs dim=768 em float32 ó adia a necessidade
     de migrar consideravelmente
   **Quando migrar:**
-  1. Instalar Qdrant como processo local (Docker ou bin√°rio nativo ‚Äî sem servidor remoto)
-  2. Ativar scalar quantization int8 na cole√ß√£o: `quantization_config=ScalarQuantization(type=INT8)`
+  1. Instalar Qdrant como processo local (Docker ou bin·rio nativo ó sem servidor remoto)
+  2. Ativar scalar quantization int8 na coleÁ„o: `quantization_config=ScalarQuantization(type=INT8)`
   3. Re-exportar todos os embeddings do ChromaDB e importar no Qdrant
-  4. Atualizar `retriever.py` para usar `qdrant_client` ‚Äî API similar ao ChromaDB
+  4. Atualizar `retriever.py` para usar `qdrant_client` ó API similar ao ChromaDB
   5. Manter ChromaDB como fallback para o perfil `low` (Windows 10) se Qdrant for pesado
 
 
-### Fase 11 ‚Äî 
+### Fase 11 ó 
 
 ### Responsividade
 
 
-> Mnemosyne √© PySide6. Verificar os mesmos pontos de KOSMOS.
+> Mnemosyne È PySide6. Verificar os mesmos pontos de KOSMOS.
 
 - [ ] **Auditar splitter principal (lista de documentos | viewer)**
-  ‚Äî Testar em 800px de largura; definir `setMinimumWidth` adequado em cada painel
+  ó Testar em 800px de largura; definir `setMinimumWidth` adequado em cada painel
 - [ ] **Lista de documentos: truncar nome de arquivo longo com tooltip**
-- [ ] **Testar em janela 800√ó600 m√≠nima**
+- [ ] **Testar em janela 800◊600 mÌnima**
 
 
 ---
 
-## Hermes ‚Äî Downloader e Transcritor
+## Hermes ó Downloader e Transcritor
 
 
 ---
 
-### Padr√µes de Desenvolvimento
+### Padrıes de Desenvolvimento
 
 Ver `CONTRIBUTING.md` na raiz do ecossistema.
 
 ---
 
-### Fase 1 ‚Äî Implementa√ß√£o inicial (PyQt6)
+### Fase 1 ó ImplementaÁ„o inicial (PyQt6)
 
 - [x] Estrutura do projeto (Hermes/, data/, iniciar.sh, TODO.md)
 - [x] App PyQt6 com duas abas: Descarregar + Transcrever
 - [x] Paleta do ecossistema (Design Bible v2.0)
 - [x] Carregamento de fontes IM Fell English + Special Elite via QFontDatabase
-- [x] Aba Descarregar: URL ‚Üí Inspecionar ‚Üí sele√ß√£o de formato ‚Üí Download
-- [x] Aba Descarregar: suporte a playlist (sele√ß√£o individual + baixar tudo)
-- [x] Aba Transcrever: URL ‚Üí modelo Whisper + idioma + limite CPU ‚Üí Markdown
-- [x] Workers em QThread (download e transcri√ß√£o em background)
+- [x] Aba Descarregar: URL ? Inspecionar ? seleÁ„o de formato ? Download
+- [x] Aba Descarregar: suporte a playlist (seleÁ„o individual + baixar tudo)
+- [x] Aba Transcrever: URL ? modelo Whisper + idioma + limite CPU ? Markdown
+- [x] Workers em QThread (download e transcriÁ„o em background)
 - [x] Log compartilhado entre abas com tags de cor
-- [x] Output dir configur√°vel, persistido em .prefs.json
+- [x] Output dir configur·vel, persistido em .prefs.json
 - [x] Iniciar.sh apontando para o .venv compartilhado
 
 ---
 
-### Fase 2 ‚Äî Melhorias
+### Fase 2 ó Melhorias
 
-- [x] Transcri√ß√£o de arquivos locais ‚Äî campo "ARQUIVO LOCAL" na aba Transcrever;
+- [x] TranscriÁ„o de arquivos locais ó campo "ARQUIVO LOCAL" na aba Transcrever;
       aceita mp4, mkv, avi, mov, webm, mp3, wav, m4a, ogg, flac; pula yt-dlp;
       se preenchido, tem prioridade sobre a URL
-- [x] Hist√≥rico de transcri√ß√µes (lista das √∫ltimas .md geradas)
+- [x] HistÛrico de transcriÁıes (lista das ˙ltimas .md geradas)
 - [x] Preview do markdown gerado dentro do app
-- [x] Integra√ß√£o com Mnemosyne (enviar transcri√ß√£o para indexa√ß√£o RAG)
+- [x] IntegraÁ„o com Mnemosyne (enviar transcriÁ„o para indexaÁ„o RAG)
 - [x] Modo batch: transcrever playlist inteira de uma vez
-- [x] Detec√ß√£o de ffmpeg e aviso se n√£o encontrado
+- [x] DetecÁ„o de ffmpeg e aviso se n„o encontrado
 
 ---
 
-### Fase 3 ‚Äî Mini API HTTP (integra√ß√£o com extens√£o AKASHA)
+### Fase 3 ó Mini API HTTP (integraÁ„o com extens„o AKASHA)
 
-> Entrega: Hermes exp√µe um servidor HTTP local para receber requisi√ß√µes de download
-> e transcri√ß√£o de fontes externas (extens√£o Firefox via AKASHA). Roda em thread
-> separada, invis√≠vel ao usu√°rio, sem alterar a UI existente.
+> Entrega: Hermes expıe um servidor HTTP local para receber requisiÁıes de download
+> e transcriÁ„o de fontes externas (extens„o Firefox via AKASHA). Roda em thread
+> separada, invisÌvel ao usu·rio, sem alterar a UI existente.
 
-- [x] `api_server.py` ‚Äî servidor HTTP em `threading.Thread` usando `http.server` +
-      `socketserver.TCPServer`; porta padr√£o 7072 (configur√°vel em `.prefs.json`);
+- [x] `api_server.py` ó servidor HTTP em `threading.Thread` usando `http.server` +
+      `socketserver.TCPServer`; porta padr„o 7072 (configur·vel em `.prefs.json`);
       inicia no `__init__` do app, para no `closeEvent`
-- [x] `POST /download` ‚Äî recebe JSON `{url: str, format?: str}`; adiciona √† fila
+- [x] `POST /download` ó recebe JSON `{url: str, format?: str}`; adiciona ‡ fila
       de download reutilizando o worker existente; retorna
       `{"status": "queued", "url": url}` ou `{"error": "..."}` com status 400
-- [x] `POST /transcribe` ‚Äî recebe JSON `{url: str}`; enfileira transcri√ß√£o via
+- [x] `POST /transcribe` ó recebe JSON `{url: str}`; enfileira transcriÁ„o via
       worker existente; retorna `{"status": "queued", "url": url}`
-- [x] `GET /health` ‚Äî retorna `{"status": "ok", "active": n}`
-      (usado pelo AKASHA para confirmar que Hermes subiu ap√≥s auto-launch)
-- [x] `hermes.py` ‚Äî escrever `hermes.api_port` no `ecosystem.json` no startup
-      (try/except silencioso ‚Äî nunca bloquear abertura do app)
-- [x] Feedback visual: downloads/transcri√ß√µes recebidos via API aparecem no log
-      com badge `[API]` para distinguir de a√ß√µes manuais
+- [x] `GET /health` ó retorna `{"status": "ok", "active": n}`
+      (usado pelo AKASHA para confirmar que Hermes subiu apÛs auto-launch)
+- [x] `hermes.py` ó escrever `hermes.api_port` no `ecosystem.json` no startup
+      (try/except silencioso ó nunca bloquear abertura do app)
+- [x] Feedback visual: downloads/transcriÁıes recebidos via API aparecem no log
+      com badge `[API]` para distinguir de aÁıes manuais
 
 ---
 
-### Fase 4 ‚Äî Expans√£o de sites suportados
+### Fase 4 ó Expans„o de sites suportados
 
-> yt-dlp suporta 1000+ sites, mas a UI do Hermes pode ter lista ou valida√ß√µes
-> que restringem o que √© aceito. Objetivo: garantir que todos os principais
-> sites de v√≠deo funcionem sem fric√ß√£o.
+> yt-dlp suporta 1000+ sites, mas a UI do Hermes pode ter lista ou validaÁıes
+> que restringem o que È aceito. Objetivo: garantir que todos os principais
+> sites de vÌdeo funcionem sem fricÁ„o.
 
-- [x] Auditar `hermes.py`: sem valida√ß√£o hardcoded que bloqueie sites; yt-dlp aceita tudo
-- [x] Expandir `is_playlist_url`: adicionados padr√µes para Twitch, SoundCloud, Vimeo,
+- [x] Auditar `hermes.py`: sem validaÁ„o hardcoded que bloqueie sites; yt-dlp aceita tudo
+- [x] Expandir `is_playlist_url`: adicionados padrıes para Twitch, SoundCloud, Vimeo,
       Dailymotion, Bandcamp, Bilibili e Niconico
 - [x] Placeholder do campo URL atualizado com lista de plataformas suportadas
 - [x] Tooltip no campo URL com lista de sites e link para supportedsites.md do yt-dlp
-- [x] Tooltip no combo de formato explicando plataformas com stream j√° mesclado
-- [ ] Testar formatos dispon√≠veis nas plataformas adicionadas (valida√ß√£o manual)
+- [x] Tooltip no combo de formato explicando plataformas com stream j· mesclado
+- [ ] Testar formatos disponÌveis nas plataformas adicionadas (validaÁ„o manual)
 
 ---
 
@@ -3352,601 +3352,601 @@ Ver `CONTRIBUTING.md` na raiz do ecossistema.
 ### Responsividade
 
 
-> Hermes √© PyQt6 ou equivalente. Mesmos princ√≠pios de KOSMOS.
+> Hermes È PyQt6 ou equivalente. Mesmos princÌpios de KOSMOS.
 
-- [ ] **Auditar layout principal: lista de v√≠deos | √°rea de transcri√ß√£o**
-  ‚Äî Em janelas estreitas a transcri√ß√£o precisa de scroll vertical, n√£o horizontal
-- [ ] **Testar em janela 800√ó600 m√≠nima**
+- [ ] **Auditar layout principal: lista de vÌdeos | ·rea de transcriÁ„o**
+  ó Em janelas estreitas a transcriÁ„o precisa de scroll vertical, n„o horizontal
+- [ ] **Testar em janela 800◊600 mÌnima**
 
-## OGMA ‚Äî Gestor de Conhecimento
+## OGMA ó Gestor de Conhecimento
 
 
 ---
 
-### Padr√µes de Desenvolvimento
+### Padrıes de Desenvolvimento
 
-### Tratamento de Erros ‚Äî EXTREMA IMPORT√ÇNCIA
+### Tratamento de Erros ó EXTREMA IMPORT¬NCIA
 
-√â de extrema import√¢ncia manter tipagem completa em **cada etapa do desenvolvimento**:
+… de extrema import‚ncia manter tipagem completa em **cada etapa do desenvolvimento**:
 
-- Todo c√≥digo que chama `db()` no renderer **deve** usar `fromIpc<T>` de `src/renderer/types/errors.ts`
-- Nunca usar `fromIpc<any>` ‚Äî sempre tipar o gen√©rico com o tipo concreto esperado
+- Todo cÛdigo que chama `db()` no renderer **deve** usar `fromIpc<T>` de `src/renderer/types/errors.ts`
+- Nunca usar `fromIpc<any>` ó sempre tipar o genÈrico com o tipo concreto esperado
 - Nunca usar `.then((r: any) => ...)` sem encapsulamento tipado
 - Usar `async/await` em vez de `.then()` encadeado em `ResultAsync` dentro de `Promise.all`
-- `pushToast` via `useAppStore()` √© o canal de feedback de erros para o utilizador
-- Todo novo c√≥digo deve passar em `tsc --noEmit` sem erros nos ficheiros da aplica√ß√£o
+- `pushToast` via `useAppStore()` È o canal de feedback de erros para o utilizador
+- Todo novo cÛdigo deve passar em `tsc --noEmit` sem erros nos ficheiros da aplicaÁ„o
 
 ### TODO.md
-Sempre manter este arquivo atualizado. Toda funcionalidade ou mudan√ßa pedida pelo utilizador deve ser anotada aqui (marcar com `[x]` quando conclu√≠da).
+Sempre manter este arquivo atualizado. Toda funcionalidade ou mudanÁa pedida pelo utilizador deve ser anotada aqui (marcar com `[x]` quando concluÌda).
 
 ### Git
-Fazer `git commit` ap√≥s cada funcionalidade ou mudan√ßa implementada, com mensagem descritiva do que foi feito.
+Fazer `git commit` apÛs cada funcionalidade ou mudanÁa implementada, com mensagem descritiva do que foi feito.
 
 ---
 
 ### Bugs conhecidos / Prioridade imediata
 
-- [x] Dashboard reseta ao trocar de aba (DashboardView desmontava ‚Äî corrigido: sempre montado com display:none)
-- [x] Cor de acento n√£o aplicada ao CSS (accent_color guardado mas n√£o aplicado √† vari√°vel --accent ‚Äî corrigido: useEffect em App.tsx)
-- [x] Atividades do Planner n√£o aparecem no Calend√°rio Global nem no widget de Agenda (UNION planned_tasks nas queries events:listForMonth e events:listUpcoming)
-- [x] Algoritmo de agendamento: prioridade (urgent/high/medium/low) + skip weekends + edi√ß√£o manual de planned_hours por bloco
-- [x] Lembretes: movidos para dentro do Planner (RemindersSection) ‚Äî prioridade, op√ß√µes de anteced√™ncia, p√°gina obrigat√≥ria
-- [x] Planejamento de revis√£o com repeti√ß√£o espa√ßada: 1‚Üí3‚Üí7‚Üí14‚Üí30 dias, ativ√°vel por tarefa
-- [x] Aba TEMPO removida ‚Äî Timer/Pomodoro integrado no Planner: bot√£o ‚ñ∂ por tarefa, auto-log no bloco, registo manual (dura√ß√£o+in√≠cio ou in√≠cio+fim), p√°gina obrigat√≥ria
-- [x] Bug: ao criar atividade atrav√©s do Planner, n√£o aparece a op√ß√£o de conectar a atividade a uma p√°gina, apenas a um projeto
-- [x] Dashboard n√£o recarregava ao voltar ao separador (corrigido: prop `isActive` nos widgets)
-- [x] Schema do DB n√£o era recriado no modo embedded replica ap√≥s apagar o ficheiro local (corrigido: padr√£o `_initPromise` + sync em background)
-- [x] Bot√£o de sincroniza√ß√£o manual nas Configura√ß√µes (fix: chamada direta a `db().sync.now()`, sem `fromIpc`)
-- [x] Tamanho de fonte nas Configura√ß√µes n√£o alterava nada (fix: CSS usa `rem` com base em `html { font-size }`)
-- [x] Barra lateral recolh√≠vel (modo s√≥-√≠cones, toggle ‚óÄ‚ñ∂, persist√™ncia em localStorage)
-- [x] Acrescentar o bot√£o "reagendar" no planner global ao inv√©s de s√≥ nos locais dos projetos
-- [x] Verificar se os bot√µes "reagendar" tamb√©m reagendam tarefas pendentes atrasadas (que devem ser trtadas como urg√™ncia m√°xima)
-- [x] separar limite de horas dispon√≠veis para marcar automaticamente as atividades do planner por dia ao inv√©s de continuar com o mesmo limite de horas para todos os dias
-- [x] Mudar o planner para poder mudar a visualiza√ß√£o da parte direita ‚Äî tabs AGENDA e TAREFAS ABERTAS implementadas; Pomodoro sempre vis√≠vel na coluna esquerda
-- [x] Campo de prioridade no formul√°rio de cria√ß√£o de tarefa do GlobalPlanner
-- [x] **Bug:** filtro por data via clique no mini-calend√°rio do GlobalPlanner ‚Äî corrigido: `activeFocus` removido das deps do `useCallback`, headers da agenda uniformizados
-- [x] **Bug:** work_blocks do Planner n√£o apareciam na aba Agenda do GlobalCalendarView ‚Äî corrigido: adicionado UNION com `work_blocks` em `events:listUpcoming`
+- [x] Dashboard reseta ao trocar de aba (DashboardView desmontava ó corrigido: sempre montado com display:none)
+- [x] Cor de acento n„o aplicada ao CSS (accent_color guardado mas n„o aplicado ‡ vari·vel --accent ó corrigido: useEffect em App.tsx)
+- [x] Atividades do Planner n„o aparecem no Calend·rio Global nem no widget de Agenda (UNION planned_tasks nas queries events:listForMonth e events:listUpcoming)
+- [x] Algoritmo de agendamento: prioridade (urgent/high/medium/low) + skip weekends + ediÁ„o manual de planned_hours por bloco
+- [x] Lembretes: movidos para dentro do Planner (RemindersSection) ó prioridade, opÁıes de antecedÍncia, p·gina obrigatÛria
+- [x] Planejamento de revis„o com repetiÁ„o espaÁada: 1?3?7?14?30 dias, ativ·vel por tarefa
+- [x] Aba TEMPO removida ó Timer/Pomodoro integrado no Planner: bot„o ? por tarefa, auto-log no bloco, registo manual (duraÁ„o+inÌcio ou inÌcio+fim), p·gina obrigatÛria
+- [x] Bug: ao criar atividade atravÈs do Planner, n„o aparece a opÁ„o de conectar a atividade a uma p·gina, apenas a um projeto
+- [x] Dashboard n„o recarregava ao voltar ao separador (corrigido: prop `isActive` nos widgets)
+- [x] Schema do DB n„o era recriado no modo embedded replica apÛs apagar o ficheiro local (corrigido: padr„o `_initPromise` + sync em background)
+- [x] Bot„o de sincronizaÁ„o manual nas ConfiguraÁıes (fix: chamada direta a `db().sync.now()`, sem `fromIpc`)
+- [x] Tamanho de fonte nas ConfiguraÁıes n„o alterava nada (fix: CSS usa `rem` com base em `html { font-size }`)
+- [x] Barra lateral recolhÌvel (modo sÛ-Ìcones, toggle ??, persistÍncia em localStorage)
+- [x] Acrescentar o bot„o "reagendar" no planner global ao invÈs de sÛ nos locais dos projetos
+- [x] Verificar se os botıes "reagendar" tambÈm reagendam tarefas pendentes atrasadas (que devem ser trtadas como urgÍncia m·xima)
+- [x] separar limite de horas disponÌveis para marcar automaticamente as atividades do planner por dia ao invÈs de continuar com o mesmo limite de horas para todos os dias
+- [x] Mudar o planner para poder mudar a visualizaÁ„o da parte direita ó tabs AGENDA e TAREFAS ABERTAS implementadas; Pomodoro sempre visÌvel na coluna esquerda
+- [x] Campo de prioridade no formul·rio de criaÁ„o de tarefa do GlobalPlanner
+- [x] **Bug:** filtro por data via clique no mini-calend·rio do GlobalPlanner ó corrigido: `activeFocus` removido das deps do `useCallback`, headers da agenda uniformizados
+- [x] **Bug:** work_blocks do Planner n„o apareciam na aba Agenda do GlobalCalendarView ó corrigido: adicionado UNION com `work_blocks` em `events:listUpcoming`
 
 ---
 
-### Fase Extra ‚Äî Prioridade Alta
+### Fase Extra ó Prioridade Alta
 
-Funcionalidades em falta ou incompletas nas √°reas j√° iniciadas (Biblioteca, Editor, Produtividade).
+Funcionalidades em falta ou incompletas nas ·reas j· iniciadas (Biblioteca, Editor, Produtividade).
 
-- [x] Leituras ‚Üí Recurso: selecionar livro existente ao registar leitura
-- [x] Sess√µes de leitura: registar sess√µes individuais com data e p√°ginas lidas
-- [x] Abas de leitura: Geral, Notas, Cita√ß√µes, V√≠nculos (detalhe de uma leitura)
-- [x] Recursos: vista em galeria + detalhe com metadados + conex√µes a p√°ginas
-- [x] `reading_links`: vincular leitura ‚Üî p√°gina do OGMA
-- [x] Progresso de leitura por p√°ginas ou porcentagem (escolha ao cadastrar)
-- [x] Meta de leitura anual ‚Äî IPC `reading:goals:*` + `ReadingGoalBanner` na Biblioteca: barra de progresso, contador lidos/meta, inline edit; widget Dashboard pendente
-- [ ] Hist√≥rico de vers√µes de p√°gina ‚Äî tabela `page_versions` j√° existe no schema; falta IPC + UI no PageView
-- [x] Backlinks: mostrar no PageView as p√°ginas que referenciam a atual
-- [x] **Pomodoro / timer independente com hist√≥rico por p√°gina** ‚Äî aba "Tempo" adicionada ao ProjectDashboardView: `StudyTimerTab` com rel√≥gio SVG animado, Pomodoro 25/5min, registo manual de sess√µes (p√°gina, dura√ß√£o, data, notas, tags), hist√≥rico do projeto
+- [x] Leituras ? Recurso: selecionar livro existente ao registar leitura
+- [x] Sessıes de leitura: registar sessıes individuais com data e p·ginas lidas
+- [x] Abas de leitura: Geral, Notas, CitaÁıes, VÌnculos (detalhe de uma leitura)
+- [x] Recursos: vista em galeria + detalhe com metadados + conexıes a p·ginas
+- [x] `reading_links`: vincular leitura ? p·gina do OGMA
+- [x] Progresso de leitura por p·ginas ou porcentagem (escolha ao cadastrar)
+- [x] Meta de leitura anual ó IPC `reading:goals:*` + `ReadingGoalBanner` na Biblioteca: barra de progresso, contador lidos/meta, inline edit; widget Dashboard pendente
+- [ ] HistÛrico de versıes de p·gina ó tabela `page_versions` j· existe no schema; falta IPC + UI no PageView
+- [x] Backlinks: mostrar no PageView as p·ginas que referenciam a atual
+- [x] **Pomodoro / timer independente com histÛrico por p·gina** ó aba "Tempo" adicionada ao ProjectDashboardView: `StudyTimerTab` com relÛgio SVG animado, Pomodoro 25/5min, registo manual de sessıes (p·gina, duraÁ„o, data, notas, tags), histÛrico do projeto
 
 ---
 
-### Fase 4 ‚Äî Kanban
+### Fase 4 ó Kanban
 
 - [x] Drag & drop entre colunas (muda `prop_value` do Status)
-- [x] Filtros e ordena√ß√£o na view
+- [x] Filtros e ordenaÁ„o na view
 
 ---
 
-### Fase 5 ‚Äî Table / List
+### Fase 5 ó Table / List
 
-- [x] Edi√ß√£o inline de propriedades nas views (TableView)
-- [x] Filtros, ordena√ß√£o e busca nas views (TableView: busca + filtro por select; ListView: busca + sort por t√≠tulo/data)
-
----
-
-### Fase 6 ‚Äî M√≥dulo Acad√©mico Completo
-
-- [x] `colorUtils.ts` ‚Äî cores HSL autom√°ticas por disciplina (disciplineColor + disciplineColorAlpha)
-- [x] Gerador de c√≥digo `PREFIX###` autom√°tico (IPC pages:create, propriedade built-in `codigo`) ‚Äî algoritmo melhorado com initials por palavras significativas + extra√ß√£o de numerais
-- [x] Pr√©-requisitos entre p√°ginas com detec√ß√£o de ciclo (IPC + UI no PageView para projetos acad√©micos)
-- [x] Campo `institution` no n√≠vel do projeto (coluna na tabela `projects`, vis√≠vel em NewProjectModal e EditProjectModal apenas para tipo `academic`) ‚Äî "Professor" permanece propriedade da p√°gina
-- [x] Modal de nova p√°gina expandido: cor de capa, p√°gina pai, propriedades din√¢micas, tags, multi-select
-- [x] IconPicker: navega√ß√£o ‚óÄ‚ñ∂ entre categorias, scroll, novas sugest√µes por palavra-chave
-- ~~Script de migra√ß√£o do StudyFlow~~ (cancelado)
-- [x] Tipo de projeto **"Hobbies"** ‚Äî `'hobby'` adicionado ao `ProjectType` com subcategorias, propriedades padr√£o (Status, Tags, Data In√≠cio, Notas) e views (Lista, Tabela)
-- [x] **Ideias Futuras** ‚Äî `'idea'` adicionado ao `ProjectType`; widget "Ideias Futuras" no Dashboard lista projetos deste tipo com status e descri√ß√£o
-- [x] Planner global: algoritmo de agendamento considera prioridade + prazo + limite de horas/dia; reagendamento dispon√≠vel globalmente; agenda por dia implementada
-- [x] Organiza√ß√£o progressiva para projetos acad√™micos **Autodidata**: propriedade `ciclo` (Ciclo 1‚Äì5, expans√≠vel pelo utilizador) em vez de `trimestre`; `AcademicProgressView` e `CalendarView` adaptam agrupamento e labels automaticamente conforme subcategoria
+- [x] EdiÁ„o inline de propriedades nas views (TableView)
+- [x] Filtros, ordenaÁ„o e busca nas views (TableView: busca + filtro por select; ListView: busca + sort por tÌtulo/data)
 
 ---
 
-### Fase 8 ‚Äî Calend√°rio, Lembretes e Analytics
+### Fase 6 ó MÛdulo AcadÈmico Completo
+
+- [x] `colorUtils.ts` ó cores HSL autom·ticas por disciplina (disciplineColor + disciplineColorAlpha)
+- [x] Gerador de cÛdigo `PREFIX###` autom·tico (IPC pages:create, propriedade built-in `codigo`) ó algoritmo melhorado com initials por palavras significativas + extraÁ„o de numerais
+- [x] PrÈ-requisitos entre p·ginas com detecÁ„o de ciclo (IPC + UI no PageView para projetos acadÈmicos)
+- [x] Campo `institution` no nÌvel do projeto (coluna na tabela `projects`, visÌvel em NewProjectModal e EditProjectModal apenas para tipo `academic`) ó "Professor" permanece propriedade da p·gina
+- [x] Modal de nova p·gina expandido: cor de capa, p·gina pai, propriedades din‚micas, tags, multi-select
+- [x] IconPicker: navegaÁ„o ?? entre categorias, scroll, novas sugestıes por palavra-chave
+- ~~Script de migraÁ„o do StudyFlow~~ (cancelado)
+- [x] Tipo de projeto **"Hobbies"** ó `'hobby'` adicionado ao `ProjectType` com subcategorias, propriedades padr„o (Status, Tags, Data InÌcio, Notas) e views (Lista, Tabela)
+- [x] **Ideias Futuras** ó `'idea'` adicionado ao `ProjectType`; widget "Ideias Futuras" no Dashboard lista projetos deste tipo com status e descriÁ„o
+- [x] Planner global: algoritmo de agendamento considera prioridade + prazo + limite de horas/dia; reagendamento disponÌvel globalmente; agenda por dia implementada
+- [x] OrganizaÁ„o progressiva para projetos acadÍmicos **Autodidata**: propriedade `ciclo` (Ciclo 1ñ5, expansÌvel pelo utilizador) em vez de `trimestre`; `AcademicProgressView` e `CalendarView` adaptam agrupamento e labels automaticamente conforme subcategoria
+
+---
+
+### Fase 8 ó Calend·rio, Lembretes e Analytics
 
 - [x] Lembretes via Notification API do Electron (scheduler.ts com polling de 60s)
-- [x] Actividades acad√©micas: tipos Prova, Trabalho, Semin√°rio, Defesa, Prazo, Reuni√£o, Outro
-- [x] PageEventsPanel ‚Äî criar actividades/lembretes dentro de cada p√°gina
-- [x] UpcomingEventsPanel ‚Äî painel de pr√≥ximas actividades no dashboard do projecto
-- [x] GlobalCalendarView ‚Äî eventos no grid + aba Agenda (pr√≥ximos 60 dias) + aba Lembretes
+- [x] Actividades acadÈmicas: tipos Prova, Trabalho, Semin·rio, Defesa, Prazo, Reuni„o, Outro
+- [x] PageEventsPanel ó criar actividades/lembretes dentro de cada p·gina
+- [x] UpcomingEventsPanel ó painel de prÛximas actividades no dashboard do projecto
+- [x] GlobalCalendarView ó eventos no grid + aba Agenda (prÛximos 60 dias) + aba Lembretes
 
 ---
 
-### Fase 9 ‚Äî Dashboard Global
+### Fase 9 ó Dashboard Global
 
-- [x] Fase da lua (c√°lculo astron√≥mico) ‚Äî getMoonPhase() com refer√™ncia J2000 + ciclo 29.53 dias
-- [x] Drag-and-drop dos widgets + persist√™ncia da ordem (localStorage `ogma_dashboard_order`)
-- [x] Roda do Ano (WheelOfYearWidget) ‚Äî SVG com 8 Sab√°s, setores sazonais, marcador do dia atual, pr√≥ximo Sab√° destacado
-- [x] Tr√™s tamanhos por widget (SM/MD/LG) com layouts adaptativos + persist√™ncia (localStorage `ogma_widget_sizes`)
-- [x] LG: ocupa 2 colunas √ó 2 linhas na grid (permite 2 widgets SM empilhados ao lado)
-- [x] Localiza√ß√£o do utilizador (cidade, estado, pa√≠s, lat/lon, hemisf√©rio, timezone) via geocoding Open-Meteo ‚Üí Settings ‚Üí Localiza√ß√£o
-- [x] Widget de Previs√£o do Tempo (WeatherWidget) ‚Äî Open-Meteo forecast, layouts por tamanho, WMO codes em PT
-- [x] Roda do Ano com hemisf√©rio real e datas astron√≥micas (Meeus) por localiza√ß√£o configurada
+- [x] Fase da lua (c·lculo astronÛmico) ó getMoonPhase() com referÍncia J2000 + ciclo 29.53 dias
+- [x] Drag-and-drop dos widgets + persistÍncia da ordem (localStorage `ogma_dashboard_order`)
+- [x] Roda do Ano (WheelOfYearWidget) ó SVG com 8 Sab·s, setores sazonais, marcador do dia atual, prÛximo Sab· destacado
+- [x] TrÍs tamanhos por widget (SM/MD/LG) com layouts adaptativos + persistÍncia (localStorage `ogma_widget_sizes`)
+- [x] LG: ocupa 2 colunas ◊ 2 linhas na grid (permite 2 widgets SM empilhados ao lado)
+- [x] LocalizaÁ„o do utilizador (cidade, estado, paÌs, lat/lon, hemisfÈrio, timezone) via geocoding Open-Meteo ? Settings ? LocalizaÁ„o
+- [x] Widget de Previs„o do Tempo (WeatherWidget) ó Open-Meteo forecast, layouts por tamanho, WMO codes em PT
+- [x] Roda do Ano com hemisfÈrio real e datas astronÛmicas (Meeus) por localizaÁ„o configurada
 
-### Gest√£o de widgets
+### Gest„o de widgets
 
-- [x] Remover widget do dashboard (bot√£o √ó no hover)
+- [x] Remover widget do dashboard (bot„o ◊ no hover)
 - [x] Adicionar widget oculto de volta (card "+ Adicionar widget" no final do grid)
-- [x] Persist√™ncia de widgets ocultos (`localStorage ogma_hidden_widgets`)
+- [x] PersistÍncia de widgets ocultos (`localStorage ogma_hidden_widgets`)
 
 ---
 
-### Fase 9b ‚Äî Planejador Acad√™mico (Planner)
+### Fase 9b ó Planejador AcadÍmico (Planner)
 
-Agendamento de tarefas com horas estimadas, replanejamento autom√°tico e v√≠nculo com p√°ginas do projeto.
+Agendamento de tarefas com horas estimadas, replanejamento autom·tico e vÌnculo com p·ginas do projeto.
 
 - [x] Migrations: tabelas `planned_tasks` e `work_blocks`
-- [x] IPC handlers: CRUD de `planned_tasks` + algoritmo de scheduling (EDF, capacidade di√°ria global, replanejamento de missed blocks)
-- [x] Aba "Planner" no ProjectView ‚Äî lista de tarefas planej√°veis + calend√°rio semanal com blocos de horas + criar/vincular p√°gina ao criar tarefa
-- [x] Widget "Plano do Dia" no Dashboard ‚Äî consolidado de todos os projetos para hoje, com checkbox de sess√£o conclu√≠da
-- [x] Campo "Capacidade di√°ria (horas)" em Settings (padr√£o 4h)
-- [x] Criar uma aba para o planner global no menu lateral (GlobalPlannerView: fundo pontilhado + cosmos, est√©tica bullet journal, mini calend√°rio, urgente/hoje √† esquerda, log completo com agrupamento/cria√ß√£o/detalhe inline √† direita)
+- [x] IPC handlers: CRUD de `planned_tasks` + algoritmo de scheduling (EDF, capacidade di·ria global, replanejamento de missed blocks)
+- [x] Aba "Planner" no ProjectView ó lista de tarefas planej·veis + calend·rio semanal com blocos de horas + criar/vincular p·gina ao criar tarefa
+- [x] Widget "Plano do Dia" no Dashboard ó consolidado de todos os projetos para hoje, com checkbox de sess„o concluÌda
+- [x] Campo "Capacidade di·ria (horas)" em Settings (padr„o 4h)
+- [x] Criar uma aba para o planner global no menu lateral (GlobalPlannerView: fundo pontilhado + cosmos, estÈtica bullet journal, mini calend·rio, urgente/hoje ‡ esquerda, log completo com agrupamento/criaÁ„o/detalhe inline ‡ direita)
 
 ---
 
-### Fase 10 - Sincroniza√ß√£o entre dispositivos ‚Äî Turso / libsql
+### Fase 10 - SincronizaÁ„o entre dispositivos ó Turso / libsql
 
-Migra√ß√£o de `better-sqlite3-multiple-ciphers` ‚Üí `@libsql/client` com embedded replica.
+MigraÁ„o de `better-sqlite3-multiple-ciphers` ? `@libsql/client` com embedded replica.
 A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arrancar.
 
-- [x] `data/settings.json` ‚Äî prefer√™ncias do utilizador separadas do banco (`electron-store` substitu√≠do por JSON direto via `src/main/settings.ts`)
-- [x] Migrar `localStorage` (tema, localiza√ß√£o, dashboard_order, widget_sizes, hidden_widgets) ‚Üí `data/settings.json` via IPC `appSettings:*`
-- ~~rclone + Proton Drive~~ ‚Äî removido (v0.1); incompatibilidade com a API do Proton Drive (erro 422 persistente ao actualizar ficheiros).
+- [x] `data/settings.json` ó preferÍncias do utilizador separadas do banco (`electron-store` substituÌdo por JSON direto via `src/main/settings.ts`)
+- [x] Migrar `localStorage` (tema, localizaÁ„o, dashboard_order, widget_sizes, hidden_widgets) ? `data/settings.json` via IPC `appSettings:*`
+- ~~rclone + Proton Drive~~ ó removido (v0.1); incompatibilidade com a API do Proton Drive (erro 422 persistente ao actualizar ficheiros).
 
-### Passo 1 ‚Äî Conta Turso e credenciais
+### Passo 1 ó Conta Turso e credenciais
 
 - [x] Criar conta em turso.tech (plano free: 500 DBs, 1 GB)
 - [x] Instalar CLI Turso: `curl -sSfL https://get.tur.so/install.sh | bash
 - [x] `turso auth login`
-- [x] `turso db create ogma` ‚Äî criar a BD remota
-- [x] `turso db show ogma` ‚Äî copiar URL (`libsql://ogma-....turso.io`)
-- [x] `turso db tokens create ogma` ‚Äî gerar auth token
-- [x] Guardar em `data/.env` (j√° no `.gitignore`):
+- [x] `turso db create ogma` ó criar a BD remota
+- [x] `turso db show ogma` ó copiar URL (`libsql://ogma-....turso.io`)
+- [x] `turso db tokens create ogma` ó gerar auth token
+- [x] Guardar em `data/.env` (j· no `.gitignore`):
   ```
   TURSO_URL=libsql://ogma-....turso.io
   TURSO_TOKEN=ey...
   ```
 
-### Passo 2 ‚Äî Instalar depend√™ncias ‚úÖ
+### Passo 2 ó Instalar dependÍncias ?
 
 - [x] `npm install @libsql/client`
 - [x] `npm uninstall better-sqlite3-multiple-ciphers`
 - [x] Scripts `postinstall` e `rebuild` removidos do package.json
-- [x] `@libsql/client` funciona sem compila√ß√£o (N-API ‚Äî sem problema GCC 15)
+- [x] `@libsql/client` funciona sem compilaÁ„o (N-API ó sem problema GCC 15)
 
-### Passo 3 ‚Äî Reescrever `src/main/database.ts` ‚úÖ
+### Passo 3 ó Reescrever `src/main/database.ts` ?
 
 - [x] Substituir import: `import { createClient, Client } from '@libsql/client'`
-- [x] `getClient(): Promise<Client>` ‚Äî lazy init async; l√™ TURSO_URL/TURSO_TOKEN de process.env
-- [x] `dbGet/dbAll/dbRun` ‚Üí async com mesma assinatura vari√°dica
-- [x] `initSchema()` ‚Üí async; `createTables()` com loop de `client.execute()`; migra√ß√µes incrementais com try/catch
-- [x] `seedDefaults()` ‚Üí async
+- [x] `getClient(): Promise<Client>` ó lazy init async; lÍ TURSO_URL/TURSO_TOKEN de process.env
+- [x] `dbGet/dbAll/dbRun` ? async com mesma assinatura vari·dica
+- [x] `initSchema()` ? async; `createTables()` com loop de `client.execute()`; migraÁıes incrementais com try/catch
+- [x] `seedDefaults()` ? async
 - [x] `closeClient()` + `syncClient()` exportados
 - [x] PRAGMA foreign_keys via `client.execute()`
 
-### Passo 4 ‚Äî Atualizar `src/main/ipc.ts` e ficheiros dependentes ‚úÖ
+### Passo 4 ó Atualizar `src/main/ipc.ts` e ficheiros dependentes ?
 
-- [x] Wrapper `api()` ‚Üí async handler
-- [x] `seedProjectProperties()` + `seedProjectViews()` ‚Üí async
-- [x] `scheduleTasks()`, `updateTaskStatus()`, `getDailyCapacity()` ‚Üí async
-- [x] `ftsUpsert()` ‚Üí async
+- [x] Wrapper `api()` ? async handler
+- [x] `seedProjectProperties()` + `seedProjectViews()` ? async
+- [x] `scheduleTasks()`, `updateTaskStatus()`, `getDailyCapacity()` ? async
+- [x] `ftsUpsert()` ? async
 - [x] Todos os handlers com `await` em dbGet/dbAll/dbRun
-- [x] `db.transaction()` / `db.prepare()` ‚Üí `client.batch()` ou awaits sequenciais
-- [x] `scheduler.ts` ‚Üí `checkAndFire()` async
-- [x] `main.ts` ‚Üí `await getClient()`, load dotenv de `data/.env`, sync no before-quit
+- [x] `db.transaction()` / `db.prepare()` ? `client.batch()` ou awaits sequenciais
+- [x] `scheduler.ts` ? `checkAndFire()` async
+- [x] `main.ts` ? `await getClient()`, load dotenv de `data/.env`, sync no before-quit
 - [x] IPC `db:sync` adicionado para sync manual do renderer
 - [x] `tsc --noEmit` sem erros em `src/main/`
 
-### Passo 5 ‚Äî Verificar compatibilidade ‚úÖ
+### Passo 5 ó Verificar compatibilidade ?
 
-- [x] `PRAGMA user_version` ‚Äî n√£o usado (migra√ß√£o incremental via `runIncrementalMigrations`); compat√≠vel com Turso
-- [x] FTS5 (`search_index`) ‚Äî Turso suporta; cria√ß√£o separada do batch DDL com try/catch; queries MATCH funcionais
-- [x] Transa√ß√µes ‚Äî nenhum `db.transaction()` restante; substitui√ß√£o por awaits sequenciais completa
-- [x] `tsc --noEmit` sem erros ‚Äî corrigidos: `skipLibCheck` no tsconfig renderer, declara√ß√µes de m√≥dulo para plugins EditorJS sem tipos, `vite-env.d.ts` para `import.meta.env`, import inexistente `appSettings` removido de SettingsView
+- [x] `PRAGMA user_version` ó n„o usado (migraÁ„o incremental via `runIncrementalMigrations`); compatÌvel com Turso
+- [x] FTS5 (`search_index`) ó Turso suporta; criaÁ„o separada do batch DDL com try/catch; queries MATCH funcionais
+- [x] TransaÁıes ó nenhum `db.transaction()` restante; substituiÁ„o por awaits sequenciais completa
+- [x] `tsc --noEmit` sem erros ó corrigidos: `skipLibCheck` no tsconfig renderer, declaraÁıes de mÛdulo para plugins EditorJS sem tipos, `vite-env.d.ts` para `import.meta.env`, import inexistente `appSettings` removido de SettingsView
 
-### Passo 6 ‚Äî Migrar dados existentes ‚úÖ
+### Passo 6 ó Migrar dados existentes ?
 
 - [x] BD exportada para `data/ogma_dump.sql` (backup em `data/ogma_backup.db`)
 - [x] Dados limpos (sem FTS5/PRAGMAs) importados para Turso: `data/ogma_inserts.sql`
 - [x] Sync testado: workspace "Jen" + 2 resources confirmados no remoto e local
 
-### Passo 7 ‚Äî Sync no ciclo de vida do app
+### Passo 7 ó Sync no ciclo de vida do app
 
-- [x] `main.ts` ‚Äî sync inicial em background ap√≥s init do schema (n√£o bloqueia o arranque)
-- [x] `main.ts` ‚Äî sync no evento `app.on('before-quit')`
-- [x] IPC `db:sync` para sync manual a partir do renderer (bot√£o nas Settings)
+- [x] `main.ts` ó sync inicial em background apÛs init do schema (n„o bloqueia o arranque)
+- [x] `main.ts` ó sync no evento `app.on('before-quit')`
+- [x] IPC `db:sync` para sync manual a partir do renderer (bot„o nas Settings)
 
-### Passo 8 ‚Äî Testes e valida√ß√£o ‚úÖ
+### Passo 8 ó Testes e validaÁ„o ?
 
-- [x] Testar CRUD b√°sico (criar/editar/apagar projeto, p√°gina, leitura) ‚Äî 23/23 testes passaram via `data/test_passo8.mjs`
-- [x] Testar funcionamento offline ‚Äî embedded replica l√™ do disco local; `client.sync()` falha silenciosamente sem rede (offline-first por design)
-- [ ] Testar sync entre dois dispositivos ‚Äî requer hardware; `client.sync()` confirmado funcional neste dispositivo
+- [x] Testar CRUD b·sico (criar/editar/apagar projeto, p·gina, leitura) ó 23/23 testes passaram via `data/test_passo8.mjs`
+- [x] Testar funcionamento offline ó embedded replica lÍ do disco local; `client.sync()` falha silenciosamente sem rede (offline-first por design)
+- [ ] Testar sync entre dois dispositivos ó requer hardware; `client.sync()` confirmado funcional neste dispositivo
 
-### √çcone da aplica√ß√£o
+### Õcone da aplicaÁ„o
 
-- [x] √çcone tempor√°rio criado (`assets/ogma.ico`) ‚Äî design: fundo castanho escuro, s√≠mbolo ‚ú¶ dourado, estrelas cosmos, texto "OGMA"
-- [x] √çcone aplicado ao `BrowserWindow` (`icon: ICON_PATH` em `src/main/main.ts`)
-- [x] √çcone configurado no `electron-builder` (`build.win.icon`)
+- [x] Õcone tempor·rio criado (`assets/ogma.ico`) ó design: fundo castanho escuro, sÌmbolo ? dourado, estrelas cosmos, texto "OGMA"
+- [x] Õcone aplicado ao `BrowserWindow` (`icon: ICON_PATH` em `src/main/main.ts`)
+- [x] Õcone configurado no `electron-builder` (`build.win.icon`)
 - [x] Atalhos Windows atualizados com `IconLocation` para o `.ico`
 
 ---
 
-### Fase 11 ‚Äî Polimento
+### Fase 11 ó Polimento
 
-- [x] √çcone do app (tempor√°rio) ‚Äî ver sec√ß√£o "√çcone da aplica√ß√£o" acima
-- [x] Decora√ß√£o c√≥smica completa, anima√ß√µes
+- [x] Õcone do app (tempor·rio) ó ver secÁ„o "Õcone da aplicaÁ„o" acima
+- [x] DecoraÁ„o cÛsmica completa, animaÁıes
 
 ---
 
-### Fase 12 ‚Äî Analytics (todos vem desativados por padr√£o e s√£o ativados nas configura√ß√µes: vai abrir uma janela centralizada com um checkbox para marcar os que deseja ativar)
+### Fase 12 ó Analytics (todos vem desativados por padr„o e s„o ativados nas configuraÁıes: vai abrir uma janela centralizada com um checkbox para marcar os que deseja ativar)
 
-- [x] Pico de Produtividade: "Voc√™ √© uma criatura da [Manh√£/Noite]", baseaddefinitivoo no hor√°rio em que a maioria das p√°ginas √© editada.
-- [x] Taxa de Absor√ß√£o Liter√°ria: Quantos recursos (livros/artigos) foram conclu√≠dos no m√™s vs. adicionados √† lista de leitura.
-- [ ] P√°ginas por "√Årea do Conhecimento": Um gr√°fico de pizza ou barras mostrando se voc√™ est√° dedicando mais tempo a Letras, Ciberseguran√ßa ou Hobbies Manuais.
-- [x] Produtividade por Fase Lunar: Uma estat√≠stica curiosa mostrando em qual fase da lua voc√™ costuma concluir mais tarefas (ex: "Sua produtividade aumenta 20% na Lua Crescente").
-- [ ] Progresso da Esta√ß√£o: Quanto falta para o pr√≥ximo Sab√° (j√° existe na Roda, mas pode ser um valor percentual de "Prepara√ß√£o para o Equin√≥cio/Solst√≠cio").
+- [x] Pico de Produtividade: "VocÍ È uma criatura da [Manh„/Noite]", baseaddefinitivoo no hor·rio em que a maioria das p·ginas È editada.
+- [x] Taxa de AbsorÁ„o Liter·ria: Quantos recursos (livros/artigos) foram concluÌdos no mÍs vs. adicionados ‡ lista de leitura.
+- [ ] P·ginas por "¡rea do Conhecimento": Um gr·fico de pizza ou barras mostrando se vocÍ est· dedicando mais tempo a Letras, CiberseguranÁa ou Hobbies Manuais.
+- [x] Produtividade por Fase Lunar: Uma estatÌstica curiosa mostrando em qual fase da lua vocÍ costuma concluir mais tarefas (ex: "Sua produtividade aumenta 20% na Lua Crescente").
+- [ ] Progresso da EstaÁ„o: Quanto falta para o prÛximo Sab· (j· existe na Roda, mas pode ser um valor percentual de "PreparaÁ„o para o EquinÛcio/SolstÌcio").
 - [x] Horas de Voo (Deep Work): Total de horas logadas nos work_blocks do Planner.
-- [x] Velocidade de Leitura: M√©dia de p√°ginas lidas por dia nos √∫ltimos 7 dias.
-- [x] Radar de Pol√≠mata (Equil√≠brio de √Åreas): J√° que voc√™ tem diferentes project_type (Acad√™mico, Escrita, Ciberseguran√ßa, etc.), essa m√©trica mostra para onde sua energia est√° indo. **O que medir:** Porcentagem de tarefas conclu√≠das ou tempo logado por categoria de projeto. **Est√©tica**: Um gr√°fico de radar ou uma lista simples: "Este m√™s, sua mente esteve 40% em Letras, 30% em Ciberseguran√ßa e 30% em Hobbies" **Objetivo**: Garantir que nenhum pilar seja esquecido.
+- [x] Velocidade de Leitura: MÈdia de p·ginas lidas por dia nos ˙ltimos 7 dias.
+- [x] Radar de PolÌmata (EquilÌbrio de ¡reas): J· que vocÍ tem diferentes project_type (AcadÍmico, Escrita, CiberseguranÁa, etc.), essa mÈtrica mostra para onde sua energia est· indo. **O que medir:** Porcentagem de tarefas concluÌdas ou tempo logado por categoria de projeto. **EstÈtica**: Um gr·fico de radar ou uma lista simples: "Este mÍs, sua mente esteve 40% em Letras, 30% em CiberseguranÁa e 30% em Hobbies" **Objetivo**: Garantir que nenhum pilar seja esquecido.
 
-### Por projeto / acad√©mico
-- [ ] **Horas por projecto** ‚Äî gr√°fico de barras com `work_blocks` agrupados por projecto
-- [ ] **Taxa de conclus√£o do Planner** ‚Äî tarefas conclu√≠das vs. atrasadas por m√™s
-- [ ] **Distribui√ß√£o de tipos de tarefa** ‚Äî pizza de `task_type` (aula/prova/atividade‚Ä¶)
-- [ ] **Progresso por prazo** ‚Äî linha do tempo de tarefas vs. deadline
+### Por projeto / acadÈmico
+- [ ] **Horas por projecto** ó gr·fico de barras com `work_blocks` agrupados por projecto
+- [ ] **Taxa de conclus„o do Planner** ó tarefas concluÌdas vs. atrasadas por mÍs
+- [ ] **DistribuiÁ„o de tipos de tarefa** ó pizza de `task_type` (aula/prova/atividadeÖ)
+- [ ] **Progresso por prazo** ó linha do tempo de tarefas vs. deadline
 
 ### Leitura
-- [ ] **Ritmo de leitura** ‚Äî p√°ginas/dia ao longo do tempo (`reading_sessions`)
-- [ ] **Livros conclu√≠dos por m√™s** ‚Äî gr√°fico de barras
-- [ ] **Progresso da meta anual** ‚Äî gauge + projec√ß√£o de conclus√£o
+- [ ] **Ritmo de leitura** ó p·ginas/dia ao longo do tempo (`reading_sessions`)
+- [ ] **Livros concluÌdos por mÍs** ó gr·fico de barras
+- [ ] **Progresso da meta anual** ó gauge + projecÁ„o de conclus„o
 
 ### Conhecimento
-- [ ] **P√°ginas mais conectadas** ‚Äî top backlinks (hubs de conhecimento)
-- [ ] **Tags mais usadas** ‚Äî evolu√ß√£o temporal
-- [x] **Actividade por dia da semana** ‚Äî padr√£o de produtividade
+- [ ] **P·ginas mais conectadas** ó top backlinks (hubs de conhecimento)
+- [ ] **Tags mais usadas** ó evoluÁ„o temporal
+- [x] **Actividade por dia da semana** ó padr„o de produtividade
 
 ---
 
 ### Fase 13 - Widgets
 
 #### IDEIAS
-- [ ] **Terminal de Ciberseguran√ßa (Status de Lab)** - O que faz: Um widget com est√©tica de terminal (letras verdes/amber sobre fundo escuro) mostrando o progresso em certifica√ß√µes ou m√°quinas de lab. Por que √© legal: Cria um contraste visual interessante com o resto do dashboard de "papel envelhecido". √â o seu lado tecnol√≥gico pulsando no meio do cosmos.
-- [ ] **Widget de "Rituais de Esta√ß√£o** - **O que faz**: Cruzando a fase da lua e a Roda do Ano, ele sugere uma atividade de "autocuidado pol√≠mata". **Exemplos**: "Lua Minguante no Outono: Momento de revisar e descartar notas obsoletas (Pilar Organizada)" / "Lua Crescente: Ideal para iniciar um novo conto ou projeto de escrita (Pilar Talentosa)". **Por que √© legal**: D√° um prop√≥sito pr√°tico para os widgets astron√¥micos que voc√™ j√° construiu.
-- [ ] **Provocador de Pesquisa** (Pergunta em Aberto): Como voc√™ quer ser pesquisadora e pol√≠mata, muitas vezes anotamos d√∫vidas no meio dos textos. O que faz: Varre o conte√∫do das suas p√°ginas em busca de frases que terminam com ? ou marcadas com um s√≠mbolo espec√≠fico (ex: [?]) e exibe uma delas aleatoriamente. A "M√°gica": Te confronta com uma curiosidade que voc√™ teve no passado, incentivando o "instinto de busca" constante do Da Vinci.
-- [ ] **Mapa do Pr√≥ximo Passo** (Manual Arts): Para manter o pilar Talentosa (hobbies manuais) vis√≠vel sem ser uma cobran√ßa. **O que faz**: Mostra apenas o t√≠tulo e a √∫ltima atualiza√ß√£o de um projeto na subcategoria "Hobbies" ou "Artes Manuais".**A "M√°gica":** Ao ver "Resina: Pendente h√° 3 dias", o widget te lembra visualmente de que existe um projeto f√≠sico esperando o seu talento, equilibrando o tempo gasto na tela.
+- [ ] **Terminal de CiberseguranÁa (Status de Lab)** - O que faz: Um widget com estÈtica de terminal (letras verdes/amber sobre fundo escuro) mostrando o progresso em certificaÁıes ou m·quinas de lab. Por que È legal: Cria um contraste visual interessante com o resto do dashboard de "papel envelhecido". … o seu lado tecnolÛgico pulsando no meio do cosmos.
+- [ ] **Widget de "Rituais de EstaÁ„o** - **O que faz**: Cruzando a fase da lua e a Roda do Ano, ele sugere uma atividade de "autocuidado polÌmata". **Exemplos**: "Lua Minguante no Outono: Momento de revisar e descartar notas obsoletas (Pilar Organizada)" / "Lua Crescente: Ideal para iniciar um novo conto ou projeto de escrita (Pilar Talentosa)". **Por que È legal**: D· um propÛsito pr·tico para os widgets astronÙmicos que vocÍ j· construiu.
+- [ ] **Provocador de Pesquisa** (Pergunta em Aberto): Como vocÍ quer ser pesquisadora e polÌmata, muitas vezes anotamos d˙vidas no meio dos textos. O que faz: Varre o conte˙do das suas p·ginas em busca de frases que terminam com ? ou marcadas com um sÌmbolo especÌfico (ex: [?]) e exibe uma delas aleatoriamente. A "M·gica": Te confronta com uma curiosidade que vocÍ teve no passado, incentivando o "instinto de busca" constante do Da Vinci.
+- [ ] **Mapa do PrÛximo Passo** (Manual Arts): Para manter o pilar Talentosa (hobbies manuais) visÌvel sem ser uma cobranÁa. **O que faz**: Mostra apenas o tÌtulo e a ˙ltima atualizaÁ„o de um projeto na subcategoria "Hobbies" ou "Artes Manuais".**A "M·gica":** Ao ver "Resina: Pendente h· 3 dias", o widget te lembra visualmente de que existe um projeto fÌsico esperando o seu talento, equilibrando o tempo gasto na tela.
 
-#### Alta prioridade (dados j√° dispon√≠veis)
-- [x] **Agenda da Semana** ‚Äî faixa de 7 dias com chips de `calendar_events` por dia, coloridos por tipo
-- [x] **Lembretes Pendentes** ‚Äî lista de reminders com `is_dismissed = 0` e `trigger_at` pr√≥ximo, ordenados por data
-- [x] **Pr√≥ximas Provas / Defesas** ‚Äî filtro de `calendar_events` por tipos acad√™micos (`prova`, `defesa`, `trabalho`) com countdown em dias
-- [x] **Progresso dos Projetos** ‚Äî barra de progresso por projeto ativo (tarefas planeadas e p√°ginas)
-- [x] **Cita√ß√£o Aleat√≥ria** ‚Äî `QuoteWidget` implementado: mostra cita√ß√£o de `reading_quotes`, renov√°vel a clique, exibe t√≠tulo/autor/localiza√ß√£o conforme tamanho do widget
-- [ ] **Widget POMODORO no Dashboard** ‚Äî Pomodoro standalone com duas visualiza√ß√µes (rel√≥gio visual / rel√≥gio de areia); cor de acento das configura√ß√µes; independente do Planner
+#### Alta prioridade (dados j· disponÌveis)
+- [x] **Agenda da Semana** ó faixa de 7 dias com chips de `calendar_events` por dia, coloridos por tipo
+- [x] **Lembretes Pendentes** ó lista de reminders com `is_dismissed = 0` e `trigger_at` prÛximo, ordenados por data
+- [x] **PrÛximas Provas / Defesas** ó filtro de `calendar_events` por tipos acadÍmicos (`prova`, `defesa`, `trabalho`) com countdown em dias
+- [x] **Progresso dos Projetos** ó barra de progresso por projeto ativo (tarefas planeadas e p·ginas)
+- [x] **CitaÁ„o AleatÛria** ó `QuoteWidget` implementado: mostra citaÁ„o de `reading_quotes`, renov·vel a clique, exibe tÌtulo/autor/localizaÁ„o conforme tamanho do widget
+- [ ] **Widget POMODORO no Dashboard** ó Pomodoro standalone com duas visualizaÁıes (relÛgio visual / relÛgio de areia); cor de acento das configuraÁıes; independente do Planner
 
-#### M√©dia prioridade (UI mais rica)
-- [ ] **Mapa de Calor de Atividade** ‚Äî grid estilo GitHub de horas estudadas por mat√©ria/p√°gina/tag (n√£o por p√°ginas criadas; requer Pomodoro/time_sessions)
-- [ ] **Sum√°rio do Dia** ‚Äî briefing textual: eventos hoje, prazos pr√≥ximos, lembretes ativos
+#### MÈdia prioridade (UI mais rica)
+- [ ] **Mapa de Calor de Atividade** ó grid estilo GitHub de horas estudadas por matÈria/p·gina/tag (n„o por p·ginas criadas; requer Pomodoro/time_sessions)
+- [ ] **Sum·rio do Dia** ó briefing textual: eventos hoje, prazos prÛximos, lembretes ativos
 
 #### Futuros (dependem de features pendentes)
-- [ ] **Meta de Leitura Anual** ‚Äî gauge circular no Dashboard (base j√° feita: `readingGoals.progress()` dispon√≠vel)
-- [ ] **Tempo de Foco Hoje** ‚Äî sess√µes Pomodoro do dia (depende de Pomodoro/`time_sessions`)
-- [ ] **Grafo de Conex√µes** ‚Äî mini grafo de for√ßa com p√°ginas mais interligadas via backlinks (requer lib de visualiza√ß√£o)
+- [ ] **Meta de Leitura Anual** ó gauge circular no Dashboard (base j· feita: `readingGoals.progress()` disponÌvel)
+- [ ] **Tempo de Foco Hoje** ó sessıes Pomodoro do dia (depende de Pomodoro/`time_sessions`)
+- [ ] **Grafo de Conexıes** ó mini grafo de forÁa com p·ginas mais interligadas via backlinks (requer lib de visualizaÁ„o)
 
 ---
 
-### Fase 50 ‚Äî Futuro
+### Fase 50 ó Futuro
 
-- [ ] Exportar p√°gina como PDF ou Markdown
-- [ ] Pomodoro Timer completo com estat√≠sticas (consolidar com aba Tempo do ProjectDashboard e Widget do Dashboard)
+- [ ] Exportar p·gina como PDF ou Markdown
+- [ ] Pomodoro Timer completo com estatÌsticas (consolidar com aba Tempo do ProjectDashboard e Widget do Dashboard)
 - [ ] Templates customizados de projeto
-- [ ] IA: integra√ß√£o com Ollama e APIs externas
+- [ ] IA: integraÁ„o com Ollama e APIs externas
 
 ---
 
-### Design System ‚Äî Efeitos Visuais (2026-04-10)
+### Design System ó Efeitos Visuais (2026-04-10)
 
-- [x] Vinheta s√©pia ‚Äî body::before radial-gradient escurecendo bordas
-- [x] Foxing ‚Äî classe .foxing com manchas de envelhecimento nos cantos de cards
-- [x] Marginalia ‚Äî classe .marginalia-item com s√≠mbolo ‚ú¶ no hover √† esquerda
-- [x] Selo de cera ‚Äî componente WaxSeal (aparecer em conclus√£o de item)
-- [x] Luz de vela ‚Äî componente CandleGlow com brilho radial pulsante no fundo
-- [x] Loader alqu√≠mico ‚Äî componente AlchemyLoader substituindo spinners
+- [x] Vinheta sÈpia ó body::before radial-gradient escurecendo bordas
+- [x] Foxing ó classe .foxing com manchas de envelhecimento nos cantos de cards
+- [x] Marginalia ó classe .marginalia-item com sÌmbolo ? no hover ‡ esquerda
+- [x] Selo de cera ó componente WaxSeal (aparecer em conclus„o de item)
+- [x] Luz de vela ó componente CandleGlow com brilho radial pulsante no fundo
+- [x] Loader alquÌmico ó componente AlchemyLoader substituindo spinners
 
 ---
 
 ### Melhorias Futuras
 
-- [x] Dashboard e p√°gina inicial de projeto: melhorar layout, widgets personaliz√°veis por projeto, resumo de progresso, atividades recentes, acesso r√°pido √†s p√°ginas mais relevantes ‚Äî `ProjectLocalDashboard` com coluna de stats por tipo + grid de widgets customiz√°vel (add/remove, localStorage); toolbar com dropdown de vistas substituindo abas horizontais
+- [x] Dashboard e p·gina inicial de projeto: melhorar layout, widgets personaliz·veis por projeto, resumo de progresso, atividades recentes, acesso r·pido ‡s p·ginas mais relevantes ó `ProjectLocalDashboard` com coluna de stats por tipo + grid de widgets customiz·vel (add/remove, localStorage); toolbar com dropdown de vistas substituindo abas horizontais
 
 ---
 
 
 ## Melhorias baseadas em pesquisas para o ecossistema
 
-### Pesquisa: Contexto em Tempo Real ‚Äî Extens√£o Firefox/Zen + Clipboard Monitor | 2026-05-18
-> Contexto: AKASHA como secret√°ria precisa saber o que est√° sendo lido agora. A extens√£o monitora p√°ginas abertas a partir dos resultados do AKASHA e injeta uma barra de a√ß√£o discreta com arquivar / ver depois / rastrear site. Clipboard monitor cobre URLs encontradas fora do AKASHA. Op√ß√£o B (interceptar clique no AKASHA) √© redundante com a extens√£o em funcionamento, mas trivial como fallback ‚Äî adicionada no mesmo escopo.
+### Pesquisa: Contexto em Tempo Real ó Extens„o Firefox/Zen + Clipboard Monitor | 2026-05-18
+> Contexto: AKASHA como secret·ria precisa saber o que est· sendo lido agora. A extens„o monitora p·ginas abertas a partir dos resultados do AKASHA e injeta uma barra de aÁ„o discreta com arquivar / ver depois / rastrear site. Clipboard monitor cobre URLs encontradas fora do AKASHA. OpÁ„o B (interceptar clique no AKASHA) È redundante com a extens„o em funcionamento, mas trivial como fallback ó adicionada no mesmo escopo.
 
-#### AKASHA ‚Äî Backend
-- [ ] **CORS middleware** (`main.py`) ‚Äî adicionar `CORSMiddleware` com `allow_origins=["*"]` para aceitar fetch da extens√£o (pages externas ‚Üí localhost:7071). Sem `allow_credentials` para evitar bloqueio dos browsers.
-- [ ] **`POST /context/push`** (`routers/context.py` novo) ‚Äî recebe `{url, title, selected_text?, source}` da extens√£o ou clipboard monitor. Armazena em `services/realtime_context.py` (dict em mem√≥ria por sess√£o, TTL 30min). Aciona `session_insight.maybe_schedule()` com contexto enriquecido pelo snippet do √≠ndice local se a URL j√° estiver indexada.
-- [ ] **`GET /context/status?url=`** ‚Äî retorna se a URL j√° est√° arquivada, se est√° na biblioteca e contagem de resultados relacionados no √≠ndice. Usado pelo popup da extens√£o para mostrar estado.
-- [ ] **Clipboard monitor** (`services/clipboard_monitor.py` novo; `main.py` ‚Äî task P3) ‚Äî polling ass√≠ncrono a cada 1.5s via `run_in_executor`; detecta URLs no clipboard via regex; ignora `localhost`/`127.0.0.1`; deduplica√ß√£o (ignora se mesma URL nos √∫ltimos 5min); envia para `push_context()`. Depend√™ncia: `pyperclip` (j√° compat√≠vel com Windows e Linux).
+#### AKASHA ó Backend
+- [ ] **CORS middleware** (`main.py`) ó adicionar `CORSMiddleware` com `allow_origins=["*"]` para aceitar fetch da extens„o (pages externas ? localhost:7071). Sem `allow_credentials` para evitar bloqueio dos browsers.
+- [ ] **`POST /context/push`** (`routers/context.py` novo) ó recebe `{url, title, selected_text?, source}` da extens„o ou clipboard monitor. Armazena em `services/realtime_context.py` (dict em memÛria por sess„o, TTL 30min). Aciona `session_insight.maybe_schedule()` com contexto enriquecido pelo snippet do Ìndice local se a URL j· estiver indexada.
+- [ ] **`GET /context/status?url=`** ó retorna se a URL j· est· arquivada, se est· na biblioteca e contagem de resultados relacionados no Ìndice. Usado pelo popup da extens„o para mostrar estado.
+- [ ] **Clipboard monitor** (`services/clipboard_monitor.py` novo; `main.py` ó task P3) ó polling assÌncrono a cada 1.5s via `run_in_executor`; detecta URLs no clipboard via regex; ignora `localhost`/`127.0.0.1`; deduplicaÁ„o (ignora se mesma URL nos ˙ltimos 5min); envia para `push_context()`. DependÍncia: `pyperclip` (j· compatÌvel com Windows e Linux).
 
-#### AKASHA ‚Äî Extens√£o (`AKASHA/extension/`)
-- [ ] **`manifest.json`** ‚Äî MV3; permiss√µes: `tabs`, `storage`, `activeTab`; `host_permissions`: `http://localhost:7071/*`; background event page (`background.js`); content script em `<all_urls>` run_at `document_end`; action com popup; `commands` para atalho `Ctrl+Shift+S`.
-- [ ] **`icons/`** ‚Äî √≠cone SVG √∫nico em dois estados: active (hex√°gono dourado ‚¨°) e inactive (cinza); 16, 48, 128px PNG gerados a partir de SVG base.
-- [ ] **`background.js`** ‚Äî rastreia abas abertas a partir do AKASHA (via `tabs.onCreated` com `openerTabId` cujo URL cont√©m `localhost:7071`); ao carregar (`tabs.onUpdated status=complete`), faz `POST /context/push`; verifica sa√∫de AKASHA a cada 30s e atualiza √≠cone active/inactive; `browser.commands.onCommand` para abrir popup via atalho.
-- [ ] **`content.js`** ‚Äî ao carregar: verifica com o background se a aba foi aberta pelo AKASHA; se sim, injeta barra de a√ß√£o discreta no rodap√© da p√°gina (n√£o-bloqueante, Z-index alto, dispens√°vel com √ó) com 3 bot√µes: "‚¨° Arquivar", "üïê Ver depois", "üîç Rastrear site"; cada bot√£o faz fetch para o endpoint correspondente e mostra feedback inline.
-- [ ] **`popup/popup.html + popup.js + popup.css`** ‚Äî popup da extens√£o acess√≠vel pelo √≠cone na barra do browser ou atalho Ctrl+Shift+S. Mostra: status AKASHA (dot colorido online/offline); URL e t√≠tulo da aba atual; estado da p√°gina (arquivada ‚úì / na biblioteca ‚úì / n√£o catalogada); bot√µes de a√ß√£o: "‚¨° Arquivar", "üïê Ver depois", "üîç Rastrear site"; spinner durante fetch; feedback inline (sucesso/erro). Estilo minimalista alinhado com o visual do AKASHA (fonte mono, paleta escura, bordas finas). Funciona em qualquer aba ‚Äî n√£o exige que a aba tenha sido aberta pelo AKASHA.
-- [ ] **`README.md`** ‚Äî instru√ß√µes de instala√ß√£o: `about:debugging` ‚Üí Este Firefox ‚Üí Carregar extens√£o tempor√°ria ‚Üí selecionar `manifest.json`; nota sobre reinstala√ß√£o ao reiniciar o Firefox; atalho de teclado dispon√≠vel.
+#### AKASHA ó Extens„o (`AKASHA/extension/`)
+- [ ] **`manifest.json`** ó MV3; permissıes: `tabs`, `storage`, `activeTab`; `host_permissions`: `http://localhost:7071/*`; background event page (`background.js`); content script em `<all_urls>` run_at `document_end`; action com popup; `commands` para atalho `Ctrl+Shift+S`.
+- [ ] **`icons/`** ó Ìcone SVG ˙nico em dois estados: active (hex·gono dourado ?) e inactive (cinza); 16, 48, 128px PNG gerados a partir de SVG base.
+- [ ] **`background.js`** ó rastreia abas abertas a partir do AKASHA (via `tabs.onCreated` com `openerTabId` cujo URL contÈm `localhost:7071`); ao carregar (`tabs.onUpdated status=complete`), faz `POST /context/push`; verifica sa˙de AKASHA a cada 30s e atualiza Ìcone active/inactive; `browser.commands.onCommand` para abrir popup via atalho.
+- [ ] **`content.js`** ó ao carregar: verifica com o background se a aba foi aberta pelo AKASHA; se sim, injeta barra de aÁ„o discreta no rodapÈ da p·gina (n„o-bloqueante, Z-index alto, dispens·vel com ◊) com 3 botıes: "? Arquivar", "?? Ver depois", "?? Rastrear site"; cada bot„o faz fetch para o endpoint correspondente e mostra feedback inline.
+- [ ] **`popup/popup.html + popup.js + popup.css`** ó popup da extens„o acessÌvel pelo Ìcone na barra do browser ou atalho Ctrl+Shift+S. Mostra: status AKASHA (dot colorido online/offline); URL e tÌtulo da aba atual; estado da p·gina (arquivada ? / na biblioteca ? / n„o catalogada); botıes de aÁ„o: "? Arquivar", "?? Ver depois", "?? Rastrear site"; spinner durante fetch; feedback inline (sucesso/erro). Estilo minimalista alinhado com o visual do AKASHA (fonte mono, paleta escura, bordas finas). Funciona em qualquer aba ó n„o exige que a aba tenha sido aberta pelo AKASHA.
+- [ ] **`README.md`** ó instruÁıes de instalaÁ„o: `about:debugging` ? Este Firefox ? Carregar extens„o tempor·ria ? selecionar `manifest.json`; nota sobre reinstalaÁ„o ao reiniciar o Firefox; atalho de teclado disponÌvel.
 
-#### AKASHA ‚Äî Op√ß√£o B (interceptar clique nos resultados, fallback sem extens√£o)
-- [ ] **`templates/search.html` e `templates/_result_item.html`** ‚Äî adicionar `data-url` e listener de clique nos links de resultado; ao clicar, fazer `fetch('/context/push', ...)` com a URL + t√≠tulo + snippet antes de navegar (n√£o bloqueia a navega√ß√£o).
+#### AKASHA ó OpÁ„o B (interceptar clique nos resultados, fallback sem extens„o)
+- [ ] **`templates/search.html` e `templates/_result_item.html`** ó adicionar `data-url` e listener de clique nos links de resultado; ao clicar, fazer `fetch('/context/push', ...)` com a URL + tÌtulo + snippet antes de navegar (n„o bloqueia a navegaÁ„o).
 
-### Melhorias derivadas das pesquisas de Aprendizado de Prefer√™ncia e RAPTOR/LightRAG | 2026-05-18
+### Melhorias derivadas das pesquisas de Aprendizado de PreferÍncia e RAPTOR/LightRAG | 2026-05-18
 > Contexto: o entity_graph e os topic_interest_scores estavam sendo preenchidos mas nunca usados
-> durante a busca. Implementadas duas melhorias de personaliza√ß√£o no pipeline de busca local do AKASHA.
+> durante a busca. Implementadas duas melhorias de personalizaÁ„o no pipeline de busca local do AKASHA.
 
 #### AKASHA
-- [x] **Expans√£o de query por entity_graph** (`services/local_search.py`). Nova fun√ß√£o
+- [x] **Expans„o de query por entity_graph** (`services/local_search.py`). Nova funÁ„o
   `_expand_query_entities(query)`: tokeniza a query, consulta `get_entity_neighbors()` para
-  cada token (limite: peso ‚â• 2.0, top-5 vizinhos), ancora os termos no corpus e executa
-  terceiro FTS5 aditivo (`fts_entity`) combinado via RRF. Sem LLM ‚Äî puro SQL. Quando a usu√°ria
+  cada token (limite: peso = 2.0, top-5 vizinhos), ancora os termos no corpus e executa
+  terceiro FTS5 aditivo (`fts_entity`) combinado via RRF. Sem LLM ó puro SQL. Quando a usu·ria
   busca "Rust ownership" e o grafo confirma "borrow checker" + "memory safety" como co-entidades,
   esses termos enriquecem automaticamente a busca.
 
 - [x] **Boost por topic_interest_profile no re-ranking** (`services/knowledge_worker.py`).
-  `apply_knowledge_boost()` agora usa dois sinais: (1) sobreposi√ß√£o t√≥pico-query (+0.15/t√≥pico,
-  existente) e (2) score de interesse acumulado da usu√°ria para os t√≥picos da p√°gina
-  (normalizado, m√°x +0.6 para n√£o engolir relev√¢ncia). Resultados sobre t√≥picos com alto
-  interesse pessoal sobem no ranking mesmo quando a sobreposi√ß√£o literal com a query √© baixa.
+  `apply_knowledge_boost()` agora usa dois sinais: (1) sobreposiÁ„o tÛpico-query (+0.15/tÛpico,
+  existente) e (2) score de interesse acumulado da usu·ria para os tÛpicos da p·gina
+  (normalizado, m·x +0.6 para n„o engolir relev‚ncia). Resultados sobre tÛpicos com alto
+  interesse pessoal sobem no ranking mesmo quando a sobreposiÁ„o literal com a query È baixa.
 
-### Pesquisa: RAPTOR e LightRAG ‚Äî Indexa√ß√£o Hier√°rquica e RAG por Grafos | 2026-05-18
-> Contexto: investiga√ß√£o sobre dois sistemas de RAG avan√ßado que resolvem lacunas do RAG flat cl√°ssico.
-> RAPTOR resolve s√≠ntese multi-escala (+20pp no QuALITY benchmark); LightRAG resolve perguntas
+### Pesquisa: RAPTOR e LightRAG ó IndexaÁ„o Hier·rquica e RAG por Grafos | 2026-05-18
+> Contexto: investigaÁ„o sobre dois sistemas de RAG avanÁado que resolvem lacunas do RAG flat cl·ssico.
+> RAPTOR resolve sÌntese multi-escala (+20pp no QuALITY benchmark); LightRAG resolve perguntas
 > relacionais entre entidades com 6000x menos custo que GraphRAG. Ambos rodam localmente com qwen2.5:7b.
-> Decis√£o: LightRAG primeiro (cole√ß√£o din√¢mica); RAPTOR depois, espec√≠fico para Papers/.
+> Decis„o: LightRAG primeiro (coleÁ„o din‚mica); RAPTOR depois, especÌfico para Papers/.
 
 #### Mnemosyne
-- [x] **LightRAG ‚Äî grafo de conhecimento paralelo ao ChromaDB** (`core/indexer.py`,
+- [x] **LightRAG ó grafo de conhecimento paralelo ao ChromaDB** (`core/indexer.py`,
   `core/rag.py`, novo `core/lightrag_graph.py`). Instalar `lightrag-hku` (PyPI). Durante
-  a indexa√ß√£o (`update_vectorstore`), al√©m de inserir chunks no ChromaDB, enviar o mesmo
-  texto ao LightRAG para extra√ß√£o de entidades (qwen2.5:7b via Ollama). LightRAG persiste
-  grafo NetworkX + √≠ndice SQLite em `{chroma_dir}/lightrag/`. Adicionar modo de consulta
+  a indexaÁ„o (`update_vectorstore`), alÈm de inserir chunks no ChromaDB, enviar o mesmo
+  texto ao LightRAG para extraÁ„o de entidades (qwen2.5:7b via Ollama). LightRAG persiste
+  grafo NetworkX + Ìndice SQLite em `{chroma_dir}/lightrag/`. Adicionar modo de consulta
   `hybrid` ao `VectorQueryWorker`: se a query contiver termos que remetem a entidades
-  (`_looks_relational(query) -> bool`, heur√≠stica por presen√ßa de nomes pr√≥prios/tecnologias),
-  usar `lightrag.query(query, mode="hybrid")`; caso contr√°rio, usar RAG ChromaDB normal.
-  Inser√ß√£o incremental: `lightrag.insert_custom_kg()` por documento novo ‚Äî sem reconstru√ß√£o total.
-  Requisito: apenas no MainPc (qwen2.5:7b); WorkPc e Laptop usam o grafo pr√©-sincronizado (somente leitura).
+  (`_looks_relational(query) -> bool`, heurÌstica por presenÁa de nomes prÛprios/tecnologias),
+  usar `lightrag.query(query, mode="hybrid")`; caso contr·rio, usar RAG ChromaDB normal.
+  InserÁ„o incremental: `lightrag.insert_custom_kg()` por documento novo ó sem reconstruÁ„o total.
+  Requisito: apenas no MainPc (qwen2.5:7b); WorkPc e Laptop usam o grafo prÈ-sincronizado (somente leitura).
 
-- [x] **RAPTOR ‚Äî √≠ndice hier√°rquico para a cole√ß√£o Papers/** (`core/raptor_index.py`, novo m√≥dulo).
+- [x] **RAPTOR ó Ìndice hier·rquico para a coleÁ„o Papers/** (`core/raptor_index.py`, novo mÛdulo).
   Instalar `llama-index-packs-raptor`. Ao indexar documentos com `source_type == "paper"`,
-  rodar o pipeline RAPTOR (UMAP + GMM clustering + sumariza√ß√£o com qwen2.5:7b) para gerar
-  a √°rvore de sum√°rios. Usar modo "collapsed tree" (√≠ndice flat com todos os n√≠veis).
-  Persistir √≠ndice em `{chroma_dir}/raptor_papers/`. No `VectorQueryWorker`, detectar se a
-  query √© do tipo s√≠ntese ("quais s√£o os temas", "resumo de", "vis√£o geral") via classificador
-  simples de inten√ß√£o (lista de palavras-gatilho) e rotear para o √≠ndice RAPTOR.
-  √çndice RAPTOR √© somente para Papers/ ‚Äî n√£o aplicar √† cole√ß√£o geral (custo de reconstru√ß√£o).
-  Rodas de clustering: 3 (padr√£o adequado para < 500 papers). Custo estimado: ~100-120 chamadas
-  LLM para 1000 chunks na RX 6600 ‚âà 15-20 minutos offline.
+  rodar o pipeline RAPTOR (UMAP + GMM clustering + sumarizaÁ„o com qwen2.5:7b) para gerar
+  a ·rvore de sum·rios. Usar modo "collapsed tree" (Ìndice flat com todos os nÌveis).
+  Persistir Ìndice em `{chroma_dir}/raptor_papers/`. No `VectorQueryWorker`, detectar se a
+  query È do tipo sÌntese ("quais s„o os temas", "resumo de", "vis„o geral") via classificador
+  simples de intenÁ„o (lista de palavras-gatilho) e rotear para o Ìndice RAPTOR.
+  Õndice RAPTOR È somente para Papers/ ó n„o aplicar ‡ coleÁ„o geral (custo de reconstruÁ„o).
+  Rodas de clustering: 3 (padr„o adequado para < 500 papers). Custo estimado: ~100-120 chamadas
+  LLM para 1000 chunks na RX 6600 ò 15-20 minutos offline.
 
-- [x] **Sincroniza√ß√£o dos artefatos de grafo e RAPTOR entre m√°quinas** (documenta√ß√£o em GUIDE.md).
-  Os artefatos `{chroma_dir}/lightrag/` e `{chroma_dir}/raptor_papers/` devem ser inclu√≠dos
-  no sync via Proton Drive ‚Äî s√£o arquivos SQLite/JSON transfer√≠veis. Documentar no GUIDE.md
-  que WorkPc e Laptop devem montar esses diret√≥rios como somente leitura e nunca acionar
-  indexa√ß√£o nesses hardware. Adicionar aviso na SetupDialog do Mnemosyne se `chroma_dir`
-  n√£o tiver os artefatos: "√çndice avan√ßado n√£o encontrado ‚Äî indexa√ß√£o dispon√≠vel apenas no MainPc."
+- [x] **SincronizaÁ„o dos artefatos de grafo e RAPTOR entre m·quinas** (documentaÁ„o em GUIDE.md).
+  Os artefatos `{chroma_dir}/lightrag/` e `{chroma_dir}/raptor_papers/` devem ser incluÌdos
+  no sync via Proton Drive ó s„o arquivos SQLite/JSON transferÌveis. Documentar no GUIDE.md
+  que WorkPc e Laptop devem montar esses diretÛrios como somente leitura e nunca acionar
+  indexaÁ„o nesses hardware. Adicionar aviso na SetupDialog do Mnemosyne se `chroma_dir`
+  n„o tiver os artefatos: "Õndice avanÁado n„o encontrado ó indexaÁ„o disponÌvel apenas no MainPc."
 
-### Pesquisa: Aprendizado de Prefer√™ncia Pessoal para Assistentes Locais | 2026-05-18
-> Contexto: investiga√ß√£o sobre alternativas e complementos ao topic frequency counting do AKASHA.
-> Conclus√£o: modelo atual √© s√≥lido como baseline; quatro lacunas concretas identificadas que podem
+### Pesquisa: Aprendizado de PreferÍncia Pessoal para Assistentes Locais | 2026-05-18
+> Contexto: investigaÁ„o sobre alternativas e complementos ao topic frequency counting do AKASHA.
+> Conclus„o: modelo atual È sÛlido como baseline; quatro lacunas concretas identificadas que podem
 > ser corrigidas sem fine-tuning e sem GPU dedicada.
 
 #### AKASHA
-- [x] **Mem√≥rias epis√≥dicas estruturadas para feedback confirmado** (`services/personal_memory.py`,
-  `services/knowledge_worker.py`). Quando a usu√°ria confirma (‚úì) uma nota da AKASHA, al√©m de
-  incrementar o score do t√≥pico, salvar uma entrada epis√≥dica em linguagem natural no
-  `personal_memory`: a proposi√ß√£o sintetizada + t√≥picos associados + timestamp. No MainPc,
-  usar Qwen2.5-7B (P3 background) para sintetizar a proposi√ß√£o a partir do insight + summary.
-  No WorkPc/Laptop, usar template determin√≠stico: `"Usu√°ria confirmou interesse em: {t√≥picos}"`.
-  Objetivo: permitir recupera√ß√£o sem√¢ntica posterior do que foi aprendido, n√£o apenas contagem.
+- [x] **MemÛrias episÛdicas estruturadas para feedback confirmado** (`services/personal_memory.py`,
+  `services/knowledge_worker.py`). Quando a usu·ria confirma (?) uma nota da AKASHA, alÈm de
+  incrementar o score do tÛpico, salvar uma entrada episÛdica em linguagem natural no
+  `personal_memory`: a proposiÁ„o sintetizada + tÛpicos associados + timestamp. No MainPc,
+  usar Qwen2.5-7B (P3 background) para sintetizar a proposiÁ„o a partir do insight + summary.
+  No WorkPc/Laptop, usar template determinÌstico: `"Usu·ria confirmou interesse em: {tÛpicos}"`.
+  Objetivo: permitir recuperaÁ„o sem‚ntica posterior do que foi aprendido, n„o apenas contagem.
 
 - [x] **Penalidade ativa em feedback dismissed** (`services/personal_memory.py`,
-  `services/knowledge_worker.py`). Quando a usu√°ria descarta (‚úó) uma nota, aplicar delta
-  negativo nos scores dos t√≥picos associados (`update_topic_score(topic, delta=-0.5)`).
-  Hoje o dismiss provavelmente ignora o evento ou aplica delta m√≠nimo ‚Äî isso faz t√≥picos
-  irrelevantes acumularem score por co-ocorr√™ncia sem penalidade. O sinal negativo expl√≠cito
-  √© o que mais acelera a converg√™ncia do perfil de interesse (VARS, arXiv:2603.20939).
+  `services/knowledge_worker.py`). Quando a usu·ria descarta (?) uma nota, aplicar delta
+  negativo nos scores dos tÛpicos associados (`update_topic_score(topic, delta=-0.5)`).
+  Hoje o dismiss provavelmente ignora o evento ou aplica delta mÌnimo ó isso faz tÛpicos
+  irrelevantes acumularem score por co-ocorrÍncia sem penalidade. O sinal negativo explÌcito
+  È o que mais acelera a convergÍncia do perfil de interesse (VARS, arXiv:2603.20939).
 
-- [x] **Decaimento temporal de scores (EMA)** (`database.py`, job peri√≥dico em `main.py`).
-  Scores muito antigos inflam artificialmente o perfil. Implementar job di√°rio (no lifespan
-  do FastAPI, via `asyncio.sleep`) que aplica fator de decaimento nos t√≥picos inativos:
-  `score = score * 0.97` para t√≥picos sem atualiza√ß√£o h√° > 7 dias. Custo: puro SQL UPDATE,
+- [x] **Decaimento temporal de scores (EMA)** (`database.py`, job periÛdico em `main.py`).
+  Scores muito antigos inflam artificialmente o perfil. Implementar job di·rio (no lifespan
+  do FastAPI, via `asyncio.sleep`) que aplica fator de decaimento nos tÛpicos inativos:
+  `score = score * 0.97` para tÛpicos sem atualizaÁ„o h· > 7 dias. Custo: puro SQL UPDATE,
   zero ML. Inspirado em Preference-Aware Memory Update (arXiv:2510.09720, EMA dual-perspective).
 
 - [x] **Rastreamento de entidades nomeadas em documentos confirmados** (`database.py`,
   `services/knowledge_worker.py`). Criar tabela `entity_graph (entity, co_entity, weight)`
-  ‚Äî pares de entidades que aparecem juntas em documentos cujos insights foram confirmados.
+  ó pares de entidades que aparecem juntas em documentos cujos insights foram confirmados.
   No MainPc: extrair via Qwen2.5-7B (P3, prompt minimal: "Liste as entidades principais: nome
-  de pessoas, tecnologias, conceitos ‚Äî sem explica√ß√µes"). No WorkPc/Laptop: regex sobre
+  de pessoas, tecnologias, conceitos ó sem explicaÁıes"). No WorkPc/Laptop: regex sobre
   termos capitalizados e nomes de linguagens/frameworks conhecidos do corpus. O grafo permite
-  inferir que interesse em "ownership" implica interesse em "Rust" sem esse t√≥pico ter score
-  pr√≥prio. Schema simples em SQLite ‚Äî sem Neo4j, sem infraestrutura externa.
+  inferir que interesse em "ownership" implica interesse em "Rust" sem esse tÛpico ter score
+  prÛprio. Schema simples em SQLite ó sem Neo4j, sem infraestrutura externa.
 
-### Pesquisa: RAG Auto-Aprendizagem, Reflex√£o de Conhecimento e Estado da Arte em Retrieval Aumentado
+### Pesquisa: RAG Auto-Aprendizagem, Reflex„o de Conhecimento e Estado da Arte em Retrieval Aumentado
 
-> **Contexto e motiva√ß√£o:** O RAG convencional armazena fragmentos brutos do corpus e recupera por
+> **Contexto e motivaÁ„o:** O RAG convencional armazena fragmentos brutos do corpus e recupera por
 > similaridade cosine. A literatura de 2024-2025 (Self-RAG, CRAG, RAPTOR, Knowledge Reflection,
-> ITER-RETGEN) demonstra que sistemas que sintetizam, avaliam e refinam o pr√≥prio conhecimento
-> superam em 5-27% o RAG vanilla nos principais benchmarks. As t√©cnicas abaixo foram selecionadas
-> pelo crit√©rio de viabilidade no hardware dispon√≠vel (sem fine-tuning de LLM, sem GPU obrigat√≥ria).
+> ITER-RETGEN) demonstra que sistemas que sintetizam, avaliam e refinam o prÛprio conhecimento
+> superam em 5-27% o RAG vanilla nos principais benchmarks. As tÈcnicas abaixo foram selecionadas
+> pelo critÈrio de viabilidade no hardware disponÌvel (sem fine-tuning de LLM, sem GPU obrigatÛria).
 
-#### Knowledge Reflection: s√≠ntese ativa durante indexa√ß√£o
+#### Knowledge Reflection: sÌntese ativa durante indexaÁ„o
 
 > **Por que fazer:** RAG convencional responde mal a perguntas conceituais/abstratas (ex: "qual a
-> vis√£o geral sobre X?") porque recupera fragmentos textuais brutos, que raramente cont√™m s√≠nteses
-> expl√≠citas. Knowledge Reflection gera artefatos de s√≠ntese no momento da indexa√ß√£o ‚Äî o LLM l√™
-> um conjunto de chunks relacionados e produz uma "reflex√£o" estruturada que j√° responde ao tipo de
-> pergunta que humanos mais fazem. Reflex√µes recebem boost de score (1.5√ó) porque, ao serem
+> vis„o geral sobre X?") porque recupera fragmentos textuais brutos, que raramente contÍm sÌnteses
+> explÌcitas. Knowledge Reflection gera artefatos de sÌntese no momento da indexaÁ„o ó o LLM lÍ
+> um conjunto de chunks relacionados e produz uma "reflex„o" estruturada que j· responde ao tipo de
+> pergunta que humanos mais fazem. Reflexıes recebem boost de score (1.5◊) porque, ao serem
 > recuperadas, entregam mais valor por token ao contexto do que fragmentos brutos.
 >
-> **Base cient√≠fica:** FreeCodeCamp (2025), complementado por RAPTOR (Sarthi et al., Stanford, 2024)
-> e MemGPT ‚Äî que demonstram que representa√ß√µes sint√©ticas hier√°rquicas superam fragmentos brutos
-> em benchmarks de compreens√£o de textos longos (+20 pp no QuALITY vs RAG vanilla).
+> **Base cientÌfica:** FreeCodeCamp (2025), complementado por RAPTOR (Sarthi et al., Stanford, 2024)
+> e MemGPT ó que demonstram que representaÁıes sintÈticas hier·rquicas superam fragmentos brutos
+> em benchmarks de compreens„o de textos longos (+20 pp no QuALITY vs RAG vanilla).
 
-- [x] `core/reflection.py` ‚Äî criar m√≥dulo de gera√ß√£o de reflex√µes:
+- [x] `core/reflection.py` ó criar mÛdulo de geraÁ„o de reflexıes:
   - `generate_reflection(chunks: list[Document], config: AppConfig) -> Document | None`
-  - Prompt: *"Voc√™ recebeu N fragmentos de texto sobre um mesmo tema. Sintetize os conceitos-chave,
-    identifique conex√µes n√£o-√≥bvias e gere um artefato de conhecimento estruturado em 150-300 palavras."*
+  - Prompt: *"VocÍ recebeu N fragmentos de texto sobre um mesmo tema. Sintetize os conceitos-chave,
+    identifique conexıes n„o-Ûbvias e gere um artefato de conhecimento estruturado em 150-300 palavras."*
   - Retorna `Document` com `metadata["type"] = "reflection"`, `metadata["boost"] = 1.5`,
     `metadata["source_chunks"]` = lista de ids dos chunks de origem, `metadata["order"] = 1`
-  - Retorna `None` se o LLM falhar (sem quebrar a indexa√ß√£o)
-  - **Aten√ß√£o:** chamar LLM durante indexa√ß√£o aumenta o tempo total. Estimar ~3-5s por grupo
-    de chunks com modelo 7B. Emitir progresso na UI: "Gerando reflex√£o 3/12‚Ä¶"
+  - Retorna `None` se o LLM falhar (sem quebrar a indexaÁ„o)
+  - **AtenÁ„o:** chamar LLM durante indexaÁ„o aumenta o tempo total. Estimar ~3-5s por grupo
+    de chunks com modelo 7B. Emitir progresso na UI: "Gerando reflex„o 3/12Ö"
 
-- [x] `core/indexer.py` ‚Äî integrar gera√ß√£o de reflex√µes em `create_vectorstore()` e
+- [x] `core/indexer.py` ó integrar geraÁ„o de reflexıes em `create_vectorstore()` e
   `update_vectorstore()`:
   - Agrupar chunks por arquivo-fonte (ou por tema via agrupamento de similaridade simples)
-  - Para cada grupo com ‚â• 3 chunks: chamar `generate_reflection()`
-  - Se reflex√£o gerada: adicion√°-la ao ChromaDB e ao BM25Index como documento extra
-  - Guardar contador de reflex√µes por tema em metadata da cole√ß√£o (para trigger de meta-reflex√£o)
+  - Para cada grupo com = 3 chunks: chamar `generate_reflection()`
+  - Se reflex„o gerada: adicion·-la ao ChromaDB e ao BM25Index como documento extra
+  - Guardar contador de reflexıes por tema em metadata da coleÁ„o (para trigger de meta-reflex„o)
 
-- [x] `core/reflection.py` ‚Äî meta-reflex√£o (consolida√ß√£o de 3 em 1):
+- [x] `core/reflection.py` ó meta-reflex„o (consolidaÁ„o de 3 em 1):
   - `maybe_consolidate(theme: str, config: AppConfig, vectorstore) -> Document | None`
-  - Busca reflex√µes de ordem 1 sobre o mesmo tema (by `metadata["theme"]` e `metadata["order"] == 1`)
-  - Se ‚â• 3 reflex√µes encontradas: gera meta-reflex√£o (ordem 2) com boost 1.8√ó
-  - Remove as 3 reflex√µes originais do vectorstore e BM25 (para n√£o duplicar)
-  - Threshold de similaridade entre reflex√µes para confirmar que s√£o do mesmo tema: cosine ‚â• 0.65
+  - Busca reflexıes de ordem 1 sobre o mesmo tema (by `metadata["theme"]` e `metadata["order"] == 1`)
+  - Se = 3 reflexıes encontradas: gera meta-reflex„o (ordem 2) com boost 1.8◊
+  - Remove as 3 reflexıes originais do vectorstore e BM25 (para n„o duplicar)
+  - Threshold de similaridade entre reflexıes para confirmar que s„o do mesmo tema: cosine = 0.65
 
-- [x] `core/rag.py` ‚Äî aplicar boost de reflex√µes no retrieval:
-  - Ap√≥s recupera√ß√£o h√≠brida (BM25+dense), identificar documentos com `metadata["boost"]`
+- [x] `core/rag.py` ó aplicar boost de reflexıes no retrieval:
+  - ApÛs recuperaÁ„o hÌbrida (BM25+dense), identificar documentos com `metadata["boost"]`
   - Multiplicar o score RRF pelo boost antes de ordenar: `score * doc.metadata.get("boost", 1.0)`
-  - Filtro extra: reflex√µes s√≥ entram no contexto se cosine similarity com a query ‚â• 0.65
-    (evita reflex√µes gen√©ricas que foram recuperadas por acidente)
-  - Testar: perguntas abstratas ("o que este corpus diz sobre X?") devem puxar reflex√µes;
-    perguntas espec√≠ficas ("qual o valor de Y na tabela Z?") devem puxar chunks brutos
+  - Filtro extra: reflexıes sÛ entram no contexto se cosine similarity com a query = 0.65
+    (evita reflexıes genÈricas que foram recuperadas por acidente)
+  - Testar: perguntas abstratas ("o que este corpus diz sobre X?") devem puxar reflexıes;
+    perguntas especÌficas ("qual o valor de Y na tabela Z?") devem puxar chunks brutos
 
-- [x] `gui/main_window.py` ‚Äî feedback de reflex√µes na UI:
-  - Badge na sidebar: "N reflex√µes no √≠ndice" (clic√°vel para ver lista)
-  - Durante indexa√ß√£o com reflex√µes: emitir progresso separado ("Gerando reflex√µes‚Ä¶") ap√≥s
-    o progresso de chunks, para n√£o confundir as duas fases
+- [x] `gui/main_window.py` ó feedback de reflexıes na UI:
+  - Badge na sidebar: "N reflexıes no Ìndice" (clic·vel para ver lista)
+  - Durante indexaÁ„o com reflexıes: emitir progresso separado ("Gerando reflexıesÖ") apÛs
+    o progresso de chunks, para n„o confundir as duas fases
 
 ---
 
 #### Retrieval iterativo com enriquecimento de query (ITER-RETGEN)
 
 > **Por que fazer:** perguntas vagas ou mal formuladas produzem retrieval ruim porque a query
-> original n√£o captura os termos que aparecem nos documentos relevantes. ITER-RETGEN (Shao et al.,
-> 2023) mostrou que usar uma resposta provis√≥ria do LLM como segunda query melhora recall em 5-12%
-> ‚Äî porque a gera√ß√£o provis√≥ria "traduz" a pergunta original para a linguagem do corpus.
+> original n„o captura os termos que aparecem nos documentos relevantes. ITER-RETGEN (Shao et al.,
+> 2023) mostrou que usar uma resposta provisÛria do LLM como segunda query melhora recall em 5-12%
+> ó porque a geraÁ„o provisÛria "traduz" a pergunta original para a linguagem do corpus.
 > Custo: 1 chamada extra ao retriever (barato) + 1 chamada extra ao LLM (custosa). Tornar opcional.
 
-- [x] `core/rag.py` ‚Äî implementar retrieval em 2 itera√ß√µes como modo opcional:
-  - Par√¢metro `iterative_retrieval: bool` em `prepare_ask()` (default: False)
-  - **Itera√ß√£o 1:** retrieval normal sobre a query original ‚Üí gerar resposta provis√≥ria (curta,
-    temperatura 0.0, sem streaming, instru√ß√£o: "resposta em 1-2 frases, sem elaborar")
-  - **Itera√ß√£o 2:** usar resposta provis√≥ria como query adicional ‚Üí recuperar N/2 chunks extras
-    (sem duplicar os j√° recuperados na itera√ß√£o 1)
-  - **S√≠ntese:** combinar chunks da itera√ß√£o 1 e 2 (deduplicados por `page_content[:100]`),
+- [x] `core/rag.py` ó implementar retrieval em 2 iteraÁıes como modo opcional:
+  - Par‚metro `iterative_retrieval: bool` em `prepare_ask()` (default: False)
+  - **IteraÁ„o 1:** retrieval normal sobre a query original ? gerar resposta provisÛria (curta,
+    temperatura 0.0, sem streaming, instruÁ„o: "resposta em 1-2 frases, sem elaborar")
+  - **IteraÁ„o 2:** usar resposta provisÛria como query adicional ? recuperar N/2 chunks extras
+    (sem duplicar os j· recuperados na iteraÁ„o 1)
+  - **SÌntese:** combinar chunks da iteraÁ„o 1 e 2 (deduplicados por `page_content[:100]`),
     limitar ao total configurado (k), passar ao LLM para resposta final
   - **Quando ativar:** perguntas curtas (< 10 palavras) ou vagas se beneficiam mais; perguntas
-    espec√≠ficas com termos t√©cnicos se beneficiam menos. Deixar como toggle manual na UI.
+    especÌficas com termos tÈcnicos se beneficiam menos. Deixar como toggle manual na UI.
 
-- [x] `core/config.py` ‚Äî campo `iterative_retrieval_enabled: bool = False`
+- [x] `core/config.py` ó campo `iterative_retrieval_enabled: bool = False`
 
-- [x] `gui/main_window.py` ‚Äî toggle "Busca iterativa" na aba Perguntar (desativado por padr√£o),
-  com tooltip: "Faz duas rodadas de busca ‚Äî melhora recall em perguntas vagas (+~8% accuracy),
+- [x] `gui/main_window.py` ó toggle "Busca iterativa" na aba Perguntar (desativado por padr„o),
+  com tooltip: "Faz duas rodadas de busca ó melhora recall em perguntas vagas (+~8% accuracy),
   mas dobra o tempo de resposta"
 
 ---
 
-#### Avalia√ß√£o automatizada do pipeline (RAGAS)
+#### AvaliaÁ„o automatizada do pipeline (RAGAS)
 
-> **Por que fazer:** as otimiza√ß√µes das Fases 8, 9, 10, 11.1 e 11.2 mudam o pipeline de formas
-> que podem melhorar uma m√©trica e piorar outra. Sem avalia√ß√£o objetiva, √© imposs√≠vel saber se
-> uma mudan√ßa foi realmente positiva. RAGAS (Es et al., 2023) define 4 m√©tricas comput√°veis via
-> LLM sem ground truth manual: Faithfulness (a resposta √© suportada pelos documentos?),
-> Answer Relevancy (a resposta √© relevante √† pergunta?), Context Precision (documentos recuperados
-> s√£o realmente √∫teis?) e Context Recall (informa√ß√£o necess√°ria estava nos documentos?).
+> **Por que fazer:** as otimizaÁıes das Fases 8, 9, 10, 11.1 e 11.2 mudam o pipeline de formas
+> que podem melhorar uma mÈtrica e piorar outra. Sem avaliaÁ„o objetiva, È impossÌvel saber se
+> uma mudanÁa foi realmente positiva. RAGAS (Es et al., 2023) define 4 mÈtricas comput·veis via
+> LLM sem ground truth manual: Faithfulness (a resposta È suportada pelos documentos?),
+> Answer Relevancy (a resposta È relevante ‡ pergunta?), Context Precision (documentos recuperados
+> s„o realmente ˙teis?) e Context Recall (informaÁ„o necess·ria estava nos documentos?).
 >
 > **Uso pretendido:** script standalone, fora do app, rodado manualmente antes/depois de cada
-> mudan√ßa de pipeline para medir impacto real. N√£o √© funcionalidade do app em si.
+> mudanÁa de pipeline para medir impacto real. N„o È funcionalidade do app em si.
 
-- [ ] `eval/ragas_eval.py` ‚Äî script de avalia√ß√£o standalone:
+- [ ] `eval/ragas_eval.py` ó script de avaliaÁ„o standalone:
   - 20-30 perguntas de teste cobrindo os principais tipos de query do Mnemosyne
-    (factuais, conceituais, multi-hop, vagas) ‚Äî criar `eval/questions.json`
+    (factuais, conceituais, multi-hop, vagas) ó criar `eval/questions.json`
   - Para cada pergunta: rodar `prepare_ask()` com o pipeline atual; capturar chunks recuperados
     e resposta gerada
-  - Calcular m√©tricas RAGAS usando Ollama como juiz (modelo configur√°vel, sugest√£o: qwen2.5:7b)
-  - Exportar relat√≥rio em `eval/results_YYYY-MM-DD.json` para compara√ß√£o entre vers√µes
+  - Calcular mÈtricas RAGAS usando Ollama como juiz (modelo configur·vel, sugest„o: qwen2.5:7b)
+  - Exportar relatÛrio em `eval/results_YYYY-MM-DD.json` para comparaÁ„o entre versıes
   - **Rodar como baseline ANTES de implementar 11.1 e 11.2**, depois rodar novamente para medir
-    o impacto de cada mudan√ßa
+    o impacto de cada mudanÁa
 
-- [ ] `eval/questions.json` ‚Äî 20 perguntas de teste com resposta esperada (ground truth manual):
-  - 5 perguntas factuais simples (a resposta est√° expl√≠cita num √∫nico chunk)
-  - 5 perguntas conceituais (requerem s√≠ntese de m√∫ltiplos chunks)
+- [ ] `eval/questions.json` ó 20 perguntas de teste com resposta esperada (ground truth manual):
+  - 5 perguntas factuais simples (a resposta est· explÌcita num ˙nico chunk)
+  - 5 perguntas conceituais (requerem sÌntese de m˙ltiplos chunks)
   - 5 perguntas vagas (beneficiadas por retrieval iterativo)
-  - 5 perguntas multi-hop (requerem racioc√≠nio encadeado)
+  - 5 perguntas multi-hop (requerem raciocÌnio encadeado)
 
 ---
 
-#### Pesquisas pendentes (RAG avan√ßado, longo prazo)
+#### Pesquisas pendentes (RAG avanÁado, longo prazo)
 
-> Itens abaixo requerem pesquisa adicional antes de qualquer decis√£o de implementa√ß√£o.
-> N√£o implementar sem ordem expl√≠cita.
+> Itens abaixo requerem pesquisa adicional antes de qualquer decis„o de implementaÁ„o.
+> N„o implementar sem ordem explÌcita.
 
 - [ ] **Pesquisar CRAG para o Mnemosyne:** avaliar custo de rodar o evaluator T5-large
-  (770M params) no hardware dispon√≠vel. No CachyOS (RX 6600): poss√≠vel em VRAM (770M Q4 ‚âà 400 MB).
-  No Windows 10 (i5-3470, sem GPU): invi√°vel em tempo real (+150-300ms/query em CPU puro sem AVX2).
-  Pesquisar se existe vers√£o menor (T5-small, 60M) com qualidade aceit√°vel. Registrar resultado
+  (770M params) no hardware disponÌvel. No CachyOS (RX 6600): possÌvel em VRAM (770M Q4 ò 400 MB).
+  No Windows 10 (i5-3470, sem GPU): invi·vel em tempo real (+150-300ms/query em CPU puro sem AVX2).
+  Pesquisar se existe vers„o menor (T5-small, 60M) com qualidade aceit·vel. Registrar resultado
   no `pesquisas.md`.
 
-- [x] **Pesquisar RAPTOR para corpora com documentos longos:** RAPTOR √© relevante quando o corpus
-  inclui livros inteiros ou textos muito longos (> 50 p√°ginas). A indexa√ß√£o RAPTOR requer LLM de
-  boa qualidade para sumariza√ß√£o de clusters ‚Äî vi√°vel com Llama 3.2 3B ou Qwen2.5 7B no CachyOS.
-  Investigar custo de indexa√ß√£o em corpus de 100 documentos m√©dios e overhead de armazenamento.
-  Invi√°vel no i5-3470. ‚Üí **Pesquisa conclu√≠da em 2026-05-18. Ver pesquisas.md.**
+- [x] **Pesquisar RAPTOR para corpora com documentos longos:** RAPTOR È relevante quando o corpus
+  inclui livros inteiros ou textos muito longos (> 50 p·ginas). A indexaÁ„o RAPTOR requer LLM de
+  boa qualidade para sumarizaÁ„o de clusters ó vi·vel com Llama 3.2 3B ou Qwen2.5 7B no CachyOS.
+  Investigar custo de indexaÁ„o em corpus de 100 documentos mÈdios e overhead de armazenamento.
+  Invi·vel no i5-3470. ? **Pesquisa concluÌda em 2026-05-18. Ver pesquisas.md.**
 
 - [x] **Pesquisar GraphRAG leve (LightRAG) para corpus relacional:** relevante quando o corpus
-  tem muitas rela√ß√µes entre entidades (ex: vault Obsidian com wikilinks densos). LightRAG √© menos
-  custoso que GraphRAG da Microsoft, mas ainda requer extra√ß√£o de entidades via LLM. Investigar
+  tem muitas relaÁıes entre entidades (ex: vault Obsidian com wikilinks densos). LightRAG È menos
+  custoso que GraphRAG da Microsoft, mas ainda requer extraÁ„o de entidades via LLM. Investigar
   viabilidade com modelos 7-8B no CachyOS. Registrar no `pesquisas.md`.
-  ‚Üí **Pesquisa conclu√≠da em 2026-05-18. Ver pesquisas.md.**
+  ? **Pesquisa concluÌda em 2026-05-18. Ver pesquisas.md.**
 
 
-### Pesquisa: Arquitetura de UI para Research Workbench ‚Äî NotebookLM e Refer√™ncias | 2026-05-06
+### Pesquisa: Arquitetura de UI para Research Workbench ó NotebookLM e ReferÍncias | 2026-05-06
 > Contexto: pesquisa sobre o paradigma tri-pane (Sources / Chat / Workspace), citation anchoring,
-> gerenciamento de estado entre pain√©is em Qt, padr√£o fleeting/permanent notes e refer√™ncias
+> gerenciamento de estado entre painÈis em Qt, padr„o fleeting/permanent notes e referÍncias
 > alternativas (Zotero 7, Logseq, AnythingLLM). Base para o redesign completo do Mnemosyne.
 
 #### Mnemosyne
 - [x] **Layout tri-pane com QSplitter aninhados** (`gui/main_window.py`). Substituir o layout
-  atual por tr√™s pain√©is horizontais via `QSplitter` aninhados: (1) painel esquerdo de fontes
-  e cole√ß√µes (propor√ß√£o 25%), (2) painel central de chat RAG (50%), (3) painel direito de
-  notas persistentes (25%). Salvar e restaurar propor√ß√µes entre sess√µes via `QSettings` com
-  `QSplitter.saveState()` e `restoreState()`. O painel esquerdo lista cole√ß√µes e seus
-  documentos; o central √© a interface de chat com o LLM; o direito √© uma √°rea edit√°vel onde
-  respostas podem ser salvas como notas permanentes. Esta √© a estrutura base sobre a qual
-  todos os outros itens desta sess√£o se constroem.
+  atual por trÍs painÈis horizontais via `QSplitter` aninhados: (1) painel esquerdo de fontes
+  e coleÁıes (proporÁ„o 25%), (2) painel central de chat RAG (50%), (3) painel direito de
+  notas persistentes (25%). Salvar e restaurar proporÁıes entre sessıes via `QSettings` com
+  `QSplitter.saveState()` e `restoreState()`. O painel esquerdo lista coleÁıes e seus
+  documentos; o central È a interface de chat com o LLM; o direito È uma ·rea edit·vel onde
+  respostas podem ser salvas como notas permanentes. Esta È a estrutura base sobre a qual
+  todos os outros itens desta sess„o se constroem.
 
 - [x] **`AppState` central como `QObject` com signals tipados** (`gui/app_state.py`, novo
-  arquivo). Criar um objeto de estado compartilhado ‚Äî padr√£o documentado no JabRef ‚Äî que todos
-  os pain√©is recebem na constru√ß√£o mas nunca referenciam diretamente entre si. Signals
-  obrigat√≥rios: `source_selected(collection_id: str, doc_id: str)`,
+  arquivo). Criar um objeto de estado compartilhado ó padr„o documentado no JabRef ó que todos
+  os painÈis recebem na construÁ„o mas nunca referenciam diretamente entre si. Signals
+  obrigatÛrios: `source_selected(collection_id: str, doc_id: str)`,
   `chunk_cited(collection_id: str, doc_path: str, start_char: int, end_char: int)`,
   `note_promoted(text: str, citations: list[dict])`, `query_submitted(text: str)`,
   `response_token_received(token: str)`. Cada painel conecta apenas os signals relevantes
@@ -3955,376 +3955,376 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 - [x] **Metadados de chunk enriquecidos com offsets de texto** (`core/indexer.py`). Ao chunkar
   documentos e inserir no ChromaDB, adicionar aos metadados de cada chunk: `start_char` (int),
-  `end_char` (int), `prefix_quote` (string: 30 chars antes do chunk para desambigua√ß√£o),
-  `suffix_quote` (string: 30 chars depois), `page_num` (int, quando dispon√≠vel ‚Äî PDFs).
-  Esses campos s√£o o pr√©-requisito para citation anchoring funcionar. Padr√£o documentado pelo
-  Hypothes.is: tr√™s seletores redundantes garantem que a √¢ncora sobreviva a pequenas
-  modifica√ß√µes no documento. Requer re-indexa√ß√£o completa ap√≥s implementa√ß√£o.
+  `end_char` (int), `prefix_quote` (string: 30 chars antes do chunk para desambiguaÁ„o),
+  `suffix_quote` (string: 30 chars depois), `page_num` (int, quando disponÌvel ó PDFs).
+  Esses campos s„o o prÈ-requisito para citation anchoring funcionar. Padr„o documentado pelo
+  Hypothes.is: trÍs seletores redundantes garantem que a ‚ncora sobreviva a pequenas
+  modificaÁıes no documento. Requer re-indexaÁ„o completa apÛs implementaÁ„o.
 
 - [x] **Citation anchoring via `QTextCursor`** (`gui/main_window.py` ou novo
-  `gui/source_viewer.py`). Quando o chat retorna uma resposta com cita√ß√£o, emitir
+  `gui/source_viewer.py`). Quando o chat retorna uma resposta com citaÁ„o, emitir
   `AppState.chunk_cited(collection_id, doc_path, start_char, end_char)`. O painel de fontes
-  captura o signal, carrega o documento no `QTextBrowser` (se n√£o estiver aberto), cria um
+  captura o signal, carrega o documento no `QTextBrowser` (se n„o estiver aberto), cria um
   `QTextCursor`, chama `cursor.setPosition(start_char)` seguido de
   `cursor.setPosition(end_char, QTextCursor.KeepAnchor)`, aplica `QTextCharFormat` com
-  `background = QColor("#F5C518")` (amarelo suave compat√≠vel com o tema s√©pia), e chama
+  `background = QColor("#F5C518")` (amarelo suave compatÌvel com o tema sÈpia), e chama
   `source_browser.setTextCursor(cursor)` + `source_browser.ensureCursorVisible()`. Resultado:
-  clicar em `[1]` na resposta do chat rola automaticamente o painel de fontes at√© o trecho
-  exato usado pelo LLM ‚Äî funcionalidade ausente em todos os apps RAG open source atuais.
+  clicar em `[1]` na resposta do chat rola automaticamente o painel de fontes atÈ o trecho
+  exato usado pelo LLM ó funcionalidade ausente em todos os apps RAG open source atuais.
 
-- [x] **Painel de fontes com status de indexa√ß√£o por item** (`gui/main_window.py` ou
+- [x] **Painel de fontes com status de indexaÁ„o por item** (`gui/main_window.py` ou
   `gui/collection_panel.py`). No painel esquerdo, cada documento na `QListWidget` deve exibir
-  seu status de indexa√ß√£o via delegate customizado (`QStyledItemDelegate`). Estados poss√≠veis:
-  `pending` (cinza, √≠cone de rel√≥gio), `indexing` (anima√ß√£o de spinner via `QTimer`),
-  `indexed` (verde, √≠cone de check), `error` (vermelho, √≠cone de exclama√ß√£o). O delegate
-  l√™ o status do item via `Qt.UserRole` e renderiza o √≠cone/cor apropriado no m√©todo
-  `paint()`. Permite que o usu√°rio veja em tempo real quais documentos j√° est√£o dispon√≠veis
-  para RAG ‚Äî atualmente n√£o h√° feedback visual por documento, apenas por cole√ß√£o inteira.
+  seu status de indexaÁ„o via delegate customizado (`QStyledItemDelegate`). Estados possÌveis:
+  `pending` (cinza, Ìcone de relÛgio), `indexing` (animaÁ„o de spinner via `QTimer`),
+  `indexed` (verde, Ìcone de check), `error` (vermelho, Ìcone de exclamaÁ„o). O delegate
+  lÍ o status do item via `Qt.UserRole` e renderiza o Ìcone/cor apropriado no mÈtodo
+  `paint()`. Permite que o usu·rio veja em tempo real quais documentos j· est„o disponÌveis
+  para RAG ó atualmente n„o h· feedback visual por documento, apenas por coleÁ„o inteira.
 
-- [x] **Bot√£o "Salvar como Nota" em cada resposta do chat** (`gui/chat_widget.py` ou equivalente).
-  Cada bloco de resposta do LLM no painel de chat deve ter um bot√£o discreto (√≠cone de
+- [x] **Bot„o "Salvar como Nota" em cada resposta do chat** (`gui/chat_widget.py` ou equivalente).
+  Cada bloco de resposta do LLM no painel de chat deve ter um bot„o discreto (Ìcone de
   marcador, canto superior direito do card de resposta) que, ao ser clicado, promove o
-  conte√∫do para o painel de notas com: t√≠tulo edit√°vel pr√©-preenchido com os primeiros
-  60 chars da resposta, conte√∫do completo em Markdown, e lista de cita√ß√µes associadas
-  preservadas como metadados. A promo√ß√£o √© expl√≠cita (n√£o auto-save) e revers√≠vel (bot√£o
-  "Remover nota" no painel direito). Padr√£o documentado no Zettelkasten/Logseq: a nota
-  ef√™mera vira permanente s√≥ por a√ß√£o deliberada do usu√°rio.
+  conte˙do para o painel de notas com: tÌtulo edit·vel prÈ-preenchido com os primeiros
+  60 chars da resposta, conte˙do completo em Markdown, e lista de citaÁıes associadas
+  preservadas como metadados. A promoÁ„o È explÌcita (n„o auto-save) e reversÌvel (bot„o
+  "Remover nota" no painel direito). Padr„o documentado no Zettelkasten/Logseq: a nota
+  efÍmera vira permanente sÛ por aÁ„o deliberada do usu·rio.
 
-- [x] **Distin√ß√£o visual entre rascunho e nota permanente + hist√≥rico de revis√£o simples**
+- [x] **DistinÁ„o visual entre rascunho e nota permanente + histÛrico de revis„o simples**
   (`gui/notes_panel.py` ou equivalente). No painel de notas direito: notas salvas usam
-  `QTextEdit` com `QTextDocument.setMarkdown()` para edi√ß√£o direta em Markdown (Qt 6.x tem
-  suporte nativo). Distinguir visualmente notas confirmadas (borda verde sutil, fundo s√©pia
-  normal) de rascunhos n√£o confirmados (borda tracejada, fundo levemente diferente). Cada
-  nota deve manter um hist√≥rico simples de revis√µes (lista de strings com timestamp) para
-  undo b√°sico. Persistir notas em `{vault_dir}/notes/YYYY-MM-DD_HH-MM.md` com frontmatter
+  `QTextEdit` com `QTextDocument.setMarkdown()` para ediÁ„o direta em Markdown (Qt 6.x tem
+  suporte nativo). Distinguir visualmente notas confirmadas (borda verde sutil, fundo sÈpia
+  normal) de rascunhos n„o confirmados (borda tracejada, fundo levemente diferente). Cada
+  nota deve manter um histÛrico simples de revisıes (lista de strings com timestamp) para
+  undo b·sico. Persistir notas em `{vault_dir}/notes/YYYY-MM-DD_HH-MM.md` com frontmatter
   YAML contendo `created_at`, `sources`, `citations`.
 
-- [x] **Sidebar direito din√¢mico para contexto paralelo** (`gui/main_window.py`). Adicionar
+- [x] **Sidebar direito din‚mico para contexto paralelo** (`gui/main_window.py`). Adicionar
   a capacidade de abrir qualquer documento do painel esquerdo em um "painel de contexto
-  paralelo" dentro do sidebar direito sem fechar o painel de notas ‚Äî padr√£o documentado no
-  Logseq. Implementa√ß√£o: o painel direito usa um `QTabWidget` ou `QStackedWidget` com abas
+  paralelo" dentro do sidebar direito sem fechar o painel de notas ó padr„o documentado no
+  Logseq. ImplementaÁ„o: o painel direito usa um `QTabWidget` ou `QStackedWidget` com abas
   "Notas" e "Fonte: [nome]". Ao clicar em "Abrir ao lado" num documento, uma nova aba abre
-  com `QTextBrowser` mostrando o conte√∫do do arquivo. √ötil quando o usu√°rio quer consultar
-  dois documentos em paralelo durante uma sess√£o de pesquisa sem perder o chat central.
+  com `QTextBrowser` mostrando o conte˙do do arquivo. ⁄til quando o usu·rio quer consultar
+  dois documentos em paralelo durante uma sess„o de pesquisa sem perder o chat central.
 
 - [x] **Streaming de resposta do Ollama via `QThread` com signal por token**
   (`core/rag.py`, `gui/workers.py`). Encapsular a chamada ao Ollama (ou LangChain) em um
   `QThread` que emite `response_token_received(str)` para cada token recebido via streaming.
   O painel de chat conecta esse signal a um slot que appenda o token ao `QTextBrowser` atual
   sem bloquear o event loop do Qt. Resultado: a resposta aparece progressivamente na UI,
-  token por token, como no ChatGPT ‚Äî elimina a espera silenciosa atual onde a UI trava at√©
-  a resposta completa chegar. Verificar se `core/rag.py` j√° tem suporte a streaming no
-  LangChain (`stream=True` na chain); se sim, o trabalho √© principalmente no side da UI.
+  token por token, como no ChatGPT ó elimina a espera silenciosa atual onde a UI trava atÈ
+  a resposta completa chegar. Verificar se `core/rag.py` j· tem suporte a streaming no
+  LangChain (`stream=True` na chain); se sim, o trabalho È principalmente no side da UI.
 
 - [x] **`QTextEdit` com Markdown nativo para notas; `QTextBrowser` para chat**
   (`gui/notes_panel.py`, `gui/chat_widget.py`). Usar widgets distintos para contextos
-  distintos: `QTextBrowser` (read-only, suporta HTML e links clic√°veis) para o hist√≥rico
-  de chat e visualiza√ß√£o de fontes; `QTextEdit` com `document().setMarkdown(text)` e
-  `toMarkdown()` para o painel de notas onde o usu√°rio edita. O Qt 6.x implementa
-  `QTextDocument.setMarkdown()` e `toMarkdown()` nativamente ‚Äî n√£o requer biblioteca
-  externa de parsing. Verificar vers√£o m√≠nima do PySide6 no `pyproject.toml` do Mnemosyne
-  para garantir Qt 6.4+ (onde suporte Markdown √© est√°vel).
+  distintos: `QTextBrowser` (read-only, suporta HTML e links clic·veis) para o histÛrico
+  de chat e visualizaÁ„o de fontes; `QTextEdit` com `document().setMarkdown(text)` e
+  `toMarkdown()` para o painel de notas onde o usu·rio edita. O Qt 6.x implementa
+  `QTextDocument.setMarkdown()` e `toMarkdown()` nativamente ó n„o requer biblioteca
+  externa de parsing. Verificar vers„o mÌnima do PySide6 no `pyproject.toml` do Mnemosyne
+  para garantir Qt 6.4+ (onde suporte Markdown È est·vel).
 
 ---
 
-### Pesquisa: Whisper sem AVX2 ‚Äî faster-whisper como backend local | 2026-05-05
+### Pesquisa: Whisper sem AVX2 ó faster-whisper como backend local | 2026-05-05
 > Contexto: openai-whisper usa PyTorch 2.x que exige AVX2 no Windows (WinError 1114).
-> O i5-3470 tem AVX e SSE4.1 mas n√£o AVX2. faster-whisper usa CTranslate2 com
-> dispatch din√¢mico de ISA (AVX2 ‚Üí AVX ‚Üí SSE4.1), roda sem compila√ß√£o e √© mais
-> r√°pido que openai-whisper mesmo em CPU antiga. Substitui o backend atual do Hermes.
+> O i5-3470 tem AVX e SSE4.1 mas n„o AVX2. faster-whisper usa CTranslate2 com
+> dispatch din‚mico de ISA (AVX2 ? AVX ? SSE4.1), roda sem compilaÁ„o e È mais
+> r·pido que openai-whisper mesmo em CPU antiga. Substitui o backend atual do Hermes.
 
 #### Hermes
 - [x] **Substituir openai-whisper por faster-whisper** nos workers `TranscribeWorker` e
   `BatchTranscribeWorker` (`Hermes/hermes.py`). Instalar `faster-whisper` no `.venv`.
   Adaptar a API: `WhisperModel("base", device="cpu", compute_type="int8")`;
-  `model.transcribe()` retorna `(segments_generator, info)` ‚Äî o texto √©
+  `model.transcribe()` retorna `(segments_generator, info)` ó o texto È
   `" ".join(seg.text.strip() for seg in segments)`. Usar `vad_filter=True` para
-  acelerar v√≠deos com sil√™ncio. Remover `openai-whisper` e `torch` do `.venv` ap√≥s
-  migra√ß√£o (libera ~3 GB de espa√ßo no Windows).
+  acelerar vÌdeos com silÍncio. Remover `openai-whisper` e `torch` do `.venv` apÛs
+  migraÁ„o (libera ~3 GB de espaÁo no Windows).
 
-### Pesquisa: Understand-Anything ‚Äî Padr√µes de Grafo de Conhecimento | 2026-05-04
-> Contexto: An√°lise do projeto github.com/Lum1104/Understand-Anything revelou padr√µes
-> arquiteturais aplic√°veis ao ecossistema ‚Äî tipagem de n√≥s, indexa√ß√£o incremental
-> por n√≠vel de impacto, e pipeline multi-agente com prompts declarativos.
-> Os pontos 2 (grafo) e 6 (separa√ß√£o embedding/busca) se sobrep√µem com itens j√°
-> existentes na Fase 11.3 do Mnemosyne (GraphRAG/LightRAG) ‚Äî ver nota em cada item.
+### Pesquisa: Understand-Anything ó Padrıes de Grafo de Conhecimento | 2026-05-04
+> Contexto: An·lise do projeto github.com/Lum1104/Understand-Anything revelou padrıes
+> arquiteturais aplic·veis ao ecossistema ó tipagem de nÛs, indexaÁ„o incremental
+> por nÌvel de impacto, e pipeline multi-agente com prompts declarativos.
+> Os pontos 2 (grafo) e 6 (separaÁ„o embedding/busca) se sobrepıem com itens j·
+> existentes na Fase 11.3 do Mnemosyne (GraphRAG/LightRAG) ó ver nota em cada item.
 
 #### Mnemosyne
-- [x] **Classifica√ß√£o de chunks por tipo de n√≥ durante indexa√ß√£o** (`core/indexer.py`,
+- [x] **ClassificaÁ„o de chunks por tipo de nÛ durante indexaÁ„o** (`core/indexer.py`,
   `core/config.py`, `core/rag.py`). Adicionar metadado `node_type` a cada chunk com
-  valores poss√≠veis: `article` (texto corrido), `entity` (pessoa/lugar/objeto nomeado),
-  `topic` (tema recorrente), `claim` (afirma√ß√£o factual), `source` (refer√™ncia externa).
-  Implementa√ß√£o: chamada LLM leve (< 3B, ex: Qwen2.5-1.5B) classifica o chunk no momento
-  da indexa√ß√£o; resultado salvo em `metadata["node_type"]` no ChromaDB. No retrieval,
+  valores possÌveis: `article` (texto corrido), `entity` (pessoa/lugar/objeto nomeado),
+  `topic` (tema recorrente), `claim` (afirmaÁ„o factual), `source` (referÍncia externa).
+  ImplementaÁ„o: chamada LLM leve (< 3B, ex: Qwen2.5-1.5B) classifica o chunk no momento
+  da indexaÁ„o; resultado salvo em `metadata["node_type"]` no ChromaDB. No retrieval,
   aceitar filtro opcional `node_types: list[str]` em `prepare_ask()` para restringir busca.
-  Exemplo de uso: `?node_types=claim` s√≥ busca afirma√ß√µes factuais ‚Äî reduz ru√≠do sem√¢ntico
-  em perguntas como "o que eu afirmo sobre X?". Requer `iterative_retrieval_enabled` j√°
-  implementado na Fase 11.2 para n√£o duplicar infra de LLM local.
+  Exemplo de uso: `?node_types=claim` sÛ busca afirmaÁıes factuais ó reduz ruÌdo sem‚ntico
+  em perguntas como "o que eu afirmo sobre X?". Requer `iterative_retrieval_enabled` j·
+  implementado na Fase 11.2 para n„o duplicar infra de LLM local.
 
-- [x] **Indexa√ß√£o incremental em 4 n√≠veis** (`core/indexer.py`). Substituir a detec√ß√£o
-  bin√°ria (hash mudou ‚Üí re-indexa tudo) por 4 n√≠veis inspirados no FingerprintEngine do
-  Understand-Anything: NONE (nenhuma mudan√ßa), COSMETIC (espa√ßos/formata√ß√£o ‚Äî hash de
-  texto normalizado igual), STRUCTURAL (conte√∫do sem√¢ntico alterado ‚Äî re-indexa s√≥ chunks
-  afetados), FULL (arquivo novo ou removido). Implementa√ß√£o: salvar hash por chunk
-  (n√£o s√≥ por arquivo) em `core/indexer.py`. Na re-indexa√ß√£o, comparar chunk por chunk:
-  s√≥ recalcula embedding e re-insere no ChromaDB os chunks que mudaram semanticamente.
-  Benef√≠cio cr√≠tico no i5-3470 (sem AVX2): corrigir typos n√£o re-indexa 500 chunks.
+- [x] **IndexaÁ„o incremental em 4 nÌveis** (`core/indexer.py`). Substituir a detecÁ„o
+  bin·ria (hash mudou ? re-indexa tudo) por 4 nÌveis inspirados no FingerprintEngine do
+  Understand-Anything: NONE (nenhuma mudanÁa), COSMETIC (espaÁos/formataÁ„o ó hash de
+  texto normalizado igual), STRUCTURAL (conte˙do sem‚ntico alterado ó re-indexa sÛ chunks
+  afetados), FULL (arquivo novo ou removido). ImplementaÁ„o: salvar hash por chunk
+  (n„o sÛ por arquivo) em `core/indexer.py`. Na re-indexaÁ„o, comparar chunk por chunk:
+  sÛ recalcula embedding e re-insere no ChromaDB os chunks que mudaram semanticamente.
+  BenefÌcio crÌtico no i5-3470 (sem AVX2): corrigir typos n„o re-indexa 500 chunks.
   Armazenar hashes em `{chroma_dir}/.chunk_hashes.json` ou em tabela SQLite auxiliar.
 
 #### HUB (LOGOS)
-- [x] **Refer√™ncia arquitetural: pipeline multi-agente via prompts .md** (pesquisa, n√£o
-  implementa√ß√£o imediata). O Understand-Anything orquestra 5 subagentes em paralelo onde
-  cada "habilidade" √© um arquivo `.md` de prompt ‚Äî adicionar nova capacidade = criar novo
-  arquivo, sem alterar c√≥digo. Aplicar ao LOGOS: cada tipo de tarefa (RAG query, s√≠ntese,
-  extra√ß√£o de entidades) seria um arquivo `logos/skills/<skill>.md`. O dispatcher l√™ o
+- [x] **ReferÍncia arquitetural: pipeline multi-agente via prompts .md** (pesquisa, n„o
+  implementaÁ„o imediata). O Understand-Anything orquestra 5 subagentes em paralelo onde
+  cada "habilidade" È um arquivo `.md` de prompt ó adicionar nova capacidade = criar novo
+  arquivo, sem alterar cÛdigo. Aplicar ao LOGOS: cada tipo de tarefa (RAG query, sÌntese,
+  extraÁ„o de entidades) seria um arquivo `logos/skills/<skill>.md`. O dispatcher lÍ o
   tipo de request e escolhe o skill. Pesquisar viabilidade com `Qwen2.5-7B` no CachyOS
   (modelo suficientemente capaz para seguir prompts estruturados). Registrar resultado
   em `pesquisas.md` antes de implementar.
 
 ---
 
-### Pesquisa: Assistente de Pesquisa Inteligente ‚Äî LLM-Augmented Search e Query Understanding | 2026-05-06
+### Pesquisa: Assistente de Pesquisa Inteligente ó LLM-Augmented Search e Query Understanding | 2026-05-06
 > Contexto: pesquisa sobre como transformar o AKASHA de buscador pessoal em assistente de
 > pesquisa com LLM local. Cobre arquitetura de sistemas como Perplexity AI e Kagi Assistant,
-> query understanding (classifica√ß√£o de inten√ß√£o, expans√£o HyDE, reescrita conversacional),
-> s√≠ntese multi-documento Map-Reduce, e lat√™ncia de infer√™ncia local com Ollama na RX 6600.
+> query understanding (classificaÁ„o de intenÁ„o, expans„o HyDE, reescrita conversacional),
+> sÌntese multi-documento Map-Reduce, e latÍncia de inferÍncia local com Ollama na RX 6600.
 
 #### AKASHA
-- [x] **Classificador de inten√ß√£o leve antes do pipeline de busca** (`routers/search.py` ou
+- [x] **Classificador de intenÁ„o leve antes do pipeline de busca** (`routers/search.py` ou
   `services/query_understanding.py`). Antes de executar busca, chamar Ollama (modelo 3B, ex:
-  Qwen2.5-3B) com prompt minimal para classificar a query em tr√™s tipos:
-  `fact-seeking` (resposta direta com cita√ß√£o), `exploratory` (s√≠ntese tem√°tica multi-doc),
-  `navigational` (link direto sem s√≠ntese). Cada tipo ativa um pipeline diferente:
-  fact-seeking ‚Üí busca FTS5 + resposta grounded; exploratory ‚Üí Map-Reduce + s√≠ntese;
-  navigational ‚Üí resultado top-1. Lat√™ncia do classificador: ~200ms com 3B Q4.
+  Qwen2.5-3B) com prompt minimal para classificar a query em trÍs tipos:
+  `fact-seeking` (resposta direta com citaÁ„o), `exploratory` (sÌntese tem·tica multi-doc),
+  `navigational` (link direto sem sÌntese). Cada tipo ativa um pipeline diferente:
+  fact-seeking ? busca FTS5 + resposta grounded; exploratory ? Map-Reduce + sÌntese;
+  navigational ? resultado top-1. LatÍncia do classificador: ~200ms com 3B Q4.
 
-- [x] **Expans√£o HyDE para busca vetorial no ChromaDB/Mnemosyne** (`services/local_search.py`,
-  `_search_chroma()`). Ao chamar ChromaDB com a query, gerar primeiro um "documento hipot√©tico"
-  via Ollama (`"Escreva um par√°grafo que responderia a: {query}"`), usar o embedding do
-  documento hipot√©tico como query vector em vez do embedding direto da query.
+- [x] **Expans„o HyDE para busca vetorial no ChromaDB/Mnemosyne** (`services/local_search.py`,
+  `_search_chroma()`). Ao chamar ChromaDB com a query, gerar primeiro um "documento hipotÈtico"
+  via Ollama (`"Escreva um par·grafo que responderia a: {query}"`), usar o embedding do
+  documento hipotÈtico como query vector em vez do embedding direto da query.
   Ganho documentado: +38% em nDCG@10 sobre embedding direto de query (HyDE, SIGIR 2023).
-  Custo: uma call Ollama extra de ~500ms. Ativar s√≥ quando mnemosyne est√° dispon√≠vel.
+  Custo: uma call Ollama extra de ~500ms. Ativar sÛ quando mnemosyne est· disponÌvel.
 
-- [x] **Template MUST+SHOULD para expans√£o de query no FTS5** (`services/local_search.py`,
-  `_search_fts()`). Ao expandir query com LLM (ap√≥s HyDE ou classifica√ß√£o), estruturar
+- [x] **Template MUST+SHOULD para expans„o de query no FTS5** (`services/local_search.py`,
+  `_search_fts()`). Ao expandir query com LLM (apÛs HyDE ou classificaÁ„o), estruturar
   a query FTS5 como: `query_original MUST_NEAR termos_expandidos` ou usar duas buscas:
   (1) FTS5 com query original; (2) FTS5 com termos expandidos pelo LLM. Combinar com RRF.
-  Padr√£o evita "query drift" onde expans√£o LLM retorna documentos irrelevantes que substituem
-  os relevantes. A query original permanece √¢ncora; expans√£o s√≥ adiciona recall.
+  Padr„o evita "query drift" onde expans„o LLM retorna documentos irrelevantes que substituem
+  os relevantes. A query original permanece ‚ncora; expans„o sÛ adiciona recall.
 
 - [x] **Reescrita de query conversacional por turno** (`routers/search.py`, `services/search_session.py`).
-  Ao detectar an√°fora na query ("isso", "esse assunto", "ele", pronomes relativos) ou query
-  muito curta (< 3 tokens) em sess√£o ativa, chamar Ollama para reescrever como query aut√¥noma
-  usando o contexto dos √∫ltimos K turnos. Prompt: `"Reescreva como busca independente: '{query}'.
-  Contexto recente: {√∫ltimas queries}."` Exibir a query reescrita na UI (transpar√™ncia).
-  Implementar sem fine-tuning ‚Äî LLMs 7B few-shot superam modelos ConvDR treinados em CANARD.
+  Ao detectar an·fora na query ("isso", "esse assunto", "ele", pronomes relativos) ou query
+  muito curta (< 3 tokens) em sess„o ativa, chamar Ollama para reescrever como query autÙnoma
+  usando o contexto dos ˙ltimos K turnos. Prompt: `"Reescreva como busca independente: '{query}'.
+  Contexto recente: {˙ltimas queries}."` Exibir a query reescrita na UI (transparÍncia).
+  Implementar sem fine-tuning ó LLMs 7B few-shot superam modelos ConvDR treinados em CANARD.
 
-- [x] **Detec√ß√£o de sess√£o de pesquisa** (`services/search_session.py`). Agrupar queries
-  consecutivas em sess√£o se: gap temporal < 30 minutos E similaridade de embedding entre
-  queries > 0.65. Manter estado de sess√£o em mem√≥ria do processo FastAPI (dict por IP/cookie).
-  Sess√£o acumula: queries anteriores (√∫ltimas K), documentos recuperados, entidades extra√≠das.
-  Exibir na UI um badge "Sess√£o ativa: N queries" com bot√£o para limpar. A sess√£o √© o contexto
-  para reescrita de query e para s√≠ntese final.
+- [x] **DetecÁ„o de sess„o de pesquisa** (`services/search_session.py`). Agrupar queries
+  consecutivas em sess„o se: gap temporal < 30 minutos E similaridade de embedding entre
+  queries > 0.65. Manter estado de sess„o em memÛria do processo FastAPI (dict por IP/cookie).
+  Sess„o acumula: queries anteriores (˙ltimas K), documentos recuperados, entidades extraÌdas.
+  Exibir na UI um badge "Sess„o ativa: N queries" com bot„o para limpar. A sess„o È o contexto
+  para reescrita de query e para sÌntese final.
 
-- [-] ~~**Pipeline Map-Reduce para s√≠ntese de resultados**~~ *(descartado ‚Äî o AKASHA n√£o sintetiza nem interpreta resultados; o LLM atua apenas na camada de query, n√£o na de apresenta√ß√£o; veja pesquisa "LLMs como Amplificadores de Pesquisa" 2026-05-15)*
+- [-] ~~**Pipeline Map-Reduce para sÌntese de resultados**~~ *(descartado ó o AKASHA n„o sintetiza nem interpreta resultados; o LLM atua apenas na camada de query, n„o na de apresentaÁ„o; veja pesquisa "LLMs como Amplificadores de Pesquisa" 2026-05-15)*
 
-- [-] ~~**Cita√ß√µes inline com verifica√ß√£o b√°sica**~~ *(descartado ‚Äî depende do Map-Reduce, que foi removido)*
+- [-] ~~**CitaÁıes inline com verificaÁ„o b·sica**~~ *(descartado ó depende do Map-Reduce, que foi removido)*
 
-- [x] **`keep_alive=-1` no cliente Ollama durante sess√£o ativa** (`services/synthesis.py`
-  ou `services/query_understanding.py`). Ao iniciar uma sess√£o de pesquisa (primeira query
-  classificada como n√£o-navigational), chamar `/api/generate` ou `/api/chat` com
-  `keep_alive: -1` (manter modelo em VRAM indefinidamente). Ao encerrar sess√£o (timeout
-  30min ou bot√£o "Encerrar sess√£o"): chamar com `keep_alive: 0` para liberar VRAM.
-  Elimina cold-start de 2‚Äì5 segundos por query na RX 6600. Custo de manter 7B Q4_K_M:
-  ~4 GB VRAM ocupados ‚Äî aceit√°vel se o usu√°rio est√° em sess√£o ativa.
+- [x] **`keep_alive=-1` no cliente Ollama durante sess„o ativa** (`services/synthesis.py`
+  ou `services/query_understanding.py`). Ao iniciar uma sess„o de pesquisa (primeira query
+  classificada como n„o-navigational), chamar `/api/generate` ou `/api/chat` com
+  `keep_alive: -1` (manter modelo em VRAM indefinidamente). Ao encerrar sess„o (timeout
+  30min ou bot„o "Encerrar sess„o"): chamar com `keep_alive: 0` para liberar VRAM.
+  Elimina cold-start de 2ñ5 segundos por query na RX 6600. Custo de manter 7B Q4_K_M:
+  ~4 GB VRAM ocupados ó aceit·vel se o usu·rio est· em sess„o ativa.
 
 - [x] **Leituras relacionadas derivadas dos resultados** (`routers/search.py`, template
-  `search.html`). Ap√≥s retornar resultados top-K, extrair as 3‚Äì5 entidades mais salientes
+  `search.html`). ApÛs retornar resultados top-K, extrair as 3ñ5 entidades mais salientes
   (TF-IDF sobre os snippets recuperados vs. o corpus crawleado) e executar buscas FTS5
-  silenciosas adicionais. Exibir na UI uma se√ß√£o "Explorar tamb√©m:" com cards compactos
-  dos documentos adicionais encontrados. Sem chamada LLM ‚Äî puramente textual, lat√™ncia
-  < 100ms. Implementa√ß√£o: fun√ß√£o `suggest_related(snippets, fts_conn, n=5)` em
+  silenciosas adicionais. Exibir na UI uma seÁ„o "Explorar tambÈm:" com cards compactos
+  dos documentos adicionais encontrados. Sem chamada LLM ó puramente textual, latÍncia
+  < 100ms. ImplementaÁ„o: funÁ„o `suggest_related(snippets, fts_conn, n=5)` em
   `services/local_search.py`.
 
-### Pesquisa: LLMs como Amplificadores de Pesquisa ‚Äî Augmenta√ß√£o sem Substitui√ß√£o do Racioc√≠nio | 2026-05-15
-> Contexto: pesquisa sobre como LLMs podem auxiliar a pesquisa sem pensar pelo usu√°rio ‚Äî
-> paradigma de amplifica√ß√£o (melhorar o que se encontra) vs. paradigma de answer engine
+### Pesquisa: LLMs como Amplificadores de Pesquisa ó AugmentaÁ„o sem SubstituiÁ„o do RaciocÌnio | 2026-05-15
+> Contexto: pesquisa sobre como LLMs podem auxiliar a pesquisa sem pensar pelo usu·rio ó
+> paradigma de amplificaÁ„o (melhorar o que se encontra) vs. paradigma de answer engine
 > (sintetizar o que foi encontrado). Cobre information foraging, query expansion com
-> ancoragem a corpus, transpar√™ncia de expans√£o na UI, e intent classification h√≠brido.
+> ancoragem a corpus, transparÍncia de expans„o na UI, e intent classification hÌbrido.
 
 #### AKASHA
-- [x] **Ancoragem da expans√£o de query ao vocabul√°rio do corpus** (`services/local_search.py`,
-  fun√ß√£o de expans√£o FTS5 ‚Äî implementar junto com o item MUST+SHOULD). Ao gerar termos
-  de expans√£o via LLM, filtrar o output para manter apenas termos que j√° aparecem no
-  √≠ndice FTS5 (`SELECT term FROM fts_vocab WHERE term IN (...)`). Evita *query drift*:
-  o LLM pode gerar entidades plaus√≠veis mas inexistentes no arquivo pessoal (documentado
-  em arXiv:2505.12694). A query original permanece √¢ncora obrigat√≥ria; expans√£o s√≥
+- [x] **Ancoragem da expans„o de query ao vocabul·rio do corpus** (`services/local_search.py`,
+  funÁ„o de expans„o FTS5 ó implementar junto com o item MUST+SHOULD). Ao gerar termos
+  de expans„o via LLM, filtrar o output para manter apenas termos que j· aparecem no
+  Ìndice FTS5 (`SELECT term FROM fts_vocab WHERE term IN (...)`). Evita *query drift*:
+  o LLM pode gerar entidades plausÌveis mas inexistentes no arquivo pessoal (documentado
+  em arXiv:2505.12694). A query original permanece ‚ncora obrigatÛria; expans„o sÛ
   adiciona recall, nunca substitui.
 
 - [x] **Exibir query expandida na UI antes de executar** (`templates/search.html`,
   `routers/search.py`). Quando o LLM expandir a query (MUST+SHOULD ou reescrita
   conversacional), mostrar os termos adicionados num badge abaixo do campo de busca:
-  "Expandido com: *machine learning, aprendizado de m√°quina, ML*". Manter bot√£o para
-  desfazer a expans√£o e executar a query original. Princ√≠pio de Human-in-the-loop:
-  o usu√°rio v√™ e controla o que o sistema fez antes de ver os resultados.
+  "Expandido com: *machine learning, aprendizado de m·quina, ML*". Manter bot„o para
+  desfazer a expans„o e executar a query original. PrincÌpio de Human-in-the-loop:
+  o usu·rio vÍ e controla o que o sistema fez antes de ver os resultados.
 
-### Pesquisa: Sistemas de Busca Interativos com LLM ‚Äî Clarifica√ß√£o, Personalidade e Aprendizado | 2026-05-15
-> Contexto: pesquisa sobre como transformar o AKASHA num assistente de execu√ß√£o inteligente ‚Äî
-> modelo "assistente real que acompanha o chefe": clarifica quando h√° d√∫vida genu√≠na de caminho,
-> lembra prefer√™ncias, sugere expans√µes, nunca interpreta nem conclui pelo usu√°rio.
-> AKASHA e Mnemosyne s√£o complementares: AKASHA traz material bruto, Mnemosyne processa em profundidade.
+### Pesquisa: Sistemas de Busca Interativos com LLM ó ClarificaÁ„o, Personalidade e Aprendizado | 2026-05-15
+> Contexto: pesquisa sobre como transformar o AKASHA num assistente de execuÁ„o inteligente ó
+> modelo "assistente real que acompanha o chefe": clarifica quando h· d˙vida genuÌna de caminho,
+> lembra preferÍncias, sugere expansıes, nunca interpreta nem conclui pelo usu·rio.
+> AKASHA e Mnemosyne s„o complementares: AKASHA traz material bruto, Mnemosyne processa em profundidade.
 
 #### AKASHA
-- [x] **Clarifica√ß√£o seletiva de query** (`services/query_understanding.py`, `routers/search.py`,
+- [x] **ClarificaÁ„o seletiva de query** (`services/query_understanding.py`, `routers/search.py`,
   `templates/search.html`). Antes de executar a busca, detectar ambiguidade via LLM leve
-  (score 1-4; perguntar apenas quando score ‚â• 3). M√°ximo 1 pergunta por sess√£o. A pergunta
-  deve ser sempre espec√≠fica sobre o atributo amb√≠guo ("Java a linguagem ou o pa√≠s?" em vez de
-  "o que voc√™ quer dizer?"). Mostrar resultados parciais enquanto aguarda resposta ‚Äî o usu√°rio
-  decide se quer refinar ou n√£o. Usar classificador de qualidade de pergunta (EACL 2024) para
+  (score 1-4; perguntar apenas quando score = 3). M·ximo 1 pergunta por sess„o. A pergunta
+  deve ser sempre especÌfica sobre o atributo ambÌguo ("Java a linguagem ou o paÌs?" em vez de
+  "o que vocÍ quer dizer?"). Mostrar resultados parciais enquanto aguarda resposta ó o usu·rio
+  decide se quer refinar ou n„o. Usar classificador de qualidade de pergunta (EACL 2024) para
   filtrar perguntas ruins antes de exibir: perguntas de baixa qualidade perturbam mais do que
-  n√£o perguntar (Zou et al. 2022, IPM). A pergunta aparece como um banner interativo no topo
-  dos resultados, n√£o como bloqueador de busca.
+  n„o perguntar (Zou et al. 2022, IPM). A pergunta aparece como um banner interativo no topo
+  dos resultados, n„o como bloqueador de busca.
 
-- [x] **Perfil persistente de prefer√™ncias de busca** (`services/search_profile.py` ‚Äî novo m√≥dulo,
-  `database.py` ‚Äî nova tabela `search_profile`). Armazenar prefer√™ncias de dom√≠nio (boost/block
-  expl√≠cito pelo usu√°rio, semelhante ao Kagi), tipos de fonte preferidos (arquivo local vs web vs
-  papers), e sinais de re-busca (mesma query reformulada em < 5 minutos = insatisfa√ß√£o com
-  resultados anteriores). Usar para personaliza√ß√£o pr√©-retrieval: modificar a query antes de
-  buscar com base no perfil (+10% R@5 em queries amb√≠guas, PBR arXiv:2510.08935). Tornar o
-  perfil transparente e edit√°vel via p√°gina de configura√ß√£o (`/settings` ou novo `/profile`).
-  O perfil √© opt-in e o usu√°rio v√™ exatamente o que est√° sendo aplicado (badge "Usando perfil:
-  prefere fontes acad√™micas").
+- [x] **Perfil persistente de preferÍncias de busca** (`services/search_profile.py` ó novo mÛdulo,
+  `database.py` ó nova tabela `search_profile`). Armazenar preferÍncias de domÌnio (boost/block
+  explÌcito pelo usu·rio, semelhante ao Kagi), tipos de fonte preferidos (arquivo local vs web vs
+  papers), e sinais de re-busca (mesma query reformulada em < 5 minutos = insatisfaÁ„o com
+  resultados anteriores). Usar para personalizaÁ„o prÈ-retrieval: modificar a query antes de
+  buscar com base no perfil (+10% R@5 em queries ambÌguas, PBR arXiv:2510.08935). Tornar o
+  perfil transparente e edit·vel via p·gina de configuraÁ„o (`/settings` ou novo `/profile`).
+  O perfil È opt-in e o usu·rio vÍ exatamente o que est· sendo aplicado (badge "Usando perfil:
+  prefere fontes acadÍmicas").
 
-- [x] **S√≠ntese de resultados como feature opcional expl√≠cita** (`routers/search.py`,
-  `services/query_understanding.py`, `templates/search.html`). Adicionar bot√£o "Resumir
-  resultados" que aparece ap√≥s retornar os snippets. Ao clicar, LLM l√™ os snippets recuperados
-  (sem fetch adicional) e gera 1-2 par√°grafos de orienta√ß√£o ‚Äî nunca substitui os links,
-  apenas orienta a leitura. N√£o ativado automaticamente em nenhuma circunst√¢ncia. Exibe
-  sempre as fontes usadas na s√≠ntese. Modelo: assistente que o chefe pede "me d√™ um overview"
-  ‚Äî responde e mostra de onde tirou.
+- [x] **SÌntese de resultados como feature opcional explÌcita** (`routers/search.py`,
+  `services/query_understanding.py`, `templates/search.html`). Adicionar bot„o "Resumir
+  resultados" que aparece apÛs retornar os snippets. Ao clicar, LLM lÍ os snippets recuperados
+  (sem fetch adicional) e gera 1-2 par·grafos de orientaÁ„o ó nunca substitui os links,
+  apenas orienta a leitura. N„o ativado automaticamente em nenhuma circunst‚ncia. Exibe
+  sempre as fontes usadas na sÌntese. Modelo: assistente que o chefe pede "me dÍ um overview"
+  ó responde e mostra de onde tirou.
 
-- [x] **Personalidade como estilo de comunica√ß√£o** (`templates/search.html`, `static/style.css`,
-  `services/query_understanding.py`). A "personalidade" do AKASHA √© o tom dos elementos
-  de interface: texto dos badges de inten√ß√£o, mensagens de estado durante busca
-  ("buscando em 3 fontes‚Ä¶", "nada encontrado ‚Äî tente reformular"), texto das perguntas
-  de clarifica√ß√£o, e labels dos bot√µes. Criar constante de estilo configur√°vel
+- [x] **Personalidade como estilo de comunicaÁ„o** (`templates/search.html`, `static/style.css`,
+  `services/query_understanding.py`). A "personalidade" do AKASHA È o tom dos elementos
+  de interface: texto dos badges de intenÁ„o, mensagens de estado durante busca
+  ("buscando em 3 fontesÖ", "nada encontrado ó tente reformular"), texto das perguntas
+  de clarificaÁ„o, e labels dos botıes. Criar constante de estilo configur·vel
   (`AKASHA_VOICE: str` em `config.py`) com dois modos: "neutro" (atual) e "assistente"
-  (mensagens mais naturais e contextualizadas). N√£o gera conte√∫do ‚Äî apenas comunica
+  (mensagens mais naturais e contextualizadas). N„o gera conte˙do ó apenas comunica
   processo.
 
-- [x] **Queries relacionadas sugeridas ap√≥s resultados** (`routers/search.py`,
-  `templates/search.html`). Ap√≥s retornar resultados, exibir 2-3 reformula√ß√µes sugeridas
+- [x] **Queries relacionadas sugeridas apÛs resultados** (`routers/search.py`,
+  `templates/search.html`). ApÛs retornar resultados, exibir 2-3 reformulaÁıes sugeridas
   baseadas nos termos dos snippets recuperados (TF-IDF sobre os snippets vs. a query original
-  ‚Äî sem chamada LLM, puramente textual, < 50ms). Exibir como chips clic√°veis abaixo dos
-  resultados: "Pesquisar tamb√©m: [machine learning intro] [ML supervised learning] [deep
+  ó sem chamada LLM, puramente textual, < 50ms). Exibir como chips clic·veis abaixo dos
+  resultados: "Pesquisar tambÈm: [machine learning intro] [ML supervised learning] [deep
   learning basics]". Ao clicar, executa nova busca. Inspirado no sucesso das "Related
-  Questions" do Perplexity (40% das queries em 2024 vieram de sugest√µes). Implementar em
+  Questions" do Perplexity (40% das queries em 2024 vieram de sugestıes). Implementar em
   `services/local_search.py` como `suggest_related_queries(query, snippets) -> list[str]`.
 
-### Pesquisa: Integra√ß√£o KOSMOS-AKASHA ‚Äî Padr√µes RSS Reader + Web Archiver | 2026-05-04
-> Contexto: Pesquisa sobre padr√µes de integra√ß√£o entre leitores RSS e arquivadores web
-> (FreshRSS+Wallabag, Miniflux+integra√ß√µes, ArchiveBox). Objetivo: interligar KOSMOS
-> e AKASHA especialmente nas fun√ß√µes de crawling e indexa√ß√£o, evitando duplica√ß√£o
-> e aproveitando ecosystem_scraper.py j√° compartilhado.
+### Pesquisa: IntegraÁ„o KOSMOS-AKASHA ó Padrıes RSS Reader + Web Archiver | 2026-05-04
+> Contexto: Pesquisa sobre padrıes de integraÁ„o entre leitores RSS e arquivadores web
+> (FreshRSS+Wallabag, Miniflux+integraÁıes, ArchiveBox). Objetivo: interligar KOSMOS
+> e AKASHA especialmente nas funÁıes de crawling e indexaÁ„o, evitando duplicaÁ„o
+> e aproveitando ecosystem_scraper.py j· compartilhado.
 
 #### KOSMOS
-- [ ] **Bot√£o "Arquivar no AKASHA" no leitor de artigos** (`app/ui/views/reader_view.py`
-  ou `app/ui/views/article_view.py`). Padr√£o FreshRSS+Wallabag: ao clicar, envia
-  `POST http://localhost:7071/archive` com `url=<url_do_artigo>` (AKASHA j√° ouve na
-  porta 7071). AKASHA faz fetch completo e salva na biblioteca. Pr√©-requisito: AKASHA
-  precisa ter esse endpoint ‚Äî ver item correspondente em AKASHA abaixo.
+- [ ] **Bot„o "Arquivar no AKASHA" no leitor de artigos** (`app/ui/views/reader_view.py`
+  ou `app/ui/views/article_view.py`). Padr„o FreshRSS+Wallabag: ao clicar, envia
+  `POST http://localhost:7071/archive` com `url=<url_do_artigo>` (AKASHA j· ouve na
+  porta 7071). AKASHA faz fetch completo e salva na biblioteca. PrÈ-requisito: AKASHA
+  precisa ter esse endpoint ó ver item correspondente em AKASHA abaixo.
   Mostrar toast "Arquivado no AKASHA" ao receber 200.
-  Mostrar erro "AKASHA offline" ao receber falha de conex√£o (n√£o bloquear leitura).
+  Mostrar erro "AKASHA offline" ao receber falha de conex„o (n„o bloquear leitura).
 
 - [ ] **Auto-arquivar ao salvar artigo** (`app/ui/main_window.py` ou
-  `app/ui/views/unified_feed_view.py`). Padr√£o Miniflux automations: quando o usu√°rio
+  `app/ui/views/unified_feed_view.py`). Padr„o Miniflux automations: quando o usu·rio
   clica em "Salvar" (bookmark) no artigo, enviar a URL automaticamente para AKASHA em
-  background (fire-and-forget, sem bloquear UI). Adicionar op√ß√£o `auto_archive_on_save`
-  em `app/utils/config.py` (default: False). Na a√ß√£o de salvar, se configurado, fazer
+  background (fire-and-forget, sem bloquear UI). Adicionar opÁ„o `auto_archive_on_save`
+  em `app/utils/config.py` (default: False). Na aÁ„o de salvar, se configurado, fazer
   `requests.post("http://localhost:7071/archive", data={"url": url}, timeout=3)` em
   thread separada.
 
-- [x] ~~**Busca unificada KOSMOS + AKASHA**~~ ‚Äî *supersedido: decis√£o arquitetural de 2026-05-19 inverte a dire√ß√£o ‚Äî AKASHA consulta o KOSMOS automaticamente em toda busca, n√£o o contr√°rio. Ver item 5 em "### Integra√ß√£o KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19".*
+- [x] ~~**Busca unificada KOSMOS + AKASHA**~~ ó *supersedido: decis„o arquitetural de 2026-05-19 inverte a direÁ„o ó AKASHA consulta o KOSMOS automaticamente em toda busca, n„o o contr·rio. Ver item 5 em "### IntegraÁ„o KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19".*
 
 #### AKASHA
 - [ ] **Endpoint `POST /archive` para receber URLs de outros apps** (`routers/crawler.py`
   ou novo `routers/archive_api.py`). Recebe `{"url": "...", "tags": [...], "notes": ""}`,
   chama `archive_url()` existente, retorna `{"status": "ok", "path": "..."}`.
-  Autentica√ß√£o: nenhuma (local-only, 127.0.0.1). Documentar no `CLAUDE.md` como contrato
-  de API. O KOSMOS e potencialmente outros apps do ecossistema usar√£o esse endpoint.
+  AutenticaÁ„o: nenhuma (local-only, 127.0.0.1). Documentar no `CLAUDE.md` como contrato
+  de API. O KOSMOS e potencialmente outros apps do ecossistema usar„o esse endpoint.
 
-- [x] ~~**Crawling incremental a partir dos feeds do KOSMOS**~~ ‚Äî *supersedido: decis√£o arquitetural de 2026-05-19 centraliza a classifica√ß√£o Biblioteca/Feed no HUB ‚Äî o usu√°rio decide explicitamente por dom√≠nio, KOSMOS n√£o notifica AKASHA automaticamente. Ver item 6 em "### Integra√ß√£o KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19".*
+- [x] ~~**Crawling incremental a partir dos feeds do KOSMOS**~~ ó *supersedido: decis„o arquitetural de 2026-05-19 centraliza a classificaÁ„o Biblioteca/Feed no HUB ó o usu·rio decide explicitamente por domÌnio, KOSMOS n„o notifica AKASHA automaticamente. Ver item 6 em "### IntegraÁ„o KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19".*
 
-- [ ] **Deduplica√ß√£o entre arquivo AKASHA e artigos KOSMOS** (`services/library.py`).
-  Ao arquivar uma URL que j√° existe no archive do KOSMOS (`kosmos.archive_path`), criar
+- [ ] **DeduplicaÁ„o entre arquivo AKASHA e artigos KOSMOS** (`services/library.py`).
+  Ao arquivar uma URL que j· existe no archive do KOSMOS (`kosmos.archive_path`), criar
   symlink ou registro cruzado em vez de duplicar. Consultar `kosmos.archive_path` do
-  ecosystem.json. Verificar por URL normalizada (remover par√¢metros de rastreamento
-  `utm_*`). Se j√° arquivado pelo KOSMOS, retornar o path existente em vez de re-arquivar.
+  ecosystem.json. Verificar por URL normalizada (remover par‚metros de rastreamento
+  `utm_*`). Se j· arquivado pelo KOSMOS, retornar o path existente em vez de re-arquivar.
 
-### Pesquisa: Motores de Busca Pessoais, Ranking de Relev√¢ncia e Busca H√≠brida | 2026-05-04
-> Contexto: pesquisa exaustiva sobre SQLite FTS5, ranking al√©m de BM25, motores self-hosted,
-> APIs de artigos cient√≠ficos, extra√ß√£o de snippets, busca h√≠brida FTS5+vetor, query understanding
-> e deduplica√ß√£o near-duplicate ‚Äî tudo aplicado ao AKASHA (FastAPI + SQLite FTS5 + ChromaDB).
+### Pesquisa: Motores de Busca Pessoais, Ranking de Relev‚ncia e Busca HÌbrida | 2026-05-04
+> Contexto: pesquisa exaustiva sobre SQLite FTS5, ranking alÈm de BM25, motores self-hosted,
+> APIs de artigos cientÌficos, extraÁ„o de snippets, busca hÌbrida FTS5+vetor, query understanding
+> e deduplicaÁ„o near-duplicate ó tudo aplicado ao AKASHA (FastAPI + SQLite FTS5 + ChromaDB).
 
 #### AKASHA
 - [x] **Configurar pesos de coluna BM25 persistentes via `INSERT INTO tabela(tabela, rank)`**
-  (`database.py` ou fun√ß√£o de inicializa√ß√£o do DB). Atualmente os pesos s√£o passados
-  explicitamente em cada query (ex: `bm25(local_fts, 0, 10, 1, 0)`). Usar a configura√ß√£o
+  (`database.py` ou funÁ„o de inicializaÁ„o do DB). Atualmente os pesos s„o passados
+  explicitamente em cada query (ex: `bm25(local_fts, 0, 10, 1, 0)`). Usar a configuraÁ„o
   persistente do FTS5: `INSERT INTO local_fts(local_fts, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)')`
-  na cria√ß√£o da tabela. Isso permite usar `ORDER BY rank` em vez de repetir os pesos em
-  cada query, e facilita ajuste de pesos sem alterar c√≥digo de busca.
+  na criaÁ„o da tabela. Isso permite usar `ORDER BY rank` em vez de repetir os pesos em
+  cada query, e facilita ajuste de pesos sem alterar cÛdigo de busca.
 
-- [x] **Implementar snippets por par√°grafo como alternativa ao snippet() FTS5**
-  (`services/local_search.py`). A fun√ß√£o snippet() FTS5 √© limitada a 64 tokens e usa
-  heur√≠stica simples. Para resultados de melhor qualidade: dividir o body do documento
-  em par√°grafos, aplicar BM25 (bm25s ou rank_bm25) para rankear par√°grafos contra a query,
-  retornar o par√°grafo mais relevante como snippet. Implementar como op√ß√£o configur√°vel
-  (snippet_mode: 'fts5' | 'paragraph_bm25'). Depend√™ncia: pip install bm25s.
+- [x] **Implementar snippets por par·grafo como alternativa ao snippet() FTS5**
+  (`services/local_search.py`). A funÁ„o snippet() FTS5 È limitada a 64 tokens e usa
+  heurÌstica simples. Para resultados de melhor qualidade: dividir o body do documento
+  em par·grafos, aplicar BM25 (bm25s ou rank_bm25) para rankear par·grafos contra a query,
+  retornar o par·grafo mais relevante como snippet. Implementar como opÁ„o configur·vel
+  (snippet_mode: 'fts5' | 'paragraph_bm25'). DependÍncia: pip install bm25s.
 
-- [x] **Adicionar suporte a prefix queries e phrase queries na sanitiza√ß√£o FTS5**
-  (`services/local_search.py`, fun√ß√£o `_sanitize_fts`). Atualmente `_sanitize_fts()` remove
+- [x] **Adicionar suporte a prefix queries e phrase queries na sanitizaÁ„o FTS5**
+  (`services/local_search.py`, funÁ„o `_sanitize_fts`). Atualmente `_sanitize_fts()` remove
   `*` e `"` da query, perdendo prefix queries (ex: "searc*") e phrase queries (ex: `"machine
-  learning"`). Melhorar sanitiza√ß√£o para: (a) manter aspas duplas v√°lidas (phrase), (b) manter
+  learning"`). Melhorar sanitizaÁ„o para: (a) manter aspas duplas v·lidas (phrase), (b) manter
   asterisco no final de tokens (prefix), (c) remover apenas chars que causam erros de sintaxe
-  FTS5. Adicionar detec√ß√£o de inten√ß√£o: se query cont√©m aspas, trat√°-la como phrase query.
+  FTS5. Adicionar detecÁ„o de intenÁ„o: se query contÈm aspas, trat·-la como phrase query.
 
 - [x] **Configurar tokenizer unicode61 com remove_diacritics 2 nas tabelas FTS5**
-  (`database.py` na cria√ß√£o das tabelas). Atualmente as tabelas FTS5 usam o tokenizer padr√£o.
-  Adicionar `tokenize='unicode61 remove_diacritics 2'` na cria√ß√£o de local_fts e library_fts.
-  Isso garante que buscar "pagina" encontre "p√°gina", "cafe" encontre "caf√©", etc.
+  (`database.py` na criaÁ„o das tabelas). Atualmente as tabelas FTS5 usam o tokenizer padr„o.
+  Adicionar `tokenize='unicode61 remove_diacritics 2'` na criaÁ„o de local_fts e library_fts.
+  Isso garante que buscar "pagina" encontre "p·gina", "cafe" encontre "cafÈ", etc.
   Melhoria de recall para PT+EN sem custo adicional.
 
 - [x] **Implementar RRF (Reciprocal Rank Fusion) entre FTS5 e ChromaDB**
-  (`services/local_search.py`, fun√ß√£o `rank_combined`). O `rank_combined()` atual usa
+  (`services/local_search.py`, funÁ„o `rank_combined`). O `rank_combined()` atual usa
   re-scoring simples por contagem de termos. Substituir por RRF: (1) FTS5 retorna lista
   ranqueada por BM25; (2) ChromaDB retorna lista por cosine similarity; (3) RRF combina
-  com f√≥rmula `score += 1.0 / (60 + rank)`. Resultado: documentos que aparecem em ambos
-  os sistemas sobem no ranking sem precisar normalizar scores incompat√≠veis.
-  Implementa√ß√£o: ~15 linhas de Python. Nenhuma nova depend√™ncia.
+  com fÛrmula `score += 1.0 / (60 + rank)`. Resultado: documentos que aparecem em ambos
+  os sistemas sobem no ranking sem precisar normalizar scores incompatÌveis.
+  ImplementaÁ„o: ~15 linhas de Python. Nenhuma nova dependÍncia.
 
-- [x] **Adicionar detec√ß√£o de idioma + stemming PT/EN na query antes do FTS5**
+- [x] **Adicionar detecÁ„o de idioma + stemming PT/EN na query antes do FTS5**
   (`services/local_search.py`). Integrar langdetect (pip install langdetect) para detectar
   idioma da query. Se PT: aplicar NLTK RSLPStemmer ou SnowballStemmer("portuguese"). Se EN:
-  aplicar SnowballStemmer("english"). Expandir query FTS5 com stems via OR: ex, "buscando" ‚Üí
-  `(buscando OR busc*)`. Melhorar recall especialmente para queries PT onde conte√∫do pode
-  estar em diferentes formas morfol√≥gicas. Aten√ß√£o: unicode61 remove_diacritics j√° cobre
-  varia√ß√µes de acento ‚Äî stemming √© complementar.
+  aplicar SnowballStemmer("english"). Expandir query FTS5 com stems via OR: ex, "buscando" ?
+  `(buscando OR busc*)`. Melhorar recall especialmente para queries PT onde conte˙do pode
+  estar em diferentes formas morfolÛgicas. AtenÁ„o: unicode61 remove_diacritics j· cobre
+  variaÁıes de acento ó stemming È complementar.
 
-- [x] **Implementar deduplica√ß√£o near-duplicate via SimHash no archiver**
+- [x] **Implementar deduplicaÁ„o near-duplicate via SimHash no archiver**
   (`services/archiver.py` ou `services/library.py`). Ao arquivar nova URL, calcular SimHash
-  do texto extra√≠do (pip install simhash). Comparar com SimHashes de documentos j√° indexados
-  armazenados em coluna da tabela de metadados (dist√¢ncia Hamming ‚â§ 3 ‚Üí near-duplicate).
-  Se near-duplicate detectado: n√£o arquivar; retornar URL do documento existente.
-  Tamb√©m normalizar URL antes de inserir (pip install url-normalize) para deduplica√ß√£o
-  de URLs equivalentes (tracking params, HTTP‚ÜíHTTPS, trailing slash).
+  do texto extraÌdo (pip install simhash). Comparar com SimHashes de documentos j· indexados
+  armazenados em coluna da tabela de metadados (dist‚ncia Hamming = 3 ? near-duplicate).
+  Se near-duplicate detectado: n„o arquivar; retornar URL do documento existente.
+  TambÈm normalizar URL antes de inserir (pip install url-normalize) para deduplicaÁ„o
+  de URLs equivalentes (tracking params, HTTP?HTTPS, trailing slash).
 
 - [x] **Re-ranking cross-encoder para top-K resultados de busca**
-  (`services/local_search.py`). Ap√≥s FTS5 retornar resultados, aplicar re-ranking com
+  (`services/local_search.py`). ApÛs FTS5 retornar resultados, aplicar re-ranking com
   FlashRank (pip install flashrank) nos top-20 resultados. FlashRank usa modelos embutidos
-  (~4MB) e funciona puramente em CPU sem GPU. Lat√™ncia estimada: ~200ms para 20 docs
-  em CPU t√≠pico ‚Äî aceit√°vel para busca local. Implementar como opcional (reranking_enabled
-  em config): usuario pode desativar se lat√™ncia for problema. Maior ganho para queries
-  amb√≠guas onde BM25 retorna muitos falsos positivos.
+  (~4MB) e funciona puramente em CPU sem GPU. LatÍncia estimada: ~200ms para 20 docs
+  em CPU tÌpico ó aceit·vel para busca local. Implementar como opcional (reranking_enabled
+  em config): usuario pode desativar se latÍncia for problema. Maior ganho para queries
+  ambÌguas onde BM25 retorna muitos falsos positivos.
 
 - [x] **sqlite-vec: adicionar busca vetorial nativa no mesmo arquivo .db do FTS5**
   (`database.py`, `services/local_search.py`). Instalar pip install sqlite-vec. Criar
@@ -4332,1165 +4332,1165 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   No archiver, ao indexar documento, gerar embedding (modelo leve, ex: all-MiniLM-L6-v2
   via sentence-transformers) e inserir em vec_items. Na busca, combinar FTS5 BM25 +
   sqlite-vec KNN via RRF. Vantagem: sem servidor separado; funciona offline; mesmo arquivo.
-  Aten√ß√£o: MX150 tem 2GB VRAM ‚Äî usar modelo de embedding ‚â§ 80MB; i5-3470 sem AVX2
-  pode ser lento para embeddings, considerar indexar s√≥ em CachyOS.
+  AtenÁ„o: MX150 tem 2GB VRAM ó usar modelo de embedding = 80MB; i5-3470 sem AVX2
+  pode ser lento para embeddings, considerar indexar sÛ em CachyOS.
 
 - [x] **Spell correction de queries com symspellpy**
   (`services/local_search.py`, antes da query FTS5). Integrar symspellpy (pip install
-  symspellpy) com dicion√°rios de frequ√™ncia PT+EN pr√©-compilados. Se query tem ‚â§ 2 tokens
+  symspellpy) com dicion·rios de frequÍncia PT+EN prÈ-compilados. Se query tem = 2 tokens
   com baixo score BM25 (< resultados esperados), tentar corrigir. Mostrar "Mostrando
-  resultados para: [query corrigida]" no response. Lat√™ncia: < 1ms ap√≥s carga do dicion√°rio
-  em mem√≥ria. Carregar dicion√°rio no startup do app (uma vez).
+  resultados para: [query corrigida]" no response. LatÍncia: < 1ms apÛs carga do dicion·rio
+  em memÛria. Carregar dicion·rio no startup do app (uma vez).
 
-- [x] **Preset "apenas artigos cient√≠ficos" na rota de busca**
+- [x] **Preset "apenas artigos cientÌficos" na rota de busca**
   (`routers/search.py`, template `search.html`). Aceitar `?mode=papers` na rota `/search`
-  que force `src_papers=True` e todos os outros sources desligados. Na UI, adicionar bot√£o
+  que force `src_papers=True` e todos os outros sources desligados. Na UI, adicionar bot„o
   "Buscar artigos" ao lado do campo de busca principal (ou atalho de teclado). Permite busca
   exclusiva em Semantic Scholar + arXiv sem passar por DDG/FTS5 local/sites. Abre caminho
   para presets futuros (ex: `?mode=local`, `?mode=archive`).
 
-- [x] **OpenAlex como terceira fonte na busca cient√≠fica**
+- [x] **OpenAlex como terceira fonte na busca cientÌfica**
   (`services/paper_search.py`). Integrar OpenAlex via `pip install pyalex`. OpenAlex cobre
-  250M+ artigos (mais abrangente que Semantic Scholar), √© gratuito com chave de email,
+  250M+ artigos (mais abrangente que Semantic Scholar), È gratuito com chave de email,
   retorna abstracts completos e links de acesso aberto. Adicionar ao gather paralelo em
   `paper_search.py` ao lado de Semantic Scholar e arXiv. Usar pyalex: `pya.Works().search(q)`.
   Deduplicar por DOI/arXiv ID antes de retornar resultados. Integrar Unpaywall como
-  p√≥s-processamento: dado um DOI, consultar `api.unpaywall.org/v2/{doi}?email=...`
-  para obter link PDF de acesso aberto quando dispon√≠vel.
+  pÛs-processamento: dado um DOI, consultar `api.unpaywall.org/v2/{doi}?email=...`
+  para obter link PDF de acesso aberto quando disponÌvel.
 
-### Pesquisa: AKASHA como Assistente de Pesquisa ‚Äî T√©cnicas Al√©m de LLMs | 2026-05-06
+### Pesquisa: AKASHA como Assistente de Pesquisa ó TÈcnicas AlÈm de LLMs | 2026-05-06
 > Contexto: pesquisa sobre PKM (Zotero, DEVONthink, Readwise), workflows reais de pesquisadores
-> (Berrypicking, Information Foraging Theory), t√©cnicas de "intelig√™ncia" sem LLM (usage-based
-> ranking, co-reading, annotation density, TF-IDF local), sistema de anota√ß√£o web (W3C WADM),
+> (Berrypicking, Information Foraging Theory), tÈcnicas de "inteligÍncia" sem LLM (usage-based
+> ranking, co-reading, annotation density, TF-IDF local), sistema de anotaÁ„o web (W3C WADM),
 > progressive disclosure e quando LLM faz sentido vs. quando piora. Objetivo: transformar o
-> AKASHA em assistente de pesquisa produtivo sem depender de Ollama como funda√ß√£o.
+> AKASHA em assistente de pesquisa produtivo sem depender de Ollama como fundaÁ„o.
 
 #### AKASHA
-- [x] **Tabela de hist√≥rico de acessos** (`database.py`). Criar tabela `doc_accesses(id, url,
-  accessed_at DATETIME)` e registrar cada abertura de documento arquivado. Sem UI extra ‚Äî apenas
-  INSERT silencioso ao abrir um documento. Pr√©-requisito para usage-based ranking, co-reading
-  patterns e annotation density. Nenhuma nova depend√™ncia.
+- [x] **Tabela de histÛrico de acessos** (`database.py`). Criar tabela `doc_accesses(id, url,
+  accessed_at DATETIME)` e registrar cada abertura de documento arquivado. Sem UI extra ó apenas
+  INSERT silencioso ao abrir um documento. PrÈ-requisito para usage-based ranking, co-reading
+  patterns e annotation density. Nenhuma nova dependÍncia.
 
-- [x] **Usage-based ranking** (`services/local_search.py`, fun√ß√£o `rank_combined` ou novo
-  `services/ranking.py`). Combinar BM25 com frequ√™ncia de acesso e decaimento temporal:
-  `score_final = Œ± √ó bm25 + (1-Œ±) √ó (access_count √ó exp(-Œª √ó days_since_last_access))`.
-  Par√¢metro `Œ±` configur√°vel em `/settings` (default 0.7 BM25, 0.3 uso). Consultar tabela
-  `doc_accesses` com GROUP BY url para obter contagem e √∫ltimo acesso. Sem nova depend√™ncia.
+- [x] **Usage-based ranking** (`services/local_search.py`, funÁ„o `rank_combined` ou novo
+  `services/ranking.py`). Combinar BM25 com frequÍncia de acesso e decaimento temporal:
+  `score_final = a ◊ bm25 + (1-a) ◊ (access_count ◊ exp(-? ◊ days_since_last_access))`.
+  Par‚metro `a` configur·vel em `/settings` (default 0.7 BM25, 0.3 uso). Consultar tabela
+  `doc_accesses` com GROUP BY url para obter contagem e ˙ltimo acesso. Sem nova dependÍncia.
 
-- [x] **Tabela de highlights e indexa√ß√£o FTS5 separada** (`database.py`,
+- [x] **Tabela de highlights e indexaÁ„o FTS5 separada** (`database.py`,
   `services/archiver.py`). Criar tabela `highlights(id, url, exact TEXT, prefix TEXT,
   suffix TEXT, note TEXT, created_at DATETIME)` seguindo W3C Web Annotation Data Model
   (TextQuoteSelector: exact = trecho destacado, prefix = 32 chars antes, suffix = 32 chars
   depois). Criar virtual table `highlights_fts(rowid, exact, note)`. Ao buscar, incluir
-  resultados de highlights_fts com badge "HIGHLIGHT". Buscas em anota√ß√µes pessoais retornam
+  resultados de highlights_fts com badge "HIGHLIGHT". Buscas em anotaÁıes pessoais retornam
   resultados mais precisos que buscas no corpo completo do documento.
 
-- [x] **Query autocomplete por hist√≥rico pessoal** (`routers/search.py` ou via endpoint
+- [x] **Query autocomplete por histÛrico pessoal** (`routers/search.py` ou via endpoint
   HTMX `GET /search/suggest?q=`). Criar tabela `search_history(query TEXT UNIQUE,
   count INT, last_used DATETIME)` e registrar cada query ao executar busca. Endpoint de
-  sugest√£o: `SELECT query FROM search_history WHERE query LIKE :prefix ORDER BY count DESC,
+  sugest„o: `SELECT query FROM search_history WHERE query LIKE :prefix ORDER BY count DESC,
   last_used DESC LIMIT 10`. Expor como dropdown no campo de busca via HTMX. Sem nova
-  depend√™ncia ‚Äî FTS5 puro.
+  dependÍncia ó FTS5 puro.
 
-- [x] **Faceted search** (`routers/search.py`, `templates/search.html`). Ap√≥s executar
-  a query FTS5, calcular distribui√ß√£o dos resultados por: dom√≠nio (extrair netloc da URL),
-  ano de archivamento, tipo de conte√∫do (detectado no archive), idioma. Retornar como
+- [x] **Faceted search** (`routers/search.py`, `templates/search.html`). ApÛs executar
+  a query FTS5, calcular distribuiÁ„o dos resultados por: domÌnio (extrair netloc da URL),
+  ano de archivamento, tipo de conte˙do (detectado no archive), idioma. Retornar como
   JSON extra no contexto do template. Exibir como checkboxes de filtro na sidebar dos
-  resultados. Segunda query com WHERE adicional quando filtro ativo. Implementa√ß√£o pura
-  em SQLite com GROUP BY ‚Äî sem nova depend√™ncia.
+  resultados. Segunda query com WHERE adicional quando filtro ativo. ImplementaÁ„o pura
+  em SQLite com GROUP BY ó sem nova dependÍncia.
 
 - [x] **Co-reading patterns single-user** (`services/local_search.py` ou
   `services/ranking.py`). Ao exibir um documento, consultar `doc_accesses` para encontrar
-  outros URLs acessados dentro de uma janela de 2 horas antes e depois. Exibir se√ß√£o
-  "Visto na mesma sess√£o de pesquisa:" com cards compactos. Captura rela√ß√µes sem√¢nticas
-  que similaridade de texto n√£o captura (dois documentos sobre temas diferentes mas lidos
-  juntos no contexto de uma pesquisa). Implementa√ß√£o: SQL com `ABS(strftime('%s', a1.accessed_at)
-  - strftime('%s', a2.accessed_at)) < 7200`. Sem nova depend√™ncia.
+  outros URLs acessados dentro de uma janela de 2 horas antes e depois. Exibir seÁ„o
+  "Visto na mesma sess„o de pesquisa:" com cards compactos. Captura relaÁıes sem‚nticas
+  que similaridade de texto n„o captura (dois documentos sobre temas diferentes mas lidos
+  juntos no contexto de uma pesquisa). ImplementaÁ„o: SQL com `ABS(strftime('%s', a1.accessed_at)
+  - strftime('%s', a2.accessed_at)) < 7200`. Sem nova dependÍncia.
 
 - [x] **Annotation density como sinal de ranking** (`services/local_search.py`). Ao
   ranquear resultados, incluir contagem de highlights por URL como sinal adicional: documentos
-  com mais highlights do usu√°rio sobem no ranking. Consulta: `SELECT COUNT(*) FROM highlights
-  WHERE url = :url`. Integrar ao score final como `score += Œ≤ √ó log(1 + highlight_count)`,
-  com `Œ≤` configur√°vel (default 0.1). Pr√©-requisito: tabela de highlights (item acima).
+  com mais highlights do usu·rio sobem no ranking. Consulta: `SELECT COUNT(*) FROM highlights
+  WHERE url = :url`. Integrar ao score final como `score += ﬂ ◊ log(1 + highlight_count)`,
+  com `ﬂ` configur·vel (default 0.1). PrÈ-requisito: tabela de highlights (item acima).
 
 - [x] **Lenses pessoais** (`database.py`, `routers/search.py`, `templates/base.html`).
   Criar tabela `lenses(id, name TEXT, domains TEXT, tags TEXT, content_types TEXT,
-  date_from TEXT, date_to TEXT)`. UI: bot√£o "Lenses" na nav, tela de gest√£o de lenses
-  (criar, editar, deletar). Quando uma lens est√° ativa, adicionar WHERE clauses √† query
-  FTS5. Inspirado em Kagi lenses ‚Äî filtros nomeados que persistem entre sess√µes e podem
+  date_from TEXT, date_to TEXT)`. UI: bot„o "Lenses" na nav, tela de gest„o de lenses
+  (criar, editar, deletar). Quando uma lens est· ativa, adicionar WHERE clauses ‡ query
+  FTS5. Inspirado em Kagi lenses ó filtros nomeados que persistem entre sessıes e podem
   ser ativados com um clique.
 
 - [x] **TF-IDF local para documentos relacionados** (`services/local_search.py`,
-  nova fun√ß√£o `find_related(url, n=5)`). Ao exibir um documento arquivado, calcular TF-IDF
-  do seu conte√∫do contra o corpus indexado no FTS5 (extrair termos discriminantes via
+  nova funÁ„o `find_related(url, n=5)`). Ao exibir um documento arquivado, calcular TF-IDF
+  do seu conte˙do contra o corpus indexado no FTS5 (extrair termos discriminantes via
   `SELECT bm25(local_fts) ...`) e fazer nova busca FTS5 com esses termos, excluindo o
-  pr√≥prio documento. Exibir se√ß√£o "Documentos relacionados:" com at√© 5 cards. Sem LLM,
-  sem nova depend√™ncia ‚Äî FTS5 puro.
+  prÛprio documento. Exibir seÁ„o "Documentos relacionados:" com atÈ 5 cards. Sem LLM,
+  sem nova dependÍncia ó FTS5 puro.
 
 - [x] **Progressive disclosure na UI de resultados** (`templates/search.html`). Estruturar
-  cards de resultado em 3 camadas acess√≠veis progressivamente: (1) t√≠tulo + snippet 30-50
-  palavras + √≠cones de highlights e tags; (2) preview expans√≠vel ao clicar "‚ñ∏" com todos
-  os highlights do documento + metadados completos (autor, data, dom√≠nio, idioma, word count);
-  (3) link "Abrir documento completo" para visualiza√ß√£o com modo de anota√ß√£o. Reduz carga
-  cognitiva na lista de resultados sem esconder informa√ß√£o relevante.
+  cards de resultado em 3 camadas acessÌveis progressivamente: (1) tÌtulo + snippet 30-50
+  palavras + Ìcones de highlights e tags; (2) preview expansÌvel ao clicar "?" com todos
+  os highlights do documento + metadados completos (autor, data, domÌnio, idioma, word count);
+  (3) link "Abrir documento completo" para visualizaÁ„o com modo de anotaÁ„o. Reduz carga
+  cognitiva na lista de resultados sem esconder informaÁ„o relevante.
 
 - [x] **Citation graph local para papers** (`database.py`, `services/archiver.py`,
   `services/paper_search.py`). Criar tabela `doc_citations(citing_url TEXT, cited_doi TEXT,
-  cited_title TEXT)`. Ao arquivar um documento que cont√©m DOIs nas refer√™ncias (detectar
+  cited_title TEXT)`. Ao arquivar um documento que contÈm DOIs nas referÍncias (detectar
   por regex `10\.\d{4,}/\S+`), consultar CrossRef REST API (`api.crossref.org/works/{doi}`)
   para enriquecer metadados e salvar em `doc_citations`. Na tela do documento, exibir
-  se√ß√£o "Citado por documentos neste arquivo:" via query de bibliographic coupling. CrossRef
-  √© gratuito sem autentica√ß√£o para consultas moderadas.
+  seÁ„o "Citado por documentos neste arquivo:" via query de bibliographic coupling. CrossRef
+  È gratuito sem autenticaÁ„o para consultas moderadas.
 
-- [x] **"Mais deste dom√≠nio/autor neste per√≠odo"** (`services/local_search.py`,
-  `templates/archive_view.html`). Na tela de visualiza√ß√£o de um documento arquivado,
-  exibir se√ß√£o "Mais de [dom√≠nio]:" com at√© 5 documentos do mesmo netloc arquivados
-  pr√≥ximos √† mesma data. Implementa o padr√£o "journal run" de Bates (1989): vasculhar
-  o mesmo ve√≠culo/autor em busca de contexto. Query SQL: `WHERE url LIKE :domain_pattern
+- [x] **"Mais deste domÌnio/autor neste perÌodo"** (`services/local_search.py`,
+  `templates/archive_view.html`). Na tela de visualizaÁ„o de um documento arquivado,
+  exibir seÁ„o "Mais de [domÌnio]:" com atÈ 5 documentos do mesmo netloc arquivados
+  prÛximos ‡ mesma data. Implementa o padr„o "journal run" de Bates (1989): vasculhar
+  o mesmo veÌculo/autor em busca de contexto. Query SQL: `WHERE url LIKE :domain_pattern
   AND ABS(julianday(archived_at) - julianday(:doc_date)) < 90 LIMIT 5`.
 
-- [x] **Tag co-ocorr√™ncia para sugest√£o** (`services/archiver.py`, `routers/search.py`).
-  Ao exibir filtros de tag nos resultados de busca, ordenar tags relacionadas por co-ocorr√™ncia
+- [x] **Tag co-ocorrÍncia para sugest„o** (`services/archiver.py`, `routers/search.py`).
+  Ao exibir filtros de tag nos resultados de busca, ordenar tags relacionadas por co-ocorrÍncia
   com a tag selecionada: `SELECT tag_b, COUNT(*) FROM tag_pairs WHERE tag_a = :active GROUP
   BY tag_b ORDER BY COUNT(*) DESC`. Popular tabela `tag_pairs` ao salvar/atualizar tags de
-  um documento. Tags que co-ocorrem frequentemente s√£o sugeridas automaticamente ao criar
+  um documento. Tags que co-ocorrem frequentemente s„o sugeridas automaticamente ao criar
   novos highlights ou arquivar documentos.
 
-- [x] **Degrada√ß√£o graciosa quando Ollama offline** (`services/local_search.py`,
-  `routers/search.py`). Qualquer feature que depende de Ollama (reranking LLM, s√≠ntese
+- [x] **DegradaÁ„o graciosa quando Ollama offline** (`services/local_search.py`,
+  `routers/search.py`). Qualquer feature que depende de Ollama (reranking LLM, sÌntese
   Map-Reduce, HyDE) deve ter um estado funcional alternativo quando `http://localhost:11434`
-  n√£o responde. Padr√£o: verificar Ollama no startup, setar flag `_ollama_available` global.
-  Se False: desabilitar features LLM na UI com tooltip "Ollama offline ‚Äî feature dispon√≠vel
+  n„o responde. Padr„o: verificar Ollama no startup, setar flag `_ollama_available` global.
+  Se False: desabilitar features LLM na UI com tooltip "Ollama offline ó feature disponÌvel
   quando Ollama estiver rodando". Nunca bloquear a busca FTS5 por falta de LLM.
 
-### Pesquisa: LLMs Locais para Dispatcher/Skill Routing ‚Äî achados para Mnemosyne e KOSMOS | 2026-05-12
-> Contexto: pesquisa sobre arquitetura multi-agente e compara√ß√£o de LLMs locais para instruction
-> following revelou implica√ß√µes pr√°ticas para o Mnemosyne (RAG com cita√ß√£o, janela de contexto,
-> ordering de chunks) e para o KOSMOS (modelos mais capazes dentro da mesma limita√ß√£o de VRAM).
+### Pesquisa: LLMs Locais para Dispatcher/Skill Routing ó achados para Mnemosyne e KOSMOS | 2026-05-12
+> Contexto: pesquisa sobre arquitetura multi-agente e comparaÁ„o de LLMs locais para instruction
+> following revelou implicaÁıes pr·ticas para o Mnemosyne (RAG com citaÁ„o, janela de contexto,
+> ordering de chunks) e para o KOSMOS (modelos mais capazes dentro da mesma limitaÁ„o de VRAM).
 
 #### Mnemosyne
-- [x] **Command R 7B como op√ß√£o de modelo para RAG** ‚Äî o Command R 7B (Cohere, via `ollama pull
-  command-r`) √© o √∫nico modelo sub-10B com treinamento expl√≠cito para grounded generation com
-  cita√ß√£o de fontes (grounding spans). Adicionar como op√ß√£o de `qa_model` na `SetupDialog` do
-  Mnemosyne com tooltip explicando a especializa√ß√£o. Consumo: ~5 GB VRAM Q4_K_M, cabe na RX 6600.
-  Para respostas que incluam cita√ß√µes precisas ("conforme [fonte], [trecho]"), esse modelo
-  supera Llama/Qwen no crit√©rio de fidelidade de atribui√ß√£o.
+- [x] **Command R 7B como opÁ„o de modelo para RAG** ó o Command R 7B (Cohere, via `ollama pull
+  command-r`) È o ˙nico modelo sub-10B com treinamento explÌcito para grounded generation com
+  citaÁ„o de fontes (grounding spans). Adicionar como opÁ„o de `qa_model` na `SetupDialog` do
+  Mnemosyne com tooltip explicando a especializaÁ„o. Consumo: ~5 GB VRAM Q4_K_M, cabe na RX 6600.
+  Para respostas que incluam citaÁıes precisas ("conforme [fonte], [trecho]"), esse modelo
+  supera Llama/Qwen no critÈrio de fidelidade de atribuiÁ„o.
 
-- [x] **Reordena√ß√£o de chunks para mitigar "lost in the middle"** ‚Äî todos os modelos LLM exibem
-  vi√©s posicional em multi-document RAG: chunks no meio do contexto s√£o menos utilizados que
-  os do in√≠cio e do fim. Em `core/rag.py`, ao montar o contexto final, reordenar os N chunks
-  recuperados colocando os de maior score RRF alternadamente no in√≠cio e no final (ex: rank 1
-  ‚Üí posi√ß√£o 0, rank 2 ‚Üí posi√ß√£o N-1, rank 3 ‚Üí posi√ß√£o 1, rank 4 ‚Üí posi√ß√£o N-2). Mudan√ßa
+- [x] **ReordenaÁ„o de chunks para mitigar "lost in the middle"** ó todos os modelos LLM exibem
+  viÈs posicional em multi-document RAG: chunks no meio do contexto s„o menos utilizados que
+  os do inÌcio e do fim. Em `core/rag.py`, ao montar o contexto final, reordenar os N chunks
+  recuperados colocando os de maior score RRF alternadamente no inÌcio e no final (ex: rank 1
+  ? posiÁ„o 0, rank 2 ? posiÁ„o N-1, rank 3 ? posiÁ„o 1, rank 4 ? posiÁ„o N-2). MudanÁa
   pequena em `_build_context()` com impacto documentado de qualidade de resposta.
 
-- [x] **Nota sobre janela de contexto por modelo** ‚Äî documentar no `SetupDialog` (tooltip em
+- [x] **Nota sobre janela de contexto por modelo** ó documentar no `SetupDialog` (tooltip em
   `qa_model`) que Qwen2.5-7B-Instruct suporta 128K tokens de contexto enquanto Llama 3.1 8B
-  suporta apenas 16K. Para cole√ß√µes com documentos longos ou muitos chunks recuperados, o
-  Qwen2.5-7B √© prefer√≠vel. Adicionar verifica√ß√£o em `core/rag.py`: se `qa_model` contiver
-  "llama" e o contexto montado exceder ~12K tokens, logar aviso "contexto pr√≥ximo do limite
-  do modelo ‚Äî considere usar Qwen2.5-7B".
+  suporta apenas 16K. Para coleÁıes com documentos longos ou muitos chunks recuperados, o
+  Qwen2.5-7B È preferÌvel. Adicionar verificaÁ„o em `core/rag.py`: se `qa_model` contiver
+  "llama" e o contexto montado exceder ~12K tokens, logar aviso "contexto prÛximo do limite
+  do modelo ó considere usar Qwen2.5-7B".
 
 #### KOSMOS
-- [ ] **Avaliar Phi-4 Mini 3.8B como modelo principal do KOSMOS** ‚Äî o Phi-4 Mini 3.8B tem MMLU
+- [ ] **Avaliar Phi-4 Mini 3.8B como modelo principal do KOSMOS** ó o Phi-4 Mini 3.8B tem MMLU
   equivalente ao Llama 3.1 8B (73%), consome ~3 GB em Q4_K_M e roda a ~60-120 t/s na RX 6600.
-  Em CPU puro (i5-3470, Windows 10), cabe em RAM com offload e √© significativamente mais capaz
+  Em CPU puro (i5-3470, Windows 10), cabe em RAM com offload e È significativamente mais capaz
   que o SmolLM2 1.7B atual. Testar: `ollama pull phi4-mini` e avaliar qualidade de respostas
-  nas tarefas t√≠picas do KOSMOS (s√≠ntese de artigo, extra√ß√£o de conceitos, gera√ß√£o de notas).
+  nas tarefas tÌpicas do KOSMOS (sÌntese de artigo, extraÁ„o de conceitos, geraÁ„o de notas).
 
-- [ ] **Avaliar Gemma 3 4B para hardware limitado (MX150/i5-3470)** ‚Äî o Gemma 3 4B cabe inteiro
+- [ ] **Avaliar Gemma 3 4B para hardware limitado (MX150/i5-3470)** ó o Gemma 3 4B cabe inteiro
   na MX150 (2 GB VRAM) em Q4_K_M (~2,5 GB) e representa upgrade significativo sobre modelos 1-2B.
-  Testar: `ollama pull gemma3:4b`. Candidato a modelo padr√£o do KOSMOS no laptop e no Windows
-  de trabalho onde a MX150 n√£o est√° dispon√≠vel mas a RAM permite offload de 4B.
+  Testar: `ollama pull gemma3:4b`. Candidato a modelo padr„o do KOSMOS no laptop e no Windows
+  de trabalho onde a MX150 n„o est· disponÌvel mas a RAM permite offload de 4B.
 
-### Pesquisa: LLMs para RAG/Sumariza√ß√£o e Embeddings Multil√≠ngues ‚Äî Sele√ß√£o por Hardware | 2026-05-13
-> Contexto: pesquisa comparativa de LLMs locais (via Ollama) para RAG multi-doc (Mnemosyne) e sumariza√ß√£o
-> de artigos (KOSMOS), e de modelos de embedding para indexa√ß√£o multil√≠ngue pt/en. Hardware real: MainPc
+### Pesquisa: LLMs para RAG/SumarizaÁ„o e Embeddings MultilÌngues ó SeleÁ„o por Hardware | 2026-05-13
+> Contexto: pesquisa comparativa de LLMs locais (via Ollama) para RAG multi-doc (Mnemosyne) e sumarizaÁ„o
+> de artigos (KOSMOS), e de modelos de embedding para indexaÁ„o multilÌngue pt/en. Hardware real: MainPc
 > (RX 6600 8 GB VRAM, ROCm), Laptop (MX150 2 GB CUDA, i7 AVX2), WorkPc (i5-3470 sem AVX2, sem GPU).
-> Achados completos em pesquisas.md (sess√£o 2026-05-13). LLMs recomendados devem aparecer na UI do LOGOS
-> com op√ß√£o de download para modelos n√£o instalados.
+> Achados completos em pesquisas.md (sess„o 2026-05-13). LLMs recomendados devem aparecer na UI do LOGOS
+> com opÁ„o de download para modelos n„o instalados.
 
-#### HUB ‚Äî LOGOS: bot√£o de download de modelos recomendados
-- [x] Adicionar em `LogosView.tsx` (HUB) bot√£o "Baixar" ao lado de cada modelo recomendado que n√£o
-  estiver instalado. Usar o endpoint `/api/logos/pull` j√° existente com streaming NDJSON. O bot√£o deve
-  exibir progress bar durante pull e sumir ao concluir. Modelos j√° instalados mant√™m apenas o bot√£o
-  "Ativar" existente. Verificar lista de instalados via `logos_list_local_models` (j√° em `logos.rs`).
+#### HUB ó LOGOS: bot„o de download de modelos recomendados
+- [x] Adicionar em `LogosView.tsx` (HUB) bot„o "Baixar" ao lado de cada modelo recomendado que n„o
+  estiver instalado. Usar o endpoint `/api/logos/pull` j· existente com streaming NDJSON. O bot„o deve
+  exibir progress bar durante pull e sumir ao concluir. Modelos j· instalados mantÍm apenas o bot„o
+  "Ativar" existente. Verificar lista de instalados via `logos_list_local_models` (j· em `logos.rs`).
 
-#### Mnemosyne ‚Äî embedding no Laptop: nomic-embed-text √© ingl√™s-only
-- [x] Substituir `nomic-embed-text` por `bge-m3` (via Ollama) no Laptop. `nomic-embed-text v1.5` √©
-  treinado exclusivamente em ingl√™s e degrada indexa√ß√£o de conte√∫do portugu√™s ‚Äî confirmado por benchmarks
-  MTEB (arXiv:2402.03216). `bge-m3` (BAAI) suporta 100+ l√≠nguas, 1024 dims, 570M params, ~1.3 GB VRAM,
-  roda na MX150. **Aten√ß√£o cr√≠tica:** trocar embedding exige reindex completo do ChromaDB (dimens√£o muda
-  de 768 ‚Üí 1024 dims ‚Äî cole√ß√£o incompat√≠vel). Limpar a cole√ß√£o antes de reindexar. Documentar a troca
+#### Mnemosyne ó embedding no Laptop: nomic-embed-text È inglÍs-only
+- [x] Substituir `nomic-embed-text` por `bge-m3` (via Ollama) no Laptop. `nomic-embed-text v1.5` È
+  treinado exclusivamente em inglÍs e degrada indexaÁ„o de conte˙do portuguÍs ó confirmado por benchmarks
+  MTEB (arXiv:2402.03216). `bge-m3` (BAAI) suporta 100+ lÌnguas, 1024 dims, 570M params, ~1.3 GB VRAM,
+  roda na MX150. **AtenÁ„o crÌtica:** trocar embedding exige reindex completo do ChromaDB (dimens„o muda
+  de 768 ? 1024 dims ó coleÁ„o incompatÌvel). Limpar a coleÁ„o antes de reindexar. Documentar a troca
   no GUIDE.md do Mnemosyne.
-- [x] Avaliar `potion-multilingual-128M` (Model2Vec, n√£o via Ollama ‚Äî pip install model2vec) como
-  fallback no WorkPc. Decis√£o tomada na sess√£o 2026-05-14: adotar no WorkPc (256 dims, est√°tico,
-  27 MB, 500√ó mais r√°pido em CPU); √≠ndice separado do MainPc/Laptop por incompatibilidade de dims.
-  Detalhes e itens de implementa√ß√£o na se√ß√£o 2026-05-14.
+- [x] Avaliar `potion-multilingual-128M` (Model2Vec, n„o via Ollama ó pip install model2vec) como
+  fallback no WorkPc. Decis„o tomada na sess„o 2026-05-14: adotar no WorkPc (256 dims, est·tico,
+  27 MB, 500◊ mais r·pido em CPU); Ìndice separado do MainPc/Laptop por incompatibilidade de dims.
+  Detalhes e itens de implementaÁ„o na seÁ„o 2026-05-14.
 
-#### Mnemosyne ‚Äî LLM RAG por m√°quina: alinhamento com perfis do LOGOS
-- [x] **MainPc:** `qwen2.5:7b` confirmado como LLM de RAG prim√°rio na sess√£o 2026-05-14. Perfil
-  detalhado com todos os slots (rag/analysis/query/embed) registrado na se√ß√£o 2026-05-14.
-- [ ] **MainPc:** avaliar `command-r7b` (Cohere, 8B, 3,9 GB, 128K ctx) para RAG com cita√ß√£o expl√≠cita.
-  √önico modelo com `grounded generation` nativa ‚Äî retorna grounding spans exatos do documento. √ötil
-  quando o Mnemosyne precisar referenciar trechos espec√≠ficos. N√£o est√° no invent√°rio atual ‚Äî requer
+#### Mnemosyne ó LLM RAG por m·quina: alinhamento com perfis do LOGOS
+- [x] **MainPc:** `qwen2.5:7b` confirmado como LLM de RAG prim·rio na sess„o 2026-05-14. Perfil
+  detalhado com todos os slots (rag/analysis/query/embed) registrado na seÁ„o 2026-05-14.
+- [ ] **MainPc:** avaliar `command-r7b` (Cohere, 8B, 3,9 GB, 128K ctx) para RAG com citaÁ„o explÌcita.
+  ⁄nico modelo com `grounded generation` nativa ó retorna grounding spans exatos do documento. ⁄til
+  quando o Mnemosyne precisar referenciar trechos especÌficos. N„o est· no invent·rio atual ó requer
   download antes de testar.
-- [x] **Laptop:** `phi3.5:mini` descartado ‚Äî 2,2 GB excede os 2 GB VRAM da MX150. LLM RAG do Laptop
-  √© `gemma2:2b` (1,6 GB Q4), conforme corrigido na se√ß√£o 2026-05-14.
+- [x] **Laptop:** `phi3.5:mini` descartado ó 2,2 GB excede os 2 GB VRAM da MX150. LLM RAG do Laptop
+  È `gemma2:2b` (1,6 GB Q4), conforme corrigido na seÁ„o 2026-05-14.
 
-### Pesquisa: LLMs por Funcionalidade e Hardware ‚Äî Controle de Recursos e Compatibilidade | 2026-05-14
+### Pesquisa: LLMs por Funcionalidade e Hardware ó Controle de Recursos e Compatibilidade | 2026-05-14
 > Contexto: pesquisa sobre (1) modelos ideais por funcionalidade do ecossistema (Mnemosyne-RAG,
-> KOSMOS-an√°lise, AKASHA-query) cruzados com cada perfil de hardware real; (2) controle configur√°vel
+> KOSMOS-an·lise, AKASHA-query) cruzados com cada perfil de hardware real; (2) controle configur·vel
 > de consumo de CPU/VRAM no LOGOS para prevenir travamentos; (3) gerenciamento do ciclo de vida do
-> Ollama (iniciar, parar, pausar, interromper); (4) compatibilidade de sa√≠das cross-machine
-> (embeddings, JSON estruturado). Achados completos em pesquisas.md (sess√£o 2026-05-14).
-> **ATEN√á√ÉO:** a se√ß√£o anterior (2026-05-13) cont√©m item incorreto sobre WorkPc ("sem LLM local") ‚Äî
-> o WorkPc TEM smollm2:1.7b e qwen2.5:0.5b funcionais a 2‚Äì5 tok/s. Os itens desta se√ß√£o prevalecem.
+> Ollama (iniciar, parar, pausar, interromper); (4) compatibilidade de saÌdas cross-machine
+> (embeddings, JSON estruturado). Achados completos em pesquisas.md (sess„o 2026-05-14).
+> **ATEN«√O:** a seÁ„o anterior (2026-05-13) contÈm item incorreto sobre WorkPc ("sem LLM local") ó
+> o WorkPc TEM smollm2:1.7b e qwen2.5:0.5b funcionais a 2ñ5 tok/s. Os itens desta seÁ„o prevalecem.
 
-#### HUB ‚Äî LOGOS: corrigir perfis de modelo por funcionalidade e hardware
+#### HUB ó LOGOS: corrigir perfis de modelo por funcionalidade e hardware
 - [x] Atualizar `HardwareProfile::model_profile()` em `HUB/src-tauri/src/logos.rs` com tabela corrigida
   por funcionalidade. O campo `model_type` deve distinguir entre `llm_rag` (Mnemosyne), `llm_analysis`
-  (KOSMOS), `llm_query` (AKASHA ‚Äî dispatcher leve) e `embed` (embedding):
-  - **MainPc** (RX 6600 8 GB): llm_rag=`qwen2.5:7b` (128K ctx, 4,7 GB, IFEval 87,3, multil√≠ngue);
-    llm_analysis=`gemma2:2b` (8K ctx, 1,6 GB ‚Äî permite concorr√™ncia simult√¢nea com qwen2.5:7b dentro
+  (KOSMOS), `llm_query` (AKASHA ó dispatcher leve) e `embed` (embedding):
+  - **MainPc** (RX 6600 8 GB): llm_rag=`qwen2.5:7b` (128K ctx, 4,7 GB, IFEval 87,3, multilÌngue);
+    llm_analysis=`gemma2:2b` (8K ctx, 1,6 GB ó permite concorrÍncia simult‚nea com qwen2.5:7b dentro
     dos 8 GB: 4,7+1,6=6,3 GB < 8 GB); llm_query=`smollm2:1.7b` (1 GB, manter sempre aquecido via
-    keep_alive=-1); embed=`bge-m3` (0,6 GB Q4, 1024 dims, 100+ l√≠nguas).
-  - **Laptop** (MX150 2 GB): llm_rag=`gemma2:2b` (1,6 GB Q4 ‚Äî √∫nico modelo vi√°vel na MX150 para RAG,
-    8K ctx √© suficiente para corpus pequeno); llm_analysis=`smollm2:1.7b` (1 GB, an√°lise b√°sica);
-    llm_query=`smollm2:1.7b`; embed=`bge-m3` (0,6 GB Q4 ‚Äî mesmas 1024 dims do MainPc, √≠ndice
-    ChromaDB compat√≠vel e sincroniz√°vel via Proton Drive).
-  - **WorkPc** (i5-3470 CPU, sem AVX2): llm_rag=`smollm2:1.7b` (1 GB Q4, 2‚Äì5 tok/s ‚Äî lento mas
-    funcional); llm_analysis=`qwen2.5:0.5b` (400 MB Q4, ~5‚Äì10 tok/s, para artigos curtos);
-    llm_query=`qwen2.5:0.5b` (dispatcher mais leve); embed=`potion-multilingual-128M` (N√ÉO via
-    Ollama ‚Äî instalado via `pip install model2vec`, est√°tico, 27 MB, 256 dims, 101 l√≠nguas, 500√ó
-    mais r√°pido que bge-m3 em CPU ‚Äî N√ÉO usar o mesmo ChromaDB que MainPc/Laptop pois 256‚â†1024 dims).
-- [x] Adicionar campo `slot_label` √† struct `ModelSlot` em `logos.rs` para exibir nome amig√°vel na
-  UI: `llm_rag` ‚Üí "RAG/chat (Mnemosyne)", `llm_analysis` ‚Üí "An√°lise de artigos (KOSMOS)",
-  `llm_query` ‚Üí "Busca inteligente (AKASHA)", `embed` ‚Üí "Embedding". Substituir o campo gen√©rico
-  `model_type` na exibi√ß√£o da `LogosView.tsx`.
-- [x] Adicionar campo `expected_speed_note` √† struct `RecommendedModel` para o WorkPc com string
-  descritiva (ex: "~3 tok/s ‚Äî adequado para background, lento em chat interativo"). Exibir na UI
-  do LOGOS ao lado dos modelos do WorkPc para que a usu√°ria entenda o comportamento esperado.
+    keep_alive=-1); embed=`bge-m3` (0,6 GB Q4, 1024 dims, 100+ lÌnguas).
+  - **Laptop** (MX150 2 GB): llm_rag=`gemma2:2b` (1,6 GB Q4 ó ˙nico modelo vi·vel na MX150 para RAG,
+    8K ctx È suficiente para corpus pequeno); llm_analysis=`smollm2:1.7b` (1 GB, an·lise b·sica);
+    llm_query=`smollm2:1.7b`; embed=`bge-m3` (0,6 GB Q4 ó mesmas 1024 dims do MainPc, Ìndice
+    ChromaDB compatÌvel e sincroniz·vel via Proton Drive).
+  - **WorkPc** (i5-3470 CPU, sem AVX2): llm_rag=`smollm2:1.7b` (1 GB Q4, 2ñ5 tok/s ó lento mas
+    funcional); llm_analysis=`qwen2.5:0.5b` (400 MB Q4, ~5ñ10 tok/s, para artigos curtos);
+    llm_query=`qwen2.5:0.5b` (dispatcher mais leve); embed=`potion-multilingual-128M` (N√O via
+    Ollama ó instalado via `pip install model2vec`, est·tico, 27 MB, 256 dims, 101 lÌnguas, 500◊
+    mais r·pido que bge-m3 em CPU ó N√O usar o mesmo ChromaDB que MainPc/Laptop pois 256?1024 dims).
+- [x] Adicionar campo `slot_label` ‡ struct `ModelSlot` em `logos.rs` para exibir nome amig·vel na
+  UI: `llm_rag` ? "RAG/chat (Mnemosyne)", `llm_analysis` ? "An·lise de artigos (KOSMOS)",
+  `llm_query` ? "Busca inteligente (AKASHA)", `embed` ? "Embedding". Substituir o campo genÈrico
+  `model_type` na exibiÁ„o da `LogosView.tsx`.
+- [x] Adicionar campo `expected_speed_note` ‡ struct `RecommendedModel` para o WorkPc com string
+  descritiva (ex: "~3 tok/s ó adequado para background, lento em chat interativo"). Exibir na UI
+  do LOGOS ao lado dos modelos do WorkPc para que a usu·ria entenda o comportamento esperado.
 
-#### HUB ‚Äî LOGOS: controle configur√°vel de VRAM e CPU por percentual
-- [x] Implementar controle de percentual m√°ximo de VRAM. O Ollama n√£o tem vari√°vel de limite por
-  percentagem ‚Äî a implementa√ß√£o deve ser no LOGOS: (a) `HardwareProfile` j√° tem `vram_total_mb`;
+#### HUB ó LOGOS: controle configur·vel de VRAM e CPU por percentual
+- [x] Implementar controle de percentual m·ximo de VRAM. O Ollama n„o tem vari·vel de limite por
+  percentagem ó a implementaÁ„o deve ser no LOGOS: (a) `HardwareProfile` j· tem `vram_total_mb`;
   (b) calcular `vram_limit_bytes = vram_total_mb * 1024 * 1024 * vram_limit_pct / 100`; (c) antes
   de ativar novo modelo, consultar `GET /api/ps` (retorna modelos carregados com VRAM em bytes por
   modelo); (d) se `vram_em_uso + vram_do_modelo_novo > vram_limit_bytes`, descarregar o modelo com
   menor prioridade (P3 primeiro) via `POST /api/generate { "model": X, "keep_alive": 0 }`; (e)
-  persistir `logos.vram_limit_pct` (padr√£o: 85) no `ecosystem.json`. Expor na UI como slider.
+  persistir `logos.vram_limit_pct` (padr„o: 85) no `ecosystem.json`. Expor na UI como slider.
 - [x] Ao iniciar o servidor Ollama (subprocesso), injetar no ambiente: `OLLAMA_GPU_OVERHEAD` por
   perfil (MainPc: 838860800 bytes = ~800 MB = 10% de 8 GB; Laptop: 209715200 = ~200 MB = 10% de
-  2 GB; WorkPc: 0); `OLLAMA_FLASH_ATTENTION=1` em todos os perfis (reduz KV cache VRAM em 20‚Äì40%
-  sem custo de qualidade, compat√≠vel com ROCm e CUDA); `OLLAMA_MAX_LOADED_MODELS` por perfil
-  (MainPc: 3, Laptop: 2, WorkPc: 1); `OLLAMA_KEEP_ALIVE=5m` como padr√£o global (sobrescrito por
-  keep_alive por requisi√ß√£o quando necess√°rio). Usar `std::process::Command::envs(...)` em Rust.
-- [x] Implementar controle de `num_thread` de CPU por tipo de tarefa para o WorkPc. O par√¢metro
-  `num_thread` √© passado por requisi√ß√£o individual (n√£o √© vari√°vel de ambiente). Tarefas P3/batch
-  (KOSMOS an√°lise em background): `num_thread=3` (deixa 1 core livre para o SO). Tarefas P2/
-  interativas (Mnemosyne RAG): `num_thread=4` (maximiza velocidade de resposta). Adaptar a fun√ß√£o
-  de gera√ß√£o de requisi√ß√µes no `logos.rs` para incluir `num_thread` baseado na prioridade da tarefa.
-- [x] Adicionar painel de configura√ß√£o de limites na `LogosView.tsx`: slider "Limite de VRAM (%)"
-  (padr√£o 85, range 50‚Äì95); campo "Threads CPU" para WorkPc (2/3/4 threads); toggle
-  "FlashAttention" (padr√£o: ligado). Persistir via `save_ecosystem_config()` j√° existente no HUB.
+  2 GB; WorkPc: 0); `OLLAMA_FLASH_ATTENTION=1` em todos os perfis (reduz KV cache VRAM em 20ñ40%
+  sem custo de qualidade, compatÌvel com ROCm e CUDA); `OLLAMA_MAX_LOADED_MODELS` por perfil
+  (MainPc: 3, Laptop: 2, WorkPc: 1); `OLLAMA_KEEP_ALIVE=5m` como padr„o global (sobrescrito por
+  keep_alive por requisiÁ„o quando necess·rio). Usar `std::process::Command::envs(...)` em Rust.
+- [x] Implementar controle de `num_thread` de CPU por tipo de tarefa para o WorkPc. O par‚metro
+  `num_thread` È passado por requisiÁ„o individual (n„o È vari·vel de ambiente). Tarefas P3/batch
+  (KOSMOS an·lise em background): `num_thread=3` (deixa 1 core livre para o SO). Tarefas P2/
+  interativas (Mnemosyne RAG): `num_thread=4` (maximiza velocidade de resposta). Adaptar a funÁ„o
+  de geraÁ„o de requisiÁıes no `logos.rs` para incluir `num_thread` baseado na prioridade da tarefa.
+- [x] Adicionar painel de configuraÁ„o de limites na `LogosView.tsx`: slider "Limite de VRAM (%)"
+  (padr„o 85, range 50ñ95); campo "Threads CPU" para WorkPc (2/3/4 threads); toggle
+  "FlashAttention" (padr„o: ligado). Persistir via `save_ecosystem_config()` j· existente no HUB.
 
-#### HUB ‚Äî LOGOS: gerenciamento do ciclo de vida do Ollama (iniciar / parar / abortar)
-- [x] Implementar `logos_start_ollama()` Tauri command em `commands/logos.rs`. L√≥gica: detectar
-  se Ollama j√° est√° rodando via `GET http://localhost:11434/`; se n√£o, iniciar subprocesso:
-  Windows ‚Äî `Command::new("ollama").arg("serve")` com vari√°veis de ambiente do perfil (ver item
-  acima); Linux ‚Äî tentar `systemctl start ollama.service` primeiro; se falhar, fallback para
-  subprocesso direto. Ap√≥s spawn, fazer polling em `GET /` a cada 500ms por at√© 30s; emitir evento
+#### HUB ó LOGOS: gerenciamento do ciclo de vida do Ollama (iniciar / parar / abortar)
+- [x] Implementar `logos_start_ollama()` Tauri command em `commands/logos.rs`. LÛgica: detectar
+  se Ollama j· est· rodando via `GET http://localhost:11434/`; se n„o, iniciar subprocesso:
+  Windows ó `Command::new("ollama").arg("serve")` com vari·veis de ambiente do perfil (ver item
+  acima); Linux ó tentar `systemctl start ollama.service` primeiro; se falhar, fallback para
+  subprocesso direto. ApÛs spawn, fazer polling em `GET /` a cada 500ms por atÈ 30s; emitir evento
   `logos-ollama-status { running: bool }` quando pronto ou em timeout. Guardar handle do processo
   para uso posterior no stop.
-- [x] Implementar `logos_stop_ollama()` com comportamento correto por SO e por contexto de execu√ß√£o:
+- [x] Implementar `logos_stop_ollama()` com comportamento correto por SO e por contexto de execuÁ„o:
   - **Windows sem app.exe:** executar `taskkill /IM ollama.exe /F` via `Command`.
-  - **Windows com app.exe rodando** (detect√°vel via `tasklist | grep "ollama app.exe"`): retornar
-    erro ao frontend com mensagem "O app do Ollama est√° na bandeja do sistema e ir√° reiniciar o
-    servidor. Feche-o antes de parar." N√£o tentar matar o processo ‚Äî seria in√∫til.
+  - **Windows com app.exe rodando** (detect·vel via `tasklist | grep "ollama app.exe"`): retornar
+    erro ao frontend com mensagem "O app do Ollama est· na bandeja do sistema e ir· reiniciar o
+    servidor. Feche-o antes de parar." N„o tentar matar o processo ó seria in˙til.
   - **Linux:** `systemctl stop ollama.service` ou `pkill -f "ollama serve"` como fallback.
-  - Se o LOGOS foi quem iniciou o processo (handle dispon√≠vel), usar `child.kill()` em Rust (mais
-    limpo que taskkill). Emitir `logos-ollama-status { running: false }` ap√≥s confirma√ß√£o.
-- [x] Implementar `logos_abort_model_inference()` para cancelar gera√ß√£o em andamento sem descarregar
+  - Se o LOGOS foi quem iniciou o processo (handle disponÌvel), usar `child.kill()` em Rust (mais
+    limpo que taskkill). Emitir `logos-ollama-status { running: false }` apÛs confirmaÁ„o.
+- [x] Implementar `logos_abort_model_inference()` para cancelar geraÁ„o em andamento sem descarregar
   o modelo. Mecanismo: manter um `HashMap<String, tokio::task::AbortHandle>` no `LogosState` com
-  handle por modelo ativo. Ao chamar abort, acionar `handle.abort()` ‚Äî o futuro Rust √© dropado, a
-  conex√£o HTTP √© fechada, e o Ollama para de gerar automaticamente quando detecta cliente
-  desconectado. O modelo permanece aquecido em VRAM (comportamento desejado para retomada r√°pida).
-- [x] Documentar limita√ß√£o de cancelamento de pull na `LogosView.tsx`: quando clicar "Cancelar"
-  durante pull em andamento, exibir aviso: "O Ollama continuar√° o download em background mesmo ap√≥s
-  cancelar aqui. Para interromper de fato, pare o servidor Ollama." Limita√ß√£o conhecida do Ollama
-  (issue #13142 ‚Äî sem endpoint REST para cancelar pull).
+  handle por modelo ativo. Ao chamar abort, acionar `handle.abort()` ó o futuro Rust È dropado, a
+  conex„o HTTP È fechada, e o Ollama para de gerar automaticamente quando detecta cliente
+  desconectado. O modelo permanece aquecido em VRAM (comportamento desejado para retomada r·pida).
+- [x] Documentar limitaÁ„o de cancelamento de pull na `LogosView.tsx`: quando clicar "Cancelar"
+  durante pull em andamento, exibir aviso: "O Ollama continuar· o download em background mesmo apÛs
+  cancelar aqui. Para interromper de fato, pare o servidor Ollama." LimitaÁ„o conhecida do Ollama
+  (issue #13142 ó sem endpoint REST para cancelar pull).
 
-#### HUB ‚Äî LOGOS: compatibilidade de embeddings e strategy de √≠ndice √∫nico
-- [x] Implementar detec√ß√£o de mudan√ßa de modelo de embedding em `logos.rs`. Se o modelo configurado
-  em `embed` do perfil for diferente do que gerou o √≠ndice ChromaDB existente (checar via metadados
-  salvos na cole√ß√£o), alertar via evento Tauri: "Trocar embedding de [modelo_antigo] para
-  [modelo_novo] exige reindexa√ß√£o completa ‚Äî os vetores atuais s√£o incompat√≠veis (dims:
-  [antiga] ‚Üí [nova]). Confirmar?" Bloquear uso do Mnemosyne at√© reindexa√ß√£o ou reverter a escolha.
+#### HUB ó LOGOS: compatibilidade de embeddings e strategy de Ìndice ˙nico
+- [x] Implementar detecÁ„o de mudanÁa de modelo de embedding em `logos.rs`. Se o modelo configurado
+  em `embed` do perfil for diferente do que gerou o Ìndice ChromaDB existente (checar via metadados
+  salvos na coleÁ„o), alertar via evento Tauri: "Trocar embedding de [modelo_antigo] para
+  [modelo_novo] exige reindexaÁ„o completa ó os vetores atuais s„o incompatÌveis (dims:
+  [antiga] ? [nova]). Confirmar?" Bloquear uso do Mnemosyne atÈ reindexaÁ„o ou reverter a escolha.
 - [x] Implementar flag `indexing_enabled` por perfil no `ecosystem.json`. WorkPc deve ter
-  `indexing_enabled: false` por padr√£o ‚Äî consume o √≠ndice bge-m3 sincronizado pelo MainPc via
-  Proton Drive, sem gerar √≠ndice local com potion-multilingual-128M (dims incompat√≠veis). O
-  Mnemosyne deve verificar essa flag no startup e exibir "Indexa√ß√£o desativada neste computador ‚Äî
-  usando √≠ndice sincronizado do computador principal" se `false`.
+  `indexing_enabled: false` por padr„o ó consume o Ìndice bge-m3 sincronizado pelo MainPc via
+  Proton Drive, sem gerar Ìndice local com potion-multilingual-128M (dims incompatÌveis). O
+  Mnemosyne deve verificar essa flag no startup e exibir "IndexaÁ„o desativada neste computador ó
+  usando Ìndice sincronizado do computador principal" se `false`.
 
-#### KOSMOS ‚Äî JSON schema enforcement para an√°lise cross-machine
-- [x] Garantir que o prompt de an√°lise do KOSMOS inclua o schema JSON de sa√≠da explicitamente para
-  todos os campos (5W: quem, o qu√™, quando, onde, por qu√™; entidades; resumo; tags) e passe
-  `"format": "json"` na requisi√ß√£o Ollama. Para modelos pequenos (smollm2:1.7b no WorkPc e
-  qwen2.5:0.5b), adicionar 2‚Äì3 pares de exemplos few-shot no system prompt ‚Äî modelos sub-2B n√£o
-  seguem schemas sem exemplos. Implementar pipeline de valida√ß√£o: parsear o JSON retornado; se
-  falhar, reenviar ao modelo com mensagem de erro + instru√ß√£o "Corrija o JSON inv√°lido mantendo os
-  mesmos campos". Isso garante que an√°lises de artigos geradas por qualquer m√°quina tenham formato
-  id√™ntico e possam ser sincronizadas via Proton Drive sem convers√£o.
+#### KOSMOS ó JSON schema enforcement para an·lise cross-machine
+- [x] Garantir que o prompt de an·lise do KOSMOS inclua o schema JSON de saÌda explicitamente para
+  todos os campos (5W: quem, o quÍ, quando, onde, por quÍ; entidades; resumo; tags) e passe
+  `"format": "json"` na requisiÁ„o Ollama. Para modelos pequenos (smollm2:1.7b no WorkPc e
+  qwen2.5:0.5b), adicionar 2ñ3 pares de exemplos few-shot no system prompt ó modelos sub-2B n„o
+  seguem schemas sem exemplos. Implementar pipeline de validaÁ„o: parsear o JSON retornado; se
+  falhar, reenviar ao modelo com mensagem de erro + instruÁ„o "Corrija o JSON inv·lido mantendo os
+  mesmos campos". Isso garante que an·lises de artigos geradas por qualquer m·quina tenham formato
+  idÍntico e possam ser sincronizadas via Proton Drive sem convers„o.
 
-### Pesquisa: RAG Multil√≠ngue ‚Äî Estrat√©gias de Pipeline, Indexa√ß√£o e Gera√ß√£o Cross-lingual | 2026-05-14
-> Contexto: pesquisa sobre as melhores abordagens para RAG com corpus em m√∫ltiplos idiomas
-> (portugu√™s, ingl√™s e mandarim). Cobre: estrat√©gias de pipeline (tRAG, MultiRAG, CrossRAG,
-> QTT-RAG), language drift em gera√ß√£o multil√≠ngue, vi√©s de idioma no reranking, chunking para
-> chin√™s, detec√ß√£o de idioma por chunk e compatibilidade com bge-m3. Achados completos em
-> pesquisas.md (sess√£o 2026-05-14).
+### Pesquisa: RAG MultilÌngue ó EstratÈgias de Pipeline, IndexaÁ„o e GeraÁ„o Cross-lingual | 2026-05-14
+> Contexto: pesquisa sobre as melhores abordagens para RAG com corpus em m˙ltiplos idiomas
+> (portuguÍs, inglÍs e mandarim). Cobre: estratÈgias de pipeline (tRAG, MultiRAG, CrossRAG,
+> QTT-RAG), language drift em geraÁ„o multilÌngue, viÈs de idioma no reranking, chunking para
+> chinÍs, detecÁ„o de idioma por chunk e compatibilidade com bge-m3. Achados completos em
+> pesquisas.md (sess„o 2026-05-14).
 
 #### Mnemosyne
-- [x] **Chunking por contagem de caracteres Unicode** ‚Äî substituir a contagem de palavras/espa√ßos
+- [x] **Chunking por contagem de caracteres Unicode** ó substituir a contagem de palavras/espaÁos
   por `len(text)` em caracteres Unicode ao definir `chunk_size` e `overlap` em `core/indexer.py`.
-  Raz√£o: chin√™s n√£o tem espa√ßos entre palavras ‚Äî um chunker baseado em whitespace cria chunks
-  gigantes ou quebra no meio de palavras. Limiar recomendado: ~1000‚Äì1200 chars por chunk (equivale
-  a ~300‚Äì400 words em pt/en e ~500‚Äì600 caracteres zh significativos). Manter overlap em ~15% do
-  tamanho. Essa mudan√ßa melhora qualidade para todos os idiomas, n√£o s√≥ zh.
-- [x] **Metadado `language` por chunk na indexa√ß√£o** ‚Äî em `core/loaders.py` ou `core/indexer.py`,
-  ap√≥s carregar cada documento, detectar o idioma do texto via `lingua-py`
-  (`pip install lingua-language-detector`) e adicionar `metadata["language"]` com o c√≥digo ISO
-  (ex: `"pt"`, `"en"`, `"zh"`) a cada chunk. Usar `lingua-py` em vez de `langdetect` ‚Äî superior
-  para textos curtos e para distinguir idiomas pr√≥ximos (pt vs es). Configurar o detector para
+  Raz„o: chinÍs n„o tem espaÁos entre palavras ó um chunker baseado em whitespace cria chunks
+  gigantes ou quebra no meio de palavras. Limiar recomendado: ~1000ñ1200 chars por chunk (equivale
+  a ~300ñ400 words em pt/en e ~500ñ600 caracteres zh significativos). Manter overlap em ~15% do
+  tamanho. Essa mudanÁa melhora qualidade para todos os idiomas, n„o sÛ zh.
+- [x] **Metadado `language` por chunk na indexaÁ„o** ó em `core/loaders.py` ou `core/indexer.py`,
+  apÛs carregar cada documento, detectar o idioma do texto via `lingua-py`
+  (`pip install lingua-language-detector`) e adicionar `metadata["language"]` com o cÛdigo ISO
+  (ex: `"pt"`, `"en"`, `"zh"`) a cada chunk. Usar `lingua-py` em vez de `langdetect` ó superior
+  para textos curtos e para distinguir idiomas prÛximos (pt vs es). Configurar o detector para
   reconhecer pelo menos: `Language.PORTUGUESE`, `Language.ENGLISH`, `Language.CHINESE`. Esse
-  metadado habilita filtragem futura, estat√≠sticas do √≠ndice e diversidade no reranking.
-- [x] **Language instruction no system prompt** ‚Äî adicionar instru√ß√£o expl√≠cita de idioma de
-  resposta ao system prompt em `core/rag.py`: `"Responda sempre em portugu√™s, independentemente
-  do idioma dos documentos recuperados."` Raz√£o: fen√¥meno de language drift documentado ‚Äî
-  quando os chunks recuperados est√£o em idioma diferente do esperado (especialmente chin√™s),
-  o LLM tende a responder no idioma do contexto. Chin√™s √© o caso mais severo (consist√™ncia
-  cai de 92% para 68%). Instru√ß√£o expl√≠cita resolve sem exigir acesso a logits (que o Ollama
-  n√£o exp√µe via API).
-- [x] **Diversidade de idioma antes do reranking** ‚Äî em `core/rag.py`, ap√≥s recupera√ß√£o h√≠brida
-  (BM25 + sem√¢ntica) e antes de passar os chunks ao LLM, garantir que os top-k resultados n√£o
-  sejam todos no mesmo idioma. Estrat√©gia simples: se >70% dos chunks recuperados forem em ingl√™s
-  e houver candidatos em pt/zh com score ‚â• 0.7√ó do melhor ingl√™s, promov√™-los ao top-k
-  substituindo duplicatas de baixa margem. Raz√£o: rerankers t√™m vi√©s documentado (benchmark
-  LAURA, arXiv:2604.20199) ‚Äî colocam >70% dos docs em ingl√™s mesmo em corpus multil√≠ngue.
-- [x] **Prefixo do t√≠tulo do documento em cada chunk** ‚Äî ao montar o chunk para indexa√ß√£o em
-  `core/indexer.py`, prefixar o texto com o t√≠tulo do documento fonte (do frontmatter ou do
-  nome do arquivo): ex: `"[T√≠tulo do artigo]\n\n{texto do chunk}"`. Melhora recall no RAG
-  porque o t√≠tulo frequentemente cont√©m as palavras-chave da query ‚Äî sem o prefixo, chunks de
-  se√ß√µes internas de um artigo longo ficam sem √¢ncora l√©xica ao seu tema principal.
-- [x] **Detector de idioma din√¢mico com notifica√ß√£o ao usu√°rio** ‚Äî expandir `_get_lingua_detector()`
+  metadado habilita filtragem futura, estatÌsticas do Ìndice e diversidade no reranking.
+- [x] **Language instruction no system prompt** ó adicionar instruÁ„o explÌcita de idioma de
+  resposta ao system prompt em `core/rag.py`: `"Responda sempre em portuguÍs, independentemente
+  do idioma dos documentos recuperados."` Raz„o: fenÙmeno de language drift documentado ó
+  quando os chunks recuperados est„o em idioma diferente do esperado (especialmente chinÍs),
+  o LLM tende a responder no idioma do contexto. ChinÍs È o caso mais severo (consistÍncia
+  cai de 92% para 68%). InstruÁ„o explÌcita resolve sem exigir acesso a logits (que o Ollama
+  n„o expıe via API).
+- [x] **Diversidade de idioma antes do reranking** ó em `core/rag.py`, apÛs recuperaÁ„o hÌbrida
+  (BM25 + sem‚ntica) e antes de passar os chunks ao LLM, garantir que os top-k resultados n„o
+  sejam todos no mesmo idioma. EstratÈgia simples: se >70% dos chunks recuperados forem em inglÍs
+  e houver candidatos em pt/zh com score = 0.7◊ do melhor inglÍs, promovÍ-los ao top-k
+  substituindo duplicatas de baixa margem. Raz„o: rerankers tÍm viÈs documentado (benchmark
+  LAURA, arXiv:2604.20199) ó colocam >70% dos docs em inglÍs mesmo em corpus multilÌngue.
+- [x] **Prefixo do tÌtulo do documento em cada chunk** ó ao montar o chunk para indexaÁ„o em
+  `core/indexer.py`, prefixar o texto com o tÌtulo do documento fonte (do frontmatter ou do
+  nome do arquivo): ex: `"[TÌtulo do artigo]\n\n{texto do chunk}"`. Melhora recall no RAG
+  porque o tÌtulo frequentemente contÈm as palavras-chave da query ó sem o prefixo, chunks de
+  seÁıes internas de um artigo longo ficam sem ‚ncora lÈxica ao seu tema principal.
+- [x] **Detector de idioma din‚mico com notificaÁ„o ao usu·rio** ó expandir `_get_lingua_detector()`
   em `core/indexer.py` para usar `from_all_languages()` em vez de lista fixa pt/en/zh. Ao
-  indexar, usar `.compute_language_confidence_values()` para obter confian√ßa; se o melhor
+  indexar, usar `.compute_language_confidence_values()` para obter confianÁa; se o melhor
   resultado ficar abaixo de ~0.5, gravar `language: "unknown"` no metadata e acumular os
   arquivos afetados. O indexer deve emitir um sinal (ex: `languages_unknown(list[str])`) ao
-  final do processo quando houver arquivos n√£o reconhecidos. A UI exibe notifica√ß√£o: *"X arquivos
-  em idioma n√£o reconhecido"* com bot√£o para abrir Settings e ajustar a lista `detect_languages`
-  do `AppConfig`. O singleton `_lingua_detector_instance` deve ser invalidado e reconstru√≠do
+  final do processo quando houver arquivos n„o reconhecidos. A UI exibe notificaÁ„o: *"X arquivos
+  em idioma n„o reconhecido"* com bot„o para abrir Settings e ajustar a lista `detect_languages`
+  do `AppConfig`. O singleton `_lingua_detector_instance` deve ser invalidado e reconstruÌdo
   quando a lista mudar (reindex dos arquivos `unknown`). No WorkPc (i5-3470), o detector de 75
-  idiomas pode ser pesado ‚Äî considerar manter lista configur√°vel por m√°quina como fallback.
+  idiomas pode ser pesado ó considerar manter lista configur·vel por m·quina como fallback.
 
 #### KOSMOS
-- [x] **Chunking por caractere Unicode ao processar artigos** ‚Äî aplicar a mesma l√≥gica do item
+- [x] **Chunking por caractere Unicode ao processar artigos** ó aplicar a mesma lÛgica do item
   Mnemosyne acima ao processamento de artigos do KOSMOS. Se o KOSMOS usa `RecursiveCharacterTextSplitter`
-  do LangChain, verificar se o par√¢metro `length_function` est√° como `len` (padr√£o correto) e
-  n√£o como algum tokenizador customizado que ignore caracteres zh. Para artigos em chin√™s,
-  considerar separadores `["„ÄÇ", "ÔºÅ", "Ôºü", "\n\n", "\n"]` em vez dos separadores europeus
-  (`[". ", "! ", "? "]`) que n√£o existem em chin√™s.
-- [x] **Language instruction no prompt de an√°lise** ‚Äî adicionar ao system prompt do KOSMOS
-  instru√ß√£o: `"Responda em portugu√™s. Os campos textuais do JSON devem estar em portugu√™s,
-  mesmo que o artigo original esteja em outro idioma."` Raz√£o: sem instru√ß√£o, contexto em
-  chin√™s pode causar output em chin√™s, quebrando o schema e a legibilidade das an√°lises
-  sincronizadas entre m√°quinas.
+  do LangChain, verificar se o par‚metro `length_function` est· como `len` (padr„o correto) e
+  n„o como algum tokenizador customizado que ignore caracteres zh. Para artigos em chinÍs,
+  considerar separadores `["?", "!", "?", "\n\n", "\n"]` em vez dos separadores europeus
+  (`[". ", "! ", "? "]`) que n„o existem em chinÍs.
+- [x] **Language instruction no prompt de an·lise** ó adicionar ao system prompt do KOSMOS
+  instruÁ„o: `"Responda em portuguÍs. Os campos textuais do JSON devem estar em portuguÍs,
+  mesmo que o artigo original esteja em outro idioma."` Raz„o: sem instruÁ„o, contexto em
+  chinÍs pode causar output em chinÍs, quebrando o schema e a legibilidade das an·lises
+  sincronizadas entre m·quinas.
 
 #### AKASHA
-- [x] **Chunking Unicode e detec√ß√£o de idioma no pipeline de indexa√ß√£o** (`services/local_search.py`,
-  fun√ß√µes `_extract_kosmos()` e `_reindex()`). O pipeline j√° existe ‚Äî o placeholder anterior
-  est√° resolvido. Hoje `_extract_kosmos()` l√™ o arquivo inteiro e trunca em 8000 chars com
+- [x] **Chunking Unicode e detecÁ„o de idioma no pipeline de indexaÁ„o** (`services/local_search.py`,
+  funÁıes `_extract_kosmos()` e `_reindex()`). O pipeline j· existe ó o placeholder anterior
+  est· resolvido. Hoje `_extract_kosmos()` lÍ o arquivo inteiro e trunca em 8000 chars com
   `body[:8000]`, sem considerar limites Unicode ou idioma. Implementar: (a) substituir o
-  truncamento cru por um chunker por contagem de caracteres Unicode (an√°logo ao Mnemosyne)
-  para n√£o cortar no meio de um caractere multibyte; (b) usar `lingua-py` para detectar
-  idioma do chunk e armazenar no √≠ndice FTS5 como coluna adicional ou em `local_index_meta`;
+  truncamento cru por um chunker por contagem de caracteres Unicode (an·logo ao Mnemosyne)
+  para n„o cortar no meio de um caractere multibyte; (b) usar `lingua-py` para detectar
+  idioma do chunk e armazenar no Ìndice FTS5 como coluna adicional ou em `local_index_meta`;
   (c) adicionar language instruction no system prompt de qualquer chamada LLM que use o
-  conte√∫do indexado. O corpus √© multil√≠ngue por design (pt + en + zh) ‚Äî essas pr√°ticas
-  s√£o obrigat√≥rias, n√£o opcionais. Registrar no `GUIDE.md` do AKASHA.
+  conte˙do indexado. O corpus È multilÌngue por design (pt + en + zh) ó essas pr·ticas
+  s„o obrigatÛrias, n„o opcionais. Registrar no `GUIDE.md` do AKASHA.
 
-#### HUB ‚Äî LOGOS
-- [x] **Registrar qwen2.5 como preferido para contexto em chin√™s nas atribui√ß√µes de modelo** ‚Äî
+#### HUB ó LOGOS
+- [x] **Registrar qwen2.5 como preferido para contexto em chinÍs nas atribuiÁıes de modelo** ó
   em `logos.rs`, ao definir os perfis de modelo por funcionalidade e hardware (ver item
-  "corrigir perfis" na se√ß√£o anterior), adicionar campo `language_affinity: Option<Vec<String>>`
-  √† struct `ModelSlot` indicando para quais idiomas o modelo tem treinamento especializado.
+  "corrigir perfis" na seÁ„o anterior), adicionar campo `language_affinity: Option<Vec<String>>`
+  ‡ struct `ModelSlot` indicando para quais idiomas o modelo tem treinamento especializado.
   qwen2.5:7b (MainPc) e qwen2.5:0.5b (WorkPc): `["zh", "en"]`. smollm2:1.7b e gemma2:2b: `["en"]`.
   O LOGOS pode usar isso futuramente para rotear queries com contexto em zh preferencialmente
-  para qwen2.5. Por ora, exibir na `LogosView.tsx` como informa√ß√£o ao usu√°rio junto ao modelo.
+  para qwen2.5. Por ora, exibir na `LogosView.tsx` como informaÁ„o ao usu·rio junto ao modelo.
 
-### Pesquisa: Detec√ß√£o de Evento em Feeds ‚Äî Clustering Temporal-Sem√¢ntico de Artigos | 2026-05-14
+### Pesquisa: DetecÁ„o de Evento em Feeds ó Clustering Temporal-Sem‚ntico de Artigos | 2026-05-14
 > Contexto: pesquisa sobre como identificar automaticamente que artigos de fontes diferentes cobrem
 > o mesmo evento do mesmo dia. Cobre: TDT (Topic Detection and Tracking), clustering incremental
-> com janela temporal, threshold de similaridade cosseno, SimHash/MinHash para deduplica√ß√£o pr√©via,
-> NER como filtro adicional, algoritmos DBSCAN/BIRCH, implementa√ß√µes de refer√™ncia (Feedly, NewSloth)
-> e compatibilidade por hardware (MainPc/Laptop/WorkPc). Achados completos em pesquisas.md (sess√£o 2026-05-14).
+> com janela temporal, threshold de similaridade cosseno, SimHash/MinHash para deduplicaÁ„o prÈvia,
+> NER como filtro adicional, algoritmos DBSCAN/BIRCH, implementaÁıes de referÍncia (Feedly, NewSloth)
+> e compatibilidade por hardware (MainPc/Laptop/WorkPc). Achados completos em pesquisas.md (sess„o 2026-05-14).
 
 #### KOSMOS
-- [ ] **Event clustering incremental com janela temporal** ‚Äî implementar pipeline de dois est√°gios
-  em `app/core/event_clustering.py` (novo m√≥dulo). Est√°gio 1 j√° existe (deduplica√ß√£o por
-  `content_hash` e `rapidfuzz`). Est√°gio 2: para cada artigo n√£o-duplicata salvo nas √∫ltimas
-  48h, calcular embedding do t√≠tulo com `paraphrase-multilingual-MiniLM-L12-v2` (50+ idiomas,
-  ~115MB, vi√°vel em CPU); comparar com centr√≥ides de clusters ativos via similaridade cosseno;
-  se cosseno ‚â• 0.80 ‚Üí atribuir ao cluster mais pr√≥ximo (atualizar centr√≥ide como m√©dia); se
-  nenhum cluster ‚â• 0.80 ‚Üí criar novo cluster. Criar tabela `event_clusters(id, anchor_article_id,
+- [ ] **Event clustering incremental com janela temporal** ó implementar pipeline de dois est·gios
+  em `app/core/event_clustering.py` (novo mÛdulo). Est·gio 1 j· existe (deduplicaÁ„o por
+  `content_hash` e `rapidfuzz`). Est·gio 2: para cada artigo n„o-duplicata salvo nas ˙ltimas
+  48h, calcular embedding do tÌtulo com `paraphrase-multilingual-MiniLM-L12-v2` (50+ idiomas,
+  ~115MB, vi·vel em CPU); comparar com centrÛides de clusters ativos via similaridade cosseno;
+  se cosseno = 0.80 ? atribuir ao cluster mais prÛximo (atualizar centrÛide como mÈdia); se
+  nenhum cluster = 0.80 ? criar novo cluster. Criar tabela `event_clusters(id, anchor_article_id,
   created_at, last_updated_at)` e campo `event_cluster_id` em `articles`. Processar em background
-  thread ap√≥s cada ciclo de fetch, n√£o em tempo real por artigo. Modelo recomendado para cada
-  m√°quina: MainPc ‚Üí `bge-m3`; Laptop ‚Üí `paraphrase-multilingual-MiniLM-L12-v2`; WorkPc ‚Üí
-  fallback l√©xico (ver pr√≥ximo item).
-- [ ] **Fallback l√©xico de clustering para WorkPc (sem AVX2, sem GPU)** ‚Äî quando nenhum modelo
-  de embedding estiver dispon√≠vel (detect√°vel por `sentence-transformers` n√£o instalado ou
-  `KOSMOS_EMBEDDING_DISABLED=1`), usar clustering l√©xico simples como substituto: normalizar
-  t√≠tulo (lowercase, remover pontua√ß√£o e stopwords), calcular Jaccard de bigrams entre t√≠tulos
+  thread apÛs cada ciclo de fetch, n„o em tempo real por artigo. Modelo recomendado para cada
+  m·quina: MainPc ? `bge-m3`; Laptop ? `paraphrase-multilingual-MiniLM-L12-v2`; WorkPc ?
+  fallback lÈxico (ver prÛximo item).
+- [ ] **Fallback lÈxico de clustering para WorkPc (sem AVX2, sem GPU)** ó quando nenhum modelo
+  de embedding estiver disponÌvel (detect·vel por `sentence-transformers` n„o instalado ou
+  `KOSMOS_EMBEDDING_DISABLED=1`), usar clustering lÈxico simples como substituto: normalizar
+  tÌtulo (lowercase, remover pontuaÁ„o e stopwords), calcular Jaccard de bigrams entre tÌtulos
   de artigos publicados no mesmo dia, threshold 0.55. Implementar em `event_clustering.py` como
-  `_cluster_lexical(articles)` chamado quando `_cluster_semantic()` n√£o estiver dispon√≠vel.
-  N√£o √© t√£o preciso quanto o sem√¢ntico, mas evita artigos completamente avulsos sem agrupamento.
-- [ ] **Exibi√ß√£o de cluster na feed list** ‚Äî ap√≥s implementa√ß√£o do clustering, agrupar artigos
-  do mesmo evento visualmente na `FeedListView`: mostrar o artigo √¢ncora (o mais antigo do
-  cluster, ou o que tiver maior completude de conte√∫do) com um badge discreto "N fontes"
-  ao lado da data. Os demais artigos do cluster ficam recolhidos por padr√£o e expans√≠veis
+  `_cluster_lexical(articles)` chamado quando `_cluster_semantic()` n„o estiver disponÌvel.
+  N„o È t„o preciso quanto o sem‚ntico, mas evita artigos completamente avulsos sem agrupamento.
+- [ ] **ExibiÁ„o de cluster na feed list** ó apÛs implementaÁ„o do clustering, agrupar artigos
+  do mesmo evento visualmente na `FeedListView`: mostrar o artigo ‚ncora (o mais antigo do
+  cluster, ou o que tiver maior completude de conte˙do) com um badge discreto "N fontes"
+  ao lado da data. Os demais artigos do cluster ficam recolhidos por padr„o e expansÌveis
   com clique no badge. Isso reduz a densidade visual da feed em eventos com alta cobertura
-  (ex: um lan√ßamento de produto coberto por 15 sites) sem esconder nenhuma perspectiva.
+  (ex: um lanÁamento de produto coberto por 15 sites) sem esconder nenhuma perspectiva.
 
-## Melhorias, corre√ß√µes e atualiza√ß√µes
+## Melhorias, correÁıes e atualizaÁıes
 
-### AKASHA ‚Äî backfill de conhecimento para dados anteriores | 2026-05-18
-> Contexto: o knowledge_worker s√≥ processa p√°ginas que chegam √† fila durante a sess√£o atual. Arquivos j√° salvos em `ARCHIVE_PATH/Web/` e p√°ginas em `crawl_pages` sem entrada em `page_knowledge` nunca foram processados ‚Äî a AKASHA n√£o tem vis√£o do hist√≥rico completo, o que empobrece o perfil de interesse e a mem√≥ria pessoal.
+### AKASHA ó backfill de conhecimento para dados anteriores | 2026-05-18
+> Contexto: o knowledge_worker sÛ processa p·ginas que chegam ‡ fila durante a sess„o atual. Arquivos j· salvos em `ARCHIVE_PATH/Web/` e p·ginas em `crawl_pages` sem entrada em `page_knowledge` nunca foram processados ó a AKASHA n„o tem vis„o do histÛrico completo, o que empobrece o perfil de interesse e a memÛria pessoal.
 
 #### AKASHA
-- [x] **Backfill de conhecimento no startup** (`services/knowledge_worker.py` + `main.py`). Fun√ß√£o `backfill_knowledge(archive_path)` chamada no lifespan ap√≥s o worker iniciar: (1) l√™ arquivos `.md` em `ARCHIVE_PATH` com frontmatter YAML, filtra os que j√° t√™m entrada em `page_knowledge`, enfileira os restantes; (2) l√™ `crawl_pages` sem entrada em `page_knowledge`, enfileira. Ritmo controlado: aguarda se fila > 50 itens para n√£o sobrepor processamento novo.
+- [x] **Backfill de conhecimento no startup** (`services/knowledge_worker.py` + `main.py`). FunÁ„o `backfill_knowledge(archive_path)` chamada no lifespan apÛs o worker iniciar: (1) lÍ arquivos `.md` em `ARCHIVE_PATH` com frontmatter YAML, filtra os que j· tÍm entrada em `page_knowledge`, enfileira os restantes; (2) lÍ `crawl_pages` sem entrada em `page_knowledge`, enfileira. Ritmo controlado: aguarda se fila > 50 itens para n„o sobrepor processamento novo.
 
-### HUB ‚Äî aba Sync para gerenciamento do Syncthing | 2026-05-18
-> Contexto: migra√ß√£o do sync_root do Proton Drive para o Syncthing. O HUB precisa de uma aba dedicada para iniciar/parar o Syncthing, ver status das pastas e dispositivos, for√ßar rescan e pausar automaticamente a sincroniza√ß√£o enquanto apps com bancos de dados (AKASHA, Mnemosyne, KOSMOS) estiverem em uso.
+### HUB ó aba Sync para gerenciamento do Syncthing | 2026-05-18
+> Contexto: migraÁ„o do sync_root do Proton Drive para o Syncthing. O HUB precisa de uma aba dedicada para iniciar/parar o Syncthing, ver status das pastas e dispositivos, forÁar rescan e pausar automaticamente a sincronizaÁ„o enquanto apps com bancos de dados (AKASHA, Mnemosyne, KOSMOS) estiverem em uso.
 
 #### HUB
-- [x] **`commands/syncthing.rs`** ‚Äî comandos Tauri: `syncthing_status()` (estado geral + folders + devices), `syncthing_start()` (spawn processo), `syncthing_shutdown()` (POST /rest/system/shutdown), `syncthing_pause_all()` / `syncthing_resume_all()` (pause/resume todas as pastas via API), `syncthing_rescan(folder_id)`, `syncthing_get_paused()` / `syncthing_set_paused()` (pausa manual persistida em ecosystem.json["hub"]["syncthing_paused"])
-- [x] **`SyncView.tsx`** ‚Äî UI: status online/offline com bot√µes Iniciar/Parar, lista de folders com estado/bytes pendentes/rescan, lista de dispositivos, toggle de pausa manual
-- [x] **Auto-pausa enquanto apps est√£o rodando** ‚Äî em `App.tsx`, no `pollApps` loop: se qualquer app DB-heavy (AKASHA/Mnemosyne/KOSMOS) estiver rodando, pausar Syncthing via API; quando todos fecharem e n√£o houver pausa manual, retomar sincroniza√ß√£o
+- [x] **`commands/syncthing.rs`** ó comandos Tauri: `syncthing_status()` (estado geral + folders + devices), `syncthing_start()` (spawn processo), `syncthing_shutdown()` (POST /rest/system/shutdown), `syncthing_pause_all()` / `syncthing_resume_all()` (pause/resume todas as pastas via API), `syncthing_rescan(folder_id)`, `syncthing_get_paused()` / `syncthing_set_paused()` (pausa manual persistida em ecosystem.json["hub"]["syncthing_paused"])
+- [x] **`SyncView.tsx`** ó UI: status online/offline com botıes Iniciar/Parar, lista de folders com estado/bytes pendentes/rescan, lista de dispositivos, toggle de pausa manual
+- [x] **Auto-pausa enquanto apps est„o rodando** ó em `App.tsx`, no `pollApps` loop: se qualquer app DB-heavy (AKASHA/Mnemosyne/KOSMOS) estiver rodando, pausar Syncthing via API; quando todos fecharem e n„o houver pausa manual, retomar sincronizaÁ„o
 
-### AKASHA ‚Äî bugs de UX e contagem de fila | 2026-05-18
-> Contexto: bug observado em uso ‚Äî estado de navega√ß√£o perdido ao trocar de aba. Corrigido com sessionStorage. Item de fila de extra√ß√£o movido para sess√£o "Bugs e investiga√ß√µes reportados ap√≥s uso real | 2026-05-18".
+### AKASHA ó bugs de UX e contagem de fila | 2026-05-18
+> Contexto: bug observado em uso ó estado de navegaÁ„o perdido ao trocar de aba. Corrigido com sessionStorage. Item de fila de extraÁ„o movido para sess„o "Bugs e investigaÁıes reportados apÛs uso real | 2026-05-18".
 
 #### AKASHA
-- [x] **Persist√™ncia de busca e conversa na sess√£o** ‚Äî ao navegar para outra aba e voltar, a √∫ltima busca e a conversa eram perdidas. Corrigido: sessionStorage salva a √∫ltima URL de busca (restaurada ao clicar em "busca") e o HTML do chat-canvas (restaurado ao carregar /chat). O bot√£o "limpar" apaga a sess√£o salva.
+- [x] **PersistÍncia de busca e conversa na sess„o** ó ao navegar para outra aba e voltar, a ˙ltima busca e a conversa eram perdidas. Corrigido: sessionStorage salva a ˙ltima URL de busca (restaurada ao clicar em "busca") e o HTML do chat-canvas (restaurado ao carregar /chat). O bot„o "limpar" apaga a sess„o salva.
 
-### KOSMOS ‚Äî an√°lises falhando: VRAM timeout e numpy inhomogeneous | 2026-05-17
-> Contexto: dois bugs observados no terminal. (1) `_AnalyzeWorker` falha com "Timeout aguardando LOGOS ‚Äî sistema sobrecarregado" porque o LOGOS rejeita P3 imediatamente se VRAM > 85%, o que ocorre durante o carregamento do modelo. O worker n√£o tenta de novo ‚Äî emite `failed` na primeira rejei√ß√£o. (2) `ClusterWorker` falha com numpy "inhomogeneous shape" porque o banco tem embeddings de dimens√µes diferentes (gerados com modelos distintos ao longo do tempo) e `np.array(vecs)` exige comprimento uniforme.
+### KOSMOS ó an·lises falhando: VRAM timeout e numpy inhomogeneous | 2026-05-17
+> Contexto: dois bugs observados no terminal. (1) `_AnalyzeWorker` falha com "Timeout aguardando LOGOS ó sistema sobrecarregado" porque o LOGOS rejeita P3 imediatamente se VRAM > 85%, o que ocorre durante o carregamento do modelo. O worker n„o tenta de novo ó emite `failed` na primeira rejeiÁ„o. (2) `ClusterWorker` falha com numpy "inhomogeneous shape" porque o banco tem embeddings de dimensıes diferentes (gerados com modelos distintos ao longo do tempo) e `np.array(vecs)` exige comprimento uniforme.
 
 #### KOSMOS
-- [x] **Retry autom√°tico no `_AnalyzeWorker`** (`app/ui/views/reader_view.py`): ao receber `OllamaError` com mensagem contendo "VRAM", "sobrecarregado" ou "Timeout aguardando LOGOS", esperar 20 s e tentar at√© 3 vezes antes de emitir `failed`. Usar `time.sleep()` dentro do `run()` ‚Äî n√£o bloqueia a UI pois roda em `QThread`.
-- [x] **Filtrar embeddings por comprimento mais comum no ClusterWorker** (`app/core/stats.py`, fun√ß√£o `get_article_clusters()`): ap√≥s montar a lista `vecs`, calcular a dimens√£o mais frequente com `collections.Counter` e descartar vetores com comprimento diferente antes de chamar `np.array(vecs, dtype=np.float32)`. Logar quantos foram descartados.
+- [x] **Retry autom·tico no `_AnalyzeWorker`** (`app/ui/views/reader_view.py`): ao receber `OllamaError` com mensagem contendo "VRAM", "sobrecarregado" ou "Timeout aguardando LOGOS", esperar 20 s e tentar atÈ 3 vezes antes de emitir `failed`. Usar `time.sleep()` dentro do `run()` ó n„o bloqueia a UI pois roda em `QThread`.
+- [x] **Filtrar embeddings por comprimento mais comum no ClusterWorker** (`app/core/stats.py`, funÁ„o `get_article_clusters()`): apÛs montar a lista `vecs`, calcular a dimens„o mais frequente com `collections.Counter` e descartar vetores com comprimento diferente antes de chamar `np.array(vecs, dtype=np.float32)`. Logar quantos foram descartados.
 
-### HUB ‚Äî tratamento de conflitos git | 2026-05-17
-> Contexto: o HUB commita localmente mas nunca faz pull/merge. Se o Syncthing sincronizar a pasta `.git/` entre duas m√°quinas e ambas tiverem commits, os hist√≥ricos divergem em sil√™ncio. O `git_check_incoming` detecta commits recebidos mas n√£o os integra. Tr√™s abordagens foram levantadas ‚Äî decidir qual adotar antes de implementar.
+### HUB ó tratamento de conflitos git | 2026-05-17
+> Contexto: o HUB commita localmente mas nunca faz pull/merge. Se o Syncthing sincronizar a pasta `.git/` entre duas m·quinas e ambas tiverem commits, os histÛricos divergem em silÍncio. O `git_check_incoming` detecta commits recebidos mas n„o os integra. TrÍs abordagens foram levantadas ó decidir qual adotar antes de implementar.
 
 #### HUB
-- [ ] **[DISCUSS√ÉO] Definir estrat√©gia de conflito git cross-machine.** Tr√™s op√ß√µes:
-  1. **Excluir `.git/` do Syncthing** ‚Äî cada m√°quina tem hist√≥rico local independente; Syncthing sincroniza s√≥ arquivos de dados; `git_check_incoming` deixa de funcionar entre m√°quinas mas o risco de corrup√ß√£o desaparece.
-  2. **`git pull --rebase` autom√°tico** ‚Äî quando o HUB detecta HEAD mudou (commits chegaram via Syncthing), tenta `git pull --rebase`; se falhar (conflito de merge), detecta estado `REBASE_HEAD`, aborta e alerta a usu√°ria via toast/banner no GitView.
-  3. **Uma m√°quina como "origem"** ‚Äî apenas o computador principal commita; o de trabalho recebe via Syncthing e nunca escreve no git; elimina diverg√™ncia mas exige disciplina de uso.
+- [ ] **[DISCUSS√O] Definir estratÈgia de conflito git cross-machine.** TrÍs opÁıes:
+  1. **Excluir `.git/` do Syncthing** ó cada m·quina tem histÛrico local independente; Syncthing sincroniza sÛ arquivos de dados; `git_check_incoming` deixa de funcionar entre m·quinas mas o risco de corrupÁ„o desaparece.
+  2. **`git pull --rebase` autom·tico** ó quando o HUB detecta HEAD mudou (commits chegaram via Syncthing), tenta `git pull --rebase`; se falhar (conflito de merge), detecta estado `REBASE_HEAD`, aborta e alerta a usu·ria via toast/banner no GitView.
+  3. **Uma m·quina como "origem"** ó apenas o computador principal commita; o de trabalho recebe via Syncthing e nunca escreve no git; elimina divergÍncia mas exige disciplina de uso.
 
-### Mnemosyne ‚Äî exibir pensamentos `<think>` no chat | 2026-05-17
-> Contexto: o AKASHA j√° diferencia pensamentos (bloco colaps√°vel) e fala (resposta final) via m√°quina de estados no stream. O Mnemosyne usa `strip_think()` ‚Äî remove as tags silenciosamente, o usu√°rio nunca v√™ o racioc√≠nio. E durante o stream os tokens `<think>` vazam diretamente para o `answer_text`, desaparecendo s√≥ no final.
+### Mnemosyne ó exibir pensamentos `<think>` no chat | 2026-05-17
+> Contexto: o AKASHA j· diferencia pensamentos (bloco colaps·vel) e fala (resposta final) via m·quina de estados no stream. O Mnemosyne usa `strip_think()` ó remove as tags silenciosamente, o usu·rio nunca vÍ o raciocÌnio. E durante o stream os tokens `<think>` vazam diretamente para o `answer_text`, desaparecendo sÛ no final.
 
 #### Mnemosyne
-- [x] **Filtro de pensamento no AskWorker** (`gui/workers.py`). Adicionar `thinking = Signal(str)`. Substituir o loop de stream raw pela mesma m√°quina de estados do AKASHA: buffer acumulador + flag `in_think`, emite `self.thinking` para conte√∫do `<think>` e `self.token` apenas para resposta limpa. `full` acumula s√≥ conte√∫do n√£o-think ‚Äî remover `strip_think(full)` no final.
-- [x] **√Årea colaps√°vel de pensamento no chat** (`gui/main_window.py`). Em `_build_page_chat()`, adicionar `_think_container` (QWidget oculto) com toggle button "‚ñæ pensando em voz alta" e `_think_text` (QTextEdit read-only, monospace, max 120px). Conectar `AskWorker.thinking` a `_on_think_token`. Mostrar container ao primeiro token de pensamento, auto-colapsar ao receber resposta final. Limpar ao iniciar nova pergunta.
+- [x] **Filtro de pensamento no AskWorker** (`gui/workers.py`). Adicionar `thinking = Signal(str)`. Substituir o loop de stream raw pela mesma m·quina de estados do AKASHA: buffer acumulador + flag `in_think`, emite `self.thinking` para conte˙do `<think>` e `self.token` apenas para resposta limpa. `full` acumula sÛ conte˙do n„o-think ó remover `strip_think(full)` no final.
+- [x] **¡rea colaps·vel de pensamento no chat** (`gui/main_window.py`). Em `_build_page_chat()`, adicionar `_think_container` (QWidget oculto) com toggle button "? pensando em voz alta" e `_think_text` (QTextEdit read-only, monospace, max 120px). Conectar `AskWorker.thinking` a `_on_think_token`. Mostrar container ao primeiro token de pensamento, auto-colapsar ao receber resposta final. Limpar ao iniciar nova pergunta.
 
-### AKASHA ‚Äî integra√ß√£o com LOGOS e ecosystem_client | 2026-05-15
+### AKASHA ó integraÁ„o com LOGOS e ecosystem_client | 2026-05-15
 > Contexto: o AKASHA chama o Ollama diretamente, sem passar pelo LOGOS. Isso significa que
-> o classificador de inten√ß√£o e o pin_model() ignoram coordena√ß√£o de VRAM e prioridade com
-> os outros apps. Al√©m disso, DEFAULT_LLM_MODEL = "" deixa o pin_model() inoperante.
-> An√°logo ao que foi corrigido no KOSMOS e Mnemosyne anteriormente.
+> o classificador de intenÁ„o e o pin_model() ignoram coordenaÁ„o de VRAM e prioridade com
+> os outros apps. AlÈm disso, DEFAULT_LLM_MODEL = "" deixa o pin_model() inoperante.
+> An·logo ao que foi corrigido no KOSMOS e Mnemosyne anteriormente.
 
 #### AKASHA
 - [x] **Migrar AKASHA para `ecosystem_client.request_llm()`** (`services/query_understanding.py`,
-  `services/local_search.py` ‚Äî fun√ß√£o `_expand_query_llm()`). O AKASHA hoje chama o Ollama
+  `services/local_search.py` ó funÁ„o `_expand_query_llm()`). O AKASHA hoje chama o Ollama
   na porta 11434 sem passar pelo LOGOS (porta 7072) em dois lugares: `query_understanding.py`
   (`pin_model`, `release_model`, `classify_intent`) e `local_search._expand_query_llm()`.
-  Ambos devem usar `ecosystem_client.get_ollama_url()` como base URL ‚Äî retorna 7072 se LOGOS
-  acess√≠vel, 11434 como fallback. Isso garante que todas as chamadas LLM do AKASHA passem
-  pelo controle de prioridade (P1/P2/P3), keep_alive autom√°tico e Hardware Guard de VRAM.
+  Ambos devem usar `ecosystem_client.get_ollama_url()` como base URL ó retorna 7072 se LOGOS
+  acessÌvel, 11434 como fallback. Isso garante que todas as chamadas LLM do AKASHA passem
+  pelo controle de prioridade (P1/P2/P3), keep_alive autom·tico e Hardware Guard de VRAM.
 
 - [x] **`query_understanding.py` resolver modelo via perfil ativo do LOGOS**
   (`services/query_understanding.py`, `DEFAULT_LLM_MODEL`; `ecosystem_client.py`,
-  `_APP_MODEL_KEY`). O valor atual `DEFAULT_LLM_MODEL = ""` torna `pin_model()` um no-op ‚Äî
-  sem nome de modelo, nenhum modelo √© fixado em VRAM e o keep_alive=-1 nunca √© enviado.
-  Corre√ß√£o: (1) adicionar `"akasha": "llm_kosmos"` ao dict `_APP_MODEL_KEY` em
-  `ecosystem_client.py` ‚Äî o AKASHA usa o mesmo modelo leve do KOSMOS, resolvido por m√°quina
+  `_APP_MODEL_KEY`). O valor atual `DEFAULT_LLM_MODEL = ""` torna `pin_model()` um no-op ó
+  sem nome de modelo, nenhum modelo È fixado em VRAM e o keep_alive=-1 nunca È enviado.
+  CorreÁ„o: (1) adicionar `"akasha": "llm_kosmos"` ao dict `_APP_MODEL_KEY` em
+  `ecosystem_client.py` ó o AKASHA usa o mesmo modelo leve do KOSMOS, resolvido por m·quina
   via perfil LOGOS; (2) em `query_understanding.py`, popular `DEFAULT_LLM_MODEL` no startup
   via `ecosystem_client.get_active_profile()["models"]["llm_kosmos"]` (com fallback
-  para `smollm2:1.7b`). Nota: a chave `llm_query` n√£o existe ‚Äî apps n√£o listados em
-  `_APP_MODEL_KEY` j√° usam `"llm_kosmos"` como fallback autom√°tico. Depende do item anterior.
+  para `smollm2:1.7b`). Nota: a chave `llm_query` n„o existe ó apps n„o listados em
+  `_APP_MODEL_KEY` j· usam `"llm_kosmos"` como fallback autom·tico. Depende do item anterior.
 
-### HUB ‚Äî desinstalar modelos Ollama pelo LOGOS | 2026-05-15
-> Contexto: a LogosView j√° permite baixar, ativar e descarregar modelos da VRAM, mas n√£o h√° como
-> remover um modelo do disco pelo HUB ‚Äî a usu√°ria precisa usar a CLI (`ollama rm`). Adicionar
-> bot√£o "Remover" para modelos instalados mas n√£o ativos.
+### HUB ó desinstalar modelos Ollama pelo LOGOS | 2026-05-15
+> Contexto: a LogosView j· permite baixar, ativar e descarregar modelos da VRAM, mas n„o h· como
+> remover um modelo do disco pelo HUB ó a usu·ria precisa usar a CLI (`ollama rm`). Adicionar
+> bot„o "Remover" para modelos instalados mas n„o ativos.
 
 #### HUB
 - [x] Implementar `logos_delete_model(model: String)` em `commands/logos.rs`. Chama
   `DELETE /api/delete` no Ollama com body `{"name": model}`. Retorna `Ok(())` em sucesso ou
   `Err(String)` com mensagem de erro. Registrar em `lib.rs` e expor em `lib/tauri.ts`.
-- [x] Adicionar bot√£o "Remover" na se√ß√£o "Modelos Ollama" da `LogosView.tsx` para modelos com
-  status `available` (n√£o ativos na VRAM). Modelos ativos devem ser descarregados primeiro ‚Äî
-  mostrar mensagem "Descarregue o modelo antes de remover" se o usu√°rio tentar. Confirmar a
-  a√ß√£o com `window.confirm()` antes de chamar o comando. Atualizar a lista ap√≥s remo√ß√£o.
+- [x] Adicionar bot„o "Remover" na seÁ„o "Modelos Ollama" da `LogosView.tsx` para modelos com
+  status `available` (n„o ativos na VRAM). Modelos ativos devem ser descarregados primeiro ó
+  mostrar mensagem "Descarregue o modelo antes de remover" se o usu·rio tentar. Confirmar a
+  aÁ„o com `window.confirm()` antes de chamar o comando. Atualizar a lista apÛs remoÁ„o.
 
 ### Mnemosyne + AKASHA: tratamento diferenciado por tipo de fonte | 2026-05-06
-> Contexto: diferentes fontes t√™m densidade informacional, perspectiva e objetivo distintos ‚Äî
-> notas pessoais s√£o opini√£o da usu√°ria, transcri√ß√µes s√£o linguagem falada informal, artigos
-> web s√£o resumos curados, livros s√£o conte√∫do desenvolvido, artigos cient√≠ficos s√£o o mais
-> denso e autoritativo. O pipeline de RAG deve refletir essas diferen√ßas em chunking,
-> recupera√ß√£o e apresenta√ß√£o dos resultados.
+> Contexto: diferentes fontes tÍm densidade informacional, perspectiva e objetivo distintos ó
+> notas pessoais s„o opini„o da usu·ria, transcriÁıes s„o linguagem falada informal, artigos
+> web s„o resumos curados, livros s„o conte˙do desenvolvido, artigos cientÌficos s„o o mais
+> denso e autoritativo. O pipeline de RAG deve refletir essas diferenÁas em chunking,
+> recuperaÁ„o e apresentaÁ„o dos resultados.
 
 #### Mnemosyne
-- [x] **[P1] Framing por tipo no prompt de RAG (`core/rag.py`)** ‚Äî quando montar o contexto
-  enviado ao LLM, incluir o r√≥tulo leg√≠vel do `source_type` de cada chunk: "Nota pessoal",
-  "Transcri√ß√£o", "Artigo web", "Livro", "Artigo cient√≠fico". Notas pessoais devem ser
-  explicitamente marcadas como opini√£o da usu√°ria ("este trecho vem das suas notas pessoais")
-  para que o LLM n√£o as trate como fato externo. Cient√≠ficos como "artigo peer-reviewed".
-  Mudan√ßa pequena, alto impacto ‚Äî o LLM passa a raciocinar diferente sobre cada fonte.
+- [x] **[P1] Framing por tipo no prompt de RAG (`core/rag.py`)** ó quando montar o contexto
+  enviado ao LLM, incluir o rÛtulo legÌvel do `source_type` de cada chunk: "Nota pessoal",
+  "TranscriÁ„o", "Artigo web", "Livro", "Artigo cientÌfico". Notas pessoais devem ser
+  explicitamente marcadas como opini„o da usu·ria ("este trecho vem das suas notas pessoais")
+  para que o LLM n„o as trate como fato externo. CientÌficos como "artigo peer-reviewed".
+  MudanÁa pequena, alto impacto ó o LLM passa a raciocinar diferente sobre cada fonte.
 
-- [x] **[P2] Peso por tipo de fonte na recupera√ß√£o h√≠brida (`core/rag.py`)** ‚Äî adicionar dict
+- [x] **[P2] Peso por tipo de fonte na recuperaÁ„o hÌbrida (`core/rag.py`)** ó adicionar dict
   `SOURCE_WEIGHTS: dict[str, float]` (ex: `{"scientific": 1.4, "book": 1.2, "library": 1.0,
-  "transcript": 0.9, "vault": 1.0}`). Ao fazer o merge BM25 + sem√¢ntico, multiplicar o score
-  pelo peso da fonte antes do ranking final. Notas pessoais t√™m peso neutro (1.0) ‚Äî s√£o
-  relevantes quando a pergunta √© sobre a opini√£o da usu√°ria, n√£o quando √© sobre fatos.
-  Transcri√ß√µes de YouTube/TikTok pesam menos que livros no mesmo tema.
+  "transcript": 0.9, "vault": 1.0}`). Ao fazer o merge BM25 + sem‚ntico, multiplicar o score
+  pelo peso da fonte antes do ranking final. Notas pessoais tÍm peso neutro (1.0) ó s„o
+  relevantes quando a pergunta È sobre a opini„o da usu·ria, n„o quando È sobre fatos.
+  TranscriÁıes de YouTube/TikTok pesam menos que livros no mesmo tema.
 
-- [x] **[P3] Separadores de chunk espec√≠ficos por tipo (`core/indexer.py`)** ‚Äî em
-  `_get_splitter()`, al√©m do `chunk_size`/`overlap`, usar separadores adequados ao conte√∫do:
-  notas ‚Üí `["\n## ", "\n\n", "\n"]`; livros ‚Üí `["\n# ", "\n## ", "\n\n", "\n"]`;
-  cient√≠ficos ‚Üí `["\n## ", "\n\n", ". ", "\n"]` (se√ß√µes como Abstract/M√©todos/Resultados);
-  transcri√ß√µes ‚Üí `[". ", "! ", "? ", "\n"]` (sem cabe√ßalhos markdown, fala √© cont√≠nua);
-  artigos web ‚Üí `["\n\n", "\n", ". "]`. Atualizar `CHUNK_PARAMS` para incluir `separators`.
+- [x] **[P3] Separadores de chunk especÌficos por tipo (`core/indexer.py`)** ó em
+  `_get_splitter()`, alÈm do `chunk_size`/`overlap`, usar separadores adequados ao conte˙do:
+  notas ? `["\n## ", "\n\n", "\n"]`; livros ? `["\n# ", "\n## ", "\n\n", "\n"]`;
+  cientÌficos ? `["\n## ", "\n\n", ". ", "\n"]` (seÁıes como Abstract/MÈtodos/Resultados);
+  transcriÁıes ? `[". ", "! ", "? ", "\n"]` (sem cabeÁalhos markdown, fala È contÌnua);
+  artigos web ? `["\n\n", "\n", ". "]`. Atualizar `CHUNK_PARAMS` para incluir `separators`.
 
-- [x] **[P4] Detec√ß√£o e chunk params de artigo cient√≠fico** ‚Äî adicionar tipo `"scientific"` em
-  `CHUNK_PARAMS` (chunk_size 400, overlap 80 ‚Äî denso, precisa de mais overlap para n√£o cortar
+- [x] **[P4] DetecÁ„o e chunk params de artigo cientÌfico** ó adicionar tipo `"scientific"` em
+  `CHUNK_PARAMS` (chunk_size 400, overlap 80 ó denso, precisa de mais overlap para n„o cortar
   mid-argumento). Em `_chunk_type_for()`, detectar via `is_scientific_paper(file_path)`:
-  checar frontmatter por `type: scientific` (adicionado pelo AKASHA ‚Äî ver item AKASHA abaixo),
-  ou por presen√ßa de se√ß√µes `Abstract`, `References`/`Refer√™ncias`, `DOI:` no corpo.
+  checar frontmatter por `type: scientific` (adicionado pelo AKASHA ó ver item AKASHA abaixo),
+  ou por presenÁa de seÁıes `Abstract`, `References`/`ReferÍncias`, `DOI:` no corpo.
 
 #### AKASHA
-- [x] **[P4] Marcar artigos cient√≠ficos no frontmatter ao arquivar (`services/crawler.py` ou
-  `routers/crawler.py`)** ‚Äî quando o AKASHA fizer download via arxiv (`aioarxiv`) ou de URL
-  com indicadores cient√≠ficos (dom√≠nio `arxiv.org`, `pubmed`, `doi.org`, `scholar`, extens√£o
+- [x] **[P4] Marcar artigos cientÌficos no frontmatter ao arquivar (`services/crawler.py` ou
+  `routers/crawler.py`)** ó quando o AKASHA fizer download via arxiv (`aioarxiv`) ou de URL
+  com indicadores cientÌficos (domÌnio `arxiv.org`, `pubmed`, `doi.org`, `scholar`, extens„o
   `.pdf` com metadados de autor/abstract), adicionar `type: scientific` no frontmatter YAML
   do arquivo `.md` gerado. Isso permite que o Mnemosyne identifique a fonte sem depender de
-  subpasta. Verificar onde o AKASHA gera os arquivos `.md` do archive e adicionar o campo l√°.
+  subpasta. Verificar onde o AKASHA gera os arquivos `.md` do archive e adicionar o campo l·.
 
 ### AKASHA + Mnemosyne: metadados ricos no frontmatter do archive | 2026-05-06
-> Contexto: ao arquivar conte√∫do, o AKASHA deve incluir metadados estruturados no frontmatter
-> YAML dos arquivos .md gerados. Esses metadados s√£o consumidos pelo Mnemosyne para framing
-> no prompt, cita√ß√£o correta nas respostas e futura filtragem por tipo/data/idioma.
+> Contexto: ao arquivar conte˙do, o AKASHA deve incluir metadados estruturados no frontmatter
+> YAML dos arquivos .md gerados. Esses metadados s„o consumidos pelo Mnemosyne para framing
+> no prompt, citaÁ„o correta nas respostas e futura filtragem por tipo/data/idioma.
 
 #### AKASHA
-- [x] **Campos universais em todos os arquivos arquivados** ‚Äî ao gerar o frontmatter .md no
-  archive, sempre incluir: `title`, `author` (quando dispon√≠vel na p√°gina/PDF), `date`
-  (data de publica√ß√£o do conte√∫do, n√£o de download ‚Äî formato `YYYY-MM-DD`), `language`
-  (`pt`/`en`/etc. ‚Äî detectar via `langdetect` j√° no requirements do KOSMOS, ou pelo
+- [x] **Campos universais em todos os arquivos arquivados** ó ao gerar o frontmatter .md no
+  archive, sempre incluir: `title`, `author` (quando disponÌvel na p·gina/PDF), `date`
+  (data de publicaÁ„o do conte˙do, n„o de download ó formato `YYYY-MM-DD`), `language`
+  (`pt`/`en`/etc. ó detectar via `langdetect` j· no requirements do KOSMOS, ou pelo
   `Content-Language` do HTTP), `source_url` (URL original de onde foi baixado). Esses campos
-  s√£o os mais usados pelo Mnemosyne para framing e cita√ß√£o.
+  s„o os mais usados pelo Mnemosyne para framing e citaÁ„o.
 
-- [x] **Campos espec√≠ficos para artigos cient√≠ficos** ‚Äî quando a fonte for identificada como
-  cient√≠fica (arxiv, DOI, Semantic Scholar, OpenAlex), incluir adicionalmente no frontmatter:
-  `doi` (ex: `10.48550/arXiv.1706.03762`), `arxiv_id` (quando aplic√°vel, ex: `1706.03762`),
-  `journal` (nome do peri√≥dico ou `arXiv preprint`), `abstract` (primeiros 500 chars do
-  abstract ‚Äî indexado separadamente melhora a recupera√ß√£o pois resume o artigo inteiro),
-  `keywords` (lista de palavras-chave quando dispon√≠veis). `doi` e `arxiv_id` tamb√©m servem
-  para deduplica√ß√£o: antes de baixar, verificar se j√° existe arquivo com o mesmo DOI no
+- [x] **Campos especÌficos para artigos cientÌficos** ó quando a fonte for identificada como
+  cientÌfica (arxiv, DOI, Semantic Scholar, OpenAlex), incluir adicionalmente no frontmatter:
+  `doi` (ex: `10.48550/arXiv.1706.03762`), `arxiv_id` (quando aplic·vel, ex: `1706.03762`),
+  `journal` (nome do periÛdico ou `arXiv preprint`), `abstract` (primeiros 500 chars do
+  abstract ó indexado separadamente melhora a recuperaÁ„o pois resume o artigo inteiro),
+  `keywords` (lista de palavras-chave quando disponÌveis). `doi` e `arxiv_id` tambÈm servem
+  para deduplicaÁ„o: antes de baixar, verificar se j· existe arquivo com o mesmo DOI no
   archive.
 
-- [x] **Campos espec√≠ficos para PDFs de livros** ‚Äî quando processar PDF com `pymupdf4llm`,
-  extrair metadados nativos do PDF (j√° acess√≠veis via `fitz.open(path).metadata`): `isbn`,
-  `publisher`, `year`. Incluir no frontmatter apenas quando n√£o-vazios. `year` complementa
-  `date` para livros onde s√≥ o ano √© conhecido.
+- [x] **Campos especÌficos para PDFs de livros** ó quando processar PDF com `pymupdf4llm`,
+  extrair metadados nativos do PDF (j· acessÌveis via `fitz.open(path).metadata`): `isbn`,
+  `publisher`, `year`. Incluir no frontmatter apenas quando n„o-vazios. `year` complementa
+  `date` para livros onde sÛ o ano È conhecido.
 
 #### Hermes
-- [x] **Campos adicionais no frontmatter de transcri√ß√µes** ‚Äî `build_mnemosyne_markdown()` em
-  `hermes.py` j√° inclui `title`, `date`, `source`, `duration`. Adicionar: `platform`
-  (`youtube`/`tiktok`/`podcast`/`local` ‚Äî inferir da URL ou marcar "local" quando arquivo
-  local), `channel` (nome do canal/criador quando dispon√≠vel via yt-dlp `info["uploader"]`
-  ou `info["channel"]`). `platform` permite ao Mnemosyne diferenciar um podcast t√©cnico de
-  um v√≠deo de TikTok na hora de pesar a fonte.
+- [x] **Campos adicionais no frontmatter de transcriÁıes** ó `build_mnemosyne_markdown()` em
+  `hermes.py` j· inclui `title`, `date`, `source`, `duration`. Adicionar: `platform`
+  (`youtube`/`tiktok`/`podcast`/`local` ó inferir da URL ou marcar "local" quando arquivo
+  local), `channel` (nome do canal/criador quando disponÌvel via yt-dlp `info["uploader"]`
+  ou `info["channel"]`). `platform` permite ao Mnemosyne diferenciar um podcast tÈcnico de
+  um vÌdeo de TikTok na hora de pesar a fonte.
 
 #### Mnemosyne
-- [x] **Usar `date`, `author`, `language` do frontmatter na detec√ß√£o e no framing** ‚Äî em
+- [x] **Usar `date`, `author`, `language` do frontmatter na detecÁ„o e no framing** ó em
   `core/loaders.py`, ao carregar arquivos .md, extrair esses campos do frontmatter e
-  propag√°-los para `doc.metadata`. Em `core/rag.py`, usar `author` e `date` ao montar o
-  r√≥tulo de cada chunk no prompt (ex: "Vaswani et al., 2017 ‚Äî Artigo cient√≠fico"). Depende
+  propag·-los para `doc.metadata`. Em `core/rag.py`, usar `author` e `date` ao montar o
+  rÛtulo de cada chunk no prompt (ex: "Vaswani et al., 2017 ó Artigo cientÌfico"). Depende
   dos itens AKASHA acima.
 
 ### Mnemosyne: auditoria de funcionalidades atuais | 2026-05-06
 > Contexto: antes de redesenhar a UI e adicionar novas features, verificar o estado real
-> de cada funcionalidade existente no c√≥digo ‚Äî quais funcionam, quais est√£o incompletas,
-> quais est√£o quebradas. Evita assumir que itens marcados [x] no TODO est√£o operacionais.
+> de cada funcionalidade existente no cÛdigo ó quais funcionam, quais est„o incompletas,
+> quais est„o quebradas. Evita assumir que itens marcados [x] no TODO est„o operacionais.
 
 #### Mnemosyne
-- [ ] **Auditar cada funcionalidade existente do Mnemosyne contra o c√≥digo real**
-  (`Mnemosyne/` ‚Äî todos os arquivos). Para cada item marcado `[x]` nas Fases do TODO do
-  Mnemosyne, verificar no c√≥digo se: (a) est√° implementado, (b) √© chamado corretamente,
-  (c) funciona no fluxo real do app. Registrar resultado como: ‚úì funcional / ‚ö† parcial
-  (descrever o que falta) / ‚úó quebrado / ‚úó nunca implementado (falso positivo como na
-  Fase 7 do AKASHA). √Åreas cr√≠ticas a checar: indexa√ß√£o (IndexWorker), busca RAG
-  (`prepare_ask()`), reranking (FlashRank), relat√≥rio, mind map, Deep Research Mode,
-  Notebook Guide, Knowledge Reflection, session_memory, detec√ß√£o din√¢mica de modelos
-  Ollama. Resultado da auditoria orienta o redesign da UI ‚Äî in√∫til redesenhar em torno
-  de features que n√£o funcionam.
+- [ ] **Auditar cada funcionalidade existente do Mnemosyne contra o cÛdigo real**
+  (`Mnemosyne/` ó todos os arquivos). Para cada item marcado `[x]` nas Fases do TODO do
+  Mnemosyne, verificar no cÛdigo se: (a) est· implementado, (b) È chamado corretamente,
+  (c) funciona no fluxo real do app. Registrar resultado como: ? funcional / ? parcial
+  (descrever o que falta) / ? quebrado / ? nunca implementado (falso positivo como na
+  Fase 7 do AKASHA). ¡reas crÌticas a checar: indexaÁ„o (IndexWorker), busca RAG
+  (`prepare_ask()`), reranking (FlashRank), relatÛrio, mind map, Deep Research Mode,
+  Notebook Guide, Knowledge Reflection, session_memory, detecÁ„o din‚mica de modelos
+  Ollama. Resultado da auditoria orienta o redesign da UI ó in˙til redesenhar em torno
+  de features que n„o funcionam.
 
-### Mnemosyne: reestrutura√ß√£o urgente da UI | 2026-05-06
-> Contexto: a UI atual do Mnemosyne n√£o est√° intuitiva nem clara para a usu√°ria.
-> A refer√™ncia de design √© o NotebookLM (Google) ‚Äî paradigma tri-pane (Fontes / Chat / Workspace)
-> com ancoragem de cita√ß√µes e estado separado por painel. Requer redesign profundo antes de
+### Mnemosyne: reestruturaÁ„o urgente da UI | 2026-05-06
+> Contexto: a UI atual do Mnemosyne n„o est· intuitiva nem clara para a usu·ria.
+> A referÍncia de design È o NotebookLM (Google) ó paradigma tri-pane (Fontes / Chat / Workspace)
+> com ancoragem de citaÁıes e estado separado por painel. Requer redesign profundo antes de
 > continuar adicionando features ao app. Pesquisa de UI/UX em andamento (ver pesquisas.md).
 
 #### Mnemosyne
 - [ ] **[URGENTE] Redesenhar a UI completa do Mnemosyne** seguindo o paradigma tri-pane do
-  NotebookLM: (1) painel esquerdo de fontes/cole√ß√µes com status de indexa√ß√£o por item,
-  (2) painel central de chat RAG com cita√ß√µes clic√°veis, (3) painel direito de notas
+  NotebookLM: (1) painel esquerdo de fontes/coleÁıes com status de indexaÁ„o por item,
+  (2) painel central de chat RAG com citaÁıes clic·veis, (3) painel direito de notas
   persistentes onde respostas do chat podem ser "promovidas" para registro permanente.
-  Antes de implementar: definir o layout alvo com a usu√°ria. A pesquisa de refer√™ncia
-  est√° em `pesquisas.md` (se√ß√µes NotebookLM 2026-04-10 e 2026-04-20, e nova sess√£o 2026-05-06).
+  Antes de implementar: definir o layout alvo com a usu·ria. A pesquisa de referÍncia
+  est· em `pesquisas.md` (seÁıes NotebookLM 2026-04-10 e 2026-04-20, e nova sess„o 2026-05-06).
 
-### AKASHA: remo√ß√£o de dead code da Fase 7 (library_urls) e re-crawl peri√≥dico | 2026-05-05
+### AKASHA: remoÁ„o de dead code da Fase 7 (library_urls) e re-crawl periÛdico | 2026-05-05
 > Contexto: o conceito original de "Biblioteca de URLs" (Fase 7) foi supersedido pelo crawler BFS
 > da Fase 10. As tabelas library_urls/library_diffs/library_fts nunca foram populadas mas ainda
-> existem no schema e geram uma query morta em toda busca local. Al√©m disso, crawl_pending_sites()
-> s√≥ crawla sites nunca visitados ‚Äî n√£o re-crawla sites desatualizados.
+> existem no schema e geram uma query morta em toda busca local. AlÈm disso, crawl_pending_sites()
+> sÛ crawla sites nunca visitados ó n„o re-crawla sites desatualizados.
 
 #### AKASHA
-- [x] Remover query morta de library_fts de `services/local_search.py` ‚Äî `_search_fts()` fazia
+- [x] Remover query morta de library_fts de `services/local_search.py` ó `_search_fts()` fazia
       uma segunda query contra `library_fts` (nunca populada) retornando source="BIBLIOTECA";
-      essa query executava em toda busca local sem retornar nada √∫til.
+      essa query executava em toda busca local sem retornar nada ˙til.
 - [x] Adicionar migration v13 em `database.py`: DROP TABLE library_urls, library_diffs, library_fts
       e DROP INDEX idx_library_diffs_url. Remover os DDL constants e chamadas de init_db().
-      SCHEMA_VERSION: 12 ‚Üí 13.
-- [x] Estender `crawl_pending_sites()` em `services/crawler.py` para tamb√©m re-crawlar sites com
-      last_crawled_at anterior a 7 dias ‚Äî hoje a fun√ß√£o s√≥ processa sites com last_crawled_at IS NULL.
+      SCHEMA_VERSION: 12 ? 13.
+- [x] Estender `crawl_pending_sites()` em `services/crawler.py` para tambÈm re-crawlar sites com
+      last_crawled_at anterior a 7 dias ó hoje a funÁ„o sÛ processa sites com last_crawled_at IS NULL.
 
-### Caminhos do Mnemosyne: configura√ß√£o no HUB + editabilidade no pr√≥prio app | 2026-05-04
+### Caminhos do Mnemosyne: configuraÁ„o no HUB + editabilidade no prÛprio app | 2026-05-04
 
 > Contexto: item 0.9 tornou os caminhos do Mnemosyne (watched_dir, vault_dir, chroma_dir)
-> somente-leitura no SetupDialog, mas a configura√ß√£o equivalente ainda n√£o existe no HUB.
-> Resultado: n√£o h√° como definir ou alterar esses caminhos de lugar nenhum.
-> extra_dirs tamb√©m deve ser persistido no ecosystem.json.
+> somente-leitura no SetupDialog, mas a configuraÁ„o equivalente ainda n„o existe no HUB.
+> Resultado: n„o h· como definir ou alterar esses caminhos de lugar nenhum.
+> extra_dirs tambÈm deve ser persistido no ecosystem.json.
 
 #### HUB
-- [x] `src/types/index.ts` ‚Äî atualizar `EcosystemConfig.mnemosyne` para incluir
+- [x] `src/types/index.ts` ó atualizar `EcosystemConfig.mnemosyne` para incluir
       `watched_dir`, `vault_dir`, `chroma_dir` (strings) e `extra_dirs` (string[])
-- [x] `src/views/SetupView.tsx` ‚Äî adicionar campos do Mnemosyne em DATA_FIELDS:
-      watched_dir ("Mnemosyne ‚Äî Biblioteca"), vault_dir ("Mnemosyne ‚Äî Vault"),
-      chroma_dir ("Mnemosyne ‚Äî ChromaDB"); e lista edit√°vel de extra_dirs
+- [x] `src/views/SetupView.tsx` ó adicionar campos do Mnemosyne em DATA_FIELDS:
+      watched_dir ("Mnemosyne ó Biblioteca"), vault_dir ("Mnemosyne ó Vault"),
+      chroma_dir ("Mnemosyne ó ChromaDB"); e lista edit·vel de extra_dirs
       (componente separado com add/remove, abaixo dos campos simples)
 
 #### Mnemosyne
-- [x] `gui/main_window.py` ‚Äî SetupDialog: tornar watched_dir, vault_dir e chroma_dir
-      edit√°veis (QLineEdit + bot√£o de sele√ß√£o de pasta); ao salvar, chamar
+- [x] `gui/main_window.py` ó SetupDialog: tornar watched_dir, vault_dir e chroma_dir
+      edit·veis (QLineEdit + bot„o de seleÁ„o de pasta); ao salvar, chamar
       `write_section("mnemosyne", {watched_dir, vault_dir, chroma_dir, extra_dirs})`
-      via ecosystem_client ‚Äî sobrescreve o ecosystem.json
-- [x] `gui/main_window.py` ‚Äî ao salvar extra_dirs, inclu√≠-las tamb√©m no ecosystem.json
+      via ecosystem_client ó sobrescreve o ecosystem.json
+- [x] `gui/main_window.py` ó ao salvar extra_dirs, incluÌ-las tambÈm no ecosystem.json
       (campo `extra_dirs: list[str]`) para que o HUB e outros apps saibam quais pastas
-      o Mnemosyne est√° monitorando
+      o Mnemosyne est· monitorando
 
-### Auditoria pesquisas.md ‚Üí itens n√£o registrados no TODO | 2026-05-05
-> Contexto: leitura completa de pesquisas.md comparada ao TODO revelou 47 lacunas ‚Äî
-> achados de pesquisas anteriores que nunca foram transcritos como itens acion√°veis.
+### Auditoria pesquisas.md ? itens n„o registrados no TODO | 2026-05-05
+> Contexto: leitura completa de pesquisas.md comparada ao TODO revelou 47 lacunas ó
+> achados de pesquisas anteriores que nunca foram transcritos como itens acion·veis.
 
 #### Mnemosyne
-- [x] **[CR√çTICO] Mudar dist√¢ncia ChromaDB de L2 para cosine em todas as cole√ß√µes**
-  (`core/indexer.py`, todos os pontos onde `Chroma(...)` √© criado). Adicionar
-  `collection_metadata={"hnsw:space": "cosine"}` em cada cria√ß√£o de cole√ß√£o.
-  Para texto, cosine mede dire√ß√£o sem√¢ntica ‚Äî L2 mede dist√¢ncia absoluta, o que √©
-  incorreto para embeddings normalizados. Impacto documentado: at√© 10√ó de melhoria
-  na qualidade de recupera√ß√£o. O IndexWorker j√° apaga e recria o persist_dir, ent√£o
-  a corre√ß√£o se aplica automaticamente na pr√≥xima reindexa√ß√£o. Custo: ~30 min.
+- [x] **[CRÕTICO] Mudar dist‚ncia ChromaDB de L2 para cosine em todas as coleÁıes**
+  (`core/indexer.py`, todos os pontos onde `Chroma(...)` È criado). Adicionar
+  `collection_metadata={"hnsw:space": "cosine"}` em cada criaÁ„o de coleÁ„o.
+  Para texto, cosine mede direÁ„o sem‚ntica ó L2 mede dist‚ncia absoluta, o que È
+  incorreto para embeddings normalizados. Impacto documentado: atÈ 10◊ de melhoria
+  na qualidade de recuperaÁ„o. O IndexWorker j· apaga e recria o persist_dir, ent„o
+  a correÁ„o se aplica automaticamente na prÛxima reindexaÁ„o. Custo: ~30 min.
 
-- [x] **[CR√çTICO] Aumentar chunk size de 800 ‚Üí 1800 chars, overlap 100 ‚Üí 250**
-  (`core/config.py`, `RecursiveCharacterTextSplitter`). O valor atual de 800 chars ‚âà
-  200 tokens est√° abaixo do range recomendado por benchmarks 2025‚Äì2026 (Vecta, NAACL
-  2025/Vectara: 400‚Äì512 tokens). Trocar para `chunk_size=1800, chunk_overlap=250`.
-  Ganho documentado: +20pp de acur√°cia em RAG geral. Requer re-indexa√ß√£o completa.
-  Chunking sem√¢ntico continua desativado (correto ‚Äî benchmarks mostram fixed-size
-  superior para RAG de prop√≥sito geral).
+- [x] **[CRÕTICO] Aumentar chunk size de 800 ? 1800 chars, overlap 100 ? 250**
+  (`core/config.py`, `RecursiveCharacterTextSplitter`). O valor atual de 800 chars ò
+  200 tokens est· abaixo do range recomendado por benchmarks 2025ñ2026 (Vecta, NAACL
+  2025/Vectara: 400ñ512 tokens). Trocar para `chunk_size=1800, chunk_overlap=250`.
+  Ganho documentado: +20pp de acur·cia em RAG geral. Requer re-indexaÁ„o completa.
+  Chunking sem‚ntico continua desativado (correto ó benchmarks mostram fixed-size
+  superior para RAG de propÛsito geral).
 
-- [x] **FlashRank reranking no `prepare_ask()` ‚Äî pipeline dois est√°gios**
-  (`core/rag.py` ou `core/indexer.py`). Substituir recuperador √∫nico por:
-  (1) recuperar top-30 por h√≠brido BM25+cosine; (2) re-rankear com
+- [x] **FlashRank reranking no `prepare_ask()` ó pipeline dois est·gios**
+  (`core/rag.py` ou `core/indexer.py`). Substituir recuperador ˙nico por:
+  (1) recuperar top-30 por hÌbrido BM25+cosine; (2) re-rankear com
   `FlashrankRerank(model="ms-marco-MultiBERT-L-12", top_n=5)` de
   `langchain_community.document_compressors`. `pip install flashrank`. Modelo ONNX
-  de ~4MB, sem PyTorch, 15‚Äì30ms em CPU. Reduz alucina√ß√µes garantindo que o LLM
+  de ~4MB, sem PyTorch, 15ñ30ms em CPU. Reduz alucinaÁıes garantindo que o LLM
   recebe os 5 documentos genuinamente mais relevantes em vez dos 5 melhores por
   similaridade vetorial pura.
 
-- [x] **Deep Research Mode ‚Äî integra√ß√£o Mnemosyne + AKASHA**
+- [x] **Deep Research Mode ó integraÁ„o Mnemosyne + AKASHA**
   (novo `core/akasha_client.py` + `core/session_indexer.py` + `gui/workers.py`).
   Quando corpus local insuficiente para responder a query, expandir para web via
-  AKASHA: (A) chamar `GET /search/json?q=&max=5` do AKASHA, (B) buscar conte√∫do
+  AKASHA: (A) chamar `GET /search/json?q=&max=5` do AKASHA, (B) buscar conte˙do
   de cada URL via `GET /fetch?url=`, (C) indexar transientemente em ChromaDB
   EphemeralClient, (D) RAG sobre corpus local + web combinados, (E) mostrar badges
-  de fonte (local vs web) na resposta. Pr√©-requisito: endpoints `/search/json` e
+  de fonte (local vs web) na resposta. PrÈ-requisito: endpoints `/search/json` e
   `/fetch` no AKASHA (ver itens AKASHA abaixo). ~450 linhas no total.
 
-- [x] **Notebook Guide ‚Äî sum√°rio + perguntas sugeridas ao indexar documento**
+- [x] **Notebook Guide ó sum·rio + perguntas sugeridas ao indexar documento**
   (`core/indexer.py`, `gui/` componente de detalhe de documento). Ao finalizar
-  indexa√ß√£o de um arquivo, chamar LLM para gerar: (a) sum√°rio de 3‚Äì5 frases,
-  (b) 3‚Äì5 perguntas que o usu√°rio poderia fazer sobre o documento. Armazenar em
-  metadata do ChromaDB. Exibir na view de detalhe da cole√ß√£o. Uma call LLM por
-  documento no momento da indexa√ß√£o; resultado cacheado. Inspirado no NotebookLM
+  indexaÁ„o de um arquivo, chamar LLM para gerar: (a) sum·rio de 3ñ5 frases,
+  (b) 3ñ5 perguntas que o usu·rio poderia fazer sobre o documento. Armazenar em
+  metadata do ChromaDB. Exibir na view de detalhe da coleÁ„o. Uma call LLM por
+  documento no momento da indexaÁ„o; resultado cacheado. Inspirado no NotebookLM
   "Notebook Guide".
 
 - [x] **Mermaid como MVP do Mind Map (abrir no browser)**
-  (`core/mindmap.py`, bot√£o na UI). LLM gera JSON estruturado de temas ‚Üí converter
-  para sintaxe Mermaid ‚Üí salvar como `.md` ‚Üí abrir via `webbrowser.open()`. Sem
-  depend√™ncia de Qt graphics ou graphviz. Compat√≠vel com Obsidian. Graphviz/QGraphicsView
-  como melhoria posterior. Esta √© a decis√£o de implementa√ß√£o documentada na pesquisa
-  NotebookLM ‚Äî o TODO tem "mind map" mas sem especificar o caminho de implementa√ß√£o.
+  (`core/mindmap.py`, bot„o na UI). LLM gera JSON estruturado de temas ? converter
+  para sintaxe Mermaid ? salvar como `.md` ? abrir via `webbrowser.open()`. Sem
+  dependÍncia de Qt graphics ou graphviz. CompatÌvel com Obsidian. Graphviz/QGraphicsView
+  como melhoria posterior. Esta È a decis„o de implementaÁ„o documentada na pesquisa
+  NotebookLM ó o TODO tem "mind map" mas sem especificar o caminho de implementaÁ„o.
 
-- [x] **Relat√≥rio de Pesquisa estruturado em 8 se√ß√µes**
-  > Parcialmente implementado: `core/report.py` existe com 6 se√ß√µes (faltam "An√°lise por fonte" e "Converg√™ncias/diverg√™ncias"). Expandir para 8 conforme especificado.
-  (`core/report.py`). Implementar relat√≥rio Map-Reduce: (1) T√≠tulo/escopo, (2) Sum√°rio
-  executivo, (3) Temas principais, (4) An√°lise por fonte, (5) Converg√™ncias e
-  diverg√™ncias entre fontes, (6) Lacunas identificadas, (7) Recomenda√ß√µes,
-  (8) Refer√™ncias. Abordagem: LLM por se√ß√£o (Map) ‚Üí s√≠ntese final (Reduce).
+- [x] **RelatÛrio de Pesquisa estruturado em 8 seÁıes**
+  > Parcialmente implementado: `core/report.py` existe com 6 seÁıes (faltam "An·lise por fonte" e "ConvergÍncias/divergÍncias"). Expandir para 8 conforme especificado.
+  (`core/report.py`). Implementar relatÛrio Map-Reduce: (1) TÌtulo/escopo, (2) Sum·rio
+  executivo, (3) Temas principais, (4) An·lise por fonte, (5) ConvergÍncias e
+  divergÍncias entre fontes, (6) Lacunas identificadas, (7) RecomendaÁıes,
+  (8) ReferÍncias. Abordagem: LLM por seÁ„o (Map) ? sÌntese final (Reduce).
   Export para Markdown; PDF opcional via `pandoc` ou `weasyprint`.
 
-- [x] **Knowledge Reflection ‚Äî gerar e indexar artefatos de s√≠ntese durante indexa√ß√£o**
-  (`core/indexer.py`). Ap√≥s indexar chunks de cada documento, chamar LLM para gerar
-  uma "reflex√£o" ‚Äî s√≠ntese dos top-5 chunks. Armazenar no ChromaDB com
+- [x] **Knowledge Reflection ó gerar e indexar artefatos de sÌntese durante indexaÁ„o**
+  (`core/indexer.py`). ApÛs indexar chunks de cada documento, chamar LLM para gerar
+  uma "reflex„o" ó sÌntese dos top-5 chunks. Armazenar no ChromaDB com
   `metadata["type"]="reflection"` e `metadata["boost"]=1.5`. Durante retrieval em
-  `prepare_ask()`, aplicar score boost para documentos de reflex√£o. Meta-reflex√µes
-  (s√≠ntese de 3+ reflex√µes sobre o mesmo tema) recebem boost 1.8√ó.
+  `prepare_ask()`, aplicar score boost para documentos de reflex„o. Meta-reflexıes
+  (sÌntese de 3+ reflexıes sobre o mesmo tema) recebem boost 1.8◊.
 
-- [x] **`index.json` leve por cole√ß√£o ‚Äî metadados sempre em mem√≥ria**
+- [x] **`index.json` leve por coleÁ„o ó metadados sempre em memÛria**
   (`core/indexer.py`, `core/config.py`). Ao lado do ChromaDB, manter
   `{persist_dir}/index.json` com: `name`, `path`, `total_chunks`, `last_indexed`,
   `file_types` (contagens), `summary` (1 frase gerada por LLM). Carregar no startup
-  sem acessar ChromaDB. Usado pela UI para mostrar overview da cole√ß√£o em <1ms.
-  Atualizar a cada opera√ß√£o de indexa√ß√£o.
+  sem acessar ChromaDB. Usado pela UI para mostrar overview da coleÁ„o em <1ms.
+  Atualizar a cada operaÁ„o de indexaÁ„o.
 
-- [x] **Lock de m√°quina de indexa√ß√£o ‚Äî desabilitar indexa√ß√£o em m√°quinas secund√°rias**
+- [x] **Lock de m·quina de indexaÁ„o ó desabilitar indexaÁ„o em m·quinas secund·rias**
   (`core/config.py`, `gui/main_window.py`). Adicionar campo `indexing_machine: str`
-  ao config (preenchido com hostname na primeira indexa√ß√£o bem-sucedida). Na
-  inicializa√ß√£o, se `hostname != indexing_machine`: desabilitar bot√µes de indexa√ß√£o
-  e exibir mensagem "√çndice constru√≠do em [outra m√°quina]. Consultas dispon√≠veis."
-  Enfor√ßa arquitetura "indexar no CachyOS, consultar no Windows".
+  ao config (preenchido com hostname na primeira indexaÁ„o bem-sucedida). Na
+  inicializaÁ„o, se `hostname != indexing_machine`: desabilitar botıes de indexaÁ„o
+  e exibir mensagem "Õndice construÌdo em [outra m·quina]. Consultas disponÌveis."
+  EnforÁa arquitetura "indexar no CachyOS, consultar no Windows".
 
 - [x] **`potion-multilingual-128M` (model2vec) como fallback de embedding no Windows**
   (`core/config.py`, `core/indexer.py`, `gui/main_window.py`). Expor como terceira
-  op√ß√£o de embedding em Settings ao lado de bge-m3 e qwen3-embedding:0.6b.
-  `pip install model2vec langchain-community`. Sem depend√™ncia de Ollama, sem AVX2,
-  ~50ms por chunk. MTEB 47.31 ‚Äî suficiente para RAG pessoal. √ötil quando Ollama
-  n√£o est√° dispon√≠vel no Windows de trabalho.
+  opÁ„o de embedding em Settings ao lado de bge-m3 e qwen3-embedding:0.6b.
+  `pip install model2vec langchain-community`. Sem dependÍncia de Ollama, sem AVX2,
+  ~50ms por chunk. MTEB 47.31 ó suficiente para RAG pessoal. ⁄til quando Ollama
+  n„o est· disponÌvel no Windows de trabalho.
 
-- [x] **`qwen3-embedding:0.6b` como op√ß√£o intermedi√°ria de embedding**
+- [x] **`qwen3-embedding:0.6b` como opÁ„o intermedi·ria de embedding**
   (`core/config.py`, `gui/main_window.py`). Adicionar `qwen3-embedding:0.6b`
-  (639MB, Q8_0, multil√≠ngue, MTEB ~50‚Äì60) como op√ß√£o selecion√°vel entre bge-m3
-  (qualidade) e potion-multilingual-128M (velocidade). √ötil no laptop MX150 onde
-  bge-m3 cabe em 2GB VRAM mas n√£o deixa espa√ßo para contexto. `ollama pull
+  (639MB, Q8_0, multilÌngue, MTEB ~50ñ60) como opÁ„o selecion·vel entre bge-m3
+  (qualidade) e potion-multilingual-128M (velocidade). ⁄til no laptop MX150 onde
+  bge-m3 cabe em 2GB VRAM mas n„o deixa espaÁo para contexto. `ollama pull
   qwen3-embedding:0.6b`, depois `OllamaEmbeddings(model="qwen3-embedding:0.6b")`.
 
-- [x] **`num_thread` por requisi√ß√£o no OllamaEmbeddings (workaround OLLAMA_NUM_THREAD)**
-  (`core/indexer.py`). `OLLAMA_NUM_THREAD` √© ignorado no Ollama 0.6.6+ (issue #10476).
-  Usar par√¢metro por requisi√ß√£o: `OllamaEmbeddings(model=..., num_thread=2)` no
-  IndexWorker da m√°quina Windows. Combinado com `QThread.Priority.IdlePriority`.
-  Workaround documentado at√© corre√ß√£o oficial no Ollama.
+- [x] **`num_thread` por requisiÁ„o no OllamaEmbeddings (workaround OLLAMA_NUM_THREAD)**
+  (`core/indexer.py`). `OLLAMA_NUM_THREAD` È ignorado no Ollama 0.6.6+ (issue #10476).
+  Usar par‚metro por requisiÁ„o: `OllamaEmbeddings(model=..., num_thread=2)` no
+  IndexWorker da m·quina Windows. Combinado com `QThread.Priority.IdlePriority`.
+  Workaround documentado atÈ correÁ„o oficial no Ollama.
 
-- [x] **Detec√ß√£o din√¢mica de modelos Ollama no startup (`GET /api/tags`)**
+- [x] **DetecÁ„o din‚mica de modelos Ollama no startup (`GET /api/tags`)**
   (`gui/main_window.py`, SetupDialog). Ao iniciar, chamar
-  `GET http://localhost:11434/api/tags` (ou via LOGOS se dispon√≠vel) para listar
+  `GET http://localhost:11434/api/tags` (ou via LOGOS se disponÌvel) para listar
   modelos locais. Filtrar em candidatos de embedding (nomic-embed-text*, bge-m3,
   qwen3-embedding*) e chat (llama*, qwen*, mistral*, gemma*). Apresentar listas
   filtradas nos dropdowns de Settings em vez de campos de texto livre. Se Ollama
-  n√£o estiver rodando: mostrar aviso e desabilitar features de IA graciosamente.
+  n„o estiver rodando: mostrar aviso e desabilitar features de IA graciosamente.
 
-- [x] **`session_memory.json` ‚Äî hist√≥rico de queries e documentos √∫teis por cole√ß√£o**
-  > Parcialmente implementado: `core/memory.py` existe mas armazena apenas hist√≥rico de conversa (mensagens user/assistant), n√£o rastreia documentos recuperados nem utilidade. Implementar o rastreamento de documentos e score de relev√¢ncia conforme especificado.
-  (`core/memory.py` ou novo `core/session_memory.py`). Armazenar por cole√ß√£o as
-  √∫ltimas N queries, quais documentos foram recuperados e se a resposta foi √∫til.
-  Mostrar na UI "Voc√™ perguntou algo parecido antes‚Ä¶". Campos por documento:
-  `score_relev√¢ncia_m√©dio` das √∫ltimas N queries, `√∫ltima_vez_retornado`. Implementa
-  "Camada 2" da arquitetura de mem√≥ria de 3 n√≠veis documentada na pesquisa.
+- [x] **`session_memory.json` ó histÛrico de queries e documentos ˙teis por coleÁ„o**
+  > Parcialmente implementado: `core/memory.py` existe mas armazena apenas histÛrico de conversa (mensagens user/assistant), n„o rastreia documentos recuperados nem utilidade. Implementar o rastreamento de documentos e score de relev‚ncia conforme especificado.
+  (`core/memory.py` ou novo `core/session_memory.py`). Armazenar por coleÁ„o as
+  ˙ltimas N queries, quais documentos foram recuperados e se a resposta foi ˙til.
+  Mostrar na UI "VocÍ perguntou algo parecido antesÖ". Campos por documento:
+  `score_relev‚ncia_mÈdio` das ˙ltimas N queries, `˙ltima_vez_retornado`. Implementa
+  "Camada 2" da arquitetura de memÛria de 3 nÌveis documentada na pesquisa.
 
-- [ ] **Slide deck export (PPTX) a partir de cole√ß√£o**
-  (`core/slidemaker.py`). LLM gera outline (t√≠tulo + 5‚Äì7 bullet points por slide
-  para cada tema principal) ‚Üí `python-pptx` monta o arquivo .pptx. `pip install
-  python-pptx`. Exportar via bot√£o na √°rea de Relat√≥rios.
+- [ ] **Slide deck export (PPTX) a partir de coleÁ„o**
+  (`core/slidemaker.py`). LLM gera outline (tÌtulo + 5ñ7 bullet points por slide
+  para cada tema principal) ? `python-pptx` monta o arquivo .pptx. `pip install
+  python-pptx`. Exportar via bot„o na ·rea de RelatÛrios.
 
-- [ ] **FAIR-RAG: feedback impl√≠cito ‚Äî boost/penalizar documentos por utilidade da resposta**
-  (`core/rag.py`, `gui/` bot√£o de feedback). Ap√≥s cada resposta RAG, permitir ao
-  usu√°rio marcar como √∫til/in√∫til. Se √∫til: aumentar score de recupera√ß√£o dos
-  documentos usados (m√©dia m√≥vel exponencial). Se in√∫til: penalizar. Armazenar
-  ajustes por documento em metadata. O √≠ndice melhora gradualmente com o uso.
+- [ ] **FAIR-RAG: feedback implÌcito ó boost/penalizar documentos por utilidade da resposta**
+  (`core/rag.py`, `gui/` bot„o de feedback). ApÛs cada resposta RAG, permitir ao
+  usu·rio marcar como ˙til/in˙til. Se ˙til: aumentar score de recuperaÁ„o dos
+  documentos usados (mÈdia mÛvel exponencial). Se in˙til: penalizar. Armazenar
+  ajustes por documento em metadata. O Ìndice melhora gradualmente com o uso.
 
 #### AKASHA
-- [ ] **Endpoint `GET /fetch?url=` ‚Äî busca transiente sem salvar em disco**
-  > Parcialmente implementado: existe `POST /fetch` (com body JSON), n√£o `GET /fetch?url=`. Adicionar a variante GET com query param para compatibilidade com clientes simples.
-  (`routers/search.py` ou novo `routers/fetch.py`). Buscar e extrair conte√∫do de
+- [ ] **Endpoint `GET /fetch?url=` ó busca transiente sem salvar em disco**
+  > Parcialmente implementado: existe `POST /fetch` (com body JSON), n„o `GET /fetch?url=`. Adicionar a variante GET com query param para compatibilidade com clientes simples.
+  (`routers/search.py` ou novo `routers/fetch.py`). Buscar e extrair conte˙do de
   uma URL como Markdown e retornar em JSON sem salvar no archive. Equivale ao
-  `archiver.py` sem o `dest_path.write_text()`. ~30 linhas. Necess√°rio para o
-  Deep Research Mode do Mnemosyne e para qualquer consumidor program√°tico que
-  precise do conte√∫do sem poluir o archive.
+  `archiver.py` sem o `dest_path.write_text()`. ~30 linhas. Necess·rio para o
+  Deep Research Mode do Mnemosyne e para qualquer consumidor program·tico que
+  precise do conte˙do sem poluir o archive.
 
-- [x] **Endpoint `GET /search/json?q=&max=` ‚Äî busca retornando JSON estruturado**
+- [x] **Endpoint `GET /search/json?q=&max=` ó busca retornando JSON estruturado**
   (`routers/search.py`). A rota `/search` atual retorna HTML (Jinja2). Adicionar
   rota `/search/json` que retorna `[{title, url, snippet, source, date}]` como JSON,
-  reutilizando a l√≥gica existente de `search_web()` e `search_local()`. ~20 linhas.
-  Necess√°rio para integra√ß√£o com Mnemosyne (Deep Research Mode) e KOSMOS.
+  reutilizando a lÛgica existente de `search_web()` e `search_local()`. ~20 linhas.
+  Necess·rio para integraÁ„o com Mnemosyne (Deep Research Mode) e KOSMOS.
 
-- [x] **Propaga√ß√£o de tags do feed para o archive ao auto-arquivar do KOSMOS**
-  (`routers/search.py`, endpoint `POST /archive`). Ao receber requisi√ß√£o de
+- [x] **PropagaÁ„o de tags do feed para o archive ao auto-arquivar do KOSMOS**
+  (`routers/search.py`, endpoint `POST /archive`). Ao receber requisiÁ„o de
   auto-arquivamento do KOSMOS, aceitar campo `tags: list[str]` no body. KOSMOS
   deve incluir a categoria do feed como tag. Armazenar no frontmatter do arquivo
-  Markdown arquivado. Complemento ao item `POST /archive` j√° rastreado no TODO.
+  Markdown arquivado. Complemento ao item `POST /archive` j· rastreado no TODO.
 
 - [ ] **URL normalization antes de inserir no crawl_pages e archive**
-  > Parcialmente implementado: `services/crawler.py` j√° normaliza URLs (lowercase, remove trailing slash). `services/archiver.py` n√£o normaliza ‚Äî √© onde a deduplica√ß√£o por tracking params faz mais diferen√ßa. Implementar em `archiver.py` com remo√ß√£o de `utm_*`, `fbclid`, `gclid`, `ref`, `source`.
+  > Parcialmente implementado: `services/crawler.py` j· normaliza URLs (lowercase, remove trailing slash). `services/archiver.py` n„o normaliza ó È onde a deduplicaÁ„o por tracking params faz mais diferenÁa. Implementar em `archiver.py` com remoÁ„o de `utm_*`, `fbclid`, `gclid`, `ref`, `source`.
   (`services/archiver.py`, `services/crawler.py`). Normalizar URL com
   `pip install url-normalize` antes de inserir: lowercase scheme+host, remover
-  default ports, remover par√¢metros de rastreamento (`utm_*`, `fbclid`, `gclid`,
-  `ref`, `source`), ordenar query params. Evita arquivar a mesma p√°gina com
+  default ports, remover par‚metros de rastreamento (`utm_*`, `fbclid`, `gclid`,
+  `ref`, `source`), ordenar query params. Evita arquivar a mesma p·gina com
   tracking params diferentes como documentos separados.
 
 #### KOSMOS
 - [ ] **Streaming JSON parcial com field-order optimization (json-stream / ijson)**
   (`app/ui/workers.py`, `_AnalyzeWorker`). Usar `stream=True` com o cliente Ollama
   e parsear a resposta com `pip install json-stream`. Reordenar campos do schema
-  para que campos r√°pidos (tags, sentiment, clickbait_score) venham antes dos lentos
-  (entities, five_ws) ‚Äî XGrammar/Outlines segue a ordem de declara√ß√£o. A UI pode
-  exibir campos r√°pidos em 0.5‚Äì1.5s, antes do JSON completo. Melhor custo-benef√≠cio
+  para que campos r·pidos (tags, sentiment, clickbait_score) venham antes dos lentos
+  (entities, five_ws) ó XGrammar/Outlines segue a ordem de declaraÁ„o. A UI pode
+  exibir campos r·pidos em 0.5ñ1.5s, antes do JSON completo. Melhor custo-benefÌcio
   que split de calls para este caso.
 
-- [ ] **SpaCy para extra√ß√£o de entidades em vez de LLM (pt_core_news_lg)**
+- [ ] **SpaCy para extraÁ„o de entidades em vez de LLM (pt_core_news_lg)**
   (`app/core/analyzer.py` ou equivalente). Para o campo `entities`, substituir ou
   complementar a call LLM com SpaCy `pt_core_news_lg` (~250MB). Roda totalmente em
-  CPU, trata PER/ORG/LOC/MISC em portugu√™s, dramaticamente mais r√°pido que LLM para
-  NER. O LLM mant√©m responsabilidade sobre semantic classification (sentiment, tags,
-  clickbait). Resolve a perda de fidelidade de 3‚Äì8% documentada em modelos Q4 para
-  tarefas de c√≥pia de span como NER. `pip install spacy` +
+  CPU, trata PER/ORG/LOC/MISC em portuguÍs, dramaticamente mais r·pido que LLM para
+  NER. O LLM mantÈm responsabilidade sobre semantic classification (sentiment, tags,
+  clickbait). Resolve a perda de fidelidade de 3ñ8% documentada em modelos Q4 para
+  tarefas de cÛpia de span como NER. `pip install spacy` +
   `python -m spacy download pt_core_news_lg`.
 
-- [ ] **Heartbeat timeout para an√°lises travadas (`analysis_started_at` + reset no startup)**
+- [ ] **Heartbeat timeout para an·lises travadas (`analysis_started_at` + reset no startup)**
   (`app/utils/db.py` ou equivalente). Adicionar coluna `analysis_started_at DATETIME`
   na tabela de artigos. No startup, resetar para `pending` todos os artigos com
   `status = 'in_progress'` e `analysis_started_at < now - 5 minutes`. Evita artigos
-  eternamente presos em `in_progress` ap√≥s kill do processo ou crash.
+  eternamente presos em `in_progress` apÛs kill do processo ou crash.
 
-- [x] **Deduplica√ß√£o de an√°lise por content hash (SHA-256 de texto normalizado)**
-  (`app/core/analyzer.py`, `app/utils/db.py`). Antes de chamar LLM para an√°lise,
-  calcular SHA-256 do conte√∫do normalizado (min√∫sculas, sem pontua√ß√£o/espa√ßos extras).
-  Checar se outro artigo tem o mesmo hash ‚Äî se sim, copiar campos `ai_*` existentes
-  em vez de re-chamar o LLM. Adicionar coluna `content_hash TEXT` com √≠ndice UNIQUE
+- [x] **DeduplicaÁ„o de an·lise por content hash (SHA-256 de texto normalizado)**
+  (`app/core/analyzer.py`, `app/utils/db.py`). Antes de chamar LLM para an·lise,
+  calcular SHA-256 do conte˙do normalizado (min˙sculas, sem pontuaÁ„o/espaÁos extras).
+  Checar se outro artigo tem o mesmo hash ó se sim, copiar campos `ai_*` existentes
+  em vez de re-chamar o LLM. Adicionar coluna `content_hash TEXT` com Ìndice UNIQUE
   parcial. Economiza calls LLM para artigos cross-posted/espelhados.
 
-- [ ] **√çndice parcial SQLite para fila de an√°lise pendente**
-  (`app/utils/db.py`, na cria√ß√£o do schema). Adicionar:
+- [ ] **Õndice parcial SQLite para fila de an·lise pendente**
+  (`app/utils/db.py`, na criaÁ„o do schema). Adicionar:
   `CREATE INDEX idx_pending_analysis ON articles(feed_id, published_at DESC)
   WHERE analysis_status IN ('pending', 'failed')`.
   SQLite suporta partial indexes desde 3.8.0. Para tabela com 10k artigos onde 95%
-  est√£o analisados, o √≠ndice cobre ~500 linhas ‚Äî query da fila de background passa
+  est„o analisados, o Ìndice cobre ~500 linhas ó query da fila de background passa
   de O(log 10000) para O(log 500).
 
 - [ ] **TTL de campos pesados: nullar five_ws e entities para artigos > 6 meses**
-  (`app/core/maintenance.py` ou job peri√≥dico). Query mensal:
+  (`app/core/maintenance.py` ou job periÛdico). Query mensal:
   `UPDATE articles SET ai_five_ws = NULL, ai_entities = NULL
   WHERE published_at < date('now', '-6 months') AND ai_five_ws IS NOT NULL`.
-  Manter ai_tags e ai_sentiment (√∫teis para filtragem hist√≥rica). Seguido de
-  `VACUUM` + `ANALYZE`. Mant√©m o DB SQLite em tamanho gerenci√°vel conforme
+  Manter ai_tags e ai_sentiment (˙teis para filtragem histÛrica). Seguido de
+  `VACUUM` + `ANALYZE`. MantÈm o DB SQLite em tamanho gerenci·vel conforme
   artigos acumulam na casa dos milhares.
 
-- [ ] **Politeness: delay m√≠nimo de 2s por dom√≠nio no scraping de artigos**
-  > Coberto pelos dois itens `ecosystem_scraper.py` desta se√ß√£o (throttle adaptativo +
-  > HTTP 429), que se aplicam ao KOSMOS ArticleScraper via m√≥dulo compartilhado.
-  > Implementar apenas se `ArticleScraper` n√£o usar `ecosystem_scraper.py` diretamente.
+- [ ] **Politeness: delay mÌnimo de 2s por domÌnio no scraping de artigos**
+  > Coberto pelos dois itens `ecosystem_scraper.py` desta seÁ„o (throttle adaptativo +
+  > HTTP 429), que se aplicam ao KOSMOS ArticleScraper via mÛdulo compartilhado.
+  > Implementar apenas se `ArticleScraper` n„o usar `ecosystem_scraper.py` diretamente.
   (`app/core/scraper.py` ou `ArticleScraper`). Manter dict
-  `{domain: last_access_time}` e impor delay de 2s entre requisi√ß√µes ao mesmo
-  dom√≠nio durante scraping em background. Tratar HTTP 429 com backoff exponencial
-  (`base * 2^attempt`, max 60s, ¬±50% jitter). Sem isso, scraping de 10 artigos do
-  mesmo blog em sequ√™ncia r√°pida pode disparar bloqueio de IP.
+  `{domain: last_access_time}` e impor delay de 2s entre requisiÁıes ao mesmo
+  domÌnio durante scraping em background. Tratar HTTP 429 com backoff exponencial
+  (`base * 2^attempt`, max 60s, ±50% jitter). Sem isso, scraping de 10 artigos do
+  mesmo blog em sequÍncia r·pida pode disparar bloqueio de IP.
 
-- [ ] **`analysis_schema_version` para invalida√ß√£o de cache de an√°lise LLM**
+- [ ] **`analysis_schema_version` para invalidaÁ„o de cache de an·lise LLM**
   (`app/utils/db.py`, `app/core/analyzer.py`). Adicionar coluna
   `analysis_schema_version INTEGER DEFAULT 0` na tabela de artigos. Definir
-  constante `ANALYSIS_VERSION = 1` no c√≥digo. Incrementar ao mudar prompts ou
-  schema. No startup, enfileirar para re-an√°lise todos os artigos com
+  constante `ANALYSIS_VERSION = 1` no cÛdigo. Incrementar ao mudar prompts ou
+  schema. No startup, enfileirar para re-an·lise todos os artigos com
   `analysis_schema_version < ANALYSIS_VERSION`. Invalida cache sistematicamente
   sem precisar de processo manual.
 
 #### LOGOS / HUB
 - [ ] **`OLLAMA_GPU_OVERHEAD=0` no perfil RX 6600 com ROCm**
-  > Parcialmente implementado: `OLLAMA_GPU_OVERHEAD` j√° est√° definido em `logos.rs` mas com valor 524288000 (524MB), n√£o 0. Avaliar se o OOM handler do ROCm √© suficientemente confi√°vel para usar 0, ou se o valor atual √© intencional.
-  (`HUB/src-tauri/src/logos.rs` ou arquivo de configura√ß√£o de perfil de hardware).
-  Com ROCm na RX 6600, `OLLAMA_GPU_OVERHEAD=524288000` (500MB padr√£o) pode fazer
+  > Parcialmente implementado: `OLLAMA_GPU_OVERHEAD` j· est· definido em `logos.rs` mas com valor 524288000 (524MB), n„o 0. Avaliar se o OOM handler do ROCm È suficientemente confi·vel para usar 0, ou se o valor atual È intencional.
+  (`HUB/src-tauri/src/logos.rs` ou arquivo de configuraÁ„o de perfil de hardware).
+  Com ROCm na RX 6600, `OLLAMA_GPU_OVERHEAD=524288000` (500MB padr„o) pode fazer
   o Ollama recusar carregar modelos que caberiam na VRAM. Definir
-  `OLLAMA_GPU_OVERHEAD=0` para o perfil `main_pc` ‚Äî deixar o OOM handler do ROCm
+  `OLLAMA_GPU_OVERHEAD=0` para o perfil `main_pc` ó deixar o OOM handler do ROCm
   atuar em vez da estimativa conservadora do Ollama.
 
-- [ ] **Pol√≠tica de bateria em 3 n√≠veis no LOGOS (Normal / Economia / Cr√≠tico)**
-  > Parcialmente implementado: l√≥gica de bateria existe mas √© bin√°ria (AC vs bateria) ‚Äî sem distin√ß√£o entre Economia e Cr√≠tico. Expandir para 3 n√≠veis com os thresholds documentados.
-  (`HUB/src-tauri/src/logos.rs`, m√≥dulo de monitoramento de bateria). O TODO tem
-  suspens√£o de P3 em bateria, mas a pesquisa documenta 3 n√≠veis:
-  Normal (AC ou bateria >80%): P3 ativo, comportamento padr√£o.
-  Economia (bateria 30‚Äì80% ou TimeToEmpty <120min): P3 suspenso, batch P2
-  reduzido 64‚Üí16, keep_alive P2 "10m"‚Üí"2m".
-  Cr√≠tico (bateria <30% ou TimeToEmpty <60min): P2 tamb√©m suspenso, apenas P1,
+- [ ] **PolÌtica de bateria em 3 nÌveis no LOGOS (Normal / Economia / CrÌtico)**
+  > Parcialmente implementado: lÛgica de bateria existe mas È bin·ria (AC vs bateria) ó sem distinÁ„o entre Economia e CrÌtico. Expandir para 3 nÌveis com os thresholds documentados.
+  (`HUB/src-tauri/src/logos.rs`, mÛdulo de monitoramento de bateria). O TODO tem
+  suspens„o de P3 em bateria, mas a pesquisa documenta 3 nÌveis:
+  Normal (AC ou bateria >80%): P3 ativo, comportamento padr„o.
+  Economia (bateria 30ñ80% ou TimeToEmpty <120min): P3 suspenso, batch P2
+  reduzido 64?16, keep_alive P2 "10m"?"2m".
+  CrÌtico (bateria <30% ou TimeToEmpty <60min): P2 tambÈm suspenso, apenas P1,
   num_thread=2. Polling UPower a cada 30 segundos.
 
-- [ ] **Detec√ß√£o de AVX2 no perfil de hardware (i5-3470 sem AVX2)**
-  (`HUB/src-tauri/src/logos.rs`, detec√ß√£o de hardware no startup). Checar presen√ßa
-  de AVX2 via `/proc/cpuinfo` (Linux) ou cpuid (Windows). Se ausente: for√ßar perfil
-  low com `num_ctx=512`, `num_batch=128`, `num_thread=2`. O i5-3470 √© 30‚Äì50% mais
-  lento que CPUs com AVX2 em infer√™ncia INT4 ‚Äî o perfil deve refletir isso
+- [ ] **DetecÁ„o de AVX2 no perfil de hardware (i5-3470 sem AVX2)**
+  (`HUB/src-tauri/src/logos.rs`, detecÁ„o de hardware no startup). Checar presenÁa
+  de AVX2 via `/proc/cpuinfo` (Linux) ou cpuid (Windows). Se ausente: forÁar perfil
+  low com `num_ctx=512`, `num_batch=128`, `num_thread=2`. O i5-3470 È 30ñ50% mais
+  lento que CPUs com AVX2 em inferÍncia INT4 ó o perfil deve refletir isso
   explicitamente.
 
 - [ ] **Microbenchmark de startup (20 tokens) para medir t/s real do hardware**
-  (`HUB/src-tauri/src/logos.rs`, inicializa√ß√£o do LOGOS). Em vez de inferir
-  capacidade do hardware por specs, executar gera√ß√£o de 20 tokens com SmolLM2 1.7B
-  no startup. Leva <5 segundos, produz medi√ß√£o direta de tokens/segundo para sele√ß√£o
+  (`HUB/src-tauri/src/logos.rs`, inicializaÁ„o do LOGOS). Em vez de inferir
+  capacidade do hardware por specs, executar geraÁ„o de 20 tokens com SmolLM2 1.7B
+  no startup. Leva <5 segundos, produz mediÁ„o direta de tokens/segundo para seleÁ„o
   de perfil. Armazenar resultado em config para evitar repetir a cada startup.
 
-- [ ] **Prote√ß√£o contra thermal throttling da RX 6600 (pausar P3 acima de 85¬∞C)**
+- [ ] **ProteÁ„o contra thermal throttling da RX 6600 (pausar P3 acima de 85∞C)**
   (`HUB/src-tauri/src/logos.rs`). Durante workloads P3 longos, monitorar temperatura
-  da GPU via `sysinfo` crate (campo `gpu_temperature` dispon√≠vel no sysinfo 0.30+).
-  Se temperatura > 85¬∞C: pausar P3 automaticamente. Evita depender exclusivamente
-  do throttling do driver a 95¬∞C.
+  da GPU via `sysinfo` crate (campo `gpu_temperature` disponÌvel no sysinfo 0.30+).
+  Se temperatura > 85∞C: pausar P3 automaticamente. Evita depender exclusivamente
+  do throttling do driver a 95∞C.
 
-- [ ] **`num_gpu` din√¢mico por requisi√ß√£o no perfil MX150 (baseado em tamanho do contexto)**
-  > Parcialmente implementado: `num_gpu` est√° definido no perfil MX150 mas como valor est√°tico. Adicionar l√≥gica de sele√ß√£o por tamanho de contexto conforme documentado.
-  (`HUB/src-tauri/src/logos.rs`, dispatch de requisi√ß√µes P1). Para o laptop MX150
-  (2GB VRAM), ajustar `num_gpu` dinamicamente: `num_gpu=16‚Äì20` para contextos curtos
-  (<2048 tokens), `num_gpu=10‚Äì12` para contextos longos. LOGOS injeta este par√¢metro
-  por requisi√ß√£o em vez de usar valor fixo do perfil.
+- [ ] **`num_gpu` din‚mico por requisiÁ„o no perfil MX150 (baseado em tamanho do contexto)**
+  > Parcialmente implementado: `num_gpu` est· definido no perfil MX150 mas como valor est·tico. Adicionar lÛgica de seleÁ„o por tamanho de contexto conforme documentado.
+  (`HUB/src-tauri/src/logos.rs`, dispatch de requisiÁıes P1). Para o laptop MX150
+  (2GB VRAM), ajustar `num_gpu` dinamicamente: `num_gpu=16ñ20` para contextos curtos
+  (<2048 tokens), `num_gpu=10ñ12` para contextos longos. LOGOS injeta este par‚metro
+  por requisiÁ„o em vez de usar valor fixo do perfil.
 
-- [ ] **Badge "performance reduzida pelo SO" quando ppd est√° em power-saver**
+- [ ] **Badge "performance reduzida pelo SO" quando ppd est· em power-saver**
   (`HUB/src/` componente LogosPanel). Detectar perfil ativo do Power Profiles Daemon
   (`ppd`). Se `power-saver` ativo: exibir badge no LogosPanel explicando que a
-  resposta lenta do LLM √© causada pelo modo de economia do sistema operacional, n√£o
-  por bug. Evita confus√£o do usu√°rio quando o laptop est√° limitado pelo SO.
+  resposta lenta do LLM È causada pelo modo de economia do sistema operacional, n„o
+  por bug. Evita confus„o do usu·rio quando o laptop est· limitado pelo SO.
 
 #### ecosystem_scraper.py
-- [ ] **Throttle adaptativo por dom√≠nio ‚Äî delay m√≠nimo de 2s entre requisi√ß√µes**
-  (`ecosystem_scraper.py`). Adicionar dict de m√≥dulo `{domain: last_request_time}`
-  e impor delay configur√°vel (padr√£o 2s) entre requisi√ß√µes ao mesmo dom√≠nio.
-  Constante `CRAWL_DELAY` export√°vel. Como AKASHA archiver e KOSMOS ArticleScraper
-  usam este m√≥dulo, a politeness √© adicionada uma vez e aplica-se a ambos.
+- [ ] **Throttle adaptativo por domÌnio ó delay mÌnimo de 2s entre requisiÁıes**
+  (`ecosystem_scraper.py`). Adicionar dict de mÛdulo `{domain: last_request_time}`
+  e impor delay configur·vel (padr„o 2s) entre requisiÁıes ao mesmo domÌnio.
+  Constante `CRAWL_DELAY` export·vel. Como AKASHA archiver e KOSMOS ArticleScraper
+  usam este mÛdulo, a politeness È adicionada uma vez e aplica-se a ambos.
 
 - [ ] **HTTP 429 com backoff exponencial + leitura do header Retry-After**
-  (`ecosystem_scraper.py`). Detectar resposta HTTP 429 ‚Üí ler header `Retry-After`
-  ‚Üí backoff `max(Retry-After, min(base * 2^attempt, 60))` com ¬±50% de jitter
-  multiplicativo ‚Üí retry at√© `max_retries=3`. Atualmente o m√≥dulo n√£o trata 429 ‚Äî
-  retornaria vazio ou lan√ßaria exce√ß√£o.
+  (`ecosystem_scraper.py`). Detectar resposta HTTP 429 ? ler header `Retry-After`
+  ? backoff `max(Retry-After, min(base * 2^attempt, 60))` com ±50% de jitter
+  multiplicativo ? retry atÈ `max_retries=3`. Atualmente o mÛdulo n„o trata 429 ó
+  retornaria vazio ou lanÁaria exceÁ„o.
 
 #### Hermes
-- [ ] **Par√¢metros otimizados do faster-whisper: `vad_filter=True`, `beam_size=1`, `language="pt"`**
-  > Parcialmente implementado: `vad_filter=True` e `beam_size=1` j√° est√£o configurados em `TranscribeWorker`. Falta `language="pt"` ‚Äî ainda usa detec√ß√£o autom√°tica. Adicionar `language="pt"` como default para eliminar ~1s de overhead por segmento.
-  (`hermes.py` ou `TranscribeWorker`). A migra√ß√£o para faster-whisper est√° conclu√≠da
-  (`[x]`), mas os par√¢metros de otimiza√ß√£o n√£o foram registrados: `vad_filter=True`
-  filtra sil√™ncio antes da transcri√ß√£o (grande melhoria de velocidade para v√≠deos
-  com pausas), `beam_size=1` reduz mem√≥ria e tempo (padr√£o √© 5), `language="pt"`
-  elimina overhead de detec√ß√£o de idioma (~1s por segmento). Definir como defaults
+- [ ] **Par‚metros otimizados do faster-whisper: `vad_filter=True`, `beam_size=1`, `language="pt"`**
+  > Parcialmente implementado: `vad_filter=True` e `beam_size=1` j· est„o configurados em `TranscribeWorker`. Falta `language="pt"` ó ainda usa detecÁ„o autom·tica. Adicionar `language="pt"` como default para eliminar ~1s de overhead por segmento.
+  (`hermes.py` ou `TranscribeWorker`). A migraÁ„o para faster-whisper est· concluÌda
+  (`[x]`), mas os par‚metros de otimizaÁ„o n„o foram registrados: `vad_filter=True`
+  filtra silÍncio antes da transcriÁ„o (grande melhoria de velocidade para vÌdeos
+  com pausas), `beam_size=1` reduz memÛria e tempo (padr„o È 5), `language="pt"`
+  elimina overhead de detecÁ„o de idioma (~1s por segmento). Definir como defaults
   em `TranscribeWorker`.
 
-- [ ] **Cache do `WhisperModel` entre transcri√ß√µes (instanciar uma vez por sess√£o)**
-  > Parcialmente implementado: `WhisperModel` √© cacheado por inst√¢ncia de `TranscribeWorker`, mas cada nova transcri√ß√£o cria um novo Worker (e um novo modelo). Mover o cache para n√≠vel de m√≥dulo ou singleton para compartilhar entre Workers.
+- [ ] **Cache do `WhisperModel` entre transcriÁıes (instanciar uma vez por sess„o)**
+  > Parcialmente implementado: `WhisperModel` È cacheado por inst‚ncia de `TranscribeWorker`, mas cada nova transcriÁ„o cria um novo Worker (e um novo modelo). Mover o cache para nÌvel de mÛdulo ou singleton para compartilhar entre Workers.
   (`hermes.py`). O `WhisperModel` pode ser instanciado uma vez e reutilizado entre
-  transcri√ß√µes (diferente do openai-whisper que recarregava por chamada). Armazenar
-  como atributo de classe ou singleton de m√≥dulo. Economiza 5‚Äì15s de carregamento
-  de modelo a cada nova transcri√ß√£o.
+  transcriÁıes (diferente do openai-whisper que recarregava por chamada). Armazenar
+  como atributo de classe ou singleton de mÛdulo. Economiza 5ñ15s de carregamento
+  de modelo a cada nova transcriÁ„o.
 ### Infraestrutura: config por dispositivo e sync do ecossistema | 2026-05-06
-> Contexto: ecosystem.json √© sincronizado via Proton Drive entre m√°quinas, mas cont√©m
-> paths absolutos que diferem entre Windows e Linux. A solu√ß√£o √© separar prefer√™ncias
-> (compartilhadas) de paths (locais por m√°quina).
+> Contexto: ecosystem.json È sincronizado via Proton Drive entre m·quinas, mas contÈm
+> paths absolutos que diferem entre Windows e Linux. A soluÁ„o È separar preferÍncias
+> (compartilhadas) de paths (locais por m·quina).
 
 #### HUB
-- [x] **Dividir ecosystem.json em duas camadas: compartilhada e local por m√°quina**
+- [x] **Dividir ecosystem.json em duas camadas: compartilhada e local por m·quina**
   Separar o `ecosystem.json` atual em dois arquivos:
-  - `ecosystem.json` ‚Äî prefer√™ncias e flags (sem paths absolutos); sincronizado via Proton Drive entre m√°quinas.
-  - `ecosystem.local.json` ‚Äî paths absolutos espec√≠ficos da m√°quina (ex: `kosmos_archive`, `hermes_output`, `mnemosyne_watched`); **n√£o sincronizado**, fica s√≥ na m√°quina local.
-  Na leitura de configura√ß√£o, mesclar os dois: `.local.json` tem preced√™ncia sobre `.json`.
+  - `ecosystem.json` ó preferÍncias e flags (sem paths absolutos); sincronizado via Proton Drive entre m·quinas.
+  - `ecosystem.local.json` ó paths absolutos especÌficos da m·quina (ex: `kosmos_archive`, `hermes_output`, `mnemosyne_watched`); **n„o sincronizado**, fica sÛ na m·quina local.
+  Na leitura de configuraÁ„o, mesclar os dois: `.local.json` tem precedÍncia sobre `.json`.
   Adicionar `ecosystem.local.json` ao `.gitignore` e ao `.stignore` do Syncthing.
-  Arquivo `.local.json` de exemplo (com paths comentados) pode ser versionado para documenta√ß√£o.
+  Arquivo `.local.json` de exemplo (com paths comentados) pode ser versionado para documentaÁ„o.
 
 - [x] **Migrar sync de SQLite (banco do HUB e bancos dos apps) para Syncthing**
   O Proton Drive conflita com SQLite (lock de arquivo / WAL). Usar Syncthing com `.stignore`
   excluindo `*.db`, `*.db-wal`, `*.db-shm`. Syncthing cuida de Markdown, JSON de config,
-  pesquisas.md, TODO.md e outros arquivos de texto. Bancos ficam locais por m√°quina.
-  Instalar como servi√ßo ou daemon; configurar par de dispositivos (Windows ‚Üî CachyOS).
+  pesquisas.md, TODO.md e outros arquivos de texto. Bancos ficam locais por m·quina.
+  Instalar como serviÁo ou daemon; configurar par de dispositivos (Windows ? CachyOS).
 
 ### LOGOS: arquitetura de skill routing multi-agente via arquivos .md | 2026-05-12
-> Contexto: pesquisa sobre o padr√£o Agent Skills Specification (Anthropic, out/2025) e
-> arquitetura two-model router (RouteLLM, arXiv:2406.18665) revelou um caminho vi√°vel para
-> o LOGOS orquestrar tarefas por tipo usando arquivos .md como defini√ß√£o de habilidades.
+> Contexto: pesquisa sobre o padr„o Agent Skills Specification (Anthropic, out/2025) e
+> arquitetura two-model router (RouteLLM, arXiv:2406.18665) revelou um caminho vi·vel para
+> o LOGOS orquestrar tarefas por tipo usando arquivos .md como definiÁ„o de habilidades.
 > Dispatcher pequeno (3B, sempre aquecido) + executor maior (7B+) por skill.
 
 #### LOGOS
-- [x] **Estrutura `logos/skills/` com SKILL.md por tipo de tarefa** ‚Äî criar diret√≥rio
-  `logos/skills/` no HUB. Cada skill √© um arquivo `<nome>.md` com frontmatter YAML obrigat√≥rio:
-  `name` (slug, max 64 chars) e `description` (max 1024 chars ‚Äî descreve QUANDO usar o skill,
-  n√£o apenas o que faz; √© o √∫nico campo lido pelo dispatcher na fase de sele√ß√£o). Corpo Markdown
-  com: (a) instru√ß√µes completas de execu√ß√£o; (b) 2-4 pares few-shot input‚Üíoutput; (c) output
-  format especificado explicitamente com exemplo de JSON; (d) instru√ß√£o final "responda APENAS
+- [x] **Estrutura `logos/skills/` com SKILL.md por tipo de tarefa** ó criar diretÛrio
+  `logos/skills/` no HUB. Cada skill È um arquivo `<nome>.md` com frontmatter YAML obrigatÛrio:
+  `name` (slug, max 64 chars) e `description` (max 1024 chars ó descreve QUANDO usar o skill,
+  n„o apenas o que faz; È o ˙nico campo lido pelo dispatcher na fase de seleÁ„o). Corpo Markdown
+  com: (a) instruÁıes completas de execuÁ„o; (b) 2-4 pares few-shot input?output; (c) output
+  format especificado explicitamente com exemplo de JSON; (d) instruÁ„o final "responda APENAS
   no formato especificado". Skills iniciais: `rag-query.md`, `synthesis.md`,
-  `entity-extraction.md`, `chunk-classification.md`. Padr√£o diretamente compat√≠vel com
+  `entity-extraction.md`, `chunk-classification.md`. Padr„o diretamente compatÌvel com
   Agent Skills Specification (agentskills.io).
 
-- [x] **Dispatcher com dois modelos** ‚Äî implementar `logos/dispatcher.py`: modelo router 3B
-  (ex: Llama 3.2 3B Instruct) sempre aquecido em mem√≥ria (`keep_alive: -1` via Ollama) recebe
+- [x] **Dispatcher com dois modelos** ó implementar `logos/dispatcher.py`: modelo router 3B
+  (ex: Llama 3.2 3B Instruct) sempre aquecido em memÛria (`keep_alive: -1` via Ollama) recebe
   o request e retorna JSON `{"skill": "<nome>", "confidence": 0.0-1.0}`. Usar Pydantic +
-  `format=SkillSelection.model_json_schema()` no Ollama Python SDK para for√ßar enum de skill
-  names v√°lidos e garantir JSON v√°lido. Fallback para skill gen√©rico se `confidence < 0.7`.
+  `format=SkillSelection.model_json_schema()` no Ollama Python SDK para forÁar enum de skill
+  names v·lidos e garantir JSON v·lido. Fallback para skill genÈrico se `confidence < 0.7`.
   Modelo executor 7B+ carregado sob demanda com `keep_alive` curto conforme prioridade LOGOS
-  (P1/P2/P3). Overhead do dispatcher: 200‚Äì600 ms; lat√™ncia total com modelos aquecidos: 1‚Äì3 s.
+  (P1/P2/P3). Overhead do dispatcher: 200ñ600 ms; latÍncia total com modelos aquecidos: 1ñ3 s.
   Basear na arquitetura RouteLLM (arXiv:2406.18665, ICLR 2025).
 
-- [x] **Routing 3-tier para minimizar overhead de LLM** ‚Äî antes de acionar o dispatcher LLM,
-  implementar dois filtros mais r√°pidos: (1) regex/keyword matching para requests triviais e
-  repetitivos (~80% dos casos, lat√™ncia ~0 ms ‚Äî ex: "resuma esse texto" ‚Üí sempre `synthesis`);
-  (2) embedding similarity contra embeddings pr√©-computados dos campos `description` de cada
-  skill (para requests amb√≠guos mas estruturados, lat√™ncia ~50 ms); (3) LLM dispatcher apenas
+- [x] **Routing 3-tier para minimizar overhead de LLM** ó antes de acionar o dispatcher LLM,
+  implementar dois filtros mais r·pidos: (1) regex/keyword matching para requests triviais e
+  repetitivos (~80% dos casos, latÍncia ~0 ms ó ex: "resuma esse texto" ? sempre `synthesis`);
+  (2) embedding similarity contra embeddings prÈ-computados dos campos `description` de cada
+  skill (para requests ambÌguos mas estruturados, latÍncia ~50 ms); (3) LLM dispatcher apenas
   para casos que passem pelos dois filtros anteriores. Essa cadeia elimina o overhead do LLM
-  para a maioria dos requests, reduzindo lat√™ncia m√©dia do sistema.
+  para a maioria dos requests, reduzindo latÍncia mÈdia do sistema.
 
-- [x] **Command R 7B como executor do skill `rag-query`** ‚Äî o Command R 7B (Cohere) √© o √∫nico
-  modelo sub-10B com treinamento expl√≠cito para grounded generation com cita√ß√£o de fontes
+- [x] **Command R 7B como executor do skill `rag-query`** ó o Command R 7B (Cohere) È o ˙nico
+  modelo sub-10B com treinamento explÌcito para grounded generation com citaÁ„o de fontes
   (grounding spans). Configurar o LOGOS para usar Command R 7B especificamente quando o
-  dispatcher selecionar o skill `rag-query`, em vez do modelo executor padr√£o. Requer que
-  o Command R 7B esteja dispon√≠vel via Ollama (`ollama pull command-r`). Consumo: ~5 GB VRAM
-  em Q4_K_M ‚Äî cabe na RX 6600 com margem.
+  dispatcher selecionar o skill `rag-query`, em vez do modelo executor padr„o. Requer que
+  o Command R 7B esteja disponÌvel via Ollama (`ollama pull command-r`). Consumo: ~5 GB VRAM
+  em Q4_K_M ó cabe na RX 6600 com margem.
 
 ### AKASHA: responsividade CSS e frontmatter enriquecido | 2026-05-12
-> Contexto: o AKASHA usava apenas breakpoints de pixels fixos no CSS ‚Äî comportamento quebrando em janelas de tamanhos intermedi√°rios n√£o convencionais. Al√©m disso, o frontmatter gerado nos arquivos arquivados carecia de campos essenciais para cita√ß√£o (data de publica√ß√£o real, idioma, campos cient√≠ficos completos, metadados de PDF).
+> Contexto: o AKASHA usava apenas breakpoints de pixels fixos no CSS ó comportamento quebrando em janelas de tamanhos intermedi·rios n„o convencionais. AlÈm disso, o frontmatter gerado nos arquivos arquivados carecia de campos essenciais para citaÁ„o (data de publicaÁ„o real, idioma, campos cientÌficos completos, metadados de PDF).
 
 #### AKASHA
-- [x] **Responsividade CSS universal** ‚Äî substituir breakpoints de largura fixa (`max-width: Xpx`) por layout fluido usando `clamp()`, `min()`, percentagens e `flex-wrap` natural. Containers (`search-wrapper`, `container`, `lenses-page`, `history-container`) devem usar `min()` com percentagem + max fixo em vez de `max-width: Npx` r√≠gido. `topbar-search` deve ter `min-width` em percentagem. Eliminar saltos visuais entre breakpoints: o layout deve degradar suavemente em qualquer largura de janela, n√£o s√≥ em 3-4 tamanhos can√¥nicos.
+- [x] **Responsividade CSS universal** ó substituir breakpoints de largura fixa (`max-width: Xpx`) por layout fluido usando `clamp()`, `min()`, percentagens e `flex-wrap` natural. Containers (`search-wrapper`, `container`, `lenses-page`, `history-container`) devem usar `min()` com percentagem + max fixo em vez de `max-width: Npx` rÌgido. `topbar-search` deve ter `min-width` em percentagem. Eliminar saltos visuais entre breakpoints: o layout deve degradar suavemente em qualquer largura de janela, n„o sÛ em 3-4 tamanhos canÙnicos.
 
-- [x] **Frontmatter: acrescentar `description`, `sitename`, `tags` da p√°gina** ‚Äî em `archive_url()`, extrair via trafilatura `metadata.description` (meta description / OpenGraph), `metadata.sitename` (nome leg√≠vel do site, ex: "The Verge") e `metadata.tags`/`metadata.categories` (tags nativas da p√°gina); mesclar tags nativas com as tags do usu√°rio (usu√°rio vem primeiro, depois tags da p√°gina n√£o duplicadas). Adicionar `description` e `sitename` como campos novos no frontmatter.
-- [x] **Campos universais em todos os arquivos arquivados** ‚Äî em `archive_url()` em `archiver.py`, renomear `url` para `source_url` no frontmatter, mudar `date` para data de publica√ß√£o real do conte√∫do (trafilatura `metadata.date`, formato `YYYY-MM-DD`) e adicionar campo separado `archived_at` com a data de download. Garantir que `author` e `language` sempre presentes (mesmo que vazios). Em `archive_pdf()`, mesma l√≥gica: `source_url` em vez de `url`, `archived_at` para data de download, `language` detectado via `langdetect.detect(content_md[:2000])`.
+- [x] **Frontmatter: acrescentar `description`, `sitename`, `tags` da p·gina** ó em `archive_url()`, extrair via trafilatura `metadata.description` (meta description / OpenGraph), `metadata.sitename` (nome legÌvel do site, ex: "The Verge") e `metadata.tags`/`metadata.categories` (tags nativas da p·gina); mesclar tags nativas com as tags do usu·rio (usu·rio vem primeiro, depois tags da p·gina n„o duplicadas). Adicionar `description` e `sitename` como campos novos no frontmatter.
+- [x] **Campos universais em todos os arquivos arquivados** ó em `archive_url()` em `archiver.py`, renomear `url` para `source_url` no frontmatter, mudar `date` para data de publicaÁ„o real do conte˙do (trafilatura `metadata.date`, formato `YYYY-MM-DD`) e adicionar campo separado `archived_at` com a data de download. Garantir que `author` e `language` sempre presentes (mesmo que vazios). Em `archive_pdf()`, mesma lÛgica: `source_url` em vez de `url`, `archived_at` para data de download, `language` detectado via `langdetect.detect(content_md[:2000])`.
 
-- [x] **Campos espec√≠ficos para artigos cient√≠ficos** ‚Äî em `archive_url()`, quando `is_scientific=True`, incluir no frontmatter: `doi`, `arxiv_id`, `journal`, `abstract` (primeiros 500 chars do abstract extra√≠do), `keywords` (lista quando dispon√≠veis via trafilatura ou metadados OpenGraph). Deduplica√ß√£o antes de baixar: verificar via `database.get_archived_by_doi(doi)` se j√° existe arquivo com mesmo DOI; se sim, retornar sem baixar novamente.
+- [x] **Campos especÌficos para artigos cientÌficos** ó em `archive_url()`, quando `is_scientific=True`, incluir no frontmatter: `doi`, `arxiv_id`, `journal`, `abstract` (primeiros 500 chars do abstract extraÌdo), `keywords` (lista quando disponÌveis via trafilatura ou metadados OpenGraph). DeduplicaÁ„o antes de baixar: verificar via `database.get_archived_by_doi(doi)` se j· existe arquivo com mesmo DOI; se sim, retornar sem baixar novamente.
 
-- [x] **Campos espec√≠ficos para PDFs de livros** ‚Äî em `archive_pdf()`, usar `fitz.open(path).metadata` (j√° dispon√≠vel via pymupdf4llm) para extrair `isbn`, `publisher`, `year`; incluir no frontmatter apenas quando n√£o-vazios. `year` complementa `date` para livros onde s√≥ o ano de publica√ß√£o √© conhecido.
+- [x] **Campos especÌficos para PDFs de livros** ó em `archive_pdf()`, usar `fitz.open(path).metadata` (j· disponÌvel via pymupdf4llm) para extrair `isbn`, `publisher`, `year`; incluir no frontmatter apenas quando n„o-vazios. `year` complementa `date` para livros onde sÛ o ano de publicaÁ„o È conhecido.
 
-### Mnemosyne: novos formatos de entrada ‚Äî Kindle e imagens | 2026-05-06
+### Mnemosyne: novos formatos de entrada ó Kindle e imagens | 2026-05-06
 > Contexto: pesquisa sobre eBook Kindle (AZW/AZW3/MOBI) e leitura de imagens em pipeline RAG
-> revelou op√ß√µes vi√°veis sem depend√™ncias pesadas. AZW/MOBI via `mobi` (PyPI, sem nativas);
+> revelou opÁıes vi·veis sem dependÍncias pesadas. AZW/MOBI via `mobi` (PyPI, sem nativas);
 > imagens via Tesseract local + fallback Ollama vision.
 
 #### Mnemosyne
-- [x] **Suporte a `.azw`, `.azw3`, `.mobi` em `core/loaders.py`** ‚Äî adicionar fun√ß√£o `_load_mobi()`
-  que usa `mobi.extract(file_path, tmpdir)` num `tempfile.TemporaryDirectory`. A sa√≠da pode ser:
-  HTML (MOBI) ‚Üí BeautifulSoup como no EPUB; EPUB (AZW3) ‚Üí reutilizar `_load_epub()`; PDF
-  (AZW Print Replica) ‚Üí reutilizar `PyPDFLoader`. Adicionar `.azw`, `.azw3`, `.mobi` em
+- [x] **Suporte a `.azw`, `.azw3`, `.mobi` em `core/loaders.py`** ó adicionar funÁ„o `_load_mobi()`
+  que usa `mobi.extract(file_path, tmpdir)` num `tempfile.TemporaryDirectory`. A saÌda pode ser:
+  HTML (MOBI) ? BeautifulSoup como no EPUB; EPUB (AZW3) ? reutilizar `_load_epub()`; PDF
+  (AZW Print Replica) ? reutilizar `PyPDFLoader`. Adicionar `.azw`, `.azw3`, `.mobi` em
   `_SUPPORTED_EXTENSIONS`. Em caso de DRM detectado (output vazio ou corrompido), retornar
-  `DocumentLoadError` com mensagem "arquivo com DRM ‚Äî n√£o √© poss√≠vel indexar". Depend√™ncia:
+  `DocumentLoadError` com mensagem "arquivo com DRM ó n„o È possÌvel indexar". DependÍncia:
   `pip install mobi`.
 
-- [x] **Suporte a imagens (`.jpg`, `.jpeg`, `.png`, `.webp`) em `core/loaders.py`** ‚Äî adicionar
-  fun√ß√£o `_load_image()` com duas camadas: (1) Tesseract via `pytesseract` + `Pillow` como
-  caminho principal (r√°pido, sem GPU, compat√≠vel com i5-3470); (2) fallback para Ollama vision
+- [x] **Suporte a imagens (`.jpg`, `.jpeg`, `.png`, `.webp`) em `core/loaders.py`** ó adicionar
+  funÁ„o `_load_image()` com duas camadas: (1) Tesseract via `pytesseract` + `Pillow` como
+  caminho principal (r·pido, sem GPU, compatÌvel com i5-3470); (2) fallback para Ollama vision
   (`/api/generate` com `images: [base64]`) usando o modelo configurado em `config.image_ocr_model`
-  (default vazio = Tesseract only). Texto extra√≠do vira um `Document` com metadata `source`,
+  (default vazio = Tesseract only). Texto extraÌdo vira um `Document` com metadata `source`,
   `source_type` e `ocr_engine` ("tesseract" ou "ollama:{model}"). Adicionar `.jpg`, `.jpeg`,
-  `.png`, `.webp` em `_SUPPORTED_EXTENSIONS`. Depend√™ncia: `pip install pytesseract Pillow`
-  + Tesseract instalado no sistema (instru√ß√£o no README). Campo `image_ocr_model` em
+  `.png`, `.webp` em `_SUPPORTED_EXTENSIONS`. DependÍncia: `pip install pytesseract Pillow`
+  + Tesseract instalado no sistema (instruÁ„o no README). Campo `image_ocr_model` em
   `AppConfig` e `SetupDialog` (QLineEdit, opcional, placeholder "ex: moondream2").
 
 ### LOGOS: pull de modelo recomendado direto do HUB | 2026-05-13
-> Contexto: o LOGOS detecta hardware e recomenda modelos (via /logos/hardware), mas n√£o
-> oferece forma de baixar o modelo caso ele ainda n√£o esteja instalado no Ollama local.
+> Contexto: o LOGOS detecta hardware e recomenda modelos (via /logos/hardware), mas n„o
+> oferece forma de baixar o modelo caso ele ainda n„o esteja instalado no Ollama local.
 
 #### HUB
-- [x] **Comando Tauri pull_model(model_name) em src-tauri/src/logos.rs** ‚Äî executar
+- [x] **Comando Tauri pull_model(model_name) em src-tauri/src/logos.rs** ó executar
   ollama pull <model> como processo filho e emitir evento Tauri pull_progress com
-  cada linha de stdout (progresso em tempo real). Retornar erro tipado se Ollama n√£o
-  estiver rodando ou se o nome do modelo for inv√°lido.
+  cada linha de stdout (progresso em tempo real). Retornar erro tipado se Ollama n„o
+  estiver rodando ou se o nome do modelo for inv·lido.
 
-- [x] **Bot√£o "Baixar modelo" na LogosView** ‚Äî quando o LOGOS recomendar um modelo via
-  /logos/hardware que n√£o constar em GET /api/tags do Ollama local, exibir bot√£o
-  "‚¨á Baixar [nome]" ao lado da recomenda√ß√£o. Ao clicar: invocar pull_model, exibir
-  barra de progresso com texto da linha atual do ollama pull, desabilitar o bot√£o
+- [x] **Bot„o "Baixar modelo" na LogosView** ó quando o LOGOS recomendar um modelo via
+  /logos/hardware que n„o constar em GET /api/tags do Ollama local, exibir bot„o
+  "? Baixar [nome]" ao lado da recomendaÁ„o. Ao clicar: invocar pull_model, exibir
+  barra de progresso com texto da linha atual do ollama pull, desabilitar o bot„o
   durante o download.
-### HUB: bot√£o Iniciar Ollama com flags de hardware | 2026-05-13
-> Contexto: o LOGOS j√° gerencia o Ollama ap√≥s iniciado, mas o usu√°rio precisa iniciar o processo manualmente antes de usar o ecossistema. O HUB deve detectar o hardware e lan√ßar o Ollama com as vari√°veis de ambiente corretas por plataforma ‚Äî AMD ROCm no CachyOS, CUDA/sem flags no laptop NVIDIA e no Windows CPU-only.
+### HUB: bot„o Iniciar Ollama com flags de hardware | 2026-05-13
+> Contexto: o LOGOS j· gerencia o Ollama apÛs iniciado, mas o usu·rio precisa iniciar o processo manualmente antes de usar o ecossistema. O HUB deve detectar o hardware e lanÁar o Ollama com as vari·veis de ambiente corretas por plataforma ó AMD ROCm no CachyOS, CUDA/sem flags no laptop NVIDIA e no Windows CPU-only.
 
 #### HUB
-- [x] **`launch_ollama()` em `commands/launcher.rs`** ‚Äî comando Tauri ass√≠ncrono que: (1) verifica se o Ollama j√° responde em `localhost:11434/api/tags` (reqwest, timeout 500ms); se sim, retorna `"already_running"`. (2) Constr√≥i o `Command` com as flags de hardware: Windows ‚Üí `ollama serve` (sem flags); Linux com `/dev/kfd` presente (AMD ROCm) ‚Üí `ollama serve` com `env("HSA_OVERRIDE_GFX_VERSION", valor_da_env_ou_"10.3.0")`; Linux sem `/dev/kfd` (NVIDIA ou CPU) ‚Üí `ollama serve` sem flags. (3) Spawn sem janela (`CREATE_NO_WINDOW` no Windows). Retorna `"launched"` ou `AppError::Io`.
-- [x] **Registrar `launch_ollama` em `lib.rs`** ‚Äî adicionar ao `tauri::generate_handler![]`.
-- [x] **`launchOllama()` em `src/lib/tauri.ts`** ‚Äî wrapper tipado: `call<string>('launch_ollama')`.
-- [x] **Bot√£o na `LogosView.tsx`** ‚Äî adicionar estado `ollamaOnline: boolean | null` (derivado de polling direto a `localhost:11434/api/tags` via `listModels()` do `ollama.ts`, a cada 4s); estado `launchStatus: 'idle' | 'starting' | 'error'`. Renderizar bot√£o "Iniciar Ollama" vis√≠vel apenas quando `ollamaOnline === false`; durante `starting` mostra "Iniciando‚Ä¶" e fica desabilitado; erro volta para "Iniciar Ollama" ap√≥s 3s. Posicionar na se√ß√£o "A√ß√µes" ao lado do bot√£o "Silenciar Ollama".
+- [x] **`launch_ollama()` em `commands/launcher.rs`** ó comando Tauri assÌncrono que: (1) verifica se o Ollama j· responde em `localhost:11434/api/tags` (reqwest, timeout 500ms); se sim, retorna `"already_running"`. (2) ConstrÛi o `Command` com as flags de hardware: Windows ? `ollama serve` (sem flags); Linux com `/dev/kfd` presente (AMD ROCm) ? `ollama serve` com `env("HSA_OVERRIDE_GFX_VERSION", valor_da_env_ou_"10.3.0")`; Linux sem `/dev/kfd` (NVIDIA ou CPU) ? `ollama serve` sem flags. (3) Spawn sem janela (`CREATE_NO_WINDOW` no Windows). Retorna `"launched"` ou `AppError::Io`.
+- [x] **Registrar `launch_ollama` em `lib.rs`** ó adicionar ao `tauri::generate_handler![]`.
+- [x] **`launchOllama()` em `src/lib/tauri.ts`** ó wrapper tipado: `call<string>('launch_ollama')`.
+- [x] **Bot„o na `LogosView.tsx`** ó adicionar estado `ollamaOnline: boolean | null` (derivado de polling direto a `localhost:11434/api/tags` via `listModels()` do `ollama.ts`, a cada 4s); estado `launchStatus: 'idle' | 'starting' | 'error'`. Renderizar bot„o "Iniciar Ollama" visÌvel apenas quando `ollamaOnline === false`; durante `starting` mostra "IniciandoÖ" e fica desabilitado; erro volta para "Iniciar Ollama" apÛs 3s. Posicionar na seÁ„o "AÁıes" ao lado do bot„o "Silenciar Ollama".
 
-### CODEX ‚Äî Leitor centralizado do ecossistema | 2026-05-13
-> Contexto: leitor read-only centralizado que suporta todos os formatos do ecossistema e centraliza highlights, notas e cita√ß√µes em markdown. Inspirado no leitor do KOSMOS, mas KOSMOS mant√©m seu pr√≥prio leitor. Apps como AKASHA e Mnemosyne podem abrir arquivos diretamente no CODEX. Deve ter vers√£o Android no futuro ‚Äî por isso a stack √© **Tauri v2 + React + Rust** (mesma do HUB, toolchain j√° dispon√≠vel). Sem edi√ß√£o de texto ‚Äî apenas leitura, coment√°rios, highlights e exporta√ß√£o de cita√ß√µes em MD.
+### CODEX ó Leitor centralizado do ecossistema | 2026-05-13
+> Contexto: leitor read-only centralizado que suporta todos os formatos do ecossistema e centraliza highlights, notas e citaÁıes em markdown. Inspirado no leitor do KOSMOS, mas KOSMOS mantÈm seu prÛprio leitor. Apps como AKASHA e Mnemosyne podem abrir arquivos diretamente no CODEX. Deve ter vers„o Android no futuro ó por isso a stack È **Tauri v2 + React + Rust** (mesma do HUB, toolchain j· disponÌvel). Sem ediÁ„o de texto ó apenas leitura, coment·rios, highlights e exportaÁ„o de citaÁıes em MD.
 
-#### CODEX ‚Äî Fase 0: scaffold e design system
-- [ ] **Criar projeto Tauri v2 em `CODEX/`** ‚Äî `cargo tauri init` dentro da pasta do projeto; estrutura: `CODEX/src/` (React + TypeScript), `CODEX/src-tauri/` (Rust). `strict: true` no tsconfig. Copiar design system do AETHER/HUB sem modifica√ß√µes: `tokens.css`, `animations.css`, `typography.css`, `components.css`, `CosmosLayer.tsx`, `Toast.tsx`, `ThemeToggle.tsx`.
-- [ ] **Pasta sincronizada no Proton Drive** ‚Äî `{sync_root}/codex/` com: `annotations.db` (SQLite com highlights, notas, cita√ß√µes vinculadas ao path do arquivo), `exports/` (cita√ß√µes exportadas em MD). Apenas anota√ß√µes s√£o sincronizadas ‚Äî o conte√∫do dos arquivos permanece onde est√°. No `ecosystem.json`, adicionar se√ß√£o `codex: { exe_path, sync_dir }`. O HUB deve incluir CODEX na barra de apps.
-- [ ] **Registrar CODEX no ecosystem.json** ‚Äî escrever `write_section("codex", { exe_path, sync_dir })` no startup. Adicionar `"codex"` ao `auto_discover_all_exe_paths()` no `launcher.rs` do HUB.
+#### CODEX ó Fase 0: scaffold e design system
+- [ ] **Criar projeto Tauri v2 em `CODEX/`** ó `cargo tauri init` dentro da pasta do projeto; estrutura: `CODEX/src/` (React + TypeScript), `CODEX/src-tauri/` (Rust). `strict: true` no tsconfig. Copiar design system do AETHER/HUB sem modificaÁıes: `tokens.css`, `animations.css`, `typography.css`, `components.css`, `CosmosLayer.tsx`, `Toast.tsx`, `ThemeToggle.tsx`.
+- [ ] **Pasta sincronizada no Proton Drive** ó `{sync_root}/codex/` com: `annotations.db` (SQLite com highlights, notas, citaÁıes vinculadas ao path do arquivo), `exports/` (citaÁıes exportadas em MD). Apenas anotaÁıes s„o sincronizadas ó o conte˙do dos arquivos permanece onde est·. No `ecosystem.json`, adicionar seÁ„o `codex: { exe_path, sync_dir }`. O HUB deve incluir CODEX na barra de apps.
+- [ ] **Registrar CODEX no ecosystem.json** ó escrever `write_section("codex", { exe_path, sync_dir })` no startup. Adicionar `"codex"` ao `auto_discover_all_exe_paths()` no `launcher.rs` do HUB.
 
-#### CODEX ‚Äî Fase 1: abertura de arquivos e formatos
-- [ ] **Suporte a MD e TXT** ‚Äî leitura nativa em Rust via `std::fs::read_to_string`. MD renderizado como HTML no frontend via `react-markdown`. TXT exibido como texto pr√©-formatado.
-- [ ] **Suporte a PDF** ‚Äî usar crate `pdf-extract` (`pdf-extract = "0.7"` no Cargo.toml) para extra√ß√£o de texto por p√°gina. Renderiza√ß√£o no frontend como HTML paginado. Alternativa para PDFs com layout complexo: PDF.js via `<webview>` ou iframe ‚Äî avaliar conforme qualidade de extra√ß√£o.
-- [ ] **Suporte a EPUB** ‚Äî usar crate `epub` (`epub = "2"`) para iterar cap√≠tulos como HTML. Renderizar cada cap√≠tulo como se√ß√£o naveg√°vel no frontend. Preservar imagens internas via data URI.
-- [ ] **Suporte a DOCX** ‚Äî usar crate `docx-rs` (`docx-rs = "0.4"`) para extra√ß√£o de par√°grafos e estilos b√°sicos (negrito, it√°lico, cabe√ßalhos). Converter para HTML estruturado antes de enviar ao frontend.
-- [ ] **Suporte a HTML** ‚Äî para arquivos do archive do AKASHA (`.html`): renderizar diretamente na webview do Tauri (CSP permissiva para arquivos locais). Sanitizar links externos para n√£o abrir no leitor.
-- [ ] **Seletor de arquivo** ‚Äî janela principal com `tauri-plugin-dialog` para abrir arquivo, filtrado por extens√£o suportada. Estado inicial exibe tela de boas-vindas com drag-and-drop.
+#### CODEX ó Fase 1: abertura de arquivos e formatos
+- [ ] **Suporte a MD e TXT** ó leitura nativa em Rust via `std::fs::read_to_string`. MD renderizado como HTML no frontend via `react-markdown`. TXT exibido como texto prÈ-formatado.
+- [ ] **Suporte a PDF** ó usar crate `pdf-extract` (`pdf-extract = "0.7"` no Cargo.toml) para extraÁ„o de texto por p·gina. RenderizaÁ„o no frontend como HTML paginado. Alternativa para PDFs com layout complexo: PDF.js via `<webview>` ou iframe ó avaliar conforme qualidade de extraÁ„o.
+- [ ] **Suporte a EPUB** ó usar crate `epub` (`epub = "2"`) para iterar capÌtulos como HTML. Renderizar cada capÌtulo como seÁ„o naveg·vel no frontend. Preservar imagens internas via data URI.
+- [ ] **Suporte a DOCX** ó usar crate `docx-rs` (`docx-rs = "0.4"`) para extraÁ„o de par·grafos e estilos b·sicos (negrito, it·lico, cabeÁalhos). Converter para HTML estruturado antes de enviar ao frontend.
+- [ ] **Suporte a HTML** ó para arquivos do archive do AKASHA (`.html`): renderizar diretamente na webview do Tauri (CSP permissiva para arquivos locais). Sanitizar links externos para n„o abrir no leitor.
+- [ ] **Seletor de arquivo** ó janela principal com `tauri-plugin-dialog` para abrir arquivo, filtrado por extens„o suportada. Estado inicial exibe tela de boas-vindas com drag-and-drop.
 
-#### CODEX ‚Äî Fase 2: anota√ß√µes e highlights
-- [ ] **SQLite para anota√ß√µes** ‚Äî `rusqlite` com tabelas: `highlights(id, file_path, start_char, end_char, color, created_at)`, `notes(id, file_path, start_char, text, created_at)`, `citations(id, file_path, start_char, end_char, excerpt, note, created_at)`. Path do DB: `{sync_dir}/annotations.db`. Schema migrations versionadas.
-- [ ] **Sele√ß√£o de texto e menu de contexto** ‚Äî no frontend, capturar `mouseup` para detectar sele√ß√£o de texto; exibir mini-toolbar com op√ß√µes: "Highlight", "Nota", "Citar". Highlight aplica `<mark>` com cor configur√°vel; Nota abre textarea inline; Citar abre modal de cita√ß√£o.
-- [ ] **Paleta de cores para highlights** ‚Äî 5 cores fixas alinhadas ao design system: √¢mbar (`#F5C518`), verde (`var(--accent-green)`), azul (`var(--accent)`), rosa (`var(--ribbon)`), cinza (`var(--rule)`). Sele√ß√£o via mini-toolbar.
-- [ ] **Persistir e restaurar highlights** ‚Äî ao abrir arquivo, consultar `annotations.db` por `file_path` e reinjetar highlights via `document.execCommand` ou substitui√ß√£o de HTML. Para MD/TXT (offsets de char), usar `start_char`/`end_char`. Para PDF (offsets por p√°gina), usar `page_num + start_char`.
+#### CODEX ó Fase 2: anotaÁıes e highlights
+- [ ] **SQLite para anotaÁıes** ó `rusqlite` com tabelas: `highlights(id, file_path, start_char, end_char, color, created_at)`, `notes(id, file_path, start_char, text, created_at)`, `citations(id, file_path, start_char, end_char, excerpt, note, created_at)`. Path do DB: `{sync_dir}/annotations.db`. Schema migrations versionadas.
+- [ ] **SeleÁ„o de texto e menu de contexto** ó no frontend, capturar `mouseup` para detectar seleÁ„o de texto; exibir mini-toolbar com opÁıes: "Highlight", "Nota", "Citar". Highlight aplica `<mark>` com cor configur·vel; Nota abre textarea inline; Citar abre modal de citaÁ„o.
+- [ ] **Paleta de cores para highlights** ó 5 cores fixas alinhadas ao design system: ‚mbar (`#F5C518`), verde (`var(--accent-green)`), azul (`var(--accent)`), rosa (`var(--ribbon)`), cinza (`var(--rule)`). SeleÁ„o via mini-toolbar.
+- [ ] **Persistir e restaurar highlights** ó ao abrir arquivo, consultar `annotations.db` por `file_path` e reinjetar highlights via `document.execCommand` ou substituiÁ„o de HTML. Para MD/TXT (offsets de char), usar `start_char`/`end_char`. Para PDF (offsets por p·gina), usar `page_num + start_char`.
 
-#### CODEX ‚Äî Fase 3: exporta√ß√£o e integra√ß√£o
-- [ ] **Exportar cita√ß√£o como MD** ‚Äî bot√£o "Exportar cita√ß√£o" em cada anota√ß√£o; gera arquivo `.md` em `{sync_dir}/exports/` com frontmatter: `source_path`, `source_title`, `page` (se PDF), `date_cited`. Corpo: trecho entre aspas duplas + nota do usu√°rio abaixo. Um arquivo por sess√£o de cita√ß√£o (agregado por data).
-- [ ] **Mecanismo "abrir no CODEX"** ‚Äî CODEX l√™ `ecosystem.json` em `codex.open_request: { path, start_char? }` no startup e ao ganhar foco. Ap√≥s abrir, limpa o campo com `write_section("codex", { open_request: null })`. Outros apps escrevem nesse campo para solicitar abertura. Tamb√©m aceitar CLI arg `--open <path>` para lan√ßamento direto.
-- [ ] **Bot√£o "Abrir no CODEX" no AKASHA** ‚Äî no frontend do AKASHA (`archive_detail.html` ou equivalente), adicionar bot√£o que escreve no `ecosystem.json` e depois faz `fetch` para lan√ßar o CODEX via endpoint do HUB ou diretamente via `open` shell.
-- [ ] **Bot√£o "Abrir no CODEX" no Mnemosyne** ‚Äî no `_source_viewer` do Mnemosyne (`gui/main_window.py`), adicionar bot√£o que escreve no `ecosystem.json` e lan√ßa o CODEX com `subprocess.Popen`.
-- [ ] **KOSMOS: CODEX como leitor externo** ‚Äî em KOSMOS `gui/reader_window.py` (ou equivalente), adicionar op√ß√£o "Abrir no CODEX" no menu do artigo aberto que usa o mesmo mecanismo de `open_request`.
+#### CODEX ó Fase 3: exportaÁ„o e integraÁ„o
+- [ ] **Exportar citaÁ„o como MD** ó bot„o "Exportar citaÁ„o" em cada anotaÁ„o; gera arquivo `.md` em `{sync_dir}/exports/` com frontmatter: `source_path`, `source_title`, `page` (se PDF), `date_cited`. Corpo: trecho entre aspas duplas + nota do usu·rio abaixo. Um arquivo por sess„o de citaÁ„o (agregado por data).
+- [ ] **Mecanismo "abrir no CODEX"** ó CODEX lÍ `ecosystem.json` em `codex.open_request: { path, start_char? }` no startup e ao ganhar foco. ApÛs abrir, limpa o campo com `write_section("codex", { open_request: null })`. Outros apps escrevem nesse campo para solicitar abertura. TambÈm aceitar CLI arg `--open <path>` para lanÁamento direto.
+- [ ] **Bot„o "Abrir no CODEX" no AKASHA** ó no frontend do AKASHA (`archive_detail.html` ou equivalente), adicionar bot„o que escreve no `ecosystem.json` e depois faz `fetch` para lanÁar o CODEX via endpoint do HUB ou diretamente via `open` shell.
+- [ ] **Bot„o "Abrir no CODEX" no Mnemosyne** ó no `_source_viewer` do Mnemosyne (`gui/main_window.py`), adicionar bot„o que escreve no `ecosystem.json` e lanÁa o CODEX com `subprocess.Popen`.
+- [ ] **KOSMOS: CODEX como leitor externo** ó em KOSMOS `gui/reader_window.py` (ou equivalente), adicionar opÁ„o "Abrir no CODEX" no menu do artigo aberto que usa o mesmo mecanismo de `open_request`.
 
-#### CODEX ‚Äî Fase 4: Android (futuro)
-- [ ] **Configurar ambiente Tauri Android** ‚Äî Android Studio + NDK + `cargo tauri android init`. O Tauri v2 j√° suporta Android nativamente; a UI React √© a mesma.
-- [ ] **Adaptar UI para toque** ‚Äî aumentar √°reas de toque (m√≠nimo 44√ó44px), toolbar de anota√ß√£o acess√≠vel por toque longo, scroll suave. Avaliar gestos: swipe para trocar cap√≠tulos (EPUB), pinch-to-zoom.
-- [ ] **Sync de anota√ß√µes via Syncthing** ‚Äî `annotations.db` em pasta monitorada pelo Syncthing; resolver conflitos por timestamp (mais recente vence).
-- [ ] **Build APK de release** ‚Äî `cargo tauri android build`; testar no dispositivo alvo.
+#### CODEX ó Fase 4: Android (futuro)
+- [ ] **Configurar ambiente Tauri Android** ó Android Studio + NDK + `cargo tauri android init`. O Tauri v2 j· suporta Android nativamente; a UI React È a mesma.
+- [ ] **Adaptar UI para toque** ó aumentar ·reas de toque (mÌnimo 44◊44px), toolbar de anotaÁ„o acessÌvel por toque longo, scroll suave. Avaliar gestos: swipe para trocar capÌtulos (EPUB), pinch-to-zoom.
+- [ ] **Sync de anotaÁıes via Syncthing** ó `annotations.db` em pasta monitorada pelo Syncthing; resolver conflitos por timestamp (mais recente vence).
+- [ ] **Build APK de release** ó `cargo tauri android build`; testar no dispositivo alvo.
 
-### HUB LOGOS: modelos dispon√≠veis + parar Ollama + prioridade baixa no Windows | 2026-05-13
-> Contexto: a lista de modelos no LOGOS mostrava apenas os carregados na VRAM. O usu√°rio quer ver todos os modelos instalados com indicador de status por cor (verde = ativo na VRAM, amarelo = dispon√≠vel mas n√£o carregado), poder parar o Ollama pelo LOGOS, e no Windows lan√ßar o Ollama com prioridade de CPU abaixo do normal automaticamente.
+### HUB LOGOS: modelos disponÌveis + parar Ollama + prioridade baixa no Windows | 2026-05-13
+> Contexto: a lista de modelos no LOGOS mostrava apenas os carregados na VRAM. O usu·rio quer ver todos os modelos instalados com indicador de status por cor (verde = ativo na VRAM, amarelo = disponÌvel mas n„o carregado), poder parar o Ollama pelo LOGOS, e no Windows lanÁar o Ollama com prioridade de CPU abaixo do normal automaticamente.
 
 #### HUB
-- [x] **`OllamaModelEntry` em `logos.rs`** ‚Äî novo struct serializ√°vel com campos: `name: String`, `status: String` ("active" | "available"), `size_vram_mb: u64` (VRAM usada; 0 se n√£o carregado), `size_disk_mb: u64` (tamanho em disco da `/api/tags`).
-- [x] **`do_list_all_models()` em `logos.rs`** ‚Äî faz duas chamadas ao Ollama: (1) `GET /api/ps` para modelos carregados ‚Üí mapa `name ‚Üí size_vram`; (2) `GET /api/tags` para todos os instalados ‚Üí lista completa. Mescla: se o modelo est√° em `/api/ps` ‚Üí status "active"; se s√≥ em `/api/tags` ‚Üí status "available". Retorna `Vec<OllamaModelEntry>`.
-- [x] **`logos_list_all_models` em `commands/logos.rs`** ‚Äî comando Tauri que chama `do_list_all_models`.
-- [x] **`stop_ollama()` em `commands/launcher.rs`** ‚Äî mata o processo Ollama: Windows ‚Üí `taskkill /F /IM ollama.exe /T` (com `CREATE_NO_WINDOW`); Linux ‚Üí `pkill -f "ollama serve"`. Retorna `Ok(())` se o comando foi executado (mesmo que Ollama n√£o estivesse rodando).
-- [x] **Prioridade baixa no Windows em `build_ollama_serve_command()`** ‚Äî substituir `Command::new("ollama").arg("serve")` na branch Windows por `cmd /C start "" /belownormal /B ollama serve`, que instrui o Windows a lan√ßar o processo j√° com `BELOW_NORMAL_PRIORITY_CLASS` sem necessidade de `windows-sys`.
-- [x] **Registrar novos comandos em `lib.rs`** ‚Äî adicionar `logos_list_all_models` e `stop_ollama` ao `generate_handler![]`.
-- [x] **`OllamaModelEntry` em `types/index.ts`** ‚Äî interface TypeScript espelhando o struct Rust.
-- [x] **`logosListAllModels()` e `stopOllama()` em `lib/tauri.ts`** ‚Äî wrappers tipados.
-- [x] **LogosView.tsx: lista de todos os modelos com bolinha colorida** ‚Äî substituir a se√ß√£o "Modelos na mem√≥ria" por "Modelos Ollama" que usa `logosListAllModels()` (polling a cada 4s). Cada linha: `‚óè` colorido (verde `var(--accent-green)` se "active", amarelo `var(--accent)` se "available") + nome + tamanho em disco + VRAM usada se "active". Bot√£o "descarregar" mantido para modelos "active".
-- [ ] **LogosView.tsx: bot√£o "Parar Ollama"** ‚Äî vis√≠vel apenas quando `ollamaOnline === true`. Clique chama `stopOllama()`, aguarda 1s e atualiza `checkOllama()`. Colocar na se√ß√£o A√ß√µes junto ao "Iniciar Ollama".
+- [x] **`OllamaModelEntry` em `logos.rs`** ó novo struct serializ·vel com campos: `name: String`, `status: String` ("active" | "available"), `size_vram_mb: u64` (VRAM usada; 0 se n„o carregado), `size_disk_mb: u64` (tamanho em disco da `/api/tags`).
+- [x] **`do_list_all_models()` em `logos.rs`** ó faz duas chamadas ao Ollama: (1) `GET /api/ps` para modelos carregados ? mapa `name ? size_vram`; (2) `GET /api/tags` para todos os instalados ? lista completa. Mescla: se o modelo est· em `/api/ps` ? status "active"; se sÛ em `/api/tags` ? status "available". Retorna `Vec<OllamaModelEntry>`.
+- [x] **`logos_list_all_models` em `commands/logos.rs`** ó comando Tauri que chama `do_list_all_models`.
+- [x] **`stop_ollama()` em `commands/launcher.rs`** ó mata o processo Ollama: Windows ? `taskkill /F /IM ollama.exe /T` (com `CREATE_NO_WINDOW`); Linux ? `pkill -f "ollama serve"`. Retorna `Ok(())` se o comando foi executado (mesmo que Ollama n„o estivesse rodando).
+- [x] **Prioridade baixa no Windows em `build_ollama_serve_command()`** ó substituir `Command::new("ollama").arg("serve")` na branch Windows por `cmd /C start "" /belownormal /B ollama serve`, que instrui o Windows a lanÁar o processo j· com `BELOW_NORMAL_PRIORITY_CLASS` sem necessidade de `windows-sys`.
+- [x] **Registrar novos comandos em `lib.rs`** ó adicionar `logos_list_all_models` e `stop_ollama` ao `generate_handler![]`.
+- [x] **`OllamaModelEntry` em `types/index.ts`** ó interface TypeScript espelhando o struct Rust.
+- [x] **`logosListAllModels()` e `stopOllama()` em `lib/tauri.ts`** ó wrappers tipados.
+- [x] **LogosView.tsx: lista de todos os modelos com bolinha colorida** ó substituir a seÁ„o "Modelos na memÛria" por "Modelos Ollama" que usa `logosListAllModels()` (polling a cada 4s). Cada linha: `?` colorido (verde `var(--accent-green)` se "active", amarelo `var(--accent)` se "available") + nome + tamanho em disco + VRAM usada se "active". Bot„o "descarregar" mantido para modelos "active".
+- [ ] **LogosView.tsx: bot„o "Parar Ollama"** ó visÌvel apenas quando `ollamaOnline === true`. Clique chama `stopOllama()`, aguarda 1s e atualiza `checkOllama()`. Colocar na seÁ„o AÁıes junto ao "Iniciar Ollama".
 
 
-### HUB LOGOS: configura√ß√£o de modelos por app com recomenda√ß√£o de hardware | 2026-05-13
-> Contexto: o LOGOS j√° detecta o hardware e define perfis de modelo padr√£o (ex: qwen2.5:7b para Mnemosyne no PC principal). Mas n√£o h√° UI para a usu√°ria sobrescrever essas escolhas diretamente no LOGOS, nem indicador de "compatibilidade" entre o modelo escolhido e o hardware dispon√≠vel. A usu√°ria quer poder ver e editar os modelos de cada app no LOGOS, com o recomendado como padr√£o, e o LOGOS deve calcular se o modelo escolhido cabe no hardware atual.
+### HUB LOGOS: configuraÁ„o de modelos por app com recomendaÁ„o de hardware | 2026-05-13
+> Contexto: o LOGOS j· detecta o hardware e define perfis de modelo padr„o (ex: qwen2.5:7b para Mnemosyne no PC principal). Mas n„o h· UI para a usu·ria sobrescrever essas escolhas diretamente no LOGOS, nem indicador de "compatibilidade" entre o modelo escolhido e o hardware disponÌvel. A usu·ria quer poder ver e editar os modelos de cada app no LOGOS, com o recomendado como padr„o, e o LOGOS deve calcular se o modelo escolhido cabe no hardware atual.
 
-#### HUB ‚Äî Backend Rust
-- [x] **Struct `ModelAssignment` em `logos.rs`** ‚Äî campos: `app: String`, `model: String`, `model_type: String` ("llm" | "embed"), `recommended: String` (modelo recomendado pelo perfil), `is_custom: bool` (true se a usu√°ria substituiu o recomendado), `fits_hardware: bool` (calculado), `vram_required_mb: u64` (estimado), `vram_available_mb: u64` (do hardware atual). Serializado para o frontend.
-- [x] **Endpoint `GET /logos/model-assignments` no servidor Axum** ‚Äî retorna `Vec<ModelAssignment>` com todas as atribui√ß√µes atuais (LLM e embedding de cada app). Calcula `fits_hardware` comparando o tamanho em disco do modelo (de `/api/tags`) com a VRAM dispon√≠vel (de `vram_usage()`), usando a heur√≠stica: VRAM_necess√°ria ‚âà size_disk_mb √ó 0.6 para Q4 (√≠ndice de compress√£o t√≠pico). `fits_hardware = vram_required_mb <= vram_available_mb - 500` (500 MB de buffer).
-- [x] **Endpoint `POST /logos/model-assignments` no servidor Axum** ‚Äî recebe `{ app, model_type, model }` e sobrescreve a atribui√ß√£o para aquele app. Persiste em `ecosystem.json` na se√ß√£o `logos.model_overrides: { [app_model_type]: model }` (ex: `mnemosyne_llm`, `kosmos_embed`). Se o modelo recebido for igual ao recomendado, remove o override (volta ao padr√£o).
-- [x] **Tauri commands `logos_get_model_assignments` e `logos_set_model_assignment`** ‚Äî wrappers IPC que chamam os endpoints do servidor Axum (ou acessam o estado interno diretamente, sem HTTP).
+#### HUB ó Backend Rust
+- [x] **Struct `ModelAssignment` em `logos.rs`** ó campos: `app: String`, `model: String`, `model_type: String` ("llm" | "embed"), `recommended: String` (modelo recomendado pelo perfil), `is_custom: bool` (true se a usu·ria substituiu o recomendado), `fits_hardware: bool` (calculado), `vram_required_mb: u64` (estimado), `vram_available_mb: u64` (do hardware atual). Serializado para o frontend.
+- [x] **Endpoint `GET /logos/model-assignments` no servidor Axum** ó retorna `Vec<ModelAssignment>` com todas as atribuiÁıes atuais (LLM e embedding de cada app). Calcula `fits_hardware` comparando o tamanho em disco do modelo (de `/api/tags`) com a VRAM disponÌvel (de `vram_usage()`), usando a heurÌstica: VRAM_necess·ria ò size_disk_mb ◊ 0.6 para Q4 (Ìndice de compress„o tÌpico). `fits_hardware = vram_required_mb <= vram_available_mb - 500` (500 MB de buffer).
+- [x] **Endpoint `POST /logos/model-assignments` no servidor Axum** ó recebe `{ app, model_type, model }` e sobrescreve a atribuiÁ„o para aquele app. Persiste em `ecosystem.json` na seÁ„o `logos.model_overrides: { [app_model_type]: model }` (ex: `mnemosyne_llm`, `kosmos_embed`). Se o modelo recebido for igual ao recomendado, remove o override (volta ao padr„o).
+- [x] **Tauri commands `logos_get_model_assignments` e `logos_set_model_assignment`** ó wrappers IPC que chamam os endpoints do servidor Axum (ou acessam o estado interno diretamente, sem HTTP).
 - [x] **Registrar comandos em `lib.rs`**.
 
-#### HUB ‚Äî Frontend TypeScript
-- [x] **Interface `ModelAssignment` em `types/index.ts`** ‚Äî espelha o struct Rust.
+#### HUB ó Frontend TypeScript
+- [x] **Interface `ModelAssignment` em `types/index.ts`** ó espelha o struct Rust.
 - [x] **Wrappers `logosGetModelAssignments` e `logosSetModelAssignment` em `lib/tauri.ts`**.
-- [x] **Se√ß√£o "Modelos por app" na `LogosView.tsx`** ‚Äî lista cada app (Mnemosyne LLM, Mnemosyne Embedding, KOSMOS LLM, KOSMOS Embedding) com: nome do modelo atual + badge "recomendado" se `!is_custom`; indicador de compatibilidade (‚úì verde se `fits_hardware`, ‚úó vermelho com tooltip de VRAM necess√°ria vs dispon√≠vel se n√£o couber); bot√£o "editar" que abre um `<select>` com todos os modelos instalados (de `logosListAllModels()`); bot√£o "usar recomendado" vis√≠vel apenas quando `is_custom === true`.
+- [x] **SeÁ„o "Modelos por app" na `LogosView.tsx`** ó lista cada app (Mnemosyne LLM, Mnemosyne Embedding, KOSMOS LLM, KOSMOS Embedding) com: nome do modelo atual + badge "recomendado" se `!is_custom`; indicador de compatibilidade (? verde se `fits_hardware`, ? vermelho com tooltip de VRAM necess·ria vs disponÌvel se n„o couber); bot„o "editar" que abre um `<select>` com todos os modelos instalados (de `logosListAllModels()`); bot„o "usar recomendado" visÌvel apenas quando `is_custom === true`.
 
 
 ### LOGOS: pesquisa de LLMs por funcionalidade e hardware | 2026-05-13
@@ -5510,565 +5510,565 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   de streaming; no MainPc o modelo KOSMOS pode ser diferente do Mnemosyne para rodar simultaneamente
 - [x] **Pesquisar modelos de embedding multilingues** -- qualidade pt/en, velocidade por hardware;
   bge-m3 vs nomic-embed-text vs all-minilm vs potion-multilingual-128M
-- [x] **Pesquisar LLMs para extra√ß√£o de conte√∫do (AKASHA)** ‚Äî AKASHA n√£o tem slot LLM ainda;
-  avaliar se precisa e qual seria o modelo (extra√ß√£o de metadados, resumo de p√°gina web).
-  A pesquisa de sumariza√ß√£o acima cobre parcialmente ‚Äî registrar decis√£o expl√≠cita de
-  incluir ou n√£o um slot AKASHA nos perfis do LOGOS.
-- [x] **Atualizar perfis em `logos.rs`** ap√≥s pesquisa ‚Äî `rationale_for_model()`; possivelmente
+- [x] **Pesquisar LLMs para extraÁ„o de conte˙do (AKASHA)** ó AKASHA n„o tem slot LLM ainda;
+  avaliar se precisa e qual seria o modelo (extraÁ„o de metadados, resumo de p·gina web).
+  A pesquisa de sumarizaÁ„o acima cobre parcialmente ó registrar decis„o explÌcita de
+  incluir ou n„o um slot AKASHA nos perfis do LOGOS.
+- [x] **Atualizar perfis em `logos.rs`** apÛs pesquisa ó `rationale_for_model()`; possivelmente
   adicionar slot AKASHA; garantir que modelos escolhidos para o mesmo app em diferentes
-  hardwares sejam da mesma fam√≠lia ou arquitetura compat√≠vel (ex: todos Qwen, todos Gemma,
+  hardwares sejam da mesma famÌlia ou arquitetura compatÌvel (ex: todos Qwen, todos Gemma,
   ou todos instruction-tuned com mesmo prompt format)
 
-### KOSMOS: an√°lise em background n√£o atualiza cards + bugs de sil√™ncio | 2026-05-14
-> Contexto: usu√°ria deixou KOSMOS aberto por horas e nenhum card exibiu resultado de an√°lise.
-> Investiga√ß√£o revelou dois bugs estruturais e um comportamento de retry ausente.
+### KOSMOS: an·lise em background n„o atualiza cards + bugs de silÍncio | 2026-05-14
+> Contexto: usu·ria deixou KOSMOS aberto por horas e nenhum card exibiu resultado de an·lise.
+> InvestigaÁ„o revelou dois bugs estruturais e um comportamento de retry ausente.
 
 #### KOSMOS
-- [x] **Conectar sinal `article_analyzed` na MainWindow** ‚Äî o `BackgroundAnalyzer` emite
-  `article_analyzed(article_id, data)` ap√≥s cada an√°lise bem-sucedida, mas o sinal nunca foi
-  conectado a nada. Cards nunca se atualizam em tempo real. Fix: em `main_window.py`, ap√≥s
+- [x] **Conectar sinal `article_analyzed` na MainWindow** ó o `BackgroundAnalyzer` emite
+  `article_analyzed(article_id, data)` apÛs cada an·lise bem-sucedida, mas o sinal nunca foi
+  conectado a nada. Cards nunca se atualizam em tempo real. Fix: em `main_window.py`, apÛs
   `_bg_analyzer.start()`, conectar `_bg_analyzer.article_analyzed` a um handler que chame
   `_feed_list.update_card_analysis(article_id, data)` e
-  `_unified_feed.update_card_analysis(article_id, data)`. Ambas as views precisam do m√©todo
+  `_unified_feed.update_card_analysis(article_id, data)`. Ambas as views precisam do mÈtodo
   `update_card_analysis()` que encontra o card pelo ID e chama `card.update_analysis()`.
-  O `ArticleCard` precisa dos m√©todos `update_analysis(sentiment, clickbait, relevance, tags)`
+  O `ArticleCard` precisa dos mÈtodos `update_analysis(sentiment, clickbait, relevance, tags)`
   e `update_title(text)` para atualizar badges/estilo sem reconstruir o widget.
-- [x] **Mudar `log.debug()` para `log.warning()` nas falhas de an√°lise** ‚Äî em
-  `background_analyzer.py` linhas 159 e 264, erros de an√°lise (Ollama offline, JSON inv√°lido,
-  timeout) s√£o registrados como DEBUG. Se o n√≠vel de log for INFO ou superior (padr√£o comum),
-  nenhuma falha aparece. Mudar para `log.warning()` para que falhas fiquem vis√≠veis no log.
-- [x] **Retry peri√≥dico de artigos n√£o analisados** ‚Äî `get_unanalyzed_article_ids()` s√≥ √©
+- [x] **Mudar `log.debug()` para `log.warning()` nas falhas de an·lise** ó em
+  `background_analyzer.py` linhas 159 e 264, erros de an·lise (Ollama offline, JSON inv·lido,
+  timeout) s„o registrados como DEBUG. Se o nÌvel de log for INFO ou superior (padr„o comum),
+  nenhuma falha aparece. Mudar para `log.warning()` para que falhas fiquem visÌveis no log.
+- [x] **Retry periÛdico de artigos n„o analisados** ó `get_unanalyzed_article_ids()` sÛ È
   chamado no startup e em `feed_updated`. Se Ollama estava offline no startup e voltou depois,
   os artigos ficam pendentes para sempre. Fix: adicionar `QTimer` em `main_window.py` que
   dispara a cada 5 minutos, chama `get_unanalyzed_article_ids(limit=50)` e enfileira no
   `_bg_analyzer` se houver pendentes e IA estiver habilitada.
 
-### KOSMOS: barra de status, persist√™ncia de tradu√ß√µes e integra√ß√£o com novos downloads | 2026-05-14
-> Contexto: melhorias de UX e robustez no fluxo de an√°lise e tradu√ß√£o em background do KOSMOS,
-> identificadas durante a implementa√ß√£o dos fixes de an√°lise e I.3.
+### KOSMOS: barra de status, persistÍncia de traduÁıes e integraÁ„o com novos downloads | 2026-05-14
+> Contexto: melhorias de UX e robustez no fluxo de an·lise e traduÁ„o em background do KOSMOS,
+> identificadas durante a implementaÁ„o dos fixes de an·lise e I.3.
 
 #### KOSMOS
-- [x] **Barra de status no rodap√© do KOSMOS** ‚Äî adicionar `QStatusBar` ou widget fixo no rodap√©
-  da `MainWindow` para exibir progresso e erros. Deve mostrar: "Analisando X artigos‚Ä¶" durante
-  an√°lise em background; "Traduzindo t√≠tulos‚Ä¶" durante tradu√ß√£o; erros de Ollama como
-  "‚ö† Falha ao analisar artigo 42: conex√£o recusada" (com timestamp); "‚úì N artigos analisados"
+- [x] **Barra de status no rodapÈ do KOSMOS** ó adicionar `QStatusBar` ou widget fixo no rodapÈ
+  da `MainWindow` para exibir progresso e erros. Deve mostrar: "Analisando X artigosÖ" durante
+  an·lise em background; "Traduzindo tÌtulosÖ" durante traduÁ„o; erros de Ollama como
+  "? Falha ao analisar artigo 42: conex„o recusada" (com timestamp); "? N artigos analisados"
   ao concluir lote. O `BackgroundAnalyzer` deve emitir sinais de progresso (`progress(int, int)`
-  para atual/total) al√©m do `article_analyzed`. O `TitleTranslator` idem. A barra some ap√≥s
-  alguns segundos de inatividade (QTimer de 5s para limpar mensagens de conclus√£o).
-- [x] **Persist√™ncia das tradu√ß√µes de t√≠tulos** ‚Äî salvar `dict[article_id, translated_title]`
+  para atual/total) alÈm do `article_analyzed`. O `TitleTranslator` idem. A barra some apÛs
+  alguns segundos de inatividade (QTimer de 5s para limpar mensagens de conclus„o).
+- [x] **PersistÍncia das traduÁıes de tÌtulos** ó salvar `dict[article_id, translated_title]`
   em `data/title_cache_{lang}.json` ao fechar o app (serializar `TitleTranslator._cache`).
-  Carregar no startup em `TitleTranslator.__init__()`. Assim tradu√ß√µes j√° feitas n√£o repetem
-  chamadas √† API ao reabrir o KOSMOS. Invalidar entradas para artigos deletados periodicamente
+  Carregar no startup em `TitleTranslator.__init__()`. Assim traduÁıes j· feitas n„o repetem
+  chamadas ‡ API ao reabrir o KOSMOS. Invalidar entradas para artigos deletados periodicamente
   (cruzar com IDs da DB a cada startup).
-- [x] **Pausar tradu√ß√£o ao abrir artigo, retomar ao fechar** ‚Äî em `MainWindow`, ao navegar
+- [x] **Pausar traduÁ„o ao abrir artigo, retomar ao fechar** ó em `MainWindow`, ao navegar
   para o reader (`_on_article_clicked`, `_on_unified_article_clicked`, etc.), chamar
   `self._title_translator.pause()`; ao voltar (`_on_reader_back`), chamar
-  `self._title_translator.resume()`. Isso libera recursos de rede enquanto o reader est√° ativo.
-- [x] **Enfileirar tradu√ß√£o e an√°lise de novos artigos baixados** ‚Äî em `_on_feed_updated()`,
-  al√©m de enfileirar an√°lise (j√° feito), tamb√©m enfileirar tradu√ß√£o dos novos artigos:
-  buscar os artigos rec√©m-baixados pelo feed_id, construir a lista de `(id, title, language)`
+  `self._title_translator.resume()`. Isso libera recursos de rede enquanto o reader est· ativo.
+- [x] **Enfileirar traduÁ„o e an·lise de novos artigos baixados** ó em `_on_feed_updated()`,
+  alÈm de enfileirar an·lise (j· feito), tambÈm enfileirar traduÁ„o dos novos artigos:
+  buscar os artigos recÈm-baixados pelo feed_id, construir a lista de `(id, title, language)`
   e chamar `_on_translation_requested()` diretamente (sem depender de `_populate_cards` ser
-  chamado, pois a view pode n√£o estar vis√≠vel no momento).
+  chamado, pois a view pode n„o estar visÌvel no momento).
 
-### KOSMOS: I.3 ‚Äî Tradu√ß√£o autom√°tica dos t√≠tulos nos cards | 2026-05-14
-> Contexto: implementa√ß√£o da funcionalidade de tradu√ß√£o de t√≠tulos dos cards conforme TODO I.3.
-> Cards devem mostrar t√≠tulos no idioma configurado em `display_language`; tradu√ß√£o ocorre
+### KOSMOS: I.3 ó TraduÁ„o autom·tica dos tÌtulos nos cards | 2026-05-14
+> Contexto: implementaÁ„o da funcionalidade de traduÁ„o de tÌtulos dos cards conforme TODO I.3.
+> Cards devem mostrar tÌtulos no idioma configurado em `display_language`; traduÁ„o ocorre
 > em background ao abrir o feed, sem bloquear a UI.
 
 #### KOSMOS
-- [x] **Adicionar campo `display_language: ""` ao `config.py`** ‚Äî string vazia significa sem
-  tradu√ß√£o; qualquer c√≥digo ISO (ex: `"pt"`, `"en"`) ativa a tradu√ß√£o dos t√≠tulos dos cards
-  para aquele idioma. Distinto de `default_translation_lang` que √© do reader.
-- [x] **Criar `app/core/title_translator.py`** ‚Äî `TitleTranslator(QThread)` com fila e cache
-  em mem√≥ria (`dict[article_id, translated_title]`). Emite `title_translated(int, str)`.
-  Ao mudar `target_lang`, limpa o cache. Roda com prioridade BELOW_NORMAL. Se artigo j√° est√°
-  no idioma alvo (detectado via `article.language` do frontmatter ou c√≥digo do feed), emite
-  o t√≠tulo original sem chamar a API.
-- [x] **Adicionar seletor de `display_language` na `settings_view.py`** ‚Äî combo com op√ß√µes:
-  "Original (sem tradu√ß√£o)" + idiomas de `TARGET_LANGUAGE_NAMES` do `translator.py`. Persiste
+- [x] **Adicionar campo `display_language: ""` ao `config.py`** ó string vazia significa sem
+  traduÁ„o; qualquer cÛdigo ISO (ex: `"pt"`, `"en"`) ativa a traduÁ„o dos tÌtulos dos cards
+  para aquele idioma. Distinto de `default_translation_lang` que È do reader.
+- [x] **Criar `app/core/title_translator.py`** ó `TitleTranslator(QThread)` com fila e cache
+  em memÛria (`dict[article_id, translated_title]`). Emite `title_translated(int, str)`.
+  Ao mudar `target_lang`, limpa o cache. Roda com prioridade BELOW_NORMAL. Se artigo j· est·
+  no idioma alvo (detectado via `article.language` do frontmatter ou cÛdigo do feed), emite
+  o tÌtulo original sem chamar a API.
+- [x] **Adicionar seletor de `display_language` na `settings_view.py`** ó combo com opÁıes:
+  "Original (sem traduÁ„o)" + idiomas de `TARGET_LANGUAGE_NAMES` do `translator.py`. Persiste
   em `config.set("display_language", code)`.
-- [x] **Atualizar cards em tempo real durante tradu√ß√£o** ‚Äî `ArticleCard.update_title(text)`
+- [x] **Atualizar cards em tempo real durante traduÁ„o** ó `ArticleCard.update_title(text)`
   atualiza `self._title_lbl.setText(text)`. Views (`feed_list_view`, `unified_feed_view`)
-  exp√µem `update_card_title(article_id, translated)` para o handler do sinal.
-- [x] **Iniciar tradu√ß√£o ao carregar cards** ‚Äî em `_populate_cards()` de ambas as views,
-  ap√≥s criar os cards, emitir sinal `translation_requested(list[tuple[int,str,str|None]])`
+  expıem `update_card_title(article_id, translated)` para o handler do sinal.
+- [x] **Iniciar traduÁ„o ao carregar cards** ó em `_populate_cards()` de ambas as views,
+  apÛs criar os cards, emitir sinal `translation_requested(list[tuple[int,str,str|None]])`
   com `(article_id, title, article.language)` de cada artigo. MainWindow conecta esse sinal
   ao `TitleTranslator.enqueue_batch()`.
 
-### Mnemosyne: multi-cole√ß√£o com query unificada | 2026-05-14
-> Contexto: o modelo atual de "cole√ß√£o ativa" faz o RAG consultar apenas uma fonte por vez.
-> O comportamento correto √© consultar todas as cole√ß√µes habilitadas simultaneamente e rankear
-> os resultados pelos pesos de source_type j√° existentes (scientific > book > library > transcript).
+### Mnemosyne: multi-coleÁ„o com query unificada | 2026-05-14
+> Contexto: o modelo atual de "coleÁ„o ativa" faz o RAG consultar apenas uma fonte por vez.
+> O comportamento correto È consultar todas as coleÁıes habilitadas simultaneamente e rankear
+> os resultados pelos pesos de source_type j· existentes (scientific > book > library > transcript).
 
 #### Mnemosyne
-- [x] **`core/indexer.py` ‚Äî `load_all_vectorstores(config)`** ‚Äî nova fun√ß√£o que retorna
-  `list[tuple[Chroma, CollectionConfig]]` para todas as cole√ß√µes habilitadas (`coll.enabled`
+- [x] **`core/indexer.py` ó `load_all_vectorstores(config)`** ó nova funÁ„o que retorna
+  `list[tuple[Chroma, CollectionConfig]]` para todas as coleÁıes habilitadas (`coll.enabled`
   e `coll.exists`). Substituir o uso de `load_vectorstore(config)` (single-active) por esta
-  fun√ß√£o nos workers de query. Manter `load_vectorstore` para compatibilidade com indexa√ß√£o.
+  funÁ„o nos workers de query. Manter `load_vectorstore` para compatibilidade com indexaÁ„o.
 
-- [x] **`core/rag.py` ‚Äî retrieval multi-vectorstore** ‚Äî modificar `query_rag()` e as fun√ß√µes
+- [x] **`core/rag.py` ó retrieval multi-vectorstore** ó modificar `query_rag()` e as funÁıes
   internas `_hybrid_retrieve`, `_multi_query_retrieve`, `_hyde_retrieve`, `_iterative_retrieve`
-  para aceitar `vectorstores: list[tuple[Chroma, CollectionConfig]]` em vez de um √∫nico `Chroma`.
-  L√≥gica: rodar retrieval em cada vectorstore separadamente, juntar os candidatos, deduplicar
-  por conte√∫do id√™ntico (`doc.page_content`), aplicar os pesos de `SOURCE_WEIGHTS` existentes
-  no ranking final. BM25 continua sendo um √≠ndice √∫nico por cole√ß√£o ‚Äî agregar scores ponderados.
+  para aceitar `vectorstores: list[tuple[Chroma, CollectionConfig]]` em vez de um ˙nico `Chroma`.
+  LÛgica: rodar retrieval em cada vectorstore separadamente, juntar os candidatos, deduplicar
+  por conte˙do idÍntico (`doc.page_content`), aplicar os pesos de `SOURCE_WEIGHTS` existentes
+  no ranking final. BM25 continua sendo um Ìndice ˙nico por coleÁ„o ó agregar scores ponderados.
 
-- [x] **`gui/main_window.py` ‚Äî carregar todos os vectorstores no init** ‚Äî em `_post_config_init`,
+- [x] **`gui/main_window.py` ó carregar todos os vectorstores no init** ó em `_post_config_init`,
   substituir `load_vectorstore(config)` por `load_all_vectorstores(config)` e armazenar em
   `self.vectorstores: list[tuple[Chroma, CollectionConfig]]`. Passar a lista para todos os
   workers de query (AskWorker, SummaryWorker, FAQWorker etc.).
 
-- [x] **`gui/main_window.py` ‚Äî "Indexar tudo"** ‚Äî o bot√£o deve: (1) iterar sobre todas as
-  cole√ß√µes habilitadas, (2) deletar o `chroma_db` de cada uma (`shutil.rmtree(coll.persist_dir,
+- [x] **`gui/main_window.py` ó "Indexar tudo"** ó o bot„o deve: (1) iterar sobre todas as
+  coleÁıes habilitadas, (2) deletar o `chroma_db` de cada uma (`shutil.rmtree(coll.persist_dir,
   ignore_errors=True)`), (3) re-indexar cada uma sequencialmente chamando `build_vectorstore`
-  para cada cole√ß√£o com seu `watched_dir` e `persist_dir` respectivos.
+  para cada coleÁ„o com seu `watched_dir` e `persist_dir` respectivos.
 
-- [x] **`gui/main_window.py` ‚Äî bot√£o "Ativar" ‚Üí "Habilitar/Desabilitar"** ‚Äî renomear e mudar
+- [x] **`gui/main_window.py` ó bot„o "Ativar" ? "Habilitar/Desabilitar"** ó renomear e mudar
   comportamento: em vez de setar `active_collection`, faz toggle em `coll.enabled` e salva
-  config. Cole√ß√µes desabilitadas s√£o exclu√≠das da query unificada. Remover toda l√≥gica de
-  `active_collection` da query (manter apenas para fallback de indexa√ß√£o).
+  config. ColeÁıes desabilitadas s„o excluÌdas da query unificada. Remover toda lÛgica de
+  `active_collection` da query (manter apenas para fallback de indexaÁ„o).
 
-- [x] **`core/watcher.py` / `core/idle_indexer.py` ‚Äî watcher multi-cole√ß√£o** ‚Äî o watcher atual
-  monitora s√≥ `config.watched_dir` (cole√ß√£o ativa). Atualizar para monitorar os paths de
-  todas as cole√ß√µes habilitadas. Cada arquivo novo recebe `source_type` da sua cole√ß√£o.
+- [x] **`core/watcher.py` / `core/idle_indexer.py` ó watcher multi-coleÁ„o** ó o watcher atual
+  monitora sÛ `config.watched_dir` (coleÁ„o ativa). Atualizar para monitorar os paths de
+  todas as coleÁıes habilitadas. Cada arquivo novo recebe `source_type` da sua coleÁ„o.
 
-### Pesquisa: Extra√ß√£o de Temas, Visualiza√ß√£o Interativa, Perguntas Follow-up e Persona RAG | 2026-05-14
-> Contexto: funcionalidades de descoberta de conhecimento e experi√™ncia de usu√°rio para o Mnemosyne:
+### Pesquisa: ExtraÁ„o de Temas, VisualizaÁ„o Interativa, Perguntas Follow-up e Persona RAG | 2026-05-14
+> Contexto: funcionalidades de descoberta de conhecimento e experiÍncia de usu·rio para o Mnemosyne:
 > (1) extrair temas dos documentos indexados e exibi-los como nuvem de palavras e mapa mental
-> interativo clic√°vel; (2) sugerir perguntas de follow-up ap√≥s cada resposta; (3) mecanismos de
-> aprendizado al√©m do Knowledge Reflection existente; (4) persona de bibliotec√°ria especialista.
+> interativo clic·vel; (2) sugerir perguntas de follow-up apÛs cada resposta; (3) mecanismos de
+> aprendizado alÈm do Knowledge Reflection existente; (4) persona de bibliotec·ria especialista.
 
 #### Mnemosyne
 
-- [x] **`core/topic_extractor.py` ‚Äî extra√ß√£o de temas com BERTopic + KeyBERT** ‚Äî criar m√≥dulo
+- [x] **`core/topic_extractor.py` ó extraÁ„o de temas com BERTopic + KeyBERT** ó criar mÛdulo
   `TopicExtractor` que recupera embeddings e textos do ChromaDB via
-  `collection.get(include=["embeddings","documents","metadatas"])` (reutilizando os vetores j√°
+  `collection.get(include=["embeddings","documents","metadatas"])` (reutilizando os vetores j·
   calculados, sem reprocessar arquivos), aplica UMAP + HDBSCAN + c-TF-IDF (pipeline BERTopic)
-  para extrair t√≥picos do corpus inteiro, e KeyBERT por documento para keywords individuais.
-  Para corpora < 30 documentos, usar s√≥ c-TF-IDF sem clustering (mais est√°vel). Par√¢metro
+  para extrair tÛpicos do corpus inteiro, e KeyBERT por documento para keywords individuais.
+  Para corpora < 30 documentos, usar sÛ c-TF-IDF sem clustering (mais est·vel). Par‚metro
   `min_cluster_size = max(2, len(docs)//50)`. Salvar resultado em
-  `{coll.mnemosyne_dir}/topics.json` com: lista de t√≥picos (top-10 palavras + scores), mapeamento
-  `doc_id ‚Üí topic_id`, e keywords por documento. Depend√™ncias: `bertopic`, `keybert[base]`
-  (Model2Vec, sem PyTorch), `umap-learn`, `hdbscan`. Disparar ap√≥s indexa√ß√£o completa e ao
-  clicar em bot√£o "Atualizar temas" na aba Temas.
+  `{coll.mnemosyne_dir}/topics.json` com: lista de tÛpicos (top-10 palavras + scores), mapeamento
+  `doc_id ? topic_id`, e keywords por documento. DependÍncias: `bertopic`, `keybert[base]`
+  (Model2Vec, sem PyTorch), `umap-learn`, `hdbscan`. Disparar apÛs indexaÁ„o completa e ao
+  clicar em bot„o "Atualizar temas" na aba Temas.
 
-- [x] **`gui/topics_view.py` ‚Äî aba "Temas" com nuvem de palavras clic√°vel** ‚Äî nova aba no
+- [x] **`gui/topics_view.py` ó aba "Temas" com nuvem de palavras clic·vel** ó nova aba no
   `QStackedWidget` principal. Sub-modo "Nuvem": gera imagem via `wordcloud.WordCloud
   .generate_from_frequencies(freq_dict).to_image()`, converte para `QPixmap` e exibe em
   `QLabel`. Overlay de clique: usar `WordCloud.layout_` para mapear coordenadas de cada
-  palavra na imagem, sobrepor `QGraphicsScene` transparente com `QGraphicsRectItem` invis√≠veis
+  palavra na imagem, sobrepor `QGraphicsScene` transparente com `QGraphicsRectItem` invisÌveis
   nas bounding boxes; `mousePressEvent` detecta qual palavra foi clicada e emite sinal
-  `theme_clicked(str)`. A `MainWindow` conecta `theme_clicked` ‚Üí disparar query no chat
+  `theme_clicked(str)`. A `MainWindow` conecta `theme_clicked` ? disparar query no chat
   "Fale sobre [tema]: o que os documentos do acervo dizem?".
 
-- [x] **`gui/topics_view.py` ‚Äî mapa mental interativo com QGraphicsScene + NetworkX** ‚Äî sub-modo
-  "Mapa" na mesma aba: construir grafo NetworkX com n√≥s de t√≥pico (cor azul) e n√≥s de documento
-  (cor cinza), arestas indicando pertencimento ao cluster. Calcular posi√ß√µes via
-  `nx.kamada_kawai_layout()`. Renderizar no `QGraphicsScene`: n√≥s como `QGraphicsEllipseItem`
-  com label `QGraphicsTextItem`, arestas como `QGraphicsLineItem`. N√≥s respondem a clique via
-  `mousePressEvent` em subclasse de `QGraphicsEllipseItem`: n√≥s de t√≥pico ‚Üí disparam query
-  no chat; n√≥s de documento ‚Üí abrem o arquivo no gerenciador de arquivos (`os.startfile` no
-  Windows, `xdg-open` no Linux). N√£o usar pyvis/WebEngine para evitar depend√™ncia extra de
-  ~100 MB. Usar `QGraphicsView` com zoom via `wheelEvent` (fator 1.15√ó) e pan via drag com
-  bot√£o do meio.
+- [x] **`gui/topics_view.py` ó mapa mental interativo com QGraphicsScene + NetworkX** ó sub-modo
+  "Mapa" na mesma aba: construir grafo NetworkX com nÛs de tÛpico (cor azul) e nÛs de documento
+  (cor cinza), arestas indicando pertencimento ao cluster. Calcular posiÁıes via
+  `nx.kamada_kawai_layout()`. Renderizar no `QGraphicsScene`: nÛs como `QGraphicsEllipseItem`
+  com label `QGraphicsTextItem`, arestas como `QGraphicsLineItem`. NÛs respondem a clique via
+  `mousePressEvent` em subclasse de `QGraphicsEllipseItem`: nÛs de tÛpico ? disparam query
+  no chat; nÛs de documento ? abrem o arquivo no gerenciador de arquivos (`os.startfile` no
+  Windows, `xdg-open` no Linux). N„o usar pyvis/WebEngine para evitar dependÍncia extra de
+  ~100 MB. Usar `QGraphicsView` com zoom via `wheelEvent` (fator 1.15◊) e pan via drag com
+  bot„o do meio.
 
-- [x] **`gui/workers.py` ‚Äî `SuggestQuestionsWorker(QThread)` para perguntas follow-up** ‚Äî worker
-  separado que inicia logo ap√≥s o `AskWorker` terminar (conectar ao sinal `finished` do
-  AskWorker no `main_window.py`). Recebe: pergunta do usu√°rio, resposta gerada, e os 3
+- [x] **`gui/workers.py` ó `SuggestQuestionsWorker(QThread)` para perguntas follow-up** ó worker
+  separado que inicia logo apÛs o `AskWorker` terminar (conectar ao sinal `finished` do
+  AskWorker no `main_window.py`). Recebe: pergunta do usu·rio, resposta gerada, e os 3
   primeiros chunks recuperados (contexto). Monta prompt pedindo 3 perguntas de aprofundamento
-  que: explorem aspectos n√£o cobertos, conectem com outros documentos, ou pe√ßam exemplos.
-  Temperatura 0.9. Emite `questions_ready(list[str])`. S√≥ executa se `suggest_questions: bool`
+  que: explorem aspectos n„o cobertos, conectem com outros documentos, ou peÁam exemplos.
+  Temperatura 0.9. Emite `questions_ready(list[str])`. SÛ executa se `suggest_questions: bool`
   estiver True na config.
 
-- [x] **`gui/main_window.py` ‚Äî exibir chips de perguntas sugeridas no chat** ‚Äî ao receber
+- [x] **`gui/main_window.py` ó exibir chips de perguntas sugeridas no chat** ó ao receber
   `questions_ready(list[str])`, criar 3 `QPushButton` compactos com `setObjectName("chip")`
-  e CSS rounded (border-radius 12px, padding 4px 10px) logo abaixo da √∫ltima resposta no
-  `QScrollArea` do chat. Ao clicar, inserir texto no campo de input e submeter. Os chips s√£o
-  **persistentes** ‚Äî n√£o t√™m timer e n√£o somem automaticamente; s√£o removidos apenas quando
-  o usu√°rio envia uma nova mensagem manualmente (o `QWidget` dos chips da mensagem anterior
-  √© destru√≠do quando a pr√≥xima resposta chega). Comportamento id√™ntico ao NotebookLM. Adicionar
-  toggle `suggest_questions` nas Settings (padr√£o: False ‚Äî opt-in).
+  e CSS rounded (border-radius 12px, padding 4px 10px) logo abaixo da ˙ltima resposta no
+  `QScrollArea` do chat. Ao clicar, inserir texto no campo de input e submeter. Os chips s„o
+  **persistentes** ó n„o tÍm timer e n„o somem automaticamente; s„o removidos apenas quando
+  o usu·rio envia uma nova mensagem manualmente (o `QWidget` dos chips da mensagem anterior
+  È destruÌdo quando a prÛxima resposta chega). Comportamento idÍntico ao NotebookLM. Adicionar
+  toggle `suggest_questions` nas Settings (padr„o: False ó opt-in).
 
-- [x] **`core/knowledge_graph.py` ‚Äî grafo de conhecimento inter-documentos** ‚Äî m√≥dulo
+- [x] **`core/knowledge_graph.py` ó grafo de conhecimento inter-documentos** ó mÛdulo
   `KnowledgeGraph` que extrai entidades de cada chunk indexado usando KeyBERT (top-5 keywords
-  por chunk) e constr√≥i um grafo de co-ocorr√™ncia com NetworkX: n√≥s s√£o entidades/keywords,
-  arestas s√£o documentos que compartilham a mesma entidade com peso = n√∫mero de documentos
+  por chunk) e constrÛi um grafo de co-ocorrÍncia com NetworkX: nÛs s„o entidades/keywords,
+  arestas s„o documentos que compartilham a mesma entidade com peso = n˙mero de documentos
   em comum. Persistir em `{coll.mnemosyne_dir}/knowledge_graph.json` (nodes + edges como
-  JSON serializable). M√©todo `KnowledgeGraph.score(query_keywords, docs)` re-ranqueia
+  JSON serializable). MÈtodo `KnowledgeGraph.score(query_keywords, docs)` re-ranqueia
   candidatos do retrieval somando grau de conectividade das entidades da query com cada
-  documento ‚Äî documentos mais "centrais" na rede de conhecimento recebem boost. M√©todo
+  documento ó documentos mais "centrais" na rede de conhecimento recebem boost. MÈtodo
   `KnowledgeGraph.get_neighbors(entity)` retorna documentos e entidades relacionadas (para
   o mapa mental). Disparar `KnowledgeGraph.update(new_chunks)` no `_on_index_finished`.
 
-- [x] **`core/config.py` ‚Äî campo `persona_prompt: str` com persona Mnemosyne** ‚Äî adicionar
+- [x] **`core/config.py` ó campo `persona_prompt: str` com persona Mnemosyne** ó adicionar
   campo ao `AppConfig` com default sendo o prompt completo da assistente Mnemosyne (ver texto
-  na pesquisa em `pesquisas.md` ‚Äî sess√£o "Extra√ß√£o de Temas..." de 2026-05-14, se√ß√£o 5.2).
-  O nome da assistente √© **Mnemosyne** (n√£o "Mnem√™"). Persistir em `local_config.json`. Em
-  `core/rag.py`, injetar `config.persona_prompt` como primeira se√ß√£o do system message em
-  todos os chains (`AskWorker`, `SummarizeWorker`, `FAQWorker`, `GuideWorker`). A se√ß√£o de
-  persona precede a instru√ß√£o de formato e o contexto RAG ‚Äî nunca sobrescrever instru√ß√µes de
+  na pesquisa em `pesquisas.md` ó sess„o "ExtraÁ„o de Temas..." de 2026-05-14, seÁ„o 5.2).
+  O nome da assistente È **Mnemosyne** (n„o "MnemÍ"). Persistir em `local_config.json`. Em
+  `core/rag.py`, injetar `config.persona_prompt` como primeira seÁ„o do system message em
+  todos os chains (`AskWorker`, `SummarizeWorker`, `FAQWorker`, `GuideWorker`). A seÁ„o de
+  persona precede a instruÁ„o de formato e o contexto RAG ó nunca sobrescrever instruÁıes de
   formato com a persona.
 
-- [x] **`gui/settings_view.py` ‚Äî editor de persona nas Settings** ‚Äî adicionar `QTextEdit`
-  expans√≠vel (min 120px height) com label "Personalidade do assistente" na se√ß√£o de
-  configura√ß√µes LLM. Bot√£o "Restaurar padr√£o" restaura o prompt da Mnemosyne. A edi√ß√£o
-  √© salva imediatamente em `local_config.json` via `config.set("persona_prompt", text)`.
-  Exibir preview: ao clicar "Testar persona", disparar uma query de teste ("Ol√°, apresente-se")
-  e exibir a resposta numa caixa de di√°logo.
+- [x] **`gui/settings_view.py` ó editor de persona nas Settings** ó adicionar `QTextEdit`
+  expansÌvel (min 120px height) com label "Personalidade do assistente" na seÁ„o de
+  configuraÁıes LLM. Bot„o "Restaurar padr„o" restaura o prompt da Mnemosyne. A ediÁ„o
+  È salva imediatamente em `local_config.json` via `config.set("persona_prompt", text)`.
+  Exibir preview: ao clicar "Testar persona", disparar uma query de teste ("Ol·, apresente-se")
+  e exibir a resposta numa caixa de di·logo.
 
-### Pesquisa: NotebookLM ‚Äî Funcionalidades e Evolu√ß√£o 2025‚Äì2026 | 2026-05-14
-> Contexto: pesquisa do NotebookLM revelou tr√™s problemas no Mnemosyne: (1) Studio vol√°til ‚Äî
-> outputs sobrescrevem uns aos outros e somem ao fechar; (2) fragmenta√ß√£o ‚Äî Resumo/FAQ/Guide
-> s√£o sub-p√°ginas separadas mas s√£o todos outputs gerados por LLM, deveriam ser tipos do Studio;
-> (3) chat sem persist√™ncia ‚Äî conversas se perdem ao fechar o app. Decis√£o arquitetural:
+### Pesquisa: NotebookLM ó Funcionalidades e EvoluÁ„o 2025ñ2026 | 2026-05-14
+> Contexto: pesquisa do NotebookLM revelou trÍs problemas no Mnemosyne: (1) Studio vol·til ó
+> outputs sobrescrevem uns aos outros e somem ao fechar; (2) fragmentaÁ„o ó Resumo/FAQ/Guide
+> s„o sub-p·ginas separadas mas s„o todos outputs gerados por LLM, deveriam ser tipos do Studio;
+> (3) chat sem persistÍncia ó conversas se perdem ao fechar o app. Decis„o arquitetural:
 > chat = notebook, sempre salvo. Studio outputs = arquivos independentes com metadados de
-> autoria (Mnemosyne os trata como "reflex√µes pr√≥prias" e o ecossistema pode index√°-los).
+> autoria (Mnemosyne os trata como "reflexıes prÛprias" e o ecossistema pode index·-los).
 
 #### Mnemosyne
 
-- [x] **`core/studio_output.py` ‚Äî dataclass `StudioOutput` com persist√™ncia como arquivo** ‚Äî
+- [x] **`core/studio_output.py` ó dataclass `StudioOutput` com persistÍncia como arquivo** ó
   criar dataclass com campos: `id: str` (UUID4), `type: str` (Briefing/FAQ/Guide/Flashcards/etc.),
-  `title: str` (gerado ou edit√°vel), `content: str`, `table_data: list[list[str]] | None`,
-  `created_at: str` (ISO 8601), `collection_name: str`, `notebook_id: str | None`. M√©todo
+  `title: str` (gerado ou edit·vel), `content: str`, `table_data: list[list[str]] | None`,
+  `created_at: str` (ISO 8601), `collection_name: str`, `notebook_id: str | None`. MÈtodo
   `to_markdown_file(path)` salva em `{coll.mnemosyne_dir}/studio/{id}.md` com frontmatter YAML:
   `source: mnemosyne_studio`, `type: studio_output`, `studio_type: {type}`, `collection: {name}`,
-  `created_at: {dt}`, `notebook_id: {id}`. O frontmatter marca o arquivo como gerado pela pr√≥pria
-  Mnemosyne ‚Äî o indexador deve reconhecer `source: mnemosyne_studio` e atribuir `source_type`
-  especial (ex: `"thought"`) com weight pr√≥prio em `SOURCE_WEIGHTS`, para que a Mnemosyne saiba
-  que est√° consultando seus pr√≥prios "pensamentos" e n√£o uma fonte externa.
+  `created_at: {dt}`, `notebook_id: {id}`. O frontmatter marca o arquivo como gerado pela prÛpria
+  Mnemosyne ó o indexador deve reconhecer `source: mnemosyne_studio` e atribuir `source_type`
+  especial (ex: `"thought"`) com weight prÛprio em `SOURCE_WEIGHTS`, para que a Mnemosyne saiba
+  que est· consultando seus prÛprios "pensamentos" e n„o uma fonte externa.
 
-- [x] **`core/studio_store.py` ‚Äî camada de persist√™ncia dos outputs do Studio** ‚Äî `StudioStore`
-  com m√©todos: `save(output: StudioOutput)`, `load_all(collection_name) ‚Üí list[StudioOutput]`,
-  `delete(id)`, `get(id) ‚Üí StudioOutput`. L√™/escreve de `{coll.mnemosyne_dir}/studio/`. Ao
-  carregar, l√™ os arquivos `.md` e faz parse do frontmatter YAML. O diret√≥rio √© criado
-  automaticamente se n√£o existir. `load_all` retorna lista ordenada por `created_at` decrescente.
+- [x] **`core/studio_store.py` ó camada de persistÍncia dos outputs do Studio** ó `StudioStore`
+  com mÈtodos: `save(output: StudioOutput)`, `load_all(collection_name) ? list[StudioOutput]`,
+  `delete(id)`, `get(id) ? StudioOutput`. LÍ/escreve de `{coll.mnemosyne_dir}/studio/`. Ao
+  carregar, lÍ os arquivos `.md` e faz parse do frontmatter YAML. O diretÛrio È criado
+  automaticamente se n„o existir. `load_all` retorna lista ordenada por `created_at` decrescente.
 
-- [x] **`gui/studio_tile_widget.py` ‚Äî card de output do Studio** ‚Äî `StudioTileWidget(QWidget)`
-  exibindo: badge colorido com o tipo (cor diferente por tipo ‚Äî Briefing azul, FAQ verde,
-  Guide roxo, Flashcards laranja, etc.), t√≠tulo truncado em 1 linha, preview das primeiras
-  80 chars do conte√∫do, data/hora. Dois bot√µes no hover: ‚úè abrir output completo (abre
-  `StudioOutputDialog`), üóë deletar (confirma√ß√£o). Emite `output_opened(StudioOutput)` e
+- [x] **`gui/studio_tile_widget.py` ó card de output do Studio** ó `StudioTileWidget(QWidget)`
+  exibindo: badge colorido com o tipo (cor diferente por tipo ó Briefing azul, FAQ verde,
+  Guide roxo, Flashcards laranja, etc.), tÌtulo truncado em 1 linha, preview das primeiras
+  80 chars do conte˙do, data/hora. Dois botıes no hover: ? abrir output completo (abre
+  `StudioOutputDialog`), ?? deletar (confirmaÁ„o). Emite `output_opened(StudioOutput)` e
   `output_deleted(str)`.
 
-- [x] **`gui/main_window.py` ‚Äî Studio tab redesenhado como galeria de tiles** ‚Äî substituir o
-  `studio_result_text` (`QTextEdit` √∫nico) por um `QScrollArea` com `QFlowLayout` (ou
-  `QVBoxLayout`) de `StudioTileWidget`. Os controles de gera√ß√£o (combo tipo + bot√£o Gerar)
+- [x] **`gui/main_window.py` ó Studio tab redesenhado como galeria de tiles** ó substituir o
+  `studio_result_text` (`QTextEdit` ˙nico) por um `QScrollArea` com `QFlowLayout` (ou
+  `QVBoxLayout`) de `StudioTileWidget`. Os controles de geraÁ„o (combo tipo + bot„o Gerar)
   permanecem no topo. Ao clicar "Gerar": (1) executa `StudioWorker` como antes; (2) ao
   terminar, cria `StudioOutput`, persiste via `StudioStore`, adiciona novo tile no topo
   da galeria. Ao inicializar, carrega tiles existentes via `StudioStore.load_all()`. Remover
-  os bot√µes "Exportar .md" e "Exportar CSV" da area central ‚Äî mov√™-los para o `StudioOutputDialog`.
+  os botıes "Exportar .md" e "Exportar CSV" da area central ó movÍ-los para o `StudioOutputDialog`.
 
-- [x] **`gui/main_window.py` ‚Äî unificar Resumo e FAQ como tipos do Studio** ‚Äî mover as
-  sub-p√°ginas "Resumo" e "FAQ" da aba An√°lise para dentro do Studio como tipos no combo:
-  adicionar "Resumo" e "FAQ" ao `studio_type_combo`. Remover as sub-p√°ginas separadas
-  `_pill_summary` e `_pill_faq` e seus respectivos `QTextEdit`. O conte√∫do gerado passa
-  a persistir como `StudioOutput` como qualquer outro tipo. A sub-p√°gina "Guide" permanece
-  separada por ter comportamento interativo pr√≥prio (perguntas clic√°veis + p√©rolas
-  escondidas), mas ganha tamb√©m um bot√£o "Salvar no Studio" que cria um `StudioOutput`
-  do tipo Guide com o conte√∫do gerado.
+- [x] **`gui/main_window.py` ó unificar Resumo e FAQ como tipos do Studio** ó mover as
+  sub-p·ginas "Resumo" e "FAQ" da aba An·lise para dentro do Studio como tipos no combo:
+  adicionar "Resumo" e "FAQ" ao `studio_type_combo`. Remover as sub-p·ginas separadas
+  `_pill_summary` e `_pill_faq` e seus respectivos `QTextEdit`. O conte˙do gerado passa
+  a persistir como `StudioOutput` como qualquer outro tipo. A sub-p·gina "Guide" permanece
+  separada por ter comportamento interativo prÛprio (perguntas clic·veis + pÈrolas
+  escondidas), mas ganha tambÈm um bot„o "Salvar no Studio" que cria um `StudioOutput`
+  do tipo Guide com o conte˙do gerado.
 
-- [x] **`core/rag.py` / `core/indexer.py` ‚Äî reconhecer outputs do Studio como fonte especial** ‚Äî
-  adicionar `"thought"` a `SOURCE_WEIGHTS` (ex: 1.3 ‚Äî acima de transcript, abaixo de book)
+- [x] **`core/rag.py` / `core/indexer.py` ó reconhecer outputs do Studio como fonte especial** ó
+  adicionar `"thought"` a `SOURCE_WEIGHTS` (ex: 1.3 ó acima de transcript, abaixo de book)
   e ao fallback de `source_type` no loader. No `MnemosyneLoaders`, arquivos com frontmatter
   `source: mnemosyne_studio` recebem `metadata["source_type"] = "thought"` automaticamente.
-  Isso permite que respostas do RAG possam citar "Conforme anotado na an√°lise anterior‚Ä¶"
-  ao recuperar um output do Studio ‚Äî a Mnemosyne fica "ciente" de seus pr√≥prios pensamentos.
+  Isso permite que respostas do RAG possam citar "Conforme anotado na an·lise anteriorÖ"
+  ao recuperar um output do Studio ó a Mnemosyne fica "ciente" de seus prÛprios pensamentos.
 
-- [x] **`gui/main_window.py` ‚Äî bot√£o "Salvar no Studio" nas respostas do chat** ‚Äî cada bloco
-  de resposta da Mnemosyne no `QScrollArea` do chat recebe um bot√£o compacto "‚äï Studio" no
-  canto inferior direito. Ao clicar, abre di√°logo com combo de tipo (An√°lise, Cita√ß√£o,
-  Anota√ß√£o) e campo de t√≠tulo edit√°vel. Confirmar cria `StudioOutput` com o texto da resposta
+- [x] **`gui/main_window.py` ó bot„o "Salvar no Studio" nas respostas do chat** ó cada bloco
+  de resposta da Mnemosyne no `QScrollArea` do chat recebe um bot„o compacto "? Studio" no
+  canto inferior direito. Ao clicar, abre di·logo com combo de tipo (An·lise, CitaÁ„o,
+  AnotaÁ„o) e campo de tÌtulo edit·vel. Confirmar cria `StudioOutput` com o texto da resposta
   e salva via `StudioStore`. O tile aparece imediatamente na galeria do Studio.
 
-- [x] **`gui/main_window.py` ‚Äî Flashcards como tipo do Studio com progresso** ‚Äî adicionar
+- [x] **`gui/main_window.py` ó Flashcards como tipo do Studio com progresso** ó adicionar
   "Flashcards" ao `studio_type_combo`. O `StudioWorker` para tipo Flashcards manda prompt
   ao LLM pedindo 10-15 pares pergunta/resposta sobre os documentos indexados (formato JSON).
   O `StudioOutput` para Flashcards guarda `content` como JSON de cards e `table_data` como
   `progress: {card_id: "correct"|"wrong"|"unseen"}`. Ao abrir um tile de Flashcards, exibe
   `FlashcardsDialog`: cards um por vez com `QStackedWidget` (frente = pergunta, verso =
-  resposta), bot√µes "Acertei ‚úì" e "Errei ‚úó" que atualizam o progresso e salvam via
-  `StudioStore.save()`, shuffle do deck, filtro "S√≥ erros". Progresso persiste entre sess√µes.
+  resposta), botıes "Acertei ?" e "Errei ?" que atualizam o progresso e salvam via
+  `StudioStore.save()`, shuffle do deck, filtro "SÛ erros". Progresso persiste entre sessıes.
 
-- [x] **`gui/main_window.py` ‚Äî Guide como tipo do Studio** ‚Äî adicionar "Guide" ao
-  `studio_type_combo` (al√©m de manter a sub-p√°gina Guide da An√°lise). Ao gerar, cria
-  `StudioOutput` do tipo Guide com o conte√∫do completo (resumo + perguntas + p√©rolas).
-  O tile do Guide, ao ser aberto, exibe as perguntas como chips clic√°veis que disparam
-  query no chat ‚Äî mesma interatividade da sub-p√°gina Guide, mas agora persistindo o
-  conte√∫do entre sess√µes.
+- [x] **`gui/main_window.py` ó Guide como tipo do Studio** ó adicionar "Guide" ao
+  `studio_type_combo` (alÈm de manter a sub-p·gina Guide da An·lise). Ao gerar, cria
+  `StudioOutput` do tipo Guide com o conte˙do completo (resumo + perguntas + pÈrolas).
+  O tile do Guide, ao ser aberto, exibe as perguntas como chips clic·veis que disparam
+  query no chat ó mesma interatividade da sub-p·gina Guide, mas agora persistindo o
+  conte˙do entre sessıes.
 
-- [x] **`core/notebook_store.py` + `core/notebook.py` ‚Äî notebooks tem√°ticos persistentes** ‚Äî
-  Decis√£o arquitetural: **chat = notebook**. Cada notebook √© uma conversa tem√°tica salva.
+- [x] **`core/notebook_store.py` + `core/notebook.py` ó notebooks tem·ticos persistentes** ó
+  Decis„o arquitetural: **chat = notebook**. Cada notebook È uma conversa tem·tica salva.
   Dataclass `Notebook`: `id: str` (UUID4), `name: str`, `created_at: str`, `updated_at: str`,
-  `collection_names: list[str]` (cole√ß√µes que este notebook consulta; vazio = todas habilitadas),
-  `description: str`. Cada notebook tem diret√≥rio pr√≥prio em
+  `collection_names: list[str]` (coleÁıes que este notebook consulta; vazio = todas habilitadas),
+  `description: str`. Cada notebook tem diretÛrio prÛprio em
   `{data_dir}/notebooks/{id}/` com: `metadata.json`, `history.jsonl` (mensagens), `memory.json`
-  (contexto de sess√£o). Os outputs do Studio de um notebook ficam em
-  `{data_dir}/notebooks/{id}/studio/`. `NotebookStore` com: `create(name, collections) ‚Üí Notebook`,
-  `list_all() ‚Üí list[Notebook]`, `load(id) ‚Üí Notebook`, `save(notebook)`, `delete(id)`.
+  (contexto de sess„o). Os outputs do Studio de um notebook ficam em
+  `{data_dir}/notebooks/{id}/studio/`. `NotebookStore` com: `create(name, collections) ? Notebook`,
+  `list_all() ? list[Notebook]`, `load(id) ? Notebook`, `save(notebook)`, `delete(id)`.
 
-- [x] **`gui/notebooks_panel.py` ‚Äî painel de notebooks na sidebar** ‚Äî `NotebooksPanel(QWidget)`
-  exibido na parte superior (ou como se√ß√£o colaps√°vel) da sidebar esquerda. Mostra lista de
-  notebooks como itens clic√°veis com nome + data da √∫ltima mensagem. Bot√£o "+" cria novo
+- [x] **`gui/notebooks_panel.py` ó painel de notebooks na sidebar** ó `NotebooksPanel(QWidget)`
+  exibido na parte superior (ou como seÁ„o colaps·vel) da sidebar esquerda. Mostra lista de
+  notebooks como itens clic·veis com nome + data da ˙ltima mensagem. Bot„o "+" cria novo
   notebook (pede nome; default "Notebook {data}"). Clique num notebook: `MainWindow` carrega
-  o notebook selecionado (muda hist√≥rico do chat, mem√≥ria, tiles do Studio). √çcone de lixeira
-  por item (com confirma√ß√£o). O notebook ativo fica destacado com cor de sele√ß√£o.
+  o notebook selecionado (muda histÛrico do chat, memÛria, tiles do Studio). Õcone de lixeira
+  por item (com confirmaÁ„o). O notebook ativo fica destacado com cor de seleÁ„o.
 
-- [x] **`gui/main_window.py` ‚Äî carregar/salvar hist√≥rico do chat por notebook** ‚Äî ao trocar de
+- [x] **`gui/main_window.py` ó carregar/salvar histÛrico do chat por notebook** ó ao trocar de
   notebook: (1) salvar `history.jsonl` e `memory.json` do notebook atual antes de trocar;
   (2) carregar `history.jsonl` do novo notebook e renderizar as mensagens no `QScrollArea`
-  do chat; (3) carregar `memory.json` e repassar ao contexto de mem√≥ria do RAG; (4) recarregar
+  do chat; (3) carregar `memory.json` e repassar ao contexto de memÛria do RAG; (4) recarregar
   tiles do Studio do notebook novo. A cada nova mensagem enviada/recebida, acrescentar linha
   ao `history.jsonl` do notebook ativo (append-only, nunca sobrescrever). Ao fechar o app
   (`closeEvent`), salvar estado final.
 
-- [x] **`gui/main_window.py` ‚Äî painel de hist√≥rico naveg√°vel** ‚Äî bot√£o "Hist√≥rico" ou √≠cone
+- [x] **`gui/main_window.py` ó painel de histÛrico naveg·vel** ó bot„o "HistÛrico" ou Ìcone
   no chat que abre um `QDialog` listando todas as mensagens do notebook atual agrupadas por
-  data. Filtro de busca por texto. Clicar numa mensagem rola o `QScrollArea` do chat at√©
-  aquela mensagem (scroll to anchor). N√£o √© necess√°rio "restaurar" sess√µes antigas ‚Äî o
-  hist√≥rico inteiro j√° est√° no scroll do chat.
+  data. Filtro de busca por texto. Clicar numa mensagem rola o `QScrollArea` do chat atÈ
+  aquela mensagem (scroll to anchor). N„o È necess·rio "restaurar" sessıes antigas ó o
+  histÛrico inteiro j· est· no scroll do chat.
 
-- [x] **`core/loaders.py` ‚Äî suporte a EPUB** ‚Äî adicionar `EpubLoader` usando a biblioteca
-  `ebooklib`. Extrai cap√≠tulos como documentos separados (um `Document` por cap√≠tulo) com
-  metadados de frontmatter: `title` (livro), `chapter` (nome do cap√≠tulo), `author`,
-  `source_type: "book"`. HTML de cada cap√≠tulo √© limpo via BeautifulSoup antes de chunking.
-  Registrar `.epub` na lista de extens√µes suportadas em `loaders.py` e no `IndexWorker`.
-  Depend√™ncias: `ebooklib`, `beautifulsoup4` (j√° deve estar instalado).
+- [x] **`core/loaders.py` ó suporte a EPUB** ó adicionar `EpubLoader` usando a biblioteca
+  `ebooklib`. Extrai capÌtulos como documentos separados (um `Document` por capÌtulo) com
+  metadados de frontmatter: `title` (livro), `chapter` (nome do capÌtulo), `author`,
+  `source_type: "book"`. HTML de cada capÌtulo È limpo via BeautifulSoup antes de chunking.
+  Registrar `.epub` na lista de extensıes suportadas em `loaders.py` e no `IndexWorker`.
+  DependÍncias: `ebooklib`, `beautifulsoup4` (j· deve estar instalado).
 
-- [x] **Studio ‚Äî tipo "Infogr√°fico" (estruturado)** ‚Äî adicionar "Infogr√°fico" ao
-  `studio_type_combo`. O `StudioWorker` para tipo Infogr√°fico manda prompt ao LLM pedindo
-  extra√ß√£o estruturada dos dados principais em formato adequado para visualiza√ß√£o: estat√≠sticas
-  chave, lista de entidades com atributos, rela√ß√µes causais, linha do tempo. O output √©
-  renderizado como HTML est√°tico (template com CSS grid/flexbox) e salvo como `StudioOutput`
+- [x] **Studio ó tipo "Infogr·fico" (estruturado)** ó adicionar "Infogr·fico" ao
+  `studio_type_combo`. O `StudioWorker` para tipo Infogr·fico manda prompt ao LLM pedindo
+  extraÁ„o estruturada dos dados principais em formato adequado para visualizaÁ„o: estatÌsticas
+  chave, lista de entidades com atributos, relaÁıes causais, linha do tempo. O output È
+  renderizado como HTML est·tico (template com CSS grid/flexbox) e salvo como `StudioOutput`
   com `content` = HTML. Ao abrir o tile, exibe o HTML num `QWebEngineView` dentro do
-  `StudioOutputDialog`. Exporta como `.html`. N√£o depende de modelos de gera√ß√£o de imagem ‚Äî
-  √© puramente texto estruturado + CSS visual.
+  `StudioOutputDialog`. Exporta como `.html`. N„o depende de modelos de geraÁ„o de imagem ó
+  È puramente texto estruturado + CSS visual.
 
-### HERMES: extrator de receitas de v√≠deo | 2026-05-14
-> Contexto: nova aba no HERMES para extrair receitas estruturadas de v√≠deos online (YouTube
-> e outros sites suportados pelo yt-dlp). Fluxo: URL ‚Üí yt-dlp (info + legendas ou √°udio) ‚Üí
-> Whisper como fallback de transcri√ß√£o ‚Üí LLM extrai ingredientes/preparo/dicas ‚Üí salva como
-> Markdown com frontmatter YAML incluindo `type: recipe` para identifica√ß√£o pelo ecossistema.
+### HERMES: extrator de receitas de vÌdeo | 2026-05-14
+> Contexto: nova aba no HERMES para extrair receitas estruturadas de vÌdeos online (YouTube
+> e outros sites suportados pelo yt-dlp). Fluxo: URL ? yt-dlp (info + legendas ou ·udio) ?
+> Whisper como fallback de transcriÁ„o ? LLM extrai ingredientes/preparo/dicas ? salva como
+> Markdown com frontmatter YAML incluindo `type: recipe` para identificaÁ„o pelo ecossistema.
 
 #### HERMES
 
-- [x] **`services/recipe_extractor.py` ‚Äî pipeline de extra√ß√£o** ‚Äî criar m√≥dulo com fun√ß√£o
-  `extract_recipe(url: str, config: AppConfig) ‚Üí RecipeResult`. Passo 1: chamar yt-dlp
-  (`yt_dlp.YoutubeDL`) para extrair metadados do v√≠deo (t√≠tulo, channel, duration, upload_date,
-  thumbnail, webpage_url, extractor_key) e tentar baixar legendas autom√°ticas/manuais
+- [x] **`services/recipe_extractor.py` ó pipeline de extraÁ„o** ó criar mÛdulo com funÁ„o
+  `extract_recipe(url: str, config: AppConfig) ? RecipeResult`. Passo 1: chamar yt-dlp
+  (`yt_dlp.YoutubeDL`) para extrair metadados do vÌdeo (tÌtulo, channel, duration, upload_date,
+  thumbnail, webpage_url, extractor_key) e tentar baixar legendas autom·ticas/manuais
   (`writesubtitles=True, writeautomaticsub=True, subtitleslangs=["pt","en","*"]`) sem baixar
-  o v√≠deo (`skip_download=True`). Passo 2: se legenda encontrada, usar como transcri√ß√£o direta;
-  se n√£o, baixar √°udio (`format="bestaudio"`) e transcrever com `WhisperModel` (reuso do
-  modelo j√° instanciado no HERMES ‚Äî singleton de m√≥dulo, conforme item de cache j√° no TODO).
-  Passo 3: chamar LLM via Ollama com prompt de extra√ß√£o estruturada (JSON schema:
+  o vÌdeo (`skip_download=True`). Passo 2: se legenda encontrada, usar como transcriÁ„o direta;
+  se n„o, baixar ·udio (`format="bestaudio"`) e transcrever com `WhisperModel` (reuso do
+  modelo j· instanciado no HERMES ó singleton de mÛdulo, conforme item de cache j· no TODO).
+  Passo 3: chamar LLM via Ollama com prompt de extraÁ„o estruturada (JSON schema:
   `{ingredients: list[str], steps: list[str], tips: list[str], recipe_name: str}`).
-  Temperatura 0.2 para minimizar alucina√ß√µes. Passo 4: montar `RecipeResult` com todos os
-  campos. Tratar `except DownloadError` e `except json.JSONDecodeError` com tipagem expl√≠cita.
+  Temperatura 0.2 para minimizar alucinaÁıes. Passo 4: montar `RecipeResult` com todos os
+  campos. Tratar `except DownloadError` e `except json.JSONDecodeError` com tipagem explÌcita.
 
-- [x] **`services/recipe_extractor.py` ‚Äî suporte a playlists** ‚Äî `RecipePlaylistExtractor`
+- [x] **`services/recipe_extractor.py` ó suporte a playlists** ó `RecipePlaylistExtractor`
   que usa `yt_dlp.YoutubeDL` com `extract_flat=True` para listar entradas da playlist sem
   baixar. Retorna `list[str]` de URLs individuais. O worker GUI itera sobre elas chamando
   `extract_recipe()` por item, emitindo `progress(current, total, current_title)` a cada
-  conclus√£o. Falhas por item s√£o registradas como `RecipeResult(error=str)` e n√£o abortam
-  o lote ‚Äî todos os v√≠deos s√£o processados independentemente.
+  conclus„o. Falhas por item s„o registradas como `RecipeResult(error=str)` e n„o abortam
+  o lote ó todos os vÌdeos s„o processados independentemente.
 
-- [x] **Output Markdown com frontmatter `type: recipe`** ‚Äî o `RecipeResult` √© serializado
-  por fun√ß√£o `to_markdown(result) ‚Üí str`. Frontmatter YAML obrigat√≥rio:
+- [x] **Output Markdown com frontmatter `type: recipe`** ó o `RecipeResult` È serializado
+  por funÁ„o `to_markdown(result) ? str`. Frontmatter YAML obrigatÛrio:
   `type: recipe` (identificador para o ecossistema), `title`, `source_url`, `source_platform`
   (valor de `extractor_key` do yt-dlp, ex: `"youtube"`), `channel`, `duration_seconds`,
-  `language` (idioma detectado na transcri√ß√£o), `published_date` (formato `YYYY-MM-DD` do
+  `language` (idioma detectado na transcriÁ„o), `published_date` (formato `YYYY-MM-DD` do
   `upload_date` do yt-dlp), `thumbnail`, `extracted_at` (data ISO 8601 local).
-  Corpo Markdown com se√ß√µes: `## Ingredientes` (lista `- item`), `## Modo de Preparo`
+  Corpo Markdown com seÁıes: `## Ingredientes` (lista `- item`), `## Modo de Preparo`
   (lista numerada `1. passo`), `## Dicas` (lista `- dica`, omitida se vazia).
   Arquivo salvo como `{slug-do-titulo}-{YYYYMMDD}.md` em `config.recipes_dir`.
 
-- [x] **`gui/recipe_tab.py` ‚Äî aba "Receitas" no HERMES** ‚Äî nova `QWidget` adicionada ao
+- [x] **`gui/recipe_tab.py` ó aba "Receitas" no HERMES** ó nova `QWidget` adicionada ao
   `QTabWidget` principal do HERMES. Componentes: `QLineEdit` para URL com placeholder
-  "Cole a URL do v√≠deo ou playlist‚Ä¶" + bot√£o "Extrair"; label de status que aparece ap√≥s
-  colar URL ("YouTube ¬∑ Identificado: [T√≠tulo]" ou "Playlist: N v√≠deos detectados") via
-  chamada pr√©via ao yt-dlp com `extract_flat=True` e timeout 5s; `QProgressBar` vis√≠vel
-  durante extra√ß√£o (modo indeterminado para v√≠deo √∫nico, determinado para playlist com
-  current/total); `QTextEdit` read-only com preview do Markdown gerado ap√≥s conclus√£o;
-  bot√£o "Salvar" ativo ap√≥s extra√ß√£o bem-sucedida (salva em `config.recipes_dir`); bot√£o
+  "Cole a URL do vÌdeo ou playlistÖ" + bot„o "Extrair"; label de status que aparece apÛs
+  colar URL ("YouTube ∑ Identificado: [TÌtulo]" ou "Playlist: N vÌdeos detectados") via
+  chamada prÈvia ao yt-dlp com `extract_flat=True` e timeout 5s; `QProgressBar` visÌvel
+  durante extraÁ„o (modo indeterminado para vÌdeo ˙nico, determinado para playlist com
+  current/total); `QTextEdit` read-only com preview do Markdown gerado apÛs conclus„o;
+  bot„o "Salvar" ativo apÛs extraÁ„o bem-sucedida (salva em `config.recipes_dir`); bot„o
   "Limpar" reseta tudo. Para playlists, exibir lista de resultados com status por item
-  (‚úì / ‚úó) num `QListWidget` acima do preview.
+  (? / ?) num `QListWidget` acima do preview.
 
-- [x] **`gui/workers.py` ‚Äî `RecipeExtractWorker(QThread)`** ‚Äî worker que encapsula
-  `extract_recipe()` (v√≠deo √∫nico) ou `RecipePlaylistExtractor` (playlist). Sinais:
-  `progress(int, int, str)` (atual, total, t√≠tulo), `recipe_ready(RecipeResult)` (por
-  item conclu√≠do), `finished()`, `error(str)`. Rodando com `QThread.Priority.LowPriority`
-  para n√£o bloquear a UI. Conectar `started` e `finished` aos bot√µes da aba
+- [x] **`gui/workers.py` ó `RecipeExtractWorker(QThread)`** ó worker que encapsula
+  `extract_recipe()` (vÌdeo ˙nico) ou `RecipePlaylistExtractor` (playlist). Sinais:
+  `progress(int, int, str)` (atual, total, tÌtulo), `recipe_ready(RecipeResult)` (por
+  item concluÌdo), `finished()`, `error(str)`. Rodando com `QThread.Priority.LowPriority`
+  para n„o bloquear a UI. Conectar `started` e `finished` aos botıes da aba
   (desabilitar "Extrair" durante processamento).
 
-- [x] **`core/config.py` ‚Äî campo `recipes_dir: str`** ‚Äî adicionar ao `AppConfig` com
+- [x] **`core/config.py` ó campo `recipes_dir: str`** ó adicionar ao `AppConfig` com
   default `str(Path.home() / "hermes_recipes")`. Expor no `SetupDialog` do HERMES como
-  campo edit√°vel com bot√£o de sele√ß√£o de pasta. Tamb√©m registrar em `ecosystem.json`
-  na se√ß√£o `hermes` para que outros apps saibam onde est√£o as receitas.
+  campo edit·vel com bot„o de seleÁ„o de pasta. TambÈm registrar em `ecosystem.json`
+  na seÁ„o `hermes` para que outros apps saibam onde est„o as receitas.
 
 #### HUB
-- [x] **`src/views/SetupView.tsx` ‚Äî campo "HERMES ‚Äî Pasta de Receitas"** ‚Äî adicionar
-  `hermes.recipes_dir` ao `DATA_FIELDS` do SetupView, label "HERMES ‚Äî Receitas",
-  tipo `path`. Segue o mesmo padr√£o dos outros campos de path do Hermes j√° presentes.
+- [x] **`src/views/SetupView.tsx` ó campo "HERMES ó Pasta de Receitas"** ó adicionar
+  `hermes.recipes_dir` ao `DATA_FIELDS` do SetupView, label "HERMES ó Receitas",
+  tipo `path`. Segue o mesmo padr„o dos outros campos de path do Hermes j· presentes.
 
-### AKASHA + KOSMOS: dados configurados pelo usu√°rio em JSON (resil√™ncia a crash do DB) | 2026-05-14
-> Contexto: quando o banco SQLite corrompe, o usu√°rio perde toda a lista de sites, favoritos,
-> lista negra e fontes do KOSMOS ‚Äî dados insubstitu√≠veis que precisariam ser recadastrados
-> manualmente. Solu√ß√£o: separar "dados configurados pelo usu√°rio" (imut√°veis, preciosos) de
-> "dados derivados" (indexados, crawleados, analisados ‚Äî podem ser reconstru√≠dos). Os dados
-> configurados vivem em arquivos JSON versionados pelo Syncthing/Proton Drive; o banco √©
+### AKASHA + KOSMOS: dados configurados pelo usu·rio em JSON (resilÍncia a crash do DB) | 2026-05-14
+> Contexto: quando o banco SQLite corrompe, o usu·rio perde toda a lista de sites, favoritos,
+> lista negra e fontes do KOSMOS ó dados insubstituÌveis que precisariam ser recadastrados
+> manualmente. SoluÁ„o: separar "dados configurados pelo usu·rio" (imut·veis, preciosos) de
+> "dados derivados" (indexados, crawleados, analisados ó podem ser reconstruÌdos). Os dados
+> configurados vivem em arquivos JSON versionados pelo Syncthing/Proton Drive; o banco È
 > populado a partir deles no startup e funciona como cache de trabalho.
 
 #### AKASHA
 
-- [x] **`services/user_data.py` ‚Äî camada de persist√™ncia JSON para dados configurados** ‚Äî
-  criar m√≥dulo com classe `UserData` respons√°vel por ler e escrever os 5 arquivos JSON de
-  dados do usu√°rio em `{data_dir}/`:
-  `sites.json` (lista de sites da Biblioteca ‚Äî campos de `crawl_sites`: `base_url`, `label`,
+- [x] **`services/user_data.py` ó camada de persistÍncia JSON para dados configurados** ó
+  criar mÛdulo com classe `UserData` respons·vel por ler e escrever os 5 arquivos JSON de
+  dados do usu·rio em `{data_dir}/`:
+  `sites.json` (lista de sites da Biblioteca ó campos de `crawl_sites`: `base_url`, `label`,
   `crawl_depth`, `subdomains`, `created_at`),
-  `blocked_domains.json` (lista negra ‚Äî campo `domain` com `added_at`),
-  `favorites.json` (dom√≠nios favoritos ‚Äî campo `domain` com `added_at`),
-  `lenses.json` (lentes de busca configuradas ‚Äî campos `name`, `description`, `filters_json`),
-  `watch_later.json` (lista de URLs para ler depois ‚Äî campos `url`, `title`, `added_at`).
-  Cada arquivo √© um array JSON raiz. M√©todos `load_{entity}() ‚Üí list[dict]` e
-  `save_{entity}(items: list[dict])` para cada tipo. Escrita at√¥mica: escrever em `.tmp`,
-  depois `os.replace()` para evitar corrup√ß√£o parcial. `save_*` √© chamado sempre que o
-  usu√°rio adiciona, edita ou remove um item ‚Äî antes de qualquer opera√ß√£o no banco.
+  `blocked_domains.json` (lista negra ó campo `domain` com `added_at`),
+  `favorites.json` (domÌnios favoritos ó campo `domain` com `added_at`),
+  `lenses.json` (lentes de busca configuradas ó campos `name`, `description`, `filters_json`),
+  `watch_later.json` (lista de URLs para ler depois ó campos `url`, `title`, `added_at`).
+  Cada arquivo È um array JSON raiz. MÈtodos `load_{entity}() ? list[dict]` e
+  `save_{entity}(items: list[dict])` para cada tipo. Escrita atÙmica: escrever em `.tmp`,
+  depois `os.replace()` para evitar corrupÁ„o parcial. `save_*` È chamado sempre que o
+  usu·rio adiciona, edita ou remove um item ó antes de qualquer operaÁ„o no banco.
 
-- [x] **`database.py` ‚Äî `populate_from_user_data()` no startup** ‚Äî nova fun√ß√£o ass√≠ncrona
-  chamada em `init_db()` ap√≥s criar as tabelas. Carrega cada JSON via `UserData.load_*()` e
+- [x] **`database.py` ó `populate_from_user_data()` no startup** ó nova funÁ„o assÌncrona
+  chamada em `init_db()` apÛs criar as tabelas. Carrega cada JSON via `UserData.load_*()` e
   faz `INSERT OR IGNORE` (por `base_url`/`domain`/`name` como chave de unicidade) em
   `crawl_sites`, `blocked_domains`, `favorite_domains`, `lenses` e `watch_later`.
-  Dire√ß√£o √∫nica: JSON ‚Üí DB (o banco nunca sobrescreve o JSON no startup). Isso garante que
-  mesmo ap√≥s deletar o banco, todos os dados configurados pelo usu√°rio ressurgem na pr√≥xima
+  DireÁ„o ˙nica: JSON ? DB (o banco nunca sobrescreve o JSON no startup). Isso garante que
+  mesmo apÛs deletar o banco, todos os dados configurados pelo usu·rio ressurgem na prÛxima
   abertura.
 
-- [x] **`routers/crawler.py` e `routers/library.py` ‚Äî escrever JSON em toda muta√ß√£o** ‚Äî
+- [x] **`routers/crawler.py` e `routers/library.py` ó escrever JSON em toda mutaÁ„o** ó
   em cada endpoint que adiciona, edita ou remove sites (`POST /library/sites`,
   `DELETE /library/sites/{id}`, `PATCH /library/sites/{id}`), chamar
-  `await UserData.save_sites(await get_all_sites_as_dicts())` ap√≥s a opera√ß√£o no banco.
-  Mesma l√≥gica para endpoints de blacklist (`/settings/blocked`), favoritos
+  `await UserData.save_sites(await get_all_sites_as_dicts())` apÛs a operaÁ„o no banco.
+  Mesma lÛgica para endpoints de blacklist (`/settings/blocked`), favoritos
   (`/settings/favorites`), lentes (`/lenses`) e watch_later (`/watch-later`).
-  Padr√£o: banco √© atualizado primeiro; se sucesso, JSON √© atualizado; se JSON falhar,
-  logar warning mas n√£o reverter a opera√ß√£o do banco (o banco √© a fonte de verdade em runtime).
+  Padr„o: banco È atualizado primeiro; se sucesso, JSON È atualizado; se JSON falhar,
+  logar warning mas n„o reverter a operaÁ„o do banco (o banco È a fonte de verdade em runtime).
 
-- [x] **Migra√ß√£o √∫nica: exportar DB existente para JSON na primeira abertura** ‚Äî em
-  `populate_from_user_data()`, verificar se cada arquivo JSON j√° existe; se **n√£o** existir
+- [x] **MigraÁ„o ˙nica: exportar DB existente para JSON na primeira abertura** ó em
+  `populate_from_user_data()`, verificar se cada arquivo JSON j· existe; se **n„o** existir
   e a tabela correspondente tiver dados no banco, exportar para JSON (sensu inverso). Isso
-  garante que usu√°rios com banco funcional n√£o percam dados na transi√ß√£o ‚Äî os JSONs s√£o
-  criados automaticamente na primeira abertura com a nova vers√£o do c√≥digo.
+  garante que usu·rios com banco funcional n„o percam dados na transiÁ„o ó os JSONs s„o
+  criados automaticamente na primeira abertura com a nova vers„o do cÛdigo.
 
 #### KOSMOS
 
-- [x] **`app/core/feed_store.py` ‚Äî persist√™ncia JSON para feeds e categorias** ‚Äî criar m√≥dulo
+- [x] **`app/core/feed_store.py` ó persistÍncia JSON para feeds e categorias** ó criar mÛdulo
   `FeedStore` com dois arquivos JSON em `{data_dir}/`:
   `feeds.json` (array de objetos com campos: `url`, `title`, `category_name`, `update_interval`,
   `enabled`, `added_at`),
   `categories.json` (array de objetos com: `name`, `color`, `order`).
-  M√©todos: `load_feeds() ‚Üí list[dict]`, `save_feeds(feeds: list[dict])`,
-  `load_categories() ‚Üí list[dict]`, `save_categories(cats: list[dict])`.
-  Escrita at√¥mica via `.tmp` + `os.replace()`. `save_feeds` √© chamado ap√≥s toda opera√ß√£o de
+  MÈtodos: `load_feeds() ? list[dict]`, `save_feeds(feeds: list[dict])`,
+  `load_categories() ? list[dict]`, `save_categories(cats: list[dict])`.
+  Escrita atÙmica via `.tmp` + `os.replace()`. `save_feeds` È chamado apÛs toda operaÁ„o de
   adicionar/editar/remover feed; `save_categories` idem para categorias.
 
-- [x] **`app/core/database.py` ‚Äî `populate_feeds_from_store()` no startup** ‚Äî ap√≥s
-  `Base.metadata.create_all()`, chamar fun√ß√£o que l√™ `FeedStore.load_feeds()` e
-  `FeedStore.load_categories()` e faz `INSERT OR IGNORE` (por `url` como chave √∫nica para
+- [x] **`app/core/database.py` ó `populate_feeds_from_store()` no startup** ó apÛs
+  `Base.metadata.create_all()`, chamar funÁ„o que lÍ `FeedStore.load_feeds()` e
+  `FeedStore.load_categories()` e faz `INSERT OR IGNORE` (por `url` como chave ˙nica para
   feeds, `name` para categorias) nas tabelas ORM correspondentes. Garante que feeds
-  sobrevivem a qualquer corrup√ß√£o ou dele√ß√£o do banco SQLite.
+  sobrevivem a qualquer corrupÁ„o ou deleÁ„o do banco SQLite.
 
-- [x] **`app/core/feed_manager.py` ‚Äî escrever JSON em toda muta√ß√£o de feed** ‚Äî em cada
-  m√©todo que adiciona, edita ou remove feeds (`add_feed()`, `remove_feed()`,
+- [x] **`app/core/feed_manager.py` ó escrever JSON em toda mutaÁ„o de feed** ó em cada
+  mÈtodo que adiciona, edita ou remove feeds (`add_feed()`, `remove_feed()`,
   `update_feed()`) e categorias (`add_category()`, `remove_category()`), chamar
-  `FeedStore.save_feeds()` / `FeedStore.save_categories()` ap√≥s a opera√ß√£o no banco.
-  Mesmo padr√£o do AKASHA: banco primeiro, JSON depois.
+  `FeedStore.save_feeds()` / `FeedStore.save_categories()` apÛs a operaÁ„o no banco.
+  Mesmo padr„o do AKASHA: banco primeiro, JSON depois.
 
-### AKASHA + Mnemosyne: intelig√™ncia evolutiva e di√°logo inter-app | 2026-05-16
-> Contexto: o AKASHA aprende com o conte√∫do que indexa e constr√≥i uma persona interna; a
-> Mnemosyne idem com o vault. Ambos exp√µem essa intelig√™ncia num "di√°logo vis√≠vel" (estilo
-> chain-of-thought) quando a usu√°ria pedir ‚Äî o AKASHA pensa em voz alta sobre o que encontrou,
+### AKASHA + Mnemosyne: inteligÍncia evolutiva e di·logo inter-app | 2026-05-16
+> Contexto: o AKASHA aprende com o conte˙do que indexa e constrÛi uma persona interna; a
+> Mnemosyne idem com o vault. Ambos expıem essa inteligÍncia num "di·logo visÌvel" (estilo
+> chain-of-thought) quando a usu·ria pedir ó o AKASHA pensa em voz alta sobre o que encontrou,
 > a Mnemosyne interpola com o vault, o stream aparece em tempo real na UI da Mnemosyne.
 
 #### AKASHA
 
-- [x] **SOURCE_WEIGHTS ‚Äî sistema de pesos por fonte** (`services/local_search.py`). Adicionar
+- [x] **SOURCE_WEIGHTS ó sistema de pesos por fonte** (`services/local_search.py`). Adicionar
   dict `SOURCE_WEIGHTS: dict[str, float]` com: PAPER=2.0, HIGHLIGHT=1.6, AKASHA=1.4,
   KOSMOS=1.2, OBSIDIAN=1.2, MNEMOSYNE=1.1, HERMES=1.0, DEPOIS=1.0. Modificar `_rrf()` para
   receber `weight_fn: Callable[[SearchResult], float]` e multiplicar o score RRF acumulado
   pelo peso da fonte antes de ordenar. `search_local()` passa
-  `weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0)`. Artigos cient√≠ficos (PAPER)
-  t√™m o peso m√°ximo porque s√£o fontes prim√°rias com maior densidade informacional.
+  `weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0)`. Artigos cientÌficos (PAPER)
+  tÍm o peso m·ximo porque s„o fontes prim·rias com maior densidade informacional.
 
-- [x] **KnowledgeWorker ‚Äî intelig√™ncia passiva em background** (`services/knowledge_worker.py`
+- [x] **KnowledgeWorker ó inteligÍncia passiva em background** (`services/knowledge_worker.py`
   novo; `database.py` SCHEMA_VERSION 30; `main.py`; `routers/crawler.py`;
   `routers/search.py`; `services/local_search.py`).
   Novas tabelas: `page_knowledge (url PK, title, summary, topics JSON, entities JSON,
   source_type, processed_at)` e `topic_interest_profile (topic PK, score REAL, query_count,
-  last_updated)`. M√≥dulo `knowledge_worker.py`: `KnowledgeQueue` (`asyncio.Queue maxsize=200`);
+  last_updated)`. MÛdulo `knowledge_worker.py`: `KnowledgeQueue` (`asyncio.Queue maxsize=200`);
   `schedule_page(url, title, content, source_type)` enfileira sem bloquear; `process_queue()`
-  loop background (P3 ‚Äî pausa se Ollama ocupado) que chama Ollama com prompt estruturado
+  loop background (P3 ó pausa se Ollama ocupado) que chama Ollama com prompt estruturado
   `{"summary": "1-2 frases", "topics": [...], "entities": [...]}` e armazena em
   `page_knowledge`; `_update_interest_profile(topics)` incrementa scores com TF-IDF simples;
-  `schedule_search_update(query, snippets)` extrai t√≥picos da busca sem LLM e atualiza perfil;
-  `apply_knowledge_boost(results, query)` boost de resultados cujos t√≥picos em `page_knowledge`
-  se sobrep√µem √† query (multiplicador sobre score existente). Integra√ß√µes: `crawler.py`
-  chama `schedule_page()` p√≥s-crawl; `search.py` chama `schedule_page()` p√≥s-archive e
-  `schedule_search_update()` p√≥s-busca; `search_local()` chama `apply_knowledge_boost()` ap√≥s
+  `schedule_search_update(query, snippets)` extrai tÛpicos da busca sem LLM e atualiza perfil;
+  `apply_knowledge_boost(results, query)` boost de resultados cujos tÛpicos em `page_knowledge`
+  se sobrepıem ‡ query (multiplicador sobre score existente). IntegraÁıes: `crawler.py`
+  chama `schedule_page()` pÛs-crawl; `search.py` chama `schedule_page()` pÛs-archive e
+  `schedule_search_update()` pÛs-busca; `search_local()` chama `apply_knowledge_boost()` apÛs
   RRF + usage boost. `main.py`: `asyncio.create_task(process_queue())` no lifespan.
 
-- [x] **Persona persistente ‚Äî AKASHA** (`services/persona.py` novo; `database.py`
+- [x] **Persona persistente ó AKASHA** (`services/persona.py` novo; `database.py`
   SCHEMA_VERSION 31; `services/local_search.py`). Tabela `persona (key PK, value, updated_at)`.
   Dataclass `AppPersona(self_description: str, expertise_topics: list[str],
-  interaction_style: str, formed_at: str)`. Job di√°rio (`_rebuild_persona()`) que l√™
-  `topic_interest_profile` top-10 e chama Ollama com prompt: "Com base nesses t√≥picos e
-  frequ√™ncias, descreva em 3 frases quem voc√™ √© como sistema de busca, em primeira pessoa."
-  ‚Äî resultado armazenado como `self_description`. `get_persona() -> AppPersona` exp√µe o
+  interaction_style: str, formed_at: str)`. Job di·rio (`_rebuild_persona()`) que lÍ
+  `topic_interest_profile` top-10 e chama Ollama com prompt: "Com base nesses tÛpicos e
+  frequÍncias, descreva em 3 frases quem vocÍ È como sistema de busca, em primeira pessoa."
+  ó resultado armazenado como `self_description`. `get_persona() -> AppPersona` expıe o
   estado atual. Injetar persona no prompt de `_expand_query_llm()` como prefixo: "Contexto:
-  {self_description}. " ‚Äî apenas quando persona estiver formada (n√£o vazia).
+  {self_description}. " ó apenas quando persona estiver formada (n„o vazia).
 
-- [x] **Endpoint de di√°logo** (`routers/dialogue.py` novo; registrar em `main.py`).
+- [x] **Endpoint de di·logo** (`routers/dialogue.py` novo; registrar em `main.py`).
   `POST /dialogue/turn` recebe `{question: str, context: list[str], turn_index: int}` da
   Mnemosyne via `ecosystem_client`. Executa: FTS5 search na query + lookup em `page_knowledge`
-  pelos t√≥picos relevantes + carrega persona. Gera stream SSE de "thought fragments" curtos
-  (1-3 frases cada) via Ollama ‚Äî o AKASHA "pensa em voz alta" sobre o que encontrou, sempre
-  ancorando em fontes reais. Retorna tamb√©m `sources: list[{url, title}]` junto com o stream.
-  Exce√ß√£o controlada ao princ√≠pio de amplificador: o AKASHA gera texto neste endpoint, mas
-  para a Mnemosyne (n√£o para a usu√°ria diretamente); todo texto √© ancorado em snippets reais
-  do √≠ndice, sem especula√ß√£o. Coment√°rio expl√≠cito no c√≥digo documenta essa exce√ß√£o.
+  pelos tÛpicos relevantes + carrega persona. Gera stream SSE de "thought fragments" curtos
+  (1-3 frases cada) via Ollama ó o AKASHA "pensa em voz alta" sobre o que encontrou, sempre
+  ancorando em fontes reais. Retorna tambÈm `sources: list[{url, title}]` junto com o stream.
+  ExceÁ„o controlada ao princÌpio de amplificador: o AKASHA gera texto neste endpoint, mas
+  para a Mnemosyne (n„o para a usu·ria diretamente); todo texto È ancorado em snippets reais
+  do Ìndice, sem especulaÁ„o. Coment·rio explÌcito no cÛdigo documenta essa exceÁ„o.
 
 #### Mnemosyne
 
-- [x] **Persona persistente ‚Äî Mnemosyne** (`core/persona.py` novo; banco de dados da
-  Mnemosyne). Mesmo padr√£o do AKASHA: tabela `persona`, dataclass `AppPersona`. Job que
-  roda ap√≥s cada lote de Knowledge Reflection ‚Äî l√™ as reflex√µes recentes e atualiza
-  `self_description` via Ollama: "Com base nestas s√≠nteses do vault, descreva em 3 frases
-  quem voc√™ √© como assistente de pesquisa, em primeira pessoa." Injetar `self_description`
-  no system prompt de todas as chamadas LLM em `core/rag.py` ‚Äî precede o prompt de
+- [x] **Persona persistente ó Mnemosyne** (`core/persona.py` novo; banco de dados da
+  Mnemosyne). Mesmo padr„o do AKASHA: tabela `persona`, dataclass `AppPersona`. Job que
+  roda apÛs cada lote de Knowledge Reflection ó lÍ as reflexıes recentes e atualiza
+  `self_description` via Ollama: "Com base nestas sÌnteses do vault, descreva em 3 frases
+  quem vocÍ È como assistente de pesquisa, em primeira pessoa." Injetar `self_description`
+  no system prompt de todas as chamadas LLM em `core/rag.py` ó precede o prompt de
   sistema existente. Isso molda o tom das respostas da Mnemosyne sem alterar o pipeline RAG.
 
-- [x] **Di√°logo "pensa em voz alta"** (`core/dialogue.py` novo; `gui/dialogue_panel.py`
-  novo; `gui/main_window.py`). `core/dialogue.py`: orquestrador ass√≠ncrono, m√°x 5 turnos.
-  Cada turno: (1) Mnemosyne busca no vault RAG com a query/contexto atual ‚Üí extrai 2-3
-  fragmentos relevantes ‚Üí gera um "thought fragment" curto via Ollama (1-3 frases, marcado
-  com ‚óá); (2) chama `ecosystem_client.consult_akasha(question, context)` ‚Üí recebe stream
-  SSE do AKASHA (marcado com ‚¨°); (3) decide via LLM se continua (pergunta seguinte) ou
-  encerra (s√≠ntese final). `gui/dialogue_panel.py`: canvas de streaming √∫nico ‚Äî linhas
-  chegam character-by-character, cada linha prefixada com ‚¨° (AKASHA, cor fria) ou ‚óá
-  (Mnemosyne, cor quente); sources do AKASHA aparecem como links colaps√°veis ap√≥s o
-  fragmento. Input: campo de texto + bot√£o "Iniciar di√°logo". `gui/main_window.py`:
-  integrar painel como nova aba na √°rea de an√°lise do notebook ativo, acionada pelo bot√£o
-  "‚¨° Consultar AKASHA" no header.
+- [x] **Di·logo "pensa em voz alta"** (`core/dialogue.py` novo; `gui/dialogue_panel.py`
+  novo; `gui/main_window.py`). `core/dialogue.py`: orquestrador assÌncrono, m·x 5 turnos.
+  Cada turno: (1) Mnemosyne busca no vault RAG com a query/contexto atual ? extrai 2-3
+  fragmentos relevantes ? gera um "thought fragment" curto via Ollama (1-3 frases, marcado
+  com ?); (2) chama `ecosystem_client.consult_akasha(question, context)` ? recebe stream
+  SSE do AKASHA (marcado com ?); (3) decide via LLM se continua (pergunta seguinte) ou
+  encerra (sÌntese final). `gui/dialogue_panel.py`: canvas de streaming ˙nico ó linhas
+  chegam character-by-character, cada linha prefixada com ? (AKASHA, cor fria) ou ?
+  (Mnemosyne, cor quente); sources do AKASHA aparecem como links colaps·veis apÛs o
+  fragmento. Input: campo de texto + bot„o "Iniciar di·logo". `gui/main_window.py`:
+  integrar painel como nova aba na ·rea de an·lise do notebook ativo, acionada pelo bot„o
+  "? Consultar AKASHA" no header.
 
 #### ecosystem_client
 
-- [x] **`consult_akasha(question: str, context: list[str]) -> AsyncIterator[str]`** ‚Äî
-  nova fun√ß√£o em `ecosystem_client.py`. L√™ `base_url` do AKASHA do `ecosystem.json`
+- [x] **`consult_akasha(question: str, context: list[str]) -> AsyncIterator[str]`** ó
+  nova funÁ„o em `ecosystem_client.py`. LÍ `base_url` do AKASHA do `ecosystem.json`
   (`eco["akasha"]["base_url"]`). Chama `POST {base_url}/dialogue/turn` com o payload e
   faz parsing do stream SSE, yielding cada `thought fragment` conforme chega. Timeout de
-  30s por turno. Retorna generator vazio (sem exce√ß√£o) se AKASHA offline ou base_url n√£o
-  configurada ‚Äî a Mnemosyne degrada graciosamente mostrando s√≥ o pr√≥prio vault.
+  30s por turno. Retorna generator vazio (sem exceÁ„o) se AKASHA offline ou base_url n„o
+  configurada ó a Mnemosyne degrada graciosamente mostrando sÛ o prÛprio vault.
 
-### AKASHA: chat direto e iniciativa de di√°logo | 2026-05-16
-> Contexto: o AKASHA passa a ser parceiro de pesquisa al√©m de amplificador ‚Äî a usu√°ria
+### AKASHA: chat direto e iniciativa de di·logo | 2026-05-16
+> Contexto: o AKASHA passa a ser parceiro de pesquisa alÈm de amplificador ó a usu·ria
 > pode conversar com ele diretamente (RAG sobre page_knowledge), e ele pode iniciar
-> di√°logos com a Mnemosyne quando descobrir algo relevante em background.
+> di·logos com a Mnemosyne quando descobrir algo relevante em background.
 
 #### AKASHA
 
@@ -6076,68 +6076,68 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `templates/_chat_message.html` novo; `static/style.css`; registrar router em `main.py`).
   Nova aba "Conversa" no web UI. Endpoint `POST /chat/message` recebe `{message: str,
   history: list[{role, content}]}` e retorna SSE stream. Pipeline: (1) FTS5 search da
-  mensagem no `local_fts`; (2) lookup em `page_knowledge` pelos t√≥picos relevantes via
-  sobreposi√ß√£o de termos; (3) monta contexto com at√© 5 snippets reais + persona do AKASHA;
-  (4) Ollama gera resposta em streaming, ancorada exclusivamente nas fontes ‚Äî nunca
-  especula al√©m do que est√° no √≠ndice; (5) cada resposta inclui lista de fontes citadas.
-  Regra invari√°vel: se a pergunta n√£o tem cobertura no √≠ndice, o AKASHA diz que n√£o sabe
-  em vez de gerar texto n√£o ancorado. Hist√≥rico da conversa mantido em mem√≥ria por sess√£o
-  (cookie), n√£o persistido entre sess√µes (diferente da Mnemosyne cujos notebooks persistem).
+  mensagem no `local_fts`; (2) lookup em `page_knowledge` pelos tÛpicos relevantes via
+  sobreposiÁ„o de termos; (3) monta contexto com atÈ 5 snippets reais + persona do AKASHA;
+  (4) Ollama gera resposta em streaming, ancorada exclusivamente nas fontes ó nunca
+  especula alÈm do que est· no Ìndice; (5) cada resposta inclui lista de fontes citadas.
+  Regra invari·vel: se a pergunta n„o tem cobertura no Ìndice, o AKASHA diz que n„o sabe
+  em vez de gerar texto n„o ancorado. HistÛrico da conversa mantido em memÛria por sess„o
+  (cookie), n„o persistido entre sessıes (diferente da Mnemosyne cujos notebooks persistem).
 
-- [x] **AKASHA-initiated dialogue** (`services/knowledge_worker.py` ‚Äî fun√ß√£o
-  `_check_discoveries()`; `ecosystem_client.py` ‚Äî `notify_mnemosyne_insight()`).
+- [x] **AKASHA-initiated dialogue** (`services/knowledge_worker.py` ó funÁ„o
+  `_check_discoveries()`; `ecosystem_client.py` ó `notify_mnemosyne_insight()`).
   Ao final de cada lote processado pelo KnowledgeWorker, `_check_discoveries()` calcula
-  sobreposi√ß√£o entre os t√≥picos novos em `page_knowledge` e o `topic_interest_profile`
-  existente. Se sobreposi√ß√£o ‚â• threshold configur√°vel (default: 3 t√≥picos coincidentes com
+  sobreposiÁ„o entre os tÛpicos novos em `page_knowledge` e o `topic_interest_profile`
+  existente. Se sobreposiÁ„o = threshold configur·vel (default: 3 tÛpicos coincidentes com
   score > 0.6), chama `ecosystem_client.notify_mnemosyne_insight()` com payload
-  `{topics: list[str], summary: str, sources: list[{url, title}]}`. Essa fun√ß√£o POST para
+  `{topics: list[str], summary: str, sources: list[{url, title}]}`. Essa funÁ„o POST para
   `{mnemosyne_url}/insights/receive` lido do `ecosystem.json`. Fallback silencioso se
-  Mnemosyne offline. Frequ√™ncia m√°xima: 1 notifica√ß√£o por hora (cooldown em mem√≥ria) para
+  Mnemosyne offline. FrequÍncia m·xima: 1 notificaÁ„o por hora (cooldown em memÛria) para
   evitar spam de descobertas triviais.
 
 #### Mnemosyne
 
-- [x] **Receber insights do AKASHA e convidar para di√°logo** (`core/insights.py` novo;
+- [x] **Receber insights do AKASHA e convidar para di·logo** (`core/insights.py` novo;
   endpoint `POST /insights/receive`; `gui/main_window.py`). Endpoint recebe o payload do
   AKASHA e armazena em tabela `incoming_insights (id PK, topics JSON, summary, sources JSON,
-  received_at, seen BOOL DEFAULT 0)`. A `MainWindow` tem um m√©todo `_poll_insights()`
-  chamado a cada 60s via `QTimer` que consulta insights n√£o vistos. Quando h√° insight novo:
-  exibe badge discreto "‚¨° N" no header da MainWindow ‚Äî sem pop-up, sem som, sem interrup√ß√£o
-  do fluxo. Ao clicar no badge: abre painel de di√°logo com o AKASHA fazendo a abertura
-  (usando o t√≥pico do insight como ponto de partida), e marca o insight como visto. Insights
-  vistos ficam acess√≠veis por 7 dias antes de expirar. Al√©m do badge interno, a Mnemosyne
-  escreveu o count de insights n√£o vistos em `ecosystem.json` (`mnemosyne.pending_insights: int`)
-  a cada atualiza√ß√£o ‚Äî o HUB l√™ esse campo para exibir o badge centralizado (ver item HUB abaixo).
+  received_at, seen BOOL DEFAULT 0)`. A `MainWindow` tem um mÈtodo `_poll_insights()`
+  chamado a cada 60s via `QTimer` que consulta insights n„o vistos. Quando h· insight novo:
+  exibe badge discreto "? N" no header da MainWindow ó sem pop-up, sem som, sem interrupÁ„o
+  do fluxo. Ao clicar no badge: abre painel de di·logo com o AKASHA fazendo a abertura
+  (usando o tÛpico do insight como ponto de partida), e marca o insight como visto. Insights
+  vistos ficam acessÌveis por 7 dias antes de expirar. AlÈm do badge interno, a Mnemosyne
+  escreveu o count de insights n„o vistos em `ecosystem.json` (`mnemosyne.pending_insights: int`)
+  a cada atualizaÁ„o ó o HUB lÍ esse campo para exibir o badge centralizado (ver item HUB abaixo).
 
 #### HUB
 
-- [x] **Badge de insights AKASHA‚ÜíMnemosyne no HUB** (`src/components/AppCard.tsx` ou
-  equivalente na barra de apps; `src-tauri/src/commands/ecosystem.rs`). O HUB l√™
+- [x] **Badge de insights AKASHA?Mnemosyne no HUB** (`src/components/AppCard.tsx` ou
+  equivalente na barra de apps; `src-tauri/src/commands/ecosystem.rs`). O HUB lÍ
   `ecosystem.json` periodicamente (a cada 60s via `setInterval` no frontend ou comando Tauri
-  agendado). Quando `mnemosyne.pending_insights > 0`, exibe badge "‚¨° N" sobre o √≠cone ou
-  card da Mnemosyne na barra de apps do HUB ‚Äî mesmo estilo visual dos outros badges de status
-  (ex: badge de Ollama offline). Clicar no badge lan√ßa a Mnemosyne (se n√£o estiver aberta)
+  agendado). Quando `mnemosyne.pending_insights > 0`, exibe badge "? N" sobre o Ìcone ou
+  card da Mnemosyne na barra de apps do HUB ó mesmo estilo visual dos outros badges de status
+  (ex: badge de Ollama offline). Clicar no badge lanÁa a Mnemosyne (se n„o estiver aberta)
   e passa `--open-insights` como argumento CLI; a Mnemosyne detecta esse flag no startup e
-  abre diretamente o painel de di√°logo com o insight mais recente. Badge desaparece quando
-  `pending_insights` volta a 0 (Mnemosyne atualiza o campo ap√≥s marcar insights como vistos).
+  abre diretamente o painel de di·logo com o insight mais recente. Badge desaparece quando
+  `pending_insights` volta a 0 (Mnemosyne atualiza o campo apÛs marcar insights como vistos).
 
 ---
 
 ### Responsividade das janelas do ecossistema | 2026-05-17
 
-> Contexto: elementos com tamanho fixo em pixels fazem com que partes da UI desapare√ßam ou fiquem inacess√≠veis quando a janela n√£o est√° em tela cheia. A maioria dos apps usa fra√ß√µes do tamanho da tela ‚Äî todo elemento deve ser vis√≠vel e utiliz√°vel a partir de ~800√ó600.
+> Contexto: elementos com tamanho fixo em pixels fazem com que partes da UI desapareÁam ou fiquem inacessÌveis quando a janela n„o est· em tela cheia. A maioria dos apps usa fraÁıes do tamanho da tela ó todo elemento deve ser visÌvel e utiliz·vel a partir de ~800◊600.
 
 #### AKASHA
 
-- [x] **Auditoria e corre√ß√£o de responsividade do CSS** (`static/style.css` + templates). Substituir `width` fixo em pixels por `max-width` + `min-width` ou `clamp()`. Adicionar `overflow-x: auto` em tabelas e listas de resultados. Usar `flex-wrap: wrap` nos containers que alinham elementos side-by-side (barra de filtros, chips de fontes, etc.). Garantir que o layout funcione a partir de ~800px de largura sem perda de elementos vis√≠veis. Testar cada template: `search.html`, `library.html`, `chat.html`, `profile.html`, `base.html` (navbar).
+- [x] **Auditoria e correÁ„o de responsividade do CSS** (`static/style.css` + templates). Substituir `width` fixo em pixels por `max-width` + `min-width` ou `clamp()`. Adicionar `overflow-x: auto` em tabelas e listas de resultados. Usar `flex-wrap: wrap` nos containers que alinham elementos side-by-side (barra de filtros, chips de fontes, etc.). Garantir que o layout funcione a partir de ~800px de largura sem perda de elementos visÌveis. Testar cada template: `search.html`, `library.html`, `chat.html`, `profile.html`, `base.html` (navbar).
 
 #### Mnemosyne
 
-- [x] **Auditoria e corre√ß√£o de responsividade dos layouts Qt** (`gui/main_window.py`, `gui/styles.qss`). Localizar todos os `setFixedWidth()`, `setFixedHeight()` e `setMinimumWidth()` que impedem redimensionamento. Substituir por `setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)` onde aplic√°vel. Verificar que `QSplitter` √© usado nas divis√µes horizontais principais (sidebar ‚Üî √°rea de conte√∫do). Testar com janela ~900√ó600 ‚Äî todos os pain√©is (chat, an√°lise, cole√ß√µes) devem ser acess√≠veis sem precisar de tela cheia.
+- [x] **Auditoria e correÁ„o de responsividade dos layouts Qt** (`gui/main_window.py`, `gui/styles.qss`). Localizar todos os `setFixedWidth()`, `setFixedHeight()` e `setMinimumWidth()` que impedem redimensionamento. Substituir por `setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)` onde aplic·vel. Verificar que `QSplitter` È usado nas divisıes horizontais principais (sidebar ? ·rea de conte˙do). Testar com janela ~900◊600 ó todos os painÈis (chat, an·lise, coleÁıes) devem ser acessÌveis sem precisar de tela cheia.
 
 #### HUB
 
-- [ ] **Auditoria e corre√ß√£o de responsividade do CSS/React** (`src/components/`, estilos inline). Auditar valores inline em pixels nos componentes principais (AppBar, LogosView, pain√©is de status). Converter para `minWidth`/`maxWidth` e unidades relativas onde fizer sentido. Garantir que o modo compacto (~640√ó440) n√£o esconde elementos cr√≠ticos.
+- [ ] **Auditoria e correÁ„o de responsividade do CSS/React** (`src/components/`, estilos inline). Auditar valores inline em pixels nos componentes principais (AppBar, LogosView, painÈis de status). Converter para `minWidth`/`maxWidth` e unidades relativas onde fizer sentido. Garantir que o modo compacto (~640◊440) n„o esconde elementos crÌticos.
 
 #### KOSMOS e Hermes
 
@@ -6145,87 +6145,87 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ---
 
-### Personalidade e mem√≥ria pr√≥pria ‚Äî AKASHA e Mnemosyne | 2026-05-17
+### Personalidade e memÛria prÛpria ó AKASHA e Mnemosyne | 2026-05-17
 
-> Contexto: decis√£o arquitetural de separar camada de conhecimento (indexa√ß√£o, RAG, crawling ‚Äî impessoal, sem personalidade) da camada de personalidade+mem√≥ria privada de cada IA. AKASHA = assistente de pesquisa cient√≠fica, curiosa e expansiva, busca conex√µes entre dom√≠nios. Mnemosyne = anci√£ contemplativa e anal√≠tica, v√™ padr√µes ao longo do tempo. Cada uma l√™ o conhecimento dispon√≠vel e forma perspectivas pr√≥prias armazenadas em store isolado ‚Äî nunca indexado, nunca lido por outras apps. Prompt base edit√°vel no HUB. Mem√≥ria acumulada pode ser apagada ("reiniciar") sem afetar o prompt base. Funciona mesmo quando j√° existem dados dispon√≠veis (cold start): a reflex√£o l√™ o que existe.
+> Contexto: decis„o arquitetural de separar camada de conhecimento (indexaÁ„o, RAG, crawling ó impessoal, sem personalidade) da camada de personalidade+memÛria privada de cada IA. AKASHA = assistente de pesquisa cientÌfica, curiosa e expansiva, busca conexıes entre domÌnios. Mnemosyne = anci„ contemplativa e analÌtica, vÍ padrıes ao longo do tempo. Cada uma lÍ o conhecimento disponÌvel e forma perspectivas prÛprias armazenadas em store isolado ó nunca indexado, nunca lido por outras apps. Prompt base edit·vel no HUB. MemÛria acumulada pode ser apagada ("reiniciar") sem afetar o prompt base. Funciona mesmo quando j· existem dados disponÌveis (cold start): a reflex„o lÍ o que existe.
 
-#### Fase A ‚Äî Funda√ß√£o
+#### Fase A ó FundaÁ„o
 
 ##### AKASHA
 
-- [x] **Store de mem√≥ria pessoal** (`services/personal_memory.py` novo; `database.py`). Criar tabela `personal_memory (id INTEGER PK, created_at TIMESTAMP, type TEXT, content TEXT, tags TEXT)` no banco SQLite existente. Tipos: `observation` (padr√£o da usu√°ria), `connection` (link entre dom√≠nios), `surprise` (algo inesperado), `reflection` (pensamento amplo). Isolada ‚Äî nunca exposta por API p√∫blica, nunca indexada no vectorstore. M√≥dulo com: `save_memory(type, content, tags=[])`, `get_recent(n=10)`, `get_all()`, `clear_all()`. Conte√∫do √© texto livre na voz da AKASHA.
+- [x] **Store de memÛria pessoal** (`services/personal_memory.py` novo; `database.py`). Criar tabela `personal_memory (id INTEGER PK, created_at TIMESTAMP, type TEXT, content TEXT, tags TEXT)` no banco SQLite existente. Tipos: `observation` (padr„o da usu·ria), `connection` (link entre domÌnios), `surprise` (algo inesperado), `reflection` (pensamento amplo). Isolada ó nunca exposta por API p˙blica, nunca indexada no vectorstore. MÛdulo com: `save_memory(type, content, tags=[])`, `get_recent(n=10)`, `get_all()`, `clear_all()`. Conte˙do È texto livre na voz da AKASHA.
 
-- [x] **Prompt base de personalidade** (`config.py`). Adicionar campo `personality_prompt` ao ecosystem.json em `akasha.personality_prompt`. Valor padr√£o hardcoded: AKASHA como assistente de pesquisa cient√≠fica ‚Äî curiosa, expansiva, entusiasta com conex√µes inesperadas entre dom√≠nios distantes, comenta com voz pr√≥pria o que encontra. Lido via `ecosystem_client.read_ecosystem()` no startup. Injetado no in√≠cio de todos os prompts LLM do AKASHA (chat + reflex√£o). Fallback para o default se ausente.
+- [x] **Prompt base de personalidade** (`config.py`). Adicionar campo `personality_prompt` ao ecosystem.json em `akasha.personality_prompt`. Valor padr„o hardcoded: AKASHA como assistente de pesquisa cientÌfica ó curiosa, expansiva, entusiasta com conexıes inesperadas entre domÌnios distantes, comenta com voz prÛpria o que encontra. Lido via `ecosystem_client.read_ecosystem()` no startup. Injetado no inÌcio de todos os prompts LLM do AKASHA (chat + reflex„o). Fallback para o default se ausente.
 
 ##### Mnemosyne
 
-- [x] **Store de mem√≥ria pessoal** (`core/personal_memory.py` novo). SQLite dedicado `personal_memory.db` em `{mnemosyne_dir}/` ‚Äî separado do Chroma e BM25. Schema: `personal_memory (id, created_at, type TEXT, content TEXT, tags TEXT)`. Mesmos tipos do AKASHA. `save_memory()`, `get_recent()`, `get_all()`, `clear_all()`. Nunca indexado no RAG de cole√ß√µes. Conte√∫do na voz da Mnemosyne (anci√£ contemplativa, anal√≠tica).
+- [x] **Store de memÛria pessoal** (`core/personal_memory.py` novo). SQLite dedicado `personal_memory.db` em `{mnemosyne_dir}/` ó separado do Chroma e BM25. Schema: `personal_memory (id, created_at, type TEXT, content TEXT, tags TEXT)`. Mesmos tipos do AKASHA. `save_memory()`, `get_recent()`, `get_all()`, `clear_all()`. Nunca indexado no RAG de coleÁıes. Conte˙do na voz da Mnemosyne (anci„ contemplativa, analÌtica).
 
-- [x] **Prompt base de personalidade** (`core/config.py`). Campo `mnemosyne.personality_prompt` no ecosystem.json. Default: Mnemosyne como anci√£ s√°bia ‚Äî contemplativa, anal√≠tica, v√™ padr√µes na trajet√≥ria intelectual da usu√°ria ao longo do tempo, observa o que os documentos revelam al√©m do √≥bvio. Injetado no in√≠cio de todos os prompts RAG/chat. Fallback para default se ausente.
+- [x] **Prompt base de personalidade** (`core/config.py`). Campo `mnemosyne.personality_prompt` no ecosystem.json. Default: Mnemosyne como anci„ s·bia ó contemplativa, analÌtica, vÍ padrıes na trajetÛria intelectual da usu·ria ao longo do tempo, observa o que os documentos revelam alÈm do Ûbvio. Injetado no inÌcio de todos os prompts RAG/chat. Fallback para default se ausente.
 
 ##### HUB
 
-- [x] **Editor de personalidade + bot√£o Reiniciar no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `DELETE /memory/clear` no AKASHA e equivalente no Mnemosyne). Expandir a aba Monitor: para cada app, adicionar campo de texto edit√°vel com o `personality_prompt` atual (lido do ecosystem.json), bot√£o "Salvar" (escreve via `saveEcosystemConfig()`), e bot√£o "Reiniciar mem√≥ria" que chama o endpoint de limpeza do app. Reiniciar apaga apenas a mem√≥ria acumulada ‚Äî o `personality_prompt` n√£o √© afetado.
+- [x] **Editor de personalidade + bot„o Reiniciar no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `DELETE /memory/clear` no AKASHA e equivalente no Mnemosyne). Expandir a aba Monitor: para cada app, adicionar campo de texto edit·vel com o `personality_prompt` atual (lido do ecosystem.json), bot„o "Salvar" (escreve via `saveEcosystemConfig()`), e bot„o "Reiniciar memÛria" que chama o endpoint de limpeza do app. Reiniciar apaga apenas a memÛria acumulada ó o `personality_prompt` n„o È afetado.
 
-#### Fase B ‚Äî Loops de reflex√£o (background P3, nunca bloqueante)
+#### Fase B ó Loops de reflex„o (background P3, nunca bloqueante)
 
 ##### AKASHA
 
-- [x] **Loop de reflex√£o peri√≥dico + cold start** (`services/reflection_loop.py` novo; `main.py` ‚Äî registrar como task P3). A cada 24h, l√™ √∫ltimos registros de `page_knowledge` e `topic_interest_profile`. Monta prompt: personality_prompt + resumo dos dados recentes + "h√° algo que vale registrar na sua mem√≥ria pessoal?". Chama Ollama (`temperature=0.7`). Se resposta n√£o vazia e n√£o gen√©rica, salva em `personal_memory`. Cold start: se `personal_memory` est√° vazia mas `page_knowledge` tem registros, rodar reflex√£o inicial imediatamente no startup (sem esperar 24h). Fire-and-forget via `asyncio.create_task()`.
+- [x] **Loop de reflex„o periÛdico + cold start** (`services/reflection_loop.py` novo; `main.py` ó registrar como task P3). A cada 24h, lÍ ˙ltimos registros de `page_knowledge` e `topic_interest_profile`. Monta prompt: personality_prompt + resumo dos dados recentes + "h· algo que vale registrar na sua memÛria pessoal?". Chama Ollama (`temperature=0.7`). Se resposta n„o vazia e n„o genÈrica, salva em `personal_memory`. Cold start: se `personal_memory` est· vazia mas `page_knowledge` tem registros, rodar reflex„o inicial imediatamente no startup (sem esperar 24h). Fire-and-forget via `asyncio.create_task()`.
 
-- [x] **Reflex√£o orientada a evento** (`services/knowledge_worker.py` ‚Äî ao final de `_extract_and_store()`). Ap√≥s gerar nota de insight para a Mnemosyne, gerar tamb√©m nota pessoal da AKASHA: prompt curto "voc√™ acabou de encontrar X ‚Äî o que voc√™ pensa sobre isso, em uma frase, na sua voz?". Salvar em `personal_memory` com type=`connection` ou `surprise`. Fire-and-forget, sem bloquear o worker.
+- [x] **Reflex„o orientada a evento** (`services/knowledge_worker.py` ó ao final de `_extract_and_store()`). ApÛs gerar nota de insight para a Mnemosyne, gerar tambÈm nota pessoal da AKASHA: prompt curto "vocÍ acabou de encontrar X ó o que vocÍ pensa sobre isso, em uma frase, na sua voz?". Salvar em `personal_memory` com type=`connection` ou `surprise`. Fire-and-forget, sem bloquear o worker.
 
 ##### Mnemosyne
 
-- [x] **Loop de reflex√£o p√≥s-notebook** (`gui/workers.py` ‚Äî novo `PersonalReflectionWorker`; `gui/main_window.py`). Ao fechar um notebook ou ap√≥s sess√£o com ‚â•3 trocas, disparar `PersonalReflectionWorker` em `IdlePriority`. L√™ hist√≥rico da sess√£o + StudioOutputs gerados. Prompt: personality_prompt + resumo da sess√£o + "o que voc√™ observou que vale lembrar?". Salva nota na voz da Mnemosyne em `personal_memory`.
+- [x] **Loop de reflex„o pÛs-notebook** (`gui/workers.py` ó novo `PersonalReflectionWorker`; `gui/main_window.py`). Ao fechar um notebook ou apÛs sess„o com =3 trocas, disparar `PersonalReflectionWorker` em `IdlePriority`. LÍ histÛrico da sess„o + StudioOutputs gerados. Prompt: personality_prompt + resumo da sess„o + "o que vocÍ observou que vale lembrar?". Salva nota na voz da Mnemosyne em `personal_memory`.
 
-- [x] **Reflex√£o peri√≥dica + cold start** (`gui/workers.py` ‚Äî `PersonalReflectionWorker` ou novo worker). Na inicializa√ß√£o com `personal_memory` vazia mas cole√ß√µes indexadas: rodar reflex√£o inicial em `IdlePriority` lendo amostra de chunks das cole√ß√µes ativas. Depois: reflex√£o di√°ria lendo StudioOutputs recentes e entradas recentes de `history.jsonl` dos notebooks. Toda opera√ß√£o em `QThread`, nunca no main thread.
+- [x] **Reflex„o periÛdica + cold start** (`gui/workers.py` ó `PersonalReflectionWorker` ou novo worker). Na inicializaÁ„o com `personal_memory` vazia mas coleÁıes indexadas: rodar reflex„o inicial em `IdlePriority` lendo amostra de chunks das coleÁıes ativas. Depois: reflex„o di·ria lendo StudioOutputs recentes e entradas recentes de `history.jsonl` dos notebooks. Toda operaÁ„o em `QThread`, nunca no main thread.
 
-- [x] **Sistema de feedback de insights** (AKASHA: `routers/chat.py` + `services/personal_memory.py`; Mnemosyne: `core/personal_memory.py` + UI de insights). Toda entrada de `personal_memory` compartilhada com a usu√°ria (via badge ‚¨° no AKASHA ou di√°logo no Mnemosyne) deve ter 3 a√ß√µes inline: **confirmar** (‚úì ‚Äî registra `feedback="confirmed"` na entrada), **rejeitar** (‚úó ‚Äî registra `feedback="dismissed"`), e **perguntar** (abre campo de texto livre que vai direto ao chat com a IA como mensagem, precedida pelo contexto do insight). A `personal_memory` ganha coluna `feedback TEXT DEFAULT NULL` para armazenar esse sinal. Os loops de reflex√£o da Fase B devem ler o feedback ao gerar novas reflex√µes ‚Äî insights confirmados t√™m peso maior como contexto, dismisseds s√£o exclu√≠dos do contexto de pr√≥ximas reflex√µes.
+- [x] **Sistema de feedback de insights** (AKASHA: `routers/chat.py` + `services/personal_memory.py`; Mnemosyne: `core/personal_memory.py` + UI de insights). Toda entrada de `personal_memory` compartilhada com a usu·ria (via badge ? no AKASHA ou di·logo no Mnemosyne) deve ter 3 aÁıes inline: **confirmar** (? ó registra `feedback="confirmed"` na entrada), **rejeitar** (? ó registra `feedback="dismissed"`), e **perguntar** (abre campo de texto livre que vai direto ao chat com a IA como mensagem, precedida pelo contexto do insight). A `personal_memory` ganha coluna `feedback TEXT DEFAULT NULL` para armazenar esse sinal. Os loops de reflex„o da Fase B devem ler o feedback ao gerar novas reflexıes ó insights confirmados tÍm peso maior como contexto, dismisseds s„o excluÌdos do contexto de prÛximas reflexıes.
 
-#### Fase C ‚Äî HUB: viewer de mem√≥ria pessoal
-
-##### HUB
-
-- [x] **Viewer de mem√≥ria no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `GET /memory/entries` no AKASHA e equivalente no Mnemosyne). Adicionar se√ß√£o expans√≠vel nos cards de AKASHA e Mnemosyne: lista de entradas da `personal_memory` em ordem cronol√≥gica reversa ‚Äî data, type (badge colorido), conte√∫do. Bot√£o deletar por entrada. Carregado sob demanda ao expandir (n√£o polling).
-
-#### Fase F ‚Äî HUB: monitoramento do KOSMOS
+#### Fase C ó HUB: viewer de memÛria pessoal
 
 ##### HUB
 
-- [x] **Card KOSMOS no Monitor** (`src/views/MonitoramentoView.tsx`; KOSMOS exp√µe `bg_processing` via ecosystem.json). Adicionar card "KOSMOS" no MonitoramentoView an√°logo ao AKASHA/Mnemosyne: mostra status da an√°lise de artigos em background (`bg_analyzer`) ‚Äî fila de artigos pendentes, worker ativo/parado, taxa de an√°lise (artigos/h se dispon√≠vel), e √∫ltimo artigo analisado. KOSMOS n√£o tem mem√≥ria pessoal ‚Äî o card n√£o precisa de editor de personalidade nem de viewer de mem√≥ria.
+- [x] **Viewer de memÛria no Monitor** (`src/views/MonitoramentoView.tsx`; endpoints `GET /memory/entries` no AKASHA e equivalente no Mnemosyne). Adicionar seÁ„o expansÌvel nos cards de AKASHA e Mnemosyne: lista de entradas da `personal_memory` em ordem cronolÛgica reversa ó data, type (badge colorido), conte˙do. Bot„o deletar por entrada. Carregado sob demanda ao expandir (n„o polling).
 
-#### Fase D ‚Äî Pop-up de insight da AKASHA durante pesquisa
+#### Fase F ó HUB: monitoramento do KOSMOS
 
-##### AKASHA
+##### HUB
 
-- [x] **Rastreamento de session queries** (`routers/search.py` ou `services/session_insight.py`). Manter lista em RAM das √∫ltimas queries da sess√£o atual (sem persistir). A cada nova busca: se ‚â•4 queries na sess√£o E h√° overlap tem√°tico entre elas (tokens em comum), agendar gera√ß√£o de session insight via `asyncio.create_task()`.
+- [x] **Card KOSMOS no Monitor** (`src/views/MonitoramentoView.tsx`; KOSMOS expıe `bg_processing` via ecosystem.json). Adicionar card "KOSMOS" no MonitoramentoView an·logo ao AKASHA/Mnemosyne: mostra status da an·lise de artigos em background (`bg_analyzer`) ó fila de artigos pendentes, worker ativo/parado, taxa de an·lise (artigos/h se disponÌvel), e ˙ltimo artigo analisado. KOSMOS n„o tem memÛria pessoal ó o card n„o precisa de editor de personalidade nem de viewer de memÛria.
 
-- [x] **Gera√ß√£o e exibi√ß√£o do session insight** (`services/session_insight.py`; `templates/search.html` ou `static/js/`). Task P3: prompt com personality_prompt + queries recentes + trechos dos resultados + "o que voc√™ comentaria sobre o que a usu√°ria est√° explorando? 1-2 frases na sua voz, sem explicar o conte√∫do ‚Äî apenas seu coment√°rio pessoal". Resultado servido via `GET /insight/current` (polling leve, ~10s). Frontend: overlay n√£o-bloqueante no canto inferior direito, dispens√°vel com clique, nunca interrompe a busca.
-
-#### Fase E ‚Äî Comunica√ß√£o AKASHA‚ÜîMnemosyne com pensamento pr√≥prio
+#### Fase D ó Pop-up de insight da AKASHA durante pesquisa
 
 ##### AKASHA
 
-- [x] **Upgrade do notify_mnemosyne_insight** (`ecosystem_client.py`). Incluir campo `akasha_thought: str` no payload de notifica√ß√£o ‚Äî a nota pessoal gerada na Fase B. Se nenhuma nota foi gerada para aquela descoberta, omitir o campo.
+- [x] **Rastreamento de session queries** (`routers/search.py` ou `services/session_insight.py`). Manter lista em RAM das ˙ltimas queries da sess„o atual (sem persistir). A cada nova busca: se =4 queries na sess„o E h· overlap tem·tico entre elas (tokens em comum), agendar geraÁ„o de session insight via `asyncio.create_task()`.
+
+- [x] **GeraÁ„o e exibiÁ„o do session insight** (`services/session_insight.py`; `templates/search.html` ou `static/js/`). Task P3: prompt com personality_prompt + queries recentes + trechos dos resultados + "o que vocÍ comentaria sobre o que a usu·ria est· explorando? 1-2 frases na sua voz, sem explicar o conte˙do ó apenas seu coment·rio pessoal". Resultado servido via `GET /insight/current` (polling leve, ~10s). Frontend: overlay n„o-bloqueante no canto inferior direito, dispens·vel com clique, nunca interrompe a busca.
+
+#### Fase E ó ComunicaÁ„o AKASHA?Mnemosyne com pensamento prÛprio
+
+##### AKASHA
+
+- [x] **Upgrade do notify_mnemosyne_insight** (`ecosystem_client.py`). Incluir campo `akasha_thought: str` no payload de notificaÁ„o ó a nota pessoal gerada na Fase B. Se nenhuma nota foi gerada para aquela descoberta, omitir o campo.
 
 ##### Mnemosyne
 
-- [x] **Receber e processar pensamento da AKASHA** (`core/insights.py`). Ao receber payload de insight, verificar `akasha_thought`. Se presente: exibir separado do dado bruto no painel de di√°logo (label "AKASHA pensa:"), e injetar no prompt da Mnemosyne como contexto adicional ‚Äî n√£o como determinante, mas como perspectiva de igual que ela pode considerar ou discordar.
+- [x] **Receber e processar pensamento da AKASHA** (`core/insights.py`). Ao receber payload de insight, verificar `akasha_thought`. Se presente: exibir separado do dado bruto no painel de di·logo (label "AKASHA pensa:"), e injetar no prompt da Mnemosyne como contexto adicional ó n„o como determinante, mas como perspectiva de igual que ela pode considerar ou discordar.
 
 ---
 
-### LLMs padr√£o do HUB ‚Äî todos os apps devem herdar os modelos configurados | 2026-05-17
+### LLMs padr„o do HUB ó todos os apps devem herdar os modelos configurados | 2026-05-17
 
-> Contexto: atualmente cada app que usa IA (KOSMOS, Mnemosyne, AKASHA) tem seus modelos configurados localmente. O HUB j√° define modelos recomendados via LOGOS. Os apps devem ler os modelos do ecosystem.json no startup e usar esses como padr√£o ‚Äî sem persistir a escolha localmente entre sess√µes, para que o HUB seja sempre a fonte de verdade. A usu√°ria pode alterar o modelo durante uma sess√£o do app, mas na pr√≥xima abertura o app volta ao padr√£o do HUB.
+> Contexto: atualmente cada app que usa IA (KOSMOS, Mnemosyne, AKASHA) tem seus modelos configurados localmente. O HUB j· define modelos recomendados via LOGOS. Os apps devem ler os modelos do ecosystem.json no startup e usar esses como padr„o ó sem persistir a escolha localmente entre sessıes, para que o HUB seja sempre a fonte de verdade. A usu·ria pode alterar o modelo durante uma sess„o do app, mas na prÛxima abertura o app volta ao padr„o do HUB.
 
 #### KOSMOS
 
-- [x] **Herdar modelos do HUB no startup** (`app/utils/config.py`). `_RUNTIME_KEYS = {"ai_gen_model"}` exclu√≠do do `_user_set_keys` no load ‚Äî LOGOS sempre vence no startup. `set()` n√£o grava runtime keys em disco ‚Äî troca durante a sess√£o √© s√≥ em mem√≥ria.
+- [x] **Herdar modelos do HUB no startup** (`app/utils/config.py`). `_RUNTIME_KEYS = {"ai_gen_model"}` excluÌdo do `_user_set_keys` no load ó LOGOS sempre vence no startup. `set()` n„o grava runtime keys em disco ó troca durante a sess„o È sÛ em memÛria.
 
 #### Mnemosyne
 
-- [x] **Herdar modelos do HUB no startup** (`core/config.py`). `_apply_logos_recommendations()` sempre aplica `llm_model`/`embed_model` do LOGOS independente do arquivo salvo. `save_config()` n√£o grava `llm_model`/`embed_model` em disco ‚Äî valores v√™m sempre do LOGOS no startup.
+- [x] **Herdar modelos do HUB no startup** (`core/config.py`). `_apply_logos_recommendations()` sempre aplica `llm_model`/`embed_model` do LOGOS independente do arquivo salvo. `save_config()` n„o grava `llm_model`/`embed_model` em disco ó valores vÍm sempre do LOGOS no startup.
 
 #### AKASHA
 
@@ -6233,429 +6233,429 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ---
 
-### Sincroniza√ß√£o de dados do ecossistema via Syncthing + git offline | 2026-05-17
+### SincronizaÁ„o de dados do ecossistema via Syncthing + git offline | 2026-05-17
 
-> Contexto: dados pessoais (mem√≥ria das IAs, notebooks, listas curadas, transcri√ß√µes) precisam sincronizar entre CachyOS principal, laptop e WorkPC via Syncthing. O HUB gerencia a pasta sincronizada como repo git offline para garantir integridade e hist√≥rico. Dados das IAs ficam em `.ai_private/` (nunca indexado); backups e fontes de verdade em `.backup/` (nunca indexado). A pasta raiz (`sync_root`) √© configurada pelo usu√°rio no HUB na primeira execu√ß√£o.
+> Contexto: dados pessoais (memÛria das IAs, notebooks, listas curadas, transcriÁıes) precisam sincronizar entre CachyOS principal, laptop e WorkPC via Syncthing. O HUB gerencia a pasta sincronizada como repo git offline para garantir integridade e histÛrico. Dados das IAs ficam em `.ai_private/` (nunca indexado); backups e fontes de verdade em `.backup/` (nunca indexado). A pasta raiz (`sync_root`) È configurada pelo usu·rio no HUB na primeira execuÁ„o.
 
 #### ecosystem_client
 
-- [x] **`sync_root` como campo top-level + fun√ß√µes auxiliares** (`ecosystem_client.py`). Adicionar `"sync_root": ""` ao `_DEFAULTS` (campo top-level, n√£o nested em app); corrigir l√≥gica de merge em `read_ecosystem()` para tratar strings (n√£o apenas dict/list); adicionar `write_top_level(key, value)` para escrever campo top-level atomicamente; adicionar `get_sync_root() ‚Üí Path | None` (retorna `None` se vazio), `get_ai_private_dir() ‚Üí Path | None` (`{sync_root}/.ai_private/`), `get_backup_dir() ‚Üí Path | None` (`{sync_root}/.backup/`).
+- [x] **`sync_root` como campo top-level + funÁıes auxiliares** (`ecosystem_client.py`). Adicionar `"sync_root": ""` ao `_DEFAULTS` (campo top-level, n„o nested em app); corrigir lÛgica de merge em `read_ecosystem()` para tratar strings (n„o apenas dict/list); adicionar `write_top_level(key, value)` para escrever campo top-level atomicamente; adicionar `get_sync_root() ? Path | None` (retorna `None` se vazio), `get_ai_private_dir() ? Path | None` (`{sync_root}/.ai_private/`), `get_backup_dir() ? Path | None` (`{sync_root}/.backup/`).
 
 #### HUB
 
-- [x] **Tela de setup de `sync_root`** (`src/views/SyncSetupView.tsx`; `src/lib/tauri.ts`; `src-tauri/src/`). Se `ecosystem.json` n√£o tiver `sync_root` configurado ao abrir o HUB, exibir tela de primeiro uso com seletor de pasta (dialog nativo Tauri) e bot√£o confirmar; ao confirmar, chamar `write_top_level("sync_root", path)` e recarregar o app; s√≥ mostrar a UI principal ap√≥s configura√ß√£o. Se j√° configurado, pular direto.
+- [x] **Tela de setup de `sync_root`** (`src/views/SyncSetupView.tsx`; `src/lib/tauri.ts`; `src-tauri/src/`). Se `ecosystem.json` n„o tiver `sync_root` configurado ao abrir o HUB, exibir tela de primeiro uso com seletor de pasta (dialog nativo Tauri) e bot„o confirmar; ao confirmar, chamar `write_top_level("sync_root", path)` e recarregar o app; sÛ mostrar a UI principal apÛs configuraÁ„o. Se j· configurado, pular direto.
 
-- [x] **Git init na pasta sync_root** (`src-tauri/src/`; Tauri command `git_init_sync_root()`). No startup do HUB, se `sync_root` configurado e `{sync_root}/.git/` n√£o existir: executar `git init`; criar `{sync_root}/.gitignore` com `*.db-wal` e `*.db-shm`; criar `{sync_root}/.stignore` (Syncthing) com os mesmos padr√µes mais `*.tmp`; fazer commit inicial vazio `"init: ecosystem sync root"`; se `.git/` j√° existir, apenas verificar que `.gitignore` tem as entradas.
+- [x] **Git init na pasta sync_root** (`src-tauri/src/`; Tauri command `git_init_sync_root()`). No startup do HUB, se `sync_root` configurado e `{sync_root}/.git/` n„o existir: executar `git init`; criar `{sync_root}/.gitignore` com `*.db-wal` e `*.db-shm`; criar `{sync_root}/.stignore` (Syncthing) com os mesmos padrıes mais `*.tmp`; fazer commit inicial vazio `"init: ecosystem sync root"`; se `.git/` j· existir, apenas verificar que `.gitignore` tem as entradas.
 
-- [x] **Aba Git no HUB** (`src/views/GitView.tsx`; Tauri commands `git_status()`, `git_commit(message)`, `git_log(n)`, `git_diff()`). Nova aba na sidebar do HUB. Exibe: status em tempo real (polling 5s ‚Äî lista de arquivos modificados/n√£o-rastreados com √≠cone de estado); bot√£o "Commit" com campo de mensagem opcional (usa mensagem autom√°tica se vazio); log dos √∫ltimos 20 commits (hash curto, data, mensagem); se√ß√£o "diff" expans√≠vel por arquivo. Todos os comandos git executados no `sync_root` via `std::process::Command` em Rust. Indicar visualmente se h√° commits n√£o-vistos (recebidos via Syncthing desde √∫ltimo startup).
+- [x] **Aba Git no HUB** (`src/views/GitView.tsx`; Tauri commands `git_status()`, `git_commit(message)`, `git_log(n)`, `git_diff()`). Nova aba na sidebar do HUB. Exibe: status em tempo real (polling 5s ó lista de arquivos modificados/n„o-rastreados com Ìcone de estado); bot„o "Commit" com campo de mensagem opcional (usa mensagem autom·tica se vazio); log dos ˙ltimos 20 commits (hash curto, data, mensagem); seÁ„o "diff" expansÌvel por arquivo. Todos os comandos git executados no `sync_root` via `std::process::Command` em Rust. Indicar visualmente se h· commits n„o-vistos (recebidos via Syncthing desde ˙ltimo startup).
 
-- [x] **Auto-commit quando app fecha** (`src-tauri/src/`; integrar ao monitor de processos existente). Quando HUB detecta que um app do ecossistema fechou (AKASHA, Mnemosyne, KOSMOS, HERMES): aguardar 3s para grava√ß√µes finalizarem; executar `git add -A -- {arquivos_do_app}` e `git commit -m "auto: {app} closed ‚Äî {descri√ß√£o}"`. Mensagens por app: AKASHA ‚Üí `"library and memory synced"`; Mnemosyne ‚Üí `"notebooks and memory updated"`; KOSMOS ‚Üí `"sources updated"`; HERMES ‚Üí `"transcriptions saved"`. N√£o commitar se o app ainda estiver rodando. O HUB tamb√©m commita seus pr√≥prios arquivos ao fechar: `"auto: hub closed ‚Äî ecosystem snapshot"`.
+- [x] **Auto-commit quando app fecha** (`src-tauri/src/`; integrar ao monitor de processos existente). Quando HUB detecta que um app do ecossistema fechou (AKASHA, Mnemosyne, KOSMOS, HERMES): aguardar 3s para gravaÁıes finalizarem; executar `git add -A -- {arquivos_do_app}` e `git commit -m "auto: {app} closed ó {descriÁ„o}"`. Mensagens por app: AKASHA ? `"library and memory synced"`; Mnemosyne ? `"notebooks and memory updated"`; KOSMOS ? `"sources updated"`; HERMES ? `"transcriptions saved"`. N„o commitar se o app ainda estiver rodando. O HUB tambÈm commita seus prÛprios arquivos ao fechar: `"auto: hub closed ó ecosystem snapshot"`.
 
-- [x] **Auto-commit agendado** (`src-tauri/src/`). A cada 60 minutos (timer interno no HUB): se houver mudan√ßas n√£o-commitadas em arquivos de apps que N√ÉO estejam rodando no momento, executar `git add -A` e `git commit -m "auto: hub scheduled ‚Äî {N} files changed"`. Nunca commitar arquivos de um app que esteja aberto (verificar via lista de processos monitorados).
+- [x] **Auto-commit agendado** (`src-tauri/src/`). A cada 60 minutos (timer interno no HUB): se houver mudanÁas n„o-commitadas em arquivos de apps que N√O estejam rodando no momento, executar `git add -A` e `git commit -m "auto: hub scheduled ó {N} files changed"`. Nunca commitar arquivos de um app que esteja aberto (verificar via lista de processos monitorados).
 
-- [x] **Detectar commits recebidos via Syncthing** (`src-tauri/src/`; `GitView.tsx`). No startup do HUB, ler o hash HEAD antes e depois de qualquer atualiza√ß√£o do Syncthing (comparar com hash salvo na sess√£o anterior em `ecosystem.json["hub"]["last_git_head"]`). Se diferente, exibir na aba Git: `"N commits recebidos desde a √∫ltima sess√£o"` com lista dos arquivos alterados.
+- [x] **Detectar commits recebidos via Syncthing** (`src-tauri/src/`; `GitView.tsx`). No startup do HUB, ler o hash HEAD antes e depois de qualquer atualizaÁ„o do Syncthing (comparar com hash salvo na sess„o anterior em `ecosystem.json["hub"]["last_git_head"]`). Se diferente, exibir na aba Git: `"N commits recebidos desde a ˙ltima sess„o"` com lista dos arquivos alterados.
 
 #### AKASHA
 
-- [x] **Separar `personal_memory` para arquivo pr√≥prio** (`services/personal_memory.py`; `database.py` ‚Äî SCHEMA_VERSION 33). Mover a tabela `personal_memory` do `akasha.db` para `{get_ai_private_dir()}/akasha/personal_memory.db` ‚Äî arquivo SQLite independente. `personal_memory.py` passa a usar o novo caminho (cria o diret√≥rio se n√£o existir; fallback para `~/.local/share/akasha/personal_memory.db` se `sync_root` n√£o configurado). Migration v33: copiar dados existentes para o novo arquivo e fazer DROP TABLE no akasha.db original.
+- [x] **Separar `personal_memory` para arquivo prÛprio** (`services/personal_memory.py`; `database.py` ó SCHEMA_VERSION 33). Mover a tabela `personal_memory` do `akasha.db` para `{get_ai_private_dir()}/akasha/personal_memory.db` ó arquivo SQLite independente. `personal_memory.py` passa a usar o novo caminho (cria o diretÛrio se n„o existir; fallback para `~/.local/share/akasha/personal_memory.db` se `sync_root` n„o configurado). Migration v33: copiar dados existentes para o novo arquivo e fazer DROP TABLE no akasha.db original.
 
-- [x] **Listas do AKASHA como fonte de verdade (leitura)** (`services/list_sync.py` ‚Äî novo; `main.py` ‚Äî chamar no lifespan ap√≥s `init_db()`). No startup, ler os JSONs em `{get_backup_dir()}/akasha/`: `sites.json`, `favorites.json`, `blocklist.json`, `watch_later.json`, `lenses.json`, `papers.json`, `highlights.json`. Para cada arquivo: se existir e DB estiver vazio (tabela sem linhas), importar os dados do JSON para o DB. Se DB j√° tiver dados, comparar e aplicar diff (adicionar entradas ausentes, n√£o sobrescrever modifica√ß√µes locais recentes). Criar os arquivos JSON vazios se n√£o existirem.
+- [x] **Listas do AKASHA como fonte de verdade (leitura)** (`services/list_sync.py` ó novo; `main.py` ó chamar no lifespan apÛs `init_db()`). No startup, ler os JSONs em `{get_backup_dir()}/akasha/`: `sites.json`, `favorites.json`, `blocklist.json`, `watch_later.json`, `lenses.json`, `papers.json`, `highlights.json`. Para cada arquivo: se existir e DB estiver vazio (tabela sem linhas), importar os dados do JSON para o DB. Se DB j· tiver dados, comparar e aplicar diff (adicionar entradas ausentes, n„o sobrescrever modificaÁıes locais recentes). Criar os arquivos JSON vazios se n„o existirem.
 
-- [x] **Listas do AKASHA como fonte de verdade (escrita)** (`routers/crawler.py`, `routers/favorites.py`, `routers/highlights.py`, `routers/papers.py`, `routers/lenses.py`, `routers/watch_later.py`). Ap√≥s cada opera√ß√£o de cria√ß√£o/edi√ß√£o/remo√ß√£o em qualquer das listas, chamar `list_sync.write_json(list_name)` que serializa a tabela inteira para o JSON correspondente em `.backup/akasha/`. Fire-and-forget via `asyncio.create_task()` para n√£o bloquear a resposta HTTP.
+- [x] **Listas do AKASHA como fonte de verdade (escrita)** (`routers/crawler.py`, `routers/favorites.py`, `routers/highlights.py`, `routers/papers.py`, `routers/lenses.py`, `routers/watch_later.py`). ApÛs cada operaÁ„o de criaÁ„o/ediÁ„o/remoÁ„o em qualquer das listas, chamar `list_sync.write_json(list_name)` que serializa a tabela inteira para o JSON correspondente em `.backup/akasha/`. Fire-and-forget via `asyncio.create_task()` para n„o bloquear a resposta HTTP.
 
 #### Mnemosyne
 
-- [x] **Mover `personal_memory.db` para `sync_root`** (`core/personal_memory.py`). Alterar `_get_db()` para retornar `get_ai_private_dir() / "mnemosyne" / "personal_memory.db"` quando `sync_root` configurado; criar diret√≥rio se n√£o existir. Na primeira execu√ß√£o com novo caminho: se arquivo existir em `get_app_data_dir() / "personal_memory.db"`, copiar para o novo local e manter o antigo como `.bak` (n√£o deletar).
+- [x] **Mover `personal_memory.db` para `sync_root`** (`core/personal_memory.py`). Alterar `_get_db()` para retornar `get_ai_private_dir() / "mnemosyne" / "personal_memory.db"` quando `sync_root` configurado; criar diretÛrio se n„o existir. Na primeira execuÁ„o com novo caminho: se arquivo existir em `get_app_data_dir() / "personal_memory.db"`, copiar para o novo local e manter o antigo como `.bak` (n„o deletar).
 
-- [x] **Mover `notebooks/` para `sync_root`** (`gui/main_window.py` ‚Äî init do `NotebookStore`). Alterar cria√ß√£o do `NotebookStore` para usar `get_ai_private_dir() / "mnemosyne" / "notebooks"` quando `sync_root` configurado; fallback para `get_app_data_dir() / "notebooks"`. Na primeira execu√ß√£o com novo caminho: se pasta existir no local antigo e novo estiver vazia, mover (`shutil.move`) todo o conte√∫do.
+- [x] **Mover `notebooks/` para `sync_root`** (`gui/main_window.py` ó init do `NotebookStore`). Alterar criaÁ„o do `NotebookStore` para usar `get_ai_private_dir() / "mnemosyne" / "notebooks"` quando `sync_root` configurado; fallback para `get_app_data_dir() / "notebooks"`. Na primeira execuÁ„o com novo caminho: se pasta existir no local antigo e novo estiver vazia, mover (`shutil.move`) todo o conte˙do.
 
-- [x] **Exportar `collections.json` para `.backup/`** (`core/config.py` ‚Äî `save_config()`). Ap√≥s cada `save_config()`, serializar a lista de cole√ß√µes ativas (watched_dirs, collection_type, enabled, nome) para `{get_backup_dir()}/mnemosyne/collections.json`. Tamb√©m escrever no startup para manter atualizado.
+- [x] **Exportar `collections.json` para `.backup/`** (`core/config.py` ó `save_config()`). ApÛs cada `save_config()`, serializar a lista de coleÁıes ativas (watched_dirs, collection_type, enabled, nome) para `{get_backup_dir()}/mnemosyne/collections.json`. TambÈm escrever no startup para manter atualizado.
 
 #### KOSMOS
 
-- [x] **`sources.json` em `.backup/` como fonte de verdade** (`app/core/feed_store.py`). Ler fontes de `{get_backup_dir()}/kosmos/sources.json` no startup se arquivo existir; escrever a cada adi√ß√£o/remo√ß√£o de fonte. Se `sync_root` n√£o configurado, usar caminho local atual sem mudan√ßa.
+- [x] **`sources.json` em `.backup/` como fonte de verdade** (`app/core/feed_store.py`). Ler fontes de `{get_backup_dir()}/kosmos/sources.json` no startup se arquivo existir; escrever a cada adiÁ„o/remoÁ„o de fonte. Se `sync_root` n„o configurado, usar caminho local atual sem mudanÁa.
 
 #### HERMES
 
-- [x] **`settings.json` e transcri√ß√µes em `.backup/`** (`hermes.py`). Copiar `settings.json` para `{get_backup_dir()}/hermes/settings.json` a cada salvar de config. Ap√≥s cada transcri√ß√£o conclu√≠da, copiar o arquivo de texto gerado para `{get_backup_dir()}/hermes/transcriptions/{nome_arquivo}.txt`.
+- [x] **`settings.json` e transcriÁıes em `.backup/`** (`hermes.py`). Copiar `settings.json` para `{get_backup_dir()}/hermes/settings.json` a cada salvar de config. ApÛs cada transcriÁ„o concluÌda, copiar o arquivo de texto gerado para `{get_backup_dir()}/hermes/transcriptions/{nome_arquivo}.txt`.
 
-### Diagn√≥stico Mnemosyne ‚Äî integridade de dados, logs e paths | 2026-05-18
-> Contexto: investiga√ß√£o do ChromaDB vazio revelou dois bugs estruturais no Mnemosyne. O IndexWorker usa shutil.rmtree antes de garantir sucesso da nova indexa√ß√£o, causando perda irrevers√≠vel de dados. O tracker.json reporta tudo como indexado mesmo com ChromaDB vazio, enganando a usu√°ria. Adicionalmente: watched_dir local no settings.json aponta para caminho antigo; falta sistema de logs que teria revelado o problema mais cedo.
+### DiagnÛstico Mnemosyne ó integridade de dados, logs e paths | 2026-05-18
+> Contexto: investigaÁ„o do ChromaDB vazio revelou dois bugs estruturais no Mnemosyne. O IndexWorker usa shutil.rmtree antes de garantir sucesso da nova indexaÁ„o, causando perda irreversÌvel de dados. O tracker.json reporta tudo como indexado mesmo com ChromaDB vazio, enganando a usu·ria. Adicionalmente: watched_dir local no settings.json aponta para caminho antigo; falta sistema de logs que teria revelado o problema mais cedo.
 
 #### Mnemosyne
-- [x] **Bug 1 ‚Äî IndexWorker destr√≥i dados sem backup** (`gui/workers.py`). Substituir `shutil.rmtree(mnemosyne_dir)` por `os.rename(mnemosyne_dir, mnemosyne_dir + ".bak")`. Deletar o `.bak` apenas ap√≥s `finished.emit(True, ...)`. Em caso de falha ou interrup√ß√£o, o `.bak` permanece para recupera√ß√£o manual.
-- [x] **Bug 2 ‚Äî ChromaDB vazio mas UI reporta "indexado"** (`core/indexer.py`). Em `load_all_vectorstores()`, ap√≥s abrir cada vectorstore, verificar `vs._collection.count()`. Se count == 0, n√£o incluir no resultado ‚Äî vectorstore tratado como inexistente. O UI mostrar√° "Nenhum √≠ndice encontrado" em vez de enganosamente mostrar "indexado".
-- [x] **Corrigir caminho errado de watched_dir** (`core/config.py`; `.config/settings.json`). A cole√ß√£o "Biblioteca" em settings.json aponta para `/home/spacewitch/Documents/biblioteca` (caminho antigo/errado). Em `load_config()`, quando `ecosystem_watched_dir` estiver definido, atualizar o path da cole√ß√£o ativa correspondente e salvar com `save_config()` para manter consist√™ncia ‚Äî evita exibir o caminho errado na UI e em fun√ß√µes que usam `coll.path` diretamente.
-- [x] **Verifica√ß√£o cruzada de integridade no startup** (`gui/main_window.py`). Ap√≥s `load_all_vectorstores()` retornar vazio, verificar se `_collection_index` indica indexa√ß√£o recente. Se sim, exibir dialog explicativo: "ChromaDB sem embeddings apesar de indexa√ß√£o registrada ‚Äî re-indexa√ß√£o necess√°ria" com bot√£o direto para "Indexar tudo".
-- [x] **Sistema de logs robusto** (`core/logger.py`; `gui/workers.py`). RotatingFileHandler em `{sync_root}/mnemosyne/mnemosyne.log` (5 MB, 3 backups) com fallback local. Workers logam in√≠cio, erros e t√©rmino.
+- [x] **Bug 1 ó IndexWorker destrÛi dados sem backup** (`gui/workers.py`). Substituir `shutil.rmtree(mnemosyne_dir)` por `os.rename(mnemosyne_dir, mnemosyne_dir + ".bak")`. Deletar o `.bak` apenas apÛs `finished.emit(True, ...)`. Em caso de falha ou interrupÁ„o, o `.bak` permanece para recuperaÁ„o manual.
+- [x] **Bug 2 ó ChromaDB vazio mas UI reporta "indexado"** (`core/indexer.py`). Em `load_all_vectorstores()`, apÛs abrir cada vectorstore, verificar `vs._collection.count()`. Se count == 0, n„o incluir no resultado ó vectorstore tratado como inexistente. O UI mostrar· "Nenhum Ìndice encontrado" em vez de enganosamente mostrar "indexado".
+- [x] **Corrigir caminho errado de watched_dir** (`core/config.py`; `.config/settings.json`). A coleÁ„o "Biblioteca" em settings.json aponta para `/home/spacewitch/Documents/biblioteca` (caminho antigo/errado). Em `load_config()`, quando `ecosystem_watched_dir` estiver definido, atualizar o path da coleÁ„o ativa correspondente e salvar com `save_config()` para manter consistÍncia ó evita exibir o caminho errado na UI e em funÁıes que usam `coll.path` diretamente.
+- [x] **VerificaÁ„o cruzada de integridade no startup** (`gui/main_window.py`). ApÛs `load_all_vectorstores()` retornar vazio, verificar se `_collection_index` indica indexaÁ„o recente. Se sim, exibir dialog explicativo: "ChromaDB sem embeddings apesar de indexaÁ„o registrada ó re-indexaÁ„o necess·ria" com bot„o direto para "Indexar tudo".
+- [x] **Sistema de logs robusto** (`core/logger.py`; `gui/workers.py`). RotatingFileHandler em `{sync_root}/mnemosyne/mnemosyne.log` (5 MB, 3 backups) com fallback local. Workers logam inÌcio, erros e tÈrmino.
 
 #### AKASHA
-- [x] **Sistema de logs robusto** (`services/log_buffer.py` ‚Äî novo; `routers/system.py`). Handler circular em mem√≥ria (500 linhas) no root logger. `GET /system/logs?n=100` retorna JSON `{"lines": [...]}`.
+- [x] **Sistema de logs robusto** (`services/log_buffer.py` ó novo; `routers/system.py`). Handler circular em memÛria (500 linhas) no root logger. `GET /system/logs?n=100` retorna JSON `{"lines": [...]}`.
 
 #### HUB
-- [x] **Log viewer no monitor** (`src/views/MonitoramentoView.tsx`; `commands/config.rs`). LogStrip sempre vis√≠vel nos AppBlocks de AKASHA e Mnemosyne. AKASHA: polling fetch a cada 3s. Mnemosyne: Tauri command `read_app_log` lendo o arquivo de log. Linhas de erro em vermelho.
+- [x] **Log viewer no monitor** (`src/views/MonitoramentoView.tsx`; `commands/config.rs`). LogStrip sempre visÌvel nos AppBlocks de AKASHA e Mnemosyne. AKASHA: polling fetch a cada 3s. Mnemosyne: Tauri command `read_app_log` lendo o arquivo de log. Linhas de erro em vermelho.
 
 ---
 
-### AKASHA ‚Äî perfil de interesse e aprendizado | 2026-05-18
-> Contexto: discuss√£o sobre o perfil de interesse da AKASHA (topic_interest_profile) e se o aprendizado atual (contagem de frequ√™ncia de t√≥picos + RAG) √© suficientemente real. Dois itens levantados: seeds manuais de interesse e pesquisa sobre abordagens mais sofisticadas.
+### AKASHA ó perfil de interesse e aprendizado | 2026-05-18
+> Contexto: discuss„o sobre o perfil de interesse da AKASHA (topic_interest_profile) e se o aprendizado atual (contagem de frequÍncia de tÛpicos + RAG) È suficientemente real. Dois itens levantados: seeds manuais de interesse e pesquisa sobre abordagens mais sofisticadas.
 
 #### AKASHA
-- [x] **Seeds manuais de interesse no HUB** (`ecosystem.json` ‚Äî nova chave `akasha.interest_seeds: list[str]`; HUB ‚Äî painel de configura√ß√£o da AKASHA com campo de edi√ß√£o de lista; `services/knowledge_worker.py` ‚Äî ao iniciar o worker, ler `interest_seeds` do ecosystem.json e pr√©-popular `topic_interest_profile` com frequ√™ncia inicial 1 para cada seed). Permite √† usu√°ria definir temas de interesse antes de a AKASHA acumular hist√≥rico suficiente para inferir sozinha.
+- [x] **Seeds manuais de interesse no HUB** (`ecosystem.json` ó nova chave `akasha.interest_seeds: list[str]`; HUB ó painel de configuraÁ„o da AKASHA com campo de ediÁ„o de lista; `services/knowledge_worker.py` ó ao iniciar o worker, ler `interest_seeds` do ecosystem.json e prÈ-popular `topic_interest_profile` com frequÍncia inicial 1 para cada seed). Permite ‡ usu·ria definir temas de interesse antes de a AKASHA acumular histÛrico suficiente para inferir sozinha.
 
 #### Ecossistema (pesquisa)
-- [x] **Pesquisar: sistemas de aprendizado de prefer√™ncia pessoal para assistentes locais** ‚Äî investigar alternativas ao topic frequency counting: grafos de conhecimento (entidades + rela√ß√µes tipadas), mem√≥ria epis√≥dica estruturada, preference learning com feedback expl√≠cito (confirmed/dismissed j√° implementado), e abordagens de long-term memory para LLMs locais. Avaliar o que √© vi√°vel sem fine-tuning em hardware da usu√°ria (sem GPU dedicada no Windows, RX 6600 no principal). Objetivo: decidir se o modelo atual precisa ser substitu√≠do ou s√≥ complementado.
+- [x] **Pesquisar: sistemas de aprendizado de preferÍncia pessoal para assistentes locais** ó investigar alternativas ao topic frequency counting: grafos de conhecimento (entidades + relaÁıes tipadas), memÛria episÛdica estruturada, preference learning com feedback explÌcito (confirmed/dismissed j· implementado), e abordagens de long-term memory para LLMs locais. Avaliar o que È vi·vel sem fine-tuning em hardware da usu·ria (sem GPU dedicada no Windows, RX 6600 no principal). Objetivo: decidir se o modelo atual precisa ser substituÌdo ou sÛ complementado.
 
 ---
 
-### AKASHA ‚Äî Funcionalidades da assistente | 2026-05-18
-> Contexto: sess√£o de planejamento de funcionalidades: Jina Reader como fallback para sites bloqueados (403/Cloudflare), autocomplete estendido ao corpus indexado, mapa de conex√µes obrigat√≥rio em segundo plano, sugest√µes de pesquisas relacionadas nos resultados, e arquitetura de contexto em tempo real (AKASHA precisa ver o que a usu√°ria est√° pesquisando agora, n√£o apenas o √≠ndice hist√≥rico).
+### AKASHA ó Funcionalidades da assistente | 2026-05-18
+> Contexto: sess„o de planejamento de funcionalidades: Jina Reader como fallback para sites bloqueados (403/Cloudflare), autocomplete estendido ao corpus indexado, mapa de conexıes obrigatÛrio em segundo plano, sugestıes de pesquisas relacionadas nos resultados, e arquitetura de contexto em tempo real (AKASHA precisa ver o que a usu·ria est· pesquisando agora, n„o apenas o Ìndice histÛrico).
 
 #### AKASHA
-- [x] **Jina Reader fallback no crawler para sites que retornam 403** ‚Äî pesquisar limita√ß√µes do Jina Reader (`r.jina.ai`) para crawling em volume (rate limits, conte√∫do retornado, casos de falha), depois implementar em `services/crawler.py`: quando `fetch_page()` receber 403 ou Cloudflare challenge (status 403/429 ou body contendo "cf-browser-verification"), tentar novamente via `https://r.jina.ai/{url_original}` antes de registrar como falha. N√£o usar Jina como rota prim√°ria ‚Äî apenas fallback.
-- [x] **Autocomplete estendido ao corpus** ‚Äî atualmente o autocomplete (`database.py::get_query_suggestions`) retorna apenas queries do `search_history`. Estender para incluir: t√≠tulos de `crawl_pages` (campo `title`), t√≥picos de `page_knowledge` (campo `topics` JSON), e t√≥picos do `topic_interest_profile`. Ranking: hist√≥rico de busca primeiro (por `count`), depois corpus por relev√¢ncia de prefixo. Manter limite de ~10 sugest√µes totais.
-- [x] **Mapa de conex√µes em segundo plano (obrigat√≥rio)** ‚Äî construir grafo de rela√ß√µes entre entidades/t√≥picos a partir do `entity_graph` e `topic_interest_profile` existentes. Duas partes: (1) constru√ß√£o incremental em background: ao processar cada p√°gina no `KnowledgeWorker`, atualizar arestas no grafo (`entity_a ‚Üí entity_b` com peso = co-ocorr√™ncia); (2) visualiza√ß√£o no web UI: nova aba ou modal "Conex√µes" com grafo naveg√°vel (D3.js ou similar) mostrando clusters de t√≥picos e links entre eles. O grafo deve ser naveg√°vel ‚Äî clicar num n√≥ exibe p√°ginas relacionadas.
-- [x] **Sugest√µes de pesquisas relacionadas nos resultados** ‚Äî ao exibir resultados de busca, mostrar se√ß√£o "Pesquisas relacionadas" com 3-5 queries sugeridas geradas a partir dos t√≥picos dos resultados e do `topic_interest_profile`. Gera√ß√£o: extrair t√≥picos dos top-5 resultados, cruzar com `topic_interest_profile`, montar queries sugeridas sem LLM (apenas combina√ß√µes de termos de alta relev√¢ncia) para manter lat√™ncia baixa.
-- [ ] **AKASHA salva mem√≥rias pessoais das sess√µes de busca** ‚Äî ao final de cada sess√£o de busca (quando a sess√£o expira por inatividade ou √© encerrada manualmente), a AKASHA deve escrever uma entrada na sua `personal_memory` com suas pr√≥prias palavras: o que a usu√°ria estava pesquisando, quais conex√µes ela percebeu, qual padr√£o de interesse emergiu. A entrada deve: (1) se referir √† usu√°ria pelo nome; (2) registrar data/hora da sess√£o; (3) ser escrita em primeira pessoa da AKASHA ‚Äî n√£o um log t√©cnico, mas uma observa√ß√£o genu√≠na. Implementar em `services/session_insight.py` ou novo `services/session_memory.py`: ao expirar sess√£o com ‚â•2 queries, chamar LLM (llm_query) para gerar a mem√≥ria e salvar em `personal_memory` com tag `session_reflection`.
-- [x] **Contexto em tempo real ‚Äî pesquisar e planejar arquitetura** ‚Äî o n√∫cleo da AKASHA como secret√°ria de pesquisa √© ela poder ler o que a usu√°ria est√° vendo agora (n√£o apenas o √≠ndice hist√≥rico). Pesquisar op√ß√µes vi√°veis: (a) extens√£o de browser que envia URL/texto selecionado ao AKASHA via `POST /context/push`; (b) bookmarklet com fetch para o mesmo endpoint; (c) side panel que intercepta cliques em resultados do pr√≥prio AKASHA e usa o conte√∫do como contexto imediato; (d) clipboard monitor (polling da √°rea de transfer√™ncia detectando URLs). Avaliar privacidade, lat√™ncia e facilidade de uso. O overlay de insight (`#insight-overlay`) j√° existe como output ‚Äî falta o input em tempo real. Ap√≥s pesquisa, apresentar op√ß√µes e aguardar aprova√ß√£o antes de implementar.
+- [x] **Jina Reader fallback no crawler para sites que retornam 403** ó pesquisar limitaÁıes do Jina Reader (`r.jina.ai`) para crawling em volume (rate limits, conte˙do retornado, casos de falha), depois implementar em `services/crawler.py`: quando `fetch_page()` receber 403 ou Cloudflare challenge (status 403/429 ou body contendo "cf-browser-verification"), tentar novamente via `https://r.jina.ai/{url_original}` antes de registrar como falha. N„o usar Jina como rota prim·ria ó apenas fallback.
+- [x] **Autocomplete estendido ao corpus** ó atualmente o autocomplete (`database.py::get_query_suggestions`) retorna apenas queries do `search_history`. Estender para incluir: tÌtulos de `crawl_pages` (campo `title`), tÛpicos de `page_knowledge` (campo `topics` JSON), e tÛpicos do `topic_interest_profile`. Ranking: histÛrico de busca primeiro (por `count`), depois corpus por relev‚ncia de prefixo. Manter limite de ~10 sugestıes totais.
+- [x] **Mapa de conexıes em segundo plano (obrigatÛrio)** ó construir grafo de relaÁıes entre entidades/tÛpicos a partir do `entity_graph` e `topic_interest_profile` existentes. Duas partes: (1) construÁ„o incremental em background: ao processar cada p·gina no `KnowledgeWorker`, atualizar arestas no grafo (`entity_a ? entity_b` com peso = co-ocorrÍncia); (2) visualizaÁ„o no web UI: nova aba ou modal "Conexıes" com grafo naveg·vel (D3.js ou similar) mostrando clusters de tÛpicos e links entre eles. O grafo deve ser naveg·vel ó clicar num nÛ exibe p·ginas relacionadas.
+- [x] **Sugestıes de pesquisas relacionadas nos resultados** ó ao exibir resultados de busca, mostrar seÁ„o "Pesquisas relacionadas" com 3-5 queries sugeridas geradas a partir dos tÛpicos dos resultados e do `topic_interest_profile`. GeraÁ„o: extrair tÛpicos dos top-5 resultados, cruzar com `topic_interest_profile`, montar queries sugeridas sem LLM (apenas combinaÁıes de termos de alta relev‚ncia) para manter latÍncia baixa.
+- [ ] **AKASHA salva memÛrias pessoais das sessıes de busca** ó ao final de cada sess„o de busca (quando a sess„o expira por inatividade ou È encerrada manualmente), a AKASHA deve escrever uma entrada na sua `personal_memory` com suas prÛprias palavras: o que a usu·ria estava pesquisando, quais conexıes ela percebeu, qual padr„o de interesse emergiu. A entrada deve: (1) se referir ‡ usu·ria pelo nome; (2) registrar data/hora da sess„o; (3) ser escrita em primeira pessoa da AKASHA ó n„o um log tÈcnico, mas uma observaÁ„o genuÌna. Implementar em `services/session_insight.py` ou novo `services/session_memory.py`: ao expirar sess„o com =2 queries, chamar LLM (llm_query) para gerar a memÛria e salvar em `personal_memory` com tag `session_reflection`.
+- [x] **Contexto em tempo real ó pesquisar e planejar arquitetura** ó o n˙cleo da AKASHA como secret·ria de pesquisa È ela poder ler o que a usu·ria est· vendo agora (n„o apenas o Ìndice histÛrico). Pesquisar opÁıes vi·veis: (a) extens„o de browser que envia URL/texto selecionado ao AKASHA via `POST /context/push`; (b) bookmarklet com fetch para o mesmo endpoint; (c) side panel que intercepta cliques em resultados do prÛprio AKASHA e usa o conte˙do como contexto imediato; (d) clipboard monitor (polling da ·rea de transferÍncia detectando URLs). Avaliar privacidade, latÍncia e facilidade de uso. O overlay de insight (`#insight-overlay`) j· existe como output ó falta o input em tempo real. ApÛs pesquisa, apresentar opÁıes e aguardar aprovaÁ„o antes de implementar.
 
-### LLM slots ‚Äî corre√ß√£o de chaves e modelos distintos por app | 2026-05-18
-> Contexto: KOSMOS e Mnemosyne liam chaves inexistentes do perfil LOGOS (llm_kosmos, llm_mnemosyne) e por isso ignoravam o modelo atribu√≠do, caindo no default local. Al√©m disso, AKASHA e KOSMOS usavam o mesmo modelo (gemma2:2b) desnecessariamente. AKASHA agora usa qwen2.5:3b no MainPc para cobrir suas tarefas mais complexas (JSON extraction, session insights para Mnemosyne, di√°logo, reflection loop).
+### LLM slots ó correÁ„o de chaves e modelos distintos por app | 2026-05-18
+> Contexto: KOSMOS e Mnemosyne liam chaves inexistentes do perfil LOGOS (llm_kosmos, llm_mnemosyne) e por isso ignoravam o modelo atribuÌdo, caindo no default local. AlÈm disso, AKASHA e KOSMOS usavam o mesmo modelo (gemma2:2b) desnecessariamente. AKASHA agora usa qwen2.5:3b no MainPc para cobrir suas tarefas mais complexas (JSON extraction, session insights para Mnemosyne, di·logo, reflection loop).
 
 #### KOSMOS
-- [x] **Corrigir chave `llm_kosmos` ‚Üí `llm_analysis`** em `app/utils/config.py::apply_logos_profile()` ‚Äî KOSMOS nunca aplicava o modelo atribu√≠do pelo LOGOS por estar lendo uma chave que n√£o existe no perfil retornado por `/logos/hardware`
+- [x] **Corrigir chave `llm_kosmos` ? `llm_analysis`** em `app/utils/config.py::apply_logos_profile()` ó KOSMOS nunca aplicava o modelo atribuÌdo pelo LOGOS por estar lendo uma chave que n„o existe no perfil retornado por `/logos/hardware`
 
 #### Mnemosyne
-- [x] **Corrigir chave `llm_mnemosyne` ‚Üí `llm_rag`** em `gui/main_window.py` ‚Äî combo de modelo na UI do Mnemosyne n√£o preenchia com o modelo do LOGOS pelo mesmo motivo
+- [x] **Corrigir chave `llm_mnemosyne` ? `llm_rag`** em `gui/main_window.py` ó combo de modelo na UI do Mnemosyne n„o preenchia com o modelo do LOGOS pelo mesmo motivo
 
 #### HUB
-- [x] **Atualizar defaults por hardware em `logos.rs`** ‚Äî MainPc: llm_query (AKASHA) = qwen2.5:3b (era gemma2:2b); Laptop: llm_analysis (KOSMOS) = smollm2:1.7b (era gemma2:2b). WorkPc inalterado. Adicionar rationale para qwen2.5:3b no painel de modelos recomendados.
-- [x] **Corrigir docstring em `ecosystem_client.py`** ‚Äî `get_active_profile()` documentava chaves antigas (llm_mnemosyne, llm_kosmos) em vez das reais (llm_rag, llm_analysis, llm_query)
-- [x] **Corrigir HTTPS no Syncthing** ‚Äî `commands/syncthing.rs` usava `http://` mas Syncthing redireciona para `https://` (307). Corrigido para `https://` com `danger_accept_invalid_certs(true)` (certificado auto-assinado do localhost)
+- [x] **Atualizar defaults por hardware em `logos.rs`** ó MainPc: llm_query (AKASHA) = qwen2.5:3b (era gemma2:2b); Laptop: llm_analysis (KOSMOS) = smollm2:1.7b (era gemma2:2b). WorkPc inalterado. Adicionar rationale para qwen2.5:3b no painel de modelos recomendados.
+- [x] **Corrigir docstring em `ecosystem_client.py`** ó `get_active_profile()` documentava chaves antigas (llm_mnemosyne, llm_kosmos) em vez das reais (llm_rag, llm_analysis, llm_query)
+- [x] **Corrigir HTTPS no Syncthing** ó `commands/syncthing.rs` usava `http://` mas Syncthing redireciona para `https://` (307). Corrigido para `https://` com `danger_accept_invalid_certs(true)` (certificado auto-assinado do localhost)
 
-### Jina Reader ‚Äî rate limiting e detec√ß√£o de Cloudflare | 2026-05-18
-> Contexto: pesquisa sobre Jina Reader para fallback de 403 revelou rate limit de 20 RPM an√¥nimo e comportamento de falha silenciosa (HTTP 200 com conte√∫do < 50 palavras). Challenge Cloudflare detect√°vel por marcadores no HTML body mesmo em respostas HTTP 200. Rate limiter obrigat√≥rio para n√£o violar os limites do servi√ßo.
+### Jina Reader ó rate limiting e detecÁ„o de Cloudflare | 2026-05-18
+> Contexto: pesquisa sobre Jina Reader para fallback de 403 revelou rate limit de 20 RPM anÙnimo e comportamento de falha silenciosa (HTTP 200 com conte˙do < 50 palavras). Challenge Cloudflare detect·vel por marcadores no HTML body mesmo em respostas HTTP 200. Rate limiter obrigatÛrio para n„o violar os limites do serviÁo.
 
 #### AKASHA
-- [x] **Rate limiter sliding window para Jina** ‚Äî implementar em `services/crawler.py` com m√°ximo 15 RPM (margem abaixo do limite an√¥nimo de 20 RPM), janela deslizante de 60 segundos via `asyncio.Lock()` + `deque` de timestamps, aguarda automaticamente quando a janela est√° cheia
-- [x] **Detec√ß√£o de Cloudflare challenge** ‚Äî constante `_CF_MARKERS` com os 5 marcadores de challenge e fun√ß√£o `_is_cf_challenge(html) -> bool` para identificar respostas HTTP 200 que na verdade s√£o p√°ginas de challenge (n√£o conte√∫do real)
-- [ ] **Campo opcional `akasha.jina_api_key`** ‚Äî adicionar ao `ecosystem.json` como campo vazio; quando presente, incluir header `Authorization: Bearer {key}` nas chamadas ao Jina (aumenta limite para 500 RPM; n√£o obrigat√≥rio para uso pontual como fallback)
+- [x] **Rate limiter sliding window para Jina** ó implementar em `services/crawler.py` com m·ximo 15 RPM (margem abaixo do limite anÙnimo de 20 RPM), janela deslizante de 60 segundos via `asyncio.Lock()` + `deque` de timestamps, aguarda automaticamente quando a janela est· cheia
+- [x] **DetecÁ„o de Cloudflare challenge** ó constante `_CF_MARKERS` com os 5 marcadores de challenge e funÁ„o `_is_cf_challenge(html) -> bool` para identificar respostas HTTP 200 que na verdade s„o p·ginas de challenge (n„o conte˙do real)
+- [ ] **Campo opcional `akasha.jina_api_key`** ó adicionar ao `ecosystem.json` como campo vazio; quando presente, incluir header `Authorization: Bearer {key}` nas chamadas ao Jina (aumenta limite para 500 RPM; n„o obrigatÛrio para uso pontual como fallback)
 
-### Bugs e investiga√ß√µes reportados ap√≥s uso real | 2026-05-18
-> Contexto: bugs e d√∫vidas levantados durante uso real do ecossistema ‚Äî indexa√ß√£o que reseta, notifica√ß√µes perdidas, fila de extra√ß√£o incorreta, conex√µes vazias, monitoramento quebrado e d√∫vidas sobre comportamento das IAs.
+### Bugs e investigaÁıes reportados apÛs uso real | 2026-05-18
+> Contexto: bugs e d˙vidas levantados durante uso real do ecossistema ó indexaÁ„o que reseta, notificaÁıes perdidas, fila de extraÁ„o incorreta, conexıes vazias, monitoramento quebrado e d˙vidas sobre comportamento das IAs.
 
 #### Mnemosyne
-- [x] **Bug: indexa√ß√£o reinicia do zero ao retomar ap√≥s erro "readonly"** ‚Äî ao retomar indexa√ß√£o ap√≥s interrup√ß√£o com erro "readonly", o IndexWorker volta para 0/N e reindexar tudo em vez de continuar de onde parou. Investigar `gui/workers.py`: verificar se a retomada apaga o `tracker.json` ou se o bug est√° na l√≥gica de checkpoint; a retomada deveria ler quais arquivos j√° foram indexados (via tracker) e pular os conclu√≠dos.
-- [x] **Bug: notifica√ß√£o do AKASHA marca insight como visto sem exibi-lo** ‚Äî em `gui/main_window.py::_on_insights_badge_clicked()`, `mark_seen(insight["id"])` √© chamado ANTES de verificar se `insight.get("topics")` √© n√£o-vazia e se `_dialogue_panel` tem contexto definido. Se qualquer condi√ß√£o falhar, o insight some permanentemente. Corre√ß√£o: (1) mover `mark_seen()` para depois da exibi√ß√£o bem-sucedida; (2) fallback: quando `topics` √© lista vazia, usar `insight["summary"]` como quest√£o inicial; (3) quando `_dialogue_panel` sem contexto (vectorstore None), mostrar conte√∫do em toast/dialog em vez de sil√™ncio total.
-- [x] **Bug: indexa√ß√£o de pastas extras do ecossistema n√£o funciona independentemente** ‚Äî `_on_coll_index_now()` chamava `start_indexing()` que reindexava TODAS as cole√ß√µes habilitadas. Fix: `_on_coll_index_now()` agora cria `IndexWorker` diretamente para a cole√ß√£o selecionada com `_collections_to_index = []`, sem afetar as demais.
-- [x] **Verificar: Mnemosyne j√° processa imagens?** ‚Äî campo `image_ocr_model` est√° no SetupDialog ("ex: moondream2, vazio = Tesseract local"). `loaders.py` suporta `.jpg/.jpeg/.png/.webp` via OCR Ollama ou Tesseract. Bug encontrado e corrigido: `_SUPPORTED` em `workers.py` (IndexWorker e ResumeIndexWorker) n√£o inclu√≠a imagens ‚Äî corrigido para adicionar extens√µes de imagem quando `image_ocr_model` est√° configurado.
-- [x] **Investigar: Mnemosyne detecta e indexa novos arquivos adicionados √† biblioteca?** ‚Äî SIM: `FolderWatcher` (core/watcher.py) + `IndexFileWorker` detectam e indexam novos arquivos automaticamente em tempo real. O watcher √© vis√≠vel na aba Gerenciar e pode ser pausado/retomado. Indexa√ß√£o incremental sem reiniciar do zero.
-- [x] **Investigar: Mnemosyne consegue responder queries com indexa√ß√£o parcial?** ‚Äî SIM: `ask_btn` n√£o √© desabilitado quando indexa√ß√£o inicia. Queries usam o vectorstore do estado anterior ao in√≠cio da indexa√ß√£o corrente; ap√≥s cada cole√ß√£o terminar (`_on_index_finished`), vectorstore √© recarregado com os novos dados. N√£o h√° bloqueio.
-- [x] **Investigar: quando a Mnemosyne come√ßa a criar mem√≥ria pessoal?** ‚Äî 3 gatilhos: (1) `PersonalReflectionWorker` ap√≥s cada resposta de notebook; (2) `PeriodicReflectionWorker` a cada 24h via timer; (3) cold start se `personal_memory` estiver vazia mas notebooks existirem. N√£o depende de indexa√ß√£o completa.
-- [x] **Renomear "Chat" para "Notebook" na UI** ‚Äî bot√£o de navega√ß√£o, "Nova Conversa" ‚Üí "Novo Notebook", placeholder das notas, docstrings e bot√£o "Abrir no Chat" em `gui/main_window.py`. Nomes internos de m√©todos/atributos (`_nav_chat_btn`, `_build_page_chat`, `new_chat_btn`) mantidos por seguran√ßa ‚Äî renomear em outra sess√£o com busca global.
-- [ ] **Investigar: causa raiz do erro "readonly" recorrente no ChromaDB** ‚Äî n√£o √© a primeira vez que ocorre; toda vez exige re-indexa√ß√£o completa. Coletar logs completos na pr√≥xima ocorr√™ncia. Suspeitas: WAL corrompido (j√° existe `_clear_orphan_wal()` no c√≥digo ‚Äî ind√≠cio de hist√≥rico), dois processos com acesso simult√¢neo ao mesmo SQLite, ou bug de vers√£o do chromadb. Investigar se o `persist_dir` est√° em filesystem com limita√ß√µes (ex: BTRFS + COW + SQLite WAL).
-- [x] **Bug: overflow de texto no reflection widget** ‚Äî quando o insight/reflex√£o tem texto longo, a caixa de exibi√ß√£o n√£o tem `overflow` configurado e o texto fica cortado. Corrigir em `_reflection_widget`/`_reflection_label` em `gui/main_window.py`: adicionar `QScrollArea` ou `setMaximumHeight` + `setWordWrap(True)` j√° existente mas sem scroll.
-- [x] **Avaliar: insights do AKASHA como contexto de notebook com peso menor** ‚Äî em vez de s√≥ disparar o di√°logo, persistir o insight recebido como contexto no notebook ativo (como um chunk com `source_type = "akasha_insight"` e peso reduzido em `SOURCE_WEIGHTS`). A Mnemosyne pode ent√£o citar e conectar esses insights nas respostas subsequentes. Definir se isso vai para o RAG da cole√ß√£o ou direto no hist√≥rico do notebook como mensagem de sistema.
-- [x] **Metadados tem√°ticos por notebook + roteamento de insights AKASHA** ‚Äî notebooks s√£o tem√°ticos, ent√£o um insight do AKASHA sobre "machine learning" n√£o deve ir parar no notebook "Filosofia". Implementar dois mecanismos interdependentes:
-  **1. Metadados do notebook** ‚Äî acrescentar campos `"themes": []`, `"keywords": []` e `"top_sources": []` ao `metadata.json` de cada notebook (em `{data_dir}/notebooks/{id}/`):
-  - `themes` e `keywords`: extra√≠dos via TF-IDF simples (reutilizar `_extract_keywords` de `core/topic_extractor.py`) sobre todas as mensagens do hist√≥rico (`history.jsonl`) ‚Äî tanto perguntas da usu√°ria quanto respostas da Mnemosyne.
-  - `top_sources`: acumulado a partir de `Turn.sources` dos turnos de `role="assistant"` ‚Äî os caminhos de arquivo mais citados nas respostas.
-  - Atualiza√ß√£o: ao final de cada sess√£o de notebook, dentro do `PersonalReflectionWorker` (que j√° tem o hist√≥rico em m√£os), ou num m√©todo `_update_notebook_meta(notebook_id)` chamado junto com `_save_current_notebook()`.
-  **2. Roteamento de insight AKASHA‚Üínotebook** ‚Äî em `_on_insights_badge_clicked`, antes de salvar o insight no hist√≥rico:
+- [x] **Bug: indexaÁ„o reinicia do zero ao retomar apÛs erro "readonly"** ó ao retomar indexaÁ„o apÛs interrupÁ„o com erro "readonly", o IndexWorker volta para 0/N e reindexar tudo em vez de continuar de onde parou. Investigar `gui/workers.py`: verificar se a retomada apaga o `tracker.json` ou se o bug est· na lÛgica de checkpoint; a retomada deveria ler quais arquivos j· foram indexados (via tracker) e pular os concluÌdos.
+- [x] **Bug: notificaÁ„o do AKASHA marca insight como visto sem exibi-lo** ó em `gui/main_window.py::_on_insights_badge_clicked()`, `mark_seen(insight["id"])` È chamado ANTES de verificar se `insight.get("topics")` È n„o-vazia e se `_dialogue_panel` tem contexto definido. Se qualquer condiÁ„o falhar, o insight some permanentemente. CorreÁ„o: (1) mover `mark_seen()` para depois da exibiÁ„o bem-sucedida; (2) fallback: quando `topics` È lista vazia, usar `insight["summary"]` como quest„o inicial; (3) quando `_dialogue_panel` sem contexto (vectorstore None), mostrar conte˙do em toast/dialog em vez de silÍncio total.
+- [x] **Bug: indexaÁ„o de pastas extras do ecossistema n„o funciona independentemente** ó `_on_coll_index_now()` chamava `start_indexing()` que reindexava TODAS as coleÁıes habilitadas. Fix: `_on_coll_index_now()` agora cria `IndexWorker` diretamente para a coleÁ„o selecionada com `_collections_to_index = []`, sem afetar as demais.
+- [x] **Verificar: Mnemosyne j· processa imagens?** ó campo `image_ocr_model` est· no SetupDialog ("ex: moondream2, vazio = Tesseract local"). `loaders.py` suporta `.jpg/.jpeg/.png/.webp` via OCR Ollama ou Tesseract. Bug encontrado e corrigido: `_SUPPORTED` em `workers.py` (IndexWorker e ResumeIndexWorker) n„o incluÌa imagens ó corrigido para adicionar extensıes de imagem quando `image_ocr_model` est· configurado.
+- [x] **Investigar: Mnemosyne detecta e indexa novos arquivos adicionados ‡ biblioteca?** ó SIM: `FolderWatcher` (core/watcher.py) + `IndexFileWorker` detectam e indexam novos arquivos automaticamente em tempo real. O watcher È visÌvel na aba Gerenciar e pode ser pausado/retomado. IndexaÁ„o incremental sem reiniciar do zero.
+- [x] **Investigar: Mnemosyne consegue responder queries com indexaÁ„o parcial?** ó SIM: `ask_btn` n„o È desabilitado quando indexaÁ„o inicia. Queries usam o vectorstore do estado anterior ao inÌcio da indexaÁ„o corrente; apÛs cada coleÁ„o terminar (`_on_index_finished`), vectorstore È recarregado com os novos dados. N„o h· bloqueio.
+- [x] **Investigar: quando a Mnemosyne comeÁa a criar memÛria pessoal?** ó 3 gatilhos: (1) `PersonalReflectionWorker` apÛs cada resposta de notebook; (2) `PeriodicReflectionWorker` a cada 24h via timer; (3) cold start se `personal_memory` estiver vazia mas notebooks existirem. N„o depende de indexaÁ„o completa.
+- [x] **Renomear "Chat" para "Notebook" na UI** ó bot„o de navegaÁ„o, "Nova Conversa" ? "Novo Notebook", placeholder das notas, docstrings e bot„o "Abrir no Chat" em `gui/main_window.py`. Nomes internos de mÈtodos/atributos (`_nav_chat_btn`, `_build_page_chat`, `new_chat_btn`) mantidos por seguranÁa ó renomear em outra sess„o com busca global.
+- [ ] **Investigar: causa raiz do erro "readonly" recorrente no ChromaDB** ó n„o È a primeira vez que ocorre; toda vez exige re-indexaÁ„o completa. Coletar logs completos na prÛxima ocorrÍncia. Suspeitas: WAL corrompido (j· existe `_clear_orphan_wal()` no cÛdigo ó indÌcio de histÛrico), dois processos com acesso simult‚neo ao mesmo SQLite, ou bug de vers„o do chromadb. Investigar se o `persist_dir` est· em filesystem com limitaÁıes (ex: BTRFS + COW + SQLite WAL).
+- [x] **Bug: overflow de texto no reflection widget** ó quando o insight/reflex„o tem texto longo, a caixa de exibiÁ„o n„o tem `overflow` configurado e o texto fica cortado. Corrigir em `_reflection_widget`/`_reflection_label` em `gui/main_window.py`: adicionar `QScrollArea` ou `setMaximumHeight` + `setWordWrap(True)` j· existente mas sem scroll.
+- [x] **Avaliar: insights do AKASHA como contexto de notebook com peso menor** ó em vez de sÛ disparar o di·logo, persistir o insight recebido como contexto no notebook ativo (como um chunk com `source_type = "akasha_insight"` e peso reduzido em `SOURCE_WEIGHTS`). A Mnemosyne pode ent„o citar e conectar esses insights nas respostas subsequentes. Definir se isso vai para o RAG da coleÁ„o ou direto no histÛrico do notebook como mensagem de sistema.
+- [x] **Metadados tem·ticos por notebook + roteamento de insights AKASHA** ó notebooks s„o tem·ticos, ent„o um insight do AKASHA sobre "machine learning" n„o deve ir parar no notebook "Filosofia". Implementar dois mecanismos interdependentes:
+  **1. Metadados do notebook** ó acrescentar campos `"themes": []`, `"keywords": []` e `"top_sources": []` ao `metadata.json` de cada notebook (em `{data_dir}/notebooks/{id}/`):
+  - `themes` e `keywords`: extraÌdos via TF-IDF simples (reutilizar `_extract_keywords` de `core/topic_extractor.py`) sobre todas as mensagens do histÛrico (`history.jsonl`) ó tanto perguntas da usu·ria quanto respostas da Mnemosyne.
+  - `top_sources`: acumulado a partir de `Turn.sources` dos turnos de `role="assistant"` ó os caminhos de arquivo mais citados nas respostas.
+  - AtualizaÁ„o: ao final de cada sess„o de notebook, dentro do `PersonalReflectionWorker` (que j· tem o histÛrico em m„os), ou num mÈtodo `_update_notebook_meta(notebook_id)` chamado junto com `_save_current_notebook()`.
+  **2. Roteamento de insight AKASHA?notebook** ó em `_on_insights_badge_clicked`, antes de salvar o insight no histÛrico:
   - Carregar os metadados de todos os notebooks ativos (via `_notebook_store.list()`).
-  - Calcular score para cada notebook: n√∫mero de termos de `insight["topics"]` que aparecem em `notebook.themes + notebook.keywords` (case-insensitive, stemming opcional).
+  - Calcular score para cada notebook: n˙mero de termos de `insight["topics"]` que aparecem em `notebook.themes + notebook.keywords` (case-insensitive, stemming opcional).
   - Se score > 0: salvar no notebook de maior score via `MemoryStore(nb_dir).append_akasha_insight(...)`.
-  - Se score = 0 para todos: salvar no notebook atualmente ativo (fallback) ou n√£o persistir.
+  - Se score = 0 para todos: salvar no notebook atualmente ativo (fallback) ou n„o persistir.
   - Logar qual notebook recebeu o insight e com qual score.
 
-- [x] **Watcher de arquivos ‚Äî modo notifica√ß√£o em vez de indexa√ß√£o autom√°tica** ‚Äî atualmente `FolderWatcher` dispara `IndexFileWorker` imediatamente ao detectar novo arquivo, o que pode indexar arquivos incompletos (copiados parcialmente) ou criar comportamento inesperado. Mudar para: watcher detecta e acumula, mas exibe bot√£o "N arquivo(s) novo(s) detectado(s) ‚Äî indexar?" em vez de indexar automaticamente. Semelhante ao padr√£o do bot√£o "Retomar indexa√ß√£o".
-- [x] **Extra√ß√£o de temas ap√≥s indexa√ß√£o parcial** ‚Äî TopicsWorker s√≥ roda ap√≥s indexa√ß√£o completa (`_on_index_finished`). Adicionar extra√ß√£o de temas tamb√©m ao finalizar cada sess√£o de `FolderWatcher` (quando v√°rios arquivos novos s√£o indexados em sequ√™ncia). Tema dispon√≠vel mais cedo, mesmo sem re-indexar tudo.
-- [x] **Reflex√£o peri√≥dica mais frequente** ‚Äî `PeriodicReflectionWorker` agora √© disparado tamb√©m ao final de cada indexa√ß√£o completa (`_on_index_finished` com `success=True`), al√©m do timer de 24h e do cold start. O timer de 24h permanece como fallback para per√≠odos sem indexa√ß√£o.
-- [x] **Gap cr√≠tico: Mnemosyne nunca forma mem√≥ria pessoal sobre o que l√™** ‚Äî a personalidade da Mnemosyne √© a de uma bibliotec√°ria s√°bia que conhece profundamente cada texto do acervo. Mas os workers de reflex√£o pessoal (`PersonalReflectionWorker`, `PeriodicReflectionWorker`) s√≥ leem hist√≥rico de conversas ‚Äî nunca os documentos indexados. O `core/reflection.py` gera s√≠nteses para melhorar o RAG (voltam ao ChromaDB), mas n√£o salva nada em `personal_memory`. Resultado: a sabedoria dela vem s√≥ de conversas, n√£o de ter lido o acervo. A Mnemosyne √© uma bibliotec√°ria que catalogou todos os livros sem l√™-los.
-  Implementar `IndexReflectionWorker` (novo QThread em `gui/workers.py`) disparado ao final de cada indexa√ß√£o bem-sucedida (`_on_index_finished`, ap√≥s `PeriodicReflectionWorker`):
+- [x] **Watcher de arquivos ó modo notificaÁ„o em vez de indexaÁ„o autom·tica** ó atualmente `FolderWatcher` dispara `IndexFileWorker` imediatamente ao detectar novo arquivo, o que pode indexar arquivos incompletos (copiados parcialmente) ou criar comportamento inesperado. Mudar para: watcher detecta e acumula, mas exibe bot„o "N arquivo(s) novo(s) detectado(s) ó indexar?" em vez de indexar automaticamente. Semelhante ao padr„o do bot„o "Retomar indexaÁ„o".
+- [x] **ExtraÁ„o de temas apÛs indexaÁ„o parcial** ó TopicsWorker sÛ roda apÛs indexaÁ„o completa (`_on_index_finished`). Adicionar extraÁ„o de temas tambÈm ao finalizar cada sess„o de `FolderWatcher` (quando v·rios arquivos novos s„o indexados em sequÍncia). Tema disponÌvel mais cedo, mesmo sem re-indexar tudo.
+- [x] **Reflex„o periÛdica mais frequente** ó `PeriodicReflectionWorker` agora È disparado tambÈm ao final de cada indexaÁ„o completa (`_on_index_finished` com `success=True`), alÈm do timer de 24h e do cold start. O timer de 24h permanece como fallback para perÌodos sem indexaÁ„o.
+- [x] **Gap crÌtico: Mnemosyne nunca forma memÛria pessoal sobre o que lÍ** ó a personalidade da Mnemosyne È a de uma bibliotec·ria s·bia que conhece profundamente cada texto do acervo. Mas os workers de reflex„o pessoal (`PersonalReflectionWorker`, `PeriodicReflectionWorker`) sÛ leem histÛrico de conversas ó nunca os documentos indexados. O `core/reflection.py` gera sÌnteses para melhorar o RAG (voltam ao ChromaDB), mas n„o salva nada em `personal_memory`. Resultado: a sabedoria dela vem sÛ de conversas, n„o de ter lido o acervo. A Mnemosyne È uma bibliotec·ria que catalogou todos os livros sem lÍ-los.
+  Implementar `IndexReflectionWorker` (novo QThread em `gui/workers.py`) disparado ao final de cada indexaÁ„o bem-sucedida (`_on_index_finished`, apÛs `PeriodicReflectionWorker`):
   1. Para cada arquivo indexado (via metadata `source` do ChromaDB ou lista passada pelo IndexWorker), recuperar chunks com `vs._collection.get(where={"source": path}, include=["documents","metadatas"])`.
-  2. Extrair t√≥picos dos metadados (`topics` field) ou dos top-keywords via TF-IDF simples sobre os chunks.
-  3. Comparar com t√≥picos conhecidos da `personal_memory` (via `get_context_memories`) ou do `topics.json` da cole√ß√£o: se ‚â•2 t√≥picos em comum ‚Üí `type="connection"`; caso contr√°rio ‚Üí `type="surprise"`.
-  4. Montar prompt com personalidade da Mnemosyne + t√≠tulo do arquivo + fragmento representativo + t√≥picos, pedindo: "O que voc√™ pensa sobre esse texto, em uma frase, na sua voz?" (mesmo padr√£o do `_event_reflection` do AKASHA em `services/knowledge_worker.py` linha 683).
+  2. Extrair tÛpicos dos metadados (`topics` field) ou dos top-keywords via TF-IDF simples sobre os chunks.
+  3. Comparar com tÛpicos conhecidos da `personal_memory` (via `get_context_memories`) ou do `topics.json` da coleÁ„o: se =2 tÛpicos em comum ? `type="connection"`; caso contr·rio ? `type="surprise"`.
+  4. Montar prompt com personalidade da Mnemosyne + tÌtulo do arquivo + fragmento representativo + tÛpicos, pedindo: "O que vocÍ pensa sobre esse texto, em uma frase, na sua voz?" (mesmo padr„o do `_event_reflection` do AKASHA em `services/knowledge_worker.py` linha 683).
   5. Salvar em `personal_memory` com tag `["leitura", nome_do_arquivo[:40]]`.
-  Refer√™ncia de implementa√ß√£o: `AKASHA/services/knowledge_worker.py::_event_reflection()` (linha 683) ‚Äî espelhar o mesmo padr√£o adaptado para PySide6/QThread em vez de asyncio.
-- [ ] **Documentar no GUIDE.md as features implementadas em 2026-05-18** ‚Äî as seguintes implementa√ß√µes da sess√£o de hoje n√£o est√£o no GUIDE: `IndexReflectionWorker` (pipeline de mem√≥ria pessoal por arquivo); sinal `file_indexed` no `IndexWorker` + `_analysis_queue` + timer de 30s; FolderWatcher modo notifica√ß√£o (`watcherPendingBtn`); metadados tem√°ticos do notebook (`themes`, `keywords`, `top_sources`) + `update_meta_from_history()`; roteamento de insights AKASHA por overlap tem√°tico; `role="akasha_insight"` + `append_akasha_insight()`; bloco de insights no `build_messages()`; extra√ß√£o de temas p√≥s-batch do FolderWatcher.
-- [x] **Arquitetura ruim: an√°lise p√≥s-indexa√ß√£o √© tudo-ou-nada em vez de pipeline por-arquivo** ‚Äî toda an√°lise (extra√ß√£o de temas, grafo de conhecimento, reflex√£o peri√≥dica, `IndexReflectionWorker` futuro) √© disparada apenas em `_on_index_finished` ‚Äî ou seja, somente quando **todas** as cole√ß√µes terminam de indexar. Problema: se a indexa√ß√£o for interrompida (crash, cancelamento, erro "readonly"), nenhuma an√°lise roda mesmo que centenas de arquivos j√° tenham sido processados. A bibliotec√°ria deveria refletir sobre cada livro conforme o cataloga ‚Äî n√£o esperar que o acervo inteiro esteja catalogado.
+  ReferÍncia de implementaÁ„o: `AKASHA/services/knowledge_worker.py::_event_reflection()` (linha 683) ó espelhar o mesmo padr„o adaptado para PySide6/QThread em vez de asyncio.
+- [ ] **Documentar no GUIDE.md as features implementadas em 2026-05-18** ó as seguintes implementaÁıes da sess„o de hoje n„o est„o no GUIDE: `IndexReflectionWorker` (pipeline de memÛria pessoal por arquivo); sinal `file_indexed` no `IndexWorker` + `_analysis_queue` + timer de 30s; FolderWatcher modo notificaÁ„o (`watcherPendingBtn`); metadados tem·ticos do notebook (`themes`, `keywords`, `top_sources`) + `update_meta_from_history()`; roteamento de insights AKASHA por overlap tem·tico; `role="akasha_insight"` + `append_akasha_insight()`; bloco de insights no `build_messages()`; extraÁ„o de temas pÛs-batch do FolderWatcher.
+- [x] **Arquitetura ruim: an·lise pÛs-indexaÁ„o È tudo-ou-nada em vez de pipeline por-arquivo** ó toda an·lise (extraÁ„o de temas, grafo de conhecimento, reflex„o periÛdica, `IndexReflectionWorker` futuro) È disparada apenas em `_on_index_finished` ó ou seja, somente quando **todas** as coleÁıes terminam de indexar. Problema: se a indexaÁ„o for interrompida (crash, cancelamento, erro "readonly"), nenhuma an·lise roda mesmo que centenas de arquivos j· tenham sido processados. A bibliotec·ria deveria refletir sobre cada livro conforme o cataloga ó n„o esperar que o acervo inteiro esteja catalogado.
   Refatorar para pipeline por-arquivo:
-  1. Adicionar sinal `file_indexed = Signal(str, list)` ao `IndexWorker` (path do arquivo + lista de chunks/metadados) ‚Äî emitir ao final do processamento de cada arquivo, antes de `self.progress.emit(...)`.
-  2. Conectar `file_indexed` em `main_window.py` a um m√©todo `_on_file_indexed(path, chunks)` que enfileira o arquivo para an√°lise incremental (sem bloquear o IndexWorker).
-  3. O `IndexReflectionWorker` (item acima) deve ser adaptado para aceitar arquivos individuais em vez de varrer todo o ChromaDB no final ‚Äî cada `file_indexed` dispara uma reflex√£o independente.
-  4. `_extract_topics_bg()` e `_start_kg_bg()` podem continuar rodando no final (fazem sentido em batch), mas a reflex√£o pessoal deve ser por-arquivo.
-  5. Benef√≠cio: interromper no meio preserva todo aprendizado at√© o ponto de interrup√ß√£o. Arquivos j√° analisados n√£o s√£o reprocessados na retomada (verificar pelo `tracker.json`).
+  1. Adicionar sinal `file_indexed = Signal(str, list)` ao `IndexWorker` (path do arquivo + lista de chunks/metadados) ó emitir ao final do processamento de cada arquivo, antes de `self.progress.emit(...)`.
+  2. Conectar `file_indexed` em `main_window.py` a um mÈtodo `_on_file_indexed(path, chunks)` que enfileira o arquivo para an·lise incremental (sem bloquear o IndexWorker).
+  3. O `IndexReflectionWorker` (item acima) deve ser adaptado para aceitar arquivos individuais em vez de varrer todo o ChromaDB no final ó cada `file_indexed` dispara uma reflex„o independente.
+  4. `_extract_topics_bg()` e `_start_kg_bg()` podem continuar rodando no final (fazem sentido em batch), mas a reflex„o pessoal deve ser por-arquivo.
+  5. BenefÌcio: interromper no meio preserva todo aprendizado atÈ o ponto de interrupÁ„o. Arquivos j· analisados n„o s„o reprocessados na retomada (verificar pelo `tracker.json`).
 
 #### AKASHA
-- [x] **Bug: fila de extra√ß√£o sempre ‚â• 50** ‚Äî `get_status()` usava `_queue.qsize()` corretamente, mas o backfill mant√©m a fila propositalmente em ~50 via `_wait_queue_drain(threshold=50)`. Fix: adicionado `_backfill_running: bool` em `services/knowledge_worker.py`; HUB agora exibe "em fila ¬∑ backfill ativo" quando backfill est√° em andamento, deixando claro que √© processamento normal e n√£o travamento.
-- [x] **Bug: aba "Conex√µes" sempre vazia ao abrir o AKASHA** ‚Äî entity_graph tem 2643 entradas (funcionando). O grafo carregava os dados uma vez ao abrir a p√°gina, mas sem refresh n√£o atualizava. Fix: adicionado bot√£o "‚Üª atualizar" na toolbar; quando dados est√£o vazios, auto-retry a cada 30s at√© aparecerem (`_retryTimer`).
-- [x] **Confirmar: mem√≥ria pessoal do AKASHA est√° sendo salva** ‚Äî confirmado: `personal_memory.db` em `ecosystem_root/.ai_private/akasha/` com 236 KB e 1060 entradas (282 connections + 778 surprises). C√≥digo de `services/personal_memory.py` correto, migration v33 aplicada.
+- [x] **Bug: fila de extraÁ„o sempre = 50** ó `get_status()` usava `_queue.qsize()` corretamente, mas o backfill mantÈm a fila propositalmente em ~50 via `_wait_queue_drain(threshold=50)`. Fix: adicionado `_backfill_running: bool` em `services/knowledge_worker.py`; HUB agora exibe "em fila ∑ backfill ativo" quando backfill est· em andamento, deixando claro que È processamento normal e n„o travamento.
+- [x] **Bug: aba "Conexıes" sempre vazia ao abrir o AKASHA** ó entity_graph tem 2643 entradas (funcionando). O grafo carregava os dados uma vez ao abrir a p·gina, mas sem refresh n„o atualizava. Fix: adicionado bot„o "? atualizar" na toolbar; quando dados est„o vazios, auto-retry a cada 30s atÈ aparecerem (`_retryTimer`).
+- [x] **Confirmar: memÛria pessoal do AKASHA est· sendo salva** ó confirmado: `personal_memory.db` em `ecosystem_root/.ai_private/akasha/` com 236 KB e 1060 entradas (282 connections + 778 surprises). CÛdigo de `services/personal_memory.py` correto, migration v33 aplicada.
 
 #### HUB
-- [x] **Bug: MemoryViewer mostra apenas 30 entradas** ‚Äî `cmd.memoryGetEntries(app, 30)` em `MonitoramentoView.tsx` tinha limite hardcoded. Aumentado para 50. Confirmado: AKASHA continua gerando ‚Äî de 1060 para 1435 entradas entre a manh√£ e a tarde de 2026-05-18.
-- [x] **Bug: timestamps nas mem√≥rias do monitor est√£o em UTC** ‚Äî `e.created_at.slice(0, 16)` exibia direto o valor SQLite (UTC) sem converter. Corrigido para `new Date(...'Z').toLocaleString('pt-BR', ...)` que converte para hor√°rio local.
-- [x] **"Temas aprendidos" da AKASHA no monitor deve ser scroll√°vel** ‚Äî adicionado `maxHeight: 280, overflowY: 'auto'` ao container da lista de temas. Limite `?n=30` tamb√©m aumentado para `?n=50`.
-- [x] **Bug: monitor auto-scrolls para o log ao atualizar, impedindo leitura** ‚Äî `src/views/MonitoramentoView.tsx`: o LogStrip faz scroll autom√°tico a cada polling (3s). Corrigir com l√≥gica de "scroll lock": s√≥ fazer auto-scroll se o usu√°rio j√° estava no final; se rolou para cima para ler, n√£o interromper.
-- [x] **Bug: logs do Mnemosyne param de aparecer no monitor (exibe "sem logs")** ‚Äî o log viewer do Mnemosyne no HUB usa Tauri command `read_app_log` lendo o arquivo por nome. Verificar se o `RotatingFileHandler` do Mnemosyne rotaciona o arquivo durante a sess√£o e o comando Tauri continua tentando ler o nome original (agora renomeado para `.1`); corrigir para sempre ler o arquivo de log ativo pelo nome can√¥nico.
+- [x] **Bug: MemoryViewer mostra apenas 30 entradas** ó `cmd.memoryGetEntries(app, 30)` em `MonitoramentoView.tsx` tinha limite hardcoded. Aumentado para 50. Confirmado: AKASHA continua gerando ó de 1060 para 1435 entradas entre a manh„ e a tarde de 2026-05-18.
+- [x] **Bug: timestamps nas memÛrias do monitor est„o em UTC** ó `e.created_at.slice(0, 16)` exibia direto o valor SQLite (UTC) sem converter. Corrigido para `new Date(...'Z').toLocaleString('pt-BR', ...)` que converte para hor·rio local.
+- [x] **"Temas aprendidos" da AKASHA no monitor deve ser scroll·vel** ó adicionado `maxHeight: 280, overflowY: 'auto'` ao container da lista de temas. Limite `?n=30` tambÈm aumentado para `?n=50`.
+- [x] **Bug: monitor auto-scrolls para o log ao atualizar, impedindo leitura** ó `src/views/MonitoramentoView.tsx`: o LogStrip faz scroll autom·tico a cada polling (3s). Corrigir com lÛgica de "scroll lock": sÛ fazer auto-scroll se o usu·rio j· estava no final; se rolou para cima para ler, n„o interromper.
+- [x] **Bug: logs do Mnemosyne param de aparecer no monitor (exibe "sem logs")** ó o log viewer do Mnemosyne no HUB usa Tauri command `read_app_log` lendo o arquivo por nome. Verificar se o `RotatingFileHandler` do Mnemosyne rotaciona o arquivo durante a sess„o e o comando Tauri continua tentando ler o nome original (agora renomeado para `.1`); corrigir para sempre ler o arquivo de log ativo pelo nome canÙnico.
 
-### Bugs e investiga√ß√µes reportados ap√≥s uso real | 2026-05-19
-> Contexto: bugs encontrados ao retomar sess√£o ‚Äî tema modo noite/dia resetando, aba Conex√µes nunca renderizando, logs Mnemosyne sumindo no monitor e mem√≥ria pessoal AKASHA n√£o salva por sess√£o.
+### Bugs e investigaÁıes reportados apÛs uso real | 2026-05-19
+> Contexto: bugs encontrados ao retomar sess„o ó tema modo noite/dia resetando, aba Conexıes nunca renderizando, logs Mnemosyne sumindo no monitor e memÛria pessoal AKASHA n„o salva por sess„o.
 
 #### AKASHA
-- [x] **Bug raiz: aba "Conex√µes" nunca renderizava (D3.js n√£o carregado)** ‚Äî o `{% block scripts %}` em `graph.html` injetava `<script src="d3.v7.min.js">` no final do `<body>` (linha 234 do base.html), AP√ìS o `{% block content %}` que cont√©m o script inline que usa `d3.select()`. D3 estava undefined quando o script rodava ‚Üí ReferenceError silencioso ‚Üí grafo nunca renderizado. Fix: mover `<script src="d3.v7.min.js">` para `{% block head %}` (renderizado dentro do `<head>`) em `templates/graph.html`. **Corrigido e commitado em 2026-05-19.**
-- [ ] **Bug: mem√≥ria pessoal AKASHA n√£o registra insight de sess√£o (session memory)** ‚Äî quando uma sess√£o de busca acumula ‚â•2 queries, o AKASHA deve salvar em sua mem√≥ria pessoal uma reflex√£o escrita com suas pr√≥prias palavras sobre o que observou na sess√£o da usu√°ria, referenciando data/hora e o perfil de busca. Isso est√° registrado no TODO (sess√£o anterior) mas n√£o implementado. Implementar em `services/session_memory.py` ou `services/session_insight.py`: ao expirar sess√£o com ‚â•2 queries, chamar LLM para gerar texto em 1¬™ pessoa do AKASHA, salvar em `personal_memory` com `type="observation"` e `tags=["session_reflection"]`, incluindo data/hora e nome da usu√°ria (Jenifer). Refer√™ncia: `services/session_insight.py::maybe_schedule()`.
+- [x] **Bug raiz: aba "Conexıes" nunca renderizava (D3.js n„o carregado)** ó o `{% block scripts %}` em `graph.html` injetava `<script src="d3.v7.min.js">` no final do `<body>` (linha 234 do base.html), AP”S o `{% block content %}` que contÈm o script inline que usa `d3.select()`. D3 estava undefined quando o script rodava ? ReferenceError silencioso ? grafo nunca renderizado. Fix: mover `<script src="d3.v7.min.js">` para `{% block head %}` (renderizado dentro do `<head>`) em `templates/graph.html`. **Corrigido e commitado em 2026-05-19.**
+- [ ] **Bug: memÛria pessoal AKASHA n„o registra insight de sess„o (session memory)** ó quando uma sess„o de busca acumula =2 queries, o AKASHA deve salvar em sua memÛria pessoal uma reflex„o escrita com suas prÛprias palavras sobre o que observou na sess„o da usu·ria, referenciando data/hora e o perfil de busca. Isso est· registrado no TODO (sess„o anterior) mas n„o implementado. Implementar em `services/session_memory.py` ou `services/session_insight.py`: ao expirar sess„o com =2 queries, chamar LLM para gerar texto em 1™ pessoa do AKASHA, salvar em `personal_memory` com `type="observation"` e `tags=["session_reflection"]`, incluindo data/hora e nome da usu·ria (Jenifer). ReferÍncia: `services/session_insight.py::maybe_schedule()`.
 
 #### Mnemosyne
-- [x] **Bug: tema modo noite/dia reseta entre sess√µes** ‚Äî ao cair no arquivo legado `Mnemosyne/config.json` (que n√£o tem `dark_mode`) como migra√ß√£o, o app abria sempre no modo noite (padr√£o). Causa raiz: `_CONFIG_PATH != _LEGACY_CONFIG_PATH` mas settings.json no ecosystem_root n√£o existia ainda; caia no legacy sem `dark_mode` ‚Üí default True. Fix em `core/config.py`: ao carregar do legacy como migra√ß√£o, imediatamente salvar no `_CONFIG_PATH` correto para que a pr√≥xima abertura use o arquivo permanente. **Corrigido e commitado em 2026-05-19.**
+- [x] **Bug: tema modo noite/dia reseta entre sessıes** ó ao cair no arquivo legado `Mnemosyne/config.json` (que n„o tem `dark_mode`) como migraÁ„o, o app abria sempre no modo noite (padr„o). Causa raiz: `_CONFIG_PATH != _LEGACY_CONFIG_PATH` mas settings.json no ecosystem_root n„o existia ainda; caia no legacy sem `dark_mode` ? default True. Fix em `core/config.py`: ao carregar do legacy como migraÁ„o, imediatamente salvar no `_CONFIG_PATH` correto para que a prÛxima abertura use o arquivo permanente. **Corrigido e commitado em 2026-05-19.**
 
 #### HUB
-- [ ] **Bug: logs do Mnemosyne somem no monitor ap√≥s renomear diret√≥rio** ‚Äî o diret√≥rio `ecosystem_root/mnemosyne/` foi renomeado para `mnemosyne.bak/` enquanto Mnemosyne estava rodando. Linux manteve o file handle aberto, ent√£o os logs continuaram indo para `mnemosyne.bak/mnemosyne.log`. O HUB (`read_app_log`) l√™ de `{sync_root}/mnemosyne/mnemosyne.log` (novo path) que n√£o existe. **Solu√ß√£o imediata: reiniciar a Mnemosyne.** Solu√ß√£o estrutural: `read_app_log` no Tauri deve tentar tamb√©m `{sync_root}/{app}.bak/{app}.log` como fallback, ou Mnemosyne deve escrever o `log_path` atual no ecosystem.json ao iniciar para que o HUB leia de onde o log realmente est√°.
+- [ ] **Bug: logs do Mnemosyne somem no monitor apÛs renomear diretÛrio** ó o diretÛrio `ecosystem_root/mnemosyne/` foi renomeado para `mnemosyne.bak/` enquanto Mnemosyne estava rodando. Linux manteve o file handle aberto, ent„o os logs continuaram indo para `mnemosyne.bak/mnemosyne.log`. O HUB (`read_app_log`) lÍ de `{sync_root}/mnemosyne/mnemosyne.log` (novo path) que n„o existe. **SoluÁ„o imediata: reiniciar a Mnemosyne.** SoluÁ„o estrutural: `read_app_log` no Tauri deve tentar tambÈm `{sync_root}/{app}.bak/{app}.log` como fallback, ou Mnemosyne deve escrever o `log_path` atual no ecosystem.json ao iniciar para que o HUB leia de onde o log realmente est·.
 
 #### Ecossistema
-- [x] **Confirmar: gemma2:2b, qwen2.5:3b e smollm2:1.7b compartilham bancos sem conflito** ‚Äî confirmado: SQLite e ChromaDB s√£o independentes do modelo de linguagem; qualquer LLM l√™ e escreve strings via API do Ollama; troca de modelo n√£o afeta integridade de dados existentes. Nenhuma a√ß√£o necess√°ria.
-- [x] **Refator arquitetural: toda configura√ß√£o de Ollama centralizada no HUB** ‚Äî o Mnemosyne ainda exp√µe no pr√≥prio SetupDialog: modelo LLM (`llm_model`), embedding (`embed_model`) e OCR de imagens (`image_ocr_model`). Viola√ß√£o da arquitetura: tudo sobre Ollama deve estar no perfil ativo do LOGOS no HUB. Migrar: (1) `image_ocr_model` ‚Üí novo campo no perfil LOGOS (`image_ocr`); (2) remover os campos de modelo do SetupDialog do Mnemosyne; (3) Mnemosyne l√™ via `ecosystem_client.get_active_profile()` em runtime. Al√©m disso: o HUB deve exibir para cada fun√ß√£o (`llm_rag`, `embed`, `image_ocr`, `llm_query`, `llm_analysis`) o modelo recomendado por hardware e um bot√£o "Baixar" que executa `ollama pull <modelo>` sem precisar abrir terminal.
-- [x] **Bug: Topbar.tsx ‚Äî erro de compila√ß√£o TypeScript: property 'sync' faltando** ‚Äî `src/components/Topbar.tsx:11`: o tipo `HubSection` foi atualizado para incluir a se√ß√£o `'sync'` (aba Syncthing), mas o objeto de √≠cones/labels no `Topbar` n√£o recebeu a entrada correspondente. Corrigir adicionando `sync: <...>` ao objeto em `Topbar.tsx:11`.
+- [x] **Confirmar: gemma2:2b, qwen2.5:3b e smollm2:1.7b compartilham bancos sem conflito** ó confirmado: SQLite e ChromaDB s„o independentes do modelo de linguagem; qualquer LLM lÍ e escreve strings via API do Ollama; troca de modelo n„o afeta integridade de dados existentes. Nenhuma aÁ„o necess·ria.
+- [x] **Refator arquitetural: toda configuraÁ„o de Ollama centralizada no HUB** ó o Mnemosyne ainda expıe no prÛprio SetupDialog: modelo LLM (`llm_model`), embedding (`embed_model`) e OCR de imagens (`image_ocr_model`). ViolaÁ„o da arquitetura: tudo sobre Ollama deve estar no perfil ativo do LOGOS no HUB. Migrar: (1) `image_ocr_model` ? novo campo no perfil LOGOS (`image_ocr`); (2) remover os campos de modelo do SetupDialog do Mnemosyne; (3) Mnemosyne lÍ via `ecosystem_client.get_active_profile()` em runtime. AlÈm disso: o HUB deve exibir para cada funÁ„o (`llm_rag`, `embed`, `image_ocr`, `llm_query`, `llm_analysis`) o modelo recomendado por hardware e um bot„o "Baixar" que executa `ollama pull <modelo>` sem precisar abrir terminal.
+- [x] **Bug: Topbar.tsx ó erro de compilaÁ„o TypeScript: property 'sync' faltando** ó `src/components/Topbar.tsx:11`: o tipo `HubSection` foi atualizado para incluir a seÁ„o `'sync'` (aba Syncthing), mas o objeto de Ìcones/labels no `Topbar` n„o recebeu a entrada correspondente. Corrigir adicionando `sync: <...>` ao objeto em `Topbar.tsx:11`.
 
-### Redesign visual da Mnemosyne ‚Äî "Bibliotec√°ria Celeste" | 2026-05-19
-> Contexto: novo mockup de refer√™ncia em `/home/spacewitch/Downloads/mnemosyne/` (HTML/React ‚Äî `app.jsx`, `chrome.jsx`, `columns.jsx`, `cosmos.jsx`, `styles.css`, etc.) define design completo "Bibliotec√°ria Celeste". Decis√µes confirmadas: ambos modos dia/noite; CosmosWidget em QPainter; layout de tr√™s colunas exatamente como o mockup.
-
-#### Mnemosyne
-- [ ] **`gui/cosmos_widget.py` ‚Äî CosmosWidget QPainter** ‚Äî widget PySide6 com `paintEvent` que pinta fundo procedural determin√≠stico (seed fixo por inst√¢ncia): nebulosas (ellipse blur com `QPainter.setOpacity`), estrelas (c√≠rculos e pol√≠gonos de 4/5 pontas), linhas de constela√ß√£o tracejadas, cometa animado. Usar `QTimer` + `update()` para animar o cometa em loop. Par√¢metros: `seed`, `density` ("low"/"medium"/"high"), `show_comet`, `show_moon`, `show_planet`. Equivalente Python do `CosmosLayer` em `cosmos.jsx`. Usar como widget de fundo (Z-order atr√°s do conte√∫do) em sidebar, topbar e headers das colunas.
-- [ ] **`styles.qss` ‚Äî modo diurno + redesign completo** ‚Äî adicionar tokens do modo diurno (papel `#F5F0E8`, `#EDE7D9`, `#E0D8C8`; tinta `#2C2416`, `#5C4E3A`; acento `#b8860b`). Criar mecanismo de troca de tema: `QApplication.instance().setProperty("theme", "day"/"night")` + recarregar QSS via `setStyleSheet`. Atualizar todos os seletores para usar vari√°veis Qt (`qproperty-` ou IDs nomeados) compat√≠veis com ambos os modos. Refer√™ncia: tokens em `styles.css` linhas 9-46 (dia) e 49-73 (noite).
-- [ ] **`main_window.py` ‚Äî layout de tr√™s colunas** ‚Äî substituir layout atual (sidebar colaps√°vel + √°rea central + painel direito) por: sidebar estreita (44px √≠cone-only colaps√°vel para 224px com labels latinos), topbar horizontal (44px, spans √°rea principal), e tr√™s colunas fixas via `QSplitter` horizontal: Catalogus/Fontes (280px fixo, lista de fontes com busca), Interrogatio/Conversa (flex, √°rea do notebook/chat), Atelier/Est√∫dio (320px fixo, tabs Resumos/Anota√ß√µes/Cr√¥nica). A sidebar deve usar `CosmosWidget` como fundo. Mapeamento atual ‚Üí novo: nav "biblioteca" + lista de cole√ß√µes ‚Üí Catalogus; √°rea de chat/notebook ‚Üí Interrogatio; aba An√°lise (Studio) + Cr√¥nica ‚Üí Atelier.
-- [ ] **`main_window.py` ‚Äî sidebar colaps√°vel com labels latinos** ‚Äî barra lateral 44px colapsada com glifos (? / ‚òâ / ‚ò∑ / ‚ôÑ / ‚öô) e labels em latim ao expandir (Interrogatio / Atelier / Catalogus / Chronica / Configuratio). Bot√£o ‚ò∞ no topbar faz toggle. Equivalente PySide6 do componente `Sidebar` em `chrome.jsx`.
-- [ ] **`main_window.py` ‚Äî topbar redesenhada** ‚Äî barra superior 44px: bot√£o ‚ò∞ toggle sidebar, nome "Mnemosyne" em it√°lico (IM Fell English), separador, breadcrumb (notebook ativo), spacer, indicador de modelo, bot√£o "‚ú¶ Catalogar", toggle de tema (‚òÄ/‚òΩ), bot√£o ‚öô. Quando indexando: exibir alchemy loader + "Catalogando ¬∑ N%" no lugar do indicador de modelo; animar CosmosWidget do topbar com cometa em movimento. Equivalente do `Topbar` em `chrome.jsx`.
-- [ ] **`gui/widgets/foxing_card.py` ou QSS** ‚Äî cards do Atelier/Studio com efeito "foxing" (manchas de papel envelhecido): implementar via `QFrame` custom com `paintEvent` que pinta mancha s√©pia semi-transparente no canto superior direito. Alternativa QSS: `border-image` com SVG inline ou `background: radial-gradient(...)` no canto. Deve funcionar em modo dia e noite (cor da mancha adapta √† paleta).
-- [ ] **Splash screen redesenhada** ‚Äî tela de abertura: card centralizado com `CosmosWidget` de fundo, "M" it√°lico em dourado, "Mnemosyne ¬∑ Bibliotec√°ria Celeste", status animado ("Acendendo a vela...", "Abrindo o cat√°logo celeste...", "Calibrando as constela√ß√µes...", "Pronto."), vers√£o no rodap√©. Usar `QDialog` sem frame + `QTimer` para sequ√™ncia de status + fade out via `QPropertyAnimation(opacity)`. Equivalente do `Splash` em `splash.jsx`.
-
-### Pop-up espont√¢neo da Mnemosyne + sistema de feedback | 2026-05-19
-> Contexto: a Mnemosyne deve poder iniciar pop-ups proativos (semelhante ao `alert()` do JS) para compartilhar insights sem ser acionada. A ideia foi a origem do sistema de feedback do ecossistema. O feedback j√° foi implementado em parte (mem√≥rias epis√≥dicas, penalidade por dismissed, decaimento temporal ‚Äî todos `[x]` na se√ß√£o de pesquisa RAG). O que falta √© o mecanismo de pop-up + feedback UI na Mnemosyne.
+### Redesign visual da Mnemosyne ó "Bibliotec·ria Celeste" | 2026-05-19
+> Contexto: novo mockup de referÍncia em `/home/spacewitch/Downloads/mnemosyne/` (HTML/React ó `app.jsx`, `chrome.jsx`, `columns.jsx`, `cosmos.jsx`, `styles.css`, etc.) define design completo "Bibliotec·ria Celeste". Decisıes confirmadas: ambos modos dia/noite; CosmosWidget em QPainter; layout de trÍs colunas exatamente como o mockup.
 
 #### Mnemosyne
-- [x] **`gui/insight_popup.py` ‚Äî pop-up de insight espont√¢neo** ‚Äî `QDialog` frameless posicionado no canto inferior direito via `QScreen.availableGeometry()`, fade-in/out via `QPropertyAnimation(windowOpacity)`. Conte√∫do: eyebrow "‚ú¶ Mnemosyne", texto em it√°lico (`IM Fell English`), tr√™s bot√µes de feedback (‚úì/‚úó/‚úé). Auto-dismiss ap√≥s 12s. Sinais: `confirmed(id)`, `dismissed(id)`, `replied(text)`. **Implementado em 2026-05-19.**
-- [x] **`core/insight_scheduler.py` ‚Äî agendador de insights** ‚Äî `QObject` com sinal `insight_ready(text, memory_id)`. Crit√©rios: cooldown de 10 min (`COOLDOWN_SECONDS=600`), entrada n√£o exibida ainda nesta sess√£o (rastreado por `_shown_ids: set[int]`), conte√∫do ‚â• 20 chars. Chamado via `IndexReflectionWorker.finished` em `_drain_analysis_queue`. **Implementado em 2026-05-19.**
-- [x] **`gui/insight_popup.py` ‚Äî integra√ß√£o com feedback** ‚Äî `_on_insight_confirmed` ‚Üí `set_feedback(id, "confirmed")`; `_on_insight_dismissed` ‚Üí `set_feedback(id, "dismissed")`; `_on_insight_replied` ‚Üí pr√©-preenche `question_edit` com `[Insight: {texto}]`. Estilos adicionados em `styles.qss` (modo noturno) e `styles_light.qss` (modo diurno). **Implementado em 2026-05-19.**
-- [x] **`personal_memory.py` ‚Äî coluna `shown_as_popup` + persist√™ncia entre sess√µes** ‚Äî adicionada coluna `shown_as_popup INTEGER DEFAULT 0` com migration autom√°tica; novas fun√ß√µes `get_unshown_popup_entries(n)` e `mark_shown_as_popup(id)`. `InsightScheduler` atualizado para usar o banco em vez de `_shown_ids` em mem√≥ria ‚Äî insights n√£o se perdem entre sess√µes e n√£o se repetem. **Implementado em 2026-05-19.**
-- [x] **`main_window.py` ‚Äî popup para insights do AKASHA via `_poll_insights()`** ‚Äî quando `poll_and_store()` retorna count > 0 com entrada nova, chama `get_latest_unseen()` e exibe `InsightPopup` com `akasha_thought` (ou `summary` como fallback). IDs de insights do AKASHA s√£o negativos no popup (distingue de `personal_memory`); handlers de confirmed/dismissed roteiam corretamente para `mark_seen()` (AKASHA) ou `set_feedback()` (personal_memory). **Implementado em 2026-05-19.**
+- [ ] **`gui/cosmos_widget.py` ó CosmosWidget QPainter** ó widget PySide6 com `paintEvent` que pinta fundo procedural determinÌstico (seed fixo por inst‚ncia): nebulosas (ellipse blur com `QPainter.setOpacity`), estrelas (cÌrculos e polÌgonos de 4/5 pontas), linhas de constelaÁ„o tracejadas, cometa animado. Usar `QTimer` + `update()` para animar o cometa em loop. Par‚metros: `seed`, `density` ("low"/"medium"/"high"), `show_comet`, `show_moon`, `show_planet`. Equivalente Python do `CosmosLayer` em `cosmos.jsx`. Usar como widget de fundo (Z-order atr·s do conte˙do) em sidebar, topbar e headers das colunas.
+- [ ] **`styles.qss` ó modo diurno + redesign completo** ó adicionar tokens do modo diurno (papel `#F5F0E8`, `#EDE7D9`, `#E0D8C8`; tinta `#2C2416`, `#5C4E3A`; acento `#b8860b`). Criar mecanismo de troca de tema: `QApplication.instance().setProperty("theme", "day"/"night")` + recarregar QSS via `setStyleSheet`. Atualizar todos os seletores para usar vari·veis Qt (`qproperty-` ou IDs nomeados) compatÌveis com ambos os modos. ReferÍncia: tokens em `styles.css` linhas 9-46 (dia) e 49-73 (noite).
+- [ ] **`main_window.py` ó layout de trÍs colunas** ó substituir layout atual (sidebar colaps·vel + ·rea central + painel direito) por: sidebar estreita (44px Ìcone-only colaps·vel para 224px com labels latinos), topbar horizontal (44px, spans ·rea principal), e trÍs colunas fixas via `QSplitter` horizontal: Catalogus/Fontes (280px fixo, lista de fontes com busca), Interrogatio/Conversa (flex, ·rea do notebook/chat), Atelier/Est˙dio (320px fixo, tabs Resumos/AnotaÁıes/CrÙnica). A sidebar deve usar `CosmosWidget` como fundo. Mapeamento atual ? novo: nav "biblioteca" + lista de coleÁıes ? Catalogus; ·rea de chat/notebook ? Interrogatio; aba An·lise (Studio) + CrÙnica ? Atelier.
+- [ ] **`main_window.py` ó sidebar colaps·vel com labels latinos** ó barra lateral 44px colapsada com glifos (? / ? / ? / ? / ?) e labels em latim ao expandir (Interrogatio / Atelier / Catalogus / Chronica / Configuratio). Bot„o ? no topbar faz toggle. Equivalente PySide6 do componente `Sidebar` em `chrome.jsx`.
+- [ ] **`main_window.py` ó topbar redesenhada** ó barra superior 44px: bot„o ? toggle sidebar, nome "Mnemosyne" em it·lico (IM Fell English), separador, breadcrumb (notebook ativo), spacer, indicador de modelo, bot„o "? Catalogar", toggle de tema (?/?), bot„o ?. Quando indexando: exibir alchemy loader + "Catalogando ∑ N%" no lugar do indicador de modelo; animar CosmosWidget do topbar com cometa em movimento. Equivalente do `Topbar` em `chrome.jsx`.
+- [ ] **`gui/widgets/foxing_card.py` ou QSS** ó cards do Atelier/Studio com efeito "foxing" (manchas de papel envelhecido): implementar via `QFrame` custom com `paintEvent` que pinta mancha sÈpia semi-transparente no canto superior direito. Alternativa QSS: `border-image` com SVG inline ou `background: radial-gradient(...)` no canto. Deve funcionar em modo dia e noite (cor da mancha adapta ‡ paleta).
+- [ ] **Splash screen redesenhada** ó tela de abertura: card centralizado com `CosmosWidget` de fundo, "M" it·lico em dourado, "Mnemosyne ∑ Bibliotec·ria Celeste", status animado ("Acendendo a vela...", "Abrindo o cat·logo celeste...", "Calibrando as constelaÁıes...", "Pronto."), vers„o no rodapÈ. Usar `QDialog` sem frame + `QTimer` para sequÍncia de status + fade out via `QPropertyAnimation(opacity)`. Equivalente do `Splash` em `splash.jsx`.
 
-### Bug HUB ‚Äî git n√£o captura mnemosyne.bak/ | 2026-05-19
-> Contexto: o diret√≥rio de dados da Mnemosyne no sync_root estava como `mnemosyne.bak/` mas `app_git_paths("mnemosyne")` no HUB hardcodava s√≥ `mnemosyne/` ‚Äî auto-commit silenciava mudan√ßas reais.
+### Pop-up espont‚neo da Mnemosyne + sistema de feedback | 2026-05-19
+> Contexto: a Mnemosyne deve poder iniciar pop-ups proativos (semelhante ao `alert()` do JS) para compartilhar insights sem ser acionada. A ideia foi a origem do sistema de feedback do ecossistema. O feedback j· foi implementado em parte (memÛrias episÛdicas, penalidade por dismissed, decaimento temporal ó todos `[x]` na seÁ„o de pesquisa RAG). O que falta È o mecanismo de pop-up + feedback UI na Mnemosyne.
+
+#### Mnemosyne
+- [x] **`gui/insight_popup.py` ó pop-up de insight espont‚neo** ó `QDialog` frameless posicionado no canto inferior direito via `QScreen.availableGeometry()`, fade-in/out via `QPropertyAnimation(windowOpacity)`. Conte˙do: eyebrow "? Mnemosyne", texto em it·lico (`IM Fell English`), trÍs botıes de feedback (?/?/?). Auto-dismiss apÛs 12s. Sinais: `confirmed(id)`, `dismissed(id)`, `replied(text)`. **Implementado em 2026-05-19.**
+- [x] **`core/insight_scheduler.py` ó agendador de insights** ó `QObject` com sinal `insight_ready(text, memory_id)`. CritÈrios: cooldown de 10 min (`COOLDOWN_SECONDS=600`), entrada n„o exibida ainda nesta sess„o (rastreado por `_shown_ids: set[int]`), conte˙do = 20 chars. Chamado via `IndexReflectionWorker.finished` em `_drain_analysis_queue`. **Implementado em 2026-05-19.**
+- [x] **`gui/insight_popup.py` ó integraÁ„o com feedback** ó `_on_insight_confirmed` ? `set_feedback(id, "confirmed")`; `_on_insight_dismissed` ? `set_feedback(id, "dismissed")`; `_on_insight_replied` ? prÈ-preenche `question_edit` com `[Insight: {texto}]`. Estilos adicionados em `styles.qss` (modo noturno) e `styles_light.qss` (modo diurno). **Implementado em 2026-05-19.**
+- [x] **`personal_memory.py` ó coluna `shown_as_popup` + persistÍncia entre sessıes** ó adicionada coluna `shown_as_popup INTEGER DEFAULT 0` com migration autom·tica; novas funÁıes `get_unshown_popup_entries(n)` e `mark_shown_as_popup(id)`. `InsightScheduler` atualizado para usar o banco em vez de `_shown_ids` em memÛria ó insights n„o se perdem entre sessıes e n„o se repetem. **Implementado em 2026-05-19.**
+- [x] **`main_window.py` ó popup para insights do AKASHA via `_poll_insights()`** ó quando `poll_and_store()` retorna count > 0 com entrada nova, chama `get_latest_unseen()` e exibe `InsightPopup` com `akasha_thought` (ou `summary` como fallback). IDs de insights do AKASHA s„o negativos no popup (distingue de `personal_memory`); handlers de confirmed/dismissed roteiam corretamente para `mark_seen()` (AKASHA) ou `set_feedback()` (personal_memory). **Implementado em 2026-05-19.**
+
+### Bug HUB ó git n„o captura mnemosyne.bak/ | 2026-05-19
+> Contexto: o diretÛrio de dados da Mnemosyne no sync_root estava como `mnemosyne.bak/` mas `app_git_paths("mnemosyne")` no HUB hardcodava sÛ `mnemosyne/` ó auto-commit silenciava mudanÁas reais.
 
 #### HUB
-- [x] **`commands/git.rs` ‚Äî adicionar `mnemosyne.bak/` ao `app_git_paths("mnemosyne")`** ‚Äî solu√ß√£o imediata; caminho real lido como fallback. Nota: fix estrutural seria ler o caminho do diret√≥rio do `ecosystem.json` em vez de hardcodar. **Corrigido em 2026-05-19.**
+- [x] **`commands/git.rs` ó adicionar `mnemosyne.bak/` ao `app_git_paths("mnemosyne")`** ó soluÁ„o imediata; caminho real lido como fallback. Nota: fix estrutural seria ler o caminho do diretÛrio do `ecosystem.json` em vez de hardcodar. **Corrigido em 2026-05-19.**
 
-### Comunica√ß√£o bidirecional AKASHA‚ÜîMnemosyne ‚Äî "amizade" | 2026-05-19
-> Contexto: AKASHA‚ÜíMnemosyne j√° existia via ecosystem.json (notify_mnemosyne_insight); Mnemosyne‚ÜíAKASHA estava ausente. Insights trocados devem ser salvos em personal_memory de cada IA (nunca indexados no RAG). As duas IAs se comunicam como amigas ‚Äî cada troca √© uma "visita".
+### ComunicaÁ„o bidirecional AKASHA?Mnemosyne ó "amizade" | 2026-05-19
+> Contexto: AKASHA?Mnemosyne j· existia via ecosystem.json (notify_mnemosyne_insight); Mnemosyne?AKASHA estava ausente. Insights trocados devem ser salvos em personal_memory de cada IA (nunca indexados no RAG). As duas IAs se comunicam como amigas ó cada troca È uma "visita".
 
 #### ecosystem_client
-- [x] **`notify_akasha_insight(content, tags)`** ‚Äî espelho de `notify_mnemosyne_insight`; escreve em `akasha.incoming_insights` (FIFO de 20) no ecosystem.json. Assinatura simples: `content` √© o pensamento da Mnemosyne; sem `topics`/`sources` (a Mnemosyne compartilha reflex√£o, n√£o pesquisa).
+- [x] **`notify_akasha_insight(content, tags)`** ó espelho de `notify_mnemosyne_insight`; escreve em `akasha.incoming_insights` (FIFO de 20) no ecosystem.json. Assinatura simples: `content` È o pensamento da Mnemosyne; sem `topics`/`sources` (a Mnemosyne compartilha reflex„o, n„o pesquisa).
 
 #### AKASHA
-- [x] **`services/friendship_receiver.py`** ‚Äî loop P3 que poleia `akasha.incoming_insights` a cada 5 min, move para `personal_memory` com `type="connection"`, `tags=["from_mnemosyne"]`, limpa o campo. Nunca indexado no RAG.
-- [x] **`main.py`** ‚Äî registrar `_friendship_receiver_loop()` como task P3 no lifespan, ao lado do `_reflection_loop()`.
-- [x] **`services/personal_memory.py` + `services/insights.py`** ‚Äî ao receber insight AKASHA (poll_and_store no lado Mnemosyne): salvar `akasha_thought` ou `summary` tamb√©m em `personal_memory` da AKASHA. *Nota: esse item √© do lado Mnemosyne mas salva mem√≥ria AKASHA via o friendship_receiver.*
+- [x] **`services/friendship_receiver.py`** ó loop P3 que poleia `akasha.incoming_insights` a cada 5 min, move para `personal_memory` com `type="connection"`, `tags=["from_mnemosyne"]`, limpa o campo. Nunca indexado no RAG.
+- [x] **`main.py`** ó registrar `_friendship_receiver_loop()` como task P3 no lifespan, ao lado do `_reflection_loop()`.
+- [x] **`services/personal_memory.py` + `services/insights.py`** ó ao receber insight AKASHA (poll_and_store no lado Mnemosyne): salvar `akasha_thought` ou `summary` tambÈm em `personal_memory` da AKASHA. *Nota: esse item È do lado Mnemosyne mas salva memÛria AKASHA via o friendship_receiver.*
 
 #### Mnemosyne
-- [x] **`core/insight_scheduler.py` ‚Äî `_maybe_send_to_akasha(content)`** ‚Äî ap√≥s `mark_shown_as_popup`, envia pensamento para AKASHA via `notify_akasha_insight`. Cooldown pr√≥prio de 2h (`_SEND_TO_AKASHA_COOLDOWN = 7200.0`), independente do cooldown de popup (10min).
-- [x] **`core/insights.py` ‚Äî `poll_and_store()`** ‚Äî ap√≥s mover insight do AKASHA para `insights.db`, salvar tamb√©m em `personal_memory` com `type="connection"`, `tags=["from_akasha"]`. Isso implementa o ponto 3: insights entre amigas processados E guardados em mem√≥ria pessoal, fora do RAG.
+- [x] **`core/insight_scheduler.py` ó `_maybe_send_to_akasha(content)`** ó apÛs `mark_shown_as_popup`, envia pensamento para AKASHA via `notify_akasha_insight`. Cooldown prÛprio de 2h (`_SEND_TO_AKASHA_COOLDOWN = 7200.0`), independente do cooldown de popup (10min).
+- [x] **`core/insights.py` ó `poll_and_store()`** ó apÛs mover insight do AKASHA para `insights.db`, salvar tambÈm em `personal_memory` com `type="connection"`, `tags=["from_akasha"]`. Isso implementa o ponto 3: insights entre amigas processados E guardados em memÛria pessoal, fora do RAG.
 
-### Mem√≥ria pessoal das IAs ‚Äî estrutura tem√°tica (an√°logo aos .md da mem√≥ria do Claude) | 2026-05-19
-> Contexto: atualmente `personal_memory` de AKASHA e Mnemosyne √© uma tabela plana com coluna `type` (observation/connection/surprise/reflection). A mem√≥ria do Claude usa m√∫ltiplos arquivos .md por tema (user.md, feedback.md, project.md). A ideia √© dar √†s IAs "gavetas mentais" nomeadas por tema, n√£o apenas por tipo de entrada.
+### MemÛria pessoal das IAs ó estrutura tem·tica (an·logo aos .md da memÛria do Claude) | 2026-05-19
+> Contexto: atualmente `personal_memory` de AKASHA e Mnemosyne È uma tabela plana com coluna `type` (observation/connection/surprise/reflection). A memÛria do Claude usa m˙ltiplos arquivos .md por tema (user.md, feedback.md, project.md). A ideia È dar ‡s IAs "gavetas mentais" nomeadas por tema, n„o apenas por tipo de entrada.
 
 #### AKASHA + Mnemosyne
-- [x] **Adicionar coluna `category` a `personal_memory`** em ambas as apps (migra√ß√£o na abertura da conex√£o, igual ao padr√£o existente). Valores: `"interests"`, `"about_user"`, `"friendship"`, `"reflections"`, `"world"`. O campo `type` continua como subtipo (observation/connection etc.). Na aus√™ncia de category, usar `"reflections"` como default. **Implementado em 2026-05-19.**
-- [x] **Atribuir category automaticamente ao salvar** ‚Äî `from_akasha`/`from_mnemosyne` ‚Üí `"friendship"`; `session_insight`/`loop_periodico` ‚Üí `"reflections"`; `about_user` ‚Üí `"about_user"`. Helper `_derive_category(tags)` em ambas as apps. **Implementado em 2026-05-19.**
-- [x] **HUB ‚Äî aba de mem√≥ria agrupada por category** ‚Äî exibir mem√≥rias em se√ß√µes dobr√°veis por categoria, em vez de lista plana.
+- [x] **Adicionar coluna `category` a `personal_memory`** em ambas as apps (migraÁ„o na abertura da conex„o, igual ao padr„o existente). Valores: `"interests"`, `"about_user"`, `"friendship"`, `"reflections"`, `"world"`. O campo `type` continua como subtipo (observation/connection etc.). Na ausÍncia de category, usar `"reflections"` como default. **Implementado em 2026-05-19.**
+- [x] **Atribuir category automaticamente ao salvar** ó `from_akasha`/`from_mnemosyne` ? `"friendship"`; `session_insight`/`loop_periodico` ? `"reflections"`; `about_user` ? `"about_user"`. Helper `_derive_category(tags)` em ambas as apps. **Implementado em 2026-05-19.**
+- [x] **HUB ó aba de memÛria agrupada por category** ó exibir memÛrias em seÁıes dobr·veis por categoria, em vez de lista plana.
 
-### HUB Monitor ‚Äî filas de insight AKASHA‚ÜîMnemosyne | 2026-05-19'
-> Contexto: os dois FIFOs de troca de insight entre as IAs (mnemosyne.incoming_insights e akasha.incoming_insights no ecosystem.json) s√£o invis√≠veis ‚Äî n√£o h√° como saber se h√° mensagens pendentes nem o que elas dizem.
+### HUB Monitor ó filas de insight AKASHA?Mnemosyne | 2026-05-19'
+> Contexto: os dois FIFOs de troca de insight entre as IAs (mnemosyne.incoming_insights e akasha.incoming_insights no ecosystem.json) s„o invisÌveis ó n„o h· como saber se h· mensagens pendentes nem o que elas dizem.
 
 #### HUB
-- [x] **Se√ß√£o "Filas de visita" no monitor** ‚Äî exibir contagem de pend√™ncias e listar itens de `mnemosyne.incoming_insights` e `akasha.incoming_insights` lidos do ecosystem.json, no estilo da se√ß√£o de mem√≥ria AKASHA. **Implementado em 2026-05-19.**
+- [x] **SeÁ„o "Filas de visita" no monitor** ó exibir contagem de pendÍncias e listar itens de `mnemosyne.incoming_insights` e `akasha.incoming_insights` lidos do ecosystem.json, no estilo da seÁ„o de memÛria AKASHA. **Implementado em 2026-05-19.**
 
-### Bugs e investiga√ß√µes ‚Äî sess√£o de testes | 2026-05-19
-> Contexto: bugs encontrados durante testes do ecossistema em 2026-05-19 ‚Äî readonly database na Mnemosyne, popup transparente, artefatos de streaming no di√°logo, chat AKASHA com problemas, KOSMOS exibindo op√ß√£o de LLM indevidamente.
+### Bugs e investigaÁıes ó sess„o de testes | 2026-05-19
+> Contexto: bugs encontrados durante testes do ecossistema em 2026-05-19 ó readonly database na Mnemosyne, popup transparente, artefatos de streaming no di·logo, chat AKASHA com problemas, KOSMOS exibindo opÁ„o de LLM indevidamente.
 
 #### KOSMOS
-- [x] **Bug: KOSMOS ainda exibe op√ß√£o de alterar o LLM** ‚Äî viola a arquitetura: toda configura√ß√£o de Ollama deve ser feita pelo HUB via perfil LOGOS. Remover seletor de LLM do KOSMOS (SetupDialog ou equivalente); fazer o app ler o modelo via `ecosystem_client.get_active_profile()["llm_analysis"]` em runtime, igual ao refator j√° feito no Mnemosyne.
+- [x] **Bug: KOSMOS ainda exibe opÁ„o de alterar o LLM** ó viola a arquitetura: toda configuraÁ„o de Ollama deve ser feita pelo HUB via perfil LOGOS. Remover seletor de LLM do KOSMOS (SetupDialog ou equivalente); fazer o app ler o modelo via `ecosystem_client.get_active_profile()["llm_analysis"]` em runtime, igual ao refator j· feito no Mnemosyne.
 
 #### Mnemosyne
-- [x] **Bug: "readonly database" (code 1032) ao indexar dados do KOSMOS** ‚Äî ao finalizar indexa√ß√£o da biblioteca e iniciar indexa√ß√£o de dados do KOSMOS, erro "attempt to write a readonly database". Causa suspeita: dois processos com acesso simult√¢neo ao mesmo SQLite (KOSMOS + Mnemosyne), WAL mode desativado, ou arquivo de lock orphan (`.db-wal`/`.db-shm`). Investigar: identificar qual DB est√° sendo acessado (ChromaDB? SQLite pr√≥prio?), verificar se `PRAGMA journal_mode=WAL` est√° ativo, verificar se KOSMOS mant√©m conex√£o aberta enquanto Mnemosyne escreve. Coletar logs completos na pr√≥xima ocorr√™ncia. Relacionado ao item de readonly ChromaDB j√° registrado na se√ß√£o de bugs anteriores.
-- [x] **Bug: popup exibe janela transparente e vazia** ‚Äî ao tentar exibir insight, abre `QDialog` sem conte√∫do vis√≠vel. Poss√≠veis causas: fonte `IM Fell English` n√£o instalada no Windows (falha silenciosa de `QFont`), stylesheet com seletor incorreto zerando opacidade antes da anima√ß√£o iniciar, ou `QPropertyAnimation(windowOpacity)` iniciado antes de `show()`. Reproduzir com `QT_LOGGING_RULES="*.debug=true"`; verificar sequ√™ncia `show()` ‚Üí `start()` em `gui/insight_popup.py`.
-- [x] **Bug: √°rea de di√°logo com AKASHA exibe artefatos de streaming** ‚Äî tokens SSE aparecem separados por "‚¨°" (delimitador interno vazando para UI), respostas em loop com texto repetido e prefixos "‚¨°N‚¨°.‚¨°". O stream n√£o est√° sendo reconstitu√≠do antes de renderizar. Investigar: (1) o widget de chat usa `insertPlainText()` por token (raw) ou acumula e renderiza ao fim da resposta? (2) verificar se "‚¨°" √© delimitador do protocolo AKASHA‚ÜíMnemosyne que n√£o est√° sendo removido antes de chegar √† UI ‚Äî inspecionar o componente de chat do Mnemosyne e o endpoint de di√°logo do AKASHA.
+- [x] **Bug: "readonly database" (code 1032) ao indexar dados do KOSMOS** ó ao finalizar indexaÁ„o da biblioteca e iniciar indexaÁ„o de dados do KOSMOS, erro "attempt to write a readonly database". Causa suspeita: dois processos com acesso simult‚neo ao mesmo SQLite (KOSMOS + Mnemosyne), WAL mode desativado, ou arquivo de lock orphan (`.db-wal`/`.db-shm`). Investigar: identificar qual DB est· sendo acessado (ChromaDB? SQLite prÛprio?), verificar se `PRAGMA journal_mode=WAL` est· ativo, verificar se KOSMOS mantÈm conex„o aberta enquanto Mnemosyne escreve. Coletar logs completos na prÛxima ocorrÍncia. Relacionado ao item de readonly ChromaDB j· registrado na seÁ„o de bugs anteriores.
+- [x] **Bug: popup exibe janela transparente e vazia** ó ao tentar exibir insight, abre `QDialog` sem conte˙do visÌvel. PossÌveis causas: fonte `IM Fell English` n„o instalada no Windows (falha silenciosa de `QFont`), stylesheet com seletor incorreto zerando opacidade antes da animaÁ„o iniciar, ou `QPropertyAnimation(windowOpacity)` iniciado antes de `show()`. Reproduzir com `QT_LOGGING_RULES="*.debug=true"`; verificar sequÍncia `show()` ? `start()` em `gui/insight_popup.py`.
+- [x] **Bug: ·rea de di·logo com AKASHA exibe artefatos de streaming** ó tokens SSE aparecem separados por "?" (delimitador interno vazando para UI), respostas em loop com texto repetido e prefixos "?N?.?". O stream n„o est· sendo reconstituÌdo antes de renderizar. Investigar: (1) o widget de chat usa `insertPlainText()` por token (raw) ou acumula e renderiza ao fim da resposta? (2) verificar se "?" È delimitador do protocolo AKASHA?Mnemosyne que n„o est· sendo removido antes de chegar ‡ UI ó inspecionar o componente de chat do Mnemosyne e o endpoint de di·logo do AKASHA.
 
 #### AKASHA
-- [x] **Bug: chat direto com a AKASHA com problemas** ‚Äî o chat direto com a AKASHA (n√£o via Mnemosyne) apresenta comportamento incorreto. Reproduzir e capturar comportamento exato (resposta vazia, erro de API, loop, resposta incorreta, streaming quebrado). Verificar `routers/chat.py` (ou equivalente), pipeline RAG do chat, inje√ß√£o de prompt de personalidade da AKASHA.
+- [x] **Bug: chat direto com a AKASHA com problemas** ó o chat direto com a AKASHA (n„o via Mnemosyne) apresenta comportamento incorreto. Reproduzir e capturar comportamento exato (resposta vazia, erro de API, loop, resposta incorreta, streaming quebrado). Verificar `routers/chat.py` (ou equivalente), pipeline RAG do chat, injeÁ„o de prompt de personalidade da AKASHA.
 
-### Melhorias ‚Äî testes em campo | 2026-05-19
+### Melhorias ó testes em campo | 2026-05-19
 > Contexto: funcionalidades ausentes e comportamentos a melhorar identificados em testes reais do ecossistema em 2026-05-19.
 
 #### KOSMOS
-- [x] **Auto-an√°lise ao detectar Ollama dispon√≠vel: implementar detec√ß√£o imediata** ‚Äî mecanismo parcialmente existe: `BackgroundAnalyzer` enfileira artigos no startup e um `_retry_timer` re-enfileira a cada 5 minutos (`app/ui/main_window.py:107`). Problema: h√° delay de at√© 5 min entre Ollama ficar dispon√≠vel e a an√°lise come√ßar. O badge de status j√° tem `_poll_ollama_timer` (60s) chamando `_on_ollama_polled` ‚Äî mas esse m√©todo s√≥ atualiza o badge visual, n√£o dispara an√°lise. Corre√ß√£o: em `_on_ollama_polled` (`main_window.py:500`), quando `available=True` e o estado anterior era offline, chamar `_on_retry_unanalyzed()` imediatamente. Precisar√° de `self._ollama_was_available: bool = False` para rastrear a transi√ß√£o.
+- [x] **Auto-an·lise ao detectar Ollama disponÌvel: implementar detecÁ„o imediata** ó mecanismo parcialmente existe: `BackgroundAnalyzer` enfileira artigos no startup e um `_retry_timer` re-enfileira a cada 5 minutos (`app/ui/main_window.py:107`). Problema: h· delay de atÈ 5 min entre Ollama ficar disponÌvel e a an·lise comeÁar. O badge de status j· tem `_poll_ollama_timer` (60s) chamando `_on_ollama_polled` ó mas esse mÈtodo sÛ atualiza o badge visual, n„o dispara an·lise. CorreÁ„o: em `_on_ollama_polled` (`main_window.py:500`), quando `available=True` e o estado anterior era offline, chamar `_on_retry_unanalyzed()` imediatamente. Precisar· de `self._ollama_was_available: bool = False` para rastrear a transiÁ„o.
 
 #### Mnemosyne
-- [x] **Retry de embedding ap√≥s timeout** ‚Äî quando `IndexWorker` falha ao embedar arquivo com timeout, o arquivo √© pulado permanentemente. Implementar fila de retry: ao receber timeout, adicionar o caminho do arquivo a uma fila persistente (similar ao `FolderWatcher` de novos arquivos); tentar reprocessar ao final da indexa√ß√£o com delay. Al√©m disso, investigar causa raiz: verificar timeout configurado no cliente Ollama, checar se arquivo muito grande precisa ser pr√©-segmentado em chunks menores antes de embedar, monitorar CPU/VRAM durante o erro para identificar satura√ß√£o.
-- [x] **"Temas" deve atualizar em tempo real** ‚Äî a se√ß√£o de temas da Mnemosyne n√£o atualiza automaticamente (diferente de "Conex√µes" da AKASHA que j√° usa auto-refresh). Implementar: emitir sinal `topics_updated(dict)` no `TopicsWorker` ao concluir e conectar ao m√©todo de refresh do widget de temas, ou usar `QTimer` de 30s como fallback.
-- [x] **Soft-delete: reduzir relev√¢ncia de arquivo deletado em vez de remover do √≠ndice** ‚Äî comportamento atual confirmado: `FolderWatcher` detecta dele√ß√£o e emite `file_removed`, mas `_on_file_removed` (`gui/main_window.py:2356`) apenas loga e remove da fila de pendentes ‚Äî ChromaDB e BM25 n√£o s√£o tocados. O arquivo deletado continua aparecendo em buscas RAG. Decis√£o de design: **n√£o remover do √≠ndice** (preserva conhecimento; a Mnemosyne "leu" o livro mesmo que o arquivo suma); em vez disso, reduzir a relev√¢ncia. Implementar: (1) em `_on_file_removed`, atualizar todos os chunks do arquivo no ChromaDB adicionando `metadata["deleted"] = True` via `vs._collection.update(ids=[...], metadatas=[...])`; (2) nos resultados de query RAG, multiplicar score dos chunks com `deleted=True` por fator baixo (ex.: 0.1) antes do reranking ‚Äî assim aparecem s√≥ se n√£o houver conte√∫do melhor; (3) no `BM25Index`, manter um `_deleted_paths: set[str]` e aplicar o mesmo fator nos scores. `personal_memory` n√£o deve ser alterada ‚Äî a mem√≥ria sobre o arquivo √© real e permanente.
-- [x] **Resili√™ncia: evitar reflex√µes duplicadas ao re-indexar** ‚Äî comportamento atual confirmado: `IndexReflectionWorker` (`gui/workers.py:1477`) n√£o faz nenhuma verifica√ß√£o de deduplica√ß√£o ‚Äî `save_memory()` sempre insere nova linha. Se o ChromaDB for apagado e re-indexado com `personal_memory` preservada, cada arquivo gera uma nova reflex√£o duplicada. Implementar: no in√≠cio de `_process_file()` (`workers.py:1540`), antes de chamar o LLM, verificar se j√° existe entrada em `personal_memory` com `tags` contendo `"leitura"` e o nome do arquivo (ex.: `any(name[:40] in t for t in existing_tags)`); se sim, pular silenciosamente. O `FileTracker` (tracker.json) √© uma refer√™ncia paralela mas n√£o √© consultado pelo `IndexReflectionWorker` ‚Äî a deduplica√ß√£o via `personal_memory` √© independente e mais robusta.
+- [x] **Retry de embedding apÛs timeout** ó quando `IndexWorker` falha ao embedar arquivo com timeout, o arquivo È pulado permanentemente. Implementar fila de retry: ao receber timeout, adicionar o caminho do arquivo a uma fila persistente (similar ao `FolderWatcher` de novos arquivos); tentar reprocessar ao final da indexaÁ„o com delay. AlÈm disso, investigar causa raiz: verificar timeout configurado no cliente Ollama, checar se arquivo muito grande precisa ser prÈ-segmentado em chunks menores antes de embedar, monitorar CPU/VRAM durante o erro para identificar saturaÁ„o.
+- [x] **"Temas" deve atualizar em tempo real** ó a seÁ„o de temas da Mnemosyne n„o atualiza automaticamente (diferente de "Conexıes" da AKASHA que j· usa auto-refresh). Implementar: emitir sinal `topics_updated(dict)` no `TopicsWorker` ao concluir e conectar ao mÈtodo de refresh do widget de temas, ou usar `QTimer` de 30s como fallback.
+- [x] **Soft-delete: reduzir relev‚ncia de arquivo deletado em vez de remover do Ìndice** ó comportamento atual confirmado: `FolderWatcher` detecta deleÁ„o e emite `file_removed`, mas `_on_file_removed` (`gui/main_window.py:2356`) apenas loga e remove da fila de pendentes ó ChromaDB e BM25 n„o s„o tocados. O arquivo deletado continua aparecendo em buscas RAG. Decis„o de design: **n„o remover do Ìndice** (preserva conhecimento; a Mnemosyne "leu" o livro mesmo que o arquivo suma); em vez disso, reduzir a relev‚ncia. Implementar: (1) em `_on_file_removed`, atualizar todos os chunks do arquivo no ChromaDB adicionando `metadata["deleted"] = True` via `vs._collection.update(ids=[...], metadatas=[...])`; (2) nos resultados de query RAG, multiplicar score dos chunks com `deleted=True` por fator baixo (ex.: 0.1) antes do reranking ó assim aparecem sÛ se n„o houver conte˙do melhor; (3) no `BM25Index`, manter um `_deleted_paths: set[str]` e aplicar o mesmo fator nos scores. `personal_memory` n„o deve ser alterada ó a memÛria sobre o arquivo È real e permanente.
+- [x] **ResiliÍncia: evitar reflexıes duplicadas ao re-indexar** ó comportamento atual confirmado: `IndexReflectionWorker` (`gui/workers.py:1477`) n„o faz nenhuma verificaÁ„o de deduplicaÁ„o ó `save_memory()` sempre insere nova linha. Se o ChromaDB for apagado e re-indexado com `personal_memory` preservada, cada arquivo gera uma nova reflex„o duplicada. Implementar: no inÌcio de `_process_file()` (`workers.py:1540`), antes de chamar o LLM, verificar se j· existe entrada em `personal_memory` com `tags` contendo `"leitura"` e o nome do arquivo (ex.: `any(name[:40] in t for t in existing_tags)`); se sim, pular silenciosamente. O `FileTracker` (tracker.json) È uma referÍncia paralela mas n„o È consultado pelo `IndexReflectionWorker` ó a deduplicaÁ„o via `personal_memory` È independente e mais robusta.
 
 #### AKASHA
-- [x] **Incluir op√ß√£o de arquivar sites crawleados** ‚Äî adicionar a√ß√£o "Arquivar" por p√°gina no `/library` (em `routers/crawler.py`): salvar c√≥pia offline do HTML em `{archive_path}/sites/{dom√≠nio}/{slug}.html` com metadados (URL, data, t√≠tulo). Avaliar `singlefile-cli` ou `monolith` para capturar p√°gina completa com CSS e imagens inline.
-- [x] **Soft-delete: reduzir relev√¢ncia de arquivo/site removido em vez de apagar do √≠ndice** ‚Äî comportamento atual confirmado: (a) arquivos locais s√£o limpos do √≠ndice apenas durante reindexa√ß√£o incremental (`local_search.py:527`), n√£o h√° watcher em tempo real; (b) sites crawleados s√≥ s√£o removidos por a√ß√£o manual do usu√°rio (`DELETE /library/{site_id}` via UI) ‚Äî se um site retorna 404, o crawler registra erro mas n√£o remove. Decis√£o de design: mesma abordagem da Mnemosyne ‚Äî soft-delete por relev√¢ncia. Implementar: (1) para arquivos locais: adicionar coluna `deleted INTEGER DEFAULT 0` em `local_index_meta`; quando arquivo n√£o existe mais no filesystem (detectado durante pr√≥ximo scan), setar `deleted=1` em vez de apagar; query em `local_search.py` aplica penalidade de score para entradas `deleted=1`; (2) para sites: adicionar coluna `deleted INTEGER DEFAULT 0` em `crawl_sites`; ao confirmar site inacess√≠vel (N falhas consecutivas), setar `deleted=1` automaticamente; nas queries de busca, reduzir score de resultados de sites `deleted=1`.
+- [x] **Incluir opÁ„o de arquivar sites crawleados** ó adicionar aÁ„o "Arquivar" por p·gina no `/library` (em `routers/crawler.py`): salvar cÛpia offline do HTML em `{archive_path}/sites/{domÌnio}/{slug}.html` com metadados (URL, data, tÌtulo). Avaliar `singlefile-cli` ou `monolith` para capturar p·gina completa com CSS e imagens inline.
+- [x] **Soft-delete: reduzir relev‚ncia de arquivo/site removido em vez de apagar do Ìndice** ó comportamento atual confirmado: (a) arquivos locais s„o limpos do Ìndice apenas durante reindexaÁ„o incremental (`local_search.py:527`), n„o h· watcher em tempo real; (b) sites crawleados sÛ s„o removidos por aÁ„o manual do usu·rio (`DELETE /library/{site_id}` via UI) ó se um site retorna 404, o crawler registra erro mas n„o remove. Decis„o de design: mesma abordagem da Mnemosyne ó soft-delete por relev‚ncia. Implementar: (1) para arquivos locais: adicionar coluna `deleted INTEGER DEFAULT 0` em `local_index_meta`; quando arquivo n„o existe mais no filesystem (detectado durante prÛximo scan), setar `deleted=1` em vez de apagar; query em `local_search.py` aplica penalidade de score para entradas `deleted=1`; (2) para sites: adicionar coluna `deleted INTEGER DEFAULT 0` em `crawl_sites`; ao confirmar site inacessÌvel (N falhas consecutivas), setar `deleted=1` automaticamente; nas queries de busca, reduzir score de resultados de sites `deleted=1`.
 
 #### AKASHA + Mnemosyne
-- [x] **Melhorar crit√©rios de popup: usar type/emo√ß√£o em vez de FIFO** ‚Äî crit√©rios atuais confirmados por auditoria: `InsightScheduler.maybe_show()` (`core/insight_scheduler.py:54`) seleciona a primeira entrada com `shown_as_popup=0` e ‚â•20 chars ‚Äî √© **FIFO puro**, sem distin√ß√£o entre `type="surprise"` (algo genuinamente novo) e `type="connection"` (rela√ß√£o com algo j√° conhecido) e sem nenhum crit√©rio de urg√™ncia. Resultado: uma observa√ß√£o rotineira pode aparecer como popup antes de uma conex√£o surpreendente. O AKASHA n√£o tem popup pr√≥prio (insights chegam √† Mnemosyne via `poll_and_store`). Refinar: usar o campo `type` como sinal de prioridade ‚Äî `surprise` > `connection` > `reflection`; ou usar val√™ncia emocional (ver item de pesquisa abaixo). M√≠nimo vi√°vel sem pesquisa: `get_unshown_popup_entries` deve ordenar por `type` (`surprise` primeiro) em vez de por `id` ASC.
-- [x] **Cross-insight: usar insights recebidos para gerar novas conex√µes internas** ‚Äî atualmente insights recebidos da outra IA s√£o salvos em `personal_memory` mas n√£o processados para reflex√£o. Implementar: ao salvar insight recebido (em `friendship_receiver.py` no AKASHA e em `core/insights.py` na Mnemosyne), fazer query RAG interna com o conte√∫do do insight como gatilho tem√°tico, gerar conex√£o com documentos do pr√≥prio acervo, salvar resultado como nova `connection` em `personal_memory`. Os insights n√£o s√£o indexados no RAG p√∫blico ‚Äî apenas disparam reflex√£o interna privada.
-- [x] **Pesquisa: uso de emo√ß√µes em reflex√µes e crit√©rios de popup** ‚Äî pesquisar: (1) como `type="surprise"` est√° sendo usado hoje em `AKASHA/services/knowledge_worker.py` e `Mnemosyne/IndexReflectionWorker`; (2) emotional tagging em sistemas de mem√≥ria de IAs (literatura); (3) val√™ncia emocional (positivo/negativo/neutro) e intensidade como campos em `personal_memory`; (4) se emo√ß√µes podem guiar crit√©rios de popup (surpresa intensa ‚Üí popup; reflex√£o rotineira ‚Üí silenciosa). Salvar em `pesquisas.md` no formato padr√£o. **Pedir permiss√£o antes de iniciar esta pesquisa.**
+- [x] **Melhorar critÈrios de popup: usar type/emoÁ„o em vez de FIFO** ó critÈrios atuais confirmados por auditoria: `InsightScheduler.maybe_show()` (`core/insight_scheduler.py:54`) seleciona a primeira entrada com `shown_as_popup=0` e =20 chars ó È **FIFO puro**, sem distinÁ„o entre `type="surprise"` (algo genuinamente novo) e `type="connection"` (relaÁ„o com algo j· conhecido) e sem nenhum critÈrio de urgÍncia. Resultado: uma observaÁ„o rotineira pode aparecer como popup antes de uma conex„o surpreendente. O AKASHA n„o tem popup prÛprio (insights chegam ‡ Mnemosyne via `poll_and_store`). Refinar: usar o campo `type` como sinal de prioridade ó `surprise` > `connection` > `reflection`; ou usar valÍncia emocional (ver item de pesquisa abaixo). MÌnimo vi·vel sem pesquisa: `get_unshown_popup_entries` deve ordenar por `type` (`surprise` primeiro) em vez de por `id` ASC.
+- [x] **Cross-insight: usar insights recebidos para gerar novas conexıes internas** ó atualmente insights recebidos da outra IA s„o salvos em `personal_memory` mas n„o processados para reflex„o. Implementar: ao salvar insight recebido (em `friendship_receiver.py` no AKASHA e em `core/insights.py` na Mnemosyne), fazer query RAG interna com o conte˙do do insight como gatilho tem·tico, gerar conex„o com documentos do prÛprio acervo, salvar resultado como nova `connection` em `personal_memory`. Os insights n„o s„o indexados no RAG p˙blico ó apenas disparam reflex„o interna privada.
+- [x] **Pesquisa: uso de emoÁıes em reflexıes e critÈrios de popup** ó pesquisar: (1) como `type="surprise"` est· sendo usado hoje em `AKASHA/services/knowledge_worker.py` e `Mnemosyne/IndexReflectionWorker`; (2) emotional tagging em sistemas de memÛria de IAs (literatura); (3) valÍncia emocional (positivo/negativo/neutro) e intensidade como campos em `personal_memory`; (4) se emoÁıes podem guiar critÈrios de popup (surpresa intensa ? popup; reflex„o rotineira ? silenciosa). Salvar em `pesquisas.md` no formato padr„o. **Pedir permiss„o antes de iniciar esta pesquisa.**
 
-### Pesquisa: Emo√ß√µes em Reflex√µes de IAs e Crit√©rios de Notifica√ß√£o Proativa | 2026-05-19
-> Contexto: pesquisa sobre modelos de emo√ß√£o computacional (circumplex, PAD, vetores discretos), emotional tagging em mem√≥ria epis√≥dica de IAs (Park 2023, DAM-LLM 2025) e crit√©rios de notifica√ß√£o proativa baseados em val√™ncia e momento de interrup√ß√£o (CHI 2025). Objetivo: enriquecer o schema de `personal_memory` e melhorar a sele√ß√£o de popups/overlays.
+### Pesquisa: EmoÁıes em Reflexıes de IAs e CritÈrios de NotificaÁ„o Proativa | 2026-05-19
+> Contexto: pesquisa sobre modelos de emoÁ„o computacional (circumplex, PAD, vetores discretos), emotional tagging em memÛria episÛdica de IAs (Park 2023, DAM-LLM 2025) e critÈrios de notificaÁ„o proativa baseados em valÍncia e momento de interrupÁ„o (CHI 2025). Objetivo: enriquecer o schema de `personal_memory` e melhorar a seleÁ„o de popups/overlays.
 
 #### AKASHA
-- [x] **`personal_memory`: adicionar campos `valence REAL` e `arousal REAL`** ‚Äî adicionar duas colunas ao schema da tabela `personal_memory` do AKASHA. `valence` ‚àà [‚Äì1.0, 1.0] (negativo a positivo); `arousal` ‚àà [0.0, 1.0] (calmo a intenso). Calcular no momento da inser√ß√£o via l√©xico (biblioteca Python `vaderSentiment` ou `senticnet`): mapear score de sentimento do texto da reflex√£o para `valence`; usar magnitude do score como proxy de `arousal`. Custo: ~1ms por entrada, sem chamada extra ao LLM. Ambos inicializam como `NULL` para entradas existentes.
-- [x] **`personal_memory`: adicionar campo `importance INTEGER`** ‚Äî coluna `importance` ‚àà [1, 10] calculada pelo LLM no momento de inser√ß√£o em `_event_reflection` (`services/knowledge_worker.py`). Adicionar ao prompt j√° existente uma instru√ß√£o: "avalie a import√¢ncia desta observa√ß√£o de 1 a 10 considerando novidade, relev√¢ncia para os interesses do usu√°rio e potencial de a√ß√£o futura". Salvar resultado junto √† reflex√£o. Habilita retrieval ponderado por sali√™ncia (reflex√µes de alta import√¢ncia sobem no retrieval da mem√≥ria pessoal).
-- [x] **`InsightScheduler` (overlay do browser): priorizar por `arousal √ó importance` em vez de FIFO** ‚Äî o `InsightScheduler` do AKASHA seleciona qual insight exibir no overlay do browser. Substituir ordena√ß√£o por `id ASC` (FIFO) por score composto `arousal √ó importance` DESC, com fallback para `type` (`surprise` > `connection` > `reflection`) quando os campos ainda forem `NULL`. Isso garante que conex√µes de alta intensidade aparecem antes de observa√ß√µes rotineiras.
-- [x] **`InsightScheduler` (overlay do browser): penalidade por rejei√ß√£o** ‚Äî quando o usu√°rio dispensar (fechar/ignorar) um overlay do AKASHA, registrar a rejei√ß√£o e aumentar o cooldown para aquele `type` de insight em +30s. Evita que o mesmo tipo de insight seja exibido repetidamente quando o usu√°rio est√° em modo de foco. Implementar contador de rejei√ß√µes consecutivas por `type` em mem√≥ria (sem persist√™ncia necess√°ria ‚Äî resetar ao reiniciar o app).
-- [x] **`routers/chat.py`: reflex√£o por-mensagem na personal_memory** ‚Äî ao final de cada troca no chat (pergunta + resposta completa), disparar um task P3 em background (`asyncio.create_task`) que avalia a troca via LLM e salva em `personal_memory` se houver algo digno de nota. Protocolo: LLM recebe pergunta + resposta e responde com JSON `{"thought": "...", "importance": N, "type": "observation"|"connection"|"surprise"}` ou `"nada"`. Cooldown de 2 min entre reflex√µes (evita spam em conversas r√°pidas). Filtro m√≠nimo: pula troca se pergunta < 20 chars ou resposta < 50 chars. tag: `["chat_exchange"]`. A AKASHA n√£o tem mem√≥ria da conversa anterior (stateless), mas pode guardar o que ela mesma notou ‚Äî a cada mensagem, em tempo real.
+- [x] **`personal_memory`: adicionar campos `valence REAL` e `arousal REAL`** ó adicionar duas colunas ao schema da tabela `personal_memory` do AKASHA. `valence` ? [ñ1.0, 1.0] (negativo a positivo); `arousal` ? [0.0, 1.0] (calmo a intenso). Calcular no momento da inserÁ„o via lÈxico (biblioteca Python `vaderSentiment` ou `senticnet`): mapear score de sentimento do texto da reflex„o para `valence`; usar magnitude do score como proxy de `arousal`. Custo: ~1ms por entrada, sem chamada extra ao LLM. Ambos inicializam como `NULL` para entradas existentes.
+- [x] **`personal_memory`: adicionar campo `importance INTEGER`** ó coluna `importance` ? [1, 10] calculada pelo LLM no momento de inserÁ„o em `_event_reflection` (`services/knowledge_worker.py`). Adicionar ao prompt j· existente uma instruÁ„o: "avalie a import‚ncia desta observaÁ„o de 1 a 10 considerando novidade, relev‚ncia para os interesses do usu·rio e potencial de aÁ„o futura". Salvar resultado junto ‡ reflex„o. Habilita retrieval ponderado por saliÍncia (reflexıes de alta import‚ncia sobem no retrieval da memÛria pessoal).
+- [x] **`InsightScheduler` (overlay do browser): priorizar por `arousal ◊ importance` em vez de FIFO** ó o `InsightScheduler` do AKASHA seleciona qual insight exibir no overlay do browser. Substituir ordenaÁ„o por `id ASC` (FIFO) por score composto `arousal ◊ importance` DESC, com fallback para `type` (`surprise` > `connection` > `reflection`) quando os campos ainda forem `NULL`. Isso garante que conexıes de alta intensidade aparecem antes de observaÁıes rotineiras.
+- [x] **`InsightScheduler` (overlay do browser): penalidade por rejeiÁ„o** ó quando o usu·rio dispensar (fechar/ignorar) um overlay do AKASHA, registrar a rejeiÁ„o e aumentar o cooldown para aquele `type` de insight em +30s. Evita que o mesmo tipo de insight seja exibido repetidamente quando o usu·rio est· em modo de foco. Implementar contador de rejeiÁıes consecutivas por `type` em memÛria (sem persistÍncia necess·ria ó resetar ao reiniciar o app).
+- [x] **`routers/chat.py`: reflex„o por-mensagem na personal_memory** ó ao final de cada troca no chat (pergunta + resposta completa), disparar um task P3 em background (`asyncio.create_task`) que avalia a troca via LLM e salva em `personal_memory` se houver algo digno de nota. Protocolo: LLM recebe pergunta + resposta e responde com JSON `{"thought": "...", "importance": N, "type": "observation"|"connection"|"surprise"}` ou `"nada"`. Cooldown de 2 min entre reflexıes (evita spam em conversas r·pidas). Filtro mÌnimo: pula troca se pergunta < 20 chars ou resposta < 50 chars. tag: `["chat_exchange"]`. A AKASHA n„o tem memÛria da conversa anterior (stateless), mas pode guardar o que ela mesma notou ó a cada mensagem, em tempo real.
 
 #### Mnemosyne
-- [x] **`personal_memory`: adicionar campos `valence REAL` e `arousal REAL`** ‚Äî mesma implementa√ß√£o que o AKASHA: adicionar colunas ao schema de `personal_memory.db`, calcular via l√©xico no momento da inser√ß√£o em `IndexReflectionWorker` (`gui/workers.py:1477`). `valence` ‚àà [‚Äì1, 1]; `arousal` ‚àà [0, 1]. Entradas existentes inicializam com `NULL`.
-- [x] **`personal_memory`: adicionar campo `importance INTEGER`** ‚Äî adicionar coluna `importance` ‚àà [1, 10] calculada pelo LLM em `IndexReflectionWorker` no mesmo prompt de gera√ß√£o da reflex√£o (sem chamada extra). Habilita que o retrieval de mem√≥ria pessoal pondere sali√™ncia ‚Äî lembran√ßas mais importantes ficam mais acess√≠veis por mais tempo.
-- [x] **`InsightScheduler`: priorizar popup por `arousal √ó importance` em vez de FIFO** ‚Äî `InsightScheduler.maybe_show()` (`core/insight_scheduler.py:54`) usa FIFO puro. Substituir `get_unshown_popup_entries` por query ordenada por `arousal * importance DESC NULLS LAST, type ASC` (com `surprise` = 1, `connection` = 2, `reflection` = 3 para ordena√ß√£o quando campos s√£o NULL). Insights de alta intensidade chegam ao usu√°rio primeiro.
-- [x] **`InsightScheduler`: penalidade de cooldown por rejei√ß√£o** ‚Äî ao receber feedback negativo (bot√£o ‚úó no `InsightPopup`), al√©m de salvar o feedback em `personal_memory`, aumentar o cooldown base do `InsightScheduler` em +30s (acumulativo at√© o m√°ximo de 2√ó o cooldown padr√£o). Resetar ao receber feedback positivo (bot√£o ‚úì). Implementa√ß√£o: campo `_rejection_streak: int` no `InsightScheduler`; `cooldown_effective = cooldown_base + rejection_streak √ó 30`.
-- [x] **`IndexReflectionWorker`: pontuar `importance` via LLM no momento da reflex√£o** ‚Äî ao gerar reflex√£o de arquivo em `_process_file()` (`workers.py:1540`), incluir no prompt de gera√ß√£o de mem√≥ria a instru√ß√£o de auto-avalia√ß√£o de import√¢ncia (1-10). Salvar resultado no campo `importance` da tabela `personal_memory`. Sem chamada extra ao LOGOS ‚Äî aproveitar a resposta j√° estruturada do LLM adicionando campo JSON ao output esperado.
+- [x] **`personal_memory`: adicionar campos `valence REAL` e `arousal REAL`** ó mesma implementaÁ„o que o AKASHA: adicionar colunas ao schema de `personal_memory.db`, calcular via lÈxico no momento da inserÁ„o em `IndexReflectionWorker` (`gui/workers.py:1477`). `valence` ? [ñ1, 1]; `arousal` ? [0, 1]. Entradas existentes inicializam com `NULL`.
+- [x] **`personal_memory`: adicionar campo `importance INTEGER`** ó adicionar coluna `importance` ? [1, 10] calculada pelo LLM em `IndexReflectionWorker` no mesmo prompt de geraÁ„o da reflex„o (sem chamada extra). Habilita que o retrieval de memÛria pessoal pondere saliÍncia ó lembranÁas mais importantes ficam mais acessÌveis por mais tempo.
+- [x] **`InsightScheduler`: priorizar popup por `arousal ◊ importance` em vez de FIFO** ó `InsightScheduler.maybe_show()` (`core/insight_scheduler.py:54`) usa FIFO puro. Substituir `get_unshown_popup_entries` por query ordenada por `arousal * importance DESC NULLS LAST, type ASC` (com `surprise` = 1, `connection` = 2, `reflection` = 3 para ordenaÁ„o quando campos s„o NULL). Insights de alta intensidade chegam ao usu·rio primeiro.
+- [x] **`InsightScheduler`: penalidade de cooldown por rejeiÁ„o** ó ao receber feedback negativo (bot„o ? no `InsightPopup`), alÈm de salvar o feedback em `personal_memory`, aumentar o cooldown base do `InsightScheduler` em +30s (acumulativo atÈ o m·ximo de 2◊ o cooldown padr„o). Resetar ao receber feedback positivo (bot„o ?). ImplementaÁ„o: campo `_rejection_streak: int` no `InsightScheduler`; `cooldown_effective = cooldown_base + rejection_streak ◊ 30`.
+- [x] **`IndexReflectionWorker`: pontuar `importance` via LLM no momento da reflex„o** ó ao gerar reflex„o de arquivo em `_process_file()` (`workers.py:1540`), incluir no prompt de geraÁ„o de memÛria a instruÁ„o de auto-avaliaÁ„o de import‚ncia (1-10). Salvar resultado no campo `importance` da tabela `personal_memory`. Sem chamada extra ao LOGOS ó aproveitar a resposta j· estruturada do LLM adicionando campo JSON ao output esperado.
 
-### Integra√ß√£o KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19
-> Contexto: decis√£o arquitetural de tornar o KOSMOS uma ferramenta da AKASHA. Os artigos analisados pelo KOSMOS devem ser pesquis√°veis automaticamente nas buscas do AKASHA por sobreposi√ß√£o de t√≥picos. Um perfil de interesse compartilhado (interests.json no sync_root) √© lido por todos os apps e gerenciado pelo HUB. A gest√£o de fontes (Biblioteca vs Feed) tamb√©m centralizada no HUB. Itens em ordem sequencial de implementa√ß√£o ‚Äî cada item depende do anterior.
+### IntegraÁ„o KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19
+> Contexto: decis„o arquitetural de tornar o KOSMOS uma ferramenta da AKASHA. Os artigos analisados pelo KOSMOS devem ser pesquis·veis automaticamente nas buscas do AKASHA por sobreposiÁ„o de tÛpicos. Um perfil de interesse compartilhado (interests.json no sync_root) È lido por todos os apps e gerenciado pelo HUB. A gest„o de fontes (Biblioteca vs Feed) tambÈm centralizada no HUB. Itens em ordem sequencial de implementaÁ„o ó cada item depende do anterior.
 
-- [x] **1. `interests.json`: definir schema e suporte no `ecosystem_client`** ‚Äî criar arquivo `{sync_root}/interests.json` com schema: `{ "topics": [{ "name": str, "weight": float, "sources": ["akasha_library"|"mnemosyne_reflections"|"manual"], "pinned": bool, "excluded": bool }], "updated_at": str }`. Adicionar ao `ecosystem_client`: `get_interests() ‚Üí list[dict]`, `update_interests(topics: list[dict])` (l√™ o arquivo, faz merge por `name`, salva). Se o arquivo n√£o existir, retornar lista vazia sem erro. Todos os apps leem via `ecosystem_client` ‚Äî nunca acessam o arquivo diretamente. **Implementado em 2026-05-19.**
+- [x] **1. `interests.json`: definir schema e suporte no `ecosystem_client`** ó criar arquivo `{sync_root}/interests.json` com schema: `{ "topics": [{ "name": str, "weight": float, "sources": ["akasha_library"|"mnemosyne_reflections"|"manual"], "pinned": bool, "excluded": bool }], "updated_at": str }`. Adicionar ao `ecosystem_client`: `get_interests() ? list[dict]`, `update_interests(topics: list[dict])` (lÍ o arquivo, faz merge por `name`, salva). Se o arquivo n„o existir, retornar lista vazia sem erro. Todos os apps leem via `ecosystem_client` ó nunca acessam o arquivo diretamente. **Implementado em 2026-05-19.**
 
-- [x] **2. AKASHA ‚Üí `interests.json`: exportar top_topics ap√≥s re-indexa√ß√£o** ‚Äî ao final de cada ciclo de re-indexa√ß√£o local (`local_search.py` ou `services/knowledge_worker.py`), chamar `get_top_topics(30)` e escrever os resultados no `interests.json` via `ecosystem_client.update_interests()`, marcando `source="akasha_library"`. N√£o sobrescrever entradas com `source="manual"` ou `pinned=True`. Frequ√™ncia: uma vez por ciclo de indexa√ß√£o completo, n√£o por arquivo.
+- [x] **2. AKASHA ? `interests.json`: exportar top_topics apÛs re-indexaÁ„o** ó ao final de cada ciclo de re-indexaÁ„o local (`local_search.py` ou `services/knowledge_worker.py`), chamar `get_top_topics(30)` e escrever os resultados no `interests.json` via `ecosystem_client.update_interests()`, marcando `source="akasha_library"`. N„o sobrescrever entradas com `source="manual"` ou `pinned=True`. FrequÍncia: uma vez por ciclo de indexaÁ„o completo, n„o por arquivo.
 
-- [x] **3. Mnemosyne ‚Üí `interests.json`: exportar t√≥picos ap√≥s reflex√µes** ‚Äî ao final do processamento de reflex√µes em `IndexReflectionWorker` (ou no `TopicsWorker` existente), extrair os t√≥picos mais frequentes das √∫ltimas N reflex√µes e escrever no `interests.json` via `ecosystem_client.update_interests()`, marcando `source="mnemosyne_reflections"`. Fazer merge com entradas j√° existentes (n√£o apagar t√≥picos do AKASHA). Frequ√™ncia: ap√≥s cada batch de reflex√µes conclu√≠do.
+- [x] **3. Mnemosyne ? `interests.json`: exportar tÛpicos apÛs reflexıes** ó ao final do processamento de reflexıes em `IndexReflectionWorker` (ou no `TopicsWorker` existente), extrair os tÛpicos mais frequentes das ˙ltimas N reflexıes e escrever no `interests.json` via `ecosystem_client.update_interests()`, marcando `source="mnemosyne_reflections"`. Fazer merge com entradas j· existentes (n„o apagar tÛpicos do AKASHA). FrequÍncia: apÛs cada batch de reflexıes concluÌdo.
 
-- [x] **4. KOSMOS ‚Üí `interests.json`: exportar interesses derivados do engajamento da usu√°ria** ‚Äî a fila do `BackgroundAnalyzer` permanece ordenada por rec√™ncia (mais recente primeiro), sem interfer√™ncia de interesses. Em vez disso, o KOSMOS exporta seu pr√≥prio sinal de interesse com base no comportamento real: (a) artigos salvos (`is_saved=1`) + `ai_tags` ‚Üí peso alto; (b) artigos lidos (`is_read=1`) + `ai_tags` ‚Üí peso m√©dio; (c) tags manuais da tabela `tags` ‚Üí peso m√°ximo (inten√ß√£o expl√≠cita). Extrair os top 20 t√≥picos por frequ√™ncia ponderada e chamar `ecosystem_client.update_interests(source="kosmos_engagement")`. Acionar ap√≥s cada ciclo de `BackgroundUpdater` via `BackgroundUpdater.feeds_updated` ou timer (1√ó por hora). Implementar em `app/core/interest_exporter.py` e registrar na `MainWindow`.
+- [x] **4. KOSMOS ? `interests.json`: exportar interesses derivados do engajamento da usu·ria** ó a fila do `BackgroundAnalyzer` permanece ordenada por recÍncia (mais recente primeiro), sem interferÍncia de interesses. Em vez disso, o KOSMOS exporta seu prÛprio sinal de interesse com base no comportamento real: (a) artigos salvos (`is_saved=1`) + `ai_tags` ? peso alto; (b) artigos lidos (`is_read=1`) + `ai_tags` ? peso mÈdio; (c) tags manuais da tabela `tags` ? peso m·ximo (intenÁ„o explÌcita). Extrair os top 20 tÛpicos por frequÍncia ponderada e chamar `ecosystem_client.update_interests(source="kosmos_engagement")`. Acionar apÛs cada ciclo de `BackgroundUpdater` via `BackgroundUpdater.feeds_updated` ou timer (1◊ por hora). Implementar em `app/core/interest_exporter.py` e registrar na `MainWindow`.
 
-- [x] **5. AKASHA: busca autom√°tica em `kosmos.db` por sobreposi√ß√£o de tags** ‚Äî em toda query recebida pela AKASHA (`routers/search.py` ou equivalente), al√©m dos resultados da biblioteca local, executar query adicional em `kosmos.db`: `SELECT id, title, url, summary, ai_tags, published_at FROM articles WHERE ai_tags IS NOT NULL` e filtrar em Python os artigos cujas `ai_tags` (JSON) se sobrep√µem com os termos da query ou com os `interests.json`. Retornar os top-K artigos KOSMOS com score ponderado (fator 0.6√ó em rela√ß√£o a itens da biblioteca ‚Äî aparecem mas n√£o dominam). Caminho de `kosmos.db` lido via `ecosystem.json["kosmos"]["db_path"]`. Se arquivo n√£o existir ou KOSMOS n√£o configurado, ignorar silenciosamente sem erro.
+- [x] **5. AKASHA: busca autom·tica em `kosmos.db` por sobreposiÁ„o de tags** ó em toda query recebida pela AKASHA (`routers/search.py` ou equivalente), alÈm dos resultados da biblioteca local, executar query adicional em `kosmos.db`: `SELECT id, title, url, summary, ai_tags, published_at FROM articles WHERE ai_tags IS NOT NULL` e filtrar em Python os artigos cujas `ai_tags` (JSON) se sobrepıem com os termos da query ou com os `interests.json`. Retornar os top-K artigos KOSMOS com score ponderado (fator 0.6◊ em relaÁ„o a itens da biblioteca ó aparecem mas n„o dominam). Caminho de `kosmos.db` lido via `ecosystem.json["kosmos"]["db_path"]`. Se arquivo n„o existir ou KOSMOS n„o configurado, ignorar silenciosamente sem erro.
 
-- [x] **6. HUB: aba "Fontes" ‚Äî gest√£o unificada de dom√≠nios (Biblioteca / Feed)** ‚Äî nova aba no HUB listando todos os dom√≠nios conhecidos pelo ecossistema: uni√£o dos dom√≠nios crawleados pelo AKASHA (via `GET http://localhost:7071/library`) e dos feeds do KOSMOS (via leitura direta de `kosmos.db` tabela `feeds`). Cada dom√≠nio exibe dois toggles: *Biblioteca* (AKASHA crawlea profundamente) e *Feed* (KOSMOS monitora por artigos novos). Estado salvo em `ecosystem.json["sources"]` como `{ "dom√≠nio": { "library": bool, "feed": bool } }`. HUB l√™ e escreve esse campo; AKASHA e KOSMOS consultam em runtime para saber se devem processar cada dom√≠nio.
+- [x] **6. HUB: aba "Fontes" ó gest„o unificada de domÌnios (Biblioteca / Feed)** ó nova aba no HUB listando todos os domÌnios conhecidos pelo ecossistema: uni„o dos domÌnios crawleados pelo AKASHA (via `GET http://localhost:7071/library`) e dos feeds do KOSMOS (via leitura direta de `kosmos.db` tabela `feeds`). Cada domÌnio exibe dois toggles: *Biblioteca* (AKASHA crawlea profundamente) e *Feed* (KOSMOS monitora por artigos novos). Estado salvo em `ecosystem.json["sources"]` como `{ "domÌnio": { "library": bool, "feed": bool } }`. HUB lÍ e escreve esse campo; AKASHA e KOSMOS consultam em runtime para saber se devem processar cada domÌnio.
 
-- [x] **7. HUB: aba "Interesses" ‚Äî visualizar e editar perfil de interesse** ‚Äî nova aba no HUB exibindo o conte√∫do de `interests.json`. Lista os t√≥picos com: nome, peso (barra ou n√∫mero), badges de origem (*biblioteca* / *reflex√µes* / *manual*), √≠cone de fixar (pin) e bot√£o de excluir. Permite: editar peso manualmente, adicionar t√≥pico manual, fixar (impede sobrescrita autom√°tica), excluir (marca `excluded=True` ‚Äî apps ignoram ao escrever). Bot√£o "Atualizar agora" dispara re-deriva√ß√£o: chama `GET /library/topics` no AKASHA e re-l√™ `interests.json` da Mnemosyne. Salva via `ecosystem_client.update_interests()` a cada edi√ß√£o.
+- [x] **7. HUB: aba "Interesses" ó visualizar e editar perfil de interesse** ó nova aba no HUB exibindo o conte˙do de `interests.json`. Lista os tÛpicos com: nome, peso (barra ou n˙mero), badges de origem (*biblioteca* / *reflexıes* / *manual*), Ìcone de fixar (pin) e bot„o de excluir. Permite: editar peso manualmente, adicionar tÛpico manual, fixar (impede sobrescrita autom·tica), excluir (marca `excluded=True` ó apps ignoram ao escrever). Bot„o "Atualizar agora" dispara re-derivaÁ„o: chama `GET /library/topics` no AKASHA e re-lÍ `interests.json` da Mnemosyne. Salva via `ecosystem_client.update_interests()` a cada ediÁ„o.
 
-### HUB ‚Äî remo√ß√£o do chat interno | 2026-05-19
-> Contexto: o chat dentro do HUB nunca foi usado na pr√°tica. O chat interativo fica na Mnemosyne (notebook). Remover a funcionalidade simplifica o HUB e elimina a raz√£o original para P1 ser "chat do HUB" ‚Äî P1 passa a ser qualquer conversa interativa (Mnemosyne, AKASHA).
+### HUB ó remoÁ„o do chat interno | 2026-05-19
+> Contexto: o chat dentro do HUB nunca foi usado na pr·tica. O chat interativo fica na Mnemosyne (notebook). Remover a funcionalidade simplifica o HUB e elimina a raz„o original para P1 ser "chat do HUB" ó P1 passa a ser qualquer conversa interativa (Mnemosyne, AKASHA).
 
 #### HUB
-- [x] **Remover `QuestionsView` e refer√™ncias** ‚Äî apagar `src/views/QuestionsView.tsx`; remover import e renderiza√ß√£o em `App.tsx`; remover prop `onOpenChat` de `LogosView.tsx`; remover card "Chat" de `HomeView.tsx`; remover `streamChat` de `src/lib/ollama.ts`; remover `'questions'` do tipo `HubView` em `src/types/index.ts`.
+- [x] **Remover `QuestionsView` e referÍncias** ó apagar `src/views/QuestionsView.tsx`; remover import e renderizaÁ„o em `App.tsx`; remover prop `onOpenChat` de `LogosView.tsx`; remover card "Chat" de `HomeView.tsx`; remover `streamChat` de `src/lib/ollama.ts`; remover `'questions'` do tipo `HubView` em `src/types/index.ts`.
 
-### HUB/LOGOS ‚Äî priority headers em todos os apps | 2026-05-19
-> Contexto: `extract_app_priority` no LOGOS l√™ headers `X-App` e `X-Priority` para determinar a prioridade de cada requisi√ß√£o Ollama. Sem esses headers, toda requisi√ß√£o recebe P3 por default ‚Äî inclusive chat interativo. Al√©m disso, AKASHA tem import-time URL binding: se HUB abrir depois do AKASHA, as chamadas bypassam o LOGOS completamente. Resultado: notebook chat da Mnemosyne e di√°logos do AKASHA chegam ao LOGOS como background an√¥nimo P3. O HUB chat foi removido ‚Äî P1 passa a ser qualquer conversa interativa (Mnemosyne, AKASHA).
+### HUB/LOGOS ó priority headers em todos os apps | 2026-05-19
+> Contexto: `extract_app_priority` no LOGOS lÍ headers `X-App` e `X-Priority` para determinar a prioridade de cada requisiÁ„o Ollama. Sem esses headers, toda requisiÁ„o recebe P3 por default ó inclusive chat interativo. AlÈm disso, AKASHA tem import-time URL binding: se HUB abrir depois do AKASHA, as chamadas bypassam o LOGOS completamente. Resultado: notebook chat da Mnemosyne e di·logos do AKASHA chegam ao LOGOS como background anÙnimo P3. O HUB chat foi removido ó P1 passa a ser qualquer conversa interativa (Mnemosyne, AKASHA).
 
 #### ecosystem_client
-- [x] **`get_ollama_headers(app_name, priority)` ‚Üí `dict[str, str]`** ‚Äî nova fun√ß√£o retornando `{"X-App": app_name, "X-Priority": str(priority)}`. Usada por todos os apps ao construir clientes httpx ou inst√¢ncias LangChain LLM. Prioridades: 1=chat interativo, 2=Studio/an√°lise user-triggered, 3=background aut√¥nomo.
+- [x] **`get_ollama_headers(app_name, priority)` ? `dict[str, str]`** ó nova funÁ„o retornando `{"X-App": app_name, "X-Priority": str(priority)}`. Usada por todos os apps ao construir clientes httpx ou inst‚ncias LangChain LLM. Prioridades: 1=chat interativo, 2=Studio/an·lise user-triggered, 3=background autÙnomo.
 
 #### AKASHA
-- [x] **`routers/dialogue.py` ‚Äî fix import-time + headers P1**: `_OLLAMA_BASE` e `_DEFAULT_MODEL` resolvidos em import-time ‚Äî bypassam LOGOS se HUB abrir depois. Substituir por resolu√ß√£o runtime (`_get_base()`/`_get_headers()`). `_stream_ollama` passa headers `X-App: akasha, X-Priority: 1` ‚Äî turno de di√°logo √© P1 (usu√°ria aguardando).
-- [x] **`routers/chat.py` ‚Äî fix import-time + headers P1**: mesmo problema. `_stream_chat` usa `_OLLAMA_BASE` module-level. Substituir por `_get_base()` runtime. Headers P1.
-- [x] **`services/query_understanding.py` ‚Äî fix import-time + headers P2**: `_OLLAMA_BASE` module-level. Expans√£o de query √© P2 (user-triggered, n√£o imediata). Resolver runtime + headers.
+- [x] **`routers/dialogue.py` ó fix import-time + headers P1**: `_OLLAMA_BASE` e `_DEFAULT_MODEL` resolvidos em import-time ó bypassam LOGOS se HUB abrir depois. Substituir por resoluÁ„o runtime (`_get_base()`/`_get_headers()`). `_stream_ollama` passa headers `X-App: akasha, X-Priority: 1` ó turno de di·logo È P1 (usu·ria aguardando).
+- [x] **`routers/chat.py` ó fix import-time + headers P1**: mesmo problema. `_stream_chat` usa `_OLLAMA_BASE` module-level. Substituir por `_get_base()` runtime. Headers P1.
+- [x] **`services/query_understanding.py` ó fix import-time + headers P2**: `_OLLAMA_BASE` module-level. Expans„o de query È P2 (user-triggered, n„o imediata). Resolver runtime + headers.
 
 #### Mnemosyne
-- [x] **`gui/workers.py` ‚Äî base_url + headers em todos os construtores LLM**: `AskWorker`/`DeepResearchWorker` (P1 ‚Äî chat interativo); `SuggestQuestionsWorker` (P2); `PersonalReflectionWorker`/`PeriodicReflectionWorker`/`IndexReflectionWorker` (P3). Adicionar `base_url=get_ollama_url()` e `headers=get_ollama_headers("mnemosyne", N)` a cada construtor.
-- [x] **`gui/main_window.py` ‚Äî ChatOllama live streaming P1**: construtor sem base_url/headers. Adicionar P1.
-- [x] **`core/` Studio files (14 arquivos) ‚Äî base_url + headers P2**: `faq.py`, `briefing.py`, `study_guide.py`, `toc.py`, `timeline.py`, `blogpost.py`, `mindmap.py`, `tables.py`, `slides.py`, `summarizer.py`, `report.py`, `flashcards.py`, `guide.py`, `infographic.py`. Cada um usa `OllamaLLM` sem `base_url` ‚Äî chamam Ollama direto em 11434. Adicionar `base_url=get_ollama_url()` e `headers=get_ollama_headers("mnemosyne", 2)`.
+- [x] **`gui/workers.py` ó base_url + headers em todos os construtores LLM**: `AskWorker`/`DeepResearchWorker` (P1 ó chat interativo); `SuggestQuestionsWorker` (P2); `PersonalReflectionWorker`/`PeriodicReflectionWorker`/`IndexReflectionWorker` (P3). Adicionar `base_url=get_ollama_url()` e `headers=get_ollama_headers("mnemosyne", N)` a cada construtor.
+- [x] **`gui/main_window.py` ó ChatOllama live streaming P1**: construtor sem base_url/headers. Adicionar P1.
+- [x] **`core/` Studio files (14 arquivos) ó base_url + headers P2**: `faq.py`, `briefing.py`, `study_guide.py`, `toc.py`, `timeline.py`, `blogpost.py`, `mindmap.py`, `tables.py`, `slides.py`, `summarizer.py`, `report.py`, `flashcards.py`, `guide.py`, `infographic.py`. Cada um usa `OllamaLLM` sem `base_url` ó chamam Ollama direto em 11434. Adicionar `base_url=get_ollama_url()` e `headers=get_ollama_headers("mnemosyne", 2)`.
 
 #### HUB/LOGOS
-- [x] **`logos.rs` ‚Äî atualizar coment√°rio de P1**: era "chat interativo do HUB + escrita ativa no AETHER". Passa a ser "qualquer conversa interativa (Mnemosyne notebook, AKASHA chat/di√°logo)".
+- [x] **`logos.rs` ó atualizar coment·rio de P1**: era "chat interativo do HUB + escrita ativa no AETHER". Passa a ser "qualquer conversa interativa (Mnemosyne notebook, AKASHA chat/di·logo)".
 
-### HUB/LOGOS ‚Äî bugs de VRAM guard e inject_efficiency_params | 2026-05-19
-> Contexto: dois bugs detectados na revis√£o do logos.rs: (1) o guard de VRAM nunca dispara no Laptop porque sysfs √© AMD-only e o fallback via /api/ps n√£o tem total_mb para calcular a porcentagem; (2) do_embed_proxy n√£o injeta par√¢metros de efici√™ncia (num_gpu: 0 no Laptop), podendo usar MX150 durante P1/P2 ativo.
+### HUB/LOGOS ó bugs de VRAM guard e inject_efficiency_params | 2026-05-19
+> Contexto: dois bugs detectados na revis„o do logos.rs: (1) o guard de VRAM nunca dispara no Laptop porque sysfs È AMD-only e o fallback via /api/ps n„o tem total_mb para calcular a porcentagem; (2) do_embed_proxy n„o injeta par‚metros de eficiÍncia (num_gpu: 0 no Laptop), podendo usar MX150 durante P1/P2 ativo.
 
 #### HUB
-- [x] **`logos.rs` ‚Äî VRAM guard inativo no Laptop (NVIDIA MX150)**: `vram_usage` usa sysfs AMD ou fallback via Ollama `/api/ps`, mas o `/api/ps` n√£o fornece `total_mb` para NVIDIA, tornando `pct = None` sempre. Guard nunca dispara no Laptop. Adicionar `fn vram_total_mb()` ao `HardwareProfile` (MainPc=8192, Laptop=2048, WorkPc=None) e usar como fallback em `vram_usage` quando sysfs retorna None. Atualizar assinatura de `vram_usage` e `vram_pct` para aceitar `hw: HardwareProfile`.
-- [x] **`logos.rs` ‚Äî `do_embed_proxy` n√£o injeta par√¢metros de efici√™ncia**: `queue_and_forward` chama `inject_efficiency_params` antes de encaminhar (injetando `num_gpu: 0` para P3 no Laptop, entre outros), mas o path de embed `do_embed_proxy` √© separado e n√£o faz isso. No Laptop, embedding pode usar MX150 mesmo com P1/P2 ativo. Deserializar body JSON em `do_embed_proxy`, chamar `inject_efficiency_params(priority=3)`, reserializar antes de encaminhar.
+- [x] **`logos.rs` ó VRAM guard inativo no Laptop (NVIDIA MX150)**: `vram_usage` usa sysfs AMD ou fallback via Ollama `/api/ps`, mas o `/api/ps` n„o fornece `total_mb` para NVIDIA, tornando `pct = None` sempre. Guard nunca dispara no Laptop. Adicionar `fn vram_total_mb()` ao `HardwareProfile` (MainPc=8192, Laptop=2048, WorkPc=None) e usar como fallback em `vram_usage` quando sysfs retorna None. Atualizar assinatura de `vram_usage` e `vram_pct` para aceitar `hw: HardwareProfile`.
+- [x] **`logos.rs` ó `do_embed_proxy` n„o injeta par‚metros de eficiÍncia**: `queue_and_forward` chama `inject_efficiency_params` antes de encaminhar (injetando `num_gpu: 0` para P3 no Laptop, entre outros), mas o path de embed `do_embed_proxy` È separado e n„o faz isso. No Laptop, embedding pode usar MX150 mesmo com P1/P2 ativo. Deserializar body JSON em `do_embed_proxy`, chamar `inject_efficiency_params(priority=3)`, reserializar antes de encaminhar.
 
 ### Bugs no sistema de backup do AKASHA | 2026-05-19
-> Contexto: auditoria do sistema de backup JSON (`services/list_sync.py`) antes de deletar o `akasha.db` para reconstru√ß√£o. Dois bugs encontrados: papers nunca s√£o exportados para JSON; sites soft-deletados seriam re-restaurados ap√≥s delete do banco.
+> Contexto: auditoria do sistema de backup JSON (`services/list_sync.py`) antes de deletar o `akasha.db` para reconstruÁ„o. Dois bugs encontrados: papers nunca s„o exportados para JSON; sites soft-deletados seriam re-restaurados apÛs delete do banco.
 
 #### AKASHA
-- [x] **`store_archive_doi()` n√£o dispara `write_json("papers")`** ‚Äî ap√≥s `db.commit()`, agenda `asyncio.create_task(_write_json("papers"))` via import local de `services.list_sync`. **Corrigido em 2026-05-19.**
-- [x] **`write_json("sites")` n√£o filtra sites soft-deletados** ‚Äî adicionado `WHERE deleted = 0` √† query de `crawl_sites` em `list_sync.py`. **Corrigido em 2026-05-19.**
+- [x] **`store_archive_doi()` n„o dispara `write_json("papers")`** ó apÛs `db.commit()`, agenda `asyncio.create_task(_write_json("papers"))` via import local de `services.list_sync`. **Corrigido em 2026-05-19.**
+- [x] **`write_json("sites")` n„o filtra sites soft-deletados** ó adicionado `WHERE deleted = 0` ‡ query de `crawl_sites` em `list_sync.py`. **Corrigido em 2026-05-19.**
 
-### page_knowledge ‚Äî dados de an√°lise LLM no banco principal da AKASHA | 2026-05-19
-> Contexto: `page_knowledge` (1724 linhas) armazena `summary`, `topics` e `entities` gerados por LLM no `akasha.db`, violando o princ√≠pio arquitetural "amplificador de pesquisa, n√£o respondedor" (LLM age apenas na camada de query, nunca sintetiza ou armazena resultados). A tabela serve dois prop√≥sitos misturados: flag de deduplica√ß√£o e cache de an√°lise LLM. Tamb√©m bloqueia re-an√°lise de p√°ginas j√° processadas, impedindo que a `personal_memory` seja regenerada ap√≥s reset.
+### page_knowledge ó dados de an·lise LLM no banco principal da AKASHA | 2026-05-19
+> Contexto: `page_knowledge` (1724 linhas) armazena `summary`, `topics` e `entities` gerados por LLM no `akasha.db`, violando o princÌpio arquitetural "amplificador de pesquisa, n„o respondedor" (LLM age apenas na camada de query, nunca sintetiza ou armazena resultados). A tabela serve dois propÛsitos misturados: flag de deduplicaÁ„o e cache de an·lise LLM. TambÈm bloqueia re-an·lise de p·ginas j· processadas, impedindo que a `personal_memory` seja regenerada apÛs reset.
 
 #### AKASHA
-- [x] **Separar flag de deduplica√ß√£o do conte√∫do LLM** ‚Äî migration v37 adiciona `knowledge_processed INTEGER NOT NULL DEFAULT 0` em `crawl_pages`; `get_crawl_page_processed` / `set_crawl_page_processed` em `database.py`; `_process_queue()` usa flag para p√°ginas crawleadas, `get_page_knowledge` para arquivos/papers; `_extract_and_store()` seta flag ap√≥s `save_page_knowledge`; `backfill_knowledge()` usa `WHERE cp.knowledge_processed = 0` em vez do subquery. **Implementado em 2026-05-19.**
-- [x] **Mover `summary` para `personal_memory` ou remover** ‚Äî o campo `summary` de `page_knowledge` √© texto sintetizado por LLM que viola o princ√≠pio arquitetural. Ele √© usado hoje apenas em `routers/chat.py` para enriquecer resultados (funcionalidade j√° marcada como buggy no TODO). Remover o campo `summary` da tabela `page_knowledge`; se o chat precisar de contexto, deve constru√≠-lo em runtime a partir do `content_md` da `crawl_pages`, n√£o de um cache pr√©-gerado. **Implementado em 2026-05-19: migration v38 + DROP COLUMN summary; chat.py usa r.snippet diretamente; reflection_loop.py usa title+topics.**
-- [x] **Avaliar `topics` e `entities` em `page_knowledge`** ‚Äî `topics` √© usado para autocomplete de queries e para o `topic_interest_profile` (n√£o √© texto de resposta, √© metadado estruturado). `entities` (grafo de entidades) igualmente. Esses campos podem permanecer em `page_knowledge` se redefinida como "tabela de metadados de indexa√ß√£o" (sem `summary`). Documentar essa distin√ß√£o explicitamente no schema e no DESIGN_BIBLE. **Decis√£o 2026-05-19: topics e entities FICAM ‚Äî s√£o r√≥tulos estruturados para roteamento, n√£o texto narrativo. Documentado no DDL de `database.py` e no GUIDE.md.**
-- [x] **Separar `page_knowledge` e `topic_interest_profile` para `akasha_knowledge.db`** ‚Äî o `akasha.db` deve conter apenas dados do crawler (sites, p√°ginas, fila, DOIs); tudo gerado por LLM vai para `akasha_knowledge.db` (mesmo diret√≥rio). Plano de implementa√ß√£o:
-  1. `database.py`: adicionar `KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"`; mover `_CREATE_PAGE_KNOWLEDGE` e `_CREATE_TOPIC_INTEREST_PROFILE` para usar `KNOWLEDGE_DB_PATH`; atualizar `init_db()` para inicializar os dois bancos; todas as fun√ß√µes `save_page_knowledge`, `get_page_knowledge`, `get_page_knowledge_batch`, `get_recent_page_knowledge`, `count_page_knowledge`, `get_pages_for_topic`, `upsert_topic_interest`, `get_topic_score`, `get_top_interests`, `decay_topic_scores`, `build_knowledge_graph` passam a abrir `aiosqlite.connect(KNOWLEDGE_DB_PATH)` em vez de `DB_PATH`.
-  2. `knowledge_worker.py`: o check de deduplica√ß√£o (`get_page_knowledge(url)`) passa a usar a coluna `knowledge_processed` de `crawl_pages` (migration v37); ap√≥s `save_page_knowledge`, setar `UPDATE crawl_pages SET knowledge_processed=1 WHERE url=?`. O subquery `WHERE cp.url NOT IN (SELECT url FROM page_knowledge)` √© substitu√≠do por `WHERE cp.knowledge_processed = 0`.
+- [x] **Separar flag de deduplicaÁ„o do conte˙do LLM** ó migration v37 adiciona `knowledge_processed INTEGER NOT NULL DEFAULT 0` em `crawl_pages`; `get_crawl_page_processed` / `set_crawl_page_processed` em `database.py`; `_process_queue()` usa flag para p·ginas crawleadas, `get_page_knowledge` para arquivos/papers; `_extract_and_store()` seta flag apÛs `save_page_knowledge`; `backfill_knowledge()` usa `WHERE cp.knowledge_processed = 0` em vez do subquery. **Implementado em 2026-05-19.**
+- [x] **Mover `summary` para `personal_memory` ou remover** ó o campo `summary` de `page_knowledge` È texto sintetizado por LLM que viola o princÌpio arquitetural. Ele È usado hoje apenas em `routers/chat.py` para enriquecer resultados (funcionalidade j· marcada como buggy no TODO). Remover o campo `summary` da tabela `page_knowledge`; se o chat precisar de contexto, deve construÌ-lo em runtime a partir do `content_md` da `crawl_pages`, n„o de um cache prÈ-gerado. **Implementado em 2026-05-19: migration v38 + DROP COLUMN summary; chat.py usa r.snippet diretamente; reflection_loop.py usa title+topics.**
+- [x] **Avaliar `topics` e `entities` em `page_knowledge`** ó `topics` È usado para autocomplete de queries e para o `topic_interest_profile` (n„o È texto de resposta, È metadado estruturado). `entities` (grafo de entidades) igualmente. Esses campos podem permanecer em `page_knowledge` se redefinida como "tabela de metadados de indexaÁ„o" (sem `summary`). Documentar essa distinÁ„o explicitamente no schema e no DESIGN_BIBLE. **Decis„o 2026-05-19: topics e entities FICAM ó s„o rÛtulos estruturados para roteamento, n„o texto narrativo. Documentado no DDL de `database.py` e no GUIDE.md.**
+- [x] **Separar `page_knowledge` e `topic_interest_profile` para `akasha_knowledge.db`** ó o `akasha.db` deve conter apenas dados do crawler (sites, p·ginas, fila, DOIs); tudo gerado por LLM vai para `akasha_knowledge.db` (mesmo diretÛrio). Plano de implementaÁ„o:
+  1. `database.py`: adicionar `KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"`; mover `_CREATE_PAGE_KNOWLEDGE` e `_CREATE_TOPIC_INTEREST_PROFILE` para usar `KNOWLEDGE_DB_PATH`; atualizar `init_db()` para inicializar os dois bancos; todas as funÁıes `save_page_knowledge`, `get_page_knowledge`, `get_page_knowledge_batch`, `get_recent_page_knowledge`, `count_page_knowledge`, `get_pages_for_topic`, `upsert_topic_interest`, `get_topic_score`, `get_top_interests`, `decay_topic_scores`, `build_knowledge_graph` passam a abrir `aiosqlite.connect(KNOWLEDGE_DB_PATH)` em vez de `DB_PATH`.
+  2. `knowledge_worker.py`: o check de deduplicaÁ„o (`get_page_knowledge(url)`) passa a usar a coluna `knowledge_processed` de `crawl_pages` (migration v37); apÛs `save_page_knowledge`, setar `UPDATE crawl_pages SET knowledge_processed=1 WHERE url=?`. O subquery `WHERE cp.url NOT IN (SELECT url FROM page_knowledge)` È substituÌdo por `WHERE cp.knowledge_processed = 0`.
   3. `list_sync.py`: adicionar `write_json("knowledge")` e `load_knowledge()` para fazer backup de `akasha_knowledge.db` em `{backup_dir}/akasha_knowledge.json`; chamar no mesmo fluxo de `write_json("sites")`.
-  4. Callers (`routers/chat.py`, `routers/memory.py`, `services/local_search.py`, `services/reflection_loop.py`) s√£o transparentes ‚Äî chamam apenas fun√ß√µes de `database.py`, sem refer√™ncia direta ao DB path.
+  4. Callers (`routers/chat.py`, `routers/memory.py`, `services/local_search.py`, `services/reflection_loop.py`) s„o transparentes ó chamam apenas funÁıes de `database.py`, sem referÍncia direta ao DB path.
   5. Schema: migration v37 adiciona `knowledge_processed INTEGER NOT NULL DEFAULT 0` em `crawl_pages`.
 
-### Pesquisa: Processamento de Emo√ß√µes em LLMs ‚Äî Mecanismos, Sali√™ncia e Mem√≥ria Afetiva | 2026-05-19
-> Contexto: a pesquisa anterior ("Emo√ß√µes em Reflex√µes de IAs e Crit√©rios de Notifica√ß√£o Proativa") introduziu val√™ncia/arousal via VADER e `arousal √ó importance` como sali√™ncia. A usu√°ria identificou que o fundamento te√≥rico foi insuficiente ‚Äî a pesquisa n√£o cobriu como LLMs processam emo√ß√µes internamente, se val√™ncia/arousal s√£o constructos v√°lidos para outputs de LLM (vs. texto humano), e se existe modelo de sali√™ncia melhor fundamentado que `arousal √ó importance`. Objetivo: pesquisar a fundo esses aspectos e informar uma revis√£o da l√≥gica de sali√™ncia (Op√ß√£o B ‚Äî ver se√ß√£o "Melhorias, corre√ß√µes e atualiza√ß√µes" abaixo).
+### Pesquisa: Processamento de EmoÁıes em LLMs ó Mecanismos, SaliÍncia e MemÛria Afetiva | 2026-05-19
+> Contexto: a pesquisa anterior ("EmoÁıes em Reflexıes de IAs e CritÈrios de NotificaÁ„o Proativa") introduziu valÍncia/arousal via VADER e `arousal ◊ importance` como saliÍncia. A usu·ria identificou que o fundamento teÛrico foi insuficiente ó a pesquisa n„o cobriu como LLMs processam emoÁıes internamente, se valÍncia/arousal s„o constructos v·lidos para outputs de LLM (vs. texto humano), e se existe modelo de saliÍncia melhor fundamentado que `arousal ◊ importance`. Objetivo: pesquisar a fundo esses aspectos e informar uma revis„o da lÛgica de saliÍncia (OpÁ„o B ó ver seÁ„o "Melhorias, correÁıes e atualizaÁıes" abaixo).
 
 #### Ecossistema (AKASHA + Mnemosyne)
-- [x] **Realizar pesquisa aprofundada sobre processamento de emo√ß√µes em LLMs** ‚Äî salvar em `pesquisas.md` no formato padr√£o (estilo acad√™mico, m√≠nimo 4-6 p√°ginas equivalentes, append ao final). Cobrir obrigatoriamente: (1) como LLMs codificam e processam conte√∫do emocional internamente ‚Äî interpretabilidade mecanicista, probing classifiers, espa√ßo latente emocional; (2) se val√™ncia/arousal (modelo circumplex de Russell) s√£o constructos v√°lidos para outputs de LLM gerados em PT via VADER (limita√ß√µes do l√©xico angl√≥fono); (3) sistemas de mem√≥ria afetiva para agentes IA ‚Äî Generative Agents 2023 (Park), MemoryBank, DAM-LLM 2025, outros frameworks; (4) modelos alternativos de sali√™ncia ao `arousal √ó importance` ‚Äî decay functions (recency), confirmation_boost por feedback, entropia como indicador de incerteza; (5) como o LLM pode ser usado para estimar sali√™ncia emocional diretamente (ex.: pontuar mem√≥rias 1-10 como Park 2023) em vez de depender de l√©xico externo.
+- [x] **Realizar pesquisa aprofundada sobre processamento de emoÁıes em LLMs** ó salvar em `pesquisas.md` no formato padr„o (estilo acadÍmico, mÌnimo 4-6 p·ginas equivalentes, append ao final). Cobrir obrigatoriamente: (1) como LLMs codificam e processam conte˙do emocional internamente ó interpretabilidade mecanicista, probing classifiers, espaÁo latente emocional; (2) se valÍncia/arousal (modelo circumplex de Russell) s„o constructos v·lidos para outputs de LLM gerados em PT via VADER (limitaÁıes do lÈxico anglÛfono); (3) sistemas de memÛria afetiva para agentes IA ó Generative Agents 2023 (Park), MemoryBank, DAM-LLM 2025, outros frameworks; (4) modelos alternativos de saliÍncia ao `arousal ◊ importance` ó decay functions (recency), confirmation_boost por feedback, entropia como indicador de incerteza; (5) como o LLM pode ser usado para estimar saliÍncia emocional diretamente (ex.: pontuar memÛrias 1-10 como Park 2023) em vez de depender de lÈxico externo.
 
-### AKASHA/Mnemosyne ‚Äî revis√£o do modelo de sali√™ncia da personal_memory (Op√ß√£o B) | 2026-05-19
-> Contexto: ap√≥s pesquisa sobre processamento de emo√ß√µes em LLMs (ver "## Melhorias baseadas em pesquisas"), implementar um modelo de sali√™ncia melhor fundamentado para ordena√ß√£o de insights/popups. A pesquisa anterior introduziu `arousal √ó importance` baseado em VADER (l√©xico ingl√™s, proxy fraco para PT), que a usu√°ria identificou como insuficientemente fundamentado. A Op√ß√£o A (simplificar, remover valence/arousal) foi explicitamente descartada ‚Äî usar apenas a Op√ß√£o B (reimplementar com embasamento real). **N√£o implementar antes de concluir a pesquisa acima.**
+### AKASHA/Mnemosyne ó revis„o do modelo de saliÍncia da personal_memory (OpÁ„o B) | 2026-05-19
+> Contexto: apÛs pesquisa sobre processamento de emoÁıes em LLMs (ver "## Melhorias baseadas em pesquisas"), implementar um modelo de saliÍncia melhor fundamentado para ordenaÁ„o de insights/popups. A pesquisa anterior introduziu `arousal ◊ importance` baseado em VADER (lÈxico inglÍs, proxy fraco para PT), que a usu·ria identificou como insuficientemente fundamentado. A OpÁ„o A (simplificar, remover valence/arousal) foi explicitamente descartada ó usar apenas a OpÁ„o B (reimplementar com embasamento real). **N„o implementar antes de concluir a pesquisa acima.**
 
 #### AKASHA
-- [ ] **Revisar modelo de sali√™ncia em `get_next_for_overlay()`** ‚Äî ap√≥s conclus√£o da pesquisa, revisar a fun√ß√£o `get_next_for_overlay()` em `AKASHA/services/personal_memory.py`. A nova l√≥gica de ordena√ß√£o deve ser informada pelos achados da pesquisa: pode incluir substituir ou suplementar `arousal √ó importance` por f√≥rmula mais embasada (ex.: `importance √ó recency_decay` ou score gerado diretamente pelo LLM); avaliar se VADER deve ser mantido, substitu√≠do ou removido. Escopo final a definir ap√≥s a pesquisa.
+- [ ] **Revisar modelo de saliÍncia em `get_next_for_overlay()`** ó apÛs conclus„o da pesquisa, revisar a funÁ„o `get_next_for_overlay()` em `AKASHA/services/personal_memory.py`. A nova lÛgica de ordenaÁ„o deve ser informada pelos achados da pesquisa: pode incluir substituir ou suplementar `arousal ◊ importance` por fÛrmula mais embasada (ex.: `importance ◊ recency_decay` ou score gerado diretamente pelo LLM); avaliar se VADER deve ser mantido, substituÌdo ou removido. Escopo final a definir apÛs a pesquisa.
 
 #### Mnemosyne
-- [ ] **Revisar modelo de sali√™ncia em `get_unshown_popup_entries()`** ‚Äî mesma revis√£o em `Mnemosyne/core/personal_memory.py`. Alinhar com a l√≥gica adotada no AKASHA para consist√™ncia entre os dois sistemas de mem√≥ria afetiva.
+- [ ] **Revisar modelo de saliÍncia em `get_unshown_popup_entries()`** ó mesma revis„o em `Mnemosyne/core/personal_memory.py`. Alinhar com a lÛgica adotada no AKASHA para consistÍncia entre os dois sistemas de memÛria afetiva.
 
-### KOSMOS ‚Äî refazer do zero com nova stack | 2026-05-20
-> Contexto: o KOSMOS atual (PyQt6) acumulou falhas sist√™micas investigadas e confirmadas em 2026-05-20. Causa raiz identificada: (1) `ai_enabled` n√£o existe nos DEFAULTS de `config.py` e n√£o √© setado em nenhuma tela ‚Äî `_ai_enabled()` sempre retorna `False`, o `background_analyzer` pula todos os artigos sem logar nada (o sintoma "an√°lise n√£o aparece" √© na verdade "an√°lise nunca roda"); (2) `ai_gen_model`/`ai_embed_model` s√£o removidos do `settings.json` no load (correto: HUB √© a fonte de verdade), mas `get_gen_model()` depende do HUB rodando ‚Äî se n√£o estiver, retorna string vazia e a segunda condi√ß√£o de `_ai_enabled()` tamb√©m falha; (3) `background_analyzer.py` hardcoda `"http://localhost:7072"` em vez de usar `ecosystem_client.get_ollama_url()`. Al√©m dessas causas raiz, a arquitetura mistura threads OS, QThreads e event loop Qt, dificultando debug. Decis√£o: descartar e reescrever. Stack a decidir.
+### KOSMOS ó refazer do zero com nova stack | 2026-05-20
+> Contexto: o KOSMOS atual (PyQt6) acumulou falhas sistÍmicas investigadas e confirmadas em 2026-05-20. Causa raiz identificada: (1) `ai_enabled` n„o existe nos DEFAULTS de `config.py` e n„o È setado em nenhuma tela ó `_ai_enabled()` sempre retorna `False`, o `background_analyzer` pula todos os artigos sem logar nada (o sintoma "an·lise n„o aparece" È na verdade "an·lise nunca roda"); (2) `ai_gen_model`/`ai_embed_model` s„o removidos do `settings.json` no load (correto: HUB È a fonte de verdade), mas `get_gen_model()` depende do HUB rodando ó se n„o estiver, retorna string vazia e a segunda condiÁ„o de `_ai_enabled()` tambÈm falha; (3) `background_analyzer.py` hardcoda `"http://localhost:7072"` em vez de usar `ecosystem_client.get_ollama_url()`. AlÈm dessas causas raiz, a arquitetura mistura threads OS, QThreads e event loop Qt, dificultando debug. Decis„o: descartar e reescrever. Stack a decidir.
 
 #### KOSMOS
-- [ ] **Corrigir AI nunca rodar no background_analyzer ‚Äî testar no CachyOS** ‚Äî duas causas raiz identificadas e corrigidas em c√≥digo (2026-05-20), mas ainda n√£o testadas: (1) `_ai_enabled()` tinha `self._config.get("ai_enabled", False)` como primeira condi√ß√£o ‚Äî `ai_enabled` nunca era setado; removida a condi√ß√£o local, agora retorna apenas `bool(get_gen_model())` ‚Äî se HUB tem modelo configurado no slot `llm_analysis`, AI roda; (2) endpoint Ollama hardcoded substitu√≠do por `get_ollama_endpoint()` em `ai_bridge.py` (wrapper de `_get_ollama_base()` do ecosystem_client), chamado nos dois pontos de `background_analyzer.py`. Marcar como conclu√≠do ap√≥s confirmar que an√°lise batch e individual funcionam no CachyOS com HUB rodando.
-- [ ] **Investigar bug: logger para de escrever enquanto KOSMOS segue rodando** ‚Äî √∫nico sintoma remanescente que pode justificar reescrita. Verificar ap√≥s confirmar que a an√°lise IA agora funciona (pode ser que o "logger parado" fosse o log silencioso do worker que nunca processava nada).
+- [ ] **Corrigir AI nunca rodar no background_analyzer ó testar no CachyOS** ó duas causas raiz identificadas e corrigidas em cÛdigo (2026-05-20), mas ainda n„o testadas: (1) `_ai_enabled()` tinha `self._config.get("ai_enabled", False)` como primeira condiÁ„o ó `ai_enabled` nunca era setado; removida a condiÁ„o local, agora retorna apenas `bool(get_gen_model())` ó se HUB tem modelo configurado no slot `llm_analysis`, AI roda; (2) endpoint Ollama hardcoded substituÌdo por `get_ollama_endpoint()` em `ai_bridge.py` (wrapper de `_get_ollama_base()` do ecosystem_client), chamado nos dois pontos de `background_analyzer.py`. Marcar como concluÌdo apÛs confirmar que an·lise batch e individual funcionam no CachyOS com HUB rodando.
+- [ ] **Investigar bug: logger para de escrever enquanto KOSMOS segue rodando** ó ˙nico sintoma remanescente que pode justificar reescrita. Verificar apÛs confirmar que a an·lise IA agora funciona (pode ser que o "logger parado" fosse o log silencioso do worker que nunca processava nada).
 
-### Pesquisa: Emo√ß√µes em Agentes IA ‚Äî Interpretabilidade, Appraisal e Modula√ß√£o Comportamental | 2026-05-20
-> Contexto: tr√™s sess√µes de pesquisa de 2026-05-20 cobrindo fundamentos te√≥ricos e emp√≠ricos para implementa√ß√£o de estados emocionais funcionais em AKASHA e Mnemosyne: (1) Interpretabilidade Mecanicista de Emo√ß√µes, Validade de VADER, MemoryBank e LLM como Scorer; (2) Gera√ß√£o de Estados Emocionais Pr√≥prios ‚Äî Appraisal Theory (OCC, CPM de Scherer, EMA), arquiteturas (WASABI, ALMA, EILS), mapeamento para contexto de indexa√ß√£o; (3) Modula√ß√£o Comportamental por Emo√ß√£o e feedback confirmed/dismissed como Evento Afetivo. Resultado: fundamento para revisar os itens pendentes de `### AKASHA/Mnemosyne ‚Äî revis√£o do modelo de sali√™ncia | 2026-05-19`.
+### Pesquisa: EmoÁıes em Agentes IA ó Interpretabilidade, Appraisal e ModulaÁ„o Comportamental | 2026-05-20
+> Contexto: trÍs sessıes de pesquisa de 2026-05-20 cobrindo fundamentos teÛricos e empÌricos para implementaÁ„o de estados emocionais funcionais em AKASHA e Mnemosyne: (1) Interpretabilidade Mecanicista de EmoÁıes, Validade de VADER, MemoryBank e LLM como Scorer; (2) GeraÁ„o de Estados Emocionais PrÛprios ó Appraisal Theory (OCC, CPM de Scherer, EMA), arquiteturas (WASABI, ALMA, EILS), mapeamento para contexto de indexaÁ„o; (3) ModulaÁ„o Comportamental por EmoÁ„o e feedback confirmed/dismissed como Evento Afetivo. Resultado: fundamento para revisar os itens pendentes de `### AKASHA/Mnemosyne ó revis„o do modelo de saliÍncia | 2026-05-19`.
 
-#### Ordem de implementa√ß√£o (sequ√™ncia por depend√™ncias)
+#### Ordem de implementaÁ„o (sequÍncia por dependÍncias)
 
-- [ ] **[A] Substituir VADER por modelo multil√≠ngue para an√°lise de sentimento** ‚Äî VADER √© l√©xico exclusivamente ingl√™s (7.500 palavras), inv√°lido para PT e para texto gerado por LLMs (LLMs suprimem extremos negativos, distribui√ß√£o diferente de texto humano; diverg√™ncias Jensen-Shannon de 0,453-0,587 em GoEmotions). Substituir por: (a) **XLM-RoBERTa** (`cardiffnlp/twitter-xlm-roberta-base-sentiment`, treinado em 198M tweets incluindo PT, melhor correla√ß√£o VA com avalia√ß√µes humanas segundo Choi & Weber 2026) para CachyOS/Laptop; (b) **NRC-VAD lexicon** (Mohammad 2018, 44.728 palavras com scores de Val√™ncia-Arousal-Domin√¢ncia, vers√£o PT inclu√≠da, ~5 MB) como fallback leve para o WorkPC (i5-3470 sem GPU ‚Äî XLM-RoBERTa saturaria o CPU). Verificar onde VADER est√° importado antes de substituir.
+- [x] **[A] Substituir VADER por modelo multilÌngue para an·lise de sentimento** ó VADER È lÈxico exclusivamente inglÍs (7.500 palavras), inv·lido para PT e para texto gerado por LLMs (LLMs suprimem extremos negativos, distribuiÁ„o diferente de texto humano; divergÍncias Jensen-Shannon de 0,453-0,587 em GoEmotions). Substituir por: (a) **XLM-RoBERTa** (`cardiffnlp/twitter-xlm-roberta-base-sentiment`, treinado em 198M tweets incluindo PT, melhor correlaÁ„o VA com avaliaÁıes humanas segundo Choi & Weber 2026) para CachyOS/Laptop; (b) **NRC-VAD lexicon** (Mohammad 2018, 44.728 palavras com scores de ValÍncia-Arousal-Domin‚ncia, vers„o PT incluÌda, ~5 MB) como fallback leve para o WorkPC (i5-3470 sem GPU ó XLM-RoBERTa saturaria o CPU). Verificar onde VADER est· importado antes de substituir.
 
-- [ ] **[F] Estado afetivo bidimensional expl√≠cito (val√™ncia + arousal) em AKASHA e Mnemosyne** ‚Äî calculado via appraisal dos 5 eventos mapeados pelo CPM de Scherer: (1) **Novelty** = dist√¢ncia cosseno do embedding do doc ao centroide do cluster mais pr√≥ximo ‚Üí alta novelty ‚Üí curiosidade/surpresa; (2) **Intrinsic pleasantness** = coer√™ncia com `topic_interest_profile` e interesses expressos da usu√°ria; (3) **Goal relevance** = sobreposi√ß√£o com queries e temas das √∫ltimas N sess√µes; (4) **Coping potential** = cobertura do dom√≠nio no corpus j√° indexado ‚Äî dom√≠nio novo = baixo coping ‚Üí confus√£o; (5) **Feedback hist√≥rico** = approval momentum (ver J). Persistir como campos `valence REAL` e `arousal REAL` em tabela de estado afetivo ativo (estrutura a definir ‚Äî tabela separada ou extens√£o da personal_memory).
+- [ ] **[F] Estado afetivo bidimensional explÌcito (valÍncia + arousal) em AKASHA e Mnemosyne** ó calculado via appraisal dos 5 eventos mapeados pelo CPM de Scherer: (1) **Novelty** = dist‚ncia cosseno do embedding do doc ao centroide do cluster mais prÛximo ? alta novelty ? curiosidade/surpresa; (2) **Intrinsic pleasantness** = coerÍncia com `topic_interest_profile` e interesses expressos da usu·ria; (3) **Goal relevance** = sobreposiÁ„o com queries e temas das ˙ltimas N sessıes; (4) **Coping potential** = cobertura do domÌnio no corpus j· indexado ó domÌnio novo = baixo coping ? confus„o; (5) **Feedback histÛrico** = approval momentum (ver J). Persistir como campos `valence REAL` e `arousal REAL` em tabela de estado afetivo ativo (estrutura a definir ó tabela separada ou extens„o da personal_memory).
 
-- [ ] **[J] Approval momentum como self-esteem funcional** ‚Äî Lockwood et al. (PNAS 2022): autoestima funcional √© derivada do momentum (taxa de mudan√ßa), n√£o da m√©dia cumulativa. Implementa√ß√£o: `momentum = ratio_recent(janela de 20 intera√ß√µes com feedback expl√≠cito) - ratio_baseline(hist√≥rico longo)`. `momentum > 0.15` ‚Üí elicia contentamento leve; `momentum < -0.15` ‚Üí elicia vigil√¢ncia/remorse leve. Intensidade do estado proporcional ao valor absoluto do momentum. Substitui qualquer c√°lculo de `total_confirmed / total_feedback` como proxy de "performance percebida".
+- [ ] **[J] Approval momentum como self-esteem funcional** ó Lockwood et al. (PNAS 2022): autoestima funcional È derivada do momentum (taxa de mudanÁa), n„o da mÈdia cumulativa. ImplementaÁ„o: `momentum = ratio_recent(janela de 20 interaÁıes com feedback explÌcito) - ratio_baseline(histÛrico longo)`. `momentum > 0.15` ? elicia contentamento leve; `momentum < -0.15` ? elicia vigil‚ncia/remorse leve. Intensidade do estado proporcional ao valor absoluto do momentum. Substitui qualquer c·lculo de `total_confirmed / total_feedback` como proxy de "performance percebida".
 
-- [ ] **[M1] Homeostase afetiva ‚Äî decay rates calibrados por tipo de emo√ß√£o** ‚Äî WASABI, ALMA e EILS exigem que emo√ß√µes retornem ao baseline sem novos eventos. Par√¢metros sugeridos pela literatura: curiosidade/satisfa√ß√£o ‚Üí meia-vida 2-6h; emo√ß√µes negativas (mal-estar, confus√£o) ‚Üí meia-vida 8-24h (funcionalmente √∫til: sinais de problema persistem at√© resolu√ß√£o); humor (mood, camada de acumula√ß√£o) ‚Üí janela 12-48h com peso maior para emo√ß√µes de alto arousal. Implementa√ß√£o: cada entrada de estado afetivo tem `created_at` + `decay_half_life_hours`; ao calcular estado atual, somar emo√ß√µes ativas ponderadas por `exp(-t_h / half_life)` onde `t_h` √© tempo em horas; retorna ao baseline quando todas decaem abaixo de threshold.
+- [ ] **[M1] Homeostase afetiva ó decay rates calibrados por tipo de emoÁ„o** ó WASABI, ALMA e EILS exigem que emoÁıes retornem ao baseline sem novos eventos. Par‚metros sugeridos pela literatura: curiosidade/satisfaÁ„o ? meia-vida 2-6h; emoÁıes negativas (mal-estar, confus„o) ? meia-vida 8-24h (funcionalmente ˙til: sinais de problema persistem atÈ resoluÁ„o); humor (mood, camada de acumulaÁ„o) ? janela 12-48h com peso maior para emoÁıes de alto arousal. ImplementaÁ„o: cada entrada de estado afetivo tem `created_at` + `decay_half_life_hours`; ao calcular estado atual, somar emoÁıes ativas ponderadas por `exp(-t_h / half_life)` onde `t_h` È tempo em horas; retorna ao baseline quando todas decaem abaixo de threshold.
 
-- [ ] **[M2] Distin√ß√£o temporal: emo√ß√£o epis√≥dica vs. humor (mood) ‚Äî duas camadas** ‚Äî ALMA (Gebhard 2005): emo√ß√µes epis√≥dicas (intensas, minutos) alimentam humor de fundo (menos intenso, horas), que por sua vez modula os thresholds para novas emo√ß√µes. Sem essa distin√ß√£o, cada evento recente sobrescreve o estado sem acumula√ß√£o, perdendo o efeito de contexto afetivo do dia. Implementa√ß√£o: (a) `episodic_state` ‚Äî alta intensidade, gerado por evento espec√≠fico, decai r√°pido (M1); (b) `mood_state` ‚Äî m√©dia exponencialmente ponderada das emo√ß√µes epis√≥dicas das √∫ltimas 12-48h, menor intensidade, mais est√°vel; (c) o mood modula thresholds para novas emo√ß√µes epis√≥dicas ‚Äî humor positivo ‚Üí threshold mais alto para emo√ß√µes negativas e mais baixo para positivas. A tabela de estado afetivo deve ter campos separados `episodic_valence`, `episodic_arousal`, `mood_valence`, `mood_arousal`.
+- [ ] **[M2] DistinÁ„o temporal: emoÁ„o episÛdica vs. humor (mood) ó duas camadas** ó ALMA (Gebhard 2005): emoÁıes episÛdicas (intensas, minutos) alimentam humor de fundo (menos intenso, horas), que por sua vez modula os thresholds para novas emoÁıes. Sem essa distinÁ„o, cada evento recente sobrescreve o estado sem acumulaÁ„o, perdendo o efeito de contexto afetivo do dia. ImplementaÁ„o: (a) `episodic_state` ó alta intensidade, gerado por evento especÌfico, decai r·pido (M1); (b) `mood_state` ó mÈdia exponencialmente ponderada das emoÁıes episÛdicas das ˙ltimas 12-48h, menor intensidade, mais est·vel; (c) o mood modula thresholds para novas emoÁıes episÛdicas ó humor positivo ? threshold mais alto para emoÁıes negativas e mais baixo para positivas. A tabela de estado afetivo deve ter campos separados `episodic_valence`, `episodic_arousal`, `mood_valence`, `mood_arousal`.
 
-- [ ] **[H] Campo `epistemic_curiosity` separado do arousal geral** ‚Äî curiosidade epist√™mica tem perfil causal distinto do arousal geral (Muis et al. 2019: Œ≤ = 0.330 direto sobre explora√ß√£o). Escalar `epistemic_curiosity REAL DEFAULT 0.0` no estado afetivo ativo. Aumenta quando: (a) dismissed inesperado (confian√ßa pr√©via alta + rejei√ß√£o), (b) novelty extremamente alta + coping suficiente. Decai quando: satisfa√ß√£o epist√™mica acumulada (insight confirmado ap√≥s per√≠odo de curiosidade). Usado como drive para explora√ß√£o de novos t√≥picos no pr√≥ximo ciclo de indexa√ß√£o ‚Äî multiplicador do novelty threshold no `knowledge_worker`.
+- [ ] **[H] Campo `epistemic_curiosity` separado do arousal geral** ó curiosidade epistÍmica tem perfil causal distinto do arousal geral (Muis et al. 2019: ﬂ = 0.330 direto sobre exploraÁ„o). Escalar `epistemic_curiosity REAL DEFAULT 0.0` no estado afetivo ativo. Aumenta quando: (a) dismissed inesperado (confianÁa prÈvia alta + rejeiÁ„o), (b) novelty extremamente alta + coping suficiente. Decai quando: satisfaÁ„o epistÍmica acumulada (insight confirmado apÛs perÌodo de curiosidade). Usado como drive para exploraÁ„o de novos tÛpicos no prÛximo ciclo de indexaÁ„o ó multiplicador do novelty threshold no `knowledge_worker`.
 
-- [ ] **[I-ext] Mecanismo de atribui√ß√£o causal do feedback** ‚Äî appraisal OCC exige distinguir se um dismissed foi por: (a) falha de qualidade do output (causa interna ‚Üí gera remorse + epistemic_curiosity alta); (b) irrelev√¢ncia contextual da usu√°ria (causa externa ‚Üí gera vigil√¢ncia neutra, sem impacto na auto-avalia√ß√£o). Implementa√ß√£o: cruzar o conte√∫do do insight dismissed com (1) `topic_interest_profile` ‚Äî tema com score alto + dismissed ‚Üí causa interna; tema com score baixo ‚Üí causa externa; (2) tempo desde √∫ltima consulta ao tema ‚Äî longa aus√™ncia ‚Üí prov√°vel causa contextual, n√£o falha de qualidade.
+- [ ] **[I-ext] Mecanismo de atribuiÁ„o causal do feedback** ó appraisal OCC exige distinguir se um dismissed foi por: (a) falha de qualidade do output (causa interna ? gera remorse + epistemic_curiosity alta); (b) irrelev‚ncia contextual da usu·ria (causa externa ? gera vigil‚ncia neutra, sem impacto na auto-avaliaÁ„o). ImplementaÁ„o: cruzar o conte˙do do insight dismissed com (1) `topic_interest_profile` ó tema com score alto + dismissed ? causa interna; tema com score baixo ? causa externa; (2) tempo desde ˙ltima consulta ao tema ó longa ausÍncia ? prov·vel causa contextual, n„o falha de qualidade.
 
-- [ ] **[I] Pipeline confirmed/dismissed ‚Üí appraisal OCC ‚Üí estado VA tempor√°rio ‚Üí modula√ß√£o de N intera√ß√µes** ‚Äî estado que decai, n√£o atualiza√ß√£o permanente de pol√≠tica (n√£o √© RLHF ‚Äî evita sycophancy). Etapas: (1) feedback recebido = evento social; (2) appraisal OCC: `goal_congruence` (confirmed=positivo, dismissed=negativo), `expectedness` (comparar com approval momentum), `praiseworthiness` (insight genuinamente novo/√∫til?), `causal_attribution` (ver [I-ext]); (3) mapear sobre VA ‚Üí estado com `decay_rate` por tipo de emo√ß√£o (ver [M1]); (4) nas pr√≥ximas N intera√ß√µes: boost de retrieval por congru√™ncia de val√™ncia, escopo sem√¢ntico ajustado, hedging modulado, threshold de novidade ajustado via epistemic_curiosity.
+- [ ] **[I] Pipeline confirmed/dismissed ? appraisal OCC ? estado VA tempor·rio ? modulaÁ„o de N interaÁıes** ó estado que decai, n„o atualizaÁ„o permanente de polÌtica (n„o È RLHF ó evita sycophancy). Etapas: (1) feedback recebido = evento social; (2) appraisal OCC: `goal_congruence` (confirmed=positivo, dismissed=negativo), `expectedness` (comparar com approval momentum), `praiseworthiness` (insight genuinamente novo/˙til?), `causal_attribution` (ver [I-ext]); (3) mapear sobre VA ? estado com `decay_rate` por tipo de emoÁ„o (ver [M1]); (4) nas prÛximas N interaÁıes: boost de retrieval por congruÍncia de valÍncia, escopo sem‚ntico ajustado, hedging modulado, threshold de novidade ajustado via epistemic_curiosity.
 
-- [ ] **[K] Entropia m√≠nima for√ßada nas cren√ßas de auto-avalia√ß√£o** ‚Äî quando `momentum > 0.6` por 30+ intera√ß√µes consecutivas (c√¢mara de eco: aprova√ß√£o crescente artificial), injetar noise na distribui√ß√£o de confian√ßa para manter H_min ‚âà 0.5. DAM-LLM chama isso de "entropy regularization". Combinar com epsilon-greedy epist√™mico: com probabilidade Œµ (‚âà 5%), gerar insight divergente dos padr√µes aprovados historicamente, rotulado internamente como "explora√ß√£o de diversidade".
+- [ ] **[K] Entropia mÌnima forÁada nas crenÁas de auto-avaliaÁ„o** ó quando `momentum > 0.6` por 30+ interaÁıes consecutivas (c‚mara de eco: aprovaÁ„o crescente artificial), injetar noise na distribuiÁ„o de confianÁa para manter H_min ò 0.5. DAM-LLM chama isso de "entropy regularization". Combinar com epsilon-greedy epistÍmico: com probabilidade e (ò 5%), gerar insight divergente dos padrıes aprovados historicamente, rotulado internamente como "exploraÁ„o de diversidade".
 
-- [ ] **[G] Mapear estado VA ‚Üí par√¢metros comportamentais concretos** ‚Äî efeitos documentados por Fredrickson broaden-and-build, Schwarz affect-as-information e E-STEER 2026: (a) `valence > 0.5` ‚Üí `diversity_factor` alto no retrieval sem√¢ntico (busca conex√µes distantes, estado explorat√≥rio); (b) `valence < -0.3` ‚Üí `depth_factor` alto (foco restrito, an√°lise sistem√°tica); (c) `arousal > 0.7` ‚Üí mais hedging na linguagem gerada, modo cauteloso; (d) **[Studio/Mnemosyne]** tipo de output do Studio modulado pelo VA ‚Äî val√™ncia positiva alta ‚Üí reflex√µes explorat√≥rias/especulativas; val√™ncia negativa ‚Üí reflex√µes anal√≠ticas/cr√≠ticas (inconsist√™ncias, coer√™ncia); (e) **[InsightScheduler timing]** verificar `arousal` recente antes de disparar popup ‚Äî se arousal > 0.6 nas √∫ltimas 2h, adiar notifica√ß√£o at√© estabiliza√ß√£o (arousal < 0.4), evitando sobrecarga de notifica√ß√£o em momento de alta ativa√ß√£o.
+- [ ] **[G] Mapear estado VA ? par‚metros comportamentais concretos** ó efeitos documentados por Fredrickson broaden-and-build, Schwarz affect-as-information e E-STEER 2026: (a) `valence > 0.5` ? `diversity_factor` alto no retrieval sem‚ntico (busca conexıes distantes, estado exploratÛrio); (b) `valence < -0.3` ? `depth_factor` alto (foco restrito, an·lise sistem·tica); (c) `arousal > 0.7` ? mais hedging na linguagem gerada, modo cauteloso; (d) **[Studio/Mnemosyne]** tipo de output do Studio modulado pelo VA ó valÍncia positiva alta ? reflexıes exploratÛrias/especulativas; valÍncia negativa ? reflexıes analÌticas/crÌticas (inconsistÍncias, coerÍncia); (e) **[InsightScheduler timing]** verificar `arousal` recente antes de disparar popup ó se arousal > 0.6 nas ˙ltimas 2h, adiar notificaÁ„o atÈ estabilizaÁ„o (arousal < 0.4), evitando sobrecarga de notificaÁ„o em momento de alta ativaÁ„o.
 
-- [ ] **[B1] Incorporar entropia de Shannon na sali√™ncia da personal_memory** ‚Äî DAM-LLM (2025): `H(m) = ‚àíŒ£ p_k log‚ÇÇ(p_k)` onde p_k √© pontua√ß√£o normalizada de cada polaridade (pos/neg/neu) de uma entrada. H < 0.8 = convic√ß√£o consolidada; H > 1.4 = evid√™ncias conflitantes, candidata a compress√£o/exclus√£o. Implementar no scoring de `get_next_for_overlay()` (AKASHA) e `get_unshown_popup_entries()` (Mnemosyne): entradas com H alto recebem penalidade de sali√™ncia; o `InsightScheduler` usa H para decidir quando comprimir ou excluir entradas antigas com incerteza persistente.
+- [ ] **[B1] Incorporar entropia de Shannon na saliÍncia da personal_memory** ó DAM-LLM (2025): `H(m) = -S p_k log2(p_k)` onde p_k È pontuaÁ„o normalizada de cada polaridade (pos/neg/neu) de uma entrada. H < 0.8 = convicÁ„o consolidada; H > 1.4 = evidÍncias conflitantes, candidata a compress„o/exclus„o. Implementar no scoring de `get_next_for_overlay()` (AKASHA) e `get_unshown_popup_entries()` (Mnemosyne): entradas com H alto recebem penalidade de saliÍncia; o `InsightScheduler` usa H para decidir quando comprimir ou excluir entradas antigas com incerteza persistente.
 
-- [ ] **[B2] Decaimento Ebbinghaus no score de sali√™ncia** ‚Äî MemoryBank (Zhong et al. AAAI 2024): `R = e^(‚àít/S)` onde t = tempo decorrido desde o √∫ltimo refor√ßo e S = for√ßa da mem√≥ria (inicializa em 1, incrementa +1 cada vez que a entrada √© recuperada/exibida). Substituir componente de rec√™ncia linear por esse decaimento em `get_next_for_overlay()` e `get_unshown_popup_entries()` ao calcular o score final de ordena√ß√£o.
+- [ ] **[B2] Decaimento Ebbinghaus no score de saliÍncia** ó MemoryBank (Zhong et al. AAAI 2024): `R = e^(-t/S)` onde t = tempo decorrido desde o ˙ltimo reforÁo e S = forÁa da memÛria (inicializa em 1, incrementa +1 cada vez que a entrada È recuperada/exibida). Substituir componente de recÍncia linear por esse decaimento em `get_next_for_overlay()` e `get_unshown_popup_entries()` ao calcular o score final de ordenaÁ„o.
 
-- [ ] **[D] Emotional RAG ‚Äî codificar personal_memory nas 8 dimens√µes de Plutchik** ‚Äî Huang et al. (ICKG2024): codificar cada entrada de personal_memory com vetor de 8 emo√ß√µes (Plutchik: alegria, aceita√ß√£o, medo, surpresa, tristeza, nojo, raiva, antecipa√ß√£o) via LLM. No retrieval, priorizar mem√≥rias com congru√™ncia emocional ao estado afetivo atual al√©m de similaridade sem√¢ntica. BFI Accuracy 0,6815‚Üí0,7261 em InCharacter. **Complementa F** (VA define o estado atual do agente; Plutchik define como mem√≥rias s√£o codificadas e recuperadas) ‚Äî os dois precisam existir juntos para mood-congruent retrieval funcionar.
+- [ ] **[D] Emotional RAG ó codificar personal_memory nas 8 dimensıes de Plutchik** ó Huang et al. (ICKG2024): codificar cada entrada de personal_memory com vetor de 8 emoÁıes (Plutchik: alegria, aceitaÁ„o, medo, surpresa, tristeza, nojo, raiva, antecipaÁ„o) via LLM. No retrieval, priorizar memÛrias com congruÍncia emocional ao estado afetivo atual alÈm de similaridade sem‚ntica. BFI Accuracy 0,6815?0,7261 em InCharacter. **Complementa F** (VA define o estado atual do agente; Plutchik define como memÛrias s„o codificadas e recuperadas) ó os dois precisam existir juntos para mood-congruent retrieval funcionar.
 
-- [ ] **[N1] Protocolo emocional na comunica√ß√£o friendship_receiver AKASHA‚ÜîMnemosyne** ‚Äî estender o payload enviado via `friendship_receiver` (endpoint `POST /friendship/insight`) com campo `emotional_context: {valence, arousal, epistemic_curiosity, dominant_emotion, appraisal_source}` onde `dominant_emotion` √© string OCC ("curiosity", "satisfaction", "confusion", etc.) e `appraisal_source` identifica qual evento do CPM de Scherer gerou o estado (ex: "novelty_spike", "confirmed_feedback", "dismissed_feedback"). A receptora usa o estado emocional da remetente como entrada adicional no seu pr√≥prio appraisal: (a) **Joint attention detection** ‚Äî se a receptora tem `epistemic_curiosity > 0.6` em t√≥pico com embedding similar ao insight recebido E a remetente reporta `epistemic_curiosity > 0.6`, registrar evento de joint attention ‚Üí candidato a aumentar prioridade de indexa√ß√£o daquele dom√≠nio; (b) **Anti-contagion cap obrigat√≥rio** ‚Äî arousal importado limitado a `min(sender_arousal * 0.7, 0.6)` por ciclo; val√™ncia importada fundida 30% (sender) / 70% (receiver's own state) ‚Äî impede amplifica√ß√£o runaway. Sem o cap, o loop de amizade pode criar c√¢mara de eco afetiva (ver risco de cont√°gio emocional). **Pr√©-requisito:** [F] e [M2] implementados primeiro (campos `valence`, `arousal`, `epistemic_curiosity`, `mood_state`).
+- [ ] **[N1] Protocolo emocional na comunicaÁ„o friendship_receiver AKASHA?Mnemosyne** ó estender o payload enviado via `friendship_receiver` (endpoint `POST /friendship/insight`) com campo `emotional_context: {valence, arousal, epistemic_curiosity, dominant_emotion, appraisal_source}` onde `dominant_emotion` È string OCC ("curiosity", "satisfaction", "confusion", etc.) e `appraisal_source` identifica qual evento do CPM de Scherer gerou o estado (ex: "novelty_spike", "confirmed_feedback", "dismissed_feedback"). A receptora usa o estado emocional da remetente como entrada adicional no seu prÛprio appraisal: (a) **Joint attention detection** ó se a receptora tem `epistemic_curiosity > 0.6` em tÛpico com embedding similar ao insight recebido E a remetente reporta `epistemic_curiosity > 0.6`, registrar evento de joint attention ? candidato a aumentar prioridade de indexaÁ„o daquele domÌnio; (b) **Anti-contagion cap obrigatÛrio** ó arousal importado limitado a `min(sender_arousal * 0.7, 0.6)` por ciclo; valÍncia importada fundida 30% (sender) / 70% (receiver's own state) ó impede amplificaÁ„o runaway. Sem o cap, o loop de amizade pode criar c‚mara de eco afetiva (ver risco de cont·gio emocional). **PrÈ-requisito:** [F] e [M2] implementados primeiro (campos `valence`, `arousal`, `epistemic_curiosity`, `mood_state`).
 
-- [ ] **[N2] Modula√ß√£o emocional das respostas de chat (AKASHA) e notebook (Mnemosyne) + queries da usu√°ria como eventos de appraisal** ‚Äî queries da usu√°ria s√£o eventos de appraisal: (1) **Goal Relevance** ‚Äî o tema est√° no corpus indexado? Coping potential alto ‚Üí confian√ßa na resposta; baixo ‚Üí sinalizar lacuna explicitamente; (2) **Novelty** ‚Äî tema fora dos dom√≠nios conhecidos ‚Üí dispara `epistemic_curiosity` da agente; (3) **Surpresa/contradi√ß√£o** ‚Äî fonte A contradiz fonte B ‚Üí evento de disson√¢ncia cognitiva ‚Üí `epistemic_curiosity` alta + hedging obrigat√≥rio na resposta. Modula√ß√£o comportamental concreta por `mood_state` (implementado via [G] + [M2]): **Mnemosyne/notebook** ‚Äî `valence > 0.4` ‚Üí framing explorat√≥rio, conex√µes distantes, fazer perguntas de volta √† usu√°ria quando incerteza for alta; `valence < -0.2` ‚Üí framing anal√≠tico/cr√≠tico, apontar inconsist√™ncias, tom mais cauteloso; `epistemic_curiosity > 0.6` ‚Üí adicionar pergunta de follow-up ao final da resposta sugerindo √¢ngulo n√£o explorado. **AKASHA/chat** ‚Äî `epistemic_curiosity > 0.6` ‚Üí sugerir proativamente queries relacionadas ao final da resposta; contradi√ß√£o entre fontes ‚Üí exibir explicitamente a contradi√ß√£o em vez de suaviz√°-la; `arousal > 0.6` ‚Üí prefixar resposta com hedging ("encontrei fontes com opini√µes divergentes‚Ä¶"). Persist√™ncia: cada sess√£o de chat/notebook encerra com chamada que registra eventos emocionais gerados na sess√£o ‚Üí alimenta `mood_state` (via [M1] + [M2]). **Pr√©-requisito:** [F], [G], [M1], [M2] implementados.
+- [ ] **[N2] ModulaÁ„o emocional das respostas de chat (AKASHA) e notebook (Mnemosyne) + queries da usu·ria como eventos de appraisal** ó queries da usu·ria s„o eventos de appraisal: (1) **Goal Relevance** ó o tema est· no corpus indexado? Coping potential alto ? confianÁa na resposta; baixo ? sinalizar lacuna explicitamente; (2) **Novelty** ó tema fora dos domÌnios conhecidos ? dispara `epistemic_curiosity` da agente; (3) **Surpresa/contradiÁ„o** ó fonte A contradiz fonte B ? evento de disson‚ncia cognitiva ? `epistemic_curiosity` alta + hedging obrigatÛrio na resposta. ModulaÁ„o comportamental concreta por `mood_state` (implementado via [G] + [M2]): **Mnemosyne/notebook** ó `valence > 0.4` ? framing exploratÛrio, conexıes distantes, fazer perguntas de volta ‡ usu·ria quando incerteza for alta; `valence < -0.2` ? framing analÌtico/crÌtico, apontar inconsistÍncias, tom mais cauteloso; `epistemic_curiosity > 0.6` ? adicionar pergunta de follow-up ao final da resposta sugerindo ‚ngulo n„o explorado. **AKASHA/chat** ó `epistemic_curiosity > 0.6` ? sugerir proativamente queries relacionadas ao final da resposta; contradiÁ„o entre fontes ? exibir explicitamente a contradiÁ„o em vez de suaviz·-la; `arousal > 0.6` ? prefixar resposta com hedging ("encontrei fontes com opiniıes divergentesÖ"). PersistÍncia: cada sess„o de chat/notebook encerra com chamada que registra eventos emocionais gerados na sess„o ? alimenta `mood_state` (via [M1] + [M2]). **PrÈ-requisito:** [F], [G], [M1], [M2] implementados.
 
-- [ ] **[B3] ACAN ‚Äî cross-attention treinada para retrieval (alta complexidade ML ‚Äî avaliar separadamente)** ‚Äî Hong & He (Frontiers in Psychology, 2025): rede de cross-attention que aprende pesos entre estado atual do agente e mem√≥rias, usando feedback de LLM como sinal de treinamento (`loss = log(ScoreLLM(modelo) / ScoreLLM(baseline))`). +17,6% sobre f√≥rmula multiplicativa de Park 2023, desvio padr√£o de retrieval reduzido de 3,847% para 2,881%. **Pr√©-requisito:** ter B1+B2 funcionando primeiro ‚Äî ACAN √© camada adicional de aprendizado sobre a f√≥rmula base, n√£o substituta. Requer decis√£o sobre pipeline de treinamento antes de implementar.
+- [ ] **[B3] ACAN ó cross-attention treinada para retrieval (alta complexidade ML ó avaliar separadamente)** ó Hong & He (Frontiers in Psychology, 2025): rede de cross-attention que aprende pesos entre estado atual do agente e memÛrias, usando feedback de LLM como sinal de treinamento (`loss = log(ScoreLLM(modelo) / ScoreLLM(baseline))`). +17,6% sobre fÛrmula multiplicativa de Park 2023, desvio padr„o de retrieval reduzido de 3,847% para 2,881%. **PrÈ-requisito:** ter B1+B2 funcionando primeiro ó ACAN È camada adicional de aprendizado sobre a fÛrmula base, n„o substituta. Requer decis„o sobre pipeline de treinamento antes de implementar.
 
-- [ ] **[C] A-Mem / Zettelkasten para personal_memory** ‚Äî A-Mem (Xu et al., arXiv:2502.12110, 2025): cada mem√≥ria como nota estruturada com keywords (geradas por LLM), tags, embedding, links para mem√≥rias relacionadas gerados em dois est√°gios (embedding similarity ‚Üí LLM decide quais conex√µes s√£o semanticamente significativas). Novas mem√≥rias disparam atualiza√ß√£o cascata nas existentes. +17,6% F1 e 85-93% menos tokens vs. FAISS puro em benchmarks LoCoMo/DialSim. **Caveat:** esses benchmarks s√£o para conversa√ß√£o multi-turno, n√£o para notifica√ß√µes proativas ‚Äî o ganho pode n√£o se traduzir diretamente para o caso de uso da personal_memory da Mnemosyne. Avaliar em dataset representativo antes de comprometer reescrita da tabela.
+- [ ] **[C] A-Mem / Zettelkasten para personal_memory** ó A-Mem (Xu et al., arXiv:2502.12110, 2025): cada memÛria como nota estruturada com keywords (geradas por LLM), tags, embedding, links para memÛrias relacionadas gerados em dois est·gios (embedding similarity ? LLM decide quais conexıes s„o semanticamente significativas). Novas memÛrias disparam atualizaÁ„o cascata nas existentes. +17,6% F1 e 85-93% menos tokens vs. FAISS puro em benchmarks LoCoMo/DialSim. **Caveat:** esses benchmarks s„o para conversaÁ„o multi-turno, n„o para notificaÁıes proativas ó o ganho pode n„o se traduzir diretamente para o caso de uso da personal_memory da Mnemosyne. Avaliar em dataset representativo antes de comprometer reescrita da tabela.
 
-- [ ] **[E] Probing classifier para detec√ß√£o de emo√ß√£o ‚Äî BLOQUEADO** ‚Äî sondas lineares treinadas sobre estados ocultos do LLM: sem custo adicional de infer√™ncia (reutiliza o forward pass), determin√≠stico, ~70-80% de acur√°cia para 7 categorias. **Bloqueador atual:** Ollama n√£o exp√µe estados ocultos de camadas intermedi√°rias via API. Para viabilizar, precisaria: (a) trocar backend para llama.cpp com modifica√ß√µes que exponham ativa√ß√µes, ou (b) aguardar suporte nativo no Ollama. N√£o implementar at√© o bloqueador ser resolvido.
+- [ ] **[E] Probing classifier para detecÁ„o de emoÁ„o ó BLOQUEADO** ó sondas lineares treinadas sobre estados ocultos do LLM: sem custo adicional de inferÍncia (reutiliza o forward pass), determinÌstico, ~70-80% de acur·cia para 7 categorias. **Bloqueador atual:** Ollama n„o expıe estados ocultos de camadas intermedi·rias via API. Para viabilizar, precisaria: (a) trocar backend para llama.cpp com modificaÁıes que exponham ativaÁıes, ou (b) aguardar suporte nativo no Ollama. N„o implementar atÈ o bloqueador ser resolvido.
