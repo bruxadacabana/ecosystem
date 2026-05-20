@@ -727,6 +727,15 @@ class AskWorker(QThread):
             self.finished.emit(False, f"Erro na recuperação: {exc}", [], self.chat_history)
             return
 
+        # topic_interest_profile: registra interesse implícito pela query da usuária
+        try:
+            from core.affective_state import record_query_appraisal
+            from core.topic_profile import bulk_update_from_text
+            record_query_appraisal(self.question)
+            bulk_update_from_text(self.question, 0.5, source="query")
+        except Exception:
+            pass
+
         try:
             validate_model(self.config.llm_model)
         except ModelNotFoundError as exc:
@@ -1730,6 +1739,14 @@ class FeedbackReflectionWorker(QThread):
         content = entry.get("content", "")
         if not content:
             return
+
+        # topic_interest_profile: registra interesse explicitado pelo feedback confirmado
+        if self._feedback_type == "confirmed":
+            try:
+                from core.topic_profile import bulk_update_from_text
+                bulk_update_from_text(content, 1.0, source="feedback")
+            except Exception:
+                pass
 
         personality = (
             getattr(self._config, "persona_prompt", "")

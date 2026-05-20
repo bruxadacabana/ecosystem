@@ -114,6 +114,35 @@ def record_appraisal(
         log.debug("record_appraisal: %s", exc)
 
 
+def record_query_appraisal(query_text: str, event_ref: str | None = None) -> None:
+    """Registra appraisal gerado por query da usuária, usando topic_interest_profile.
+
+    Calcula pleasantness e coping_potential a partir da familiaridade com os
+    tópicos da query. Análogo a _record_doc_appraisal no AKASHA/knowledge_worker.
+    A apprisação deve acontecer ANTES de atualizar o perfil de interesse (bulk_update_from_text),
+    para refletir o estado do conhecimento antes da query.
+    """
+    try:
+        from core.topic_profile import extract_keywords, get_topic_scores_for_list
+        keywords = extract_keywords(query_text)
+        if not keywords:
+            return
+        scores = get_topic_scores_for_list(keywords)
+        known_scores = [v for v in scores.values() if v > 0]
+        avg_score = sum(known_scores) / len(known_scores) if known_scores else 0.0
+        familiarity = min(1.0, avg_score / 20.0)
+        pleasantness      = round(familiarity, 4)
+        coping_potential  = round(len(known_scores) / len(keywords), 4)
+        novelty           = round(1.0 - familiarity, 4)
+        goal_relevance    = 1.0   # query direta da usuária = relevância máxima
+        record_appraisal(
+            "user_query", novelty, pleasantness, goal_relevance, coping_potential,
+            event_ref=event_ref,
+        )
+    except Exception as exc:
+        log.debug("record_query_appraisal: %s", exc)
+
+
 def get_current_state(hours: float = 24.0) -> dict[str, float]:
     """Estado afetivo atual — média simples das últimas `hours` horas.
 
