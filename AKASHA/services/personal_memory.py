@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS personal_memory (
     feedback   TEXT             DEFAULT NULL,
     category   TEXT    NOT NULL DEFAULT 'reflections',
     valence    REAL             DEFAULT NULL,
-    arousal    REAL             DEFAULT NULL
+    arousal    REAL             DEFAULT NULL,
+    importance INTEGER          DEFAULT NULL
 );
 """
 
@@ -128,9 +129,10 @@ async def init_pm_db() -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(_PM_DDL)
         for migration in (
-            "ALTER TABLE personal_memory ADD COLUMN category TEXT NOT NULL DEFAULT 'reflections'",
-            "ALTER TABLE personal_memory ADD COLUMN valence  REAL DEFAULT NULL",
-            "ALTER TABLE personal_memory ADD COLUMN arousal  REAL DEFAULT NULL",
+            "ALTER TABLE personal_memory ADD COLUMN category   TEXT    NOT NULL DEFAULT 'reflections'",
+            "ALTER TABLE personal_memory ADD COLUMN valence    REAL    DEFAULT NULL",
+            "ALTER TABLE personal_memory ADD COLUMN arousal    REAL    DEFAULT NULL",
+            "ALTER TABLE personal_memory ADD COLUMN importance INTEGER DEFAULT NULL",
         ):
             try:
                 await db.execute(migration)
@@ -144,11 +146,13 @@ async def save_memory(
     content: str,
     tags: list[str] | None = None,
     category: str | None = None,
+    importance: int | None = None,
 ) -> int:
     """Salva entrada de memória pessoal. Retorna o id da nova entrada.
 
     Se `category` não for passado, é derivado automaticamente das tags.
     `valence` e `arousal` são calculados automaticamente via VADER.
+    `importance` ∈ [1, 10] deve ser fornecido pelo chamador (via LLM).
     """
     if type not in _VALID_TYPES:
         type = "observation"
@@ -156,13 +160,16 @@ async def save_memory(
         tags = []
     if category is None or category not in _VALID_CATEGORIES:
         category = _derive_category(tags)
+    if importance is not None:
+        importance = max(1, min(10, int(importance)))
     valence, arousal = _compute_valence_arousal(content)
     async with aiosqlite.connect(_get_pm_db()) as db:
         cur = await db.execute(
             "INSERT INTO personal_memory "
-            "(type, content, tags, category, valence, arousal) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (type, content, json.dumps(tags, ensure_ascii=False), category, valence, arousal),
+            "(type, content, tags, category, valence, arousal, importance) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (type, content, json.dumps(tags, ensure_ascii=False), category,
+             valence, arousal, importance),
         )
         await db.commit()
         return cur.lastrowid  # type: ignore[return-value]
@@ -172,7 +179,7 @@ async def get_recent(n: int = 10) -> list[dict]:
     """Retorna as N entradas mais recentes."""
     async with aiosqlite.connect(_get_pm_db()) as db:
         rows = await (await db.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal "
+            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
             "FROM personal_memory ORDER BY id DESC LIMIT ?",
             (n,),
         )).fetchall()
@@ -181,7 +188,7 @@ async def get_recent(n: int = 10) -> list[dict]:
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
             "feedback": r[5], "category": r[6],
-            "valence": r[7], "arousal": r[8],
+            "valence": r[7], "arousal": r[8], "importance": r[9],
         }
         for r in rows
     ]
@@ -191,7 +198,7 @@ async def get_all() -> list[dict]:
     """Retorna todas as entradas em ordem decrescente."""
     async with aiosqlite.connect(_get_pm_db()) as db:
         rows = await (await db.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal "
+            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
             "FROM personal_memory ORDER BY id DESC",
         )).fetchall()
     return [
@@ -199,7 +206,7 @@ async def get_all() -> list[dict]:
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
             "feedback": r[5], "category": r[6],
-            "valence": r[7], "arousal": r[8],
+            "valence": r[7], "arousal": r[8], "importance": r[9],
         }
         for r in rows
     ]
@@ -209,7 +216,7 @@ async def get_by_category(category: str, n: int = 50) -> list[dict]:
     """Retorna entradas de uma category específica, mais recentes primeiro."""
     async with aiosqlite.connect(_get_pm_db()) as db:
         rows = await (await db.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal "
+            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
             "FROM personal_memory WHERE category = ? ORDER BY id DESC LIMIT ?",
             (category, n),
         )).fetchall()
@@ -218,7 +225,7 @@ async def get_by_category(category: str, n: int = 50) -> list[dict]:
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
             "feedback": r[5], "category": r[6],
-            "valence": r[7], "arousal": r[8],
+            "valence": r[7], "arousal": r[8], "importance": r[9],
         }
         for r in rows
     ]
@@ -240,7 +247,7 @@ async def get_by_id(memory_id: int) -> dict | None:
     """Retorna uma entrada pelo id, ou None se não encontrada."""
     async with aiosqlite.connect(_get_pm_db()) as db:
         row = await (await db.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal "
+            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
             "FROM personal_memory WHERE id = ?",
             (memory_id,),
         )).fetchone()
@@ -250,7 +257,7 @@ async def get_by_id(memory_id: int) -> dict | None:
         "id": row[0], "created_at": row[1], "type": row[2],
         "content": row[3], "tags": json.loads(row[4] or "[]"),
         "feedback": row[5], "category": row[6],
-        "valence": row[7], "arousal": row[8],
+        "valence": row[7], "arousal": row[8], "importance": row[9],
     }
 
 
@@ -261,7 +268,7 @@ async def get_context_memories(n: int = 8) -> list[dict]:
     """
     async with aiosqlite.connect(_get_pm_db()) as db:
         rows = await (await db.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal "
+            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
             "FROM personal_memory "
             "WHERE feedback IS NULL OR feedback = 'confirmed' "
             "ORDER BY CASE WHEN feedback = 'confirmed' THEN 0 ELSE 1 END, id DESC "
@@ -273,7 +280,7 @@ async def get_context_memories(n: int = 8) -> list[dict]:
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
             "feedback": r[5], "category": r[6],
-            "valence": r[7], "arousal": r[8],
+            "valence": r[7], "arousal": r[8], "importance": r[9],
         }
         for r in rows
     ]

@@ -763,8 +763,11 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
         f"Título: {title}\n"
         f"Resumo: {summary or '(sem resumo)'}\n"
         f"Tópicos: {', '.join(topics[:5]) or '(nenhum)'}\n\n"
-        f"O que você pensa sobre isso, em uma frase, na sua voz? "
-        f"Sem introduções — apenas o pensamento direto."
+        f"Responda SOMENTE com JSON válido neste formato exato:\n"
+        f'{{\"thought\": \"<seu pensamento em uma frase, na sua voz>\", \"importance\": <1-10>}}\n\n'
+        f"O campo \"importance\" avalia esta observação de 1 a 10 considerando: "
+        f"novidade, relevância para os interesses da usuária e potencial de ação futura. "
+        f"Sem texto fora do JSON."
     )
 
     # Aguarda antes de chamar Ollama — dá tempo à extração concorrente terminar.
@@ -779,7 +782,7 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
                     "model":   model,
                     "prompt":  prompt,
                     "stream":  False,
-                    "options": {"num_predict": 80, "temperature": 0.7},
+                    "options": {"num_predict": 120, "temperature": 0.7},
                 },
             )
             resp.raise_for_status()
@@ -791,8 +794,37 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
     if not raw or len(raw) < 10:
         return
 
-    await save_memory(type=mem_type, content=raw, tags=["event_discovery", title[:40]])
-    log.info("knowledge_worker.reflection: nota salva (type=%s) sobre '%s'", mem_type, title[:60])
+    # Tenta parsear JSON estruturado com thought + importance
+    thought = raw
+    importance: int | None = None
+    try:
+        import json as _json
+        # Extrai o bloco JSON mesmo que o modelo adicione texto antes/depois
+        start = raw.find("{")
+        end   = raw.rfind("}") + 1
+        if start >= 0 and end > start:
+            parsed = _json.loads(raw[start:end])
+            if isinstance(parsed.get("thought"), str) and len(parsed["thought"]) >= 5:
+                thought = parsed["thought"].strip()
+            raw_imp = parsed.get("importance")
+            if isinstance(raw_imp, (int, float)):
+                importance = max(1, min(10, int(raw_imp)))
+    except Exception:
+        pass  # fallback: usa raw como thought, importance=None
+
+    if len(thought) < 10:
+        return
+
+    await save_memory(
+        type=mem_type,
+        content=thought,
+        tags=["event_discovery", title[:40]],
+        importance=importance,
+    )
+    log.info(
+        "knowledge_worker.reflection: nota salva (type=%s, importance=%s) sobre '%s'",
+        mem_type, importance, title[:60],
+    )
 
 
 # ---------------------------------------------------------------------------
