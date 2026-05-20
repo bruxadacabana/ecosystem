@@ -305,7 +305,8 @@ def get_unshown_popup_entries(n: int = 5) -> list[dict]:
     'reflection' ficam só na memória, nunca interrompem a usuária.
     Cross-insights internos (tag 'cross_insight') também excluídos.
 
-    Ordem: surprise > connection; empate por id DESC.
+    Ordem primária: arousal × importance DESC NULLS LAST.
+    Fallback (campos NULL): type ('surprise' > 'connection') e id DESC.
     """
     with _conn() as con:
         rows = con.execute(
@@ -314,10 +315,12 @@ def get_unshown_popup_entries(n: int = 5) -> list[dict]:
             "WHERE shown_as_popup = 0 "
             "AND type IN ('surprise', 'connection') "
             "AND tags NOT LIKE '%\"cross_insight\"%' "
-            "ORDER BY CASE type "
-            "  WHEN 'surprise' THEN 1 WHEN 'connection' THEN 2 "
-            "  ELSE 3 END ASC, "
-            "id DESC LIMIT ?",
+            "ORDER BY "
+            "  CASE WHEN arousal IS NOT NULL AND importance IS NOT NULL "
+            "       THEN arousal * importance ELSE -1 END DESC, "
+            "  CASE type WHEN 'surprise' THEN 1 WHEN 'connection' THEN 2 "
+            "            ELSE 3 END ASC, "
+            "  id DESC LIMIT ?",
             (n,),
         ).fetchall()
     return [
