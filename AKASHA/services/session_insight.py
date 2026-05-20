@@ -5,6 +5,10 @@ Monitora queries da sessão ativa. Quando ≥ SESSION_INSIGHT_MIN_QUERIES querie
 temáticas forem acumuladas, agenda geração de um comentário pessoal em P3
 (background, não-bloqueante). O resultado fica disponível via get_current()
 para polling pelo frontend a cada ~10 s.
+
+Quando o overlay de personal_memory é dispensado, a AKASHA gera uma
+meta-reflexão sobre o que julgou mal — salva em personal_memory e afeta
+o contexto das próximas gerações.
 """
 from __future__ import annotations
 
@@ -17,10 +21,12 @@ import httpx
 
 log = logging.getLogger("akasha.session_insight")
 
-SESSION_INSIGHT_MIN_QUERIES: int   = 4
+SESSION_INSIGHT_MIN_QUERIES: int = 4
 _INSIGHT_COOLDOWN_S:         float = 180.0   # 3 min entre insights na mesma sessão
 _INSIGHT_MAX_AGE_S:          float = 1800.0  # insight expira após 30 min
 _GENERATE_TIMEOUT:           float = 25.0
+_REFLECT_TIMEOUT:            float = 20.0
+
 
 def _get_ollama_base() -> str:
     try:
@@ -38,17 +44,14 @@ def _get_model() -> str:
     except Exception:
         return ""
 
+
 # {session_id: {"text": str, "memory_id": int | None, "generated_at": float}}
 _current:  dict[str, dict[str, Any]] = {}
 # timestamp da última geração iniciada por sessão (para cooldown)
-_last_gen: dict[str, float]           = {}
+_last_gen: dict[str, float]          = {}
 
 # Entrada de personal_memory atualmente exibida no overlay (global — um overlay por vez)
 _pm_current: dict[str, Any] | None = None
-
-# Penalidade de rejeição por tipo — contador e deadline (sem persistência)
-_rejection_streak: dict[str, int]   = {}   # type → nº de rejeições consecutivas
-_type_penalty_until: dict[str, float] = {}  # type → time.time() do fim da penalidade
 
 
 def get_pm_current() -> dict[str, Any] | None:
@@ -60,22 +63,6 @@ def set_pm_current(entry: dict[str, Any] | None) -> None:
     """Define (ou limpa) a entrada de personal_memory do overlay."""
     global _pm_current
     _pm_current = entry
-
-
-def is_type_penalized(memory_type: str) -> bool:
-    """Retorna True se este type ainda está sob penalidade de rejeição."""
-    return time.time() < _type_penalty_until.get(memory_type, 0.0)
-
-
-def _apply_type_penalty(memory_type: str) -> None:
-    """Incrementa streak e aplica penalidade de +30s × streak ao type."""
-    _rejection_streak[memory_type] = _rejection_streak.get(memory_type, 0) + 1
-    penalty_s = _rejection_streak[memory_type] * 30
-    _type_penalty_until[memory_type] = time.time() + penalty_s
-    log.debug(
-        "session_insight: penalidade aplicada — type=%s streak=%d cooldown_extra=+%ds",
-        memory_type, _rejection_streak[memory_type], penalty_s,
-    )
 
 
 def maybe_schedule(
@@ -113,21 +100,107 @@ def get_current(session_id: str) -> dict[str, Any] | None:
 def dismiss(session_id: str) -> None:
     """Descarta insight atual — session_insight ou entrada de personal_memory.
 
-    Quando PM overlay é dispensada, aplica penalidade de +30s × streak ao type
-    para evitar que o mesmo tipo de insight reapareça imediatamente.
+    Quando PM overlay é dispensada, dispara reflexão sobre o que foi mal julgado.
     """
     global _pm_current
     if session_id in _current:
         _current.pop(session_id, None)
     else:
-        # Descartando entrada de personal_memory do overlay
         if _pm_current is not None:
-            mem_type = _pm_current.get("type", "")
+            dismissed_entry = _pm_current
             _pm_current = None
-            if mem_type:
-                _apply_type_penalty(mem_type)
+            _fire_feedback_reflection(dismissed_entry, "dismissed")
         else:
             _pm_current = None
+
+
+def on_feedback_confirmed(memory_id: int) -> None:
+    """Usuária confirmou um overlay de personal_memory (✓).
+
+    Dispara reflexão sobre o que foi bem julgado.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_fetch_and_reflect(memory_id, "confirmed"))
+    except RuntimeError:
+        pass
+
+
+def _fire_feedback_reflection(entry: dict[str, Any], feedback_type: str) -> None:
+    """Dispara reflexão de feedback como fire-and-forget."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_reflect_on_feedback(entry, feedback_type))
+    except RuntimeError:
+        pass
+
+
+async def _fetch_and_reflect(memory_id: int, feedback_type: str) -> None:
+    """Busca entrada por id e reflete sobre o feedback."""
+    try:
+        from services.personal_memory import get_by_id
+        entry = await get_by_id(memory_id)
+        if entry:
+            await _reflect_on_feedback(entry, feedback_type)
+    except Exception as exc:
+        log.debug("session_insight: fetch para reflexão falhou: %s", exc)
+
+
+async def _reflect_on_feedback(entry: dict[str, Any], feedback_type: str) -> None:
+    """Gera meta-reflexão sobre o que o feedback diz sobre o julgamento da AKASHA."""
+    import config as _config
+
+    model = _get_model()
+    if not model:
+        return
+
+    content = entry.get("content", "")
+    if not content:
+        return
+
+    if feedback_type == "confirmed":
+        instruction = (
+            f"A usuária achou relevante este pensamento meu:\n\"{content}\"\n\n"
+            f"O que eu avaliei corretamente sobre o que era relevante para ela? "
+            f"Uma frase, na minha voz, sem introduções."
+        )
+        tag = "feedback_confirmado"
+    else:
+        instruction = (
+            f"A usuária dispensou este pensamento meu:\n\"{content}\"\n\n"
+            f"O que eu errei ao julgar o que era relevante ou interessante? "
+            f"Uma frase honesta, na minha voz, sem introduções."
+        )
+        tag = "feedback_dispensado"
+
+    prompt = f"{_config.PERSONALITY_PROMPT}\n\n{instruction}"
+
+    try:
+        async with httpx.AsyncClient(timeout=_REFLECT_TIMEOUT) as client:
+            resp = await client.post(
+                f"{_get_ollama_base()}/api/generate",
+                json={
+                    "model":  model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 80, "temperature": 0.6},
+                },
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "").strip()
+    except Exception as exc:
+        log.debug("session_insight: reflexão de feedback falhou: %s", exc)
+        return
+
+    if not raw or len(raw) < 10:
+        return
+
+    try:
+        from services.personal_memory import save_memory as _save_memory
+        mid = await _save_memory("reflection", raw, tags=["meta_reflexao", tag])
+        log.info("session_insight: meta-reflexão salva (id=%s, %s)", mid, feedback_type)
+    except Exception as exc:
+        log.debug("session_insight: falha ao salvar meta-reflexão: %s", exc)
 
 
 async def _generate(session_id: str, queries: list[str], snippets: list[str]) -> None:
@@ -140,8 +213,8 @@ async def _generate(session_id: str, queries: list[str], snippets: list[str]) ->
 
     log.info("session_insight: gerando insight (sessão %.8s…, %d queries)", session_id, len(queries))
 
-    personality  = _config.PERSONALITY_PROMPT
-    queries_text = "\n".join(f"- {q}" for q in queries[-6:])
+    personality   = _config.PERSONALITY_PROMPT
+    queries_text  = "\n".join(f"- {q}" for q in queries[-6:])
     snippets_text = "\n".join(s for s in snippets[:4] if s)
 
     prompt = (
@@ -173,7 +246,6 @@ async def _generate(session_id: str, queries: list[str], snippets: list[str]) ->
     if not text or len(text) < 10:
         return
 
-    # Salva na memória pessoal para que a usuária possa dar feedback
     memory_id: int | None = None
     try:
         from services.personal_memory import save_memory as _save_memory

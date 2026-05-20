@@ -287,6 +287,24 @@ def get_context_memories(n: int = 8) -> list[dict]:
     ]
 
 
+def get_by_id(memory_id: int) -> dict | None:
+    """Retorna uma entrada pelo id, ou None se não encontrada."""
+    with _conn() as con:
+        row = con.execute(
+            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
+            "FROM personal_memory WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0], "created_at": row[1], "type": row[2],
+        "content": row[3], "tags": json.loads(row[4] or "[]"),
+        "feedback": row[5], "category": row[6],
+        "valence": row[7], "arousal": row[8], "importance": row[9],
+    }
+
+
 def has_file_reflection(name_prefix: str) -> bool:
     """Retorna True se já existe reflexão sobre este arquivo (deduplicação)."""
     with _conn() as con:

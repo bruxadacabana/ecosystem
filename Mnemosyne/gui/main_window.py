@@ -665,6 +665,7 @@ class MainWindow(QMainWindow):
 
         self._insight_scheduler = InsightScheduler(self)
         self._insight_scheduler.insight_ready.connect(self._show_insight_popup)
+        self._insight_scheduler.reflection_requested.connect(self._on_feedback_reflection_requested)
         self._active_insight_popup: InsightPopup | None = None
         self._last_akasha_insight_count: int = 0
         self._shown_akasha_popup_ids: set[int] = set()
@@ -1992,6 +1993,7 @@ class MainWindow(QMainWindow):
         popup.dismissed.connect(self._insight_scheduler.on_dismissed)
         popup.replied.connect(self._on_insight_replied)
         popup.destroyed.connect(lambda: self._clear_insight_popup(popup))
+        popup.destroyed.connect(self._insight_scheduler.on_popup_closed)
         self._active_insight_popup = popup
         popup.show_in_corner()
 
@@ -2017,6 +2019,12 @@ class MainWindow(QMainWindow):
         else:
             from core.personal_memory import set_feedback
             set_feedback(memory_id, "dismissed")
+
+    def _on_feedback_reflection_requested(self, memory_id: int, feedback_type: str) -> None:
+        """Inicia FeedbackReflectionWorker para a Mnemosyne refletir sobre o feedback."""
+        from gui.workers import FeedbackReflectionWorker
+        worker = FeedbackReflectionWorker(memory_id, feedback_type, self._config)
+        worker.start()
 
     def _on_insight_replied(self, text: str) -> None:
         """Pré-preenche o composer do notebook ativo com o insight."""

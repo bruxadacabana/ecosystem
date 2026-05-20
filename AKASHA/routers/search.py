@@ -612,11 +612,10 @@ async def insight_current(request: Request) -> dict:
         from services.personal_memory import get_next_for_overlay, mark_shown_as_overlay
         candidates = await get_next_for_overlay(5)
         for c in candidates:
-            if not _si.is_type_penalized(c["type"]):
-                await mark_shown_as_overlay(c["id"])
-                _si.set_pm_current(c)
-                pm_entry = c
-                break
+            await mark_shown_as_overlay(c["id"])
+            _si.set_pm_current(c)
+            pm_entry = c
+            break
 
     if pm_entry:
         return {"text": pm_entry["content"], "memory_id": pm_entry["id"]}
@@ -650,6 +649,7 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
     if body.feedback == "confirmed":
         from services.knowledge_worker import on_feedback_confirmed as _on_confirmed
         _on_confirmed(body.memory_id)
+        _si.on_feedback_confirmed(body.memory_id)  # reflexão sobre o acerto
     elif body.feedback == "dismissed":
         session_id = request.cookies.get("akasha_session", "")
         if session_id:

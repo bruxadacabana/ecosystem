@@ -1687,3 +1687,94 @@ class IndexReflectionWorker(QThread):
             known_terms.update(reflection.lower().split())
         except Exception as exc:
             log.warning("IndexReflectionWorker: falha ao salvar memória: %s", exc)
+
+
+class FeedbackReflectionWorker(QThread):
+    """Gera uma meta-reflexão da Mnemosyne sobre o feedback da usuária em um pensamento.
+
+    Quando a usuária confirma (✓) ou dispensa (✗) um pensamento, a Mnemosyne
+    tem a oportunidade de refletir sobre o que esse feedback diz sobre sua própria
+    capacidade de julgamento — o que acertou ou errou ao avaliar o que era relevante.
+    Salvo em personal_memory como type='reflection' com tag 'meta_reflexao'.
+    """
+
+    def __init__(
+        self,
+        memory_id:    int,
+        feedback_type: str,   # "confirmed" | "dismissed"
+        config:       "AppConfig",
+    ) -> None:
+        super().__init__()
+        self._memory_id    = memory_id
+        self._feedback_type = feedback_type
+        self._config       = config
+
+    def start(self, priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
+        super().start(priority)
+
+    def run(self) -> None:
+        if self._memory_id < 0:
+            return  # insight externo (AKASHA) — ignorar
+        if not self._config.llm_model:
+            return
+
+        try:
+            from core.personal_memory import get_by_id, save_memory
+        except Exception:
+            return
+
+        entry = get_by_id(self._memory_id)
+        if not entry:
+            return
+
+        content = entry.get("content", "")
+        if not content:
+            return
+
+        personality = (
+            getattr(self._config, "persona_prompt", "")
+            or getattr(self._config, "ecosystem_personality_prompt", "")
+        )
+
+        if self._feedback_type == "confirmed":
+            instruction = (
+                f"A Jenifer achou interessante este pensamento meu:\n\"{content}\"\n\n"
+                f"O que isso me diz sobre o que ela valoriza e o que eu avaliei corretamente? "
+                f"Uma frase, na minha voz, sem introduções."
+            )
+            tag = "feedback_confirmado"
+        else:
+            instruction = (
+                f"A Jenifer dispensou este pensamento meu:\n\"{content}\"\n\n"
+                f"O que eu errei no julgamento do que era relevante? "
+                f"Uma frase honesta, na minha voz, sem introduções."
+            )
+            tag = "feedback_dispensado"
+
+        prompt = f"{personality}\n\n{instruction}"
+
+        try:
+            llm = OllamaLLM(
+                model=self._config.llm_model,
+                base_url=_ec_url(),
+                headers=_ec_hdrs("mnemosyne", 3),
+                temperature=0.6,
+                num_predict=80,
+            )
+            raw = str(llm.invoke(prompt)).strip()
+        except Exception as exc:
+            log.debug("FeedbackReflectionWorker: LLM falhou: %s", exc)
+            return
+
+        if not raw or len(raw) < 10 or raw.lower() in {"nada.", "nada"}:
+            return
+
+        try:
+            save_memory(
+                type="reflection",
+                content=raw,
+                tags=["meta_reflexao", tag],
+            )
+            log.info("FeedbackReflectionWorker: meta-reflexão salva (%s)", self._feedback_type)
+        except Exception as exc:
+            log.debug("FeedbackReflectionWorker: falha ao salvar: %s", exc)
