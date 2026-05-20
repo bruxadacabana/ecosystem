@@ -46,6 +46,10 @@ _last_gen: dict[str, float]           = {}
 # Entrada de personal_memory atualmente exibida no overlay (global — um overlay por vez)
 _pm_current: dict[str, Any] | None = None
 
+# Penalidade de rejeição por tipo — contador e deadline (sem persistência)
+_rejection_streak: dict[str, int]   = {}   # type → nº de rejeições consecutivas
+_type_penalty_until: dict[str, float] = {}  # type → time.time() do fim da penalidade
+
 
 def get_pm_current() -> dict[str, Any] | None:
     """Retorna a entrada de personal_memory exibida no overlay, ou None."""
@@ -56,6 +60,22 @@ def set_pm_current(entry: dict[str, Any] | None) -> None:
     """Define (ou limpa) a entrada de personal_memory do overlay."""
     global _pm_current
     _pm_current = entry
+
+
+def is_type_penalized(memory_type: str) -> bool:
+    """Retorna True se este type ainda está sob penalidade de rejeição."""
+    return time.time() < _type_penalty_until.get(memory_type, 0.0)
+
+
+def _apply_type_penalty(memory_type: str) -> None:
+    """Incrementa streak e aplica penalidade de +30s × streak ao type."""
+    _rejection_streak[memory_type] = _rejection_streak.get(memory_type, 0) + 1
+    penalty_s = _rejection_streak[memory_type] * 30
+    _type_penalty_until[memory_type] = time.time() + penalty_s
+    log.debug(
+        "session_insight: penalidade aplicada — type=%s streak=%d cooldown_extra=+%ds",
+        memory_type, _rejection_streak[memory_type], penalty_s,
+    )
 
 
 def maybe_schedule(
@@ -91,13 +111,23 @@ def get_current(session_id: str) -> dict[str, Any] | None:
 
 
 def dismiss(session_id: str) -> None:
-    """Descarta insight atual — session_insight ou entrada de personal_memory."""
+    """Descarta insight atual — session_insight ou entrada de personal_memory.
+
+    Quando PM overlay é dispensada, aplica penalidade de +30s × streak ao type
+    para evitar que o mesmo tipo de insight reapareça imediatamente.
+    """
     global _pm_current
     if session_id in _current:
         _current.pop(session_id, None)
     else:
         # Descartando entrada de personal_memory do overlay
-        _pm_current = None
+        if _pm_current is not None:
+            mem_type = _pm_current.get("type", "")
+            _pm_current = None
+            if mem_type:
+                _apply_type_penalty(mem_type)
+        else:
+            _pm_current = None
 
 
 async def _generate(session_id: str, queries: list[str], snippets: list[str]) -> None:
