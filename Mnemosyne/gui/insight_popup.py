@@ -3,13 +3,13 @@ Mnemosyne — Pop-up de insight espontâneo.
 
 QDialog frameless posicionado no canto inferior direito da tela.
 Mostra um pensamento gerado pela Mnemosyne com botões de feedback.
-Auto-dismiss após AUTO_DISMISS_MS ms sem interação.
+Permanece visível até a usuária interagir (✓ / ✗ / ✎).
 """
 from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QPropertyAnimation, Qt, QTimer, Signal
+from PySide6.QtCore import QPropertyAnimation, Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
 
 log = logging.getLogger("mnemosyne.insight_popup")
 
-AUTO_DISMISS_MS = 12_000
 _POPUP_MAX_WIDTH = 360
 _MARGIN = 20
 
@@ -57,11 +56,6 @@ class InsightPopup(QDialog):
         self._memory_id = memory_id
         self._text = text
         self._build(text)
-
-        self._auto_timer = QTimer(self)
-        self._auto_timer.setSingleShot(True)
-        self._auto_timer.setInterval(AUTO_DISMISS_MS)
-        self._auto_timer.timeout.connect(self._on_auto_dismiss)
 
     def _build(self, text: str) -> None:
         outer = QVBoxLayout(self)
@@ -131,7 +125,6 @@ class InsightPopup(QDialog):
         self.show()
         self.raise_()
         self._fade_in()
-        self._auto_timer.start()
 
     def _fade_in(self) -> None:
         self._anim = QPropertyAnimation(self, b"windowOpacity", self)
@@ -149,19 +142,13 @@ class InsightPopup(QDialog):
         self._anim.start()
 
     def _on_confirm(self) -> None:
-        self._auto_timer.stop()
         self.confirmed.emit(self._memory_id)
         self._close_anim()
 
     def _on_dismiss(self) -> None:
-        self._auto_timer.stop()
         self.dismissed.emit(self._memory_id)
         self._close_anim()
 
     def _on_reply(self) -> None:
-        self._auto_timer.stop()
         self.replied.emit(self._text)
-        self._close_anim()
-
-    def _on_auto_dismiss(self) -> None:
         self._close_anim()
