@@ -54,7 +54,7 @@ _EMBED_NAME_PATTERNS = ("embed", "minilm", "nomic", "bge-", "e5-", "all-mini")
 
 _CHAT_TIMEOUT_S   = 60.0
 _REFLECT_TIMEOUT  = 20.0
-_REFLECT_COOLDOWN = 120.0   # 2 min entre reflexões de chat
+_REFLECT_COOLDOWN = 15.0    # 15 s entre reflexões de chat (evita spam em digitação rápida)
 _REFLECT_MIN_Q    = 20      # pergunta mínima para disparar reflexão
 _REFLECT_MIN_A    = 50      # resposta mínima para disparar reflexão
 
