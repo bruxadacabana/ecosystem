@@ -1890,7 +1890,68 @@ class MainWindow(QMainWindow):
         )
         self._index_reflection_worker = IndexReflectionWorker(batch, self.config)
         self._index_reflection_worker.finished.connect(self._insight_scheduler.maybe_show)
+        self._index_reflection_worker.finished.connect(self._export_reflection_interests)
         self._index_reflection_worker.start()
+
+    def _export_reflection_interests(self) -> None:
+        """Exporta tópicos frequentes das memórias pessoais para interests.json.
+
+        Chamada ao final de cada batch do IndexReflectionWorker. Extrai as
+        palavras mais frequentes das últimas 50 memórias (exclui dismissed),
+        converte para o formato do interests.json e chama
+        ecosystem_client.update_interests() em thread separada.
+        """
+        import threading
+
+        def _run() -> None:
+            try:
+                from core.personal_memory import get_recent
+                from ecosystem_client import update_interests  # type: ignore
+            except Exception:
+                return
+            try:
+                memories = get_recent(50)
+            except Exception:
+                return
+
+            _STOPWORDS = frozenset({
+                "a", "o", "e", "de", "da", "do", "em", "no", "na", "para",
+                "por", "com", "que", "se", "não", "um", "uma", "os", "as",
+                "ao", "dos", "das", "é", "mais", "sua", "seu", "ser", "são",
+                "como", "mas", "foi", "pela", "pelo", "sobre", "isso", "essa",
+                "este", "esse", "the", "and", "or", "of", "to", "in", "is",
+                "it", "for", "on", "at", "an", "are", "was", "be", "that",
+                "with", "from", "have", "has", "had", "will", "than", "also",
+            })
+
+            freq: dict[str, int] = {}
+            for mem in memories:
+                if mem.get("feedback") == "dismissed":
+                    continue
+                for word in mem.get("content", "").lower().split():
+                    word = word.strip(".,;:!?\"'()[]")
+                    if len(word) >= 4 and word not in _STOPWORDS:
+                        freq[word] = freq.get(word, 0) + 1
+
+            if not freq:
+                return
+
+            max_count = max(freq.values())
+            top = sorted(freq.items(), key=lambda x: -x[1])[:20]
+            topics = [
+                {
+                    "name":    word,
+                    "weight":  round(count / max_count, 4),
+                    "sources": ["mnemosyne_reflections"],
+                }
+                for word, count in top
+            ]
+            try:
+                update_interests(topics)
+            except Exception:
+                pass
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _on_reflection_ready(self, memory_id: int, content: str) -> None:
         """Exibe notificação de reflexão pós-notebook com ações inline."""
