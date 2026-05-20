@@ -519,6 +519,45 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
     except RuntimeError:
         pass
 
+    # Fire-and-forget: appraisal emocional do documento (item [F])
+    try:
+        asyncio.get_running_loop().create_task(
+            _record_doc_appraisal(clean_topics, task.url)
+        )
+    except RuntimeError:
+        pass
+
+
+async def _record_doc_appraisal(topics: list[str], event_ref: str) -> None:
+    """Calcula e persiste appraisal emocional para documento recém-processado (P3)."""
+    try:
+        import database as _db
+        from services.affective_state import record_appraisal
+
+        topic_scores = await _db.get_topic_scores_for_list(topics)
+        recent = [r["query"] for r in await _db.get_recent_search_history(20)]
+
+        if topics:
+            avg_score       = sum(topic_scores.get(t, 0.0) for t in topics) / len(topics)
+            familiarity     = min(1.0, avg_score / 20.0)
+            novelty         = round(1.0 - familiarity, 4)
+            pleasantness    = round(familiarity, 4)
+            known           = sum(1 for t in topics if t in topic_scores)
+            coping_potential = round(known / len(topics), 4)
+            query_words     = {w for q in recent for w in q.lower().split()}
+            topic_words     = {w for t in topics for w in t.lower().split()}
+            overlap         = len(query_words & topic_words)
+            goal_relevance  = round(min(1.0, overlap / max(len(topic_words), 1)), 4)
+        else:
+            novelty = pleasantness = goal_relevance = coping_potential = 0.5
+
+        await record_appraisal(
+            "doc_indexed", novelty, pleasantness, goal_relevance, coping_potential,
+            event_ref=event_ref,
+        )
+    except Exception as exc:
+        log.debug("_record_doc_appraisal: %s", exc)
+
 
 async def _check_discoveries(
     url: str,

@@ -208,6 +208,24 @@ async def init_pm_db() -> None:
                 await db.execute(migration)
             except Exception:
                 pass  # coluna já existe
+        # affective_state — estado emocional ativo da AKASHA (item [F])
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS affective_state (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+                event_type        TEXT    NOT NULL,
+                event_ref         TEXT             DEFAULT NULL,
+                novelty           REAL             DEFAULT NULL,
+                pleasantness      REAL             DEFAULT NULL,
+                goal_relevance    REAL             DEFAULT NULL,
+                coping_potential  REAL             DEFAULT NULL,
+                valence           REAL    NOT NULL,
+                arousal           REAL    NOT NULL
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_affstate_created ON affective_state(created_at)"
+        )
         await db.commit()
 
 

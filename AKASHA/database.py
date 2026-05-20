@@ -2120,6 +2120,19 @@ async def get_topic_score(topic: str) -> float | None:
     return row[0] if row else None
 
 
+async def get_topic_scores_for_list(topics: list[str]) -> dict[str, float]:
+    """Retorna score de cada tópico informado (apenas os existentes no profile)."""
+    if not topics:
+        return {}
+    placeholders = ",".join("?" * len(topics))
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
+        rows = await (await db.execute(
+            f"SELECT topic, score FROM topic_interest_profile WHERE topic IN ({placeholders})",
+            topics,
+        )).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
 async def get_top_topics(n: int = 10) -> list[tuple[str, float]]:
     """Retorna os N tópicos com maior score, em ordem decrescente."""
     async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
