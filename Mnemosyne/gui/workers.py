@@ -1638,27 +1638,50 @@ class IndexReflectionWorker(QThread):
             f"Título/arquivo: {name}\n"
             f"Trecho: {snippet}\n"
             f"Palavras-chave: {', '.join(keywords[:8]) if keywords else '(não extraídas)'}\n\n"
-            f"O que você pensa sobre esse texto, em uma frase, na sua voz? "
-            f"Sem introduções, sem 'Eu acho'. Uma observação genuína."
+            f"Responda SOMENTE com JSON válido neste formato exato:\n"
+            f'{{\"thought\": \"<seu pensamento em uma frase, na sua voz>\", \"importance\": <1-10>}}\n\n'
+            f"O campo \"importance\" avalia esta observação de 1 a 10 considerando: "
+            f"novidade, relevância para os interesses da usuária e potencial de ação futura. "
+            f"Sem texto fora do JSON."
         )
 
         try:
             llm = OllamaLLM(model=self._config.llm_model, base_url=_ec_url(),
-                            headers=_ec_hdrs("mnemosyne", 3), temperature=0.7)
-            reflection = str(llm.invoke(prompt)).strip()
+                            headers=_ec_hdrs("mnemosyne", 3), temperature=0.7,
+                            num_predict=120)
+            raw = str(llm.invoke(prompt)).strip()
         except Exception as exc:
             log.debug("IndexReflectionWorker: LLM falhou para '%s': %s", name, exc)
             return
+
+        # Extrai JSON — fallback para raw text se parsing falhar
+        reflection: str = ""
+        importance: int | None = None
+        try:
+            import json as _json
+            start = raw.find("{")
+            end   = raw.rfind("}") + 1
+            if start >= 0 and end > start:
+                parsed = _json.loads(raw[start:end])
+                reflection = str(parsed.get("thought", "")).strip()
+                raw_imp = parsed.get("importance")
+                if raw_imp is not None:
+                    importance = max(1, min(10, int(raw_imp)))
+        except Exception:
+            pass
+        if not reflection:
+            reflection = raw  # usa resposta bruta se JSON falhou
 
         if not reflection or len(reflection) < 15 or reflection.lower() in {"nada.", "nada", "—", "-"}:
             return
 
         try:
-            save_memory(type=mem_type, content=reflection, tags=["leitura", tag_name])
+            save_memory(type=mem_type, content=reflection,
+                        tags=["leitura", tag_name], importance=importance)
             log.info(
-                "IndexReflectionWorker: %s sobre '%s' — type=%s, overlap=%s",
+                "IndexReflectionWorker: %s sobre '%s' — type=%s, importance=%s, overlap=%s",
                 "conexão" if mem_type == "connection" else "surpresa",
-                name, mem_type, overlap,
+                name, mem_type, importance, overlap,
             )
             # Atualiza termos conhecidos para as próximas iterações da mesma sessão
             known_terms.update(reflection.lower().split())
