@@ -32,9 +32,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("kosmos.bg_analyzer")
 
-_HIGH       = 0    # artigo aberto pelo usuário
-_LOW        = 10   # pré-análise silenciosa
-_BATCH_SIZE = 5    # artigos por call LLM no modo batch
+_HIGH              = 0    # artigo aberto pelo usuário
+_LOW               = 10   # pré-análise silenciosa
+_BATCH_SIZE        = 5    # artigos por call LLM no modo batch
+_SURVIVAL_COOLDOWN = 45   # segundos de pausa quando LOGOS está em modo sobrevivência
 
 # Sistema de instrução fixo — idêntico ao _AnalyzeWorker para aproveitar KV cache
 _SYSTEM = (
@@ -327,11 +328,26 @@ class BackgroundAnalyzer(QThread):
                     done += 1
             self.status_message.emit(f"✓ {done} artigo{'s' if done != 1 else ''} analisado{'s' if done != 1 else ''}")
         except (OllamaError, json.JSONDecodeError, Exception) as exc:
-            log.warning("Análise batch falhou (%d artigos): %s", len(resolved), exc)
-            self.status_message.emit(f"⚠ Falha na análise em lote: {exc}")
-            # Fallback: tentar individualmente
-            for article_id, title, content in resolved:
-                self._analyze_single(article_id, title, content)
+            exc_str = str(exc)
+            if "Modo Sobrevivência" in exc_str or "P3" in exc_str:
+                # LOGOS limitou recursos P3 — reenfileirar e aguardar (não escalar para P1)
+                log.info(
+                    "Análise adiada (%d artigos): recursos limitados, "
+                    "retentando em %ds.",
+                    len(resolved), _SURVIVAL_COOLDOWN,
+                )
+                self.status_message.emit(
+                    f"⏸ Análise em pausa por {_SURVIVAL_COOLDOWN}s (recursos limitados)…"
+                )
+                for article_id, title, content in resolved:
+                    self._queue.put((_LOW, next(self._seq), article_id, title, content))
+                self.msleep(_SURVIVAL_COOLDOWN * 1000)
+            else:
+                # Outros erros (JSON malformado, timeout de rede) → fallback individual
+                log.warning("Análise batch falhou (%d artigos): %s", len(resolved), exc)
+                self.status_message.emit(f"⚠ Falha na análise em lote: {exc}")
+                for article_id, title, content in resolved:
+                    self._analyze_single(article_id, title, content)
 
     # ------------------------------------------------------------------
     # Helpers
