@@ -29,6 +29,7 @@ from services.local_search import (
 )
 from services.query_understanding import pin_model, classify_intent, needs_rewrite, rewrite_query, score_ambiguity, summarize_snippets
 from services.crawler import search_sites, index_visited_page
+from services.kosmos_search import search_kosmos
 from services.paper_search import PaperResult, search_papers
 from database import (
     get_all_crawl_sites,
@@ -179,6 +180,7 @@ async def search(
     site_results:        list[SearchResult] = []
     watch_later_results: list[SearchResult] = []
     paper_results:       list[PaperResult]  = []
+    kosmos_results:      list[SearchResult] = []
     error: str | None = None
     corrected_query: str | None = None
     local_facets: dict[str, int] = {}
@@ -240,13 +242,15 @@ async def search(
                 search_sites(_effective_query)                                            if src_sites  else asyncio.sleep(0, result=[]),
                 search_papers(_effective_query)                                           if src_papers else asyncio.sleep(0, result=[]),
                 _db_search_wl(_effective_query),
+                search_kosmos(_effective_query),
                 return_exceptions=True,
             )
-            web_r, eco_r, sites_r, papers_r, wl_r = tasks
+            web_r, eco_r, sites_r, papers_r, wl_r, kosmos_r = tasks
             if isinstance(web_r,    list): web_results    = web_r
             if isinstance(eco_r,    list): local_results  = eco_r
             if isinstance(sites_r,  list): site_results   = sites_r
             if isinstance(papers_r, list): paper_results  = papers_r
+            if isinstance(kosmos_r, list): kosmos_results = kosmos_r
             if isinstance(wl_r,     list):
                 watch_later_results = [
                     SearchResult(title=r[2] or r[1], url=r[1], snippet=r[3], source="DEPOIS")
@@ -329,7 +333,7 @@ async def search(
                 fav_results  = [r for r in web_results if _domain(r.url) in fav_domains]
                 web_results  = [r for r in web_results if _domain(r.url) not in fav_domains]
 
-        total = len(web_results) + len(fav_results) + len(local_results) + len(site_results) + len(watch_later_results) + len(paper_results)
+        total = len(web_results) + len(fav_results) + len(local_results) + len(site_results) + len(watch_later_results) + len(paper_results) + len(kosmos_results)
         src_label = "+".join(filter(None, [
             "web" if src_web else "",
             "local" if src_eco else "",
@@ -389,6 +393,7 @@ async def search(
             "site_results":         site_results,
             "watch_later_results":  watch_later_results,
             "paper_results":        paper_results,
+            "kosmos_results":       kosmos_results,
             "has_more_web":         len(web_results) >= _PAGE_SIZE,
             "query":         q,
             "src_web":       bool(src_web),
