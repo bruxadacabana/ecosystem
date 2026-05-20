@@ -58,6 +58,12 @@ _mood_cache:    dict[str, float] = {"valence": 0.0, "arousal": 0.0}
 _mood_cache_at: float = 0.0
 
 
+_CURIOSITY_HL:       float = 8.0     # meia-vida da curiosidade epistêmica (h)
+_CURIOSITY_WINDOW_H: float = 24.0   # janela de acumulação da curiosidade
+_CURIOSITY_NOVELTY_THRESHOLD: float = 0.7   # novelty mínima para disparar curiosidade
+_CURIOSITY_COPING_MIN:        float = 0.5   # coping mínimo (alta incerteza inibe curiosidade)
+
+
 _DDL = """
 CREATE TABLE IF NOT EXISTS affective_state (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +76,8 @@ CREATE TABLE IF NOT EXISTS affective_state (
     coping_potential      REAL             DEFAULT NULL,
     valence               REAL    NOT NULL,
     arousal               REAL    NOT NULL,
-    decay_half_life_hours REAL    NOT NULL DEFAULT 6.0
+    decay_half_life_hours REAL    NOT NULL DEFAULT 6.0,
+    curiosity_delta       REAL    NOT NULL DEFAULT 0.0
 );
 """
 _IDX = "CREATE INDEX IF NOT EXISTS idx_affstate_created ON affective_state(created_at);"
@@ -78,19 +85,24 @@ _MIGRATION_DECAY = (
     "ALTER TABLE affective_state "
     "ADD COLUMN decay_half_life_hours REAL NOT NULL DEFAULT 6.0"
 )
+_MIGRATION_CURIOSITY = (
+    "ALTER TABLE affective_state "
+    "ADD COLUMN curiosity_delta REAL NOT NULL DEFAULT 0.0"
+)
 
 _BASELINE: dict[str, float] = {
-    "valence":          0.0,
-    "arousal":          0.0,
-    "episodic_valence": 0.0,
-    "episodic_arousal": 0.0,
-    "mood_valence":     0.0,
-    "mood_arousal":     0.0,
-    "novelty":          0.5,
-    "pleasantness":     0.5,
-    "goal_relevance":   0.5,
-    "coping_potential": 0.5,
-    "sample_count":     0,
+    "valence":             0.0,
+    "arousal":             0.0,
+    "episodic_valence":    0.0,
+    "episodic_arousal":    0.0,
+    "mood_valence":        0.0,
+    "mood_arousal":        0.0,
+    "epistemic_curiosity": 0.0,
+    "novelty":             0.5,
+    "pleasantness":        0.5,
+    "goal_relevance":      0.5,
+    "coping_potential":    0.5,
+    "sample_count":        0,
 }
 
 
@@ -142,11 +154,12 @@ def _get_db() -> Path:
 async def _ensure_schema(conn: aiosqlite.Connection) -> None:
     await conn.execute(_DDL)
     await conn.execute(_IDX)
-    try:
-        await conn.execute(_MIGRATION_DECAY)
-        await conn.commit()
-    except Exception:
-        pass  # coluna já existe
+    for migration in (_MIGRATION_DECAY, _MIGRATION_CURIOSITY):
+        try:
+            await conn.execute(migration)
+            await conn.commit()
+        except Exception:
+            pass  # coluna já existe
 
 
 def _assign_half_life(event_type: str, valence: float) -> float:
@@ -204,6 +217,62 @@ def _weighted_va(rows: list, smoothing_hl: float | None, dampen: float) -> tuple
 
 # ── API pública ──────────────────────────────────────────────────────────────
 
+async def record_curiosity_event(delta: float, event_ref: str | None = None) -> None:
+    """Persiste um evento de curiosidade epistêmica com meia-vida própria (_CURIOSITY_HL).
+
+    delta > 0: aumento (dismissed inesperado, alta novidade + coping suficiente).
+    delta < 0: redução (satisfação epistêmica — insight confirmado após curiosidade).
+    Curiosidade não contribui para VA — é armazenada em linha separada com valence=0.
+    """
+    async with aiosqlite.connect(_get_db()) as conn:
+        await _ensure_schema(conn)
+        await conn.execute(
+            """INSERT INTO affective_state
+               (event_type, event_ref, valence, arousal,
+                decay_half_life_hours, curiosity_delta)
+               VALUES ('curiosity_event', ?, 0.0, 0.0, ?, ?)""",
+            (event_ref, _CURIOSITY_HL, round(delta, 4)),
+        )
+        await conn.commit()
+    log.debug("curiosity_event: delta=%.3f ref=%s", delta, event_ref)
+
+
+async def get_epistemic_curiosity() -> float:
+    """Nível atual de curiosidade epistêmica ∈ [0, 1], com decaimento exponencial.
+
+    Soma ponderada dos curiosity_delta das últimas _CURIOSITY_WINDOW_H horas,
+    normalizada pelo peso total máximo possível (se todos os deltas fossem +1).
+    Clamped a [0, 1].
+    """
+    try:
+        async with aiosqlite.connect(_get_db()) as conn:
+            await _ensure_schema(conn)
+            conn.row_factory = aiosqlite.Row
+            cur = await conn.execute(
+                """SELECT curiosity_delta, decay_half_life_hours,
+                          (julianday('now') - julianday(created_at)) * 24.0 AS age_hours
+                   FROM affective_state
+                   WHERE curiosity_delta != 0
+                     AND created_at >= datetime('now', ?)""",
+                (f"-{int(_CURIOSITY_WINDOW_H)} hours",),
+            )
+            rows = await cur.fetchall()
+        if not rows:
+            return 0.0
+        total_w = wc = 0.0
+        for r in rows:
+            t = max(0.0, r["age_hours"])
+            w = math.exp(-t / r["decay_half_life_hours"])
+            total_w += w
+            wc += r["curiosity_delta"] * w
+        if total_w < 0.01:
+            return 0.0
+        return round(max(0.0, min(1.0, wc / total_w)), 4)
+    except Exception as exc:
+        log.debug("get_epistemic_curiosity: %s", exc)
+        return 0.0
+
+
 async def record_appraisal(
     event_type:       str,
     novelty:          float,
@@ -214,8 +283,8 @@ async def record_appraisal(
 ) -> None:
     """Calcula VA + meia-vida de decaimento e persiste em affective_state.
 
-    Aplica modulação de threshold pelo humor de fundo (M2): eventos que alinham
-    com o humor são levemente amplificados; os que se opõem são amortecidos.
+    Aplica modulação de threshold pelo humor de fundo (M2).
+    Dispara curiosidade epistêmica (H) quando novelty > 0.7 e coping > 0.5.
     """
     valence, arousal = compute_va(novelty, pleasantness, goal_relevance, coping_potential)
     half_life = _assign_half_life(event_type, valence)
@@ -240,6 +309,12 @@ async def record_appraisal(
         event_type, novelty, pleasantness, goal_relevance, coping_potential,
         valence, arousal, half_life, _mood_cache.get("valence", 0.0),
     )
+
+    # H: alta novidade + coping suficiente → curiosidade epistêmica
+    if novelty > _CURIOSITY_NOVELTY_THRESHOLD and coping_potential > _CURIOSITY_COPING_MIN:
+        delta = round((novelty - _CURIOSITY_NOVELTY_THRESHOLD)
+                      / (1.0 - _CURIOSITY_NOVELTY_THRESHOLD) * 0.4, 4)
+        await record_curiosity_event(delta, event_ref=f"high_novelty:{event_type}")
 
 
 async def _get_feedback_stats(recent_n: int = 20) -> dict[str, int]:
@@ -371,6 +446,9 @@ async def get_current_state() -> dict[str, float]:
         _mood_cache    = {"valence": mv, "arousal": ma}
         _mood_cache_at = time.monotonic()
 
+        # Curiosidade epistêmica: soma decaída dos deltas de curiosidade
+        curiosity = await get_epistemic_curiosity()
+
         # Dimensões CPM do episódico (média ponderada da janela curta)
         total_w = wn = wp = wg = wc = 0.0
         for r in episodic_rows or rows[:1]:
@@ -394,17 +472,18 @@ async def get_current_state() -> dict[str, float]:
         )
 
         return {
-            "valence":          ev,   # alias episódico (retrocompat)
-            "arousal":          ea,
-            "episodic_valence": ev,
-            "episodic_arousal": ea,
-            "mood_valence":     mv,
-            "mood_arousal":     ma,
-            "novelty":          round(wn, 4),
-            "pleasantness":     round(wp, 4),
-            "goal_relevance":   round(wg, 4),
-            "coping_potential": round(wc, 4),
-            "sample_count":     len(rows),
+            "valence":             ev,   # alias episódico (retrocompat)
+            "arousal":             ea,
+            "episodic_valence":    ev,
+            "episodic_arousal":    ea,
+            "mood_valence":        mv,
+            "mood_arousal":        ma,
+            "epistemic_curiosity": curiosity,
+            "novelty":             round(wn, 4),
+            "pleasantness":        round(wp, 4),
+            "goal_relevance":      round(wg, 4),
+            "coping_potential":    round(wc, 4),
+            "sample_count":        len(rows),
         }
     except Exception as exc:
         log.debug("get_current_state: %s", exc)

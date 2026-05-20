@@ -360,6 +360,32 @@ def set_feedback(memory_id: int, feedback: str | None) -> None:
         except Exception:
             pass
 
+        # H: curiosidade epistêmica via feedback
+        def _curiosity_from_feedback(mid: int, fb: str) -> None:
+            try:
+                from core.affective_state import (
+                    get_epistemic_curiosity, record_curiosity_event,
+                )
+                con = _conn()
+                row = con.execute(
+                    "SELECT valence FROM personal_memory WHERE id = ?", (mid,)
+                ).fetchone()
+                con.close()
+                valence = (row[0] or 0.0) if row else 0.0
+                if fb == "dismissed" and valence > 0.2:
+                    # dismissed inesperado — agente confiava, foi rejeitado
+                    record_curiosity_event(+0.5, event_ref=f"dismissed_unexpected:mem#{mid}")
+                elif fb == "confirmed":
+                    current = get_epistemic_curiosity()
+                    if current > 0.3:
+                        record_curiosity_event(-0.4, event_ref=f"epistemic_satisfied:mem#{mid}")
+            except Exception as exc:
+                log.debug("curiosity_from_feedback: %s", exc)
+
+        threading.Thread(
+            target=_curiosity_from_feedback, args=(memory_id, feedback), daemon=True
+        ).start()
+
 
 def get_context_memories(n: int = 8) -> list[dict]:
     """Memórias para uso como contexto em reflexões.

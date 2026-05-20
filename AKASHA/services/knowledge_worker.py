@@ -389,6 +389,16 @@ async def _process_dismissed_feedback(memory_id: int) -> None:
         len(terms), memory_id,
     )
 
+    # H: dismissed com valência positiva = inesperado → curiosidade epistêmica +0.5
+    valence = entry.get("valence") or 0.0
+    if valence > 0.2:
+        try:
+            from services.affective_state import record_curiosity_event
+            await record_curiosity_event(+0.5, event_ref=f"dismissed_unexpected:mem#{memory_id}")
+            log.debug("curiosity +0.5 por dismissed inesperado (mem #%d, V=%.2f)", memory_id, valence)
+        except Exception as exc:
+            log.debug("curiosity dismissed: %s", exc)
+
 
 async def _process_confirmed_feedback(memory_id: int) -> None:
     """Gera entrada episódica a partir de um insight confirmado pela usuária."""
@@ -450,6 +460,16 @@ async def _process_confirmed_feedback(memory_id: int) -> None:
         "knowledge_worker.confirmed: memória episódica salva (fonte memória #%d).",
         memory_id,
     )
+
+    # H: confirmed após período de curiosidade = satisfação epistêmica → curiosidade -0.4
+    try:
+        from services.affective_state import get_epistemic_curiosity, record_curiosity_event
+        current_curiosity = await get_epistemic_curiosity()
+        if current_curiosity > 0.3:
+            await record_curiosity_event(-0.4, event_ref=f"epistemic_satisfied:mem#{memory_id}")
+            log.debug("curiosity -0.4 por satisfação epistêmica (curiosity=%.2f)", current_curiosity)
+    except Exception as exc:
+        log.debug("curiosity confirmed: %s", exc)
 
     # Extrai entidades e atualiza grafo de co-ocorrência
     if model:
@@ -581,7 +601,16 @@ async def _check_discoveries(
 
     import database as _db
     top = await _db.get_top_topics(20)
-    high_score = {t for t, score in top if score > _INSIGHT_SCORE_MIN}
+
+    # H: curiosidade epistêmica abaixa o threshold — explora mais quando curiosa
+    try:
+        from services.affective_state import get_epistemic_curiosity as _get_curiosity
+        _curiosity = await _get_curiosity()
+    except Exception:
+        _curiosity = 0.0
+    effective_score_min = _INSIGHT_SCORE_MIN * (1.0 - _curiosity * 0.3)
+
+    high_score = {t for t, score in top if score > effective_score_min}
     if not high_score:
         return
 
