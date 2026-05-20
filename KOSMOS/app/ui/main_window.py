@@ -283,6 +283,7 @@ class MainWindow(QMainWindow):
         # Background updater
         self._updater.feed_updated.connect(self._on_feed_updated)
         self._updater.update_error.connect(self._on_update_error)
+        self._updater.feed_updated.connect(self._on_export_interests)
 
     # ------------------------------------------------------------------
     # Handlers
@@ -460,6 +461,12 @@ class MainWindow(QMainWindow):
         """
         self._fm.clear_all_etags()
         self._updater.trigger_now()
+
+    def _on_export_interests(self, _feed_id: int, _new_count: int) -> None:
+        """Exporta interesses de engajamento ao interests.json após cada feed atualizado."""
+        from app.core.interest_exporter import export_interests
+        from app.utils.paths import Paths
+        export_interests(Paths.DB)
 
     def _on_update_error(self, feed_id: int, message: str) -> None:
         log.warning("Erro ao atualizar feed %d: %s", feed_id, message)
