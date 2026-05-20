@@ -10,6 +10,11 @@ import aiosqlite
 
 from config import DB_PATH
 
+# Banco de metadados LLM — separado do banco do crawler por princípio arquitetural.
+# akasha.db contém apenas dados do crawler (sites, páginas, fila, DOIs).
+# akasha_knowledge.db contém metadados gerados por LLM (topics, entities, interesse).
+KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
+
 # ---------------------------------------------------------------------------
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
@@ -261,6 +266,7 @@ CREATE TABLE IF NOT EXISTS entity_graph (
     co_entity  TEXT NOT NULL,
     weight     REAL NOT NULL DEFAULT 1.0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    feedback   TEXT DEFAULT NULL,
     PRIMARY KEY (entity, co_entity)
 );
 """
@@ -418,10 +424,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_DOC_CITATIONS)
         await db.execute(_CREATE_IDX_DOC_CITATIONS_DOI)
         await db.execute(_CREATE_SEARCH_PROFILE)
-        await db.execute(_CREATE_PAGE_KNOWLEDGE)
-        await db.execute(_CREATE_TOPIC_INTEREST_PROFILE)
-        await db.execute(_CREATE_ENTITY_GRAPH)
-        # personal_memory agora vive em arquivo separado — ver init_pm_db()
+        # page_knowledge, topic_interest_profile e entity_graph vivem em
+        # akasha_knowledge.db — ver init_knowledge_db() abaixo.
 
         # Verifica versão atual do schema
         row = await (await db.execute(
@@ -437,6 +441,57 @@ async def init_db() -> None:
 
     from services import personal_memory as _pm
     await _pm.init_pm_db()
+    await init_knowledge_db()
+
+
+async def init_knowledge_db() -> None:
+    """Cria akasha_knowledge.db e migra dados legados do banco principal (one-time)."""
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
+        await db.execute(_CREATE_PAGE_KNOWLEDGE)
+        await db.execute(_CREATE_TOPIC_INTEREST_PROFILE)
+        await db.execute(_CREATE_ENTITY_GRAPH)
+
+        # Migração one-time: copia dados do akasha.db se knowledge DB está vazio
+        row = await (await db.execute(
+            "SELECT COUNT(*) FROM page_knowledge"
+        )).fetchone()
+        if row and row[0] == 0:
+            try:
+                import aiosqlite as _aio
+                async with _aio.connect(DB_PATH) as src:
+                    for table in ("page_knowledge", "topic_interest_profile", "entity_graph"):
+                        try:
+                            cols_rows = await (await src.execute(
+                                f"PRAGMA table_info({table})"
+                            )).fetchall()
+                            if not cols_rows:
+                                continue
+                            cols = [r[1] for r in cols_rows]
+                            # Filtra colunas que existem no novo DDL
+                            dst_cols_rows = await (await db.execute(
+                                f"PRAGMA table_info({table})"
+                            )).fetchall()
+                            dst_cols = {r[1] for r in dst_cols_rows}
+                            shared = [c for c in cols if c in dst_cols]
+                            col_list = ", ".join(shared)
+                            rows = await (await src.execute(
+                                f"SELECT {col_list} FROM {table}"
+                            )).fetchall()
+                            if rows:
+                                placeholders = ", ".join("?" * len(shared))
+                                await db.executemany(
+                                    f"INSERT OR IGNORE INTO {table} ({col_list}) "
+                                    f"VALUES ({placeholders})",
+                                    rows,
+                                )
+                        except Exception:
+                            pass  # tabela não existe no banco legado — ok para bancos novos
+            except Exception:
+                pass
+
+        await db.commit()
 
 
 async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
@@ -773,9 +828,8 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
     if from_version < 29:
         await db.execute(_CREATE_SEARCH_PROFILE)
 
-    if from_version < 30:
-        await db.execute(_CREATE_PAGE_KNOWLEDGE)
-        await db.execute(_CREATE_TOPIC_INTEREST_PROFILE)
+    # from_version < 30: page_knowledge e topic_interest_profile agora em
+    # akasha_knowledge.db — migrados via init_knowledge_db(), não aqui.
 
     if from_version < 31:
         await db.execute(_CREATE_PERSONAL_MEMORY)
@@ -788,13 +842,8 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         except Exception:
             pass  # coluna já existe em DBs novos criados com o DDL atualizado
 
-    if from_version < 35:
-        try:
-            await db.execute(
-                "ALTER TABLE entity_graph ADD COLUMN feedback TEXT DEFAULT NULL"
-            )
-        except Exception:
-            pass  # coluna já existe em DBs novos
+    # from_version < 35: entity_graph agora em akasha_knowledge.db com feedback
+    # incluído no DDL desde o início — nenhuma migration necessária aqui.
 
     if from_version < 38:
         # Remove summary de page_knowledge — texto sintetizado por LLM viola o
@@ -1643,10 +1692,10 @@ async def get_query_suggestions(prefix: str, limit: int = 10) -> list[str]:
     """Retorna sugestões de autocomplete combinando histórico e corpus indexado.
 
     Prioridade:
-      1. search_history   — queries já feitas, ordenadas por frequência
-      2. topic_interest_profile — tópicos aprendidos, ordenados por score
-      3. page_knowledge topics  — tópicos extraídos por página (json_each)
-      4. crawl_pages titles     — títulos de páginas indexadas
+      1. search_history         — queries já feitas, ordenadas por frequência (akasha.db)
+      2. topic_interest_profile — tópicos aprendidos, por score (akasha_knowledge.db)
+      3. page_knowledge topics  — tópicos por página, json_each (akasha_knowledge.db)
+      4. crawl_pages titles     — títulos de páginas (akasha.db)
 
     Deduplica (case-insensitive) e limita a `limit` itens totais.
     """
@@ -1656,8 +1705,11 @@ async def get_query_suggestions(prefix: str, limit: int = 10) -> list[str]:
     pattern   = f"{prefix.strip()}%"
     pat_lower = f"{p_lower}%"
 
+    seen: set[str] = set()
+    results: list[str] = []
+
+    # 1 e 4: banco principal (search_history + crawl_pages)
     async with aiosqlite.connect(DB_PATH) as db:
-        # 1. Histórico
         rows = await (await db.execute(
             "SELECT query FROM search_history "
             "WHERE query LIKE ? "
@@ -1665,56 +1717,65 @@ async def get_query_suggestions(prefix: str, limit: int = 10) -> list[str]:
             "LIMIT ?",
             (pattern, limit),
         )).fetchall()
-        seen: set[str] = {r[0].lower() for r in rows}
-        results: list[str] = [r[0] for r in rows]
+        for (q,) in rows:
+            seen.add(q.lower())
+            results.append(q)
 
-        # 2. Tópicos do perfil de interesse (por score)
-        if len(results) < limit:
-            cap = (limit - len(results)) * 2
-            rows2 = await (await db.execute(
-                "SELECT topic FROM topic_interest_profile "
-                "WHERE LOWER(topic) LIKE ? "
-                "ORDER BY score DESC LIMIT ?",
-                (pat_lower, cap),
-            )).fetchall()
-            for (t,) in rows2:
-                if len(results) >= limit:
-                    break
-                if t.lower() not in seen:
-                    seen.add(t.lower())
-                    results.append(t)
-
-        # 3. Tópicos de page_knowledge (json_each — requer SQLite ≥ 3.9)
-        if len(results) < limit:
-            cap = (limit - len(results)) * 2
-            try:
-                rows3 = await (await db.execute(
-                    "SELECT DISTINCT value FROM page_knowledge, "
-                    "json_each(page_knowledge.topics) "
-                    "WHERE LOWER(value) LIKE ? LIMIT ?",
-                    (pat_lower, cap),
-                )).fetchall()
-                for (t,) in rows3:
-                    if len(results) >= limit:
-                        break
-                    if t and t.lower() not in seen:
-                        seen.add(t.lower())
-                        results.append(t)
-            except Exception:
-                pass  # json_each indisponível nesta versão do SQLite
-
-        # 4. Títulos de crawl_pages
+        crawl_titles: list[str] = []
         if len(results) < limit:
             cap = limit - len(results)
             rows4 = await (await db.execute(
                 "SELECT DISTINCT title FROM crawl_pages "
                 "WHERE title IS NOT NULL AND LOWER(title) LIKE ? LIMIT ?",
-                (pat_lower, cap),
+                (pat_lower, cap * 2),
             )).fetchall()
-            for (t,) in rows4:
-                if t and t.lower() not in seen:
-                    seen.add(t.lower())
-                    results.append(t)
+            crawl_titles = [r[0] for r in rows4 if r[0]]
+
+    # 2 e 3: banco de conhecimento (topic_interest_profile + page_knowledge)
+    try:
+        async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as kdb:
+            if len(results) < limit:
+                cap = (limit - len(results)) * 2
+                rows2 = await (await kdb.execute(
+                    "SELECT topic FROM topic_interest_profile "
+                    "WHERE LOWER(topic) LIKE ? "
+                    "ORDER BY score DESC LIMIT ?",
+                    (pat_lower, cap),
+                )).fetchall()
+                for (t,) in rows2:
+                    if len(results) >= limit:
+                        break
+                    if t.lower() not in seen:
+                        seen.add(t.lower())
+                        results.append(t)
+
+            if len(results) < limit:
+                cap = (limit - len(results)) * 2
+                try:
+                    rows3 = await (await kdb.execute(
+                        "SELECT DISTINCT value FROM page_knowledge, "
+                        "json_each(page_knowledge.topics) "
+                        "WHERE LOWER(value) LIKE ? LIMIT ?",
+                        (pat_lower, cap),
+                    )).fetchall()
+                    for (t,) in rows3:
+                        if len(results) >= limit:
+                            break
+                        if t and t.lower() not in seen:
+                            seen.add(t.lower())
+                            results.append(t)
+                except Exception:
+                    pass  # json_each indisponível nesta versão do SQLite
+    except Exception:
+        pass
+
+    # 4 (diferido): adiciona títulos de crawl_pages se ainda há espaço
+    for t in crawl_titles:
+        if len(results) >= limit:
+            break
+        if t.lower() not in seen:
+            seen.add(t.lower())
+            results.append(t)
 
     return results[:limit]
 
@@ -1992,7 +2053,7 @@ async def save_page_knowledge(
     entities: list[str],
     source_type: str,
 ) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO page_knowledge
                (url, title, topics, entities, source_type, processed_at)
@@ -2003,7 +2064,7 @@ async def save_page_knowledge(
 
 
 async def get_page_knowledge(url: str) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         row = await (await db.execute(
             "SELECT url, title, topics, entities, source_type, processed_at "
             "FROM page_knowledge WHERE url = ?",
@@ -2024,7 +2085,7 @@ async def get_page_knowledge_batch(urls: list[str]) -> dict[str, dict]:
     if not urls:
         return {}
     placeholders = ",".join("?" * len(urls))
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         rows = await (await db.execute(
             f"SELECT url, topics FROM page_knowledge WHERE url IN ({placeholders})",
             urls,
@@ -2037,7 +2098,7 @@ async def get_page_knowledge_batch(urls: list[str]) -> dict[str, dict]:
 
 async def update_topic_score(topic: str, delta: float = 1.0) -> None:
     """Incrementa score de um tópico no perfil de interesse."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         await db.execute(
             """INSERT INTO topic_interest_profile (topic, score, query_count, last_updated)
                VALUES (?, ?, 1, datetime('now'))
@@ -2052,7 +2113,7 @@ async def update_topic_score(topic: str, delta: float = 1.0) -> None:
 
 async def get_topic_score(topic: str) -> float | None:
     """Retorna o score atual de um tópico, ou None se não existir."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         row = await (await db.execute(
             "SELECT score FROM topic_interest_profile WHERE topic = ?", (topic,)
         )).fetchone()
@@ -2061,7 +2122,7 @@ async def get_topic_score(topic: str) -> float | None:
 
 async def get_top_topics(n: int = 10) -> list[tuple[str, float]]:
     """Retorna os N tópicos com maior score, em ordem decrescente."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         rows = await (await db.execute(
             "SELECT topic, score FROM topic_interest_profile "
             "ORDER BY score DESC LIMIT ?",
@@ -2072,7 +2133,7 @@ async def get_top_topics(n: int = 10) -> list[tuple[str, float]]:
 
 async def get_recent_page_knowledge(n: int = 10) -> list[dict]:
     """Retorna os N registros de page_knowledge mais recentes."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         rows = await (await db.execute(
             "SELECT url, title, topics FROM page_knowledge "
             "ORDER BY processed_at DESC LIMIT ?",
@@ -2104,7 +2165,7 @@ async def decay_old_topic_scores(days_inactive: int = 7, factor: float = 0.97) -
     Remove tópicos com score abaixo de 0.01 para evitar acúmulo de ruído.
     Retorna o número de tópicos afetados.
     """
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         cur = await db.execute(
             f"""UPDATE topic_interest_profile
                 SET score = score * ?
@@ -2127,7 +2188,7 @@ async def upsert_entity_pair(entity: str, co_entity: str, delta: float = 1.0) ->
     a, b = sorted([entity.strip().lower(), co_entity.strip().lower()])
     if a == b:
         return
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         await db.execute(
             """INSERT INTO entity_graph (entity, co_entity, weight, updated_at)
                VALUES (?, ?, ?, datetime('now'))
@@ -2142,7 +2203,7 @@ async def upsert_entity_pair(entity: str, co_entity: str, delta: float = 1.0) ->
 async def get_entity_neighbors(entity: str, n: int = 10) -> list[tuple[str, float]]:
     """Retorna os N co-entes com maior peso associados a `entity`."""
     e = entity.strip().lower()
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         rows = await (await db.execute(
             """SELECT co_entity, weight FROM entity_graph WHERE entity = ?
                UNION ALL
@@ -2159,7 +2220,7 @@ async def get_graph_data(node_limit: int = 80, edge_limit: int = 250) -> dict:
     Nós: top-N entidades por peso total acumulado (soma das arestas).
     Arestas: top-M pares por peso, filtradas para conter apenas nós do conjunto acima.
     """
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         # Nós: peso total = soma de todos os pesos das arestas incidentes
         node_rows = await (await db.execute(
             """SELECT entity, SUM(weight) AS total
@@ -2217,29 +2278,45 @@ async def get_graph_data(node_limit: int = 80, edge_limit: int = 250) -> dict:
 async def get_pages_for_topic(topic: str, limit: int = 12) -> list[dict]:
     """Retorna páginas de crawl_pages cujo page_knowledge menciona o tópico/entidade."""
     t = topic.strip().lower()
-    async with aiosqlite.connect(DB_PATH) as db:
-        try:
-            rows = await (await db.execute(
-                """SELECT DISTINCT cp.url, cp.title
-                   FROM crawl_pages cp
-                   JOIN page_knowledge pk ON cp.url = pk.url
+    # Passo 1: URLs que têm o tópico/entidade no knowledge DB
+    try:
+        async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
+            url_rows = await (await db.execute(
+                """SELECT DISTINCT url FROM page_knowledge
                    WHERE EXISTS (
-                       SELECT 1 FROM json_each(pk.topics)   WHERE LOWER(value) = ?
+                       SELECT 1 FROM json_each(topics)   WHERE LOWER(value) = ?
                    ) OR EXISTS (
-                       SELECT 1 FROM json_each(pk.entities) WHERE LOWER(value) = ?
+                       SELECT 1 FROM json_each(entities) WHERE LOWER(value) = ?
                    )
                    LIMIT ?""",
                 (t, t, limit),
             )).fetchall()
-        except Exception:
-            rows = []
-    return [{"url": r[0], "title": r[1] or r[0]} for r in rows]
+    except Exception:
+        return []
+
+    urls = [r[0] for r in url_rows]
+    if not urls:
+        return []
+
+    # Passo 2: títulos do banco principal
+    placeholders = ",".join("?" * len(urls))
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            title_rows = await (await db.execute(
+                f"SELECT url, title FROM crawl_pages WHERE url IN ({placeholders})",
+                urls,
+            )).fetchall()
+    except Exception:
+        title_rows = []
+
+    title_map = {r[0]: r[1] for r in title_rows}
+    return [{"url": u, "title": title_map.get(u) or u} for u in urls]
 
 
 async def set_edge_feedback(a: str, b: str, feedback: str | None) -> None:
     """Define feedback (confirmed/dismissed/None) para uma aresta do grafo."""
     na, nb = sorted([a.strip().lower(), b.strip().lower()])
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         await db.execute(
             "UPDATE entity_graph SET feedback = ? WHERE entity = ? AND co_entity = ?",
             (feedback, na, nb),
@@ -2249,7 +2326,7 @@ async def set_edge_feedback(a: str, b: str, feedback: str | None) -> None:
 
 async def count_page_knowledge() -> int:
     """Número total de registros em page_knowledge."""
-    async with aiosqlite.connect(DB_PATH) as db:
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
         row = await (await db.execute("SELECT COUNT(*) FROM page_knowledge")).fetchone()
     return row[0] if row else 0
 

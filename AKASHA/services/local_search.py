@@ -14,6 +14,7 @@ import aiosqlite
 
 import config
 from config import DB_PATH
+from database import KNOWLEDGE_DB_PATH
 from services.web_search import SearchResult
 
 # ---------------------------------------------------------------------------
@@ -209,7 +210,7 @@ async def _has_entity_graph() -> bool:
     if now - _entity_graph_checked_at < 120.0:
         return _entity_graph_has_rows
     try:
-        async with aiosqlite.connect(DB_PATH) as _db:
+        async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as _db:
             row = await (await _db.execute("SELECT 1 FROM entity_graph LIMIT 1")).fetchone()
             _entity_graph_has_rows = row is not None
     except Exception:
