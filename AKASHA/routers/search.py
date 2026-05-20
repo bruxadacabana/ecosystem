@@ -593,12 +593,33 @@ async def fetch(body: _FetchBody) -> _FetchResponse:
 
 @router.get("/insight/current")
 async def insight_current(request: Request) -> dict:
-    """Retorna o insight atual para a sessão (polling leve do frontend, ~10 s)."""
+    """Retorna o insight atual para a sessão (polling leve do frontend, ~10 s).
+
+    Prioridade: session_insight (gerado on-the-fly) > entrada de personal_memory
+    ordenada por arousal × importance DESC.
+    """
     from services import session_insight as _si
     session_id = request.cookies.get("akasha_session", "")
+
+    # 1. Session insight (gerado durante a sessão de busca)
     entry = _si.get_current(session_id) if session_id else None
     if entry:
         return {"text": entry["text"], "memory_id": entry["memory_id"]}
+
+    # 2. Fallback: entrada de personal_memory de alta saliência
+    pm_entry = _si.get_pm_current()
+    if pm_entry is None:
+        from services.personal_memory import get_next_for_overlay, mark_shown_as_overlay
+        candidates = await get_next_for_overlay(5)
+        for c in candidates:
+            await mark_shown_as_overlay(c["id"])
+            _si.set_pm_current(c)
+            pm_entry = c
+            break
+
+    if pm_entry:
+        return {"text": pm_entry["content"], "memory_id": pm_entry["id"]}
+
     return {"text": None, "memory_id": None}
 
 

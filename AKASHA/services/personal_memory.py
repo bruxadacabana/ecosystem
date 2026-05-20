@@ -40,16 +40,17 @@ _CATEGORY_FROM_TAG: dict[str, str] = {
 
 _PM_DDL = """
 CREATE TABLE IF NOT EXISTS personal_memory (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
-    type       TEXT    NOT NULL,
-    content    TEXT    NOT NULL,
-    tags       TEXT    NOT NULL DEFAULT '[]',
-    feedback   TEXT             DEFAULT NULL,
-    category   TEXT    NOT NULL DEFAULT 'reflections',
-    valence    REAL             DEFAULT NULL,
-    arousal    REAL             DEFAULT NULL,
-    importance INTEGER          DEFAULT NULL
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    type             TEXT    NOT NULL,
+    content          TEXT    NOT NULL,
+    tags             TEXT    NOT NULL DEFAULT '[]',
+    feedback         TEXT             DEFAULT NULL,
+    category         TEXT    NOT NULL DEFAULT 'reflections',
+    valence          REAL             DEFAULT NULL,
+    arousal          REAL             DEFAULT NULL,
+    importance       INTEGER          DEFAULT NULL,
+    shown_as_overlay INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -129,10 +130,11 @@ async def init_pm_db() -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(_PM_DDL)
         for migration in (
-            "ALTER TABLE personal_memory ADD COLUMN category   TEXT    NOT NULL DEFAULT 'reflections'",
-            "ALTER TABLE personal_memory ADD COLUMN valence    REAL    DEFAULT NULL",
-            "ALTER TABLE personal_memory ADD COLUMN arousal    REAL    DEFAULT NULL",
-            "ALTER TABLE personal_memory ADD COLUMN importance INTEGER DEFAULT NULL",
+            "ALTER TABLE personal_memory ADD COLUMN category         TEXT    NOT NULL DEFAULT 'reflections'",
+            "ALTER TABLE personal_memory ADD COLUMN valence          REAL    DEFAULT NULL",
+            "ALTER TABLE personal_memory ADD COLUMN arousal          REAL    DEFAULT NULL",
+            "ALTER TABLE personal_memory ADD COLUMN importance       INTEGER DEFAULT NULL",
+            "ALTER TABLE personal_memory ADD COLUMN shown_as_overlay INTEGER NOT NULL DEFAULT 0",
         ):
             try:
                 await db.execute(migration)
@@ -284,6 +286,49 @@ async def get_context_memories(n: int = 8) -> list[dict]:
         }
         for r in rows
     ]
+
+
+async def get_next_for_overlay(n: int = 5) -> list[dict]:
+    """Candidatos para o overlay do browser, ordenados por arousal × importance.
+
+    Apenas 'surprise' e 'connection' são overlay-worthy.
+    Ordem primária: COALESCE(arousal * importance, -1) DESC.
+    Fallback para NULLs: type ('surprise' > 'connection') e id DESC.
+    """
+    async with aiosqlite.connect(_get_pm_db()) as db:
+        rows = await (await db.execute(
+            "SELECT id, created_at, type, content, tags, feedback, category, "
+            "valence, arousal, importance "
+            "FROM personal_memory "
+            "WHERE shown_as_overlay = 0 "
+            "AND type IN ('surprise', 'connection') "
+            "ORDER BY "
+            "  CASE WHEN arousal IS NOT NULL AND importance IS NOT NULL "
+            "       THEN arousal * importance ELSE -1 END DESC, "
+            "  CASE type WHEN 'surprise' THEN 1 WHEN 'connection' THEN 2 "
+            "            ELSE 3 END ASC, "
+            "  id DESC LIMIT ?",
+            (n,),
+        )).fetchall()
+    return [
+        {
+            "id": r[0], "created_at": r[1], "type": r[2],
+            "content": r[3], "tags": json.loads(r[4] or "[]"),
+            "feedback": r[5], "category": r[6],
+            "valence": r[7], "arousal": r[8], "importance": r[9],
+        }
+        for r in rows
+    ]
+
+
+async def mark_shown_as_overlay(memory_id: int) -> None:
+    """Marca entrada como já exibida no overlay — persiste entre sessões."""
+    async with aiosqlite.connect(_get_pm_db()) as db:
+        await db.execute(
+            "UPDATE personal_memory SET shown_as_overlay = 1 WHERE id = ?",
+            (memory_id,),
+        )
+        await db.commit()
 
 
 async def clear_all() -> None:

@@ -43,6 +43,20 @@ _current:  dict[str, dict[str, Any]] = {}
 # timestamp da última geração iniciada por sessão (para cooldown)
 _last_gen: dict[str, float]           = {}
 
+# Entrada de personal_memory atualmente exibida no overlay (global — um overlay por vez)
+_pm_current: dict[str, Any] | None = None
+
+
+def get_pm_current() -> dict[str, Any] | None:
+    """Retorna a entrada de personal_memory exibida no overlay, ou None."""
+    return _pm_current
+
+
+def set_pm_current(entry: dict[str, Any] | None) -> None:
+    """Define (ou limpa) a entrada de personal_memory do overlay."""
+    global _pm_current
+    _pm_current = entry
+
 
 def maybe_schedule(
     session_id: str,
@@ -77,8 +91,13 @@ def get_current(session_id: str) -> dict[str, Any] | None:
 
 
 def dismiss(session_id: str) -> None:
-    """Descarta insight atual para esta sessão."""
-    _current.pop(session_id, None)
+    """Descarta insight atual — session_insight ou entrada de personal_memory."""
+    global _pm_current
+    if session_id in _current:
+        _current.pop(session_id, None)
+    else:
+        # Descartando entrada de personal_memory do overlay
+        _pm_current = None
 
 
 async def _generate(session_id: str, queries: list[str], snippets: list[str]) -> None:
