@@ -321,6 +321,7 @@ class _AnalyzeWorker(QThread):
                     system=self._SYSTEM,
                     json_schema=self._JSON_SCHEMA,
                     num_ctx=self._num_ctx,
+                    priority=2,
                 )
                 data = _json.loads(result)
                 if isinstance(data, dict):
