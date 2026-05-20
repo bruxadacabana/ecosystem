@@ -64,6 +64,11 @@ _worker_started:   bool = False
 _total_processed:  int  = 0   # conta páginas processadas com sucesso nesta sessão
 _backfill_running: bool = False  # True enquanto backfill inicial estiver em andamento
 
+# Exportação de interesses para interests.json ao final de cada ciclo
+_processed_since_export:      int   = 0
+_last_interests_export_at:    float = 0.0
+_INTERESTS_EXPORT_COOLDOWN_S: float = 300.0   # mínimo 5 min entre exportações
+
 # Cooldown de notificação de insights (evita spam)
 import time as _time
 _last_insight_at: float    = 0.0
@@ -275,6 +280,28 @@ async def _apply_interest_seeds() -> None:
         log.info("knowledge_worker: %d seed(s) de interesse pré-populados.", count)
 
 
+async def _export_top_interests() -> None:
+    """Exporta top 30 tópicos para interests.json via ecosystem_client. Fire-and-forget."""
+    try:
+        import database as _db
+        from ecosystem_client import update_interests as _update_interests
+        top = await _db.get_top_topics(30)
+        if not top:
+            return
+        topics = [
+            {
+                "name":    topic,
+                "weight":  round(score, 4),
+                "sources": ["akasha_library"],
+            }
+            for topic, score in top
+        ]
+        await asyncio.to_thread(_update_interests, topics)
+        log.info("knowledge_worker: %d tópico(s) exportados para interests.json.", len(topics))
+    except Exception as exc:
+        log.debug("knowledge_worker: _export_top_interests falhou: %s", exc)
+
+
 async def process_queue() -> None:
     """Loop background: processa uma task por vez com cooldown entre elas.
 
@@ -319,6 +346,20 @@ async def process_queue() -> None:
             log.info("knowledge_worker: extraindo '%s' [%s]", task.title[:60] or task.url[:60], task.source_type)
             await _extract_and_store(task)
             _queue.task_done()
+
+            # Detecta drenagem de fila → exporta perfil de interesse ao final do ciclo
+            global _processed_since_export, _last_interests_export_at
+            _processed_since_export += 1
+            if _queue.empty():
+                now = _time.monotonic()
+                if now - _last_interests_export_at >= _INTERESTS_EXPORT_COOLDOWN_S:
+                    _last_interests_export_at = now
+                    _processed_since_export = 0
+                    try:
+                        asyncio.get_running_loop().create_task(_export_top_interests())
+                    except RuntimeError:
+                        pass
+
             await asyncio.sleep(_COOLDOWN_S)
 
         except asyncio.CancelledError:
