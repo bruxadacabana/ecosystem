@@ -181,6 +181,17 @@ async def apply_knowledge_boost(
         _interests_cache_at = now
     interest_profile = _interests_cache
 
+    # I: valência episódica modula peso do perfil de interesse no boost.
+    # Estado positivo (gratificação) → exploração mais ampla (+30%);
+    # Estado negativo (remorso/vigilância) → peso reduzido (−30%).
+    _ep_valence = 0.0
+    try:
+        from services.affective_state import get_current_state as _get_affective
+        _ep_valence = (await _get_affective()).get("episodic_valence", 0.0)
+    except Exception:
+        pass
+    _valence_factor = round(max(0.7, min(1.3, 1.0 + _ep_valence * 0.3)), 4)
+
     def _boost(r: object) -> float:
         topics = topics_by_url.get(r.url, [])  # type: ignore[union-attr]
         if not topics:
@@ -194,8 +205,8 @@ async def apply_knowledge_boost(
                 interest_bonus += interest_profile[t_key] * 0.3
         overlap = len(query_terms & topic_terms)
         # Sinal 1: sobreposição query-tópico (+0.15 por tópico)
-        # Sinal 2: interesse acumulado da usuária (máx +0.6 para não engolir a relevância)
-        return overlap * 0.15 + min(interest_bonus, 0.6)
+        # Sinal 2: interesse acumulado × valência episódica (máx +0.6)
+        return overlap * 0.15 + min(interest_bonus * _valence_factor, 0.6)
 
     scored = [(i, _boost(r), r) for i, r in enumerate(results)]
     scored.sort(key=lambda x: (-x[1], x[0]))
@@ -372,6 +383,92 @@ async def process_queue() -> None:
 # Extração via Ollama
 # ---------------------------------------------------------------------------
 
+def _infer_causal_attribution(
+    terms: set[str],
+    top_topics: list[tuple[str, float]],
+    recent_queries: list[str],
+) -> str:
+    """Causa de um dismissed: 'internal' (qualidade) | 'external' (contexto) | 'ambiguous'.
+
+    Interno: tema de alto interesse no perfil OU recentemente pesquisado → falha de qualidade.
+    Externo: tema de baixo interesse e sem query recente → irrelevância contextual da usuária.
+    """
+    if not terms:
+        return "ambiguous"
+    topic_map  = {t.lower().strip(): score for t, score in top_topics}
+    max_score  = max((topic_map.get(t, 0.0) for t in terms), default=0.0)
+    recent_txt = " ".join(q.lower() for q in recent_queries[:10])
+    queried    = any(t in recent_txt for t in terms)
+    if max_score > 5.0 or (max_score > 2.0 and queried):
+        return "internal"
+    if max_score < 1.0 and not queried:
+        return "external"
+    return "ambiguous"
+
+
+async def _record_feedback_appraisal(
+    entry: dict,
+    feedback_type: str,
+    attribution: str = "ambiguous",
+) -> None:
+    """Registra appraisal OCC para evento de feedback (item [I]).
+
+    confirmed → gratificação: alta pleasantness + coping.
+    dismissed internal → remorso: baixa pleasantness, baixa coping.
+    dismissed external → vigilância neutra: valores intermediários sem impacto na auto-avaliação.
+    dismissed ambiguous → estado intermediário.
+
+    Expectedness é inferido comparando feedback com o episodic_valence atual:
+    se o feedback tem sinal oposto ao estado corrente, é inesperado → novelty maior.
+    Praiseworthiness (importância do insight) modula intensidade.
+    """
+    try:
+        from services.affective_state import record_appraisal, get_current_state
+        state      = await get_current_state()
+        ep_valence = state.get("episodic_valence", 0.0)
+        unexpected = (
+            (feedback_type == "confirmed" and ep_valence < -0.2) or
+            (feedback_type == "dismissed" and ep_valence >  0.2)
+        )
+        importance       = entry.get("importance") or 5
+        praiseworthiness = min(1.0, importance / 10.0)
+
+        if feedback_type == "confirmed":
+            novelty          = 0.15 + (0.25 if unexpected else 0.0)
+            pleasantness     = min(1.0, 0.70 + praiseworthiness * 0.20)
+            goal_relevance   = 0.80
+            coping_potential = 0.80
+        elif attribution == "internal":
+            novelty          = 0.40 + (0.15 if unexpected else 0.0)
+            pleasantness     = max(0.10, 0.30 - praiseworthiness * 0.10)
+            goal_relevance   = 0.70
+            coping_potential = max(0.20, 0.40 - praiseworthiness * 0.10)
+        elif attribution == "external":
+            novelty          = 0.30
+            pleasantness     = 0.45
+            goal_relevance   = 0.40
+            coping_potential = 0.60
+        else:  # ambiguous
+            novelty          = 0.35
+            pleasantness     = 0.40
+            goal_relevance   = 0.55
+            coping_potential = 0.50
+
+        await record_appraisal(
+            f"feedback_{feedback_type}",
+            novelty, pleasantness, goal_relevance, coping_potential,
+            event_ref=f"{feedback_type}:mem#{entry.get('id', '?')}:{attribution}",
+        )
+        log.debug(
+            "_record_feedback_appraisal: %s attrib=%s unexpected=%s → "
+            "N=%.2f P=%.2f R=%.2f C=%.2f",
+            feedback_type, attribution, unexpected,
+            novelty, pleasantness, goal_relevance, coping_potential,
+        )
+    except Exception as exc:
+        log.debug("_record_feedback_appraisal: %s", exc)
+
+
 async def _process_dismissed_feedback(memory_id: int) -> None:
     """Aplica delta negativo nos tópicos de um insight descartado."""
     from services.personal_memory import get_by_id
@@ -389,15 +486,30 @@ async def _process_dismissed_feedback(memory_id: int) -> None:
         len(terms), memory_id,
     )
 
-    # H: dismissed com valência positiva = inesperado → curiosidade epistêmica +0.5
+    # I-ext: atribuição causal — interno (falha de qualidade) vs. externo (contexto)
+    top     = await _db.get_top_topics(20)
+    recent  = [r["query"] for r in await _db.get_recent_search_history(10)]
+    attribution = _infer_causal_attribution(terms, top, recent)
+    log.debug(
+        "knowledge_worker.dismissed: attribution=%s (mem #%d)", attribution, memory_id
+    )
+
+    # H + I-ext: intensidade de curiosidade escalada pela atribuição causal
     valence = entry.get("valence") or 0.0
     if valence > 0.2:
+        delta = 0.7 if attribution == "internal" else (0.5 if attribution == "ambiguous" else 0.3)
         try:
             from services.affective_state import record_curiosity_event
-            await record_curiosity_event(+0.5, event_ref=f"dismissed_unexpected:mem#{memory_id}")
-            log.debug("curiosity +0.5 por dismissed inesperado (mem #%d, V=%.2f)", memory_id, valence)
+            await record_curiosity_event(delta, event_ref=f"dismissed_{attribution}:mem#{memory_id}")
+            log.debug(
+                "curiosity +%.1f por dismissed %s (mem #%d, V=%.2f)",
+                delta, attribution, memory_id, valence,
+            )
         except Exception as exc:
             log.debug("curiosity dismissed: %s", exc)
+
+    # I: appraisal OCC do evento de feedback (estado VA temporário com decaimento)
+    await _record_feedback_appraisal(entry, "dismissed", attribution)
 
 
 async def _process_confirmed_feedback(memory_id: int) -> None:
@@ -470,6 +582,9 @@ async def _process_confirmed_feedback(memory_id: int) -> None:
             log.debug("curiosity -0.4 por satisfação epistêmica (curiosity=%.2f)", current_curiosity)
     except Exception as exc:
         log.debug("curiosity confirmed: %s", exc)
+
+    # I: appraisal OCC do evento de feedback confirmed (gratificação)
+    await _record_feedback_appraisal(entry, "confirmed", "external")
 
     # Extrai entidades e atualiza grafo de co-ocorrência
     if model:
@@ -602,13 +717,19 @@ async def _check_discoveries(
     import database as _db
     top = await _db.get_top_topics(20)
 
-    # H: curiosidade epistêmica abaixa o threshold — explora mais quando curiosa
+    # H + I: estado afetivo completo — curiosidade abaixa threshold; remorse sobe
     try:
-        from services.affective_state import get_epistemic_curiosity as _get_curiosity
-        _curiosity = await _get_curiosity()
+        from services.affective_state import get_current_state as _get_state
+        _aff = await _get_state()
+        _curiosity  = _aff.get("epistemic_curiosity", 0.0)
+        _ep_valence = _aff.get("episodic_valence", 0.0)
     except Exception:
-        _curiosity = 0.0
+        _curiosity  = 0.0
+        _ep_valence = 0.0
     effective_score_min = _INSIGHT_SCORE_MIN * (1.0 - _curiosity * 0.3)
+    if _ep_valence < -0.2:
+        # Remorso/vigilância pós-dismissed → threshold mais alto, evita repetir erro
+        effective_score_min *= (1.0 + abs(_ep_valence) * 0.3)
 
     high_score = {t for t, score in top if score > effective_score_min}
     if not high_score:

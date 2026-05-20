@@ -360,25 +360,76 @@ def set_feedback(memory_id: int, feedback: str | None) -> None:
         except Exception:
             pass
 
-        # H: curiosidade epistêmica via feedback
+        # H + I-ext + I: curiosidade epistêmica + atribuição causal + appraisal OCC
         def _curiosity_from_feedback(mid: int, fb: str) -> None:
             try:
                 from core.affective_state import (
-                    get_epistemic_curiosity, record_curiosity_event,
+                    get_epistemic_curiosity, record_curiosity_event, record_appraisal,
                 )
                 con = _conn()
                 row = con.execute(
-                    "SELECT valence FROM personal_memory WHERE id = ?", (mid,)
+                    "SELECT valence, content FROM personal_memory WHERE id = ?", (mid,)
                 ).fetchone()
                 con.close()
                 valence = (row[0] or 0.0) if row else 0.0
+                content = (row[1] or "")  if row else ""
+
+                # I-ext: atribuição causal usando topic_interest_profile
+                attribution = "ambiguous"
+                try:
+                    from core.topic_profile import extract_keywords, get_topic_scores_for_list
+                    terms = list(extract_keywords(content))
+                    if terms:
+                        scores    = get_topic_scores_for_list(terms)
+                        max_score = max(scores.values(), default=0.0) if scores else 0.0
+                        if max_score > 5.0:
+                            attribution = "internal"
+                        elif max_score < 1.0:
+                            attribution = "external"
+                except Exception:
+                    pass
+
+                # H + I-ext: intensidade de curiosidade escalada pela atribuição
                 if fb == "dismissed" and valence > 0.2:
-                    # dismissed inesperado — agente confiava, foi rejeitado
-                    record_curiosity_event(+0.5, event_ref=f"dismissed_unexpected:mem#{mid}")
+                    delta = (0.7 if attribution == "internal"
+                             else 0.5 if attribution == "ambiguous"
+                             else 0.3)
+                    record_curiosity_event(delta, event_ref=f"dismissed_{attribution}:mem#{mid}")
                 elif fb == "confirmed":
                     current = get_epistemic_curiosity()
                     if current > 0.3:
                         record_curiosity_event(-0.4, event_ref=f"epistemic_satisfied:mem#{mid}")
+
+                # I: appraisal OCC do evento de feedback → estado VA temporário decaível
+                if fb == "confirmed":
+                    record_appraisal(
+                        "feedback_confirmed",
+                        novelty=0.15, pleasantness=0.75,
+                        goal_relevance=0.80, coping_potential=0.80,
+                        event_ref=f"confirmed:mem#{mid}",
+                    )
+                elif fb == "dismissed":
+                    if attribution == "internal":
+                        record_appraisal(
+                            "feedback_dismissed",
+                            novelty=0.40, pleasantness=0.25,
+                            goal_relevance=0.70, coping_potential=0.35,
+                            event_ref=f"dismissed_internal:mem#{mid}",
+                        )
+                    elif attribution == "external":
+                        record_appraisal(
+                            "feedback_dismissed",
+                            novelty=0.30, pleasantness=0.45,
+                            goal_relevance=0.40, coping_potential=0.60,
+                            event_ref=f"dismissed_external:mem#{mid}",
+                        )
+                    else:
+                        record_appraisal(
+                            "feedback_dismissed",
+                            novelty=0.35, pleasantness=0.40,
+                            goal_relevance=0.55, coping_potential=0.50,
+                            event_ref=f"dismissed_ambiguous:mem#{mid}",
+                        )
             except Exception as exc:
                 log.debug("curiosity_from_feedback: %s", exc)
 

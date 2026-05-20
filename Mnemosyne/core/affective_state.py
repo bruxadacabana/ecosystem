@@ -151,6 +151,8 @@ def _assign_half_life(event_type: str, valence: float) -> float:
         return 3.0 if valence >= 0 else 16.0
     if event_type == "doc_indexed":
         return 4.0 if valence >= 0 else 12.0
+    if event_type in ("feedback_confirmed", "feedback_dismissed"):
+        return 2.0 if valence >= 0 else 8.0
     return 6.0
 
 
