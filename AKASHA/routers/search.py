@@ -647,6 +647,7 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
         raise HTTPException(status_code=422, detail="feedback deve ser 'confirmed' ou 'dismissed'")
     await _set_feedback(body.memory_id, body.feedback)
     if body.feedback == "confirmed":
+        _si.set_pm_current(None)  # limpar overlay — confirmado, não reexibir
         from services.knowledge_worker import on_feedback_confirmed as _on_confirmed
         _on_confirmed(body.memory_id)
         _si.on_feedback_confirmed(body.memory_id)  # reflexão sobre o acerto
