@@ -18,6 +18,14 @@ def main() -> None:
         )
         sys.exit(1)
 
+    # Desabilitar GPU acceleration do Chromium/QtWebEngine — KOSMOS é leitor de texto,
+    # GPU rendering não agrega nada e consome ~1-2 GB de VRAM desnecessariamente.
+    import os as _os
+    _os.environ.setdefault(
+        "QTWEBENGINE_CHROMIUM_FLAGS",
+        "--disable-gpu --disable-software-rasterizer",
+    )
+
     # QWebEngineWidgets DEVE ser importado antes de QApplication ser criado
     try:
         from PyQt6.QtWebEngineWidgets import QWebEngineView as _QWV  # noqa: F401
