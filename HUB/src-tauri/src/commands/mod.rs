@@ -1,10 +1,12 @@
 pub mod config;
 pub mod git;
+pub mod interests;
 pub mod launcher;
 pub mod logos;
 pub mod memory;
 pub mod notify;
 pub mod projects;
 pub mod reading;
+pub mod sources;
 pub mod syncthing;
 pub mod writing;

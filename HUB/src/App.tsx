@@ -26,6 +26,8 @@ import { PageView } from './views/PageView'
 import { MonitoramentoView } from './views/MonitoramentoView'
 import { GitView } from './views/GitView'
 import { SyncView } from './views/SyncView'
+import { FontesView } from './views/FontesView'
+import { InteressesView } from './views/InteressesView'
 import * as cmd from './lib/tauri'
 import type { HubSection, HubView, Project, Book, ChapterMeta, ArticleMeta, OgmaProject } from './types'
 
@@ -328,6 +330,10 @@ export default function App() {
         return <AtividadeView />
       case 'monitoramento':
         return <MonitoramentoView />
+      case 'fontes':
+        return <FontesView />
+      case 'interesses':
+        return <InteressesView />
       case 'git':
         return <GitView paused={gitPaused} onTogglePaused={handleToggleGitPaused} />
       case 'sync':

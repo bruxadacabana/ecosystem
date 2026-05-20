@@ -110,6 +110,12 @@ pub fn run() {
             commands::syncthing::syncthing_rescan,
             commands::syncthing::syncthing_get_paused,
             commands::syncthing::syncthing_set_paused,
+            commands::sources::sources_get_domains,
+            commands::sources::sources_set_flag,
+            commands::interests::interests_get,
+            commands::interests::interests_set_topic,
+            commands::interests::interests_add_manual,
+            commands::interests::interests_refresh,
         ])
         .setup(|app| {
             // Inicializar LOGOS antes do logging para ter o estado pronto

@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry, DomainEntry, TopicEntry } from '../types'
 
 async function call<T>(
   command: string,
@@ -278,6 +278,48 @@ export interface SyncStatus {
   folders: SyncFolder[]
   devices: SyncDevice[]
 }
+
+// ----------------------------------------------------------
+//  Fontes — domínios do ecossistema
+// ----------------------------------------------------------
+
+export const sourcesGetDomains = (): Promise<TauriResult<DomainEntry[]>> =>
+  call<DomainEntry[]>('sources_get_domains')
+
+export const sourcesSetFlag = (
+  domain: string,
+  flag: 'library' | 'feed',
+  enabled: boolean,
+): Promise<TauriResult<void>> =>
+  call<void>('sources_set_flag', { domain, flag, enabled })
+
+// ----------------------------------------------------------
+//  Interesses — perfil de tópicos compartilhado
+// ----------------------------------------------------------
+
+export const interestsGet = (): Promise<TauriResult<TopicEntry[]>> =>
+  call<TopicEntry[]>('interests_get')
+
+export const interestsSetTopic = (
+  name:     string,
+  weight:   number | null,
+  pinned:   boolean | null,
+  excluded: boolean | null,
+): Promise<TauriResult<void>> =>
+  call<void>('interests_set_topic', { name, weight, pinned, excluded })
+
+export const interestsAddManual = (
+  name:   string,
+  weight: number,
+): Promise<TauriResult<void>> =>
+  call<void>('interests_add_manual', { name, weight })
+
+export const interestsRefresh = (): Promise<TauriResult<void>> =>
+  call<void>('interests_refresh')
+
+// ----------------------------------------------------------
+//  Syncthing
+// ----------------------------------------------------------
 
 export const syncthingStatus    = ():                      Promise<TauriResult<SyncStatus>> => call<SyncStatus>('syncthing_status')
 export const syncthingStart     = ():                      Promise<TauriResult<void>>       => call<void>('syncthing_start')

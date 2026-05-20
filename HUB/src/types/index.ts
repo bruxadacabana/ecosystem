@@ -287,12 +287,37 @@ export interface InsightQueueItem {
 }
 
 // ----------------------------------------------------------
+//  Fontes — domínios do ecossistema
+// ----------------------------------------------------------
+
+export interface DomainEntry {
+  domain:       string
+  label:        string
+  library:      boolean
+  feed:         boolean
+  akasha_url:   string | null
+  kosmos_feeds: string[]
+}
+
+// ----------------------------------------------------------
+//  Interesses — perfil de tópicos compartilhado
+// ----------------------------------------------------------
+
+export interface TopicEntry {
+  name:     string
+  weight:   number
+  sources:  string[]
+  pinned:   boolean
+  excluded: boolean
+}
+
+// ----------------------------------------------------------
 //  HUB Navigation
 // ----------------------------------------------------------
 
 export type HubView = 'home' | 'writing' | 'reading' | 'projects'
 
-export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'config'
+export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'fontes' | 'interesses' | 'config'
 
 export interface ModuleCard {
   id: HubView
