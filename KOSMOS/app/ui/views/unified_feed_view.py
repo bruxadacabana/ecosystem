@@ -233,10 +233,13 @@ class UnifiedFeedView(QWidget):
         card = self._card_map.get(article_id)
         if card is None:
             return
+        show_badge     = bool(self._cfg.get("ai_relevance_badge",  False))
+        show_sentiment = bool(self._cfg.get("ai_sentiment_border", False))
+        show_clickbait = bool(self._cfg.get("ai_clickbait_badge",  False))
         card.update_analysis(
-            sentiment=data.get("sentiment"),
-            clickbait=data.get("clickbait"),
-            relevance=data.get("relevance"),
+            sentiment=data.get("sentiment") if show_sentiment else None,
+            clickbait=data.get("clickbait") if show_clickbait else None,
+            relevance=data.get("relevance") if show_badge     else None,
             tags=data.get("tags", []),
         )
 

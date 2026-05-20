@@ -35,9 +35,10 @@ class FeedListView(QWidget):
     unread_changed       = pyqtSignal(int, int)
     translation_requested = pyqtSignal(list)  # list[tuple[int, str, str | None]]
 
-    def __init__(self, feed_manager: "FeedManager", parent=None) -> None:
+    def __init__(self, feed_manager: "FeedManager", config=None, parent=None) -> None:
         super().__init__(parent)
         self._fm         = feed_manager
+        self._cfg        = config
         self._feed_id: int | None = None
         self._card_map:  dict[int, "ArticleCard"] = {}  # article_id → card
         self.setObjectName("feedListView")
@@ -175,14 +176,17 @@ class FeedListView(QWidget):
             self._cards_layout.insertWidget(0, empty)
             return
 
+        show_badge     = bool(self._cfg.get("ai_relevance_badge",  False)) if self._cfg else True
+        show_sentiment = bool(self._cfg.get("ai_sentiment_border", False)) if self._cfg else True
+        show_clickbait = bool(self._cfg.get("ai_clickbait_badge",  False)) if self._cfg else True
         tags_by_id = self._fm.get_tags_for_articles([a.id for a in articles])
         translation_items: list[tuple[int, str, "str | None"]] = []
         for article in articles:
             card = ArticleCard(
                 article,
-                ai_sentiment = article.ai_sentiment,
-                ai_clickbait = article.ai_clickbait,
-                ai_relevance = article.ai_relevance,
+                ai_sentiment = article.ai_sentiment if show_sentiment else None,
+                ai_clickbait = article.ai_clickbait if show_clickbait else None,
+                ai_relevance = article.ai_relevance if show_badge     else None,
                 user_tags    = tags_by_id.get(article.id, []),
             )
             card.clicked.connect(self._on_card_clicked)
@@ -220,10 +224,13 @@ class FeedListView(QWidget):
         card = self._card_map.get(article_id)
         if card is None:
             return
+        show_badge     = bool(self._cfg.get("ai_relevance_badge",  False)) if self._cfg else True
+        show_sentiment = bool(self._cfg.get("ai_sentiment_border", False)) if self._cfg else True
+        show_clickbait = bool(self._cfg.get("ai_clickbait_badge",  False)) if self._cfg else True
         card.update_analysis(
-            sentiment=data.get("sentiment"),
-            clickbait=data.get("clickbait"),
-            relevance=data.get("relevance"),
+            sentiment=data.get("sentiment") if show_sentiment else None,
+            clickbait=data.get("clickbait") if show_clickbait else None,
+            relevance=data.get("relevance") if show_badge     else None,
             tags=data.get("tags", []),
         )
 

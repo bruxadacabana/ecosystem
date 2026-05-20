@@ -198,7 +198,7 @@ class MainWindow(QMainWindow):
         self._dashboard = DashboardView(self._theme)
         self._stack.addWidget(self._dashboard)
 
-        self._feed_list = FeedListView(self._fm)
+        self._feed_list = FeedListView(self._fm, self._config)
         self._stack.addWidget(self._feed_list)
 
         self._unified_feed = UnifiedFeedView(self._fm, self._config)
