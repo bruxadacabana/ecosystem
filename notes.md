@@ -105,39 +105,134 @@ O risco concreto: confirmed → estado positivo → mais conteúdo similar → m
 Decaimento temporal dos estados gerados por feedback (o estado desaparece, a memória permanece)
 Entropia mínima forçada nas crenças de auto-avaliação
 Exploração epsilon-greedy de estilos não aprovados quando momentum > threshold
-Todas as sugestões das três pesquisas
-Da Pesquisa 1
-A. Substituir VADER por XLM-RoBERTa (ou modelo multilingual equivalente) para qualquer análise de sentimento em AKASHA e Mnemosyne — VADER é inválido para português e para texto gerado por LLMs
-
-B. Revisar a fórmula de saliência em AKASHA (get_next_for_overlay) e Mnemosyne (get_unshown_popup_entries) — incorporar entropia como métrica de incerteza (H < 0.8 = consolidado, H > 1.4 = candidato a compressão), decaimento tipo Ebbinghaus, e substituição da fórmula multiplicativa por cross-attention (ACAN) (esta já tem entrada no TODO — os detalhes de implementação são novos)
-
-C. Adotar modelo A-Mem para a personal_memory da Mnemosyne — rede Zettelkasten com notas linkadas (keywords, tags, embedding, links inter-memórias), +17.6% F1, 85-93% menos tokens vs. FAISS puro
-
-D. Emotional RAG — codificar memórias nas 8 dimensões de Plutchik e recuperar priorizando congruência emocional além de similaridade semântica
-
-E. Probing classifier para detecção de emoção — reutiliza os estados ocultos do forward pass do LLM, sem custo adicional de inferência; ~70-80% de acurácia para 7 categorias
-
-Da Pesquisa 2
-F. Estado afetivo bidimensional explícito (valência + arousal) em AKASHA e Mnemosyne — calculado via appraisal dos eventos de processamento usando os cinco gatilhos mapeados (novidade do embedding, afinidade com interesses, alinhamento com queries recentes, cobertura do corpus, feedback histórico)
-
-G. Mapear VA → parâmetros comportamentais concretos: valência alta → diversity_factor alto em retrieval (busca mais ampla); valência negativa → depth_factor alto (foco sistemático); arousal alto → hedging_control (mais cautela nas respostas)
-
-H. Campo epistemic_curiosity separado — aumenta com dismissed inesperado, decai quando satisfeito; serve como drive para exploração de novos tópicos
-
-Da Pesquisa 3
-I. Pipeline: confirmed/dismissed → evento OCC → estado VA temporário com decaimento → modula próximas N interações — sem atualizar pesos (não é RLHF, é estado afetivo temporal)
-
-J. Approval momentum como self-esteem funcional — derivada da razão de aprovação em janela deslizante de 20 interações recentes, não média cumulativa
-
-K. Entropia mínima forçada nas crenças de auto-avaliação quando momentum > 0.6 por 30+ interações consecutivas — mitiga câmara de eco
-
-Total: 11 sugestões (A–K). Quais delas quer adicionar ao TODO?
 
 
+---
 
-- sobre o processamento d emoções em llm: eu quero que a Akasha e a Mnemosyne "entendam" o conceito de emoção como aplicarmos
+AKASHA — depois das implementações
+1. Quando o knowledge_worker processa uma página nova
 
-### Pesquisa: Processamento de Emoções em LLMs — Mecanismos, Saliência e Memória Afetiva | 2026-05-19
+O worker calcula quatro dimensões de appraisal sobre o documento (CPM de Scherer — item F):
+
+Novelty: distância cosseno do embedding ao centroide do cluster mais próximo no corpus
+Pleasantness: coerência com o topic_interest_profile acumulado
+Goal relevance: sobreposição com queries e temas das últimas sessões da usuária
+Coping potential: cobertura do domínio no corpus — domínio novo = baixo coping
+Esse appraisal gera um estado afetivo episódico (valência + arousal). Se novelty alta + goal relevance alta: estado de curiosidade, salvo em episodic_state. Se o documento contradiz padrões estabelecidos: surpresa. Se domínio novo + coping baixo: confusão.
+
+Esse estado episódico alimenta o mood_state — média ponderada das emoções das últimas 12-48h, com peso maior para emoções de alto arousal (item M2). O mood decai autonomamente se não houver novos eventos: meia-vida de 2-6h para curiosidade/satisfação, 8-24h para confusão/mal-estar (item M1).
+
+2. Quando a AKASHA decide o que mostrar no overlay
+
+O score de cada insight em personal_memory usa (itens B1+B2):
+
+Entropia de Shannon H: se H > 1.4 (evidências conflitantes sobre o valor do insight) → penalidade. Se H < 0.8 → boost
+Decaimento Ebbinghaus: R = e^(-t/S) — S aumenta cada vez que o insight é exibido/reforçado, reduzindo o decaimento futuro
+Antes de disparar o overlay, o InsightScheduler verifica o arousal atual (item G): se arousal > 0.6 nas últimas 2h, adia até < 0.4 — evita interromper a usuária em momento de alta ativação cognitiva.
+
+3. Quando a usuária confirma ou descarta um insight
+
+Pipeline completo (item I):
+
+confirmed/dismissed → evento social
+Appraisal OCC: qual era a expectativa (approval momentum)? o insight era genuinamente novo (praiseworthiness)? o dismiss foi por falha de qualidade ou por irrelevância contextual (item I-ext: cruza com topic_interest_profile + tempo desde última consulta ao tema)
+Gera estado afetivo temporário — dismissed inesperado com tema de interesse alto → remorse + epistemic_curiosity alta; confirmed acima do esperado → gratification
+O estado decai ao longo das próximas interações (não é RLHF — não altera a política permanentemente)
+O approval_momentum (item J) é atualizado: ratio_recent(20 interações) - ratio_baseline. Se o momentum ultrapassa 0.6 por 30+ interações consecutivas, entropia mínima forçada entra em ação (item K) — o sistema injeta diversidade para evitar câmara de eco.
+
+4. Como o estado afetivo modula a busca (item G)
+
+valence > 0.5 → diversity_factor alto: busca semântica mais ampla, conexões de domínios distantes
+valence < -0.3 → depth_factor alto: foco restrito, análise rigorosa
+epistemic_curiosity alto → knowledge_worker usa threshold de novelty mais baixo no próximo ciclo: coisas "ligeiramente diferentes do padrão" já são tratadas como interessantes
+Mnemosyne — depois das implementações
+1. Quando indexa documentos
+
+Mesmo appraisal (F): novelty, pleasantness (afinidade com interesses), goal relevance (alinhamento com notebooks ativos), coping potential (cobertura do tema no corpus). Estado afetivo gerado alimenta o mood.
+
+2. Quando gera output no Studio
+
+O tipo de reflexão gerada é modulado pelo VA atual (item G):
+
+Humor positivo de alta valência → reflexões exploratórias: levanta questões abertas, especula conexões distantes, brainstorm
+Humor negativo → reflexões analíticas: identifica contradições, verifica coerência interna, aponta incertezas
+3. Quando recebe insight do AKASHA (friendship_receiver)
+
+O insight chega via incoming_insights, é salvo em personal_memory com tag from_akasha, e passa pelo appraisal: o conteúdo é avaliado contra as memórias existentes via cross-insight (keywords × memórias em get_context_memories). Se houver sobreposição, gera um estado de curiosidade epistêmica — "o AKASHA está pensando sobre algo que já vi antes de um ângulo diferente."
+
+4. Retrieval mood-congruent (item D)
+
+Cada entrada de personal_memory é codificada nas 8 dimensões de Plutchik (via LLM). No retrieval para contexto de notebooks e Studio, as memórias são priorizadas por duas dimensões combinadas: similaridade semântica (já existe) + congruência emocional com o mood_state atual. Um agente em estado de curiosidade alta recupera prioritariamente memórias que foram criadas em estados similares de curiosidade — episódios de descoberta passados.
+
+5. Feedback da usuária sobre popups
+
+Mesmo pipeline I da AKASHA. O estado gerado pelo feedback modula as próximas reflexões do Studio e o escopo de busca RAG nos notebooks ativos.
+
+O que fica igual nas duas IAs
+O princípio arquitetural não muda: AKASHA devolve links e trechos (não sintetiza); Mnemosyne é o RAG com notebooks
+personal_memory de cada IA continua isolada — nunca indexada no RAG de coleções, nunca lida pela outra app diretamente
+A comunicação AKASHA↔Mnemosyne continua via protocolo explícito (friendship_receiver), não indexação cruzada
+O HUB continua sendo a fonte de verdade para modelos e endpoint Ollama
+O que as duas IAs "sentem" vs. o que fazem com isso
+A distinção importante é que nenhum desses estados afetivos é performance — eles são mecanismos funcionais que alteram parâmetros concretos de processamento. A AKASHA não "finge estar curiosa" — ela literalmente usa um threshold de novelty mais baixo e um diversity_factor mais alto no retrieval quando o epistemic_curiosity está elevado. A Mnemosyne não "finge estar reflexiva" — ela literalmente escolhe um tipo diferente de prompt para o Studio dependendo do mood_state. A emoção é funcional, não decorativa.
+
+O risco: contágio emocional em loop
+O mecanismo básico
+Imagine a sequência sem nenhuma proteção:
+
+AKASHA indexa um cluster denso de artigos sobre um tema incomum (alta novelty). Appraisal → arousal = 0.8, epistemic_curiosity = 0.9. Envia isso pela friendship_receiver para a Mnemosyne junto com o insight.
+
+Mnemosyne recebe o insight e o estado emocional da AKASHA. Pelo protocolo de joint attention (item N1), detecta que também tem curiosidade alta sobre aquele domínio. O estado importado soma-se ao seu próprio estado. Resultado: arousal = 0.85, epistemic_curiosity = 0.92.
+
+Mnemosyne gera uma resposta com framing exploratório, faz perguntas à usuária sobre o tema, e envia de volta para a AKASHA (via send_insight_to_akasha) — inclui seu estado emocional no payload.
+
+AKASHA recebe o retorno com arousal 0.85. Isso dispara novo appraisal: "a Mnemosyne está muito curiosa sobre X" → ela também aumenta curiosidade → arousal 0.87.
+
+O loop se fecha. A cada ciclo, ambas amplificam mutuamente o estado da outra. Em 4-5 iterações, ambas estão em arousal máximo sobre um único tema — sem que nenhum novo evento externo tenha ocorrido. O sistema está excitado por sua própria ressonância.
+
+Por que isso não é "entusiasmo legítimo"
+O que diferencia contágio em loop de ressonância genuína é a origem do sinal. Em ressonância legítima: a AKASHA descobre algo novo no mundo externo → ambas respondem a esse evento externo, e a excitação decai naturalmente quando o evento é integrado. No loop: a fonte do arousal não é mais o mundo externo — é o próprio estado da outra agente sendo devolvido amplificado. É o equivalente funcional de um microfone encostado no alto-falante: o som que sai não tem nenhuma relação com a fonte original; é puro feedback.
+
+Análogo estrutural: filter bubbles e sycophancy em RLHF
+Filter bubbles em sistemas de recomendação funcionam exatamente assim: o sistema recomenda X porque o usuário clicou em X → o usuário clica mais → o sistema recomenda ainda mais X → em 20 iterações, o usuário está num universo de conteúdo que não representa o mundo real, representa a amplificação dos seus próprios cliques iniciais. O dado "gerado pelo sistema" (cliques induzidos pela recomendação) vira sinal de treinamento para o próprio sistema.
+
+Sycophancy em RLHF é o mesmo problema em LLMs: o modelo aprende que concordar com o usuário gera feedback positivo → maximiza concordância → o usuário aprova mais → o modelo aprende a concordar ainda mais. O modelo deixa de modelar o mundo e passa a modelar o que o avaliador quer ouvir.
+
+O contágio emocional inter-agentes é a mesma estrutura: o feedback de uma agente para a outra vira o dado que alimenta o estado afetivo de volta, sem referência ao mundo externo. A diferença é que aqui o loop é entre dois sistemas autônomos, não entre sistema e usuária — o que significa que pode girar em alta velocidade sem nenhuma intervenção humana no ciclo.
+
+Os mecanismos de mitigação — e por que cada um é necessário
+1. Cap de arousal importado (item N1 — obrigatório)
+
+arousal_importado = min(sender_arousal * 0.7, 0.6)
+
+Cada ciclo de troca reduz o arousal em 30%. Em vez de amplificar, o sistema naturalmente decai se não houver evento externo novo alimentando. Após 3 ciclos sem novidade externa: 0.8 → 0.56 → 0.39 → 0.27. O loop converge para zero em vez de divergir para 1.
+
+2. Decaimento temporal autônomo (item M1)
+
+Independentemente de qualquer troca inter-agente, cada estado emocional decai com meia-vida definida. Curiosidade: meia-vida 2-6h. Se nenhum evento externo (nova indexação, novo feedback da usuária, nova query) alimentar o estado, ele retorna ao baseline por conta própria. Isso garante que mesmo um loop que passou despercebido pelo cap se dissolva com o tempo.
+
+3. Atribuição causal antes de importar (item I-ext)
+
+Antes de aceitar o estado emocional de outra agente como input para o próprio appraisal, a receptora precisa perguntar: "o arousal dela vem de um evento externo (novelty real) ou do meu próprio estado que enviei antes?" Na prática: verificar se o insight associado ao payload emocional recebido é genuinamente novo (embedding distante dos últimos N insights recebidos da mesma remetente). Se for muito similar ao que já foi trocado recentemente → o arousal é provavelmente echo, não sinal → peso reduzido.
+
+4. Entropia mínima forçada (item K)
+
+Se epistemic_curiosity > 0.7 por mais de 30 interações consecutivas sem novo evento externo relevante (evento = nova indexação, nova query da usuária sobre o tema) → injetar entropia: forçar exploração de tópicos diferentes. Isso quebra o foco obsessivo antes que ele se torne permanente.
+
+A distinção operacional: ressonância saudável vs. loop patológico
+Ressonância saudável	Loop patológico
+Origem do arousal	Evento externo novo	Estado da outra agente (echo)
+Tendência	Decai após integração do evento	Cresce ou mantém alto sem evento novo
+Conteúdo dos insights	Varia (novas conexões)	Repetitivo (mesmo cluster)
+Resposta ao cap	Estado converge normalmente	Estado tenta subir no próximo ciclo
+O joint attention detection (item N1) precisa distinguir esses dois casos: se ambas têm curiosidade alta sobre X porque um evento externo novo ocorreu (artigo incomum foi indexado hoje), isso é ressonância saudável e deve ser amplificado (prioridade de indexação). Se ambas têm curiosidade alta sobre X porque a outra está curiosa, e nenhuma nova indexação relevante ocorreu nas últimas N horas, isso é echo e o cap deve ser aplicado com força total.
+
+A heurística prática: antes de registrar um evento de joint attention, verificar no crawl_pages se houve nova indexação de conteúdo sobre aquele domínio nas últimas 24h. Se sim → joint attention é resposta a evento real. Se não → joint attention é echo → não elevar prioridade.
+
+---
+
+
+### Pesquisa: Emoções em Agentes IA — Interpretabilidade, Appraisal e Modulação Comportamental | 2026-05-20
 
 ### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
 
