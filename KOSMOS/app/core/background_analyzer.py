@@ -186,9 +186,13 @@ class BackgroundAnalyzer(QThread):
         from app.core.ai_bridge import AiBridge, OllamaError
         from app.ui.views.reader_view import _AnalyzeWorker
 
+        from app.core.ai_bridge import get_gen_model
         endpoint  = str(self._config.get("ai_endpoint", "http://localhost:7072"))
-        gen_model = str(self._config.get("ai_gen_model", ""))
+        gen_model = get_gen_model()
         num_ctx   = int(self._config.get("ai_num_ctx", 4096))
+        if not gen_model:
+            log.warning("Análise individual ignorada: nenhum modelo configurado no HUB.")
+            return
         bridge    = AiBridge(endpoint=endpoint, gen_model=gen_model)
 
         system = _SYSTEM_FEW_SHOT if _is_small_model(gen_model) else _SYSTEM
@@ -222,8 +226,12 @@ class BackgroundAnalyzer(QThread):
         """
         from app.core.ai_bridge import AiBridge, OllamaError
 
+        from app.core.ai_bridge import get_gen_model as _get_gen_model
         endpoint  = str(self._config.get("ai_endpoint", "http://localhost:7072"))
-        gen_model = str(self._config.get("ai_gen_model", ""))
+        gen_model = _get_gen_model()
+        if not gen_model:
+            log.warning("Análise batch ignorada: nenhum modelo configurado no HUB.")
+            return
         bridge    = AiBridge(endpoint=endpoint, gen_model=gen_model)
 
         # Resolver artigos que vieram só com ID (sem title/content)
@@ -330,9 +338,10 @@ class BackgroundAnalyzer(QThread):
     # ------------------------------------------------------------------
 
     def _ai_enabled(self) -> bool:
+        from app.core.ai_bridge import get_gen_model as _get_gen_model
         return (
             bool(self._config.get("ai_enabled", False))
-            and bool(self._config.get("ai_gen_model", ""))
+            and bool(_get_gen_model())
         )
 
     def _extract_text(self, article) -> str:

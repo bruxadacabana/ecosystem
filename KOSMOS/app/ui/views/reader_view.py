@@ -974,8 +974,9 @@ class ReaderView(QWidget):
         self._update_meta_indicators()
 
         # Status inicial da análise
+        from app.core.ai_bridge import get_gen_model as _get_gen_model
         ai_on     = bool(self._config.get("ai_enabled", False))
-        gen_model = self._config.get("ai_gen_model", "")
+        gen_model = _get_gen_model()
         if not ai_on or not gen_model:
             self._update_analysis_status("")
         elif (
@@ -1221,7 +1222,8 @@ class ReaderView(QWidget):
             return
         if not bool(self._config.get("ai_enabled", False)):
             return
-        gen_model = self._config.get("ai_gen_model", "")
+        from app.core.ai_bridge import get_gen_model as _get_gen_model
+        gen_model = _get_gen_model()
         if not gen_model:
             return
 
@@ -1353,7 +1355,8 @@ class ReaderView(QWidget):
             return
         if not bool(self._config.get("ai_enabled", False)):
             return
-        embed_model = self._config.get("ai_embed_model", "")
+        from app.core.ai_bridge import get_embed_model as _get_embed_model
+        embed_model = _get_embed_model()
         if not embed_model:
             return
         if self._article.embedding is not None:
@@ -1905,14 +1908,14 @@ class ReaderView(QWidget):
             return
 
         # Verificar configuração de IA
-        endpoint  = self._config.get("ai_endpoint",  "http://localhost:7072")
-        gen_model = self._config.get("ai_gen_model", "")
+        from app.core.ai_bridge import get_gen_model as _get_gen_model
+        endpoint  = self._config.get("ai_endpoint", "http://localhost:7072")
+        gen_model = _get_gen_model()
         if not gen_model:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(
                 self, "IA não configurada",
-                "Nenhum modelo de geração selecionado.\n"
-                "Vá em Configurações → IA e clique em 'Detectar modelos'.",
+                "Nenhum modelo configurado no HUB para análise do KOSMOS.",
             )
             return
 

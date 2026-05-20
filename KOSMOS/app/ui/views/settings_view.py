@@ -568,9 +568,10 @@ class SettingsView(QWidget):
         # IA
         self._ai_enable.setChecked(bool(self._cfg.get("ai_enabled", False)))
         self._ai_endpoint.setText(self._cfg.get("ai_endpoint", "http://localhost:7072"))
-        gen_val = self._cfg.get("ai_gen_model", "")
-        emb_val = self._cfg.get("ai_embed_model", "")
+        from app.core.ai_bridge import get_gen_model as _get_gen_model, get_embed_model as _get_embed_model
         parts: list[str] = []
+        gen_val = _get_gen_model()
+        emb_val = _get_embed_model()
         if gen_val:
             parts.append(f"geração: {gen_val}")
         if emb_val:
@@ -634,8 +635,9 @@ class SettingsView(QWidget):
     def _check_ollama_status(self) -> None:
         if hasattr(self, "_ollama_check_worker") and self._ollama_check_worker.isRunning():
             return
+        from app.core.ai_bridge import get_gen_model as _get_gen_model
         endpoint = self._cfg.get("ai_endpoint", "http://localhost:7072")
-        model    = str(self._cfg.get("ai_gen_model", ""))
+        model    = _get_gen_model()
         self._ollama_conn_lbl.setText("○  verificando…")
         self._ollama_conn_lbl.setObjectName("ollamaUnknown")
         self._ollama_conn_lbl.style().unpolish(self._ollama_conn_lbl)

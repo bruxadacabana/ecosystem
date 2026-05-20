@@ -263,9 +263,10 @@ class SearchOverlay(QWidget):
         """True se IA está habilitada e o modelo de embedding está configurado."""
         if self._config is None:
             return False
+        from app.core.ai_bridge import get_embed_model as _get_embed_model
         return (
             bool(self._config.get("ai_enabled", False))
-            and bool(self._config.get("ai_embed_model", ""))
+            and bool(_get_embed_model())
         )
 
     def deactivate(self) -> None:
@@ -349,8 +350,9 @@ class SearchOverlay(QWidget):
             self._sem_worker.finished.disconnect()
             self._sem_worker.failed.disconnect()
 
+        from app.core.ai_bridge import get_embed_model as _get_embed_model
         endpoint    = self._config.get("ai_endpoint", "http://localhost:7072")   # type: ignore[union-attr]
-        embed_model = self._config.get("ai_embed_model", "")                      # type: ignore[union-attr]
+        embed_model = _get_embed_model()
 
         self._status_lbl.setText("Gerando embedding… aguarde")
         self._status_lbl.show()

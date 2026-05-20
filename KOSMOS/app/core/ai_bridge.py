@@ -27,6 +27,26 @@ from ecosystem_client import (  # noqa: E402
 DEFAULT_ENDPOINT = "http://localhost:7072"   # LOGOS proxy; fallback a 11434 nas Settings
 
 
+def get_gen_model() -> str:
+    """Modelo de geração do KOSMOS — sempre lido do perfil ativo do LOGOS em runtime."""
+    try:
+        from ecosystem_client import get_active_profile
+        p = get_active_profile()
+        return ((p or {}).get("models", {}) or {}).get("llm_analysis", "") if p else ""
+    except Exception:
+        return ""
+
+
+def get_embed_model() -> str:
+    """Modelo de embedding — sempre lido do perfil ativo do LOGOS em runtime."""
+    try:
+        from ecosystem_client import get_active_profile
+        p = get_active_profile()
+        return ((p or {}).get("models", {}) or {}).get("embed", "") if p else ""
+    except Exception:
+        return ""
+
+
 class OllamaError(Exception):
     """Erro de comunicação com o Ollama."""
 

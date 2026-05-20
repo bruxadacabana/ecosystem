@@ -11,10 +11,6 @@ from app.utils.paths import Paths
 
 log = logging.getLogger("kosmos.config")
 
-# Chaves cujo valor é sempre determinado pelo LOGOS/HUB — nunca persistido entre sessões.
-# O usuário pode alterar durante a sessão, mas no próximo startup o HUB volta a ser a fonte.
-_RUNTIME_KEYS: frozenset[str] = frozenset({"ai_gen_model", "ai_embed_model"})
-
 DEFAULTS: dict[str, Any] = {
     "theme":                    "day",
     "reader_font_size":         18,
@@ -23,14 +19,12 @@ DEFAULTS: dict[str, Any] = {
     "purge_unread_days":        90,
     "auto_scrape":              False,
     "default_translation_lang": "pt",
-    "display_language":         "",     # "" = sem tradução de títulos; "pt", "en", etc.
+    "display_language":         "",
     "reddit_client_id":         "",
     "reddit_client_secret":     "",
     "reddit_user_agent":        "KOSMOS/1.0",
     "http_port":                8965,
-    # IA — modelos recomendados pelo LOGOS para o KOSMOS
-    "ai_gen_model":             "gemma2:2b",   # análise: ~2-3× mais rápido que 7B
-    "ai_num_ctx":               4096,           # necessário para KV prefix cache consistente
+    "ai_num_ctx":               4096,
 }
 
 
@@ -53,7 +47,6 @@ class Config:
     def __init__(self) -> None:
         self._path: Path = Paths.SETTINGS
         self._data: dict[str, Any] = {}
-        self._user_set_keys: set[str] = set()  # chaves presentes no arquivo salvo pelo usuário
         self._load()
 
     # ------------------------------------------------------------------
@@ -61,7 +54,6 @@ class Config:
     # ------------------------------------------------------------------
 
     def _load(self) -> None:
-        # Tenta caminho primário (config_path sincronizado), fallback para legado em data/
         for candidate in (self._path, self._LEGACY_PATH):
             if candidate.exists():
                 try:
@@ -70,8 +62,6 @@ class Config:
                     if not isinstance(loaded, dict):
                         raise ConfigError("settings.json não contém um objeto JSON válido.")
                     self._data = loaded
-                    # Runtime keys são sempre determinadas pelo LOGOS — excluir do user_set
-                    self._user_set_keys = set(loaded.keys()) - _RUNTIME_KEYS
                 except json.JSONDecodeError as exc:
                     log.warning("settings.json corrompido, usando padrões. Detalhe: %s", exc)
                     self._data = {}
@@ -80,7 +70,10 @@ class Config:
                     self._data = {}
                 break
 
-        # Preencher chaves ausentes com defaults
+        # Chaves de modelo são exclusividade do HUB — remover valores stale do arquivo
+        self._data.pop("ai_gen_model", None)
+        self._data.pop("ai_embed_model", None)
+
         for key, value in DEFAULTS.items():
             if key not in self._data:
                 self._data[key] = value
@@ -102,23 +95,7 @@ class Config:
 
     def set(self, key: str, value: Any) -> None:
         self._data[key] = value
-        if key not in _RUNTIME_KEYS:
-            self._save()
+        self._save()
 
     def get_all(self) -> dict[str, Any]:
         return dict(self._data)
-
-    def apply_logos_profile(self, profile: "dict[str, Any]") -> None:
-        """Aplica modelos recomendados pelo LOGOS para campos não configurados pelo usuário.
-
-        Chaves presentes no arquivo salvo (override explícito) nunca são alteradas.
-        """
-        models = profile.get("models", {})
-        if "ai_gen_model" not in self._user_set_keys:
-            model = models.get("llm_analysis", "")
-            if model:
-                self._data["ai_gen_model"] = model
-        if "ai_embed_model" not in self._user_set_keys:
-            model = models.get("embed", "")
-            if model:
-                self._data["ai_embed_model"] = model
