@@ -38,9 +38,9 @@ log = logging.getLogger("mnemosyne.affective_state")
 
 # ── Parâmetros ALMA ──────────────────────────────────────────────────────────
 
-_EPISODIC_WINDOW_H:  float = 6.0
-_MOOD_WINDOW_H:      float = 48.0
-_MOOD_SMOOTHING_HL:  float = 24.0
+_EPISODIC_WINDOW_H:  float = 2.0    # dentro de uma sessão
+_MOOD_WINDOW_H:      float = 24.0   # contexto do dia
+_MOOD_SMOOTHING_HL:  float = 12.0
 _MOOD_DAMPEN:        float = 0.5
 _MOOD_MAX_ABS:       float = 0.5
 _MOOD_CACHE_TTL_S:   float = 600.0

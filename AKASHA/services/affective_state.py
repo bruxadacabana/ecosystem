@@ -46,9 +46,9 @@ log = logging.getLogger("akasha.affective_state")
 
 # ── Parâmetros ALMA ──────────────────────────────────────────────────────────
 
-_EPISODIC_WINDOW_H:  float = 6.0    # janela para emoções episódicas (M2)
-_MOOD_WINDOW_H:      float = 48.0   # janela de acumulação do humor
-_MOOD_SMOOTHING_HL:  float = 24.0   # meia-vida de suavização do humor (h)
+_EPISODIC_WINDOW_H:  float = 2.0    # janela para emoções episódicas (M2) — dentro de uma sessão
+_MOOD_WINDOW_H:      float = 24.0   # janela de acumulação do humor — contexto do dia
+_MOOD_SMOOTHING_HL:  float = 12.0   # meia-vida de suavização do humor (h)
 _MOOD_DAMPEN:        float = 0.5    # humor menos intenso que episódico
 _MOOD_MAX_ABS:       float = 0.5    # clamp: humor nunca excede ±0.5
 _MOOD_CACHE_TTL_S:   float = 600.0  # TTL do cache de humor em memória (10 min)
