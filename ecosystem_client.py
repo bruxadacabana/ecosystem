@@ -584,6 +584,116 @@ def get_backup_dir() -> Path | None:
     return (root / ".backup") if root is not None else None
 
 
+def _interests_path() -> Path | None:
+    """Retorna {sync_root}/interests.json ou None se sync_root não configurado."""
+    root = get_sync_root()
+    return (root / "interests.json") if root is not None else None
+
+
+def get_interests() -> list[dict]:
+    """Retorna a lista de tópicos de interesse do ecossistema.
+
+    Lê {sync_root}/interests.json. Retorna [] se o arquivo não existir,
+    sync_root não estiver configurado, ou o arquivo estiver corrompido.
+    Nunca lança exceção.
+    """
+    path = _interests_path()
+    if path is None or not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data.get("topics", [])
+    except Exception:
+        return []
+
+
+def update_interests(topics: list[dict]) -> None:
+    """Faz merge de `topics` no interests.json, preservando entradas fixadas e excluídas.
+
+    Regras de merge por `name` (case-insensitive):
+    - Se o tópico já existe com `pinned=True`: mantém weight e sources atuais — não
+      sobrescreve (o usuário fixou manualmente, não deve ser modificado por automação).
+    - Se o tópico já existe com `excluded=True`: ignora a entrada recebida — o usuário
+      excluiu explicitamente e não quer ver ele de volta.
+    - Caso contrário: atualiza weight e faz union de sources; mantém pinned/excluded atuais.
+    - Tópicos novos (não existem no arquivo): adicionados com os valores recebidos.
+
+    Escrita atômica com filelock. Silenciosamente ignorado se sync_root não configurado.
+    """
+    path = _interests_path()
+    if path is None:
+        return
+
+    import datetime as _dt
+
+    def _do_write() -> None:
+        existing: list[dict] = []
+        if path.exists():
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8")).get("topics", [])
+            except Exception:
+                existing = []
+
+        by_name: dict[str, dict] = {t["name"].lower(): t for t in existing if "name" in t}
+
+        for incoming in topics:
+            name = incoming.get("name", "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in by_name:
+                current = by_name[key]
+                if current.get("excluded"):
+                    continue
+                if current.get("pinned"):
+                    # Mantém weight e sources atuais — apenas garante que name correto
+                    by_name[key] = current
+                    continue
+                # Merge: atualiza weight, faz union de sources
+                merged_sources = list({
+                    *current.get("sources", []),
+                    *incoming.get("sources", []),
+                })
+                by_name[key] = {
+                    "name":     current["name"],
+                    "weight":   incoming.get("weight", current.get("weight", 1.0)),
+                    "sources":  merged_sources,
+                    "pinned":   current.get("pinned", False),
+                    "excluded": current.get("excluded", False),
+                }
+            else:
+                by_name[key] = {
+                    "name":     name,
+                    "weight":   incoming.get("weight", 1.0),
+                    "sources":  incoming.get("sources", []),
+                    "pinned":   incoming.get("pinned", False),
+                    "excluded": incoming.get("excluded", False),
+                }
+
+        result = {
+            "topics":     list(by_name.values()),
+            "updated_at": _dt.datetime.utcnow().isoformat() + "Z",
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(result, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, path)
+        except OSError:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    if _HAS_FILELOCK:
+        with _FileLock(str(_lock_path()), timeout=10):
+            _do_write()
+    else:
+        _do_write()
+
+
 def write_section(app: str, section: dict[str, Any]) -> None:
     """
     Atualiza apenas a seção `app` do ecosystem.json, preservando as demais.
