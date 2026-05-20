@@ -6611,3 +6611,10 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Mnemosyne
 - [ ] **Revisar modelo de saliência em `get_unshown_popup_entries()`** — mesma revisão em `Mnemosyne/core/personal_memory.py`. Alinhar com a lógica adotada no AKASHA para consistência entre os dois sistemas de memória afetiva.
+
+### KOSMOS — refazer do zero com nova stack | 2026-05-20
+> Contexto: o KOSMOS atual (PyQt6) acumulou falhas sistêmicas que não foram possíveis de depurar/corrigir: análise de IA em background não exibe resultado nos cards mesmo com artigos analisados no banco, logger para de escrever enquanto o app segue rodando, análise de artigo aberto não aparece nem no reader nem no log, e o app como um todo não reflete o estado real da IA. A arquitetura atual mistura threads OS, QThreads e event loop Qt de forma difícil de rastrear. Decisão: descartar e reescrever. Stack a decidir — avaliar alternativas ao PyQt6 (ex.: Tauri+webview, Electron, Flutter, GTK4/Python, web app local) antes de começar. Discutir com a usuária antes de escolher stack.
+
+#### KOSMOS
+- [ ] **Avaliar e decidir nova stack para o KOSMOS** — pesquisar alternativas ao PyQt6 considerando: (1) facilidade de debug de threads/async; (2) suporte a feeds RSS/Atom; (3) integração HTTP com Ollama/LOGOS; (4) compatibilidade CachyOS + Windows 10; (5) manutenibilidade a longo prazo. Apresentar opções com trade-offs antes de decidir.
+- [ ] **Reescrever KOSMOS do zero na stack escolhida** — preservar funcionalidades: feed reader RSS/Atom, análise IA (sentimento, clickbait, 5Ws, tags), busca FTS5 + semântica, leitor de artigos, modo noite/dia, integração HTTP com LOGOS (prioridades P1/P2/P3), integração ecosystem_client (sync_root, perfil ativo). Não replicar bugs da versão atual.
