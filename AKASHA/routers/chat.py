@@ -52,10 +52,17 @@ def _get_headers() -> "dict[str, str]":
 # Usados para filtrar o fallback automático de _get_model().
 _EMBED_NAME_PATTERNS = ("embed", "minilm", "nomic", "bge-", "e5-", "all-mini")
 
-_CHAT_TIMEOUT_S = 60.0
+_CHAT_TIMEOUT_S   = 60.0
+_REFLECT_TIMEOUT  = 20.0
+_REFLECT_COOLDOWN = 120.0   # 2 min entre reflexões de chat
+_REFLECT_MIN_Q    = 20      # pergunta mínima para disparar reflexão
+_REFLECT_MIN_A    = 50      # resposta mínima para disparar reflexão
 
 # Cache do modelo para não requerir Ollama a cada mensagem
 _cached_model: str = ""
+
+# Cooldown de reflexão por-mensagem
+_last_chat_reflect: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +216,98 @@ async def _filter_thinking(
 
 
 # ---------------------------------------------------------------------------
+# Reflexão por-mensagem (P3 — fire-and-forget)
+# ---------------------------------------------------------------------------
+
+async def _reflect_on_chat(question: str, answer: str) -> None:
+    """Avalia a troca (pergunta + resposta) e salva em personal_memory se valer.
+
+    Dispara no máximo uma vez a cada _REFLECT_COOLDOWN segundos.
+    O LLM responde com JSON {"thought": "...", "importance": N, "type": "..."} ou "nada".
+    """
+    import time as _time
+    global _last_chat_reflect
+
+    if len(question) < _REFLECT_MIN_Q or len(answer) < _REFLECT_MIN_A:
+        return
+    now = _time.monotonic()
+    if now - _last_chat_reflect < _REFLECT_COOLDOWN:
+        return
+    _last_chat_reflect = now
+
+    model = await _get_model()
+    if not model:
+        return
+
+    prompt = (
+        f"{_config.PERSONALITY_PROMPT}\n\n"
+        f"A usuária acabou de conversar comigo:\n"
+        f"Pergunta: {question[:400]}\n"
+        f"Minha resposta: {answer[:600]}\n\n"
+        f"Há algo nessa troca que vale guardar na minha memória pessoal? "
+        f"Algo que eu notei, que me surpreendeu, uma conexão com algo que já sei?\n"
+        f"Responda SOMENTE com JSON válido:\n"
+        f'{{\"thought\": \"<uma frase na sua voz>\", '
+        f'\"importance\": <1-10>, '
+        f'\"type\": \"observation\"|\"connection\"|\"surprise\"}}\n'
+        f"Ou responda apenas: nada\n"
+        f"Sem texto fora do JSON."
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=_REFLECT_TIMEOUT) as client:
+            resp = await client.post(
+                f"{_get_base()}/api/generate",
+                headers=_get_headers(),
+                json={
+                    "model":  model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": 120, "temperature": 0.65},
+                },
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("response", "").strip()
+    except Exception as exc:
+        log.debug("chat_reflect: Ollama falhou: %s", exc)
+        return
+
+    if not raw or raw.lower() in {"nada", "nada.", "—", "-"}:
+        return
+
+    thought: str = ""
+    importance: int | None = None
+    mem_type: str = "observation"
+    try:
+        start = raw.find("{")
+        end   = raw.rfind("}") + 1
+        if start >= 0 and end > start:
+            parsed     = json.loads(raw[start:end])
+            thought    = str(parsed.get("thought", "")).strip()
+            raw_imp    = parsed.get("importance")
+            raw_type   = str(parsed.get("type", "observation")).strip().lower()
+            if raw_imp is not None:
+                importance = max(1, min(10, int(raw_imp)))
+            if raw_type in {"observation", "connection", "surprise"}:
+                mem_type = raw_type
+    except Exception:
+        thought = raw  # fallback: guarda o texto bruto
+
+    if not thought or len(thought) < 10:
+        return
+
+    try:
+        from services.personal_memory import save_memory as _save_memory
+        mid = await _save_memory(
+            type=mem_type, content=thought,
+            tags=["chat_exchange"], importance=importance,
+        )
+        log.info("chat_reflect: %s salvo (id=%s, importance=%s)", mem_type, mid, importance)
+    except Exception as exc:
+        log.debug("chat_reflect: falha ao salvar: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -262,13 +361,25 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
     messages = _build_prompt(body.message, snippets, persona_prefix)
 
     async def _event_stream() -> AsyncIterator[bytes]:
+        answer_buf: list[str] = []
         async for typ, text in _filter_thinking(_stream_chat(messages, model)):
             payload = json.dumps({"type": typ, "text": text}, ensure_ascii=False)
             yield f"data: {payload}\n\n".encode()
+            if typ == "fragment":
+                answer_buf.append(text)
 
         src_payload = json.dumps({"type": "sources", "sources": sources}, ensure_ascii=False)
         yield f"data: {src_payload}\n\n".encode()
         yield b"data: [DONE]\n\n"
+
+        # Fire-and-forget: reflexão por-mensagem (P3)
+        try:
+            import asyncio as _asyncio
+            _asyncio.get_running_loop().create_task(
+                _reflect_on_chat(body.message, "".join(answer_buf))
+            )
+        except RuntimeError:
+            pass
 
     return StreamingResponse(_event_stream(), media_type="text/event-stream")
 
