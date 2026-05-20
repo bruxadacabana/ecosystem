@@ -1,10 +1,6 @@
 ## Fila de implementação atual:
 
-### page_knowledge — dados de análise LLM no banco principal da AKASHA | 2026-05-19
-
 ### Pesquisa: Emoções em Reflexões de IAs e Critérios de Notificação Proativa | 2026-05-19
-
-### Integração KOSMOS-AKASHA: Perfil de Interesse Compartilhado e Busca Unificada | 2026-05-19
 
 ### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
 
