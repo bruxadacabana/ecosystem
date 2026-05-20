@@ -1,14 +1,18 @@
 ## Fila de implementação atual:
 
-### Pesquisa: Emoções em Reflexões de IAs e Critérios de Notificação Proativa | 2026-05-19
+- sobre o processamento d emoções em llm: eu quero que a Akasha e a Mnemosyne "entendam" o conceito de emoção como aplicarmos
+
+### Pesquisa: Processamento de Emoções em LLMs — Mecanismos, Saliência e Memória Afetiva | 2026-05-19
 
 ### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
+
+### KOSMOS — refazer do zero com nova stack | 2026-05-20
+
+### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
 
 ### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
 
 ### CODEX — Leitor centralizado do ecossistema | 2026-05-13
-
-### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
 
 ### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
 
