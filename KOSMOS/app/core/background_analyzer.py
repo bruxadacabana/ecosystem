@@ -186,8 +186,8 @@ class BackgroundAnalyzer(QThread):
         from app.core.ai_bridge import AiBridge, OllamaError
         from app.ui.views.reader_view import _AnalyzeWorker
 
-        from app.core.ai_bridge import get_gen_model
-        endpoint  = str(self._config.get("ai_endpoint", "http://localhost:7072"))
+        from app.core.ai_bridge import get_gen_model, get_ollama_endpoint
+        endpoint  = get_ollama_endpoint()
         gen_model = get_gen_model()
         num_ctx   = int(self._config.get("ai_num_ctx", 4096))
         if not gen_model:
@@ -226,8 +226,8 @@ class BackgroundAnalyzer(QThread):
         """
         from app.core.ai_bridge import AiBridge, OllamaError
 
-        from app.core.ai_bridge import get_gen_model as _get_gen_model
-        endpoint  = str(self._config.get("ai_endpoint", "http://localhost:7072"))
+        from app.core.ai_bridge import get_gen_model as _get_gen_model, get_ollama_endpoint
+        endpoint  = get_ollama_endpoint()
         gen_model = _get_gen_model()
         if not gen_model:
             log.warning("Análise batch ignorada: nenhum modelo configurado no HUB.")
@@ -339,10 +339,7 @@ class BackgroundAnalyzer(QThread):
 
     def _ai_enabled(self) -> bool:
         from app.core.ai_bridge import get_gen_model as _get_gen_model
-        return (
-            bool(self._config.get("ai_enabled", False))
-            and bool(_get_gen_model())
-        )
+        return bool(_get_gen_model())
 
     def _extract_text(self, article) -> str:
         raw = article.content_full or article.summary or ""

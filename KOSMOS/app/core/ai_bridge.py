@@ -27,6 +27,11 @@ from ecosystem_client import (  # noqa: E402
 DEFAULT_ENDPOINT = "http://localhost:7072"   # LOGOS proxy; fallback a 11434 nas Settings
 
 
+def get_ollama_endpoint() -> str:
+    """Endpoint Ollama — sempre via LOGOS (ecosystem_client), nunca hardcoded."""
+    return _get_ollama_base()
+
+
 def get_gen_model() -> str:
     """Modelo de geração do KOSMOS — sempre lido do perfil ativo do LOGOS em runtime."""
     try:
