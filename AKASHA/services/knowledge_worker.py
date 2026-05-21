@@ -808,6 +808,7 @@ async def _call_ollama_extract(title: str, content: str) -> dict | None:
         f'{{\"summary\": \"1-2 frases sobre o conteúdo\", '
         f'\"topics\": [\"tópico1\", \"tópico2\", \"tópico3\"], '
         f'\"entities\": [\"entidade1\", \"entidade2\"]}}\n\n'
+        f"Escreva tópicos e entidades SEMPRE em português, mesmo que o texto esteja em outro idioma.\n\n"
         f"Título: {title}\nTexto: {content}\nJSON:"
     )
 
@@ -882,7 +883,8 @@ async def _extract_entities_llm(text: str, model: str) -> list[str]:
     """Extrai entidades via LLM (P3). Retorna lista vazia em falha."""
     prompt = (
         f"Liste as entidades principais do texto abaixo: nomes de pessoas, tecnologias, "
-        f"linguagens, conceitos, frameworks ou organizações. Uma por linha, sem explicações.\n\n"
+        f"linguagens, conceitos, frameworks ou organizações. Uma por linha, sem explicações.\n"
+        f"Escreva SEMPRE em português, mesmo que o texto esteja em outro idioma.\n\n"
         f"Texto: {text[:500]}\n\nEntidades:"
     )
     try:

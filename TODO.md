@@ -4761,6 +4761,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### AKASHA — normalização de idioma no perfil de interesses | 2026-05-21
+> Contexto: topics extraídos de páginas em inglês ficam em inglês ("machine learning"), enquanto topics de páginas em português ficam em português ("aprendizado de máquina"). O mesmo interesse acaba fragmentado em entradas separadas no topic_interest_profile, enfraquecendo o sinal acumulado.
+
+#### AKASHA
+- [x] **Forçar português nos prompts de extração LLM** (`_call_ollama_extract` e `_extract_entities_llm` em `knowledge_worker.py`): adicionar instrução explícita para que tópicos e entidades sejam sempre escritos em português, independente do idioma da página indexada.
+
 ### AKASHA — backfill de conhecimento para dados anteriores | 2026-05-18
 > Contexto: o knowledge_worker só processa páginas que chegam à fila durante a sessão atual. Arquivos já salvos em `ARCHIVE_PATH/Web/` e páginas em `crawl_pages` sem entrada em `page_knowledge` nunca foram processados — a AKASHA não tem visão do histórico completo, o que empobrece o perfil de interesse e a memória pessoal.
 
