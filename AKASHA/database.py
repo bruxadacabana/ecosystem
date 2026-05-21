@@ -1731,24 +1731,23 @@ async def get_query_suggestions(prefix: str, limit: int = 10) -> list[str]:
             )).fetchall()
             crawl_titles = [r[0] for r in rows4 if r[0]]
 
-    # 2 e 3: banco de conhecimento (topic_interest_profile + page_knowledge)
+    # 2: topic_interest_profile — shared store
+    if len(results) < limit:
+        try:
+            import shared_topic_profile as _stp
+            cap = (limit - len(results)) * 2
+            for t in _stp.search_topics(pat_lower.rstrip("%"), cap):
+                if len(results) >= limit:
+                    break
+                if t.lower() not in seen:
+                    seen.add(t.lower())
+                    results.append(t)
+        except Exception:
+            pass
+
+    # 3: page_knowledge topics
     try:
         async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as kdb:
-            if len(results) < limit:
-                cap = (limit - len(results)) * 2
-                rows2 = await (await kdb.execute(
-                    "SELECT topic FROM topic_interest_profile "
-                    "WHERE LOWER(topic) LIKE ? "
-                    "ORDER BY score DESC LIMIT ?",
-                    (pat_lower, cap),
-                )).fetchall()
-                for (t,) in rows2:
-                    if len(results) >= limit:
-                        break
-                    if t.lower() not in seen:
-                        seen.add(t.lower())
-                        results.append(t)
-
             if len(results) < limit:
                 cap = (limit - len(results)) * 2
                 try:
@@ -2097,51 +2096,31 @@ async def get_page_knowledge_batch(urls: list[str]) -> dict[str, dict]:
 
 
 async def update_topic_score(topic: str, delta: float = 1.0) -> None:
-    """Incrementa score de um tópico no perfil de interesse."""
-    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
-        await db.execute(
-            """INSERT INTO topic_interest_profile (topic, score, query_count, last_updated)
-               VALUES (?, ?, 1, datetime('now'))
-               ON CONFLICT(topic) DO UPDATE SET
-                   score        = score + ?,
-                   query_count  = query_count + 1,
-                   last_updated = datetime('now')""",
-            (topic, delta, delta),
-        )
-        await db.commit()
+    """Incrementa score de um tópico no perfil de interesse compartilhado."""
+    import shared_topic_profile as _stp
+    _stp.update_score(topic, delta, "akasha")
 
 
 async def get_topic_score(topic: str) -> float | None:
     """Retorna o score atual de um tópico, ou None se não existir."""
-    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
-        row = await (await db.execute(
-            "SELECT score FROM topic_interest_profile WHERE topic = ?", (topic,)
-        )).fetchone()
-    return row[0] if row else None
+    import shared_topic_profile as _stp
+    scores = _stp.get_scores([topic])
+    val = scores.get(topic.strip().lower())
+    return val if val and val > 0.0 else None
 
 
 async def get_topic_scores_for_list(topics: list[str]) -> dict[str, float]:
-    """Retorna score de cada tópico informado (apenas os existentes no profile)."""
+    """Retorna score de cada tópico informado (apenas os com score > 0)."""
     if not topics:
         return {}
-    placeholders = ",".join("?" * len(topics))
-    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
-        rows = await (await db.execute(
-            f"SELECT topic, score FROM topic_interest_profile WHERE topic IN ({placeholders})",
-            topics,
-        )).fetchall()
-    return {r[0]: r[1] for r in rows}
+    import shared_topic_profile as _stp
+    return {k: v for k, v in _stp.get_scores(topics).items() if v > 0.0}
 
 
 async def get_top_topics(n: int = 10) -> list[tuple[str, float]]:
     """Retorna os N tópicos com maior score, em ordem decrescente."""
-    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
-        rows = await (await db.execute(
-            "SELECT topic, score FROM topic_interest_profile "
-            "ORDER BY score DESC LIMIT ?",
-            (n,),
-        )).fetchall()
-    return [(r[0], r[1]) for r in rows]
+    import shared_topic_profile as _stp
+    return _stp.get_top_topics(n)
 
 
 async def get_recent_page_knowledge(n: int = 10) -> list[dict]:
@@ -2193,19 +2172,8 @@ async def decay_old_topic_scores(days_inactive: int = 7, factor: float = 0.97) -
     Remove tópicos com score abaixo de 0.01 para evitar acúmulo de ruído.
     Retorna o número de tópicos afetados.
     """
-    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
-        cur = await db.execute(
-            f"""UPDATE topic_interest_profile
-                SET score = score * ?
-                WHERE last_updated < datetime('now', '-{days_inactive} days')""",
-            (factor,),
-        )
-        affected = cur.rowcount
-        await db.execute(
-            "DELETE FROM topic_interest_profile WHERE score < 0.01"
-        )
-        await db.commit()
-    return affected
+    import shared_topic_profile as _stp
+    return _stp.decay_scores(factor, days_inactive)
 
 
 async def upsert_entity_pair(entity: str, co_entity: str, delta: float = 1.0) -> None:
@@ -2266,10 +2234,8 @@ async def get_graph_data(node_limit: int = 80, edge_limit: int = 250) -> dict:
         node_ids = {r[0] for r in node_rows}
 
         # Scores de interesse para dimensionar nós
-        score_rows = await (await db.execute(
-            "SELECT topic, score FROM topic_interest_profile"
-        )).fetchall()
-        interest: dict[str, float] = {r[0]: r[1] for r in score_rows}
+        import shared_topic_profile as _stp
+        interest: dict[str, float] = _stp.get_all_scores()
 
         nodes = [
             {
