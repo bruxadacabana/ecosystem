@@ -118,5 +118,10 @@ def iter_briefing(
 
         prompt = _REDUCE_PROMPT.format(extractions="\n\n---\n".join(extractions))
 
+    # G(c,d): tom afetivo baseado no estado VA atual (injetado pelo StudioWorker)
+    va_hint = getattr(config, "va_hint", "")
+    if va_hint:
+        prompt = f"Tom: {va_hint}\n\n{prompt}"
+
     llm_reduce = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.2, timeout=180)
     yield from llm_reduce.stream(prompt)

@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
-from pathlib import Path
-
+import math
 import shutil
+import sqlite3
 import sys
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 from .config import get_app_data_dir
 
@@ -137,6 +138,156 @@ def _compute_valence_arousal(text: str) -> tuple[float | None, float | None]:
         pass
     return None, None
 
+# ── B1: Entropia de Shannon + B2: Decaimento Ebbinghaus ──────────────────────
+
+_EBBINGHAUS_HALFLIFE_H = 72.0
+_H_MAX = math.log2(3)
+_H_THRESHOLD = 0.8
+_PRUNE_H_THRESHOLD = 1.4
+_PRUNE_STALE_HOURS = 240.0
+
+
+def _shannon_entropy(valence: float | None, arousal: float | None) -> float:
+    """H ∈ [0, 1.585]. Retorna 1.0 se VA ausente (incerteza neutra).
+
+    Polaridades derivadas: neu = 1−arousal; pos = (arousal+valence)/2;
+    neg = (arousal−valence)/2. Exato para XLM-RoBERTa, aproximado para NRC-VAD/VADER.
+    """
+    if valence is None or arousal is None:
+        return 1.0
+    neu = max(1e-10, 1.0 - arousal)
+    pos = max(1e-10, (arousal + valence) / 2.0)
+    neg = max(1e-10, (arousal - valence) / 2.0)
+    total = neu + pos + neg
+    neu /= total; pos /= total; neg /= total
+    return -(pos * math.log2(pos) + neg * math.log2(neg) + neu * math.log2(neu))
+
+
+def _ebbinghaus_retention(created_at: str, display_count: int) -> float:
+    """R = exp(−t / τ) onde τ = S × halflife/ln2, S = 1 + display_count."""
+    try:
+        dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        t_h = max(0.0, (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0)
+    except Exception:
+        t_h = 0.0
+    tau = (1.0 + display_count) * _EBBINGHAUS_HALFLIFE_H / math.log(2)
+    return math.exp(-t_h / tau)
+
+
+# ── D: Emotional RAG — vetores Plutchik ──────────────────────────────────────
+
+_PLUTCHIK_LABELS = (
+    "joy", "trust", "fear", "surprise", "sadness", "disgust", "anger", "anticipation"
+)
+_PLUTCHIK_PROMPT = (
+    "Avalie o texto abaixo nas 8 emoções primárias de Plutchik "
+    "(0.0 = ausente, 1.0 = dominante).\n"
+    "Responda APENAS com JSON válido, sem texto adicional:\n"
+    '{"joy":X,"trust":X,"fear":X,"surprise":X,"sadness":X,"disgust":X,"anger":X,"anticipation":X}\n\n'
+    "Texto: {content}\n\nJSON:"
+)
+
+
+def _va_to_plutchik(valence: float, arousal: float) -> list[float]:
+    """Mapeia estado VA para vetor Plutchik aproximado (proxy para mood-congruent retrieval)."""
+    v  = max(-1.0, min(1.0, valence))
+    a  = max(0.0,  min(1.0, arousal))
+    vn = (v + 1.0) / 2.0
+    vec = [
+        vn * a,
+        vn * (1.0 - a),
+        (1.0 - vn) * a * 0.6,
+        a * (1.0 - abs(v)),
+        (1.0 - vn) * (1.0 - a),
+        (1.0 - vn) * (1.0 - a) * 0.5,
+        (1.0 - vn) * a,
+        vn * a * 0.7,
+    ]
+    total = sum(vec) or 1.0
+    return [round(x / total, 4) for x in vec]
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na  = math.sqrt(sum(x * x for x in a))
+    nb  = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na > 0 and nb > 0 else 0.0
+
+
+def _plutchik_congruence(stored_json: str | None, mood_vec: list[float]) -> float:
+    """Cosine similarity entre vetor Plutchik armazenado e humor atual (0–1)."""
+    if not stored_json:
+        return 0.0
+    try:
+        data = json.loads(stored_json)
+        if isinstance(data, list) and len(data) == 8:
+            vec = [float(x) for x in data]
+        elif isinstance(data, dict):
+            vec = [float(data.get(k, 0.0)) for k in _PLUTCHIK_LABELS]
+        else:
+            return 0.0
+        return _cosine_similarity(vec, mood_vec)
+    except Exception:
+        return 0.0
+
+
+def _update_plutchik_bg(memory_id: int, content: str, llm_model: str, db_path: Path) -> None:
+    """Atualiza coluna plutchik em background (thread daemon)."""
+    try:
+        _root = str(db_path.parent.parent.parent.parent)
+        if _root not in sys.path:
+            sys.path.insert(0, _root)
+        from ecosystem_client import request_llm  # type: ignore
+        prompt = _PLUTCHIK_PROMPT.format(content=content[:400])
+        resp   = request_llm(
+            [{"role": "user", "content": prompt}],
+            app="mnemosyne", model=llm_model, priority=3,
+        )
+        raw = (resp.get("message", {}).get("content", "") or "").strip()
+        start = raw.find("{"); end = raw.rfind("}") + 1
+        if start < 0 or end <= start:
+            return
+        data = json.loads(raw[start:end])
+        if isinstance(data, dict):
+            vec = [float(data.get(k, 0.0)) for k in _PLUTCHIK_LABELS]
+        elif isinstance(data, list) and len(data) == 8:
+            vec = [float(x) for x in data]
+        else:
+            return
+        total = sum(vec) or 1.0
+        vec   = [round(x / total, 4) for x in vec]
+        con   = sqlite3.connect(str(db_path))
+        con.execute("UPDATE personal_memory SET plutchik = ? WHERE id = ?",
+                    (json.dumps(vec), memory_id))
+        con.commit(); con.close()
+    except Exception as exc:
+        log.debug("_update_plutchik_bg: %s", exc)
+
+
+def _salience_score(row: tuple) -> float:
+    """Score composto: base × Ebbinghaus_R × entropy_factor + type_bonus.
+
+    row: (id, created_at, type, content, tags, feedback, category,
+          valence, arousal, importance, display_count)
+    """
+    valence      = row[7]
+    arousal_v    = (row[8] if row[8] is not None else 0.5)
+    importance_v = (row[9] if row[9] is not None else 5) / 10.0
+    display_c    = int(row[10] or 0)
+
+    base = arousal_v * importance_v
+    R    = _ebbinghaus_retention(row[1], display_c)
+
+    H     = _shannon_entropy(valence, row[8])
+    h_pen = max(0.0, (H - _H_THRESHOLD) / (_H_MAX - _H_THRESHOLD))
+    ent_f = 1.0 - 0.3 * h_pen
+
+    type_bonus = 0.001 if row[2] == "surprise" else 0.0
+    return base * R * ent_f + type_bonus
+
+
 _DB_PATH: Path | None = None
 
 # Mapeamento tag → category (primeiras tags reconhecidas têm prioridade)
@@ -229,6 +380,12 @@ def _conn() -> sqlite3.Connection:
         con.execute("ALTER TABLE personal_memory ADD COLUMN arousal REAL DEFAULT NULL")
     if "importance" not in cols:
         con.execute("ALTER TABLE personal_memory ADD COLUMN importance INTEGER DEFAULT NULL")
+    if "display_count" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN display_count INTEGER NOT NULL DEFAULT 0")
+    if "last_shown_at" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN last_shown_at TEXT DEFAULT NULL")
+    if "plutchik" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN plutchik TEXT DEFAULT NULL")
     # affective_state — estado emocional ativo da Mnemosyne (item [F])
     con.execute("""
         CREATE TABLE IF NOT EXISTS affective_state (
@@ -276,6 +433,7 @@ def save_memory(
     if importance is not None:
         importance = max(1, min(10, int(importance)))
     valence, arousal = _compute_valence_arousal(content)
+    import threading
     with _conn() as con:
         cursor = con.execute(
             "INSERT INTO personal_memory "
@@ -284,7 +442,23 @@ def save_memory(
             (type, content, json.dumps(tags, ensure_ascii=False),
              category, valence, arousal, importance),
         )
-        return cursor.lastrowid or 0
+        mid = cursor.lastrowid or 0
+    # D: Plutchik — classificação emocional em background (fire-and-forget)
+    try:
+        _root = str(Path(__file__).parent.parent.parent)
+        if _root not in sys.path:
+            sys.path.insert(0, _root)
+        from ecosystem_client import get_active_profile as _gp  # type: ignore
+        _model = (_gp() or {}).get("llm_analysis", (_gp() or {}).get("llm_rag", ""))
+        if _model and mid:
+            threading.Thread(
+                target=_update_plutchik_bg,
+                args=(mid, content, _model, _get_db()),
+                daemon=True,
+            ).start()
+    except Exception:
+        pass
+    return mid
 
 
 def get_recent(n: int = 10) -> list[dict]:
@@ -360,21 +534,117 @@ def set_feedback(memory_id: int, feedback: str | None) -> None:
         except Exception:
             pass
 
+        # H + I-ext + I: curiosidade epistêmica + atribuição causal + appraisal OCC
+        def _curiosity_from_feedback(mid: int, fb: str) -> None:
+            try:
+                from core.affective_state import (
+                    get_epistemic_curiosity, record_curiosity_event, record_appraisal,
+                )
+                con = _conn()
+                row = con.execute(
+                    "SELECT valence, content FROM personal_memory WHERE id = ?", (mid,)
+                ).fetchone()
+                con.close()
+                valence = (row[0] or 0.0) if row else 0.0
+                content = (row[1] or "")  if row else ""
+
+                # I-ext: atribuição causal usando topic_interest_profile
+                attribution = "ambiguous"
+                try:
+                    from core.topic_profile import extract_keywords, get_topic_scores_for_list
+                    terms = list(extract_keywords(content))
+                    if terms:
+                        scores    = get_topic_scores_for_list(terms)
+                        max_score = max(scores.values(), default=0.0) if scores else 0.0
+                        if max_score > 5.0:
+                            attribution = "internal"
+                        elif max_score < 1.0:
+                            attribution = "external"
+                except Exception:
+                    pass
+
+                # H + I-ext: intensidade de curiosidade escalada pela atribuição
+                if fb == "dismissed" and valence > 0.2:
+                    delta = (0.7 if attribution == "internal"
+                             else 0.5 if attribution == "ambiguous"
+                             else 0.3)
+                    record_curiosity_event(delta, event_ref=f"dismissed_{attribution}:mem#{mid}")
+                elif fb == "confirmed":
+                    current = get_epistemic_curiosity()
+                    if current > 0.3:
+                        record_curiosity_event(-0.4, event_ref=f"epistemic_satisfied:mem#{mid}")
+
+                # I: appraisal OCC do evento de feedback → estado VA temporário decaível
+                if fb == "confirmed":
+                    record_appraisal(
+                        "feedback_confirmed",
+                        novelty=0.15, pleasantness=0.75,
+                        goal_relevance=0.80, coping_potential=0.80,
+                        event_ref=f"confirmed:mem#{mid}",
+                    )
+                elif fb == "dismissed":
+                    if attribution == "internal":
+                        record_appraisal(
+                            "feedback_dismissed",
+                            novelty=0.40, pleasantness=0.25,
+                            goal_relevance=0.70, coping_potential=0.35,
+                            event_ref=f"dismissed_internal:mem#{mid}",
+                        )
+                    elif attribution == "external":
+                        record_appraisal(
+                            "feedback_dismissed",
+                            novelty=0.30, pleasantness=0.45,
+                            goal_relevance=0.40, coping_potential=0.60,
+                            event_ref=f"dismissed_external:mem#{mid}",
+                        )
+                    else:
+                        record_appraisal(
+                            "feedback_dismissed",
+                            novelty=0.35, pleasantness=0.40,
+                            goal_relevance=0.55, coping_potential=0.50,
+                            event_ref=f"dismissed_ambiguous:mem#{mid}",
+                        )
+            except Exception as exc:
+                log.debug("curiosity_from_feedback: %s", exc)
+
+        threading.Thread(
+            target=_curiosity_from_feedback, args=(memory_id, feedback), daemon=True
+        ).start()
+
 
 def get_context_memories(n: int = 8) -> list[dict]:
     """Memórias para uso como contexto em reflexões.
 
-    Ordem: confirmed primeiro, depois neutral; dismissed excluídos.
+    D: rerank por congruência Plutchik com humor atual (mood-congruent retrieval).
+    Confirmed sempre preferenciais; dentro de cada grupo, as de assinatura emocional
+    mais próxima do humor atual ganham prioridade.
     """
+    fetch_n = max(n * 2, 16)
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
+            "SELECT id, created_at, type, content, tags, feedback, category, "
+            "valence, arousal, importance, plutchik "
             "FROM personal_memory "
             "WHERE feedback IS NULL OR feedback = 'confirmed' "
-            "ORDER BY CASE WHEN feedback = 'confirmed' THEN 0 ELSE 1 END, id DESC "
             "LIMIT ?",
-            (n,),
+            (fetch_n,),
         ).fetchall()
+
+    mood_vec: list[float] = [0.125] * 8
+    try:
+        from core.affective_state import get_current_state
+        state    = get_current_state()
+        mood_vec = _va_to_plutchik(state.get("mood_valence", 0.0),
+                                   state.get("mood_arousal", 0.5))
+    except Exception:
+        pass
+
+    def _ctx_score(row: tuple) -> float:
+        confirmed  = 1.0 if row[5] == "confirmed" else 0.0
+        congruence = _plutchik_congruence(row[10], mood_vec)
+        return confirmed + 0.4 * congruence
+
+    top = sorted(rows, key=_ctx_score, reverse=True)[:n]
     return [
         {
             "id": r[0], "created_at": r[1], "type": r[2],
@@ -382,7 +652,7 @@ def get_context_memories(n: int = 8) -> list[dict]:
             "feedback": r[5], "category": r[6],
             "valence": r[7], "arousal": r[8], "importance": r[9],
         }
-        for r in rows
+        for r in top
     ]
 
 
@@ -416,30 +686,26 @@ def has_file_reflection(name_prefix: str) -> bool:
 
 
 def get_unshown_popup_entries(n: int = 5) -> list[dict]:
-    """Retorna entradas candidatas a popup ainda não exibidas.
+    """Retorna entradas candidatas a popup ainda não exibidas, ordenadas por escore B1+B2.
 
-    Apenas 'surprise' e 'connection' são popup-worthy — 'observation' e
-    'reflection' ficam só na memória, nunca interrompem a usuária.
-    Cross-insights internos (tag 'cross_insight') também excluídos.
-
-    Ordem primária: arousal × importance DESC NULLS LAST.
-    Fallback (campos NULL): type ('surprise' > 'connection') e id DESC.
+    Busca pool de max(n×3, 20) candidatos e ordena em Python:
+      score = (arousal × importance/10) × Ebbinghaus_R × (1 − 0.3 × H_penalty) + type_bonus
+    B1: penalidade quando H > 0.8 (evidências conflitantes).
+    B2: decaimento Ebbinghaus — entradas mais antigas decaem em saliência.
     """
+    fetch_n = max(n * 3, 20)
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
+            "SELECT id, created_at, type, content, tags, feedback, category, "
+            "valence, arousal, importance, display_count "
             "FROM personal_memory "
             "WHERE shown_as_popup = 0 "
             "AND type IN ('surprise', 'connection') "
             "AND tags NOT LIKE '%\"cross_insight\"%' "
-            "ORDER BY "
-            "  CASE WHEN arousal IS NOT NULL AND importance IS NOT NULL "
-            "       THEN arousal * importance ELSE -1 END DESC, "
-            "  CASE type WHEN 'surprise' THEN 1 WHEN 'connection' THEN 2 "
-            "            ELSE 3 END ASC, "
-            "  id DESC LIMIT ?",
-            (n,),
+            "LIMIT ?",
+            (fetch_n,),
         ).fetchall()
+    top = sorted(rows, key=_salience_score, reverse=True)[:n]
     return [
         {
             "id": r[0], "created_at": r[1], "type": r[2],
@@ -447,17 +713,45 @@ def get_unshown_popup_entries(n: int = 5) -> list[dict]:
             "feedback": r[5], "category": r[6],
             "valence": r[7], "arousal": r[8], "importance": r[9],
         }
-        for r in rows
+        for r in top
     ]
 
 
 def mark_shown_as_popup(memory_id: int) -> None:
-    """Marca uma entrada como já exibida como popup — persiste entre sessões."""
+    """Marca entrada como já exibida como popup; incrementa display_count."""
     with _conn() as con:
         con.execute(
-            "UPDATE personal_memory SET shown_as_popup = 1 WHERE id = ?",
+            "UPDATE personal_memory "
+            "SET shown_as_popup = 1, display_count = display_count + 1, "
+            "last_shown_at = datetime('now') WHERE id = ?",
             (memory_id,),
         )
+
+
+def prune_high_entropy_stale(max_delete: int = 20) -> int:
+    """Remove entradas antigas (>10d) com alta entropia de Shannon (H > 1.4).
+
+    Entradas com evidências conflitantes que nunca foram exibidas e já esperam
+    há muito tempo provavelmente nunca serão relevantes. Retorna nº removidos.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=_PRUNE_STALE_HOURS)).isoformat()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT id, valence, arousal FROM personal_memory "
+            "WHERE shown_as_popup = 0 "
+            "AND type IN ('surprise', 'connection') "
+            "AND created_at < ?",
+            (cutoff,),
+        ).fetchall()
+        ids_to_del = [r[0] for r in rows
+                      if _shannon_entropy(r[1], r[2]) > _PRUNE_H_THRESHOLD][:max_delete]
+        if not ids_to_del:
+            return 0
+        con.execute(
+            f"DELETE FROM personal_memory WHERE id IN ({','.join('?' * len(ids_to_del))})",
+            ids_to_del,
+        )
+    return len(ids_to_del)
 
 
 def clear_all() -> None:

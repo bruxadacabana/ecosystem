@@ -9,10 +9,43 @@ em vez de BM25 sobre o pool semântico restrito.
 from __future__ import annotations
 
 import pickle
+import re
 from pathlib import Path
 
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
+
+
+_CJK_RE = re.compile(r'[一-鿿぀-ゟ゠-ヿ가-힯]')
+_CJK_BLOCK_RE = re.compile(r'[一-鿿぀-ゟ゠-ヿ가-힯]+')
+
+
+def _tokenize_for_bm25(text: str) -> list[str]:
+    """Tokeniza texto para BM25 com suporte a CJK (japonês, chinês, coreano).
+
+    Idiomas com espaços (pt, en, ru, es…): split por espaço — comportamento original.
+    Texto com >20% de caracteres CJK: gera bigrams de caracteres em cada bloco CJK
+    e split normal para segmentos latinos/cirílicos intercalados. Bigrams cobrem a
+    maioria das entidades japonesas e chinesas sem exigir MeCab/Sudachi.
+    """
+    if not text:
+        return []
+    text_lower = text.lower()
+    total = len(text_lower)
+    if len(_CJK_RE.findall(text_lower)) / total < 0.2:
+        return text_lower.split()
+    tokens: list[str] = []
+    last = 0
+    for m in _CJK_BLOCK_RE.finditer(text_lower):
+        tokens.extend(text_lower[last:m.start()].split())
+        block = m.group(0)
+        if len(block) == 1:
+            tokens.append(block)
+        else:
+            tokens.extend(block[i:i + 2] for i in range(len(block) - 1))
+        last = m.end()
+    tokens.extend(text_lower[last:].split())
+    return tokens
 
 
 _FILENAME = "bm25_index.pkl"
@@ -101,7 +134,7 @@ class BM25Index:
 
     def _ensure_built(self) -> None:
         if self._bm25 is None and self._docs:
-            tokenized = [doc.lower().split() for doc in self._docs]
+            tokenized = [_tokenize_for_bm25(doc) for doc in self._docs]
             self._bm25 = BM25Okapi(tokenized)
 
     def get_top_k(self, query: str, k: int) -> list[tuple[int, Document]]:
@@ -115,7 +148,7 @@ class BM25Index:
             return []
         self._ensure_built()
         assert self._bm25 is not None
-        raw = self._bm25.get_scores(query.lower().split())
+        raw = self._bm25.get_scores(_tokenize_for_bm25(query))
         scores = [
             s * (0.1 if self._metas[i].get("source") in self._deleted_paths else 1.0)
             for i, s in enumerate(raw)

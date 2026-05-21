@@ -320,3 +320,636 @@ O que o Syncthing vai sincronizar: ecosystem.json, TODO.md, CLAUDE.md, arquivos 
 
 O que vai ficar local por máquina: *.db, *.db-wal, *.db-shm, ecosystem.local.json, .venv/, target/, node_modules/, pastas data/ de cada app.
 
+## KOSMOS SEGUE NÃO FUNCIONANDO
+### parte do terminal (do hub):
+llama_model_load: vocab only - skipping tensors
+time=2026-05-20T19:18:01.984-03:00 level=WARN source=server.go:208 msg="flash attention enabled but not supported by model"
+time=2026-05-20T19:18:01.984-03:00 level=INFO source=server.go:430 msg="starting runner" cmd="/usr/local/bin/ollama runner --model /home/spacewitch/.ollama/models/blobs/sha256-7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b --port 46001"
+time=2026-05-20T19:18:01.985-03:00 level=INFO source=sched.go:484 msg="system memory" total="13.5 GiB" free="7.3 GiB" free_swap="13.5 GiB"
+time=2026-05-20T19:18:01.985-03:00 level=INFO source=sched.go:491 msg="gpu memory" id=0 library=ROCm available="6.1 GiB" free="7.3 GiB" minimum="457.0 MiB" overhead="800.0 MiB"
+time=2026-05-20T19:18:01.985-03:00 level=INFO source=server.go:497 msg="loading model" "model layers"=27 requested=-1
+time=2026-05-20T19:18:01.985-03:00 level=INFO source=device.go:240 msg="model weights" device=ROCm0 size="1.5 GiB"
+time=2026-05-20T19:18:01.985-03:00 level=INFO source=device.go:251 msg="kv cache" device=ROCm0 size="1.6 GiB"
+time=2026-05-20T19:18:01.985-03:00 level=INFO source=device.go:262 msg="compute graph" device=ROCm0 size="252.2 MiB"
+time=2026-05-20T19:18:01.985-03:00 level=INFO source=device.go:272 msg="total memory" size="3.4 GiB"
+time=2026-05-20T19:18:01.994-03:00 level=INFO source=runner.go:965 msg="starting go runner"
+load_backend: loaded CPU backend from /usr/local/lib/ollama/libggml-cpu-haswell.so
+ggml_cuda_init: GGML_CUDA_FORCE_MMQ:    no
+ggml_cuda_init: GGML_CUDA_FORCE_CUBLAS: no
+ggml_cuda_init: found 1 ROCm devices:
+  Device 0: AMD Radeon RX 6600, gfx1030 (0x1030), VMM: no, Wave Size: 32, ID: 0
+load_backend: loaded ROCm backend from /usr/local/lib/ollama/rocm/libggml-hip.so
+time=2026-05-20T19:18:02.049-03:00 level=INFO source=ggml.go:104 msg=system CPU.0.SSE3=1 CPU.0.SSSE3=1 CPU.0.AVX=1 CPU.0.AVX2=1 CPU.0.F16C=1 CPU.0.FMA=1 CPU.0.BMI2=1 CPU.0.LLAMAFILE=1 CPU.1.LLAMAFILE=1 ROCm.0.NO_VMM=1 ROCm.0.PEER_MAX_BATCH_SIZE=128 compiler=cgo(gcc)
+time=2026-05-20T19:18:02.049-03:00 level=INFO source=runner.go:1001 msg="Server listening on 127.0.0.1:46001"
+time=2026-05-20T19:18:02.059-03:00 level=INFO source=runner.go:895 msg=load request="{Operation:commit LoraPath:[] Parallel:2 BatchSize:256 FlashAttention:Disabled KvSize:16384 KvCacheType: NumThreads:2 GPULayers:27[ID:0 Layers:27(0..26)] MultiUserCache:false ProjectorPath: MainGPU:0 UseMmap:true}"
+time=2026-05-20T19:18:02.059-03:00 level=INFO source=server.go:1350 msg="waiting for llama runner to start responding"
+ggml_hip_get_device_memory searching for device 0000:12:00.0
+time=2026-05-20T19:18:02.059-03:00 level=INFO source=server.go:1384 msg="waiting for server to become available" status="llm server loading model"
+ggml_backend_cuda_device_get_memory device 0000:12:00.0 utilizing AMD specific memory reporting free: 7877861376 total: 8573157376
+llama_model_load_from_file_impl: using device ROCm0 (AMD Radeon RX 6600) (0000:12:00.0) - 7512 MiB free
+llama_model_loader: loaded meta data with 34 key-value pairs and 288 tensors from /home/spacewitch/.ollama/models/blobs/sha256-7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = gemma2
+llama_model_loader: - kv   1:                               general.type str              = model
+llama_model_loader: - kv   2:                               general.name str              = Gemma 2.0 2b It Transformers
+llama_model_loader: - kv   3:                           general.finetune str              = it-transformers
+llama_model_loader: - kv   4:                           general.basename str              = gemma-2.0
+llama_model_loader: - kv   5:                         general.size_label str              = 2B
+llama_model_loader: - kv   6:                            general.license str              = gemma
+llama_model_loader: - kv   7:                      gemma2.context_length u32              = 8192
+llama_model_loader: - kv   8:                    gemma2.embedding_length u32              = 2304
+llama_model_loader: - kv   9:                         gemma2.block_count u32              = 26
+llama_model_loader: - kv  10:                 gemma2.feed_forward_length u32              = 9216
+llama_model_loader: - kv  11:                gemma2.attention.head_count u32              = 8
+llama_model_loader: - kv  12:             gemma2.attention.head_count_kv u32              = 4
+llama_model_loader: - kv  13:    gemma2.attention.layer_norm_rms_epsilon f32              = 0.000001
+llama_model_loader: - kv  14:                gemma2.attention.key_length u32              = 256
+llama_model_loader: - kv  15:              gemma2.attention.value_length u32              = 256
+llama_model_loader: - kv  16:                          general.file_type u32              = 2
+llama_model_loader: - kv  17:              gemma2.attn_logit_softcapping f32              = 50.000000
+llama_model_loader: - kv  18:             gemma2.final_logit_softcapping f32              = 30.000000
+llama_model_loader: - kv  19:            gemma2.attention.sliding_window u32              = 4096
+llama_model_loader: - kv  20:                       tokenizer.ggml.model str              = llama
+llama_model_loader: - kv  21:                         tokenizer.ggml.pre str              = default
+llama_model_loader: - kv  22:                      tokenizer.ggml.tokens arr[str,256000]  = ["<pad>", "<eos>", "<bos>", "<unk>", ...
+llama_model_loader: - kv  23:                      tokenizer.ggml.scores arr[f32,256000]  = [-1000.000000, -1000.000000, -1000.00...
+llama_model_loader: - kv  24:                  tokenizer.ggml.token_type arr[i32,256000]  = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, ...
+llama_model_loader: - kv  25:                tokenizer.ggml.bos_token_id u32              = 2
+llama_model_loader: - kv  26:                tokenizer.ggml.eos_token_id u32              = 1
+llama_model_loader: - kv  27:            tokenizer.ggml.unknown_token_id u32              = 3
+llama_model_loader: - kv  28:            tokenizer.ggml.padding_token_id u32              = 0
+llama_model_loader: - kv  29:               tokenizer.ggml.add_bos_token bool             = true
+llama_model_loader: - kv  30:               tokenizer.ggml.add_eos_token bool             = false
+llama_model_loader: - kv  31:                    tokenizer.chat_template str              = {{ bos_token }}{% if messages[0]['rol...
+llama_model_loader: - kv  32:            tokenizer.ggml.add_space_prefix bool             = false
+llama_model_loader: - kv  33:               general.quantization_version u32              = 2
+llama_model_loader: - type  f32:  105 tensors
+llama_model_loader: - type q4_0:  182 tensors
+llama_model_loader: - type q6_K:    1 tensors
+print_info: file format = GGUF V3 (latest)
+print_info: file type   = Q4_0
+print_info: file size   = 1.51 GiB (4.97 BPW)
+load: control-looking token:    107 '<end_of_turn>' was not control-type; this is probably a bug in the model. its type will be overridden
+load: special_eos_id is not in special_eog_ids - the tokenizer config may be incorrect
+load: printing all EOG tokens:
+load:   - 1 ('<eos>')
+load:   - 107 ('<end_of_turn>')
+load: special tokens cache size = 249
+load: token to piece cache size = 1.6014 MB
+print_info: arch             = gemma2
+print_info: vocab_only       = 0
+print_info: no_alloc         = 0
+print_info: n_ctx_train      = 8192
+print_info: n_embd           = 2304
+print_info: n_embd_inp       = 2304
+print_info: n_layer          = 26
+print_info: n_head           = 8
+print_info: n_head_kv        = 4
+print_info: n_rot            = 256
+print_info: n_swa            = 4096
+print_info: is_swa_any       = 1
+print_info: n_embd_head_k    = 256
+print_info: n_embd_head_v    = 256
+print_info: n_gqa            = 2
+print_info: n_embd_k_gqa     = 1024
+print_info: n_embd_v_gqa     = 1024
+print_info: f_norm_eps       = 0.0e+00
+print_info: f_norm_rms_eps   = 1.0e-06
+print_info: f_clamp_kqv      = 0.0e+00
+print_info: f_max_alibi_bias = 0.0e+00
+print_info: f_logit_scale    = 0.0e+00
+print_info: f_attn_scale     = 6.2e-02
+print_info: n_ff             = 9216
+print_info: n_expert         = 0
+print_info: n_expert_used    = 0
+print_info: n_expert_groups  = 0
+print_info: n_group_used     = 0
+print_info: causal attn      = 1
+print_info: pooling type     = 0
+print_info: rope type        = 2
+print_info: rope scaling     = linear
+print_info: freq_base_train  = 10000.0
+print_info: freq_scale_train = 1
+print_info: n_ctx_orig_yarn  = 8192
+print_info: rope_yarn_log_mul= 0.0000
+print_info: rope_finetuned   = unknown
+print_info: model type       = 2B
+print_info: model params     = 2.61 B
+print_info: general.name     = Gemma 2.0 2b It Transformers
+print_info: vocab type       = SPM
+print_info: n_vocab          = 256000
+print_info: n_merges         = 0
+print_info: BOS token        = 2 '<bos>'
+print_info: EOS token        = 1 '<eos>'
+print_info: EOT token        = 107 '<end_of_turn>'
+print_info: UNK token        = 3 '<unk>'
+print_info: PAD token        = 0 '<pad>'
+print_info: LF token         = 227 '<0x0A>'
+print_info: EOG token        = 1 '<eos>'
+print_info: EOG token        = 107 '<end_of_turn>'
+print_info: max token length = 48
+load_tensors: loading model tensors, this can take a while... (mmap = true)
+load_tensors: offloading 26 repeating layers to GPU
+load_tensors: offloading output layer to GPU
+load_tensors: offloaded 27/27 layers to GPU
+load_tensors:   CPU_Mapped model buffer size =   461.43 MiB
+load_tensors:        ROCm0 model buffer size =  1548.29 MiB
+llama_context: constructing llama_context
+llama_context: n_seq_max     = 2
+llama_context: n_ctx         = 16384
+llama_context: n_ctx_seq     = 8192
+llama_context: n_batch       = 512
+llama_context: n_ubatch      = 256
+llama_context: causal_attn   = 1
+llama_context: flash_attn    = disabled
+llama_context: kv_unified    = false
+llama_context: freq_base     = 10000.0
+llama_context: freq_scale    = 1
+llama_context:  ROCm_Host  output buffer size =     1.97 MiB
+llama_kv_cache_iswa: using full-size SWA cache (ref: https://github.com/ggml-org/llama.cpp/pull/13194#issuecomment-2868343055)
+llama_kv_cache_iswa: creating non-SWA KV cache, size = 8192 cells
+llama_kv_cache:      ROCm0 KV buffer size =   832.00 MiB
+llama_kv_cache: size =  832.00 MiB (  8192 cells,  13 layers,  2/2 seqs), K (f16):  416.00 MiB, V (f16):  416.00 MiB
+llama_kv_cache_iswa: creating     SWA KV cache, size = 8192 cells
+llama_kv_cache:      ROCm0 KV buffer size =   832.00 MiB
+llama_kv_cache: size =  832.00 MiB (  8192 cells,  13 layers,  2/2 seqs), K (f16):  416.00 MiB, V (f16):  416.00 MiB
+llama_context:      ROCm0 compute buffer size =   252.25 MiB
+llama_context:  ROCm_Host compute buffer size =    22.26 MiB
+llama_context: graph nodes  = 1180
+llama_context: graph splits = 2
+time=2026-05-20T19:18:03.063-03:00 level=INFO source=server.go:1388 msg="llama runner started in 1.08 seconds"
+time=2026-05-20T19:18:03.063-03:00 level=INFO source=sched.go:561 msg="loaded runners" count=1
+time=2026-05-20T19:18:03.063-03:00 level=INFO source=server.go:1350 msg="waiting for llama runner to start responding"
+time=2026-05-20T19:18:03.063-03:00 level=INFO source=server.go:1388 msg="llama runner started in 1.08 seconds"
+2026-05-20 19:18:03,807 [WARNING] kosmos.ui: Erro ao atualizar feed 22: Parsing falhou: <unknown>:2:-1: StartTag: invalid element name
+
+[GIN] 2026/05/20 - 19:18:29 | 200 | 28.431007734s |       127.0.0.1 | POST     "/api/chat"
+[2026-05-20][22:18:29][hyper_util::client::legacy::pool][DEBUG] pooling idle connection for ("http", localhost:11434)
+time=2026-05-20T19:18:29.816-03:00 level=INFO source=server.go:430 msg="starting runner" cmd="/usr/local/bin/ollama runner --ollama-engine --port 38613"
+[2026-05-20][22:18:29][hyper_util::client::legacy::pool][DEBUG] reuse idle connection for ("http", localhost:11434)
+time=2026-05-20T19:18:29.960-03:00 level=INFO source=server.go:430 msg="starting runner" cmd="/usr/local/bin/ollama runner --ollama-engine --port 40651"
+llama_model_loader: loaded meta data with 34 key-value pairs and 288 tensors from /home/spacewitch/.ollama/models/blobs/sha256-7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = gemma2
+llama_model_loader: - kv   1:                               general.type str              = model
+llama_model_loader: - kv   2:                               general.name str              = Gemma 2.0 2b It Transformers
+llama_model_loader: - kv   3:                           general.finetune str              = it-transformers
+llama_model_loader: - kv   4:                           general.basename str              = gemma-2.0
+llama_model_loader: - kv   5:                         general.size_label str              = 2B
+llama_model_loader: - kv   6:                            general.license str              = gemma
+llama_model_loader: - kv   7:                      gemma2.context_length u32              = 8192
+llama_model_loader: - kv   8:                    gemma2.embedding_length u32              = 2304
+llama_model_loader: - kv   9:                         gemma2.block_count u32              = 26
+llama_model_loader: - kv  10:                 gemma2.feed_forward_length u32              = 9216
+llama_model_loader: - kv  11:                gemma2.attention.head_count u32              = 8
+llama_model_loader: - kv  12:             gemma2.attention.head_count_kv u32              = 4
+llama_model_loader: - kv  13:    gemma2.attention.layer_norm_rms_epsilon f32              = 0.000001
+llama_model_loader: - kv  14:                gemma2.attention.key_length u32              = 256
+llama_model_loader: - kv  15:              gemma2.attention.value_length u32              = 256
+llama_model_loader: - kv  16:                          general.file_type u32              = 2
+llama_model_loader: - kv  17:              gemma2.attn_logit_softcapping f32              = 50.000000
+llama_model_loader: - kv  18:             gemma2.final_logit_softcapping f32              = 30.000000
+llama_model_loader: - kv  19:            gemma2.attention.sliding_window u32              = 4096
+llama_model_loader: - kv  20:                       tokenizer.ggml.model str              = llama
+llama_model_loader: - kv  21:                         tokenizer.ggml.pre str              = default
+time=2026-05-20T19:18:30.131-03:00 level=INFO source=server.go:430 msg="starting runner" cmd="/usr/local/bin/ollama runner --ollama-engine --port 33915"
+llama_model_loader: - kv  22:                      tokenizer.ggml.tokens arr[str,256000]  = ["<pad>", "<eos>", "<bos>", "<unk>", ...
+llama_model_loader: - kv  23:                      tokenizer.ggml.scores arr[f32,256000]  = [-1000.000000, -1000.000000, -1000.00...
+llama_model_loader: - kv  24:                  tokenizer.ggml.token_type arr[i32,256000]  = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, ...
+llama_model_loader: - kv  25:                tokenizer.ggml.bos_token_id u32              = 2
+llama_model_loader: - kv  26:                tokenizer.ggml.eos_token_id u32              = 1
+llama_model_loader: - kv  27:            tokenizer.ggml.unknown_token_id u32              = 3
+llama_model_loader: - kv  28:            tokenizer.ggml.padding_token_id u32              = 0
+llama_model_loader: - kv  29:               tokenizer.ggml.add_bos_token bool             = true
+llama_model_loader: - kv  30:               tokenizer.ggml.add_eos_token bool             = false
+llama_model_loader: - kv  31:                    tokenizer.chat_template str              = {{ bos_token }}{% if messages[0]['rol...
+llama_model_loader: - kv  32:            tokenizer.ggml.add_space_prefix bool             = false
+llama_model_loader: - kv  33:               general.quantization_version u32              = 2
+llama_model_loader: - type  f32:  105 tensors
+llama_model_loader: - type q4_0:  182 tensors
+llama_model_loader: - type q6_K:    1 tensors
+print_info: file format = GGUF V3 (latest)
+print_info: file type   = Q4_0
+print_info: file size   = 1.51 GiB (4.97 BPW)
+load: control-looking token:    107 '<end_of_turn>' was not control-type; this is probably a bug in the model. its type will be overridden
+load: special_eos_id is not in special_eog_ids - the tokenizer config may be incorrect
+load: printing all EOG tokens:
+load:   - 1 ('<eos>')
+load:   - 107 ('<end_of_turn>')
+load: special tokens cache size = 249
+load: token to piece cache size = 1.6014 MB
+print_info: arch             = gemma2
+print_info: vocab_only       = 1
+print_info: no_alloc         = 0
+print_info: model type       = ?B
+print_info: model params     = 2.61 B
+print_info: general.name     = Gemma 2.0 2b It Transformers
+print_info: vocab type       = SPM
+print_info: n_vocab          = 256000
+print_info: n_merges         = 0
+print_info: BOS token        = 2 '<bos>'
+print_info: EOS token        = 1 '<eos>'
+print_info: EOT token        = 107 '<end_of_turn>'
+print_info: UNK token        = 3 '<unk>'
+print_info: PAD token        = 0 '<pad>'
+print_info: LF token         = 227 '<0x0A>'
+print_info: EOG token        = 1 '<eos>'
+print_info: EOG token        = 107 '<end_of_turn>'
+print_info: max token length = 48
+llama_model_load: vocab only - skipping tensors
+time=2026-05-20T19:18:30.441-03:00 level=WARN source=server.go:208 msg="flash attention enabled but not supported by model"
+time=2026-05-20T19:18:30.442-03:00 level=INFO source=server.go:430 msg="starting runner" cmd="/usr/local/bin/ollama runner --model /home/spacewitch/.ollama/models/blobs/sha256-7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b --port 32857"
+time=2026-05-20T19:18:30.442-03:00 level=INFO source=sched.go:484 msg="system memory" total="13.5 GiB" free="7.4 GiB" free_swap="13.5 GiB"
+time=2026-05-20T19:18:30.442-03:00 level=INFO source=sched.go:491 msg="gpu memory" id=0 library=ROCm available="6.1 GiB" free="7.3 GiB" minimum="457.0 MiB" overhead="800.0 MiB"
+time=2026-05-20T19:18:30.442-03:00 level=INFO source=server.go:497 msg="loading model" "model layers"=27 requested=-1
+time=2026-05-20T19:18:30.443-03:00 level=INFO source=device.go:240 msg="model weights" device=ROCm0 size="1.5 GiB"
+time=2026-05-20T19:18:30.443-03:00 level=INFO source=device.go:251 msg="kv cache" device=ROCm0 size="1.6 GiB"
+time=2026-05-20T19:18:30.443-03:00 level=INFO source=device.go:262 msg="compute graph" device=ROCm0 size="252.2 MiB"
+time=2026-05-20T19:18:30.443-03:00 level=INFO source=device.go:272 msg="total memory" size="3.4 GiB"
+time=2026-05-20T19:18:30.452-03:00 level=INFO source=runner.go:965 msg="starting go runner"
+load_backend: loaded CPU backend from /usr/local/lib/ollama/libggml-cpu-haswell.so
+ggml_cuda_init: GGML_CUDA_FORCE_MMQ:    no
+ggml_cuda_init: GGML_CUDA_FORCE_CUBLAS: no
+ggml_cuda_init: found 1 ROCm devices:
+  Device 0: AMD Radeon RX 6600, gfx1030 (0x1030), VMM: no, Wave Size: 32, ID: 0
+load_backend: loaded ROCm backend from /usr/local/lib/ollama/rocm/libggml-hip.so
+time=2026-05-20T19:18:30.507-03:00 level=INFO source=ggml.go:104 msg=system CPU.0.SSE3=1 CPU.0.SSSE3=1 CPU.0.AVX=1 CPU.0.AVX2=1 CPU.0.F16C=1 CPU.0.FMA=1 CPU.0.BMI2=1 CPU.0.LLAMAFILE=1 CPU.1.LLAMAFILE=1 ROCm.0.NO_VMM=1 ROCm.0.PEER_MAX_BATCH_SIZE=128 compiler=cgo(gcc)
+time=2026-05-20T19:18:30.507-03:00 level=INFO source=runner.go:1001 msg="Server listening on 127.0.0.1:32857"
+time=2026-05-20T19:18:30.518-03:00 level=INFO source=runner.go:895 msg=load request="{Operation:commit LoraPath:[] Parallel:2 BatchSize:256 FlashAttention:Disabled KvSize:16384 KvCacheType: NumThreads:2 GPULayers:27[ID:0 Layers:27(0..26)] MultiUserCache:false ProjectorPath: MainGPU:0 UseMmap:true}"
+time=2026-05-20T19:18:30.518-03:00 level=INFO source=server.go:1350 msg="waiting for llama runner to start responding"
+ggml_hip_get_device_memory searching for device 0000:12:00.0
+time=2026-05-20T19:18:30.518-03:00 level=INFO source=server.go:1384 msg="waiting for server to become available" status="llm server loading model"
+ggml_backend_cuda_device_get_memory device 0000:12:00.0 utilizing AMD specific memory reporting free: 7877857280 total: 8573157376
+llama_model_load_from_file_impl: using device ROCm0 (AMD Radeon RX 6600) (0000:12:00.0) - 7512 MiB free
+llama_model_loader: loaded meta data with 34 key-value pairs and 288 tensors from /home/spacewitch/.ollama/models/blobs/sha256-7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = gemma2
+llama_model_loader: - kv   1:                               general.type str              = model
+llama_model_loader: - kv   2:                               general.name str              = Gemma 2.0 2b It Transformers
+llama_model_loader: - kv   3:                           general.finetune str              = it-transformers
+llama_model_loader: - kv   4:                           general.basename str              = gemma-2.0
+llama_model_loader: - kv   5:                         general.size_label str              = 2B
+llama_model_loader: - kv   6:                            general.license str              = gemma
+llama_model_loader: - kv   7:                      gemma2.context_length u32              = 8192
+llama_model_loader: - kv   8:                    gemma2.embedding_length u32              = 2304
+llama_model_loader: - kv   9:                         gemma2.block_count u32              = 26
+llama_model_loader: - kv  10:                 gemma2.feed_forward_length u32              = 9216
+llama_model_loader: - kv  11:                gemma2.attention.head_count u32              = 8
+llama_model_loader: - kv  12:             gemma2.attention.head_count_kv u32              = 4
+llama_model_loader: - kv  13:    gemma2.attention.layer_norm_rms_epsilon f32              = 0.000001
+llama_model_loader: - kv  14:                gemma2.attention.key_length u32              = 256
+llama_model_loader: - kv  15:              gemma2.attention.value_length u32              = 256
+llama_model_loader: - kv  16:                          general.file_type u32              = 2
+llama_model_loader: - kv  17:              gemma2.attn_logit_softcapping f32              = 50.000000
+llama_model_loader: - kv  18:             gemma2.final_logit_softcapping f32              = 30.000000
+llama_model_loader: - kv  19:            gemma2.attention.sliding_window u32              = 4096
+llama_model_loader: - kv  20:                       tokenizer.ggml.model str              = llama
+llama_model_loader: - kv  21:                         tokenizer.ggml.pre str              = default
+llama_model_loader: - kv  22:                      tokenizer.ggml.tokens arr[str,256000]  = ["<pad>", "<eos>", "<bos>", "<unk>", ...
+llama_model_loader: - kv  23:                      tokenizer.ggml.scores arr[f32,256000]  = [-1000.000000, -1000.000000, -1000.00...
+llama_model_loader: - kv  24:                  tokenizer.ggml.token_type arr[i32,256000]  = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, ...
+llama_model_loader: - kv  25:                tokenizer.ggml.bos_token_id u32              = 2
+llama_model_loader: - kv  26:                tokenizer.ggml.eos_token_id u32              = 1
+llama_model_loader: - kv  27:            tokenizer.ggml.unknown_token_id u32              = 3
+llama_model_loader: - kv  28:            tokenizer.ggml.padding_token_id u32              = 0
+llama_model_loader: - kv  29:               tokenizer.ggml.add_bos_token bool             = true
+llama_model_loader: - kv  30:               tokenizer.ggml.add_eos_token bool             = false
+llama_model_loader: - kv  31:                    tokenizer.chat_template str              = {{ bos_token }}{% if messages[0]['rol...
+llama_model_loader: - kv  32:            tokenizer.ggml.add_space_prefix bool             = false
+llama_model_loader: - kv  33:               general.quantization_version u32              = 2
+llama_model_loader: - type  f32:  105 tensors
+llama_model_loader: - type q4_0:  182 tensors
+llama_model_loader: - type q6_K:    1 tensors
+print_info: file format = GGUF V3 (latest)
+print_info: file type   = Q4_0
+print_info: file size   = 1.51 GiB (4.97 BPW)
+load: control-looking token:    107 '<end_of_turn>' was not control-type; this is probably a bug in the model. its type will be overridden
+load: special_eos_id is not in special_eog_ids - the tokenizer config may be incorrect
+load: printing all EOG tokens:
+load:   - 1 ('<eos>')
+load:   - 107 ('<end_of_turn>')
+load: special tokens cache size = 249
+load: token to piece cache size = 1.6014 MB
+print_info: arch             = gemma2
+print_info: vocab_only       = 0
+print_info: no_alloc         = 0
+print_info: n_ctx_train      = 8192
+print_info: n_embd           = 2304
+print_info: n_embd_inp       = 2304
+print_info: n_layer          = 26
+print_info: n_head           = 8
+print_info: n_head_kv        = 4
+print_info: n_rot            = 256
+print_info: n_swa            = 4096
+print_info: is_swa_any       = 1
+print_info: n_embd_head_k    = 256
+print_info: n_embd_head_v    = 256
+print_info: n_gqa            = 2
+print_info: n_embd_k_gqa     = 1024
+print_info: n_embd_v_gqa     = 1024
+print_info: f_norm_eps       = 0.0e+00
+print_info: f_norm_rms_eps   = 1.0e-06
+print_info: f_clamp_kqv      = 0.0e+00
+print_info: f_max_alibi_bias = 0.0e+00
+print_info: f_logit_scale    = 0.0e+00
+print_info: f_attn_scale     = 6.2e-02
+print_info: n_ff             = 9216
+print_info: n_expert         = 0
+print_info: n_expert_used    = 0
+print_info: n_expert_groups  = 0
+print_info: n_group_used     = 0
+print_info: causal attn      = 1
+print_info: pooling type     = 0
+print_info: rope type        = 2
+print_info: rope scaling     = linear
+print_info: freq_base_train  = 10000.0
+print_info: freq_scale_train = 1
+print_info: n_ctx_orig_yarn  = 8192
+print_info: rope_yarn_log_mul= 0.0000
+print_info: rope_finetuned   = unknown
+print_info: model type       = 2B
+print_info: model params     = 2.61 B
+print_info: general.name     = Gemma 2.0 2b It Transformers
+print_info: vocab type       = SPM
+print_info: n_vocab          = 256000
+print_info: n_merges         = 0
+print_info: BOS token        = 2 '<bos>'
+print_info: EOS token        = 1 '<eos>'
+print_info: EOT token        = 107 '<end_of_turn>'
+print_info: UNK token        = 3 '<unk>'
+print_info: PAD token        = 0 '<pad>'
+print_info: LF token         = 227 '<0x0A>'
+print_info: EOG token        = 1 '<eos>'
+print_info: EOG token        = 107 '<end_of_turn>'
+print_info: max token length = 48
+load_tensors: loading model tensors, this can take a while... (mmap = true)
+load_tensors: offloading 26 repeating layers to GPU
+load_tensors: offloading output layer to GPU
+load_tensors: offloaded 27/27 layers to GPU
+load_tensors:   CPU_Mapped model buffer size =   461.43 MiB
+load_tensors:        ROCm0 model buffer size =  1548.29 MiB
+llama_context: constructing llama_context
+llama_context: n_seq_max     = 2
+llama_context: n_ctx         = 16384
+llama_context: n_ctx_seq     = 8192
+llama_context: n_batch       = 512
+llama_context: n_ubatch      = 256
+llama_context: causal_attn   = 1
+llama_context: flash_attn    = disabled
+llama_context: kv_unified    = false
+llama_context: freq_base     = 10000.0
+llama_context: freq_scale    = 1
+llama_context:  ROCm_Host  output buffer size =     1.97 MiB
+llama_kv_cache_iswa: using full-size SWA cache (ref: https://github.com/ggml-org/llama.cpp/pull/13194#issuecomment-2868343055)
+llama_kv_cache_iswa: creating non-SWA KV cache, size = 8192 cells
+llama_kv_cache:      ROCm0 KV buffer size =   832.00 MiB
+llama_kv_cache: size =  832.00 MiB (  8192 cells,  13 layers,  2/2 seqs), K (f16):  416.00 MiB, V (f16):  416.00 MiB
+llama_kv_cache_iswa: creating     SWA KV cache, size = 8192 cells
+llama_kv_cache:      ROCm0 KV buffer size =   832.00 MiB
+llama_kv_cache: size =  832.00 MiB (  8192 cells,  13 layers,  2/2 seqs), K (f16):  416.00 MiB, V (f16):  416.00 MiB
+llama_context:      ROCm0 compute buffer size =   252.25 MiB
+llama_context:  ROCm_Host compute buffer size =    22.26 MiB
+llama_context: graph nodes  = 1180
+llama_context: graph splits = 2
+time=2026-05-20T19:18:31.521-03:00 level=INFO source=server.go:1388 msg="llama runner started in 1.08 seconds"
+time=2026-05-20T19:18:31.521-03:00 level=INFO source=sched.go:561 msg="loaded runners" count=1
+time=2026-05-20T19:18:31.521-03:00 level=INFO source=server.go:1350 msg="waiting for llama runner to start responding"
+time=2026-05-20T19:18:31.521-03:00 level=INFO source=server.go:1388 msg="llama runner started in 1.08 seconds"
+2026-05-20 19:18:32,526 [WARNING] kosmos.feed_fetcher: Reddit fetcher ainda não implementado (Fase 5).
+2026-05-20 19:18:32,527 [WARNING] kosmos.ui: Erro ao atualizar feed 32: Reddit não disponível nesta versão.
+2026-05-20 19:18:52,040 [WARNING] kosmos.ui: Erro ao atualizar feed 38: Parsing falhou: <unknown>:58:-1: Opening and ending tag mismatch: link line 58 and head
+
+[GIN] 2026/05/20 - 19:18:53 | 200 |     512.715µs |       127.0.0.1 | GET      "/api/tags"
+2026-05-20 19:19:01,484 [WARNING] kosmos.ui: Erro ao atualizar feed 41: HTTP 500 ao buscar feed.
+[GIN] 2026/05/20 - 19:19:04 | 200 | 34.638619232s |       127.0.0.1 | POST     "/api/chat"
+[2026-05-20][22:19:04][hyper_util::client::legacy::pool][DEBUG] pooling idle connection for ("http", localhost:11434)
+time=2026-05-20T19:19:04.472-03:00 level=INFO source=server.go:430 msg="starting runner" cmd="/usr/local/bin/ollama runner --ollama-engine --port 33743"
+[2026-05-20][22:19:04][hyper_util::client::legacy::pool][DEBUG] reuse idle connection for ("http", localhost:11434)
+time=2026-05-20T19:19:04.789-03:00 level=INFO source=server.go:430 msg="starting runner" cmd="/usr/local/bin/ollama runner --ollama-engine --port 42859"
+time=2026-05-20T19:19:04.857-03:00 level=INFO source=server.go:430 msg="starting runner" cmd="/usr/local/bin/ollama runner --ollama-engine --port 42633"
+llama_model_loader: loaded meta data with 34 key-value pairs and 288 tensors from /home/spacewitch/.ollama/models/blobs/sha256-7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = gemma2
+llama_model_loader: - kv   1:                               general.type str              = model
+llama_model_loader: - kv   2:                               general.name str              = Gemma 2.0 2b It Transformers
+llama_model_loader: - kv   3:                           general.finetune str              = it-transformers
+llama_model_loader: - kv   4:                           general.basename str              = gemma-2.0
+llama_model_loader: - kv   5:                         general.size_label str              = 2B
+llama_model_loader: - kv   6:                            general.license str              = gemma
+llama_model_loader: - kv   7:                      gemma2.context_length u32              = 8192
+llama_model_loader: - kv   8:                    gemma2.embedding_length u32              = 2304
+llama_model_loader: - kv   9:                         gemma2.block_count u32              = 26
+llama_model_loader: - kv  10:                 gemma2.feed_forward_length u32              = 9216
+llama_model_loader: - kv  11:                gemma2.attention.head_count u32              = 8
+llama_model_loader: - kv  12:             gemma2.attention.head_count_kv u32              = 4
+llama_model_loader: - kv  13:    gemma2.attention.layer_norm_rms_epsilon f32              = 0.000001
+llama_model_loader: - kv  14:                gemma2.attention.key_length u32              = 256
+llama_model_loader: - kv  15:              gemma2.attention.value_length u32              = 256
+llama_model_loader: - kv  16:                          general.file_type u32              = 2
+llama_model_loader: - kv  17:              gemma2.attn_logit_softcapping f32              = 50.000000
+llama_model_loader: - kv  18:             gemma2.final_logit_softcapping f32              = 30.000000
+llama_model_loader: - kv  19:            gemma2.attention.sliding_window u32              = 4096
+llama_model_loader: - kv  20:                       tokenizer.ggml.model str              = llama
+llama_model_loader: - kv  21:                         tokenizer.ggml.pre str              = default
+llama_model_loader: - kv  22:                      tokenizer.ggml.tokens arr[str,256000]  = ["<pad>", "<eos>", "<bos>", "<unk>", ...
+llama_model_loader: - kv  23:                      tokenizer.ggml.scores arr[f32,256000]  = [-1000.000000, -1000.000000, -1000.00...
+llama_model_loader: - kv  24:                  tokenizer.ggml.token_type arr[i32,256000]  = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, ...
+llama_model_loader: - kv  25:                tokenizer.ggml.bos_token_id u32              = 2
+llama_model_loader: - kv  26:                tokenizer.ggml.eos_token_id u32              = 1
+llama_model_loader: - kv  27:            tokenizer.ggml.unknown_token_id u32              = 3
+llama_model_loader: - kv  28:            tokenizer.ggml.padding_token_id u32              = 0
+llama_model_loader: - kv  29:               tokenizer.ggml.add_bos_token bool             = true
+llama_model_loader: - kv  30:               tokenizer.ggml.add_eos_token bool             = false
+llama_model_loader: - kv  31:                    tokenizer.chat_template str              = {{ bos_token }}{% if messages[0]['rol...
+llama_model_loader: - kv  32:            tokenizer.ggml.add_space_prefix bool             = false
+llama_model_loader: - kv  33:               general.quantization_version u32              = 2
+llama_model_loader: - type  f32:  105 tensors
+llama_model_loader: - type q4_0:  182 tensors
+llama_model_loader: - type q6_K:    1 tensors
+print_info: file format = GGUF V3 (latest)
+print_info: file type   = Q4_0
+print_info: file size   = 1.51 GiB (4.97 BPW)
+load: control-looking token:    107 '<end_of_turn>' was not control-type; this is probably a bug in the model. its type will be overridden
+load: special_eos_id is not in special_eog_ids - the tokenizer config may be incorrect
+load: printing all EOG tokens:
+load:   - 1 ('<eos>')
+load:   - 107 ('<end_of_turn>')
+load: special tokens cache size = 249
+load: token to piece cache size = 1.6014 MB
+print_info: arch             = gemma2
+print_info: vocab_only       = 1
+print_info: no_alloc         = 0
+print_info: model type       = ?B
+print_info: model params     = 2.61 B
+print_info: general.name     = Gemma 2.0 2b It Transformers
+print_info: vocab type       = SPM
+print_info: n_vocab          = 256000
+print_info: n_merges         = 0
+print_info: BOS token        = 2 '<bos>'
+print_info: EOS token        = 1 '<eos>'
+print_info: EOT token        = 107 '<end_of_turn>'
+print_info: UNK token        = 3 '<unk>'
+print_info: PAD token        = 0 '<pad>'
+print_info: LF token         = 227 '<0x0A>'
+print_info: EOG token        = 1 '<eos>'
+print_info: EOG token        = 107 '<end_of_turn>'
+print_info: max token length = 48
+llama_model_load: vocab only - skipping tensors
+time=2026-05-20T19:19:05.317-03:00 level=WARN source=server.go:208 msg="flash attention enabled but not supported by model"
+time=2026-05-20T19:19:05.318-03:00 level=INFO source=server.go:430 msg="starting runner" cmd="/usr/local/bin/ollama runner --model /home/spacewitch/.ollama/models/blobs/sha256-7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b --port 40445"
+time=2026-05-20T19:19:05.318-03:00 level=INFO source=sched.go:484 msg="system memory" total="13.5 GiB" free="7.5 GiB" free_swap="13.5 GiB"
+time=2026-05-20T19:19:05.318-03:00 level=INFO source=sched.go:491 msg="gpu memory" id=0 library=ROCm available="6.1 GiB" free="7.3 GiB" minimum="457.0 MiB" overhead="800.0 MiB"
+time=2026-05-20T19:19:05.318-03:00 level=INFO source=server.go:497 msg="loading model" "model layers"=27 requested=-1
+time=2026-05-20T19:19:05.318-03:00 level=INFO source=device.go:240 msg="model weights" device=ROCm0 size="1.5 GiB"
+time=2026-05-20T19:19:05.318-03:00 level=INFO source=device.go:251 msg="kv cache" device=ROCm0 size="1.6 GiB"
+time=2026-05-20T19:19:05.318-03:00 level=INFO source=device.go:262 msg="compute graph" device=ROCm0 size="252.2 MiB"
+time=2026-05-20T19:19:05.318-03:00 level=INFO source=device.go:272 msg="total memory" size="3.4 GiB"
+time=2026-05-20T19:19:05.328-03:00 level=INFO source=runner.go:965 msg="starting go runner"
+load_backend: loaded CPU backend from /usr/local/lib/ollama/libggml-cpu-haswell.so
+ggml_cuda_init: GGML_CUDA_FORCE_MMQ:    no
+ggml_cuda_init: GGML_CUDA_FORCE_CUBLAS: no
+ggml_cuda_init: found 1 ROCm devices:
+  Device 0: AMD Radeon RX 6600, gfx1030 (0x1030), VMM: no, Wave Size: 32, ID: 0
+load_backend: loaded ROCm backend from /usr/local/lib/ollama/rocm/libggml-hip.so
+time=2026-05-20T19:19:05.381-03:00 level=INFO source=ggml.go:104 msg=system CPU.0.SSE3=1 CPU.0.SSSE3=1 CPU.0.AVX=1 CPU.0.AVX2=1 CPU.0.F16C=1 CPU.0.FMA=1 CPU.0.BMI2=1 CPU.0.LLAMAFILE=1 CPU.1.LLAMAFILE=1 ROCm.0.NO_VMM=1 ROCm.0.PEER_MAX_BATCH_SIZE=128 compiler=cgo(gcc)
+time=2026-05-20T19:19:05.382-03:00 level=INFO source=runner.go:1001 msg="Server listening on 127.0.0.1:40445"
+time=2026-05-20T19:19:05.383-03:00 level=INFO source=runner.go:895 msg=load request="{Operation:commit LoraPath:[] Parallel:2 BatchSize:256 FlashAttention:Disabled KvSize:16384 KvCacheType: NumThreads:2 GPULayers:27[ID:0 Layers:27(0..26)] MultiUserCache:false ProjectorPath: MainGPU:0 UseMmap:true}"
+time=2026-05-20T19:19:05.384-03:00 level=INFO source=server.go:1350 msg="waiting for llama runner to start responding"
+ggml_hip_get_device_memory searching for device 0000:12:00.0
+time=2026-05-20T19:19:05.384-03:00 level=INFO source=server.go:1384 msg="waiting for server to become available" status="llm server loading model"
+ggml_backend_cuda_device_get_memory device 0000:12:00.0 utilizing AMD specific memory reporting free: 7878946816 total: 8573157376
+llama_model_load_from_file_impl: using device ROCm0 (AMD Radeon RX 6600) (0000:12:00.0) - 7513 MiB free
+llama_model_loader: loaded meta data with 34 key-value pairs and 288 tensors from /home/spacewitch/.ollama/models/blobs/sha256-7462734796d67c40ecec2ca98eddf970e171dbb6b370e43fd633ee75b69abe1b (version GGUF V3 (latest))
+llama_model_loader: Dumping metadata keys/values. Note: KV overrides do not apply in this output.
+llama_model_loader: - kv   0:                       general.architecture str              = gemma2
+llama_model_loader: - kv   1:                               general.type str              = model
+llama_model_loader: - kv   2:                               general.name str              = Gemma 2.0 2b It Transformers
+llama_model_loader: - kv   3:                           general.finetune str              = it-transformers
+llama_model_loader: - kv   4:                           general.basename str              = gemma-2.0
+llama_model_loader: - kv   5:                         general.size_label str              = 2B
+llama_model_loader: - kv   6:                            general.license str              = gemma
+llama_model_loader: - kv   7:                      gemma2.context_length u32              = 8192
+llama_model_loader: - kv   8:                    gemma2.embedding_length u32              = 2304
+llama_model_loader: - kv   9:                         gemma2.block_count u32              = 26
+llama_model_loader: - kv  10:                 gemma2.feed_forward_length u32              = 9216
+llama_model_loader: - kv  11:                gemma2.attention.head_count u32              = 8
+llama_model_loader: - kv  12:             gemma2.attention.head_count_kv u32              = 4
+llama_model_loader: - kv  13:    gemma2.attention.layer_norm_rms_epsilon f32              = 0.000001
+llama_model_loader: - kv  14:                gemma2.attention.key_length u32              = 256
+llama_model_loader: - kv  15:              gemma2.attention.value_length u32              = 256
+llama_model_loader: - kv  16:                          general.file_type u32              = 2
+llama_model_loader: - kv  17:              gemma2.attn_logit_softcapping f32              = 50.000000
+llama_model_loader: - kv  18:             gemma2.final_logit_softcapping f32              = 30.000000
+llama_model_loader: - kv  19:            gemma2.attention.sliding_window u32              = 4096
+llama_model_loader: - kv  20:                       tokenizer.ggml.model str              = llama
+llama_model_loader: - kv  21:                         tokenizer.ggml.pre str              = default
+llama_model_loader: - kv  22:                      tokenizer.ggml.tokens arr[str,256000]  = ["<pad>", "<eos>", "<bos>", "<unk>", ...
+llama_model_loader: - kv  23:                      tokenizer.ggml.scores arr[f32,256000]  = [-1000.000000, -1000.000000, -1000.00...
+llama_model_loader: - kv  24:                  tokenizer.ggml.token_type arr[i32,256000]  = [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, ...
+llama_model_loader: - kv  25:                tokenizer.ggml.bos_token_id u32              = 2
+llama_model_loader: - kv  26:                tokenizer.ggml.eos_token_id u32              = 1
+llama_model_loader: - kv  27:            tokenizer.ggml.unknown_token_id u32              = 3
+llama_model_loader: - kv  28:            tokenizer.ggml.padding_token_id u32              = 0
+llama_model_loader: - kv  29:               tokenizer.ggml.add_bos_token bool             = true
+llama_model_loader: - kv  30:               tokenizer.ggml.add_eos_token bool             = false
+llama_model_loader: - kv  31:                    tokenizer.chat_template str              = {{ bos_token }}{% if messages[0]['rol...
+llama_model_loader: - kv  32:            tokenizer.ggml.add_space_prefix bool             = false
+llama_model_loader: - kv  33:               general.quantization_version u32              = 2
+llama_model_loader: - type  f32:  105 tensors
+llama_model_loader: - type q4_0:  182 tensors
+llama_model_loader: - type q6_K:    1 tensors
+print_info: file format = GGUF V3 (latest)
+print_info: file type   = Q4_0
+print_info: file size   = 1.51 GiB (4.97 BPW)
+load: control-looking token:    107 '<end_of_turn>' was not control-type; this is probably a bug in the model. its type will be overridden
+load: special_eos_id is not in special_eog_ids - the tokenizer config may be incorrect
+load: printing all EOG tokens:
+load:   - 1 ('<eos>')
+load:   - 107 ('<end_of_turn>')
+load: special tokens cache size = 249
+load: token to piece cache size = 1.6014 MB
+print_info: arch             = gemma2
+print_info: vocab_only       = 0
+print_info: no_alloc         = 0
+print_info: n_ctx_train      = 8192
+print_info: n_embd           = 2304
+print_info: n_embd_inp       = 2304
+print_info: n_layer          = 26
+print_info: n_head           = 8
+print_info: n_head_kv        = 4
+print_info: n_rot            = 256
+print_info: n_swa            = 4096
+print_info: is_swa_any       = 1
+print_info: n_embd_head_k    = 256
+print_info: n_embd_head_v    = 256
+print_info: n_gqa            = 2
+print_info: n_embd_k_gqa     = 1024
+print_info: n_embd_v_gqa     = 1024
+print_info: f_norm_eps       = 0.0e+00
+print_info: f_norm_rms_eps   = 1.0e-06
+print_info: f_clamp_kqv      = 0.0e+00
+print_info: f_max_alibi_bias = 0.0e+00
+print_info: f_logit_scale    = 0.0e+00
+print_info: f_attn_scale     = 6.2e-02
+print_info: n_ff             = 9216
+print_info: n_expert         = 0
+print_info: n_expert_used    = 0
+print_info: n_expert_groups  = 0
+print_info: n_group_used     = 0
+print_info: causal attn      = 1
+print_info: pooling type     = 0
+print_info: rope type        = 2
+print_info: rope scaling     = linear
+print_info: freq_base_train  = 10000.0
+print_info: freq_scale_train = 1
+print_info: n_ctx_orig_yarn  = 8192
+print_info: rope_yarn_log_mul= 0.0000
+print_info: rope_finetuned   = unknown
+print_info: model type       = 2B
+print_info: model params     = 2.61 B
+print_info: general.name     = Gemma 2.0 2b It Transformers
+print_info: vocab type       = SPM
+print_info: n_vocab          = 256000
+print_info: n_merges         = 0
+print_info: BOS token        = 2 '<bos>'
+print_info: EOS token        = 1 '<eos>'
+print_info: EOT token        = 107 '<end_of_turn>'
+print_info: UNK token        = 3 '<unk>'
+print_info: PAD token        = 0 '<pad>'
+print_info: LF token         = 227 '<0x0A>'
+print_info: EOG token        = 1 '<eos>'
+print_info: EOG token        = 107 '<end_of_turn>'
+print_info: max token length = 48
+load_tensors: loading model tensors, this can take a while... (mmap = true)
+load_tensors: offloading 26 repeating layers to GPU
+load_tensors: offloading output layer to GPU
+load_tensors: offloaded 27/27 layers to GPU
+load_tensors:   CPU_Mapped model buffer size =   461.43 MiB
+load_tensors:        ROCm0 model buffer size =  1548.29 MiB
+llama_context: constructing llama_context
+llama_context: n_seq_max     = 2
+llama_context: n_ctx         = 16384
+llama_context: n_ctx_seq     = 8192
+llama_context: n_batch       = 512
+llama_context: n_ubatch      = 256
+llama_context: causal_attn   = 1
+llama_context: flash_attn    = disabled
+llama_context: kv_unified    = false
+llama_context: freq_base     = 10000.0
+llama_context: freq_scale    = 1
+llama_context:  ROCm_Host  output buffer size =     1.97 MiB
+llama_kv_cache_iswa: using full-size SWA cache (ref: https://github.com/ggml-org/llama.cpp/pull/13194#issuecomment-2868343055)
+llama_kv_cache_iswa: creating non-SWA KV cache, size = 8192 cells
+llama_kv_cache:      ROCm0 KV buffer size =   832.00 MiB
+llama_kv_cache: size =  832.00 MiB (  8192 cells,  13 layers,  2/2 seqs), K (f16):  416.00 MiB, V (f16):  416.00 MiB
+llama_kv_cache_iswa: creating     SWA KV cache, size = 8192 cells
+llama_kv_cache:      ROCm0 KV buffer size =   832.00 MiB
+llama_kv_cache: size =  832.00 MiB (  8192 cells,  13 layers,  2/2 seqs), K (f16):  416.00 MiB, V (f16):  416.00 MiB
+llama_context:      ROCm0 compute buffer size =   252.25 MiB
+llama_context:  ROCm_Host compute buffer size =    22.26 MiB
+llama_context: graph nodes  = 1180
+llama_context: graph splits = 2
+time=2026-05-20T19:19:06.386-03:00 level=INFO source=server.go:1388 msg="llama runner started in 1.07 seconds"
+time=2026-05-20T19:19:06.387-03:00 level=INFO source=sched.go:561 msg="loaded runners" count=1
+time=2026-05-20T19:19:06.387-03:00 level=INFO source=server.go:1350 msg="waiting for llama runner to start responding"
+time=2026-05-20T19:19:06.387-03:00 level=INFO source=server.go:1388 msg="llama runner started in 1.07 seconds"

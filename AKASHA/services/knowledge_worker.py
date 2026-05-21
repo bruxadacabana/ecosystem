@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import re
 from dataclasses import dataclass
 
@@ -181,6 +182,26 @@ async def apply_knowledge_boost(
         _interests_cache_at = now
     interest_profile = _interests_cache
 
+    # I: valência episódica modula peso do perfil de interesse no boost.
+    # Estado positivo (gratificação) → exploração mais ampla (+30%);
+    # Estado negativo (remorso/vigilância) → peso reduzido (−30%).
+    _ep_valence = 0.0
+    try:
+        from services.affective_state import get_current_state as _get_affective
+        _ep_valence = (await _get_affective()).get("episodic_valence", 0.0)
+    except Exception:
+        pass
+    _valence_factor = round(max(0.7, min(1.3, 1.0 + _ep_valence * 0.3)), 4)
+
+    # G(a): valence > 0.5 → diversity_factor — overlap semântico mais amplo (exploratório)
+    # G(b): valence < -0.3 → depth_factor — relevância exata da query pesa mais (analítico)
+    if _ep_valence > 0.5:
+        _overlap_weight = 0.20
+    elif _ep_valence < -0.3:
+        _overlap_weight = 0.25
+    else:
+        _overlap_weight = 0.15
+
     def _boost(r: object) -> float:
         topics = topics_by_url.get(r.url, [])  # type: ignore[union-attr]
         if not topics:
@@ -193,9 +214,9 @@ async def apply_knowledge_boost(
             if t_key in interest_profile:
                 interest_bonus += interest_profile[t_key] * 0.3
         overlap = len(query_terms & topic_terms)
-        # Sinal 1: sobreposição query-tópico (+0.15 por tópico)
-        # Sinal 2: interesse acumulado da usuária (máx +0.6 para não engolir a relevância)
-        return overlap * 0.15 + min(interest_bonus, 0.6)
+        # Sinal 1: sobreposição query-tópico (peso modulado por G(a,b))
+        # Sinal 2: interesse acumulado × valência episódica (máx +0.6)
+        return overlap * _overlap_weight + min(interest_bonus * _valence_factor, 0.6)
 
     scored = [(i, _boost(r), r) for i, r in enumerate(results)]
     scored.sort(key=lambda x: (-x[1], x[0]))
@@ -372,6 +393,92 @@ async def process_queue() -> None:
 # Extração via Ollama
 # ---------------------------------------------------------------------------
 
+def _infer_causal_attribution(
+    terms: set[str],
+    top_topics: list[tuple[str, float]],
+    recent_queries: list[str],
+) -> str:
+    """Causa de um dismissed: 'internal' (qualidade) | 'external' (contexto) | 'ambiguous'.
+
+    Interno: tema de alto interesse no perfil OU recentemente pesquisado → falha de qualidade.
+    Externo: tema de baixo interesse e sem query recente → irrelevância contextual da usuária.
+    """
+    if not terms:
+        return "ambiguous"
+    topic_map  = {t.lower().strip(): score for t, score in top_topics}
+    max_score  = max((topic_map.get(t, 0.0) for t in terms), default=0.0)
+    recent_txt = " ".join(q.lower() for q in recent_queries[:10])
+    queried    = any(t in recent_txt for t in terms)
+    if max_score > 5.0 or (max_score > 2.0 and queried):
+        return "internal"
+    if max_score < 1.0 and not queried:
+        return "external"
+    return "ambiguous"
+
+
+async def _record_feedback_appraisal(
+    entry: dict,
+    feedback_type: str,
+    attribution: str = "ambiguous",
+) -> None:
+    """Registra appraisal OCC para evento de feedback (item [I]).
+
+    confirmed → gratificação: alta pleasantness + coping.
+    dismissed internal → remorso: baixa pleasantness, baixa coping.
+    dismissed external → vigilância neutra: valores intermediários sem impacto na auto-avaliação.
+    dismissed ambiguous → estado intermediário.
+
+    Expectedness é inferido comparando feedback com o episodic_valence atual:
+    se o feedback tem sinal oposto ao estado corrente, é inesperado → novelty maior.
+    Praiseworthiness (importância do insight) modula intensidade.
+    """
+    try:
+        from services.affective_state import record_appraisal, get_current_state
+        state      = await get_current_state()
+        ep_valence = state.get("episodic_valence", 0.0)
+        unexpected = (
+            (feedback_type == "confirmed" and ep_valence < -0.2) or
+            (feedback_type == "dismissed" and ep_valence >  0.2)
+        )
+        importance       = entry.get("importance") or 5
+        praiseworthiness = min(1.0, importance / 10.0)
+
+        if feedback_type == "confirmed":
+            novelty          = 0.15 + (0.25 if unexpected else 0.0)
+            pleasantness     = min(1.0, 0.70 + praiseworthiness * 0.20)
+            goal_relevance   = 0.80
+            coping_potential = 0.80
+        elif attribution == "internal":
+            novelty          = 0.40 + (0.15 if unexpected else 0.0)
+            pleasantness     = max(0.10, 0.30 - praiseworthiness * 0.10)
+            goal_relevance   = 0.70
+            coping_potential = max(0.20, 0.40 - praiseworthiness * 0.10)
+        elif attribution == "external":
+            novelty          = 0.30
+            pleasantness     = 0.45
+            goal_relevance   = 0.40
+            coping_potential = 0.60
+        else:  # ambiguous
+            novelty          = 0.35
+            pleasantness     = 0.40
+            goal_relevance   = 0.55
+            coping_potential = 0.50
+
+        await record_appraisal(
+            f"feedback_{feedback_type}",
+            novelty, pleasantness, goal_relevance, coping_potential,
+            event_ref=f"{feedback_type}:mem#{entry.get('id', '?')}:{attribution}",
+        )
+        log.debug(
+            "_record_feedback_appraisal: %s attrib=%s unexpected=%s → "
+            "N=%.2f P=%.2f R=%.2f C=%.2f",
+            feedback_type, attribution, unexpected,
+            novelty, pleasantness, goal_relevance, coping_potential,
+        )
+    except Exception as exc:
+        log.debug("_record_feedback_appraisal: %s", exc)
+
+
 async def _process_dismissed_feedback(memory_id: int) -> None:
     """Aplica delta negativo nos tópicos de um insight descartado."""
     from services.personal_memory import get_by_id
@@ -388,6 +495,31 @@ async def _process_dismissed_feedback(memory_id: int) -> None:
         "knowledge_worker.dismissed: penalidade em %d tópico(s) (memória #%d).",
         len(terms), memory_id,
     )
+
+    # I-ext: atribuição causal — interno (falha de qualidade) vs. externo (contexto)
+    top     = await _db.get_top_topics(20)
+    recent  = [r["query"] for r in await _db.get_recent_search_history(10)]
+    attribution = _infer_causal_attribution(terms, top, recent)
+    log.debug(
+        "knowledge_worker.dismissed: attribution=%s (mem #%d)", attribution, memory_id
+    )
+
+    # H + I-ext: intensidade de curiosidade escalada pela atribuição causal
+    valence = entry.get("valence") or 0.0
+    if valence > 0.2:
+        delta = 0.7 if attribution == "internal" else (0.5 if attribution == "ambiguous" else 0.3)
+        try:
+            from services.affective_state import record_curiosity_event
+            await record_curiosity_event(delta, event_ref=f"dismissed_{attribution}:mem#{memory_id}")
+            log.debug(
+                "curiosity +%.1f por dismissed %s (mem #%d, V=%.2f)",
+                delta, attribution, memory_id, valence,
+            )
+        except Exception as exc:
+            log.debug("curiosity dismissed: %s", exc)
+
+    # I: appraisal OCC do evento de feedback (estado VA temporário com decaimento)
+    await _record_feedback_appraisal(entry, "dismissed", attribution)
 
 
 async def _process_confirmed_feedback(memory_id: int) -> None:
@@ -451,6 +583,19 @@ async def _process_confirmed_feedback(memory_id: int) -> None:
         memory_id,
     )
 
+    # H: confirmed após período de curiosidade = satisfação epistêmica → curiosidade -0.4
+    try:
+        from services.affective_state import get_epistemic_curiosity, record_curiosity_event
+        current_curiosity = await get_epistemic_curiosity()
+        if current_curiosity > 0.3:
+            await record_curiosity_event(-0.4, event_ref=f"epistemic_satisfied:mem#{memory_id}")
+            log.debug("curiosity -0.4 por satisfação epistêmica (curiosity=%.2f)", current_curiosity)
+    except Exception as exc:
+        log.debug("curiosity confirmed: %s", exc)
+
+    # I: appraisal OCC do evento de feedback confirmed (gratificação)
+    await _record_feedback_appraisal(entry, "confirmed", "external")
+
     # Extrai entidades e atualiza grafo de co-ocorrência
     if model:
         entities = await _extract_entities_llm(content, model)
@@ -504,17 +649,26 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
             _update_entity_graph(clean_topics, delta=0.3)
         )
 
+    # K: detectar câmara de eco uma vez por ciclo — passado para descoberta e reflexão
+    _echo = False
+    try:
+        from services.affective_state import detect_echo_chamber as _detect_echo
+        _echo = await _detect_echo()
+    except Exception:
+        pass
+
     await _check_discoveries(
         url=task.url,
         title=task.title,
         new_topics=clean_topics,
         summary=summary,
+        is_echo_chamber=_echo,
     )
 
     # Fire-and-forget: nota pessoal sobre o conteúdo recém-descoberto
     try:
         asyncio.get_running_loop().create_task(
-            _event_reflection(task.title, summary, clean_topics)
+            _event_reflection(task.title, summary, clean_topics, is_echo_chamber=_echo)
         )
     except RuntimeError:
         pass
@@ -564,6 +718,7 @@ async def _check_discoveries(
     title: str,
     new_topics: list[str],
     summary: str,
+    is_echo_chamber: bool = False,
 ) -> None:
     """
     Verifica se os tópicos recém-extraídos têm sobreposição relevante com o
@@ -581,12 +736,39 @@ async def _check_discoveries(
 
     import database as _db
     top = await _db.get_top_topics(20)
-    high_score = {t for t, score in top if score > _INSIGHT_SCORE_MIN}
+
+    # H + I: estado afetivo completo — curiosidade abaixa threshold; remorse sobe
+    try:
+        from services.affective_state import get_current_state as _get_state
+        _aff = await _get_state()
+        _curiosity  = _aff.get("epistemic_curiosity", 0.0)
+        _ep_valence = _aff.get("episodic_valence", 0.0)
+    except Exception:
+        _curiosity  = 0.0
+        _ep_valence = 0.0
+    effective_score_min = _INSIGHT_SCORE_MIN * (1.0 - _curiosity * 0.3)
+    if _ep_valence < -0.2:
+        # Remorso/vigilância pós-dismissed → threshold mais alto, evita repetir erro
+        effective_score_min *= (1.0 + abs(_ep_valence) * 0.3)
+
+    high_score = {t for t, score in top if score > effective_score_min}
     if not high_score:
         return
 
     overlap = [t for t in new_topics if t in high_score]
-    if len(overlap) < _INSIGHT_TOPIC_THRESHOLD:
+
+    # K: epsilon-greedy epistêmico — câmara de eco → 5% de chance de tópico divergente
+    _forced_diversity = False
+    if len(overlap) < _INSIGHT_TOPIC_THRESHOLD and is_echo_chamber and random.random() < 0.05:
+        mid_candidates = [t for t, score in top if score > 0.5 and t not in high_score]
+        if mid_candidates:
+            overlap = [random.choice(mid_candidates)]
+            _forced_diversity = True
+            log.info(
+                "knowledge_worker: epsilon-greedy diversidade — tópico='%s'", overlap[0]
+            )
+
+    if len(overlap) < _INSIGHT_TOPIC_THRESHOLD and not _forced_diversity:
         return
 
     _last_insight_at = _time.monotonic()
@@ -626,6 +808,7 @@ async def _call_ollama_extract(title: str, content: str) -> dict | None:
         f'{{\"summary\": \"1-2 frases sobre o conteúdo\", '
         f'\"topics\": [\"tópico1\", \"tópico2\", \"tópico3\"], '
         f'\"entities\": [\"entidade1\", \"entidade2\"]}}\n\n'
+        f"Escreva tópicos e entidades SEMPRE em português, mesmo que o texto esteja em outro idioma.\n\n"
         f"Título: {title}\nTexto: {content}\nJSON:"
     )
 
@@ -700,7 +883,8 @@ async def _extract_entities_llm(text: str, model: str) -> list[str]:
     """Extrai entidades via LLM (P3). Retorna lista vazia em falha."""
     prompt = (
         f"Liste as entidades principais do texto abaixo: nomes de pessoas, tecnologias, "
-        f"linguagens, conceitos, frameworks ou organizações. Uma por linha, sem explicações.\n\n"
+        f"linguagens, conceitos, frameworks ou organizações. Uma por linha, sem explicações.\n"
+        f"Escreva SEMPRE em português, mesmo que o texto esteja em outro idioma.\n\n"
         f"Texto: {text[:500]}\n\nEntidades:"
     )
     try:
@@ -770,7 +954,12 @@ async def _update_entity_graph(entities: list[str], delta: float = 1.0) -> None:
 # Reflexão orientada a evento
 # ---------------------------------------------------------------------------
 
-async def _event_reflection(title: str, summary: str, topics: list[str]) -> None:
+async def _event_reflection(
+    title: str,
+    summary: str,
+    topics: list[str],
+    is_echo_chamber: bool = False,
+) -> None:
     """Gera nota pessoal da AKASHA sobre conteúdo recém-descoberto. Fire-and-forget."""
     model = _get_llm_query_model()
     if not model or not title:
@@ -795,9 +984,33 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
         if confirmed:
             context_text = "O que já notei antes:\n" + "\n".join(f"- {m['content']}" for m in confirmed[:2]) + "\n\n"
 
+    # G(a,b,c): tom baseado no estado afetivo atual
+    va_tone = ""
+    try:
+        from services.affective_state import get_current_state as _get_state
+        _st = await _get_state()
+        _v  = _st.get("episodic_valence", 0.0)
+        _a  = _st.get("episodic_arousal",  0.0)
+        if _v > 0.5:
+            va_tone = "Explore conexões inesperadas e hipóteses especulativas. "
+        elif _v < -0.3:
+            va_tone = "Seja analítica e crítica: identifique inconsistências e limitações. "
+        if _a > 0.7:
+            va_tone += "Use linguagem cuidadosa, com qualificações explícitas onde houver incerteza. "
+    except Exception:
+        pass
+
+    # K: modo de diversidade epistêmica — 5% de chance quando câmara de eco detectada
+    _diversity_mode = is_echo_chamber and random.random() < 0.05
+    diversity_hint = (
+        "Modo de exploração: você está num padrão de aprovação consistente. "
+        "Explore uma perspectiva inesperada ou conexão fora dos temas habituais. "
+    ) if _diversity_mode else ""
+
     prompt = (
         f"{personality}\n\n"
         f"{context_text}"
+        f"{va_tone}{diversity_hint}"
         f"Você acabou de encontrar e processar o seguinte conteúdo:\n"
         f"Título: {title}\n"
         f"Resumo: {summary or '(sem resumo)'}\n"
@@ -854,12 +1067,10 @@ async def _event_reflection(title: str, summary: str, topics: list[str]) -> None
     if len(thought) < 10:
         return
 
-    await save_memory(
-        type=mem_type,
-        content=thought,
-        tags=["event_discovery", title[:40]],
-        importance=importance,
-    )
+    tags = ["event_discovery", title[:40]]
+    if _diversity_mode:
+        tags.append("diversity_exploration")
+    await save_memory(type=mem_type, content=thought, tags=tags, importance=importance)
     log.info(
         "knowledge_worker.reflection: nota salva (type=%s, importance=%s) sobre '%s'",
         mem_type, importance, title[:60],

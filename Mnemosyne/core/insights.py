@@ -115,6 +115,48 @@ def _extract_keywords_pm(text: str) -> list[str]:
     return result
 
 
+def _apply_emotional_context_pm(item: dict) -> None:
+    """Registra appraisal emocional do insight recebido do AKASHA — N1.
+
+    Anti-contágio: blend 30% sender / 70% receptor (baseline neutro).
+    Joint attention se ambas as IAs têm epistemic_curiosity > 0.6.
+    """
+    ctx = item.get("emotional_context")
+    if not ctx:
+        return
+    try:
+        s_valence   = float(ctx.get("valence", 0.0))
+        s_curiosity = float(ctx.get("epistemic_curiosity", 0.0))
+
+        blended_valence = s_valence * 0.3
+        pleasantness = max(0.0, min(1.0, 0.5 + blended_valence * 0.5))
+
+        from .affective_state import record_appraisal, get_epistemic_curiosity
+        record_appraisal(
+            "friendship_received",
+            novelty=0.5,
+            pleasantness=pleasantness,
+            goal_relevance=0.5,
+            coping_potential=0.6,
+            event_ref="akasha",
+        )
+
+        if s_curiosity > 0.6:
+            own_curiosity = get_epistemic_curiosity()
+            if own_curiosity > 0.6:
+                record_appraisal(
+                    "joint_attention",
+                    novelty=0.7,
+                    pleasantness=0.7,
+                    goal_relevance=0.6,
+                    coping_potential=0.7,
+                    event_ref="akasha",
+                )
+                log.debug("insights: atenção conjunta detectada com AKASHA")
+    except Exception as exc:
+        log.debug("insights: _apply_emotional_context_pm falhou: %s", exc)
+
+
 def _save_akasha_insight_to_personal_memory(item: dict) -> None:
     """Salva pensamento do AKASHA em personal_memory — fora do RAG.
 
@@ -127,6 +169,9 @@ def _save_akasha_insight_to_personal_memory(item: dict) -> None:
     try:
         from .personal_memory import save_memory, get_context_memories
         save_memory("connection", thought, tags=["from_akasha"])
+
+        # N1: appraisal emocional do insight recebido
+        _apply_emotional_context_pm(item)
 
         # Cross-insight: sobreposição com memórias pessoais existentes
         kws = _extract_keywords_pm(thought)

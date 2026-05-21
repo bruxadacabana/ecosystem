@@ -55,6 +55,29 @@ class InsightScheduler(QObject):
             log.debug("InsightScheduler: popup já ativo — aguardando fechamento")
             return
 
+        # G(e): arousal alto → adiar popup — evitar sobrecarga em momento de alta ativação
+        try:
+            from core.affective_state import get_current_state
+            _st = get_current_state()
+            _arousal = _st.get("episodic_arousal", 0.0)
+            if _arousal > 0.6:
+                log.debug(
+                    "InsightScheduler: arousal=%.2f > 0.6 — popup adiado até estabilização",
+                    _arousal,
+                )
+                return
+        except Exception:
+            pass
+
+        # B1: poda de entradas antigas com alta entropia de Shannon
+        try:
+            from core.personal_memory import prune_high_entropy_stale
+            pruned = prune_high_entropy_stale()
+            if pruned:
+                log.debug("InsightScheduler: %d entradas de alta entropia podadas", pruned)
+        except Exception:
+            pass
+
         try:
             from core.personal_memory import get_unshown_popup_entries
             entries = get_unshown_popup_entries(5)
@@ -63,10 +86,27 @@ class InsightScheduler(QObject):
             return
 
         candidate: dict | None = None
-        for entry in entries:
-            if len(entry.get("content", "")) >= MIN_CONTENT_LEN:
-                candidate = entry
-                break
+        # K: câmara de eco → epsilon-greedy — 5% de chance de insight divergente (menor saliência)
+        try:
+            import random as _random
+            from core.affective_state import detect_echo_chamber
+            if detect_echo_chamber() and _random.random() < 0.05 and len(entries) > 1:
+                for entry in reversed(entries):
+                    if len(entry.get("content", "")) >= MIN_CONTENT_LEN:
+                        candidate = entry
+                        log.info(
+                            "InsightScheduler: epsilon-greedy diversidade — id=%d",
+                            entry["id"],
+                        )
+                        break
+        except Exception:
+            pass
+
+        if candidate is None:
+            for entry in entries:
+                if len(entry.get("content", "")) >= MIN_CONTENT_LEN:
+                    candidate = entry
+                    break
 
         if candidate is None:
             log.debug("InsightScheduler: nenhuma entrada nova para exibir")
@@ -114,11 +154,30 @@ class InsightScheduler(QObject):
             content = entry.get("content", "")
             if not content:
                 return
+
+            # N1: inclui estado afetivo atual como contexto emocional
+            emotional_context: dict | None = None
+            try:
+                from core.affective_state import get_current_state, get_epistemic_curiosity
+                _st = get_current_state()
+                emotional_context = {
+                    "valence":             _st.get("valence", 0.0),
+                    "arousal":             _st.get("arousal", 0.0),
+                    "epistemic_curiosity": get_epistemic_curiosity(),
+                    "appraisal_source":    "mnemosyne_confirmed",
+                }
+            except Exception:
+                pass
+
             root = str(Path(__file__).parent.parent.parent)
             if root not in sys.path:
                 sys.path.insert(0, root)
             from ecosystem_client import notify_akasha_insight  # type: ignore
-            notify_akasha_insight(content, tags=["from_mnemosyne"])
+            notify_akasha_insight(
+                content,
+                tags=["from_mnemosyne"],
+                emotional_context=emotional_context,
+            )
             log.info("InsightScheduler: pensamento confirmado enviado para AKASHA.")
         except Exception as exc:
             log.debug("InsightScheduler: falha ao notificar AKASHA: %s", exc)

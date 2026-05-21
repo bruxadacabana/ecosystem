@@ -7,22 +7,52 @@ A tabela affective_state fica em personal_memory.db (dados privados da IA).
 As dimensões são calculadas pelo chamador (indexer) com os dados disponíveis
 em cada contexto; este módulo faz apenas o mapeamento VA e a persistência.
 
+M1: decaimento exponencial por meia-vida diferenciada por tipo de evento e valência.
+M2 (ALMA Gebhard 2005): duas camadas temporais.
+  • Episódico  — evento específico, alta intensidade, janela 6 h, half-life armazenada.
+  • Humor/mood — EWA das últimas 48 h com smoothing de 24 h, intensidade 0.5×,
+                 clamped a ±0.5. Representa o contexto afetivo de fundo do dia.
+O mood modula thresholds de novos episódicos: eventos que alinham com o humor
+são levemente amplificados (+15%); eventos que se opõem são amortecidos (−25%).
+
 Uso::
 
     from core.affective_state import record_appraisal, get_current_state
 
     record_appraisal("doc_indexed", novelty, pleasantness,
                      goal_relevance, coping_potential)
-    state = get_current_state()   # {"valence": 0.3, "arousal": 0.5, ...}
+    state = get_current_state()
+    # {"valence": 0.3, "arousal": 0.5,
+    #  "episodic_valence": 0.3, "episodic_arousal": 0.5,
+    #  "mood_valence": 0.1, "mood_arousal": 0.3, ...}
 """
 from __future__ import annotations
 
 import logging
 import math
 import sqlite3
+import time
 from pathlib import Path
 
 log = logging.getLogger("mnemosyne.affective_state")
+
+# ── Parâmetros ALMA ──────────────────────────────────────────────────────────
+
+_EPISODIC_WINDOW_H:  float = 2.0    # dentro de uma sessão
+_MOOD_WINDOW_H:      float = 24.0   # contexto do dia
+_MOOD_SMOOTHING_HL:  float = 12.0
+_MOOD_DAMPEN:        float = 0.5
+_MOOD_MAX_ABS:       float = 0.5
+_MOOD_CACHE_TTL_S:   float = 600.0
+
+_CURIOSITY_HL:       float = 8.0
+_CURIOSITY_WINDOW_H: float = 24.0
+_CURIOSITY_NOVELTY_THRESHOLD: float = 0.7
+_CURIOSITY_COPING_MIN:        float = 0.5
+
+_mood_cache:    dict[str, float] = {"valence": 0.0, "arousal": 0.0}
+_mood_cache_at: float = 0.0
+
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS affective_state (
@@ -36,7 +66,8 @@ CREATE TABLE IF NOT EXISTS affective_state (
     coping_potential      REAL             DEFAULT NULL,
     valence               REAL    NOT NULL,
     arousal               REAL    NOT NULL,
-    decay_half_life_hours REAL    NOT NULL DEFAULT 6.0
+    decay_half_life_hours REAL    NOT NULL DEFAULT 6.0,
+    curiosity_delta       REAL    NOT NULL DEFAULT 0.0
 );
 """
 _IDX = "CREATE INDEX IF NOT EXISTS idx_affstate_created ON affective_state(created_at);"
@@ -44,7 +75,25 @@ _MIGRATION_DECAY = (
     "ALTER TABLE affective_state "
     "ADD COLUMN decay_half_life_hours REAL NOT NULL DEFAULT 6.0"
 )
-_MOOD_SCALE = 0.6   # humor é 60% menos intenso que emoções episódicas (ALMA)
+_MIGRATION_CURIOSITY = (
+    "ALTER TABLE affective_state "
+    "ADD COLUMN curiosity_delta REAL NOT NULL DEFAULT 0.0"
+)
+
+_BASELINE: dict[str, float] = {
+    "valence":             0.0,
+    "arousal":             0.0,
+    "episodic_valence":    0.0,
+    "episodic_arousal":    0.0,
+    "mood_valence":        0.0,
+    "mood_arousal":        0.0,
+    "epistemic_curiosity": 0.0,
+    "novelty":             0.5,
+    "pleasantness":        0.5,
+    "goal_relevance":      0.5,
+    "coping_potential":    0.5,
+    "sample_count":        0,
+}
 
 
 # ── Mapeamento CPM → VA ──────────────────────────────────────────────────────
@@ -85,60 +134,111 @@ def _conn() -> sqlite3.Connection:
     con = sqlite3.connect(_get_db())
     con.execute(_DDL)
     con.execute(_IDX)
-    try:
-        con.execute(_MIGRATION_DECAY)
-        con.commit()
-    except Exception:
-        pass  # coluna já existe
+    for migration in (_MIGRATION_DECAY, _MIGRATION_CURIOSITY):
+        try:
+            con.execute(migration)
+            con.commit()
+        except Exception:
+            pass  # coluna já existe
     return con
 
 
-def _weighted_agg(rows: list, max_age: float | None = None) -> tuple[dict[str, float] | None, int]:
-    """Agrega rows com ponderação exp(-t/half_life). Retorna (dict, count) ou (None, 0)."""
-    total_w = wv = wa = wn = wp = wg = wc = 0.0
-    count = 0
-    for r in rows:
-        age = r["age_hours"]
-        if max_age is not None and age > max_age:
-            continue
-        t = max(0.0, age)
-        w = math.exp(-t / r["decay_half_life_hours"])
-        total_w += w
-        wv += r["valence"] * w
-        wa += r["arousal"] * w
-        wn += (r["novelty"]          or 0.5) * w
-        wp += (r["pleasantness"]     or 0.5) * w
-        wg += (r["goal_relevance"]   or 0.5) * w
-        wc += (r["coping_potential"] or 0.5) * w
-        count += 1
-    if total_w < 0.01:
-        return None, 0
-    return {
-        "valence":          round(wv / total_w, 4),
-        "arousal":          round(wa / total_w, 4),
-        "novelty":          round(wn / total_w, 4),
-        "pleasantness":     round(wp / total_w, 4),
-        "goal_relevance":   round(wg / total_w, 4),
-        "coping_potential": round(wc / total_w, 4),
-    }, count
-
-
 def _assign_half_life(event_type: str, valence: float) -> float:
-    """Meia-vida em horas por tipo de evento e valência (WASABI/ALMA/EILS).
-
-    Emoções positivas → curta (2-6 h). Emoções negativas → longa (8-24 h):
-    sinais de problema persistem funcionalmente até resolução.
-    """
+    """Meia-vida em horas por tipo de evento e valência (WASABI/ALMA/EILS)."""
     if event_type == "user_query":
         return 3.0
     if event_type == "approval_momentum":
         return 3.0 if valence >= 0 else 16.0
     if event_type == "doc_indexed":
         return 4.0 if valence >= 0 else 12.0
+    if event_type in ("feedback_confirmed", "feedback_dismissed"):
+        return 2.0 if valence >= 0 else 8.0
     return 6.0
 
 
+# ── Modulação de threshold por humor (ALMA M2) ───────────────────────────────
+
+def _apply_mood_modulation(valence: float) -> float:
+    """Modula nova emoção episódica pelo humor de fundo (ALMA threshold effect).
+
+    Humor positivo → emoções positivas amplificadas (+15%), negativas amortecidas (−25%).
+    Humor negativo → emoções negativas amplificadas, positivas amortecidas.
+    """
+    mv = _mood_cache.get("valence", 0.0)
+    if abs(mv) < 0.05:
+        return valence
+    if mv * valence > 0:
+        return round(valence * (1.0 + abs(mv) * 0.15), 4)
+    else:
+        return round(valence * (1.0 - abs(mv) * 0.25), 4)
+
+
+def _weighted_va(rows: list, smoothing_hl: float | None, dampen: float) -> tuple[float, float]:
+    """Média ponderada exponencial de (valence, arousal) sobre rows."""
+    total_w = wv = wa = 0.0
+    for r in rows:
+        t  = max(0.0, r["age_hours"])
+        hl = smoothing_hl if smoothing_hl is not None else r["decay_half_life_hours"]
+        w  = math.exp(-t / hl)
+        total_w += w
+        wv += r["valence"] * w
+        wa += r["arousal"] * w
+    if total_w < 0.01:
+        return 0.0, 0.0
+    return round((wv / total_w) * dampen, 4), round((wa / total_w) * dampen, 4)
+
+
 # ── API pública ──────────────────────────────────────────────────────────────
+
+def record_curiosity_event(delta: float, event_ref: str | None = None) -> None:
+    """Persiste um evento de curiosidade epistêmica com meia-vida própria (_CURIOSITY_HL).
+
+    delta > 0: aumento (dismissed inesperado, alta novidade + coping suficiente).
+    delta < 0: redução (satisfação epistêmica).
+    """
+    try:
+        with _conn() as con:
+            con.execute(
+                """INSERT INTO affective_state
+                   (event_type, event_ref, valence, arousal,
+                    decay_half_life_hours, curiosity_delta)
+                   VALUES ('curiosity_event', ?, 0.0, 0.0, ?, ?)""",
+                (event_ref, _CURIOSITY_HL, round(delta, 4)),
+            )
+        log.debug("curiosity_event: delta=%.3f ref=%s", delta, event_ref)
+    except Exception as exc:
+        log.debug("record_curiosity_event: %s", exc)
+
+
+def get_epistemic_curiosity() -> float:
+    """Nível atual de curiosidade epistêmica ∈ [0, 1], com decaimento exponencial."""
+    try:
+        con = _conn()
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            """SELECT curiosity_delta, decay_half_life_hours,
+                      (julianday('now') - julianday(created_at)) * 24.0 AS age_hours
+               FROM affective_state
+               WHERE curiosity_delta != 0
+                 AND created_at >= datetime('now', ?)""",
+            (f"-{int(_CURIOSITY_WINDOW_H)} hours",),
+        ).fetchall()
+        con.close()
+        if not rows:
+            return 0.0
+        total_w = wc = 0.0
+        for r in rows:
+            t = max(0.0, r["age_hours"])
+            w = math.exp(-t / r["decay_half_life_hours"])
+            total_w += w
+            wc += r["curiosity_delta"] * w
+        if total_w < 0.01:
+            return 0.0
+        return round(max(0.0, min(1.0, wc / total_w)), 4)
+    except Exception as exc:
+        log.debug("get_epistemic_curiosity: %s", exc)
+        return 0.0
+
 
 def record_appraisal(
     event_type:       str,
@@ -148,9 +248,14 @@ def record_appraisal(
     coping_potential: float,
     event_ref:        str | None = None,
 ) -> None:
-    """Calcula VA + meia-vida de decaimento e persiste em affective_state."""
+    """Calcula VA + meia-vida de decaimento e persiste em affective_state.
+
+    Aplica modulação de threshold pelo humor de fundo (M2).
+    Dispara curiosidade epistêmica (H) quando novelty > 0.7 e coping > 0.5.
+    """
     valence, arousal = compute_va(novelty, pleasantness, goal_relevance, coping_potential)
     half_life = _assign_half_life(event_type, valence)
+    valence   = _apply_mood_modulation(valence)  # M2: threshold via mood
     try:
         with _conn() as con:
             con.execute(
@@ -165,12 +270,19 @@ def record_appraisal(
                  valence, arousal, half_life),
             )
         log.debug(
-            "appraisal [%s]: N=%.2f P=%.2f R=%.2f C=%.2f → V=%.3f A=%.3f hl=%.1fh",
+            "appraisal [%s]: N=%.2f P=%.2f R=%.2f C=%.2f → V=%.3f A=%.3f hl=%.1fh (mood=%.2f)",
             event_type, novelty, pleasantness, goal_relevance, coping_potential,
-            valence, arousal, half_life,
+            valence, arousal, half_life, _mood_cache.get("valence", 0.0),
         )
     except Exception as exc:
         log.debug("record_appraisal: %s", exc)
+        return
+
+    # H: alta novidade + coping suficiente → curiosidade epistêmica
+    if novelty > _CURIOSITY_NOVELTY_THRESHOLD and coping_potential > _CURIOSITY_COPING_MIN:
+        delta = round((novelty - _CURIOSITY_NOVELTY_THRESHOLD)
+                      / (1.0 - _CURIOSITY_NOVELTY_THRESHOLD) * 0.4, 4)
+        record_curiosity_event(delta, event_ref=f"high_novelty:{event_type}")
 
 
 def _get_feedback_stats(recent_n: int = 20) -> dict[str, int]:
@@ -205,11 +317,25 @@ def _get_feedback_stats(recent_n: int = 20) -> dict[str, int]:
                 "all_confirmed": 0, "all_total": 0}
 
 
+def detect_echo_chamber(recent_n: int = 30, threshold: float = 0.6) -> bool:
+    """Verifica câmara de eco — versão síncrona de AKASHA/services/affective_state.py.
+
+    Retorna True quando approval ratio recente > threshold E há dados suficientes.
+    """
+    try:
+        stats = _get_feedback_stats(recent_n)
+        if stats["recent_total"] < recent_n:
+            return False
+        ratio = stats["recent_confirmed"] / stats["recent_total"]
+        return ratio > threshold
+    except Exception as exc:
+        log.debug("detect_echo_chamber: %s", exc)
+        return False
+
+
 def record_approval_momentum(recent_n: int = 20) -> None:
     """Calcula approval momentum e registra appraisal se threshold atingido.
 
-    Lockwood et al. (PNAS 2022): autoestima funcional derivada do momentum
-    (taxa de mudança do feedback), não da média cumulativa.
     Versão síncrona — idêntica à AKASHA/services/affective_state.py.
     """
     stats = _get_feedback_stats(recent_n)
@@ -222,25 +348,14 @@ def record_approval_momentum(recent_n: int = 20) -> None:
     )
     momentum  = ratio_recent - ratio_baseline
     intensity = abs(momentum)
-    # Threshold ajustado pelo humor (ALMA: mood positivo → buffer para emoções negativas)
-    threshold = 0.15
-    try:
-        state = get_current_state()
-        mood_v = state.get("mood_valence", 0.0)
-        if momentum < 0 and mood_v > 0.3:
-            threshold += mood_v * 0.1
-        elif momentum > 0 and mood_v < -0.3:
-            threshold += abs(mood_v) * 0.1
-    except Exception:
-        pass
-    if intensity < threshold:
+    if intensity < 0.15:
         return
-    if momentum > 0:            # contentamento leve
+    if momentum > 0:
         pleasantness     = min(1.0, 0.5 + intensity)
         coping_potential = min(1.0, 0.6 + intensity * 0.4)
         goal_relevance   = 0.7
         novelty          = 0.2
-    else:                       # vigilância / remorse leve
+    else:
         pleasantness     = max(0.0, 0.5 - intensity)
         coping_potential = max(0.1, 0.5 - intensity * 0.4)
         goal_relevance   = 0.6
@@ -263,9 +378,8 @@ def record_query_appraisal(query_text: str, event_ref: str | None = None) -> Non
     """Registra appraisal gerado por query da usuária, usando topic_interest_profile.
 
     Calcula pleasantness e coping_potential a partir da familiaridade com os
-    tópicos da query. Análogo a _record_doc_appraisal no AKASHA/knowledge_worker.
-    A apprisação deve acontecer ANTES de atualizar o perfil de interesse (bulk_update_from_text),
-    para refletir o estado do conhecimento antes da query.
+    tópicos da query. A appraisal deve acontecer ANTES de atualizar o perfil de
+    interesse (bulk_update_from_text), para refletir o estado antes da query.
     """
     try:
         from core.topic_profile import extract_keywords, get_topic_scores_for_list
@@ -279,7 +393,7 @@ def record_query_appraisal(query_text: str, event_ref: str | None = None) -> Non
         pleasantness      = round(familiarity, 4)
         coping_potential  = round(len(known_scores) / len(keywords), 4)
         novelty           = round(1.0 - familiarity, 4)
-        goal_relevance    = 1.0   # query direta da usuária = relevância máxima
+        goal_relevance    = 1.0
         record_appraisal(
             "user_query", novelty, pleasantness, goal_relevance, coping_potential,
             event_ref=event_ref,
@@ -288,25 +402,21 @@ def record_query_appraisal(query_text: str, event_ref: str | None = None) -> Non
         log.debug("record_query_appraisal: %s", exc)
 
 
-def get_current_state(
-    episodic_hours: float = 12.0,
-    mood_hours:     float = 48.0,
-) -> dict[str, float]:
-    """Estado afetivo em duas camadas: episódico (recente) + humor/mood (acumulado).
+def get_current_state() -> dict[str, float]:
+    """Estado afetivo atual com duas camadas temporais (M2/ALMA).
 
-    ALMA (Gebhard 2005): emoções episódicas alimentam humor de fundo de menor
-    intensidade (_MOOD_SCALE). O humor modula thresholds para novas emoções —
-    humor positivo dificulta registrar negativos; humor negativo dificulta positivos.
+    Episódico (episodic_valence/arousal):
+        Eventos das últimas 6 h com decaimento exponencial por meia-vida
+        armazenada. Alta intensidade — reflete eventos recentes específicos.
 
-    Retorna valence/arousal/... (episódico) + mood_valence/mood_arousal (humor).
+    Humor (mood_valence/arousal):
+        EWA das últimas 48 h com smoothing de 24 h, dampened 0.5×.
+        Clamped a ±0.5. Representa o contexto afetivo de fundo.
+
+    valence/arousal são aliases para episodic_valence/arousal (retrocompatibilidade).
+    Atualiza o cache de humor usado por record_appraisal para modulação de threshold.
     """
-    _baseline = {
-        "valence": 0.0, "arousal": 0.0,
-        "novelty": 0.5, "pleasantness": 0.5,
-        "goal_relevance": 0.5, "coping_potential": 0.5,
-        "sample_count": 0,
-        "mood_valence": 0.0, "mood_arousal": 0.0,
-    }
+    global _mood_cache, _mood_cache_at
     try:
         con = _conn()
         con.row_factory = sqlite3.Row
@@ -316,25 +426,67 @@ def get_current_state(
                       (julianday('now') - julianday(created_at)) * 24.0 AS age_hours
                FROM affective_state
                WHERE created_at >= datetime('now', ?)
-                 AND decay_half_life_hours > 0""",
-            (f"-{int(mood_hours)} hours",),
+                 AND decay_half_life_hours > 0
+               ORDER BY created_at""",
+            (f"-{int(_MOOD_WINDOW_H)} hours",),
         ).fetchall()
         con.close()
 
         if not rows:
-            return _baseline
+            return dict(_BASELINE)
 
-        epi, epi_count = _weighted_agg(rows, max_age=episodic_hours)
-        mood_raw, _    = _weighted_agg(rows)
+        # Episódico: apenas eventos recentes (últimas 6 h)
+        episodic_rows = [r for r in rows if r["age_hours"] <= _EPISODIC_WINDOW_H]
+        if episodic_rows:
+            ev, ea = _weighted_va(episodic_rows, smoothing_hl=None, dampen=1.0)
+        else:
+            ev, ea = 0.0, 0.0
 
-        result = dict(_baseline)
-        if epi:
-            result.update(epi)
-            result["sample_count"] = epi_count
-        if mood_raw:
-            result["mood_valence"] = round(mood_raw["valence"] * _MOOD_SCALE, 4)
-            result["mood_arousal"] = round(mood_raw["arousal"] * _MOOD_SCALE, 4)
-        return result
+        # Humor: todos os eventos nas últimas 48 h, suavização 24 h, intensidade 0.5×
+        mv, ma = _weighted_va(rows, smoothing_hl=_MOOD_SMOOTHING_HL, dampen=_MOOD_DAMPEN)
+        mv = round(max(-_MOOD_MAX_ABS, min(_MOOD_MAX_ABS, mv)), 4)
+        ma = round(max(0.0, min(1.0, ma)), 4)
+
+        _mood_cache    = {"valence": mv, "arousal": ma}
+        _mood_cache_at = time.monotonic()
+
+        curiosity = get_epistemic_curiosity()
+
+        # Dimensões CPM do episódico
+        total_w = wn = wp = wg = wc = 0.0
+        for r in episodic_rows or rows[:1]:
+            t = max(0.0, r["age_hours"])
+            w = math.exp(-t / r["decay_half_life_hours"])
+            total_w += w
+            wn += (r["novelty"]          or 0.5) * w
+            wp += (r["pleasantness"]     or 0.5) * w
+            wg += (r["goal_relevance"]   or 0.5) * w
+            wc += (r["coping_potential"] or 0.5) * w
+        if total_w > 0:
+            wn /= total_w; wp /= total_w; wg /= total_w; wc /= total_w
+        else:
+            wn = wp = wg = wc = 0.5
+
+        log.debug(
+            "get_current_state: episodic(V=%.3f A=%.3f) mood(V=%.3f A=%.3f) "
+            "n_events=%d n_episodic=%d",
+            ev, ea, mv, ma, len(rows), len(episodic_rows),
+        )
+
+        return {
+            "valence":             ev,
+            "arousal":             ea,
+            "episodic_valence":    ev,
+            "episodic_arousal":    ea,
+            "mood_valence":        mv,
+            "mood_arousal":        ma,
+            "epistemic_curiosity": curiosity,
+            "novelty":             round(wn, 4),
+            "pleasantness":        round(wp, 4),
+            "goal_relevance":      round(wg, 4),
+            "coping_potential":    round(wc, 4),
+            "sample_count":        len(rows),
+        }
     except Exception as exc:
         log.debug("get_current_state: %s", exc)
-    return _baseline
+    return dict(_BASELINE)

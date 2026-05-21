@@ -57,6 +57,9 @@ const VRAM_P3_BLOCK: f32 = 0.85;
 // P3 recebe 429 se CPU ou RAM insuficiente — protege Windows e laptop durante indexação
 const CPU_P3_BLOCK: f32 = 85.0;
 const RAM_P3_BLOCK_MB: u64 = 1_536;
+// P3 em modo sobrevivência: thresholds mais permissivos — CPU quase saturada ou RAM crítica
+const CPU_P3_SURVIVAL_BLOCK: f32 = 92.0;
+const RAM_P3_SURVIVAL_BLOCK_MB: u64 = 512;
 // Em bateria: threshold de CPU mais conservador para P2 (preservar energia)
 const ON_BATTERY_P2_CPU_BLOCK: f32 = 60.0;
 
@@ -640,14 +643,22 @@ async fn queue_and_forward(
                 })),
             ).into_response();
         }
-        // P3 bloqueado: sem análise em background no computador de trabalho
+        // P3 em modo sobrevivência: permite com throttle mínimo, bloqueia só se sistema saturado
         if priority == 3 {
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(serde_json::json!({
-                    "error": "Modo Sobrevivência: tarefas P3 desabilitadas para preservar recursos"
-                })),
-            ).into_response();
+            let (cpu, ram_free) = {
+                let (c, f, _) = cpu_ram_usage(&s.0.sys).await;
+                (c, f)
+            };
+            if cpu > CPU_P3_SURVIVAL_BLOCK || ram_free < RAM_P3_SURVIVAL_BLOCK_MB {
+                return (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(serde_json::json!({
+                        "error": format!(
+                            "Modo Sobrevivência: CPU {cpu:.0}% ou RAM livre {ram_free} MB — tarefa P3 adiada"
+                        )
+                    })),
+                ).into_response();
+            }
         }
     } else if priority == 3 {
         // Em bateria: P3 bloqueado completamente (preservar energia)
@@ -1609,9 +1620,9 @@ fn is_on_battery() -> bool {
 /// P1 survival: num_thread=3 (i5-3470: 4 cores, deixa 1 livre para o SO).
 /// P2 normal:   num_batch=256 (preservar RAM); em bateria: num_thread=2 adicional.
 /// P2 survival: num_thread=4 (usa todos os 4 cores — usuária esperando resposta).
-/// P3 normal:   num_thread=2, num_batch=256, num_ctx=2048 (impacto mínimo no sistema).
-/// P3 survival: num_thread=3 (background usa 3 cores; 1 livre para o SO e apps ativos).
-/// P3 laptop:   num_gpu=0 adicional (background roda só na CPU, preserva VRAM da MX150).
+/// P3 normal:    num_thread=2, num_batch=256, num_ctx=2048 (impacto mínimo no sistema).
+/// P3 survival:  num_thread=1, num_batch=64, num_ctx=1024 (mínimo viável; 3 cores livres para P1/P2/SO).
+/// P3 laptop:    num_gpu=0 adicional (background roda só na CPU, preserva VRAM da MX150).
 fn inject_efficiency_params(
     body: &mut serde_json::Map<String, serde_json::Value>,
     priority: u8,
@@ -1645,14 +1656,21 @@ fn inject_efficiency_params(
             }
         }
         _ => {
-            // P3 survival: 3 cores (deixa 1 para o SO); demais: 2 (impacto mínimo)
-            let threads = if is_survival { 3 } else { 2 };
-            o.entry("num_thread").or_insert(serde_json::json!(threads));
-            o.entry("num_batch").or_insert(serde_json::json!(256));
-            o.entry("num_ctx").or_insert(serde_json::json!(2048));
-            if hw == HardwareProfile::Laptop {
-                // MX150 tem apenas 2 GB VRAM — background não deve competir com P1/P2
-                o.entry("num_gpu").or_insert(serde_json::json!(0));
+            if is_survival {
+                // P3 sobrevivência: mínimo viável — 1 core, contexto curto, batch mínimo.
+                // P1/P2 usa 3-4 cores → 1 core livre para background sem impacto perceptível.
+                o.entry("num_thread").or_insert(serde_json::json!(1));
+                o.entry("num_batch").or_insert(serde_json::json!(64));
+                o.entry("num_ctx").or_insert(serde_json::json!(1024));
+            } else {
+                // Normal: 2 cores (impacto mínimo no sistema)
+                o.entry("num_thread").or_insert(serde_json::json!(2));
+                o.entry("num_batch").or_insert(serde_json::json!(256));
+                o.entry("num_ctx").or_insert(serde_json::json!(2048));
+                if hw == HardwareProfile::Laptop {
+                    // MX150 tem apenas 2 GB VRAM — background não deve competir com P1/P2
+                    o.entry("num_gpu").or_insert(serde_json::json!(0));
+                }
             }
         }
     }

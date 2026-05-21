@@ -609,6 +609,12 @@ async def insight_current(request: Request) -> dict:
     # 2. Fallback: entrada de personal_memory de alta saliência
     pm_entry = _si.get_pm_current()
     if pm_entry is None:
+        # B1: poda de entradas antigas com alta entropia de Shannon
+        try:
+            from services.personal_memory import prune_high_entropy_stale
+            await prune_high_entropy_stale()
+        except Exception:
+            pass
         from services.personal_memory import get_next_for_overlay, mark_shown_as_overlay
         candidates = await get_next_for_overlay(5)
         for c in candidates:
@@ -647,6 +653,7 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
         raise HTTPException(status_code=422, detail="feedback deve ser 'confirmed' ou 'dismissed'")
     await _set_feedback(body.memory_id, body.feedback)
     if body.feedback == "confirmed":
+        _si.set_pm_current(None)  # limpar overlay — confirmado, não reexibir
         from services.knowledge_worker import on_feedback_confirmed as _on_confirmed
         _on_confirmed(body.memory_id)
         _si.on_feedback_confirmed(body.memory_id)  # reflexão sobre o acerto
