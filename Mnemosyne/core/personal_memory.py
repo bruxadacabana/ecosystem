@@ -233,6 +233,99 @@ def _plutchik_congruence(stored_json: str | None, mood_vec: list[float]) -> floa
         return 0.0
 
 
+# ── C: Zettelkasten / A-Mem — linking de memórias relacionadas ───────────────
+
+_STOPWORDS_ZKN: frozenset = frozenset({
+    "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas",
+    "por", "para", "com", "uma", "um", "que", "se", "os", "as",
+    "ao", "aos", "foi", "ser", "ter", "tem", "está", "mais", "como",
+    "the", "and", "for", "are", "but", "not", "can", "has", "was",
+    "that", "this", "with", "from", "they", "will", "also", "any",
+    "uma", "uns", "umas", "seu", "sua", "seus", "suas", "este", "essa",
+    "isso", "aqui", "ali", "bem", "muito", "quando", "onde", "pelo",
+    "pela", "pelos", "pelas", "entre", "sobre", "mesmo", "cada",
+})
+
+
+def _zkn_keywords(text: str, max_kw: int = 15) -> list[str]:
+    """Extrai keywords por split + filtro de stopwords + comprimento mínimo 3."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for token in text.lower().split():
+        word = "".join(c for c in token if c.isalpha())
+        if len(word) >= 3 and word not in _STOPWORDS_ZKN and word not in seen:
+            seen.add(word)
+            result.append(word)
+            if len(result) >= max_kw:
+                break
+    return result
+
+
+def _zkn_jaccard(a: list[str], b: list[str]) -> float:
+    """Jaccard similarity entre dois conjuntos de keywords."""
+    sa, sb = set(a), set(b)
+    union = sa | sb
+    return len(sa & sb) / len(union) if union else 0.0
+
+
+def _zettel_link_bg(memory_id: int, keywords: list[str], db_path: Path) -> None:
+    """Liga nova memória a memórias semanticamente relacionadas (A-Mem/Zettelkasten).
+
+    Busca últimas 200 memórias com zettel_keywords preenchidos, calcula Jaccard,
+    mantém top-5 com J ≥ 0.15; atualiza zettel_links bidirecionalmente.
+    Corre em thread daemon — falhas são suprimidas via log.debug.
+    """
+    if not keywords:
+        return
+    try:
+        con = sqlite3.connect(str(db_path))
+        rows = con.execute(
+            "SELECT id, zettel_keywords FROM personal_memory "
+            "WHERE id != ? AND zettel_keywords IS NOT NULL "
+            "AND zettel_keywords != '[]' "
+            "ORDER BY id DESC LIMIT 200",
+            (memory_id,),
+        ).fetchall()
+
+        scored: list[tuple[int, float]] = []
+        for rid, rkw_json in rows:
+            try:
+                rkw = json.loads(rkw_json or "[]")
+            except Exception:
+                rkw = []
+            if rkw:
+                j = _zkn_jaccard(keywords, rkw)
+                if j >= 0.15:
+                    scored.append((rid, j))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        top_ids = [rid for rid, _ in scored[:5]]
+        if not top_ids:
+            con.close()
+            return
+
+        con.execute(
+            "UPDATE personal_memory SET zettel_links = ? WHERE id = ?",
+            (json.dumps(top_ids), memory_id),
+        )
+        for rid in top_ids:
+            row = con.execute(
+                "SELECT zettel_links FROM personal_memory WHERE id = ?", (rid,)
+            ).fetchone()
+            if row:
+                existing: list[int] = json.loads(row[0] or "[]")
+                if memory_id not in existing:
+                    existing.append(memory_id)
+                    con.execute(
+                        "UPDATE personal_memory SET zettel_links = ? WHERE id = ?",
+                        (json.dumps(existing[:10]), rid),
+                    )
+        con.commit()
+        con.close()
+    except Exception as exc:
+        log.debug("_zettel_link_bg: %s", exc)
+
+
 def _update_plutchik_bg(memory_id: int, content: str, llm_model: str, db_path: Path) -> None:
     """Atualiza coluna plutchik em background (thread daemon)."""
     try:
@@ -386,6 +479,10 @@ def _conn() -> sqlite3.Connection:
         con.execute("ALTER TABLE personal_memory ADD COLUMN last_shown_at TEXT DEFAULT NULL")
     if "plutchik" not in cols:
         con.execute("ALTER TABLE personal_memory ADD COLUMN plutchik TEXT DEFAULT NULL")
+    if "zettel_keywords" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN zettel_keywords TEXT NOT NULL DEFAULT '[]'")
+    if "zettel_links" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN zettel_links TEXT NOT NULL DEFAULT '[]'")
     # affective_state — estado emocional ativo da Mnemosyne (item [F])
     con.execute("""
         CREATE TABLE IF NOT EXISTS affective_state (
@@ -433,14 +530,15 @@ def save_memory(
     if importance is not None:
         importance = max(1, min(10, int(importance)))
     valence, arousal = _compute_valence_arousal(content)
+    kws = _zkn_keywords(content)
     import threading
     with _conn() as con:
         cursor = con.execute(
             "INSERT INTO personal_memory "
-            "(type, content, tags, category, valence, arousal, importance) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(type, content, tags, category, valence, arousal, importance, zettel_keywords) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (type, content, json.dumps(tags, ensure_ascii=False),
-             category, valence, arousal, importance),
+             category, valence, arousal, importance, json.dumps(kws)),
         )
         mid = cursor.lastrowid or 0
     # D: Plutchik — classificação emocional em background (fire-and-forget)
@@ -458,6 +556,13 @@ def save_memory(
             ).start()
     except Exception:
         pass
+    # C: Zettelkasten — liga memórias relacionadas em background
+    if kws and mid:
+        threading.Thread(
+            target=_zettel_link_bg,
+            args=(mid, kws, _get_db()),
+            daemon=True,
+        ).start()
     return mid
 
 
@@ -623,7 +728,7 @@ def get_context_memories(n: int = 8) -> list[dict]:
     with _conn() as con:
         rows = con.execute(
             "SELECT id, created_at, type, content, tags, feedback, category, "
-            "valence, arousal, importance, plutchik "
+            "valence, arousal, importance, plutchik, zettel_links "
             "FROM personal_memory "
             "WHERE feedback IS NULL OR feedback = 'confirmed' "
             "LIMIT ?",
@@ -645,7 +750,32 @@ def get_context_memories(n: int = 8) -> list[dict]:
         return confirmed + 0.4 * congruence
 
     top = sorted(rows, key=_ctx_score, reverse=True)[:n]
-    return [
+
+    # C: Zettelkasten — expandir contexto com memórias linkadas (até n//3 extras)
+    top_ids = {r[0] for r in top}
+    extra_ids: set[int] = set()
+    for r in top:
+        try:
+            for lid in json.loads(r[11] or "[]"):
+                if int(lid) not in top_ids:
+                    extra_ids.add(int(lid))
+        except Exception:
+            pass
+
+    extra_rows: list[tuple] = []
+    if extra_ids:
+        limit_extra = max(2, n // 3)
+        with _conn() as con:
+            extra_rows = con.execute(
+                f"SELECT id, created_at, type, content, tags, feedback, category, "
+                f"valence, arousal, importance FROM personal_memory "
+                f"WHERE id IN ({','.join('?' * len(extra_ids))}) "
+                f"AND (feedback IS NULL OR feedback = 'confirmed') "
+                f"LIMIT ?",
+                [*extra_ids, limit_extra],
+            ).fetchall()
+
+    result = [
         {
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
@@ -654,6 +784,14 @@ def get_context_memories(n: int = 8) -> list[dict]:
         }
         for r in top
     ]
+    for r in extra_rows:
+        result.append({
+            "id": r[0], "created_at": r[1], "type": r[2],
+            "content": r[3], "tags": json.loads(r[4] or "[]"),
+            "feedback": r[5], "category": r[6],
+            "valence": r[7], "arousal": r[8], "importance": r[9],
+        })
+    return result
 
 
 def get_by_id(memory_id: int) -> dict | None:

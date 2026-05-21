@@ -24,6 +24,8 @@ import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import asyncio
+
 import aiosqlite
 
 log = logging.getLogger("akasha.personal_memory")
@@ -335,6 +337,104 @@ async def _update_plutchik_bg(memory_id: int, content: str, llm_model: str) -> N
         log.debug("_update_plutchik_bg: %s", exc)
 
 
+# ── C: Zettelkasten / A-Mem — linking de memórias relacionadas ───────────────
+# A-Mem (Xu et al. arXiv:2502.12110, 2025): cada memória como nota estruturada
+# com keywords e links bidirecionais para memórias semanticamente relacionadas.
+# Implementação: extração rápida de keywords (sem LLM) + Jaccard sobre keywords
+# como proxy de similaridade semântica; linking em background fire-and-forget.
+# get_context_memories() expande via zettel_links após selecionar top-n.
+
+_STOPWORDS_ZKN: frozenset = frozenset({
+    "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas",
+    "por", "para", "com", "uma", "um", "que", "se", "os", "as",
+    "ao", "aos", "foi", "ser", "ter", "tem", "está", "mais", "como",
+    "the", "and", "for", "are", "but", "not", "can", "has", "was",
+    "that", "this", "with", "from", "they", "will", "also", "any",
+    "uma", "uns", "umas", "seu", "sua", "seus", "suas", "este", "essa",
+    "isso", "aqui", "ali", "bem", "muito", "quando", "onde", "pelo",
+    "pela", "pelos", "pelas", "entre", "sobre", "mesmo", "cada",
+})
+
+
+def _zkn_keywords(text: str, max_kw: int = 15) -> list[str]:
+    """Extrai keywords por split + filtro de stopwords + comprimento mínimo 3."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for token in text.lower().split():
+        word = "".join(c for c in token if c.isalpha())
+        if len(word) >= 3 and word not in _STOPWORDS_ZKN and word not in seen:
+            seen.add(word)
+            result.append(word)
+            if len(result) >= max_kw:
+                break
+    return result
+
+
+def _zkn_jaccard(a: list[str], b: list[str]) -> float:
+    """Jaccard similarity entre dois conjuntos de keywords."""
+    sa, sb = set(a), set(b)
+    union = sa | sb
+    return len(sa & sb) / len(union) if union else 0.0
+
+
+async def _zettel_link_bg(memory_id: int, keywords: list[str]) -> None:
+    """Liga nova memória a memórias semanticamente relacionadas (A-Mem/Zettelkasten).
+
+    Busca últimas 200 memórias com zettel_keywords preenchidos, calcula Jaccard,
+    mantém top-5 com J ≥ 0.15; atualiza zettel_links bidirecionalmente.
+    Limita cada entrada a 10 links para evitar crescimento descontrolado.
+    Fire-and-forget — falhas são suprimidas via log.debug.
+    """
+    if not keywords:
+        return
+    try:
+        async with aiosqlite.connect(_get_pm_db()) as db:
+            rows = await (await db.execute(
+                "SELECT id, zettel_keywords FROM personal_memory "
+                "WHERE id != ? AND zettel_keywords IS NOT NULL "
+                "AND zettel_keywords != '[]' "
+                "ORDER BY id DESC LIMIT 200",
+                (memory_id,),
+            )).fetchall()
+
+        scored: list[tuple[int, float]] = []
+        for rid, rkw_json in rows:
+            try:
+                rkw = json.loads(rkw_json or "[]")
+            except Exception:
+                rkw = []
+            if rkw:
+                j = _zkn_jaccard(keywords, rkw)
+                if j >= 0.15:
+                    scored.append((rid, j))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        top_ids = [rid for rid, _ in scored[:5]]
+        if not top_ids:
+            return
+
+        async with aiosqlite.connect(_get_pm_db()) as db:
+            await db.execute(
+                "UPDATE personal_memory SET zettel_links = ? WHERE id = ?",
+                (json.dumps(top_ids), memory_id),
+            )
+            for rid in top_ids:
+                row = await (await db.execute(
+                    "SELECT zettel_links FROM personal_memory WHERE id = ?", (rid,)
+                )).fetchone()
+                if row:
+                    existing: list[int] = json.loads(row[0] or "[]")
+                    if memory_id not in existing:
+                        existing.append(memory_id)
+                        await db.execute(
+                            "UPDATE personal_memory SET zettel_links = ? WHERE id = ?",
+                            (json.dumps(existing[:10]), rid),
+                        )
+            await db.commit()
+    except Exception as exc:
+        log.debug("_zettel_link_bg: %s", exc)
+
+
 def _derive_category(tags: list[str]) -> str:
     """Deriva category automaticamente das tags. Default: 'reflections'."""
     for tag in tags:
@@ -378,6 +478,8 @@ async def init_pm_db() -> None:
             "ALTER TABLE personal_memory ADD COLUMN display_count    INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE personal_memory ADD COLUMN last_shown_at    TEXT    DEFAULT NULL",
             "ALTER TABLE personal_memory ADD COLUMN plutchik         TEXT    DEFAULT NULL",
+            "ALTER TABLE personal_memory ADD COLUMN zettel_keywords  TEXT    NOT NULL DEFAULT '[]'",
+            "ALTER TABLE personal_memory ADD COLUMN zettel_links     TEXT    NOT NULL DEFAULT '[]'",
         ):
             try:
                 await db.execute(migration)
@@ -426,13 +528,14 @@ async def save_memory(
     if importance is not None:
         importance = max(1, min(10, int(importance)))
     valence, arousal = _compute_valence_arousal(content)
+    kws = _zkn_keywords(content)
     async with aiosqlite.connect(_get_pm_db()) as db:
         cur = await db.execute(
             "INSERT INTO personal_memory "
-            "(type, content, tags, category, valence, arousal, importance) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(type, content, tags, category, valence, arousal, importance, zettel_keywords) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (type, content, json.dumps(tags, ensure_ascii=False), category,
-             valence, arousal, importance),
+             valence, arousal, importance, json.dumps(kws)),
         )
         await db.commit()
         mid = cur.lastrowid  # type: ignore[return-value]
@@ -445,6 +548,9 @@ async def save_memory(
             asyncio.create_task(_update_plutchik_bg(int(mid), content, _model))
     except Exception:
         pass
+    # C: Zettelkasten — liga memórias relacionadas em background
+    if kws and mid:
+        asyncio.create_task(_zettel_link_bg(int(mid), kws))
     return mid
 
 
@@ -552,7 +658,7 @@ async def get_context_memories(n: int = 8) -> list[dict]:
     async with aiosqlite.connect(_get_pm_db()) as db:
         rows = await (await db.execute(
             "SELECT id, created_at, type, content, tags, feedback, category, "
-            "valence, arousal, importance, plutchik "
+            "valence, arousal, importance, plutchik, zettel_links "
             "FROM personal_memory "
             "WHERE feedback IS NULL OR feedback = 'confirmed' "
             "LIMIT ?",
@@ -574,7 +680,32 @@ async def get_context_memories(n: int = 8) -> list[dict]:
         return confirmed + 0.4 * congruence
 
     top = sorted(rows, key=_ctx_score, reverse=True)[:n]
-    return [
+
+    # C: Zettelkasten — expandir contexto com memórias linkadas (até n//3 extras)
+    top_ids = {r[0] for r in top}
+    extra_ids: set[int] = set()
+    for r in top:
+        try:
+            for lid in json.loads(r[11] or "[]"):
+                if int(lid) not in top_ids:
+                    extra_ids.add(int(lid))
+        except Exception:
+            pass
+
+    extra_rows: list = []
+    if extra_ids:
+        limit_extra = max(2, n // 3)
+        async with aiosqlite.connect(_get_pm_db()) as db:
+            extra_rows = await (await db.execute(
+                f"SELECT id, created_at, type, content, tags, feedback, category, "
+                f"valence, arousal, importance FROM personal_memory "
+                f"WHERE id IN ({','.join('?' * len(extra_ids))}) "
+                f"AND (feedback IS NULL OR feedback = 'confirmed') "
+                f"LIMIT ?",
+                [*extra_ids, limit_extra],
+            )).fetchall()
+
+    result = [
         {
             "id": r[0], "created_at": r[1], "type": r[2],
             "content": r[3], "tags": json.loads(r[4] or "[]"),
@@ -583,6 +714,14 @@ async def get_context_memories(n: int = 8) -> list[dict]:
         }
         for r in top
     ]
+    for r in extra_rows:
+        result.append({
+            "id": r[0], "created_at": r[1], "type": r[2],
+            "content": r[3], "tags": json.loads(r[4] or "[]"),
+            "feedback": r[5], "category": r[6],
+            "valence": r[7], "arousal": r[8], "importance": r[9],
+        })
+    return result
 
 
 async def get_next_for_overlay(n: int = 5) -> list[dict]:
