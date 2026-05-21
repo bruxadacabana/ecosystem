@@ -32,7 +32,7 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 - OS: CachyOS (Arch Linux), Niri + Fish shell
 - Armazenamento: ~2 TB (3 SSDs)
 
-### Hardware — Laptop — Lenovo Ideapad 330-15IKB, modelo 81FE (CachyOS)
+### Hardware — Laptop — Lenovo Ideapad 330-15IKB, modelo 81FE (Fedora)
 
 - CPU: Intel Core i7-8550U (8 threads) @ 4.00 GHz — **tem AVX2**
 - RAM: 11.58 GiB
@@ -40,7 +40,7 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 - GPU 2 (integrada): Intel UHD Graphics 620 @ 1.15 GHz (Optimus/híbrido)
 - Disco: 443 GB btrfs
 - Tela: 1920×1080, 15", 60 Hz
-- OS: CachyOS x86_64, kernel 7.0.1-1-cachyos, Niri 26.04 (Wayland), Fish 4.6.0
+- OS: Fedora Linux 44 (Workstation Edition), kernel 7.0.9-204.fc44.x86_64, Niri 26.04 (Wayland), Fish 4.6.0
 - Bateria: L17M2PB7 (monitorável — relevante para LOGOS)
 
 Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRAM = 2 GB: modelos-teto são SmolLM2 1.7B (KOSMOS, ~1 GB Q4) e Gemma 2B Q4 (Mnemosyne, ~1.5 GB). Phi-3 mini e Llama 8B → offload para CPU → aquecimento, evitar. Em bateria: LOGOS deve reduzir indexação.
