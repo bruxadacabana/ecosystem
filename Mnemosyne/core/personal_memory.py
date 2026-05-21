@@ -456,7 +456,8 @@ def _conn() -> sqlite3.Connection:
             category       TEXT    NOT NULL DEFAULT 'reflections',
             valence        REAL             DEFAULT NULL,
             arousal        REAL             DEFAULT NULL,
-            importance     INTEGER          DEFAULT NULL
+            importance     INTEGER          DEFAULT NULL,
+            comm_id        INTEGER          DEFAULT NULL
         )
     """)
     # Migrations para DBs anteriores
@@ -483,6 +484,8 @@ def _conn() -> sqlite3.Connection:
         con.execute("ALTER TABLE personal_memory ADD COLUMN zettel_keywords TEXT NOT NULL DEFAULT '[]'")
     if "zettel_links" not in cols:
         con.execute("ALTER TABLE personal_memory ADD COLUMN zettel_links TEXT NOT NULL DEFAULT '[]'")
+    if "comm_id" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN comm_id INTEGER DEFAULT NULL")
     # affective_state — estado emocional ativo da Mnemosyne (item [F])
     con.execute("""
         CREATE TABLE IF NOT EXISTS affective_state (
@@ -855,14 +858,51 @@ def get_unshown_popup_entries(n: int = 5) -> list[dict]:
     ]
 
 
-def mark_shown_as_popup(memory_id: int) -> None:
-    """Marca entrada como já exibida como popup; incrementa display_count."""
+def get_entry_info(memory_id: int) -> dict | None:
+    """Retorna content, importance e comm_id de uma entrada. None se não existir."""
     with _conn() as con:
+        row = con.execute(
+            "SELECT content, importance, comm_id FROM personal_memory WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {"content": row[0], "importance": row[1], "comm_id": row[2]}
+
+
+def mark_shown_as_popup(memory_id: int) -> None:
+    """Marca entrada como já exibida como popup; incrementa display_count.
+
+    Também registra em communication_history via ecosystem_client e persiste
+    o comm_id retornado para que o feedback posterior possa ser associado.
+    """
+    with _conn() as con:
+        row = con.execute(
+            "SELECT content, importance, tags FROM personal_memory WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+
+        comm_id: int | None = None
+        if row:
+            try:
+                import json as _json
+                from ecosystem_client import log_communication  # type: ignore
+                tags_raw = row[2] or "[]"
+                tags = _json.loads(tags_raw) if isinstance(tags_raw, str) else []
+                comm_id = log_communication(
+                    source_app="mnemosyne",
+                    content=row[0],
+                    importance=row[1],
+                    tags=tags if isinstance(tags, list) else [],
+                )
+            except Exception:
+                pass
+
         con.execute(
             "UPDATE personal_memory "
             "SET shown_as_popup = 1, display_count = display_count + 1, "
-            "last_shown_at = datetime('now') WHERE id = ?",
-            (memory_id,),
+            "last_shown_at = datetime('now'), comm_id = ? WHERE id = ?",
+            (comm_id, memory_id),
         )
 
 

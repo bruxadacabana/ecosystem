@@ -38,7 +38,7 @@ class InsightScheduler(QObject):
         popup.destroyed.connect(scheduler.on_popup_closed)
     """
 
-    insight_ready        = Signal(str, int)   # (content, memory_id)
+    insight_ready        = Signal(str, int, object)   # (content, memory_id, importance|None)
     reflection_requested = Signal(int, str)   # (memory_id, "confirmed"|"dismissed")
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -121,7 +121,7 @@ class InsightScheduler(QObject):
 
         self._popup_active = True
         log.info("InsightScheduler: emitindo insight id=%d", mid)
-        self.insight_ready.emit(candidate["content"], mid)
+        self.insight_ready.emit(candidate["content"], mid, candidate.get("importance"))
 
     def on_popup_closed(self) -> None:
         """Chamado quando o popup fecha (qualquer motivo).

@@ -4,6 +4,11 @@ Mnemosyne — Pop-up de insight espontâneo.
 QDialog frameless posicionado no canto inferior direito da tela.
 Mostra um pensamento gerado pela Mnemosyne com botões de feedback.
 Permanece visível até a usuária interagir (✓ / ✗ / ✎).
+
+Quando importance ≥ 7 e a usuária dispensa (✗), o popup transforma seu
+conteúdo num painel de motivo: exibe o texto original acima e oferece
+opções rápidas + campo livre. O sinal dismissed_with_reason é emitido
+com o motivo coletado antes de fechar.
 """
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -22,27 +28,32 @@ from PySide6.QtWidgets import (
 
 log = logging.getLogger("mnemosyne.insight_popup")
 
-_POPUP_MAX_WIDTH = 360
+_POPUP_MAX_WIDTH = 380
 _MARGIN = 20
+
+_DISMISS_REASONS = ["já sabia disso", "irrelevante agora", "incorreto", "outro"]
 
 
 class InsightPopup(QDialog):
     """Pop-up de insight espontâneo no canto inferior direito da tela.
 
     Sinais:
-        confirmed(memory_id) — usuária marcou como interessante
-        dismissed(memory_id) — usuária dispensou
-        replied(text)        — usuária quer continuar no notebook
+        confirmed(memory_id)              — usuária marcou como interessante
+        dismissed(memory_id)              — usuária dispensou (importance < 7)
+        dismissed_with_reason(memory_id, reason) — dispensou com motivo (importance ≥ 7)
+        replied(text)                     — usuária quer continuar no notebook
     """
 
-    confirmed = Signal(int)
-    dismissed = Signal(int)
-    replied = Signal(str)
+    confirmed             = Signal(int)
+    dismissed             = Signal(int)
+    dismissed_with_reason = Signal(int, str)
+    replied               = Signal(str)
 
     def __init__(
         self,
         text: str,
         memory_id: int,
+        importance: int | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(
@@ -55,22 +66,23 @@ class InsightPopup(QDialog):
         self.setWindowOpacity(0.0)
         self._memory_id = memory_id
         self._text = text
+        self._importance = importance or 0
         self._build(text)
 
     def _build(self, text: str) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
-        card = QWidget(self)
-        card.setObjectName("insightCard")
-        card_lay = QVBoxLayout(card)
-        card_lay.setContentsMargins(16, 14, 16, 12)
-        card_lay.setSpacing(10)
+        self._card = QWidget(self)
+        self._card.setObjectName("insightCard")
+        self._card_lay = QVBoxLayout(self._card)
+        self._card_lay.setContentsMargins(16, 14, 16, 12)
+        self._card_lay.setSpacing(10)
 
-        eyebrow = QLabel("✦  Mnemosyne", card)
+        eyebrow = QLabel("✦  Mnemosyne", self._card)
         eyebrow.setObjectName("insightEyebrow")
 
-        text_label = QLabel(text, card)
+        text_label = QLabel(text, self._card)
         text_label.setObjectName("insightText")
         text_label.setWordWrap(True)
         text_label.setMaximumWidth(_POPUP_MAX_WIDTH - 40)
@@ -82,19 +94,19 @@ class InsightPopup(QDialog):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
-        confirm_btn = QPushButton("✓", card)
+        confirm_btn = QPushButton("✓", self._card)
         confirm_btn.setObjectName("insightBtnConfirm")
         confirm_btn.setToolTip("Interessante")
         confirm_btn.setFixedSize(28, 28)
         confirm_btn.clicked.connect(self._on_confirm)
 
-        dismiss_btn = QPushButton("✗", card)
+        dismiss_btn = QPushButton("✗", self._card)
         dismiss_btn.setObjectName("insightBtnDismiss")
         dismiss_btn.setToolTip("Dispensar")
         dismiss_btn.setFixedSize(28, 28)
         dismiss_btn.clicked.connect(self._on_dismiss)
 
-        reply_btn = QPushButton("✎", card)
+        reply_btn = QPushButton("✎", self._card)
         reply_btn.setObjectName("insightBtnReply")
         reply_btn.setToolTip("Continuar no notebook")
         reply_btn.setFixedSize(28, 28)
@@ -105,14 +117,88 @@ class InsightPopup(QDialog):
         btn_row.addWidget(dismiss_btn)
         btn_row.addWidget(reply_btn)
 
-        card_lay.addWidget(eyebrow)
-        card_lay.addWidget(text_label)
-        card_lay.addLayout(btn_row)
-        outer.addWidget(card)
+        self._card_lay.addWidget(eyebrow)
+        self._card_lay.addWidget(text_label)
+        self._card_lay.addLayout(btn_row)
+        outer.addWidget(self._card)
 
-    def show_in_corner(self) -> None:
-        """Posiciona no canto inferior direito da tela e exibe com fade-in."""
+    def _clear_card(self) -> None:
+        """Remove todos os widgets do card para substituir pelo painel de motivo."""
+        while self._card_lay.count():
+            item = self._card_lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                # Limpa layouts aninhados
+                while item.layout().count():
+                    child = item.layout().takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
+
+    def _show_reason_panel(self) -> None:
+        """Substitui o conteúdo do card pelo painel de motivo de dismiss."""
+        self._clear_card()
+
+        # Texto original em caixa cinza
+        original_box = QLabel(self._text, self._card)
+        original_box.setObjectName("insightOriginalText")
+        original_box.setWordWrap(True)
+        original_box.setMaximumWidth(_POPUP_MAX_WIDTH - 40)
+
+        question_lbl = QLabel("o que estava errado?", self._card)
+        question_lbl.setObjectName("insightReasonQuestion")
+
+        # Botões de opção rápida
+        reason_row = QHBoxLayout()
+        reason_row.setSpacing(4)
+        reason_row.setContentsMargins(0, 0, 0, 0)
+        self._selected_reason: str = _DISMISS_REASONS[0]
+
+        def _make_reason_btn(label: str) -> QPushButton:
+            btn = QPushButton(label, self._card)
+            btn.setObjectName("insightReasonBtn")
+            btn.setCheckable(True)
+            btn.setChecked(label == self._selected_reason)
+            btn.clicked.connect(lambda checked, l=label: self._select_reason(l))
+            return btn
+
+        self._reason_btns: list[QPushButton] = []
+        for r in _DISMISS_REASONS:
+            b = _make_reason_btn(r)
+            self._reason_btns.append(b)
+            reason_row.addWidget(b)
+
+        # Campo de detalhe opcional
+        self._detail_edit = QLineEdit(self._card)
+        self._detail_edit.setPlaceholderText("detalhe opcional…")
+        self._detail_edit.setObjectName("insightReasonDetail")
+
+        # Botão confirmar motivo
+        confirm_reason_btn = QPushButton("confirmar", self._card)
+        confirm_reason_btn.setObjectName("insightBtnConfirm")
+        confirm_reason_btn.clicked.connect(self._on_reason_confirmed)
+
+        self._card_lay.addWidget(original_box)
+        self._card_lay.addWidget(question_lbl)
+        self._card_lay.addLayout(reason_row)
+        self._card_lay.addWidget(self._detail_edit)
+        self._card_lay.addWidget(confirm_reason_btn)
+
         self.adjustSize()
+        self._reposition()
+
+    def _select_reason(self, reason: str) -> None:
+        self._selected_reason = reason
+        for btn in self._reason_btns:
+            btn.setChecked(btn.text() == reason)
+
+    def _on_reason_confirmed(self) -> None:
+        detail = self._detail_edit.text().strip()
+        full_reason = f"{self._selected_reason}: {detail}" if detail else self._selected_reason
+        self.dismissed_with_reason.emit(self._memory_id, full_reason)
+        self._close_anim()
+
+    def _reposition(self) -> None:
         screen = self.screen()
         if screen is None:
             from PySide6.QtWidgets import QApplication
@@ -122,6 +208,11 @@ class InsightPopup(QDialog):
             x = geom.right() - self.width() - _MARGIN
             y = geom.bottom() - self.height() - _MARGIN
             self.move(x, y)
+
+    def show_in_corner(self) -> None:
+        """Posiciona no canto inferior direito da tela e exibe com fade-in."""
+        self.adjustSize()
+        self._reposition()
         self.show()
         self.raise_()
         self._fade_in()
@@ -146,8 +237,12 @@ class InsightPopup(QDialog):
         self._close_anim()
 
     def _on_dismiss(self) -> None:
-        self.dismissed.emit(self._memory_id)
-        self._close_anim()
+        if self._importance >= 7:
+            # Transforma o popup no painel de motivo antes de fechar
+            self._show_reason_panel()
+        else:
+            self.dismissed.emit(self._memory_id)
+            self._close_anim()
 
     def _on_reply(self) -> None:
         self.replied.emit(self._text)

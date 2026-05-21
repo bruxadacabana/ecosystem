@@ -2052,18 +2052,21 @@ class MainWindow(QMainWindow):
     # Pop-up de insight espontâneo
     # ------------------------------------------------------------------
 
-    def _show_insight_popup(self, text: str, memory_id: int) -> None:
+    def _show_insight_popup(self, text: str, memory_id: int, importance: object = None) -> None:
         """Exibe pop-up de insight no canto inferior direito."""
         if self._active_insight_popup is not None:
             try:
                 self._active_insight_popup.close()
             except RuntimeError:
                 pass
-        popup = InsightPopup(text, memory_id, parent=self)
+        imp = int(importance) if importance is not None else None
+        popup = InsightPopup(text, memory_id, importance=imp, parent=self)
         popup.confirmed.connect(self._on_insight_confirmed)
         popup.confirmed.connect(self._insight_scheduler.on_confirmed)
         popup.dismissed.connect(self._on_insight_dismissed)
         popup.dismissed.connect(self._insight_scheduler.on_dismissed)
+        popup.dismissed_with_reason.connect(self._on_insight_dismissed_with_reason)
+        popup.dismissed_with_reason.connect(lambda mid, _r: self._insight_scheduler.on_dismissed(mid))
         popup.replied.connect(self._on_insight_replied)
         popup.destroyed.connect(lambda: self._clear_insight_popup(popup))
         popup.destroyed.connect(self._insight_scheduler.on_popup_closed)
@@ -2081,8 +2084,15 @@ class MainWindow(QMainWindow):
             mark_seen(-memory_id)
             self._update_insights_badge(0)
         else:
-            from core.personal_memory import set_feedback
+            from core.personal_memory import set_feedback, get_entry_info
             set_feedback(memory_id, "confirmed")
+            try:
+                info = get_entry_info(memory_id)
+                if info and info.get("comm_id") is not None:
+                    from ecosystem_client import update_communication_feedback  # type: ignore
+                    update_communication_feedback(info["comm_id"], "confirmed")
+            except Exception:
+                pass
 
     def _on_insight_dismissed(self, memory_id: int) -> None:
         if memory_id < 0:
@@ -2090,8 +2100,40 @@ class MainWindow(QMainWindow):
             mark_seen(-memory_id)
             self._update_insights_badge(0)
         else:
-            from core.personal_memory import set_feedback
+            from core.personal_memory import set_feedback, get_entry_info
             set_feedback(memory_id, "dismissed")
+            try:
+                info = get_entry_info(memory_id)
+                if info and info.get("comm_id") is not None:
+                    from ecosystem_client import update_communication_feedback  # type: ignore
+                    update_communication_feedback(info["comm_id"], "dismissed")
+            except Exception:
+                pass
+
+    def _on_insight_dismissed_with_reason(self, memory_id: int, reason: str) -> None:
+        """Dismiss de alta importância — salva motivo no histórico e reflexão de correção."""
+        from core.personal_memory import set_feedback, get_entry_info, save_memory
+        set_feedback(memory_id, "dismissed")
+        try:
+            info = get_entry_info(memory_id)
+            if info and info.get("comm_id") is not None:
+                from ecosystem_client import update_communication_feedback  # type: ignore
+                update_communication_feedback(info["comm_id"], "dismissed", reason=reason)
+            # Reflexão sobre a quebra de expectativa
+            if info:
+                original = info["content"][:120]
+                reflection = (
+                    f"Marquei como importante mas foi rejeitada: \"{original}…\" "
+                    f"— motivo: {reason}"
+                )
+                save_memory(
+                    type="correction",
+                    content=reflection,
+                    tags=["feedback", "quebra_expectativa"],
+                    importance=8,
+                )
+        except Exception:
+            pass
 
     def _on_feedback_reflection_requested(self, memory_id: int, feedback_type: str) -> None:
         """Inicia FeedbackReflectionWorker para a Mnemosyne refletir sobre o feedback."""
