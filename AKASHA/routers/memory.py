@@ -26,7 +26,10 @@ async def list_entries(n: int = 20) -> list[dict]:
 
 @router.get("/topics")
 async def list_topics(n: int = 30) -> list[dict]:
-    """Retorna os N tópicos com maior score no topic_interest_profile."""
+    """Retorna os N tópicos com maior score no perfil de interesses unificado do ecossistema.
+
+    Lê de shared_topic_profile.db — acumula contribuições de AKASHA, Mnemosyne e KOSMOS.
+    """
     import database as _db
     rows = await _db.get_top_topics(n)
     return [{"topic": t, "score": s} for t, s in rows]

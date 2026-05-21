@@ -461,7 +461,7 @@ function TopicsViewer({ baseUrl }: { baseUrl: string }) {
           textTransform: 'uppercase', padding: '4px 0', opacity: 0.7,
         }}
       >
-        {open ? '▾ temas aprendidos' : '▸ temas aprendidos'}
+        {open ? '▾ interesses do ecossistema' : '▸ interesses do ecossistema'}
         {topics.length > 0 && ` (${topics.length})`}
       </button>
 
