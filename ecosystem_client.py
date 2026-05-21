@@ -737,3 +737,101 @@ def write_section(app: str, section: dict[str, Any]) -> None:
             _do_write()
     else:
         _do_write()
+
+
+# ---------------------------------------------------------------------------
+# Histórico de comunicações IA → usuária
+# ---------------------------------------------------------------------------
+
+def _comm_history_path() -> Path | None:
+    """Retorna {sync_root}/communication_history.db ou None se sync_root não configurado."""
+    root = get_sync_root()
+    return (root / "communication_history.db") if root is not None else None
+
+
+def _comm_history_init(db_path: Path) -> None:
+    """Garante que a tabela existe. Chamado antes de cada operação."""
+    import sqlite3
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS communications (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_app      TEXT    NOT NULL,
+                content         TEXT    NOT NULL,
+                importance      INTEGER,
+                tags            TEXT,
+                sent_at         TEXT    NOT NULL,
+                feedback        TEXT,
+                feedback_at     TEXT,
+                feedback_reason TEXT
+            )
+        """)
+        conn.commit()
+
+
+def log_communication(
+    source_app: str,
+    content: str,
+    importance: int | None = None,
+    tags: list[str] | None = None,
+) -> int | None:
+    """Registra uma comunicação IA → usuária em communication_history.db.
+
+    Retorna o id gerado (para associar feedback posterior) ou None se
+    sync_root não estiver configurado ou a escrita falhar.
+    Falha silenciosamente — nunca bloqueia o fluxo do caller.
+    """
+    import datetime as _dt
+    import json as _json
+    import sqlite3
+
+    path = _comm_history_path()
+    if path is None:
+        return None
+    try:
+        _comm_history_init(path)
+        tags_str = _json.dumps(tags, ensure_ascii=False) if tags else None
+        sent_at = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        with sqlite3.connect(path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            cur = conn.execute(
+                "INSERT INTO communications (source_app, content, importance, tags, sent_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (source_app, content, importance, tags_str, sent_at),
+            )
+            conn.commit()
+            return cur.lastrowid
+    except Exception:
+        return None
+
+
+def update_communication_feedback(
+    comm_id: int,
+    feedback: str,
+    reason: str | None = None,
+) -> None:
+    """Atualiza o feedback (e opcionalmente o motivo) de uma comunicação registrada.
+
+    feedback: "confirmed" | "dismissed"
+    reason: texto livre ou tag rápida do motivo do ✗ (opcional).
+    Falha silenciosamente.
+    """
+    import datetime as _dt
+    import sqlite3
+
+    path = _comm_history_path()
+    if path is None:
+        return
+    try:
+        feedback_at = _dt.datetime.now(_dt.timezone.utc).isoformat()
+        with sqlite3.connect(path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute(
+                "UPDATE communications SET feedback=?, feedback_at=?, feedback_reason=? "
+                "WHERE id=?",
+                (feedback, feedback_at, reason, comm_id),
+            )
+            conn.commit()
+    except Exception:
+        pass
