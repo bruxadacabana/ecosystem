@@ -10,15 +10,17 @@ import * as cmd from '../lib/tauri'
 import type { TopicEntry } from '../types'
 
 const SOURCE_LABELS: Record<string, string> = {
-  akasha_library:      'AKASHA',
+  akasha_library:        'AKASHA',
   mnemosyne_reflections: 'Mnemosyne',
-  kosmos_engagement:   'KOSMOS',
-  manual:              'manual',
+  mnemosyne_queries:     'Mnemosyne',
+  kosmos_engagement:     'KOSMOS',
+  manual:                'manual',
 }
 
 const SOURCE_COLORS: Record<string, string> = {
   akasha_library:        'var(--accent)',
   mnemosyne_reflections: '#a78bfa',
+  mnemosyne_queries:     '#a78bfa',
   kosmos_engagement:     'var(--accent-green)',
   manual:                'var(--ink-ghost)',
 }

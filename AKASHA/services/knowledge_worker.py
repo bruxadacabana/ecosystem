@@ -69,6 +69,7 @@ _backfill_running: bool = False  # True enquanto backfill inicial estiver em and
 _processed_since_export:      int   = 0
 _last_interests_export_at:    float = 0.0
 _INTERESTS_EXPORT_COOLDOWN_S: float = 300.0   # mínimo 5 min entre exportações
+_INTERESTS_EXPORT_EVERY_N:    int   = 20       # exporta também a cada N páginas processadas
 
 # Cooldown de notificação de insights (evita spam)
 import time as _time
@@ -368,10 +369,13 @@ async def process_queue() -> None:
             await _extract_and_store(task)
             _queue.task_done()
 
-            # Detecta drenagem de fila → exporta perfil de interesse ao final do ciclo
+            # Exporta perfil de interesse: quando fila esvazia OU a cada N páginas.
+            # A condição "queue empty" não basta durante backfill grande — o backfill
+            # re-popula a fila antes de esvaziar, então a exportação nunca dispararia.
             global _processed_since_export, _last_interests_export_at
             _processed_since_export += 1
-            if _queue.empty():
+            _should_export = _queue.empty() or _processed_since_export >= _INTERESTS_EXPORT_EVERY_N
+            if _should_export:
                 now = _time.monotonic()
                 if now - _last_interests_export_at >= _INTERESTS_EXPORT_COOLDOWN_S:
                     _last_interests_export_at = now
