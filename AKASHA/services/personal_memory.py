@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS personal_memory (
     valence          REAL             DEFAULT NULL,
     arousal          REAL             DEFAULT NULL,
     importance       INTEGER          DEFAULT NULL,
-    shown_as_overlay INTEGER NOT NULL DEFAULT 0
+    shown_as_overlay INTEGER NOT NULL DEFAULT 0,
+    comm_id          INTEGER          DEFAULT NULL
 );
 """
 
@@ -480,6 +481,7 @@ async def init_pm_db() -> None:
             "ALTER TABLE personal_memory ADD COLUMN plutchik         TEXT    DEFAULT NULL",
             "ALTER TABLE personal_memory ADD COLUMN zettel_keywords  TEXT    NOT NULL DEFAULT '[]'",
             "ALTER TABLE personal_memory ADD COLUMN zettel_links     TEXT    NOT NULL DEFAULT '[]'",
+            "ALTER TABLE personal_memory ADD COLUMN comm_id          INTEGER DEFAULT NULL",
         ):
             try:
                 await db.execute(migration)
@@ -756,15 +758,53 @@ async def get_next_for_overlay(n: int = 5) -> list[dict]:
 
 
 async def mark_shown_as_overlay(memory_id: int) -> None:
-    """Marca entrada como já exibida no overlay; incrementa display_count."""
+    """Marca entrada como já exibida no overlay; incrementa display_count.
+
+    Também registra em communication_history via ecosystem_client e salva o
+    comm_id retornado para que o feedback posterior possa ser associado.
+    """
     async with aiosqlite.connect(_get_pm_db()) as db:
+        # Lê conteúdo e importância para registrar no histórico antes de marcar
+        row = await (await db.execute(
+            "SELECT content, importance, tags FROM personal_memory WHERE id = ?",
+            (memory_id,),
+        )).fetchone()
+
+        comm_id: int | None = None
+        if row:
+            try:
+                import json as _json
+                from ecosystem_client import log_communication  # type: ignore
+                tags_raw = row[2] or "[]"
+                tags = _json.loads(tags_raw) if isinstance(tags_raw, str) else []
+                comm_id = log_communication(
+                    source_app="akasha",
+                    content=row[0],
+                    importance=row[1],
+                    tags=tags if isinstance(tags, list) else [],
+                )
+            except Exception:
+                pass
+
         await db.execute(
             "UPDATE personal_memory "
             "SET shown_as_overlay = 1, display_count = display_count + 1, "
-            "last_shown_at = datetime('now') WHERE id = ?",
-            (memory_id,),
+            "last_shown_at = datetime('now'), comm_id = ? WHERE id = ?",
+            (comm_id, memory_id),
         )
         await db.commit()
+
+
+async def get_entry_info(memory_id: int) -> dict | None:
+    """Retorna content, importance e comm_id de uma entrada. None se não existir."""
+    async with aiosqlite.connect(_get_pm_db()) as db:
+        row = await (await db.execute(
+            "SELECT content, importance, comm_id FROM personal_memory WHERE id = ?",
+            (memory_id,),
+        )).fetchone()
+    if row is None:
+        return None
+    return {"content": row[0], "importance": row[1], "comm_id": row[2]}
 
 
 async def prune_high_entropy_stale(max_delete: int = 20) -> int:

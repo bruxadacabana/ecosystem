@@ -673,23 +673,99 @@ class _InsightFeedbackBody(BaseModel):
 
 @router.post("/insight/feedback")
 async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict:
-    """Registra feedback (✓/✗) num insight já salvo em personal_memory."""
+    """Registra feedback (✓/✗) num insight já salvo em personal_memory.
+
+    Se dismissed com importance ≥ 7, retorna ask_reason=True e original_text
+    para que a interface/extensão pergunte o motivo antes de fechar o overlay.
+    """
     from services import session_insight as _si
-    from services.personal_memory import set_feedback as _set_feedback
+    from services.personal_memory import set_feedback as _set_feedback, get_entry_info as _get_info
     if body.feedback not in {"confirmed", "dismissed"}:
         raise HTTPException(status_code=422, detail="feedback deve ser 'confirmed' ou 'dismissed'")
     await _set_feedback(body.memory_id, body.feedback)
+
+    entry = await _get_info(body.memory_id)
+    comm_id = entry.get("comm_id") if entry else None
+
     if body.feedback == "confirmed":
-        _si.set_pm_current(None)  # limpar overlay — confirmado, não reexibir
+        _si.set_pm_current(None)
         from services.knowledge_worker import on_feedback_confirmed as _on_confirmed
         _on_confirmed(body.memory_id)
-        _si.on_feedback_confirmed(body.memory_id)  # reflexão sobre o acerto
-    elif body.feedback == "dismissed":
-        session_id = request.cookies.get("akasha_session", "")
-        if session_id:
-            _si.dismiss(session_id)
-        from services.knowledge_worker import on_feedback_dismissed as _on_dismissed
-        _on_dismissed(body.memory_id)
+        _si.on_feedback_confirmed(body.memory_id)
+        if comm_id is not None:
+            try:
+                from ecosystem_client import update_communication_feedback  # type: ignore
+                update_communication_feedback(comm_id, "confirmed")
+            except Exception:
+                pass
+        return {"ok": True}
+
+    # dismissed
+    session_id = request.cookies.get("akasha_session", "")
+    if session_id:
+        _si.dismiss(session_id)
+    from services.knowledge_worker import on_feedback_dismissed as _on_dismissed
+    _on_dismissed(body.memory_id)
+    if comm_id is not None:
+        try:
+            from ecosystem_client import update_communication_feedback  # type: ignore
+            update_communication_feedback(comm_id, "dismissed")
+        except Exception:
+            pass
+
+    # Pergunta o motivo quando importance alta — re-exibe texto original acima
+    importance = entry.get("importance") if entry else None
+    if importance is not None and importance >= 7:
+        return {
+            "ok": True,
+            "ask_reason": True,
+            "original_text": entry["content"],
+            "memory_id": body.memory_id,
+        }
+    return {"ok": True}
+
+
+class _FeedbackReasonBody(BaseModel):
+    memory_id: int
+    reason:    str            # "já sabia disso" | "irrelevante agora" | "incorreto" | "outro"
+    detail:    str | None = None
+
+
+@router.post("/insight/feedback_reason")
+async def insight_feedback_reason(body: _FeedbackReasonBody) -> dict:
+    """Registra o motivo de um dismiss de alta importância.
+
+    Salva em communication_history e em personal_memory (como nota de reflexão)
+    para que a AKASHA aprenda com a quebra de expectativa.
+    """
+    from services.personal_memory import get_entry_info as _get_info, save_memory as _save
+    entry = await _get_info(body.memory_id)
+    comm_id = entry.get("comm_id") if entry else None
+
+    detail_str = body.detail.strip() if body.detail else ""
+    full_reason = f"{body.reason}: {detail_str}" if detail_str else body.reason
+
+    if comm_id is not None:
+        try:
+            from ecosystem_client import update_communication_feedback  # type: ignore
+            update_communication_feedback(comm_id, "dismissed", reason=full_reason)
+        except Exception:
+            pass
+
+    # Reflexão sobre a quebra de expectativa — alimenta memória com peso maior
+    if entry:
+        try:
+            original = entry["content"][:120]
+            reflection = f"Marquei como importante mas foi rejeitada: \"{original}…\" — motivo: {full_reason}"
+            await _save(
+                type="correction",
+                content=reflection,
+                tags=["feedback", "quebra_expectativa"],
+                importance=8,
+            )
+        except Exception:
+            pass
+
     return {"ok": True}
 
 
