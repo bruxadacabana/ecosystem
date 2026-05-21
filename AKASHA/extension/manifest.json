@@ -8,8 +8,7 @@
   "host_permissions": ["http://localhost:7071/*"],
 
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "scripts": ["background.js"]
   },
 
   "content_scripts": [
