@@ -4793,6 +4793,22 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### Comunicação IA → usuária: histórico centralizado e feedback qualitativo | 2026-05-21
+> Contexto: as IAs já enviam popups (Mnemosyne), overlays (AKASHA) e visitas entre si. Faltam dois fechamentos: (1) uma linha do tempo centralizada no HUB de tudo que foi comunicado e como a usuária respondeu; (2) quando a usuária rejeita um insight que o LLM avaliou como de alta importância, a IA pede o motivo — o que gera sinal de aprendizado muito mais rico que o ✗ sozinho.
+
+#### HUB
+- [ ] **Histórico de comunicações do ecossistema** (`sync_root/communication_history.db`) — nova tabela `communications (id INTEGER PK, source_app TEXT, content TEXT, importance INTEGER, tags TEXT, sent_at TEXT, feedback TEXT, feedback_at TEXT, feedback_reason TEXT)`. Ambas as IAs escrevem nela ao enviar popup/overlay (via `ecosystem_client`). HUB exibe uma aba "Comunicações" com timeline reversa: data/hora, ícone da IA remetente, trecho do conteúdo, badge de feedback (✓ / ✗ / sem resposta). Filtros: por app, por período, por status de feedback.
+- [ ] **`ecosystem_client.log_communication(source_app, content, importance, tags) -> int`** — função auxiliar que escreve em `communication_history.db` e retorna o `id` gerado. Retornar o id permite que o caller associe o feedback posterior à mesma entrada. Ambas as IAs chamam isso ao registrar um popup/overlay.
+- [ ] **`ecosystem_client.update_communication_feedback(comm_id, feedback, reason=None)`** — atualiza o campo `feedback` e `feedback_reason` na entrada correspondente. Chamado quando a usuária dá ✓ / ✗ e, opcionalmente, quando preenche o motivo do ✗.
+
+#### AKASHA
+- [ ] **Registrar overlay em `communication_history`** — ao criar entrada em `personal_memory` que será exibida como overlay (`shown_as_overlay=1`), chamar `ecosystem_client.log_communication()` e salvar o `comm_id` retornado junto à entrada de `personal_memory` (novo campo `comm_id`). Endpoints `POST /insight/{id}/confirm` e `/dismiss` devem chamar `update_communication_feedback(comm_id, feedback)`.
+- [ ] **Pedir motivo quando ✗ em insight de alta importância** — nos endpoints de dismiss (`POST /insight/{id}/dismiss`): se `importance >= 7`, retornar `{"ok": true, "ask_reason": true, "original_text": <texto do insight>}` em vez de só `{"ok": true}`. O frontend (overlay na interface AKASHA ou na extensão) detecta `ask_reason: true` e exibe follow-up: mostra o texto original do insight acima, depois pergunta "o que estava errado?" com opções rápidas ("já sabia disso", "irrelevante agora", "incorreto", "outro") + campo de texto livre. A resposta chama `POST /insight/{id}/dismiss_reason` com `{reason, detail?}`, que salva em `personal_memory` e em `update_communication_feedback`.
+
+#### Mnemosyne
+- [ ] **Registrar popup em `communication_history`** — equivalente ao AKASHA: ao mostrar `InsightPopup`, chamar `ecosystem_client.log_communication()` e salvar `comm_id` no registro de `personal_memory`. Botões ✓ / ✗ do popup chamam `update_communication_feedback`.
+- [ ] **Pedir motivo quando ✗ em insight de alta importância** — no handler do botão ✗ do `InsightPopup`: se `importance >= 7`, não fechar o popup imediatamente. Em vez disso, substituir o corpo do popup por: (1) o texto original do insight em caixa cinza acima, (2) label "o que estava errado?", (3) botões rápidos ("já sabia disso", "irrelevante agora", "incorreto", "outro") e campo de texto opcional. Ao confirmar o motivo, fechar o popup, salvar o motivo via `ecosystem_client.update_communication_feedback` e disparar `FeedbackReasonWorker` para que a Mnemosyne reflita sobre a quebra de expectativa (alimenta `personal_memory` com mais peso que ✗ sozinho).
+
 ### AKASHA — normalização de idioma no perfil de interesses | 2026-05-21
 > Contexto: topics extraídos de páginas em inglês ficam em inglês ("machine learning"), enquanto topics de páginas em português ficam em português ("aprendizado de máquina"). O mesmo interesse acaba fragmentado em entradas separadas no topic_interest_profile, enfraquecendo o sinal acumulado.
 
