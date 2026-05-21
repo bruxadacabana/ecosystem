@@ -2161,6 +2161,21 @@ async def get_recent_page_knowledge(n: int = 10) -> list[dict]:
     ]
 
 
+async def get_all_page_knowledge() -> list[dict]:
+    """Retorna todos os registros de page_knowledge para re-análise em lote."""
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT url, title, topics FROM page_knowledge ORDER BY processed_at ASC"
+        )).fetchall()
+    return [
+        {
+            "url": r[0], "title": r[1],
+            "topics": json.loads(r[2] or "[]"),
+        }
+        for r in rows
+    ]
+
+
 async def get_recent_search_history(n: int = 20) -> list[dict]:
     """Retorna as N queries mais recentes do histórico de buscas."""
     async with aiosqlite.connect(DB_PATH) as db:

@@ -23,6 +23,11 @@ _log = logging.getLogger(__name__)
 _BASE_DIR = Path(__file__).parent.parent
 _templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
+# ---------------------------------------------------------------------------
+# Estado de re-análise em memória
+# ---------------------------------------------------------------------------
+_reanalyze_state: dict = {"running": False, "total": 0, "done": 0, "errors": 0}
+
 
 @router.post("/shutdown")
 async def shutdown() -> Response:
@@ -121,6 +126,54 @@ async def more_from_source(request: Request, url: str = Query(...)) -> HTMLRespo
     return _templates.TemplateResponse(
         request, "_more_from_source.html", {"results": results_mfs, "doc_url": url}
     )
+
+
+@router.post("/reanalyze")
+async def reanalyze_all() -> JSONResponse:
+    """Dispara re-análise (appraisal + reflexão) de todos os registros de page_knowledge.
+
+    Roda como background task; retorna imediatamente com total de entradas.
+    Use GET /reanalyze/status para acompanhar progresso.
+    Idempotente: se já estiver rodando, retorna o estado atual sem iniciar nova task.
+    """
+    global _reanalyze_state
+    if _reanalyze_state["running"]:
+        return JSONResponse({"status": "already_running", **_reanalyze_state})
+
+    entries = await database.get_all_page_knowledge()
+    if not entries:
+        return JSONResponse({"status": "ok", "total": 0, "done": 0, "errors": 0})
+
+    _reanalyze_state = {"running": True, "total": len(entries), "done": 0, "errors": 0}
+
+    async def _run() -> None:
+        global _reanalyze_state
+        from services.knowledge_worker import (
+            _record_doc_appraisal,
+            _event_reflection,
+        )
+        for entry in entries:
+            try:
+                await _record_doc_appraisal(entry["topics"], entry["url"])
+                await _event_reflection(entry["title"], "", entry["topics"])
+            except Exception as exc:
+                _log.debug("reanalyze: erro em %s — %s", entry["url"][:80], exc)
+                _reanalyze_state["errors"] += 1
+            _reanalyze_state["done"] += 1
+        _reanalyze_state["running"] = False
+        _log.info(
+            "reanalyze: concluído — %d/%d entradas, %d erros",
+            _reanalyze_state["done"], _reanalyze_state["total"], _reanalyze_state["errors"],
+        )
+
+    asyncio.create_task(_run())
+    return JSONResponse({"status": "started", "total": len(entries)})
+
+
+@router.get("/reanalyze/status")
+async def reanalyze_status() -> JSONResponse:
+    """Retorna progresso atual da re-análise."""
+    return JSONResponse(_reanalyze_state)
 
 
 @router.get("/system/logs")
