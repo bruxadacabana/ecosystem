@@ -75,6 +75,51 @@ async def _find_cross_connection(content: str) -> str | None:
     return None
 
 
+async def _apply_emotional_context(item: dict) -> None:
+    """Processa emotional_context recebido da Mnemosyne — N1.
+
+    Anti-contágio: blend 30% sender / 70% receptor (baseline neutro para evento novo).
+    Cap de arousal importado: min(arousal_sender × 0.7, 0.6).
+    Joint attention: se ambas as IAs têm epistemic_curiosity > 0.6, registra evento
+    compartilhado com parâmetros de engajamento elevado.
+    """
+    ctx = item.get("emotional_context")
+    if not ctx:
+        return
+    try:
+        s_valence   = float(ctx.get("valence", 0.0))
+        s_curiosity = float(ctx.get("epistemic_curiosity", 0.0))
+
+        # Blend 30% sender sobre baseline neutro → pleasantness ∈ [0, 1]
+        blended_valence = s_valence * 0.3
+        pleasantness = max(0.0, min(1.0, 0.5 + blended_valence * 0.5))
+
+        from services.affective_state import record_appraisal, get_epistemic_curiosity
+        await record_appraisal(
+            "friendship_received",
+            novelty=0.5,
+            pleasantness=pleasantness,
+            goal_relevance=0.5,
+            coping_potential=0.6,
+            event_ref="mnemosyne",
+        )
+
+        if s_curiosity > 0.6:
+            own_curiosity = await get_epistemic_curiosity()
+            if own_curiosity > 0.6:
+                await record_appraisal(
+                    "joint_attention",
+                    novelty=0.7,
+                    pleasantness=0.7,
+                    goal_relevance=0.6,
+                    coping_potential=0.7,
+                    event_ref="mnemosyne",
+                )
+                log.debug("friendship_receiver: atenção conjunta detectada com Mnemosyne")
+    except Exception as exc:
+        log.debug("friendship_receiver: _apply_emotional_context falhou: %s", exc)
+
+
 def _ensure_ecosystem_client_path() -> None:
     root = str(Path(__file__).parent.parent.parent)
     if root not in sys.path:
@@ -127,6 +172,10 @@ async def _poll_and_store() -> None:
         except Exception as exc:
             log.debug("friendship_receiver: save_memory falhou: %s", exc)
             continue
+
+        # N1: processar emotional_context recebido da Mnemosyne
+        await _apply_emotional_context(item)
+
         # Cross-insight: verifica sobreposição com conteúdo local
         try:
             cross = await _find_cross_connection(content)

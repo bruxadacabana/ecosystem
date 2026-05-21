@@ -154,11 +154,30 @@ class InsightScheduler(QObject):
             content = entry.get("content", "")
             if not content:
                 return
+
+            # N1: inclui estado afetivo atual como contexto emocional
+            emotional_context: dict | None = None
+            try:
+                from core.affective_state import get_current_state, get_epistemic_curiosity
+                _st = get_current_state()
+                emotional_context = {
+                    "valence":             _st.get("valence", 0.0),
+                    "arousal":             _st.get("arousal", 0.0),
+                    "epistemic_curiosity": get_epistemic_curiosity(),
+                    "appraisal_source":    "mnemosyne_confirmed",
+                }
+            except Exception:
+                pass
+
             root = str(Path(__file__).parent.parent.parent)
             if root not in sys.path:
                 sys.path.insert(0, root)
             from ecosystem_client import notify_akasha_insight  # type: ignore
-            notify_akasha_insight(content, tags=["from_mnemosyne"])
+            notify_akasha_insight(
+                content,
+                tags=["from_mnemosyne"],
+                emotional_context=emotional_context,
+            )
             log.info("InsightScheduler: pensamento confirmado enviado para AKASHA.")
         except Exception as exc:
             log.debug("InsightScheduler: falha ao notificar AKASHA: %s", exc)

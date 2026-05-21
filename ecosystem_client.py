@@ -470,6 +470,7 @@ def notify_mnemosyne_insight(
     sources: list[dict],
     timeout: float = 5.0,          # mantido por compatibilidade de assinatura
     akasha_thought: str | None = None,
+    emotional_context: dict | None = None,
 ) -> None:
     """
     Deposita insight do AKASHA no ecosystem.json para ser lido pela Mnemosyne.
@@ -496,6 +497,8 @@ def notify_mnemosyne_insight(
         }
         if akasha_thought:
             entry["akasha_thought"] = akasha_thought
+        if emotional_context:
+            entry["emotional_context"] = emotional_context
         incoming.append(entry)
         incoming = incoming[-50:]  # FIFO com limite de 50
         write_section("mnemosyne", {"incoming_insights": incoming})
@@ -506,14 +509,18 @@ def notify_mnemosyne_insight(
 def notify_akasha_insight(
     content: str,
     tags: list[str] | None = None,
+    emotional_context: dict | None = None,
 ) -> None:
     """
     Deposita insight da Mnemosyne no ecosystem.json para ser lido pelo AKASHA.
 
-    Escreve em akasha.incoming_insights (lista FIFO de até 20 entradas).
+    Escreve em akasha.incoming_insights (lista FIFO de até 50 entradas).
     O AKASHA lê via loop de background a cada 5min, move para personal_memory
     com type="connection" e limpa o campo.
     Falha silenciosamente em caso de erro de IO.
+
+    emotional_context (N1): {valence, arousal, epistemic_curiosity,
+    dominant_emotion, appraisal_source} — estado afetivo da Mnemosyne ao enviar.
     """
     import datetime as _dt
 
@@ -526,6 +533,8 @@ def notify_akasha_insight(
         }
         if tags:
             entry["tags"] = tags
+        if emotional_context:
+            entry["emotional_context"] = emotional_context
         incoming.append(entry)
         incoming = incoming[-50:]  # FIFO com limite de 50
         write_section("akasha", {"incoming_insights": incoming})

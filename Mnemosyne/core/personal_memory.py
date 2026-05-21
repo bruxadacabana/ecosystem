@@ -176,6 +176,96 @@ def _ebbinghaus_retention(created_at: str, display_count: int) -> float:
     return math.exp(-t_h / tau)
 
 
+# ── D: Emotional RAG — vetores Plutchik ──────────────────────────────────────
+
+_PLUTCHIK_LABELS = (
+    "joy", "trust", "fear", "surprise", "sadness", "disgust", "anger", "anticipation"
+)
+_PLUTCHIK_PROMPT = (
+    "Avalie o texto abaixo nas 8 emoções primárias de Plutchik "
+    "(0.0 = ausente, 1.0 = dominante).\n"
+    "Responda APENAS com JSON válido, sem texto adicional:\n"
+    '{"joy":X,"trust":X,"fear":X,"surprise":X,"sadness":X,"disgust":X,"anger":X,"anticipation":X}\n\n'
+    "Texto: {content}\n\nJSON:"
+)
+
+
+def _va_to_plutchik(valence: float, arousal: float) -> list[float]:
+    """Mapeia estado VA para vetor Plutchik aproximado (proxy para mood-congruent retrieval)."""
+    v  = max(-1.0, min(1.0, valence))
+    a  = max(0.0,  min(1.0, arousal))
+    vn = (v + 1.0) / 2.0
+    vec = [
+        vn * a,
+        vn * (1.0 - a),
+        (1.0 - vn) * a * 0.6,
+        a * (1.0 - abs(v)),
+        (1.0 - vn) * (1.0 - a),
+        (1.0 - vn) * (1.0 - a) * 0.5,
+        (1.0 - vn) * a,
+        vn * a * 0.7,
+    ]
+    total = sum(vec) or 1.0
+    return [round(x / total, 4) for x in vec]
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na  = math.sqrt(sum(x * x for x in a))
+    nb  = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na > 0 and nb > 0 else 0.0
+
+
+def _plutchik_congruence(stored_json: str | None, mood_vec: list[float]) -> float:
+    """Cosine similarity entre vetor Plutchik armazenado e humor atual (0–1)."""
+    if not stored_json:
+        return 0.0
+    try:
+        data = json.loads(stored_json)
+        if isinstance(data, list) and len(data) == 8:
+            vec = [float(x) for x in data]
+        elif isinstance(data, dict):
+            vec = [float(data.get(k, 0.0)) for k in _PLUTCHIK_LABELS]
+        else:
+            return 0.0
+        return _cosine_similarity(vec, mood_vec)
+    except Exception:
+        return 0.0
+
+
+def _update_plutchik_bg(memory_id: int, content: str, llm_model: str, db_path: Path) -> None:
+    """Atualiza coluna plutchik em background (thread daemon)."""
+    try:
+        _root = str(db_path.parent.parent.parent.parent)
+        if _root not in sys.path:
+            sys.path.insert(0, _root)
+        from ecosystem_client import request_llm  # type: ignore
+        prompt = _PLUTCHIK_PROMPT.format(content=content[:400])
+        resp   = request_llm(
+            [{"role": "user", "content": prompt}],
+            app="mnemosyne", model=llm_model, priority=3,
+        )
+        raw = (resp.get("message", {}).get("content", "") or "").strip()
+        start = raw.find("{"); end = raw.rfind("}") + 1
+        if start < 0 or end <= start:
+            return
+        data = json.loads(raw[start:end])
+        if isinstance(data, dict):
+            vec = [float(data.get(k, 0.0)) for k in _PLUTCHIK_LABELS]
+        elif isinstance(data, list) and len(data) == 8:
+            vec = [float(x) for x in data]
+        else:
+            return
+        total = sum(vec) or 1.0
+        vec   = [round(x / total, 4) for x in vec]
+        con   = sqlite3.connect(str(db_path))
+        con.execute("UPDATE personal_memory SET plutchik = ? WHERE id = ?",
+                    (json.dumps(vec), memory_id))
+        con.commit(); con.close()
+    except Exception as exc:
+        log.debug("_update_plutchik_bg: %s", exc)
+
+
 def _salience_score(row: tuple) -> float:
     """Score composto: base × Ebbinghaus_R × entropy_factor + type_bonus.
 
@@ -294,6 +384,8 @@ def _conn() -> sqlite3.Connection:
         con.execute("ALTER TABLE personal_memory ADD COLUMN display_count INTEGER NOT NULL DEFAULT 0")
     if "last_shown_at" not in cols:
         con.execute("ALTER TABLE personal_memory ADD COLUMN last_shown_at TEXT DEFAULT NULL")
+    if "plutchik" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN plutchik TEXT DEFAULT NULL")
     # affective_state — estado emocional ativo da Mnemosyne (item [F])
     con.execute("""
         CREATE TABLE IF NOT EXISTS affective_state (
@@ -341,6 +433,7 @@ def save_memory(
     if importance is not None:
         importance = max(1, min(10, int(importance)))
     valence, arousal = _compute_valence_arousal(content)
+    import threading
     with _conn() as con:
         cursor = con.execute(
             "INSERT INTO personal_memory "
@@ -349,7 +442,23 @@ def save_memory(
             (type, content, json.dumps(tags, ensure_ascii=False),
              category, valence, arousal, importance),
         )
-        return cursor.lastrowid or 0
+        mid = cursor.lastrowid or 0
+    # D: Plutchik — classificação emocional em background (fire-and-forget)
+    try:
+        _root = str(Path(__file__).parent.parent.parent)
+        if _root not in sys.path:
+            sys.path.insert(0, _root)
+        from ecosystem_client import get_active_profile as _gp  # type: ignore
+        _model = (_gp() or {}).get("llm_analysis", (_gp() or {}).get("llm_rag", ""))
+        if _model and mid:
+            threading.Thread(
+                target=_update_plutchik_bg,
+                args=(mid, content, _model, _get_db()),
+                daemon=True,
+            ).start()
+    except Exception:
+        pass
+    return mid
 
 
 def get_recent(n: int = 10) -> list[dict]:
@@ -506,17 +615,36 @@ def set_feedback(memory_id: int, feedback: str | None) -> None:
 def get_context_memories(n: int = 8) -> list[dict]:
     """Memórias para uso como contexto em reflexões.
 
-    Ordem: confirmed primeiro, depois neutral; dismissed excluídos.
+    D: rerank por congruência Plutchik com humor atual (mood-congruent retrieval).
+    Confirmed sempre preferenciais; dentro de cada grupo, as de assinatura emocional
+    mais próxima do humor atual ganham prioridade.
     """
+    fetch_n = max(n * 2, 16)
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
+            "SELECT id, created_at, type, content, tags, feedback, category, "
+            "valence, arousal, importance, plutchik "
             "FROM personal_memory "
             "WHERE feedback IS NULL OR feedback = 'confirmed' "
-            "ORDER BY CASE WHEN feedback = 'confirmed' THEN 0 ELSE 1 END, id DESC "
             "LIMIT ?",
-            (n,),
+            (fetch_n,),
         ).fetchall()
+
+    mood_vec: list[float] = [0.125] * 8
+    try:
+        from core.affective_state import get_current_state
+        state    = get_current_state()
+        mood_vec = _va_to_plutchik(state.get("mood_valence", 0.0),
+                                   state.get("mood_arousal", 0.5))
+    except Exception:
+        pass
+
+    def _ctx_score(row: tuple) -> float:
+        confirmed  = 1.0 if row[5] == "confirmed" else 0.0
+        congruence = _plutchik_congruence(row[10], mood_vec)
+        return confirmed + 0.4 * congruence
+
+    top = sorted(rows, key=_ctx_score, reverse=True)[:n]
     return [
         {
             "id": r[0], "created_at": r[1], "type": r[2],
@@ -524,7 +652,7 @@ def get_context_memories(n: int = 8) -> list[dict]:
             "feedback": r[5], "category": r[6],
             "valence": r[7], "arousal": r[8], "importance": r[9],
         }
-        for r in rows
+        for r in top
     ]
 
 
