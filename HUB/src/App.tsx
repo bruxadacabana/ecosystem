@@ -28,6 +28,7 @@ import { GitView } from './views/GitView'
 import { SyncView } from './views/SyncView'
 import { FontesView } from './views/FontesView'
 import { InteressesView } from './views/InteressesView'
+import { ComunicacoesView } from './views/ComunicacoesView'
 import * as cmd from './lib/tauri'
 import type { HubSection, HubView, Project, Book, ChapterMeta, ArticleMeta, OgmaProject } from './types'
 
@@ -334,6 +335,8 @@ export default function App() {
         return <FontesView />
       case 'interesses':
         return <InteressesView />
+      case 'comunicacoes':
+        return <ComunicacoesView />
       case 'git':
         return <GitView paused={gitPaused} onTogglePaused={handleToggleGitPaused} />
       case 'sync':

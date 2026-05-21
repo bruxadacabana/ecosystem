@@ -227,6 +227,9 @@ export const memoryGetEntries = (app: string, n: number): Promise<TauriResult<Me
 export const memoryDeleteEntry = (app: string, entryId: number): Promise<TauriResult<void>> =>
   call<void>('memory_delete_entry', { app, entryId })
 
+export const commHistoryGet = (n: number): Promise<TauriResult<CommEntry[]>> =>
+  call<CommEntry[]>('comm_history_get', { n })
+
 export interface KosmosAnalysisStats {
   available: boolean
   total?:    number

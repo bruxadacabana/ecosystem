@@ -99,6 +99,7 @@ pub fn run() {
             commands::memory::memory_get_entries,
             commands::memory::memory_delete_entry,
             commands::memory::kosmos_get_analysis_stats,
+            commands::memory::comm_history_get,
             commands::config::set_window_compact,
             commands::config::read_app_log,
             commands::notify::send_notification,

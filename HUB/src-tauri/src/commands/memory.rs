@@ -145,6 +145,77 @@ pub fn kosmos_get_analysis_stats() -> Result<serde_json::Value, AppError> {
     }))
 }
 
+// ----------------------------------------------------------
+//  Histórico de comunicações IA → usuária
+// ----------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CommEntry {
+    pub id:              i64,
+    pub source_app:      String,
+    pub content:         String,
+    pub importance:      Option<i64>,
+    pub tags:            Vec<String>,
+    pub sent_at:         String,
+    pub feedback:        Option<String>,
+    pub feedback_at:     Option<String>,
+    pub feedback_reason: Option<String>,
+}
+
+/// Retorna as N entradas mais recentes do histórico de comunicações IA → usuária.
+#[tauri::command]
+pub fn comm_history_get(n: u32) -> Result<Vec<CommEntry>, AppError> {
+    let eco = ecosystem::read_json();
+    let sync_root = eco["sync_root"].as_str().unwrap_or("");
+    if sync_root.is_empty() {
+        return Ok(vec![]);
+    }
+    let path = PathBuf::from(sync_root).join("communication_history.db");
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+
+    let conn = Connection::open(&path).map_err(|e| AppError::Io(e.to_string()))?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, source_app, content, importance, tags, sent_at, \
+                    feedback, feedback_at, feedback_reason \
+             FROM communications ORDER BY id DESC LIMIT ?1",
+        )
+        .map_err(|e| AppError::Io(e.to_string()))?;
+
+    let entries = stmt
+        .query_map(params![n], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<i64>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
+            ))
+        })
+        .map_err(|e| AppError::Io(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .map(|(id, source_app, content, importance, tags_json, sent_at,
+               feedback, feedback_at, feedback_reason)| {
+            let tags: Vec<String> = tags_json
+                .and_then(|j| serde_json::from_str(&j).ok())
+                .unwrap_or_default();
+            CommEntry {
+                id, source_app, content, importance, tags, sent_at,
+                feedback, feedback_at, feedback_reason,
+            }
+        })
+        .collect();
+
+    Ok(entries)
+}
+
 /// Apaga uma entrada específica de memória por ID.
 #[tauri::command]
 pub fn memory_delete_entry(app: String, entry_id: i64) -> Result<(), AppError> {

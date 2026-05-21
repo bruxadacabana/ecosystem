@@ -272,6 +272,18 @@ export interface MemoryEntry {
   category?:  string
 }
 
+export interface CommEntry {
+  id:              number
+  source_app:      string
+  content:         string
+  importance:      number | null
+  tags:            string[]
+  sent_at:         string
+  feedback:        string | null
+  feedback_at:     string | null
+  feedback_reason: string | null
+}
+
 // Item numa fila de insight entre AKASHA e Mnemosyne
 export interface InsightQueueItem {
   // Mnemosyne → AKASHA (notify_akasha_insight)
@@ -317,7 +329,7 @@ export interface TopicEntry {
 
 export type HubView = 'home' | 'writing' | 'reading' | 'projects'
 
-export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'fontes' | 'interesses' | 'config'
+export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'fontes' | 'interesses' | 'comunicacoes' | 'config'
 
 export interface ModuleCard {
   id: HubView
