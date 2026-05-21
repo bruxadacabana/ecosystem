@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Fundo arredondado -->
+  <rect width="128" height="128" rx="24" fill="#12161E"/>
+  <!-- Hexágono flat-top: r=50, centro=(64,64) — cinza inativo -->
+  <polygon
+    points="114,64 89,107.3 39,107.3 14,64 39,20.7 89,20.7"
+    fill="#4A5060"
+  />
+</svg>
