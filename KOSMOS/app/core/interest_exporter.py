@@ -1,15 +1,15 @@
-"""Exporta interesses de engajamento do KOSMOS para o interests.json compartilhado.
+"""Exporta interesses de engajamento do KOSMOS para o shared_topic_profile.
 
 Fontes de sinal (peso decrescente):
-  - Tags manuais da usuária (tabela tags)    → 5.0 — intenção explícita
-  - Artigos salvos (is_saved=1) + ai_tags    → 3.0 — relevância confirmada
-  - Artigos lidos (is_read=1) + ai_tags      → 1.0 — engajamento passivo
+  - Tags manuais da usuária (tabela tags)    → +5.0 — intenção explícita
+  - Artigos salvos (is_saved=1) + ai_tags    → +3.0 — relevância confirmada
 
+Artigos apenas lidos não entram no perfil compartilhado — sinal fraco demais.
 Cooldown de 1 hora evita I/O excessivo quando feed_updated dispara por feed.
+interests.json continua sendo atualizado como seed de inicialização.
 """
 from __future__ import annotations
 
-import json
 import logging
 import sys
 import threading
@@ -18,13 +18,11 @@ from pathlib import Path
 
 log = logging.getLogger("kosmos.interest_exporter")
 
-_COOLDOWN_S: float = 3600.0   # 1 hora entre exports
-_TOP_N: int        = 20
+_COOLDOWN_S: float = 3600.0
 _W_TAG:   float    = 5.0
 _W_SAVED: float    = 3.0
-_W_READ:  float    = 1.0
 
-_last_export_at: float      = 0.0
+_last_export_at: float       = 0.0
 _export_lock:    threading.Lock = threading.Lock()
 
 
@@ -53,77 +51,74 @@ def _guarded_export(db_path: Path) -> None:
 
 
 def _do_export(db_path: Path) -> None:
+    import json
     import sqlite3
 
     _root = str(Path(__file__).parent.parent.parent.parent)
     if _root not in sys.path:
         sys.path.insert(0, _root)
-    from ecosystem_client import update_interests  # type: ignore
+    import shared_topic_profile as _stp  # type: ignore
 
     if not db_path.exists():
         log.debug("kosmos.db não encontrado — skip export")
         return
 
-    scores: dict[str, float] = {}
-
     conn = sqlite3.connect(db_path)
     try:
         c = conn.cursor()
 
-        # Tags manuais — sinal de intenção explícita da usuária
+        # Tags manuais — intenção explícita da usuária
         c.execute("SELECT DISTINCT name FROM tags")
         for (name,) in c.fetchall():
             t = str(name).strip().lower()
             if t:
-                scores[t] = scores.get(t, 0.0) + _W_TAG
+                _stp.update_score(t, _W_TAG, "kosmos")
 
         # Artigos salvos com ai_tags
         c.execute(
             "SELECT ai_tags FROM articles WHERE is_saved=1 AND ai_tags IS NOT NULL"
         )
         for (tags_json,) in c.fetchall():
-            _accumulate(tags_json, _W_SAVED, scores)
+            _accumulate_to_shared(tags_json, _W_SAVED, _stp)
 
-        # Artigos lidos (não salvos) com ai_tags
-        c.execute(
-            "SELECT ai_tags FROM articles "
-            "WHERE is_read=1 AND is_saved=0 AND ai_tags IS NOT NULL"
-        )
-        for (tags_json,) in c.fetchall():
-            _accumulate(tags_json, _W_READ, scores)
     finally:
         conn.close()
 
-    if not scores:
-        log.debug("Nenhum sinal de engajamento encontrado — skip export")
-        return
+    # Mantém interests.json atualizado como seed de inicialização para novas máquinas
+    _export_seed(db_path)
 
-    top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:_TOP_N]
-    max_score = top[0][1]
-
-    topics = [
-        {
-            "name": name,
-            "weight": round(score / max_score, 3),
-            "sources": ["kosmos_engagement"],
-        }
-        for name, score in top
-    ]
-
-    update_interests(topics)
-    log.info(
-        "Interesses exportados: %d tópicos (maior: %s %.2f)",
-        len(topics), top[0][0], top[0][1],
-    )
+    log.info("Interesses exportados para shared_topic_profile (kosmos).")
 
 
-def _accumulate(tags_json: str, weight: float, scores: dict[str, float]) -> None:
+def _accumulate_to_shared(tags_json: str, weight: float, stp: object) -> None:
+    import json
     try:
         tags = json.loads(tags_json)
         if isinstance(tags, list):
-            for tag in tags:
-                t = str(tag).strip().lower()
-                if t:
-                    scores[t] = scores.get(t, 0.0) + weight
+            topics = [str(tag).strip().lower() for tag in tags if str(tag).strip()]
+            if topics:
+                stp.update_scores(topics, weight, "kosmos")  # type: ignore[attr-defined]
     except (json.JSONDecodeError, TypeError):
         pass
+
+
+def _export_seed(db_path: Path) -> None:
+    """Atualiza interests.json com top tópicos do shared store (seed para novas máquinas)."""
+    try:
+        from ecosystem_client import update_interests  # type: ignore
+        import shared_topic_profile as _stp  # type: ignore
+        top = _stp.get_top_topics(20)
+        if not top:
+            return
+        max_score = top[0][1]
+        topics = [
+            {
+                "name": name,
+                "weight": round(score / max_score, 3),
+                "sources": ["kosmos_engagement"],
+            }
+            for name, score in top
+        ]
+        update_interests(topics)
+    except Exception as exc:
+        log.debug("_export_seed falhou: %s", exc)

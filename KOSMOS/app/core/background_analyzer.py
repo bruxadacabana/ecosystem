@@ -267,7 +267,7 @@ class BackgroundAnalyzer(QThread):
             f"'0' a '{n - 1}', uma por artigo.\n\n"
             + "\n\n".join(prompt_parts)
             + "\n\nRegras (para cada artigo):\n"
-            "- tags: 3 a 5 palavras-chave em letras minúsculas, no idioma do artigo\n"
+            "- tags: 3 a 5 palavras-chave em letras minúsculas, em português\n"
             "- sentiment: -1.0 (muito negativo) até +1.0 (muito positivo)\n"
             "- clickbait: 0.0 (sem clickbait) até 1.0 (clickbait puro)\n"
             "- five_ws: respostas concisas (máximo 2 frases), no idioma do artigo\n"
@@ -376,7 +376,7 @@ class BackgroundAnalyzer(QThread):
             f"Título: {title}\n\n"
             f"{content}\n\n"
             f"Regras:\n"
-            f"- tags: 3 a 5 palavras-chave em letras minúsculas, no idioma do artigo\n"
+            f"- tags: 3 a 5 palavras-chave em letras minúsculas, em português\n"
             f"- sentiment: -1.0 (muito negativo) até +1.0 (muito positivo)\n"
             f"- clickbait: 0.0 (sem clickbait) até 1.0 (clickbait puro)\n"
             f"- five_ws: respostas concisas (máximo 2 frases), em português\n"
