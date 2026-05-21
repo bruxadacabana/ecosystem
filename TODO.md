@@ -3698,8 +3698,8 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 #### AKASHA — Corrigir implementação de POST /context/push
 - [x] **Remover referência a `maybe_schedule()`** dos passos 4 e 5 do item acima (seção "Extensão Firefox/Zen"). `InsightScheduler` não tem `maybe_schedule()` — só `maybe_show()` (sem args). `session_insight.maybe_schedule(session_id, queries, snippets)` exige ≥ 4 queries acumuladas e é semânticamente errado para URL push (leitura ≠ busca). Implementação correta: apenas appraisal + `update_topic_score()` para os tópicos da página — insight da sessão acontece naturalmente quando a usuária fizer buscas.
 
-### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
-> Contexto: AKASHA como secretária precisa saber o que está sendo lido agora. A extensão monitora páginas abertas a partir dos resultados do AKASHA e injeta uma barra de ação discreta com arquivar / ver depois / rastrear site. Clipboard monitor cobre URLs encontradas fora do AKASHA. Opção B (interceptar clique no AKASHA) é redundante com a extensão em funcionamento, mas trivial como fallback — adicionada no mesmo escopo.
+### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen | 2026-05-18
+> Contexto: AKASHA como secretária precisa saber o que está sendo lido agora. A extensão monitora páginas abertas a partir dos resultados do AKASHA e injeta uma barra de ação discreta com arquivar / ver depois / rastrear site. Opção B (interceptar clique no AKASHA) é redundante com a extensão em funcionamento, mas trivial como fallback — adicionada no mesmo escopo.
 > **Revisado em 2026-05-21:** a arquitetura de backend evoluiu bastante desde a pesquisa original — o AKASHA agora tem appraisal CPM, estado afetivo VA, topic_interest_profile e InsightScheduler com contexto emocional.
 > **Revisado em 2026-05-21 (2):** `POST /context/push` — passos 4 e 5 anteriores estavam errados (`InsightScheduler.maybe_schedule()` não existe; `session_insight.maybe_schedule()` exige ≥ 4 queries e é semanticamente errado para leitura). Fluxo correto documentado abaixo. Verificação de arousal foi movida para `GET /insight/current` (ver seção "Unificação do topic_interest_profile"). Passo 3 atualizado para escrever no store compartilhado.
 
@@ -3710,13 +3710,13 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### AKASHA — Backend
 - [x] **CORS middleware** (`main.py`) — adicionar `CORSMiddleware` com `allow_origins=["*"]` para aceitar fetch da extensão (pages externas → localhost:7071). Sem `allow_credentials` para evitar bloqueio dos browsers.
-- [ ] **`POST /context/push`** (`routers/context.py` novo) — recebe `{url, title, selected_text?, source}` da extensão ou clipboard monitor. Fluxo:
+- [ ] **`POST /context/push`** (`routers/context.py` novo) — recebe `{url, title, selected_text?, source}` da extensão. Fluxo:
   1. Armazena em `services/realtime_context.py` (dict em memória por sessão, TTL 30min).
   2. Se a URL já estiver no índice local: recuperar os tópicos do documento indexado; chamar `_record_doc_appraisal()` com `goal_relevance` alto (usuária está ativamente lendo = intenção explícita) e `coping_potential` alto (domínio já indexado) — gera evento afetivo real.
   3. Incrementar score dos tópicos da página (+0.3 por tópico) no **store compartilhado** `shared_topic_profile.db` via `ecosystem_client` — leitura ativa é sinal de engajamento. (Após migração da seção "Unificação do topic_interest_profile".)
   4. Não chamar `maybe_schedule()` nem `maybe_show()` — insight gerado pelo fluxo normal de busca quando a usuária pesquisar. A verificação de arousal antes de mostrar overlay já está em `GET /insight/current`.
 - [ ] **`GET /context/status?url=`** — retorna se a URL já está arquivada, se está na biblioteca e contagem de resultados relacionados no índice. Usado pelo popup da extensão para mostrar estado.
-- [ ] **Clipboard monitor** (`services/clipboard_monitor.py` novo; `main.py` — task P3) — polling assíncrono a cada 1.5s via `run_in_executor`; detecta URLs no clipboard via regex; ignora `localhost`/`127.0.0.1`; deduplicação (ignora se mesma URL nos últimos 5min); envia para `push_context()`. Dependência: `pyperclip` (já compatível com Windows e Linux).
+
 
 #### AKASHA — Extensão (`AKASHA/extension/`)
 - [ ] **`manifest.json`** — MV3; permissões: `tabs`, `storage`, `activeTab`; `host_permissions`: `http://localhost:7071/*`; background event page (`background.js`); content script em `<all_urls>` run_at `document_end`; action com popup; `commands` para atalho `Ctrl+Shift+S`.
