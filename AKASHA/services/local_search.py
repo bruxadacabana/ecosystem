@@ -37,7 +37,7 @@ SNIPPET_MODE: str = "fts5"
 # ---------------------------------------------------------------------------
 
 RERANKING_ENABLED: bool = False
-RERANK_TOP_K:      int  = 20
+RERANK_TOP_K:      int  = 30
 RERANK_MODEL:      str  = "ms-marco-TinyBERT-L-2-v2"
 
 # ---------------------------------------------------------------------------
@@ -1080,7 +1080,7 @@ async def _search_chroma(query: str) -> list[SearchResult]:
             client = _get_chroma_client(index_path)
             for col in client.list_collections():
                 collection = client.get_collection(col.name)
-                qr = collection.query(query_texts=[effective_query], n_results=5)
+                qr = collection.query(query_texts=[effective_query], n_results=20)
                 docs: list[str] = qr.get("documents", [[]])[0]
                 metas: list[dict] = qr.get("metadatas", [[]])[0]
                 for doc, meta in zip(docs, metas):
@@ -1531,6 +1531,11 @@ async def search_local(
         [fts_results, fts_expanded, fts_entity, chroma_results, vec_results, highlight_results],
         weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0),
     )[:max_results]
+    log.debug(
+        "retrieval pool: fts=%d fts_exp=%d fts_ent=%d chroma=%d vec=%d hl=%d → rrf=%d",
+        len(fts_results), len(fts_expanded), len(fts_entity),
+        len(chroma_results), len(vec_results), len(highlight_results), len(combined),
+    )
     try:
         from services.knowledge_worker import apply_knowledge_boost as _kb_boost
         combined = await _kb_boost(combined, query)
@@ -1541,4 +1546,9 @@ async def search_local(
         rest   = combined[RERANK_TOP_K:]
         combined = top + rest
     combined = await _apply_usage_boost(combined)
+    log.debug(
+        "retrieval final: %d resultados — top5: %s",
+        len(combined),
+        [r.url[:80] for r in combined[:5]],
+    )
     return combined
