@@ -3709,7 +3709,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 3. discutir a possibilidade da ia me perguntar o porque do meu feedback caso ele crie uma quebra de expectativas alt
 
 #### AKASHA — Backend
-- [ ] **CORS middleware** (`main.py`) — adicionar `CORSMiddleware` com `allow_origins=["*"]` para aceitar fetch da extensão (pages externas → localhost:7071). Sem `allow_credentials` para evitar bloqueio dos browsers.
+- [x] **CORS middleware** (`main.py`) — adicionar `CORSMiddleware` com `allow_origins=["*"]` para aceitar fetch da extensão (pages externas → localhost:7071). Sem `allow_credentials` para evitar bloqueio dos browsers.
 - [ ] **`POST /context/push`** (`routers/context.py` novo) — recebe `{url, title, selected_text?, source}` da extensão ou clipboard monitor. Fluxo:
   1. Armazena em `services/realtime_context.py` (dict em memória por sessão, TTL 30min).
   2. Se a URL já estiver no índice local: recuperar os tópicos do documento indexado; chamar `_record_doc_appraisal()` com `goal_relevance` alto (usuária está ativamente lendo = intenção explícita) e `coping_potential` alto (domínio já indexado) — gera evento afetivo real.

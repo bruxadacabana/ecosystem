@@ -196,15 +196,12 @@ app = FastAPI(
     docs_url="/docs",
 )
 
-# CORS para o HUB (Tauri webview): origens localhost em dev e produção.
-# Sem isso, fetch() do webview para o AKASHA é bloqueado pelo browser.
+# CORS: aceita qualquer origem — necessário para fetch da extensão Firefox/Zen
+# (conteúdo de páginas externas → localhost:7071) e para o HUB (Tauri webview).
+# Sem allow_credentials para evitar bloqueio de browsers com política restrita.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",    # Tauri dev (Vite)
-        "https://tauri.localhost",  # Tauri produção Windows/Linux
-        "tauri://localhost",        # Tauri produção macOS
-    ],
+    allow_origins=["*"],
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
