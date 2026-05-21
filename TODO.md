@@ -6710,3 +6710,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Mnemosyne
 - [x] **Auditar o top-K atual do MultiVectorstore e adicionar estágio de reranqueamento** — pipeline auditado: `_RERANK_CANDIDATE_K` (pool para flashrank) aumentado de 30 → 50; `candidate_n` mínimo em `_hybrid_retrieve` aumentado de 50 → 100 (garante pool de 100 candidatos mesmo com k pequeno). Logging DEBUG adicionado em `_hybrid_retrieve` (dense/bm25/rrf counts) e em `prepare_ask` (candidate_k → post-filter → flashrank final + sources). **Implementado em 2026-05-21.**
+
+### Re-análise de todo o corpus (AKASHA + Mnemosyne) | 2026-05-21
+> Contexto: quando novas implementações de análise são adicionadas (appraisal emocional, reflexões, saliência), o corpus já indexado não é reanalisado automaticamente. Necessário ter uma forma de disparar re-análise de tudo sem precisar resetar os dados.
+
+#### AKASHA
+- [x] **`database.py`: adicionar `get_all_page_knowledge()`** — retorna todos os registros de `page_knowledge` (url, title, topics) para uso pelo endpoint de re-análise. **Implementado em 2026-05-21.**
+- [x] **`routers/system.py`: endpoint `POST /reanalyze`** — dispara background task que itera todos os registros de `page_knowledge` e chama `_record_doc_appraisal(topics, url)` + `_event_reflection(title, "", topics)` para cada um. Retorna `{"status": "started", "total": N}`. `GET /reanalyze/status` retorna progresso. Estado em `_reanalyze_state` (in-memory). **Implementado em 2026-05-21.**
+
+#### Mnemosyne
+- [x] **`workers.py`: parâmetro `force=False` em `IndexReflectionWorker`** — quando `force=True`, ignora o `has_file_reflection()` check e reprocessa todos os arquivos mesmo os que já têm reflexão. **Implementado em 2026-05-21.**
+- [x] **`main_window.py`: botão "Re-analisar reflexões"** — lê os `source` distintos do vectorstore (todos os stores do MultiVectorstore) e inicia `IndexReflectionWorker(all_files, config, force=True)`. Botão habilitado/desabilitado junto com os outros botões de indexação via `_enable_query_buttons` / `_disable_query_buttons`; incluído no `_apply_indexing_machine_lock`. **Implementado em 2026-05-21.**

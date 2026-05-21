@@ -1564,10 +1564,11 @@ class IndexReflectionWorker(QThread):
 
     finished = Signal()
 
-    def __init__(self, file_paths: list[str], config: AppConfig) -> None:
+    def __init__(self, file_paths: list[str], config: AppConfig, force: bool = False) -> None:
         super().__init__()
         self._file_paths = list(file_paths)
         self._config = config
+        self._force = force  # quando True, ignora has_file_reflection e reprocessa tudo
 
     def start(self, priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
         super().start(priority)
@@ -1625,12 +1626,13 @@ class IndexReflectionWorker(QThread):
 
         name = os.path.basename(file_path)
         tag_name = name[:40]
-        try:
-            if has_file_reflection(tag_name):
-                log.debug("IndexReflectionWorker: '%s' já tem reflexão — pulando", name)
-                return
-        except Exception:
-            pass
+        if not self._force:
+            try:
+                if has_file_reflection(tag_name):
+                    log.debug("IndexReflectionWorker: '%s' já tem reflexão — pulando", name)
+                    return
+            except Exception:
+                pass
         log.debug("IndexReflectionWorker: processando '%s'", name)
 
         try:

@@ -1532,6 +1532,12 @@ class MainWindow(QMainWindow):
             "Re-indexa apenas arquivos de transcrição com chunking otimizado (sem apagar o restante do índice)"
         )
         self.reindex_transcripts_btn.clicked.connect(self.start_reindex_transcripts)
+        self.reanalyze_reflections_btn = QPushButton("Re-analisar reflexões")
+        self.reanalyze_reflections_btn.setEnabled(False)
+        self.reanalyze_reflections_btn.setToolTip(
+            "Re-gera reflexões pessoais para todos os arquivos indexados (útil após atualizar o modelo de análise)"
+        )
+        self.reanalyze_reflections_btn.clicked.connect(self.start_reanalyze_reflections)
         self.toggle_watcher_btn = QPushButton("Pausar watcher")
         self.toggle_watcher_btn.setEnabled(False)
         self.toggle_watcher_btn.clicked.connect(self._toggle_watcher)
@@ -1541,6 +1547,7 @@ class MainWindow(QMainWindow):
         actions.addWidget(self.refresh_manage_btn)
         actions.addWidget(self.update_index_btn)
         actions.addWidget(self.reindex_transcripts_btn)
+        actions.addWidget(self.reanalyze_reflections_btn)
         actions.addWidget(self.toggle_watcher_btn)
         actions.addWidget(self.clear_index_btn)
         layout.addLayout(actions)
@@ -2381,6 +2388,7 @@ class MainWindow(QMainWindow):
             self.index_btn,
             self.update_index_btn,
             self.reindex_transcripts_btn,
+            self.reanalyze_reflections_btn,
             self.clear_index_btn,
             self.resume_btn,
         )
@@ -2736,6 +2744,54 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "Aviso", message)
         self.statusBar().showMessage(message)
+
+    def start_reanalyze_reflections(self) -> None:
+        """Re-gera reflexões pessoais para todos os arquivos indexados (force=True)."""
+        from gui.workers import IndexReflectionWorker
+
+        if not self.vectorstore:
+            return
+
+        # Coleta todos os source paths distintos do vectorstore
+        all_sources: list[str] = []
+        try:
+            for vs, _coll in self.vectorstore.stores:
+                raw = vs._collection.get(include=["metadatas"])
+                for meta in raw.get("metadatas") or []:
+                    src = meta.get("source", "")
+                    if src and src not in all_sources:
+                        all_sources.append(src)
+        except Exception as exc:
+            import logging
+            logging.getLogger("mnemosyne.main").warning(
+                "start_reanalyze_reflections: erro ao listar fontes — %s", exc
+            )
+            return
+
+        if not all_sources:
+            self.statusBar().showMessage("Nenhum arquivo indexado encontrado.")
+            return
+
+        self.reanalyze_reflections_btn.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self.progress_file_label.setVisible(True)
+        self.progress_file_label.setText(f"Re-analisando {len(all_sources)} arquivo(s)…")
+        self.statusBar().showMessage(f"Re-analisando {len(all_sources)} arquivo(s)…")
+        self._log_event(f"Iniciando re-análise de reflexões para {len(all_sources)} arquivo(s).")
+
+        self._index_reflection_worker = IndexReflectionWorker(all_sources, self.config, force=True)
+        self._index_reflection_worker.finished.connect(self._on_reanalyze_reflections_finished)
+        self._index_reflection_worker.finished.connect(self._insight_scheduler.maybe_show)
+        self._index_reflection_worker.start()
+
+    def _on_reanalyze_reflections_finished(self) -> None:
+        self.progress.setVisible(False)
+        self.progress_file_label.setVisible(False)
+        self.reanalyze_reflections_btn.setEnabled(True)
+        msg = "Re-análise de reflexões concluída."
+        self._log_event(msg)
+        self.statusBar().showMessage(msg)
 
     @staticmethod
     def _elide_middle(text: str, max_chars: int = 26) -> str:
@@ -4664,6 +4720,7 @@ class MainWindow(QMainWindow):
         self.clear_index_btn.setEnabled(True)
         self.update_index_btn.setEnabled(True)
         self.reindex_transcripts_btn.setEnabled(True)
+        self.reanalyze_reflections_btn.setEnabled(True)
         self.guide_refresh_btn.setEnabled(True)
         self.guide_save_studio_btn.setEnabled(True)
         self.studio_generate_btn.setEnabled(True)
@@ -4673,6 +4730,7 @@ class MainWindow(QMainWindow):
         self.ask_btn.setEnabled(False)
         self.update_index_btn.setEnabled(False)
         self.reindex_transcripts_btn.setEnabled(False)
+        self.reanalyze_reflections_btn.setEnabled(False)
         self.guide_refresh_btn.setEnabled(False)
         self.guide_save_studio_btn.setEnabled(False)
         self.studio_generate_btn.setEnabled(False)
