@@ -189,6 +189,8 @@ async def search(
     related_docs:            list[SearchResult] = []
     related_queries:         list[str]          = []
     _clarification_question: str               = ""
+    _show_hedging_banner:    bool               = False
+    _affective_curiosity:    float              = 0.0
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -380,6 +382,21 @@ async def search(
         from services import session_insight as _si
         _si.maybe_schedule(_session_id, _active_session.queries, _all_snippets[:6])
 
+        # Modulação afetiva: arousal alto → hedging banner; curiosidade alta → mais queries
+        try:
+            from services.affective_state import get_current_state as _get_aff_state
+            _aff = await _get_aff_state()
+            _affective_curiosity = _aff.get("epistemic_curiosity", 0.0)
+            if _aff.get("arousal", 0.0) > 0.6:
+                _show_hedging_banner = True
+            if _affective_curiosity > 0.6 and _src_related and len(related_queries) < 8:
+                _interest_topics_ext = await get_top_topics(15)
+                related_queries = suggest_related_queries(
+                    q, _src_related, n=8, interest_topics=_interest_topics_ext
+                )
+        except Exception:
+            pass
+
     has_sites = src_sites and bool(await get_all_crawl_sites())
     recent = await database.recent_searches()
 
@@ -420,10 +437,11 @@ async def search(
             "clarification_question":  _clarification_question if q else "",
             "profile_applied":         _profile_applied,
             "profile_source_label":    _profile.source_label if _profile_applied else "",
-            "related_docs":      related_docs,
-            "related_queries":   related_queries,
-            "session":           _active_session,
-            "voice":             _voice_texts(),
+            "related_docs":        related_docs,
+            "related_queries":     related_queries,
+            "show_hedging_banner": _show_hedging_banner,
+            "session":             _active_session,
+            "voice":               _voice_texts(),
         },
     )
     if _new_cookie:

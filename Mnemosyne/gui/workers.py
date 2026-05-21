@@ -801,6 +801,21 @@ class AskWorker(QThread):
                 for rank, src in enumerate(sources):
                     score = max(0.3, 1.0 - rank * 0.2)
                     self.tracker.update_retrieved(src["path"], score)
+            # session_end: registra evento afetivo consolidado (M1/M2 acumulam mood)
+            try:
+                from core.affective_state import record_appraisal as _rec_appr
+                _n_src = len(sources)
+                _coping = min(1.0, _n_src / 4.0)  # 4 fontes = coping máximo
+                _rec_appr(
+                    "session_end",
+                    novelty=0.3,
+                    pleasantness=round(0.5 + _coping * 0.3, 4),
+                    goal_relevance=0.9 if _n_src > 0 else 0.3,
+                    coping_potential=_coping,
+                    event_ref=f"n_sources={_n_src}",
+                )
+            except Exception:
+                pass
             self.finished.emit(True, answer, sources, updated)
         except Exception as exc:
             log.exception("AskWorker: erro durante streaming")

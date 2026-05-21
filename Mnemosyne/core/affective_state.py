@@ -153,6 +153,8 @@ def _assign_half_life(event_type: str, valence: float) -> float:
         return 4.0 if valence >= 0 else 12.0
     if event_type in ("feedback_confirmed", "feedback_dismissed"):
         return 2.0 if valence >= 0 else 8.0
+    if event_type == "session_end":
+        return 4.0 if valence >= 0 else 10.0
     return 6.0
 
 
@@ -372,6 +374,36 @@ def record_approval_momentum(recent_n: int = 20) -> None:
         "approval_momentum=%.3f (recent %.2f vs baseline %.2f)",
         momentum, ratio_recent, ratio_baseline,
     )
+
+
+def get_emotional_framing(state: dict) -> str:
+    """Gera instrução contextual baseada no estado afetivo para o system prompt.
+
+    Retorna string vazia quando o estado é neutro (sem modulação necessária).
+    Chamada em prepare_ask() — nunca acessa o DB; recebe o dict já calculado.
+    """
+    parts: list[str] = []
+    valence   = state.get("valence", 0.0)
+    curiosity = state.get("epistemic_curiosity", 0.0)
+    if valence > 0.4:
+        parts.append(
+            "Adote um framing exploratório: conecte ideias de domínios diferentes, "
+            "valorize conexões inesperadas e — quando houver incerteza — convide a "
+            "usuária a explorar ângulos não considerados."
+        )
+    elif valence < -0.2:
+        parts.append(
+            "Adote um framing analítico e crítico: aponte inconsistências nas fontes, "
+            "avalie limitações com cuidado e use um tom mais cauteloso antes de afirmar."
+        )
+    if curiosity > 0.6:
+        parts.append(
+            "Ao final da resposta, acrescente uma breve pergunta de follow-up "
+            "sugerindo um ângulo não explorado ou uma lacuna interessante no tema."
+        )
+    if not parts:
+        return ""
+    return "\n\n[Modulação contextual]\n" + "\n".join(parts)
 
 
 def record_query_appraisal(query_text: str, event_ref: str | None = None) -> None:

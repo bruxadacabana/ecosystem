@@ -1029,6 +1029,7 @@ def _build_messages(
     collection_type: str = "library",
     secondary_context: str = "",
     persona_prompt: str = "",
+    emotional_framing: str = "",
 ) -> list[BaseMessage]:
     """
     Constrói a lista de mensagens para ChatOllama com roles separados:
@@ -1047,6 +1048,8 @@ def _build_messages(
         system_text = persona_map.get(persona, persona_map["curador"])
     if _LANGUAGE_INSTRUCTION not in system_text:
         system_text = system_text.rstrip() + "\n" + _LANGUAGE_INSTRUCTION
+    if emotional_framing:
+        system_text = system_text.rstrip() + emotional_framing
     try:
         from .persona import get_persona as _get_persona
         _self_prefix = _get_persona().as_prompt_prefix()
@@ -1268,9 +1271,16 @@ def prepare_ask(
         config.persona_prompt
         or getattr(config, "ecosystem_personality_prompt", "")
     )
+    _emotional_framing = ""
+    try:
+        from .affective_state import get_current_state as _get_aff, get_emotional_framing as _get_framing
+        _emotional_framing = _get_framing(_get_aff())
+    except Exception:
+        pass
     messages = _build_messages(
         context, question, chat_history or [], persona, collection_type, secondary_context,
         persona_prompt=effective_persona_prompt,
+        emotional_framing=_emotional_framing,
     )
     return messages, sources
 

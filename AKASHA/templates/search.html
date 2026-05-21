@@ -22,6 +22,13 @@
 <!-- ─── Resultados ──────────────────────────────────────────────── -->
 {% elif web_results or local_results or site_results or watch_later_results or paper_results or kosmos_results %}
 
+{% if show_hedging_banner %}
+<div class="hedging-banner">
+  <span class="hedging-icon">&#x29BF;</span>
+  Encontrei fontes com perspectivas diversas sobre este tema — avalie cada uma com atenção.
+</div>
+{% endif %}
+
 {% if active_lens %}
 <div class="lens-banner">
   <span class="lens-banner-icon">&#x25CE;</span>
