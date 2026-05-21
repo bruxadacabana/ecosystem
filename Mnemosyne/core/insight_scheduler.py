@@ -69,6 +69,15 @@ class InsightScheduler(QObject):
         except Exception:
             pass
 
+        # B1: poda de entradas antigas com alta entropia de Shannon
+        try:
+            from core.personal_memory import prune_high_entropy_stale
+            pruned = prune_high_entropy_stale()
+            if pruned:
+                log.debug("InsightScheduler: %d entradas de alta entropia podadas", pruned)
+        except Exception:
+            pass
+
         try:
             from core.personal_memory import get_unshown_popup_entries
             entries = get_unshown_popup_entries(5)

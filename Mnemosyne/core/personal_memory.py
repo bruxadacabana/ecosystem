@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
-from pathlib import Path
-
+import math
 import shutil
+import sqlite3
 import sys
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 from .config import get_app_data_dir
 
@@ -137,6 +138,66 @@ def _compute_valence_arousal(text: str) -> tuple[float | None, float | None]:
         pass
     return None, None
 
+# ── B1: Entropia de Shannon + B2: Decaimento Ebbinghaus ──────────────────────
+
+_EBBINGHAUS_HALFLIFE_H = 72.0
+_H_MAX = math.log2(3)
+_H_THRESHOLD = 0.8
+_PRUNE_H_THRESHOLD = 1.4
+_PRUNE_STALE_HOURS = 240.0
+
+
+def _shannon_entropy(valence: float | None, arousal: float | None) -> float:
+    """H ∈ [0, 1.585]. Retorna 1.0 se VA ausente (incerteza neutra).
+
+    Polaridades derivadas: neu = 1−arousal; pos = (arousal+valence)/2;
+    neg = (arousal−valence)/2. Exato para XLM-RoBERTa, aproximado para NRC-VAD/VADER.
+    """
+    if valence is None or arousal is None:
+        return 1.0
+    neu = max(1e-10, 1.0 - arousal)
+    pos = max(1e-10, (arousal + valence) / 2.0)
+    neg = max(1e-10, (arousal - valence) / 2.0)
+    total = neu + pos + neg
+    neu /= total; pos /= total; neg /= total
+    return -(pos * math.log2(pos) + neg * math.log2(neg) + neu * math.log2(neu))
+
+
+def _ebbinghaus_retention(created_at: str, display_count: int) -> float:
+    """R = exp(−t / τ) onde τ = S × halflife/ln2, S = 1 + display_count."""
+    try:
+        dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        t_h = max(0.0, (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0)
+    except Exception:
+        t_h = 0.0
+    tau = (1.0 + display_count) * _EBBINGHAUS_HALFLIFE_H / math.log(2)
+    return math.exp(-t_h / tau)
+
+
+def _salience_score(row: tuple) -> float:
+    """Score composto: base × Ebbinghaus_R × entropy_factor + type_bonus.
+
+    row: (id, created_at, type, content, tags, feedback, category,
+          valence, arousal, importance, display_count)
+    """
+    valence      = row[7]
+    arousal_v    = (row[8] if row[8] is not None else 0.5)
+    importance_v = (row[9] if row[9] is not None else 5) / 10.0
+    display_c    = int(row[10] or 0)
+
+    base = arousal_v * importance_v
+    R    = _ebbinghaus_retention(row[1], display_c)
+
+    H     = _shannon_entropy(valence, row[8])
+    h_pen = max(0.0, (H - _H_THRESHOLD) / (_H_MAX - _H_THRESHOLD))
+    ent_f = 1.0 - 0.3 * h_pen
+
+    type_bonus = 0.001 if row[2] == "surprise" else 0.0
+    return base * R * ent_f + type_bonus
+
+
 _DB_PATH: Path | None = None
 
 # Mapeamento tag → category (primeiras tags reconhecidas têm prioridade)
@@ -229,6 +290,10 @@ def _conn() -> sqlite3.Connection:
         con.execute("ALTER TABLE personal_memory ADD COLUMN arousal REAL DEFAULT NULL")
     if "importance" not in cols:
         con.execute("ALTER TABLE personal_memory ADD COLUMN importance INTEGER DEFAULT NULL")
+    if "display_count" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN display_count INTEGER NOT NULL DEFAULT 0")
+    if "last_shown_at" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN last_shown_at TEXT DEFAULT NULL")
     # affective_state — estado emocional ativo da Mnemosyne (item [F])
     con.execute("""
         CREATE TABLE IF NOT EXISTS affective_state (
@@ -493,30 +558,26 @@ def has_file_reflection(name_prefix: str) -> bool:
 
 
 def get_unshown_popup_entries(n: int = 5) -> list[dict]:
-    """Retorna entradas candidatas a popup ainda não exibidas.
+    """Retorna entradas candidatas a popup ainda não exibidas, ordenadas por escore B1+B2.
 
-    Apenas 'surprise' e 'connection' são popup-worthy — 'observation' e
-    'reflection' ficam só na memória, nunca interrompem a usuária.
-    Cross-insights internos (tag 'cross_insight') também excluídos.
-
-    Ordem primária: arousal × importance DESC NULLS LAST.
-    Fallback (campos NULL): type ('surprise' > 'connection') e id DESC.
+    Busca pool de max(n×3, 20) candidatos e ordena em Python:
+      score = (arousal × importance/10) × Ebbinghaus_R × (1 − 0.3 × H_penalty) + type_bonus
+    B1: penalidade quando H > 0.8 (evidências conflitantes).
+    B2: decaimento Ebbinghaus — entradas mais antigas decaem em saliência.
     """
+    fetch_n = max(n * 3, 20)
     with _conn() as con:
         rows = con.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
+            "SELECT id, created_at, type, content, tags, feedback, category, "
+            "valence, arousal, importance, display_count "
             "FROM personal_memory "
             "WHERE shown_as_popup = 0 "
             "AND type IN ('surprise', 'connection') "
             "AND tags NOT LIKE '%\"cross_insight\"%' "
-            "ORDER BY "
-            "  CASE WHEN arousal IS NOT NULL AND importance IS NOT NULL "
-            "       THEN arousal * importance ELSE -1 END DESC, "
-            "  CASE type WHEN 'surprise' THEN 1 WHEN 'connection' THEN 2 "
-            "            ELSE 3 END ASC, "
-            "  id DESC LIMIT ?",
-            (n,),
+            "LIMIT ?",
+            (fetch_n,),
         ).fetchall()
+    top = sorted(rows, key=_salience_score, reverse=True)[:n]
     return [
         {
             "id": r[0], "created_at": r[1], "type": r[2],
@@ -524,17 +585,45 @@ def get_unshown_popup_entries(n: int = 5) -> list[dict]:
             "feedback": r[5], "category": r[6],
             "valence": r[7], "arousal": r[8], "importance": r[9],
         }
-        for r in rows
+        for r in top
     ]
 
 
 def mark_shown_as_popup(memory_id: int) -> None:
-    """Marca uma entrada como já exibida como popup — persiste entre sessões."""
+    """Marca entrada como já exibida como popup; incrementa display_count."""
     with _conn() as con:
         con.execute(
-            "UPDATE personal_memory SET shown_as_popup = 1 WHERE id = ?",
+            "UPDATE personal_memory "
+            "SET shown_as_popup = 1, display_count = display_count + 1, "
+            "last_shown_at = datetime('now') WHERE id = ?",
             (memory_id,),
         )
+
+
+def prune_high_entropy_stale(max_delete: int = 20) -> int:
+    """Remove entradas antigas (>10d) com alta entropia de Shannon (H > 1.4).
+
+    Entradas com evidências conflitantes que nunca foram exibidas e já esperam
+    há muito tempo provavelmente nunca serão relevantes. Retorna nº removidos.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=_PRUNE_STALE_HOURS)).isoformat()
+    with _conn() as con:
+        rows = con.execute(
+            "SELECT id, valence, arousal FROM personal_memory "
+            "WHERE shown_as_popup = 0 "
+            "AND type IN ('surprise', 'connection') "
+            "AND created_at < ?",
+            (cutoff,),
+        ).fetchall()
+        ids_to_del = [r[0] for r in rows
+                      if _shannon_entropy(r[1], r[2]) > _PRUNE_H_THRESHOLD][:max_delete]
+        if not ids_to_del:
+            return 0
+        con.execute(
+            f"DELETE FROM personal_memory WHERE id IN ({','.join('?' * len(ids_to_del))})",
+            ids_to_del,
+        )
+    return len(ids_to_del)
 
 
 def clear_all() -> None:
