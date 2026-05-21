@@ -9,6 +9,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$HOME/.local/bin:$PATH"
 ERROS=()
 
 header() { echo -e "\n${BOLD}${CYAN}▶ $1${NC}"; }
