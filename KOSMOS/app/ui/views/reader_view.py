@@ -1220,8 +1220,6 @@ class ReaderView(QWidget):
         """
         if self._article is None:
             return
-        if not bool(self._config.get("ai_enabled", False)):
-            return
         from app.core.ai_bridge import get_gen_model as _get_gen_model
         gen_model = _get_gen_model()
         if not gen_model:

@@ -478,7 +478,7 @@ class MainWindow(QMainWindow):
 
     def _on_retry_unanalyzed(self) -> None:
         """Re-enfileira artigos pendentes (cobre caso Ollama offline no startup)."""
-        if not self._config.get("ai_enabled", False):
+        if not self._bg_analyzer._ai_enabled():
             return
         pending = self._fm.get_unanalyzed_article_ids(limit=50)
         if pending:
