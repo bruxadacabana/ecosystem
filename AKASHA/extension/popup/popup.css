@@ -1,0 +1,105 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  width: 280px;
+  background: #12161E;
+  color: #C8BFA8;
+  font-family: "JetBrains Mono", "Fira Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+/* ── Cabeçalho ── */
+#header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #2A2F3C;
+}
+#header .logo   { font-size: 18px; color: #D4A820; }
+#header .title  { font-size: 13px; color: #E8DFC8; flex: 1; }
+#status-dot     { width: 7px; height: 7px; border-radius: 50%; background: #4A5060; }
+#status-dot.online  { background: #6A9060; }
+#status-dot.offline { background: #B85C4A; }
+
+/* ── Corpo ── */
+#body { padding: 12px 14px; }
+
+.page-url {
+  font-size: 10px;
+  color: #9A9080;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.page-title {
+  font-size: 12px;
+  color: #E8DFC8;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 12px;
+}
+
+/* ── Badges de estado ── */
+#state-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  min-height: 20px;
+}
+.badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid #2A2F3C;
+  color: #9A9080;
+}
+.badge.yes   { border-color: #4A6741; color: #6A9060; }
+.badge.count { border-color: #2A3A4C; color: #5A8FAA; }
+
+/* ── Botões de ação ── */
+#actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.action-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid #2A2F3C;
+  color: #C8BFA8;
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+}
+.action-btn:hover:not(:disabled) { border-color: #D4A820; color: #D4A820; }
+.action-btn:disabled { opacity: .4; cursor: default; }
+
+/* ── Spinner ── */
+.spinner {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border: 1px solid #2A2F3C;
+  border-top-color: #D4A820;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Feedback inline ── */
+#feedback {
+  font-size: 11px;
+  min-height: 16px;
+  color: #9A9080;
+  text-align: center;
+}
+#feedback.ok  { color: #6A9060; }
+#feedback.err { color: #B85C4A; }

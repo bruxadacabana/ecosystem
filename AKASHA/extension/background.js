@@ -127,6 +127,16 @@ async function pollInsight() {
 setInterval(pollInsight, INSIGHT_INTERVAL_MS);
 
 // ---------------------------------------------------------------------------
+// Mensagens do content script
+// ---------------------------------------------------------------------------
+
+browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "is_akasha_tab") {
+    sendResponse({ result: _akaShaTabs.has(sender.tab?.id) });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Atalho de teclado → abrir popup
 // ---------------------------------------------------------------------------
 
