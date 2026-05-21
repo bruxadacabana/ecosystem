@@ -348,11 +348,15 @@ def _apply_logos_recommendations(config: "AppConfig", saved_keys: "set[str]") ->
         _ocr = _models.get("image_ocr", "")
         if _ocr:
             _changes["image_ocr_model"] = _ocr
-        # WorkPc: indexação desabilitada por padrão — usa índice bge-m3 sincronizado
-        # pelo MainPc via Proton Drive (dims incompatíveis com potion-multilingual-128M)
-        if "indexing_enabled" not in saved_keys:
-            if _profile.get("profile") == "work_pc":
-                _changes["indexing_enabled"] = False
+        # indexing_enabled é configuração de máquina — sempre derivada do perfil LOGOS,
+        # nunca da config salva (que é sincronizada entre máquinas via Syncthing/Proton).
+        # work_pc: desabilitado (CPU i5-3470 sem AVX2, usa índice sincronizado do PC principal).
+        # main_pc / laptop: habilitado.
+        _profile_name = _profile.get("profile", "")
+        if _profile_name == "work_pc":
+            _changes["indexing_enabled"] = False
+        elif _profile_name in ("main_pc", "laptop"):
+            _changes["indexing_enabled"] = True
         return _replace(config, **_changes) if _changes else config
     except Exception:
         return config
@@ -504,7 +508,8 @@ def save_config(config: AppConfig) -> None:
         "semantic_chunking": config.semantic_chunking,
         "indexing_only": config.indexing_only,
         "indexing_machine": config.indexing_machine,
-        "indexing_enabled": config.indexing_enabled,
+        # indexing_enabled NÃO é salvo — é derivado do perfil LOGOS em runtime.
+        # Salvar causaria conflito de sync entre máquinas (Syncthing).
         "dark_mode": config.dark_mode,
         "reranking_enabled": config.reranking_enabled,
         "reranking_top_n": config.reranking_top_n,
