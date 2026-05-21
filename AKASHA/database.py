@@ -2166,6 +2166,57 @@ async def get_recent_search_history(n: int = 20) -> list[dict]:
     return [{"query": r[0], "count": r[1], "last_used": r[2]} for r in rows]
 
 
+# ---------------------------------------------------------------------------
+# Context / status helpers (usados por routers/context.py)
+# ---------------------------------------------------------------------------
+
+async def url_is_archived(url: str) -> bool:
+    """Retorna True se a URL consta em archive_simhashes (página baixada para ARCHIVE_PATH/Web/)."""
+    from urllib.parse import urlparse, urlunparse
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT 1 FROM archive_simhashes WHERE url = ? LIMIT 1",
+            (url,),
+        )).fetchone()
+        if row:
+            return True
+        # Fallback: compara sem query string (URLs com tracking params)
+        parsed = urlparse(url)
+        url_no_query = urlunparse(parsed._replace(query="", fragment=""))
+        if url_no_query != url:
+            row = await (await db.execute(
+                "SELECT 1 FROM archive_simhashes WHERE url LIKE ? LIMIT 1",
+                (url_no_query + "%",),
+            )).fetchone()
+            return row is not None
+    return False
+
+
+async def domain_in_crawl_sites(domain: str) -> bool:
+    """Retorna True se algum site rastreado pertence ao domínio especificado."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT 1 FROM crawl_sites WHERE deleted=0 "
+            "AND (base_url LIKE ? OR base_url LIKE ?) LIMIT 1",
+            (f"http://{domain}%", f"https://{domain}%"),
+        )).fetchone()
+    return row is not None
+
+
+async def count_related_pages(current_url: str, topics: list[str]) -> int:
+    """Conta páginas em page_knowledge com pelo menos um tópico em comum (heurística LIKE)."""
+    if not topics:
+        return 0
+    topic = next((t for t in topics if len(t) > 3), topics[0])
+    keyword = topic.lower().replace("'", "").replace('"', "")
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT COUNT(*) FROM page_knowledge WHERE url != ? AND lower(topics) LIKE ?",
+            (current_url, f"%{keyword}%"),
+        )).fetchone()
+    return row[0] if row else 0
+
+
 async def decay_old_topic_scores(days_inactive: int = 7, factor: float = 0.97) -> int:
     """Aplica decaimento EMA em tópicos sem atualização há mais de `days_inactive` dias.
 
