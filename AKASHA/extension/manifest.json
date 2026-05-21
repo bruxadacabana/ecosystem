@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "AKASHA",
+  "version": "0.1.0",
+  "description": "Integração com o AKASHA — buscador pessoal local.",
+
+  "permissions": ["tabs", "storage", "activeTab"],
+  "host_permissions": ["http://localhost:7071/*"],
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "AKASHA"
+  },
+
+  "commands": {
+    "open_popup": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac":     "Command+Shift+S"
+      },
+      "description": "Abrir popup AKASHA"
+    }
+  },
+
+  "icons": {
+    "16":  "icons/icon16.png",
+    "48":  "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "akasha@ecosystem",
+      "strict_min_version": "109.0"
+    }
+  }
+}
