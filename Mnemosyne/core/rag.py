@@ -291,7 +291,7 @@ def _hybrid_retrieve(
     hnsw:space=cosine retorna distância cosine; similaridade = 1 - distância.
     """
     _RRF_K = 60  # constante padrão RRF
-    candidate_n = max(k * 3, 50)
+    candidate_n = max(k * 3, 100)
 
     search_kwargs: dict = {"k": candidate_n if bm25_index else k * 2}
     where = _build_where_filter(source_type, source_files, node_types)
@@ -372,7 +372,12 @@ def _hybrid_retrieve(
             doc_map.pop(key, None)
 
         sorted_keys = sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
-        return [doc_map[ky] for ky in sorted_keys[:k]]
+        final = [doc_map[ky] for ky in sorted_keys[:k]]
+        log.debug(
+            "hybrid_retrieve: dense=%d bm25=%d → rrf_pool=%d → top%d",
+            len(semantic_docs), len(bm25_results), len(rrf_scores), len(final),
+        )
+        return final
 
     # Fallback legado: BM25 sobre o pool semântico
     tokenized_corpus = [doc.page_content.lower().split() for doc in semantic_docs]
@@ -507,7 +512,7 @@ def _hyde_retrieve(
         return _hybrid_retrieve(vectorstore, question, k, source_type, source_files, bm25_index, node_types)
 
 
-_RERANK_CANDIDATE_K = 30
+_RERANK_CANDIDATE_K = 50
 
 _ITER_PROVISIONAL_PROMPT = (
     "Com base nos trechos abaixo, responda em 1-2 frases curtas e directas. "
@@ -1214,11 +1219,18 @@ def prepare_ask(
     docs = _diversify_languages(docs)
 
     # FlashRank: reordena por relevância semântica e reduz ao top_n configurado
+    pre_rerank_n = len(docs)
     if config.reranking_enabled:
         docs = _flashrank_rerank(docs, question, config.reranking_top_n)
     elif iterative_retrieval:
         # Retrieval iterativo expande o pool além de candidate_k — limitar ao configurado
         docs = docs[:config.retriever_k]
+
+    log.debug(
+        "prepare_ask: candidate_k=%d → post-filter=%d → flashrank/final=%d — sources: %s",
+        candidate_k, pre_rerank_n, len(docs),
+        [doc.metadata.get("source", "?")[:60] for doc in docs[:5]],
+    )
 
     docs = _reorder_lost_in_middle(docs)
 
