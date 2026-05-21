@@ -175,6 +175,35 @@ except ImportError:
 
 _lingua_detector_inst: object | None = None
 
+_CJK_RE = re.compile(r'[一-鿿぀-ゟ゠-ヿ가-힯]')
+_CJK_BLOCK_RE = re.compile(r'[一-鿿぀-ゟ゠-ヿ가-힯]+')
+
+
+def _tokenize_for_bm25(text: str) -> list[str]:
+    """Tokeniza texto para BM25/entidades com suporte a CJK.
+
+    Idiomas com espaços (pt, en, ru, es…): split por espaço.
+    Texto com >20% de caracteres CJK: bigrams de caracteres em blocos CJK.
+    """
+    if not text:
+        return []
+    text_lower = text.lower()
+    total = len(text_lower)
+    if len(_CJK_RE.findall(text_lower)) / total < 0.2:
+        return text_lower.split()
+    tokens: list[str] = []
+    last = 0
+    for m in _CJK_BLOCK_RE.finditer(text_lower):
+        tokens.extend(text_lower[last:m.start()].split())
+        block = m.group(0)
+        if len(block) == 1:
+            tokens.append(block)
+        else:
+            tokens.extend(block[i:i + 2] for i in range(len(block) - 1))
+        last = m.end()
+    tokens.extend(text_lower[last:].split())
+    return tokens
+
 
 def _get_lingua_detector() -> object | None:
     """Lazy init do detector lingua-py; carrega modelos só na primeira chamada."""
@@ -183,6 +212,7 @@ def _get_lingua_detector() -> object | None:
         try:
             _lingua_detector_inst = _LinguaBuilder.from_languages(  # type: ignore[union-attr]
                 _LinguaLang.PORTUGUESE, _LinguaLang.ENGLISH, _LinguaLang.CHINESE,  # type: ignore[union-attr]
+                _LinguaLang.RUSSIAN, _LinguaLang.SPANISH, _LinguaLang.JAPANESE,  # type: ignore[union-attr]
             ).build()
         except Exception:
             pass
@@ -264,6 +294,8 @@ _stemmers: dict[str, object] = {}
 _STEM_LANG_MAP: dict[str, str] = {
     "pt": "portuguese",
     "en": "english",
+    "ru": "russian",
+    "es": "spanish",
 }
 
 
@@ -721,7 +753,7 @@ async def _expand_query_entities(query: str) -> list[str]:
     """
     if not await _has_entity_graph():
         return []
-    tokens = [t.lower() for t in query.split() if len(t) >= 3]
+    tokens = [t for t in _tokenize_for_bm25(query) if len(t) >= 2]
     if not tokens:
         return []
     try:
@@ -794,6 +826,12 @@ async def _expand_query_llm(query: str) -> list[str]:
                     _lang_hint = " Os termos devem estar em português."
                 elif _qlang in ("zh-cn", "zh-tw", "zh"):
                     _lang_hint = " Os termos devem estar em chinês."
+                elif _qlang == "ru":
+                    _lang_hint = " Os termos devem estar em russo."
+                elif _qlang == "es":
+                    _lang_hint = " Os termos devem estar em espanhol."
+                elif _qlang == "ja":
+                    _lang_hint = " Os termos devem estar em japonês."
             except Exception:
                 pass
         try:
