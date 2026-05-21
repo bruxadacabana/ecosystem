@@ -3679,10 +3679,16 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
 > Contexto: AKASHA como secretária precisa saber o que está sendo lido agora. A extensão monitora páginas abertas a partir dos resultados do AKASHA e injeta uma barra de ação discreta com arquivar / ver depois / rastrear site. Clipboard monitor cobre URLs encontradas fora do AKASHA. Opção B (interceptar clique no AKASHA) é redundante com a extensão em funcionamento, mas trivial como fallback — adicionada no mesmo escopo.
+> **Revisado em 2026-05-21:** a arquitetura de backend evoluiu bastante desde a pesquisa original — o AKASHA agora tem appraisal CPM, estado afetivo VA, topic_interest_profile e InsightScheduler com contexto emocional. O `POST /context/push` precisa integrar com tudo isso; os demais itens permanecem válidos como estão.
 
 #### AKASHA — Backend
 - [ ] **CORS middleware** (`main.py`) — adicionar `CORSMiddleware` com `allow_origins=["*"]` para aceitar fetch da extensão (pages externas → localhost:7071). Sem `allow_credentials` para evitar bloqueio dos browsers.
-- [ ] **`POST /context/push`** (`routers/context.py` novo) — recebe `{url, title, selected_text?, source}` da extensão ou clipboard monitor. Armazena em `services/realtime_context.py` (dict em memória por sessão, TTL 30min). Aciona `session_insight.maybe_schedule()` com contexto enriquecido pelo snippet do índice local se a URL já estiver indexada.
+- [ ] **`POST /context/push`** (`routers/context.py` novo) — recebe `{url, title, selected_text?, source}` da extensão ou clipboard monitor. Fluxo atualizado em relação à pesquisa original:
+  1. Armazena em `services/realtime_context.py` (dict em memória por sessão, TTL 30min) — igual ao original.
+  2. Se a URL já estiver no índice local: recuperar os tópicos e summary do documento indexado; chamar `_record_doc_appraisal()` com `goal_relevance` alto (usuária está ativamente lendo = intenção explícita) e `coping_potential` alto (domínio já indexado) — gera evento afetivo real em vez de só armazenar contexto.
+  3. Incrementar `topic_interest_profile` para os tópicos da página (`update_topic_score(topic, +0.3)` por tópico) — leitura ativa é sinal de engajamento mesmo sem feedback confirmed/dismissed explícito.
+  4. Repassar ao `InsightScheduler` com contexto enriquecido (URL + tópicos + snippet do índice). O InsightScheduler já respeita `arousal > 0.6 → adiar notificação` (implementado em [G]); chamar `maybe_schedule(context)` onde context inclui os tópicos resolvidos para que o scheduler possa gerar insight contextual sobre o que está sendo lido agora.
+  5. `session_insight.maybe_schedule()` do planejamento original não existe como função — o mecanismo real é `InsightScheduler.maybe_schedule(context: dict)` com o contexto enriquecido acima.
 - [ ] **`GET /context/status?url=`** — retorna se a URL já está arquivada, se está na biblioteca e contagem de resultados relacionados no índice. Usado pelo popup da extensão para mostrar estado.
 - [ ] **Clipboard monitor** (`services/clipboard_monitor.py` novo; `main.py` — task P3) — polling assíncrono a cada 1.5s via `run_in_executor`; detecta URLs no clipboard via regex; ignora `localhost`/`127.0.0.1`; deduplicação (ignora se mesma URL nos últimos 5min); envia para `push_context()`. Dependência: `pyperclip` (já compatível com Windows e Linux).
 
