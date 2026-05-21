@@ -738,10 +738,9 @@ async def _check_discoveries(
     if _time.monotonic() - _last_insight_at < _INSIGHT_COOLDOWN_S:
         return
 
-    import database as _db
-    top = await _db.get_top_topics(20)
+    import shared_topic_profile as _stp
 
-    # H + I: estado afetivo completo — curiosidade abaixa threshold; remorse sobe
+    # H + I: estado afetivo completo — curiosidade abaixa threshold; remorso sobe
     try:
         from services.affective_state import get_current_state as _get_state
         _aff = await _get_state()
@@ -755,16 +754,16 @@ async def _check_discoveries(
         # Remorso/vigilância pós-dismissed → threshold mais alto, evita repetir erro
         effective_score_min *= (1.0 + abs(_ep_valence) * 0.3)
 
-    high_score = {t for t, score in top if score > effective_score_min}
-    if not high_score:
-        return
-
-    overlap = [t for t in new_topics if t in high_score]
+    # Threshold mínimo: ≥2 tópicos com score > 1.0 no store compartilhado
+    # (score > 1.0 = tópico confirmado por múltiplas interações — não apenas visto uma vez)
+    scores = _stp.get_scores(new_topics)
+    overlap = [t for t in new_topics if scores.get(t, 0.0) > effective_score_min]
 
     # K: epsilon-greedy epistêmico — câmara de eco → 5% de chance de tópico divergente
     _forced_diversity = False
     if len(overlap) < _INSIGHT_TOPIC_THRESHOLD and is_echo_chamber and random.random() < 0.05:
-        mid_candidates = [t for t, score in top if score > 0.5 and t not in high_score]
+        top = _stp.get_top_topics(20)
+        mid_candidates = [t for t, s in top if s > 0.5 and scores.get(t, 0.0) <= effective_score_min]
         if mid_candidates:
             overlap = [random.choice(mid_candidates)]
             _forced_diversity = True

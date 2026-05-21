@@ -1740,6 +1740,20 @@ class IndexReflectionWorker(QThread):
         except Exception as exc:
             log.warning("IndexReflectionWorker: falha ao salvar memória: %s", exc)
 
+        # Visita automática AKASHA quando o novo arquivo tem overlap com o store compartilhado
+        # (≥2 tópicos com score > 1.0 = relevância confirmada; simétrico ao threshold AKASHA→Mnemosyne)
+        if keywords:
+            try:
+                import shared_topic_profile as _stp
+                if _stp.has_overlap(keywords, min_topics=2, min_score=1.0):
+                    from ecosystem_client import notify_akasha_insight  # type: ignore
+                    notify_akasha_insight(content=reflection, tags=keywords[:8])
+                    log.info(
+                        "IndexReflectionWorker: insight enviado à AKASHA sobre '%s'.", name
+                    )
+            except Exception as exc:
+                log.debug("IndexReflectionWorker: envio à AKASHA falhou: %s", exc)
+
 
 class FeedbackReflectionWorker(QThread):
     """Gera uma meta-reflexão da Mnemosyne sobre o feedback da usuária em um pensamento.
