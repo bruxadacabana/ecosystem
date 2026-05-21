@@ -1021,8 +1021,10 @@ async def _event_reflection(
         f"Tópicos: {', '.join(topics[:5]) or '(nenhum)'}\n\n"
         f"Responda SOMENTE com JSON válido neste formato exato:\n"
         f'{{\"thought\": \"<seu pensamento em uma frase, na sua voz>\", \"importance\": <1-10>}}\n\n'
-        f"O campo \"importance\" avalia esta observação de 1 a 10 considerando: "
-        f"novidade, relevância para os interesses da usuária e potencial de ação futura. "
+        f"O campo \"importance\" avalia de 1 a 10: use ≥7 apenas quando houver alta novidade "
+        f"(algo que não se encaixa no que você já sabe), alta relevância de meta (conecta com "
+        f"o que a usuária tem pesquisado recentemente), ou conexão inesperada entre domínios "
+        f"distintos. Processamento de rotina e conexões óbvias dentro do mesmo domínio → 1-5. "
         f"Sem texto fora do JSON."
     )
 

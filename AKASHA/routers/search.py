@@ -616,6 +616,15 @@ async def insight_current(request: Request) -> dict:
     Prioridade: session_insight (gerado on-the-fly) > entrada de personal_memory
     ordenada por arousal × importance DESC.
     """
+    # Não interrompe quando o agente está em alta ativação — adia para momento calmo.
+    try:
+        from services.affective_state import get_current_state
+        state = await get_current_state()
+        if state.get("arousal", 0.0) > 0.6:
+            return {"text": None, "memory_id": None, "reason": "deferred"}
+    except Exception:
+        pass
+
     from services import session_insight as _si
     session_id = request.cookies.get("akasha_session", "")
 
