@@ -1007,6 +1007,7 @@ QPushButton#reflectionConfirm {
     color:         #5BAD7A;
     border:        1px solid #5BAD7A;
     border-radius: 4px;
+    font-family:   "DejaVu Sans", "Noto Sans Symbols", sans-serif;
     font-size:     11px;
     font-weight:   bold;
 }
@@ -1017,6 +1018,7 @@ QPushButton#reflectionDismiss {
     color:         #AD5B5B;
     border:        1px solid #AD5B5B;
     border-radius: 4px;
+    font-family:   "DejaVu Sans", "Noto Sans Symbols", sans-serif;
     font-size:     11px;
     font-weight:   bold;
 }
@@ -1064,6 +1066,7 @@ QPushButton#insightBtnConfirm {
     color:         #6A9060;
     border:        1px solid #6A9060;
     border-radius: 4px;
+    font-family:   "DejaVu Sans", "Noto Sans Symbols", sans-serif;
     font-size:     13px;
     font-weight:   bold;
 }
@@ -1074,6 +1077,7 @@ QPushButton#insightBtnDismiss {
     color:         #9A5040;
     border:        1px solid #9A5040;
     border-radius: 4px;
+    font-family:   "DejaVu Sans", "Noto Sans Symbols", sans-serif;
     font-size:     13px;
     font-weight:   bold;
 }
@@ -1084,6 +1088,7 @@ QPushButton#insightBtnReply {
     color:         #7C9AAF;
     border:        1px solid #7C9AAF;
     border-radius: 4px;
+    font-family:   "DejaVu Sans", "Noto Sans Symbols", sans-serif;
     font-size:     13px;
 }
 QPushButton#insightBtnReply:hover { background: #222838; color: #A8C0D0; }

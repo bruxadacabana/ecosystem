@@ -101,17 +101,17 @@ def dismiss(session_id: str) -> None:
     """Descarta insight atual — session_insight ou entrada de personal_memory.
 
     Quando PM overlay é dispensada, dispara reflexão sobre o que foi mal julgado.
+    Sempre limpa _pm_current, independente de haver session_id (cookies podem
+    estar ausentes em requisições cross-origin da extensão do browser).
     """
     global _pm_current
-    if session_id in _current:
-        _current.pop(session_id, None)
+    _current.pop(session_id, None)
+    if _pm_current is not None:
+        dismissed_entry = _pm_current
+        _pm_current = None
+        _fire_feedback_reflection(dismissed_entry, "dismissed")
     else:
-        if _pm_current is not None:
-            dismissed_entry = _pm_current
-            _pm_current = None
-            _fire_feedback_reflection(dismissed_entry, "dismissed")
-        else:
-            _pm_current = None
+        _pm_current = None
 
 
 def on_feedback_confirmed(memory_id: int) -> None:

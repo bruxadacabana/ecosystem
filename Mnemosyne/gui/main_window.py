@@ -4814,23 +4814,18 @@ class MainWindow(QMainWindow):
         self.event_log.append(f"[{ts}] {message}")
 
     def _load_fonts(self) -> None:
-        """Carrega IM Fell English, Special Elite e Courier Prime do sistema."""
+        """Carrega fontes bundled (IM Fell English, Special Elite, Courier Prime)."""
         from PySide6.QtGui import QFontDatabase
 
-        font_dirs = [
-            os.path.expanduser("~/.local/share/fonts"),
-            "/usr/share/fonts",
-            "/usr/local/share/fonts",
-        ]
-        targets = {"IM Fell English", "Special Elite", "Courier Prime"}
-        for font_dir in font_dirs:
-            if not os.path.isdir(font_dir):
-                continue
-            for root, _, files in os.walk(font_dir):
-                for fname in files:
-                    if fname.lower().endswith((".ttf", ".otf")):
-                        if any(t.replace(" ", "").lower() in fname.lower().replace(" ", "").replace("-", "") for t in targets):
-                            QFontDatabase.addApplicationFont(os.path.join(root, fname))
+        fonts_dir = os.path.join(os.path.dirname(__file__), "fonts")
+        if not os.path.isdir(fonts_dir):
+            return
+        for fname in os.listdir(fonts_dir):
+            if fname.lower().endswith((".ttf", ".otf")):
+                fid = QFontDatabase.addApplicationFont(os.path.join(fonts_dir, fname))
+                if fid < 0:
+                    import logging as _log
+                    _log.getLogger("mnemosyne").debug("Falha ao registrar fonte: %s", fname)
 
     def _update_theme_btn_label(self) -> None:
         if not hasattr(self, "_theme_btn"):

@@ -737,10 +737,10 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
                 pass
         return {"ok": True}
 
-    # dismissed
+    # dismissed — always dismiss regardless of cookie presence
+    # (cookie akasha_session não é enviado em requisições cross-origin da extensão)
     session_id = request.cookies.get("akasha_session", "")
-    if session_id:
-        _si.dismiss(session_id)
+    _si.dismiss(session_id)
     from services.knowledge_worker import on_feedback_dismissed as _on_dismissed
     _on_dismissed(body.memory_id)
     if comm_id is not None:
