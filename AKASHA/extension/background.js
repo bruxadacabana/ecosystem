@@ -29,26 +29,9 @@ browser.tabs.onRemoved.addListener((tabId) => {
   _akaShaTabs.delete(tabId);
 });
 
-// Quando uma aba rastreada termina de carregar, envia o contexto ao AKASHA
-browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "complete")       return;
-  if (!_akaShaTabs.has(tabId))                return;
-  if (!tab.url || tab.url.startsWith(AKASHA_ORIGIN)) return;
-
-  try {
-    await fetch(`${AKASHA_ORIGIN}/context/push`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url:    tab.url,
-        title:  tab.title ?? "",
-        source: "extension",
-      }),
-    });
-  } catch {
-    // AKASHA offline — ignora silenciosamente
-  }
-});
+// O push de contexto (/context/push) é feito pelo content.js, que tem
+// acesso ao body_text da página. O background apenas mantém o registro
+// de quais tabs foram abertas a partir do AKASHA (_akaShaTabs).
 
 // ---------------------------------------------------------------------------
 // Saúde — atualiza ícone active/inactive a cada 30s

@@ -87,6 +87,7 @@ async def archive(
     url: str = Form(...),
     tags: str = Form(""),    # comma-separated, ex: "python, web, referência"
     notes: str = Form(""),
+    source: str = Form(""),  # "extension" quando arquivado pela extensão do browser
 ) -> Response:
     """Arquiva uma URL em {AKASHA}/data/archive/."""
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
@@ -116,6 +117,10 @@ async def archive(
     from services.knowledge_worker import schedule_page as _schedule_page
     _schedule_page(url, page.title, page.content_md, "archived")
 
+    # Sinal forte de interesse quando arquivado via extensão (usuária leu e achou relevante)
+    if source == "extension":
+        asyncio.create_task(_archive_extension_signals(url, page.title))
+
     # Se o domínio é favorito, indexa a página no crawl_fts em background
     try:
         from urllib.parse import urlparse as _up
@@ -127,6 +132,38 @@ async def archive(
         log.warning("archive: verificação de favoritos falhou para %s: %s", url, exc)
 
     return Response(status_code=200)
+
+
+async def _archive_extension_signals(url: str, title: str) -> None:
+    """Appraisal + memória + boost de tópicos quando arquivado pela extensão."""
+    try:
+        from services.affective_state import record_appraisal
+        await record_appraisal(
+            "user_archived", novelty=0.3, pleasantness=0.9,
+            goal_relevance=0.9, coping_potential=0.9,
+            event_ref=url,
+        )
+    except Exception as exc:
+        log.debug("_archive_extension_signals: appraisal falhou: %s", exc)
+
+    try:
+        from services.personal_memory import save_memory
+        content = f"Arquivei '{title}' — achei relevante o suficiente para guardar."
+        await save_memory(
+            type="archive", content=content,
+            tags=["arquivo", "extensão"], importance=3,
+        )
+    except Exception as exc:
+        log.debug("_archive_extension_signals: save_memory falhou: %s", exc)
+
+    try:
+        page_knowledge = await database.get_page_knowledge(url)
+        if page_knowledge:
+            topics: list[str] = page_knowledge.get("topics") or []
+            for topic in topics:
+                await database.update_topic_score(topic, delta=1.5)
+    except Exception as exc:
+        log.debug("_archive_extension_signals: topic boost falhou: %s", exc)
 
 
 _PAGE_SIZE = 10

@@ -151,7 +151,7 @@ function mountActionBar() {
       if (btn.dataset.action === "archive") {
         const res = await akFetch("/archive", {
           method: "POST",
-          body:   new URLSearchParams({ url, tags: "", notes: "" }),
+          body:   new URLSearchParams({ url, tags: "", notes: "", source: "extension" }),
         });
         status.textContent = res.ok ? "arquivado ✓"
           : res.status === 409 ? "já arquivado"
@@ -282,6 +282,61 @@ async function sendFeedbackReason(memoryId, reason) {
 }
 
 // ---------------------------------------------------------------------------
+// Contexto de leitura — push de conteúdo + timer de visibilidade
+// ---------------------------------------------------------------------------
+
+let _visibleStart = null;
+let _totalVisibleMs = 0;
+
+function _sendReadingTime(timeMs) {
+  if (timeMs < 5_000) return;
+  fetch(`${AKASHA_ORIGIN}/context/time`, {
+    method:    "POST",
+    headers:   { "Content-Type": "application/json" },
+    body:      JSON.stringify({ url: location.href, time_ms: timeMs }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+function _startReadingTimer() {
+  if (document.visibilityState === "visible") {
+    _visibleStart = Date.now();
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      _visibleStart = Date.now();
+    } else if (_visibleStart !== null) {
+      _totalVisibleMs += Date.now() - _visibleStart;
+      _visibleStart = null;
+      _sendReadingTime(_totalVisibleMs);
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    if (_visibleStart !== null) {
+      _totalVisibleMs += Date.now() - _visibleStart;
+      _visibleStart = null;
+    }
+    _sendReadingTime(_totalVisibleMs);
+  });
+}
+
+async function _pushContext() {
+  try {
+    await akFetch("/context/push", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url:       location.href,
+        title:     document.title,
+        body_text: document.body?.innerText?.slice(0, 3000) ?? "",
+      }),
+    });
+  } catch { /* AKASHA offline */ }
+}
+
+// ---------------------------------------------------------------------------
 // Mensagens do background
 // ---------------------------------------------------------------------------
 
@@ -298,6 +353,9 @@ browser.runtime.onMessage.addListener((msg) => {
 (async () => {
   try {
     const res = await browser.runtime.sendMessage({ type: "is_akasha_tab" });
-    if (res?.result) mountActionBar();
+    if (!res?.result) return;
+    mountActionBar();
+    _pushContext();
+    _startReadingTimer();
   } catch { /* runtime desconectado */ }
 })();
