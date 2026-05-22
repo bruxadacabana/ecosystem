@@ -6,6 +6,11 @@ export default defineConfig({
   root: 'src/renderer',
   base: './',
   plugins: [react()],
+  test: {
+    environment: 'node',
+    include: ['../../tests/**/*.test.ts'],
+    globals: true,
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src/renderer'),

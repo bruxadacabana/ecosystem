@@ -50,9 +50,9 @@ class TestLoadConfig:
             importlib.reload(cfg_module)  # recarrega com o mock ativo
 
             result = cfg_module.load_config()
-
-        from utils.config import KosmosConfig
-        assert isinstance(result, KosmosConfig)
+            # usa KosmosConfig do módulo recarregado — evita falha de identidade
+            # de classe quando importlib.reload() cria novo objeto de módulo
+            assert isinstance(result, cfg_module.KosmosConfig)
 
     def test_paths_from_ecosystem(self, tmp_path, ecosystem_mock):
         mock, archive, config = ecosystem_mock

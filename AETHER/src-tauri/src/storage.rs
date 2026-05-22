@@ -1245,3 +1245,131 @@ pub fn delete_annotation(
     annotations.retain(|a| a.id != annotation_id);
     save_annotations(vault_path, project_id, book_id, chapter_id, &annotations)
 }
+
+// ============================================================
+//  Testes unitários
+// ============================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    fn tmpdir() -> TempDir {
+        tempfile::tempdir().expect("falha ao criar dir temporário")
+    }
+
+    // ── now_iso ──────────────────────────────────────────────
+
+    #[test]
+    fn now_iso_is_rfc3339() {
+        let iso = now_iso();
+        // RFC 3339 começa com dígito do ano e contém 'T' separando data de hora
+        assert!(iso.contains('T'), "now_iso deve conter 'T': {iso}");
+        assert!(iso.len() >= 20, "now_iso muito curto: {iso}");
+    }
+
+    #[test]
+    fn now_iso_two_calls_are_ordered() {
+        let t1 = now_iso();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let t2 = now_iso();
+        assert!(t2 >= t1, "segunda chamada deve ser >= primeira");
+    }
+
+    // ── new_id ───────────────────────────────────────────────
+
+    #[test]
+    fn new_id_is_uuid_format() {
+        let id = new_id();
+        // UUID v4: 8-4-4-4-12 hexadecimais separados por hífens
+        let parts: Vec<&str> = id.split('-').collect();
+        assert_eq!(parts.len(), 5, "UUID deve ter 5 partes: {id}");
+    }
+
+    #[test]
+    fn new_id_is_unique() {
+        let a = new_id();
+        let b = new_id();
+        assert_ne!(a, b, "dois IDs gerados em sequência não devem ser iguais");
+    }
+
+    // ── read_json / write_json ───────────────────────────────
+
+    #[test]
+    fn write_read_roundtrip_app_data() {
+        let dir = tmpdir();
+        let data = AppData {
+            vault_path: Some(PathBuf::from("/tmp/test_vault")),
+        };
+        save_app_data(dir.path(), &data).expect("save_app_data falhou");
+        let loaded = load_app_data(dir.path()).expect("load_app_data falhou");
+        assert_eq!(loaded.vault_path, data.vault_path);
+    }
+
+    #[test]
+    fn load_app_data_missing_file_returns_default() {
+        let dir = tmpdir();
+        let data = load_app_data(dir.path()).expect("load_app_data falhou");
+        assert!(data.vault_path.is_none(), "vault_path deve ser None por padrão");
+    }
+
+    #[test]
+    fn write_json_creates_parent_dirs() {
+        let dir = tmpdir();
+        let nested = dir.path().join("a").join("b").join("c").join("file.json");
+
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct Simple { value: u32 }
+
+        write_json(&nested, &Simple { value: 42 }).expect("write_json falhou");
+        assert!(nested.exists(), "arquivo deve ter sido criado");
+        let loaded: Simple = read_json(&nested).expect("read_json falhou");
+        assert_eq!(loaded.value, 42);
+    }
+
+    #[test]
+    fn read_json_returns_error_on_corrupt_file() {
+        let dir = tmpdir();
+        let path = dir.path().join("bad.json");
+        std::fs::write(&path, b"{ broken json }").unwrap();
+        let result: Result<AppData, AppError> = read_json(&path);
+        assert!(result.is_err(), "JSON inválido deve retornar Err");
+    }
+
+    // ── VaultConfig ──────────────────────────────────────────
+
+    #[test]
+    fn vault_config_default_values() {
+        let cfg = VaultConfig::default();
+        assert_eq!(cfg.font_size, 16);
+        assert_eq!(cfg.column_width, 680);
+    }
+
+    #[test]
+    fn write_read_roundtrip_vault_config() {
+        let dir = tmpdir();
+        let vault = dir.path().join("vault");
+        std::fs::create_dir_all(&vault).unwrap();
+        let cfg = VaultConfig {
+            font_size: 18,
+            line_height: 1.6,
+            column_width: 720,
+            ..VaultConfig::default()
+        };
+        save_vault_config(&vault, &cfg).expect("save_vault_config falhou");
+        let loaded = load_vault_config(&vault).expect("load_vault_config falhou");
+        assert_eq!(loaded.font_size, 18);
+        assert_eq!(loaded.column_width, 720);
+    }
+
+    #[test]
+    fn load_vault_config_missing_returns_default() {
+        let dir = tmpdir();
+        let vault = dir.path().join("vault");
+        std::fs::create_dir_all(&vault).unwrap();
+        let cfg = load_vault_config(&vault).expect("load_vault_config falhou");
+        assert_eq!(cfg.font_size, VaultConfig::default().font_size);
+    }
+}

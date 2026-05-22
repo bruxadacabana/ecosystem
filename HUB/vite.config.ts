@@ -7,4 +7,9 @@ export default defineConfig({
   server: {
     strictPort: true,
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    include: ['tests/**/*.test.ts'],
+  },
 })
