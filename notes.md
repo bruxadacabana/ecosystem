@@ -50,6 +50,8 @@ Dito isso, para o HUB funcionar no laptop já funciona sem isso — o fix que im
 
 ## Anotações
 
+enquanto Mnemosyne é uma só, a ferramenta e a assistente são a mesma entidade, AKASHA tem uma diferenciação lógica (AKASHA (ferramenta) e a Akasha (assistente)) e é necessário que o AKASHA como ferramenta possa funcionar independemente da Akasha assistente. É por isso que os bancos de dados são separados inclusive, é por isso que devem funcionar em paralelo, com duas filas/processos ocorrendo ao mesmo tempo mas sem um pausar ou interromper o outro.
+
 ---
 
 ### Como as emoções são usadas no ecossistema
