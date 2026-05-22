@@ -128,11 +128,18 @@ def update_scores(topics: list[str], delta: float, source: str) -> None:
     if path is None or not topics:
         return
 
+    raw_count  = len([t for t in topics if t and t.strip()])
     normalized = [
         t.strip().lower() for t in topics
         if t and t.strip() and len(t.strip()) >= 3
         and t.strip().lower() not in _STOPWORDS
     ]
+    filtered = raw_count - len(normalized)
+    if filtered:
+        log.debug(
+            "shared_topic_profile: %d/%d tópicos filtrados por stopword (source=%s)",
+            filtered, raw_count, source,
+        )
     if not normalized:
         return
 

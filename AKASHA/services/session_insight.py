@@ -72,18 +72,28 @@ def maybe_schedule(
 ) -> None:
     """Agenda geração de insight se condições forem satisfeitas. Fire-and-forget."""
     if len(queries) < SESSION_INSIGHT_MIN_QUERIES:
+        log.debug(
+            "session_insight: ignorado — %d/%d queries acumuladas (mínimo %d)",
+            len(queries), len(queries), SESSION_INSIGHT_MIN_QUERIES,
+        )
         return
     if not _get_model():
+        log.debug("session_insight: ignorado — nenhum modelo configurado (llm_query vazio)")
         return
     now = time.time()
-    if now - _last_gen.get(session_id, 0) < _INSIGHT_COOLDOWN_S:
+    elapsed = now - _last_gen.get(session_id, 0)
+    if elapsed < _INSIGHT_COOLDOWN_S:
+        log.debug(
+            "session_insight: ignorado — cooldown ativo (%.0fs restantes, sessão %.8s…)",
+            _INSIGHT_COOLDOWN_S - elapsed, session_id,
+        )
         return
     _last_gen[session_id] = now
     try:
         loop = asyncio.get_running_loop()
         loop.create_task(_generate(session_id, queries, snippets))
     except RuntimeError:
-        pass
+        log.debug("session_insight: ignorado — sem event loop em execução")
 
 
 def get_current(session_id: str) -> dict[str, Any] | None:

@@ -138,8 +138,9 @@ def _conn() -> sqlite3.Connection:
         try:
             con.execute(migration)
             con.commit()
+            log.debug("affective_state: migration aplicada — %s", migration[:60])
         except Exception:
-            pass  # coluna já existe
+            pass  # coluna já existe (ALTER TABLE ADD COLUMN falha se coluna presente)
     return con
 
 

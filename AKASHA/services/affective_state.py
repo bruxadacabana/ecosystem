@@ -158,8 +158,9 @@ async def _ensure_schema(conn: aiosqlite.Connection) -> None:
         try:
             await conn.execute(migration)
             await conn.commit()
+            log.debug("affective_state: migration aplicada — %s", migration[:60])
         except Exception:
-            pass  # coluna já existe
+            pass  # coluna já existe (ALTER TABLE ADD COLUMN falha se coluna presente)
 
 
 def _assign_half_life(event_type: str, valence: float) -> float:
