@@ -121,7 +121,8 @@ impl HardwareProfile {
                 // smollm2:1.7b: análise batch no laptop — JSON 26% tolerável com retry; MX150 não suporta dois modelos >1 GB
                 llm_analysis: "smollm2:1.7b",
                 llm_query:    "smollm2:1.7b",
-                embed:        "bge-m3",
+                // nomic-embed-text: ~274 MB VRAM · adequado para MX150 2 GB; bge-m3 exige 8 GB (MainPc)
+                embed:        "nomic-embed-text",
                 // moondream: ~1.7 GB — MX150 2 GB mal cabe sozinho; usar isolado (não simultaneamente com outro modelo)
                 image_ocr:    "moondream",
             },
@@ -203,7 +204,7 @@ pub fn detect_hardware_profile() -> HardwareProfile {
 
     #[cfg(target_os = "linux")]
     {
-        // Etapa 1: NVIDIA MX150 → Laptop
+        // Etapa 1a: NVIDIA MX150 via nvidia-smi (requer driver proprietário instalado)
         if let Ok(out) = std::process::Command::new("nvidia-smi")
             .args(["--query-gpu=name", "--format=csv,noheader"])
             .output()
@@ -216,6 +217,16 @@ pub fn detect_hardware_profile() -> HardwareProfile {
             }
         }
 
+        // Etapa 1b: NVIDIA via sysfs vendor (funciona com nouveau e sem nvidia-smi).
+        // Vendor 0x10de = NVIDIA. Se encontrado E nenhuma AMD ≥ 4 GiB → Laptop.
+        // (No ecossistema, o único hardware Linux com NVIDIA é o Laptop MX150.)
+        let has_nvidia_sysfs = (0u8..8).any(|i| {
+            let path = format!("/sys/class/drm/card{i}/device/vendor");
+            std::fs::read_to_string(path)
+                .map(|s| s.trim().to_lowercase() == "0x10de")
+                .unwrap_or(false)
+        });
+
         // Etapa 2: AMD sysfs — VRAM ≥ 4 GiB → MainPc
         for i in 0..8u8 {
             let path = format!("/sys/class/drm/card{i}/device/mem_info_vram_total");
@@ -226,6 +237,11 @@ pub fn detect_hardware_profile() -> HardwareProfile {
                     }
                 }
             }
+        }
+
+        // Etapa 1b (aplicada após verificar AMD): NVIDIA presente sem AMD ≥ 4 GiB → Laptop
+        if has_nvidia_sysfs {
+            return HardwareProfile::Laptop;
         }
 
         // Etapa 3: Fallback
