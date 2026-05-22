@@ -452,6 +452,9 @@ async def crawl_site(site_id: int) -> int:
     pages_saved = 0
     seen_simhashes: list[int] = []  # near-duplicate detection por sessão
 
+    from services.image_indexer import ImageDeduplicator
+    img_dedup = ImageDeduplicator()
+
     # Conexão 2: única para todo o BFS (status=crawling → upserts → status=idle)
     # aiosqlite serializa operações na mesma conexão, portanto as corrotinas
     # concorrentes em asyncio.gather não geram condição de corrida no DB.
@@ -527,6 +530,17 @@ async def crawl_site(site_id: int) -> int:
                 db, site_id, url, title, content_md, chash, status, now,
                 etag=new_etag, last_modified=new_lm,
             )
+
+            # Extrai e indexa imagens da página (best-effort, falha silenciosamente)
+            if html and not from_jina:
+                try:
+                    from services.image_indexer import extract_images, index_page_images
+                    imgs = extract_images(html, url)
+                    if imgs:
+                        await index_page_images(db, url, imgs, client, img_dedup)
+                except Exception as exc:
+                    log.debug("index_page_images error %s: %s", url, exc)
+
             await db.commit()
 
             # Agenda extração de conhecimento em background (P3, fire-and-forget)

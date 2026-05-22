@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 39
+SCHEMA_VERSION = 40
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -167,6 +167,37 @@ CREATE VIRTUAL TABLE IF NOT EXISTS crawl_fts USING fts5(
 
 _CREATE_IDX_CRAWL_PAGES_SITE = """
 CREATE INDEX IF NOT EXISTS idx_crawl_pages_site ON crawl_pages(site_id);
+"""
+
+_CREATE_PAGE_IMAGES = """
+CREATE TABLE IF NOT EXISTS page_images (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    page_url   TEXT    NOT NULL,
+    img_url    TEXT    NOT NULL UNIQUE,
+    alt_text   TEXT    NOT NULL DEFAULT '',
+    title      TEXT    NOT NULL DEFAULT '',
+    phash      TEXT    NOT NULL DEFAULT '',
+    crawled_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_CREATE_PAGE_IMAGES_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS page_images_fts USING fts5(
+    img_url  UNINDEXED,
+    page_url UNINDEXED,
+    alt_text,
+    title,
+    phash    UNINDEXED,
+    tokenize = 'unicode61 remove_diacritics 2'
+);
+"""
+
+_CREATE_IDX_PAGE_IMAGES_PAGE = """
+CREATE INDEX IF NOT EXISTS idx_page_images_page ON page_images(page_url);
+"""
+
+_CREATE_IDX_PAGE_IMAGES_PHASH = """
+CREATE INDEX IF NOT EXISTS idx_page_images_phash ON page_images(phash) WHERE phash != '';
 """
 
 
@@ -411,6 +442,10 @@ async def init_db() -> None:
         )
         await db.execute(_CREATE_IDX_CRAWL_PAGES_SITE)
         await db.execute(_CREATE_IDX_CRAWL_PAGES_HASH)
+        await db.execute(_CREATE_PAGE_IMAGES)
+        await db.execute(_CREATE_PAGE_IMAGES_FTS)
+        await db.execute(_CREATE_IDX_PAGE_IMAGES_PAGE)
+        await db.execute(_CREATE_IDX_PAGE_IMAGES_PHASH)
         await db.execute(_CREATE_WATCH_LATER)
         await db.execute(_CREATE_WATCH_LATER_FTS)
         await db.execute(_CREATE_ACTIVITY_LOG)
@@ -959,6 +994,27 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
                 await db.execute(ddl)
             except Exception:
                 pass
+
+    if from_version < 40:
+        # Índice de imagens das páginas crawleadas.
+        # pHash 64-bit (hex) para detecção de near-duplicates via distância de Hamming ≤ 10.
+        # FTS5 sobre alt_text + title para busca semântica.
+        try:
+            await db.execute(_CREATE_PAGE_IMAGES)
+        except Exception:
+            pass
+        try:
+            await db.execute(_CREATE_PAGE_IMAGES_FTS)
+        except Exception:
+            pass
+        try:
+            await db.execute(_CREATE_IDX_PAGE_IMAGES_PAGE)
+        except Exception:
+            pass
+        try:
+            await db.execute(_CREATE_IDX_PAGE_IMAGES_PHASH)
+        except Exception:
+            pass
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",

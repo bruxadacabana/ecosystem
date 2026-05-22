@@ -806,6 +806,56 @@ async def insight_feedback_reason(body: _FeedbackReasonBody) -> dict:
     return {"ok": True}
 
 
+@router.get("/search/images", response_class=HTMLResponse)
+async def search_images_page(request: Request, q: str = "") -> HTMLResponse:
+    """Busca de imagens: FTS5 sobre alt_text + title do índice local.
+
+    Fallback para DDG Images se o índice local retornar <5 resultados.
+    """
+    local_results: list[dict] = []
+    ddg_results:   list[dict] = []
+
+    if q.strip():
+        try:
+            import aiosqlite
+            from config import DB_PATH
+            from services.image_indexer import search_images as _search_imgs
+            async with aiosqlite.connect(DB_PATH) as db:
+                local_results = await _search_imgs(db, q, limit=20)
+        except Exception as exc:
+            log.debug("search_images local error: %s", exc)
+
+        # Fallback DDG Images quando índice local tem menos de 5 resultados
+        if len(local_results) < 5:
+            try:
+                from ddgs import DDGS
+                with DDGS() as ddg:
+                    ddg_results = [
+                        {
+                            "img_url":  r.get("image", ""),
+                            "page_url": r.get("url", ""),
+                            "alt_text": r.get("title", ""),
+                            "title":    r.get("title", ""),
+                            "phash":    "",
+                        }
+                        for r in ddg.images(q, max_results=20)
+                        if r.get("image")
+                    ]
+            except Exception as exc:
+                log.debug("DDG images fallback error: %s", exc)
+
+    return templates.TemplateResponse(
+        request,
+        "images.html",
+        {
+            "query":         q,
+            "local_results": local_results,
+            "ddg_results":   ddg_results,
+            "active_tab":    "search",
+        },
+    )
+
+
 @router.get("/search/more", response_class=HTMLResponse)
 async def search_more(
     request: Request,

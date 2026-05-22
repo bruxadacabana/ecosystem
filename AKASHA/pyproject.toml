@@ -30,6 +30,9 @@ dependencies = [
     "sqlite-vec>=0.1",
     "sentence-transformers>=3.0",
     "symspellpy>=6.7",
+    "imagehash>=4.3",
+    "pybktree>=1.1",
+    "Pillow>=10.0",
 ]
 
 [build-system]

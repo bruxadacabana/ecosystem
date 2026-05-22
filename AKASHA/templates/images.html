@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Imagens — {{ query }} — AKASHA{% endblock %}
+
+{% block content %}
+<div id="main-content" class="images-page">
+
+  <!-- Barra de busca de imagens -->
+  <form class="images-search-bar" action="/search/images" method="get">
+    <input
+      type="text"
+      name="q"
+      class="input"
+      placeholder="buscar imagens…"
+      value="{{ query }}"
+      autofocus
+    >
+    <button type="submit" class="btn">Buscar</button>
+  </form>
+
+  {% if query %}
+
+    <!-- Resultados locais -->
+    {% if local_results %}
+    <section class="images-section">
+      <h2 class="images-section-title">Da biblioteca ({{ local_results | length }})</h2>
+      <div class="images-grid">
+        {% for img in local_results %}
+        <a
+          class="images-tile"
+          href="{{ img.page_url }}"
+          target="_blank"
+          rel="noopener"
+          title="{{ img.alt_text or img.title }}"
+        >
+          <img
+            src="{{ img.img_url }}"
+            alt="{{ img.alt_text }}"
+            loading="lazy"
+            onerror="this.closest('.images-tile').style.display='none'"
+          >
+          {% if img.alt_text or img.title %}
+          <span class="images-caption">{{ img.alt_text or img.title }}</span>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- Fallback DDG -->
+    {% if ddg_results %}
+    <section class="images-section">
+      <h2 class="images-section-title">
+        Da web
+        {% if local_results %}(índice local com menos de 5 resultados){% endif %}
+      </h2>
+      <div class="images-grid">
+        {% for img in ddg_results %}
+        <a
+          class="images-tile"
+          href="{{ img.page_url }}"
+          target="_blank"
+          rel="noopener"
+          title="{{ img.title }}"
+        >
+          <img
+            src="{{ img.img_url }}"
+            alt="{{ img.alt_text }}"
+            loading="lazy"
+            onerror="this.closest('.images-tile').style.display='none'"
+          >
+          {% if img.title %}
+          <span class="images-caption">{{ img.title }}</span>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if not local_results and not ddg_results %}
+    <p class="empty-state">Nenhuma imagem encontrada para "{{ query }}".</p>
+    {% endif %}
+
+  {% else %}
+  <p class="empty-state">Digite um termo para buscar imagens indexadas da biblioteca.</p>
+  {% endif %}
+
+</div>
+
+<style>
+.images-page       { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+.images-search-bar { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
+.images-search-bar .input { flex: 1; }
+.images-section         { margin-bottom: 2rem; }
+.images-section-title   { font-size: .85rem; opacity: .6; margin-bottom: .75rem; text-transform: uppercase; letter-spacing: .05em; }
+.images-grid       { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: .75rem; }
+.images-tile       { display: flex; flex-direction: column; border-radius: 6px; overflow: hidden; text-decoration: none; background: var(--surface, #1e2330); transition: opacity .15s; }
+.images-tile:hover { opacity: .85; }
+.images-tile img   { width: 100%; height: 130px; object-fit: cover; display: block; }
+.images-caption    { font-size: .72rem; padding: .3rem .5rem; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty-state       { opacity: .5; font-style: italic; margin-top: 2rem; }
+</style>
+{% endblock %}
