@@ -2,8 +2,6 @@
 
 ### KOSMOS — refazer do zero com nova stack | 2026-05-20
 
-### Pesquisa: Contexto em Tempo Real — Extensão Firefox/Zen + Clipboard Monitor | 2026-05-18
-
 
 ## próximo: 
 
