@@ -1,18 +1,14 @@
 ## Fila de implementação atual:
 
-### Correções nos testes de integração de DB | 2026-05-22
-(12/12 testes do AKASHA passaram (test_affective_state_db.py)
-12/12 testes do Mnemosyne passaram (test_affective_state_db.py)
-12/17 testes do shared_topic_profile passaram — 5 falham por divergências no teste (não na produção): get_top_topics retorna tuplas mas o teste espera dicts, apply_seed_topics usa chaves name/weight mas o teste passa topic/score, e um teste consulta tabela que não é criada quando todos os tópicos são stopwords)
+### Pesquisa: Funcionalidades Core da AKASHA — Query Understanding, Expansão e Memória de Sessão | 2026-05-22
 
-Pesquisa: Backends de Inferência LLM Local sem Intermediários (LOGOS Option B) | 2026-05-22
+### Pesquisa: Backends de Inferência LLM Local sem Intermediários (LOGOS Option B) | 2026-05-22
 
-### KOSMOS — refazer do zero com nova stack | 2026-05-20
-
-
-## próximo: 
 ### Pesquisa: Fine-Tuning Local com QLoRA — Aprendizado Real de Corpus Pessoal | 2026-05-22
 
+## próximo: 
+
+### KOSMOS — refazer do zero com nova stack | 2026-05-20
 
 ### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
 
