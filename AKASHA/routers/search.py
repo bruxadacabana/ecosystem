@@ -297,6 +297,7 @@ async def search(
     _lexical_intent:         str               = ""
     _web_deferred:           bool              = False
     _intent_routing:         dict[str, bool]   = {}
+    related_indexed:         list[dict]        = []
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -519,6 +520,23 @@ async def search(
                 q, _src_related, n=5, interest_topics=_interest_topics
             )
 
+        # Leituras relacionadas do índice (por sobreposição de tópicos do primeiro resultado)
+        try:
+            _first_indexed_url: str | None = None
+            for _r in (local_results + fav_results + site_results + web_results):
+                if getattr(_r, "url", ""):
+                    _first_indexed_url = _r.url
+                    break
+            if _first_indexed_url:
+                _pk = await database.get_page_knowledge(_first_indexed_url)
+                if _pk and _pk.get("topics"):
+                    _exclude = [r.url for r in (local_results + fav_results + site_results + web_results + paper_results)[:30]]
+                    related_indexed = await database.get_related_indexed_pages(
+                        _first_indexed_url, _pk["topics"], _exclude, n=3
+                    )
+        except Exception:
+            pass
+
         # Atualiza sessão de pesquisa com query atual e URLs recuperados
         _all_urls = [r.url for r in (local_results + web_results + fav_results + site_results)]
         _active_session = _session_svc.update_session(_session_id, q, _all_urls)
@@ -592,6 +610,7 @@ async def search(
             "profile_source_label":    _profile.source_label if _profile_applied else "",
             "related_docs":        related_docs,
             "related_queries":     related_queries,
+            "related_indexed":     related_indexed,
             "show_hedging_banner": _show_hedging_banner,
             "session":             _active_session,
             "voice":               _voice_texts(),

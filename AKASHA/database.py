@@ -2460,6 +2460,38 @@ async def count_related_pages(current_url: str, topics: list[str]) -> int:
     return row[0] if row else 0
 
 
+async def get_related_indexed_pages(
+    current_url: str,
+    topics: list[str],
+    exclude_urls: list[str] | None = None,
+    n: int = 3,
+) -> list[dict]:
+    """Retorna até N páginas do índice com maior sobreposição de tópicos.
+
+    Ordena candidatos por número de tópicos em comum (decrescente).
+    Exclui current_url e qualquer URL em exclude_urls.
+    Retorna lista de dicts {url, title, overlap}.
+    """
+    if not topics:
+        return []
+    excluded = set([current_url] + (exclude_urls or []))
+    topics_lower = [t.lower() for t in topics if t]
+    async with aiosqlite.connect(KNOWLEDGE_DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT url, title, topics FROM page_knowledge"
+        )).fetchall()
+    candidates: list[dict] = []
+    for url, title, topics_json in rows:
+        if url in excluded:
+            continue
+        doc_topics = {t.lower() for t in json.loads(topics_json or "[]")}
+        overlap = sum(1 for t in topics_lower if t in doc_topics)
+        if overlap > 0:
+            candidates.append({"url": url, "title": title or url, "overlap": overlap})
+    candidates.sort(key=lambda x: -x["overlap"])
+    return candidates[:n]
+
+
 async def decay_old_topic_scores(days_inactive: int = 7, factor: float = 0.97) -> int:
     """Aplica decaimento EMA em tópicos sem atualização há mais de `days_inactive` dias.
 

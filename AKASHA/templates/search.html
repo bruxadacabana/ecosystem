@@ -308,6 +308,19 @@
 </div>
 {% endif %}
 
+{% if related_indexed and related_indexed | length >= 2 %}
+<details class="related-indexed-details">
+  <summary class="related-indexed-summary">&#x1F4DA; Leituras relacionadas no seu arquivo</summary>
+  <ul class="related-indexed-list">
+    {% for doc in related_indexed %}
+    <li>
+      <a href="{{ doc.url }}" class="related-indexed-link">{{ doc.title }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}
+
 {% elif query and not error %}
   <!-- ─── Estado vazio — busca sem resultado ─────────────────────── -->
   <section class="empty-state">
