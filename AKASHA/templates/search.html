@@ -152,6 +152,26 @@
       Ler no Wikipedia &#x2197;
     </a>
     {% endif %}
+    {% if wiki_card.cited_sources_enriched %}
+    <details class="wiki-sources-details">
+      <summary class="wiki-sources-summary">Fontes citadas ({{ wiki_card.cited_sources_enriched | length }})</summary>
+      <ul class="wiki-sources-list">
+        {% for src in wiki_card.cited_sources_enriched %}
+        <li class="wiki-source-item">
+          <a href="{{ src.url }}" class="wiki-source-link" target="_blank" rel="noopener">{{ src.domain }}</a>
+          {% if src.indexed %}
+          <span class="badge badge-indexed">no seu arquivo</span>
+          {% else %}
+          <form class="wiki-archive-form" action="/archive" method="post">
+            <input type="hidden" name="url" value="{{ src.url | e }}">
+            <button type="submit" class="btn-archive-inline">Arquivar &#x2192;</button>
+          </form>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
   </div>
 </div>
 {% endif %}

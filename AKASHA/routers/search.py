@@ -543,9 +543,27 @@ async def search(
         if _intent_routing.get("wiki"):
             try:
                 from services.wiki_card import get_wiki_card as _get_wiki
-                wiki_card = await asyncio.wait_for(_get_wiki(_effective_query), timeout=5.0)
+                wiki_card = await asyncio.wait_for(_get_wiki(_effective_query), timeout=6.0)
             except (asyncio.TimeoutError, Exception):
                 pass
+
+        # Cross-reference das fontes citadas com o índice local
+        if wiki_card and wiki_card.get("cited_sources"):
+            try:
+                from urllib.parse import urlparse as _up
+                _cited = wiki_card["cited_sources"]
+                _indexed_map = await database.get_page_knowledge_batch(_cited)
+                _indexed_urls = set(_indexed_map.keys())
+                wiki_card["cited_sources_enriched"] = [
+                    {
+                        "url":     u,
+                        "domain":  (_up(u).hostname or u).removeprefix("www."),
+                        "indexed": u in _indexed_urls,
+                    }
+                    for u in _cited if u
+                ]
+            except Exception:
+                wiki_card["cited_sources_enriched"] = []
 
         # Widget de clima (weather intent → geocoding + Open-Meteo)
         if _intent_routing.get("weather"):

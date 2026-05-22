@@ -8,6 +8,11 @@ Cobre:
   - get_wiki_card: extract vazio → None
   - get_wiki_card: cache HIT → não faz request HTTP
   - get_wiki_card: exception de rede → None (não propaga)
+  - _fetch_cited_sources: MediaWiki retorna extlinks → lista de URLs
+  - _fetch_cited_sources: exception → lista vazia
+  - get_wiki_card: sources incluídas em cited_sources
+  - get_wiki_card: sources timeout → card presente com cited_sources=[]
+  - get_wiki_card: cache HIT já inclui cited_sources → retorna sem novo request
 """
 from __future__ import annotations
 
@@ -216,3 +221,160 @@ async def test_get_wiki_card_writes_to_cache(tmp_path, monkeypatch):
 
     assert len(written) == 1
     assert written[0]["title"] == "Test"
+
+
+# ---------------------------------------------------------------------------
+# _fetch_cited_sources
+# ---------------------------------------------------------------------------
+
+def _make_mediawiki_resp(urls: list[str]) -> object:
+    """Cria resposta fake da MediaWiki Action API com extlinks."""
+    import httpx
+    payload = {
+        "query": {
+            "pages": {
+                "12345": {
+                    "extlinks": [{"*": u} for u in urls],
+                }
+            }
+        }
+    }
+    request = httpx.Request("GET", "https://pt.wikipedia.org/w/api.php")
+    return httpx.Response(200, content=json.dumps(payload).encode(), request=request)
+
+
+@pytest.mark.anyio
+async def test_fetch_cited_sources_returns_urls():
+    """MediaWiki retorna extlinks → lista de URLs."""
+    import httpx
+    import services.wiki_card as _wk
+
+    urls = ["https://doi.org/10.1234/test", "https://arxiv.org/abs/1234.5678"]
+    mock_resp = _make_mediawiki_resp(urls)
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__  = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_resp)
+
+    with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        result = await _wk._fetch_cited_sources("Python", "pt")
+
+    assert result == urls
+
+
+@pytest.mark.anyio
+async def test_fetch_cited_sources_exception_returns_empty():
+    """Exception de rede → lista vazia, sem propagar."""
+    import httpx
+    import services.wiki_card as _wk
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__  = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(side_effect=ConnectionError("timeout"))
+
+    with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        result = await _wk._fetch_cited_sources("Python", "pt")
+
+    assert result == []
+
+
+@pytest.mark.anyio
+async def test_get_wiki_card_includes_cited_sources(tmp_path, monkeypatch):
+    """Card resultante inclui campo cited_sources com URLs das fontes."""
+    import httpx
+    import services.wiki_card as _wk
+    monkeypatch.setattr(_wk, "DB_PATH", tmp_path / "akasha.db")
+
+    summary_payload = {
+        "title": "Python",
+        "extract": "Python é uma linguagem.",
+        "content_urls": {"desktop": {"page": "https://pt.wikipedia.org/wiki/Python"}},
+    }
+    mw_payload = {
+        "query": {"pages": {"1": {"extlinks": [
+            {"*": "https://docs.python.org"},
+            {"*": "https://peps.python.org"},
+        ]}}}
+    }
+
+    def _make_route(url, **kw):
+        import httpx as _hx
+        req = _hx.Request("GET", str(url))
+        if "rest_v1" in str(url):
+            return _hx.Response(200, content=json.dumps(summary_payload).encode(), request=req)
+        return _hx.Response(200, content=json.dumps(mw_payload).encode(), request=req)
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__  = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(side_effect=_make_route)
+
+    with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        card = await _wk.get_wiki_card("python linguagem programação")
+
+    assert card is not None
+    assert "cited_sources" in card
+    assert "https://docs.python.org" in card["cited_sources"]
+
+
+@pytest.mark.anyio
+async def test_get_wiki_card_sources_timeout_card_still_present(tmp_path, monkeypatch):
+    """Sources expiram (exception) → card presente com cited_sources=[]."""
+    import httpx
+    import services.wiki_card as _wk
+    monkeypatch.setattr(_wk, "DB_PATH", tmp_path / "akasha.db")
+
+    summary_payload = {
+        "title": "Test",
+        "extract": "Test extract.",
+        "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Test"}},
+    }
+
+    call_count = [0]
+
+    def _make_route(url, **kw):
+        import httpx as _hx
+        call_count[0] += 1
+        req = _hx.Request("GET", str(url))
+        if "rest_v1" in str(url):
+            return _hx.Response(200, content=json.dumps(summary_payload).encode(), request=req)
+        raise ConnectionError("extlinks timeout")
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__  = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(side_effect=_make_route)
+
+    with patch.object(httpx, "AsyncClient", return_value=mock_client):
+        card = await _wk.get_wiki_card("test query en")
+
+    assert card is not None
+    assert card["extract"] == "Test extract."
+    assert card["cited_sources"] == []
+
+
+@pytest.mark.anyio
+async def test_get_wiki_card_cache_hit_includes_cited_sources(monkeypatch):
+    """Cache HIT com cited_sources → retorna completo sem novo request."""
+    import services.wiki_card as _wk
+
+    cached = {
+        "title": "Cached",
+        "extract": "Cached extract.",
+        "thumbnail_url": None,
+        "page_url": "https://en.wikipedia.org/wiki/Cached",
+        "lang": "en",
+        "cited_sources": ["https://nature.com/article"],
+    }
+
+    async def _fake_cache(qhash):
+        return cached
+
+    monkeypatch.setattr(_wk, "_get_cache", _fake_cache)
+
+    result = await _wk.get_wiki_card("cached query")
+
+    assert result is not None
+    assert result["cited_sources"] == ["https://nature.com/article"]
