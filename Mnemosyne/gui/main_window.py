@@ -1597,6 +1597,34 @@ class MainWindow(QMainWindow):
                 "Não foi possível extrair temas — corpus muito pequeno ou dependências ausentes."
             )
 
+    def _release_vectorstore(self) -> None:
+        """Fecha explicitamente todas as conexões ChromaDB antes de renomear persist_dir.
+
+        ChromaDB 1.5.7 usa um SharedSystem com refcount: a conexão SQLite só é
+        liberada quando client.close() é chamado e o refcount chega a zero.
+        langchain_chroma.Chroma nunca chama close(), então GC simples não basta —
+        o SQLite continua aberto e o rename resulta em SQLITE_READONLY_DBMOVED (1032).
+
+        Também cancela workers em background que seguram referências ao vs antigo.
+        """
+        # Para workers que podem segurar referência ao vs (evita uso após close)
+        for attr in ("_topics_worker", "_kg_worker"):
+            worker = getattr(self, attr, None)
+            if worker and hasattr(worker, "isRunning") and worker.isRunning():
+                worker.quit()
+                worker.wait(3000)
+
+        # Fecha o client de cada Chroma store explicitamente
+        if self.vectorstore:
+            for vs, _ in self.vectorstore.stores:
+                try:
+                    vs._client.close()
+                except Exception:
+                    pass
+
+        self.vectorstore = MultiVectorstore([])
+        gc.collect()
+
     def _start_kg_bg(self) -> None:
         """Constrói knowledge_graph.json em background após indexação."""
         if not self.vectorstore or not self.vectorstore.stores:
@@ -1716,11 +1744,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Indexando coleção: {name}…")
         self._log_event(f"Indexando coleção '{name}' individualmente.")
         self._switch_page(0)
-        # Libera conexões SQLite do vectorstore antes de o IndexWorker renomear
-        # mnemosyne_dir → mnemosyne_dir.bak. Sem isso, o SQLite detecta o arquivo
-        # movido e retorna SQLITE_READONLY_DBMOVED (código 1032).
-        self.vectorstore = MultiVectorstore([])
-        gc.collect()
+        self._release_vectorstore()
         self._index_worker = IndexWorker(proxy_config)
         self._index_worker.finished.connect(self._on_index_finished)
         self._index_worker.progress.connect(self._on_index_progress)
@@ -2719,13 +2743,7 @@ class MainWindow(QMainWindow):
         label = f"[{n_done + 1}/{n_total}] {first.name}…"
         self.statusBar().showMessage(f"Indexando {label}")
         self._log_event(f"Iniciando indexação de todas as coleções ({n_total}).")
-
-        # Libera conexões SQLite do vectorstore antes de o IndexWorker renomear
-        # mnemosyne_dir → mnemosyne_dir.bak. Sem isso, o SQLite detecta o arquivo
-        # movido e retorna SQLITE_READONLY_DBMOVED (código 1032).
-        self.vectorstore = MultiVectorstore([])
-        gc.collect()
-
+        self._release_vectorstore()
         self._index_worker = IndexWorker(proxy_config)
         self._index_worker.finished.connect(self._on_index_finished)
         self._index_worker.progress.connect(self._on_index_progress)
@@ -2903,11 +2921,7 @@ class MainWindow(QMainWindow):
             proxy_config = _make_config_for_collection(self.config, next_coll)
             self.statusBar().showMessage(f"Indexando {next_coll.name}…")
             self._log_event(f"Avançando para coleção: {next_coll.name}")
-            # Libera conexões SQLite do vectorstore antes de o IndexWorker renomear
-            # .mnemosyne → .mnemosyne.bak. Sem isso, o SQLite detecta o arquivo
-            # movido e retorna SQLITE_READONLY_DBMOVED (código 1032).
-            self.vectorstore = MultiVectorstore([])
-            gc.collect()
+            self._release_vectorstore()
             self._index_worker = IndexWorker(proxy_config)
             self._index_worker.finished.connect(self._on_index_finished)
             self._index_worker.progress.connect(self._on_index_progress)
