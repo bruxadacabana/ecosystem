@@ -1711,6 +1711,11 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Indexando coleção: {name}…")
         self._log_event(f"Indexando coleção '{name}' individualmente.")
         self._switch_page(0)
+        # Libera conexões SQLite do vectorstore antes de o IndexWorker renomear
+        # mnemosyne_dir → mnemosyne_dir.bak. Sem isso, o SQLite detecta o arquivo
+        # movido e retorna SQLITE_READONLY_DBMOVED (código 1032).
+        self.vectorstore = MultiVectorstore([])
+        gc.collect()
         self._index_worker = IndexWorker(proxy_config)
         self._index_worker.finished.connect(self._on_index_finished)
         self._index_worker.progress.connect(self._on_index_progress)
@@ -2709,6 +2714,12 @@ class MainWindow(QMainWindow):
         label = f"[{n_done + 1}/{n_total}] {first.name}…"
         self.statusBar().showMessage(f"Indexando {label}")
         self._log_event(f"Iniciando indexação de todas as coleções ({n_total}).")
+
+        # Libera conexões SQLite do vectorstore antes de o IndexWorker renomear
+        # mnemosyne_dir → mnemosyne_dir.bak. Sem isso, o SQLite detecta o arquivo
+        # movido e retorna SQLITE_READONLY_DBMOVED (código 1032).
+        self.vectorstore = MultiVectorstore([])
+        gc.collect()
 
         self._index_worker = IndexWorker(proxy_config)
         self._index_worker.finished.connect(self._on_index_finished)

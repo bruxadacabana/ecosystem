@@ -6753,6 +6753,22 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 #### Mnemosyne
 - [x] **Auditar o top-K atual do MultiVectorstore e adicionar estágio de reranqueamento** — pipeline auditado: `_RERANK_CANDIDATE_K` (pool para flashrank) aumentado de 30 → 50; `candidate_n` mínimo em `_hybrid_retrieve` aumentado de 50 → 100 (garante pool de 100 candidatos mesmo com k pequeno). Logging DEBUG adicionado em `_hybrid_retrieve` (dense/bm25/rrf counts) e em `prepare_ask` (candidate_k → post-filter → flashrank final + sources). **Implementado em 2026-05-21.**
 
+### Bugs detectados em uso real | 2026-05-21
+> Contexto: bugs encontrados durante uso no PC principal (CachyOS).
+
+#### Mnemosyne
+- [x] **`core/config.py`: `indexing_enabled` não deve ser salvo em `settings.json` (fix sync Syncthing)** — a chave era persistida em `ecosystem_root/mnemosyne/.config/settings.json`, que é sincronizado pelo Syncthing. O work_pc salvava `indexing_enabled=false` e o Syncthing propagava para o PC principal, desativando a indexação. Correção: `indexing_enabled` é agora derivado exclusivamente do perfil LOGOS em runtime (via `_apply_logos_recommendations`): `main_pc`/`laptop` → True; `work_pc` → False. Removido de `save_config`. **Corrigido em 2026-05-21.**
+- [x] **`gui/main_window.py`: erro 1032 `SQLITE_READONLY_DBMOVED` ao indexar** — `start_indexing()` e `_on_coll_index_now()` iniciavam o `IndexWorker` sem antes liberar as conexões SQLite do vectorstore carregado. O IndexWorker renomeia `mnemosyne_dir` → `mnemosyne_dir.bak` (move `chroma.sqlite3`); o ChromaDB Rust backend (chromadb 1.5.7) detecta inode alterado e retorna código 1032. Fix: adicionado `self.vectorstore = MultiVectorstore([]); gc.collect()` antes de `_index_worker.start()` nas duas funções (análogo ao fix já existente para coleções encadeadas em `_on_index_finished`). **Corrigido em 2026-05-21.**
+
+### Extensão AKASHA — enriquecimento de contexto e memórias por leitura | 2026-05-21
+> Contexto: a extensão rastreava abas abertas via AKASHA mas não analisava o conteúdo lido nem gerava memórias/sentimentos. Objetivo: ao abrir um site via AKASHA, enviar o texto da página para extração de tópicos + geração de memória; rastrear tempo de leitura e boostar interesses proporcionalmente; ao arquivar pela extensão, registrar appraisal forte e memória de intenção.
+
+#### AKASHA
+- [ ] **`extension/content.js`: enviar body_text ao `/context/push` + rastrear tempo de leitura** — quando detectado como aba AKASHA, enviar `body_text: document.body.innerText.slice(0, 3000)` no push. Rastrear tempo visível com Page Visibility API; enviar `POST /context/time {url, time_ms}` em `visibilitychange`/`beforeunload` usando `fetch` com `keepalive: true`. Adicionar `source=extension` no botão "Arquivar".
+- [ ] **`extension/background.js`: remover push do `onUpdated`** — o `content.js` assume a responsabilidade pelo push (tem acesso ao body_text). O background continua rastreando quais tabs são AKASHA tabs via `_akaShaTabs`.
+- [ ] **`routers/context.py`: `body_text` em `ContextPushBody` + endpoint `POST /context/time`** — se `body_text` presente e página não indexada: `schedule_page(url, title, body_text, "visited")` (pipeline existente extrai tópicos, gera memória via `_event_reflection` e appraisal via `_record_doc_appraisal`). Novo endpoint `/context/time {url, time_ms}`: boost proporcional `delta = log1p(time_ms / 60000)` nos tópicos, appraisal `active_reading` com `goal_relevance` e `coping_potential` escalados pelo tempo, memória "Li X por N min" se time_ms ≥ 120000.
+- [ ] **`routers/search.py`: `source=extension` no `/archive` + appraisal e memória** — adicionar parâmetro `source: str = Form("")`. Se `source == "extension"`: appraisal `user_archived` com `pleasantness=0.9, goal_relevance=0.9`; memória `"Arquivei '[título]' — achei relevante o suficiente para guardar"`; boost +1.5 nos tópicos se já indexados.
+
 ### Re-análise de todo o corpus (AKASHA + Mnemosyne) | 2026-05-21
 > Contexto: quando novas implementações de análise são adicionadas (appraisal emocional, reflexões, saliência), o corpus já indexado não é reanalisado automaticamente. Necessário ter uma forma de disparar re-análise de tudo sem precisar resetar os dados.
 
