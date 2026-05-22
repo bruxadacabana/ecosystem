@@ -276,12 +276,29 @@ async def search(
     _active_session: _session_svc.SearchSession | None = _session_svc.get_session(_session_id)
 
     if q:
-        # Reescrita conversacional: reescreve anáforas/queries curtas usando contexto da sessão.
-        # Acontece antes das buscas — _effective_query é o que realmente buscamos.
+        # Reescrita conversacional: resolve anáforas e reescreve queries curtas.
+        # Etapa 1 (regex, sem LLM, instantânea): substitui pronomes anafóricos PT
+        #   pelos substantivos da última query — funciona mesmo sem Ollama.
+        # Etapa 2 (LLM, opcional): reescrita semântica via Ollama quando disponível.
         _rewritten_query: str = ""
         _effective_query: str = q
+
+        # Etapa 1 — reformulação regex de anáforas (sem LLM)
+        if not no_rewrite and _active_session is not None:
+            try:
+                from services.session_memory import reformulate_if_anaphoric as _reform
+                _rr = _reform(q, _active_session.context_queries(q))
+                if _rr != q:
+                    _rewritten_query = _rr
+                    _effective_query = _rr
+            except Exception:
+                pass
+
+        # Etapa 2 — reescrita semântica via LLM (só quando Ollama disponível
+        # e a etapa 1 não produziu resultado)
         if (
             not no_rewrite
+            and not _rewritten_query
             and _active_session is not None
             and _active_session.context_queries(q)
             and needs_rewrite(q)

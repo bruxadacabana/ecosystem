@@ -1595,13 +1595,34 @@ async def search_local(
     except (asyncio.TimeoutError, Exception):
         entity_task.cancel()
 
+    # Expansão PRF (Pseudo-Relevance Feedback) — corpus-anchored, sem LLM.
+    # Usa os top-5 docs já recuperados para extrair termos discriminativos via TF-IDF.
+    # Complementa a expansão LLM: roda sempre que expand=True e query ≥ 3 tokens.
+    fts_prf: list[SearchResult] = []
+    if expand and len(query.split()) >= 3 and fts_results:
+        try:
+            from services.query_expansion import expand_query_prf as _prf_expand
+            prf_terms = _prf_expand(query, fts_results[:5])
+            if prf_terms:
+                anchored_prf = await _anchor_to_corpus(prf_terms)
+                if anchored_prf:
+                    # Adiciona ao log de expansão apenas se LLM não preencheu
+                    if expansion_log is not None and not expansion_log:
+                        expansion_log.extend(anchored_prf)
+                    sanitized_prf = [_sanitize_fts(t) for t in anchored_prf if t]
+                    prf_query = " OR ".join(t for t in sanitized_prf if t)
+                    if prf_query:
+                        fts_prf = await _search_fts(prf_query, max_results // 2)
+        except Exception:
+            pass
+
     combined = _rrf(
-        [fts_results, fts_expanded, fts_entity, chroma_results, vec_results, highlight_results],
+        [fts_results, fts_expanded, fts_prf, fts_entity, chroma_results, vec_results, highlight_results],
         weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0),
     )[:max_results]
     log.debug(
-        "retrieval pool: fts=%d fts_exp=%d fts_ent=%d chroma=%d vec=%d hl=%d → rrf=%d",
-        len(fts_results), len(fts_expanded), len(fts_entity),
+        "retrieval pool: fts=%d fts_exp=%d fts_prf=%d fts_ent=%d chroma=%d vec=%d hl=%d → rrf=%d",
+        len(fts_results), len(fts_expanded), len(fts_prf), len(fts_entity),
         len(chroma_results), len(vec_results), len(highlight_results), len(combined),
     )
     try:
