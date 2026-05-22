@@ -116,6 +116,19 @@ A Mnemosyne cria pop-ups proativos via `InsightPopup` (PySide6 `QDialog`) aciona
 **Princípio arquitetural do AKASHA: amplificador de pesquisa, não respondedor.**
 O LLM no AKASHA age APENAS na camada de query (classificação de intenção, expansão de termos, reescrita conversacional). Nunca sintetiza, interpreta ou gera texto como resultado. O AKASHA devolve links, trechos e documentos — a usuária pensa, o sistema amplifica o alcance da busca. Isso descartou o Map-Reduce/síntese permanentemente. Todo código de query understanding deve respeitar esse princípio.
 
+**AKASHA tem duas camadas lógicas que rodam em paralelo e de forma independente:**
+
+- **AKASHA (ferramenta)** — o buscador: indexação, crawling, FTS5, ranking, cache, freshness, facetas. Funciona 100% sem LLM. Banco: `akasha.db`. Todo o bloco "Funcionalidades Core da AKASHA" no TODO é sobre esta camada.
+- **Akasha (assistente)** — a IA com personalidade: memória, pensamentos, reflexões, persona, insights. Usa Ollama/LOGOS quando disponível; se offline, a ferramenta continua normalmente. Banco: tabela `personal_memory` isolada em `akasha.db`.
+
+Regras de implementação:
+1. A ferramenta **nunca bloqueia, espera ou falha** por causa da assistente estar offline.
+2. As duas filas/processos correm em paralelo — ex: crawl + reflection loop simultâneos, sem um pausar o outro.
+3. Bancos separados garantem que lentidão/corrupção num lado não afeta o outro.
+4. Código da ferramenta = sem LLM no caminho crítico. Código da assistente = pode usar LLM, mas com fallback graceful.
+
+**Contraste com Mnemosyne:** Mnemosyne não tem essa separação — ferramenta e assistente são a mesma entidade. Quando faz RAG, a personalidade já está no loop. AKASHA optou pela separação por ser primariamente uma ferramenta de busca.
+
 ### Isolamento de dados do AETHER
 
 **Os dados do AETHER não devem ser lidos por nenhum app do ecossistema exceto o OGMA.**
