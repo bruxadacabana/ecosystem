@@ -64,9 +64,11 @@ if not exist "%VENV%" (
 
 "%PIP%" install --upgrade pip --quiet
 
-"%PIP%" install -r "%ROOT%\KOSMOS\requirements.txt" --quiet
+cd /d "%ROOT%\KOSMOS"
+set UV_LINK_MODE=copy
+uv sync
 if %errorlevel% neq 0 (
-    echo   ERRO: KOSMOS -- pip install falhou
+    echo   ERRO: KOSMOS -- uv sync falhou
     set /a ERROS+=1
 ) else (
     echo   OK: KOSMOS
