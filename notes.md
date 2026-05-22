@@ -1,7 +1,11 @@
 ## Fila de implementação atual:
 
-### Discussão: backends de inferência alternativos ao Ollama | 2026-05-21
+### Correções nos testes de integração de DB | 2026-05-22
+(12/12 testes do AKASHA passaram (test_affective_state_db.py)
+12/12 testes do Mnemosyne passaram (test_affective_state_db.py)
+12/17 testes do shared_topic_profile passaram — 5 falham por divergências no teste (não na produção): get_top_topics retorna tuplas mas o teste espera dicts, apply_seed_topics usa chaves name/weight mas o teste passa topic/score, e um teste consulta tabela que não é criada quando todos os tópicos são stopwords)
 
+Pesquisa: Backends de Inferência LLM Local sem Intermediários (LOGOS Option B) | 2026-05-22
 
 ### KOSMOS — refazer do zero com nova stack | 2026-05-20
 

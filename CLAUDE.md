@@ -47,6 +47,16 @@ Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRA
 
 ---
 
+## Testes obrigatórios
+
+**Toda implementação nova deve vir acompanhada de testes — estabelecido em 2026-05-22.**
+
+- Toda feature, endpoint, módulo ou função nova: escrever os testes na mesma resposta.
+- Toda correção de bug: adicionar teste que cobre o caso corrigido.
+- Nunca reportar um item como concluído sem que os testes correspondentes existam e passem.
+
+---
+
 ## Bugs detectados durante o trabalho
 
 **Todo bug ou erro detectado deve ser reportado — nunca ignorado silenciosamente.**
