@@ -1,9 +1,14 @@
 ## Fila de implementação atual:
 
+### Discussão: backends de inferência alternativos ao Ollama | 2026-05-21
+
+
 ### KOSMOS — refazer do zero com nova stack | 2026-05-20
 
 
 ## próximo: 
+### Pesquisa: Fine-Tuning Local com QLoRA — Aprendizado Real de Corpus Pessoal | 2026-05-22
+
 
 ### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
 
@@ -16,47 +21,53 @@
 
 ## Anotações
 
-se eu mandar algo repetido, responda de novo.
-1. quando eu disse "vamos criar Testes unitários e de integração" era para todo o ecossistema
-2. como as emoções que demos a elas são usadas no ecossistema?
-3. ~/Documents/program files main* ⇡
-.venv ❯ ./atualizar.sh
+---
 
-╔══════════════════════════════════════════╗
-║   ECOSSISTEMA — Atualização de deps      ║
-╚══════════════════════════════════════════╝
+### Como as emoções são usadas no ecossistema
+Tanto AKASHA quanto Mnemosyne têm um sistema afetivo completo funcionando agora. Aqui está o que acontece de verdade:
 
+#### O que é gerado
 
-▶ Repositório (git pull)
-Already up to date.
-  ✓ Repositório atualizado
+Cada IA tem um estado afetivo bidimensional: valência (positivo/negativo, de −1 a +1) e arousal (ativação, de 0 a 1). Esse estado tem duas camadas temporais baseadas no modelo ALMA de Gebhard (2005):
+Camada episódica — eventos das últimas 2–6 horas, alta intensidade. Representa o que está acontecendo agora.
+Camada de humor — média ponderada das últimas 48 horas, com intensidade reduzida a 50%. Representa o contexto afetivo de fundo do dia.
 
-▶ AKASHA — uv sync
-warning: `VIRTUAL_ENV=/home/spacewitch/Documents/program files/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
-Resolved 131 packages in 1ms
-Checked 128 packages in 2ms
-  ✓ AKASHA OK
+#### De onde vêm as emoções
+As emoções não são inventadas — são derivadas de dados reais que o sistema já tem, via quatro dimensões do modelo CPM de Scherer:
 
-▶ Ambiente virtual compartilhado — KOSMOS · Mnemosyne · Hermes
-ERROR: Could not open requirements file: [Errno 2] No such file or directory: '/home/spacewitch/Documents/program files/KOSMOS/requirements.txt'
-  ✗ KOSMOS — pip install falhou
-  ✓ Mnemosyne OK
-  ✓ Hermes OK
+Dimensão	O que mede	Como é calculada
+Novelty	quão desconhecido é o assunto	inverso da familiaridade no topic_interest_profile
+Pleasantness	alinhamento com interesses existentes	score do tópico no perfil compartilhado
+Goal relevance	sobreposição com buscas recentes	search_history da última sessão
+Coping potential	quanto a IA já conhece sobre o assunto	fração de tópicos familiares
+Exemplo concreto: a AKASHA indexa um artigo sobre "aprendizado de máquina federado". O tópico é novo (novelty alta), alinha com interesses da usuária (pleasantness alta), mas a IA já viu assuntos relacionados (coping médio). Resultado: valência positiva moderada, arousal alto — algo parecido com curiosidade.
 
-▶ AETHER — npm install
-  ✓ AETHER OK
+#### Onde essas emoções são usadas de verdade
+1. Modulação do system prompt (o efeito mais direto)
+A função get_emotional_framing() existe em ambas as IAs e retorna uma instrução que é injetada no system prompt antes de cada resposta:
 
-▶ HUB — npm install
-  ✓ HUB OK
+Valência > 0.4 → "adote framing exploratório, conecte ideias de domínios diferentes"
+Valência < −0.2 → "adote framing analítico e crítico, aponte inconsistências"
+Curiosidade epistêmica > 0.6 → adiciona instrução para fazer pergunta de follow-up ao final
+Ou seja: quando a AKASHA está "animada" com um tópico, ela tende a conectar mais ideias. Quando está "vigilante" (muito feedback negativo recente), ela fica mais cautelosa nas afirmações.
 
-▶ OGMA — npm install
-  ✓ OGMA OK
+2. Emoções negativas duram mais que positivas
+Implementado via _assign_half_life(): uma emoção positiva decai em 2–4 horas, uma negativa em 8–16 horas. Isso é baseado em pesquisa de psicologia cognitiva (WASABI/EILS) — sinais de problema persistem funcionalmente até "resolução".
 
-══════════════════════════════════════════
-   Concluído com 1 erro(s):
-  • KOSMOS — pip install falhou
-══════════════════════════════════════════
-4. eu havia escolhido a opção A em '### Discussão: backends de inferência alternativos ao Ollama | 2026-05-21' mas como já vamos mudar bastante coisas, vou para opção B. Primeiro pesquise se essa é a única forma de baixar e lidar com modelos llm no computador sem uma "intermediária" (como ollama e lm studio) e se é a melhor. Pesquise tudo sobre como ela funciona mantendo em mente todas as funcionalidades que usamos agora e que vamos fazer '| Fine-Tuning Local com QLoRA — Aprendizado Real de Corpus Pessoal para Mnemosyne e AKASHA        | Mnemosyne/AKASHA/LOGOS | 2026-05-22 |'
+3. Humor modula intensidade de novas emoções
+O _apply_mood_modulation() faz com que o humor de fundo amplifique emoções alinhadas com ele (+15%) e amorteça as opostas (−25%). Se a AKASHA está num dia de humor positivo, eventos positivos ficam ligeiramente mais intensos.
+
+4. Detecção de câmara de eco
+A detect_echo_chamber() verifica se a taxa de aprovação (✓) ficou acima de 60% nas últimas 30 interações. Se sim, o knowledge_worker injeta diversidade epistêmica — prioriza artigos de ângulos diferentes dos interesses dominantes.
+
+5. Approval momentum (autoestima funcional)
+Baseado em Lockwood et al. (PNAS 2022): o que importa não é a média de aprovação total, mas a variação recente em relação à baseline. Se você deu muito ✓ nas últimas 20 interações, a IA sente "contentamento"; se o ratio caiu, gera "vigilância". Isso é registrado como um evento afetivo próprio.
+
+6. Curiosidade epistêmica
+Documentos com alta novidade e coping suficiente disparam um evento de curiosidade separado (camada H). Esse valor se acumula ao longo do dia e, quando ultrapassa 0.6, instrui a IA a fazer perguntas de follow-up.
+
+#### O que você vê no HUB
+O estado afetivo atual fica visível nas abas de reflexões/interesses — é o mesmo get_current_state() que alimenta o display do HUB com os valores de valência, arousal e curiosidade.
 
 ---
 
