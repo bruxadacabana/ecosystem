@@ -30,6 +30,7 @@ class SearchResult(BaseModel):
     snippet: str
     source: str = "WEB"
     date: str | None = None
+    score: float = 0.0  # BM25/relevância; 0.0 = não calculado
 
 
 # ---------------------------------------------------------------------------

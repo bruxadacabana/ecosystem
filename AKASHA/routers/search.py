@@ -27,7 +27,10 @@ from services.local_search import (
     search_local, correct_query, get_ollama_status,
     suggest_related_docs, suggest_related_queries,
 )
-from services.query_understanding import pin_model, classify_intent, needs_rewrite, rewrite_query, score_ambiguity, summarize_snippets
+from services.query_understanding import (
+    pin_model, classify_intent, needs_rewrite, rewrite_query, score_ambiguity,
+    summarize_snippets, classify_intent_lexical,
+)
 from services.crawler import search_sites, index_visited_page
 from services.kosmos_search import search_kosmos
 from services.paper_search import PaperResult, search_papers
@@ -44,6 +47,40 @@ from database import (
 
 router = APIRouter()
 log = logging.getLogger("akasha.search")
+
+
+# ---------------------------------------------------------------------------
+# Priorização de índice local — AKASHA ferramenta
+# ---------------------------------------------------------------------------
+
+def _local_qualifies_for_priority(
+    results: list,
+    min_n: int = 5,
+    min_score: float = 0.0,
+) -> bool:
+    """True se resultados locais são suficientes para adiar a busca web.
+
+    min_n: número mínimo de resultados locais para qualificar.
+    min_score: score BM25 mínimo (0.0 = não verificado; usa contagem apenas).
+    """
+    if len(results) < min_n:
+        return False
+    if min_score > 0.0:
+        qualifying = [r for r in results if getattr(r, "score", 0.0) >= min_score]
+        return len(qualifying) >= min_n
+    return True
+
+
+def _get_local_priority_threshold() -> int:
+    """Lê local_priority_threshold do ecosystem.json (default 5)."""
+    try:
+        import ecosystem_client as _ec  # type: ignore
+        cfg_fn = getattr(_ec, "get_akasha_config", None)
+        if cfg_fn is not None:
+            return max(1, int(cfg_fn().get("local_priority_threshold", 5)))
+    except Exception:
+        pass
+    return 5
 
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
@@ -228,6 +265,8 @@ async def search(
     _clarification_question: str               = ""
     _show_hedging_banner:    bool               = False
     _affective_curiosity:    float              = 0.0
+    _lexical_intent:         str               = ""
+    _web_deferred:           bool              = False
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -272,21 +311,36 @@ async def search(
                 _ambiguity_future = asyncio.ensure_future(score_ambiguity(_effective_query))
 
         _use_expansion = not bool(no_expansion)
+        _web_deferred = False
+        _lexical_intent = classify_intent_lexical(_effective_query)
         try:
+            # Fase 1: busca local primeiro (determina estratégia para web).
+            if src_eco:
+                try:
+                    local_results = await search_local(
+                        _effective_query, expand=_use_expansion,
+                        expansion_log=_eco_expanded if _use_expansion else None,
+                    )
+                except RuntimeError as exc:
+                    error = str(exc)
+
+            # Se local tem resultados suficientes, adia a busca web para background.
+            _web_deferred = src_web and _local_qualifies_for_priority(
+                local_results, min_n=_get_local_priority_threshold(),
+            )
+
+            # Fase 2: demais fontes + web (se não adiada) em paralelo.
             tasks = await asyncio.gather(
-                search_web(_effective_query, max_results=_PAGE_SIZE, filetype=filetype) if src_web    else asyncio.sleep(0, result=[]),
-                search_local(_effective_query, expand=_use_expansion,
-                             expansion_log=_eco_expanded if _use_expansion else None)
-                                                                                         if src_eco    else asyncio.sleep(0, result=[]),
-                search_sites(_effective_query)                                            if src_sites  else asyncio.sleep(0, result=[]),
-                search_papers(_effective_query)                                           if src_papers else asyncio.sleep(0, result=[]),
+                search_web(_effective_query, max_results=_PAGE_SIZE, filetype=filetype)
+                    if src_web and not _web_deferred else asyncio.sleep(0, result=[]),
+                search_sites(_effective_query)  if src_sites  else asyncio.sleep(0, result=[]),
+                search_papers(_effective_query) if src_papers else asyncio.sleep(0, result=[]),
                 _db_search_wl(_effective_query),
                 search_kosmos(_effective_query),
                 return_exceptions=True,
             )
-            web_r, eco_r, sites_r, papers_r, wl_r, kosmos_r = tasks
+            web_r, sites_r, papers_r, wl_r, kosmos_r = tasks
             if isinstance(web_r,    list): web_results    = web_r
-            if isinstance(eco_r,    list): local_results  = eco_r
             if isinstance(sites_r,  list): site_results   = sites_r
             if isinstance(papers_r, list): paper_results  = papers_r
             if isinstance(kosmos_r, list): kosmos_results = kosmos_r
@@ -299,6 +353,12 @@ async def search(
                 if isinstance(res, RuntimeError):
                     error = str(res)
                     break
+
+            # Web adiada: dispara em background para aquecer cache para a próxima busca.
+            if _web_deferred:
+                asyncio.create_task(
+                    search_web(_effective_query, max_results=_PAGE_SIZE, filetype=filetype)
+                )
         except Exception as exc:
             error = str(exc)
 
@@ -329,7 +389,7 @@ async def search(
                 local_results = local_results[:5]
 
         # Correção ortográfica: tenta reexecutar busca local com query corrigida
-        if src_eco and isinstance(eco_r, list) and not eco_r and len(_effective_query.split()) <= 2:
+        if src_eco and not local_results and len(_effective_query.split()) <= 2:
             cq = correct_query(_effective_query)
             if cq:
                 corrected_query = cq
@@ -467,6 +527,8 @@ async def search(
             "ollama_available":  get_ollama_status(),
             "intent":            intent,
             "intent_forced":     _intent_forced,
+            "lexical_intent":    _lexical_intent,
+            "web_deferred":      _web_deferred,
             "expanded_terms":    _eco_expanded,
             "no_expansion":      bool(no_expansion),
             "rewritten_query":         _rewritten_query if q else "",

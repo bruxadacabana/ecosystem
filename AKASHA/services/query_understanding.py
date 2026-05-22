@@ -30,8 +30,126 @@ log = logging.getLogger("akasha.query_understanding")
 
 IntentType = Literal["fact-seeking", "exploratory", "navigational"]
 
+# Tipos para o classificador léxico (sem LLM) — AKASHA como ferramenta
+IntentTypeLexical = Literal[
+    "navigational", "informational", "exploratory",
+    "visual", "weather", "translation", "video",
+]
+
 # ---------------------------------------------------------------------------
-# Configuração
+# Classificador léxico — sem LLM, usado pelo AKASHA ferramenta
+# ---------------------------------------------------------------------------
+
+_KNOWN_TLDS = frozenset({
+    "com", "org", "net", "io", "dev", "edu", "gov", "br", "uk",
+    "pt", "de", "fr", "es", "it", "ca", "au", "co",
+})
+
+_INFORMATIONAL_PREFIXES = (
+    "o que é", "o que são", "o que foi", "o que estava", "o que era",
+    "como funciona", "como fazer", "como se", "como é", "como eu",
+    "por que", "porque", "por quê", "explique", "explica", "defina", "definição de",
+    "what is", "what are", "what was", "what does", "what's",
+    "how to", "how do", "how does", "how can", "how is",
+    "why is", "why does", "why did", "explain", "definition of",
+)
+
+_VISUAL_TERMS = frozenset({
+    "foto", "fotos", "imagem", "imagens", "image", "images",
+    "photo", "photos", "logo", "logos", "ilustração", "ilustrações",
+    "picture", "pictures", "screenshot", "wallpaper", "icon", "ícone",
+    "diagrama", "diagram", "thumbnail",
+})
+
+_WEATHER_TERMS = frozenset({
+    "tempo", "clima", "temperatura", "chuva", "previsão",
+    "weather", "forecast", "rain", "snow", "hot", "cold",
+    "humidity", "umidade", "vento", "wind", "sol", "nublado", "cloudy",
+    "chuvoso", "ensolarado", "sunny",
+})
+
+# Tokens únicos de tradução (comparação por token_set)
+_TRANSLATION_TOKENS = frozenset({
+    "traduzir", "tradução", "translate", "translation",
+})
+
+# Frases de tradução (verificadas via substring, antes do check informacional
+# porque algumas começam com prefixos como "como se")
+_TRANSLATION_PHRASES = (
+    "em inglês", "em português", "em espanhol", "em francês",
+    "in english", "in portuguese", "in spanish", "in french",
+    "como se diz", "como fala", "como escreve",
+    "what is the translation", "how do you say",
+)
+
+_VIDEO_TERMS = frozenset({
+    "vídeo", "video", "videos", "vídeos", "assistir", "watch",
+    "youtube", "tutorial video", "stream", "streaming",
+    "filme", "movie", "série", "series", "episódio", "episode",
+})
+
+
+def classify_intent_lexical(query: str) -> IntentTypeLexical:
+    """Classifica intenção por regras léxicas — sem LLM, baixa latência.
+
+    Prioridade (primeira correspondência ganha):
+    1. URL ou token com TLD reconhecido (≤2 tokens) → navigational
+    2. Frases de tradução (antes do check informacional — "como se diz" etc.) → translation
+    3. Prefixo de pergunta → informational
+    4. Termos visuais → visual
+    5. Termos de clima → weather
+    6. Token único de tradução → translation
+    7. Termos de vídeo → video
+    8. Default: ≤3 tokens → informational; ≥4 tokens → exploratory
+    """
+    q_lower = query.lower().strip()
+    if not q_lower:
+        return "exploratory"
+    tokens = q_lower.split()
+    token_set = set(tokens)
+
+    # Regra 1: navigational
+    if q_lower.startswith(("http://", "https://", "www.")):
+        return "navigational"
+    if len(tokens) <= 2:
+        for tok in tokens:
+            parts = tok.rstrip("/").split(".")
+            if len(parts) >= 2 and parts[-1] in _KNOWN_TLDS and len(parts[0]) >= 2:
+                return "navigational"
+
+    # Regra 2: frases de tradução — antes do check informacional porque algumas
+    # começam com prefixos como "como se", que disparariam informational primeiro
+    for phrase in _TRANSLATION_PHRASES:
+        if phrase in q_lower:
+            return "translation"
+
+    # Regra 3: informational
+    for prefix in _INFORMATIONAL_PREFIXES:
+        if q_lower.startswith(prefix):
+            return "informational"
+
+    # Regra 4: visual
+    if token_set & _VISUAL_TERMS:
+        return "visual"
+
+    # Regra 5: weather
+    if token_set & _WEATHER_TERMS:
+        return "weather"
+
+    # Regra 6: token único de tradução
+    if token_set & _TRANSLATION_TOKENS:
+        return "translation"
+
+    # Regra 7: video
+    if token_set & _VIDEO_TERMS:
+        return "video"
+
+    # Regra 8: default por tamanho
+    return "informational" if len(tokens) <= 3 else "exploratory"
+
+
+# ---------------------------------------------------------------------------
+# Configuração (LLM — Akasha assistente)
 # ---------------------------------------------------------------------------
 
 SESSION_IDLE_S:        int   = 1800   # 30 min sem atividade → libera VRAM
