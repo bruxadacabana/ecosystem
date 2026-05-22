@@ -3,6 +3,34 @@
 então prossiga com a implementação de '### Pesquisa: Funcionalidades Core da AKASHA — Query Understanding, Expansão e Memória de Sessão | 2026-05-22'!
 lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
 
+! The issue is that on Fedora, nvidia-smi might not be installed (or not accessible), so the laptop falls through to the WorkPc fallback.
+No Fedora, nvidia-smi vem junto com o driver proprietário da NVIDIA via RPM Fusion:
+
+
+# 1. Habilitar RPM Fusion (free + nonfree)
+
+sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
+sudo dnf install https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+
+# 2. Instalar o driver NVIDIA + CUDA
+sudo dnf install akmod-nvidia xorg-x11-drv-nvidia-cuda
+
+# 3. Aguardar o módulo compilar (pode levar 5 min)
+# NÃO reinicie antes — o akmods precisa terminar
+
+# 4. Reiniciar
+sudo reboot
+Depois do reboot, nvidia-smi já estará disponível. Para verificar:
+
+
+nvidia-smi
+Notas importantes para o Fedora 44:
+
+O Fedora usa Secure Boot por padrão — se você tiver Secure Boot ativo, precisa ou desativá-lo ou assinar o módulo (o akmods-ostree cuida disso automaticamente no Fedora 38+, mas pode pedir para criar uma chave MOK na primeira inicialização)
+O laptop usa Optimus (iGPU Intel + dGPU NVIDIA) — o akmod-nvidia já configura isso corretamente no Fedora moderno
+Se quiser CUDA para rodar modelos na MX150: o pacote xorg-x11-drv-nvidia-cuda já inclui
+Dito isso, para o HUB funcionar no laptop já funciona sem isso — o fix que implementei (sysfs vendor 0x10de) detecta a GPU mesmo com nouveau (o driver open source padrão do Fedora), sem precisar do nvidia-smi. O nvidia-smi só é necessário se você quiser rodar modelos na GPU da MX150 via CUDA.
+
 ## próximo: 
 
 ### Pesquisa: Backends de Inferência LLM Local sem Intermediários (LOGOS Option B) | 2026-05-22
