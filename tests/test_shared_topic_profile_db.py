@@ -160,11 +160,20 @@ class TestUpdateScores:
         from shared_topic_profile import update_scores
         update_scores(["novo", "algo", "de", "the"], 1.0, "akasha")
 
-        con = sqlite3.connect(db_path)
-        count = con.execute(
-            "SELECT COUNT(*) FROM topic_interest_profile"
-        ).fetchone()[0]
-        con.close()
+        # update_scores retorna antes de criar o DB quando todos os tópicos são
+        # stopwords — o arquivo pode não existir. Se existir, a tabela pode não
+        # ter sido criada ainda. Ambos os casos equivalem a count == 0.
+        if not db_path.exists():
+            return
+        con = sqlite3.connect(str(db_path))
+        try:
+            count = con.execute(
+                "SELECT COUNT(*) FROM topic_interest_profile"
+            ).fetchone()[0]
+        except sqlite3.OperationalError:
+            count = 0
+        finally:
+            con.close()
         assert count == 0
 
 
@@ -183,8 +192,9 @@ class TestGetTopTopics:
         update_scores(["fonologia"], 2.0, "akasha")
         update_scores(["pragmática"], 8.0, "akasha")
 
+        # get_top_topics retorna list[tuple[str, float]] — índice 1 = score
         topics = get_top_topics(10)
-        scores = [t["score"] for t in topics]
+        scores = [t[1] for t in topics]
         assert scores == sorted(scores, reverse=True)
 
     def test_respects_limit(self, db_path):
@@ -195,13 +205,14 @@ class TestGetTopTopics:
         result = get_top_topics(3)
         assert len(result) == 3
 
-    def test_result_has_expected_keys(self, db_path):
+    def test_result_is_list_of_tuples(self, db_path):
         from shared_topic_profile import update_scores, get_top_topics
         update_scores(["morfologia"], 1.0, "akasha")
         topics = get_top_topics(1)
         assert len(topics) == 1
-        assert "topic" in topics[0]
-        assert "score" in topics[0]
+        topic_str, score_float = topics[0]   # tuple unpacking
+        assert isinstance(topic_str, str)
+        assert isinstance(score_float, float)
 
 
 # ---------------------------------------------------------------------------
@@ -211,26 +222,27 @@ class TestGetTopTopics:
 class TestApplySeedTopics:
     def test_inserts_new_topics(self, db_path):
         from shared_topic_profile import apply_seed_topics, get_top_topics
+        # apply_seed_topics usa chaves "name" e "weight" (formato interests.json)
         inserted = apply_seed_topics([
-            {"topic": "semiótica", "score": 3.0},
-            {"topic": "dialética", "score": 2.0},
+            {"name": "semiótica", "weight": 3.0},
+            {"name": "dialética", "weight": 2.0},
         ])
         assert inserted == 2
-        topics = {t["topic"] for t in get_top_topics(10)}
+        topics = {t[0] for t in get_top_topics(10)}   # t[0] = topic string
         assert "semiótica" in topics
         assert "dialética" in topics
 
     def test_does_not_overwrite_existing_score(self, db_path):
         from shared_topic_profile import update_scores, apply_seed_topics, get_top_topics
         update_scores(["epistemologia"], 10.0, "akasha")
-        apply_seed_topics([{"topic": "epistemologia", "score": 1.0}])
+        apply_seed_topics([{"name": "epistemologia", "weight": 1.0}])
 
-        topics = {t["topic"]: t["score"] for t in get_top_topics(10)}
+        topics = {t[0]: t[1] for t in get_top_topics(10)}  # t[0]=topic, t[1]=score
         assert topics["epistemologia"] == pytest.approx(10.0), \
             "apply_seed_topics não deve sobrescrever score existente"
 
     def test_returns_zero_for_all_existing(self, db_path):
         from shared_topic_profile import update_scores, apply_seed_topics
         update_scores(["retórica"], 5.0, "akasha")
-        inserted = apply_seed_topics([{"topic": "retórica", "score": 1.0}])
+        inserted = apply_seed_topics([{"name": "retórica", "weight": 1.0}])
         assert inserted == 0

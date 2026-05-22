@@ -6940,7 +6940,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Contexto: os testes de DB criados para shared_topic_profile, AKASHA e Mnemosyne foram executados e 5 deles falham por divergência entre o que os testes esperam e o que a produção implementa. Não se trata de bugs na produção — as asserções dos testes foram escritas com suposições erradas sobre a API.
 
 #### Ecossistema (testes raiz)
-- [ ] **`tests/test_shared_topic_profile_db.py` — 3 problemas a corrigir:**
-  1. `test_stopwords_only_does_not_crash`: quando todos os tópicos são stopwords, `update_scores()` retorna antes de criar o banco — `topic_interest_profile` não existe e a query lança `sqlite3.OperationalError`. Corrigir o teste para capturar a exceção (equivale a count=0) ou garantir que o DB seja criado mesmo sem tópicos válidos.
-  2. `TestGetTopTopics` (2 testes): `get_top_topics()` retorna `list[tuple[str, float]]` mas os testes assumem `list[dict]` com chaves `"topic"` e `"score"`. Corrigir os testes para usar indexação por posição `t[0]`, `t[1]` — ou melhorar `get_top_topics()` para retornar dicts (decisão a tomar).
-  3. `TestApplySeedTopics` (2 testes): `apply_seed_topics()` usa chaves `"name"` e `"weight"` nos dicts de entrada, mas os testes passam `{"topic": ..., "score": ...}`. Corrigir os testes para usar `{"name": ..., "weight": ...}` — e também atualizar `get_top_topics()` nas asserções que leem resultado (ver ponto 2).
+- [x] **`tests/test_shared_topic_profile_db.py` — 3 problemas corrigidos (17/17 passando):**
+  1. `test_stopwords_only_does_not_crash`: corrigido para verificar `db_path.exists()` antes de conectar e capturar `OperationalError` caso a tabela não exista — ambos equivalem a count=0.
+  2. `TestGetTopTopics` (2 testes): corrigidos para usar indexação por posição `t[0]`, `t[1]`; `test_result_has_expected_keys` renomeado para `test_result_is_list_of_tuples` com tuple unpacking. Produção mantida (`list[tuple]`) pois callers em `knowledge_worker.py` usam `for t, s in raw_interests`.
+  3. `TestApplySeedTopics` (2 testes): corrigidos para passar `{"name": ..., "weight": ...}` conforme API real; asserções de leitura ajustadas para indexação por posição.
