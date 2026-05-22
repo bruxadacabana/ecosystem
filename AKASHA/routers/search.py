@@ -53,6 +53,35 @@ log = logging.getLogger("akasha.search")
 # Priorização de índice local — AKASHA ferramenta
 # ---------------------------------------------------------------------------
 
+def _get_intent_routing(lexical_intent: str, query: str) -> dict[str, bool]:
+    """Mapeia intent léxico → flags de roteamento para widgets/abas no template.
+
+    Cada flag True indica que o widget correspondente deve ser acionado.
+    Nenhuma chamada LLM — roteamento puro por regras.
+    """
+    q_tokens = query.lower().split()
+    return {
+        "wiki":        lexical_intent == "informational" and len(q_tokens) >= 2,
+        "images":      lexical_intent == "visual",
+        "weather":     lexical_intent == "weather",
+        "translation": lexical_intent == "translation",
+        "video":       lexical_intent == "video",
+    }
+
+
+def _diversify_by_domain(results: list, max_per_domain: int = 2) -> list:
+    """Limita resultados por domínio (exploratory queries → diversidade de fontes)."""
+    from urllib.parse import urlparse as _urlparse
+    counts: dict[str, int] = {}
+    out = []
+    for r in results:
+        domain = (_urlparse(getattr(r, "url", "")).hostname or "").removeprefix("www.").lower()
+        if counts.get(domain, 0) < max_per_domain:
+            out.append(r)
+            counts[domain] = counts.get(domain, 0) + 1
+    return out
+
+
 def _local_qualifies_for_priority(
     results: list,
     min_n: int = 5,
@@ -267,6 +296,7 @@ async def search(
     _affective_curiosity:    float              = 0.0
     _lexical_intent:         str               = ""
     _web_deferred:           bool              = False
+    _intent_routing:         dict[str, bool]   = {}
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -330,6 +360,7 @@ async def search(
         _use_expansion = not bool(no_expansion)
         _web_deferred = False
         _lexical_intent = classify_intent_lexical(_effective_query)
+        _intent_routing = _get_intent_routing(_lexical_intent, _effective_query)
         try:
             # Fase 1: busca local primeiro (determina estratégia para web).
             if src_eco:
@@ -449,6 +480,11 @@ async def search(
                 fav_results  = [r for r in web_results if _domain(r.url) in fav_domains]
                 web_results  = [r for r in web_results if _domain(r.url) not in fav_domains]
 
+        # Exploratory: diversifica resultados web por domínio (máx 2 por domínio)
+        # para evitar que um único site domine a lista de resultados.
+        if _lexical_intent == "exploratory" and web_results:
+            web_results = _diversify_by_domain(web_results)
+
         total = len(web_results) + len(fav_results) + len(local_results) + len(site_results) + len(watch_later_results) + len(paper_results) + len(kosmos_results)
         src_label = "+".join(filter(None, [
             "web" if src_web else "",
@@ -545,6 +581,7 @@ async def search(
             "intent":            intent,
             "intent_forced":     _intent_forced,
             "lexical_intent":    _lexical_intent,
+            "intent_routing":    _intent_routing,
             "web_deferred":      _web_deferred,
             "expanded_terms":    _eco_expanded,
             "no_expansion":      bool(no_expansion),

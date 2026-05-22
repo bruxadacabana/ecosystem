@@ -14,6 +14,7 @@ from collections import OrderedDict
 from urllib.parse import urlparse
 
 import aiosqlite
+import httpx
 from ddgs import DDGS
 from pydantic import BaseModel
 
@@ -171,6 +172,46 @@ def _deduplicate(results: list[SearchResult]) -> list[SearchResult]:
 
 
 # ---------------------------------------------------------------------------
+# SearXNG — backend primário self-hosted (opcional)
+# ---------------------------------------------------------------------------
+
+def _get_searxng_url() -> str:
+    """Lê akasha.web_search_backend do ecosystem.json. Vazio = SearXNG desabilitado."""
+    try:
+        from ecosystem_client import get_akasha_config as _gc  # type: ignore
+        return ((_gc() or {}).get("web_search_backend", "") or "").rstrip("/")
+    except Exception:
+        return ""
+
+
+async def _fetch_searxng(
+    query: str,
+    max_results: int,
+    base_url: str,
+) -> list[SearchResult]:
+    """Busca via SearXNG JSON API (GET /search?q={q}&format=json)."""
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        resp = await client.get(
+            f"{base_url}/search",
+            params={"q": query, "format": "json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    raw = (data.get("results") or [])[:max_results]
+    return [
+        SearchResult(
+            title=r.get("title", ""),
+            url=r.get("url", ""),
+            snippet=r.get("content") or r.get("snippet", ""),
+            source="WEB",
+            date=r.get("publishedDate") or r.get("published_date"),
+        )
+        for r in raw
+        if r.get("url")
+    ]
+
+
+# ---------------------------------------------------------------------------
 # DuckDuckGo
 # ---------------------------------------------------------------------------
 
@@ -191,6 +232,28 @@ async def _fetch_ddg(query: str, max_results: int) -> list[SearchResult]:
         for r in raw
         if r.get("href")
     ]
+
+
+# ---------------------------------------------------------------------------
+# Camada de busca — SearXNG primeiro, DDG como fallback
+# ---------------------------------------------------------------------------
+
+async def _fetch_web(query: str, max_results: int) -> list[SearchResult]:
+    """Tenta SearXNG; se indisponível ou vazio, cai para DDG.
+
+    Fallover automático em dois estágios:
+      1. SearXNG self-hosted (se akasha.web_search_backend configurado)
+      2. DuckDuckGo (sempre disponível como fallback)
+    """
+    searxng_url = _get_searxng_url()
+    if searxng_url:
+        try:
+            results = await _fetch_searxng(query, max_results, searxng_url)
+            if results:
+                return results
+        except Exception:
+            pass  # fallover para DDG
+    return await _fetch_ddg(query, max_results)
 
 
 # ---------------------------------------------------------------------------
@@ -231,8 +294,8 @@ async def search_web(
         _mem_cache.set(qhash, db_cached, ttl_hours * 3600)
         return (await _filter_blocked(db_cached))[offset: offset + max_results]
 
-    # 3. Busca real
-    results = await _fetch_ddg(effective_query, _CACHE_SIZE)
+    # 3. Busca real — SearXNG (se configurado) → DDG
+    results = await _fetch_web(effective_query, _CACHE_SIZE)
     results = _deduplicate(results)
 
     # 4. Armazena em ambas as camadas
