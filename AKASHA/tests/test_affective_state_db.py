@@ -38,8 +38,8 @@ def db_path(tmp_path):
 
 
 def run(coro):
-    """Executa corrotina em event loop de teste."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Executa corrotina em event loop de teste (Python 3.12+ requer asyncio.run)."""
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------
