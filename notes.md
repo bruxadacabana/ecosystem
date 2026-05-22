@@ -15,14 +15,54 @@
 
 
 ## Anotações
-1. me explique o funcionamento dos testes (para uma leiga, nunca usei isso)
-2. quando eu disse "vamos criar Testes unitários e de integração" era para todo o ecossistema
-3. o sistema de feedback (implementado nas notificações/overlays/pop-ups) não está perguntando quando marco x, por algum motivo. 
-4. o pop-up da mnemosyne é ruim, assim com os outros icons da mnemosyne inteiro, é inexistente e todos os botões são apenas caixas vazias coloridas, o que para o sistema de feedback é um pouco confuso e eu não sei bem que feedback estou dando
-5. akasha às vezes repete suas notificações/overlays
-6. como as emoções que demos a elas são usadas no ecossistema?
-7. como sabemos se elas estão aprendendo com o que estão processando?
-8. ah alias, precisamos rever o logos em conjunto a '### Discussão: backends de inferência alternativos ao Ollama | 2026-05-21'. Também quero que o logos tenha uma forma melhor de gerenciar o hardware e detectar capacidade ao invés de se apoiar fixamente nos três hardwares que tenho.
+
+se eu mandar algo repetido, responda de novo.
+1. quando eu disse "vamos criar Testes unitários e de integração" era para todo o ecossistema
+2. como as emoções que demos a elas são usadas no ecossistema?
+3. ~/Documents/program files main* ⇡
+.venv ❯ ./atualizar.sh
+
+╔══════════════════════════════════════════╗
+║   ECOSSISTEMA — Atualização de deps      ║
+╚══════════════════════════════════════════╝
+
+
+▶ Repositório (git pull)
+Already up to date.
+  ✓ Repositório atualizado
+
+▶ AKASHA — uv sync
+warning: `VIRTUAL_ENV=/home/spacewitch/Documents/program files/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+Resolved 131 packages in 1ms
+Checked 128 packages in 2ms
+  ✓ AKASHA OK
+
+▶ Ambiente virtual compartilhado — KOSMOS · Mnemosyne · Hermes
+ERROR: Could not open requirements file: [Errno 2] No such file or directory: '/home/spacewitch/Documents/program files/KOSMOS/requirements.txt'
+  ✗ KOSMOS — pip install falhou
+  ✓ Mnemosyne OK
+  ✓ Hermes OK
+
+▶ AETHER — npm install
+  ✓ AETHER OK
+
+▶ HUB — npm install
+  ✓ HUB OK
+
+▶ OGMA — npm install
+  ✓ OGMA OK
+
+══════════════════════════════════════════
+   Concluído com 1 erro(s):
+  • KOSMOS — pip install falhou
+══════════════════════════════════════════
+4. eu havia escolhido a opção A em '### Discussão: backends de inferência alternativos ao Ollama | 2026-05-21' mas como já vamos mudar bastante coisas, vou para opção B. Primeiro pesquise se essa é a única forma de baixar e lidar com modelos llm no computador sem uma "intermediária" (como ollama e lm studio) e se é a melhor. Pesquise tudo sobre como ela funciona mantendo em mente todas as funcionalidades que usamos agora e que vamos fazer '| Fine-Tuning Local com QLoRA — Aprendizado Real de Corpus Pessoal para Mnemosyne e AKASHA        | Mnemosyne/AKASHA/LOGOS | 2026-05-22 |'
+
+---
+
+"não pode aprender" — a distinção que eu quis fazer (mas expressei mal): o modelo LLM em si não pode ser modificado em tempo de uso — as "sinapses" (pesos da rede neural) são fixas no arquivo GGUF. O que Mnemosyne e AKASHA fazem é diferente: acumulam memórias, reflexões e scores de interesse que mudam o contexto dado ao modelo. O modelo responde diferente porque vê um histórico diferente — não porque "aprendeu" no sentido de mudar seus pesos.
+
+Treinar de verdade existiria com fine-tuning (QLoRA): você coletaria pares (prompt, resposta ideal), rodaria um processo de treinamento de horas/dias, e o modelo incorporaria isso permanentemente. Isso é possível tecnicamente no laptop (MX150 tem CUDA, dá pra rodar QLoRA de modelos pequenos como SmolLM2 1.7B), mas é complexo de integrar no ecossistema. É uma ideia que pode entrar no roadmap se tiver interesse.
 
 ---
 
