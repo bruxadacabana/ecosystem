@@ -67,7 +67,7 @@ def extract_topics(
 
     # Filtra entradas com texto vazio
     valid = [
-        (i, d, (embeddings[idx] if embeddings else None), (metadatas[idx] if metadatas else {}))
+        (i, d, (embeddings[idx] if embeddings is not None else None), (metadatas[idx] if metadatas else {}))
         for idx, (i, d) in enumerate(zip(ids, docs)) if d and d.strip()
     ]
 

@@ -1273,6 +1273,7 @@ class TopicsWorker(QThread):
             result = extract_topics(self._vs, self._coll, self._mnemosyne_dir)
             self.finished.emit(result or {})
         except Exception:
+            log.exception("TopicsWorker: erro ao extrair temas")
             self.finished.emit({})
 
 
@@ -1300,6 +1301,7 @@ class KnowledgeGraphWorker(QThread):
             kg.save()
             self.finished.emit(True)
         except Exception:
+            log.exception("KnowledgeGraphWorker: erro ao construir grafo")
             self.finished.emit(False)
 
 

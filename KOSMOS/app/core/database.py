@@ -83,28 +83,32 @@ CREATE TABLE IF NOT EXISTS read_sessions (
 
 CREATE VIRTUAL TABLE IF NOT EXISTS fts_articles USING fts5(
     title,
-    content,
+    content_full,
     content='articles',
     content_rowid='id'
 );
 
+-- FTS5 com content table: DELETE/UPDATE devem usar o padrão ('delete', ...)
+-- para que o SQLite possa remover o documento do índice invertido.
+-- Usar DELETE FROM fts_articles diretamente é inválido nesse modo.
 CREATE TRIGGER IF NOT EXISTS fts_articles_insert
     AFTER INSERT ON articles BEGIN
-        INSERT INTO fts_articles(rowid, title, content)
+        INSERT INTO fts_articles(rowid, title, content_full)
         VALUES (new.id, new.title, COALESCE(new.content_full, new.summary, ''));
     END;
 
 CREATE TRIGGER IF NOT EXISTS fts_articles_update
     AFTER UPDATE ON articles BEGIN
-        UPDATE fts_articles
-           SET title   = new.title,
-               content = COALESCE(new.content_full, new.summary, '')
-         WHERE rowid = new.id;
+        INSERT INTO fts_articles(fts_articles, rowid, title, content_full)
+        VALUES ('delete', old.id, old.title, COALESCE(old.content_full, old.summary, ''));
+        INSERT INTO fts_articles(rowid, title, content_full)
+        VALUES (new.id, new.title, COALESCE(new.content_full, new.summary, ''));
     END;
 
 CREATE TRIGGER IF NOT EXISTS fts_articles_delete
     AFTER DELETE ON articles BEGIN
-        DELETE FROM fts_articles WHERE rowid = old.id;
+        INSERT INTO fts_articles(fts_articles, rowid, title, content_full)
+        VALUES ('delete', old.id, old.title, COALESCE(old.content_full, old.summary, ''));
     END;
 """
 

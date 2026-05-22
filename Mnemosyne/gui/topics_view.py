@@ -46,6 +46,11 @@ _COLOR_DOC   = QColor("#777777")   # cinza — nós de documento
 _R_TOPIC     = 22                  # raio (px)
 _R_DOC       = 12
 
+# Limites do mapa mental — evita freeze com corpora grandes (ChromaDB armazena
+# chunks, não arquivos; um único PDF pode gerar centenas de chunks)
+_MAX_FILES_PER_TOPIC = 5   # arquivos únicos exibidos por tópico
+_MAX_LAYOUT_NODES    = 120  # acima disso usa spring_layout com poucas iterações
+
 
 # ---------------------------------------------------------------------------
 # _ClickableView — QGraphicsView para nuvem de palavras
@@ -408,24 +413,38 @@ class TopicsView(QWidget):
             label = t["words"][0][0] if t.get("words") else f"Tópico {t['id']}"
             G.add_node(f"topic_{t['id']}", kind="topic", label=label)
 
-        # Nós de documento + arestas para o tópico correspondente
+        # Agrupa chunks por (topic_id, path) para deduplicar — ChromaDB guarda
+        # chunks, não arquivos; um PDF pode gerar centenas de chunks do mesmo
+        # arquivo, e renderizar todos os chunks travaria o layout.
+        topic_files: dict[int, dict[str, str]] = {}  # topic_id → {path: label}
         for chroma_id, topic_id in doc_topic.items():
-            if int(topic_id) < 0:  # outliers HDBSCAN (topic_id == -1)
+            tid = int(topic_id)
+            if tid < 0:
                 continue
-            path  = doc_sources.get(chroma_id, "")
+            path  = doc_sources.get(chroma_id, "") or chroma_id[:14]
             label = os.path.basename(path) if path else chroma_id[:14]
-            G.add_node(f"doc_{chroma_id}", kind="doc", label=label, path=path)
-            G.add_edge(f"topic_{topic_id}", f"doc_{chroma_id}")
+            bucket = topic_files.setdefault(tid, {})
+            if path not in bucket and len(bucket) < _MAX_FILES_PER_TOPIC:
+                bucket[path] = label
+
+        for tid, files in topic_files.items():
+            for path, label in files.items():
+                node_id = f"doc_{path}"
+                G.add_node(node_id, kind="doc", label=label, path=path)
+                G.add_edge(f"topic_{tid}", node_id)
 
         if not G.nodes:
             return
 
-        # Posições: kamada_kawai minimiza distâncias de forma estável;
-        # spring_layout como fallback para grafos desconexos grandes
-        try:
-            pos = nx.kamada_kawai_layout(G)
-        except Exception:
-            pos = nx.spring_layout(G, seed=42)
+        n_nodes = len(G.nodes)
+        if n_nodes <= _MAX_LAYOUT_NODES:
+            try:
+                pos = nx.kamada_kawai_layout(G)
+            except Exception:
+                pos = nx.spring_layout(G, seed=42, iterations=50)
+        else:
+            # Para grafos grandes spring_layout é muito mais rápido
+            pos = nx.spring_layout(G, seed=42, iterations=30)
 
         scale = 420.0  # fator de escala: coordenadas NetworkX [-1,1] → unidades de cena
 
