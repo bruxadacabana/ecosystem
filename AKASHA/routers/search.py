@@ -298,6 +298,8 @@ async def search(
     _web_deferred:           bool              = False
     _intent_routing:         dict[str, bool]   = {}
     related_indexed:         list[dict]        = []
+    wiki_card:               dict | None       = None
+    weather_card:            dict | None       = None
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -537,6 +539,24 @@ async def search(
         except Exception:
             pass
 
+        # Wikipedia knowledge card (informational + ≥2 tokens → busca assíncrona)
+        if _intent_routing.get("wiki"):
+            try:
+                from services.wiki_card import get_wiki_card as _get_wiki
+                wiki_card = await asyncio.wait_for(_get_wiki(_effective_query), timeout=5.0)
+            except (asyncio.TimeoutError, Exception):
+                pass
+
+        # Widget de clima (weather intent → geocoding + Open-Meteo)
+        if _intent_routing.get("weather"):
+            try:
+                from services.weather_widget import get_weather_card as _get_weather
+                weather_card = await asyncio.wait_for(
+                    _get_weather(_effective_query), timeout=8.0
+                )
+            except (asyncio.TimeoutError, Exception):
+                pass
+
         # Atualiza sessão de pesquisa com query atual e URLs recuperados
         _all_urls = [r.url for r in (local_results + web_results + fav_results + site_results)]
         _active_session = _session_svc.update_session(_session_id, q, _all_urls)
@@ -611,6 +631,8 @@ async def search(
             "related_docs":        related_docs,
             "related_queries":     related_queries,
             "related_indexed":     related_indexed,
+            "wiki_card":           wiki_card,
+            "weather_card":        weather_card,
             "show_hedging_banner": _show_hedging_banner,
             "session":             _active_session,
             "voice":               _voice_texts(),

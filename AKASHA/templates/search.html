@@ -139,6 +139,51 @@
 </div>
 {% endif %}
 
+{% if wiki_card %}
+<div class="wiki-card">
+  {% if wiki_card.thumbnail_url %}
+  <img class="wiki-thumb" src="{{ wiki_card.thumbnail_url }}" alt="{{ wiki_card.title }}" loading="lazy">
+  {% endif %}
+  <div class="wiki-body">
+    <p class="wiki-title">&#x1F4D6; {{ wiki_card.title }}</p>
+    <p class="wiki-extract">{{ wiki_card.extract }}</p>
+    {% if wiki_card.page_url %}
+    <a class="wiki-link" href="{{ wiki_card.page_url }}" target="_blank" rel="noopener">
+      Ler no Wikipedia &#x2197;
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if weather_card %}
+<div class="weather-card">
+  <div class="weather-main">
+    <span class="weather-city">&#x1F4CD; {{ weather_card.city }}</span>
+    <span class="weather-temp">{{ weather_card.temp }}°C</span>
+    <span class="weather-cond">{{ weather_card.condition }}</span>
+  </div>
+  {% if weather_card.forecast %}
+  <div class="weather-forecast">
+    {% for day in weather_card.forecast %}
+    <div class="weather-day">
+      <span class="weather-day-date">{{ day.date }}</span>
+      <span class="weather-day-cond">{{ day.condition }}</span>
+      <span class="weather-day-temps">
+        {% if day.temp_max is not none %}{{ day.temp_max | round(0) | int }}°{% endif %}
+        {% if day.temp_min is not none %} / {{ day.temp_min | round(0) | int }}°{% endif %}
+      </span>
+      {% if day.precip is not none %}
+      <span class="weather-day-precip">&#x1F327; {{ day.precip }}%</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <p class="weather-source">Dados: Open-Meteo · Geocoding: OpenStreetMap Nominatim</p>
+</div>
+{% endif %}
+
 {% set has_main   = web_results or fav_results or site_results or watch_later_results or paper_results or kosmos_results %}
 {% set has_eco    = local_results %}
 {% set two_col    = has_main and has_eco %}

@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 44
+SCHEMA_VERSION = 46
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -483,6 +483,23 @@ CREATE TABLE IF NOT EXISTS personal_memory (
 );
 """
 
+_CREATE_WIKI_CACHE = """
+CREATE TABLE IF NOT EXISTS wiki_cache (
+    query_hash  TEXT    PRIMARY KEY,
+    data_json   TEXT    NOT NULL,
+    cached_at   INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+_CREATE_GEO_CACHE = """
+CREATE TABLE IF NOT EXISTS geo_cache (
+    city_key    TEXT    PRIMARY KEY,
+    lat         REAL    NOT NULL,
+    lon         REAL    NOT NULL,
+    cached_at   INTEGER NOT NULL DEFAULT 0
+);
+"""
+
 # Status válidos para downloads: queued | active | done | error
 # Status válidos para crawl_sites: idle | crawling | error
 
@@ -552,6 +569,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_DOC_CITATIONS)
         await db.execute(_CREATE_IDX_DOC_CITATIONS_DOI)
         await db.execute(_CREATE_SEARCH_PROFILE)
+        await db.execute(_CREATE_WIKI_CACHE)
+        await db.execute(_CREATE_GEO_CACHE)
         # page_knowledge, topic_interest_profile e entity_graph vivem em
         # akasha_knowledge.db — ver init_knowledge_db() abaixo.
 
@@ -1158,6 +1177,20 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
                 pass  # coluna já existe em banco criado com este schema
         try:
             await db.execute(_CREATE_IDX_SEARCH_CACHE_HASH)
+        except Exception:
+            pass
+
+    if from_version < 45:
+        # Wikipedia knowledge card: cache local por 7 dias evita requests repetidos.
+        try:
+            await db.execute(_CREATE_WIKI_CACHE)
+        except Exception:
+            pass
+
+    if from_version < 46:
+        # Geocoding cache: coordenadas por cidade persistidas por 30 dias.
+        try:
+            await db.execute(_CREATE_GEO_CACHE)
         except Exception:
             pass
 
