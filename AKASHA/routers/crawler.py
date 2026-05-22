@@ -46,6 +46,7 @@ class CrawlSite:
     status:              str
     created_at:          str
     crawl_interval_days: int = 7
+    crawl_frequency:     str = "weekly"
 
 
 def _row_to_site(row: tuple) -> CrawlSite:
@@ -56,6 +57,7 @@ def _row_to_site(row: tuple) -> CrawlSite:
         page_count=row[5], last_crawled_at=row[6],
         status=row[7], created_at=row[8],
         crawl_interval_days=row[9] if len(row) > 9 else 7,
+        crawl_frequency=row[12] if len(row) > 12 else "weekly",
     )
 
 
@@ -186,11 +188,14 @@ async def library_update(
     label:               str = Form(...),
     crawl_depth:         int = Form(2),
     crawl_interval_days: int = Form(7),
+    crawl_frequency:     str = Form(""),
 ) -> HTMLResponse:
-    """Atualiza label, profundidade e intervalo de recrawl de um site já cadastrado."""
+    """Atualiza label, profundidade, intervalo e frequência de recrawl de um site."""
+    _valid_freqs = {"daily", "weekly", "monthly"}
     crawl_depth         = max(1, min(crawl_depth, 10))
     crawl_interval_days = max(1, min(crawl_interval_days, 365))
-    await update_crawl_site(site_id, label, crawl_depth, crawl_interval_days)
+    freq = crawl_frequency if crawl_frequency in _valid_freqs else None
+    await update_crawl_site(site_id, label, crawl_depth, crawl_interval_days, freq)
     asyncio.create_task(_ls.write_json("sites"))
     rows  = await get_all_crawl_sites()
     sites = [_row_to_site(r) for r in rows]

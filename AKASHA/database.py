@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 38
+SCHEMA_VERSION = 39
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -125,22 +125,27 @@ CREATE TABLE IF NOT EXISTS crawl_sites (
     created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
     crawl_interval_days INTEGER NOT NULL DEFAULT 7,
     deleted             INTEGER NOT NULL DEFAULT 0,
-    crawl_fail_count    INTEGER NOT NULL DEFAULT 0
+    crawl_fail_count    INTEGER NOT NULL DEFAULT 0,
+    crawl_frequency     TEXT    NOT NULL DEFAULT 'weekly',
+    next_crawl_at       INTEGER NOT NULL DEFAULT 0,
+    content_hash        TEXT    NOT NULL DEFAULT ''
 );
 """
 
 _CREATE_CRAWL_PAGES = """
 CREATE TABLE IF NOT EXISTS crawl_pages (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    site_id       INTEGER NOT NULL REFERENCES crawl_sites(id) ON DELETE CASCADE,
-    url           TEXT    NOT NULL UNIQUE,
-    title         TEXT    NOT NULL DEFAULT '',
-    content_md    TEXT    NOT NULL DEFAULT '',
-    content_hash  TEXT    NOT NULL DEFAULT '',
-    http_status   INTEGER NOT NULL DEFAULT 0,
-    etag          TEXT    NOT NULL DEFAULT '',
-    last_modified TEXT    NOT NULL DEFAULT '',
-    crawled_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id          INTEGER NOT NULL REFERENCES crawl_sites(id) ON DELETE CASCADE,
+    url              TEXT    NOT NULL UNIQUE,
+    title            TEXT    NOT NULL DEFAULT '',
+    content_md       TEXT    NOT NULL DEFAULT '',
+    content_hash     TEXT    NOT NULL DEFAULT '',
+    http_status      INTEGER NOT NULL DEFAULT 0,
+    etag             TEXT    NOT NULL DEFAULT '',
+    last_modified    TEXT    NOT NULL DEFAULT '',
+    crawled_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    last_modified_at TEXT    NOT NULL DEFAULT '',
+    last_checked_at  TEXT    NOT NULL DEFAULT ''
 );
 """
 
@@ -931,6 +936,30 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         # Remove a tabela do DB principal (agora vive em arquivo separado)
         await db.execute("DROP TABLE IF EXISTS personal_memory")
 
+    if from_version < 39:
+        # Frequência adaptativa de crawl: classificação automática daily/weekly/monthly.
+        # crawl_sites: crawl_frequency (legível) + next_crawl_at (timestamp Unix de próximo crawl)
+        #              content_hash (hash da homepage para detecção rápida de mudança)
+        # crawl_pages: last_modified_at (quando o conteúdo mudou de fato)
+        #              last_checked_at (quando verificamos, mesmo sem mudança)
+        for col, ddl in [
+            ("crawl_frequency", "ALTER TABLE crawl_sites ADD COLUMN crawl_frequency TEXT NOT NULL DEFAULT 'weekly'"),
+            ("next_crawl_at",   "ALTER TABLE crawl_sites ADD COLUMN next_crawl_at   INTEGER NOT NULL DEFAULT 0"),
+            ("content_hash",    "ALTER TABLE crawl_sites ADD COLUMN content_hash    TEXT NOT NULL DEFAULT ''"),
+        ]:
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass  # coluna já existe
+        for col, ddl in [
+            ("last_modified_at", "ALTER TABLE crawl_pages ADD COLUMN last_modified_at TEXT NOT NULL DEFAULT ''"),
+            ("last_checked_at",  "ALTER TABLE crawl_pages ADD COLUMN last_checked_at  TEXT NOT NULL DEFAULT ''"),
+        ]:
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass
+
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
         (str(SCHEMA_VERSION),),
@@ -1172,14 +1201,27 @@ async def update_crawl_site(
     label: str,
     crawl_depth: int,
     crawl_interval_days: int,
+    crawl_frequency: str | None = None,
 ) -> None:
+    import time as _time
+    _FREQ_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            """UPDATE crawl_sites
-               SET label = ?, crawl_depth = ?, crawl_interval_days = ?
-               WHERE id = ?""",
-            (label, crawl_depth, crawl_interval_days, site_id),
-        )
+        if crawl_frequency and crawl_frequency in _FREQ_DAYS:
+            next_at = int(_time.time() + _FREQ_DAYS[crawl_frequency] * 86400)
+            await db.execute(
+                """UPDATE crawl_sites
+                   SET label = ?, crawl_depth = ?, crawl_interval_days = ?,
+                       crawl_frequency = ?, next_crawl_at = ?
+                   WHERE id = ?""",
+                (label, crawl_depth, crawl_interval_days, crawl_frequency, next_at, site_id),
+            )
+        else:
+            await db.execute(
+                """UPDATE crawl_sites
+                   SET label = ?, crawl_depth = ?, crawl_interval_days = ?
+                   WHERE id = ?""",
+                (label, crawl_depth, crawl_interval_days, site_id),
+            )
         await db.commit()
 
 

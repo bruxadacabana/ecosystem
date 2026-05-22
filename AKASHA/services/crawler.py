@@ -397,14 +397,20 @@ async def _upsert_page(
     await db.execute(
         """INSERT INTO crawl_pages
                (site_id, url, title, content_md, content_hash, http_status,
-                etag, last_modified, crawled_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                etag, last_modified, crawled_at, last_modified_at, last_checked_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(url) DO UPDATE SET
                title=excluded.title, content_md=excluded.content_md,
                content_hash=excluded.content_hash, http_status=excluded.http_status,
                etag=excluded.etag, last_modified=excluded.last_modified,
-               crawled_at=excluded.crawled_at""",
-        (site_id, url, title, content_md, content_hash, http_status, etag, last_modified, now),
+               crawled_at=excluded.crawled_at,
+               last_checked_at=excluded.crawled_at,
+               last_modified_at=CASE
+                   WHEN excluded.content_hash != crawl_pages.content_hash
+                   THEN excluded.crawled_at
+                   ELSE crawl_pages.last_modified_at
+               END""",
+        (site_id, url, title, content_md, content_hash, http_status, etag, last_modified, now, now, now),
     )
     # Sync FTS5 manualmente — skip se conteúdo idêntico
     if fts_changed:
@@ -582,6 +588,8 @@ async def crawl_site(site_id: int) -> int:
                    WHERE id=?""",
                 (now, site_id, site_id),
             )
+            from services.crawler_scheduler import update_site_schedule
+            await update_site_schedule(site_id, db)
             await db.commit()
         except Exception:
             await db.execute(
