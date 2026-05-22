@@ -171,6 +171,15 @@ class IndexWorker(QThread):
             self.finished.emit(False, f"Erro ao criar diretório: {exc}")
             return
 
+        # O rename mnemosyne → mnemosyne.bak moveu o arquivo de log.
+        # Reinicializa o file handler para criar mnemosyne.log no novo diretório,
+        # garantindo que o HUB continue recebendo logs durante a indexação.
+        try:
+            from core.logger import setup_logger
+            setup_logger()
+        except Exception:
+            pass
+
         _BATCH, _SLEEP = _detect_batch_config()
         embeddings = OllamaEmbeddings(model=self.config.embed_model)
         splitter = _get_splitter(self.config, embeddings, source_type=self.config.collection_type)
