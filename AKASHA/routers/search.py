@@ -606,6 +606,24 @@ async def search_json(
     return combined[:max]
 
 
+class _ClickBody(BaseModel):
+    url:      str
+    query:    str = ""
+    position: int = 0
+
+
+@router.post("/click")
+async def record_click(body: _ClickBody, request: Request) -> dict:
+    """Registra clique num resultado de busca para o Learning to Rank (domain_boost)."""
+    session_id = request.cookies.get("akasha_session", "")
+    try:
+        from services.click_log import log_click
+        await log_click(body.query, body.url, body.position, session_id)
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 class _FetchBody(BaseModel):
     url:       str
     max_words: int = 2000

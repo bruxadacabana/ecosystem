@@ -1223,6 +1223,42 @@ async def _apply_pagerank_boost(results: list[SearchResult]) -> list[SearchResul
 
 
 # ---------------------------------------------------------------------------
+# Domain-boost ranking (Learning to Rank via click_log)
+# ---------------------------------------------------------------------------
+
+async def _apply_domain_boost(results: list[SearchResult]) -> list[SearchResult]:
+    """Multiplica score posicional pelo domain_boost do histórico de cliques.
+
+    Domínios sem histórico de cliques recebem fator 1.0 (neutro).
+    Só reordena quando há ao menos um domínio com boost != 1.0.
+    """
+    if not results:
+        return results
+    try:
+        from urllib.parse import urlparse as _urlparse
+        from services.click_log import get_domain_boosts
+        domains = [
+            (_urlparse(r.url).netloc or "").removeprefix("www.").lower()
+            for r in results
+        ]
+        unique_domains = list({d for d in domains if d})
+        if not unique_domains:
+            return results
+        async with aiosqlite.connect(DB_PATH) as db:
+            boost_map = await get_domain_boosts(db, unique_domains)
+        if all(v == 1.0 for v in boost_map.values()):
+            return results  # sem dados ainda, evita reordenação desnecessária
+        scored = [
+            (r, (1.0 / (i + 1)) * boost_map.get(domains[i], 1.0))
+            for i, r in enumerate(results)
+        ]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [r for r, _ in scored]
+    except Exception:
+        return results
+
+
+# ---------------------------------------------------------------------------
 # Usage-based ranking
 # ---------------------------------------------------------------------------
 
@@ -1579,6 +1615,7 @@ async def search_local(
         combined = top + rest
     combined = await _apply_usage_boost(combined)
     combined = await _apply_pagerank_boost(combined)
+    combined = await _apply_domain_boost(combined)
     log.debug(
         "retrieval final: %d resultados — top5: %s",
         len(combined),

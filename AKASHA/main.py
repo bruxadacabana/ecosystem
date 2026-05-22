@@ -94,6 +94,22 @@ async def _decay_scores_loop() -> None:
             _log.warning("decay_scores: erro: %s", exc)
 
 
+async def _domain_boost_job() -> None:
+    """Job semanal: recalcula domain_boosts a partir dos últimos 90 dias de cliques."""
+    while True:
+        await asyncio.sleep(7 * 86400)
+        try:
+            import aiosqlite as _aiosqlite
+            from config import DB_PATH as _DB_PATH
+            from services.click_log import compute_domain_boosts as _compute
+            async with _aiosqlite.connect(_DB_PATH) as db:
+                n = await _compute(db)
+            if n:
+                _log.info("domain_boost_job: %d domínio(s) atualizados.", n)
+        except Exception as exc:
+            _log.warning("domain_boost_job: erro: %s", exc)
+
+
 async def _monitor_crawler() -> None:
     """Acorda a cada hora: crawla sites pendentes, limpa search_cache e reverifica Ollama."""
     while True:
@@ -183,6 +199,7 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_reflection_loop())
     asyncio.get_running_loop().create_task(_friendship_receiver_loop())
     asyncio.get_running_loop().create_task(_decay_scores_loop())
+    asyncio.get_running_loop().create_task(_domain_boost_job())
     yield
     # Shutdown — nada a liberar por enquanto
 

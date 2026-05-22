@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 42
+SCHEMA_VERSION = 43
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -240,6 +240,35 @@ CREATE TABLE IF NOT EXISTS page_rank (
 );
 """
 
+
+_CREATE_CLICK_LOG = """
+CREATE TABLE IF NOT EXISTS click_log (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp        INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    query_norm       TEXT    NOT NULL DEFAULT '',
+    url              TEXT    NOT NULL DEFAULT '',
+    domain           TEXT    NOT NULL DEFAULT '',
+    position_clicked INTEGER NOT NULL DEFAULT 0,
+    session_id       TEXT    NOT NULL DEFAULT ''
+);
+"""
+
+_CREATE_IDX_CLICK_LOG_DOMAIN = """
+CREATE INDEX IF NOT EXISTS idx_click_log_domain
+    ON click_log(domain, timestamp);
+"""
+
+_CREATE_IDX_CLICK_LOG_TS = """
+CREATE INDEX IF NOT EXISTS idx_click_log_ts ON click_log(timestamp);
+"""
+
+_CREATE_DOMAIN_BOOSTS = """
+CREATE TABLE IF NOT EXISTS domain_boosts (
+    domain     TEXT PRIMARY KEY,
+    boost      REAL NOT NULL DEFAULT 1.0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+"""
 
 _CREATE_WATCH_LATER = """
 CREATE TABLE IF NOT EXISTS watch_later (
@@ -492,6 +521,10 @@ async def init_db() -> None:
         await db.execute(_CREATE_PAGE_RANK)
         await db.execute(_CREATE_SITE_SUGGESTIONS)
         await db.execute(_CREATE_IDX_SITE_SUGGESTIONS_STATUS)
+        await db.execute(_CREATE_CLICK_LOG)
+        await db.execute(_CREATE_IDX_CLICK_LOG_DOMAIN)
+        await db.execute(_CREATE_IDX_CLICK_LOG_TS)
+        await db.execute(_CREATE_DOMAIN_BOOSTS)
         await db.execute(_CREATE_WATCH_LATER)
         await db.execute(_CREATE_WATCH_LATER_FTS)
         await db.execute(_CREATE_ACTIVITY_LOG)
@@ -1081,6 +1114,21 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         # Sugestões automáticas de domínios para a Biblioteca.
         # score composto de 3 sinais: aparições em search_cache, cliques ponderados, refs em page_links.
         for ddl in (_CREATE_SITE_SUGGESTIONS, _CREATE_IDX_SITE_SUGGESTIONS_STATUS):
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass
+
+    if from_version < 43:
+        # Log de cliques para Learning to Rank (domain_boost).
+        # click_log: registra cada clique com posição para cálculo de DCG-style boost.
+        # domain_boosts: scores semanais computados sobre os últimos 90 dias de cliques.
+        for ddl in (
+            _CREATE_CLICK_LOG,
+            _CREATE_IDX_CLICK_LOG_DOMAIN,
+            _CREATE_IDX_CLICK_LOG_TS,
+            _CREATE_DOMAIN_BOOSTS,
+        ):
             try:
                 await db.execute(ddl)
             except Exception:

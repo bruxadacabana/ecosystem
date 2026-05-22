@@ -358,3 +358,24 @@
   {% endfor %}
 </section>
 {% endblock %}
+
+{% block scripts %}
+{% if query %}
+<script>
+(function() {
+  var q = {{ query | tojson }};
+  document.querySelectorAll('ol.results-list').forEach(function(ol) {
+    ol.querySelectorAll('li').forEach(function(li, idx) {
+      li.querySelectorAll('a.result-link[href^="http"]').forEach(function(a) {
+        a.addEventListener('click', function() {
+          var url = a.getAttribute('href');
+          var payload = JSON.stringify({url: url, query: q, position: idx + 1});
+          navigator.sendBeacon('/click', new Blob([payload], {type: 'application/json'}));
+        });
+      });
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
