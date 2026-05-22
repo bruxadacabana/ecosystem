@@ -62,10 +62,10 @@ fi
 if [ -n "$VENV" ] && [ -d "$VENV" ]; then
     "$PIP" install --upgrade pip --quiet
 
-    if "$PIP" install -r "$ROOT/KOSMOS/requirements.txt" --quiet; then
+    if (cd "$ROOT/KOSMOS" && uv sync --quiet 2>&1); then
         ok "KOSMOS OK"
     else
-        fail "KOSMOS — pip install falhou"
+        fail "KOSMOS — uv sync falhou"
     fi
 
     if "$PIP" install -r "$ROOT/Mnemosyne/requirements.txt" --quiet; then

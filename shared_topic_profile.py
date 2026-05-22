@@ -35,6 +35,23 @@ CREATE INDEX IF NOT EXISTS idx_tip_score ON topic_interest_profile(score DESC);
 
 _VALID_SOURCES = frozenset({"akasha", "mnemosyne", "kosmos"})
 
+# Palavras que não são tópicos válidos — filtradas antes de gravar no perfil
+_STOPWORDS: frozenset[str] = frozenset({
+    "a", "o", "e", "de", "da", "do", "em", "no", "na", "para", "por", "com",
+    "que", "se", "não", "um", "uma", "os", "as", "ao", "dos", "das", "é",
+    "mais", "sua", "seu", "ser", "são", "como", "mas", "foi", "pela", "pelo",
+    "sobre", "até", "ele", "ela", "você", "isso", "este", "esse", "tem", "ter",
+    "novo", "nova", "algo", "nada", "tudo", "forma", "parte", "tipo", "caso",
+    "vez", "modo", "coisa", "ponto", "base", "nível", "área", "campo",
+    "domínio", "contexto", "aspecto", "exemplo", "uso", "dado", "dados",
+    "valor", "número", "observação", "análise", "pesquisa", "estudo",
+    "trabalho", "relevante", "relevantes", "importante", "geral", "atual",
+    "the", "and", "or", "of", "to", "in", "is", "it", "for", "on", "at",
+    "this", "that", "with", "from", "an", "are", "was", "be", "but", "have",
+    "also", "when", "which", "were", "has", "had", "will", "can", "its",
+    "new", "use", "data", "type", "work", "model", "result", "general",
+})
+
 
 # ── Caminhos ────────────────────────────────────────────────────────────────
 
@@ -111,7 +128,11 @@ def update_scores(topics: list[str], delta: float, source: str) -> None:
     if path is None or not topics:
         return
 
-    normalized = [t.strip().lower() for t in topics if t and t.strip()]
+    normalized = [
+        t.strip().lower() for t in topics
+        if t and t.strip() and len(t.strip()) >= 3
+        and t.strip().lower() not in _STOPWORDS
+    ]
     if not normalized:
         return
 

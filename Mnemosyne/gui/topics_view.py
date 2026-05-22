@@ -66,16 +66,27 @@ class _ClickableView(QGraphicsView):
 
     word_clicked = Signal(QPointF)
 
+    _DRAG_THRESHOLD = 5  # pixels — movimento menor que isso é considerado clique
+
     def __init__(self, scene: QGraphicsScene, parent: QWidget | None = None) -> None:
         super().__init__(scene, parent)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self._press_pos: "QPoint | None" = None
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.LeftButton:
-            self.word_clicked.emit(self.mapToScene(event.pos()))
+            self._press_pos = event.pos()
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton and self._press_pos is not None:
+            delta = event.pos() - self._press_pos
+            if delta.manhattanLength() < self._DRAG_THRESHOLD:
+                self.word_clicked.emit(self.mapToScene(event.pos()))
+            self._press_pos = None
+        super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event) -> None:  # type: ignore[override]
         factor = 1.15 if event.angleDelta().y() > 0 else 1.0 / 1.15
@@ -422,7 +433,8 @@ class TopicsView(QWidget):
             if tid < 0:
                 continue
             path  = doc_sources.get(chroma_id, "") or chroma_id[:14]
-            label = os.path.basename(path) if path else chroma_id[:14]
+            base  = os.path.basename(path) if path else chroma_id[:14]
+            label = base[:22] + "…" if len(base) > 22 else base
             bucket = topic_files.setdefault(tid, {})
             if path not in bucket and len(bucket) < _MAX_FILES_PER_TOPIC:
                 bucket[path] = label

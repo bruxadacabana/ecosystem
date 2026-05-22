@@ -28,12 +28,37 @@ _EXTRACT_TIMEOUT: float = 20.0  # timeout por chamada de extração
 
 # Termos genéricos que não contribuem para o perfil de interesse
 _STOPWORDS: frozenset[str] = frozenset({
+    # artigos, preposições, conjunções PT
     "a", "o", "e", "de", "da", "do", "em", "no", "na", "para", "por", "com",
     "que", "se", "não", "um", "uma", "os", "as", "ao", "dos", "das", "é",
+    "mais", "sua", "seu", "ser", "são", "como", "mas", "foi", "pela", "pelo",
+    "sobre", "até", "entre", "ele", "ela", "eles", "elas", "você", "nós",
+    "isso", "este", "esta", "esse", "essa", "aqui", "ali", "há", "ter",
+    "tem", "bem", "já", "ainda", "também", "então", "quando", "onde",
+    "muito", "pouco", "todo", "toda", "todos", "todas", "cada", "outro",
+    "outra", "outros", "outras", "sendo", "tendo", "feito", "pode", "deve",
+    # palavras genéricas PT que não são tópicos
+    "novo", "nova", "novos", "novas", "algo", "nada", "tudo", "nenhum",
+    "forma", "parte", "tipo", "caso", "vez", "vezes", "modo", "lugar",
+    "coisa", "coisas", "ponto", "base", "nível", "área", "campo",
+    "domínio", "contexto", "aspecto", "exemplo", "uso", "usos",
+    "resultado", "resultados", "processo", "processos", "sistema", "sistemas",
+    "problema", "problemas", "solução", "soluções", "função", "funções",
+    "dado", "dados", "valor", "valores", "número", "números",
+    "observação", "análise", "pesquisa", "estudo", "trabalho",
+    "relevante", "relevantes", "importante", "importantes", "geral",
+    "específico", "específica", "primeiro", "segunda", "segundo",
+    "diferente", "diferentes", "possível", "possíveis", "atual",
+    # inglês
     "the", "and", "or", "of", "to", "in", "is", "it", "for", "on", "at",
     "this", "that", "with", "from", "an", "are", "was", "be", "but", "have",
-    "mais", "sua", "seu", "ser", "são", "como", "mas", "foi", "pela", "pelo",
-    "sobre", "also", "when", "which", "were", "has", "had", "will", "than",
+    "also", "when", "which", "were", "has", "had", "will", "than", "can",
+    "its", "more", "some", "any", "all", "other", "new", "use", "used",
+    "using", "based", "like", "such", "may", "not", "one", "two", "three",
+    "data", "type", "types", "work", "model", "models", "system", "systems",
+    "result", "results", "different", "general", "specific", "first",
+    "second", "third", "both", "each", "most", "just", "been", "into",
+    "only", "over", "after", "about", "would", "could", "should",
 })
 
 # Termos técnicos conhecidos para extração de entidades sem LLM

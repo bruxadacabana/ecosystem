@@ -165,7 +165,7 @@ QPushButton#reflectionBadgeBtn {
     border-radius: 0px;
     padding: 3px 8px;
     text-align: left;
-    font-family: "Courier Prime", "Courier New", monospace;
+    font-family: "DejaVu Sans", "Courier Prime", "Courier New", monospace;
     font-size: 10px;
     color: #7C9AAF;
 }
@@ -971,6 +971,7 @@ QPushButton#insightsBadgeBtn {
     border:        1px solid #4FC3F7;
     border-radius: 10px;
     padding:       3px 10px;
+    font-family:   "DejaVu Sans", "Noto Sans Symbols", sans-serif;
     font-size:     12px;
     font-weight:   bold;
     margin-top:    6px;
