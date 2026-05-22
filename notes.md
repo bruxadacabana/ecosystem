@@ -15,6 +15,17 @@
 
 
 ## Anotações
+1. me explique o funcionamento dos testes (para uma leiga, nunca usei isso)
+2. quando eu disse "vamos criar Testes unitários e de integração" era para todo o ecossistema
+3. o sistema de feedback (implementado nas notificações/overlays/pop-ups) não está perguntando quando marco x, por algum motivo. 
+4. o pop-up da mnemosyne é ruim, assim com os outros icons da mnemosyne inteiro, é inexistente e todos os botões são apenas caixas vazias coloridas, o que para o sistema de feedback é um pouco confuso e eu não sei bem que feedback estou dando
+5. akasha às vezes repete suas notificações/overlays
+6. como as emoções que demos a elas são usadas no ecossistema?
+7. como sabemos se elas estão aprendendo com o que estão processando?
+8. ah alias, precisamos rever o logos em conjunto a '### Discussão: backends de inferência alternativos ao Ollama | 2026-05-21'. Também quero que o logos tenha uma forma melhor de gerenciar o hardware e detectar capacidade ao invés de se apoiar fixamente nos três hardwares que tenho.
+
+---
+
 Instalação temporária (sem assinar — para uso pessoal):
 
 Abra o Firefox/Zen e navegue para about:debugging
