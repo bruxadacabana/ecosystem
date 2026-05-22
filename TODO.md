@@ -4796,23 +4796,32 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 ### KOSMOS — Reescrita v2 do zero | 2026-05-21
 > Contexto: o código existente acumulou dívida técnica, usava PyQt6 (divergente do resto do ecossistema Python), SQLAlchemy (desnecessário para o schema simples), newspaper4k (inferior ao trafilatura) e não tinha integração com ecosystem_client. Decisão: descartar tudo e reescrever. Código antigo e data/ removidos; feeds exportados para `ecosystem_root/kosmos/.config/feeds.json`; arquivos salvos estão em `ecosystem_root/kosmos/`.
 
-**Stack definitiva:** PySide6 · sqlite3 nativo · trafilatura · feedparser · praw · QWebEngineView · argostranslate · matplotlib · WeasyPrint (opcional) · uv + pyproject.toml · ecosystem_client integrado desde o início
+**Stack definitiva:** PySide6 · sqlite3 nativo · trafilatura · feedparser · argostranslate · QWebEngineView · matplotlib · uv + pyproject.toml · ecosystem_client integrado desde o início
 
 **Princípios obrigatórios:** tratamento de erros com tipagem (except específico, nunca genérico); logging detalhado e robusto desde a Fase 1; paths sempre via pathlib.Path, nunca hardcoded.
 
+**HUB é a fonte de verdade — sem exceções:**
+- Todos os paths de dados lidos via `ecosystem_client` (nunca configurados localmente no KOSMOS)
+- Qual LLM usar: campo `llm_analysis` do perfil ativo do LOGOS via `ecosystem_client.get_active_profile()` — lido em runtime, nunca em import time, nunca hardcoded
+- Qual embedding usar: idem, campo `embed` do perfil ativo
+- Toda comunicação com Ollama: via `ecosystem_client.get_ollama_url()` — porta nunca hardcoded
+- `archive_path`, `config_path`, `data_path` do KOSMOS: lidos do `ecosystem.json`, escritos pelo KOSMOS no startup via `ecosystem_client.write_section("kosmos", {...})`
+
+**Tradução — duas camadas distintas:**
+- **Títulos/cards (automática):** roda em background junto com análise IA e download de artigos novos — o usuário nunca aciona manualmente
+- **Artigo completo (manual):** acionada pelo usuário no painel de leitura via botão "Traduzir"
+- Ambas usam argostranslate; modelos gerenciados em Configurações
+
 #### KOSMOS
 - [ ] **Fase 1 — Fundação:** `pyproject.toml` (uv), `paths.py`, `config.py` (lê `ecosystem.json` via `ecosystem_client`), `database.py` (schema SQLite + FTS5 + triggers), carregamento de fontes (QFontDatabase), `setup_logger()` com RotatingFileHandler, temas PySide6 (day/night .qss), `MainWindow` esqueleto, splash screen com cosmos_painter
-- [ ] **Fase 2 — RSS básico:** `rss_fetcher.py` (feedparser + ETag/Last-Modified), `feed_manager.py` (CRUD feeds/categorias), `background_updater.py` (QThread daemon), sidebar dinâmica com badges de não lidos, marcar lido/não lido, purgação automática de artigos antigos, importar `feeds.json` na primeira execução
-- [ ] **Fase 3 — Painel de leitura:** `reader_view.py` (QWebEngineView + CSS sépia day/night), `content_filter.py` (detecta artigo truncado), `article_scraper.py` (trafilatura), toolbar de ações (salvar, marcar, abrir no navegador, scrape, arquivar), navegação anterior/próximo
-- [ ] **Fase 4 — Salvar, tags e arquivo Markdown:** favoritos/salvos persistentes, tags globais (CRUD), `archive_manager.py` (exporta para `ecosystem_root/kosmos/{feed_slug}/{slug}.md` com frontmatter), `archive_view.py`
-- [ ] **Fase 5 — Reddit (praw)**
-- [ ] **Fase 6 — YouTube/Tumblr/Substack/Mastodon** (detecção automática de tipo por URL)
-- [ ] **Fase 7 — Dashboard principal** (widgets: resumo global, feeds com mais não lidos, artigos recentes, salvos, estatística rápida, decoração cósmica)
-- [ ] **Fase 8 — Busca FTS5 global + filtros** (Ctrl+K, filtros por data/fonte/tag/status/integridade)
-- [ ] **Fase 9 — Tradução offline** (argostranslate, gerenciar modelos em Configurações)
-- [ ] **Fase 10 — Exportação PDF + estatísticas matplotlib** (WeasyPrint condicional, stats_view)
-- [ ] **Fase 11 — Polimento e multiplataforma** (animações QPropertyAnimation, testes Windows 10 + CachyOS, ícone)
-- [ ] **Fase 12 (futuro) — ai_bridge via ecosystem_client.get_ollama_url(), OPML, Playwright**
+- [ ] **Fase 2 — RSS + gerenciamento de feeds:** `rss_fetcher.py` (feedparser + ETag/Last-Modified), `feed_manager.py` (CRUD feeds/categorias), `background_updater.py` (QThread daemon), sidebar dinâmica com badges de não lidos, marcar lido/não lido, purgação automática, importar `feeds.json` na primeira execução
+- [ ] **Fase 3 — Painel de leitura + download de artigo:** `reader_view.py` (QWebEngineView + CSS sépia day/night), `content_filter.py` (detecta artigo truncado), `article_scraper.py` (trafilatura), toolbar de ações (salvar, marcar, abrir no navegador, scrape, arquivar), navegação anterior/próximo
+- [ ] **Fase 4 — Análise IA + tradução automática de títulos:** `ai_bridge.py` (via `ecosystem_client.get_ollama_url()` e perfil LOGOS), `background_analyzer.py` (QThread — roda em paralelo com updates: relevância, sentimento, clickbait, tradução de título para o idioma definido em Configurações → `default_translation_lang`); badges nos cards; campos na tabela `articles`: `relevance_score`, `sentiment`, `is_clickbait`, `title_translated`
+- [ ] **Fase 5 — Tradução manual de artigo completo:** `translator.py` (argostranslate), botão "Traduzir" no painel de leitura, exibe artigo traduzido no QWebEngineView; Configurações → gerenciar modelos (download/remoção por par de idiomas)
+- [ ] **Fase 6 — Salvar, tags e arquivo Markdown:** favoritos/salvos persistentes, tags globais (CRUD), `archive_manager.py` (exporta para `ecosystem_root/kosmos/{feed_slug}/{slug}.md` com frontmatter), `archive_view.py`
+- [ ] **Fase 7 — Dashboard principal + busca FTS5 + estatísticas:** dashboard com widgets (resumo global, feeds com mais não lidos, artigos recentes, salvos, estatística rápida, decoração cósmica), busca Ctrl+K via FTS5, filtros na feed_list_view, stats_view (matplotlib)
+- [ ] **Fase 8 — Polimento e multiplataforma:** animações QPropertyAnimation, testes Windows 10 + CachyOS, ícone
+- [ ] **(Futuro) Reddit (praw), YouTube/Tumblr/Substack/Mastodon, OPML, Playwright, PDF export (WeasyPrint)**
 
 ### Comunicação IA → usuária: histórico centralizado e feedback qualitativo | 2026-05-21
 > Contexto: as IAs já enviam popups (Mnemosyne), overlays (AKASHA) e visitas entre si. Faltam dois fechamentos: (1) uma linha do tempo centralizada no HUB de tudo que foi comunicado e como a usuária respondeu; (2) quando a usuária rejeita um insight que o LLM avaliou como de alta importância, a IA pede o motivo — o que gera sinal de aprendizado muito mais rico que o ✗ sozinho.
