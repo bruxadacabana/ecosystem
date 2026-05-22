@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Sugestões de Domínios — AKASHA{% endblock %}
+
+{% block content %}
+<div id="main-content" class="suggestions-page">
+
+  <div class="suggestions-header">
+    <h1 class="suggestions-title">Sugestões de Domínios</h1>
+    <button
+      class="btn btn-secondary"
+      hx-post="/suggestions/run"
+      hx-target="#main-content"
+      hx-swap="outerHTML"
+      hx-indicator="#run-spinner"
+    >
+      <span id="run-spinner" class="htmx-indicator">…</span>
+      Atualizar sugestões
+    </button>
+  </div>
+
+  <p class="suggestions-hint">
+    Domínios identificados automaticamente por aparições em buscas, cliques e links do crawler.
+    Nada é adicionado sem sua aprovação.
+  </p>
+
+  {% if suggestions %}
+  <div class="suggestions-list" id="suggestions-list">
+    {% for s in suggestions %}
+    <div class="suggestion-card" id="card-{{ s.domain | replace('.', '-') | replace('/', '-') }}">
+      <div class="suggestion-info">
+        <a class="suggestion-domain" href="https://{{ s.domain }}" target="_blank" rel="noopener">
+          {{ s.domain }}
+        </a>
+        <span class="suggestion-reason">{{ s.reason }}</span>
+      </div>
+      <div class="suggestion-actions">
+        <button
+          class="btn btn-approve"
+          hx-post="/suggestions/{{ s.domain }}/approve"
+          hx-target="#main-content"
+          hx-swap="outerHTML"
+          title="Adicionar à Biblioteca"
+        >✅ Adicionar</button>
+        <button
+          class="btn btn-ignore"
+          hx-post="/suggestions/{{ s.domain }}/ignore"
+          hx-target="#main-content"
+          hx-swap="outerHTML"
+          title="Ignorar desta vez"
+        >❌ Ignorar</button>
+        <button
+          class="btn btn-block"
+          hx-post="/suggestions/{{ s.domain }}/block"
+          hx-target="#main-content"
+          hx-swap="outerHTML"
+          title="Nunca mais sugerir"
+        >🔕 Bloquear sempre</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <p class="empty-state">
+    Nenhuma sugestão pendente.
+    Clique em "Atualizar sugestões" para recalcular com base em buscas e cliques recentes.
+  </p>
+  {% endif %}
+
+</div>
+
+<style>
+.suggestions-page       { max-width: 900px; margin: 0 auto; padding: 1.5rem; }
+.suggestions-header     { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5rem; }
+.suggestions-title      { font-size: 1.1rem; font-weight: 600; margin: 0; }
+.suggestions-hint       { font-size: .82rem; opacity: .55; margin-bottom: 1.5rem; }
+.suggestions-list       { display: flex; flex-direction: column; gap: .6rem; }
+.suggestion-card        { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+                          padding: .75rem 1rem; border-radius: 6px;
+                          background: var(--surface, #1e2330); }
+.suggestion-info        { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.suggestion-domain      { font-weight: 600; font-size: .9rem; color: var(--accent, #7eb3f5);
+                          text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggestion-domain:hover { text-decoration: underline; }
+.suggestion-reason      { font-size: .76rem; opacity: .55; }
+.suggestion-actions     { display: flex; gap: .4rem; flex-shrink: 0; }
+.btn-approve            { background: rgba(80,180,100,.15); color: #6ecc88; border: 1px solid rgba(80,180,100,.3); }
+.btn-ignore             { background: rgba(180,80,80,.12); color: #cc7a7a; border: 1px solid rgba(180,80,80,.25); }
+.btn-block              { background: rgba(100,100,100,.12); color: #888; border: 1px solid rgba(100,100,100,.2); }
+.btn-approve:hover      { background: rgba(80,180,100,.28); }
+.btn-ignore:hover       { background: rgba(180,80,80,.24); }
+.btn-block:hover        { background: rgba(100,100,100,.22); }
+.htmx-indicator         { display: none; }
+.htmx-request .htmx-indicator { display: inline; }
+.empty-state            { opacity: .5; font-style: italic; margin-top: 2rem; }
+</style>
+{% endblock %}

@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 41
+SCHEMA_VERSION = 42
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -198,6 +198,21 @@ CREATE INDEX IF NOT EXISTS idx_page_images_page ON page_images(page_url);
 
 _CREATE_IDX_PAGE_IMAGES_PHASH = """
 CREATE INDEX IF NOT EXISTS idx_page_images_phash ON page_images(phash) WHERE phash != '';
+"""
+
+
+_CREATE_SITE_SUGGESTIONS = """
+CREATE TABLE IF NOT EXISTS site_suggestions (
+    domain      TEXT PRIMARY KEY,
+    score       REAL NOT NULL DEFAULT 0.0,
+    reason      TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'pending',
+    updated_at  INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+_CREATE_IDX_SITE_SUGGESTIONS_STATUS = """
+CREATE INDEX IF NOT EXISTS idx_site_suggestions_status ON site_suggestions(status);
 """
 
 
@@ -475,6 +490,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_IDX_PAGE_LINKS_SOURCE)
         await db.execute(_CREATE_IDX_PAGE_LINKS_TARGET)
         await db.execute(_CREATE_PAGE_RANK)
+        await db.execute(_CREATE_SITE_SUGGESTIONS)
+        await db.execute(_CREATE_IDX_SITE_SUGGESTIONS_STATUS)
         await db.execute(_CREATE_WATCH_LATER)
         await db.execute(_CREATE_WATCH_LATER_FTS)
         await db.execute(_CREATE_ACTIVITY_LOG)
@@ -1055,6 +1072,15 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             _CREATE_IDX_PAGE_LINKS_TARGET,
             _CREATE_PAGE_RANK,
         ):
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass
+
+    if from_version < 42:
+        # Sugestões automáticas de domínios para a Biblioteca.
+        # score composto de 3 sinais: aparições em search_cache, cliques ponderados, refs em page_links.
+        for ddl in (_CREATE_SITE_SUGGESTIONS, _CREATE_IDX_SITE_SUGGESTIONS_STATUS):
             try:
                 await db.execute(ddl)
             except Exception:
