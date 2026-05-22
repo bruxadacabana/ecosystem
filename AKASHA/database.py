@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 43
+SCHEMA_VERSION = 44
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -64,13 +64,21 @@ CREATE TABLE IF NOT EXISTS search_cache (
     query        TEXT    NOT NULL,
     sources      TEXT    NOT NULL DEFAULT 'web',
     results_json TEXT    NOT NULL,
-    created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    query_hash   TEXT,
+    cached_at    INTEGER NOT NULL DEFAULT 0,
+    ttl_hours    INTEGER NOT NULL DEFAULT 1
 );
 """
 
 _CREATE_IDX_CACHE = """
 CREATE INDEX IF NOT EXISTS idx_cache_lookup
     ON search_cache(query, sources, created_at);
+"""
+
+_CREATE_IDX_SEARCH_CACHE_HASH = """
+CREATE UNIQUE INDEX IF NOT EXISTS idx_search_cache_hash
+    ON search_cache(query_hash) WHERE query_hash IS NOT NULL;
 """
 
 _CREATE_LOCAL_FTS = """
@@ -496,6 +504,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_DOWNLOADS)
         await db.execute(_CREATE_SEARCH_CACHE)
         await db.execute(_CREATE_IDX_CACHE)
+        await db.execute(_CREATE_IDX_SEARCH_CACHE_HASH)
         await db.execute(_CREATE_LOCAL_FTS)
         await db.execute(
             "INSERT INTO local_fts(local_fts, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)')"
@@ -1133,6 +1142,24 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
                 await db.execute(ddl)
             except Exception:
                 pass
+
+    if from_version < 44:
+        # Cache dois níveis para busca web: adiciona query_hash (chave de lookup),
+        # cached_at (timestamp Unix) e ttl_hours ao search_cache existente.
+        # Entradas antigas (sem query_hash) permanecem válidas até expirar pelo TTL legado.
+        for col, ddl in [
+            ("query_hash", "ALTER TABLE search_cache ADD COLUMN query_hash TEXT"),
+            ("cached_at",  "ALTER TABLE search_cache ADD COLUMN cached_at  INTEGER NOT NULL DEFAULT 0"),
+            ("ttl_hours",  "ALTER TABLE search_cache ADD COLUMN ttl_hours  INTEGER NOT NULL DEFAULT 1"),
+        ]:
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass  # coluna já existe em banco criado com este schema
+        try:
+            await db.execute(_CREATE_IDX_SEARCH_CACHE_HASH)
+        except Exception:
+            pass
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",

@@ -94,6 +94,33 @@ async def _decay_scores_loop() -> None:
             _log.warning("decay_scores: erro: %s", exc)
 
 
+async def _cache_cleanup_job() -> None:
+    """Job a cada 6h: remove entradas expiradas do cache de busca web (search_cache)."""
+    while True:
+        await asyncio.sleep(6 * 3600)
+        try:
+            import aiosqlite as _aiosqlite
+            from config import DB_PATH as _DB_PATH
+            ts_now = int(__import__("time").time())
+            async with _aiosqlite.connect(_DB_PATH) as db:
+                # Remove entradas novas (com query_hash) que já expiraram
+                await db.execute(
+                    "DELETE FROM search_cache "
+                    "WHERE query_hash IS NOT NULL "
+                    "AND (cached_at + ttl_hours * 3600) < ?",
+                    (ts_now,),
+                )
+                # Remove entradas legadas (sem query_hash) com mais de 24h
+                await db.execute(
+                    "DELETE FROM search_cache "
+                    "WHERE query_hash IS NULL "
+                    "AND created_at < datetime('now', '-1 day')"
+                )
+                await db.commit()
+        except Exception as exc:
+            _log.warning("cache_cleanup_job: erro: %s", exc)
+
+
 async def _domain_boost_job() -> None:
     """Job semanal: recalcula domain_boosts a partir dos últimos 90 dias de cliques."""
     while True:
@@ -118,16 +145,7 @@ async def _monitor_crawler() -> None:
             await crawl_pending_sites()
         except Exception as exc:
             _log.warning("monitor: erro ao crawlar sites pendentes: %s", exc)
-        try:
-            import aiosqlite
-            from config import DB_PATH
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "DELETE FROM search_cache WHERE created_at < datetime('now', '-1 day')"
-                )
-                await db.commit()
-        except Exception as exc:
-            _log.warning("monitor: erro ao limpar search_cache: %s", exc)
+        # Limpeza de search_cache delegada ao _cache_cleanup_job (a cada 6h)
         try:
             await check_ollama_available()
         except Exception:
@@ -199,6 +217,7 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_reflection_loop())
     asyncio.get_running_loop().create_task(_friendship_receiver_loop())
     asyncio.get_running_loop().create_task(_decay_scores_loop())
+    asyncio.get_running_loop().create_task(_cache_cleanup_job())
     asyncio.get_running_loop().create_task(_domain_boost_job())
     yield
     # Shutdown — nada a liberar por enquanto

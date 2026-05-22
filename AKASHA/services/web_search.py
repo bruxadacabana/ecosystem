@@ -1,13 +1,16 @@
 """
 AKASHA — Busca web via DuckDuckGo
-Cache em SQLite com TTL de 1h; deduplicação por URL normalizada.
+Cache dois níveis: memória (LRU, max 100 entradas) + SQLite (TTL variável).
+- Queries com ≥3 buscas/semana → TTL 24h; demais → TTL 1h
+- Camada transparente: memória → SQLite → DDG
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta, timezone
-
 import asyncio
+import hashlib
+import json
+import time
+from collections import OrderedDict
 from urllib.parse import urlparse
 
 import aiosqlite
@@ -30,37 +33,109 @@ class SearchResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Cache
+# Camada 1 — cache em memória (LRU, max 100 entradas, TTL por entrada)
 # ---------------------------------------------------------------------------
 
-_CACHE_TTL = 3600  # segundos
+class _MemCache:
+    """Dict LRU com TTL por entrada. Thread-safe o suficiente para asyncio."""
+
+    def __init__(self, maxsize: int = 100) -> None:
+        self._store: OrderedDict[str, tuple[list, float]] = OrderedDict()
+        self._maxsize = maxsize
+
+    def get(self, key: str) -> list | None:
+        if key not in self._store:
+            return None
+        val, expires_at = self._store[key]
+        if time.time() >= expires_at:
+            del self._store[key]
+            return None
+        self._store.move_to_end(key)
+        return val
+
+    def set(self, key: str, val: list, ttl_s: int) -> None:
+        if key in self._store:
+            self._store.move_to_end(key)
+        self._store[key] = (val, time.time() + ttl_s)
+        while len(self._store) > self._maxsize:
+            self._store.popitem(last=False)  # descarta LRU (mais antigo)
+
+    def clear(self) -> None:
+        self._store.clear()
 
 
-def _cutoff_str() -> str:
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=_CACHE_TTL)
-    return cutoff.strftime("%Y-%m-%d %H:%M:%S")
+_mem_cache = _MemCache(maxsize=100)
 
 
-async def _get_cached(query: str) -> list[SearchResult] | None:
+def _query_hash(query: str) -> str:
+    return hashlib.md5(query.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Camada 2 — cache SQLite (tabela search_cache)
+# ---------------------------------------------------------------------------
+
+async def _get_db_cache(query_hash: str) -> list[SearchResult] | None:
+    """Busca no cache SQLite. None se expirado ou ausente."""
+    ts_now = int(time.time())
     async with aiosqlite.connect(DB_PATH) as db:
         row = await (await db.execute(
-            """SELECT results_json FROM search_cache
-               WHERE query = ? AND sources = 'web' AND created_at > ?
-               ORDER BY id DESC LIMIT 1""",
-            (query, _cutoff_str()),
+            """SELECT results_json, cached_at, ttl_hours
+               FROM search_cache
+               WHERE query_hash = ?""",
+            (query_hash,),
         )).fetchone()
-    if row:
-        return [SearchResult(**r) for r in json.loads(row[0])]
-    return None
+    if row is None:
+        return None
+    results_json, cached_at, ttl_hours = row
+    if ts_now > cached_at + ttl_hours * 3600:
+        return None  # expirado
+    return [SearchResult(**r) for r in json.loads(results_json)]
 
 
-async def _set_cache(query: str, results: list[SearchResult]) -> None:
+async def _set_db_cache(
+    query: str,
+    query_hash: str,
+    results: list[SearchResult],
+    ttl_hours: int,
+) -> None:
+    """Armazena no cache SQLite (upsert por query_hash)."""
+    ts_now = int(time.time())
+    results_json = json.dumps([r.model_dump() for r in results])
     async with aiosqlite.connect(DB_PATH) as db:
+        # Delete anterior (se existir) + Insert — simples e seguro com partial UNIQUE INDEX
         await db.execute(
-            "INSERT INTO search_cache (query, sources, results_json) VALUES (?, 'web', ?)",
-            (query, json.dumps([r.model_dump() for r in results])),
+            "DELETE FROM search_cache WHERE query_hash = ?",
+            (query_hash,),
+        )
+        await db.execute(
+            """INSERT INTO search_cache
+               (query, sources, results_json, query_hash, cached_at, ttl_hours)
+               VALUES (?, 'web', ?, ?, ?, ?)""",
+            (query, results_json, query_hash, ts_now, ttl_hours),
         )
         await db.commit()
+
+
+async def _get_ttl_hours(query: str) -> int:
+    """Retorna TTL em horas baseado na frequência da query na última semana.
+
+    ≥3 buscas/semana → 24h (query popular, cache mais duradouro).
+    Demais → 1h (padrão).
+    """
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            row = await (await db.execute(
+                """SELECT COUNT(*) FROM searches
+                   WHERE query = ?
+                   AND created_at > datetime('now', '-7 days')""",
+                (query,),
+            )).fetchone()
+        if row and row[0] >= 3:
+            return 24
+    except Exception:
+        pass
+    return 1
 
 
 # ---------------------------------------------------------------------------
@@ -124,22 +199,44 @@ async def _fetch_ddg(query: str, max_results: int) -> list[SearchResult]:
 _CACHE_SIZE = 60  # resultados pré-buscados por query — serve até 6 páginas de 10
 
 
-async def search_web(query: str, max_results: int = 10, offset: int = 0, filetype: str = "") -> list[SearchResult]:
-    """Busca via DuckDuckGo com cache TTL 1h e deduplicação por URL.
+async def search_web(
+    query: str,
+    max_results: int = 10,
+    offset: int = 0,
+    filetype: str = "",
+) -> list[SearchResult]:
+    """Busca via DuckDuckGo com cache dois níveis (memória LRU + SQLite TTL variável).
 
-    Pré-busca _CACHE_SIZE resultados no primeiro acesso; páginas seguintes
-    (offset > 0) servem do mesmo lote em cache sem re-consultar o DDG,
-    evitando resultados repetidos ou inconsistências de paginação.
+    Pipeline:
+    1. Verifica cache de memória (TTL por entrada)
+    2. Verifica cache SQLite (query_hash + cached_at + ttl_hours)
+    3. Executa busca DDG; determina TTL pelo histórico de frequência
+    4. Armazena em memória + SQLite
 
-    filetype: se não vazio, acrescenta "filetype:{ext}" à query (ex: "pdf", "epub").
+    filetype: acrescenta "filetype:{ext}" à query efetiva se não vazio.
     """
     effective_query = f"{query} filetype:{filetype}" if filetype else query
+    qhash = _query_hash(effective_query)
 
-    cached = await _get_cached(effective_query)
+    # 1. Cache de memória
+    cached = _mem_cache.get(qhash)
     if cached is not None:
-        return (await _filter_blocked(cached))[offset : offset + max_results]
+        return (await _filter_blocked(cached))[offset: offset + max_results]
 
+    # 2. Cache SQLite
+    db_cached = await _get_db_cache(qhash)
+    if db_cached is not None:
+        ttl_hours = await _get_ttl_hours(effective_query)
+        _mem_cache.set(qhash, db_cached, ttl_hours * 3600)
+        return (await _filter_blocked(db_cached))[offset: offset + max_results]
+
+    # 3. Busca real
     results = await _fetch_ddg(effective_query, _CACHE_SIZE)
     results = _deduplicate(results)
-    await _set_cache(effective_query, results)
-    return (await _filter_blocked(results))[offset : offset + max_results]
+
+    # 4. Armazena em ambas as camadas
+    ttl_hours = await _get_ttl_hours(effective_query)
+    _mem_cache.set(qhash, results, ttl_hours * 3600)
+    await _set_db_cache(effective_query, qhash, results, ttl_hours)
+
+    return (await _filter_blocked(results))[offset: offset + max_results]

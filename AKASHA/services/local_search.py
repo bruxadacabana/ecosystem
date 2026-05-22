@@ -1616,6 +1616,13 @@ async def search_local(
     combined = await _apply_usage_boost(combined)
     combined = await _apply_pagerank_boost(combined)
     combined = await _apply_domain_boost(combined)
+    try:
+        from services.freshness import is_temporal_query, get_dates_for_urls, apply_freshness_rerank
+        if is_temporal_query(query):
+            _date_map = await get_dates_for_urls([r.url for r in combined])
+            combined = apply_freshness_rerank(combined, _date_map)
+    except Exception:
+        pass
     log.debug(
         "retrieval final: %d resultados — top5: %s",
         len(combined),
