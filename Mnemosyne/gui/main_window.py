@@ -1579,7 +1579,10 @@ class MainWindow(QMainWindow):
         if self._topics_worker and self._topics_worker.isRunning():
             return
         vs, coll = self.vectorstore.stores[0]
-        self._topics_worker = TopicsWorker(vs, coll)
+        # Em modo ecosystem config.mnemosyne_dir aponta para ecosystem_root/mnemosyne,
+        # não para coll.mnemosyne_dir (que pode estar em disco externo não montado).
+        topics_dir = self.config.mnemosyne_dir if self.config else None
+        self._topics_worker = TopicsWorker(vs, coll, topics_dir)
         self._topics_worker.finished.connect(self._on_topics_ready)
         self._topics_worker.start()
         self._topics_view._status_label.setText("Extraindo temas…")
@@ -1606,13 +1609,15 @@ class MainWindow(QMainWindow):
         self._kg_worker.start(KnowledgeGraphWorker.Priority.LowestPriority)
 
     def _load_topics_from_disk(self) -> None:
-        """Carrega topics.json da coleção ativa se existir; senão, não exibe nada."""
+        """Carrega topics.json se existir; senão, não exibe nada."""
         if not self.config:
             return
-        coll = self.config.active_coll
-        if coll and coll.mnemosyne_dir:
+        # config.mnemosyne_dir resolve corretamente em modo ecosystem
+        # (ecosystem_root/mnemosyne) e em modo standalone (coll.mnemosyne_dir).
+        mnemosyne_dir = self.config.mnemosyne_dir
+        if mnemosyne_dir:
             from core.topic_extractor import load_topics
-            data = load_topics(coll.mnemosyne_dir)
+            data = load_topics(mnemosyne_dir)
             if data:
                 self._topics_view.set_topics(data)
 

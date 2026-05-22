@@ -1261,15 +1261,16 @@ class TopicsWorker(QThread):
 
     finished = Signal(dict)
 
-    def __init__(self, vs, coll) -> None:
+    def __init__(self, vs, coll, mnemosyne_dir: str | None = None) -> None:
         super().__init__()
-        self._vs   = vs
-        self._coll = coll
+        self._vs            = vs
+        self._coll          = coll
+        self._mnemosyne_dir = mnemosyne_dir
 
     def run(self) -> None:
         from core.topic_extractor import extract_topics
         try:
-            result = extract_topics(self._vs, self._coll)
+            result = extract_topics(self._vs, self._coll, self._mnemosyne_dir)
             self.finished.emit(result or {})
         except Exception:
             self.finished.emit({})

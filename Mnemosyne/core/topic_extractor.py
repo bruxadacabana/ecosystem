@@ -7,7 +7,7 @@ Pipeline:
   corpus  < 30 docs → c-TF-IDF sobre todo o corpus (1 tópico global, mais estável)
 Keywords por documento via TF-IDF (leve, sem chamadas de embedding adicionais).
 
-Resultado salvo em {coll.mnemosyne_dir}/topics.json:
+Resultado salvo em topics.json (diretório resolvido pelo caller):
   {
     "topics":       [{"id": int, "words": [[str, float], ...]}, ...],
     "doc_topic":    {"chroma_id": topic_id, ...},
@@ -41,12 +41,19 @@ _KEYWORDS_PER_DOC = 5
 # API pública
 # ---------------------------------------------------------------------------
 
-def extract_topics(vs: "Chroma", coll: "CollectionConfig") -> dict:
+def extract_topics(
+    vs: "Chroma",
+    coll: "CollectionConfig",
+    mnemosyne_dir: str | None = None,
+) -> dict:
     """Extrai temas do corpus e salva em topics.json.
 
     Args:
-        vs:   Chroma vectorstore (langchain_chroma.Chroma).
-        coll: CollectionConfig da coleção correspondente.
+        vs:            Chroma vectorstore (langchain_chroma.Chroma).
+        coll:          CollectionConfig da coleção correspondente.
+        mnemosyne_dir: Diretório onde salvar topics.json. Se None, usa
+                       coll.mnemosyne_dir (modo standalone). Em modo
+                       ecosystem, o caller passa config.mnemosyne_dir.
 
     Returns:
         Dicionário com 'topics', 'doc_topic' e 'doc_keywords'. Vazio se o
@@ -97,8 +104,9 @@ def extract_topics(vs: "Chroma", coll: "CollectionConfig") -> dict:
         "doc_sources":  {valid_ids[i]: (valid_metas[i] or {}).get("source", "") for i in range(n)},
     }
 
-    if coll.mnemosyne_dir:
-        save_topics(result, coll.mnemosyne_dir)
+    save_dir = mnemosyne_dir or coll.mnemosyne_dir
+    if save_dir:
+        save_topics(result, save_dir)
 
     return result
 
