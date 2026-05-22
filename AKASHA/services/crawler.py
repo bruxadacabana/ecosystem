@@ -464,6 +464,15 @@ async def crawl_site(site_id: int) -> int:
         )
         await db.commit()
 
+        # Domínios da biblioteca: links externos só são armazenados para PageRank
+        # se o domínio alvo já está na biblioteca.
+        _site_rows = await (await db.execute(
+            "SELECT base_url FROM crawl_sites WHERE deleted=0"
+        )).fetchall()
+        _known_domains: frozenset[str] = frozenset(
+            urlparse(r[0]).netloc for r in _site_rows if r[0]
+        )
+
         async def _process_url(
             client: httpx.AsyncClient, url: str, depth: int
         ) -> list[tuple[str, int]]:
@@ -540,6 +549,16 @@ async def crawl_site(site_id: int) -> int:
                         await index_page_images(db, url, imgs, client, img_dedup)
                 except Exception as exc:
                     log.debug("index_page_images error %s: %s", url, exc)
+
+            # Extrai e armazena links de saída para PageRank (best-effort)
+            if html and not from_jina:
+                try:
+                    from services.pagerank import extract_links, store_page_links
+                    links = extract_links(html, url, known_domains=_known_domains)
+                    if links:
+                        await store_page_links(db, url, links)
+                except Exception as exc:
+                    log.debug("store_page_links error %s: %s", url, exc)
 
             await db.commit()
 

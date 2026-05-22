@@ -33,6 +33,7 @@ dependencies = [
     "imagehash>=4.3",
     "pybktree>=1.1",
     "Pillow>=10.0",
+    "networkx>=3.0",
 ]
 
 [build-system]

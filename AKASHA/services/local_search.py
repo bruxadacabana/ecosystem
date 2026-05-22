@@ -1191,6 +1191,38 @@ async def _search_vec(query: str, max_results: int) -> list[SearchResult]:
 
 
 # ---------------------------------------------------------------------------
+# PageRank boost
+# ---------------------------------------------------------------------------
+
+async def _apply_pagerank_boost(results: list[SearchResult]) -> list[SearchResult]:
+    """Multiplica o score implícito de cada resultado pelo seu PageRank normalizado.
+
+    URLs sem entrada em page_rank recebem fator 1.0 (neutro).
+    A reordenação é por (rank_position_score × pagerank_factor).
+    """
+    if not results:
+        return results
+    try:
+        from services.pagerank import get_page_rank_scores
+        import aiosqlite as _aio
+        urls = [r.url for r in results]
+        async with _aio.connect(DB_PATH) as db:
+            pr_scores = await get_page_rank_scores(db, urls)
+        if all(s == 1.0 for s in pr_scores.values()):
+            return results  # sem dados ainda, evita reordenação desnecessária
+        # score combinado: posição invertida × pagerank
+        n = len(results)
+        scored = [
+            (r, (1.0 / (i + 1)) * pr_scores.get(r.url, 1.0))
+            for i, r in enumerate(results)
+        ]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [r for r, _ in scored]
+    except Exception:
+        return results
+
+
+# ---------------------------------------------------------------------------
 # Usage-based ranking
 # ---------------------------------------------------------------------------
 
@@ -1546,6 +1578,7 @@ async def search_local(
         rest   = combined[RERANK_TOP_K:]
         combined = top + rest
     combined = await _apply_usage_boost(combined)
+    combined = await _apply_pagerank_boost(combined)
     log.debug(
         "retrieval final: %d resultados — top5: %s",
         len(combined),

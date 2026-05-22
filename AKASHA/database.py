@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 40
+SCHEMA_VERSION = 41
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -198,6 +198,31 @@ CREATE INDEX IF NOT EXISTS idx_page_images_page ON page_images(page_url);
 
 _CREATE_IDX_PAGE_IMAGES_PHASH = """
 CREATE INDEX IF NOT EXISTS idx_page_images_phash ON page_images(phash) WHERE phash != '';
+"""
+
+
+_CREATE_PAGE_LINKS = """
+CREATE TABLE IF NOT EXISTS page_links (
+    source_url  TEXT NOT NULL,
+    target_url  TEXT NOT NULL,
+    PRIMARY KEY (source_url, target_url)
+);
+"""
+
+_CREATE_IDX_PAGE_LINKS_SOURCE = """
+CREATE INDEX IF NOT EXISTS idx_page_links_source ON page_links(source_url);
+"""
+
+_CREATE_IDX_PAGE_LINKS_TARGET = """
+CREATE INDEX IF NOT EXISTS idx_page_links_target ON page_links(target_url);
+"""
+
+_CREATE_PAGE_RANK = """
+CREATE TABLE IF NOT EXISTS page_rank (
+    url         TEXT PRIMARY KEY,
+    score       REAL NOT NULL DEFAULT 1.0,
+    updated_at  INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -446,6 +471,10 @@ async def init_db() -> None:
         await db.execute(_CREATE_PAGE_IMAGES_FTS)
         await db.execute(_CREATE_IDX_PAGE_IMAGES_PAGE)
         await db.execute(_CREATE_IDX_PAGE_IMAGES_PHASH)
+        await db.execute(_CREATE_PAGE_LINKS)
+        await db.execute(_CREATE_IDX_PAGE_LINKS_SOURCE)
+        await db.execute(_CREATE_IDX_PAGE_LINKS_TARGET)
+        await db.execute(_CREATE_PAGE_RANK)
         await db.execute(_CREATE_WATCH_LATER)
         await db.execute(_CREATE_WATCH_LATER_FTS)
         await db.execute(_CREATE_ACTIVITY_LOG)
@@ -1015,6 +1044,21 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             await db.execute(_CREATE_IDX_PAGE_IMAGES_PHASH)
         except Exception:
             pass
+
+    if from_version < 41:
+        # Grafo de links para Personalized PageRank.
+        # page_links: arestas extraídas durante crawling (source → target).
+        # page_rank: scores normalizados 0.8–1.2 computados semanalmente.
+        for ddl in (
+            _CREATE_PAGE_LINKS,
+            _CREATE_IDX_PAGE_LINKS_SOURCE,
+            _CREATE_IDX_PAGE_LINKS_TARGET,
+            _CREATE_PAGE_RANK,
+        ):
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
