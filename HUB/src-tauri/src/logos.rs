@@ -598,7 +598,7 @@ pub struct RecommendedModel {
     pub for_profiles:        Vec<String>,
     /// True se o perfil atual recomenda este modelo para algum slot
     pub for_current_profile: bool,
-    /// Instalado no Ollama
+    /// Instalado (registry LOGOS ou blob store do Ollama)
     pub is_installed:        bool,
     /// Modelo estático (model2vec, não-Ollama) — download automático no primeiro uso
     pub is_static:           bool,
@@ -2109,37 +2109,33 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
         current_mp.llm_query, current_mp.embed,
     ].iter().filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
 
-    // Status de instalação via /api/tags
+    // Status de instalação: registry LOGOS primeiro, depois blob store do Ollama.
+    // Não consulta Ollama /api/tags — funciona sem Ollama em execução.
+    let model_names: Vec<String> = map.keys().cloned().collect();
+    let registry_entries = read_model_registry(&s.0.models_dir).await;
     let size_map: HashMap<String, u64> = {
-        let tags = s.0.client
-            .get(format!("{}/api/tags", s.0.ollama_url))
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await
-            .ok();
-        if let Some(resp) = tags {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                json["models"].as_array()
-                    .map(|arr| arr.iter().filter_map(|m| {
-                        let name = m["name"].as_str()?.to_string();
-                        let size_mb = m["size"].as_u64().unwrap_or(0) / 1_000_000;
-                        Some((name, size_mb))
-                    }).collect())
-                    .unwrap_or_default()
-            } else { Default::default() }
-        } else { Default::default() }
+        let mut m: HashMap<String, u64> = HashMap::new();
+        // 1. Modelos registrados no LOGOS (downloaded via HUB ou gguf_converter)
+        for entry in &registry_entries {
+            m.insert(entry.name.clone(), entry.size_bytes / 1_000_000);
+        }
+        // 2. Modelos no blob store do Ollama (reutiliza downloads existentes)
+        for name in &model_names {
+            if !m.contains_key(name.as_str()) {
+                if let Some(blob) = find_gguf_in_ollama_store(name) {
+                    let size_mb = std::fs::metadata(&blob)
+                        .map(|meta| meta.len() / 1_000_000)
+                        .unwrap_or(0);
+                    m.insert(name.clone(), size_mb);
+                }
+            }
+        }
+        m
     };
 
     let mut result: Vec<RecommendedModel> = map.into_iter().map(|(model_name, (slots, for_profiles))| {
-        // Ollama armazena modelos sem tag explícita com ":latest" (ex: "bge-m3" → "bge-m3:latest").
-        // Verificar ambas as formas para não mostrar botão de download em modelos já instalados.
-        let name_latest          = format!("{}:latest", model_name);
-        let is_installed         = size_map.contains_key(&model_name)
-                                || size_map.contains_key(&name_latest);
-        let size_disk_mb         = size_map.get(&model_name)
-                                .or_else(|| size_map.get(&name_latest))
-                                .copied()
-                                .unwrap_or(0);
+        let is_installed         = size_map.contains_key(&model_name);
+        let size_disk_mb         = size_map.get(&model_name).copied().unwrap_or(0);
         let for_current_profile  = current_models.contains(&model_name);
         let expected_speed_note = if for_profiles.contains(&"work_pc".to_string()) {
             speed_note_workpc(&model_name).map(str::to_string)
@@ -3403,5 +3399,37 @@ mod tests {
     fn find_gguf_ollama_store_returns_none_for_nonexistent_model() {
         let result = find_gguf_in_ollama_store("modelo-que-nao-existe-xyz");
         assert!(result.is_none());
+    }
+
+    // ── size_map para recommended models — registry LOGOS ────────────────────
+
+    #[tokio::test]
+    async fn recommended_size_map_uses_logos_registry() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        let gguf = models_dir.join("smollm2-q4km.gguf");
+        std::fs::write(&gguf, vec![0u8; 2_000_000]).unwrap(); // 2 MB
+
+        let entry = ModelRegistryEntry {
+            name:          "smollm2:1.7b".to_string(),
+            repo_id:       "org/repo".to_string(),
+            filename:      "smollm2-q4km.gguf".to_string(),
+            path:          gguf.to_str().unwrap().to_string(),
+            size_bytes:    2_000_000,
+            sha256:        "aaa".to_string(),
+            downloaded_at: "2026-05-23T00:00:00+00:00".to_string(),
+        };
+        update_model_registry(&models_dir, entry).await;
+
+        // Simula o bloco size_map da do_get_recommended_models
+        let registry_entries = read_model_registry(&models_dir).await;
+        let mut size_map: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        for e in &registry_entries {
+            size_map.insert(e.name.clone(), e.size_bytes / 1_000_000);
+        }
+
+        assert_eq!(size_map.get("smollm2:1.7b"), Some(&2));
+        assert!(!size_map.contains_key("modelo-ausente"));
     }
 }

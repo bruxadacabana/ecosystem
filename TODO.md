@@ -4800,6 +4800,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **VRAM via nvidia-smi no laptop** — `vram_usage` usa nvidia-smi quando sysfs AMD não está disponível; elimina dependência de Ollama /api/ps para monitoramento NVIDIA
 - [x] **`do_silence` para llama-server** — para o processo llama-server atual ao invés de enviar keep_alive=0 ao Ollama
 - [x] **Remover `ollama create` do gguf_converter.py** — GGUF registrado no registry do LOGOS; llama-server carrega diretamente sem necessidade de registro no Ollama
+- [x] **`is_installed` em `do_get_recommended_models` sem Ollama** — substituir consulta ao `/api/tags` do Ollama por leitura do registry LOGOS (`registry.json`) + `find_gguf_in_ollama_store`; `size_disk_mb` calculado via `size_bytes` do registry ou `fs::metadata` do blob
 
 ### Pesquisa: Backends de Inferência LLM Local sem Intermediários (LOGOS Option B) | 2026-05-22
 > Contexto: investigação completa de alternativas ao Ollama para inferência LLM local sem intermediário. O LOGOS precisa de controle direto sobre carga/descarga de modelos, monitoramento de VRAM e acesso a logits. Conclusão: llama-server nativo em Router Mode + llama-cpp-python in-process é a arquitetura correta para o hardware heterogêneo do ecossistema (AMD Vulkan/RX 6600, CUDA/MX150, CPU sem AVX2).
