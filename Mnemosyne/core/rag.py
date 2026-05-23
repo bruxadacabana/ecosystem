@@ -53,7 +53,7 @@ def _check_index_health(vectorstore: Any) -> None:
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama, OllamaLLM
+from langchain_openai import ChatOpenAI
 from rank_bm25 import BM25Okapi
 
 from .bm25_index import BM25Index
@@ -65,6 +65,17 @@ from .reflection import REFLECTION_COSINE_THRESHOLD
 if TYPE_CHECKING:
     from .tracker import FileTracker
     from .collections import CollectionConfig
+
+
+def _make_llm(model: str, temperature: float = 0.0, timeout: int = 30) -> ChatOpenAI:
+    """Cria ChatOpenAI apontando para o backend de inferência ativo (LOGOS ou llama-server)."""
+    try:
+        from ecosystem_client import get_inference_url as _giu
+        base_url = f"{_giu()}/v1"
+    except Exception:
+        base_url = "http://localhost:8080/v1"
+    return ChatOpenAI(model=model, temperature=temperature, timeout=timeout,
+                      base_url=base_url, api_key="logos")
 
 
 class SourceRecord(TypedDict, total=False):
@@ -455,10 +466,10 @@ def _multi_query_retrieve(
     """
     queries = [question]
     try:
-        llm = OllamaLLM(model=llm_model, temperature=0.5, timeout=30)
+        llm = _make_llm(llm_model, temperature=0.5, timeout=30)
         raw = strip_think(llm.invoke(
             _MULTI_QUERY_PROMPT.format(n=n_variants, question=question)
-        ))
+        ).content)
         for line in raw.splitlines():
             line = line.strip()
             if line and line != question:
@@ -501,10 +512,10 @@ def _hyde_retrieve(
     Fallback para retrieval semântico normal se a geração falhar.
     """
     try:
-        llm = OllamaLLM(model=llm_model, temperature=0.3, timeout=30)
+        llm = _make_llm(llm_model, temperature=0.3, timeout=30)
         hypothetical = strip_think(llm.invoke(
             _HYDE_PROMPT.format(question=question)
-        ))
+        ).content)
         if not hypothetical.strip():
             raise ValueError("Resposta hipotética vazia")
         return _hybrid_retrieve(vectorstore, hypothetical, k, source_type, source_files, bm25_index, node_types)
@@ -551,8 +562,8 @@ def _iterative_retrieve(
     try:
         context_preview = "\n\n---\n".join(doc.page_content[:400] for doc in iter1[:5])
         prompt = _ITER_PROVISIONAL_PROMPT.format(context=context_preview, question=question)
-        llm = OllamaLLM(model=llm_model, temperature=0.0, timeout=30)
-        provisional = strip_think(llm.invoke(prompt)).strip()
+        llm = _make_llm(llm_model, temperature=0.0, timeout=30)
+        provisional = strip_think(llm.invoke(prompt).content).strip()
     except Exception:
         pass  # sem resposta provisória → retornar só iter1
 
@@ -621,13 +632,13 @@ def _contextual_compress(
         return docs
 
     try:
-        llm = OllamaLLM(model=llm_model, temperature=0, timeout=30)
+        llm = _make_llm(llm_model, temperature=0, timeout=30)
         kept: list[Document] = []
         for doc in docs:
             chunk_preview = doc.page_content[:600]
             prompt = _COMPRESS_PROMPT.format(question=question, chunk=chunk_preview)
             try:
-                answer = strip_think(llm.invoke(prompt)).lower().strip()
+                answer = strip_think(llm.invoke(prompt).content).lower().strip()
                 if answer.startswith("sim"):
                     kept.append(doc)
             except Exception:
@@ -824,8 +835,8 @@ def _retrieve_multi_strategy(
         try:
             context_preview = "\n\n---\n".join(doc.page_content[:400] for doc in iter1[:5])
             prompt = _ITER_PROVISIONAL_PROMPT.format(context=context_preview, question=question)
-            llm = OllamaLLM(model=llm_model, temperature=0.0, timeout=30)
-            provisional = strip_think(llm.invoke(prompt)).strip()
+            llm = _make_llm(llm_model, temperature=0.0, timeout=30)
+            provisional = strip_think(llm.invoke(prompt).content).strip()
         except Exception:
             pass
         if not provisional:
@@ -844,9 +855,9 @@ def _retrieve_multi_strategy(
     if strategy == "multi_query":
         queries = [question]
         try:
-            llm = OllamaLLM(model=llm_model, temperature=0.5, timeout=30)
+            llm = _make_llm(llm_model, temperature=0.5, timeout=30)
             raw = strip_think(
-                llm.invoke(_MULTI_QUERY_PROMPT.format(n=3, question=question))
+                llm.invoke(_MULTI_QUERY_PROMPT.format(n=3, question=question)).content
             )
             for line in raw.splitlines():
                 line = line.strip()
@@ -870,9 +881,9 @@ def _retrieve_multi_strategy(
 
     if strategy == "hyde":
         try:
-            llm = OllamaLLM(model=llm_model, temperature=0.3, timeout=30)
+            llm = _make_llm(llm_model, temperature=0.3, timeout=30)
             hypothetical = strip_think(
-                llm.invoke(_HYDE_PROMPT.format(question=question))
+                llm.invoke(_HYDE_PROMPT.format(question=question)).content
             )
             if hypothetical.strip():
                 return _retrieve_multi(
@@ -1037,7 +1048,7 @@ def _build_messages(
     emotional_framing: str = "",
 ) -> list[BaseMessage]:
     """
-    Constrói a lista de mensagens para ChatOllama com roles separados:
+    Constrói a lista de mensagens para ChatOpenAI com roles separados:
       SystemMessage  — persona fixa (nunca se perde no contexto)
       HumanMessage   — turnos anteriores do utilizador
       AIMessage      — respostas anteriores do assistente
@@ -1322,7 +1333,7 @@ def ask(
             source_type, retrieval_mode, tracker, persona, source_files,
             collection_type, bm25_index=None, iterative_retrieval=iterative_retrieval,
         )
-        llm = ChatOllama(model=config.llm_model, temperature=0)
+        llm = _make_llm(config.llm_model, temperature=0)
         response = llm.invoke(messages)
         answer = strip_think(response.content)
     except QueryError:
