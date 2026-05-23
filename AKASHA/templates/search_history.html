@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Sessões de busca — AKASHA{% endblock %}
+
+{% block content %}
+<div class="history-container">
+
+  <div class="history-filters" style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;">
+    <a href="/history" class="tag">atividade</a>
+    <span class="tag tag-active">sessões de busca</span>
+    {% if total %}<span class="meta">{{ total }} sessão{% if total != 1 %}ões{% endif %}</span>{% endif %}
+  </div>
+
+  {% if not sessions %}
+  <section class="empty-state">
+    <p class="empty-icon">&#x2315;</p>
+    <p class="empty-title">Nenhuma sessão registrada</p>
+    <p class="empty-hint">Faça buscas e clique em resultados para ver o histórico de sessões aqui.</p>
+  </section>
+  {% else %}
+
+  {% set ns = namespace(last_date='') %}
+  {% for s in sessions %}
+
+    {% if s.date_label != ns.last_date %}
+      {% if not loop.first %}</div>{% endif %}
+      <h3 class="results-section-title" style="margin:1.5rem 0 .5rem;">{{ s.date_label }}</h3>
+      <div>
+      {% set ns.last_date = s.date_label %}
+    {% endif %}
+
+    <div class="search-session-card">
+      <div class="search-session-header">
+        <span class="search-session-time meta">{{ s.time_label }}</span>
+        <div class="search-session-queries">
+          {% for q in s.queries %}
+            <a href="/search?q={{ q | urlencode }}&sources=all"
+               class="search-session-query-tag tag"
+               hx-get="/search?q={{ q | urlencode }}&sources=all"
+               hx-target="#main-content"
+               hx-swap="outerHTML"
+               hx-select="#main-content"
+               hx-push-url="true"
+            >{{ q }}</a>
+          {% endfor %}
+        </div>
+        <span class="meta">{{ s.click_count }} clique{% if s.click_count != 1 %}s{% endif %}</span>
+      </div>
+
+      {% if s.clicks %}
+      <ul class="search-session-clicks">
+        {% for c in s.clicks %}
+        <li class="search-session-click">
+          <span class="meta search-session-click-time">{{ c.time_label }}</span>
+          <a href="{{ c.url }}" target="_blank" rel="noopener" class="result-link search-session-click-url">{{ c.url }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+
+    {% if loop.last %}</div>{% endif %}
+  {% endfor %}
+
+  <!-- ─── Paginação ─────────────────────────────────────────── -->
+  {% if total_pages > 1 %}
+  <div class="history-pagination">
+    {% if page > 1 %}
+    <a class="btn btn-ghost btn-sm"
+       href="/search/history?page={{ page - 1 }}"
+       hx-get="/search/history?page={{ page - 1 }}"
+       hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+    >← anterior</a>
+    {% endif %}
+    <span class="meta">{{ page }} / {{ total_pages }}</span>
+    {% if page < total_pages %}
+    <a class="btn btn-ghost btn-sm"
+       href="/search/history?page={{ page + 1 }}"
+       hx-get="/search/history?page={{ page + 1 }}"
+       hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+    >próxima →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}

@@ -943,6 +943,72 @@ a:hover { opacity: 0.75; }
   flex-wrap:       wrap;
 }
 
+/* ── Sessões de busca ────────────────────────────────────── */
+.search-session-card {
+  border:        1px solid var(--border);
+  border-radius: var(--radius);
+  padding:       .75rem 1rem;
+  margin-bottom: .6rem;
+  background:    var(--surface);
+}
+
+.search-session-header {
+  display:     flex;
+  align-items: flex-start;
+  gap:         .75rem;
+  flex-wrap:   wrap;
+}
+
+.search-session-time {
+  min-width:   3rem;
+  flex-shrink: 0;
+  padding-top: .15rem;
+}
+
+.search-session-queries {
+  display:   flex;
+  flex-wrap: wrap;
+  gap:       .35rem;
+  flex:      1;
+}
+
+.search-session-query-tag {
+  font-size:    .8rem;
+  padding:      .15rem .5rem;
+  border-radius: 999px;
+}
+
+.search-session-clicks {
+  list-style:  none;
+  padding:     0;
+  margin:      .5rem 0 0;
+  border-top:  1px solid var(--border);
+  padding-top: .4rem;
+  display:     flex;
+  flex-direction: column;
+  gap:         .25rem;
+}
+
+.search-session-click {
+  display:     flex;
+  align-items: baseline;
+  gap:         .6rem;
+  font-size:   .82rem;
+}
+
+.search-session-click-time {
+  min-width:   3rem;
+  flex-shrink: 0;
+  font-size:   .75rem;
+}
+
+.search-session-click-url {
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+  max-width:     60ch;
+}
+
 /* ── Biblioteca — cards de sites cadastrados ─────────────── */
 .lib-discover-form {
   display:       flex;

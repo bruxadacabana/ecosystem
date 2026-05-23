@@ -1176,6 +1176,64 @@ async def search_videos_page(request: Request, q: str = "") -> HTMLResponse:
     )
 
 
+_SEARCH_HISTORY_PAGE_SIZE = 20
+
+
+def _ts_to_date_label(ts: int) -> str:
+    from datetime import date, datetime, timedelta, timezone
+    try:
+        d = datetime.fromtimestamp(ts, tz=timezone.utc).date()
+    except Exception:
+        return ""
+    today = date.today()
+    if d == today:
+        return "Hoje"
+    if d == today - timedelta(days=1):
+        return "Ontem"
+    return d.strftime("%d/%m/%Y")
+
+
+def _ts_to_time_label(ts: int) -> str:
+    from datetime import datetime, timezone
+    try:
+        return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%H:%M")
+    except Exception:
+        return ""
+
+
+@router.get("/search/history", response_class=HTMLResponse)
+async def search_history_page(request: Request, page: int = 1) -> HTMLResponse:
+    """Lista cronológica de sessões de busca — queries feitas e links abertos."""
+    page = max(1, page)
+    offset = (page - 1) * _SEARCH_HISTORY_PAGE_SIZE
+
+    import aiosqlite
+    from services.click_log import get_search_sessions, count_search_sessions
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        sessions = await get_search_sessions(db, limit=_SEARCH_HISTORY_PAGE_SIZE, offset=offset)
+        total = await count_search_sessions(db)
+
+    total_pages = max(1, (total + _SEARCH_HISTORY_PAGE_SIZE - 1) // _SEARCH_HISTORY_PAGE_SIZE)
+
+    for s in sessions:
+        s["date_label"] = _ts_to_date_label(s["session_end"])
+        s["time_label"] = _ts_to_time_label(s["session_end"])
+        for c in s["clicks"]:
+            c["time_label"] = _ts_to_time_label(c["timestamp"])
+
+    return templates.TemplateResponse(
+        request,
+        "search_history.html",
+        {
+            "sessions":    sessions,
+            "page":        page,
+            "total_pages": total_pages,
+            "total":       total,
+            "active_tab":  "history",
+        },
+    )
+
+
 @router.get("/search/more", response_class=HTMLResponse)
 async def search_more(
     request: Request,

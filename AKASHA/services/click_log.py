@@ -105,6 +105,69 @@ async def compute_domain_boosts(db: aiosqlite.Connection) -> int:
     return len(boosts)
 
 
+async def get_search_sessions(
+    db: aiosqlite.Connection,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[dict]:
+    """Retorna sessões de busca agrupadas por session_id, mais recentes primeiro.
+
+    Cada sessão contém as queries distintas feitas e os links clicados.
+    Sessões sem session_id são ignoradas.
+    """
+    session_rows = await (await db.execute(
+        """SELECT session_id, MIN(timestamp) AS t_start, MAX(timestamp) AS t_end,
+                  COUNT(*) AS click_count
+           FROM click_log
+           WHERE session_id != ''
+           GROUP BY session_id
+           ORDER BY t_end DESC
+           LIMIT ? OFFSET ?""",
+        (limit, offset),
+    )).fetchall()
+
+    if not session_rows:
+        return []
+
+    sessions = []
+    for sid, t_start, t_end, click_count in session_rows:
+        click_rows = await (await db.execute(
+            """SELECT url, query_norm, timestamp, position_clicked
+               FROM click_log
+               WHERE session_id = ?
+               ORDER BY timestamp ASC""",
+            (sid,),
+        )).fetchall()
+
+        seen_set: set[str] = set()
+        queries: list[str] = []
+        clicks: list[dict] = []
+        for url, qnorm, ts, pos in click_rows:
+            if qnorm and qnorm not in seen_set:
+                queries.append(qnorm)
+                seen_set.add(qnorm)
+            clicks.append({"url": url, "query_norm": qnorm, "timestamp": ts, "position": pos})
+
+        sessions.append({
+            "session_id":    sid,
+            "session_start": t_start,
+            "session_end":   t_end,
+            "queries":       queries,
+            "clicks":        clicks,
+            "click_count":   click_count,
+        })
+
+    return sessions
+
+
+async def count_search_sessions(db: aiosqlite.Connection) -> int:
+    """Conta sessões distintas com session_id não-vazio."""
+    row = await (await db.execute(
+        "SELECT COUNT(DISTINCT session_id) FROM click_log WHERE session_id != ''"
+    )).fetchone()
+    return row[0] if row else 0
+
+
 async def get_domain_boosts(
     db: aiosqlite.Connection,
     domains: list[str],
