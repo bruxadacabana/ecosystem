@@ -1,5 +1,36 @@
 ## Fila de implementação atual:
 
+6PM
+
+BUG
+
+AKASHA não completou a busca:
+"Erro na busca
+
+name 'log' is not defined"
+
+
+15:15:07
+,105 [INFO] akasha.knowledge_worker: knowledge_worker: extraindo 'É possível se cansar de fazer algo repetidas vezes? E como i' [crawled]
+15:15:07
+,120 [INFO] httpx: HTTP Request: POST http://127.0.0.1:7072/api/generate "HTTP/1.1 502 Bad Gateway"
+15:15:07
+,120 [WARNING] akasha.knowledge_worker: knowledge_worker: Ollama falhou na extração: Server error '502 Bad Gateway' for url 'http://127.0.0.1:7072/api/generate' For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502
+15:15:07
+,727 [INFO] httpx: HTTP Request: GET https://coveteur.com/charlotte-lawrence-closet-tour "HTTP/1.1 200 OK"
+15:15:08
+,736 [INFO] httpx: HTTP Request: GET https://coveteur.com/katarina-zhu-keeping-tabs "HTTP/1.1 200 OK"
+15:15:09
+,123 [INFO] akasha.knowledge_worker: knowledge_worker: extraindo 'How to measure metacognition' [paper]
+15:15:09
+,140 [INFO] httpx: HTTP Request: POST http://127.0.0.1:7072/api/generate "HTTP/1.1 502 Bad Gateway"
+15:15:09
+,141 [WARNING] akasha.knowledge_worker: knowledge_worker: Ollama falhou na extração: Server error '502 Bad Gateway' for url 'http://127.0.0.1:7072/api/generate' For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502
+15:15:09
+
+---
+
+
 então prossiga com a implementação de '### Pesquisa: Fine-Tuning Local com QLoRA — Aprendizado Real de Corpus Pessoal | 2026-05-22
 '!
 lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.

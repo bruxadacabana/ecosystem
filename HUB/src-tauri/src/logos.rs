@@ -1310,11 +1310,6 @@ async fn queue_and_forward(
     if use_llama {
         // ── llama-server: garante modelo carregado e traduz formato ──
         if let Err(e) = ensure_llama_model_loaded(&s, &model_name).await {
-            if priority == 1 && s.0.llama_server_bin.is_none() {
-                if let Some(pid) = *s.0.ollama_pid.lock().await {
-                    set_ollama_priority(pid, false).await;
-                }
-            }
             *s.0.active_priority.lock().await    = None;
             *s.0.active_model_class.lock().await = None;
             *s.0.active_app.lock().await         = None;
