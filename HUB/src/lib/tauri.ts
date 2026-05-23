@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry, DomainEntry, TopicEntry } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry, DomainEntry, TopicEntry, FinetuneState } from '../types'
 
 async function call<T>(
   command: string,
@@ -322,6 +322,15 @@ export const interestsRefresh = (): Promise<TauriResult<void>> =>
 
 // ----------------------------------------------------------
 //  Syncthing
+// ----------------------------------------------------------
+
+// ----------------------------------------------------------
+//  Fine-tuning
+// ----------------------------------------------------------
+
+export const logosGetFinetuneState  = ():    Promise<TauriResult<FinetuneState>> => call<FinetuneState>('logos_get_finetune_state')
+export const logosTriggerFinetune   = ():    Promise<TauriResult<boolean>>       => call<boolean>('logos_trigger_finetune')
+
 // ----------------------------------------------------------
 
 export const syncthingStatus    = ():                      Promise<TauriResult<SyncStatus>> => call<SyncStatus>('syncthing_status')

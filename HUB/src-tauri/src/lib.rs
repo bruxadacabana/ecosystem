@@ -96,6 +96,8 @@ pub fn run() {
             commands::logos::logos_set_vram_limit_pct,
             commands::logos::logos_abort_model_inference,
             commands::logos::logos_delete_model,
+            commands::logos::logos_get_finetune_state,
+            commands::logos::logos_trigger_finetune,
             commands::memory::memory_get_entries,
             commands::memory::memory_delete_entry,
             commands::memory::kosmos_get_analysis_stats,

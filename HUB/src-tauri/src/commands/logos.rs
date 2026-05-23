@@ -5,8 +5,9 @@
 
 use std::time::Duration;
 use tauri::Emitter;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use crate::logos::{LogosState, ModelAssignment, OllamaModelEntry, OllamaModelInfo, OllamaStatus, PullProgress, RecommendedModel, StatusResponse};
+use crate::ecosystem;
 
 #[derive(Serialize, Clone)]
 struct EmbedCompatWarning {
@@ -428,4 +429,132 @@ async fn wait_ollama_down(app: &tauri::AppHandle, ollama_url: &str) {
         running: false,
         message: "Ollama encerrado.".into(),
     });
+}
+
+// ============================================================
+//  Fine-tuning
+// ============================================================
+
+/// Estado do ciclo de fine-tuning — espelha logos/finetune_scheduler.py:FinetuneState.
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct FinetuneState {
+    pub corpus_chunks_at_last_train: i64,
+    pub last_cycle_at:               String,
+    pub current_model:               String,
+    pub prev_model:                  String,
+    pub current_step:                String,
+    pub examples_generated:          i64,
+    pub last_train_loss:             f64,
+    pub running:                     bool,
+}
+
+/// Lê {sync_root}/logos/finetune_state.json e retorna o estado atual.
+/// Retorna estado vazio se o arquivo não existir ou sync_root não estiver configurado.
+#[tauri::command]
+pub fn logos_get_finetune_state() -> FinetuneState {
+    let eco = ecosystem::read_json();
+    let sync_root = eco["sync_root"].as_str().unwrap_or("").trim().to_string();
+    if sync_root.is_empty() {
+        return FinetuneState::default();
+    }
+    let path = std::path::PathBuf::from(&sync_root)
+        .join("logos")
+        .join("finetune_state.json");
+    if !path.exists() {
+        return FinetuneState::default();
+    }
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<FinetuneState>(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Localiza o binário `uv` em locais canônicos (espelha iniciar.sh).
+fn find_uv() -> Option<std::path::PathBuf> {
+    // Verifica PATH primeiro via which
+    if let Ok(p) = which::which("uv") {
+        return Some(p);
+    }
+    // Locais canônicos sem PATH (mesmo que iniciar.sh)
+    let home = dirs::home_dir()?;
+    for candidate in &[
+        home.join(".local").join("bin").join("uv"),
+        home.join(".cargo").join("bin").join("uv"),
+        std::path::PathBuf::from("/usr/local/bin/uv"),
+    ] {
+        if candidate.exists() {
+            return Some(candidate.clone());
+        }
+    }
+    None
+}
+
+/// Localiza o diretório raiz do ecossistema (onde logos/finetune_scheduler.py existe).
+/// Tenta: pai do executável, diretório atual, e subidas até encontrar o script.
+fn find_ecosystem_root() -> Option<std::path::PathBuf> {
+    let marker = std::path::Path::new("logos").join("finetune_scheduler.py");
+    // 1. Tentar partir do executável e subir
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.parent()?;
+        for _ in 0..6 {
+            if dir.join(&marker).exists() {
+                return Some(dir.to_path_buf());
+            }
+            dir = dir.parent()?;
+        }
+    }
+    // 2. Diretório de trabalho atual
+    if let Ok(cwd) = std::env::current_dir() {
+        if cwd.join(&marker).exists() {
+            return Some(cwd);
+        }
+    }
+    None
+}
+
+/// Dispara o ciclo de fine-tuning em background via `uv run python logos/finetune_scheduler.py --trigger`.
+///
+/// Retorna true se o processo foi iniciado com sucesso.
+/// Retorna false se já houver um ciclo em andamento (lock file existe) ou se o
+/// uv/ecosistema não forem encontrados.
+#[tauri::command]
+pub fn logos_trigger_finetune() -> Result<bool, crate::AppError> {
+    // Verificar lock file antes de spawnar processo
+    let eco = ecosystem::read_json();
+    let sync_root = eco["sync_root"].as_str().unwrap_or("").trim().to_string();
+    if !sync_root.is_empty() {
+        let lock = std::path::PathBuf::from(&sync_root)
+            .join("logos")
+            .join("finetune.lock");
+        if lock.exists() {
+            return Ok(false);  // já em andamento
+        }
+    }
+
+    let ecosystem_root = find_ecosystem_root().ok_or_else(|| {
+        crate::AppError::NotFound("logos/finetune_scheduler.py não encontrado. Certifique-se de que o HUB está sendo executado a partir do diretório do ecossistema.".into())
+    })?;
+
+    let uv = find_uv().ok_or_else(|| {
+        crate::AppError::NotFound("uv não encontrado. Instale com: curl -LsSf https://astral.sh/uv/install.sh | sh".into())
+    })?;
+
+    // Spawna processo detached — não aguarda conclusão
+    let mut cmd = std::process::Command::new(&uv);
+    cmd.args(["run", "--python", "3.13", "python", "logos/finetune_scheduler.py", "--trigger"])
+        .current_dir(&ecosystem_root)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // process_group(0) cria novo grupo de processo → sobrevive ao HUB
+        cmd.process_group(0);
+    }
+
+    cmd.spawn()
+        .map(|_| true)
+        .map_err(|e| crate::AppError::Io(e.to_string()))
 }

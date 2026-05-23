@@ -322,3 +322,37 @@ def configure_logging(log_dir: "Path | None" = None) -> None:
     """Configura logging para este módulo (chamar no entry point do processo pai)."""
     from ecosystem_logging import setup_ecosystem_logger, default_log_dir  # noqa: PLC0415
     setup_ecosystem_logger("ecosystem.logos.finetune_scheduler", log_dir or default_log_dir())
+
+
+# ---------------------------------------------------------------------------
+# Entry point CLI — invocado pelo HUB via subprocess
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import sys as _sys
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=_sys.stderr,
+    )
+    # Suporta: python -m logos.finetune_scheduler [--trigger | --check]
+    args = _sys.argv[1:]
+    if "--trigger" in args or not args:
+        started = trigger_manual()
+        if started:
+            log.info("Ciclo iniciado — aguardando conclusão…")
+            # Manter o processo vivo enquanto o ciclo roda (thread daemon)
+            while is_running():
+                time.sleep(5)
+            log.info("Ciclo concluído.")
+            _sys.exit(0)
+        else:
+            log.warning("Ciclo já em andamento.")
+            _sys.exit(1)
+    elif "--check" in args:
+        result = should_auto_trigger()
+        print("true" if result else "false")
+        _sys.exit(0)
+    else:
+        print(f"Uso: python -m logos.finetune_scheduler [--trigger | --check]", file=_sys.stderr)
+        _sys.exit(2)

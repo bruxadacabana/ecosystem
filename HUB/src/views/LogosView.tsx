@@ -9,6 +9,7 @@ import { listen } from '@tauri-apps/api/event'
 import * as cmd from '../lib/tauri'
 import { listModels } from '../lib/ollama'
 import type { LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, PullProgress, EmbedCompatWarning } from '../types'
+import { FinetunePanel } from '../components/FinetunePanel'
 
 const PROFILES = [
   { id: 'normal',  label: 'Normal',  tip: 'Prioridades padrão de cada app'                       },
@@ -978,6 +979,11 @@ export function LogosView() {
             })}
           </div>
         )}
+      </section>
+
+      {/* ── Fine-Tuning ───────────────────────────────── */}
+      <section>
+        <FinetunePanel logosStatus={status} />
       </section>
 
       {/* ── Ações ─────────────────────────────────────── */}

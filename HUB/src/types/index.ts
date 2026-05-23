@@ -329,6 +329,21 @@ export interface TopicEntry {
 //  HUB Navigation
 // ----------------------------------------------------------
 
+// ----------------------------------------------------------
+//  Fine-tuning
+// ----------------------------------------------------------
+
+export interface FinetuneState {
+  corpus_chunks_at_last_train: number
+  last_cycle_at:               string    // ISO-8601 UTC ou ""
+  current_model:               string
+  prev_model:                  string
+  current_step:                string    // "" = parado; "erro: ..." = falha
+  examples_generated:          number
+  last_train_loss:             number    // -1 se não disponível
+  running:                     boolean
+}
+
 export type HubView = 'home' | 'writing' | 'reading' | 'projects'
 
 export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'fontes' | 'interesses' | 'comunicacoes' | 'config'
