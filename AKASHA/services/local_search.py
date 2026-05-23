@@ -6,6 +6,7 @@ ChromaDB (Mnemosyne) é opcional — importação com graceful fallback.
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import re
 from pathlib import Path
@@ -16,6 +17,8 @@ import config
 from config import DB_PATH
 from database import KNOWLEDGE_DB_PATH
 from services.web_search import SearchResult
+
+log = logging.getLogger("akasha.local_search")
 
 # ---------------------------------------------------------------------------
 # Modo de snippet — 'fts5' (padrão) ou 'paragraph_bm25'
