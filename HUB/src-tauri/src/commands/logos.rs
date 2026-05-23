@@ -130,90 +130,178 @@ pub async fn logos_get_recommended_models(
     Ok(crate::logos::do_get_recommended_models(&state).await)
 }
 
-/// Inicia o download de um modelo via Ollama pull.
-/// Emite eventos "logos-pull-progress" com PullProgress durante o download.
+/// Inicia o download de um modelo via LOGOS (HuggingFace).
+///
+/// Localiza o modelo na lista de recomendados (por nome ou filename) e
+/// usa o endpoint /logos/models/download do LOGOS proxy. Emite eventos
+/// "logos-pull-progress" com PullProgress durante o download via SSE.
 #[tauri::command]
 pub async fn logos_pull_model(
     app: tauri::AppHandle,
     state: tauri::State<'_, LogosState>,
     model: String,
 ) -> Result<(), String> {
-    let ollama_url = crate::logos::collect_status(&state).await.ollama_url;
+    let logos_base = "http://127.0.0.1:7072";
+
+    // Encontra repo_id + filename nos modelos recomendados ou no registry
+    let (repo_id, filename) = find_model_hf_info(&state, &model).await
+        .ok_or_else(|| format!(
+            "Modelo '{model}' não encontrado na lista de recomendados. \
+             Use o HUB para baixar modelos suportados."
+        ))?;
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(3600))
+        .timeout(Duration::from_secs(7200))
         .build()
         .unwrap_or_default();
 
-    let resp = client
-        .post(format!("{ollama_url}/api/pull"))
-        .json(&serde_json::json!({ "model": model, "stream": true }))
+    // Inicia o download
+    let start_resp = client
+        .post(format!("{logos_base}/logos/models/download"))
+        .json(&serde_json::json!({ "repo_id": repo_id, "filename": filename }))
         .send()
         .await
-        .map_err(|e| format!("Ollama indisponível: {e}"))?;
+        .map_err(|e| format!("LOGOS indisponível: {e}"))?;
 
-    if !resp.status().is_success() {
-        let code = resp.status().as_u16();
-        return Err(format!("Ollama retornou {code}"));
+    let status = start_resp.status();
+    if !status.is_success() && status.as_u16() != 409 {
+        let code = status.as_u16();
+        let body = start_resp.text().await.unwrap_or_default();
+        return Err(format!("LOGOS retornou {code}: {body}"));
     }
 
-    let mut resp = resp;
-    let mut buf  = String::new();
+    let body_json: serde_json::Value = start_resp.json().await
+        .map_err(|e| format!("Resposta inválida do LOGOS: {e}"))?;
+    let id = body_json["id"].as_str()
+        .ok_or_else(|| "LOGOS não retornou id de download".to_string())?
+        .to_string();
+
+    // Acompanha progresso via SSE
+    let mut sse = client
+        .get(format!("{logos_base}/logos/models/download/progress/{id}"))
+        .send()
+        .await
+        .map_err(|e| format!("Erro ao acompanhar progresso: {e}"))?;
+
     let model_str = model.clone();
+    let mut buf   = String::new();
 
     loop {
-        let chunk = resp.chunk().await.map_err(|e| format!("Erro ao ler stream: {e}"))?;
+        let chunk = sse.chunk().await.map_err(|e| format!("Erro ao ler SSE: {e}"))?;
         let Some(bytes) = chunk else { break };
         buf.push_str(&String::from_utf8_lossy(&bytes));
 
         while let Some(pos) = buf.find('\n') {
             let line = buf[..pos].trim().to_string();
             buf.drain(..=pos);
-            if line.is_empty() { continue; }
-            if let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) {
-                let status_str = obj["status"].as_str().unwrap_or("").to_string();
-                let done       = status_str == "success";
+            if !line.starts_with("data: ") { continue; }
+            let data = &line[6..];
+            if let Ok(progress) = serde_json::from_str::<serde_json::Value>(data) {
+                let done       = progress["done"].as_bool().unwrap_or(false);
+                let has_error  = progress["error"].is_string();
+                let error_msg  = progress["error"].as_str().map(str::to_string);
+                let completed  = progress["bytes_downloaded"].as_u64();
+                let total      = progress["total_bytes"].as_u64();
+                let status_str = if done { "success" } else { "downloading" };
                 let _ = app.emit("logos-pull-progress", PullProgress {
                     model:     model_str.clone(),
-                    status:    status_str,
-                    completed: obj["completed"].as_u64(),
-                    total:     obj["total"].as_u64(),
+                    status:    status_str.into(),
+                    completed,
+                    total,
                     done,
-                    error:     None,
+                    error:     error_msg.clone(),
                 });
-                if done { return Ok(()); }
+                if done || has_error {
+                    return match error_msg {
+                        Some(e) => Err(e),
+                        None    => Ok(()),
+                    };
+                }
             }
         }
     }
 
     let _ = app.emit("logos-pull-progress", PullProgress {
-        model: model_str, status: "success".to_string(),
+        model: model_str, status: "success".into(),
         completed: None, total: None, done: true, error: None,
     });
     Ok(())
 }
 
-/// Remove um modelo do disco via DELETE /api/delete do Ollama.
-/// O modelo não deve estar ativo na VRAM — descarregue antes de remover.
+/// Remove um modelo do registry do LOGOS e apaga o arquivo GGUF do disco.
+/// O modelo não deve estar carregado na VRAM — descarregue antes de remover.
 #[tauri::command]
 pub async fn logos_delete_model(
     state: tauri::State<'_, LogosState>,
     model: String,
 ) -> Result<(), String> {
-    let ollama_url = crate::logos::collect_status(&state).await.ollama_url;
-    let client = reqwest::Client::new();
-    let resp = client
-        .delete(format!("{ollama_url}/api/delete"))
-        .json(&serde_json::json!({ "name": model }))
-        .send()
-        .await
-        .map_err(|e| format!("Ollama indisponível: {e}"))?;
-    if resp.status().is_success() {
-        Ok(())
-    } else {
-        let code = resp.status().as_u16();
-        let body = resp.text().await.unwrap_or_default();
-        Err(format!("Erro {code}: {body}"))
+    use std::path::PathBuf;
+
+    let registry_path = state.models_dir().join("registry.json");
+    let text = std::fs::read_to_string(&registry_path)
+        .map_err(|e| format!("Falha ao ler registry.json: {e}"))?;
+    let mut entries: Vec<crate::logos::ModelRegistryEntry> = serde_json::from_str(&text)
+        .map_err(|e| format!("registry.json corrompido: {e}"))?;
+
+    let idx = entries.iter().position(|e| {
+        e.name == model || e.filename == model || e.filename.trim_end_matches(".gguf") == model
+    }).ok_or_else(|| format!("Modelo '{model}' não encontrado no registry do LOGOS"))?;
+
+    let entry = entries.remove(idx);
+    let gguf  = PathBuf::from(&entry.path);
+    if gguf.exists() {
+        std::fs::remove_file(&gguf)
+            .map_err(|e| format!("Falha ao remover arquivo GGUF: {e}"))?;
+    }
+
+    let tmp = registry_path.with_extension("tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&entries).unwrap_or_default())
+        .map_err(|e| format!("Falha ao escrever registry.json: {e}"))?;
+    std::fs::rename(&tmp, &registry_path)
+        .map_err(|e| format!("Falha ao atualizar registry.json: {e}"))?;
+
+    log::info!("LOGOS: modelo '{}' removido do registry e disco", model);
+    Ok(())
+}
+
+/// Mapeia nome de modelo para (repo_id, filename) no HuggingFace.
+/// Consulta primeiro o registry LOGOS (modelos já baixados), depois a lista de recomendados.
+async fn find_model_hf_info(
+    state: &tauri::State<'_, LogosState>,
+    model: &str,
+) -> Option<(String, String)> {
+    // 1. Registry local (modelo já baixado via HUB)
+    let registry_path = state.models_dir().join("registry.json");
+    if let Ok(text) = std::fs::read_to_string(&registry_path) {
+        if let Ok(entries) = serde_json::from_str::<Vec<crate::logos::ModelRegistryEntry>>(&text) {
+            if let Some(e) = entries.iter().find(|e| {
+                e.name == model || e.filename == model || e.name.contains(model)
+            }) {
+                return Some((e.repo_id.clone(), e.filename.clone()));
+            }
+        }
+    }
+    // 2. Mapeamento estático: nome de modelo → (repo_id, filename no HuggingFace)
+    let hf = model_hf_table(model)?;
+    Some((hf.0.to_string(), hf.1.to_string()))
+}
+
+/// Tabela estática de mapeamento: nome/alias do modelo → (repo_id, filename GGUF).
+fn model_hf_table(model: &str) -> Option<(&'static str, &'static str)> {
+    let m = model.to_lowercase();
+    let m = m.trim_end_matches(":latest");
+    match m {
+        "smollm2:1.7b" | "smollm2-1.7b" | "smollm2_1.7b" =>
+            Some(("HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF", "SmolLM2-1.7B-Instruct-Q4_K_M.gguf")),
+        "gemma2:2b" | "gemma2-2b" | "gemma-2-2b" =>
+            Some(("bartowski/gemma-2-2b-it-GGUF", "gemma-2-2b-it-Q4_K_M.gguf")),
+        "llama3.2:3b" | "llama3.2-3b" | "llama-3.2-3b" =>
+            Some(("bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")),
+        "command-r:7b" | "command-r-7b" =>
+            Some(("bartowski/c4ai-command-r7b-12-2024-GGUF", "c4ai-command-r7b-12-2024-Q4_K_M.gguf")),
+        "nomic-embed-text" =>
+            Some(("nomic-ai/nomic-embed-text-v1.5-GGUF", "nomic-embed-text-v1.5.Q4_K_M.gguf")),
+        _ => None,
     }
 }
 
@@ -240,74 +328,54 @@ pub async fn logos_set_vram_limit_pct(
         .map_err(|e| format!("Erro ao salvar vram_limit_pct: {e}"))
 }
 
-/// Inicia o servidor Ollama com variáveis de ambiente corretas para o hardware.
+/// Verifica se o servidor de inferência (llama-server via LOGOS) está respondendo.
+/// Emite logos-ollama-status { running: bool }.
 ///
-/// Comportamento:
-/// - Se já estiver respondendo: emite logos-ollama-status { running: true } e retorna.
-/// - Linux: tenta `systemctl start ollama.service` primeiro; se falhar, fallback para
-///   subprocesso direto com env vars do perfil.
-/// - Windows: spawn direto via build_ollama_serve_command().
-/// - Após o spawn, faz polling a cada 500 ms por até 30 s e emite
-///   logos-ollama-status { running: true/false } quando o Ollama responder (ou timeout).
-/// - Guarda o handle do subprocesso no LogosState para uso no stop.
+/// O LOGOS inicia o llama-server automaticamente — esta função apenas verifica
+/// o estado e emite o evento para o frontend sincronizar o UI.
 #[tauri::command]
 pub async fn logos_start_ollama(
     app: tauri::AppHandle,
-    state: tauri::State<'_, LogosState>,
+    _state: tauri::State<'_, LogosState>,
 ) -> Result<(), String> {
-    let ollama_url = crate::logos::collect_status(&state).await.ollama_url;
-
-    if ollama_check(&ollama_url).await {
-        let _ = app.emit("logos-ollama-status", OllamaStatus {
-            running: true,
-            message: "Ollama já está em execução.".into(),
-        });
-        return Ok(());
-    }
-
-    // Linux: tentar systemctl antes do spawn direto
-    #[cfg(not(target_os = "windows"))]
-    {
-        let systemctl_ok = tokio::process::Command::new("systemctl")
-            .args(["start", "ollama.service"])
-            .output()
-            .await
-            .map(|out| out.status.success())
-            .unwrap_or(false);
-        if systemctl_ok {
-            // systemctl gerencia o processo — não há handle de filho para guardar
-            return poll_ollama_ready(app, &ollama_url).await;
-        }
-    }
-
-    // Spawn direto (Windows sempre; Linux como fallback)
-    let mut cmd = crate::commands::launcher::build_ollama_serve_command();
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    }
-
-    match cmd.spawn() {
-        Ok(child) => {
-            state.store_ollama_child(child).await;
-            poll_ollama_ready(app, &ollama_url).await
-        }
-        Err(e) => {
-            let msg = format!("Falha ao iniciar Ollama: {e}");
-            let _ = app.emit("logos-ollama-status", OllamaStatus {
-                running: false,
-                message: msg.clone(),
-            });
-            Err(msg)
-        }
-    }
+    let running = inference_check("http://127.0.0.1:7072/health").await;
+    let _ = app.emit("logos-ollama-status", OllamaStatus {
+        running,
+        message: if running {
+            "LOGOS ativo.".into()
+        } else {
+            "LOGOS não está respondendo — verifique se o HUB está em execução.".into()
+        },
+    });
+    Ok(())
 }
 
-/// Verifica se o Ollama está respondendo (timeout 500 ms).
-async fn ollama_check(url: &str) -> bool {
+/// Descarrega o modelo ativo da VRAM via LOGOS para liberar recursos.
+/// Emite logos-ollama-status { running: false } após o unload.
+#[tauri::command]
+pub async fn logos_stop_ollama(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LogosState>,
+) -> Result<(), String> {
+    // Para o processo llama-server gerenciado pelo LOGOS
+    let killed = state.kill_llama_proc().await;
+    if !killed {
+        // Fallback: descarregar modelo via endpoint LOGOS
+        let _ = reqwest::Client::new()
+            .post("http://127.0.0.1:7072/logos/models/unload")
+            .json(&serde_json::json!({ "model": "" }))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await;
+    }
+    wait_inference_down(&app).await;
+    Ok(())
+}
+
+/// Verifica se o LOGOS (llama-server) está respondendo via /health (timeout 500 ms).
+async fn inference_check(url: &str) -> bool {
     reqwest::Client::new()
-        .get(format!("{url}/api/tags"))
+        .get(url)
         .timeout(Duration::from_millis(500))
         .send()
         .await
@@ -315,121 +383,20 @@ async fn ollama_check(url: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Polling pós-spawn: tenta 60 × 500 ms = 30 s.
-/// Emite logos-ollama-status ao primeiro sucesso ou após timeout.
-async fn poll_ollama_ready(app: tauri::AppHandle, url: &str) -> Result<(), String> {
-    for _ in 0..60 {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        if ollama_check(url).await {
-            let _ = app.emit("logos-ollama-status", OllamaStatus {
-                running: true,
-                message: "Ollama pronto.".into(),
-            });
-            return Ok(());
-        }
-    }
-    let _ = app.emit("logos-ollama-status", OllamaStatus {
-        running: false,
-        message: "Timeout aguardando Ollama (30 s).".into(),
-    });
-    Err("Timeout aguardando Ollama (30 s).".into())
-}
-
-/// Para o servidor Ollama.
-///
-/// Prioridade de parada:
-/// 1. Se o LOGOS iniciou o processo (handle disponível): `child.kill()` — mais limpo.
-/// 2. Windows: verifica se "Ollama app.exe" está na bandeja do sistema via tasklist.
-///    Se sim, retorna erro explicativo (o app reinstanciaria o servidor imediatamente).
-///    Se não, executa `taskkill /F /IM ollama.exe /T`.
-/// 3. Linux: tenta `systemctl stop ollama.service`; fallback para `pkill -f "ollama serve"`.
-///
-/// Emite `logos-ollama-status { running: false }` após confirmar que o Ollama parou (até 5 s).
-#[tauri::command]
-pub async fn logos_stop_ollama(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, LogosState>,
-) -> Result<(), String> {
-    let ollama_url = crate::logos::collect_status(&state).await.ollama_url;
-
-    // Prioridade 1: matar o child que o LOGOS iniciou
-    if state.kill_ollama_child().await {
-        wait_ollama_down(&app, &ollama_url).await;
-        return Ok(());
-    }
-
-    // Prioridade 2/3: SO-específico
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-        // Detectar se "Ollama app.exe" (bandeja do sistema) está rodando
-        let tasklist = std::process::Command::new("tasklist")
-            .args(["/FI", "IMAGENAME eq ollama app.exe", "/NH", "/FO", "CSV"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase())
-            .unwrap_or_default();
-        if tasklist.contains("ollama app.exe") {
-            return Err(
-                "O app do Ollama está na bandeja do sistema e reiniciaria o servidor automaticamente. \
-                 Feche-o antes de parar.".to_string()
-            );
-        }
-
-        std::process::Command::new("taskkill")
-            .args(["/F", "/IM", "ollama.exe", "/T"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("taskkill falhou: {e}"))?;
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let systemctl_ok = tokio::process::Command::new("systemctl")
-            .args(["stop", "ollama.service"])
-            .output()
-            .await
-            .map(|out| out.status.success())
-            .unwrap_or(false);
-        if !systemctl_ok {
-            tokio::process::Command::new("pkill")
-                .args(["-f", "ollama serve"])
-                .spawn()
-                .map_err(|e| format!("pkill falhou: {e}"))?;
-        }
-    }
-
-    wait_ollama_down(&app, &ollama_url).await;
-    Ok(())
-}
-
-/// Polling até 5 s: aguarda o servidor de inferência parar de responder antes de emitir o evento final.
-async fn wait_ollama_down(app: &tauri::AppHandle, ollama_url: &str) {
-    let check_url = if ollama_url.contains("7072") {
-        // LOGOS proxy — checar diretamente o llama-server na 8080
-        "http://localhost:8080/health".to_string()
-    } else {
-        format!("{ollama_url}/health")
-    };
+/// Polling até 5 s: aguarda o servidor de inferência parar antes de emitir evento.
+async fn wait_inference_down(app: &tauri::AppHandle) {
     for _ in 0..10 {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        let still_up = reqwest::Client::new()
-            .get(&check_url)
-            .timeout(Duration::from_millis(400))
-            .send()
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false);
-        if !still_up {
+        if !inference_check("http://127.0.0.1:7072/health").await {
             break;
         }
     }
     let _ = app.emit("logos-ollama-status", OllamaStatus {
         running: false,
-        message: "Ollama encerrado.".into(),
+        message: "Servidor de inferência encerrado.".into(),
     });
 }
+
 
 // ============================================================
 //  Fine-tuning

@@ -201,19 +201,18 @@ async def _get_embedding(
     logos_url: str,
     embed_model: str,
 ) -> list[float] | None:
-    """Chama /api/embed no LOGOS e retorna o vetor. Retorna None em caso de erro."""
+    """Chama /v1/embeddings no LOGOS e retorna o vetor. Retorna None em caso de erro."""
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.post(
-                f"{logos_url}/api/embed",
+                f"{logos_url}/v1/embeddings",
                 json={"model": embed_model, "input": text},
             )
             resp.raise_for_status()
             data = resp.json()
-            # Ollama retorna {"embeddings": [[...]]} (lista de listas)
-            embeddings = data.get("embeddings")
-            if embeddings and isinstance(embeddings[0], list):
-                return embeddings[0]
+            items = data.get("data", [])
+            if items and isinstance(items[0].get("embedding"), list):
+                return items[0]["embedding"]
     except Exception as exc:
         log.debug("Embedding falhou: %s", exc)
     return None
@@ -292,35 +291,24 @@ async def _llm_route(
     logos_url:    str,
 ) -> SkillSelection:
     """
-    Tier 3: usa o router 3B via Ollama structured output.
-    keep_alive: -1 mantém o router sempre aquecido na VRAM.
+    Tier 3: usa o router 3B via API OpenAI-compatível do LOGOS (llama-server).
+    response_format json_object garante que a resposta seja JSON válido.
     """
-    valid_skills = list(_SKILLS.keys())
-    schema = {
-        "type": "object",
-        "properties": {
-            "skill":      {"type": "string", "enum": valid_skills},
-            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-        },
-        "required": ["skill", "confidence"],
-        "additionalProperties": False,
-    }
-
     payload = {
-        "model":      router_model,
-        "messages":   [{"role": "user", "content": _build_dispatch_prompt(request)}],
-        "format":     schema,
-        "stream":     False,
-        "keep_alive": -1,
-        "options":    {"temperature": 0, "num_predict": 64},
+        "model":           router_model,
+        "messages":        [{"role": "user", "content": _build_dispatch_prompt(request)}],
+        "response_format": {"type": "json_object"},
+        "stream":          False,
+        "temperature":     0,
+        "max_tokens":      64,
     }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{logos_url}/api/chat", json=payload)
+            resp = await client.post(f"{logos_url}/v1/chat/completions", json=payload)
             resp.raise_for_status()
             data    = resp.json()
-            content = data.get("message", {}).get("content", "{}")
+            content = data["choices"][0]["message"]["content"]
             result  = SkillSelection.model_validate_json(content)
             result  = result.model_copy(update={"tier": "llm"})
             if result.confidence < _CONFIDENCE_THRESHOLD:

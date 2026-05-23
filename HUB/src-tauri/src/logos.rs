@@ -399,6 +399,11 @@ impl LogosState {
         false
     }
 
+    /// Retorna o diretório de modelos GGUF (para acesso externo ao módulo).
+    pub fn models_dir(&self) -> &std::path::Path {
+        &self.0.models_dir
+    }
+
     pub fn new(ollama_url: impl Into<String>) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(300))
@@ -907,8 +912,19 @@ fn translate_ollama_chat_to_openai(
         }
     }
     body.remove("keep_alive");
-    body.remove("format");
     body.remove("raw");
+    // Ollama "format" (JSON schema ou "json") → OpenAI "response_format"
+    if let Some(fmt) = body.remove("format") {
+        let response_format = if fmt.is_object() {
+            serde_json::json!({
+                "type": "json_schema",
+                "json_schema": { "name": "response", "strict": true, "schema": fmt }
+            })
+        } else {
+            serde_json::json!({"type": "json_object"})
+        };
+        body.entry("response_format".to_string()).or_insert(response_format);
+    }
     serde_json::Value::Object(body)
 }
 
