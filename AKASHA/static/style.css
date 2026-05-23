@@ -616,6 +616,53 @@ a:hover { opacity: 0.75; }
 .badge-paper-pdf  { background: color-mix(in srgb, var(--accent-green)  15%, transparent); color: var(--accent-green); border: 1px solid var(--accent-green); font-size: 7px; }
 .badge-wiki-cited { background: color-mix(in srgb, #6b8fbe 15%, transparent); color: #6b8fbe; border: 1px solid #6b8fbe; }
 
+/* Translation card */
+.translation-card {
+  background:    var(--paper-dark);
+  border:        1px solid var(--rule);
+  border-left:   3px solid var(--accent-green);
+  border-radius: var(--radius);
+  padding:       12px 16px;
+  margin-bottom: 12px;
+  animation:     paperFall 0.18s ease-out both;
+}
+.translation-header {
+  display:         flex;
+  align-items:     center;
+  gap:             0.5rem;
+  margin-bottom:   8px;
+}
+.translation-label {
+  font-family:    var(--font-mono);
+  font-size:      0.65rem;
+  letter-spacing: 0.08em;
+  color:          var(--accent-green);
+  text-transform: uppercase;
+}
+.translation-langs {
+  font-family: var(--font-mono);
+  font-size:   0.65rem;
+  color:       var(--ink-ghost);
+}
+.translation-original {
+  font-size:   0.85rem;
+  color:       var(--ink-ghost);
+  margin:      0 0 4px;
+  font-style:  italic;
+}
+.translation-result {
+  font-size:   1rem;
+  color:       var(--ink);
+  font-family: var(--font-display);
+  margin:      0;
+}
+.translation-fallback {
+  font-size: 0.82rem;
+  color:     var(--ink-ghost);
+  margin:    0;
+}
+.translation-fallback a { color: var(--accent); }
+
 .tag {
   border:         1px solid var(--rule);
   border-radius:  var(--radius);

@@ -332,6 +332,7 @@ async def search(
     related_indexed:         list[dict]        = []
     wiki_card:               dict | None       = None
     weather_card:            dict | None       = None
+    translation_card:        dict | None       = None
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -614,6 +615,17 @@ async def search(
             except (asyncio.TimeoutError, Exception):
                 pass
 
+        # Tradução inline (translation intent → argostranslate ou fallback LibreTranslate)
+        if _intent_routing.get("translation"):
+            try:
+                import asyncio as _aio
+                from services.translation_card import get_translation_card as _get_trans
+                translation_card = await _aio.wait_for(
+                    _aio.to_thread(_get_trans, _effective_query), timeout=5.0
+                )
+            except (asyncio.TimeoutError, Exception):
+                pass
+
         # Atualiza sessão de pesquisa com query atual e URLs recuperados
         _all_urls = [r.url for r in (local_results + web_results + fav_results + site_results)]
         _active_session = _session_svc.update_session(_session_id, q, _all_urls)
@@ -690,6 +702,7 @@ async def search(
             "related_indexed":     related_indexed,
             "wiki_card":           wiki_card,
             "weather_card":        weather_card,
+            "translation_card":    translation_card,
             "show_hedging_banner": _show_hedging_banner,
             "session":             _active_session,
             "voice":               _voice_texts(),

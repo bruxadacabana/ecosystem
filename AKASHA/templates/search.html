@@ -204,6 +204,26 @@
 </div>
 {% endif %}
 
+{% if translation_card %}
+<div class="translation-card">
+  <div class="translation-header">
+    <span class="translation-label">&#x1F310; Tradução</span>
+    <span class="translation-langs">{{ translation_card.source_lang }} → {{ translation_card.target_lang }}</span>
+  </div>
+  <div class="translation-body">
+    <p class="translation-original">{{ translation_card.original }}</p>
+    {% if translation_card.translated %}
+    <p class="translation-result">{{ translation_card.translated }}</p>
+    {% else %}
+    <p class="translation-fallback">
+      Pacote de idioma não instalado.
+      <a href="{{ translation_card.fallback_url }}" target="_blank" rel="noopener">Traduzir no LibreTranslate &#x2197;</a>
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {% set has_main   = web_results or fav_results or site_results or watch_later_results or paper_results or kosmos_results %}
 {% set has_eco    = local_results %}
 {% set two_col    = has_main and has_eco %}
