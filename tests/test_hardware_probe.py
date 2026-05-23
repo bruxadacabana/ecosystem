@@ -1,0 +1,173 @@
+"""
+Testes para hardware_probe.py.
+
+Cobre:
+  - Windows → work_pc / cpu / sem AVX2
+  - Linux com nvidia-smi MX150 → laptop / cuda
+  - Linux com AMD sysfs VRAM ≥ 4 GiB → main_pc / vulkan
+  - Fallback (sem GPU) → work_pc / cpu
+  - flags de build por perfil
+  - limite de contexto por perfil
+  - cache invalidation (detect_hardware.cache_clear)
+"""
+from __future__ import annotations
+import sys
+import os
+from unittest.mock import patch, MagicMock
+
+# Adiciona raiz do ecossistema ao path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+import hardware_probe as hp
+
+
+def _clear():
+    """Limpa cache entre testes."""
+    hp.detect_hardware.cache_clear()
+
+
+# ─── Perfil Windows ───────────────────────────────────────────────────────────
+
+def test_windows_returns_work_pc():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Windows"):
+        info = hp.detect_hardware()
+    assert info.profile  == "work_pc"
+    assert info.backend  == "cpu"
+    assert info.vram_mb  == 0
+
+
+def test_windows_context_limit_2048():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Windows"):
+        assert hp.get_context_limit() == 2048
+
+
+# ─── Perfil Laptop (NVIDIA MX150 via nvidia-smi) ─────────────────────────────
+
+def test_linux_nvidia_smi_returns_laptop():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value="NVIDIA GeForce MX150, 2000 MiB"):
+        info = hp.detect_hardware()
+    assert info.profile  == "laptop"
+    assert info.backend  == "cuda"
+    assert "MX150" in info.gpu_name or "NVIDIA" in info.gpu_name
+    assert info.vram_mb  == 2000
+
+
+def test_laptop_context_limit_2048():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value="NVIDIA GeForce MX150, 2000 MiB"):
+        assert hp.get_context_limit() == 2048
+
+
+def test_laptop_cuda_build_flags():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value="NVIDIA GeForce MX150, 2000 MiB"):
+        flags = hp.get_llama_build_flags()
+    assert "-DGGML_CUDA=ON" in flags
+
+
+# ─── Perfil MainPc (AMD RX 6600 via sysfs) ───────────────────────────────────
+
+def test_linux_amd_sysfs_returns_main_pc():
+    _clear()
+    vram_bytes = 8 * 1024 ** 3  # 8 GiB
+    def mock_sysfs(path: str) -> str:
+        if "mem_info_vram_total" in path and "card0" in path:
+            return str(vram_bytes)
+        if "product_name" in path and "card0" in path:
+            return "Radeon RX 6600"
+        if "vendor" in path:
+            return "0x1002"  # AMD vendor
+        return ""
+
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value=""), \
+         patch("hardware_probe._sysfs", side_effect=mock_sysfs):
+        info = hp.detect_hardware()
+
+    assert info.profile  == "main_pc"
+    assert info.backend  == "vulkan"
+    assert info.vram_mb  == 8192
+    assert "RX 6600" in info.gpu_name or "AMD" in info.gpu_name
+
+
+def test_main_pc_context_limit_8192():
+    _clear()
+    vram_bytes = 8 * 1024 ** 3
+    def mock_sysfs(path: str) -> str:
+        if "mem_info_vram_total" in path and "card0" in path:
+            return str(vram_bytes)
+        return ""
+
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value=""), \
+         patch("hardware_probe._sysfs", side_effect=mock_sysfs):
+        assert hp.get_context_limit() == 8192
+
+
+def test_main_pc_vulkan_build_flags():
+    _clear()
+    vram_bytes = 8 * 1024 ** 3
+    def mock_sysfs(path: str) -> str:
+        if "mem_info_vram_total" in path and "card0" in path:
+            return str(vram_bytes)
+        return ""
+
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value=""), \
+         patch("hardware_probe._sysfs", side_effect=mock_sysfs):
+        flags = hp.get_llama_build_flags()
+
+    assert "-DGGML_VULKAN=ON" in flags
+
+
+# ─── Fallback (sem GPU) ───────────────────────────────────────────────────────
+
+def test_no_gpu_returns_work_pc():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value=""), \
+         patch("hardware_probe._sysfs", return_value=""):
+        info = hp.detect_hardware()
+    assert info.profile == "work_pc"
+    assert info.backend == "cpu"
+
+
+def test_work_pc_no_avx2_build_flags():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value=""), \
+         patch("hardware_probe._sysfs", return_value=""), \
+         patch("hardware_probe._has_avx2", return_value=False):
+        flags = hp.get_llama_build_flags()
+    assert "-DGGML_AVX=OFF"  in flags
+    assert "-DGGML_AVX2=OFF" in flags
+    assert "-DGGML_SSE41=ON" in flags
+
+
+# ─── Cache e funções de conveniência ─────────────────────────────────────────
+
+def test_detect_hardware_cached():
+    """Segunda chamada retorna o mesmo objeto (cache ativo)."""
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Windows"):
+        info1 = hp.detect_hardware()
+        info2 = hp.detect_hardware()
+    assert info1 is info2
+
+
+def test_get_profile_shortcut():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Windows"):
+        assert hp.get_profile() == "work_pc"
+
+
+def test_get_inference_backend_shortcut():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Windows"):
+        assert hp.get_inference_backend() == "cpu"
