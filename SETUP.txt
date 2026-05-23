@@ -1,0 +1,324 @@
+ECOSSISTEMA — SETUP DO ZERO
+============================
+Instale tudo nesta ordem antes de rodar o atualizar.sh.
+O atualizar.sh só funciona se os pré-requisitos abaixo já estiverem no sistema.
+
+Última atualização: 2026-05-22
+
+
+════════════════════════════════════════════
+  0. VISÃO GERAL RÁPIDA
+════════════════════════════════════════════
+
+Runtimes necessários:
+  - Rust (para AETHER, HUB)
+  - Node.js 22+ (para AETHER, HUB, OGMA)
+  - Python 3.11+ + uv (para AKASHA, KOSMOS, Mnemosyne, Hermes)
+
+Ferramentas de build:
+  - cargo-tauri CLI (para AETHER, HUB)
+
+Serviços externos:
+  - Ollama (para Mnemosyne e HUB)
+
+Dependências de sistema (Linux):
+  - webkit2gtk-4.1 (obrigatório para Tauri)
+  - libayatana-appindicator (obrigatório para Tauri)
+  - base-devel / build-essential (compiladores C++)
+
+
+════════════════════════════════════════════
+  1. DEPENDÊNCIAS DE SISTEMA
+════════════════════════════════════════════
+
+──────────────────────────────────────────
+  Fedora (laptop)
+──────────────────────────────────────────
+
+  # Compiladores e ferramentas base
+  sudo dnf group install development-tools c-development
+  sudo dnf install cmake pkg-config openssl-devel
+
+  # Tauri (webkit + tray icon)
+  sudo dnf install webkit2gtk4.1-devel libappindicator-gtk3-devel
+
+  # Python build deps (necessário para compilar algumas libs Python)
+  sudo dnf install python3-devel
+
+  # Utilitário para OGMA (foco automático de janela)
+  sudo dnf install xdotool
+
+  # SQLite (caso não venha no sistema)
+  sudo dnf install sqlite sqlite-devel
+
+──────────────────────────────────────────
+  CachyOS / Arch Linux (computador principal)
+──────────────────────────────────────────
+
+  # Base
+  sudo pacman -S base-devel cmake pkg-config openssl
+
+  # Tauri
+  sudo pacman -S webkit2gtk-4.1 libayatana-appindicator
+
+  # Python
+  sudo pacman -S python python-pip
+
+  # Utilitário para OGMA
+  sudo pacman -S xdotool
+
+──────────────────────────────────────────
+  Windows 10 (trabalho)
+──────────────────────────────────────────
+
+  - Visual Studio Build Tools 2022:
+    https://visualstudio.microsoft.com/visual-cpp-build-tools/
+    (marcar: "Desenvolvimento para desktop com C++")
+
+  - Visual C++ Redistributable 2022:
+    https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+  - Git para Windows:
+    https://git-scm.com/download/win
+
+
+════════════════════════════════════════════
+  2. RUST
+════════════════════════════════════════════
+
+  Instalar rustup (instala Rust + cargo automaticamente):
+
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+  Após instalar, recarregar o shell:
+
+    source "$HOME/.cargo/env"          # bash/zsh
+    fish_add_path ~/.cargo/bin         # Fish (ou abrir novo terminal)
+
+  Verificar:
+
+    rustc --version    # deve mostrar 1.77+
+    cargo --version
+
+  Instalar o Tauri CLI (necessário para buildar AETHER e HUB):
+
+    cargo install tauri-cli --version "^2"
+
+  Isso demora vários minutos na primeira vez — compila do zero.
+
+  Verificar:
+
+    cargo tauri --version
+
+  Windows: o rustup instala automaticamente as Build Tools do MSVC
+  se não estiverem presentes. Se falhar, instale manualmente (passo 1).
+
+
+════════════════════════════════════════════
+  3. NODE.JS 22+
+════════════════════════════════════════════
+
+  Recomendado: instalar via fnm (funciona em bash E Fish)
+
+    curl -fsSL https://fnm.vercel.app/install | bash
+
+  Fish: o instalador detecta Fish e configura automaticamente.
+  Após instalar, abrir novo terminal, depois:
+
+    fnm install 22
+    fnm use 22
+    fnm default 22
+
+  Verificar:
+
+    node --version    # deve mostrar v22.x.x
+    npm --version     # vem junto com o Node
+
+  Nota: nvm NÃO funciona em Fish. Use fnm ou a alternativa abaixo.
+
+  Alternativa direta (sem gerenciador de versões):
+    - Fedora:       sudo dnf install nodejs22
+    - Arch/CachyOS: sudo pacman -S nodejs npm
+    - Windows:      https://nodejs.org  (baixar LTS v22)
+                    Marcar "Automatically install necessary tools" durante setup
+
+
+════════════════════════════════════════════
+  4. PYTHON 3.11+
+════════════════════════════════════════════
+
+  Fedora/CachyOS: Python 3.11+ geralmente já vem instalado.
+
+  Verificar:
+
+    python3 --version    # deve ser 3.11 ou maior
+
+  Se não tiver:
+    - Fedora:       sudo dnf install python3.11
+    - Arch/CachyOS: sudo pacman -S python
+    - Windows:      https://python.org  (marcar "Add Python to PATH")
+
+
+════════════════════════════════════════════
+  5. UV (gerenciador de Python moderno)
+════════════════════════════════════════════
+
+  O uv é necessário para AKASHA e KOSMOS.
+  Também acelera muito o install das outras apps Python.
+
+  Instalar:
+
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+  Recarregar o shell, depois verificar:
+
+    uv --version
+
+  Windows:
+
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+  Nota: o uv instala em ~/.local/bin (Linux) ou %USERPROFILE%\.local\bin (Windows).
+  Se o comando não for encontrado após instalar, adicione ao PATH manualmente.
+
+
+════════════════════════════════════════════
+  6. OLLAMA (necessário para Mnemosyne e HUB)
+════════════════════════════════════════════
+
+  Instalar:
+
+    curl -fsSL https://ollama.com/install.sh | sh
+
+  Windows: https://ollama.com/download
+
+  Verificar se está rodando:
+
+    ollama list
+
+  Se não iniciar sozinho:
+
+    ollama serve    # rodar em terminal separado
+    # ou: systemctl start ollama (Linux com systemd)
+
+  Baixar os modelos necessários:
+
+    # Para Mnemosyne (RAG — chat + embedding)
+    ollama pull qwen3:8b-q4_K_M      # modelo de chat (~4.6 GB VRAM)
+    ollama pull bge-m3               # embedding (~0.6 GB VRAM)
+
+    # Alternativas menores (para máquina com pouca VRAM)
+    ollama pull gemma3:4b            # chat leve (~2.5 GB)
+    ollama pull nomic-embed-text     # embedding leve (~270 MB)
+
+  Nota CachyOS (GPU AMD RX 6600):
+    Para usar a GPU, setar antes de rodar o ollama:
+    export HSA_OVERRIDE_GFX_VERSION=10.3.0    # bash/zsh
+    set -x HSA_OVERRIDE_GFX_VERSION 10.3.0   # Fish
+
+  Nota Laptop (MX150, 2 GB VRAM):
+    VRAM muito limitada. Modelos viáveis:
+    ollama pull smollm2:1.7b-instruct-q4_K_M   # ~1 GB
+    Os modelos maiores vão usar CPU (lento mas funciona)
+
+
+════════════════════════════════════════════
+  7. CLONAR O REPOSITÓRIO
+════════════════════════════════════════════
+
+  git clone <url-do-repo> ecosystem
+  cd ecosystem
+
+
+════════════════════════════════════════════
+  8. RODAR O ATUALIZAR.SH
+════════════════════════════════════════════
+
+  Com todos os pré-requisitos acima instalados:
+
+    bash atualizar.sh
+
+  O que ele faz:
+    - git pull
+    - uv sync (AKASHA, KOSMOS)
+    - cria .venv compartilhado e instala Mnemosyne + Hermes
+    - npm install (AETHER, HUB, OGMA)
+
+  Se der erro de permissão no Linux:
+
+    chmod +x atualizar.sh && bash atualizar.sh
+
+
+════════════════════════════════════════════
+  9. CONFIGURAR O ECOSYSTEM.JSON
+════════════════════════════════════════════
+
+  O HUB cria e gerencia o ecosystem.json na primeira execução.
+  Se precisar criar manualmente, copiar o exemplo:
+
+    cp ecosystem.local.example.json ~/.local/share/ecosystem/ecosystem.json
+    # editar os caminhos conforme sua máquina
+
+  Campos importantes:
+    sync_root        — caminho da pasta sincronizada (Syncthing)
+    aether.vault_dir — onde o AETHER salva os capítulos
+    mnemosyne.watched_dir — pasta que a Mnemosyne indexa
+    hermes.output_dir     — onde o Hermes salva transcrições
+
+  Porta do AKASHA: sempre 7071 (fixa, não configurável)
+  Porta do Ollama: sempre 11434 (ou via LOGOS em 7072 se o HUB estiver rodando)
+
+
+════════════════════════════════════════════
+  10. BUILDAR OS APPS (opcional — só se quiser executável)
+════════════════════════════════════════════
+
+  Os apps Python (AKASHA, KOSMOS, Mnemosyne, Hermes) rodam direto do source.
+  AETHER, HUB e OGMA precisam ser buildados para gerar executável.
+
+  Build de todos:
+
+    bash buildar.sh
+
+  Build individual:
+
+    bash buildar.sh hub
+    bash buildar.sh aether
+    bash buildar.sh ogma
+
+  Outputs:
+    AETHER/src-tauri/target/release/bundle/appimage/   (.AppImage Linux)
+    AETHER/src-tauri/target/release/bundle/deb/        (.deb Linux)
+    HUB/src-tauri/target/release/bundle/appimage/
+    OGMA/dist/
+
+  Nota: o primeiro build do Rust demora 10-20 minutos.
+  Builds subsequentes são muito mais rápidos (cache).
+
+
+════════════════════════════════════════════
+  CHECKLIST FINAL
+════════════════════════════════════════════
+
+  [ ] rustc --version          → 1.77+
+  [ ] cargo tauri --version    → 2.x
+  [ ] node --version           → v22.x
+  [ ] npm --version            → 10.x+
+  [ ] python3 --version        → 3.11+
+  [ ] uv --version             → 0.4+
+  [ ] ollama list              → sem erro (serviço rodando)
+  [ ] webkit2gtk-4.1 instalado (Linux)
+  [ ] bash atualizar.sh        → sem erros vermelhos
+  [ ] ecosystem.json configurado com os caminhos corretos
+
+
+════════════════════════════════════════════
+  PORTAS USADAS PELO ECOSSISTEMA
+════════════════════════════════════════════
+
+  5173   HUB (Vite dev server)
+  5174   AETHER (Vite dev server)
+  5175   OGMA (Vite dev server)
+  7071   AKASHA (FastAPI — sempre ativo quando AKASHA roda)
+  7072   LOGOS / proxy Ollama (HUB — quando rodando)
+  11434  Ollama (externo)
