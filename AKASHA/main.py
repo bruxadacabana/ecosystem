@@ -137,6 +137,19 @@ async def _domain_boost_job() -> None:
             _log.warning("domain_boost_job: erro: %s", exc)
 
 
+async def _session_gc_loop() -> None:
+    """Acorda a cada 10 min: remove sessões expiradas e dispara reflexão pós-sessão."""
+    while True:
+        await asyncio.sleep(600)
+        try:
+            from services.session_memory import gc_with_reflection as _gc
+            n = await _gc()
+            if n:
+                _log.debug("session_gc_loop: %d sessão(ões) expirada(s) processada(s).", n)
+        except Exception as exc:
+            _log.debug("session_gc_loop: erro: %s", exc)
+
+
 async def _monitor_crawler() -> None:
     """Acorda a cada hora: crawla sites pendentes, limpa search_cache e reverifica Ollama."""
     while True:
@@ -219,6 +232,7 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_decay_scores_loop())
     asyncio.get_running_loop().create_task(_cache_cleanup_job())
     asyncio.get_running_loop().create_task(_domain_boost_job())
+    asyncio.get_running_loop().create_task(_session_gc_loop())
     yield
     # Shutdown — nada a liberar por enquanto
 

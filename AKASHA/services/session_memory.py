@@ -1,16 +1,12 @@
 """
-AKASHA — Memória de sessão + reformulação de anáforas por regex (sem LLM).
+AKASHA — Memória de sessão + reformulação de anáforas + reflexão pós-sessão.
 
 Responsabilidades:
   1. Manter histórico de queries por session_id com TTL de 30 min.
-     Usado pelo item 23 (reflexão pós-sessão) via detecção de expiração com ≥ 3 queries.
   2. reformulate_if_anaphoric(): substitui pronomes anafóricos PT pelos
      substantivos da última query — sem LLM, sem latência de rede.
-
-Exemplo:
-    history = ["python decorators"]
-    query   = "como ela funciona"
-    → "como python decorators funciona"
+  3. gc_with_reflection(): ao expirar sessões com ≥3 queries, dispara
+     reflexão via LLM e salva em personal_memory com tag "session_reflection".
 
 Distingue-se de search_session.py: esse módulo é simples (só append + TTL),
 sem Jaccard, sem lógica de agrupamento por tema. O search_session.py continua
@@ -19,12 +15,25 @@ com reformulação léxica imediata para anáforas PT.
 """
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
 
-SESSION_TTL_S: int = 1800  # 30 min sem nova query → sessão expirada
-MAX_QUERIES:   int = 20    # limite de queries acumuladas por sessão
+log = logging.getLogger("akasha.session_memory")
+
+SESSION_TTL_S:            int   = 1800  # 30 min sem nova query → sessão expirada
+MAX_QUERIES:              int   = 20    # limite de queries acumuladas por sessão
+SESSION_MIN_REFLECT_QUERIES: int = 3   # mínimo de queries para disparar reflexão
+
+_SESSION_REFLECT_TIMEOUT: float = 20.0
+_SESSION_REFLECT_NUM_PREDICT: int = 100
+
+_GENERIC_PREFIXES = (
+    "não há", "não tenho", "como ia", "como um assistente",
+    "preciso de mais", "não posso", "desculpe", "lamento",
+    "não é possível", "como assistente", "como uma ia",
+)
 
 # Regex de anáforas PT — pronomes + locuções pronominais
 _ANAPHORA_RE = re.compile(
@@ -105,6 +114,123 @@ def gc_sessions() -> int:
     expired = [sid for sid, s in list(_sessions.items()) if not s.active]
     for sid in expired:
         del _sessions[sid]
+    return len(expired)
+
+
+# ---------------------------------------------------------------------------
+# Reflexão pós-sessão
+# ---------------------------------------------------------------------------
+
+def _get_ollama_base() -> str:
+    try:
+        from ecosystem_client import get_ollama_url as _u  # type: ignore
+        return _u()
+    except Exception:
+        return "http://localhost:11434"
+
+
+def _get_reflect_model() -> str:
+    try:
+        from ecosystem_client import get_active_profile as _gp  # type: ignore
+        p = _gp()
+        return ((p or {}).get("models", {}) or {}).get("llm_query", "") if p else ""
+    except Exception:
+        return ""
+
+
+def _is_meaningful_reflection(text: str) -> bool:
+    """Descarta respostas genéricas, vazias ou muito curtas."""
+    t = text.strip().lower()
+    if len(t) < 20:
+        return False
+    if t in {"nada.", "nada", "—", "-"}:
+        return False
+    for prefix in _GENERIC_PREFIXES:
+        if t.startswith(prefix):
+            return False
+    return True
+
+
+async def _call_ollama_reflect(prompt: str, model: str) -> str | None:
+    """Chama Ollama com temperatura baixa para reflexão de sessão."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=_SESSION_REFLECT_TIMEOUT) as client:
+            resp = await client.post(
+                f"{_get_ollama_base()}/api/generate",
+                json={
+                    "model":   model,
+                    "prompt":  prompt,
+                    "stream":  False,
+                    "options": {
+                        "num_predict": _SESSION_REFLECT_NUM_PREDICT,
+                        "temperature": 0.65,
+                    },
+                },
+            )
+            resp.raise_for_status()
+            return resp.json().get("response", "").strip()
+    except Exception as exc:
+        log.debug("reflect_on_session: Ollama falhou: %s", exc)
+        return None
+
+
+async def reflect_on_session(queries: list[str]) -> None:
+    """Gera e salva reflexão pós-sessão para um conjunto de queries.
+
+    Chamada fire-and-forget quando uma sessão com ≥SESSION_MIN_REFLECT_QUERIES
+    queries expira. Sem Ollama ou modelo configurado → retorna silenciosamente.
+    """
+    model = _get_reflect_model()
+    if not model:
+        return
+
+    try:
+        import config as _cfg
+        personality = _cfg.PERSONALITY_PROMPT
+    except Exception:
+        personality = ""
+
+    queries_str = ", ".join(f'"{q}"' for q in queries)
+    prompt = (
+        f"{personality}\n\n" if personality else ""
+    ) + (
+        f"Você acompanhou uma sessão de busca com as seguintes queries: {queries_str}.\n\n"
+        f"Olhando para esses tópicos, há algo que vale registrar na sua memória pessoal? "
+        f"Alguma conexão, curiosidade ou observação genuína que você quer guardar? "
+        f"Responda em uma frase curta, na sua voz, sem introduções. "
+        f"Se não houver nada relevante, responda apenas: nada."
+    )
+
+    raw = await _call_ollama_reflect(prompt, model)
+    if not raw or not _is_meaningful_reflection(raw):
+        log.debug("reflect_on_session: descartado (%r)", (raw or "")[:40])
+        return
+
+    try:
+        from services.personal_memory import save_memory
+        await save_memory(
+            type="reflection",
+            content=raw,
+            tags=["session_reflection"],
+            importance=4,
+        )
+        log.info("reflect_on_session: reflexão salva (%d chars).", len(raw))
+    except Exception as exc:
+        log.debug("reflect_on_session: save_memory falhou: %s", exc)
+
+
+async def gc_with_reflection() -> int:
+    """Remove sessões expiradas; dispara reflexão para sessões com ≥SESSION_MIN_REFLECT_QUERIES queries.
+
+    Retorna número de sessões removidas.
+    """
+    import asyncio
+    expired = [(sid, s) for sid, s in list(_sessions.items()) if not s.active]
+    for sid, s in expired:
+        del _sessions[sid]
+        if len(s.queries) >= SESSION_MIN_REFLECT_QUERIES:
+            asyncio.create_task(reflect_on_session(list(s.queries)))
     return len(expired)
 
 
