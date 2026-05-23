@@ -1,12 +1,11 @@
 ## Fila de implementação atual:
 
-então prossiga com a implementação de '### Pesquisa: Funcionalidades Core da AKASHA — Query Understanding, Expansão e Memória de Sessão | 2026-05-22'!
+então prossiga com a implementação de '### Pesquisa: Fine-Tuning Local com QLoRA — Aprendizado Real de Corpus Pessoal | 2026-05-22
+'!
 lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
 
 
 ## próximo: 
-
-
 
 ### KOSMOS — refazer do zero com nova stack | 2026-05-20
 

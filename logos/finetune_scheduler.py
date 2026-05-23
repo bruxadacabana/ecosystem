@@ -33,7 +33,7 @@ from pathlib import Path
 
 import ecosystem_client as ec
 
-log = logging.getLogger("ecosystem.logos.finetune_scheduler")
+log = logging.getLogger("logos")
 
 # Threshold de crescimento do corpus para disparo automático (20%)
 _AUTO_TRIGGER_GROWTH = 0.20
@@ -319,9 +319,22 @@ def trigger_manual(sync_root: str = "") -> bool:
 
 
 def configure_logging(log_dir: "Path | None" = None) -> None:
-    """Configura logging para este módulo (chamar no entry point do processo pai)."""
-    from ecosystem_logging import setup_ecosystem_logger, default_log_dir  # noqa: PLC0415
-    setup_ecosystem_logger("ecosystem.logos.finetune_scheduler", log_dir or default_log_dir())
+    """Configura logging para este módulo (chamar no entry point do processo pai).
+
+    Escreve em {log_dir}/logos.log para que o HUB possa ler via read_app_log('logos', n).
+    """
+    from ecosystem_logging import setup_ecosystem_logger  # noqa: PLC0415
+    resolved = log_dir or _default_logos_log_dir()
+    setup_ecosystem_logger("logos", resolved)
+
+
+def _default_logos_log_dir() -> Path:
+    """Resolve o diretório de logs do LOGOS a partir do sync_root."""
+    root = ec.get_sync_root()
+    if root:
+        return Path(str(root)) / "logos"
+    from ecosystem_logging import default_log_dir  # noqa: PLC0415
+    return default_log_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +343,9 @@ def configure_logging(log_dir: "Path | None" = None) -> None:
 
 if __name__ == "__main__":
     import sys as _sys
+    # Configura logging em arquivo ({sync_root}/logos/logos.log) para o HUB ler
+    configure_logging()
+    # Fallback stderr para qualquer mensagem antes do handler de arquivo estar ativo
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",

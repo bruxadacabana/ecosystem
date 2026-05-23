@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import * as cmd from '../lib/tauri'
-import type { EcosystemConfig, InsightQueueItem, MemoryEntry } from '../types'
+import type { EcosystemConfig, FinetuneState, InsightQueueItem, MemoryEntry } from '../types'
 
 // ── Faixa de logs em tempo real ────────────────────────────────
 
@@ -152,6 +152,48 @@ function useKosmosLogs() {
     return () => { running = false }
   }, [])
   return lines
+}
+
+function useFinetuneLogs() {
+  const [lines, setLines] = useState<string[]>([])
+  useEffect(() => {
+    let running = true
+    async function poll() {
+      const res = await cmd.readAppLog('logos', 10)
+      if (running && res.ok && res.data.length > 0) setLines(res.data)
+      if (running) setTimeout(poll, 5000)
+    }
+    poll()
+    return () => { running = false }
+  }, [])
+  return lines
+}
+
+function useFinetuneState() {
+  const [state, setState] = useState<FinetuneState | null>(null)
+  useEffect(() => {
+    let running = true
+    async function poll() {
+      const res = await cmd.logosGetFinetuneState()
+      if (running && res.ok) setState(res.data)
+      if (running) setTimeout(poll, 5000)
+    }
+    poll()
+    return () => { running = false }
+  }, [])
+  return state
+}
+
+function finetuneStepLabel(step: string): string {
+  const labels: Record<string, string> = {
+    'iniciando':     'Iniciando…',
+    'gerando_dados': 'Gerando Q&A',
+    'treinando':     'Treinando',
+    'convertendo':   'Convertendo para GGUF',
+    'concluido':     'Concluído',
+  }
+  if (step.startsWith('erro:')) return `Erro: ${step.slice(5).trim()}`
+  return labels[step] ?? step
 }
 
 // ── Tipos locais ──────────────────────────────────────────────
@@ -911,6 +953,8 @@ export function MonitoramentoView() {
   const akashaLogs    = useAkashaLogs(akashaBaseUrl, akashaActive)
   const mnemosyneLogs = useMnemosyneLogs()
   const kosmosLogs    = useKosmosLogs()
+  const finetuneLogs  = useFinetuneLogs()
+  const finetuneState = useFinetuneState()
 
   // Porcentagem de artigos analisados
   const kosmosAnalyzedPct = kosmosStats?.available && kosmosStats.total
@@ -1058,6 +1102,46 @@ export function MonitoramentoView() {
             )}
           </>
         )}
+      </AppBlock>
+
+      {/* LOGOS — Fine-Tuning */}
+      <AppBlock sigla="LOGOS · Fine-Tuning" active={finetuneState?.running ?? false}>
+        <StatusRow
+          label="estado"
+          value={finetuneState
+            ? finetuneState.running
+              ? finetuneStepLabel(finetuneState.current_step)
+              : finetuneState.current_step.startsWith('erro:')
+                ? finetuneStepLabel(finetuneState.current_step)
+                : 'parado'
+            : '—'}
+          dim={!finetuneState?.running}
+        />
+        {finetuneState?.running && (finetuneState.examples_generated ?? 0) > 0 && (
+          <StatusRow
+            label="exemplos gerados"
+            value={finetuneState.examples_generated.toLocaleString('pt-BR')}
+            dim={false}
+          />
+        )}
+        <StatusRow
+          label="modelo atual"
+          value={finetuneState?.current_model
+            ? <code style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)', fontSize: 10 }}>{finetuneState.current_model}</code>
+            : '—'}
+          dim={!finetuneState?.current_model}
+        />
+        {finetuneState?.last_cycle_at && (
+          <StatusRow
+            label="último ciclo"
+            value={new Date(finetuneState.last_cycle_at).toLocaleString('pt-BR', {
+              day: '2-digit', month: '2-digit', year: 'numeric',
+              hour: '2-digit', minute: '2-digit',
+            })}
+            dim={false}
+          />
+        )}
+        <LogStrip lines={finetuneLogs} />
       </AppBlock>
 
       {!eco && (
