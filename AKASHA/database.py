@@ -529,7 +529,10 @@ async def init_db() -> None:
         await db.execute(_CREATE_DOWNLOADS)
         await db.execute(_CREATE_SEARCH_CACHE)
         await db.execute(_CREATE_IDX_CACHE)
-        await db.execute(_CREATE_IDX_SEARCH_CACHE_HASH)
+        try:
+            await db.execute(_CREATE_IDX_SEARCH_CACHE_HASH)
+        except Exception:
+            pass  # coluna query_hash ausente em banco pré-v44 — migração adiciona a seguir
         await db.execute(_CREATE_LOCAL_FTS)
         await db.execute(
             "INSERT INTO local_fts(local_fts, rank) VALUES('rank', 'bm25(0, 10.0, 1.0, 0)')"

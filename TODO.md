@@ -6971,3 +6971,9 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Contexto: o fallback offline do LOGOS em ecosystem_client usava smollm2:1.7b fixo para todos os perfis e funções — incorreto para main_pc (qwen2.5:7b para RAG) e laptop (gemma2:2b para RAG). hardware_probe.py espelhava logos.rs mas sem modelos recomendados.
 - [x] **Adicionar ModelProfile ao hardware_probe.py** — dataclass frozen com llm_rag, llm_analysis, llm_query, embed, image_ocr, vram_budget_mb; espelha HardwareProfile::model_profile() em logos.rs. Incluído em HardwareInfo e exposto via get_model_profile().
 - [x] **Corrigir fallback offline do ecosystem_client** — substituir _FALLBACK_MODEL="smollm2:1.7b" fixo por _fallback_model_for_app(app) que consulta hardware_probe.get_model_profile() — correto por hardware × funcionalidade (main_pc→qwen2.5:7b para RAG, work_pc→qwen2.5:0.5b para query, etc).
+
+### Bugs e investigações reportados após uso real | 2026-05-23
+> Contexto: bug encontrado ao iniciar AKASHA — startup falhava ao tentar criar índice em coluna inexistente.
+
+#### AKASHA
+- [x] **Bug: `init_db()` falhava com `no such column: query_hash` em banco pré-v44** — `_CREATE_IDX_SEARCH_CACHE_HASH` executado em `init_db()` antes da migração v44 adicionar a coluna `query_hash` via ALTER TABLE. Fix: envolver a criação do índice em `init_db()` com try/except; a migração v44 já cria o índice corretamente após adicionar a coluna. Adicionados 2 testes de regressão em `tests/test_database_infra.py`. **Corrigido e commitado em 2026-05-23.**

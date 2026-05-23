@@ -187,3 +187,76 @@ class TestFTS5FieldWeighting:
         assert row is not None, "Configuração de rank não encontrada em local_fts_config"
         assert "10.0" in row[0], f"Peso 10.0 não encontrado na config de rank: {row[0]}"
         assert "1.0" in row[0], f"Peso 1.0 não encontrado na config de rank: {row[0]}"
+
+
+# ---------------------------------------------------------------------------
+# Regressão: init_db() em banco pré-v44 (search_cache sem query_hash)
+# ---------------------------------------------------------------------------
+
+class TestSearchCacheQueryHashMigration:
+    """Regressão para bug: init_db() falhava com 'no such column: query_hash'
+    em bancos criados antes da versão 44 do schema.
+
+    Causa: _CREATE_IDX_SEARCH_CACHE_HASH tentava criar índice em query_hash
+    antes da migração v44 adicionar a coluna via ALTER TABLE.
+    """
+
+    def test_init_db_succeeds_on_pre_v44_database(self, tmp_path):
+        """init_db() não deve lançar exceção em banco existente sem query_hash."""
+        import database as _db
+
+        main_path = tmp_path / "akasha_old.db"
+        knowledge_path = tmp_path / "akasha_knowledge.db"
+
+        # Simula banco pré-v44: search_cache sem query_hash, cached_at, ttl_hours
+        con = sqlite3.connect(main_path)
+        con.execute("""
+            CREATE TABLE search_cache (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                query        TEXT    NOT NULL,
+                sources      TEXT    NOT NULL DEFAULT 'web',
+                results_json TEXT    NOT NULL,
+                created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        con.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        # schema_version ausente → init_db trata como versão 0 → aplica todas as migrações
+        con.commit()
+        con.close()
+
+        orig_db  = _db.DB_PATH
+        orig_kdb = _db.KNOWLEDGE_DB_PATH
+        _db.DB_PATH = main_path
+        _db.KNOWLEDGE_DB_PATH = knowledge_path
+        try:
+            # Não deve lançar OperationalError: no such column: query_hash
+            run(_db.init_db())
+        finally:
+            _db.DB_PATH = orig_db
+            _db.KNOWLEDGE_DB_PATH = orig_kdb
+
+        # Verifica que a migração adicionou query_hash e criou o índice
+        con = sqlite3.connect(main_path)
+        cols = [row[1] for row in con.execute("PRAGMA table_info(search_cache)").fetchall()]
+        assert "query_hash" in cols, "Coluna query_hash deve existir após migração v44"
+        indices = [row[1] for row in con.execute(
+            "SELECT * FROM sqlite_master WHERE type='index' AND tbl_name='search_cache'"
+        ).fetchall()]
+        assert any("hash" in idx for idx in indices), (
+            f"Índice idx_search_cache_hash deve existir. Índices encontrados: {indices}"
+        )
+        con.close()
+
+    def test_init_db_succeeds_on_fresh_database(self, tmp_path):
+        """init_db() em banco novo (sem tabelas) também não deve falhar."""
+        import database as _db
+
+        orig_db  = _db.DB_PATH
+        orig_kdb = _db.KNOWLEDGE_DB_PATH
+        _db.DB_PATH = tmp_path / "akasha_fresh.db"
+        _db.KNOWLEDGE_DB_PATH = tmp_path / "akasha_knowledge.db"
+        try:
+            run(_db.init_db())
+        finally:
+            _db.DB_PATH = orig_db
+            _db.KNOWLEDGE_DB_PATH = orig_kdb
