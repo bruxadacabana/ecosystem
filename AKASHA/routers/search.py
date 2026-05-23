@@ -82,6 +82,30 @@ def _diversify_by_domain(results: list, max_per_domain: int = 2) -> list:
     return out
 
 
+_SOURCE_LABELS = ("Pessoal", "Biblioteca", "Web")
+
+
+def _build_results_by_source(
+    local_results: list,
+    watch_later_results: list,
+    kosmos_results: list,
+    site_results: list,
+    web_results: list,
+    fav_results: list,
+    paper_results: list,
+) -> dict[str, list]:
+    """Agrupa resultados por origem para as pills de facetação por fonte.
+
+    Retorna dict com chave para cada fonte (lista vazia quando sem resultados).
+    Chaves fixas: "Pessoal", "Biblioteca", "Web".
+    """
+    return {
+        "Pessoal":    local_results + watch_later_results + kosmos_results,
+        "Biblioteca": list(site_results),
+        "Web":        web_results + fav_results + paper_results,
+    }
+
+
 def _local_qualifies_for_priority(
     results: list,
     min_n: int = 5,
@@ -280,8 +304,9 @@ async def search(
     facet_ext:  str = "",   # filtro de extensão de arquivo para resultados locais
     lens_id:    int = 0,    # id de lens pessoal a aplicar (0 = sem lens)
     intent:       str = "",   # sobrescreve o classificador: navigational|fact-seeking|exploratory
-    no_expansion: str = "",   # "on" = desativa expansão LLM para esta busca
-    no_rewrite:   str = "",   # "on" = desativa reescrita conversacional para esta busca
+    no_expansion:  str = "",   # "on" = desativa expansão LLM para esta busca
+    no_rewrite:    str = "",   # "on" = desativa reescrita conversacional para esta busca
+    source_filter: str = "",   # "Pessoal" | "Biblioteca" | "Web" — filtrar por origem
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -333,6 +358,8 @@ async def search(
     wiki_card:               dict | None       = None
     weather_card:            dict | None       = None
     translation_card:        dict | None       = None
+    _results_by_source:      dict[str, list]  = {}
+    _sf:                     str              = source_filter.strip() if source_filter else ""
     # intent pode vir da URL (override manual) ou do classificador automático
     _intent_forced = intent in ("navigational", "fact-seeking", "exploratory")
 
@@ -521,6 +548,22 @@ async def search(
         if _lexical_intent == "exploratory" and web_results:
             web_results = _diversify_by_domain(web_results)
 
+        # Facetação por fonte — agrupa antes do filtro para preservar contagens nas pills
+        _results_by_source = _build_results_by_source(
+            local_results, watch_later_results, kosmos_results,
+            site_results, web_results, fav_results, paper_results,
+        )
+
+        # Filtro de fonte selecionada: zera listas das outras fontes
+        _sf = source_filter.strip() if source_filter else ""
+        if _sf in _SOURCE_LABELS:
+            if _sf == "Pessoal":
+                web_results = fav_results = site_results = paper_results = []
+            elif _sf == "Biblioteca":
+                web_results = fav_results = local_results = watch_later_results = kosmos_results = paper_results = []
+            elif _sf == "Web":
+                local_results = watch_later_results = kosmos_results = site_results = []
+
         total = len(web_results) + len(fav_results) + len(local_results) + len(site_results) + len(watch_later_results) + len(paper_results) + len(kosmos_results)
         src_label = "+".join(filter(None, [
             "web" if src_web else "",
@@ -679,8 +722,10 @@ async def search(
             "recent":            recent,
             "error":             error,
             "corrected_query":   corrected_query,
-            "local_facets":      local_facets,
-            "facet_ext":         facet_ext,
+            "local_facets":        local_facets,
+            "facet_ext":           facet_ext,
+            "results_by_source":   _results_by_source if q else {},
+            "source_filter":       _sf,
             "active_lens":       active_lens,
             "lens_id":           lens_id,
             "active_tab":        "search",

@@ -1371,6 +1371,15 @@ a:hover { opacity: 0.75; }
   margin:      0.5rem 0 0.75rem;
 }
 
+.source-pills {
+  display:       flex;
+  flex-wrap:     wrap;
+  gap:           0.35rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
 .facet-count {
   display:       inline-block;
   padding:       0 4px;

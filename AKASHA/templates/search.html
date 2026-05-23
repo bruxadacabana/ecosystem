@@ -237,6 +237,36 @@
 </div>
 {% endif %}
 
+{% if results_by_source %}
+{% set _total_all = (results_by_source.Pessoal | length) + (results_by_source.Biblioteca | length) + (results_by_source.Web | length) %}
+{% if _total_all > 0 %}
+{% set _sfbase = "/search?q=" ~ (query | urlencode) %}
+{% if src_web %}{% set _sfbase = _sfbase ~ "&src_web=on" %}{% endif %}
+{% if src_eco %}{% set _sfbase = _sfbase ~ "&src_eco=on" %}{% endif %}
+{% if src_sites %}{% set _sfbase = _sfbase ~ "&src_sites=on" %}{% endif %}
+{% if src_papers %}{% set _sfbase = _sfbase ~ "&src_papers=on" %}{% endif %}
+{% if lens_id %}{% set _sfbase = _sfbase ~ "&lens_id=" ~ lens_id %}{% endif %}
+{% if facet_ext %}{% set _sfbase = _sfbase ~ "&facet_ext=" ~ facet_ext %}{% endif %}
+<div class="source-pills">
+  <a class="tag {% if not source_filter %}tag-active{% endif %}"
+     href="{{ _sfbase }}"
+     hx-get="{{ _sfbase }}" hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true">
+    Todos <span class="facet-count">{{ _total_all }}</span>
+  </a>
+  {% for src_name, src_list in results_by_source.items() %}
+  {% if src_list | length > 0 %}
+  <a class="tag {% if source_filter == src_name %}tag-active{% endif %}"
+     href="{{ _sfbase }}&source_filter={{ src_name | urlencode }}"
+     hx-get="{{ _sfbase }}&source_filter={{ src_name | urlencode }}"
+     hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true">
+    {{ src_name }} <span class="facet-count">{{ src_list | length }}</span>
+  </a>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
 {% set has_main   = web_results or fav_results or site_results or watch_later_results or paper_results or kosmos_results %}
 {% set has_eco    = local_results %}
 {% set two_col    = has_main and has_eco %}
