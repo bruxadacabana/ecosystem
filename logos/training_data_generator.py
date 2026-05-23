@@ -169,9 +169,8 @@ def _generate_qa_pairs(text: str, n: int, timeout: float) -> list[dict]:
             messages,
             app="logos",
             priority=3,
-            ollama_base=ec.get_ollama_base(),
         )
-        raw = resp.get("message", {}).get("content", "")
+        raw = resp["choices"][0]["message"]["content"]
         pairs = _parse_qa_json(raw)
         return pairs
     except Exception as exc:

@@ -179,17 +179,23 @@ def _transcribe_audio(audio_path: str, model_size: str, language: str) -> str:
 
 
 def _call_llm(transcript: str, ollama_model: str) -> dict:
-    """Chama Ollama com o prompt de extração e retorna dict parsed."""
+    """Chama llama-server com o prompt de extração e retorna dict parsed."""
     try:
-        from langchain_ollama import OllamaLLM
+        from langchain_openai import ChatOpenAI
     except ImportError as exc:
         raise RecipeLLMError(
-            "langchain-ollama não encontrado. Instale com: pip install langchain-ollama"
+            "langchain-openai não encontrado. Instale com: pip install langchain-openai"
         ) from exc
 
     try:
-        llm = OllamaLLM(model=ollama_model, temperature=0.2, timeout=120)
-        raw = llm.invoke(_LLM_PROMPT.format(transcript=transcript[:6000]))
+        try:
+            from ecosystem_client import get_inference_url as _giu
+            base_url = f"{_giu()}/v1"
+        except Exception:
+            base_url = "http://localhost:8080/v1"
+        llm = ChatOpenAI(model=ollama_model, temperature=0.2, timeout=120,
+                         base_url=base_url, api_key="logos")
+        raw = llm.invoke(_LLM_PROMPT.format(transcript=transcript[:6000])).content
     except Exception as exc:
         raise RecipeLLMError(f"Falha ao chamar LLM: {exc}") from exc
 
