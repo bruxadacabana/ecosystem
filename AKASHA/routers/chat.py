@@ -35,10 +35,10 @@ _MAX_SNIPPETS = 5
 # Resolução LOGOS-first em runtime (não import-time)
 def _get_base() -> str:
     try:
-        from ecosystem_client import get_ollama_url as _u
+        from ecosystem_client import get_inference_url as _u
         return _u()
     except Exception:
-        return "http://localhost:11434"
+        return "http://localhost:8080"
 
 
 def _get_headers() -> "dict[str, str]":
@@ -99,15 +99,15 @@ async def _get_model() -> str:
     except Exception:
         pass
 
-    # Fallback: usa primeiro modelo generativo disponível no Ollama
+    # Fallback: usa primeiro modelo generativo disponível no servidor de inferência
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(f"{_get_base()}/api/tags")
-            for m in r.json().get("models", []):
-                name = m["name"].lower()
+            r = await client.get(f"{_get_base()}/v1/models")
+            for m in r.json().get("data", []):
+                name = m["id"].lower()
                 if not any(pat in name for pat in _EMBED_NAME_PATTERNS):
-                    _cached_model = m["name"]
-                    return m["name"]
+                    _cached_model = m["id"]
+                    return m["id"]
     except Exception:
         pass
     return ""
@@ -118,7 +118,7 @@ def _build_prompt(
     snippets: list[dict],
     persona_prefix: str,
 ) -> list[dict]:
-    """Monta messages list para Ollama /api/chat."""
+    """Monta messages list para /v1/chat/completions."""
     parts = [_config.PERSONALITY_PROMPT]
     if persona_prefix:
         parts.append(persona_prefix.rstrip())
@@ -136,32 +136,35 @@ def _build_prompt(
 
 
 async def _stream_chat(messages: list[dict], model: str) -> AsyncIterator[str]:
-    """Gera fragmentos de texto via Ollama /api/chat stream."""
+    """Gera fragmentos de texto via llama-server /v1/chat/completions stream (SSE)."""
     try:
         async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT_S) as client:
             async with client.stream(
                 "POST",
-                f"{_get_base()}/api/chat",
+                f"{_get_base()}/v1/chat/completions",
                 headers=_get_headers(),
                 json={"model": model, "messages": messages, "stream": True,
-                      "options": {"num_predict": 400, "temperature": 0.4, "repeat_penalty": 1.1}},
+                      "max_tokens": 400, "temperature": 0.4, "frequency_penalty": 0.1},
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
-                    if not line:
+                    if not line or not line.startswith("data: "):
                         continue
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
                     try:
-                        chunk = json.loads(line)
+                        chunk = json.loads(data)
                     except json.JSONDecodeError:
                         continue
-                    text = chunk.get("message", {}).get("content", "")
+                    text = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
                     if text:
                         yield text
-                    if chunk.get("done"):
+                    if chunk.get("choices", [{}])[0].get("finish_reason") == "stop":
                         break
     except Exception as exc:
-        log.warning("chat: stream Ollama falhou: %s", exc)
-        yield f"[Erro ao conectar com Ollama: {exc}]"
+        log.warning("chat: stream inferência falhou: %s", exc)
+        yield f"[Erro ao conectar com o servidor de inferência: {exc}]"
 
 
 def _trim_partial(text: str, tag: str) -> int:
@@ -257,19 +260,20 @@ async def _reflect_on_chat(question: str, answer: str) -> None:
     try:
         async with httpx.AsyncClient(timeout=_REFLECT_TIMEOUT) as client:
             resp = await client.post(
-                f"{_get_base()}/api/generate",
+                f"{_get_base()}/v1/chat/completions",
                 headers=_get_headers(),
                 json={
-                    "model":  model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"num_predict": 120, "temperature": 0.65},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  120,
+                    "temperature": 0.65,
                 },
             )
             resp.raise_for_status()
-            raw = resp.json().get("response", "").strip()
+            raw = resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
-        log.debug("chat_reflect: Ollama falhou: %s", exc)
+        log.debug("chat_reflect: inferência falhou: %s", exc)
         return
 
     if not raw or raw.lower() in {"nada", "nada.", "—", "-"}:

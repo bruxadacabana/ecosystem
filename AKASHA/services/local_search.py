@@ -125,19 +125,19 @@ SOURCE_WEIGHTS: dict[str, float] = {
 
 _expansion_model_cache: str = ""
 
-# LOGOS-first: URL do Ollama e modelo padrão resolvidos no startup via ecosystem_client.
-# get_ollama_url() retorna 7072 (LOGOS proxy) se disponível, 11434 direto como fallback.
-# check_ollama_available() atualiza _ollama_base_url em runtime.
+# LOGOS-first: URL do servidor de inferência resolvida no startup via ecosystem_client.
+# get_inference_url() retorna LOGOS (7072) se disponível, llama-server (8080) como fallback.
+# check_inference_available() atualiza _inference_base_url em runtime.
 try:
     from ecosystem_client import (
-        get_ollama_url    as _ec_ollama_url,
+        get_inference_url  as _ec_inference_url,
         get_active_profile as _ec_profile,
     )
-    _ollama_base_url: str = _ec_ollama_url()
+    _inference_base_url: str = _ec_inference_url()
     _p = _ec_profile()
     _expansion_default_model: str = (_p or {}).get("models", {}).get("llm_query", "") if _p else ""
 except Exception:
-    _ollama_base_url         = "http://localhost:11434"
+    _inference_base_url      = "http://localhost:8080"
     _expansion_default_model = ""
 
 try:
@@ -228,7 +228,7 @@ def _get_lingua_detector() -> object | None:
 # antes de tentar se conectar — nunca bloquear o path FTS5 por falta de LLM.
 # ---------------------------------------------------------------------------
 
-_ollama_available: bool = False
+_inference_available: bool = False
 
 # Cache para presença de dados no entity_graph — evita 5 queries DB por busca quando vazio
 _entity_graph_checked_at: float = 0.0
@@ -252,27 +252,37 @@ async def _has_entity_graph() -> bool:
     return _entity_graph_has_rows
 
 
-async def check_ollama_available() -> bool:
-    """Tenta conectar ao Ollama via LOGOS (7072) ou direto (11434). Atualiza URL e flag global."""
-    global _ollama_available, _ollama_base_url
+async def check_inference_available() -> bool:
+    """Tenta conectar ao servidor de inferência via LOGOS (7072) ou llama-server (8080)."""
+    global _inference_available, _inference_base_url
     try:
-        from ecosystem_client import get_ollama_url as _get_url
-        _ollama_base_url = _get_url()  # atualiza LOGOS vs direto em runtime
+        from ecosystem_client import get_inference_url as _get_url
+        _inference_base_url = _get_url()  # atualiza LOGOS vs direto em runtime
     except Exception:
         pass
     try:
         import httpx as _httpx
         async with _httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.get(f"{_ollama_base_url}/api/tags")
-            _ollama_available = r.status_code == 200
+            r = await client.get(f"{_inference_base_url}/health")
+            _inference_available = r.status_code == 200
     except Exception:
-        _ollama_available = False
-    return _ollama_available
+        _inference_available = False
+    return _inference_available
+
+
+async def check_inference_available() -> bool:
+    """Alias de check_inference_available() para compatibilidade com código legado."""
+    return await check_inference_available()
+
+
+def get_inference_status() -> bool:
+    """Retorna o último estado conhecido do servidor de inferência (sem nova requisição)."""
+    return _inference_available
 
 
 def get_ollama_status() -> bool:
-    """Retorna o último estado conhecido do Ollama (sem fazer nova requisição)."""
-    return _ollama_available
+    """Alias de get_inference_status() para compatibilidade com código legado."""
+    return get_inference_status()
 
 
 # ---------------------------------------------------------------------------
@@ -719,10 +729,10 @@ def _rerank(results: list[SearchResult], query: str) -> list[SearchResult]:
 # ---------------------------------------------------------------------------
 
 async def _get_expansion_model() -> str:
-    """Retorna modelo Ollama a usar para expansão. Resultado cacheado em memória.
+    """Retorna modelo a usar para expansão. Resultado cacheado em memória.
 
-    Prioridade: FTS_EXPANSION_MODEL explícito → perfil LOGOS (llm_kosmos) → primeiro
-    modelo disponível via /api/tags. LOGOS resolve o melhor modelo para o hardware ativo.
+    Prioridade: FTS_EXPANSION_MODEL explícito → perfil LOGOS (llm_query) → primeiro
+    modelo disponível via /v1/models. LOGOS resolve o melhor modelo para o hardware ativo.
     """
     global _expansion_model_cache
     if _expansion_model_cache:
@@ -733,15 +743,15 @@ async def _get_expansion_model() -> str:
     if _expansion_default_model:
         _expansion_model_cache = _expansion_default_model
         return _expansion_model_cache
-    # Fallback: primeiro modelo disponível no Ollama (LOGOS ou direto)
+    # Fallback: primeiro modelo disponível no servidor de inferência
     try:
         import httpx as _httpx
         async with _httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get(f"{_ollama_base_url}/api/tags")
+            r = await client.get(f"{_inference_base_url}/v1/models")
             if r.status_code == 200:
-                models = r.json().get("models", [])
+                models = r.json().get("data", [])
                 if models:
-                    _expansion_model_cache = models[0]["name"]
+                    _expansion_model_cache = models[0]["id"]
     except Exception:
         pass
     return _expansion_model_cache
@@ -813,7 +823,7 @@ async def _expand_query_llm(query: str) -> list[str]:
     em qualquer falha (Ollama fora do ar, timeout, output malformado).
     Roda em paralelo com as buscas FTS5 principais para não adicionar latência.
     """
-    if not _ollama_available:
+    if not _inference_available:
         return []
     model = await _get_expansion_model()
     if not model:
@@ -850,18 +860,18 @@ async def _expand_query_llm(query: str) -> list[str]:
         )
         async with _httpx.AsyncClient(timeout=5.0) as client:
             r = await client.post(
-                f"{_ollama_base_url}/api/generate",
+                f"{_inference_base_url}/v1/chat/completions",
                 json={
                     "model":       model,
-                    "prompt":      prompt,
+                    "messages":    [{"role": "user", "content": prompt}],
                     "stream":      False,
-                    "num_predict": 40,
+                    "max_tokens":  40,
                     "temperature": 0.2,
                 },
             )
         if r.status_code != 200:
             return []
-        text = r.json().get("response", "").strip()
+        text = r.json()["choices"][0]["message"]["content"].strip()
         raw = [t.strip() for t in re.split(r"[,\n]", text) if t.strip()]
         # Regex estendido para pt/en (À-ÿ) e zh (CJK U+4E00–U+9FFF)
         terms = [
@@ -1042,25 +1052,27 @@ async def _generate_hyde(query: str) -> str:
     entre a query curta e os documentos longos armazenados no Mnemosyne.
     Retorna "" em qualquer falha — busca cai de volta ao embedding direto da query.
     """
-    if not _ollama_available:
+    if not _inference_available:
         return ""
     model = await _get_expansion_model()
     if not model:
         return ""
     try:
         import httpx as _httpx
+        prompt = f"Escreva 2-3 frases que responderiam à busca: {query}"
         async with _httpx.AsyncClient(timeout=4.0) as client:
             r = await client.post(
-                f"{_ollama_base_url}/api/generate",
+                f"{_inference_base_url}/v1/chat/completions",
                 json={
-                    "model": model,
-                    "prompt": f"Escreva 2-3 frases que responderiam à busca: {query}",
-                    "stream": False,
-                    "options": {"num_predict": 80, "temperature": 0.3},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  80,
+                    "temperature": 0.3,
                 },
             )
         if r.status_code == 200:
-            return r.json().get("response", "").strip()
+            return r.json()["choices"][0]["message"]["content"].strip()
     except Exception:
         pass
     return ""
@@ -1072,7 +1084,7 @@ async def _search_chroma(query: str) -> list[SearchResult]:
 
     # HyDE: usa documento hipotético como query vector quando Ollama disponível
     effective_query = query
-    if HYDE_ENABLED and _ollama_available:
+    if HYDE_ENABLED and _inference_available:
         hyde_doc = await _generate_hyde(query)
         if hyde_doc:
             effective_query = hyde_doc
@@ -1558,7 +1570,7 @@ async def search_local(
     """
     # Inicia expansão LLM e expansão por entidades em paralelo com as buscas principais
     expand_task = None
-    if expand and FTS_EXPANSION_ENABLED and _ollama_available:
+    if expand and FTS_EXPANSION_ENABLED and _inference_available:
         expand_task = asyncio.ensure_future(_expand_query_llm(query))
     entity_task = asyncio.ensure_future(_expand_query_entities(query))
 

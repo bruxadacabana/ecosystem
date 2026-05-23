@@ -31,10 +31,10 @@ router = APIRouter(prefix="/dialogue", tags=["dialogue"])
 
 def _get_base() -> str:
     try:
-        from ecosystem_client import get_ollama_url as _u
+        from ecosystem_client import get_inference_url as _u
         return _u()
     except Exception:
-        return "http://localhost:11434"
+        return "http://localhost:8080"
 
 
 def _get_headers() -> "dict[str, str]":
@@ -104,36 +104,42 @@ def _build_prompt(
     return "\n\n".join(parts)
 
 
-async def _stream_ollama(prompt: str, model: str) -> AsyncIterator[str]:
-    """Gera fragmentos de texto via Ollama stream. Yields strings de texto bruto."""
+async def _stream_inference(prompt: str, model: str) -> AsyncIterator[str]:
+    """Gera fragmentos de texto via llama-server SSE. Yields strings de texto bruto."""
     try:
+        messages = [{"role": "user", "content": prompt}]
         async with httpx.AsyncClient(timeout=_DIALOGUE_TIMEOUT_S) as client:
             async with client.stream(
                 "POST",
-                f"{_get_base()}/api/generate",
+                f"{_get_base()}/v1/chat/completions",
                 headers=_get_headers(),
                 json={
-                    "model":   model,
-                    "prompt":  prompt,
-                    "stream":  True,
-                    "options": {"num_predict": 200, "temperature": 0.5, "repeat_penalty": 1.1},
+                    "model":              model,
+                    "messages":           messages,
+                    "stream":             True,
+                    "max_tokens":         200,
+                    "temperature":        0.5,
+                    "frequency_penalty":  0.1,
                 },
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
-                    if not line:
+                    if not line or not line.startswith("data: "):
                         continue
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
                     try:
-                        chunk = json.loads(line)
+                        chunk = json.loads(data)
                     except json.JSONDecodeError:
                         continue
-                    text = chunk.get("response", "")
+                    text = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
                     if text:
                         yield text
-                    if chunk.get("done"):
+                    if chunk.get("choices", [{}])[0].get("finish_reason") == "stop":
                         break
     except Exception as exc:
-        log.debug("dialogue: stream Ollama falhou: %s", exc)
+        log.debug("dialogue: stream inferência falhou: %s", exc)
 
 
 async def _get_model() -> str:
@@ -147,10 +153,10 @@ async def _get_model() -> str:
         pass
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get(f"{_get_base()}/api/tags")
-            models = r.json().get("models", [])
+            r = await client.get(f"{_get_base()}/v1/models")
+            models = r.json().get("data", [])
             if models:
-                return models[0]["name"]
+                return models[0]["id"]
     except Exception:
         pass
     return ""
@@ -170,12 +176,12 @@ async def dialogue_turn(turn: DialogueTurn) -> StreamingResponse:
       data: {"type": "sources",  "sources": [...]} — lista de fontes usadas
       data: [DONE]
     """
-    from services.local_search import search_local, get_ollama_status
+    from services.local_search import search_local, get_inference_status
     from services.persona import get_persona
 
-    if not get_ollama_status():
+    if not get_inference_status():
         async def _offline() -> AsyncIterator[bytes]:
-            payload = json.dumps({"type": "fragment", "text": "Ollama indisponível."})
+            payload = json.dumps({"type": "fragment", "text": "Servidor de inferência indisponível."})
             yield f"data: {payload}\n\n".encode()
             yield b"data: [DONE]\n\n"
         return StreamingResponse(_offline(), media_type="text/event-stream")
@@ -205,7 +211,7 @@ async def dialogue_turn(turn: DialogueTurn) -> StreamingResponse:
     )
 
     async def _event_stream() -> AsyncIterator[bytes]:
-        async for text in _stream_ollama(prompt, model):
+        async for text in _stream_inference(prompt, model):
             payload = json.dumps({"type": "fragment", "text": text}, ensure_ascii=False)
             yield f"data: {payload}\n\n".encode()
 

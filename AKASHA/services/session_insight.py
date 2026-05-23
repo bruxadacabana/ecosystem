@@ -28,12 +28,12 @@ _GENERATE_TIMEOUT:           float = 25.0
 _REFLECT_TIMEOUT:            float = 20.0
 
 
-def _get_ollama_base() -> str:
+def _get_inference_base() -> str:
     try:
-        from ecosystem_client import get_ollama_url as _get_url
+        from ecosystem_client import get_inference_url as _get_url
         return _get_url()
     except Exception:
-        return "http://localhost:11434"
+        return "http://localhost:8080"
 
 
 def _get_model() -> str:
@@ -188,16 +188,17 @@ async def _reflect_on_feedback(entry: dict[str, Any], feedback_type: str) -> Non
     try:
         async with httpx.AsyncClient(timeout=_REFLECT_TIMEOUT) as client:
             resp = await client.post(
-                f"{_get_ollama_base()}/api/generate",
+                f"{_get_inference_base()}/v1/chat/completions",
                 json={
-                    "model":  model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"num_predict": 80, "temperature": 0.6},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  80,
+                    "temperature": 0.6,
                 },
             )
             resp.raise_for_status()
-            raw = resp.json().get("response", "").strip()
+            raw = resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
         log.debug("session_insight: reflexão de feedback falhou: %s", exc)
         return
@@ -239,16 +240,17 @@ async def _generate(session_id: str, queries: list[str], snippets: list[str]) ->
     try:
         async with httpx.AsyncClient(timeout=_GENERATE_TIMEOUT) as client:
             resp = await client.post(
-                f"{_get_ollama_base()}/api/generate",
+                f"{_get_inference_base()}/v1/chat/completions",
                 json={
-                    "model":  model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"num_predict": 60, "temperature": 0.65},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  60,
+                    "temperature": 0.65,
                 },
             )
             resp.raise_for_status()
-            text = resp.json().get("response", "").strip()
+            text = resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
         log.debug("session_insight: Ollama falhou: %s", exc)
         return

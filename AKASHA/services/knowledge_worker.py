@@ -103,17 +103,13 @@ _INSIGHT_COOLDOWN_S: float = 3600.0   # 1 hora entre notificações
 _INSIGHT_TOPIC_THRESHOLD: int   = 3   # sobreposição mínima de tópicos
 _INSIGHT_SCORE_MIN: float       = 0.6 # score mínimo no topic_interest_profile
 
-# URL base do Ollama — resolvida dinamicamente em runtime via _get_ollama_base()
-_OLLAMA_BASE: str = "http://localhost:11434"
-
-
-def _get_ollama_base() -> str:
-    """Retorna URL do Ollama em runtime (LOGOS 7072 se disponível, direto 11434)."""
+def _get_inference_base() -> str:
+    """Retorna URL do servidor de inferência em runtime (LOGOS 7072 → llama-server 8080)."""
     try:
-        from ecosystem_client import get_ollama_url as _get_url  # type: ignore
+        from ecosystem_client import get_inference_url as _get_url  # type: ignore
         return _get_url()
     except Exception:
-        return "http://localhost:11434"
+        return "http://localhost:8080"
 
 
 def _get_llm_query_model() -> str:
@@ -580,16 +576,17 @@ async def _process_confirmed_feedback(memory_id: int) -> None:
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(
-                    f"{_get_ollama_base()}/api/generate",
+                    f"{_get_inference_base()}/v1/chat/completions",
                     json={
-                        "model":   model,
-                        "prompt":  prompt,
-                        "stream":  False,
-                        "options": {"num_predict": 60, "temperature": 0.2},
+                        "model":       model,
+                        "messages":    [{"role": "user", "content": prompt}],
+                        "stream":      False,
+                        "max_tokens":  60,
+                        "temperature": 0.2,
                     },
                 )
                 resp.raise_for_status()
-                raw = resp.json().get("response", "").strip()
+                raw = resp.json()["choices"][0]["message"]["content"].strip()
                 if raw and len(raw) >= 10:
                     proposition = raw
         except Exception as exc:
@@ -825,7 +822,7 @@ async def _check_discoveries(
 
 
 async def _call_ollama_extract(title: str, content: str) -> dict | None:
-    """Chama Ollama pedindo JSON estruturado com summary, topics, entities."""
+    """Chama llama-server pedindo JSON estruturado com summary, topics, entities."""
     model = _get_llm_query_model()
     if not model:
         log.debug("knowledge_worker: llm_query não configurado no perfil do LOGOS — extração ignorada.")
@@ -843,18 +840,19 @@ async def _call_ollama_extract(title: str, content: str) -> dict | None:
     try:
         async with httpx.AsyncClient(timeout=_EXTRACT_TIMEOUT) as client:
             resp = await client.post(
-                f"{_get_ollama_base()}/api/generate",
+                f"{_get_inference_base()}/v1/chat/completions",
                 json={
-                    "model":   model,
-                    "prompt":  prompt,
-                    "stream":  False,
-                    "options": {"num_predict": 150, "temperature": 0.1},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  150,
+                    "temperature": 0.1,
                 },
             )
             resp.raise_for_status()
-            raw = resp.json().get("response", "").strip()
+            raw = resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
-        log.warning("knowledge_worker: Ollama falhou na extração: %s", exc)
+        log.warning("knowledge_worker: inferência falhou na extração: %s", exc)
         return None
 
     return _parse_json(raw)
@@ -918,16 +916,17 @@ async def _extract_entities_llm(text: str, model: str) -> list[str]:
     try:
         async with httpx.AsyncClient(timeout=12.0) as client:
             resp = await client.post(
-                f"{_get_ollama_base()}/api/generate",
+                f"{_get_inference_base()}/v1/chat/completions",
                 json={
-                    "model":   model,
-                    "prompt":  prompt,
-                    "stream":  False,
-                    "options": {"num_predict": 80, "temperature": 0.1},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  80,
+                    "temperature": 0.1,
                 },
             )
             resp.raise_for_status()
-            raw = resp.json().get("response", "")
+            raw = resp.json()["choices"][0]["message"]["content"]
     except Exception as exc:
         log.debug("knowledge_worker: extração de entidades LLM falhou: %s", exc)
         return []
@@ -1059,16 +1058,17 @@ async def _event_reflection(
     try:
         async with httpx.AsyncClient(timeout=90.0) as client:
             resp = await client.post(
-                f"{_get_ollama_base()}/api/generate",
+                f"{_get_inference_base()}/v1/chat/completions",
                 json={
-                    "model":   model,
-                    "prompt":  prompt,
-                    "stream":  False,
-                    "options": {"num_predict": 120, "temperature": 0.7},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  120,
+                    "temperature": 0.7,
                 },
             )
             resp.raise_for_status()
-            raw = resp.json().get("response", "").strip()
+            raw = resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
         log.warning("knowledge_worker: _event_reflection falhou: %s", exc)
         return

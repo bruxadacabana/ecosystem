@@ -121,12 +121,12 @@ def gc_sessions() -> int:
 # Reflexão pós-sessão
 # ---------------------------------------------------------------------------
 
-def _get_ollama_base() -> str:
+def _get_inference_base() -> str:
     try:
-        from ecosystem_client import get_ollama_url as _u  # type: ignore
+        from ecosystem_client import get_inference_url as _u  # type: ignore
         return _u()
     except Exception:
-        return "http://localhost:11434"
+        return "http://localhost:8080"
 
 
 def _get_reflect_model() -> str:
@@ -151,27 +151,25 @@ def _is_meaningful_reflection(text: str) -> bool:
     return True
 
 
-async def _call_ollama_reflect(prompt: str, model: str) -> str | None:
-    """Chama Ollama com temperatura baixa para reflexão de sessão."""
+async def _call_inference_reflect(prompt: str, model: str) -> str | None:
+    """Chama llama-server com temperatura baixa para reflexão de sessão."""
     import httpx
     try:
         async with httpx.AsyncClient(timeout=_SESSION_REFLECT_TIMEOUT) as client:
             resp = await client.post(
-                f"{_get_ollama_base()}/api/generate",
+                f"{_get_inference_base()}/v1/chat/completions",
                 json={
-                    "model":   model,
-                    "prompt":  prompt,
-                    "stream":  False,
-                    "options": {
-                        "num_predict": _SESSION_REFLECT_NUM_PREDICT,
-                        "temperature": 0.65,
-                    },
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  _SESSION_REFLECT_NUM_PREDICT,
+                    "temperature": 0.65,
                 },
             )
             resp.raise_for_status()
-            return resp.json().get("response", "").strip()
+            return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
-        log.debug("reflect_on_session: Ollama falhou: %s", exc)
+        log.debug("reflect_on_session: inferência falhou: %s", exc)
         return None
 
 
@@ -202,7 +200,7 @@ async def reflect_on_session(queries: list[str]) -> None:
         f"Se não houver nada relevante, responda apenas: nada."
     )
 
-    raw = await _call_ollama_reflect(prompt, model)
+    raw = await _call_inference_reflect(prompt, model)
     if not raw or not _is_meaningful_reflection(raw):
         log.debug("reflect_on_session: descartado (%r)", (raw or "")[:40])
         return

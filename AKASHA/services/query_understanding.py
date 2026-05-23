@@ -163,10 +163,10 @@ DEFAULT_LLM_MODEL: str = ""
 
 def _get_base() -> str:
     try:
-        from ecosystem_client import get_ollama_url as _u
+        from ecosystem_client import get_inference_url as _u
         return _u()
     except Exception:
-        return "http://localhost:11434"
+        return "http://localhost:8080"
 
 
 def _get_headers() -> "dict[str, str]":
@@ -175,9 +175,6 @@ def _get_headers() -> "dict[str, str]":
         return _h("akasha", 2)  # P2: expansão de query é user-triggered, não imediata
     except Exception:
         return {}
-
-
-OLLAMA_BASE_URL: str = "http://localhost:11434"  # retrocompat; resolve em runtime nos call sites
 
 # ---------------------------------------------------------------------------
 # Reescrita conversacional — anáforas detectadas
@@ -220,17 +217,18 @@ async def rewrite_query(query: str, context: list[str], model: str = "") -> str:
     try:
         async with httpx.AsyncClient(timeout=INTENT_TIMEOUT_S) as client:
             resp = await client.post(
-                f"{_get_base()}/api/generate",
+                f"{_get_base()}/v1/chat/completions",
                 headers=_get_headers(),
                 json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"num_predict": 30, "temperature": 0.1},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  30,
+                    "temperature": 0.1,
                 },
             )
             resp.raise_for_status()
-            raw = resp.json().get("response", "").strip().strip("\"'")
+            raw = resp.json()["choices"][0]["message"]["content"].strip().strip("\"'")
             if raw and len(raw) <= 200 and raw.lower() != query.lower():
                 return raw
     except Exception as exc:
@@ -267,17 +265,18 @@ async def score_ambiguity(query: str, model: str = "") -> tuple[int, str]:
     try:
         async with httpx.AsyncClient(timeout=INTENT_TIMEOUT_S) as client:
             resp = await client.post(
-                f"{_get_base()}/api/generate",
+                f"{_get_base()}/v1/chat/completions",
                 headers=_get_headers(),
                 json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"num_predict": 60, "temperature": 0},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  60,
+                    "temperature": 0,
                 },
             )
             resp.raise_for_status()
-            raw = resp.json().get("response", "").strip()
+            raw = resp.json()["choices"][0]["message"]["content"].strip()
 
         score = 1
         question = ""
@@ -324,17 +323,18 @@ async def summarize_snippets(query: str, snippets: list[str], model: str = "") -
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
-                f"{_get_base()}/api/generate",
+                f"{_get_base()}/v1/chat/completions",
                 headers=_get_headers(),
                 json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"num_predict": 300, "temperature": 0.3},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  300,
+                    "temperature": 0.3,
                 },
             )
             resp.raise_for_status()
-            return resp.json().get("response", "").strip()
+            return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
         log.debug("summarize_snippets falhou (%s).", exc)
         return ""
@@ -431,17 +431,18 @@ async def classify_intent(query: str, model: str = "") -> IntentType:
     try:
         async with httpx.AsyncClient(timeout=INTENT_TIMEOUT_S) as client:
             resp = await client.post(
-                f"{_get_base()}/api/generate",
+                f"{_get_base()}/v1/chat/completions",
                 headers=_get_headers(),
                 json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"num_predict": 8, "temperature": 0},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  8,
+                    "temperature": 0,
                 },
             )
             resp.raise_for_status()
-            raw = resp.json().get("response", "").strip().lower()
+            raw = resp.json()["choices"][0]["message"]["content"].strip().lower()
     except (httpx.HTTPError, httpx.TimeoutException, KeyError, ValueError) as exc:
         log.debug("classify_intent falhou (%s) — usando 'exploratory'.", exc)
         return "exploratory"
@@ -462,15 +463,8 @@ async def classify_intent(query: str, model: str = "") -> IntentType:
 # ---------------------------------------------------------------------------
 
 async def _set_keep_alive(model: str, keep_alive: int) -> None:
-    """Envia request ao Ollama para ajustar keep_alive do modelo."""
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(
-                f"{_get_base()}/api/generate",
-                json={"model": model, "prompt": "", "keep_alive": keep_alive},
-            )
-    except Exception as exc:
-        log.debug("keep_alive(%d) para '%s' falhou: %s", keep_alive, model, exc)
+    """No-op: llama-server gerencia o ciclo de vida do modelo nativamente."""
+    _ = model, keep_alive
 
 
 def _reset_idle_timer(model: str) -> None:

@@ -17,12 +17,12 @@ log = logging.getLogger("akasha.persona")
 _REBUILD_INTERVAL_S: int   = 86400   # 1 vez por dia
 _PERSONA_TIMEOUT_S:  float = 20.0
 
-def _get_ollama_base() -> str:
+def _get_inference_base() -> str:
     try:
-        from ecosystem_client import get_ollama_url as _get_url
+        from ecosystem_client import get_inference_url as _get_url
         return _get_url()
     except Exception:
-        return "http://localhost:11434"
+        return "http://localhost:8080"
 
 
 def _get_model() -> str:
@@ -132,18 +132,19 @@ async def _rebuild_persona() -> None:
     try:
         async with httpx.AsyncClient(timeout=_PERSONA_TIMEOUT_S) as client:
             resp = await client.post(
-                f"{_get_ollama_base()}/api/generate",
+                f"{_get_inference_base()}/v1/chat/completions",
                 json={
-                    "model":   model,
-                    "prompt":  prompt,
-                    "stream":  False,
-                    "options": {"num_predict": 100, "temperature": 0.4},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  100,
+                    "temperature": 0.4,
                 },
             )
             resp.raise_for_status()
-            description = resp.json().get("response", "").strip()
+            description = resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
-        log.debug("persona: Ollama falhou: %s", exc)
+        log.debug("persona: inferência falhou: %s", exc)
         return
 
     if not description:

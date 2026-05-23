@@ -131,12 +131,12 @@ def test_reflect_no_model_returns_silently():
 
 
 def test_reflect_saves_when_ollama_responds():
-    """Resposta válida do Ollama → save_memory chamado com tag 'session_reflection'."""
+    """Resposta válida → save_memory chamado com tag 'session_reflection'."""
     from services import session_memory as sm
 
     async def run():
         with patch.object(sm, "_get_reflect_model", return_value="mistral"):
-            with patch.object(sm, "_call_ollama_reflect", new_callable=AsyncMock,
+            with patch.object(sm, "_call_inference_reflect", new_callable=AsyncMock,
                               return_value="Parece que o interesse em privacidade e ML se intensifica."):
                 with patch("services.personal_memory.save_memory", new_callable=AsyncMock) as mock_save:
                     await sm.reflect_on_session(["privacidade", "machine learning", "dados pessoais"])
@@ -149,12 +149,12 @@ def test_reflect_saves_when_ollama_responds():
 
 
 def test_reflect_discards_generic_ollama_response():
-    """Resposta genérica ('nada.') do Ollama → save_memory NÃO chamado."""
+    """Resposta genérica ('nada.') → save_memory NÃO chamado."""
     from services import session_memory as sm
 
     async def run():
         with patch.object(sm, "_get_reflect_model", return_value="mistral"):
-            with patch.object(sm, "_call_ollama_reflect", new_callable=AsyncMock,
+            with patch.object(sm, "_call_inference_reflect", new_callable=AsyncMock,
                               return_value="nada."):
                 with patch("services.personal_memory.save_memory", new_callable=AsyncMock) as mock_save:
                     await sm.reflect_on_session(["busca um", "busca dois", "busca tres"])

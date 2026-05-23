@@ -22,12 +22,12 @@ _GENERIC_PREFIXES = (
     "não é possível",
 )
 
-def _get_ollama_base() -> str:
+def _get_inference_base() -> str:
     try:
-        from ecosystem_client import get_ollama_url as _get_url
+        from ecosystem_client import get_inference_url as _get_url
         return _get_url()
     except Exception:
-        return "http://localhost:11434"
+        return "http://localhost:8080"
 
 
 def _get_model() -> str:
@@ -116,7 +116,7 @@ async def _run_reflection() -> None:
         f"Se não houver nada relevante, responda apenas: nada."
     )
 
-    raw = await _call_ollama(prompt, model)
+    raw = await _call_inference(prompt, model)
     if not raw:
         return
     if not _is_meaningful(raw):
@@ -127,23 +127,24 @@ async def _run_reflection() -> None:
     log.info("reflection_loop: reflexão salva (%d chars).", len(raw))
 
 
-async def _call_ollama(prompt: str, model: str) -> str | None:
-    """Chama Ollama com temperature=0.7 para reflexão criativa."""
+async def _call_inference(prompt: str, model: str) -> str | None:
+    """Chama llama-server com temperature=0.7 para reflexão criativa."""
     try:
         async with httpx.AsyncClient(timeout=_REFLECT_TIMEOUT) as client:
             resp = await client.post(
-                f"{_get_ollama_base()}/api/generate",
+                f"{_get_inference_base()}/v1/chat/completions",
                 json={
-                    "model":   model,
-                    "prompt":  prompt,
-                    "stream":  False,
-                    "options": {"num_predict": 120, "temperature": 0.7},
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  120,
+                    "temperature": 0.7,
                 },
             )
             resp.raise_for_status()
-            return resp.json().get("response", "").strip()
+            return resp.json()["choices"][0]["message"]["content"].strip()
     except Exception as exc:
-        log.debug("reflection_loop: Ollama falhou: %s", exc)
+        log.debug("reflection_loop: inferência falhou: %s", exc)
         return None
 
 
