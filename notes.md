@@ -4,7 +4,7 @@
 
 BUG
 
-AKASHA não completou a busca:
+AKASHA não completou a busca e apareceu na tela:
 "Erro na busca
 
 name 'log' is not defined"
