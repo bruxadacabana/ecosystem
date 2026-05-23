@@ -171,3 +171,73 @@ def test_get_inference_backend_shortcut():
     _clear()
     with patch("hardware_probe.platform.system", return_value="Windows"):
         assert hp.get_inference_backend() == "cpu"
+
+
+# ─── ModelProfile por perfil ──────────────────────────────────────────────────
+
+def test_main_pc_model_profile():
+    _clear()
+    vram_bytes = 8 * 1024 ** 3
+    def mock_sysfs(path: str) -> str:
+        if "card0" in path and "mem_info_vram_total" in path:
+            return str(vram_bytes)
+        return ""
+
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value=""), \
+         patch("hardware_probe._sysfs", side_effect=mock_sysfs):
+        mp = hp.get_model_profile()
+
+    assert mp.llm_rag      == "qwen2.5:7b"
+    assert mp.llm_analysis == "gemma2:2b"
+    assert mp.llm_query    == "qwen2.5:3b"
+    assert mp.embed        == "bge-m3"
+    assert mp.image_ocr    == "moondream"
+    assert mp.vram_budget_mb == 7_500
+
+
+def test_laptop_model_profile():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value="NVIDIA GeForce MX150, 2000 MiB"):
+        mp = hp.get_model_profile()
+
+    assert mp.llm_rag      == "gemma2:2b"
+    assert mp.llm_analysis == "smollm2:1.7b"
+    assert mp.llm_query    == "smollm2:1.7b"
+    assert mp.embed        == "nomic-embed-text"
+    assert mp.vram_budget_mb == 1_800
+
+
+def test_work_pc_model_profile():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Windows"):
+        mp = hp.get_model_profile()
+
+    assert mp.llm_rag      == "smollm2:1.7b"
+    assert mp.llm_analysis == "qwen2.5:0.5b"
+    assert mp.llm_query    == "qwen2.5:0.5b"
+    assert mp.embed        == "potion-multilingual-128M"
+    assert mp.image_ocr    == ""    # sem GPU, sem OCR neural
+    assert mp.vram_budget_mb == 4_000
+
+
+def test_model_profile_in_hardware_info():
+    """model_profile está presente em HardwareInfo e é o ModelProfile correto."""
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Windows"):
+        info = hp.detect_hardware()
+
+    assert isinstance(info.model_profile, hp.ModelProfile)
+    assert info.model_profile.llm_rag == "smollm2:1.7b"
+
+
+def test_model_profile_is_frozen():
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Windows"):
+        mp = hp.get_model_profile()
+    try:
+        mp.llm_rag = "other"  # type: ignore
+        assert False, "ModelProfile deve ser imutável"
+    except Exception:
+        pass

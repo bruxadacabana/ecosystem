@@ -6951,3 +6951,8 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   2. `TestGetTopTopics` (2 testes): corrigidos para usar indexação por posição `t[0]`, `t[1]`; `test_result_has_expected_keys` renomeado para `test_result_is_list_of_tuples` com tuple unpacking. Produção mantida (`list[tuple]`) pois callers em `knowledge_worker.py` usam `for t, s in raw_interests`.
   3. `TestApplySeedTopics` (2 testes): corrigidos para passar `{"name": ..., "weight": ...}` conforme API real; asserções de leitura ajustadas para indexação por posição.
 
+
+### hardware_probe: ModelProfile por perfil × funcionalidade | 2026-05-23
+> Contexto: o fallback offline do LOGOS em ecosystem_client usava smollm2:1.7b fixo para todos os perfis e funções — incorreto para main_pc (qwen2.5:7b para RAG) e laptop (gemma2:2b para RAG). hardware_probe.py espelhava logos.rs mas sem modelos recomendados.
+- [x] **Adicionar ModelProfile ao hardware_probe.py** — dataclass frozen com llm_rag, llm_analysis, llm_query, embed, image_ocr, vram_budget_mb; espelha HardwareProfile::model_profile() em logos.rs. Incluído em HardwareInfo e exposto via get_model_profile().
+- [x] **Corrigir fallback offline do ecosystem_client** — substituir _FALLBACK_MODEL="smollm2:1.7b" fixo por _fallback_model_for_app(app) que consulta hardware_probe.get_model_profile() — correto por hardware × funcionalidade (main_pc→qwen2.5:7b para RAG, work_pc→qwen2.5:0.5b para query, etc).

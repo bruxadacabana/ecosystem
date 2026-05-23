@@ -2,10 +2,12 @@
 hardware_probe — detecção de hardware em runtime para seleção de backend de inferência.
 
 Detecta GPU disponível e retorna: backend de inferência (Vulkan/CUDA/CPU),
-flags de build do llama-server, limite de contexto recomendado e perfil de hardware.
+flags de build do llama-server, limite de contexto, perfil de hardware e
+modelos LLM recomendados por funcionalidade.
 
-Lógica espelha detect_hardware_profile() em HUB/src-tauri/src/logos.rs
-para consistência entre o componente Rust (LOGOS) e os apps Python.
+Lógica espelha detect_hardware_profile() + model_profile() em
+HUB/src-tauri/src/logos.rs para consistência entre o componente Rust (LOGOS)
+e os apps Python. Usado como fallback offline quando o LOGOS não está disponível.
 A detecção acontece uma única vez por processo (resultado cacheado via lru_cache).
 """
 from __future__ import annotations
@@ -40,8 +42,63 @@ _BUILD_FLAGS: dict[str, tuple[str, ...]] = {
 
 
 @dataclass(frozen=True)
+class ModelProfile:
+    """Modelos LLM recomendados por funcionalidade para um perfil de hardware.
+
+    Espelha ModelProfile em HUB/src-tauri/src/logos.rs.
+    Usado como fallback offline quando o LOGOS não está disponível.
+    """
+    llm_rag:        str   # RAG conversacional (Mnemosyne) — síntese multi-doc
+    llm_analysis:   str   # análise/sumarização em background (KOSMOS) — JSON estruturado
+    llm_query:      str   # extração on-demand e expansão de query (AKASHA) — baixa latência
+    embed:          str   # modelo de embedding (todos os apps)
+    image_ocr:      str   # multimodal/OCR (Mnemosyne) — "" se hardware não suporta
+    vram_budget_mb: int   # orçamento de VRAM/RAM disponível para inferência (MB)
+
+
+# Espelha HardwareProfile::model_profile() em logos.rs.
+# Atualizar aqui quando os modelos recomendados mudarem no Rust.
+_MODEL_PROFILE: dict[str, ModelProfile] = {
+    "main_pc": ModelProfile(
+        # RX 6600 8 GB: qwen2.5:7b (4.7 GB) + gemma2:2b (1.6 GB) coexistem (~6.3 GB < 7.5 GB)
+        llm_rag      = "qwen2.5:7b",
+        llm_analysis = "gemma2:2b",
+        # qwen2.5:3b (~1.9 GB) coexiste com qwen2.5:7b (4.7+1.9=6.6 GB)
+        llm_query    = "qwen2.5:3b",
+        embed        = "bge-m3",
+        # moondream (~1.7 GB) coexiste com qwen2.5:7b (4.7+1.7=6.4 GB < 7.5 GB)
+        image_ocr    = "moondream",
+        vram_budget_mb = 7_500,
+    ),
+    "laptop": ModelProfile(
+        # MX150 2 GB: apenas 1 modelo >1 GB por vez
+        llm_rag      = "gemma2:2b",
+        # smollm2:1.7b: análise batch — JSON 26% tolerável com retry
+        llm_analysis = "smollm2:1.7b",
+        llm_query    = "smollm2:1.7b",
+        # nomic-embed-text: ~274 MB VRAM; bge-m3 exige 8 GB (somente main_pc)
+        embed        = "nomic-embed-text",
+        # moondream: ~1.7 GB — usar isolado (não simultaneamente com outro modelo)
+        image_ocr    = "moondream",
+        vram_budget_mb = 1_800,
+    ),
+    "work_pc": ModelProfile(
+        llm_rag      = "smollm2:1.7b",
+        # qwen2.5:0.5b: JSON parse rate 61% vs smollm2 26% — melhor para extração
+        llm_analysis = "qwen2.5:0.5b",
+        llm_query    = "qwen2.5:0.5b",
+        # potion: modelo estático, sem GPU, multilíngue — substitui all-minilm
+        embed        = "potion-multilingual-128M",
+        # WorkPc sem GPU discreta — OCR via Tesseract local apenas
+        image_ocr    = "",
+        vram_budget_mb = 4_000,
+    ),
+}
+
+
+@dataclass(frozen=True)
 class HardwareInfo:
-    """Informações de hardware para seleção de backend de inferência."""
+    """Informações de hardware para seleção de backend de inferência e modelos."""
     profile:           HardwareProfile
     backend:           InferenceBackend
     gpu_name:          str
@@ -49,6 +106,7 @@ class HardwareInfo:
     has_avx2:          bool
     context_limit:     int
     llama_build_flags: tuple[str, ...]
+    model_profile:     ModelProfile
 
 
 def _run(cmd: list[str], timeout: float = 3.0) -> str:
@@ -158,6 +216,7 @@ def detect_hardware() -> HardwareInfo:
         has_avx2=has_avx2,
         context_limit=_CONTEXT_LIMIT[profile],
         llama_build_flags=build_flags,
+        model_profile=_MODEL_PROFILE[profile],
     )
 
 
@@ -179,3 +238,12 @@ def get_llama_build_flags() -> list[str]:
 def get_profile() -> HardwareProfile:
     """Perfil de hardware: 'main_pc' | 'laptop' | 'work_pc'."""
     return detect_hardware().profile
+
+
+def get_model_profile() -> ModelProfile:
+    """Modelos LLM recomendados para o hardware atual.
+
+    Fallback offline do LOGOS: mesmos valores de HardwareProfile::model_profile()
+    em logos.rs. Usar quando o HUB não estiver disponível.
+    """
+    return detect_hardware().model_profile

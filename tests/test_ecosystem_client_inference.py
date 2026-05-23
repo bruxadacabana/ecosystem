@@ -104,3 +104,43 @@ def test_unload_model_calls_correct_endpoint():
     assert len(calls) == 1
     assert calls[0][0] == "/logos/models/unload"
     assert calls[0][1]["model"] == "qwen2.5:7b"
+
+
+# ─── _fallback_model_for_app ──────────────────────────────────────────────────
+
+def test_fallback_model_mnemosyne_main_pc():
+    """main_pc offline → fallback correto para mnemosyne (llm_rag = qwen2.5:7b)."""
+    import hardware_probe as hp
+    with patch.object(hp, "detect_hardware", return_value=hp.HardwareInfo(
+        profile="main_pc", backend="vulkan", gpu_name="RX 6600",
+        vram_mb=8192, has_avx2=True, context_limit=8192,
+        llama_build_flags=("-DGGML_VULKAN=ON",),
+        model_profile=hp._MODEL_PROFILE["main_pc"],
+    )):
+        hp.detect_hardware.cache_clear = lambda: None  # type: ignore
+        model = ec._fallback_model_for_app("mnemosyne")
+    assert model == "qwen2.5:7b"
+
+
+def test_fallback_model_akasha_work_pc():
+    """work_pc offline → fallback correto para akasha (llm_query = qwen2.5:0.5b)."""
+    import hardware_probe as hp
+    with patch.object(hp, "get_model_profile", return_value=hp._MODEL_PROFILE["work_pc"]):
+        model = ec._fallback_model_for_app("akasha")
+    assert model == "qwen2.5:0.5b"
+
+
+def test_fallback_model_kosmos_laptop():
+    """laptop offline → fallback correto para kosmos (llm_analysis = smollm2:1.7b)."""
+    import hardware_probe as hp
+    with patch.object(hp, "get_model_profile", return_value=hp._MODEL_PROFILE["laptop"]):
+        model = ec._fallback_model_for_app("kosmos")
+    assert model == "smollm2:1.7b"
+
+
+def test_fallback_model_unknown_app_uses_llm_query():
+    """App desconhecido → fallback para llm_query do perfil atual."""
+    import hardware_probe as hp
+    with patch.object(hp, "get_model_profile", return_value=hp._MODEL_PROFILE["work_pc"]):
+        model = ec._fallback_model_for_app("app_inexistente")
+    assert model == "qwen2.5:0.5b"  # work_pc llm_query

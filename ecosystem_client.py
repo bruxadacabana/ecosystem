@@ -243,16 +243,25 @@ def logos_silence() -> bool:
     return result is not None
 
 
-# Mapeamento de nome de app para campo do ModelProfile retornado por /logos/hardware.
-# Apps não listados usam "llm_kosmos" como fallback (modelo mais leve).
+# Mapeamento de nome de app para campo do ModelProfile retornado por /logos/hardware
+# e para o atributo correspondente em hardware_probe.ModelProfile.
 _APP_MODEL_KEY: "dict[str, str]" = {
     "mnemosyne": "llm_rag",
     "kosmos":    "llm_analysis",
     "akasha":    "llm_query",
 }
 
-# Modelo usado se LOGOS não estiver rodando e model não for especificado.
-_FALLBACK_MODEL = "smollm2:1.7b"
+
+def _fallback_model_for_app(app: str) -> str:
+    """Retorna modelo recomendado para o app no hardware atual (fallback offline do LOGOS).
+
+    Usa hardware_probe.get_model_profile() — espelha os mesmos valores de
+    HardwareProfile::model_profile() no Rust, por hardware × funcionalidade.
+    """
+    import hardware_probe as _hp
+    mp = _hp.get_model_profile()
+    attr = _APP_MODEL_KEY.get(app, "llm_query")
+    return getattr(mp, attr, mp.llm_query)
 
 
 def request_llm(
@@ -269,6 +278,7 @@ def request_llm(
 
     Se `model` for None, consulta GET /logos/hardware e usa o modelo recomendado
     para o `app` informado. Callers que passam `model` explicitamente não são afetados.
+    Quando LOGOS offline, usa hardware_probe como fallback (correto por hardware × função).
 
     priority: 1=P1 interativo, 2=P2 RAG, 3=P3 background (padrão)
 
@@ -281,10 +291,10 @@ def request_llm(
     if model is None:
         profile = get_active_profile()
         if profile is not None:
-            key = _APP_MODEL_KEY.get(app, "llm_kosmos")
-            model = profile["models"].get(key, _FALLBACK_MODEL)
+            key = _APP_MODEL_KEY.get(app, "llm_query")
+            model = profile["models"].get(key) or _fallback_model_for_app(app)
         else:
-            model = _FALLBACK_MODEL
+            model = _fallback_model_for_app(app)
 
     payload: dict[str, Any] = {
         "app": app,
