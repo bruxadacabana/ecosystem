@@ -15,11 +15,14 @@ Windows/CPU: psutil.virtual_memory() — sem GPU dedicada, RAM é o recurso limi
 """
 from __future__ import annotations
 
+import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import hardware_probe as hp
+
+log = logging.getLogger("ecosystem.vram_monitor")
 
 
 @dataclass(frozen=True)
@@ -124,20 +127,29 @@ def get_vram_info() -> VramInfo:
     if profile == "main_pc":
         info = _amd_sysfs()
         if info is not None:
+            log.debug("vram: amd_sysfs → %d/%d MB (%.1f%%)", info.used_mb, info.total_mb, info.used_pct)
             return info
     elif profile == "laptop":
         info = _nvidia_smi()
         if info is not None:
+            log.debug("vram: nvidia_smi → %d/%d MB (%.1f%%)", info.used_mb, info.total_mb, info.used_pct)
             return info
         info = _amd_sysfs()  # fallback se nvidia-smi ausente (ex: driver nouveau)
         if info is not None:
+            log.debug("vram: amd_sysfs fallback → %d/%d MB (%.1f%%)", info.used_mb, info.total_mb, info.used_pct)
             return info
-    return _ram_fallback()
+    info = _ram_fallback()
+    log.debug("vram: ram_fallback → %d/%d MB (%.1f%%)", info.used_mb, info.total_mb, info.used_pct)
+    return info
 
 
 def should_block_p3(threshold_pct: float = 85.0) -> bool:
     """True se VRAM/RAM estiver no threshold ou acima — P3 deve ser bloqueado."""
-    return get_vram_info().used_pct >= threshold_pct
+    info = get_vram_info()
+    blocked = info.used_pct >= threshold_pct
+    if blocked:
+        log.info("P3 bloqueado: VRAM/RAM %.1f%% >= %.1f%% (source=%s)", info.used_pct, threshold_pct, info.source)
+    return blocked
 
 
 def maybe_unload_before_p3(model_name: str, threshold_pct: float = 85.0) -> bool:
@@ -149,5 +161,19 @@ def maybe_unload_before_p3(model_name: str, threshold_pct: float = 85.0) -> bool
     """
     if not should_block_p3(threshold_pct):
         return False
+    log.info("Descarregando '%s' via LOGOS (VRAM acima de %.0f%%)", model_name, threshold_pct)
     import ecosystem_client as ec
-    return ec.unload_model(model_name)
+    result = ec.unload_model(model_name)
+    if not result:
+        log.warning("Falha ao descarregar '%s' — LOGOS offline ou modelo não encontrado", model_name)
+    return result
+
+
+def configure_logging(log_dir: Path | None = None) -> None:
+    """Configura RotatingFileHandler para o logger deste módulo.
+
+    Chamar no entry point do processo que usa vram_monitor como utilitário.
+    Se log_dir for None, usa o diretório padrão do ecossistema.
+    """
+    from ecosystem_logging import setup_ecosystem_logger, default_log_dir
+    setup_ecosystem_logger("ecosystem.vram_monitor", log_dir or default_log_dir())

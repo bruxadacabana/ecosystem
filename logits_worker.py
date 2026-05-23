@@ -39,6 +39,17 @@ import hardware_probe as hp
 
 log = logging.getLogger("ecosystem.logits_worker")
 
+
+def configure_logging(log_dir: Path | None = None) -> None:
+    """Configura RotatingFileHandler para o logger deste módulo.
+
+    Chamar no entry point do processo pai que usa logits_worker como utilitário.
+    O processo filho configura seu próprio logging mínimo em _worker_main.
+    Se log_dir for None, usa o diretório padrão do ecossistema.
+    """
+    from ecosystem_logging import setup_ecosystem_logger, default_log_dir
+    setup_ecosystem_logger("ecosystem.logits_worker", log_dir or default_log_dir())
+
 # Tokens de classificação zero-shot — vocabuário de emoção básico.
 # Positivo/negativo → valência; excitado/calmo → arousal.
 # Os tokens com espaço leading (" positive") correspondem ao tokenizer BPE padrão.
@@ -125,6 +136,9 @@ def _worker_main(
     res_q: mp.Queue,
 ) -> None:
     """Corpo do processo filho. Não chamar diretamente — usado por _LogitsWorkerProcess."""
+    # Logging básico no processo filho — não herda handlers do processo pai.
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    child_log = logging.getLogger("ecosystem.logits_worker.child")
     try:
         from llama_cpp import Llama  # noqa: PLC0415
         import numpy as np           # noqa: PLC0415
@@ -133,6 +147,7 @@ def _worker_main(
         return
 
     try:
+        child_log.info("Carregando modelo %s (n_gpu_layers=%d)", model_path, n_gpu_layers)
         llm = Llama(
             model_path=model_path,
             n_gpu_layers=n_gpu_layers,
@@ -141,9 +156,11 @@ def _worker_main(
             verbose=False,
         )
     except Exception as exc:
+        child_log.error("Falha ao carregar %s: %s", model_path, exc)
         res_q.put(RuntimeError(f"Falha ao carregar {model_path}: {exc}"))
         return
 
+    child_log.info("Modelo carregado — aguardando tarefas")
     res_q.put("ready")
 
     while True:
