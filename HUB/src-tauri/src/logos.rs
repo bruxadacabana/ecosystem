@@ -53,6 +53,10 @@ use sysinfo::{ProcessesToUpdate, System};
 use tokio::sync::{Mutex, Semaphore};
 
 pub const LOGOS_PORT: u16 = 7072;
+/// Porta local do processo llama-server gerenciado pelo LOGOS.
+const LLAMA_SERVER_PORT: u16 = 8081;
+/// Timeout (s) para o llama-server responder ao primeiro /health após o spawn.
+const LLAMA_SERVER_READY_TIMEOUT_SECS: u64 = 90;
 
 // Tempos máximos de espera na fila por prioridade
 const P2_TIMEOUT: Duration = Duration::from_secs(60);
@@ -340,6 +344,10 @@ struct Inner {
     downloads: Mutex<HashMap<String, tokio::sync::watch::Sender<DownloadProgress>>>,
     /// Diretório onde os modelos GGUF são salvos: {hub_data_path}/logos/models/
     models_dir: std::path::PathBuf,
+    /// Caminho do binário llama-server detectado no startup. None = usar Ollama como fallback.
+    llama_server_bin: Option<std::path::PathBuf>,
+    /// Processo llama-server ativo gerenciado pelo LOGOS. None = nenhum modelo carregado.
+    llama_proc: Mutex<Option<LlamaProcHandle>>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -363,6 +371,17 @@ impl LogosState {
     pub(crate) async fn abort_inference(&self, model: &str) -> bool {
         if let Some(handle) = self.0.active_inferences.lock().await.remove(model) {
             handle.abort();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Para o processo llama-server ativo (se houver). Retorna true se havia processo.
+    pub(crate) async fn kill_llama_proc(&self) -> bool {
+        let mut guard = self.0.llama_proc.lock().await;
+        if let Some(mut proc) = guard.take() {
+            let _ = proc.child.kill();
             true
         } else {
             false
@@ -411,6 +430,13 @@ impl LogosState {
                 .join("logos")
                 .join("models")
         };
+        let llama_server_bin = find_llama_server_bin();
+        if let Some(ref bin) = llama_server_bin {
+            log::info!("LOGOS: llama-server encontrado em {} — modo llama-server ativo", bin.display());
+        } else {
+            log::info!("LOGOS: llama-server não encontrado — usando Ollama como backend de inferência");
+        }
+
         // Inicialização prévia do sysinfo — primeira leitura é sempre 0%; a segunda é o delta real.
         let mut sys = System::new_all();
         sys.refresh_cpu_all();
@@ -437,6 +463,8 @@ impl LogosState {
             p3_vram_blocked: Arc::new(AtomicBool::new(false)),
             downloads: Mutex::new(HashMap::new()),
             models_dir,
+            llama_server_bin,
+            llama_proc: Mutex::new(None),
         }))
     }
 }
@@ -636,6 +664,365 @@ pub struct ModelRegistryEntry {
     pub size_bytes:    u64,
     pub sha256:        String,
     pub downloaded_at: String,   // ISO 8601
+}
+
+/// Handle de um processo llama-server ativo gerenciado pelo LOGOS.
+struct LlamaProcHandle {
+    child:      tokio::process::Child,
+    model_name: String,
+}
+
+// ── llama-server backend ──────────────────────────────────────
+//
+// O LOGOS gerencia um processo llama-server local como backend de inferência.
+// Ativado automaticamente quando o binário é encontrado no startup.
+// Fallback para Ollama quando llama-server não está disponível.
+//
+// Resolução de modelo (em ordem):
+//   1. Registry do LOGOS ({models_dir}/registry.json) — modelos baixados via HUB
+//   2. Blob store do Ollama (~/.ollama/models/blobs/) — reutiliza downloads existentes
+//
+// Tradução de formato:
+//   /api/chat     (Ollama) → /v1/chat/completions (OpenAI) → llama-server
+//   /api/generate (Ollama) → /v1/completions       (OpenAI) → llama-server
+//   /api/embed    (Ollama) → /v1/embeddings         (OpenAI) → llama-server
+//   Streaming é bufferizado no LOGOS e retornado como resposta única.
+
+/// Encontra o binário llama-server em localizações padrão.
+fn find_llama_server_bin() -> Option<std::path::PathBuf> {
+    for path in [
+        "/usr/bin/llama-server",
+        "/usr/local/bin/llama-server",
+        "/opt/llama.cpp/llama-server",
+    ] {
+        let p = std::path::Path::new(path);
+        if p.exists() {
+            return Some(p.to_owned());
+        }
+    }
+    None
+}
+
+/// Localiza o blob GGUF de um modelo no store local do Ollama.
+/// Analisa o manifesto em ~/.ollama/models/manifests/ para extrair o hash do layer GGUF.
+pub(crate) fn find_gguf_in_ollama_store(model_name: &str) -> Option<std::path::PathBuf> {
+    let (name, tag) = model_name.split_once(':').unwrap_or((model_name, "latest"));
+    let home = dirs::home_dir()?;
+    let manifest_path = home
+        .join(".ollama").join("models").join("manifests")
+        .join("registry.ollama.ai").join("library")
+        .join(name).join(tag);
+    let text = std::fs::read_to_string(&manifest_path).ok()?;
+    let manifest: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let layers = manifest["layers"].as_array()?;
+    let model_layer = layers.iter().find(|l| {
+        l["mediaType"].as_str() == Some("application/vnd.ollama.image.model")
+    })?;
+    let digest    = model_layer["digest"].as_str()?; // "sha256:abc..."
+    let blob_name = digest.replace(':', "-");          // "sha256-abc..."
+    let blob_path = home.join(".ollama").join("models").join("blobs").join(&blob_name);
+    if blob_path.exists() { Some(blob_path) } else { None }
+}
+
+/// Resolve o nome de um modelo para o caminho do seu arquivo GGUF.
+/// Verifica o registry do LOGOS primeiro, depois o blob store do Ollama.
+pub(crate) fn resolve_gguf_path(
+    model_name: &str,
+    models_dir: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    // 1. Registry do LOGOS
+    let registry_path = models_dir.join("registry.json");
+    if let Ok(text) = std::fs::read_to_string(&registry_path) {
+        if let Ok(entries) = serde_json::from_str::<Vec<ModelRegistryEntry>>(&text) {
+            if let Some(entry) = entries.iter().find(|e| {
+                e.name == model_name
+                    || e.filename == model_name
+                    || e.filename.trim_end_matches(".gguf") == model_name
+            }) {
+                let p = std::path::PathBuf::from(&entry.path);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    // 2. Blob store do Ollama — reutiliza downloads existentes diretamente
+    find_gguf_in_ollama_store(model_name)
+}
+
+/// Retorna o número de layers na GPU para um modelo dado o perfil de hardware.
+pub(crate) fn gpu_layers_for_model(model_name: &str, profile: HardwareProfile) -> i32 {
+    let mp = profile.model_profile();
+    if model_name == mp.llm_rag     { return mp.llm_rag_gpu_layers; }
+    if model_name == mp.llm_analysis { return mp.llm_analysis_gpu_layers; }
+    if model_name == mp.llm_query   { return mp.llm_query_gpu_layers; }
+    if model_name == mp.embed       { return mp.embed_gpu_layers; }
+    if model_name == mp.image_ocr   { return mp.image_ocr_gpu_layers; }
+    match profile {
+        HardwareProfile::WorkPc => 0,  // sem GPU discreta
+        _                       => -1, // offload total na GPU
+    }
+}
+
+/// Tamanho do contexto para o perfil de hardware.
+fn n_ctx_for_hardware(hw: HardwareProfile) -> u32 {
+    match hw {
+        HardwareProfile::MainPc  => 4096,
+        HardwareProfile::Laptop  => 2048, // KV cache >2048 esgota 2 GB da MX150
+        HardwareProfile::WorkPc  => 2048,
+    }
+}
+
+/// Inicia um processo llama-server para o modelo especificado.
+async fn spawn_llama_server_proc(
+    bin: &std::path::Path,
+    model_path: &std::path::Path,
+    n_gpu: i32,
+    n_ctx: u32,
+    port: u16,
+) -> Result<tokio::process::Child, String> {
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.arg("--model")     .arg(model_path)
+       .arg("--port")      .arg(port.to_string())
+       .arg("--ctx-size")  .arg(n_ctx.to_string())
+       .arg("--parallel")  .arg("2")
+       .arg("--cont-batching")
+       .stdout(std::process::Stdio::null())
+       .stderr(std::process::Stdio::null());
+    if n_gpu == 0 {
+        cmd.arg("--n-gpu-layers").arg("0");
+    } else if n_gpu > 0 {
+        cmd.arg("--n-gpu-layers").arg(n_gpu.to_string());
+    }
+    // n_gpu == -1: sem flag; llama-server faz offload completo na GPU por padrão
+    #[cfg(unix)]
+    cmd.process_group(0); // novo grupo de processos — sobrevive ao fechamento do HUB
+    cmd.spawn().map_err(|e| format!("Falha ao iniciar llama-server: {e}"))
+}
+
+/// Aguarda llama-server responder em /health com 200 OK.
+async fn wait_llama_ready(port: u16, client: &Client, timeout_secs: u64) -> bool {
+    let url      = format!("http://127.0.0.1:{port}/health");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        if let Ok(resp) = client.get(&url).timeout(Duration::from_secs(2)).send().await {
+            if resp.status().is_success() {
+                return true;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+/// Garante que o llama-server está rodando com o modelo solicitado.
+/// Para o processo atual e reinicia com o novo modelo se necessário.
+/// Deve ser chamado enquanto o semáforo de concorrência está adquirido.
+pub(crate) async fn ensure_llama_model_loaded(
+    s: &LogosState,
+    model_name: &str,
+) -> Result<(), String> {
+    let bin = s.0.llama_server_bin.as_ref()
+        .ok_or_else(|| "llama-server não encontrado".to_string())?
+        .clone();
+
+    // Fast path: modelo correto já carregado
+    {
+        let guard = s.0.llama_proc.lock().await;
+        if guard.as_ref().map(|p| p.model_name.as_str()) == Some(model_name) {
+            return Ok(());
+        }
+    }
+
+    // Para o processo atual (se houver)
+    {
+        let mut guard = s.0.llama_proc.lock().await;
+        if let Some(mut proc) = guard.take() {
+            let _ = proc.child.kill();
+            let _ = proc.child.wait().await;
+        }
+    }
+
+    // Resolve caminho do GGUF
+    let gguf_path = resolve_gguf_path(model_name, &s.0.models_dir)
+        .ok_or_else(|| format!(
+            "Modelo '{model_name}' não encontrado no registry do LOGOS nem no Ollama. \
+             Faça download via HUB ou execute 'ollama pull {model_name}'."
+        ))?;
+
+    let n_gpu = gpu_layers_for_model(model_name, s.0.hardware_profile);
+    let n_ctx = n_ctx_for_hardware(s.0.hardware_profile);
+    log::info!(
+        "LOGOS llama-server: carregando '{model_name}' \
+         (n_gpu={n_gpu}, n_ctx={n_ctx}, porta={LLAMA_SERVER_PORT})"
+    );
+
+    let child = spawn_llama_server_proc(&bin, &gguf_path, n_gpu, n_ctx, LLAMA_SERVER_PORT)
+        .await?;
+
+    {
+        let mut guard = s.0.llama_proc.lock().await;
+        *guard = Some(LlamaProcHandle { child, model_name: model_name.to_string() });
+    }
+
+    if !wait_llama_ready(LLAMA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS).await {
+        let mut guard = s.0.llama_proc.lock().await;
+        if let Some(mut p) = guard.take() {
+            let _ = p.child.kill();
+        }
+        return Err(format!(
+            "llama-server não ficou pronto em {LLAMA_SERVER_READY_TIMEOUT_SECS}s. \
+             Verifique se o modelo cabe na VRAM disponível."
+        ));
+    }
+
+    log::info!("LOGOS llama-server: '{model_name}' pronto na porta {LLAMA_SERVER_PORT}");
+    Ok(())
+}
+
+// ── Tradução de formato: Ollama ↔ OpenAI ─────────────────────
+
+/// Converte requisição de chat do formato Ollama para OpenAI.
+/// Achata `options.*` para o topo e força `stream: false` (LOGOS bufferiza).
+fn translate_ollama_chat_to_openai(
+    mut body: serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    body.insert("stream".to_string(), serde_json::json!(false));
+    if let Some(opts) = body.remove("options") {
+        if let Some(obj) = opts.as_object() {
+            for (k, v) in obj {
+                let oai_key = match k.as_str() {
+                    "temperature"    => "temperature",
+                    "top_p"          => "top_p",
+                    "repeat_penalty" => "frequency_penalty",
+                    "seed"           => "seed",
+                    "stop"           => "stop",
+                    "num_predict"    => "max_tokens",
+                    _                => continue,
+                };
+                body.entry(oai_key.to_string()).or_insert_with(|| v.clone());
+            }
+        }
+    }
+    body.remove("keep_alive");
+    body.remove("format");
+    body.remove("raw");
+    serde_json::Value::Object(body)
+}
+
+/// Converte requisição de completions (/api/generate) do formato Ollama para OpenAI.
+fn translate_ollama_generate_to_openai(
+    mut body: serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    body.insert("stream".to_string(), serde_json::json!(false));
+    if let Some(opts) = body.remove("options") {
+        if let Some(obj) = opts.as_object() {
+            for (k, v) in obj {
+                let oai_key = match k.as_str() {
+                    "temperature"    => "temperature",
+                    "top_p"          => "top_p",
+                    "num_predict"    => "max_tokens",
+                    "seed"           => "seed",
+                    "stop"           => "stop",
+                    _                => continue,
+                };
+                body.entry(oai_key.to_string()).or_insert_with(|| v.clone());
+            }
+        }
+    }
+    body.remove("keep_alive");
+    body.remove("format");
+    body.remove("raw");
+    serde_json::Value::Object(body)
+}
+
+/// Converte resposta OpenAI `/v1/chat/completions` para formato Ollama `/api/chat`.
+fn translate_openai_chat_to_ollama(bytes: &[u8], model: &str) -> Vec<u8> {
+    let Ok(resp) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return bytes.to_vec();
+    };
+    let choice  = resp["choices"].get(0);
+    let content = choice.and_then(|c| c["message"]["content"].as_str()).unwrap_or("").to_string();
+    let role    = choice.and_then(|c| c["message"]["role"].as_str()).unwrap_or("assistant").to_string();
+    let finish  = choice.and_then(|c| c["finish_reason"].as_str()).unwrap_or("stop").to_string();
+    let prompt_tokens     = resp["usage"]["prompt_tokens"]    .as_u64().unwrap_or(0);
+    let completion_tokens = resp["usage"]["completion_tokens"].as_u64().unwrap_or(0);
+    let ollama = serde_json::json!({
+        "model":             model,
+        "created_at":        chrono::Local::now().to_rfc3339(),
+        "message":           { "role": role, "content": content },
+        "done_reason":       finish,
+        "done":              true,
+        "prompt_eval_count": prompt_tokens,
+        "eval_count":        completion_tokens,
+    });
+    serde_json::to_vec(&ollama).unwrap_or_else(|_| bytes.to_vec())
+}
+
+/// Converte resposta OpenAI `/v1/completions` para formato Ollama `/api/generate`.
+fn translate_openai_generate_to_ollama(bytes: &[u8], model: &str) -> Vec<u8> {
+    let Ok(resp) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return bytes.to_vec();
+    };
+    let text   = resp["choices"][0]["text"].as_str().unwrap_or("").to_string();
+    let finish = resp["choices"][0]["finish_reason"].as_str().unwrap_or("stop").to_string();
+    let prompt_tokens     = resp["usage"]["prompt_tokens"]    .as_u64().unwrap_or(0);
+    let completion_tokens = resp["usage"]["completion_tokens"].as_u64().unwrap_or(0);
+    let ollama = serde_json::json!({
+        "model":             model,
+        "created_at":        chrono::Local::now().to_rfc3339(),
+        "response":          text,
+        "done_reason":       finish,
+        "done":              true,
+        "prompt_eval_count": prompt_tokens,
+        "eval_count":        completion_tokens,
+    });
+    serde_json::to_vec(&ollama).unwrap_or_else(|_| bytes.to_vec())
+}
+
+/// Converte requisição de embedding do formato Ollama para OpenAI `/v1/embeddings`.
+/// /api/embeddings usa "prompt"; /api/embed usa "input" — normaliza para "input".
+fn translate_ollama_embed_to_openai(body: &[u8]) -> Vec<u8> {
+    let Ok(mut map) = serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(body)
+    else {
+        return body.to_vec();
+    };
+    if let Some(prompt) = map.remove("prompt") {
+        map.entry("input".to_string()).or_insert(prompt);
+    }
+    map.remove("keep_alive");
+    serde_json::to_vec(&map).unwrap_or_else(|_| body.to_vec())
+}
+
+/// Converte resposta OpenAI `/v1/embeddings` para formato Ollama `/api/embed`.
+fn translate_openai_embed_to_ollama(bytes: &[u8]) -> Vec<u8> {
+    let Ok(resp) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return bytes.to_vec();
+    };
+    let embedding = resp["data"][0]["embedding"].clone();
+    let ollama = serde_json::json!({
+        "embedding":  embedding,
+        "embeddings": [embedding],
+    });
+    serde_json::to_vec(&ollama).unwrap_or_else(|_| bytes.to_vec())
+}
+
+/// VRAM atual da GPU NVIDIA via nvidia-smi.
+/// Retorna (total_mb, used_mb) ou None se nvidia-smi não disponível.
+async fn nvidia_vram_mb() -> Option<(u64, u64)> {
+    let out = tokio::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"])
+        .output()
+        .await
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.trim();
+    let mut parts = line.split(',');
+    let used  = parts.next()?.trim().parse::<u64>().ok()?;
+    let total = parts.next()?.trim().parse::<u64>().ok()?;
+    Some((total, used))
 }
 
 // ── Router ────────────────────────────────────────────────────
@@ -908,36 +1295,88 @@ async fn queue_and_forward(
     *s.0.active_model_class.lock().await = Some(model_class);
     *s.0.active_app.lock().await         = Some(app_name);
 
-    // Boost de prioridade do Ollama para P1: restaura para normal enquanto responde
-    if priority == 1 {
+    // Boost de prioridade do Ollama para P1 (apenas quando usando Ollama como backend)
+    if priority == 1 && s.0.llama_server_bin.is_none() {
         if let Some(pid) = get_or_find_ollama_pid(&s).await {
             set_ollama_priority(pid, true).await;
         }
     }
 
-    // Encaminha ao Ollama como tarefa abortável.
-    // AbortHandle armazenado em active_inferences para cancelamento via logos_abort_model_inference.
-    let url = format!("{}/{ollama_target}", s.0.ollama_url);
-    let client_clone = s.0.client.clone();
-    let payload_clone = ollama_payload.clone();
-    let task = tokio::spawn(async move {
-        let resp = client_clone.post(&url).json(&payload_clone).send().await
-            .map_err(|e| format!("Ollama indisponível: {e}"))?;
-        let status = resp.status();
-        let bytes  = resp.bytes().await
-            .map_err(|e| format!("Erro ao ler resposta: {e}"))?;
-        Ok::<_, String>((status, bytes))
-    });
-    if !model_name.is_empty() {
-        s.0.active_inferences.lock().await.insert(model_name.clone(), task.abort_handle());
-    }
-    let task_result = task.await;
-    if !model_name.is_empty() {
-        s.0.active_inferences.lock().await.remove(&model_name);
-    }
+    // Encaminha ao backend de inferência (llama-server ou Ollama).
+    let use_llama   = s.0.llama_server_bin.is_some();
+    let is_generate = ollama_target == "api/generate";
 
-    // Restaura prioridade de background do Ollama após P1
-    if priority == 1 {
+    let task_result: Result<Result<(reqwest::StatusCode, Bytes), String>, tokio::task::JoinError> =
+    if use_llama {
+        // ── llama-server: garante modelo carregado e traduz formato ──
+        if let Err(e) = ensure_llama_model_loaded(&s, &model_name).await {
+            if priority == 1 && s.0.llama_server_bin.is_none() {
+                if let Some(pid) = *s.0.ollama_pid.lock().await {
+                    set_ollama_priority(pid, false).await;
+                }
+            }
+            *s.0.active_priority.lock().await    = None;
+            *s.0.active_model_class.lock().await = None;
+            *s.0.active_app.lock().await         = None;
+            drop(_permit);
+            return (StatusCode::BAD_GATEWAY, Json(serde_json::json!({ "error": e }))).into_response();
+        }
+        let body_map = ollama_payload.as_object().cloned().unwrap_or_default();
+        let openai_payload = if is_generate {
+            translate_ollama_generate_to_openai(body_map)
+        } else {
+            translate_ollama_chat_to_openai(body_map)
+        };
+        let endpoint = if is_generate { "v1/completions" } else { "v1/chat/completions" };
+        let url          = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/{endpoint}");
+        let client_clone = s.0.client.clone();
+        let model_clone  = model_name.clone();
+        let task = tokio::spawn(async move {
+            let resp = client_clone.post(&url).json(&openai_payload).send().await
+                .map_err(|e| format!("llama-server indisponível: {e}"))?;
+            let status = resp.status();
+            let raw    = resp.bytes().await
+                .map_err(|e| format!("Erro ao ler resposta llama-server: {e}"))?;
+            let translated = if is_generate {
+                translate_openai_generate_to_ollama(&raw, &model_clone)
+            } else {
+                translate_openai_chat_to_ollama(&raw, &model_clone)
+            };
+            Ok::<_, String>((status, Bytes::from(translated)))
+        });
+        if !model_name.is_empty() {
+            s.0.active_inferences.lock().await.insert(model_name.clone(), task.abort_handle());
+        }
+        let r = task.await;
+        if !model_name.is_empty() {
+            s.0.active_inferences.lock().await.remove(&model_name);
+        }
+        r
+    } else {
+        // ── Ollama: caminho original ──
+        let url          = format!("{}/{ollama_target}", s.0.ollama_url);
+        let client_clone = s.0.client.clone();
+        let payload_clone = ollama_payload.clone();
+        let task = tokio::spawn(async move {
+            let resp = client_clone.post(&url).json(&payload_clone).send().await
+                .map_err(|e| format!("Ollama indisponível: {e}"))?;
+            let status = resp.status();
+            let bytes  = resp.bytes().await
+                .map_err(|e| format!("Erro ao ler resposta: {e}"))?;
+            Ok::<_, String>((status, bytes))
+        });
+        if !model_name.is_empty() {
+            s.0.active_inferences.lock().await.insert(model_name.clone(), task.abort_handle());
+        }
+        let r = task.await;
+        if !model_name.is_empty() {
+            s.0.active_inferences.lock().await.remove(&model_name);
+        }
+        r
+    };
+
+    // Restaura prioridade de background do Ollama após P1 (apenas Ollama mode)
+    if priority == 1 && !use_llama {
         if let Some(pid) = *s.0.ollama_pid.lock().await {
             set_ollama_priority(pid, false).await;
         }
@@ -1064,41 +1503,61 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
     *s.0.active_priority.lock().await = Some(3);
     *s.0.active_app.lock().await = Some(app_name);
 
-    // Injeta parâmetros de eficiência P3 — inclui num_gpu: 0 no Laptop
-    // para evitar que embedding use MX150 enquanto P1/P2 ocupa a GPU.
-    let embed_body: Vec<u8> =
-        if let Ok(mut m) = serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&body) {
-            inject_efficiency_params(&mut m, 3, s.0.hardware_profile, is_survival, on_battery);
-            serde_json::to_vec(&m).unwrap_or_else(|_| body.to_vec())
-        } else {
-            body.to_vec()
-        };
-    let url = format!("{}/{target}", s.0.ollama_url);
-    let result = s.0.client
-        .post(&url)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(embed_body)
-        .send()
-        .await;
+    let result = if s.0.llama_server_bin.is_some() {
+        // ── llama-server: traduz para OpenAI /v1/embeddings ──
+        let openai_body = translate_ollama_embed_to_openai(&body);
+        let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/v1/embeddings");
+        s.0.client
+            .post(&url)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(openai_body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())
+    } else {
+        // ── Ollama: injeta parâmetros de eficiência e encaminha ──
+        let embed_body: Vec<u8> =
+            if let Ok(mut m) = serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&body) {
+                inject_efficiency_params(&mut m, 3, s.0.hardware_profile, is_survival, on_battery);
+                serde_json::to_vec(&m).unwrap_or_else(|_| body.to_vec())
+            } else {
+                body.to_vec()
+            };
+        let url = format!("{}/{target}", s.0.ollama_url);
+        s.0.client
+            .post(&url)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(embed_body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())
+    };
 
     *s.0.active_priority.lock().await = None;
-    *s.0.active_app.lock().await = None;
+    *s.0.active_app.lock().await      = None;
     drop(_permit);
 
     match result {
         Ok(resp) => {
             let status = resp.status();
             match resp.bytes().await {
-                Ok(bytes) => axum::http::Response::builder()
-                    .status(status)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(axum::body::Body::from(bytes))
-                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+                Ok(raw) => {
+                    let bytes = if s.0.llama_server_bin.is_some() {
+                        Bytes::from(translate_openai_embed_to_ollama(&raw))
+                    } else {
+                        raw
+                    };
+                    axum::http::Response::builder()
+                        .status(status)
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(axum::body::Body::from(bytes))
+                        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+                }
                 Err(_) => StatusCode::BAD_GATEWAY.into_response(),
             }
         }
         Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
-            "error": format!("Ollama indisponível: {e}")
+            "error": format!("Backend de inferência indisponível: {e}")
         }))).into_response(),
     }
 }
@@ -1317,6 +1776,13 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
 /// Envia keep_alive: 0 para descarregar todos os modelos carregados.
 /// Retorna o número de modelos descarregados.
 pub async fn do_silence(s: &LogosState) -> usize {
+    if s.0.llama_server_bin.is_some() {
+        // llama-server: para o processo para liberar VRAM completamente
+        let stopped = s.kill_llama_proc().await;
+        log::info!("LOGOS silence: llama-server parado ({stopped})");
+        return if stopped { 1 } else { 0 };
+    }
+    // Ollama: envia keep_alive=0 a todos os modelos carregados
     let ps_url = format!("{}/api/ps", s.0.ollama_url);
     let Ok(resp) = s.0.client.get(&ps_url).timeout(Duration::from_secs(5)).send().await else {
         return 0;
@@ -1779,7 +2245,16 @@ async fn vram_usage(client: &Client, ollama_url: &str, hw: HardwareProfile) -> (
         return (Some(used_mb), pct);
     }
 
-    // Fallback: Ollama /api/ps (NVIDIA ou plataformas sem sysfs AMD)
+    // NVIDIA: nvidia-smi (não depende do Ollama — funciona com llama-server)
+    #[cfg(target_os = "linux")]
+    if hw == HardwareProfile::Laptop {
+        if let Some((total_mb, used_mb)) = nvidia_vram_mb().await {
+            let pct = if total_mb > 0 { Some(used_mb as f32 / total_mb as f32) } else { None };
+            return (Some(used_mb), pct);
+        }
+    }
+
+    // Fallback: Ollama /api/ps (plataformas sem sysfs AMD nem nvidia-smi)
     let Ok(resp) = client
         .get(format!("{}/api/ps", ollama_url))
         .timeout(Duration::from_secs(3))
@@ -2713,5 +3188,220 @@ mod tests {
         let json = serde_json::to_value(&p).expect("serialize");
         assert_eq!(json["done"], true);
         assert_eq!(json["error"], "HuggingFace retornou 404");
+    }
+
+    // ── translate_ollama_chat_to_openai ───────────────────────────────────────
+
+    #[test]
+    fn chat_translate_forces_stream_false() {
+        let body = serde_json::json!({ "model": "m", "messages": [] });
+        let out = translate_ollama_chat_to_openai(body.as_object().unwrap().clone());
+        assert_eq!(out["stream"], false);
+    }
+
+    #[test]
+    fn chat_translate_flattens_options() {
+        let body = serde_json::json!({
+            "model": "m",
+            "messages": [],
+            "options": {
+                "temperature": 0.8,
+                "top_p": 0.9,
+                "num_predict": 512,
+                "repeat_penalty": 1.1
+            }
+        });
+        let out = translate_ollama_chat_to_openai(body.as_object().unwrap().clone());
+        assert_eq!(out["temperature"], 0.8);
+        assert_eq!(out["top_p"], 0.9);
+        assert_eq!(out["max_tokens"], 512);
+        assert_eq!(out["frequency_penalty"], 1.1);
+        assert!(out.get("options").is_none(), "options deve ser removido");
+    }
+
+    #[test]
+    fn chat_translate_removes_ollama_only_fields() {
+        let body = serde_json::json!({
+            "model": "m", "messages": [],
+            "keep_alive": "5m", "format": "json", "raw": true
+        });
+        let out = translate_ollama_chat_to_openai(body.as_object().unwrap().clone());
+        assert!(out.get("keep_alive").is_none());
+        assert!(out.get("format").is_none());
+        assert!(out.get("raw").is_none());
+    }
+
+    #[test]
+    fn chat_translate_does_not_override_existing_top_level_keys() {
+        let body = serde_json::json!({
+            "model": "m", "messages": [],
+            "temperature": 0.3,
+            "options": { "temperature": 0.9 }
+        });
+        let out = translate_ollama_chat_to_openai(body.as_object().unwrap().clone());
+        // temperature já presente no topo — options não deve sobrescrever
+        assert_eq!(out["temperature"], 0.3);
+    }
+
+    // ── translate_openai_chat_to_ollama ───────────────────────────────────────
+
+    #[test]
+    fn chat_response_translate_extracts_content() {
+        let oai = serde_json::json!({
+            "choices": [{
+                "message": { "role": "assistant", "content": "Olá!" },
+                "finish_reason": "stop"
+            }],
+            "usage": { "prompt_tokens": 10, "completion_tokens": 5 }
+        });
+        let bytes = serde_json::to_vec(&oai).unwrap();
+        let result_bytes = translate_openai_chat_to_ollama(&bytes, "test-model");
+        let result: serde_json::Value = serde_json::from_slice(&result_bytes).unwrap();
+        assert_eq!(result["message"]["content"], "Olá!");
+        assert_eq!(result["message"]["role"], "assistant");
+        assert_eq!(result["model"], "test-model");
+        assert_eq!(result["done"], true);
+        assert_eq!(result["done_reason"], "stop");
+        assert_eq!(result["prompt_eval_count"], 10);
+        assert_eq!(result["eval_count"], 5);
+    }
+
+    #[test]
+    fn chat_response_translate_passthrough_on_invalid_json() {
+        let garbage = b"not json";
+        let out = translate_openai_chat_to_ollama(garbage, "m");
+        assert_eq!(out, garbage);
+    }
+
+    // ── translate_ollama_generate_to_openai ───────────────────────────────────
+
+    #[test]
+    fn generate_translate_converts_prompt_field() {
+        let body = serde_json::json!({
+            "model": "m",
+            "prompt": "Olá",
+            "options": { "num_predict": 100 }
+        });
+        let out = translate_ollama_generate_to_openai(body.as_object().unwrap().clone());
+        assert_eq!(out["stream"], false);
+        assert_eq!(out["max_tokens"], 100);
+        assert_eq!(out["prompt"], "Olá");
+    }
+
+    // ── translate_openai_generate_to_ollama ───────────────────────────────────
+
+    #[test]
+    fn generate_response_translate_extracts_text() {
+        let oai = serde_json::json!({
+            "choices": [{ "text": "resultado", "finish_reason": "length" }],
+            "usage": { "prompt_tokens": 3, "completion_tokens": 7 }
+        });
+        let bytes = serde_json::to_vec(&oai).unwrap();
+        let out: serde_json::Value =
+            serde_json::from_slice(&translate_openai_generate_to_ollama(&bytes, "m")).unwrap();
+        assert_eq!(out["response"], "resultado");
+        assert_eq!(out["done_reason"], "length");
+        assert_eq!(out["prompt_eval_count"], 3);
+        assert_eq!(out["eval_count"], 7);
+    }
+
+    // ── translate_ollama_embed_to_openai ─────────────────────────────────────
+
+    #[test]
+    fn embed_translate_renames_prompt_to_input() {
+        let body = serde_json::json!({ "model": "emb", "prompt": "texto", "keep_alive": "1m" });
+        let out_bytes = translate_ollama_embed_to_openai(&serde_json::to_vec(&body).unwrap());
+        let out: serde_json::Value = serde_json::from_slice(&out_bytes).unwrap();
+        assert_eq!(out["input"], "texto");
+        assert!(out.get("prompt").is_none(), "prompt deve ser removido");
+        assert!(out.get("keep_alive").is_none(), "keep_alive deve ser removido");
+    }
+
+    #[test]
+    fn embed_translate_preserves_input_if_already_present() {
+        let body = serde_json::json!({ "model": "emb", "input": ["a", "b"] });
+        let out_bytes = translate_ollama_embed_to_openai(&serde_json::to_vec(&body).unwrap());
+        let out: serde_json::Value = serde_json::from_slice(&out_bytes).unwrap();
+        assert_eq!(out["input"], serde_json::json!(["a", "b"]));
+    }
+
+    // ── translate_openai_embed_to_ollama ─────────────────────────────────────
+
+    #[test]
+    fn embed_response_translate_extracts_embedding() {
+        let oai = serde_json::json!({
+            "data": [{ "embedding": [0.1, 0.2, 0.3], "index": 0 }]
+        });
+        let bytes = serde_json::to_vec(&oai).unwrap();
+        let out: serde_json::Value =
+            serde_json::from_slice(&translate_openai_embed_to_ollama(&bytes)).unwrap();
+        assert_eq!(out["embedding"], serde_json::json!([0.1, 0.2, 0.3]));
+        assert_eq!(out["embeddings"], serde_json::json!([[0.1, 0.2, 0.3]]));
+    }
+
+    #[test]
+    fn embed_response_translate_passthrough_on_invalid_json() {
+        let garbage = b"!!!";
+        let out = translate_openai_embed_to_ollama(garbage);
+        assert_eq!(out, garbage);
+    }
+
+    // ── gpu_layers_for_model ─────────────────────────────────────────────────
+
+    #[test]
+    fn gpu_layers_unknown_model_workpc_returns_zero() {
+        assert_eq!(gpu_layers_for_model("unknown-model", HardwareProfile::WorkPc), 0);
+    }
+
+    #[test]
+    fn gpu_layers_unknown_model_laptop_returns_minus_one() {
+        assert_eq!(gpu_layers_for_model("unknown-model", HardwareProfile::Laptop), -1);
+    }
+
+    #[test]
+    fn gpu_layers_unknown_model_mainpc_returns_minus_one() {
+        assert_eq!(gpu_layers_for_model("unknown-model", HardwareProfile::MainPc), -1);
+    }
+
+    // ── resolve_gguf_path ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn resolve_gguf_path_finds_entry_in_registry() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        // Cria um arquivo GGUF fictício
+        let gguf_path = models_dir.join("mnemosyne-ft-v1-q4km.gguf");
+        std::fs::write(&gguf_path, b"fake gguf").unwrap();
+
+        let entry = ModelRegistryEntry {
+            name:          "mnemosyne-ft-v1".to_string(),
+            repo_id:       "local/fine-tuned".to_string(),
+            filename:      "mnemosyne-ft-v1-q4km.gguf".to_string(),
+            path:          gguf_path.to_str().unwrap().to_string(),
+            size_bytes:    9,
+            sha256:        "abc".to_string(),
+            downloaded_at: "2026-05-23T00:00:00+00:00".to_string(),
+        };
+        update_model_registry(&models_dir, entry).await;
+
+        let resolved = resolve_gguf_path("mnemosyne-ft-v1", &models_dir);
+        assert!(resolved.is_some(), "deve encontrar no registry");
+        assert_eq!(resolved.unwrap(), gguf_path);
+    }
+
+    #[test]
+    fn resolve_gguf_path_returns_none_for_missing_model() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let result = resolve_gguf_path("modelo-inexistente", dir.path());
+        assert!(result.is_none());
+    }
+
+    // ── find_gguf_in_ollama_store ─────────────────────────────────────────────
+
+    #[test]
+    fn find_gguf_ollama_store_returns_none_for_nonexistent_model() {
+        let result = find_gguf_in_ollama_store("modelo-que-nao-existe-xyz");
+        assert!(result.is_none());
     }
 }

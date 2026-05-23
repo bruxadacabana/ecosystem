@@ -1,20 +1,17 @@
 """
-logos/gguf_converter.py — conversão do adapter LoRA treinado para GGUF e registro no Ollama.
+logos/gguf_converter.py — conversão do adapter LoRA treinado para GGUF e registro no LOGOS.
 
 Pipeline após treinamento QLoRA:
   1. Mesclar adapter ao modelo base via PEFT ``merge_and_unload()``
   2. Converter para GGUF F16 com ``convert_hf_to_gguf.py`` do llama.cpp
   3. Quantizar para Q4_K_M com ``llama-quantize``
-  4. Gerar Modelfile com o prompt de personalidade da Mnemosyne
-  5. Registrar via ``ollama create mnemosyne-ft-vN``
-  6. Manter versão anterior como ``mnemosyne-ft-prev`` no Ollama
-  7. Atualizar ecosystem.json com o nome do novo modelo
+  4. Registrar no registry do LOGOS ({models_dir}/registry.json)
+  5. Atualizar ecosystem.json com o nome do novo modelo
 
 Pré-requisitos:
   - ``llama.cpp`` compilado (``llama-quantize`` no PATH ou em ``llama_cpp_dir``)
   - ``convert_hf_to_gguf.py`` disponível (llama.cpp scripts ou ``llama-cpp-python``)
   - ``peft`` e ``transformers`` instalados (mesmos que o qlora_trainer)
-  - ``ollama`` no PATH
 
 Uso::
 
@@ -26,6 +23,7 @@ Uso::
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -35,6 +33,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import ecosystem_client as ec
@@ -42,26 +41,7 @@ import ecosystem_client as ec
 log = logging.getLogger("ecosystem.logos.gguf_converter")
 
 _DEFAULT_BASE_MODEL = "HuggingFaceTB/SmolLM2-1.7B"
-_OLLAMA_MODEL_PREFIX = "mnemosyne-ft"
-_OLLAMA_PREV_NAME = "mnemosyne-ft-prev"
-
-# Modelfile — parâmetros conservadores para SmolLM2 1.7B Q4_K_M
-_MODELFILE_TMPL = """\
-FROM {gguf_path}
-
-PARAMETER temperature 0.7
-PARAMETER top_p 0.9
-PARAMETER repeat_penalty 1.1
-PARAMETER num_ctx 4096
-
-SYSTEM \"\"\"{system_prompt}\"\"\"
-"""
-
-_DEFAULT_SYSTEM_PROMPT = (
-    "You are Mnemosyne, a thoughtful and intellectually curious AI assistant. "
-    "You help the user explore ideas, synthesize information, and remember what matters. "
-    "Be concise, precise, and honest."
-)
+_MODEL_PREFIX = "mnemosyne-ft"
 
 
 # ---------------------------------------------------------------------------
@@ -85,9 +65,6 @@ class ConverterConfig:
     # Vazio → busca no PATH e em locais comuns
     llama_cpp_dir: str = ""
 
-    # Prompt de personalidade para o Modelfile (vazio → lê mnemosyne.personality_prompt)
-    personality_prompt: str = ""
-
     def resolve(self) -> "ConverterConfig":
         """Preenche campos vazios via ecosystem.json."""
         cfg = ConverterConfig(**self.__dict__)
@@ -100,11 +77,6 @@ class ConverterConfig:
             )
         if not cfg.output_dir:
             cfg.output_dir = str(Path(sync_root) / "logos" / "models")
-        if not cfg.personality_prompt:
-            cfg.personality_prompt = (
-                eco.get("mnemosyne", {}).get("personality_prompt", "")
-                or _DEFAULT_SYSTEM_PROMPT
-            )
         return cfg
 
 
@@ -142,7 +114,6 @@ def _find_binary(name: str, llama_cpp_dir: str = "") -> str:
             Path(llama_cpp_dir) / name,
             Path(llama_cpp_dir) / "build" / "bin" / name,
         ])
-    # PATH padrão
     in_path = shutil.which(name)
     if in_path:
         return in_path
@@ -160,13 +131,11 @@ def _find_convert_script(llama_cpp_dir: str = "") -> str:
 
     Retorna caminho absoluto ao script ou levanta RuntimeError.
     """
-    # Diretório explícito
     if llama_cpp_dir:
         explicit = Path(llama_cpp_dir) / "convert_hf_to_gguf.py"
         if explicit.exists():
             return str(explicit)
 
-    # llama-cpp-python instala o script junto ao pacote
     try:
         import llama_cpp  # noqa: PLC0415
         pkg_dir = Path(llama_cpp.__file__).parent
@@ -176,7 +145,6 @@ def _find_convert_script(llama_cpp_dir: str = "") -> str:
     except ImportError:
         pass
 
-    # PATH (caso o usuário tenha ln -s)
     in_path = shutil.which("convert_hf_to_gguf.py")
     if in_path:
         return in_path
@@ -192,10 +160,7 @@ def _find_convert_script(llama_cpp_dir: str = "") -> str:
 # ---------------------------------------------------------------------------
 
 def _merge_adapter(checkpoint_dir: str, base_model_name: str, merged_dir: str) -> None:
-    """Mescla o adapter LoRA ao modelo base e salva o modelo completo HuggingFace.
-
-    Requer: peft, transformers (mesmas dependências do qlora_trainer).
-    """
+    """Mescla o adapter LoRA ao modelo base e salva o modelo completo HuggingFace."""
     try:
         from peft import PeftModel  # noqa: PLC0415
         from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: PLC0415
@@ -209,7 +174,7 @@ def _merge_adapter(checkpoint_dir: str, base_model_name: str, merged_dir: str) -
     model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
         torch_dtype="auto",
-        device_map="cpu",       # merge sempre em CPU — sem VRAM
+        device_map="cpu",
     )
     tokenizer = AutoTokenizer.from_pretrained(base_model_name)
 
@@ -243,58 +208,78 @@ def _quantize_gguf(f16_path: str, q4_path: str, llama_cpp_dir: str) -> None:
     _run([binary, f16_path, q4_path, "Q4_K_M"])
 
 
-def _write_modelfile(gguf_path: str, personality_prompt: str, modelfile_path: str) -> None:
-    """Gera o Modelfile do Ollama com prompt de personalidade da Mnemosyne."""
-    content = _MODELFILE_TMPL.format(
-        gguf_path=gguf_path,
-        system_prompt=personality_prompt.replace('"', '\\"'),
-    )
-    Path(modelfile_path).write_text(content, encoding="utf-8")
-    log.debug("Modelfile escrito em %s", modelfile_path)
+def _sha256_file(path: str) -> str:
+    """Calcula SHA256 de um arquivo em blocos de 4 MB."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(4 * 1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
-def _next_version() -> int:
-    """Descobre o próximo número de versão para mnemosyne-ft-vN via `ollama list`.
+def _next_version(output_dir: str) -> int:
+    """Descobre o próximo número de versão para mnemosyne-ft-vN via registry.json.
 
-    Retorna 1 se nenhum modelo existir.
+    Retorna 1 se nenhum modelo fine-tuned existir.
     """
+    registry_path = Path(output_dir) / "registry.json"
+    if not registry_path.exists():
+        return 1
     try:
-        out = _run(["ollama", "list"])
-    except RuntimeError:
+        entries = json.loads(registry_path.read_text(encoding="utf-8"))
+        if not isinstance(entries, list):
+            return 1
+    except Exception:
         return 1
-    # Procura linhas como "mnemosyne-ft-v3:latest"
-    versions = re.findall(rf"{re.escape(_OLLAMA_MODEL_PREFIX)}-v(\d+)", out)
-    if not versions:
-        return 1
-    return max(int(v) for v in versions) + 1
+    versions = []
+    for entry in entries:
+        name = entry.get("name", "")
+        m = re.search(rf"{re.escape(_MODEL_PREFIX)}-v(\d+)", name)
+        if m:
+            versions.append(int(m.group(1)))
+    return (max(versions) + 1) if versions else 1
 
 
-def _ollama_model_name(version: int) -> str:
-    return f"{_OLLAMA_MODEL_PREFIX}-v{version}"
+def _model_version_name(version: int) -> str:
+    return f"{_MODEL_PREFIX}-v{version}"
 
 
-def _register_ollama(model_name: str, modelfile_path: str) -> None:
-    """Registra o modelo no Ollama via `ollama create`."""
-    log.info("Registrando modelo '%s' no Ollama…", model_name)
-    _run(["ollama", "create", model_name, "-f", modelfile_path])
+def _register_logos_registry(model_name: str, gguf_path: str, output_dir: str) -> None:
+    """Registra o GGUF no registry do LOGOS ({output_dir}/registry.json).
 
-
-def _copy_to_prev(current_name: str) -> bool:
-    """Copia o modelo atual para 'mnemosyne-ft-prev' antes de substituir.
-
-    Retorna False se não existir modelo atual (primeira vez).
+    Usa a mesma estrutura que update_model_registry em logos.rs:
+    deduplicação por `filename`, escrita atômica via arquivo .tmp.
     """
-    try:
-        _run(["ollama", "list"])
-    except RuntimeError:
-        return False
-    try:
-        _run(["ollama", "cp", current_name, _OLLAMA_PREV_NAME])
-        log.info("Versão anterior copiada como '%s'", _OLLAMA_PREV_NAME)
-        return True
-    except RuntimeError:
-        log.debug("Sem modelo anterior para copiar ('%s' não existe)", current_name)
-        return False
+    p = Path(gguf_path)
+    log.info("Calculando SHA256 de %s…", p.name)
+    sha256 = _sha256_file(gguf_path)
+    entry = {
+        "name": model_name,
+        "repo_id": "local/fine-tuned",
+        "filename": p.name,
+        "path": str(p),
+        "size_bytes": p.stat().st_size,
+        "sha256": sha256,
+        "downloaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    registry_path = Path(output_dir) / "registry.json"
+    entries: list[dict] = []
+    if registry_path.exists():
+        try:
+            loaded = json.loads(registry_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, list):
+                entries = loaded
+        except Exception:
+            pass
+
+    entries = [e for e in entries if e.get("filename") != entry["filename"]]
+    entries.append(entry)
+
+    tmp = registry_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(registry_path)
+    log.info("Modelo '%s' registrado no LOGOS registry: %s", model_name, gguf_path)
 
 
 def _update_ecosystem_json(new_model: str, prev_model: str) -> None:
@@ -302,7 +287,7 @@ def _update_ecosystem_json(new_model: str, prev_model: str) -> None:
 
     Campos escritos:
       logos.finetuned_rag_model      — modelo atual ("mnemosyne-ft-vN")
-      logos.finetuned_rag_model_prev — versão anterior ("mnemosyne-ft-prev")
+      logos.finetuned_rag_model_prev — versão anterior
 
     Tenta também atualizar o LOGOS em memória via HTTP (graceful se offline).
     """
@@ -312,7 +297,6 @@ def _update_ecosystem_json(new_model: str, prev_model: str) -> None:
     })
     log.info("ecosystem.json atualizado: finetuned_rag_model=%s", new_model)
 
-    # Notificar LOGOS em memória — sem garantia se HUB offline
     result = ec._logos_post(
         "/logos/models/assign",
         {"app": "mnemosyne", "model_type": "llm_rag", "model": new_model},
@@ -328,7 +312,7 @@ def _update_ecosystem_json(new_model: str, prev_model: str) -> None:
 
 @dataclass
 class ConverterResult:
-    ollama_model_name: str = ""
+    ollama_model_name: str = ""   # mantido por compatibilidade — nome do modelo no registry
     prev_model_name: str = ""
     gguf_path: str = ""
     elapsed_seconds: float = 0.0
@@ -348,7 +332,7 @@ class ConverterResult:
 # ---------------------------------------------------------------------------
 
 def convert_and_register(cfg: "ConverterConfig | None" = None) -> ConverterResult:
-    """Executa o pipeline completo: merge → GGUF → quantize → Ollama.
+    """Executa o pipeline completo: merge → GGUF F16 → Q4_K_M → registry LOGOS.
 
     Raises:
         RuntimeError: se checkpoint_dir não definido, deps faltando, ou conversão falhar.
@@ -371,47 +355,39 @@ def convert_and_register(cfg: "ConverterConfig | None" = None) -> ConverterResul
     output_dir = Path(cfg.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Versão do novo modelo
-    version = _next_version()
-    model_name = _ollama_model_name(version)
+    version = _next_version(cfg.output_dir)
+    model_name = _model_version_name(version)
     result.ollama_model_name = model_name
 
-    # Copiar modelo anterior como prev antes de sobrescrever
-    prev_name = _ollama_model_name(version - 1) if version > 1 else ""
-    if prev_name:
-        _copy_to_prev(prev_name)
-    result.prev_model_name = _OLLAMA_PREV_NAME if prev_name else ""
+    # Nome do modelo anterior (para fallback no ecosystem.json)
+    prev_name = _model_version_name(version - 1) if version > 1 else ""
+    result.prev_model_name = prev_name
 
     with tempfile.TemporaryDirectory(prefix="gguf_merge_") as tmp_dir:
-        merged_dir   = str(Path(tmp_dir) / "merged")
-        f16_path     = str(output_dir / f"{model_name}-f16.gguf")
-        q4_path      = str(output_dir / f"{model_name}-q4km.gguf")
-        modelfile    = str(output_dir / f"{model_name}.Modelfile")
+        merged_dir = str(Path(tmp_dir) / "merged")
+        f16_path   = str(output_dir / f"{model_name}-f16.gguf")
+        q4_path    = str(output_dir / f"{model_name}-q4km.gguf")
 
-        # Etapa 1: merge
+        # Etapa 1: merge adapter → modelo completo
         _merge_adapter(cfg.checkpoint_dir, cfg.base_model_name, merged_dir)
 
-        # Etapa 2: convert → GGUF F16
+        # Etapa 2: converter para GGUF F16
         _convert_to_gguf(merged_dir, f16_path, cfg.llama_cpp_dir)
 
-    # Etapa 3: quantize F16 → Q4_K_M (fora do tmpdir, o F16 ficou em output_dir)
+    # Etapa 3: quantizar F16 → Q4_K_M
     _quantize_gguf(f16_path, q4_path, cfg.llama_cpp_dir)
     result.gguf_path = q4_path
 
-    # Apagar F16 após quantização — economiza ~3x espaço
     try:
         Path(f16_path).unlink()
         log.debug("GGUF F16 removido: %s", f16_path)
     except OSError:
         pass
 
-    # Etapa 4: Modelfile
-    _write_modelfile(q4_path, cfg.personality_prompt, modelfile)
+    # Etapa 4: registrar no LOGOS registry
+    _register_logos_registry(model_name, q4_path, cfg.output_dir)
 
-    # Etapa 5: registrar no Ollama
-    _register_ollama(model_name, modelfile)
-
-    # Etapa 6: persistir no ecosystem.json + notificar LOGOS
+    # Etapa 5: persistir no ecosystem.json + notificar LOGOS
     _update_ecosystem_json(model_name, result.prev_model_name)
 
     result.elapsed_seconds = time.monotonic() - t0

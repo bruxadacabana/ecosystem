@@ -4791,6 +4791,16 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   com clique no badge. Isso reduz a densidade visual da feed em eventos com alta cobertura
   (ex: um lançamento de produto coberto por 15 sites) sem esconder nenhuma perspectiva.
 
+### Implementação: backend llama-server no LOGOS (correção de items marcados incorretamente) | 2026-05-23
+> Contexto: a pesquisa de 2026-05-22 identificou a migração Ollama → llama-server como objetivo e os items foram marcados [x] antes de serem implementados. O LOGOS continuava usando Ollama como backend real de inferência. Esta sessão implementa a migração real. Binário: `llama-cpp` do Fedora repo (`/usr/bin/llama-server`); CachyOS usa AUR. Instalação: `sudo dnf install llama-cpp` (Fedora/laptop) ou `yay -S llama.cpp` (CachyOS).
+
+#### HUB / LOGOS
+- [x] **Gerenciamento de processo llama-server em logos.rs** — `llama_server_bin` + `llama_proc` no estado; `ensure_llama_model_loaded` para switch de modelo; `spawn_llama_server_proc`, `wait_llama_ready`, `resolve_gguf_path` (registry LOGOS + blob store do Ollama)
+- [x] **Tradução Ollama ↔ OpenAI no LOGOS** — `queue_and_forward` e `do_embed_proxy` roteiam para llama-server quando binário disponível; `translate_ollama_chat_to_openai`, `translate_openai_chat_to_ollama`, versões equivalentes para generate e embed
+- [x] **VRAM via nvidia-smi no laptop** — `vram_usage` usa nvidia-smi quando sysfs AMD não está disponível; elimina dependência de Ollama /api/ps para monitoramento NVIDIA
+- [x] **`do_silence` para llama-server** — para o processo llama-server atual ao invés de enviar keep_alive=0 ao Ollama
+- [x] **Remover `ollama create` do gguf_converter.py** — GGUF registrado no registry do LOGOS; llama-server carrega diretamente sem necessidade de registro no Ollama
+
 ### Pesquisa: Backends de Inferência LLM Local sem Intermediários (LOGOS Option B) | 2026-05-22
 > Contexto: investigação completa de alternativas ao Ollama para inferência LLM local sem intermediário. O LOGOS precisa de controle direto sobre carga/descarga de modelos, monitoramento de VRAM e acesso a logits. Conclusão: llama-server nativo em Router Mode + llama-cpp-python in-process é a arquitetura correta para o hardware heterogêneo do ecossistema (AMD Vulkan/RX 6600, CUDA/MX150, CPU sem AVX2).
 
