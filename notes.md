@@ -6,9 +6,7 @@ lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque
 
 ## próximo: 
 
-### Pesquisa: Backends de Inferência LLM Local sem Intermediários (LOGOS Option B) | 2026-05-22
 
-### Pesquisa: Fine-Tuning Local com QLoRA — Aprendizado Real de Corpus Pessoal | 2026-05-22
 
 ### KOSMOS — refazer do zero com nova stack | 2026-05-20
 
