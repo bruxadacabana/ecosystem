@@ -46,6 +46,7 @@ use axum::{
 use reqwest::Client;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use sysinfo::{ProcessesToUpdate, System};
@@ -330,6 +331,10 @@ struct Inner {
     /// Handles de abort para inferências em andamento, indexados por nome de modelo.
     /// Permite cancelar uma geração sem descarregar o modelo da VRAM.
     pub(crate) active_inferences: Mutex<HashMap<String, tokio::task::AbortHandle>>,
+    /// Flag de histerese do watchdog de VRAM.
+    /// true  → VRAM acima do threshold; P3 bloqueado até cair abaixo de 70%.
+    /// false → P3 permitido (verificação por-request ainda acontece como defesa).
+    p3_vram_blocked: Arc<AtomicBool>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -411,6 +416,7 @@ impl LogosState {
             ollama_child: Mutex::new(None),
             vram_limit_pct: Mutex::new(vram_limit_pct),
             active_inferences: Mutex::new(HashMap::new()),
+            p3_vram_blocked: Arc::new(AtomicBool::new(false)),
         }))
     }
 }
@@ -451,6 +457,9 @@ pub struct StatusResponse {
     pub preempted_count: u32,
     /// Limite de VRAM configurado (0–100). P3 bloqueado acima deste percentual.
     pub vram_limit_pct: f32,
+    /// True quando o watchdog de VRAM bloqueou P3 (VRAM > block_pct%).
+    /// Retoma automaticamente quando VRAM cai abaixo de 70%.
+    pub p3_vram_blocked: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -679,16 +688,24 @@ async fn queue_and_forward(
         body.entry("keep_alive".to_string()).or_insert(ka);
     }
 
-    // Sobrevivência: cap de num_ctx em 2048 (contextos maiores saturam RAM no Windows)
-    if is_survival {
-        const MAX_CTX: u64 = 2048;
+    // Cap de num_ctx por hardware: WorkPc (sem RAM) e Laptop (VRAM MX150 2 GB)
+    // WorkPc: RAM satura com contextos longos no i5-3470 (8 GB).
+    // Laptop: KV cache para contextos >2048 esgota a VRAM de 2 GB da MX150.
+    let hw_ctx_cap = if is_survival {
+        Some(2_048_u64)  // WorkPc (survival)
+    } else if s.0.hardware_profile == HardwareProfile::Laptop {
+        Some(2_048_u64)  // MX150 2 GB — contextos longos esgotam VRAM
+    } else {
+        None
+    };
+    if let Some(max_ctx) = hw_ctx_cap {
         if let Some(opts) = body.get_mut("options").and_then(|v| v.as_object_mut()) {
             let ctx = opts.get("num_ctx").and_then(|v| v.as_u64()).unwrap_or(0);
-            if ctx == 0 || ctx > MAX_CTX {
-                opts.insert("num_ctx".to_string(), serde_json::json!(MAX_CTX));
+            if ctx == 0 || ctx > max_ctx {
+                opts.insert("num_ctx".to_string(), serde_json::json!(max_ctx));
             }
         } else {
-            body.insert("options".to_string(), serde_json::json!({ "num_ctx": MAX_CTX }));
+            body.insert("options".to_string(), serde_json::json!({ "num_ctx": max_ctx }));
         }
     }
 
@@ -736,7 +753,17 @@ async fn queue_and_forward(
                 })),
             ).into_response();
         }
-        // Normal: rejeita P3 se VRAM saturada
+        // Normal: rejeita P3 se watchdog sinalizou VRAM saturada (histerese: bloqueia >85%, retoma <70%)
+        if s.0.p3_vram_blocked.load(Ordering::Relaxed) {
+            let pct_cfg = (*s.0.vram_limit_pct.lock().await) as u32;
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({
+                    "error": format!("VRAM > {pct_cfg}% — tarefa P3 bloqueada pelo watchdog; aguarde VRAM < 70%")
+                })),
+            ).into_response();
+        }
+        // Verificação por-request como defesa secundária (cobre janela entre polls do watchdog)
         let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
         if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url, s.0.hardware_profile).await {
             if pct > vram_block {
@@ -1201,9 +1228,10 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let queue = *s.0.queue_counts.lock().await;
     let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, &s.0.ollama_url, s.0.hardware_profile).await;
     let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
-    let on_battery      = *s.0.on_battery.lock().await;
-    let preempted_count = *s.0.preempted_count.lock().await;
-    let vram_limit_pct  = *s.0.vram_limit_pct.lock().await;
+    let on_battery       = *s.0.on_battery.lock().await;
+    let preempted_count  = *s.0.preempted_count.lock().await;
+    let vram_limit_pct   = *s.0.vram_limit_pct.lock().await;
+    let p3_vram_blocked  = s.0.p3_vram_blocked.load(Ordering::Relaxed);
     StatusResponse {
         active_priority,
         active_model_class,
@@ -1222,6 +1250,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         on_battery,
         preempted_count,
         vram_limit_pct,
+        p3_vram_blocked,
     }
 }
 
@@ -2185,6 +2214,54 @@ pub async fn start_server(state: LogosState) {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             *battery_state.0.on_battery.lock().await = is_on_battery();
+        }
+    });
+
+    // Watchdog de VRAM com histerese — verifica a cada 5s.
+    // Block em >block_pct% (padrão 85%), retoma em <70% (VRAM_P3_RESUME).
+    // Descarrega modelos P3 ao bloquear para liberar VRAM antes que P1/P2 precise.
+    const VRAM_P3_RESUME: f32 = 0.70;
+    let wdg_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            let on_battery = *wdg_state.0.on_battery.lock().await;
+            if on_battery {
+                // Em bateria P3 já está bloqueado por outra razão — não interferir
+                continue;
+            }
+            let block_threshold = *wdg_state.0.vram_limit_pct.lock().await / 100.0;
+            let currently_blocked = wdg_state.0.p3_vram_blocked.load(Ordering::Relaxed);
+            let pct = vram_pct(
+                &wdg_state.0.client,
+                &wdg_state.0.ollama_url,
+                wdg_state.0.hardware_profile,
+            ).await;
+
+            match pct {
+                Some(p) if !currently_blocked && p > block_threshold => {
+                    wdg_state.0.p3_vram_blocked.store(true, Ordering::Relaxed);
+                    log::info!(
+                        "LOGOS watchdog: VRAM {:.0}% > {:.0}% — P3 bloqueado; descarregando modelos P3",
+                        p * 100.0,
+                        block_threshold * 100.0,
+                    );
+                    do_silence(&wdg_state).await;
+                }
+                Some(p) if currently_blocked && p < VRAM_P3_RESUME => {
+                    wdg_state.0.p3_vram_blocked.store(false, Ordering::Relaxed);
+                    log::info!(
+                        "LOGOS watchdog: VRAM {:.0}% < {:.0}% — P3 retomado",
+                        p * 100.0,
+                        VRAM_P3_RESUME * 100.0,
+                    );
+                }
+                None if currently_blocked => {
+                    // Sem leitura de VRAM (GPU offline?): desbloquear para não travar P3 forever
+                    wdg_state.0.p3_vram_blocked.store(false, Ordering::Relaxed);
+                }
+                _ => {}
+            }
         }
     });
 

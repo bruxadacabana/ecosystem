@@ -215,6 +215,7 @@ export function LogosView() {
   const hwProfile          = status?.hardware_profile ?? null
   const hwDisplay          = status?.hardware_profile_display ?? null
   const maxConcurrent      = hwProfile === 'main_pc' ? 2 : 1
+  const p3VramBlocked      = status?.p3_vram_blocked ?? false
 
   let vramColor = 'var(--accent-green)'
   if (vramPct !== null) {
@@ -391,6 +392,19 @@ export function LogosView() {
             {vramLabel}
           </span>
         </div>
+        {p3VramBlocked && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            marginTop: 8, padding: '4px 10px',
+            border: '1px solid var(--ribbon)', borderRadius: 'var(--radius)',
+            background: 'var(--ribbon)10',
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ribbon)', flexShrink: 0 }} />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ribbon)' }}>
+              watchdog VRAM: P3 bloqueado — aguardando VRAM &lt; 70%
+            </span>
+          </div>
+        )}
         <Note>
           {isSurvival
             ? 'CPU-only — VRAM não monitorada'

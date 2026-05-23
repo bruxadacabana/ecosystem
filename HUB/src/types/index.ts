@@ -153,6 +153,8 @@ export interface LogosStatus {
   preempted_count:    number
   /** Limite de VRAM (%) para bloquear P3 — configurável, padrão 85 */
   vram_limit_pct:     number
+  /** True quando o watchdog de VRAM bloqueou P3 (VRAM > limit%). Retoma automaticamente em <70%. */
+  p3_vram_blocked:    boolean
 }
 
 export interface OllamaModelInfo {

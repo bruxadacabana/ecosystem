@@ -94,8 +94,10 @@ export function LogosPanel() {
   const activeModelClass = status?.active_model_class ?? null
   const queue            = status?.queue ?? ([0, 0, 0] as [number, number, number])
   const hwDisplay        = status?.hardware_profile_display ?? null
+  const hwProfile        = status?.hardware_profile ?? null
   const onBattery        = status?.on_battery ?? false
   const preemptedCount   = status?.preempted_count ?? 0
+  const isLaptop         = hwProfile === 'laptop'
 
   // Preferir métricas SSE; fallback para status do IPC
   const vramMb     = metrics?.vram_used_mb   ?? status?.vram_used_mb   ?? null
@@ -246,6 +248,25 @@ export function LogosPanel() {
           )
         })}
       </div>
+
+      {/* Badge de contexto limitado — laptop MX150 2 GB */}
+      {isLaptop && online && (
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            letterSpacing: '0.06em',
+            color: 'var(--ink-ghost)',
+            border: '1px solid var(--rule)',
+            borderRadius: 'var(--radius)',
+            padding: '2px 6px',
+            opacity: 0.7,
+          }}
+          title="MX150 2 GB VRAM — contexto limitado a 2048 tokens para preservar VRAM"
+        >
+          ctx 2k
+        </span>
+      )}
 
       {/* Badge de bateria */}
       {onBattery && (
