@@ -196,9 +196,7 @@ def test_generate_produces_jsonl(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
 
     fake_response = {
-        "message": {
-            "content": '[{"question": "What is this?", "answer": "A passage."}]'
-        }
+        "choices": [{"message": {"content": '[{"question": "What is this?", "answer": "A passage."}]'}}]
     }
 
     cfg = GeneratorConfig(
@@ -230,9 +228,7 @@ def test_generate_includes_anchors(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
 
     fake_response = {
-        "message": {
-            "content": '[{"question": "Q?", "answer": "A."}]'
-        }
+        "choices": [{"message": {"content": '[{"question": "Q?", "answer": "A."}]'}}]
     }
 
     cfg = GeneratorConfig(
@@ -255,7 +251,7 @@ def test_generate_skips_llm_failure(tmp_path, monkeypatch):
     fake_chromadb = _make_fake_chromadb(tmp_path, [long_text])
     monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
 
-    bad_response = {"message": {"content": "I cannot help with that."}}
+    bad_response = {"choices": [{"message": {"content": "I cannot help with that."}}]}
 
     cfg = GeneratorConfig(
         chroma_dir=str(tmp_path / "chroma"),
@@ -278,9 +274,7 @@ def test_generate_respects_max_chunks(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "chromadb", fake_chromadb)
 
     fake_response = {
-        "message": {
-            "content": '[{"question": "Q?", "answer": "A."}]'
-        }
+        "choices": [{"message": {"content": '[{"question": "Q?", "answer": "A."}]'}}]
     }
 
     cfg = GeneratorConfig(

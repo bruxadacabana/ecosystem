@@ -4,10 +4,8 @@ Testes para logos/gguf_converter.py.
 Cobre:
   - _find_binary(): localiza binário no PATH ou dir explícito, levanta se ausente
   - _find_convert_script(): localiza script no dir explícito, levanta se ausente
-  - _write_modelfile(): gera Modelfile com path e prompt corretos
-  - _next_version(): extrai versão de `ollama list`, retorna 1 se nenhum existir
-  - _ollama_model_name(): gera nome correto
-  - _copy_to_prev(): retorna False se ollama falhar
+  - _next_version(): lê registry.json, retorna 1 se nenhum existir
+  - _model_version_name(): gera nome correto
   - _update_ecosystem_json(): escreve seção logos e tenta LOGOS (graceful offline)
   - ConverterConfig.resolve(): levanta RuntimeError sem sync_root, preenche campos
   - ConverterResult.__str__(): não levanta exceção
@@ -30,9 +28,8 @@ from logos.gguf_converter import (
     ConverterConfig,
     ConverterResult,
     _find_binary,
+    _model_version_name,
     _next_version,
-    _ollama_model_name,
-    _write_modelfile,
     _update_ecosystem_json,
     convert_and_register,
 )
@@ -63,64 +60,49 @@ def test_find_binary_uses_path_if_available():
     assert result == "/usr/bin/llama-quantize"
 
 
-# ─── _write_modelfile ─────────────────────────────────────────────────────────
-
-def test_write_modelfile_contains_gguf_path(tmp_path):
-    mf = str(tmp_path / "model.Modelfile")
-    _write_modelfile("/path/to/model.gguf", "Be helpful.", mf)
-    content = Path(mf).read_text()
-    assert "FROM /path/to/model.gguf" in content
-
-
-def test_write_modelfile_contains_system_prompt(tmp_path):
-    mf = str(tmp_path / "model.Modelfile")
-    _write_modelfile("/model.gguf", "Custom personality here.", mf)
-    content = Path(mf).read_text()
-    assert "Custom personality here." in content
-
-
-def test_write_modelfile_escapes_double_quotes(tmp_path):
-    mf = str(tmp_path / "model.Modelfile")
-    prompt = 'Say "hello".'
-    _write_modelfile("/model.gguf", prompt, mf)
-    content = Path(mf).read_text()
-    # As aspas no prompt devem ser escapadas
-    assert '\\"hello\\"' in content
-
-
 # ─── _next_version ────────────────────────────────────────────────────────────
 
-def test_next_version_returns_1_if_no_models():
-    with patch("logos.gguf_converter._run", return_value=""):
-        assert _next_version() == 1
+def test_next_version_returns_1_if_no_registry(tmp_path):
+    """Retorna 1 se registry.json não existir."""
+    assert _next_version(str(tmp_path)) == 1
 
 
-def test_next_version_returns_1_if_ollama_fails():
-    with patch("logos.gguf_converter._run", side_effect=RuntimeError("not found")):
-        assert _next_version() == 1
+def test_next_version_returns_1_if_registry_empty(tmp_path):
+    """Retorna 1 se registry.json está vazio."""
+    (tmp_path / "registry.json").write_text("[]")
+    assert _next_version(str(tmp_path)) == 1
 
 
-def test_next_version_parses_existing_versions():
-    fake_list = (
-        "mnemosyne-ft-v1:latest   abc123   2.1 GB\n"
-        "mnemosyne-ft-v3:latest   def456   2.1 GB\n"
-        "mnemosyne-ft-v2:latest   ghi789   2.1 GB\n"
-        "llama3:latest            xyz000   4.5 GB\n"
-    )
-    with patch("logos.gguf_converter._run", return_value=fake_list):
-        assert _next_version() == 4
+def test_next_version_parses_existing_versions(tmp_path):
+    """Retorna max(versão) + 1 para versões existentes no registry."""
+    entries = [
+        {"name": "mnemosyne-ft-v1", "filename": "v1.gguf"},
+        {"name": "mnemosyne-ft-v3", "filename": "v3.gguf"},
+        {"name": "mnemosyne-ft-v2", "filename": "v2.gguf"},
+        {"name": "llama3", "filename": "llama3.gguf"},
+    ]
+    (tmp_path / "registry.json").write_text(json.dumps(entries))
+    assert _next_version(str(tmp_path)) == 4
 
 
-def test_next_version_handles_single_version():
-    with patch("logos.gguf_converter._run", return_value="mnemosyne-ft-v5:latest ..."):
-        assert _next_version() == 6
+def test_next_version_handles_single_version(tmp_path):
+    """Retorna version+1 com um único modelo registrado."""
+    entries = [{"name": "mnemosyne-ft-v5", "filename": "v5.gguf"}]
+    (tmp_path / "registry.json").write_text(json.dumps(entries))
+    assert _next_version(str(tmp_path)) == 6
 
 
-# ─── _ollama_model_name ───────────────────────────────────────────────────────
+def test_next_version_returns_1_on_malformed_registry(tmp_path):
+    """Retorna 1 se registry.json contiver JSON inválido."""
+    (tmp_path / "registry.json").write_text("not json")
+    assert _next_version(str(tmp_path)) == 1
 
-def test_ollama_model_name():
-    assert _ollama_model_name(1) == "mnemosyne-ft-v1"
-    assert _ollama_model_name(42) == "mnemosyne-ft-v42"
+
+# ─── _model_version_name ──────────────────────────────────────────────────────
+
+def test_model_version_name():
+    assert _model_version_name(1) == "mnemosyne-ft-v1"
+    assert _model_version_name(42) == "mnemosyne-ft-v42"
 
 
 # ─── _update_ecosystem_json ───────────────────────────────────────────────────
@@ -169,28 +151,6 @@ def test_resolve_fills_output_dir(tmp_path, monkeypatch):
     assert "logos" in cfg.output_dir
     assert "models" in cfg.output_dir
 
-
-def test_resolve_uses_personality_from_ecosystem(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    eco_path = tmp_path / "ecosystem" / "ecosystem.json"
-    eco_path.parent.mkdir(parents=True)
-    eco_path.write_text(json.dumps({
-        "sync_root": str(tmp_path / "sync"),
-        "mnemosyne": {"personality_prompt": "I am a custom persona."},
-    }))
-
-    cfg = ConverterConfig().resolve()
-    assert cfg.personality_prompt == "I am a custom persona."
-
-
-def test_resolve_uses_default_personality_if_missing(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    eco_path = tmp_path / "ecosystem" / "ecosystem.json"
-    eco_path.parent.mkdir(parents=True)
-    eco_path.write_text(json.dumps({"sync_root": str(tmp_path / "sync")}))
-
-    cfg = ConverterConfig().resolve()
-    assert "Mnemosyne" in cfg.personality_prompt  # default contém o nome
 
 
 # ─── ConverterResult.__str__ ──────────────────────────────────────────────────
@@ -244,14 +204,13 @@ def test_convert_and_register_smoke(tmp_path, monkeypatch):
         checkpoint_dir=str(ckpt_dir),
         output_dir=str(output_dir),
         llama_cpp_dir="",
-        personality_prompt="Test persona.",
     )
 
     with patch("logos.gguf_converter._run", return_value="") as mock_run, \
          patch("logos.gguf_converter._find_binary", return_value="/fake/llama-quantize"), \
          patch("logos.gguf_converter._find_convert_script", return_value="/fake/convert.py"), \
          patch("logos.gguf_converter._next_version", return_value=1), \
-         patch("logos.gguf_converter._copy_to_prev", return_value=False), \
+         patch("logos.gguf_converter._register_logos_registry"), \
          patch("logos.gguf_converter._update_ecosystem_json"), \
          patch("shutil.which", return_value=None):
         result = convert_and_register(cfg)
@@ -259,9 +218,9 @@ def test_convert_and_register_smoke(tmp_path, monkeypatch):
     assert result.ollama_model_name == "mnemosyne-ft-v1"
     assert "mnemosyne-ft-v1" in result.gguf_path
     assert result.elapsed_seconds >= 0.0
-    # Verifica que ollama create foi chamado
+    # Verifica que a quantização foi chamada (llama-quantize)
     calls = [c.args[0] for c in mock_run.call_args_list]
-    assert any("ollama" in " ".join(c) and "create" in " ".join(c) for c in calls)
+    assert any("llama-quantize" in " ".join(c) or "quantize" in str(c) for c in calls)
 
 
 def test_convert_and_register_raises_if_no_checkpoint(tmp_path, monkeypatch):
@@ -269,7 +228,6 @@ def test_convert_and_register_raises_if_no_checkpoint(tmp_path, monkeypatch):
     cfg = ConverterConfig(
         checkpoint_dir=str(tmp_path / "nonexistent"),
         output_dir=str(tmp_path / "out"),
-        personality_prompt="x",
     )
     # resolve() precisaria de sync_root — usamos campos já preenchidos
     with pytest.raises(FileNotFoundError):
