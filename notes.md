@@ -7,6 +7,8 @@ lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque
 
 ## próximo: 
 
+### Bugs e investigações reportados após uso real | 2026-05-23 (b)
+
 ### KOSMOS — refazer do zero com nova stack | 2026-05-20
 
 ### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
