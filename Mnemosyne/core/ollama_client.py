@@ -1,5 +1,5 @@
 """
-Cliente HTTP mínimo para o Ollama — detecção de disponibilidade e listagem de modelos.
+Cliente HTTP mínimo para o backend de inferência — detecção de disponibilidade e listagem de modelos.
 Não depende do pacote ollama, usa apenas urllib da stdlib.
 """
 from __future__ import annotations
@@ -7,61 +7,66 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .errors import OllamaUnavailableError
 
 
-_BASE_URL = "http://localhost:7072"   # LOGOS proxy; fallback direto via Ollama 11434
 _TIMEOUT = 2  # segundos
 
 # Fragmentos de nome que identificam modelos de embedding
 _EMBED_HINTS = ("embed", "nomic", "mxbai", "bge", "e5", "minilm", "qwen3")
 
+try:
+    from ecosystem_client import get_inference_url as _get_inference_url
+except ImportError:
+    def _get_inference_url() -> str:  # type: ignore[misc]
+        return "http://localhost:8080"
+
+
+def _base_url() -> str:
+    return _get_inference_url()
+
 
 @dataclass
 class OllamaModel:
     name: str
-    size: int        # bytes
-    modified_at: str
+    size: int = 0
+    modified_at: str = ""
 
 
-def check_ollama() -> bool:
-    """Retorna True se o Ollama responde no endereço padrão; False caso contrário."""
+def check_inference() -> bool:
+    """Retorna True se o backend de inferência responde no endpoint /health; False caso contrário."""
     try:
-        urllib.request.urlopen(_BASE_URL, timeout=_TIMEOUT)
+        urllib.request.urlopen(f"{_base_url()}/health", timeout=_TIMEOUT)
         return True
     except Exception:
         return False
 
 
+def check_ollama() -> bool:
+    """Alias de check_inference() — mantido para compatibilidade com código legado."""
+    return check_inference()
+
+
 def list_models() -> list[OllamaModel]:
     """
-    Retorna os modelos disponíveis localmente no Ollama.
+    Retorna os modelos disponíveis no backend de inferência via GET /v1/models.
 
     Raises:
-        OllamaUnavailableError: se o Ollama não estiver acessível ou retornar dados inválidos.
+        OllamaUnavailableError: se o backend não estiver acessível ou retornar dados inválidos.
     """
     try:
         with urllib.request.urlopen(
-            f"{_BASE_URL}/api/tags", timeout=_TIMEOUT
+            f"{_base_url()}/v1/models", timeout=_TIMEOUT
         ) as resp:
             data = json.loads(resp.read())
     except urllib.error.URLError as exc:
-        raise OllamaUnavailableError(f"Ollama inacessível: {exc}") from exc
+        raise OllamaUnavailableError(f"Backend de inferência inacessível: {exc}") from exc
     except json.JSONDecodeError as exc:
-        raise OllamaUnavailableError(f"Resposta inválida do Ollama: {exc}") from exc
+        raise OllamaUnavailableError(f"Resposta inválida do backend: {exc}") from exc
 
-    models: list[OllamaModel] = []
-    for m in data.get("models", []):
-        models.append(
-            OllamaModel(
-                name=m.get("name", ""),
-                size=m.get("size", 0),
-                modified_at=m.get("modified_at", ""),
-            )
-        )
-    return models
+    return [OllamaModel(name=m.get("id", "")) for m in data.get("data", [])]
 
 
 def filter_embed_models(models: list[OllamaModel]) -> list[OllamaModel]:
@@ -77,10 +82,10 @@ def filter_chat_models(models: list[OllamaModel]) -> list[OllamaModel]:
 
 def validate_model(model_name: str) -> None:
     """
-    Verifica se um modelo específico está disponível no Ollama.
+    Verifica se um modelo específico está disponível no backend de inferência.
 
     Raises:
-        OllamaUnavailableError: se o Ollama não estiver acessível.
+        OllamaUnavailableError: se o backend não estiver acessível.
         ModelNotFoundError: se o modelo não estiver instalado.
     """
     from .errors import ModelNotFoundError

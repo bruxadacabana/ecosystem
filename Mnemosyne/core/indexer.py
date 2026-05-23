@@ -16,13 +16,10 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings as LCEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
-
 from .bm25_index import BM25Index
 from .config import AppConfig
 from .errors import EmptyDirectoryError, EmbedTimeoutError, IndexBuildError, VectorstoreNotFoundError
 from .loaders import load_documents, load_single_file, is_transcript_file
-from .ollama_client import _BASE_URL as _OLLAMA_BASE
 from .reflection import generate_reflection, maybe_consolidate, MIN_CHUNKS
 from .tracker import FileTracker
 
@@ -237,7 +234,7 @@ _NODE_TYPE_PROMPT = (
 def _classify_node_types(
     chunks: list[Document],
     model: str,
-    base_url: str = _OLLAMA_BASE,
+    base_url: str | None = None,
     batch_size: int = 10,
 ) -> None:
     """
@@ -246,6 +243,13 @@ def _classify_node_types(
     """
     import httpx
 
+    if base_url is None:
+        try:
+            from ecosystem_client import get_inference_url as _giu
+            base_url = _giu()
+        except Exception:
+            base_url = "http://localhost:8080"
+
     for start in range(0, len(chunks), batch_size):
         batch = chunks[start : start + batch_size]
         items = "\n".join(f"[{i+1}] {c.page_content[:300]}" for i, c in enumerate(batch))
@@ -253,12 +257,14 @@ def _classify_node_types(
         labels: list[str] = []
         try:
             resp = httpx.post(
-                f"{base_url}/api/generate",
-                json={"model": model, "prompt": prompt, "stream": False, "temperature": 0},
+                f"{base_url}/v1/chat/completions",
+                json={"model": model, "messages": [{"role": "user", "content": prompt}],
+                      "stream": False, "temperature": 0},
                 timeout=60.0,
             )
             resp.raise_for_status()
-            lines = [l.strip().lower() for l in resp.json()["response"].splitlines() if l.strip()]
+            content = resp.json()["choices"][0]["message"]["content"]
+            lines = [l.strip().lower() for l in content.splitlines() if l.strip()]
             labels = [l for l in lines if l in _NODE_TYPES]
         except Exception:
             pass
@@ -373,24 +379,17 @@ def _embed_batch(
     texts: list[str],
     model: str,
     base_url: str | None = None,
-    truncate_dim: int | None = None,
+    truncate_dim: int | None = None,  # ignorado — llama-server não suporta MRL truncation
 ) -> list[list[float]]:
-    """Gera embeddings para um lote de textos.
+    """Gera embeddings para um lote de textos via /v1/embeddings (OpenAI-compatível).
 
-    Para modelos Ollama: chama /api/embed — 1 HTTP por lote.
-    Para potion-multilingual-128M: usa model2vec local (sem Ollama, sem AVX2).
-
-    truncate_dim: passado ao Ollama para truncar embeddings via MRL (Matryoshka).
-    Ignorado para model2vec. Se o Ollama não suportar, faz fallback silencioso.
+    Para potion-multilingual-128M: usa model2vec local (sem GPU, sem AVX2).
 
     Retries automáticos em dois cenários:
-    - Timeout (httpx.TimeoutException): Ollama direto ocupado com LLM ativo.
-    - 429 (LOGOS P3_TIMEOUT): LOGOS retorna 429 quando fila P3 espera >30s
-      atrás de uma geração P1/P2 em andamento.
-    Em ambos os casos: aguarda e tenta novamente até _EMBED_RETRY_WAITS esgotar.
+    - Timeout (httpx.TimeoutException): backend ocupado com LLM ativo.
+    - 429 (LOGOS P3_TIMEOUT): LOGOS retorna 429 quando fila P3 espera >30s.
 
-    base_url: resolução em runtime via ecosystem_client para garantir que
-    LOGOS (7072) seja usado mesmo que o HUB tenha iniciado após a Mnemosyne.
+    base_url: resolvido em runtime via ecosystem_client (LOGOS 7072 ou llama-server 8080).
     """
     if model == _POTION_MODEL_NAME:
         return _embed_batch_model2vec(texts)
@@ -398,18 +397,14 @@ def _embed_batch(
     import time
     import httpx
 
-    # Resolve URL em runtime — garante que LOGOS seja usado mesmo se o HUB
-    # iniciou depois da Mnemosyne (quando _OLLAMA_BASE foi setado).
     if base_url is None:
         try:
-            from ecosystem_client import get_ollama_url as _get_url  # type: ignore
-            base_url = _get_url()
+            from ecosystem_client import get_inference_url as _giu
+            base_url = _giu()
         except Exception:
-            base_url = _OLLAMA_BASE
+            base_url = "http://localhost:8080"
 
     payload: dict = {"model": model, "input": texts}
-    if truncate_dim:
-        payload["truncate_dim"] = truncate_dim
 
     last_exc: Exception | None = None
     for attempt, wait in enumerate((-1, *_EMBED_RETRY_WAITS)):
@@ -418,27 +413,16 @@ def _embed_batch(
             time.sleep(wait)
         try:
             resp = httpx.post(
-                f"{base_url}/api/embed", json=payload, timeout=_EMBED_TIMEOUT_S
+                f"{base_url}/v1/embeddings", json=payload, timeout=_EMBED_TIMEOUT_S
             )
             if resp.status_code == 429:
-                # LOGOS: P3 bloqueado por LLM P1/P2 ativo ou hardware saturado
-                last_exc = Exception(f"429 Too Many Requests (LOGOS P3 bloqueado)")
+                last_exc = Exception("429 Too Many Requests (LOGOS P3 bloqueado)")
                 continue
             resp.raise_for_status()
-            return resp.json()["embeddings"]
+            return [d["embedding"] for d in resp.json()["data"]]
         except httpx.TimeoutException as exc:
             last_exc = exc
             continue
-        except Exception:
-            if truncate_dim:
-                # Ollama sem suporte a truncate_dim — retry sem o parâmetro
-                payload.pop("truncate_dim", None)
-                resp = httpx.post(
-                    f"{base_url}/api/embed", json=payload, timeout=_EMBED_TIMEOUT_S
-                )
-                resp.raise_for_status()
-                return resp.json()["embeddings"]
-            raise
 
     raise EmbedTimeoutError(
         f"timed out após {1 + len(_EMBED_RETRY_WAITS)} tentativas "
@@ -611,15 +595,23 @@ def _enrich_chunk_offsets(
             chunk.metadata["page_num"] = int(chunk.metadata["page"])
 
 
+class _InferenceEmbeddings(LCEmbeddings):
+    """Wrapper LangChain para embeddings via llama-server (/v1/embeddings)."""
+
+    def __init__(self, model: str) -> None:
+        self._model = model
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return _embed_batch(texts, self._model)
+
+    def embed_query(self, text: str) -> list[float]:
+        return _embed_batch([text], self._model)[0]
+
+
 def _get_embeddings(config: AppConfig) -> LCEmbeddings:
     if config.embed_model == _POTION_MODEL_NAME:
         return _Model2VecEmbeddings()
-    # No Windows (CPU-only, sem GPU), OLLAMA_NUM_THREAD é ignorado pelo Ollama 0.6.6+
-    # (issue #10476). Passar num_thread por requisição é o workaround documentado até
-    # correção oficial. Valor 2 evita que o Ollama monopolize o i5-3470 durante indexação.
-    import sys as _sys
-    extra: dict = {"num_thread": 2} if _sys.platform == "win32" else {}
-    return OllamaEmbeddings(model=config.embed_model, base_url="http://localhost:7072", **extra)
+    return _InferenceEmbeddings(config.embed_model)
 
 
 def _load_reflection_counts(mnemosyne_dir: str) -> dict[str, int]:
