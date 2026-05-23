@@ -1101,6 +1101,36 @@ async def search_images_page(request: Request, q: str = "") -> HTMLResponse:
     )
 
 
+@router.get("/search/videos", response_class=HTMLResponse)
+async def search_videos_page(request: Request, q: str = "") -> HTMLResponse:
+    """Busca de vídeos via Invidious. Abre no Invidious — sem YouTube direto."""
+    video_results: list[dict] = []
+    error: str | None = None
+
+    if q.strip():
+        try:
+            from services.invidious import search_videos as _search_vids
+            video_results, error = await asyncio.wait_for(
+                _search_vids(q.strip()), timeout=10.0
+            )
+        except asyncio.TimeoutError:
+            error = "Invidious não respondeu a tempo."
+        except Exception as exc:
+            log.debug("search_videos error: %s", exc)
+            error = "Erro ao buscar vídeos."
+
+    return templates.TemplateResponse(
+        request,
+        "videos.html",
+        {
+            "query":         q,
+            "video_results": video_results,
+            "error":         error,
+            "active_tab":    "search",
+        },
+    )
+
+
 @router.get("/search/more", response_class=HTMLResponse)
 async def search_more(
     request: Request,

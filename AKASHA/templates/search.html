@@ -204,6 +204,19 @@
 </div>
 {% endif %}
 
+{% if intent_routing and intent_routing.video %}
+<div class="video-intent-banner">
+  <span class="video-intent-icon">&#x25B6;</span>
+  Parece que você quer assistir a um vídeo.
+  <a class="video-intent-link"
+     href="/search/videos?q={{ query | urlencode }}"
+     hx-get="/search/videos?q={{ query | urlencode }}"
+     hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true">
+    Ver vídeos via Invidious &#x2197;
+  </a>
+</div>
+{% endif %}
+
 {% if translation_card %}
 <div class="translation-card">
   <div class="translation-header">
