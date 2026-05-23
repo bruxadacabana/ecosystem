@@ -205,7 +205,8 @@ def test_laptop_model_profile():
     assert mp.llm_rag      == "gemma2:2b"
     assert mp.llm_analysis == "smollm2:1.7b"
     assert mp.llm_query    == "smollm2:1.7b"
-    assert mp.embed        == "nomic-embed-text"
+    # bge-m3 para compatibilidade de vetores com main_pc (Syncthing)
+    assert mp.embed        == "bge-m3"
     assert mp.vram_budget_mb == 1_800
 
 
@@ -241,3 +242,55 @@ def test_model_profile_is_frozen():
         assert False, "ModelProfile deve ser imutável"
     except Exception:
         pass
+
+
+# ─── n_gpu_layers por perfil ──────────────────────────────────────────────────
+
+def test_main_pc_gpu_layers_all_full():
+    """main_pc: todos os modelos com GPU total (-1)."""
+    _clear()
+    vram_bytes = 8 * 1024 ** 3
+    def mock_sysfs(path: str) -> str:
+        if "card0" in path and "mem_info_vram_total" in path:
+            return str(vram_bytes)
+        return ""
+
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value=""), \
+         patch("hardware_probe._sysfs", side_effect=mock_sysfs):
+        mp = hp.get_model_profile()
+
+    assert mp.llm_rag_gpu_layers      == -1
+    assert mp.llm_analysis_gpu_layers == -1
+    assert mp.llm_query_gpu_layers    == -1
+    assert mp.embed_gpu_layers         == -1
+    assert mp.image_ocr_gpu_layers     == -1
+
+
+def test_laptop_rag_partial_offload():
+    """laptop: gemma2:2b usa offload parcial (17 layers) para coexistir com bge-m3."""
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Linux"), \
+         patch("hardware_probe._run", return_value="NVIDIA GeForce MX150, 2000 MiB"):
+        mp = hp.get_model_profile()
+
+    # gemma2:2b com 17 layers na GPU: ~1026 MB — cabe junto com bge-m3 (670 MB)
+    assert mp.llm_rag_gpu_layers == 17
+    # smollm2:1.7b (~1000 MB) cabe full GPU junto com bge-m3 (670+1000+50=1720 MB)
+    assert mp.llm_analysis_gpu_layers == -1
+    assert mp.llm_query_gpu_layers    == -1
+    assert mp.embed_gpu_layers         == -1
+    assert mp.image_ocr_gpu_layers     == -1
+
+
+def test_work_pc_gpu_layers_all_cpu():
+    """work_pc: sem GPU discreta — todos os modelos em CPU (0)."""
+    _clear()
+    with patch("hardware_probe.platform.system", return_value="Windows"):
+        mp = hp.get_model_profile()
+
+    assert mp.llm_rag_gpu_layers      == 0
+    assert mp.llm_analysis_gpu_layers == 0
+    assert mp.llm_query_gpu_layers    == 0
+    assert mp.embed_gpu_layers         == 0
+    assert mp.image_ocr_gpu_layers     == 0

@@ -1,14 +1,24 @@
 /* ============================================================
    LogosPanel — barra de status do LOGOS em tempo real.
-   Mostra prioridade ativa, fila P1/P2/P3 e uso de VRAM.
-   Faz polling a cada 5 s via Tauri IPC.
+   Dados estruturais (fila, modelo, perfil) via Tauri IPC a cada 30 s.
+   Métricas de hardware (VRAM, CPU, RAM) via SSE a cada 1 s.
    ============================================================ */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as cmd from '../lib/tauri'
 import type { LogosStatus } from '../types'
 
-const POLL_MS = 5_000
+const LOGOS_METRICS_URL = 'http://127.0.0.1:7072/logos/metrics/stream'
+const STRUCT_POLL_MS    = 30_000
+
+interface MetricsSnapshot {
+  vram_used_mb:  number | null
+  vram_total_mb: number | null
+  vram_pct:      number | null  // 0–100
+  cpu_pct:       number
+  ram_free_mb:   number
+  ram_total_mb:  number
+}
 
 const P_COLORS: Record<number, string> = {
   1: 'var(--accent)',
@@ -17,16 +27,59 @@ const P_COLORS: Record<number, string> = {
 }
 
 export function LogosPanel() {
-  const [status, setStatus] = useState<LogosStatus | null>(null)
+  const [status,  setStatus]  = useState<LogosStatus | null>(null)
+  const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null)
+  const [online,  setOnline]  = useState(false)
   const [silencing, setSilencing] = useState(false)
+  const esRef = useRef<EventSource | null>(null)
 
+  // Dados estruturais — pool leve (30 s)
   useEffect(() => {
-    function fetch() {
-      cmd.logosGetStatus().then(r => setStatus(r.ok ? r.data : null))
+    function fetchStruct() {
+      cmd.logosGetStatus().then(r => {
+        if (r.ok) {
+          setStatus(r.data)
+          setOnline(true)
+        } else {
+          setStatus(null)
+        }
+      })
     }
-    fetch()
-    const id = setInterval(fetch, POLL_MS)
+    fetchStruct()
+    const id = setInterval(fetchStruct, STRUCT_POLL_MS)
     return () => clearInterval(id)
+  }, [])
+
+  // Métricas em tempo real — SSE 1 s
+  useEffect(() => {
+    function connect() {
+      const es = new EventSource(LOGOS_METRICS_URL)
+      esRef.current = es
+
+      es.onmessage = (ev) => {
+        try {
+          const snap: MetricsSnapshot = JSON.parse(ev.data)
+          setMetrics(snap)
+          setOnline(true)
+        } catch {
+          // ignore parse error
+        }
+      }
+
+      es.onerror = () => {
+        // SSE caiu — fechar e tentar reconectar após 5 s
+        es.close()
+        esRef.current = null
+        setOnline(false)
+        setTimeout(connect, 5_000)
+      }
+    }
+
+    connect()
+    return () => {
+      esRef.current?.close()
+      esRef.current = null
+    }
   }, [])
 
   async function handleSilence() {
@@ -37,43 +90,44 @@ export function LogosPanel() {
     setSilencing(false)
   }
 
-  const online              = status !== null
-  const activePriority      = status?.active_priority ?? null
-  const activeModelClass    = status?.active_model_class ?? null
-  const queue               = status?.queue ?? ([0, 0, 0] as [number, number, number])
-  const vramMb              = status?.vram_used_mb ?? null
-  const vramPct             = status?.vram_pct ?? null
-  const hwDisplay           = status?.hardware_profile_display ?? null
-  const cpuPct              = status?.cpu_pct ?? 0
-  const ramFreeMb           = status?.ram_free_mb ?? 0
-  const ramTotalMb          = status?.ram_total_mb ?? 0
-  const onBattery           = status?.on_battery ?? false
-  const preemptedCount      = status?.preempted_count ?? 0
+  const activePriority   = status?.active_priority ?? null
+  const activeModelClass = status?.active_model_class ?? null
+  const queue            = status?.queue ?? ([0, 0, 0] as [number, number, number])
+  const hwDisplay        = status?.hardware_profile_display ?? null
+  const onBattery        = status?.on_battery ?? false
+  const preemptedCount   = status?.preempted_count ?? 0
+
+  // Preferir métricas SSE; fallback para status do IPC
+  const vramMb     = metrics?.vram_used_mb   ?? status?.vram_used_mb   ?? null
+  const vramPctRaw = metrics?.vram_pct       ?? (status?.vram_pct != null ? status.vram_pct * 100 : null)
+  const cpuPct     = metrics?.cpu_pct        ?? status?.cpu_pct        ?? 0
+  const ramFreeMb  = metrics?.ram_free_mb    ?? status?.ram_free_mb    ?? 0
+  const ramTotalMb = metrics?.ram_total_mb   ?? status?.ram_total_mb   ?? 0
+
+  // vramPctRaw é 0–100 (tanto do SSE quanto normalizado do IPC acima)
+  const vramPct = vramPctRaw  // 0–100
 
   let vramBarColor = 'var(--accent-green)'
   if (vramPct !== null) {
-    if (vramPct > 0.85) vramBarColor = 'var(--ribbon)'
-    else if (vramPct > 0.70) vramBarColor = 'var(--accent)'
+    if (vramPct > 85) vramBarColor = 'var(--ribbon)'
+    else if (vramPct > 70) vramBarColor = 'var(--accent)'
   }
 
   const vramLabel =
     vramMb === null ? '—' :
     vramPct !== null
-      ? `${(vramMb / 1000).toFixed(1)} GB · ${Math.round(vramPct * 100)}%`
+      ? `${(vramMb / 1000).toFixed(1)} GB · ${Math.round(vramPct)}%`
       : `${vramMb} MB`
 
-  // CPU bar — verde < 70%, amarelo 70–85%, vermelho > 85%
   let cpuBarColor = 'var(--accent-green)'
   if (cpuPct > 85) cpuBarColor = 'var(--ribbon)'
   else if (cpuPct > 70) cpuBarColor = 'var(--accent)'
 
-  // RAM — verde > 4 GB livre, amarelo 1.5–4 GB, vermelho < 1.5 GB
   const ramFreeGb = ramFreeMb / 1024
   let ramBarColor = 'var(--accent-green)'
   if (ramFreeGb < 1.5) ramBarColor = 'var(--ribbon)'
   else if (ramFreeGb < 4) ramBarColor = 'var(--accent)'
 
-  // Barra RAM como uso: (total - free) / total * 100
   const ramUsedPct = ramTotalMb > 0 ? Math.min(100, ((ramTotalMb - ramFreeMb) / ramTotalMb) * 100) : 0
 
   const ramFreeLabel = ramFreeGb >= 1
@@ -139,7 +193,6 @@ export function LogosPanel() {
         {([1, 2, 3] as const).map(p => {
           const isActive    = activePriority === p
           const waiting     = queue[p - 1]
-          // P3 mostra vermelho quando em bateria (bloqueado)
           const batteryBlock = p === 3 && onBattery
           const color       = batteryBlock ? 'var(--ribbon)' : P_COLORS[p]
           return (
@@ -254,7 +307,7 @@ export function LogosPanel() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 100, maxWidth: 340 }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', letterSpacing: '0.08em', flexShrink: 0 }}>VRAM</span>
           <div style={{ flex: 1, height: 4, background: 'var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${Math.min(100, Math.round(vramPct * 100))}%`, background: vramBarColor, transition: 'width 400ms ease, background 400ms ease' }} />
+            <div style={{ height: '100%', width: `${Math.min(100, Math.round(vramPct))}%`, background: vramBarColor, transition: 'width 400ms ease, background 400ms ease' }} />
           </div>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', letterSpacing: '0.04em', whiteSpace: 'nowrap', minWidth: 72 }}>{vramLabel}</span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', letterSpacing: '0.04em', whiteSpace: 'nowrap', opacity: 0.65 }}

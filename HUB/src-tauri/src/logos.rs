@@ -8,7 +8,8 @@
 //
 //  Rotas próprias:
 //    GET  /logos/status    → StatusResponse
-//    GET  /logos/vram      → VramResponse (usado_mb, total_mb, used_pct, profile)
+//    GET  /logos/vram             → VramResponse (usado_mb, total_mb, used_pct, profile)
+//    GET  /logos/metrics/stream   → SSE MetricsSnapshot (1 evento/s) para o LogosPanel
 //    POST /logos/chat      → proxy para Ollama /api/chat (API legada)
 //    POST /logos/silence   → keep_alive: 0 em todos os modelos carregados
 //
@@ -35,7 +36,10 @@ use axum::{
     body::Bytes,
     extract::State,
     http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     routing::{delete, get, post},
     Json, Router,
 };
@@ -116,16 +120,31 @@ impl HardwareProfile {
                 embed:        "bge-m3",
                 // moondream: ~1.7 GB VRAM — multimodal compacto; coexiste com qwen2.5:7b (4.7+1.7=6.4 GB < 7.5 GB)
                 image_ocr:    "moondream",
+                // RX 6600 8 GB — todos os modelos na GPU total
+                llm_rag_gpu_layers:      -1,
+                llm_analysis_gpu_layers: -1,
+                llm_query_gpu_layers:    -1,
+                embed_gpu_layers:         -1,
+                image_ocr_gpu_layers:     -1,
             },
             HardwareProfile::Laptop => ModelProfile {
                 llm_rag:      "gemma2:2b",
-                // smollm2:1.7b: análise batch no laptop — JSON 26% tolerável com retry; MX150 não suporta dois modelos >1 GB
+                // smollm2:1.7b: análise batch no laptop — JSON 26% tolerável com retry
                 llm_analysis: "smollm2:1.7b",
                 llm_query:    "smollm2:1.7b",
-                // nomic-embed-text: ~274 MB VRAM · adequado para MX150 2 GB; bge-m3 exige 8 GB (MainPc)
-                embed:        "nomic-embed-text",
-                // moondream: ~1.7 GB — MX150 2 GB mal cabe sozinho; usar isolado (não simultaneamente com outro modelo)
+                // bge-m3 (670 MB): mesmo vetorstore que MainPc — compatível via Syncthing
+                embed:        "bge-m3",
+                // moondream: ~1.7 GB — LOGOS descarrega bge-m3 antes de carregar (swap explícito)
                 image_ocr:    "moondream",
+                // gemma2:2b: offload parcial — 17 layers na GPU (~1026 MB)
+                // bge-m3 (670 MB) + gemma2:2b parcial (1026 MB) + KV cache (~104 MB) ≈ 1800 MB ✓
+                llm_rag_gpu_layers:      17,
+                // smollm2:1.7b (~1000 MB) cabe full GPU junto com bge-m3 (670+1000+50=1720 MB)
+                llm_analysis_gpu_layers: -1,
+                llm_query_gpu_layers:    -1,
+                embed_gpu_layers:         -1,
+                // moondream: LOGOS descarrega bge-m3 antes — pode usar GPU total
+                image_ocr_gpu_layers:     -1,
             },
             HardwareProfile::WorkPc => ModelProfile {
                 llm_rag:      "smollm2:1.7b",
@@ -136,6 +155,12 @@ impl HardwareProfile {
                 embed:        "potion-multilingual-128M",
                 // WorkPc sem GPU discreta — OCR via Tesseract local apenas
                 image_ocr:    "",
+                // i5-3470 sem GPU discreta — todos os modelos em CPU
+                llm_rag_gpu_layers:      0,
+                llm_analysis_gpu_layers: 0,
+                llm_query_gpu_layers:    0,
+                embed_gpu_layers:         0,
+                image_ocr_gpu_layers:     0,
             },
         }
     }
@@ -154,6 +179,13 @@ pub struct ModelProfile {
     pub embed:        &'static str,
     /// LLM multimodal para OCR de imagens (Mnemosyne) — "" quando hardware não suporta.
     pub image_ocr:    &'static str,
+    /// Layers na GPU para cada modelo (-1 = todas, 0 = CPU only, N = N layers na GPU).
+    /// Passado como `--n-gpu-layers` ao llama-server via LOGOS ao carregar o modelo.
+    pub llm_rag_gpu_layers:      i32,
+    pub llm_analysis_gpu_layers: i32,
+    pub llm_query_gpu_layers:    i32,
+    pub embed_gpu_layers:         i32,
+    pub image_ocr_gpu_layers:     i32,
 }
 
 /// Atribuição de modelo para um app+tipo específico.
@@ -545,8 +577,9 @@ pub struct OllamaStatus {
 pub fn build_router(state: LogosState) -> Router {
     Router::new()
         // LOGOS API própria
-        .route("/logos/status",         get(status_handler))
-        .route("/logos/vram",           get(vram_handler))
+        .route("/logos/status",          get(status_handler))
+        .route("/logos/vram",            get(vram_handler))
+        .route("/logos/metrics/stream",  get(metrics_stream_handler))
         .route("/logos/chat",           post(chat_handler))
         .route("/logos/silence",        post(silence_handler))
         .route("/logos/profile",        post(profile_handler))
@@ -1106,6 +1139,44 @@ async fn vram_handler(State(s): State<LogosState>) -> Json<VramResponse> {
         used_pct: pct.map(|p| p * 100.0),
         hardware_profile: hw.as_str(),
     })
+}
+
+/// Snapshot de métricas de hardware emitido a cada 1 s pelo endpoint SSE.
+#[derive(Debug, Clone, Serialize)]
+struct MetricsSnapshot {
+    vram_used_mb:  Option<u64>,
+    vram_total_mb: Option<u64>,
+    vram_pct:      Option<f32>,   // 0–100
+    cpu_pct:       f32,
+    ram_free_mb:   u64,
+    ram_total_mb:  u64,
+}
+
+/// GET /logos/metrics/stream — SSE com snapshot de métricas a cada 1 s.
+/// O LogosPanel usa EventSource neste endpoint para atualizações em tempo real
+/// em vez de polling via Tauri IPC a cada 5 s.
+async fn metrics_stream_handler(State(s): State<LogosState>) -> impl IntoResponse {
+    let stream = async_stream::stream! {
+        loop {
+            let hw = s.0.hardware_profile;
+            let (vram_used_mb, vram_pct_raw) =
+                vram_usage(&s.0.client, &s.0.ollama_url, hw).await;
+            let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
+            let snap = MetricsSnapshot {
+                vram_used_mb,
+                vram_total_mb: hw.vram_total_mb(),
+                vram_pct: vram_pct_raw.map(|p| p * 100.0),
+                cpu_pct,
+                ram_free_mb,
+                ram_total_mb,
+            };
+            if let Ok(json) = serde_json::to_string(&snap) {
+                yield Ok::<Event, std::convert::Infallible>(Event::default().data(json));
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    };
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 fn max_concurrent_for_profile(profile: HardwareProfile) -> u32 {

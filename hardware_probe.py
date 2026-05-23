@@ -55,6 +55,14 @@ class ModelProfile:
     image_ocr:      str   # multimodal/OCR (Mnemosyne) — "" se hardware não suporta
     vram_budget_mb: int   # orçamento de VRAM/RAM disponível para inferência (MB)
 
+    # Camadas GPU por modelo (-1 = todas, 0 = CPU only, N = N camadas na GPU)
+    # Espelha n_gpu_layers do llama-server. Controlado pelo LOGOS ao carregar cada modelo.
+    llm_rag_gpu_layers:      int  # layers na GPU para llm_rag
+    llm_analysis_gpu_layers: int  # layers na GPU para llm_analysis
+    llm_query_gpu_layers:    int  # layers na GPU para llm_query
+    embed_gpu_layers:         int  # layers na GPU para embed
+    image_ocr_gpu_layers:     int  # layers na GPU para image_ocr
+
 
 # Espelha HardwareProfile::model_profile() em logos.rs.
 # Atualizar aqui quando os modelos recomendados mudarem no Rust.
@@ -69,18 +77,33 @@ _MODEL_PROFILE: dict[str, ModelProfile] = {
         # moondream (~1.7 GB) coexiste com qwen2.5:7b (4.7+1.7=6.4 GB < 7.5 GB)
         image_ocr    = "moondream",
         vram_budget_mb = 7_500,
+        # RX 6600 8 GB — tudo na GPU
+        llm_rag_gpu_layers      = -1,
+        llm_analysis_gpu_layers = -1,
+        llm_query_gpu_layers    = -1,
+        embed_gpu_layers         = -1,
+        image_ocr_gpu_layers     = -1,
     ),
     "laptop": ModelProfile(
-        # MX150 2 GB: apenas 1 modelo >1 GB por vez
+        # MX150 2 GB: bge-m3 (670 MB) + gemma2:2b partial (17 layers, ~1026 MB) coexistem
         llm_rag      = "gemma2:2b",
-        # smollm2:1.7b: análise batch — JSON 26% tolerável com retry
+        # smollm2:1.7b (~1000 MB) cabe junto com bge-m3 (670+1000+50=1720 MB < 1800 MB)
         llm_analysis = "smollm2:1.7b",
         llm_query    = "smollm2:1.7b",
-        # nomic-embed-text: ~274 MB VRAM; bge-m3 exige 8 GB (somente main_pc)
-        embed        = "nomic-embed-text",
-        # moondream: ~1.7 GB — usar isolado (não simultaneamente com outro modelo)
+        # bge-m3 (670 MB): mesmo vetorstore que main_pc — compatível via Syncthing
+        embed        = "bge-m3",
+        # moondream (~1700 MB): usar isolado — LOGOS descarga bge-m3 antes de carregar
         image_ocr    = "moondream",
         vram_budget_mb = 1_800,
+        # gemma2:2b: offload parcial — 17 layers na GPU (~1026 MB), resto em RAM
+        # bge-m3 (670 MB) + gemma2:2b parcial (1026 MB) + KV cache (~104 MB) ≈ 1800 MB ✓
+        llm_rag_gpu_layers      = 17,
+        # smollm2:1.7b: ~1000 MB full GPU, cabe junto com bge-m3 (670+1000+50=1720 MB)
+        llm_analysis_gpu_layers = -1,
+        llm_query_gpu_layers    = -1,
+        embed_gpu_layers         = -1,
+        # moondream: LOGOS descarga bge-m3 antes — pode usar GPU total
+        image_ocr_gpu_layers     = -1,
     ),
     "work_pc": ModelProfile(
         llm_rag      = "smollm2:1.7b",
@@ -92,6 +115,12 @@ _MODEL_PROFILE: dict[str, ModelProfile] = {
         # WorkPc sem GPU discreta — OCR via Tesseract local apenas
         image_ocr    = "",
         vram_budget_mb = 4_000,
+        # i5-3470 sem GPU discreta — tudo em RAM/CPU
+        llm_rag_gpu_layers      = 0,
+        llm_analysis_gpu_layers = 0,
+        llm_query_gpu_layers    = 0,
+        embed_gpu_layers         = 0,
+        image_ocr_gpu_layers     = 0,
     ),
 }
 
