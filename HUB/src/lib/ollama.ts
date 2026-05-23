@@ -1,25 +1,24 @@
 // ============================================================
-//  HUB — Cliente Ollama
-//  Chama localhost:11434 diretamente via fetch (sem Rust).
+//  HUB — Cliente de inferência (LOGOS proxy)
+//  Chama LOGOS (localhost:7072) via fetch.
 //  CSP desabilitado em tauri.conf.json (csp: null).
 // ============================================================
 
-const BASE = 'http://localhost:11434'
+const BASE = 'http://localhost:7072'
 
 // ----------------------------------------------------------
 //  Tipos
 // ----------------------------------------------------------
 
 // ----------------------------------------------------------
-//  listModels — GET /api/tags
+//  listModels — GET /v1/models
 // ----------------------------------------------------------
 
 export async function listModels(): Promise<string[]> {
-  const res = await fetch(`${BASE}/api/tags`)
+  const res = await fetch(`${BASE}/v1/models`)
   if (!res.ok) {
-    throw new Error(`Ollama retornou ${res.status}`)
+    throw new Error(`Servidor de inferência retornou ${res.status}`)
   }
-  const data = (await res.json()) as { models?: { name: string }[] }
-  return (data.models ?? []).map(m => m.name).sort()
+  const data = (await res.json()) as { data?: { id: string }[] }
+  return (data.data ?? []).map(m => m.id).sort()
 }
-

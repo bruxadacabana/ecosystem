@@ -1043,7 +1043,12 @@ pub fn build_router(state: LogosState) -> Router {
         .route("/logos/models/download/progress/:id",    get(download_progress_handler))
         .route("/logos/models/registry",                 get(model_registry_handler))
         .route("/logos/hardware",                        get(hardware_handler))
-        // Proxy transparente — apps apontam para 7072 em vez de 11434
+        // OpenAI-compatible endpoints — apps usam formato OpenAI diretamente
+        .route("/v1/chat/completions",  post(v1_chat_completions_proxy))
+        .route("/v1/embeddings",        post(v1_embeddings_proxy))
+        .route("/v1/models",            get(v1_models_proxy))
+        .route("/health",               get(health_proxy))
+        // Proxy transparente legado — apps Ollama apontam para 7072 em vez de 11434
         .route("/api/chat",       post(api_chat_proxy))
         .route("/api/generate",   post(api_generate_proxy))
         .route("/api/embed",      post(api_embed_proxy))
@@ -1607,6 +1612,113 @@ async fn proxy_get_to_ollama(s: &LogosState, path: &str) -> Response {
         }
         Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
             "error": format!("Ollama indisponível: {e}")
+        }))).into_response(),
+    }
+}
+
+// ── OpenAI-compatible endpoints (/v1/*) ─────────────────────────
+
+/// Proxy transparente para llama-server via semáforo de prioridade.
+/// Sem tradução de formato — apps enviam OpenAI diretamente.
+async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes, endpoint: &str, default_priority: u8) -> Response {
+    let (app_name, req_priority) = extract_app_priority(headers);
+    let profile  = s.0.active_profile.lock().await.clone();
+    let priority = apply_profile_priority(&profile, &app_name,
+                       if req_priority == 0 { default_priority } else { req_priority });
+
+    let permits: u32 = if priority >= 3 { 1 } else { 2 };
+    let timeout = match priority {
+        1 => Duration::from_secs(120),
+        2 => P2_TIMEOUT,
+        _ => P3_TIMEOUT,
+    };
+    let sem = s.0.semaphore.clone();
+    let _permit = match tokio::time::timeout(timeout, sem.acquire_many_owned(permits)).await {
+        Ok(Ok(p)) => p,
+        _ => return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+            "error": "Timeout aguardando LOGOS — sistema sobrecarregado"
+        }))).into_response(),
+    };
+
+    let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/{endpoint}");
+    match s.0.client
+        .post(&url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let status = resp.status();
+            let ct = resp.headers()
+                .get(header::CONTENT_TYPE)
+                .cloned()
+                .unwrap_or_else(|| "application/json".parse().unwrap());
+            match resp.bytes().await {
+                Ok(bytes) => axum::http::Response::builder()
+                    .status(status)
+                    .header(header::CONTENT_TYPE, ct)
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+            }
+        },
+        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+            "error": format!("llama-server indisponível: {e}")
+        }))).into_response(),
+    }
+}
+
+async fn v1_chat_completions_proxy(
+    State(s): State<LogosState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    proxy_openai_to_llama(&s, &headers, body, "v1/chat/completions", 2).await
+}
+
+async fn v1_embeddings_proxy(
+    State(s): State<LogosState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    proxy_openai_to_llama(&s, &headers, body, "v1/embeddings", 3).await
+}
+
+async fn v1_models_proxy(State(s): State<LogosState>) -> Response {
+    let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/v1/models");
+    match s.0.client.get(&url).timeout(Duration::from_secs(3)).send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            match resp.bytes().await {
+                Ok(bytes) => axum::http::Response::builder()
+                    .status(status)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+            }
+        },
+        Err(_) => (StatusCode::OK, Json(serde_json::json!({ "object": "list", "data": [] }))).into_response(),
+    }
+}
+
+async fn health_proxy(State(s): State<LogosState>) -> Response {
+    let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/health");
+    match s.0.client.get(&url).timeout(Duration::from_secs(2)).send().await {
+        Ok(resp) => {
+            let status = resp.status();
+            match resp.bytes().await {
+                Ok(bytes) => axum::http::Response::builder()
+                    .status(status)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+            }
+        },
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "status": "offline"
         }))).into_response(),
     }
 }

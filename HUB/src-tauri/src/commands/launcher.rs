@@ -45,10 +45,10 @@ pub async fn launch_ollama() -> Result<String, AppError> {
         .map_err(|e| AppError::Io(format!("Não foi possível iniciar o Ollama: {e}")))
 }
 
-/// Testa se o Ollama já está respondendo na porta padrão (timeout 500 ms).
+/// Testa se o llama-server já está respondendo na porta padrão (timeout 500 ms).
 async fn ollama_responding() -> bool {
     reqwest::Client::new()
-        .get("http://localhost:11434/api/tags")
+        .get("http://localhost:8080/health")
         .timeout(std::time::Duration::from_millis(500))
         .send()
         .await

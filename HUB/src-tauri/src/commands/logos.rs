@@ -404,13 +404,13 @@ pub async fn logos_stop_ollama(
     Ok(())
 }
 
-/// Polling até 5 s: aguarda o Ollama parar de responder antes de emitir o evento final.
+/// Polling até 5 s: aguarda o servidor de inferência parar de responder antes de emitir o evento final.
 async fn wait_ollama_down(app: &tauri::AppHandle, ollama_url: &str) {
     let check_url = if ollama_url.contains("7072") {
-        // LOGOS proxy — checar diretamente o Ollama na 11434
-        "http://localhost:11434/api/tags".to_string()
+        // LOGOS proxy — checar diretamente o llama-server na 8080
+        "http://localhost:8080/health".to_string()
     } else {
-        format!("{ollama_url}/api/tags")
+        format!("{ollama_url}/health")
     };
     for _ in 0..10 {
         tokio::time::sleep(Duration::from_millis(500)).await;
