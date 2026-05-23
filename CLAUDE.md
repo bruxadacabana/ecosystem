@@ -181,7 +181,7 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 - **Caminhos de dados**: lidos via `ecosystem.json` / `ecosystem_client`
 - **Qual LLM usar**: campo específico por função no perfil ativo do LOGOS — `llm_rag` (Mnemosyne), `llm_analysis` (KOSMOS), `llm_query` (AKASHA), `embed` (embeddings). Lido via `ecosystem_client.get_active_profile()` em **runtime**, nunca em import time.
 - **Qual embedding usar**: idem — nunca hardcoded no app
-- **Toda comunicação com o Ollama**: deve passar pelo LOGOS (porta 7072) via `ecosystem_client.get_ollama_url()`. Fallback direto (11434) é automático quando LOGOS offline — nunca hardcodar a porta.
+- **Inferência de LLM**: gerenciada diretamente pelo LOGOS via llama-cpp — **Ollama não é mais usado**. Todo o código legado que referencia Ollama (porta 11434, `get_ollama_url()`, `ollama_client.py`) será migrado para `ecosystem_client.get_inference_url()` apontando ao LOGOS. Nunca hardcodar porta ou URL de inferência.
 
 ---
 
