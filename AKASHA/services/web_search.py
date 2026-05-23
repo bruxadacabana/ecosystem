@@ -32,6 +32,7 @@ class SearchResult(BaseModel):
     source: str = "WEB"
     date: str | None = None
     score: float = 0.0  # BM25/relevância; 0.0 = não calculado
+    wiki_cited: bool = False  # domínio citado em artigo Wikipedia relevante
 
 
 # ---------------------------------------------------------------------------

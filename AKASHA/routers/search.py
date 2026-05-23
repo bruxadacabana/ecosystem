@@ -114,6 +114,38 @@ def _get_local_priority_threshold() -> int:
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
+_WIKI_CITATION_BOOST = 1.3
+
+
+def _apply_wiki_citation_boost(
+    results: list,
+    cited_domains: set[str],
+) -> list:
+    """Aplica boost 1.3 em resultados cujo domínio está nas citações da Wikipedia.
+
+    Marca `wiki_cited=True` nos resultados afetados e re-ordena por
+    (posição_invertida × boost), mantendo neutros com fator 1.0.
+    Retorna a lista original se cited_domains estiver vazio.
+    """
+    if not results or not cited_domains:
+        return results
+    from urllib.parse import urlparse as _up
+    any_boosted = False
+    scored: list[tuple] = []
+    for i, r in enumerate(results):
+        domain = (_up(r.url).hostname or "").removeprefix("www.").lower()
+        if domain in cited_domains:
+            r.wiki_cited = True
+            factor = _WIKI_CITATION_BOOST
+            any_boosted = True
+        else:
+            factor = 1.0
+        scored.append((r, (1.0 / (i + 1)) * factor))
+    if not any_boosted:
+        return results
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [r for r, _ in scored]
+
 
 def _voice_texts() -> dict[str, str]:
     """Retorna textos de interface segundo AKASHA_VOICE configurado em config.py."""
@@ -562,6 +594,13 @@ async def search(
                     }
                     for u in _cited if u
                 ]
+                # Boost 1.3 em resultados web/favoritos citados pela Wikipedia
+                _cited_domains = {
+                    (_up(u).hostname or "").removeprefix("www.").lower()
+                    for u in _cited if u
+                }
+                web_results  = _apply_wiki_citation_boost(web_results,  _cited_domains)
+                fav_results  = _apply_wiki_citation_boost(fav_results,  _cited_domains)
             except Exception:
                 wiki_card["cited_sources_enriched"] = []
 

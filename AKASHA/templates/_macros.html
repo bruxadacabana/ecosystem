@@ -43,6 +43,7 @@
   <!-- Layer 1: cabeçalho + título + snippet curto -->
   <div class="result-header">
     <span class="badge badge-{{ r.source | lower }}">{{ r.source }}</span>
+    {% if r.wiki_cited %}<span class="badge badge-wiki-cited" title="Domínio citado em artigo da Wikipedia">Wikipedia</span>{% endif %}
     {% if r.date %}<time class="result-date">{{ r.date }}</time>{% endif %}
   </div>
   <h2 class="result-title">

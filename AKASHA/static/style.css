@@ -614,6 +614,7 @@ a:hover { opacity: 0.75; }
 .badge-sites      { background: color-mix(in srgb, var(--accent-dim)   20%, transparent); color: var(--accent-dim);   border: 1px solid var(--accent-dim); }
 .badge-paper      { background: color-mix(in srgb, var(--ribbon)        15%, transparent); color: var(--ribbon);       border: 1px solid var(--ribbon); }
 .badge-paper-pdf  { background: color-mix(in srgb, var(--accent-green)  15%, transparent); color: var(--accent-green); border: 1px solid var(--accent-green); font-size: 7px; }
+.badge-wiki-cited { background: color-mix(in srgb, #6b8fbe 15%, transparent); color: #6b8fbe; border: 1px solid #6b8fbe; }
 
 .tag {
   border:         1px solid var(--rule);
