@@ -38,7 +38,7 @@ _DEFAULTS: dict[str, Any] = {
     "hub":       {"data_path": ""},
     "hermes":    {"output_dir": "", "config_path": ""},
     "akasha":    {"archive_path": "", "data_path": "", "base_url": "", "config_path": ""},
-    "logos":     {"ollama_base": "http://localhost:11434"},
+    "logos":     {"ollama_base": "http://localhost:11434", "llama_server_url": ""},
 }
 
 
@@ -137,6 +137,37 @@ def get_ollama_url() -> str:
     """Retorna a URL do Ollama a usar: 7072 (LOGOS) se disponível, 11434 direto como fallback."""
     status = _logos_get("/logos/status", timeout=1.5)
     return LOGOS_OLLAMA_BASE if status is not None else OLLAMA_DIRECT
+
+
+def get_inference_url() -> str:
+    """URL do backend de inferência: LOGOS (7072) se disponível, backend direto como fallback.
+
+    Agnóstico ao backend (Ollama ou llama-server) — o LOGOS roteia internamente.
+    Usar em preferência a get_ollama_url() em código novo.
+    """
+    return get_ollama_url()
+
+
+def load_model(model_name: str) -> bool:
+    """Pré-aquece um modelo no backend de inferência (carrega na VRAM).
+
+    Envia sinal ao LOGOS para carregar o modelo antes de uma tarefa P1/P2.
+    Retorna True se o LOGOS confirmou o carregamento.
+    Sem efeito se LOGOS offline — não levanta exceção.
+    """
+    result = _logos_post("/logos/models/load", {"model": model_name})
+    return bool(result and result.get("ok"))
+
+
+def unload_model(model_name: str) -> bool:
+    """Descarrega um modelo do backend de inferência (libera VRAM explicitamente).
+
+    Útil antes de carregar um modelo mais pesado ou liberar VRAM para tarefas P1.
+    Retorna True se o LOGOS confirmou o descarregamento.
+    Sem efeito se LOGOS offline — não levanta exceção.
+    """
+    result = _logos_post("/logos/models/unload", {"model": model_name})
+    return bool(result and result.get("ok"))
 
 
 def get_ollama_headers(app_name: str, priority: int) -> "dict[str, str]":

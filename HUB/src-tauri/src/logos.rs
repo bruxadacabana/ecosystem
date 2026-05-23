@@ -531,12 +531,14 @@ pub struct OllamaStatus {
 pub fn build_router(state: LogosState) -> Router {
     Router::new()
         // LOGOS API própria
-        .route("/logos/status",   get(status_handler))
-        .route("/logos/chat",     post(chat_handler))
-        .route("/logos/silence",  post(silence_handler))
-        .route("/logos/profile",  post(profile_handler))
-        .route("/logos/models",   get(models_handler))
-        .route("/logos/hardware", get(hardware_handler))
+        .route("/logos/status",         get(status_handler))
+        .route("/logos/chat",           post(chat_handler))
+        .route("/logos/silence",        post(silence_handler))
+        .route("/logos/profile",        post(profile_handler))
+        .route("/logos/models",         get(models_handler))
+        .route("/logos/models/load",    post(models_load_handler))
+        .route("/logos/models/unload",  post(models_unload_handler))
+        .route("/logos/hardware",       get(hardware_handler))
         // Proxy transparente — apps apontam para 7072 em vez de 11434
         .route("/api/chat",       post(api_chat_proxy))
         .route("/api/generate",   post(api_generate_proxy))
@@ -1039,6 +1041,36 @@ async fn models_handler(State(s): State<LogosState>) -> Response {
     (StatusCode::OK, Json(models)).into_response()
 }
 
+async fn models_load_handler(
+    State(s): State<LogosState>,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    let model = match body["model"].as_str() {
+        Some(m) if !m.is_empty() => m.to_string(),
+        _ => return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "campo 'model' obrigatório" })),
+        ).into_response(),
+    };
+    let ok = do_load_model(&s, &model).await;
+    (StatusCode::OK, Json(serde_json::json!({ "ok": ok, "model": model }))).into_response()
+}
+
+async fn models_unload_handler(
+    State(s): State<LogosState>,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    let model = match body["model"].as_str() {
+        Some(m) if !m.is_empty() => m.to_string(),
+        _ => return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "campo 'model' obrigatório" })),
+        ).into_response(),
+    };
+    let ok = do_unload_model(&s, &model).await;
+    (StatusCode::OK, Json(serde_json::json!({ "ok": ok, "model": model }))).into_response()
+}
+
 async fn hardware_handler(State(s): State<LogosState>) -> Json<HardwareResponse> {
     let hw = s.0.hardware_profile;
     Json(HardwareResponse {
@@ -1150,6 +1182,24 @@ pub async fn do_unload_model(s: &LogosState, model: &str) -> bool {
         .post(format!("{}/api/generate", s.0.ollama_url))
         .json(&serde_json::json!({ "model": model, "keep_alive": 0 }))
         .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .is_ok()
+}
+
+/// Pré-aquece um modelo enviando um request de geração vazio com keep_alive: -1.
+/// Carrega o modelo na VRAM e mantém-no carregado indefinidamente.
+/// Retorna true se o request chegou ao backend de inferência.
+pub async fn do_load_model(s: &LogosState, model: &str) -> bool {
+    s.0.client
+        .post(format!("{}/api/generate", s.0.ollama_url))
+        .json(&serde_json::json!({
+            "model":      model,
+            "prompt":     "",
+            "keep_alive": -1,
+            "stream":     false,
+        }))
+        .timeout(Duration::from_secs(30))
         .send()
         .await
         .is_ok()
