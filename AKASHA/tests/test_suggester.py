@@ -6,6 +6,9 @@ Cobre:
     domínio já em crawl_sites → excluído; score mínimo filtrado
   - get_pending_suggestions: retorna apenas status pending, ordenados por score
   - set_suggestion_status: atualiza status corretamente
+  - update_wiki_citation_counts: wiki_cache com cited_sources → contagens atualizadas
+  - sinal 4: domínio com count ≥ 3 → score extra; count < 3 → sem efeito;
+    cited_sources vazio → sem efeito; domínio bloqueado → não ressurge
 """
 from __future__ import annotations
 
@@ -321,3 +324,155 @@ class TestSetSuggestionStatus:
                 return row[0]
 
         assert run(_run()) == "ignored"
+
+
+# ---------------------------------------------------------------------------
+# update_wiki_citation_counts + Sinal 4
+# ---------------------------------------------------------------------------
+
+def _insert_wiki_cache(con: sqlite3.Connection, cited_sources: list[str]) -> None:
+    """Insere uma entrada em wiki_cache com o card contendo cited_sources."""
+    import hashlib
+    import json as _json
+    card = {
+        "title": "Test",
+        "extract": "Test extract.",
+        "cited_sources": cited_sources,
+    }
+    qhash = hashlib.md5(str(len(cited_sources)).encode()).hexdigest()
+    con.execute(
+        "INSERT OR REPLACE INTO wiki_cache (query_hash, data_json, cached_at) VALUES (?, ?, 0)",
+        (qhash, _json.dumps(card)),
+    )
+    con.commit()
+
+
+class TestWikiCitationSignal:
+
+    def test_update_wiki_citation_counts_accumulates(self, db_paths):
+        """wiki_cache com cited_sources → contagens corretas em wiki_citation_counts."""
+        main_path, _ = db_paths
+        con = sqlite3.connect(main_path)
+        # 3 entradas de cache, todas citando a.com; 2 citando b.com
+        import hashlib, json as _j
+        for i, sources in enumerate([
+            ["https://a.com/p1", "https://b.com/p1"],
+            ["https://a.com/p2", "https://b.com/p2"],
+            ["https://a.com/p3"],
+        ]):
+            card = {"title": f"T{i}", "extract": "x", "cited_sources": sources}
+            qhash = hashlib.md5(str(i).encode()).hexdigest()
+            con.execute(
+                "INSERT OR REPLACE INTO wiki_cache (query_hash, data_json, cached_at) VALUES (?,?,0)",
+                (qhash, _j.dumps(card)),
+            )
+        con.commit()
+        con.close()
+
+        async def _run():
+            import aiosqlite
+            from services.suggester import update_wiki_citation_counts
+            async with aiosqlite.connect(main_path) as db:
+                n = await update_wiki_citation_counts(db)
+                rows = await (await db.execute(
+                    "SELECT domain, count FROM wiki_citation_counts ORDER BY domain"
+                )).fetchall()
+                return n, dict(rows)
+
+        n, counts = run(_run())
+        assert n >= 2
+        assert counts["a.com"] == 3
+        assert counts["b.com"] == 2
+
+    def test_signal4_domain_with_3_citations_gets_score(self, db_paths):
+        """Domínio com count ≥ 3 em wiki_citation_counts → aparece nas sugestões."""
+        main_path, _ = db_paths
+        con = sqlite3.connect(main_path)
+        # Inserir diretamente em wiki_citation_counts (simula job anterior)
+        con.execute(
+            "INSERT INTO wiki_citation_counts (domain, count, last_seen) VALUES ('wiki-ref.org', 5, '2026-01-01')"
+        )
+        con.commit()
+        con.close()
+
+        async def _run():
+            import aiosqlite
+            from services.suggester import compute_suggestions, get_pending_suggestions
+            async with aiosqlite.connect(main_path) as db:
+                await compute_suggestions(db, min_score=0.0)
+                await db.commit()
+                return await get_pending_suggestions(db)
+
+        pending = run(_run())
+        domains = [s["domain"] for s in pending]
+        assert "wiki-ref.org" in domains
+        hit = next(s for s in pending if s["domain"] == "wiki-ref.org")
+        # score = 5 * 2.0 = 10.0 (só sinal 4)
+        assert abs(hit["score"] - 10.0) < 0.01
+        assert "Wikipedia" in hit["reason"]
+
+    def test_signal4_count_below_3_no_effect(self, db_paths):
+        """Domínio com count < 3 não é incluído pelo sinal 4."""
+        main_path, _ = db_paths
+        con = sqlite3.connect(main_path)
+        con.execute(
+            "INSERT INTO wiki_citation_counts (domain, count, last_seen) VALUES ('lowcount.org', 2, '2026-01-01')"
+        )
+        con.commit()
+        con.close()
+
+        async def _run():
+            import aiosqlite
+            from services.suggester import compute_suggestions, get_pending_suggestions
+            async with aiosqlite.connect(main_path) as db:
+                await compute_suggestions(db, min_score=0.0)
+                await db.commit()
+                return await get_pending_suggestions(db)
+
+        pending = run(_run())
+        domains = [s["domain"] for s in pending]
+        assert "lowcount.org" not in domains
+
+    def test_signal4_empty_cited_sources_no_effect(self, db_paths):
+        """wiki_cache com cited_sources vazio → wiki_citation_counts não ganha entradas."""
+        main_path, _ = db_paths
+        con = sqlite3.connect(main_path)
+        _insert_wiki_cache(con, [])  # cited_sources vazio
+        con.close()
+
+        async def _run():
+            import aiosqlite
+            from services.suggester import update_wiki_citation_counts
+            async with aiosqlite.connect(main_path) as db:
+                n = await update_wiki_citation_counts(db)
+                return n
+
+        n = run(_run())
+        assert n == 0
+
+    def test_signal4_blocked_domain_not_resurface(self, db_paths):
+        """Domínio bloqueado com count ≥ 3 não aparece nas sugestões."""
+        import time
+        main_path, _ = db_paths
+        con = sqlite3.connect(main_path)
+        con.execute(
+            "INSERT INTO site_suggestions (domain, score, reason, status, updated_at) VALUES ('blocked-wiki.org', 0, '', 'blocked', ?)",
+            (int(time.time()),),
+        )
+        con.execute(
+            "INSERT INTO wiki_citation_counts (domain, count, last_seen) VALUES ('blocked-wiki.org', 10, '2026-01-01')"
+        )
+        con.commit()
+        con.close()
+
+        async def _run():
+            import aiosqlite
+            from services.suggester import compute_suggestions, get_pending_suggestions
+            async with aiosqlite.connect(main_path) as db:
+                await compute_suggestions(db, min_score=0.0)
+                await db.commit()
+                return await get_pending_suggestions(db)
+
+        pending = run(_run())
+        domains = [s["domain"] for s in pending]
+        assert "blocked-wiki.org" not in domains

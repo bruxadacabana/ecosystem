@@ -23,6 +23,7 @@ from services.suggester import (
     compute_suggestions,
     get_pending_suggestions,
     set_suggestion_status,
+    update_wiki_citation_counts,
 )
 
 router = APIRouter()
@@ -46,6 +47,11 @@ async def suggestions_page(request: Request):
 async def run_suggestions(request: Request):
     """Recalcula sugestões e retorna o fragmento HTMX atualizado."""
     async with aiosqlite.connect(DB_PATH) as db:
+        # Atualiza contagens de citações Wikipedia antes de calcular sugestões
+        try:
+            await update_wiki_citation_counts(db)
+        except Exception as exc:
+            log.warning("run_suggestions: update_wiki_citation_counts falhou: %s", exc)
         await compute_suggestions(db)
         await db.commit()
         pending = await get_pending_suggestions(db)

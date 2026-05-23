@@ -1,10 +1,11 @@
 """
 AKASHA — Sugestão automática de novos domínios para a Biblioteca.
 
-Cruza 3 sinais para identificar domínios relevantes não ainda indexados:
-  1. search_cache  — domínios que aparecem em resultados de busca salvos
-  2. click_log     — domínios clicados pelo usuário (ponderado por 1/log2(2+pos))
-  3. page_links    — domínios referenciados nas páginas já crawleadas
+Cruza 4 sinais para identificar domínios relevantes não ainda indexados:
+  1. search_cache          — domínios que aparecem em resultados de busca salvos
+  2. click_log             — domínios clicados pelo usuário (ponderado por 1/log2(2+pos))
+  3. page_links            — domínios referenciados nas páginas já crawleadas
+  4. wiki_citation_counts  — domínios citados em ≥3 artigos da Wikipedia (via wiki_cache)
 
 Domínios já em crawl_sites ou com status='blocked' são descartados.
 Resultado salvo em site_suggestions (upsert por domain, preserva status blocked).
@@ -34,6 +35,44 @@ def _netloc(url: str) -> str:
         return ""
     except Exception:
         return ""
+
+
+async def update_wiki_citation_counts(db: "aiosqlite.Connection") -> int:
+    """Varre wiki_cache e acumula contagem de citações por domínio.
+
+    Para cada entrada do cache, extrai domínios de `cited_sources` e faz upsert
+    em wiki_citation_counts. Retorna número de domínios atualizados.
+    """
+    rows = await (await db.execute(
+        "SELECT data_json FROM wiki_cache"
+    )).fetchall()
+
+    domain_counts: dict[str, int] = defaultdict(int)
+    for (data_json,) in rows:
+        try:
+            card = json.loads(data_json)
+            for url in card.get("cited_sources") or []:
+                domain = _netloc(url)
+                if domain:
+                    domain_counts[domain] += 1
+        except Exception:
+            pass
+
+    if not domain_counts:
+        return 0
+
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    await db.executemany(
+        """INSERT INTO wiki_citation_counts (domain, count, last_seen)
+           VALUES (?, ?, ?)
+           ON CONFLICT(domain) DO UPDATE SET
+               count     = excluded.count,
+               last_seen = excluded.last_seen""",
+        [(domain, count, now) for domain, count in domain_counts.items()],
+    )
+    await db.commit()
+    log.info("update_wiki_citation_counts: %d domínios atualizados", len(domain_counts))
+    return len(domain_counts)
 
 
 async def compute_suggestions(
@@ -103,14 +142,27 @@ async def compute_suggestions(
     except Exception:
         pass
 
+    # ── Sinal 4: domínios citados em artigos da Wikipedia (≥3 artigos) ───────
+    wiki_citation: dict[str, int] = defaultdict(int)
+    try:
+        wiki_rows = await (await db.execute(
+            "SELECT domain, count FROM wiki_citation_counts WHERE count >= 3"
+        )).fetchall()
+        for (domain, count) in wiki_rows:
+            if domain and domain not in skip:
+                wiki_citation[domain] = count
+    except Exception:
+        pass
+
     # ── Score composto ────────────────────────────────────────────────────────
-    all_domains = set(cache_count) | set(click_score) | set(link_count)
+    all_domains = set(cache_count) | set(click_score) | set(link_count) | set(wiki_citation)
     scores: list[tuple[str, float, str]] = []
     for domain in all_domains:
         s1 = cache_count.get(domain, 0)
         s2 = click_score.get(domain, 0.0)
         s3 = link_count.get(domain, 0)
-        score = float(s1) * 1.0 + s2 * 3.0 + float(s3) * 0.5
+        s4 = wiki_citation.get(domain, 0)
+        score = float(s1) * 1.0 + s2 * 3.0 + float(s3) * 0.5 + float(s4) * 2.0
         if score < min_score:
             continue
 
@@ -121,6 +173,8 @@ async def compute_suggestions(
             parts.append(f"clicado {s2:.1f}× (ponderado por posição)")
         if s3:
             parts.append(f"referenciado em {s3} página{'s' if s3 != 1 else ''}")
+        if s4:
+            parts.append(f"citado em {s4} artigo{'s' if s4 != 1 else ''} da Wikipedia")
         reason = ", ".join(parts)
         scores.append((domain, score, reason))
 

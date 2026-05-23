@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 46
+SCHEMA_VERSION = 47
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -497,6 +497,14 @@ CREATE TABLE IF NOT EXISTS geo_cache (
     lat         REAL    NOT NULL,
     lon         REAL    NOT NULL,
     cached_at   INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+_CREATE_WIKI_CITATION_COUNTS = """
+CREATE TABLE IF NOT EXISTS wiki_citation_counts (
+    domain    TEXT    PRIMARY KEY,
+    count     INTEGER NOT NULL DEFAULT 0,
+    last_seen TEXT    NOT NULL DEFAULT ''
 );
 """
 
@@ -1191,6 +1199,13 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         # Geocoding cache: coordenadas por cidade persistidas por 30 dias.
         try:
             await db.execute(_CREATE_GEO_CACHE)
+        except Exception:
+            pass
+
+    if from_version < 47:
+        # Sinal 4 do suggester: frequência de citação por artigos da Wikipedia.
+        try:
+            await db.execute(_CREATE_WIKI_CITATION_COUNTS)
         except Exception:
             pass
 
