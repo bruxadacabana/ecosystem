@@ -191,8 +191,8 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
   - **Windows 10:** `D:\windows\documentos\notebook\` (raiz do repo); arquivos em `inbox\ecosystem_notes\`
   - **CachyOS principal:** `/home/spacewitch/Documents/notebook/` (raiz do repo); arquivos em `inbox/ecosystem_notes/`
   - **Laptop:** `/home/spacewitch/Documents/proton/notebook/` (raiz do repo); arquivos em `01_Projetos/ecosystem/` (a confirmar)
-- **`DESIGN_BIBLE.md` e `GUIDE.md` devem ser mantidos atualizados como prioridade permanente.** Toda implementação — sem exceção — deve ser documentada no `GUIDE.md` na mesma resposta (ou ao menos sinalizar que precisa de atualização). Não esperar a usuária pedir.
-- **Tom obrigatório do `GUIDE.md`:** perspectiva de engenheiro de software escrevendo para um programador iniciante/intermediário — didático, detalhado, contextualiza cada conceito antes de detalhar, explica o "por que" além do "como". Nunca bullet points secos; parágrafos explicativos. Toda nova seção adicionada ao GUIDE deve seguir esse mesmo padrão.
+- **`DESIGN_BIBLE.md` deve ser mantido atualizado como prioridade permanente.**
+- **`GUIDE.md` não é prioridade — será refeito futuramente.** Não atualizar o `GUIDE.md` durante implementações.
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado.
 - **`notes.md` é arquivo de organização pessoal da usuária — nunca editá-lo.** Apenas lê-lo quando necessário para entender o contexto. Todo rastreamento de progresso vai no `TODO.md`. **Sempre commitar o `notes.md` quando houver mudanças não commitadas** — verificar `git status notes.md` proativamente a cada sessão.
 - **Marcar item como `[x]` no TODO imediatamente após concluí-lo** — não acumular para marcar depois, não esperar o fim da sessão.
