@@ -38,7 +38,7 @@ _DEFAULTS: dict[str, Any] = {
     "hub":       {"data_path": ""},
     "hermes":    {"output_dir": "", "config_path": ""},
     "akasha":    {"archive_path": "", "data_path": "", "base_url": "", "config_path": ""},
-    "logos":     {"ollama_base": "http://localhost:11434", "llama_server_url": ""},
+    "logos":     {"llama_server_url": "http://localhost:8080"},
 }
 
 
@@ -126,26 +126,26 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
 
 _LOGOS_PORT = 7072
 _LOGOS_BASE = f"http://127.0.0.1:{_LOGOS_PORT}"
-
-# URL do Ollama a usar nos apps: aponta para o LOGOS (proxy transparente).
-# Apps devem usar get_ollama_url() para obter a URL correta em runtime.
-LOGOS_OLLAMA_BASE = f"http://127.0.0.1:{_LOGOS_PORT}"
-OLLAMA_DIRECT     = "http://localhost:11434"
-
-
-def get_ollama_url() -> str:
-    """Retorna a URL do Ollama a usar: 7072 (LOGOS) se disponível, 11434 direto como fallback."""
-    status = _logos_get("/logos/status", timeout=1.5)
-    return LOGOS_OLLAMA_BASE if status is not None else OLLAMA_DIRECT
+_LLAMA_SERVER_DIRECT = "http://localhost:8080"
 
 
 def get_inference_url() -> str:
-    """URL do backend de inferência: LOGOS (7072) se disponível, backend direto como fallback.
+    """URL do backend de inferência: LOGOS (7072) se disponível, llama-server direto como fallback.
 
-    Agnóstico ao backend (Ollama ou llama-server) — o LOGOS roteia internamente.
-    Usar em preferência a get_ollama_url() em código novo.
+    Primary: LOGOS em 7072.
+    Fallback: llama_server_url do ecosystem.json → default http://localhost:8080.
+    Nunca aponta para Ollama.
     """
-    return get_ollama_url()
+    status = _logos_get("/logos/status", timeout=1.5)
+    if status is not None:
+        return _LOGOS_BASE
+    eco = read_ecosystem()
+    return eco.get("logos", {}).get("llama_server_url") or _LLAMA_SERVER_DIRECT
+
+
+def get_ollama_url() -> str:
+    """Alias de get_inference_url() — mantido para compatibilidade com código legado."""
+    return get_inference_url()
 
 
 def load_model(model_name: str) -> bool:
@@ -208,12 +208,23 @@ def _logos_post(path: str, data: "dict[str, Any]", timeout: float = 10.0) -> "di
 
 
 def get_ollama_base() -> str:
-    """Retorna o endpoint base do Ollama conforme configurado em ecosystem.json.
+    """Alias de get_inference_url() — mantido para compatibilidade com código legado."""
+    return get_inference_url()
 
-    Lê logos.ollama_base; fallback para http://localhost:11434.
+
+def list_inference_models() -> list[str]:
+    """Lista modelos disponíveis no backend de inferência (LOGOS ou llama-server direto).
+
+    Retorna [] se o backend estiver offline ou retornar erro.
     """
-    eco = read_ecosystem()
-    return eco.get("logos", {}).get("ollama_base", "http://localhost:11434")
+    import urllib.request as _r
+    url = f"{get_inference_url()}/v1/models"
+    try:
+        with _r.urlopen(url, timeout=5.0) as resp:
+            data = json.loads(resp.read())
+            return [item["id"] for item in data.get("data", [])]
+    except OSError:
+        return []
 
 
 def logos_status() -> "dict[str, Any] | None":
@@ -270,20 +281,18 @@ def request_llm(
     app: str,
     model: "str | None" = None,
     priority: int = 3,
-    stream: bool = False,
-    ollama_base: str = "http://localhost:11434",
     **options: Any,
 ) -> "dict[str, Any]":
-    """Envia chamada LLM ao LOGOS (fila de prioridades) com failsafe direto ao Ollama.
+    """Envia chamada LLM ao backend de inferência (LOGOS → llama-server).
 
-    Se `model` for None, consulta GET /logos/hardware e usa o modelo recomendado
-    para o `app` informado. Callers que passam `model` explicitamente não são afetados.
-    Quando LOGOS offline, usa hardware_probe como fallback (correto por hardware × função).
+    Tenta via get_inference_url() (LOGOS se disponível, llama-server direto como fallback).
+    Se falhar, tenta _LLAMA_SERVER_DIRECT como segunda tentativa.
+    Retorna resposta OpenAI-compatível completa (choices[0].message.content).
 
     priority: 1=P1 interativo, 2=P2 RAG, 3=P3 background (padrão)
 
     Raises:
-        RuntimeError: se LOGOS rejeitar (429) ou Ollama retornar erro HTTP.
+        RuntimeError: se backend rejeitar (429) ou estiver indisponível.
     """
     import urllib.request as _r
     import urllib.error as _ue
@@ -296,47 +305,48 @@ def request_llm(
         else:
             model = _fallback_model_for_app(app)
 
+    temperature = options.pop("temperature", 0.7)
+    max_tokens = options.pop("max_tokens", None) or options.pop("num_predict", None)
+
     payload: dict[str, Any] = {
-        "app": app,
-        "priority": max(1, min(3, priority)),
         "model": model,
         "messages": messages,
-        "stream": stream,
-        **options,
+        "stream": False,
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = int(max_tokens)
+
+    req_headers = {
+        "Content-Type": "application/json",
+        "X-App": app,
+        "X-Priority": str(max(1, min(3, priority))),
     }
 
-    # --- Tentar via LOGOS ---
-    logos_req = _r.Request(
-        f"{_LOGOS_BASE}/logos/chat",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with _r.urlopen(logos_req, timeout=300) as resp:
-            return json.loads(resp.read())
-    except _ue.HTTPError as e:
-        if e.code == 429:
-            raise RuntimeError(json.loads(e.read()).get("error", "LOGOS: solicitação rejeitada (429)"))
-        # Outros erros HTTP → fallback ao Ollama direto
-    except OSError:
-        pass  # HUB/LOGOS não está rodando → modo emergência
+    def _try(base: str) -> "dict[str, Any] | None":
+        req = _r.Request(
+            f"{base}/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers=req_headers,
+            method="POST",
+        )
+        try:
+            with _r.urlopen(req, timeout=300) as resp:
+                return json.loads(resp.read())
+        except _ue.HTTPError as e:
+            if e.code == 429:
+                raise RuntimeError(json.loads(e.read()).get("error", "backend: solicitação rejeitada (429)"))
+            return None
+        except OSError:
+            return None
 
-    # --- Failsafe: Ollama direto ---
-    direct: dict[str, Any] = {k: v for k, v in payload.items() if k not in ("app", "priority")}
-    direct_req = _r.Request(
-        f"{ollama_base}/api/chat",
-        data=json.dumps(direct).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with _r.urlopen(direct_req, timeout=300) as resp:
-            return json.loads(resp.read())
-    except _ue.HTTPError as e:
-        raise RuntimeError(f"Ollama HTTP {e.code}: {e.read().decode(errors='replace')}")
-    except OSError as e:
-        raise RuntimeError(f"Ollama indisponível: {e}")
+    result = _try(get_inference_url())
+    if result is not None:
+        return result
+    result = _try(_LLAMA_SERVER_DIRECT)
+    if result is not None:
+        return result
+    raise RuntimeError("Backend de inferência indisponível (LOGOS e llama-server direto)")
 
 
 def request_llm_stream(
@@ -345,15 +355,15 @@ def request_llm_stream(
     app: str,
     model: "str | None" = None,
     priority: int = 1,
-    ollama_base: str = "http://localhost:11434",
     **options: Any,
 ) -> "Generator[str, None, None]":
-    """Streaming LLM via LOGOS (P1 por padrão) com fallback direto ao Ollama.
+    """Streaming LLM via backend de inferência (P1 por padrão).
 
-    Yields tokens de texto à medida que chegam (NDJSON, campo ``message.content``).
+    Yields tokens de texto (SSE OpenAI-compatível, choices[0].delta.content).
+    Fallback: tenta get_inference_url() depois _LLAMA_SERVER_DIRECT.
 
     Raises:
-        RuntimeError: se LOGOS rejeitar (429) ou Ollama retornar erro.
+        RuntimeError: se backend rejeitar (429) ou estiver indisponível.
     """
     import urllib.request as _r
     import urllib.error as _ue
@@ -362,22 +372,51 @@ def request_llm_stream(
     if model is None:
         profile = get_active_profile()
         if profile is not None:
-            key = _APP_MODEL_KEY.get(app, "llm_kosmos")
-            model = profile["models"].get(key, _FALLBACK_MODEL)
+            key = _APP_MODEL_KEY.get(app, "llm_query")
+            model = profile["models"].get(key) or _fallback_model_for_app(app)
         else:
-            model = _FALLBACK_MODEL
+            model = _fallback_model_for_app(app)
+
+    temperature = options.pop("temperature", 0.7)
+    max_tokens = options.pop("max_tokens", None) or options.pop("num_predict", None)
 
     payload: dict[str, Any] = {
-        "app": app,
-        "priority": max(1, min(3, priority)),
         "model": model,
         "messages": messages,
         "stream": True,
-        **options,
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = int(max_tokens)
+
+    req_headers = {
+        "Content-Type": "application/json",
+        "X-App": app,
+        "X-Priority": str(max(1, min(3, priority))),
     }
 
-    def _iter_ndjson(resp: Any) -> "Generator[str, None, None]":
-        buf = b""
+    resp = None
+    for base_url in (get_inference_url(), _LLAMA_SERVER_DIRECT):
+        req = _r.Request(
+            f"{base_url}/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers=req_headers,
+            method="POST",
+        )
+        try:
+            resp = _r.urlopen(req, timeout=300)
+            break
+        except _ue.HTTPError as e:
+            if e.code == 429:
+                raise RuntimeError(json.loads(e.read()).get("error", "backend: solicitação rejeitada (429)"))
+        except OSError:
+            continue
+
+    if resp is None:
+        raise RuntimeError("Backend de inferência indisponível para streaming")
+
+    buf = b""
+    try:
         while True:
             chunk = resp.read(512)
             if not chunk:
@@ -386,54 +425,22 @@ def request_llm_stream(
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
                 line = line.strip()
-                if not line:
+                if not line.startswith(b"data:"):
                     continue
+                data = line[5:].strip()
+                if data == b"[DONE]":
+                    return
                 try:
-                    obj = json.loads(line)
-                    token = (
-                        obj.get("message", {}).get("content")  # /api/chat
-                        or obj.get("response")                  # /api/generate
-                        or ""
-                    )
+                    obj = json.loads(data)
+                    token = obj["choices"][0]["delta"].get("content", "")
                     if token:
                         yield token
-                    if obj.get("done"):
+                    if obj["choices"][0].get("finish_reason") == "stop":
                         return
-                except (json.JSONDecodeError, AttributeError):
+                except (json.JSONDecodeError, KeyError, IndexError):
                     continue
-
-    # --- Tentar via LOGOS ---
-    logos_req = _r.Request(
-        f"{_LOGOS_BASE}/logos/chat",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with _r.urlopen(logos_req, timeout=300) as resp:
-            yield from _iter_ndjson(resp)
-            return
-    except _ue.HTTPError as e:
-        if e.code == 429:
-            raise RuntimeError(json.loads(e.read()).get("error", "LOGOS: solicitação rejeitada (429)"))
-    except OSError:
-        pass  # HUB não está rodando → fallback
-
-    # --- Failsafe: Ollama direto ---
-    direct: dict[str, Any] = {k: v for k, v in payload.items() if k not in ("app", "priority")}
-    direct_req = _r.Request(
-        f"{ollama_base}/api/chat",
-        data=json.dumps(direct).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with _r.urlopen(direct_req, timeout=300) as resp:
-            yield from _iter_ndjson(resp)
-    except _ue.HTTPError as e:
-        raise RuntimeError(f"Ollama HTTP {e.code}: {e.read().decode(errors='replace')}")
-    except OSError as e:
-        raise RuntimeError(f"Ollama indisponível: {e}")
+    finally:
+        resp.close()
 
 
 def _lock_path() -> Path:

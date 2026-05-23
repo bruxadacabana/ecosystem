@@ -1,6 +1,6 @@
 """
 Testes para as funções de gestão de inferência em ecosystem_client.py:
-  - get_inference_url(): mesma semântica que get_ollama_url()
+  - get_inference_url(): LOGOS (7072) se disponível; llama-server direto (8080) como fallback
   - load_model(): chama /logos/models/load e interpreta resposta
   - unload_model(): chama /logos/models/unload e interpreta resposta
 
@@ -27,10 +27,11 @@ def test_get_inference_url_logos_available():
 
 
 def test_get_inference_url_logos_offline():
-    """Com LOGOS offline retorna Ollama direto (11434)."""
+    """Com LOGOS offline retorna llama-server direto (8080)."""
     with patch.object(ec, "_logos_get", return_value=None):
         url = ec.get_inference_url()
-    assert "11434" in url
+    assert "8080" in url
+    assert "11434" not in url
 
 
 def test_get_inference_url_same_as_get_ollama_url():
