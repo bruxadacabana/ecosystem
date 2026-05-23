@@ -8,6 +8,7 @@
 //
 //  Rotas próprias:
 //    GET  /logos/status    → StatusResponse
+//    GET  /logos/vram      → VramResponse (usado_mb, total_mb, used_pct, profile)
 //    POST /logos/chat      → proxy para Ollama /api/chat (API legada)
 //    POST /logos/silence   → keep_alive: 0 em todos os modelos carregados
 //
@@ -447,6 +448,19 @@ pub struct HardwareResponse {
     pub max_concurrent:       u32,
 }
 
+/// Resposta do endpoint GET /logos/vram — snapshot de VRAM/RAM.
+#[derive(Serialize)]
+pub struct VramResponse {
+    /// VRAM em uso em MB (None se não detectado)
+    pub used_mb:          Option<u64>,
+    /// VRAM total em MB do perfil de hardware (None se WorkPc/CPU-only)
+    pub total_mb:         Option<u64>,
+    /// Percentual de uso 0–100 (None se total desconhecido)
+    pub used_pct:         Option<f32>,
+    /// Perfil de hardware: "main_pc" | "laptop" | "work_pc"
+    pub hardware_profile: &'static str,
+}
+
 /// Slot de modelo — app + tipo + labels legíveis.
 #[derive(Serialize, Clone)]
 pub struct ModelSlot {
@@ -532,6 +546,7 @@ pub fn build_router(state: LogosState) -> Router {
     Router::new()
         // LOGOS API própria
         .route("/logos/status",         get(status_handler))
+        .route("/logos/vram",           get(vram_handler))
         .route("/logos/chat",           post(chat_handler))
         .route("/logos/silence",        post(silence_handler))
         .route("/logos/profile",        post(profile_handler))
@@ -1078,6 +1093,18 @@ async fn hardware_handler(State(s): State<LogosState>) -> Json<HardwareResponse>
         profile_display:  hw.display(),
         models:           hw.model_profile(),
         max_concurrent:   max_concurrent_for_profile(hw),
+    })
+}
+
+async fn vram_handler(State(s): State<LogosState>) -> Json<VramResponse> {
+    let hw = s.0.hardware_profile;
+    let (used_mb, pct) = vram_usage(&s.0.client, &s.0.ollama_url, hw).await;
+    let total_mb = hw.vram_total_mb();
+    Json(VramResponse {
+        used_mb,
+        total_mb,
+        used_pct: pct.map(|p| p * 100.0),
+        hardware_profile: hw.as_str(),
     })
 }
 
