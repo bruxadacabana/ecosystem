@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import logging
 
-from langchain_ollama import ChatOllama, OllamaLLM
+from langchain_openai import ChatOpenAI
 try:
     from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
 except ImportError:
-    _ec_url  = lambda: "http://localhost:11434"
+    _ec_url  = lambda: "http://localhost:8080"
     _ec_hdrs = lambda app, p: {}
 from PySide6.QtCore import QThread, Signal
 
@@ -41,6 +41,7 @@ from core.indexer import (
     _prepend_titles,
     _add_language_metadata,
     _get_splitter,
+    _get_embeddings,
     _clear_orphan_wal,
     IndexCheckpoint,
 )
@@ -63,7 +64,7 @@ def _trim_partial_think(text: str, tag: str) -> int:
 
 
 class OllamaCheckWorker(QThread):
-    """Verifica disponibilidade do Ollama e lista modelos instalados."""
+    """Verifica disponibilidade do backend de inferência e lista modelos instalados."""
 
     models_loaded = Signal(list)      # list[OllamaModel]
     ollama_unavailable = Signal(str)  # mensagem de erro
@@ -75,7 +76,7 @@ class OllamaCheckWorker(QThread):
         except OllamaUnavailableError as exc:
             self.ollama_unavailable.emit(str(exc))
         except Exception as exc:
-            self.ollama_unavailable.emit(f"Erro inesperado ao contatar Ollama: {exc}")
+            self.ollama_unavailable.emit(f"Erro inesperado ao contatar backend de inferência: {exc}")
 
 
 class IndexWorker(QThread):
@@ -113,7 +114,6 @@ class IndexWorker(QThread):
         import uuid
         from concurrent.futures import ThreadPoolExecutor
         from langchain_chroma import Chroma
-        from langchain_ollama import OllamaEmbeddings
 
         _SUPPORTED = {".pdf", ".docx", ".txt", ".md", ".epub"}
         if self.config.image_ocr_model:
@@ -181,7 +181,7 @@ class IndexWorker(QThread):
             pass
 
         _BATCH, _SLEEP = _detect_batch_config()
-        embeddings = OllamaEmbeddings(model=self.config.embed_model)
+        embeddings = _get_embeddings(self.config)
         splitter = _get_splitter(self.config, embeddings, source_type=self.config.collection_type)
         tracker = FileTracker(self.config.mnemosyne_dir)
         checkpoint = IndexCheckpoint(self.config.mnemosyne_dir)
@@ -402,7 +402,6 @@ class ResumeIndexWorker(QThread):
         if self.config.image_ocr_model:
             _SUPPORTED |= {".jpg", ".jpeg", ".png", ".webp"}
         from langchain_chroma import Chroma
-        from langchain_ollama import OllamaEmbeddings
         get_and_clear_unknown_sources()  # limpar acumulador de sessão anterior
 
         log.info("ResumeIndexWorker iniciado — pasta: %s", self.config.watched_dir)
@@ -448,7 +447,7 @@ class ResumeIndexWorker(QThread):
         _clear_orphan_wal(self.config.persist_dir)
 
         _BATCH, _SLEEP = _detect_batch_config()
-        embeddings = OllamaEmbeddings(model=self.config.embed_model)
+        embeddings = _get_embeddings(self.config)
         splitter = _get_splitter(self.config, embeddings, source_type=self.config.collection_type)
         tracker = FileTracker(self.config.mnemosyne_dir)
         bm25_idx = BM25Index.load(self.config.mnemosyne_dir)
@@ -755,8 +754,8 @@ class AskWorker(QThread):
             return
 
         try:
-            llm = ChatOllama(model=self.config.llm_model, base_url=_ec_url(),
-                             headers=_ec_hdrs("mnemosyne", 1), temperature=0, num_ctx=8192)
+            llm = ChatOpenAI(model=self.config.llm_model, base_url=f"{_ec_url()}/v1",
+                             default_headers=_ec_hdrs("mnemosyne", 1), temperature=0, api_key="logos")
             full = ""
             buf = ""
             in_think = False
@@ -1021,8 +1020,8 @@ class DeepResearchWorker(QThread):
             return
 
         try:
-            llm  = ChatOllama(model=self.config.llm_model, base_url=_ec_url(),
-                              headers=_ec_hdrs("mnemosyne", 1), temperature=0, num_ctx=8192)
+            llm  = ChatOpenAI(model=self.config.llm_model, base_url=f"{_ec_url()}/v1",
+                              default_headers=_ec_hdrs("mnemosyne", 1), temperature=0, api_key="logos")
             full = ""
             for chunk in llm.stream([system_msg, human_msg]):
                 if self.isInterruptionRequested():
@@ -1375,9 +1374,9 @@ class SuggestQuestionsWorker(QThread):
         )
 
         try:
-            llm = OllamaLLM(model=self._config.llm_model, base_url=_ec_url(),
-                            headers=_ec_hdrs("mnemosyne", 2), temperature=0.9)
-            raw = llm.invoke(prompt)
+            llm = ChatOpenAI(model=self._config.llm_model, base_url=f"{_ec_url()}/v1",
+                             default_headers=_ec_hdrs("mnemosyne", 2), temperature=0.9, api_key="logos")
+            raw = llm.invoke(prompt).content
             self.questions_ready.emit(_parse_numbered_questions(str(raw)))
         except Exception:
             self.questions_ready.emit([])
@@ -1454,9 +1453,9 @@ class PersonalReflectionWorker(QThread):
         )
 
         try:
-            llm = OllamaLLM(model=self._config.llm_model, base_url=_ec_url(),
-                            headers=_ec_hdrs("mnemosyne", 3), temperature=0.7)
-            raw = str(llm.invoke(prompt)).strip()
+            llm = ChatOpenAI(model=self._config.llm_model, base_url=f"{_ec_url()}/v1",
+                             default_headers=_ec_hdrs("mnemosyne", 3), temperature=0.7, api_key="logos")
+            raw = llm.invoke(prompt).content.strip()
         except Exception:
             return
 
@@ -1543,9 +1542,9 @@ class PeriodicReflectionWorker(QThread):
         )
 
         try:
-            llm = OllamaLLM(model=self._config.llm_model, base_url=_ec_url(),
-                            headers=_ec_hdrs("mnemosyne", 3), temperature=0.7)
-            raw = str(llm.invoke(prompt)).strip()
+            llm = ChatOpenAI(model=self._config.llm_model, base_url=f"{_ec_url()}/v1",
+                             default_headers=_ec_hdrs("mnemosyne", 3), temperature=0.7, api_key="logos")
+            raw = llm.invoke(prompt).content.strip()
         except Exception:
             self.finished.emit()
             return
@@ -1608,8 +1607,7 @@ class IndexReflectionWorker(QThread):
             pass
 
         try:
-            from langchain_ollama import OllamaEmbeddings
-            embeddings = OllamaEmbeddings(model=self._config.embed_model)
+            embeddings = _get_embeddings(self._config)
             vs = Chroma(
                 persist_directory=self._config.persist_dir,
                 embedding_function=embeddings,
@@ -1710,10 +1708,10 @@ class IndexReflectionWorker(QThread):
         )
 
         try:
-            llm = OllamaLLM(model=self._config.llm_model, base_url=_ec_url(),
-                            headers=_ec_hdrs("mnemosyne", 3), temperature=0.7,
-                            num_predict=120)
-            raw = str(llm.invoke(prompt)).strip()
+            llm = ChatOpenAI(model=self._config.llm_model, base_url=f"{_ec_url()}/v1",
+                             default_headers=_ec_hdrs("mnemosyne", 3), temperature=0.7,
+                             max_tokens=120, api_key="logos")
+            raw = llm.invoke(prompt).content.strip()
         except Exception as exc:
             log.debug("IndexReflectionWorker: LLM falhou para '%s': %s", name, exc)
             return
@@ -1840,14 +1838,15 @@ class FeedbackReflectionWorker(QThread):
         prompt = f"{personality}\n\n{instruction}"
 
         try:
-            llm = OllamaLLM(
+            llm = ChatOpenAI(
                 model=self._config.llm_model,
-                base_url=_ec_url(),
-                headers=_ec_hdrs("mnemosyne", 3),
+                base_url=f"{_ec_url()}/v1",
+                default_headers=_ec_hdrs("mnemosyne", 3),
                 temperature=0.6,
-                num_predict=80,
+                max_tokens=80,
+                api_key="logos",
             )
-            raw = str(llm.invoke(prompt)).strip()
+            raw = llm.invoke(prompt).content.strip()
         except Exception as exc:
             log.debug("FeedbackReflectionWorker: LLM falhou: %s", exc)
             return
