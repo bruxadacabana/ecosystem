@@ -3,7 +3,7 @@ name = "akasha"
 version = "0.1.0"
 description = "AKASHA — Buscador pessoal local do ecossistema"
 authors = [{ name = "Jenifer Angelo" }]
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",

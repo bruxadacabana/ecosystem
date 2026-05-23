@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 # AKASHA — Script de inicialização
-# Detecta o venv do ecossistema ou cria um local, então executa o servidor.
+# Usa o venv local gerenciado pelo uv (AKASHA/.venv, Python 3.13).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ECO_VENV="$(dirname "$SCRIPT_DIR")/.venv"
-LOCAL_VENV="$SCRIPT_DIR/.venv"
-
 cd "$SCRIPT_DIR"
 
-# ── Escolhe o venv a usar ────────────────────────────────────────────
-if [ -d "$ECO_VENV" ] && [ -f "$ECO_VENV/bin/activate" ]; then
-    VENV_DIR="$ECO_VENV"
-else
-    VENV_DIR="$LOCAL_VENV"
-    if [ ! -d "$VENV_DIR" ]; then
-        echo "[AKASHA] Criando venv local em $VENV_DIR"
-        uv venv "$VENV_DIR"
-    fi
+# ── Garante que uv está no PATH ───────────────────────────────────────
+if ! command -v uv &>/dev/null; then
+    for candidate in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv" /usr/local/bin/uv; do
+        if [ -x "$candidate" ]; then
+            export PATH="$(dirname "$candidate"):$PATH"
+            break
+        fi
+    done
+fi
+if ! command -v uv &>/dev/null; then
+    echo "[AKASHA] ERRO: uv não encontrado. Instale em https://docs.astral.sh/uv/getting-started/installation/" >&2
+    exit 1
 fi
 
-# ── Sincroniza dependências ───────────────────────────────────────────
+# ── Sincroniza dependências no venv local (Python 3.13) ──────────────
 echo "[AKASHA] Sincronizando dependências…"
-uv sync --python "$VENV_DIR/bin/python"
+uv sync --python 3.13
 
 # ── Inicia o servidor ─────────────────────────────────────────────────
 echo "[AKASHA] Iniciando na porta 7071…"
 xdg-open "http://localhost:7071" 2>/dev/null &
-uv run python main.py
+uv run --python 3.13 python main.py
