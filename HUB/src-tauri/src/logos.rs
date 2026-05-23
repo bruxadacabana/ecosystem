@@ -34,7 +34,7 @@
 
 use axum::{
     body::Bytes,
-    extract::State,
+    extract::{Path as AxumPath, State},
     http::{header, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -44,7 +44,7 @@ use axum::{
     Json, Router,
 };
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -335,6 +335,11 @@ struct Inner {
     /// true  → VRAM acima do threshold; P3 bloqueado até cair abaixo de 70%.
     /// false → P3 permitido (verificação por-request ainda acontece como defesa).
     p3_vram_blocked: Arc<AtomicBool>,
+    /// Downloads de GGUF em andamento ou concluídos recentemente.
+    /// Chave: download ID (timestamp_filename). Valor: sender do canal de progresso.
+    downloads: Mutex<HashMap<String, tokio::sync::watch::Sender<DownloadProgress>>>,
+    /// Diretório onde os modelos GGUF são salvos: {hub_data_path}/logos/models/
+    models_dir: std::path::PathBuf,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -393,6 +398,19 @@ impl LogosState {
             "normal".to_string()
         };
         let hardware_profile = detect_hardware_profile();
+        let models_dir = {
+            let eco = crate::ecosystem::read_json();
+            let hub_data = eco["hub"]["data_path"].as_str().map(std::path::PathBuf::from);
+            hub_data
+                .or_else(|| dirs::data_local_dir().map(|d| d.join("ecosystem").join("hub")))
+                .unwrap_or_else(|| {
+                    dirs::home_dir()
+                        .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+                        .join(".local").join("share").join("ecosystem").join("hub")
+                })
+                .join("logos")
+                .join("models")
+        };
         // Inicialização prévia do sysinfo — primeira leitura é sempre 0%; a segunda é o delta real.
         let mut sys = System::new_all();
         sys.refresh_cpu_all();
@@ -417,6 +435,8 @@ impl LogosState {
             vram_limit_pct: Mutex::new(vram_limit_pct),
             active_inferences: Mutex::new(HashMap::new()),
             p3_vram_blocked: Arc::new(AtomicBool::new(false)),
+            downloads: Mutex::new(HashMap::new()),
+            models_dir,
         }))
     }
 }
@@ -581,6 +601,43 @@ pub struct OllamaStatus {
     pub message: String,
 }
 
+// ── Download de GGUF via HuggingFace ──────────────────────────
+
+/// Payload de POST /logos/models/download
+#[derive(Deserialize)]
+struct DownloadRequest {
+    /// Ex: "bartowski/Phi-3.5-mini-instruct-GGUF"
+    repo_id:  String,
+    /// Ex: "Phi-3.5-mini-instruct-Q4_K_M.gguf"
+    filename: String,
+}
+
+/// Progresso de download emitido via SSE a cada 500 ms e no final.
+#[derive(Serialize, Clone)]
+pub struct DownloadProgress {
+    pub id:               String,
+    pub filename:         String,
+    pub bytes_downloaded: u64,
+    pub total_bytes:      Option<u64>,
+    /// Percentual 0–100; None quando Content-Length não informado
+    pub pct:              Option<f32>,
+    pub speed_mbps:       f32,
+    pub done:             bool,
+    pub error:            Option<String>,
+}
+
+/// Entrada no registry local logos/models/registry.json
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ModelRegistryEntry {
+    pub name:          String,   // filename sem extensão
+    pub repo_id:       String,
+    pub filename:      String,
+    pub path:          String,   // caminho absoluto do arquivo
+    pub size_bytes:    u64,
+    pub sha256:        String,
+    pub downloaded_at: String,   // ISO 8601
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 pub fn build_router(state: LogosState) -> Router {
@@ -592,10 +649,13 @@ pub fn build_router(state: LogosState) -> Router {
         .route("/logos/chat",           post(chat_handler))
         .route("/logos/silence",        post(silence_handler))
         .route("/logos/profile",        post(profile_handler))
-        .route("/logos/models",         get(models_handler))
-        .route("/logos/models/load",    post(models_load_handler))
-        .route("/logos/models/unload",  post(models_unload_handler))
-        .route("/logos/hardware",       get(hardware_handler))
+        .route("/logos/models",                          get(models_handler))
+        .route("/logos/models/load",                     post(models_load_handler))
+        .route("/logos/models/unload",                   post(models_unload_handler))
+        .route("/logos/models/download",                 post(download_model_handler))
+        .route("/logos/models/download/progress/:id",    get(download_progress_handler))
+        .route("/logos/models/registry",                 get(model_registry_handler))
+        .route("/logos/hardware",                        get(hardware_handler))
         // Proxy transparente — apps apontam para 7072 em vez de 11434
         .route("/api/chat",       post(api_chat_proxy))
         .route("/api/generate",   post(api_generate_proxy))
@@ -2173,6 +2233,262 @@ pub fn configure_ollama_env(profile: HardwareProfile) {
     }
 }
 
+// ── Download de GGUF do HuggingFace ──────────────────────────
+
+/// POST /logos/models/download — inicia download em background e retorna { id }.
+async fn download_model_handler(
+    State(s): State<LogosState>,
+    Json(req): Json<DownloadRequest>,
+) -> Response {
+    if req.repo_id.is_empty() || req.filename.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "campos 'repo_id' e 'filename' são obrigatórios" })),
+        ).into_response();
+    }
+    // Rejeita filenames com path traversal
+    if req.filename.contains("..") || req.filename.contains('/') || req.filename.contains('\\') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "filename inválido" })),
+        ).into_response();
+    }
+
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let safe_name = req.filename.replace(['.', '-', ' '], "_");
+    let id = format!("{ts}_{safe_name}");
+
+    // Verifica se já existe um download ativo para o mesmo arquivo
+    {
+        let map = s.0.downloads.lock().await;
+        for tx in map.values() {
+            let p = tx.borrow();
+            if p.filename == req.filename && !p.done && p.error.is_none() {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({
+                        "error": "download já em andamento para este arquivo",
+                        "id": p.id,
+                    })),
+                ).into_response();
+            }
+        }
+    }
+
+    let hf_url = format!(
+        "https://huggingface.co/{}/resolve/main/{}",
+        req.repo_id, req.filename
+    );
+
+    let initial = DownloadProgress {
+        id:               id.clone(),
+        filename:         req.filename.clone(),
+        bytes_downloaded: 0,
+        total_bytes:      None,
+        pct:              None,
+        speed_mbps:       0.0,
+        done:             false,
+        error:            None,
+    };
+    let (tx, _) = tokio::sync::watch::channel(initial);
+    s.0.downloads.lock().await.insert(id.clone(), tx.clone());
+
+    let s_task  = s.clone();
+    let id_task = id.clone();
+    let url_log = hf_url.clone();
+    tokio::spawn(async move {
+        download_model_task(s_task, id_task, hf_url, req.repo_id, req.filename, tx).await;
+    });
+
+    log::info!("LOGOS: download iniciado — id={id}, url={url_log}");
+    (StatusCode::ACCEPTED, Json(serde_json::json!({ "id": id }))).into_response()
+}
+
+/// GET /logos/models/download/progress/:id — SSE com progresso do download.
+async fn download_progress_handler(
+    State(s): State<LogosState>,
+    AxumPath(id): AxumPath<String>,
+) -> impl IntoResponse {
+    let rx = {
+        let map = s.0.downloads.lock().await;
+        map.get(&id).map(|tx| tx.subscribe())
+    };
+
+    let Some(mut rx) = rx else {
+        return (StatusCode::NOT_FOUND, "download não encontrado").into_response();
+    };
+
+    let stream = async_stream::stream! {
+        loop {
+            let progress = rx.borrow().clone();
+            let done = progress.done || progress.error.is_some();
+            if let Ok(json) = serde_json::to_string(&progress) {
+                yield Ok::<Event, std::convert::Infallible>(Event::default().data(json));
+            }
+            if done { break; }
+            if rx.changed().await.is_err() { break; }
+        }
+    };
+    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
+}
+
+/// GET /logos/models/registry — lista modelos baixados registrados em registry.json.
+async fn model_registry_handler(State(s): State<LogosState>) -> Response {
+    let entries = read_model_registry(&s.0.models_dir).await;
+    (StatusCode::OK, Json(entries)).into_response()
+}
+
+/// Task de download em background.
+async fn download_model_task(
+    s:        LogosState,
+    id:       String,
+    url:      String,
+    repo_id:  String,
+    filename: String,
+    tx:       tokio::sync::watch::Sender<DownloadProgress>,
+) {
+    // Envia erro e limpa o mapa após 60s para consumidores tardios
+    macro_rules! fail {
+        ($msg:expr) => {{
+            let _ = tx.send(DownloadProgress {
+                id: id.clone(), filename: filename.clone(),
+                bytes_downloaded: 0, total_bytes: None, pct: None,
+                speed_mbps: 0.0, done: true, error: Some($msg),
+            });
+            log::warn!("LOGOS: download falhou — id={id}: {}", $msg);
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            s.0.downloads.lock().await.remove(&id);
+            return;
+        }};
+    }
+
+    // Passo 1: iniciar request HTTP
+    let mut resp = match s.0.client.get(&url).send().await {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r)  => fail!(format!("HuggingFace retornou {}", r.status())),
+        Err(e) => fail!(format!("Erro de rede: {e}")),
+    };
+
+    let total_bytes = resp.content_length();
+
+    // Passo 2: criar arquivo de destino
+    if let Err(e) = tokio::fs::create_dir_all(&s.0.models_dir).await {
+        fail!(format!("Erro ao criar diretório de modelos: {e}"));
+    }
+    let out_path = s.0.models_dir.join(&filename);
+    let mut file = match tokio::fs::File::create(&out_path).await {
+        Ok(f)  => f,
+        Err(e) => fail!(format!("Erro ao criar arquivo de destino: {e}")),
+    };
+
+    // Passo 3: stream de chunks + SHA256
+    use sha2::{Digest as _, Sha256};
+    use tokio::io::AsyncWriteExt as _;
+
+    let mut hasher            = Sha256::new();
+    let mut bytes_downloaded  = 0u64;
+    let start                 = std::time::Instant::now();
+    let mut last_report       = std::time::Instant::now();
+
+    loop {
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                hasher.update(&chunk);
+                bytes_downloaded += chunk.len() as u64;
+                if let Err(e) = file.write_all(&chunk).await {
+                    let _ = tokio::fs::remove_file(&out_path).await;
+                    fail!(format!("Erro de escrita: {e}"));
+                }
+                if last_report.elapsed().as_millis() >= 500 {
+                    let elapsed   = start.elapsed().as_secs_f64().max(0.001);
+                    let speed_mbps = (bytes_downloaded as f64 / elapsed / 1_000_000.0) as f32;
+                    let pct = total_bytes
+                        .filter(|&t| t > 0)
+                        .map(|t| bytes_downloaded as f32 / t as f32 * 100.0);
+                    let _ = tx.send(DownloadProgress {
+                        id: id.clone(), filename: filename.clone(),
+                        bytes_downloaded, total_bytes, pct, speed_mbps,
+                        done: false, error: None,
+                    });
+                    last_report = std::time::Instant::now();
+                }
+            }
+            Ok(None) => break, // transfer completa
+            Err(e)   => {
+                let _ = tokio::fs::remove_file(&out_path).await;
+                fail!(format!("Erro ao receber chunk: {e}"));
+            }
+        }
+    }
+
+    if let Err(e) = file.flush().await {
+        let _ = tokio::fs::remove_file(&out_path).await;
+        fail!(format!("Erro ao finalizar arquivo: {e}"));
+    }
+    drop(file);
+
+    // Passo 4: SHA256 e registry
+    let sha256 = hex::encode(hasher.finalize());
+    let entry  = ModelRegistryEntry {
+        name:          filename.trim_end_matches(".gguf").to_string(),
+        repo_id:       repo_id.clone(),
+        filename:      filename.clone(),
+        path:          out_path.to_string_lossy().into_owned(),
+        size_bytes:    bytes_downloaded,
+        sha256:        sha256.clone(),
+        downloaded_at: chrono::Local::now().to_rfc3339(),
+    };
+    update_model_registry(&s.0.models_dir, entry).await;
+
+    // Passo 5: progresso final
+    let elapsed    = start.elapsed().as_secs_f64().max(0.001);
+    let speed_mbps = (bytes_downloaded as f64 / elapsed / 1_000_000.0) as f32;
+    let _ = tx.send(DownloadProgress {
+        id: id.clone(), filename: filename.clone(),
+        bytes_downloaded, total_bytes, pct: Some(100.0), speed_mbps,
+        done: true, error: None,
+    });
+
+    log::info!(
+        "LOGOS: download concluído — {} ({:.1} MB em {:.1}s, {:.1} MB/s, sha256={}…)",
+        filename,
+        bytes_downloaded as f64 / 1_000_000.0,
+        elapsed,
+        speed_mbps,
+        &sha256[..8],
+    );
+
+    // Mantém entrada para consumidores tardios do SSE
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    s.0.downloads.lock().await.remove(&id);
+}
+
+/// Lê o registry de modelos GGUF de {models_dir}/registry.json.
+/// Retorna vec vazio se o arquivo não existir ou estiver corrompido.
+async fn read_model_registry(models_dir: &std::path::Path) -> Vec<ModelRegistryEntry> {
+    let path = models_dir.join("registry.json");
+    tokio::fs::read_to_string(&path)
+        .await
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Adiciona ou atualiza uma entrada no registry.
+/// Entradas com o mesmo `filename` são substituídas (re-download).
+async fn update_model_registry(models_dir: &std::path::Path, entry: ModelRegistryEntry) {
+    let path = models_dir.join("registry.json");
+    let mut entries = read_model_registry(models_dir).await;
+    entries.retain(|e| e.filename != entry.filename);
+    entries.push(entry);
+    if let Ok(json) = serde_json::to_string_pretty(&entries) {
+        let _ = tokio::fs::write(&path, json).await;
+    }
+}
+
 // ── Entry point ───────────────────────────────────────────────
 
 pub async fn start_server(state: LogosState) {
@@ -2276,5 +2592,126 @@ pub async fn start_server(state: LogosState) {
     log::info!("LOGOS iniciado em http://{addr}");
     if let Err(e) = axum::serve(listener, build_router(state)).await {
         log::error!("LOGOS: servidor encerrado inesperadamente: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    // ── ModelRegistryEntry — serialização roundtrip ───────────────────────────
+
+    #[test]
+    fn registry_entry_serde_roundtrip() {
+        let entry = ModelRegistryEntry {
+            name:          "Phi-3_5-mini-instruct-Q4_K_M".to_string(),
+            repo_id:       "bartowski/Phi-3.5-mini-instruct-GGUF".to_string(),
+            filename:      "Phi-3.5-mini-instruct-Q4_K_M.gguf".to_string(),
+            path:          "/home/user/.local/share/ecosystem/hub/logos/models/Phi-3.5-mini-instruct-Q4_K_M.gguf".to_string(),
+            size_bytes:    2_400_000_000,
+            sha256:        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
+            downloaded_at: "2026-05-23T12:00:00+00:00".to_string(),
+        };
+        let json = serde_json::to_string(&entry).expect("serialize");
+        let back: ModelRegistryEntry = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.filename, entry.filename);
+        assert_eq!(back.sha256,   entry.sha256);
+        assert_eq!(back.size_bytes, entry.size_bytes);
+    }
+
+    // ── update_model_registry — deduplication ────────────────────────────────
+
+    #[tokio::test]
+    async fn registry_update_deduplicates_by_filename() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        let e1 = ModelRegistryEntry {
+            name:          "model_v1".to_string(),
+            repo_id:       "org/repo".to_string(),
+            filename:      "model.gguf".to_string(),
+            path:          "/tmp/model.gguf".to_string(),
+            size_bytes:    1_000,
+            sha256:        "aaa".to_string(),
+            downloaded_at: "2026-01-01T00:00:00+00:00".to_string(),
+        };
+        let e2 = ModelRegistryEntry {
+            sha256: "bbb".to_string(),
+            size_bytes: 2_000,
+            downloaded_at: "2026-06-01T00:00:00+00:00".to_string(),
+            ..e1.clone()
+        };
+
+        update_model_registry(&models_dir, e1).await;
+        update_model_registry(&models_dir, e2).await;
+
+        let entries = read_model_registry(&models_dir).await;
+        assert_eq!(entries.len(), 1, "re-download substitui entrada anterior");
+        assert_eq!(entries[0].sha256, "bbb", "sha256 deve ser do download mais recente");
+        assert_eq!(entries[0].size_bytes, 2_000);
+    }
+
+    #[tokio::test]
+    async fn registry_stores_multiple_distinct_files() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        for i in 0..3u32 {
+            let e = ModelRegistryEntry {
+                name:          format!("model_{i}"),
+                repo_id:       "org/repo".to_string(),
+                filename:      format!("model_{i}.gguf"),
+                path:          format!("/tmp/model_{i}.gguf"),
+                size_bytes:    i as u64 * 1_000,
+                sha256:        format!("{i:064x}"),
+                downloaded_at: "2026-05-23T00:00:00+00:00".to_string(),
+            };
+            update_model_registry(&models_dir, e).await;
+        }
+
+        let entries = read_model_registry(&models_dir).await;
+        assert_eq!(entries.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn registry_read_returns_empty_when_file_missing() {
+        let dir  = tempfile::tempdir().expect("tmpdir");
+        let entries = read_model_registry(dir.path()).await;
+        assert!(entries.is_empty());
+    }
+
+    // ── DownloadProgress — serialização ──────────────────────────────────────
+
+    #[test]
+    fn download_progress_serializes_correctly() {
+        let p = DownloadProgress {
+            id:               "12345_model_gguf".to_string(),
+            filename:         "model.gguf".to_string(),
+            bytes_downloaded: 500_000_000,
+            total_bytes:      Some(1_000_000_000),
+            pct:              Some(50.0),
+            speed_mbps:       25.5,
+            done:             false,
+            error:            None,
+        };
+        let json = serde_json::to_value(&p).expect("serialize");
+        assert_eq!(json["pct"], 50.0);
+        assert_eq!(json["done"], false);
+        assert_eq!(json["bytes_downloaded"], 500_000_000_u64);
+        assert!(json["error"].is_null());
+    }
+
+    #[test]
+    fn download_progress_done_with_error() {
+        let p = DownloadProgress {
+            id: "id".to_string(), filename: "f.gguf".to_string(),
+            bytes_downloaded: 0, total_bytes: None, pct: None,
+            speed_mbps: 0.0, done: true,
+            error: Some("HuggingFace retornou 404".to_string()),
+        };
+        let json = serde_json::to_value(&p).expect("serialize");
+        assert_eq!(json["done"], true);
+        assert_eq!(json["error"], "HuggingFace retornou 404");
     }
 }
