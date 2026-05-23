@@ -6977,3 +6977,9 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### AKASHA
 - [x] **Bug: `init_db()` falhava com `no such column: query_hash` em banco pré-v44** — `_CREATE_IDX_SEARCH_CACHE_HASH` executado em `init_db()` antes da migração v44 adicionar a coluna `query_hash` via ALTER TABLE. Fix: envolver a criação do índice em `init_db()` com try/except; a migração v44 já cria o índice corretamente após adicionar a coluna. Adicionados 2 testes de regressão em `tests/test_database_infra.py`. **Corrigido e commitado em 2026-05-23.**
+
+### Bugs e investigações reportados após uso real | 2026-05-23 (b)
+> Contexto: ao resetar AKASHA, sites.json estava vazio apesar de haver 10 sites no banco — a exportação automática nunca re-disparou após a criação inicial do arquivo.
+
+#### AKASHA
+- [ ] **Bug: exportação para userdata/sites.json roda só uma vez** — a condição `if not SITES_FILE.exists()` em `_migrate()` impede re-exportação quando o arquivo existe mas está desatualizado. Corrigir: exportar a cada startup (em `populate_from_user_data`) OR sempre que um site for adicionado/removido via API (em `list_sync.save_sites`). A segunda opção é mais eficiente — chamar `save_sites` no router de sites após qualquer mutação no banco.
