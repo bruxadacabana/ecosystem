@@ -7087,3 +7087,25 @@ Quando LOGOS estiver fora (HUB fechado):
 - Mnemosyne RAG: busca retorna documentos mas sem geração; Studio desabilitado.
 - Hermes: extração por regras continua; extração via LLM falha e exibe mensagem ao usuário.
 - Em nenhum caso o llama-server em localhost:8080 deve ser acessado diretamente por apps do ecossistema.
+
+#### LOGOS: robustez, defesa de hardware e testes | 2026-05-24
+> Contexto: análise do logos.rs revelou que a maior parte da defesa de hardware está implementada (VRAM watchdog via sysfs/nvidia-smi, CPU/RAM guards via sysinfo, battery detection, priority semaphore, timeouts P2/P3, cgroup). Lacunas críticas: crash detection do llama-server, stderr capturado para /dev/null, P1 sem timeout, ausência de testes para os guards e ausência de visibilidade dos logs do LOGOS no frontend.
+
+##### Resiliência do llama-server
+- [ ] **`logos.rs` — watchdog de processo do llama-server** — após `spawn_llama_server_proc()`, iniciar task tokio que faz `try_wait()` no `Child` a cada 10s; se o processo saiu (exit code ou sinal), logar com `log::error!` (incluindo exit code/sinal), emitir evento Tauri `"logos-llama-crashed"` para o frontend, tentar restart automático até 3 vezes com backoff exponencial (10s, 30s, 60s); após 3 falhas consecutivas, emitir `"logos-llama-unavailable"` e desabilitar `llama_server_bin` até reload manual.
+- [ ] **`logos.rs` — capturar stderr do llama-server** — substituir `.stderr(Stdio::null())` por `.stderr(Stdio::piped())`; spawnar task que lê stderr linha a linha e re-emite via `log::warn!("llama-server: {line}")`; captura erros de OOM, falha de carregamento de modelo e erros de GPU/ROCm.
+- [ ] **`logos.rs` — P1 timeout** — adicionar timeout de 120s para P1 na aquisição do semáforo (atualmente aguarda indefinidamente); retornar 503 com `"error": "timeout aguardando slot de inferência"` ao expirar.
+- [ ] **`logos.rs` — fallback de modelo em OOM** — se `ensure_llama_model_loaded()` falhar (exit code não-zero ou stderr com "out of memory"), tentar o próximo modelo menor no `ModelProfile` do hardware atual antes de retornar erro; registrar o downgrade com `log::warn!`.
+
+##### Logs e visibilidade
+- [ ] **`logos.rs` — eventos críticos para o frontend** — emitir evento Tauri `"logos-alert"` com `{ level: "error"|"warn", message, timestamp }` para eventos críticos: crash do llama-server, OOM, P3 bloqueado por VRAM, llama-server indisponível. O `LogosView.tsx` pode exibir badge ou banner.
+- [ ] **`logos.rs` — endpoint de toggle de log level em runtime** — `POST /logos/log-level { "level": "debug" | "info" | "warn" }` altera o filtro de log do módulo `logos` em runtime sem rebuild; útil para diagnóstico em produção.
+- [ ] **`lib.rs` — arquivamento de logs antigos** — ao rotacionar logs (cleanup_old_logs), mover arquivos com mais de 7 dias para `logs/archive/` comprimidos (gzip) em vez de deletar; manter archive por 30 dias; torna post-mortem de crashes possível dias depois.
+
+##### Testes para os mecanismos de defesa (todos em `logos.rs` #[cfg(test)])
+- [ ] **Testes do watchdog de VRAM** — (a) P3 rejeitado com 429 quando `vram_pct > VRAM_P3_BLOCK`; (b) P3 desbloqueado quando `vram_pct < VRAM_P3_RESUME` (histerese 85%→70%); (c) P3 desbloqueado quando leitura de VRAM retorna `None` (não travar indefinidamente); (d) `do_silence()` chamado ao bloquear.
+- [ ] **Testes do CPU/RAM guard** — (a) P3 rejeitado quando `cpu_pct > CPU_P3_BLOCK` (85%); (b) P3 rejeitado quando `ram_free_mb < RAM_P3_BLOCK_MB` (1536 MB); (c) survival mode usa thresholds mais permissivos (92% / 512 MB); (d) P2 rejeitado quando `on_battery=true` e `cpu_pct > ON_BATTERY_P2_CPU_BLOCK` (60%).
+- [ ] **Testes do battery mode** — (a) `is_on_battery()` retorna `true` quando `/sys/class/power_supply/*/status` = "Discharging"; (b) P3 rejeitado imediatamente quando `on_battery=true`; (c) campo `on_battery: true` presente no `StatusResponse`.
+- [ ] **Testes do semáforo sob carga** — (a) modelo leve (≤3B) adquire 1 permit → 2 requests paralelos permitidos; (b) modelo pesado (>3B) adquire 2 permits → exclusividade; (c) P2 retorna 503 após `P2_TIMEOUT` (60s) de espera; (d) P3 retorna 503 após `P3_TIMEOUT` (30s).
+- [ ] **Testes do crash e restart do llama-server** — com mock do processo filho, testar: (a) watchdog detecta exit code não-zero e loga; (b) restart automático acontece até 3 vezes; (c) após 3 falhas, llama-server desabilitado; (d) evento `"logos-llama-crashed"` emitido corretamente.
+- [ ] **Testes de `sysfs_vram_mb()`** — com filesystem mockado (arquivos temporários), testar: (a) lê card com maior VRAM_TOTAL como GPU discreta; (b) retorna `None` quando nenhum `card*/device/mem_info_vram_total` existe; (c) ignora cards com leitura inválida (não-numérica).
