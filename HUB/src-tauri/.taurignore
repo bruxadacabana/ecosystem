@@ -1,0 +1,3 @@
+# Ignora o diretório de modelos GGUF — mudanças durante download
+# não devem disparar rebuild do app em modo dev
+logos/models/
