@@ -7109,3 +7109,16 @@ Quando LOGOS estiver fora (HUB fechado):
 - [ ] **Testes do semáforo sob carga** — (a) modelo leve (≤3B) adquire 1 permit → 2 requests paralelos permitidos; (b) modelo pesado (>3B) adquire 2 permits → exclusividade; (c) P2 retorna 503 após `P2_TIMEOUT` (60s) de espera; (d) P3 retorna 503 após `P3_TIMEOUT` (30s).
 - [ ] **Testes do crash e restart do llama-server** — com mock do processo filho, testar: (a) watchdog detecta exit code não-zero e loga; (b) restart automático acontece até 3 vezes; (c) após 3 falhas, llama-server desabilitado; (d) evento `"logos-llama-crashed"` emitido corretamente.
 - [ ] **Testes de `sysfs_vram_mb()`** — com filesystem mockado (arquivos temporários), testar: (a) lê card com maior VRAM_TOTAL como GPU discreta; (b) retorna `None` quando nenhum `card*/device/mem_info_vram_total` existe; (c) ignora cards com leitura inválida (não-numérica).
+
+### LOGOS: inferência no CPU para o laptop | 2026-05-24
+> Contexto: o laptop (MX150, 2GB VRAM) não comporta modelo de embedding + LLM na VRAM simultaneamente. A decisão foi padronizar o modelo de embedding com o do PC principal. Para viabilizar uso completo no laptop, o LOGOS precisa suportar CPU inference como fallback de VRAM — não como fallback de serviço (o LOGOS continua obrigatório), mas como backend de execução alternativo dentro do próprio LOGOS.
+
+#### HUB/LOGOS
+- [ ] Unificar modelo de embedding do laptop com o do PC principal — ajustar ecosytem.json profile do laptop para apontar o mesmo `embed` do PC principal
+- [ ] LOGOS: detectar perfil de hardware "laptop" (MX150, 2 GB VRAM) automaticamente ao iniciar
+- [ ] LOGOS: implementar modo CPU para inferência LLM — quando VRAM disponível for insuficiente para carregar o LLM (após embedding model já estar carregado), spawnar llama-server com `--n-gpu-layers 0` (CPU-only) em vez de falhar
+- [ ] LOGOS: lógica de decisão VRAM vs CPU — ao receber request de LLM, checar VRAM livre; se < threshold para o modelo solicitado → redirecionar para instância CPU do llama-server (porta separada, ex: 8082) sem bloquear o pipeline de embedding
+- [ ] LOGOS: gerenciar duas instâncias de llama-server quando necessário — GPU (para embedding, porta 8081) + CPU (para LLM em modo degradado, porta 8082); ambas sob controle do LOGOS
+- [ ] LOGOS: emitir evento `logos://hardware-mode-changed` ao HUB quando alternar entre GPU-full / GPU-embed+CPU-llm / CPU-full
+- [ ] HUB LogosView: exibir modo de execução atual (ex: "IA: GPU+CPU" ou "IA: CPU") quando em modo degradado
+- [ ] Testes: simular VRAM < threshold no laptop-profile e verificar que LOGOS spawna instância CPU corretamente
