@@ -4009,4 +4009,423 @@ O mesmo ciclo se aplica a qualquer feature nova no ecossistema:
 
 ---
 
-Seção 11 concluída. Aguardando confirmação para a próxima.
+---
+
+## 12. 🔍 Debugging e Solução de Problemas
+
+Nesta seção: onde estão os logs, como diagnosticar os problemas mais comuns, e as ferramentas úteis para cada situação.
+
+---
+
+### 12.1 Mapa de portas
+
+Antes de qualquer debugging, saiba o que roda onde:
+
+| App | Tipo | Porta | Observação |
+|---|---|---|---|
+| LOGOS (proxy LLM) | HTTP/axum | **7072** | Dentro do HUB — sempre ativo quando o HUB está aberto |
+| llama-server (backend IA) | HTTP | **8081** | Gerenciado pelo LOGOS — inicia sob demanda |
+| AKASHA | HTTP/uvicorn | **7071** | Servidor FastAPI — inicia via `iniciar.sh` |
+| HUB | App Tauri | — | Interface gráfica local, sem porta HTTP própria |
+| KOSMOS | App Qt | — | App de desktop, sem porta HTTP própria |
+| Mnemosyne | App Qt | — | App de desktop, sem porta HTTP própria |
+| Hermes | App Qt | — | App de desktop, sem porta HTTP própria |
+
+**Verificar se um serviço está respondendo:**
+
+```bash
+# LOGOS
+curl http://localhost:7072/health
+
+# llama-server (só se carregado)
+curl http://localhost:8081/health
+
+# AKASHA
+curl http://localhost:7071/health
+```
+
+**Ver o que está usando uma porta:**
+
+```bash
+# Linux
+ss -tlnp | grep 7071
+lsof -i :7071
+
+# Windows
+netstat -ano | findstr 7071
+tasklist /FI "PID eq <PID>"
+```
+
+---
+
+### 12.2 Onde estão os logs
+
+Cada app tem seu próprio arquivo de log com rotação automática (5 MB, 3 backups):
+
+| App | Caminho do log |
+|---|---|
+| HUB | `~/.local/share/com.hub/logs/` (Linux) / `%APPDATA%\com.hub\logs\` (Windows) — arquivos diários, 7 dias |
+| AKASHA | Sem arquivo — logs vão para stderr/stdout. Iniciar pelo terminal para ver. |
+| KOSMOS | `~/.local/share/kosmos/logs/kosmos.log` (Linux) / `%LOCALAPPDATA%\kosmos\logs\` (Windows) |
+| Mnemosyne | `{sync_root}/mnemosyne/mnemosyne.log` (preferido) ou `Mnemosyne/logs/mnemosyne.log` (fallback) |
+| Hermes | `Hermes/data/logs/hermes.log` (relativo à raiz do app) |
+
+**Seguir o log em tempo real (Linux):**
+
+```bash
+tail -f ~/.local/share/kosmos/logs/kosmos.log
+tail -f "$sync_root/mnemosyne/mnemosyne.log"
+```
+
+O HUB exibe logs dos apps Python na aba **Monitor** — mas só os que foram lançados via HUB. Para debug detalhado, prefira o arquivo de log.
+
+**Nível de log:**
+- Arquivo: `DEBUG` (tudo)
+- Console/stderr: `INFO` (mensagens relevantes)
+- Para aumentar verbosidade em testes: `logging.getLogger().setLevel(logging.DEBUG)`
+
+---
+
+### 12.3 Problema: ecosystem.json corrompido ou sumido
+
+**Sintomas:** app não inicia, erro `KeyError` em `ecosystem_client.py`, seção de configuração vazia no HUB.
+
+**Diagnóstico:**
+```bash
+# O arquivo fica em:
+cat ~/.local/share/ecosystem/ecosystem.json  # Linux
+# Windows: %APPDATA%\ecosystem\ecosystem.json
+
+# Verificar se é JSON válido:
+python3 -c "import json, pathlib; print(json.loads(pathlib.Path('~/.local/share/ecosystem/ecosystem.json').expanduser().read_text()))"
+```
+
+**Solução:**
+1. O `ecosystem_client.py` tem defaults embutidos em `_DEFAULTS` — se o arquivo sumir, ele recria com valores padrão ao primeiro acesso.
+2. Se o arquivo existe mas está corrompido (JSON inválido), apague-o. O próximo acesso recria do zero.
+3. Se uma seção específica sumiu (ex: `akasha.data_path` virou `""`), abra o HUB → Setup → reaplique os caminhos.
+
+**Nunca edite o `ecosystem.json` manualmente** enquanto qualquer app estiver rodando — há lock file em uso e a escrita concorrente pode corromper.
+
+---
+
+### 12.4 Problema: AKASHA — busca retorna zero resultados
+
+A AKASHA tem três índices separados. Se um deles estiver vazio ou desatualizado, partes da busca falham silenciosamente.
+
+**Diagnóstico rápido pelo terminal:**
+
+```bash
+# Contar documentos nos índices FTS5
+sqlite3 AKASHA/akasha.db "SELECT count(*) FROM local_fts;"
+sqlite3 AKASHA/akasha.db "SELECT count(*) FROM crawl_fts;"
+
+# Verificar se há dados na tabela base
+sqlite3 AKASHA/akasha.db "SELECT count(*) FROM local_pages;"
+sqlite3 AKASHA/akasha.db "SELECT count(*) FROM crawl_pages;"
+```
+
+**Causas comuns:**
+
+| Causa | Como identificar | Solução |
+|---|---|---|
+| FTS5 desincronizado da tabela base | `count(local_fts)` ≪ `count(local_pages)` | `INSERT INTO local_fts(local_fts) VALUES('rebuild')` |
+| `data_path` configurado para pasta vazia | `local_pages` também está vazia | HUB → Setup → reconfigurar `data_path` |
+| Crawl nunca rodou | `crawl_pages` vazia | AKASHA → Biblioteca → adicionar sites e iniciar crawl |
+| Migração de DB falhou | Erro no log ao iniciar | Verificar se versão do banco está correta: `sqlite3 akasha.db "PRAGMA user_version;"` |
+
+**Rebuildar o FTS5 sem apagar dados:**
+
+```bash
+sqlite3 AKASHA/akasha.db "INSERT INTO local_fts(local_fts) VALUES('rebuild');"
+sqlite3 AKASHA/akasha.db "INSERT INTO crawl_fts(crawl_fts) VALUES('rebuild');"
+```
+
+---
+
+### 12.5 Problema: Mnemosyne — ChromaDB não indexa / busca vazia
+
+**Diagnóstico:**
+```python
+# No terminal Python dentro do .venv do Mnemosyne
+import chromadb
+client = chromadb.PersistentClient(path="<sync_root>/mnemosyne/chroma")
+for col in client.list_collections():
+    print(col.name, col.count())
+```
+
+**Causas comuns:**
+
+| Causa | Sintoma | Solução |
+|---|---|---|
+| `watched_dir` aponta para pasta errada | Nenhum arquivo indexado | HUB → Setup → corrigir `watched_dir` |
+| Modelo de embedding trocado mid-indexação | Erro de dimensão ao buscar | Resetar a coleção afetada (não apaga arquivos) |
+| ChromaDB corrompido | Erro na abertura do client | Fazer backup e deletar `<sync_root>/mnemosyne/chroma/` — será recriado na próxima indexação |
+
+---
+
+### 12.6 Problema: LLM offline — o que acontece
+
+O ecossistema é projetado para funcionar **sem IA**. Cada app tem degradação graciosa:
+
+| App | Sem LLM |
+|---|---|
+| AKASHA (ferramenta) | Funciona 100% — busca, crawl, FTS5, ranking |
+| AKASHA (assistente) | Reflexões e insights são pulados silenciosamente |
+| Mnemosyne (RAG) | Busca retorna documentos mas sem síntese |
+| Mnemosyne (Studio) | Worker falha com mensagem "LLM indisponível" |
+| KOSMOS | Análise de imagem e OCR são pulados |
+| Hermes | Extração de receitas via LLM falha; extração por regras continua |
+
+**Como verificar se o LOGOS está ativo:**
+
+```bash
+curl http://localhost:7072/health
+# Resposta esperada: {"status":"ok","llama_server_running":true/false}
+```
+
+Se `llama_server_running: false`, o modelo não foi carregado ainda — a primeira requisição de IA vai disparar o carregamento (pode levar até 90 segundos na primeira vez).
+
+---
+
+### 12.7 Problema: porta em uso ao iniciar AKASHA
+
+**Sintoma:** `[Errno 98] Address already in use` ao iniciar.
+
+```bash
+# Encontrar o processo
+lsof -i :7071          # Linux
+netstat -ano | findstr 7071  # Windows
+
+# Matar (Linux)
+kill -9 <PID>
+
+# Ou usar o helper do ecossistema:
+pkill -f "uvicorn.*7071"
+```
+
+**Causa mais comum:** instância anterior do AKASHA travada. Acontece se o processo foi encerrado de forma abrupta sem liberar a porta.
+
+---
+
+### 12.8 Ferramentas de debug úteis
+
+**Para Python (AKASHA, KOSMOS, Mnemosyne, Hermes):**
+
+```bash
+# Inspecionar banco SQLite interativamente
+sqlite3 AKASHA/akasha.db
+
+# Ver todas as tabelas
+.tables
+
+# Ver esquema de uma tabela
+.schema crawl_pages
+
+# Modo coluna legível
+.mode column
+.headers on
+SELECT * FROM crawl_pages LIMIT 5;
+
+# Sair
+.quit
+```
+
+```bash
+# Rodar testes com output detalhado
+uv run pytest tests/ -v -s
+
+# Rodar só um teste específico
+uv run pytest tests/test_database.py::TestFTS5::test_rebuild -v
+
+# Ver cobertura
+uv run pytest tests/ --cov=. --cov-report=term-missing
+```
+
+**Para o HUB (Tauri/Rust):**
+
+```bash
+# Build de debug com logs visíveis
+cd HUB
+cargo tauri dev
+
+# Ver logs do processo Rust
+RUST_LOG=debug cargo tauri dev
+
+# Inspecionar o webview (DevTools do Chromium)
+# Dentro do app: clicar com botão direito → "Inspect Element"
+# Ou: F12 se habilitado no tauri.conf.json
+```
+
+**Para o LOGOS:**
+
+```bash
+# Verificar modelos disponíveis
+curl http://localhost:7072/v1/models | python3 -m json.tool
+
+# Testar inferência diretamente
+curl http://localhost:7072/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"smollm2:1.7b","messages":[{"role":"user","content":"Olá"}],"max_tokens":50}'
+
+# Ver status completo (hardware, modelo ativo, semáforo)
+curl http://localhost:7072/logos/status | python3 -m json.tool
+```
+
+**Para o llama-server (porta interna 8081):**
+
+```bash
+# Health direto no backend
+curl http://localhost:8081/health
+
+# Modelos carregados
+curl http://localhost:8081/v1/models | python3 -m json.tool
+```
+
+---
+
+### 12.9 Sequência de diagnóstico quando algo parece errado
+
+Se um app não funciona e você não sabe por onde começar:
+
+```
+1. HUB está aberto?
+   → Se não: abrir o HUB primeiro (é a fonte de verdade)
+
+2. ecosystem.json está OK?
+   → curl http://localhost:7072/health  (se LOGOS responde, o HUB está ok)
+
+3. Qual é o erro exato?
+   → Olhar o log do app afetado (seção 12.2)
+
+4. É um erro de banco?
+   → sqlite3 <app>.db  → .tables → verificar contagens
+
+5. É um erro de LLM?
+   → curl http://localhost:7072/health
+   → O app continua sem LLM? (seção 12.6)
+
+6. Os testes passam?
+   → cd <app> && uv run pytest tests/ -v
+   → Se falham: o bug está no código, não no ambiente
+```
+
+---
+
+## 13. 📖 Glossário
+
+Termos técnicos usados neste guia e no código do ecossistema.
+
+| Termo | Definição |
+|---|---|
+| **BM25** | Algoritmo de ranking de textos baseado em frequência de termos e raridade no corpus. É o ranking padrão do FTS5. Pondera: termos raros valem mais; documentos muito longos são normalizados. |
+| **ChromaDB** | Banco de vetores usado pelo Mnemosyne para armazenar embeddings de documentos. Permite busca por similaridade semântica. Persistido em disco (modo `PersistentClient`). |
+| **Conventional Commits** | Convenção de mensagens de commit: `type(scope): descrição`. Tipos: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. Facilita geração de changelogs e rastreamento de mudanças. |
+| **ChromaDB** | Banco de vetores usado pelo Mnemosyne. Armazena embeddings e permite busca por similaridade semântica. |
+| **ecosystem.json** | Arquivo JSON central que armazena configuração compartilhada entre todos os apps (caminhos, modelos, sync_root). Lido via `ecosystem_client.py`. Nunca editado manualmente com apps abertos. |
+| **ecosystem_client.py** | Módulo Python em `program files/` que todos os apps importam. Fornece: URL do LOGOS, caminhos de dados, leitura/escrita do `ecosystem.json`, `request_llm()`. |
+| **Embedding** | Representação numérica (vetor de floats) de um texto. Textos semanticamente parecidos têm vetores próximos no espaço vetorial. Gerado por modelos de embedding (ex: nomic-embed-text). |
+| **FTS5** | Extensão do SQLite para busca de texto completo (Full-Text Search, versão 5). Cria índice invertido sobre colunas de texto. Suporta BM25, operadores `AND`/`OR`/`NOT`, prefix matching. |
+| **GGUF** | Formato de arquivo para modelos de linguagem quantizados (successor do GGML). Um arquivo `.gguf` contém pesos do modelo + metadados. Usado pelo llama-server. |
+| **HUB** | App Tauri (Rust + React) que é o centro do ecossistema. Gerencia configuração, lança outros apps, hospeda o LOGOS. Deve estar sempre aberto. |
+| **IPC** | Inter-Process Communication. No contexto Tauri: chamadas do frontend (TypeScript) para o backend (Rust) via `invoke()`. Cada função Rust anotada com `#[tauri::command]` vira um comando IPC. |
+| **llama-server** | Servidor HTTP do projeto llama-cpp. Expõe API OpenAI-compatível (`/v1/chat/completions`, `/v1/embeddings`). Gerenciado pelo LOGOS como processo filho. Porta interna: 8081. |
+| **LOGOS** | Proxy inteligente de LLM hospedado dentro do HUB (porta 7072). Recebe requisições dos apps, aplica fila de prioridade (P1/P2/P3), repassa ao llama-server. |
+| **LoRA** | Low-Rank Adaptation. Técnica de fine-tuning que adiciona matrizes de baixa rank aos pesos do modelo sem modificá-los diretamente. Muito mais eficiente em VRAM que fine-tuning completo. |
+| **NDJSON** | Newline-Delimited JSON. Formato de streaming onde cada linha é um objeto JSON válido. Era usado pela API antiga do Ollama. Substituído por SSE na migração. |
+| **Notebook** | No Mnemosyne, cada conversa é um "notebook" — não "chat" nem "sessão". Persistido em `{data_dir}/notebooks/{id}/` com histórico, memória e outputs do Studio. |
+| **PageRank** | Algoritmo adaptado para o AKASHA: páginas com muitos links recebidos têm maior relevância base. Calculado offline e armazenado como `base_score`. |
+| **pHash** | Perceptual Hash. Hash calculado com base no conteúdo visual de uma imagem (não nos bytes). Duas imagens visualmente similares têm pHash próximos. Usado pelo AKASHA para deduplicação de imagens. |
+| **PRF** | Pseudo-Relevance Feedback. Técnica de expansão de query: pega os top-N documentos do primeiro resultado, extrai termos frequentes, adiciona à query. Melhora recall sem precisar de feedback do usuário. |
+| **Q4_K_M** | Tipo de quantização GGUF: 4 bits por peso, método K-Quant, variante "Medium". Boa relação entre qualidade e tamanho. Um modelo 7B pesa ~4-5 GB. |
+| **QLoRA** | Quantized LoRA. Fine-tuning com LoRA aplicado sobre modelo quantizado em 4 bits (NF4). Permite treinar modelos grandes em GPUs com pouca VRAM. |
+| **RAG** | Retrieval-Augmented Generation. Padrão onde o LLM recebe contexto recuperado de um banco (vetorial ou FTS) antes de responder. Evita alucinação e traz informação atualizada. |
+| **RRF** | Reciprocal Rank Fusion. Fórmula de fusão de rankings: `score = Σ 1/(k + rank_i)` com k=60. Combina rankings de múltiplos sistemas (ex: FTS5 + vetorial) sem precisar normalizar scores brutos. |
+| **SSE** | Server-Sent Events. Protocolo HTTP onde o servidor envia múltiplos eventos em uma única conexão (`Content-Type: text/event-stream`). Cada evento começa com `data: `. Usado para streaming de tokens LLM. |
+| **sync_root** | Diretório raiz sincronizado entre máquinas via Syncthing. Configurado no HUB. Cada app lê via `ecosystem_client.get_sync_root()`. Caminhos: `/home/spacewitch/Documents/ecosystem_root` (CachyOS). |
+| **Tauri** | Framework para apps de desktop usando Rust no backend e HTML/CSS/JS no frontend. Alternativa ao Electron com binários menores e melhor segurança. Versão 2 em uso no ecossistema. |
+| **uv** | Gerenciador de pacotes e ambientes Python em Rust. Substitui pip + venv com performance muito superior. Usado em todos os apps Python do ecossistema. |
+| **VRAM** | Video RAM — memória da GPU. Modelos LLM são carregados na VRAM para inferência rápida. O LOGOS monitora uso e pausa tarefas P3 quando VRAM > 85%. |
+| **WAL** | Write-Ahead Logging. Modo do SQLite onde escritas vão para um arquivo separado (`-wal`) antes de serem consolidadas. Permite leituras e escritas simultâneas sem bloqueio mútuo. |
+
+---
+
+## 14. 🔗 Referências e Links Úteis
+
+Documentação oficial, papers e comunidades relevantes para o desenvolvimento do ecossistema.
+
+### Linguagens e runtimes
+
+| Recurso | URL | Quando consultar |
+|---|---|---|
+| Python 3.13 | https://docs.python.org/3.13/ | Sintaxe, stdlib, novidades de versão |
+| Rust Book | https://doc.rust-lang.org/book/ | Aprender Rust do zero |
+| Rust Reference | https://doc.rust-lang.org/reference/ | Detalhes da linguagem |
+| TypeScript Handbook | https://www.typescriptlang.org/docs/ | Tipos, generics, utilidades |
+
+### Frameworks e bibliotecas principais
+
+| Recurso | URL | App |
+|---|---|---|
+| FastAPI | https://fastapi.tiangolo.com/ | AKASHA |
+| Pydantic v2 | https://docs.pydantic.dev/ | AKASHA (validação) |
+| PySide6 | https://doc.qt.io/qtforpython-6/ | Mnemosyne, KOSMOS |
+| PyQt6 | https://www.riverbankcomputing.com/static/Docs/PyQt6/ | Hermes |
+| Tauri v2 | https://tauri.app/v2/guide/ | HUB |
+| axum | https://docs.rs/axum/latest/axum/ | HUB/LOGOS (servidor Rust) |
+| Tokio | https://tokio.rs/ | HUB (async Rust) |
+| React | https://react.dev/ | HUB (frontend) |
+
+### Banco de dados e busca
+
+| Recurso | URL | Quando consultar |
+|---|---|---|
+| SQLite FTS5 | https://www.sqlite.org/fts5.html | Dúvidas sobre FTS5, BM25, tokenizadores |
+| SQLite WAL | https://www.sqlite.org/wal.html | Entender o modo WAL |
+| ChromaDB | https://docs.trychroma.com/ | API do Mnemosyne, coleções, embeddings |
+| aiosqlite | https://aiosqlite.omnilib.dev/ | SQLite assíncrono no AKASHA |
+
+### IA e modelos
+
+| Recurso | URL | Quando consultar |
+|---|---|---|
+| llama-cpp | https://github.com/ggerganov/llama.cpp | llama-server, GGUF, quantização |
+| LangChain | https://python.langchain.com/docs/ | Mnemosyne (RAG, ChatOpenAI) |
+| HuggingFace Hub | https://huggingface.co/docs/hub/ | Download de modelos, datasets |
+| PEFT (LoRA) | https://huggingface.co/docs/peft/ | QLoRA fine-tuning |
+| TRL (SFTTrainer) | https://huggingface.co/docs/trl/ | Treinamento supervisionado |
+| unsloth | https://github.com/unslothai/unsloth | Aceleração QLoRA (usado no logos/) |
+| OpenAI API spec | https://platform.openai.com/docs/api-reference | Formato /v1/chat/completions, SSE |
+
+### Ferramentas de desenvolvimento
+
+| Recurso | URL | Quando consultar |
+|---|---|---|
+| Ruff | https://docs.astral.sh/ruff/ | Linting, formatação, regras |
+| uv | https://docs.astral.sh/uv/ | Gerenciamento de dependências Python |
+| pytest | https://docs.pytest.org/ | Escrita de testes |
+| Conventional Commits | https://www.conventionalcommits.org/ | Formato de mensagens de commit |
+
+### Papers de referência
+
+| Paper | Relevância |
+|---|---|
+| *BM25: The Probabilistic Relevance Framework* (Robertson & Zaragoza, 2009) | Base teórica do ranking FTS5 |
+| *Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods* (Cormack et al., 2009) | Justificativa do RRF no pipeline de busca |
+| *LoRA: Low-Rank Adaptation of Large Language Models* (Hu et al., 2022) | Base teórica do fine-tuning do LOGOS |
+| *QLoRA: Efficient Finetuning of Quantized LLMs* (Dettmers et al., 2023) | Quantização NF4 e treinamento eficiente |
+| *GGML: Efficient Inference of Large Language Models* (Gerganov, 2023) | Formato GGUF e llama-cpp |
+
+### Comunidades
+
+| Comunidade | Onde | Para quê |
+|---|---|---|
+| r/LocalLLaMA | Reddit | Modelos locais, benchmarks, novidades |
+| Tauri Discord | discord.com/invite/tauri | Dúvidas de Tauri/Rust |
+| FastAPI Discord | discord.com/invite/VQjSZaeJmf | Dúvidas de FastAPI/Pydantic |
+| HuggingFace Forums | discuss.huggingface.co | Modelos, fine-tuning, datasets |
+
+---
+
+*Guia de Desenvolvimento do Ecossistema — concluído em 2026-05-24.*
+*14 seções. Para atualizar: editar `program files/GUIDE.md` e commitar no repo do ecossistema.*
