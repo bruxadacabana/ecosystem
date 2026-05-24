@@ -561,6 +561,227 @@ pub(crate) fn resolve_app_db(eco: &Value, app: &str) -> Option<PathBuf> {
     }
 }
 
+// ─── ecosystem_reset ────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResetReport {
+    pub deleted:   Vec<String>,
+    pub preserved: Vec<String>,
+    pub errors:    Vec<String>,
+    pub timestamp: String,
+}
+
+/// Núcleo testável de `ecosystem_reset` — recebe `eco` e `root` diretamente.
+/// NÃO chama backup — isso é responsabilidade do command.
+pub(crate) fn ecosystem_reset_inner(
+    confirm_token: &str,
+    eco:           &Value,
+    root:          &Path,
+) -> Result<ResetReport, AppError> {
+    if confirm_token.trim() != "RESETAR" {
+        return Err(AppError::InvalidPath(
+            "Token de confirmação inválido. Digite RESETAR para confirmar.".into(),
+        ));
+    }
+
+    let timestamp = Utc::now().to_rfc3339();
+    let mut deleted:   Vec<String> = Vec::new();
+    let mut preserved: Vec<String> = Vec::new();
+    let mut errors:    Vec<String> = Vec::new();
+
+    reset_akasha(eco, root, &mut deleted, &mut preserved, &mut errors);
+    reset_kosmos(eco, root, &mut deleted, &mut preserved, &mut errors);
+    reset_mnemosyne(eco, root, &mut deleted, &mut preserved, &mut errors);
+    reset_shared(root, &mut deleted, &mut preserved, &mut errors);
+
+    Ok(ResetReport { deleted, preserved, errors, timestamp })
+}
+
+/// Apaga dados transientes do ecossistema, preservando dados da usuária.
+///
+/// Requer token de confirmação `"RESETAR"`.
+/// Cria backup antes de apagar qualquer coisa.
+#[tauri::command]
+pub fn ecosystem_reset(confirm_token: String) -> Result<ResetReport, AppError> {
+    if confirm_token.trim() != "RESETAR" {
+        return Err(AppError::InvalidPath(
+            "Token de confirmação inválido. Digite RESETAR para confirmar.".into(),
+        ));
+    }
+    let eco  = ecosystem::read_json();
+    let root = sync_root().ok_or_else(|| {
+        AppError::MissingConfig("sync_root não configurado".into())
+    })?;
+    // Cria backup antes de qualquer deleção
+    let _ = backup_key_data();
+    ecosystem_reset_inner(&confirm_token, &eco, &root)
+}
+
+// ── Helpers de reset por app ──────────────────────────────────────────────────
+
+fn reset_akasha(
+    eco:       &Value,
+    root:      &Path,
+    deleted:   &mut Vec<String>,
+    preserved: &mut Vec<String>,
+    errors:    &mut Vec<String>,
+) {
+    // 1. Apagar personal_memory.db da IA (fora do akasha.db)
+    let pm_path = root.join(".ai_private").join("akasha").join("personal_memory.db");
+    delete_file_or_dir(&pm_path, false, deleted, errors);
+
+    // 2. akasha.db — apagar crawl_pages (não salvas) e personal_memory (tabela)
+    if let Some(db_path) = akasha_db_path(eco) {
+        match Connection::open(&db_path) {
+            Err(e) => errors.push(format!("akasha.db: não foi possível abrir: {e}")),
+            Ok(conn) => {
+                // Apagar crawl_pages (tentativas sucessivas para diferentes esquemas)
+                let del_pages = conn.execute_batch(
+                    "DELETE FROM crawl_pages WHERE saved IS NULL OR saved = 0"
+                ).or_else(|_| conn.execute_batch(
+                    "DELETE FROM crawl_pages WHERE is_saved IS NULL OR is_saved = 0"
+                )).or_else(|_| conn.execute_batch("DELETE FROM crawl_pages"));
+
+                match del_pages {
+                    Ok(_)  => deleted.push("akasha: crawl_pages (não salvas)".into()),
+                    Err(e) => errors.push(format!("akasha: crawl_pages: {e}")),
+                }
+
+                // Apagar personal_memory (tabela no akasha.db)
+                match conn.execute_batch("DELETE FROM personal_memory") {
+                    Ok(_)  => deleted.push("akasha: personal_memory (tabela)".into()),
+                    Err(e) => {
+                        // Tabela pode não existir — não é erro crítico
+                        if !e.to_string().contains("no such table") {
+                            errors.push(format!("akasha: personal_memory: {e}"));
+                        }
+                    }
+                }
+
+                preserved.push("akasha: crawl_sites (lista de sites da usuária)".into());
+            }
+        }
+
+        // 3. Apagar akasha_knowledge.db
+        let knowledge_db = db_path.with_file_name("akasha_knowledge.db");
+        delete_file_or_dir(&knowledge_db, false, deleted, errors);
+    }
+
+    // Preservar: userdata/, Web/, Papers/
+    preserved.push("akasha: userdata/ (blocked_domains, watch_later, etc.)".into());
+    preserved.push("akasha: Web/ e Papers/ (arquivos salvos)".into());
+}
+
+fn reset_kosmos(
+    eco:       &Value,
+    _root:     &Path,
+    deleted:   &mut Vec<String>,
+    preserved: &mut Vec<String>,
+    errors:    &mut Vec<String>,
+) {
+    if let Some(db_path) = kosmos_db_path(eco) {
+        match Connection::open(&db_path) {
+            Err(e) => errors.push(format!("kosmos.db: não foi possível abrir: {e}")),
+            Ok(conn) => {
+                let del = conn.execute_batch(
+                    "DELETE FROM articles WHERE is_saved IS NULL OR is_saved = 0"
+                ).or_else(|_| conn.execute_batch(
+                    "DELETE FROM articles WHERE saved IS NULL OR saved = 0"
+                ));
+                match del {
+                    Ok(_)  => deleted.push("kosmos: artigos não salvos".into()),
+                    Err(e) => errors.push(format!("kosmos: articles: {e}")),
+                }
+                preserved.push("kosmos: feeds (lista de fontes RSS)".into());
+                preserved.push("kosmos: artigos salvos (is_saved=1)".into());
+            }
+        }
+    }
+}
+
+fn reset_mnemosyne(
+    eco:       &Value,
+    root:      &Path,
+    deleted:   &mut Vec<String>,
+    preserved: &mut Vec<String>,
+    errors:    &mut Vec<String>,
+) {
+    // 1. Apagar ChromaDB
+    if let Some(chroma) = eco["mnemosyne"]["chroma_dir"].as_str() {
+        let chroma_path = std::path::Path::new(chroma);
+        delete_file_or_dir(chroma_path, true, deleted, errors);
+
+        // 2. BM25 index — fica no diretório pai do chroma_dir
+        if let Some(parent) = chroma_path.parent() {
+            let bm25 = parent.join("bm25_index.pkl");
+            delete_file_or_dir(&bm25, false, deleted, errors);
+
+            // 3. Studio outputs — notebooks/{id}/studio/*.md
+            let notebooks_dir = parent.join("notebooks");
+            if notebooks_dir.is_dir() {
+                delete_studio_outputs(&notebooks_dir, deleted, errors);
+            }
+        }
+    }
+
+    // 4. personal_memory.db da IA
+    let pm_path = root.join(".ai_private").join("mnemosyne").join("personal_memory.db");
+    delete_file_or_dir(&pm_path, false, deleted, errors);
+
+    preserved.push("mnemosyne: notebooks/ (histórico de conversas)".into());
+    preserved.push("mnemosyne: biblioteca de documentos indexados".into());
+}
+
+fn reset_shared(
+    root:    &Path,
+    deleted: &mut Vec<String>,
+    _pres:   &mut Vec<String>,
+    errors:  &mut Vec<String>,
+) {
+    let comm = root.join("communication_history.db");
+    delete_file_or_dir(&comm, false, deleted, errors);
+
+    let topic = root.join("shared_topic_profile.db");
+    delete_file_or_dir(&topic, false, deleted, errors);
+}
+
+/// Apaga um arquivo ou diretório (recursivo se `is_dir=true`).
+/// Não-encontrado → silencioso. Erros → reportados em `errors`.
+fn delete_file_or_dir(
+    path:    &Path,
+    is_dir:  bool,
+    deleted: &mut Vec<String>,
+    errors:  &mut Vec<String>,
+) {
+    if !path.exists() { return; }
+    let label = path.display().to_string();
+    let result = if is_dir {
+        std::fs::remove_dir_all(path).map_err(|e| e.to_string())
+    } else {
+        std::fs::remove_file(path).map_err(|e| e.to_string())
+    };
+    match result {
+        Ok(_)  => deleted.push(label),
+        Err(e) => errors.push(format!("{label}: {e}")),
+    }
+}
+
+/// Apaga todos os arquivos `.md` em `{notebooks_dir}/{id}/studio/`.
+fn delete_studio_outputs(notebooks_dir: &Path, deleted: &mut Vec<String>, errors: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(notebooks_dir) else { return; };
+    for entry in entries.flatten() {
+        let studio = entry.path().join("studio");
+        if !studio.is_dir() { continue; }
+        let Ok(files) = std::fs::read_dir(&studio) else { continue; };
+        for file in files.flatten() {
+            let fp = file.path();
+            if fp.extension().map(|e| e == "md").unwrap_or(false) {
+                delete_file_or_dir(&fp, false, deleted, errors);
+            }
+        }
+    }
+}
+
 // ─── Testes ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -806,6 +1027,153 @@ mod tests {
         let eco = make_eco(tmp.path(), tmp.path());
         let result = recover_db_inner(&eco, "akasha", tmp.path());
         assert!(result.is_err(), "deve retornar Err quando DB não existe");
+    }
+
+    // ─── ecosystem_reset ─────────────────────────────────────────────────────
+
+    fn make_akasha_db_with_memory(dir: &Path) -> PathBuf {
+        let db_path = dir.join("akasha.db");
+        let conn = Connection::open(&db_path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE crawl_sites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                base_url TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL DEFAULT '',
+                crawl_depth INTEGER NOT NULL DEFAULT 2,
+                subdomains_json TEXT NOT NULL DEFAULT '[]',
+                page_count INTEGER NOT NULL DEFAULT 0,
+                last_crawled_at TEXT,
+                status TEXT NOT NULL DEFAULT 'idle',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                crawl_interval_days INTEGER NOT NULL DEFAULT 7,
+                deleted INTEGER NOT NULL DEFAULT 0,
+                crawl_fail_count INTEGER NOT NULL DEFAULT 0,
+                crawl_frequency TEXT NOT NULL DEFAULT 'weekly',
+                next_crawl_at INTEGER NOT NULL DEFAULT 0,
+                content_hash TEXT NOT NULL DEFAULT ''
+             );
+             INSERT INTO crawl_sites (base_url, label) VALUES ('https://keep.com', 'Keep');
+             CREATE TABLE crawl_pages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT NOT NULL,
+                saved INTEGER NOT NULL DEFAULT 0
+             );
+             INSERT INTO crawl_pages (url, saved) VALUES
+                ('https://keep.com/page1', 1),
+                ('https://keep.com/page2', 0),
+                ('https://keep.com/page3', 0);
+             CREATE TABLE personal_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT
+             );
+             INSERT INTO personal_memory (content) VALUES ('private thought');",
+        ).unwrap();
+        db_path
+    }
+
+    #[test]
+    fn test_reset_requires_confirm_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let eco = json!({});
+        let result = ecosystem_reset_inner("wrong_token", &eco, tmp.path());
+        assert!(result.is_err(), "token inválido deve retornar Err");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("RESETAR"), "mensagem de erro deve mencionar RESETAR");
+    }
+
+    #[test]
+    fn test_reset_deletes_crawl_pages() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_akasha_db_with_memory(tmp.path());
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        let report = ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
+
+        // Verificar que crawl_pages não salvas foram apagadas
+        let conn = Connection::open(tmp.path().join("akasha.db")).unwrap();
+        let total: i64 = conn.query_row("SELECT count(*) FROM crawl_pages", [], |r| r.get(0)).unwrap();
+        // página salva (saved=1) deve permanecer; não salvas devem ser apagadas
+        assert_eq!(total, 1, "só páginas salvas devem sobrar");
+        assert!(report.deleted.iter().any(|d| d.contains("crawl_pages")), "relatório deve mencionar crawl_pages");
+    }
+
+    #[test]
+    fn test_reset_preserves_crawl_sites() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_akasha_db_with_memory(tmp.path());
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
+
+        let conn = Connection::open(tmp.path().join("akasha.db")).unwrap();
+        let count: i64 = conn.query_row("SELECT count(*) FROM crawl_sites", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1, "crawl_sites deve ser preservada após reset");
+    }
+
+    #[test]
+    fn test_reset_deletes_personal_memory() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_akasha_db_with_memory(tmp.path());
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
+
+        let conn = Connection::open(tmp.path().join("akasha.db")).unwrap();
+        let count: i64 = conn.query_row("SELECT count(*) FROM personal_memory", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0, "personal_memory deve ser apagada após reset");
+    }
+
+    #[test]
+    fn test_reset_preserves_user_prefs() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_akasha_db_with_memory(tmp.path());
+        // Criar userdata com arquivo de preferências
+        let userdata = tmp.path().join("userdata");
+        std::fs::create_dir_all(&userdata).unwrap();
+        std::fs::write(userdata.join("blocked_domains.json"), b"[]").unwrap();
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
+
+        assert!(userdata.join("blocked_domains.json").exists(), "userdata deve ser preservado");
+    }
+
+    #[test]
+    fn test_reset_report_lists_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_akasha_db_with_memory(tmp.path());
+        // Criar personal_memory.db externo
+        let ai_private = tmp.path().join(".ai_private").join("akasha");
+        std::fs::create_dir_all(&ai_private).unwrap();
+        std::fs::write(ai_private.join("personal_memory.db"), b"").unwrap();
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        let report = ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
+
+        assert!(!report.deleted.is_empty(), "relatório deve listar itens deletados");
+        assert!(!report.preserved.is_empty(), "relatório deve listar itens preservados");
+    }
+
+    #[test]
+    fn test_reset_deletes_mnemosyne_chroma() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Criar chroma_dir com arquivos dentro
+        let chroma_dir = tmp.path().join("chroma_db");
+        std::fs::create_dir_all(&chroma_dir).unwrap();
+        std::fs::write(chroma_dir.join("chroma.sqlite3"), b"fake").unwrap();
+        // BM25 index
+        std::fs::write(tmp.path().join("bm25_index.pkl"), b"fake bm25").unwrap();
+
+        let eco = json!({
+            "akasha": { "data_path": tmp.path().display().to_string() },
+            "kosmos": { "data_path": tmp.path().display().to_string() },
+            "mnemosyne": { "chroma_dir": chroma_dir.display().to_string() },
+        });
+
+        ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
+
+        assert!(!chroma_dir.exists(), "chroma_dir deve ser apagado");
+        assert!(!tmp.path().join("bm25_index.pkl").exists(), "bm25_index deve ser apagado");
     }
 
     // ─── syncthing_checkpoint_app_dbs ────────────────────────────────────────

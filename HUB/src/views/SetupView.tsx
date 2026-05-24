@@ -6,9 +6,34 @@
    ============================================================ */
 
 import { useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import * as cmd from '../lib/tauri'
+import type { ServiceCredentials, ResetReport } from '../lib/tauri'
 import type { EcosystemConfig } from '../types'
+
+const WILL_DELETE = [
+  'AKASHA: páginas crawleadas (não salvas)',
+  'AKASHA: memória pessoal da IA (personal_memory)',
+  'AKASHA: base de conhecimento (akasha_knowledge.db)',
+  'KOSMOS: artigos não salvos',
+  'Mnemosyne: banco vetorial ChromaDB',
+  'Mnemosyne: índice BM25',
+  'Mnemosyne: memória pessoal da IA (personal_memory.db)',
+  'Compartilhado: communication_history.db',
+  'Compartilhado: shared_topic_profile.db',
+] as const
+
+const WILL_PRESERVE = [
+  'AKASHA: lista de sites (crawl_sites)',
+  'AKASHA: userdata (blocked_domains, watch_later, etc.)',
+  'AKASHA: arquivos salvos (Web/, Papers/)',
+  'KOSMOS: lista de feeds',
+  'KOSMOS: artigos salvos (is_saved=1)',
+  'Mnemosyne: notebooks (histórico de chats)',
+  'Mnemosyne: documentos da biblioteca',
+  'Hermes: transcrições, ecosystem.json, modelos LOGOS, .backup/',
+] as const
 
 interface SetupViewProps {
   onBack: () => void
@@ -145,7 +170,22 @@ export function SetupView({ onBack }: SetupViewProps) {
   const [syncMsg, setSyncMsg] = useState('')
   const [extraDirs, setExtraDirs] = useState<string[]>([])
 
-  // Carrega valores atuais do ecosystem.json
+  const defaultCreds: ServiceCredentials = {
+    unpaywall_email: '', qbt_host: 'localhost', qbt_port: 8080,
+    qbt_user: '', qbt_password: '', syncthing_gui_user: '', syncthing_gui_password: '',
+  }
+  const [creds,       setCreds]       = useState<ServiceCredentials>(defaultCreds)
+  const [credsSaving, setCredsSaving] = useState(false)
+  const [credsSaved,  setCredsSaved]  = useState(false)
+  const [credsErr,    setCredsErr]    = useState('')
+
+  const [resetModalOpen, setResetModalOpen] = useState(false)
+  const [resetToken,     setResetToken]     = useState('')
+  const [resetting,      setResetting]      = useState(false)
+  const [resetReport,    setResetReport]    = useState<ResetReport | null>(null)
+  const [resetErr,       setResetErr]       = useState('')
+
+  // Carrega valores atuais do ecosystem.json e credenciais
   useEffect(() => {
     cmd.readEcosystemConfig().then(result => {
       if (!result.ok) return
@@ -159,6 +199,9 @@ export function SetupView({ onBack }: SetupViewProps) {
       setSyncRoot(String(eco['sync_root'] ?? ''))
       const mnem = eco['mnemosyne'] as Record<string, unknown> | undefined
       setExtraDirs((mnem?.['extra_dirs'] as string[] | undefined) ?? [])
+    })
+    cmd.getServiceCredentials().then(res => {
+      if (res.ok) setCreds(res.data)
     })
   }, [])
 
@@ -250,6 +293,33 @@ export function SetupView({ onBack }: SetupViewProps) {
 
   function handleRemoveExtraDir(idx: number) {
     setExtraDirs(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  async function handleSaveCreds() {
+    setCredsSaving(true)
+    setCredsErr('')
+    setCredsSaved(false)
+    const res = await cmd.saveServiceCredentials(creds)
+    setCredsSaving(false)
+    if (res.ok) {
+      setCredsSaved(true)
+      setTimeout(() => setCredsSaved(false), 3000)
+    } else {
+      setCredsErr(res.error.message)
+    }
+  }
+
+  async function handleReset() {
+    setResetting(true)
+    setResetErr('')
+    const res = await cmd.ecosystemReset(resetToken)
+    setResetting(false)
+    if (res.ok) {
+      setResetReport(res.data)
+      setResetToken('')
+    } else {
+      setResetErr(res.error.message)
+    }
   }
 
   async function handleSave() {
@@ -574,7 +644,295 @@ export function SetupView({ onBack }: SetupViewProps) {
         >
           {saving ? 'Salvando…' : 'Salvar configuração'}
         </button>
+
+        {/* ── Credenciais e Serviços Externos ─────────────────────────── */}
+        <div style={{ borderTop: '1px solid var(--rule)', marginTop: 48, paddingTop: 32 }}>
+          <p style={sectionTitleStyle}>Credenciais e Serviços Externos</p>
+          <p style={hintStyle}>
+            Credenciais lidas pelo AKASHA e outros apps em runtime. Armazenadas localmente no ecosystem.json.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div>
+              <label style={labelStyle}>Unpaywall — E-mail</label>
+              <input
+                type="email"
+                value={creds.unpaywall_email}
+                placeholder="seu@email.com"
+                onChange={e => setCreds(c => ({ ...c, unpaywall_email: e.target.value }))}
+                style={inputStyle}
+              />
+            </div>
+
+            <p style={{ ...labelStyle, marginBottom: 0, color: 'var(--ink-ghost)', fontSize: 11 }}>qBittorrent</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Host</label>
+                <input
+                  type="text"
+                  value={creds.qbt_host}
+                  placeholder="localhost"
+                  onChange={e => setCreds(c => ({ ...c, qbt_host: e.target.value }))}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Porta</label>
+                <input
+                  type="number"
+                  value={creds.qbt_port}
+                  min={1}
+                  max={65535}
+                  onChange={e => setCreds(c => ({ ...c, qbt_port: Number(e.target.value) }))}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Usuário</label>
+                <input
+                  type="text"
+                  value={creds.qbt_user}
+                  placeholder="admin"
+                  onChange={e => setCreds(c => ({ ...c, qbt_user: e.target.value }))}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Senha</label>
+                <input
+                  type="password"
+                  value={creds.qbt_password}
+                  placeholder="••••••••"
+                  onChange={e => setCreds(c => ({ ...c, qbt_password: e.target.value }))}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <p style={{ ...labelStyle, marginBottom: 0, color: 'var(--ink-ghost)', fontSize: 11 }}>Syncthing GUI</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Usuário</label>
+                <input
+                  type="text"
+                  value={creds.syncthing_gui_user}
+                  placeholder="spacewitch"
+                  onChange={e => setCreds(c => ({ ...c, syncthing_gui_user: e.target.value }))}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Senha</label>
+                <input
+                  type="password"
+                  value={creds.syncthing_gui_password}
+                  placeholder="••••••••"
+                  onChange={e => setCreds(c => ({ ...c, syncthing_gui_password: e.target.value }))}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+          </div>
+
+          {credsErr && (
+            <p style={{ marginTop: 12, fontFamily: 'var(--font-mono)', fontSize: 11, color: '#8B3A2A' }}>
+              {credsErr}
+            </p>
+          )}
+          {credsSaved && (
+            <p style={{ marginTop: 12, fontFamily: 'var(--font-mono)', fontSize: 11, color: '#4A6741' }}>
+              Credenciais salvas.
+            </p>
+          )}
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ marginTop: 16 }}
+            onClick={handleSaveCreds}
+            disabled={credsSaving}
+          >
+            {credsSaving ? 'Salvando…' : 'Salvar credenciais'}
+          </button>
+        </div>
+
+        {/* ── Zona de Risco ────────────────────────────────────────────── */}
+        <div style={{ borderTop: '1px solid var(--rule)', marginTop: 48, paddingTop: 32, marginBottom: 40 }}>
+          <p style={{ ...sectionTitleStyle, color: 'var(--ribbon)' }}>Zona de Risco</p>
+          <p style={hintStyle}>
+            Apaga dados transientes (indexação, memória das IAs, artigos não salvos)
+            preservando a lista de fontes, feeds, arquivos salvos e configurações.
+            Um backup é criado automaticamente antes de qualquer deleção.
+          </p>
+          <button
+            style={{
+              fontFamily:   'var(--font-mono)',
+              fontSize:     11,
+              padding:      '6px 14px',
+              background:   'transparent',
+              border:       '1px solid var(--ribbon)',
+              borderRadius: 'var(--radius)',
+              color:        'var(--ribbon)',
+              cursor:       'pointer',
+            }}
+            onClick={() => { setResetModalOpen(true); setResetToken(''); setResetReport(null); setResetErr('') }}
+          >
+            Resetar dados transientes
+          </button>
+        </div>
       </div>
+
+      {/* ── Modal de confirmação do reset ────────────────────────────── */}
+      {resetModalOpen && (
+        <div
+          style={{
+            position:       'fixed',
+            inset:          0,
+            background:     'rgba(0,0,0,0.72)',
+            zIndex:         9000,
+            display:        'flex',
+            alignItems:     'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              background:   'var(--paper)',
+              borderRadius: 8,
+              padding:      '28px 32px',
+              maxWidth:     520,
+              width:        '90vw',
+              maxHeight:    '80vh',
+              overflow:     'auto',
+              boxShadow:    '0 8px 32px rgba(0,0,0,0.4)',
+            }}
+          >
+            {resetReport ? (
+              <>
+                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 16 }}>
+                  Reset concluído
+                </p>
+                <p style={{ ...hintStyle, marginBottom: 8 }}>Apagados ({resetReport.deleted.length}):</p>
+                <ul style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink)', paddingLeft: 16, margin: '0 0 12px' }}>
+                  {resetReport.deleted.map((d, i) => <li key={i}>{d}</li>)}
+                </ul>
+                {resetReport.errors.length > 0 && (
+                  <>
+                    <p style={{ ...hintStyle, color: '#8B3A2A', marginBottom: 8 }}>Erros ({resetReport.errors.length}):</p>
+                    <ul style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#8B3A2A', paddingLeft: 16, margin: '0 0 12px' }}>
+                      {resetReport.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </ul>
+                  </>
+                )}
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ marginTop: 8 }}
+                  onClick={() => { setResetModalOpen(false); setResetReport(null) }}
+                >
+                  Fechar
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, color: 'var(--ribbon)', marginBottom: 16 }}>
+                  Resetar dados transientes
+                </p>
+                <p style={{ ...hintStyle, marginBottom: 6, color: 'var(--ink)' }}>Será apagado:</p>
+                <ul style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#8B3A2A', paddingLeft: 16, margin: '0 0 16px' }}>
+                  {WILL_DELETE.map((d, i) => <li key={i}>{d}</li>)}
+                </ul>
+                <p style={{ ...hintStyle, marginBottom: 6, color: 'var(--ink)' }}>Será preservado:</p>
+                <ul style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#4A6741', paddingLeft: 16, margin: '0 0 20px' }}>
+                  {WILL_PRESERVE.map((p, i) => <li key={i}>{p}</li>)}
+                </ul>
+                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink)', marginBottom: 8 }}>
+                  Digite <strong>RESETAR</strong> para confirmar:
+                </p>
+                <input
+                  type="text"
+                  value={resetToken}
+                  placeholder="RESETAR"
+                  onChange={e => setResetToken(e.target.value)}
+                  style={{ ...inputStyle, marginBottom: 8, fontFamily: 'var(--font-mono)' }}
+                />
+                {resetErr && (
+                  <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#8B3A2A', marginBottom: 8 }}>
+                    {resetErr}
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setResetModalOpen(false)}
+                    disabled={resetting}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    style={{
+                      fontFamily:   'var(--font-mono)',
+                      fontSize:     11,
+                      padding:      '4px 14px',
+                      background:   resetToken === 'RESETAR' ? 'var(--ribbon)' : 'transparent',
+                      border:       '1px solid var(--ribbon)',
+                      borderRadius: 'var(--radius)',
+                      color:        resetToken === 'RESETAR' ? 'white' : 'var(--ribbon)',
+                      cursor:       resetToken === 'RESETAR' && !resetting ? 'pointer' : 'not-allowed',
+                      opacity:      resetToken === 'RESETAR' && !resetting ? 1 : 0.5,
+                    }}
+                    onClick={handleReset}
+                    disabled={resetting || resetToken !== 'RESETAR'}
+                  >
+                    {resetting ? 'Resetando…' : 'Confirmar reset'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
+}
+
+// ── Estilos compartilhados ─────────────────────────────────────────────────
+
+const sectionTitleStyle: CSSProperties = {
+  fontFamily:    'var(--font-mono)',
+  fontSize:      10,
+  letterSpacing: '0.16em',
+  textTransform: 'uppercase',
+  color:         'var(--accent)',
+  marginBottom:  16,
+}
+
+const hintStyle: CSSProperties = {
+  fontFamily:   'var(--font-body)',
+  fontSize:     12,
+  color:        'var(--ink-ghost)',
+  marginBottom: 16,
+  lineHeight:   1.6,
+}
+
+const labelStyle: CSSProperties = {
+  display:       'block',
+  fontFamily:    'var(--font-mono)',
+  fontSize:      10,
+  letterSpacing: '0.14em',
+  textTransform: 'uppercase',
+  color:         'var(--ink-ghost)',
+  marginBottom:  6,
+}
+
+const inputStyle: CSSProperties = {
+  width:        '100%',
+  fontFamily:   'var(--font-mono)',
+  fontSize:     12,
+  padding:      '6px 10px',
+  background:   'var(--paper-dark)',
+  border:       '1px solid var(--rule)',
+  borderRadius: 'var(--radius)',
+  color:        'var(--ink)',
+  outline:      'none',
+  boxSizing:    'border-box',
 }

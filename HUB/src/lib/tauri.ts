@@ -391,3 +391,24 @@ export const syncthingCheckpointAppDbs = (app: string):                    Promi
 
 export const backupKeyData    = ():            Promise<TauriResult<BackupReport>>    => call<BackupReport>('backup_key_data')
 export const checkDbIntegrity = (app: string): Promise<TauriResult<IntegrityReport>> => call<IntegrityReport>('check_db_integrity', { app })
+
+export interface ServiceCredentials {
+  unpaywall_email:        string
+  qbt_host:               string
+  qbt_port:               number
+  qbt_user:               string
+  qbt_password:           string
+  syncthing_gui_user:     string
+  syncthing_gui_password: string
+}
+
+export interface ResetReport {
+  deleted:   string[]
+  preserved: string[]
+  errors:    string[]
+  timestamp: string
+}
+
+export const getServiceCredentials  = ():                         Promise<TauriResult<ServiceCredentials>> => call<ServiceCredentials>('get_service_credentials')
+export const saveServiceCredentials = (creds: ServiceCredentials): Promise<TauriResult<void>>              => call<void>('save_service_credentials', { creds })
+export const ecosystemReset         = (confirmToken: string):      Promise<TauriResult<ResetReport>>       => call<ResetReport>('ecosystem_reset', { confirmToken })

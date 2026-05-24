@@ -5,6 +5,7 @@
 
 use crate::ecosystem;
 use crate::error::AppError;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
@@ -145,6 +146,119 @@ pub fn read_app_log(app: String, n: u32) -> Result<Vec<String>, AppError> {
         Ok(all[all.len() - n..].to_vec())
     } else {
         Ok(all)
+    }
+}
+
+// ─── ServiceCredentials ──────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ServiceCredentials {
+    pub unpaywall_email:        String,
+    pub qbt_host:               String,
+    pub qbt_port:               u16,
+    pub qbt_user:               String,
+    pub qbt_password:           String,
+    pub syncthing_gui_user:     String,
+    pub syncthing_gui_password: String,
+}
+
+/// Núcleo testável de `get_service_credentials` — recebe `eco` diretamente.
+pub(crate) fn get_service_credentials_inner(eco: &Value) -> ServiceCredentials {
+    let akasha = &eco["akasha"];
+    let hub    = &eco["hub"];
+    ServiceCredentials {
+        unpaywall_email:        akasha["unpaywall_email"].as_str().unwrap_or("").to_string(),
+        qbt_host:               akasha["qbt_host"].as_str().unwrap_or("localhost").to_string(),
+        qbt_port:               akasha["qbt_port"].as_u64().unwrap_or(8080) as u16,
+        qbt_user:               akasha["qbt_user"].as_str().unwrap_or("").to_string(),
+        qbt_password:           akasha["qbt_password"].as_str().unwrap_or("").to_string(),
+        syncthing_gui_user:     hub["syncthing_gui_user"].as_str().unwrap_or("").to_string(),
+        syncthing_gui_password: hub["syncthing_gui_password"].as_str().unwrap_or("").to_string(),
+    }
+}
+
+/// Lê credenciais de serviços externos do ecosystem.json.
+#[tauri::command]
+pub fn get_service_credentials() -> Result<ServiceCredentials, AppError> {
+    Ok(get_service_credentials_inner(&ecosystem::read_json()))
+}
+
+/// Salva credenciais de serviços externos no ecosystem.json.
+#[tauri::command]
+pub fn save_service_credentials(creds: ServiceCredentials) -> Result<(), AppError> {
+    ecosystem::write_section("akasha", serde_json::json!({
+        "unpaywall_email": creds.unpaywall_email,
+        "qbt_host":        creds.qbt_host,
+        "qbt_port":        creds.qbt_port,
+        "qbt_user":        creds.qbt_user,
+        "qbt_password":    creds.qbt_password,
+    }))?;
+    ecosystem::write_section("hub", serde_json::json!({
+        "syncthing_gui_user":     creds.syncthing_gui_user,
+        "syncthing_gui_password": creds.syncthing_gui_password,
+    }))
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_get_service_credentials_reads_all_fields() {
+        let eco = json!({
+            "akasha": {
+                "unpaywall_email": "test@example.com",
+                "qbt_host": "192.168.1.1",
+                "qbt_port": 9090,
+                "qbt_user": "admin",
+                "qbt_password": "secret",
+            },
+            "hub": {
+                "syncthing_gui_user": "sync_user",
+                "syncthing_gui_password": "sync_pass",
+            }
+        });
+        let creds = get_service_credentials_inner(&eco);
+        assert_eq!(creds.unpaywall_email, "test@example.com");
+        assert_eq!(creds.qbt_host, "192.168.1.1");
+        assert_eq!(creds.qbt_port, 9090);
+        assert_eq!(creds.qbt_user, "admin");
+        assert_eq!(creds.qbt_password, "secret");
+        assert_eq!(creds.syncthing_gui_user, "sync_user");
+        assert_eq!(creds.syncthing_gui_password, "sync_pass");
+    }
+
+    #[test]
+    fn test_get_service_credentials_defaults() {
+        let eco = json!({});
+        let creds = get_service_credentials_inner(&eco);
+        assert_eq!(creds.unpaywall_email, "");
+        assert_eq!(creds.qbt_host, "localhost");
+        assert_eq!(creds.qbt_port, 8080);
+        assert_eq!(creds.qbt_user, "");
+        assert_eq!(creds.qbt_password, "");
+        assert_eq!(creds.syncthing_gui_user, "");
+        assert_eq!(creds.syncthing_gui_password, "");
+    }
+
+    #[test]
+    fn test_service_credentials_serializes() {
+        let creds = ServiceCredentials {
+            unpaywall_email:        "a@b.com".into(),
+            qbt_host:               "localhost".into(),
+            qbt_port:               8080,
+            qbt_user:               "u".into(),
+            qbt_password:           "p".into(),
+            syncthing_gui_user:     "s".into(),
+            syncthing_gui_password: "q".into(),
+        };
+        let json_str = serde_json::to_string(&creds).unwrap();
+        assert!(json_str.contains("unpaywall_email"));
+        assert!(json_str.contains("qbt_port"));
+        assert!(json_str.contains("syncthing_gui_user"));
     }
 }
 
