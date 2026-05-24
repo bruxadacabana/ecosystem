@@ -279,12 +279,55 @@ export interface SyncStatus {
   devices: SyncDevice[]
 }
 
+export interface SyncEvent {
+  id:     number
+  time:   string
+  kind:   string
+  folder: string
+  item:   string
+  action: string
+}
+
+export interface SyncLogLine {
+  time:    string
+  level:   string
+  message: string
+}
+
+export interface SyncCredentials {
+  user:     string
+  password: string
+}
+
+export interface BackupReport {
+  backed_up: string[]
+  failed:    string[]
+  timestamp: string
+}
+
+export interface IntegrityReport {
+  app:      string
+  db_path:  string
+  ok:       boolean
+  details:  string
+  wal_size: number
+}
+
 // ----------------------------------------------------------
 //  Fontes — domínios do ecossistema
 // ----------------------------------------------------------
 
-export const sourcesGetDomains = (): Promise<TauriResult<DomainEntry[]>> =>
-  call<DomainEntry[]>('sources_get_domains')
+export interface SourcesResponse {
+  domains:      DomainEntry[]
+  akasha_error: string | null
+  from_backup:  boolean
+}
+
+export const sourcesGetDomains      = (): Promise<TauriResult<SourcesResponse>> =>
+  call<SourcesResponse>('sources_get_domains')
+
+export const sourcesGetAkashaBackup = (): Promise<TauriResult<DomainEntry[]>> =>
+  call<DomainEntry[]>('sources_get_akasha_backup')
 
 export const sourcesSetFlag = (
   domain: string,
@@ -318,10 +361,6 @@ export const interestsRefresh = (): Promise<TauriResult<void>> =>
   call<void>('interests_refresh')
 
 // ----------------------------------------------------------
-//  Syncthing
-// ----------------------------------------------------------
-
-// ----------------------------------------------------------
 //  Fine-tuning
 // ----------------------------------------------------------
 
@@ -337,4 +376,18 @@ export const syncthingPauseAll  = ():                      Promise<TauriResult<v
 export const syncthingResumeAll = ():                      Promise<TauriResult<void>>       => call<void>('syncthing_resume_all')
 export const syncthingRescan    = (folderId: string):      Promise<TauriResult<void>>       => call<void>('syncthing_rescan', { folderId })
 export const syncthingGetPaused = ():                      Promise<TauriResult<boolean>>    => call<boolean>('syncthing_get_paused')
-export const syncthingSetPaused = (paused: boolean):       Promise<TauriResult<void>>       => call<void>('syncthing_set_paused', { paused })
+export const syncthingSetPaused        = (paused: boolean):                 Promise<TauriResult<void>>            => call<void>('syncthing_set_paused',         { paused })
+export const syncthingPauseFolder      = (folderId: string):                Promise<TauriResult<void>>            => call<void>('syncthing_pause_folder',        { folderId })
+export const syncthingResumeFolder     = (folderId: string):                Promise<TauriResult<void>>            => call<void>('syncthing_resume_folder',       { folderId })
+export const syncthingGetLog           = (lines: number):                   Promise<TauriResult<SyncLogLine[]>>   => call<SyncLogLine[]>('syncthing_get_log',   { lines })
+export const syncthingGetEvents        = (since: number, limit: number):    Promise<TauriResult<SyncEvent[]>>     => call<SyncEvent[]>('syncthing_get_events',  { since, limit })
+export const syncthingGetCredentials   = ():                                Promise<TauriResult<SyncCredentials>> => call<SyncCredentials>('syncthing_get_credentials')
+export const syncthingSetCredentials   = (user: string, password: string): Promise<TauriResult<void>>            => call<void>('syncthing_set_credentials',    { user, password })
+export const syncthingCheckpointAppDbs = (app: string):                    Promise<TauriResult<void>>            => call<void>('syncthing_checkpoint_app_dbs', { app })
+
+// ----------------------------------------------------------
+//  Backup e integridade
+// ----------------------------------------------------------
+
+export const backupKeyData    = ():            Promise<TauriResult<BackupReport>>    => call<BackupReport>('backup_key_data')
+export const checkDbIntegrity = (app: string): Promise<TauriResult<IntegrityReport>> => call<IntegrityReport>('check_db_integrity', { app })

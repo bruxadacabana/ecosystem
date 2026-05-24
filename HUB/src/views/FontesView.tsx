@@ -14,14 +14,17 @@ export function FontesView() {
   const [domains,  setDomains]  = useState<DomainEntry[]>([])
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
+  const [warning,  setWarning]  = useState<string | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)  // "domain:flag" em progresso
 
   async function load() {
     setLoading(true)
     setError(null)
+    setWarning(null)
     const res = await cmd.sourcesGetDomains()
     if (res.ok) {
-      setDomains(res.data)
+      setDomains(res.data.domains)
+      if (res.data.akasha_error) setWarning(res.data.akasha_error)
     } else {
       setError(res.error.message)
     }
@@ -85,6 +88,16 @@ export function FontesView() {
         </button>
       </div>
 
+      {warning && (
+        <div style={{
+          fontFamily: 'var(--font-mono)', fontSize: 10, color: '#b8860b',
+          background: 'rgba(184, 134, 11, 0.08)',
+          borderBottom: '1px solid rgba(184, 134, 11, 0.25)',
+          padding: '6px 20px', flexShrink: 0,
+        }}>
+          ⚠ {warning}
+        </div>
+      )}
       <div style={styles.tableWrapper}>
         <table style={styles.table}>
           <thead>

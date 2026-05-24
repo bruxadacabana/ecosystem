@@ -32,6 +32,13 @@ import { ComunicacoesView } from './views/ComunicacoesView'
 import * as cmd from './lib/tauri'
 import type { HubSection, HubView, Project, Book, ChapterMeta, ArticleMeta, OgmaProject } from './types'
 
+async function isAkashaRunning(): Promise<boolean> {
+  try {
+    const r = await fetch('http://127.0.0.1:7071/health', { signal: AbortSignal.timeout(400) })
+    return r.ok
+  } catch { return false }
+}
+
 export default function App() {
   const [ready,           setReady]           = useState(false)
   // null = verificando; false = precisa configurar; true = configurado
@@ -131,11 +138,17 @@ export default function App() {
         const p = eco[app]?.exe_path
         if (p) exePaths[app] = p
       }
-      if (Object.keys(exePaths).length === 0) return
 
-      const statusRes = await cmd.getAllAppStatuses(exePaths)
+      // AKASHA: health check (porta 7071) em paralelo com exe_path
+      const [statusRes, akashaHealthy] = await Promise.all([
+        Object.keys(exePaths).length > 0
+          ? cmd.getAllAppStatuses(exePaths)
+          : Promise.resolve({ ok: true as const, data: {} as Record<string, boolean> }),
+        isAkashaRunning(),
+      ])
       if (!statusRes.ok) return
-      const current = statusRes.data
+      const current: Record<string, boolean> = { ...statusRes.data }
+      current['akasha'] = akashaHealthy || Boolean(statusRes.data['akasha'])
 
       const prev = prevRunningRef.current
       if (prev !== null) {
@@ -169,12 +182,14 @@ export default function App() {
         cmd.syncthingPauseAll().catch(() => {})
       } else if (!anyDbRunning && syncthingAutoPaused.current && !syncthingManualPaused) {
         syncthingAutoPaused.current = false
+        // WAL checkpoint em todos os DBs antes de retomar o sync
+        await Promise.allSettled(DB_APPS.map(app => cmd.syncthingCheckpointAppDbs(app)))
         cmd.syncthingResumeAll().catch(() => {})
       }
     }
 
     pollApps()
-    const id = setInterval(pollApps, 10_000)
+    const id = setInterval(pollApps, 5_000)
     return () => clearInterval(id)
   }, [syncRootReady])
 
