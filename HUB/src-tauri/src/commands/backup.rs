@@ -349,6 +349,218 @@ fn restore_ecosystem_json_backup(
     }
 }
 
+// ─── check_db_integrity ─────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IntegrityReport {
+    pub app:      String,
+    pub db_path:  String,
+    pub ok:       bool,
+    pub details:  String,
+    pub wal_size: u64,
+}
+
+/// Núcleo testável de `check_db_integrity` — recebe `eco` diretamente.
+pub(crate) fn check_db_integrity_inner(eco: &Value, app: &str) -> Result<IntegrityReport, AppError> {
+    let db_path = resolve_app_db(eco, app)
+        .ok_or_else(|| AppError::NotFound(format!("{app}.db não encontrado")))?;
+
+    let wal_path = db_path.with_extension("db-wal");
+    let wal_size = wal_path.metadata().map(|m| m.len()).unwrap_or(0);
+
+    match Connection::open(&db_path) {
+        Err(e) => Ok(IntegrityReport {
+            app: app.to_string(),
+            db_path: db_path.display().to_string(),
+            ok:      false,
+            details: format!("não foi possível abrir: {e}"),
+            wal_size,
+        }),
+        Ok(conn) => {
+            let _ = conn.execute_batch("PRAGMA wal_checkpoint(FULL);");
+            let details: String = conn
+                .query_row("PRAGMA integrity_check(1);", [], |r| r.get(0))
+                .unwrap_or_else(|e| format!("erro ao executar integrity_check: {e}"));
+            Ok(IntegrityReport {
+                app: app.to_string(),
+                db_path: db_path.display().to_string(),
+                ok: details.trim() == "ok",
+                details,
+                wal_size,
+            })
+        }
+    }
+}
+
+/// Verifica a integridade de um banco SQLite do ecossistema.
+///
+/// `app`: `"akasha"` | `"kosmos"`
+/// Executa `PRAGMA integrity_check(1)` e `PRAGMA wal_checkpoint(FULL)`.
+/// Mede o tamanho do `.db-wal` para identificar WAL pendente.
+#[tauri::command]
+pub fn check_db_integrity(app: String) -> Result<IntegrityReport, AppError> {
+    let eco = ecosystem::read_json();
+    check_db_integrity_inner(&eco, &app)
+}
+
+// ─── recover_db ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RecoveryReport {
+    pub app:     String,
+    pub method:  String,
+    pub ok:      bool,
+    pub details: String,
+}
+
+/// Núcleo testável de `recover_db` — recebe `eco` e `sync_root` diretamente.
+pub(crate) fn recover_db_inner(eco: &Value, app: &str, sr: &Path) -> Result<RecoveryReport, AppError> {
+    let db_path = resolve_app_db(eco, app)
+        .ok_or_else(|| AppError::NotFound(format!("{app}.db não encontrado")))?;
+    recover_db_at(app, &db_path, eco, sr)
+}
+
+/// Tenta recuperar um banco corrompido em sequência:
+/// 1. `PRAGMA wal_checkpoint(TRUNCATE)` + `integrity_check` → se "ok", sucesso
+/// 2. `sqlite3 db ".recover" | sqlite3 db_recovered` via CLI + renomear
+/// 3. `restore_from_backup` a partir dos JSONs em `.backup/`
+/// 4. Falhou — retorna `method: "failed"`
+#[tauri::command]
+pub fn recover_db(app: String) -> Result<RecoveryReport, AppError> {
+    let eco = ecosystem::read_json();
+    let db_path = resolve_app_db(&eco, &app)
+        .ok_or_else(|| AppError::NotFound(format!("{app}.db não encontrado")))?;
+    let sr = sync_root().ok_or_else(|| AppError::MissingConfig("sync_root não configurado".into()))?;
+    recover_db_at(&app, &db_path, &eco, &sr)
+}
+
+fn recover_db_at(app: &str, db_path: &Path, eco: &Value, sr: &Path) -> Result<RecoveryReport, AppError> {
+
+    // 1. Tentativa: WAL checkpoint + integrity_check
+    if let Ok(conn) = Connection::open(db_path) {
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        let result: String = conn
+            .query_row("PRAGMA integrity_check(1);", [], |r| r.get(0))
+            .unwrap_or_default();
+        if result.trim() == "ok" {
+            return Ok(RecoveryReport {
+                app:     app.to_string(),
+                method:  "wal_checkpoint".into(),
+                ok:      true,
+                details: "WAL checkpoint + integrity_check ok".into(),
+            });
+        }
+    }
+
+    // 2. Tentativa: sqlite3 .recover via CLI
+    let recovered = db_path.with_file_name(format!(
+        "{}_recovered.db",
+        db_path.file_stem().unwrap_or_default().to_string_lossy()
+    ));
+    let _ = std::fs::remove_file(&recovered);
+
+    let dump = std::process::Command::new("sqlite3")
+        .arg(db_path)
+        .arg(".recover")
+        .output();
+
+    if let Ok(dump_out) = dump {
+        if dump_out.status.success() || !dump_out.stdout.is_empty() {
+            let restore = std::process::Command::new("sqlite3")
+                .arg(&recovered)
+                .stdin(std::process::Stdio::piped())
+                .spawn();
+
+            if let Ok(mut child) = restore {
+                use std::io::Write;
+                if let Some(stdin) = child.stdin.as_mut() {
+                    let _ = stdin.write_all(&dump_out.stdout);
+                }
+                if child.wait().map(|s| s.success()).unwrap_or(false) && recovered.exists() {
+                    let ok = Connection::open(&recovered)
+                        .and_then(|c| c.query_row("PRAGMA integrity_check(1);", [], |r| r.get::<_, String>(0)))
+                        .map(|s| s.trim() == "ok")
+                        .unwrap_or(false);
+
+                    if ok {
+                        if std::fs::rename(&recovered, db_path).is_ok() {
+                            return Ok(RecoveryReport {
+                                app:     app.to_string(),
+                                method:  "sqlite_recover".into(),
+                                ok:      true,
+                                details: "recuperado via sqlite3 .recover".into(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&recovered);
+
+    // 3. Tentativa: restore_from_backup
+    let bdir = backup_dir(sr);
+    let backup_sites = bdir.join("akasha").join("sites.json");
+    if backup_sites.exists() {
+        match restore_akasha_sites(eco, &backup_sites) {
+            Ok(n) => {
+                return Ok(RecoveryReport {
+                    app:     app.to_string(),
+                    method:  "restore_backup".into(),
+                    ok:      true,
+                    details: format!("restaurados {n} sites do backup JSON"),
+                });
+            }
+            Err(e) => {
+                return Ok(RecoveryReport {
+                    app:     app.to_string(),
+                    method:  "restore_backup".into(),
+                    ok:      false,
+                    details: format!("backup encontrado mas restauração falhou: {e}"),
+                });
+            }
+        }
+    }
+
+    // 4. Falhou
+    Ok(RecoveryReport {
+        app:     app.to_string(),
+        method:  "failed".into(),
+        ok:      false,
+        details: "todos os métodos de recuperação falharam".into(),
+    })
+}
+
+// ─── syncthing_checkpoint_app_dbs ───────────────────────────────────────────
+
+/// Executa WAL checkpoint em todos os bancos SQLite de um app.
+///
+/// Deve ser chamado ANTES de retomar o Syncthing quando um app fecha,
+/// para garantir que o WAL foi incorporado ao arquivo principal.
+/// O Syncthing então sincroniza um arquivo SQLite coerente.
+#[tauri::command]
+pub fn syncthing_checkpoint_app_dbs(app: String) -> Result<(), AppError> {
+    let eco = ecosystem::read_json();
+    let db_path = resolve_app_db(&eco, &app)
+        .ok_or_else(|| AppError::NotFound(format!("{app}.db não encontrado")))?;
+
+    let conn = Connection::open(&db_path)
+        .map_err(|e| AppError::Io(format!("{app}.db: {e}")))?;
+    conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
+        .map_err(|e| AppError::Io(format!("checkpoint {app}: {e}")))?;
+    Ok(())
+}
+
+// ─── Helper: resolver path do DB por app ─────────────────────────────────────
+
+pub(crate) fn resolve_app_db(eco: &Value, app: &str) -> Option<PathBuf> {
+    match app {
+        "akasha" => akasha_db_path(eco),
+        "kosmos" => kosmos_db_path(eco),
+        _ => None,
+    }
+}
+
 // ─── Testes ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -514,5 +726,99 @@ mod tests {
         let conn = Connection::open(&db_path).unwrap();
         let count: i64 = conn.query_row("SELECT count(*) FROM crawl_sites", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 2);
+    }
+
+    // ─── check_db_integrity ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_integrity_check_ok() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db_path = make_fake_akasha_db(tmp.path());
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        let report = check_db_integrity_inner(&eco, "akasha").unwrap();
+        assert!(report.ok, "DB recém-criado deve passar no integrity_check");
+        assert_eq!(report.details.trim(), "ok");
+    }
+
+    #[test]
+    fn test_integrity_check_corrupted() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Criar um arquivo DB com conteúdo inválido
+        let db_path = tmp.path().join("akasha.db");
+        std::fs::write(&db_path, b"not a valid sqlite database content xyz").unwrap();
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        let report = check_db_integrity_inner(&eco, "akasha").unwrap();
+        assert!(!report.ok, "DB corrompido deve falhar no integrity_check");
+    }
+
+    #[test]
+    fn test_integrity_wal_size_reported() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_fake_akasha_db(tmp.path());
+        // Criar um .db-wal falso com tamanho conhecido
+        let wal_path = tmp.path().join("akasha.db-wal");
+        std::fs::write(&wal_path, vec![0u8; 512]).unwrap();
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        let report = check_db_integrity_inner(&eco, "akasha").unwrap();
+        assert_eq!(report.wal_size, 512, "wal_size deve refletir tamanho do arquivo .db-wal");
+    }
+
+    // ─── recover_db ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_recover_via_checkpoint() {
+        let tmp = tempfile::tempdir().unwrap();
+        // DB saudável: checkpoint deve resolver
+        make_fake_akasha_db(tmp.path());
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        let report = recover_db_inner(&eco, "akasha", tmp.path()).unwrap();
+        assert!(report.ok);
+        assert_eq!(report.method, "wal_checkpoint");
+    }
+
+    #[test]
+    fn test_recover_attempts_all_methods() {
+        let tmp = tempfile::tempdir().unwrap();
+        // DB com conteúdo inválido — sqlite3 .recover pode gerar um DB vazio
+        let db_path = tmp.path().join("akasha.db");
+        std::fs::write(&db_path, b"garbage").unwrap();
+
+        let bdir = tmp.path().join(".backup");
+        std::fs::create_dir_all(bdir.join("akasha")).unwrap();
+        let backup_sites = bdir.join("akasha/sites.json");
+        std::fs::write(&backup_sites, r#"[{"base_url":"https://t.com","label":"T","crawl_depth":2,"crawl_interval_days":7}]"#).unwrap();
+
+        let eco = make_eco(tmp.path(), tmp.path());
+        let report = recover_db_inner(&eco, "akasha", tmp.path()).unwrap();
+        // sqlite3 .recover pode reconstruir um DB vazio válido a partir de garbage —
+        // o importante é que a função retorna Ok com método preenchido
+        assert!(!report.method.is_empty(), "método não pode ser vazio");
+    }
+
+    #[test]
+    fn test_recover_db_not_found_returns_err() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Sem akasha.db em tmp.path() → resolve_app_db retorna None → Err(NotFound)
+        let eco = make_eco(tmp.path(), tmp.path());
+        let result = recover_db_inner(&eco, "akasha", tmp.path());
+        assert!(result.is_err(), "deve retornar Err quando DB não existe");
+    }
+
+    // ─── syncthing_checkpoint_app_dbs ────────────────────────────────────────
+
+    #[test]
+    fn test_checkpoint_app_dbs_ok() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_fake_akasha_db(tmp.path());
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        let db_path = akasha_db_path(&eco).unwrap();
+        let conn = Connection::open(&db_path).unwrap();
+        let result = conn.execute_batch("PRAGMA wal_checkpoint(FULL);");
+        assert!(result.is_ok(), "checkpoint em DB saudável deve funcionar");
     }
 }

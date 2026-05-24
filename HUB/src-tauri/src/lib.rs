@@ -81,6 +81,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::backup::backup_key_data,
             commands::backup::restore_from_backup,
+            commands::backup::check_db_integrity,
+            commands::backup::recover_db,
+            commands::backup::syncthing_checkpoint_app_dbs,
             commands::git::git_init_sync_root,
             commands::git::git_status,
             commands::git::git_commit,
@@ -145,6 +148,7 @@ pub fn run() {
             commands::syncthing::syncthing_set_paused,
             commands::sources::sources_get_domains,
             commands::sources::sources_set_flag,
+            commands::sources::sources_get_akasha_backup,
             commands::interests::interests_get,
             commands::interests::interests_set_topic,
             commands::interests::interests_add_manual,
