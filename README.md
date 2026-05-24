@@ -1,884 +1,946 @@
-# Ecossistema
+# Ecossistema — Documentação Completa
 
 Conjunto de aplicativos pessoais, completamente locais, sem conta, sem nuvem, sem telemetria.
-Desenvolvidos para CachyOS (Arch Linux) e Windows 10.
+Desenvolvidos para CachyOS (Arch Linux), Fedora e Windows 10.
+
+> **Última atualização:** 2026-05-23
+> Para manter este arquivo atualizado: toda mudança significativa de arquitetura, dependência ou funcionalidade deve ser refletida aqui na mesma resposta que implementa a mudança.
 
 ---
 
-## Os apps
+## Índice
 
-Cada app tem nome derivado de mitologia, línguas antigas ou conceitos esotéricos e cósmicos — essa etimologia é a alma de cada ferramenta.
-
----
-
-### AETHER — Forja de Mundos
-*pronuncia-se: ay-ther · αἰθήρ (grego) — "brilhar com luz própria"*
-
-O quinto elemento da cosmologia grega — além da terra, água, fogo e ar. A substância pura e luminosa dos céus, o que os deuses respiravam, o meio pelo qual a luz viajava. Eterno e imutável, a quintessência que preenche o espaço além da esfera lunar. Aristóteles o descreveu como o material de que as estrelas são feitas.
-
-Editor de escrita criativa para narrativas longas — livros, séries, fanfiction, worldbuilding.
-Inspirado no Scrivener e no Ellipsus, mas completamente local.
-
-- Vault portátil (pasta escolhida pelo usuário, formato JSON + Markdown)
-- Binder com árvore Livros > Capítulos, CRUD, reordenação
-- Editor WYSIWYG com auto-save, modo foco, modo typewriter
-- Fichas de personagem, worldbuilding, linha do tempo
-- Metas de palavras, sessões de escrita, streak diário, snapshots de capítulo
-
-**Stack:** Rust (Tauri v2) · TypeScript + React + Vite  
-**Estado:** Fases 0–5 completas. Vault format estável.
+1. [Visão geral](#1-visão-geral)
+2. [Mapa do ecossistema](#2-mapa-do-ecossistema)
+3. [Funcionalidades por programa](#3-funcionalidades-por-programa)
+4. [Hardware e implicações](#4-hardware-e-implicações)
+5. [Instalação do zero — CachyOS](#5-instalação-do-zero--cachyos)
+6. [Instalação do zero — Fedora](#6-instalação-do-zero--fedora)
+7. [Instalação do zero — Windows 10](#7-instalação-do-zero--windows-10)
+8. [llama-cpp e llama-server](#8-llama-cpp-e-llama-server)
+9. [Modelos recomendados por máquina](#9-modelos-recomendados-por-máquina)
+10. [Configurar ecosystem.json](#10-configurar-ecosystemjson)
+11. [Atualizar e rodar](#11-atualizar-e-rodar)
+12. [Portas e serviços](#12-portas-e-serviços)
+13. [Checklist de verificação](#13-checklist-de-verificação)
 
 ---
 
-### HUB — Central do Ecossistema
+## 1. Visão geral
 
-App unificado para ler e navegar o conteúdo de todos os outros apps numa interface única.
-Projetado para rodar também como APK Android (via Tauri 2) numa fase futura.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                            HUB                                  │
+│          Dashboard central · lança todos os outros apps         │
+│                    porta 5173 (dev)                             │
+│                                                                 │
+│   ┌─────────────────────────────────────────────────────────┐   │
+│   │                        LOGOS                            │   │
+│   │   Proxy inteligente de LLM · gerencia prioridades P1/2/3│   │
+│   │   ↕ llama-server (llama-cpp)  porta 7072 (proxy)        │   │
+│   └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+         │           │           │           │
+         ▼           ▼           ▼           ▼
+     AETHER       AKASHA     Mnemosyne    KOSMOS
+   (escrita)    (pesquisa)  (notebook IA) (análise)
+   Tauri/SvK    FastAPI/Py  PySide6/Py   PyQt6/Py
+   porta 5174   porta 7071  (desktop)    (desktop)
 
-- **Módulo Escrita:** navega projetos, livros e capítulos do vault AETHER; renderiza Markdown
-- **Módulo Leituras:** lista e lê artigos do archive do KOSMOS; marca como lido
-- **Módulo Projetos:** lista projetos e páginas do OGMA (read-only)
-- **Módulo Perguntas:** chat local com qualquer modelo Ollama, streaming token a token
-- Barra de atalhos: lança os 6 apps e indica visualmente se cada um está rodando
-- Read-only por padrão — não substitui os editores primários de cada app
+         │           │
+         ▼           ▼
+       OGMA        Hermes
+   (editor notas) (transcrição)
+   Electron       Python+GUI
+   porta 5175     (desktop)
 
-**Stack:** Rust (Tauri v2) · TypeScript + React + Vite  
-**Estado:** Fases 2.1–2.6 completas. Todos os módulos implementados.
-
----
-
-### OGMA — Grimório de Projetos
-*pronuncia-se: og-mah · Ogma (irlandês antigo) — deus da eloquência e das letras*
-
-Divindade irlandesa criadora do Ogham — o alfabeto mais antigo da Irlanda, entalhado em bordas de pedra. Representado com uma corrente dourada saindo da língua, presa às línguas de todos que o seguiam: o poder da linguagem de conectar e conduzir.
-
-Gerenciador unificado de projetos, estudos e leituras. Cada projeto tem páginas com editor de blocos rico e propriedades customizáveis. Banco SQLite local sincronizado via Proton Drive.
-
-- Projetos do tipo criativo, técnico, estudo, leitura
-- Editor de blocos com imagens, tabelas, checklists, código
-- Tags, filtros, busca por texto
-- Offline-first: 100% local, sem conta externa
-
-**Stack:** Electron · TypeScript + React + Vite  
-**Estado:** Schema v2 em produção.
-
----
-
-### KOSMOS — Ordem do Universo
-*pronuncia-se: koz-mos · κόσμος (grego) — ordem, harmonia, totalidade*
-
-Oposto semântico ao Caos primordial. Para os gregos, o cosmos era a prova de que o universo tem sentido — uma ordem inteligível subjacente a tudo. Pitágoras foi o primeiro a usá-lo para descrever o universo como totalidade harmônica. Implica que tudo tem seu lugar, sua relação, sua proporção.
-
-Leitor e agregador de feeds RSS local. Suporta RSS genérico, YouTube, Tumblr, Substack, Mastodon e Reddit. Lê artigos, salva no archive em Markdown, exporta como PDF.
-
-- Múltiplos tipos de feed com parsers dedicados
-- Painel de leitura com WebEngine
-- Archive de artigos em Markdown (`data/archive/`)
-- Tradução offline opcional via Argos Translate
-
-**Stack:** Python + PyQt6  
-**Estado:** Funcional. Pronto para integração.
-
----
-
-### Mnemosyne — Guardiã da Memória
-*pronuncia-se: nem-oz-ih-nee · Μνημοσύνη (grego) — personificação da Memória*
-
-Titânide filha de Urano e Gaia, mãe das nove Musas — todas as artes nascem da memória. No submundo, guardava o rio Mnemosyne, oposto ao Letes (esquecimento). Quem bebia de suas águas antes de reencarnar lembrava de tudo que havia vivido. A memória como identidade e como poder.
-
-Assistente local de documentos com RAG. Indexa uma pasta de arquivos (`.pdf`, `.docx`, `.txt`, `.md`), responde perguntas e gera resumos com modelos do Ollama — sem nenhum dado sair da máquina.
-
-- Vectorstore local via ChromaDB (índice em `<pasta>/.mnemosyne/`)
-- Seleção dinâmica de modelos detectados no Ollama
-- Watcher de pasta: indexa novos arquivos automaticamente
-- Hybrid retrieval BM25 + semântico
-
-**Stack:** Python + PySide6 · LangChain · ChromaDB · Ollama  
-**Estado:** Em desenvolvimento ativo.
-
----
-
-### Hermes — Mensageiro
-*pronuncia-se: her-meez · Ἑρμῆς (grego) — mensageiro dos deuses, guia entre mundos*
-
-O único olímpico que transitava livremente entre o Olimpo, o mundo dos vivos e o Hades — mediador por excelência. Inventor da lira, da flauta e do alfabeto. Seu símbolo, o caduceu (duas serpentes entrelaçadas), representa o movimento entre opostos.
-
-Utilitário de download e transcrição de vídeos. Baixa qualquer URL suportada pelo yt-dlp e transcreve o áudio em Markdown via Whisper.
-
-- Aba Descarregar: inspeciona URL, lista formatos, suporta playlists
-- Aba Transcrever: modelo Whisper configurável, idioma, limite de CPU
-- Output salvo em pasta configurável; histórico de transcrições
-- Workers em thread separada, log colorido em tempo real
-
-**Stack:** Python + PyQt6 · yt-dlp · faster-whisper  
-**Estado:** Fase 1 completa.
-
----
-
-### AKASHA — Registros do Universo
-*pronuncia-se: ah-kah-shah · ākāśa (sânscrito) — "espaço luminoso", o substrato invisível onde tudo existe*
-
-Na cosmologia hindu/vedanta, o quinto elemento — o espaço onde tudo existe, ressoa e persiste. No esoterismo ocidental, os *Registros Akáshicos* são a biblioteca cósmica imaterial onde cada pensamento, palavra e ação está eternamente gravada no tecido do universo. Consultar os Registros é acessar o conhecimento total.
-
-Buscador pessoal local. Agrega resultados da web e do próprio ecossistema numa interface única, com biblioteca de URLs monitorada e arquivação de páginas. Roda como servidor Python acessado via browser — sem conta, sem nuvem, sem telemetria.
-
-- Busca web: DuckDuckGo sem API key; cache local de 1h; histórico persistido
-- Busca local: lê `ecosystem.json` para descobrir os caminhos — `kosmos.archive_path` (`**/*.md`), `aether.vault_dir` (`*/chapters/*.md`) e `mnemosyne.indices` (ChromaDB, opcional); fontes não configuradas são silenciosamente ignoradas
-- Arquivação: salva qualquer página como `.md` em `AKASHA/data/archive/{YYYY-MM-DD}_{slug}.md` (pasta própria, sem dependências externas)
-- Biblioteca de URLs: monitoramento periódico com diff automático e busca FTS5
-- Integração com ecossistema: lê `ecosystem.json`; delega vídeo/áudio ao Hermes
-
-**Stack:** Python + FastAPI · HTMX + Jinja2 · SQLite · uv  
-**Estado:** Fases 1–3, 5 e 7 concluídas. Busca web + local + biblioteca de URLs funcionais.  
-**Porta:** 7071
-
----
-
-## Guia de instalação e uso
-
-Este guia assume que você está configurando tudo do zero. Se alguns requisitos já estiverem instalados, pule os passos correspondentes.
-
-Os apps se dividem em três grupos por tecnologia:
-
-| Grupo | Apps | Tecnologia |
-|---|---|---|
-| Tauri (Rust + Node) | AETHER, HUB | Rust, Node.js, cargo-tauri |
-| Electron (Node) | OGMA | Node.js |
-| Python | KOSMOS, Mnemosyne, Hermes | Python 3, venv compartilhado |
-
----
-
-## CachyOS (Arch Linux) — Niri + Fish
-
-As instruções abaixo assumem o shell **Fish** e o compositor Wayland **Niri**, que é o ambiente padrão nesta instalação.
-
-Todos os comandos devem ser digitados em um terminal com Fish (ex.: Foot, Alacritty, ou qualquer emulador configurado no Niri).
-
-### Passo 1 — Rust
-
-O Rust é a linguagem de programação usada pelo AETHER e pelo HUB. É necessário instalá-lo via `rustup` (o instalador oficial) — **não use o pacote do sistema**, pois ele pode estar desatualizado.
-
-Abra um terminal e execute:
-
-```fish
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+Sync entre máquinas: Syncthing → sync_root
+Inferência LLM: llama-server (llama-cpp) em porta 8080 (direto) / 7072 (via LOGOS)
 ```
 
-O instalador vai perguntar qual tipo de instalação fazer. Pressione **Enter** para aceitar o padrão (opção 1).
-
-No Fish, o `cargo` já fica disponível nas próximas sessões se `~/.cargo/bin` estiver no PATH. Para ativá-lo na sessão atual sem fechar o terminal:
-
-```fish
-fish_add_path ~/.cargo/bin
-```
-
-Verifique se a instalação funcionou:
-
-```fish
-rustc --version
-# deve mostrar algo como: rustc 1.x.x (...)
-```
+**Princípio fundamental:** tudo local. Nenhum dado sai da máquina. Nenhum serviço externo. Nenhuma conta.
 
 ---
 
-### Passo 2 — Tauri CLI
+## 2. Mapa do ecossistema
 
-O `cargo-tauri` é a ferramenta de linha de comando que compila e roda os apps AETHER e HUB. Instale com:
-
-```fish
-cargo install tauri-cli
-```
-
-> Isso vai levar alguns minutos na primeira vez — o Cargo precisa compilar a ferramenta. Nas próximas vezes, o comando `cargo tauri dev` é rápido.
-
-Verifique:
-
-```fish
-cargo tauri --version
-# deve mostrar: tauri-cli x.x.x
-```
+| Programa | Stack | Tipo | Porta | Função principal |
+|----------|-------|------|-------|-----------------|
+| **HUB** | Tauri 2 + SvelteKit + Rust | App desktop | 5173 (dev) | Dashboard central, LOGOS, lançador |
+| **AETHER** | Tauri 2 + SvelteKit + Rust | App desktop | 5174 (dev) | Editor de escrita criativa e vault |
+| **OGMA** | Electron + EditorJS | App desktop | 5175 (dev) | Editor de notas e documentos |
+| **AKASHA** | FastAPI + Python + SQLite | Servidor HTTP | 7071 | Buscador e indexador de pesquisa |
+| **Mnemosyne** | PySide6 + Python + ChromaDB | App desktop | — | Assistente RAG com notebooks |
+| **KOSMOS** | PyQt6 + Python | App desktop | — | Análise de imagens, OCR, visão |
+| **Hermes** | Python + GUI | App desktop | — | Transcrição e processamento de áudio |
 
 ---
 
-### Passo 3 — Dependências de sistema para Tauri
+## 3. Funcionalidades por programa
 
-O Tauri usa o motor web do sistema (webkit2gtk). No CachyOS, instale:
+### HUB
 
-```fish
+O HUB está sempre aberto — é o centro do ecossistema. Nenhum outro app é iniciado diretamente; todos são lançados e monitorados pelo HUB.
+
+**LOGOS (subprograma do HUB):**
+- Proxy inteligente de LLM sobre o llama-server (llama-cpp) — expõe API OpenAI-compatível em porta 7072
+- Sistema de filas com três prioridades:
+  - P1 (crítica): chat interativo do HUB + escrita ativa no AETHER
+  - P2 (importante): buscas RAG no Mnemosyne
+  - P3 (background): pré-análise KOSMOS + transcrições Hermes
+- Monitora VRAM da GPU e pausa tarefas P3 quando VRAM > 85%
+- Rotas: `/v1/chat/completions`, `/v1/embeddings`, `/v1/models` (OpenAI-compatível)
+
+**Painel de controle:**
+- Lança, monitora e encerra todos os outros apps do ecossistema
+- Gerencia o `ecosystem.json` — fonte de verdade para caminhos, modelos e configurações
+- Painel Syncthing: visualiza estado da sincronização entre máquinas
+- Monitor de VRAM / GPU em tempo real
+- Gerenciador de perfis LLM: define qual modelo usar para chat, RAG, análise e embedding
+- Chat direto com LLM (via LOGOS, P1)
+
+**Lançador de modelos:**
+- Inicia/para o llama-server com o modelo selecionado
+- Verifica saúde via `GET /health`
+- Lista modelos disponíveis via `GET /v1/models`
+
+---
+
+### AETHER
+
+Editor de escrita criativa com vault local de capítulos e cenas.
+
+**Funcionalidades:**
+- Editor de texto rico focado em escrita narrativa (capítulos, cenas, personagens)
+- Vault local organizado por projeto/capítulo/cena
+- Modo de foco com minimização de distrações
+- Histórico de versões local (por arquivo)
+- Exportação para formatos comuns
+- Integração com LOGOS (P1) para assistência à escrita — sugestões, continuações, reformulações
+- Sincronizado via Syncthing entre máquinas
+
+**Isolamento de dados:**
+O vault do AETHER é privado — nunca indexado pelo AKASHA ou Mnemosyne. Apenas o OGMA pode acessar esses dados quando necessário.
+
+---
+
+### OGMA
+
+Editor de notas e documentos com suporte a blocos ricos (EditorJS).
+
+**Funcionalidades:**
+- Editor baseado em blocos (EditorJS): texto, cabeçalhos, listas, código, imagens, tabelas
+- Notas locais em SQLite via `better-sqlite3`
+- Busca full-text nas notas
+- Foco automático de janela (via `xdotool` no Linux)
+- Organização por tags e coleções
+- Exportação para Markdown
+
+**Stack:** Electron (não Tauri) — usa Node.js nativo para acesso ao sistema de arquivos.
+
+---
+
+### AKASHA
+
+Buscador e amplificador de pesquisa. O LLM age **apenas** na camada de query — nunca sintetiza nem gera resposta. O AKASHA devolve links, trechos e documentos; a usuária pensa.
+
+**Duas camadas independentes:**
+
+*AKASHA (ferramenta)* — funciona 100% sem LLM:
+- Indexação de páginas web e documentos locais (SQLite FTS5 + embeddings)
+- Crawler de domínios com agendamento e atualização (freshness)
+- Biblioteca unificada: gerencia sites e documentos numa única seção
+- Busca híbrida: FTS5 (BM25) + busca semântica (embeddings via `/v1/embeddings`)
+- Cache de resultados, facetas, ranking
+- Extensão de browser para pesquisa contextual
+
+*Akasha (assistente)* — usa LLM quando disponível, falha gracefully se offline:
+- Personalidade e memória próprias (tabela `personal_memory` isolada em `akasha.db`)
+- Query understanding: classificação de intenção, expansão de termos, reescrita conversacional
+- Reflection loop: reflexões periódicas sobre sessões de pesquisa
+- Geração de insights a partir do padrão de uso
+- Envio de insights para a Mnemosyne via protocolo `friendship` (comunicação bidirecional)
+
+**Porta:** 7071 (FastAPI)
+
+---
+
+### Mnemosyne
+
+Assistente RAG pessoal organizada em **notebooks** temáticos. Cada conversa é um notebook — sempre salvo automaticamente, persistente entre sessões.
+
+**Notebooks:**
+- Cada notebook tem tema e pode filtrar quais coleções de documentos consulta
+- Histórico em `history.jsonl` (append-only), metadados em `metadata.json`
+- Memória de contexto RAG por notebook em `memory.json`
+- Studio outputs (análises geradas) salvos como `.md` com `source: mnemosyne_studio`
+
+**RAG multi-coleção:**
+- Consulta todas as coleções habilitadas simultaneamente via `MultiVectorstore` (ChromaDB)
+- Indexação de documentos locais: PDF, EPUB, Markdown, texto, imagens (via OCR/visão)
+- Indexação de páginas web por sessão (`SessionIndexer` — in-memory, efêmero)
+- RAPTOR index para documentos longos (sumarização hierárquica)
+- BM25 (Okapi) + embeddings vetoriais — busca híbrida com re-ranking
+
+**Studio (aba Análise):**
+- Galeria de tiles persistentes (outputs anteriores sempre visíveis)
+- Tipos: Resumo, FAQ, Mapa Mental, Guia de Estudos, Infográfico, Flashcards, Slides, Relatório, Cronograma, Briefing, Tabelas, Sumário (TOC), Blogpost, Guide
+- Gerados via `ChatOpenAI` com `base_url` apontando ao LOGOS
+
+**Sistema de personalidade e pop-ups:**
+- Personalidade e memória pessoal em `personal_memory.db` (isolado do RAG)
+- `InsightScheduler` + `InsightPopup`: pop-ups proativos no canto da tela, sem timeout de fechamento
+- Feedback nos pop-ups (✓ / ✗ / comentário) — molda comportamento futuro
+- Recebe insights da AKASHA via `friendship_receiver` (endpoint `POST /friendship/insight`)
+
+**LLM:** via `ChatOpenAI` → LOGOS (`base_url=http://127.0.0.1:7072/v1`, `api_key="logos"`)
+**Embeddings:** via `_InferenceEmbeddings` → `/v1/embeddings`
+
+---
+
+### KOSMOS
+
+Análise de imagens com visão computacional e OCR local.
+
+**Funcionalidades:**
+- OCR de imagens e PDFs (via llama-server com modelo de visão)
+- Análise de conteúdo visual (descrever, classificar, extrair texto estruturado)
+- Processamento em lote (queue de imagens)
+- Pré-análise em background (P3 no LOGOS) — não bloqueia interface
+- Exportação de resultados
+
+**LLM de visão:** envia imagens em base64 via API OpenAI multimodal (`/v1/chat/completions` com `content` como array de objetos `text` + `image_url`)
+
+---
+
+### Hermes
+
+Transcrição e processamento de áudio local.
+
+**Funcionalidades:**
+- Transcrição de arquivos de áudio (MP3, WAV, M4A, OGG...)
+- Transcrição em tempo real (microfone)
+- Identificação de falantes (diarização)
+- Extração de receitas e informações estruturadas de áudio (via LLM)
+- Exportação de transcrições em texto e SRT
+- Output salvo em `hermes.output_dir` (configurável via `ecosystem.json`)
+
+---
+
+### logos/ (scripts de fine-tuning)
+
+Scripts para geração de dados de treino e fine-tuning local (diretório `logos/`, não confundir com o LOGOS do HUB).
+
+- `training_data_generator.py`: gera pares Q&A via LLM para datasets de fine-tuning
+- `finetune_scheduler.py`: agendador de execuções de fine-tuning
+- `gguf_converter.py`: converte modelos para formato GGUF (llama.cpp)
+
+---
+
+## 4. Hardware e implicações
+
+### CachyOS — computador principal
+
+| Item | Especificação |
+|------|---------------|
+| CPU | AMD Ryzen 5 4600G |
+| RAM | 16 GB |
+| GPU | AMD Radeon RX 6600, RDNA2, 8 GB VRAM (gfx1032) |
+| OS | CachyOS (Arch Linux), Niri + Fish shell |
+| Armazenamento | ~2 TB (3 SSDs) |
+
+**Implicações:**
+- GPU AMD requer ROCm com `HSA_OVERRIDE_GFX_VERSION=10.3.0` para inferência em GPU
+- 8 GB VRAM suporta modelos até ~7B em Q4 com conforto, ou ~13B com offload parcial
+- llama-server com ROCm: compilar com `-DGGML_ROCM=ON` ou usar build pré-compilado ROCm
+- Fish shell: usar `set -x VAR valor` em vez de `export VAR=valor`
+
+### Fedora — laptop (Lenovo Ideapad 330-15IKB)
+
+| Item | Especificação |
+|------|---------------|
+| CPU | Intel Core i7-8550U (8 threads, 4.00 GHz) — **tem AVX2** |
+| RAM | 11.58 GiB |
+| GPU discreta | NVIDIA GeForce MX150, 2 GB VRAM |
+| GPU integrada | Intel UHD Graphics 620 (Optimus/híbrido) |
+| OS | Fedora 44, kernel 7.0.9, Niri + Fish shell |
+| Tela | 1920×1080, 15", 60 Hz |
+
+**Implicações:**
+- CUDA via MX150 — não usar `HSA_OVERRIDE_GFX_VERSION` (isso é só AMD/ROCm)
+- VRAM = 2 GB: limite real de modelos
+  - Viável: SmolLM2 1.7B Q4 (~1 GB), Gemma 2B Q4 (~1.5 GB)
+  - Inviável em GPU: Phi-3 mini 4B, Llama 8B → usam CPU (aquecimento elevado)
+- llama-cpp com CUDA: compilar com `-DGGML_CUDA=ON`
+- Em bateria: LOGOS deve reduzir indexação (a implementar)
+- AVX2 disponível — builds padrão do llama-cpp funcionam
+
+### Windows 10 — computador de trabalho
+
+| Item | Especificação |
+|------|---------------|
+| CPU | Intel Core i5-3470, Ivy Bridge 2012, 4 cores/4 threads, 3.2 GHz — **sem AVX2** |
+| RAM | 8 GB |
+| GPU | Intel HD Graphics integrada (32 MB dedicados — inútil para ML) |
+| OS | Windows 10 x64 |
+
+**Implicações:**
+- **Sem AVX2** — builds padrão do llama-cpp vão crashar com SIGILL
+  - Obrigatório: compilar com `-DLLAMA_AVX2=OFF -DLLAMA_AVX=ON -DLLAMA_F16C=OFF -DLLAMA_FMA=OFF`
+  - Ou baixar build pré-compilado "noavx" do llama.cpp releases
+- Sem GPU útil para ML — toda inferência no CPU, muito lento
+- 8 GB RAM: modelos viáveis ≤ 3B em Q4 (~2-3 GB)
+- Recomendado: usar apenas para embedding leve (ex: nomic-embed-text)
+- Indexação pesada: fazer no CachyOS e sincronizar vectorstore via Syncthing
+- Modelos de embedding pesados (ex: bge-m3) saturam o CPU e travam o sistema
+
+---
+
+## 5. Instalação do zero — CachyOS
+
+### 5.1. Dependências de sistema
+
+```bash
+# Base + compiladores
+sudo pacman -S base-devel cmake pkg-config openssl git
+
+# Tauri (obrigatório para HUB e AETHER)
 sudo pacman -S webkit2gtk-4.1 libayatana-appindicator
+
+# Python
+sudo pacman -S python python-pip
+
+# Utilitários
+sudo pacman -S xdotool sqlite
+
+# ROCm (para llama-server com GPU AMD)
+sudo pacman -S rocm-hip-sdk rocm-opencl-sdk
+# Ou via AUR: paru -S rocm-llvm rocm-hip-sdk
 ```
 
----
+### 5.2. Rust
 
-### Passo 4 — Node.js
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-O Node.js é necessário para AETHER, HUB e OGMA. A forma recomendada é via `nvm` (o arquivo `nvm.fish` já deve estar configurado se você usa o plugin nvm para fish):
+# Fish shell: adicionar ao PATH
+fish_add_path ~/.cargo/bin
+# (ou abrir novo terminal)
 
-```fish
-nvm install 22
-nvm use 22
+# Verificar
+rustc --version    # 1.77+
+cargo --version
+
+# Tauri CLI
+cargo install tauri-cli --version "^2"
+cargo tauri --version
 ```
 
-Se ainda não tiver o nvm, instale o plugin via Fisher:
+### 5.3. Node.js 22+
 
-```fish
-fisher install jorgebucaran/nvm.fish
-nvm install 22
-```
+```bash
+# Via fnm (recomendado — funciona em Fish)
+curl -fsSL https://fnm.vercel.app/install | bash
+# Abrir novo terminal, depois:
+fnm install 22
+fnm use 22
+fnm default 22
 
-Ou, se preferir o pacote do sistema sem gerenciador de versões:
+# Verificar
+node --version    # v22.x.x
+npm --version
 
-```fish
+# Alternativa direta
 sudo pacman -S nodejs npm
 ```
 
-Verifique:
+### 5.4. Python + uv
 
-```fish
-node --version   # deve mostrar v18 ou superior
-npm --version
+```bash
+# uv (gerenciador de ambientes Python moderno)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Abrir novo terminal ou:
+fish_add_path ~/.local/bin
+
+uv --version
+
+# Python (geralmente já instalado no CachyOS)
+python3 --version    # 3.11+
+```
+
+### 5.5. Fontes
+
+```bash
+# Nerd Fonts (ícones usados na UI)
+sudo pacman -S ttf-nerd-fonts-symbols
+# Ou instalar via AUR a família específica (ex: JetBrainsMono Nerd Font):
+paru -S ttf-jetbrains-mono-nerd
+
+# Fontes sans-serif usadas no ecossistema
+sudo pacman -S ttf-liberation noto-fonts
+```
+
+### 5.6. llama-server com ROCm (GPU AMD RX 6600)
+
+Ver seção [8. llama-cpp e llama-server](#8-llama-cpp-e-llama-server).
+
+```bash
+# Variável obrigatória para RX 6600 (gfx1032)
+set -x HSA_OVERRIDE_GFX_VERSION 10.3.0   # Fish
+# export HSA_OVERRIDE_GFX_VERSION=10.3.0  # bash
+
+# Adicionar ao config do Fish para persistir:
+echo 'set -x HSA_OVERRIDE_GFX_VERSION 10.3.0' >> ~/.config/fish/config.fish
+```
+
+### 5.7. Clonar e instalar
+
+```bash
+git clone <url-do-repo> "program files"
+cd "program files"
+
+# Instalar todas as dependências
+bash atualizar.sh
 ```
 
 ---
 
-### Passo 5 — Python e o ambiente virtual compartilhado
+## 6. Instalação do zero — Fedora
 
-Os apps KOSMOS, Mnemosyne e Hermes compartilham um único ambiente virtual Python localizado em `.venv/` na raiz do ecossistema. Isso evita conflitos entre versões de bibliotecas.
+### 6.1. Dependências de sistema
 
-O Python 3 já vem instalado no CachyOS. Verifique:
+```bash
+# Compiladores e ferramentas base
+sudo dnf group install development-tools c-development
+sudo dnf install cmake pkg-config openssl-devel git
 
-```fish
-python3 --version
-# deve mostrar Python 3.11 ou superior
+# Tauri (obrigatório para HUB e AETHER)
+sudo dnf install webkit2gtk4.1-devel libappindicator-gtk3-devel
+
+# Python build deps
+sudo dnf install python3-devel
+
+# Utilitários
+sudo dnf install xdotool sqlite sqlite-devel
+
+# CUDA (para llama-server com GPU MX150)
+# Via repositório RPM Fusion ou instalador NVIDIA:
+sudo dnf install https://developer.download.nvidia.com/compute/cuda/repos/fedora$(rpm -E %fedora)/x86_64/cuda-repo-fedora$(rpm -E %fedora)-12-x86_64.rpm
+sudo dnf install cuda-toolkit
 ```
 
-Crie o ambiente virtual e instale as dependências de todos os apps Python de uma vez:
+### 6.2. Rust
 
-```fish
-# Vá para a pasta raiz do ecossistema
-cd "/home/spacewitch/Documents/program files"
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
 
-# Crie o ambiente virtual
-python3 -m venv .venv
-
-# Ative-o (no Fish, o prompt muda para mostrar "(.venv)")
-source .venv/bin/activate.fish
-
-# Atualize o pip
-pip install --upgrade pip
-
-# Instale as dependências do KOSMOS
-pip install -r KOSMOS/requirements.txt
-
-# Instale as dependências do Mnemosyne
-pip install -r Mnemosyne/requirements.txt
-
-# Instale as dependências do Hermes
-pip install yt-dlp faster-whisper
-
-# Desative o ambiente virtual quando terminar
-deactivate
-```
-
-> **Atenção:** o passo acima precisa ser feito apenas **uma vez**. Depois, os scripts `iniciar.sh` de cada app ativam o venv automaticamente (os scripts usam bash internamente, o que funciona normalmente no Niri/Wayland).
-
----
-
-### Passo 6 — Ollama (opcional — necessário para Mnemosyne e módulo Perguntas do HUB)
-
-O Ollama é um servidor local de modelos de linguagem (LLMs). O Mnemosyne e o módulo Perguntas do HUB precisam dele para funcionar.
-
-```fish
-# Instalar o Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Baixar um modelo (escolha conforme o seu hardware)
-ollama pull llama3        # recomendado — bom equilíbrio tamanho/qualidade (~4,7GB)
-ollama pull phi3          # menor e mais rápido (~2,3GB)
-ollama pull mistral       # alternativa popular (~4,1GB)
-```
-
-Verifique se o Ollama está rodando:
-
-```fish
-ollama list
-# deve listar os modelos baixados
-```
-
-O Ollama inicia automaticamente como serviço de sistema após a instalação. Se não estiver ativo, inicie manualmente com `ollama serve`.
-
----
-
-### Passo 7 — Instalar dependências Node dos apps Tauri e Electron
-
-Este passo baixa as bibliotecas JavaScript necessárias para AETHER, HUB e OGMA. Precisa ser feito apenas **uma vez** por app (e de novo se o `package.json` mudar).
-
-```fish
-cd "/home/spacewitch/Documents/program files/AETHER"
-npm install
-
-cd "/home/spacewitch/Documents/program files/HUB"
-npm install
-
-cd "/home/spacewitch/Documents/program files/OGMA"
-npm install
-```
-
----
-
-### Rodar os apps no CachyOS
-
-Todos os apps têm um atalho configurado como **função fish**. Basta digitar o nome em qualquer terminal:
-
-#### AETHER
-
-```fish
-aether
-```
-
-O que acontece internamente: `cd .../AETHER && cargo tauri dev`
-
-Na **primeira execução**, o Rust compila todas as dependências — pode levar de 5 a 15 minutos. As próximas aberturas são quase instantâneas (apenas o código modificado é recompilado). Enquanto compila, você vai ver linhas `Compiling ...` no terminal — isso é normal.
-
-#### HUB
-
-```fish
-hub
-```
-
-Mesmo comportamento do AETHER — compilação longa apenas na primeira vez.
-
-#### OGMA
-
-```fish
-ogma
-```
-
-O OGMA é um app Electron. O `iniciar.sh` detecta automaticamente que você está numa sessão Wayland (Niri) e força o modo de compatibilidade X11/XWayland — isso é necessário para o Electron funcionar no Niri. Você não precisa fazer nada especial.
-
-O log de execução fica em `/tmp/ogma.log` — abra com `cat /tmp/ogma.log` se algo der errado.
-
-#### KOSMOS
-
-```fish
-kosmos
-```
-
-Abre em background — o terminal fica livre para outros comandos.
-
-#### Mnemosyne
-
-```fish
-mnemosyne
-```
-
-Abre em background. Para responder perguntas, o Ollama precisa estar rodando (`ollama serve` ou como serviço de sistema).
-
-#### Hermes
-
-```fish
-hermes
-```
-
-Abre em background.
-
----
-
-### Atalhos fish — configuração manual (se necessário)
-
-Se as funções fish não estiverem configuradas (por exemplo, em uma nova instalação), crie os arquivos manualmente. Cada app tem um arquivo em `~/.config/fish/functions/` — o Fish carrega automaticamente qualquer arquivo `.fish` nessa pasta:
-
-# Garante que a pasta de funções existe
-mkdir -p ~/.config/fish/functions/
-
-# Cria o arquivo para AETHER
-printf 'function aether --description "Rodar AETHER em modo desenvolvimento"
-    set -l dir "/home/spacewitch/Documents/ecosystem//AETHER"
-    echo "→ AETHER dev  ($dir)"
-    cd $dir && cargo tauri dev
-end' > ~/.config/fish/functions/aether.fish
-
-# Cria o arquivo para HUB
-printf 'function hub --description "Rodar HUB em modo desenvolvimento"
-    set -l dir "/home/spacewitch/Documents/ecosystem//HUB"
-    echo "→ HUB dev  ($dir)"
-    cd $dir && cargo tauri dev
-end' > ~/.config/fish/functions/hub.fish
-
-# Cria o arquivo para OGMA
-printf 'function ogma --description "Rodar OGMA (Electron)"
-    set -l dir "/home/spacewitch/Documents/ecosystem//OGMA"
-    echo "→ OGMA  (log em /tmp/ogma.log)"
-    bash "$dir/iniciar.sh"
-end' > ~/.config/fish/functions/ogma.fish
-
-# Cria o arquivo para KOSMOS
-printf 'function kosmos --description "Rodar KOSMOS (leitor RSS)"
-    set -l dir "/home/spacewitch/Documents/ecosystem//KOSMOS"
-    set -l python "/home/spacewitch/Documents/ecosystem/.venv/bin/python"
-    echo "→ KOSMOS"
-    cd $dir && $python main.py &
-    disown
-end' > ~/.config/fish/functions/kosmos.fish
-
-# Cria o arquivo para Mnemosyne
-printf 'function mnemosyne --description "Rodar Mnemosyne (RAG local)"
-    set -l dir "/home/spacewitch/Documents/ecosystem//Mnemosyne"
-    set -l python "/home/spacewitch/Documents/ecosystem/.venv/bin/python"
-    echo "→ Mnemosyne"
-    cd $dir && $python main.py &
-    disown
-end' > ~/.config/fish/functions/mnemosyne.fish
-
-# Cria o arquivo para Hermes
-printf 'function hermes --description "Rodar Hermes (downloader + transcritor)"
-    set -l dir "/home/spacewitch/Documents/ecosystem//Hermes"
-    echo "→ Hermes"
-    bash "$dir/iniciar.sh" &
-    disown
-end' > ~/.config/fish/functions/hermes.fish
-
-# Cria o arquivo para AKASHA
-printf 'function akasha --description "Rodar AKASHA (buscador pessoal, porta 7071)"
-    set -l dir "/home/spacewitch/Documents/ecosystem/AKASHA"
-    echo "→ AKASHA  (http://localhost:7071)"
-    bash "$dir/iniciar.sh" &
-    disown
-end' > ~/.config/fish/functions/akasha.fish
-
----
-
-## Windows 10
-
-### Passo 1 — Rust
-
-1. Acesse [rustup.rs](https://rustup.rs) e clique em **"Download rustup-init.exe (64-bit)"**
-2. Execute o arquivo baixado
-3. O instalador vai avisar se as **Visual Studio Build Tools** não estiverem instaladas — se avisar, clique em "Yes" para instalar. Isso baixa o compilador C++ necessário (pode levar vários minutos)
-4. Quando retornar para a tela do rustup, pressione **Enter** para aceitar a instalação padrão (opção 1)
-5. Abra um novo **Prompt de Comando** (CMD) ou **PowerShell** — o anterior não vai reconhecer os comandos ainda
-
-Verifique (no novo terminal):
-
-```powershell
 rustc --version
 cargo --version
-```
 
-Se aparecer "não reconhecido como comando", feche e abra o terminal novamente.
-
----
-
-### Passo 2 — Tauri CLI
-
-No PowerShell ou CMD:
-
-```powershell
-cargo install tauri-cli
-```
-
-Vai levar alguns minutos. Ao final:
-
-```powershell
+cargo install tauri-cli --version "^2"
 cargo tauri --version
 ```
 
+### 6.3. Node.js 22+
+
+```bash
+# Via fnm (recomendado)
+curl -fsSL https://fnm.vercel.app/install | bash
+# Novo terminal, depois:
+fnm install 22
+fnm use 22
+fnm default 22
+
+node --version
+npm --version
+
+# Alternativa direta
+sudo dnf install nodejs22
+```
+
+### 6.4. Python + uv
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.local/bin/env    # ou abrir novo terminal
+
+uv --version
+python3 --version    # 3.11+
+```
+
+### 6.5. Fontes
+
+```bash
+# RPM Fusion free (necessário para muitas fontes)
+sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
+
+# Fontes base
+sudo dnf install liberation-fonts google-noto-fonts-common
+
+# Nerd Fonts: baixar manualmente em https://www.nerdfonts.com/font-downloads
+# Extrair para ~/.local/share/fonts/ e rodar: fc-cache -fv
+```
+
+### 6.6. llama-server com CUDA (GPU MX150 2 GB)
+
+Ver seção [8. llama-cpp e llama-server](#8-llama-cpp-e-llama-server).
+
+```bash
+# CUDA_VISIBLE_DEVICES=0 para selecionar MX150 se Optimus causar problemas
+export CUDA_VISIBLE_DEVICES=0
+```
+
+### 6.7. Clonar e instalar
+
+```bash
+git clone <url-do-repo> "program files"
+cd "program files"
+bash atualizar.sh
+```
+
 ---
 
-### Passo 3 — WebView2
+## 7. Instalação do zero — Windows 10
 
-O Tauri usa o WebView2 do Windows como motor web. No Windows 10 com atualizações recentes, ele **já vem instalado**. Para verificar, abra o Painel de Controle > Programas e procure por "Microsoft Edge WebView2 Runtime".
+### 7.1. Pré-requisitos de sistema
 
-Se não estiver instalado, baixe em: https://developer.microsoft.com/microsoft-edge/webview2/ (clique em "Download Evergreen Bootstrapper").
+```
+1. Visual Studio Build Tools 2022
+   → https://visualstudio.microsoft.com/visual-cpp-build-tools/
+   → Marcar: "Desenvolvimento para desktop com C++"
 
----
+2. Visual C++ Redistributable 2022
+   → https://aka.ms/vs/17/release/vc_redist.x64.exe
 
-### Passo 4 — Node.js
+3. Git para Windows
+   → https://git-scm.com/download/win
+   → Marcar "Add Git to PATH" durante instalação
 
-1. Acesse [nodejs.org](https://nodejs.org)
-2. Baixe a versão **LTS** (Long Term Support) — a que aparece à esquerda
-3. Execute o instalador e aceite todas as opções padrão
-4. Na tela "Tools for Native Modules", **marque a caixa** "Automatically install the necessary tools" — isso instala ferramentas adicionais que o OGMA precisa
+4. WebView2 Runtime (para Tauri)
+   → Geralmente já instalado no Windows 10 atualizado
+   → Se não: https://developer.microsoft.com/microsoft-edge/webview2/
+```
 
-Verifique (novo terminal):
+### 7.2. Rust
 
 ```powershell
-node --version    # deve mostrar v18 ou superior
+# Baixar e executar rustup-init.exe
+# → https://rustup.rs
+# Selecionar opção 1 (default)
+
+# Abrir novo terminal, verificar:
+rustc --version
+cargo --version
+
+# Tauri CLI
+cargo install tauri-cli --version "^2"
+cargo tauri --version
+```
+
+### 7.3. Node.js 22+
+
+```
+Baixar instalador LTS v22 em: https://nodejs.org
+Marcar "Automatically install necessary tools" durante a instalação.
+
+Verificar (no PowerShell ou cmd):
+node --version    → v22.x.x
 npm --version
 ```
 
----
-
-### Passo 5 — Python
-
-1. Acesse [python.org/downloads](https://www.python.org/downloads/)
-2. Baixe a versão mais recente do **Python 3** (ex.: Python 3.12.x)
-3. Execute o instalador — **IMPORTANTE:** na primeira tela, marque **"Add Python to PATH"** antes de clicar em Install Now
-4. Clique em "Install Now"
-
-Verifique (novo terminal):
+### 7.4. Python + uv
 
 ```powershell
-python --version    # deve mostrar Python 3.x.x
-pip --version
+# Python — se não estiver instalado
+# → https://python.org → Download Python 3.12
+# → Marcar "Add Python to PATH" durante instalação
+python --version    # 3.11+
+
+# uv
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# Abrir novo terminal:
+uv --version
 ```
 
----
+### 7.5. Fontes
 
-### Passo 6 — Ambiente virtual Python compartilhado
+```
+Nerd Fonts: https://www.nerdfonts.com/font-downloads
+→ Baixar família desejada (ex: JetBrainsMono)
+→ Extrair, selecionar todos os .ttf, botão direito → Instalar para todos os usuários
 
-Abra o PowerShell e execute:
-
-```powershell
-# Se a política de execução bloquear scripts, execute isso primeiro (uma vez):
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-
-# Vá para a pasta raiz do ecossistema (ajuste o caminho se necessário)
-cd "C:\caminho\para\program files"
-
-# Crie o ambiente virtual
-python -m venv .venv
-
-# Ative-o
-.\.venv\Scripts\Activate.ps1
-# O prompt vai mudar para mostrar "(.venv)"
-
-# Atualize o pip
-pip install --upgrade pip
-
-# Instale as dependências de cada app
-pip install -r KOSMOS\requirements.txt
-pip install -r Mnemosyne\requirements.txt
-pip install yt-dlp faster-whisper
-
-# Desative quando terminar
-deactivate
+Liberation Fonts: https://github.com/liberationfonts/liberation-fonts/releases
+→ Baixar o .zip, extrair e instalar os .ttf
 ```
 
-> **Nota:** o PyQt6-WebEngine do KOSMOS requer as Visual C++ Redistributable 2019+. Se aparecer erro de DLL, baixe e instale em: https://aka.ms/vs/17/release/vc_redist.x64.exe
+### 7.6. llama-server sem AVX2 (i5-3470)
 
----
+Ver seção [8. llama-cpp e llama-server](#8-llama-cpp-e-llama-server).
 
-### Passo 7 — Dependências Node
+**ATENÇÃO:** O i5-3470 (Ivy Bridge, 2012) não suporta AVX2. Binários padrão vão crashar.
 
-No PowerShell:
+```
+Opção A — build pré-compilado "noavx":
+→ https://github.com/ggml-org/llama.cpp/releases
+→ Procurar "llama-*-bin-win-noavx-x64.zip"
+→ Extrair, usar llama-server.exe diretamente
 
-```powershell
-cd "program files\AETHER" && npm install
-cd "..\HUB"               && npm install
-cd "..\OGMA"              && npm install
+Opção B — compilar manualmente:
+No Developer Command Prompt (Visual Studio):
+cmake .. -DLLAMA_AVX2=OFF -DLLAMA_AVX=ON -DLLAMA_F16C=OFF -DLLAMA_FMA=OFF
+cmake --build . --config Release
 ```
 
----
-
-### Passo 8 — Ollama (opcional)
-
-1. Acesse [ollama.com/download](https://ollama.com/download) e baixe o instalador para Windows
-2. Execute e siga o instalador
-3. Após instalar, abra o CMD e baixe um modelo:
+### 7.7. Clonar e instalar
 
 ```powershell
-ollama pull llama3
-```
-
----
-
-### Rodar os apps no Windows 10
-
-#### AETHER e HUB
-
-Abra o PowerShell na pasta do app e execute:
-
-```powershell
-# AETHER:
-cd "program files\AETHER"
-cargo tauri dev
-
-# HUB:
-cd "program files\HUB"
-cargo tauri dev
-```
-
-> **Na primeira execução**, o Rust compila tudo — pode levar de 5 a 15 minutos. Seja paciente; as próximas aberturas são quase instantâneas.
-
-#### OGMA
-
-Clique duas vezes em `iniciar.bat` dentro da pasta OGMA, ou no PowerShell:
-
-```powershell
-cd "program files\OGMA"
-.\iniciar.bat
-```
-
-#### KOSMOS, Mnemosyne e Hermes
-
-Ative o venv e rode diretamente:
-
-```powershell
-# Ative o venv (necessário cada vez que abrir um novo terminal)
+git clone <url-do-repo> "program files"
 cd "program files"
-.\.venv\Scripts\Activate.ps1
 
-# KOSMOS:
-cd KOSMOS
-python main.py
-
-# Mnemosyne (abra outro terminal com o venv ativado):
-cd Mnemosyne
-python main.py
-
-# Hermes (abra outro terminal com o venv ativado):
-cd Hermes
-python hermes.py
-```
-
----
-
-## Atualizar dependências
-
-Após um `git pull` ou quando quiser garantir que todas as dependências estão sincronizadas, rode o script de atualização na raiz do ecossistema. Ele atualiza todos os apps em sequência e lista erros ao final sem interromper o processo.
-
-#### CachyOS
-
-```fish
-bash "/home/spacewitch/Documents/program files/atualizar.sh"
-```
-
-O script:
-1. `git pull` — atualiza o repositório
-2. `uv sync` — sincroniza dependências do AKASHA
-3. `pip install -r` — atualiza deps do KOSMOS e Mnemosyne no `.venv` compartilhado
-4. `pip install --upgrade yt-dlp faster-whisper` — atualiza deps do Hermes
-5. `npm install` — sincroniza pacotes do AETHER, HUB e OGMA
-
-#### Windows 10
-
-Clique duas vezes em `atualizar.bat` na raiz do ecossistema, ou no PowerShell:
-
-```powershell
-cd "program files"
+# Rodar o instalador
 .\atualizar.bat
 ```
 
+### 7.8. Variáveis de ambiente no Windows
+
+```
+Painel de Controle → Sistema → Configurações avançadas do sistema
+→ Variáveis de Ambiente
+
+Adicionar (usuário):
+ECOSYSTEM_ROOT    C:\caminho\para\sync_root
+```
+
 ---
 
-## Build de produção
+## 8. llama-cpp e llama-server
 
-Necessário após alterações de código nos apps Tauri (AETHER, HUB) e no OGMA. Apps Python (KOSMOS, Mnemosyne, Hermes, AKASHA) rodam do source — sem build.
+O llama-server é o backend de inferência LLM de todo o ecossistema. Substitui o Ollama. Expõe API OpenAI-compatível.
 
-#### CachyOS
+**Endpoints expostos:**
+- `GET  /health` — verificação de saúde
+- `POST /v1/chat/completions` — geração de texto (stream SSE ou completo)
+- `POST /v1/embeddings` — embeddings vetoriais
+- `GET  /v1/models` — lista modelos carregados
 
-```fish
-# Builda AETHER, HUB e OGMA de uma vez:
-bash "/home/spacewitch/Documents/program files/buildar.sh"
+**Portas:**
+- `8080` — llama-server direto
+- `7072` — via LOGOS (proxy com fila de prioridades)
 
-# Ou só um app específico:
-bash "/home/spacewitch/Documents/program files/buildar.sh hub
-bash "/home/spacewitch/Documents/program files/buildar.sh aether hub
-```
-
-Saída:
-- AETHER/HUB → `src-tauri/target/release/bundle/appimage/` e `deb/`
-- OGMA → `OGMA/dist/`
-
-#### Windows 10
-
-Clique duas vezes em `buildar.bat` na raiz, ou no PowerShell:
-
-```powershell
-cd "program files"
-.\buildar.bat          # builda tudo
-.\buildar.bat hub      # só o HUB
-```
-
-Saída:
-- AETHER/HUB → `src-tauri\target\release\bundle\msi\` e `nsis\`
-- OGMA → `OGMA\dist\`
-
-#### Manualmente (por app)
+### Compilar do zero
 
 ```bash
-# CachyOS
-cd AETHER && cargo tauri build
-cd OGMA && npm run dist:linux
+git clone https://github.com/ggml-org/llama.cpp
+cd llama.cpp
+mkdir build && cd build
 
-# Windows
-cd AETHER && cargo tauri build
-cd OGMA && npm run dist:win
+# CachyOS com ROCm (AMD RX 6600):
+cmake .. -DGGML_ROCM=ON -DCMAKE_HIP_COMPILER=$(hipconfig --hipclangpath)/clang++
+cmake --build . --config Release -j$(nproc)
+
+# Fedora com CUDA (NVIDIA MX150):
+cmake .. -DGGML_CUDA=ON
+cmake --build . --config Release -j$(nproc)
+
+# CPU puro com AVX2 (qualquer Linux com AVX2):
+cmake ..
+cmake --build . --config Release -j$(nproc)
+
+# CPU sem AVX2 (Windows i5-3470 / máquinas antigas):
+cmake .. -DLLAMA_AVX2=OFF -DLLAMA_AVX=ON -DLLAMA_F16C=OFF -DLLAMA_FMA=OFF
+cmake --build . --config Release
 ```
 
-#### Apps Python
+### Iniciar o llama-server
 
-Sem build — rodam do source com o venv ativado.
+```bash
+# CachyOS — com ROCm
+HSA_OVERRIDE_GFX_VERSION=10.3.0 ./build/bin/llama-server \
+  --model /path/to/model.gguf \
+  --host 127.0.0.1 --port 8080 \
+  --n-gpu-layers 999 \
+  --ctx-size 4096
+
+# Fedora — com CUDA
+./build/bin/llama-server \
+  --model /path/to/model.gguf \
+  --host 127.0.0.1 --port 8080 \
+  --n-gpu-layers 999 \
+  --ctx-size 2048    # MX150 tem só 2 GB
+
+# Windows — CPU puro (noavx)
+.\llama-server.exe \
+  --model C:\models\model.gguf \
+  --host 127.0.0.1 --port 8080 \
+  --n-gpu-layers 0 \
+  --ctx-size 2048
+
+# Com dois modelos (chat + embedding simultâneos):
+# Rodar duas instâncias em portas diferentes (8080 e 8081)
+# LOGOS gerencia qual usar conforme a requisição
+```
+
+### Gerenciar arquivos GGUF
+
+```bash
+# Baixar modelos via Hugging Face CLI
+pip install huggingface_hub
+huggingface-cli download \
+  bartowski/Qwen2.5-7B-Instruct-GGUF \
+  Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  --local-dir ~/models/
+
+# Verificar se carregou corretamente:
+curl http://localhost:8080/v1/models
+```
 
 ---
 
-## Design
+## 9. Modelos recomendados por máquina
 
-Todos os apps compartilham a mesma identidade visual, definida no [DESIGN_BIBLE.txt](DESIGN_BIBLE.txt).
+### CachyOS — RX 6600 8 GB VRAM
 
-**Metáfora:** biblioteca medieval de alquimia modernizada por um cartógrafo do século XIX que descobriu a astronomia. Papel envelhecido, tinta, mapas estelares, luminosidade dourada de vela.
+| Função | Modelo | Tamanho | VRAM |
+|--------|--------|---------|------|
+| Chat/RAG | Qwen2.5-7B-Instruct Q4_K_M | ~4.4 GB | ~5 GB |
+| Embedding | nomic-embed-text-v1.5 Q8 | ~274 MB | ~0.3 GB |
+| Embedding pesado | bge-m3 Q8 | ~567 MB | ~0.6 GB |
+| Visão/OCR | Qwen2-VL-7B-Instruct Q4_K_M | ~4.5 GB | ~5 GB |
+| Análise longa | Llama-3.1-8B-Instruct Q4_K_M | ~4.7 GB | ~5.5 GB |
 
-**Paleta:** sépia diurna / "Atlas Astronômico à Meia-Noite" (`#12161E` base) para modo escuro. Nunca branco puro, nunca preto puro, nunca cores vibrantes.
+### Fedora — MX150 2 GB VRAM
 
-**Tipografia — exatamente três fontes:**
+| Função | Modelo | Tamanho | VRAM |
+|--------|--------|---------|------|
+| Chat (GPU) | SmolLM2-1.7B-Instruct Q4_K_M | ~1.0 GB | ~1.2 GB |
+| Chat (GPU) | Gemma-2-2B-Instruct Q4_K_M | ~1.5 GB | ~1.8 GB |
+| Embedding | nomic-embed-text-v1.5 Q4 | ~135 MB | ~0.2 GB |
+| Chat maior (CPU) | Qwen2.5-3B-Instruct Q4_K_M | ~1.9 GB | CPU |
 
-| Fonte | Uso |
-|---|---|
-| IM Fell English | Títulos, conteúdo do editor, sempre itálico |
-| Special Elite | Corpo, botões, labels, nunca itálico |
-| Courier Prime | Código exclusivamente |
+### Windows 10 — i5-3470, sem GPU (CPU puro)
 
-**Componentes:** `border-radius: 2px`, sombra flat sem blur, animações máximo 300ms.
+| Função | Modelo | Tamanho | Notas |
+|--------|--------|---------|-------|
+| Embedding | nomic-embed-text-v1.5 Q4 | ~135 MB | Leve, viável |
+| Embedding | all-minilm-l6-v2 | ~22 MB | Muito leve |
+| Chat (lento) | SmolLM2-1.7B-Instruct Q4_K_M | ~1.0 GB | Funciona, lento |
+| Chat (evitar) | Qualquer 7B+ | — | Trava a máquina |
+
+**Recomendação para Windows 10:** Usar apenas para embeddings. Fazer indexação e inferência pesada no CachyOS e sincronizar via Syncthing.
 
 ---
 
-## Princípios
+## 10. Configurar ecosystem.json
 
-**Local-first.** Nenhum app conecta a servidores externos sem ação explícita do usuário. Toda sincronização é opt-in.
+O HUB cria e gerencia o `ecosystem.json` automaticamente na primeira execução. Se precisar criar manualmente:
 
-**Tratamento de erros com tipagem é prioridade absoluta.**
-- Rust: toda função falível retorna `Result<T, AppError>`. Zero `.unwrap()` em produção.
-- TypeScript: `strict: true`. Erros tipados com discriminated unions. Nunca `any`.
-- Python: `except ValueError` (específico), nunca `except Exception` genérico sem re-tipar.
+```bash
+# Linux
+cp ecosystem.local.example.json ~/.local/share/ecosystem/ecosystem.json
 
-**Cross-platform.** Todos os apps rodam em CachyOS e Windows 10. Paths via API da linguagem, nunca separadores hardcoded.
+# Windows
+copy ecosystem.local.example.json %APPDATA%\ecosystem\ecosystem.json
+```
 
----
-
-## Integração
-
-O roteiro completo de integração dos apps — incluindo o HUB unificado e suporte Android — está em [ECOSYSTEM_TODO.md](ECOSYSTEM_TODO.md).
-
-### Contrato compartilhado — `ecosystem.json`
-
-Os apps se comunicam via um arquivo JSON descoberto automaticamente:
-
-- **Linux:** `~/.local/share/ecosystem/ecosystem.json` (respeita `$XDG_DATA_HOME`)
-- **Windows:** `%APPDATA%\ecosystem\ecosystem.json`
-
-Cada app escreve apenas a sua própria seção; as demais são preservadas. Escrita atômica em todos (arquivo temporário + rename). Falha silenciosa — nunca bloqueia o startup.
+### Exemplo de ecosystem.json
 
 ```json
 {
-  "sync_root":  "/caminho/proton-drive/ecosystem",
-  "aether":    { "vault_path": "...", "exe_path": "..." },
-  "kosmos":    { "archive_path": "...", "data_path": "...", "exe_path": "..." },
-  "ogma":      { "data_path": "...", "exe_path": "..." },
-  "mnemosyne": { "watched_dir": "...", "vault_dir": "...", "chroma_dir": "...", "index_paths": [], "exe_path": "..." },
-  "hermes":    { "output_dir": "...", "exe_path": "..." },
-  "akasha":    { "archive_path": "...", "base_url": "...", "exe_path": "..." }
+  "sync_root": "/home/spacewitch/Documents/ecosystem_root",
+  "logos": {
+    "port": 7072,
+    "llama_server_url": "http://localhost:8080",
+    "active_profile": "default"
+  },
+  "profiles": {
+    "default": {
+      "llm_chat": "qwen2.5-7b-instruct",
+      "llm_rag": "qwen2.5-7b-instruct",
+      "llm_analysis": "qwen2.5-7b-instruct",
+      "llm_query": "qwen2.5-7b-instruct",
+      "embed": "nomic-embed-text-v1.5"
+    }
+  },
+  "aether": {
+    "vault_dir": "/home/spacewitch/Documents/ecosystem_root/aether"
+  },
+  "akasha": {
+    "personality_prompt": "...",
+    "data_dir": "/home/spacewitch/.local/share/akasha"
+  },
+  "mnemosyne": {
+    "watched_dir": "/home/spacewitch/Documents",
+    "data_dir": "/home/spacewitch/.local/share/mnemosyne",
+    "personality_prompt": "..."
+  },
+  "hermes": {
+    "output_dir": "/home/spacewitch/Documents/ecosystem_root/hermes"
+  },
+  "ogma": {
+    "data_dir": "/home/spacewitch/.local/share/ogma"
+  }
 }
 ```
 
-#### Contrato por campo
+**Campos importantes:**
+- `sync_root` — pasta raiz do Syncthing (compartilhada entre máquinas)
+- `logos.llama_server_url` — URL do llama-server direto (fallback se LOGOS cair)
+- `profiles.*.llm_*` — modelo a usar por função (lido em runtime por cada app)
+- `profiles.*.embed` — modelo de embedding (lido em runtime)
+- Nunca hardcodar caminhos ou URLs nos apps — sempre via `ecosystem_client`
 
-| Campo | Escrito por | Quando | Lido por | Formato |
-|---|---|---|---|---|
-| `sync_root` | HUB | ação do usuário (SetupView → Aplicar) | HUB (SetupView) | string — caminho absoluto |
-| `aether.vault_path` | AETHER · HUB | startup · `apply_sync_root` | AKASHA (busca local) | string — caminho absoluto |
-| `aether.exe_path` | AETHER | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
-| `kosmos.archive_path` | KOSMOS · HUB | startup · `apply_sync_root` | AKASHA (busca local), Mnemosyne (sugestões) | string — caminho absoluto |
-| `kosmos.data_path` | KOSMOS | startup | HUB | string — caminho absoluto |
-| `kosmos.exe_path` | KOSMOS | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
-| `ogma.data_path` | OGMA | startup | HUB | string — caminho absoluto |
-| `ogma.exe_path` | OGMA | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
-| `mnemosyne.watched_dir` | Mnemosyne · HUB | startup (se configurado) · `apply_sync_root` | AKASHA (busca local), Mnemosyne (sugestões) | string — caminho absoluto |
-| `mnemosyne.vault_dir` | Mnemosyne | startup (se configurado) | AKASHA (busca local), Mnemosyne (sugestões) | string — caminho absoluto |
-| `mnemosyne.chroma_dir` | HUB | `apply_sync_root` | Mnemosyne (`persist_dir`) | string — caminho absoluto |
-| `mnemosyne.index_paths` | Mnemosyne | startup (se `persist_dir` configurado) | — reservado para uso futuro | array de strings |
-| `mnemosyne.exe_path` | Mnemosyne | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
-| `hermes.output_dir` | Hermes · HUB | startup · `apply_sync_root` | HUB | string — caminho absoluto |
-| `hermes.exe_path` | Hermes | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
-| `akasha.archive_path` | HUB | `apply_sync_root` | AKASHA (arquivação e busca local) | string — caminho absoluto |
-| `akasha.base_url` | AKASHA | startup | HUB (link para o app) | string — URL base (ex: `http://localhost:7071`) |
-| `akasha.exe_path` | AKASHA | startup | HUB (detecção de apps) | string — `iniciar.bat` ou `iniciar.sh` |
-
-**Regras de escrita:** cada app usa `write_section(app, {...})` — merge atômico que preserva todos os campos da seção que não estão no payload. O HUB é o único que escreve campos de múltiplos apps (via `apply_sync_root`). Nunca sobrescrever `exe_path` de outro app.
-
-### Estrutura de sincronização (Proton Drive)
-
-O campo `sync_root` aponta para a pasta raiz do ecossistema no Proton Drive. O HUB deriva e aplica todos os subcaminhos de uma vez via `apply_sync_root`. Cada app lê o seu caminho do ecosystem.json no startup, com fallback para o caminho local.
-
-```
-{sync_root}/
-├── ogma/
-│   ├── ogma.db              ← banco SQLite
-│   ├── uploads/
-│   ├── exports/
-│   └── .config/
-│       └── settings.json    ← preferências sincronizadas
-├── kosmos/
-│   ├── (artigos arquivados .md)
-│   └── .config/
-│       └── settings.json
-├── hermes/
-│   ├── (transcrições .md)
-│   └── .config/
-│       └── settings.json
-├── mnemosyne/
-│   ├── docs/
-│   ├── chroma_db/
-│   └── .config/
-│       └── settings.json
-├── aether/
-│   └── .config/
-│       └── settings.json
-└── akasha/
-    ├── akasha.db
-    └── .config/
-        └── settings.json
-```
-
-Cada app lê `{sync_root}/{app}/.config/settings.json` se `config_path` estiver definido no ecosystem.json, com fallback para o arquivo de configuração local. O banco do KOSMOS (`kosmos.db`) é mantido local por ser metadados de feeds — somente o archive de artigos é sincronizado.
-
-### Portas reservadas (modo desenvolvimento)
-
-Cada app que roda um servidor Vite ou web usa uma porta fixa com `strictPort: true`.
-**Não altere essas portas** — elas estão hardcoded em múltiplos arquivos de configuração.
-
-| App | Porta | Arquivo de referência |
-|---|---|---|
-| HUB | 5173 | `HUB/vite.config.ts` · `HUB/src-tauri/tauri.conf.json` |
-| AETHER | 5174 | `AETHER/vite.config.ts` · `AETHER/src-tauri/tauri.conf.json` |
-| OGMA | 5175 | `OGMA/vite.config.ts` · `OGMA/package.json` · `OGMA/src/main/main.ts` |
-| AKASHA | 7071 | `AKASHA/config.py` |
-
-KOSMOS, Mnemosyne e Hermes são apps desktop (PyQt6/PySide6) — não expõem portas de rede.
+**Caminhos do sync_root por máquina:**
+- CachyOS: `/home/spacewitch/Documents/ecosystem_root`
+- Windows 10: a definir após configuração do Syncthing
+- Fedora/laptop: a definir após configuração do Syncthing
 
 ---
 
-**Utilitários de integração:**
+## 11. Atualizar e rodar
 
-| Arquivo | Stack | Usado por |
-|---|---|---|
-| [`ecosystem_client.py`](ecosystem_client.py) | Python | KOSMOS, Mnemosyne, Hermes |
-| [`OGMA/src/main/ecosystem.ts`](OGMA/src/main/ecosystem.ts) | TypeScript | OGMA |
-| [`AETHER/src-tauri/src/ecosystem.rs`](AETHER/src-tauri/src/ecosystem.rs) | Rust | AETHER, HUB |
+### Atualizar tudo (após clonar ou após pull)
 
-**Estado atual das fases:**
+```bash
+# Linux
+bash atualizar.sh
 
-| Fase | Descrição | Estado |
-|---|---|---|
-| 0 | Fundação: `ecosystem.json` + utilitários Python/TS/Rust | ✅ Concluída |
-| 1 | Interligação dos apps existentes | ✅ Concluída — 1.1, 1.2, 1.3, 1.4 |
-| 2 | App Hub desktop (Tauri 2 + React) | ✅ Concluída — 2.1–2.6 |
-| 3 | Android (APK via Tauri 2) | Não iniciada |
-| 4 | Polimento e features extras | Não iniciada |
+# Windows
+.\atualizar.bat
+```
 
-**Integrações ativas:**
-- AETHER escreve `vault_path` e `exe_path` no startup
-- KOSMOS escreve `archive_path`, `data_path` e `exe_path` no startup
-- OGMA escreve `data_path` e `exe_path` no startup
-- Mnemosyne escreve `watched_dir`, `vault_dir` (se configurado), `index_paths` e `exe_path` no startup; botão "Sugestões do ecossistema" preenche campos com caminhos do KOSMOS/AKASHA/AETHER
-- Hermes escreve `output_dir` e `exe_path` no startup
-- AKASHA escreve `base_url` e `exe_path` no startup; lê `archive_path` configurado pelo HUB
-- HUB: lê `ecosystem.json` para descobrir dados de todos os apps; `apply_sync_root()` escreve `sync_root` + todos os caminhos de pasta de uma vez (preservando `exe_path` e demais campos)
+O que o script faz:
+- `git pull`
+- `uv sync` (AKASHA, KOSMOS)
+- cria `.venv` compartilhado e instala Mnemosyne + Hermes
+- `npm install` (AETHER, HUB, OGMA)
+
+### Iniciar apps individualmente
+
+```bash
+# AKASHA (servidor FastAPI)
+cd AKASHA && bash iniciar.sh   # Linux
+cd AKASHA && iniciar.bat       # Windows
+
+# Mnemosyne (app desktop PySide6)
+cd Mnemosyne && bash iniciar.sh
+
+# HUB (dev mode — Tauri + Vite)
+cd HUB && npm run tauri dev
+
+# AETHER (dev mode)
+cd AETHER && npm run tauri dev
+
+# OGMA (Electron dev)
+cd OGMA && npm run dev
+
+# KOSMOS (PyQt6)
+cd KOSMOS && bash iniciar.sh
+
+# Hermes (Python)
+cd Hermes && bash iniciar.sh
+```
+
+### Buildar para produção
+
+```bash
+# Buildar tudo
+bash buildar.sh
+
+# Buildar app específico
+bash buildar.sh hub
+bash buildar.sh aether
+bash buildar.sh ogma
+
+# Outputs:
+# AETHER/src-tauri/target/release/bundle/appimage/   (.AppImage Linux)
+# AETHER/src-tauri/target/release/bundle/deb/        (.deb)
+# HUB/src-tauri/target/release/bundle/appimage/
+# OGMA/dist/
+```
+
+### Rodar testes
+
+```bash
+# AKASHA
+cd AKASHA && uv run pytest tests/ -v --ignore=tests/integration
+
+# Mnemosyne
+cd Mnemosyne && python -m pytest tests/ -v
+
+# ecosystem_client
+cd "program files" && .venv/bin/pytest tests/ -v
+
+# HUB (TypeScript)
+cd HUB && npm test
+```
 
 ---
 
-## Padrões de desenvolvimento
+## 12. Portas e serviços
 
-Ver [CONTRIBUTING.md](CONTRIBUTING.md) para as regras completas: workflow de commits, convenções de erro, design system e nomenclatura de apps.
+| Porta | Serviço | Notas |
+|-------|---------|-------|
+| 5173 | HUB (Vite dev) | Apenas em dev mode |
+| 5174 | AETHER (Vite dev) | Apenas em dev mode |
+| 5175 | OGMA (Electron dev) | Apenas em dev mode |
+| 7071 | AKASHA (FastAPI) | Sempre ativo quando AKASHA roda |
+| 7072 | LOGOS (proxy LLM) | HUB gerencia; fila de prioridades P1/P2/P3 |
+| 8080 | llama-server (direto) | Fallback se LOGOS estiver offline |
 
-**Venv Python compartilhado:** `.venv/` na raiz do ecossistema — KOSMOS, Mnemosyne e Hermes apontam para ele nos scripts `iniciar.sh` / `hermes.py`.
+**Syncthing:** gerenciado via painel no HUB; porta padrão 8384 (interface web local do Syncthing).
+
+---
+
+## 13. Checklist de verificação
+
+### Pré-requisitos
+
+```
+[ ] rustc --version          → 1.77+
+[ ] cargo tauri --version    → 2.x
+[ ] node --version           → v22.x.x
+[ ] npm --version            → 10.x+
+[ ] python3 --version        → 3.11+
+[ ] uv --version             → 0.4+
+[ ] webkit2gtk-4.1           → instalado (Linux)
+```
+
+### llama-server
+
+```
+[ ] llama-server --version   → compilado corretamente
+[ ] curl http://localhost:8080/health  → {"status":"ok"}
+[ ] curl http://localhost:8080/v1/models → lista modelos
+[ ] Modelo de chat carregado
+[ ] Modelo de embedding carregado
+```
+
+### Ecossistema
+
+```
+[ ] bash atualizar.sh        → sem erros vermelhos
+[ ] ecosystem.json configurado com os caminhos corretos
+[ ] sync_root acessível
+[ ] AKASHA respondendo: curl http://localhost:7071/health
+[ ] HUB iniciando: npm run tauri dev (sem erros de compilação Rust)
+[ ] LOGOS respondendo: curl http://localhost:7072/health
+```
+
+### Hardware específico
+
+```
+CachyOS:
+[ ] HSA_OVERRIDE_GFX_VERSION=10.3.0 no config.fish
+[ ] llama-server compilado com -DGGML_ROCM=ON
+[ ] GPU detectada: rocminfo | grep "gfx1032"
+
+Fedora (laptop):
+[ ] CUDA toolkit instalado
+[ ] llama-server compilado com -DGGML_CUDA=ON
+[ ] nvidia-smi funcionando
+
+Windows 10:
+[ ] Build do llama-server usa flags noavx (-DLLAMA_AVX2=OFF)
+[ ] Testar com modelo pequeno antes de carregar modelo grande
+```
