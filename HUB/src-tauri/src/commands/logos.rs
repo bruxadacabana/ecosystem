@@ -306,9 +306,6 @@ pub(crate) fn model_hf_table(model: &str) -> Option<(&'static str, &'static str)
         // ── Llama 3.2 ─────────────────────────────────────────────────────────
         "llama3.2:3b" | "llama3.2-3b" | "llama-3.2-3b" =>
             Some(("bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")),
-        // ── Multimodal ────────────────────────────────────────────────────────
-        "moondream" | "moondream2" =>
-            Some(("vikhyatk/moondream2", "moondream2-latest.gguf")),
         // ── Embedding ─────────────────────────────────────────────────────────
         "bge-m3" | "bge_m3" | "baai/bge-m3" =>
             Some(("gpustack/bge-m3-GGUF", "bge-m3-Q4_K_M.gguf")),

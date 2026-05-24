@@ -662,8 +662,8 @@ export function LogosView() {
                             cursor: 'help',
                           }}
                         />
-                        {/* Botão baixar — só aparece quando o modelo não está instalado */}
-                        {!a.is_installed && (() => {
+                        {/* Botão baixar — só aparece quando não instalado E pode ser baixado via HUB */}
+                        {!a.is_installed && a.is_downloadable && (() => {
                           const isPullingThis = pulling.has(a.current_model)
                           return (
                             <button

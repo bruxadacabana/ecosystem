@@ -235,6 +235,8 @@ export interface ModelAssignment {
   /** VRAM/RAM disponível no hardware atual em MB */
   vram_budget_mb:    number
   fits_hardware:     boolean
+  /** True se o modelo pode ser baixado automaticamente via HUB */
+  is_downloadable:   boolean
 }
 
 // ----------------------------------------------------------

@@ -218,6 +218,9 @@ pub struct ModelAssignment {
     pub vram_budget_mb: u64,
     /// True se `vram_required_mb <= vram_budget_mb`
     pub fits_hardware: bool,
+    /// True se o modelo pode ser baixado automaticamente via HUB (está na HF table).
+    /// False para modelos que precisam de instalação manual (ex: multimodais com vários arquivos).
+    pub is_downloadable: bool,
 }
 
 /// Retorna o orçamento de VRAM/RAM disponível para inferência por hardware (MB).
@@ -2087,6 +2090,7 @@ pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
             .map(|&s| s * 65 / 100)
             .unwrap_or(0);
         let fits_hardware = vram_required_mb == 0 || vram_required_mb <= budget;
+        let is_downloadable = crate::commands::logos::model_hf_table(current).is_some();
         ModelAssignment {
             app: app.to_string(),
             model_type: model_type.to_string(),
@@ -2098,6 +2102,7 @@ pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
             vram_required_mb,
             vram_budget_mb: budget,
             fits_hardware,
+            is_downloadable,
         }
     }).collect()
 }
