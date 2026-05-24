@@ -1,5 +1,6 @@
 use crate::ecosystem;
 use crate::AppError;
+use serde::{Deserialize, Serialize};
 
 const PORT: u16 = 8384;
 
@@ -74,6 +75,29 @@ async fn st_post(path: &str) -> Result<(), AppError> {
 }
 
 // ── Tipos de retorno ────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncEvent {
+    pub id:     u64,
+    pub time:   String,
+    pub kind:   String,   // "LocalChangeDetected" | "RemoteChangeDetected" | "ItemFinished" | …
+    pub folder: String,
+    pub item:   String,   // arquivo afetado (path relativo)
+    pub action: String,   // "update" | "delete" | ""
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncLogLine {
+    pub time:    String,
+    pub level:   String,  // "INFO" | "WARNING" | "VERBOSE" | "CRITICAL"
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncCredentials {
+    pub user:     String,
+    pub password: String,
+}
 
 #[derive(serde::Serialize)]
 pub struct SyncFolder {
@@ -228,4 +252,160 @@ pub fn syncthing_get_paused() -> bool {
 #[tauri::command]
 pub fn syncthing_set_paused(paused: bool) -> Result<(), AppError> {
     ecosystem::write_section("hub", serde_json::json!({ "syncthing_paused": paused }))
+}
+
+/// Pausa uma pasta específica do Syncthing por ID.
+#[tauri::command]
+pub async fn syncthing_pause_folder(folder_id: String) -> Result<(), AppError> {
+    st_post(&format!("/rest/db/pause?folder={folder_id}")).await
+}
+
+/// Retoma uma pasta específica do Syncthing por ID.
+#[tauri::command]
+pub async fn syncthing_resume_folder(folder_id: String) -> Result<(), AppError> {
+    st_post(&format!("/rest/db/resume?folder={folder_id}")).await
+}
+
+// ── Nível de log do Syncthing (inteiro → string) ────────────────
+
+fn log_level_str(level: i64) -> &'static str {
+    match level {
+        0 => "VERBOSE",
+        2 => "INFO",
+        3 => "WARNING",
+        5 => "CRITICAL",
+        _ => "INFO",
+    }
+}
+
+/// Retorna os últimos `lines` eventos do log do Syncthing.
+#[tauri::command]
+pub async fn syncthing_get_log(lines: u32) -> Result<Vec<SyncLogLine>, AppError> {
+    let resp = st_get("/rest/system/log").await?;
+    let messages = resp["messages"].as_array().cloned().unwrap_or_default();
+    let limit = lines as usize;
+    let start = messages.len().saturating_sub(limit);
+    Ok(messages[start..]
+        .iter()
+        .map(|m| SyncLogLine {
+            time:    m["when"].as_str().unwrap_or("").to_string(),
+            level:   log_level_str(m["level"].as_i64().unwrap_or(2)).to_string(),
+            message: m["message"].as_str().unwrap_or("").to_string(),
+        })
+        .collect())
+}
+
+/// Retorna eventos recentes do Syncthing a partir de `since` (ID do último evento visto).
+///
+/// Tipos monitorados: LocalChangeDetected, RemoteChangeDetected, ItemFinished,
+/// DeviceConnected, DeviceDisconnected.
+#[tauri::command]
+pub async fn syncthing_get_events(since: u64, limit: u32) -> Result<Vec<SyncEvent>, AppError> {
+    let types = "LocalChangeDetected,RemoteChangeDetected,ItemFinished,DeviceConnected,DeviceDisconnected";
+    let path = format!("/rest/events?types={types}&since={since}&limit={limit}");
+    let resp = st_get(&path).await?;
+    let arr = resp.as_array().cloned().unwrap_or_default();
+    Ok(arr.iter().map(parse_sync_event).collect())
+}
+
+fn parse_sync_event(v: &serde_json::Value) -> SyncEvent {
+    let id   = v["id"].as_u64().unwrap_or(0);
+    let time = v["time"].as_str().unwrap_or("").to_string();
+    let kind = v["type"].as_str().unwrap_or("").to_string();
+    let data = &v["data"];
+    let folder = data["folder"].as_str()
+        .or_else(|| data["folderID"].as_str())
+        .unwrap_or("").to_string();
+    let item   = data["path"].as_str()
+        .or_else(|| data["item"].as_str())
+        .unwrap_or("").to_string();
+    let action = data["action"].as_str()
+        .or_else(|| data["type"].as_str())
+        .unwrap_or("").to_string();
+    SyncEvent { id, time, kind, folder, item, action }
+}
+
+// ── Credenciais da GUI do Syncthing ─────────────────────────────
+
+/// Retorna as credenciais armazenadas para a GUI web do Syncthing.
+/// Usadas pelo frontend para exibir user/password e oferecer link para o painel web.
+#[tauri::command]
+pub fn syncthing_get_credentials() -> Result<SyncCredentials, AppError> {
+    let eco = ecosystem::read_json();
+    Ok(SyncCredentials {
+        user:     eco["hub"]["syncthing_gui_user"].as_str().unwrap_or("").to_string(),
+        password: eco["hub"]["syncthing_gui_password"].as_str().unwrap_or("").to_string(),
+    })
+}
+
+/// Persiste as credenciais da GUI do Syncthing em ecosystem.json.
+/// Não envia essas credenciais para a API REST — são apenas para referência no frontend.
+#[tauri::command]
+pub fn syncthing_set_credentials(user: String, password: String) -> Result<(), AppError> {
+    ecosystem::write_section("hub", serde_json::json!({
+        "syncthing_gui_user":     user,
+        "syncthing_gui_password": password,
+    }))
+}
+
+// ─── Testes ──────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_extract_apikey_found() {
+        let xml = "<configuration><apikey>my-secret-key</apikey></configuration>";
+        assert_eq!(extract_apikey(xml), Some("my-secret-key".into()));
+    }
+
+    #[test]
+    fn test_extract_apikey_not_found() {
+        let xml = "<configuration><gui>no key here</gui></configuration>";
+        assert_eq!(extract_apikey(xml), None);
+    }
+
+    #[test]
+    fn test_log_level_str_mapping() {
+        assert_eq!(log_level_str(0), "VERBOSE");
+        assert_eq!(log_level_str(2), "INFO");
+        assert_eq!(log_level_str(3), "WARNING");
+        assert_eq!(log_level_str(5), "CRITICAL");
+        assert_eq!(log_level_str(99), "INFO"); // desconhecido → INFO
+    }
+
+    #[test]
+    fn test_parse_sync_event_local_change() {
+        let v = json!({
+            "id":   42,
+            "time": "2026-05-24T10:00:00Z",
+            "type": "LocalChangeDetected",
+            "data": { "folder": "abc123", "path": "docs/file.txt", "action": "modified" }
+        });
+        let ev = parse_sync_event(&v);
+        assert_eq!(ev.id,     42);
+        assert_eq!(ev.kind,   "LocalChangeDetected");
+        assert_eq!(ev.folder, "abc123");
+        assert_eq!(ev.item,   "docs/file.txt");
+        assert_eq!(ev.action, "modified");
+    }
+
+    #[test]
+    fn test_parse_sync_event_missing_data_fields() {
+        let v = json!({ "id": 1, "time": "t", "type": "ItemFinished", "data": {} });
+        let ev = parse_sync_event(&v);
+        assert_eq!(ev.folder, "");
+        assert_eq!(ev.item,   "");
+        assert_eq!(ev.action, "");
+    }
+
+    #[test]
+    fn test_sync_credentials_serializes() {
+        let c = SyncCredentials { user: "alice".into(), password: "s3cr3t".into() };
+        let s = serde_json::to_string(&c).unwrap();
+        assert!(s.contains("alice"));
+        assert!(s.contains("s3cr3t"));
+    }
 }

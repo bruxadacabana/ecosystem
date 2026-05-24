@@ -7138,7 +7138,7 @@ Quando LOGOS estiver fora (HUB fechado):
 - [x] **`commands/backup.rs` — `recover_db(app) -> RecoveryReport`** — tenta em sequência: (1) wal_checkpoint; (2) sqlite3 .recover; (3) restore_from_backup; (4) failed. Retornar método usado e sucesso.
 - [x] **`commands/syncthing.rs` — `syncthing_checkpoint_app_dbs(app)` (WAL antes de retomar sync)** — abre DBs do app e executa `PRAGMA wal_checkpoint(FULL)`. Chamado antes de retomar o Syncthing quando app fecha. Previne corrupção no banco da máquina receptora.
 - [x] **`commands/sources.rs` — graceful degradation + fallback JSON** — se AKASHA DB corrompido ao abrir `sources_get_domains()`, não retornar erro total: retornar dados KOSMOS normalmente + `akasha_error: Option<String>`. Se corrompido, tentar leitura fallback de `.backup/akasha/sites.json` para popular a lista de fontes.
-- [ ] **Testes obrigatórios de backup/integridade/recuperação** — todos em `commands/backup.rs` e arquivo de testes dedicado:
+- [x] **Testes obrigatórios de backup/integridade/recuperação** — todos em `commands/backup.rs` e arquivo de testes dedicado:
   - `test_backup_akasha_sites_from_db` — DB válido → JSON correto gerado
   - `test_backup_akasha_sites_db_not_found` — DB ausente → erro graceful
   - `test_backup_kosmos_feeds_from_db` — DB válido → JSON correto
@@ -7162,7 +7162,7 @@ Quando LOGOS estiver fora (HUB fechado):
 #### Eixo 2 — Syncthing e SyncView
 
 ##### HUB
-- [ ] **`commands/syncthing.rs` — novos commands e structs** — adicionar: `SyncEvent` (id, time, kind, folder, item, action); `SyncLogLine` (time, level, message); `SyncCredentials` (user, password); commands: `syncthing_get_events(since, limit)` (GET /rest/events com filtro de tipos), `syncthing_get_log(lines)` (GET /rest/system/log), `syncthing_pause_folder(folder_id)`, `syncthing_resume_folder(folder_id)`, `syncthing_get_credentials()`, `syncthing_set_credentials(user, password)`. Registrar todos em `lib.rs`.
+- [x] **`commands/syncthing.rs` — novos commands e structs** — adicionar: `SyncEvent` (id, time, kind, folder, item, action); `SyncLogLine` (time, level, message); `SyncCredentials` (user, password); commands: `syncthing_get_events(since, limit)` (GET /rest/events com filtro de tipos), `syncthing_get_log(lines)` (GET /rest/system/log), `syncthing_pause_folder(folder_id)`, `syncthing_resume_folder(folder_id)`, `syncthing_get_credentials()`, `syncthing_set_credentials(user, password)`. Registrar todos em `lib.rs`.
 - [ ] **`views/SyncView.tsx` — reescrita completa** — seções: (1) cabeçalho + status + botões Iniciar/Parar + link "Abrir painel web"; (2) credenciais GUI do Syncthing (user/password, recolhível); (3) controles globais (⏸ Pausar tudo / ▶ Retomar tudo) + warning de auto-pause inativo quando exe_paths não configuradas; (4) pastas com barra de progresso `in_sync/total`, botão ⏸/▶ por pasta e ↻ re-scan; (5) dispositivos (manter); (6) "Atividade recente" — poll de eventos a cada 5s, acumular 50 eventos, ícone + pasta + arquivo + hora relativa; (7) "Logs" recolhível — poll a cada 10s, 60 linhas, WARNING em laranja; (8) painel "Backup" — botão "Criar backup agora", timestamp último backup, botão "Verificar integridade".
 - [ ] **`App.tsx` — auto-pause mais confiável** — (1) AKASHA detectado via health check `GET http://127.0.0.1:7071/health` (timeout 400ms) em paralelo com exe_path para Mnemosyne/Kosmos; (2) antes de retomar Syncthing quando app fecha, chamar `cmd.syncthingCheckpointAppDbs(app)`; (3) reduzir intervalo de poll de 10s para 5s.
 
