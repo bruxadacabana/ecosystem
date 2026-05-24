@@ -7122,3 +7122,55 @@ Quando LOGOS estiver fora (HUB fechado):
 - [ ] LOGOS: emitir evento `logos://hardware-mode-changed` ao HUB quando alternar entre GPU-full / GPU-embed+CPU-llm / CPU-full
 - [ ] HUB LogosView: exibir modo de execução atual (ex: "IA: GPU+CPU" ou "IA: CPU") quando em modo degradado
 - [ ] Testes: simular VRAM < threshold no laptop-profile e verificar que LOGOS spawna instância CPU corretamente
+
+### Integridade, Sync e Segurança do Ecossistema | 2026-05-24
+> Contexto: abertura do HUB revelou corrupção do akasha.db (Syncthing sincronizou banco SQLite aberto), git do ecosystem_root corrompido (Syncthing sincronizou .git entre máquinas), botão "Ligar IA" sem efeito, CPU/RAM ausente no LogosView. Adicionalmente: ausência de sistema de backup robusto, testes de integridade e mecanismo de reset de dados transientes.
+
+#### Eixo 1 — Integridade, Backup e Recuperação
+
+##### HUB
+- [x] **`commands/git.rs:344` — STIGNORE_ENTRIES: adicionar `.git`** — `.git` nunca deve ser sincronizado pelo Syncthing entre máquinas (cada máquina tem histórico local independente). Manter `*.db-wal`, `*.db-shm`, `*.tmp`. NUNCA adicionar `*.db` — os bancos SQLite DEVEM ser sincronizados.
+- [ ] **`commands/git.rs:357` — `git_init_sync_root`: detectar repo corrompido** — se `.git` existe mas `git rev-parse HEAD` falha (hash inexistente), remover `.git` e reinicializar. Escrever `.stignore` correto em disco antes do primeiro commit, mesmo que `.git` já exista.
+- [ ] **Operação imediata: recuperar `akasha.db` corrompido** — tentar em sequência: (1) `PRAGMA wal_checkpoint(TRUNCATE)` + `PRAGMA integrity_check`; (2) `sqlite3 akasha.db ".recover" | sqlite3 akasha_recovered.db`; (3) restaurar de `.backup/akasha/sites.json`. Registrar resultado.
+- [ ] **Novo `commands/backup.rs` — `backup_key_data() -> BackupReport`** — exporta dados chave de forma atômica: AKASHA `crawl_sites` → `.backup/akasha/sites.json`; AKASHA userdata JSONs → `.backup/akasha/`; KOSMOS `feeds` → `.backup/kosmos/sources.json`; `ecosystem.json` → `.backup/ecosystem.json`. Chamado: ao fechar app, a cada 60 min, manualmente via SyncView.
+- [ ] **`commands/backup.rs` — `restore_from_backup(app) -> RestoreReport`** — recria tabelas chave a partir do `.backup/` quando DB corrompido. Para AKASHA: recria `crawl_sites` do JSON. Reportar o que foi restaurado.
+- [ ] **`commands/backup.rs` — `check_db_integrity(app) -> IntegrityReport`** — `PRAGMA integrity_check` + `PRAGMA wal_checkpoint(FULL)` + medir tamanho do `.db-wal`. Retornar `{ app, db_path, ok, details, wal_size }`.
+- [ ] **`commands/backup.rs` — `recover_db(app) -> RecoveryReport`** — tenta em sequência: (1) wal_checkpoint; (2) sqlite3 .recover; (3) restore_from_backup; (4) failed. Retornar método usado e sucesso.
+- [ ] **`commands/syncthing.rs` — `syncthing_checkpoint_app_dbs(app)` (WAL antes de retomar sync)** — abre DBs do app e executa `PRAGMA wal_checkpoint(FULL)`. Chamado antes de retomar o Syncthing quando app fecha. Previne corrupção no banco da máquina receptora.
+- [ ] **`commands/sources.rs` — graceful degradation + fallback JSON** — se AKASHA DB corrompido ao abrir `sources_get_domains()`, não retornar erro total: retornar dados KOSMOS normalmente + `akasha_error: Option<String>`. Se corrompido, tentar leitura fallback de `.backup/akasha/sites.json` para popular a lista de fontes.
+- [ ] **Testes obrigatórios de backup/integridade/recuperação** — todos em `commands/backup.rs` e arquivo de testes dedicado:
+  - `test_backup_akasha_sites_from_db` — DB válido → JSON correto gerado
+  - `test_backup_akasha_sites_db_not_found` — DB ausente → erro graceful
+  - `test_backup_kosmos_feeds_from_db` — DB válido → JSON correto
+  - `test_backup_atomic_write` — arquivo .tmp não sobra
+  - `test_integrity_check_ok` — PRAGMA integrity_check "ok"
+  - `test_integrity_check_corrupted` — DB corrompido → ok=false
+  - `test_integrity_wal_size_reported` — WAL presente → wal_size > 0
+  - `test_recover_via_checkpoint` — WAL pendente → checkpoint resolve
+  - `test_recover_fallback_to_backup` — DB irrecuperável → restaura de JSON
+  - `test_recover_all_methods_fail` — sem backup → method="failed"
+  - `test_restore_from_backup_akasha` — JSON backup → recria crawl_sites
+  - `test_stignore_includes_git` — STIGNORE_ENTRIES contém ".git"
+  - `test_stignore_does_not_include_db` — STIGNORE_ENTRIES NÃO contém "*.db"
+  - `test_reset_deletes_crawl_pages` — crawl_pages vazia após reset
+  - `test_reset_preserves_crawl_sites` — crawl_sites intacta após reset
+  - `test_reset_deletes_personal_memory` — personal_memory vazia após reset
+  - `test_reset_preserves_user_prefs` — userdata JSONs intactos após reset
+  - `test_reset_creates_backup_first` — .backup/ atualizado antes de deletar
+  - `test_reset_requires_confirm_token` — sem token → erro sem deletar nada
+
+#### Eixo 2 — Syncthing e SyncView
+
+##### HUB
+- [ ] **`commands/syncthing.rs` — novos commands e structs** — adicionar: `SyncEvent` (id, time, kind, folder, item, action); `SyncLogLine` (time, level, message); `SyncCredentials` (user, password); commands: `syncthing_get_events(since, limit)` (GET /rest/events com filtro de tipos), `syncthing_get_log(lines)` (GET /rest/system/log), `syncthing_pause_folder(folder_id)`, `syncthing_resume_folder(folder_id)`, `syncthing_get_credentials()`, `syncthing_set_credentials(user, password)`. Registrar todos em `lib.rs`.
+- [ ] **`views/SyncView.tsx` — reescrita completa** — seções: (1) cabeçalho + status + botões Iniciar/Parar + link "Abrir painel web"; (2) credenciais GUI do Syncthing (user/password, recolhível); (3) controles globais (⏸ Pausar tudo / ▶ Retomar tudo) + warning de auto-pause inativo quando exe_paths não configuradas; (4) pastas com barra de progresso `in_sync/total`, botão ⏸/▶ por pasta e ↻ re-scan; (5) dispositivos (manter); (6) "Atividade recente" — poll de eventos a cada 5s, acumular 50 eventos, ícone + pasta + arquivo + hora relativa; (7) "Logs" recolhível — poll a cada 10s, 60 linhas, WARNING em laranja; (8) painel "Backup" — botão "Criar backup agora", timestamp último backup, botão "Verificar integridade".
+- [ ] **`App.tsx` — auto-pause mais confiável** — (1) AKASHA detectado via health check `GET http://127.0.0.1:7071/health` (timeout 400ms) em paralelo com exe_path para Mnemosyne/Kosmos; (2) antes de retomar Syncthing quando app fecha, chamar `cmd.syncthingCheckpointAppDbs(app)`; (3) reduzir intervalo de poll de 10s para 5s.
+
+#### Eixo 3 — UI do HUB
+
+##### HUB
+- [ ] **`commands/sources.rs` — `sources_get_akasha_backup()`** — lê `.backup/akasha/sites.json` e retorna lista de `DomainEntry`. Chamado quando DB corrompido como fallback na aba Fontes.
+- [ ] **Credenciais de serviços externos nas Configurações do HUB** — campos em `ecosystem.json`: `akasha.unpaywall_email` (email obrigatório para Unpaywall API), `akasha.qbt_host/port/user/password` (qBittorrent), `hub.syncthing_gui_user/password`. Novo command `get_service_credentials()` e `save_service_credentials()`. Seção "Credenciais e Serviços" nas Configurações do HUB. O `ecosystem_client.py` deve ler `unpaywall_email` de `ecosystem.json["akasha"]["unpaywall_email"]`.
+- [ ] **Reset do ecossistema nas Configurações** — botão "Resetar dados transientes" (cor ribbon); modal listando exatamente o que será deletado vs. preservado; campo de confirmação textual ("RESETAR"); barra de progresso; relatório final. Command `ecosystem_reset(confirm_token)` em `commands/backup.rs`: (1) backup_key_data primeiro; (2) AKASHA: `DELETE FROM crawl_pages WHERE NOT saved`, `DELETE FROM personal_memory`, deletar `akasha_knowledge.db` — PRESERVAR `Web/`, `Papers/`, `crawl_sites`, `userdata/*.json`; (3) KOSMOS: `DELETE FROM articles WHERE is_saved=0` — PRESERVAR feeds e artigos salvos; (4) Mnemosyne: apagar `chroma_dir/`, BM25 index, `personal_memory.db`, `studio/*.md` — PRESERVAR notebooks; (5) Compartilhados: deletar `communication_history.db`, `shared_topic_profile.db`.
+- [ ] **`commands/launcher.rs:31` — `toggle_inference(true)`: implementar carregamento real** — verificar se servidor está ativo; se não, pegar primeiro modelo do registry via `do_list_all_models()`; se vazio, retornar `NotFound`; spawnar `do_load_model()` em background via `tauri::async_runtime::spawn`; retornar "started". Frontend: poll em 2s/5s/10s, texto "Carregando modelo…", erro após 10s sem modelo ativo.
+- [ ] **`views/LogosView.tsx` — seção CPU/RAM** — extrair `cpu_pct`, `ram_free_mb`, `ram_total_mb` do `status` (linha ~210); adicionar seção visual após VRAM (linha ~407): barra de CPU + barra de RAM, escala de cor verde/laranja/vermelho (< 70% / > 70% / > 85%), label "CPU XX% · RAM livre X.X GB / X.X GB".

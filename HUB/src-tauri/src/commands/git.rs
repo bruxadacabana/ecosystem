@@ -341,7 +341,12 @@ pub fn git_diff(path: Option<String>) -> Result<String, AppError> {
 }
 
 const GITIGNORE_ENTRIES: &[&str] = &["*.db-wal", "*.db-shm"];
-const STIGNORE_ENTRIES: &[&str]  = &["*.db-wal", "*.db-shm", "*.tmp"];
+const STIGNORE_ENTRIES: &[&str]  = &[
+    ".git",      // histórico git é local de cada máquina — nunca sincronizar entre máquinas
+    "*.db-wal",  // WAL do SQLite — nunca sincronizar (só o .db principal é sincronizado)
+    "*.db-shm",  // shared memory do SQLite
+    "*.tmp",
+];
 
 /// Inicializa o repositório git offline na sync_root do ecossistema.
 ///
@@ -483,4 +488,25 @@ fn ensure_file_entries(root: &Path, filename: &str, required: &[&str]) -> Result
         std::fs::write(&path, &content)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stignore_includes_git() {
+        assert!(
+            STIGNORE_ENTRIES.contains(&".git"),
+            ".git deve estar em STIGNORE_ENTRIES para evitar sincronização do histórico git entre máquinas"
+        );
+    }
+
+    #[test]
+    fn test_stignore_does_not_include_db() {
+        assert!(
+            !STIGNORE_ENTRIES.iter().any(|e| *e == "*.db"),
+            "*.db nunca deve estar em STIGNORE_ENTRIES — o Syncthing deve sincronizar os bancos SQLite"
+        );
+    }
 }

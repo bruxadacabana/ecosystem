@@ -1,8 +1,8 @@
 ## Fila de implementação atual:
 
-então prossiga com a implementação de '### Pesquisa: Fine-Tuning Local com QLoRA — Aprendizado Real de Corpus Pessoal | 2026-05-22
-'!
+então prossiga com a implementação de '### Integridade, Sync e Segurança do Ecossistema | 2026-05-24'!
 lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
+Não se esqueça das regras para documentar no README e GUIDE.
 
 
 ## próximo: 
