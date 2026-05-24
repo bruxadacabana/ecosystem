@@ -298,8 +298,8 @@ fn model_hf_table(model: &str) -> Option<(&'static str, &'static str)> {
             Some(("bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")),
         "command-r:7b" | "command-r-7b" =>
             Some(("bartowski/c4ai-command-r7b-12-2024-GGUF", "c4ai-command-r7b-12-2024-Q4_K_M.gguf")),
-        "nomic-embed-text" =>
-            Some(("nomic-ai/nomic-embed-text-v1.5-GGUF", "nomic-embed-text-v1.5.Q4_K_M.gguf")),
+        "bge-m3" | "bge_m3" | "baai/bge-m3" =>
+            Some(("gpustack/bge-m3-GGUF", "bge-m3-Q4_K_M.gguf")),
         _ => None,
     }
 }

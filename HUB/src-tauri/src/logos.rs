@@ -2139,7 +2139,7 @@ fn rationale_for_model(name: &str) -> &'static str {
         "smollm2:1.7b"             => "1.7B · ~1 GB RAM · CPU-only, geração de texto · JSON 26% (não usar para extração estruturada)",
         "qwen2.5:0.5b"             => "0.5B · ~400 MB RAM · CPU-only, extração JSON · JSON 61% (melhor que smollm2 para schema)",
         "moondream"               => "multimodal compacto · ~1.7 GB VRAM · OCR + descrição de imagens · ideal para indexação de PDFs com figuras",
-        "bge-m3"                   => "embed multilíngue SOTA · 8 GB VRAM",
+        "bge-m3"                   => "embed multilíngue SOTA · ~670 MB VRAM · 1024 dims",
         "nomic-embed-text"         => "embed compacto · boa qualidade · 2 GB VRAM",
         "all-minilm"               => "embed 384-dim · muito leve · CPU-only",
         "potion-multilingual-128M" => "embed estático · ~50ms/chunk · sem GPU · sem Ollama",
