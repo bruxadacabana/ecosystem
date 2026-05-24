@@ -19,7 +19,7 @@ router = APIRouter()
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
-_VALID_TYPES = {"all", "search", "archive", "download"}
+_VALID_TYPES = {"all", "search", "archive", "download", "visit"}
 
 
 def _date_label(created_at: str) -> str:

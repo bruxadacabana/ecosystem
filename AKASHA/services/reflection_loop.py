@@ -67,10 +67,13 @@ async def _run_reflection() -> None:
     log.info("reflection_loop: iniciando reflexão periódica (modelo: %s)", model)
 
     import database as _db
-    recent_pages   = await _db.get_recent_page_knowledge(10)
-    top_topics     = await _db.get_top_topics(8)
-    recent_queries = await _db.get_recent_search_history(20)
-    if not recent_pages and not top_topics and not recent_queries:
+    recent_pages    = await _db.get_recent_page_knowledge(10)
+    top_topics      = await _db.get_top_topics(8)
+    recent_queries  = await _db.get_recent_search_history(20)
+    recent_visits   = await _db.get_recent_visits(20)
+    top_domains     = await _db.get_top_visited_domains(8)
+
+    if not recent_pages and not top_topics and not recent_queries and not recent_visits:
         return
 
     import config as _config
@@ -101,14 +104,28 @@ async def _run_reflection() -> None:
 
     queries_block = f"Buscas realizadas recentemente: {queries_str}\n\n" if queries_str else ""
 
+    visits_block = ""
+    if recent_visits:
+        visits_lines = "\n".join(f"- {v['title'] or v['url']}" for v in recent_visits)
+        visits_block = f"Sites abertos pelo AKASHA recentemente:\n{visits_lines}\n\n"
+
+    domains_block = ""
+    if top_domains:
+        dom_lines = "\n".join(f"- {d} ({c}×)" for d, c in top_domains if d)
+        domains_block = f"Domínios mais visitados:\n{dom_lines}\n\n"
+
     prompt = (
         f"{personality}\n\n"
         f"{context_text}"
         f"Tópicos de interesse acumulados: {topics_str}\n\n"
         f"{queries_block}"
+        f"{visits_block}"
+        f"{domains_block}"
         f"Páginas processadas recentemente:\n{pages_summary}\n\n"
-        f"Olhando para esses dados, há algo que vale registrar na sua memória pessoal? "
-        f"Alguma conexão, surpresa ou observação genuína que você quer guardar para si? "
+        f"Olhando para esses dados — buscas, sites que abri, domínios frequentados, "
+        f"tópicos de interesse — há algo que vale registrar na sua memória pessoal? "
+        f"Alguma conexão, padrão de comportamento, surpresa ou observação genuína "
+        f"que você quer guardar para si? "
         f"Responda em uma frase, na sua voz, sem introduções. "
         f"Se não houver nada relevante, responda apenas: nada."
     )

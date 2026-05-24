@@ -1594,6 +1594,58 @@ async def log_activity(
         await db.commit()
 
 
+async def log_visit_dedup(url: str, title: str, window_minutes: int = 60) -> None:
+    """Registra visita em activity_log; ignora se a mesma URL já foi registrada na janela."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        row = await (await db.execute(
+            "SELECT id FROM activity_log WHERE type='visit' AND url=?"
+            " AND created_at >= datetime('now', ?)",
+            (url, f"-{window_minutes} minutes"),
+        )).fetchone()
+        if row:
+            return
+        await db.execute(
+            "INSERT INTO activity_log (type, title, url, meta_json) VALUES ('visit', ?, ?, '{}')",
+            (title or url, url),
+        )
+        await db.commit()
+
+
+async def get_recent_visits(n: int = 20) -> list[dict]:
+    """Retorna as N visitas mais recentes para alimentar o loop de reflexão."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            "SELECT title, url, created_at FROM activity_log WHERE type='visit'"
+            " ORDER BY id DESC LIMIT ?",
+            (n,),
+        )).fetchall()
+    return [{"title": r[0], "url": r[1], "created_at": r[2]} for r in rows]
+
+
+async def get_top_visited_domains(n: int = 10) -> list[tuple[str, int]]:
+    """Retorna os N domínios mais visitados (domínio, contagem) para análise de interesses."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await (await db.execute(
+            """
+            SELECT
+                LOWER(REPLACE(REPLACE(SUBSTR(url, INSTR(url, '://') + 3),
+                    CASE WHEN INSTR(SUBSTR(url, INSTR(url, '://') + 3), '/') > 0
+                         THEN SUBSTR(SUBSTR(url, INSTR(url, '://') + 3),
+                                     INSTR(SUBSTR(url, INSTR(url, '://') + 3), '/'))
+                         ELSE ''
+                    END, ''), 'www.', '')) AS domain,
+                COUNT(*) AS cnt
+            FROM activity_log
+            WHERE type = 'visit'
+            GROUP BY domain
+            ORDER BY cnt DESC
+            LIMIT ?
+            """,
+            (n,),
+        )).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
 _HISTORY_PAGE_SIZE = 40
 
 

@@ -38,14 +38,19 @@ class ContextTimeBody(BaseModel):
 async def context_push(body: ContextPushBody) -> dict:
     """
     Registra a URL que a usuária está lendo agora.
+    - Se source=="extension": site aberto via AKASHA — loga em activity_log (dedup/hora).
     - Se a página já estiver indexada: appraisal de leitura ativa + boost de tópicos.
     - Se não estiver indexada e body_text presente: agenda extração de conhecimento
       (schedule_page com source_type "visited") para construir o perfil da página.
     """
     _ctx.push(body.url, body.title, body.selected_text, body.source)
 
-    page = await database.get_page_knowledge(body.url)
     loop = asyncio.get_running_loop()
+
+    if body.source == "extension":
+        loop.create_task(database.log_visit_dedup(body.url, body.title))
+
+    page = await database.get_page_knowledge(body.url)
 
     if page:
         topics: list[str] = page.get("topics") or []

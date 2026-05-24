@@ -6,7 +6,7 @@
 
   <!-- ─── Filtros ───────────────────────────────────────────── -->
   <div class="source-filters history-filters">
-    {% for t, label in [('all','tudo'), ('search','buscas'), ('archive','arquivos'), ('download','downloads')] %}
+    {% for t, label in [('all','tudo'), ('search','buscas'), ('visit','visitas'), ('archive','arquivos'), ('download','downloads')] %}
     <a
       class="tag {% if type_filter == t %}tag-active{% endif %}"
       href="/history?type={{ t }}&page=1"
@@ -42,6 +42,7 @@
           {% if item.type == 'search' %}&#x2315;
           {% elif item.type == 'archive' %}&#x25A4;
           {% elif item.type == 'download' %}&#x21A7;
+          {% elif item.type == 'visit' %}&#x2192;
           {% else %}&#x25CB;{% endif %}
         </span>
         <div class="history-item-content">
