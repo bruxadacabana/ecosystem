@@ -135,11 +135,8 @@ export const listProjectPages = (
 //  Módulo Launcher — apps externos
 // ----------------------------------------------------------
 
-export const launchOllama = (): Promise<TauriResult<string>> =>
-  call<string>('launch_ollama')
-
-export const stopOllama = (): Promise<TauriResult<void>> =>
-  call<void>('stop_ollama')
+export const toggleInference = (enable: boolean): Promise<TauriResult<string>> =>
+  call<string>('toggle_inference', { enable })
 
 export const launchApp = (exePath: string): Promise<TauriResult<void>> =>
   call<void>('launch_app', { exePath })
@@ -205,11 +202,11 @@ export const logosPullModel = (model: string): Promise<TauriResult<void>> =>
 export const logosSetVramLimitPct = (pct: number): Promise<TauriResult<void>> =>
   call<void>('logos_set_vram_limit_pct', { pct })
 
-export const logosStartOllama = (): Promise<TauriResult<void>> =>
-  call<void>('logos_start_ollama')
+export const logosStartInference = (): Promise<TauriResult<void>> =>
+  call<void>('logos_start_inference')
 
-export const logosStopOllama = (): Promise<TauriResult<void>> =>
-  call<void>('logos_stop_ollama')
+export const logosStopInference = (): Promise<TauriResult<void>> =>
+  call<void>('logos_stop_inference')
 
 export const logosAbortModelInference = (model: string): Promise<TauriResult<boolean>> =>
   call<boolean>('logos_abort_model_inference', { model })

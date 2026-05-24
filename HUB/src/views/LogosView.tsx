@@ -1,13 +1,12 @@
 /* ============================================================
    HUB — LogosView
    Seção LOGOS: perfis de workflow + monitor de fila/VRAM +
-   painel de gerenciamento de modelos Ollama.
+   painel de gerenciamento de modelos instalados.
    ============================================================ */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import * as cmd from '../lib/tauri'
-import { listModels } from '../lib/ollama'
 import type { LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, PullProgress, EmbedCompatWarning } from '../types'
 import { FinetunePanel } from '../components/FinetunePanel'
 
@@ -31,9 +30,9 @@ export function LogosView() {
   const [allModels,    setAllModels]    = useState<OllamaModelEntry[]>([])
   const [silencing,    setSilencing]    = useState(false)
   const [unloading,    setUnloading]    = useState<string | null>(null)
-  const [stopping,       setStopping]       = useState(false)
-  const [ollamaOnline,   setOllamaOnline]   = useState<boolean | null>(null)
-  const [launchStatus,   setLaunchStatus]   = useState<'idle' | 'starting' | 'error'>('idle')
+  const [stopping,     setStopping]     = useState(false)
+  const [starting,     setStarting]     = useState(false)
+  const [toggleError,  setToggleError]  = useState(false)
   const [assignments,       setAssignments]       = useState<ModelAssignment[]>([])
   const [editingSlot,       setEditingSlot]       = useState<string | null>(null)
   const [recommended,       setRecommended]       = useState<RecommendedModel[]>([])
@@ -66,21 +65,13 @@ export function LogosView() {
     cmd.logosGetRecommendedModels().then(r => { if (r.ok) setRecommended(r.data) })
   }, [])
 
-  const checkOllama = useCallback(() => {
-    listModels()
-      .then(() => setOllamaOnline(true))
-      .catch(() => setOllamaOnline(false))
-  }, [])
-
   useEffect(() => {
     fetchStatus()
     fetchModels()
-    checkOllama()
     const sid = setInterval(fetchStatus, 4_000)
     const mid = setInterval(fetchModels, 8_000)
-    const oid = setInterval(checkOllama, 4_000)
-    return () => { clearInterval(sid); clearInterval(mid); clearInterval(oid) }
-  }, [fetchStatus, fetchModels, checkOllama])
+    return () => { clearInterval(sid); clearInterval(mid) }
+  }, [fetchStatus, fetchModels])
 
   // Escuta aviso de incompatibilidade de embedding
   useEffect(() => {
@@ -146,16 +137,17 @@ export function LogosView() {
     fetchModels()
   }
 
-  async function handleLaunchOllama() {
-    setLaunchStatus('starting')
-    const r = await cmd.launchOllama()
-    if (r.ok) {
-      setLaunchStatus('idle')
-      setTimeout(checkOllama, 1_500)
-      setTimeout(checkOllama, 3_500)
+  async function handleStartInference() {
+    setStarting(true)
+    setToggleError(false)
+    const r = await cmd.toggleInference(true)
+    setStarting(false)
+    if (!r.ok) {
+      setToggleError(true)
+      setTimeout(() => setToggleError(false), 3_000)
     } else {
-      setLaunchStatus('error')
-      setTimeout(() => setLaunchStatus('idle'), 3_000)
+      setTimeout(fetchModels, 1_500)
+      setTimeout(fetchModels, 3_500)
     }
   }
 
@@ -165,11 +157,10 @@ export function LogosView() {
     cmd.logosGetModelAssignments().then(r => { if (r.ok) setAssignments(r.data) })
   }
 
-  async function handleStopOllama() {
+  async function handleStopInference() {
     setStopping(true)
-    await cmd.stopOllama()
+    await cmd.toggleInference(false)
     setTimeout(() => {
-      checkOllama()
       fetchModels()
       setStopping(false)
     }, 1_500)
@@ -186,7 +177,7 @@ export function LogosView() {
   }
 
   async function handleDeleteModel(name: string) {
-    if (!window.confirm(`Remover "${name}" do Ollama? Esta ação apaga o modelo do disco.`)) return
+    if (!window.confirm(`Remover "${name}"? Esta ação apaga o modelo do disco.`)) return
     setDeleting(name)
     const r = await cmd.logosDeleteModel(name)
     setDeleting(null)
@@ -866,14 +857,13 @@ export function LogosView() {
                       {prog.status}
                     </span>
                   )}
-                  {/* Aviso de cancelamento: Ollama continua em background (limitação conhecida) */}
+                  {/* Aviso de cancelamento */}
                   {isPulling && cancelledPulls.has(m.model_name) && (
                     <span style={{
                       fontFamily: 'var(--font-mono)', fontSize: 9,
                       color: 'var(--accent)', paddingLeft: 15, lineHeight: 1.6,
                     }}>
-                      O Ollama continuará o download em background mesmo após cancelar aqui.
-                      Para interromper de fato, pare o servidor Ollama.
+                      Download em andamento no LOGOS — aguarde ou feche o HUB para interromper.
                     </span>
                   )}
                 </div>
@@ -883,14 +873,10 @@ export function LogosView() {
         </section>
       )}
 
-      {/* ── Modelos Ollama ────────────────────────────── */}
+      {/* ── Modelos instalados ───────────────────────── */}
       <section>
-        <Label>Modelos Ollama</Label>
-        {!ollamaOnline ? (
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)', margin: 0 }}>
-            {ollamaOnline === null ? '…' : 'Ollama offline'}
-          </p>
-        ) : allModels.length === 0 ? (
+        <Label>Modelos instalados</Label>
+        {allModels.length === 0 ? (
           <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)', margin: 0 }}>
             Nenhum modelo instalado
           </p>
@@ -987,63 +973,66 @@ export function LogosView() {
       </section>
 
       {/* ── Ações ─────────────────────────────────────── */}
-      <section style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button
-          className="btn btn-ghost btn-sm"
-          disabled={silencing}
-          onClick={handleSilence}
-          title="Descarregar todos os modelos carregados no Ollama"
-          style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
-        >
-          {silencing ? '…' : 'Silenciar Ollama'}
-        </button>
-        {ollamaOnline === false && (
-          <button
-            className="btn btn-ghost btn-sm"
-            disabled={launchStatus === 'starting'}
-            onClick={handleLaunchOllama}
-            title="Iniciar o servidor Ollama com as flags de hardware corretas"
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              color: launchStatus === 'error' ? 'var(--ribbon)' : 'var(--accent-green)',
-              borderColor: launchStatus === 'error' ? 'var(--ribbon)' : 'var(--accent-green)',
-              opacity: launchStatus === 'starting' ? 0.6 : 1,
-            }}
-          >
-            {launchStatus === 'starting' ? 'Iniciando…'
-             : launchStatus === 'error'   ? 'Erro — tentar novamente'
-             : 'Iniciar Ollama'}
-          </button>
-        )}
-        {ollamaOnline === true && (
-          <>
-            <span style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              color: 'var(--accent-green)',
-              opacity: 0.7,
-            }}>
-              Ollama ativo
-            </span>
+      {(() => {
+        const inferenceOnline = allModels.some(m => m.status === 'active')
+        return (
+          <section style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <button
               className="btn btn-ghost btn-sm"
-              disabled={stopping}
-              onClick={handleStopOllama}
-              title="Encerrar o processo Ollama"
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                color: stopping ? 'var(--ink-ghost)' : 'var(--ribbon)',
-                borderColor: stopping ? 'var(--rule)' : 'var(--ribbon)',
-                opacity: stopping ? 0.5 : 1,
-              }}
+              disabled={silencing}
+              onClick={handleSilence}
+              title="Descarregar modelos da memória"
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
             >
-              {stopping ? '…' : 'Parar Ollama'}
+              {silencing ? '…' : 'Descarregar modelos'}
             </button>
-          </>
-        )}
-      </section>
+            {!inferenceOnline && (
+              <button
+                className="btn btn-ghost btn-sm"
+                disabled={starting}
+                onClick={handleStartInference}
+                title="Carregar modelo e ligar o backend de inferência"
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  color: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
+                  borderColor: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
+                  opacity: starting ? 0.6 : 1,
+                }}
+              >
+                {starting ? 'Iniciando…' : toggleError ? 'Erro — tentar novamente' : 'Ligar IA'}
+              </button>
+            )}
+            {inferenceOnline && (
+              <>
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  color: 'var(--accent-green)',
+                  opacity: 0.7,
+                }}>
+                  IA ativa
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={stopping}
+                  onClick={handleStopInference}
+                  title="Descarregar modelo e liberar VRAM"
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    color: stopping ? 'var(--ink-ghost)' : 'var(--ribbon)',
+                    borderColor: stopping ? 'var(--rule)' : 'var(--ribbon)',
+                    opacity: stopping ? 0.5 : 1,
+                  }}
+                >
+                  {stopping ? '…' : 'Desligar IA'}
+                </button>
+              </>
+            )}
+          </section>
+        )
+      })()}
     </div>
   )
 }

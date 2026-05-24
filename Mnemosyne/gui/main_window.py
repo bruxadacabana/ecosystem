@@ -735,7 +735,7 @@ class MainWindow(QMainWindow):
 
         # Ollama banner
         self.ollama_banner = QLabel(
-            "⚠  Ollama não encontrado. Inicie o Ollama para usar o Mnemosyne."
+            "⚠  Backend de inferência indisponível. Abra o HUB e ligue a IA para usar o Mnemosyne."
         )
         self.ollama_banner.setObjectName("ollamaBanner")
         self.ollama_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1776,10 +1776,10 @@ class MainWindow(QMainWindow):
         self._post_config_init()
         self._log_event(f"Coleção removida: {name}")
 
-    # ── Inicialização Ollama ──────────────────────────────────────────────────
+    # ── Inicialização do backend de inferência ───────────────────────────────
 
     def _start_ollama_check(self) -> None:
-        self.statusBar().showMessage("Verificando Ollama…")
+        self.statusBar().showMessage("Verificando backend de inferência…")
         self._ollama_worker = OllamaCheckWorker()
         self._ollama_worker.models_loaded.connect(self._on_models_loaded)
         self._ollama_worker.ollama_unavailable.connect(self._on_ollama_unavailable)
@@ -1792,7 +1792,7 @@ class MainWindow(QMainWindow):
         self.ollama_banner.setVisible(False)
         self.config_btn.setEnabled(True)
         self.statusBar().showMessage(
-            f"Ollama ativo — {len(models)} modelo(s) disponível(is)."
+            f"Backend ativo — {len(models)} modelo(s) disponível(is)."
         )
 
         available_names = {m.name for m in models}
@@ -1821,13 +1821,13 @@ class MainWindow(QMainWindow):
         self._ollama_ok = False
         self.ollama_banner.setVisible(True)
         self.config_btn.setEnabled(True)
-        self.statusBar().showMessage("Ollama indisponível — aguardando reconexão…")
-        self._log_event(f"Ollama indisponível: {message}")
+        self.statusBar().showMessage("Backend de inferência indisponível — aguardando reconexão…")
+        self._log_event(f"Backend de inferência indisponível: {message}")
         if not self._retry_timer.isActive():
             self._retry_timer.start()
 
     def _retry_ollama_check(self) -> None:
-        """Tenta reconectar ao Ollama silenciosamente em background."""
+        """Tenta reconectar ao backend de inferência silenciosamente em background."""
         if self._ollama_ok:
             self._retry_timer.stop()
             return

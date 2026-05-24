@@ -7,7 +7,7 @@ Cobre:
   - gc_with_reflection: sessão ativa não é removida
   - _is_meaningful_reflection: respostas genéricas/curtas são descartadas
   - reflect_on_session: sem modelo configurado → retorna sem chamar save_memory
-  - reflect_on_session: Ollama responde → save_memory chamado com tag correta
+  - reflect_on_session: backend responde → save_memory chamado com tag correta
   - reflect_on_session: resposta genérica → save_memory NÃO chamado
 """
 from __future__ import annotations
@@ -130,7 +130,7 @@ def test_reflect_no_model_returns_silently():
     asyncio.get_event_loop().run_until_complete(run())
 
 
-def test_reflect_saves_when_ollama_responds():
+def test_reflect_saves_when_inference_responds():
     """Resposta válida → save_memory chamado com tag 'session_reflection'."""
     from services import session_memory as sm
 
@@ -148,7 +148,7 @@ def test_reflect_saves_when_ollama_responds():
     asyncio.get_event_loop().run_until_complete(run())
 
 
-def test_reflect_discards_generic_ollama_response():
+def test_reflect_discards_generic_inference_response():
     """Resposta genérica ('nada.') → save_memory NÃO chamado."""
     from services import session_memory as sm
 

@@ -302,7 +302,7 @@ async def test_search_router_includes_related_indexed(monkeypatch):
     monkeypatch.setattr(db, "get_top_topics",       AsyncMock(return_value=[]))
     monkeypatch.setattr(_rs, "suggest_related_docs",    AsyncMock(return_value=[]))
     monkeypatch.setattr(_rs, "suggest_related_queries", lambda *a, **kw: [])
-    monkeypatch.setattr(_rs, "get_ollama_status", lambda: False)
+    monkeypatch.setattr(_rs, "get_inference_status", lambda: False)
     monkeypatch.setattr(_rs, "classify_intent_lexical", lambda q: "informational")
 
     from unittest.mock import MagicMock

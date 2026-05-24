@@ -343,7 +343,7 @@ export function LogosPanel() {
         className="btn btn-ghost btn-sm"
         disabled={silencing || !online}
         onClick={handleSilence}
-        title="Descarregar todos os modelos carregados no Ollama"
+        title="Descarregar modelos da memória"
         style={{ fontSize: 11, flexShrink: 0, fontFamily: 'var(--font-mono)' }}
       >
         {silencing ? '…' : 'silenciar'}
