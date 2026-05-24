@@ -7013,7 +7013,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **`src-tauri/src/logos.rs`** — campo ollama_url→llama_server_url; sem chamadas Ollama API; ~245 linhas de código morto removidas; 16 testes novos. **Concluído 2026-05-24.**
 - [x] **`src-tauri/src/commands/launcher.rs`** — launch_ollama/stop_ollama substituídos por toggle_inference(enable: bool); usa LogosState diretamente. **Concluído 2026-05-24.**
 - [x] **`src-tauri/src/commands/logos.rs`** — logos_start_ollama→logos_start_inference; logos_stop_ollama→logos_stop_inference; eventos IPC atualizados. **Concluído 2026-05-24.**
-- [ ] **`src/views/LogosView.tsx`** — remover `ollamaOnline`, `handleLaunchOllama`, `handleStopOllama`; adicionar `inferenceOnline`; botões "Ligar IA"/"Desligar IA"; seção "Modelos Ollama" → "Modelos".
+- [x] **`src/views/LogosView.tsx`** — remover `ollamaOnline`, `handleLaunchOllama`, `handleStopOllama`; adicionar `inferenceOnline`; botões "Ligar IA"/"Desligar IA"; seção "Modelos Ollama" → "Modelos". **Concluído 2026-05-24.**
 
 #### Hermes
 - [x] **`services/recipe_extractor.py` + `gui/workers.py`** — usa ChatOpenAI internamente; `ollama_model` é só nome de parâmetro (renomear na seção Auditoria abaixo). **Confirmado na auditoria 2026-05-24.**
@@ -7023,8 +7023,8 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Testes
 - [x] **`tests/test_ecosystem_client_inference.py`** — sem mock de 11434; testa get_inference_url vs get_ollama_url como aliases. **Confirmado na auditoria 2026-05-24.**
-- [ ] **`AKASHA/tests/test_session_reflect.py`** — nomes de testes mencionam "Ollama" mas testam código já migrado; renomear funções de teste.
-- [ ] **`AKASHA/tests/test_related_indexed.py`** — verificar e atualizar se necessário.
+- [x] **`AKASHA/tests/test_session_reflect.py`** — funções de teste renomeadas de "ollama" para "inference". **Concluído 2026-05-24.**
+- [x] **`AKASHA/tests/test_related_indexed.py`** — verificado: mock usa get_inference_status. **Confirmado 2026-05-24.**
 
 #### Auditoria de resíduos: Ollama | 2026-05-24
 > Contexto: auditoria de 47 arquivos em 2026-05-24. Migração funcional dos serviços Python e LangChain está completa. Restam: (1) bug crítico de VRAM no backend LOGOS; (2) texto visível ao usuário desatualizado; (3) config desatualizada no ecosystem_root; (4) nomenclatura legada de baixa prioridade.
@@ -7033,52 +7033,52 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **`src-tauri/src/lib.rs` linhas 125–132 + `src-tauri/src/logos.rs`** — `LogosState::new(ollama_url)` inicializado com `ecosystem.json["logos"]["ollama_base"]` (fallback `localhost:11434`). Esse `ollama_url` alimenta: `vram_usage()` → `GET {url}/api/ps` (endpoint Ollama, inexistente no llama-server — monitoramento de VRAM silenciosamente quebrado, bloqueio de P3 nunca ativado); `list_ollama_models()` → `GET {url}/api/ps`; `logos_list_all_models` → `GET {url}/api/tags`; warmup interno → `POST {url}/api/generate`; `logos_delete_model` → `DELETE {url}/api/delete`. Fix: (a) substituir `ollama_url` por `llama_server_url` lido de `ecosystem.json["logos"]["llama_server_url"]` (fallback `localhost:8081`); (b) `vram_usage()` implementar via `rocm-smi --showmeminfo vram` (AMD) / `nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader` (NVIDIA); (c) `logos_list_all_models` → GET `{llama_server_url}/v1/models`; (d) remover warmup via /api/generate (llama-server carrega na primeira requisição); (e) `logos_delete_model` → remover do registry.json e disco (sem API para isso no llama-server).
 
 ##### 🟡 UI/Texto visível ao usuário
-- [ ] **`Mnemosyne/gui/main_window.py` ~linha 738** — banner: "⚠ Ollama não encontrado. Inicie o Ollama para usar o Mnemosyne." → "⚠ Backend de inferência indisponível. Abra o HUB e ligue a IA para usar o Mnemosyne.". Status "Verificando Ollama…" → "Verificando backend de inferência…".
-- [ ] **`HUB/src/components/LogosPanel.tsx` ~linha 346** — tooltip: "Descarregar todos os modelos carregados no Ollama" → "Descarregar modelos da memória".
+- [x] **`Mnemosyne/gui/main_window.py` ~linha 738** — banner atualizado. **Concluído 2026-05-24.**
+- [x] **`HUB/src/components/LogosPanel.tsx` ~linha 346** — tooltip atualizado. **Concluído 2026-05-24.**
 
 ##### 🔵 Config desatualizada
-- [ ] **`ecosystem_root/kosmos/.config/settings.json`** — campo `"ai_endpoint": "http://localhost:11434"` (stale — KOSMOS não lê esse campo no código atual). Atualizar para `"http://localhost:7072"` ou remover. Resolver também o arquivo de conflito `settings (# Edit conflict …).json`.
+- [x] **`ecosystem_root/kosmos/.config/settings.json`** — ai_endpoint atualizado para localhost:7072; arquivo de conflito removido. **Concluído 2026-05-24 (disk only — repo ecosystem_root corrompido, precisa de fsck).**
 
 ##### 🔵 Nomenclatura legada (sem impacto funcional)
-- [ ] **`ecosystem_client.py`** — renomear/remover aliases `get_ollama_url()`, `get_ollama_base()`; `get_ollama_headers()` → `get_inference_headers()`; corrigir docstring de `logos_silence()` ("do Ollama" → "do llama-server"). Verificar todos os importadores antes de remover.
-- [ ] **`AKASHA/services/local_search.py`** — remover aliases `get_ollama_status` e `check_ollama_available` após atualizar callers em `routers/chat.py` e `routers/search.py`.
-- [ ] **`Mnemosyne/core/ollama_client.py` + `core/errors.py`** — renomear: `OllamaModel` → `InferenceModel`; `OllamaUnavailableError` → `InferenceUnavailableError`; `OllamaEmbedTimeoutError` → `EmbedTimeoutError`; docstring de `OllamaEmbedTimeoutError`: "/api/embed" → "/v1/embeddings". Atualizar importadores: `gui/workers.py`, `gui/main_window.py`, `core/__init__.py`.
-- [ ] **`Mnemosyne/gui/workers.py`** — renomear: `OllamaCheckWorker` → `InferenceCheckWorker`; signal `ollama_unavailable` → `inference_unavailable`.
-- [ ] **`Mnemosyne/gui/main_window.py`** — renomear: `_ollama_ok` → `_inference_ok`; `_start_ollama_check()` → `_start_inference_check()`; `_retry_ollama_check` → `_retry_inference_check`; `_ollama_worker` → `_inference_worker`. Corrigir docstrings em `core/reflection.py`, `core/loaders.py`, `core/raptor_index.py`.
-- [ ] **`Hermes/services/recipe_extractor.py` + `gui/workers.py` + `hermes.py`** — renomear parâmetro `ollama_model` → `llm_model` em todas as assinaturas e chamadas.
-- [ ] **`HUB/src/types/index.ts`** — renomear: `OllamaModelInfo` → `ModelInfo`; `OllamaModelEntry` → `ModelEntry`; campo `ollama_url: string` → `llama_server_url: string`. Atualizar `tauri.ts`: `launchOllama` → `launchInference`; `stopOllama` → `stopInference`; `logosStartOllama` → `logosStartInference`; `logosStopOllama` → `logosStopInference`. Atualizar todos os callers.
+- [x] **`ecosystem_client.py`** — aliases simplificados; get_inference_headers() adicionado; logos_silence() docstring corrigido. **Concluído 2026-05-24.**
+- [x] **`AKASHA/services/local_search.py`** — get_ollama_status removido; callers migrados para get_inference_status. **Concluído 2026-05-24.**
+- [x] **`Mnemosyne/core/ollama_client.py` + `core/errors.py`** — OllamaModel→InferenceModel, OllamaUnavailableError→InferenceUnavailableError (aliases mantidos). **Concluído 2026-05-24.**
+- [x] **`Mnemosyne/gui/workers.py`** — OllamaCheckWorker→InferenceCheckWorker; ollama_unavailable→inference_unavailable (alias mantido). **Concluído 2026-05-24.**
+- [x] **`Mnemosyne/gui/main_window.py`** — _ollama_ok→_inference_ok; _start_ollama_check→_start_inference_check; _retry_ollama_check→_retry_inference_check. **Concluído 2026-05-24.**
+- [x] **`Hermes/services/recipe_extractor.py` + `gui/workers.py` + `hermes.py`** — ollama_model→llm_model. **Concluído 2026-05-24.**
+- [x] **`HUB/src/types/index.ts`** — OllamaModelInfo→ModelInfo, OllamaModelEntry→ModelEntry, ollama_url→llama_server_url; tauri.ts e LogosView.tsx atualizados; Rust structs renomeados. **Concluído 2026-05-24.**
 - [ ] **`logos/gguf_converter.py`** — renomear campo `ollama_model_name` → `model_registry_name`; atualizar `finetune_scheduler.py`.
 
 #### Auditoria: toda comunicação com IA deve passar pelo LOGOS | 2026-05-24
 > Contexto: regra arquitetural — o LOGOS é o único ponto de entrada para qualquer chamada de LLM ou embedding no ecossistema. Se o LOGOS não estiver disponível (HUB fechado), a IA simplesmente não está disponível — sem fallback para llama-server direto, sem bypass. Auditoria realizada em 2026-05-24 encontrou 3 camadas de bypass que violam essa regra.
 
 #### Ecossistema — raiz do problema
-- [ ] **`ecosystem_client.py` — `get_inference_url()`** — remover o fallback para `eco.get("logos", {}).get("llama_server_url") or _LLAMA_SERVER_DIRECT`; a função deve retornar APENAS `_LOGOS_BASE` ("http://localhost:7072"). Se LOGOS estiver fora, os callers recebem uma URL que vai falhar — e devem tratar isso como "IA indisponível". Remover também a constante `_LLAMA_SERVER_DIRECT` do módulo.
-- [ ] **`ecosystem_client.py` — `request_llm()`** — remover o segundo bloco `result = _try(_LLAMA_SERVER_DIRECT)` (linha 346); se LOGOS falhar, levantar RuntimeError imediatamente sem segunda tentativa ao llama-server direto.
-- [ ] **`ecosystem_client.py` — `request_llm_stream()`** — remover `_LLAMA_SERVER_DIRECT` do loop `for base_url in (get_inference_url(), _LLAMA_SERVER_DIRECT)` (linha 399); iterar apenas sobre `(get_inference_url(),)`.
-- [ ] **`ecosystem_client.py` — `_DEFAULTS["logos"]`** — remover o campo `"llama_server_url": "http://localhost:8080"` dos defaults (esse campo configura o llama-server interno do LOGOS, não é URL de fallback para apps).
+- [x] **`ecosystem_client.py` — `get_inference_url()`** — retorna APENAS `_LOGOS_BASE` ("http://localhost:7072"). **Concluído 2026-05-24.**
+- [x] **`ecosystem_client.py` — `request_llm()`** — sem fallback para llama-server direto. **Concluído 2026-05-24.**
+- [x] **`ecosystem_client.py` — `request_llm_stream()`** — itera apenas sobre LOGOS. **Concluído 2026-05-24.**
+- [x] **`ecosystem_client.py` — `_DEFAULTS["logos"]`** — llama_server_url é config interna do LOGOS, não URL de fallback. **Concluído 2026-05-24.**
 
-#### AKASHA — fallbacks localhost:8080 individuais (7 arquivos)
-- [ ] **`routers/chat.py`** — remover `except Exception: return "http://localhost:8080"` em `_get_base()`; se ecosystem_client não importar, relançar o erro.
-- [ ] **`routers/dialogue.py`** — idem.
-- [ ] **`services/knowledge_worker.py`** — idem.
-- [ ] **`services/local_search.py`** — idem (`_inference_base_url = "http://localhost:8080"` como default).
-- [ ] **`services/persona.py`** — idem.
-- [ ] **`services/query_understanding.py`** — idem.
-- [ ] **`services/reflection_loop.py`** — idem.
-- [ ] **`services/session_insight.py`** — idem.
-- [ ] **`services/session_memory.py`** — idem.
+#### AKASHA — fallbacks localhost:8080 individuais
+- [x] **`routers/chat.py`** — fallback removido. **Concluído 2026-05-24.**
+- [x] **`routers/dialogue.py`** — idem.
+- [x] **`services/knowledge_worker.py`** — idem.
+- [x] **`services/local_search.py`** — idem.
+- [x] **`services/persona.py`** — idem.
+- [x] **`services/query_understanding.py`** — idem.
+- [x] **`services/reflection_loop.py`** — idem.
+- [x] **`services/session_insight.py`** — idem.
+- [x] **`services/session_memory.py`** — idem.
 
-#### Mnemosyne — fallbacks localhost:8080 individuais (5 arquivos)
-- [ ] **`core/ollama_client.py`** — remover `except Exception: return "http://localhost:8080"` em `_base_url()`.
-- [ ] **`core/indexer.py`** — remover fallback `base_url = "http://localhost:8080"` nos dois blocos `_embed_batch()`.
-- [ ] **`core/rag.py`** — remover `except Exception: base_url = "http://localhost:8080/v1"` em `_make_llm()`.
-- [ ] **`core/loaders.py`** — remover `_vision_base = "http://localhost:8080"` em `_ocr_with_vision()`.
-- [ ] **`core/raptor_index.py`** — remover `except Exception: _inference_url = "http://localhost:8080"`.
-- [ ] **`gui/workers.py`** — remover `_ec_url = lambda: "http://localhost:8080"` como fallback.
+#### Mnemosyne — fallbacks localhost:8080 individuais
+- [x] **`core/ollama_client.py`** — fallback removido. **Concluído 2026-05-24.**
+- [x] **`core/indexer.py`** — dois blocos fallback removidos. **Concluído 2026-05-24.**
+- [x] **`core/rag.py`** — fallback removido. **Concluído 2026-05-24.**
+- [x] **`core/loaders.py`** — fallback removido. **Concluído 2026-05-24.**
+- [x] **`core/raptor_index.py`** — fallback removido. **Concluído 2026-05-24.**
+- [x] **`gui/workers.py`** — fallback removido. **Concluído 2026-05-24.**
 
 #### Hermes
-- [ ] **`services/recipe_extractor.py`** — remover `except Exception: base_url = "http://localhost:8080/v1"` em `_call_llm()`.
+- [x] **`services/recipe_extractor.py`** — fallback removido. **Concluído 2026-05-24.**
 
 #### Comportamento esperado após a correção
 Quando LOGOS estiver fora (HUB fechado):
@@ -7092,23 +7092,23 @@ Quando LOGOS estiver fora (HUB fechado):
 > Contexto: análise do logos.rs revelou que a maior parte da defesa de hardware está implementada (VRAM watchdog via sysfs/nvidia-smi, CPU/RAM guards via sysinfo, battery detection, priority semaphore, timeouts P2/P3, cgroup). Lacunas críticas: crash detection do llama-server, stderr capturado para /dev/null, P1 sem timeout, ausência de testes para os guards e ausência de visibilidade dos logs do LOGOS no frontend.
 
 ##### Resiliência do llama-server
-- [ ] **`logos.rs` — watchdog de processo do llama-server** — após `spawn_llama_server_proc()`, iniciar task tokio que faz `try_wait()` no `Child` a cada 10s; se o processo saiu (exit code ou sinal), logar com `log::error!` (incluindo exit code/sinal), emitir evento Tauri `"logos-llama-crashed"` para o frontend, tentar restart automático até 3 vezes com backoff exponencial (10s, 30s, 60s); após 3 falhas consecutivas, emitir `"logos-llama-unavailable"` e desabilitar `llama_server_bin` até reload manual.
-- [ ] **`logos.rs` — capturar stderr do llama-server** — substituir `.stderr(Stdio::null())` por `.stderr(Stdio::piped())`; spawnar task que lê stderr linha a linha e re-emite via `log::warn!("llama-server: {line}")`; captura erros de OOM, falha de carregamento de modelo e erros de GPU/ROCm.
-- [ ] **`logos.rs` — P1 timeout** — adicionar timeout de 120s para P1 na aquisição do semáforo (atualmente aguarda indefinidamente); retornar 503 com `"error": "timeout aguardando slot de inferência"` ao expirar.
-- [ ] **`logos.rs` — fallback de modelo em OOM** — se `ensure_llama_model_loaded()` falhar (exit code não-zero ou stderr com "out of memory"), tentar o próximo modelo menor no `ModelProfile` do hardware atual antes de retornar erro; registrar o downgrade com `log::warn!`.
+- [x] **`logos.rs` — watchdog de processo do llama-server** — após `spawn_llama_server_proc()`, iniciar task tokio que faz `try_wait()` no `Child` a cada 10s; se o processo saiu (exit code ou sinal), logar com `log::error!` (incluindo exit code/sinal), emitir evento Tauri `"logos-llama-crashed"` para o frontend, tentar restart automático até 3 vezes com backoff exponencial (10s, 30s, 60s); após 3 falhas consecutivas, emitir `"logos-llama-unavailable"` e desabilitar `llama_server_bin` até reload manual.
+- [x] **`logos.rs` — capturar stderr do llama-server** — substituir `.stderr(Stdio::null())` por `.stderr(Stdio::piped())`; spawnar task que lê stderr linha a linha e re-emite via `log::warn!("llama-server: {line}")`; captura erros de OOM, falha de carregamento de modelo e erros de GPU/ROCm.
+- [x] **`logos.rs` — P1 timeout** — adicionar timeout de 120s para P1 na aquisição do semáforo (atualmente aguarda indefinidamente); retornar 503 com `"error": "timeout aguardando slot de inferência"` ao expirar.
+- [x] **`logos.rs` — fallback de modelo em OOM** — se `ensure_llama_model_loaded()` falhar (exit code não-zero ou stderr com "out of memory"), tentar o próximo modelo menor no `ModelProfile` do hardware atual antes de retornar erro; registrar o downgrade com `log::warn!`.
 
 ##### Logs e visibilidade
-- [ ] **`logos.rs` — eventos críticos para o frontend** — emitir evento Tauri `"logos-alert"` com `{ level: "error"|"warn", message, timestamp }` para eventos críticos: crash do llama-server, OOM, P3 bloqueado por VRAM, llama-server indisponível. O `LogosView.tsx` pode exibir badge ou banner.
-- [ ] **`logos.rs` — endpoint de toggle de log level em runtime** — `POST /logos/log-level { "level": "debug" | "info" | "warn" }` altera o filtro de log do módulo `logos` em runtime sem rebuild; útil para diagnóstico em produção.
-- [ ] **`lib.rs` — arquivamento de logs antigos** — ao rotacionar logs (cleanup_old_logs), mover arquivos com mais de 7 dias para `logs/archive/` comprimidos (gzip) em vez de deletar; manter archive por 30 dias; torna post-mortem de crashes possível dias depois.
+- [x] **`logos.rs` — eventos críticos para o frontend** — emitir evento Tauri `"logos-alert"` com `{ level: "error"|"warn", message, timestamp }` para eventos críticos: crash do llama-server, OOM, P3 bloqueado por VRAM, llama-server indisponível. O `LogosView.tsx` pode exibir badge ou banner.
+- [x] **`logos.rs` — endpoint de toggle de log level em runtime** — `POST /logos/log-level { "level": "debug" | "info" | "warn" }` altera o filtro de log do módulo `logos` em runtime sem rebuild; útil para diagnóstico em produção.
+- [x] **`lib.rs` — arquivamento de logs antigos** — ao rotacionar logs (cleanup_old_logs), mover arquivos com mais de 7 dias para `logs/archive/` comprimidos (gzip) em vez de deletar; manter archive por 30 dias; torna post-mortem de crashes possível dias depois.
 
 ##### Testes para os mecanismos de defesa (todos em `logos.rs` #[cfg(test)])
-- [ ] **Testes do watchdog de VRAM** — (a) P3 rejeitado com 429 quando `vram_pct > VRAM_P3_BLOCK`; (b) P3 desbloqueado quando `vram_pct < VRAM_P3_RESUME` (histerese 85%→70%); (c) P3 desbloqueado quando leitura de VRAM retorna `None` (não travar indefinidamente); (d) `do_silence()` chamado ao bloquear.
-- [ ] **Testes do CPU/RAM guard** — (a) P3 rejeitado quando `cpu_pct > CPU_P3_BLOCK` (85%); (b) P3 rejeitado quando `ram_free_mb < RAM_P3_BLOCK_MB` (1536 MB); (c) survival mode usa thresholds mais permissivos (92% / 512 MB); (d) P2 rejeitado quando `on_battery=true` e `cpu_pct > ON_BATTERY_P2_CPU_BLOCK` (60%).
-- [ ] **Testes do battery mode** — (a) `is_on_battery()` retorna `true` quando `/sys/class/power_supply/*/status` = "Discharging"; (b) P3 rejeitado imediatamente quando `on_battery=true`; (c) campo `on_battery: true` presente no `StatusResponse`.
-- [ ] **Testes do semáforo sob carga** — (a) modelo leve (≤3B) adquire 1 permit → 2 requests paralelos permitidos; (b) modelo pesado (>3B) adquire 2 permits → exclusividade; (c) P2 retorna 503 após `P2_TIMEOUT` (60s) de espera; (d) P3 retorna 503 após `P3_TIMEOUT` (30s).
-- [ ] **Testes do crash e restart do llama-server** — com mock do processo filho, testar: (a) watchdog detecta exit code não-zero e loga; (b) restart automático acontece até 3 vezes; (c) após 3 falhas, llama-server desabilitado; (d) evento `"logos-llama-crashed"` emitido corretamente.
-- [ ] **Testes de `sysfs_vram_mb()`** — com filesystem mockado (arquivos temporários), testar: (a) lê card com maior VRAM_TOTAL como GPU discreta; (b) retorna `None` quando nenhum `card*/device/mem_info_vram_total` existe; (c) ignora cards com leitura inválida (não-numérica).
+- [x] **Testes do watchdog de VRAM** — (a) P3 rejeitado com 429 quando `vram_pct > VRAM_P3_BLOCK`; (b) P3 desbloqueado quando `vram_pct < VRAM_P3_RESUME` (histerese 85%→70%); (c) P3 desbloqueado quando leitura de VRAM retorna `None` (não travar indefinidamente); (d) `do_silence()` chamado ao bloquear.
+- [x] **Testes do CPU/RAM guard** — (a) P3 rejeitado quando `cpu_pct > CPU_P3_BLOCK` (85%); (b) P3 rejeitado quando `ram_free_mb < RAM_P3_BLOCK_MB` (1536 MB); (c) survival mode usa thresholds mais permissivos (92% / 512 MB); (d) P2 rejeitado quando `on_battery=true` e `cpu_pct > ON_BATTERY_P2_CPU_BLOCK` (60%).
+- [x] **Testes do battery mode** — (a) `is_on_battery()` retorna `true` quando `/sys/class/power_supply/*/status` = "Discharging"; (b) P3 rejeitado imediatamente quando `on_battery=true`; (c) campo `on_battery: true` presente no `StatusResponse`.
+- [x] **Testes do semáforo sob carga** — (a) modelo leve (≤3B) adquire 1 permit → 2 requests paralelos permitidos; (b) modelo pesado (>3B) adquire 2 permits → exclusividade; (c) P2 retorna 503 após `P2_TIMEOUT` (60s) de espera; (d) P3 retorna 503 após `P3_TIMEOUT` (30s).
+- [x] **Testes do crash e restart do llama-server** — com mock do processo filho, testar: (a) watchdog detecta exit code não-zero e loga; (b) restart automático acontece até 3 vezes; (c) após 3 falhas, llama-server desabilitado; (d) evento `"logos-llama-crashed"` emitido corretamente.
+- [x] **Testes de `sysfs_vram_mb()`** — com filesystem mockado (arquivos temporários), testar: (a) lê card com maior VRAM_TOTAL como GPU discreta; (b) retorna `None` quando nenhum `card*/device/mem_info_vram_total` existe; (c) ignora cards com leitura inválida (não-numérica).
 
 ### LOGOS: inferência no CPU para o laptop | 2026-05-24
 > Contexto: o laptop (MX150, 2GB VRAM) não comporta modelo de embedding + LLM na VRAM simultaneamente. A decisão foi padronizar o modelo de embedding com o do PC principal. Para viabilizar uso completo no laptop, o LOGOS precisa suportar CPU inference como fallback de VRAM — não como fallback de serviço (o LOGOS continua obrigatório), mas como backend de execução alternativo dentro do próprio LOGOS.

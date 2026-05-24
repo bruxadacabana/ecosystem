@@ -242,7 +242,7 @@ def get_active_profile() -> "dict[str, Any] | None":
 
 
 def logos_silence() -> bool:
-    """Envia keep_alive: 0 para descarregar modelos do Ollama. Retorna True se bem-sucedido."""
+    """Descarrega modelos carregados no llama-server (libera VRAM). Retorna True se bem-sucedido."""
     result = _logos_post("/logos/silence", {}, timeout=15.0)
     return result is not None
 

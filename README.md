@@ -84,12 +84,19 @@ O HUB está sempre aberto — é o centro do ecossistema. Nenhum outro app é in
 
 **LOGOS (subprograma do HUB):**
 - Proxy inteligente de LLM sobre o llama-server (llama-cpp) — expõe API OpenAI-compatível em porta 7072
-- Sistema de filas com três prioridades:
-  - P1 (crítica): chat interativo do HUB + escrita ativa no AETHER
-  - P2 (importante): buscas RAG no Mnemosyne
-  - P3 (background): pré-análise KOSMOS + transcrições Hermes
+- Sistema de filas com três prioridades e timeouts:
+  - P1 (crítica, 120s timeout): chat interativo do HUB + escrita ativa no AETHER
+  - P2 (importante, 60s timeout): buscas RAG no Mnemosyne
+  - P3 (background, 30s timeout): pré-análise KOSMOS + transcrições Hermes
 - Monitora VRAM da GPU e pausa tarefas P3 quando VRAM > 85%
-- Rotas: `/v1/chat/completions`, `/v1/embeddings`, `/v1/models` (OpenAI-compatível)
+- CPU/RAM guards: rejeita P3 quando CPU > 85% ou RAM livre < 1.5 GB
+- Watchdog de processo: detecta crashes do llama-server e reinicia automaticamente (até 3x com backoff 10s/30s/60s); desabilita após 3 falhas consecutivas
+- Captura stderr do llama-server em `log::warn!` para diagnóstico de OOM e erros de GPU
+- OOM fallback: se modelo não carrega na GPU (timeout + exit prematuro), retenta com CPU only (`--n-gpu-layers 0`)
+- Eventos críticos para frontend: `logos-alert` (nivel error/warn), `logos-llama-crashed`, `logos-llama-unavailable`
+- Endpoint `POST /logos/log-level` para ajuste de verbosidade em runtime (debug/info/warn)
+- Rotas: `/v1/chat/completions`, `/v1/embeddings`, `/v1/models` (OpenAI-compatível) e legado `/api/*`
+- Logs archivados em `logs/archive/` após 7 dias; mantidos por 30 dias
 
 **Painel de controle:**
 - Lança, monitora e encerra todos os outros apps do ecossistema

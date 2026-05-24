@@ -477,6 +477,33 @@ HSA_OVERRIDE_GFX_VERSION=10.3.0 \
   --n-gpu-layers 999
 ```
 
+**Arquitetura de resiliência do LOGOS (`logos.rs`):**
+
+| Mecanismo | Comportamento |
+|---|---|
+| **P1 timeout** | 120s para adquirir slot de inferência; retorna 503 com mensagem específica |
+| **P2 timeout** | 60s; retorna 503 |
+| **P3 timeout** | 30s; retorna 429 |
+| **VRAM watchdog** | Poll a cada 5s; bloqueia P3 quando VRAM > 85%, retoma quando < 70% (histerese) |
+| **CPU/RAM guard** | Rejeita P3 quando CPU > 85% ou RAM livre < 1.5 GB |
+| **Battery mode** | P3 bloqueado; P2 usa threshold de CPU mais conservador (60%) |
+| **Watchdog de processo** | Poll `try_wait()` a cada 10s; restart com backoff 10s/30s/60s; desabilita após 3 crashes |
+| **Stderr capture** | stderr do llama-server redirecionado para `log::warn!` (diagnóstico de OOM/GPU) |
+| **OOM fallback** | Se o processo sai sozinho com GPU ativo, retenta com `--n-gpu-layers 0` (CPU only) |
+| **`llama_disabled`** | Flag atômica setada após 3 crashes; bloqueia novos requests até reinício do HUB |
+
+**Eventos Tauri emitidos pelo LOGOS:**
+- `logos-alert` → `{ level: "error"|"warn", message, timestamp }` — alertas críticos
+- `logos-llama-crashed` → `{ model: string }` — crash detectado, restart em andamento
+- `logos-llama-unavailable` — após 3 crashes consecutivos, llama-server desabilitado
+
+**Endpoint de diagnóstico:**
+```bash
+# Alterar nível de log em runtime (sem rebuild)
+curl -X POST http://localhost:7072/logos/log-level -H 'Content-Type: application/json' \
+  -d '{"level": "debug"}'
+```
+
 ---
 
 ### 2.8. Ferramentas de fine-tuning (opcional)

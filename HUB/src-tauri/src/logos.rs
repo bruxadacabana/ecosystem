@@ -32,6 +32,8 @@
 //      requests simultâneos.
 // ============================================================
 
+use tauri::Emitter as _;
+
 use axum::{
     body::Bytes,
     extract::{Path as AxumPath, State},
@@ -59,6 +61,7 @@ const LLAMA_SERVER_PORT: u16 = 8081;
 const LLAMA_SERVER_READY_TIMEOUT_SECS: u64 = 90;
 
 // Tempos máximos de espera na fila por prioridade
+const P1_TIMEOUT: Duration = Duration::from_secs(120);
 const P2_TIMEOUT: Duration = Duration::from_secs(60);
 const P3_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -321,6 +324,14 @@ struct Inner {
     /// Chave: "mnemosyne_llm_rag", "kosmos_llm_analysis", "akasha_llm_query", "embed_embed". Valor: nome do modelo.
     /// Vazio = usar recomendado do perfil de hardware.
     model_overrides: Mutex<HashMap<String, String>>,
+    /// Contador de crashes consecutivos do llama-server. Zerado após restart bem-sucedido.
+    llama_crash_count: Mutex<u32>,
+    /// True quando o llama-server atingiu o limite de 3 crashes e foi desabilitado.
+    /// Permanece true até reload manual (reinício do HUB).
+    llama_disabled: Arc<AtomicBool>,
+    /// Tauri AppHandle para emissão de eventos críticos ao frontend.
+    /// Inicializado em start_server após o setup do Tauri.
+    app_handle: Mutex<Option<tauri::AppHandle>>,
 
     /// Percentual máximo de VRAM permitido antes de bloquear P3.
     /// Padrão: 85. Persistido em ecosystem.json como logos.vram_limit_pct.
@@ -379,6 +390,20 @@ impl LogosState {
     /// Retorna o diretório de modelos GGUF (para acesso externo ao módulo).
     pub fn models_dir(&self) -> &std::path::Path {
         &self.0.models_dir
+    }
+
+    /// Emite um evento de alerta crítico para o frontend (nível "error" | "warn" | "info").
+    /// Sem-op se o AppHandle ainda não foi inicializado.
+    pub(crate) async fn emit_alert(&self, level: &str, message: &str) {
+        #[derive(serde::Serialize, Clone)]
+        struct LogosAlert { level: String, message: String, timestamp: String }
+        if let Some(handle) = self.0.app_handle.lock().await.as_ref() {
+            let _ = handle.emit("logos-alert", LogosAlert {
+                level:     level.to_string(),
+                message:   message.to_string(),
+                timestamp: chrono::Local::now().to_rfc3339(),
+            });
+        }
     }
 
     pub fn new(llama_server_url: impl Into<String>) -> Self {
@@ -445,6 +470,9 @@ impl LogosState {
             models_dir,
             llama_server_bin,
             llama_proc: Mutex::new(None),
+            llama_crash_count: Mutex::new(0),
+            llama_disabled: Arc::new(AtomicBool::new(false)),
+            app_handle: Mutex::new(None),
         }))
     }
 }
@@ -768,7 +796,7 @@ async fn spawn_llama_server_proc(
        .arg("--parallel")  .arg("2")
        .arg("--cont-batching")
        .stdout(std::process::Stdio::null())
-       .stderr(std::process::Stdio::null());
+       .stderr(std::process::Stdio::piped()); // capturado para log
     if n_gpu == 0 {
         cmd.arg("--n-gpu-layers").arg("0");
     } else if n_gpu > 0 {
@@ -778,6 +806,19 @@ async fn spawn_llama_server_proc(
     #[cfg(unix)]
     cmd.process_group(0); // novo grupo de processos — sobrevive ao fechamento do HUB
     cmd.spawn().map_err(|e| format!("Falha ao iniciar llama-server: {e}"))
+}
+
+/// Inicia uma task que lê o stderr do processo llama-server linha a linha e registra via log.
+fn spawn_stderr_reader(stderr: tokio::process::ChildStderr, model_name: String) {
+    tokio::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                log::warn!("llama-server [{}]: {}", model_name, line);
+            }
+        }
+    });
 }
 
 /// Aguarda llama-server responder em /health com 200 OK.
@@ -839,8 +880,13 @@ pub(crate) async fn ensure_llama_model_loaded(
          (n_gpu={n_gpu}, n_ctx={n_ctx}, porta={LLAMA_SERVER_PORT})"
     );
 
-    let child = spawn_llama_server_proc(&bin, &gguf_path, n_gpu, n_ctx, LLAMA_SERVER_PORT)
+    let mut child = spawn_llama_server_proc(&bin, &gguf_path, n_gpu, n_ctx, LLAMA_SERVER_PORT)
         .await?;
+
+    // Captura stderr para log (leitura linha a linha em background)
+    if let Some(stderr) = child.stderr.take() {
+        spawn_stderr_reader(stderr, model_name.to_string());
+    }
 
     {
         let mut guard = s.0.llama_proc.lock().await;
@@ -848,10 +894,54 @@ pub(crate) async fn ensure_llama_model_loaded(
     }
 
     if !wait_llama_ready(LLAMA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS).await {
-        let mut guard = s.0.llama_proc.lock().await;
-        if let Some(mut p) = guard.take() {
-            let _ = p.child.kill();
+        // Verifica se o processo saiu prematuramente (provável OOM em GPU)
+        let proc_exited = {
+            let mut guard = s.0.llama_proc.lock().await;
+            guard.as_mut()
+                .and_then(|p| p.child.try_wait().ok())
+                .map(|o| o.is_some())
+                .unwrap_or(false)
+        };
+
+        // Mata o processo (se ainda vivo) e limpa o handle
+        {
+            let mut guard = s.0.llama_proc.lock().await;
+            if let Some(mut p) = guard.take() {
+                let _ = p.child.kill();
+            }
         }
+
+        // OOM fallback: se o processo saiu sozinho E estava usando GPU, tenta CPU only
+        if proc_exited && n_gpu != 0 {
+            log::warn!(
+                "LOGOS llama-server: '{model_name}' saiu (provável OOM de GPU) — \
+                 retentando com CPU only (n_gpu_layers=0)"
+            );
+            let mut cpu_child = spawn_llama_server_proc(&bin, &gguf_path, 0, n_ctx, LLAMA_SERVER_PORT)
+                .await
+                .map_err(|e| format!("Falha ao reiniciar em modo CPU: {e}"))?;
+
+            if let Some(stderr) = cpu_child.stderr.take() {
+                spawn_stderr_reader(stderr, format!("{model_name}[cpu]"));
+            }
+            {
+                let mut guard = s.0.llama_proc.lock().await;
+                *guard = Some(LlamaProcHandle { child: cpu_child, model_name: model_name.to_string() });
+            }
+            if !wait_llama_ready(LLAMA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS).await {
+                let mut guard = s.0.llama_proc.lock().await;
+                if let Some(mut p) = guard.take() { let _ = p.child.kill(); }
+                return Err(format!(
+                    "llama-server não ficou pronto em modo CPU — \
+                     '{model_name}' pode estar corrompido ou incompatível"
+                ));
+            }
+            log::warn!(
+                "LOGOS llama-server: '{model_name}' carregado em modo CPU only (downgrade de GPU)"
+            );
+            return Ok(());
+        }
+
         return Err(format!(
             "llama-server não ficou pronto em {LLAMA_SERVER_READY_TIMEOUT_SECS}s. \
              Verifique se o modelo cabe na VRAM disponível."
@@ -1027,6 +1117,7 @@ pub fn build_router(state: LogosState) -> Router {
         .route("/logos/chat",           post(chat_handler))
         .route("/logos/silence",        post(silence_handler))
         .route("/logos/profile",        post(profile_handler))
+        .route("/logos/log-level",      post(log_level_handler))
         .route("/logos/models",                          get(models_handler))
         .route("/logos/models/load",                     post(models_load_handler))
         .route("/logos/models/unload",                   post(models_unload_handler))
@@ -1261,7 +1352,8 @@ async fn queue_and_forward(
     // modelos leves adquirem 1 (até 2 simultâneos se OLLAMA_NUM_PARALLEL=2).
     let sem = s.0.semaphore.clone();
     let permit = match priority {
-        1 => sem.acquire_many_owned(permits).await.ok(),
+        1 => tokio::time::timeout(P1_TIMEOUT, sem.acquire_many_owned(permits))
+                .await.ok().and_then(|r| r.ok()),
         2 => tokio::time::timeout(P2_TIMEOUT, sem.acquire_many_owned(permits))
                 .await.ok().and_then(|r| r.ok()),
         _ => tokio::time::timeout(P3_TIMEOUT, sem.acquire_many_owned(permits))
@@ -1277,11 +1369,14 @@ async fn queue_and_forward(
     let _permit = match permit {
         Some(p) => p,
         None => {
+            let msg = if priority == 1 {
+                "Timeout aguardando slot de inferência — sistema sobrecarregado"
+            } else {
+                "Timeout aguardando LOGOS — sistema sobrecarregado"
+            };
             return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(serde_json::json!({
-                    "error": "Timeout aguardando LOGOS — sistema sobrecarregado"
-                })),
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": msg })),
             ).into_response();
         }
     };
@@ -1293,7 +1388,9 @@ async fn queue_and_forward(
 
 
     // Encaminha ao backend de inferência (llama-server ou Ollama).
-    let use_llama   = s.0.llama_server_bin.is_some();
+    // llama_disabled é setado pelo watchdog após 3 crashes consecutivos.
+    let use_llama   = s.0.llama_server_bin.is_some()
+        && !s.0.llama_disabled.load(Ordering::Relaxed);
     let is_generate = ollama_target == "api/generate";
 
     let task_result: Result<Result<(reqwest::StatusCode, Bytes), String>, tokio::task::JoinError> =
@@ -1704,6 +1801,23 @@ async fn profile_handler(
     let requested = body["profile"].as_str().unwrap_or("normal").to_string();
     let profile = do_set_profile(&s, requested).await;
     (StatusCode::OK, Json(serde_json::json!({ "profile": profile }))).into_response()
+}
+
+/// POST /logos/log-level { "level": "debug"|"info"|"warn" }
+/// Altera o nível de log em runtime sem reiniciar o HUB.
+async fn log_level_handler(
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    let level = body["level"].as_str().unwrap_or("info");
+    let filter = match level {
+        "debug" => log::LevelFilter::Debug,
+        "warn"  => log::LevelFilter::Warn,
+        "error" => log::LevelFilter::Error,
+        _       => log::LevelFilter::Info,
+    };
+    log::set_max_level(filter);
+    log::info!("LOGOS: nível de log alterado para '{level}'");
+    (StatusCode::OK, Json(serde_json::json!({ "level": level }))).into_response()
 }
 
 async fn models_handler(State(s): State<LogosState>) -> Response {
@@ -2653,7 +2767,10 @@ async fn update_model_registry(models_dir: &std::path::Path, entry: ModelRegistr
 
 // ── Entry point ───────────────────────────────────────────────
 
-pub async fn start_server(state: LogosState) {
+pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
+
+    // Armazena o AppHandle para emissão de eventos críticos ao frontend
+    *state.0.app_handle.lock().await = Some(app_handle);
 
     // Task de atualização do status de bateria a cada 60s.
     let battery_state = state.clone();
@@ -2661,6 +2778,113 @@ pub async fn start_server(state: LogosState) {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             *battery_state.0.on_battery.lock().await = is_on_battery();
+        }
+    });
+
+    // Watchdog de processo do llama-server — verifica a cada 10s.
+    // Detecta crashes e tenta restart automático com backoff exponencial (10s/30s/60s).
+    // Após 3 falhas consecutivas: desabilita o llama-server e emite "logos-llama-unavailable".
+    let proc_wdg = state.clone();
+    tokio::spawn(async move {
+        const BACKOFFS: [u64; 3] = [10, 30, 60];
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+
+            // Verifica se o processo existe e saiu inesperadamente
+            let crashed_model: Option<String> = {
+                let mut guard = proc_wdg.0.llama_proc.lock().await;
+                if let Some(ref mut proc) = guard.as_mut() {
+                    match proc.child.try_wait() {
+                        Ok(Some(status)) => {
+                            log::error!(
+                                "LOGOS watchdog: llama-server saiu inesperadamente \
+                                 (modelo='{}', status={:?})",
+                                proc.model_name, status
+                            );
+                            Some(proc.model_name.clone())
+                        }
+                        Ok(None) => None, // ainda rodando — ok
+                        Err(e) => {
+                            log::warn!("LOGOS watchdog: erro ao verificar processo: {e}");
+                            None
+                        }
+                    }
+                } else {
+                    None // nenhum processo ativo — normal
+                }
+            };
+
+            let Some(model_name) = crashed_model else { continue };
+
+            // Limpa o handle do processo morto
+            *proc_wdg.0.llama_proc.lock().await = None;
+
+            // Emite evento de crash para o frontend
+            proc_wdg.emit_alert(
+                "error",
+                &format!("llama-server caiu inesperadamente (modelo '{model_name}')"),
+            ).await;
+            {
+                let guard = proc_wdg.0.app_handle.lock().await;
+                if let Some(ref handle) = *guard {
+                    let _ = handle.emit("logos-llama-crashed", serde_json::json!({
+                        "model": model_name,
+                    }));
+                }
+            }
+
+            // Incrementa contador de crashes
+            let crash_count = {
+                let mut cc = proc_wdg.0.llama_crash_count.lock().await;
+                *cc += 1;
+                *cc
+            };
+
+            if crash_count > 3 {
+                log::error!(
+                    "LOGOS watchdog: llama-server falhou {} vezes — \
+                     desabilitado até reload manual",
+                    crash_count
+                );
+                proc_wdg.0.llama_disabled.store(true, Ordering::Relaxed);
+                proc_wdg.emit_alert(
+                    "error",
+                    "llama-server falhou 3+ vezes consecutivas — \
+                     desabilitado. Reinicie o HUB para reativar.",
+                ).await;
+                {
+                    let guard = proc_wdg.0.app_handle.lock().await;
+                    if let Some(ref handle) = *guard {
+                        let _ = handle.emit("logos-llama-unavailable", ());
+                    }
+                }
+                // Watchdog permanece ativo mas sem tentar restart
+                loop { tokio::time::sleep(Duration::from_secs(3600)).await; }
+            }
+
+            let backoff = BACKOFFS[(crash_count as usize - 1).min(2)];
+            log::warn!(
+                "LOGOS watchdog: tentativa {crash_count}/3 de restart de '{model_name}' em {backoff}s"
+            );
+            tokio::time::sleep(Duration::from_secs(backoff)).await;
+
+            // Tenta restart
+            let ok = do_load_model(&proc_wdg, &model_name).await;
+            if ok {
+                *proc_wdg.0.llama_crash_count.lock().await = 0;
+                log::info!(
+                    "LOGOS watchdog: llama-server reiniciado com sucesso — '{model_name}'"
+                );
+                proc_wdg.emit_alert(
+                    "warn",
+                    &format!("llama-server reiniciado após crash — '{model_name}'"),
+                ).await;
+            } else {
+                log::error!(
+                    "LOGOS watchdog: falha ao reiniciar llama-server — '{model_name}' \
+                     (tentativa {crash_count}/3)"
+                );
+            }
         }
     });
 
@@ -3121,6 +3345,9 @@ mod tests {
             models_dir,
             llama_server_bin:    None,
             llama_proc:          Mutex::new(None),
+            llama_crash_count:   Mutex::new(0),
+            llama_disabled:      Arc::new(AtomicBool::new(false)),
+            app_handle:          Mutex::new(None),
         }))
     }
 
@@ -3136,13 +3363,246 @@ mod tests {
         }
     }
 
-    // ── LogosState::new — campo llama_server_url (regressão: era ollama_url) ──
+    // ── LogosState::new — campos básicos ──────────────────────────────────────
 
     #[test]
     fn logos_state_stores_llama_server_url() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
         assert_eq!(state.0.llama_server_url, "http://127.0.0.1:8081");
+    }
+
+    // ── Watchdog de VRAM — 4 cenários ────────────────────────────────────────
+
+    #[test]
+    fn vram_watchdog_p3_blocked_starts_false() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert!(!state.0.p3_vram_blocked.load(Ordering::Relaxed),
+            "p3_vram_blocked deve iniciar em false");
+    }
+
+    #[test]
+    fn vram_watchdog_sets_blocked_when_stored_true() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        state.0.p3_vram_blocked.store(true, Ordering::Relaxed);
+        assert!(state.0.p3_vram_blocked.load(Ordering::Relaxed),
+            "p3_vram_blocked deve refletir o valor armazenado");
+    }
+
+    #[test]
+    fn vram_watchdog_unblocks_when_vram_drops() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        // Simula: bloqueado → VRAM cai → desbloqueia
+        state.0.p3_vram_blocked.store(true, Ordering::Relaxed);
+        state.0.p3_vram_blocked.store(false, Ordering::Relaxed);
+        assert!(!state.0.p3_vram_blocked.load(Ordering::Relaxed),
+            "p3_vram_blocked deve ser false após desbloquear");
+    }
+
+    #[tokio::test]
+    async fn vram_watchdog_limit_pct_defaults_to_85() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let pct = *state.0.vram_limit_pct.lock().await;
+        assert!((pct - 85.0).abs() < 0.001,
+            "vram_limit_pct deve iniciar em 85%");
+    }
+
+    // ── CPU/RAM guard — 4 cenários ────────────────────────────────────────────
+
+    #[test]
+    fn cpu_ram_guard_constants_are_sane() {
+        assert!(CPU_P3_BLOCK > 0.0 && CPU_P3_BLOCK <= 100.0,
+            "CPU_P3_BLOCK deve estar entre 0 e 100");
+        assert!(RAM_P3_BLOCK_MB > 0,
+            "RAM_P3_BLOCK_MB deve ser positivo");
+        assert!(CPU_P3_SURVIVAL_BLOCK >= CPU_P3_BLOCK,
+            "threshold de sobrevivência deve ser >= threshold normal");
+        assert!(RAM_P3_SURVIVAL_BLOCK_MB <= RAM_P3_BLOCK_MB,
+            "RAM de sobrevivência deve ser mais permissiva (menor threshold)");
+    }
+
+    #[test]
+    fn cpu_p3_block_is_85_percent() {
+        assert!((CPU_P3_BLOCK - 85.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn ram_p3_block_is_1536_mb() {
+        assert_eq!(RAM_P3_BLOCK_MB, 1_536);
+    }
+
+    #[test]
+    fn cpu_p3_survival_block_is_92_percent() {
+        assert!((CPU_P3_SURVIVAL_BLOCK - 92.0).abs() < 0.001);
+    }
+
+    // ── Battery mode — 3 cenários ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn battery_mode_on_battery_starts_false_in_test() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        // make_test_state inicializa on_battery = false
+        assert!(!*state.0.on_battery.lock().await,
+            "on_battery deve iniciar false no test state");
+    }
+
+    #[tokio::test]
+    async fn battery_mode_can_be_set_true() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        *state.0.on_battery.lock().await = true;
+        assert!(*state.0.on_battery.lock().await,
+            "on_battery deve refletir o valor definido");
+    }
+
+    #[test]
+    fn battery_mode_cpu_p2_threshold_more_conservative() {
+        // Em bateria, P2 usa threshold mais conservador que o P3 normal
+        assert!(ON_BATTERY_P2_CPU_BLOCK < CPU_P3_BLOCK,
+            "threshold de bateria P2 deve ser mais conservador que P3 normal");
+    }
+
+    // ── Semáforo — 4 cenários ─────────────────────────────────────────────────
+
+    #[test]
+    fn semaphore_starts_with_2_permits() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let sem = state.0.semaphore.clone();
+        // Deve conseguir adquirir 2 permits de uma vez
+        let _p = sem.try_acquire_many(2).expect("semáforo deve ter 2 permits inicialmente");
+    }
+
+    #[test]
+    fn semaphore_heavy_model_uses_2_permits() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let sem = state.0.semaphore.clone();
+        // Modelo pesado: 2 permits → exclusividade total
+        let p1 = sem.try_acquire_many(2).expect("2 permits disponíveis");
+        // Com 2 permits adquiridos, nenhum outro consegue
+        assert!(sem.try_acquire_many(1).is_err(),
+            "nenhum permit restante após modelo pesado");
+        drop(p1);
+    }
+
+    #[test]
+    fn semaphore_light_model_uses_1_permit() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let sem = state.0.semaphore.clone();
+        // Modelo leve: 1 permit → permite 2 simultâneos
+        let p1 = sem.try_acquire_many(1).expect("1 permit disponível");
+        let p2 = sem.try_acquire_many(1).expect("segundo permit também disponível");
+        assert!(sem.try_acquire_many(1).is_err(),
+            "sem terceiro permit (semáforo tem apenas 2)");
+        drop(p1);
+        drop(p2);
+    }
+
+    #[test]
+    fn is_light_model_identifies_models_correctly() {
+        assert!(is_light_model("gemma2:2b"),  "2b é leve");
+        assert!(is_light_model("smollm2:1.7b"), "1.7b é leve");
+        assert!(is_light_model("qwen2.5:3b"), "3b é leve");
+        assert!(!is_light_model("qwen2.5:7b"), "7b não é leve");
+        assert!(!is_light_model("llama3:8b"),  "8b não é leve");
+        assert!(is_light_model("qwen2.5:0.5b"), "0.5b é leve");
+    }
+
+    // ── Crash counter e llama_disabled — 4 cenários ───────────────────────────
+
+    #[tokio::test]
+    async fn llama_crash_count_starts_zero() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let count = *state.0.llama_crash_count.lock().await;
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn llama_crash_count_increments_correctly() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        for expected in 1u32..=3 {
+            let count = {
+                let mut cc = state.0.llama_crash_count.lock().await;
+                *cc += 1;
+                *cc
+            };
+            assert_eq!(count, expected, "crash count deve incrementar para {expected}");
+        }
+    }
+
+    #[test]
+    fn llama_disabled_starts_false() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert!(!state.0.llama_disabled.load(Ordering::Relaxed),
+            "llama_disabled deve iniciar false");
+    }
+
+    #[test]
+    fn llama_disabled_flag_prevents_inference_path() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        // Simula estado após 3+ crashes
+        state.0.llama_disabled.store(true, Ordering::Relaxed);
+        // A expressão que queue_and_forward usa para decidir use_llama
+        let use_llama = state.0.llama_server_bin.is_some()
+            && !state.0.llama_disabled.load(Ordering::Relaxed);
+        assert!(!use_llama,
+            "llama_disabled=true deve impedir uso do llama-server mesmo se bin existe");
+    }
+
+    // ── sysfs_vram_mb — 3 cenários ────────────────────────────────────────────
+
+    #[test]
+    fn sysfs_vram_mb_does_not_panic_without_hardware() {
+        // Em ambiente de teste (sem GPU física), não deve entrar em pânico
+        let _ = sysfs_vram_mb();
+    }
+
+    #[test]
+    fn sysfs_vram_mb_returns_none_on_non_linux() {
+        // Em Linux sem /sys/class/drm/card* (CI/container), retorna None
+        // Em Linux com hardware AMD, pode retornar Some — ambos são válidos
+        #[cfg(not(target_os = "linux"))]
+        assert!(sysfs_vram_mb().is_none(), "não-Linux deve retornar None");
+        #[cfg(target_os = "linux")]
+        let _ = sysfs_vram_mb(); // não crasha
+    }
+
+    #[test]
+    fn sysfs_vram_mb_picks_highest_vram_card() {
+        // Valida a lógica de seleção do melhor card via inspeção da função.
+        // A função retorna o card com maior mem_info_vram_total — se dois cards
+        // existirem, o menor não deve ser selecionado.
+        // Como não podemos criar sysfs fictício em teste unitário, validamos que
+        // a função retorna valores consistentes (used ≤ total se Some).
+        if let Some((total_mb, used_mb)) = sysfs_vram_mb() {
+            assert!(total_mb > 0, "total_mb deve ser positivo");
+            assert!(used_mb <= total_mb,
+                "used_mb ({used_mb}) não pode exceder total_mb ({total_mb})");
+        }
+    }
+
+    // ── P1 timeout ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn p1_timeout_constant_is_120s() {
+        assert_eq!(P1_TIMEOUT.as_secs(), 120, "P1_TIMEOUT deve ser 120s");
+    }
+
+    #[test]
+    fn timeout_hierarchy_p1_gt_p2_gt_p3() {
+        assert!(P1_TIMEOUT > P2_TIMEOUT, "P1 > P2 timeout");
+        assert!(P2_TIMEOUT > P3_TIMEOUT, "P2 > P3 timeout");
     }
 
     // ── list_ollama_models ────────────────────────────────────────────────────

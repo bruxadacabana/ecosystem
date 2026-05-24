@@ -23,17 +23,46 @@ fn resolve_logs_dir(app_data_dir: &std::path::Path) -> std::path::PathBuf {
     app_data_dir.join("logs")
 }
 
-fn cleanup_old_logs(logs_dir: &std::path::Path, keep_days: u64) {
-    let Ok(entries) = std::fs::read_dir(logs_dir) else { return };
-    let threshold = std::time::SystemTime::now()
-        .checked_sub(std::time::Duration::from_secs(keep_days * 86_400))
+/// Move logs com mais de `archive_after_days` dias para `logs_dir/archive/`.
+/// Remove arquivos do archive com mais de 30 dias.
+fn cleanup_old_logs(logs_dir: &std::path::Path, archive_after_days: u64) {
+    let now = std::time::SystemTime::now();
+    let archive_threshold = now
+        .checked_sub(std::time::Duration::from_secs(archive_after_days * 86_400))
+        .unwrap_or(std::time::UNIX_EPOCH);
+    let delete_threshold = now
+        .checked_sub(std::time::Duration::from_secs(30 * 86_400))
         .unwrap_or(std::time::UNIX_EPOCH);
 
-    for entry in entries.flatten() {
-        if let Ok(meta) = entry.metadata() {
-            if let Ok(modified) = meta.modified() {
-                if modified < threshold {
-                    let _ = std::fs::remove_file(entry.path());
+    let archive_dir = logs_dir.join("archive");
+    let _ = std::fs::create_dir_all(&archive_dir);
+
+    // Move logs antigos para archive/
+    if let Ok(entries) = std::fs::read_dir(logs_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() { continue; }
+            if let Ok(meta) = entry.metadata() {
+                if let Ok(modified) = meta.modified() {
+                    if modified < archive_threshold {
+                        if let Some(name) = path.file_name() {
+                            let dest = archive_dir.join(name);
+                            let _ = std::fs::rename(&path, &dest);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Remove arquivos do archive com mais de 30 dias
+    if let Ok(entries) = std::fs::read_dir(&archive_dir) {
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if let Ok(modified) = meta.modified() {
+                    if modified < delete_threshold {
+                        let _ = std::fs::remove_file(entry.path());
+                    }
                 }
             }
         }
@@ -130,8 +159,9 @@ pub fn run() {
             };
             let logos_state = logos::LogosState::new(llama_server_url);
             app.manage(logos_state.clone());
+            let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                logos::start_server(logos_state).await;
+                logos::start_server(logos_state, app_handle).await;
             });
 
             // System tray — clique esquerdo mostra/oculta; direito abre menu
