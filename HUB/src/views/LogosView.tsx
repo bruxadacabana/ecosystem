@@ -150,9 +150,10 @@ export function LogosView() {
       setTimeout(() => setToggleError(null), 6_000)
       return
     }
-    // Poll até o modelo ficar ativo — 2s / 5s / 10s a partir do comando
-    for (const delay of [2_000, 3_000, 5_000]) {
-      await new Promise<void>(res => setTimeout(res, delay))
+    // Poll a cada 5s por até 90s — GGUFs grandes podem demorar bastante para carregar na VRAM
+    const deadline = Date.now() + 90_000
+    while (Date.now() < deadline) {
+      await new Promise<void>(res => setTimeout(res, 5_000))
       fetchModels()
       const check = await cmd.logosListAllModels()
       if (check.ok && check.data.some(m => m.status === 'active')) {
@@ -160,10 +161,9 @@ export function LogosView() {
         return
       }
     }
-    // Timeout — modelo não carregou em 10 s
     setStarting(false)
     setToggleError('Timeout ao carregar — tente novamente')
-    setTimeout(() => setToggleError(null), 6_000)
+    setTimeout(() => setToggleError(null), 8_000)
   }
 
   async function handleSetModel(app: string, modelType: string, model: string) {
