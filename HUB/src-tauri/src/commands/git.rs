@@ -348,16 +348,48 @@ const STIGNORE_ENTRIES: &[&str]  = &[
     "*.tmp",
 ];
 
+/// Núcleo testável de `git_init_sync_root` — recebe o path diretamente.
+///
+/// - Se `.git/` não existir: inicializa novo repo.
+/// - Se `.git/` existir mas `rev-parse HEAD` falhar (repo corrompido, ex.: `.git`
+///   sincronizado pelo Syncthing entre máquinas): remove `.git` e reinicializa.
+/// - Em todos os casos escreve `.gitignore` e `.stignore` **antes** do `git init`,
+///   garantindo que o Syncthing já os use mesmo se o init falhar.
+/// - Repo saudável: apenas garante que as entradas de ignore estejam presentes.
+pub(crate) fn git_init_at(root: &Path) -> Result<(), AppError> {
+    // Detecta repo corrompido: .git existe mas HEAD não pode ser resolvido.
+    // Causa típica: Syncthing sincronizou .git entre máquinas antes do fix do .stignore.
+    let git_exists  = root.join(".git").exists();
+    let git_broken  = git_exists && run_git(root, &["rev-parse", "HEAD"]).is_err();
+
+    if git_broken {
+        std::fs::remove_dir_all(root.join(".git"))
+            .map_err(|e| AppError::Io(e.to_string()))?;
+    }
+
+    let is_new = !git_exists || git_broken;
+
+    // Escrever ignore files ANTES do git init — Syncthing já os usa mesmo se init falhar
+    ensure_file_entries(root, ".gitignore", GITIGNORE_ENTRIES)?;
+    ensure_file_entries(root, ".stignore",  STIGNORE_ENTRIES)?;
+
+    if is_new {
+        run_git(root, &["init"])?;
+        run_git(root, &["add", ".gitignore", ".stignore"])?;
+        run_git(root, &[
+            "-c", "user.name=HUB",
+            "-c", "user.email=hub@ecosystem",
+            "commit", "--allow-empty",
+            "-m", "init: ecosystem sync root",
+        ])?;
+    }
+
+    Ok(())
+}
+
 /// Inicializa o repositório git offline na sync_root do ecossistema.
 ///
-/// Se `.git/` não existir:
-///   - executa `git init`
-///   - cria `.gitignore` com `*.db-wal` e `*.db-shm`
-///   - cria `.stignore` (Syncthing) com `*.db-wal`, `*.db-shm` e `*.tmp`
-///   - faz commit inicial "init: ecosystem sync root"
-///
-/// Se `.git/` já existir, garante apenas que os arquivos de ignore
-/// contenham as entradas obrigatórias (acrescenta ao final se faltar).
+/// Delega para `git_init_at` após resolver `sync_root` via ecosystem.json.
 #[tauri::command]
 pub fn git_init_sync_root() -> Result<(), AppError> {
     let eco = ecosystem::read_json();
@@ -378,28 +410,7 @@ pub fn git_init_sync_root() -> Result<(), AppError> {
         )));
     }
 
-    let is_new = !root.join(".git").exists();
-
-    if is_new {
-        run_git(root, &["init"])?;
-    }
-
-    // Garante entradas de ignore em ambos os arquivos
-    ensure_file_entries(root, ".gitignore", GITIGNORE_ENTRIES)?;
-    ensure_file_entries(root, ".stignore",  STIGNORE_ENTRIES)?;
-
-    if is_new {
-        // Stage os arquivos de ignore e cria commit inicial
-        run_git(root, &["add", ".gitignore", ".stignore"])?;
-        run_git(root, &[
-            "-c", "user.name=HUB",
-            "-c", "user.email=hub@ecosystem",
-            "commit", "--allow-empty",
-            "-m", "init: ecosystem sync root",
-        ])?;
-    }
-
-    Ok(())
+    git_init_at(root)
 }
 
 // ------------------------------------------------------------------
@@ -508,5 +519,50 @@ mod tests {
             !STIGNORE_ENTRIES.iter().any(|e| *e == "*.db"),
             "*.db nunca deve estar em STIGNORE_ENTRIES — o Syncthing deve sincronizar os bancos SQLite"
         );
+    }
+
+    // --- git_init_at ---
+
+    #[test]
+    fn test_git_init_at_new_repo_creates_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_at(root).unwrap();
+        // .git criado
+        assert!(root.join(".git").exists());
+        // .stignore com entradas corretas
+        let st = std::fs::read_to_string(root.join(".stignore")).unwrap();
+        assert!(st.contains(".git"), ".stignore deve conter .git");
+        assert!(st.contains("*.db-wal"), ".stignore deve conter *.db-wal");
+        assert!(!st.lines().any(|l| l.trim() == "*.db"), ".stignore não deve conter *.db");
+    }
+
+    #[test]
+    fn test_git_init_at_broken_repo_reinitializes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        // Simula repo corrompido: .git vazio (sem HEAD → rev-parse HEAD falha)
+        std::fs::create_dir(root.join(".git")).unwrap();
+        assert!(run_git(root, &["rev-parse", "HEAD"]).is_err(), "repo vazio deve ser detectado como corrompido");
+        // Deve reinicializar sem erro
+        git_init_at(root).unwrap();
+        // HEAD deve existir após o commit inicial
+        assert!(root.join(".git/HEAD").exists());
+        // .stignore deve estar presente
+        assert!(root.join(".stignore").exists());
+    }
+
+    #[test]
+    fn test_git_init_at_healthy_repo_keeps_git() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        // Inicializar uma vez
+        git_init_at(root).unwrap();
+        // Capturar hash do HEAD para confirmar que .git não foi recriado
+        let head_before = String::from_utf8_lossy(&run_git(root, &["rev-parse", "HEAD"]).unwrap().stdout).to_string();
+        // Segunda chamada: repo saudável → não reinicializa
+        git_init_at(root).unwrap();
+        let head_after = String::from_utf8_lossy(&run_git(root, &["rev-parse", "HEAD"]).unwrap().stdout).to_string();
+        assert_eq!(head_before.trim(), head_after.trim(), "HEAD não deve mudar em repo saudável");
     }
 }

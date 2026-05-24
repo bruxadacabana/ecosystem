@@ -7130,7 +7130,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 ##### HUB
 - [x] **`commands/git.rs:344` — STIGNORE_ENTRIES: adicionar `.git`** — `.git` nunca deve ser sincronizado pelo Syncthing entre máquinas (cada máquina tem histórico local independente). Manter `*.db-wal`, `*.db-shm`, `*.tmp`. NUNCA adicionar `*.db` — os bancos SQLite DEVEM ser sincronizados.
-- [ ] **`commands/git.rs:357` — `git_init_sync_root`: detectar repo corrompido** — se `.git` existe mas `git rev-parse HEAD` falha (hash inexistente), remover `.git` e reinicializar. Escrever `.stignore` correto em disco antes do primeiro commit, mesmo que `.git` já exista.
+- [x] **`commands/git.rs:357` — `git_init_sync_root`: detectar repo corrompido** — se `.git` existe mas `git rev-parse HEAD` falha (hash inexistente), remover `.git` e reinicializar. Escrever `.stignore` correto em disco antes do primeiro commit, mesmo que `.git` já exista.
 - [ ] **Operação imediata: recuperar `akasha.db` corrompido** — tentar em sequência: (1) `PRAGMA wal_checkpoint(TRUNCATE)` + `PRAGMA integrity_check`; (2) `sqlite3 akasha.db ".recover" | sqlite3 akasha_recovered.db`; (3) restaurar de `.backup/akasha/sites.json`. Registrar resultado.
 - [ ] **Novo `commands/backup.rs` — `backup_key_data() -> BackupReport`** — exporta dados chave de forma atômica: AKASHA `crawl_sites` → `.backup/akasha/sites.json`; AKASHA userdata JSONs → `.backup/akasha/`; KOSMOS `feeds` → `.backup/kosmos/sources.json`; `ecosystem.json` → `.backup/ecosystem.json`. Chamado: ao fechar app, a cada 60 min, manualmente via SyncView.
 - [ ] **`commands/backup.rs` — `restore_from_backup(app) -> RestoreReport`** — recria tabelas chave a partir do `.backup/` quando DB corrompido. Para AKASHA: recria `crawl_sites` do JSON. Reportar o que foi restaurado.
