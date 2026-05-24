@@ -46,6 +46,8 @@ export function LogosView() {
   const [cancelledPulls, setCancelledPulls] = useState<Set<string>>(new Set())
   const [deleting,       setDeleting]       = useState<string | null>(null)
   const [pullErrors,     setPullErrors]     = useState<Map<string, string>>(new Map())
+  const [recCollapsed,   setRecCollapsed]   = useState(false)
+  const [assignCollapsed, setAssignCollapsed] = useState(false)
 
   const fetchStatus = useCallback(() => {
     cmd.logosGetStatus().then(r => {
@@ -186,21 +188,19 @@ export function LogosView() {
     setPulling(s => new Set(s).add(model))
     setPullErrors(prev => { const n = new Map(prev); n.delete(model); return n })
     const r = await cmd.logosPullModel(model)
+    // Limpa estado imediatamente — o comando só retorna quando o download termina
+    setPulling(s => { const n = new Set(s); n.delete(model); return n })
+    setPullProgress(prev => { const n = new Map(prev); n.delete(model); return n })
     if (!r.ok) {
       const msg = r.error?.message ?? 'Erro ao baixar modelo'
-      setPulling(s => { const n = new Set(s); n.delete(model); return n })
-      setPullProgress(prev => { const n = new Map(prev); n.delete(model); return n })
       setPullErrors(prev => new Map(prev).set(model, msg))
       setTimeout(() => {
         setPullErrors(prev => { const n = new Map(prev); n.delete(model); return n })
       }, 10_000)
       return
     }
-    // Aguarda evento SSE — limpa após timeout de segurança se o evento não vier
-    setTimeout(() => {
-      setPulling(s => { const n = new Set(s); n.delete(model); return n })
-      setPullProgress(prev => { const n = new Map(prev); n.delete(model); return n })
-    }, 3_000)
+    // Download concluído — atualiza is_installed e modelos instalados
+    fetchModels()
   }
 
   async function handleDeleteModel(name: string) {
@@ -599,8 +599,8 @@ export function LogosView() {
       {/* ── Modelos por app ──────────────────────────── */}
       {assignments.length > 0 && (
         <section>
-          <Label>Modelos por app</Label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <SectionToggle label="Modelos por app" collapsed={assignCollapsed} onToggle={() => setAssignCollapsed(c => !c)} />
+          {!assignCollapsed && <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {assignments.map(a => {
               const slotKey = `${a.app}_${a.model_type}`
               const isEditing = editingSlot === slotKey
@@ -752,21 +752,22 @@ export function LogosView() {
                 </div>
               )
             })}
-          </div>
+          </div>}
         </section>
       )}
 
       {/* ── Modelos recomendados para instalação ─────── */}
       {recommended.length > 0 && (
         <section>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: recCollapsed ? 0 : 12, cursor: 'pointer', userSelect: 'none' }} onClick={() => setRecCollapsed(c => !c)}>
+            <CollapseChevron collapsed={recCollapsed} />
             <h3 style={{
               fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em',
               textTransform: 'uppercase', color: 'var(--ink-ghost)', margin: 0,
             }}>
               Modelos recomendados
             </h3>
-            {hwDisplay && (
+            {!recCollapsed && hwDisplay && (
               <span style={{
                 fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 8px',
                 border: '1px solid var(--accent)40', borderRadius: 10, color: 'var(--accent)',
@@ -774,7 +775,7 @@ export function LogosView() {
                 {hwDisplay}
               </span>
             )}
-            {maxConcurrent === 2 && (
+            {!recCollapsed && maxConcurrent === 2 && (
               <span style={{
                 fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 8px',
                 border: '1px solid var(--accent-green)40', borderRadius: 10,
@@ -784,7 +785,7 @@ export function LogosView() {
               </span>
             )}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {!recCollapsed && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {recommended.map(m => {
               const prog        = pullProgress.get(m.model_name)
               const isPulling   = pulling.has(m.model_name)
@@ -962,7 +963,7 @@ export function LogosView() {
                 </div>
               )
             })}
-          </div>
+          </div>}
         </section>
       )}
 
@@ -1144,6 +1145,42 @@ export function LogosView() {
 }
 
 // ── Helpers de estilo ──────────────────────────────────────────
+
+function CollapseChevron({ collapsed }: { collapsed: boolean }) {
+  return (
+    <span style={{
+      fontFamily: 'var(--font-mono)', fontSize: 9,
+      color: 'var(--ink-ghost)', opacity: 0.6,
+      transition: 'transform 150ms ease',
+      display: 'inline-block',
+      transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+      userSelect: 'none',
+    }}>
+      ▾
+    </span>
+  )
+}
+
+function SectionToggle({ label, collapsed, onToggle }: { label: string; collapsed: boolean; onToggle: () => void }) {
+  return (
+    <div
+      onClick={onToggle}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        marginBottom: collapsed ? 0 : 12,
+        cursor: 'pointer', userSelect: 'none',
+      }}
+    >
+      <CollapseChevron collapsed={collapsed} />
+      <h3 style={{
+        fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em',
+        textTransform: 'uppercase', color: 'var(--ink-ghost)', margin: 0,
+      }}>
+        {label}
+      </h3>
+    </div>
+  )
+}
 
 function Label({ children }: { children: React.ReactNode }) {
   return (

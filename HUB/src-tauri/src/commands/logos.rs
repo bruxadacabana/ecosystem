@@ -290,14 +290,26 @@ fn model_hf_table(model: &str) -> Option<(&'static str, &'static str)> {
     let m = model.to_lowercase();
     let m = m.trim_end_matches(":latest");
     match m {
-        "smollm2:1.7b" | "smollm2-1.7b" | "smollm2_1.7b" =>
-            Some(("HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF", "SmolLM2-1.7B-Instruct-Q4_K_M.gguf")),
+        // ── Qwen2.5 ───────────────────────────────────────────────────────────
+        "qwen2.5:7b" | "qwen2.5-7b" | "qwen2.5_7b" =>
+            Some(("bartowski/Qwen2.5-7B-Instruct-GGUF", "Qwen2.5-7B-Instruct-Q4_K_M.gguf")),
+        "qwen2.5:3b" | "qwen2.5-3b" | "qwen2.5_3b" =>
+            Some(("bartowski/Qwen2.5-3B-Instruct-GGUF", "Qwen2.5-3B-Instruct-Q4_K_M.gguf")),
+        "qwen2.5:0.5b" | "qwen2.5-0.5b" | "qwen2.5_0.5b" =>
+            Some(("bartowski/Qwen2.5-0.5B-Instruct-GGUF", "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf")),
+        // ── Gemma ─────────────────────────────────────────────────────────────
         "gemma2:2b" | "gemma2-2b" | "gemma-2-2b" =>
             Some(("bartowski/gemma-2-2b-it-GGUF", "gemma-2-2b-it-Q4_K_M.gguf")),
+        // ── SmolLM2 ───────────────────────────────────────────────────────────
+        "smollm2:1.7b" | "smollm2-1.7b" | "smollm2_1.7b" =>
+            Some(("HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF", "SmolLM2-1.7B-Instruct-Q4_K_M.gguf")),
+        // ── Llama 3.2 ─────────────────────────────────────────────────────────
         "llama3.2:3b" | "llama3.2-3b" | "llama-3.2-3b" =>
             Some(("bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")),
-        "command-r:7b" | "command-r-7b" =>
-            Some(("bartowski/c4ai-command-r7b-12-2024-GGUF", "c4ai-command-r7b-12-2024-Q4_K_M.gguf")),
+        // ── Multimodal ────────────────────────────────────────────────────────
+        "moondream" | "moondream2" =>
+            Some(("vikhyatk/moondream2", "moondream2-latest.gguf")),
+        // ── Embedding ─────────────────────────────────────────────────────────
         "bge-m3" | "bge_m3" | "baai/bge-m3" =>
             Some(("gpustack/bge-m3-GGUF", "bge-m3-Q4_K_M.gguf")),
         _ => None,
