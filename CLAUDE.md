@@ -187,13 +187,13 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
 
 ## Workflow
 
-- **`DESIGN_BIBLE.md`, `GUIDE.md` e `pesquisas.md` ficam no repositório `notebook`** (repositório Git separado, sincronizado via Proton Drive). Os caminhos por máquina estão abaixo — usar esses caminhos ao ler ou editar. **Após editar qualquer um desses arquivos, commitar o repositório `notebook` na mesma resposta** — `cd` para a raiz do repo e `git commit`. O `git add` só é necessário para arquivos não rastreados. Nunca recriar esses arquivos na raiz do repo do ecossistema.
+- **`DESIGN_BIBLE.md` e `pesquisas.md` ficam no repositório `notebook`** (repositório Git separado, sincronizado via Proton Drive). Os caminhos por máquina estão abaixo — usar esses caminhos ao ler ou editar. **Após editar qualquer um desses arquivos, commitar o repositório `notebook` na mesma resposta** — `cd` para a raiz do repo e `git commit`. O `git add` só é necessário para arquivos não rastreados.
   - **Windows 10:** `D:\windows\documentos\notebook\` (raiz do repo); arquivos em `inbox\ecosystem_notes\`
   - **CachyOS principal:** `/home/spacewitch/Documents/notebook/` (raiz do repo); arquivos em `inbox/ecosystem_notes/`
   - **Laptop:** `/home/spacewitch/Documents/proton/notebook/` (raiz do repo); arquivos em `01_Projetos/ecosystem/` (a confirmar)
+- **`GUIDE.md` fica na raiz do ecossistema (`program files/GUIDE.md`)**, versionado no repo do ecossistema (não no notebook). Commitar após cada edição no mesmo repo. **Regra permanente:** atualizar o GUIDE.md na mesma resposta que implementa qualquer mudança relevante no ecossistema.
 - **`DESIGN_BIBLE.md` deve ser mantido atualizado como prioridade permanente.**
 - **`README.md` (raiz do ecossistema) deve ser mantido atualizado** — toda mudança significativa de arquitetura, dependência ou funcionalidade deve ser refletida nele na mesma resposta que implementa a mudança.
-- **`GUIDE.md` não é prioridade — será refeito futuramente.** Não atualizar o `GUIDE.md` durante implementações.
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado.
 - **`notes.md` é arquivo de organização pessoal da usuária — nunca editá-lo.** Apenas lê-lo quando necessário para entender o contexto. Todo rastreamento de progresso vai no `TODO.md`. **Sempre commitar o `notes.md` quando houver mudanças não commitadas** — verificar `git status notes.md` proativamente a cada sessão.
 - **Marcar item como `[x]` no TODO imediatamente após concluí-lo** — não acumular para marcar depois, não esperar o fim da sessão.
