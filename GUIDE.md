@@ -3577,3 +3577,436 @@ HUB/
 ---
 
 Seção 10 concluída. Aguardando confirmação para a próxima.
+
+---
+
+## 🔧 Seção 11: Como Adicionar uma Feature Nova
+
+Esta seção usa um exemplo concreto e completo para mostrar o ciclo inteiro de desenvolvimento: da ideia ao código funcionando com testes. O exemplo é realista — algo que poderia estar (ou estar) no TODO do ecossistema.
+
+**Exemplo escolhido:** adicionar um endpoint `/api/stats` no AKASHA que retorna estatísticas do corpus indexado (total de páginas, domínios, itens no watch later, etc.) e exibi-las numa página `/stats` via Jinja2.
+
+---
+
+### 11.1. Antes de começar: registrar no TODO
+
+A regra do CLAUDE.md é clara: **nunca implementar algo que não está no TODO**. Antes de escrever qualquer código, abre o `AKASHA/dev_files/todo` e adiciona:
+
+```markdown
+### Endpoint /stats — estatísticas do corpus | 2026-05-24
+> Contexto: usuária quer ver um painel rápido com métricas do que está indexado
+
+#### AKASHA
+- [ ] Criar `services/stats.py` com função `get_corpus_stats()` que consulta o banco
+- [ ] Criar `routers/stats.py` com endpoints GET /api/stats (JSON) e GET /stats (HTML)
+- [ ] Criar `templates/stats.html` renderizando as métricas
+- [ ] Registrar o router em `main.py`
+- [ ] Escrever `tests/test_stats.py` cobrindo a função de stats e o endpoint JSON
+```
+
+Só depois de registrar → implementar, um item por vez, marcando `[x]` ao concluir cada um.
+
+---
+
+### 11.2. Entendendo onde cada peça vai
+
+Antes de escrever código, pense na separação de responsabilidades:
+
+```
+Camada          Responsabilidade                      Arquivo
+─────────────────────────────────────────────────────────────
+Database        Schema e queries SQL                  database.py
+Service         Lógica de negócio pura (sem HTTP)     services/stats.py  ← novo
+Router          Recebe HTTP, chama service, responde  routers/stats.py   ← novo
+Template        HTML renderizado pelo Jinja2          templates/stats.html ← novo
+Main            Registra o router na app              main.py            ← modificado
+Tests           Verifica serviço e endpoint           tests/test_stats.py ← novo
+```
+
+**Regra de ouro:** o router não contém lógica de negócio. O service não sabe que existe HTTP. Se você se pega escrevendo SQL dentro de um router, pare — mova para o service ou para o `database.py`.
+
+---
+
+### 11.3. Passo 1 — O service
+
+Crie `AKASHA/services/stats.py`:
+
+```python
+"""
+AKASHA — Estatísticas do corpus indexado.
+
+Fornece contagens agregadas do banco para exibição no painel /stats.
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+
+import aiosqlite
+
+from config import DB_PATH
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class CorpusStats:
+    pages_total: int
+    domains_total: int
+    local_files_total: int
+    watch_later_total: int
+    highlights_total: int
+
+
+async def get_corpus_stats() -> CorpusStats:
+    """Retorna contagens agregadas do corpus. Leitura rápida — sem joins pesados."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        async def count(query: str) -> int:
+            row = await (await db.execute(query)).fetchone()
+            return int(row[0]) if row else 0
+
+        pages    = await count("SELECT COUNT(*) FROM pages")
+        domains  = await count("SELECT COUNT(DISTINCT host) FROM pages WHERE host != ''")
+        files    = await count("SELECT COUNT(*) FROM local_index_meta")
+        wl       = await count("SELECT COUNT(*) FROM watch_later")
+        hl       = await count("SELECT COUNT(*) FROM highlights")
+
+    log.debug("Stats consultadas: pages=%d domains=%d", pages, domains)
+    return CorpusStats(
+        pages_total=pages,
+        domains_total=domains,
+        local_files_total=files,
+        watch_later_total=wl,
+        highlights_total=hl,
+    )
+```
+
+**Por que `@dataclass`?** É a forma mais limpa de representar um grupo de valores relacionados sem boilerplate. O FastAPI também consegue serializar dataclasses automaticamente, mas aqui usaremos `asdict()` explicitamente para controle.
+
+---
+
+### 11.4. Passo 2 — O router
+
+Crie `AKASHA/routers/stats.py`:
+
+```python
+"""
+AKASHA — Router de estatísticas
+GET /api/stats → JSON com contagens do corpus
+GET /stats     → página HTML com as mesmas informações
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import asdict
+from pathlib import Path
+
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+
+from services.stats import get_corpus_stats
+
+log = logging.getLogger(__name__)
+
+router = APIRouter()
+templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+
+@router.get("/api/stats")
+async def api_stats() -> JSONResponse:
+    """Retorna estatísticas do corpus como JSON."""
+    stats = await get_corpus_stats()
+    return JSONResponse(asdict(stats))
+
+
+@router.get("/stats", response_class=HTMLResponse)
+async def stats_page(request: Request) -> HTMLResponse:
+    """Renderiza página HTML com estatísticas do corpus."""
+    stats = await get_corpus_stats()
+    return templates.TemplateResponse(
+        "stats.html",
+        {"request": request, "stats": stats},
+    )
+```
+
+Dois endpoints, uma linha de lógica cada um. Toda a inteligência está no service — o router apenas delega e formata a resposta.
+
+---
+
+### 11.5. Passo 3 — O template Jinja2
+
+Crie `AKASHA/templates/stats.html`:
+
+```html
+{% extends "base.html" %}
+
+{% block title %}Estatísticas — AKASHA{% endblock %}
+
+{% block content %}
+<section class="stats-panel">
+  <h2>Corpus indexado</h2>
+  <dl class="stats-grid">
+    <div class="stat-item">
+      <dt>Páginas web</dt>
+      <dd>{{ stats.pages_total | intcomma }}</dd>
+    </div>
+    <div class="stat-item">
+      <dt>Domínios únicos</dt>
+      <dd>{{ stats.domains_total | intcomma }}</dd>
+    </div>
+    <div class="stat-item">
+      <dt>Arquivos locais</dt>
+      <dd>{{ stats.local_files_total | intcomma }}</dd>
+    </div>
+    <div class="stat-item">
+      <dt>Watch later</dt>
+      <dd>{{ stats.watch_later_total | intcomma }}</dd>
+    </div>
+    <div class="stat-item">
+      <dt>Highlights</dt>
+      <dd>{{ stats.highlights_total | intcomma }}</dd>
+    </div>
+  </dl>
+</section>
+{% endblock %}
+```
+
+O template usa `{% extends "base.html" %}` para herdar o layout comum (header, nav, styles) — nunca duplique o HTML base. As variáveis vêm do dict passado em `TemplateResponse`, acessadas diretamente pelo nome (`stats.pages_total`).
+
+O filtro `| intcomma` (se registrado no Jinja2 env do AKASHA) formata números com separadores de milhar. Se não existir, use `{{ "{:,}".format(stats.pages_total) }}`.
+
+---
+
+### 11.6. Passo 4 — Registrar o router em main.py
+
+Abra `AKASHA/main.py` e adicione a importação e o registro do novo router:
+
+```python
+# imports existentes...
+from routers import search, chat, crawler, history  # etc.
+from routers import stats  # ← novo
+
+app = FastAPI(...)
+
+# routers existentes...
+app.include_router(search.router)
+app.include_router(chat.router)
+app.include_router(stats.router)  # ← novo
+```
+
+`include_router()` registra todos os endpoints do router na aplicação FastAPI. Sem isso, as rotas `/api/stats` e `/stats` não existem.
+
+---
+
+### 11.7. Passo 5 — Testes
+
+Crie `AKASHA/tests/test_stats.py`:
+
+```python
+"""
+Testes para services/stats.py e routers/stats.py.
+
+Cobre:
+  - get_corpus_stats: retorna CorpusStats com campos corretos num banco vazio
+  - get_corpus_stats: conta corretamente após inserções
+  - GET /api/stats: retorna JSON com os campos esperados
+"""
+from __future__ import annotations
+
+import asyncio
+import pytest
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+# ── Fixture: banco temporário com schema AKASHA ──────────────────────────────
+
+@pytest.fixture()
+def patched_db(tmp_path, monkeypatch):
+    import database as _db
+    db_path = tmp_path / "akasha.db"
+    monkeypatch.setattr(_db, "DB_PATH", db_path)
+
+    import services.stats as _stats
+    monkeypatch.setattr(_stats, "DB_PATH", db_path)
+
+    run(_db.init_db())
+    return db_path
+
+
+# ── get_corpus_stats ─────────────────────────────────────────────────────────
+
+def test_stats_empty_db(patched_db):
+    """Banco vazio → todos os campos são zero, sem exceção."""
+    from services.stats import get_corpus_stats, CorpusStats
+    stats = run(get_corpus_stats())
+    assert isinstance(stats, CorpusStats)
+    assert stats.pages_total == 0
+    assert stats.domains_total == 0
+    assert stats.local_files_total == 0
+    assert stats.watch_later_total == 0
+    assert stats.highlights_total == 0
+
+
+def test_stats_counts_pages(patched_db):
+    """Após inserir páginas, pages_total e domains_total refletem corretamente."""
+    import aiosqlite
+
+    async def _seed():
+        async with aiosqlite.connect(patched_db) as db:
+            await db.execute(
+                "INSERT INTO pages (url, title, host) VALUES (?, ?, ?)",
+                ("https://example.com/a", "Artigo A", "example.com"),
+            )
+            await db.execute(
+                "INSERT INTO pages (url, title, host) VALUES (?, ?, ?)",
+                ("https://other.com/b", "Artigo B", "other.com"),
+            )
+            await db.commit()
+
+    run(_seed())
+
+    from services.stats import get_corpus_stats
+    stats = run(get_corpus_stats())
+    assert stats.pages_total == 2
+    assert stats.domains_total == 2
+
+
+def test_stats_same_domain_counted_once(patched_db):
+    """Dois URLs do mesmo domínio → domains_total = 1."""
+    import aiosqlite
+
+    async def _seed():
+        async with aiosqlite.connect(patched_db) as db:
+            for i in range(3):
+                await db.execute(
+                    "INSERT INTO pages (url, title, host) VALUES (?, ?, ?)",
+                    (f"https://example.com/page{i}", f"Página {i}", "example.com"),
+                )
+            await db.commit()
+
+    run(_seed())
+
+    from services.stats import get_corpus_stats
+    stats = run(get_corpus_stats())
+    assert stats.pages_total == 3
+    assert stats.domains_total == 1  # três páginas, um domínio
+
+
+# ── Endpoint GET /api/stats ──────────────────────────────────────────────────
+
+def test_api_stats_returns_json(patched_db):
+    """GET /api/stats retorna 200 com JSON contendo os campos esperados."""
+    from fastapi.testclient import TestClient
+    import main as _main  # importa a app FastAPI do AKASHA
+
+    with TestClient(_main.app) as client:
+        resp = client.get("/api/stats")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "pages_total" in data
+    assert "domains_total" in data
+    assert "local_files_total" in data
+    assert "watch_later_total" in data
+    assert "highlights_total" in data
+    assert isinstance(data["pages_total"], int)
+```
+
+**O que esses testes verificam:**
+1. Banco vazio não quebra — `get_corpus_stats()` retorna zeros, não exceção
+2. A contagem é correta após inserções reais
+3. A deduplicação de domínios funciona (`COUNT(DISTINCT host)`)
+4. O endpoint `/api/stats` responde com os campos corretos
+
+**O que eles não testam** (e não precisam, porque é responsabilidade do FastAPI/Jinja2):
+- Renderização HTML do template — isso é responsabilidade do motor de template
+- Formatação de números — isso é responsabilidade do filtro Jinja2
+
+---
+
+### 11.8. Passo 6 — Rodar e verificar
+
+```bash
+cd AKASHA
+
+# Rodar apenas os testes novos (rápido)
+uv run pytest tests/test_stats.py -v
+
+# Rodar toda a suíte para garantir que nada quebrou
+uv run pytest tests/ -v --ignore=tests/integration
+
+# Subir o servidor e testar manualmente
+./iniciar.sh
+# Em outro terminal:
+curl http://localhost:7071/api/stats | python -m json.tool
+# Abre no navegador: http://localhost:7071/stats
+```
+
+---
+
+### 11.9. Passo 7 — Commit
+
+Com tudo funcionando e os testes passando:
+
+```bash
+# Marcar itens como [x] no TODO antes de commitar
+
+git add AKASHA/services/stats.py \
+        AKASHA/routers/stats.py \
+        AKASHA/templates/stats.html \
+        AKASHA/main.py \
+        AKASHA/tests/test_stats.py \
+        AKASHA/dev_files/todo
+
+git commit -m "feat(AKASHA): adicionar painel /stats com estatísticas do corpus
+
+Novo endpoint GET /api/stats (JSON) e GET /stats (HTML) com contagens
+de páginas, domínios, arquivos locais, watch later e highlights.
+Inclui testes para get_corpus_stats() e o endpoint JSON."
+```
+
+**Não commitar todos os arquivos com `git add -A`** — pode incluir arquivos temporários, `.env`, caches. Sempre listar explicitamente.
+
+---
+
+### 11.10. Resumo do padrão
+
+O mesmo ciclo se aplica a qualquer feature nova no ecossistema:
+
+```
+1. Registrar no TODO (antes de qualquer código)
+2. Identificar as camadas: DB → service → router → template
+3. Implementar de baixo para cima:
+   a. database.py (se precisar de nova tabela ou query complexa)
+   b. services/<nome>.py (lógica de negócio)
+   c. routers/<nome>.py (endpoints HTTP)
+   d. templates/<nome>.html (se for página web)
+   e. main.py (registrar router)
+4. Escrever os testes (obrigatório — não é opcional)
+5. Rodar os testes: pytest tests/ -v
+6. Marcar [x] no TODO
+7. Commitar com mensagem Conventional Commits
+8. Verificar se README.md ou GUIDE.md precisam de atualização
+```
+
+**Onde colocar cada tipo de lógica:**
+
+| Lógica | Onde | Por que |
+|---|---|---|
+| Query SQL | `database.py` ou começo do `service` | Centraliza acesso ao banco |
+| Regras de negócio | `services/<domínio>.py` | Testável sem HTTP |
+| Validação de input | Router (Pydantic/FastAPI) | Na fronteira do sistema |
+| Formatação de resposta | Router | Responsabilidade da camada HTTP |
+| Renderização | Template Jinja2 | Separa lógica de apresentação |
+| Estado da app | `config.py` ou `ecosystem_client` | Nunca em variáveis globais esparsas |
+
+---
+
+Seção 11 concluída. Aguardando confirmação para a próxima.
