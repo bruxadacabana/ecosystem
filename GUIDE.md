@@ -2762,3 +2762,360 @@ curl http://localhost:9999/v1/chat/completions \
 ---
 
 Seção 8 concluída. Aguardando confirmação para a próxima.
+
+---
+
+## 📚 Seção 9: Conceitos Importantes Explicados
+
+Esta seção existe para que você possa entender *por que* o ecossistema funciona do jeito que funciona — não apenas *como*. Cada conceito é explicado em linguagem simples, com exemplos práticos e referências ao código real onde ele é aplicado.
+
+---
+
+### 9.1. Índice invertido e FTS5
+
+**O problema:** você tem 50.000 documentos. Como encontrar todos que contêm a palavra "atenção" em menos de um segundo?
+
+A resposta ingênua é passar por todos os documentos um a um. Isso é lento demais. A solução é construir um **índice invertido** — uma estrutura de dados que mapeia cada palavra para a lista de documentos onde ela aparece:
+
+```
+"atenção"   → [doc_42, doc_107, doc_891, ...]
+"transformer" → [doc_42, doc_93, doc_107, ...]
+"redes"     → [doc_93, doc_442, ...]
+```
+
+Quando você busca "atenção transformer", o banco intersecciona as duas listas e retorna apenas os documentos que contêm ambas as palavras. Isso é ordens de magnitude mais rápido do que varrer o texto completo.
+
+**FTS5 (Full-Text Search 5)** é o módulo de busca textual embutido no SQLite que implementa exatamente isso. Ele constrói e mantém o índice invertido automaticamente, suporta operadores como `AND`, `OR`, `NOT`, busca de frases com aspas, e prefixos com `*`.
+
+**No ecossistema:** o AKASHA usa FTS5 para busca local. A tabela virtual é criada assim:
+
+```sql
+-- AKASHA/database.py
+CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
+    title, content, tags, url UNINDEXED,
+    content='pages', content_rowid='id',
+    tokenize='unicode61 remove_diacritics 2'
+);
+```
+
+O `tokenize='unicode61 remove_diacritics 2'` remove acentos antes de indexar — assim "atenção" e "atencao" são tratados como a mesma palavra.
+
+---
+
+### 9.2. BM25 e TF-IDF
+
+**O problema:** todos os documentos que contêm "atenção" foram encontrados, mas em que ordem exibi-los? Um documento que menciona "atenção" 50 vezes é necessariamente mais relevante do que um que menciona 2 vezes?
+
+**TF-IDF (Term Frequency — Inverse Document Frequency)** é a fórmula clássica para pontuar relevância:
+
+```
+TF(termo, doc)  = frequência do termo no documento
+IDF(termo)      = log(total de docs / docs que contêm o termo)
+
+score(termo, doc) = TF × IDF
+```
+
+O IDF é o detalhe mais importante: ele penaliza palavras que aparecem em muitos documentos (como "de", "a", "o") e premia palavras raras. "Transformer" em um corpus de artigos gerais é muito mais informativo do que "pesquisa".
+
+**BM25 (Best Match 25)** é a evolução do TF-IDF, com dois refinamentos práticos:
+
+1. **Saturação de frequência:** o score para de crescer quando o termo aparece muitas vezes. Um documento com 20 ocorrências não é necessariamente 10× mais relevante que um com 2 — há um teto.
+2. **Normalização por comprimento:** documentos longos naturalmente contêm mais palavras. BM25 penaliza documentos muito longos proporcionalmente.
+
+```
+BM25 = IDF × (TF × (k1 + 1)) / (TF + k1 × (1 - b + b × (len/avglen)))
+
+k1 ≈ 1.2–2.0  → controla saturação de frequência
+b  ≈ 0.75     → controla penalidade de comprimento
+```
+
+**No ecossistema:** o SQLite FTS5 calcula BM25 automaticamente via função `bm25()`. O AKASHA usa `ORDER BY bm25(pages_fts)` em `services/local_search.py` para ranquear os resultados textuais.
+
+---
+
+### 9.3. Busca vetorial e embeddings
+
+**O problema:** a usuária busca "mecanismo de atenção em redes neurais". Um documento relevante usa a frase "self-attention in deep learning". BM25 não encontra nada — nenhuma palavra em comum.
+
+A solução é representar o significado de um texto como um **vetor numérico** (embedding) num espaço de alta dimensão — tipicamente 768 ou 1024 dimensões. Textos semanticamente similares ficam geometricamente próximos nesse espaço, mesmo que usem palavras completamente diferentes.
+
+```
+embedding("mecanismo de atenção em redes neurais")
+  → [0.12, -0.34, 0.87, 0.05, ..., -0.21]  (768 números)
+
+embedding("self-attention in deep learning")
+  → [0.11, -0.31, 0.85, 0.07, ..., -0.19]  (similaridade alta!)
+
+embedding("receita de bolo de cenoura")
+  → [-0.45, 0.78, -0.12, 0.33, ..., 0.62]  (distante dos anteriores)
+```
+
+A **similaridade de cosseno** mede o ângulo entre dois vetores: 1.0 = idênticos, 0.0 = sem relação, -1.0 = opostos. Na prática, dois textos relacionados ficam entre 0.7 e 0.95.
+
+**O modelo de embedding** é uma rede neural treinada especificamente para essa tarefa — no ecossistema, `bge-m3` (multilíngue, 670 MB) para o PC principal e laptop, e `potion-multilingual-128M` (estático, sem GPU) para o PC de trabalho.
+
+**Onde os vetores são armazenados:**
+- Mnemosyne usa **ChromaDB** (banco de vetores) em `{sync_root}/mnemosyne/chroma/`
+- AKASHA usa **sqlite-vec** (extensão do SQLite) — vetores direto no mesmo banco que o FTS5
+
+**No ecossistema:** a Mnemosyne indexa documentos via `core/indexer.py:_embed_batch()`, que chama `POST /v1/embeddings` no LOGOS. O ChromaDB armazena e busca os vetores aproximados com HNSW.
+
+---
+
+### 9.4. Reciprocal Rank Fusion (RRF)
+
+**O problema:** você tem quatro listas de resultados para a mesma query:
+- Lista FTS5 (busca textual)
+- Lista ChromaDB (busca vetorial)
+- Lista sqlite-vec (outra busca vetorial)
+- Lista de highlights (anotações da usuária)
+
+Como combiná-las num ranking único sem perder os pontos fortes de cada uma?
+
+**RRF** é uma fórmula elegantemente simples:
+
+```
+score_rrf(documento) = Σ 1 / (k + posição_na_lista_i)
+```
+
+Para cada lista em que o documento aparece, soma-se `1 / (k + posição)`. O `k = 60` é um parâmetro de amortecimento que evita que posições altas dominem demais.
+
+**Exemplo:**
+```
+Doc A: posição 1 na FTS5, posição 3 no vetorial
+  score = 1/(60+1) + 1/(60+3) = 0.01639 + 0.01587 = 0.03226
+
+Doc B: posição 2 na FTS5, posição 1 no vetorial
+  score = 1/(60+2) + 1/(60+1) = 0.01613 + 0.01639 = 0.03252
+
+Doc C: posição 1 apenas no FTS5 (não aparece no vetorial)
+  score = 1/(60+1) = 0.01639
+```
+
+Doc B vence por ter consistência em ambas as listas. Doc A fica em segundo. Doc C fica em terceiro, mesmo sendo o melhor da busca textual isolada.
+
+A grande vantagem do RRF é que **não precisa normalizar scores** entre sistemas diferentes — usa apenas a posição relativa, não a pontuação absoluta.
+
+**No ecossistema:** `AKASHA/services/local_search.py:_rrf()` implementa exatamente isso, com um multiplicador de `SOURCE_WEIGHTS` aplicado depois para dar mais peso a PDFs acadêmicos (2.0×) do que a páginas genéricas (1.0×). Veja a Seção 7 para detalhes completos.
+
+---
+
+### 9.5. PageRank
+
+**O problema:** dois documentos têm score RRF idêntico. Como desempatar? Um deles é o artigo original do Google (citado por 10.000 papers). O outro é um blog post obscuro. Deveriam ter o mesmo peso?
+
+**PageRank** é o algoritmo que o Google usou para ranquear páginas web pela importância — medida pelo número e qualidade das páginas que apontam para ela. A ideia central: uma página importante é apontada por muitas páginas importantes.
+
+```
+PR(A) = (1 - d) + d × Σ (PR(B) / links_saída(B))
+            para todo B que aponta para A
+
+d = 0.85  → fator de amortecimento (probabilidade de seguir um link)
+```
+
+O algoritmo é iterativo: começa com todos os nós com PR = 1.0 e itera até convergir.
+
+**No ecossistema:** o AKASHA calcula PageRank localmente sobre o grafo de links rastreados (tabela `links` no SQLite). O valor é armazenado na tabela `pages` e aplicado como boost pós-RRF em `local_search.py:_apply_pagerank_boost()`. Um artigo muito citado pelos outros documentos indexados sobe no ranking.
+
+---
+
+### 9.6. Pseudo-Relevance Feedback (PRF)
+
+**O problema:** a usuária busca "atenção". Sem mais contexto, o sistema não sabe se é "atenção" no sentido de machine learning ou no sentido de "prestar atenção". Como refinar a busca automaticamente?
+
+**PRF** assume que os primeiros resultados de uma busca são provavelmente relevantes (daí "pseudo") e usa esses documentos para expandir a query original com termos adicionais que apareceram neles.
+
+```
+query original: "atenção"
+  ↓ busca inicial
+top-3 resultados: ["self-attention", "transformer", "query key value"]
+  ↓ extrai termos mais relevantes dos top-3
+query expandida: "atenção self-attention transformer query key value"
+  ↓ segunda busca com query expandida
+  ↓ RRF entre busca original + busca expandida
+resultado final mais rico
+```
+
+O risco do PRF é **query drift**: se os primeiros resultados não forem relevantes, a expansão piora a busca em vez de melhorá-la. Por isso, o PRF está implementado no AKASHA (`services/query_expansion.py`) mas controlado pela flag `PRF_ENABLED` em `local_search.py` — pode ser ativado e desativado sem tocar na lógica.
+
+---
+
+### 9.7. pHash e distância de Hamming
+
+**O problema:** você baixou a mesma imagem duas vezes — uma versão original e uma levemente redimensionada. Como detectar que são a mesma imagem sem comparar pixel a pixel?
+
+**pHash (Perceptual Hash)** reduz uma imagem a uma sequência de 64 bits que representa sua "impressão digital visual". A ideia é aplicar uma Transformada de Cosseno Discreta (DCT) sobre a imagem reduzida e codificar se cada frequência está acima ou abaixo da média.
+
+```
+imagem 300×200px
+  ↓ reduz para 32×32 escala de cinza
+  ↓ aplica DCT 2D
+  ↓ pega os 64 coeficientes de baixa frequência (8×8 bloco superior esquerdo)
+  ↓ bit 1 se coeficiente > média, bit 0 caso contrário
+hash: 1011010001110010...  (64 bits)
+```
+
+Duas versões da mesma imagem (redimensionada, comprimida, levemente recortada) terão hashes muito similares. A **distância de Hamming** entre dois hashes é o número de bits que diferem:
+
+```
+hash_A: 1011010001110010...
+hash_B: 1011010001110110...  ← apenas 1 bit diferente
+distância de Hamming = 1  → mesma imagem (< 8: provavelmente duplicata)
+```
+
+**No ecossistema:** a Mnemosyne usa pHash para deduplicação de imagens no pipeline de indexação. Evita reindexar a mesma figura que aparece em múltiplos formatos ou tamanhos.
+
+---
+
+### 9.8. WAL mode no SQLite
+
+**O problema:** o AKASHA está rastreando páginas e escrevendo no banco ao mesmo tempo que a usuária faz uma busca. Se o escritor bloquear o banco durante a escrita, a busca trava e a interface congela.
+
+**WAL (Write-Ahead Log)** é um modo de journaling do SQLite que resolve isso. Em vez de escrever diretamente nas páginas do banco, as mudanças são primeiro escritas num arquivo de log separado (`.wal`). O banco principal só é atualizado quando o log é "checkpointed".
+
+O resultado prático: **leitores e escritores nunca se bloqueiam mutuamente**. Uma busca pode ler o banco enquanto o crawler está escrevendo — a leitura vê o estado consistente mais recente.
+
+```
+# AKASHA/database.py — aplicado no init
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;    # mais rápido que FULL, seguro com WAL
+PRAGMA cache_size=-8000;      # 8 MB de cache em memória
+PRAGMA mmap_size=67108864;    # 64 MB mapeados em memória (acesso mais rápido)
+```
+
+O modo WAL é especialmente importante no ecossistema porque o crawl, a indexação e a busca rodam em paralelo — é uma premissa arquitetural, não um caso especial.
+
+---
+
+### 9.9. RAG — e por que o AKASHA não gera respostas
+
+**RAG (Retrieval-Augmented Generation)** é um padrão onde, antes de um LLM gerar uma resposta, o sistema primeiro busca documentos relevantes e os passa como contexto para o modelo:
+
+```
+query da usuária
+  ↓ busca nos documentos indexados
+top-K documentos relevantes
+  ↓ incluídos no prompt do LLM como contexto
+LLM gera resposta baseada nos documentos
+```
+
+A Mnemosyne usa RAG: faz busca vetorial + FTS5, pega os top-K chunks, e o LLM sintetiza uma resposta citando as fontes.
+
+**O AKASHA não usa RAG — e isso é uma decisão arquitetural deliberada.**
+
+O AKASHA é uma **ferramenta de busca**, não um assistente. O LLM entra apenas nas camadas auxiliares:
+- `query_understanding.py` — classificar intenção e reescrever a query
+- `services/persona.py` — reflexão e pensamentos da Akasha (assistente)
+
+Nunca na síntese de resultados. O AKASHA devolve links, trechos e documentos — a usuária lê e pensa. O motivo:
+
+1. **Velocidade:** RAG adiciona 1–3 segundos de latência do LLM em cada busca
+2. **Fidelidade:** o LLM pode alucinar ou distorcer o conteúdo dos documentos
+3. **Transparência:** a usuária vê as fontes diretamente, sem intermediação
+4. **Funciona offline:** busca local funciona 100% sem LLM
+
+Esta decisão está documentada no CLAUDE.md como "princípio arquitetural do AKASHA: amplificador de pesquisa, não respondedor."
+
+---
+
+### 9.10. LoRA e fine-tuning
+
+**O problema:** você quer que um LLM de 1.7 bilhões de parâmetros responda com o estilo e o conhecimento do corpus que você indexou. Treinar o modelo inteiro do zero exigiria semanas de GPU e terabytes de dados. Há uma forma mais eficiente?
+
+**LoRA (Low-Rank Adaptation)** é a resposta. A intuição matemática: as mudanças de peso necessárias para adaptar um modelo a uma tarefa específica formam uma **matriz de posto baixo** — ou seja, podem ser aproximadas pelo produto de duas matrizes muito menores.
+
+```
+Peso original W (4096 × 4096 = ~16M parâmetros)
+  ≈ W + ΔW
+    onde ΔW = A × B
+    A: (4096 × r)
+    B: (r × 4096)
+    r = 16  → 4096×16 + 16×4096 = ~131K parâmetros (apenas 0.8% do original)
+```
+
+Durante o fine-tuning, o modelo base (W) permanece **congelado**. Apenas as matrizes A e B são treinadas. No final, ΔW pode ser mesclado ao W original (`merge_and_unload()`) para gerar um modelo completo sem overhead de inferência.
+
+**QLoRA** adiciona um passo: o modelo base é carregado em **quantização NF4 (4-bit)**, reduzindo o uso de VRAM de ~3.4 GB (FP16) para ~900 MB. As matrizes LoRA continuam em FP32 ou BF16 — só o modelo base é comprimido.
+
+```
+SmolLM2 1.7B em NF4   → ~900 MB VRAM
++ matrizes LoRA (r=16) → ~130 MB VRAM
++ KV cache (seq=512)   → ~200 MB VRAM
+Total:                 → ~1.2 GB VRAM (cabe na RX 6600 junto com outros modelos)
+```
+
+**No ecossistema:** `logos/qlora_trainer.py` usa Unsloth + bitsandbytes AMD + TRL SFTTrainer para o pipeline QLoRA. Veja a Seção 8 para detalhes completos.
+
+---
+
+### 9.11. Embeddings para treinamento vs. embeddings para busca
+
+São o mesmo conceito, mas com propósitos diferentes — vale distinguir:
+
+**Embeddings para busca** (bge-m3, potion):
+- Gerados por modelos especializados em similarity search
+- Treinados para que textos semanticamente similares fiquem próximos no espaço vetorial
+- Usados em runtime para indexar e buscar documentos
+- **Imutáveis:** não são fine-tunados no ecossistema
+
+**Embeddings para treinamento** (no contexto do fine-tuning):
+- São as representações internas do LLM que está sendo fine-tunado
+- O LoRA modifica as camadas que produzem essas representações
+- O resultado é que o modelo "aprende" a associar padrões do corpus com respostas adequadas
+- **Mutable:** são exatamente o que o fine-tuning altera
+
+A distinção prática: quando o `training_data_generator.py` chama o LOGOS para gerar pares Q&A, ele está usando o **LLM como gerador** (inferência). Quando o `qlora_trainer.py` treina, ele está ajustando os **pesos internos** do modelo — mudando como ele processa e representa texto.
+
+---
+
+### 9.12. Crawling respeitoso
+
+**O problema:** um crawler que baixa páginas o mais rápido possível pode sobrecarregar servidores pequenos, fazer o IP ser bloqueado, e violar os termos de uso dos sites.
+
+**robots.txt** é um arquivo de texto que os sites disponibilizam em `https://exemplo.com/robots.txt` descrevendo quais caminhos crawlers são (ou não são) permitidos de acessar:
+
+```
+User-agent: *
+Disallow: /admin/
+Disallow: /private/
+Crawl-delay: 5
+```
+
+Um crawler respeitoso **lê e obedece esse arquivo** antes de fazer qualquer requisição. O AKASHA cacheia o robots.txt por domínio para não precisar baixá-lo a cada visita.
+
+**Delay adaptativo:** ao invés de um delay fixo, o AKASHA ajusta o tempo de espera baseado na velocidade de resposta do servidor:
+
+```python
+# AKASHA/services/crawler.py
+_MIN_DELAY = 0.5   # segundos mínimos entre requisições ao mesmo domínio
+_MAX_DELAY = 30.0  # máximo (quando o servidor está lento)
+```
+
+Se o servidor demorar 3 segundos para responder, o delay aumenta proporcionalmente. Se responder em 200ms, o delay se mantém próximo do mínimo.
+
+**ETag e Last-Modified:** antes de baixar uma página novamente, o AKASHA envia os cabeçalhos de cache HTTP. Se o servidor responder com `304 Not Modified`, a página não é re-baixada — economiza banda e reduz carga no servidor.
+
+**User-Agent declarado:** o crawler se identifica com uma string transparente, não tenta se passar por navegador humano.
+
+Essas práticas não são apenas éticas — são pragmáticas. Sites que detectam crawlers agressivos bloqueiam IPs, tornam o acesso futuro impossível.
+
+---
+
+### 9.13. Resumo rápido — qual técnica resolve qual problema
+
+| Problema | Técnica | Onde no ecossistema |
+|---|---|---|
+| Busca por palavra-chave rápida | Índice invertido + FTS5 | `AKASHA/database.py`, `local_search.py` |
+| Ranquear resultados por relevância | BM25 | SQLite FTS5 `bm25()` |
+| Busca por significado (não palavras) | Embeddings + similaridade de cosseno | Mnemosyne (ChromaDB), AKASHA (sqlite-vec) |
+| Combinar múltiplos rankings | RRF (Reciprocal Rank Fusion) | `AKASHA/services/local_search.py:_rrf()` |
+| Desempatar por autoridade/importância | PageRank | `local_search.py:_apply_pagerank_boost()` |
+| Expandir query automaticamente | PRF | `services/query_expansion.py` (flag `PRF_ENABLED`) |
+| Deduplicar imagens | pHash + distância de Hamming | Mnemosyne (indexação de imagens) |
+| Leituras e escritas simultâneas | WAL mode SQLite | `AKASHA/database.py:init_db()` |
+| Adaptar LLM com dados pessoais | QLoRA (LoRA + quantização NF4) | `logos/qlora_trainer.py` |
+| Não sobrecarregar servidores | Delay adaptativo + robots.txt | `AKASHA/services/crawler.py` |
+
+---
+
+Seção 9 concluída. Aguardando confirmação para a próxima.
