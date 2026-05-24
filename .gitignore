@@ -59,5 +59,8 @@ AKASHA/akasha.db
 *.db-shm
 *.db-wal
 
+# Modelos GGUF do LOGOS — binários de GBs, não versionados
+HUB/src-tauri/logos/
+
 # Artefatos do SO
 Thumbs.db
