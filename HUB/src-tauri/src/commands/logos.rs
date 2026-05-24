@@ -154,10 +154,10 @@ pub async fn logos_pull_model(
         .build()
         .unwrap_or_default();
 
-    // Inicia o download
+    // Inicia o download — passa model_name para o registry usar o alias canônico
     let start_resp = client
         .post(format!("{logos_base}/logos/models/download"))
-        .json(&serde_json::json!({ "repo_id": repo_id, "filename": filename }))
+        .json(&serde_json::json!({ "repo_id": repo_id, "filename": filename, "model_name": model }))
         .send()
         .await
         .map_err(|e| format!("LOGOS indisponível: {e}"))?;
@@ -286,7 +286,7 @@ async fn find_model_hf_info(
 }
 
 /// Tabela estática de mapeamento: nome/alias do modelo → (repo_id, filename GGUF).
-fn model_hf_table(model: &str) -> Option<(&'static str, &'static str)> {
+pub(crate) fn model_hf_table(model: &str) -> Option<(&'static str, &'static str)> {
     let m = model.to_lowercase();
     let m = m.trim_end_matches(":latest");
     match m {

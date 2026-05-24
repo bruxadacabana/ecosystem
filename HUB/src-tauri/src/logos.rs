@@ -643,9 +643,12 @@ pub struct InferenceStatus {
 #[derive(Deserialize)]
 struct DownloadRequest {
     /// Ex: "bartowski/Phi-3.5-mini-instruct-GGUF"
-    repo_id:  String,
+    repo_id:    String,
     /// Ex: "Phi-3.5-mini-instruct-Q4_K_M.gguf"
-    filename: String,
+    filename:   String,
+    /// Alias canônico do modelo (ex: "qwen2.5:7b", "bge-m3").
+    /// Usado como `name` no registry em vez do filename sem extensão.
+    model_name: Option<String>,
 }
 
 /// Progresso de download emitido via SSE a cada 500 ms e no final.
@@ -2219,8 +2222,19 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
     };
 
     let mut result: Vec<RecommendedModel> = map.into_iter().map(|(model_name, (slots, for_profiles))| {
-        let is_installed         = size_map.contains_key(&model_name);
-        let size_disk_mb         = size_map.get(&model_name).copied().unwrap_or(0);
+        // Lookup primário: pelo alias canônico no registry (modelos baixados com a versão corrigida).
+        // Fallback: via HF table — verifica se alguma entrada do registry tem o filename esperado
+        // (cobre modelos baixados antes da correção que usavam filename como name).
+        let is_installed = size_map.contains_key(&model_name)
+            || crate::commands::logos::model_hf_table(&model_name)
+                .map(|(_, hf_fn)| registry_entries.iter().any(|e| e.filename == hf_fn))
+                .unwrap_or(false);
+        let size_disk_mb = size_map.get(&model_name).copied().unwrap_or_else(|| {
+            crate::commands::logos::model_hf_table(&model_name)
+                .and_then(|(_, hf_fn)| registry_entries.iter().find(|e| e.filename == hf_fn))
+                .map(|e| e.size_bytes / 1_000_000)
+                .unwrap_or(0)
+        });
         let for_current_profile  = current_models.contains(&model_name);
         let expected_speed_note = if for_profiles.contains(&"work_pc".to_string()) {
             speed_note_workpc(&model_name).map(str::to_string)
@@ -2575,8 +2589,9 @@ async fn download_model_handler(
     let s_task  = s.clone();
     let id_task = id.clone();
     let url_log = hf_url.clone();
+    let model_name_task = req.model_name.clone();
     tokio::spawn(async move {
-        download_model_task(s_task, id_task, hf_url, req.repo_id, req.filename, tx).await;
+        download_model_task(s_task, id_task, hf_url, req.repo_id, req.filename, model_name_task, tx).await;
     });
 
     log::info!("LOGOS: download iniciado — id={id}, url={url_log}");
@@ -2619,12 +2634,13 @@ async fn model_registry_handler(State(s): State<LogosState>) -> Response {
 
 /// Task de download em background.
 async fn download_model_task(
-    s:        LogosState,
-    id:       String,
-    url:      String,
-    repo_id:  String,
-    filename: String,
-    tx:       tokio::sync::watch::Sender<DownloadProgress>,
+    s:          LogosState,
+    id:         String,
+    url:        String,
+    repo_id:    String,
+    filename:   String,
+    model_name: Option<String>,
+    tx:         tokio::sync::watch::Sender<DownloadProgress>,
 ) {
     // Envia erro e limpa o mapa após 60s para consumidores tardios
     macro_rules! fail {
@@ -2709,7 +2725,7 @@ async fn download_model_task(
     // Passo 4: SHA256 e registry
     let sha256 = hex::encode(hasher.finalize());
     let entry  = ModelRegistryEntry {
-        name:          filename.trim_end_matches(".gguf").to_string(),
+        name:          model_name.unwrap_or_else(|| filename.trim_end_matches(".gguf").to_string()),
         repo_id:       repo_id.clone(),
         filename:      filename.clone(),
         path:          out_path.to_string_lossy().into_owned(),
