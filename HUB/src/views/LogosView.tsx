@@ -32,7 +32,7 @@ export function LogosView() {
   const [unloading,    setUnloading]    = useState<string | null>(null)
   const [stopping,     setStopping]     = useState(false)
   const [starting,     setStarting]     = useState(false)
-  const [toggleError,  setToggleError]  = useState(false)
+  const [toggleError,  setToggleError]  = useState<string | null>(null)
   const [assignments,       setAssignments]       = useState<ModelAssignment[]>([])
   const [editingSlot,       setEditingSlot]       = useState<string | null>(null)
   const [recommended,       setRecommended]       = useState<RecommendedModel[]>([])
@@ -45,6 +45,7 @@ export function LogosView() {
   const [embedWarning,    setEmbedWarning]    = useState<EmbedCompatWarning | null>(null)
   const [cancelledPulls, setCancelledPulls] = useState<Set<string>>(new Set())
   const [deleting,       setDeleting]       = useState<string | null>(null)
+  const [pullErrors,     setPullErrors]     = useState<Map<string, string>>(new Map())
 
   const fetchStatus = useCallback(() => {
     cmd.logosGetStatus().then(r => {
@@ -139,12 +140,15 @@ export function LogosView() {
 
   async function handleStartInference() {
     setStarting(true)
-    setToggleError(false)
+    setToggleError(null)
     const r = await cmd.toggleInference(true)
     if (!r.ok) {
       setStarting(false)
-      setToggleError(true)
-      setTimeout(() => setToggleError(false), 3_000)
+      const msg = r.error?.kind === 'NotFound'
+        ? 'Nenhum modelo instalado — baixe um modelo primeiro'
+        : (r.error?.message ?? 'Erro ao ligar')
+      setToggleError(msg)
+      setTimeout(() => setToggleError(null), 6_000)
       return
     }
     // Poll até o modelo ficar ativo — 2s / 5s / 10s a partir do comando
@@ -159,8 +163,8 @@ export function LogosView() {
     }
     // Timeout — modelo não carregou em 10 s
     setStarting(false)
-    setToggleError(true)
-    setTimeout(() => setToggleError(false), 3_000)
+    setToggleError('Timeout ao carregar — tente novamente')
+    setTimeout(() => setToggleError(null), 6_000)
   }
 
   async function handleSetModel(app: string, modelType: string, model: string) {
@@ -180,8 +184,19 @@ export function LogosView() {
 
   async function handlePullModel(model: string) {
     setPulling(s => new Set(s).add(model))
-    await cmd.logosPullModel(model)
-    // se houver erro, o evento de pull não virá — limpa o estado após timeout
+    setPullErrors(prev => { const n = new Map(prev); n.delete(model); return n })
+    const r = await cmd.logosPullModel(model)
+    if (!r.ok) {
+      const msg = r.error?.message ?? 'Erro ao baixar modelo'
+      setPulling(s => { const n = new Set(s); n.delete(model); return n })
+      setPullProgress(prev => { const n = new Map(prev); n.delete(model); return n })
+      setPullErrors(prev => new Map(prev).set(model, msg))
+      setTimeout(() => {
+        setPullErrors(prev => { const n = new Map(prev); n.delete(model); return n })
+      }, 10_000)
+      return
+    }
+    // Aguarda evento SSE — limpa após timeout de segurança se o evento não vier
     setTimeout(() => {
       setPulling(s => { const n = new Set(s); n.delete(model); return n })
       setPullProgress(prev => { const n = new Map(prev); n.delete(model); return n })
@@ -729,6 +744,11 @@ export function LogosView() {
                       </div>
                     )
                   })()}
+                  {pullErrors.has(a.current_model) && (
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ribbon)' }}>
+                      {pullErrors.get(a.current_model)}
+                    </span>
+                  )}
                 </div>
               )
             })}
@@ -931,6 +951,14 @@ export function LogosView() {
                       Download em andamento no LOGOS — aguarde ou feche o HUB para interromper.
                     </span>
                   )}
+                  {pullErrors.has(m.model_name) && (
+                    <span style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 9,
+                      color: 'var(--ribbon)', paddingLeft: 15, lineHeight: 1.6,
+                    }}>
+                      {pullErrors.get(m.model_name)}
+                    </span>
+                  )}
                 </div>
               )
             })}
@@ -1052,21 +1080,34 @@ export function LogosView() {
               {silencing ? '…' : 'Descarregar modelos'}
             </button>
             {!inferenceOnline && (
-              <button
-                className="btn btn-ghost btn-sm"
-                disabled={starting}
-                onClick={handleStartInference}
-                title="Carregar modelo e ligar o backend de inferência"
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
-                  color: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
-                  borderColor: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
-                  opacity: starting ? 0.6 : 1,
-                }}
-              >
-                {starting ? 'Carregando modelo…' : toggleError ? 'Erro — tentar novamente' : 'Ligar IA'}
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={starting}
+                  onClick={handleStartInference}
+                  title="Carregar modelo e ligar o backend de inferência"
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    color: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
+                    borderColor: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
+                    opacity: starting ? 0.6 : 1,
+                  }}
+                >
+                  {starting ? 'Carregando modelo…' : 'Ligar IA'}
+                </button>
+                {toggleError && (
+                  <span style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10,
+                    color: 'var(--ribbon)',
+                    maxWidth: 300,
+                    lineHeight: 1.5,
+                  }}>
+                    {toggleError}
+                  </span>
+                )}
+              </div>
             )}
             {inferenceOnline && (
               <>
