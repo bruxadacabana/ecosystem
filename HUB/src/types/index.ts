@@ -208,6 +208,10 @@ export interface PullProgress {
   total:     number | null
   done:      boolean
   error:     string | null
+  /** Índice do arquivo atual (0-based). 0 para download de arquivo único. */
+  file_index?: number
+  /** Total de arquivos para download. 1 para download de arquivo único. */
+  file_total?:  number
 }
 
 export interface EmbedCompatWarning {

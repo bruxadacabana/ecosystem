@@ -131,9 +131,10 @@ pub async fn logos_get_recommended_models(
 
 /// Inicia o download de um modelo via LOGOS (HuggingFace).
 ///
-/// Localiza o modelo na lista de recomendados (por nome ou filename) e
-/// usa o endpoint /logos/models/download do LOGOS proxy. Emite eventos
-/// "logos-pull-progress" com PullProgress durante o download via SSE.
+/// Para modelos de arquivo único: baixa o GGUF e registra no registry.
+/// Para modelos multi-arquivo (ex: moondream): baixa todos os arquivos em sequência,
+/// emitindo `logos-pull-progress` com `file_index`/`file_total` para o frontend exibir
+/// "Arquivo N/M". O campo `mmproj_path` é atualizado no registry após o download auxiliar.
 #[tauri::command]
 pub async fn logos_pull_model(
     app: tauri::AppHandle,
@@ -142,31 +143,61 @@ pub async fn logos_pull_model(
 ) -> Result<(), String> {
     let logos_base = "http://127.0.0.1:7072";
 
-    // Encontra repo_id + filename nos modelos recomendados ou no registry
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(7200))
+        .build()
+        .unwrap_or_default();
+
+    // Multi-arquivo: verificar antes do single-file
+    if let Some(files) = model_hf_table_multi(&model) {
+        return pull_model_multi(&app, &state, &model, logos_base, &client, files).await;
+    }
+
+    // Single-file
     let (repo_id, filename) = find_model_hf_info(&state, &model).await
         .ok_or_else(|| format!(
             "Modelo '{model}' não encontrado na lista de recomendados. \
              Use o HUB para baixar modelos suportados."
         ))?;
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(7200))
-        .build()
-        .unwrap_or_default();
+    pull_model_single(&app, &model, logos_base, &client, &repo_id, &filename, 0, 1).await
+}
 
-    // Inicia o download — passa model_name para o registry usar o alias canônico
+/// Download de arquivo único com progresso SSE.
+/// `file_index` e `file_total` são usados para o frontend exibir "Arquivo N/M".
+async fn pull_model_single(
+    app: &tauri::AppHandle,
+    model: &str,
+    logos_base: &str,
+    client: &reqwest::Client,
+    repo_id: &str,
+    filename: &str,
+    file_index: u32,
+    file_total: u32,
+) -> Result<(), String> {
+    // Inicia o download — passa model_name apenas para o arquivo principal (index 0)
+    let model_name_json = if file_index == 0 {
+        serde_json::json!(model)
+    } else {
+        serde_json::Value::Null
+    };
+
     let start_resp = client
         .post(format!("{logos_base}/logos/models/download"))
-        .json(&serde_json::json!({ "repo_id": repo_id, "filename": filename, "model_name": model }))
+        .json(&serde_json::json!({
+            "repo_id":    repo_id,
+            "filename":   filename,
+            "model_name": model_name_json,
+        }))
         .send()
         .await
         .map_err(|e| format!("LOGOS indisponível: {e}"))?;
 
-    let status = start_resp.status();
-    if !status.is_success() && status.as_u16() != 409 {
-        let code = status.as_u16();
+    let http_status = start_resp.status();
+    if !http_status.is_success() && http_status.as_u16() != 409 {
+        let code = http_status.as_u16();
         let body = start_resp.text().await.unwrap_or_default();
-        return Err(format!("LOGOS retornou {code}: {body}"));
+        return Err(format!("LOGOS retornou {code} para '{filename}': {body}"));
     }
 
     let body_json: serde_json::Value = start_resp.json().await
@@ -182,10 +213,11 @@ pub async fn logos_pull_model(
         .await
         .map_err(|e| format!("Erro ao acompanhar progresso: {e}"))?;
 
-    let model_str = model.clone();
+    let model_str = model.to_string();
     let mut buf   = String::new();
+    let is_last_file = file_index == file_total - 1;
 
-    loop {
+    'sse: loop {
         let chunk = sse.chunk().await.map_err(|e| format!("Erro ao ler SSE: {e}"))?;
         let Some(bytes) = chunk else { break };
         buf.push_str(&String::from_utf8_lossy(&bytes));
@@ -196,34 +228,76 @@ pub async fn logos_pull_model(
             if !line.starts_with("data: ") { continue; }
             let data = &line[6..];
             if let Ok(progress) = serde_json::from_str::<serde_json::Value>(data) {
-                let done       = progress["done"].as_bool().unwrap_or(false);
+                let file_done  = progress["done"].as_bool().unwrap_or(false);
                 let has_error  = progress["error"].is_string();
                 let error_msg  = progress["error"].as_str().map(str::to_string);
                 let completed  = progress["bytes_downloaded"].as_u64();
                 let total      = progress["total_bytes"].as_u64();
-                let status_str = if done { "success" } else { "downloading" };
+
+                // done:true só no último arquivo; arquivos intermediários emitem done:false
+                let emit_done  = file_done && is_last_file && !has_error;
                 let _ = app.emit("logos-pull-progress", PullProgress {
-                    model:     model_str.clone(),
-                    status:    status_str.into(),
+                    model:      model_str.clone(),
+                    status:     if emit_done { "success" } else { "downloading" }.into(),
                     completed,
                     total,
-                    done,
-                    error:     error_msg.clone(),
+                    done:       emit_done,
+                    error:      error_msg.clone(),
+                    file_index,
+                    file_total,
                 });
-                if done || has_error {
-                    return match error_msg {
-                        Some(e) => Err(e),
-                        None    => Ok(()),
-                    };
+
+                if has_error {
+                    return Err(error_msg.unwrap_or_else(|| "Erro ao baixar modelo".into()));
                 }
+                if file_done { break 'sse; }
             }
         }
     }
 
+    Ok(())
+}
+
+/// Orquestra o download de um modelo com múltiplos arquivos (ex: moondream2).
+/// Arquivos são baixados em sequência. O primeiro é registrado com o alias canônico;
+/// os demais (mmproj, etc.) têm seus caminhos gravados em `mmproj_path` no registry.
+async fn pull_model_multi(
+    app: &tauri::AppHandle,
+    state: &tauri::State<'_, LogosState>,
+    model: &str,
+    logos_base: &str,
+    client: &reqwest::Client,
+    files: &[(&str, &str)],
+) -> Result<(), String> {
+    let file_total = files.len() as u32;
+
+    for (file_index, &(repo_id, filename)) in files.iter().enumerate() {
+        pull_model_single(app, model, logos_base, client, repo_id, filename, file_index as u32, file_total).await?;
+    }
+
+    // Após todos os downloads, atualizar mmproj_path no registry com o segundo arquivo
+    if files.len() >= 2 {
+        let (_, mmproj_filename) = files[1];
+        let mmproj_path = state.models_dir().join(mmproj_filename);
+        crate::logos::update_registry_mmproj(
+            state.models_dir(),
+            model,
+            &mmproj_path.to_string_lossy(),
+        ).await;
+    }
+
+    // Emitir done final explícito (para garantir que o frontend limpe o estado)
     let _ = app.emit("logos-pull-progress", PullProgress {
-        model: model_str, status: "success".into(),
-        completed: None, total: None, done: true, error: None,
+        model:      model.to_string(),
+        status:     "success".into(),
+        completed:  None,
+        total:      None,
+        done:       true,
+        error:      None,
+        file_index: file_total - 1,
+        file_total,
     });
+
     Ok(())
 }
 
@@ -309,6 +383,26 @@ pub(crate) fn model_hf_table(model: &str) -> Option<(&'static str, &'static str)
         // ── Embedding ─────────────────────────────────────────────────────────
         "bge-m3" | "bge_m3" | "baai/bge-m3" =>
             Some(("gpustack/bge-m3-GGUF", "bge-m3-Q4_K_M.gguf")),
+        _ => None,
+    }
+}
+
+/// Tabela de modelos que requerem múltiplos arquivos para download.
+/// Retorna uma fatia de `(repo_id, filename)` em ordem: [arquivo principal, arquivos auxiliares].
+/// O primeiro arquivo é registrado com o alias canônico do modelo; os demais são salvo sem entrada
+/// de registry própria, com seus caminhos armazenados em `mmproj_path` do entry principal.
+pub(crate) fn model_hf_table_multi(model: &str) -> Option<&'static [(&'static str, &'static str)]> {
+    let m = model.to_lowercase();
+    let m = m.trim_end_matches(":latest");
+    match m {
+        // Moondream2 — modelo multimodal OCR/visão.
+        // Requer dois arquivos: transformer de texto (principal) + projeção visual (mmproj).
+        // Repo: ggml-org/moondream2-20250414-GGUF (versão 2025-04-14 convertida por ggml-org).
+        // NOTA: se o HuggingFace retornar 404, verificar os filenames exatos no repo.
+        "moondream" | "moondream2" => Some(&[
+            ("ggml-org/moondream2-20250414-GGUF", "moondream2-text-model-f16_ct-vicuna.gguf"),
+            ("ggml-org/moondream2-20250414-GGUF", "moondream2-mmproj-f16-20250414.gguf"),
+        ]),
         _ => None,
     }
 }
@@ -519,4 +613,82 @@ pub fn logos_trigger_finetune() -> Result<bool, crate::AppError> {
     cmd.spawn()
         .map(|_| true)
         .map_err(|e| crate::AppError::Io(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── model_hf_table ────────────────────────────────────────────────────────
+
+    #[test]
+    fn hf_table_returns_entry_for_ecosystem_models() {
+        assert!(model_hf_table("qwen2.5:7b").is_some());
+        assert!(model_hf_table("qwen2.5:3b").is_some());
+        assert!(model_hf_table("qwen2.5:0.5b").is_some());
+        assert!(model_hf_table("gemma2:2b").is_some());
+        assert!(model_hf_table("smollm2:1.7b").is_some());
+        assert!(model_hf_table("llama3.2:3b").is_some());
+        assert!(model_hf_table("bge-m3").is_some());
+    }
+
+    #[test]
+    fn hf_table_strips_latest_suffix() {
+        assert!(model_hf_table("qwen2.5:7b:latest").is_some());
+        assert!(model_hf_table("bge-m3:latest").is_some());
+    }
+
+    #[test]
+    fn hf_table_returns_none_for_unknown() {
+        assert!(model_hf_table("gpt-4").is_none());
+        assert!(model_hf_table("").is_none());
+    }
+
+    #[test]
+    fn hf_table_does_not_contain_moondream_single_file() {
+        // Moondream está apenas na tabela multi-arquivo — não na single-file
+        assert!(model_hf_table("moondream").is_none());
+        assert!(model_hf_table("moondream2").is_none());
+    }
+
+    // ── model_hf_table_multi ──────────────────────────────────────────────────
+
+    #[test]
+    fn hf_table_multi_moondream_returns_two_files() {
+        let files = model_hf_table_multi("moondream").expect("moondream deve ter tabela multi");
+        assert_eq!(files.len(), 2, "moondream precisa de exatamente 2 arquivos");
+        // Arquivo 0 = texto; arquivo 1 = mmproj
+        let (_, text_fn) = files[0];
+        let (_, mmproj_fn) = files[1];
+        assert!(text_fn.ends_with(".gguf"));
+        assert!(mmproj_fn.ends_with(".gguf"));
+        assert!(mmproj_fn.contains("mmproj"), "segundo arquivo deve ser mmproj");
+    }
+
+    #[test]
+    fn hf_table_multi_aliases_moondream2() {
+        // "moondream" e "moondream2" devem resolver para o mesmo conjunto de arquivos
+        let a = model_hf_table_multi("moondream");
+        let b = model_hf_table_multi("moondream2");
+        assert!(a.is_some() && b.is_some());
+        assert_eq!(a.unwrap().len(), b.unwrap().len());
+    }
+
+    #[test]
+    fn hf_table_multi_returns_none_for_single_file_models() {
+        // Modelos single-file NÃO devem aparecer na tabela multi
+        assert!(model_hf_table_multi("qwen2.5:7b").is_none());
+        assert!(model_hf_table_multi("bge-m3").is_none());
+        assert!(model_hf_table_multi("smollm2:1.7b").is_none());
+    }
+
+    #[test]
+    fn hf_table_multi_first_file_is_text_model() {
+        let files = model_hf_table_multi("moondream").unwrap();
+        let (_, first_fn) = files[0];
+        assert!(
+            first_fn.contains("text-model") || first_fn.contains("text"),
+            "primeiro arquivo deve ser o transformer de texto, não o mmproj"
+        );
+    }
 }

@@ -748,13 +748,16 @@ export function LogosView() {
                   )}
                   {/* Progresso de download quando baixando via botão desta linha */}
                   {pulling.has(a.current_model) && (() => {
-                    const prog = pullProgress.get(a.current_model)
-                    const pct  = prog?.total && prog.completed != null ? Math.round((prog.completed / prog.total) * 100) : null
+                    const prog      = pullProgress.get(a.current_model)
+                    const pct       = prog?.total && prog.completed != null ? Math.round((prog.completed / prog.total) * 100) : null
+                    const fileTotal = prog?.file_total ?? 1
+                    const fileIdx   = prog?.file_index ?? 0
+                    const fileLabel = fileTotal > 1 ? `Arquivo ${fileIdx + 1}/${fileTotal} · ` : ''
                     return (
                       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ink-ghost)' }}>
                         {pct !== null
-                          ? <><div style={{ height: 3, background: 'var(--rule)', borderRadius: 2, marginTop: 4 }}><div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent-green)', borderRadius: 2, transition: 'width 0.3s' }} /></div><span>{pct}%</span></>
-                          : <span>{prog?.status ?? 'baixando…'}</span>
+                          ? <><div style={{ height: 3, background: 'var(--rule)', borderRadius: 2, marginTop: 4 }}><div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent-green)', borderRadius: 2, transition: 'width 0.3s' }} /></div><span>{fileLabel}{pct}%</span></>
+                          : <span>{fileLabel}{prog?.status ?? 'baixando…'}</span>
                         }
                       </div>
                     )

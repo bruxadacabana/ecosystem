@@ -631,6 +631,10 @@ pub struct PullProgress {
     pub total:     Option<u64>,
     pub done:      bool,
     pub error:     Option<String>,
+    /// Índice do arquivo atual (0-based). 0 para download de arquivo único.
+    pub file_index: u32,
+    /// Total de arquivos para download. 1 para download de arquivo único.
+    pub file_total:  u32,
 }
 
 /// Evento emitido pelo ciclo de vida do backend de inferência.
@@ -678,6 +682,10 @@ pub struct ModelRegistryEntry {
     pub size_bytes:    u64,
     pub sha256:        String,
     pub downloaded_at: String,   // ISO 8601
+    /// Caminho do arquivo mmproj para modelos multimodais (moondream, LLaVA, etc.)
+    /// None para modelos de texto puro.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mmproj_path:   Option<String>,
 }
 
 /// Handle de um processo llama-server ativo gerenciado pelo LOGOS.
@@ -788,9 +796,12 @@ fn n_ctx_for_hardware(hw: HardwareProfile) -> u32 {
 }
 
 /// Inicia um processo llama-server para o modelo especificado.
+/// `mmproj_path`: caminho do arquivo de projeção visual para modelos multimodais (moondream, LLaVA).
+/// None para modelos de texto puro.
 async fn spawn_llama_server_proc(
     bin: &std::path::Path,
     model_path: &std::path::Path,
+    mmproj_path: Option<&std::path::Path>,
     n_gpu: i32,
     n_ctx: u32,
     port: u16,
@@ -803,6 +814,9 @@ async fn spawn_llama_server_proc(
        .arg("--cont-batching")
        .stdout(std::process::Stdio::null())
        .stderr(std::process::Stdio::piped()); // capturado para log
+    if let Some(mp) = mmproj_path {
+        cmd.arg("--mmproj").arg(mp);
+    }
     if n_gpu == 0 {
         cmd.arg("--n-gpu-layers").arg("0");
     } else if n_gpu > 0 {
@@ -879,14 +893,25 @@ pub(crate) async fn ensure_llama_model_loaded(
              Faça download via HUB ou execute 'ollama pull {model_name}'."
         ))?;
 
+    // Resolve mmproj para modelos multimodais (moondream, LLaVA, etc.)
+    let mmproj_path: Option<std::path::PathBuf> = {
+        let registry = read_model_registry(&s.0.models_dir).await;
+        registry.iter()
+            .find(|e| e.name == model_name)
+            .and_then(|e| e.mmproj_path.as_deref())
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+    };
+
     let n_gpu = gpu_layers_for_model(model_name, s.0.hardware_profile);
     let n_ctx = n_ctx_for_hardware(s.0.hardware_profile);
     log::info!(
         "LOGOS llama-server: carregando '{model_name}' \
-         (n_gpu={n_gpu}, n_ctx={n_ctx}, porta={LLAMA_SERVER_PORT})"
+         (n_gpu={n_gpu}, n_ctx={n_ctx}, porta={LLAMA_SERVER_PORT}, mmproj={})",
+        mmproj_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".into())
     );
 
-    let mut child = spawn_llama_server_proc(&bin, &gguf_path, n_gpu, n_ctx, LLAMA_SERVER_PORT)
+    let mut child = spawn_llama_server_proc(&bin, &gguf_path, mmproj_path.as_deref(), n_gpu, n_ctx, LLAMA_SERVER_PORT)
         .await?;
 
     // Captura stderr para log (leitura linha a linha em background)
@@ -923,7 +948,7 @@ pub(crate) async fn ensure_llama_model_loaded(
                 "LOGOS llama-server: '{model_name}' saiu (provável OOM de GPU) — \
                  retentando com CPU only (n_gpu_layers=0)"
             );
-            let mut cpu_child = spawn_llama_server_proc(&bin, &gguf_path, 0, n_ctx, LLAMA_SERVER_PORT)
+            let mut cpu_child = spawn_llama_server_proc(&bin, &gguf_path, mmproj_path.as_deref(), 0, n_ctx, LLAMA_SERVER_PORT)
                 .await
                 .map_err(|e| format!("Falha ao reiniciar em modo CPU: {e}"))?;
 
@@ -2080,17 +2105,22 @@ pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
         let is_custom = overrides.contains_key(&key);
         // Heurística: VRAM ≈ 65% do tamanho em disco (típico para Q4)
         let name_latest    = format!("{}:latest", current);
+        let hf_fn_assign: Option<&str> = crate::commands::logos::model_hf_table(current)
+            .map(|(_, fn_)| fn_)
+            .or_else(|| crate::commands::logos::model_hf_table_multi(current)
+                .and_then(|f| f.first().map(|(_, fn_)| *fn_)));
         let is_installed   = size_map.contains_key(current)
             || size_map.contains_key(&name_latest)
-            || crate::commands::logos::model_hf_table(current)
-                .map(|(_, hf_fn)| registry_entries_assign.iter().any(|e| e.filename == hf_fn))
+            || hf_fn_assign
+                .map(|fn_| registry_entries_assign.iter().any(|e| e.filename == fn_))
                 .unwrap_or(false);
         let vram_required_mb = size_map.get(current)
             .or_else(|| size_map.get(&name_latest))
             .map(|&s| s * 65 / 100)
             .unwrap_or(0);
         let fits_hardware = vram_required_mb == 0 || vram_required_mb <= budget;
-        let is_downloadable = crate::commands::logos::model_hf_table(current).is_some();
+        let is_downloadable = crate::commands::logos::model_hf_table(current).is_some()
+            || crate::commands::logos::model_hf_table_multi(current).is_some();
         ModelAssignment {
             app: app.to_string(),
             model_type: model_type.to_string(),
@@ -2232,13 +2262,18 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
         // Lookup primário: pelo alias canônico no registry (modelos baixados com a versão corrigida).
         // Fallback: via HF table — verifica se alguma entrada do registry tem o filename esperado
         // (cobre modelos baixados antes da correção que usavam filename como name).
+        // lookup pelo alias canônico; fallback pelo filename da HF table (single ou multi-file)
+        let hf_main_filename: Option<&str> = crate::commands::logos::model_hf_table(&model_name)
+            .map(|(_, fn_)| fn_)
+            .or_else(|| crate::commands::logos::model_hf_table_multi(&model_name)
+                .and_then(|f| f.first().map(|(_, fn_)| *fn_)));
         let is_installed = size_map.contains_key(&model_name)
-            || crate::commands::logos::model_hf_table(&model_name)
-                .map(|(_, hf_fn)| registry_entries.iter().any(|e| e.filename == hf_fn))
+            || hf_main_filename
+                .map(|fn_| registry_entries.iter().any(|e| e.filename == fn_))
                 .unwrap_or(false);
         let size_disk_mb = size_map.get(&model_name).copied().unwrap_or_else(|| {
-            crate::commands::logos::model_hf_table(&model_name)
-                .and_then(|(_, hf_fn)| registry_entries.iter().find(|e| e.filename == hf_fn))
+            hf_main_filename
+                .and_then(|fn_| registry_entries.iter().find(|e| e.filename == fn_))
                 .map(|e| e.size_bytes / 1_000_000)
                 .unwrap_or(0)
         });
@@ -2739,6 +2774,7 @@ async fn download_model_task(
         size_bytes:    bytes_downloaded,
         sha256:        sha256.clone(),
         downloaded_at: chrono::Local::now().to_rfc3339(),
+        mmproj_path:   None,
     };
     update_model_registry(&s.0.models_dir, entry).await;
 
@@ -2783,6 +2819,32 @@ async fn update_model_registry(models_dir: &std::path::Path, entry: ModelRegistr
     let mut entries = read_model_registry(models_dir).await;
     entries.retain(|e| e.filename != entry.filename);
     entries.push(entry);
+    if let Ok(json) = serde_json::to_string_pretty(&entries) {
+        let _ = tokio::fs::write(&path, json).await;
+    }
+}
+
+/// Atualiza o campo `mmproj_path` de uma entrada existente no registry (busca por `name`).
+/// Usado após o download do arquivo de projeção visual de modelos multimodais.
+pub(crate) async fn update_registry_mmproj(
+    models_dir: &std::path::Path,
+    model_name: &str,
+    mmproj_path: &str,
+) {
+    let path = models_dir.join("registry.json");
+    let mut entries = read_model_registry(models_dir).await;
+    let mut found = false;
+    for e in entries.iter_mut() {
+        if e.name == model_name {
+            e.mmproj_path = Some(mmproj_path.to_string());
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        log::warn!("update_registry_mmproj: modelo '{}' não encontrado no registry", model_name);
+        return;
+    }
     if let Ok(json) = serde_json::to_string_pretty(&entries) {
         let _ = tokio::fs::write(&path, json).await;
     }
@@ -2986,12 +3048,39 @@ mod tests {
             size_bytes:    2_400_000_000,
             sha256:        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
             downloaded_at: "2026-05-23T12:00:00+00:00".to_string(),
+            mmproj_path:   None,
         };
         let json = serde_json::to_string(&entry).expect("serialize");
         let back: ModelRegistryEntry = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.filename, entry.filename);
         assert_eq!(back.sha256,   entry.sha256);
         assert_eq!(back.size_bytes, entry.size_bytes);
+        assert!(back.mmproj_path.is_none());
+    }
+
+    #[test]
+    fn registry_entry_with_mmproj_roundtrip() {
+        let entry = ModelRegistryEntry {
+            name:          "moondream".to_string(),
+            repo_id:       "ggml-org/moondream2-20250414-GGUF".to_string(),
+            filename:      "moondream2-20250414-text-model-f16.gguf".to_string(),
+            path:          "/tmp/moondream2-20250414-text-model-f16.gguf".to_string(),
+            size_bytes:    1_800_000_000,
+            sha256:        "deadbeef".to_string(),
+            downloaded_at: "2026-05-24T00:00:00+00:00".to_string(),
+            mmproj_path:   Some("/tmp/moondream2-20250414-mmproj-f16.gguf".to_string()),
+        };
+        let json = serde_json::to_string(&entry).expect("serialize");
+        let back: ModelRegistryEntry = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.mmproj_path.as_deref(), Some("/tmp/moondream2-20250414-mmproj-f16.gguf"));
+    }
+
+    #[test]
+    fn registry_entry_legacy_no_mmproj_deserializes() {
+        // Entradas antigas no registry.json sem campo mmproj_path devem deserializar com None
+        let legacy = r#"{"name":"qwen2.5:7b","repo_id":"bartowski/Qwen2.5-7B-Instruct-GGUF","filename":"Qwen2.5-7B-Instruct-Q4_K_M.gguf","path":"/tmp/q.gguf","size_bytes":4000000000,"sha256":"abc","downloaded_at":"2026-05-01T00:00:00+00:00"}"#;
+        let entry: ModelRegistryEntry = serde_json::from_str(legacy).expect("deserialize legacy");
+        assert!(entry.mmproj_path.is_none(), "campo ausente deve deserializar como None");
     }
 
     // ── update_model_registry — deduplication ────────────────────────────────
@@ -3009,6 +3098,7 @@ mod tests {
             size_bytes:    1_000,
             sha256:        "aaa".to_string(),
             downloaded_at: "2026-01-01T00:00:00+00:00".to_string(),
+            mmproj_path:   None,
         };
         let e2 = ModelRegistryEntry {
             sha256: "bbb".to_string(),
@@ -3040,6 +3130,7 @@ mod tests {
                 size_bytes:    i as u64 * 1_000,
                 sha256:        format!("{i:064x}"),
                 downloaded_at: "2026-05-23T00:00:00+00:00".to_string(),
+                mmproj_path:   None,
             };
             update_model_registry(&models_dir, e).await;
         }
@@ -3052,6 +3143,44 @@ mod tests {
     async fn registry_read_returns_empty_when_file_missing() {
         let dir  = tempfile::tempdir().expect("tmpdir");
         let entries = read_model_registry(dir.path()).await;
+        assert!(entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn update_registry_mmproj_sets_path() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        let entry = ModelRegistryEntry {
+            name:          "moondream".to_string(),
+            repo_id:       "ggml-org/moondream2-20250414-GGUF".to_string(),
+            filename:      "moondream2-20250414-text-model-f16.gguf".to_string(),
+            path:          "/tmp/text.gguf".to_string(),
+            size_bytes:    1_800_000_000,
+            sha256:        "abc".to_string(),
+            downloaded_at: "2026-05-24T00:00:00+00:00".to_string(),
+            mmproj_path:   None,
+        };
+        update_model_registry(&models_dir, entry).await;
+
+        update_registry_mmproj(&models_dir, "moondream", "/tmp/mmproj.gguf").await;
+
+        let entries = read_model_registry(&models_dir).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].mmproj_path.as_deref(),
+            Some("/tmp/mmproj.gguf"),
+            "mmproj_path deve ser atualizado"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_registry_mmproj_noop_for_unknown_model() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+        // Registry vazio — sem crash, sem efeito
+        update_registry_mmproj(&models_dir, "nao-existe", "/tmp/x.gguf").await;
+        let entries = read_model_registry(&models_dir).await;
         assert!(entries.is_empty());
     }
 
@@ -3281,6 +3410,7 @@ mod tests {
             size_bytes:    9,
             sha256:        "abc".to_string(),
             downloaded_at: "2026-05-23T00:00:00+00:00".to_string(),
+            mmproj_path:   None,
         };
         update_model_registry(&models_dir, entry).await;
 
@@ -3322,6 +3452,7 @@ mod tests {
             size_bytes:    2_000_000,
             sha256:        "aaa".to_string(),
             downloaded_at: "2026-05-23T00:00:00+00:00".to_string(),
+            mmproj_path:   None,
         };
         update_model_registry(&models_dir, entry).await;
 
@@ -3383,6 +3514,7 @@ mod tests {
             size_bytes:    1_000_000_000,
             sha256:        "abc123".to_string(),
             downloaded_at: "2026-05-24T00:00:00+00:00".to_string(),
+            mmproj_path:   None,
         }
     }
 
