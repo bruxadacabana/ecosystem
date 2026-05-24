@@ -79,6 +79,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            commands::backup::backup_key_data,
+            commands::backup::restore_from_backup,
             commands::git::git_init_sync_root,
             commands::git::git_status,
             commands::git::git_commit,
