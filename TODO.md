@@ -6988,39 +6988,102 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Contexto: Ollama descartado como intermediário. LOGOS gerencia inferência via llama-server (llama-cpp, Vulkan/ROCm). API nova: OpenAI-compatível — /v1/chat/completions, /v1/embeddings, /v1/models. Substituir em todo o ecossistema: /api/generate, /api/chat → /v1/chat/completions; /api/embed → /v1/embeddings; /api/tags → /v1/models; NDJSON stream → SSE stream; campo "response"/"message.content" → "choices[0].message.content". Plano detalhado em /home/spacewitch/.claude/plans/robust-purring-simon.md.
 
 #### Ecossistema
-- [ ] **`ecosystem_client.py`** — remover OLLAMA_DIRECT/LOGOS_OLLAMA_BASE; _LLAMA_SERVER_DIRECT="http://localhost:8080"; get_inference_url() primary=LOGOS(7072) fallback=llama_server_url do ecosystem.json; get_ollama_url/get_ollama_base como aliases; request_llm() e request_llm_stream() para /v1/chat/completions com parser OpenAI; nova list_inference_models() via /v1/models; _DEFAULTS["logos"] sem ollama_base.
+- [x] **`ecosystem_client.py`** — OLLAMA_DIRECT/LOGOS_OLLAMA_BASE removidos; _LLAMA_SERVER_DIRECT=localhost:8080; get_inference_url() primary=LOGOS(7072) fallback=llama_server_url; aliases get_ollama_url/get_ollama_base existem; request_llm/request_llm_stream usam /v1/chat/completions; list_inference_models() via /v1/models. **Confirmado na auditoria 2026-05-24.**
 
 #### Mnemosyne
-- [ ] **`core/ollama_client.py`** — check_inference(): GET /health em vez de /api/tags; list_models(): GET /v1/models, campo "id" em vez de "name"; renomear check_ollama → check_inference.
-- [ ] **`core/indexer.py` — `_embed_batch()`** — /api/embed → /v1/embeddings; remover truncate_dim; response: resp["embeddings"] → [d["embedding"] for d in resp["data"]]; import get_ollama_url → get_inference_url.
-- [ ] **`core/rag.py`** — substituir langchain_ollama.ChatOllama por langchain_openai.ChatOpenAI com base_url=f"{url}/v1", api_key="logos"; adicionar langchain-openai ao requirements; remover langchain-ollama.
-- [ ] **`gui/workers.py`** — import get_ollama_url → get_inference_url; OllamaCheckWorker chamar check_inference().
+- [x] **`core/ollama_client.py`** — check_inference() via GET /health; check_ollama() é alias; list_models() via /v1/models (campo "id"). **Confirmado na auditoria 2026-05-24.**
+- [x] **`core/indexer.py` — `_embed_batch()`** — /v1/embeddings; sem truncate_dim; parser [d["embedding"] for d in resp["data"]]; usa get_inference_url. **Confirmado na auditoria 2026-05-24.**
+- [x] **`core/rag.py`** — ChatOpenAI com base_url=f"{url}/v1", api_key="logos"; langchain-openai em uso. **Confirmado na auditoria 2026-05-24.**
+- [x] **`gui/workers.py`** — chama check_inference (migrada). **Confirmado na auditoria 2026-05-24.**
 
 #### AKASHA
-- [ ] **`services/reflection_loop.py`** — _call_ollama() → _call_inference(); /api/generate → /v1/chat/completions não-stream; encapsular prompt em messages; response: resp.json()["choices"][0]["message"]["content"].
-- [ ] **`services/knowledge_worker.py`** — remover _OLLAMA_BASE hardcoded; _get_ollama_base() → _get_inference_base() via get_inference_url(); /api/generate → /v1/chat/completions; ajustar payloads e parsers.
-- [ ] **`services/query_understanding.py`** — remover OLLAMA_BASE_URL; _get_base() via get_inference_url(); /api/generate → /v1/chat/completions.
-- [ ] **`services/persona.py`** — _get_ollama_base() → _get_inference_base(); /api/generate → /v1/chat/completions.
-- [ ] **`services/session_insight.py`** — idem persona.py.
-- [ ] **`services/session_memory.py`** — idem persona.py.
-- [ ] **`services/local_search.py`** — _ollama_base_url → _inference_base_url; check_ollama_available() → check_inference_available() via GET /health; _generate_hyde() e expand_query() para /v1/chat/completions.
-- [ ] **`routers/chat.py`** — _get_base() → _get_inference_base(); _get_model() via list_inference_models(); _stream_chat() para /v1/chat/completions; parser SSE: choices[0].delta.content; stop: finish_reason=="stop".
-- [ ] **`routers/dialogue.py`** — _stream_ollama() para /v1/chat/completions; encapsular prompt em messages; _get_model() via list_inference_models().
-- [ ] **`main.py`** — verificar e remover referências a /api/tags e porta 11434.
+- [x] **`services/reflection_loop.py`** — _get_inference_base(); /v1/chat/completions. **Confirmado na auditoria 2026-05-24.**
+- [x] **`services/knowledge_worker.py`** — _get_inference_base(); /v1/chat/completions em todas as chamadas. **Confirmado na auditoria 2026-05-24.**
+- [x] **`services/query_understanding.py`** — get_inference_url(); /v1/chat/completions. **Confirmado na auditoria 2026-05-24.**
+- [x] **`services/persona.py`** — _get_inference_base(); /v1/chat/completions. **Confirmado na auditoria 2026-05-24.**
+- [x] **`services/session_insight.py`** — _get_inference_base(); /v1/chat/completions. **Confirmado na auditoria 2026-05-24.**
+- [x] **`services/session_memory.py`** — _get_inference_base(); /v1/chat/completions. **Confirmado na auditoria 2026-05-24.**
+- [x] **`services/local_search.py`** — _inference_base_url; check_inference_available() via GET /health; aliases check_ollama_available/get_ollama_status existem. **Confirmado na auditoria 2026-05-24.**
+- [x] **`routers/chat.py`** — get_inference_url(); /v1/chat/completions; SSE parser correto. **Confirmado na auditoria 2026-05-24.**
+- [x] **`routers/dialogue.py`** — get_inference_url(); /v1/chat/completions. **Confirmado na auditoria 2026-05-24.**
+- [x] **`main.py`** — sem referências a /api/tags ou porta 11434. **Confirmado na auditoria 2026-05-24.**
 
 #### HUB
-- [ ] **`src/lib/ollama.ts`** — BASE = 'http://localhost:7072' (LOGOS); fetch /v1/models; parser: data array, campo "id".
-- [ ] **`src-tauri/src/logos.rs`** — ler llama_server_url do ecosystem.json; endpoints /v1/chat/completions, /v1/embeddings, /v1/models proxies ao llama-server; health check: GET /health; logos_list_all_models()/logos_list_models() via /v1/models.
-- [ ] **`src-tauri/src/commands/launcher.rs`** — linha 51: /api/tags → /health no llama-server.
-- [ ] **`src-tauri/src/commands/logos.rs`** — linha 411: substituir URL 11434/api/tags por llama_server_url/v1/models.
+- [x] **`src/lib/ollama.ts`** — BASE=localhost:7072 (LOGOS); GET /v1/models. **Confirmado na auditoria 2026-05-24.**
+- [ ] **`src-tauri/src/logos.rs`** — ver item crítico na seção Auditoria de resíduos abaixo.
+- [ ] **`src-tauri/src/commands/launcher.rs`** — remover `launch_ollama`, `stop_ollama`, `build_ollama_serve_command`, `ollama_responding`; substituir por `toggle_inference()` que chama `ensure_llama_model_loaded()` (ligar) ou `kill_llama_proc()` (desligar) via LogosState. Botão de toggle visível mesmo sem modelo carregado.
+- [ ] **`src-tauri/src/commands/logos.rs`** — `logos_start_ollama`: corrigir para chamar `ensure_llama_model_loaded()` e emitir evento com status real; `logos_stop_ollama`: já correto (kill_llama_proc). Renomear ambos para `logos_start_inference` / `logos_stop_inference`.
+- [ ] **`src/views/LogosView.tsx`** — remover `ollamaOnline`, `handleLaunchOllama`, `handleStopOllama`; adicionar `inferenceOnline`; botões "Ligar IA"/"Desligar IA"; seção "Modelos Ollama" → "Modelos".
 
 #### Hermes
-- [ ] **`services/recipe_extractor.py` + `gui/workers.py`** — verificar hardcodes Ollama; atualizar se necessário.
+- [x] **`services/recipe_extractor.py` + `gui/workers.py`** — usa ChatOpenAI internamente; `ollama_model` é só nome de parâmetro (renomear na seção Auditoria abaixo). **Confirmado na auditoria 2026-05-24.**
 
 #### logos/ scripts
-- [ ] **`training_data_generator.py`** — migrar geração de Q&A de Ollama para request_llm() do ecosystem_client.
+- [x] **`training_data_generator.py`** — usa ec.request_llm() do ecosystem_client (já migrado). **Confirmado na auditoria 2026-05-24.**
 
 #### Testes
-- [ ] **`tests/test_ecosystem_client_inference.py`** — atualizar mocks: 11434 → 8080, /api/chat → /v1/chat/completions.
-- [ ] **`AKASHA/tests/test_session_reflect.py`** — atualizar mock de /api/generate → /v1/chat/completions.
-- [ ] **`AKASHA/tests/test_related_indexed.py`** — verificar e atualizar mocks.
+- [x] **`tests/test_ecosystem_client_inference.py`** — sem mock de 11434; testa get_inference_url vs get_ollama_url como aliases. **Confirmado na auditoria 2026-05-24.**
+- [ ] **`AKASHA/tests/test_session_reflect.py`** — nomes de testes mencionam "Ollama" mas testam código já migrado; renomear funções de teste.
+- [ ] **`AKASHA/tests/test_related_indexed.py`** — verificar e atualizar se necessário.
+
+#### Auditoria de resíduos: Ollama | 2026-05-24
+> Contexto: auditoria de 47 arquivos em 2026-05-24. Migração funcional dos serviços Python e LangChain está completa. Restam: (1) bug crítico de VRAM no backend LOGOS; (2) texto visível ao usuário desatualizado; (3) config desatualizada no ecosystem_root; (4) nomenclatura legada de baixa prioridade.
+
+##### 🔴 HUB — Bug crítico: LogosState ainda aponta para Ollama (monitoramento de VRAM quebrado)
+- [ ] **`src-tauri/src/lib.rs` linhas 125–132 + `src-tauri/src/logos.rs`** — `LogosState::new(ollama_url)` inicializado com `ecosystem.json["logos"]["ollama_base"]` (fallback `localhost:11434`). Esse `ollama_url` alimenta: `vram_usage()` → `GET {url}/api/ps` (endpoint Ollama, inexistente no llama-server — monitoramento de VRAM silenciosamente quebrado, bloqueio de P3 nunca ativado); `list_ollama_models()` → `GET {url}/api/ps`; `logos_list_all_models` → `GET {url}/api/tags`; warmup interno → `POST {url}/api/generate`; `logos_delete_model` → `DELETE {url}/api/delete`. Fix: (a) substituir `ollama_url` por `llama_server_url` lido de `ecosystem.json["logos"]["llama_server_url"]` (fallback `localhost:8081`); (b) `vram_usage()` implementar via `rocm-smi --showmeminfo vram` (AMD) / `nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader` (NVIDIA); (c) `logos_list_all_models` → GET `{llama_server_url}/v1/models`; (d) remover warmup via /api/generate (llama-server carrega na primeira requisição); (e) `logos_delete_model` → remover do registry.json e disco (sem API para isso no llama-server).
+
+##### 🟡 UI/Texto visível ao usuário
+- [ ] **`Mnemosyne/gui/main_window.py` ~linha 738** — banner: "⚠ Ollama não encontrado. Inicie o Ollama para usar o Mnemosyne." → "⚠ Backend de inferência indisponível. Abra o HUB e ligue a IA para usar o Mnemosyne.". Status "Verificando Ollama…" → "Verificando backend de inferência…".
+- [ ] **`HUB/src/components/LogosPanel.tsx` ~linha 346** — tooltip: "Descarregar todos os modelos carregados no Ollama" → "Descarregar modelos da memória".
+
+##### 🔵 Config desatualizada
+- [ ] **`ecosystem_root/kosmos/.config/settings.json`** — campo `"ai_endpoint": "http://localhost:11434"` (stale — KOSMOS não lê esse campo no código atual). Atualizar para `"http://localhost:7072"` ou remover. Resolver também o arquivo de conflito `settings (# Edit conflict …).json`.
+
+##### 🔵 Nomenclatura legada (sem impacto funcional)
+- [ ] **`ecosystem_client.py`** — renomear/remover aliases `get_ollama_url()`, `get_ollama_base()`; `get_ollama_headers()` → `get_inference_headers()`; corrigir docstring de `logos_silence()` ("do Ollama" → "do llama-server"). Verificar todos os importadores antes de remover.
+- [ ] **`AKASHA/services/local_search.py`** — remover aliases `get_ollama_status` e `check_ollama_available` após atualizar callers em `routers/chat.py` e `routers/search.py`.
+- [ ] **`Mnemosyne/core/ollama_client.py` + `core/errors.py`** — renomear: `OllamaModel` → `InferenceModel`; `OllamaUnavailableError` → `InferenceUnavailableError`; `OllamaEmbedTimeoutError` → `EmbedTimeoutError`; docstring de `OllamaEmbedTimeoutError`: "/api/embed" → "/v1/embeddings". Atualizar importadores: `gui/workers.py`, `gui/main_window.py`, `core/__init__.py`.
+- [ ] **`Mnemosyne/gui/workers.py`** — renomear: `OllamaCheckWorker` → `InferenceCheckWorker`; signal `ollama_unavailable` → `inference_unavailable`.
+- [ ] **`Mnemosyne/gui/main_window.py`** — renomear: `_ollama_ok` → `_inference_ok`; `_start_ollama_check()` → `_start_inference_check()`; `_retry_ollama_check` → `_retry_inference_check`; `_ollama_worker` → `_inference_worker`. Corrigir docstrings em `core/reflection.py`, `core/loaders.py`, `core/raptor_index.py`.
+- [ ] **`Hermes/services/recipe_extractor.py` + `gui/workers.py` + `hermes.py`** — renomear parâmetro `ollama_model` → `llm_model` em todas as assinaturas e chamadas.
+- [ ] **`HUB/src/types/index.ts`** — renomear: `OllamaModelInfo` → `ModelInfo`; `OllamaModelEntry` → `ModelEntry`; campo `ollama_url: string` → `llama_server_url: string`. Atualizar `tauri.ts`: `launchOllama` → `launchInference`; `stopOllama` → `stopInference`; `logosStartOllama` → `logosStartInference`; `logosStopOllama` → `logosStopInference`. Atualizar todos os callers.
+- [ ] **`logos/gguf_converter.py`** — renomear campo `ollama_model_name` → `model_registry_name`; atualizar `finetune_scheduler.py`.
+
+### Auditoria: toda comunicação com IA deve passar pelo LOGOS | 2026-05-24
+> Contexto: regra arquitetural — o LOGOS é o único ponto de entrada para qualquer chamada de LLM ou embedding no ecossistema. Se o LOGOS não estiver disponível (HUB fechado), a IA simplesmente não está disponível — sem fallback para llama-server direto, sem bypass. Auditoria realizada em 2026-05-24 encontrou 3 camadas de bypass que violam essa regra.
+
+#### Ecossistema — raiz do problema
+- [ ] **`ecosystem_client.py` — `get_inference_url()`** — remover o fallback para `eco.get("logos", {}).get("llama_server_url") or _LLAMA_SERVER_DIRECT`; a função deve retornar APENAS `_LOGOS_BASE` ("http://localhost:7072"). Se LOGOS estiver fora, os callers recebem uma URL que vai falhar — e devem tratar isso como "IA indisponível". Remover também a constante `_LLAMA_SERVER_DIRECT` do módulo.
+- [ ] **`ecosystem_client.py` — `request_llm()`** — remover o segundo bloco `result = _try(_LLAMA_SERVER_DIRECT)` (linha 346); se LOGOS falhar, levantar RuntimeError imediatamente sem segunda tentativa ao llama-server direto.
+- [ ] **`ecosystem_client.py` — `request_llm_stream()`** — remover `_LLAMA_SERVER_DIRECT` do loop `for base_url in (get_inference_url(), _LLAMA_SERVER_DIRECT)` (linha 399); iterar apenas sobre `(get_inference_url(),)`.
+- [ ] **`ecosystem_client.py` — `_DEFAULTS["logos"]`** — remover o campo `"llama_server_url": "http://localhost:8080"` dos defaults (esse campo configura o llama-server interno do LOGOS, não é URL de fallback para apps).
+
+#### AKASHA — fallbacks localhost:8080 individuais (7 arquivos)
+- [ ] **`routers/chat.py`** — remover `except Exception: return "http://localhost:8080"` em `_get_base()`; se ecosystem_client não importar, relançar o erro.
+- [ ] **`routers/dialogue.py`** — idem.
+- [ ] **`services/knowledge_worker.py`** — idem.
+- [ ] **`services/local_search.py`** — idem (`_inference_base_url = "http://localhost:8080"` como default).
+- [ ] **`services/persona.py`** — idem.
+- [ ] **`services/query_understanding.py`** — idem.
+- [ ] **`services/reflection_loop.py`** — idem.
+- [ ] **`services/session_insight.py`** — idem.
+- [ ] **`services/session_memory.py`** — idem.
+
+#### Mnemosyne — fallbacks localhost:8080 individuais (5 arquivos)
+- [ ] **`core/ollama_client.py`** — remover `except Exception: return "http://localhost:8080"` em `_base_url()`.
+- [ ] **`core/indexer.py`** — remover fallback `base_url = "http://localhost:8080"` nos dois blocos `_embed_batch()`.
+- [ ] **`core/rag.py`** — remover `except Exception: base_url = "http://localhost:8080/v1"` em `_make_llm()`.
+- [ ] **`core/loaders.py`** — remover `_vision_base = "http://localhost:8080"` em `_ocr_with_vision()`.
+- [ ] **`core/raptor_index.py`** — remover `except Exception: _inference_url = "http://localhost:8080"`.
+- [ ] **`gui/workers.py`** — remover `_ec_url = lambda: "http://localhost:8080"` como fallback.
+
+#### Hermes
+- [ ] **`services/recipe_extractor.py`** — remover `except Exception: base_url = "http://localhost:8080/v1"` em `_call_llm()`.
+
+#### Comportamento esperado após a correção
+Quando LOGOS estiver fora (HUB fechado):
+- AKASHA ferramenta (busca, crawl, FTS5): continua 100% funcional — sem LLM no caminho crítico.
+- AKASHA assistente (reflexões, persona, insights): operações silenciosamente ignoradas (já acontece via `get_ollama_status() == False`).
+- Mnemosyne RAG: busca retorna documentos mas sem geração; Studio desabilitado.
+- Hermes: extração por regras continua; extração via LLM falha e exibe mensagem ao usuário.
+- Em nenhum caso o llama-server em localhost:8080 deve ser acessado diretamente por apps do ecossistema.
