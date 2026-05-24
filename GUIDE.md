@@ -3119,3 +3119,461 @@ Essas práticas não são apenas éticas — são pragmáticas. Sites que detect
 ---
 
 Seção 9 concluída. Aguardando confirmação para a próxima.
+
+---
+
+## 🧑‍💻 Seção 10: Convenções de Código
+
+Esta seção descreve os padrões que o ecossistema segue. Código consistente é mais fácil de ler, debugar e dar continuidade — especialmente num projeto de longa duração como este.
+
+---
+
+### 10.1. Formatação e linting Python
+
+O ecossistema usa **Ruff** como linter (encontrado como dependência de dev em `KOSMOS/pyproject.toml` e esperado nos demais). Não há Black ou isort separados — o Ruff substitui ambos com velocidade muito maior.
+
+**Instalação (dev):**
+```bash
+# Como dependência de dev no pyproject.toml:
+[dependency-groups]
+dev = ["ruff>=0.4", "pytest>=9.0"]
+
+# Ou diretamente:
+uv pip install ruff
+```
+
+**Rodar:**
+```bash
+ruff check .          # lista problemas
+ruff check --fix .    # corrige automaticamente o que for possível
+ruff format .         # formata o código (substitui Black)
+```
+
+**Regras gerais seguidas pelo Ruff/PEP 8:**
+- Indentação: **4 espaços** (nunca tabs)
+- Comprimento máximo de linha: **100 caracteres** (mais permissivo que PEP 8 padrão de 79)
+- Aspas: **aspas duplas** para strings (padrão do Ruff formatter)
+- Espaços ao redor de operadores: `x = a + b`, não `x=a+b`
+- Linha em branco entre funções de nível de módulo; duas linhas antes de classes
+
+**TypeScript (HUB, OGMA):** não há eslint configurado explicitamente, mas o compilador TypeScript com `strict: true` (ver `tsconfig.json`) já captura a maioria dos problemas.
+
+**Rust (HUB src-tauri):** `cargo fmt` e `cargo clippy` são os padrões. Clippy warnings são tratados como erros em CI.
+
+---
+
+### 10.2. Nomenclatura
+
+**Python:**
+
+| Tipo | Convenção | Exemplo |
+|---|---|---|
+| Arquivos/módulos | `snake_case` | `query_understanding.py`, `local_search.py` |
+| Funções | `snake_case` | `classify_intent()`, `_rrf()` |
+| Variáveis | `snake_case` | `base_url`, `chunk_text` |
+| Classes | `PascalCase` | `SearchResult`, `TrainerConfig`, `FinetuneState` |
+| Constantes | `SCREAMING_SNAKE_CASE` | `SOURCE_WEIGHTS`, `_MIN_DELAY`, `LOGOS_PORT` |
+| "Privado" (módulo) | prefixo `_` | `_embed_batch()`, `_TEMPORAL_TERMS`, `_rrf()` |
+| "Privado" (forte) | prefixo `__` | raro — só para evitar conflito em subclasses |
+
+**Convenção `_` de privacidade:**
+O Python não tem verdadeiro controlo de acesso. O prefixo `_` é uma convenção que diz "não use isso diretamente de fora do módulo". Funções internas de um serviço sempre têm `_`. A API pública de um módulo são as funções sem prefixo.
+
+```python
+# services/freshness.py
+_TEMPORAL_TERMS = frozenset({...})   # constante interna — não importar de fora
+_days_since(date_str)                # helper interno
+freshness_factor(days)               # API pública — pode importar
+apply_freshness_rerank(...)          # API pública — pode importar
+```
+
+**Rust:**
+
+| Tipo | Convenção |
+|---|---|
+| Funções | `snake_case` |
+| Structs/Enums | `PascalCase` |
+| Constantes | `SCREAMING_SNAKE_CASE` |
+| Módulos | `snake_case` |
+
+**TypeScript:**
+
+| Tipo | Convenção |
+|---|---|
+| Funções/variáveis | `camelCase` |
+| Componentes React | `PascalCase` |
+| Interfaces/tipos | `PascalCase` |
+| Constantes de módulo | `SCREAMING_SNAKE_CASE` |
+
+---
+
+### 10.3. Convenção de commits
+
+O ecossistema usa **Conventional Commits** — formato `tipo(escopo): descrição`:
+
+```
+feat(AKASHA): adicionar busca por data de publicação
+fix(Mnemosyne): corrigir crash ao abrir notebook sem histórico
+docs(GUIDE): adicionar Seção 10 — convenções de código
+test(AKASHA): adicionar testes para freshness rerank
+refactor(logos): extrair detect_hardware_profile para função separada
+chore(notes): commit notas pendentes
+```
+
+**Tipos válidos:**
+
+| Tipo | Quando usar |
+|---|---|
+| `feat` | Nova funcionalidade visível para o usuário |
+| `fix` | Correção de bug |
+| `docs` | Documentação (README, GUIDE, comentários) |
+| `test` | Adicionar ou corrigir testes |
+| `refactor` | Mudança de código que não é feat nem fix |
+| `chore` | Tarefas de manutenção (atualizar deps, commitar notes.md, etc.) |
+| `perf` | Melhoria de performance |
+| `style` | Formatação pura (sem mudança de lógica) |
+
+**Regras:**
+- Descrição em **português ou inglês** — o projeto mistura os dois, mas seja consistente no mesmo commit
+- Imperativo: "adicionar", não "adicionado" ou "adicionando"
+- Escopo em PascalCase para apps (`AKASHA`, `Mnemosyne`, `HUB`), ou snake_case para módulos (`logos`, `ecosystem_client`)
+- Sem ponto final na linha de título
+
+---
+
+### 10.4. Docstrings e comentários
+
+**Regra geral:** o CLAUDE.md estabelece que **comentários só são escritos quando o "por que" não é óbvio**. Nomes bem escolhidos já documentam o "o quê".
+
+**Docstring de módulo** — obrigatória em todo arquivo `.py` com mais de uma função:
+
+```python
+"""
+AKASHA — Freshness decay como sinal de ranking
+
+Aplica desconto de antiguidade somente em queries com termos temporais explícitos.
+Fórmula: freshness = 1.0 / (1.0 + ln(1 + dias_desde_publicacao))
+  - Documento de hoje → fator ≈ 1.0
+  - Documento de 1 ano → fator ≈ 0.145
+  - Documento sem data → fator 1.0 (neutro)
+"""
+```
+
+A docstring de módulo deve responder: o que este módulo faz, qual a fórmula/algoritmo principal, e quais são os limites esperados. Não precisa listar todas as funções — isso é papel do código.
+
+**Docstring de função** — só quando a assinatura + nome não são suficientes:
+
+```python
+def freshness_factor(days: float | None) -> float:
+    """Sem data → fator neutro 1.0."""  # uma linha, ponto final
+
+def _rrf(rankings, k=60, weight_fn=None):
+    """Funde N rankings via RRF. k=60 é o parâmetro de amortecimento padrão."""
+```
+
+**Nunca escrever:**
+```python
+def get_url(page):
+    """Retorna a URL da página."""  # óbvio pelo nome — não adiciona valor
+    return page.url
+```
+
+**Comentários inline** — apenas para invariantes não-óbvios, workarounds ou restrições de hardware:
+
+```python
+# RX 6600 8 GB — todos os modelos na GPU total
+llm_rag_gpu_layers: -1
+
+# Etapa 1b (aplicada após verificar AMD): NVIDIA presente sem AMD ≥ 4 GiB → Laptop
+if has_nvidia_sysfs:
+    return HardwareProfile.Laptop
+
+# O_CREAT | O_EXCL é atômico — falha se já existir
+fd = os.open(str(lp), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+```
+
+---
+
+### 10.5. Importações
+
+**Ordem obrigatória (PEP 8 + isort/Ruff):**
+
+```python
+from __future__ import annotations  # sempre primeiro, quando usado
+
+# 1. Biblioteca padrão
+import json
+import logging
+import time
+from pathlib import Path
+from typing import Iterator
+
+# 2. Bibliotecas de terceiros
+import httpx
+from fastapi import APIRouter, Request
+from pydantic import BaseModel
+
+# 3. Módulos internos do app
+import config
+import database
+from services.freshness import apply_freshness_rerank
+from services.web_search import SearchResult, search_web
+```
+
+**`from __future__ import annotations`** aparece em todos os módulos Python do ecossistema. Ele faz com que as anotações de tipo sejam avaliadas de forma lazy (como strings), permitindo referências circulares e melhorando performance de importação.
+
+**Importações dentro de funções** — usadas intencionalmente em dois casos:
+1. Dependências opcionais pesadas (ML libs que podem não estar instaladas):
+   ```python
+   def train(cfg):
+       from unsloth import FastLanguageModel  # só importa quando train() é chamada
+       from trl import SFTTrainer
+   ```
+2. Evitar importações circulares entre módulos.
+
+---
+
+### 10.6. Tipagem
+
+Todo o código Python novo usa **type hints**. O ecossistema não usa `mypy` em CI, mas as anotações servem como documentação viva e são verificadas pelo Ruff.
+
+```python
+# Correto
+def classify_intent(query: str, model: str = "qwen2.5:3b") -> str: ...
+def _rrf(rankings: list[list[SearchResult]], k: int = 60) -> list[SearchResult]: ...
+def read_state(sync_root: str = "") -> FinetuneState: ...
+
+# Para tipos complexos
+from typing import Iterator
+def _iter_chroma_chunks(chroma_dir: str) -> Iterator[dict]: ...
+
+# Union types (Python 3.10+)
+def find_latest(data_dir: str) -> Path | None: ...
+def vram_pct() -> float | None: ...
+```
+
+**`from __future__ import annotations`** permite escrever `list[str]` em vez de `List[str]` mesmo em Python 3.9, e `X | Y` em vez de `Optional[X]` ou `Union[X, Y]`.
+
+**Tratamento de erros tipado** (regra do CLAUDE.md):
+```python
+# ✓ Específico — captura só o que espera
+except ValueError as exc:
+    log.warning("JSON inválido: %s", exc)
+    return []
+
+# ✗ Genérico demais — nunca em produção sem re-tipar
+except Exception:
+    pass
+```
+
+---
+
+### 10.7. Logging
+
+O ecossistema usa o módulo padrão `logging` (não `print`, não `loguru`). Cada módulo cria seu próprio logger com o nome hierárquico do módulo:
+
+```python
+import logging
+log = logging.getLogger(__name__)
+# ou com namespace explícito do ecossistema:
+log = logging.getLogger("ecosystem.logos.qlora_trainer")
+```
+
+**Níveis de uso:**
+
+| Nível | Quando usar |
+|---|---|
+| `log.debug(...)` | Informações de trace interno — desabilitado em produção |
+| `log.info(...)` | Progresso de operações importantes (início/fim de ciclos, modelos carregados) |
+| `log.warning(...)` | Algo inesperado mas recuperável (timeout, fallback ativado, arquivo ausente) |
+| `log.error(...)` | Falha de uma etapa — operação não concluída, mas o processo continua |
+
+**Formatação:**
+```python
+# ✓ Lazy formatting — string só é formatada se o nível estiver ativo
+log.info("Dataset: %d exemplos de %s", len(records), latest.name)
+log.warning("Skill desconhecido: %r — usando fallback", v)
+
+# ✗ Eager — sempre formata, mesmo se logging.DEBUG estiver desabilitado
+log.debug(f"Chunk {chunk_id}: {len(pairs)} par(es) gerados")  # evitar f-string aqui
+```
+
+---
+
+### 10.8. Caminhos de arquivo
+
+**Sempre `pathlib.Path`**, nunca `os.path`:
+
+```python
+# ✓ Correto
+from pathlib import Path
+checkpoint = Path(cfg.checkpoint_dir) / f"smollm2-qlora-{timestamp}"
+checkpoint.mkdir(parents=True, exist_ok=True)
+text = (Path(data_dir) / "registry.json").read_text(encoding="utf-8")
+
+# ✗ Evitar
+import os
+checkpoint = os.path.join(cfg.checkpoint_dir, f"smollm2-qlora-{timestamp}")
+os.makedirs(checkpoint, exist_ok=True)
+```
+
+`pathlib.Path` funciona em Windows e Linux sem ajustes — resolve o separador automaticamente. É a razão pela qual o ecossistema roda nos dois sistemas sem `if sys.platform`.
+
+**Encoding explícito:** sempre `encoding="utf-8"` em `open()`, `read_text()`, `write_text()`. Nunca depender do encoding padrão do sistema (que no Windows pode ser cp1252).
+
+---
+
+### 10.9. Testes
+
+**Framework:** `pytest` em todos os apps Python. Sem `unittest` puro.
+
+**Estrutura de arquivos:**
+```
+AKASHA/
+  tests/
+    __init__.py
+    conftest.py          # fixtures compartilhadas (DB setup, monkeypatches)
+    test_freshness.py    # um arquivo por módulo testado
+    test_query_understanding.py
+    integration/         # testes que precisam de serviços externos (opcionais)
+```
+
+**Convenções de nomenclatura dos testes:**
+- Arquivo: `test_<nome_do_módulo>.py`
+- Função: `test_<o_que_testa>_<condição>()` — descritivo o suficiente para ser lido como documentação
+
+```python
+def test_temporal_query_hoje():           # ✓ — clara o que testa
+def test_non_temporal_query_definition(): # ✓ — o caso negativo também nomeado
+def test_1():                             # ✗ — não diz nada
+```
+
+**Classes de teste** para agrupar casos relacionados:
+```python
+class TestNeedsRewrite:
+    """needs_rewrite retorna True para queries curtas ou com anáforas."""
+
+    def _check(self, q):
+        from services.query_understanding import needs_rewrite
+        return needs_rewrite(q)
+
+    def test_single_word_needs_rewrite(self):
+        assert self._check("isso")
+
+    def test_specific_query_no_rewrite(self):
+        assert not self._check("aprendizado de máquina federado privacidade")
+```
+
+**Importações dentro dos testes** — preferido para evitar efeitos colaterais no nível de módulo:
+```python
+def test_freshness_factor_none():
+    from services.freshness import freshness_factor  # importa aqui, não no topo
+    assert freshness_factor(None) == pytest.approx(1.0)
+```
+
+**Fixtures para banco de dados:**
+```python
+@pytest.fixture()
+def db_paths(tmp_path):
+    import database as _db
+    main_path = tmp_path / "akasha.db"
+    # patch o caminho original, roda init, yield, restaura
+    orig = _db.DB_PATH
+    _db.DB_PATH = main_path
+    asyncio.run(_db.init_db())
+    yield main_path
+    _db.DB_PATH = orig
+```
+
+`tmp_path` é uma fixture embutida do pytest que cria um diretório temporário único por teste — nunca interferem entre si.
+
+**Async:** funções assíncronas são testadas com `asyncio.run()` via helper local:
+```python
+def run(coro):
+    return asyncio.run(coro)
+
+def test_get_dates_http_url(patched_db):
+    result = run(_run_async_function())
+    assert ...
+```
+
+**Regra do CLAUDE.md:** toda feature nova e toda correção de bug deve vir acompanhada de testes na mesma resposta. Nunca reportar um item como concluído sem que os testes existam e passem.
+
+---
+
+### 10.10. Estrutura de módulos por app
+
+**AKASHA (FastAPI):**
+```
+AKASHA/
+  main.py              # startup: registra routers, inicia serviços
+  config.py            # constantes, leitura de ecosystem.json
+  database.py          # schema SQLite, init_db(), helpers de query
+  routers/             # endpoints FastAPI (um arquivo por domínio)
+    search.py          # GET /search
+    chat.py            # POST /chat
+    crawler.py         # GET/POST /library
+  services/            # lógica de negócio (sem HTTP, sem DB direto)
+    local_search.py    # _rrf(), search_local(), SOURCE_WEIGHTS
+    web_search.py      # search_web(), cache dois níveis
+    query_understanding.py
+    freshness.py
+  templates/           # Jinja2 HTML
+  tests/
+```
+
+**Mnemosyne (PySide6):**
+```
+Mnemosyne/
+  main.py              # QApplication, MainWindow
+  core/                # lógica pura (sem GUI)
+    notebook.py        # dataclass Notebook
+    notebook_store.py  # persistência em disco
+    indexer.py         # embeddings, ChromaDB
+    rag.py             # LangChain ChatOpenAI
+    personal_memory.py
+  gui/                 # widgets QT
+    workers.py         # QThread workers para operações async
+    styles.qss         # estilos PySide6
+  tests/
+```
+
+**HUB (Tauri + React):**
+```
+HUB/
+  src/                 # frontend React (TypeScript)
+    components/        # componentes React
+    lib/               # helpers (ecosystem.ts, ollama.ts)
+    pages/             # rotas do app
+  src-tauri/           # backend Rust
+    src/
+      main.rs          # entry point
+      lib.rs           # registro de comandos Tauri
+      logos.rs         # servidor LOGOS (axum)
+      ecosystem.rs     # leitura do ecosystem.json
+      commands/        # comandos Tauri expostos ao frontend
+        launcher.rs
+        logos.rs
+        config.rs
+```
+
+**Princípio geral:** a lógica de negócio fica em `services/` (ou `core/`), nunca misturada com routers, handlers ou widgets. Um router chama um service; um service não importa de routers.
+
+---
+
+### 10.11. Checklist antes de commitar
+
+```
+[ ] O código passa em `ruff check .` sem warnings?
+[ ] Os testes novos existem e passam com `pytest tests/ -v`?
+[ ] Nomes de funções/variáveis são descritivos sem precisar de comentário?
+[ ] Caminhos usam pathlib.Path e encoding="utf-8" explícito?
+[ ] Erros são capturados com except específico (não except Exception: pass)?
+[ ] Se é um serviço: a lógica está em services/, não no router?
+[ ] README.md e GUIDE.md foram verificados e atualizados se necessário?
+[ ] O commit segue o formato tipo(escopo): descrição?
+```
+
+---
+
+Seção 10 concluída. Aguardando confirmação para a próxima.
