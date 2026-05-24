@@ -19,7 +19,7 @@ use crate::AppError;
 
 /// Liga ou desliga o backend de inferência (llama-server via LOGOS).
 ///
-/// `enable = true`  → garante que o llama-server está pronto (via LOGOS).
+/// `enable = true`  → seleciona o primeiro modelo instalado e o carrega em background.
 /// `enable = false` → para o llama-server via LOGOS (libera VRAM).
 ///
 /// Retorna `"started"` | `"already_running"` | `"stopped"` | `"already_stopped"`.
@@ -29,15 +29,27 @@ pub async fn toggle_inference(
     enable: bool,
 ) -> Result<String, AppError> {
     if enable {
-        let running = llama_server_responding().await;
-        if running {
+        if llama_server_responding().await {
             return Ok("already_running".into());
         }
+        let models = crate::logos::do_list_all_models(state.inner()).await;
+        let names: Vec<String> = models.into_iter().map(|m| m.name).collect();
+        let model_name = select_model_to_load(&names)
+            .ok_or_else(|| AppError::NotFound("Nenhum modelo instalado.".into()))?;
+        let s = state.inner().clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = crate::logos::do_load_model(&s, &model_name).await;
+        });
         Ok("started".into())
     } else {
         let stopped = state.kill_llama_proc().await;
         Ok(if stopped { "stopped" } else { "already_stopped" }.into())
     }
+}
+
+/// Seleciona o primeiro modelo disponível da lista de nomes instalados.
+pub(crate) fn select_model_to_load(names: &[String]) -> Option<String> {
+    names.first().cloned()
 }
 
 /// Testa se o llama-server (através do LOGOS) está respondendo (timeout 500 ms).
@@ -274,6 +286,32 @@ pub fn auto_discover_all_exe_paths() -> HashMap<String, String> {
     }
 
     result
+}
+
+// ----------------------------------------------------------
+//  Testes
+// ----------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_select_model_to_load_returns_first() {
+        let names = vec!["gemma-2b".to_string(), "llama-3b".to_string()];
+        assert_eq!(select_model_to_load(&names), Some("gemma-2b".to_string()));
+    }
+
+    #[test]
+    fn test_select_model_to_load_empty_returns_none() {
+        assert_eq!(select_model_to_load(&[]), None);
+    }
+
+    #[test]
+    fn test_select_model_to_load_single_element() {
+        let names = vec!["only-model".to_string()];
+        assert_eq!(select_model_to_load(&names), Some("only-model".to_string()));
+    }
 }
 
 // ----------------------------------------------------------

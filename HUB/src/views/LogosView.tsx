@@ -141,14 +141,26 @@ export function LogosView() {
     setStarting(true)
     setToggleError(false)
     const r = await cmd.toggleInference(true)
-    setStarting(false)
     if (!r.ok) {
+      setStarting(false)
       setToggleError(true)
       setTimeout(() => setToggleError(false), 3_000)
-    } else {
-      setTimeout(fetchModels, 1_500)
-      setTimeout(fetchModels, 3_500)
+      return
     }
+    // Poll até o modelo ficar ativo — 2s / 5s / 10s a partir do comando
+    for (const delay of [2_000, 3_000, 5_000]) {
+      await new Promise<void>(res => setTimeout(res, delay))
+      fetchModels()
+      const check = await cmd.logosListAllModels()
+      if (check.ok && check.data.some(m => m.status === 'active')) {
+        setStarting(false)
+        return
+      }
+    }
+    // Timeout — modelo não carregou em 10 s
+    setStarting(false)
+    setToggleError(true)
+    setTimeout(() => setToggleError(false), 3_000)
   }
 
   async function handleSetModel(app: string, modelType: string, model: string) {
@@ -214,6 +226,14 @@ export function LogosView() {
     if (vramPct > 0.85) vramColor = 'var(--ribbon)'
     else if (vramPct > 0.70) vramColor = 'var(--accent)'
   }
+
+  const cpuPct     = status?.cpu_pct    ?? 0
+  const ramFreeMb  = status?.ram_free_mb ?? 0
+  const ramTotalMb = status?.ram_total_mb ?? 0
+  const ramUsedPct = ramTotalMb > 0 ? (ramTotalMb - ramFreeMb) / ramTotalMb : 0
+
+  const cpuColor = cpuPct > 85 ? 'var(--ribbon)' : cpuPct > 70 ? 'var(--accent)' : 'var(--accent-green)'
+  const ramColor = ramUsedPct > 0.85 ? 'var(--ribbon)' : ramUsedPct > 0.70 ? 'var(--accent)' : 'var(--accent-green)'
 
   const vramLabel =
     vramMb === null ? '—' :
@@ -405,6 +425,51 @@ export function LogosView() {
               : '—'}
         </Note>
       </section>
+
+      {/* ── CPU / RAM ─────────────────────────────────── */}
+      {online && (
+        <section>
+          <Label>Sistema</Label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 440 }}>
+            {/* CPU */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)' }}>CPU</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: cpuColor }}>
+                  {Math.round(cpuPct)}%
+                </span>
+              </div>
+              <div style={{ height: 6, background: 'var(--rule)', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.min(100, Math.round(cpuPct))}%`,
+                  background: cpuColor,
+                  transition: 'width 400ms ease, background 400ms ease',
+                }} />
+              </div>
+            </div>
+            {/* RAM */}
+            {ramTotalMb > 0 && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)' }}>RAM</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)', whiteSpace: 'nowrap' }}>
+                    {`livre ${(ramFreeMb / 1000).toFixed(1)} GB / ${(ramTotalMb / 1000).toFixed(1)} GB`}
+                  </span>
+                </div>
+                <div style={{ height: 6, background: 'var(--rule)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${Math.min(100, Math.round(ramUsedPct * 100))}%`,
+                    background: ramColor,
+                    transition: 'width 400ms ease, background 400ms ease',
+                  }} />
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ── Configurações de recursos ─────────────────── */}
       <section>
@@ -1000,7 +1065,7 @@ export function LogosView() {
                   opacity: starting ? 0.6 : 1,
                 }}
               >
-                {starting ? 'Iniciando…' : toggleError ? 'Erro — tentar novamente' : 'Ligar IA'}
+                {starting ? 'Carregando modelo…' : toggleError ? 'Erro — tentar novamente' : 'Ligar IA'}
               </button>
             )}
             {inferenceOnline && (
