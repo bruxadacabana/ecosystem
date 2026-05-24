@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import * as cmd from '../lib/tauri'
-import type { LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, PullProgress, EmbedCompatWarning } from '../types'
+import type { LogosStatus, ModelInfo, ModelEntry, ModelAssignment, RecommendedModel, PullProgress, EmbedCompatWarning } from '../types'
 import { FinetunePanel } from '../components/FinetunePanel'
 
 const PROFILES = [
@@ -26,8 +26,8 @@ const P_COLORS: Record<number, string> = {
 export function LogosView() {
   const [status,       setStatus]       = useState<LogosStatus | null>(null)
   const [profile,      setProfile]      = useState('normal')
-  const [,             setModels]       = useState<OllamaModelInfo[]>([])
-  const [allModels,    setAllModels]    = useState<OllamaModelEntry[]>([])
+  const [,             setModels]       = useState<ModelInfo[]>([])
+  const [allModels,    setAllModels]    = useState<ModelEntry[]>([])
   const [silencing,    setSilencing]    = useState(false)
   const [unloading,    setUnloading]    = useState<string | null>(null)
   const [stopping,     setStopping]     = useState(false)

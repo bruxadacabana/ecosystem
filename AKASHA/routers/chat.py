@@ -34,11 +34,8 @@ _MAX_SNIPPETS = 5
 
 # Resolução LOGOS-first em runtime (não import-time)
 def _get_base() -> str:
-    try:
-        from ecosystem_client import get_inference_url as _u
-        return _u()
-    except Exception:
-        return "http://localhost:8080"
+    from ecosystem_client import get_inference_url as _u
+    return _u()
 
 
 def _get_headers() -> "dict[str, str]":
@@ -336,12 +333,12 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
       data: {"type": "sources",  "sources": [...]}
       data: [DONE]
     """
-    from services.local_search import search_local, get_ollama_status
+    from services.local_search import search_local, get_inference_status
     from services.persona import get_persona
 
-    if not get_ollama_status():
+    if not get_inference_status():
         async def _offline() -> AsyncIterator[bytes]:
-            yield 'data: {"type":"fragment","text":"Ollama indisponível."}\n\n'.encode()
+            yield 'data: {"type":"fragment","text":"Backend de inferência indisponível."}\n\n'.encode()
             yield b"data: [DONE]\n\n"
         return StreamingResponse(_offline(), media_type="text/event-stream")
 

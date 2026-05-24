@@ -140,7 +140,7 @@ export interface LogosStatus {
   queue:              [number, number, number]
   vram_used_mb:       number | null
   vram_pct:           number | null
-  ollama_url:         string
+  llama_server_url:   string
   /** Uso de CPU global (0–100) via sysinfo — delta entre polls consecutivos */
   cpu_pct:            number
   /** RAM livre em MB via sysinfo */
@@ -157,12 +157,12 @@ export interface LogosStatus {
   p3_vram_blocked:    boolean
 }
 
-export interface OllamaModelInfo {
+export interface ModelInfo {
   name:         string
   size_vram_mb: number
 }
 
-export interface OllamaModelEntry {
+export interface ModelEntry {
   name:          string
   /** "active" = carregado na VRAM; "available" = instalado mas não carregado */
   status:        'active' | 'available'
@@ -171,6 +171,10 @@ export interface OllamaModelEntry {
   /** Tamanho em disco em MB */
   size_disk_mb:  number
 }
+
+// backward-compat aliases
+export type OllamaModelInfo  = ModelInfo
+export type OllamaModelEntry = ModelEntry
 
 export interface ModelSlot {
   app:        string

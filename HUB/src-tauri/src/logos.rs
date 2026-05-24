@@ -491,20 +491,20 @@ pub struct StatusResponse {
 }
 
 #[derive(Serialize, Clone)]
-pub struct OllamaModelInfo {
+pub struct ModelInfo {
     pub name: String,
     pub size_vram_mb: u64,
 }
 
 /// Entrada de modelo para listagem completa (instalados + status de carregamento).
 #[derive(Serialize, Clone)]
-pub struct OllamaModelEntry {
+pub struct ModelEntry {
     pub name: String,
     /// "active" = carregado na VRAM; "available" = instalado mas não carregado
     pub status: String,
     /// VRAM em uso em MB — 0 quando não carregado
     pub size_vram_mb: u64,
-    /// Tamanho em disco em MB (de /api/tags)
+    /// Tamanho em disco em MB
     pub size_disk_mb: u64,
 }
 
@@ -602,9 +602,9 @@ pub struct PullProgress {
     pub error:     Option<String>,
 }
 
-/// Evento emitido pelo ciclo de vida do Ollama (logos-ollama-status).
+/// Evento emitido pelo ciclo de vida do backend de inferência.
 #[derive(Serialize, Clone)]
-pub struct OllamaStatus {
+pub struct InferenceStatus {
     pub running: bool,
     pub message: String,
 }
@@ -1862,12 +1862,17 @@ pub async fn do_silence(s: &LogosState) -> usize {
 
 /// Retorna o modelo atualmente carregado no llama-server (se houver).
 /// Com llama-server, apenas um modelo roda por vez — é o que está em `llama_proc`.
-pub async fn list_ollama_models(s: &LogosState) -> Vec<OllamaModelInfo> {
+pub async fn list_inference_models(s: &LogosState) -> Vec<ModelInfo> {
     let guard = s.0.llama_proc.lock().await;
     match guard.as_ref() {
-        Some(p) => vec![OllamaModelInfo { name: p.model_name.clone(), size_vram_mb: 0 }],
+        Some(p) => vec![ModelInfo { name: p.model_name.clone(), size_vram_mb: 0 }],
         None    => vec![],
     }
+}
+
+/// Alias for backward compat with internal callers.
+pub async fn list_ollama_models(s: &LogosState) -> Vec<ModelInfo> {
+    list_inference_models(s).await
 }
 
 /// Para o processo llama-server ativo para liberar VRAM.
@@ -1893,24 +1898,24 @@ pub async fn do_set_profile(s: &LogosState, profile: String) -> String {
     validated
 }
 
-/// Wrapper público de `list_ollama_models` para uso nos Tauri commands.
-pub async fn do_list_models(s: &LogosState) -> Vec<OllamaModelInfo> {
-    list_ollama_models(s).await
+/// Wrapper público de `list_inference_models` para uso nos Tauri commands.
+pub async fn do_list_models(s: &LogosState) -> Vec<ModelInfo> {
+    list_inference_models(s).await
 }
 
 /// Retorna todos os modelos instalados com status de carregamento.
 /// Fonte: registry.json do LOGOS (modelos baixados via HUB).
 /// Status "active" = modelo atualmente rodando no llama-server.
-pub async fn do_list_all_models(s: &LogosState) -> Vec<OllamaModelEntry> {
+pub async fn do_list_all_models(s: &LogosState) -> Vec<ModelEntry> {
     let registry = read_model_registry(&s.0.models_dir).await;
     let active_name: Option<String> = s.0.llama_proc.lock().await
         .as_ref()
         .map(|p| p.model_name.clone());
 
-    let mut entries: Vec<OllamaModelEntry> = registry.iter().map(|e| {
+    let mut entries: Vec<ModelEntry> = registry.iter().map(|e| {
         let is_active = active_name.as_deref() == Some(&e.name)
             || active_name.as_deref() == Some(e.filename.trim_end_matches(".gguf"));
-        OllamaModelEntry {
+        ModelEntry {
             name:         e.name.clone(),
             status:       if is_active { "active" } else { "available" }.to_string(),
             size_vram_mb: 0,

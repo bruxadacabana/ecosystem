@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
-from .errors import OllamaUnavailableError
+from .errors import InferenceUnavailableError, OllamaUnavailableError
 
 
 _TIMEOUT = 2  # segundos
@@ -17,11 +17,7 @@ _TIMEOUT = 2  # segundos
 # Fragmentos de nome que identificam modelos de embedding
 _EMBED_HINTS = ("embed", "nomic", "mxbai", "bge", "e5", "minilm", "qwen3")
 
-try:
-    from ecosystem_client import get_inference_url as _get_inference_url
-except ImportError:
-    def _get_inference_url() -> str:  # type: ignore[misc]
-        return "http://localhost:8080"
+from ecosystem_client import get_inference_url as _get_inference_url
 
 
 def _base_url() -> str:
@@ -29,10 +25,13 @@ def _base_url() -> str:
 
 
 @dataclass
-class OllamaModel:
+class InferenceModel:
     name: str
     size: int = 0
     modified_at: str = ""
+
+
+OllamaModel = InferenceModel  # alias backward-compat
 
 
 def check_inference() -> bool:
@@ -49,7 +48,7 @@ def check_ollama() -> bool:
     return check_inference()
 
 
-def list_models() -> list[OllamaModel]:
+def list_models() -> list[InferenceModel]:
     """
     Retorna os modelos disponíveis no backend de inferência via GET /v1/models.
 
@@ -62,19 +61,19 @@ def list_models() -> list[OllamaModel]:
         ) as resp:
             data = json.loads(resp.read())
     except urllib.error.URLError as exc:
-        raise OllamaUnavailableError(f"Backend de inferência inacessível: {exc}") from exc
+        raise InferenceUnavailableError(f"Backend de inferência inacessível: {exc}") from exc
     except json.JSONDecodeError as exc:
-        raise OllamaUnavailableError(f"Resposta inválida do backend: {exc}") from exc
+        raise InferenceUnavailableError(f"Resposta inválida do backend: {exc}") from exc
 
-    return [OllamaModel(name=m.get("id", "")) for m in data.get("data", [])]
+    return [InferenceModel(name=m.get("id", "")) for m in data.get("data", [])]
 
 
-def filter_embed_models(models: list[OllamaModel]) -> list[OllamaModel]:
+def filter_embed_models(models: list[InferenceModel]) -> list[InferenceModel]:
     """Filtra modelos de embedding pelo nome."""
     return [m for m in models if any(h in m.name.lower() for h in _EMBED_HINTS)]
 
 
-def filter_chat_models(models: list[OllamaModel]) -> list[OllamaModel]:
+def filter_chat_models(models: list[InferenceModel]) -> list[InferenceModel]:
     """Retorna modelos que não são de embedding (presumidos como modelos de chat/LLM)."""
     embed_names = {m.name for m in filter_embed_models(models)}
     return [m for m in models if m.name not in embed_names]

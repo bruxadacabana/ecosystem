@@ -87,7 +87,7 @@ from core.memory import (
     Turn,
 )
 from core.notebook_store import NotebookStore
-from core.ollama_client import OllamaModel, filter_chat_models, filter_embed_models
+from core.ollama_client import InferenceModel, filter_chat_models, filter_embed_models
 from core.tracker import FileTracker
 from gui.insight_popup import InsightPopup
 from gui.notebooks_panel import NotebooksPanel
@@ -101,7 +101,7 @@ from gui.workers import (
     IndexFileWorker,
     IndexReflectionWorker,
     IndexWorker,
-    OllamaCheckWorker,
+    InferenceCheckWorker,
     PersonalReflectionWorker,
     PeriodicReflectionWorker,
     ReindexTranscriptsWorker,
@@ -120,7 +120,7 @@ class SetupDialog(QDialog):
 
     def __init__(
         self,
-        models: list[OllamaModel],
+        models: list[InferenceModel],
         current: AppConfig,
         parent: QWidget | None = None,
     ) -> None:
@@ -595,7 +595,7 @@ class MainWindow(QMainWindow):
         self.vectorstore: MultiVectorstore = MultiVectorstore([])
         self._main_splitter: QSplitter | None = None
         self._akasha_available = False
-        self._available_models: list[OllamaModel] = []
+        self._available_models: list[InferenceModel] = []
         self._session_memory = SessionMemory()
         self._query_store: PersistentQueryStore | None = None
         self._topics_worker: TopicsWorker | None = None
@@ -608,7 +608,7 @@ class MainWindow(QMainWindow):
         self._session_manager: SessionManager | None = None
         self._current_session: ChatSession | None = None
         self._updating_sessions = False
-        self._ollama_ok = False
+        self._inference_ok = False
         self._raw_answer = ""
         self._studio_raw = ""
         self._collections_to_index: list = []  # fila para "Indexar tudo" em cadeia
@@ -635,7 +635,7 @@ class MainWindow(QMainWindow):
 
         self._retry_timer = QTimer(self)
         self._retry_timer.setInterval(30_000)  # 30 segundos
-        self._retry_timer.timeout.connect(self._retry_ollama_check)
+        self._retry_timer.timeout.connect(self._retry_inference_check)
 
         self._insights_timer = QTimer(self)
         self._insights_timer.setInterval(60_000)  # 60 segundos
@@ -686,7 +686,7 @@ class MainWindow(QMainWindow):
         self._register_ecosystem()
         self._build_ui()
         self.apply_style()
-        self._start_ollama_check()
+        self._start_inference_check()
 
     # ── Construção da UI ──────────────────────────────────────────────────────
 
@@ -1778,16 +1778,16 @@ class MainWindow(QMainWindow):
 
     # ── Inicialização do backend de inferência ───────────────────────────────
 
-    def _start_ollama_check(self) -> None:
+    def _start_inference_check(self) -> None:
         self.statusBar().showMessage("Verificando backend de inferência…")
-        self._ollama_worker = OllamaCheckWorker()
-        self._ollama_worker.models_loaded.connect(self._on_models_loaded)
-        self._ollama_worker.ollama_unavailable.connect(self._on_ollama_unavailable)
-        self._ollama_worker.start()
+        self._inference_worker = InferenceCheckWorker()
+        self._inference_worker.models_loaded.connect(self._on_models_loaded)
+        self._inference_worker.inference_unavailable.connect(self._on_inference_unavailable)
+        self._inference_worker.start()
 
     def _on_models_loaded(self, models: list) -> None:
         self._available_models = models
-        self._ollama_ok = True
+        self._inference_ok = True
         self._retry_timer.stop()
         self.ollama_banner.setVisible(False)
         self.config_btn.setEnabled(True)
@@ -1817,8 +1817,8 @@ class MainWindow(QMainWindow):
         else:
             self._post_config_init()
 
-    def _on_ollama_unavailable(self, message: str) -> None:
-        self._ollama_ok = False
+    def _on_inference_unavailable(self, message: str) -> None:
+        self._inference_ok = False
         self.ollama_banner.setVisible(True)
         self.config_btn.setEnabled(True)
         self.statusBar().showMessage("Backend de inferência indisponível — aguardando reconexão…")
@@ -1826,14 +1826,14 @@ class MainWindow(QMainWindow):
         if not self._retry_timer.isActive():
             self._retry_timer.start()
 
-    def _retry_ollama_check(self) -> None:
+    def _retry_inference_check(self) -> None:
         """Tenta reconectar ao backend de inferência silenciosamente em background."""
-        if self._ollama_ok:
+        if self._inference_ok:
             self._retry_timer.stop()
             return
-        worker = OllamaCheckWorker()
+        worker = InferenceCheckWorker()
         worker.models_loaded.connect(self._on_models_loaded)
-        worker.ollama_unavailable.connect(lambda _: None)  # silencioso no retry
+        worker.inference_unavailable.connect(lambda _: None)  # silencioso no retry
         worker.start()
         # Manter referência para evitar GC prematuro
         self._retry_worker = worker

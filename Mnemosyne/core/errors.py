@@ -8,18 +8,20 @@ class MnemosyneError(Exception):
     """Base para todos os erros do Mnemosyne."""
 
 
-class OllamaUnavailableError(MnemosyneError):
-    """Ollama não está acessível no endereço configurado."""
+class InferenceUnavailableError(MnemosyneError):
+    """Backend de inferência (LOGOS) não está acessível."""
+
+
+OllamaUnavailableError = InferenceUnavailableError  # alias backward-compat
 
 
 class ModelNotFoundError(MnemosyneError):
-    """Modelo solicitado não está instalado no Ollama."""
+    """Modelo solicitado não está disponível no backend de inferência."""
 
     def __init__(self, model_name: str) -> None:
         self.model_name = model_name
         super().__init__(
-            f"Modelo '{model_name}' não encontrado. "
-            f"Instale-o com: ollama pull {model_name}"
+            f"Modelo '{model_name}' não encontrado no backend de inferência."
         )
 
 
@@ -45,7 +47,7 @@ class IndexBuildError(MnemosyneError):
 
 
 class EmbedTimeoutError(IndexBuildError):
-    """Timeout ao chamar Ollama /api/embed para um arquivo específico."""
+    """Timeout ao chamar o backend de inferência para embeddings."""
 
 
 class EmptyDirectoryError(IndexBuildError):

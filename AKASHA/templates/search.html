@@ -384,7 +384,7 @@
 </div>
 
 {% set _summarizable = (local_results + fav_results + web_results + site_results) | selectattr("snippet") | list %}
-{% if _summarizable and ollama_available and query %}
+{% if _summarizable and inference_available and query %}
 <div id="summary-area">
   <form class="summary-form"
         hx-post="/search/summarize"

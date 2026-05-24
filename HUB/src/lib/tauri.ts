@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, OllamaModelInfo, OllamaModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry, DomainEntry, TopicEntry, FinetuneState } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, ModelInfo, ModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry, DomainEntry, TopicEntry, FinetuneState } from '../types'
 
 async function call<T>(
   command: string,
@@ -174,14 +174,14 @@ export const logosSilence = (): Promise<TauriResult<number>> =>
 export const logosSetProfile = (profile: string): Promise<TauriResult<string>> =>
   call<string>('logos_set_profile', { profile })
 
-export const logosListModels = (): Promise<TauriResult<OllamaModelInfo[]>> =>
-  call<OllamaModelInfo[]>('logos_list_models')
+export const logosListModels = (): Promise<TauriResult<ModelInfo[]>> =>
+  call<ModelInfo[]>('logos_list_models')
 
 export const logosUnloadModel = (model: string): Promise<TauriResult<boolean>> =>
   call<boolean>('logos_unload_model', { model })
 
-export const logosListAllModels = (): Promise<TauriResult<OllamaModelEntry[]>> =>
-  call<OllamaModelEntry[]>('logos_list_all_models')
+export const logosListAllModels = (): Promise<TauriResult<ModelEntry[]>> =>
+  call<ModelEntry[]>('logos_list_all_models')
 
 export const logosGetModelAssignments = (): Promise<TauriResult<ModelAssignment[]>> =>
   call<ModelAssignment[]>('logos_get_model_assignments')

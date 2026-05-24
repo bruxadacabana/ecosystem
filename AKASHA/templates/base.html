@@ -99,8 +99,8 @@
       <a href="/domains" class="nav-link {% if active_tab == 'domains' %}nav-link-active{% endif %}">lista negra</a>
     </nav>
 
-    {% if ollama_available is defined and not ollama_available %}
-    <span class="ollama-badge" title="Ollama offline — features de IA indisponíveis">&#x25CF; offline</span>
+    {% if inference_available is defined and not inference_available %}
+    <span class="ollama-badge" title="Backend de inferência offline — features de IA indisponíveis">&#x25CF; offline</span>
     {% endif %}
 
     <button

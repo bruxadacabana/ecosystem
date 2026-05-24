@@ -24,7 +24,7 @@ import database
 from services.archiver import archive_url, fetch_and_extract, NearDuplicateError, DoiDuplicateError
 from services.web_search import SearchResult, search_web
 from services.local_search import (
-    search_local, correct_query, get_ollama_status,
+    search_local, correct_query, get_inference_status,
     suggest_related_docs, suggest_related_queries,
 )
 from services.query_understanding import (
@@ -395,7 +395,7 @@ async def search(
             and _active_session is not None
             and _active_session.context_queries(q)
             and needs_rewrite(q)
-            and get_ollama_status()
+            and get_inference_status()
         ):
             try:
                 _rw = await asyncio.wait_for(
@@ -412,7 +412,7 @@ async def search(
         # Classificador usa _effective_query (pode ser a query reescrita).
         intent_future = None
         _ambiguity_future = None
-        if get_ollama_status():
+        if get_inference_status():
             asyncio.ensure_future(pin_model())
             if not _intent_forced:
                 intent_future = asyncio.ensure_future(classify_intent(_effective_query))
@@ -729,7 +729,7 @@ async def search(
             "active_lens":       active_lens,
             "lens_id":           lens_id,
             "active_tab":        "search",
-            "ollama_available":  get_ollama_status(),
+            "inference_available":  get_inference_status(),
             "intent":            intent,
             "intent_forced":     _intent_forced,
             "lexical_intent":    _lexical_intent,

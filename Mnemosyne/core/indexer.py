@@ -244,11 +244,8 @@ def _classify_node_types(
     import httpx
 
     if base_url is None:
-        try:
-            from ecosystem_client import get_inference_url as _giu
-            base_url = _giu()
-        except Exception:
-            base_url = "http://localhost:8080"
+        from ecosystem_client import get_inference_url as _giu
+        base_url = _giu()
 
     for start in range(0, len(chunks), batch_size):
         batch = chunks[start : start + batch_size]
@@ -389,7 +386,7 @@ def _embed_batch(
     - Timeout (httpx.TimeoutException): backend ocupado com LLM ativo.
     - 429 (LOGOS P3_TIMEOUT): LOGOS retorna 429 quando fila P3 espera >30s.
 
-    base_url: resolvido em runtime via ecosystem_client (LOGOS 7072 ou llama-server 8080).
+    base_url: resolvido em runtime via ecosystem_client (LOGOS 7072).
     """
     if model == _POTION_MODEL_NAME:
         return _embed_batch_model2vec(texts)
@@ -398,11 +395,8 @@ def _embed_batch(
     import httpx
 
     if base_url is None:
-        try:
-            from ecosystem_client import get_inference_url as _giu
-            base_url = _giu()
-        except Exception:
-            base_url = "http://localhost:8080"
+        from ecosystem_client import get_inference_url as _giu
+        base_url = _giu()
 
     payload: dict = {"model": model, "input": texts}
 

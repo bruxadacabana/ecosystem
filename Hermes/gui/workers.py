@@ -31,7 +31,7 @@ class RecipeExtractWorker(QThread):
         *,
         model_size: str = "small",
         language: str = "auto",
-        ollama_model: str = "qwen2.5:7b",
+        llm_model: str = "qwen2.5:7b",
         recipes_dir: str = "",
         parent=None,
     ):
@@ -39,7 +39,7 @@ class RecipeExtractWorker(QThread):
         self.url          = url
         self.model_size   = model_size
         self.language     = language
-        self.ollama_model = ollama_model
+        self.llm_model = llm_model
         self.recipes_dir  = recipes_dir
         self._cancelled   = False
         self.setPriority(QThread.Priority.LowPriority)
@@ -108,7 +108,7 @@ class RecipeExtractWorker(QThread):
                     vurl,
                     model_size=self.model_size,
                     language=self.language,
-                    ollama_model=self.ollama_model,
+                    llm_model=self.llm_model,
                     recipes_dir=self.recipes_dir,
                 )
                 self.progress.emit(i, total, result.title or vurl)

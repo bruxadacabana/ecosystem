@@ -125,20 +125,14 @@ SOURCE_WEIGHTS: dict[str, float] = {
 
 _expansion_model_cache: str = ""
 
-# LOGOS-first: URL do servidor de inferência resolvida no startup via ecosystem_client.
-# get_inference_url() retorna LOGOS (7072) se disponível, llama-server (8080) como fallback.
-# check_inference_available() atualiza _inference_base_url em runtime.
-try:
-    from ecosystem_client import (
-        get_inference_url  as _ec_inference_url,
-        get_active_profile as _ec_profile,
-    )
-    _inference_base_url: str = _ec_inference_url()
-    _p = _ec_profile()
-    _expansion_default_model: str = (_p or {}).get("models", {}).get("llm_query", "") if _p else ""
-except Exception:
-    _inference_base_url      = "http://localhost:8080"
-    _expansion_default_model = ""
+# URL do LOGOS — toda comunicação com IA passa pelo LOGOS (7072).
+from ecosystem_client import (
+    get_inference_url  as _ec_inference_url,
+    get_active_profile as _ec_profile,
+)
+_inference_base_url: str = _ec_inference_url()
+_p = _ec_profile()
+_expansion_default_model: str = (_p or {}).get("models", {}).get("llm_query", "") if _p else ""
 
 try:
     import bm25s as _bm25s
@@ -253,13 +247,8 @@ async def _has_entity_graph() -> bool:
 
 
 async def check_inference_available() -> bool:
-    """Tenta conectar ao servidor de inferência via LOGOS (7072) ou llama-server (8080)."""
-    global _inference_available, _inference_base_url
-    try:
-        from ecosystem_client import get_inference_url as _get_url
-        _inference_base_url = _get_url()  # atualiza LOGOS vs direto em runtime
-    except Exception:
-        pass
+    """Tenta conectar ao LOGOS (/health) e atualiza _inference_available."""
+    global _inference_available
     try:
         import httpx as _httpx
         async with _httpx.AsyncClient(timeout=3.0) as client:
@@ -270,19 +259,9 @@ async def check_inference_available() -> bool:
     return _inference_available
 
 
-async def check_inference_available() -> bool:
-    """Alias de check_inference_available() para compatibilidade com código legado."""
-    return await check_inference_available()
-
-
 def get_inference_status() -> bool:
     """Retorna o último estado conhecido do servidor de inferência (sem nova requisição)."""
     return _inference_available
-
-
-def get_ollama_status() -> bool:
-    """Alias de get_inference_status() para compatibilidade com código legado."""
-    return get_inference_status()
 
 
 # ---------------------------------------------------------------------------

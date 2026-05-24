@@ -4,10 +4,7 @@ from __future__ import annotations
 import logging
 
 from langchain_openai import ChatOpenAI
-try:
-    from ecosystem_client import get_inference_url as _ec_url
-except ImportError:
-    _ec_url = lambda: "http://localhost:8080"
+from ecosystem_client import get_inference_url as _ec_url
 from PySide6.QtCore import QThread, Signal
 
 from core.config import AppConfig
@@ -62,20 +59,23 @@ def _trim_partial_think(text: str, tag: str) -> int:
     return len(text)
 
 
-class OllamaCheckWorker(QThread):
+class InferenceCheckWorker(QThread):
     """Verifica disponibilidade do backend de inferência e lista modelos instalados."""
 
-    models_loaded = Signal(list)      # list[OllamaModel]
-    ollama_unavailable = Signal(str)  # mensagem de erro
+    models_loaded = Signal(list)           # list[InferenceModel]
+    inference_unavailable = Signal(str)    # mensagem de erro
 
     def run(self) -> None:
         try:
             models = list_models()
             self.models_loaded.emit(models)
         except OllamaUnavailableError as exc:
-            self.ollama_unavailable.emit(str(exc))
+            self.inference_unavailable.emit(str(exc))
         except Exception as exc:
-            self.ollama_unavailable.emit(f"Erro inesperado ao contatar backend de inferência: {exc}")
+            self.inference_unavailable.emit(f"Erro inesperado ao contatar backend de inferência: {exc}")
+
+
+OllamaCheckWorker = InferenceCheckWorker  # alias backward-compat
 
 
 class IndexWorker(QThread):

@@ -68,12 +68,9 @@ if TYPE_CHECKING:
 
 
 def _make_llm(model: str, temperature: float = 0.0, timeout: int = 30) -> ChatOpenAI:
-    """Cria ChatOpenAI apontando para o backend de inferência ativo (LOGOS ou llama-server)."""
-    try:
-        from ecosystem_client import get_inference_url as _giu
-        base_url = f"{_giu()}/v1"
-    except Exception:
-        base_url = "http://localhost:8080/v1"
+    """Cria ChatOpenAI apontando para o LOGOS."""
+    from ecosystem_client import get_inference_url as _giu
+    base_url = f"{_giu()}/v1"
     return ChatOpenAI(model=model, temperature=temperature, timeout=timeout,
                       base_url=base_url, api_key="logos")
 

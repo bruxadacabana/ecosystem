@@ -111,11 +111,8 @@ async def build_raptor_index(
         log.warning("raptor: umap-learn ou scikit-learn não instalado")
         return 0
 
-    try:
-        from ecosystem_client import get_inference_url as _giu
-        _inference_url = _giu()
-    except Exception:
-        _inference_url = "http://localhost:8080"
+    from ecosystem_client import get_inference_url as _giu
+    _inference_url = _giu()
 
     # ── Extrai chunks PDF do ChromaDB ─────────────────────────────────────────
     if progress_cb:

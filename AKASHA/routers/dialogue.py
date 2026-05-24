@@ -30,11 +30,8 @@ router = APIRouter(prefix="/dialogue", tags=["dialogue"])
 # ---------------------------------------------------------------------------
 
 def _get_base() -> str:
-    try:
-        from ecosystem_client import get_inference_url as _u
-        return _u()
-    except Exception:
-        return "http://localhost:8080"
+    from ecosystem_client import get_inference_url as _u
+    return _u()
 
 
 def _get_headers() -> "dict[str, str]":

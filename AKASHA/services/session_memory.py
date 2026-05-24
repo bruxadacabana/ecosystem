@@ -122,11 +122,8 @@ def gc_sessions() -> int:
 # ---------------------------------------------------------------------------
 
 def _get_inference_base() -> str:
-    try:
-        from ecosystem_client import get_inference_url as _u  # type: ignore
-        return _u()
-    except Exception:
-        return "http://localhost:8080"
+    from ecosystem_client import get_inference_url as _u  # type: ignore
+    return _u()
 
 
 def _get_reflect_model() -> str:

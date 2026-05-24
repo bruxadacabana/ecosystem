@@ -40,7 +40,7 @@ from routers import graph as graph_router
 from routers import interests as interests_router
 from routers import context as context_router
 from routers import suggestions as suggestions_router
-from services.local_search import index_local_files, init_vec_index, init_spell_checker, check_ollama_available
+from services.local_search import index_local_files, init_vec_index, init_spell_checker, check_inference_available
 from services.crawler import crawl_pending_sites
 from services.knowledge_worker import process_queue as _knowledge_process_queue, backfill_knowledge as _backfill_knowledge
 from services.persona import load_persona as _load_persona, persona_rebuild_loop as _persona_loop
@@ -160,7 +160,7 @@ async def _monitor_crawler() -> None:
             _log.warning("monitor: erro ao crawlar sites pendentes: %s", exc)
         # Limpeza de search_cache delegada ao _cache_cleanup_job (a cada 6h)
         try:
-            await check_ollama_available()
+            await check_inference_available()
         except Exception:
             pass
 
@@ -220,7 +220,7 @@ async def lifespan(app: FastAPI):
     await index_local_files()
     await init_vec_index()
     init_spell_checker()
-    await check_ollama_available()
+    await check_inference_available()
     asyncio.get_running_loop().create_task(_status_writer())
     asyncio.get_running_loop().create_task(_monitor_crawler())
     asyncio.get_running_loop().create_task(_startup_crawl())

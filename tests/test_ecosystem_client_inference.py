@@ -1,6 +1,6 @@
 """
 Testes para as funções de gestão de inferência em ecosystem_client.py:
-  - get_inference_url(): LOGOS (7072) se disponível; llama-server direto (8080) como fallback
+  - get_inference_url(): retorna SEMPRE o LOGOS (7072) — sem fallback para llama-server direto
   - load_model(): chama /logos/models/load e interpreta resposta
   - unload_model(): chama /logos/models/unload e interpreta resposta
 
@@ -19,28 +19,24 @@ import ecosystem_client as ec
 
 # ─── get_inference_url ────────────────────────────────────────────────────────
 
-def test_get_inference_url_logos_available():
-    """Com LOGOS disponível retorna URL do LOGOS (7072)."""
-    with patch.object(ec, "_logos_get", return_value={"status": "ok"}):
+def test_get_inference_url_returns_logos():
+    """get_inference_url() retorna sempre a URL do LOGOS (7072), sem exceção."""
+    url = ec.get_inference_url()
+    assert "7072" in url
+    assert "11434" not in url
+    assert "8080" not in url
+
+
+def test_get_inference_url_does_not_fallback_when_logos_offline():
+    """Mesmo com LOGOS offline, retorna LOGOS — sem fallback para llama-server direto."""
+    with patch.object(ec, "_logos_get", return_value=None):
         url = ec.get_inference_url()
     assert "7072" in url
 
 
-def test_get_inference_url_logos_offline():
-    """Com LOGOS offline retorna llama-server direto (8080)."""
-    with patch.object(ec, "_logos_get", return_value=None):
-        url = ec.get_inference_url()
-    assert "8080" in url
-    assert "11434" not in url
-
-
 def test_get_inference_url_same_as_get_ollama_url():
-    """get_inference_url() e get_ollama_url() retornam o mesmo valor."""
-    with patch.object(ec, "_logos_get", return_value={"status": "ok"}):
-        assert ec.get_inference_url() == ec.get_ollama_url()
-
-    with patch.object(ec, "_logos_get", return_value=None):
-        assert ec.get_inference_url() == ec.get_ollama_url()
+    """get_inference_url() e get_ollama_url() retornam o mesmo valor (alias)."""
+    assert ec.get_inference_url() == ec.get_ollama_url()
 
 
 # ─── load_model ───────────────────────────────────────────────────────────────

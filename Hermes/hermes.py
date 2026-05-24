@@ -1268,7 +1268,7 @@ class HermesApp(QMainWindow):
             recipes_dir=self.recipes_dir_edit.text(),
             model_size=self.model_combo.currentText(),
             language=LANG_CODES[self.lang_combo.currentIndex()],
-            ollama_model="qwen2.5:7b",
+            llm_model="qwen2.5:7b",
         )
 
     def _on_mnemo_dir_changed(self, text: str):

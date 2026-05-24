@@ -38,7 +38,7 @@ _DEFAULTS: dict[str, Any] = {
     "hub":       {"data_path": ""},
     "hermes":    {"output_dir": "", "config_path": ""},
     "akasha":    {"archive_path": "", "data_path": "", "base_url": "", "config_path": ""},
-    "logos":     {"llama_server_url": "http://localhost:8080"},
+    "logos":     {},
 }
 
 
@@ -126,26 +126,18 @@ def derive_paths(sync_root: str) -> dict[str, Any]:
 
 _LOGOS_PORT = 7072
 _LOGOS_BASE = f"http://127.0.0.1:{_LOGOS_PORT}"
-_LLAMA_SERVER_DIRECT = "http://localhost:8080"
 
 
 def get_inference_url() -> str:
-    """URL do backend de inferência: LOGOS (7072) se disponível, llama-server direto como fallback.
+    """URL do backend de inferência: sempre o LOGOS (7072).
 
-    Primary: LOGOS em 7072.
-    Fallback: llama_server_url do ecosystem.json → default http://localhost:8080.
-    Nunca aponta para Ollama.
+    Toda comunicação com LLMs passa pelo LOGOS. Se o LOGOS não estiver disponível
+    (HUB fechado), os callers recebem esta URL e a chamada falha — sem fallback.
     """
-    status = _logos_get("/logos/status", timeout=1.5)
-    if status is not None:
-        return _LOGOS_BASE
-    eco = read_ecosystem()
-    return eco.get("logos", {}).get("llama_server_url") or _LLAMA_SERVER_DIRECT
+    return _LOGOS_BASE
 
 
-def get_ollama_url() -> str:
-    """Alias de get_inference_url() — mantido para compatibilidade com código legado."""
-    return get_inference_url()
+get_ollama_url = get_inference_url   # alias backward-compat
 
 
 def load_model(model_name: str) -> bool:
@@ -170,7 +162,7 @@ def unload_model(model_name: str) -> bool:
     return bool(result and result.get("ok"))
 
 
-def get_ollama_headers(app_name: str, priority: int) -> "dict[str, str]":
+def get_inference_headers(app_name: str, priority: int) -> "dict[str, str]":
     """Headers HTTP para enviar ao LOGOS com app e prioridade explícitos.
 
     Prioridades:
@@ -179,6 +171,9 @@ def get_ollama_headers(app_name: str, priority: int) -> "dict[str, str]":
       3 — background autônomo (indexação, reflexões, transcrições)
     """
     return {"X-App": app_name, "X-Priority": str(priority)}
+
+
+get_ollama_headers = get_inference_headers  # alias backward-compat
 
 
 def _logos_get(path: str, timeout: float = 3.0) -> "dict[str, Any] | None":
@@ -207,9 +202,7 @@ def _logos_post(path: str, data: "dict[str, Any]", timeout: float = 10.0) -> "di
         return None
 
 
-def get_ollama_base() -> str:
-    """Alias de get_inference_url() — mantido para compatibilidade com código legado."""
-    return get_inference_url()
+get_ollama_base = get_inference_url  # alias backward-compat
 
 
 def list_inference_models() -> list[str]:
@@ -283,16 +276,15 @@ def request_llm(
     priority: int = 3,
     **options: Any,
 ) -> "dict[str, Any]":
-    """Envia chamada LLM ao backend de inferência (LOGOS → llama-server).
+    """Envia chamada LLM ao LOGOS (→ llama-server).
 
-    Tenta via get_inference_url() (LOGOS se disponível, llama-server direto como fallback).
-    Se falhar, tenta _LLAMA_SERVER_DIRECT como segunda tentativa.
     Retorna resposta OpenAI-compatível completa (choices[0].message.content).
+    Se o LOGOS estiver offline (HUB fechado), levanta RuntimeError imediatamente.
 
     priority: 1=P1 interativo, 2=P2 RAG, 3=P3 background (padrão)
 
     Raises:
-        RuntimeError: se backend rejeitar (429) ou estiver indisponível.
+        RuntimeError: se LOGOS rejeitar (429) ou estiver indisponível.
     """
     import urllib.request as _r
     import urllib.error as _ue
@@ -343,10 +335,7 @@ def request_llm(
     result = _try(get_inference_url())
     if result is not None:
         return result
-    result = _try(_LLAMA_SERVER_DIRECT)
-    if result is not None:
-        return result
-    raise RuntimeError("Backend de inferência indisponível (LOGOS e llama-server direto)")
+    raise RuntimeError("Backend de inferência indisponível — abra o HUB e ligue a IA")
 
 
 def request_llm_stream(
@@ -357,13 +346,13 @@ def request_llm_stream(
     priority: int = 1,
     **options: Any,
 ) -> "Generator[str, None, None]":
-    """Streaming LLM via backend de inferência (P1 por padrão).
+    """Streaming LLM via LOGOS (P1 por padrão).
 
     Yields tokens de texto (SSE OpenAI-compatível, choices[0].delta.content).
-    Fallback: tenta get_inference_url() depois _LLAMA_SERVER_DIRECT.
+    Se o LOGOS estiver offline, levanta RuntimeError imediatamente.
 
     Raises:
-        RuntimeError: se backend rejeitar (429) ou estiver indisponível.
+        RuntimeError: se LOGOS rejeitar (429) ou estiver indisponível.
     """
     import urllib.request as _r
     import urllib.error as _ue
@@ -395,25 +384,20 @@ def request_llm_stream(
         "X-Priority": str(max(1, min(3, priority))),
     }
 
-    resp = None
-    for base_url in (get_inference_url(), _LLAMA_SERVER_DIRECT):
-        req = _r.Request(
-            f"{base_url}/v1/chat/completions",
-            data=json.dumps(payload).encode(),
-            headers=req_headers,
-            method="POST",
-        )
-        try:
-            resp = _r.urlopen(req, timeout=300)
-            break
-        except _ue.HTTPError as e:
-            if e.code == 429:
-                raise RuntimeError(json.loads(e.read()).get("error", "backend: solicitação rejeitada (429)"))
-        except OSError:
-            continue
-
-    if resp is None:
-        raise RuntimeError("Backend de inferência indisponível para streaming")
+    req = _r.Request(
+        f"{get_inference_url()}/v1/chat/completions",
+        data=json.dumps(payload).encode(),
+        headers=req_headers,
+        method="POST",
+    )
+    try:
+        resp = _r.urlopen(req, timeout=300)
+    except _ue.HTTPError as e:
+        if e.code == 429:
+            raise RuntimeError(json.loads(e.read()).get("error", "backend: solicitação rejeitada (429)"))
+        raise RuntimeError(f"LOGOS retornou {e.code} — backend indisponível")
+    except OSError as e:
+        raise RuntimeError(f"Backend de inferência indisponível — abra o HUB e ligue a IA: {e}")
 
     buf = b""
     try:

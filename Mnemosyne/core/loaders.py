@@ -391,11 +391,8 @@ def _load_image(file_path: str, ocr_model: str = "") -> list[Document]:
     if (not text.strip() or ocr_model) and ocr_model:
         try:
             import httpx
-            try:
-                from ecosystem_client import get_inference_url as _giu
-                _vision_base = _giu()
-            except Exception:
-                _vision_base = "http://localhost:8080"
+            from ecosystem_client import get_inference_url as _giu
+            _vision_base = _giu()
 
             with open(file_path, "rb") as fh:
                 img_b64 = base64.b64encode(fh.read()).decode()

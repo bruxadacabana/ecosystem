@@ -105,11 +105,8 @@ _INSIGHT_SCORE_MIN: float       = 0.6 # score mínimo no topic_interest_profile
 
 def _get_inference_base() -> str:
     """Retorna URL do servidor de inferência em runtime (LOGOS 7072 → llama-server 8080)."""
-    try:
-        from ecosystem_client import get_inference_url as _get_url  # type: ignore
-        return _get_url()
-    except Exception:
-        return "http://localhost:8080"
+    from ecosystem_client import get_inference_url as _get_url  # type: ignore
+    return _get_url()
 
 
 def _get_llm_query_model() -> str:
@@ -359,12 +356,12 @@ async def process_queue() -> None:
         try:
             task = await _queue.get()
             # Verifica se Ollama está disponível antes de tentar
-            from services.local_search import get_ollama_status, check_ollama_available
-            if not get_ollama_status():
+            from services.local_search import get_inference_status, check_inference_available
+            if not get_inference_status():
                 # Re-verifica em tempo real antes de desistir
-                await check_ollama_available()
-                if not get_ollama_status():
-                    # Recoloca na fila e aguarda — Ollama pode ficar disponível depois
+                await check_inference_available()
+                if not get_inference_status():
+                    # Recoloca na fila e aguarda — backend pode ficar disponível depois
                     try:
                         _queue.put_nowait(task)
                     except asyncio.QueueFull:

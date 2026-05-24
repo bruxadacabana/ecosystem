@@ -6,7 +6,7 @@
 use std::time::Duration;
 use tauri::Emitter;
 use serde::{Deserialize, Serialize};
-use crate::logos::{LogosState, ModelAssignment, OllamaModelEntry, OllamaModelInfo, OllamaStatus, PullProgress, RecommendedModel, StatusResponse};
+use crate::logos::{LogosState, ModelAssignment, ModelEntry, ModelInfo, InferenceStatus, PullProgress, RecommendedModel, StatusResponse};
 use crate::ecosystem;
 
 #[derive(Serialize, Clone)]
@@ -53,11 +53,11 @@ pub async fn logos_set_profile(
     Ok(crate::logos::do_set_profile(&state, profile).await)
 }
 
-/// Lista os modelos atualmente carregados na VRAM pelo Ollama.
+/// Lista os modelos atualmente carregados na VRAM.
 #[tauri::command]
 pub async fn logos_list_models(
     state: tauri::State<'_, LogosState>,
-) -> Result<Vec<OllamaModelInfo>, String> {
+) -> Result<Vec<ModelInfo>, String> {
     Ok(crate::logos::do_list_models(&state).await)
 }
 
@@ -71,11 +71,10 @@ pub async fn logos_unload_model(
 }
 
 /// Lista todos os modelos instalados com status de carregamento (active/available).
-/// Combina /api/ps (VRAM) e /api/tags (disco).
 #[tauri::command]
 pub async fn logos_list_all_models(
     state: tauri::State<'_, LogosState>,
-) -> Result<Vec<OllamaModelEntry>, String> {
+) -> Result<Vec<ModelEntry>, String> {
     Ok(crate::logos::do_list_all_models(&state).await)
 }
 
@@ -336,7 +335,7 @@ pub async fn logos_start_inference(
     _state: tauri::State<'_, LogosState>,
 ) -> Result<(), String> {
     let running = inference_check("http://127.0.0.1:7072/health").await;
-    let _ = app.emit("logos-inference-status", OllamaStatus {
+    let _ = app.emit("logos-inference-status", InferenceStatus {
         running,
         message: if running {
             "LOGOS ativo.".into()
@@ -378,7 +377,7 @@ async fn wait_inference_down(app: &tauri::AppHandle) {
             break;
         }
     }
-    let _ = app.emit("logos-inference-status", OllamaStatus {
+    let _ = app.emit("logos-inference-status", InferenceStatus {
         running: false,
         message: "Backend de inferência encerrado.".into(),
     });

@@ -4,7 +4,7 @@ Extrator de receitas de vídeo — pipeline yt-dlp → legendas/Whisper → LLM 
 Fluxo de extração:
   1. yt-dlp: metadata + download de legendas (pt/en/*)
   2. Se nenhuma legenda disponível: download de áudio + WhisperModel
-  3. LLM (Ollama): extração estruturada JSON com ingredientes, passos e dicas
+  3. LLM: extração estruturada JSON com ingredientes, passos e dicas
   4. Retorna RecipeResult com todos os metadados e o conteúdo estruturado
 """
 from __future__ import annotations
@@ -178,7 +178,7 @@ def _transcribe_audio(audio_path: str, model_size: str, language: str) -> str:
         raise RecipeTranscribeError(f"Falha na transcrição Whisper: {exc}") from exc
 
 
-def _call_llm(transcript: str, ollama_model: str) -> dict:
+def _call_llm(transcript: str, llm_model: str) -> dict:
     """Chama llama-server com o prompt de extração e retorna dict parsed."""
     try:
         from langchain_openai import ChatOpenAI
@@ -188,12 +188,9 @@ def _call_llm(transcript: str, ollama_model: str) -> dict:
         ) from exc
 
     try:
-        try:
-            from ecosystem_client import get_inference_url as _giu
-            base_url = f"{_giu()}/v1"
-        except Exception:
-            base_url = "http://localhost:8080/v1"
-        llm = ChatOpenAI(model=ollama_model, temperature=0.2, timeout=120,
+        from ecosystem_client import get_inference_url as _giu
+        base_url = f"{_giu()}/v1"
+        llm = ChatOpenAI(model=llm_model, temperature=0.2, timeout=120,
                          base_url=base_url, api_key="logos")
         raw = llm.invoke(_LLM_PROMPT.format(transcript=transcript[:6000])).content
     except Exception as exc:
@@ -210,7 +207,7 @@ def extract_recipe(
     *,
     model_size: str = "small",
     language: str = "auto",
-    ollama_model: str = "qwen2.5:7b",
+    llm_model: str = "qwen2.5:7b",
     recipes_dir: str = "",
 ) -> RecipeResult:
     """Extrai receita de uma URL de vídeo.
@@ -300,7 +297,7 @@ def extract_recipe(
 
     # ── Passo 3: LLM JSON extraction ─────────────────────────────────────────
     try:
-        data = _call_llm(transcript, ollama_model)
+        data = _call_llm(transcript, llm_model)
     except RecipeLLMError as exc:
         result.error = str(exc)
         return result
@@ -434,7 +431,7 @@ class RecipePlaylistExtractor:
         *,
         model_size: str = "small",
         language: str = "auto",
-        ollama_model: str = "qwen2.5:7b",
+        llm_model: str = "qwen2.5:7b",
         recipes_dir: str = "",
         progress_cb=None,   # callable(current: int, total: int, title: str)
     ) -> Iterator[RecipeResult]:
@@ -450,7 +447,7 @@ class RecipePlaylistExtractor:
                 url,
                 model_size=model_size,
                 language=language,
-                ollama_model=ollama_model,
+                llm_model=llm_model,
                 recipes_dir=recipes_dir,
             )
             if progress_cb is not None:

@@ -18,11 +18,8 @@ _REBUILD_INTERVAL_S: int   = 86400   # 1 vez por dia
 _PERSONA_TIMEOUT_S:  float = 20.0
 
 def _get_inference_base() -> str:
-    try:
-        from ecosystem_client import get_inference_url as _get_url
-        return _get_url()
-    except Exception:
-        return "http://localhost:8080"
+    from ecosystem_client import get_inference_url as _get_url
+    return _get_url()
 
 
 def _get_model() -> str:
