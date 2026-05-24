@@ -25,7 +25,29 @@ from logos.gguf_converter import (
     _model_version_name,
     _find_binary,
     _MODEL_PREFIX,
+    ConverterResult,
 )
+
+
+# ---------------------------------------------------------------------------
+# ConverterResult — campo model_registry_name (renomeado de ollama_model_name)
+# ---------------------------------------------------------------------------
+
+def test_converter_result_has_model_registry_name():
+    r = ConverterResult(model_registry_name="mnemosyne-ft-v1")
+    assert r.model_registry_name == "mnemosyne-ft-v1"
+
+
+def test_converter_result_str_uses_model_registry_name():
+    r = ConverterResult(model_registry_name="mnemosyne-ft-v2", gguf_path="/tmp/m.gguf", elapsed_seconds=5.0)
+    s = str(r)
+    assert "mnemosyne-ft-v2" in s
+    assert "ollama" not in s.lower()
+
+
+def test_converter_result_no_ollama_model_name_field():
+    r = ConverterResult()
+    assert not hasattr(r, "ollama_model_name"), "campo legado ollama_model_name não deve existir"
 
 
 # ---------------------------------------------------------------------------

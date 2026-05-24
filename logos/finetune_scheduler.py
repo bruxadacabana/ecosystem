@@ -57,7 +57,7 @@ class FinetuneState:
     # Timestamp ISO-8601 UTC do último ciclo concluído
     last_cycle_at: str = ""
 
-    # Modelo atual registrado no Ollama
+    # Modelo atual registrado no LOGOS registry
     current_model: str = ""
 
     # Modelo anterior (fallback)
@@ -277,12 +277,12 @@ def _run_cycle(sync_root: str) -> None:
             current_step="",
             running=False,
             last_cycle_at=datetime.now(timezone.utc).isoformat(),
-            current_model=conv_result.ollama_model_name,
+            current_model=conv_result.model_registry_name,
             prev_model=conv_result.prev_model_name,
             corpus_chunks_at_last_train=current_chunks,
             last_train_loss=loss,
         )
-        log.info("Ciclo de fine-tuning concluído: %s", conv_result.ollama_model_name)
+        log.info("Ciclo de fine-tuning concluído: %s", conv_result.model_registry_name)
 
     except Exception as exc:
         log.error("Ciclo de fine-tuning falhou na etapa '%s': %s", read_state(sync_root).current_step, exc)

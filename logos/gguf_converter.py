@@ -19,7 +19,7 @@ Uso::
 
     cfg = ConverterConfig(checkpoint_dir="/path/to/smollm2-qlora-20260523-120000")
     result = convert_and_register(cfg)
-    print(result.ollama_model_name)  # "mnemosyne-ft-v2"
+    print(result.model_registry_name)  # "mnemosyne-ft-v2"
 """
 from __future__ import annotations
 
@@ -312,7 +312,7 @@ def _update_ecosystem_json(new_model: str, prev_model: str) -> None:
 
 @dataclass
 class ConverterResult:
-    ollama_model_name: str = ""   # mantido por compatibilidade — nome do modelo no registry
+    model_registry_name: str = ""  # nome do modelo no LOGOS registry
     prev_model_name: str = ""
     gguf_path: str = ""
     elapsed_seconds: float = 0.0
@@ -320,7 +320,7 @@ class ConverterResult:
     def __str__(self) -> str:
         return (
             f"ConverterResult("
-            f"model={self.ollama_model_name!r}, "
+            f"model={self.model_registry_name!r}, "
             f"prev={self.prev_model_name!r}, "
             f"gguf={self.gguf_path!r}, "
             f"elapsed={self.elapsed_seconds:.1f}s)"
@@ -357,7 +357,7 @@ def convert_and_register(cfg: "ConverterConfig | None" = None) -> ConverterResul
 
     version = _next_version(cfg.output_dir)
     model_name = _model_version_name(version)
-    result.ollama_model_name = model_name
+    result.model_registry_name = model_name
 
     # Nome do modelo anterior (para fallback no ecosystem.json)
     prev_name = _model_version_name(version - 1) if version > 1 else ""

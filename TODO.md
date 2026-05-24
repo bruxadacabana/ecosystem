@@ -7047,7 +7047,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **`Mnemosyne/gui/main_window.py`** — _ollama_ok→_inference_ok; _start_ollama_check→_start_inference_check; _retry_ollama_check→_retry_inference_check. **Concluído 2026-05-24.**
 - [x] **`Hermes/services/recipe_extractor.py` + `gui/workers.py` + `hermes.py`** — ollama_model→llm_model. **Concluído 2026-05-24.**
 - [x] **`HUB/src/types/index.ts`** — OllamaModelInfo→ModelInfo, OllamaModelEntry→ModelEntry, ollama_url→llama_server_url; tauri.ts e LogosView.tsx atualizados; Rust structs renomeados. **Concluído 2026-05-24.**
-- [ ] **`logos/gguf_converter.py`** — renomear campo `ollama_model_name` → `model_registry_name`; atualizar `finetune_scheduler.py`.
+- [x] **`logos/gguf_converter.py`** — renomear campo `ollama_model_name` → `model_registry_name`; atualizar `finetune_scheduler.py`. **Concluído 2026-05-24.**
 
 #### Auditoria: toda comunicação com IA deve passar pelo LOGOS | 2026-05-24
 > Contexto: regra arquitetural — o LOGOS é o único ponto de entrada para qualquer chamada de LLM ou embedding no ecossistema. Se o LOGOS não estiver disponível (HUB fechado), a IA simplesmente não está disponível — sem fallback para llama-server direto, sem bypass. Auditoria realizada em 2026-05-24 encontrou 3 camadas de bypass que violam essa regra.
