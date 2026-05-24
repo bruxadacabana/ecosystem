@@ -2053,15 +2053,13 @@ pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
     let overrides = s.0.model_overrides.lock().await.clone();
 
     // Mapa de tamanho em disco por modelo instalado (lido do registry.json do LOGOS)
-    let size_map: HashMap<String, u64> = {
-        let registry = read_model_registry(&s.0.models_dir).await;
-        registry.into_iter().flat_map(|e| {
-            let size_mb = e.size_bytes / 1_000_000;
-            // Indexa por nome do registro e pelo filename sem extensão
-            let alt_name = e.filename.trim_end_matches(".gguf").to_string();
-            vec![(e.name, size_mb), (alt_name, size_mb)]
-        }).collect()
-    };
+    let registry_entries_assign = read_model_registry(&s.0.models_dir).await;
+    let size_map: HashMap<String, u64> = registry_entries_assign.iter().flat_map(|e| {
+        let size_mb = e.size_bytes / 1_000_000;
+        // Indexa por nome do registro e pelo filename sem extensão
+        let alt_name = e.filename.trim_end_matches(".gguf").to_string();
+        vec![(e.name.clone(), size_mb), (alt_name, size_mb)]
+    }).collect();
 
     // Definição de todos os slots de modelo configuráveis
     let slots: &[(&str, &str, &str, &str)] = &[
@@ -2079,7 +2077,11 @@ pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
         let is_custom = overrides.contains_key(&key);
         // Heurística: VRAM ≈ 65% do tamanho em disco (típico para Q4)
         let name_latest    = format!("{}:latest", current);
-        let is_installed   = size_map.contains_key(current) || size_map.contains_key(&name_latest);
+        let is_installed   = size_map.contains_key(current)
+            || size_map.contains_key(&name_latest)
+            || crate::commands::logos::model_hf_table(current)
+                .map(|(_, hf_fn)| registry_entries_assign.iter().any(|e| e.filename == hf_fn))
+                .unwrap_or(false);
         let vram_required_mb = size_map.get(current)
             .or_else(|| size_map.get(&name_latest))
             .map(|&s| s * 65 / 100)

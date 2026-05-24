@@ -35,7 +35,6 @@ export function LogosView() {
   const [toggleError,  setToggleError]  = useState<string | null>(null)
   const [assignments,       setAssignments]       = useState<ModelAssignment[]>([])
   const [editingSlot,       setEditingSlot]       = useState<string | null>(null)
-  const [recommended,       setRecommended]       = useState<RecommendedModel[]>([])
   const [pullProgress,      setPullProgress]      = useState<Map<string, PullProgress>>(new Map())
   const [pulling,           setPulling]           = useState<Set<string>>(new Set())
   const [vramLimit,         setVramLimit]         = useState<number>(85)
@@ -46,7 +45,6 @@ export function LogosView() {
   const [cancelledPulls, setCancelledPulls] = useState<Set<string>>(new Set())
   const [deleting,       setDeleting]       = useState<string | null>(null)
   const [pullErrors,     setPullErrors]     = useState<Map<string, string>>(new Map())
-  const [recCollapsed,   setRecCollapsed]   = useState(false)
   const [assignCollapsed, setAssignCollapsed] = useState(false)
 
   const fetchStatus = useCallback(() => {
@@ -65,7 +63,6 @@ export function LogosView() {
     cmd.logosListModels().then(r => { if (r.ok) setModels(r.data) })
     cmd.logosListAllModels().then(r => { if (r.ok) setAllModels(r.data) })
     cmd.logosGetModelAssignments().then(r => { if (r.ok) setAssignments(r.data) })
-    cmd.logosGetRecommendedModels().then(r => { if (r.ok) setRecommended(r.data) })
   }, [])
 
   useEffect(() => {
@@ -599,7 +596,25 @@ export function LogosView() {
       {/* ── Modelos por app ──────────────────────────── */}
       {assignments.length > 0 && (
         <section>
-          <SectionToggle label="Modelos por app" collapsed={assignCollapsed} onToggle={() => setAssignCollapsed(c => !c)} />
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: assignCollapsed ? 0 : 12, cursor: 'pointer', userSelect: 'none' }}
+            onClick={() => setAssignCollapsed(c => !c)}
+          >
+            <CollapseChevron collapsed={assignCollapsed} />
+            <h3 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-ghost)', margin: 0 }}>
+              Modelos por app
+            </h3>
+            {hwDisplay && (
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 8px', border: '1px solid var(--accent)40', borderRadius: 10, color: 'var(--accent)' }}>
+                {hwDisplay}
+              </span>
+            )}
+            {maxConcurrent === 2 && (
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 8px', border: '1px solid var(--accent-green)40', borderRadius: 10, color: 'var(--accent-green)' }}>
+                até 2 leves simultâneos
+              </span>
+            )}
+          </div>
           {!assignCollapsed && <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {assignments.map(a => {
               const slotKey = `${a.app}_${a.model_type}`
@@ -747,217 +762,6 @@ export function LogosView() {
                   {pullErrors.has(a.current_model) && (
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ribbon)' }}>
                       {pullErrors.get(a.current_model)}
-                    </span>
-                  )}
-                </div>
-              )
-            })}
-          </div>}
-        </section>
-      )}
-
-      {/* ── Modelos recomendados para instalação ─────── */}
-      {recommended.length > 0 && (
-        <section>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: recCollapsed ? 0 : 12, cursor: 'pointer', userSelect: 'none' }} onClick={() => setRecCollapsed(c => !c)}>
-            <CollapseChevron collapsed={recCollapsed} />
-            <h3 style={{
-              fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.12em',
-              textTransform: 'uppercase', color: 'var(--ink-ghost)', margin: 0,
-            }}>
-              Modelos recomendados
-            </h3>
-            {!recCollapsed && hwDisplay && (
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 8px',
-                border: '1px solid var(--accent)40', borderRadius: 10, color: 'var(--accent)',
-              }}>
-                {hwDisplay}
-              </span>
-            )}
-            {!recCollapsed && maxConcurrent === 2 && (
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 8px',
-                border: '1px solid var(--accent-green)40', borderRadius: 10,
-                color: 'var(--accent-green)',
-              }}>
-                até 2 leves simultâneos
-              </span>
-            )}
-          </div>
-          {!recCollapsed && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {recommended.map(m => {
-              const prog        = pullProgress.get(m.model_name)
-              const isPulling   = pulling.has(m.model_name)
-              const pct         = prog && prog.total ? Math.round((prog.completed ?? 0) / prog.total * 100) : null
-              const dimmed      = !m.for_current_profile
-              return (
-                <div
-                  key={m.model_name}
-                  style={{
-                    display: 'flex', flexDirection: 'column', gap: 4,
-                    padding: '8px 12px',
-                    border: `1px solid ${m.for_current_profile ? 'var(--rule)' : 'var(--rule)30'}`,
-                    borderRadius: 'var(--radius)',
-                    opacity: dimmed ? 0.5 : 1,
-                    transition: 'opacity 200ms ease',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {/* Indicador de instalação */}
-                    <span
-                      title={m.is_static ? 'Modelo estático — baixado automaticamente' : m.is_installed ? 'Instalado' : 'Não instalado'}
-                      style={{
-                        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                        background: m.is_static ? 'var(--accent)' : m.is_installed ? 'var(--accent-green)' : 'var(--ink-faint)',
-                      }}
-                    />
-                    {/* Nome do modelo */}
-                    <span style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 11,
-                      color: m.for_current_profile ? 'var(--ink)' : 'var(--ink-ghost)',
-                    }}>
-                      {m.model_name}
-                    </span>
-                    {/* Slots */}
-                    {m.slots.map(sl => (
-                      <span key={`${sl.app}_${sl.model_type}`} title={sl.label} style={{
-                        fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 6px',
-                        border: '1px solid var(--rule)', borderRadius: 10,
-                        color: 'var(--ink-ghost)',
-                      }}>
-                        {sl.slot_label}
-                      </span>
-                    ))}
-                    {/* Afinidade linguística */}
-                    {(() => {
-                      const langs = [...new Set(m.slots.flatMap(sl => sl.language_affinity ?? []))]
-                      if (!langs.length) return null
-                      return (
-                        <span title="Idiomas com melhor desempenho documentado" style={{
-                          fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 6px',
-                          border: '1px solid var(--rule)', borderRadius: 10, color: 'var(--ink-ghost)',
-                        }}>
-                          {langs.join('·')}
-                        </span>
-                      )
-                    })()}
-                    {/* Badge estático */}
-                    {m.is_static && (
-                      <span style={{
-                        fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 6px',
-                        border: '1px solid var(--accent)40', borderRadius: 10, color: 'var(--accent)',
-                      }}>
-                        estático
-                      </span>
-                    )}
-                    {/* Perfis para outros profiles */}
-                    {!m.for_current_profile && m.for_profiles.map(p => (
-                      <span key={p} style={{
-                        fontFamily: 'var(--font-mono)', fontSize: 9, padding: '1px 6px',
-                        border: '1px solid var(--rule)', borderRadius: 10, color: 'var(--ink-ghost)',
-                      }}>
-                        {p}
-                      </span>
-                    ))}
-                    {/* Tamanho em disco */}
-                    {m.is_installed && m.size_disk_mb > 0 && (
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', marginLeft: 'auto' }}>
-                        {m.size_disk_mb >= 1000
-                          ? `${(m.size_disk_mb / 1000).toFixed(1)} GB`
-                          : `${m.size_disk_mb} MB`}
-                      </span>
-                    )}
-                    {/* Botão de download / Cancelar */}
-                    {!m.is_static && !m.is_installed && m.for_current_profile && (
-                      <>
-                        <button
-                          disabled={isPulling}
-                          onClick={() => handlePullModel(m.model_name)}
-                          style={{
-                            fontFamily: 'var(--font-mono)', fontSize: 10,
-                            padding: '2px 10px', background: 'transparent',
-                            color: isPulling ? 'var(--ink-ghost)' : 'var(--accent-green)',
-                            border: `1px solid ${isPulling ? 'var(--rule)' : 'var(--accent-green)'}`,
-                            borderRadius: 'var(--radius)', cursor: isPulling ? 'wait' : 'pointer',
-                            opacity: isPulling ? 0.6 : 1,
-                            transition: 'all 150ms ease', marginLeft: 'auto',
-                          }}
-                        >
-                          {isPulling ? 'baixando…' : 'baixar'}
-                        </button>
-                        {isPulling && !cancelledPulls.has(m.model_name) && (
-                          <button
-                            onClick={() => setCancelledPulls(s => new Set(s).add(m.model_name))}
-                            style={{
-                              fontFamily: 'var(--font-mono)', fontSize: 10,
-                              padding: '2px 8px', background: 'transparent',
-                              color: 'var(--ink-ghost)', border: '1px solid var(--rule)',
-                              borderRadius: 'var(--radius)', cursor: 'pointer',
-                            }}
-                          >
-                            Cancelar
-                          </button>
-                        )}
-                      </>
-                    )}
-                    {m.is_static && (
-                      <span style={{
-                        fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ink-ghost)',
-                        marginLeft: 'auto',
-                      }}>
-                        download automático ao usar
-                      </span>
-                    )}
-                  </div>
-                  {/* Rationale */}
-                  {m.rationale && (
-                    <span style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 9,
-                      color: 'var(--ink-ghost)', opacity: 0.7, paddingLeft: 15,
-                    }}>
-                      {m.rationale}
-                    </span>
-                  )}
-                  {/* Nota de velocidade — WorkPc only */}
-                  {m.expected_speed_note && (
-                    <span style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 9,
-                      color: 'var(--ribbon)', opacity: 0.85, paddingLeft: 15,
-                    }}>
-                      {m.expected_speed_note}
-                    </span>
-                  )}
-                  {/* Barra de progresso durante pull */}
-                  {isPulling && pct !== null && (
-                    <div style={{ height: 3, background: 'var(--rule)', borderRadius: 2, marginTop: 2 }}>
-                      <div style={{
-                        height: '100%', width: `${pct}%`,
-                        background: 'var(--accent-green)', borderRadius: 2,
-                        transition: 'width 200ms ease',
-                      }} />
-                    </div>
-                  )}
-                  {isPulling && prog && !pct && (
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent-green)', paddingLeft: 15 }}>
-                      {prog.status}
-                    </span>
-                  )}
-                  {/* Aviso de cancelamento */}
-                  {isPulling && cancelledPulls.has(m.model_name) && (
-                    <span style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 9,
-                      color: 'var(--accent)', paddingLeft: 15, lineHeight: 1.6,
-                    }}>
-                      Download em andamento no LOGOS — aguarde ou feche o HUB para interromper.
-                    </span>
-                  )}
-                  {pullErrors.has(m.model_name) && (
-                    <span style={{
-                      fontFamily: 'var(--font-mono)', fontSize: 9,
-                      color: 'var(--ribbon)', paddingLeft: 15, lineHeight: 1.6,
-                    }}>
-                      {pullErrors.get(m.model_name)}
                     </span>
                   )}
                 </div>
