@@ -72,8 +72,7 @@ pub fn run() {
             commands::reading::toggle_read,
             commands::projects::list_ogma_projects,
             commands::projects::list_project_pages,
-            commands::launcher::launch_ollama,
-            commands::launcher::stop_ollama,
+            commands::launcher::toggle_inference,
             commands::launcher::launch_app,
             commands::launcher::launch_app_with_args,
             commands::launcher::is_app_running,
@@ -91,8 +90,8 @@ pub fn run() {
             commands::logos::logos_set_model_assignment,
             commands::logos::logos_get_recommended_models,
             commands::logos::logos_pull_model,
-            commands::logos::logos_start_ollama,
-            commands::logos::logos_stop_ollama,
+            commands::logos::logos_start_inference,
+            commands::logos::logos_stop_inference,
             commands::logos::logos_set_vram_limit_pct,
             commands::logos::logos_abort_model_inference,
             commands::logos::logos_delete_model,
@@ -122,14 +121,14 @@ pub fn run() {
         ])
         .setup(|app| {
             // Inicializar LOGOS antes do logging para ter o estado pronto
-            let ollama_url = {
+            let llama_server_url = {
                 let eco = ecosystem::read_json();
-                eco["logos"]["ollama_base"]
+                eco["logos"]["llama_server_url"]
                     .as_str()
-                    .unwrap_or("http://localhost:11434")
+                    .unwrap_or("http://localhost:8081")
                     .to_string()
             };
-            let logos_state = logos::LogosState::new(ollama_url);
+            let logos_state = logos::LogosState::new(llama_server_url);
             app.manage(logos_state.clone());
             tauri::async_runtime::spawn(async move {
                 logos::start_server(logos_state).await;

@@ -49,7 +49,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use sysinfo::{ProcessesToUpdate, System};
+use sysinfo::System;
 use tokio::sync::{Mutex, Semaphore};
 
 pub const LOGOS_PORT: u16 = 7072;
@@ -62,8 +62,6 @@ const LLAMA_SERVER_READY_TIMEOUT_SECS: u64 = 90;
 const P2_TIMEOUT: Duration = Duration::from_secs(60);
 const P3_TIMEOUT: Duration = Duration::from_secs(30);
 
-// P3 recebe 429 imediatamente se VRAM acima deste limiar
-const VRAM_P3_BLOCK: f32 = 0.85;
 // P3 recebe 429 se CPU ou RAM insuficiente — protege Windows e laptop durante indexação
 const CPU_P3_BLOCK: f32 = 85.0;
 const RAM_P3_BLOCK_MB: u64 = 1_536;
@@ -293,7 +291,7 @@ pub fn detect_hardware_profile() -> HardwareProfile {
 // ── Estado interno ────────────────────────────────────────────
 
 struct Inner {
-    ollama_url: String,
+    llama_server_url: String,
     /// Semáforo com 2 permits:
     ///   modelos leves  (≤3B): adquire 1 → permite 2 simultâneos
     ///   modelos pesados (>3B): adquire 2 → exclusividade (NUM_PARALLEL efetivo = 1)
@@ -319,16 +317,11 @@ struct Inner {
     on_battery: Mutex<bool>,
     /// Contagem de requests P3 preemptados por P1 desde o startup.
     preempted_count: Mutex<u32>,
-    /// PID do processo Ollama detectado em runtime.
-    /// None se o Ollama ainda não foi encontrado ou reiniciou.
-    ollama_pid: Mutex<Option<u32>>,
     /// Substituições de modelo definidas pela usuária.
     /// Chave: "mnemosyne_llm_rag", "kosmos_llm_analysis", "akasha_llm_query", "embed_embed". Valor: nome do modelo.
     /// Vazio = usar recomendado do perfil de hardware.
     model_overrides: Mutex<HashMap<String, String>>,
-    /// Handle do processo Ollama se foi o LOGOS que o iniciou via logos_start_ollama.
-    /// None se o Ollama estava em execução antes do HUB ou foi iniciado via systemctl.
-    pub(crate) ollama_child: Mutex<Option<std::process::Child>>,
+
     /// Percentual máximo de VRAM permitido antes de bloquear P3.
     /// Padrão: 85. Persistido em ecosystem.json como logos.vram_limit_pct.
     vram_limit_pct: Mutex<f32>,
@@ -356,11 +349,6 @@ struct Inner {
 pub struct LogosState(Arc<Inner>);
 
 impl LogosState {
-    /// Guarda o handle do subprocesso Ollama iniciado pelo LOGOS.
-    pub(crate) async fn store_ollama_child(&self, child: std::process::Child) {
-        *self.0.ollama_child.lock().await = Some(child);
-    }
-
     /// Atualiza o limite de VRAM em memória (não persiste — persistência fica em logos_set_vram_limit_pct).
     pub(crate) async fn set_vram_limit_pct(&self, pct: f32) {
         *self.0.vram_limit_pct.lock().await = pct.clamp(50.0, 95.0);
@@ -388,23 +376,12 @@ impl LogosState {
         }
     }
 
-    /// Mata o processo Ollama guardado (se houver). Retorna true se havia child para matar.
-    pub(crate) async fn kill_ollama_child(&self) -> bool {
-        let mut guard = self.0.ollama_child.lock().await;
-        if let Some(child) = guard.as_mut() {
-            let _ = child.kill();
-            *guard = None;
-            return true;
-        }
-        false
-    }
-
     /// Retorna o diretório de modelos GGUF (para acesso externo ao módulo).
     pub fn models_dir(&self) -> &std::path::Path {
         &self.0.models_dir
     }
 
-    pub fn new(ollama_url: impl Into<String>) -> Self {
+    pub fn new(llama_server_url: impl Into<String>) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(300))
             .build()
@@ -447,7 +424,7 @@ impl LogosState {
         sys.refresh_cpu_all();
         sys.refresh_memory();
         Self(Arc::new(Inner {
-            ollama_url: ollama_url.into(),
+            llama_server_url: llama_server_url.into(),
             semaphore: Arc::new(Semaphore::new(2)),
             active_priority: Mutex::new(None),
             active_model_class: Mutex::new(None),
@@ -460,9 +437,7 @@ impl LogosState {
             sys: Mutex::new(sys),
             on_battery: Mutex::new(is_on_battery()),
             preempted_count: Mutex::new(0),
-            ollama_pid: Mutex::new(None),
             model_overrides: Mutex::new(HashMap::new()),
-            ollama_child: Mutex::new(None),
             vram_limit_pct: Mutex::new(vram_limit_pct),
             active_inferences: Mutex::new(HashMap::new()),
             p3_vram_blocked: Arc::new(AtomicBool::new(false)),
@@ -497,7 +472,7 @@ pub struct StatusResponse {
     pub vram_used_mb: Option<u64>,
     /// Razão vram_used / vram_total; None se total desconhecido
     pub vram_pct: Option<f32>,
-    pub ollama_url: String,
+    pub llama_server_url: String,
     /// Uso de CPU global (%) via sysinfo — delta entre dois polls consecutivos
     pub cpu_pct: f32,
     /// RAM livre em MB via sysinfo
@@ -1233,7 +1208,7 @@ async fn queue_and_forward(
         }
         // Verificação por-request como defesa secundária (cobre janela entre polls do watchdog)
         let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
-        if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url, s.0.hardware_profile).await {
+        if let Some(pct) = vram_pct(&s.0.client, s.0.hardware_profile).await {
             if pct > vram_block {
                 let pct_cfg = (vram_block * 100.0) as u32;
                 return (
@@ -1316,12 +1291,6 @@ async fn queue_and_forward(
     *s.0.active_model_class.lock().await = Some(model_class);
     *s.0.active_app.lock().await         = Some(app_name);
 
-    // Boost de prioridade do Ollama para P1 (apenas quando usando Ollama como backend)
-    if priority == 1 && s.0.llama_server_bin.is_none() {
-        if let Some(pid) = get_or_find_ollama_pid(&s).await {
-            set_ollama_priority(pid, true).await;
-        }
-    }
 
     // Encaminha ao backend de inferência (llama-server ou Ollama).
     let use_llama   = s.0.llama_server_bin.is_some();
@@ -1369,34 +1338,19 @@ async fn queue_and_forward(
         }
         r
     } else {
-        // ── Ollama: caminho original ──
-        let url          = format!("{}/{ollama_target}", s.0.ollama_url);
-        let client_clone = s.0.client.clone();
-        let payload_clone = ollama_payload.clone();
-        let task = tokio::spawn(async move {
-            let resp = client_clone.post(&url).json(&payload_clone).send().await
-                .map_err(|e| format!("Ollama indisponível: {e}"))?;
-            let status = resp.status();
-            let bytes  = resp.bytes().await
-                .map_err(|e| format!("Erro ao ler resposta: {e}"))?;
-            Ok::<_, String>((status, bytes))
-        });
-        if !model_name.is_empty() {
-            s.0.active_inferences.lock().await.insert(model_name.clone(), task.abort_handle());
-        }
-        let r = task.await;
-        if !model_name.is_empty() {
-            s.0.active_inferences.lock().await.remove(&model_name);
-        }
-        r
+        // llama-server não encontrado — IA indisponível
+        *s.0.active_priority.lock().await    = None;
+        *s.0.active_model_class.lock().await = None;
+        *s.0.active_app.lock().await         = None;
+        drop(_permit);
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "Backend de inferência indisponível — instale llama-server e reinicie o HUB"
+            })),
+        ).into_response();
     };
 
-    // Restaura prioridade de background do Ollama após P1 (apenas Ollama mode)
-    if priority == 1 && !use_llama {
-        if let Some(pid) = *s.0.ollama_pid.lock().await {
-            set_ollama_priority(pid, false).await;
-        }
-    }
 
     // Limpa estado ativo antes de liberar o semáforo
     *s.0.active_priority.lock().await    = None;
@@ -1482,7 +1436,7 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
     }
 
     let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
-    if let Some(pct) = vram_pct(&s.0.client, &s.0.ollama_url, s.0.hardware_profile).await {
+    if let Some(pct) = vram_pct(&s.0.client, s.0.hardware_profile).await {
         if pct > vram_block {
             let pct_cfg = (vram_block * 100.0) as u32;
             return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
@@ -1539,7 +1493,7 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
             } else {
                 body.to_vec()
             };
-        let url = format!("{}/{target}", s.0.ollama_url);
+        let url = format!("{}/{target}", s.0.llama_server_url);
         s.0.client
             .post(&url)
             .header(header::CONTENT_TYPE, "application/json")
@@ -1578,59 +1532,58 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
     }
 }
 
+/// GET /api/tags — retorna modelos do registry no formato Ollama (compatibilidade legada).
 async fn api_tags_passthrough(State(s): State<LogosState>) -> Response {
-    proxy_get_to_ollama(&s, "api/tags").await
+    let registry = read_model_registry(&s.0.models_dir).await;
+    let models: Vec<serde_json::Value> = registry.iter().map(|e| serde_json::json!({
+        "name":       e.name,
+        "model":      e.name,
+        "size":       e.size_bytes,
+        "digest":     e.sha256,
+        "modified_at": e.downloaded_at,
+    })).collect();
+    (StatusCode::OK, Json(serde_json::json!({ "models": models }))).into_response()
 }
 
+/// GET /api/ps — retorna o modelo atualmente carregado no formato Ollama (compatibilidade legada).
 async fn api_ps_passthrough(State(s): State<LogosState>) -> Response {
-    proxy_get_to_ollama(&s, "api/ps").await
+    let models = list_ollama_models(&s).await;
+    let arr: Vec<serde_json::Value> = models.iter().map(|m| serde_json::json!({
+        "name":      m.name,
+        "model":     m.name,
+        "size_vram": 0,
+    })).collect();
+    (StatusCode::OK, Json(serde_json::json!({ "models": arr }))).into_response()
 }
 
+/// DELETE /api/delete — remove modelo do registry e disco (compatibilidade legada).
+/// Delega para a mesma lógica de logos_delete_model.
 async fn api_delete_passthrough(State(s): State<LogosState>, body: Bytes) -> Response {
-    let url = format!("{}/api/delete", s.0.ollama_url);
-    match s.0.client
-        .delete(&url)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(body)
-        .send()
-        .await
-    {
-        Ok(resp) => {
-            let status = resp.status();
-            match resp.bytes().await {
-                Ok(bytes) => axum::http::Response::builder()
-                    .status(status)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(axum::body::Body::from(bytes))
-                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
-            }
-        }
-        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
-            "error": format!("Ollama indisponível: {e}")
-        }))).into_response(),
+    let model = serde_json::from_slice::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v["name"].as_str().map(str::to_string))
+        .unwrap_or_default();
+
+    let registry_path = s.0.models_dir.join("registry.json");
+    let text = match std::fs::read_to_string(&registry_path) {
+        Ok(t) => t,
+        Err(_) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "registry não encontrado" }))).into_response(),
+    };
+    let mut entries: Vec<ModelRegistryEntry> = match serde_json::from_str(&text) {
+        Ok(e) => e,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": "registry corrompido" }))).into_response(),
+    };
+    let idx = entries.iter().position(|e| e.name == model || e.filename == model);
+    if let Some(i) = idx {
+        let entry = entries.remove(i);
+        let _ = std::fs::remove_file(&entry.path);
+        let _ = std::fs::write(&registry_path, serde_json::to_string_pretty(&entries).unwrap_or_default());
+        (StatusCode::OK, Json(serde_json::json!({ "ok": true }))).into_response()
+    } else {
+        (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": format!("modelo '{model}' não encontrado") }))).into_response()
     }
 }
 
-async fn proxy_get_to_ollama(s: &LogosState, path: &str) -> Response {
-    let url = format!("{}/{path}", s.0.ollama_url);
-    match s.0.client.get(&url).send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            match resp.bytes().await {
-                Ok(bytes) => axum::http::Response::builder()
-                    .status(status)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(axum::body::Body::from(bytes))
-                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
-            }
-        }
-        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
-            "error": format!("Ollama indisponível: {e}")
-        }))).into_response(),
-    }
-}
 
 // ── OpenAI-compatible endpoints (/v1/*) ─────────────────────────
 
@@ -1800,7 +1753,7 @@ async fn hardware_handler(State(s): State<LogosState>) -> Json<HardwareResponse>
 
 async fn vram_handler(State(s): State<LogosState>) -> Json<VramResponse> {
     let hw = s.0.hardware_profile;
-    let (used_mb, pct) = vram_usage(&s.0.client, &s.0.ollama_url, hw).await;
+    let (used_mb, pct) = vram_usage(&s.0.client, hw).await;
     let total_mb = hw.vram_total_mb();
     Json(VramResponse {
         used_mb,
@@ -1829,7 +1782,7 @@ async fn metrics_stream_handler(State(s): State<LogosState>) -> impl IntoRespons
         loop {
             let hw = s.0.hardware_profile;
             let (vram_used_mb, vram_pct_raw) =
-                vram_usage(&s.0.client, &s.0.ollama_url, hw).await;
+                vram_usage(&s.0.client, hw).await;
             let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
             let snap = MetricsSnapshot {
                 vram_used_mb,
@@ -1868,7 +1821,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let hardware_profile          = s.0.hardware_profile.as_str().to_string();
     let hardware_profile_display  = s.0.hardware_profile.display().to_string();
     let queue = *s.0.queue_counts.lock().await;
-    let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, &s.0.ollama_url, s.0.hardware_profile).await;
+    let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, s.0.hardware_profile).await;
     let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
     let on_battery       = *s.0.on_battery.lock().await;
     let preempted_count  = *s.0.preempted_count.lock().await;
@@ -1885,7 +1838,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         queue,
         vram_used_mb,
         vram_pct,
-        ollama_url: s.0.ollama_url.clone(),
+        llama_server_url: s.0.llama_server_url.clone(),
         cpu_pct,
         ram_free_mb,
         ram_total_mb,
@@ -1897,88 +1850,36 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
 }
 
 /// Envia keep_alive: 0 para descarregar todos os modelos carregados.
-/// Retorna o número de modelos descarregados.
+/// Para o processo llama-server para liberar VRAM completamente.
+/// Retorna o número de processos parados (0 ou 1).
 pub async fn do_silence(s: &LogosState) -> usize {
-    if s.0.llama_server_bin.is_some() {
-        // llama-server: para o processo para liberar VRAM completamente
-        let stopped = s.kill_llama_proc().await;
-        log::info!("LOGOS silence: llama-server parado ({stopped})");
-        return if stopped { 1 } else { 0 };
+    let stopped = s.kill_llama_proc().await;
+    if stopped {
+        log::info!("LOGOS silence: llama-server parado");
     }
-    // Ollama: envia keep_alive=0 a todos os modelos carregados
-    let ps_url = format!("{}/api/ps", s.0.ollama_url);
-    let Ok(resp) = s.0.client.get(&ps_url).timeout(Duration::from_secs(5)).send().await else {
-        return 0;
-    };
-    let json = resp.json::<serde_json::Value>().await.unwrap_or_default();
-    let models = json["models"].as_array().cloned().unwrap_or_default();
-    let count = models.len();
-    for model in &models {
-        if let Some(name) = model["name"].as_str() {
-            let _ = s.0.client
-                .post(format!("{}/api/generate", s.0.ollama_url))
-                .json(&serde_json::json!({ "model": name, "keep_alive": 0 }))
-                .timeout(Duration::from_secs(10))
-                .send()
-                .await;
-        }
+    if stopped { 1 } else { 0 }
+}
+
+/// Retorna o modelo atualmente carregado no llama-server (se houver).
+/// Com llama-server, apenas um modelo roda por vez — é o que está em `llama_proc`.
+pub async fn list_ollama_models(s: &LogosState) -> Vec<OllamaModelInfo> {
+    let guard = s.0.llama_proc.lock().await;
+    match guard.as_ref() {
+        Some(p) => vec![OllamaModelInfo { name: p.model_name.clone(), size_vram_mb: 0 }],
+        None    => vec![],
     }
-    count
 }
 
-/// Retorna lista de modelos atualmente carregados na memória pelo Ollama.
-pub async fn list_ollama_models(client: &Client, ollama_url: &str) -> Vec<OllamaModelInfo> {
-    let Ok(resp) = client
-        .get(format!("{}/api/ps", ollama_url))
-        .timeout(Duration::from_secs(5))
-        .send()
-        .await
-    else {
-        return vec![];
-    };
-    let Ok(json) = resp.json::<serde_json::Value>().await else {
-        return vec![];
-    };
-    json["models"]
-        .as_array()
-        .unwrap_or(&vec![])
-        .iter()
-        .filter_map(|m| {
-            let name = m["name"].as_str()?.to_string();
-            let size_vram_mb = m["size_vram"].as_u64().unwrap_or(0) / 1_000_000;
-            Some(OllamaModelInfo { name, size_vram_mb })
-        })
-        .collect()
+/// Para o processo llama-server ativo para liberar VRAM.
+/// Retorna true se havia processo rodando.
+pub async fn do_unload_model(s: &LogosState, _model: &str) -> bool {
+    s.kill_llama_proc().await
 }
 
-/// Envia keep_alive: 0 para descarregar um modelo específico da VRAM.
-/// Retorna true se o request chegou ao Ollama (independente de o modelo estar carregado).
-pub async fn do_unload_model(s: &LogosState, model: &str) -> bool {
-    s.0.client
-        .post(format!("{}/api/generate", s.0.ollama_url))
-        .json(&serde_json::json!({ "model": model, "keep_alive": 0 }))
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await
-        .is_ok()
-}
-
-/// Pré-aquece um modelo enviando um request de geração vazio com keep_alive: -1.
-/// Carrega o modelo na VRAM e mantém-no carregado indefinidamente.
-/// Retorna true se o request chegou ao backend de inferência.
+/// Carrega um modelo no llama-server (garante processo ativo com o modelo correto).
+/// Retorna true se o modelo foi carregado com sucesso.
 pub async fn do_load_model(s: &LogosState, model: &str) -> bool {
-    s.0.client
-        .post(format!("{}/api/generate", s.0.ollama_url))
-        .json(&serde_json::json!({
-            "model":      model,
-            "prompt":     "",
-            "keep_alive": -1,
-            "stream":     false,
-        }))
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await
-        .is_ok()
+    ensure_llama_model_loaded(s, model).await.is_ok()
 }
 
 /// Altera o perfil de workflow ativo. Valores inválidos caem em "normal".
@@ -1994,78 +1895,30 @@ pub async fn do_set_profile(s: &LogosState, profile: String) -> String {
 
 /// Wrapper público de `list_ollama_models` para uso nos Tauri commands.
 pub async fn do_list_models(s: &LogosState) -> Vec<OllamaModelInfo> {
-    list_ollama_models(&s.0.client, &s.0.ollama_url).await
+    list_ollama_models(s).await
 }
 
-/// Retorna todos os modelos instalados com seu status de carregamento.
-/// Combina /api/ps (carregados na VRAM) e /api/tags (todos instalados).
+/// Retorna todos os modelos instalados com status de carregamento.
+/// Fonte: registry.json do LOGOS (modelos baixados via HUB).
+/// Status "active" = modelo atualmente rodando no llama-server.
 pub async fn do_list_all_models(s: &LogosState) -> Vec<OllamaModelEntry> {
-    let base = &s.0.ollama_url;
-    let client = &s.0.client;
+    let registry = read_model_registry(&s.0.models_dir).await;
+    let active_name: Option<String> = s.0.llama_proc.lock().await
+        .as_ref()
+        .map(|p| p.model_name.clone());
 
-    // Modelos carregados na VRAM → mapa name → size_vram_mb
-    // .json() retorna um Future — precisa de .await antes de .ok()
-    let loaded: std::collections::HashMap<String, u64> = {
-        let ps_val = client
-            .get(format!("{base}/api/ps"))
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await
-            .ok();
-        if let Some(resp) = ps_val {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                json["models"].as_array()
-                    .map(|arr| {
-                        arr.iter().filter_map(|m| {
-                            let name = m["name"].as_str()?.to_string();
-                            let vram = m["size_vram"].as_u64().unwrap_or(0) / 1_000_000;
-                            Some((name, vram))
-                        }).collect()
-                    })
-                    .unwrap_or_default()
-            } else {
-                Default::default()
-            }
-        } else {
-            Default::default()
+    let mut entries: Vec<OllamaModelEntry> = registry.iter().map(|e| {
+        let is_active = active_name.as_deref() == Some(&e.name)
+            || active_name.as_deref() == Some(e.filename.trim_end_matches(".gguf"));
+        OllamaModelEntry {
+            name:         e.name.clone(),
+            status:       if is_active { "active" } else { "available" }.to_string(),
+            size_vram_mb: 0,
+            size_disk_mb: e.size_bytes / 1_000_000,
         }
-    };
-
-    // Todos os modelos instalados em disco
-    let all_json: Option<serde_json::Value> = {
-        let tags_val = client
-            .get(format!("{base}/api/tags"))
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await
-            .ok();
-        if let Some(resp) = tags_val {
-            resp.json::<serde_json::Value>().await.ok()
-        } else {
-            None
-        }
-    };
-
-    let Some(all) = all_json else { return vec![] };
-    let Some(models) = all["models"].as_array() else { return vec![] };
-
-    let mut entries: Vec<OllamaModelEntry> = models.iter().filter_map(|m| {
-        let name = m["name"].as_str()?.to_string();
-        let size_disk_mb = m["size"].as_u64().unwrap_or(0) / 1_000_000;
-        let size_vram_mb = loaded.get(&name).copied().unwrap_or(0);
-        let status = if loaded.contains_key(&name) { "active" } else { "available" };
-        Some(OllamaModelEntry {
-            name,
-            status: status.to_string(),
-            size_vram_mb,
-            size_disk_mb,
-        })
     }).collect();
 
-    // Modelos ativos primeiro, depois por nome
-    entries.sort_by(|a, b| {
-        b.status.cmp(&a.status).then(a.name.cmp(&b.name))
-    });
+    entries.sort_by(|a, b| b.status.cmp(&a.status).then(a.name.cmp(&b.name)));
     entries
 }
 
@@ -2077,25 +1930,15 @@ pub async fn do_get_model_assignments(s: &LogosState) -> Vec<ModelAssignment> {
     let budget  = vram_budget_for_profile(s.0.hardware_profile);
     let overrides = s.0.model_overrides.lock().await.clone();
 
-    // Mapa de tamanho em disco por modelo instalado (para estimativa de VRAM)
+    // Mapa de tamanho em disco por modelo instalado (lido do registry.json do LOGOS)
     let size_map: HashMap<String, u64> = {
-        let tags = s.0.client
-            .get(format!("{}/api/tags", s.0.ollama_url))
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await
-            .ok();
-        if let Some(resp) = tags {
-            if let Ok(json) = resp.json::<serde_json::Value>().await {
-                json["models"].as_array()
-                    .map(|arr| arr.iter().filter_map(|m| {
-                        let name = m["name"].as_str()?.to_string();
-                        let size_mb = m["size"].as_u64().unwrap_or(0) / 1_000_000;
-                        Some((name, size_mb))
-                    }).collect())
-                    .unwrap_or_default()
-            } else { Default::default() }
-        } else { Default::default() }
+        let registry = read_model_registry(&s.0.models_dir).await;
+        registry.into_iter().flat_map(|e| {
+            let size_mb = e.size_bytes / 1_000_000;
+            // Indexa por nome do registro e pelo filename sem extensão
+            let alt_name = e.filename.trim_end_matches(".gguf").to_string();
+            vec![(e.name, size_mb), (alt_name, size_mb)]
+        }).collect()
     };
 
     // Definição de todos os slots de modelo configuráveis
@@ -2315,12 +2158,12 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
 fn apply_profile_priority(profile: &str, app: &str, requested: u8) -> u8 {
     match profile {
         "escrita" => match (app, requested) {
-            // AETHER, Mnemosyne e AKASHA (conversas interativas) mantêm prioridade máxima
-            ("aether" | "hub" | "mnemosyne" | "akasha", p) => p,
             // KOSMOS reader rebaixado: não interrompe a escrita
             ("kosmos", 1) => 2,
             // Mnemosyne RAG rebaixado para background: escrita em foco
             ("mnemosyne", 2) => 3,
+            // AETHER, hub e AKASHA (conversas interativas) mantêm prioridade solicitada
+            ("aether" | "hub" | "akasha", p) => p,
             _ => requested,
         },
         "estudo" => match (app, requested) {
@@ -2351,11 +2194,11 @@ fn is_light_model(model: &str) -> bool {
 
 // ── VRAM helpers ──────────────────────────────────────────────
 
-async fn vram_pct(client: &Client, ollama_url: &str, hw: HardwareProfile) -> Option<f32> {
-    vram_usage(client, ollama_url, hw).await.1
+async fn vram_pct(client: &Client, hw: HardwareProfile) -> Option<f32> {
+    vram_usage(client, hw).await.1
 }
 
-async fn vram_usage(client: &Client, ollama_url: &str, hw: HardwareProfile) -> (Option<u64>, Option<f32>) {
+async fn vram_usage(_client: &Client, hw: HardwareProfile) -> (Option<u64>, Option<f32>) {
     // No Linux, sysfs é a fonte correta para AMD/ROCm —
     // o Ollama reporta size_vram=0 para GPUs AMD, tornando /api/ps inútil para VRAM.
     #[cfg(target_os = "linux")]
@@ -2373,29 +2216,8 @@ async fn vram_usage(client: &Client, ollama_url: &str, hw: HardwareProfile) -> (
         }
     }
 
-    // Fallback: Ollama /api/ps (plataformas sem sysfs AMD nem nvidia-smi)
-    let Ok(resp) = client
-        .get(format!("{}/api/ps", ollama_url))
-        .timeout(Duration::from_secs(3))
-        .send()
-        .await
-    else {
-        return (None, None);
-    };
-    let Ok(json) = resp.json::<serde_json::Value>().await else {
-        return (None, None);
-    };
-    let used_bytes: u64 = json["models"]
-        .as_array()
-        .unwrap_or(&vec![])
-        .iter()
-        .filter_map(|m| m["size_vram"].as_u64())
-        .sum();
-    let used_mb = used_bytes / 1_000_000;
-    // sysfs é AMD-only; para NVIDIA (Laptop), usar total do HardwareProfile como fallback
-    let total_mb = sysfs_vram_mb().map(|(t, _)| t).or_else(|| hw.vram_total_mb());
-    let pct = total_mb.filter(|&t| t > 0).map(|t| used_mb as f32 / t as f32);
-    (Some(used_mb), pct)
+    // WorkPc não tem GPU discreta — sem VRAM para monitorar
+    (None, None)
 }
 
 /// Lê total e uso de VRAM da GPU discreta via sysfs (Linux/AMD).
@@ -2525,29 +2347,14 @@ fn inject_efficiency_params(
 
 // ── Preempção inteligente ─────────────────────────────────────
 
-/// Retorna estimativa de VRAM necessária em MB para o modelo, via /api/tags.
-/// /api/tags reporta tamanho em disco (bytes); VRAM ≈ 85% para modelos Q4.
-/// Fallback: 4 GB (conservador — garante que preemptamos se não conseguirmos estimar).
-async fn estimate_model_vram_mb(client: &Client, ollama_url: &str, model: &str) -> u64 {
-    let Ok(resp) = client
-        .get(format!("{ollama_url}/api/tags"))
-        .timeout(Duration::from_secs(3))
-        .send()
-        .await
-    else {
-        return 4_096;
-    };
-    let Ok(json) = resp.json::<serde_json::Value>().await else {
-        return 4_096;
-    };
-    json["models"]
-        .as_array()
-        .and_then(|arr| {
-            arr.iter()
-                .find(|m| m["name"].as_str() == Some(model))
-                .and_then(|m| m["size"].as_u64())
-                .map(|bytes| bytes * 85 / (100 * 1_048_576))
-        })
+/// Retorna estimativa de VRAM necessária em MB para o modelo via registry.json.
+/// Tamanho em disco × 85% é uma heurística razoável para modelos Q4.
+/// Fallback: 4 GB (conservador — garante preempção se o modelo não estiver no registry).
+async fn estimate_model_vram_mb(s: &LogosState, model: &str) -> u64 {
+    let registry = read_model_registry(&s.0.models_dir).await;
+    registry.iter()
+        .find(|e| e.name == model || e.filename.trim_end_matches(".gguf") == model)
+        .map(|e| e.size_bytes * 85 / (100 * 1_048_576))
         .unwrap_or(4_096)
 }
 
@@ -2560,7 +2367,7 @@ async fn try_preempt_p3(s: &LogosState, model_name: &str) {
     }
     let Some((vram_total, vram_used)) = sysfs_vram_mb() else { return };
     let vram_free = vram_total.saturating_sub(vram_used);
-    let needed_mb = estimate_model_vram_mb(&s.0.client, &s.0.ollama_url, model_name).await;
+    let needed_mb = estimate_model_vram_mb(s, model_name).await;
     if vram_free >= needed_mb + 500 {
         return; // VRAM suficiente — coexistência possível
     }
@@ -2569,263 +2376,19 @@ async fn try_preempt_p3(s: &LogosState, model_name: &str) {
     );
     do_silence(s).await;
     *s.0.preempted_count.lock().await += 1;
-    // Aguarda até 10s para os modelos serem descarregados do /api/ps
+    // Aguarda até 10s para o llama-server liberar a VRAM
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     loop {
         if tokio::time::Instant::now() >= deadline {
             break;
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
-        if list_ollama_models(&s.0.client, &s.0.ollama_url).await.is_empty() {
+        if list_ollama_models(s).await.is_empty() {
             break;
         }
     }
 }
 
-// ── Prioridade de processo do Ollama ────────────────────────
-
-/// Encontra o PID do processo Ollama varrendo a tabela de processos do SO.
-/// Executa de forma síncrona — deve ser chamado via spawn_blocking.
-fn find_ollama_pid_sync() -> Option<u32> {
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, false);
-    sys.processes().iter().find_map(|(pid, proc)| {
-        let name = proc.name().to_string_lossy().to_lowercase();
-        // Corresponde a "ollama", "ollama.exe" — exclui "ollama_llm" (worker interno)
-        if name.starts_with("ollama") && !name.contains("_llm") {
-            Some(pid.as_u32())
-        } else {
-            None
-        }
-    })
-}
-
-/// Ajusta a prioridade de processo do Ollama via comandos de SO.
-///
-/// `p1_active = true`  → normal priority (nice=0 / NORMAL)
-///   Usado quando P1 (chat interativo) está ativo — Ollama recebe sua cota justa de CPU.
-/// `p1_active = false` → abaixo do normal (nice=10 / BELOW_NORMAL)
-///   Usado em background — P3 cede CPU para apps ativos sem polling ativo do LOGOS.
-///
-/// Nota: elevar acima do normal (nice < 0) requer root no Linux; usamos
-/// apenas 0 ↔ 10 para operar sem privilégios.
-async fn set_ollama_priority(pid: u32, p1_active: bool) {
-    #[cfg(target_os = "linux")]
-    {
-        let nice_val = if p1_active { "0" } else { "10" };
-        let _ = tokio::process::Command::new("renice")
-            .args(["-n", nice_val, "-p", &pid.to_string()])
-            .output()
-            .await;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        // NORMAL_PRIORITY_CLASS = 0x20, BELOW_NORMAL_PRIORITY_CLASS = 0x4000
-        let class = if p1_active { "Normal" } else { "BelowNormal" };
-        let script = format!(
-            "$p = Get-Process -Id {pid} -ErrorAction SilentlyContinue; if ($p) {{ $p.PriorityClass = '{class}' }}"
-        );
-        let _ = tokio::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-            .output()
-            .await;
-    }
-}
-
-/// Retorna o PID do Ollama guardado, ou tenta descobri-lo agora.
-/// Atualiza o cache se encontrado.
-async fn get_or_find_ollama_pid(s: &LogosState) -> Option<u32> {
-    {
-        if let Some(pid) = *s.0.ollama_pid.lock().await {
-            return Some(pid);
-        }
-    }
-    let pid = tokio::task::spawn_blocking(find_ollama_pid_sync)
-        .await
-        .ok()
-        .flatten();
-    if let Some(p) = pid {
-        *s.0.ollama_pid.lock().await = Some(p);
-    }
-    pid
-}
-
-// ── cgroup para Ollama via systemd ───────────────────────────
-
-/// Escreve drop-in de cgroup para o serviço Ollama em ~/.config/systemd/user/ollama.service.d/
-/// Limita CPU e RAM do Ollama para que o sistema permaneça responsivo durante inferência P3.
-/// Aplica apenas em máquinas com GPU discreta (MainPc e Laptop).
-#[allow(unused_variables)]
-fn configure_cgroup(profile: HardwareProfile) {
-    #[cfg(target_os = "linux")]
-    {
-        use std::io::Write as _;
-        let (cpu_weight, cpu_quota, mem_max) = match profile {
-            HardwareProfile::MainPc => (20u32, "80%", "10G"),
-            HardwareProfile::Laptop => (20u32, "60%", "6G"),
-            HardwareProfile::WorkPc => return, // CPU-only sem cgroup — sem GPU para proteger
-        };
-        let Some(home) = dirs::home_dir() else { return };
-        let drop_in = home.join(".config/systemd/user/ollama.service.d");
-        if std::fs::create_dir_all(&drop_in).is_err() {
-            return;
-        }
-        let conf = drop_in.join("logos-limits.conf");
-        let Ok(mut f) = std::fs::OpenOptions::new()
-            .write(true).create(true).truncate(true)
-            .open(&conf)
-        else {
-            return;
-        };
-        let _ = writeln!(f, "[Service]");
-        let _ = writeln!(f, "CPUWeight={cpu_weight}");
-        let _ = writeln!(f, "CPUQuota={cpu_quota}");
-        let _ = writeln!(f, "MemoryMax={mem_max}");
-        let _ = writeln!(f, "IOSchedulingClass=idle");
-        let _ = writeln!(f, "Nice=10");
-        log::info!(
-            "LOGOS: cgroup escrito em {} — rode `systemctl --user daemon-reload && systemctl --user restart ollama` para aplicar",
-            conf.display()
-        );
-    }
-}
-
-// ── Prioridade de SO do processo Ollama ──────────────────────
-
-/// Encontra o PID do processo Ollama via `pidof ollama` (Linux).
-/// Retorna None no Windows (processo não gerenciado pelo LOGOS) ou se não encontrado.
-fn find_ollama_pid() -> Option<u32> {
-    #[cfg(target_os = "linux")]
-    {
-        let out = std::process::Command::new("pidof")
-            .arg("ollama")
-            .output()
-            .ok()?;
-        // pidof pode retornar múltiplos PIDs separados por espaço — usa o primeiro
-        String::from_utf8_lossy(&out.stdout)
-            .split_whitespace()
-            .next()?
-            .parse()
-            .ok()
-    }
-    #[cfg(not(target_os = "linux"))]
-    None
-}
-
-/// Chama `renice -n NICE_VAL PID` para ajustar a prioridade do processo Ollama.
-///
-/// Aumentar o nice (ex: 0 → 10): sempre permitido para o dono do processo.
-/// Diminuir o nice (ex: 10 → 0): requer CAP_SYS_NICE — falha silenciosa para usuário regular.
-fn renice_ollama(pid: u32, nice_val: i32) {
-    #[cfg(target_os = "linux")]
-    {
-        match std::process::Command::new("renice")
-            .args(["-n", &nice_val.to_string(), &pid.to_string()])
-            .output()
-        {
-            Ok(out) if out.status.success() => {
-                log::info!("LOGOS: Ollama PID {pid} → nice={nice_val}");
-            }
-            Ok(out) => {
-                let msg = String::from_utf8_lossy(&out.stderr);
-                log::debug!("LOGOS: renice Ollama PID {pid} nice={nice_val} falhou: {msg}");
-            }
-            Err(e) => {
-                log::debug!("LOGOS: renice indisponível: {e}");
-            }
-        }
-    }
-}
-
-/// Aplica nice=10 ao processo Ollama em execução (Linux).
-/// Complementa o `Nice=10` do systemd para casos em que o Ollama não roda via serviço.
-pub fn apply_ollama_nice() {
-    if let Some(pid) = find_ollama_pid() {
-        renice_ollama(pid, 10);
-    } else {
-        log::debug!("LOGOS: processo Ollama não encontrado para renice (ok se gerenciado por systemd)");
-    }
-}
-
-// ── Ollama env vars por perfil de hardware ────────────────────
-
-/// Retorna as variáveis de ambiente recomendadas para o Ollama
-/// conforme o perfil de hardware detectado.
-///
-/// | Variável                   | MainPc (RX 6600) | Laptop (MX150) | WorkPc (i5-3470) |
-/// |---------------------------|------------------|----------------|------------------|
-/// | OLLAMA_MAX_LOADED_MODELS   | 3                | 1              | 1                |
-/// | OLLAMA_GPU_OVERHEAD (bytes)| 838 860 800 (~800MB) | 209 715 200 (~200MB) | 0      |
-/// | OLLAMA_FLASH_ATTENTION     | 1                | 1              | 0 (sem GPU)      |
-/// | OLLAMA_NUM_PARALLEL        | 2                | 1              | 1                |
-/// | OLLAMA_KEEP_ALIVE          | 5m               | 5m             | 5m               |
-///
-/// OLLAMA_KEEP_ALIVE=5m é um default global — sobrescrito por keep_alive por requisição
-/// quando o LOGOS injeta valores específicos (P1=-1, P2=10m, P3=0).
-pub fn ollama_env_for_profile(profile: HardwareProfile) -> Vec<(&'static str, String)> {
-    match profile {
-        HardwareProfile::MainPc => vec![
-            ("OLLAMA_MAX_LOADED_MODELS", "3".into()),
-            ("OLLAMA_GPU_OVERHEAD",      "838860800".into()),
-            ("OLLAMA_FLASH_ATTENTION",   "1".into()),
-            ("OLLAMA_NUM_PARALLEL",      "2".into()),
-            ("OLLAMA_KEEP_ALIVE",        "5m".into()),
-        ],
-        HardwareProfile::Laptop => vec![
-            ("OLLAMA_MAX_LOADED_MODELS", "1".into()),
-            ("OLLAMA_GPU_OVERHEAD",      "209715200".into()),
-            ("OLLAMA_FLASH_ATTENTION",   "1".into()),
-            ("OLLAMA_NUM_PARALLEL",      "1".into()),
-            ("OLLAMA_KEEP_ALIVE",        "5m".into()),
-        ],
-        HardwareProfile::WorkPc => vec![
-            ("OLLAMA_MAX_LOADED_MODELS", "1".into()),
-            ("OLLAMA_GPU_OVERHEAD",      "0".into()),
-            ("OLLAMA_FLASH_ATTENTION",   "0".into()),
-            ("OLLAMA_NUM_PARALLEL",      "1".into()),
-            ("OLLAMA_KEEP_ALIVE",        "5m".into()),
-        ],
-    }
-}
-
-/// Persiste as variáveis de ambiente do Ollama em arquivo de configuração e registra no log.
-///
-/// Linux: escreve em `~/.config/ollama/ollama_env` (compatível com systemd EnvironmentFile).
-/// Windows: não escreve arquivo (sem systemd); apenas loga as variáveis recomendadas.
-///
-/// Para aplicar no Linux após escrita:
-///   systemctl --user daemon-reload && systemctl --user restart ollama
-pub fn configure_ollama_env(profile: HardwareProfile) {
-    let vars = ollama_env_for_profile(profile);
-    log::info!(
-        "LOGOS: perfil {} — variáveis Ollama recomendadas: {}",
-        profile.display(),
-        vars.iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-
-    #[cfg(target_os = "linux")]
-    {
-        use std::io::Write;
-        let Some(config_dir) = dirs::config_dir() else { return };
-        let ollama_dir = config_dir.join("ollama");
-        if std::fs::create_dir_all(&ollama_dir).is_err() { return }
-        let env_path = ollama_dir.join("ollama_env");
-        let Ok(mut f) = std::fs::OpenOptions::new()
-            .write(true).create(true).truncate(true)
-            .open(&env_path)
-        else { return };
-        for (k, v) in &vars {
-            let _ = writeln!(f, "{k}={v}");
-        }
-        log::info!(
-            "LOGOS: variáveis escritas em {} — rode `systemctl --user restart ollama` para aplicar",
-            env_path.display()
-        );
-    }
-}
 
 // ── Download de GGUF do HuggingFace ──────────────────────────
 
@@ -3086,37 +2649,6 @@ async fn update_model_registry(models_dir: &std::path::Path, entry: ModelRegistr
 // ── Entry point ───────────────────────────────────────────────
 
 pub async fn start_server(state: LogosState) {
-    // Configura variáveis de ambiente do Ollama conforme o perfil de hardware detectado.
-    // No Linux, escreve ~/.config/ollama/ollama_env; sempre loga as variáveis recomendadas.
-    configure_ollama_env(state.0.hardware_profile);
-
-    // Escreve drop-in de cgroup para o serviço Ollama (Linux/systemd, perfis high/medium).
-    configure_cgroup(state.0.hardware_profile);
-
-    // Task de descoberta do PID do Ollama + prioridade inicial de background.
-    // Aguarda 3s para dar tempo do Ollama inicializar caso tenha sido lançado junto com o HUB.
-    // Tenta novamente a cada 5 minutos para cobrir reinicios do Ollama.
-    let pid_state = state.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            if let Some(pid) = tokio::task::spawn_blocking(find_ollama_pid_sync)
-                .await
-                .ok()
-                .flatten()
-            {
-                let already_known = *pid_state.0.ollama_pid.lock().await == Some(pid);
-                *pid_state.0.ollama_pid.lock().await = Some(pid);
-                if !already_known {
-                    set_ollama_priority(pid, false).await;
-                    log::info!(
-                        "LOGOS: Ollama PID={pid} detectado — prioridade de background aplicada (nice=10)"
-                    );
-                }
-            }
-            tokio::time::sleep(Duration::from_secs(297)).await; // ~5 min total
-        }
-    });
 
     // Task de atualização do status de bateria a cada 60s.
     let battery_state = state.clone();
@@ -3142,11 +2674,7 @@ pub async fn start_server(state: LogosState) {
             }
             let block_threshold = *wdg_state.0.vram_limit_pct.lock().await / 100.0;
             let currently_blocked = wdg_state.0.p3_vram_blocked.load(Ordering::Relaxed);
-            let pct = vram_pct(
-                &wdg_state.0.client,
-                &wdg_state.0.ollama_url,
-                wdg_state.0.hardware_profile,
-            ).await;
+            let pct = vram_pct(&wdg_state.0.client, wdg_state.0.hardware_profile).await;
 
             match pct {
                 Some(p) if !currently_blocked && p > block_threshold => {
@@ -3554,5 +3082,237 @@ mod tests {
 
         assert_eq!(size_map.get("smollm2:1.7b"), Some(&2));
         assert!(!size_map.contains_key("modelo-ausente"));
+    }
+
+    // ── Helpers para testes de LogosState ────────────────────────────────────
+
+    fn make_test_state(models_dir: std::path::PathBuf) -> LogosState {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
+        let mut sys = System::new_all();
+        sys.refresh_cpu_all();
+        sys.refresh_memory();
+        LogosState(Arc::new(Inner {
+            llama_server_url:    "http://127.0.0.1:8081".to_string(),
+            semaphore:           Arc::new(Semaphore::new(2)),
+            active_priority:     Mutex::new(None),
+            active_model_class:  Mutex::new(None),
+            active_app:          Mutex::new(None),
+            active_profile:      Mutex::new("normal".to_string()),
+            hardware_mode:       "normal".to_string(),
+            hardware_profile:    HardwareProfile::WorkPc,
+            queue_counts:        Mutex::new([0, 0, 0]),
+            client,
+            sys:                 Mutex::new(sys),
+            on_battery:          Mutex::new(false),
+            preempted_count:     Mutex::new(0),
+            model_overrides:     Mutex::new(HashMap::new()),
+            vram_limit_pct:      Mutex::new(85.0),
+            active_inferences:   Mutex::new(HashMap::new()),
+            p3_vram_blocked:     Arc::new(AtomicBool::new(false)),
+            downloads:           Mutex::new(HashMap::new()),
+            models_dir,
+            llama_server_bin:    None,
+            llama_proc:          Mutex::new(None),
+        }))
+    }
+
+    fn sample_registry_entry(name: &str, filename: &str, path: &str) -> ModelRegistryEntry {
+        ModelRegistryEntry {
+            name:          name.to_string(),
+            repo_id:       "test/repo".to_string(),
+            filename:      filename.to_string(),
+            path:          path.to_string(),
+            size_bytes:    1_000_000_000,
+            sha256:        "abc123".to_string(),
+            downloaded_at: "2026-05-24T00:00:00+00:00".to_string(),
+        }
+    }
+
+    // ── LogosState::new — campo llama_server_url (regressão: era ollama_url) ──
+
+    #[test]
+    fn logos_state_stores_llama_server_url() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert_eq!(state.0.llama_server_url, "http://127.0.0.1:8081");
+    }
+
+    // ── list_ollama_models ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn list_ollama_models_empty_when_no_proc() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let models = list_ollama_models(&state).await;
+        assert!(models.is_empty(), "sem proc ativo → lista vazia");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn list_ollama_models_returns_active_model_name() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Injeta um proc fictício (sleep em background)
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível");
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "phi-3-mini".to_string(),
+        });
+
+        let models = list_ollama_models(&state).await;
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].name, "phi-3-mini");
+    }
+
+    // ── do_list_all_models ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn do_list_all_models_empty_when_registry_missing() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let entries = do_list_all_models(&state).await;
+        assert!(entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn do_list_all_models_shows_available_when_not_loaded() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+        let entry = sample_registry_entry("phi-3-mini", "phi-3-mini.gguf", "/tmp/phi-3-mini.gguf");
+        update_model_registry(&models_dir, entry).await;
+
+        let state = make_test_state(models_dir);
+        let entries = do_list_all_models(&state).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "phi-3-mini");
+        assert_eq!(entries[0].status, "available", "sem proc → status available");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn do_list_all_models_marks_loaded_model_active() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        let entry = sample_registry_entry("phi-3-mini", "phi-3-mini.gguf", "/tmp/phi-3-mini.gguf");
+        update_model_registry(&models_dir, entry).await;
+
+        let state = make_test_state(models_dir);
+
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível");
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "phi-3-mini".to_string(),
+        });
+
+        let entries = do_list_all_models(&state).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].status, "active", "proc ativo com mesmo nome → status active");
+    }
+
+    #[tokio::test]
+    async fn do_list_all_models_size_disk_mb_from_registry() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        let mut entry = sample_registry_entry("smol", "smol.gguf", "/tmp/smol.gguf");
+        entry.size_bytes = 2_500_000_000; // 2500 MB
+        update_model_registry(&models_dir, entry).await;
+
+        let state = make_test_state(models_dir);
+        let entries = do_list_all_models(&state).await;
+        assert_eq!(entries[0].size_disk_mb, 2_500);
+    }
+
+    // ── do_silence ────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn do_silence_returns_zero_when_no_proc() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let count = do_silence(&state).await;
+        assert_eq!(count, 0, "nenhum proc para parar → retorna 0");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn do_silence_returns_one_and_clears_proc() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível");
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "test-model".to_string(),
+        });
+
+        let count = do_silence(&state).await;
+        assert_eq!(count, 1);
+        assert!(state.0.llama_proc.lock().await.is_none(), "proc deve ser None após silence");
+    }
+
+    // ── do_unload_model ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn do_unload_model_returns_false_when_no_proc() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let stopped = do_unload_model(&state, "qualquer-modelo").await;
+        assert!(!stopped, "nenhum proc ativo → retorna false");
+    }
+
+    // ── kill_llama_proc ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn kill_llama_proc_returns_false_when_no_proc() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert!(!state.kill_llama_proc().await);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kill_llama_proc_returns_true_and_clears_handle() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível");
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "test-model".to_string(),
+        });
+
+        assert!(state.kill_llama_proc().await, "proc ativo → true");
+        assert!(state.0.llama_proc.lock().await.is_none(), "handle limpo após kill");
+        // Segunda chamada: nenhum proc → false
+        assert!(!state.kill_llama_proc().await);
     }
 }

@@ -16,7 +16,7 @@
 
 use crate::error::AppError;
 use fs2::FileExt;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::path::PathBuf;
 
 /// Retorna o caminho do ecosystem.json compartilhado (sincronizado via Proton Drive / Syncthing).

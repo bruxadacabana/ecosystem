@@ -83,7 +83,7 @@ Por que essa separação? Porque misturar IA no caminho crítico de busca é um 
 │  │  P2: RAG Mnemosyne                                           │    │
 │  │  P3: análise KOSMOS + transcrição Hermes + treino logos/     │    │
 │  │                                                              │    │
-│  │  ← llama-server (llama-cpp) em :8080 ← modelos GGUF        │    │
+│  │  ← llama-server (llama-cpp) em :8081 ← modelos GGUF        │    │
 │  │     API OpenAI-compatível em :7072                           │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────┘
@@ -178,9 +178,9 @@ O diretório `sync_root` é sincronizado entre as máquinas via Syncthing. Os da
   //   deriva os caminhos de cada app a partir daqui automaticamente.
 
   "logos": {
-    "llama_server_url": "http://localhost:8080"
-    // ^ URL do llama-server direto. Usada como fallback quando o LOGOS (proxy)
-    //   em :7072 não estiver disponível.
+    "llama_server_url": "http://localhost:8081"
+    // ^ URL interna do llama-server gerenciado pelo LOGOS.
+    //   O LOGOS inicia o processo nessa porta automaticamente ao carregar um modelo.
   },
 
   "aether": {
@@ -257,7 +257,7 @@ O diretório `sync_root` é sincronizado entre as máquinas via Syncthing. Os da
 | 5175 | OGMA — Electron dev | Apenas em modo de desenvolvimento |
 | 7071 | AKASHA — FastAPI | Sempre ativo quando o AKASHA está rodando |
 | 7072 | LOGOS — proxy LLM | HUB gerencia; fila P1/P2/P3 |
-| 8080 | llama-server (direto) | Fallback quando LOGOS não está disponível |
+| 8081 | llama-server (interno) | Gerenciado pelo LOGOS — não acessível diretamente pelos apps |
 | 8384 | Syncthing (interface web) | Interface de administração do Syncthing |
 | 8965 | KOSMOS — HTTP interno | Comunicação interna entre KOSMOS e AKASHA |
 
@@ -459,21 +459,21 @@ O backend de inferência LLM do ecossistema. **Substitui o Ollama** — todo o c
 
 > 📖 Instruções completas de compilação e uso estão na Seção 8 e no `README.md`. Aqui está o resumo rápido para verificar se está funcional.
 
-**Verificar se está rodando:**
+**Verificar se está rodando (gerenciado pelo LOGOS em :8081):**
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:8081/health
 # Resposta esperada: {"status":"ok"}
 
-curl http://localhost:8080/v1/models
+curl http://localhost:8081/v1/models
 # Resposta esperada: {"data": [...]}
 ```
 
-**Iniciar manualmente (CachyOS, com ROCm):**
+**Iniciar manualmente para testes (CachyOS, com ROCm):**
 ```bash
 HSA_OVERRIDE_GFX_VERSION=10.3.0 \
   ./llama-server \
   --model ~/models/qwen2.5-7b-q4_k_m.gguf \
-  --host 127.0.0.1 --port 8080 \
+  --host 127.0.0.1 --port 8081 \
   --n-gpu-layers 999
 ```
 
@@ -614,7 +614,7 @@ python3 --version        # 3.11+ (e < 3.14)
 uv --version             # 0.4+
 
 # llama-server
-curl -s http://localhost:8080/health | python3 -m json.tool
+curl -s http://localhost:8081/health | python3 -m json.tool
 # Esperado: { "status": "ok" }
 
 # AKASHA (depois de iniciar)
@@ -1892,7 +1892,7 @@ Cada app lê seus próprios caminhos e configurações
 response = ecosystem_client.request_llm(model, messages, app="mnemosyne", priority=2)
 # → POST http://localhost:7072/v1/chat/completions
 # → LOGOS coloca na fila com prioridade P1/P2/P3
-# → encaminha ao llama-server em :8080
+# → encaminha ao llama-server em :8081
 ```
 
 ---
@@ -2370,33 +2370,32 @@ O LOGOS detecta o hardware em runtime (`detect_hardware_profile()`) e aplica pol
 
 ---
 
-### 8.4. Backend de inferência — llama-server vs Ollama
+### 8.4. Backend de inferência — llama-server
 
-O LOGOS suporta dois backends, selecionados automaticamente no startup:
+O LOGOS usa exclusivamente o **llama-server** como backend de inferência. Não há fallback para Ollama — se o llama-server não estiver disponível, as requisições retornam 503.
 
-**llama-server (preferido):**
+**Detecção do binário:**
 ```
 logos.rs:find_llama_server_bin() busca em:
   /usr/bin/llama-server
   /usr/local/bin/llama-server
   /opt/llama.cpp/llama-server
 ```
-Quando encontrado, o LOGOS inicia um processo `llama-server` sob demanda para cada modelo solicitado. O servidor roda na porta **8081** (interna, não exposta aos apps).
+O LOGOS inicia um processo `llama-server` sob demanda para cada modelo solicitado. O servidor roda na porta **8081** (interna, não exposta aos apps). Apenas um modelo é carregado por vez — troca de modelo derruba o processo anterior e sobe um novo.
 
-O LOGOS resolve o arquivo GGUF em duas etapas:
+**Resolução do arquivo GGUF:**
 1. Registry próprio: `{hub_data_path}/logos/models/registry.json`
-2. Blob store do Ollama: `~/.ollama/models/blobs/` (reutiliza downloads existentes)
+2. Blob store do Ollama: `~/.ollama/models/blobs/` (reutiliza downloads existentes do Ollama, se houver)
 
-**Ollama (fallback):** usado quando `llama-server` não é encontrado. O LOGOS atua como proxy transparente para `http://localhost:11434`.
-
-**Tradução de formato:** o LOGOS traduz automaticamente entre APIs. Os apps Python usam formato OpenAI-compatível — o LOGOS converte para o backend ativo:
+**Tradução de formato:** o LOGOS traduz automaticamente APIs legadas para o llama-server:
 
 ```
 App Python                LOGOS                     Backend
 POST /v1/chat/completions ──────────────────────►   llama-server :8081/v1/chat/completions
 POST /api/chat (legado)   → traduz para OpenAI ──►   llama-server :8081/v1/chat/completions
-                                ↓ ou
-                          → repassa para Ollama ──►   Ollama :11434/api/chat
+POST /api/generate (leg.) → traduz para OpenAI ──►   llama-server :8081/v1/chat/completions
+GET  /api/tags            → lê registry.json   (sem chamada de rede)
+GET  /api/ps              → lê llama_proc state (sem chamada de rede)
 ```
 
 ---
@@ -2460,7 +2459,7 @@ for token in ec.request_llm_stream(messages, app="hub", priority=1):
     print(token, end="", flush=True)
 ```
 
-**URL do LOGOS:** `ec.get_inference_url()` → retorna `http://127.0.0.1:7072` (primário) ou `http://localhost:8080` (llama-server direto como fallback se LOGOS offline).
+**URL do LOGOS:** `ec.get_inference_url()` → retorna sempre `http://127.0.0.1:7072`. Não há fallback — se o LOGOS não estiver disponível, as IAs não estão disponíveis.
 
 ---
 

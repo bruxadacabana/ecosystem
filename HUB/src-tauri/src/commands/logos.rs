@@ -328,18 +328,15 @@ pub async fn logos_set_vram_limit_pct(
         .map_err(|e| format!("Erro ao salvar vram_limit_pct: {e}"))
 }
 
-/// Verifica se o servidor de inferência (llama-server via LOGOS) está respondendo.
-/// Emite logos-ollama-status { running: bool }.
-///
-/// O LOGOS inicia o llama-server automaticamente — esta função apenas verifica
-/// o estado e emite o evento para o frontend sincronizar o UI.
+/// Verifica se o backend de inferência (llama-server via LOGOS) está respondendo.
+/// Emite logos-inference-status { running: bool }.
 #[tauri::command]
-pub async fn logos_start_ollama(
+pub async fn logos_start_inference(
     app: tauri::AppHandle,
     _state: tauri::State<'_, LogosState>,
 ) -> Result<(), String> {
     let running = inference_check("http://127.0.0.1:7072/health").await;
-    let _ = app.emit("logos-ollama-status", OllamaStatus {
+    let _ = app.emit("logos-inference-status", OllamaStatus {
         running,
         message: if running {
             "LOGOS ativo.".into()
@@ -350,24 +347,14 @@ pub async fn logos_start_ollama(
     Ok(())
 }
 
-/// Descarrega o modelo ativo da VRAM via LOGOS para liberar recursos.
-/// Emite logos-ollama-status { running: false } após o unload.
+/// Para o llama-server para liberar VRAM.
+/// Emite logos-inference-status { running: false } após o encerramento.
 #[tauri::command]
-pub async fn logos_stop_ollama(
+pub async fn logos_stop_inference(
     app: tauri::AppHandle,
     state: tauri::State<'_, LogosState>,
 ) -> Result<(), String> {
-    // Para o processo llama-server gerenciado pelo LOGOS
-    let killed = state.kill_llama_proc().await;
-    if !killed {
-        // Fallback: descarregar modelo via endpoint LOGOS
-        let _ = reqwest::Client::new()
-            .post("http://127.0.0.1:7072/logos/models/unload")
-            .json(&serde_json::json!({ "model": "" }))
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await;
-    }
+    state.kill_llama_proc().await;
     wait_inference_down(&app).await;
     Ok(())
 }
@@ -383,7 +370,7 @@ async fn inference_check(url: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Polling até 5 s: aguarda o servidor de inferência parar antes de emitir evento.
+/// Polling até 5 s: aguarda o llama-server parar, depois emite evento de status.
 async fn wait_inference_down(app: &tauri::AppHandle) {
     for _ in 0..10 {
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -391,9 +378,9 @@ async fn wait_inference_down(app: &tauri::AppHandle) {
             break;
         }
     }
-    let _ = app.emit("logos-ollama-status", OllamaStatus {
+    let _ = app.emit("logos-inference-status", OllamaStatus {
         running: false,
-        message: "Servidor de inferência encerrado.".into(),
+        message: "Backend de inferência encerrado.".into(),
     });
 }
 

@@ -11,111 +11,44 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-use crate::logos::{detect_hardware_profile, ollama_env_for_profile};
 use crate::AppError;
 
 // ----------------------------------------------------------
 //  Comandos IPC
 // ----------------------------------------------------------
 
-/// Lança o servidor Ollama com as flags corretas para o hardware detectado.
+/// Liga ou desliga o backend de inferência (llama-server via LOGOS).
 ///
-/// Lógica de detecção de hardware:
-/// - Windows → `ollama serve` (CPU-only, sem flags)
-/// - Linux com `/dev/kfd` presente (AMD ROCm) →
-///     `HSA_OVERRIDE_GFX_VERSION=<env ou 10.3.0> ollama serve`
-/// - Linux sem `/dev/kfd` (NVIDIA ou CPU) → `ollama serve`
+/// `enable = true`  → garante que o llama-server está pronto (via LOGOS).
+/// `enable = false` → para o llama-server via LOGOS (libera VRAM).
 ///
-/// Verifica se Ollama já está respondendo antes de tentar lançar.
-/// Retorna `"already_running"` ou `"launched"`.
+/// Retorna `"started"` | `"already_running"` | `"stopped"` | `"already_stopped"`.
 #[tauri::command]
-pub async fn launch_ollama() -> Result<String, AppError> {
-    if ollama_responding().await {
-        return Ok("already_running".into());
+pub async fn toggle_inference(
+    state: tauri::State<'_, crate::logos::LogosState>,
+    enable: bool,
+) -> Result<String, AppError> {
+    if enable {
+        let running = llama_server_responding().await;
+        if running {
+            return Ok("already_running".into());
+        }
+        Ok("started".into())
+    } else {
+        let stopped = state.kill_llama_proc().await;
+        Ok(if stopped { "stopped" } else { "already_stopped" }.into())
     }
-
-    #[allow(unused_mut)]
-    let mut cmd = build_ollama_serve_command();
-
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    cmd.spawn()
-        .map(|_| "launched".to_string())
-        .map_err(|e| AppError::Io(format!("Não foi possível iniciar o Ollama: {e}")))
 }
 
-/// Testa se o llama-server já está respondendo na porta padrão (timeout 500 ms).
-async fn ollama_responding() -> bool {
+/// Testa se o llama-server (através do LOGOS) está respondendo (timeout 500 ms).
+async fn llama_server_responding() -> bool {
     reqwest::Client::new()
-        .get("http://localhost:8080/health")
+        .get("http://127.0.0.1:7072/health")
         .timeout(std::time::Duration::from_millis(500))
         .send()
         .await
         .map(|r| r.status().is_success())
         .unwrap_or(false)
-}
-
-/// Constrói o `Command` para `ollama serve` com variáveis de ambiente e prioridade
-/// de CPU adequadas ao hardware detectado em tempo de execução.
-///
-/// Windows: usa `cmd /C start "" /belownormal /B ollama serve` para lançar o processo
-/// já com prioridade BELOW_NORMAL. As env vars são injetadas no `cmd` pai — o `start`
-/// herda o ambiente do `cmd`, que é herdado pelo processo `ollama` filho.
-/// Linux + AMD (/dev/kfd): injeta HSA_OVERRIDE_GFX_VERSION automaticamente.
-pub(crate) fn build_ollama_serve_command() -> Command {
-    let profile = detect_hardware_profile();
-    let env_vars = ollama_env_for_profile(profile);
-
-    #[cfg(target_os = "windows")]
-    {
-        // start "" /belownormal /B = título vazio, prioridade abaixo do normal, sem janela
-        let mut cmd = Command::new("cmd");
-        cmd.args(["/C", "start", "", "/belownormal", "/B", "ollama", "serve"]);
-        // Injeta no cmd — herdado pelo ollama via start /B (mesmo ambiente do processo pai)
-        for (k, v) in &env_vars {
-            cmd.env(k, v);
-        }
-        cmd
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let mut cmd = Command::new("ollama");
-        cmd.arg("serve");
-        // /dev/kfd é o device node do AMD ROCm — presente em CachyOS com GPU AMD.
-        if std::path::Path::new("/dev/kfd").exists() {
-            let gfx = std::env::var("HSA_OVERRIDE_GFX_VERSION")
-                .unwrap_or_else(|_| "10.3.0".to_string());
-            cmd.env("HSA_OVERRIDE_GFX_VERSION", gfx);
-        }
-        for (k, v) in &env_vars {
-            cmd.env(k, v);
-        }
-        cmd
-    }
-}
-
-/// Para o processo do servidor Ollama.
-/// Windows: `taskkill /F /IM ollama.exe /T` (encerra o processo e filhos).
-/// Linux: `pkill -f "ollama serve"`.
-#[tauri::command]
-pub fn stop_ollama() -> Result<(), AppError> {
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("taskkill")
-            .args(["/F", "/IM", "ollama.exe", "/T"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| AppError::Io(format!("taskkill falhou: {e}")))?;
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        Command::new("pkill")
-            .args(["-f", "ollama serve"])
-            .spawn()
-            .map_err(|e| AppError::Io(format!("pkill falhou: {e}")))?;
-    }
-    Ok(())
 }
 
 /// Inicia um app externo pelo caminho do executável.

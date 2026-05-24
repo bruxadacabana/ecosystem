@@ -55,7 +55,7 @@ Desenvolvidos para CachyOS (Arch Linux), Fedora e Windows 10.
    porta 5175     (desktop)
 
 Sync entre máquinas: Syncthing → sync_root
-Inferência LLM: llama-server (llama-cpp) em porta 8080 (direto) / 7072 (via LOGOS)
+Inferência LLM: llama-server (llama-cpp) em porta 8081 (interno, gerenciado pelo LOGOS) / 7072 (LOGOS proxy)
 ```
 
 **Princípio fundamental:** tudo local. Nenhum dado sai da máquina. Nenhum serviço externo. Nenhuma conta.
@@ -625,7 +625,7 @@ O llama-server é o backend de inferência LLM de todo o ecossistema. Substitui 
 - `GET  /v1/models` — lista modelos carregados
 
 **Portas:**
-- `8080` — llama-server direto
+- `8081` — llama-server (gerenciado pelo LOGOS, porta interna)
 - `7072` — via LOGOS (proxy com fila de prioridades)
 
 ### Compilar do zero
@@ -658,27 +658,26 @@ cmake --build . --config Release
 # CachyOS — com ROCm
 HSA_OVERRIDE_GFX_VERSION=10.3.0 ./build/bin/llama-server \
   --model /path/to/model.gguf \
-  --host 127.0.0.1 --port 8080 \
+  --host 127.0.0.1 --port 8081 \
   --n-gpu-layers 999 \
   --ctx-size 4096
 
 # Fedora — com CUDA
 ./build/bin/llama-server \
   --model /path/to/model.gguf \
-  --host 127.0.0.1 --port 8080 \
+  --host 127.0.0.1 --port 8081 \
   --n-gpu-layers 999 \
   --ctx-size 2048    # MX150 tem só 2 GB
 
 # Windows — CPU puro (noavx)
 .\llama-server.exe \
   --model C:\models\model.gguf \
-  --host 127.0.0.1 --port 8080 \
+  --host 127.0.0.1 --port 8081 \
   --n-gpu-layers 0 \
   --ctx-size 2048
 
-# Com dois modelos (chat + embedding simultâneos):
-# Rodar duas instâncias em portas diferentes (8080 e 8081)
-# LOGOS gerencia qual usar conforme a requisição
+# Nota: o LOGOS gerencia o processo llama-server automaticamente.
+# Iniciar manualmente só é necessário para debug sem o HUB.
 ```
 
 ### Gerenciar arquivos GGUF
@@ -692,7 +691,7 @@ huggingface-cli download \
   --local-dir ~/models/
 
 # Verificar se carregou corretamente:
-curl http://localhost:8080/v1/models
+curl http://localhost:8081/v1/models
 ```
 
 ---
@@ -750,7 +749,7 @@ copy ecosystem.local.example.json %APPDATA%\ecosystem\ecosystem.json
   "sync_root": "/home/spacewitch/Documents/ecosystem_root",
   "logos": {
     "port": 7072,
-    "llama_server_url": "http://localhost:8080",
+    "llama_server_url": "http://localhost:8081",
     "active_profile": "default"
   },
   "profiles": {
@@ -886,7 +885,7 @@ cd HUB && npm test
 | 5175 | OGMA (Electron dev) | Apenas em dev mode |
 | 7071 | AKASHA (FastAPI) | Sempre ativo quando AKASHA roda |
 | 7072 | LOGOS (proxy LLM) | HUB gerencia; fila de prioridades P1/P2/P3 |
-| 8080 | llama-server (direto) | Fallback se LOGOS estiver offline |
+| 8081 | llama-server (interno) | Gerenciado pelo LOGOS; não acessível diretamente pelos apps |
 
 **Syncthing:** gerenciado via painel no HUB; porta padrão 8384 (interface web local do Syncthing).
 
@@ -910,8 +909,8 @@ cd HUB && npm test
 
 ```
 [ ] llama-server --version   → compilado corretamente
-[ ] curl http://localhost:8080/health  → {"status":"ok"}
-[ ] curl http://localhost:8080/v1/models → lista modelos
+[ ] curl http://localhost:8081/health  → {"status":"ok"}
+[ ] curl http://localhost:8081/v1/models → lista modelos
 [ ] Modelo de chat carregado
 [ ] Modelo de embedding carregado
 ```
