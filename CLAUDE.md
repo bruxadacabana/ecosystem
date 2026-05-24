@@ -191,9 +191,19 @@ Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é**
   - **Windows 10:** `D:\windows\documentos\notebook\` (raiz do repo); arquivos em `inbox\ecosystem_notes\`
   - **CachyOS principal:** `/home/spacewitch/Documents/notebook/` (raiz do repo); arquivos em `inbox/ecosystem_notes/`
   - **Laptop:** `/home/spacewitch/Documents/proton/notebook/` (raiz do repo); arquivos em `01_Projetos/ecosystem/` (a confirmar)
-- **`GUIDE.md` fica na raiz do ecossistema (`program files/GUIDE.md`)**, versionado no repo do ecossistema (não no notebook). Commitar após cada edição no mesmo repo. **Regra permanente:** atualizar o GUIDE.md na mesma resposta que implementa qualquer mudança relevante no ecossistema.
+- **`GUIDE.md` fica na raiz do ecossistema (`program files/GUIDE.md`)**, versionado no repo do ecossistema (não no notebook). Commitar após cada edição no mesmo repo.
 - **`DESIGN_BIBLE.md` deve ser mantido atualizado como prioridade permanente.**
-- **`README.md` (raiz do ecossistema) deve ser mantido atualizado** — toda mudança significativa de arquitetura, dependência ou funcionalidade deve ser refletida nele na mesma resposta que implementa a mudança.
+
+### Regra permanente — documentação sempre atualizada
+
+**Toda implementação (código, dependência, arquitetura, funcionalidade, endpoint, porta, modelo, novo módulo, etc.) deve terminar com atualização de documentação.** A documentação é tão importante quanto o código. Como etapa final de qualquer tarefa:
+
+1. Verificar se `README.md` precisa ser atualizado — seções: mapa do ecossistema, funcionalidades, hardware, instalação, portas, dependências, modelos recomendados.
+2. Verificar se `GUIDE.md` precisa ser atualizado — seções correspondentes à mudança (setup, dependências, arquitetura de dados, pipeline de busca, LLMs, etc.).
+3. Fazer as edições necessárias com informações precisas.
+4. Informar na resposta que a documentação foi atualizada e em quais seções.
+
+Nunca deixar uma mudança sem reflexo nos dois arquivos. Commitar `README.md` e `GUIDE.md` junto ao código no mesmo commit (ou em commit imediatamente seguinte).
 - Manter o `TODO.md` / `ROADMAP.md` / `dev_files/todo` de cada app atualizado.
 - **`notes.md` é arquivo de organização pessoal da usuária — nunca editá-lo.** Apenas lê-lo quando necessário para entender o contexto. Todo rastreamento de progresso vai no `TODO.md`. **Sempre commitar o `notes.md` quando houver mudanças não commitadas** — verificar `git status notes.md` proativamente a cada sessão.
 - **Marcar item como `[x]` no TODO imediatamente após concluí-lo** — não acumular para marcar depois, não esperar o fim da sessão.
