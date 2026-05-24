@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import Generator, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
-from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
+from langchain_openai import ChatOpenAI
+from ecosystem_client import get_inference_url as _ec_url
 
 from .config import AppConfig
 from .rag import strip_think
@@ -60,7 +60,7 @@ def iter_faq(
     """
     context = _build_context(vectorstore, sample_k)
     prompt  = _FAQ_PROMPT.format(n=n_questions, context=context)
-    llm     = ChatOllama(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0)
+    llm     = ChatOpenAI(model=config.llm_model, base_url=f"{_ec_url()}/v1", api_key="logos", temperature=0)
     messages = [
         SystemMessage(content=_FAQ_SYSTEM),
         HumanMessage(content=prompt),

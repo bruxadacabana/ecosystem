@@ -355,11 +355,11 @@ def _load_image(file_path: str, ocr_model: str = "") -> list[Document]:
 
     Estratégia em duas camadas:
       1. Tesseract via pytesseract (rápido, sem GPU, <100 MB RAM) — caminho principal.
-      2. Fallback para Ollama vision via /api/generate com imagem em base64,
+      2. Fallback para vision via llama-server /v1/chat/completions com imagem em base64,
          usado quando Tesseract falha ou quando ocr_model está configurado.
 
     O texto extraído vira um Document com metadata ocr_engine informando qual
-    camada foi usada ("tesseract" ou "ollama:{model}").
+    camada foi usada ("tesseract" ou "vision:{model}").
 
     Raises:
         DocumentLoadError: se ambas as camadas falharem ou nenhuma estiver disponível.
@@ -387,36 +387,48 @@ def _load_image(file_path: str, ocr_model: str = "") -> list[Document]:
     except Exception:
         pass  # Tesseract falhou na imagem específica — tentar Ollama
 
-    # Camada 2: Ollama vision — usado se Tesseract falhou OU se ocr_model configurado
+    # Camada 2: vision via llama-server — usado se Tesseract falhou OU se ocr_model configurado
     if (not text.strip() or ocr_model) and ocr_model:
         try:
             import httpx
-            from .ollama_client import _BASE_URL as _OLLAMA_BASE
+            try:
+                from ecosystem_client import get_inference_url as _giu
+                _vision_base = _giu()
+            except Exception:
+                _vision_base = "http://localhost:8080"
 
             with open(file_path, "rb") as fh:
                 img_b64 = base64.b64encode(fh.read()).decode()
 
             resp = httpx.post(
-                f"{_OLLAMA_BASE}/api/generate",
+                f"{_vision_base}/v1/chat/completions",
                 json={
                     "model": ocr_model,
-                    "prompt": (
-                        "Extraia TODO o texto visível nesta imagem. "
-                        "Se houver tabelas, preserva a estrutura em Markdown. "
-                        "Se não houver texto, descreve o conteúdo da imagem em português."
-                    ),
-                    "images": [img_b64],
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Extraia TODO o texto visível nesta imagem. "
+                                    "Se houver tabelas, preserva a estrutura em Markdown. "
+                                    "Se não houver texto, descreve o conteúdo da imagem em português."
+                                ),
+                            },
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
+                        ],
+                    }],
                     "stream": False,
                     "temperature": 0,
-                    "keep_alive": "10m",
+                    "max_tokens": 2048,
                 },
                 timeout=120.0,
             )
             resp.raise_for_status()
-            ollama_text = resp.json().get("response", "").strip()
-            if ollama_text:
-                text = ollama_text
-                engine = f"ollama:{ocr_model}"
+            vision_text = resp.json()["choices"][0]["message"]["content"].strip()
+            if vision_text:
+                text = vision_text
+                engine = f"vision:{ocr_model}"
         except Exception:
             pass
 

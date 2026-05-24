@@ -68,18 +68,24 @@ def _is_synthesis_query(query: str) -> bool:
     return any(trigger in q_lower for trigger in _SYNTHESIS_TRIGGERS)
 
 
-async def _call_ollama(prompt: str, model: str, ollama_url: str) -> str | None:
-    """Chama Ollama para sumarização. Retorna texto ou None em falha."""
+async def _call_inference(prompt: str, model: str, inference_url: str) -> str | None:
+    """Chama llama-server para sumarização. Retorna texto ou None em falha."""
     try:
         import httpx
         async with httpx.AsyncClient(timeout=120) as client:
             r = await client.post(
-                f"{ollama_url}/api/generate",
-                json={"model": model, "prompt": prompt, "stream": False},
+                f"{inference_url}/v1/chat/completions",
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                    "max_tokens": 512,
+                    "temperature": 0.3,
+                },
             )
-            return r.json().get("response", "").strip() or None
+            return r.json()["choices"][0]["message"]["content"].strip() or None
     except Exception as exc:
-        log.warning("raptor._call_ollama: %s", exc)
+        log.warning("raptor._call_inference: %s", exc)
         return None
 
 
@@ -106,9 +112,10 @@ async def build_raptor_index(
         return 0
 
     try:
-        from .ollama_client import _BASE_URL as _ollama_url
+        from ecosystem_client import get_inference_url as _giu
+        _inference_url = _giu()
     except Exception:
-        _ollama_url = "http://localhost:11434"
+        _inference_url = "http://localhost:8080"
 
     # ── Extrai chunks PDF do ChromaDB ─────────────────────────────────────────
     if progress_cb:
@@ -212,7 +219,7 @@ async def build_raptor_index(
                 "Escreva parágrafos explicativos, não listas.\n\n"
                 f"{combined}"
             )
-            summary = await _call_ollama(prompt, config.llm_model or "qwen2.5:7b", _ollama_url)
+            summary = await _call_inference(prompt, config.llm_model or "qwen2.5:7b", _inference_url)
             if not summary:
                 continue
 
@@ -229,11 +236,8 @@ async def build_raptor_index(
 
         # Embedar sumários para próxima rodada
         try:
-            from langchain_ollama import OllamaEmbeddings  # type: ignore[import]
-            embedder = OllamaEmbeddings(
-                model=config.embed_model or "bge-m3",
-                base_url=_ollama_url,
-            )
+            from .indexer import _InferenceEmbeddings
+            embedder = _InferenceEmbeddings(config.embed_model or "nomic-embed-text")
             round_vectors = embedder.embed_documents(round_texts)
         except Exception as exc:
             log.warning("raptor: embedding de sumários falhou — %s", exc)

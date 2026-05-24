@@ -16,8 +16,8 @@ import json
 import re
 from typing import Any, Iterator
 
-from langchain_ollama import OllamaLLM
-from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
+from langchain_openai import ChatOpenAI
+from ecosystem_client import get_inference_url as _ec_url
 
 from .config import AppConfig
 from .errors import MnemosyneError
@@ -265,7 +265,7 @@ def iter_infographic(vectorstore: Any, config: "AppConfig") -> Iterator[str]:
     context = _sample_context(vectorstore)
 
     try:
-        llm = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.1, timeout=90)
+        llm = ChatOpenAI(model=config.llm_model, base_url=f"{_ec_url()}/v1", api_key="logos", temperature=0.1, timeout=90)
         raw = strip_think(llm.invoke(_EXTRACT_PROMPT.format(context=context)))
     except Exception as exc:
         raise InfographicError(f"Falha ao chamar LLM: {exc}") from exc

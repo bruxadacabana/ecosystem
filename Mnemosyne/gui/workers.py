@@ -5,10 +5,9 @@ import logging
 
 from langchain_openai import ChatOpenAI
 try:
-    from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
+    from ecosystem_client import get_inference_url as _ec_url
 except ImportError:
-    _ec_url  = lambda: "http://localhost:8080"
-    _ec_hdrs = lambda app, p: {}
+    _ec_url = lambda: "http://localhost:8080"
 from PySide6.QtCore import QThread, Signal
 
 from core.config import AppConfig
@@ -838,7 +837,7 @@ class DeepResearchWorker(QThread):
       2. fetch() paralelo via asyncio.gather → conteúdo Markdown de cada página
       3. SessionIndexer.add_pages() → índice efêmero em memória (ou stuffing em RAM limitada)
       4. Retrieval local (vectorstore) + retrieval web (session)
-      5. Prompt combinado [Local] + [WEB] → streaming com ChatOllama
+      5. Prompt combinado [Local] + [WEB] → streaming com ChatOpenAI
       6. SessionIndexer.clear() no finally
     """
 

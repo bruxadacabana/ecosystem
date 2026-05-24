@@ -11,8 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any, Iterator
 
-from langchain_ollama import OllamaLLM
-from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
+from langchain_openai import ChatOpenAI
+from ecosystem_client import get_inference_url as _ec_url
 
 from .config import AppConfig
 from .errors import SummarizationError
@@ -171,7 +171,7 @@ def iter_summary(
         prompt = f"Tom: {va_hint}\n\n{prompt}"
 
     # Fase Reduce (ou Stuff) em streaming
-    llm_reduce = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.2, timeout=180)
+    llm_reduce = ChatOpenAI(model=config.llm_model, base_url=f"{_ec_url()}/v1", api_key="logos", temperature=0.2, timeout=180)
     yield from llm_reduce.stream(prompt)
 
 

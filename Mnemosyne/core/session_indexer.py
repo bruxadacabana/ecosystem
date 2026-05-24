@@ -8,7 +8,7 @@ from __future__ import annotations
 import chromadb
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_ollama import OllamaEmbeddings
+from .indexer import _InferenceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from .akasha_client import FetchResult
@@ -42,7 +42,7 @@ class SessionIndexer:
         self._max_pages = max_pages
         self._page_count = 0
         self._chroma_client = chromadb.EphemeralClient()
-        self._embeddings = OllamaEmbeddings(model=embed_model)
+        self._embeddings = _InferenceEmbeddings(embed_model)
         self._splitter = RecursiveCharacterTextSplitter(
             chunk_size=_CHUNK_SIZE,
             chunk_overlap=_CHUNK_OVERLAP,

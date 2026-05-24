@@ -46,8 +46,8 @@ def iter_flashcards(vectorstore, config: "AppConfig") -> Iterator[str]:
     Raises:
         Exception: se o corpus estiver vazio ou o LLM não retornar JSON válido.
     """
-    from langchain_ollama import OllamaLLM
-    from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
+    from langchain_openai import ChatOpenAI
+    from ecosystem_client import get_inference_url as _ec_url
     from .rag import strip_think
 
     docs = vectorstore.similarity_search("conceitos principais temas abordados", k=_RETRIEVAL_K)
@@ -70,7 +70,7 @@ def iter_flashcards(vectorstore, config: "AppConfig") -> Iterator[str]:
     context = "\n\n---\n\n".join(parts)
     prompt = _PROMPT.format(n=_N_CARDS, context=context)
 
-    llm = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.3, timeout=120)
+    llm = ChatOpenAI(model=config.llm_model, base_url=f"{_ec_url()}/v1", api_key="logos", temperature=0.3, timeout=120)
     raw = ""
     for chunk in llm.stream(prompt):
         raw += chunk

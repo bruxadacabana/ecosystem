@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from typing import Any, Iterator
 
-from langchain_ollama import OllamaLLM
-from ecosystem_client import get_ollama_url as _ec_url, get_ollama_headers as _ec_hdrs
+from langchain_openai import ChatOpenAI
+from ecosystem_client import get_inference_url as _ec_url
 
 from .config import AppConfig
 from .errors import MnemosyneError
@@ -106,7 +106,7 @@ def iter_study_guide(
         raise StudyGuideError("Nenhum documento indexado para gerar guia de estudo.")
 
     total_chars = sum(len(content) for _, content in docs)
-    llm_map = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.2, timeout=120)
+    llm_map = ChatOpenAI(model=config.llm_model, base_url=f"{_ec_url()}/v1", api_key="logos", temperature=0.2, timeout=120)
 
     if total_chars <= _STUFF_CHAR_LIMIT:
         context = "\n\n---\n".join(content for _, content in docs)
@@ -125,5 +125,5 @@ def iter_study_guide(
 
         prompt = _REDUCE_PROMPT.format(extractions="\n\n---\n".join(extractions))
 
-    llm_reduce = OllamaLLM(model=config.llm_model, base_url=_ec_url(), headers=_ec_hdrs("mnemosyne", 2), temperature=0.2, timeout=180)
+    llm_reduce = ChatOpenAI(model=config.llm_model, base_url=f"{_ec_url()}/v1", api_key="logos", temperature=0.2, timeout=180)
     yield from llm_reduce.stream(prompt)

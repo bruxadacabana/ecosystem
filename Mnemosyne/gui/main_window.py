@@ -395,11 +395,11 @@ class SetupDialog(QDialog):
 
             def run(self) -> None:
                 try:
-                    from langchain_ollama import ChatOllama
+                    from langchain_openai import ChatOpenAI
                     from langchain_core.messages import SystemMessage, HumanMessage
-                    from ecosystem_client import get_ollama_url as _u, get_ollama_headers as _h
-                    llm  = ChatOllama(model=self._model, base_url=_u(),
-                                     headers=_h("mnemosyne", 1), temperature=0.5)
+                    from ecosystem_client import get_inference_url as _u
+                    llm  = ChatOpenAI(model=self._model, base_url=f"{_u()}/v1",
+                                      api_key="logos", temperature=0.5)
                     msgs = [
                         SystemMessage(content=self._persona),
                         HumanMessage(content="Olá, apresente-se brevemente."),
