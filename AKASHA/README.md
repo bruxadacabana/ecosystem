@@ -35,75 +35,108 @@ As duas camadas correm em paralelo. Lentidão ou falha na IA não afeta a ferram
 
 ### Busca
 
-- **FTS5** sobre páginas crawleadas (`crawl_fts`) e arquivos locais do ecossistema (`local_fts`)
-- **Web search** via SearXNG — fallback quando a cobertura local é insuficiente
-- **Classificação de intenção** automática: `navigational` / `fact-seeking` / `exploratory`  
-  Roteia a busca para fontes locais, web ou ambas conforme o tipo detectado
-- **Expansão de query** com sinônimos e termos relacionados (lexical, sem LLM)
-- **Prioridade local**: quando há resultados locais suficientes, a busca web é adiada
-- **Diversificação por domínio**: máx 2 resultados por domínio para não monopolizar a lista
-- **Boost de citações Wikipedia**: páginas que citam artigos conhecidos sobem no ranking
-- **Cache de resultados web**: evita buscas repetidas para queries idênticas na mesma sessão
-- **Histórico de buscas**: toda query é salva e alimenta a análise de interesses da Akasha
+O AKASHA funciona como um mecanismo de busca pessoal que combina duas fontes: o seu próprio acervo local (sites que você rastreou, páginas que você arquivou) e a web aberta via SearXNG (instância local do meta-buscador, sem rastreamento). As duas fontes são consultadas em paralelo e os resultados aparecem em seções separadas na mesma interface.
+
+**Como a busca decide o que fazer com a sua query:**
+
+Toda query passa por um classificador de intenção antes de ser executada:
+
+- `navigational` — você quer ir a um site específico (ex: "github fastapi"). O AKASHA prioriza resultados locais e evita busca web redundante.
+- `fact-seeking` — você quer uma resposta direta (ex: "o que é FTS5"). Consulta local e web em paralelo, destaca snippets relevantes.
+- `exploratory` — você está descobrindo um tema (ex: "técnicas de crawling ético"). Expande a query com termos relacionados, diversifica as fontes.
+
+**Mecanismos de qualidade nos resultados:**
+
+- **FTS5** (Full-Text Search 5 do SQLite): índice invertido sobre todo o conteúdo crawleado e arquivado. Suporta busca por campo (título tem peso 10×, corpo tem peso 1×) — encontrar a palavra no título de uma página vale muito mais que encontrá-la enterrada no meio do texto.
+- **Expansão de query**: antes de buscar, o AKASHA adiciona sinônimos e termos relacionados lexicalmente (sem LLM). Buscar "machine learning" também encontra "aprendizado de máquina".
+- **Prioridade local**: se há pelo menos N resultados locais com pontuação alta, a busca web é adiada — você não é forçada a esperar a web quando o seu acervo já cobre o tema.
+- **Diversificação por domínio**: máximo 2 resultados por domínio na lista final. Evita que um único site domine os resultados.
+- **Boost de citações Wikipedia**: páginas que citam artigos da Wikipedia recebem pontuação extra — heurística de confiabilidade baseada em links de autoridade.
+- **Cache de resultados web**: resultados da busca web são cacheados por sessão. A mesma query não dispara duas requisições ao SearXNG.
+- **Histórico de buscas**: toda query fica registrada e alimenta continuamente o sistema de interesses da Akasha (assistente), que aprende quais temas você explora com frequência.
 
 ### Lentes
 
-Conjuntos de filtros salvos em `/lenses`. Permitem criar visões específicas da busca (ex: "só papers", "só sites em inglês", "só resultados locais"). Cada lente tem nome, filtros de fonte e palavras-chave obrigatórias.
+Uma lente é um conjunto de filtros salvo com nome, que você pode ativar na interface de busca. Em vez de re-selecionar filtros toda vez, você cria uma lente uma vez e reutiliza.
+
+Exemplos de uso:
+- **"Só papers"**: filtra resultados para arquivos `.pdf` e fontes acadêmicas
+- **"Só biblioteca"**: busca apenas no conteúdo que você rastreou, sem web
+- **"Física quântica"**: busca com termos obrigatórios pré-configurados num domínio específico
+
+Cada lente tem nome, filtros de fonte (`local`, `web`, `all`) e palavras-chave obrigatórias. Gerenciadas em `/lenses`.
 
 ### Biblioteca (crawling de sites)
 
-- Adicionar domínios para rastreamento em `/library`
-- Crawl agendado automático ou manual por site
-- Configurar profundidade de links e intervalo de recrawl (diário / semanal / mensal)
-- Ver e navegar páginas indexadas de cada site com leitor interno
-- Descoberta recursiva de links internos a partir das páginas já crawleadas
-- Pausar/retomar o crawler global ou por site individual
-- Adicionar site rápido pelo popup da extensão ("Rastrear site")
+A Biblioteca é o coração do acervo local do AKASHA. Você adiciona domínios que quer monitorar — blogs, wikis, fóruns, sites de pesquisa, qualquer coisa pública — e o AKASHA os rastreia automaticamente, baixando e indexando o conteúdo para busca offline.
+
+**O que acontece quando você adiciona um site:**
+
+1. O AKASHA visita a URL inicial e extrai todo o texto via `trafilatura` (remove menus, rodapés, propagandas — fica só o conteúdo)
+2. Descobre links internos e os adiciona à fila de crawl (configurável: profundidade 1, 2 ou 3 níveis)
+3. Indexa o conteúdo em FTS5 (`crawl_fts`) — fica disponível para busca imediatamente
+4. Agenda re-crawl automático (diário / semanal / mensal) para manter o conteúdo atualizado
+
+**Controles disponíveis:**
+- Pausar/retomar o crawler global sem perder a fila
+- Pausar/retomar site por site
+- Disparar crawl manual imediato em qualquer site
+- Navegar as páginas indexadas de um site com leitor interno (texto limpo, sem CSS da página original)
+- Arquivar qualquer página indexada diretamente pelo leitor
+
+Adicionar um site rápido também é possível via popup da extensão ("Rastrear site") — sem precisar abrir a interface.
 
 ### Arquivamento
 
-- Salvar página completa localmente: `{ecosystem_root}/akasha/Web/{slug}.md`
-- Extração de conteúdo via `trafilatura`
-- Via interface, popup da extensão ou barra de ação da extensão
-- Detecção de duplicatas (HTTP 409 se já arquivada)
-- Tags e notas por arquivo
+Arquivar é diferente de marcar como favorito: o AKASHA baixa e salva o **conteúdo completo** da página localmente, em formato Markdown. Se o site sair do ar amanhã, o seu arquivo continua disponível.
+
+O arquivo fica em `{ecosystem_root}/akasha/Web/{slug}.md` com metadados completos no frontmatter (título, URL de origem, data, tags, notas). O conteúdo é extraído via `trafilatura` — só o texto principal, sem ruído.
+
+Pode arquivar de três formas:
+- Pelo botão "Arquivar" na interface de busca (em qualquer resultado)
+- Pelo popup da extensão (em qualquer aba aberta no browser)
+- Pela barra de ação (em abas abertas a partir de resultados do AKASHA)
+
+Se você tentar arquivar uma página que já foi arquivada, recebe HTTP 409 — sem duplicatas.
 
 ### Watch later
 
-- Lista de páginas para ler depois em `/watch-later`
-- Adicionar via popup da extensão ou interface
-- Notas editáveis por item
-- Busca FTS5 dentro da lista
+Lista de páginas que você quer ler depois mas não quer arquivar agora. Adicione via popup da extensão ou pela interface, com uma nota opcional explicando por que quer ver. A lista tem busca FTS5 — você encontra itens por palavra no título ou na nota, não precisa lembrar exatamente o que salvou.
+
+Quando terminar de ler, marque como lido ou archive a página direto da lista.
 
 ### Highlights
 
-- Salvar trechos selecionados de páginas via extensão
-- Associados à URL de origem, pesquisáveis
+Trechos de texto salvos de páginas que você estava lendo. A extensão captura o texto selecionado e associa ao URL da página de origem. Útil para guardar citações ou trechos específicos sem arquivar a página inteira.
+
+Os highlights são pesquisáveis e ficam vinculados à URL — se você arquivar a página depois, o contexto se conecta automaticamente.
 
 ### Papers
 
-- Download de PDFs acadêmicos via **Unpaywall** (requer `unpaywall_email` no `ecosystem.json`)
-- Salvo em `{ecosystem_root}/akasha/Papers/`
-- Integração com **qBittorrent** para downloads via torrent
+Download de artigos acadêmicos em PDF diretamente pela interface. O AKASHA usa o **Unpaywall** (serviço gratuito que agrega versões abertas de papers científicos) para encontrar o PDF sem paywall. Requer um endereço de e-mail válido configurado em `ecosystem.json` → `akasha.unpaywall_email` (exigência da API do Unpaywall).
+
+Papers baixados ficam em `{ecosystem_root}/akasha/Papers/`. Para papers que só existem via torrent, há integração com qBittorrent — o download é disparado pela interface e acompanhado na fila de downloads.
 
 ### Histórico de atividade
 
-Registro unificado em `/history`, filtrável e paginado:
+Registro cronológico de tudo que aconteceu no AKASHA, acessível em `/history`. Filtrável por tipo e paginado.
 
-| Tipo | Quando é gerado |
+| Tipo | O que registra |
 |------|----------------|
-| `search` | Toda busca realizada |
-| `archive` | Toda página arquivada |
-| `download` | Todo paper ou torrent baixado |
-| `visit` | Site aberto a partir de resultado do AKASHA (via extensão) |
+| `search` | Cada busca realizada, com a query e número de resultados |
+| `archive` | Cada página arquivada, com URL e tags |
+| `download` | Cada paper ou torrent iniciado |
+| `visit` | Cada site aberto a partir de um resultado do AKASHA (via extensão) |
 
-Cada visita é registrada com deduplicação por URL dentro de uma janela de 1h — a mesma página não aparece 20 vezes por uma única sessão de leitura.
+As visitas têm deduplicação por janela de 1 hora por URL — se você recarregar a mesma página várias vezes numa sessão, ela aparece uma vez no histórico, não trinta.
+
+Esse histórico é mais do que um log: ele alimenta o sistema de análise de interesses da Akasha. A frequência com que você abre sites de um certo domínio, os tópicos das páginas que você visita, o tempo que passa lendo — tudo isso informa o que a Akasha aprende sobre você ao longo do tempo.
 
 ### Domínios e favoritos
 
-- Lista de todos os domínios rastreados com status (ativo/pausado, data da última crawl)
-- Favoritos: domínios marcados como referência frequente
-- Mover domínio de favoritos → biblioteca ou → blacklist em um clique
+**Biblioteca** (`/library`): todos os domínios que você adicionou para rastreamento, com status de cada um (ativo, pausado, última crawl, número de páginas indexadas).
+
+**Favoritos** (`/favorites`): domínios que você sinalizou como referência frequente — aparecem destacados e podem ser convertidos em sites da biblioteca ou movidos para a blacklist (domínios que nunca devem aparecer nos resultados) com um clique. Útil para marcar fontes confiáveis sem necessariamente rastrear o site inteiro.
 
 ---
 
