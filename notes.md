@@ -1,7 +1,6 @@
 ## Fila de implementação atual:
 
-então prossiga com a implementação de '### LOGOS: inferência no CPU para o laptop | 2026-05-24'!
-lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
+pode prosseguir e completar toda essa seção, mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
 Não se esqueça das regras para documentar no README e GUIDE.
 
 
