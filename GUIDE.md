@@ -1228,7 +1228,13 @@ npm run test -- --watch
 
 # Com cobertura
 npm run test -- --coverage
+
+# Testes Rust (unitários do backend)
+cd src-tauri
+cargo test --lib
 ```
+
+> ⚠️ **Windows — `STATUS_ENTRYPOINT_NOT_FOUND` (0xC0000139):** sem o fix em `build.rs`, os testes Rust travam ao iniciar. A causa é `comctl32.dll` v5.82 (padrão do Windows sem manifest) que não exporta `TaskDialogIndirect` (função exclusiva da v6, usada por `tauri-plugin-dialog`). O `build.rs` já emite `/DELAYLOAD:comctl32.dll` para adiar a resolução da importação — como testes nunca chamam funções de diálogo, a DLL nunca é carregada. O `hub.exe` não é afetado porque o manifest do Tauri ativa v6 antes de qualquer diálogo.
 
 **Variáveis de ambiente (frontend):**  
 Definidas em `HUB/.env` (não commitado). Para dev, os valores padrão no código funcionam sem arquivo `.env`.
