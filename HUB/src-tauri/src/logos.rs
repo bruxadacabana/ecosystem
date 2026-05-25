@@ -512,6 +512,58 @@ impl LogosState {
             app_handle: Mutex::new(None),
         }))
     }
+
+    /// Injeta um processo filho como llama_proc ativo — apenas para testes.
+    /// Permite simular um servidor em execução sem spawnar o llama-server real.
+    #[cfg(test)]
+    pub(crate) async fn inject_proc_for_test(&self, child: tokio::process::Child, model_name: &str) {
+        *self.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: model_name.to_string(),
+        });
+    }
+
+    /// Construtor mínimo para testes unitários em outros módulos.
+    /// Não lê ecosystem.json; usa valores padrão seguros.
+    #[cfg(test)]
+    pub(crate) fn for_testing(
+        models_dir: std::path::PathBuf,
+        llama_server_bin: Option<std::path::PathBuf>,
+    ) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
+        let mut sys = System::new_all();
+        sys.refresh_cpu_all();
+        sys.refresh_memory();
+        Self(Arc::new(Inner {
+            llama_server_url:   "http://127.0.0.1:8081".to_string(),
+            semaphore:          Arc::new(Semaphore::new(2)),
+            active_priority:    Mutex::new(None),
+            active_model_class: Mutex::new(None),
+            active_app:         Mutex::new(None),
+            active_profile:     Mutex::new("normal".to_string()),
+            hardware_mode:      "normal".to_string(),
+            hardware_profile:   HardwareProfile::WorkPc,
+            queue_counts:       Mutex::new([0, 0, 0]),
+            client,
+            sys:                Mutex::new(sys),
+            on_battery:         Mutex::new(false),
+            preempted_count:    Mutex::new(0),
+            model_overrides:    Mutex::new(HashMap::new()),
+            vram_limit_pct:     Mutex::new(85.0),
+            active_inferences:  Mutex::new(HashMap::new()),
+            p3_vram_blocked:    Arc::new(AtomicBool::new(false)),
+            downloads:          Mutex::new(HashMap::new()),
+            models_dir,
+            llama_server_bin,
+            llama_proc:         Mutex::new(None),
+            llama_crash_count:  Mutex::new(0),
+            llama_disabled:     Arc::new(AtomicBool::new(false)),
+            app_handle:         Mutex::new(None),
+        }))
+    }
 }
 
 // ── Tipos de resposta ─────────────────────────────────────────

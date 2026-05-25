@@ -3,7 +3,7 @@ ECOSSISTEMA — SETUP DO ZERO
 Instale tudo nesta ordem antes de rodar o atualizar.sh.
 O atualizar.sh só funciona se os pré-requisitos abaixo já estiverem no sistema.
 
-Última atualização: 2026-05-22
+Última atualização: 2026-05-25
 
 
 ════════════════════════════════════════════
@@ -17,9 +17,17 @@ Runtimes necessários:
 
 Ferramentas de build:
   - cargo-tauri CLI (para AETHER, HUB)
+  - cmake + compilador C++ (para compilar llama.cpp do zero)
+  - Vulkan SDK / shaderc (CachyOS/Fedora — para backend Vulkan do llama.cpp)
+  - ROCm (CachyOS — alternativa ao Vulkan para AMD RX 6600)
 
 Serviços externos:
-  - Ollama (para Mnemosyne e HUB)
+  - llama-server (llama.cpp) — gerenciado pelo LOGOS dentro do HUB
+    Opção A: baixar binário pré-compilado em https://github.com/ggml-org/llama.cpp/releases
+    Opção B: compilar do zero (necessário cmake + Vulkan/ROCm)
+    WorkPC (sem AVX2): builds com CPU dispatch automático funcionam direto (incluem DLLs
+      para Ivy Bridge/Sandy Bridge/SSE4.2 — selecionadas automaticamente em runtime).
+      Se o build não tiver dispatch, usar variante "avx" do binário.
 
 Dependências de sistema (Linux):
   - webkit2gtk-4.1 (obrigatório para Tauri)
@@ -51,6 +59,9 @@ Dependências de sistema (Linux):
   # SQLite (caso não venha no sistema)
   sudo dnf install sqlite sqlite-devel
 
+  # llama.cpp (build do servidor de inferência)
+  sudo dnf install cmake vulkan-headers vulkan-tools glslc
+
 ──────────────────────────────────────────
   CachyOS / Arch Linux (computador principal)
 ──────────────────────────────────────────
@@ -67,6 +78,16 @@ Dependências de sistema (Linux):
   # Utilitário para OGMA
   sudo pacman -S xdotool
 
+  # llama.cpp (build do servidor de inferência)
+  # Backend Vulkan — necessário para GPU AMD via Kompute (alternativa ao ROCm)
+  sudo pacman -S vulkan-icd-loader vulkan-tools shaderc glslc
+
+  # Backend ROCm (AMD RX 6600) — se preferir ROCm em vez de Vulkan
+  # Instalar via AUR ou repositórios da distribuição:
+  # yay -S rocm-hip-sdk rocm-opencl-runtime
+  # Setar antes de compilar/rodar:
+  #   export HSA_OVERRIDE_GFX_VERSION=10.3.0
+
 ──────────────────────────────────────────
   Windows 10 (trabalho)
 ──────────────────────────────────────────
@@ -80,6 +101,14 @@ Dependências de sistema (Linux):
 
   - Git para Windows:
     https://git-scm.com/download/win
+
+  - CMake (necessário para compilar llama.cpp do zero):
+    https://cmake.org/download/
+    Marcar "Add CMake to the system PATH" durante a instalação.
+    Alternativamente, via winget: winget install Kitware.CMake
+
+  Nota WorkPC: cmake é necessário apenas se for COMPILAR o llama-server.
+  Para uso normal, baixe o binário pré-compilado (seção 6) — não precisa de cmake.
 
 
 ════════════════════════════════════════════
@@ -183,43 +212,45 @@ Dependências de sistema (Linux):
 
 
 ════════════════════════════════════════════
-  6. OLLAMA (necessário para Mnemosyne e HUB)
+  6. LLAMA-SERVER (gerenciado pelo LOGOS no HUB)
 ════════════════════════════════════════════
 
-  Instalar:
+  O ecossistema usa llama-server (llama.cpp) como backend de inferência.
+  O HUB/LOGOS gerencia o processo — você não precisa iniciá-lo manualmente.
 
-    curl -fsSL https://ollama.com/install.sh | sh
+  Instalar o binário pré-compilado:
+    https://github.com/ggml-org/llama.cpp/releases
+    Baixar o arquivo "llama-<versão>-bin-<plataforma>.zip"
 
-  Windows: https://ollama.com/download
+  Variantes por CPU:
+    - avx2       → padrão (maioria dos PCs modernos)
+    - avx        → CPUs sem AVX2 (ex: Intel Ivy Bridge 2012)
+    - noavx      → CPUs muito antigas (fallback máximo)
+    - cuda       → NVIDIA com CUDA
+    - kompute    → AMD/Intel via Vulkan
 
-  Verificar se está rodando:
+  WorkPC (i5-3470, Ivy Bridge, sem AVX2): usar variante "avx" ou "noavx"
+    Exemplo: llama-b5194-bin-win-avx-x64.zip
 
-    ollama list
+  Após baixar, extrair e configurar o caminho em ecosystem.json:
+    logos.llama_server_path: "C:\\caminho\\para\\llama-server.exe"
+  Ou adicionar o diretório ao PATH do sistema.
 
-  Se não iniciar sozinho:
+  Verificar:
+    llama-server --version
 
-    ollama serve    # rodar em terminal separado
-    # ou: systemctl start ollama (Linux com systemd)
-
-  Baixar os modelos necessários:
-
-    # Para Mnemosyne (RAG — chat + embedding)
-    ollama pull qwen3:8b-q4_K_M      # modelo de chat (~4.6 GB VRAM)
-    ollama pull bge-m3               # embedding (~0.6 GB VRAM)
-
-    # Alternativas menores (para máquina com pouca VRAM)
-    ollama pull gemma3:4b            # chat leve (~2.5 GB)
-    ollama pull nomic-embed-text     # embedding leve (~270 MB)
+  Modelos GGUF (baixar via HUB ou manualmente):
+    Pasta padrão: %LOCALAPPDATA%\ecosystem\hub\logos\models\  (Windows)
+    O HUB lista e baixa modelos com um clique na aba LOGOS.
 
   Nota CachyOS (GPU AMD RX 6600):
-    Para usar a GPU, setar antes de rodar o ollama:
+    Para usar ROCm, setar antes de iniciar o HUB:
     export HSA_OVERRIDE_GFX_VERSION=10.3.0    # bash/zsh
     set -x HSA_OVERRIDE_GFX_VERSION 10.3.0   # Fish
 
   Nota Laptop (MX150, 2 GB VRAM):
-    VRAM muito limitada. Modelos viáveis:
-    ollama pull smollm2:1.7b-instruct-q4_K_M   # ~1 GB
-    Os modelos maiores vão usar CPU (lento mas funciona)
+    VRAM muito limitada. Usar modelos Q4 ≤1.7B para GPU.
+    O LOGOS gerencia a troca automática GPU→CPU quando necessário.
 
 
 ════════════════════════════════════════════
@@ -266,7 +297,8 @@ Dependências de sistema (Linux):
     hermes.output_dir     — onde o Hermes salva transcrições
 
   Porta do AKASHA: sempre 7071 (fixa, não configurável)
-  Porta do Ollama: sempre 11434 (ou via LOGOS em 7072 se o HUB estiver rodando)
+  Porta do LOGOS: sempre 7072 (quando HUB estiver rodando)
+  Porta do llama-server: 8081 (processo filho do LOGOS, não acessar diretamente)
 
 
 ════════════════════════════════════════════
@@ -306,7 +338,7 @@ Dependências de sistema (Linux):
   [ ] npm --version            → 10.x+
   [ ] python3 --version        → 3.11+
   [ ] uv --version             → 0.4+
-  [ ] ollama list              → sem erro (serviço rodando)
+  [ ] llama-server --version   → qualquer versão (confirma que está no PATH)
   [ ] webkit2gtk-4.1 instalado (Linux)
   [ ] bash atualizar.sh        → sem erros vermelhos
   [ ] ecosystem.json configurado com os caminhos corretos
@@ -320,5 +352,5 @@ Dependências de sistema (Linux):
   5174   AETHER (Vite dev server)
   5175   OGMA (Vite dev server)
   7071   AKASHA (FastAPI — sempre ativo quando AKASHA roda)
-  7072   LOGOS / proxy Ollama (HUB — quando rodando)
-  11434  Ollama (externo)
+  7072   LOGOS (HUB — proxy de LLM com fila de prioridades, quando rodando)
+  8081   llama-server (processo filho gerenciado pelo LOGOS)

@@ -28,10 +28,21 @@ pub async fn toggle_inference(
     state: tauri::State<'_, crate::logos::LogosState>,
     enable: bool,
 ) -> Result<String, AppError> {
+    let responding = llama_server_responding().await;
+    do_toggle_inference(state.inner(), enable, responding).await
+}
+
+/// Lógica testável de toggle_inference.
+/// `server_responding` injeta o resultado do check HTTP para desacoplar de rede.
+pub(crate) async fn do_toggle_inference(
+    state: &crate::logos::LogosState,
+    enable: bool,
+    server_responding: bool,
+) -> Result<String, AppError> {
     if enable {
-        if llama_server_responding().await {
+        if server_responding {
             // Se o processo já está rastreado pelo HUB, está tudo bem.
-            if state.inner().llama_proc_active().await {
+            if state.llama_proc_active().await {
                 return Ok("already_running".into());
             }
             // Servidor órfão de sessão anterior: matar antes de subir o nosso.
@@ -39,20 +50,20 @@ pub async fn toggle_inference(
             kill_orphaned_llama_server().await;
         }
         // Falha rápida e clara: llama-server não localizado no startup
-        if !state.inner().has_llama_server() {
+        if !state.has_llama_server() {
             return Err(AppError::NotFound(
                 "llama-server não encontrado. Instale o llama.cpp e certifique-se de que \
                  'llama-server' está no PATH, ou configure o caminho em ecosystem.json \
                  como logos.llama_server_path.".into(),
             ));
         }
-        let models = crate::logos::do_list_all_models(state.inner()).await;
+        let models = crate::logos::do_list_all_models(state).await;
         let names: Vec<String> = models.into_iter().map(|m| m.name).collect();
         let model_name = select_model_to_load_llm(&names)
             .or_else(|| select_model_to_load(&names))
             .ok_or_else(|| AppError::NotFound("Nenhum modelo instalado.".into()))?;
-        let s = state.inner().clone();
-        tauri::async_runtime::spawn(async move {
+        let s = state.clone();
+        tokio::spawn(async move {
             let _ = crate::logos::do_load_model(&s, &model_name).await;
         });
         Ok("started".into())
@@ -434,6 +445,108 @@ mod tests {
     fn test_select_model_to_load_llm_all_embeddings_returns_none() {
         let names = vec!["bge-m3".to_string(), "nomic-embed".to_string()];
         assert_eq!(select_model_to_load_llm(&names), None);
+    }
+
+    // ── do_toggle_inference ───────────────────────────────────────────────────
+
+    // Helper: cria registry.json com um modelo fake no diretório informado.
+    fn write_fake_registry(dir: &std::path::Path, model_name: &str) {
+        let registry = serde_json::json!([{
+            "name": model_name,
+            "repo_id": "test/repo",
+            "filename": format!("{model_name}.gguf"),
+            "path": dir.join(format!("{model_name}.gguf")).to_string_lossy(),
+            "size_bytes": 1_000_000,
+            "sha256": "abc123",
+            "downloaded_at": "2026-05-25T00:00:00+00:00"
+        }]);
+        std::fs::write(
+            dir.join("registry.json"),
+            serde_json::to_vec(&registry).unwrap(),
+        ).unwrap();
+    }
+
+    #[tokio::test]
+    async fn toggle_disable_no_proc_returns_already_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), None);
+        let result = do_toggle_inference(&state, false, false).await.unwrap();
+        assert_eq!(result, "already_stopped");
+    }
+
+    #[tokio::test]
+    async fn toggle_enable_no_llama_server_returns_not_found() {
+        // has_llama_server() = false → NotFound independente de server_responding
+        let dir = tempfile::tempdir().unwrap();
+        let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), None);
+        let err = do_toggle_inference(&state, true, false).await.unwrap_err();
+        assert!(matches!(err, crate::AppError::NotFound(_)), "esperado NotFound, obteve: {err:?}");
+    }
+
+    #[tokio::test]
+    async fn toggle_enable_no_models_returns_not_found() {
+        // has_llama_server() = true, mas models dir vazio → NotFound
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("llama-server");
+        std::fs::write(&bin, b"").unwrap();
+        let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), Some(bin));
+        // sem registry.json → lista de modelos vazia
+        let err = do_toggle_inference(&state, true, false).await.unwrap_err();
+        assert!(matches!(err, crate::AppError::NotFound(_)), "esperado NotFound, obteve: {err:?}");
+    }
+
+    #[tokio::test]
+    async fn toggle_enable_with_model_returns_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("llama-server");
+        std::fs::write(&bin, b"").unwrap();
+        write_fake_registry(dir.path(), "gemma-2b");
+        let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), Some(bin));
+        // server_responding=false → sem verificação de órfão
+        let result = do_toggle_inference(&state, true, false).await.unwrap();
+        assert_eq!(result, "started");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn toggle_disable_with_active_proc_returns_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), None);
+
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível em Unix");
+        state.inject_proc_for_test(child, "stub").await;
+
+        let result = do_toggle_inference(&state, false, false).await.unwrap();
+        assert_eq!(result, "stopped");
+        assert!(!state.llama_proc_active().await, "proc deve ser None após kill");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn toggle_enable_server_responding_proc_active_returns_already_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), None);
+
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível em Unix");
+        state.inject_proc_for_test(child, "stub").await;
+
+        // server_responding=true e proc_active=true → already_running (sem kill, sem spawn)
+        let result = do_toggle_inference(&state, true, true).await.unwrap();
+        assert_eq!(result, "already_running");
+
+        state.kill_llama_proc().await;
     }
 }
 
