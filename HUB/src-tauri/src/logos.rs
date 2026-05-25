@@ -927,8 +927,10 @@ async fn spawn_llama_server_proc(
         cmd.arg("--n-gpu-layers").arg("0");
     } else if n_gpu > 0 {
         cmd.arg("--n-gpu-layers").arg(n_gpu.to_string());
+    } else {
+        // n_gpu == -1: offload total — llama-server NÃO usa GPU sem esta flag (padrão = CPU)
+        cmd.arg("--n-gpu-layers").arg("9999");
     }
-    // n_gpu == -1: sem flag; llama-server faz offload completo na GPU por padrão
     #[cfg(unix)]
     cmd.process_group(0); // novo grupo de processos — sobrevive ao fechamento do HUB
     cmd.spawn().map_err(|e| format!("Falha ao iniciar llama-server: {e}"))
