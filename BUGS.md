@@ -426,3 +426,88 @@ O `hub.exe` não é afetado: o manifest do Tauri ativa comctl32 v6 antes de qual
 
 #### Teste de regressão
 Não há teste automatizado para este fix (seria necessário um teste de processo que verifica o código de saída do binário de testes em si). O fix é verificado indiretamente: se regredir, **todos** os 126 testes unitários falharão antes de executar no Windows.
+
+---
+
+### BUG-006 · [FIXED] · Expansão morfológica gera query FTS5 inválida em buscas multi-palavra
+
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** AKASHA
+- **Componente:** `AKASHA/services/local_search.py` — função `_expand_query_stems`
+- **Commit do fix:** pendente
+- **Descoberta via:** teste-automatizado (ao escrever `test_search_integration.py`)
+- **Tempo de diagnóstico:** ~30 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas (qualquer máquina com langdetect + NLTK instalados no venv)
+- **OS:** Windows 10 (confirmado); CachyOS provavelmente afetado também
+- **Hardware relevante:** não aplicável
+- **Modo:** produção + testes
+- **Reproduzível em:** qualquer ambiente onde langdetect e nltk estejam instalados no venv AKASHA
+
+#### Pré-condição para reproduzir
+1. Venv AKASHA com `langdetect` e `nltk` instalados (ambos presentes no `pyproject.toml`)
+2. Query de dois ou mais tokens em português ou inglês (ex: `"python recente"`)
+3. Pelo menos um token stem-expansível (ex: "recente" → stem "recent")
+
+#### Sintoma observado
+Busca local (`search_local("python recente")`) retorna `[]` silenciosamente, mesmo com documentos indexados que contêm os termos. Queries de palavra única ("python") funcionam normalmente.
+
+#### Logs
+```python
+# Expansão gerada (ERRADA):
+_expand_query_stems("python recente", "python recente")
+# → 'python (recente OR recent*)'
+
+# SQLite FTS5:
+conn.execute("SELECT * FROM local_fts WHERE local_fts MATCH 'python (recente OR recent*)'")
+# → sqlite3.OperationalError: fts5: syntax error near "OR"
+
+# Erro silenciado por:
+try:
+    async with aiosqlite.connect(DB_PATH) as db:
+        rows = await db.execute(...)  # query explode aqui
+        ...
+except Exception:
+    pass  # ← retorna [] sem avisar
+```
+
+#### Causa raiz
+`_expand_query_stems` expande cada token de `"python recente"` individualmente:
+- `"python"` → `"python"` (stem igual ao token, sem expansão)
+- `"recente"` → `"(recente OR recent*)"` (stem "recent" ≠ token "recente")
+
+E então junta as partes com `" ".join(parts)`, produzindo `"python (recente OR recent*)"`.
+
+O FTS5 do SQLite interpreta espaço como AND implícito. A sequência `token (A OR B)` é **sintaxe inválida** porque o FTS5 não aceita AND implícito entre um token simples e um grupo `(...)` contendo `OR`. O error code é `fts5: syntax error near "OR"`.
+
+Essa restrição está documentada no SQLite: tokens simples podem ser combinados com AND implícito entre si, mas parênteses com OR dentro exigem `AND` explícito do token anterior.
+
+#### Impacto
+**Silencioso e severo.** Qualquer query de 2+ palavras em PT ou EN com NLTK instalado retornava `[]` sem aviso. A usuária nunca veria resultados de busca local multi-palavra (a situação mais comum em uso real). O erro era mascarado pelo `except Exception: pass` em `_search_fts`.
+
+#### Tentativas anteriores
+Nenhuma — bug descoberto diretamente durante a escrita dos testes.
+
+#### Fix aplicado
+`_expand_query_stems` em `AKASHA/services/local_search.py` — mudança de `" ".join(parts)` para `" AND ".join(parts)`:
+
+```python
+# Antes (ERRADO):
+return " ".join(parts)
+# Produzia: 'python (recente OR recent*)'  ← FTS5 syntax error
+
+# Depois (CORRETO):
+return " AND ".join(parts)
+# Produz: 'python AND (recente OR recent*)'  ← válido
+# Também correto para tokens sem expansão:
+# 'python AND recente' ≡ 'python recente' (AND implícito e explícito são equivalentes)
+```
+
+O `AND` explícito é semanticamente equivalente ao AND implícito para tokens simples, e resolve o syntax error para tokens expandidos com `(A OR B)`.
+
+O docstring foi atualizado para refletir a saída correta: `(buscando OR busc*) AND (artigos OR artig*)`.
+
+#### Teste de regressão
+`AKASHA/tests/test_search_integration.py::TestConflictingBoosts::test_conflicting_pagerank_and_freshness_preserves_all_results` — verifica que buscas multi-palavra com query temporal encontram documentos indexados. Antes do fix, retornava `[]`.

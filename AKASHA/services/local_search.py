@@ -894,7 +894,9 @@ def _expand_query_stems(fts_query: str, original_query: str) -> str:
     """Detecta idioma da query e expande tokens com suas raízes morfológicas.
 
     Exemplo: query='buscando artigos' (PT detectado) →
-             '(buscando OR busc*) (artigos OR artig*)'
+             '(buscando OR busc*) AND (artigos OR artig*)'
+    Tokens expandidos com OR são unidos por AND explícito — FTS5 não aceita
+    implicit-AND entre um token simples e um grupo '(A OR B)'.
     Phrase queries entre aspas não são expandidas.
     Retorna fts_query inalterado se langdetect ou nltk não estiverem disponíveis
     ou se o idioma detectado não for PT nem EN.
@@ -920,7 +922,9 @@ def _expand_query_stems(fts_query: str, original_query: str) -> str:
     tail = fts_query[cursor:].strip()
     if tail:
         parts.extend(_expand_token(t, lang) for t in tail.split())
-    return " ".join(parts)
+    # AND explícito: necessário quando qualquer parte é '(token OR stem*)'.
+    # FTS5 não aceita implicit-AND entre token simples e grupo OR.
+    return " AND ".join(parts)
 
 
 def _plain_tokens(text: str) -> list[str]:
