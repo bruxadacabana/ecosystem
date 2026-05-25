@@ -1362,7 +1362,25 @@ python -m pytest logos/tests/test_gguf_converter.py -v
 
 ---
 
-### 4.9. Resumo rápido — comandos por app
+### 4.9. Testes da raiz — ecosystem_client.py
+
+Testes de contrato que verificam a integração HUB (Rust) → `ecosystem.json` → apps Python.
+Ficam em `tests/` na raiz do monorepo e usam o venv compartilhado `.venv`.
+
+```bash
+# A partir da raiz do monorepo:
+.venv/Scripts/pytest tests/ -v          # Windows
+.venv/bin/pytest     tests/ -v          # Linux/macOS
+
+# Um arquivo específico:
+.venv/Scripts/pytest tests/test_ecosystem_client_sync_root.py -v
+```
+
+Estes testes não exigem HUB nem serviços rodando — usam `patch.object(ec, "ecosystem_path", ...)` para redirecionar leituras/escritas para um tempdir isolado.
+
+---
+
+### 4.10. Resumo rápido — comandos por app
 
 | App | Instalar | Rodar (dev) | Testar |
 |-----|----------|-------------|--------|
@@ -1370,10 +1388,11 @@ python -m pytest logos/tests/test_gguf_converter.py -v
 | Mnemosyne | `pip install -r Mnemosyne/requirements.txt` | `bash Mnemosyne/iniciar.sh` | `python -m pytest Mnemosyne/tests/ -v` |
 | KOSMOS | `cd KOSMOS && uv sync` | `uv run main.py` | `uv run pytest tests/ -v` |
 | Hermes | `pip install -r Hermes/requirements.txt` | `bash Hermes/iniciar.sh` | `python -m pytest Hermes/tests/ -v` |
-| HUB | `cd HUB && npm install` | `npm run tauri dev` | `npm test` |
+| HUB | `cd HUB && npm install` | `npm run tauri dev` | `npm test` + `cd src-tauri && cargo test --lib` |
 | AETHER | `cd AETHER && npm install` | `npm run tauri dev` | `npm test` |
 | OGMA | `cd OGMA && npm install` | `npm run dev` | `npm test` |
 | logos/ | `pip install unsloth trl peft ...` | invocação direta | `python -m pytest logos/tests/ -v` |
+| raiz | — | — | `.venv/Scripts/pytest tests/ -v` (contrato ecosystem_client) |
 
 > 📦 Para instalar tudo de uma vez: `bash atualizar.sh` na raiz. Ele faz exatamente esses passos na ordem certa.
 
