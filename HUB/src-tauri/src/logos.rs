@@ -987,14 +987,16 @@ fn n_ctx_for_hardware(hw: HardwareProfile) -> u32 {
 /// Inicia um processo llama-server para o modelo especificado.
 /// `mmproj_path`: caminho do arquivo de projeção visual para modelos multimodais (moondream, LLaVA).
 /// None para modelos de texto puro.
-async fn spawn_llama_server_proc(
+/// Constrói o `Command` do llama-server sem spawná-lo.
+/// Separado para permitir inspeção dos args em testes sem precisar de um binário real.
+pub(crate) fn build_llama_server_cmd(
     bin: &std::path::Path,
     model_path: &std::path::Path,
     mmproj_path: Option<&std::path::Path>,
     n_gpu: i32,
     n_ctx: u32,
     port: u16,
-) -> Result<tokio::process::Child, String> {
+) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(bin);
     cmd.arg("--model")     .arg(model_path)
        .arg("--port")      .arg(port.to_string())
@@ -1003,7 +1005,7 @@ async fn spawn_llama_server_proc(
        .arg("--cont-batching")
        .arg("--pooling")   .arg("mean")   // habilita /v1/embeddings no modelo de chat
        .stdout(std::process::Stdio::null())
-       .stderr(std::process::Stdio::piped()); // capturado para log
+       .stderr(std::process::Stdio::piped());
     if let Some(mp) = mmproj_path {
         cmd.arg("--mmproj").arg(mp);
     }
@@ -1015,8 +1017,21 @@ async fn spawn_llama_server_proc(
         // n_gpu == -1: offload total — llama-server NÃO usa GPU sem esta flag (padrão = CPU)
         cmd.arg("--n-gpu-layers").arg("9999");
     }
+    cmd
+}
+
+async fn spawn_llama_server_proc(
+    bin: &std::path::Path,
+    model_path: &std::path::Path,
+    mmproj_path: Option<&std::path::Path>,
+    n_gpu: i32,
+    n_ctx: u32,
+    port: u16,
+) -> Result<tokio::process::Child, String> {
     // Sem process_group(0): llama-server é filho do HUB e morre junto com ele
-    cmd.spawn().map_err(|e| format!("Falha ao iniciar llama-server: {e}"))
+    build_llama_server_cmd(bin, model_path, mmproj_path, n_gpu, n_ctx, port)
+        .spawn()
+        .map_err(|e| format!("Falha ao iniciar llama-server: {e}"))
 }
 
 /// Inicia uma task que lê o stderr do processo llama-server linha a linha e registra via log.
@@ -4229,6 +4244,91 @@ mod tests {
         // nenhum tem registry.json
         let result = pick_models_dir(xdg_tmp.path().to_owned(), cwd_tmp.path().to_owned());
         assert_eq!(result, xdg_tmp.path(), "xdg deve ser o padrão quando nenhum tem registry.json");
+    }
+
+    // ── build_llama_server_cmd — flags obrigatórias ───────────────────────────
+
+    fn cmd_args(cmd: &tokio::process::Command) -> Vec<String> {
+        cmd.as_std().get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn spawn_cmd_always_includes_pooling_mean() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd(bin, model, None, -1, 4096, 8081);
+        let args  = cmd_args(&cmd);
+        let idx   = args.iter().position(|a| a == "--pooling")
+            .expect("--pooling deve estar presente (BUG-002: sem ela /v1/embeddings retorna 501)");
+        assert_eq!(args[idx + 1], "mean", "--pooling deve ser 'mean'");
+    }
+
+    #[test]
+    fn spawn_cmd_always_includes_port() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd(bin, model, None, 0, 4096, 8081);
+        let args  = cmd_args(&cmd);
+        let idx   = args.iter().position(|a| a == "--port")
+            .expect("--port deve sempre estar presente");
+        assert_eq!(args[idx + 1], "8081");
+    }
+
+    #[test]
+    fn spawn_cmd_n_gpu_minus1_emits_9999() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd(bin, model, None, -1, 4096, 8081);
+        let args  = cmd_args(&cmd);
+        let idx   = args.iter().position(|a| a == "--n-gpu-layers")
+            .expect("--n-gpu-layers deve estar presente quando n_gpu=-1 (BUG-003: sem ela roda em CPU)");
+        assert_eq!(args[idx + 1], "9999", "n_gpu=-1 deve gerar 9999 (offload total)");
+    }
+
+    #[test]
+    fn spawn_cmd_n_gpu_zero_emits_zero() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd(bin, model, None, 0, 4096, 8081);
+        let args  = cmd_args(&cmd);
+        let idx   = args.iter().position(|a| a == "--n-gpu-layers")
+            .expect("--n-gpu-layers deve estar presente quando n_gpu=0");
+        assert_eq!(args[idx + 1], "0", "n_gpu=0 deve forçar modo CPU explícito");
+    }
+
+    #[test]
+    fn spawn_cmd_n_gpu_positive_uses_value() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd(bin, model, None, 24, 4096, 8081);
+        let args  = cmd_args(&cmd);
+        let idx   = args.iter().position(|a| a == "--n-gpu-layers")
+            .expect("--n-gpu-layers deve estar presente quando n_gpu=24");
+        assert_eq!(args[idx + 1], "24");
+    }
+
+    #[test]
+    fn spawn_cmd_with_mmproj_includes_flag() {
+        let bin    = std::path::Path::new("llama-server");
+        let model  = std::path::Path::new("model.gguf");
+        let mmproj = std::path::Path::new("mmproj.gguf");
+        let cmd    = build_llama_server_cmd(bin, model, Some(mmproj), -1, 4096, 8081);
+        let args   = cmd_args(&cmd);
+        let idx    = args.iter().position(|a| a == "--mmproj")
+            .expect("--mmproj deve estar presente quando mmproj_path é Some");
+        assert!(args[idx + 1].ends_with("mmproj.gguf"));
+    }
+
+    #[test]
+    fn spawn_cmd_without_mmproj_excludes_flag() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd(bin, model, None, -1, 4096, 8081);
+        let args  = cmd_args(&cmd);
+        assert!(!args.contains(&"--mmproj".to_string()),
+            "--mmproj não deve aparecer quando mmproj_path é None");
     }
 
     // ── do_list_all_models: active model detectado via llama_proc ─────────────
