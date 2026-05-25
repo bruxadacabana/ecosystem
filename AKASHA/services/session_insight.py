@@ -50,6 +50,12 @@ _last_gen: dict[str, float]          = {}
 # Entrada de personal_memory atualmente exibida no overlay (global — um overlay por vez)
 _pm_current: dict[str, Any] | None = None
 
+# Rastreia quem já recebeu/mostrou a entrada atual de PM.
+# "ui"  = interface AKASHA (requisição com cookie de sessão)
+# "ext" = extensão do browser (requisição sem cookie)
+# Evita que a mesma observação apareça duas vezes para a usuária.
+_pm_shown_by: set[str] = set()
+
 
 def get_pm_current() -> dict[str, Any] | None:
     """Retorna a entrada de personal_memory exibida no overlay, ou None."""
@@ -57,9 +63,21 @@ def get_pm_current() -> dict[str, Any] | None:
 
 
 def set_pm_current(entry: dict[str, Any] | None) -> None:
-    """Define (ou limpa) a entrada de personal_memory do overlay."""
-    global _pm_current
+    """Define (ou limpa) a entrada de personal_memory do overlay.
+    Sempre reseta _pm_shown_by — nova entrada deve poder ser vista por qualquer consumidor."""
+    global _pm_current, _pm_shown_by
     _pm_current = entry
+    _pm_shown_by = set()
+
+
+def pm_already_shown_by(consumer: str) -> bool:
+    """True se o outro consumidor já mostrou a entrada atual (UI ou extensão)."""
+    return bool(_pm_shown_by - {consumer})
+
+
+def mark_pm_shown(consumer: str) -> None:
+    """Registra que o consumidor 'ui' ou 'ext' já mostrou a entrada atual."""
+    _pm_shown_by.add(consumer)
 
 
 def maybe_schedule(
@@ -111,14 +129,13 @@ def dismiss(session_id: str) -> None:
     Sempre limpa _pm_current, independente de haver session_id (cookies podem
     estar ausentes em requisições cross-origin da extensão do browser).
     """
-    global _pm_current
     _current.pop(session_id, None)
     if _pm_current is not None:
         dismissed_entry = _pm_current
-        _pm_current = None
+        set_pm_current(None)  # reseta _pm_current e _pm_shown_by
         _fire_feedback_reflection(dismissed_entry, "dismissed")
     else:
-        _pm_current = None
+        set_pm_current(None)
 
 
 def on_feedback_confirmed(memory_id: int) -> None:

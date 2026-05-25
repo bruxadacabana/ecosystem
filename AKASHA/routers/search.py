@@ -942,6 +942,12 @@ async def insight_current(request: Request) -> dict:
 
     Prioridade: session_insight (gerado on-the-fly) > entrada de personal_memory
     ordenada por arousal × importance DESC.
+
+    Consumidores:
+    - UI da interface (cookie akasha_session presente) → consumer="ui"
+    - Extensão do browser (sem cookie, cross-origin) → consumer="ext"
+    Cada entrada de PM é mostrada por apenas UM consumidor — o primeiro que pede.
+    O segundo recebe text=None e não exibe nada.
     """
     # Não interrompe quando o agente está em alta ativação — adia para momento calmo.
     try:
@@ -954,8 +960,11 @@ async def insight_current(request: Request) -> dict:
 
     from services import session_insight as _si
     session_id = request.cookies.get("akasha_session", "")
+    # UI tem cookie de sessão; extensão não envia cookies (cross-origin sem credentials)
+    consumer = "ui" if session_id else "ext"
 
     # 1. Session insight (gerado durante a sessão de busca)
+    # Session insights são keyed por session_id — a extensão não tem sessão, não os recebe.
     entry = _si.get_current(session_id) if session_id else None
     if entry:
         return {"text": entry["text"], "memory_id": entry["memory_id"]}
@@ -978,6 +987,10 @@ async def insight_current(request: Request) -> dict:
             break
 
     if pm_entry:
+        # Se o outro consumidor já mostrou esta entrada, não duplicar
+        if _si.pm_already_shown_by(consumer):
+            return {"text": None, "memory_id": None}
+        _si.mark_pm_shown(consumer)
         return {"text": pm_entry["content"], "memory_id": pm_entry["id"]}
 
     return {"text": None, "memory_id": None}

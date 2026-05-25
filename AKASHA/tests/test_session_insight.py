@@ -20,10 +20,12 @@ def reset_state():
     si._current.clear()
     si._last_gen.clear()
     si._pm_current = None
+    si._pm_shown_by = set()
     yield
     si._current.clear()
     si._last_gen.clear()
     si._pm_current = None
+    si._pm_shown_by = set()
 
 
 class TestGetCurrent:
@@ -116,3 +118,52 @@ class TestPmCurrentRoundtrip:
         set_pm_current({"content": "algo"})
         set_pm_current(None)
         assert get_pm_current() is None
+
+    def test_set_none_resets_shown_by(self):
+        """set_pm_current(None) deve limpar _pm_shown_by."""
+        import services.session_insight as si
+        si._pm_shown_by = {"ui"}
+        si.set_pm_current(None)
+        assert si._pm_shown_by == set()
+
+
+class TestPmShownBy:
+    def test_first_consumer_not_blocked(self):
+        """Primeiro consumidor a pedir não foi mostrado pelo outro — pode exibir."""
+        from services.session_insight import pm_already_shown_by, mark_pm_shown
+        assert not pm_already_shown_by("ui")
+        assert not pm_already_shown_by("ext")
+
+    def test_ui_shown_blocks_ext(self):
+        """Após UI mostrar, extensão não deve exibir a mesma entrada."""
+        from services.session_insight import pm_already_shown_by, mark_pm_shown
+        mark_pm_shown("ui")
+        assert pm_already_shown_by("ext")  # ext vê que ui já mostrou
+
+    def test_ext_shown_blocks_ui(self):
+        """Após extensão mostrar, UI não deve exibir a mesma entrada."""
+        from services.session_insight import pm_already_shown_by, mark_pm_shown
+        mark_pm_shown("ext")
+        assert pm_already_shown_by("ui")   # ui vê que ext já mostrou
+
+    def test_same_consumer_not_blocked_by_itself(self):
+        """Um consumidor que já mostrou não bloqueia a si mesmo."""
+        from services.session_insight import pm_already_shown_by, mark_pm_shown
+        mark_pm_shown("ui")
+        assert not pm_already_shown_by("ui")  # ui pergunta se ext mostrou → não
+
+    def test_dismiss_resets_shown_by_via_set_pm_current(self):
+        """dismiss() deve resetar _pm_shown_by ao limpar _pm_current."""
+        import services.session_insight as si
+        si._pm_current = {"content": "algo", "id": 5}
+        si._pm_shown_by = {"ui"}
+        si.dismiss("")  # extensão dispensou (sem session_id)
+        assert si._pm_shown_by == set()
+        assert si._pm_current is None
+
+    def test_new_pm_entry_starts_with_empty_shown_by(self):
+        """Ao definir nova entrada de PM, _pm_shown_by deve estar vazio."""
+        import services.session_insight as si
+        si._pm_shown_by = {"ui", "ext"}
+        si.set_pm_current({"content": "nova observação", "id": 10})
+        assert si._pm_shown_by == set()
