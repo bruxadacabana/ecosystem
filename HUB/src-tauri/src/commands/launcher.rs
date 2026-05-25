@@ -30,7 +30,13 @@ pub async fn toggle_inference(
 ) -> Result<String, AppError> {
     if enable {
         if llama_server_responding().await {
-            return Ok("already_running".into());
+            // Se o processo já está rastreado pelo HUB, está tudo bem.
+            if state.inner().llama_proc_active().await {
+                return Ok("already_running".into());
+            }
+            // Servidor órfão de sessão anterior: matar antes de subir o nosso.
+            log::warn!("toggle_inference: llama-server órfão detectado na porta — matando");
+            kill_orphaned_llama_server().await;
         }
         // Falha rápida e clara: llama-server não localizado no startup
         if !state.inner().has_llama_server() {
@@ -81,6 +87,53 @@ async fn llama_server_responding() -> bool {
         .await
         .map(|r| r.status().is_success())
         .unwrap_or(false)
+}
+
+/// Mata qualquer processo llama-server órfão (de sessão anterior do HUB).
+async fn kill_orphaned_llama_server() {
+    #[cfg(unix)]
+    {
+        let port = crate::logos::LLAMA_SERVER_PORT.to_string();
+        // fuser -k <port>/tcp encerra processos escutando na porta (Linux)
+        let ok = tokio::process::Command::new("fuser")
+            .args(["-k", &format!("{port}/tcp")])
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ok {
+            // Fallback: pkill por nome do binário
+            let _ = tokio::process::Command::new("pkill")
+                .args(["-f", "llama-server"])
+                .status()
+                .await;
+        }
+    }
+    #[cfg(windows)]
+    {
+        use crate::logos::LLAMA_SERVER_PORT;
+        // netstat para encontrar PID escutando na porta, depois taskkill
+        if let Ok(out) = tokio::process::Command::new("netstat")
+            .args(["-ano"])
+            .output()
+            .await
+        {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let port_str = format!(":{LLAMA_SERVER_PORT}");
+            for line in text.lines() {
+                if line.contains(&port_str) && line.contains("LISTENING") {
+                    if let Some(pid) = line.split_whitespace().last() {
+                        let _ = tokio::process::Command::new("taskkill")
+                            .args(["/PID", pid, "/F"])
+                            .status()
+                            .await;
+                    }
+                }
+            }
+        }
+    }
+    // Aguarda o processo liberar a porta
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 }
 
 /// Inicia um app externo pelo caminho do executável.
