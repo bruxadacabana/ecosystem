@@ -35,15 +35,13 @@ pub fn validate_path(path: String) -> bool {
     Path::new(&path).is_dir()
 }
 
-/// Aplica um diretório raiz de sincronização ao ecossistema:
-/// cria as subpastas necessárias e escreve os caminhos derivados
-/// no ecosystem.json para todos os apps.
-#[tauri::command]
-pub fn apply_sync_root(sync_root: String) -> Result<(), AppError> {
+/// Núcleo testável de `apply_sync_root` — recebe o path do ecosystem.json explicitamente.
+/// Permite testes com tempdir sem tocar no arquivo real do sistema.
+pub(crate) fn apply_sync_root_inner(
+    root: &Path,
+    eco_path: &std::path::PathBuf,
+) -> Result<(), AppError> {
     use serde_json::json;
-    use std::path::Path;
-
-    let root = Path::new(&sync_root);
 
     let dirs = [
         root.join("aether"),
@@ -65,38 +63,48 @@ pub fn apply_sync_root(sync_root: String) -> Result<(), AppError> {
         std::fs::create_dir_all(dir)?;
     }
 
-    // Escreve sync_root como campo top-level
-    ecosystem::write_section("sync_root", json!(sync_root))?;
+    let root_str = root.to_string_lossy();
 
-    // Escreve caminhos derivados por app (merge — preserva exe_path e outros campos)
-    ecosystem::write_section("aether", json!({
+    ecosystem::write_to_file(eco_path, "sync_root", json!(root_str.as_ref()))?;
+    ecosystem::write_to_file(eco_path, "aether", json!({
         "vault_path":  root.join("aether").to_string_lossy().as_ref(),
         "config_path": root.join("aether").join(".config").to_string_lossy().as_ref(),
     }))?;
-    ecosystem::write_section("kosmos", json!({
+    ecosystem::write_to_file(eco_path, "kosmos", json!({
         "archive_path": root.join("kosmos").to_string_lossy().as_ref(),
         "config_path":  root.join("kosmos").join(".config").to_string_lossy().as_ref(),
     }))?;
-    ecosystem::write_section("mnemosyne", json!({
+    ecosystem::write_to_file(eco_path, "mnemosyne", json!({
         "watched_dir": root.join("mnemosyne").join("docs").to_string_lossy().as_ref(),
         "chroma_dir":  root.join("mnemosyne").join("chroma_db").to_string_lossy().as_ref(),
         "config_path": root.join("mnemosyne").join(".config").to_string_lossy().as_ref(),
     }))?;
-    ecosystem::write_section("hermes", json!({
+    ecosystem::write_to_file(eco_path, "hermes", json!({
         "output_dir":  root.join("hermes").to_string_lossy().as_ref(),
         "config_path": root.join("hermes").join(".config").to_string_lossy().as_ref(),
     }))?;
-    ecosystem::write_section("akasha", json!({
+    ecosystem::write_to_file(eco_path, "akasha", json!({
         "archive_path": root.join("akasha").to_string_lossy().as_ref(),
         "data_path":    root.join("akasha").to_string_lossy().as_ref(),
         "config_path":  root.join("akasha").join(".config").to_string_lossy().as_ref(),
     }))?;
-    ecosystem::write_section("ogma", json!({
+    ecosystem::write_to_file(eco_path, "ogma", json!({
         "data_path":   root.join("ogma").to_string_lossy().as_ref(),
         "config_path": root.join("ogma").join(".config").to_string_lossy().as_ref(),
     }))?;
 
     Ok(())
+}
+
+/// Aplica um diretório raiz de sincronização ao ecossistema:
+/// cria as subpastas necessárias e escreve os caminhos derivados
+/// no ecosystem.json para todos os apps.
+#[tauri::command]
+pub fn apply_sync_root(sync_root: String) -> Result<(), AppError> {
+    let eco_path = ecosystem::ecosystem_path().ok_or_else(|| {
+        AppError::Io("Não foi possível determinar o diretório de dados do sistema.".into())
+    })?;
+    apply_sync_root_inner(Path::new(&sync_root), &eco_path)
 }
 
 /// Atualiza seções do ecosystem.json com os valores fornecidos.
@@ -205,6 +213,116 @@ pub fn save_service_credentials(creds: ServiceCredentials) -> Result<(), AppErro
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // ── apply_sync_root ────────────────────────────────────────────────────────
+
+    fn run_inner(sync_tmp: &tempfile::TempDir, eco_tmp: &tempfile::TempDir) -> Result<(), AppError> {
+        let eco_path = eco_tmp.path().join("ecosystem.json");
+        apply_sync_root_inner(sync_tmp.path(), &eco_path)
+    }
+
+    fn read_eco(eco_tmp: &tempfile::TempDir) -> serde_json::Value {
+        let eco_path = eco_tmp.path().join("ecosystem.json");
+        let text = std::fs::read_to_string(&eco_path).unwrap_or_default();
+        serde_json::from_str(&text).unwrap_or(json!({}))
+    }
+
+    #[test]
+    fn apply_sync_root_creates_all_subdirs() {
+        let sync_tmp = tempfile::tempdir().unwrap();
+        let eco_tmp  = tempfile::tempdir().unwrap();
+        run_inner(&sync_tmp, &eco_tmp).unwrap();
+
+        let expected = [
+            vec!["aether"],
+            vec!["aether", ".config"],
+            vec!["kosmos"],
+            vec!["kosmos", ".config"],
+            vec!["mnemosyne", "docs"],
+            vec!["mnemosyne", "chroma_db"],
+            vec!["mnemosyne", ".config"],
+            vec!["hermes"],
+            vec!["hermes", ".config"],
+            vec!["akasha"],
+            vec!["akasha", ".config"],
+            vec!["ogma"],
+            vec!["ogma", ".config"],
+        ];
+        for parts in &expected {
+            let mut path = sync_tmp.path().to_path_buf();
+            for p in parts { path = path.join(p); }
+            assert!(path.is_dir(), "subdiretório ausente: {:?}", path);
+        }
+    }
+
+    #[test]
+    fn apply_sync_root_writes_correct_paths_for_all_apps() {
+        let sync_tmp = tempfile::tempdir().unwrap();
+        let eco_tmp  = tempfile::tempdir().unwrap();
+        run_inner(&sync_tmp, &eco_tmp).unwrap();
+
+        let eco = read_eco(&eco_tmp);
+        let root = sync_tmp.path().to_string_lossy();
+
+        assert_eq!(eco["aether"]["vault_path"].as_str().unwrap(),
+            sync_tmp.path().join("aether").to_string_lossy().as_ref());
+        assert_eq!(eco["kosmos"]["archive_path"].as_str().unwrap(),
+            sync_tmp.path().join("kosmos").to_string_lossy().as_ref());
+        assert_eq!(eco["mnemosyne"]["watched_dir"].as_str().unwrap(),
+            sync_tmp.path().join("mnemosyne").join("docs").to_string_lossy().as_ref());
+        assert_eq!(eco["mnemosyne"]["chroma_dir"].as_str().unwrap(),
+            sync_tmp.path().join("mnemosyne").join("chroma_db").to_string_lossy().as_ref());
+        assert_eq!(eco["hermes"]["output_dir"].as_str().unwrap(),
+            sync_tmp.path().join("hermes").to_string_lossy().as_ref());
+        assert_eq!(eco["akasha"]["data_path"].as_str().unwrap(),
+            sync_tmp.path().join("akasha").to_string_lossy().as_ref());
+        assert_eq!(eco["ogma"]["data_path"].as_str().unwrap(),
+            sync_tmp.path().join("ogma").to_string_lossy().as_ref());
+        assert_eq!(eco["sync_root"].as_str().unwrap(), root.as_ref());
+    }
+
+    #[test]
+    fn apply_sync_root_preserves_existing_fields() {
+        let sync_tmp = tempfile::tempdir().unwrap();
+        let eco_tmp  = tempfile::tempdir().unwrap();
+        let eco_path = eco_tmp.path().join("ecosystem.json");
+
+        // Pré-escreve campos existentes que não devem ser removidos
+        let pre = json!({
+            "aether": { "exe_path": "/usr/bin/aether", "some_flag": true },
+            "hub":    { "port": 7072 }
+        });
+        std::fs::write(&eco_path, serde_json::to_string_pretty(&pre).unwrap()).unwrap();
+
+        apply_sync_root_inner(sync_tmp.path(), &eco_path).unwrap();
+
+        let eco = read_eco(&eco_tmp);
+        // Campos antigos preservados
+        assert_eq!(eco["aether"]["exe_path"].as_str().unwrap(), "/usr/bin/aether",
+            "exe_path deve ser preservado — apply_sync_root não deve sobrescrever campos existentes");
+        assert_eq!(eco["aether"]["some_flag"].as_bool().unwrap(), true);
+        assert_eq!(eco["hub"]["port"].as_u64().unwrap(), 7072,
+            "seção hub não deve ser tocada por apply_sync_root");
+        // Novo campo também presente
+        assert!(eco["aether"]["vault_path"].as_str().is_some(),
+            "vault_path deve ter sido adicionado");
+    }
+
+    #[test]
+    fn apply_sync_root_fails_on_invalid_path() {
+        let eco_tmp = tempfile::tempdir().unwrap();
+        let eco_path = eco_tmp.path().join("ecosystem.json");
+
+        // Cria um arquivo onde apply_sync_root esperaria um diretório
+        // — create_dir_all falha quando um componente do path é um arquivo existente
+        let blocker = eco_tmp.path().join("blocker");
+        std::fs::write(&blocker, b"not a dir").unwrap();
+        // sync_root aponta para dentro do "arquivo", que não é um dir
+        let invalid_root = blocker.join("subpath");
+
+        let result = apply_sync_root_inner(&invalid_root, &eco_path);
+        assert!(result.is_err(), "deve falhar quando o path não pode ser criado");
+    }
 
     #[test]
     fn test_get_service_credentials_reads_all_fields() {

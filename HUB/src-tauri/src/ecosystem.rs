@@ -91,7 +91,7 @@ pub fn write_local_section(app: &str, section: Value) -> Result<(), AppError> {
     write_to_file(&path, app, section)
 }
 
-fn write_to_file(path: &PathBuf, app: &str, section: Value) -> Result<(), AppError> {
+pub(crate) fn write_to_file(path: &PathBuf, app: &str, section: Value) -> Result<(), AppError> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
