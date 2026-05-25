@@ -831,22 +831,30 @@ pub(crate) fn gpu_layers_for_model(model_name: &str, profile: HardwareProfile) -
     }
 }
 
+/// Estima o KV cache em MB para um modelo e tamanho de contexto dados.
+///
+/// Fórmula empírica: `(model_size_mb × n_ctx) / (4096 × 3)`.
+/// Calibrada para modelos Q4_K_M (~1489 MB para 7B@4096, ~745 MB para 7B@2048).
+fn estimate_kv_cache_mb(model_size_mb: u64, n_ctx: u32) -> u64 {
+    if model_size_mb == 0 { return 0; }
+    (model_size_mb * n_ctx as u64) / (4096 * 3)
+}
+
 /// Decide quantas layers carregar na GPU considerando a VRAM disponível AGORA.
 ///
 /// Lógica:
 /// - `profile_n_gpu == 0` (WorkPc ou slot CPU fixo) → 0, sem checar VRAM.
 /// - Hardware sem GPU (WorkPc) → 0.
 /// - Lê VRAM usada atual via sysfs/nvidia-smi.
-/// - Se `vram_usado + model_size_mb > budget * 0.90` → 0 (CPU).
+/// - Usa VRAM real do sysfs como budget (não o valor fixo do perfil).
+/// - Checa `model_size_mb + kv_cache_estimate > total_real × 0.90 − vram_used` → 0 (CPU).
 /// - Senão → `profile_n_gpu` (full GPU ou partial layers do perfil).
-///
-/// Isso torna o fallback para CPU automático em qualquer hardware com GPU insuficiente,
-/// não apenas no Laptop — garante que bge-m3 e um LLM coexistam corretamente.
 async fn effective_gpu_layers(
     client: &Client,
     profile: HardwareProfile,
     profile_n_gpu: i32,
     model_size_mb: u64,
+    n_ctx: u32,
 ) -> i32 {
     // Slot configurado como CPU-only no perfil — respeitar sem checar VRAM
     if profile_n_gpu == 0 {
@@ -856,21 +864,30 @@ async fn effective_gpu_layers(
     if profile == HardwareProfile::WorkPc {
         return 0;
     }
-    let budget_mb = vram_budget_for_profile(profile);
-    let (vram_used_opt, _) = vram_usage(client, profile).await;
-    let vram_used = vram_used_opt.unwrap_or(0);
-    // 10% de margem para KV cache e overhead do driver
-    let safe_budget = (budget_mb as f64 * 0.90) as u64;
-    let available = safe_budget.saturating_sub(vram_used);
-    if model_size_mb > 0 && model_size_mb > available {
+    let (vram_used_opt, vram_total_opt, _) = vram_usage(client, profile).await;
+    let vram_used  = vram_used_opt.unwrap_or(0);
+    // Usa total real do sysfs; fallback para valor conservador do perfil
+    let vram_total = vram_total_opt.unwrap_or_else(|| vram_budget_for_profile(profile));
+    // 10% reservado para overhead do driver
+    let safe_budget = (vram_total as f64 * 0.90) as u64;
+    let available   = safe_budget.saturating_sub(vram_used);
+    let kv_cache_mb = estimate_kv_cache_mb(model_size_mb, n_ctx);
+    let total_needed = model_size_mb.saturating_add(kv_cache_mb);
+    if total_needed > 0 && total_needed > available {
         log::info!(
             "LOGOS: VRAM insuficiente para GPU \
              (usada: {vram_used} MB, disponível: {available} MB, \
-             modelo: {model_size_mb} MB, budget: {budget_mb} MB) — \
+             modelo: {model_size_mb} MB + KV cache estimado: {kv_cache_mb} MB, \
+             necessário: {total_needed} MB, total sysfs: {vram_total} MB) — \
              carregando em CPU"
         );
         0
     } else {
+        log::info!(
+            "LOGOS: VRAM suficiente para GPU \
+             (usada: {vram_used} MB, disponível: {available} MB, \
+             necessário: {total_needed} MB, total sysfs: {vram_total} MB)"
+        );
         profile_n_gpu
     }
 }
@@ -996,8 +1013,9 @@ pub(crate) async fn ensure_llama_model_loaded(
     let model_size_mb = registry_entry.map(|e| e.size_bytes / 1_048_576).unwrap_or(0);
 
     let profile_n_gpu = gpu_layers_for_model(model_name, s.0.hardware_profile);
-    let n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb).await;
+    // n_ctx calculado ANTES do check de VRAM para incluir KV cache na estimativa
     let n_ctx = n_ctx_for_hardware(s.0.hardware_profile);
+    let n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx).await;
     let gpu_mode = if n_gpu == 0 { "CPU".to_string() } else if n_gpu == -1 { "GPU (full)".to_string() } else { format!("GPU ({n_gpu} layers)") };
     log::info!(
         "LOGOS llama-server: carregando '{model_name}' \
@@ -1992,8 +2010,9 @@ async fn hardware_handler(State(s): State<LogosState>) -> Json<HardwareResponse>
 
 async fn vram_handler(State(s): State<LogosState>) -> Json<VramResponse> {
     let hw = s.0.hardware_profile;
-    let (used_mb, pct) = vram_usage(&s.0.client, hw).await;
-    let total_mb = hw.vram_total_mb();
+    let (used_mb, total_sysfs, pct) = vram_usage(&s.0.client, hw).await;
+    // Prefere total real do sysfs; fallback para valor fixo do perfil
+    let total_mb = total_sysfs.or_else(|| hw.vram_total_mb());
     Json(VramResponse {
         used_mb,
         total_mb,
@@ -2020,12 +2039,12 @@ async fn metrics_stream_handler(State(s): State<LogosState>) -> impl IntoRespons
     let stream = async_stream::stream! {
         loop {
             let hw = s.0.hardware_profile;
-            let (vram_used_mb, vram_pct_raw) =
+            let (vram_used_mb, vram_total_sysfs, vram_pct_raw) =
                 vram_usage(&s.0.client, hw).await;
             let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
             let snap = MetricsSnapshot {
                 vram_used_mb,
-                vram_total_mb: hw.vram_total_mb(),
+                vram_total_mb: vram_total_sysfs.or_else(|| hw.vram_total_mb()),
                 vram_pct: vram_pct_raw.map(|p| p * 100.0),
                 cpu_pct,
                 ram_free_mb,
@@ -2060,7 +2079,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let hardware_profile          = s.0.hardware_profile.as_str().to_string();
     let hardware_profile_display  = s.0.hardware_profile.display().to_string();
     let queue = *s.0.queue_counts.lock().await;
-    let (vram_used_mb, vram_pct) = vram_usage(&s.0.client, s.0.hardware_profile).await;
+    let (vram_used_mb, _, vram_pct) = vram_usage(&s.0.client, s.0.hardware_profile).await;
     let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
     let on_battery       = *s.0.on_battery.lock().await;
     let preempted_count  = *s.0.preempted_count.lock().await;
@@ -2464,16 +2483,17 @@ fn is_light_model(model: &str) -> bool {
 // ── VRAM helpers ──────────────────────────────────────────────
 
 async fn vram_pct(client: &Client, hw: HardwareProfile) -> Option<f32> {
-    vram_usage(client, hw).await.1
+    vram_usage(client, hw).await.2
 }
 
-async fn vram_usage(_client: &Client, hw: HardwareProfile) -> (Option<u64>, Option<f32>) {
+/// Retorna `(used_mb, total_mb, pct)` — total_mb é o real do sysfs, não hardcoded.
+async fn vram_usage(_client: &Client, hw: HardwareProfile) -> (Option<u64>, Option<u64>, Option<f32>) {
     // No Linux, sysfs é a fonte correta para AMD/ROCm —
     // o Ollama reporta size_vram=0 para GPUs AMD, tornando /api/ps inútil para VRAM.
     #[cfg(target_os = "linux")]
     if let Some((total_mb, used_mb)) = sysfs_vram_mb() {
         let pct = if total_mb > 0 { Some(used_mb as f32 / total_mb as f32) } else { None };
-        return (Some(used_mb), pct);
+        return (Some(used_mb), Some(total_mb), pct);
     }
 
     // NVIDIA: nvidia-smi (não depende do Ollama — funciona com llama-server)
@@ -2481,12 +2501,12 @@ async fn vram_usage(_client: &Client, hw: HardwareProfile) -> (Option<u64>, Opti
     if hw == HardwareProfile::Laptop {
         if let Some((total_mb, used_mb)) = nvidia_vram_mb().await {
             let pct = if total_mb > 0 { Some(used_mb as f32 / total_mb as f32) } else { None };
-            return (Some(used_mb), pct);
+            return (Some(used_mb), Some(total_mb), pct);
         }
     }
 
     // WorkPc não tem GPU discreta — sem VRAM para monitorar
-    (None, None)
+    (None, None, None)
 }
 
 /// Lê total e uso de VRAM da GPU discreta via sysfs (Linux/AMD).
@@ -3491,7 +3511,7 @@ mod tests {
     async fn effective_gpu_workpc_always_cpu() {
         // WorkPc sem GPU discreta — deve retornar 0 independente do model_size
         let client = Client::new();
-        let result = effective_gpu_layers(&client, HardwareProfile::WorkPc, -1, 0).await;
+        let result = effective_gpu_layers(&client, HardwareProfile::WorkPc, -1, 0, 4096).await;
         assert_eq!(result, 0);
     }
 
@@ -3499,17 +3519,16 @@ mod tests {
     async fn effective_gpu_profile_zero_passthrough() {
         // Se o perfil já diz 0 (slot CPU-only), não deve checar VRAM
         let client = Client::new();
-        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, 0, 0).await;
+        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, 0, 0, 4096).await;
         assert_eq!(result, 0);
     }
 
     #[tokio::test]
     async fn effective_gpu_model_fits_uses_profile_value() {
-        // Modelo pequeno cabe na VRAM (budget 7500, usado 0, modelo 500) → usa perfil
-        // No CI sem GPU, vram_usage retorna None → vram_used=0 → model fits
+        // Modelo pequeno cabe na VRAM — sem GPU no CI, vram_used=0, modelo+KV < budget
         let client = Client::new();
-        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 500).await;
-        // Sem GPU real no CI: vram_used=0, budget=7500, 500 < 6750 → deve retornar -1
+        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 500, 4096).await;
+        // KV cache estimado: 500*4096/(4096*3) = 167MB; total=667MB < budget → retorna -1
         assert_eq!(result, -1);
     }
 
@@ -3517,7 +3536,7 @@ mod tests {
     async fn effective_gpu_model_size_zero_uses_profile_value() {
         // Tamanho desconhecido (0) → não deve bloquear GPU
         let client = Client::new();
-        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 0).await;
+        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 0, 4096).await;
         assert_eq!(result, -1);
     }
 
