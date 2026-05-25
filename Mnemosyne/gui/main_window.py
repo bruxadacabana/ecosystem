@@ -2622,6 +2622,7 @@ class MainWindow(QMainWindow):
     # ── Indexação ─────────────────────────────────────────────────────────────
 
     def start_indexing(self) -> None:
+        import shutil
         from core.idle_indexer import _make_config_for_collection
 
         # Coleta todas as coleções habilitadas com pasta válida
@@ -2632,6 +2633,29 @@ class MainWindow(QMainWindow):
         if not enabled:
             QMessageBox.warning(self, "Aviso", "Nenhuma coleção habilitada. Configure primeiro.")
             return
+
+        # Apaga dados existentes de todas as coleções antes de reindexar
+        self._release_vectorstore()
+        for coll in enabled:
+            mdir = coll.mnemosyne_dir
+            if not mdir:
+                continue
+            for name in ("chroma_db", "bm25_index.pkl", "index_checkpoint.db", "reflection_meta.json"):
+                target = os.path.join(mdir, name)
+                try:
+                    if os.path.isdir(target):
+                        shutil.rmtree(target)
+                    elif os.path.isfile(target):
+                        os.remove(target)
+                except OSError:
+                    pass
+        # Se chroma_dir global estiver configurado, apagar também
+        eco_chroma = self.config.ecosystem_chroma_dir
+        if eco_chroma and os.path.isdir(eco_chroma):
+            try:
+                shutil.rmtree(eco_chroma)
+            except OSError:
+                pass
 
         # Armazena as demais coleções na fila; começa pela primeira
         first = enabled[0]
@@ -2648,8 +2672,7 @@ class MainWindow(QMainWindow):
         n_done = 0
         label = f"[{n_done + 1}/{n_total}] {first.name}…"
         self.statusBar().showMessage(f"Indexando {label}")
-        self._log_event(f"Iniciando indexação de todas as coleções ({n_total}).")
-        self._release_vectorstore()
+        self._log_event(f"Indexando tudo do zero — dados anteriores apagados ({n_total} coleções).")
         self._index_worker = IndexWorker(proxy_config)
         self._index_worker.finished.connect(self._on_index_finished)
         self._index_worker.progress.connect(self._on_index_progress)

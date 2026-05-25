@@ -918,6 +918,7 @@ async fn spawn_llama_server_proc(
        .arg("--ctx-size")  .arg(n_ctx.to_string())
        .arg("--parallel")  .arg("2")
        .arg("--cont-batching")
+       .arg("--pooling")   .arg("mean")   // habilita /v1/embeddings no modelo de chat
        .stdout(std::process::Stdio::null())
        .stderr(std::process::Stdio::piped()); // capturado para log
     if let Some(mp) = mmproj_path {
