@@ -210,11 +210,93 @@ Atalho padrão: `Ctrl+Shift+S`
 
 ### Instalação
 
+#### Temporária (desenvolvimento / teste rápido)
+
 1. Abrir `about:debugging` no Firefox
 2. "Este Firefox" → "Carregar extensão temporária"
 3. Selecionar `extension/manifest.json`
 
-A extensão é temporária (desaparece ao fechar o Firefox). Para permanente, precisaria ser assinada via AMO.
+A extensão desaparece ao fechar o Firefox. Para uso permanente, use uma das opções abaixo.
+
+---
+
+#### Permanente — Opção A: `web-ext sign` (qualquer Firefox, qualquer SO)
+
+Requer uma conta gratuita em [addons.mozilla.org](https://addons.mozilla.org).
+
+**1. Gerar API key**
+
+Entre em `addons.mozilla.org` → sua conta → **Gerenciar chaves de API** → crie um par JWT (anote `api_key` e `api_secret`).
+
+**2. Instalar `web-ext`**
+
+```bash
+# Linux / macOS
+npm install -g web-ext
+
+# Windows (PowerShell como administrador)
+npm install -g web-ext
+```
+
+**3. Assinar e empacotar**
+
+```bash
+# Linux / macOS
+cd /caminho/para/AKASHA/extension
+web-ext sign --api-key=SEU_API_KEY --api-secret=SEU_API_SECRET --channel=unlisted
+
+# Windows (PowerShell)
+cd C:\caminho\para\AKASHA\extension
+web-ext sign --api-key=SEU_API_KEY --api-secret=SEU_API_SECRET --channel=unlisted
+```
+
+O comando gera um `.xpi` em `web-ext-artifacts/`.
+
+**4. Instalar o `.xpi`**
+
+No Firefox: `about:addons` → ⚙ → **Instalar Add-on de Arquivo** → selecionar o `.xpi` gerado.
+
+A extensão fica instalada permanentemente como qualquer outra — sobrevive a reinicializações e atualizações do Firefox.
+
+> `--channel=unlisted` assina para auto-distribuição sem passar pelo processo de revisão da AMO. O `.xpi` gerado é pessoal e não é listado publicamente.
+
+---
+
+#### Permanente — Opção B: Firefox Developer Edition ou Nightly (sem conta AMO)
+
+Funciona apenas no **Firefox Developer Edition** ou **Firefox Nightly** — o Firefox regular não permite extensões não assinadas permanentes mesmo com a configuração abaixo.
+
+**1. Empacotar a extensão como `.xpi`**
+
+```bash
+# Linux / macOS
+cd /caminho/para/AKASHA/extension
+zip -r ../akasha_extension.xpi .
+
+# Windows (PowerShell)
+cd C:\caminho\para\AKASHA\extension
+Compress-Archive -Path * -DestinationPath ..\akasha_extension.zip
+# Renomear o .zip para .xpi
+Rename-Item ..\akasha_extension.zip akasha_extension.xpi
+```
+
+**2. Desabilitar verificação de assinatura**
+
+No Firefox Developer Edition / Nightly, abrir `about:config` e setar:
+
+```
+xpinstall.signatures.required = false
+```
+
+**3. Instalar**
+
+`about:addons` → ⚙ → **Instalar Add-on de Arquivo** → selecionar `akasha_extension.xpi`.
+
+A extensão fica permanente enquanto a configuração `xpinstall.signatures.required = false` estiver ativa.
+
+---
+
+> **Recomendação:** use a Opção A com `web-ext sign` se quiser continuar usando o Firefox regular. A Opção B é mais simples mas exige trocar de versão do browser.
 
 ### Popup (qualquer aba)
 
