@@ -183,7 +183,6 @@ class SetupDialog(QDialog):
         content_layout.addWidget(paths_group)
 
         # Modelos gerenciados pelo HUB (LOGOS) — exibição somente leitura
-        self._current_llm = current.llm_model  # mantido para _test_persona
         _logos_llm    = current.llm_model    or "—"
         _logos_embed  = current.embed_model  or "—"
         _logos_ocr    = current.image_ocr_model or "Tesseract local"
@@ -200,7 +199,6 @@ class SetupDialog(QDialog):
                 _logos_llm   = _p.get("models", {}).get("llm_rag",   _logos_llm)
                 _logos_embed = _p.get("models", {}).get("embed",      _logos_embed)
                 _logos_ocr   = _p.get("models", {}).get("image_ocr", "") or "Tesseract local"
-                self._current_llm = _logos_llm
         except Exception:
             pass
 
@@ -327,33 +325,6 @@ class SetupDialog(QDialog):
             adv_layout.addWidget(_adv_warning)
         content_layout.addWidget(adv_group)
 
-        # Personalidade do assistente (curador customizável)
-        persona_group = QGroupBox("Personalidade do assistente")
-        persona_layout = QVBoxLayout(persona_group)
-        persona_layout.addWidget(QLabel(
-            "Texto de sistema para o modo 'Curador' (afeta todas as consultas RAG):"
-        ))
-        self.persona_edit = QTextEdit()
-        self.persona_edit.setMinimumHeight(120)
-        self.persona_edit.setPlaceholderText("Deixe vazio para usar o padrão do Mnemosyne…")
-        self.persona_edit.setPlainText(current.persona_prompt or DEFAULT_PERSONA_PROMPT)
-        persona_layout.addWidget(self.persona_edit)
-        persona_btn_row = QHBoxLayout()
-        restore_btn = QPushButton("Restaurar padrão")
-        restore_btn.setToolTip("Restaura o prompt de curador original do Mnemosyne")
-        restore_btn.clicked.connect(
-            lambda: self.persona_edit.setPlainText(DEFAULT_PERSONA_PROMPT)
-        )
-        self._test_persona_btn = QPushButton("Testar persona")
-        self._test_persona_btn.setToolTip(
-            "Envia 'Olá, apresente-se' ao LLM com esta persona e exibe a resposta"
-        )
-        self._test_persona_btn.clicked.connect(self._test_persona)
-        persona_btn_row.addWidget(restore_btn)
-        persona_btn_row.addWidget(self._test_persona_btn)
-        persona_btn_row.addStretch()
-        persona_layout.addLayout(persona_btn_row)
-        content_layout.addWidget(persona_group)
         content_layout.addStretch()
 
         # Botões fixos fora do scroll — sempre visíveis
@@ -369,55 +340,6 @@ class SetupDialog(QDialog):
         btns_layout.addWidget(btns)
         layout.addWidget(btns_wrapper)
 
-    def _test_persona(self) -> None:
-        """Envia 'Olá, apresente-se' ao LLM com a persona atual e exibe o resultado."""
-        prompt = self.persona_edit.toPlainText().strip()
-        if not prompt:
-            QMessageBox.warning(self, "Aviso", "O campo de persona está vazio.")
-            return
-        llm_model = self._current_llm
-        if not llm_model:
-            QMessageBox.warning(self, "Aviso", "Nenhum modelo LLM configurado no LOGOS.")
-            return
-
-        self._test_persona_btn.setEnabled(False)
-        self._test_persona_btn.setText("Testando…")
-
-        from PySide6.QtCore import QThread, Signal as _Signal
-
-        class _TestWorker(QThread):
-            done = _Signal(str)
-
-            def __init__(self, model: str, persona: str) -> None:
-                super().__init__()
-                self._model  = model
-                self._persona = persona
-
-            def run(self) -> None:
-                try:
-                    from langchain_openai import ChatOpenAI
-                    from langchain_core.messages import SystemMessage, HumanMessage
-                    from ecosystem_client import get_inference_url as _u
-                    llm  = ChatOpenAI(model=self._model, base_url=f"{_u()}/v1",
-                                      api_key="logos", temperature=0.5)
-                    msgs = [
-                        SystemMessage(content=self._persona),
-                        HumanMessage(content="Olá, apresente-se brevemente."),
-                    ]
-                    result = llm.invoke(msgs)
-                    self.done.emit(str(result.content))
-                except Exception as exc:
-                    self.done.emit(f"Erro: {exc}")
-
-        self._persona_worker = _TestWorker(llm_model, prompt)
-        self._persona_worker.done.connect(self._on_test_persona_done)
-        self._persona_worker.start()
-
-    def _on_test_persona_done(self, result: str) -> None:
-        self._test_persona_btn.setEnabled(True)
-        self._test_persona_btn.setText("Testar persona")
-        QMessageBox.information(self, "Resultado da persona", result)
-
     def _add_extra_dir(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Selecionar pasta adicional")
         if folder:
@@ -431,13 +353,12 @@ class SetupDialog(QDialog):
         if row >= 0:
             self.extra_dirs_list.takeItem(row)
 
-    def get_values(self) -> tuple[str, str, str, list[str], dict[str, bool], bool, int | None, bool, str, bool, str, bool, bool]:
-        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, suggest_questions, persona_prompt, lightrag_enabled, raptor_enabled).
-        Modelos (llm, embed, ocr) são gerenciados pelo LOGOS e não fazem parte desta tupla."""
+    def get_values(self) -> tuple[str, str, str, list[str], dict[str, bool], bool, int | None, bool, str, bool, bool, bool]:
+        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, suggest_questions, lightrag_enabled, raptor_enabled).
+        Modelos e personalidade são gerenciados pelo HUB e não fazem parte desta tupla."""
         extra_dirs = [self.extra_dirs_list.item(i).text()
                       for i in range(self.extra_dirs_list.count())]
         eco_enabled = {key: cb.isChecked() for key, cb in self._eco_checkboxes.items()}
-        persona = self.persona_edit.toPlainText().strip()
         return (
             self.watched_edit.text().strip(),
             self.vault_edit.text().strip(),
@@ -449,7 +370,6 @@ class SetupDialog(QDialog):
             self.node_type_check.isChecked(),
             self.node_type_model_edit.text().strip(),
             self.suggest_questions_check.isChecked(),
-            persona if persona != DEFAULT_PERSONA_PROMPT else "",
             self.lightrag_check.isChecked(),
             self.raptor_check.isChecked(),
         )
@@ -1795,24 +1715,12 @@ class MainWindow(QMainWindow):
             f"Backend ativo — {len(models)} modelo(s) disponível(is)."
         )
 
-        available_names = {m.name for m in models}
-        llm_ok    = not self.config.llm_model    or self.config.llm_model    in available_names
-        embed_ok  = not self.config.embed_model  or self.config.embed_model  in available_names
-
-        if not self.config.is_configured or not llm_ok or not embed_ok:
-            if self.config.is_configured and (not llm_ok or not embed_ok):
-                missing: list[str] = []
-                if not llm_ok:
-                    missing.append(f"LLM '{self.config.llm_model}'")
-                if not embed_ok:
-                    missing.append(f"embedding '{self.config.embed_model}'")
-                QMessageBox.warning(
-                    self,
-                    "Modelo não encontrado",
-                    "O(s) modelo(s) configurado(s) não estão disponíveis neste computador:\n"
-                    + "\n".join(f"  • {m}" for m in missing)
-                    + "\n\nEscolha os modelos disponíveis para continuar.",
-                )
+        # Verificação de modelos removida — LOGOS é a fonte de verdade para modelos.
+        # O alerta "modelo não encontrado" não faz sentido aqui porque os nomes no
+        # registry do LOGOS (ex: "Qwen2.5-7B-Instruct-Q4_K_M") diferem dos nomes
+        # Ollama-style no hardware profile (ex: "qwen2.5:7b"). O backend responder
+        # é suficiente para indicar que os modelos estão disponíveis.
+        if not self.config.is_configured:
             self._show_setup_dialog()
         else:
             self._post_config_init()
@@ -2288,8 +2196,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, persona_p, lightrag_en, raptor_en = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, persona_p, lightrag_en, raptor_en)
+            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -2297,8 +2205,8 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, persona_p, lightrag_en, raptor_en = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, persona_p, lightrag_en, raptor_en)
+            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             self._log_event("Configuração atualizada.")
@@ -2313,7 +2221,6 @@ class MainWindow(QMainWindow):
         node_type_classification: bool = False,
         node_type_model: str = "",
         suggest_questions: bool = False,
-        persona_prompt: str = "",
         lightrag_enabled: bool = False,
         raptor_enabled: bool = False,
     ) -> None:
@@ -2332,7 +2239,6 @@ class MainWindow(QMainWindow):
         self.config.node_type_classification = node_type_classification
         self.config.node_type_model = node_type_model
         self.config.suggest_questions = suggest_questions
-        self.config.persona_prompt = persona_prompt
         self.config.lightrag_enabled = lightrag_enabled
         self.config.raptor_enabled = raptor_enabled
         save_config(self.config)
