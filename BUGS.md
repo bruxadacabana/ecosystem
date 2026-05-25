@@ -1,109 +1,428 @@
 # Histórico de Bugs — Ecossistema
 
-Bugs detectados durante desenvolvimento e uso real. Inclui contexto de ambiente, sintomas, causa raiz e fix aplicado.
+Registro permanente de bugs detectados durante desenvolvimento e uso real.
+Ordenado por data decrescente (mais recente primeiro).
 
-Formato de status: `[FIXED]` · `[OPEN]` · `[INVESTIGATING]`
+**Status:** `[FIXED]` · `[OPEN]` · `[INVESTIGATING]`  
+**Descoberta:** `uso-real` · `teste-automatizado` · `revisão-de-código` · `tentativa-de-feature`
 
 ---
 
-## BUG-005 · [FIXED] · STATUS_ENTRYPOINT_NOT_FOUND ao iniciar testes Rust do HUB no Windows
+## Template para novos registros
 
-**Data:** 2026-05-25  
-**App:** HUB (src-tauri — testes unitários Rust)  
-**Ambiente:** Windows 10 Pro 22H2, i5-3470, sem AVX2 — WorkPC  
-**Commit do fix:** `6dc763f`
-
-**Sintoma:**  
-`cargo test --lib` encerrava imediatamente com código de saída `0xC0000139 STATUS_ENTRYPOINT_NOT_FOUND` antes de qualquer saída. Nenhum teste chegava a executar.
-
-**Causa raiz:**  
-O PE loader do Windows resolve a tabela de imports do binário antes de `main()` executar. `tauri-plugin-dialog` importa `TaskDialogIndirect` de `comctl32.dll`. O Windows carrega `comctl32` v5.82 por padrão (sem manifest de ativação). A v5.82 não exporta `TaskDialogIndirect` — essa função só existe na v6. O loader falha e aborta o processo.
-
-O `hub.exe` não tem esse problema porque o Tauri embute um manifest RT_MANIFEST no binário (via `resource.lib` + `cargo:rustc-link-arg-bins`) que declara `Microsoft.Windows.Common-Controls v6.0.0.0`, ativando a v6 antes de qualquer código executar. O binário de testes não tem esse manifest.
-
-**Fix:**  
-`HUB/src-tauri/build.rs` emite `/DELAYLOAD:comctl32.dll` + `delayimp.lib` para **todos** os targets (via `cargo:rustc-link-arg`). O delay-loading move a resolução de `comctl32` da tabela de imports estática para resolução lazy no primeiro uso real — que nunca ocorre em testes (nenhum teste chama funções de diálogo).
-
-**Tentativas que não funcionaram:**  
-- `cargo:rustc-link-arg-tests` — documentado como aplicando a "todos os binários de teste", mas na prática só se aplica a targets `[[test]]` explícitos no Cargo.toml, não a unit tests de `[lib]`. Confirmado com `llvm-readobj --coff-imports`.
-- Embed de manifest via `.rc` + `.res` + `cargo:rustc-link-arg-tests` — mesmo problema acima; além disso, teria conflito de recurso duplicado com o manifest do `hub.exe` se aplicado globalmente.
-
-**Diagnóstico usado:**  
 ```
-llvm-readobj --coff-imports target\debug\deps\hub_lib-*.exe | findstr comctl32
+### BUG-NNN · [STATUS] · Título curto descritivo
+
+#### Identificação
+- **Data:** YYYY-MM-DD
+- **App(s):** nome dos apps envolvidos
+- **Componente:** arquivo ou módulo específico
+- **Commit do fix:** `hash` (ou "pendente")
+- **Descoberta via:** uso-real | teste-automatizado | revisão-de-código | tentativa-de-feature
+- **Tempo de diagnóstico:** estimativa
+
+#### Ambiente
+- **Máquina(s) afetadas:** WorkPC / MainPC / Laptop / todas
+- **OS:** Windows 10 / CachyOS / Fedora
+- **Hardware relevante:** CPU, GPU, VRAM se aplicável
+- **Modo:** dev (cargo tauri dev / uv run) | produção | teste (cargo test)
+- **Reproduzível em:** lista de ambientes onde foi confirmado
+
+#### Pré-condição para reproduzir
+Passos mínimos ou estado necessário para o bug aparecer.
+
+#### Sintoma observado
+O que aparece para o usuário ou no terminal — comportamento visível.
+
+#### Logs
 ```
-Confirmou que `TaskDialogIndirect` constava na tabela de imports estática.
+colar trecho exato de stderr/stdout aqui
+```
+
+#### Causa raiz
+Explicação técnica detalhada do que estava errado e por quê.
+
+#### Impacto
+O que parou de funcionar. Classificar: bloqueante / degradação / cosmético.
+
+#### Tentativas anteriores (opcional)
+Abordagens que foram tentadas e por que não funcionaram.
+
+#### Fix aplicado
+O que foi mudado, em qual arquivo, e por que resolve.
+
+#### Teste de regressão
+Qual teste cobre o caso agora, ou por que não existe um.
+```
 
 ---
 
-## BUG-004 · [FIXED] · llama-server órfão bloqueia reinício via toggle_inference
+## Índice
 
-**Data:** 2026-05-25  
-**App:** HUB / LOGOS  
-**Ambiente:** Windows 10 Pro 22H2 e CachyOS (reproduzível em ambos)  
-**Commit do fix:** `f7abf5f`
-
-**Sintoma:**  
-Ao clicar "Ligar IA" após o llama-server ter sido iniciado fora do HUB (ex: processo residual de sessão anterior), `toggle_inference(true)` retornava `"already_running"` imediatamente sem iniciar o modelo. A UI ficava sem resposta de progresso e sem erro visível.
-
-**Causa raiz:**  
-`toggle_inference` verificava `llama_server_responding()` (ping HTTP ao endpoint) para decidir se havia servidor rodando. Se havia resposta, assumia que o processo já estava rastreado (`llama_proc`) e retornava `"already_running"`. Mas um servidor órfão responde ao ping sem ter sido registrado no `llama_proc` do HUB — a condição `llama_proc_active()` era `false` mas o código nunca chegava a verificar isso antes de retornar.
-
-**Fix:**  
-`do_toggle_inference` passa `server_responding` como parâmetro separado. Quando `enable=true` e servidor está respondendo, verifica `llama_proc_active()` antes de retornar `"already_running"`. Se o proc não está ativo, chama `kill_orphaned_llama_server()` para matar o órfão e então inicia o próprio processo rastreado.
+| ID | Status | Data | App | Título resumido |
+|---|---|---|---|---|
+| [BUG-005](#bug-005) | FIXED | 2026-05-25 | HUB | STATUS_ENTRYPOINT_NOT_FOUND nos testes Rust no Windows |
+| [BUG-004](#bug-004) | FIXED | 2026-05-25 | HUB/LOGOS | Servidor llama-server órfão bloqueia toggle_inference |
+| [BUG-003](#bug-003) | FIXED | 2026-05-25 | HUB/LOGOS | llama-server roda em CPU por falta de --n-gpu-layers |
+| [BUG-002](#bug-002) | FIXED | 2026-05-25 | HUB/LOGOS + Mnemosyne | /v1/embeddings retorna 501 sem --pooling mean |
+| [BUG-001](#bug-001) | FIXED | 2026-05-25 | HUB/LOGOS | models_dir retorna lista vazia em dev (CWD ignorado) |
 
 ---
 
-## BUG-003 · [FIXED] · llama-server não usa GPU (roda em CPU por padrão sem --n-gpu-layers)
-
-**Data:** 2026-05-25  
-**App:** HUB / LOGOS  
-**Ambiente:** CachyOS, RX 6600 8 GB VRAM  
-**Commit do fix:** `aa23ec3`
-
-**Sintoma:**  
-Após ligar o LOGOS, o llama-server saturava a RAM do sistema e rodava lentamente. Monitoramento de VRAM mostrava 0% de uso GPU.
-
-**Causa raiz:**  
-O llama-server não usa GPU por padrão — requer `--n-gpu-layers N` explícito. O código interno usava `-1` para representar "offload total", mas a condição de geração da flag era `n_gpu > 0` — o caso `-1` não gerava nenhuma flag, resultando em modo CPU.
-
-**Fix:**  
-Adicionado branch `else` para `n_gpu == -1`: gera `--n-gpu-layers 9999` (offload máximo — o llama-server usa o que couber na VRAM e o restante vai para CPU).
+## Bugs
 
 ---
 
-## BUG-002 · [FIXED] · /v1/embeddings retorna 501 Not Implemented no llama-server
+### BUG-005 · [FIXED] · STATUS_ENTRYPOINT_NOT_FOUND ao iniciar testes Rust do HUB no Windows
 
-**Data:** 2026-05-25  
-**App:** HUB / LOGOS + Mnemosyne  
-**Ambiente:** CachyOS  
-**Commit do fix:** `da15c62`
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** HUB
+- **Componente:** `HUB/src-tauri/` — binário de testes unitários (`cargo test --lib`)
+- **Commit do fix:** `6dc763f`
+- **Descoberta via:** tentativa-de-feature (escrever os primeiros testes unitários do backend Rust)
+- **Tempo de diagnóstico:** ~4 horas (causa raiz não óbvia — processo aborta antes de qualquer output Rust)
 
-**Sintoma:**  
-Mnemosyne retornava erro `501 Not Implemented` ao chamar `POST /v1/embeddings` no LOGOS. Indexação falhava completamente.
+#### Ambiente
+- **Máquina(s) afetadas:** WorkPC (Windows 10) — não ocorre no CachyOS nem no Laptop
+- **OS:** Windows 10 Pro 22H2 (build 19045)
+- **Hardware relevante:** Intel i5-3470, sem AVX2, sem GPU dedicada
+- **Modo:** teste (`cargo test --lib`)
+- **Reproduzível em:** qualquer máquina Windows 10/11 sem manifest ComCtl32 v6 no binário de testes
 
-**Causa raiz:**  
-O llama-server requer a flag `--pooling mean` (ou `cls`/`last`) para habilitar o endpoint `/v1/embeddings`. Sem ela, o endpoint existe na rota mas retorna 501. A flag não estava sendo passada no spawn do processo.
+#### Pré-condição para reproduzir
+1. Windows 10 ou 11
+2. `HUB/src-tauri/` com `tauri-plugin-dialog` como dependência
+3. Rodar `cargo test --lib` (não `cargo build`, não `npm run tauri dev`)
 
-**Fix:**  
-Adicionado `.arg("--pooling").arg("mean")` no `spawn_llama_server_proc` em `logos.rs`.
+#### Sintoma observado
+`cargo test --lib` encerrava imediatamente, antes de imprimir qualquer linha de output. Código de saída: `0xC0000139`. Nenhum teste chegava a executar. O Cargo reportava apenas "Finished" e em seguida o processo filho morria.
 
-**Nota:** Este bug bloqueou completamente a indexação da Mnemosyne e foi descoberto durante tentativa de primeiro uso real após migração Ollama → llama-server.
+#### Logs
+```
+Finished `test` profile [unoptimized + debuginfo] target(s) in Xm Xs
+Running unittests src\lib.rs (target\debug\deps\hub_lib-2f627c204cbd413e.exe)
+error: test failed, to rerun pass `--lib`
+
+Caused by:
+  process didn't exit successfully: `...\hub_lib-2f627c204cbd413e.exe`
+  (exit code: 0xc0000139, STATUS_ENTRYPOINT_NOT_FOUND)
+```
+
+Diagnóstico com `llvm-readobj`:
+```
+llvm-readobj --coff-imports target\debug\deps\hub_lib-*.exe | findstr -i comctl32
+# output: Import { Name: comctl32.dll }
+# seguido de: TaskDialogIndirect
+```
+
+Verificação da DLL carregada via PowerShell:
+```powershell
+$dll = [System.Runtime.InteropServices.NativeLibrary]::Load("comctl32.dll")
+$fn  = [System.Runtime.InteropServices.NativeLibrary]::GetExport($dll, "TaskDialogIndirect")
+# $fn == 0 → função não existe na versão carregada (v5.82)
+```
+
+#### Causa raiz
+O PE loader do Windows resolve a tabela de imports estática do binário **antes de `main()` executar**. `tauri-plugin-dialog` (dependência do HUB) importa `TaskDialogIndirect` de `comctl32.dll`.
+
+O Windows carrega `comctl32` v5.82 por padrão quando o binário não tem um manifest ativando `Microsoft.Windows.Common-Controls v6.0.0.0`. A v5.82 não exporta `TaskDialogIndirect` — essa função existe apenas na v6 (que fica em `C:\Windows\WinSxS\`). O loader não encontra o símbolo, emite `STATUS_ENTRYPOINT_NOT_FOUND` e aborta o processo.
+
+O `hub.exe` não sofre o problema porque o Tauri embute um manifest `RT_MANIFEST` no executável via `resource.lib` (compilado de `.rc` e linkado via `cargo:rustc-link-arg-bins`). Esse manifest declara a v6 e o Windows a carrega antes de qualquer código executar. O binário de testes é gerado pelo Rust sem esse manifest.
+
+#### Impacto
+**Bloqueante.** Impossível rodar qualquer teste unitário do backend Rust no Windows. Toda a auditoria de cobertura de testes do HUB estava bloqueada por este bug.
+
+#### Tentativas anteriores
+
+**1. `cargo:rustc-link-arg-tests` com manifest `.rc`**  
+Criar `test_manifest.rc` + compilar para `.res` + emitir via `cargo:rustc-link-arg-tests`. Não funcionou: apesar da documentação do Cargo afirmar que a instrução aplica a "todos os binários de teste incluindo os de `#[test]` em arquivos de biblioteca" (desde Rust 1.56), na prática só se aplica a targets `[[test]]` explícitos no `Cargo.toml`, não a unit tests compilados do `[lib]`. Confirmado via `llvm-readobj --coff-resources` — seção de resources permanecia vazia.
+
+**2. `/MANIFEST:EMBED` via `cargo:rustc-link-arg`**  
+Tentar embedar manifest via flag do linker MSVC globalmente. Causou `CVTRES: recurso duplicado` no `hub.exe`, que já tem manifest via `resource.lib` do Tauri. Targets `bin` e testes recebem o mesmo `cargo:rustc-link-arg`.
+
+#### Fix aplicado
+`HUB/src-tauri/build.rs` emite `/DELAYLOAD:comctl32.dll` e `delayimp.lib` via `cargo:rustc-link-arg` (aplica a todos os targets):
+
+```rust
+if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+    println!("cargo:rustc-link-arg=/DELAYLOAD:comctl32.dll");
+    println!("cargo:rustc-link-arg=delayimp.lib");
+}
+```
+
+O delay-loading move a resolução de `comctl32` da tabela de imports estática para uma tabela de imports lazy — a DLL só é carregada no primeiro uso real da função. Como testes nunca chamam funções de diálogo (`TaskDialogIndirect`, `TaskDialog`), a DLL nunca é carregada e o símbolo nunca é resolvido.
+
+O `hub.exe` não é afetado: o manifest do Tauri ativa comctl32 v6 antes de qualquer diálogo ser chamado, então o delay-loading é seguro também em produção.
+
+#### Teste de regressão
+Não há teste automatizado para este fix (seria necessário um teste de processo que verifica o código de saída do binário de testes em si). O fix é verificado indiretamente: se regredir, **todos** os 126 testes unitários falharão antes de executar no Windows.
 
 ---
 
-## BUG-001 · [FIXED] · models_dir do LOGOS retorna lista vazia em dev (CWD/logos/models ignorado)
+### BUG-004 · [FIXED] · Servidor llama-server órfão bloqueia toggle_inference
 
-**Data:** 2026-05-25  
-**App:** HUB / LOGOS  
-**Ambiente:** Windows 10 Pro 22H2 (dev mode, `cargo tauri dev`)  
-**Commit do fix:** `f7abf5f`
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** HUB, LOGOS
+- **Componente:** `HUB/src-tauri/src/commands/launcher.rs` — função `toggle_inference`
+- **Commit do fix:** `f7abf5f`
+- **Descoberta via:** uso-real (tentativa de ligar a IA após crash/reinício do HUB)
+- **Tempo de diagnóstico:** ~30 minutos
 
-**Sintoma:**  
-Ao clicar "Ligar IA" no HUB em modo dev, a lista de modelos aparecia vazia mesmo com modelos instalados em `HUB/src-tauri/logos/models/`.
+#### Ambiente
+- **Máquina(s) afetadas:** todas (reproduzível em qualquer máquina)
+- **OS:** Windows 10 e CachyOS (confirmado em ambos)
+- **Hardware relevante:** N/A
+- **Modo:** produção / dev
+- **Reproduzível em:** qualquer sessão onde o llama-server ficou rodando após o HUB fechar
 
-**Causa raiz:**  
-Em `cargo tauri dev`, o CWD é `HUB/src-tauri/`. Os modelos baixados via HUB ficam em `CWD/logos/models/`. Mas `LogosState::new()` calculava o `models_dir` usando apenas `dirs::data_local_dir()` (caminho XDG), que não tinha `registry.json` na máquina de desenvolvimento. O fallback para CWD só existia parcialmente no código e não estava sendo ativado corretamente.
+#### Pré-condição para reproduzir
+1. Iniciar o HUB e ligar a IA (llama-server sobe)
+2. Fechar o HUB abruptamente (sem clicar "Desligar IA") — o llama-server continua rodando como órfão
+3. Reiniciar o HUB
+4. Clicar "Ligar IA"
 
-**Fix:**  
-Lógica extraída para `pick_models_dir(xdg, cwd_logos_models)`: se XDG não tem `registry.json` mas CWD tem, usa CWD. Função pura testável com 3 testes determinísticos via `tempfile::tempdir`.
+#### Sintoma observado
+O botão "Ligar IA" retornava instantaneamente sem progresso visível. A UI não mostrava erro nem barra de carregamento. O modelo nunca era carregado. Clicar repetidamente não resolvia.
+
+#### Logs
+```
+# No frontend (DevTools console):
+toggle_inference result: "already_running"
+
+# No backend (RUST_LOG=debug):
+[LOGOS] toggle_inference: server responding=true, llama_proc_active=false
+# → código retornava "already_running" sem verificar llama_proc_active
+```
+
+#### Causa raiz
+`toggle_inference(enable=true)` verificava `llama_server_responding()` (ping HTTP a `localhost:8081/health`) para detectar servidor ativo. Se o ping respondia, assumia que o servidor era gerenciado pelo HUB e retornava `"already_running"` imediatamente.
+
+Um servidor órfão (processo vivo mas sem `llama_proc` registrado no `LogosState`) responde ao ping normalmente. A função nunca chegava a verificar `llama_proc_active()`. Resultado: HUB incapaz de iniciar a IA enquanto o órfão existisse.
+
+#### Impacto
+**Bloqueante para uso da IA.** O único workaround era matar o processo manualmente via gerenciador de tarefas antes de abrir o HUB.
+
+#### Fix aplicado
+Lógica extraída para `do_toggle_inference(state, enable, server_responding)`. Quando `enable=true` e `server_responding=true`, verifica `llama_proc_active()`:
+- Se ativo → retorna `"already_running"` (comportamento correto)
+- Se não ativo → chama `kill_orphaned_llama_server()` para matar o órfão, depois inicia processo próprio
+
+```rust
+if server_responding {
+    if state.llama_proc_active().await {
+        return Ok("already_running".into());
+    }
+    kill_orphaned_llama_server().await; // mata o órfão
+}
+// continua para iniciar processo rastreado
+```
+
+Além disso, `process_group(0)` foi removido do spawn do llama-server no Linux: antes, o processo ficava num group separado e sobrevivia ao HUB. Agora herda o group do HUB e morre junto.
+
+#### Teste de regressão
+`toggle_enable_server_responding_proc_active_returns_already_running` (unix-only) em `commands/launcher.rs` — cobre o caso onde servidor responde E proc está ativo → deve retornar `already_running` sem spawnar novo processo.
+
+O caso "servidor órfão" (server_responding=true, proc_active=false) → mata e reinicia — coberto implicitamente pelo fluxo do `do_toggle_inference`, mas sem teste isolado ainda (requer mock de processo HTTP).
+
+---
+
+### BUG-003 · [FIXED] · llama-server roda em CPU por padrão sem --n-gpu-layers
+
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** HUB, LOGOS
+- **Componente:** `HUB/src-tauri/src/logos.rs` — função `spawn_llama_server_proc`
+- **Commit do fix:** `aa23ec3`
+- **Descoberta via:** uso-real (monitoramento de VRAM no HUB mostrava 0%)
+- **Tempo de diagnóstico:** ~15 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS, RX 6600)
+- **OS:** CachyOS (Arch Linux)
+- **Hardware relevante:** AMD Radeon RX 6600, 8 GB VRAM, ROCm com `HSA_OVERRIDE_GFX_VERSION=10.3.0`
+- **Modo:** produção
+- **Reproduzível em:** qualquer máquina com GPU onde `n_gpu_layers = -1` (offload total) estava configurado
+
+#### Pré-condição para reproduzir
+1. Perfil LOGOS com `n_gpu_layers = -1` (valor padrão para "offload tudo para GPU")
+2. Ligar a IA via HUB
+3. Observar uso de VRAM / velocidade de inferência
+
+#### Sintoma observado
+Após ligar a IA, a inferência era extremamente lenta (~0.5 tok/s em vez de ~15 tok/s). O monitor de VRAM no HUB mostrava 0 MB de uso. O sistema ficava com ~6 GB de RAM ocupada pelo llama-server.
+
+#### Logs
+```bash
+# Processo spawned sem --n-gpu-layers:
+llama-server --model /path/model.gguf --ctx-size 4096 --parallel 2 --cont-batching \
+  --pooling mean --port 8081
+
+# Correto (após fix):
+llama-server --model /path/model.gguf --ctx-size 4096 --parallel 2 --cont-batching \
+  --pooling mean --n-gpu-layers 9999 --port 8081
+```
+
+```
+# llama-server stdout sem a flag:
+llm_load_tensors: offloaded 0/33 layers to GPU
+```
+
+#### Causa raiz
+O llama-server **não usa GPU por padrão** — requer `--n-gpu-layers N` explícito. Sem a flag, todos os layers rodam em CPU.
+
+O código usava `-1` como valor sentinela para "offload máximo". A condição de geração da flag era:
+
+```rust
+if n_gpu == 0 {
+    cmd.arg("--n-gpu-layers").arg("0");
+} else if n_gpu > 0 {
+    cmd.arg("--n-gpu-layers").arg(n_gpu.to_string());
+}
+// n_gpu == -1 não entrava em nenhum branch → sem flag → CPU
+```
+
+#### Impacto
+**Degradação severa de performance.** Inferência 30× mais lenta. RAM saturada. Em máquinas com pouca RAM (WorkPC, 8 GB), poderia travar o sistema.
+
+#### Fix aplicado
+Adicionado branch `else` para o caso `-1`:
+
+```rust
+} else {
+    // n_gpu == -1: offload total — llama-server não usa GPU sem esta flag
+    cmd.arg("--n-gpu-layers").arg("9999");
+}
+```
+
+O valor `9999` é a convenção do llama-server para "offload máximo possível" — ele ajusta automaticamente para o número real de layers do modelo.
+
+#### Teste de regressão
+Não há teste automatizado cobrindo os args de GPU (requer mock de processo ou inspeção de `Command` antes do spawn). Pendente: BUG-003 motivou o item `logos.rs — teste de spawn_llama_server_proc com flags obrigatórias` no TODO de auditoria.
+
+---
+
+### BUG-002 · [FIXED] · /v1/embeddings retorna 501 Not Implemented no llama-server
+
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** HUB / LOGOS, Mnemosyne
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `spawn_llama_server_proc`; `Mnemosyne/core/vectorstore.py` — chamada ao endpoint
+- **Commit do fix:** `da15c62`
+- **Descoberta via:** uso-real (primeira tentativa de indexar documentos após migração Ollama → llama-server)
+- **Tempo de diagnóstico:** ~20 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS) — não testado no Windows nesta data
+- **OS:** CachyOS
+- **Hardware relevante:** RX 6600 8 GB VRAM
+- **Modo:** produção
+- **Reproduzível em:** qualquer máquina com llama-server sem `--pooling mean`
+
+#### Pré-condição para reproduzir
+1. llama-server rodando sem `--pooling mean`
+2. Mnemosyne tenta indexar qualquer coleção
+3. `POST http://localhost:8081/v1/embeddings` é chamado
+
+#### Sintoma observado
+Ao clicar "Indexar tudo" na Mnemosyne, a indexação falhava imediatamente. Nenhum arquivo era indexado. Barra de progresso não avançava.
+
+#### Logs
+```
+# Mnemosyne (stderr):
+ERROR - Embeddings request failed: 501 Not Implemented
+POST http://localhost:8081/v1/embeddings → 501
+{"error": {"code": 501, "message": "This server does not support embeddings", "type": "not_implemented_error"}}
+
+# llama-server stdout:
+[Warning] Pooling type not specified. Using no pooling.
+```
+
+#### Causa raiz
+O endpoint `/v1/embeddings` do llama-server requer que um modo de pooling seja especificado via flag `--pooling <tipo>` no startup (valores válidos: `mean`, `cls`, `last`, `rank`). Sem a flag, o servidor ativa `PoolingType::None` e o endpoint retorna 501 para qualquer requisição.
+
+A flag não estava sendo incluída no spawn do processo em `spawn_llama_server_proc`.
+
+#### Impacto
+**Bloqueante.** Toda a indexação da Mnemosyne parava. RAG inoperante. Bug bloqueou o primeiro uso real após a migração completa de Ollama para llama-server — a migração havia sido concluída mas nunca testada end-to-end.
+
+#### Fix aplicado
+```rust
+cmd.arg("--pooling").arg("mean");
+```
+Adicionado ao bloco de args em `spawn_llama_server_proc`, junto com `--cont-batching`.
+
+`mean` é o modo recomendado para modelos de embedding e de chat usados para embeddings (faz média dos token embeddings como representação da sequência).
+
+#### Teste de regressão
+Pendente — cobre o mesmo cenário do item `logos.rs — teste de spawn_llama_server_proc com flags obrigatórias` no TODO. Um teste que inspeciona os args do processo spawned cobriria `--pooling mean`, `--n-gpu-layers` e `--port` simultaneamente.
+
+---
+
+### BUG-001 · [FIXED] · models_dir retorna lista vazia em modo dev (CWD/logos/models ignorado)
+
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** HUB, LOGOS
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `LogosState::new()`, cálculo de `models_dir`
+- **Commit do fix:** `f7abf5f` (lógica), `39ea82b` (extração + testes)
+- **Descoberta via:** uso-real (lista de modelos vazia ao ligar IA em dev)
+- **Tempo de diagnóstico:** ~10 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** WorkPC (Windows 10) em modo dev — possivelmente também Laptop em dev
+- **OS:** Windows 10 Pro 22H2
+- **Hardware relevante:** N/A
+- **Modo:** dev (`cargo tauri dev` / `npm run tauri dev`)
+- **Reproduzível em:** qualquer máquina onde `data_local_dir/ecosystem/hub/logos/models/registry.json` não existe (setup inicial de desenvolvimento)
+
+#### Pré-condição para reproduzir
+1. `cargo tauri dev` rodando (CWD = `HUB/src-tauri/`)
+2. Modelos instalados em `HUB/src-tauri/logos/models/` (com `registry.json`)
+3. `%LOCALAPPDATA%\ecosystem\hub\logos\models\registry.json` **não existe** (máquina de desenvolvimento sem dados de produção)
+
+#### Sintoma observado
+Ao clicar "Ligar IA" no HUB em dev, o dropdown de modelos aparecia vazio. O comando `logos_list_models` retornava lista vazia.
+
+#### Logs
+```
+# Backend (RUST_LOG=info):
+[INFO logos] LOGOS: models_dir = C:\Users\USUARIO\AppData\Local\ecosystem\hub\logos\models
+# → sem "fallback para CWD" → nenhum modelo encontrado
+
+# O CWD real tinha os modelos:
+# HUB/src-tauri/logos/models/registry.json  ← ignorado
+```
+
+#### Causa raiz
+`LogosState::new()` calculava `models_dir` a partir de `dirs::data_local_dir()` (caminho XDG/AppData). Em desenvolvimento, esse diretório não tem `registry.json` — os modelos ficam em `CWD/logos/models/` porque é onde o HUB os baixa durante `cargo tauri dev`.
+
+O fallback para CWD existia no código mas estava implementado incorretamente: verificava `!xdg_dir.join("registry.json").exists()` mas não logava nem ativava o caminho CWD consistentemente.
+
+#### Impacto
+**Bloqueante em dev.** Impossível testar o fluxo de carregamento de modelos sem simular o ambiente de produção (copiar `registry.json` para AppData manualmente).
+
+#### Fix aplicado
+Lógica extraída para `pub(crate) fn pick_models_dir(xdg: PathBuf, cwd_logos_models: PathBuf) -> PathBuf`:
+
+```rust
+pub(crate) fn pick_models_dir(xdg: PathBuf, cwd_logos_models: PathBuf) -> PathBuf {
+    if xdg.join("registry.json").exists() { return xdg; }
+    if cwd_logos_models.join("registry.json").exists() {
+        log::info!("LOGOS: models_dir fallback para CWD: {}", cwd_logos_models.display());
+        return cwd_logos_models;
+    }
+    xdg
+}
+```
+
+`LogosState::new()` agora chama `pick_models_dir(xdg_dir, cwd_dir)` em vez do bloco inline.
+
+#### Teste de regressão
+3 testes determinísticos com `tempfile::tempdir` em `logos::tests`:
+- `pick_models_dir_prefers_xdg_when_xdg_has_registry`
+- `pick_models_dir_falls_back_to_cwd_when_only_cwd_has_registry`
+- `pick_models_dir_uses_xdg_when_neither_has_registry`
+
+Substitui o teste condicional anterior que só validava algo se o ambiente real fosse dev.
