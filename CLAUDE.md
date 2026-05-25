@@ -65,6 +65,7 @@ Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRA
 
 - Se puder corrigir imediatamente → corrigir e reportar na mesma resposta.
 - Se não puder corrigir imediatamente → anotar no TODO (seção `#### <App>` dentro do `### Bugs e investigações reportados após uso real`) **e avisar a usuária explicitamente** na mesma resposta.
+- **Em ambos os casos:** registrar no `BUGS.md` (raiz do ecossistema) seguindo o template do arquivo — campos obrigatórios: identificação, ambiente, pré-condição, sintoma, logs, causa raiz, impacto, fix, teste de regressão. Acrescentar sempre no final (ordem cronológica crescente) e atualizar o índice no topo do arquivo.
 
 ---
 

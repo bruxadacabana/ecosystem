@@ -1,7 +1,7 @@
 # Histórico de Bugs — Ecossistema
 
 Registro permanente de bugs detectados durante desenvolvimento e uso real.
-Ordenado por data decrescente (mais recente primeiro).
+Ordenado por data crescente — novos bugs sempre acrescentados no final do arquivo.
 
 **Status:** `[FIXED]` · `[OPEN]` · `[INVESTIGATING]`  
 **Descoberta:** `uso-real` · `teste-automatizado` · `revisão-de-código` · `tentativa-de-feature`
@@ -61,15 +61,284 @@ Qual teste cobre o caso agora, ou por que não existe um.
 
 | ID | Status | Data | App | Título resumido |
 |---|---|---|---|---|
-| [BUG-005](#bug-005) | FIXED | 2026-05-25 | HUB | STATUS_ENTRYPOINT_NOT_FOUND nos testes Rust no Windows |
-| [BUG-004](#bug-004) | FIXED | 2026-05-25 | HUB/LOGOS | Servidor llama-server órfão bloqueia toggle_inference |
-| [BUG-003](#bug-003) | FIXED | 2026-05-25 | HUB/LOGOS | llama-server roda em CPU por falta de --n-gpu-layers |
-| [BUG-002](#bug-002) | FIXED | 2026-05-25 | HUB/LOGOS + Mnemosyne | /v1/embeddings retorna 501 sem --pooling mean |
 | [BUG-001](#bug-001) | FIXED | 2026-05-25 | HUB/LOGOS | models_dir retorna lista vazia em dev (CWD ignorado) |
+| [BUG-002](#bug-002) | FIXED | 2026-05-25 | HUB/LOGOS + Mnemosyne | /v1/embeddings retorna 501 sem --pooling mean |
+| [BUG-003](#bug-003) | FIXED | 2026-05-25 | HUB/LOGOS | llama-server roda em CPU por falta de --n-gpu-layers |
+| [BUG-004](#bug-004) | FIXED | 2026-05-25 | HUB/LOGOS | Servidor llama-server órfão bloqueia toggle_inference |
+| [BUG-005](#bug-005) | FIXED | 2026-05-25 | HUB | STATUS_ENTRYPOINT_NOT_FOUND nos testes Rust no Windows |
 
 ---
 
 ## Bugs
+
+---
+
+### BUG-001 · [FIXED] · models_dir retorna lista vazia em modo dev (CWD/logos/models ignorado)
+
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** HUB, LOGOS
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `LogosState::new()`, cálculo de `models_dir`
+- **Commit do fix:** `f7abf5f` (lógica), `39ea82b` (extração + testes)
+- **Descoberta via:** uso-real (lista de modelos vazia ao ligar IA em dev)
+- **Tempo de diagnóstico:** ~10 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** WorkPC (Windows 10) em modo dev — possivelmente também Laptop em dev
+- **OS:** Windows 10 Pro 22H2
+- **Hardware relevante:** N/A
+- **Modo:** dev (`cargo tauri dev` / `npm run tauri dev`)
+- **Reproduzível em:** qualquer máquina onde `data_local_dir/ecosystem/hub/logos/models/registry.json` não existe (setup inicial de desenvolvimento)
+
+#### Pré-condição para reproduzir
+1. `cargo tauri dev` rodando (CWD = `HUB/src-tauri/`)
+2. Modelos instalados em `HUB/src-tauri/logos/models/` (com `registry.json`)
+3. `%LOCALAPPDATA%\ecosystem\hub\logos\models\registry.json` **não existe** (máquina de desenvolvimento sem dados de produção)
+
+#### Sintoma observado
+Ao clicar "Ligar IA" no HUB em dev, o dropdown de modelos aparecia vazio. O comando `logos_list_models` retornava lista vazia.
+
+#### Logs
+```
+# Backend (RUST_LOG=info):
+[INFO logos] LOGOS: models_dir = C:\Users\USUARIO\AppData\Local\ecosystem\hub\logos\models
+# → sem "fallback para CWD" → nenhum modelo encontrado
+
+# O CWD real tinha os modelos:
+# HUB/src-tauri/logos/models/registry.json  ← ignorado
+```
+
+#### Causa raiz
+`LogosState::new()` calculava `models_dir` a partir de `dirs::data_local_dir()` (caminho XDG/AppData). Em desenvolvimento, esse diretório não tem `registry.json` — os modelos ficam em `CWD/logos/models/` porque é onde o HUB os baixa durante `cargo tauri dev`.
+
+O fallback para CWD existia no código mas estava implementado incorretamente: verificava `!xdg_dir.join("registry.json").exists()` mas não logava nem ativava o caminho CWD consistentemente.
+
+#### Impacto
+**Bloqueante em dev.** Impossível testar o fluxo de carregamento de modelos sem simular o ambiente de produção (copiar `registry.json` para AppData manualmente).
+
+#### Fix aplicado
+Lógica extraída para `pub(crate) fn pick_models_dir(xdg: PathBuf, cwd_logos_models: PathBuf) -> PathBuf`:
+
+```rust
+pub(crate) fn pick_models_dir(xdg: PathBuf, cwd_logos_models: PathBuf) -> PathBuf {
+    if xdg.join("registry.json").exists() { return xdg; }
+    if cwd_logos_models.join("registry.json").exists() {
+        log::info!("LOGOS: models_dir fallback para CWD: {}", cwd_logos_models.display());
+        return cwd_logos_models;
+    }
+    xdg
+}
+```
+
+`LogosState::new()` agora chama `pick_models_dir(xdg_dir, cwd_dir)` em vez do bloco inline.
+
+#### Teste de regressão
+3 testes determinísticos com `tempfile::tempdir` em `logos::tests`:
+- `pick_models_dir_prefers_xdg_when_xdg_has_registry`
+- `pick_models_dir_falls_back_to_cwd_when_only_cwd_has_registry`
+- `pick_models_dir_uses_xdg_when_neither_has_registry`
+
+Substitui o teste condicional anterior que só validava algo se o ambiente real fosse dev.
+
+---
+
+### BUG-002 · [FIXED] · /v1/embeddings retorna 501 Not Implemented no llama-server
+
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** HUB / LOGOS, Mnemosyne
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `spawn_llama_server_proc`; `Mnemosyne/core/vectorstore.py` — chamada ao endpoint
+- **Commit do fix:** `da15c62`
+- **Descoberta via:** uso-real (primeira tentativa de indexar documentos após migração Ollama → llama-server)
+- **Tempo de diagnóstico:** ~20 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS) — não testado no Windows nesta data
+- **OS:** CachyOS
+- **Hardware relevante:** RX 6600 8 GB VRAM
+- **Modo:** produção
+- **Reproduzível em:** qualquer máquina com llama-server sem `--pooling mean`
+
+#### Pré-condição para reproduzir
+1. llama-server rodando sem `--pooling mean`
+2. Mnemosyne tenta indexar qualquer coleção
+3. `POST http://localhost:8081/v1/embeddings` é chamado
+
+#### Sintoma observado
+Ao clicar "Indexar tudo" na Mnemosyne, a indexação falhava imediatamente. Nenhum arquivo era indexado. Barra de progresso não avançava.
+
+#### Logs
+```
+# Mnemosyne (stderr):
+ERROR - Embeddings request failed: 501 Not Implemented
+POST http://localhost:8081/v1/embeddings → 501
+{"error": {"code": 501, "message": "This server does not support embeddings", "type": "not_implemented_error"}}
+
+# llama-server stdout:
+[Warning] Pooling type not specified. Using no pooling.
+```
+
+#### Causa raiz
+O endpoint `/v1/embeddings` do llama-server requer que um modo de pooling seja especificado via flag `--pooling <tipo>` no startup (valores válidos: `mean`, `cls`, `last`, `rank`). Sem a flag, o servidor ativa `PoolingType::None` e o endpoint retorna 501 para qualquer requisição.
+
+A flag não estava sendo incluída no spawn do processo em `spawn_llama_server_proc`.
+
+#### Impacto
+**Bloqueante.** Toda a indexação da Mnemosyne parava. RAG inoperante. Bug bloqueou o primeiro uso real após a migração completa de Ollama para llama-server — a migração havia sido concluída mas nunca testada end-to-end.
+
+#### Fix aplicado
+```rust
+cmd.arg("--pooling").arg("mean");
+```
+Adicionado ao bloco de args em `spawn_llama_server_proc`, junto com `--cont-batching`.
+
+`mean` é o modo recomendado para modelos de embedding e de chat usados para embeddings (faz média dos token embeddings como representação da sequência).
+
+#### Teste de regressão
+Pendente — cobre o mesmo cenário do item `logos.rs — teste de spawn_llama_server_proc com flags obrigatórias` no TODO. Um teste que inspeciona os args do processo spawned cobriria `--pooling mean`, `--n-gpu-layers` e `--port` simultaneamente.
+
+---
+
+### BUG-003 · [FIXED] · llama-server roda em CPU por padrão sem --n-gpu-layers
+
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** HUB, LOGOS
+- **Componente:** `HUB/src-tauri/src/logos.rs` — função `spawn_llama_server_proc`
+- **Commit do fix:** `aa23ec3`
+- **Descoberta via:** uso-real (monitoramento de VRAM no HUB mostrava 0%)
+- **Tempo de diagnóstico:** ~15 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS, RX 6600)
+- **OS:** CachyOS (Arch Linux)
+- **Hardware relevante:** AMD Radeon RX 6600, 8 GB VRAM, ROCm com `HSA_OVERRIDE_GFX_VERSION=10.3.0`
+- **Modo:** produção
+- **Reproduzível em:** qualquer máquina com GPU onde `n_gpu_layers = -1` (offload total) estava configurado
+
+#### Pré-condição para reproduzir
+1. Perfil LOGOS com `n_gpu_layers = -1` (valor padrão para "offload tudo para GPU")
+2. Ligar a IA via HUB
+3. Observar uso de VRAM / velocidade de inferência
+
+#### Sintoma observado
+Após ligar a IA, a inferência era extremamente lenta (~0.5 tok/s em vez de ~15 tok/s). O monitor de VRAM no HUB mostrava 0 MB de uso. O sistema ficava com ~6 GB de RAM ocupada pelo llama-server.
+
+#### Logs
+```bash
+# Processo spawned sem --n-gpu-layers:
+llama-server --model /path/model.gguf --ctx-size 4096 --parallel 2 --cont-batching \
+  --pooling mean --port 8081
+
+# Correto (após fix):
+llama-server --model /path/model.gguf --ctx-size 4096 --parallel 2 --cont-batching \
+  --pooling mean --n-gpu-layers 9999 --port 8081
+```
+
+```
+# llama-server stdout sem a flag:
+llm_load_tensors: offloaded 0/33 layers to GPU
+```
+
+#### Causa raiz
+O llama-server **não usa GPU por padrão** — requer `--n-gpu-layers N` explícito. Sem a flag, todos os layers rodam em CPU.
+
+O código usava `-1` como valor sentinela para "offload máximo". A condição de geração da flag era:
+
+```rust
+if n_gpu == 0 {
+    cmd.arg("--n-gpu-layers").arg("0");
+} else if n_gpu > 0 {
+    cmd.arg("--n-gpu-layers").arg(n_gpu.to_string());
+}
+// n_gpu == -1 não entrava em nenhum branch → sem flag → CPU
+```
+
+#### Impacto
+**Degradação severa de performance.** Inferência 30× mais lenta. RAM saturada. Em máquinas com pouca RAM (WorkPC, 8 GB), poderia travar o sistema.
+
+#### Fix aplicado
+Adicionado branch `else` para o caso `-1`:
+
+```rust
+} else {
+    // n_gpu == -1: offload total — llama-server não usa GPU sem esta flag
+    cmd.arg("--n-gpu-layers").arg("9999");
+}
+```
+
+O valor `9999` é a convenção do llama-server para "offload máximo possível" — ele ajusta automaticamente para o número real de layers do modelo.
+
+#### Teste de regressão
+Não há teste automatizado cobrindo os args de GPU (requer mock de processo ou inspeção de `Command` antes do spawn). Pendente: BUG-003 motivou o item `logos.rs — teste de spawn_llama_server_proc com flags obrigatórias` no TODO de auditoria.
+
+---
+
+### BUG-004 · [FIXED] · Servidor llama-server órfão bloqueia toggle_inference
+
+#### Identificação
+- **Data:** 2026-05-25
+- **App(s):** HUB, LOGOS
+- **Componente:** `HUB/src-tauri/src/commands/launcher.rs` — função `toggle_inference`
+- **Commit do fix:** `f7abf5f`
+- **Descoberta via:** uso-real (tentativa de ligar a IA após crash/reinício do HUB)
+- **Tempo de diagnóstico:** ~30 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas (reproduzível em qualquer máquina)
+- **OS:** Windows 10 e CachyOS (confirmado em ambos)
+- **Hardware relevante:** N/A
+- **Modo:** produção / dev
+- **Reproduzível em:** qualquer sessão onde o llama-server ficou rodando após o HUB fechar
+
+#### Pré-condição para reproduzir
+1. Iniciar o HUB e ligar a IA (llama-server sobe)
+2. Fechar o HUB abruptamente (sem clicar "Desligar IA") — o llama-server continua rodando como órfão
+3. Reiniciar o HUB
+4. Clicar "Ligar IA"
+
+#### Sintoma observado
+O botão "Ligar IA" retornava instantaneamente sem progresso visível. A UI não mostrava erro nem barra de carregamento. O modelo nunca era carregado. Clicar repetidamente não resolvia.
+
+#### Logs
+```
+# No frontend (DevTools console):
+toggle_inference result: "already_running"
+
+# No backend (RUST_LOG=debug):
+[LOGOS] toggle_inference: server responding=true, llama_proc_active=false
+# → código retornava "already_running" sem verificar llama_proc_active
+```
+
+#### Causa raiz
+`toggle_inference(enable=true)` verificava `llama_server_responding()` (ping HTTP a `localhost:8081/health`) para detectar servidor ativo. Se o ping respondia, assumia que o servidor era gerenciado pelo HUB e retornava `"already_running"` imediatamente.
+
+Um servidor órfão (processo vivo mas sem `llama_proc` registrado no `LogosState`) responde ao ping normalmente. A função nunca chegava a verificar `llama_proc_active()`. Resultado: HUB incapaz de iniciar a IA enquanto o órfão existisse.
+
+#### Impacto
+**Bloqueante para uso da IA.** O único workaround era matar o processo manualmente via gerenciador de tarefas antes de abrir o HUB.
+
+#### Fix aplicado
+Lógica extraída para `do_toggle_inference(state, enable, server_responding)`. Quando `enable=true` e `server_responding=true`, verifica `llama_proc_active()`:
+- Se ativo → retorna `"already_running"` (comportamento correto)
+- Se não ativo → chama `kill_orphaned_llama_server()` para matar o órfão, depois inicia processo próprio
+
+```rust
+if server_responding {
+    if state.llama_proc_active().await {
+        return Ok("already_running".into());
+    }
+    kill_orphaned_llama_server().await; // mata o órfão
+}
+// continua para iniciar processo rastreado
+```
+
+Além disso, `process_group(0)` foi removido do spawn do llama-server no Linux: antes, o processo ficava num group separado e sobrevivia ao HUB. Agora herda o group do HUB e morre junto.
+
+#### Teste de regressão
+`toggle_enable_server_responding_proc_active_returns_already_running` (unix-only) em `commands/launcher.rs` — cobre o caso onde servidor responde E proc está ativo → deve retornar `already_running` sem spawnar novo processo.
+
+O caso "servidor órfão" (server_responding=true, proc_active=false) → mata e reinicia — coberto implicitamente pelo fluxo do `do_toggle_inference`, mas sem teste isolado ainda (requer mock de processo HTTP).
 
 ---
 
@@ -157,272 +426,3 @@ O `hub.exe` não é afetado: o manifest do Tauri ativa comctl32 v6 antes de qual
 
 #### Teste de regressão
 Não há teste automatizado para este fix (seria necessário um teste de processo que verifica o código de saída do binário de testes em si). O fix é verificado indiretamente: se regredir, **todos** os 126 testes unitários falharão antes de executar no Windows.
-
----
-
-### BUG-004 · [FIXED] · Servidor llama-server órfão bloqueia toggle_inference
-
-#### Identificação
-- **Data:** 2026-05-25
-- **App(s):** HUB, LOGOS
-- **Componente:** `HUB/src-tauri/src/commands/launcher.rs` — função `toggle_inference`
-- **Commit do fix:** `f7abf5f`
-- **Descoberta via:** uso-real (tentativa de ligar a IA após crash/reinício do HUB)
-- **Tempo de diagnóstico:** ~30 minutos
-
-#### Ambiente
-- **Máquina(s) afetadas:** todas (reproduzível em qualquer máquina)
-- **OS:** Windows 10 e CachyOS (confirmado em ambos)
-- **Hardware relevante:** N/A
-- **Modo:** produção / dev
-- **Reproduzível em:** qualquer sessão onde o llama-server ficou rodando após o HUB fechar
-
-#### Pré-condição para reproduzir
-1. Iniciar o HUB e ligar a IA (llama-server sobe)
-2. Fechar o HUB abruptamente (sem clicar "Desligar IA") — o llama-server continua rodando como órfão
-3. Reiniciar o HUB
-4. Clicar "Ligar IA"
-
-#### Sintoma observado
-O botão "Ligar IA" retornava instantaneamente sem progresso visível. A UI não mostrava erro nem barra de carregamento. O modelo nunca era carregado. Clicar repetidamente não resolvia.
-
-#### Logs
-```
-# No frontend (DevTools console):
-toggle_inference result: "already_running"
-
-# No backend (RUST_LOG=debug):
-[LOGOS] toggle_inference: server responding=true, llama_proc_active=false
-# → código retornava "already_running" sem verificar llama_proc_active
-```
-
-#### Causa raiz
-`toggle_inference(enable=true)` verificava `llama_server_responding()` (ping HTTP a `localhost:8081/health`) para detectar servidor ativo. Se o ping respondia, assumia que o servidor era gerenciado pelo HUB e retornava `"already_running"` imediatamente.
-
-Um servidor órfão (processo vivo mas sem `llama_proc` registrado no `LogosState`) responde ao ping normalmente. A função nunca chegava a verificar `llama_proc_active()`. Resultado: HUB incapaz de iniciar a IA enquanto o órfão existisse.
-
-#### Impacto
-**Bloqueante para uso da IA.** O único workaround era matar o processo manualmente via gerenciador de tarefas antes de abrir o HUB.
-
-#### Fix aplicado
-Lógica extraída para `do_toggle_inference(state, enable, server_responding)`. Quando `enable=true` e `server_responding=true`, verifica `llama_proc_active()`:
-- Se ativo → retorna `"already_running"` (comportamento correto)
-- Se não ativo → chama `kill_orphaned_llama_server()` para matar o órfão, depois inicia processo próprio
-
-```rust
-if server_responding {
-    if state.llama_proc_active().await {
-        return Ok("already_running".into());
-    }
-    kill_orphaned_llama_server().await; // mata o órfão
-}
-// continua para iniciar processo rastreado
-```
-
-Além disso, `process_group(0)` foi removido do spawn do llama-server no Linux: antes, o processo ficava num group separado e sobrevivia ao HUB. Agora herda o group do HUB e morre junto.
-
-#### Teste de regressão
-`toggle_enable_server_responding_proc_active_returns_already_running` (unix-only) em `commands/launcher.rs` — cobre o caso onde servidor responde E proc está ativo → deve retornar `already_running` sem spawnar novo processo.
-
-O caso "servidor órfão" (server_responding=true, proc_active=false) → mata e reinicia — coberto implicitamente pelo fluxo do `do_toggle_inference`, mas sem teste isolado ainda (requer mock de processo HTTP).
-
----
-
-### BUG-003 · [FIXED] · llama-server roda em CPU por padrão sem --n-gpu-layers
-
-#### Identificação
-- **Data:** 2026-05-25
-- **App(s):** HUB, LOGOS
-- **Componente:** `HUB/src-tauri/src/logos.rs` — função `spawn_llama_server_proc`
-- **Commit do fix:** `aa23ec3`
-- **Descoberta via:** uso-real (monitoramento de VRAM no HUB mostrava 0%)
-- **Tempo de diagnóstico:** ~15 minutos
-
-#### Ambiente
-- **Máquina(s) afetadas:** MainPC (CachyOS, RX 6600)
-- **OS:** CachyOS (Arch Linux)
-- **Hardware relevante:** AMD Radeon RX 6600, 8 GB VRAM, ROCm com `HSA_OVERRIDE_GFX_VERSION=10.3.0`
-- **Modo:** produção
-- **Reproduzível em:** qualquer máquina com GPU onde `n_gpu_layers = -1` (offload total) estava configurado
-
-#### Pré-condição para reproduzir
-1. Perfil LOGOS com `n_gpu_layers = -1` (valor padrão para "offload tudo para GPU")
-2. Ligar a IA via HUB
-3. Observar uso de VRAM / velocidade de inferência
-
-#### Sintoma observado
-Após ligar a IA, a inferência era extremamente lenta (~0.5 tok/s em vez de ~15 tok/s). O monitor de VRAM no HUB mostrava 0 MB de uso. O sistema ficava com ~6 GB de RAM ocupada pelo llama-server.
-
-#### Logs
-```bash
-# Processo spawned sem --n-gpu-layers:
-llama-server --model /path/model.gguf --ctx-size 4096 --parallel 2 --cont-batching \
-  --pooling mean --port 8081
-
-# Correto (após fix):
-llama-server --model /path/model.gguf --ctx-size 4096 --parallel 2 --cont-batching \
-  --pooling mean --n-gpu-layers 9999 --port 8081
-```
-
-```
-# llama-server stdout sem a flag:
-llm_load_tensors: offloaded 0/33 layers to GPU
-```
-
-#### Causa raiz
-O llama-server **não usa GPU por padrão** — requer `--n-gpu-layers N` explícito. Sem a flag, todos os layers rodam em CPU.
-
-O código usava `-1` como valor sentinela para "offload máximo". A condição de geração da flag era:
-
-```rust
-if n_gpu == 0 {
-    cmd.arg("--n-gpu-layers").arg("0");
-} else if n_gpu > 0 {
-    cmd.arg("--n-gpu-layers").arg(n_gpu.to_string());
-}
-// n_gpu == -1 não entrava em nenhum branch → sem flag → CPU
-```
-
-#### Impacto
-**Degradação severa de performance.** Inferência 30× mais lenta. RAM saturada. Em máquinas com pouca RAM (WorkPC, 8 GB), poderia travar o sistema.
-
-#### Fix aplicado
-Adicionado branch `else` para o caso `-1`:
-
-```rust
-} else {
-    // n_gpu == -1: offload total — llama-server não usa GPU sem esta flag
-    cmd.arg("--n-gpu-layers").arg("9999");
-}
-```
-
-O valor `9999` é a convenção do llama-server para "offload máximo possível" — ele ajusta automaticamente para o número real de layers do modelo.
-
-#### Teste de regressão
-Não há teste automatizado cobrindo os args de GPU (requer mock de processo ou inspeção de `Command` antes do spawn). Pendente: BUG-003 motivou o item `logos.rs — teste de spawn_llama_server_proc com flags obrigatórias` no TODO de auditoria.
-
----
-
-### BUG-002 · [FIXED] · /v1/embeddings retorna 501 Not Implemented no llama-server
-
-#### Identificação
-- **Data:** 2026-05-25
-- **App(s):** HUB / LOGOS, Mnemosyne
-- **Componente:** `HUB/src-tauri/src/logos.rs` — `spawn_llama_server_proc`; `Mnemosyne/core/vectorstore.py` — chamada ao endpoint
-- **Commit do fix:** `da15c62`
-- **Descoberta via:** uso-real (primeira tentativa de indexar documentos após migração Ollama → llama-server)
-- **Tempo de diagnóstico:** ~20 minutos
-
-#### Ambiente
-- **Máquina(s) afetadas:** MainPC (CachyOS) — não testado no Windows nesta data
-- **OS:** CachyOS
-- **Hardware relevante:** RX 6600 8 GB VRAM
-- **Modo:** produção
-- **Reproduzível em:** qualquer máquina com llama-server sem `--pooling mean`
-
-#### Pré-condição para reproduzir
-1. llama-server rodando sem `--pooling mean`
-2. Mnemosyne tenta indexar qualquer coleção
-3. `POST http://localhost:8081/v1/embeddings` é chamado
-
-#### Sintoma observado
-Ao clicar "Indexar tudo" na Mnemosyne, a indexação falhava imediatamente. Nenhum arquivo era indexado. Barra de progresso não avançava.
-
-#### Logs
-```
-# Mnemosyne (stderr):
-ERROR - Embeddings request failed: 501 Not Implemented
-POST http://localhost:8081/v1/embeddings → 501
-{"error": {"code": 501, "message": "This server does not support embeddings", "type": "not_implemented_error"}}
-
-# llama-server stdout:
-[Warning] Pooling type not specified. Using no pooling.
-```
-
-#### Causa raiz
-O endpoint `/v1/embeddings` do llama-server requer que um modo de pooling seja especificado via flag `--pooling <tipo>` no startup (valores válidos: `mean`, `cls`, `last`, `rank`). Sem a flag, o servidor ativa `PoolingType::None` e o endpoint retorna 501 para qualquer requisição.
-
-A flag não estava sendo incluída no spawn do processo em `spawn_llama_server_proc`.
-
-#### Impacto
-**Bloqueante.** Toda a indexação da Mnemosyne parava. RAG inoperante. Bug bloqueou o primeiro uso real após a migração completa de Ollama para llama-server — a migração havia sido concluída mas nunca testada end-to-end.
-
-#### Fix aplicado
-```rust
-cmd.arg("--pooling").arg("mean");
-```
-Adicionado ao bloco de args em `spawn_llama_server_proc`, junto com `--cont-batching`.
-
-`mean` é o modo recomendado para modelos de embedding e de chat usados para embeddings (faz média dos token embeddings como representação da sequência).
-
-#### Teste de regressão
-Pendente — cobre o mesmo cenário do item `logos.rs — teste de spawn_llama_server_proc com flags obrigatórias` no TODO. Um teste que inspeciona os args do processo spawned cobriria `--pooling mean`, `--n-gpu-layers` e `--port` simultaneamente.
-
----
-
-### BUG-001 · [FIXED] · models_dir retorna lista vazia em modo dev (CWD/logos/models ignorado)
-
-#### Identificação
-- **Data:** 2026-05-25
-- **App(s):** HUB, LOGOS
-- **Componente:** `HUB/src-tauri/src/logos.rs` — `LogosState::new()`, cálculo de `models_dir`
-- **Commit do fix:** `f7abf5f` (lógica), `39ea82b` (extração + testes)
-- **Descoberta via:** uso-real (lista de modelos vazia ao ligar IA em dev)
-- **Tempo de diagnóstico:** ~10 minutos
-
-#### Ambiente
-- **Máquina(s) afetadas:** WorkPC (Windows 10) em modo dev — possivelmente também Laptop em dev
-- **OS:** Windows 10 Pro 22H2
-- **Hardware relevante:** N/A
-- **Modo:** dev (`cargo tauri dev` / `npm run tauri dev`)
-- **Reproduzível em:** qualquer máquina onde `data_local_dir/ecosystem/hub/logos/models/registry.json` não existe (setup inicial de desenvolvimento)
-
-#### Pré-condição para reproduzir
-1. `cargo tauri dev` rodando (CWD = `HUB/src-tauri/`)
-2. Modelos instalados em `HUB/src-tauri/logos/models/` (com `registry.json`)
-3. `%LOCALAPPDATA%\ecosystem\hub\logos\models\registry.json` **não existe** (máquina de desenvolvimento sem dados de produção)
-
-#### Sintoma observado
-Ao clicar "Ligar IA" no HUB em dev, o dropdown de modelos aparecia vazio. O comando `logos_list_models` retornava lista vazia.
-
-#### Logs
-```
-# Backend (RUST_LOG=info):
-[INFO logos] LOGOS: models_dir = C:\Users\USUARIO\AppData\Local\ecosystem\hub\logos\models
-# → sem "fallback para CWD" → nenhum modelo encontrado
-
-# O CWD real tinha os modelos:
-# HUB/src-tauri/logos/models/registry.json  ← ignorado
-```
-
-#### Causa raiz
-`LogosState::new()` calculava `models_dir` a partir de `dirs::data_local_dir()` (caminho XDG/AppData). Em desenvolvimento, esse diretório não tem `registry.json` — os modelos ficam em `CWD/logos/models/` porque é onde o HUB os baixa durante `cargo tauri dev`.
-
-O fallback para CWD existia no código mas estava implementado incorretamente: verificava `!xdg_dir.join("registry.json").exists()` mas não logava nem ativava o caminho CWD consistentemente.
-
-#### Impacto
-**Bloqueante em dev.** Impossível testar o fluxo de carregamento de modelos sem simular o ambiente de produção (copiar `registry.json` para AppData manualmente).
-
-#### Fix aplicado
-Lógica extraída para `pub(crate) fn pick_models_dir(xdg: PathBuf, cwd_logos_models: PathBuf) -> PathBuf`:
-
-```rust
-pub(crate) fn pick_models_dir(xdg: PathBuf, cwd_logos_models: PathBuf) -> PathBuf {
-    if xdg.join("registry.json").exists() { return xdg; }
-    if cwd_logos_models.join("registry.json").exists() {
-        log::info!("LOGOS: models_dir fallback para CWD: {}", cwd_logos_models.display());
-        return cwd_logos_models;
-    }
-    xdg
-}
-```
-
-`LogosState::new()` agora chama `pick_models_dir(xdg_dir, cwd_dir)` em vez do bloco inline.
-
-#### Teste de regressão
-3 testes determinísticos com `tempfile::tempdir` em `logos::tests`:
-- `pick_models_dir_prefers_xdg_when_xdg_has_registry`
-- `pick_models_dir_falls_back_to_cwd_when_only_cwd_has_registry`
-- `pick_models_dir_uses_xdg_when_neither_has_registry`
-
-Substitui o teste condicional anterior que só validava algo se o ambiente real fosse dev.
