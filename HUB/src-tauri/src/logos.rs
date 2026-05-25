@@ -786,6 +786,50 @@ pub(crate) fn gpu_layers_for_model(model_name: &str, profile: HardwareProfile) -
     }
 }
 
+/// Decide quantas layers carregar na GPU considerando a VRAM disponível AGORA.
+///
+/// Lógica:
+/// - `profile_n_gpu == 0` (WorkPc ou slot CPU fixo) → 0, sem checar VRAM.
+/// - Hardware sem GPU (WorkPc) → 0.
+/// - Lê VRAM usada atual via sysfs/nvidia-smi.
+/// - Se `vram_usado + model_size_mb > budget * 0.90` → 0 (CPU).
+/// - Senão → `profile_n_gpu` (full GPU ou partial layers do perfil).
+///
+/// Isso torna o fallback para CPU automático em qualquer hardware com GPU insuficiente,
+/// não apenas no Laptop — garante que bge-m3 e um LLM coexistam corretamente.
+async fn effective_gpu_layers(
+    client: &Client,
+    profile: HardwareProfile,
+    profile_n_gpu: i32,
+    model_size_mb: u64,
+) -> i32 {
+    // Slot configurado como CPU-only no perfil — respeitar sem checar VRAM
+    if profile_n_gpu == 0 {
+        return 0;
+    }
+    // Hardware sem GPU discreta — CPU sempre
+    if profile == HardwareProfile::WorkPc {
+        return 0;
+    }
+    let budget_mb = vram_budget_for_profile(profile);
+    let (vram_used_opt, _) = vram_usage(client, profile).await;
+    let vram_used = vram_used_opt.unwrap_or(0);
+    // 10% de margem para KV cache e overhead do driver
+    let safe_budget = (budget_mb as f64 * 0.90) as u64;
+    let available = safe_budget.saturating_sub(vram_used);
+    if model_size_mb > 0 && model_size_mb > available {
+        log::info!(
+            "LOGOS: VRAM insuficiente para GPU \
+             (usada: {vram_used} MB, disponível: {available} MB, \
+             modelo: {model_size_mb} MB, budget: {budget_mb} MB) — \
+             carregando em CPU"
+        );
+        0
+    } else {
+        profile_n_gpu
+    }
+}
+
 /// Tamanho do contexto para o perfil de hardware.
 fn n_ctx_for_hardware(hw: HardwareProfile) -> u32 {
     match hw {
@@ -893,21 +937,26 @@ pub(crate) async fn ensure_llama_model_loaded(
              Faça download via HUB ou execute 'ollama pull {model_name}'."
         ))?;
 
-    // Resolve mmproj para modelos multimodais (moondream, LLaVA, etc.)
-    let mmproj_path: Option<std::path::PathBuf> = {
-        let registry = read_model_registry(&s.0.models_dir).await;
-        registry.iter()
-            .find(|e| e.name == model_name)
-            .and_then(|e| e.mmproj_path.as_deref())
-            .map(std::path::PathBuf::from)
-            .filter(|p| p.exists())
-    };
+    // Lê o registry uma vez — usado para mmproj e tamanho do modelo (VRAM check)
+    let registry = read_model_registry(&s.0.models_dir).await;
+    let registry_entry = registry.iter().find(|e| e.name == model_name);
 
-    let n_gpu = gpu_layers_for_model(model_name, s.0.hardware_profile);
+    // Resolve mmproj para modelos multimodais (moondream, LLaVA, etc.)
+    let mmproj_path: Option<std::path::PathBuf> = registry_entry
+        .and_then(|e| e.mmproj_path.as_deref())
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists());
+
+    // Tamanho em disco ≈ VRAM para GGUFs quantizados
+    let model_size_mb = registry_entry.map(|e| e.size_bytes / 1_048_576).unwrap_or(0);
+
+    let profile_n_gpu = gpu_layers_for_model(model_name, s.0.hardware_profile);
+    let n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb).await;
     let n_ctx = n_ctx_for_hardware(s.0.hardware_profile);
+    let gpu_mode = if n_gpu == 0 { "CPU".to_string() } else if n_gpu == -1 { "GPU (full)".to_string() } else { format!("GPU ({n_gpu} layers)") };
     log::info!(
         "LOGOS llama-server: carregando '{model_name}' \
-         (n_gpu={n_gpu}, n_ctx={n_ctx}, porta={LLAMA_SERVER_PORT}, mmproj={})",
+         ({gpu_mode}, n_ctx={n_ctx}, porta={LLAMA_SERVER_PORT}, mmproj={})",
         mmproj_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".into())
     );
 
@@ -3389,6 +3438,42 @@ mod tests {
     #[test]
     fn gpu_layers_unknown_model_mainpc_returns_minus_one() {
         assert_eq!(gpu_layers_for_model("unknown-model", HardwareProfile::MainPc), -1);
+    }
+
+    // ── effective_gpu_layers ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn effective_gpu_workpc_always_cpu() {
+        // WorkPc sem GPU discreta — deve retornar 0 independente do model_size
+        let client = Client::new();
+        let result = effective_gpu_layers(&client, HardwareProfile::WorkPc, -1, 0).await;
+        assert_eq!(result, 0);
+    }
+
+    #[tokio::test]
+    async fn effective_gpu_profile_zero_passthrough() {
+        // Se o perfil já diz 0 (slot CPU-only), não deve checar VRAM
+        let client = Client::new();
+        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, 0, 0).await;
+        assert_eq!(result, 0);
+    }
+
+    #[tokio::test]
+    async fn effective_gpu_model_fits_uses_profile_value() {
+        // Modelo pequeno cabe na VRAM (budget 7500, usado 0, modelo 500) → usa perfil
+        // No CI sem GPU, vram_usage retorna None → vram_used=0 → model fits
+        let client = Client::new();
+        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 500).await;
+        // Sem GPU real no CI: vram_used=0, budget=7500, 500 < 6750 → deve retornar -1
+        assert_eq!(result, -1);
+    }
+
+    #[tokio::test]
+    async fn effective_gpu_model_size_zero_uses_profile_value() {
+        // Tamanho desconhecido (0) → não deve bloquear GPU
+        let client = Client::new();
+        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 0).await;
+        assert_eq!(result, -1);
     }
 
     // ── resolve_gguf_path ────────────────────────────────────────────────────
