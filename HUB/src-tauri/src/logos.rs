@@ -457,22 +457,11 @@ impl LogosState {
                 })
                 .join("logos")
                 .join("models");
-            // Fallback para dev: se o XDG não tem registry mas o CWD tem, usa o CWD
-            // (cargo tauri dev roda com CWD = src-tauri/, onde os modelos são baixados)
-            if !xdg_dir.join("registry.json").exists() {
-                let local_dir = std::env::current_dir()
-                    .unwrap_or_default()
-                    .join("logos")
-                    .join("models");
-                if local_dir.join("registry.json").exists() {
-                    log::info!("LOGOS: models_dir fallback para CWD: {}", local_dir.display());
-                    local_dir
-                } else {
-                    xdg_dir
-                }
-            } else {
-                xdg_dir
-            }
+            let cwd_dir = std::env::current_dir()
+                .unwrap_or_default()
+                .join("logos")
+                .join("models");
+            pick_models_dir(xdg_dir, cwd_dir)
         };
         let llama_server_bin = find_llama_server_bin();
         if let Some(ref bin) = llama_server_bin {
@@ -795,6 +784,25 @@ struct LlamaProcHandle {
 //   /api/generate (Ollama) → /v1/completions       (OpenAI) → llama-server
 //   /api/embed    (Ollama) → /v1/embeddings         (OpenAI) → llama-server
 //   Streaming é bufferizado no LOGOS e retornado como resposta única.
+
+/// Seleciona o `models_dir` com base na existência de `registry.json`.
+///
+/// Regra: usa `xdg` se ele já tem registry. Caso contrário, usa `cwd_logos_models`
+/// se este tem registry (fallback dev — `cargo tauri dev` roda com CWD = src-tauri/).
+/// Se nenhum tem registry, retorna `xdg` como padrão seguro.
+pub(crate) fn pick_models_dir(
+    xdg: std::path::PathBuf,
+    cwd_logos_models: std::path::PathBuf,
+) -> std::path::PathBuf {
+    if xdg.join("registry.json").exists() {
+        return xdg;
+    }
+    if cwd_logos_models.join("registry.json").exists() {
+        log::info!("LOGOS: models_dir fallback para CWD: {}", cwd_logos_models.display());
+        return cwd_logos_models;
+    }
+    xdg
+}
 
 /// Encontra o binário llama-server de forma dinâmica — sem paths hardcoded por máquina.
 ///
@@ -4192,37 +4200,35 @@ mod tests {
         assert!(!state.llama_proc_active().await);
     }
 
-    // ── models_dir fallback para CWD em dev ──────────────────────────────────
+    // ── pick_models_dir — seleção determinística com tempdir ──────────────────
 
     #[test]
-    fn models_dir_fallback_uses_cwd_when_xdg_has_no_registry() {
-        // Garante que o fallback CWD/logos/models é usado quando o XDG não tem registry.json.
-        // Em dev (cargo tauri dev, CWD = src-tauri/), os modelos ficam em CWD/logos/models/.
-        let cwd_models = std::env::current_dir()
-            .unwrap_or_default()
-            .join("logos")
-            .join("models");
-        let xdg_models = dirs::data_local_dir()
-            .unwrap_or_default()
-            .join("ecosystem")
-            .join("hub")
-            .join("logos")
-            .join("models");
-        // Se o XDG não tem registry mas o CWD tem, o CWD deve ser preferido
-        let xdg_has_registry  = xdg_models.join("registry.json").exists();
-        let cwd_has_registry  = cwd_models.join("registry.json").exists();
-        if !xdg_has_registry && cwd_has_registry {
-            // Neste ambiente (dev), o fallback deve ativar
-            let selected = if !xdg_models.join("registry.json").exists()
-                && cwd_models.join("registry.json").exists()
-            {
-                cwd_models.clone()
-            } else {
-                xdg_models.clone()
-            };
-            assert_eq!(selected, cwd_models, "fallback CWD ativado quando XDG sem registry");
-        }
-        // Em produção (XDG tem registry), o teste é trivialmente verdadeiro.
+    fn pick_models_dir_prefers_xdg_when_xdg_has_registry() {
+        let xdg_tmp  = tempfile::tempdir().unwrap();
+        let cwd_tmp  = tempfile::tempdir().unwrap();
+        // xdg tem registry.json; cwd não tem
+        std::fs::write(xdg_tmp.path().join("registry.json"), "[]").unwrap();
+        let result = pick_models_dir(xdg_tmp.path().to_owned(), cwd_tmp.path().to_owned());
+        assert_eq!(result, xdg_tmp.path(), "xdg deve ser preferido quando tem registry.json");
+    }
+
+    #[test]
+    fn pick_models_dir_falls_back_to_cwd_when_only_cwd_has_registry() {
+        let xdg_tmp  = tempfile::tempdir().unwrap();
+        let cwd_tmp  = tempfile::tempdir().unwrap();
+        // cwd tem registry.json; xdg não tem
+        std::fs::write(cwd_tmp.path().join("registry.json"), "[]").unwrap();
+        let result = pick_models_dir(xdg_tmp.path().to_owned(), cwd_tmp.path().to_owned());
+        assert_eq!(result, cwd_tmp.path(), "cwd deve ser usado como fallback quando só ele tem registry.json");
+    }
+
+    #[test]
+    fn pick_models_dir_uses_xdg_when_neither_has_registry() {
+        let xdg_tmp  = tempfile::tempdir().unwrap();
+        let cwd_tmp  = tempfile::tempdir().unwrap();
+        // nenhum tem registry.json
+        let result = pick_models_dir(xdg_tmp.path().to_owned(), cwd_tmp.path().to_owned());
+        assert_eq!(result, xdg_tmp.path(), "xdg deve ser o padrão quando nenhum tem registry.json");
     }
 
     // ── do_list_all_models: active model detectado via llama_proc ─────────────
