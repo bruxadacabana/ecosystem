@@ -352,6 +352,74 @@ def _embed_sync(text: str) -> bytes | None:
 
 
 # ---------------------------------------------------------------------------
+# Embedding via LOGOS /v1/embeddings
+# ---------------------------------------------------------------------------
+
+class _EmbedError(Exception):
+    """Falha definitiva ao chamar LOGOS /v1/embeddings (não retriável)."""
+
+
+_LOGOS_EMBED_RETRY_WAITS: tuple[int, ...] = (5, 15)
+_LOGOS_EMBED_TIMEOUT_S: float = 30.0
+
+
+def _embed_via_logos(
+    texts: list[str],
+    model: str | None = None,
+    *,
+    _transport: "object | None" = None,
+) -> "list[list[float]] | None":
+    """Chama LOGOS /v1/embeddings e retorna lista de vetores por texto.
+
+    Retry automático em timeout e 429 (LOGOS P3 ocupado).
+    Levanta _EmbedError em 501 (modelo não carregado) — sem retry.
+    Retorna None em ConnectError (LOGOS offline) — caller usa fallback FTS5.
+
+    _transport: injetado em testes via httpx.MockTransport; produção usa None.
+    """
+    import time
+    import httpx  # import local — httpx opcional em runtime estático
+
+    if model is None:
+        p = _ec_profile()
+        model = ((p or {}).get("models", {}) or {}).get("embed", "") if p else ""
+
+    payload: dict = {"model": model, "input": texts}
+    last_exc: Exception | None = None
+
+    for attempt, wait in enumerate((-1, *_LOGOS_EMBED_RETRY_WAITS)):
+        if wait >= 0:
+            log.debug("_embed_via_logos: ocupado (tentativa %d), aguardando %ds…", attempt, wait)
+            time.sleep(wait)
+        try:
+            client_kwargs: dict = {"timeout": _LOGOS_EMBED_TIMEOUT_S}
+            if _transport is not None:
+                client_kwargs["transport"] = _transport
+            with httpx.Client(**client_kwargs) as client:
+                resp = client.post(f"{_inference_base_url}/v1/embeddings", json=payload)
+            if resp.status_code == 429:
+                last_exc = Exception("429 LOGOS P3 bloqueado")
+                continue
+            if resp.status_code == 501:
+                raise _EmbedError(
+                    f"LOGOS /v1/embeddings não implementado para modelo '{model}' "
+                    f"(status 501) — nenhum modelo de embedding carregado no servidor"
+                )
+            resp.raise_for_status()
+            return [d["embedding"] for d in resp.json()["data"]]
+        except httpx.ConnectError:
+            return None  # LOGOS offline — fallback graceful, não propaga
+        except httpx.TimeoutException as exc:
+            last_exc = exc
+            continue
+
+    raise _EmbedError(
+        f"timeout após {1 + len(_LOGOS_EMBED_RETRY_WAITS)} tentativas "
+        f"(modelo '{model}', {len(texts)} textos)"
+    ) from last_exc
+
+
+# ---------------------------------------------------------------------------
 # Correção ortográfica (symspellpy)
 # ---------------------------------------------------------------------------
 

@@ -796,6 +796,7 @@ AKASHA/
     ├── conftest.py          → Fixtures compartilhadas
     ├── test_local_search_smoke.py
     ├── test_search_integration.py → Fluxo completo FTS5→RRF→boosts (banco SQLite temporário)
+    ├── test_embeddings_contract.py → Contrato _embed_via_logos: sucesso, timeout/retry, 429/retry, 501 sem retry, offline→None
     ├── test_query_understanding.py
     ├── test_friendship_receiver.py
     └── integration/        → Testes de integração (exigem serviços rodando)
