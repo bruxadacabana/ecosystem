@@ -32,9 +32,18 @@ pub async fn toggle_inference(
         if llama_server_responding().await {
             return Ok("already_running".into());
         }
+        // Falha rápida e clara: llama-server não localizado no startup
+        if !state.inner().has_llama_server() {
+            return Err(AppError::NotFound(
+                "llama-server não encontrado. Instale o llama.cpp e certifique-se de que \
+                 'llama-server' está no PATH, ou configure o caminho em ecosystem.json \
+                 como logos.llama_server_path.".into(),
+            ));
+        }
         let models = crate::logos::do_list_all_models(state.inner()).await;
         let names: Vec<String> = models.into_iter().map(|m| m.name).collect();
-        let model_name = select_model_to_load(&names)
+        let model_name = select_model_to_load_llm(&names)
+            .or_else(|| select_model_to_load(&names))
             .ok_or_else(|| AppError::NotFound("Nenhum modelo instalado.".into()))?;
         let s = state.inner().clone();
         tauri::async_runtime::spawn(async move {
@@ -50,6 +59,17 @@ pub async fn toggle_inference(
 /// Seleciona o primeiro modelo disponível da lista de nomes instalados.
 pub(crate) fn select_model_to_load(names: &[String]) -> Option<String> {
     names.first().cloned()
+}
+
+/// Prefere modelos de chat/instrução; exclui embeddings e mmproj.
+/// Reconhece modelos de embedding pelo nome (bge, e5, nomic-embed, etc.)
+/// e modelos auxiliares (mmproj).
+pub(crate) fn select_model_to_load_llm(names: &[String]) -> Option<String> {
+    let skip_patterns = ["bge", "e5-", "nomic-embed", "all-minilm", "mmproj", "embed"];
+    names.iter().find(|name| {
+        let lower = name.to_lowercase();
+        !skip_patterns.iter().any(|p| lower.contains(p))
+    }).cloned()
 }
 
 /// Testa se o llama-server (através do LOGOS) está respondendo (timeout 500 ms).
@@ -311,6 +331,56 @@ mod tests {
     fn test_select_model_to_load_single_element() {
         let names = vec!["only-model".to_string()];
         assert_eq!(select_model_to_load(&names), Some("only-model".to_string()));
+    }
+
+    #[test]
+    fn test_select_model_to_load_llm_skips_bge() {
+        let names = vec![
+            "bge-m3-Q4_K_M".to_string(),
+            "gemma-2-2b-it-Q4_K_M".to_string(),
+            "Qwen2.5-7B-Instruct-Q4_K_M".to_string(),
+        ];
+        assert_eq!(
+            select_model_to_load_llm(&names),
+            Some("gemma-2-2b-it-Q4_K_M".to_string())
+        );
+    }
+
+    #[test]
+    fn test_select_model_to_load_llm_skips_mmproj() {
+        let names = vec![
+            "moondream2-mmproj-f16-20250414".to_string(),
+            "moondream".to_string(),
+        ];
+        assert_eq!(
+            select_model_to_load_llm(&names),
+            Some("moondream".to_string())
+        );
+    }
+
+    #[test]
+    fn test_select_model_to_load_llm_skips_embed() {
+        let names = vec![
+            "nomic-embed-text".to_string(),
+            "e5-large".to_string(),
+            "all-minilm".to_string(),
+            "qwen2.5:3b".to_string(),
+        ];
+        assert_eq!(
+            select_model_to_load_llm(&names),
+            Some("qwen2.5:3b".to_string())
+        );
+    }
+
+    #[test]
+    fn test_select_model_to_load_llm_empty_returns_none() {
+        assert_eq!(select_model_to_load_llm(&[]), None);
+    }
+
+    #[test]
+    fn test_select_model_to_load_llm_all_embeddings_returns_none() {
+        let names = vec!["bge-m3".to_string(), "nomic-embed".to_string()];
+        assert_eq!(select_model_to_load_llm(&names), None);
     }
 }
 

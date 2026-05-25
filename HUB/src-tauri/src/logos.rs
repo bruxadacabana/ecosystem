@@ -395,6 +395,17 @@ impl LogosState {
         &self.0.models_dir
     }
 
+    /// Retorna true se o binário llama-server foi localizado no startup.
+    /// Usado para falha rápida antes de spawnar a task de carregamento.
+    pub fn has_llama_server(&self) -> bool {
+        self.0.llama_server_bin.is_some()
+    }
+
+    /// Retorna o caminho do binário llama-server, se encontrado.
+    pub fn llama_server_path(&self) -> Option<&std::path::Path> {
+        self.0.llama_server_bin.as_deref()
+    }
+
     /// Emite um evento de alerta crítico para o frontend (nível "error" | "warn" | "info").
     /// Sem-op se o AppHandle ainda não foi inicializado.
     pub(crate) async fn emit_alert(&self, level: &str, message: &str) {
@@ -710,8 +721,41 @@ struct LlamaProcHandle {
 //   /api/embed    (Ollama) → /v1/embeddings         (OpenAI) → llama-server
 //   Streaming é bufferizado no LOGOS e retornado como resposta única.
 
-/// Encontra o binário llama-server em localizações padrão.
+/// Encontra o binário llama-server de forma dinâmica — sem paths hardcoded por máquina.
+///
+/// Ordem de busca:
+///   1. `ecosystem.json["logos"]["llama_server_path"]` — configuração por máquina (não sincronizada)
+///   2. PATH via `which`/`where` — funciona em qualquer instalação do sistema
+///   3. Paths padrão comuns (/usr/bin, /usr/local/bin, /opt)
 fn find_llama_server_bin() -> Option<std::path::PathBuf> {
+    // 1. Caminho configurado manualmente no ecosystem.json local (não sincronizado entre máquinas)
+    {
+        let eco = crate::ecosystem::read_json();
+        if let Some(configured) = eco["logos"]["llama_server_path"].as_str().filter(|s| !s.is_empty()) {
+            let p = std::path::Path::new(configured);
+            if p.exists() && p.is_file() {
+                log::info!("LOGOS: llama-server configurado em ecosystem.json: {}", p.display());
+                return Some(p.to_owned());
+            }
+        }
+    }
+
+    // 2. PATH do sistema via `which` (Linux/macOS) / `where` (Windows)
+    let finder = if cfg!(target_os = "windows") { "where" } else { "which" };
+    if let Ok(out) = std::process::Command::new(finder).arg("llama-server").output() {
+        if out.status.success() {
+            let path_str = String::from_utf8_lossy(&out.stdout);
+            if let Some(found) = path_str.lines().next().map(str::trim).filter(|s| !s.is_empty()) {
+                let p = std::path::PathBuf::from(found);
+                if p.exists() {
+                    log::info!("LOGOS: llama-server encontrado via PATH: {}", p.display());
+                    return Some(p);
+                }
+            }
+        }
+    }
+
+    // 3. Paths padrão do sistema como último recurso
     for path in [
         "/usr/bin/llama-server",
         "/usr/local/bin/llama-server",
@@ -722,6 +766,7 @@ fn find_llama_server_bin() -> Option<std::path::PathBuf> {
             return Some(p.to_owned());
         }
     }
+
     None
 }
 

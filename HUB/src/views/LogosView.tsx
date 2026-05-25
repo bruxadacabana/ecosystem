@@ -143,9 +143,8 @@ export function LogosView() {
     const r = await cmd.toggleInference(true)
     if (!r.ok) {
       setStarting(false)
-      const msg = r.error?.kind === 'NotFound'
-        ? 'Nenhum modelo instalado — baixe um modelo primeiro'
-        : (r.error?.message ?? 'Erro ao ligar')
+      const msg = r.error?.message
+        ?? (r.error?.kind === 'NotFound' ? 'Nenhum modelo instalado — baixe um modelo primeiro' : 'Erro ao ligar')
       setToggleError(msg)
       setTimeout(() => setToggleError(null), 6_000)
       return
