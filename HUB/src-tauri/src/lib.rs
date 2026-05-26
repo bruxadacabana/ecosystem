@@ -87,6 +87,8 @@ pub fn run() {
             commands::backup::ecosystem_reset,
             commands::config::get_service_credentials,
             commands::config::save_service_credentials,
+            commands::config::get_logos_embed_config,
+            commands::config::save_logos_embed_config,
             commands::git::git_init_sync_root,
             commands::git::git_status,
             commands::git::git_commit,

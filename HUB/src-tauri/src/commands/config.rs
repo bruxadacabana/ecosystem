@@ -93,6 +93,30 @@ pub(crate) fn apply_sync_root_inner(
         "config_path": root.join("ogma").join(".config").to_string_lossy().as_ref(),
     }))?;
 
+    // ── Seção logos — inicializa defaults sem sobrescrever config existente ──
+    // Lê o estado atual e só escreve os campos ausentes, preservando embed_model
+    // e embed_port que a usuária pode ter configurado manualmente.
+    {
+        let cur: Value = if eco_path.exists() {
+            std::fs::read_to_string(eco_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(json!({}))
+        } else {
+            json!({})
+        };
+        let mut defaults = serde_json::Map::new();
+        if !cur["logos"]["embed_model"].is_string() {
+            defaults.insert("embed_model".into(), json!("bge-m3"));
+        }
+        if cur["logos"]["embed_port"].as_u64().is_none() {
+            defaults.insert("embed_port".into(), json!(8082_u64));
+        }
+        if !defaults.is_empty() {
+            ecosystem::write_to_file(eco_path, "logos", Value::Object(defaults))?;
+        }
+    }
+
     Ok(())
 }
 
@@ -378,6 +402,146 @@ mod tests {
         assert!(json_str.contains("qbt_port"));
         assert!(json_str.contains("syncthing_gui_user"));
     }
+
+    // ── LogosEmbedConfig ──────────────────────────────────────────────────────
+
+    #[test]
+    fn logos_embed_config_reads_configured_values() {
+        let eco = json!({
+            "logos": {
+                "embed_model": "custom-embed.gguf",
+                "embed_port":  9000
+            }
+        });
+        let cfg = get_logos_embed_config_inner(&eco);
+        assert_eq!(cfg.embed_model, "custom-embed.gguf");
+        assert_eq!(cfg.embed_port, 9000);
+    }
+
+    #[test]
+    fn logos_embed_config_defaults_when_logos_section_absent() {
+        let eco = json!({});
+        let cfg = get_logos_embed_config_inner(&eco);
+        assert_eq!(cfg.embed_model, "bge-m3",
+            "embed_model padrão deve ser 'bge-m3'");
+        assert_eq!(cfg.embed_port, 8082,
+            "embed_port padrão deve ser 8082");
+    }
+
+    #[test]
+    fn logos_embed_config_defaults_when_embed_model_empty_string() {
+        let eco = json!({ "logos": { "embed_model": "", "embed_port": 8082 } });
+        let cfg = get_logos_embed_config_inner(&eco);
+        assert_eq!(cfg.embed_model, "bge-m3",
+            "embed_model vazio deve cair no default 'bge-m3'");
+    }
+
+    #[test]
+    fn logos_embed_config_serializes() {
+        let cfg = LogosEmbedConfig { embed_model: "bge-m3".into(), embed_port: 8082 };
+        let s   = serde_json::to_string(&cfg).unwrap();
+        assert!(s.contains("embed_model"), "deve serializar embed_model");
+        assert!(s.contains("embed_port"),  "deve serializar embed_port");
+        assert!(s.contains("8082"),        "porta deve estar no JSON");
+    }
+
+    // ── apply_sync_root: logos defaults ─────────────────────────────────────
+
+    #[test]
+    fn apply_sync_root_writes_logos_embed_defaults_when_absent() {
+        let sync_tmp = tempfile::tempdir().unwrap();
+        let eco_tmp  = tempfile::tempdir().unwrap();
+        run_inner(&sync_tmp, &eco_tmp).unwrap();
+
+        let eco = read_eco(&eco_tmp);
+        assert_eq!(eco["logos"]["embed_model"].as_str().unwrap(), "bge-m3",
+            "logos.embed_model deve ser inicializado com 'bge-m3'");
+        assert_eq!(eco["logos"]["embed_port"].as_u64().unwrap(), 8082,
+            "logos.embed_port deve ser inicializado com 8082");
+    }
+
+    #[test]
+    fn apply_sync_root_preserves_existing_logos_embed_config() {
+        let sync_tmp = tempfile::tempdir().unwrap();
+        let eco_tmp  = tempfile::tempdir().unwrap();
+        let eco_path = eco_tmp.path().join("ecosystem.json");
+
+        // Pré-escreve config customizada de logos
+        let pre = json!({
+            "logos": {
+                "embed_model": "custom-embed.gguf",
+                "embed_port":  9000
+            }
+        });
+        std::fs::write(&eco_path, serde_json::to_string_pretty(&pre).unwrap()).unwrap();
+
+        apply_sync_root_inner(sync_tmp.path(), &eco_path).unwrap();
+
+        let eco = read_eco(&eco_tmp);
+        assert_eq!(eco["logos"]["embed_model"].as_str().unwrap(), "custom-embed.gguf",
+            "apply_sync_root NÃO deve sobrescrever embed_model já configurado");
+        assert_eq!(eco["logos"]["embed_port"].as_u64().unwrap(), 9000,
+            "apply_sync_root NÃO deve sobrescrever embed_port já configurado");
+    }
+
+    #[test]
+    fn apply_sync_root_writes_only_missing_logos_fields() {
+        let sync_tmp = tempfile::tempdir().unwrap();
+        let eco_tmp  = tempfile::tempdir().unwrap();
+        let eco_path = eco_tmp.path().join("ecosystem.json");
+
+        // embed_model configurado, embed_port ausente
+        let pre = json!({ "logos": { "embed_model": "my-embed.gguf" } });
+        std::fs::write(&eco_path, serde_json::to_string_pretty(&pre).unwrap()).unwrap();
+
+        apply_sync_root_inner(sync_tmp.path(), &eco_path).unwrap();
+
+        let eco = read_eco(&eco_tmp);
+        assert_eq!(eco["logos"]["embed_model"].as_str().unwrap(), "my-embed.gguf",
+            "embed_model existente deve ser preservado");
+        assert_eq!(eco["logos"]["embed_port"].as_u64().unwrap(), 8082,
+            "embed_port ausente deve receber valor padrão 8082");
+    }
+}
+
+// ─── LogosEmbedConfig ─────────────────────────────────────────────────────────
+
+/// Configuração do servidor de embedding do LOGOS.
+/// `embed_model`: nome do GGUF de embedding (ex: "bge-m3"). Padrão: "bge-m3".
+/// `embed_port`: porta do embed-server. Padrão: 8082 (= EMBED_SERVER_PORT).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogosEmbedConfig {
+    pub embed_model: String,
+    pub embed_port:  u16,
+}
+
+/// Núcleo testável — lê `logos.embed_model` e `logos.embed_port` do ecosystem.json.
+pub(crate) fn get_logos_embed_config_inner(eco: &Value) -> LogosEmbedConfig {
+    let logos = &eco["logos"];
+    LogosEmbedConfig {
+        embed_model: logos["embed_model"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("bge-m3")
+            .to_string(),
+        embed_port: logos["embed_port"].as_u64().unwrap_or(8082) as u16,
+    }
+}
+
+/// Lê a configuração do servidor de embedding do LOGOS a partir do ecosystem.json.
+#[tauri::command]
+pub fn get_logos_embed_config() -> Result<LogosEmbedConfig, AppError> {
+    Ok(get_logos_embed_config_inner(&ecosystem::read_json()))
+}
+
+/// Salva a configuração do servidor de embedding do LOGOS no ecosystem.json.
+/// Usa merge de campos — não toca em outros campos da seção `logos`.
+#[tauri::command]
+pub fn save_logos_embed_config(config: LogosEmbedConfig) -> Result<(), AppError> {
+    ecosystem::write_section("logos", serde_json::json!({
+        "embed_model": config.embed_model,
+        "embed_port":  config.embed_port,
+    }))
 }
 
 /// Alterna entre modo compacto (~640×440) e expandido (~1280×800).

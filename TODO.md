@@ -7221,7 +7221,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **LOGOS proxy — `v1_embeddings_proxy` aponta para porta 8082** — modificar o handler de `/v1/embeddings` em `logos.rs` (ou onde `proxy_openai_to_llama` é chamado) para usar `EMBED_SERVER_PORT` (8082) em vez de `LLAMA_PORT` (8081). Manter todos os retries, timeout e lógica de fila intactos. Log: cada requisição de embedding deve registrar timestamp, tamanho do input, latência da resposta do backend, e erro se houver.
 
-- [ ] **`ecosystem.json` — campo `logos.embed_model`** — adicionar ao schema: `logos.embed_model: String` (nome do GGUF de embedding), `logos.embed_port: u16` (default 8082). Atualizar `apply_sync_root` e funções de leitura de config para incluir esses campos. O `ecosystem_client.py` continua apontando para a porta 7072 do LOGOS proxy — nenhuma mudança nas apps.
+- [x] **`ecosystem.json` — campo `logos.embed_model`** — adicionar ao schema: `logos.embed_model: String` (nome do GGUF de embedding), `logos.embed_port: u16` (default 8082). Atualizar `apply_sync_root` e funções de leitura de config para incluir esses campos. O `ecosystem_client.py` continua apontando para a porta 7072 do LOGOS proxy — nenhuma mudança nas apps.
 
 - [ ] **`views/LogosView.tsx` — status de ambas as instâncias** — exibir status separado para "Servidor LLM (chat)" e "Servidor de Embedding": dot colorido independente, modelo carregado, porta, tempo de resposta. Manter o botão "Ligar/Desligar IA" controlando ambos simultaneamente.
 
