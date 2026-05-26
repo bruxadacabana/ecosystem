@@ -527,6 +527,23 @@ mod tests {
         assert!(!state.llama_proc_active().await, "proc deve ser None após kill");
     }
 
+    #[tokio::test]
+    async fn toggle_enable_orphan_server_with_model_returns_started() {
+        // Cenário: server_responding=true mas llama_proc_active=false (órfão de sessão anterior).
+        // A função deve: chamar kill_orphaned_llama_server (efeito externo, não verificável em unit)
+        // e em seguida retornar "started" quando há modelo disponível.
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("llama-server");
+        std::fs::write(&bin, b"").unwrap();
+        write_fake_registry(dir.path(), "gemma-2b");
+        // GGUF precisa existir para resolve_gguf_path encontrá-lo
+        std::fs::write(dir.path().join("gemma-2b.gguf"), b"fake gguf").unwrap();
+        let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), Some(bin));
+        // server_responding=true + proc_active=false → orphan path → continua e retorna "started"
+        let result = do_toggle_inference(&state, true, true).await.unwrap();
+        assert_eq!(result, "started", "órfão detectado deve ser morto e novo carregamento iniciado");
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn toggle_enable_server_responding_proc_active_returns_already_running() {
