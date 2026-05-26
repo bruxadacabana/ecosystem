@@ -1117,6 +1117,96 @@ fn spawn_stderr_reader(stderr: tokio::process::ChildStderr, model_name: String) 
     });
 }
 
+// ── Servidor de embedding (porta EMBED_SERVER_PORT) ───────────────────────
+
+/// Constrói o `Command` do servidor de embedding sem spawná-lo.
+///
+/// Diferenças em relação ao servidor de chat (`build_llama_server_cmd`):
+/// - Adiciona `--embeddings` (habilita /v1/embeddings, restringe a embedding-only)
+/// - Usa `--pooling mean` (pooling por média de tokens — padrão para bge-m3)
+/// - Sem `--ctx-size`, `--parallel`, `--cont-batching` (não aplicáveis a embedding)
+/// - Sem `--chat-template` (embedding-only não processa chat)
+///
+/// Separado por design: impossível ter chat e embedding no mesmo processo com `--embeddings`.
+pub(crate) fn build_embed_server_cmd(
+    bin:        &std::path::Path,
+    model_path: &std::path::Path,
+    n_gpu:      i32,
+    port:       u16,
+) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.arg("--model")      .arg(model_path)
+       .arg("--port")       .arg(port.to_string())
+       .arg("--embeddings")              // habilita /v1/embeddings (embedding-only mode)
+       .arg("--pooling")    .arg("mean") // pooling por média — padrão para bge-m3
+       .stdout(std::process::Stdio::null())
+       .stderr(std::process::Stdio::piped());
+    if n_gpu == 0 {
+        cmd.arg("--n-gpu-layers").arg("0");
+    } else if n_gpu > 0 {
+        cmd.arg("--n-gpu-layers").arg(n_gpu.to_string());
+    } else {
+        // n_gpu == -1: offload total
+        cmd.arg("--n-gpu-layers").arg("9999");
+    }
+    cmd
+}
+
+/// Spawna o processo llama-server em modo embedding (porta EMBED_SERVER_PORT).
+/// O processo é filho do HUB e encerra quando o HUB encerra.
+async fn spawn_embed_server_proc(
+    bin:        &std::path::Path,
+    model_path: &std::path::Path,
+    n_gpu:      i32,
+    port:       u16,
+) -> Result<tokio::process::Child, String> {
+    build_embed_server_cmd(bin, model_path, n_gpu, port)
+        .spawn()
+        .map_err(|e| format!("Falha ao iniciar embed-server: {e}"))
+}
+
+/// Inicia uma task que lê o stderr do embed-server, registra via log e escreve em arquivo.
+///
+/// `log_path`: caminho do arquivo de log rotativo (`logos_embed.log` no diretório logos/).
+/// Logs são escritos em append com timestamp ISO, permitindo diagnóstico pós-mortem.
+fn spawn_embed_stderr_reader(
+    stderr:     tokio::process::ChildStderr,
+    model_name: String,
+    log_path:   std::path::PathBuf,
+) {
+    tokio::spawn(async move {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let log_file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .await
+            .ok();
+        let mut log_file = log_file;
+
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if line.trim().is_empty() { continue; }
+            log::info!("[logos-embed] [{}]: {}", model_name, line);
+            if let Some(ref mut f) = log_file {
+                let ts       = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S");
+                let log_line = format!("{ts} {line}\n");
+                let _        = f.write_all(log_line.as_bytes()).await;
+            }
+        }
+    });
+}
+
+/// Deriva o caminho do arquivo de log do embed-server a partir do `models_dir`.
+/// `models_dir` = `{logos_data}/logos/models/` → log em `{logos_data}/logos/logos_embed.log`
+pub(crate) fn embed_log_path(models_dir: &std::path::Path) -> std::path::PathBuf {
+    models_dir
+        .parent()
+        .unwrap_or(models_dir)
+        .join("logos_embed.log")
+}
+
 /// Aguarda llama-server responder em /health com 200 OK.
 async fn wait_llama_ready(port: u16, client: &Client, timeout_secs: u64) -> bool {
     let url      = format!("http://127.0.0.1:{port}/health");
@@ -4618,5 +4708,116 @@ mod tests {
         assert!(entries.iter().any(|e| e.status == "active"),
             "com llama_proc setado, o modelo deve aparecer como active");
         state.kill_llama_proc().await;
+    }
+
+    // ── build_embed_server_cmd — flags e parâmetros ──────────────────────────
+
+    fn embed_cmd_args(n_gpu: i32, port: u16) -> Vec<String> {
+        let bin        = std::path::Path::new("/usr/bin/llama-server");
+        let model_path = std::path::Path::new("/models/bge-m3.gguf");
+        let mut cmd    = build_embed_server_cmd(bin, model_path, n_gpu, port);
+        cmd.as_std()
+           .get_args()
+           .map(|a| a.to_string_lossy().to_string())
+           .collect()
+    }
+
+    #[test]
+    fn build_embed_server_cmd_has_embeddings_flag() {
+        let args = embed_cmd_args(-1, 8082);
+        assert!(args.contains(&"--embeddings".to_string()),
+            "--embeddings deve estar presente (habilita /v1/embeddings)");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_has_pooling_mean() {
+        let args = embed_cmd_args(-1, 8082);
+        let pooling_idx = args.iter().position(|a| a == "--pooling")
+            .expect("--pooling deve estar presente");
+        assert_eq!(args[pooling_idx + 1], "mean",
+            "pooling deve ser 'mean' (padrão para bge-m3)");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_has_correct_port() {
+        let args = embed_cmd_args(-1, 8082);
+        let port_idx = args.iter().position(|a| a == "--port")
+            .expect("--port deve estar presente");
+        assert_eq!(args[port_idx + 1], "8082",
+            "porta do embed-server deve ser 8082");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_n_gpu_zero_passes_0() {
+        let args = embed_cmd_args(0, 8082);
+        let idx = args.iter().position(|a| a == "--n-gpu-layers")
+            .expect("--n-gpu-layers deve estar presente quando n_gpu=0");
+        assert_eq!(args[idx + 1], "0",
+            "n_gpu=0 deve passar '--n-gpu-layers 0' (CPU-only)");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_n_gpu_positive_passes_value() {
+        let args = embed_cmd_args(16, 8082);
+        let idx = args.iter().position(|a| a == "--n-gpu-layers")
+            .expect("--n-gpu-layers deve estar presente quando n_gpu=16");
+        assert_eq!(args[idx + 1], "16",
+            "n_gpu=16 deve passar '--n-gpu-layers 16'");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_n_gpu_minus1_passes_9999() {
+        let args = embed_cmd_args(-1, 8082);
+        let idx = args.iter().position(|a| a == "--n-gpu-layers")
+            .expect("--n-gpu-layers deve estar presente quando n_gpu=-1");
+        assert_eq!(args[idx + 1], "9999",
+            "n_gpu=-1 (offload total) deve passar '--n-gpu-layers 9999'");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_no_chat_template() {
+        let args = embed_cmd_args(-1, 8082);
+        assert!(!args.contains(&"--chat-template".to_string()),
+            "--chat-template não deve aparecer no embed-server (embedding-only)");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_no_cont_batching() {
+        let args = embed_cmd_args(-1, 8082);
+        assert!(!args.contains(&"--cont-batching".to_string()),
+            "--cont-batching não deve aparecer no embed-server (não aplicável a embedding)");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_no_parallel() {
+        let args = embed_cmd_args(-1, 8082);
+        assert!(!args.contains(&"--parallel".to_string()),
+            "--parallel não deve aparecer no embed-server");
+    }
+
+    // ── embed_log_path ────────────────────────────────────────────────────────
+
+    #[test]
+    fn embed_log_path_is_sibling_of_models_dir() {
+        let models_dir = std::path::Path::new("/home/user/logos/models");
+        let log        = embed_log_path(models_dir);
+        assert_eq!(log.parent().unwrap(), std::path::Path::new("/home/user/logos"),
+            "log deve ficar no diretório pai de models/");
+    }
+
+    #[test]
+    fn embed_log_path_filename_is_logos_embed_log() {
+        let models_dir = std::path::Path::new("/home/user/logos/models");
+        let log        = embed_log_path(models_dir);
+        assert_eq!(log.file_name().unwrap().to_str().unwrap(), "logos_embed.log",
+            "nome do arquivo de log deve ser 'logos_embed.log'");
+    }
+
+    #[test]
+    fn embed_log_path_fallback_when_no_parent() {
+        // Caminho sem parent (ex: "models") — deve usar o próprio diretório
+        let models_dir = std::path::Path::new("models");
+        let log        = embed_log_path(models_dir);
+        assert_eq!(log.file_name().unwrap().to_str().unwrap(), "logos_embed.log");
     }
 }
