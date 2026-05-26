@@ -376,7 +376,7 @@ pub(crate) fn model_hf_table(model: &str) -> Option<(&'static str, &'static str)
             Some(("bartowski/gemma-2-2b-it-GGUF", "gemma-2-2b-it-Q4_K_M.gguf")),
         // ── SmolLM2 ───────────────────────────────────────────────────────────
         "smollm2:1.7b" | "smollm2-1.7b" | "smollm2_1.7b" =>
-            Some(("HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF", "SmolLM2-1.7B-Instruct-Q4_K_M.gguf")),
+            Some(("HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF", "smollm2-1.7b-instruct-q4_k_m.gguf")),
         // ── Llama 3.2 ─────────────────────────────────────────────────────────
         "llama3.2:3b" | "llama3.2-3b" | "llama-3.2-3b" =>
             Some(("bartowski/Llama-3.2-3B-Instruct-GGUF", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")),
@@ -643,6 +643,15 @@ mod tests {
         assert!(model_hf_table("smollm2:1.7b").is_some());
         assert!(model_hf_table("llama3.2:3b").is_some());
         assert!(model_hf_table("bge-m3").is_some());
+    }
+
+    #[test]
+    fn hf_table_smollm2_filename_is_lowercase() {
+        // Regressão: filename original estava em CamelCase (SmolLM2-1.7B-...) → 404 no HF.
+        // O arquivo real no repo HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF é tudo minúsculo.
+        let (_, filename) = model_hf_table("smollm2:1.7b").unwrap();
+        assert_eq!(filename, "smollm2-1.7b-instruct-q4_k_m.gguf",
+            "filename deve ser minúsculo — HuggingFace é case-sensitive");
     }
 
     #[test]
