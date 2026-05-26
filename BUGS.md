@@ -66,6 +66,8 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-003](#bug-003) | FIXED | 2026-05-25 | HUB/LOGOS | llama-server roda em CPU por falta de --n-gpu-layers |
 | [BUG-004](#bug-004) | FIXED | 2026-05-25 | HUB/LOGOS | Servidor llama-server órfão bloqueia toggle_inference |
 | [BUG-005](#bug-005) | FIXED | 2026-05-25 | HUB | STATUS_ENTRYPOINT_NOT_FOUND nos testes Rust no Windows |
+| [BUG-006](#bug-006) | FIXED | 2026-05-26 | HUB/LOGOS | Download smollm2:1.7b falha com 404 — filename errado no HuggingFace |
+| [BUG-007](#bug-007) | FIXED | 2026-05-26 | HUB/LOGOS | CPU usage sempre 0% no Windows — refresh e leitura no mesmo tick |
 
 ---
 
@@ -511,3 +513,99 @@ O docstring foi atualizado para refletir a saída correta: `(buscando OR busc*) 
 
 #### Teste de regressão
 `AKASHA/tests/test_search_integration.py::TestConflictingBoosts::test_conflicting_pagerank_and_freshness_preserves_all_results` — verifica que buscas multi-palavra com query temporal encontram documentos indexados. Antes do fix, retornava `[]`.
+
+---
+
+### BUG-006 · [FIXED] · Download smollm2:1.7b falha com 404 — filename errado no HuggingFace
+
+#### Identificação
+- **Data:** 2026-05-26
+- **App(s):** HUB, LOGOS
+- **Componente:** `HUB/src-tauri/src/commands/logos.rs` — `model_hf_table()`
+- **Commit do fix:** `b4b1550`
+- **Descoberta via:** uso-real (tentativa de download pelo painel LOGOS)
+- **Tempo de diagnóstico:** ~5 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** WorkPC (Windows 10) — qualquer máquina ao tentar baixar smollm2:1.7b
+- **OS:** Windows 10 Pro
+- **Hardware relevante:** N/A (erro de rede, não de hardware)
+- **Modo:** dev e produção
+- **Reproduzível em:** qualquer máquina com acesso ao HuggingFace
+
+#### Pré-condição para reproduzir
+Tentar baixar o modelo `smollm2:1.7b` pelo painel LOGOS ("Baixar modelo").
+
+#### Sintoma observado
+Erro `HuggingFace retornou 404 Not Found` ao tentar fazer download de smollm2:1.7b.
+O modelo qwen2.5:0.5b baixava normalmente (filename correto).
+
+#### Logs
+```
+HuggingFace retornou 404 Not Found
+URL: https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_K_M.gguf
+```
+
+#### Causa raiz
+O filename mapeado em `model_hf_table` estava em CamelCase (`SmolLM2-1.7B-Instruct-Q4_K_M.gguf`), mas o arquivo real no repo HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF é todo em letras minúsculas (`smollm2-1.7b-instruct-q4_k_m.gguf`). HuggingFace trata URLs de download como case-sensitive — o servidor retorna 404 para qualquer divergência de capitalização.
+
+#### Impacto
+**Bloqueante** para download de smollm2:1.7b. Modelos com filename correto (qwen, gemma, bge-m3) não são afetados.
+
+#### Fix aplicado
+Corrigido o filename em `model_hf_table` para `smollm2-1.7b-instruct-q4_k_m.gguf` (tudo minúsculo).
+Adicionado teste de regressão `hf_table_smollm2_filename_is_lowercase` que verifica o valor exato.
+
+#### Teste de regressão
+`commands::logos::tests::hf_table_smollm2_filename_is_lowercase` — verifica que o filename mapeado é `smollm2-1.7b-instruct-q4_k_m.gguf` (minúsculo). Falha imediatamente se o filename for revertido para CamelCase.
+
+---
+
+### BUG-007 · [FIXED] · CPU usage sempre 0% no Windows — refresh e leitura no mesmo tick
+
+#### Identificação
+- **Data:** 2026-05-26
+- **App(s):** HUB, LOGOS
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `cpu_ram_usage()`, `metrics_stream_handler`, `collect_status`
+- **Commit do fix:** (nesta sessão)
+- **Descoberta via:** uso-real (painel LOGOS exibindo 0% de CPU no WorkPC Windows 10)
+- **Tempo de diagnóstico:** ~15 minutos (análise de chamadas concorrentes)
+
+#### Ambiente
+- **Máquina(s) afetadas:** WorkPC (Windows 10) — confirmado; possivelmente laptop (Windows com PDH)
+- **OS:** Windows 10 Pro
+- **Hardware relevante:** CPU Intel i5-3470 (sem AVX2)
+- **Modo:** dev e produção
+- **Reproduzível em:** Windows — Linux usa /proc/stat com resolução mais alta, menos afetado
+
+#### Pré-condição para reproduzir
+Abrir painel LOGOS no HUB com o SSE stream de métricas ativo (qualquer uso normal).
+
+#### Sintoma observado
+Barra/valor de CPU no painel LOGOS exibe permanentemente 0% no Windows. RAM e VRAM exibem corretamente.
+
+#### Logs
+```
+# Nenhum log de erro — o valor simplesmente retorna 0.0 silenciosamente
+```
+
+#### Causa raiz
+`cpu_ram_usage()` chamava `sys.refresh_cpu_all()` imediatamente seguido de `sys.global_cpu_usage()` na mesma função. O valor de CPU% em sysinfo é calculado como delta entre duas chamadas consecutivas de `refresh_cpu_all()`. Dois callers concorrentes usavam o mesmo `Mutex<System>`:
+
+1. `metrics_stream_handler` — loop SSE, chama a cada 1s
+2. `collect_status` — chamado a cada 4s pelo frontend
+
+Quando `collect_status` adquiria o mutex logo após `metrics_stream_handler` (poucos ms de diferença), o delta de tempo entre os dois `refresh_cpu_all()` era < 15ms. No Windows (PDH — Performance Data Helper), o acumulador de tempo de CPU só atualiza a cada ~15ms (quantum do scheduler). Com delta < 1 quantum → Δ idle = Δ kernel = Δ user = 0 → CPU% = 0.
+
+No Linux, `/proc/stat` tem resolução de clock ticks (~10ms) e o problema era menos severo; no Windows é reproduzível consistentemente.
+
+#### Impacto
+**Cosmético** (o guard de CPU ainda funciona, mas usa a leitura inline dentro do guard — que também pode ser 0). Os guards de CPU para P3 (`CPU_P3_BLOCK = 85%`) liam o mesmo valor e potencialmente nunca bloqueavam mesmo com CPU saturada.
+
+#### Fix aplicado
+1. Removido `s.refresh_cpu_all()` de `cpu_ram_usage()` — a função passou a apenas ler `global_cpu_usage()` (último valor computado) e `refresh_memory()`.
+2. Adicionado `cpu_watchdog` background task em `start_server()`: faz `refresh_cpu_all()` exclusivamente, a cada 1s, com sleep de 200ms antes da primeira leitura para garantir baseline não-zero no Windows.
+3. O watchdog é o único caller de `refresh_cpu_all()` — sem contention, sem delta zero.
+
+#### Teste de regressão
+`logos::tests::cpu_watchdog_is_sole_caller_of_refresh_cpu_all` — verifica que `cpu_ram_usage` não chama `refresh_cpu_all` (análise estática via grep do código compilado seria ideal, mas o teste verifica indiretamente via snapshot de `global_cpu_usage` entre chamadas sem refresh). Complementado por teste de integração manual no Windows.

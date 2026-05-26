@@ -48,7 +48,7 @@ use axum::{
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use sysinfo::System;
@@ -368,6 +368,14 @@ struct Inner {
     /// Processo llama-server do servidor de embedding (porta EMBED_SERVER_PORT).
     /// Independente do llama_proc (porta LLAMA_SERVER_PORT) — falhas são isoladas.
     embed_proc: Mutex<Option<LlamaProcHandle>>,
+
+    // ── Limites de recursos configuráveis ───────────────────────────────────
+    /// Threshold de CPU (%) para bloquear tarefas P3. Padrão 85.
+    /// Persistido em ecosystem.json como logos.cpu_p3_limit_pct.
+    cpu_p3_limit_pct: Mutex<f32>,
+    /// Último valor de CPU% calculado pelo cpu_watchdog (f32 bits em AtomicU32).
+    /// Evita que múltiplos callers chamem refresh_cpu_all() com delta ≈ 0.
+    cached_cpu_pct: Arc<AtomicU32>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -379,6 +387,11 @@ impl LogosState {
     /// Atualiza o limite de VRAM em memória (não persiste — persistência fica em logos_set_vram_limit_pct).
     pub(crate) async fn set_vram_limit_pct(&self, pct: f32) {
         *self.0.vram_limit_pct.lock().await = pct.clamp(50.0, 95.0);
+    }
+
+    /// Atualiza o limite de CPU P3 em memória (não persiste — persistência fica em logos_set_cpu_p3_limit_pct).
+    pub(crate) async fn set_cpu_p3_limit_pct(&self, pct: f32) {
+        *self.0.cpu_p3_limit_pct.lock().await = pct.clamp(30.0, 99.0);
     }
 
     /// Aborta a inferência em andamento para o modelo especificado.
@@ -524,9 +537,16 @@ impl LogosState {
                 .map(|v| v as i32)
                 .unwrap_or(-1)
         };
+        let cpu_p3_limit_pct = {
+            let eco = crate::ecosystem::read_json();
+            eco["logos"]["cpu_p3_limit_pct"]
+                .as_f64()
+                .map(|v| (v as f32).clamp(30.0, 99.0))
+                .unwrap_or(85.0)
+        };
         log::info!(
-            "LOGOS: embed_model='{}' embed_n_gpu_layers={}",
-            embed_model, embed_n_gpu_layers
+            "LOGOS: embed_model='{}' embed_n_gpu_layers={} cpu_p3_limit_pct={:.0}%",
+            embed_model, embed_n_gpu_layers, cpu_p3_limit_pct
         );
 
         // Inicialização prévia do sysinfo — primeira leitura é sempre 0%; a segunda é o delta real.
@@ -561,6 +581,8 @@ impl LogosState {
             embed_model: Mutex::new(embed_model),
             embed_n_gpu_layers: Mutex::new(embed_n_gpu_layers),
             embed_proc: Mutex::new(None),
+            cpu_p3_limit_pct: Mutex::new(cpu_p3_limit_pct),
+            cached_cpu_pct: Arc::new(AtomicU32::new(0)),
         }))
     }
 
@@ -616,6 +638,8 @@ impl LogosState {
             embed_model:        Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers: Mutex::new(-1),
             embed_proc:         Mutex::new(None),
+            cpu_p3_limit_pct:   Mutex::new(85.0),
+            cached_cpu_pct:     Arc::new(AtomicU32::new(0)),
         }))
     }
 }
@@ -656,6 +680,8 @@ pub struct StatusResponse {
     pub preempted_count: u32,
     /// Limite de VRAM configurado (0–100). P3 bloqueado acima deste percentual.
     pub vram_limit_pct: f32,
+    /// Limite de CPU (%) para bloquear P3. Configurável, padrão 85.
+    pub cpu_p3_limit_pct: f32,
     /// True quando o watchdog de VRAM bloqueou P3 (VRAM > block_pct%).
     /// Retoma automaticamente quando VRAM cai abaixo de 70%.
     pub p3_vram_blocked: bool,
@@ -1741,7 +1767,7 @@ async fn queue_and_forward(
         // P3 em modo sobrevivência: permite com throttle mínimo, bloqueia só se sistema saturado
         if priority == 3 {
             let (cpu, ram_free) = {
-                let (c, f, _) = cpu_ram_usage(&s.0.sys).await;
+                let (c, f, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
                 (c, f)
             };
             if cpu > CPU_P3_SURVIVAL_BLOCK || ram_free < RAM_P3_SURVIVAL_BLOCK_MB {
@@ -1790,10 +1816,11 @@ async fn queue_and_forward(
         }
         // CPU/RAM check — protege Windows (sem GPU) e laptop durante indexação pesada
         let (cpu, ram_free) = {
-            let (c, f, _) = cpu_ram_usage(&s.0.sys).await;
+            let (c, f, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
             (c, f)
         };
-        if cpu > CPU_P3_BLOCK || ram_free < RAM_P3_BLOCK_MB {
+        let cpu_limit = *s.0.cpu_p3_limit_pct.lock().await;
+        if cpu > cpu_limit || ram_free < RAM_P3_BLOCK_MB {
             return (
                 StatusCode::TOO_MANY_REQUESTS,
                 Json(serde_json::json!({
@@ -1805,7 +1832,7 @@ async fn queue_and_forward(
         }
     } else if priority == 2 && on_battery {
         // Em bateria: threshold de CPU mais conservador para P2
-        let (cpu, _ram, _) = cpu_ram_usage(&s.0.sys).await;
+        let (cpu, _ram, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
         if cpu > ON_BATTERY_P2_CPU_BLOCK {
             return (
                 StatusCode::TOO_MANY_REQUESTS,
@@ -2020,10 +2047,11 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
         }
     }
     let (cpu, ram_free) = {
-        let (c, f, _) = cpu_ram_usage(&s.0.sys).await;
+        let (c, f, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
         (c, f)
     };
-    if cpu > CPU_P3_BLOCK || ram_free < RAM_P3_BLOCK_MB {
+    let cpu_limit = *s.0.cpu_p3_limit_pct.lock().await;
+    if cpu > cpu_limit || ram_free < RAM_P3_BLOCK_MB {
         return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
             "error": format!("CPU {cpu:.0}% ou RAM livre {ram_free} MB insuficiente — embedding adiado")
         }))).into_response();
@@ -2479,7 +2507,7 @@ async fn metrics_stream_handler(State(s): State<LogosState>) -> impl IntoRespons
             let hw = s.0.hardware_profile;
             let (vram_used_mb, vram_total_sysfs, vram_pct_raw) =
                 vram_usage(&s.0.client, hw).await;
-            let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
+            let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
             let snap = MetricsSnapshot {
                 vram_used_mb,
                 vram_total_mb: vram_total_sysfs.or_else(|| hw.vram_total_mb()),
@@ -2533,10 +2561,11 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let hardware_profile_display  = s.0.hardware_profile.display().to_string();
     let queue = *s.0.queue_counts.lock().await;
     let (vram_used_mb, _, vram_pct) = vram_usage(&s.0.client, s.0.hardware_profile).await;
-    let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys).await;
+    let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
     let on_battery       = *s.0.on_battery.lock().await;
     let preempted_count  = *s.0.preempted_count.lock().await;
     let vram_limit_pct   = *s.0.vram_limit_pct.lock().await;
+    let cpu_p3_limit_pct = *s.0.cpu_p3_limit_pct.lock().await;
     let p3_vram_blocked  = s.0.p3_vram_blocked.load(Ordering::Relaxed);
 
     // Estado dos dois servidores llama.cpp
@@ -2582,6 +2611,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         on_battery,
         preempted_count,
         vram_limit_pct,
+        cpu_p3_limit_pct,
         p3_vram_blocked,
         chat_server_online: chat_online,
         chat_server_model:  chat_model,
@@ -3103,16 +3133,17 @@ fn sysfs_vram_mb() -> Option<(u64, u64)> {
     None
 }
 
-/// Lê uso de CPU e memória via sysinfo.
-/// Mantém a instância System entre chamadas — CPU% é calculado como delta entre dois polls.
-/// Retorna (cpu_pct: f32, ram_free_mb: u64, ram_total_mb: u64).
-async fn cpu_ram_usage(sys: &Mutex<System>) -> (f32, u64, u64) {
-    let mut s = sys.lock().await;
-    s.refresh_cpu_all();
-    s.refresh_memory();
-    let cpu = s.global_cpu_usage();
-    let free_mb  = s.available_memory() / 1_048_576;
-    let total_mb = s.total_memory()     / 1_048_576;
+/// Lê uso de CPU e memória.
+/// CPU% vem do `cached_cpu_pct` atualizado pelo `cpu_watchdog` a cada 1s — evita delta zero
+/// quando múltiplos callers chamam `refresh_cpu_all()` com menos de 15ms de intervalo (Windows).
+/// RAM é lida diretamente via sysinfo (sem problema de delta).
+async fn cpu_ram_usage(sys: &Mutex<System>, cached_cpu_pct: &AtomicU32) -> (f32, u64, u64) {
+    let cpu = f32::from_bits(cached_cpu_pct.load(Ordering::Relaxed));
+    let (free_mb, total_mb) = {
+        let mut s = sys.lock().await;
+        s.refresh_memory();
+        (s.available_memory() / 1_048_576, s.total_memory() / 1_048_576)
+    };
     (cpu, free_mb, total_mb)
 }
 
@@ -3550,6 +3581,23 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             *battery_state.0.on_battery.lock().await = is_on_battery();
+        }
+    });
+
+    // Watchdog de CPU — único caller de refresh_cpu_all(), a cada 1s.
+    // Resolve BUG-007: múltiplos callers com delta ≈ 0 ms retornavam 0% no Windows (PDH).
+    // 200ms de espera inicial garante baseline não-zero antes da primeira leitura.
+    let cpu_wdg = state.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        loop {
+            let pct = {
+                let mut s = cpu_wdg.0.sys.lock().await;
+                s.refresh_cpu_all();
+                s.global_cpu_usage()
+            };
+            cpu_wdg.0.cached_cpu_pct.store(pct.to_bits(), Ordering::Relaxed);
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
 
@@ -4410,6 +4458,8 @@ mod tests {
             embed_model:         Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers:  Mutex::new(-1),
             embed_proc:          Mutex::new(None),
+            cpu_p3_limit_pct:    Mutex::new(85.0),
+            cached_cpu_pct:      Arc::new(AtomicU32::new(0)),
         }))
     }
 
@@ -4528,6 +4578,71 @@ mod tests {
         let pct = *state.0.vram_limit_pct.lock().await;
         assert!((pct - 85.0).abs() < 0.001,
             "vram_limit_pct deve iniciar em 85%");
+    }
+
+    // ── cpu_p3_limit_pct — limite configurável ────────────────────────────────
+
+    #[tokio::test]
+    async fn cpu_p3_limit_pct_defaults_to_85() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let pct   = *state.0.cpu_p3_limit_pct.lock().await;
+        assert!((pct - 85.0).abs() < 0.001, "cpu_p3_limit_pct deve iniciar em 85%");
+    }
+
+    #[tokio::test]
+    async fn cpu_p3_limit_pct_set_clamps_to_valid_range() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        state.set_cpu_p3_limit_pct(200.0).await;
+        assert!((*state.0.cpu_p3_limit_pct.lock().await - 99.0).abs() < 0.001,
+            "acima de 99 deve ser clamped para 99");
+        state.set_cpu_p3_limit_pct(0.0).await;
+        assert!((*state.0.cpu_p3_limit_pct.lock().await - 30.0).abs() < 0.001,
+            "abaixo de 30 deve ser clamped para 30");
+    }
+
+    #[tokio::test]
+    async fn cpu_p3_limit_pct_exposed_in_collect_status() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        state.set_cpu_p3_limit_pct(70.0).await;
+        let s = collect_status(&state).await;
+        assert!((s.cpu_p3_limit_pct - 70.0).abs() < 0.001,
+            "cpu_p3_limit_pct no StatusResponse deve refletir o valor configurado");
+    }
+
+    // ── cpu_watchdog — CPU% via AtomicU32 ────────────────────────────────────
+
+    #[test]
+    fn cached_cpu_pct_starts_at_zero() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let bits  = state.0.cached_cpu_pct.load(Ordering::Relaxed);
+        assert_eq!(f32::from_bits(bits), 0.0,
+            "cached_cpu_pct deve iniciar em 0.0 antes do watchdog rodar");
+    }
+
+    #[test]
+    fn cached_cpu_pct_store_and_load_roundtrip() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let val: f32 = 42.5;
+        state.0.cached_cpu_pct.store(val.to_bits(), Ordering::Relaxed);
+        let loaded = f32::from_bits(state.0.cached_cpu_pct.load(Ordering::Relaxed));
+        assert!((loaded - val).abs() < 0.001,
+            "store/load de f32 via AtomicU32 deve preservar o valor");
+    }
+
+    #[tokio::test]
+    async fn cpu_ram_usage_reads_from_cached_cpu_pct() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        // Simula o watchdog armazenando 55.0%
+        state.0.cached_cpu_pct.store(55.0_f32.to_bits(), Ordering::Relaxed);
+        let (cpu, _, _) = cpu_ram_usage(&state.0.sys, &state.0.cached_cpu_pct).await;
+        assert!((cpu - 55.0).abs() < 0.001,
+            "cpu_ram_usage deve retornar o valor cacheado pelo watchdog, não chamar refresh");
     }
 
     // ── CPU/RAM guard — 4 cenários ────────────────────────────────────────────

@@ -443,6 +443,19 @@ pub async fn logos_set_vram_limit_pct(
         .map_err(|e| format!("Erro ao salvar vram_limit_pct: {e}"))
 }
 
+/// Define o percentual de CPU acima do qual tarefas P3 são bloqueadas.
+/// Persiste em ecosystem.json como logos.cpu_p3_limit_pct. Faixa válida: 30–99.
+#[tauri::command]
+pub async fn logos_set_cpu_p3_limit_pct(
+    state: tauri::State<'_, LogosState>,
+    pct: f32,
+) -> Result<(), String> {
+    let clamped = pct.clamp(30.0, 99.0);
+    state.set_cpu_p3_limit_pct(clamped).await;
+    crate::ecosystem::write_section("logos", serde_json::json!({ "cpu_p3_limit_pct": clamped }))
+        .map_err(|e| format!("Erro ao salvar cpu_p3_limit_pct: {e}"))
+}
+
 /// Verifica se o backend de inferência (llama-server via LOGOS) está respondendo.
 /// Emite logos-inference-status { running: bool }.
 #[tauri::command]

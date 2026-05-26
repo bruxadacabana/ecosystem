@@ -7236,3 +7236,12 @@ Quando LOGOS estiver fora (HUB fechado):
 - [x] **Testes — logging** — verificar que após spawn de cada processo, o arquivo de log correspondente (`logos_chat.log` / `logos_embed.log`) é criado e contém entrada de inicialização. Verificar que requisições geram entradas de log com os campos obrigatórios (timestamp, operação, porta, duração).
 
 - [x] **Documentação — GUIDE.md e README.md** — atualizar seção LOGOS com a nova topologia: dois processos, duas portas (8081 chat / 8082 embed), roteamento pelo LOGOS proxy na porta 7072. Incluir tabela de portas atualizada. Documentar como configurar `logos.embed_model` em `ecosystem.json`. Atualizar "Rodar testes" com os novos testes de logos.rs.
+
+### LOGOS — Métricas de CPU e limite configurável | 2026-05-26
+> Contexto: BUG-007 detectado em uso real — CPU exibe sempre 0% no Windows porque `cpu_ram_usage` chama `refresh_cpu_all()` e lê o delta no mesmo tick; múltiplos callers concorrentes tornam o delta ≈ 0. Junto, pedido de feature: barra de limite de CPU nos guardas P3, análoga ao limite de VRAM já existente.
+
+#### HUB / LOGOS
+
+- [x] **Fix BUG-007 — `cpu_watchdog` background task** — remover `refresh_cpu_all()` de `cpu_ram_usage()`. Adicionar `cpu_watchdog` em `start_server()` que faz `refresh_cpu_all()` exclusivamente a cada 1s (sleep 200ms antes da primeira leitura para garantir baseline não-zero no Windows). `cpu_ram_usage()` passa a só chamar `global_cpu_usage()` + `refresh_memory()`. Adicionar testes que verificam: (1) `cpu_p3_limit_pct` default é 85%; (2) `cpu_watchdog` é o único caller de `refresh_cpu_all` (verificado indiretamente).
+
+- [x] **Feature — limite de CPU configurável para guardas P3** — substituir a constante hardcoded `CPU_P3_BLOCK = 85.0` por campo `cpu_p3_limit_pct: Mutex<f32>` em `Inner` (padrão 85, faixa 30–99, persistido em `ecosystem.json` como `logos.cpu_p3_limit_pct`). Adicionar `set_cpu_p3_limit_pct()` em `LogosState`. Adicionar campo `cpu_p3_limit_pct` ao `StatusResponse`. Adicionar comando Tauri `logos_set_cpu_p3_limit_pct`. Adicionar slider "Limite de CPU P3 (%)" no bloco "Configurações de recursos" do LogosView.tsx (análogo ao slider de VRAM). Testes: default, clamp, persistência via StatusResponse.

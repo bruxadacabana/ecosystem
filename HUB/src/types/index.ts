@@ -27,7 +27,7 @@ export interface EcosystemConfig {
   hermes:    { exe_path?: string }
   akasha:    { base_url?: string; exe_path?: string; incoming_insights?: InsightQueueItem[]; bg_processing?: { knowledge_extraction?: number; worker_active?: boolean }; personality_prompt?: string; interest_seeds?: string[] }
   hub:       { data_path: string }
-  logos?:    { vram_limit_pct?: number; cpu_threads?: number; flash_attention?: boolean }
+  logos?:    { vram_limit_pct?: number; cpu_p3_limit_pct?: number; cpu_threads?: number; flash_attention?: boolean }
 }
 
 export type AppName = 'aether' | 'ogma' | 'kosmos' | 'mnemosyne' | 'hermes' | 'akasha'
@@ -153,6 +153,8 @@ export interface LogosStatus {
   preempted_count:    number
   /** Limite de VRAM (%) para bloquear P3 — configurável, padrão 85 */
   vram_limit_pct:     number
+  /** Limite de CPU (%) para bloquear P3 — configurável, padrão 85 */
+  cpu_p3_limit_pct:   number
   /** True quando o watchdog de VRAM bloqueou P3 (VRAM > limit%). Retoma automaticamente em <70%. */
   p3_vram_blocked:    boolean
   /** True se o processo llama-server de chat (porta 8081) está ativo. */

@@ -38,9 +38,11 @@ export function LogosView() {
   const [pullProgress,      setPullProgress]      = useState<Map<string, PullProgress>>(new Map())
   const [pulling,           setPulling]           = useState<Set<string>>(new Set())
   const [vramLimit,         setVramLimit]         = useState<number>(85)
+  const [cpuLimit,          setCpuLimit]          = useState<number>(85)
   const [cpuThreads,        setCpuThreads]        = useState<number>(4)
   const [flashAttention,    setFlashAttention]    = useState<boolean>(true)
   const vramLimitSynced = useRef(false)
+  const cpuLimitSynced  = useRef(false)
   const [embedWarning,    setEmbedWarning]    = useState<EmbedCompatWarning | null>(null)
   const [cancelledPulls, setCancelledPulls] = useState<Set<string>>(new Set())
   const [deleting,       setDeleting]       = useState<string | null>(null)
@@ -55,6 +57,10 @@ export function LogosView() {
       if (!vramLimitSynced.current) {
         vramLimitSynced.current = true
         setVramLimit(r.data.vram_limit_pct ?? 85)
+      }
+      if (!cpuLimitSynced.current) {
+        cpuLimitSynced.current = true
+        setCpuLimit(r.data.cpu_p3_limit_pct ?? 85)
       }
     })
   }, [])
@@ -123,6 +129,11 @@ export function LogosView() {
   async function handleFlashAttention(enabled: boolean) {
     setFlashAttention(enabled)
     await cmd.saveEcosystemConfig({ logos: { flash_attention: enabled } })
+  }
+
+  async function handleCpuLimit(pct: number) {
+    setCpuLimit(pct)
+    await cmd.logosSetCpuP3LimitPct(pct)
   }
 
   async function handleProfile(id: string) {
@@ -535,6 +546,29 @@ export function LogosView() {
             style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }}
           />
           <Note>Tarefas P3 bloqueadas quando VRAM ultrapassar este limite</Note>
+        </div>
+
+        {/* Slider de limite de CPU P3 */}
+        <div style={{ marginBottom: 16, maxWidth: 400 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)' }}>
+              Limite de CPU P3 (%)
+            </span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink)' }}>
+              {cpuLimit}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min={30}
+            max={99}
+            step={1}
+            value={cpuLimit}
+            onChange={e => setCpuLimit(Number(e.target.value))}
+            onPointerUp={() => handleCpuLimit(cpuLimit)}
+            style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }}
+          />
+          <Note>Tarefas P3 bloqueadas quando CPU ultrapassar este limite</Note>
         </div>
 
         {/* Threads CPU — apenas WorkPc (modo sobrevivência) */}
