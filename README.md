@@ -91,7 +91,9 @@ O HUB está sempre aberto — é o centro do ecossistema. Nenhum outro app é in
 - Monitora VRAM da GPU e pausa tarefas P3 quando VRAM > 85%
 - CPU/RAM guards: rejeita P3 quando CPU > 85% ou RAM livre < 1.5 GB
 - Watchdog de processo: detecta crashes do llama-server e reinicia automaticamente (até 3x com backoff 10s/30s/60s); desabilita após 3 falhas consecutivas
-- Captura stderr do llama-server em `log::warn!` para diagnóstico de OOM e erros de GPU
+- Captura stderr do chat-server em `log::warn!` + arquivo `logos_chat.log` com timestamp ISO
+- Captura stderr do embed-server em `log::info!` + arquivo `logos_embed.log` com timestamp ISO
+- Endpoints de diagnóstico: `GET /logos/logs/chat` e `GET /logos/logs/embed` (últimas 500 linhas, text/plain)
 - OOM fallback: se modelo não carrega na GPU (timeout + exit prematuro), retenta com CPU only (`--n-gpu-layers 0`)
 - Eventos críticos para frontend: `logos-alert` (nivel error/warn), `logos-llama-crashed`, `logos-llama-unavailable`
 - Endpoint `POST /logos/log-level` para ajuste de verbosidade em runtime (debug/info/warn)

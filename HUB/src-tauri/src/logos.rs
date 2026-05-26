@@ -1116,14 +1116,33 @@ async fn spawn_llama_server_proc(
         .map_err(|e| format!("Falha ao iniciar llama-server: {e}"))
 }
 
-/// Inicia uma task que lê o stderr do processo llama-server linha a linha e registra via log.
-fn spawn_stderr_reader(stderr: tokio::process::ChildStderr, model_name: String) {
+/// Inicia uma task que lê o stderr do chat-server, registra via log e escreve em arquivo.
+///
+/// `log_path`: caminho do arquivo de log (`logos_chat.log` no diretório logos/).
+fn spawn_chat_stderr_reader(
+    stderr:     tokio::process::ChildStderr,
+    model_name: String,
+    log_path:   std::path::PathBuf,
+) {
     tokio::spawn(async move {
-        use tokio::io::{AsyncBufReadExt, BufReader};
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let log_file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .await
+            .ok();
+        let mut log_file = log_file;
+
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            if !line.trim().is_empty() {
-                log::warn!("llama-server [{}]: {}", model_name, line);
+            if line.trim().is_empty() { continue; }
+            log::warn!("[logos-chat] [{}]: {}", model_name, line);
+            if let Some(ref mut f) = log_file {
+                let ts       = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S");
+                let log_line = format!("{ts} {line}\n");
+                let _        = f.write_all(log_line.as_bytes()).await;
             }
         }
     });
@@ -1219,6 +1238,15 @@ pub(crate) fn embed_log_path(models_dir: &std::path::Path) -> std::path::PathBuf
         .join("logos_embed.log")
 }
 
+/// Deriva o caminho do arquivo de log do chat-server a partir do `models_dir`.
+/// `models_dir` = `{logos_data}/logos/models/` → log em `{logos_data}/logos/logos_chat.log`
+pub(crate) fn chat_log_path(models_dir: &std::path::Path) -> std::path::PathBuf {
+    models_dir
+        .parent()
+        .unwrap_or(models_dir)
+        .join("logos_chat.log")
+}
+
 /// Aguarda llama-server responder em /health com 200 OK.
 async fn wait_llama_ready(port: u16, client: &Client, timeout_secs: u64) -> bool {
     let url      = format!("http://127.0.0.1:{port}/health");
@@ -1300,7 +1328,7 @@ pub(crate) async fn ensure_llama_model_loaded(
 
     // Captura stderr para log (leitura linha a linha em background)
     if let Some(stderr) = child.stderr.take() {
-        spawn_stderr_reader(stderr, model_name.to_string());
+        spawn_chat_stderr_reader(stderr, model_name.to_string(), chat_log_path(&s.0.models_dir));
     }
 
     {
@@ -1337,7 +1365,7 @@ pub(crate) async fn ensure_llama_model_loaded(
                 .map_err(|e| format!("Falha ao reiniciar em modo CPU: {e}"))?;
 
             if let Some(stderr) = cpu_child.stderr.take() {
-                spawn_stderr_reader(stderr, format!("{model_name}[cpu]"));
+                spawn_chat_stderr_reader(stderr, format!("{model_name}[cpu]"), chat_log_path(&s.0.models_dir));
             }
             {
                 let mut guard = s.0.llama_proc.lock().await;
@@ -1533,6 +1561,8 @@ pub fn build_router(state: LogosState) -> Router {
         .route("/logos/silence",        post(silence_handler))
         .route("/logos/profile",        post(profile_handler))
         .route("/logos/log-level",      post(log_level_handler))
+        .route("/logos/logs/chat",      get(logs_chat_handler))
+        .route("/logos/logs/embed",     get(logs_embed_handler))
         .route("/logos/models",                          get(models_handler))
         .route("/logos/models/load",                     post(models_load_handler))
         .route("/logos/models/unload",                   post(models_unload_handler))
@@ -1560,6 +1590,39 @@ pub fn build_router(state: LogosState) -> Router {
 
 async fn status_handler(State(s): State<LogosState>) -> Json<StatusResponse> {
     Json(collect_status(&s).await)
+}
+
+/// Lê as últimas `max_lines` linhas de um arquivo de log.
+/// Retorna string vazia se o arquivo não existir.
+pub(crate) async fn read_tail_log(path: std::path::PathBuf, max_lines: usize) -> String {
+    match tokio::fs::read_to_string(&path).await {
+        Ok(content) => {
+            let lines: Vec<&str> = content.lines().collect();
+            let start = lines.len().saturating_sub(max_lines);
+            lines[start..].join("\n")
+        }
+        Err(_) => String::new(),
+    }
+}
+
+async fn logs_chat_handler(State(s): State<LogosState>) -> Response {
+    let content = read_tail_log(chat_log_path(&s.0.models_dir), 500).await;
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        content,
+    )
+        .into_response()
+}
+
+async fn logs_embed_handler(State(s): State<LogosState>) -> Response {
+    let content = read_tail_log(embed_log_path(&s.0.models_dir), 500).await;
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        content,
+    )
+        .into_response()
 }
 
 async fn chat_handler(
@@ -5442,5 +5505,128 @@ mod tests {
         assert!(s.embed_server_model.is_empty());
 
         state.kill_llama_proc().await;
+    }
+
+    // ── chat_log_path ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn chat_log_path_is_sibling_of_models_dir() {
+        let models_dir = std::path::Path::new("/home/user/logos/models");
+        let log        = chat_log_path(models_dir);
+        assert_eq!(log.parent().unwrap(), std::path::Path::new("/home/user/logos"),
+            "log deve ficar no diretório pai de models/");
+    }
+
+    #[test]
+    fn chat_log_path_filename_is_logos_chat_log() {
+        let models_dir = std::path::Path::new("/home/user/logos/models");
+        let log        = chat_log_path(models_dir);
+        assert_eq!(log.file_name().unwrap().to_str().unwrap(), "logos_chat.log",
+            "nome do arquivo de log deve ser 'logos_chat.log'");
+    }
+
+    #[test]
+    fn chat_log_path_fallback_when_no_parent() {
+        let models_dir = std::path::Path::new("models");
+        let log        = chat_log_path(models_dir);
+        assert_eq!(log.file_name().unwrap().to_str().unwrap(), "logos_chat.log");
+    }
+
+    #[test]
+    fn chat_log_path_differs_from_embed_log_path() {
+        let models_dir = std::path::Path::new("/home/user/logos/models");
+        assert_ne!(
+            chat_log_path(models_dir),
+            embed_log_path(models_dir),
+            "chat e embed devem gravar em arquivos distintos"
+        );
+    }
+
+    // ── /logos/logs — endpoints de log ───────────────────────────────────────
+
+    #[tokio::test]
+    async fn logs_chat_handler_returns_empty_when_no_file() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        // Arquivo ainda não existe — handler deve retornar 200 com body vazio
+        let response = logs_chat_handler(State(state)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn logs_embed_handler_returns_empty_when_no_file() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let response = logs_embed_handler(State(state)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn logs_chat_handler_returns_file_content() {
+        use axum::body::to_bytes;
+
+        let dir        = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().join("models");
+        tokio::fs::create_dir_all(&models_dir).await.unwrap();
+
+        let log_path = chat_log_path(&models_dir);
+        tokio::fs::write(&log_path, b"2026-05-26T10:00:00 llama-server started\n").await.unwrap();
+
+        let state    = make_test_state(models_dir);
+        let response = logs_chat_handler(State(state)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+        let text  = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("llama-server started"),
+            "resposta deve conter o conteúdo do log; obtido: {text}");
+    }
+
+    #[tokio::test]
+    async fn logs_embed_handler_returns_file_content() {
+        use axum::body::to_bytes;
+
+        let dir        = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().join("models");
+        tokio::fs::create_dir_all(&models_dir).await.unwrap();
+
+        let log_path = embed_log_path(&models_dir);
+        tokio::fs::write(&log_path, b"2026-05-26T10:00:00 embed-server ready\n").await.unwrap();
+
+        let state    = make_test_state(models_dir);
+        let response = logs_embed_handler(State(state)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+        let text  = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("embed-server ready"),
+            "resposta deve conter o conteúdo do log; obtido: {text}");
+    }
+
+    #[tokio::test]
+    async fn logs_chat_handler_content_type_is_text_plain() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let response = logs_chat_handler(State(state)).await;
+        let ct = response.headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert!(ct.contains("text/plain"),
+            "Content-Type deve ser text/plain; obtido: {ct}");
+    }
+
+    #[tokio::test]
+    async fn read_tail_log_returns_last_n_lines() {
+        let dir      = tempfile::tempdir().expect("tmpdir");
+        let log_path = dir.path().join("test.log");
+        let content  = (1u32..=10).map(|i| format!("linha {i}")).collect::<Vec<_>>().join("\n");
+        tokio::fs::write(&log_path, content.as_bytes()).await.unwrap();
+
+        let tail = read_tail_log(log_path, 3).await;
+        let lines: Vec<&str> = tail.lines().collect();
+        assert_eq!(lines.len(), 3, "deve retornar exatamente 3 linhas");
+        assert_eq!(lines[2], "linha 10", "última linha deve ser 'linha 10'");
+        assert_eq!(lines[0], "linha 8",  "primeira linha do tail deve ser 'linha 8'");
     }
 }

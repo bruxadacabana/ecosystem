@@ -515,7 +515,8 @@ HSA_OVERRIDE_GFX_VERSION=10.3.0 \
 | **CPU/RAM guard** | Rejeita P3 quando CPU > 85% ou RAM livre < 1.5 GB |
 | **Battery mode** | P3 bloqueado; P2 usa threshold de CPU mais conservador (60%) |
 | **Watchdog de processo** | Poll `try_wait()` a cada 10s; restart com backoff 10s/30s/60s; desabilita após 3 crashes |
-| **Stderr capture** | stderr do llama-server redirecionado para `log::warn!` (diagnóstico de OOM/GPU) |
+| **Stderr capture chat** | stderr do chat-server redirecionado para `log::warn!` E gravado em `logos_chat.log` com timestamp ISO |
+| **Stderr capture embed** | stderr do embed-server redirecionado para `log::info!` E gravado em `logos_embed.log` com timestamp ISO |
 | **OOM fallback** | Se o processo sai sozinho com GPU ativo, retenta com `--n-gpu-layers 0` (CPU only) |
 | **`llama_disabled`** | Flag atômica setada após 3 crashes; bloqueia novos requests até reinício do HUB |
 
@@ -524,11 +525,17 @@ HSA_OVERRIDE_GFX_VERSION=10.3.0 \
 - `logos-llama-crashed` → `{ model: string }` — crash detectado, restart em andamento
 - `logos-llama-unavailable` — após 3 crashes consecutivos, llama-server desabilitado
 
-**Endpoint de diagnóstico:**
+**Endpoints de diagnóstico:**
 ```bash
 # Alterar nível de log em runtime (sem rebuild)
 curl -X POST http://localhost:7072/logos/log-level -H 'Content-Type: application/json' \
   -d '{"level": "debug"}'
+
+# Ver últimas 500 linhas do log do servidor de chat (logos_chat.log)
+curl http://localhost:7072/logos/logs/chat
+
+# Ver últimas 500 linhas do log do servidor de embedding (logos_embed.log)
+curl http://localhost:7072/logos/logs/embed
 ```
 
 ---
@@ -2504,6 +2511,8 @@ POST /logos/models/download  → inicia download de GGUF do HuggingFace
 GET  /logos/models/registry  → lista o registry.json local
 POST /logos/silence          → descarrega todos os modelos carregados (libera VRAM)
 POST /logos/profile          → muda o perfil de workflow ativo
+GET  /logos/logs/chat        → últimas 500 linhas de logos_chat.log (text/plain)
+GET  /logos/logs/embed       → últimas 500 linhas de logos_embed.log (text/plain)
 ```
 
 **Proxy transparente (OpenAI-compatível — usado pelos apps Python):**
@@ -4151,6 +4160,8 @@ Cada app tem seu próprio arquivo de log com rotação automática (5 MB, 3 back
 | App | Caminho do log |
 |---|---|
 | HUB | `~/.local/share/com.hub/logs/` (Linux) / `%APPDATA%\com.hub\logs\` (Windows) — arquivos diários, 7 dias |
+| LOGOS (chat) | `{hub_data_path}/logos/logos_chat.log` — stderr do llama-server de chat (porta 8081) com timestamp ISO |
+| LOGOS (embed) | `{hub_data_path}/logos/logos_embed.log` — stderr do embed-server (porta 8082) com timestamp ISO |
 | AKASHA | Sem arquivo — logs vão para stderr/stdout. Iniciar pelo terminal para ver. |
 | KOSMOS | `~/.local/share/kosmos/logs/kosmos.log` (Linux) / `%LOCALAPPDATA%\kosmos\logs\` (Windows) |
 | Mnemosyne | `{sync_root}/mnemosyne/mnemosyne.log` (preferido) ou `Mnemosyne/logs/mnemosyne.log` (fallback) |
