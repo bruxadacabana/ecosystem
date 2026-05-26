@@ -178,9 +178,18 @@ O diretório `sync_root` é sincronizado entre as máquinas via Syncthing. Os da
   //   deriva os caminhos de cada app a partir daqui automaticamente.
 
   "logos": {
-    "llama_server_url": "http://localhost:8081"
-    // ^ URL interna do llama-server gerenciado pelo LOGOS.
+    "llama_server_url": "http://localhost:8081",
+    // ^ URL interna do chat-server gerenciado pelo LOGOS (porta 8081).
     //   O LOGOS inicia o processo nessa porta automaticamente ao carregar um modelo.
+
+    "embed_model": "bge-m3-q4_k_m.gguf",
+    // ^ Nome (ou alias) do modelo de embedding. Deve existir em {hub_data_path}/logos/models/.
+    //   Deixar vazio ("") para desabilitar o embed-server — apenas o chat sobe.
+    //   Exemplos: "bge-m3-q4_k_m.gguf", "bge-m3", "nomic-embed-text-v1.5-q4_k_m.gguf"
+
+    "embed_n_gpu_layers": -1
+    // ^ Camadas GPU para o embed-server. -1 = offload total (GPU); 0 = CPU only.
+    //   No WorkPc (sem GPU), use 0. Na MainPc (RX 6600), -1 para GPU full.
   },
 
   "aether": {
@@ -1274,6 +1283,17 @@ npm run test -- --coverage
 # Testes Rust (unitários do backend)
 cd src-tauri
 cargo test --lib
+
+# Apenas testes do LOGOS (proxy LLM, dual llama-server)
+cargo test --lib -- logos::tests
+
+# Subconjuntos de testes por tema (logos.rs)
+cargo test --lib -- logos::tests::chat_log_path      # funções de caminho de log
+cargo test --lib -- logos::tests::logs_              # endpoints GET /logos/logs/*
+cargo test --lib -- logos::tests::build_embed        # flags do embed-server
+cargo test --lib -- logos::tests::collect_status     # status dual-server
+cargo test --lib -- logos::tests::do_silence         # ciclo de vida integrado
+cargo test --lib -- logos::tests::ensure_embed       # startup condicional do embed-server
 ```
 
 > ⚠️ **Windows — `STATUS_ENTRYPOINT_NOT_FOUND` (0xC0000139):** sem o fix em `build.rs`, os testes Rust travam ao iniciar. A causa é `comctl32.dll` v5.82 (padrão do Windows sem manifest) que não exporta `TaskDialogIndirect` (função exclusiva da v6, usada por `tauri-plugin-dialog`). O `build.rs` já emite `/DELAYLOAD:comctl32.dll` para adiar a resolução da importação — como testes nunca chamam funções de diálogo, a DLL nunca é carregada. O `hub.exe` não é afetado porque o manifest do Tauri ativa v6 antes de qualquer diálogo.

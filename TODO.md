@@ -7235,4 +7235,4 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **Testes — logging** — verificar que após spawn de cada processo, o arquivo de log correspondente (`logos_chat.log` / `logos_embed.log`) é criado e contém entrada de inicialização. Verificar que requisições geram entradas de log com os campos obrigatórios (timestamp, operação, porta, duração).
 
-- [ ] **Documentação — GUIDE.md e README.md** — atualizar seção LOGOS com a nova topologia: dois processos, duas portas (8081 chat / 8082 embed), roteamento pelo LOGOS proxy na porta 7072. Incluir tabela de portas atualizada. Documentar como configurar `logos.embed_model` em `ecosystem.json`. Atualizar "Rodar testes" com os novos testes de logos.rs.
+- [x] **Documentação — GUIDE.md e README.md** — atualizar seção LOGOS com a nova topologia: dois processos, duas portas (8081 chat / 8082 embed), roteamento pelo LOGOS proxy na porta 7072. Incluir tabela de portas atualizada. Documentar como configurar `logos.embed_model` em `ecosystem.json`. Atualizar "Rodar testes" com os novos testes de logos.rs.
