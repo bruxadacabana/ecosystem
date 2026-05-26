@@ -57,6 +57,8 @@ use tokio::sync::{Mutex, Semaphore};
 pub const LOGOS_PORT: u16 = 7072;
 /// Porta local do processo llama-server gerenciado pelo LOGOS.
 pub(crate) const LLAMA_SERVER_PORT: u16 = 8081;
+/// Porta do segundo servidor llama-server, dedicado ao modelo de embedding (bge-m3, etc.)
+pub(crate) const EMBED_SERVER_PORT: u16  = 8082;
 /// Timeout (s) para o llama-server responder ao primeiro /health após o spawn.
 const LLAMA_SERVER_READY_TIMEOUT_SECS: u64 = 90;
 
@@ -355,6 +357,17 @@ struct Inner {
     llama_server_bin: Option<std::path::PathBuf>,
     /// Processo llama-server ativo gerenciado pelo LOGOS. None = nenhum modelo carregado.
     llama_proc: Mutex<Option<LlamaProcHandle>>,
+
+    // ── Servidor de embedding (porta EMBED_SERVER_PORT) ──────────────────────
+    /// Alias canônico do modelo de embedding (ex: "bge-m3").
+    /// Lido de ecosystem.json["logos"]["embed_model"] no startup.
+    embed_model: Mutex<String>,
+    /// Camadas GPU para o servidor de embedding. -1 = offload total; 0 = CPU.
+    /// Lido de ecosystem.json["logos"]["embed_n_gpu_layers"]. Padrão: -1.
+    embed_n_gpu_layers: Mutex<i32>,
+    /// Processo llama-server do servidor de embedding (porta EMBED_SERVER_PORT).
+    /// Independente do llama_proc (porta LLAMA_SERVER_PORT) — falhas são isoladas.
+    embed_proc: Mutex<Option<LlamaProcHandle>>,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -393,6 +406,32 @@ impl LogosState {
     /// Retorna o diretório de modelos GGUF (para acesso externo ao módulo).
     pub fn models_dir(&self) -> &std::path::Path {
         &self.0.models_dir
+    }
+
+    /// Retorna o alias canônico do modelo de embedding configurado.
+    pub async fn embed_model(&self) -> String {
+        self.0.embed_model.lock().await.clone()
+    }
+
+    /// Atualiza o modelo de embedding em memória (persiste via ecosystem.json externamente).
+    pub async fn set_embed_model(&self, model: impl Into<String>) {
+        *self.0.embed_model.lock().await = model.into();
+    }
+
+    /// Retorna true se há um processo embed-server rastreado ativamente.
+    pub async fn embed_proc_active(&self) -> bool {
+        self.0.embed_proc.lock().await.is_some()
+    }
+
+    /// Para o processo embed-server ativo (se houver). Retorna true se havia processo.
+    pub(crate) async fn kill_embed_proc(&self) -> bool {
+        let mut guard = self.0.embed_proc.lock().await;
+        if let Some(mut proc) = guard.take() {
+            let _ = proc.child.kill();
+            true
+        } else {
+            false
+        }
     }
 
     /// Retorna true se o binário llama-server foi localizado no startup.
@@ -470,6 +509,26 @@ impl LogosState {
             log::info!("LOGOS: llama-server não encontrado — usando Ollama como backend de inferência");
         }
 
+        let embed_model = {
+            let eco = crate::ecosystem::read_json();
+            eco["logos"]["embed_model"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("bge-m3")
+                .to_string()
+        };
+        let embed_n_gpu_layers = {
+            let eco = crate::ecosystem::read_json();
+            eco["logos"]["embed_n_gpu_layers"]
+                .as_i64()
+                .map(|v| v as i32)
+                .unwrap_or(-1)
+        };
+        log::info!(
+            "LOGOS: embed_model='{}' embed_n_gpu_layers={}",
+            embed_model, embed_n_gpu_layers
+        );
+
         // Inicialização prévia do sysinfo — primeira leitura é sempre 0%; a segunda é o delta real.
         let mut sys = System::new_all();
         sys.refresh_cpu_all();
@@ -499,6 +558,9 @@ impl LogosState {
             llama_crash_count: Mutex::new(0),
             llama_disabled: Arc::new(AtomicBool::new(false)),
             app_handle: Mutex::new(None),
+            embed_model: Mutex::new(embed_model),
+            embed_n_gpu_layers: Mutex::new(embed_n_gpu_layers),
+            embed_proc: Mutex::new(None),
         }))
     }
 
@@ -551,6 +613,9 @@ impl LogosState {
             llama_crash_count:  Mutex::new(0),
             llama_disabled:     Arc::new(AtomicBool::new(false)),
             app_handle:         Mutex::new(None),
+            embed_model:        Mutex::new("bge-m3".to_string()),
+            embed_n_gpu_layers: Mutex::new(-1),
+            embed_proc:         Mutex::new(None),
         }))
     }
 }
@@ -3878,6 +3943,9 @@ mod tests {
             llama_crash_count:   Mutex::new(0),
             llama_disabled:      Arc::new(AtomicBool::new(false)),
             app_handle:          Mutex::new(None),
+            embed_model:         Mutex::new("bge-m3".to_string()),
+            embed_n_gpu_layers:  Mutex::new(-1),
+            embed_proc:          Mutex::new(None),
         }))
     }
 
@@ -3902,6 +3970,61 @@ mod tests {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
         assert_eq!(state.0.llama_server_url, "http://127.0.0.1:8081");
+    }
+
+    // ── Embed server — estado separado ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn embed_model_defaults_to_bge_m3() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert_eq!(state.embed_model().await, "bge-m3");
+    }
+
+    #[tokio::test]
+    async fn embed_proc_active_starts_false() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert!(!state.embed_proc_active().await, "embed_proc deve iniciar inativo");
+    }
+
+    #[tokio::test]
+    async fn embed_n_gpu_layers_defaults_to_minus1() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let n = *state.0.embed_n_gpu_layers.lock().await;
+        assert_eq!(n, -1, "embed_n_gpu_layers padrão deve ser -1 (offload total)");
+    }
+
+    #[tokio::test]
+    async fn set_embed_model_updates_in_memory() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        state.set_embed_model("nomic-embed-text").await;
+        assert_eq!(state.embed_model().await, "nomic-embed-text");
+    }
+
+    #[tokio::test]
+    async fn kill_embed_proc_returns_false_when_no_proc() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert!(!state.kill_embed_proc().await, "kill_embed_proc sem processo ativo deve retornar false");
+    }
+
+    #[test]
+    fn embed_server_port_is_8082() {
+        assert_eq!(EMBED_SERVER_PORT, 8082, "porta do embed-server deve ser 8082");
+    }
+
+    #[test]
+    fn chat_server_port_is_8081() {
+        assert_eq!(LLAMA_SERVER_PORT, 8081, "porta do chat-server deve ser 8081");
+    }
+
+    #[test]
+    fn embed_and_chat_ports_are_distinct() {
+        assert_ne!(EMBED_SERVER_PORT, LLAMA_SERVER_PORT,
+            "servidores de embedding e chat devem usar portas diferentes");
     }
 
     // ── Watchdog de VRAM — 4 cenários ────────────────────────────────────────

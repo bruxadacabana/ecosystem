@@ -7213,7 +7213,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **Download do bge-m3 GGUF** — baixar `bge-m3-q4_k_m.gguf` de `bbvch-ai/bge-m3-GGUF` (HuggingFace) para o diretório de modelos do LOGOS (mesmo diretório dos modelos de chat). Verificar integridade com SHA256 após download. O modelo deve aparecer no `GET /v1/models` do LOGOS como tipo "embed". Se o sistema de download de modelos do LOGOS ainda não suportar download direto por URL HF, implementar esse suporte como sub-passo.
 
-- [ ] **`logos.rs` / `launcher.rs` — `EmbedServerConfig` e estado separado** — adicionar campos ao estado do LOGOS: `embed_port: u16` (default 8082), `embed_model: String` (nome do arquivo GGUF), `embed_n_gpu_layers: i32`. Armazenar em `ecosystem.json` campo `logos.embed_model`. Adicionar campo `embed_proc: Option<Child>` ao `AppState` para o processo de embedding separado do processo de chat.
+- [x] **`logos.rs` / `launcher.rs` — `EmbedServerConfig` e estado separado** — adicionar campos ao estado do LOGOS: `embed_port: u16` (default 8082), `embed_model: String` (nome do arquivo GGUF), `embed_n_gpu_layers: i32`. Armazenar em `ecosystem.json` campo `logos.embed_model`. Adicionar campo `embed_proc: Option<Child>` ao `AppState` para o processo de embedding separado do processo de chat.
 
 - [ ] **`logos.rs` — `spawn_embed_server_proc()`** — função análoga a `spawn_llama_server_proc()` para o servidor de embedding. Flags obrigatórias: `--embeddings`, `--pooling mean`, `--port 8082`, `--model <embed_model_path>`, `--n-gpu-layers <embed_n_gpu_layers>`. Sem `--chat-template`. Log ao spawnar: timestamp, modelo, porta, todas as flags usadas. Redirecionamento de stdout/stderr para arquivo de log identificado (`logos_embed.log` em `data_dir`).
 
