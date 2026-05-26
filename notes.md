@@ -1,7 +1,7 @@
 ## Fila de implementação atual:
 
-pode prosseguir e completar toda essa seção, mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
-Não se esqueça das regras para documentar no README e GUIDE.
+pode prosseguir para a implementação da seção '### LOGOS — Duas instâncias llama-server: chat + embedding simultâneos | 2026-05-26', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
+Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes exaustivamente e incluir criação de logs em todo o processo do llama cpp.
 
 
 ## próximo: 
