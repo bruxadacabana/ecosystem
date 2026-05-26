@@ -2367,15 +2367,90 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     }
 }
 
-/// Envia keep_alive: 0 para descarregar todos os modelos carregados.
-/// Para o processo llama-server para liberar VRAM completamente.
-/// Retorna o número de processos parados (0 ou 1).
-pub async fn do_silence(s: &LogosState) -> usize {
-    let stopped = s.kill_llama_proc().await;
-    if stopped {
-        log::info!("LOGOS silence: llama-server parado");
+/// Inicia o embed-server se `embed_model` estiver configurado e o servidor não estiver ativo.
+///
+/// Não-fatal: erros (modelo ausente, falha de spawn, timeout de ready) são apenas logados —
+/// o servidor de chat continua funcionando independentemente.
+async fn ensure_embed_server_started(s: &LogosState) {
+    let embed_model = s.0.embed_model.lock().await.clone();
+    if embed_model.is_empty() {
+        log::debug!("LOGOS embed: embed_model vazio — embed-server não iniciado");
+        return;
     }
-    if stopped { 1 } else { 0 }
+
+    // Fast path: processo já ativo
+    if s.embed_proc_active().await {
+        return;
+    }
+
+    let bin = match s.0.llama_server_bin.as_ref() {
+        Some(b) => b.clone(),
+        None => {
+            log::warn!("LOGOS embed: llama-server não encontrado — embed-server não iniciado");
+            return;
+        }
+    };
+
+    let gguf_path = match resolve_gguf_path(&embed_model, &s.0.models_dir) {
+        Some(p) => p,
+        None => {
+            log::warn!(
+                "LOGOS embed: modelo '{}' não encontrado no registry — embed-server não iniciado",
+                embed_model
+            );
+            return;
+        }
+    };
+
+    let n_gpu    = *s.0.embed_n_gpu_layers.lock().await;
+    let log_path = embed_log_path(&s.0.models_dir);
+
+    log::info!(
+        "LOGOS embed-server: iniciando '{}' (n_gpu={}, porta={}, log={})",
+        embed_model, n_gpu, EMBED_SERVER_PORT, log_path.display()
+    );
+
+    match spawn_embed_server_proc(&bin, &gguf_path, n_gpu, EMBED_SERVER_PORT).await {
+        Ok(mut child) => {
+            if let Some(stderr) = child.stderr.take() {
+                spawn_embed_stderr_reader(stderr, embed_model.clone(), log_path);
+            }
+            *s.0.embed_proc.lock().await = Some(LlamaProcHandle {
+                child,
+                model_name: embed_model.clone(),
+            });
+
+            if wait_llama_ready(EMBED_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS).await {
+                log::info!(
+                    "LOGOS embed-server: '{}' pronto na porta {}",
+                    embed_model, EMBED_SERVER_PORT
+                );
+            } else {
+                log::error!(
+                    "LOGOS embed-server: '{}' não ficou pronto em {}s — abortando",
+                    embed_model, LLAMA_SERVER_READY_TIMEOUT_SECS
+                );
+                let mut guard = s.0.embed_proc.lock().await;
+                if let Some(mut p) = guard.take() {
+                    let _ = p.child.kill();
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("LOGOS embed-server: falha ao spawnar '{}': {}", embed_model, e);
+        }
+    }
+}
+
+/// Envia keep_alive: 0 para descarregar todos os modelos carregados.
+/// Para o processo llama-server e o embed-server para liberar VRAM completamente.
+/// Retorna o número de processos parados (0, 1 ou 2).
+pub async fn do_silence(s: &LogosState) -> usize {
+    let stopped_chat  = s.kill_llama_proc().await;
+    let stopped_embed = s.kill_embed_proc().await;
+    if stopped_chat  { log::info!("LOGOS silence: llama-server (chat) parado"); }
+    if stopped_embed { log::info!("LOGOS silence: embed-server parado"); }
+    usize::from(stopped_chat) + usize::from(stopped_embed)
 }
 
 /// Retorna o modelo atualmente carregado no llama-server (se houver).
@@ -2393,16 +2468,22 @@ pub async fn list_ollama_models(s: &LogosState) -> Vec<ModelInfo> {
     list_inference_models(s).await
 }
 
-/// Para o processo llama-server ativo para liberar VRAM.
-/// Retorna true se havia processo rodando.
+/// Para o processo llama-server e o embed-server ativos para liberar VRAM.
+/// Retorna true se o servidor de chat estava rodando.
 pub async fn do_unload_model(s: &LogosState, _model: &str) -> bool {
+    s.kill_embed_proc().await;
     s.kill_llama_proc().await
 }
 
 /// Carrega um modelo no llama-server (garante processo ativo com o modelo correto).
-/// Retorna true se o modelo foi carregado com sucesso.
+/// Após o chat server estar pronto, inicia o embed-server se configurado.
+/// Retorna true se o modelo de chat foi carregado com sucesso.
 pub async fn do_load_model(s: &LogosState, model: &str) -> bool {
-    ensure_llama_model_loaded(s, model).await.is_ok()
+    let ok = ensure_llama_model_loaded(s, model).await.is_ok();
+    if ok {
+        ensure_embed_server_started(s).await;
+    }
+    ok
 }
 
 /// Altera o perfil de workflow ativo. Valores inválidos caem em "normal".
@@ -3350,6 +3431,74 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
                     "LOGOS watchdog: falha ao reiniciar llama-server — '{model_name}' \
                      (tentativa {crash_count}/3)"
                 );
+            }
+        }
+    });
+
+    // Watchdog do embed-server — verifica a cada 10s.
+    // Detecta crash e tenta 1 restart (sem backoff exponencial — embed é leve).
+    // Se o restart também falhar, emite alerta e aguarda o próximo ciclo.
+    let embed_wdg = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+
+            let crashed_model: Option<String> = {
+                let mut guard = embed_wdg.0.embed_proc.lock().await;
+                if let Some(ref mut proc) = guard.as_mut() {
+                    match proc.child.try_wait() {
+                        Ok(Some(status)) => {
+                            log::error!(
+                                "LOGOS embed-watchdog: embed-server saiu inesperadamente \
+                                 (modelo='{}', status={:?})",
+                                proc.model_name, status
+                            );
+                            Some(proc.model_name.clone())
+                        }
+                        Ok(None) => None, // ainda rodando — ok
+                        Err(e) => {
+                            log::warn!(
+                                "LOGOS embed-watchdog: erro ao verificar processo: {e}"
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    None // nenhum embed-server ativo — normal (modelo não configurado)
+                }
+            };
+
+            let Some(model_name) = crashed_model else { continue };
+
+            // Limpa o handle do processo morto
+            *embed_wdg.0.embed_proc.lock().await = None;
+
+            embed_wdg.emit_alert(
+                "warn",
+                &format!("embed-server caiu — tentando reiniciar '{model_name}'"),
+            ).await;
+
+            // Uma tentativa de restart (embed é leve, reinício é rápido)
+            log::warn!("LOGOS embed-watchdog: tentando reiniciar '{model_name}'");
+            ensure_embed_server_started(&embed_wdg).await;
+
+            if embed_wdg.embed_proc_active().await {
+                log::info!(
+                    "LOGOS embed-watchdog: embed-server reiniciado — '{model_name}'"
+                );
+                embed_wdg.emit_alert(
+                    "warn",
+                    &format!("embed-server reiniciado após crash — '{model_name}'"),
+                ).await;
+            } else {
+                log::error!(
+                    "LOGOS embed-watchdog: falha ao reiniciar embed-server — \
+                     '{model_name}' — /v1/embeddings indisponível"
+                );
+                embed_wdg.emit_alert(
+                    "error",
+                    &format!("embed-server falhou — /v1/embeddings indisponível até restart manual"),
+                ).await;
             }
         }
     });
@@ -4819,5 +4968,141 @@ mod tests {
         let models_dir = std::path::Path::new("models");
         let log        = embed_log_path(models_dir);
         assert_eq!(log.file_name().unwrap().to_str().unwrap(), "logos_embed.log");
+    }
+
+    // ── Ciclo de vida integrado (item 4) ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn do_silence_kills_both_chat_and_embed() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Spawna dois processos "sleep" simulando chat + embed
+        let chat_child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+        let embed_child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child: chat_child, model_name: "qwen".to_string(),
+        });
+        *state.0.embed_proc.lock().await = Some(LlamaProcHandle {
+            child: embed_child, model_name: "bge-m3".to_string(),
+        });
+
+        let stopped = do_silence(&state).await;
+
+        assert_eq!(stopped, 2, "do_silence deve retornar 2 quando ambos os processos estavam ativos");
+        assert!(!state.embed_proc_active().await, "embed_proc deve ser None após do_silence");
+        assert!(!state.0.llama_proc.lock().await.is_some(), "llama_proc deve ser None após do_silence");
+    }
+
+    #[tokio::test]
+    async fn do_silence_returns_0_when_no_procs() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let stopped = do_silence(&state).await;
+        assert_eq!(stopped, 0, "do_silence sem processos deve retornar 0");
+    }
+
+    #[tokio::test]
+    async fn do_silence_returns_1_when_only_chat_active() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        let child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child, model_name: "qwen".to_string(),
+        });
+
+        let stopped = do_silence(&state).await;
+        assert_eq!(stopped, 1, "apenas chat ativo → do_silence retorna 1");
+    }
+
+    #[tokio::test]
+    async fn do_unload_model_kills_embed_proc_too() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        let embed_child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+        *state.0.embed_proc.lock().await = Some(LlamaProcHandle {
+            child: embed_child, model_name: "bge-m3".to_string(),
+        });
+
+        do_unload_model(&state, "qwen").await;
+
+        assert!(!state.embed_proc_active().await,
+            "do_unload_model deve matar embed_proc além do llama_proc");
+    }
+
+    #[tokio::test]
+    async fn ensure_embed_server_started_noop_when_embed_model_empty() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // embed_model vazio por padrão no make_test_state — não deve spawnar nada
+        *state.0.embed_model.lock().await = String::new();
+
+        ensure_embed_server_started(&state).await;
+
+        assert!(!state.embed_proc_active().await,
+            "embed_model vazio → ensure_embed_server_started não deve criar processo");
+    }
+
+    #[tokio::test]
+    async fn ensure_embed_server_started_noop_when_already_active() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Simula processo já ativo
+        let child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+        let pid_before = child.id();
+        *state.0.embed_proc.lock().await = Some(LlamaProcHandle {
+            child, model_name: "bge-m3".to_string(),
+        });
+        *state.0.embed_model.lock().await = "bge-m3".to_string();
+
+        ensure_embed_server_started(&state).await;
+
+        // PID não deve ter mudado — nenhum novo spawn
+        let pid_after = state.0.embed_proc.lock().await
+            .as_ref()
+            .and_then(|p| p.child.id());
+        assert_eq!(pid_before, pid_after,
+            "embed-server já ativo → ensure_embed_server_started deve ser no-op");
+
+        state.kill_embed_proc().await;
+    }
+
+    #[tokio::test]
+    async fn ensure_embed_server_started_noop_when_model_not_in_registry() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Modelo configurado mas GGUF ausente — deve logar warn e não criar processo
+        *state.0.embed_model.lock().await = "bge-m3".to_string();
+
+        ensure_embed_server_started(&state).await;
+
+        assert!(!state.embed_proc_active().await,
+            "modelo ausente do registry → nenhum processo deve ser criado");
     }
 }
