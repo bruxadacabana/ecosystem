@@ -7205,3 +7205,34 @@ Quando LOGOS estiver fora (HUB fechado):
 - [x] **Contrato AKASHA/Mnemosyne → LOGOS `/v1/embeddings`** — teste de contrato HTTP: ambos os apps devem enviar `{"model": "<nome>", "input": ["texto"]}` e aceitar resposta `{"data": [{"embedding": [...]}]}`. Qualquer divergência de formato quebra silenciosamente. Criar fixture compartilhada em `tests/` que valide o schema do request e response para os dois callers.
 - [x] **Contrato `ecosystem_client.py`** — a função `get_inference_url()` é usada por AKASHA, Mnemosyne e potencialmente KOSMOS. Criar testes que verificam: (1) retorna URL com porta correta quando `ecosystem.json` existe; (2) retorna URL padrão quando arquivo ausente; (3) não falha em import time (lazy read). Cada app tem seu próprio `ecosystem_client.py` — verificar se os três são idênticos ou têm divergências.
 - [x] **Recovery E2E: LOGOS offline** — teste de integração (subprocess): iniciar AKASHA sem HUB/LOGOS ativo → fazer busca via `GET /search?q=teste` → resposta deve ser 200 com resultados (degraded, sem IA), não 500. Hoje não há garantia de que o fallback funciona no caminho real.
+
+### LOGOS — Duas instâncias llama-server: chat + embedding simultâneos | 2026-05-26
+> Contexto: diagnóstico confirmou que o erro HTTP 501 em `/v1/embeddings` ocorre porque o llama-server com modelo de chat (Qwen) não expõe o endpoint de embedding. A solução escolhida é a Opção A: duas instâncias llama-server separadas — uma para chat (porta 8081) e uma para embedding com `--embeddings --pooling mean` (porta 8082). O LOGOS roteia por tipo de endpoint. bge-m3 em GGUF (~350 MB Q4_K_M) existe no HuggingFace (bbvch-ai/bge-m3-GGUF). VRAM total estimada: ~4,35 GB de 8 GB na RX 6600. **Regra transversal: TODO o uso do llama.cpp (spawn, flags, requests, respostas, erros, retries, latência) deve ser testado exaustivamente e documentado por logs com timestamp, porta e contexto — nunca silencioso.**
+
+#### HUB / LOGOS
+
+- [ ] **Download do bge-m3 GGUF** — baixar `bge-m3-q4_k_m.gguf` de `bbvch-ai/bge-m3-GGUF` (HuggingFace) para o diretório de modelos do LOGOS (mesmo diretório dos modelos de chat). Verificar integridade com SHA256 após download. O modelo deve aparecer no `GET /v1/models` do LOGOS como tipo "embed". Se o sistema de download de modelos do LOGOS ainda não suportar download direto por URL HF, implementar esse suporte como sub-passo.
+
+- [ ] **`logos.rs` / `launcher.rs` — `EmbedServerConfig` e estado separado** — adicionar campos ao estado do LOGOS: `embed_port: u16` (default 8082), `embed_model: String` (nome do arquivo GGUF), `embed_n_gpu_layers: i32`. Armazenar em `ecosystem.json` campo `logos.embed_model`. Adicionar campo `embed_proc: Option<Child>` ao `AppState` para o processo de embedding separado do processo de chat.
+
+- [ ] **`logos.rs` — `spawn_embed_server_proc()`** — função análoga a `spawn_llama_server_proc()` para o servidor de embedding. Flags obrigatórias: `--embeddings`, `--pooling mean`, `--port 8082`, `--model <embed_model_path>`, `--n-gpu-layers <embed_n_gpu_layers>`. Sem `--chat-template`. Log ao spawnar: timestamp, modelo, porta, todas as flags usadas. Redirecionamento de stdout/stderr para arquivo de log identificado (`logos_embed.log` em `data_dir`).
+
+- [ ] **`logos.rs` — ciclo de vida integrado** — iniciar `spawn_embed_server_proc()` automaticamente junto ao servidor de chat quando `embed_model` estiver configurado em `ecosystem.json`. Parar o embed server quando `toggle_inference(false)` for chamado (garantir que ambos os processos são finalizados). Monitorar o embed server com o mesmo mecanismo de health check do servidor de chat — se cair, tentar reiniciar uma vez antes de reportar erro.
+
+- [ ] **LOGOS proxy — `v1_embeddings_proxy` aponta para porta 8082** — modificar o handler de `/v1/embeddings` em `logos.rs` (ou onde `proxy_openai_to_llama` é chamado) para usar `EMBED_SERVER_PORT` (8082) em vez de `LLAMA_PORT` (8081). Manter todos os retries, timeout e lógica de fila intactos. Log: cada requisição de embedding deve registrar timestamp, tamanho do input, latência da resposta do backend, e erro se houver.
+
+- [ ] **`ecosystem.json` — campo `logos.embed_model`** — adicionar ao schema: `logos.embed_model: String` (nome do GGUF de embedding), `logos.embed_port: u16` (default 8082). Atualizar `apply_sync_root` e funções de leitura de config para incluir esses campos. O `ecosystem_client.py` continua apontando para a porta 7072 do LOGOS proxy — nenhuma mudança nas apps.
+
+- [ ] **`views/LogosView.tsx` — status de ambas as instâncias** — exibir status separado para "Servidor LLM (chat)" e "Servidor de Embedding": dot colorido independente, modelo carregado, porta, tempo de resposta. Manter o botão "Ligar/Desligar IA" controlando ambos simultaneamente.
+
+- [ ] **Logging detalhado — regra obrigatória para todo o llama.cpp** — todo ponto de interação com llama.cpp deve gerar log estruturado com: timestamp ISO, operação (spawn / request / response / error / retry), porta (8081 ou 8082), modelo, duração em ms, código HTTP ou tipo de erro. Logs escritos em arquivo rotativo (`logos_chat.log`, `logos_embed.log`) acessíveis via `GET /logs` ou via painel do SyncView. Nunca logar apenas "erro" sem contexto — incluir payload resumido e stack trace quando disponível.
+
+- [ ] **Testes — `spawn_embed_server_proc` com flags corretas** — usar `build_llama_server_cmd()` (ou equivalente para embed) e inspecionar `.as_std().get_args()` sem spawnar processo: verificar presença obrigatória de `--embeddings`, `--pooling`, `--port 8082`, ausência de `--chat-template`. Verificar que `--n-gpu-layers` está presente. Adicionar ao mesmo módulo de testes de `logos.rs`.
+
+- [ ] **Testes — roteamento de endpoint** — teste de integração que verifica: request para `/v1/embeddings` no LOGOS (7072) é encaminhado para porta 8082 (não 8081); request para `/v1/chat/completions` vai para 8081 (não 8082). Usar mocks de transport HTTP ou iniciar servidores stub em portas de teste.
+
+- [ ] **Testes — ciclo de vida independente** — verificar que: (1) parar o embed server (SIGTERM no PID 8082) não afeta o servidor de chat em 8081 e vice-versa; (2) `toggle_inference(false)` finaliza ambos os processos; (3) se embed_model não estiver configurado, apenas o servidor de chat sobe (sem erro).
+
+- [ ] **Testes — logging** — verificar que após spawn de cada processo, o arquivo de log correspondente (`logos_chat.log` / `logos_embed.log`) é criado e contém entrada de inicialização. Verificar que requisições geram entradas de log com os campos obrigatórios (timestamp, operação, porta, duração).
+
+- [ ] **Documentação — GUIDE.md e README.md** — atualizar seção LOGOS com a nova topologia: dois processos, duas portas (8081 chat / 8082 embed), roteamento pelo LOGOS proxy na porta 7072. Incluir tabela de portas atualizada. Documentar como configurar `logos.embed_model` em `ecosystem.json`. Atualizar "Rodar testes" com os novos testes de logos.rs.
