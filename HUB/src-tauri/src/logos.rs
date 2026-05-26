@@ -757,6 +757,11 @@ pub struct ModelRegistryEntry {
     pub size_bytes:    u64,
     pub sha256:        String,
     pub downloaded_at: String,   // ISO 8601
+    /// Tipo do modelo: "chat" (LLM generativo) ou "embed" (modelo de embedding).
+    /// Determina qual instância llama-server serve este modelo (8081=chat, 8082=embed).
+    /// Entries antigas sem este campo são tratadas como "chat" por retrocompatibilidade.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_type:    Option<String>,
     /// Caminho do arquivo mmproj para modelos multimodais (moondream, LLaVA, etc.)
     /// None para modelos de texto puro.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2979,15 +2984,22 @@ async fn download_model_task(
     drop(file);
 
     // Passo 4: SHA256 e registry
-    let sha256 = hex::encode(hasher.finalize());
-    let entry  = ModelRegistryEntry {
-        name:          model_name.unwrap_or_else(|| filename.trim_end_matches(".gguf").to_string()),
+    let sha256         = hex::encode(hasher.finalize());
+    let resolved_name  = model_name.unwrap_or_else(|| filename.trim_end_matches(".gguf").to_string());
+    let model_type_str = crate::commands::logos::model_type_for_name(&resolved_name);
+    log::info!(
+        "LOGOS: download finalizado — modelo='{}' tipo='{}' sha256={}…",
+        resolved_name, model_type_str, &sha256[..8]
+    );
+    let entry = ModelRegistryEntry {
+        name:          resolved_name,
         repo_id:       repo_id.clone(),
         filename:      filename.clone(),
         path:          out_path.to_string_lossy().into_owned(),
         size_bytes:    bytes_downloaded,
         sha256:        sha256.clone(),
         downloaded_at: chrono::Local::now().to_rfc3339(),
+        model_type:    Some(model_type_str.to_string()),
         mmproj_path:   None,
     };
     update_model_registry(&s.0.models_dir, entry).await;
@@ -3262,6 +3274,7 @@ mod tests {
             size_bytes:    2_400_000_000,
             sha256:        "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
             downloaded_at: "2026-05-23T12:00:00+00:00".to_string(),
+            model_type:    None,
             mmproj_path:   None,
         };
         let json = serde_json::to_string(&entry).expect("serialize");
@@ -3282,6 +3295,7 @@ mod tests {
             size_bytes:    1_800_000_000,
             sha256:        "deadbeef".to_string(),
             downloaded_at: "2026-05-24T00:00:00+00:00".to_string(),
+            model_type:    None,
             mmproj_path:   Some("/tmp/moondream2-20250414-mmproj-f16.gguf".to_string()),
         };
         let json = serde_json::to_string(&entry).expect("serialize");
@@ -3312,6 +3326,7 @@ mod tests {
             size_bytes:    1_000,
             sha256:        "aaa".to_string(),
             downloaded_at: "2026-01-01T00:00:00+00:00".to_string(),
+            model_type:    None,
             mmproj_path:   None,
         };
         let e2 = ModelRegistryEntry {
@@ -3344,6 +3359,7 @@ mod tests {
                 size_bytes:    i as u64 * 1_000,
                 sha256:        format!("{i:064x}"),
                 downloaded_at: "2026-05-23T00:00:00+00:00".to_string(),
+                model_type:    None,
                 mmproj_path:   None,
             };
             update_model_registry(&models_dir, e).await;
@@ -3373,6 +3389,7 @@ mod tests {
             size_bytes:    1_800_000_000,
             sha256:        "abc".to_string(),
             downloaded_at: "2026-05-24T00:00:00+00:00".to_string(),
+            model_type:    None,
             mmproj_path:   None,
         };
         update_model_registry(&models_dir, entry).await;
@@ -3396,6 +3413,114 @@ mod tests {
         update_registry_mmproj(&models_dir, "nao-existe", "/tmp/x.gguf").await;
         let entries = read_model_registry(&models_dir).await;
         assert!(entries.is_empty());
+    }
+
+    // ── ModelRegistryEntry — model_type ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn registry_entry_bge_m3_persists_model_type_embed() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        let entry = ModelRegistryEntry {
+            name:          "bge-m3".to_string(),
+            repo_id:       "gpustack/bge-m3-GGUF".to_string(),
+            filename:      "bge-m3-Q4_K_M.gguf".to_string(),
+            path:          "/tmp/bge-m3-Q4_K_M.gguf".to_string(),
+            size_bytes:    360_000_000,
+            sha256:        "abc".to_string(),
+            downloaded_at: "2026-05-26T00:00:00+00:00".to_string(),
+            model_type:    Some("embed".to_string()),
+            mmproj_path:   None,
+        };
+        update_model_registry(&models_dir, entry).await;
+
+        let entries = read_model_registry(&models_dir).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].model_type.as_deref(),
+            Some("embed"),
+            "model_type deve ser 'embed' para bge-m3"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_entry_model_type_defaults_to_none_for_legacy_entries() {
+        // Verifica retrocompatibilidade: entradas sem model_type no JSON desserializam como None
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let registry_path = dir.path().join("registry.json");
+        let legacy = r#"[{
+            "name": "qwen2.5-7b",
+            "repo_id": "bartowski/Qwen2.5-7B-Instruct-GGUF",
+            "filename": "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+            "path": "/tmp/qwen.gguf",
+            "size_bytes": 4000000000,
+            "sha256": "deadbeef",
+            "downloaded_at": "2026-01-01T00:00:00+00:00"
+        }]"#;
+        std::fs::write(&registry_path, legacy).unwrap();
+
+        let entries = read_model_registry(dir.path()).await;
+        assert_eq!(entries.len(), 1);
+        assert!(
+            entries[0].model_type.is_none(),
+            "entry legada sem model_type deve deserializar como None"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_model_type_derived_from_name_for_bge_m3() {
+        // Simula o comportamento do download_model_task: model_type derivado de model_type_for_name
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        let model_name = "bge-m3";
+        let derived_type = crate::commands::logos::model_type_for_name(model_name);
+        let entry = ModelRegistryEntry {
+            name:          model_name.to_string(),
+            repo_id:       "gpustack/bge-m3-GGUF".to_string(),
+            filename:      "bge-m3-Q4_K_M.gguf".to_string(),
+            path:          "/tmp/bge-m3-Q4_K_M.gguf".to_string(),
+            size_bytes:    360_000_000,
+            sha256:        "abc".to_string(),
+            downloaded_at: "2026-05-26T00:00:00+00:00".to_string(),
+            model_type:    Some(derived_type.to_string()),
+            mmproj_path:   None,
+        };
+        update_model_registry(&models_dir, entry).await;
+
+        let entries = read_model_registry(&models_dir).await;
+        assert_eq!(
+            entries[0].model_type.as_deref(),
+            Some("embed"),
+            "model_type derivado de model_type_for_name deve ser 'embed' para bge-m3"
+        );
+    }
+
+    #[tokio::test]
+    async fn registry_model_type_chat_for_llm_models() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        let entry = ModelRegistryEntry {
+            name:          "qwen2.5:7b".to_string(),
+            repo_id:       "bartowski/Qwen2.5-7B-Instruct-GGUF".to_string(),
+            filename:      "Qwen2.5-7B-Instruct-Q4_K_M.gguf".to_string(),
+            path:          "/tmp/qwen.gguf".to_string(),
+            size_bytes:    4_000_000_000,
+            sha256:        "xyz".to_string(),
+            downloaded_at: "2026-05-26T00:00:00+00:00".to_string(),
+            model_type:    Some(crate::commands::logos::model_type_for_name("qwen2.5:7b").to_string()),
+            mmproj_path:   None,
+        };
+        update_model_registry(&models_dir, entry).await;
+
+        let entries = read_model_registry(&models_dir).await;
+        assert_eq!(
+            entries[0].model_type.as_deref(),
+            Some("chat"),
+            "model_type deve ser 'chat' para LLMs generativos"
+        );
     }
 
     // ── DownloadProgress — serialização ──────────────────────────────────────
@@ -3659,6 +3784,7 @@ mod tests {
             size_bytes:    9,
             sha256:        "abc".to_string(),
             downloaded_at: "2026-05-23T00:00:00+00:00".to_string(),
+            model_type:    None,
             mmproj_path:   None,
         };
         update_model_registry(&models_dir, entry).await;
@@ -3701,6 +3827,7 @@ mod tests {
             size_bytes:    2_000_000,
             sha256:        "aaa".to_string(),
             downloaded_at: "2026-05-23T00:00:00+00:00".to_string(),
+            model_type:    None,
             mmproj_path:   None,
         };
         update_model_registry(&models_dir, entry).await;
@@ -3763,6 +3890,7 @@ mod tests {
             size_bytes:    1_000_000_000,
             sha256:        "abc123".to_string(),
             downloaded_at: "2026-05-24T00:00:00+00:00".to_string(),
+            model_type:    None,
             mmproj_path:   None,
         }
     }

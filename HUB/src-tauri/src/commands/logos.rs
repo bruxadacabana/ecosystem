@@ -407,6 +407,19 @@ pub(crate) fn model_hf_table_multi(model: &str) -> Option<&'static [(&'static st
     }
 }
 
+/// Retorna o tipo canônico de um modelo com base no seu nome.
+///
+/// Valores: `"embed"` para modelos de embedding, `"chat"` para LLMs generativos.
+/// Usado pelo registry para distinguir instâncias de serving (porta 8081 = chat, 8082 = embed).
+pub(crate) fn model_type_for_name(model: &str) -> &'static str {
+    let m = model.to_lowercase();
+    let m = m.trim_end_matches(":latest");
+    match m {
+        "bge-m3" | "bge_m3" | "baai/bge-m3" => "embed",
+        _ => "chat",
+    }
+}
+
 /// Cancela a geração em andamento para um modelo específico sem descarregá-lo da VRAM.
 /// Retorna true se havia uma inferência ativa para esse modelo.
 #[tauri::command]
@@ -690,5 +703,47 @@ mod tests {
             first_fn.contains("text-model") || first_fn.contains("text"),
             "primeiro arquivo deve ser o transformer de texto, não o mmproj"
         );
+    }
+
+    // ── model_type_for_name ───────────────────────────────────────────────────
+
+    #[test]
+    fn model_type_bge_m3_is_embed() {
+        assert_eq!(model_type_for_name("bge-m3"), "embed");
+    }
+
+    #[test]
+    fn model_type_bge_m3_latest_suffix_is_embed() {
+        assert_eq!(model_type_for_name("bge-m3:latest"), "embed");
+    }
+
+    #[test]
+    fn model_type_bge_m3_aliases_are_embed() {
+        assert_eq!(model_type_for_name("bge_m3"),       "embed");
+        assert_eq!(model_type_for_name("baai/bge-m3"),  "embed");
+        assert_eq!(model_type_for_name("BGE-M3"),        "embed"); // case-insensitive
+    }
+
+    #[test]
+    fn model_type_chat_models_are_chat() {
+        assert_eq!(model_type_for_name("qwen2.5:7b"),  "chat");
+        assert_eq!(model_type_for_name("gemma2:2b"),   "chat");
+        assert_eq!(model_type_for_name("smollm2:1.7b"),"chat");
+        assert_eq!(model_type_for_name("llama3.2:3b"), "chat");
+    }
+
+    #[test]
+    fn model_type_unknown_defaults_to_chat() {
+        assert_eq!(model_type_for_name("gpt-4"),  "chat");
+        assert_eq!(model_type_for_name(""),        "chat");
+        assert_eq!(model_type_for_name("unknown"), "chat");
+    }
+
+    #[test]
+    fn model_type_bge_m3_matches_hf_table_entry() {
+        // Garante que o nome canônico do bge-m3 na hf_table bate com model_type_for_name
+        assert!(model_hf_table("bge-m3").is_some(), "bge-m3 deve ter entry na hf_table");
+        assert_eq!(model_type_for_name("bge-m3"), "embed",
+            "bge-m3 na hf_table deve ser classificado como embed");
     }
 }
