@@ -676,7 +676,7 @@ program files/
 ├── 📁 logos/           → Scripts de fine-tuning de LLMs (Python puro)
 ├── 📁 Mnemosyne/       → Assistente RAG com notebooks (Python + PySide6)
 ├── 📁 OGMA/            → Editor de notas (Electron + EditorJS)
-├── 📁 tests/           → Testes de integração do ecossistema (ecosystem_client)
+├── 📁 tests/           → Testes de integração do ecossistema (ecosystem_client, contrato LOGOS /v1/embeddings)
 │
 │   ── Biblioteca compartilhada Python ──
 ├── ecosystem_client.py         → Lê/escreve ecosystem.json; get_inference_url(), etc.
@@ -797,9 +797,11 @@ AKASHA/
     ├── test_local_search_smoke.py
     ├── test_search_integration.py → Fluxo completo FTS5→RRF→boosts (banco SQLite temporário)
     ├── test_embeddings_contract.py → Contrato _embed_via_logos: sucesso, timeout/retry, 429/retry, 501 sem retry, offline→None
+    ├── test_recovery.py     → Degradação graciosa: DB corrompido/ausente, LOGOS offline, ConnectError
     ├── test_query_understanding.py
     ├── test_friendship_receiver.py
     └── integration/        → Testes de integração (exigem serviços rodando)
+        └── test_api.py     → Rotas FastAPI: /search/json, /insight/current, /insight/feedback, /library/crawl/status
 ```
 
 ---
@@ -909,7 +911,11 @@ Mnemosyne/
 │
 ├── 📁 logs/                → Logs rotativos da Mnemosyne
 └── 📁 tests/               → Testes pytest
-    └── integration/        → Testes que precisam de ChromaDB e modelos reais
+    ├── test_initialization.py   → Bootstrap: ecosystem.json, paths inválidos, ChromaDB, BM25
+    ├── test_logos_embeddings.py → Contrato _embed_batch: sucesso, potion local, retry, 501
+    ├── test_akasha_sync.py      → Protocolo de amizade: notify_akasha_insight, notify_mnemosyne_insight
+    ├── test_index_clear.py      → Limpeza pré-indexação: habilitadas, desabilitadas, ecosystem_chroma_dir
+    └── integration/             → Testes que precisam de ChromaDB e modelos reais
 ```
 
 ---

@@ -868,18 +868,24 @@ bash buildar.sh ogma
 ### Rodar testes
 
 ```bash
-# AKASHA
-cd AKASHA && uv run pytest tests/ -v --ignore=tests/integration
+# AKASHA (venv próprio — aiosqlite + FastAPI)
+cd AKASHA && uv run pytest tests/ -v
 
-# Mnemosyne
-cd Mnemosyne && python -m pytest tests/ -v
+# Mnemosyne (venv compartilhado em program files/.venv)
+.venv/bin/pytest Mnemosyne/tests/ -v
 
-# ecosystem_client
-cd "program files" && .venv/bin/pytest tests/ -v
+# Ecosystem cross-app (ecosystem_client, contrato LOGOS /v1/embeddings)
+.venv/bin/pytest tests/ -v
 
-# HUB (TypeScript)
-cd HUB && npm test
+# HUB (Rust)
+cd HUB/src-tauri && cargo test
 ```
+
+**Cobertura por módulo:**
+- AKASHA: FTS5/RRF, embeddings, API, recovery (degradação graciosa), amizade AKASHA↔Mnemosyne
+- Mnemosyne: bootstrap, embeddings LOGOS, sync AKASHA, limpeza pré-indexação
+- HUB/Rust: toggle_inference, models_dir fallback, spawn flags, apply_sync_root, ecosystem.json write/read
+- Cross-app: contrato /v1/embeddings, get_inference_url, recovery E2E LOGOS offline
 
 ---
 
