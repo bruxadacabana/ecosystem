@@ -7219,7 +7219,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **`logos.rs` — ciclo de vida integrado** — iniciar `spawn_embed_server_proc()` automaticamente junto ao servidor de chat quando `embed_model` estiver configurado em `ecosystem.json`. Parar o embed server quando `toggle_inference(false)` for chamado (garantir que ambos os processos são finalizados). Monitorar o embed server com o mesmo mecanismo de health check do servidor de chat — se cair, tentar reiniciar uma vez antes de reportar erro.
 
-- [ ] **LOGOS proxy — `v1_embeddings_proxy` aponta para porta 8082** — modificar o handler de `/v1/embeddings` em `logos.rs` (ou onde `proxy_openai_to_llama` é chamado) para usar `EMBED_SERVER_PORT` (8082) em vez de `LLAMA_PORT` (8081). Manter todos os retries, timeout e lógica de fila intactos. Log: cada requisição de embedding deve registrar timestamp, tamanho do input, latência da resposta do backend, e erro se houver.
+- [x] **LOGOS proxy — `v1_embeddings_proxy` aponta para porta 8082** — modificar o handler de `/v1/embeddings` em `logos.rs` (ou onde `proxy_openai_to_llama` é chamado) para usar `EMBED_SERVER_PORT` (8082) em vez de `LLAMA_PORT` (8081). Manter todos os retries, timeout e lógica de fila intactos. Log: cada requisição de embedding deve registrar timestamp, tamanho do input, latência da resposta do backend, e erro se houver.
 
 - [ ] **`ecosystem.json` — campo `logos.embed_model`** — adicionar ao schema: `logos.embed_model: String` (nome do GGUF de embedding), `logos.embed_port: u16` (default 8082). Atualizar `apply_sync_root` e funções de leitura de config para incluir esses campos. O `ecosystem_client.py` continua apontando para a porta 7072 do LOGOS proxy — nenhuma mudança nas apps.
 

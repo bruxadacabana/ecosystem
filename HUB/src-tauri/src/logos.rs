@@ -1973,10 +1973,18 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
     *s.0.active_priority.lock().await = Some(3);
     *s.0.active_app.lock().await = Some(app_name);
 
+    let input_bytes = body.len();
+    let t0 = std::time::Instant::now();
+
     let result = if s.0.llama_server_bin.is_some() {
-        // ── llama-server: traduz para OpenAI /v1/embeddings ──
+        // ── llama-server: traduz para OpenAI /v1/embeddings e roteia para embed-server ──
         let openai_body = translate_ollama_embed_to_openai(&body);
-        let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/v1/embeddings");
+        let url = format!("http://127.0.0.1:{EMBED_SERVER_PORT}/v1/embeddings");
+        let active_app = s.0.active_app.lock().await.clone().unwrap_or_else(|| "unknown".to_string());
+        log::info!(
+            "LOGOS embed proxy (Ollama→OpenAI): app='{}' target={target} → {url} input_bytes={input_bytes}",
+            active_app
+        );
         s.0.client
             .post(&url)
             .header(header::CONTENT_TYPE, "application/json")
@@ -2009,7 +2017,12 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
 
     match result {
         Ok(resp) => {
-            let status = resp.status();
+            let latency_ms = t0.elapsed().as_millis();
+            let status     = resp.status();
+            log::info!(
+                "LOGOS embed proxy (Ollama): target={target} status={} input_bytes={} latency={}ms",
+                status.as_u16(), input_bytes, latency_ms
+            );
             match resp.bytes().await {
                 Ok(raw) => {
                     let bytes = if s.0.llama_server_bin.is_some() {
@@ -2026,9 +2039,16 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
                 Err(_) => StatusCode::BAD_GATEWAY.into_response(),
             }
         }
-        Err(e) => (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
-            "error": format!("Backend de inferência indisponível: {e}")
-        }))).into_response(),
+        Err(e) => {
+            let latency_ms = t0.elapsed().as_millis();
+            log::warn!(
+                "LOGOS embed proxy (Ollama): target={target} ERRO='{}' input_bytes={} latency={}ms",
+                e, input_bytes, latency_ms
+            );
+            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                "error": format!("Backend de inferência indisponível: {e}")
+            }))).into_response()
+        }
     }
 }
 
@@ -2146,12 +2166,95 @@ async fn v1_chat_completions_proxy(
     proxy_openai_to_llama(&s, &headers, body, "v1/chat/completions", 2).await
 }
 
+/// Proxy para POST /v1/embeddings — roteado para o embed-server (porta EMBED_SERVER_PORT).
+///
+/// Separado de `proxy_openai_to_llama` porque o embed-server corre numa porta própria
+/// (EMBED_SERVER_PORT) e tem ciclo de vida independente do servidor de chat (LLAMA_SERVER_PORT).
+///
+/// Logging obrigatório: timestamp, app, tamanho do input, porta, latência, status/erro.
 async fn v1_embeddings_proxy(
     State(s): State<LogosState>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    proxy_openai_to_llama(&s, &headers, body, "v1/embeddings", 3).await
+    let (app_name, req_priority) = extract_app_priority(&headers);
+    let profile  = s.0.active_profile.lock().await.clone();
+    let priority = apply_profile_priority(&profile, &app_name,
+                       if req_priority == 0 { 3 } else { req_priority });
+
+    // Verifica se o embed-server está ativo antes de adquirir o semáforo
+    if !s.embed_proc_active().await {
+        log::warn!(
+            "LOGOS embed proxy: requisição de app='{}' rejeitada — embed-server não está ativo \
+             (porta {}). Configure embed_model em ecosystem.json e reinicie a inferência.",
+            app_name, EMBED_SERVER_PORT
+        );
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "error": format!(
+                "embed-server não está ativo (porta {EMBED_SERVER_PORT}). \
+                 Configure embed_model e reinicie a inferência via HUB."
+            )
+        }))).into_response();
+    }
+
+    let permits: u32 = if priority >= 3 { 1 } else { 2 };
+    let timeout  = P3_TIMEOUT; // embeddings são sempre P3
+
+    let sem      = s.0.semaphore.clone();
+    let _permit  = match tokio::time::timeout(timeout, sem.acquire_many_owned(permits)).await {
+        Ok(Ok(p)) => p,
+        _ => return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+            "error": "Timeout aguardando LOGOS — sistema sobrecarregado"
+        }))).into_response(),
+    };
+
+    let url         = format!("http://127.0.0.1:{EMBED_SERVER_PORT}/v1/embeddings");
+    let input_bytes = body.len();
+    let t0          = std::time::Instant::now();
+
+    log::info!(
+        "LOGOS embed proxy: app='{}' → {url} input_bytes={input_bytes}",
+        app_name
+    );
+
+    match s.0.client
+        .post(&url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let latency_ms = t0.elapsed().as_millis();
+            let status     = resp.status();
+            let ct         = resp.headers()
+                .get(header::CONTENT_TYPE)
+                .cloned()
+                .unwrap_or_else(|| "application/json".parse().unwrap());
+            log::info!(
+                "LOGOS embed proxy: app='{}' status={} input_bytes={} latency={}ms porta={}",
+                app_name, status.as_u16(), input_bytes, latency_ms, EMBED_SERVER_PORT
+            );
+            match resp.bytes().await {
+                Ok(bytes) => axum::http::Response::builder()
+                    .status(status)
+                    .header(header::CONTENT_TYPE, ct)
+                    .body(axum::body::Body::from(bytes))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+            }
+        }
+        Err(e) => {
+            let latency_ms = t0.elapsed().as_millis();
+            log::warn!(
+                "LOGOS embed proxy: app='{}' ERRO='{}' input_bytes={} latency={}ms porta={}",
+                app_name, e, input_bytes, latency_ms, EMBED_SERVER_PORT
+            );
+            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({
+                "error": format!("embed-server indisponível (porta {EMBED_SERVER_PORT}): {e}")
+            }))).into_response()
+        }
+    }
 }
 
 async fn v1_models_proxy(State(s): State<LogosState>) -> Response {
@@ -4968,6 +5071,67 @@ mod tests {
         let models_dir = std::path::Path::new("models");
         let log        = embed_log_path(models_dir);
         assert_eq!(log.file_name().unwrap().to_str().unwrap(), "logos_embed.log");
+    }
+
+    // ── v1_embeddings_proxy — roteamento para porta 8082 ─────────────────────
+
+    #[test]
+    fn embed_proxy_url_uses_embed_server_port_not_chat_port() {
+        // Verifica que a URL construída aponta para 8082 e não para 8081 (chat)
+        let url = format!("http://127.0.0.1:{EMBED_SERVER_PORT}/v1/embeddings");
+        assert!(url.contains("8082"),
+            "URL de embedding deve conter porta 8082 (EMBED_SERVER_PORT)");
+        assert!(!url.contains("8081"),
+            "URL de embedding NÃO deve conter porta 8081 (LLAMA_SERVER_PORT/chat)");
+    }
+
+    #[test]
+    fn embed_proxy_url_endpoint_is_v1_embeddings() {
+        let url = format!("http://127.0.0.1:{EMBED_SERVER_PORT}/v1/embeddings");
+        assert!(url.ends_with("/v1/embeddings"),
+            "endpoint deve ser /v1/embeddings");
+    }
+
+    #[tokio::test]
+    async fn v1_embeddings_proxy_returns_503_when_embed_proc_not_active() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // embed_proc = None (padrão) → deve retornar 503
+        assert!(!state.embed_proc_active().await,
+            "pré-condição: embed_proc deve estar inativo");
+
+        let headers = axum::http::HeaderMap::new();
+        let body    = axum::body::Bytes::from(r#"{"input": "teste"}"#);
+
+        let response = v1_embeddings_proxy(State(state), headers, body).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "embed-server inativo → proxy deve retornar 503 SERVICE_UNAVAILABLE"
+        );
+    }
+
+    #[tokio::test]
+    async fn v1_embeddings_proxy_503_body_mentions_embed_port() {
+        use axum::body::to_bytes;
+
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let headers = axum::http::HeaderMap::new();
+        let body    = axum::body::Bytes::from(r#"{"input": "teste"}"#);
+
+        let response = v1_embeddings_proxy(State(state), headers, body).await;
+
+        let (parts, body_stream) = response.into_parts();
+        assert_eq!(parts.status, StatusCode::SERVICE_UNAVAILABLE);
+
+        let bytes  = to_bytes(body_stream, 4096).await.unwrap();
+        let text   = String::from_utf8_lossy(&bytes);
+        assert!(
+            text.contains("8082"),
+            "corpo do 503 deve mencionar a porta 8082; obtido: {text}"
+        );
     }
 
     // ── Ciclo de vida integrado (item 4) ─────────────────────────────────────
