@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
 from enum import Enum
 from pathlib import Path
 from typing import Callable
+
+log = logging.getLogger(__name__)
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings as LCEmbeddings
