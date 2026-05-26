@@ -659,6 +659,18 @@ pub struct StatusResponse {
     /// True quando o watchdog de VRAM bloqueou P3 (VRAM > block_pct%).
     /// Retoma automaticamente quando VRAM cai abaixo de 70%.
     pub p3_vram_blocked: bool,
+    /// True se o processo llama-server de chat (porta 8081) está ativo.
+    pub chat_server_online: bool,
+    /// Modelo carregado no servidor de chat ("" se offline).
+    pub chat_server_model: String,
+    /// Latência do último /health no servidor de chat (ms); None se offline ou não respondeu.
+    pub chat_response_ms: Option<u32>,
+    /// True se o processo embed-server (porta 8082) está ativo.
+    pub embed_server_online: bool,
+    /// Modelo carregado no servidor de embedding ("" se offline).
+    pub embed_server_model: String,
+    /// Latência do último /health no servidor de embedding (ms); None se offline ou não respondeu.
+    pub embed_response_ms: Option<u32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -2433,6 +2445,21 @@ fn max_concurrent_for_profile(profile: HardwareProfile) -> u32 {
 
 // ── Lógica pública (usada também pelos Tauri commands) ────────
 
+/// Pinga /health numa porta do llama-server com timeout curto.
+/// Retorna latência em ms ou None (timeout / servidor offline).
+/// Timeout: 400 ms — suficientemente rápido para não atrasar o poll de status (4 s).
+async fn ping_server_ms(client: &reqwest::Client, port: u16) -> Option<u32> {
+    let url = format!("http://127.0.0.1:{port}/health");
+    let t0  = std::time::Instant::now();
+    match tokio::time::timeout(
+        Duration::from_millis(400),
+        client.get(&url).send(),
+    ).await {
+        Ok(Ok(_)) => Some(t0.elapsed().as_millis() as u32),
+        _         => None,
+    }
+}
+
 pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let active_priority    = *s.0.active_priority.lock().await;
     let active_model_class = s.0.active_model_class.lock().await.clone();
@@ -2448,6 +2475,32 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let preempted_count  = *s.0.preempted_count.lock().await;
     let vram_limit_pct   = *s.0.vram_limit_pct.lock().await;
     let p3_vram_blocked  = s.0.p3_vram_blocked.load(Ordering::Relaxed);
+
+    // Estado dos dois servidores llama.cpp
+    let chat_model = {
+        let g = s.0.llama_proc.lock().await;
+        g.as_ref().map(|p| p.model_name.clone()).unwrap_or_default()
+    };
+    let embed_model_loaded = {
+        let g = s.0.embed_proc.lock().await;
+        g.as_ref().map(|p| p.model_name.clone()).unwrap_or_default()
+    };
+    let chat_online  = !chat_model.is_empty();
+    let embed_online = !embed_model_loaded.is_empty();
+
+    // Pings paralelos — só executados quando o processo está ativo para evitar
+    // 400ms de timeout desnecessário quando ambos os servidores estão offline.
+    let (chat_ms, embed_ms) = tokio::join!(
+        async {
+            if chat_online  { ping_server_ms(&s.0.client, LLAMA_SERVER_PORT).await }
+            else            { None }
+        },
+        async {
+            if embed_online { ping_server_ms(&s.0.client, EMBED_SERVER_PORT).await }
+            else            { None }
+        },
+    );
+
     StatusResponse {
         active_priority,
         active_model_class,
@@ -2467,6 +2520,12 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         preempted_count,
         vram_limit_pct,
         p3_vram_blocked,
+        chat_server_online: chat_online,
+        chat_server_model:  chat_model,
+        chat_response_ms:   chat_ms,
+        embed_server_online: embed_online,
+        embed_server_model:  embed_model_loaded,
+        embed_response_ms:   embed_ms,
     }
 }
 
@@ -5268,5 +5327,120 @@ mod tests {
 
         assert!(!state.embed_proc_active().await,
             "modelo ausente do registry → nenhum processo deve ser criado");
+    }
+
+    // ── collect_status — campos de servidor ───────────────────────────────────
+
+    #[tokio::test]
+    async fn collect_status_chat_offline_when_no_proc() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Nenhum processo ativo
+        let s = collect_status(&state).await;
+        assert!(!s.chat_server_online, "sem llama_proc → chat_server_online deve ser false");
+        assert!(s.chat_server_model.is_empty(), "sem proc → chat_server_model deve ser vazio");
+        assert!(s.chat_response_ms.is_none(), "sem proc → chat_response_ms deve ser None");
+    }
+
+    #[tokio::test]
+    async fn collect_status_embed_offline_when_no_proc() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        let s = collect_status(&state).await;
+        assert!(!s.embed_server_online, "sem embed_proc → embed_server_online deve ser false");
+        assert!(s.embed_server_model.is_empty(), "sem proc → embed_server_model deve ser vazio");
+        assert!(s.embed_response_ms.is_none(), "sem proc → embed_response_ms deve ser None");
+    }
+
+    #[tokio::test]
+    async fn collect_status_chat_online_model_reflects_proc() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Injeta processo dummy: o ping vai falhar (nenhum servidor real),
+        // mas chat_server_online e chat_server_model devem refletir o proc.
+        #[cfg(unix)]
+        let child = tokio::process::Command::new("sleep")
+            .arg("600")
+            .spawn()
+            .expect("sleep disponível em Unix");
+        #[cfg(windows)]
+        let child = tokio::process::Command::new("cmd")
+            .args(["/C", "timeout", "/T", "600", "/NOBREAK"])
+            .spawn()
+            .expect("cmd disponível no Windows");
+
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "qwen2.5-7b".to_string(),
+        });
+
+        let s = collect_status(&state).await;
+        assert!(s.chat_server_online, "llama_proc Some → chat_server_online deve ser true");
+        assert_eq!(s.chat_server_model, "qwen2.5-7b");
+        // response_ms = None porque o sleep/cmd não serve /health
+        assert!(s.chat_response_ms.is_none(),
+            "processo dummy sem servidor HTTP → chat_response_ms deve ser None");
+
+        state.kill_llama_proc().await;
+    }
+
+    #[tokio::test]
+    async fn collect_status_embed_online_model_reflects_proc() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        #[cfg(unix)]
+        let child = tokio::process::Command::new("sleep")
+            .arg("600")
+            .spawn()
+            .expect("sleep disponível em Unix");
+        #[cfg(windows)]
+        let child = tokio::process::Command::new("cmd")
+            .args(["/C", "timeout", "/T", "600", "/NOBREAK"])
+            .spawn()
+            .expect("cmd disponível no Windows");
+
+        *state.0.embed_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "bge-m3".to_string(),
+        });
+
+        let s = collect_status(&state).await;
+        assert!(s.embed_server_online, "embed_proc Some → embed_server_online deve ser true");
+        assert_eq!(s.embed_server_model, "bge-m3");
+        assert!(s.embed_response_ms.is_none(),
+            "processo dummy sem servidor HTTP → embed_response_ms deve ser None");
+
+        state.kill_embed_proc().await;
+    }
+
+    #[tokio::test]
+    async fn collect_status_both_servers_reported_independently() {
+        // Verifica que chat e embed têm campos independentes — um online, outro offline.
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        #[cfg(unix)]
+        let chat_child = tokio::process::Command::new("sleep").arg("600").spawn().unwrap();
+        #[cfg(windows)]
+        let chat_child = tokio::process::Command::new("cmd")
+            .args(["/C", "timeout", "/T", "600", "/NOBREAK"]).spawn().unwrap();
+
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child: chat_child,
+            model_name: "phi3.5".to_string(),
+        });
+        // embed_proc permanece None
+
+        let s = collect_status(&state).await;
+        assert!(s.chat_server_online,   "chat_server_online deve ser true");
+        assert!(!s.embed_server_online, "embed_server_online deve ser false (proc ausente)");
+        assert_eq!(s.chat_server_model, "phi3.5");
+        assert!(s.embed_server_model.is_empty());
+
+        state.kill_llama_proc().await;
     }
 }

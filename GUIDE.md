@@ -257,7 +257,8 @@ O diretório `sync_root` é sincronizado entre as máquinas via Syncthing. Os da
 | 5175 | OGMA — Electron dev | Apenas em modo de desenvolvimento |
 | 7071 | AKASHA — FastAPI | Sempre ativo quando o AKASHA está rodando |
 | 7072 | LOGOS — proxy LLM | HUB gerencia; fila P1/P2/P3 |
-| 8081 | llama-server (interno) | Gerenciado pelo LOGOS — não acessível diretamente pelos apps |
+| 8081 | llama-server chat (interno) | Gerenciado pelo LOGOS — servidor de chat/completions |
+| 8082 | llama-server embed (interno) | Gerenciado pelo LOGOS — servidor de embeddings (`--embeddings --pooling mean`) |
 | 8384 | Syncthing (interface web) | Interface de administração do Syncthing |
 | 8965 | KOSMOS — HTTP interno | Comunicação interna entre KOSMOS e AKASHA |
 
@@ -459,23 +460,49 @@ O backend de inferência LLM do ecossistema. **Substitui o Ollama** — todo o c
 
 > 📖 Instruções completas de compilação e uso estão na Seção 8 e no `README.md`. Aqui está o resumo rápido para verificar se está funcional.
 
-**Verificar se está rodando (gerenciado pelo LOGOS em :8081):**
-```bash
-curl http://localhost:8081/health
-# Resposta esperada: {"status":"ok"}
+**Topologia de dois servidores:**
+O LOGOS gerencia duas instâncias separadas do llama-server:
+- **Servidor de chat** (`:8081`) — carrega o modelo LLM principal; responde `/v1/chat/completions`, `/v1/models`
+- **Servidor de embedding** (`:8082`) — carrega o modelo de embedding (ex: `bge-m3`); flags `--embeddings --pooling mean`; responde `/v1/embeddings`
 
-curl http://localhost:8081/v1/models
-# Resposta esperada: {"data": [...]}
+O proxy LOGOS (`:7072`) roteia automaticamente: `/v1/embeddings` → 8082; todo o resto → 8081.
+Configurar o modelo de embedding em `ecosystem.json` no campo `logos.embed_model` (ex: `"bge-m3-q4_k_m.gguf"`).
+
+**Verificar se estão rodando (gerenciados pelo LOGOS):**
+```bash
+curl http://localhost:8081/health   # servidor de chat
+curl http://localhost:8082/health   # servidor de embedding
+# Resposta esperada: {"status":"ok"}
 ```
 
 **Iniciar manualmente para testes (CachyOS, com ROCm):**
 ```bash
+# Chat server
 HSA_OVERRIDE_GFX_VERSION=10.3.0 \
   ./llama-server \
   --model ~/models/qwen2.5-7b-q4_k_m.gguf \
   --host 127.0.0.1 --port 8081 \
   --n-gpu-layers 999
+
+# Embed server
+HSA_OVERRIDE_GFX_VERSION=10.3.0 \
+  ./llama-server \
+  --model ~/models/bge-m3-q4_k_m.gguf \
+  --host 127.0.0.1 --port 8082 \
+  --embeddings --pooling mean \
+  --n-gpu-layers 999
 ```
+
+**`StatusResponse` — campos de status de servidor (expostos ao frontend):**
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `chat_server_online` | `bool` | Processo llama-server de chat (8081) ativo |
+| `chat_server_model` | `String` | Modelo carregado no chat server ("" se offline) |
+| `chat_response_ms` | `Option<u32>` | Latência do último `/health` no chat server |
+| `embed_server_online` | `bool` | Processo embed-server (8082) ativo |
+| `embed_server_model` | `String` | Modelo carregado no embed server ("" se offline) |
+| `embed_response_ms` | `Option<u32>` | Latência do último `/health` no embed server |
 
 **Arquitetura de resiliência do LOGOS (`logos.rs`):**
 

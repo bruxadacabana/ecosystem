@@ -155,6 +155,18 @@ export interface LogosStatus {
   vram_limit_pct:     number
   /** True quando o watchdog de VRAM bloqueou P3 (VRAM > limit%). Retoma automaticamente em <70%. */
   p3_vram_blocked:    boolean
+  /** True se o processo llama-server de chat (porta 8081) está ativo. */
+  chat_server_online:  boolean
+  /** Modelo carregado no servidor de chat ("" se offline). */
+  chat_server_model:   string
+  /** Latência do último /health no servidor de chat (ms); null se offline ou não respondeu. */
+  chat_response_ms:    number | null
+  /** True se o processo embed-server (porta 8082) está ativo. */
+  embed_server_online: boolean
+  /** Modelo carregado no servidor de embedding ("" se offline). */
+  embed_server_model:  string
+  /** Latência do último /health no servidor de embedding (ms); null se offline ou não respondeu. */
+  embed_response_ms:   number | null
 }
 
 export interface ModelInfo {

@@ -7223,7 +7223,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **`ecosystem.json` — campo `logos.embed_model`** — adicionar ao schema: `logos.embed_model: String` (nome do GGUF de embedding), `logos.embed_port: u16` (default 8082). Atualizar `apply_sync_root` e funções de leitura de config para incluir esses campos. O `ecosystem_client.py` continua apontando para a porta 7072 do LOGOS proxy — nenhuma mudança nas apps.
 
-- [ ] **`views/LogosView.tsx` — status de ambas as instâncias** — exibir status separado para "Servidor LLM (chat)" e "Servidor de Embedding": dot colorido independente, modelo carregado, porta, tempo de resposta. Manter o botão "Ligar/Desligar IA" controlando ambos simultaneamente.
+- [x] **`views/LogosView.tsx` — status de ambas as instâncias** — exibir status separado para "Servidor LLM (chat)" e "Servidor de Embedding": dot colorido independente, modelo carregado, porta, tempo de resposta. Manter o botão "Ligar/Desligar IA" controlando ambos simultaneamente.
 
 - [ ] **Logging detalhado — regra obrigatória para todo o llama.cpp** — todo ponto de interação com llama.cpp deve gerar log estruturado com: timestamp ISO, operação (spawn / request / response / error / retry), porta (8081 ou 8082), modelo, duração em ms, código HTTP ou tipo de erro. Logs escritos em arquivo rotativo (`logos_chat.log`, `logos_embed.log`) acessíveis via `GET /logs` ou via painel do SyncView. Nunca logar apenas "erro" sem contexto — incluir payload resumido e stack trace quando disponível.
 

@@ -232,6 +232,13 @@ export function LogosView() {
   const maxConcurrent      = hwProfile === 'main_pc' ? 2 : 1
   const p3VramBlocked      = status?.p3_vram_blocked ?? false
 
+  const chatOnline      = status?.chat_server_online  ?? false
+  const chatModel       = status?.chat_server_model   ?? ''
+  const chatMs          = status?.chat_response_ms    ?? null
+  const embedOnline     = status?.embed_server_online ?? false
+  const embedModel      = status?.embed_server_model  ?? ''
+  const embedMs         = status?.embed_response_ms   ?? null
+
   let vramColor = 'var(--accent-green)'
   if (vramPct !== null) {
     if (vramPct > 0.85) vramColor = 'var(--ribbon)'
@@ -435,6 +442,27 @@ export function LogosView() {
               ? `${hwDisplay} · ${maxConcurrent === 2 ? 'até 2 modelos leves (≤3B) simultâneos' : '1 modelo por vez'}`
               : '—'}
         </Note>
+      </section>
+
+      {/* ── Servidores llama.cpp ─────────────────────── */}
+      <section>
+        <Label>Servidores</Label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <ServerRow
+            label="Servidor LLM (chat)"
+            port={8081}
+            online={chatOnline}
+            model={chatModel}
+            responseMs={chatMs}
+          />
+          <ServerRow
+            label="Servidor de Embedding"
+            port={8082}
+            online={embedOnline}
+            model={embedModel}
+            responseMs={embedMs}
+          />
+        </div>
       </section>
 
       {/* ── CPU / RAM ─────────────────────────────────── */}
@@ -1015,5 +1043,88 @@ function Note({ children }: { children: React.ReactNode }) {
     }}>
       {children}
     </p>
+  )
+}
+
+function ServerRow({
+  label, port, online, model, responseMs,
+}: {
+  label: string
+  port: number
+  online: boolean
+  model: string
+  responseMs: number | null
+}) {
+  const dotColor = online ? 'var(--accent-green)' : 'var(--rule)'
+  const statusText = online
+    ? (model || '(carregando…)')
+    : 'offline'
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '6px 12px',
+      border: `1px solid ${online ? 'var(--accent-green)20' : 'var(--rule)'}`,
+      borderRadius: 'var(--radius)',
+      background: online ? 'var(--accent-green)06' : 'transparent',
+      transition: 'all 200ms ease',
+    }}>
+      {/* Status dot */}
+      <span
+        title={online ? `Online — porta ${port}` : `Offline — porta ${port}`}
+        style={{
+          width: 7, height: 7, borderRadius: '50%',
+          background: dotColor,
+          boxShadow: online ? `0 0 5px ${dotColor}` : 'none',
+          flexShrink: 0,
+          transition: 'all 200ms ease',
+        }}
+      />
+      {/* Label */}
+      <span style={{
+        fontFamily: 'var(--font-mono)', fontSize: 10,
+        color: 'var(--ink-ghost)', minWidth: 160,
+      }}>
+        {label}
+      </span>
+      {/* Modelo ou "offline" */}
+      <span style={{
+        flex: 1,
+        fontFamily: 'var(--font-mono)', fontSize: 11,
+        color: online ? 'var(--ink)' : 'var(--ink-ghost)',
+        opacity: online ? 1 : 0.5,
+      }}>
+        {statusText}
+      </span>
+      {/* Porta */}
+      <span style={{
+        fontFamily: 'var(--font-mono)', fontSize: 9,
+        color: 'var(--ink-ghost)', opacity: 0.5,
+        padding: '1px 6px',
+        border: '1px solid var(--rule)',
+        borderRadius: 4,
+      }}>
+        :{port}
+      </span>
+      {/* Latência */}
+      {responseMs !== null && (
+        <span
+          title="Latência do último /health"
+          style={{
+            fontFamily: 'var(--font-mono)', fontSize: 9,
+            color: responseMs < 50
+              ? 'var(--accent-green)'
+              : responseMs < 200
+                ? 'var(--accent)'
+                : 'var(--ribbon)',
+            minWidth: 40, textAlign: 'right',
+          }}
+        >
+          {responseMs}ms
+        </span>
+      )}
+    </div>
   )
 }
