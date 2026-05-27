@@ -668,7 +668,7 @@ Causa terciária: `ensure_embed_server_started` só logava `log::warn!` ao falha
 
 ---
 
-### BUG-009 · [OPEN] · embed-server em loop de reinicialização — bge-m3-Q4_K_M.gguf corrompido (download incompleto)
+### BUG-009 · [FIXED] · embed-server em loop de reinicialização — bge-m3-Q4_K_M.gguf corrompido (download incompleto)
 
 #### Identificação
 - **Data:** 2026-05-26
