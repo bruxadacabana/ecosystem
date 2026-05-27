@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import * as cmd from '../lib/tauri'
-import type { LogosStatus, ModelInfo, ModelEntry, ModelAssignment, RecommendedModel, PullProgress, EmbedCompatWarning } from '../types'
+import type { LogosStatus, ModelInfo, ModelEntry, ModelAssignment, RecommendedModel, PullProgress, EmbedCompatWarning, ModelCorruptedEvent } from '../types'
 import { FinetunePanel } from '../components/FinetunePanel'
 
 const PROFILES = [
@@ -47,6 +47,8 @@ export function LogosView() {
   const [cancelledPulls, setCancelledPulls] = useState<Set<string>>(new Set())
   const [deleting,       setDeleting]       = useState<string | null>(null)
   const [pullErrors,     setPullErrors]     = useState<Map<string, string>>(new Map())
+  const [corruptedModels, setCorruptedModels] = useState<ModelCorruptedEvent[]>([])
+  const [repairing,       setRepairing]       = useState<Set<string>>(new Set())
   const [assignCollapsed, setAssignCollapsed] = useState(false)
 
   const fetchStatus = useCallback(() => {
@@ -120,6 +122,20 @@ export function LogosView() {
     }).then(fn => { unlisten = fn })
     return () => { unlisten?.() }
   }, [fetchModels])
+
+  // Escuta modelos corrompidos/incompletos detectados pelo LOGOS
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    listen<ModelCorruptedEvent>('logos-model-corrupted', ev => {
+      const e = ev.payload
+      setCorruptedModels(prev => {
+        // Evita duplicatas — mesmo model_name substitui entry anterior
+        const filtered = prev.filter(c => c.model_name !== e.model_name)
+        return [...filtered, e]
+      })
+    }).then(fn => { unlisten = fn })
+    return () => { unlisten?.() }
+  }, [])
 
   async function handleCpuThreads(n: number) {
     setCpuThreads(n)
@@ -223,6 +239,22 @@ export function LogosView() {
     }
   }
 
+  async function handleRepairModel(modelName: string) {
+    setRepairing(s => new Set(s).add(modelName))
+    // Passo 1: remove arquivo corrompido do disco (mantém entry no registry)
+    const repairResult = await cmd.logosRepairModel(modelName)
+    if (!repairResult.ok) {
+      setRepairing(s => { const n = new Set(s); n.delete(modelName); return n })
+      window.alert(`Erro ao preparar reparo: ${repairResult.error?.message ?? 'erro desconhecido'}`)
+      return
+    }
+    // Remove da lista de corrompidos antes de iniciar download
+    setCorruptedModels(prev => prev.filter(c => c.model_name !== modelName))
+    // Passo 2: re-baixa usando o mesmo fluxo de pull (mostra progresso)
+    await handlePullModel(modelName)
+    setRepairing(s => { const n = new Set(s); n.delete(modelName); return n })
+  }
+
   async function handleUnload(name: string) {
     setUnloading(name)
     await cmd.logosUnloadModel(name)
@@ -272,6 +304,89 @@ export function LogosView() {
 
   return (
     <div style={{ flex: 1, padding: 36, display: 'flex', flexDirection: 'column', gap: 32, overflowY: 'auto' }}>
+
+      {/* ── Banners: modelos corrompidos / download incompleto ──────────────── */}
+      {corruptedModels.map(c => {
+        const isRepairing = repairing.has(c.model_name)
+        const isPulling   = pulling.has(c.model_name)
+        const progress    = pullProgress.get(c.model_name)
+        const reasonLabel = c.reason === 'incomplete_download'
+          ? 'download incompleto'
+          : c.reason === 'file_missing'
+          ? 'arquivo ausente'
+          : 'magic bytes inválidos'
+        return (
+          <div key={c.model_name} style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            padding: '12px 16px',
+            border: '1px solid var(--ribbon)',
+            borderRadius: 'var(--radius)',
+            background: 'color-mix(in srgb, var(--ribbon) 10%, var(--surface))',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: 'var(--ribbon)', fontSize: 15 }}>⚠</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--ribbon)' }}>
+                  {c.model_type === 'embed' ? 'Embedding' : 'Chat'} — <strong>{c.model_name}</strong>
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--ink-ghost)', fontFamily: 'var(--font-mono)' }}>
+                  {reasonLabel}
+                </span>
+              </div>
+              {!isRepairing && !isPulling && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => handleRepairModel(c.model_name)}
+                    style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 11,
+                      background: 'var(--ribbon)', color: '#fff',
+                      border: 'none', borderRadius: 'var(--radius)',
+                      padding: '4px 12px', cursor: 'pointer',
+                    }}
+                  >
+                    Baixar novamente
+                  </button>
+                  <button
+                    onClick={() => setCorruptedModels(prev => prev.filter(x => x.model_name !== c.model_name))}
+                    style={{
+                      fontFamily: 'var(--font-mono)', fontSize: 11,
+                      background: 'transparent', color: 'var(--ink-ghost)',
+                      border: '1px solid var(--rule)', borderRadius: 'var(--radius)',
+                      padding: '4px 10px', cursor: 'pointer',
+                    }}
+                  >
+                    Dispensar
+                  </button>
+                </div>
+              )}
+              {(isRepairing || isPulling) && (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-ghost)' }}>
+                  {isRepairing && !isPulling ? 'Removendo arquivo…' : 'Baixando…'}
+                </span>
+              )}
+            </div>
+            {isPulling && progress && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ height: 4, background: 'var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: progress.total ? `${Math.round((progress.completed ?? 0) / progress.total * 100)}%` : '0%',
+                    background: 'var(--ribbon)',
+                    transition: 'width 0.3s',
+                  }} />
+                </div>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)' }}>
+                  {progress.total
+                    ? `${Math.round((progress.completed ?? 0) / 1_048_576)} MB / ${Math.round(progress.total / 1_048_576)} MB`
+                    : progress.status}
+                </span>
+              </div>
+            )}
+          </div>
+        )
+      })}
 
       {/* ── Badge: Modo Sobrevivência ──────────────────── */}
       {isSurvival && (

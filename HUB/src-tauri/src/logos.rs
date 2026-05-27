@@ -483,6 +483,41 @@ impl LogosState {
         }
     }
 
+    /// Emite `logos-model-corrupted` para o frontend, informando que um modelo
+    /// está corrompido ou com download incompleto e permite oferecer reparo.
+    ///
+    /// `reason`: "file_missing" | "incomplete_download" | "invalid_magic"
+    pub(crate) async fn emit_model_corrupted(
+        &self,
+        model_name: &str,
+        model_type: &str,
+        reason:     &str,
+        repo_id:    &str,
+        filename:   &str,
+    ) {
+        #[derive(serde::Serialize, Clone)]
+        struct ModelCorruptedEvent {
+            model_name: String,
+            model_type: String,
+            reason:     String,
+            repo_id:    String,
+            filename:   String,
+        }
+        log::error!(
+            "LOGOS: modelo '{}' ({}) corrompido — reason={} repo={} file={}",
+            model_name, model_type, reason, repo_id, filename
+        );
+        if let Some(handle) = self.0.app_handle.lock().await.as_ref() {
+            let _ = handle.emit("logos-model-corrupted", ModelCorruptedEvent {
+                model_name: model_name.to_string(),
+                model_type: model_type.to_string(),
+                reason:     reason.to_string(),
+                repo_id:    repo_id.to_string(),
+                filename:   filename.to_string(),
+            });
+        }
+    }
+
     pub fn new(llama_server_url: impl Into<String>) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(300))
@@ -859,6 +894,77 @@ pub struct DownloadProgress {
     pub speed_mbps:       f32,
     pub done:             bool,
     pub error:            Option<String>,
+}
+
+// ── Validação de arquivos GGUF ────────────────────────────────────────────────
+
+/// Resultado da validação de integridade de um arquivo GGUF antes de carregá-lo.
+#[derive(Debug, PartialEq)]
+pub(crate) enum GgufValidation {
+    Ok,
+    /// Arquivo não existe no caminho esperado.
+    FileMissing,
+    /// Download foi interrompido — arquivo menor que o esperado pelo registry.
+    IncompleteDownload { actual_bytes: u64, expected_bytes: u64 },
+    /// Primeiros 4 bytes não são "GGUF" — arquivo corrompido ou tipo errado.
+    InvalidMagic { actual_magic: [u8; 4] },
+}
+
+/// Valida um arquivo GGUF antes de passá-lo ao llama-server.
+///
+/// Verifica em ordem:
+/// 1. Arquivo existe
+/// 2. Tamanho ≥ `expected_bytes` (detecção de download incompleto)
+/// 3. Primeiros 4 bytes == b"GGUF" (magic number do formato)
+pub(crate) fn validate_gguf_file(
+    path:           &std::path::Path,
+    expected_bytes: Option<u64>,
+) -> GgufValidation {
+    use std::io::Read as _;
+
+    let metadata = match std::fs::metadata(path) {
+        Ok(m)  => m,
+        Err(_) => return GgufValidation::FileMissing,
+    };
+    let actual_bytes = metadata.len();
+
+    if let Some(expected) = expected_bytes {
+        if actual_bytes < expected {
+            return GgufValidation::IncompleteDownload { actual_bytes, expected_bytes: expected };
+        }
+    }
+
+    let mut f = match std::fs::File::open(path) {
+        Ok(f)  => f,
+        Err(_) => return GgufValidation::FileMissing,
+    };
+    let mut magic = [0u8; 4];
+    if f.read_exact(&mut magic).is_err() {
+        return GgufValidation::IncompleteDownload {
+            actual_bytes,
+            expected_bytes: expected_bytes.unwrap_or(4),
+        };
+    }
+    if &magic != b"GGUF" {
+        return GgufValidation::InvalidMagic { actual_magic: magic };
+    }
+
+    GgufValidation::Ok
+}
+
+/// Busca a entry completa do registry para um nome de modelo (sync).
+/// Retorna None se o registry não existir ou o modelo não estiver registrado.
+pub(crate) fn find_model_registry_entry(
+    model_name: &str,
+    models_dir: &std::path::Path,
+) -> Option<ModelRegistryEntry> {
+    let text = std::fs::read_to_string(models_dir.join("registry.json")).ok()?;
+    let entries: Vec<ModelRegistryEntry> = serde_json::from_str(&text).ok()?;
+    entries.into_iter().find(|e| {
+        e.name == model_name
+            || e.filename == model_name
+            || e.filename.trim_end_matches(".gguf") == model_name
+    })
 }
 
 /// Entrada no registry local logos/models/registry.json
@@ -1301,6 +1407,38 @@ async fn wait_llama_ready(port: u16, client: &Client, timeout_secs: u64) -> bool
     }
 }
 
+/// Igual a `wait_llama_ready` mas verifica a cada iteração se o processo filho
+/// já saiu — retorna false imediatamente ao detectar saída, sem aguardar o timeout.
+///
+/// Use quando o processo pode falhar rápido (modelo corrompido, OOM) para evitar
+/// os 90 segundos de espera de `wait_llama_ready`.
+async fn wait_llama_ready_checking_child(
+    port:         u16,
+    client:       &Client,
+    timeout_secs: u64,
+    child:        &mut tokio::process::Child,
+) -> bool {
+    let url      = format!("http://127.0.0.1:{port}/health");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout_secs);
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            log::warn!("LOGOS wait_ready: timeout de {timeout_secs}s na porta {port}");
+            return false;
+        }
+        // Saída precoce do processo — não tem sentido aguardar HTTP de processo morto
+        if let Ok(Some(status)) = child.try_wait() {
+            log::warn!("LOGOS wait_ready: processo na porta {port} saiu antes de ficar pronto (status={status:?})");
+            return false;
+        }
+        if let Ok(resp) = client.get(&url).timeout(Duration::from_secs(2)).send().await {
+            if resp.status().is_success() {
+                return true;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
 /// Garante que o llama-server está rodando com o modelo solicitado.
 /// Para o processo atual e reinicia com o novo modelo se necessário.
 /// Deve ser chamado enquanto o semáforo de concorrência está adquirido.
@@ -1336,9 +1474,43 @@ pub(crate) async fn ensure_llama_model_loaded(
              Faça download via HUB ou execute 'ollama pull {model_name}'."
         ))?;
 
-    // Lê o registry uma vez — usado para mmproj e tamanho do modelo (VRAM check)
+    // Lê o registry uma vez — usado para mmproj, tamanho do modelo (VRAM) e validação GGUF
     let registry = read_model_registry(&s.0.models_dir).await;
     let registry_entry = registry.iter().find(|e| e.name == model_name);
+
+    // ── Validação de integridade GGUF antes de tentar iniciar ─────────────────
+    {
+        let expected_bytes = registry_entry.map(|e| e.size_bytes);
+        let (repo_id, filename) = registry_entry
+            .map(|e| (e.repo_id.as_str(), e.filename.as_str()))
+            .unwrap_or(("", model_name));
+        match validate_gguf_file(&gguf_path, expected_bytes) {
+            GgufValidation::Ok => {}
+            GgufValidation::FileMissing => {
+                s.emit_model_corrupted(model_name, "chat", "file_missing", repo_id, filename).await;
+                return Err(format!("Modelo '{model_name}': arquivo GGUF não encontrado no disco"));
+            }
+            GgufValidation::IncompleteDownload { actual_bytes, expected_bytes: exp } => {
+                log::error!(
+                    "LOGOS chat: modelo '{model_name}' incompleto — {actual_bytes} de {exp} bytes"
+                );
+                s.emit_model_corrupted(model_name, "chat", "incomplete_download", repo_id, filename).await;
+                return Err(format!(
+                    "Modelo '{model_name}' incompleto: {actual_bytes} de {exp} bytes \
+                     (download interrompido — use reparo no HUB)"
+                ));
+            }
+            GgufValidation::InvalidMagic { actual_magic } => {
+                log::error!(
+                    "LOGOS chat: modelo '{model_name}' com magic bytes inválidos: {actual_magic:?}"
+                );
+                s.emit_model_corrupted(model_name, "chat", "invalid_magic", repo_id, filename).await;
+                return Err(format!(
+                    "Modelo '{model_name}' corrompido: magic bytes inválidos {actual_magic:?}"
+                ));
+            }
+        }
+    }
 
     // Resolve mmproj para modelos multimodais (moondream, LLaVA, etc.)
     let mmproj_path: Option<std::path::PathBuf> = registry_entry
@@ -1368,30 +1540,16 @@ pub(crate) async fn ensure_llama_model_loaded(
         spawn_chat_stderr_reader(stderr, model_name.to_string(), chat_log_path(&s.0.models_dir));
     }
 
-    {
-        let mut guard = s.0.llama_proc.lock().await;
-        *guard = Some(LlamaProcHandle { child, model_name: model_name.to_string() });
-    }
+    // Aguarda servidor pronto; detecção precoce de saída do processo evita 90s de timeout
+    // quando o modelo falha ao carregar (ex: GGUF corrompido pós-validação, OOM, etc.)
+    if !wait_llama_ready_checking_child(LLAMA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut child).await {
+        // Verifica se o processo saiu (OOM em GPU) ou apenas timeout (servidor lento)
+        let proc_exited = child.try_wait().ok().flatten().is_some();
 
-    if !wait_llama_ready(LLAMA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS).await {
-        // Verifica se o processo saiu prematuramente (provável OOM em GPU)
-        let proc_exited = {
-            let mut guard = s.0.llama_proc.lock().await;
-            guard.as_mut()
-                .and_then(|p| p.child.try_wait().ok())
-                .map(|o| o.is_some())
-                .unwrap_or(false)
-        };
+        // Mata o processo e descarta o handle
+        let _ = child.kill().await;
 
-        // Mata o processo (se ainda vivo) e limpa o handle
-        {
-            let mut guard = s.0.llama_proc.lock().await;
-            if let Some(mut p) = guard.take() {
-                let _ = p.child.kill();
-            }
-        }
-
-        // OOM fallback: se o processo saiu sozinho E estava usando GPU, tenta CPU only
+        // OOM fallback: processo saiu sozinho em modo GPU → retenta com CPU only
         if proc_exited && n_gpu != 0 {
             log::warn!(
                 "LOGOS llama-server: '{model_name}' saiu (provável OOM de GPU) — \
@@ -1404,18 +1562,19 @@ pub(crate) async fn ensure_llama_model_loaded(
             if let Some(stderr) = cpu_child.stderr.take() {
                 spawn_chat_stderr_reader(stderr, format!("{model_name}[cpu]"), chat_log_path(&s.0.models_dir));
             }
-            {
-                let mut guard = s.0.llama_proc.lock().await;
-                *guard = Some(LlamaProcHandle { child: cpu_child, model_name: model_name.to_string() });
-            }
-            if !wait_llama_ready(LLAMA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS).await {
-                let mut guard = s.0.llama_proc.lock().await;
-                if let Some(mut p) = guard.take() { let _ = p.child.kill(); }
+
+            if !wait_llama_ready_checking_child(LLAMA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut cpu_child).await {
+                let _ = cpu_child.kill().await;
                 return Err(format!(
                     "llama-server não ficou pronto em modo CPU — \
                      '{model_name}' pode estar corrompido ou incompatível"
                 ));
             }
+
+            *s.0.llama_proc.lock().await = Some(LlamaProcHandle {
+                child: cpu_child,
+                model_name: model_name.to_string(),
+            });
             log::warn!(
                 "LOGOS llama-server: '{model_name}' carregado em modo CPU only (downgrade de GPU)"
             );
@@ -1428,6 +1587,11 @@ pub(crate) async fn ensure_llama_model_loaded(
         ));
     }
 
+    // Servidor pronto — armazena handle no estado
+    *s.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        child,
+        model_name: model_name.to_string(),
+    });
     log::info!("LOGOS llama-server: '{model_name}' pronto na porta {LLAMA_SERVER_PORT}");
     Ok(())
 }
@@ -2651,16 +2815,10 @@ async fn ensure_embed_server_started(s: &LogosState) {
         return;
     }
 
-    let bin = match s.0.llama_server_bin.as_ref() {
-        Some(b) => b.clone(),
-        None => {
-            log::warn!("LOGOS embed: llama-server não encontrado — embed-server não iniciado");
-            return;
-        }
-    };
-
-    let gguf_path = match resolve_gguf_path(&embed_model, &s.0.models_dir) {
-        Some(p) => p,
+    // Busca a entry completa do registry ANTES do bin check — validação de integridade
+    // deve ocorrer mesmo em ambientes de teste onde não há llama-server disponível.
+    let entry = match find_model_registry_entry(&embed_model, &s.0.models_dir) {
+        Some(e) => e,
         None => {
             let msg = format!(
                 "embed-server não iniciado: modelo '{}' não encontrado no registry. \
@@ -2670,6 +2828,56 @@ async fn ensure_embed_server_started(s: &LogosState) {
             );
             log::warn!("LOGOS embed: {msg}");
             s.emit_alert("warn", &msg).await;
+            return;
+        }
+    };
+
+    let gguf_path = std::path::PathBuf::from(&entry.path);
+
+    // ── Validação de integridade GGUF — ocorre antes de buscar o bin ──────────
+    // Detecta downloads incompletos e arquivos corrompidos antes de tentar spawnar,
+    // evitando o timeout de 90s do wait_llama_ready em arquivos inválidos.
+    match validate_gguf_file(&gguf_path, Some(entry.size_bytes)) {
+        GgufValidation::Ok => {}
+        GgufValidation::FileMissing => {
+            log::error!(
+                "LOGOS embed: arquivo '{}' não encontrado em '{}' — corrompido ou ausente",
+                entry.filename, gguf_path.display()
+            );
+            s.emit_model_corrupted(
+                &embed_model, "embed", "file_missing",
+                &entry.repo_id, &entry.filename,
+            ).await;
+            return;
+        }
+        GgufValidation::IncompleteDownload { actual_bytes, expected_bytes } => {
+            log::error!(
+                "LOGOS embed: arquivo '{}' incompleto — {} de {} bytes (download interrompido)",
+                entry.filename, actual_bytes, expected_bytes
+            );
+            s.emit_model_corrupted(
+                &embed_model, "embed", "incomplete_download",
+                &entry.repo_id, &entry.filename,
+            ).await;
+            return;
+        }
+        GgufValidation::InvalidMagic { actual_magic } => {
+            log::error!(
+                "LOGOS embed: arquivo '{}' com magic bytes inválidos ({:?}) — não é um GGUF válido",
+                entry.filename, actual_magic
+            );
+            s.emit_model_corrupted(
+                &embed_model, "embed", "invalid_magic",
+                &entry.repo_id, &entry.filename,
+            ).await;
+            return;
+        }
+    }
+
+    let bin = match s.0.llama_server_bin.as_ref() {
+        Some(b) => b.clone(),
+        None => {
+            log::warn!("LOGOS embed: llama-server não encontrado — embed-server não iniciado");
             return;
         }
     };
@@ -2684,28 +2892,34 @@ async fn ensure_embed_server_started(s: &LogosState) {
 
     match spawn_embed_server_proc(&bin, &gguf_path, n_gpu, EMBED_SERVER_PORT).await {
         Ok(mut child) => {
+            // Captura stderr antes de aguardar — reader roda em background
             if let Some(stderr) = child.stderr.take() {
                 spawn_embed_stderr_reader(stderr, embed_model.clone(), log_path);
             }
-            *s.0.embed_proc.lock().await = Some(LlamaProcHandle {
-                child,
-                model_name: embed_model.clone(),
-            });
 
-            if wait_llama_ready(EMBED_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS).await {
+            // Aguarda servidor pronto; detecção precoce de saída do processo evita
+            // 90s de timeout quando o modelo falha ao carregar (ex: GGUF corrompido)
+            let ready = wait_llama_ready_checking_child(
+                EMBED_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut child,
+            ).await;
+
+            if ready {
+                *s.0.embed_proc.lock().await = Some(LlamaProcHandle {
+                    child,
+                    model_name: embed_model.clone(),
+                });
                 log::info!(
                     "LOGOS embed-server: '{}' pronto na porta {}",
                     embed_model, EMBED_SERVER_PORT
                 );
             } else {
+                // Processo morreu ou timeout — encerra e loga
+                let _ = child.kill().await;
                 log::error!(
-                    "LOGOS embed-server: '{}' não ficou pronto em {}s — abortando",
+                    "LOGOS embed-server: '{}' não ficou pronto — abortando \
+                     (processo saiu ou timeout de {}s)",
                     embed_model, LLAMA_SERVER_READY_TIMEOUT_SECS
                 );
-                let mut guard = s.0.embed_proc.lock().await;
-                if let Some(mut p) = guard.take() {
-                    let _ = p.child.kill();
-                }
             }
         }
         Err(e) => {
@@ -5829,5 +6043,370 @@ mod tests {
         assert_eq!(lines.len(), 3, "deve retornar exatamente 3 linhas");
         assert_eq!(lines[2], "linha 10", "última linha deve ser 'linha 10'");
         assert_eq!(lines[0], "linha 8",  "primeira linha do tail deve ser 'linha 8'");
+    }
+
+    // ── validate_gguf_file ────────────────────────────────────────────────────
+
+    #[test]
+    fn validate_gguf_file_ok_with_correct_magic_and_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("model.gguf");
+        // 8 bytes: magic "GGUF" + padding
+        std::fs::write(&path, b"GGUF\x00\x00\x00\x00").unwrap();
+        assert_eq!(
+            validate_gguf_file(&path, Some(8)),
+            GgufValidation::Ok,
+            "arquivo com magic GGUF e tamanho correto deve ser Ok"
+        );
+    }
+
+    #[test]
+    fn validate_gguf_file_ok_without_expected_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("model.gguf");
+        std::fs::write(&path, b"GGUF\x00\x00\x00\x00").unwrap();
+        // Sem expected_size: só verifica magic
+        assert_eq!(
+            validate_gguf_file(&path, None),
+            GgufValidation::Ok,
+            "sem expected_size, apenas magic é verificado"
+        );
+    }
+
+    #[test]
+    fn validate_gguf_file_missing_returns_file_missing() {
+        let path = std::path::Path::new("/tmp/nonexistent_gguf_test_file.gguf");
+        assert_eq!(
+            validate_gguf_file(path, None),
+            GgufValidation::FileMissing,
+            "arquivo inexistente deve retornar FileMissing"
+        );
+    }
+
+    #[test]
+    fn validate_gguf_file_too_small_returns_incomplete_download() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("partial.gguf");
+        std::fs::write(&path, b"GGUF\x00").unwrap(); // 5 bytes
+        let result = validate_gguf_file(&path, Some(417_000_000));
+        assert!(
+            matches!(result, GgufValidation::IncompleteDownload { actual_bytes: 5, expected_bytes: 417_000_000 }),
+            "arquivo menor que o esperado deve retornar IncompleteDownload"
+        );
+    }
+
+    #[test]
+    fn validate_gguf_file_bad_magic_returns_invalid_magic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.gguf");
+        std::fs::write(&path, b"XXXX\x00\x00\x00\x00").unwrap();
+        let result = validate_gguf_file(&path, Some(8));
+        assert!(
+            matches!(result, GgufValidation::InvalidMagic { actual_magic: [b'X', b'X', b'X', b'X'] }),
+            "arquivo com magic errado deve retornar InvalidMagic; obtido: {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_gguf_file_empty_file_returns_incomplete() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.gguf");
+        std::fs::write(&path, b"").unwrap();
+        // Arquivo vazio: tamanho 0 < esperado, ou não tem 4 bytes para ler
+        let result = validate_gguf_file(&path, Some(100));
+        assert!(
+            matches!(result, GgufValidation::IncompleteDownload { actual_bytes: 0, .. }),
+            "arquivo vazio deve retornar IncompleteDownload; obtido: {result:?}"
+        );
+    }
+
+    #[test]
+    fn validate_gguf_file_exact_size_match_is_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("exact.gguf");
+        let data = b"GGUF\x01\x02\x03\x04";
+        std::fs::write(&path, data).unwrap();
+        // Tamanho exato (8 bytes) deve passar
+        assert_eq!(
+            validate_gguf_file(&path, Some(8)),
+            GgufValidation::Ok,
+            "tamanho exato igual ao esperado deve ser Ok"
+        );
+    }
+
+    #[test]
+    fn validate_gguf_file_larger_than_expected_is_ok() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.gguf");
+        let data = b"GGUF\x01\x02\x03\x04\x05\x06";
+        std::fs::write(&path, data).unwrap();
+        // Arquivo MAIOR que expected_bytes: não é erro (tamanho do registry pode ser arredondado)
+        assert_eq!(
+            validate_gguf_file(&path, Some(4)),
+            GgufValidation::Ok,
+            "arquivo maior que o esperado não é download incompleto"
+        );
+    }
+
+    // ── find_model_registry_entry ─────────────────────────────────────────────
+
+    #[test]
+    fn find_model_registry_entry_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let registry = vec![serde_json::json!({
+            "name": "bge-m3", "repo_id": "org/bge", "filename": "bge-m3-Q4.gguf",
+            "path": "/models/bge-m3-Q4.gguf", "size_bytes": 100_u64,
+            "sha256": "abc", "downloaded_at": "2026-05-26"
+        })];
+        std::fs::write(dir.path().join("registry.json"), serde_json::to_string(&registry).unwrap()).unwrap();
+        let entry = find_model_registry_entry("bge-m3", dir.path());
+        assert!(entry.is_some(), "deve encontrar por name exato");
+        assert_eq!(entry.unwrap().repo_id, "org/bge");
+    }
+
+    #[test]
+    fn find_model_registry_entry_by_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        let registry = vec![serde_json::json!({
+            "name": "bge-m3", "repo_id": "org/bge", "filename": "bge-m3-Q4.gguf",
+            "path": "/models/bge-m3-Q4.gguf", "size_bytes": 100_u64,
+            "sha256": "abc", "downloaded_at": "2026-05-26"
+        })];
+        std::fs::write(dir.path().join("registry.json"), serde_json::to_string(&registry).unwrap()).unwrap();
+        let entry = find_model_registry_entry("bge-m3-Q4.gguf", dir.path());
+        assert!(entry.is_some(), "deve encontrar por filename");
+    }
+
+    #[test]
+    fn find_model_registry_entry_not_found_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("registry.json"), "[]").unwrap();
+        let entry = find_model_registry_entry("inexistente", dir.path());
+        assert!(entry.is_none(), "registry vazio deve retornar None");
+    }
+
+    #[test]
+    fn find_model_registry_entry_no_registry_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        // registry.json não existe
+        let entry = find_model_registry_entry("bge-m3", dir.path());
+        assert!(entry.is_none(), "sem registry.json deve retornar None");
+    }
+
+    // ── wait_llama_ready_checking_child ───────────────────────────────────────
+
+    #[tokio::test]
+    async fn wait_llama_ready_checking_child_exits_early_when_process_dies() {
+        // Spawna um processo que termina imediatamente
+        #[cfg(unix)]
+        let mut child = tokio::process::Command::new("true").spawn().expect("'true' disponível");
+        #[cfg(windows)]
+        let mut child = tokio::process::Command::new("cmd")
+            .args(["/C", "exit", "0"]).spawn().expect("cmd disponível");
+
+        // Aguarda o processo sair antes de chamar wait_llama_ready_checking_child
+        let _ = child.wait().await;
+
+        let client = reqwest::Client::new();
+        let t0 = std::time::Instant::now();
+        // timeout = 30s, mas processo já morreu → deve retornar em < 2s
+        let ready = wait_llama_ready_checking_child(59983, &client, 30, &mut child).await;
+        let elapsed = t0.elapsed().as_millis();
+
+        assert!(!ready, "processo morto → wait_llama_ready_checking_child deve retornar false");
+        assert!(elapsed < 2_000, "deve retornar rapidamente quando processo morreu; elapsed={elapsed}ms");
+    }
+
+    #[tokio::test]
+    async fn wait_llama_ready_checking_child_times_out_when_no_server() {
+        // Processo vivo (sleep 600) mas sem servidor HTTP na porta
+        #[cfg(unix)]
+        let mut child = tokio::process::Command::new("sleep").arg("600").spawn().expect("sleep disponível");
+        #[cfg(windows)]
+        let mut child = tokio::process::Command::new("cmd")
+            .args(["/C", "timeout", "/T", "600", "/NOBREAK"]).spawn().expect("cmd disponível");
+
+        let client = reqwest::Client::new();
+        let t0 = std::time::Instant::now();
+        // timeout = 2s (pequeno para o teste ser rápido)
+        let ready = wait_llama_ready_checking_child(59984, &client, 2, &mut child).await;
+        let elapsed = t0.elapsed().as_millis();
+
+        assert!(!ready, "sem servidor HTTP → deve retornar false após timeout");
+        assert!(elapsed >= 1_900, "deve aguardar ~2s de timeout; elapsed={elapsed}ms");
+        assert!(elapsed < 4_000,  "não deve ultrapassar muito o timeout; elapsed={elapsed}ms");
+
+        let _ = child.kill().await;
+    }
+
+    // ── ensure_embed_server_started com validação GGUF ────────────────────────
+
+    #[tokio::test]
+    async fn ensure_embed_server_no_spawn_when_gguf_truncated() {
+        let dir   = tempfile::tempdir().unwrap();
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Cria GGUF truncado (32 MB de lixo, sem magic correto)
+        let gguf = dir.path().join("models").join("bge-m3-Q4_K_M.gguf");
+        std::fs::create_dir_all(gguf.parent().unwrap()).unwrap();
+        std::fs::write(&gguf, b"NOTGGUF_TRUNCATED").unwrap();
+
+        // Registry aponta para o arquivo truncado com size_bytes = 417 MB
+        let registry = vec![serde_json::json!({
+            "name":         "bge-m3",
+            "repo_id":      "gpustack/bge-m3-GGUF",
+            "filename":     "bge-m3-Q4_K_M.gguf",
+            "path":         gguf.to_string_lossy(),
+            "size_bytes":   437_778_496_u64,
+            "sha256":       "abc",
+            "downloaded_at":"2026-05-26",
+            "model_type":   "embed"
+        })];
+        std::fs::write(dir.path().join("models").join("registry.json"),
+            serde_json::to_string(&registry).unwrap()).unwrap();
+
+        *state.0.embed_model.lock().await = "bge-m3".to_string();
+        ensure_embed_server_started(&state).await;
+
+        assert!(!state.embed_proc_active().await,
+            "GGUF truncado → nenhum processo deve ser criado");
+    }
+
+    #[tokio::test]
+    async fn ensure_embed_server_no_spawn_when_gguf_has_bad_magic() {
+        let dir   = tempfile::tempdir().unwrap();
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Arquivo com tamanho correto mas magic bytes errados
+        let gguf = dir.path().join("models").join("bge-m3-Q4_K_M.gguf");
+        std::fs::create_dir_all(gguf.parent().unwrap()).unwrap();
+        let fake_data = vec![0xAB_u8; 437_778_496]; // tamanho correto, bytes errados
+        // Escrever 8 bytes apenas (magic errado) — mais rápido nos testes
+        std::fs::write(&gguf, b"INVALID!").unwrap();
+
+        let registry = vec![serde_json::json!({
+            "name":         "bge-m3",
+            "repo_id":      "gpustack/bge-m3-GGUF",
+            "filename":     "bge-m3-Q4_K_M.gguf",
+            "path":         gguf.to_string_lossy(),
+            "size_bytes":   8_u64,
+            "sha256":       "abc",
+            "downloaded_at":"2026-05-26",
+            "model_type":   "embed"
+        })];
+        std::fs::write(dir.path().join("models").join("registry.json"),
+            serde_json::to_string(&registry).unwrap()).unwrap();
+
+        let _ = fake_data; // evitar warning unused
+        *state.0.embed_model.lock().await = "bge-m3".to_string();
+        ensure_embed_server_started(&state).await;
+
+        assert!(!state.embed_proc_active().await,
+            "magic bytes inválidos → nenhum processo deve ser criado");
+    }
+
+    #[tokio::test]
+    async fn ensure_embed_server_no_spawn_when_gguf_missing() {
+        let dir   = tempfile::tempdir().unwrap();
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Registry aponta para arquivo que não existe
+        let gguf_path = dir.path().join("models").join("bge-m3-Q4_K_M.gguf");
+        std::fs::create_dir_all(gguf_path.parent().unwrap()).unwrap();
+
+        let registry = vec![serde_json::json!({
+            "name":         "bge-m3",
+            "repo_id":      "gpustack/bge-m3-GGUF",
+            "filename":     "bge-m3-Q4_K_M.gguf",
+            "path":         gguf_path.to_string_lossy(),
+            "size_bytes":   437_778_496_u64,
+            "sha256":       "abc",
+            "downloaded_at":"2026-05-26",
+            "model_type":   "embed"
+        })];
+        std::fs::write(dir.path().join("models").join("registry.json"),
+            serde_json::to_string(&registry).unwrap()).unwrap();
+
+        *state.0.embed_model.lock().await = "bge-m3".to_string();
+        ensure_embed_server_started(&state).await;
+
+        assert!(!state.embed_proc_active().await,
+            "GGUF ausente → nenhum processo deve ser criado");
+    }
+
+    // ── logos_repair_model — lógica interna ──────────────────────────────────
+
+    #[test]
+    fn logos_repair_model_deletes_file_keeps_registry() {
+        let dir = tempfile::tempdir().unwrap();
+        let models_dir = dir.path().join("models");
+        std::fs::create_dir_all(&models_dir).unwrap();
+
+        let gguf = models_dir.join("bge-m3-Q4_K_M.gguf");
+        std::fs::write(&gguf, b"fake-truncated").unwrap();
+
+        let registry = vec![serde_json::json!({
+            "name":         "bge-m3",
+            "repo_id":      "gpustack/bge-m3-GGUF",
+            "filename":     "bge-m3-Q4_K_M.gguf",
+            "path":         gguf.to_string_lossy(),
+            "size_bytes":   437_778_496_u64,
+            "sha256":       "abc",
+            "downloaded_at":"2026-05-26",
+            "model_type":   "embed"
+        })];
+        let registry_path = models_dir.join("registry.json");
+        std::fs::write(&registry_path, serde_json::to_string(&registry).unwrap()).unwrap();
+
+        // Simula o que logos_repair_model faz internamente
+        let entry = find_model_registry_entry("bge-m3", &models_dir).expect("entry existe");
+        let gguf_to_remove = std::path::PathBuf::from(&entry.path);
+        if gguf_to_remove.exists() {
+            std::fs::remove_file(&gguf_to_remove).unwrap();
+        }
+
+        // Arquivo removido
+        assert!(!gguf.exists(), "GGUF deve ser removido após repair");
+
+        // Registry intacto
+        let text = std::fs::read_to_string(&registry_path).unwrap();
+        let restored: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
+        assert_eq!(restored.len(), 1, "registry deve manter 1 entry após repair");
+        assert_eq!(restored[0]["name"], "bge-m3", "entry deve ser preservada");
+        assert_eq!(restored[0]["repo_id"], "gpustack/bge-m3-GGUF", "repo_id preservado para re-download");
+    }
+
+    #[test]
+    fn logos_repair_model_noop_when_file_already_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let models_dir = dir.path().join("models");
+        std::fs::create_dir_all(&models_dir).unwrap();
+
+        // Arquivo NÃO existe — registry existe
+        let gguf_path = models_dir.join("bge-m3-Q4_K_M.gguf");
+        let registry = vec![serde_json::json!({
+            "name":         "bge-m3",
+            "repo_id":      "gpustack/bge-m3-GGUF",
+            "filename":     "bge-m3-Q4_K_M.gguf",
+            "path":         gguf_path.to_string_lossy(),
+            "size_bytes":   437_778_496_u64,
+            "sha256":       "abc",
+            "downloaded_at":"2026-05-26"
+        })];
+        let registry_path = models_dir.join("registry.json");
+        std::fs::write(&registry_path, serde_json::to_string(&registry).unwrap()).unwrap();
+
+        // Simula lógica: arquivo ausente → apenas loga, não falha
+        let entry = find_model_registry_entry("bge-m3", &models_dir).expect("entry existe");
+        let gguf_to_remove = std::path::PathBuf::from(&entry.path);
+        // Não deve panicar quando o arquivo já não existe
+        if gguf_to_remove.exists() {
+            std::fs::remove_file(&gguf_to_remove).unwrap();
+        }
+
+        // Registry intacto
+        let text = std::fs::read_to_string(&registry_path).unwrap();
+        let restored: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
+        assert_eq!(restored.len(), 1, "registry não deve ser alterado se arquivo já ausente");
     }
 }

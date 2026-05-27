@@ -665,3 +665,63 @@ Causa terciária: `ensure_embed_server_started` só logava `log::warn!` ao falha
 #### Testes de regressão
 - `logos::tests::resolve_gguf_path_finds_bge_m3_by_canonical_name` — registry com `name="bge-m3"` → `resolve_gguf_path("bge-m3")` retorna `Some`
 - `logos::tests::resolve_gguf_path_does_not_find_bge_m3_when_registry_name_has_quantization_suffix` — registry com `name="bge-m3-Q4_K_M"` → `resolve_gguf_path("bge-m3")` retorna `None` (confirma que a busca é por nome exato)
+
+---
+
+### BUG-009 · [OPEN] · embed-server em loop de reinicialização — bge-m3-Q4_K_M.gguf corrompido (download incompleto)
+
+#### Identificação
+- **Data:** 2026-05-26
+- **App(s):** HUB (LOGOS), Mnemosyne
+- **Componente:** `logos/models/bge-m3-Q4_K_M.gguf`, `logos.rs::embed_watchdog`
+- **Commit do fix:** pendente
+- **Descoberta via:** uso-real (Mnemosyne retornou 502 ao tentar indexar, após fix do BUG-008)
+- **Tempo de diagnóstico:** ~5 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS)
+- **OS:** CachyOS
+- **Hardware relevante:** RX 6600 8 GB VRAM
+- **Modo:** dev (cargo tauri dev)
+- **Reproduzível em:** qualquer máquina com o mesmo arquivo truncado
+
+#### Pré-condição
+- BUG-008 corrigido (registry name = "bge-m3", ecosystem.json atualizado)
+- `bge-m3-Q4_K_M.gguf` presente mas com apenas **32 MB** dos **417 MB** esperados (download interrompido)
+
+#### Sintoma
+```
+httpx.HTTPStatusError: Server error '502 Bad Gateway' for url 'http://127.0.0.1:7072/v1/embeddings'
+```
+Log do LOGOS:
+```
+E llama_model_load: error loading model: tensor 'token_embd.weight' data is not within the file bounds, model is corrupted or incomplete
+E srv  llama_server: exiting due to model loading error
+ERROR LOGOS embed-watchdog: embed-server saiu inesperadamente (modelo='bge-m3', status=ExitStatus(unix_wait_status(256)))
+WARN  LOGOS embed-watchdog: tentando reiniciar 'bge-m3'
+[... loop a cada ~10 segundos indefinidamente ...]
+```
+
+#### Causa raiz
+Dois problemas independentes:
+1. **Arquivo GGUF truncado:** o download do `bge-m3-Q4_K_M.gguf` foi interrompido com apenas 32 MB (7,3% do arquivo). O llama-server lê o cabeçalho GGUF com sucesso, mas os dados do tensor `token_embd.weight` ficam fora dos limites do arquivo.
+2. **Watchdog sem circuit breaker:** `embed_watchdog` detecta que o processo morreu e tenta 1 restart via `ensure_embed_server_started`. O servidor reinicia, falha imediatamente pelo mesmo motivo, morre novamente, e o ciclo se repete a cada 10 segundos sem limite de tentativas para falhas permanentes.
+
+#### Impacto
+- Mnemosyne e qualquer app que use `/v1/embeddings` recebe 502 permanentemente
+- CPU e I/O consumidos pelo loop de restart a cada 10 segundos
+
+#### Fix
+**Arquivo corrompido (operação imediata):**
+1. Deletar `logos/models/bge-m3-Q4_K_M.gguf` (32 MB, inválido)
+2. Atualizar `registry.json`: remover ou marcar a entry como inválida
+3. Re-baixar o modelo via downloader do HUB (`logos_download_model`)
+
+**Código — circuit breaker no watchdog (previne loops futuros):**
+- Rastrear `consecutive_fast_fails: u8` no embed watchdog
+- "Fast fail" = servidor sai em < 3 segundos após spawn
+- Após 2 fast fails consecutivos: parar de reiniciar, chamar `emit_alert("error", ...)`, aguardar intervenção manual
+- Reset do contador quando servidor fica ativo por ≥ 30 segundos
+
+#### Testes de regressão
+- `logos::tests::embed_watchdog_stops_after_consecutive_fast_fails` — mock de processo que sai imediatamente → watchdog deve parar após N tentativas e não reiniciar indefinidamente

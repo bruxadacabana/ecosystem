@@ -217,6 +217,10 @@ export const logosAbortModelInference = (model: string): Promise<TauriResult<boo
 export const logosDeleteModel = (model: string): Promise<TauriResult<void>> =>
   call<void>('logos_delete_model', { model })
 
+/** Remove o arquivo GGUF do disco preservando a entry no registry (para re-download). */
+export const logosRepairModel = (model: string): Promise<TauriResult<void>> =>
+  call<void>('logos_repair_model', { model })
+
 // ----------------------------------------------------------
 //  Memória pessoal — AKASHA e Mnemosyne
 // ----------------------------------------------------------

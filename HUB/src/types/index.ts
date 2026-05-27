@@ -235,6 +235,16 @@ export interface EmbedCompatWarning {
   new_dims:  number
 }
 
+export interface ModelCorruptedEvent {
+  model_name: string
+  /** "chat" | "embed" */
+  model_type: string
+  /** "file_missing" | "incomplete_download" | "invalid_magic" */
+  reason:     string
+  repo_id:    string
+  filename:   string
+}
+
 export interface ModelAssignment {
   /** "mnemosyne" | "kosmos" | "akasha" | "embed" */
   app:               string

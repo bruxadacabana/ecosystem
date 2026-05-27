@@ -337,6 +337,48 @@ pub async fn logos_delete_model(
     Ok(())
 }
 
+/// Remove apenas o arquivo GGUF do disco sem tocar no registry.
+/// Usado pelo fluxo de reparo: frontend chama este comando e depois `logos_pull_model`
+/// para re-baixar com progresso visível.
+///
+/// Mantém a entry no registry (com repo_id e filename) para que `logos_pull_model`
+/// possa encontrar onde re-baixar sem precisar de informação extra do usuário.
+#[tauri::command]
+pub async fn logos_repair_model(
+    state: tauri::State<'_, LogosState>,
+    model: String,
+) -> Result<(), String> {
+    use std::path::PathBuf;
+
+    let registry_path = state.models_dir().join("registry.json");
+    let text = std::fs::read_to_string(&registry_path)
+        .map_err(|e| format!("Falha ao ler registry.json: {e}"))?;
+    let entries: Vec<crate::logos::ModelRegistryEntry> = serde_json::from_str(&text)
+        .map_err(|e| format!("registry.json corrompido: {e}"))?;
+
+    let entry = entries
+        .iter()
+        .find(|e| e.name == model || e.filename == model || e.filename.trim_end_matches(".gguf") == model)
+        .ok_or_else(|| format!("Modelo '{model}' não encontrado no registry — não é possível reparar"))?;
+
+    let gguf = PathBuf::from(&entry.path);
+    if gguf.exists() {
+        std::fs::remove_file(&gguf)
+            .map_err(|e| format!("Falha ao remover arquivo GGUF corrompido: {e}"))?;
+        log::info!(
+            "LOGOS repair: arquivo '{}' removido para re-download (registry preservado)",
+            entry.filename
+        );
+    } else {
+        log::info!(
+            "LOGOS repair: arquivo '{}' já ausente — registry preservado para re-download",
+            entry.filename
+        );
+    }
+
+    Ok(())
+}
+
 /// Mapeia nome de modelo para (repo_id, filename) no HuggingFace.
 /// Consulta primeiro o registry LOGOS (modelos já baixados), depois a lista de recomendados.
 async fn find_model_hf_info(
