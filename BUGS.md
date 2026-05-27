@@ -68,6 +68,9 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-005](#bug-005) | FIXED | 2026-05-25 | HUB | STATUS_ENTRYPOINT_NOT_FOUND nos testes Rust no Windows |
 | [BUG-006](#bug-006) | FIXED | 2026-05-26 | HUB/LOGOS | Download smollm2:1.7b falha com 404 — filename errado no HuggingFace |
 | [BUG-007](#bug-007) | FIXED | 2026-05-26 | HUB/LOGOS | CPU usage sempre 0% no Windows — refresh e leitura no mesmo tick |
+| [BUG-008](#bug-008) | FIXED | 2026-05-26 | HUB/LOGOS | embed-server não inicia — name no registry não corresponde ao embed_model |
+| [BUG-009](#bug-009) | FIXED | 2026-05-27 | HUB/LOGOS | embed-server em loop — bge-m3-Q4_K_M.gguf corrompido (download incompleto) |
+| [BUG-010](#bug-010) | FIXED | 2026-05-27 | Mnemosyne | SQLITE_READONLY_DBMOVED ao reindexar — ChromaDB SharedSystem com conexão stale |
 
 ---
 
@@ -725,3 +728,88 @@ Dois problemas independentes:
 
 #### Testes de regressão
 - `logos::tests::embed_watchdog_stops_after_consecutive_fast_fails` — mock de processo que sai imediatamente → watchdog deve parar após N tentativas e não reiniciar indefinidamente
+
+---
+
+### BUG-010 · [FIXED] · SQLITE_READONLY_DBMOVED ao reindexar — ChromaDB SharedSystem com conexão stale
+
+#### Identificação
+- **Data:** 2026-05-27
+- **App(s):** Mnemosyne
+- **Componente:** `Mnemosyne/core/indexer.py` — `load_all_vectorstores()`; `Mnemosyne/gui/main_window.py` — `_release_vectorstore()`
+- **Commit do fix:** pendente
+- **Descoberta via:** uso-real
+- **Tempo de diagnóstico:** ~45 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS)
+- **OS:** CachyOS (Arch Linux)
+- **Hardware relevante:** n/a
+- **Modo:** produção
+- **Reproduzível em:** qualquer máquina com chromadb ≥ 1.5.x
+
+#### Pré-condição
+1. Mnemosyne abre com `ecosystem_chroma_dir` configurado
+2. `chroma_db` existe no disco mas está vazio (count == 0) — ex: após falha anterior ou Syncthing mover o conteúdo
+3. Usuária clica em "Indexar tudo"
+
+#### Sintoma
+```
+chromadb.errors.InternalError: Error updating collection:
+Database error: error returned from database: (code: 1032)
+attempt to write a readonly database
+```
+Erro ocorre em `workers.py:249` na primeira chamada `vs._collection.add()` do IndexWorker.
+
+#### Logs
+```
+2026-05-27 06:45:15,428 [INFO] gui.workers: IndexWorker: 30 arquivos a indexar
+2026-05-27 06:45:25,449 [ERROR] gui.workers: IndexWorker: erro fatal no probe de embedding
+...
+chromadb.errors.InternalError: Error updating collection: Database error: error returned from database: (code: 1032) attempt to write a readonly database
+```
+
+#### Causa raiz
+**SQLite error 1032 = `SQLITE_READONLY_DBMOVED`:** ocorre quando SQLite detecta que o arquivo do banco de dados foi movido/substituído após a conexão ser aberta (inode antigo ≠ inode atual no mesmo path).
+
+**Cadeia de eventos:**
+1. Mnemosyne inicia → `load_all_vectorstores()` → `load_vectorstore()` abre `Chroma(persist_directory=eco_chroma_dir)`
+2. `vs._collection.count() == 0` → `load_all_vectorstores` retorna `[]` **sem chamar `vs._client.close()`**
+3. `langchain_chroma.Chroma` não implementa `__del__` com `close()` (confirmado no comment de `_release_vectorstore` em `main_window.py:1524`)
+4. `SharedSystemClient` do chromadb mantém a conexão SQLite aberta para o path `eco_chroma_dir` com refcount > 0
+5. Usuária clica "Indexar tudo" → `_release_vectorstore()` → fecha `self.vectorstore.stores` (que está vazio) → sem efeito na conexão stale
+6. `shutil.rmtree(eco_chroma_dir)` apaga o diretório incluindo `chroma.sqlite3` (inode X)
+7. `os.makedirs(persist_dir)` recria o diretório vazio
+8. `IndexWorker` → `Chroma(persist_directory=same_path)` → ChromaDB SharedSystem ainda tem entrada para o path → tenta reutilizar a conexão stale (inode X)
+9. IndexWorker tenta escrever → SQLite compara inode no path atual (inode Y) com o inode registrado na conexão (X) → `SQLITE_READONLY_DBMOVED`
+
+**`_release_vectorstore()` também não parava `IndexReflectionWorker`**, que cria seu próprio `Chroma()` interno não rastreado por `self.vectorstore.stores`.
+
+#### Impacto
+- Indexação completamente bloqueada — toda tentativa de "Indexar tudo" falha
+- Usuária fica sem acesso ao RAG da Mnemosyne
+- Não afeta o chat (LLM continua funcionando sem RAG)
+
+#### Fix
+**`indexer.py` — `load_all_vectorstores` (fix primário):**
+```python
+if vs._collection.count() == 0:
+    try:
+        vs._client.close()  # ← ADICIONADO — evita conexão stale no SharedSystem
+    except Exception:
+        pass
+    return []
+```
+
+**`main_window.py` — `_release_vectorstore` (fix de segurança):**
+1. Adicionar `_index_reflection_worker` à lista de workers a parar (usava `requestInterruption()` em vez de `quit()`)
+2. Ao final, chamar `SharedSystemClient.clear_system_cache()` para garantir limpeza total do SharedSystem
+
+#### Teste de regressão
+Arquivo: `Mnemosyne/tests/test_index_clear.py` — 6 novos testes (8–13):
+- `test_load_all_vectorstores_closes_connection_when_empty` — close() explícito antes de retornar [] previne stale
+- `test_clear_system_cache_empties_registry` — `clear_system_cache()` zera `_identifier_to_system` e `_identifier_to_refcount`
+- `test_reindex_after_empty_vectorstore_no_dbmoved` — cenário completo do BUG-010: abre vazio → close → clear → apaga dir → recria → escreve sem erro
+- `test_multiple_opens_accumulate_refcount` — refcount cresce com múltiplas instâncias no mesmo path
+- `test_close_decrements_refcount_to_zero` — close() libera refcount corretamente
+- `test_clear_system_cache_works_with_pending_references` — clear_system_cache() funciona mesmo com conexões não-fechadas

@@ -1181,7 +1181,16 @@ def load_all_vectorstores(config: AppConfig) -> list[tuple[Chroma, "CollectionCo
         try:
             vs = load_vectorstore(config)
             if vs._collection.count() == 0:
-                # ChromaDB existe mas está vazio — tratar como não-indexado
+                # ChromaDB existe mas está vazio — tratar como não-indexado.
+                # CRÍTICO: fechar explicitamente antes de retornar; langchain_chroma.Chroma
+                # não implementa __del__ com close(), e o SharedSystem do ChromaDB mantém
+                # a conexão SQLite viva. Sem close() aqui, um reindex subsequente que
+                # apaga e recria o persist_dir no mesmo caminho recebe
+                # SQLITE_READONLY_DBMOVED (código 1032) ao tentar escrever.
+                try:
+                    vs._client.close()
+                except Exception:
+                    pass
                 return []
             active = config.active_coll
             if active:

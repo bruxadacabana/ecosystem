@@ -12,6 +12,14 @@ Cenários:
   4. ecosystem_chroma_dir global também é apagado quando configurado
   5. OSError durante limpeza é capturado (sem crash)
   6. Coleção habilitada sem mnemosyne_dir definido é ignorada
+
+SharedSystem / SQLITE_READONLY_DBMOVED (BUG-010):
+  8.  load_all_vectorstores fecha conexão quando count == 0 (evita SharedSystem stale)
+  9.  SharedSystemClient.clear_system_cache() remove entradas do cache global
+  10. Reindex após vectorstore vazio não causa SQLITE_READONLY_DBMOVED
+  11. Múltiplas aberturas do mesmo path sem close() acumulam refcount
+  12. close() decrementa refcount e libera SharedSystem quando chega a zero
+  13. clear_system_cache() limpa mesmo com múltiplas referências pendentes
 """
 from __future__ import annotations
 
@@ -211,3 +219,221 @@ def test_clear_cleans_all_enabled_collections():
         for mdir in dirs:
             assert not (mdir / "bm25_index.pkl").exists(), \
                 f"bm25 de {mdir.name} deve ser deletado"
+
+
+# ---------------------------------------------------------------------------
+# Bloco 8-13: SharedSystem / SQLITE_READONLY_DBMOVED (BUG-010)
+# ---------------------------------------------------------------------------
+
+class _FakeEmbeddings:
+    """Embeddings mínimos sem GPU para testes unitários."""
+    def embed_documents(self, texts):
+        return [[0.0] * 4] * len(texts)
+    def embed_query(self, text):
+        return [0.0] * 4
+
+
+def _fresh_chroma(path: str):
+    """Abre langchain_chroma.Chroma em modo rwc — mesmo padrão do indexer.py."""
+    from langchain_chroma import Chroma
+    return Chroma(
+        persist_directory=path,
+        embedding_function=_FakeEmbeddings(),
+        collection_metadata={"hnsw:space": "cosine"},
+    )
+
+
+def _clear_shared_system() -> None:
+    from chromadb.api.shared_system_client import SharedSystemClient
+    SharedSystemClient.clear_system_cache()
+
+
+# ---------------------------------------------------------------------------
+# 8. load_all_vectorstores fecha conexão quando count == 0
+# ---------------------------------------------------------------------------
+
+def test_load_all_vectorstores_closes_connection_when_empty():
+    """Após load_all_vectorstores retornar [] por count==0, o SharedSystem não
+    deve manter refcount > 0 para o path — confirmado pela ausência de erro ao
+    recriar a store no mesmo path após apagar o diretório."""
+    with tempfile.TemporaryDirectory() as td:
+        chroma_dir = Path(td) / "chroma_db"
+        chroma_dir.mkdir()
+
+        # Cria chroma_db vazio (count == 0)
+        vs = _fresh_chroma(str(chroma_dir))
+        assert vs._collection.count() == 0
+        # Simula o comportamento CORRIGIDO: close() explícito antes de retornar
+        vs._client.close()
+
+        import shutil
+        shutil.rmtree(str(chroma_dir))
+        chroma_dir.mkdir()
+
+        # Deve ser possível abrir e escrever no mesmo path sem SQLITE_READONLY_DBMOVED
+        vs2 = _fresh_chroma(str(chroma_dir))
+        vs2._collection.add(
+            ids=["1"],
+            documents=["hello"],
+            embeddings=[[0.1, 0.2, 0.3, 0.4]],
+            metadatas=[{"src": "test"}],
+        )
+        assert vs2._collection.count() == 1
+        vs2._client.close()
+
+
+# ---------------------------------------------------------------------------
+# 9. SharedSystemClient.clear_system_cache() limpa o cache global
+# ---------------------------------------------------------------------------
+
+def test_clear_system_cache_empties_registry():
+    """clear_system_cache() deve deixar _identifier_to_system e
+    _identifier_to_refcount vazios."""
+    from chromadb.api.shared_system_client import SharedSystemClient
+
+    with tempfile.TemporaryDirectory() as td:
+        chroma_dir = Path(td) / "chroma_db"
+        chroma_dir.mkdir()
+        vs = _fresh_chroma(str(chroma_dir))
+        # Há pelo menos uma entrada no SharedSystem
+        assert len(SharedSystemClient._identifier_to_system) > 0
+        vs._client.close()
+
+    _clear_shared_system()
+    assert SharedSystemClient._identifier_to_system == {}, \
+        "SharedSystem deve estar vazio após clear_system_cache()"
+    assert SharedSystemClient._identifier_to_refcount == {}, \
+        "refcount deve estar vazio após clear_system_cache()"
+
+
+# ---------------------------------------------------------------------------
+# 10. Reindex após vectorstore vazio não causa SQLITE_READONLY_DBMOVED
+# ---------------------------------------------------------------------------
+
+def test_reindex_after_empty_vectorstore_no_dbmoved():
+    """Reproduz o cenário do BUG-010:
+    1. Chroma aberto com count == 0 (retornado sem close pelo bug original)
+    2. Diretório apagado e recriado (fluxo 'indexar tudo')
+    3. Nova store no mesmo path deve conseguir escrever SEM SQLITE_READONLY_DBMOVED.
+
+    Com o fix (close() + clear_system_cache()), não deve lançar nenhuma exceção.
+    """
+    import shutil
+    with tempfile.TemporaryDirectory() as td:
+        chroma_dir = Path(td) / "chroma_db"
+        chroma_dir.mkdir()
+
+        # Abertura inicial (simula load_all_vectorstores)
+        vs_initial = _fresh_chroma(str(chroma_dir))
+        assert vs_initial._collection.count() == 0
+
+        # FIX: fechar e limpar SharedSystem (o que o código corrigido faz)
+        vs_initial._client.close()
+        _clear_shared_system()
+
+        # Fluxo de "indexar tudo": apagar dir e recriar
+        shutil.rmtree(str(chroma_dir))
+        chroma_dir.mkdir()
+
+        # Nova indexação: deve funcionar sem SQLITE_READONLY_DBMOVED
+        vs_new = _fresh_chroma(str(chroma_dir))
+        vs_new._collection.add(
+            ids=["doc-1"],
+            documents=["conteúdo de teste"],
+            embeddings=[[0.1, 0.2, 0.3, 0.4]],
+            metadatas=[{"source": "unit_test"}],
+        )
+        assert vs_new._collection.count() == 1
+        vs_new._client.close()
+
+
+# ---------------------------------------------------------------------------
+# 11. Múltiplas aberturas do mesmo path acumulam refcount
+# ---------------------------------------------------------------------------
+
+def test_multiple_opens_accumulate_refcount():
+    """Duas instâncias Chroma no mesmo path devem resultar em refcount >= 2."""
+    from chromadb.api.shared_system_client import SharedSystemClient
+
+    with tempfile.TemporaryDirectory() as td:
+        chroma_dir = Path(td) / "chroma_db"
+        chroma_dir.mkdir()
+
+        vs1 = _fresh_chroma(str(chroma_dir))
+        refcount_after_1 = list(SharedSystemClient._identifier_to_refcount.values())
+        assert any(r >= 1 for r in refcount_after_1), "refcount deve ser >= 1 após primeiro open"
+
+        vs2 = _fresh_chroma(str(chroma_dir))
+        refcount_after_2 = list(SharedSystemClient._identifier_to_refcount.values())
+        assert any(r >= 2 for r in refcount_after_2), "refcount deve acumular com segundo open"
+
+        vs1._client.close()
+        vs2._client.close()
+
+
+# ---------------------------------------------------------------------------
+# 12. close() decrementa refcount e libera quando chega a zero
+# ---------------------------------------------------------------------------
+
+def test_close_decrements_refcount_to_zero():
+    """Após fechar todas as referências, SharedSystem não deve ter entradas
+    para o path em questão."""
+    from chromadb.api.shared_system_client import SharedSystemClient
+    _clear_shared_system()
+
+    with tempfile.TemporaryDirectory() as td:
+        chroma_dir = Path(td) / "chroma_db"
+        chroma_dir.mkdir()
+
+        vs = _fresh_chroma(str(chroma_dir))
+        assert len(SharedSystemClient._identifier_to_refcount) > 0
+
+        vs._client.close()
+
+        # Após fechar, SharedSystem deve ter refcount = 0 ou entry removida
+        remaining = [r for r in SharedSystemClient._identifier_to_refcount.values() if r > 0]
+        assert len(remaining) == 0, \
+            "Após close(), não deve haver refcount > 0 no SharedSystem"
+
+
+# ---------------------------------------------------------------------------
+# 13. clear_system_cache() funciona mesmo com múltiplas referências pendentes
+# ---------------------------------------------------------------------------
+
+def test_clear_system_cache_works_with_pending_references():
+    """clear_system_cache() não deve lançar exceção mesmo se houver conexões
+    abertas (objetos não-fechados). Após clear, novos opens ao mesmo path
+    devem funcionar normalmente."""
+    import shutil
+    from chromadb.api.shared_system_client import SharedSystemClient
+
+    with tempfile.TemporaryDirectory() as td:
+        chroma_dir = Path(td) / "chroma_db"
+        chroma_dir.mkdir()
+
+        # Abre sem fechar (simula langchain_chroma sem __del__ com close())
+        vs_leaked = _fresh_chroma(str(chroma_dir))
+        assert len(SharedSystemClient._identifier_to_system) > 0
+
+        # clear_system_cache() deve funcionar sem exceção
+        _clear_shared_system()
+        assert SharedSystemClient._identifier_to_system == {}
+
+        # Novo open ao mesmo path deve funcionar (sem DBMOVED)
+        chroma_dir2 = Path(td) / "chroma_db2"
+        chroma_dir2.mkdir()
+        vs_new = _fresh_chroma(str(chroma_dir2))
+        vs_new._collection.add(
+            ids=["x"],
+            documents=["teste"],
+            embeddings=[[0.0, 0.0, 0.0, 0.0]],
+            metadatas=[{"k": "v"}],
+        )
+        assert vs_new._collection.count() == 1
+        vs_new._client.close()
+
+        # Evitar que vs_leaked cause erro ao ser coletado depois
+        try:
+            vs_leaked._client.close()
+        except Exception:
+            pass

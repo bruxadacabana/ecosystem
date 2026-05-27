@@ -1527,11 +1527,14 @@ class MainWindow(QMainWindow):
 
         Também cancela workers em background que seguram referências ao vs antigo.
         """
-        # Para workers que podem segurar referência ao vs (evita uso após close)
-        for attr in ("_topics_worker", "_kg_worker"):
+        # Para workers que podem segurar referência ao vs (evita uso após close).
+        # IndexReflectionWorker cria seu próprio Chroma() internamente e não é
+        # rastreado por self.vectorstore.stores — precisa ser parado explicitamente
+        # antes de limpar o SharedSystem.
+        for attr in ("_topics_worker", "_kg_worker", "_index_reflection_worker"):
             worker = getattr(self, attr, None)
             if worker and hasattr(worker, "isRunning") and worker.isRunning():
-                worker.quit()
+                worker.requestInterruption()
                 worker.wait(3000)
 
         # Fecha o client de cada Chroma store explicitamente
@@ -1544,6 +1547,17 @@ class MainWindow(QMainWindow):
 
         self.vectorstore = MultiVectorstore([])
         gc.collect()
+
+        # Limpa o SharedSystem do ChromaDB: garante que não haja conexões SQLite
+        # pendentes ao caminho que será apagado/recriado pelo IndexWorker.
+        # Sem isso, reindex após load_all_vectorstores com count==0 (vectorstore vazio)
+        # resulta em SQLITE_READONLY_DBMOVED (1032) porque o SharedSystem reutiliza
+        # a conexão stale para o mesmo path com inode diferente.
+        try:
+            from chromadb.api.shared_system_client import SharedSystemClient
+            SharedSystemClient.clear_system_cache()
+        except Exception:
+            pass
 
     def _start_kg_bg(self) -> None:
         """Constrói knowledge_graph.json em background após indexação."""
