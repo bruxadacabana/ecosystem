@@ -609,3 +609,59 @@ No Linux, `/proc/stat` tem resolução de clock ticks (~10ms) e o problema era m
 
 #### Teste de regressão
 `logos::tests::cpu_watchdog_is_sole_caller_of_refresh_cpu_all` — verifica que `cpu_ram_usage` não chama `refresh_cpu_all` (análise estática via grep do código compilado seria ideal, mas o teste verifica indiretamente via snapshot de `global_cpu_usage` entre chamadas sem refresh). Complementado por teste de integração manual no Windows.
+
+---
+
+### BUG-008 · [FIXED] · embed-server não inicia — name no registry não corresponde ao embed_model do ecosystem.json
+
+#### Identificação
+- **Data:** 2026-05-26
+- **App(s):** HUB (LOGOS)
+- **Componente:** `logos.rs::ensure_embed_server_started`, `logos/models/registry.json`, `ecosystem.json`
+- **Commit do fix:** (ver commit fix/BUG-008)
+- **Descoberta via:** uso-real (Mnemosyne retornou 503 ao tentar indexar)
+- **Tempo de diagnóstico:** ~15 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS)
+- **OS:** CachyOS
+- **Hardware relevante:** RX 6600 8GB VRAM
+- **Modo:** dev (cargo tauri dev)
+- **Reproduzível em:** qualquer máquina onde registry.json tem o nome de quantização em vez do nome canônico
+
+#### Pré-condição
+- bge-m3-Q4_K_M.gguf presente em `logos/models/`
+- `ecosystem.json["logos"]["embed_model"]` ausente (valor default do código: `"bge-m3"`)
+- `registry.json` com entry `name = "bge-m3-Q4_K_M"` (nome gerado automaticamente no download)
+
+#### Sintoma
+```
+httpx.HTTPStatusError: Server error '503 Service Unavailable'
+for url 'http://127.0.0.1:7072/v1/embeddings'
+```
+No HUB: "servidor de embedding offline". Log interno: `"LOGOS embed: modelo 'bge-m3' não encontrado no registry"`.
+
+#### Causa raiz
+`ensure_embed_server_started()` chama `resolve_gguf_path(embed_model, models_dir)`. A função busca o modelo por:
+1. `entry.name == "bge-m3"` → FALSE (entry.name era "bge-m3-Q4_K_M")
+2. `entry.filename == "bge-m3"` → FALSE
+3. `entry.filename.trim_end_matches(".gguf") == "bge-m3"` → FALSE ("bge-m3-Q4_K_M" ≠ "bge-m3")
+
+Nenhuma correspondência → `None` → embed-server não sobe.
+
+Causa secundária: `ecosystem.json` não tinha o campo `logos.embed_model` explícito → código usava default `"bge-m3"`, que deveria funcionar **se** o registry estivesse correto.
+
+Causa terciária: `ensure_embed_server_started` só logava `log::warn!` ao falhar, sem alerta visível na UI — o usuário via apenas "offline" sem explicação.
+
+#### Impacto
+- Mnemosyne e qualquer app que use `/v1/embeddings` recebe 503 permanentemente
+- Nenhuma indexação possível enquanto embed_model não for encontrado no registry
+
+#### Fix
+1. `registry.json`: renomear entry `"bge-m3-Q4_K_M"` → `"bge-m3"` + adicionar `"model_type": "embed"` em todas as entradas
+2. `ecosystem.json`: definir `logos.embed_model = "bge-m3"` e `logos.embed_port = 8082` explicitamente
+3. `logos.rs::ensure_embed_server_started`: chamar `emit_alert("warn", msg)` quando modelo não encontrado no registry — erro aparece na UI do HUB
+
+#### Testes de regressão
+- `logos::tests::resolve_gguf_path_finds_bge_m3_by_canonical_name` — registry com `name="bge-m3"` → `resolve_gguf_path("bge-m3")` retorna `Some`
+- `logos::tests::resolve_gguf_path_does_not_find_bge_m3_when_registry_name_has_quantization_suffix` — registry com `name="bge-m3-Q4_K_M"` → `resolve_gguf_path("bge-m3")` retorna `None` (confirma que a busca é por nome exato)

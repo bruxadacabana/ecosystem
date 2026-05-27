@@ -368,6 +368,12 @@ struct Inner {
     /// Processo llama-server do servidor de embedding (porta EMBED_SERVER_PORT).
     /// Independente do llama_proc (porta LLAMA_SERVER_PORT) — falhas são isoladas.
     embed_proc: Mutex<Option<LlamaProcHandle>>,
+    /// Porta usada por `collect_status` para pings de health no servidor de chat.
+    /// Em produção = LLAMA_SERVER_PORT (8081). Em testes usa porta livre para isolamento.
+    chat_health_port: u16,
+    /// Porta usada por `collect_status` para pings de health no servidor de embedding.
+    /// Em produção = EMBED_SERVER_PORT (8082). Em testes usa porta livre para isolamento.
+    embed_health_port: u16,
 
     // ── Limites de recursos configuráveis ───────────────────────────────────
     /// Threshold de CPU (%) para bloquear tarefas P3. Padrão 85.
@@ -581,6 +587,8 @@ impl LogosState {
             embed_model: Mutex::new(embed_model),
             embed_n_gpu_layers: Mutex::new(embed_n_gpu_layers),
             embed_proc: Mutex::new(None),
+            chat_health_port:  LLAMA_SERVER_PORT,
+            embed_health_port: EMBED_SERVER_PORT,
             cpu_p3_limit_pct: Mutex::new(cpu_p3_limit_pct),
             cached_cpu_pct: Arc::new(AtomicU32::new(0)),
         }))
@@ -638,6 +646,9 @@ impl LogosState {
             embed_model:        Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers: Mutex::new(-1),
             embed_proc:         Mutex::new(None),
+            // Em testes: portas que sabidamente não têm servidor → pings retornam None
+            chat_health_port:  59981,
+            embed_health_port: 59982,
             cpu_p3_limit_pct:   Mutex::new(85.0),
             cached_cpu_pct:     Arc::new(AtomicU32::new(0)),
         }))
@@ -2582,13 +2593,15 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
 
     // Pings paralelos — só executados quando o processo está ativo para evitar
     // 400ms de timeout desnecessário quando ambos os servidores estão offline.
+    // Usam chat_health_port / embed_health_port para permitir isolamento em testes
+    // (testes apontam para portas livres; produção usa LLAMA_SERVER_PORT / EMBED_SERVER_PORT).
     let (chat_ms, embed_ms) = tokio::join!(
         async {
-            if chat_online  { ping_server_ms(&s.0.client, LLAMA_SERVER_PORT).await }
+            if chat_online  { ping_server_ms(&s.0.client, s.0.chat_health_port).await }
             else            { None }
         },
         async {
-            if embed_online { ping_server_ms(&s.0.client, EMBED_SERVER_PORT).await }
+            if embed_online { ping_server_ms(&s.0.client, s.0.embed_health_port).await }
             else            { None }
         },
     );
@@ -2649,10 +2662,14 @@ async fn ensure_embed_server_started(s: &LogosState) {
     let gguf_path = match resolve_gguf_path(&embed_model, &s.0.models_dir) {
         Some(p) => p,
         None => {
-            log::warn!(
-                "LOGOS embed: modelo '{}' não encontrado no registry — embed-server não iniciado",
+            let msg = format!(
+                "embed-server não iniciado: modelo '{}' não encontrado no registry. \
+                 Verifique se o nome em ecosystem.json[logos][embed_model] corresponde \
+                 exatamente a um entry do registry.",
                 embed_model
             );
+            log::warn!("LOGOS embed: {msg}");
+            s.emit_alert("warn", &msg).await;
             return;
         }
     };
@@ -4458,6 +4475,9 @@ mod tests {
             embed_model:         Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers:  Mutex::new(-1),
             embed_proc:          Mutex::new(None),
+            // Portas livres para isolamento de testes — sem servidor nestas portas
+            chat_health_port:   59981,
+            embed_health_port:  59982,
             cpu_p3_limit_pct:    Mutex::new(85.0),
             cached_cpu_pct:      Arc::new(AtomicU32::new(0)),
         }))
@@ -5505,6 +5525,72 @@ mod tests {
 
         assert!(!state.embed_proc_active().await,
             "modelo ausente do registry → nenhum processo deve ser criado");
+    }
+
+    // ── Regressão BUG-008: nome canônico "bge-m3" no registry ────────────────
+
+    #[test]
+    fn resolve_gguf_path_finds_bge_m3_by_canonical_name() {
+        // Verifica que resolve_gguf_path("bge-m3") encontra uma entrada cujo
+        // `name` é "bge-m3" — mesmo que o filename seja "bge-m3-Q4_K_M.gguf".
+        // Regressão: entry com name="bge-m3-Q4_K_M" não era encontrada por "bge-m3".
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        // Cria o arquivo GGUF no tempdir
+        let gguf = models_dir.join("bge-m3-Q4_K_M.gguf");
+        std::fs::write(&gguf, b"fake-gguf").unwrap();
+
+        // Entry com o nome canônico correto ("bge-m3") — como deve estar no registry
+        let registry = vec![serde_json::json!({
+            "name":         "bge-m3",
+            "repo_id":      "gpustack/bge-m3-GGUF",
+            "filename":     "bge-m3-Q4_K_M.gguf",
+            "path":         gguf.to_string_lossy(),
+            "size_bytes":   437_778_496_u64,
+            "sha256":       "abc",
+            "downloaded_at":"2026-05-26",
+            "model_type":   "embed"
+        })];
+        std::fs::write(
+            models_dir.join("registry.json"),
+            serde_json::to_string(&registry).unwrap(),
+        ).unwrap();
+
+        let result = resolve_gguf_path("bge-m3", &models_dir);
+        assert!(result.is_some(),
+            "resolve_gguf_path deve encontrar 'bge-m3' quando registry.name == 'bge-m3'");
+    }
+
+    #[test]
+    fn resolve_gguf_path_does_not_find_bge_m3_when_registry_name_has_quantization_suffix() {
+        // Regressão BUG-008: entry com name="bge-m3-Q4_K_M" NÃO deve ser encontrada
+        // por embed_model="bge-m3". Garante que o fix (renomear para "bge-m3") foi feito.
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let models_dir = dir.path().to_path_buf();
+
+        let gguf = models_dir.join("bge-m3-Q4_K_M.gguf");
+        std::fs::write(&gguf, b"fake-gguf").unwrap();
+
+        // Entry com nome errado — como estava antes do fix
+        let registry = vec![serde_json::json!({
+            "name":         "bge-m3-Q4_K_M",
+            "repo_id":      "gpustack/bge-m3-GGUF",
+            "filename":     "bge-m3-Q4_K_M.gguf",
+            "path":         gguf.to_string_lossy(),
+            "size_bytes":   437_778_496_u64,
+            "sha256":       "abc",
+            "downloaded_at":"2026-05-26"
+        })];
+        std::fs::write(
+            models_dir.join("registry.json"),
+            serde_json::to_string(&registry).unwrap(),
+        ).unwrap();
+
+        let result = resolve_gguf_path("bge-m3", &models_dir);
+        assert!(result.is_none(),
+            "name='bge-m3-Q4_K_M' não deve ser encontrado por 'bge-m3' — \
+             garante que a busca é por nome exato, não por prefixo");
     }
 
     // ── collect_status — campos de servidor ───────────────────────────────────
