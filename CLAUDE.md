@@ -54,7 +54,7 @@ Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRA
 **Toda implementação nova deve vir acompanhada de testes — estabelecido em 2026-05-22.**
 
 - Toda feature, endpoint, módulo ou função nova: escrever os testes na mesma resposta.
-- Toda correção de bug: adicionar teste que cobre o caso corrigido.
+- Toda correção de bug: adicionar teste que cobre o caso corrigido **e sempre expandir para cobrir casos adjacentes, branches relacionadas e edge cases da função/módulo inteiro** — nunca limitar ao caso específico do bug.
 - Nunca reportar um item como concluído sem que os testes correspondentes existam e passem.
 
 ---
