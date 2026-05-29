@@ -9,6 +9,14 @@ Cobre:
   - decay_scores: decaimento de scores antigos
   - Filtragem de stopwords registrada via log
 
+Recuperação de corrupção (BUG-011):
+  - _ensure_db detecta SQLITE_CORRUPT e chama _recreate_from_backup
+  - _recreate_from_backup recria schema e restaura dados do JSON
+  - update_scores continua funcionando após recuperação transparente
+  - DatabaseError não-corrupção não é engolida
+  - Backup JSON ausente resulta em banco vazio (sem crash)
+  - WAL/SHM são removidos junto com o banco corrompido
+
 Usa DB SQLite em arquivo temporário — sem mock de _profile_path().
 """
 from __future__ import annotations
@@ -246,3 +254,180 @@ class TestApplySeedTopics:
         update_scores(["retórica"], 5.0, "akasha")
         inserted = apply_seed_topics([{"name": "retórica", "weight": 1.0}])
         assert inserted == 0
+
+
+# ---------------------------------------------------------------------------
+# Recuperação de corrupção — BUG-011
+# ---------------------------------------------------------------------------
+
+class TestCorruptionRecovery:
+    def _corrupt_db(self, path: Path) -> None:
+        """Sobrescreve os primeiros bytes do arquivo para simular corrupção."""
+        with open(path, "r+b") as f:
+            f.write(b"\x00" * 64)
+
+    def test_ensure_db_recovers_from_corrupt_db_without_backup(self, db_path):
+        """Banco corrompido sem backup JSON → _ensure_db recria schema vazio sem crash."""
+        import shared_topic_profile as stp
+
+        # Criar DB válido primeiro
+        stp._ensure_db(db_path)
+        assert db_path.exists()
+
+        # Corromper
+        self._corrupt_db(db_path)
+
+        # _ensure_db deve detectar e recriar (sem backup disponível — fixture já tem backup=None)
+        stp._ensure_db(db_path)
+
+        # Banco deve existir e ter schema correto
+        con = sqlite3.connect(str(db_path))
+        tables = [r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()]
+        con.close()
+        assert "topic_interest_profile" in tables
+
+    def test_ensure_db_restores_data_from_backup_json(self, tmp_path):
+        """Banco corrompido COM backup JSON → dados restaurados após _ensure_db."""
+        import json
+        import shared_topic_profile as stp
+
+        db = tmp_path / "shared_topic_profile.db"
+        bk = tmp_path / "shared_topic_profile.json"
+
+        # Criar backup JSON com dados
+        backup_data = [
+            {"topic": "linguística", "score": 5.0, "akasha_count": 3,
+             "mnemosyne_count": 1, "kosmos_count": 0, "last_updated": "2026-05-27 00:00:00"},
+            {"topic": "semiótica", "score": 2.5, "akasha_count": 1,
+             "mnemosyne_count": 0, "kosmos_count": 1, "last_updated": "2026-05-27 00:00:00"},
+        ]
+        bk.write_text(json.dumps(backup_data), encoding="utf-8")
+
+        orig_profile = stp._profile_path
+        orig_backup  = stp._backup_path
+        stp._profile_path = lambda: db
+        stp._backup_path  = lambda: bk
+        try:
+            # Criar DB corrompido
+            db.write_bytes(b"\x00" * 128)
+
+            # _ensure_db deve detectar e restaurar
+            stp._ensure_db(db)
+
+            con = sqlite3.connect(str(db))
+            rows = {r[0]: r[1] for r in con.execute(
+                "SELECT topic, score FROM topic_interest_profile"
+            ).fetchall()}
+            con.close()
+
+            assert rows.get("linguística") == pytest.approx(5.0)
+            assert rows.get("semiótica") == pytest.approx(2.5)
+        finally:
+            stp._profile_path = orig_profile
+            stp._backup_path  = orig_backup
+
+    def test_update_scores_transparent_recovery(self, tmp_path):
+        """update_scores funciona normalmente após recuperação transparente de corrupção."""
+        import json
+        import shared_topic_profile as stp
+
+        db = tmp_path / "shared_topic_profile.db"
+        bk = tmp_path / "shared_topic_profile.json"
+        bk.write_text(json.dumps([]), encoding="utf-8")  # backup vazio
+
+        orig_profile = stp._profile_path
+        orig_backup  = stp._backup_path
+        stp._profile_path = lambda: db
+        stp._backup_path  = lambda: bk
+        try:
+            # Criar DB corrompido
+            db.write_bytes(b"\x00" * 128)
+
+            # update_scores deve recuperar e escrever normalmente
+            stp.update_scores(["pragmática"], 3.0, "mnemosyne")
+
+            con = sqlite3.connect(str(db))
+            row = con.execute(
+                "SELECT score FROM topic_interest_profile WHERE topic='pragmática'"
+            ).fetchone()
+            con.close()
+            assert row is not None
+            assert row[0] == pytest.approx(3.0)
+        finally:
+            stp._profile_path = orig_profile
+            stp._backup_path  = orig_backup
+
+    def test_recreate_removes_wal_and_shm(self, db_path):
+        """_recreate_from_backup apaga arquivos WAL e SHM do banco corrompido.
+
+        SQLite pode recriar um WAL vazio ao abrir o novo banco em modo WAL — o que
+        importa é que o conteúdo ANTIGO dos sidecars foi removido antes da recriação.
+        Verificamos isso checando que o conteúdo antigo não persiste.
+        """
+        import shared_topic_profile as stp
+
+        # Criar DB e sidecars simulados com conteúdo identificável
+        db_path.write_bytes(b"\x00" * 64)
+        wal = db_path.with_name(db_path.name + "-wal")
+        shm = db_path.with_name(db_path.name + "-shm")
+        wal.write_bytes(b"FAKE_OLD_WAL_CONTENT")
+        shm.write_bytes(b"FAKE_OLD_SHM_CONTENT")
+
+        stp._recreate_from_backup(db_path)
+
+        # O novo DB deve existir e ter schema válido
+        assert db_path.exists(), "Novo banco deve existir após recriação"
+        con = sqlite3.connect(str(db_path))
+        tables = [r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()]
+        con.close()
+        assert "topic_interest_profile" in tables
+
+        # Conteúdo antigo dos sidecars deve ter sido removido
+        # (SQLite pode recriar o WAL vazio no modo WAL — mas o conteúdo antigo sumiu)
+        if wal.exists():
+            assert wal.read_bytes() != b"FAKE_OLD_WAL_CONTENT", \
+                "conteúdo do WAL antigo deve ter sido deletado"
+        if shm.exists():
+            assert shm.read_bytes() != b"FAKE_OLD_SHM_CONTENT", \
+                "conteúdo do SHM antigo deve ter sido deletado"
+
+    def test_ensure_db_does_not_swallow_non_corrupt_errors(self, db_path):
+        """DatabaseError que NÃO seja corrupção deve propagar normalmente."""
+        import shared_topic_profile as stp
+        import unittest.mock as mock
+
+        with mock.patch.object(
+            stp.sqlite3, "connect",
+            side_effect=sqlite3.DatabaseError("disk I/O error")
+        ):
+            with pytest.raises(sqlite3.DatabaseError, match="disk I/O error"):
+                stp._ensure_db(db_path)
+
+    def test_recreate_backup_json_malformed_does_not_crash(self, tmp_path):
+        """JSON de backup malformado → _recreate_from_backup não crasha, banco fica vazio."""
+        import shared_topic_profile as stp
+
+        db = tmp_path / "shared_topic_profile.db"
+        bk = tmp_path / "shared_topic_profile.json"
+        bk.write_text("ISTO NAO E JSON VALIDO {{{", encoding="utf-8")
+
+        orig_profile = stp._profile_path
+        orig_backup  = stp._backup_path
+        stp._profile_path = lambda: db
+        stp._backup_path  = lambda: bk
+        try:
+            stp._recreate_from_backup(db)
+
+            con = sqlite3.connect(str(db))
+            count = con.execute(
+                "SELECT COUNT(*) FROM topic_interest_profile"
+            ).fetchone()[0]
+            con.close()
+            assert count == 0
+        finally:
+            stp._profile_path = orig_profile
+            stp._backup_path  = orig_backup

@@ -76,9 +76,71 @@ def _conn(path: Path) -> sqlite3.Connection:
     return con
 
 
-def _ensure_db(path: Path) -> None:
+def _recreate_from_backup(path: Path) -> None:
+    """Apaga banco corrompido e o recria do backup JSON.
+
+    Chamado quando _ensure_db detecta SQLITE_CORRUPT. Remove o arquivo corrompido
+    e os arquivos WAL/SHM associados, cria schema limpo e importa os dados do
+    backup JSON se disponível.
+    """
+    for suffix in ("-wal", "-shm"):
+        sidecar = path.with_name(path.name + suffix)
+        try:
+            sidecar.unlink(missing_ok=True)
+        except OSError:
+            pass
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
     with _conn(path) as con:
         con.executescript(_DDL)
+
+    bk = _backup_path()
+    if bk is None or not bk.exists():
+        log.warning("shared_topic_profile: banco recriado vazio — backup JSON não encontrado")
+        return
+
+    try:
+        data = json.loads(bk.read_text(encoding="utf-8"))
+        with _conn(path) as con:
+            for row in data:
+                con.execute(
+                    """INSERT INTO topic_interest_profile
+                           (topic, score, akasha_count, mnemosyne_count, kosmos_count, last_updated)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(topic) DO NOTHING""",
+                    (
+                        row.get("topic", ""),
+                        float(row.get("score", 0.0)),
+                        int(row.get("akasha_count", 0)),
+                        int(row.get("mnemosyne_count", 0)),
+                        int(row.get("kosmos_count", 0)),
+                        row.get("last_updated", ""),
+                    ),
+                )
+        log.info(
+            "shared_topic_profile: banco restaurado do backup JSON (%d tópicos)", len(data)
+        )
+    except Exception as exc:
+        log.warning("shared_topic_profile: restauração do backup falhou: %s", exc)
+
+
+def _ensure_db(path: Path) -> None:
+    try:
+        with _conn(path) as con:
+            con.executescript(_DDL)
+    except sqlite3.DatabaseError as exc:
+        msg = str(exc).lower()
+        if "malformed" in msg or "corrupt" in msg or "not a database" in msg:
+            log.warning(
+                "shared_topic_profile: banco corrompido detectado (%s) — recriando do backup JSON",
+                exc,
+            )
+            _recreate_from_backup(path)
+        else:
+            raise
 
 
 # ── Backup JSON ──────────────────────────────────────────────────────────────
