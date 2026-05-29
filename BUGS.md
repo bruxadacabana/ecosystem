@@ -71,6 +71,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-008](#bug-008) | FIXED | 2026-05-26 | HUB/LOGOS | embed-server não inicia — name no registry não corresponde ao embed_model |
 | [BUG-009](#bug-009) | FIXED | 2026-05-27 | HUB/LOGOS | embed-server em loop — bge-m3-Q4_K_M.gguf corrompido (download incompleto) |
 | [BUG-010](#bug-010) | FIXED | 2026-05-27 | Mnemosyne | SQLITE_READONLY_DBMOVED ao reindexar — ChromaDB SharedSystem com conexão stale |
+| [BUG-011](#bug-011) | FIXED | 2026-05-27 | Ecossistema | shared_topic_profile.db corrompido — "database disk image is malformed" sem recuperação |
 
 ---
 
@@ -730,6 +731,52 @@ Dois problemas independentes:
 - `logos::tests::embed_watchdog_stops_after_consecutive_fast_fails` — mock de processo que sai imediatamente → watchdog deve parar após N tentativas e não reiniciar indefinidamente
 
 ---
+
+### BUG-011 · [FIXED] · shared_topic_profile.db corrompido sem recuperação automática
+
+#### Identificação
+- **Data:** 2026-05-27
+- **App(s):** Ecossistema (shared_topic_profile.py — usado por AKASHA, Mnemosyne, KOSMOS)
+- **Componente:** `shared_topic_profile.py` — `_ensure_db()`, `update_scores()`
+- **Commit do fix:** `d9d7a33`
+- **Descoberta via:** uso-real
+- **Tempo de diagnóstico:** ~10 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS)
+- **OS:** CachyOS (Arch Linux)
+- **Reproduzível em:** qualquer máquina onde o DB seja corrompido
+
+#### Pré-condição
+`shared_topic_profile.db` está com estrutura SQLite inválida — causada provavelmente por escrita interrompida ou Syncthing sobrescrevendo o arquivo durante WAL.
+
+#### Sintoma
+```
+WARNING ecosystem.shared_topic_profile: shared_topic_profile.update_scores falhou: database disk image is malformed
+```
+Erro repetido a cada chamada de `update_scores`. O banco permanece corrompido indefinidamente — não havia mecanismo de recuperação.
+
+#### Causa raiz
+`_ensure_db` fazia `con.executescript(_DDL)` sem capturar `sqlite3.DatabaseError`. Quando o banco estava corrompido, a exceção propagava para `update_scores`, que a capturava como `Exception` e logava como WARNING — mas o banco continuava corrompido para todas as chamadas subsequentes. Backup JSON era gerado a cada escrita mas nunca usado para recuperação.
+
+#### Impacto
+- Perfil de interesses do ecossistema não é atualizado enquanto corrompido
+- Aba "Interesses" no HUB mostra dados desatualizados
+- Não afeta outras funcionalidades (erro é não-fatal)
+
+#### Fix
+1. `_recreate_from_backup(path)`: apaga o banco corrompido + WAL/SHM sidecars, recria schema limpo, restaura dados do backup JSON se disponível.
+2. `_ensure_db`: captura `sqlite3.DatabaseError` com mensagens "malformed", "corrupt" ou "not a database" → chama `_recreate_from_backup`. Outros `DatabaseError` propagam normalmente.
+3. Recuperação imediata manual via `_recreate_from_backup` — 4600 tópicos restaurados do JSON.
+
+#### Teste de regressão
+Arquivo: `tests/test_shared_topic_profile_db.py` — 6 novos testes (`TestCorruptionRecovery`):
+- `test_ensure_db_recovers_from_corrupt_db_without_backup` — corrupção sem backup → banco vazio, sem crash
+- `test_ensure_db_restores_data_from_backup_json` — corrupção com JSON → dados restaurados
+- `test_update_scores_transparent_recovery` — update_scores funciona normalmente após recuperação
+- `test_recreate_removes_wal_and_shm` — sidecars antigos são removidos
+- `test_ensure_db_does_not_swallow_non_corrupt_errors` — DatabaseError não-corrupção propaga
+- `test_recreate_backup_json_malformed_does_not_crash` — JSON inválido → banco vazio, sem crash
 
 ### BUG-010 · [FIXED] · SQLITE_READONLY_DBMOVED ao reindexar — ChromaDB SharedSystem com conexão stale
 
