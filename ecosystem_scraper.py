@@ -16,10 +16,44 @@ para que cada app instale apenas o subconjunto que funciona no seu ambiente.
 """
 from __future__ import annotations
 
+import asyncio
 import re
+import time
 from urllib.parse import urlparse
 
 _WORD_THRESHOLD = 100
+
+# ---------------------------------------------------------------------------
+# Throttle adaptativo por domínio
+# ---------------------------------------------------------------------------
+
+CRAWL_DELAY: float = 2.0  # segundos mínimos entre requisições ao mesmo domínio
+
+_domain_timestamps: dict[str, float] = {}
+
+
+async def throttle_domain(url: str, delay: float = CRAWL_DELAY) -> None:
+    """Impõe delay mínimo entre requisições ao mesmo domínio.
+
+    Chamado pelos clientes HTTP (archiver, crawler, KOSMOS ArticleScraper)
+    antes de cada GET. Se não passou tempo suficiente desde a última requisição
+    ao mesmo domínio, aguarda a diferença.
+
+    Args:
+        url:   URL completa do recurso a buscar.
+        delay: Delay mínimo em segundos (padrão: CRAWL_DELAY = 2.0).
+    """
+    try:
+        host = urlparse(url).hostname or url
+    except Exception:
+        host = url
+
+    now = time.monotonic()
+    last = _domain_timestamps.get(host, 0.0)
+    wait = delay - (now - last)
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _domain_timestamps[host] = time.monotonic()
 
 
 # ---------------------------------------------------------------------------

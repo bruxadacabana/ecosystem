@@ -41,7 +41,12 @@ except ImportError:
 
 # Módulo compartilhado do ecossistema
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from ecosystem_scraper import extract as _cascade_extract, get_fetch_url as _get_fetch_url, get_fetch_url_fallbacks as _get_fetch_url_fallbacks
+from ecosystem_scraper import (
+    extract as _cascade_extract,
+    get_fetch_url as _get_fetch_url,
+    get_fetch_url_fallbacks as _get_fetch_url_fallbacks,
+    throttle_domain as _throttle_domain,
+)
 
 log = logging.getLogger("akasha.archiver")
 
@@ -249,6 +254,7 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         # 1. Tenta proxies HTML em ordem (Medium: freedium → original)
         html = ""
         last_exc: Exception | None = None
+        await _throttle_domain(url)
         for fetch_url in _get_fetch_url_fallbacks(url):
             try:
                 response = await client.get(fetch_url)

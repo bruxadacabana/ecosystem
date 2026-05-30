@@ -7293,7 +7293,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **AKASHA — `GET /fetch?url=` — busca transiente sem salvar (`routers/search.py`)** — implementado como `fetch_get()` em `routers/search.py`, logo acima do `POST /fetch` existente. Reutiliza `fetch_and_extract` com os mesmos tratamentos de erro. 6 testes em `tests/test_fetch_get.py`. 2026-05-30.
 
-- [ ] **ecosystem_scraper.py — throttle adaptativo por domínio (delay mínimo 2s)** — sem throttle, scraping de N artigos do mesmo domínio em sequência rápida pode disparar bloqueio de IP. Adicionar dict de módulo `{domain: last_request_time}` e impor delay configurável (padrão 2s). Constante `CRAWL_DELAY` exportável. Como AKASHA archiver e KOSMOS ArticleScraper usam este módulo, a politeness se aplica a ambos sem mudança nos callers. Origem: Auditoria 05-05, ecosystem_scraper.py.
+- [x] **ecosystem_scraper.py — throttle adaptativo por domínio (delay mínimo 2s)** — implementado: `CRAWL_DELAY=2.0`, `_domain_timestamps: dict[str, float]`, `async def throttle_domain(url, delay)`. `archiver.py` importa e chama `await _throttle_domain(url)` antes do fetch. `crawler.py` já tinha throttle próprio (mais sofisticado). 8 testes em `tests/test_throttle_domain.py`. 2026-05-30.
 
 - [ ] **ecosystem_scraper.py — HTTP 429 com backoff exponencial + header Retry-After** — atualmente o módulo não trata 429 (retorna vazio ou lança exceção). Detectar HTTP 429 → ler header `Retry-After` → backoff `max(Retry-After, min(base × 2^attempt, 60s))` com ±50% jitter → até `max_retries=3`. Implementar junto ao throttle adaptativo acima. Origem: Auditoria 05-05, ecosystem_scraper.py.
 
