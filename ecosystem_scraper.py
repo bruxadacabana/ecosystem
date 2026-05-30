@@ -27,7 +27,9 @@ _WORD_THRESHOLD = 100
 # Throttle adaptativo por domínio
 # ---------------------------------------------------------------------------
 
-CRAWL_DELAY: float = 2.0  # segundos mínimos entre requisições ao mesmo domínio
+CRAWL_DELAY: float = 2.0   # segundos mínimos entre requisições ao mesmo domínio
+MAX_RETRIES: int   = 3     # máximo de tentativas em caso de HTTP 429
+_BACKOFF_BASE: float = 2.0  # base para cálculo exponencial: base × 2^attempt
 
 _domain_timestamps: dict[str, float] = {}
 
@@ -54,6 +56,35 @@ async def throttle_domain(url: str, delay: float = CRAWL_DELAY) -> None:
     if wait > 0:
         await asyncio.sleep(wait)
     _domain_timestamps[host] = time.monotonic()
+
+
+def compute_429_backoff(retry_after_header: str | None, attempt: int) -> float:
+    """Calcula o tempo de espera após HTTP 429.
+
+    Fórmula: max(Retry-After, min(base × 2^attempt, 60s)) com ±50% jitter.
+    O jitter evita tempestade de retentativas sincronizadas entre workers.
+
+    Args:
+        retry_after_header: valor do header Retry-After em segundos (ou None).
+        attempt:            número da tentativa atual (0-based).
+
+    Returns:
+        Segundos a aguardar antes da próxima tentativa (sempre ≥ 0).
+    """
+    import random
+
+    server_wait = 0.0
+    if retry_after_header:
+        try:
+            server_wait = float(retry_after_header)
+        except ValueError:
+            pass
+
+    exponential = min(_BACKOFF_BASE * (2 ** attempt), 60.0)
+    base_wait = max(server_wait, exponential)
+    # jitter ±50% — mantém wait mínimo em 0
+    jitter = base_wait * (random.random() - 0.5)
+    return max(0.0, base_wait + jitter)
 
 
 # ---------------------------------------------------------------------------

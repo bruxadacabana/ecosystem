@@ -7295,7 +7295,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **ecosystem_scraper.py — throttle adaptativo por domínio (delay mínimo 2s)** — implementado: `CRAWL_DELAY=2.0`, `_domain_timestamps: dict[str, float]`, `async def throttle_domain(url, delay)`. `archiver.py` importa e chama `await _throttle_domain(url)` antes do fetch. `crawler.py` já tinha throttle próprio (mais sofisticado). 8 testes em `tests/test_throttle_domain.py`. 2026-05-30.
 
-- [ ] **ecosystem_scraper.py — HTTP 429 com backoff exponencial + header Retry-After** — atualmente o módulo não trata 429 (retorna vazio ou lança exceção). Detectar HTTP 429 → ler header `Retry-After` → backoff `max(Retry-After, min(base × 2^attempt, 60s))` com ±50% jitter → até `max_retries=3`. Implementar junto ao throttle adaptativo acima. Origem: Auditoria 05-05, ecosystem_scraper.py.
+- [x] **ecosystem_scraper.py — HTTP 429 com backoff exponencial + header Retry-After** — implementado: `compute_429_backoff(retry_after_header, attempt)` em `ecosystem_scraper.py` (fórmula: max(Retry-After, min(base×2^attempt, 60s)) ±50% jitter). `archiver.py` retenta até `_MAX_RETRIES=3` com sleep adaptativo e log de debug. 13 testes em `tests/test_429_backoff.py`. 2026-05-30.
 
 #### 🟡 Média prioridade
 

@@ -46,6 +46,8 @@ from ecosystem_scraper import (
     get_fetch_url as _get_fetch_url,
     get_fetch_url_fallbacks as _get_fetch_url_fallbacks,
     throttle_domain as _throttle_domain,
+    compute_429_backoff as _compute_429_backoff,
+    MAX_RETRIES as _MAX_RETRIES,
 )
 
 log = logging.getLogger("akasha.archiver")
@@ -252,18 +254,52 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         headers={"User-Agent": "Mozilla/5.0 (compatible; AKASHA-archiver/1.0)"},
     ) as client:
         # 1. Tenta proxies HTML em ordem (Medium: freedium → original)
+        #    Para cada URL de proxy, retenta até _MAX_RETRIES vezes em caso de 429.
         html = ""
         last_exc: Exception | None = None
         await _throttle_domain(url)
         for fetch_url in _get_fetch_url_fallbacks(url):
-            try:
-                response = await client.get(fetch_url)
-                response.raise_for_status()
-                html = response.text
-                break
-            except Exception as exc:
-                last_exc = exc
-                continue
+            for attempt in range(_MAX_RETRIES + 1):
+                try:
+                    response = await client.get(fetch_url)
+                    if response.status_code == 429:
+                        if attempt < _MAX_RETRIES:
+                            wait = _compute_429_backoff(
+                                response.headers.get("Retry-After"), attempt
+                            )
+                            log.debug(
+                                "archiver: 429 em %s (tentativa %d/%d) — aguardando %.1fs",
+                                fetch_url, attempt + 1, _MAX_RETRIES, wait,
+                            )
+                            await asyncio.sleep(wait)
+                            continue
+                        last_exc = httpx.HTTPStatusError(
+                            "429 Too Many Requests",
+                            request=response.request,
+                            response=response,
+                        )
+                        break
+                    response.raise_for_status()
+                    html = response.text
+                    break
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code == 429 and attempt < _MAX_RETRIES:
+                        wait = _compute_429_backoff(
+                            exc.response.headers.get("Retry-After"), attempt
+                        )
+                        log.debug(
+                            "archiver: 429 (exc) em %s (tentativa %d/%d) — aguardando %.1fs",
+                            fetch_url, attempt + 1, _MAX_RETRIES, wait,
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                    last_exc = exc
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    break
+            if html:
+                break  # fetch bem-sucedido — sai do loop de proxies
 
         # 2. Extrai metadados e conteúdo do HTML obtido (se houver)
         title:       str       = _url_fallback_title(url)
