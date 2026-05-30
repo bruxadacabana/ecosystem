@@ -2923,23 +2923,39 @@ async fn v1_models_proxy(State(s): State<LogosState>) -> Response {
 }
 
 async fn health_proxy(State(s): State<LogosState>) -> Response {
-    let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/health");
-    match s.0.client.get(&url).timeout(Duration::from_secs(2)).send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            match resp.bytes().await {
-                Ok(bytes) => axum::http::Response::builder()
-                    .status(status)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(axum::body::Body::from(bytes))
-                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+    // Com lazy loading, o llama-server só sobe na primeira requisição real.
+    // Se o LOGOS está habilitado (inference_enabled=true), retorna 200 imediatamente —
+    // independentemente do llama-server estar carregado ou não.
+    // Isso evita o deadlock: health retornava 503 → AKASHA parava de mandar req →
+    // lazy load nunca disparava → llama-server nunca subia.
+    if s.inference_enabled() {
+        // Se llama-server já estiver rodando, proxy o /health real para refletir estado correto.
+        if s.llama_proc_active().await {
+            let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/health");
+            if let Ok(resp) = s.0.client.get(&url).timeout(Duration::from_secs(2)).send().await {
+                let status = resp.status();
+                if let Ok(bytes) = resp.bytes().await {
+                    return axum::http::Response::builder()
+                        .status(status)
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(axum::body::Body::from(bytes))
+                        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+                }
             }
-        },
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-            "status": "offline"
-        }))).into_response(),
+        }
+        // Habilitada mas sem modelo carregado ainda (idle): 200 — LOGOS pronto para receber req
+        return (StatusCode::OK, Json(serde_json::json!({
+            "status": "ok",
+            "model": null,
+            "inference_enabled": true,
+            "llm_loaded": false
+        }))).into_response();
     }
+    // inference_enabled=false → LOGOS não aceitará requisições LLM
+    (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+        "status": "disabled",
+        "inference_enabled": false
+    }))).into_response()
 }
 
 async fn silence_handler(State(s): State<LogosState>) -> Response {
@@ -7594,6 +7610,48 @@ mod tests {
                 "P{priority} corpo deve mencionar 'inferência desabilitada'; got: {text}"
             );
         }
+    }
+
+    // ── health_proxy — comportamento com lazy loading ─────────────────────────
+
+    #[tokio::test]
+    async fn health_returns_200_when_inference_enabled_but_no_model_loaded() {
+        // Reproduz o deadlock corrigido: AKASHA chamava /health, LOGOS retornava 503
+        // (llama-server não carregado), AKASHA parava de mandar req, lazy load nunca disparava.
+        // Com o fix: inference_enabled=true + sem proc → 200 imediato.
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        state.set_inference_enabled(true);
+        // Sem proc ativo → llama_proc_active() = false
+
+        let resp = health_proxy(axum::extract::State(state)).await;
+        assert_eq!(resp.status(), StatusCode::OK,
+            "inference_enabled=true sem modelo carregado deve retornar 200 (lazy load disponível)");
+
+        let (_, body_stream) = resp.into_parts();
+        let bytes = axum::body::to_bytes(body_stream, 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["inference_enabled"], serde_json::json!(true));
+        assert_eq!(body["llm_loaded"],        serde_json::json!(false));
+    }
+
+    #[tokio::test]
+    async fn health_returns_503_when_inference_disabled() {
+        // inference_enabled=false → LOGOS não aceita req → /health deve retornar 503
+        // para que apps externos (AKASHA) saibam que não devem enviar requisições LLM.
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        // inference_enabled=false por padrão
+
+        let resp = health_proxy(axum::extract::State(state)).await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE,
+            "inference_enabled=false deve retornar 503");
+
+        let (_, body_stream) = resp.into_parts();
+        let bytes = axum::body::to_bytes(body_stream, 4096).await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["inference_enabled"], serde_json::json!(false));
+        assert_eq!(body["status"],            serde_json::json!("disabled"));
     }
 
     #[test]
