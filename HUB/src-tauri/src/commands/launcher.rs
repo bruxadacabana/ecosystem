@@ -19,10 +19,11 @@ use crate::AppError;
 
 /// Liga ou desliga o backend de inferência (llama-server via LOGOS).
 ///
-/// `enable = true`  → seleciona o primeiro modelo instalado e o carrega em background.
-/// `enable = false` → para o llama-server via LOGOS (libera VRAM).
+/// `enable = true`  → seta flag de inferência; o modelo é carregado lazily na
+///                    primeira requisição real (não imediatamente).
+/// `enable = false` → para llama-server e embed-server (libera VRAM/CPU).
 ///
-/// Retorna `"started"` | `"already_running"` | `"stopped"` | `"already_stopped"`.
+/// Retorna `"enabled"` | `"already_running"` | `"stopped"` | `"already_stopped"`.
 #[tauri::command]
 pub async fn toggle_inference(
     state: tauri::State<'_, crate::logos::LogosState>,
@@ -41,15 +42,16 @@ pub(crate) async fn do_toggle_inference(
 ) -> Result<String, AppError> {
     if enable {
         if server_responding {
-            // Se o processo já está rastreado pelo HUB, está tudo bem.
+            // Processo já rastreado pelo HUB → sincroniza flag e sinaliza já ativo.
             if state.llama_proc_active().await {
+                state.set_inference_enabled(true);
                 return Ok("already_running".into());
             }
-            // Servidor órfão de sessão anterior: matar antes de subir o nosso.
-            log::warn!("toggle_inference: llama-server órfão detectado na porta — matando");
+            // Servidor órfão de sessão anterior: matar antes de habilitar.
+            log::warn!("LOGOS toggle_inference: llama-server órfão detectado — matando");
             kill_orphaned_llama_server().await;
         }
-        // Falha rápida e clara: llama-server não localizado no startup
+        // Falha rápida: sem o binário é impossível carregar qualquer modelo.
         if !state.has_llama_server() {
             return Err(AppError::NotFound(
                 "llama-server não encontrado. Instale o llama.cpp e certifique-se de que \
@@ -57,19 +59,16 @@ pub(crate) async fn do_toggle_inference(
                  como logos.llama_server_path.".into(),
             ));
         }
-        let models = crate::logos::do_list_all_models(state).await;
-        let names: Vec<String> = models.into_iter().map(|m| m.name).collect();
-        let model_name = select_model_to_load_llm(&names)
-            .or_else(|| select_model_to_load(&names))
-            .ok_or_else(|| AppError::NotFound("Nenhum modelo instalado.".into()))?;
-        let s = state.clone();
-        tokio::spawn(async move {
-            let _ = crate::logos::do_load_model(&s, &model_name).await;
-        });
-        Ok("started".into())
+        // Lazy loading: apenas habilita a flag; o modelo carrega na primeira requisição real.
+        state.set_inference_enabled(true);
+        log::info!("LOGOS: inferência habilitada — modelo será carregado na primeira requisição");
+        Ok("enabled".into())
     } else {
-        let stopped = state.kill_llama_proc().await;
-        Ok(if stopped { "stopped" } else { "already_stopped" }.into())
+        let stopped_llm   = state.kill_llama_proc().await;
+        let stopped_embed = state.kill_embed_proc().await;
+        state.set_inference_enabled(false);
+        log::info!("LOGOS: inferência desabilitada (llm_killed={stopped_llm} embed_killed={stopped_embed})");
+        Ok(if stopped_llm || stopped_embed { "stopped" } else { "already_stopped" }.into())
     }
 }
 
@@ -449,24 +448,7 @@ mod tests {
 
     // ── do_toggle_inference ───────────────────────────────────────────────────
 
-    // Helper: cria registry.json com um modelo fake no diretório informado.
-    fn write_fake_registry(dir: &std::path::Path, model_name: &str) {
-        let registry = serde_json::json!([{
-            "name": model_name,
-            "repo_id": "test/repo",
-            "filename": format!("{model_name}.gguf"),
-            "path": dir.join(format!("{model_name}.gguf")).to_string_lossy(),
-            "size_bytes": 1_000_000,
-            "sha256": "abc123",
-            "downloaded_at": "2026-05-25T00:00:00+00:00"
-        }]);
-        std::fs::write(
-            dir.join("registry.json"),
-            serde_json::to_vec(&registry).unwrap(),
-        ).unwrap();
-    }
-
-    #[tokio::test]
+#[tokio::test]
     async fn toggle_disable_no_proc_returns_already_stopped() {
         let dir = tempfile::tempdir().unwrap();
         let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), None);
@@ -484,27 +466,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn toggle_enable_no_models_returns_not_found() {
-        // has_llama_server() = true, mas models dir vazio → NotFound
+    async fn toggle_enable_no_models_still_returns_enabled() {
+        // Lazy loading: toggle_inference(true) com binário presente mas sem modelos
+        // deve retornar "enabled" — a verificação de modelos acontece na primeira requisição.
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("llama-server");
         std::fs::write(&bin, b"").unwrap();
         let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), Some(bin));
-        // sem registry.json → lista de modelos vazia
-        let err = do_toggle_inference(&state, true, false).await.unwrap_err();
-        assert!(matches!(err, crate::AppError::NotFound(_)), "esperado NotFound, obteve: {err:?}");
+        // sem registry.json → modelos ausentes, mas não mais um erro no toggle
+        let result = do_toggle_inference(&state, true, false).await.unwrap();
+        assert_eq!(result, "enabled", "sem modelos instalados ainda retorna 'enabled' (lazy load)");
     }
 
     #[tokio::test]
-    async fn toggle_enable_with_model_returns_started() {
+    async fn toggle_enable_returns_enabled_and_sets_flag() {
+        // toggle_inference(true) → retorna "enabled" e seta inference_enabled=true.
+        // Não deve spawnar nenhum processo (lazy loading).
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("llama-server");
         std::fs::write(&bin, b"").unwrap();
-        write_fake_registry(dir.path(), "gemma-2b");
         let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), Some(bin));
-        // server_responding=false → sem verificação de órfão
         let result = do_toggle_inference(&state, true, false).await.unwrap();
-        assert_eq!(result, "started");
+        assert_eq!(result, "enabled");
+        assert!(state.inference_enabled(), "inference_enabled deve ser true após toggle(true)");
     }
 
     #[cfg(unix)]
@@ -528,20 +512,54 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn toggle_enable_orphan_server_with_model_returns_started() {
+    async fn toggle_enable_orphan_server_returns_enabled() {
         // Cenário: server_responding=true mas llama_proc_active=false (órfão de sessão anterior).
-        // A função deve: chamar kill_orphaned_llama_server (efeito externo, não verificável em unit)
-        // e em seguida retornar "started" quando há modelo disponível.
+        // A função deve: chamar kill_orphaned_llama_server + setar flag + retornar "enabled".
         let dir = tempfile::tempdir().unwrap();
         let bin = dir.path().join("llama-server");
         std::fs::write(&bin, b"").unwrap();
-        write_fake_registry(dir.path(), "gemma-2b");
-        // GGUF precisa existir para resolve_gguf_path encontrá-lo
-        std::fs::write(dir.path().join("gemma-2b.gguf"), b"fake gguf").unwrap();
         let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), Some(bin));
-        // server_responding=true + proc_active=false → orphan path → continua e retorna "started"
+        // server_responding=true + proc_active=false → orphan path → habilita lazy e retorna "enabled"
         let result = do_toggle_inference(&state, true, true).await.unwrap();
-        assert_eq!(result, "started", "órfão detectado deve ser morto e novo carregamento iniciado");
+        assert_eq!(result, "enabled", "após matar órfão deve habilitar lazy loading");
+        assert!(state.inference_enabled(), "flag deve ser true após toggle(true) com órfão");
+    }
+
+    #[tokio::test]
+    async fn lazy_load_toggle_does_not_spawn_llama() {
+        // toggle_inference(true) não deve spawnar processo — apenas seta flag.
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("llama-server");
+        std::fs::write(&bin, b"").unwrap();
+        let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), Some(bin));
+
+        // Pré-condição: nenhum processo ativo
+        assert!(!state.llama_proc_active().await, "pré-condição: nenhum proc antes do toggle");
+        assert!(!state.inference_enabled(), "pré-condição: flag false antes do toggle");
+
+        let result = do_toggle_inference(&state, true, false).await.unwrap();
+        assert_eq!(result, "enabled");
+
+        // Flag setada, mas nenhum processo foi spawned (lazy loading)
+        assert!(state.inference_enabled(), "flag deve ser true após toggle(true)");
+        assert!(!state.llama_proc_active().await, "nenhum proc deve ter sido spawned — lazy loading");
+    }
+
+    #[tokio::test]
+    async fn toggle_disable_sets_inference_enabled_false() {
+        // toggle_inference(false) deve: matar processos + setar inference_enabled=false.
+        let dir = tempfile::tempdir().unwrap();
+        let state = crate::logos::LogosState::for_testing(dir.path().to_path_buf(), None);
+
+        // Simula IA ligada
+        state.set_inference_enabled(true);
+        assert!(state.inference_enabled(), "pré-condição: flag true");
+
+        let result = do_toggle_inference(&state, false, false).await.unwrap();
+        assert_eq!(result, "already_stopped"); // nenhum proc ativo
+
+        // Flag deve ser false após toggle(false), independente de haver proc ou não
+        assert!(!state.inference_enabled(), "inference_enabled deve ser false após toggle(false)");
     }
 
     #[cfg(unix)]

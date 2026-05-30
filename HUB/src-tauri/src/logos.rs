@@ -480,6 +480,18 @@ impl LogosState {
         self.0.llama_server_bin.is_some()
     }
 
+    /// Retorna true se a IA está habilitada ("Ligar IA" ativado pela usuária).
+    /// O modelo pode não estar carregado ainda — será carregado lazily na primeira requisição.
+    pub fn inference_enabled(&self) -> bool {
+        self.0.inference_enabled.load(Ordering::Relaxed)
+    }
+
+    /// Habilita ou desabilita a flag de inferência.
+    /// `true` → IA ligada (modelo carrega lazily). `false` → IA desligada (rejeita requisições).
+    pub fn set_inference_enabled(&self, val: bool) {
+        self.0.inference_enabled.store(val, Ordering::Relaxed);
+    }
+
     /// Retorna true se há um processo llama-server rastreado ativamente pelo HUB.
     pub async fn llama_proc_active(&self) -> bool {
         self.0.llama_proc.lock().await.is_some()
@@ -1926,6 +1938,18 @@ async fn queue_and_forward(
     requested_priority: u8,
     ollama_target: &str,
 ) -> Response {
+    // Rejeitar imediatamente se a IA estiver desabilitada ("Ligar IA" desligado).
+    // O modelo será carregado lazily na primeira requisição — isso é verificado no Passo 3.
+    if !s.0.inference_enabled.load(Ordering::Relaxed) {
+        log::debug!("LOGOS: requisição rejeitada de '{}' — inferência desabilitada", app_name);
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "LOGOS: inferência desabilitada — ative a IA no HUB antes de fazer requisições"
+            })),
+        ).into_response();
+    }
+
     // Aplica override de prioridade baseado no perfil ativo
     let profile = s.0.active_profile.lock().await.clone();
     let priority = apply_profile_priority(&profile, &app_name, requested_priority);
@@ -6547,5 +6571,70 @@ mod tests {
             elapsed.as_secs() < 5,
             "last_embed_request_at deve ser inicializado recentemente (elapsed={elapsed:?})"
         );
+    }
+
+    // ── Passo 2: lazy loading — gate de inference_enabled em queue_and_forward ─
+
+    #[tokio::test]
+    async fn inference_enabled_false_rejects_requests() {
+        // inference_enabled=false (padrão) → queue_and_forward deve retornar 503
+        // antes de qualquer processamento (sem tentativa de rede).
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        // Confirma pré-condição: flag false por padrão
+        assert!(!state.inference_enabled(), "pré-condição: inference_enabled deve ser false");
+
+        let body = serde_json::Map::from_iter([
+            ("model".to_string(), serde_json::json!("qwen2.5:3b")),
+            ("messages".to_string(), serde_json::json!([])),
+        ]);
+        let response = queue_and_forward(state, body, "test_app".to_string(), 1, "api/chat").await;
+        assert_eq!(
+            response.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "inference_enabled=false → 503 SERVICE_UNAVAILABLE esperado"
+        );
+    }
+
+    #[tokio::test]
+    async fn inference_enabled_true_passes_gate() {
+        // inference_enabled=true → não retorna 503 pelo gate (pode falhar por outro motivo —
+        // o servidor não existe — mas o gate em si não rejeita a requisição).
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        state.set_inference_enabled(true);
+
+        let body = serde_json::Map::from_iter([
+            ("model".to_string(), serde_json::json!("qwen2.5:3b")),
+            ("messages".to_string(), serde_json::json!([])),
+        ]);
+        let response = queue_and_forward(state, body, "test_app".to_string(), 1, "api/chat").await;
+        // O gate foi ultrapassado: a resposta pode ser qualquer erro de rede/504/503 por motivo
+        // diferente (sem llama-server real), mas NÃO deve ser 503 pelo gate de inference_enabled.
+        // Verificamos que o status não é o 503 específico do gate.
+        if response.status() == StatusCode::SERVICE_UNAVAILABLE {
+            use axum::body::to_bytes;
+            let (_, body_stream) = response.into_parts();
+            let bytes = to_bytes(body_stream, 4096).await.unwrap();
+            let text = String::from_utf8_lossy(&bytes);
+            assert!(
+                !text.contains("inferência desabilitada"),
+                "com inference_enabled=true o gate não deve rejeitar; body: {text}"
+            );
+        }
+        // Qualquer outro status (5xx, timeout, etc.) é aceitável — o gate passou
+    }
+
+    #[test]
+    fn inference_enabled_accessor_reads_flag() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        assert!(!state.inference_enabled(), "deve iniciar false");
+        state.set_inference_enabled(true);
+        assert!(state.inference_enabled(), "deve retornar true após set");
+        state.set_inference_enabled(false);
+        assert!(!state.inference_enabled(), "deve retornar false após reset");
     }
 }

@@ -1,7 +1,14 @@
 ## Fila de implementação atual:
 
-pode prosseguir para a implementação da seção '### LOGOS — Duas instâncias llama-server: chat + embedding simultâneos | 2026-05-26', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
+pode prosseguir para a implementação da seção '### LOGOS — Reestruturação ciclo de vida LLMs | 2026-05-27
+', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
 Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes exaustivamente e incluir criação de logs em todo o processo do llama cpp.
+
+---
+
+O valor real desse servidor pro ecossistema seria como nó sempre ligado: Syncthing disponível mesmo quando o CachyOS estiver desligado, AKASHA crawlando em background permanentemente, KOSMOS agregando feeds o dia todo. Coisas que hoje dependem do PC principal estar acordado.
+
+---
 
 
 ## próximo: 

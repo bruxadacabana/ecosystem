@@ -2508,6 +2508,18 @@ logos.rs:find_llama_server_bin() busca em:
 ```
 O LOGOS inicia um processo `llama-server` sob demanda para cada modelo solicitado. O servidor roda na porta **8081** (interna, não exposta aos apps). Apenas um modelo é carregado por vez — troca de modelo derruba o processo anterior e sobe um novo.
 
+**Ciclo de vida de modelos — Lazy Loading:**
+
+"Ligar IA" (`toggle_inference(true)`) apenas seta a flag `inference_enabled=true` internamente. O modelo NÃO é carregado neste momento. A carga acontece lazily na primeira requisição real que chegar ao proxy. Isso evita ocupar VRAM sem necessidade de uso imediato.
+
+| Estado | `inference_enabled` | Processo ativo | O que acontece nas requisições |
+|--------|--------------------|-----------------|---------------------------------|
+| IA desligada | `false` | Nenhum | 503 "inferência desabilitada" |
+| IA ligada, idle | `true` | Nenhum | Carrega modelo na primeira requisição (Passo 3) |
+| IA ligada, servindo | `true` | `llama-server:8081` | Requisições encaminhadas normalmente |
+
+"Desligar IA" (`toggle_inference(false)`) mata os processos `llama-server` e `embed-server` e seta `inference_enabled=false`.
+
 **Resolução do arquivo GGUF:**
 1. Registry próprio: `{hub_data_path}/logos/models/registry.json`
 2. Blob store do Ollama: `~/.ollama/models/blobs/` (reutiliza downloads existentes do Ollama, se houver)
