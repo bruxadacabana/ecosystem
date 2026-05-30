@@ -169,6 +169,15 @@ export interface LogosStatus {
   embed_server_model:  string
   /** Latência do último /health no servidor de embedding (ms); null se offline ou não respondeu. */
   embed_response_ms:   number | null
+  /**
+   * True quando "Ligar IA" foi ativado pela usuária.
+   * O modelo pode não estar carregado ainda (lazy loading) — ver chat_server_online.
+   * Estados possíveis:
+   *   false                               → disabled (IA desligada)
+   *   true  + chat_server_online=false    → enabled_idle (aguardando primeira req)
+   *   true  + chat_server_online=true     → active (modelo servindo)
+   */
+  inference_enabled: boolean
 }
 
 export interface ModelInfo {

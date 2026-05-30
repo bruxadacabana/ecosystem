@@ -168,28 +168,16 @@ export function LogosView() {
     setStarting(true)
     setToggleError(null)
     const r = await cmd.toggleInference(true)
+    setStarting(false)
     if (!r.ok) {
-      setStarting(false)
       const msg = r.error?.message
         ?? (r.error?.kind === 'NotFound' ? 'Nenhum modelo instalado — baixe um modelo primeiro' : 'Erro ao ligar')
       setToggleError(msg)
       setTimeout(() => setToggleError(null), 6_000)
       return
     }
-    // Poll a cada 5s por até 90s — GGUFs grandes podem demorar bastante para carregar na VRAM
-    const deadline = Date.now() + 90_000
-    while (Date.now() < deadline) {
-      await new Promise<void>(res => setTimeout(res, 5_000))
-      fetchModels()
-      const check = await cmd.logosListAllModels()
-      if (check.ok && check.data.some(m => m.status === 'active')) {
-        setStarting(false)
-        return
-      }
-    }
-    setStarting(false)
-    setToggleError('Timeout ao carregar — tente novamente')
-    setTimeout(() => setToggleError(null), 8_000)
+    // Com lazy loading, "Ligar IA" apenas seta a flag — o modelo carrega na primeira requisição.
+    // A UI transita para "enabled_idle" via status poll. Nenhuma espera adicional necessária.
   }
 
   async function handleSetModel(app: string, modelType: string, model: string) {
@@ -275,12 +263,14 @@ export function LogosView() {
   const maxConcurrent      = hwProfile === 'main_pc' ? 2 : 1
   const p3VramBlocked      = status?.p3_vram_blocked ?? false
 
-  const chatOnline      = status?.chat_server_online  ?? false
-  const chatModel       = status?.chat_server_model   ?? ''
-  const chatMs          = status?.chat_response_ms    ?? null
-  const embedOnline     = status?.embed_server_online ?? false
-  const embedModel      = status?.embed_server_model  ?? ''
-  const embedMs         = status?.embed_response_ms   ?? null
+  const chatOnline        = status?.chat_server_online  ?? false
+  const chatModel         = status?.chat_server_model   ?? ''
+  const chatMs            = status?.chat_response_ms    ?? null
+  const embedOnline       = status?.embed_server_online ?? false
+  const embedModel        = status?.embed_server_model  ?? ''
+  const embedMs           = status?.embed_response_ms   ?? null
+  // inference_enabled: "Ligar IA" foi ativado. O modelo pode ainda não estar carregado (lazy).
+  const inferenceEnabled  = status?.inference_enabled   ?? false
 
   let vramColor = 'var(--accent-green)'
   if (vramPct !== null) {
@@ -1050,79 +1040,113 @@ export function LogosView() {
       </section>
 
       {/* ── Ações ─────────────────────────────────────── */}
-      {(() => {
-        const inferenceOnline = allModels.some(m => m.status === 'active')
-        return (
-          <section style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Estados:
+          disabled      → inference_enabled=false: botão "Ligar IA"
+          enabled_idle  → inference_enabled=true + chat offline: "IA ativa — aguardando"
+          active        → inference_enabled=true + chat online: modelo carregado */}
+      <section style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button
+          className="btn btn-ghost btn-sm"
+          disabled={silencing}
+          onClick={handleSilence}
+          title="Descarregar modelos da memória"
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
+        >
+          {silencing ? '…' : 'Descarregar modelos'}
+        </button>
+
+        {/* Estado: disabled — IA desligada */}
+        {!inferenceEnabled && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <button
               className="btn btn-ghost btn-sm"
-              disabled={silencing}
-              onClick={handleSilence}
-              title="Descarregar modelos da memória"
-              style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}
+              disabled={starting}
+              onClick={handleStartInference}
+              title="Ativar IA — modelo carregará na primeira requisição"
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
+                borderColor: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
+                opacity: starting ? 0.6 : 1,
+              }}
             >
-              {silencing ? '…' : 'Descarregar modelos'}
+              {starting ? 'Ativando…' : 'Ligar IA'}
             </button>
-            {!inferenceOnline && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  disabled={starting}
-                  onClick={handleStartInference}
-                  title="Carregar modelo e ligar o backend de inferência"
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 11,
-                    color: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
-                    borderColor: toggleError ? 'var(--ribbon)' : 'var(--accent-green)',
-                    opacity: starting ? 0.6 : 1,
-                  }}
-                >
-                  {starting ? 'Carregando modelo…' : 'Ligar IA'}
-                </button>
-                {toggleError && (
-                  <span style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 10,
-                    color: 'var(--ribbon)',
-                    maxWidth: 300,
-                    lineHeight: 1.5,
-                  }}>
-                    {toggleError}
-                  </span>
-                )}
-              </div>
+            {toggleError && (
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                color: 'var(--ribbon)',
+                maxWidth: 300,
+                lineHeight: 1.5,
+              }}>
+                {toggleError}
+              </span>
             )}
-            {inferenceOnline && (
-              <>
-                <span style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  color: 'var(--accent-green)',
-                  opacity: 0.7,
-                }}>
-                  IA ativa
-                </span>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  disabled={stopping}
-                  onClick={handleStopInference}
-                  title="Descarregar modelo e liberar VRAM"
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 11,
-                    color: stopping ? 'var(--ink-ghost)' : 'var(--ribbon)',
-                    borderColor: stopping ? 'var(--rule)' : 'var(--ribbon)',
-                    opacity: stopping ? 0.5 : 1,
-                  }}
-                >
-                  {stopping ? '…' : 'Desligar IA'}
-                </button>
-              </>
-            )}
-          </section>
-        )
-      })()}
+          </div>
+        )}
+
+        {/* Estado: enabled_idle — IA ativa, modelo ainda não carregado */}
+        {inferenceEnabled && !chatOnline && (
+          <>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--accent)',
+              opacity: 0.85,
+            }}
+              title="IA ativa — modelo carregará automaticamente na primeira requisição"
+            >
+              IA ativa — aguardando requisição
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={stopping}
+              onClick={handleStopInference}
+              title="Desligar IA e cancelar carregamento"
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: stopping ? 'var(--ink-ghost)' : 'var(--ribbon)',
+                borderColor: stopping ? 'var(--rule)' : 'var(--ribbon)',
+                opacity: stopping ? 0.5 : 1,
+              }}
+            >
+              {stopping ? '…' : 'Desligar IA'}
+            </button>
+          </>
+        )}
+
+        {/* Estado: active — modelo carregado e servindo */}
+        {inferenceEnabled && chatOnline && (
+          <>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--accent-green)',
+              opacity: 0.7,
+            }}>
+              IA ativa
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={stopping}
+              onClick={handleStopInference}
+              title="Descarregar modelo e liberar VRAM"
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                color: stopping ? 'var(--ink-ghost)' : 'var(--ribbon)',
+                borderColor: stopping ? 'var(--rule)' : 'var(--ribbon)',
+                opacity: stopping ? 0.5 : 1,
+              }}
+            >
+              {stopping ? '…' : 'Desligar IA'}
+            </button>
+          </>
+        )}
+      </section>
     </div>
   )
 }

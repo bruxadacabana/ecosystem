@@ -813,6 +813,9 @@ pub struct StatusResponse {
     pub embed_server_model: String,
     /// Latência do último /health no servidor de embedding (ms); None se offline ou não respondeu.
     pub embed_response_ms: Option<u32>,
+    /// True quando "Ligar IA" foi ativado pela usuária.
+    /// O modelo pode ainda não estar carregado (lazy loading) — ver `chat_server_online`.
+    pub inference_enabled: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -1329,6 +1332,102 @@ async fn spawn_llama_server_proc(
         .map_err(|e| format!("Falha ao iniciar llama-server: {e}"))
 }
 
+/// Constrói o `Command` do llama-server em modo CPU fallback com recursos restritos.
+///
+/// Aplicado após OOM de GPU confirmado e modelo dentro do limite `cpu_fallback_max_mb`.
+/// Restrições para evitar travamento do sistema:
+/// - `--n-gpu-layers 0`: sem GPU
+/// - `--threads N` / `--threads-batch N`: N ≤ metade dos cores lógicos (mínimo 1)
+/// - `--ctx-size 512`: contexto mínimo para reduzir uso de RAM
+/// - `--parallel 1`: uma requisição por vez (CPU não suporta batching eficiente)
+///
+/// `cpu_max_threads`: valor de `ecosystem.json["logos"]["cpu_max_threads"]`.
+/// 0 = automático (metade dos cores, mínimo 1). >0 = limitado a esse valor.
+pub(crate) fn build_llama_server_cmd_cpu_fallback(
+    bin:             &std::path::Path,
+    model_path:      &std::path::Path,
+    mmproj_path:     Option<&std::path::Path>,
+    port:            u16,
+    cpu_max_threads: usize,
+) -> tokio::process::Command {
+    let total_cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2);
+    let auto_threads = (total_cores / 2).max(1);
+    let threads = if cpu_max_threads == 0 {
+        auto_threads
+    } else {
+        cpu_max_threads.min(total_cores).max(1)
+    };
+    log::info!(
+        "LOGOS CPU fallback cmd: threads={threads} \
+         (cpu_max_threads={cpu_max_threads}, total_cores={total_cores}), \
+         ctx-size=512, parallel=1, n-gpu-layers=0"
+    );
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.arg("--model")         .arg(model_path)
+       .arg("--port")          .arg(port.to_string())
+       .arg("--n-gpu-layers")  .arg("0")
+       .arg("--threads")       .arg(threads.to_string())
+       .arg("--threads-batch") .arg(threads.to_string())
+       .arg("--ctx-size")      .arg("512")
+       .arg("--parallel")      .arg("1")
+       .arg("--pooling")       .arg("mean")
+       .stdout(std::process::Stdio::null())
+       .stderr(std::process::Stdio::piped());
+    if let Some(mp) = mmproj_path {
+        cmd.arg("--mmproj").arg(mp);
+    }
+    cmd
+}
+
+/// Spawna llama-server em modo CPU fallback e aplica prioridade reduzida no SO.
+///
+/// No Linux: `renice +10` (prioridade CPU baixa) + `ionice -c 3` (I/O idle).
+/// Garante que o fallback não monopolize o sistema mesmo dentro dos threads permitidos.
+async fn spawn_llama_server_cpu_fallback(
+    bin:             &std::path::Path,
+    model_path:      &std::path::Path,
+    mmproj_path:     Option<&std::path::Path>,
+    port:            u16,
+    cpu_max_threads: usize,
+) -> Result<tokio::process::Child, String> {
+    let mut child =
+        build_llama_server_cmd_cpu_fallback(bin, model_path, mmproj_path, port, cpu_max_threads)
+            .spawn()
+            .map_err(|e| format!("Falha ao iniciar llama-server em modo CPU: {e}"))?;
+
+    // Linux: reduzir prioridade para o fallback não monopolizar CPU e disco
+    #[cfg(target_os = "linux")]
+    if let Some(pid) = child.id() {
+        let pid_str = pid.to_string();
+        match std::process::Command::new("renice")
+            .args(["+10", "-p", &pid_str])
+            .status()
+        {
+            Ok(s) if s.success() =>
+                log::info!("LOGOS CPU fallback: renice +10 aplicado ao pid {pid}"),
+            Ok(s) =>
+                log::warn!("LOGOS CPU fallback: renice retornou {s} para pid {pid}"),
+            Err(e) =>
+                log::warn!("LOGOS CPU fallback: renice falhou (não instalado?) para pid {pid}: {e}"),
+        }
+        match std::process::Command::new("ionice")
+            .args(["-c", "3", "-p", &pid_str])
+            .status()
+        {
+            Ok(s) if s.success() =>
+                log::info!("LOGOS CPU fallback: ionice -c 3 aplicado ao pid {pid}"),
+            Ok(s) =>
+                log::warn!("LOGOS CPU fallback: ionice retornou {s} para pid {pid}"),
+            Err(e) =>
+                log::warn!("LOGOS CPU fallback: ionice falhou (não instalado?) para pid {pid}: {e}"),
+        }
+    }
+
+    Ok(child)
+}
+
 /// Inicia uma task que lê o stderr do chat-server, registra via log e escreve em arquivo.
 ///
 /// `log_path`: caminho do arquivo de log (`logos_chat.log` no diretório logos/).
@@ -1509,6 +1608,14 @@ async fn wait_llama_ready_checking_child(
     }
 }
 
+/// Retorna `true` se a VRAM livre é suficiente para carregar o modelo (margem de 15%).
+/// `model_size_mb = 0` → sem dados de tamanho, skip da verificação (retorna true).
+pub(crate) fn vram_sufficient_for_model(vram_free_mb: u64, model_size_mb: u64) -> bool {
+    if model_size_mb == 0 { return true; }
+    let needed = (model_size_mb as f64 * 1.15) as u64;
+    vram_free_mb >= needed
+}
+
 /// Verifica se o tamanho do arquivo GGUF permite fallback para CPU após OOM de GPU.
 /// Retorna `None` se o modelo cabe dentro do limite; `Some(mensagem)` se for muito grande.
 /// Usa o tamanho real do arquivo em disco (mais confiável que o registry para modelos importados).
@@ -1546,13 +1653,25 @@ pub(crate) async fn ensure_llama_model_loaded(
         }
     }
 
-    // Para o processo atual (se houver)
-    {
+    // Para o processo atual (se houver). Aguarda 500ms para GPU liberar VRAM.
+    let killed_prev_proc = {
         let mut guard = s.0.llama_proc.lock().await;
         if let Some(mut proc) = guard.take() {
+            let prev_name = proc.model_name.clone();
             let _ = proc.child.kill();
             let _ = proc.child.wait().await;
+            log::info!(
+                "LOGOS llama-server: processo anterior ({prev_name}) encerrado — \
+                 carregando '{model_name}'"
+            );
+            true
+        } else {
+            false
         }
+    };
+    if killed_prev_proc {
+        // Aguarda GPU liberar VRAM após encerramento do processo anterior
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
     // Resolve caminho do GGUF
@@ -1613,6 +1732,32 @@ pub(crate) async fn ensure_llama_model_loaded(
     // n_ctx calculado ANTES do check de VRAM para incluir KV cache na estimativa
     let n_ctx = n_ctx_for_hardware(s.0.hardware_profile);
     let n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx).await;
+
+    // Passo 7: VRAM pre-check — verificar disponibilidade antes do spawn
+    // Executado apenas quando há GPU (n_gpu ≠ 0) e tamanho do modelo conhecido (> 0).
+    // Em modo CPU-only (WorkPc) ou modelo sem metadados: skip silencioso.
+    if n_gpu != 0 && model_size_mb > 0 {
+        let (vram_used_opt, vram_total_opt, _) = vram_usage(&s.0.client, s.0.hardware_profile).await;
+        if let (Some(vram_used), Some(vram_total)) = (vram_used_opt, vram_total_opt) {
+            let vram_free = vram_total.saturating_sub(vram_used);
+            if !vram_sufficient_for_model(vram_free, model_size_mb) {
+                let needed_mb = (model_size_mb as f64 * 1.15) as u64;
+                let msg = format!(
+                    "VRAM insuficiente para '{model_name}': {vram_free}MB livre, \
+                     modelo precisa ~{needed_mb}MB ({model_size_mb}MB + 15% margem)"
+                );
+                log::error!("LOGOS VRAM pre-check: {msg}");
+                s.emit_alert("error", &msg).await;
+                return Err(msg);
+            }
+            log::info!(
+                "LOGOS VRAM pre-check: OK — {vram_free}MB livre, \
+                 '{model_name}' precisa ~{}MB",
+                (model_size_mb as f64 * 1.15) as u64
+            );
+        }
+    }
+
     let gpu_mode = if n_gpu == 0 { "CPU".to_string() } else if n_gpu == -1 { "GPU (full)".to_string() } else { format!("GPU ({n_gpu} layers)") };
     log::info!(
         "LOGOS llama-server: carregando '{model_name}' \
@@ -1655,9 +1800,12 @@ pub(crate) async fn ensure_llama_model_loaded(
                  modelo dentro do limite CPU de {}MB) — retentando com CPU only",
                 s.0.cpu_fallback_max_mb
             );
-            let mut cpu_child = spawn_llama_server_proc(&bin, &gguf_path, mmproj_path.as_deref(), 0, n_ctx, LLAMA_SERVER_PORT)
-                .await
-                .map_err(|e| format!("Falha ao reiniciar em modo CPU: {e}"))?;
+            let mut cpu_child = spawn_llama_server_cpu_fallback(
+                &bin, &gguf_path, mmproj_path.as_deref(),
+                LLAMA_SERVER_PORT, s.0.cpu_max_threads,
+            )
+            .await
+            .map_err(|e| format!("Falha ao reiniciar em modo CPU: {e}"))?;
 
             if let Some(stderr) = cpu_child.stderr.take() {
                 spawn_chat_stderr_reader(stderr, format!("{model_name}[cpu]"), chat_log_path(&s.0.models_dir));
@@ -3017,6 +3165,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         embed_server_online: embed_online,
         embed_server_model:  embed_model_loaded,
         embed_response_ms:   embed_ms,
+        inference_enabled:   s.inference_enabled(),
     }
 }
 
@@ -7223,5 +7372,237 @@ mod tests {
             "last_llm_request_at deve ser < 5s após requisição; elapsed={elapsed:?}"
         );
         state.kill_llama_proc().await;
+    }
+
+    // ── Passo 6: build_llama_server_cmd_cpu_fallback ──────────────────────────
+
+    #[test]
+    fn cpu_spawn_has_zero_gpu_layers() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd_cpu_fallback(bin, model, None, 8081, 0);
+        let args  = cmd_args(&cmd);
+        let idx   = args.iter().position(|a| a == "--n-gpu-layers")
+            .expect("--n-gpu-layers deve estar presente em modo CPU fallback");
+        assert_eq!(args[idx + 1], "0", "modo CPU fallback deve usar --n-gpu-layers 0");
+    }
+
+    #[test]
+    fn cpu_spawn_has_ctx_size_512() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd_cpu_fallback(bin, model, None, 8081, 0);
+        let args  = cmd_args(&cmd);
+        let idx   = args.iter().position(|a| a == "--ctx-size")
+            .expect("--ctx-size deve estar presente em modo CPU fallback");
+        assert_eq!(args[idx + 1], "512", "ctx-size deve ser 512 em modo CPU (economia de RAM)");
+    }
+
+    #[test]
+    fn cpu_spawn_parallel_is_one() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd_cpu_fallback(bin, model, None, 8081, 0);
+        let args  = cmd_args(&cmd);
+        let idx   = args.iter().position(|a| a == "--parallel")
+            .expect("--parallel deve estar presente");
+        assert_eq!(args[idx + 1], "1", "--parallel deve ser 1 em modo CPU (uma req por vez)");
+    }
+
+    #[test]
+    fn cpu_spawn_uses_limited_threads_explicit() {
+        let total = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
+        let cpu_max = 2usize;
+        let expected = cpu_max.min(total).max(1);
+
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd_cpu_fallback(bin, model, None, 8081, cpu_max);
+        let args  = cmd_args(&cmd);
+
+        let idx = args.iter().position(|a| a == "--threads")
+            .expect("--threads deve estar presente");
+        let idx_batch = args.iter().position(|a| a == "--threads-batch")
+            .expect("--threads-batch deve estar presente");
+        let t: usize = args[idx + 1].parse().expect("--threads deve ser número");
+        let tb: usize = args[idx_batch + 1].parse().expect("--threads-batch deve ser número");
+        assert_eq!(t, expected, "--threads deve ser min(cpu_max_threads, total_cores)");
+        assert_eq!(tb, t, "--threads-batch deve ser igual a --threads");
+        assert!(t <= total, "threads não pode exceder total de cores lógicos");
+    }
+
+    #[test]
+    fn cpu_spawn_auto_threads_is_at_most_half_cores() {
+        let total    = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
+        let expected = (total / 2).max(1);
+
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd_cpu_fallback(bin, model, None, 8081, 0); // 0 = auto
+        let args  = cmd_args(&cmd);
+
+        let idx = args.iter().position(|a| a == "--threads")
+            .expect("--threads deve estar presente com cpu_max_threads=0");
+        let t: usize = args[idx + 1].parse().expect("--threads deve ser número");
+        assert_eq!(t, expected,
+            "cpu_max_threads=0 deve usar metade dos cores ({total} cores → {expected} threads)");
+        assert!(t <= total, "auto threads não pode exceder total de cores");
+    }
+
+    #[test]
+    fn cpu_spawn_threads_and_batch_are_equal() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd_cpu_fallback(bin, model, None, 8081, 4);
+        let args  = cmd_args(&cmd);
+
+        let idx_t  = args.iter().position(|a| a == "--threads")       .expect("--threads");
+        let idx_tb = args.iter().position(|a| a == "--threads-batch")  .expect("--threads-batch");
+        assert_eq!(args[idx_t + 1], args[idx_tb + 1],
+            "--threads e --threads-batch devem ter o mesmo valor");
+    }
+
+    // ── Passo 7: vram_sufficient_for_model ────────────────────────────────────
+
+    #[test]
+    fn vram_precheck_skips_when_model_size_zero() {
+        // model_size_mb=0 → sem dados de tamanho → não bloquear (skip check)
+        assert!(vram_sufficient_for_model(0, 0),
+            "model_size=0 deve retornar true (skip)");
+        assert!(vram_sufficient_for_model(100, 0),
+            "qualquer vram_free com model_size=0 deve retornar true");
+    }
+
+    #[test]
+    fn vram_precheck_sufficient_when_free_gt_needed() {
+        // free = 1200 MB, model = 1000 MB, needed = 1000 * 1.15 = 1150 → 1200 >= 1150 = OK
+        assert!(vram_sufficient_for_model(1_200, 1_000),
+            "1200MB livre deve ser suficiente para modelo de 1000MB (needed=1150MB)");
+    }
+
+    #[test]
+    fn vram_precheck_insufficient_when_free_lt_needed() {
+        // free = 1000 MB, model = 1000 MB, needed = 1150 → 1000 < 1150 = FAIL
+        assert!(!vram_sufficient_for_model(1_000, 1_000),
+            "1000MB livre não deve ser suficiente para modelo de 1000MB (needed=1150MB)");
+    }
+
+    #[test]
+    fn vram_precheck_margin_is_fifteen_pct() {
+        // Verifica que a margem é exatamente 15%: needed = floor(size * 1.15)
+        let size   = 100u64;
+        let needed = (size as f64 * 1.15) as u64; // = 115
+        assert!( vram_sufficient_for_model(needed,      size), "free=115 deve passar (exact)");
+        assert!(!vram_sufficient_for_model(needed - 1,  size), "free=114 deve falhar (<115)");
+        assert!( vram_sufficient_for_model(needed + 1,  size), "free=116 deve passar (>115)");
+    }
+
+    #[test]
+    fn vram_precheck_small_model_always_ok_with_full_vram() {
+        // Modelo de 100MB em 8192MB VRAM (RX 6600) → sempre OK
+        assert!(vram_sufficient_for_model(8_192, 100));
+    }
+
+    #[test]
+    fn vram_precheck_large_model_fails_small_vram() {
+        // Modelo de 7000MB em 500MB livre → falha
+        assert!(!vram_sufficient_for_model(500, 7_000));
+    }
+
+    // ── Passo 9: testes de integração ────────────────────────────────────────
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn full_cycle_idle_kill_preserves_inference_flag() {
+        // Cria estado com inference_enabled=true e proc ativo simulado.
+        // Simula idle (timestamp antigo) → check_idle_llm mata o proc.
+        // Verifica: proc killed, mas inference_enabled permanece true.
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        state.set_inference_enabled(true);
+
+        // Injeta proc "ativo"
+        let child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().expect("sleep disponível");
+        state.inject_proc_for_test(child, "gemma-2b").await;
+
+        assert!(state.llama_proc_active().await, "proc deve estar ativo após inject");
+
+        // Simula idle: last_llm_request_at muito antigo
+        let old = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(state.0.idle_timeout_secs + 10))
+            .unwrap_or_else(std::time::Instant::now);
+        *state.0.last_llm_request_at.lock().await = old;
+
+        let killed = check_idle_llm(&state).await;
+        assert!(killed, "idle watchdog deve matar proc após timeout");
+        assert!(!state.llama_proc_active().await, "proc deve estar inativo após kill");
+        assert!(state.inference_enabled(),
+            "inference_enabled deve permanecer true após idle unload — modelo recarrega na próxima req");
+    }
+
+    #[tokio::test]
+    async fn collect_status_includes_inference_enabled_field() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        // Verifica estado inicial = false
+        let st = collect_status(&state).await;
+        assert!(!st.inference_enabled,
+            "inference_enabled deve ser false por padrão");
+
+        // Ativa e verifica
+        state.set_inference_enabled(true);
+        let st2 = collect_status(&state).await;
+        assert!(st2.inference_enabled,
+            "inference_enabled deve ser true após set_inference_enabled(true)");
+
+        // Desativa e verifica
+        state.set_inference_enabled(false);
+        let st3 = collect_status(&state).await;
+        assert!(!st3.inference_enabled,
+            "inference_enabled deve ser false após set_inference_enabled(false)");
+    }
+
+    #[tokio::test]
+    async fn full_cycle_inference_disabled_rejects_all_priorities() {
+        // inference_enabled=false → TODAS as prioridades (P1, P2, P3) recebem 503
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        // inference_enabled=false por padrão
+
+        for priority in [1u8, 2, 3] {
+            let body = serde_json::Map::from_iter([
+                ("model".to_string(), serde_json::json!("any-model")),
+                ("messages".to_string(), serde_json::json!([])),
+            ]);
+            let resp = queue_and_forward(
+                state.clone(), body, "test".to_string(), priority, "api/chat"
+            ).await;
+            assert_eq!(
+                resp.status(), StatusCode::SERVICE_UNAVAILABLE,
+                "P{priority} deve receber 503 com inference_enabled=false"
+            );
+            let (_, body_stream) = resp.into_parts();
+            let bytes = axum::body::to_bytes(body_stream, 4096).await.unwrap();
+            let text  = String::from_utf8_lossy(&bytes);
+            assert!(
+                text.contains("inferência desabilitada"),
+                "P{priority} corpo deve mencionar 'inferência desabilitada'; got: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn cpu_fallback_cmd_port_is_passed_through() {
+        let bin   = std::path::Path::new("llama-server");
+        let model = std::path::Path::new("model.gguf");
+        let cmd   = build_llama_server_cmd_cpu_fallback(bin, model, None, 9090, 0);
+        let args  = cmd_args(&cmd);
+        let idx   = args.iter().position(|a| a == "--port").expect("--port presente");
+        assert_eq!(args[idx + 1], "9090");
     }
 }

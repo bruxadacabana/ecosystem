@@ -2512,21 +2512,42 @@ O LOGOS inicia um processo `llama-server` sob demanda para cada modelo solicitad
 
 "Ligar IA" (`toggle_inference(true)`) apenas seta a flag `inference_enabled=true` internamente. O modelo NÃO é carregado neste momento. A carga acontece lazily na primeira requisição real que chegar ao proxy. Isso evita ocupar VRAM sem necessidade de uso imediato.
 
-| Estado | `inference_enabled` | Processo ativo | O que acontece nas requisições |
-|--------|--------------------|-----------------|---------------------------------|
-| IA desligada | `false` | Nenhum | 503 "inferência desabilitada" |
-| IA ligada, idle | `true` | Nenhum | Seleciona melhor LLM do registry → `ensure_llama_model_loaded` → 503 se falhar |
-| IA ligada, servindo | `true` | `llama-server:8081` | Requisições encaminhadas normalmente |
+| Estado | `inference_enabled` | `chat_server_online` | UI | Nas requisições |
+|--------|--------------------|-----------------------|----|-----------------|
+| `disabled` | `false` | `false` | Botão "Ligar IA" | 503 "inferência desabilitada" |
+| `enabled_idle` | `true` | `false` | "IA ativa — aguardando" + "Desligar" | Lazy load ativado na primeira req |
+| `active` | `true` | `true` | "IA ativa" + modelo + "Desligar" | Encaminhadas ao llama-server:8081 |
 
 "Desligar IA" (`toggle_inference(false)`) mata os processos `llama-server` e `embed-server` e seta `inference_enabled=false`.
+
+O campo `inference_enabled` está disponível no `StatusResponse` (rota `GET /logos/status`) e na UI via `LogosStatus.inference_enabled`. A UI reage ao poll periódico do status — sem eventos dedicados para esta transição.
 
 **CPU Fallback Gate (OOM de GPU):**
 Quando o llama-server sai inesperadamente em modo GPU (OOM), o LOGOS tenta retomar em modo CPU — mas apenas se o modelo couber:
 - `check_cpu_fallback_allowed(gguf_path, cpu_fallback_max_mb)` mede o arquivo GGUF em disco
 - Se `file_size_mb > cpu_fallback_max_mb` → `emit_alert("error")` + Err (sem retry CPU)
-- Se dentro do limite → retry com `--n-gpu-layers 0` (controlado pelo Passo 6)
+- Se dentro do limite → retry via `build_llama_server_cmd_cpu_fallback` com recursos restritos
 - `cpu_fallback_max_mb` vem de `ecosystem.json["logos"]["cpu_fallback_max_gb"]` (padrão 2.0 GB)
 - Modelos importados do Ollama blob store também são cobertos (tamanho real do arquivo, não do registry)
+
+**CPU Fallback — Restrições de recursos (`build_llama_server_cmd_cpu_fallback`):**
+Quando o fallback CPU é ativado, o servidor roda com recursos limitados para não travar o sistema:
+- `--n-gpu-layers 0` — sem GPU
+- `--threads N` / `--threads-batch N` — N = metade dos cores lógicos (mínimo 1); configura via `ecosystem.json["logos"]["cpu_max_threads"]` (0 = automático)
+- `--ctx-size 512` — contexto mínimo para economizar RAM
+- `--parallel 1` — uma requisição por vez no CPU
+
+No Linux, após o spawn, o processo recebe prioridade reduzida:
+- `renice +10 -p <pid>` — CPU menos urgente que processos normais
+- `ionice -c 3 -p <pid>` — I/O em modo idle (não bloqueia disco do sistema)
+
+**VRAM Pre-check (antes do spawn):**
+Antes de spawnar o llama-server em modo GPU, o LOGOS verifica se há VRAM suficiente:
+- Calcula `needed_mb = model_size_mb × 1.15` (15% de margem para KV cache e overhead)
+- Se VRAM livre < needed_mb → `emit_alert("error")` + Err (sem spawn)
+- Se modelo não está no registry (`model_size_mb = 0`) → skip da verificação
+- Em WorkPc (sem GPU) ou quando sysfs não retorna dados → skip silencioso
+- Se o proc anterior foi morto antes do spawn: aguarda 500ms para a GPU liberar VRAM
 
 **Idle Unload Watchdog:**
 Dois loops de background iniciados em `start_server` (poll a cada 60s) verificam ociosidade:
