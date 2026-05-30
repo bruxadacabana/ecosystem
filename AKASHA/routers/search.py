@@ -909,6 +909,32 @@ class _FetchResponse(BaseModel):
     error:      str | None = None
 
 
+@router.get("/fetch")
+async def fetch_get(url: str, max_words: int = 2000) -> _FetchResponse:
+    """GET /fetch?url= — busca transiente sem salvar. Equivalente ao POST /fetch mas via query param.
+
+    Usado pelo Mnemosyne Deep Research Mode e outras integrações que não podem enviar body JSON.
+    """
+    try:
+        page = await fetch_and_extract(url, max_words=max_words)
+        return _FetchResponse(
+            url=page.url,
+            title=page.title,
+            content_md=page.content_md,
+            word_count=page.word_count,
+        )
+    except httpx.HTTPStatusError as exc:
+        return _FetchResponse(
+            url=url, title="", content_md="", word_count=0,
+            error=f"HTTP {exc.response.status_code}",
+        )
+    except httpx.RequestError as exc:
+        return _FetchResponse(
+            url=url, title="", content_md="", word_count=0,
+            error=f"Erro de rede: {exc}",
+        )
+
+
 @router.post("/fetch")
 async def fetch(body: _FetchBody) -> _FetchResponse:
     """

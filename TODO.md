@@ -7289,9 +7289,9 @@ Quando LOGOS estiver fora (HUB fechado):
 
 #### 🔴 Alta prioridade
 
-- [ ] **AKASHA — `save_sites` re-exportação ao adicionar/remover site (`database.py`, `routers/crawler.py`)** — `save_sites()` só é chamada dentro de `if not SITES_FILE.exists()` na migração v27 — nunca ao mudar sites via UI. Resultado: `userdata/sites.json` fica desatualizado após qualquer mutação. Fix: chamar `save_sites(...)` no router de sites (`routers/crawler.py`) após qualquer `INSERT`, `UPDATE` ou `DELETE` em `crawl_sites`. Origem: Bugs 2026-05-23 (b).
+- [x] **AKASHA — `save_sites` re-exportação ao adicionar/remover site (`database.py`, `routers/crawler.py`)** — já implementado via `asyncio.create_task(_ls.write_json("sites"))` em todos os 4 endpoints de mutação do `routers/crawler.py` (add, add-quick, update, delete). Usa `list_sync.py` que lê do DB e escreve atomicamente em `.backup/akasha/sites.json` (ou `userdata/sites.json`). Item estava desatualizado. Auditado 2026-05-30.
 
-- [ ] **AKASHA — `GET /fetch?url=` — busca transiente sem salvar (`routers/fetch.py`)** — existe `POST /fetch` com body JSON; falta variante `GET /fetch?url=` com query param para compatibilidade com Mnemosyne Deep Research Mode. Implementar em `routers/fetch.py` (~30 linhas): buscar URL, extrair Markdown via `_cascade_extract`, retornar JSON `{url, title, content_md, word_count}` sem salvar em `archive`. Registrar em `main.py`. Origem: Auditoria 05-05, AKASHA.
+- [x] **AKASHA — `GET /fetch?url=` — busca transiente sem salvar (`routers/search.py`)** — implementado como `fetch_get()` em `routers/search.py`, logo acima do `POST /fetch` existente. Reutiliza `fetch_and_extract` com os mesmos tratamentos de erro. 6 testes em `tests/test_fetch_get.py`. 2026-05-30.
 
 - [ ] **ecosystem_scraper.py — throttle adaptativo por domínio (delay mínimo 2s)** — sem throttle, scraping de N artigos do mesmo domínio em sequência rápida pode disparar bloqueio de IP. Adicionar dict de módulo `{domain: last_request_time}` e impor delay configurável (padrão 2s). Constante `CRAWL_DELAY` exportável. Como AKASHA archiver e KOSMOS ArticleScraper usam este módulo, a politeness se aplica a ambos sem mudança nos callers. Origem: Auditoria 05-05, ecosystem_scraper.py.
 
