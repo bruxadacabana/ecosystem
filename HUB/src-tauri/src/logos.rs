@@ -382,6 +382,27 @@ struct Inner {
     /// Último valor de CPU% calculado pelo cpu_watchdog (f32 bits em AtomicU32).
     /// Evita que múltiplos callers chamem refresh_cpu_all() com delta ≈ 0.
     cached_cpu_pct: Arc<AtomicU32>,
+
+    // ── Ciclo de vida de modelos ─────────────────────────────────────────────
+    /// True quando o usuário ativou a IA ("Ligar IA"). O modelo só é carregado
+    /// lazily na primeira requisição real — não no momento do toggle.
+    inference_enabled: Arc<AtomicBool>,
+    /// Timestamp da última requisição ao servidor de chat (llama-server:8081).
+    /// Atualizado por queue_and_forward a cada requisição; usado pelo idle watchdog.
+    last_llm_request_at: Mutex<std::time::Instant>,
+    /// Timestamp da última requisição ao servidor de embedding (llama-server:8082).
+    last_embed_request_at: Mutex<std::time::Instant>,
+    /// Segundos de ociosidade após os quais o servidor de chat é descarregado.
+    /// Lido de ecosystem.json["logos"]["idle_timeout_minutes"] (default 5 → 300s).
+    idle_timeout_secs: u64,
+    /// Tamanho máximo de GGUF (em MB) permitido para fallback CPU.
+    /// Modelos acima desse limite retornam Err em vez de tentar rodar no CPU.
+    /// Lido de ecosystem.json["logos"]["cpu_fallback_max_gb"] (default 2.0 → 2048 MB).
+    cpu_fallback_max_mb: u64,
+    /// Número máximo de threads de CPU para o llama-server em modo CPU.
+    /// 0 = automático (metade dos cores lógicos).
+    /// Lido de ecosystem.json["logos"]["cpu_max_threads"] (default 0).
+    cpu_max_threads: usize,
 }
 
 /// Handle compartilhável do estado do LOGOS.
@@ -585,9 +606,34 @@ impl LogosState {
                 .map(|v| (v as f32).clamp(30.0, 99.0))
                 .unwrap_or(85.0)
         };
+        let idle_timeout_secs = {
+            let eco = crate::ecosystem::read_json();
+            let minutes = eco["logos"]["idle_timeout_minutes"]
+                .as_f64()
+                .unwrap_or(5.0)
+                .max(0.5);
+            (minutes * 60.0) as u64
+        };
+        let cpu_fallback_max_mb = {
+            let eco = crate::ecosystem::read_json();
+            let gb = eco["logos"]["cpu_fallback_max_gb"]
+                .as_f64()
+                .unwrap_or(2.0)
+                .max(0.1);
+            (gb * 1024.0) as u64
+        };
+        let cpu_max_threads = {
+            let eco = crate::ecosystem::read_json();
+            eco["logos"]["cpu_max_threads"]
+                .as_u64()
+                .unwrap_or(0) as usize
+        };
         log::info!(
-            "LOGOS: embed_model='{}' embed_n_gpu_layers={} cpu_p3_limit_pct={:.0}%",
-            embed_model, embed_n_gpu_layers, cpu_p3_limit_pct
+            "LOGOS: embed_model='{}' embed_n_gpu_layers={} cpu_p3_limit_pct={:.0}% \
+             idle_timeout={}s cpu_fallback_max={}MB cpu_max_threads={}",
+            embed_model, embed_n_gpu_layers, cpu_p3_limit_pct,
+            idle_timeout_secs, cpu_fallback_max_mb,
+            if cpu_max_threads == 0 { "auto".to_string() } else { cpu_max_threads.to_string() }
         );
 
         // Inicialização prévia do sysinfo — primeira leitura é sempre 0%; a segunda é o delta real.
@@ -626,6 +672,12 @@ impl LogosState {
             embed_health_port: EMBED_SERVER_PORT,
             cpu_p3_limit_pct: Mutex::new(cpu_p3_limit_pct),
             cached_cpu_pct: Arc::new(AtomicU32::new(0)),
+            inference_enabled:     Arc::new(AtomicBool::new(false)),
+            last_llm_request_at:   Mutex::new(std::time::Instant::now()),
+            last_embed_request_at: Mutex::new(std::time::Instant::now()),
+            idle_timeout_secs,
+            cpu_fallback_max_mb,
+            cpu_max_threads,
         }))
     }
 
@@ -686,6 +738,12 @@ impl LogosState {
             embed_health_port: 59982,
             cpu_p3_limit_pct:   Mutex::new(85.0),
             cached_cpu_pct:     Arc::new(AtomicU32::new(0)),
+            inference_enabled:     Arc::new(AtomicBool::new(false)),
+            last_llm_request_at:   Mutex::new(std::time::Instant::now()),
+            last_embed_request_at: Mutex::new(std::time::Instant::now()),
+            idle_timeout_secs:  300,
+            cpu_fallback_max_mb: 2048,
+            cpu_max_threads:    0,
         }))
     }
 }
@@ -4694,6 +4752,12 @@ mod tests {
             embed_health_port:  59982,
             cpu_p3_limit_pct:    Mutex::new(85.0),
             cached_cpu_pct:      Arc::new(AtomicU32::new(0)),
+            inference_enabled:     Arc::new(AtomicBool::new(false)),
+            last_llm_request_at:   Mutex::new(std::time::Instant::now()),
+            last_embed_request_at: Mutex::new(std::time::Instant::now()),
+            idle_timeout_secs:  300,
+            cpu_fallback_max_mb: 2048,
+            cpu_max_threads:    0,
         }))
     }
 
@@ -6408,5 +6472,80 @@ mod tests {
         let text = std::fs::read_to_string(&registry_path).unwrap();
         let restored: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
         assert_eq!(restored.len(), 1, "registry não deve ser alterado se arquivo já ausente");
+    }
+
+    // ── Passo 1: campos de ciclo de vida ─────────────────────────────────────
+
+    #[test]
+    fn inference_enabled_starts_false() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert!(
+            !state.0.inference_enabled.load(Ordering::Relaxed),
+            "inference_enabled deve iniciar false — modelo não carregado ao criar LogosState"
+        );
+    }
+
+    #[test]
+    fn inference_enabled_can_be_set_true() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        state.0.inference_enabled.store(true, Ordering::Relaxed);
+        assert!(
+            state.0.inference_enabled.load(Ordering::Relaxed),
+            "inference_enabled deve poder ser setado true"
+        );
+    }
+
+    #[test]
+    fn idle_timeout_secs_default_is_300() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert_eq!(
+            state.0.idle_timeout_secs, 300,
+            "idle_timeout_secs default deve ser 300s (5 minutos)"
+        );
+    }
+
+    #[test]
+    fn cpu_fallback_max_mb_default_is_2048() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert_eq!(
+            state.0.cpu_fallback_max_mb, 2048,
+            "cpu_fallback_max_mb default deve ser 2048MB (2 GB)"
+        );
+    }
+
+    #[test]
+    fn cpu_max_threads_default_is_zero_meaning_auto() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert_eq!(
+            state.0.cpu_max_threads, 0,
+            "cpu_max_threads=0 significa automático (metade dos cores)"
+        );
+    }
+
+    #[tokio::test]
+    async fn last_llm_request_at_is_recent_on_init() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let elapsed = state.0.last_llm_request_at.lock().await.elapsed();
+        assert!(
+            elapsed.as_secs() < 5,
+            "last_llm_request_at deve ser inicializado recentemente (elapsed={elapsed:?})"
+        );
+    }
+
+    #[tokio::test]
+    async fn last_embed_request_at_is_recent_on_init() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let elapsed = state.0.last_embed_request_at.lock().await.elapsed();
+        assert!(
+            elapsed.as_secs() < 5,
+            "last_embed_request_at deve ser inicializado recentemente (elapsed={elapsed:?})"
+        );
     }
 }

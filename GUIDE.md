@@ -477,6 +477,17 @@ O LOGOS gerencia duas instâncias separadas do llama-server:
 O proxy LOGOS (`:7072`) roteia automaticamente: `/v1/embeddings` → 8082; todo o resto → 8081.
 Configurar o modelo de embedding em `ecosystem.json` no campo `logos.embed_model` (ex: `"bge-m3-q4_k_m.gguf"`).
 
+**Campos de configuração do LOGOS em `ecosystem.json["logos"]`:**
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `embed_model` | string | `"bge-m3"` | Alias do modelo de embedding |
+| `embed_n_gpu_layers` | int | `-1` | Camadas GPU para embed; -1 = total |
+| `vram_limit_pct` | float | `85.0` | % de VRAM acima da qual P3 é bloqueado |
+| `cpu_p3_limit_pct` | float | `85.0` | % de CPU acima da qual P3 é bloqueado |
+| `idle_timeout_minutes` | float | `5.0` | Minutos de ociosidade antes do modelo ser descarregado automaticamente |
+| `cpu_fallback_max_gb` | float | `2.0` | Tamanho máximo de modelo (GB) permitido para fallback CPU; acima disso retorna erro |
+| `cpu_max_threads` | int | `0` | Threads máximos no modo CPU; 0 = automático (metade dos cores) |
+
 **Verificar se estão rodando (gerenciados pelo LOGOS):**
 ```bash
 curl http://localhost:8081/health   # servidor de chat
