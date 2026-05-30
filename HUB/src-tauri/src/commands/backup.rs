@@ -741,8 +741,24 @@ fn reset_shared(
     let comm = root.join("communication_history.db");
     delete_file_or_dir(&comm, false, deleted, errors);
 
-    let topic = root.join("shared_topic_profile.db");
-    delete_file_or_dir(&topic, false, deleted, errors);
+    // shared_topic_profile: suporta .db (formato legado) e .json (formato atual pós-BUG-011)
+    let topic_db   = root.join("shared_topic_profile.db");
+    let topic_json = root.join("shared_topic_profile.json");
+    delete_file_or_dir(&topic_db,   false, deleted, errors);
+    delete_file_or_dir(&topic_json, false, deleted, errors);
+
+    // interests.json — perfil de interesses exibido na aba Interesses do HUB
+    // Zerado (não deletado) para manter estrutura válida; topics[] regenerados pela análise
+    let interests = root.join("interests.json");
+    if interests.exists() || true {
+        let empty = r#"{"topics":[],"updated_at":""#.to_string()
+            + &chrono::Utc::now().to_rfc3339()
+            + r#""}"#;
+        match std::fs::write(&interests, &empty) {
+            Ok(_)  => deleted.push(format!("{} (zerado)", interests.display())),
+            Err(e) => errors.push(format!("{}: {e}", interests.display())),
+        }
+    }
 }
 
 /// Apaga um arquivo ou diretório (recursivo se `is_dir=true`).
@@ -1174,6 +1190,41 @@ mod tests {
 
         assert!(!chroma_dir.exists(), "chroma_dir deve ser apagado");
         assert!(!tmp.path().join("bm25_index.pkl").exists(), "bm25_index deve ser apagado");
+    }
+
+    #[test]
+    fn test_reset_clears_shared_topic_profile_json() {
+        // Verifica que reset apaga shared_topic_profile.json (formato atual, pós-BUG-011)
+        let tmp = tempfile::tempdir().unwrap();
+        make_akasha_db_with_memory(tmp.path());
+        let profile = tmp.path().join("shared_topic_profile.json");
+        std::fs::write(&profile, b"[{\"topic\":\"crochet\",\"score\":100}]").unwrap();
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
+
+        assert!(!profile.exists(),
+            "shared_topic_profile.json deve ser apagado no reset");
+    }
+
+    #[test]
+    fn test_reset_zeroes_interests_json() {
+        // Verifica que reset zera interests.json (não deleta, mantém estrutura válida)
+        let tmp = tempfile::tempdir().unwrap();
+        make_akasha_db_with_memory(tmp.path());
+        let interests = tmp.path().join("interests.json");
+        std::fs::write(&interests, br#"{"topics":[{"name":"crochet","weight":10}]}"#).unwrap();
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
+
+        // O arquivo deve existir mas com topics: []
+        assert!(interests.exists(), "interests.json deve existir após reset (zerado, não deletado)");
+        let content: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&interests).unwrap()
+        ).unwrap();
+        let topics = content["topics"].as_array().expect("topics deve ser array");
+        assert!(topics.is_empty(), "topics deve ser [] após reset; contém: {topics:?}");
     }
 
     // ─── syncthing_checkpoint_app_dbs ────────────────────────────────────────
