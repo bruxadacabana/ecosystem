@@ -2508,7 +2508,7 @@ logos.rs:find_llama_server_bin() busca em:
 ```
 O LOGOS inicia um processo `llama-server` sob demanda para cada modelo solicitado. O servidor roda na porta **8081** (interna, não exposta aos apps). Apenas um modelo é carregado por vez — troca de modelo derruba o processo anterior e sobe um novo.
 
-**Ciclo de vida de modelos — Lazy Loading:**
+**Ciclo de vida de modelos — Lazy Loading e Idle Unload:**
 
 "Ligar IA" (`toggle_inference(true)`) apenas seta a flag `inference_enabled=true` internamente. O modelo NÃO é carregado neste momento. A carga acontece lazily na primeira requisição real que chegar ao proxy. Isso evita ocupar VRAM sem necessidade de uso imediato.
 
@@ -2519,6 +2519,18 @@ O LOGOS inicia um processo `llama-server` sob demanda para cada modelo solicitad
 | IA ligada, servindo | `true` | `llama-server:8081` | Requisições encaminhadas normalmente |
 
 "Desligar IA" (`toggle_inference(false)`) mata os processos `llama-server` e `embed-server` e seta `inference_enabled=false`.
+
+**Idle Unload Watchdog:**
+Dois loops de background iniciados em `start_server` (poll a cada 60s) verificam ociosidade:
+- `check_idle_llm` — se `last_llm_request_at.elapsed() > idle_timeout_secs` → mata `llama-server`
+- `check_idle_embed` — análogo para `embed-server`, timer independente
+
+`idle_timeout_secs` vem de `ecosystem.json["logos"]["idle_timeout_minutes"]` (padrão 5 min → 300s).
+
+**keep_alive por prioridade (injetado automaticamente em todas as requisições):**
+- P1, P2 → `"10m"` — o idle watchdog cuida do descarregamento após ociosidade
+- P3 → `0` — modelo descarrega imediatamente após resposta (background)
+- Modo sobrevivência / bateria → `0` em todas as prioridades
 
 **Resolução do arquivo GGUF:**
 1. Registry próprio: `{hub_data_path}/logos/models/registry.json`

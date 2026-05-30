@@ -1929,6 +1929,64 @@ fn extract_app_priority(headers: &HeaderMap) -> (String, u8) {
     (app, priority)
 }
 
+/// Seleciona o valor de keep_alive a injetar por prioridade de requisição.
+/// P1 e P2 → "10m": o idle watchdog cuida do descarregamento após ociosidade.
+/// P3       → 0:    descarrega imediatamente após a resposta (background não precisa ficar quente).
+fn select_keep_alive(priority: u8) -> serde_json::Value {
+    match priority {
+        1 | 2 => serde_json::json!("10m"),
+        _     => serde_json::json!(0),
+    }
+}
+
+/// Verifica ociosidade do chat server e descarrega o modelo se necessário.
+/// Retorna `true` se o processo foi morto, `false` se não havia processo ou não estava ocioso.
+/// Chamada pelo idle watchdog a cada 60s — e diretamente por testes.
+async fn check_idle_llm(s: &LogosState) -> bool {
+    if !s.llama_proc_active().await {
+        return false;
+    }
+    let elapsed = s.0.last_llm_request_at.lock().await.elapsed().as_secs();
+    if elapsed > s.0.idle_timeout_secs {
+        log::info!(
+            "LOGOS idle watchdog: chat sem requisições por {elapsed}s \
+             (limite: {}s) — descarregando modelo",
+            s.0.idle_timeout_secs
+        );
+        s.kill_llama_proc().await;
+        true
+    } else {
+        log::debug!(
+            "LOGOS idle watchdog: chat ativo há {elapsed}s (limite: {}s) — mantendo",
+            s.0.idle_timeout_secs
+        );
+        false
+    }
+}
+
+/// Análogo para o embed server — mesmo comportamento, timer independente.
+async fn check_idle_embed(s: &LogosState) -> bool {
+    if !s.embed_proc_active().await {
+        return false;
+    }
+    let elapsed = s.0.last_embed_request_at.lock().await.elapsed().as_secs();
+    if elapsed > s.0.idle_timeout_secs {
+        log::info!(
+            "LOGOS idle watchdog: embed sem requisições por {elapsed}s \
+             (limite: {}s) — descarregando modelo",
+            s.0.idle_timeout_secs
+        );
+        s.kill_embed_proc().await;
+        true
+    } else {
+        log::debug!(
+            "LOGOS idle watchdog: embed ativo há {elapsed}s (limite: {}s) — mantendo",
+            s.0.idle_timeout_secs
+        );
+        false
+    }
+}
+
 /// Núcleo da fila de prioridades: aplica guards, enfileira e encaminha ao Ollama.
 /// Compartilhado entre /logos/chat (legado) e /api/chat, /api/generate (proxy transparente).
 async fn queue_and_forward(
@@ -2024,17 +2082,13 @@ async fn queue_and_forward(
     // Injeção de keep_alive por prioridade (transparente para os apps):
     //   Sobrevivência → 0 (RAM liberada imediatamente, independente da prioridade)
     //   Bateria + P1/P2 → 0 (economiza VRAM; modelo descarregado após cada resposta)
-    //   P1 → -1 (modelo permanece na VRAM indefinidamente — sessão ativa)
+    //   P1 → "10m" (idle watchdog gerencia descarregamento; keep_alive permanente removido)
     //   P2 → "10m" (libera após 10 min de inatividade)
-    //   P3 → "0"  (descarrega imediatamente após resposta — background, não precisa ficar quente)
+    //   P3 → 0     (descarrega imediatamente — background não precisa ficar quente)
     if is_survival || on_battery {
         body.insert("keep_alive".to_string(), serde_json::json!(0));
     } else {
-        let ka = match priority {
-            1 => serde_json::json!(-1),
-            2 => serde_json::json!("10m"),
-            _ => serde_json::json!(0),
-        };
+        let ka = select_keep_alive(priority);
         body.entry("keep_alive".to_string()).or_insert(ka);
     }
 
@@ -4185,6 +4239,26 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
                 }
                 _ => {}
             }
+        }
+    });
+
+    // Idle unload watchdog — chat server.
+    // Mata o llama-server após `idle_timeout_secs` sem requisições.
+    // Poll a cada 60s — resolve o problema de VRAM ocupada sem uso que causava freeze.
+    let idle_llm_wdg = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            check_idle_llm(&idle_llm_wdg).await;
+        }
+    });
+
+    // Idle unload watchdog — embed server. Timer independente do chat server.
+    let idle_embed_wdg = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            check_idle_embed(&idle_embed_wdg).await;
         }
     });
 
@@ -6679,6 +6753,182 @@ mod tests {
             );
         }
         // Qualquer outro status (5xx, timeout, etc.) é aceitável — o gate passou
+    }
+
+    // ── Passo 4: idle watchdogs e keep_alive P1 ─────────────────────────────
+
+    #[test]
+    fn keep_alive_p1_is_not_negative_one() {
+        let ka_p1 = select_keep_alive(1);
+        assert_ne!(
+            ka_p1,
+            serde_json::json!(-1),
+            "P1 keep_alive não deve ser -1 — idle watchdog gerencia descarregamento"
+        );
+        assert_eq!(
+            ka_p1,
+            serde_json::json!("10m"),
+            "P1 keep_alive deve ser '10m'"
+        );
+    }
+
+    #[test]
+    fn keep_alive_p2_is_10m() {
+        assert_eq!(select_keep_alive(2), serde_json::json!("10m"));
+    }
+
+    #[test]
+    fn keep_alive_p3_is_zero() {
+        assert_eq!(select_keep_alive(3), serde_json::json!(0));
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_noop_when_no_proc() {
+        // Sem processo ativo → check_idle_llm retorna false sem panic
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        assert!(!state.llama_proc_active().await, "pré-condição: nenhum proc");
+        let killed = check_idle_llm(&state).await;
+        assert!(!killed, "sem proc ativo → não deve matar nada");
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_embed_noop_when_no_proc() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let killed = check_idle_embed(&state).await;
+        assert!(!killed, "sem embed proc → não deve matar nada");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn idle_watchdog_kills_after_timeout() {
+        // Proc ativo + timestamp muito antigo → watchdog deve matar o processo
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        // Injeta processo sleep simulando modelo carregado
+        let child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().expect("sleep deve estar disponível");
+        state.inject_proc_for_test(child, "gemma-2b").await;
+        assert!(state.llama_proc_active().await, "pré-condição: proc ativo");
+
+        // Falsifica timestamp como sendo (idle_timeout_secs + 1) atrás
+        let old = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(state.0.idle_timeout_secs + 1));
+        let Some(old) = old else {
+            // Sistema com uptime muito baixo (CI fresh boot) — skip graceful
+            state.kill_llama_proc().await;
+            return;
+        };
+        *state.0.last_llm_request_at.lock().await = old;
+
+        let killed = check_idle_llm(&state).await;
+        assert!(killed, "proc ocioso deve ser morto pelo watchdog");
+        assert!(!state.llama_proc_active().await, "proc deve ser None após kill pelo watchdog");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn idle_watchdog_embed_kills_after_timeout() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        let child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().expect("sleep deve estar disponível");
+        *state.0.embed_proc.lock().await = Some(LlamaProcHandle {
+            child, model_name: "bge-m3".to_string(),
+        });
+        assert!(state.embed_proc_active().await, "pré-condição: embed proc ativo");
+
+        let old = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(state.0.idle_timeout_secs + 1));
+        let Some(old) = old else {
+            state.kill_embed_proc().await;
+            return;
+        };
+        *state.0.last_embed_request_at.lock().await = old;
+
+        let killed = check_idle_embed(&state).await;
+        assert!(killed, "embed ocioso deve ser morto");
+        assert!(!state.embed_proc_active().await, "embed_proc deve ser None após kill");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn idle_watchdog_resets_on_request() {
+        // Proc ativo + timestamp recente → watchdog NÃO deve matar
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        let child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().expect("sleep deve estar disponível");
+        state.inject_proc_for_test(child, "gemma-2b").await;
+
+        // Timestamp recente (Instant::now) — simula que requisição acabou de chegar
+        *state.0.last_llm_request_at.lock().await = std::time::Instant::now();
+
+        let killed = check_idle_llm(&state).await;
+        assert!(!killed, "proc com requisição recente não deve ser morto");
+        assert!(state.llama_proc_active().await, "proc deve continuar ativo");
+
+        state.kill_llama_proc().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn idle_watchdog_timers_are_independent() {
+        // Chat ocioso mas embed recente → apenas chat é morto, embed continua
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        // Injeta chat proc com timestamp antigo
+        let chat_child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+        state.inject_proc_for_test(chat_child, "qwen2.5:3b").await;
+
+        let old = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(state.0.idle_timeout_secs + 1));
+        let Some(old) = old else {
+            state.kill_llama_proc().await;
+            return;
+        };
+        *state.0.last_llm_request_at.lock().await = old;
+
+        // Injeta embed proc com timestamp recente
+        let embed_child = tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+        *state.0.embed_proc.lock().await = Some(LlamaProcHandle {
+            child: embed_child, model_name: "bge-m3".to_string(),
+        });
+        *state.0.last_embed_request_at.lock().await = std::time::Instant::now();
+
+        // Verifica chat (deve matar) e embed (não deve matar)
+        let chat_killed  = check_idle_llm(&state).await;
+        let embed_killed = check_idle_embed(&state).await;
+
+        assert!(chat_killed,  "chat ocioso deve ser morto");
+        assert!(!embed_killed, "embed recente não deve ser morto");
+        assert!(!state.llama_proc_active().await, "chat proc deve ser None");
+        assert!(state.embed_proc_active().await,  "embed proc deve continuar ativo");
+
+        state.kill_embed_proc().await;
     }
 
     #[test]
