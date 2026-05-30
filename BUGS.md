@@ -73,6 +73,9 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-010](#bug-010) | FIXED | 2026-05-27 | Mnemosyne | SQLITE_READONLY_DBMOVED ao reindexar — ChromaDB SharedSystem com conexão stale |
 | [BUG-011](#bug-011) | FIXED | 2026-05-27 | Ecossistema | shared_topic_profile.db corrompido — "database disk image is malformed" sem recuperação |
 | [BUG-012](#bug-012) | FIXED | 2026-05-30 | AKASHA | Race condition em insight/current: overlay duplicado + feedback "sem resposta" no HUB |
+| [BUG-013](#bug-013) | FIXED | 2026-05-30 | HUB/LOGOS | proxy_openai_to_llama sem lazy loading — knowledge_worker recebia 502 Bad Gateway |
+| [BUG-014](#bug-014) | FIXED | 2026-05-30 | HUB/LOGOS | lazy loading ignorava perfil de hardware — carregava 7B em vez de 3B para AKASHA |
+| [BUG-015](#bug-015) | FIXED | 2026-05-30 | HUB/LOGOS | proxy_openai_to_llama sem hardware guards, model switching ou active state tracking |
 
 ---
 
@@ -915,3 +918,152 @@ Resultado: ambas retornavam o insight (duplicata), e quando o feedback chegava, 
 #### Teste de regressão
 - Verificar que dois polls simultâneos de `GET /insight/current` produzem exatamente **uma** entrada em `communication_history` (não duas)
 - Verificar que após feedback em um consumidor, a entrada em comms aparece com feedback preenchido
+
+---
+
+### BUG-013 · [FIXED] · proxy_openai_to_llama sem lazy loading — knowledge_worker recebia 502
+
+#### Identificação
+- **Data:** 2026-05-30
+- **App(s):** HUB/LOGOS, AKASHA
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `proxy_openai_to_llama`, `v1_chat_completions_proxy`
+- **Commit do fix:** `d785667`
+- **Descoberta via:** uso-real (log do AKASHA: `knowledge_worker: inferência falhou na extração: Server error '502 Bad Gateway' for url 'http://127.0.0.1:7072/v1/chat/completions'`)
+- **Tempo de diagnóstico:** ~15 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** CachyOS principal
+- **OS:** CachyOS (Arch Linux)
+- **Hardware relevante:** RX 6600 8 GB VRAM
+- **Modo:** produção (HUB rodando, IA ligada)
+
+#### Pré-condição para reproduzir
+1. LOGOS rodando com `inference_enabled=true` (IA ligada no HUB)
+2. Nenhum modelo carregado ainda (lazy loading pendente — nenhuma requisição anterior)
+3. AKASHA knowledge_worker chama `POST /v1/chat/completions`
+
+#### Sintoma
+AKASHA knowledge_worker recebia `502 Bad Gateway` em toda tentativa de extração LLM, mesmo com a IA ligada no HUB.
+
+#### Logs
+```
+akasha.knowledge_worker: knowledge_worker: inferência falhou na extração:
+Server error '502 Bad Gateway' for url 'http://127.0.0.1:7072/v1/chat/completions'
+```
+
+#### Causa raiz
+O lazy loading (carregar modelo na primeira requisição real) foi implementado em `queue_and_forward` — que serve as rotas Ollama-style (`/api/chat`, `/api/generate`). A rota OpenAI-compatible `POST /v1/chat/completions`, servida por `proxy_openai_to_llama`, não tinha o mesmo mecanismo.
+
+`proxy_openai_to_llama` ia direto ao proxy sem verificar se o llama-server estava rodando. Resultado: connection refused ao llama-server (porta 8081) → `reqwest` reportava como 502.
+
+O AKASHA knowledge_worker usa exclusivamente a rota `/v1/chat/completions` (OpenAI-compatible), nunca `/api/chat` (Ollama-style).
+
+#### Impacto
+Bloqueante: AKASHA não conseguia extrair tópicos, entidades nem gerar reflexões de nenhuma página crawleada. Análise de conhecimento completamente inoperante.
+
+#### Fix
+`proxy_openai_to_llama`: adicionado gate de `inference_enabled` + bloco de lazy loading idêntico ao de `queue_and_forward`, com chamada a `model_for_app` e `ensure_llama_model_loaded`.
+
+#### Teste de regressão
+Testes existentes: `lazy_load_no_models_returns_503_no_models`, `lazy_load_first_request_triggers_load`, `inference_enabled_false_rejects_requests` (cobrem `queue_and_forward`). O gate de `inference_enabled` na rota OpenAI é coberto pela lógica compartilhada — não há teste isolado de `proxy_openai_to_llama` por limitação de setup (não tem servidor HTTP real em testes unitários).
+
+---
+
+### BUG-014 · [FIXED] · lazy loading ignorava perfil de hardware — carregava modelo errado
+
+#### Identificação
+- **Data:** 2026-05-30
+- **App(s):** HUB/LOGOS
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `queue_and_forward`, `proxy_openai_to_llama` (após BUG-013)
+- **Commit do fix:** `bf5a0ce`
+- **Descoberta via:** uso-real (HUB mostrava qwen2.5:7b carregado quando recomendado para AKASHA é qwen2.5:3b)
+- **Tempo de diagnóstico:** ~20 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** CachyOS principal (MainPc — perfil com llm_query=qwen2.5:3b, llm_rag=qwen2.5:7b)
+- **OS:** CachyOS (Arch Linux)
+- **Modo:** produção
+
+#### Pré-condição para reproduzir
+1. Dois ou mais modelos LLM instalados no registry do LOGOS
+2. O modelo configurado para o app solicitante (`llm_query` para AKASHA) não é o primeiro da lista
+3. AKASHA knowledge_worker faz requisição (lazy loading ativado)
+
+#### Sintoma
+O LOGOS carregava o primeiro modelo LLM instalado (qwen2.5:7b) em vez do modelo configurado para AKASHA (qwen2.5:3b via `llm_query` no perfil MainPc).
+
+#### Causa raiz
+O lazy loading usava `select_model_to_load_llm(&names)` — função que retorna o **primeiro modelo instalado** que não seja embedding. Não consultava:
+- `model_overrides` (overrides da usuária por app)
+- `hardware_profile.model_profile()` (llm_query / llm_rag / llm_analysis por hardware)
+
+O perfil do LOGOS tem campos separados por app+função: `llm_query` (AKASHA), `llm_rag` (Mnemosyne), `llm_analysis` (KOSMOS). Esses campos eram ignorados completamente no lazy loading.
+
+#### Impacto
+Degradação funcional: AKASHA recebia respostas de um modelo maior/diferente do esperado, consumindo mais VRAM e potencialmente dando respostas fora do esperado para o perfil de uso. Todo o gerenciamento de hardware (VRAM pre-check, GPU layers, CPU fallback) era calculado para o modelo errado.
+
+#### Fix
+Nova função `model_for_app(s: &LogosState, app_name: &str) -> Option<String>`:
+- Mapeia `app_name` → slot de modelo (`akasha`→`llm_query`, `mnemosyne`→`llm_rag`, `kosmos`→`llm_analysis`)
+- Respeita overrides da usuária (`model_overrides["akasha_llm_query"]`)
+- Fallback: modelo recomendado do perfil de hardware → primeiro LLM instalado (se não instalado)
+- Ambos `queue_and_forward` e `proxy_openai_to_llama` passaram a usar `model_for_app`
+
+#### Teste de regressão
+6 novos testes unitários: `model_for_app_akasha_uses_llm_query_from_profile`, `model_for_app_mnemosyne_uses_llm_rag_from_profile`, `model_for_app_override_takes_priority_over_profile`, `model_for_app_falls_back_when_configured_not_installed`, `model_for_app_unknown_app_uses_first_llm`, `model_for_app_no_models_installed_returns_none`.
+
+---
+
+### BUG-015 · [FIXED] · proxy_openai_to_llama sem hardware guards, model switching ou active state
+
+#### Identificação
+- **Data:** 2026-05-30
+- **App(s):** HUB/LOGOS
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `proxy_openai_to_llama`
+- **Commit do fix:** `1d5eaa8`
+- **Descoberta via:** revisão-de-código (auditoria do LOGOS após BUG-013 e BUG-014)
+- **Tempo de diagnóstico:** ~30 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas (guards são especialmente críticos no Laptop MX150 2GB e WorkPc i5)
+
+#### Pré-condição para reproduzir
+Qualquer requisição via `POST /v1/chat/completions` (AKASHA knowledge_worker) em condições de pressão de recursos.
+
+#### Sintoma
+Múltiplas ausências em relação à rota Ollama (`queue_and_forward`):
+1. AKASHA knowledge_worker continuava enviando LLM requests mesmo com VRAM > 85%, CPU saturada ou em modo bateria
+2. Se Mnemosyne carregava o 7B (via `/api/chat`), AKASHA recebia respostas do 7B em vez do 3B configurado
+3. Após 3 crashes do llama-server (`llama_disabled=true`), requests ainda eram tentados pela rota OpenAI
+4. UI/métricas do HUB não mostravam que AKASHA estava usando o LOGOS (active_priority/app/model_class permaneciam None)
+5. P1 (HUB chat) não conseguia preemptar P3 (AKASHA knowledge_worker) pela rota OpenAI
+
+#### Causa raiz
+`proxy_openai_to_llama` foi adicionada como rota simplificada, sem as proteções que `queue_and_forward` acumulou ao longo do tempo:
+- Sem gate de `llama_disabled`
+- Sem hardware guards P3 (VRAM watchdog, VRAM per-request, CPU/RAM, bateria)
+- Sem hardware guards P2 (CPU em bateria)
+- Sem model switching (model switching só acontecia no lazy loading — quando proc não estava ativo)
+- Sem active state tracking (active_priority, active_app, active_model_class)
+- Sem P1 preemption
+
+Adicionalmente: `knowledge_worker.py` faz chamadas httpx diretas **sem `X-App` header**, então `app_name=""` e `model_for_app` caía no fallback (primeiro LLM). O campo `"model"` do body JSON (que contém o modelo correto via `_get_llm_query_model()`) não era usado como source of truth.
+
+#### Impacto
+- Degradação funcional em condições de pressão de recursos: AKASHA não era throttleado, podendo causar freeze no sistema (especialmente Laptop e WorkPc)
+- Modelo errado servindo requisições AKASHA quando outro modelo estava carregado
+- Métricas do HUB imprecisas (não refletiam atividade OpenAI-route)
+- llama_disabled não respeitado na rota OpenAI
+
+#### Fix
+`proxy_openai_to_llama` reescrita com paridade completa ao `queue_and_forward`:
+- Gate de `llama_disabled`
+- Hardware guards P3 (bateria, p3_vram_blocked, VRAM per-request, CPU/RAM com limites survival vs normal)
+- Hardware guards P2 (CPU em bateria)
+- Model switching: `ensure_llama_model_loaded` chamado sempre (fast path se modelo correto já carregado)
+- Active state tracking: set antes do proxy, clear após
+- P1 preemption via `try_preempt_p3`
+- Seleção de modelo: body `"model"` field tem prioridade sobre `model_for_app` (suporte a chamadas sem X-App header)
+
+#### Teste de regressão
+Sem testes isolados para `proxy_openai_to_llama` (requer servidor HTTP mock completo). Os guards individuais são cobertos pelos testes de `queue_and_forward` e pelos novos testes de `model_for_app`. Regressão verificada via `cargo test` — 295+ testes passando.
