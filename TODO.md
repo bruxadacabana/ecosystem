@@ -5436,13 +5436,8 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   sem precisar de processo manual.
 
 #### LOGOS / HUB
-- [ ] **`OLLAMA_GPU_OVERHEAD=0` no perfil RX 6600 com ROCm**
-  > Parcialmente implementado: `OLLAMA_GPU_OVERHEAD` já está definido em `logos.rs` mas com valor 524288000 (524MB), não 0. Avaliar se o OOM handler do ROCm é suficientemente confiável para usar 0, ou se o valor atual é intencional.
-  (`HUB/src-tauri/src/logos.rs` ou arquivo de configuração de perfil de hardware).
-  Com ROCm na RX 6600, `OLLAMA_GPU_OVERHEAD=524288000` (500MB padrão) pode fazer
-  o Ollama recusar carregar modelos que caberiam na VRAM. Definir
-  `OLLAMA_GPU_OVERHEAD=0` para o perfil `main_pc` — deixar o OOM handler do ROCm
-  atuar em vez da estimativa conservadora do Ollama.
+- [x] **`OLLAMA_GPU_OVERHEAD=0` no perfil RX 6600 com ROCm**
+  > **OBSOLETO — 2026-05-30:** o ecossistema migrou completamente do Ollama para llama.cpp via LOGOS. `OLLAMA_GPU_OVERHEAD` é variável de ambiente do Ollama; o LOGOS usa VRAM pre-check próprio (baseado em tamanho do GGUF × 115%). Item não aplicável.
 
 - [ ] **Política de bateria em 3 níveis no LOGOS (Normal / Economia / Crítico)**
   > Parcialmente implementado: lógica de bateria existe mas é binária (AC vs bateria) — sem distinção entre Economia e Crítico. Expandir para 3 níveis com os thresholds documentados.
@@ -6616,7 +6611,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### AKASHA
 - [x] **Bug raiz: aba "Conexões" nunca renderizava (D3.js não carregado)** — o `{% block scripts %}` em `graph.html` injetava `<script src="d3.v7.min.js">` no final do `<body>` (linha 234 do base.html), APÓS o `{% block content %}` que contém o script inline que usa `d3.select()`. D3 estava undefined quando o script rodava → ReferenceError silencioso → grafo nunca renderizado. Fix: mover `<script src="d3.v7.min.js">` para `{% block head %}` (renderizado dentro do `<head>`) em `templates/graph.html`. **Corrigido e commitado em 2026-05-19.**
-- [ ] **Bug: memória pessoal AKASHA não registra insight de sessão (session memory)** — quando uma sessão de busca acumula ≥2 queries, o AKASHA deve salvar em sua memória pessoal uma reflexão escrita com suas próprias palavras sobre o que observou na sessão da usuária, referenciando data/hora e o perfil de busca. Isso está registrado no TODO (sessão anterior) mas não implementado. Implementar em `services/session_memory.py` ou `services/session_insight.py`: ao expirar sessão com ≥2 queries, chamar LLM para gerar texto em 1ª pessoa do AKASHA, salvar em `personal_memory` com `type="observation"` e `tags=["session_reflection"]`, incluindo data/hora e nome da usuária (Jenifer). Referência: `services/session_insight.py::maybe_schedule()`.
+- [x] **Bug: memória pessoal AKASHA não registra insight de sessão (session memory)** — quando uma sessão de busca acumula ≥2 queries, o AKASHA deve salvar em sua memória pessoal uma reflexão escrita com suas próprias palavras sobre o que observou na sessão da usuária, referenciando data/hora e o perfil de busca. Isso está registrado no TODO (sessão anterior) mas não implementado. Implementar em `services/session_memory.py` ou `services/session_insight.py`: ao expirar sessão com ≥2 queries, chamar LLM para gerar texto em 1ª pessoa do AKASHA, salvar em `personal_memory` com `type="observation"` e `tags=["session_reflection"]`, incluindo data/hora e nome da usuária (Jenifer). Referência: `services/session_insight.py::maybe_schedule()`. **Verificado em 2026-05-30: `session_memory.py` e `session_insight.py` existem e implementam o fluxo completo — `reflect_on_session()` salva com tag `"session_reflection"`, `maybe_schedule()` salva com tag `"session_insight"`.**
 
 #### Mnemosyne
 - [x] **Bug: tema modo noite/dia reseta entre sessões** — ao cair no arquivo legado `Mnemosyne/config.json` (que não tem `dark_mode`) como migração, o app abria sempre no modo noite (padrão). Causa raiz: `_CONFIG_PATH != _LEGACY_CONFIG_PATH` mas settings.json no ecosystem_root não existia ainda; caia no legacy sem `dark_mode` → default True. Fix em `core/config.py`: ao carregar do legacy como migração, imediatamente salvar no `_CONFIG_PATH` correto para que a próxima abertura use o arquivo permanente. **Corrigido e commitado em 2026-05-19.**
