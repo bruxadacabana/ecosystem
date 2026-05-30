@@ -2515,7 +2515,7 @@ O LOGOS inicia um processo `llama-server` sob demanda para cada modelo solicitad
 | Estado | `inference_enabled` | Processo ativo | O que acontece nas requisições |
 |--------|--------------------|-----------------|---------------------------------|
 | IA desligada | `false` | Nenhum | 503 "inferência desabilitada" |
-| IA ligada, idle | `true` | Nenhum | Carrega modelo na primeira requisição (Passo 3) |
+| IA ligada, idle | `true` | Nenhum | Seleciona melhor LLM do registry → `ensure_llama_model_loaded` → 503 se falhar |
 | IA ligada, servindo | `true` | `llama-server:8081` | Requisições encaminhadas normalmente |
 
 "Desligar IA" (`toggle_inference(false)`) mata os processos `llama-server` e `embed-server` e seta `inference_enabled=false`.
