@@ -7301,7 +7301,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **AKASHA — URL normalization em `archiver.py` antes de inserir** — já implementado: `_normalize_url()` com `_TRACKING_PARAMS` (utm_*, fbclid, gclid…) + integração com `url-normalize`. `archive_url()` chama como primeira operação. Item estava desatualizado. Auditado 2026-05-30.
 
-- [ ] **Mnemosyne — FAIR-RAG: feedback implícito de utilidade da resposta (`core/rag.py`)** — após cada resposta RAG, botão útil/inútil na UI. Se útil: aumentar score de recuperação dos documentos usados (média móvel exponencial em metadata ChromaDB). Se inútil: penalizar. O índice melhora gradualmente com o uso. Origem: Auditoria 05-05, Mnemosyne.
+- [x] **Mnemosyne — FAIR-RAG: feedback implícito de utilidade da resposta (`core/rag.py`)** — implementado: `apply_source_feedback(vectorstore, source_paths, is_positive)` em `core/rag.py` com EMA (alpha=0.15, target 1.5/0.5, clamp 0.3–3.0). Botões "✓ Útil / ✗ Inútil" em `gui/main_window.py` abaixo do painel de fontes, visíveis só após resposta com fontes locais. 11 testes em `tests/test_fair_rag.py`. 2026-05-30.
 
 - [ ] **Hermes — `language="pt"` como padrão no `TranscribeWorker` (`hermes.py`)** — `vad_filter=True` e `beam_size=1` já implementados; falta `language="pt"` como padrão (hoje é "auto", com ~1s overhead de detecção por segmento). Mudar o índice padrão do `lang_combo` de 0 ("auto") para 1 ("pt") em `hermes.py:1173` onde `self._prefs["lang_idx"]` é lido com default 0. Ou adicionar `"pt"` como primeiro item de `LANGUAGES`. Origem: Auditoria 05-05, Hermes.
 

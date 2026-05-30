@@ -1060,6 +1060,29 @@ class MainWindow(QMainWindow):
         self.sources_text.anchorClicked.connect(self._on_source_anchor_clicked)
         layout.addWidget(self.sources_text)
 
+        # FAIR-RAG — botões de feedback de utilidade da resposta
+        self._feedback_widget = QWidget()
+        self._feedback_widget.setObjectName("feedbackBar")
+        _flay = QHBoxLayout(self._feedback_widget)
+        _flay.setContentsMargins(0, 2, 0, 2)
+        _flay.setSpacing(6)
+        _flay.addStretch()
+        _flbl = QLabel("Esta resposta foi útil?")
+        _flbl.setObjectName("feedbackLabel")
+        _flay.addWidget(_flbl)
+        self._feedback_yes_btn = QPushButton("✓ Útil")
+        self._feedback_yes_btn.setObjectName("feedbackBtnYes")
+        self._feedback_yes_btn.setFixedHeight(24)
+        self._feedback_yes_btn.clicked.connect(lambda: self._on_rag_feedback(True))
+        _flay.addWidget(self._feedback_yes_btn)
+        self._feedback_no_btn = QPushButton("✗ Inútil")
+        self._feedback_no_btn.setObjectName("feedbackBtnNo")
+        self._feedback_no_btn.setFixedHeight(24)
+        self._feedback_no_btn.clicked.connect(lambda: self._on_rag_feedback(False))
+        _flay.addWidget(self._feedback_no_btn)
+        self._feedback_widget.setVisible(False)
+        layout.addWidget(self._feedback_widget)
+
         # Chips de perguntas sugeridas (visíveis só quando suggest_questions está ativo)
         self._chips_widget = QWidget()
         self._chips_widget.setObjectName("chipsContainer")
@@ -3790,6 +3813,7 @@ class MainWindow(QMainWindow):
         self._raw_answer = ""
         self.answer_text.setPlainText("")
         self.sources_text.clear()
+        self._feedback_widget.setVisible(False)
         self._think_container.setVisible(False)
         self._think_text.setPlainText("")
         self.cancel_btn.setVisible(True)
@@ -3981,12 +4005,50 @@ class MainWindow(QMainWindow):
                 self.sources_text.setHtml("<br><br>".join(html_parts))
             else:
                 self.sources_text.setPlainText("(nenhuma fonte identificada)")
+            # Mostrar botões de feedback apenas quando há coleções indexadas locais
+            _has_local = any(
+                not s["path"].startswith("http://") and not s["path"].startswith("https://")
+                for s in sources
+            ) if sources else False
+            self._feedback_widget.setVisible(_has_local)
+            self._feedback_yes_btn.setEnabled(True)
+            self._feedback_no_btn.setEnabled(True)
         else:
             self.answer_text.setPlainText(f"Erro: {text}")
             self.sources_text.clear()
+            self._feedback_widget.setVisible(False)
 
         self.ask_btn.setEnabled(True)
         self.statusBar().showMessage("Pronto." if success else "Interrompido.")
+
+    def _on_rag_feedback(self, is_positive: bool) -> None:
+        """Aplica feedback de utilidade às fontes da última resposta RAG."""
+        if not self._current_sources:
+            return
+        # Desabilitar botões imediatamente para evitar duplo-clique
+        self._feedback_yes_btn.setEnabled(False)
+        self._feedback_no_btn.setEnabled(False)
+
+        local_paths = [
+            s["path"] for s in self._current_sources
+            if not s["path"].startswith("http://") and not s["path"].startswith("https://")
+        ]
+        if not local_paths:
+            self._feedback_widget.setVisible(False)
+            return
+
+        label = "✓ útil" if is_positive else "✗ inútil"
+        self.statusBar().showMessage(f"Feedback {label} registrado — atualizando índice…")
+
+        try:
+            from core.rag import apply_source_feedback
+            n = apply_source_feedback(self.vectorstore, local_paths, is_positive)
+            msg = f"Feedback {label} registrado ({n} trecho(s) ajustados)."
+        except Exception as exc:
+            msg = f"Feedback registrado (erro ao atualizar índice: {exc})."
+
+        self.statusBar().showMessage(msg, 4000)
+        self._feedback_widget.setVisible(False)
 
     # ── Perguntas sugeridas ───────────────────────────────────────────────
 

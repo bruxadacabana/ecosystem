@@ -1339,3 +1339,86 @@ def ask(
         raise QueryError(f"Falha na consulta: {exc}") from exc
 
     return AskResult(answer=answer, sources=sources)
+
+
+# ---------------------------------------------------------------------------
+# FAIR-RAG — feedback implícito de utilidade por resposta
+# ---------------------------------------------------------------------------
+
+_FAIR_MIN_BOOST: float = 0.3   # boost mínimo (não deixa chunk sumir do ranking)
+_FAIR_MAX_BOOST: float = 3.0   # boost máximo (não permite dominância absoluta)
+_FAIR_ALPHA:     float = 0.15  # taxa de aprendizado EMA
+
+
+def apply_source_feedback(
+    vectorstore: Any,
+    source_paths: list[str],
+    is_positive: bool,
+) -> int:
+    """Atualiza o campo `boost` nos chunks ChromaDB das fontes usadas.
+
+    Chamado após a usuária clicar "✓ Útil" ou "✗ Inútil" numa resposta RAG.
+    Usa Exponential Moving Average (EMA) para ajustar suavemente o boost:
+
+        new_boost = old_boost + alpha × (target − old_boost)
+
+    Onde:
+        target = 1.5 se útil, 0.5 se inútil
+        alpha  = 0.15 (aprendizado conservador — 15 avaliações para estabilizar)
+
+    O boost é lido e aplicado no ranking RRF de `_hybrid_retrieve`:
+        rrf_scores[key] *= boost
+
+    Args:
+        vectorstore:  store ChromaDB (pode ser MultiVectorstore ou store único).
+        source_paths: caminhos/URLs das fontes da resposta (SourceRecord.path).
+        is_positive:  True = útil (✓), False = inútil (✗).
+
+    Returns:
+        Número total de chunks atualizados no ChromaDB.
+    """
+    if not source_paths:
+        return 0
+
+    target = 1.5 if is_positive else 0.5
+    label  = "positivo" if is_positive else "negativo"
+    updated = 0
+
+    # Suporta MultiVectorstore (múltiplas coleções) e store único
+    if isinstance(vectorstore, MultiVectorstore):
+        stores_to_update = [(vs, None) for vs, _ in vectorstore.stores]
+    else:
+        stores_to_update = [(vectorstore, None)]
+
+    for vs, _ in stores_to_update:
+        for path in source_paths:
+            try:
+                result = vs._collection.get(where={"source": {"$eq": path}})
+                ids   = result.get("ids") or []
+                metas = result.get("metadatas") or []
+
+                if not ids:
+                    log.debug("fair_rag: nenhum chunk encontrado para %s", path)
+                    continue
+
+                new_metas: list[dict] = []
+                for meta in metas:
+                    m = dict(meta or {})
+                    old_boost = float(m.get("boost", 1.0))
+                    new_boost = old_boost + _FAIR_ALPHA * (target - old_boost)
+                    new_boost = max(_FAIR_MIN_BOOST, min(_FAIR_MAX_BOOST, new_boost))
+                    m["boost"] = round(new_boost, 4)
+                    new_metas.append(m)
+
+                vs._collection.update(ids=ids, metadatas=new_metas)
+                updated += len(ids)
+                log.info(
+                    "fair_rag: feedback %s → %d chunks atualizados (fonte: %s, target=%.2f)",
+                    label, len(ids), path, target,
+                )
+
+            except Exception as exc:
+                log.warning("fair_rag: falha ao atualizar boost para %s: %s", path, exc)
+
+    log.info("fair_rag: total %d chunks atualizados (%s)", updated, label)
+    return updated
