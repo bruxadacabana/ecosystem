@@ -2520,6 +2520,14 @@ O LOGOS inicia um processo `llama-server` sob demanda para cada modelo solicitad
 
 "Desligar IA" (`toggle_inference(false)`) mata os processos `llama-server` e `embed-server` e seta `inference_enabled=false`.
 
+**CPU Fallback Gate (OOM de GPU):**
+Quando o llama-server sai inesperadamente em modo GPU (OOM), o LOGOS tenta retomar em modo CPU — mas apenas se o modelo couber:
+- `check_cpu_fallback_allowed(gguf_path, cpu_fallback_max_mb)` mede o arquivo GGUF em disco
+- Se `file_size_mb > cpu_fallback_max_mb` → `emit_alert("error")` + Err (sem retry CPU)
+- Se dentro do limite → retry com `--n-gpu-layers 0` (controlado pelo Passo 6)
+- `cpu_fallback_max_mb` vem de `ecosystem.json["logos"]["cpu_fallback_max_gb"]` (padrão 2.0 GB)
+- Modelos importados do Ollama blob store também são cobertos (tamanho real do arquivo, não do registry)
+
 **Idle Unload Watchdog:**
 Dois loops de background iniciados em `start_server` (poll a cada 60s) verificam ociosidade:
 - `check_idle_llm` — se `last_llm_request_at.elapsed() > idle_timeout_secs` → mata `llama-server`

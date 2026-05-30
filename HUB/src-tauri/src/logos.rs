@@ -1509,6 +1509,24 @@ async fn wait_llama_ready_checking_child(
     }
 }
 
+/// Verifica se o tamanho do arquivo GGUF permite fallback para CPU após OOM de GPU.
+/// Retorna `None` se o modelo cabe dentro do limite; `Some(mensagem)` se for muito grande.
+/// Usa o tamanho real do arquivo em disco (mais confiável que o registry para modelos importados).
+fn check_cpu_fallback_allowed(gguf_path: &std::path::Path, cpu_fallback_max_mb: u64) -> Option<String> {
+    let file_size_mb = std::fs::metadata(gguf_path)
+        .map(|m| m.len() / 1_048_576)
+        .unwrap_or(0);
+    if file_size_mb > cpu_fallback_max_mb {
+        Some(format!(
+            "modelo {file_size_mb}MB excede o limite de fallback CPU {cpu_fallback_max_mb}MB — \
+             fallback desabilitado para evitar travamento do sistema. \
+             Reduza o modelo ou aumente logos.cpu_fallback_max_gb em ecosystem.json"
+        ))
+    } else {
+        None
+    }
+}
+
 /// Garante que o llama-server está rodando com o modelo solicitado.
 /// Para o processo atual e reinicia com o novo modelo se necessário.
 /// Deve ser chamado enquanto o semáforo de concorrência está adquirido.
@@ -1619,11 +1637,23 @@ pub(crate) async fn ensure_llama_model_loaded(
         // Mata o processo e descarta o handle
         let _ = child.kill().await;
 
-        // OOM fallback: processo saiu sozinho em modo GPU → retenta com CPU only
+        // OOM fallback: processo saiu sozinho em modo GPU → tenta CPU only se modelo couber
         if proc_exited && n_gpu != 0 {
+            // Gate por tamanho: modelo maior que cpu_fallback_max_mb → sem retry CPU.
+            // Evita travar o sistema rodando modelos grandes sem limite de threads (Passo 6).
+            if let Some(gate_err) = check_cpu_fallback_allowed(&gguf_path, s.0.cpu_fallback_max_mb) {
+                let alert = format!("'{model_name}': OOM GPU — {gate_err}");
+                log::error!("LOGOS llama-server: {alert}");
+                s.emit_alert("error", &alert).await;
+                return Err(format!(
+                    "OOM GPU em '{model_name}' — {gate_err}"
+                ));
+            }
+
             log::warn!(
-                "LOGOS llama-server: '{model_name}' saiu (provável OOM de GPU) — \
-                 retentando com CPU only (n_gpu_layers=0)"
+                "LOGOS llama-server: '{model_name}' saiu (provável OOM de GPU, \
+                 modelo dentro do limite CPU de {}MB) — retentando com CPU only",
+                s.0.cpu_fallback_max_mb
             );
             let mut cpu_child = spawn_llama_server_proc(&bin, &gguf_path, mmproj_path.as_deref(), 0, n_ctx, LLAMA_SERVER_PORT)
                 .await
@@ -6929,6 +6959,91 @@ mod tests {
         assert!(state.embed_proc_active().await,  "embed proc deve continuar ativo");
 
         state.kill_embed_proc().await;
+    }
+
+    // ── Passo 5: CPU fallback gate por tamanho de modelo ─────────────────────
+
+    #[test]
+    fn cpu_fallback_blocked_for_large_model() {
+        // Arquivo 3 MB, limite 2 MB → gate bloqueia
+        let td = tempfile::tempdir().unwrap();
+        let gguf = td.path().join("large.gguf");
+        std::fs::write(&gguf, vec![0u8; 3 * 1024 * 1024]).unwrap();
+
+        let result = check_cpu_fallback_allowed(&gguf, 2);
+        assert!(
+            result.is_some(),
+            "modelo 3MB com limite 2MB deve ser bloqueado"
+        );
+        let msg = result.unwrap();
+        assert!(msg.contains("3MB"), "mensagem deve mencionar tamanho real: {msg}");
+        assert!(msg.contains("2MB"), "mensagem deve mencionar o limite: {msg}");
+    }
+
+    #[test]
+    fn cpu_fallback_allowed_for_small_model() {
+        // Arquivo 1 MB, limite 2 MB → gate permite
+        let td = tempfile::tempdir().unwrap();
+        let gguf = td.path().join("small.gguf");
+        std::fs::write(&gguf, vec![0u8; 1024 * 1024]).unwrap();
+
+        let result = check_cpu_fallback_allowed(&gguf, 2);
+        assert!(result.is_none(), "modelo 1MB com limite 2MB deve ser permitido");
+    }
+
+    #[test]
+    fn cpu_fallback_exact_limit_is_allowed() {
+        // Arquivo exatamente no limite (não estritamente maior) → permitido
+        let td = tempfile::tempdir().unwrap();
+        let gguf = td.path().join("exact.gguf");
+        std::fs::write(&gguf, vec![0u8; 2 * 1024 * 1024]).unwrap();
+
+        let result = check_cpu_fallback_allowed(&gguf, 2);
+        assert!(
+            result.is_none(),
+            "modelo no exato limite (2MB == 2MB) deve ser permitido (não estritamente maior)"
+        );
+    }
+
+    #[test]
+    fn cpu_fallback_missing_file_returns_allowed() {
+        // Arquivo ausente → tamanho 0 → permitido para qualquer limite > 0
+        let td = tempfile::tempdir().unwrap();
+        let gguf = td.path().join("nao_existe.gguf");
+
+        let result = check_cpu_fallback_allowed(&gguf, 2);
+        assert!(
+            result.is_none(),
+            "arquivo ausente → 0MB → permitido com limite 2MB"
+        );
+    }
+
+    #[test]
+    fn cpu_fallback_zero_limit_blocks_any_model() {
+        // Limite 0 → qualquer modelo com tamanho > 0 é bloqueado
+        let td = tempfile::tempdir().unwrap();
+        let gguf = td.path().join("any.gguf");
+        std::fs::write(&gguf, vec![0u8; 1024 * 1024]).unwrap();
+
+        let result = check_cpu_fallback_allowed(&gguf, 0);
+        assert!(
+            result.is_some(),
+            "com limite 0MB, qualquer modelo real deve ser bloqueado"
+        );
+    }
+
+    #[test]
+    fn cpu_fallback_message_mentions_ecosystem_config() {
+        // A mensagem de erro deve guiar a usuária para a configuração correta
+        let td = tempfile::tempdir().unwrap();
+        let gguf = td.path().join("large.gguf");
+        std::fs::write(&gguf, vec![0u8; 3 * 1024 * 1024]).unwrap();
+
+        let msg = check_cpu_fallback_allowed(&gguf, 2).unwrap();
+        assert!(
+            msg.contains("cpu_fallback_max_gb") || msg.contains("ecosystem.json"),
+            "mensagem deve referenciar configuração: {msg}"
+        );
     }
 
     #[test]
