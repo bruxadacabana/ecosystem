@@ -970,21 +970,30 @@ async def insight_current(request: Request) -> dict:
         return {"text": entry["text"], "memory_id": entry["memory_id"]}
 
     # 2. Fallback: entrada de personal_memory de alta saliência
+    # O lock serializa o bloco "carregar próxima entrada": sem ele, UI e extensão polando
+    # simultaneamente liam _pm_current=None ao mesmo tempo, chamavam mark_shown_as_overlay
+    # duas vezes para a mesma entrada → duas linhas em communication_history → uma ficava
+    # com feedback=NULL para sempre ("sem resposta" no HUB).
     pm_entry = _si.get_pm_current()
     if pm_entry is None:
-        # B1: poda de entradas antigas com alta entropia de Shannon
-        try:
-            from services.personal_memory import prune_high_entropy_stale
-            await prune_high_entropy_stale()
-        except Exception:
-            pass
-        from services.personal_memory import get_next_for_overlay, mark_shown_as_overlay
-        candidates = await get_next_for_overlay(5)
-        for c in candidates:
-            await mark_shown_as_overlay(c["id"])
-            _si.set_pm_current(c)
-            pm_entry = c
-            break
+        async with _si.pm_load_lock:
+            # Double-check após adquirir o lock: outra coroutine pode ter carregado enquanto
+            # esperávamos, evitando mark_shown_as_overlay duplicado.
+            pm_entry = _si.get_pm_current()
+            if pm_entry is None:
+                # B1: poda de entradas antigas com alta entropia de Shannon
+                try:
+                    from services.personal_memory import prune_high_entropy_stale
+                    await prune_high_entropy_stale()
+                except Exception:
+                    pass
+                from services.personal_memory import get_next_for_overlay, mark_shown_as_overlay
+                candidates = await get_next_for_overlay(5)
+                for c in candidates:
+                    await mark_shown_as_overlay(c["id"])
+                    _si.set_pm_current(c)
+                    pm_entry = c
+                    break
 
     if pm_entry:
         # Se o outro consumidor já mostrou esta entrada, não duplicar

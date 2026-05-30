@@ -72,6 +72,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-009](#bug-009) | FIXED | 2026-05-27 | HUB/LOGOS | embed-server em loop — bge-m3-Q4_K_M.gguf corrompido (download incompleto) |
 | [BUG-010](#bug-010) | FIXED | 2026-05-27 | Mnemosyne | SQLITE_READONLY_DBMOVED ao reindexar — ChromaDB SharedSystem com conexão stale |
 | [BUG-011](#bug-011) | FIXED | 2026-05-27 | Ecossistema | shared_topic_profile.db corrompido — "database disk image is malformed" sem recuperação |
+| [BUG-012](#bug-012) | FIXED | 2026-05-30 | AKASHA | Race condition em insight/current: overlay duplicado + feedback "sem resposta" no HUB |
 
 ---
 
@@ -860,3 +861,57 @@ Arquivo: `Mnemosyne/tests/test_index_clear.py` — 6 novos testes (8–13):
 - `test_multiple_opens_accumulate_refcount` — refcount cresce com múltiplas instâncias no mesmo path
 - `test_close_decrements_refcount_to_zero` — close() libera refcount corretamente
 - `test_clear_system_cache_works_with_pending_references` — clear_system_cache() funciona mesmo com conexões não-fechadas
+
+---
+
+### BUG-012 · [FIXED] · Race condition em /insight/current: overlay duplicado + feedback "sem resposta"
+
+**Identificação:** BUG-012
+**Data:** 2026-05-30
+**App:** AKASHA — `routers/search.py` + `services/session_insight.py` + `services/personal_memory.py`
+**Status:** FIXED
+
+#### Ambiente
+- CachyOS principal, AKASHA rodando com extensão de browser ativa + interface web AKASHA aberta simultaneamente
+
+#### Pré-condição
+- Usuária com AKASHA aberto na interface web E extensão de browser instalada
+- Ambos polam `GET /insight/current` a cada ~10 segundos
+
+#### Sintoma
+1. **Overlay duplicado:** mesmo insight aparece uma vez na interface AKASHA e uma segunda vez pelo overlay da extensão
+2. **"Sem resposta" no HUB:** na aba Comms, a entrada correspondente aparece com `feedback=NULL` mesmo após a usuária ter dado OK no overlay
+
+#### Logs / comportamento observado
+- Usuária clica OK no overlay da extensão
+- Em `/communicacoes` (aba Comms do HUB) o insight aparece mas sem feedback registrado
+- O overlay reaparece ou aparece simultaneamente em dois lugares
+
+#### Causa raiz
+Race condition em `GET /insight/current`:
+
+```
+UI poll:  lê _pm_current=None ──────────────────────►──────►  set_pm_current(c) → _pm_shown_by={}
+                                                              ↓
+Ext poll: lê _pm_current=None ──►  await get_next_overlay  ──►  set_pm_current(c) → _pm_shown_by={}  ← RESET!
+```
+
+Como `get_next_for_overlay` e `mark_shown_as_overlay` têm `await`, duas coroutines (UI + extensão) liam `_pm_current=None` antes que qualquer uma o populasse. Ambas chamavam `mark_shown_as_overlay(mesmo_id)` → criavam **duas linhas** em `communication_history`. O `set_pm_current` subsequente resetava `_pm_shown_by=set()`, destruindo a guarda anti-duplicata.
+
+Resultado: ambas retornavam o insight (duplicata), e quando o feedback chegava, só atualizava o `comm_id` mais recente em `personal_memory` — a entrada mais antiga em `communication_history` ficava com `feedback=NULL`.
+
+#### Impacto
+- Usuária vê o mesmo insight duas vezes por sessão
+- Linha orphã em `communication_history` com `feedback=NULL` permanece para sempre
+- A reflexão de feedback (`_reflect_on_feedback`) pode ser disparada duas vezes
+
+#### Fix
+**`services/session_insight.py`:** adicionado `pm_load_lock: asyncio.Lock()` global.
+
+**`routers/search.py`:** bloco "carregar próxima entrada de PM" envolvido com `async with _si.pm_load_lock:` + double-check após adquirir o lock (padrão check-lock-recheck).
+
+**`services/personal_memory.py`:** guarda de idempotência em `mark_shown_as_overlay`: se `shown_as_overlay=1` e `comm_id IS NOT NULL`, retorna sem criar segunda linha em `communication_history`.
+
+#### Teste de regressão
+- Verificar que dois polls simultâneos de `GET /insight/current` produzem exatamente **uma** entrada em `communication_history` (não duas)
+- Verificar que após feedback em um consumidor, a entrada em comms aparece com feedback preenchido

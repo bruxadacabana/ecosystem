@@ -762,8 +762,19 @@ async def mark_shown_as_overlay(memory_id: int) -> None:
 
     Também registra em communication_history via ecosystem_client e salva o
     comm_id retornado para que o feedback posterior possa ser associado.
+
+    Idempotente: se a entrada já tiver shown_as_overlay=1 E comm_id preenchido,
+    não cria um segundo registro em communication_history.
     """
     async with aiosqlite.connect(_get_pm_db()) as db:
+        # Guarda de idempotência: se já foi marcada E já tem comm_id, não duplicar
+        existing = await (await db.execute(
+            "SELECT shown_as_overlay, comm_id FROM personal_memory WHERE id = ?",
+            (memory_id,),
+        )).fetchone()
+        if existing and existing[0] == 1 and existing[1] is not None:
+            return  # já foi registrada — sem duplicata em communication_history
+
         # Lê conteúdo e importância para registrar no histórico antes de marcar
         row = await (await db.execute(
             "SELECT content, importance, tags FROM personal_memory WHERE id = ?",

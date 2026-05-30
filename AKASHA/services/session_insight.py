@@ -56,6 +56,11 @@ _pm_current: dict[str, Any] | None = None
 # Evita que a mesma observação apareça duas vezes para a usuária.
 _pm_shown_by: set[str] = set()
 
+# Lock que serializa o bloco "carregar próxima entrada de PM para o overlay".
+# Sem ele, dois pollings simultâneos (UI + extensão) carregam a mesma entrada duas vezes:
+# dois registros em communication_history, um fica "sem resposta" para sempre.
+pm_load_lock: asyncio.Lock = asyncio.Lock()
+
 
 def get_pm_current() -> dict[str, Any] | None:
     """Retorna a entrada de personal_memory exibida no overlay, ou None."""
