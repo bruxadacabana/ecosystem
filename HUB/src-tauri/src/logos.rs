@@ -2276,6 +2276,9 @@ async fn queue_and_forward(
                     "LOGOS lazy load: '{}' carregado — requisição de '{}' prossegue",
                     model_name, app_name
                 );
+                // Inicia embed-server em paralelo — mesmo ciclo de vida do chat server.
+                // ensure_embed_server_started tem fast path (noop se já ativo).
+                ensure_embed_server_started(&s).await;
             }
         }
     }
@@ -2921,6 +2924,8 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
                     "LOGOS lazy load (/v1): '{}' carregado — requisição de '{}' prossegue",
                     model_name, app_name
                 );
+                // Inicia embed-server em paralelo — mesmo ciclo de vida do chat server.
+                ensure_embed_server_started(s).await;
             }
         }
     }
@@ -3013,19 +3018,36 @@ async fn v1_embeddings_proxy(
     let priority = apply_profile_priority(&profile, &app_name,
                        if req_priority == 0 { 3 } else { req_priority });
 
-    // Verifica se o embed-server está ativo antes de adquirir o semáforo
-    if !s.embed_proc_active().await {
-        log::warn!(
-            "LOGOS embed proxy: requisição de app='{}' rejeitada — embed-server não está ativo \
-             (porta {}). Configure embed_model em ecosystem.json e reinicie a inferência.",
-            app_name, EMBED_SERVER_PORT
-        );
+    // Gate: inferência desabilitada → rejeitar embeddings também.
+    if !s.0.inference_enabled.load(Ordering::Relaxed) {
         return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-            "error": format!(
-                "embed-server não está ativo (porta {EMBED_SERVER_PORT}). \
-                 Configure embed_model e reinicie a inferência via HUB."
-            )
+            "error": "LOGOS: inferência desabilitada — ative a IA no HUB antes de fazer requisições"
         }))).into_response();
+    }
+
+    // Lazy loading do embed-server: inicia se não estiver ativo.
+    // ensure_embed_server_started é não-fatal e tem fast path (noop se já ativo).
+    if !s.embed_proc_active().await {
+        log::info!(
+            "LOGOS embed proxy: embed-server inativo — iniciando para requisição de '{}'",
+            app_name
+        );
+        ensure_embed_server_started(&s).await;
+
+        // Após tentativa de start, verificar se subiu de fato.
+        if !s.embed_proc_active().await {
+            log::warn!(
+                "LOGOS embed proxy: embed-server não iniciou para '{}' — \
+                 verifique embed_model em ecosystem.json (porta {})",
+                app_name, EMBED_SERVER_PORT
+            );
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error": format!(
+                    "embed-server não está ativo (porta {EMBED_SERVER_PORT}). \
+                     Verifique embed_model em ecosystem.json."
+                )
+            }))).into_response();
+        }
     }
 
     let permits: u32 = if priority >= 3 { 1 } else { 2 };

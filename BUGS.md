@@ -76,6 +76,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-013](#bug-013) | FIXED | 2026-05-30 | HUB/LOGOS | proxy_openai_to_llama sem lazy loading — knowledge_worker recebia 502 Bad Gateway |
 | [BUG-014](#bug-014) | FIXED | 2026-05-30 | HUB/LOGOS | lazy loading ignorava perfil de hardware — carregava 7B em vez de 3B para AKASHA |
 | [BUG-015](#bug-015) | FIXED | 2026-05-30 | HUB/LOGOS | proxy_openai_to_llama sem hardware guards, model switching ou active state tracking |
+| [BUG-016](#bug-016) | FIXED | 2026-05-30 | HUB/LOGOS | embed-server sem lazy loading — Mnemosyne recebia 503 em /v1/embeddings |
 
 ---
 
@@ -1067,3 +1068,52 @@ Adicionalmente: `knowledge_worker.py` faz chamadas httpx diretas **sem `X-App` h
 
 #### Teste de regressão
 Sem testes isolados para `proxy_openai_to_llama` (requer servidor HTTP mock completo). Os guards individuais são cobertos pelos testes de `queue_and_forward` e pelos novos testes de `model_for_app`. Regressão verificada via `cargo test` — 295+ testes passando.
+
+---
+
+### BUG-016 · [FIXED] · embed-server sem lazy loading — Mnemosyne recebia 503 em /v1/embeddings
+
+#### Identificação
+- **Data:** 2026-05-30
+- **App(s):** HUB/LOGOS, Mnemosyne
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `v1_embeddings_proxy`, `queue_and_forward`, `proxy_openai_to_llama`
+- **Commit do fix:** (próximo commit)
+- **Descoberta via:** uso-real (`httpx.HTTPStatusError: Server error '503 Service Unavailable' for url 'http://127.0.0.1:7072/v1/embeddings'` no indexer da Mnemosyne)
+- **Tempo de diagnóstico:** ~10 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** CachyOS principal
+- **OS:** CachyOS (Arch Linux)
+- **Modo:** produção (HUB rodando, IA ligada)
+
+#### Pré-condição para reproduzir
+1. LOGOS com `inference_enabled=true` (IA ligada)
+2. Embed-server não iniciado ainda (nenhuma requisição anterior ou após idle unload)
+3. Mnemosyne indexer chama `POST /v1/embeddings`
+
+#### Sintoma
+```
+httpx.HTTPStatusError: Server error '503 Service Unavailable'
+for url 'http://127.0.0.1:7072/v1/embeddings'
+```
+Toda tentativa de indexação da Mnemosyne falhava silenciosamente (ou com erro) — nenhum embedding gerado.
+
+#### Causa raiz
+Três problemas relacionados:
+
+1. **`v1_embeddings_proxy` sem lazy loading:** o handler verificava se o embed-server estava ativo e retornava 503 imediatamente se não. Não havia nenhuma tentativa de iniciá-lo. O embed-server só subia via `do_load_model` (toggle explícito), que não é mais chamado com lazy loading.
+
+2. **`queue_and_forward` lazy load não iniciava embed-server:** após `ensure_llama_model_loaded` bem-sucedido, não havia chamada a `ensure_embed_server_started`. O fluxo `do_load_model` (que chama ambos) foi substituído pelo lazy load que só chama um.
+
+3. **`v1_embeddings_proxy` sem gate de `inference_enabled`:** o handler não verificava se a IA estava ligada, tratando o embed-server como sempre disponível.
+
+#### Impacto
+Bloqueante: Mnemosyne não conseguia indexar nenhum documento nem fazer RAG depois que o LOGOS migrou para lazy loading. O embed-server nunca subia automaticamente.
+
+#### Fix
+- **`v1_embeddings_proxy`:** substituído o 503 imediato por lazy loading: chama `ensure_embed_server_started(&s)`, verifica se subiu, retorna 503 apenas se falhar. Adicionado gate de `inference_enabled`.
+- **`queue_and_forward`:** adicionado `ensure_embed_server_started(&s).await` após `ensure_llama_model_loaded` bem-sucedido no bloco de lazy load.
+- **`proxy_openai_to_llama`:** idem — adicionado `ensure_embed_server_started(s).await` após lazy load bem-sucedido.
+
+#### Teste de regressão
+`ensure_embed_server_started` tem fast path (noop se já ativo) — chamadas redundantes são seguras. Sem teste isolado de `v1_embeddings_proxy` (requer servidor HTTP mock). Regressão verificada via `cargo test`.
