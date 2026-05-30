@@ -630,32 +630,37 @@ fn reset_akasha(
     let pm_path = root.join(".ai_private").join("akasha").join("personal_memory.db");
     delete_file_or_dir(&pm_path, false, deleted, errors);
 
-    // 2. akasha.db — apagar crawl_pages (não salvas) e personal_memory (tabela)
+    // 2. akasha.db — apagar crawl_pages + crawl_fts + personal_memory
     if let Some(db_path) = akasha_db_path(eco) {
         match Connection::open(&db_path) {
             Err(e) => errors.push(format!("akasha.db: não foi possível abrir: {e}")),
             Ok(conn) => {
-                // Apagar crawl_pages (tentativas sucessivas para diferentes esquemas)
-                let del_pages = conn.execute_batch(
-                    "DELETE FROM crawl_pages WHERE saved IS NULL OR saved = 0"
-                ).or_else(|_| conn.execute_batch(
-                    "DELETE FROM crawl_pages WHERE is_saved IS NULL OR is_saved = 0"
-                )).or_else(|_| conn.execute_batch("DELETE FROM crawl_pages"));
+                // busy_timeout: AKASHA pode estar rodando com o DB aberto.
+                // Sem timeout, rusqlite falha imediatamente com SQLITE_BUSY.
+                let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
 
+                // crawl_pages: apagar tudo (o schema não tem coluna 'saved' — a tabela é
+                // redesenhada depois pelo crawler; crawl_sites é preservado).
+                // Fallback encadeado por segurança caso o schema mude no futuro.
+                let del_pages = conn.execute_batch("DELETE FROM crawl_pages");
                 match del_pages {
-                    Ok(_)  => deleted.push("akasha: crawl_pages (não salvas)".into()),
+                    Ok(_)  => deleted.push("akasha: crawl_pages".into()),
                     Err(e) => errors.push(format!("akasha: crawl_pages: {e}")),
                 }
 
-                // Apagar personal_memory (tabela no akasha.db)
+                // crawl_fts: tabela FTS5 separada — deve ser limpa junto com crawl_pages.
+                // Sem isso, a busca retorna resultados de páginas já deletadas.
+                match conn.execute_batch("DELETE FROM crawl_fts") {
+                    Ok(_) => deleted.push("akasha: crawl_fts".into()),
+                    Err(e) if e.to_string().contains("no such table") => {}
+                    Err(e) => errors.push(format!("akasha: crawl_fts: {e}")),
+                }
+
+                // personal_memory (tabela no akasha.db — pode não existir em todos os schemas)
                 match conn.execute_batch("DELETE FROM personal_memory") {
                     Ok(_)  => deleted.push("akasha: personal_memory (tabela)".into()),
-                    Err(e) => {
-                        // Tabela pode não existir — não é erro crítico
-                        if !e.to_string().contains("no such table") {
-                            errors.push(format!("akasha: personal_memory: {e}"));
-                        }
-                    }
+                    Err(e) if e.to_string().contains("no such table") => {}
+                    Err(e) => errors.push(format!("akasha: personal_memory: {e}")),
                 }
 
                 preserved.push("akasha: crawl_sites (lista de sites da usuária)".into());
@@ -1069,15 +1074,28 @@ mod tests {
                 content_hash TEXT NOT NULL DEFAULT ''
              );
              INSERT INTO crawl_sites (base_url, label) VALUES ('https://keep.com', 'Keep');
+             -- Schema real: sem coluna 'saved' — dados crawleados são todos transientes.
+             -- Arquivos explicitamente salvos ficam em Web/ e Papers/ (não nesta tabela).
              CREATE TABLE crawl_pages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                url TEXT NOT NULL,
-                saved INTEGER NOT NULL DEFAULT 0
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                site_id          INTEGER NOT NULL DEFAULT 1,
+                url              TEXT    NOT NULL UNIQUE,
+                title            TEXT    NOT NULL DEFAULT '',
+                content_md       TEXT    NOT NULL DEFAULT '',
+                crawled_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+                knowledge_processed INTEGER NOT NULL DEFAULT 0
              );
-             INSERT INTO crawl_pages (url, saved) VALUES
-                ('https://keep.com/page1', 1),
-                ('https://keep.com/page2', 0),
-                ('https://keep.com/page3', 0);
+             CREATE VIRTUAL TABLE crawl_fts USING fts5(
+                site_id UNINDEXED, url UNINDEXED, title, content_md
+             );
+             INSERT INTO crawl_pages (url, title, content_md) VALUES
+                ('https://keep.com/page1', 'Page 1', 'content one'),
+                ('https://keep.com/page2', 'Page 2', 'content two'),
+                ('https://keep.com/page3', 'Page 3', 'content three');
+             INSERT INTO crawl_fts (site_id, url, title, content_md) VALUES
+                (1, 'https://keep.com/page1', 'Page 1', 'content one'),
+                (1, 'https://keep.com/page2', 'Page 2', 'content two'),
+                (1, 'https://keep.com/page3', 'Page 3', 'content three');
              CREATE TABLE personal_memory (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 content TEXT
@@ -1105,12 +1123,36 @@ mod tests {
 
         let report = ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
 
-        // Verificar que crawl_pages não salvas foram apagadas
         let conn = Connection::open(tmp.path().join("akasha.db")).unwrap();
         let total: i64 = conn.query_row("SELECT count(*) FROM crawl_pages", [], |r| r.get(0)).unwrap();
-        // página salva (saved=1) deve permanecer; não salvas devem ser apagadas
-        assert_eq!(total, 1, "só páginas salvas devem sobrar");
-        assert!(report.deleted.iter().any(|d| d.contains("crawl_pages")), "relatório deve mencionar crawl_pages");
+        // Todas as páginas crawleadas são dados transientes — apagadas pelo reset.
+        // Arquivos salvos pela usuária ficam em Web/ e Papers/ (não nesta tabela).
+        assert_eq!(total, 0, "todas as crawl_pages devem ser apagadas no reset");
+        assert!(report.deleted.iter().any(|d| d.contains("crawl_pages")),
+            "relatório deve mencionar crawl_pages");
+    }
+
+    #[test]
+    fn test_reset_clears_crawl_fts() {
+        let tmp = tempfile::tempdir().unwrap();
+        make_akasha_db_with_memory(tmp.path());
+        let eco = make_eco(tmp.path(), tmp.path());
+
+        let conn_before = Connection::open(tmp.path().join("akasha.db")).unwrap();
+        let fts_before: i64 = conn_before.query_row(
+            "SELECT count(*) FROM crawl_fts", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(fts_before, 3, "crawl_fts deve ter 3 entradas antes do reset");
+        drop(conn_before);
+
+        ecosystem_reset_inner("RESETAR", &eco, tmp.path()).unwrap();
+
+        let conn = Connection::open(tmp.path().join("akasha.db")).unwrap();
+        let fts_after: i64 = conn.query_row(
+            "SELECT count(*) FROM crawl_fts", [], |r| r.get(0)
+        ).unwrap();
+        assert_eq!(fts_after, 0,
+            "crawl_fts deve ser esvaziada junto com crawl_pages (evita resultados de busca órfãos)");
     }
 
     #[test]
