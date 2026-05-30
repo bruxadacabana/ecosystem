@@ -7299,7 +7299,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 #### 🟡 Média prioridade
 
-- [ ] **AKASHA — URL normalization em `archiver.py` antes de inserir** — `crawler.py` já normaliza (lowercase, sem trailing slash); `archiver.py` não normaliza — mesma página com tracking params diferentes (`utm_*`, `fbclid`, `gclid`, `ref`, `source`) é arquivada como documento separado. Adicionar `from url_normalize import url_normalize` (`pip install url-normalize`) em `archiver.py` antes do INSERT. Origem: Auditoria 05-05, AKASHA.
+- [x] **AKASHA — URL normalization em `archiver.py` antes de inserir** — já implementado: `_normalize_url()` com `_TRACKING_PARAMS` (utm_*, fbclid, gclid…) + integração com `url-normalize`. `archive_url()` chama como primeira operação. Item estava desatualizado. Auditado 2026-05-30.
 
 - [ ] **Mnemosyne — FAIR-RAG: feedback implícito de utilidade da resposta (`core/rag.py`)** — após cada resposta RAG, botão útil/inútil na UI. Se útil: aumentar score de recuperação dos documentos usados (média móvel exponencial em metadata ChromaDB). Se inútil: penalizar. O índice melhora gradualmente com o uso. Origem: Auditoria 05-05, Mnemosyne.
 
