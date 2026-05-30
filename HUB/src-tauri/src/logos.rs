@@ -2165,6 +2165,53 @@ async fn check_idle_embed(s: &LogosState) -> bool {
     }
 }
 
+/// Resolve o modelo a carregar para um app específico, respeitando overrides e o perfil de hardware.
+/// Ordem: override da usuária → modelo recomendado do perfil → primeiro LLM instalado (fallback).
+/// Verifica instalação antes de retornar; se não instalado, usa o fallback.
+async fn model_for_app(s: &LogosState, app_name: &str) -> Option<String> {
+    let profile  = s.0.hardware_profile.model_profile();
+    let overrides = s.0.model_overrides.lock().await.clone();
+
+    let lower = app_name.to_lowercase();
+    let configured: Option<String> = if lower.contains("akasha") {
+        let key = "akasha_llm_query";
+        Some(overrides.get(key).cloned().unwrap_or_else(|| profile.llm_query.to_string()))
+    } else if lower.contains("mnemosyne") {
+        let key = "mnemosyne_llm_rag";
+        Some(overrides.get(key).cloned().unwrap_or_else(|| profile.llm_rag.to_string()))
+    } else if lower.contains("kosmos") {
+        let key = "kosmos_llm_analysis";
+        Some(overrides.get(key).cloned().unwrap_or_else(|| profile.llm_analysis.to_string()))
+    } else {
+        None
+    };
+
+    if let Some(ref model) = configured {
+        if !model.is_empty() {
+            let registry = read_model_registry(&s.0.models_dir).await;
+            let installed = registry.iter().any(|e| {
+                e.name == *model
+                    || e.name == format!("{}:latest", model)
+                    || e.filename.trim_end_matches(".gguf") == *model
+            });
+            if installed {
+                return configured;
+            }
+            log::warn!(
+                "LOGOS: modelo configurado '{}' para '{}' não instalado — \
+                 usando primeiro LLM disponível",
+                model, app_name
+            );
+        }
+    }
+
+    // Fallback: primeiro modelo LLM instalado (não embedding)
+    let models = do_list_all_models(s).await;
+    let names: Vec<String> = models.into_iter().map(|m| m.name).collect();
+    crate::commands::launcher::select_model_to_load_llm(&names)
+        .or_else(|| crate::commands::launcher::select_model_to_load(&names))
+}
+
 /// Núcleo da fila de prioridades: aplica guards, enfileira e encaminha ao Ollama.
 /// Compartilhado entre /logos/chat (legado) e /api/chat, /api/generate (proxy transparente).
 async fn queue_and_forward(
@@ -2188,12 +2235,7 @@ async fn queue_and_forward(
     // Lazy loading: IA habilitada mas nenhum modelo ativo → carregar na primeira requisição real.
     // Isso desacopla "Ligar IA" (toggle) do carregamento de modelo em VRAM.
     if !s.llama_proc_active().await {
-        let models  = do_list_all_models(&s).await;
-        let names: Vec<String> = models.into_iter().map(|m| m.name).collect();
-
-        let to_load =
-            crate::commands::launcher::select_model_to_load_llm(&names)
-            .or_else(|| crate::commands::launcher::select_model_to_load(&names));
+        let to_load = model_for_app(&s, &app_name).await;
 
         match to_load {
             None => {
@@ -2774,10 +2816,7 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
 
     // Lazy loading: IA habilitada mas nenhum modelo ativo → carregar na primeira requisição real.
     if !s.llama_proc_active().await {
-        let models = do_list_all_models(s).await;
-        let names: Vec<String> = models.into_iter().map(|m| m.name).collect();
-        let to_load = crate::commands::launcher::select_model_to_load_llm(&names)
-            .or_else(|| crate::commands::launcher::select_model_to_load(&names));
+        let to_load = model_for_app(s, &app_name).await;
         match to_load {
             None => {
                 log::error!(
@@ -7450,6 +7489,141 @@ mod tests {
             "last_llm_request_at deve ser < 5s após requisição; elapsed={elapsed:?}"
         );
         state.kill_llama_proc().await;
+    }
+
+    // ── model_for_app — seleção de modelo por app ─────────────────────────────
+
+    /// Helper: registry com dois modelos (LLM pequeno + LLM grande) sem GGUF real.
+    fn write_two_model_registry(dir: &std::path::Path, small: &str, large: &str) {
+        let registry = serde_json::json!([
+            {
+                "name": small,
+                "repo_id": "test/small",
+                "filename": format!("{small}.gguf"),
+                "path": dir.join(format!("{small}.gguf")).to_string_lossy(),
+                "size_bytes": 2_000_000_000_u64,
+                "sha256": "aaa",
+                "downloaded_at": "2026-05-30T00:00:00+00:00"
+            },
+            {
+                "name": large,
+                "repo_id": "test/large",
+                "filename": format!("{large}.gguf"),
+                "path": dir.join(format!("{large}.gguf")).to_string_lossy(),
+                "size_bytes": 7_000_000_000_u64,
+                "sha256": "bbb",
+                "downloaded_at": "2026-05-30T00:00:00+00:00"
+            }
+        ]);
+        std::fs::write(
+            dir.join("registry.json"),
+            serde_json::to_vec(&registry).unwrap(),
+        ).unwrap();
+    }
+
+    #[tokio::test]
+    async fn model_for_app_akasha_uses_llm_query_from_profile() {
+        // A AKASHA deve receber o modelo configurado em llm_query do perfil de hardware,
+        // não o primeiro da lista (que pode ser um modelo diferente).
+        // make_test_state usa WorkPc: llm_query="qwen2.5:0.5b", llm_rag="smollm2:1.7b"
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        // Registra llm_query e llm_rag do perfil WorkPc; llm_rag vem primeiro para expor o bug.
+        write_two_model_registry(td.path(), "smollm2:1.7b", "qwen2.5:0.5b");
+
+        let selected = model_for_app(&state, "akasha").await;
+        assert_eq!(
+            selected.as_deref(), Some("qwen2.5:0.5b"),
+            "AKASHA deve usar llm_query (qwen2.5:0.5b no WorkPc), não o primeiro da lista; got={selected:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn model_for_app_mnemosyne_uses_llm_rag_from_profile() {
+        // Mnemosyne deve receber o modelo configurado em llm_rag do perfil de hardware.
+        // make_test_state usa WorkPc: llm_rag="smollm2:1.7b"
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        // Registra llm_rag e llm_query; llm_query vem primeiro para expor o bug.
+        write_two_model_registry(td.path(), "qwen2.5:0.5b", "smollm2:1.7b");
+
+        let selected = model_for_app(&state, "mnemosyne").await;
+        assert_eq!(
+            selected.as_deref(), Some("smollm2:1.7b"),
+            "Mnemosyne deve usar llm_rag (smollm2:1.7b no WorkPc); got={selected:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn model_for_app_override_takes_priority_over_profile() {
+        // Override da usuária deve ter prioridade sobre o modelo recomendado pelo perfil.
+        // make_test_state usa WorkPc: llm_query="qwen2.5:0.5b"
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        // Registra dois modelos
+        write_two_model_registry(td.path(), "qwen2.5:0.5b", "smollm2:1.7b");
+
+        // Override: AKASHA usa smollm2:1.7b em vez de qwen2.5:0.5b configurado no perfil
+        state.0.model_overrides.lock().await
+            .insert("akasha_llm_query".to_string(), "smollm2:1.7b".to_string());
+
+        let selected = model_for_app(&state, "akasha").await;
+        assert_eq!(
+            selected.as_deref(), Some("smollm2:1.7b"),
+            "override deve ter prioridade sobre o perfil; got={selected:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn model_for_app_falls_back_when_configured_not_installed() {
+        // Se o modelo configurado (llm_query do perfil) não está no registry,
+        // cai para o primeiro LLM disponível.
+        // make_test_state usa WorkPc: llm_query="qwen2.5:0.5b"
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        // Só smollm2:1.7b está instalado; qwen2.5:0.5b (llm_query WorkPc) não está.
+        let registry = serde_json::json!([{
+            "name": "smollm2:1.7b",
+            "repo_id": "test/smollm",
+            "filename": "smollm2:1.7b.gguf",
+            "path": td.path().join("smollm2:1.7b.gguf").to_string_lossy(),
+            "size_bytes": 1_000_000_000_u64,
+            "sha256": "aaa",
+            "downloaded_at": "2026-05-30T00:00:00+00:00"
+        }]);
+        std::fs::write(td.path().join("registry.json"), serde_json::to_vec(&registry).unwrap()).unwrap();
+
+        let selected = model_for_app(&state, "akasha").await;
+        assert_eq!(
+            selected.as_deref(), Some("smollm2:1.7b"),
+            "fallback ao primeiro LLM disponível quando llm_query não instalado; got={selected:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn model_for_app_unknown_app_uses_first_llm() {
+        // App desconhecido (sem mapeamento) usa o primeiro modelo LLM da lista.
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        write_two_model_registry(td.path(), "qwen2.5:3b", "qwen2.5:7b");
+
+        let selected = model_for_app(&state, "unknown_app").await;
+        assert!(selected.is_some(), "app desconhecido deve retornar algum modelo; got={selected:?}");
+    }
+
+    #[tokio::test]
+    async fn model_for_app_no_models_installed_returns_none() {
+        // Sem modelos no registry → None.
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        // sem registry.json
+        let selected = model_for_app(&state, "akasha").await;
+        assert!(selected.is_none(), "sem modelos instalados deve retornar None; got={selected:?}");
     }
 
     // ── Passo 6: build_llama_server_cmd_cpu_fallback ──────────────────────────
