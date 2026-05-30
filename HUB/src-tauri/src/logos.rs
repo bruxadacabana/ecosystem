@@ -2814,50 +2814,120 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
         ).into_response();
     }
 
-    // Lazy loading: IA habilitada mas nenhum modelo ativo → carregar na primeira requisição real.
-    if !s.llama_proc_active().await {
-        let to_load = model_for_app(s, &app_name).await;
-        match to_load {
-            None => {
+    // Se o llama-server atingiu o limite de crashes, rejeitar sem tentar.
+    if s.0.llama_disabled.load(Ordering::Relaxed) {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "LOGOS: llama-server desabilitado após múltiplos crashes — reinicie o HUB"
+            })),
+        ).into_response();
+    }
+
+    // Hardware guards por prioridade (mesma lógica de queue_and_forward):
+    let on_battery  = *s.0.on_battery.lock().await;
+    let is_survival = s.0.hardware_mode == "sobrevivencia";
+    if priority == 3 {
+        if on_battery {
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error": "Modo bateria: tarefas P3 desabilitadas para preservar energia"
+            }))).into_response();
+        }
+        if s.0.p3_vram_blocked.load(Ordering::Relaxed) {
+            let pct_cfg = (*s.0.vram_limit_pct.lock().await) as u32;
+            return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+                "error": format!("VRAM > {pct_cfg}% — tarefa P3 bloqueada pelo watchdog; aguarde VRAM < 70%")
+            }))).into_response();
+        }
+        let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
+        if let Some(pct) = vram_pct(&s.0.client, s.0.hardware_profile).await {
+            if pct > vram_block {
+                let pct_cfg = (vram_block * 100.0) as u32;
+                return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+                    "error": format!("VRAM > {pct_cfg}% — tarefa P3 adiada; tente novamente mais tarde")
+                }))).into_response();
+            }
+        }
+        let cpu_limit = if is_survival { CPU_P3_SURVIVAL_BLOCK } else { *s.0.cpu_p3_limit_pct.lock().await };
+        let ram_limit = if is_survival { RAM_P3_SURVIVAL_BLOCK_MB } else { RAM_P3_BLOCK_MB };
+        let (cpu, ram_free) = {
+            let (c, f, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+            (c, f)
+        };
+        if cpu > cpu_limit || ram_free < ram_limit {
+            return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+                "error": format!("CPU {cpu:.0}% ou RAM livre {ram_free} MB insuficiente — tarefa P3 adiada")
+            }))).into_response();
+        }
+    } else if priority == 2 && on_battery {
+        let (cpu, _ram, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+        if cpu > ON_BATTERY_P2_CPU_BLOCK {
+            return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+                "error": format!("CPU {cpu:.0}% em bateria — tarefa P2 adiada")
+            }))).into_response();
+        }
+    }
+
+    // Lazy loading + model switching:
+    // ensure_llama_model_loaded tem fast path — se o modelo correto já estiver carregado,
+    // retorna Ok imediatamente. Cobre tanto o primeiro acesso (lazy) quanto troca de modelo
+    // (e.g., Mnemosyne carregou 7b, AKASHA precisa de 3b → troca automática).
+    //
+    // Prioridade de seleção do modelo:
+    // 1. Campo "model" do body OpenAI (apps que enviam diretamente via httpx sem X-App header)
+    // 2. model_for_app (apps que enviam X-App header; fallback = primeiro LLM instalado)
+    let body_model = serde_json::from_slice::<serde_json::Value>(&body).ok()
+        .and_then(|v| v["model"].as_str().map(String::from))
+        .filter(|m| !m.is_empty());
+    let chosen_model = if body_model.is_some() {
+        body_model
+    } else {
+        model_for_app(s, &app_name).await
+    };
+    match chosen_model {
+        None => {
+            log::error!(
+                "LOGOS /v1: nenhum modelo instalado — requisição P{} de '{}' rejeitada",
+                priority, app_name
+            );
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": "LOGOS: nenhum modelo instalado — faça download de um modelo LLM no HUB"
+                })),
+            ).into_response();
+        }
+        Some(ref model_name) => {
+            let was_idle = !s.llama_proc_active().await;
+            if was_idle {
+                log::info!(
+                    "LOGOS lazy load (/v1): primeira requisição de '{}' (P{}) — carregando '{}'",
+                    app_name, priority, model_name
+                );
+            }
+            if let Err(e) = ensure_llama_model_loaded(s, model_name).await {
                 log::error!(
-                    "LOGOS lazy load (/v1): nenhum modelo instalado — \
-                     requisição P{} de '{}' rejeitada",
-                    priority, app_name
+                    "LOGOS /v1: falha ao carregar '{}' para '{}': {}", model_name, app_name, e
                 );
                 return (
                     StatusCode::SERVICE_UNAVAILABLE,
                     Json(serde_json::json!({
-                        "error": "LOGOS: nenhum modelo instalado — faça download de um modelo LLM no HUB"
+                        "error": format!("LOGOS: falha ao carregar modelo '{}' — {}", model_name, e)
                     })),
                 ).into_response();
             }
-            Some(ref model_name) => {
-                log::info!(
-                    "LOGOS lazy load (/v1): primeira requisição de '{}' (P{}) — \
-                     carregando '{}'",
-                    app_name, priority, model_name
-                );
-                if let Err(e) = ensure_llama_model_loaded(s, model_name).await {
-                    log::error!(
-                        "LOGOS lazy load (/v1): falha ao carregar '{}' para requisição de '{}': {}",
-                        model_name, app_name, e
-                    );
-                    return (
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        Json(serde_json::json!({
-                            "error": format!(
-                                "LOGOS: falha ao carregar modelo '{}' — {}",
-                                model_name, e
-                            )
-                        })),
-                    ).into_response();
-                }
+            if was_idle {
                 log::info!(
                     "LOGOS lazy load (/v1): '{}' carregado — requisição de '{}' prossegue",
                     model_name, app_name
                 );
             }
         }
+    }
+
+    // Preempção P1: se P3 está ativo e VRAM insuficiente, descarregar antes de entrar na fila.
+    if priority == 1 {
+        try_preempt_p3(s, &chosen_model.as_deref().unwrap_or("")).await;
     }
 
     // Atualiza timestamp de última requisição (idle watchdog).
@@ -2877,14 +2947,27 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
         }))).into_response(),
     };
 
+    // Rastreia estado ativo (prioridade, app, classe do modelo) para métricas e UI.
+    *s.0.active_priority.lock().await    = Some(priority);
+    *s.0.active_app.lock().await         = Some(app_name.clone());
+    *s.0.active_model_class.lock().await = Some(
+        if chosen_model.as_deref().map(is_light_model).unwrap_or(true) { "leve" } else { "pesado" }
+            .to_string()
+    );
+
     let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/{endpoint}");
-    match s.0.client
+    let result = s.0.client
         .post(&url)
         .header(header::CONTENT_TYPE, "application/json")
         .body(body)
         .send()
-        .await
-    {
+        .await;
+
+    *s.0.active_priority.lock().await    = None;
+    *s.0.active_model_class.lock().await = None;
+    *s.0.active_app.lock().await         = None;
+
+    match result {
         Ok(resp) => {
             let status = resp.status();
             let ct = resp.headers()
