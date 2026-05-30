@@ -5330,25 +5330,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   `score_relevância_médio` das últimas N queries, `última_vez_retornado`. Implementa
   "Camada 2" da arquitetura de memória de 3 níveis documentada na pesquisa.
 
-- [ ] **Slide deck export (PPTX) a partir de coleção**
-  (`core/slidemaker.py`). LLM gera outline (título + 5–7 bullet points por slide
-  para cada tema principal) → `python-pptx` monta o arquivo .pptx. `pip install
-  python-pptx`. Exportar via botão na área de Relatórios.
+- ~~**Slide deck export (PPTX) a partir de coleção** — movido para §Pendências priorizadas | 2026-05-30~~
 
-- [ ] **FAIR-RAG: feedback implícito — boost/penalizar documentos por utilidade da resposta**
-  (`core/rag.py`, `gui/` botão de feedback). Após cada resposta RAG, permitir ao
-  usuário marcar como útil/inútil. Se útil: aumentar score de recuperação dos
-  documentos usados (média móvel exponencial). Se inútil: penalizar. Armazenar
-  ajustes por documento em metadata. O índice melhora gradualmente com o uso.
+- ~~**FAIR-RAG: feedback implícito — boost/penalizar documentos por utilidade da resposta** — movido para §Pendências priorizadas | 2026-05-30~~
 
 #### AKASHA
-- [ ] **Endpoint `GET /fetch?url=` — busca transiente sem salvar em disco**
-  > Parcialmente implementado: existe `POST /fetch` (com body JSON), não `GET /fetch?url=`. Adicionar a variante GET com query param para compatibilidade com clientes simples.
-  (`routers/search.py` ou novo `routers/fetch.py`). Buscar e extrair conteúdo de
-  uma URL como Markdown e retornar em JSON sem salvar no archive. Equivale ao
-  `archiver.py` sem o `dest_path.write_text()`. ~30 linhas. Necessário para o
-  Deep Research Mode do Mnemosyne e para qualquer consumidor programático que
-  precise do conteúdo sem poluir o archive.
+- ~~**Endpoint `GET /fetch?url=` — busca transiente sem salvar em disco** — movido para §Pendências priorizadas | 2026-05-30~~
 
 - [x] **Endpoint `GET /search/json?q=&max=` — busca retornando JSON estruturado**
   (`routers/search.py`). A rota `/search` atual retorna HTML (Jinja2). Adicionar
@@ -5362,37 +5349,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   deve incluir a categoria do feed como tag. Armazenar no frontmatter do arquivo
   Markdown arquivado. Complemento ao item `POST /archive` já rastreado no TODO.
 
-- [ ] **URL normalization antes de inserir no crawl_pages e archive**
-  > Parcialmente implementado: `services/crawler.py` já normaliza URLs (lowercase, remove trailing slash). `services/archiver.py` não normaliza — é onde a deduplicação por tracking params faz mais diferença. Implementar em `archiver.py` com remoção de `utm_*`, `fbclid`, `gclid`, `ref`, `source`.
-  (`services/archiver.py`, `services/crawler.py`). Normalizar URL com
-  `pip install url-normalize` antes de inserir: lowercase scheme+host, remover
-  default ports, remover parâmetros de rastreamento (`utm_*`, `fbclid`, `gclid`,
-  `ref`, `source`), ordenar query params. Evita arquivar a mesma página com
-  tracking params diferentes como documentos separados.
+- ~~**URL normalization antes de inserir no crawl_pages e archive** — movido para §Pendências priorizadas | 2026-05-30~~
 
 #### KOSMOS
-- [ ] **Streaming JSON parcial com field-order optimization (json-stream / ijson)**
-  (`app/ui/workers.py`, `_AnalyzeWorker`). Usar `stream=True` com o cliente Ollama
-  e parsear a resposta com `pip install json-stream`. Reordenar campos do schema
-  para que campos rápidos (tags, sentiment, clickbait_score) venham antes dos lentos
-  (entities, five_ws) — XGrammar/Outlines segue a ordem de declaração. A UI pode
-  exibir campos rápidos em 0.5–1.5s, antes do JSON completo. Melhor custo-benefício
-  que split de calls para este caso.
+- ~~**Streaming JSON parcial com field-order optimization** — movido para §KOSMOS refazer do zero | 2026-05-30~~
 
-- [ ] **SpaCy para extração de entidades em vez de LLM (pt_core_news_lg)**
-  (`app/core/analyzer.py` ou equivalente). Para o campo `entities`, substituir ou
-  complementar a call LLM com SpaCy `pt_core_news_lg` (~250MB). Roda totalmente em
-  CPU, trata PER/ORG/LOC/MISC em português, dramaticamente mais rápido que LLM para
-  NER. O LLM mantém responsabilidade sobre semantic classification (sentiment, tags,
-  clickbait). Resolve a perda de fidelidade de 3–8% documentada em modelos Q4 para
-  tarefas de cópia de span como NER. `pip install spacy` +
-  `python -m spacy download pt_core_news_lg`.
+- ~~**SpaCy para extração de entidades em vez de LLM (pt_core_news_lg)** — movido para §KOSMOS refazer do zero | 2026-05-30~~
 
-- [ ] **Heartbeat timeout para análises travadas (`analysis_started_at` + reset no startup)**
-  (`app/utils/db.py` ou equivalente). Adicionar coluna `analysis_started_at DATETIME`
-  na tabela de artigos. No startup, resetar para `pending` todos os artigos com
-  `status = 'in_progress'` e `analysis_started_at < now - 5 minutes`. Evita artigos
-  eternamente presos em `in_progress` após kill do processo ou crash.
+- ~~**Heartbeat timeout para análises travadas** — movido para §KOSMOS refazer do zero | 2026-05-30~~
 
 - [x] **Deduplicação de análise por content hash (SHA-256 de texto normalizado)**
   (`app/core/analyzer.py`, `app/utils/db.py`). Antes de chamar LLM para análise,
@@ -5401,60 +5365,21 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   em vez de re-chamar o LLM. Adicionar coluna `content_hash TEXT` com índice UNIQUE
   parcial. Economiza calls LLM para artigos cross-posted/espelhados.
 
-- [ ] **Índice parcial SQLite para fila de análise pendente**
-  (`app/utils/db.py`, na criação do schema). Adicionar:
-  `CREATE INDEX idx_pending_analysis ON articles(feed_id, published_at DESC)
-  WHERE analysis_status IN ('pending', 'failed')`.
-  SQLite suporta partial indexes desde 3.8.0. Para tabela com 10k artigos onde 95%
-  estão analisados, o índice cobre ~500 linhas — query da fila de background passa
-  de O(log 10000) para O(log 500).
+- ~~**Índice parcial SQLite para fila de análise pendente** — movido para §KOSMOS refazer do zero | 2026-05-30~~
 
-- [ ] **TTL de campos pesados: nullar five_ws e entities para artigos > 6 meses**
-  (`app/core/maintenance.py` ou job periódico). Query mensal:
-  `UPDATE articles SET ai_five_ws = NULL, ai_entities = NULL
-  WHERE published_at < date('now', '-6 months') AND ai_five_ws IS NOT NULL`.
-  Manter ai_tags e ai_sentiment (úteis para filtragem histórica). Seguido de
-  `VACUUM` + `ANALYZE`. Mantém o DB SQLite em tamanho gerenciável conforme
-  artigos acumulam na casa dos milhares.
+- ~~**TTL de campos pesados: nullar five_ws e entities para artigos > 6 meses** — movido para §KOSMOS refazer do zero | 2026-05-30~~
 
-- [ ] **Politeness: delay mínimo de 2s por domínio no scraping de artigos**
-  > Coberto pelos dois itens `ecosystem_scraper.py` desta seção (throttle adaptativo +
-  > HTTP 429), que se aplicam ao KOSMOS ArticleScraper via módulo compartilhado.
-  > Implementar apenas se `ArticleScraper` não usar `ecosystem_scraper.py` diretamente.
-  (`app/core/scraper.py` ou `ArticleScraper`). Manter dict
-  `{domain: last_access_time}` e impor delay de 2s entre requisições ao mesmo
-  domínio durante scraping em background. Tratar HTTP 429 com backoff exponencial
-  (`base * 2^attempt`, max 60s, ±50% jitter). Sem isso, scraping de 10 artigos do
-  mesmo blog em sequência rápida pode disparar bloqueio de IP.
+- ~~**Politeness: delay mínimo de 2s por domínio no scraping de artigos** — movido para §KOSMOS refazer do zero | 2026-05-30~~
 
-- [ ] **`analysis_schema_version` para invalidação de cache de análise LLM**
-  (`app/utils/db.py`, `app/core/analyzer.py`). Adicionar coluna
-  `analysis_schema_version INTEGER DEFAULT 0` na tabela de artigos. Definir
-  constante `ANALYSIS_VERSION = 1` no código. Incrementar ao mudar prompts ou
-  schema. No startup, enfileirar para re-análise todos os artigos com
-  `analysis_schema_version < ANALYSIS_VERSION`. Invalida cache sistematicamente
-  sem precisar de processo manual.
+- ~~**`analysis_schema_version` para invalidação de cache de análise LLM** — movido para §KOSMOS refazer do zero | 2026-05-30~~
 
 #### LOGOS / HUB
 - [x] **`OLLAMA_GPU_OVERHEAD=0` no perfil RX 6600 com ROCm**
   > **OBSOLETO — 2026-05-30:** o ecossistema migrou completamente do Ollama para llama.cpp via LOGOS. `OLLAMA_GPU_OVERHEAD` é variável de ambiente do Ollama; o LOGOS usa VRAM pre-check próprio (baseado em tamanho do GGUF × 115%). Item não aplicável.
 
-- [ ] **Política de bateria em 3 níveis no LOGOS (Normal / Economia / Crítico)**
-  > Parcialmente implementado: lógica de bateria existe mas é binária (AC vs bateria) — sem distinção entre Economia e Crítico. Expandir para 3 níveis com os thresholds documentados.
-  (`HUB/src-tauri/src/logos.rs`, módulo de monitoramento de bateria). O TODO tem
-  suspensão de P3 em bateria, mas a pesquisa documenta 3 níveis:
-  Normal (AC ou bateria >80%): P3 ativo, comportamento padrão.
-  Economia (bateria 30–80% ou TimeToEmpty <120min): P3 suspenso, batch P2
-  reduzido 64→16, keep_alive P2 "10m"→"2m".
-  Crítico (bateria <30% ou TimeToEmpty <60min): P2 também suspenso, apenas P1,
-  num_thread=2. Polling UPower a cada 30 segundos.
+- ~~**Política de bateria em 3 níveis no LOGOS (Normal / Economia / Crítico)** — movido para §Pendências priorizadas | 2026-05-30~~
 
-- [ ] **Detecção de AVX2 no perfil de hardware (i5-3470 sem AVX2)**
-  (`HUB/src-tauri/src/logos.rs`, detecção de hardware no startup). Checar presença
-  de AVX2 via `/proc/cpuinfo` (Linux) ou cpuid (Windows). Se ausente: forçar perfil
-  low com `num_ctx=512`, `num_batch=128`, `num_thread=2`. O i5-3470 é 30–50% mais
-  lento que CPUs com AVX2 em inferência INT4 — o perfil deve refletir isso
-  explicitamente.
+- ~~**Detecção de AVX2 no perfil de hardware (i5-3470 sem AVX2)** — movido para §Pendências priorizadas | 2026-05-30~~
 
 - [ ] **Microbenchmark de startup (20 tokens) para medir t/s real do hardware**
   (`HUB/src-tauri/src/logos.rs`, inicialização do LOGOS). Em vez de inferir
@@ -5462,11 +5387,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   no startup. Leva <5 segundos, produz medição direta de tokens/segundo para seleção
   de perfil. Armazenar resultado em config para evitar repetir a cada startup.
 
-- [ ] **Proteção contra thermal throttling da RX 6600 (pausar P3 acima de 85°C)**
-  (`HUB/src-tauri/src/logos.rs`). Durante workloads P3 longos, monitorar temperatura
-  da GPU via `sysinfo` crate (campo `gpu_temperature` disponível no sysinfo 0.30+).
-  Se temperatura > 85°C: pausar P3 automaticamente. Evita depender exclusivamente
-  do throttling do driver a 95°C.
+- ~~**Proteção contra thermal throttling da RX 6600 (pausar P3 acima de 85°C)** — movido para §Pendências priorizadas | 2026-05-30~~
 
 - [ ] **`num_gpu` dinâmico por requisição no perfil MX150 (baseado em tamanho do contexto)**
   > Parcialmente implementado: `num_gpu` está definido no perfil MX150 mas como valor estático. Adicionar lógica de seleção por tamanho de contexto conforme documentado.
@@ -5482,34 +5403,14 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
   por bug. Evita confusão do usuário quando o laptop está limitado pelo SO.
 
 #### ecosystem_scraper.py
-- [ ] **Throttle adaptativo por domínio — delay mínimo de 2s entre requisições**
-  (`ecosystem_scraper.py`). Adicionar dict de módulo `{domain: last_request_time}`
-  e impor delay configurável (padrão 2s) entre requisições ao mesmo domínio.
-  Constante `CRAWL_DELAY` exportável. Como AKASHA archiver e KOSMOS ArticleScraper
-  usam este módulo, a politeness é adicionada uma vez e aplica-se a ambos.
+- ~~**Throttle adaptativo por domínio — delay mínimo de 2s entre requisições** — movido para §Pendências priorizadas | 2026-05-30~~
 
-- [ ] **HTTP 429 com backoff exponencial + leitura do header Retry-After**
-  (`ecosystem_scraper.py`). Detectar resposta HTTP 429 → ler header `Retry-After`
-  → backoff `max(Retry-After, min(base * 2^attempt, 60))` com ±50% de jitter
-  multiplicativo → retry até `max_retries=3`. Atualmente o módulo não trata 429 —
-  retornaria vazio ou lançaria exceção.
+- ~~**HTTP 429 com backoff exponencial + leitura do header Retry-After** — movido para §Pendências priorizadas | 2026-05-30~~
 
 #### Hermes
-- [ ] **Parâmetros otimizados do faster-whisper: `vad_filter=True`, `beam_size=1`, `language="pt"`**
-  > Parcialmente implementado: `vad_filter=True` e `beam_size=1` já estão configurados em `TranscribeWorker`. Falta `language="pt"` — ainda usa detecção automática. Adicionar `language="pt"` como default para eliminar ~1s de overhead por segmento.
-  (`hermes.py` ou `TranscribeWorker`). A migração para faster-whisper está concluída
-  (`[x]`), mas os parâmetros de otimização não foram registrados: `vad_filter=True`
-  filtra silêncio antes da transcrição (grande melhoria de velocidade para vídeos
-  com pausas), `beam_size=1` reduz memória e tempo (padrão é 5), `language="pt"`
-  elimina overhead de detecção de idioma (~1s por segmento). Definir como defaults
-  em `TranscribeWorker`.
+- ~~**Parâmetros otimizados do faster-whisper: `language="pt"` como padrão** — `vad_filter` e `beam_size=1` já implementados; falta o default de idioma. Movido para §Pendências priorizadas | 2026-05-30~~
 
-- [ ] **Cache do `WhisperModel` entre transcrições (instanciar uma vez por sessão)**
-  > Parcialmente implementado: `WhisperModel` é cacheado por instância de `TranscribeWorker`, mas cada nova transcrição cria um novo Worker (e um novo modelo). Mover o cache para nível de módulo ou singleton para compartilhar entre Workers.
-  (`hermes.py`). O `WhisperModel` pode ser instanciado uma vez e reutilizado entre
-  transcrições (diferente do openai-whisper que recarregava por chamada). Armazenar
-  como atributo de classe ou singleton de módulo. Economiza 5–15s de carregamento
-  de modelo a cada nova transcrição.
+- ~~**Cache do `WhisperModel` entre transcrições** — movido para §Pendências priorizadas | 2026-05-30~~
 ### Infraestrutura: config por dispositivo e sync do ecossistema | 2026-05-06
 > Contexto: ecosystem.json é sincronizado via Proton Drive entre máquinas, mas contém
 > paths absolutos que diferem entre Windows e Linux. A solução é separar preferências
@@ -6617,7 +6518,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **Bug: tema modo noite/dia reseta entre sessões** — ao cair no arquivo legado `Mnemosyne/config.json` (que não tem `dark_mode`) como migração, o app abria sempre no modo noite (padrão). Causa raiz: `_CONFIG_PATH != _LEGACY_CONFIG_PATH` mas settings.json no ecosystem_root não existia ainda; caia no legacy sem `dark_mode` → default True. Fix em `core/config.py`: ao carregar do legacy como migração, imediatamente salvar no `_CONFIG_PATH` correto para que a próxima abertura use o arquivo permanente. **Corrigido e commitado em 2026-05-19.**
 
 #### HUB
-- [ ] **Bug: logs do Mnemosyne somem no monitor após renomear diretório** — o diretório `ecosystem_root/mnemosyne/` foi renomeado para `mnemosyne.bak/` enquanto Mnemosyne estava rodando. Linux manteve o file handle aberto, então os logs continuaram indo para `mnemosyne.bak/mnemosyne.log`. O HUB (`read_app_log`) lê de `{sync_root}/mnemosyne/mnemosyne.log` (novo path) que não existe. **Solução imediata: reiniciar a Mnemosyne.** Solução estrutural: `read_app_log` no Tauri deve tentar também `{sync_root}/{app}.bak/{app}.log` como fallback, ou Mnemosyne deve escrever o `log_path` atual no ecosystem.json ao iniciar para que o HUB leia de onde o log realmente está.
+- ~~**Bug: logs do Mnemosyne somem no monitor após renomear diretório** — movido para §Pendências priorizadas | 2026-05-30~~
 
 #### Ecossistema
 - [x] **Confirmar: gemma2:2b, qwen2.5:3b e smollm2:1.7b compartilham bancos sem conflito** — confirmado: SQLite e ChromaDB são independentes do modelo de linguagem; qualquer LLM lê e escreve strings via API do Ollama; troca de modelo não afeta integridade de dados existentes. Nenhuma ação necessária.
@@ -6825,6 +6726,23 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [ ] **Corrigir AI nunca rodar no background_analyzer — testar no CachyOS** — duas causas raiz identificadas e corrigidas em código (2026-05-20), mas ainda não testadas: (1) `_ai_enabled()` tinha `self._config.get("ai_enabled", False)` como primeira condição — `ai_enabled` nunca era setado; removida a condição local, agora retorna apenas `bool(get_gen_model())` — se HUB tem modelo configurado no slot `llm_analysis`, AI roda; (2) endpoint Ollama hardcoded substituído por `get_ollama_endpoint()` em `ai_bridge.py` (wrapper de `_get_ollama_base()` do ecosystem_client), chamado nos dois pontos de `background_analyzer.py`. Marcar como concluído após confirmar que análise batch e individual funcionam no CachyOS com HUB rodando.
 - [ ] **Investigar bug: logger para de escrever enquanto KOSMOS segue rodando** — único sintoma remanescente que pode justificar reescrita. Verificar após confirmar que a análise IA agora funciona (pode ser que o "logger parado" fosse o log silencioso do worker que nunca processava nada).
 
+#### KOSMOS — itens da auditoria 05-05 a incorporar na nova stack
+> Itens identificados na Auditoria pesquisas.md (2026-05-05) que eram pendentes no KOSMOS atual. Devem ser considerados como requisitos da nova stack, não como patches do código legado.
+
+- [ ] **Streaming de análise com exibição progressiva** — exibir campos rápidos da análise (tags, sentiment, clickbait_score) na UI antes dos campos lentos (entities, five_ws). Na nova stack, estruturar o schema de análise para que campos rápidos sejam gerados primeiro; emitir via sinal/evento conforme ficam prontos em vez de aguardar o JSON completo.
+
+- [ ] **NER por SpaCy em vez de LLM para `entities` (`pt_core_news_lg`)** — SpaCy `pt_core_news_lg` (~250MB) para extração de entidades PER/ORG/LOC/MISC: roda em CPU, dramaticamente mais rápido que LLM para NER, resolve perda de fidelidade de 3–8% em modelos Q4. LLM mantém responsabilidade sobre sentiment, tags, clickbait. `pip install spacy && python -m spacy download pt_core_news_lg`.
+
+- [ ] **Heartbeat timeout para análises travadas** — coluna `analysis_started_at DATETIME` na tabela de artigos. No startup: resetar para `pending` todos os artigos com `status='in_progress'` e `analysis_started_at < now - 5min`. Evita artigos eternamente presos após crash ou kill.
+
+- [ ] **Índice parcial SQLite para fila de análise** — `CREATE INDEX idx_pending_analysis ON articles(feed_id, published_at DESC) WHERE analysis_status IN ('pending', 'failed')`. Para 10k artigos com 95% analisados, o índice cobre ~500 linhas — query da fila de background passa de O(log 10000) para O(log 500).
+
+- [ ] **TTL de campos pesados para artigos > 6 meses** — job periódico: `UPDATE articles SET ai_five_ws = NULL, ai_entities = NULL WHERE published_at < date('now', '-6 months')`. Manter `ai_tags` e `ai_sentiment` (úteis para filtragem histórica). Seguido de `VACUUM + ANALYZE`. Mantém DB em tamanho gerenciável com acumulação de artigos.
+
+- [ ] **`analysis_schema_version` para invalidação de cache de análise** — coluna `analysis_schema_version INTEGER DEFAULT 0` na tabela de artigos. Constante `ANALYSIS_VERSION` no código. Incrementar ao mudar prompts ou schema — no startup, enfileirar re-análise de artigos com `analysis_schema_version < ANALYSIS_VERSION`. Invalida cache sistematicamente sem processo manual.
+
+- [ ] **Politeness: throttle de 2s por domínio no scraping** — implementar junto ao throttle global de `ecosystem_scraper.py` (§Pendências priorizadas — item ecosystem_scraper throttle). Se `ArticleScraper` usa `ecosystem_scraper` diretamente, não precisa de código extra; verificar na nova stack.
+
 #### KOSMOS [fixes] | 2026-05-21
 - [x] **reader_view.py — remover guard `ai_enabled` em `_start_analyze()`** — linha 1223 checava `self._config.get("ai_enabled", False)`, chave nunca setada → análise inline no reader nunca rodava. Removida; `get_gen_model()` logo abaixo já serve como guard suficiente (se nenhum modelo configurado no HUB, retorna string vazia e análise é pulada).
 - [x] **main_window.py — corrigir `_on_retry_unanalyzed()`** — linha 481 checava `self._config.get("ai_enabled", False)`, mesma chave morta → retry de artigos não analisados nunca enfileirava nada. Substituído por `self._bg_analyzer._ai_enabled()` (usa `get_gen_model()` internamente, consistente com o BackgroundAnalyzer).
@@ -6977,7 +6895,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Contexto: ao resetar AKASHA, sites.json estava vazio apesar de haver 10 sites no banco — a exportação automática nunca re-disparou após a criação inicial do arquivo.
 
 #### AKASHA
-- [ ] **Bug: exportação para userdata/sites.json roda só uma vez** — a condição `if not SITES_FILE.exists()` em `_migrate()` impede re-exportação quando o arquivo existe mas está desatualizado. Corrigir: exportar a cada startup (em `populate_from_user_data`) OR sempre que um site for adicionado/removido via API (em `list_sync.save_sites`). A segunda opção é mais eficiente — chamar `save_sites` no router de sites após qualquer mutação no banco.
+- ~~**Bug: exportação para userdata/sites.json roda só uma vez** — movido para §Pendências priorizadas | 2026-05-30~~
 
 ### Migração completa: Ollama → llama-cpp/LOGOS | 2026-05-23
 > Contexto: Ollama descartado como intermediário. LOGOS gerencia inferência via llama-server (llama-cpp, Vulkan/ROCm). API nova: OpenAI-compatível — /v1/chat/completions, /v1/embeddings, /v1/models. Substituir em todo o ecossistema: /api/generate, /api/chat → /v1/chat/completions; /api/embed → /v1/embeddings; /api/tags → /v1/models; NDJSON stream → SSE stream; campo "response"/"message.content" → "choices[0].message.content". Plano detalhado em /home/spacewitch/.claude/plans/robust-purring-simon.md.
@@ -7363,3 +7281,40 @@ Quando LOGOS estiver fora (HUB fechado):
 - [ ] **Multilíngue 1 — Serviço `query_multilang.py` (`services/query_multilang.py`)** — novo arquivo com: (1) `def detect_language(query: str) -> str` — usa `langdetect` (já dependência do AKASHA) para retornar código ISO ("pt", "en", "es", etc.), com fallback "pt" se falhar; (2) `async def translate_query(query: str, target_lang: str) -> str | None` — chama LOGOS via `request_llm` com prompt `"Translate this search query to {lang} (keep concise, search query style, no explanation): {query}"`, max 30 tokens; retorna None se LOGOS offline; (3) `async def expand_multilang(query: str, target_langs: list[str]) -> list[str]` — detecta idioma original, traduz para cada target lang diferente do original, retorna `[original, tradução_en, tradução_es, ...]` deduplicado. Configuração: `target_langs` padrão lido de `ecosystem.json["akasha"]["search_languages"]` (default `["pt", "en"]`). Testes: `detect_language("crochet vintage")` retorna "en"; `translate_query("pesquisa semântica", "en")` com LLM mockado retorna string.
 
 - [ ] **Multilíngue 2 — Integrar expansão na busca web (`routers/search.py`, `services/web_search.py`)** — ao executar `search_web(query)`: detectar idioma da query; se diferente do inglês, também buscar em inglês com a query traduzida; combinar resultados deduplicando por URL; se tradução falhar (LOGOS offline), continuar apenas com query original. Tradução ocorre em paralelo via `asyncio.gather`. Expor parâmetro `?lang=auto|pt|en|multi` na API: `auto` detecta e expande automaticamente, `multi` sempre expande para todos os idiomas configurados, código específico (`pt`, `en`) força sem expansão. UI: seletor de língua discreto (chips abaixo do campo de busca) em `search.html`. Testes: busca "machine learning" com `lang=auto` retorna resultados em EN sem tradução (já é EN); busca "aprendizado de máquina" com `lang=auto` retorna resultados em EN e PT combinados.
+
+---
+
+### Pendências priorizadas — auditoria 2026-05-30
+> Itens identificados na auditoria das seções "Auditoria pesquisas.md | 2026-05-05", "Bugs 2026-05-19" e "Bugs 2026-05-23 (b)" como não implementados. Organizados por prioridade. Itens riscados nas seções originais.
+
+#### 🔴 Alta prioridade
+
+- [ ] **AKASHA — `save_sites` re-exportação ao adicionar/remover site (`database.py`, `routers/crawler.py`)** — `save_sites()` só é chamada dentro de `if not SITES_FILE.exists()` na migração v27 — nunca ao mudar sites via UI. Resultado: `userdata/sites.json` fica desatualizado após qualquer mutação. Fix: chamar `save_sites(...)` no router de sites (`routers/crawler.py`) após qualquer `INSERT`, `UPDATE` ou `DELETE` em `crawl_sites`. Origem: Bugs 2026-05-23 (b).
+
+- [ ] **AKASHA — `GET /fetch?url=` — busca transiente sem salvar (`routers/fetch.py`)** — existe `POST /fetch` com body JSON; falta variante `GET /fetch?url=` com query param para compatibilidade com Mnemosyne Deep Research Mode. Implementar em `routers/fetch.py` (~30 linhas): buscar URL, extrair Markdown via `_cascade_extract`, retornar JSON `{url, title, content_md, word_count}` sem salvar em `archive`. Registrar em `main.py`. Origem: Auditoria 05-05, AKASHA.
+
+- [ ] **ecosystem_scraper.py — throttle adaptativo por domínio (delay mínimo 2s)** — sem throttle, scraping de N artigos do mesmo domínio em sequência rápida pode disparar bloqueio de IP. Adicionar dict de módulo `{domain: last_request_time}` e impor delay configurável (padrão 2s). Constante `CRAWL_DELAY` exportável. Como AKASHA archiver e KOSMOS ArticleScraper usam este módulo, a politeness se aplica a ambos sem mudança nos callers. Origem: Auditoria 05-05, ecosystem_scraper.py.
+
+- [ ] **ecosystem_scraper.py — HTTP 429 com backoff exponencial + header Retry-After** — atualmente o módulo não trata 429 (retorna vazio ou lança exceção). Detectar HTTP 429 → ler header `Retry-After` → backoff `max(Retry-After, min(base × 2^attempt, 60s))` com ±50% jitter → até `max_retries=3`. Implementar junto ao throttle adaptativo acima. Origem: Auditoria 05-05, ecosystem_scraper.py.
+
+#### 🟡 Média prioridade
+
+- [ ] **AKASHA — URL normalization em `archiver.py` antes de inserir** — `crawler.py` já normaliza (lowercase, sem trailing slash); `archiver.py` não normaliza — mesma página com tracking params diferentes (`utm_*`, `fbclid`, `gclid`, `ref`, `source`) é arquivada como documento separado. Adicionar `from url_normalize import url_normalize` (`pip install url-normalize`) em `archiver.py` antes do INSERT. Origem: Auditoria 05-05, AKASHA.
+
+- [ ] **Mnemosyne — FAIR-RAG: feedback implícito de utilidade da resposta (`core/rag.py`)** — após cada resposta RAG, botão útil/inútil na UI. Se útil: aumentar score de recuperação dos documentos usados (média móvel exponencial em metadata ChromaDB). Se inútil: penalizar. O índice melhora gradualmente com o uso. Origem: Auditoria 05-05, Mnemosyne.
+
+- [ ] **Hermes — `language="pt"` como padrão no `TranscribeWorker` (`hermes.py`)** — `vad_filter=True` e `beam_size=1` já implementados; falta `language="pt"` como padrão (hoje é "auto", com ~1s overhead de detecção por segmento). Mudar o índice padrão do `lang_combo` de 0 ("auto") para 1 ("pt") em `hermes.py:1173` onde `self._prefs["lang_idx"]` é lido com default 0. Ou adicionar `"pt"` como primeiro item de `LANGUAGES`. Origem: Auditoria 05-05, Hermes.
+
+- [ ] **Hermes — cache de `WhisperModel` entre transcrições (`hermes.py`)** — `WhisperModel` é instanciado a cada novo `TranscribeWorker` (cada transcrição), causando 5–15s de overhead desnecessário. Mover para atributo de classe ou singleton de módulo `_WHISPER_CACHE: dict[str, WhisperModel] = {}` keyed por `(model_size, device, compute_type)`. Economiza tempo em sessões com múltiplas transcrições. Origem: Auditoria 05-05, Hermes.
+
+- [ ] **LOGOS — política de bateria em 3 níveis (`HUB/src-tauri/src/logos.rs`)** — lógica atual é binária (AC vs bateria). Expandir para 3 níveis: Normal (AC ou >80%): comportamento atual; Economia (30–80% ou TimeToEmpty <120min): P3 suspenso, keep_alive P2 reduzido; Crítico (<30% ou TimeToEmpty <60min): P2 também suspenso, apenas P1, `num_thread=2`. Polling UPower a cada 30s. Origem: Auditoria 05-05, LOGOS/HUB.
+
+- [ ] **LOGOS — detecção de AVX2 no startup (`HUB/src-tauri/src/logos.rs`)** — i5-3470 (WorkPc) não tem AVX2 — 30–50% mais lento em inferência INT4. Checar `/proc/cpuinfo` (Linux) ou cpuid (Windows) no startup. Se AVX2 ausente: forçar `num_ctx=512`, `num_batch=128`, `num_thread=2` independentemente do perfil de hardware detectado. Origem: Auditoria 05-05, LOGOS/HUB.
+
+#### 🔵 Baixa prioridade
+
+- [ ] **Mnemosyne — slide deck export PPTX a partir de coleção (`core/slidemaker.py`)** — LLM gera outline → `python-pptx` monta .pptx. `pip install python-pptx`. Botão na área de Relatórios. Origem: Auditoria 05-05, Mnemosyne.
+
+- [ ] **LOGOS — proteção contra thermal throttling RX 6600 (`HUB/src-tauri/src/logos.rs`)** — monitorar temperatura GPU via `sysinfo` crate. Se >85°C: pausar P3 automaticamente. Evita depender do throttling do driver (que age apenas a 95°C). Origem: Auditoria 05-05, LOGOS/HUB.
+
+- [ ] **HUB — `read_app_log` sem fallback para `.bak/` (`commands/config.rs`)** — se o diretório de dados de um app for renomeado para `.bak/` enquanto rodando, o HUB não encontra o log (busca em `{sync_root}/{app}/{app}.log`). Solução estrutural: Mnemosyne escreve `log_path` atual em `ecosystem.json` ao iniciar; HUB lê de onde o log realmente está. Alternativa simples: tentar `{sync_root}/{app}.bak/{app}.log` como fallback. Origem: Bugs 2026-05-19, HUB.
