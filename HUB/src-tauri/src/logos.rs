@@ -2762,6 +2762,68 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
     let priority = apply_profile_priority(&profile, &app_name,
                        if req_priority == 0 { default_priority } else { req_priority });
 
+    // Rejeitar se inferência desabilitada ("Ligar IA" desligado).
+    if !s.0.inference_enabled.load(Ordering::Relaxed) {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({
+                "error": "LOGOS: inferência desabilitada — ative a IA no HUB antes de fazer requisições"
+            })),
+        ).into_response();
+    }
+
+    // Lazy loading: IA habilitada mas nenhum modelo ativo → carregar na primeira requisição real.
+    if !s.llama_proc_active().await {
+        let models = do_list_all_models(s).await;
+        let names: Vec<String> = models.into_iter().map(|m| m.name).collect();
+        let to_load = crate::commands::launcher::select_model_to_load_llm(&names)
+            .or_else(|| crate::commands::launcher::select_model_to_load(&names));
+        match to_load {
+            None => {
+                log::error!(
+                    "LOGOS lazy load (/v1): nenhum modelo instalado — \
+                     requisição P{} de '{}' rejeitada",
+                    priority, app_name
+                );
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(serde_json::json!({
+                        "error": "LOGOS: nenhum modelo instalado — faça download de um modelo LLM no HUB"
+                    })),
+                ).into_response();
+            }
+            Some(ref model_name) => {
+                log::info!(
+                    "LOGOS lazy load (/v1): primeira requisição de '{}' (P{}) — \
+                     carregando '{}'",
+                    app_name, priority, model_name
+                );
+                if let Err(e) = ensure_llama_model_loaded(s, model_name).await {
+                    log::error!(
+                        "LOGOS lazy load (/v1): falha ao carregar '{}' para requisição de '{}': {}",
+                        model_name, app_name, e
+                    );
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(serde_json::json!({
+                            "error": format!(
+                                "LOGOS: falha ao carregar modelo '{}' — {}",
+                                model_name, e
+                            )
+                        })),
+                    ).into_response();
+                }
+                log::info!(
+                    "LOGOS lazy load (/v1): '{}' carregado — requisição de '{}' prossegue",
+                    model_name, app_name
+                );
+            }
+        }
+    }
+
+    // Atualiza timestamp de última requisição (idle watchdog).
+    *s.0.last_llm_request_at.lock().await = std::time::Instant::now();
+
     let permits: u32 = if priority >= 3 { 1 } else { 2 };
     let timeout = match priority {
         1 => Duration::from_secs(120),
