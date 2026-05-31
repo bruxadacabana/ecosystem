@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 49
+SCHEMA_VERSION = 50
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -1255,6 +1255,22 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             pass  # tabela já existe em bancos migrados
         try:
             await db.execute(_CREATE_IDX_PAGE_EMBEDDINGS_URL)
+        except Exception:
+            pass
+
+    if from_version < 50:
+        # requires_js: sinaliza páginas SPA não renderizáveis sem JavaScript.
+        try:
+            await db.execute(
+                "ALTER TABLE crawl_pages ADD COLUMN requires_js INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass  # coluna já existe
+        try:
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_crawl_pages_requires_js "
+                "ON crawl_pages(requires_js)"
+            )
         except Exception:
             pass
 

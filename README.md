@@ -163,6 +163,8 @@ Buscador e amplificador de pesquisa. O LLM age **apenas** na camada de query —
 - Busca web via SearXNG self-hosted (agrega Google, Bing, Brave, DDG) com fallback DDG; fetch paralelo de múltiplas páginas (padrão 4 × 25 resultados)
 - Classificador de intenção afeta **apresentação** dos resultados, nunca a quantidade
 - Diversificação por domínio configurável (`max_per_domain`, padrão 5); filtragem de páginas vazias (`word_count < 50`)
+- Qualidade de extração: fallback newspaper4k, pré-filtro de páginas de navegação (razão texto-link), detecção de paywall, sinalização de SPAs (`requires_js`)
+- Busca semântica com fallback de latência para hardware sem AVX2 (i5-3470): `_vector_too_slow` desativa KNN automáticamente
 - Cache de resultados, facetas, ranking
 - Extensão de browser para pesquisa contextual
 

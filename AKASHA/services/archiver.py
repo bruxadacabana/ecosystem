@@ -122,6 +122,101 @@ _TRACKING_PARAMS: frozenset[str] = frozenset({
 })
 
 
+_LINK_RATIO_THRESHOLD: float = 0.55   # > 55% do texto em âncoras → página de navegação
+_MIN_CONTENT_PARAGRAPHS: int  = 2     # < 2 parágrafos com > 10 palavras → página estrutural
+
+
+def is_navigation_page(html: str) -> tuple[bool, str]:
+    """Retorna (True, motivo) se o HTML parece ser uma página de navegação sem conteúdo.
+
+    Dois sinais detectados antes de chamar trafilatura — ambos baratos (BeautifulSoup):
+    1. Razão texto-em-âncoras / texto-total > _LINK_RATIO_THRESHOLD (página de categoria/menu)
+    2. Menos de _MIN_CONTENT_PARAGRAPHS parágrafos com > 10 palavras (página estrutural)
+
+    Retorna (False, "") quando a página parece ter conteúdo editorial real.
+    """
+    if not html:
+        return False, ""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+
+        total_text = soup.get_text()
+        total_len = len(total_text)
+        if total_len == 0:
+            return False, ""
+
+        # Sinal 1: razão texto-em-links
+        link_text_len = sum(len(a.get_text()) for a in soup.find_all("a"))
+        ratio = link_text_len / total_len
+        if ratio > _LINK_RATIO_THRESHOLD:
+            return True, f"link_ratio={ratio:.2f} > {_LINK_RATIO_THRESHOLD}"
+
+        # Sinal 2: ausência de parágrafos com conteúdo real
+        content_paras = [
+            p for p in soup.find_all("p")
+            if len(p.get_text().split()) > 10
+        ]
+        if len(content_paras) < _MIN_CONTENT_PARAGRAPHS:
+            return True, f"content_paragraphs={len(content_paras)} < {_MIN_CONTENT_PARAGRAPHS}"
+
+    except Exception:
+        pass
+    return False, ""
+
+
+_PAYWALL_PHRASES: tuple[str, ...] = (
+    "subscribe to continue",
+    "subscribe to read",
+    "sign in to read",
+    "create a free account to continue",
+    "this content is for subscribers",
+    "já é assinante",
+    "acesso exclusivo para assinantes",
+    "faça login para continuar lendo",
+)
+_PAYWALL_MAX_WORDS: int = 200   # só descarta quando conteúdo for curto
+
+
+def is_paywall_content(content: str) -> bool:
+    """Retorna True se o conteúdo parece um muro de assinatura.
+
+    Critério duplo: contém uma frase indicadora de paywall AND tem menos de
+    _PAYWALL_MAX_WORDS palavras. Artigos longos que mencionam paywalls como
+    tema (ex: jornalismo) são indexados normalmente.
+    """
+    if not content:
+        return False
+    word_count = len(content.split())
+    if word_count >= _PAYWALL_MAX_WORDS:
+        return False  # conteúdo longo → não descarta mesmo com frase paywall
+    content_lower = content.lower()
+    return any(phrase in content_lower for phrase in _PAYWALL_PHRASES)
+
+
+_SPA_SIGNALS: tuple[str, ...] = (
+    'id="root"',
+    "id='root'",
+    'id="app"',
+    "id='app'",
+    "data-reactroot",
+    "<noscript>",
+)
+_SPA_MIN_CONTENT_WORDS: int = 10  # conteúdo < 10 palavras + sinal SPA → flag
+
+
+def is_spa_page(html: str, content: str) -> bool:
+    """Retorna True se a página parece uma SPA (Single Page App) não renderizada.
+
+    Condições: conteúdo extraído < _SPA_MIN_CONTENT_WORDS E HTML contém pelo
+    menos um sinal de SPA (div#root, div#app, data-reactroot, <noscript>).
+    """
+    if len(content.split()) >= _SPA_MIN_CONTENT_WORDS:
+        return False  # tem conteúdo — não é SPA ou trafilatura conseguiu extrair
+    html_lower = html.lower()
+    return any(sig.lower() in html_lower for sig in _SPA_SIGNALS)
+
+
 def _extract_doi_and_arxiv(url: str) -> tuple[str | None, str | None]:
     """
     Extrai (doi, arxiv_id) diretamente da URL, sem precisar buscar o conteúdo.
@@ -312,6 +407,13 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
         keywords:    list[str] = []
 
         if html:
+            # Pré-filtro de página de navegação — antes de chamar trafilatura
+            _nav, _nav_reason = is_navigation_page(html)
+            if _nav:
+                log.debug("archiver: descartando página de navegação %s (%s)", url, _nav_reason)
+                html = ""  # força content="" → filtrado pelo Jina/MIN_WORDS_TO_STORE
+
+        if html:
             try:
                 metadata    = trafilatura.extract_metadata(html, default_url=url)
                 title       = (metadata and metadata.title)                        or title
@@ -325,6 +427,32 @@ async def fetch_and_extract(url: str, max_words: int = 0) -> FetchedPage:
             except Exception:
                 pass  # mantém valores padrão se trafilatura falhar nos metadados
             content     = _cascade_extract(html, url, output_format="markdown")
+
+            # newspaper4k fallback — acionado quando trafilatura retorna < 50 palavras.
+            # Tenta extrair com newspaper4k antes do Jina Reader (que requer rede).
+            _trafilatura_words = len(content.split())
+            if _trafilatura_words < 50:
+                try:
+                    from newspaper import Article as _NpArticle  # type: ignore
+                    _art = _NpArticle(url)
+                    _art.set_html(html)
+                    _art.parse()
+                    _np_content = (_art.text or "").strip()
+                    if len(_np_content.split()) > _trafilatura_words:
+                        log.debug(
+                            "archiver: newspaper4k fallback: %s (%d → %d palavras)",
+                            url, _trafilatura_words, len(_np_content.split()),
+                        )
+                        content = _np_content
+                except ImportError:
+                    pass  # newspaper4k ausente — MIN_WORDS_TO_STORE filtra normalmente
+                except Exception as exc:
+                    log.debug("archiver: newspaper4k fallback erro: %s", exc)
+
+            # Detecção de paywall — antes do Jina Reader (evita trafegar rede por página inútil)
+            if is_paywall_content(content):
+                log.debug("archiver: [PAYWALL] descartando %s (%d palavras)", url, len(content.split()))
+                content = ""  # força descarte pelo MIN_WORDS_TO_STORE
 
         # Fallback de idioma: langdetect quando trafilatura não detectou language
         if not language and _LANGDETECT_AVAILABLE:

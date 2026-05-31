@@ -37,6 +37,11 @@ dependencies = [
     "argostranslate>=1.11.0",
 ]
 
+[project.optional-dependencies]
+extraction = [
+    "newspaper4k>=0.9",   # fallback de extração quando trafilatura retorna conteúdo curto
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

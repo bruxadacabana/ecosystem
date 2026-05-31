@@ -14,6 +14,7 @@ qualquer outra sem tradução explícita — o espaço de embeddings é comparti
 from __future__ import annotations
 
 import logging
+import time
 
 log = logging.getLogger("akasha.semantic_search")
 
@@ -22,6 +23,35 @@ try:
     _SQLITE_VEC_AVAILABLE = True
 except ImportError:
     _SQLITE_VEC_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
+# Detecção de latência excessiva — hardware sem AVX2 (ex: i5-3470)
+#
+# sqlite-vec sem AVX2 cai para caminho escalar que pode ultrapassar 300ms em
+# coleções de 50k+ vetores, tornando a busca interativa perceptível.
+# Acumulamos as 3 primeiras amostras de latência e desativamos KNN se a média
+# exceder _LATENCY_THRESHOLD_MS. Média em vez de primeira amostra para evitar
+# falso positivo de cold start (cache miss, warm-up de JIT).
+# A flag é em memória — resetada ao reiniciar o processo, nunca persiste.
+# ---------------------------------------------------------------------------
+
+_LATENCY_THRESHOLD_MS: float = 250.0
+_LATENCY_SAMPLES_NEEDED: int = 3
+
+_latency_samples: list[float] = []
+_vector_too_slow: bool = False
+
+
+def get_vector_too_slow() -> bool:
+    """Retorna True se o hardware detectado é lento demais para KNN interativo."""
+    return _vector_too_slow
+
+
+def reset_latency_state() -> None:
+    """Reseta o estado de latência (usado em testes)."""
+    global _latency_samples, _vector_too_slow
+    _latency_samples = []
+    _vector_too_slow = False
 
 
 def _get_inference_url() -> str:
@@ -152,8 +182,21 @@ async def semantic_search_local(
 
     Retorna lista de (url, distance) ordenada por distância crescente
     (menor distância = maior similaridade). Lista vazia se LOGOS offline,
-    sqlite-vec indisponível, ou sem vetores no banco.
+    sqlite-vec indisponível, sem vetores no banco, ou hardware detectado
+    como lento demais para KNN interativo (_vector_too_slow=True).
+
+    Mede latência das 3 primeiras chamadas: se a média ultrapassar
+    _LATENCY_THRESHOLD_MS (250ms), seta _vector_too_slow e subsequentes
+    chamadas retornam [] imediatamente — apenas a query interativa é afetada,
+    o backfill de embeddings (Semântico 3) continua rodando normalmente.
     """
+    global _latency_samples, _vector_too_slow
+
+    # Guarda rápida: hardware já marcado como lento
+    if _vector_too_slow:
+        log.debug("semantic_search_local: _vector_too_slow ativo — pulando KNN")
+        return []
+
     if not _SQLITE_VEC_AVAILABLE:
         return []
     vec = await embed_text(query)
@@ -165,6 +208,7 @@ async def semantic_search_local(
         embedding_bytes = _sqlite_vec.serialize_float32(vec)  # type: ignore[union-attr]
         async with aiosqlite.connect(DB_PATH) as db:
             await _load_vec_ext_async(db)
+            _t0 = time.monotonic()
             rows = await (await db.execute(
                 """SELECT pe.url, pv.distance
                    FROM page_vec pv
@@ -173,6 +217,26 @@ async def semantic_search_local(
                    ORDER BY pv.distance""",
                 (embedding_bytes, top_k),
             )).fetchall()
+            _elapsed_ms = (time.monotonic() - _t0) * 1000
+
+        # Acumula amostras de latência até ter _LATENCY_SAMPLES_NEEDED
+        if len(_latency_samples) < _LATENCY_SAMPLES_NEEDED:
+            _latency_samples.append(_elapsed_ms)
+            if len(_latency_samples) == _LATENCY_SAMPLES_NEEDED:
+                _avg_ms = sum(_latency_samples) / _LATENCY_SAMPLES_NEEDED
+                if _avg_ms > _LATENCY_THRESHOLD_MS:
+                    _vector_too_slow = True
+                    log.warning(
+                        "[PERF] busca vetorial lenta (média %.0fms em %d amostras) — "
+                        "possível hardware sem AVX2; usando só FTS5 para queries interativas",
+                        _avg_ms, _LATENCY_SAMPLES_NEEDED,
+                    )
+                else:
+                    log.debug(
+                        "latência vetorial OK: média %.0fms em %d amostras",
+                        _avg_ms, _LATENCY_SAMPLES_NEEDED,
+                    )
+
         return [(r[0], float(r[1])) for r in rows]
     except Exception as exc:
         log.debug("semantic_search_local: %s", exc)

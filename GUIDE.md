@@ -804,7 +804,7 @@ AKASHA/
 │   ├── pagerank.py         → Calcula PageRank dos domínios indexados
 │   ├── freshness.py        → Pontuação de frescor dos resultados
 │   ├── image_indexer.py    → Indexa imagens com pHash + vetorial
-│   ├── archiver.py         → Arquiva páginas em formato longo
+│   ├── archiver.py         → Arquiva páginas; pré-filtros: navegação (link_ratio), paywall, SPA; fallback newspaper4k
 │   ├── paper_search.py     → Busca em arXiv e repositórios científicos
 │   ├── paper_download.py   → Download de PDFs de artigos
 │   ├── downloader.py       → Fila de downloads gerais

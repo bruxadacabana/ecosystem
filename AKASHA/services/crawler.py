@@ -521,10 +521,42 @@ async def crawl_site(site_id: int) -> int:
                 idx = html.find(marker)
                 content_md = html[idx + len(marker):].strip() if idx != -1 else html
             else:
+                # Pré-filtro de página de navegação antes de chamar trafilatura
+                try:
+                    from services.archiver import is_navigation_page as _is_nav
+                    _nav, _nav_reason = _is_nav(html)
+                    if _nav:
+                        log.debug("crawler: página de navegação descartada %s (%s)", url, _nav_reason)
+                        return []
+                except Exception:
+                    pass
                 content_md = _cascade_extract(html, url, output_format="markdown")
                 t = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
                 title = t.group(1).strip() if t else urlparse(url).path or url
             chash = _hash(content_md)
+
+            # Detecção de SPA — antes de indexar conteúdo (economiza espaço no FTS)
+            if not from_jina:
+                try:
+                    from services.archiver import is_spa_page as _is_spa
+                    if _is_spa(html, content_md):
+                        log.info("[SPA] página requer JavaScript para renderizar: %s", url)
+                        # Persiste URL com requires_js=1 sem entrar no FTS
+                        await db.execute(
+                            """INSERT INTO crawl_pages
+                               (site_id, url, title, content_md, content_hash,
+                                http_status, crawled_at, last_checked_at, word_count, requires_js)
+                               VALUES (?, ?, ?, '', '', ?, ?, ?, 0, 1)
+                               ON CONFLICT(url) DO UPDATE SET
+                                   requires_js=1, last_checked_at=excluded.last_checked_at""",
+                            (site_id, url, title, status,
+                             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                             datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                        )
+                        await db.commit()
+                        return []
+                except Exception as _exc:
+                    log.debug("crawler: SPA check erro: %s", _exc)
 
             # Deduplicação exata por hash SHA-256 cross-URL
             if chash and content_md:
