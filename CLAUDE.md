@@ -6,6 +6,7 @@ Instruções para o Claude Code ao trabalhar neste repositório.
 
 ## Regras (estão escritas em inglês mas se aplicam a todas as linguas)
 - Never open responses with filler phrases like 'Great question!', 'Of course!', 'Certainly!', or similar warmups. Start every response with the actual answer. No preamble. Just the information.
+- Summaries and reports must be detailed but accessible — explain the logic and reasoning behind changes, not code details and technicalities. Lead with what changed and why it matters; put technical specifics last and only if necessary. Never make a table of file/line/code as the primary way to communicate what was done.
 - Before any significant task, always show me 2-3 possible approaches first. Wait for my choice before proceeding.
 - If you are uncertain about any fact, statistic, date, or quote — say so explicitly before including it. 'I'm not certain about this' is always better than presenting a guess as a fact. Never fill gaps with plausible-sounding information.
 - Match response length to task complexity. Simple questions get short direct answers. Complex tasks get full detailed responses. Never pad responses with restatements or closing sentences that repeat what you just said.
