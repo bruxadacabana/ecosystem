@@ -292,6 +292,79 @@ async def _fetch_web(
 _CACHE_SIZE = 100  # max resultados a cachear por query
 
 
+async def _fetch_searxng_images(query: str, max: int, base_url: str) -> list[dict]:
+    """Busca imagens via SearXNG JSON API com categories=images.
+
+    Campos do resultado SearXNG para imagens:
+      img_src / thumbnail_src — URL direta da imagem
+      url                     — página de origem
+      title                   — descrição / alt text
+    """
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(
+                f"{base_url}/search",
+                params={"q": query, "format": "json", "categories": "images"},
+            )
+            resp.raise_for_status()
+            items = resp.json().get("results") or []
+    except Exception:
+        return []
+
+    results: list[dict] = []
+    for r in items:
+        img_url = r.get("img_src") or r.get("thumbnail_src") or r.get("thumbnail") or ""
+        page_url = r.get("url", "")
+        if not img_url:
+            continue
+        results.append({
+            "img_url":  img_url,
+            "page_url": page_url,
+            "alt_text": r.get("title", ""),
+            "title":    r.get("title", ""),
+        })
+        if len(results) >= max:
+            break
+    return results
+
+
+async def search_images_web(query: str, max: int = 20) -> list[dict]:
+    """Busca imagens via SearXNG (se configurado) ou DDG Images como fallback.
+
+    Retorna lista de dicts com: img_url, page_url, alt_text, title.
+    Silenciosa em caso de falha — retorna [].
+
+    Prioridade:
+      1. SearXNG com categories=images (se akasha.web_search_backend configurado)
+      2. DDG Images API
+    """
+    searxng_url = _get_searxng_url()
+    if searxng_url:
+        try:
+            results = await _fetch_searxng_images(query, max, searxng_url)
+            if results:
+                return results
+        except Exception:
+            pass
+
+    try:
+        raw = await asyncio.to_thread(
+            lambda: list(DDGS().images(query, max_results=max))
+        )
+        return [
+            {
+                "img_url":  r.get("image", ""),
+                "page_url": r.get("url", ""),
+                "alt_text": r.get("title", ""),
+                "title":    r.get("title", ""),
+            }
+            for r in raw
+            if r.get("image")
+        ][:max]
+    except Exception:
+        return []
+
+
 async def search_web(
     query: str,
     max_results: int = 0,

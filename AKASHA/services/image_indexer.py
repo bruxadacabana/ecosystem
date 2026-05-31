@@ -235,49 +235,53 @@ async def index_page_images(
 async def search_images_quick(query: str, max: int = 6) -> list[dict]:
     """Busca leve de imagens para painel inline na página de busca principal.
 
-    Prioriza o índice local (FTS5 sobre alt_text/title); faz fallback para DDG
-    Images se o índice retornar 0 resultados. Retorna no máximo `max` dicts com
-    chaves img_url, page_url, alt_text, title, phash.
+    Combina resultados do índice local (FTS5) com resultados web via
+    search_images_web (SearXNG → DDG). Deduplicação por img_url; resultados
+    locais têm prioridade. Retorna no máximo `max` dicts com chaves
+    img_url, page_url, alt_text, title, phash.
 
-    Cross-lingual por natureza: o índice local usa tokens unicode61; o DDG
-    aceita qualquer idioma — nenhuma tradução explícita é necessária.
+    Cross-lingual por natureza: FTS5 usa unicode61; SearXNG/DDG aceitam
+    qualquer idioma — nenhuma tradução explícita é necessária.
     """
     if not query.strip():
         log.debug("search_images_quick: query vazia, retornando []")
         return []
 
-    results: list[dict] = []
-
+    local: list[dict] = []
     try:
         import aiosqlite
         from config import DB_PATH
         async with aiosqlite.connect(DB_PATH) as _db:
-            results = await search_images(_db, query, limit=max)
-        log.debug("search_images_quick: local=%d q=%r", len(results), query)
+            local = await search_images(_db, query, limit=max)
+        log.debug("search_images_quick: local=%d q=%r", len(local), query)
     except Exception as exc:
         log.debug("search_images_quick: erro no índice local: %s", exc)
 
-    if not results:
-        try:
-            from ddgs import DDGS
-            with DDGS() as ddg:
-                ddg_items = ddg.images(query, max_results=max)
-                results = [
-                    {
-                        "img_url":  r.get("image", ""),
-                        "page_url": r.get("url", ""),
-                        "alt_text": r.get("title", ""),
-                        "title":    r.get("title", ""),
-                        "phash":    "",
-                    }
-                    for r in ddg_items
-                    if r.get("image")
-                ][:max]
-            log.debug("search_images_quick: DDG fallback=%d q=%r", len(results), query)
-        except Exception as exc:
-            log.debug("search_images_quick: DDG fallback error: %s", exc)
+    web: list[dict] = []
+    try:
+        from services.web_search import search_images_web
+        web = await search_images_web(query, max=max)
+        log.debug("search_images_quick: web=%d q=%r", len(web), query)
+    except Exception as exc:
+        log.debug("search_images_quick: web error: %s", exc)
 
-    return results[:max]
+    # Combina local (prioridade) + web, deduplicando por img_url
+    seen: set[str] = {r["img_url"] for r in local if r.get("img_url")}
+    combined = list(local)
+    for r in web:
+        url = r.get("img_url", "")
+        if url and url not in seen:
+            seen.add(url)
+            # Normalizar chaves para o formato padrão (web pode não ter phash)
+            combined.append({
+                "img_url":  url,
+                "page_url": r.get("page_url", ""),
+                "alt_text": r.get("alt_text", ""),
+                "title":    r.get("title", ""),
+                "phash":    r.get("phash", ""),
+            })
+
+    return combined[:max]
 
 
 async def search_images(

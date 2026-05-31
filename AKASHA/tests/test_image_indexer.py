@@ -26,30 +26,6 @@ def run(coro):
 
 
 # ---------------------------------------------------------------------------
-# Fixture: DB completo com schema AKASHA
-# ---------------------------------------------------------------------------
-
-@pytest.fixture()
-def db_paths(tmp_path):
-    import database as _db
-
-    main_path = tmp_path / "akasha.db"
-    knowledge_path = tmp_path / "akasha_knowledge.db"
-
-    orig_db  = _db.DB_PATH
-    orig_kdb = _db.KNOWLEDGE_DB_PATH
-    _db.DB_PATH = main_path
-    _db.KNOWLEDGE_DB_PATH = knowledge_path
-
-    run(_db.init_db())
-
-    yield main_path, knowledge_path
-
-    _db.DB_PATH = orig_db
-    _db.KNOWLEDGE_DB_PATH = orig_kdb
-
-
-# ---------------------------------------------------------------------------
 # extract_images — função pura (sem I/O)
 # ---------------------------------------------------------------------------
 
@@ -358,7 +334,7 @@ class TestSearchImages:
 # ---------------------------------------------------------------------------
 
 class TestSearchImagesQuick:
-    """Testa search_images_quick: índice local + fallback DDG + tratamento de erros."""
+    """Testa search_images_quick: combina local + search_images_web, dedup, tratamento de erros."""
 
     def _insert_image(self, con: sqlite3.Connection, img_url: str, page_url: str,
                       alt_text: str, title: str = "") -> None:
@@ -389,10 +365,13 @@ class TestSearchImagesQuick:
     # ── resultados locais ────────────────────────────────────────────────────
 
     def test_returns_local_results_when_available(self, db_paths, monkeypatch):
-        """Imagens indexadas localmente retornam sem chamar DDG."""
+        """Imagens indexadas localmente aparecem no resultado combinado."""
+        import services.image_indexer as _mod
+        import services.web_search as _web
+        import config as _cfg
+
         main_path, _ = db_paths
 
-        # Inserir 3 imagens no banco
         con = sqlite3.connect(main_path)
         for i in range(3):
             self._insert_image(
@@ -403,19 +382,11 @@ class TestSearchImagesQuick:
             )
         con.close()
 
-        # Garantir que DDG nunca seja chamado
-        ddg_called = []
+        # search_images_web retorna vazio (sem rede)
+        async def _fake_web(q, max=6):
+            return []
 
-        def _fake_ddgs(*a, **kw):
-            ddg_called.append(True)
-            raise RuntimeError("DDG não deve ser chamado quando há resultados locais")
-
-        monkeypatch.setattr("services.image_indexer.DDGS" if hasattr(
-            __import__("services.image_indexer"), "DDGS") else "builtins.open",
-            _fake_ddgs, raising=False)
-
-        import services.image_indexer as _mod
-        import config as _cfg
+        monkeypatch.setattr(_web, "search_images_web", _fake_web)
 
         orig_db = _cfg.DB_PATH
         _cfg.DB_PATH = main_path
@@ -426,10 +397,13 @@ class TestSearchImagesQuick:
 
         assert len(results) == 3
         assert all(r["img_url"].startswith("https://ex.com/img") for r in results)
-        assert not ddg_called, "DDG foi chamado indevidamente quando havia resultados locais"
 
-    def test_max_limits_local_results(self, db_paths):
-        """max=2 retorna no máximo 2 resultados mesmo com mais no banco."""
+    def test_max_limits_combined_results(self, db_paths, monkeypatch):
+        """max=2 retorna no máximo 2 resultados mesmo com mais disponíveis."""
+        import services.image_indexer as _mod
+        import services.web_search as _web
+        import config as _cfg
+
         main_path, _ = db_paths
 
         con = sqlite3.connect(main_path)
@@ -442,8 +416,10 @@ class TestSearchImagesQuick:
             )
         con.close()
 
-        import services.image_indexer as _mod
-        import config as _cfg
+        async def _fake_web(q, max=6):
+            return []
+
+        monkeypatch.setattr(_web, "search_images_web", _fake_web)
 
         orig_db = _cfg.DB_PATH
         _cfg.DB_PATH = main_path
@@ -454,36 +430,27 @@ class TestSearchImagesQuick:
 
         assert len(results) <= 2
 
-    # ── DDG fallback ─────────────────────────────────────────────────────────
+    # ── web fallback (search_images_web) ────────────────────────────────────
 
-    def test_ddg_fallback_when_no_local_results(self, db_paths, monkeypatch):
-        """Sem resultados locais, DDG é chamado como fallback."""
+    def test_web_fills_when_local_empty(self, db_paths, monkeypatch):
+        """Sem resultados locais, search_images_web preenche o painel."""
+        import services.image_indexer as _mod
+        import services.web_search as _web
+        import config as _cfg
+
         main_path, _ = db_paths  # banco vazio
 
-        _ddg_items = [
-            {"image": "https://ddg.com/img1.jpg", "url": "https://ddg.com/p1", "title": "Gato DDG 1"},
-            {"image": "https://ddg.com/img2.jpg", "url": "https://ddg.com/p2", "title": "Gato DDG 2"},
+        web_items = [
+            {"img_url": "https://web.com/img1.jpg", "page_url": "https://web.com/p1",
+             "alt_text": "Gato web 1", "title": "Gato web 1"},
+            {"img_url": "https://web.com/img2.jpg", "page_url": "https://web.com/p2",
+             "alt_text": "Gato web 2", "title": "Gato web 2"},
         ]
 
-        class _FakeDDGS:
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                pass
-            def images(self, q, max_results=6):
-                return _ddg_items[:max_results]
+        async def _fake_web(q, max=6):
+            return web_items
 
-        import services.image_indexer as _mod
-        import config as _cfg
-        monkeypatch.setattr(_mod, "DDGS" if hasattr(_mod, "DDGS") else "__builtins__", None, raising=False)
-
-        # Patch dentro do módulo via sys.modules para acessar o DDGS que a função importa
-        import sys
-        import types
-        fake_ddgs_mod = types.ModuleType("ddgs")
-        fake_ddgs_mod.DDGS = _FakeDDGS  # type: ignore[attr-defined]
-        orig_ddgs = sys.modules.get("ddgs")
-        sys.modules["ddgs"] = fake_ddgs_mod
+        monkeypatch.setattr(_web, "search_images_web", _fake_web)
 
         orig_db = _cfg.DB_PATH
         _cfg.DB_PATH = main_path
@@ -491,41 +458,27 @@ class TestSearchImagesQuick:
             results = run(_mod.search_images_quick("gato", max=6))
         finally:
             _cfg.DB_PATH = orig_db
-            if orig_ddgs is None:
-                sys.modules.pop("ddgs", None)
-            else:
-                sys.modules["ddgs"] = orig_ddgs
 
         assert len(results) == 2
-        assert results[0]["img_url"] == "https://ddg.com/img1.jpg"
-        assert results[0]["page_url"] == "https://ddg.com/p1"
-        assert results[0]["alt_text"] == "Gato DDG 1"
+        assert results[0]["img_url"] == "https://web.com/img1.jpg"
+        assert results[0]["page_url"] == "https://web.com/p1"
+        assert results[0]["alt_text"] == "Gato web 1"
 
-    def test_ddg_fallback_respects_max(self, db_paths, monkeypatch):
-        """max=2 com DDG fallback retorna no máximo 2 resultados."""
-        main_path, _ = db_paths  # banco vazio
-
-        _ddg_items = [
-            {"image": f"https://ddg.com/img{i}.jpg", "url": f"https://ddg.com/p{i}", "title": f"Item {i}"}
-            for i in range(10)
-        ]
-
-        class _FakeDDGS:
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                pass
-            def images(self, q, max_results=6):
-                return _ddg_items[:max_results]
-
+    def test_web_respects_max(self, db_paths, monkeypatch):
+        """max=2 com web fallback retorna no máximo 2 resultados."""
         import services.image_indexer as _mod
+        import services.web_search as _web
         import config as _cfg
-        import sys, types
 
-        fake_ddgs_mod = types.ModuleType("ddgs")
-        fake_ddgs_mod.DDGS = _FakeDDGS  # type: ignore[attr-defined]
-        orig_ddgs = sys.modules.get("ddgs")
-        sys.modules["ddgs"] = fake_ddgs_mod
+        main_path, _ = db_paths
+
+        async def _fake_web(q, max=6):
+            return [
+                {"img_url": f"https://web.com/img{i}.jpg", "page_url": "", "alt_text": "", "title": ""}
+                for i in range(10)
+            ]
+
+        monkeypatch.setattr(_web, "search_images_web", _fake_web)
 
         orig_db = _cfg.DB_PATH
         _cfg.DB_PATH = main_path
@@ -533,86 +486,58 @@ class TestSearchImagesQuick:
             results = run(_mod.search_images_quick("coisa", max=2))
         finally:
             _cfg.DB_PATH = orig_db
-            if orig_ddgs is None:
-                sys.modules.pop("ddgs", None)
-            else:
-                sys.modules["ddgs"] = orig_ddgs
 
         assert len(results) <= 2
 
     # ── resiliência a erros ───────────────────────────────────────────────────
 
-    def test_ddg_error_returns_empty_gracefully(self, db_paths, monkeypatch):
-        """DDG lançando exceção → retorna [] sem propagar o erro."""
-        main_path, _ = db_paths  # banco vazio
-
-        class _BrokenDDGS:
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                pass
-            def images(self, q, max_results=6):
-                raise ConnectionError("DDG indisponível")
-
+    def test_web_error_returns_local_gracefully(self, db_paths, monkeypatch):
+        """search_images_web lançando exceção → retorna só locais, sem propagar."""
         import services.image_indexer as _mod
+        import services.web_search as _web
         import config as _cfg
-        import sys, types
 
-        fake_ddgs_mod = types.ModuleType("ddgs")
-        fake_ddgs_mod.DDGS = _BrokenDDGS  # type: ignore[attr-defined]
-        orig_ddgs = sys.modules.get("ddgs")
-        sys.modules["ddgs"] = fake_ddgs_mod
+        main_path, _ = db_paths
+
+        con = sqlite3.connect(main_path)
+        self._insert_image(con, "https://ex.com/img.jpg", "https://ex.com/p", "foto")
+        con.close()
+
+        async def _broken_web(q, max=6):
+            raise ConnectionError("web offline")
+
+        monkeypatch.setattr(_web, "search_images_web", _broken_web)
 
         orig_db = _cfg.DB_PATH
         _cfg.DB_PATH = main_path
         try:
-            results = run(_mod.search_images_quick("algo", max=6))
+            results = run(_mod.search_images_quick("foto", max=6))
         finally:
             _cfg.DB_PATH = orig_db
-            if orig_ddgs is None:
-                sys.modules.pop("ddgs", None)
-            else:
-                sys.modules["ddgs"] = orig_ddgs
 
-        assert results == []
+        # Mesmo com web quebrada, retorna os locais
+        assert len(results) >= 1
+        assert results[0]["img_url"] == "https://ex.com/img.jpg"
 
-    def test_bad_db_path_falls_back_to_ddg(self, monkeypatch):
-        """Banco inacessível → tenta DDG em vez de explodir."""
+    def test_both_sources_error_returns_empty(self, db_paths, monkeypatch):
+        """Banco inválido + web quebrada → [] sem exceção."""
         import services.image_indexer as _mod
+        import services.web_search as _web
         import config as _cfg
-        import sys, types
 
-        _ddg_items = [
-            {"image": "https://ddg.com/x.jpg", "url": "https://ddg.com/x", "title": "Resultado DDG"}
-        ]
+        async def _broken_web(q, max=6):
+            raise ConnectionError("offline")
 
-        class _FakeDDGS:
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                pass
-            def images(self, q, max_results=6):
-                return _ddg_items
-
-        fake_ddgs_mod = types.ModuleType("ddgs")
-        fake_ddgs_mod.DDGS = _FakeDDGS  # type: ignore[attr-defined]
-        orig_ddgs = sys.modules.get("ddgs")
-        sys.modules["ddgs"] = fake_ddgs_mod
+        monkeypatch.setattr(_web, "search_images_web", _broken_web)
 
         orig_db = _cfg.DB_PATH
         _cfg.DB_PATH = "/caminho/invalido/que/nao/existe/akasha.db"
         try:
-            results = run(_mod.search_images_quick("algo"))
+            results = run(_mod.search_images_quick("algo", max=6))
         finally:
             _cfg.DB_PATH = orig_db
-            if orig_ddgs is None:
-                sys.modules.pop("ddgs", None)
-            else:
-                sys.modules["ddgs"] = orig_ddgs
 
-        # Com banco inválido, DDG assume — deve retornar resultado
-        assert len(results) >= 1
-        assert results[0]["img_url"] == "https://ddg.com/x.jpg"
+        assert results == []
 
     def test_result_has_required_keys(self, db_paths):
         """Cada item retornado deve ter as chaves img_url, page_url, alt_text, title, phash."""
