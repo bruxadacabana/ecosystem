@@ -262,12 +262,20 @@ export function LogosView() {
   const maxConcurrent      = hwProfile === 'main_pc' ? 2 : 1
   const p3VramBlocked      = status?.p3_vram_blocked ?? false
 
+  // Campos legados (compatibilidade com código existente)
   const chatOnline        = status?.chat_server_online  ?? false
   const chatModel         = status?.chat_server_model   ?? ''
   const chatMs            = status?.chat_response_ms    ?? null
   const embedOnline       = status?.embed_server_online ?? false
   const embedModel        = status?.embed_server_model  ?? ''
   const embedMs           = status?.embed_response_ms   ?? null
+  // Dois servidores independentes
+  const akshaOnline       = status?.chat_akasha_online    ?? false
+  const akshaModel        = status?.chat_akasha_model     ?? ''
+  const akshaMs           = status?.chat_akasha_ms        ?? null
+  const mnemosyneOnline   = status?.chat_mnemosyne_online ?? false
+  const mnemosyneModel    = status?.chat_mnemosyne_model  ?? ''
+  const mnemosyneMs       = status?.chat_mnemosyne_ms     ?? null
   // inference_enabled: "Ligar IA" foi ativado. O modelo pode ainda não estar carregado (lazy).
   const inferenceEnabled  = status?.inference_enabled   ?? false
 
@@ -562,11 +570,18 @@ export function LogosView() {
         <Label>Servidores</Label>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <ServerRow
-            label="Servidor LLM (chat)"
+            label="Servidor AKASHA"
             port={8081}
-            online={chatOnline}
-            model={chatModel}
-            responseMs={chatMs}
+            online={akshaOnline}
+            model={akshaModel}
+            responseMs={akshaMs}
+          />
+          <ServerRow
+            label="Servidor Mnemosyne"
+            port={8083}
+            online={mnemosyneOnline}
+            model={mnemosyneModel}
+            responseMs={mnemosyneMs}
           />
           <ServerRow
             label="Servidor de Embedding"

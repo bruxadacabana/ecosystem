@@ -178,6 +178,19 @@ export interface LogosStatus {
    *   true  + chat_server_online=true     → active (modelo servindo)
    */
   inference_enabled: boolean
+  // ── Dois servidores de chat independentes ─────────────────────────────────
+  /** Modelo carregado no servidor AKASHA (porta 8081). Vazio se offline. */
+  chat_akasha_model:     string
+  /** True se o servidor AKASHA está ativo. */
+  chat_akasha_online:    boolean
+  /** Latência do /health no servidor AKASHA (ms). null se offline. */
+  chat_akasha_ms:        number | null
+  /** Modelo carregado no servidor Mnemosyne (porta 8083). Vazio se offline. */
+  chat_mnemosyne_model:  string
+  /** True se o servidor Mnemosyne está ativo. */
+  chat_mnemosyne_online: boolean
+  /** Latência do /health no servidor Mnemosyne (ms). null se offline. */
+  chat_mnemosyne_ms:     number | null
 }
 
 export interface ModelInfo {

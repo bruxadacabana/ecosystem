@@ -64,11 +64,15 @@ pub(crate) async fn do_toggle_inference(
         log::info!("LOGOS: inferência habilitada — modelo será carregado na primeira requisição");
         Ok("enabled".into())
     } else {
-        let stopped_llm   = state.kill_llama_proc().await;
-        let stopped_embed = state.kill_embed_proc().await;
+        let stopped_akasha    = state.kill_akasha_proc().await;
+        let stopped_mnemosyne = state.kill_mnemosyne_proc().await;
+        let stopped_embed     = state.kill_embed_proc().await;
         state.set_inference_enabled(false);
-        log::info!("LOGOS: inferência desabilitada (llm_killed={stopped_llm} embed_killed={stopped_embed})");
-        Ok(if stopped_llm || stopped_embed { "stopped" } else { "already_stopped" }.into())
+        log::info!(
+            "LOGOS: inferência desabilitada (akasha_killed={stopped_akasha} \
+             mnemosyne_killed={stopped_mnemosyne} embed_killed={stopped_embed})"
+        );
+        Ok(if stopped_akasha || stopped_mnemosyne || stopped_embed { "stopped" } else { "already_stopped" }.into())
     }
 }
 

@@ -107,6 +107,22 @@ const THERMAL_CRITICAL_C: f32 = 93.0;
 // Intervalo do delay loop de P3 durante saturação de hardware
 const P3_HW_WAIT_SECS: u64 = 30;
 
+// ── Retry-After helper ────────────────────────────────────────
+
+/// Constrói resposta HTTP com header `Retry-After: N` e JSON `{"error":..., "retry_after":N}`.
+/// Usado em todos os retornos 429/503 para que os clientes saibam quando tentar novamente.
+fn retry_after_response(status: StatusCode, msg: &str, retry_secs: u32) -> axum::response::Response {
+    use axum::http::header::RETRY_AFTER;
+    axum::http::Response::builder()
+        .status(status)
+        .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .header(RETRY_AFTER, retry_secs.to_string())
+        .body(axum::body::Body::from(
+            serde_json::json!({ "error": msg, "retry_after": retry_secs }).to_string()
+        ))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
 // ── Política de bateria em 3 níveis ──────────────────────────
 /// Controla quanto o LOGOS restringe operações de acordo com o nível de bateria.
 ///
@@ -370,10 +386,12 @@ pub fn detect_hardware_profile() -> HardwareProfile {
 
 struct Inner {
     llama_server_url: String,
-    /// Semáforo com 2 permits:
+    /// Semáforo do servidor AKASHA com 2 permits:
     ///   modelos leves  (≤3B): adquire 1 → permite 2 simultâneos
     ///   modelos pesados (>3B): adquire 2 → exclusividade (NUM_PARALLEL efetivo = 1)
-    semaphore: Arc<Semaphore>,
+    akasha_semaphore: Arc<Semaphore>,
+    /// Semáforo do servidor Mnemosyne — independente, mesma política de permits.
+    mnemosyne_semaphore: Arc<Semaphore>,
     active_priority: Mutex<Option<u8>>,
     /// Classe do modelo em execução: "leve" | "pesado"
     active_model_class: Mutex<Option<String>>,
@@ -407,11 +425,14 @@ struct Inner {
     /// Chave: "mnemosyne_llm_rag", "kosmos_llm_analysis", "akasha_llm_query", "embed_embed". Valor: nome do modelo.
     /// Vazio = usar recomendado do perfil de hardware.
     model_overrides: Mutex<HashMap<String, String>>,
-    /// Contador de crashes consecutivos do llama-server. Zerado após restart bem-sucedido.
-    llama_crash_count: Mutex<u32>,
-    /// True quando o llama-server atingiu o limite de 3 crashes e foi desabilitado.
-    /// Permanece true até reload manual (reinício do HUB).
-    llama_disabled: Arc<AtomicBool>,
+    /// Contador de crashes consecutivos do servidor AKASHA. Zerado após restart bem-sucedido.
+    akasha_crash_count: Mutex<u32>,
+    /// True quando o servidor AKASHA atingiu o limite de 3 crashes e foi desabilitado.
+    akasha_disabled: Arc<AtomicBool>,
+    /// Contador de crashes consecutivos do servidor Mnemosyne.
+    mnemosyne_crash_count: Mutex<u32>,
+    /// True quando o servidor Mnemosyne atingiu o limite de 3 crashes e foi desabilitado.
+    mnemosyne_disabled: Arc<AtomicBool>,
     /// Tauri AppHandle para emissão de eventos críticos ao frontend.
     /// Inicializado em start_server após o setup do Tauri.
     app_handle: Mutex<Option<tauri::AppHandle>>,
@@ -439,8 +460,10 @@ struct Inner {
     models_dir: std::path::PathBuf,
     /// Caminho do binário llama-server detectado no startup. None = usar Ollama como fallback.
     llama_server_bin: Option<std::path::PathBuf>,
-    /// Processo llama-server ativo gerenciado pelo LOGOS. None = nenhum modelo carregado.
-    llama_proc: Mutex<Option<LlamaProcHandle>>,
+    /// Processo llama-server AKASHA (porta 8081). None = nenhum modelo carregado.
+    akasha_proc: Mutex<Option<LlamaProcHandle>>,
+    /// Processo llama-server Mnemosyne (porta 8083). None = nenhum modelo carregado.
+    mnemosyne_proc: Mutex<Option<LlamaProcHandle>>,
 
     // ── Servidor de embedding (porta EMBED_SERVER_PORT) ──────────────────────
     /// Alias canônico do modelo de embedding (ex: "bge-m3").
@@ -452,12 +475,15 @@ struct Inner {
     /// Processo llama-server do servidor de embedding (porta EMBED_SERVER_PORT).
     /// Independente do llama_proc (porta AKASHA_SERVER_PORT) — falhas são isoladas.
     embed_proc: Mutex<Option<LlamaProcHandle>>,
-    /// Porta usada por `collect_status` para pings de health no servidor de chat.
+    /// Porta usada por `collect_status` para pings de health no servidor AKASHA.
     /// Em produção = AKASHA_SERVER_PORT (8081). Em testes usa porta livre para isolamento.
     chat_health_port: u16,
     /// Porta usada por `collect_status` para pings de health no servidor de embedding.
     /// Em produção = EMBED_SERVER_PORT (8082). Em testes usa porta livre para isolamento.
     embed_health_port: u16,
+    /// Porta usada por `collect_status` para pings de health no servidor Mnemosyne.
+    /// Em produção = MNEMOSYNE_SERVER_PORT (8083). Em testes usa porta livre para isolamento.
+    mnemosyne_health_port: u16,
 
     // ── Limites de recursos configuráveis ───────────────────────────────────
     /// Threshold de CPU (%) para bloquear tarefas P3. Padrão 85.
@@ -471,9 +497,11 @@ struct Inner {
     /// True quando o usuário ativou a IA ("Ligar IA"). O modelo só é carregado
     /// lazily na primeira requisição real — não no momento do toggle.
     inference_enabled: Arc<AtomicBool>,
-    /// Timestamp da última requisição ao servidor de chat (llama-server:8081).
+    /// Timestamp da última requisição ao servidor AKASHA (llama-server:8081).
     /// Atualizado por queue_and_forward a cada requisição; usado pelo idle watchdog.
-    last_llm_request_at: Mutex<std::time::Instant>,
+    last_akasha_request_at: Mutex<std::time::Instant>,
+    /// Timestamp da última requisição ao servidor Mnemosyne (llama-server:8083).
+    last_mnemosyne_request_at: Mutex<std::time::Instant>,
     /// Timestamp da última requisição ao servidor de embedding (llama-server:8082).
     last_embed_request_at: Mutex<std::time::Instant>,
     /// Segundos de ociosidade após os quais o servidor de chat é descarregado.
@@ -516,11 +544,29 @@ impl LogosState {
         }
     }
 
-    /// Para o processo llama-server ativo (se houver). Retorna true se havia processo.
-    pub(crate) async fn kill_llama_proc(&self) -> bool {
-        let mut guard = self.0.llama_proc.lock().await;
+    /// Para o processo llama-server AKASHA (se houver). Retorna true se havia processo.
+    pub(crate) async fn kill_akasha_proc(&self) -> bool {
+        let mut guard = self.0.akasha_proc.lock().await;
         if let Some(mut proc) = guard.take() {
             let _ = proc.child.kill();
+            log::info!("LOGOS: processo AKASHA parado");
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Alias de compatibilidade para código legado — chama kill_akasha_proc().
+    pub(crate) async fn kill_llama_proc(&self) -> bool {
+        self.kill_akasha_proc().await
+    }
+
+    /// Para o processo llama-server Mnemosyne (se houver). Retorna true se havia processo.
+    pub(crate) async fn kill_mnemosyne_proc(&self) -> bool {
+        let mut guard = self.0.mnemosyne_proc.lock().await;
+        if let Some(mut proc) = guard.take() {
+            let _ = proc.child.kill();
+            log::info!("LOGOS: processo Mnemosyne parado");
             true
         } else {
             false
@@ -578,7 +624,12 @@ impl LogosState {
 
     /// Retorna true se há um processo llama-server rastreado ativamente pelo HUB.
     pub async fn llama_proc_active(&self) -> bool {
-        self.0.llama_proc.lock().await.is_some()
+        self.0.akasha_proc.lock().await.is_some()
+    }
+
+    /// Retorna true se há um processo Mnemosyne rastreado ativamente.
+    pub async fn mnemosyne_proc_active(&self) -> bool {
+        self.0.mnemosyne_proc.lock().await.is_some()
     }
 
     /// Retorna o caminho do binário llama-server, se encontrado.
@@ -640,13 +691,6 @@ impl LogosState {
             .timeout(Duration::from_secs(300))
             .build()
             .unwrap_or_default();
-        let vram_limit_pct = {
-            let eco = crate::ecosystem::read_json();
-            eco["logos"]["vram_limit_pct"]
-                .as_f64()
-                .map(|v| (v as f32).clamp(50.0, 95.0))
-                .unwrap_or(85.0)
-        };
         let hardware_mode = if cfg!(target_os = "windows") {
             "sobrevivencia".to_string()
         } else {
@@ -735,6 +779,29 @@ impl LogosState {
                 _ => "analise".to_string(),
             }
         };
+        // Dual-server mode: se ambos llm_query (AKASHA) e llm_rag (Mnemosyne) estiverem
+        // configurados, o estado estável usa ~84% da VRAM (3B + 7B). Ajustamos o threshold
+        // default de 85% → 93% para evitar bloqueio desnecessário de P3 nesse estado.
+        // Apenas quando o threshold ainda está no default (85%) — respeita configuração explícita.
+        let vram_limit_pct = {
+            let eco = crate::ecosystem::read_json();
+            let configured = eco["logos"]["vram_limit_pct"]
+                .as_f64()
+                .map(|v| (v as f32).clamp(50.0, 95.0))
+                .unwrap_or(85.0);
+            let akasha_model    = eco["logos"]["llm_query"].as_str().unwrap_or("").to_string();
+            let mnemosyne_model = eco["logos"]["llm_rag"].as_str().unwrap_or("").to_string();
+            let dual_server = !akasha_model.is_empty() && !mnemosyne_model.is_empty();
+            if dual_server && (configured - 85.0).abs() < 0.1 {
+                log::info!(
+                    "LOGOS: dual-server mode (akasha={akasha_model}, mnemosyne={mnemosyne_model}) \
+                     — vram_limit ajustado automaticamente para 93%"
+                );
+                93.0f32
+            } else {
+                configured
+            }
+        };
         log::info!(
             "LOGOS: embed_model='{}' embed_n_gpu_layers={} cpu_p3_limit_pct={:.0}% \
              idle_timeout={}s cpu_fallback_max={}MB cpu_max_threads={} active_profile='{}'",
@@ -750,7 +817,8 @@ impl LogosState {
         sys.refresh_memory();
         Self(Arc::new(Inner {
             llama_server_url: llama_server_url.into(),
-            semaphore: Arc::new(Semaphore::new(2)),
+            akasha_semaphore:    Arc::new(Semaphore::new(2)),
+            mnemosyne_semaphore: Arc::new(Semaphore::new(2)),
             active_priority: Mutex::new(None),
             active_model_class: Mutex::new(None),
             active_app: Mutex::new(None),
@@ -777,31 +845,35 @@ impl LogosState {
             downloads: Mutex::new(HashMap::new()),
             models_dir,
             llama_server_bin,
-            llama_proc: Mutex::new(None),
-            llama_crash_count: Mutex::new(0),
-            llama_disabled: Arc::new(AtomicBool::new(false)),
+            akasha_proc:    Mutex::new(None),
+            mnemosyne_proc: Mutex::new(None),
+            akasha_crash_count:    Mutex::new(0),
+            akasha_disabled:       Arc::new(AtomicBool::new(false)),
+            mnemosyne_crash_count: Mutex::new(0),
+            mnemosyne_disabled:    Arc::new(AtomicBool::new(false)),
             app_handle: Mutex::new(None),
             embed_model: Mutex::new(embed_model),
             embed_n_gpu_layers: Mutex::new(embed_n_gpu_layers),
             embed_proc: Mutex::new(None),
-            chat_health_port:  AKASHA_SERVER_PORT,
-            embed_health_port: EMBED_SERVER_PORT,
+            chat_health_port:      AKASHA_SERVER_PORT,
+            embed_health_port:     EMBED_SERVER_PORT,
+            mnemosyne_health_port: MNEMOSYNE_SERVER_PORT,
             cpu_p3_limit_pct: Mutex::new(cpu_p3_limit_pct),
             cached_cpu_pct: Arc::new(AtomicU32::new(0)),
-            inference_enabled:     Arc::new(AtomicBool::new(false)),
-            last_llm_request_at:   Mutex::new(std::time::Instant::now()),
-            last_embed_request_at: Mutex::new(std::time::Instant::now()),
+            inference_enabled:          Arc::new(AtomicBool::new(false)),
+            last_akasha_request_at:     Mutex::new(std::time::Instant::now()),
+            last_mnemosyne_request_at:  Mutex::new(std::time::Instant::now()),
+            last_embed_request_at:      Mutex::new(std::time::Instant::now()),
             idle_timeout_secs,
             cpu_fallback_max_mb,
             cpu_max_threads,
         }))
     }
 
-    /// Injeta um processo filho como llama_proc ativo — apenas para testes.
-    /// Permite simular um servidor em execução sem spawnar o llama-server real.
+    /// Injeta um processo filho como akasha_proc ativo — apenas para testes.
     #[cfg(test)]
     pub(crate) async fn inject_proc_for_test(&self, child: tokio::process::Child, model_name: &str) {
-        *self.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *self.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: model_name.to_string(),
         });
@@ -822,15 +894,16 @@ impl LogosState {
         sys.refresh_cpu_all();
         sys.refresh_memory();
         Self(Arc::new(Inner {
-            llama_server_url:   "http://127.0.0.1:8081".to_string(),
-            semaphore:          Arc::new(Semaphore::new(2)),
+            llama_server_url:    "http://127.0.0.1:8081".to_string(),
+            akasha_semaphore:    Arc::new(Semaphore::new(2)),
+            mnemosyne_semaphore: Arc::new(Semaphore::new(2)),
             active_priority:    Mutex::new(None),
             active_model_class: Mutex::new(None),
             active_app:         Mutex::new(None),
             active_profile:     Mutex::new("normal".to_string()),
             hardware_mode:      "normal".to_string(),
             hardware_profile:   HardwareProfile::WorkPc,
-            has_avx2:           true, // testes rodam em x86_64 com AVX2; sobrescrito em make_test_state_no_avx2 quando necessário
+            has_avx2:           true,
             queue_counts:       Mutex::new([0, 0, 0]),
             client,
             sys:                Mutex::new(sys),
@@ -847,21 +920,26 @@ impl LogosState {
             downloads:          Mutex::new(HashMap::new()),
             models_dir,
             llama_server_bin,
-            llama_proc:         Mutex::new(None),
-            llama_crash_count:  Mutex::new(0),
-            llama_disabled:     Arc::new(AtomicBool::new(false)),
+            akasha_proc:           Mutex::new(None),
+            mnemosyne_proc:        Mutex::new(None),
+            akasha_crash_count:    Mutex::new(0),
+            akasha_disabled:       Arc::new(AtomicBool::new(false)),
+            mnemosyne_crash_count: Mutex::new(0),
+            mnemosyne_disabled:    Arc::new(AtomicBool::new(false)),
             app_handle:         Mutex::new(None),
             embed_model:        Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers: Mutex::new(-1),
             embed_proc:         Mutex::new(None),
-            // Em testes: portas que sabidamente não têm servidor → pings retornam None
-            chat_health_port:  59981,
-            embed_health_port: 59982,
-            cpu_p3_limit_pct:   Mutex::new(85.0),
-            cached_cpu_pct:     Arc::new(AtomicU32::new(0)),
-            inference_enabled:     Arc::new(AtomicBool::new(false)),
-            last_llm_request_at:   Mutex::new(std::time::Instant::now()),
-            last_embed_request_at: Mutex::new(std::time::Instant::now()),
+            // Em testes: portas livres para isolamento — sem servidor nestas portas
+            chat_health_port:      59981,
+            embed_health_port:     59982,
+            mnemosyne_health_port: 59983,
+            cpu_p3_limit_pct:    Mutex::new(85.0),
+            cached_cpu_pct:      Arc::new(AtomicU32::new(0)),
+            inference_enabled:          Arc::new(AtomicBool::new(false)),
+            last_akasha_request_at:     Mutex::new(std::time::Instant::now()),
+            last_mnemosyne_request_at:  Mutex::new(std::time::Instant::now()),
+            last_embed_request_at:      Mutex::new(std::time::Instant::now()),
             idle_timeout_secs:  300,
             cpu_fallback_max_mb: 2048,
             cpu_max_threads:    0,
@@ -934,6 +1012,19 @@ pub struct StatusResponse {
     /// True quando "Ligar IA" foi ativado pela usuária.
     /// O modelo pode ainda não estar carregado (lazy loading) — ver `chat_server_online`.
     pub inference_enabled: bool,
+    // ── Campos novos: dois servidores de chat independentes ──────────────────
+    /// Modelo carregado no servidor AKASHA (porta 8081). Vazio se offline.
+    pub chat_akasha_model: String,
+    /// True se o servidor AKASHA está ativo.
+    pub chat_akasha_online: bool,
+    /// Latência do /health no servidor AKASHA (ms). None se offline.
+    pub chat_akasha_ms: Option<u32>,
+    /// Modelo carregado no servidor Mnemosyne (porta 8083). Vazio se offline.
+    pub chat_mnemosyne_model: String,
+    /// True se o servidor Mnemosyne está ativo.
+    pub chat_mnemosyne_online: bool,
+    /// Latência do /health no servidor Mnemosyne (ms). None se offline.
+    pub chat_mnemosyne_ms: Option<u32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -1755,40 +1846,47 @@ fn check_cpu_fallback_allowed(gguf_path: &std::path::Path, cpu_fallback_max_mb: 
 /// Garante que o llama-server está rodando com o modelo solicitado.
 /// Para o processo atual e reinicia com o novo modelo se necessário.
 /// Deve ser chamado enquanto o semáforo de concorrência está adquirido.
-pub(crate) async fn ensure_llama_model_loaded(
+/// Inicia (ou confirma já ativo) o servidor llama-server para o target especificado.
+/// `target` determina: qual porta usar, qual campo de processo, qual log label.
+/// CPU fallback é suportado apenas para ServerTarget::Akasha (modelos leves em WorkPc).
+pub(crate) async fn ensure_server_loaded(
     s: &LogosState,
+    target: ServerTarget,
     model_name: &str,
 ) -> Result<(), String> {
     let bin = s.0.llama_server_bin.as_ref()
         .ok_or_else(|| "llama-server não encontrado".to_string())?
         .clone();
 
-    // Fast path: modelo correto já carregado
+    let port  = match target { ServerTarget::Akasha => AKASHA_SERVER_PORT, ServerTarget::Mnemosyne => MNEMOSYNE_SERVER_PORT };
+    let label = match target { ServerTarget::Akasha => "AKASHA",           ServerTarget::Mnemosyne => "Mnemosyne" };
+
+    // Fast path: modelo correto já carregado neste servidor
     {
-        let guard = s.0.llama_proc.lock().await;
+        let guard = match target {
+            ServerTarget::Akasha    => s.0.akasha_proc.lock().await,
+            ServerTarget::Mnemosyne => s.0.mnemosyne_proc.lock().await,
+        };
         if guard.as_ref().map(|p| p.model_name.as_str()) == Some(model_name) {
             return Ok(());
         }
     }
 
     // Para o processo atual (se houver). Aguarda 500ms para GPU liberar VRAM.
-    let killed_prev_proc = {
-        let mut guard = s.0.llama_proc.lock().await;
+    let killed_prev = {
+        let mut guard = match target {
+            ServerTarget::Akasha    => s.0.akasha_proc.lock().await,
+            ServerTarget::Mnemosyne => s.0.mnemosyne_proc.lock().await,
+        };
         if let Some(mut proc) = guard.take() {
-            let prev_name = proc.model_name.clone();
+            let prev = proc.model_name.clone();
             let _ = proc.child.kill();
             let _ = proc.child.wait().await;
-            log::info!(
-                "LOGOS llama-server: processo anterior ({prev_name}) encerrado — \
-                 carregando '{model_name}'"
-            );
+            log::info!("LOGOS {label}: processo anterior ({prev}) encerrado — carregando '{model_name}'");
             true
-        } else {
-            false
-        }
+        } else { false }
     };
-    if killed_prev_proc {
-        // Aguarda GPU liberar VRAM após encerramento do processo anterior
+    if killed_prev {
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
@@ -1799,11 +1897,10 @@ pub(crate) async fn ensure_llama_model_loaded(
              Faça download via HUB ou execute 'ollama pull {model_name}'."
         ))?;
 
-    // Lê o registry uma vez — usado para mmproj, tamanho do modelo (VRAM) e validação GGUF
     let registry = read_model_registry(&s.0.models_dir).await;
     let registry_entry = registry.iter().find(|e| e.name == model_name);
 
-    // ── Validação de integridade GGUF antes de tentar iniciar ─────────────────
+    // Validação de integridade GGUF
     {
         let expected_bytes = registry_entry.map(|e| e.size_bytes);
         let (repo_id, filename) = registry_entry
@@ -1812,48 +1909,40 @@ pub(crate) async fn ensure_llama_model_loaded(
         match validate_gguf_file(&gguf_path, expected_bytes) {
             GgufValidation::Ok => {}
             GgufValidation::FileMissing => {
-                s.emit_model_corrupted(model_name, "chat", "file_missing", repo_id, filename).await;
+                s.emit_model_corrupted(model_name, label, "file_missing", repo_id, filename).await;
                 return Err(format!("Modelo '{model_name}': arquivo GGUF não encontrado no disco"));
             }
             GgufValidation::IncompleteDownload { actual_bytes, expected_bytes: exp } => {
-                log::error!(
-                    "LOGOS chat: modelo '{model_name}' incompleto — {actual_bytes} de {exp} bytes"
-                );
-                s.emit_model_corrupted(model_name, "chat", "incomplete_download", repo_id, filename).await;
+                log::error!("LOGOS {label}: modelo '{model_name}' incompleto — {actual_bytes} de {exp} bytes");
+                s.emit_model_corrupted(model_name, label, "incomplete_download", repo_id, filename).await;
                 return Err(format!(
                     "Modelo '{model_name}' incompleto: {actual_bytes} de {exp} bytes \
                      (download interrompido — use reparo no HUB)"
                 ));
             }
             GgufValidation::InvalidMagic { actual_magic } => {
-                log::error!(
-                    "LOGOS chat: modelo '{model_name}' com magic bytes inválidos: {actual_magic:?}"
-                );
-                s.emit_model_corrupted(model_name, "chat", "invalid_magic", repo_id, filename).await;
-                return Err(format!(
-                    "Modelo '{model_name}' corrompido: magic bytes inválidos {actual_magic:?}"
-                ));
+                log::error!("LOGOS {label}: modelo '{model_name}' com magic bytes inválidos: {actual_magic:?}");
+                s.emit_model_corrupted(model_name, label, "invalid_magic", repo_id, filename).await;
+                return Err(format!("Modelo '{model_name}' corrompido: magic bytes inválidos {actual_magic:?}"));
             }
         }
     }
 
-    // Resolve mmproj para modelos multimodais (moondream, LLaVA, etc.)
     let mmproj_path: Option<std::path::PathBuf> = registry_entry
         .and_then(|e| e.mmproj_path.as_deref())
         .map(std::path::PathBuf::from)
         .filter(|p| p.exists());
 
-    // Tamanho em disco ≈ VRAM para GGUFs quantizados
     let model_size_mb = registry_entry.map(|e| e.size_bytes / 1_048_576).unwrap_or(0);
-
     let profile_n_gpu = gpu_layers_for_model(model_name, s.0.hardware_profile);
-    // n_ctx calculado ANTES do check de VRAM para incluir KV cache na estimativa
     let n_ctx = n_ctx_for_hardware(s.0.hardware_profile);
     let n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx).await;
 
-    // Passo 7: VRAM pre-check — verificar disponibilidade antes do spawn
-    // Executado apenas quando há GPU (n_gpu ≠ 0) e tamanho do modelo conhecido (> 0).
-    // Em modo CPU-only (WorkPc) ou modelo sem metadados: skip silencioso.
+    // VRAM pre-check: só executa se o servidor não estava ativo (modelo novo a carregar).
+    // Se `killed_prev` é false, nenhum processo estava rodando → verificar disponibilidade.
+    // Se `killed_prev` é true, o modelo anterior foi descarregado → VRAM foi liberada.
+    // Em ambos os casos sem servidor ativo, verificar. Se já havia modelo (fast-path acima
+    // retornou Ok), nunca chegamos aqui — logo o check é sempre pertinente quando chegamos.
     if n_gpu != 0 && model_size_mb > 0 {
         let (vram_used_opt, vram_total_opt, _) = vram_usage(&s.0.client, s.0.hardware_profile).await;
         if let (Some(vram_used), Some(vram_total)) = (vram_used_opt, vram_total_opt) {
@@ -1861,15 +1950,15 @@ pub(crate) async fn ensure_llama_model_loaded(
             if !vram_sufficient_for_model(vram_free, model_size_mb) {
                 let needed_mb = (model_size_mb as f64 * 1.15) as u64;
                 let msg = format!(
-                    "VRAM insuficiente para '{model_name}': {vram_free}MB livre, \
-                     modelo precisa ~{needed_mb}MB ({model_size_mb}MB + 15% margem)"
+                    "VRAM insuficiente para '{model_name}' ({label}): {vram_free}MB livre, \
+                     modelo precisa ~{needed_mb}MB"
                 );
                 log::error!("LOGOS VRAM pre-check: {msg}");
                 s.emit_alert("error", &msg).await;
                 return Err(msg);
             }
             log::info!(
-                "LOGOS VRAM pre-check: OK — {vram_free}MB livre, \
+                "LOGOS VRAM pre-check ({label}): OK — {vram_free}MB livre, \
                  '{model_name}' precisa ~{}MB",
                 (model_size_mb as f64 * 1.15) as u64
             );
@@ -1878,49 +1967,36 @@ pub(crate) async fn ensure_llama_model_loaded(
 
     let gpu_mode = if n_gpu == 0 { "CPU".to_string() } else if n_gpu == -1 { "GPU (full)".to_string() } else { format!("GPU ({n_gpu} layers)") };
     log::info!(
-        "LOGOS llama-server: carregando '{model_name}' \
-         ({gpu_mode}, n_ctx={n_ctx}, porta={AKASHA_SERVER_PORT}, mmproj={})",
+        "LOGOS {label}: carregando '{model_name}' ({gpu_mode}, n_ctx={n_ctx}, porta={port}, mmproj={})",
         mmproj_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".into())
     );
 
-    let mut child = spawn_llama_server_proc(&bin, &gguf_path, mmproj_path.as_deref(), n_gpu, n_ctx, AKASHA_SERVER_PORT)
+    let mut child = spawn_llama_server_proc(&bin, &gguf_path, mmproj_path.as_deref(), n_gpu, n_ctx, port)
         .await?;
 
-    // Captura stderr para log (leitura linha a linha em background)
     if let Some(stderr) = child.stderr.take() {
         spawn_chat_stderr_reader(stderr, model_name.to_string(), chat_log_path(&s.0.models_dir));
     }
 
-    // Aguarda servidor pronto; detecção precoce de saída do processo evita 90s de timeout
-    // quando o modelo falha ao carregar (ex: GGUF corrompido pós-validação, OOM, etc.)
-    if !wait_llama_ready_checking_child(AKASHA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut child).await {
-        // Verifica se o processo saiu (OOM em GPU) ou apenas timeout (servidor lento)
+    if !wait_llama_ready_checking_child(port, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut child).await {
         let proc_exited = child.try_wait().ok().flatten().is_some();
-
-        // Mata o processo e descarta o handle
         let _ = child.kill().await;
 
-        // OOM fallback: processo saiu sozinho em modo GPU → tenta CPU only se modelo couber
-        if proc_exited && n_gpu != 0 {
-            // Gate por tamanho: modelo maior que cpu_fallback_max_mb → sem retry CPU.
-            // Evita travar o sistema rodando modelos grandes sem limite de threads (Passo 6).
+        // CPU fallback: apenas para AKASHA (WorkPc não tem GPU)
+        if proc_exited && n_gpu != 0 && target == ServerTarget::Akasha {
             if let Some(gate_err) = check_cpu_fallback_allowed(&gguf_path, s.0.cpu_fallback_max_mb) {
                 let alert = format!("'{model_name}': OOM GPU — {gate_err}");
-                log::error!("LOGOS llama-server: {alert}");
+                log::error!("LOGOS {label}: {alert}");
                 s.emit_alert("error", &alert).await;
-                return Err(format!(
-                    "OOM GPU em '{model_name}' — {gate_err}"
-                ));
+                return Err(format!("OOM GPU em '{model_name}' — {gate_err}"));
             }
-
             log::warn!(
-                "LOGOS llama-server: '{model_name}' saiu (provável OOM de GPU, \
-                 modelo dentro do limite CPU de {}MB) — retentando com CPU only",
+                "LOGOS {label}: '{model_name}' saiu (provável OOM GPU, dentro do limite {}MB) — \
+                 retentando com CPU only",
                 s.0.cpu_fallback_max_mb
             );
             let mut cpu_child = spawn_llama_server_cpu_fallback(
-                &bin, &gguf_path, mmproj_path.as_deref(),
-                AKASHA_SERVER_PORT, s.0.cpu_max_threads,
+                &bin, &gguf_path, mmproj_path.as_deref(), port, s.0.cpu_max_threads,
             )
             .await
             .map_err(|e| format!("Falha ao reiniciar em modo CPU: {e}"))?;
@@ -1929,37 +2005,54 @@ pub(crate) async fn ensure_llama_model_loaded(
                 spawn_chat_stderr_reader(stderr, format!("{model_name}[cpu]"), chat_log_path(&s.0.models_dir));
             }
 
-            if !wait_llama_ready_checking_child(AKASHA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut cpu_child).await {
+            if !wait_llama_ready_checking_child(port, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut cpu_child).await {
                 let _ = cpu_child.kill().await;
                 return Err(format!(
-                    "llama-server não ficou pronto em modo CPU — \
+                    "llama-server ({label}) não ficou pronto em modo CPU — \
                      '{model_name}' pode estar corrompido ou incompatível"
                 ));
             }
 
-            *s.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            *s.0.akasha_proc.lock().await = Some(LlamaProcHandle {
                 child: cpu_child,
                 model_name: model_name.to_string(),
             });
-            log::warn!(
-                "LOGOS llama-server: '{model_name}' carregado em modo CPU only (downgrade de GPU)"
-            );
+            log::warn!("LOGOS {label}: '{model_name}' carregado em modo CPU only (downgrade de GPU)");
             return Ok(());
         }
 
         return Err(format!(
-            "llama-server não ficou pronto em {LLAMA_SERVER_READY_TIMEOUT_SECS}s. \
+            "llama-server ({label}) não ficou pronto em {LLAMA_SERVER_READY_TIMEOUT_SECS}s. \
              Verifique se o modelo cabe na VRAM disponível."
         ));
     }
 
-    // Servidor pronto — armazena handle no estado
-    *s.0.llama_proc.lock().await = Some(LlamaProcHandle {
-        child,
-        model_name: model_name.to_string(),
-    });
-    log::info!("LOGOS llama-server: '{model_name}' pronto na porta {AKASHA_SERVER_PORT}");
+    // Servidor pronto — armazena handle no estado correto
+    match target {
+        ServerTarget::Akasha => {
+            *s.0.akasha_proc.lock().await = Some(LlamaProcHandle {
+                child,
+                model_name: model_name.to_string(),
+            });
+            log::info!("LOGOS {label}: '{model_name}' pronto na porta {port}");
+        }
+        ServerTarget::Mnemosyne => {
+            *s.0.mnemosyne_proc.lock().await = Some(LlamaProcHandle {
+                child,
+                model_name: model_name.to_string(),
+            });
+            log::info!("LOGOS {label}: '{model_name}' pronto na porta {port}");
+        }
+    }
     Ok(())
+}
+
+/// Alias de compatibilidade para callers existentes — usa ServerTarget::Akasha.
+pub(crate) async fn ensure_llama_model_loaded(
+    s: &LogosState,
+    model_name: &str,
+) -> Result<(), String> {
+    ensure_server_loaded(s, ServerTarget::Akasha, model_name).await
 }
 
 // ── Tradução de formato: Ollama ↔ OpenAI ─────────────────────
@@ -2242,7 +2335,7 @@ async fn check_idle_llm(s: &LogosState) -> bool {
     if !s.llama_proc_active().await {
         return false;
     }
-    let elapsed = s.0.last_llm_request_at.lock().await.elapsed().as_secs();
+    let elapsed = s.0.last_akasha_request_at.lock().await.elapsed().as_secs();
     if elapsed > s.0.idle_timeout_secs {
         log::info!(
             "LOGOS idle watchdog: chat sem requisições por {elapsed}s \
@@ -2254,6 +2347,29 @@ async fn check_idle_llm(s: &LogosState) -> bool {
     } else {
         log::debug!(
             "LOGOS idle watchdog: chat ativo há {elapsed}s (limite: {}s) — mantendo",
+            s.0.idle_timeout_secs
+        );
+        false
+    }
+}
+
+/// Idle watchdog para o servidor Mnemosyne — mesmo comportamento, timer independente.
+async fn check_idle_mnemosyne(s: &LogosState) -> bool {
+    if !s.mnemosyne_proc_active().await {
+        return false;
+    }
+    let elapsed = s.0.last_mnemosyne_request_at.lock().await.elapsed().as_secs();
+    if elapsed > s.0.idle_timeout_secs {
+        log::info!(
+            "LOGOS idle watchdog (Mnemosyne): sem requisições por {elapsed}s \
+             (limite: {}s) — descarregando modelo",
+            s.0.idle_timeout_secs
+        );
+        s.kill_mnemosyne_proc().await;
+        true
+    } else {
+        log::debug!(
+            "LOGOS idle watchdog (Mnemosyne): ativo há {elapsed}s (limite: {}s) — mantendo",
             s.0.idle_timeout_secs
         );
         false
@@ -2350,9 +2466,15 @@ async fn queue_and_forward(
         ).into_response();
     }
 
-    // Lazy loading: IA habilitada mas nenhum modelo ativo → carregar na primeira requisição real.
-    // Isso desacopla "Ligar IA" (toggle) do carregamento de modelo em VRAM.
-    if !s.llama_proc_active().await {
+    // Determina o servidor alvo: Mnemosyne (porta 8083) ou AKASHA (porta 8081).
+    let target = route_request(&app_name);
+
+    // Lazy loading: IA habilitada mas nenhum modelo ativo no servidor alvo → carregar.
+    let target_proc_active = match target {
+        ServerTarget::Akasha    => s.llama_proc_active().await,
+        ServerTarget::Mnemosyne => s.mnemosyne_proc_active().await,
+    };
+    if !target_proc_active {
         let to_load = model_for_app(&s, &app_name).await;
 
         match to_load {
@@ -2372,10 +2494,10 @@ async fn queue_and_forward(
             Some(ref model_name) => {
                 log::info!(
                     "LOGOS lazy load: primeira requisição de '{}' (P{}) — \
-                     carregando '{}'",
-                    app_name, requested_priority, model_name
+                     carregando '{}' no servidor {:?}",
+                    app_name, requested_priority, model_name, target
                 );
-                if let Err(e) = ensure_llama_model_loaded(&s, model_name).await {
+                if let Err(e) = ensure_server_loaded(&s, target, model_name).await {
                     log::error!(
                         "LOGOS lazy load: falha ao carregar '{}' para requisição de '{}': {}",
                         model_name, app_name, e
@@ -2394,15 +2516,16 @@ async fn queue_and_forward(
                     "LOGOS lazy load: '{}' carregado — requisição de '{}' prossegue",
                     model_name, app_name
                 );
-                // Inicia embed-server em paralelo — mesmo ciclo de vida do chat server.
-                // ensure_embed_server_started tem fast path (noop se já ativo).
                 ensure_embed_server_started(&s).await;
             }
         }
     }
 
-    // Atualiza timestamp de última requisição (usado pelo idle watchdog — Passo 4).
-    *s.0.last_llm_request_at.lock().await = std::time::Instant::now();
+    // Atualiza timestamp do servidor correto (idle watchdog usa por servidor).
+    match target {
+        ServerTarget::Akasha    => *s.0.last_akasha_request_at.lock().await    = std::time::Instant::now(),
+        ServerTarget::Mnemosyne => *s.0.last_mnemosyne_request_at.lock().await = std::time::Instant::now(),
+    }
 
     // Aplica override de prioridade baseado no perfil ativo
     let profile = s.0.active_profile.lock().await.clone();
@@ -2478,14 +2601,11 @@ async fn queue_and_forward(
             loop {
                 let (cpu, ram_free, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
                 if ram_free < RAM_CRITICAL_MB {
-                    return (
+                    return retry_after_response(
                         StatusCode::SERVICE_UNAVAILABLE,
-                        Json(serde_json::json!({
-                            "error": format!(
-                                "RAM livre {ram_free} MB — abaixo do mínimo de segurança ({RAM_CRITICAL_MB} MB)"
-                            )
-                        })),
-                    ).into_response();
+                        &format!("RAM livre {ram_free} MB — abaixo do mínimo de segurança ({RAM_CRITICAL_MB} MB)"),
+                        15,
+                    );
                 }
                 if cpu <= CPU_P3_SURVIVAL_BLOCK && ram_free >= RAM_P3_SURVIVAL_BLOCK_MB {
                     break;
@@ -2506,40 +2626,28 @@ async fn queue_and_forward(
             let gpu_temp = *s.0.gpu_temp_celsius.lock().await;
             if let Some(t) = gpu_temp {
                 if t > THERMAL_CRITICAL_C {
-                    return (
+                    return retry_after_response(
                         StatusCode::SERVICE_UNAVAILABLE,
-                        Json(serde_json::json!({
-                            "error": format!(
-                                "GPU {t:.0}°C — temperatura crítica (>{THERMAL_CRITICAL_C:.0}°C); \
-                                 pausando para evitar dano térmico"
-                            )
-                        })),
-                    ).into_response();
+                        &format!("GPU {t:.0}°C — temperatura crítica (>{THERMAL_CRITICAL_C:.0}°C); pausando para evitar dano térmico"),
+                        30,
+                    );
                 }
             }
             let (cpu, ram_free, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
             if ram_free < RAM_CRITICAL_MB {
-                return (
+                return retry_after_response(
                     StatusCode::SERVICE_UNAVAILABLE,
-                    Json(serde_json::json!({
-                        "error": format!(
-                            "RAM livre {ram_free} MB — abaixo do mínimo de segurança ({RAM_CRITICAL_MB} MB)"
-                        )
-                    })),
-                ).into_response();
+                    &format!("RAM livre {ram_free} MB — abaixo do mínimo de segurança ({RAM_CRITICAL_MB} MB)"),
+                    15,
+                );
             }
             if let Some(vram) = vram_pct(&s.0.client, s.0.hardware_profile).await {
                 if vram * 100.0 > VRAM_CRITICAL_PCT {
-                    return (
+                    return retry_after_response(
                         StatusCode::SERVICE_UNAVAILABLE,
-                        Json(serde_json::json!({
-                            "error": format!(
-                                "VRAM {:.0}% — crítica (>{VRAM_CRITICAL_PCT:.0}%); \
-                                 aguardar descarga antes de continuar",
-                                vram * 100.0
-                            )
-                        })),
-                    ).into_response();
+                        &format!("VRAM {:.0}% — crítica (>{VRAM_CRITICAL_PCT:.0}%); aguardar descarga", vram * 100.0),
+                        30,
+                    );
                 }
             }
             // Throttle normal: aguardar condições melhores (sem rejeição)
@@ -2592,10 +2700,13 @@ async fn queue_and_forward(
     // Incrementa contador de fila
     s.0.queue_counts.lock().await[(priority - 1) as usize] += 1;
 
-    // Aguarda semáforo respeitando timeout por prioridade.
+    // Aguarda semáforo do servidor alvo respeitando timeout por prioridade.
     // Modelos pesados adquirem 2 permits (exclusividade total);
-    // modelos leves adquirem 1 (até 2 simultâneos se OLLAMA_NUM_PARALLEL=2).
-    let sem = s.0.semaphore.clone();
+    // modelos leves adquirem 1 (até 2 simultâneos).
+    let sem = match target {
+        ServerTarget::Akasha    => s.0.akasha_semaphore.clone(),
+        ServerTarget::Mnemosyne => s.0.mnemosyne_semaphore.clone(),
+    };
     let permit = match priority {
         1 => tokio::time::timeout(P1_TIMEOUT, sem.acquire_many_owned(permits))
                 .await.ok().and_then(|r| r.ok()),
@@ -2613,17 +2724,15 @@ async fn queue_and_forward(
 
     let _permit = match permit {
         Some(p) => p,
-        None => {
-            let msg = if priority == 1 {
+        None => return retry_after_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            if priority == 1 {
                 "Timeout aguardando slot de inferência — sistema sobrecarregado"
             } else {
                 "Timeout aguardando LOGOS — sistema sobrecarregado"
-            };
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(serde_json::json!({ "error": msg })),
-            ).into_response();
-        }
+            },
+            60,
+        ),
     };
 
     // Marca prioridade, classe do modelo e app ativos
@@ -2633,15 +2742,22 @@ async fn queue_and_forward(
 
 
     // Encaminha ao backend de inferência (llama-server ou Ollama).
-    // llama_disabled é setado pelo watchdog após 3 crashes consecutivos.
-    let use_llama   = s.0.llama_server_bin.is_some()
-        && !s.0.llama_disabled.load(Ordering::Relaxed);
+    // Verifica disabled flag do servidor alvo (crash watchdog seta após 3 falhas).
+    let target_disabled = match target {
+        ServerTarget::Akasha    => s.0.akasha_disabled.load(Ordering::Relaxed),
+        ServerTarget::Mnemosyne => s.0.mnemosyne_disabled.load(Ordering::Relaxed),
+    };
+    let target_port = match target {
+        ServerTarget::Akasha    => AKASHA_SERVER_PORT,
+        ServerTarget::Mnemosyne => MNEMOSYNE_SERVER_PORT,
+    };
+    let use_llama = s.0.llama_server_bin.is_some() && !target_disabled;
     let is_generate = ollama_target == "api/generate";
 
     let task_result: Result<Result<(reqwest::StatusCode, Bytes), String>, tokio::task::JoinError> =
     if use_llama {
-        // ── llama-server: garante modelo carregado e traduz formato ──
-        if let Err(e) = ensure_llama_model_loaded(&s, &model_name).await {
+        // ── llama-server: garante modelo carregado no servidor alvo e traduz formato ──
+        if let Err(e) = ensure_server_loaded(&s, target, &model_name).await {
             *s.0.active_priority.lock().await    = None;
             *s.0.active_model_class.lock().await = None;
             *s.0.active_app.lock().await         = None;
@@ -2655,7 +2771,7 @@ async fn queue_and_forward(
             translate_ollama_chat_to_openai(body_map)
         };
         let endpoint = if is_generate { "v1/completions" } else { "v1/chat/completions" };
-        let url          = format!("http://127.0.0.1:{AKASHA_SERVER_PORT}/{endpoint}");
+        let url          = format!("http://127.0.0.1:{target_port}/{endpoint}");
         let client_clone = s.0.client.clone();
         let model_clone  = model_name.clone();
         let task = tokio::spawn(async move {
@@ -2798,7 +2914,7 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
     }
 
     s.0.queue_counts.lock().await[2] += 1;
-    let sem = s.0.semaphore.clone();
+    let sem = s.0.akasha_semaphore.clone();
     let permit = tokio::time::timeout(P3_TIMEOUT, sem.acquire_many_owned(1))
         .await.ok().and_then(|r| r.ok());
     {
@@ -2968,8 +3084,13 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
         ).into_response();
     }
 
-    // Se o llama-server atingiu o limite de crashes, rejeitar sem tentar.
-    if s.0.llama_disabled.load(Ordering::Relaxed) {
+    // Determina o servidor alvo e verifica se está desabilitado por crash repetido.
+    let target = route_request(&app_name);
+    let target_disabled = match target {
+        ServerTarget::Akasha    => s.0.akasha_disabled.load(Ordering::Relaxed),
+        ServerTarget::Mnemosyne => s.0.mnemosyne_disabled.load(Ordering::Relaxed),
+    };
+    if target_disabled {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({
@@ -3066,14 +3187,17 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
             ).into_response();
         }
         Some(ref model_name) => {
-            let was_idle = !s.llama_proc_active().await;
+            let was_idle = match target {
+                ServerTarget::Akasha    => !s.llama_proc_active().await,
+                ServerTarget::Mnemosyne => !s.mnemosyne_proc_active().await,
+            };
             if was_idle {
                 log::info!(
-                    "LOGOS lazy load (/v1): primeira requisição de '{}' (P{}) — carregando '{}'",
-                    app_name, priority, model_name
+                    "LOGOS lazy load (/v1): primeira requisição de '{}' (P{}) — carregando '{}' em {:?}",
+                    app_name, priority, model_name, target
                 );
             }
-            if let Err(e) = ensure_llama_model_loaded(s, model_name).await {
+            if let Err(e) = ensure_server_loaded(s, target, model_name).await {
                 log::error!(
                     "LOGOS /v1: falha ao carregar '{}' para '{}': {}", model_name, app_name, e
                 );
@@ -3100,8 +3224,11 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
         try_preempt_p3(s, &chosen_model.as_deref().unwrap_or("")).await;
     }
 
-    // Atualiza timestamp de última requisição (idle watchdog).
-    *s.0.last_llm_request_at.lock().await = std::time::Instant::now();
+    // Atualiza timestamp do servidor alvo (idle watchdog usa por servidor).
+    match target {
+        ServerTarget::Akasha    => *s.0.last_akasha_request_at.lock().await    = std::time::Instant::now(),
+        ServerTarget::Mnemosyne => *s.0.last_mnemosyne_request_at.lock().await = std::time::Instant::now(),
+    }
 
     let permits: u32 = if priority >= 3 { 1 } else { 2 };
     let timeout = match priority {
@@ -3109,12 +3236,17 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
         2 => P2_TIMEOUT,
         _ => P3_TIMEOUT,
     };
-    let sem = s.0.semaphore.clone();
+    let sem = match target {
+        ServerTarget::Akasha    => s.0.akasha_semaphore.clone(),
+        ServerTarget::Mnemosyne => s.0.mnemosyne_semaphore.clone(),
+    };
     let _permit = match tokio::time::timeout(timeout, sem.acquire_many_owned(permits)).await {
         Ok(Ok(p)) => p,
-        _ => return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
-            "error": "Timeout aguardando LOGOS — sistema sobrecarregado"
-        }))).into_response(),
+        _ => return retry_after_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Timeout aguardando LOGOS — sistema sobrecarregado",
+            60,
+        ),
     };
 
     // Rastreia estado ativo (prioridade, app, classe do modelo) para métricas e UI.
@@ -3125,7 +3257,11 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
             .to_string()
     );
 
-    let url = format!("http://127.0.0.1:{AKASHA_SERVER_PORT}/{endpoint}");
+    let target_port = match target {
+        ServerTarget::Akasha    => AKASHA_SERVER_PORT,
+        ServerTarget::Mnemosyne => MNEMOSYNE_SERVER_PORT,
+    };
+    let url = format!("http://127.0.0.1:{target_port}/{endpoint}");
     let result = s.0.client
         .post(&url)
         .header(header::CONTENT_TYPE, "application/json")
@@ -3218,7 +3354,7 @@ async fn v1_embeddings_proxy(
     let permits: u32 = if priority >= 3 { 1 } else { 2 };
     let timeout  = P3_TIMEOUT; // embeddings são sempre P3
 
-    let sem      = s.0.semaphore.clone();
+    let sem      = s.0.akasha_semaphore.clone();
     let _permit  = match tokio::time::timeout(timeout, sem.acquire_many_owned(permits)).await {
         Ok(Ok(p)) => p,
         _ => return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
@@ -3503,30 +3639,36 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let p3_thermal_blocked  = s.0.p3_thermal_blocked.load(Ordering::Relaxed);
     let gpu_temp_celsius     = *s.0.gpu_temp_celsius.lock().await;
 
-    // Estado dos dois servidores llama.cpp
-    let chat_model = {
-        let g = s.0.llama_proc.lock().await;
+    // Estado dos três servidores llama.cpp
+    let akasha_model = {
+        let g = s.0.akasha_proc.lock().await;
+        g.as_ref().map(|p| p.model_name.clone()).unwrap_or_default()
+    };
+    let mnemosyne_model_loaded = {
+        let g = s.0.mnemosyne_proc.lock().await;
         g.as_ref().map(|p| p.model_name.clone()).unwrap_or_default()
     };
     let embed_model_loaded = {
         let g = s.0.embed_proc.lock().await;
         g.as_ref().map(|p| p.model_name.clone()).unwrap_or_default()
     };
-    let chat_online  = !chat_model.is_empty();
-    let embed_online = !embed_model_loaded.is_empty();
+    let akasha_online    = !akasha_model.is_empty();
+    let mnemosyne_online = !mnemosyne_model_loaded.is_empty();
+    let embed_online     = !embed_model_loaded.is_empty();
 
-    // Pings paralelos — só executados quando o processo está ativo para evitar
-    // 400ms de timeout desnecessário quando ambos os servidores estão offline.
-    // Usam chat_health_port / embed_health_port para permitir isolamento em testes
-    // (testes apontam para portas livres; produção usa AKASHA_SERVER_PORT / EMBED_SERVER_PORT).
-    let (chat_ms, embed_ms) = tokio::join!(
+    // Pings paralelos para os três servidores — só quando processo ativo.
+    let (akasha_ms, mnemosyne_ms, embed_ms) = tokio::join!(
         async {
-            if chat_online  { ping_server_ms(&s.0.client, s.0.chat_health_port).await }
-            else            { None }
+            if akasha_online    { ping_server_ms(&s.0.client, s.0.chat_health_port).await }
+            else                { None }
         },
         async {
-            if embed_online { ping_server_ms(&s.0.client, s.0.embed_health_port).await }
-            else            { None }
+            if mnemosyne_online { ping_server_ms(&s.0.client, s.0.mnemosyne_health_port).await }
+            else                { None }
+        },
+        async {
+            if embed_online     { ping_server_ms(&s.0.client, s.0.embed_health_port).await }
+            else                { None }
         },
     );
 
@@ -3554,13 +3696,21 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         p3_vram_blocked,
         p3_thermal_blocked,
         gpu_temp_celsius,
-        chat_server_online: chat_online,
-        chat_server_model:  chat_model,
-        chat_response_ms:   chat_ms,
+        // Campos legados (compatibilidade) — reusam o servidor AKASHA
+        chat_server_online: akasha_online,
+        chat_server_model:  akasha_model.clone(),
+        chat_response_ms:   akasha_ms,
         embed_server_online: embed_online,
         embed_server_model:  embed_model_loaded,
         embed_response_ms:   embed_ms,
         inference_enabled:   s.inference_enabled(),
+        // Campos novos: dois servidores de chat
+        chat_akasha_model:    akasha_model,
+        chat_akasha_online:   akasha_online,
+        chat_akasha_ms:       akasha_ms,
+        chat_mnemosyne_model:  mnemosyne_model_loaded,
+        chat_mnemosyne_online: mnemosyne_online,
+        chat_mnemosyne_ms:     mnemosyne_ms,
     }
 }
 
@@ -3697,17 +3847,19 @@ async fn ensure_embed_server_started(s: &LogosState) {
 /// Para o processo llama-server e o embed-server para liberar VRAM completamente.
 /// Retorna o número de processos parados (0, 1 ou 2).
 pub async fn do_silence(s: &LogosState) -> usize {
-    let stopped_chat  = s.kill_llama_proc().await;
-    let stopped_embed = s.kill_embed_proc().await;
-    if stopped_chat  { log::info!("LOGOS silence: llama-server (chat) parado"); }
-    if stopped_embed { log::info!("LOGOS silence: embed-server parado"); }
-    usize::from(stopped_chat) + usize::from(stopped_embed)
+    let stopped_akasha    = s.kill_akasha_proc().await;
+    let stopped_mnemosyne = s.kill_mnemosyne_proc().await;
+    let stopped_embed     = s.kill_embed_proc().await;
+    if stopped_akasha    { log::info!("LOGOS silence: servidor AKASHA parado"); }
+    if stopped_mnemosyne { log::info!("LOGOS silence: servidor Mnemosyne parado"); }
+    if stopped_embed     { log::info!("LOGOS silence: embed-server parado"); }
+    usize::from(stopped_akasha) + usize::from(stopped_mnemosyne) + usize::from(stopped_embed)
 }
 
 /// Retorna o modelo atualmente carregado no llama-server (se houver).
 /// Com llama-server, apenas um modelo roda por vez — é o que está em `llama_proc`.
 pub async fn list_inference_models(s: &LogosState) -> Vec<ModelInfo> {
-    let guard = s.0.llama_proc.lock().await;
+    let guard = s.0.akasha_proc.lock().await;
     match guard.as_ref() {
         Some(p) => vec![ModelInfo { name: p.model_name.clone(), size_vram_mb: 0 }],
         None    => vec![],
@@ -3758,7 +3910,7 @@ pub async fn do_list_models(s: &LogosState) -> Vec<ModelInfo> {
 /// Status "active" = modelo atualmente rodando no llama-server.
 pub async fn do_list_all_models(s: &LogosState) -> Vec<ModelEntry> {
     let registry = read_model_registry(&s.0.models_dir).await;
-    let active_name: Option<String> = s.0.llama_proc.lock().await
+    let active_name: Option<String> = s.0.akasha_proc.lock().await
         .as_ref()
         .map(|p| p.model_name.clone());
 
@@ -4707,7 +4859,7 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
 
             // Verifica se o processo existe e saiu inesperadamente
             let crashed_model: Option<String> = {
-                let mut guard = proc_wdg.0.llama_proc.lock().await;
+                let mut guard = proc_wdg.0.akasha_proc.lock().await;
                 if let Some(ref mut proc) = guard.as_mut() {
                     match proc.child.try_wait() {
                         Ok(Some(status)) => {
@@ -4732,7 +4884,7 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
             let Some(model_name) = crashed_model else { continue };
 
             // Limpa o handle do processo morto
-            *proc_wdg.0.llama_proc.lock().await = None;
+            *proc_wdg.0.akasha_proc.lock().await = None;
 
             // Emite evento de crash para o frontend
             proc_wdg.emit_alert(
@@ -4750,7 +4902,7 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
 
             // Incrementa contador de crashes
             let crash_count = {
-                let mut cc = proc_wdg.0.llama_crash_count.lock().await;
+                let mut cc = proc_wdg.0.akasha_crash_count.lock().await;
                 *cc += 1;
                 *cc
             };
@@ -4761,7 +4913,7 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
                      desabilitado até reload manual",
                     crash_count
                 );
-                proc_wdg.0.llama_disabled.store(true, Ordering::Relaxed);
+                proc_wdg.0.akasha_disabled.store(true, Ordering::Relaxed);
                 proc_wdg.emit_alert(
                     "error",
                     "llama-server falhou 3+ vezes consecutivas — \
@@ -4786,7 +4938,7 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
             // Tenta restart
             let ok = do_load_model(&proc_wdg, &model_name).await;
             if ok {
-                *proc_wdg.0.llama_crash_count.lock().await = 0;
+                *proc_wdg.0.akasha_crash_count.lock().await = 0;
                 log::info!(
                     "LOGOS watchdog: llama-server reiniciado com sucesso — '{model_name}'"
                 );
@@ -4797,6 +4949,97 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
             } else {
                 log::error!(
                     "LOGOS watchdog: falha ao reiniciar llama-server — '{model_name}' \
+                     (tentativa {crash_count}/3)"
+                );
+            }
+        }
+    });
+
+    // Crash watchdog do servidor Mnemosyne — análogo ao do AKASHA, independente.
+    // Detecta saída inesperada, tenta restart com backoff (10s/30s/60s).
+    // Após 3 falhas: desabilita o servidor Mnemosyne e emite alerta.
+    let mnemosyne_wdg = state.clone();
+    tokio::spawn(async move {
+        const BACKOFFS: [u64; 3] = [10, 30, 60];
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+
+            let crashed_model: Option<String> = {
+                let mut guard = mnemosyne_wdg.0.mnemosyne_proc.lock().await;
+                if let Some(ref mut proc) = guard.as_mut() {
+                    match proc.child.try_wait() {
+                        Ok(Some(status)) => {
+                            log::error!(
+                                "LOGOS watchdog (Mnemosyne): servidor saiu inesperadamente \
+                                 (modelo='{}', status={:?})",
+                                proc.model_name, status
+                            );
+                            Some(proc.model_name.clone())
+                        }
+                        Ok(None)  => None,
+                        Err(e) => { log::warn!("LOGOS watchdog (Mnemosyne): erro ao verificar: {e}"); None }
+                    }
+                } else { None }
+            };
+
+            let Some(model_name) = crashed_model else { continue };
+
+            *mnemosyne_wdg.0.mnemosyne_proc.lock().await = None;
+
+            mnemosyne_wdg.emit_alert(
+                "error",
+                &format!("Mnemosyne server caiu inesperadamente (modelo '{model_name}')"),
+            ).await;
+            {
+                let guard = mnemosyne_wdg.0.app_handle.lock().await;
+                if let Some(ref handle) = *guard {
+                    let _ = handle.emit("logos-mnemosyne-crashed", serde_json::json!({ "model": model_name }));
+                }
+            }
+
+            let crash_count = {
+                let mut cc = mnemosyne_wdg.0.mnemosyne_crash_count.lock().await;
+                *cc += 1;
+                *cc
+            };
+
+            if crash_count > 3 {
+                log::error!(
+                    "LOGOS watchdog (Mnemosyne): servidor falhou {} vezes — \
+                     desabilitado até reload manual",
+                    crash_count
+                );
+                mnemosyne_wdg.0.mnemosyne_disabled.store(true, Ordering::Relaxed);
+                mnemosyne_wdg.emit_alert(
+                    "error",
+                    "Mnemosyne server falhou 3+ vezes consecutivas — \
+                     desabilitado. Reinicie o HUB para reativar.",
+                ).await;
+                {
+                    let guard = mnemosyne_wdg.0.app_handle.lock().await;
+                    if let Some(ref handle) = *guard {
+                        let _ = handle.emit("logos-mnemosyne-unavailable", ());
+                    }
+                }
+                loop { tokio::time::sleep(Duration::from_secs(3600)).await; }
+            }
+
+            let backoff = BACKOFFS[(crash_count as usize - 1).min(2)];
+            log::warn!(
+                "LOGOS watchdog (Mnemosyne): tentativa {crash_count}/3 de restart de '{model_name}' em {backoff}s"
+            );
+            tokio::time::sleep(Duration::from_secs(backoff)).await;
+
+            if let Ok(()) = ensure_server_loaded(&mnemosyne_wdg, ServerTarget::Mnemosyne, &model_name).await {
+                *mnemosyne_wdg.0.mnemosyne_crash_count.lock().await = 0;
+                log::info!("LOGOS watchdog (Mnemosyne): servidor reiniciado com sucesso — '{model_name}'");
+                mnemosyne_wdg.emit_alert(
+                    "warn",
+                    &format!("Mnemosyne server reiniciado após crash — '{model_name}'"),
+                ).await;
+            } else {
+                log::error!(
+                    "LOGOS watchdog (Mnemosyne): falha ao reiniciar servidor — '{model_name}' \
                      (tentativa {crash_count}/3)"
                 );
             }
@@ -4953,14 +5196,21 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
         }
     });
 
-    // Idle unload watchdog — chat server.
-    // Mata o llama-server após `idle_timeout_secs` sem requisições.
-    // Poll a cada 60s — resolve o problema de VRAM ocupada sem uso que causava freeze.
+    // Idle unload watchdog — servidor AKASHA (chat). Timer independente dos outros servidores.
     let idle_llm_wdg = state.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             check_idle_llm(&idle_llm_wdg).await;
+        }
+    });
+
+    // Idle unload watchdog — servidor Mnemosyne. Timer independente do AKASHA.
+    let idle_mnemosyne_wdg = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            check_idle_mnemosyne(&idle_mnemosyne_wdg).await;
         }
     });
 
@@ -5585,7 +5835,8 @@ mod tests {
         sys.refresh_memory();
         LogosState(Arc::new(Inner {
             llama_server_url:    "http://127.0.0.1:8081".to_string(),
-            semaphore:           Arc::new(Semaphore::new(2)),
+            akasha_semaphore:    Arc::new(Semaphore::new(2)),
+            mnemosyne_semaphore: Arc::new(Semaphore::new(2)),
             active_priority:     Mutex::new(None),
             active_model_class:  Mutex::new(None),
             active_app:          Mutex::new(None),
@@ -5608,22 +5859,27 @@ mod tests {
             gpu_temp_celsius:    Mutex::new(None),
             downloads:           Mutex::new(HashMap::new()),
             models_dir,
-            llama_server_bin:    None,
-            llama_proc:          Mutex::new(None),
-            llama_crash_count:   Mutex::new(0),
-            llama_disabled:      Arc::new(AtomicBool::new(false)),
+            llama_server_bin:       None,
+            akasha_proc:            Mutex::new(None),
+            mnemosyne_proc:         Mutex::new(None),
+            akasha_crash_count:     Mutex::new(0),
+            akasha_disabled:        Arc::new(AtomicBool::new(false)),
+            mnemosyne_crash_count:  Mutex::new(0),
+            mnemosyne_disabled:     Arc::new(AtomicBool::new(false)),
             app_handle:          Mutex::new(None),
             embed_model:         Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers:  Mutex::new(-1),
             embed_proc:          Mutex::new(None),
             // Portas livres para isolamento de testes — sem servidor nestas portas
-            chat_health_port:   59981,
-            embed_health_port:  59982,
+            chat_health_port:      59981,
+            embed_health_port:     59982,
+            mnemosyne_health_port: 59983,
             cpu_p3_limit_pct:    Mutex::new(85.0),
             cached_cpu_pct:      Arc::new(AtomicU32::new(0)),
-            inference_enabled:     Arc::new(AtomicBool::new(false)),
-            last_llm_request_at:   Mutex::new(std::time::Instant::now()),
-            last_embed_request_at: Mutex::new(std::time::Instant::now()),
+            inference_enabled:          Arc::new(AtomicBool::new(false)),
+            last_akasha_request_at:     Mutex::new(std::time::Instant::now()),
+            last_mnemosyne_request_at:  Mutex::new(std::time::Instant::now()),
+            last_embed_request_at:      Mutex::new(std::time::Instant::now()),
             idle_timeout_secs:  300,
             cpu_fallback_max_mb: 2048,
             cpu_max_threads:    0,
@@ -6131,7 +6387,7 @@ mod tests {
     fn semaphore_starts_with_2_permits() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
-        let sem = state.0.semaphore.clone();
+        let sem = state.0.akasha_semaphore.clone();
         // Deve conseguir adquirir 2 permits de uma vez
         let _p = sem.try_acquire_many(2).expect("semáforo deve ter 2 permits inicialmente");
     }
@@ -6140,7 +6396,7 @@ mod tests {
     fn semaphore_heavy_model_uses_2_permits() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
-        let sem = state.0.semaphore.clone();
+        let sem = state.0.akasha_semaphore.clone();
         // Modelo pesado: 2 permits → exclusividade total
         let p1 = sem.try_acquire_many(2).expect("2 permits disponíveis");
         // Com 2 permits adquiridos, nenhum outro consegue
@@ -6153,7 +6409,7 @@ mod tests {
     fn semaphore_light_model_uses_1_permit() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
-        let sem = state.0.semaphore.clone();
+        let sem = state.0.akasha_semaphore.clone();
         // Modelo leve: 1 permit → permite 2 simultâneos
         let p1 = sem.try_acquire_many(1).expect("1 permit disponível");
         let p2 = sem.try_acquire_many(1).expect("segundo permit também disponível");
@@ -6173,23 +6429,23 @@ mod tests {
         assert!(is_light_model("qwen2.5:0.5b"), "0.5b é leve");
     }
 
-    // ── Crash counter e llama_disabled — 4 cenários ───────────────────────────
+    // ── Crash counter e akasha_disabled — 4 cenários ───────────────────────────
 
     #[tokio::test]
-    async fn llama_crash_count_starts_zero() {
+    async fn akasha_crash_count_starts_zero() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
-        let count = *state.0.llama_crash_count.lock().await;
+        let count = *state.0.akasha_crash_count.lock().await;
         assert_eq!(count, 0);
     }
 
     #[tokio::test]
-    async fn llama_crash_count_increments_correctly() {
+    async fn akasha_crash_count_increments_correctly() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
         for expected in 1u32..=3 {
             let count = {
-                let mut cc = state.0.llama_crash_count.lock().await;
+                let mut cc = state.0.akasha_crash_count.lock().await;
                 *cc += 1;
                 *cc
             };
@@ -6198,24 +6454,75 @@ mod tests {
     }
 
     #[test]
-    fn llama_disabled_starts_false() {
+    fn akasha_disabled_starts_false() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
-        assert!(!state.0.llama_disabled.load(Ordering::Relaxed),
-            "llama_disabled deve iniciar false");
+        assert!(!state.0.akasha_disabled.load(Ordering::Relaxed),
+            "akasha_disabled deve iniciar false");
     }
 
     #[test]
-    fn llama_disabled_flag_prevents_inference_path() {
+    fn akasha_disabled_flag_prevents_inference_path() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
         // Simula estado após 3+ crashes
-        state.0.llama_disabled.store(true, Ordering::Relaxed);
+        state.0.akasha_disabled.store(true, Ordering::Relaxed);
         // A expressão que queue_and_forward usa para decidir use_llama
         let use_llama = state.0.llama_server_bin.is_some()
-            && !state.0.llama_disabled.load(Ordering::Relaxed);
+            && !state.0.akasha_disabled.load(Ordering::Relaxed);
         assert!(!use_llama,
-            "llama_disabled=true deve impedir uso do llama-server mesmo se bin existe");
+            "akasha_disabled=true deve impedir uso do llama-server mesmo se bin existe");
+    }
+
+    // ── Testes de mnemosyne_proc (Passo 2) ───────────────────────────────────
+
+    #[tokio::test]
+    async fn mnemosyne_proc_active_false_when_no_proc() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert!(!state.mnemosyne_proc_active().await,
+            "mnemosyne_proc_active deve ser false quando não há processo");
+    }
+
+    #[tokio::test]
+    async fn mnemosyne_proc_active_true_when_set() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let child = tokio::process::Command::new("sleep")
+            .arg("1")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep disponível");
+        *state.0.mnemosyne_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "qwen2.5:7b".to_string(),
+        });
+        assert!(state.mnemosyne_proc_active().await,
+            "mnemosyne_proc_active deve ser true após injetar processo");
+    }
+
+    #[tokio::test]
+    async fn kill_mnemosyne_proc_removes_handle() {
+        let td = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep disponível");
+        *state.0.mnemosyne_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "qwen2.5:7b".to_string(),
+        });
+        assert!(state.mnemosyne_proc_active().await);
+        let killed = state.kill_mnemosyne_proc().await;
+        assert!(killed, "kill_mnemosyne_proc deve retornar true quando havia processo");
+        assert!(!state.mnemosyne_proc_active().await,
+            "mnemosyne_proc_active deve ser false após kill");
     }
 
     // ── sysfs_vram_mb — 3 cenários ────────────────────────────────────────────
@@ -6287,7 +6594,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep deve estar disponível");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "phi-3-mini".to_string(),
         });
@@ -6339,7 +6646,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep deve estar disponível");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "phi-3-mini".to_string(),
         });
@@ -6386,14 +6693,14 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep deve estar disponível");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "test-model".to_string(),
         });
 
         let count = do_silence(&state).await;
         assert_eq!(count, 1);
-        assert!(state.0.llama_proc.lock().await.is_none(), "proc deve ser None após silence");
+        assert!(state.0.akasha_proc.lock().await.is_none(), "proc deve ser None após silence");
     }
 
     // ── do_unload_model ───────────────────────────────────────────────────────
@@ -6428,13 +6735,13 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep deve estar disponível");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "test-model".to_string(),
         });
 
         assert!(state.kill_llama_proc().await, "proc ativo → true");
-        assert!(state.0.llama_proc.lock().await.is_none(), "handle limpo após kill");
+        assert!(state.0.akasha_proc.lock().await.is_none(), "handle limpo após kill");
         // Segunda chamada: nenhum proc → false
         assert!(!state.kill_llama_proc().await);
     }
@@ -6460,7 +6767,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep disponível");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "test-active".to_string(),
         });
@@ -6613,7 +6920,7 @@ mod tests {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn().unwrap();
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "qwen".to_string(),
         });
@@ -6819,7 +7126,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn().unwrap();
 
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child: chat_child, model_name: "qwen".to_string(),
         });
         *state.0.embed_proc.lock().await = Some(LlamaProcHandle {
@@ -6830,7 +7137,7 @@ mod tests {
 
         assert_eq!(stopped, 2, "do_silence deve retornar 2 quando ambos os processos estavam ativos");
         assert!(!state.embed_proc_active().await, "embed_proc deve ser None após do_silence");
-        assert!(!state.0.llama_proc.lock().await.is_some(), "llama_proc deve ser None após do_silence");
+        assert!(!state.0.akasha_proc.lock().await.is_some(), "llama_proc deve ser None após do_silence");
     }
 
     #[tokio::test]
@@ -6839,6 +7146,115 @@ mod tests {
         let state = make_test_state(dir.path().to_path_buf());
         let stopped = do_silence(&state).await;
         assert_eq!(stopped, 0, "do_silence sem processos deve retornar 0");
+    }
+
+    // ── Testes de dois servidores (Passos 6, 9, 11) ──────────────────────────
+
+    #[tokio::test]
+    async fn do_silence_kills_both_chat_servers() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        let spawn_sleep = || tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+
+        *state.0.akasha_proc.lock().await    = Some(LlamaProcHandle { child: spawn_sleep(), model_name: "akasha-model".into() });
+        *state.0.mnemosyne_proc.lock().await = Some(LlamaProcHandle { child: spawn_sleep(), model_name: "mnemosyne-model".into() });
+
+        let stopped = do_silence(&state).await;
+        assert_eq!(stopped, 2, "do_silence com AKASHA + Mnemosyne deve retornar 2");
+        assert!(!state.llama_proc_active().await,    "AKASHA deve estar parado após do_silence");
+        assert!(!state.mnemosyne_proc_active().await, "Mnemosyne deve estar parado após do_silence");
+    }
+
+    #[tokio::test]
+    async fn kill_akasha_proc_does_not_affect_mnemosyne() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        let spawn_sleep = || tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+
+        *state.0.akasha_proc.lock().await    = Some(LlamaProcHandle { child: spawn_sleep(), model_name: "akasha-model".into() });
+        *state.0.mnemosyne_proc.lock().await = Some(LlamaProcHandle { child: spawn_sleep(), model_name: "mnemosyne-model".into() });
+
+        state.kill_akasha_proc().await;
+
+        assert!(!state.llama_proc_active().await,    "AKASHA deve estar parado");
+        assert!(state.mnemosyne_proc_active().await,  "Mnemosyne deve permanecer ativo após kill_akasha_proc");
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_akasha_independent_of_mnemosyne() {
+        // check_idle_llm só considera o akasha_proc e last_akasha_request_at
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        let spawn_sleep = || tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+
+        *state.0.akasha_proc.lock().await    = Some(LlamaProcHandle { child: spawn_sleep(), model_name: "akasha-model".into() });
+        *state.0.mnemosyne_proc.lock().await = Some(LlamaProcHandle { child: spawn_sleep(), model_name: "mnemosyne-model".into() });
+
+        // Simula que AKASHA está ocioso há muito tempo (1 dia)
+        *state.0.last_akasha_request_at.lock().await = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(86400))
+            .unwrap_or_else(std::time::Instant::now);
+
+        let killed = check_idle_llm(&state).await;
+        assert!(killed, "check_idle_llm deve matar AKASHA ocioso");
+        assert!(!state.llama_proc_active().await,     "AKASHA deve estar parado");
+        assert!(state.mnemosyne_proc_active().await,   "Mnemosyne não deve ser afetado pelo idle watchdog do AKASHA");
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_mnemosyne_independent_of_akasha() {
+        let dir   = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        let spawn_sleep = || tokio::process::Command::new("sleep").arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn().unwrap();
+
+        *state.0.akasha_proc.lock().await    = Some(LlamaProcHandle { child: spawn_sleep(), model_name: "akasha-model".into() });
+        *state.0.mnemosyne_proc.lock().await = Some(LlamaProcHandle { child: spawn_sleep(), model_name: "mnemosyne-model".into() });
+
+        // Simula que Mnemosyne está ocioso há muito tempo
+        *state.0.last_mnemosyne_request_at.lock().await = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(86400))
+            .unwrap_or_else(std::time::Instant::now);
+
+        let killed = check_idle_mnemosyne(&state).await;
+        assert!(killed, "check_idle_mnemosyne deve matar Mnemosyne ocioso");
+        assert!(!state.mnemosyne_proc_active().await,  "Mnemosyne deve estar parado");
+        assert!(state.llama_proc_active().await,        "AKASHA não deve ser afetado pelo idle watchdog da Mnemosyne");
+    }
+
+    #[test]
+    fn retry_after_response_has_correct_header() {
+        let resp = retry_after_response(StatusCode::SERVICE_UNAVAILABLE, "teste", 30);
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let ra = resp.headers().get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        assert_eq!(ra, "30", "Retry-After header deve ser 30");
+    }
+
+    #[test]
+    fn retry_after_response_body_has_retry_after_field() {
+        let resp = retry_after_response(StatusCode::TOO_MANY_REQUESTS, "ocupado", 60);
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]
@@ -6851,7 +7267,7 @@ mod tests {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn().unwrap();
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child, model_name: "qwen".to_string(),
         });
 
@@ -7045,7 +7461,7 @@ mod tests {
             .spawn()
             .expect("cmd disponível no Windows");
 
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "qwen2.5-7b".to_string(),
         });
@@ -7102,7 +7518,7 @@ mod tests {
         let chat_child = tokio::process::Command::new("cmd")
             .args(["/C", "timeout", "/T", "600", "/NOBREAK"]).spawn().unwrap();
 
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child: chat_child,
             model_name: "phi3.5".to_string(),
         });
@@ -7659,13 +8075,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn last_llm_request_at_is_recent_on_init() {
+    async fn last_akasha_request_at_is_recent_on_init() {
         let td = tempfile::tempdir().unwrap();
         let state = make_test_state(td.path().to_path_buf());
-        let elapsed = state.0.last_llm_request_at.lock().await.elapsed();
+        let elapsed = state.0.last_akasha_request_at.lock().await.elapsed();
         assert!(
             elapsed.as_secs() < 5,
-            "last_llm_request_at deve ser inicializado recentemente (elapsed={elapsed:?})"
+            "last_akasha_request_at deve ser inicializado recentemente (elapsed={elapsed:?})"
         );
     }
 
@@ -7803,7 +8219,7 @@ mod tests {
             state.kill_llama_proc().await;
             return;
         };
-        *state.0.last_llm_request_at.lock().await = old;
+        *state.0.last_akasha_request_at.lock().await = old;
 
         let killed = check_idle_llm(&state).await;
         assert!(killed, "proc ocioso deve ser morto pelo watchdog");
@@ -7854,7 +8270,7 @@ mod tests {
         state.inject_proc_for_test(child, "gemma-2b").await;
 
         // Timestamp recente (Instant::now) — simula que requisição acabou de chegar
-        *state.0.last_llm_request_at.lock().await = std::time::Instant::now();
+        *state.0.last_akasha_request_at.lock().await = std::time::Instant::now();
 
         let killed = check_idle_llm(&state).await;
         assert!(!killed, "proc com requisição recente não deve ser morto");
@@ -7884,7 +8300,7 @@ mod tests {
             state.kill_llama_proc().await;
             return;
         };
-        *state.0.last_llm_request_at.lock().await = old;
+        *state.0.last_akasha_request_at.lock().await = old;
 
         // Injeta embed proc com timestamp recente
         let embed_child = tokio::process::Command::new("sleep").arg("3600")
@@ -8092,7 +8508,7 @@ mod tests {
     #[tokio::test]
     async fn lazy_load_skipped_when_proc_already_active() {
         // Se já há um processo ativo, o bloco de lazy load é pulado completamente.
-        // O timestamp de last_llm_request_at deve ser atualizado mesmo assim.
+        // O timestamp de last_akasha_request_at deve ser atualizado mesmo assim.
         let td = tempfile::tempdir().unwrap();
         let state = make_test_state(td.path().to_path_buf());
         state.set_inference_enabled(true);
@@ -8111,19 +8527,21 @@ mod tests {
         let old_instant = std::time::Instant::now()
             .checked_sub(std::time::Duration::from_secs(600))
             .unwrap_or_else(std::time::Instant::now);
-        *state.0.last_llm_request_at.lock().await = old_instant;
+        *state.0.last_akasha_request_at.lock().await = old_instant;
 
         let body = serde_json::Map::from_iter([
             ("model".to_string(), serde_json::json!("gemma-2b")),
             ("messages".to_string(), serde_json::json!([])),
         ]);
-        let _response = queue_and_forward(state.clone(), body, "mnemosyne".to_string(), 2, "api/chat").await;
+        // Usa app_name "akasha" para que a requisição roteie para o servidor AKASHA
+        // onde o proc foi injetado (inject_proc_for_test → akasha_proc)
+        let _response = queue_and_forward(state.clone(), body, "akasha".to_string(), 2, "api/chat").await;
 
-        // Timestamp deve ter sido atualizado (Passo 3 — even when lazy load is skipped)
-        let elapsed = state.0.last_llm_request_at.lock().await.elapsed();
+        // Timestamp do servidor AKASHA deve ter sido atualizado
+        let elapsed = state.0.last_akasha_request_at.lock().await.elapsed();
         assert!(
             elapsed.as_secs() < 5,
-            "last_llm_request_at deve ser atualizado na requisição; elapsed={elapsed:?}"
+            "last_akasha_request_at deve ser atualizado na requisição; elapsed={elapsed:?}"
         );
 
         state.kill_llama_proc().await;
@@ -8132,7 +8550,7 @@ mod tests {
     #[tokio::test]
     async fn lazy_load_updates_timestamp_on_gate_pass() {
         // Quando inference_enabled=true e sem modelos instalados → 503 "nenhum modelo".
-        // O timestamp de last_llm_request_at ainda deve ser atualizado
+        // O timestamp de last_akasha_request_at ainda deve ser atualizado
         // (a requisição chegou ao LOGOS mesmo que não tenha sido encaminhada).
         // NOTA: o timestamp é atualizado APÓS o bloco lazy, que por sua vez retorna 503
         // antes de chegar à linha de update quando não há modelo.
@@ -8149,7 +8567,7 @@ mod tests {
         let old = std::time::Instant::now()
             .checked_sub(std::time::Duration::from_secs(300))
             .unwrap_or_else(std::time::Instant::now);
-        *state.0.last_llm_request_at.lock().await = old;
+        *state.0.last_akasha_request_at.lock().await = old;
 
         // Proc ativo → lazy load é pulado, timestamp é atualizado
         let child = tokio::process::Command::new("sleep").arg("3600")
@@ -8165,10 +8583,10 @@ mod tests {
         ]);
         let _r = queue_and_forward(state.clone(), body, "test".to_string(), 1, "api/chat").await;
 
-        let elapsed = state.0.last_llm_request_at.lock().await.elapsed();
+        let elapsed = state.0.last_akasha_request_at.lock().await.elapsed();
         assert!(
             elapsed.as_secs() < 5,
-            "last_llm_request_at deve ser < 5s após requisição; elapsed={elapsed:?}"
+            "last_akasha_request_at deve ser < 5s após requisição; elapsed={elapsed:?}"
         );
         state.kill_llama_proc().await;
     }
@@ -8465,11 +8883,11 @@ mod tests {
 
         assert!(state.llama_proc_active().await, "proc deve estar ativo após inject");
 
-        // Simula idle: last_llm_request_at muito antigo
+        // Simula idle: last_akasha_request_at muito antigo
         let old = std::time::Instant::now()
             .checked_sub(std::time::Duration::from_secs(state.0.idle_timeout_secs + 10))
             .unwrap_or_else(std::time::Instant::now);
-        *state.0.last_llm_request_at.lock().await = old;
+        *state.0.last_akasha_request_at.lock().await = old;
 
         let killed = check_idle_llm(&state).await;
         assert!(killed, "idle watchdog deve matar proc após timeout");
@@ -8612,7 +9030,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep deve estar disponível em Linux/Mac");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "test-model".to_string(),
         });
@@ -8651,7 +9069,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep deve estar disponível");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "test-model".to_string(),
         });
@@ -8689,7 +9107,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep deve estar disponível");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "test-model".to_string(),
         });
@@ -8727,7 +9145,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep deve estar disponível");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "test-model".to_string(),
         });
@@ -8768,7 +9186,7 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .spawn()
             .expect("sleep deve estar disponível");
-        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+        *state.0.akasha_proc.lock().await = Some(LlamaProcHandle {
             child,
             model_name: "test-model".to_string(),
         });
