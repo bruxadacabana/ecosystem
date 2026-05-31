@@ -484,20 +484,15 @@ async def search(
         else:
             intent = "exploratory"
 
-        # Roteamento por intenção — apenas ajusta quantidade/prioridade de resultados;
-        # nunca sintetiza nem interpreta conteúdo (AKASHA é amplificador, não respondedor).
+        # Roteamento por intenção — afeta apresentação e ordenação no template,
+        # nunca a quantidade de resultados retornados. AKASHA é amplificador, não respondedor.
         if intent == "navigational":
-            # Usuária sabe o que quer — retorna o melhor resultado de cada fonte
-            web_results    = web_results[:1]
-            fav_results    = fav_results[:1]
-            local_results  = local_results[:1]
-            site_results   = site_results[:1]
-            paper_results  = paper_results[:1]
+            log.debug("intent=navigational q=%r: apresentação destacada, sem corte de resultados", q)
         elif intent == "fact-seeking":
-            # Prioriza fontes locais (arquivo pessoal é mais preciso para fatos conhecidos)
+            # Inclui resultados locais mesmo quando src_eco não está selecionado
             if not src_eco:
+                log.debug("intent=fact-seeking q=%r: adicionando resultados locais", q)
                 local_results = await search_local(_effective_query)
-                local_results = local_results[:5]
 
         # Correção ortográfica: tenta reexecutar busca local com query corrigida
         if src_eco and not local_results and len(_effective_query.split()) <= 2:
