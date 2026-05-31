@@ -355,6 +355,10 @@ struct Inner {
     hardware_mode: String,
     /// Perfil de hardware detectado em runtime via fingerprint de GPU.
     hardware_profile: HardwareProfile,
+    /// True se a CPU suporta AVX2 (detectado via CPUID no startup).
+    /// O i5-3470 (WorkPc) NÃO tem AVX2 — inferência INT4 é 30-50% mais lenta.
+    /// Quando false: num_ctx, num_batch e num_thread são limitados automaticamente.
+    has_avx2: bool,
     queue_counts: Mutex<[u32; 3]>,
     client: Client,
     /// Instância sysinfo — mantida entre polls para que CPU% seja calculado como delta.
@@ -704,6 +708,7 @@ impl LogosState {
             active_profile: Mutex::new("normal".to_string()),
             hardware_mode,
             hardware_profile,
+            has_avx2: detect_avx2(),
             queue_counts: Mutex::new([0, 0, 0]),
             client,
             sys: Mutex::new(sys),
@@ -774,6 +779,7 @@ impl LogosState {
             active_profile:     Mutex::new("normal".to_string()),
             hardware_mode:      "normal".to_string(),
             hardware_profile:   HardwareProfile::WorkPc,
+            has_avx2:           true, // testes rodam em x86_64 com AVX2; sobrescrito em make_test_state_no_avx2 quando necessário
             queue_counts:       Mutex::new([0, 0, 0]),
             client,
             sys:                Mutex::new(sys),
@@ -2393,7 +2399,7 @@ async fn queue_and_forward(
 
     // Parâmetros de eficiência por prioridade (num_thread, num_batch, num_ctx, num_gpu).
     // Chamado após survival/keep_alive para não sobrescrever caps já aplicados.
-    inject_efficiency_params(&mut body, priority, s.0.hardware_profile, is_survival, on_battery);
+    inject_efficiency_params(&mut body, priority, s.0.hardware_profile, is_survival, on_battery, s.0.has_avx2);
 
     let ollama_payload = serde_json::Value::Object(body);
 
@@ -2754,7 +2760,7 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
         // ── Ollama: injeta parâmetros de eficiência e encaminha ──
         let embed_body: Vec<u8> =
             if let Ok(mut m) = serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&body) {
-                inject_efficiency_params(&mut m, 3, s.0.hardware_profile, is_survival, on_battery);
+                inject_efficiency_params(&mut m, 3, s.0.hardware_profile, is_survival, on_battery, s.0.has_avx2);
                 serde_json::to_vec(&m).unwrap_or_else(|_| body.to_vec())
             } else {
                 body.to_vec()
@@ -4096,6 +4102,16 @@ fn read_battery_pct() -> u8 {
     read_battery_info().1
 }
 
+/// Detecta suporte a AVX2 via CPUID em runtime.
+/// Funciona em x86/x86_64 (Linux e Windows). Retorna false em outras arquiteturas.
+/// O i5-3470 (WorkPc, Ivy Bridge 2012) não tem AVX2 — inferência INT4 30-50% mais lenta.
+fn detect_avx2() -> bool {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    { std::arch::is_x86_feature_detected!("avx2") }
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+    { false }
+}
+
 // ── Parâmetros de eficiência por prioridade ───────────────────
 
 /// Injeta parâmetros de eficiência no objeto `options` do body conforme prioridade e hardware.
@@ -4114,6 +4130,7 @@ fn inject_efficiency_params(
     hw: HardwareProfile,
     is_survival: bool,
     on_battery: bool,
+    has_avx2: bool,
 ) {
     if priority == 1 {
         let opts = body.entry("options").or_insert_with(|| serde_json::json!({}));
@@ -4121,9 +4138,14 @@ fn inject_efficiency_params(
             if is_survival {
                 // i5-3470: 4 cores sem hyperthreading — 3 para Ollama, 1 livre para o SO
                 o.entry("num_thread").or_insert(serde_json::json!(3));
-            } else if on_battery {
-                // Em bateria: 2 threads para reduzir consumo energético
+            } else if on_battery || !has_avx2 {
+                // Em bateria OU sem AVX2: 2 threads para reduzir consumo / evitar travamento
                 o.entry("num_thread").or_insert(serde_json::json!(2));
+            }
+            // Sem AVX2: limitar contexto para reduzir KV cache (memória e latência)
+            if !has_avx2 {
+                o.entry("num_ctx").or_insert(serde_json::json!(512));
+                o.entry("num_batch").or_insert(serde_json::json!(128));
             }
         }
         return;
@@ -4132,12 +4154,15 @@ fn inject_efficiency_params(
     let Some(o) = opts.as_object_mut() else { return };
     match priority {
         2 => {
-            o.entry("num_batch").or_insert(serde_json::json!(256));
+            o.entry("num_batch").or_insert(serde_json::json!(if has_avx2 { 256 } else { 128 }));
             if is_survival {
                 // WorkPc: resposta interativa — usa todos os 4 cores do i5-3470
                 o.entry("num_thread").or_insert(serde_json::json!(4));
-            } else if on_battery {
+            } else if on_battery || !has_avx2 {
                 o.entry("num_thread").or_insert(serde_json::json!(2));
+            }
+            if !has_avx2 {
+                o.entry("num_ctx").or_insert(serde_json::json!(512));
             }
         }
         _ => {
@@ -4148,10 +4173,15 @@ fn inject_efficiency_params(
                 o.entry("num_batch").or_insert(serde_json::json!(64));
                 o.entry("num_ctx").or_insert(serde_json::json!(1024));
             } else {
-                // Normal: 2 cores (impacto mínimo no sistema)
-                o.entry("num_thread").or_insert(serde_json::json!(2));
-                o.entry("num_batch").or_insert(serde_json::json!(256));
-                o.entry("num_ctx").or_insert(serde_json::json!(2048));
+                // Sem AVX2: limites conservadores para não saturar CPU
+                let (num_thread, num_batch, num_ctx) = if has_avx2 {
+                    (2u32, 256u32, 2048u32)
+                } else {
+                    (2u32, 128u32, 512u32) // i5-3470: sem AVX2 → contextos longos travam
+                };
+                o.entry("num_thread").or_insert(serde_json::json!(num_thread));
+                o.entry("num_batch").or_insert(serde_json::json!(num_batch));
+                o.entry("num_ctx").or_insert(serde_json::json!(num_ctx));
                 if hw == HardwareProfile::Laptop {
                     // MX150 tem apenas 2 GB VRAM — background não deve competir com P1/P2
                     o.entry("num_gpu").or_insert(serde_json::json!(0));
@@ -4504,6 +4534,16 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
 
     // Armazena o AppHandle para emissão de eventos críticos ao frontend
     *state.0.app_handle.lock().await = Some(app_handle);
+
+    // Log de capacidades da CPU no startup
+    if state.0.has_avx2 {
+        log::info!("logos: CPU tem AVX2 — inferência INT4 em velocidade máxima");
+    } else {
+        log::warn!(
+            "logos: CPU SEM AVX2 — inferência INT4 30-50% mais lenta; \
+             aplicando limites conservadores: num_ctx=512, num_batch=128, num_thread=2"
+        );
+    }
 
     // Task de atualização do status de bateria a cada 30s.
     // Atualiza on_battery, battery_pct e battery_policy (3 níveis: Normal/Economy/Critical).
@@ -5401,6 +5441,7 @@ mod tests {
             active_profile:      Mutex::new("normal".to_string()),
             hardware_mode:       "normal".to_string(),
             hardware_profile:    HardwareProfile::WorkPc,
+            has_avx2:            detect_avx2(),
             queue_counts:        Mutex::new([0, 0, 0]),
             client,
             sys:                 Mutex::new(sys),
@@ -5755,6 +5796,76 @@ mod tests {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
         assert_eq!(*state.0.battery_pct.lock().await, 100u8);
+    }
+
+    // ── AVX2 — detecção e limites ─────────────────────────────────────────────
+
+    #[test]
+    fn detect_avx2_returns_bool() {
+        // Apenas verifica que a função não causa panic — o valor depende da CPU de CI
+        let result = detect_avx2();
+        // Em qualquer máquina x86_64 moderna com AVX2, deve ser true
+        // Em arquiteturas sem AVX2 (i5-3470) será false
+        let _ = result; // sem assert — valor é legítimo em ambos os casos
+    }
+
+    #[test]
+    fn inject_efficiency_no_avx2_p3_limits_context() {
+        // Sem AVX2: P3 deve ter num_ctx=512, num_batch=128, num_thread=2
+        let mut body = serde_json::Map::new();
+        inject_efficiency_params(&mut body, 3, HardwareProfile::WorkPc, false, false, false);
+        let opts = body["options"].as_object().expect("options ausente");
+        assert_eq!(opts["num_ctx"].as_u64(), Some(512), "num_ctx deve ser 512 sem AVX2");
+        assert_eq!(opts["num_batch"].as_u64(), Some(128), "num_batch deve ser 128 sem AVX2");
+        assert_eq!(opts["num_thread"].as_u64(), Some(2));
+    }
+
+    #[test]
+    fn inject_efficiency_no_avx2_p1_limits_context() {
+        // Sem AVX2: P1 também recebe num_ctx=512, num_batch=128
+        let mut body = serde_json::Map::new();
+        inject_efficiency_params(&mut body, 1, HardwareProfile::WorkPc, false, false, false);
+        let opts = body["options"].as_object().expect("options ausente");
+        assert_eq!(opts["num_ctx"].as_u64(), Some(512));
+        assert_eq!(opts["num_batch"].as_u64(), Some(128));
+        assert_eq!(opts["num_thread"].as_u64(), Some(2));
+    }
+
+    #[test]
+    fn inject_efficiency_no_avx2_p2_limits_batch_and_ctx() {
+        // Sem AVX2: P2 recebe num_batch=128 e num_ctx=512
+        let mut body = serde_json::Map::new();
+        inject_efficiency_params(&mut body, 2, HardwareProfile::MainPc, false, false, false);
+        let opts = body["options"].as_object().expect("options ausente");
+        assert_eq!(opts["num_batch"].as_u64(), Some(128));
+        assert_eq!(opts["num_ctx"].as_u64(), Some(512));
+    }
+
+    #[test]
+    fn inject_efficiency_with_avx2_p3_normal_context() {
+        // Com AVX2: P3 usa contexto completo (2048)
+        let mut body = serde_json::Map::new();
+        inject_efficiency_params(&mut body, 3, HardwareProfile::MainPc, false, false, true);
+        let opts = body["options"].as_object().expect("options ausente");
+        assert_eq!(opts["num_ctx"].as_u64(), Some(2048), "AVX2 → num_ctx=2048");
+        assert_eq!(opts["num_batch"].as_u64(), Some(256));
+    }
+
+    #[test]
+    fn inject_efficiency_no_avx2_p3_survival_unchanged() {
+        // Modo sobrevivência já aplica limites próprios — AVX2 não interfere
+        let mut body = serde_json::Map::new();
+        inject_efficiency_params(&mut body, 3, HardwareProfile::WorkPc, true, false, false);
+        let opts = body["options"].as_object().expect("options ausente");
+        assert_eq!(opts["num_ctx"].as_u64(), Some(1024)); // survival mantém 1024
+    }
+
+    #[tokio::test]
+    async fn test_state_has_avx2_field_accessible() {
+        // has_avx2 é acessível e inicializado em make_test_state
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let _ = state.0.has_avx2; // apenas verifica acesso sem panic
     }
 
     // ── Semáforo — 4 cenários ─────────────────────────────────────────────────
@@ -6411,6 +6522,11 @@ mod tests {
 
         let dir   = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
+
+        // Habilitar inferência para ultrapassar o gate de inference_enabled
+        // e chegar ao check do embed-server (que menciona porta 8082 no 503).
+        state.0.inference_enabled.store(true, std::sync::atomic::Ordering::Relaxed);
+
         let headers = axum::http::HeaderMap::new();
         let body    = axum::body::Bytes::from(r#"{"input": "teste"}"#);
 

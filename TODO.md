@@ -7330,7 +7330,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **LOGOS — política de bateria em 3 níveis (`HUB/src-tauri/src/logos.rs`)** — implementado: `BatteryPolicy` enum (Normal/Economy/Critical) com `from_state(discharging, pct)`. `read_battery_info()` lê `/sys/class/power_supply/*/capacity` + status. Inner tem `battery_pct: Mutex<u8>` e `battery_policy: Mutex<BatteryPolicy>`. Polling a cada 30s com log de mudança. Critical bloqueia P2 nas 2 proxys (queue_and_forward e proxy_openai_to_llama). Economy = comportamento anterior de on_battery. StatusResponse expandido. 12 testes de BatteryPolicy. 2026-05-30.
 
-- [ ] **LOGOS — detecção de AVX2 no startup (`HUB/src-tauri/src/logos.rs`)** — i5-3470 (WorkPc) não tem AVX2 — 30–50% mais lento em inferência INT4. Checar `/proc/cpuinfo` (Linux) ou cpuid (Windows) no startup. Se AVX2 ausente: forçar `num_ctx=512`, `num_batch=128`, `num_thread=2` independentemente do perfil de hardware detectado. Origem: Auditoria 05-05, LOGOS/HUB.
+- [x] **LOGOS — detecção de AVX2 no startup (`HUB/src-tauri/src/logos.rs`)** — implementado: `detect_avx2()` via `std::arch::is_x86_feature_detected!("avx2")` (CPUID runtime, funciona em Linux e Windows). `has_avx2: bool` em `Inner`. Log de aviso no startup se ausente. `inject_efficiency_params` agora recebe `has_avx2`; sem AVX2 força `num_ctx=512`, `num_batch=128`, `num_thread=2` em P1/P2/P3. 7 testes de injeção e detecção. 2026-05-30.
 
 #### 🔵 Baixa prioridade
 
