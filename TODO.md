@@ -7381,7 +7381,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 #### 🔵 Baixa prioridade
 
-- [ ] **Mnemosyne — slide deck export PPTX a partir de coleção (`core/slidemaker.py`)** — LLM gera outline → `python-pptx` monta .pptx. `pip install python-pptx`. Botão na área de Relatórios. Origem: Auditoria 05-05, Mnemosyne.
+- [x] **Mnemosyne — slide deck export PPTX a partir de coleção (`core/slidemaker.py`)** — LLM gera outline → `python-pptx` monta .pptx. `pip install python-pptx`. Botão na área de Relatórios. Origem: Auditoria 05-05, Mnemosyne. 2026-05-30.
 
 - [x] **LOGOS — proteção contra thermal throttling RX 6600 (`HUB/src-tauri/src/logos.rs`)** — implementado: `read_gpu_temp_celsius()` via sysfs hwmon (`/sys/class/drm/cardX/device/hwmon/hwmonY/temp1_input`). Watchdog a cada 15s: >85°C → `p3_thermal_blocked=true`; <80°C → retoma. P3 bloqueado nas duas proxys quando flag ativa. `StatusResponse` expõe `p3_thermal_blocked` e `gpu_temp_celsius`. 4 testes de histerese e inicialização. 2026-05-30.
 

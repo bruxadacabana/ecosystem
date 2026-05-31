@@ -1,19 +1,24 @@
 ## Fila de implementação atual:
 
-pode prosseguir para a implementação da seção '### LOGOS — Reestruturação ciclo de vida LLMs | 2026-05-27
-', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir.
-Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes exaustivamente e incluir criação de logs em todo o processo do llama cpp.
+pode prosseguir para a implementação da seção '### LOGOS — Dois servidores LLM simultâneos (AKASHA + Mnemosyne em paralelo) | 2026-05-30', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir. Seu resumo sempre deve ser detalhado mas acessível, explicando mais a lógica do que códigos e tecnicidades.
+Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes exaustivamente e incluir criação de logs em todo o processo envolvendo a nova feature implementada.
 
 ---
 
-O valor real desse servidor pro ecossistema seria como nó sempre ligado: Syncthing disponível mesmo quando o CachyOS estiver desligado, AKASHA crawlando em background permanentemente, KOSMOS agregando feeds o dia todo. Coisas que hoje dependem do PC principal estar acordado.
+> O valor real desse servidor pro ecossistema seria como nó sempre ligado: Syncthing disponível mesmo quando o CachyOS estiver desligado, AKASHA crawlando em background permanentemente, KOSMOS agregando feeds o dia todo. Coisas que hoje dependem do PC principal estar acordado.
+
+---
+
+quando terminar, confirme que nenhum item da seção nova (### AKASHA como Google + Gemini — RAG grounded e integração com Mnemosyne | 2026-05-30 e ### AKASHA — Busca sem limites, semântica e multilíngue | 2026-05-30) contradiga a seção ### LOGOS — Dois servidores LLM simultâneos (AKASHA + Mnemosyne em paralelo) | 2026-05-30
 
 ---
 
 
 ## próximo: 
 
-### Bugs e investigações reportados após uso real | 2026-05-23 (b)
+### AKASHA — Busca sem limites, semântica e multilíngue | 2026-05-30
+
+### AKASHA como Google + Gemini — RAG grounded e integração com Mnemosyne | 2026-05-30
 
 ### KOSMOS — refazer do zero com nova stack | 2026-05-20
 

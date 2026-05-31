@@ -111,7 +111,7 @@ def iter_slides(
         for _, content in docs:
             try:
                 raw = llm_map.invoke(_MAP_PROMPT.format(chunk=content))
-                extracted = strip_think(raw).strip()
+                extracted = strip_think(raw.content).strip()
                 if extracted:
                     points.append(extracted)
             except Exception:

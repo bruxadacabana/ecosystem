@@ -3448,6 +3448,7 @@ class MainWindow(QMainWindow):
             tile = StudioTileWidget(output)
             tile.output_opened.connect(self._on_tile_opened)
             tile.output_deleted.connect(self._on_tile_deleted)
+            tile.export_pptx_requested.connect(self._export_output_pptx)
             layout.insertWidget(layout.count() - 1, tile)
 
     def _add_studio_tile(self, output: StudioOutput) -> None:
@@ -3455,6 +3456,7 @@ class MainWindow(QMainWindow):
         tile = StudioTileWidget(output)
         tile.output_opened.connect(self._on_tile_opened)
         tile.output_deleted.connect(self._on_tile_deleted)
+        tile.export_pptx_requested.connect(self._export_output_pptx)
         self._studio_tiles_layout.insertWidget(0, tile)
         self._studio_empty_lbl.setVisible(False)
 
@@ -3507,6 +3509,10 @@ class MainWindow(QMainWindow):
         export_btn = QPushButton("Exportar .md")
         export_btn.clicked.connect(lambda: self._export_output_md(output))
         btn_row.addWidget(export_btn)
+        if output.type == "Slides":
+            pptx_btn = QPushButton("Exportar .pptx")
+            pptx_btn.clicked.connect(lambda: self._export_output_pptx(output))
+            btn_row.addWidget(pptx_btn)
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
@@ -3669,6 +3675,29 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Exportado: {path}")
             except OSError as exc:
                 QMessageBox.warning(self, "Erro ao exportar", str(exc))
+
+    def _export_output_pptx(self, output: StudioOutput) -> None:
+        """Converte conteúdo Markdown de Slides para .pptx e salva."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar como PowerPoint", "slides.pptx", "PowerPoint (*.pptx)"
+        )
+        if not path:
+            return
+        try:
+            from core.slidemaker import markdown_to_pptx
+            markdown_to_pptx(output.content, path, title=output.title or "Apresentação")
+            self.statusBar().showMessage(f"Exportado: {path}")
+            self._log_event(f"Slides exportados: {path}")
+        except ImportError:
+            QMessageBox.warning(
+                self,
+                "python-pptx não instalado",
+                "Instale python-pptx para exportar:\n\npip install python-pptx",
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "Erro ao exportar", str(exc))
+        except OSError as exc:
+            QMessageBox.warning(self, "Erro ao salvar", str(exc))
 
     def _on_tile_deleted(self, output_id: str) -> None:
         """Remove output do store e o tile da UI."""

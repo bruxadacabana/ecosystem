@@ -39,8 +39,9 @@ _DEFAULT_COLOR = "#9A9080"
 class StudioTileWidget(QWidget):
     """Card de um output persistente do Studio."""
 
-    output_opened: Signal = Signal(object)   # StudioOutput
-    output_deleted: Signal = Signal(str)     # output_id
+    output_opened: Signal = Signal(object)          # StudioOutput
+    output_deleted: Signal = Signal(str)            # output_id
+    export_pptx_requested: Signal = Signal(object)  # StudioOutput (só tipo Slides)
 
     def __init__(self, output: StudioOutput, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -114,6 +115,19 @@ class StudioTileWidget(QWidget):
 
         btn_col.addWidget(self._edit_btn)
         btn_col.addWidget(self._del_btn)
+
+        if self._output.type == "Slides":
+            self._pptx_btn: QPushButton | None = QPushButton("↓")
+            self._pptx_btn.setObjectName("studioTileBtn")
+            self._pptx_btn.setFixedSize(28, 28)
+            self._pptx_btn.setToolTip("Exportar .pptx")
+            self._pptx_btn.clicked.connect(
+                lambda: self.export_pptx_requested.emit(self._output)
+            )
+            btn_col.addWidget(self._pptx_btn)
+        else:
+            self._pptx_btn = None
+
         root.addLayout(btn_col)
 
     # ------------------------------------------------------------------
@@ -131,6 +145,8 @@ class StudioTileWidget(QWidget):
     def _set_action_buttons_visible(self, visible: bool) -> None:
         self._edit_btn.setVisible(visible)
         self._del_btn.setVisible(visible)
+        if self._pptx_btn is not None:
+            self._pptx_btn.setVisible(visible)
 
     # ------------------------------------------------------------------
     # Deleção
