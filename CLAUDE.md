@@ -187,10 +187,13 @@ O `sync_root` é lido em runtime por todos os apps via `ecosystem_client` — nu
 O HUB é o **dashboard e painel de controle do ecossistema**: lança apps, centraliza configuração, visualiza dados de todos os programas e hospeda o **LOGOS** (proxy inteligente de LLM).
 
 O LOGOS gerencia prioridades de execução de IA:
-- **P1 (crítica):** leitura ativa no KOSMOS (leitor RSS/notícias — envia P1 enquanto o usuário está lendo)
-- **P2 (importante):** buscas RAG no Mnemosyne
-- **P3 (background):** análise/indexação KOSMOS, reflexões e indexação Mnemosyne, knowledge_worker AKASHA
+- **P1 (crítica):** KOSMOS — usuária abriu artigo e a análise LLM está sendo exibida (usuária esperando)
+- **P2 (importante):** buscas RAG no Mnemosyne; KOSMOS sync/análise de feed (não urgente)
+- **P3 (background):** knowledge_worker AKASHA, reflexões/indexação Mnemosyne, análise background KOSMOS — **P3 nunca é bloqueado, apenas atrasado** (delay loop, não hard-reject)
 - **AETHER não chama o LOGOS** — é apenas editor de texto, sem integração com LLM.
+
+**KOSMOS — estado atual e futuro:**
+O KOSMOS está sendo refeito e ainda não chama o LOGOS. Quando chamar, usará `llm_analysis` (modelo separado, ex: gemma2:2b) e terá seu próprio servidor llama-server (`ServerTarget::Kosmos`, porta 8084). Em hardware com VRAM ocupada por AKASHA + Mnemosyne, o servidor KOSMOS roda em CPU (via CPU fallback já implementado no LOGOS).
 
 Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é** um app Android — a Fase 3 (Android APK) está suspensa para replanejamento.
 

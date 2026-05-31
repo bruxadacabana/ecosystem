@@ -6743,6 +6743,15 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 - [ ] **Politeness: throttle de 2s por domínio no scraping** — implementar junto ao throttle global de `ecosystem_scraper.py` (§Pendências priorizadas — item ecosystem_scraper throttle). Se `ArticleScraper` usa `ecosystem_scraper` diretamente, não precisa de código extra; verificar na nova stack.
 
+#### KOSMOS — Integração com LOGOS (quando reescrito) | 2026-05-31
+> Contexto: o KOSMOS atual não chama o LOGOS. Quando a nova stack for implementada, as decisões abaixo definem como a integração deve funcionar.
+
+- [ ] **ServerTarget::Kosmos — servidor llama-server próprio (porta 8084)** — o KOSMOS usa `llm_analysis` (ex: gemma2:2b), modelo diferente do AKASHA (`llm_query`) e da Mnemosyne (`llm_rag`). Compartilhar servidor com o AKASHA causaria model thrashing. Implementar `ServerTarget::Kosmos` análogo ao `ServerTarget::Mnemosyne` já existente: nova constante `KOSMOS_SERVER_PORT: u16 = 8084`, campo `kosmos_proc` em `Inner`, idle/crash watchdogs independentes, `route_request("kosmos") → ServerTarget::Kosmos`. **CPU fallback automático:** quando AKASHA (8081) + Mnemosyne (8083) já estão carregados na VRAM (~6.7 GB de 8 GB), o servidor KOSMOS é iniciado em modo CPU (`--n-gpu-layers 0`). O VRAM pre-check de `ensure_server_loaded` detecta VRAM insuficiente e dispara o fallback CPU já implementado. Em hardware de trabalho (Windows, sem GPU), KOSMOS roda em CPU assim como os outros.
+
+- [ ] **Prioridades corretas no KOSMOS** — o KOSMOS deve enviar: `X-Priority: 1` quando a análise é disparada pelo usuário abrindo um artigo (usuária esperando a resposta na tela); `X-Priority: 2` para sync/análise de feed (não urgente); `X-Priority: 3` para análise background de artigos antigos. Esses valores interagem com os perfis já implementados: no perfil `estudo`, `("kosmos", 1) => 2` — KOSMOS P1 vira P2 porque Mnemosyne RAG tem prioridade. No perfil `analise`, `("kosmos", 3) => 2` — background KOSMOS promovido. P3 nunca é bloqueado, apenas atrasado (delay loop já implementado no Passo 0B).
+
+- [ ] **Headers X-App e X-Priority em todas as chamadas** — padrão estabelecido no Passo 12 para o AKASHA: `headers={"X-App": "kosmos", "X-Priority": "<1|2|3>"}`. Criar helper `_logos_llm_post()` análogo ao do AKASHA para centralizar headers + retry Retry-After.
+
 #### KOSMOS [fixes] | 2026-05-21
 - [x] **reader_view.py — remover guard `ai_enabled` em `_start_analyze()`** — linha 1223 checava `self._config.get("ai_enabled", False)`, chave nunca setada → análise inline no reader nunca rodava. Removida; `get_gen_model()` logo abaixo já serve como guard suficiente (se nenhum modelo configurado no HUB, retorna string vazia e análise é pulada).
 - [x] **main_window.py — corrigir `_on_retry_unanalyzed()`** — linha 481 checava `self._config.get("ai_enabled", False)`, mesma chave morta → retry de artigos não analisados nunca enfileirava nada. Substituído por `self._bg_analyzer._ai_enabled()` (usa `get_gen_model()` internamente, consistente com o BackgroundAnalyzer).

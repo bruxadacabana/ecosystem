@@ -5,11 +5,6 @@ Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça 
 
 ---
 
-não entendi bem "Passo 5 — Roteamento real: Toda requisição agora passa por route_request(app_name) que decide qual servidor atender. "mnemosyne" vai para o servidor 8083, tudo o mais vai para 8081" se cada funcionalidade/aplicativo tem sua llm própria. Criar servidores individuais para cada que são ativos e desativados conforme uso não é mais prático?
-Dai temos "Passo 10 — UI atualizada: O painel do LOGOS agora mostra "Servidor AKASHA", "Servidor Mnemosyne" e "Servidor de Embedding" como três linhas distintas." para cada programa que usa LLM.
-
----
-
 > O valor real desse servidor pro ecossistema seria como nó sempre ligado: Syncthing disponível mesmo quando o CachyOS estiver desligado, AKASHA crawlando em background permanentemente, KOSMOS agregando feeds o dia todo. Coisas que hoje dependem do PC principal estar acordado.
 
 ---
