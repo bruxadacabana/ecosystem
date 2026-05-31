@@ -55,6 +55,13 @@ VECTOR_SEARCH_ENABLED: bool = False
 VEC_EMBED_MODEL:       str  = "all-MiniLM-L6-v2"
 
 # ---------------------------------------------------------------------------
+# Busca semântica para crawl_pages via LOGOS + sqlite-vec (Grupo 2)
+# Feature flag lida de ecosystem.json em runtime. Default True.
+# ---------------------------------------------------------------------------
+
+SEMANTIC_SEARCH_ENABLED: bool = True
+
+# ---------------------------------------------------------------------------
 # Usage-based ranking — desativado por padrão
 # Combina posição RRF com frequência de acesso + decaimento temporal.
 # α (USAGE_RANKING_ALPHA): peso do ranking posicional (1-α = peso do uso).
@@ -113,14 +120,15 @@ HYDE_ENABLED: bool = True
 # ---------------------------------------------------------------------------
 
 SOURCE_WEIGHTS: dict[str, float] = {
-    "PAPER":     2.0,   # artigos científicos (Semantic Scholar, arXiv, OpenAlex)
-    "HIGHLIGHT": 1.6,   # trechos destacados explicitamente pela usuária
-    "AKASHA":    1.4,   # páginas arquivadas intencionalmente
-    "KOSMOS":    1.2,   # arquivo pessoal do KOSMOS
-    "OBSIDIAN":  1.2,   # vault do Obsidian / Mnemosyne
-    "MNEMOSYNE": 1.1,   # busca semântica ChromaDB
-    "HERMES":    1.0,   # transcrições automáticas
-    "DEPOIS":    1.0,   # salvo para ler depois
+    "PAPER":          2.0,   # artigos científicos (Semantic Scholar, arXiv, OpenAlex)
+    "HIGHLIGHT":      1.6,   # trechos destacados explicitamente pela usuária
+    "AKASHA":         1.4,   # páginas arquivadas intencionalmente
+    "KOSMOS":         1.2,   # arquivo pessoal do KOSMOS
+    "OBSIDIAN":       1.2,   # vault do Obsidian / Mnemosyne
+    "MNEMOSYNE":      1.1,   # busca semântica ChromaDB
+    "CRAWL_SEMANTIC": 1.1,   # crawl_pages via KNN semântico (LOGOS embeddings)
+    "HERMES":         1.0,   # transcrições automáticas
+    "DEPOIS":         1.0,   # salvo para ler depois
 }
 
 _expansion_model_cache: str = ""
@@ -1603,6 +1611,72 @@ async def find_related(url: str, n: int = 5) -> list[SearchResult]:
     return results
 
 
+async def _run_semantic_crawl_search(query: str) -> list[SearchResult]:
+    """Executa busca semântica em crawl_pages se condições forem atendidas.
+
+    Condições: LOGOS disponível + SEMANTIC_SEARCH_ENABLED + >= 10 embeddings.
+    Retorna [] silenciosamente em qualquer falha.
+    """
+    try:
+        n = await _count_page_embeddings()
+        if n < 10:
+            return []
+        from services.semantic_search import semantic_search_local as _sem_search
+        pairs = await _sem_search(query, top_k=100)
+        return await _semantic_to_crawl_results(pairs)
+    except Exception:
+        return []
+
+
+def _get_semantic_search_enabled() -> bool:
+    """Lê ecosystem.json["akasha"]["semantic_search"] em runtime. Default True."""
+    try:
+        from ecosystem_client import get_akasha_config as _gc  # type: ignore
+        return bool((_gc() or {}).get("semantic_search", True))
+    except Exception:
+        return True
+
+
+async def _count_page_embeddings() -> int:
+    """Retorna número de entradas em page_embeddings. 0 em qualquer erro."""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            row = await (await db.execute("SELECT COUNT(*) FROM page_embeddings")).fetchone()
+            return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+async def _semantic_to_crawl_results(pairs: list[tuple[str, float]]) -> list[SearchResult]:
+    """Converte pares (url, distance) de semantic_search_local em SearchResult.
+
+    Consulta crawl_pages para título e snippet. Falha silenciosamente → [].
+    """
+    if not pairs:
+        return []
+    urls = [url for url, _ in pairs]
+    try:
+        placeholders = ",".join("?" * len(urls))
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                f"SELECT url, title, content_md FROM crawl_pages WHERE url IN ({placeholders})",
+                urls,
+            )).fetchall()
+        url_data = {r[0]: (r[1] or "", r[2] or "") for r in rows}
+        results: list[SearchResult] = []
+        for url, _ in pairs:
+            title, content_md = url_data.get(url, ("", ""))
+            results.append(SearchResult(
+                title=title or url,
+                url=url,
+                snippet=content_md[:200],
+                source="CRAWL_SEMANTIC",
+            ))
+        return results
+    except Exception:
+        return []
+
+
 async def search_local(
     query: str,
     max_results: int = 500,
@@ -1627,10 +1701,24 @@ async def search_local(
         expand_task = asyncio.ensure_future(_expand_query_llm(query))
     entity_task = asyncio.ensure_future(_expand_query_entities(query))
 
+    # Busca semântica em crawl_pages (LOGOS + sqlite-vec) — em paralelo com FTS
+    _semantic_task = None
+    if _inference_available and _get_semantic_search_enabled():
+        _semantic_task = asyncio.ensure_future(_run_semantic_crawl_search(query))
+
     fts_results       = await _search_fts(query, max_results)
     chroma_results    = await _search_chroma(query)
     vec_results       = await _search_vec(query, max_results)
     highlight_results = await _search_highlights(query)
+
+    semantic_crawl_results: list[SearchResult] = []
+    if _semantic_task is not None:
+        try:
+            semantic_crawl_results = await asyncio.wait_for(
+                asyncio.shield(_semantic_task), timeout=5.0
+            )
+        except (asyncio.TimeoutError, Exception):
+            _semantic_task.cancel()
 
     # MUST+SHOULD: ancora termos ao corpus e executa segunda busca FTS5 aditiva
     fts_expanded: list[SearchResult] = []
@@ -1685,13 +1773,16 @@ async def search_local(
             pass
 
     combined = _rrf(
-        [fts_results, fts_expanded, fts_prf, fts_entity, chroma_results, vec_results, highlight_results],
+        [fts_results, fts_expanded, fts_prf, fts_entity, chroma_results, vec_results,
+         highlight_results, semantic_crawl_results],
         weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0),
     )[:max_results]
     log.debug(
-        "retrieval pool: fts=%d fts_exp=%d fts_prf=%d fts_ent=%d chroma=%d vec=%d hl=%d → rrf=%d",
+        "retrieval pool: fts=%d fts_exp=%d fts_prf=%d fts_ent=%d chroma=%d vec=%d hl=%d "
+        "sem_crawl=%d → rrf=%d",
         len(fts_results), len(fts_expanded), len(fts_prf), len(fts_entity),
-        len(chroma_results), len(vec_results), len(highlight_results), len(combined),
+        len(chroma_results), len(vec_results), len(highlight_results),
+        len(semantic_crawl_results), len(combined),
     )
     try:
         from services.knowledge_worker import apply_knowledge_boost as _kb_boost
