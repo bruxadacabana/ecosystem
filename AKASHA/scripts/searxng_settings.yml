@@ -1,6 +1,9 @@
 # =============================================================================
 # SearXNG settings.yml — Configuração curada para uso com o AKASHA
 #
+# Usa use_default_settings para mergear com os defaults do SearXNG.
+# Só sobrescreve o que é necessário — o resto vem dos defaults.
+#
 # Gerado por: AKASHA/scripts/setup_searxng.sh
 # Referência: https://docs.searxng.org/admin/settings/settings.html
 #
@@ -8,16 +11,26 @@
 # Para instalação manual, gere: python3 -c "import secrets; print(secrets.token_hex(32))"
 # =============================================================================
 
+# Merge com os defaults — não substitui inteiramente o settings.yml padrão.
+# use_default_settings.engines.keep_only: mantém apenas esses engines.
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - brave
+      - startpage
+      - bing
+      - wikipedia
+      - google
+      - wikidata
+      - arxiv
+      - semantic scholar
+
 general:
   debug: false
   instance_name: "AKASHA Search"
   donation_url: false
   contact_url: false
-
-brand:
-  new_issue_url: false
-  docs_url: false
-  public_instances: false
 
 search:
   safe_search: 0          # sem filtro — a usuária decide o que é seguro
@@ -25,15 +38,16 @@ search:
   default_lang: ""        # qualquer idioma — não restringir por padrão
   ban_time_on_fail: 5
   max_ban_time_on_fail: 120
+  formats:
+    - html
+    - json               # necessário para a API JSON usada pelo AKASHA
 
 server:
   port: 8888
   bind_address: "127.0.0.1"   # apenas local — nunca expor na rede
   secret_key: "__SECRET_KEY__"
-  base_url: "http://localhost:8888"
-  image_proxy: false
-  http_protocol_version: "1.0"
-  method: "POST"
+  base_url: false              # sem base_url pública
+  limiter: false               # sem rate limiting (uso local)
   default_http_headers:
     X-Content-Type-Options: nosniff
     X-XSS-Protection: 1; mode=block
@@ -50,88 +64,9 @@ ui:
   default_theme: simple
   results_on_new_tab: false
 
-# ---------------------------------------------------------------------------
-# Engines — curadas para automação e privacidade
-#
-# Critérios de inclusão:
-#   - Retornam resultados via API simples (sem JS obrigatório)
-#   - Disponíveis sem conta/token
-#   - Diversificam fontes de resultados
-#
-# Desabilitados por padrão (requerem JS, bloqueiam bots, ou têm TOS restritivo):
-#   google (bloqueia bots frequentemente) — habilitado com weight baixo como fallback
-#   baidu, yahoo, bing_news, etc.
-# ---------------------------------------------------------------------------
-engines:
-  - name: duckduckgo
-    engine: duckduckgo
-    shortcut: ddg
-    timeout: 8.0
-    disabled: false
-
-  - name: brave
-    engine: brave
-    shortcut: brave
-    timeout: 8.0
-    disabled: false
-
-  - name: startpage
-    engine: startpage
-    shortcut: sp
-    timeout: 8.0
-    disabled: false
-
-  - name: bing
-    engine: bing
-    shortcut: b
-    timeout: 8.0
-    disabled: false
-
-  - name: wikipedia
-    engine: wikipedia
-    shortcut: w
-    timeout: 5.0
-    disabled: false
-
-  - name: google
-    engine: google
-    shortcut: g
-    timeout: 8.0
-    disabled: false     # habilitado mas pode bloquear — weight=0.5 reduz dependência
-
-  - name: wikidata
-    engine: wikidata
-    shortcut: wd
-    timeout: 5.0
-    disabled: false
-
-  - name: arxiv
-    engine: arxiv
-    shortcut: arxiv
-    timeout: 10.0
-    disabled: false
-    categories: science
-
-  - name: semantic scholar
-    engine: semantic_scholar
-    shortcut: ss
-    timeout: 10.0
-    disabled: false
-    categories: science
-
-# ---------------------------------------------------------------------------
-# Categorias de resultados exibidas na UI
-# ---------------------------------------------------------------------------
-categories_as_tabs:
-  general:
-    name: Geral
-  science:
-    name: Ciência
-
 outgoing:
   request_timeout: 8.0       # timeout por engine
   max_request_timeout: 15.0  # timeout total da query
   pool_connections: 100
   pool_maxsize: 20
   enable_http2: true
-  # proxies: {} — sem proxy; tráfego vai direto para os engines

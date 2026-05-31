@@ -17,6 +17,9 @@
 
 set -euo pipefail
 
+# Resolver SCRIPT_DIR antes de qualquer cd — BASH_SOURCE[0] é relativo ao CWD de invocação
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 SEARXNG_DIR="${HOME}/.local/share/searxng"
 SEARXNG_CONFIG_DIR="${HOME}/.config/searxng"
 SEARXNG_PORT=8888
@@ -42,7 +45,13 @@ fi
 # ---------------------------------------------------------------------------
 echo "==> [SearXNG] Instalando dependências via uv..."
 cd "${SEARXNG_DIR}"
-uv sync --frozen 2>/dev/null || uv sync
+# SearXNG usa requirements.txt + setup.py (não pyproject.toml)
+if [ ! -d ".venv" ]; then
+    uv venv .venv
+fi
+uv pip install --python .venv/bin/python -r requirements.txt
+# Instala o próprio pacote searx em modo editável (necessário para python -m searx.webapp)
+uv pip install --python .venv/bin/python -e . 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # 3. Criar diretório de configuração e gerar settings.yml
@@ -56,7 +65,6 @@ if [ -f "${SEARXNG_CONFIG_DIR}/settings.yml" ]; then
 fi
 
 # Copia e ajusta settings.yml do AKASHA (gerado com secret_key)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AKASHA_SETTINGS="${SCRIPT_DIR}/searxng_settings.yml"
 
 if [ -f "${AKASHA_SETTINGS}" ]; then

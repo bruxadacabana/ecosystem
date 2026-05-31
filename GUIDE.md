@@ -1744,9 +1744,11 @@ curl http://localhost:8888/healthz   # deve retornar "OK"
 
 O script `setup_searxng.sh`:
 1. Clona o repositório SearXNG em `~/.local/share/searxng`
-2. Instala dependências via `uv sync`
-3. Aplica `AKASHA/scripts/searxng_settings.yml` (engines curados, sem filtro seguro, qualquer idioma)
-4. Cria e habilita serviço systemd `--user` (inicia com o login)
+2. Cria venv isolado e instala dependências via `uv venv` + `uv pip install -r requirements.txt`
+3. Aplica `AKASHA/scripts/searxng_settings.yml` em `~/.config/searxng/settings.yml` —
+   usa `use_default_settings: true` para fazer merge com os defaults do SearXNG
+   (engines curados via `keep_only`, sem filtro seguro, qualquer idioma, JSON habilitado)
+4. Cria e habilita serviço systemd `--user` (inicia com o login, `Restart=on-failure`)
 
 Engines habilitados: **DuckDuckGo, Brave, Startpage, Bing, Wikipedia, Google, Wikidata, arXiv, Semantic Scholar**
 

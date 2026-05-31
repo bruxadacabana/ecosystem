@@ -150,8 +150,14 @@ async def test_fetch_searxng_preserves_published_date():
 
 
 @pytest.mark.anyio
-async def test_fetch_searxng_http_error_raises():
-    """HTTP 500 → levanta exceção (não silencia — o caller decide o fallover)."""
+async def test_fetch_searxng_http_error_returns_empty():
+    """HTTP 500 → retorna lista vazia (erro silenciado em _one_page para não cancelar páginas restantes).
+
+    CORREÇÃO: teste anterior esperava exceção — incorreto.
+    O design de _one_page usa try/except para que uma página falhada não
+    cancele as demais em buscas multi-página. O caller (via _fetch_web) decide
+    o fallover baseado na lista vazia retornada.
+    """
     import httpx
 
     async def _mock_get(*a, **kw):
@@ -164,8 +170,8 @@ async def test_fetch_searxng_http_error_raises():
 
     with patch.object(httpx, "AsyncClient", return_value=mock_client):
         from services.web_search import _fetch_searxng
-        with pytest.raises(Exception):
-            await _fetch_searxng("test", 10, "http://searxng.local")
+        results = await _fetch_searxng("test", 10, "http://searxng.local")
+    assert results == [], "HTTP 500 deve retornar lista vazia (não levantar exceção)"
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +195,8 @@ async def test_fetch_web_uses_searxng_when_configured(monkeypatch):
 
     searxng_result = _ws.SearchResult(title="SearXNG", url="https://sx.com", snippet="ok")
 
-    async def _mock_searxng(q, n, url):
+    async def _mock_searxng(q, n, url, n_pages=1, lang=""):
+        # Aceita n_pages e lang (adicionados quando suporte multi-página foi implementado)
         return [searxng_result]
 
     monkeypatch.setattr(_ws, "_fetch_searxng", _mock_searxng)

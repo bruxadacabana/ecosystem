@@ -322,9 +322,10 @@ sudo pacman -S base-devel cmake pkg-config openssl git
 sudo pacman -S webkit2gtk-4.1 libayatana-appindicator
 
 # SearXNG (backend de busca do AKASHA — opcional mas recomendado)
-# Instalar via AUR: yay -S searxng-git
-# Configurar: /etc/searxng/settings.yml (engines: google, bing, brave, duckduckgo)
-# Iniciar: systemctl --user enable --now searxng
+# Instalação automatizada via script (requer git e uv):
+bash AKASHA/scripts/setup_searxng.sh
+# Instala em ~/.local/share/searxng, configura ~/.config/searxng/settings.yml,
+# cria serviço systemd --user e inicia na porta 8888.
 # Configurar no AKASHA: ecosystem.json["akasha"]["web_search_backend"] = "http://localhost:8888"
 
 # Python
