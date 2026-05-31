@@ -9,10 +9,6 @@ Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça 
 
 ---
 
-quando terminar, confirme que nenhum item da seção nova (### AKASHA como Google + Gemini — RAG grounded e integração com Mnemosyne | 2026-05-30 e ### AKASHA — Busca sem limites, semântica e multilíngue | 2026-05-30) contradiga a seção ### LOGOS — Dois servidores LLM simultâneos (AKASHA + Mnemosyne em paralelo) | 2026-05-30
-
----
-
 
 ## próximo: 
 
