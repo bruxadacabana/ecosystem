@@ -7243,7 +7243,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **Pesquisa 2 — Qualidade de extração de conteúdo web** — pesquisar: comparação entre trafilatura, readability-lxml, boilerpy3 e newspaper4k para extração de texto limpo de HTML; quando cada um falha (SPAs, paywalls, Cloudflare); estratégias para detectar páginas com conteúdo real vs. páginas de navegação ou login sem conteúdo útil; custo de adicionar um segundo extrator como fallback no ecossistema atual. Salvar em `pesquisas.md`.
 
-- [ ] **Pesquisa 3 — Busca semântica em coleções pequenas-médias** — pesquisar: sqlite-vec (já existe no código AKASHA mas está desabilitado) vs. FAISS vs. busca linear com numpy para coleções de 1k–100k documentos; formato de armazenamento eficiente de embeddings (BLOB float32 vs. JSON); custo de atualização incremental de índice vetorial; como combinar FTS5 BM25 + busca vetorial via RRF. Salvar em `pesquisas.md`.
+- [x] **Pesquisa 3 — Busca semântica em coleções pequenas-médias** — pesquisar: sqlite-vec (já existe no código AKASHA mas está desabilitado) vs. FAISS vs. busca linear com numpy para coleções de 1k–100k documentos; formato de armazenamento eficiente de embeddings (BLOB float32 vs. JSON); custo de atualização incremental de índice vetorial; como combinar FTS5 BM25 + busca vetorial via RRF. Salvar em `pesquisas.md`.
 
 #### AKASHA — Fixes imediatos (routers/search.py, services/)
 
