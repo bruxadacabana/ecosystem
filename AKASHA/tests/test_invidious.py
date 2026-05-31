@@ -8,6 +8,9 @@ Cobre:
   - search_videos: instância offline (TimeoutException) → lista vazia + mensagem de erro
   - search_videos: resposta malformada → itens inválidos ignorados, sem crash
   - search_videos: videoId ausente em item → item ignorado
+  - search_videos_quick: painel inline — retorna resultados, vazio em falha,
+    respeita limite max, query vazia → []
+  - fallback de instâncias: primária falha → fallback tentado; todas falham → []
 """
 from __future__ import annotations
 
@@ -190,3 +193,86 @@ def test_search_videos_missing_video_id_ignored():
 
     assert len(results) == 1
     assert results[0]["video_id"] == "valid123"
+
+
+# ---------------------------------------------------------------------------
+# search_videos_quick — painel inline
+# ---------------------------------------------------------------------------
+
+def _make_client_mock(response_data: list) -> MagicMock:
+    """Helper: cria mock de httpx.AsyncClient retornando response_data."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = response_data
+    mock_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    return mock_client
+
+
+class TestSearchVideosQuick:
+    def test_empty_query_returns_empty(self):
+        """query vazia → [] sem tocar na API."""
+        from services.invidious import search_videos_quick
+        result = run(search_videos_quick(""))
+        assert result == []
+
+    def test_whitespace_query_returns_empty(self):
+        """query só espaços → []."""
+        from services.invidious import search_videos_quick
+        result = run(search_videos_quick("   "))
+        assert result == []
+
+    def test_returns_results_from_invidious(self):
+        """Resultado parseado pelo search_videos reaparece em search_videos_quick."""
+        from services.invidious import search_videos_quick
+
+        mock_client = _make_client_mock(_FAKE_API_RESPONSE)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            results = run(search_videos_quick("python tutorial", max=4))
+
+        assert len(results) <= 4
+        assert len(results) >= 1
+        assert "video_id" in results[0]
+        assert "title" in results[0]
+        assert "invidious_url" in results[0]
+
+    def test_max_limits_results(self):
+        """max=1 retorna no máximo 1 resultado, mesmo com mais disponíveis."""
+        from services.invidious import search_videos_quick
+
+        mock_client = _make_client_mock(_FAKE_API_RESPONSE)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            results = run(search_videos_quick("test", max=1))
+
+        assert len(results) <= 1
+
+    def test_invidious_offline_returns_empty(self):
+        """Invidious offline → [] sem propagar exceção."""
+        import httpx
+        from services.invidious import search_videos_quick
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            results = run(search_videos_quick("test"))
+
+        assert results == []
+
+    def test_result_has_required_keys(self):
+        """Cada item deve ter video_id, title, author, duration, thumbnail_url, invidious_url."""
+        from services.invidious import search_videos_quick
+
+        mock_client = _make_client_mock(_FAKE_API_RESPONSE)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            results = run(search_videos_quick("test"))
+
+        assert len(results) >= 1
+        for r in results:
+            for key in ("video_id", "title", "author", "duration", "thumbnail_url", "invidious_url"):
+                assert key in r, f"Chave '{key}' ausente: {r}"

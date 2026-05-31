@@ -33,6 +33,7 @@ from services.query_understanding import (
 )
 from services.crawler import search_sites, index_visited_page
 from services.image_indexer import search_images_quick
+from services.invidious import search_videos_quick
 from services.kosmos_search import search_kosmos
 from services.paper_search import PaperResult, search_papers
 from database import (
@@ -357,6 +358,7 @@ async def search(
     paper_results:       list[PaperResult]  = []
     kosmos_results:      list[SearchResult] = []
     image_results:       list[dict]         = []
+    video_inline_results: list[dict]        = []
     error: str | None = None
     corrected_query: str | None = None
     local_facets: dict[str, int] = {}
@@ -469,14 +471,16 @@ async def search(
                 _db_search_wl(_effective_query),
                 search_kosmos(_effective_query),
                 search_images_quick(_effective_query, max=6),
+                search_videos_quick(_effective_query, max=4),
                 return_exceptions=True,
             )
-            web_r, sites_r, papers_r, wl_r, kosmos_r, img_r = tasks
-            if isinstance(web_r,    list): web_results    = web_r
-            if isinstance(sites_r,  list): site_results   = sites_r
-            if isinstance(papers_r, list): paper_results  = papers_r
-            if isinstance(kosmos_r, list): kosmos_results = kosmos_r
-            if isinstance(img_r,    list): image_results  = img_r
+            web_r, sites_r, papers_r, wl_r, kosmos_r, img_r, vid_r = tasks
+            if isinstance(web_r,    list): web_results          = web_r
+            if isinstance(sites_r,  list): site_results         = sites_r
+            if isinstance(papers_r, list): paper_results        = papers_r
+            if isinstance(kosmos_r, list): kosmos_results       = kosmos_r
+            if isinstance(img_r,    list): image_results        = img_r
+            if isinstance(vid_r,    list): video_inline_results = vid_r
             if isinstance(wl_r,     list):
                 watch_later_results = [
                     SearchResult(title=r[2] or r[1], url=r[1], snippet=r[3], source="DEPOIS")
@@ -588,9 +592,12 @@ async def search(
                 local_results = watch_later_results = kosmos_results = site_results = []
 
         total = len(web_results) + len(fav_results) + len(local_results) + len(site_results) + len(watch_later_results) + len(paper_results) + len(kosmos_results)
-        log.debug("resultados q=%r: web=%d fav=%d local=%d sites=%d papers=%d images=%d total=%d",
-                  q, len(web_results), len(fav_results), len(local_results),
-                  len(site_results), len(paper_results), len(image_results), total)
+        log.debug(
+            "resultados q=%r: web=%d fav=%d local=%d sites=%d papers=%d images=%d videos=%d total=%d",
+            q, len(web_results), len(fav_results), len(local_results),
+            len(site_results), len(paper_results), len(image_results),
+            len(video_inline_results), total,
+        )
         src_label = "+".join(filter(None, [
             "web" if src_web else "",
             "local" if src_eco else "",
@@ -779,7 +786,8 @@ async def search(
             "related_docs":        related_docs,
             "related_queries":     related_queries,
             "related_indexed":     related_indexed,
-            "image_results":        image_results,
+            "image_results":         image_results,
+            "video_inline_results":  video_inline_results,
             "wiki_card":           wiki_card,
             "weather_card":        weather_card,
             "translation_card":    translation_card,

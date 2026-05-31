@@ -51,6 +51,23 @@ def _pick_thumbnail(thumbnails: list[dict]) -> str:
     return ""
 
 
+async def search_videos_quick(query: str, max: int = 4) -> list[dict]:
+    """Versão leve para painel inline na página de busca principal.
+
+    Chama search_videos e retorna no máximo `max` resultados.
+    Silenciosa em qualquer falha — retorna [].
+    """
+    if not query.strip():
+        return []
+    try:
+        results, _ = await search_videos(query, max_results=max)
+        log.debug("search_videos_quick: %d resultados q=%r", len(results), query)
+        return results[:max]
+    except Exception as exc:
+        log.debug("search_videos_quick: erro silencioso: %s", exc)
+        return []
+
+
 async def search_videos(
     query: str,
     max_results: int = 15,
