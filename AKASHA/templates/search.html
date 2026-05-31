@@ -210,6 +210,25 @@
 </div>
 {% endif %}
 
+{% if query %}
+{% set _lbase = "/search?q=" ~ (query | urlencode) %}
+{% if src_web %}{% set _lbase = _lbase ~ "&src_web=on" %}{% endif %}
+{% if src_eco %}{% set _lbase = _lbase ~ "&src_eco=on" %}{% endif %}
+{% if src_sites %}{% set _lbase = _lbase ~ "&src_sites=on" %}{% endif %}
+{% if src_papers %}{% set _lbase = _lbase ~ "&src_papers=on" %}{% endif %}
+<div class="lang-chips">
+  {% for _lcode, _llabel in [("", "Todos"), ("pt", "PT"), ("en", "EN"), ("es", "ES"), ("fr", "FR"), ("de", "DE"), ("ja", "JA"), ("zh", "ZH"), ("auto", "Auto")] %}
+  <a class="tag lang-chip {% if lang == _lcode or (lang is not defined and _lcode == '') or (lang == '' and _lcode == '') %}tag-active{% endif %}"
+     href="{{ _lbase }}{% if _lcode %}&lang={{ _lcode }}{% endif %}"
+     hx-get="{{ _lbase }}{% if _lcode %}&lang={{ _lcode }}{% endif %}"
+     hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true"
+     title="{% if _lcode == '' %}Sem filtro de idioma{% elif _lcode == 'auto' %}Detecta idioma e expande automaticamente{% else %}Filtrar resultados em {{ _llabel }}{% endif %}">
+    {{ _llabel }}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if results_by_source %}
 {% set _total_all = (results_by_source.Pessoal | length) + (results_by_source.Biblioteca | length) + (results_by_source.Web | length) %}
 {% if _total_all > 0 %}
@@ -607,6 +626,11 @@
 .inline-images-thumb  { flex: 0 0 auto; border-radius: 5px; overflow: hidden; text-decoration: none; background: var(--surface, #1e2330); }
 .inline-images-thumb img { height: 110px; width: auto; min-width: 80px; max-width: 200px; object-fit: cover; display: block; }
 .inline-images-thumb:hover { opacity: .85; }
+
+/* ── Chips de idioma ── */
+.lang-chips      { display: flex; flex-wrap: wrap; gap: .3rem; margin: .5rem 0 .75rem; }
+.lang-chip       { font-size: .72rem; padding: .15rem .45rem; opacity: .75; }
+.lang-chip:hover { opacity: 1; }
 
 /* ── Painel inline de vídeos ── */
 .inline-videos-panel        { margin: 1rem 0 1.25rem; }

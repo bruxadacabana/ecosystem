@@ -149,6 +149,95 @@ def _get_web_pages() -> int:
     return max(1, min(10, int(_akasha_cfg().get("web_pages", 4))))
 
 
+async def _resolve_lang_search(
+    query: str,
+    lang_param: str,
+    inference_available: bool,
+    max_results: int,
+    filetype: str,
+    n_pages: int,
+) -> list[SearchResult]:
+    """Executa busca web com suporte a expansão multilíngue.
+
+    Lógica de `lang_param`:
+      ""  / "all" → usa search_languages do ecosystem.json como padrão
+      "auto"      → detecta idioma + expande a search_languages (ou ["en"/"pt" mínimo)
+      código ISO  → filtra SearXNG ao idioma especificado; sem expansão
+
+    Quando há expansão: roda uma busca por variante em paralelo, combina por URL.
+    Quando LOGOS offline: fall-back silencioso para query original sem filtro.
+    """
+    from services.query_multilang import (
+        detect_language, expand_multilang, get_search_languages,
+    )
+
+    _lang = lang_param.strip().lower()
+    _config_langs: list[str] = get_search_languages()
+
+    # Determina targets e filtro SearXNG
+    if _lang in ("", "all"):
+        # Usa config — se vazio, sem restrição
+        _expand_targets = _config_langs
+        _lang_filter = ""
+    elif _lang == "auto":
+        # Detecta idioma e expande a config langs (ou mínimo PT↔EN)
+        if inference_available:
+            detected = detect_language(query)
+            _expand_targets = _config_langs if _config_langs else (
+                ["en"] if detected != "en" else ["pt"]
+            )
+        else:
+            _expand_targets = []
+        _lang_filter = ""
+    else:
+        # Código ISO específico — filtra SearXNG, sem expansão
+        _expand_targets = []
+        _lang_filter = _lang
+
+    # Expande query se necessário
+    if _expand_targets and inference_available:
+        try:
+            variants = await expand_multilang(query, _expand_targets)
+        except Exception:
+            variants = [query]
+    else:
+        variants = [query]
+
+    log.debug(
+        "lang_search: param=%r filter=%r variants=%d expand_targets=%r",
+        lang_param, _lang_filter, len(variants), _expand_targets,
+    )
+
+    # Busca: uma chamada por variante (ou única sem expansão)
+    if len(variants) == 1:
+        return await search_web(
+            variants[0], max_results=max_results, filetype=filetype,
+            n_pages=n_pages, lang=_lang_filter,
+        )
+
+    # Multi-variante: cada variante + seu idioma alvo em paralelo
+    _variant_langs = [""] + _expand_targets  # "" para original, target para traduções
+    tasks = [
+        search_web(
+            v, max_results=max_results, filetype=filetype,
+            n_pages=n_pages,
+            lang=_variant_langs[i] if i < len(_variant_langs) else "",
+        )
+        for i, v in enumerate(variants)
+    ]
+    raw_lists = await asyncio.gather(*tasks, return_exceptions=True)
+
+    seen: set[str] = set()
+    merged: list[SearchResult] = []
+    for r_list in raw_lists:
+        if isinstance(r_list, list):
+            for r in r_list:
+                if r.url not in seen:
+                    seen.add(r.url)
+                    merged.append(r)
+    return merged
+
+
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
@@ -323,6 +412,7 @@ async def search(
     source_filter: str = "",   # "Pessoal" | "Biblioteca" | "Web" — filtrar por origem
     diversity:     int = 0,    # override de max_per_domain para esta busca (0 = usa config)
     web_pages:     int = 0,    # override de páginas web a buscar (0 = usa config)
+    lang:          str = "",   # filtro de idioma: "" / "all" = sem restrição; "auto" = detecta+expande; "pt"/"en"/... = força idioma
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -464,8 +554,10 @@ async def search(
             # Fase 2: demais fontes + web (se não adiada) em paralelo.
             # max_results=0 → retorna todos os resultados buscados (sem teto fixo).
             tasks = await asyncio.gather(
-                search_web(_effective_query, max_results=0, filetype=filetype, n_pages=_n_pages)
-                    if src_web and not _web_deferred else asyncio.sleep(0, result=[]),
+                _resolve_lang_search(
+                    _effective_query, lang, get_inference_status(),
+                    max_results=0, filetype=filetype, n_pages=_n_pages,
+                ) if src_web and not _web_deferred else asyncio.sleep(0, result=[]),
                 search_sites(_effective_query)  if src_sites  else asyncio.sleep(0, result=[]),
                 search_papers(_effective_query) if src_papers else asyncio.sleep(0, result=[]),
                 _db_search_wl(_effective_query),
@@ -494,7 +586,10 @@ async def search(
             # Web adiada: dispara em background para aquecer cache para a próxima busca.
             if _web_deferred:
                 asyncio.create_task(
-                    search_web(_effective_query, max_results=0, filetype=filetype, n_pages=_n_pages)
+                    _resolve_lang_search(
+                        _effective_query, lang, get_inference_status(),
+                        max_results=0, filetype=filetype, n_pages=_n_pages,
+                    )
                 )
         except Exception as exc:
             error = str(exc)
@@ -788,6 +883,7 @@ async def search(
             "related_indexed":     related_indexed,
             "image_results":         image_results,
             "video_inline_results":  video_inline_results,
+            "lang":                  lang,
             "wiki_card":           wiki_card,
             "weather_card":        weather_card,
             "translation_card":    translation_card,

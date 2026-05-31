@@ -125,7 +125,7 @@ query_understanding.py   ← [Akasha] classifica intenção (web? local? ambos?)
 query_expansion.py       ← [Akasha] expande termos, gera variações
        ↓
 query_multilang.py       ← [Akasha] expande query para outros idiomas (FTS5 cross-lang)
-       ↓
+       ↓                   ?lang=auto → detect + expand; ?lang=pt → filtro SearXNG
      ┌──────────────────────────────┐
      │  AKASHA (ferramenta)         │
      │  ├─ local_search.py          │
@@ -133,6 +133,7 @@ query_multilang.py       ← [Akasha] expande query para outros idiomas (FTS5 cr
      │  │    + semântico (KNN)      │
      │  └─ web_search.py            │
      │       DDG / SearXNG / arXiv  │
+     │       lang= → SearXNG filter │
      └──────────────────────────────┘
        ↓
 RRF + pagerank + freshness + domain_boost

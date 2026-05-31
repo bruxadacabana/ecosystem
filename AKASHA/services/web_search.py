@@ -208,14 +208,22 @@ async def _fetch_searxng(
     max_results: int,
     base_url: str,
     n_pages: int = 1,
+    lang: str = "",
 ) -> list[SearchResult]:
-    """Busca via SearXNG JSON API, com suporte a múltiplas páginas em paralelo."""
+    """Busca via SearXNG JSON API, com suporte a múltiplas páginas em paralelo.
+
+    lang: código ISO 639-1 (ex: "pt", "en"). Vazio = sem restrição de idioma.
+    SearXNG aceita o param `language` para filtrar resultados por idioma.
+    """
     async def _one_page(client: httpx.AsyncClient, pageno: int) -> list[SearchResult]:
         async with _FETCH_SEMAPHORE:
             try:
+                params: dict = {"q": query, "format": "json", "pageno": pageno}
+                if lang:
+                    params["language"] = lang
                 resp = await client.get(
                     f"{base_url}/search",
-                    params={"q": query, "format": "json", "pageno": pageno},
+                    params=params,
                 )
                 resp.raise_for_status()
                 return _parse_searxng_results(resp.json().get("results") or [])
@@ -264,6 +272,7 @@ async def _fetch_web(
     query: str,
     max_results: int,
     n_pages: int = 1,
+    lang: str = "",
 ) -> list[SearchResult]:
     """Tenta SearXNG (com n_pages paralelas); se indisponível ou vazio, cai para DDG.
 
@@ -276,12 +285,12 @@ async def _fetch_web(
     searxng_url = _get_searxng_url()
     if searxng_url:
         try:
-            results = await _fetch_searxng(query, max_results, searxng_url, n_pages=n_pages)
+            results = await _fetch_searxng(query, max_results, searxng_url, n_pages=n_pages, lang=lang)
             if results:
                 return results
         except Exception:
             pass  # fallover para DDG
-    # DDG: passa max_results diretamente (inclui efeito de n_pages via caller)
+    # DDG: não suporta filtro de idioma de forma confiável — usa query original
     return await _fetch_ddg(query, max_results)
 
 
@@ -371,6 +380,7 @@ async def search_web(
     offset: int = 0,
     filetype: str = "",
     n_pages: int = 1,
+    lang: str = "",
 ) -> list[SearchResult]:
     """Busca web com cache dois níveis (memória LRU + SQLite TTL variável).
 
@@ -383,9 +393,13 @@ async def search_web(
     max_results: 0 = retorna todos os resultados disponíveis (sem teto).
     n_pages: número de páginas a buscar em paralelo (default 1; configurado pelo router).
     filetype: acrescenta "filetype:{ext}" à query efetiva se não vazio.
+    lang: código ISO 639-1 (ex: "pt", "en"). Vazio = sem restrição de idioma.
+         Incluído na chave de cache para que buscas com filtros distintos sejam independentes.
     """
     effective_query = f"{query} filetype:{filetype}" if filetype else query
-    qhash = _query_hash(effective_query)
+    # Inclui lang na chave de cache: "python::lang=pt" ≠ "python::lang=en" ≠ "python"
+    cache_key = f"{effective_query}::lang={lang}" if lang else effective_query
+    qhash = _query_hash(cache_key)
     _fetch_max = min(_CACHE_SIZE, n_pages * _FETCH_PAGE_SIZE)
 
     def _slice(results: list[SearchResult]) -> list[SearchResult]:
@@ -405,12 +419,12 @@ async def search_web(
         return _slice(await _filter_blocked(db_cached))
 
     # 3. Busca real — SearXNG (n_pages paralelas) → DDG
-    results = await _fetch_web(effective_query, _fetch_max, n_pages=n_pages)
+    results = await _fetch_web(effective_query, _fetch_max, n_pages=n_pages, lang=lang)
     results = _deduplicate(results)
 
     # 4. Armazena em ambas as camadas
     ttl_hours = await _get_ttl_hours(effective_query)
     _mem_cache.set(qhash, results, ttl_hours * 3600)
-    await _set_db_cache(effective_query, qhash, results, ttl_hours)
+    await _set_db_cache(cache_key, qhash, results, ttl_hours)
 
     return _slice(await _filter_blocked(results))
