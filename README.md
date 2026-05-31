@@ -55,7 +55,7 @@ Desenvolvidos para CachyOS (Arch Linux), Fedora e Windows 10.
    porta 5175     (desktop)
 
 Sync entre máquinas: Syncthing → sync_root
-Inferência LLM: llama-server (llama-cpp) em porta 8081 (interno, gerenciado pelo LOGOS) / 7072 (LOGOS proxy)
+Inferência LLM: dois llama-servers paralelos — AKASHA :8081, Mnemosyne :8083 (internos, gerenciados pelo LOGOS) / 7072 (LOGOS proxy)
 ```
 
 **Princípio fundamental:** tudo local. Nenhum dado sai da máquina. Nenhum serviço externo. Nenhuma conta.
@@ -634,7 +634,8 @@ O llama-server é o backend de inferência LLM de todo o ecossistema. Substitui 
 - `GET  /v1/models` — lista modelos carregados
 
 **Portas:**
-- `8081` — llama-server (gerenciado pelo LOGOS, porta interna)
+- `8081` — llama-server AKASHA (gerenciado pelo LOGOS, porta interna)
+- `8083` — llama-server Mnemosyne (gerenciado pelo LOGOS, porta interna)
 - `7072` — via LOGOS (proxy com fila de prioridades)
 
 ### Compilar do zero
@@ -900,7 +901,8 @@ cd HUB/src-tauri && cargo test
 | 5175 | OGMA (Electron dev) | Apenas em dev mode |
 | 7071 | AKASHA (FastAPI) | Sempre ativo quando AKASHA roda |
 | 7072 | LOGOS (proxy LLM) | HUB gerencia; fila de prioridades P1/P2/P3 |
-| 8081 | llama-server (interno) | Gerenciado pelo LOGOS; não acessível diretamente pelos apps |
+| 8081 | llama-server AKASHA (interno) | Gerenciado pelo LOGOS; modelo llm_query; AKASHA, KOSMOS, HUB |
+| 8083 | llama-server Mnemosyne (interno) | Gerenciado pelo LOGOS; modelo llm_rag; Mnemosyne |
 
 **Syncthing:** gerenciado via painel no HUB; porta padrão 8384 (interface web local do Syncthing).
 

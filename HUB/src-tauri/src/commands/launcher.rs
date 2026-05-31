@@ -103,7 +103,7 @@ async fn llama_server_responding() -> bool {
 async fn kill_orphaned_llama_server() {
     #[cfg(unix)]
     {
-        let port = crate::logos::LLAMA_SERVER_PORT.to_string();
+        let port = crate::logos::AKASHA_SERVER_PORT.to_string();
         // fuser -k <port>/tcp encerra processos escutando na porta (Linux)
         let ok = tokio::process::Command::new("fuser")
             .args(["-k", &format!("{port}/tcp")])
@@ -121,7 +121,7 @@ async fn kill_orphaned_llama_server() {
     }
     #[cfg(windows)]
     {
-        use crate::logos::LLAMA_SERVER_PORT;
+        use crate::logos::AKASHA_SERVER_PORT;
         // netstat para encontrar PID escutando na porta, depois taskkill
         if let Ok(out) = tokio::process::Command::new("netstat")
             .args(["-ano"])
@@ -129,7 +129,7 @@ async fn kill_orphaned_llama_server() {
             .await
         {
             let text = String::from_utf8_lossy(&out.stdout);
-            let port_str = format!(":{LLAMA_SERVER_PORT}");
+            let port_str = format!(":{AKASHA_SERVER_PORT}");
             for line in text.lines() {
                 if line.contains(&port_str) && line.contains("LISTENING") {
                     if let Some(pid) = line.split_whitespace().last() {

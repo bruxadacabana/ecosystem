@@ -55,12 +55,37 @@ use sysinfo::System;
 use tokio::sync::{Mutex, Semaphore};
 
 pub const LOGOS_PORT: u16 = 7072;
-/// Porta local do processo llama-server gerenciado pelo LOGOS.
-pub(crate) const LLAMA_SERVER_PORT: u16 = 8081;
-/// Porta do segundo servidor llama-server, dedicado ao modelo de embedding (bge-m3, etc.)
-pub(crate) const EMBED_SERVER_PORT: u16  = 8082;
+/// Porta do servidor llama-server dedicado ao AKASHA (knowledge_worker, query expansion).
+pub(crate) const AKASHA_SERVER_PORT: u16    = 8081;
+/// Porta do servidor llama-server dedicado ao modelo de embedding (bge-m3, etc.)
+pub(crate) const EMBED_SERVER_PORT: u16     = 8082;
+/// Porta do servidor llama-server dedicado à Mnemosyne (RAG, indexação, reflexões).
+pub(crate) const MNEMOSYNE_SERVER_PORT: u16 = 8083;
 /// Timeout (s) para o llama-server responder ao primeiro /health após o spawn.
 const LLAMA_SERVER_READY_TIMEOUT_SECS: u64 = 90;
+
+// ── Roteamento de servidor ────────────────────────────────────
+
+/// Identifica qual servidor llama-server deve atender uma requisição.
+/// Cada servidor tem seu próprio processo llama-server, porta e ciclo de vida independentes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ServerTarget {
+    /// Servidor AKASHA (porta 8081) — knowledge_worker, expansão de query.
+    Akasha,
+    /// Servidor Mnemosyne (porta 8083) — RAG, indexação, reflexões.
+    Mnemosyne,
+}
+
+/// Determina o servidor alvo com base no nome do app que fez a requisição.
+/// Retorna `Mnemosyne` se o nome contém "mnemosyne" (case-insensitive),
+/// `Akasha` para tudo o resto (akasha, hub, kosmos, desconhecido, etc.).
+fn route_request(app_name: &str) -> ServerTarget {
+    if app_name.to_ascii_lowercase().contains("mnemosyne") {
+        ServerTarget::Mnemosyne
+    } else {
+        ServerTarget::Akasha
+    }
+}
 
 // Tempos máximos de espera na fila por prioridade
 const P1_TIMEOUT: Duration = Duration::from_secs(120);
@@ -425,10 +450,10 @@ struct Inner {
     /// Lido de ecosystem.json["logos"]["embed_n_gpu_layers"]. Padrão: -1.
     embed_n_gpu_layers: Mutex<i32>,
     /// Processo llama-server do servidor de embedding (porta EMBED_SERVER_PORT).
-    /// Independente do llama_proc (porta LLAMA_SERVER_PORT) — falhas são isoladas.
+    /// Independente do llama_proc (porta AKASHA_SERVER_PORT) — falhas são isoladas.
     embed_proc: Mutex<Option<LlamaProcHandle>>,
     /// Porta usada por `collect_status` para pings de health no servidor de chat.
-    /// Em produção = LLAMA_SERVER_PORT (8081). Em testes usa porta livre para isolamento.
+    /// Em produção = AKASHA_SERVER_PORT (8081). Em testes usa porta livre para isolamento.
     chat_health_port: u16,
     /// Porta usada por `collect_status` para pings de health no servidor de embedding.
     /// Em produção = EMBED_SERVER_PORT (8082). Em testes usa porta livre para isolamento.
@@ -759,7 +784,7 @@ impl LogosState {
             embed_model: Mutex::new(embed_model),
             embed_n_gpu_layers: Mutex::new(embed_n_gpu_layers),
             embed_proc: Mutex::new(None),
-            chat_health_port:  LLAMA_SERVER_PORT,
+            chat_health_port:  AKASHA_SERVER_PORT,
             embed_health_port: EMBED_SERVER_PORT,
             cpu_p3_limit_pct: Mutex::new(cpu_p3_limit_pct),
             cached_cpu_pct: Arc::new(AtomicU32::new(0)),
@@ -1854,11 +1879,11 @@ pub(crate) async fn ensure_llama_model_loaded(
     let gpu_mode = if n_gpu == 0 { "CPU".to_string() } else if n_gpu == -1 { "GPU (full)".to_string() } else { format!("GPU ({n_gpu} layers)") };
     log::info!(
         "LOGOS llama-server: carregando '{model_name}' \
-         ({gpu_mode}, n_ctx={n_ctx}, porta={LLAMA_SERVER_PORT}, mmproj={})",
+         ({gpu_mode}, n_ctx={n_ctx}, porta={AKASHA_SERVER_PORT}, mmproj={})",
         mmproj_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".into())
     );
 
-    let mut child = spawn_llama_server_proc(&bin, &gguf_path, mmproj_path.as_deref(), n_gpu, n_ctx, LLAMA_SERVER_PORT)
+    let mut child = spawn_llama_server_proc(&bin, &gguf_path, mmproj_path.as_deref(), n_gpu, n_ctx, AKASHA_SERVER_PORT)
         .await?;
 
     // Captura stderr para log (leitura linha a linha em background)
@@ -1868,7 +1893,7 @@ pub(crate) async fn ensure_llama_model_loaded(
 
     // Aguarda servidor pronto; detecção precoce de saída do processo evita 90s de timeout
     // quando o modelo falha ao carregar (ex: GGUF corrompido pós-validação, OOM, etc.)
-    if !wait_llama_ready_checking_child(LLAMA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut child).await {
+    if !wait_llama_ready_checking_child(AKASHA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut child).await {
         // Verifica se o processo saiu (OOM em GPU) ou apenas timeout (servidor lento)
         let proc_exited = child.try_wait().ok().flatten().is_some();
 
@@ -1895,7 +1920,7 @@ pub(crate) async fn ensure_llama_model_loaded(
             );
             let mut cpu_child = spawn_llama_server_cpu_fallback(
                 &bin, &gguf_path, mmproj_path.as_deref(),
-                LLAMA_SERVER_PORT, s.0.cpu_max_threads,
+                AKASHA_SERVER_PORT, s.0.cpu_max_threads,
             )
             .await
             .map_err(|e| format!("Falha ao reiniciar em modo CPU: {e}"))?;
@@ -1904,7 +1929,7 @@ pub(crate) async fn ensure_llama_model_loaded(
                 spawn_chat_stderr_reader(stderr, format!("{model_name}[cpu]"), chat_log_path(&s.0.models_dir));
             }
 
-            if !wait_llama_ready_checking_child(LLAMA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut cpu_child).await {
+            if !wait_llama_ready_checking_child(AKASHA_SERVER_PORT, &s.0.client, LLAMA_SERVER_READY_TIMEOUT_SECS, &mut cpu_child).await {
                 let _ = cpu_child.kill().await;
                 return Err(format!(
                     "llama-server não ficou pronto em modo CPU — \
@@ -1933,7 +1958,7 @@ pub(crate) async fn ensure_llama_model_loaded(
         child,
         model_name: model_name.to_string(),
     });
-    log::info!("LOGOS llama-server: '{model_name}' pronto na porta {LLAMA_SERVER_PORT}");
+    log::info!("LOGOS llama-server: '{model_name}' pronto na porta {AKASHA_SERVER_PORT}");
     Ok(())
 }
 
@@ -2630,7 +2655,7 @@ async fn queue_and_forward(
             translate_ollama_chat_to_openai(body_map)
         };
         let endpoint = if is_generate { "v1/completions" } else { "v1/chat/completions" };
-        let url          = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/{endpoint}");
+        let url          = format!("http://127.0.0.1:{AKASHA_SERVER_PORT}/{endpoint}");
         let client_clone = s.0.client.clone();
         let model_clone  = model_name.clone();
         let task = tokio::spawn(async move {
@@ -3100,7 +3125,7 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
             .to_string()
     );
 
-    let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/{endpoint}");
+    let url = format!("http://127.0.0.1:{AKASHA_SERVER_PORT}/{endpoint}");
     let result = s.0.client
         .post(&url)
         .header(header::CONTENT_TYPE, "application/json")
@@ -3145,7 +3170,7 @@ async fn v1_chat_completions_proxy(
 /// Proxy para POST /v1/embeddings — roteado para o embed-server (porta EMBED_SERVER_PORT).
 ///
 /// Separado de `proxy_openai_to_llama` porque o embed-server corre numa porta própria
-/// (EMBED_SERVER_PORT) e tem ciclo de vida independente do servidor de chat (LLAMA_SERVER_PORT).
+/// (EMBED_SERVER_PORT) e tem ciclo de vida independente do servidor de chat (AKASHA_SERVER_PORT).
 ///
 /// Logging obrigatório: timestamp, app, tamanho do input, porta, latência, status/erro.
 async fn v1_embeddings_proxy(
@@ -3251,7 +3276,7 @@ async fn v1_embeddings_proxy(
 }
 
 async fn v1_models_proxy(State(s): State<LogosState>) -> Response {
-    let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/v1/models");
+    let url = format!("http://127.0.0.1:{AKASHA_SERVER_PORT}/v1/models");
     match s.0.client.get(&url).timeout(Duration::from_secs(3)).send().await {
         Ok(resp) => {
             let status = resp.status();
@@ -3277,7 +3302,7 @@ async fn health_proxy(State(s): State<LogosState>) -> Response {
     if s.inference_enabled() {
         // Se llama-server já estiver rodando, proxy o /health real para refletir estado correto.
         if s.llama_proc_active().await {
-            let url = format!("http://127.0.0.1:{LLAMA_SERVER_PORT}/health");
+            let url = format!("http://127.0.0.1:{AKASHA_SERVER_PORT}/health");
             if let Ok(resp) = s.0.client.get(&url).timeout(Duration::from_secs(2)).send().await {
                 let status = resp.status();
                 if let Ok(bytes) = resp.bytes().await {
@@ -3493,7 +3518,7 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     // Pings paralelos — só executados quando o processo está ativo para evitar
     // 400ms de timeout desnecessário quando ambos os servidores estão offline.
     // Usam chat_health_port / embed_health_port para permitir isolamento em testes
-    // (testes apontam para portas livres; produção usa LLAMA_SERVER_PORT / EMBED_SERVER_PORT).
+    // (testes apontam para portas livres; produção usa AKASHA_SERVER_PORT / EMBED_SERVER_PORT).
     let (chat_ms, embed_ms) = tokio::join!(
         async {
             if chat_online  { ping_server_ms(&s.0.client, s.0.chat_health_port).await }
@@ -5673,14 +5698,66 @@ mod tests {
     }
 
     #[test]
-    fn chat_server_port_is_8081() {
-        assert_eq!(LLAMA_SERVER_PORT, 8081, "porta do chat-server deve ser 8081");
+    fn akasha_server_port_is_8081() {
+        assert_eq!(AKASHA_SERVER_PORT, 8081, "porta do servidor AKASHA deve ser 8081");
     }
 
     #[test]
-    fn embed_and_chat_ports_are_distinct() {
-        assert_ne!(EMBED_SERVER_PORT, LLAMA_SERVER_PORT,
-            "servidores de embedding e chat devem usar portas diferentes");
+    fn mnemosyne_server_port_is_8083() {
+        assert_eq!(MNEMOSYNE_SERVER_PORT, 8083, "porta do servidor Mnemosyne deve ser 8083");
+    }
+
+    #[test]
+    fn all_three_server_ports_are_distinct() {
+        assert_ne!(AKASHA_SERVER_PORT, EMBED_SERVER_PORT,
+            "AKASHA e embed-server devem usar portas diferentes");
+        assert_ne!(AKASHA_SERVER_PORT, MNEMOSYNE_SERVER_PORT,
+            "AKASHA e Mnemosyne devem usar portas diferentes");
+        assert_ne!(EMBED_SERVER_PORT, MNEMOSYNE_SERVER_PORT,
+            "embed e Mnemosyne devem usar portas diferentes");
+    }
+
+    // ── Testes de route_request (Passo 1) ────────────────────
+
+    #[test]
+    fn route_mnemosyne_returns_mnemosyne() {
+        assert_eq!(route_request("mnemosyne"), ServerTarget::Mnemosyne);
+    }
+
+    #[test]
+    fn route_mnemosyne_case_insensitive() {
+        assert_eq!(route_request("Mnemosyne"), ServerTarget::Mnemosyne);
+        assert_eq!(route_request("MNEMOSYNE"), ServerTarget::Mnemosyne);
+        assert_eq!(route_request("mNeMoSyNe"), ServerTarget::Mnemosyne);
+    }
+
+    #[test]
+    fn route_akasha_returns_akasha() {
+        assert_eq!(route_request("akasha"), ServerTarget::Akasha);
+    }
+
+    #[test]
+    fn route_empty_returns_akasha() {
+        assert_eq!(route_request(""), ServerTarget::Akasha,
+            "app desconhecido (string vazia) deve ir para servidor AKASHA");
+    }
+
+    #[test]
+    fn route_hub_returns_akasha() {
+        assert_eq!(route_request("hub"), ServerTarget::Akasha,
+            "HUB usa o servidor AKASHA (mesmo servidor que queries gerais)");
+    }
+
+    #[test]
+    fn route_kosmos_returns_akasha() {
+        assert_eq!(route_request("kosmos"), ServerTarget::Akasha,
+            "KOSMOS usa o servidor AKASHA (análise de artigos)");
+    }
+
+    #[test]
+    fn route_unknown_app_returns_akasha() {
+        assert_eq!(route_request("qualquer-coisa-desconhecida"), ServerTarget::Akasha,
+            "app desconhecido deve fazer fallback para AKASHA");
     }
 
     // ── Watchdog de VRAM — 4 cenários ────────────────────────────────────────
@@ -6666,7 +6743,7 @@ mod tests {
         assert!(url.contains("8082"),
             "URL de embedding deve conter porta 8082 (EMBED_SERVER_PORT)");
         assert!(!url.contains("8081"),
-            "URL de embedding NÃO deve conter porta 8081 (LLAMA_SERVER_PORT/chat)");
+            "URL de embedding NÃO deve conter porta 8081 (AKASHA_SERVER_PORT/chat)");
     }
 
     #[test]
