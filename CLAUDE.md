@@ -280,7 +280,7 @@ Nunca deixar uma mudança sem reflexo nos dois arquivos. Commitar `README.md` e 
 ## Regras de comportamento aprendidas
 
 **Reler arquivo quando instruída (2026-05-31):**
-Quando a usuária diz "leia o arquivo inteiro" ou "releia", usar a ferramenta Read para ler o arquivo completo naquele momento. Nunca confiar na memória da sessão nem assumir que o conteúdo já é conhecido.
+Quando a usuária diz "leia X" ou "releia X", usar a ferramenta Read para ler o arquivo naquele momento. Sem exceção — não importa que o conteúdo está no contexto da sessão ou que "já sei o que está lá". Se ela disse para ler, lê. Nunca substituir por memória da sessão.
 
 **GUI obrigatório para toda feature de usuário (2026-05-31):**
 Toda feature de backend que o usuário precisa controlar DEVE ter um elemento de GUI visível e acessível. Parâmetros de URL como `?lang=`, `?diversity=N`, `?web_pages=N` existem como overrides programáticos — nunca são o único ponto de controle. O controle principal é sempre via elemento visível: campo em Settings, chip na página de busca, botão na interface de chat. Ao escrever itens de TODO que expõem opções ao usuário: se tem parâmetro de API → incluir o elemento de UI no mesmo item ou verificar que Config 2/settings.html o inclui explicitamente.
