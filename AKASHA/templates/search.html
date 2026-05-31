@@ -272,6 +272,36 @@
 </div>
 {% endif %}
 
+{% if image_results %}
+<section class="inline-images-panel">
+  <header class="inline-images-header">
+    <span class="inline-images-label">Imagens</span>
+    <a class="inline-images-more"
+       href="/search/images?q={{ query | urlencode }}"
+       hx-get="/search/images?q={{ query | urlencode }}"
+       hx-target="#main-content" hx-swap="outerHTML" hx-select="#main-content" hx-push-url="true">
+      ver todos &#x2192;
+    </a>
+  </header>
+  <div class="inline-images-strip">
+    {% for img in image_results %}
+    <a class="inline-images-thumb"
+       href="{{ img.page_url }}"
+       target="_blank"
+       rel="noopener"
+       title="{{ img.alt_text or img.title }}">
+      <img
+        src="{{ img.img_url }}"
+        alt="{{ img.alt_text }}"
+        loading="lazy"
+        onerror="this.closest('.inline-images-thumb').style.display='none'"
+      >
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {% set has_main   = web_results or fav_results or site_results or watch_later_results or paper_results or kosmos_results %}
 {% set has_eco    = local_results %}
 {% set two_col    = has_main and has_eco %}
@@ -523,6 +553,18 @@
   <p class="weather-source">Dados: Open-Meteo · Geocoding: OpenStreetMap Nominatim</p>
 </div>
 {% endif %}
+
+<style>
+.inline-images-panel  { margin: 1rem 0 1.25rem; }
+.inline-images-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; }
+.inline-images-label  { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; opacity: .55; }
+.inline-images-more   { font-size: .78rem; text-decoration: none; opacity: .7; color: var(--accent, #6d9eeb); }
+.inline-images-more:hover { opacity: 1; }
+.inline-images-strip  { display: flex; gap: .5rem; overflow-x: auto; padding-bottom: .25rem; scrollbar-width: thin; }
+.inline-images-thumb  { flex: 0 0 auto; border-radius: 5px; overflow: hidden; text-decoration: none; background: var(--surface, #1e2330); }
+.inline-images-thumb img { height: 110px; width: auto; min-width: 80px; max-width: 200px; object-fit: cover; display: block; }
+.inline-images-thumb:hover { opacity: .85; }
+</style>
 
 <!-- ─── Skeleton loader (visível durante requisição HTMX) ─────────── -->
 <section id="skeleton-area" class="skeleton-area htmx-indicator">
