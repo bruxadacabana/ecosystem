@@ -124,10 +124,13 @@ query_understanding.py   ← [Akasha] classifica intenção (web? local? ambos?)
        ↓
 query_expansion.py       ← [Akasha] expande termos, gera variações
        ↓
+query_multilang.py       ← [Akasha] expande query para outros idiomas (FTS5 cross-lang)
+       ↓
      ┌──────────────────────────────┐
      │  AKASHA (ferramenta)         │
      │  ├─ local_search.py          │
      │  │    FTS5 (BM25) + vetorial │
+     │  │    + semântico (KNN)      │
      │  └─ web_search.py            │
      │       DDG / SearXNG / arXiv  │
      └──────────────────────────────┘
@@ -825,6 +828,7 @@ AKASHA/
 │   ├── knowledge_worker.py → Analisa corpus local para extrair conhecimento
 │   ├── query_understanding.py → Classifica intenção da query (LLM leve)
 │   ├── query_expansion.py  → Expande termos de busca (sinônimos, variações)
+│   ├── query_multilang.py  → Expansão multilíngue: detect_language + translate_query via LOGOS
 │   ├── affective_state.py  → Estado afetivo do Akasha (curiosidade, fadiga, etc.)
 │   ├── suggester.py        → Sugere buscas relacionadas
 │   ├── friendship_receiver.py → Recebe insights da Mnemosyne (POST /friendship/insight)

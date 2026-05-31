@@ -168,7 +168,7 @@ Buscador e amplificador de pesquisa. O LLM age **apenas** na camada de query —
 
 *Akasha (assistente)* — usa LLM quando disponível, falha gracefully se offline:
 - Personalidade e memória próprias (tabela `personal_memory` isolada em `akasha.db`)
-- Query understanding: classificação de intenção, expansão de termos, reescrita conversacional
+- Query understanding: classificação de intenção, expansão de termos, reescrita conversacional, expansão multilíngue (`query_multilang.py`: detect_language + translate_query via LOGOS, ativada por `search_languages` em Settings)
 - Reflection loop: reflexões periódicas sobre sessões de pesquisa
 - Geração de insights a partir do padrão de uso
 - Envio de insights para a Mnemosyne via protocolo `friendship` (comunicação bidirecional)
