@@ -185,20 +185,11 @@ def _get_searxng_url() -> str:
         return ""
 
 
-async def _fetch_searxng(
-    query: str,
-    max_results: int,
-    base_url: str,
-) -> list[SearchResult]:
-    """Busca via SearXNG JSON API (GET /search?q={q}&format=json)."""
-    async with httpx.AsyncClient(timeout=8.0) as client:
-        resp = await client.get(
-            f"{base_url}/search",
-            params={"q": query, "format": "json"},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    raw = (data.get("results") or [])[:max_results]
+_FETCH_PAGE_SIZE = 25   # resultados por página no fetch paralelo
+_FETCH_SEMAPHORE = asyncio.Semaphore(2)  # máx 2 páginas SearXNG simultâneas
+
+
+def _parse_searxng_results(raw: list) -> list[SearchResult]:
     return [
         SearchResult(
             title=r.get("title", ""),
@@ -212,11 +203,41 @@ async def _fetch_searxng(
     ]
 
 
+async def _fetch_searxng(
+    query: str,
+    max_results: int,
+    base_url: str,
+    n_pages: int = 1,
+) -> list[SearchResult]:
+    """Busca via SearXNG JSON API, com suporte a múltiplas páginas em paralelo."""
+    async def _one_page(client: httpx.AsyncClient, pageno: int) -> list[SearchResult]:
+        async with _FETCH_SEMAPHORE:
+            try:
+                resp = await client.get(
+                    f"{base_url}/search",
+                    params={"q": query, "format": "json", "pageno": pageno},
+                )
+                resp.raise_for_status()
+                return _parse_searxng_results(resp.json().get("results") or [])
+            except Exception:
+                return []
+
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        pages = await asyncio.gather(*[_one_page(client, i + 1) for i in range(n_pages)])
+
+    combined: list[SearchResult] = []
+    for page in pages:
+        combined.extend(page)
+    return combined[:max_results] if max_results > 0 else combined
+
+
 # ---------------------------------------------------------------------------
 # DuckDuckGo
 # ---------------------------------------------------------------------------
 
 async def _fetch_ddg(query: str, max_results: int) -> list[SearchResult]:
+    # DDG não suporta paginação explícita — aumentar max_results coleta mais resultados
+    # internamente (a biblioteca faz várias requisições conforme necessário).
     try:
         raw = await asyncio.to_thread(
             lambda: list(DDGS().text(query, max_results=max_results))
@@ -239,21 +260,28 @@ async def _fetch_ddg(query: str, max_results: int) -> list[SearchResult]:
 # Camada de busca — SearXNG primeiro, DDG como fallback
 # ---------------------------------------------------------------------------
 
-async def _fetch_web(query: str, max_results: int) -> list[SearchResult]:
-    """Tenta SearXNG; se indisponível ou vazio, cai para DDG.
+async def _fetch_web(
+    query: str,
+    max_results: int,
+    n_pages: int = 1,
+) -> list[SearchResult]:
+    """Tenta SearXNG (com n_pages paralelas); se indisponível ou vazio, cai para DDG.
 
     Fallover automático em dois estágios:
       1. SearXNG self-hosted (se akasha.web_search_backend configurado)
+         → fetcha n_pages em paralelo via asyncio.gather + Semaphore(2)
       2. DuckDuckGo (sempre disponível como fallback)
+         → aumenta max_results para n_pages × _FETCH_PAGE_SIZE
     """
     searxng_url = _get_searxng_url()
     if searxng_url:
         try:
-            results = await _fetch_searxng(query, max_results, searxng_url)
+            results = await _fetch_searxng(query, max_results, searxng_url, n_pages=n_pages)
             if results:
                 return results
         except Exception:
             pass  # fallover para DDG
+    # DDG: passa max_results diretamente (inclui efeito de n_pages via caller)
     return await _fetch_ddg(query, max_results)
 
 
@@ -261,42 +289,50 @@ async def _fetch_web(query: str, max_results: int) -> list[SearchResult]:
 # Função pública
 # ---------------------------------------------------------------------------
 
-_CACHE_SIZE = 60  # resultados pré-buscados por query — serve até 6 páginas de 10
+_CACHE_SIZE = 100  # max resultados a cachear por query
 
 
 async def search_web(
     query: str,
-    max_results: int = 10,
+    max_results: int = 0,
     offset: int = 0,
     filetype: str = "",
+    n_pages: int = 1,
 ) -> list[SearchResult]:
-    """Busca via DuckDuckGo com cache dois níveis (memória LRU + SQLite TTL variável).
+    """Busca web com cache dois níveis (memória LRU + SQLite TTL variável).
 
     Pipeline:
     1. Verifica cache de memória (TTL por entrada)
     2. Verifica cache SQLite (query_hash + cached_at + ttl_hours)
-    3. Executa busca DDG; determina TTL pelo histórico de frequência
+    3. Executa busca SearXNG/DDG com n_pages páginas paralelas
     4. Armazena em memória + SQLite
 
+    max_results: 0 = retorna todos os resultados disponíveis (sem teto).
+    n_pages: número de páginas a buscar em paralelo (default 1; configurado pelo router).
     filetype: acrescenta "filetype:{ext}" à query efetiva se não vazio.
     """
     effective_query = f"{query} filetype:{filetype}" if filetype else query
     qhash = _query_hash(effective_query)
+    _fetch_max = min(_CACHE_SIZE, n_pages * _FETCH_PAGE_SIZE)
+
+    def _slice(results: list[SearchResult]) -> list[SearchResult]:
+        sliced = results[offset:]
+        return sliced if max_results == 0 else sliced[:max_results]
 
     # 1. Cache de memória
     cached = _mem_cache.get(qhash)
     if cached is not None:
-        return (await _filter_blocked(cached))[offset: offset + max_results]
+        return _slice(await _filter_blocked(cached))
 
     # 2. Cache SQLite
     db_cached = await _get_db_cache(qhash)
     if db_cached is not None:
         ttl_hours = await _get_ttl_hours(effective_query)
         _mem_cache.set(qhash, db_cached, ttl_hours * 3600)
-        return (await _filter_blocked(db_cached))[offset: offset + max_results]
+        return _slice(await _filter_blocked(db_cached))
 
-    # 3. Busca real — SearXNG (se configurado) → DDG
-    results = await _fetch_web(effective_query, _CACHE_SIZE)
+    # 3. Busca real — SearXNG (n_pages paralelas) → DDG
+    results = await _fetch_web(effective_query, _fetch_max, n_pages=n_pages)
     results = _deduplicate(results)
 
     # 4. Armazena em ambas as camadas
@@ -304,4 +340,4 @@ async def search_web(
     _mem_cache.set(qhash, results, ttl_hours * 3600)
     await _set_db_cache(effective_query, qhash, results, ttl_hours)
 
-    return (await _filter_blocked(results))[offset: offset + max_results]
+    return _slice(await _filter_blocked(results))

@@ -149,6 +149,19 @@ def _get_max_per_domain() -> int:
     return 5
 
 
+def _get_web_pages() -> int:
+    """Lê web_pages do ecosystem.json (default 4, range 1–10)."""
+    try:
+        import ecosystem_client as _ec  # type: ignore
+        cfg_fn = getattr(_ec, "get_akasha_config", None)
+        if cfg_fn is not None:
+            val = int(cfg_fn().get("web_pages", 4))
+            return max(1, min(10, val))
+    except Exception:
+        pass
+    return 4
+
+
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
@@ -322,6 +335,7 @@ async def search(
     no_rewrite:    str = "",   # "on" = desativa reescrita conversacional para esta busca
     source_filter: str = "",   # "Pessoal" | "Biblioteca" | "Web" — filtrar por origem
     diversity:     int = 0,    # override de max_per_domain para esta busca (0 = usa config)
+    web_pages:     int = 0,    # override de páginas web a buscar (0 = usa config)
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -439,6 +453,9 @@ async def search(
         _web_deferred = False
         _lexical_intent = classify_intent_lexical(_effective_query)
         _intent_routing = _get_intent_routing(_lexical_intent, _effective_query)
+        # Número de páginas a buscar: ?web_pages=N sobrescreve o config do ecosystem.json
+        _n_pages = web_pages if web_pages > 0 else _get_web_pages()
+        log.debug("web_pages=%d q=%r", _n_pages, q)
         try:
             # Fase 1: busca local primeiro (determina estratégia para web).
             if src_eco:
@@ -456,8 +473,9 @@ async def search(
             )
 
             # Fase 2: demais fontes + web (se não adiada) em paralelo.
+            # max_results=0 → retorna todos os resultados buscados (sem teto fixo).
             tasks = await asyncio.gather(
-                search_web(_effective_query, max_results=_PAGE_SIZE, filetype=filetype)
+                search_web(_effective_query, max_results=0, filetype=filetype, n_pages=_n_pages)
                     if src_web and not _web_deferred else asyncio.sleep(0, result=[]),
                 search_sites(_effective_query)  if src_sites  else asyncio.sleep(0, result=[]),
                 search_papers(_effective_query) if src_papers else asyncio.sleep(0, result=[]),
@@ -483,7 +501,7 @@ async def search(
             # Web adiada: dispara em background para aquecer cache para a próxima busca.
             if _web_deferred:
                 asyncio.create_task(
-                    search_web(_effective_query, max_results=_PAGE_SIZE, filetype=filetype)
+                    search_web(_effective_query, max_results=0, filetype=filetype, n_pages=_n_pages)
                 )
         except Exception as exc:
             error = str(exc)
