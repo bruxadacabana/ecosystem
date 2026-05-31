@@ -1246,4 +1246,37 @@ async def backfill_knowledge(archive_path: "Path") -> None:
         log.info("backfill: %d página(s) enfileiradas para extração de conhecimento.", total_enqueued)
     else:
         log.info("backfill: nenhuma página nova para processar.")
+
+    # ── 3. Backfill de embeddings para páginas sem vetor ──────────────────
+    try:
+        import aiosqlite as _aiosqlite
+        from config import DB_PATH as _DB_PATH
+
+        async with _aiosqlite.connect(_DB_PATH) as _db:
+            _rows = await (await _db.execute(
+                """SELECT url, content_md FROM crawl_pages
+                   WHERE word_count >= 50
+                     AND url NOT IN (SELECT url FROM page_embeddings)
+                   LIMIT 50"""
+            )).fetchall()
+
+        if _rows:
+            log.info("backfill embeddings: %d página(s) sem vetor", len(_rows))
+            _sem = asyncio.Semaphore(2)
+
+            async def _backfill_embed(u: str, c: str) -> None:
+                async with _sem:
+                    try:
+                        from services.semantic_search import embed_and_store
+                        await embed_and_store(u, c)
+                    except Exception as exc:
+                        log.debug("backfill embeddings: erro em %s: %s", u, exc)
+
+            await asyncio.gather(*(_backfill_embed(u, c) for u, c in _rows if u and c))
+            log.info("backfill embeddings: lote de %d concluído", len(_rows))
+        else:
+            log.debug("backfill embeddings: nenhuma página sem vetor")
+    except Exception as exc:
+        log.debug("backfill embeddings: erro geral: %s", exc)
+
     _backfill_running = False

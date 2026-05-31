@@ -579,6 +579,15 @@ async def crawl_site(site_id: int) -> int:
                 except Exception:
                     pass
 
+            # Gera embedding em background (P3, fire-and-forget)
+            # Só dispara quando a página foi efetivamente salva (word_count >= mínimo)
+            if content_md and len(content_md.split()) >= MIN_WORDS_TO_STORE:
+                try:
+                    from services.semantic_search import embed_and_store as _embed
+                    asyncio.create_task(_embed(url, content_md))
+                except Exception:
+                    pass
+
             if depth >= max_depth:
                 return []
             return [
