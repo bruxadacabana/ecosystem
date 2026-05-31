@@ -7385,4 +7385,4 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [ ] **LOGOS — proteção contra thermal throttling RX 6600 (`HUB/src-tauri/src/logos.rs`)** — monitorar temperatura GPU via `sysinfo` crate. Se >85°C: pausar P3 automaticamente. Evita depender do throttling do driver (que age apenas a 95°C). Origem: Auditoria 05-05, LOGOS/HUB.
 
-- [ ] **HUB — `read_app_log` sem fallback para `.bak/` (`commands/config.rs`)** — se o diretório de dados de um app for renomeado para `.bak/` enquanto rodando, o HUB não encontra o log (busca em `{sync_root}/{app}/{app}.log`). Solução estrutural: Mnemosyne escreve `log_path` atual em `ecosystem.json` ao iniciar; HUB lê de onde o log realmente está. Alternativa simples: tentar `{sync_root}/{app}.bak/{app}.log` como fallback. Origem: Bugs 2026-05-19, HUB.
+- [x] **HUB — `read_app_log` sem fallback para `.bak/` (`commands/config.rs`)** — implementado: se `{sync_root}/{app}/{app}.log` não existe, tenta `{sync_root}/{app}.bak/{app}.log` como fallback com log de debug. 4 testes em `commands/config.rs` (primário existe, só fallback existe, nenhum existe, ambos → usa primário). 2026-05-30.

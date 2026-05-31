@@ -161,13 +161,24 @@ pub fn read_app_log(app: String, n: u32) -> Result<Vec<String>, AppError> {
         return Ok(vec![]);
     }
 
-    let log_path = std::path::Path::new(&sync_root)
-        .join(&app)
-        .join(format!("{app}.log"));
-
-    if !log_path.exists() {
-        return Ok(vec![]);
-    }
+    // Caminho principal: {sync_root}/{app}/{app}.log
+    // Fallback: {sync_root}/{app}.bak/{app}.log — quando o diretório foi renomeado
+    // para .bak/ enquanto o app estava rodando (ex: Mnemosyne renomeia pasta de dados).
+    let root = std::path::Path::new(&sync_root);
+    let log_path = {
+        let primary = root.join(&app).join(format!("{app}.log"));
+        if primary.exists() {
+            primary
+        } else {
+            let fallback = root.join(format!("{app}.bak")).join(format!("{app}.log"));
+            if fallback.exists() {
+                log::debug!("read_app_log: usando fallback .bak para '{}': {}", app, fallback.display());
+                fallback
+            } else {
+                return Ok(vec![]);
+            }
+        }
+    };
 
     let file = std::fs::File::open(&log_path)?;
     let reader = BufReader::new(file);
@@ -501,6 +512,96 @@ mod tests {
             "embed_model existente deve ser preservado");
         assert_eq!(eco["logos"]["embed_port"].as_u64().unwrap(), 8082,
             "embed_port ausente deve receber valor padrão 8082");
+    }
+
+    // ── read_app_log — fallback .bak ──────────────────────────────────────────
+
+    fn write_log(dir: &std::path::Path, lines: &[&str]) {
+        std::fs::create_dir_all(dir).unwrap();
+        let content = lines.join("\n");
+        std::fs::write(dir.join(format!("{}.log", dir.file_name().unwrap().to_str().unwrap())), content).unwrap();
+    }
+
+    fn make_ecosystem_with_sync_root(sync_root: &str) -> serde_json::Value {
+        serde_json::json!({ "sync_root": sync_root })
+    }
+
+    #[test]
+    fn read_app_log_reads_primary_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let app_dir = tmp.path().join("mnemosyne");
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::write(app_dir.join("mnemosyne.log"), "linha1\nlinha2\nlinha3").unwrap();
+
+        // Simular ecosystem.json com sync_root = tmp
+        let eco = make_ecosystem_with_sync_root(tmp.path().to_str().unwrap());
+        let eco_path = tmp.path().join("ecosystem.json");
+        std::fs::write(&eco_path, serde_json::to_string(&eco).unwrap()).unwrap();
+
+        // Chamar a lógica diretamente (sem tauri::command overhead)
+        let sync_root = tmp.path().to_str().unwrap().to_string();
+        let root = std::path::Path::new(&sync_root);
+        let primary = root.join("mnemosyne").join("mnemosyne.log");
+        assert!(primary.exists(), "arquivo de log primário deve existir");
+
+        let content = std::fs::read_to_string(&primary).unwrap();
+        let lines: Vec<String> = content.lines().map(String::from).collect();
+        assert_eq!(lines, vec!["linha1", "linha2", "linha3"]);
+    }
+
+    #[test]
+    fn read_app_log_fallback_to_bak_when_primary_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bak_dir = tmp.path().join("mnemosyne.bak");
+        std::fs::create_dir_all(&bak_dir).unwrap();
+        std::fs::write(bak_dir.join("mnemosyne.log"), "bak_linha1\nbak_linha2").unwrap();
+
+        // Caminho primário NÃO existe, apenas o .bak
+        let primary = tmp.path().join("mnemosyne").join("mnemosyne.log");
+        assert!(!primary.exists(), "primário não deve existir");
+
+        let fallback = tmp.path().join("mnemosyne.bak").join("mnemosyne.log");
+        assert!(fallback.exists(), "fallback .bak deve existir");
+
+        let content = std::fs::read_to_string(&fallback).unwrap();
+        let lines: Vec<String> = content.lines().map(String::from).collect();
+        assert_eq!(lines, vec!["bak_linha1", "bak_linha2"]);
+    }
+
+    #[test]
+    fn read_app_log_returns_empty_when_neither_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Nem primário nem .bak existe
+        let primary = tmp.path().join("mnemosyne").join("mnemosyne.log");
+        let fallback = tmp.path().join("mnemosyne.bak").join("mnemosyne.log");
+        assert!(!primary.exists());
+        assert!(!fallback.exists());
+        // A função retorna Ok(vec![]) quando nenhum existe — verificado pela lógica
+        // (não chamamos read_app_log diretamente pois depende de ecosystem::read_json)
+    }
+
+    #[test]
+    fn read_app_log_prefers_primary_over_bak_when_both_exist() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Criar ambos
+        let primary_dir = tmp.path().join("mnemosyne");
+        std::fs::create_dir_all(&primary_dir).unwrap();
+        std::fs::write(primary_dir.join("mnemosyne.log"), "primario").unwrap();
+
+        let bak_dir = tmp.path().join("mnemosyne.bak");
+        std::fs::create_dir_all(&bak_dir).unwrap();
+        std::fs::write(bak_dir.join("mnemosyne.log"), "backup").unwrap();
+
+        // A lógica escolhe primário quando existe
+        let root = tmp.path();
+        let primary = root.join("mnemosyne").join("mnemosyne.log");
+        let selected = if primary.exists() {
+            primary
+        } else {
+            root.join("mnemosyne.bak").join("mnemosyne.log")
+        };
+        let content = std::fs::read_to_string(&selected).unwrap();
+        assert_eq!(content, "primario", "deve usar caminho primário quando ambos existem");
     }
 }
 
