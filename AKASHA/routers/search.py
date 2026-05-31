@@ -135,6 +135,20 @@ def _get_local_priority_threshold() -> int:
         pass
     return 5
 
+
+def _get_max_per_domain() -> int:
+    """Lê max_per_domain do ecosystem.json (default 5). 0 = sem limite."""
+    try:
+        import ecosystem_client as _ec  # type: ignore
+        cfg_fn = getattr(_ec, "get_akasha_config", None)
+        if cfg_fn is not None:
+            val = int(cfg_fn().get("max_per_domain", 5))
+            return max(0, val)
+    except Exception:
+        pass
+    return 5
+
+
 _BASE_DIR = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
@@ -307,6 +321,7 @@ async def search(
     no_expansion:  str = "",   # "on" = desativa expansão LLM para esta busca
     no_rewrite:    str = "",   # "on" = desativa reescrita conversacional para esta busca
     source_filter: str = "",   # "Pessoal" | "Biblioteca" | "Web" — filtrar por origem
+    diversity:     int = 0,    # override de max_per_domain para esta busca (0 = usa config)
     # retrocompat
     sources: str = "",
 ) -> HTMLResponse:
@@ -538,10 +553,16 @@ async def search(
                 fav_results  = [r for r in web_results if _domain(r.url) in fav_domains]
                 web_results  = [r for r in web_results if _domain(r.url) not in fav_domains]
 
-        # Exploratory: diversifica resultados web por domínio (máx 2 por domínio)
-        # para evitar que um único site domine a lista de resultados.
+        # Exploratory: diversifica resultados web por domínio.
+        # max_per_domain lido do ecosystem.json (default 5); ?diversity=N sobrescreve por busca.
+        # 0 = sem limite de resultados por domínio.
         if _lexical_intent == "exploratory" and web_results:
-            web_results = _diversify_by_domain(web_results)
+            _max_domain = diversity if diversity > 0 else _get_max_per_domain()
+            if _max_domain > 0:
+                log.debug("diversify q=%r max_per_domain=%d", q, _max_domain)
+                web_results = _diversify_by_domain(web_results, max_per_domain=_max_domain)
+            else:
+                log.debug("diversify q=%r max_per_domain=0 (sem limite)", q)
 
         # Facetação por fonte — agrupa antes do filtro para preservar contagens nas pills
         _results_by_source = _build_results_by_source(
