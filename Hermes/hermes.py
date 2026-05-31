@@ -154,6 +154,61 @@ LANG_DISPLAY = [f"{v}  [{k}]" for k, v in LANGUAGES.items()]
 LANG_CODES   = list(LANGUAGES.keys())
 WHISPER_MODELS = ["tiny", "base", "small", "medium", "large"]
 
+# ---------------------------------------------------------------------------
+# Cache de WhisperModel entre transcrições
+# ---------------------------------------------------------------------------
+# Evita recarregar o modelo a cada nova transcrição (5–15s de overhead).
+# Chave: (model_size, device, compute_type) — instância nova só quando
+# o conjunto muda (ex: usuária troca de "base" para "small").
+import threading as _threading
+_WHISPER_CACHE: dict[tuple, object] = {}
+_WHISPER_CACHE_LOCK = _threading.Lock()
+
+
+def _get_or_load_whisper(
+    model_size: str,
+    device: str,
+    compute_type: str,
+    log_fn=None,
+) -> object:
+    """Retorna WhisperModel do cache ou carrega do disco se necessário.
+
+    Thread-safe: usa lock ao verificar/atualizar o cache.
+    log_fn: callable(msg, level) para emitir logs para a UI (opcional).
+    """
+    from faster_whisper import WhisperModel
+
+    cache_key = (model_size, device, compute_type)
+    with _WHISPER_CACHE_LOCK:
+        if cache_key in _WHISPER_CACHE:
+            _log_file.debug(
+                "whisper_cache: HIT (%s/%s/%s) — reutilizando modelo",
+                model_size, device, compute_type,
+            )
+            if log_fn:
+                log_fn(f"Modelo Whisper ({model_size}) já carregado — reutilizando.", "")
+            return _WHISPER_CACHE[cache_key]
+
+    # Cache miss — carrega fora do lock para não bloquear outras threads
+    _log_file.info(
+        "whisper_cache: MISS (%s/%s/%s) — carregando modelo do disco",
+        model_size, device, compute_type,
+    )
+    if log_fn:
+        labels = {"cuda": "GPU (CUDA)", "rocm": "GPU (ROCm)", "cpu": "CPU"}
+        device_label = labels.get(device, device.upper())
+        log_fn(f"Carregando modelo Whisper ({model_size}) em {device_label}…", "")
+
+    model = WhisperModel(model_size, device=device, compute_type=compute_type, num_workers=1)
+
+    with _WHISPER_CACHE_LOCK:
+        _WHISPER_CACHE[cache_key] = model
+        _log_file.info(
+            "whisper_cache: modelo (%s/%s/%s) salvo no cache (%d entrada(s))",
+            model_size, device, compute_type, len(_WHISPER_CACHE),
+        )
+    return model
+
 
 # ── Utilitários — detecção e device ──────────────────────────────────────────
 def detect_device() -> tuple[str, str]:
@@ -482,7 +537,6 @@ class TranscribeWorker(QThread):
         self.cpu_limit  = cpu_limit
         self.outdir     = outdir
         self._cancelled = False
-        self._model_cache: list = []
 
     def cancel(self):
         self._cancelled = True
@@ -578,8 +632,10 @@ class TranscribeWorker(QThread):
                               source: str, info: dict, is_local: bool) -> None:
         device, device_label = detect_device()
         compute_type = "float16" if device == "cuda" else "int8"
-        cache_key = (self.model_size, device)
-        if not self._model_cache or self._model_cache[0][0] != cache_key:
+
+        # Verificar RAM apenas quando o modelo ainda não estiver no cache
+        cache_key = (self.model_size, device, compute_type)
+        if cache_key not in _WHISPER_CACHE:
             ram_ok, ram_avail, ram_req = _check_ram(self.model_size)
             if not ram_ok:
                 raise MemoryError(
@@ -587,16 +643,11 @@ class TranscribeWorker(QThread):
                     f"{ram_avail} MB disponíveis, {ram_req} MB necessários. "
                     "Feche outros aplicativos ou escolha um modelo menor."
                 )
-            self.log.emit(
-                f"Carregando modelo Whisper ({self.model_size}) em {device_label}…", "")
-            model = WhisperModel(
-                self.model_size, device=device, compute_type=compute_type,
-                num_workers=1,
-            )
-            self._model_cache.clear()
-            self._model_cache.append((cache_key, model))
-        else:
-            model = self._model_cache[0][1]
+
+        model = _get_or_load_whisper(
+            self.model_size, device, compute_type,
+            log_fn=self.log.emit,
+        )
 
         if self._cancelled: return
         self.progress.emit(60)
@@ -677,20 +728,24 @@ class BatchTranscribeWorker(QThread):
         self._apply_cpu_limit()
         device, device_label = detect_device()
         compute_type = "float16" if device == "cuda" else "int8"
-        ram_ok, ram_avail, ram_req = _check_ram(self.model_size)
-        if not ram_ok:
-            self.log.emit(
-                f"RAM insuficiente para o modelo {self.model_size}: "
-                f"{ram_avail} MB disponíveis, {ram_req} MB necessários. "
-                "Feche outros aplicativos ou escolha um modelo menor.", "err"
-            )
-            self.finished.emit(0, len(self.entries))
-            return
-        self.log.emit(f"Carregando modelo {self.model_size} em {device_label}…", "")
+
+        # Verificar RAM apenas quando o modelo ainda não estiver no cache
+        cache_key = (self.model_size, device, compute_type)
+        if cache_key not in _WHISPER_CACHE:
+            ram_ok, ram_avail, ram_req = _check_ram(self.model_size)
+            if not ram_ok:
+                self.log.emit(
+                    f"RAM insuficiente para o modelo {self.model_size}: "
+                    f"{ram_avail} MB disponíveis, {ram_req} MB necessários. "
+                    "Feche outros aplicativos ou escolha um modelo menor.", "err"
+                )
+                self.finished.emit(0, len(self.entries))
+                return
+
         try:
-            model = WhisperModel(
-                self.model_size, device=device, compute_type=compute_type,
-                num_workers=1,
+            model = _get_or_load_whisper(
+                self.model_size, device, compute_type,
+                log_fn=self.log.emit,
             )
         except Exception as e:
             self.log.emit(f"Erro ao carregar modelo: {e}", "err")

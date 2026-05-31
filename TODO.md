@@ -7326,7 +7326,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **Hermes — `language="pt"` como padrão no `TranscribeWorker` (`hermes.py`)** — implementado: `_load_prefs` agora usa `self._prefs.get("lang_idx", 1)` em vez de verificar se a chave existe. Default é índice 1 (pt). Preferência salva pelo usuário continua sendo respeitada. 7 testes em `tests/test_language_default.py`. 2026-05-30.
 
-- [ ] **Hermes — cache de `WhisperModel` entre transcrições (`hermes.py`)** — `WhisperModel` é instanciado a cada novo `TranscribeWorker` (cada transcrição), causando 5–15s de overhead desnecessário. Mover para atributo de classe ou singleton de módulo `_WHISPER_CACHE: dict[str, WhisperModel] = {}` keyed por `(model_size, device, compute_type)`. Economiza tempo em sessões com múltiplas transcrições. Origem: Auditoria 05-05, Hermes.
+- [x] **Hermes — cache de `WhisperModel` entre transcrições (`hermes.py`)** — implementado: `_WHISPER_CACHE: dict[tuple, WhisperModel]` + `_WHISPER_CACHE_LOCK` + `_get_or_load_whisper()` em nível de módulo. `TranscribeWorker._transcribe_and_save` e `BatchTranscribeWorker.run` agora usam `_get_or_load_whisper`. `self._model_cache` (por instância) removido. Checa RAM só no cache miss. Logs de hit/miss via `_log_file`. 12 testes em `tests/test_whisper_cache.py`. 2026-05-30.
 
 - [ ] **LOGOS — política de bateria em 3 níveis (`HUB/src-tauri/src/logos.rs`)** — lógica atual é binária (AC vs bateria). Expandir para 3 níveis: Normal (AC ou >80%): comportamento atual; Economia (30–80% ou TimeToEmpty <120min): P3 suspenso, keep_alive P2 reduzido; Crítico (<30% ou TimeToEmpty <60min): P2 também suspenso, apenas P1, `num_thread=2`. Polling UPower a cada 30s. Origem: Auditoria 05-05, LOGOS/HUB.
 
