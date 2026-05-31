@@ -160,7 +160,7 @@ Buscador e amplificador de pesquisa. O LLM age **apenas** na camada de query —
 - Crawler de domínios com agendamento e atualização (freshness)
 - Biblioteca unificada: gerencia sites e documentos numa única seção
 - Busca híbrida: FTS5 (BM25) + busca semântica (embeddings via `/v1/embeddings`)
-- Busca web via SearXNG self-hosted (agrega Google, Bing, Brave, DDG) com fallback DDG; fetch paralelo de múltiplas páginas (padrão 4 × 25 resultados)
+- Busca web via SearXNG self-hosted (agrega Google, Bing, Brave, DDG, Startpage) com fallback DDG; fetch paralelo de múltiplas páginas (padrão 4 × 25 resultados); script de instalação em `AKASHA/scripts/setup_searxng.sh`
 - Classificador de intenção afeta **apresentação** dos resultados, nunca a quantidade
 - Diversificação por domínio configurável (`max_per_domain`, padrão 5); filtragem de páginas vazias (`word_count < 50`)
 - Qualidade de extração: fallback newspaper4k, pré-filtro de páginas de navegação (razão texto-link), detecção de paywall, sinalização de SPAs (`requires_js`)

@@ -1,17 +1,21 @@
 """
-AKASHA — Busca web via DuckDuckGo
+AKASHA — Busca web via SearXNG (primário) + DuckDuckGo (fallback)
 Cache dois níveis: memória (LRU, max 100 entradas) + SQLite (TTL variável).
 - Queries com ≥3 buscas/semana → TTL 24h; demais → TTL 1h
-- Camada transparente: memória → SQLite → DDG
+- Camada transparente: memória → SQLite → SearXNG/DDG
+- SearXNG ativado via ecosystem.json["akasha"]["web_search_backend"]
 """
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import json
+import logging
 import time
 from collections import OrderedDict
 from urllib.parse import urlparse
+
+log = logging.getLogger("akasha.web_search")
 
 import aiosqlite
 import httpx
@@ -284,12 +288,17 @@ async def _fetch_web(
     """
     searxng_url = _get_searxng_url()
     if searxng_url:
+        log.debug("web_search: usando SearXNG em %s (lang=%r, n_pages=%d)", searxng_url, lang, n_pages)
         try:
             results = await _fetch_searxng(query, max_results, searxng_url, n_pages=n_pages, lang=lang)
             if results:
+                log.debug("web_search: SearXNG retornou %d resultados para %r", len(results), query)
                 return results
-        except Exception:
-            pass  # fallover para DDG
+            log.debug("web_search: SearXNG retornou 0 resultados — fallback para DDG")
+        except Exception as exc:
+            log.debug("web_search: SearXNG erro (%s) — fallback para DDG", exc)
+    else:
+        log.debug("web_search: SearXNG não configurado — usando DDG para %r", query)
     # DDG: não suporta filtro de idioma de forma confiável — usa query original
     return await _fetch_ddg(query, max_results)
 
@@ -409,6 +418,7 @@ async def search_web(
     # 1. Cache de memória
     cached = _mem_cache.get(qhash)
     if cached is not None:
+        log.debug("web_search: cache hit (memória) para %r lang=%r", query, lang)
         return _slice(await _filter_blocked(cached))
 
     # 2. Cache SQLite

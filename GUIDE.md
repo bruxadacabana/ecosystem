@@ -1712,8 +1712,8 @@ O AKASHA acessa APIs externas para busca web e cards informativos. **Nenhuma req
 
 | Serviço | URL base | Chave? | Rate limit | Fallback | Como configurar |
 |---------|----------|--------|-----------|---------|----------------|
-| **DuckDuckGo** | `ddgs` (lib) | Não | ~1 req/s por IP | SearXNG | Automático — primária |
-| **SearXNG** | configurável | Não | dependente da instância | DDG | `akasha.searxng_url` no `ecosystem.json` |
+| **SearXNG** | `localhost:8888` (self-hosted) | Não | sem limite (local) | DDG | `akasha.web_search_backend` no `ecosystem.json`; instalar com `AKASHA/scripts/setup_searxng.sh` |
+| **DuckDuckGo** | `ddgs` (lib) | Não | ~1 req/s por IP | — | Automático — fallback quando SearXNG offline ou não configurado |
 | **arXiv** | `export.arxiv.org` | Não | ~3 req/s | — | `aioarxiv` — automático |
 | **Wikipedia** | `*.wikipedia.org/w/api.php` | Não | gentil | — | Automático |
 | **Open-Meteo** | `api.open-meteo.com` | Não | 10k req/dia | — | Automático |
@@ -1726,6 +1726,31 @@ O AKASHA acessa APIs externas para busca web e cards informativos. **Nenhuma req
 > ⚠️ **Nominatim tem rate limit rigoroso de 1 req/s** e exige `User-Agent` identificando o app. Violações resultam em bloqueio de IP. O `weather_widget.py` já respeita isso com throttling.
 
 > 🔒 **Privacidade:** DuckDuckGo e SearXNG não rastreiam. Wikipedia é read-only. Open-Meteo não coleta dados do usuário. A query enviada a qualquer API nunca inclui dados pessoais do índice local.
+
+### Instalação do SearXNG self-hosted (recomendada)
+
+O SearXNG self-hosted é o backend recomendado — sem rate limit, agrega múltiplas fontes e o tráfego nunca sai do localhost. A instalação é automatizada:
+
+```bash
+# Instalar e iniciar SearXNG (CachyOS/Arch — requer git e uv)
+bash AKASHA/scripts/setup_searxng.sh
+
+# Verificar que está rodando
+curl http://localhost:8888/healthz   # deve retornar "OK"
+
+# Configurar AKASHA para usar SearXNG (via Settings do HUB ou diretamente):
+# ecosystem.json["akasha"]["web_search_backend"] = "http://localhost:8888"
+```
+
+O script `setup_searxng.sh`:
+1. Clona o repositório SearXNG em `~/.local/share/searxng`
+2. Instala dependências via `uv sync`
+3. Aplica `AKASHA/scripts/searxng_settings.yml` (engines curados, sem filtro seguro, qualquer idioma)
+4. Cria e habilita serviço systemd `--user` (inicia com o login)
+
+Engines habilitados: **DuckDuckGo, Brave, Startpage, Bing, Wikipedia, Google, Wikidata, arXiv, Semantic Scholar**
+
+Engines desabilitados por padrão (requerem JS ou bloqueiam automação): Yahoo, Baidu, Yandex.
 
 ---
 
@@ -2327,10 +2352,12 @@ L1: _MemCache (LRU, max 100, TTL por entrada)
 L2: SQLite search_cache (TTL 1h padrão, 24h para queries frequentes)
   │ cache hit → retorna e atualiza L1
   ▼ cache miss
-SearXNG (se akasha.searxng_url configurado no ecosystem.json)
-  │ falha ou não configurado
+SearXNG self-hosted (se akasha.web_search_backend configurado no ecosystem.json)
+  │   → agrega Google, Bing, Brave, DDG, Startpage em paralelo
+  │   → suporte a filtro de idioma (?language=XX) e múltiplas páginas (?pageno=N)
+  │ falha, vazio, ou não configurado
   ▼
-DuckDuckGo (via biblioteca ddgs)
+DuckDuckGo (via biblioteca ddgs — fallback)
   │
   ▼
 filter blocked domains
