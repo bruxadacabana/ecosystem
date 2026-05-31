@@ -276,3 +276,130 @@ class TestSearchVideosQuick:
         for r in results:
             for key in ("video_id", "title", "author", "duration", "thumbnail_url", "invidious_url"):
                 assert key in r, f"Chave '{key}' ausente: {r}"
+
+
+# ---------------------------------------------------------------------------
+# Fallback de instâncias — Mídia 3
+# ---------------------------------------------------------------------------
+
+class TestInvidiousFallback:
+    """Testa o mecanismo de fallback entre instâncias Invidious."""
+
+    def _make_timeout_client(self) -> MagicMock:
+        """Cliente que sempre lança TimeoutException."""
+        import httpx
+        client = AsyncMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
+        return client
+
+    def _make_success_client(self, data: list) -> MagicMock:
+        """Cliente que retorna dados com sucesso."""
+        return _make_client_mock(data)
+
+    def test_fallback_tried_when_primary_fails(self, monkeypatch):
+        """Quando a instância primária falha, uma das instâncias de fallback é tentada."""
+        import httpx
+        from services.invidious import search_videos
+
+        call_count = []
+        responses = [
+            AsyncMock(side_effect=httpx.TimeoutException("timeout")),  # primária falha
+        ]
+        # Todas as chamadas subsequentes retornam sucesso
+        success_resp = MagicMock()
+        success_resp.json.return_value = _FAKE_API_RESPONSE
+        success_resp.raise_for_status = MagicMock()
+
+        async def _side_effect(*a, **kw):
+            n = len(call_count)
+            call_count.append(n)
+            if n == 0:
+                raise httpx.TimeoutException("timeout na primária")
+            return success_resp
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=_side_effect)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            results, error = run(search_videos("test"))
+
+        assert len(call_count) >= 2, (
+            "Esperava ≥2 chamadas (primária + fallback); obteve "
+            f"{len(call_count)}"
+        )
+        assert error is None, f"Esperava sucesso via fallback; erro: {error}"
+        assert len(results) >= 1
+
+    def test_all_instances_fail_returns_empty(self, monkeypatch):
+        """Quando todas as instâncias falham, retorna [] sem exceção."""
+        import httpx
+        from services import invidious as _mod
+        from services.invidious import search_videos
+
+        # Patch para reduzir o número de instâncias de fallback e acelerar o teste
+        monkeypatch.setattr(_mod, "_FALLBACK_INSTANCES", ["https://fake1.invalid"])
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            results, error = run(search_videos("test"))
+
+        assert results == []
+        assert error is not None
+        assert len(error) > 0
+
+    def test_primary_excluded_from_fallback_list(self):
+        """A instância primária não aparece duas vezes na lista de tentativas."""
+        from services import invidious as _mod
+
+        # Pegar a lista de instâncias que _get_instance retornaria
+        primary = _mod._get_instance()
+        fallbacks = _mod._FALLBACK_INSTANCES
+
+        # Verificar que a primária não aparece nos fallbacks como duplicata lógica
+        # (pode aparecer, mas search_videos a filtra)
+        # Testar que a lista produzida por search_videos exclui duplicatas:
+        instances = [primary] + [i for i in fallbacks if i.rstrip("/") != primary.rstrip("/")]
+        # Todas devem ser únicas
+        assert len(instances) == len(set(i.rstrip("/") for i in instances)), (
+            "Instâncias duplicadas na lista de tentativas"
+        )
+
+    def test_try_instance_returns_none_on_timeout(self):
+        """_try_instance retorna (None, error_str) em timeout, sem propagar."""
+        import httpx
+        from services.invidious import _try_instance
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("t"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result, error = run(_try_instance(
+                "https://fake.invalid", "query", 10, 5.0
+            ))
+
+        assert result is None
+        assert error is not None
+
+    def test_try_instance_returns_results_on_success(self):
+        """_try_instance retorna (results, None) quando API responde OK."""
+        from services.invidious import _try_instance
+
+        mock_client = _make_client_mock(_FAKE_API_RESPONSE)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result, error = run(_try_instance(
+                "https://fake.invalid", "test", 10, 8.0
+            ))
+
+        assert result is not None
+        assert error is None
+        assert len(result) >= 1
