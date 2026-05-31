@@ -441,6 +441,12 @@ sudo dnf install python3-devel
 # Utilitários
 sudo dnf install xdotool sqlite sqlite-devel
 
+# SearXNG (backend de busca do AKASHA — opcional mas recomendado)
+# Instalar via pip em virtualenv, ou clonar o repositório:
+#   git clone https://github.com/searxng/searxng && cd searxng && pip install -e .
+# Iniciar: python -m searxng.webapp (porta padrão 8888)
+# Configurar no AKASHA: ecosystem.json["akasha"]["web_search_backend"] = "http://localhost:8888"
+
 # CUDA (para llama-server com GPU MX150)
 # Via repositório RPM Fusion ou instalador NVIDIA:
 sudo dnf install https://developer.download.nvidia.com/compute/cuda/repos/fedora$(rpm -E %fedora)/x86_64/cuda-repo-fedora$(rpm -E %fedora)-12-x86_64.rpm
@@ -538,6 +544,13 @@ bash atualizar.sh
 4. WebView2 Runtime (para Tauri)
    → Geralmente já instalado no Windows 10 atualizado
    → Se não: https://developer.microsoft.com/microsoft-edge/webview2/
+
+5. SearXNG (opcional — backend de busca do AKASHA)
+   → Requer Python 3.11+. Instalar via: pip install searxng
+   → Ou clonar: git clone https://github.com/searxng/searxng
+   → Iniciar: python -m searxng.webapp (porta 8888)
+   → Nota: no Windows 10 com 8 GB RAM, rodar SearXNG pode consumir ~300–500 MB.
+     Alternativa: usar DDG como fallback (padrão quando web_search_backend está vazio).
 ```
 
 ### 7.2. Rust
@@ -967,8 +980,10 @@ Fedora (laptop):
 [ ] CUDA toolkit instalado
 [ ] llama-server compilado com -DGGML_CUDA=ON
 [ ] nvidia-smi funcionando
+[ ] (opcional) SearXNG rodando: curl http://localhost:8888/healthz → OK
 
 Windows 10:
 [ ] Build do llama-server usa flags noavx (-DLLAMA_AVX2=OFF)
 [ ] Testar com modelo pequeno antes de carregar modelo grande
+[ ] (opcional) SearXNG rodando — ou deixar web_search_backend vazio para usar DDG
 ```
