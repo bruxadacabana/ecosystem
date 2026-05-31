@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 47
+SCHEMA_VERSION = 48
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -1209,6 +1209,22 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         # Sinal 4 do suggester: frequência de citação por artigos da Wikipedia.
         try:
             await db.execute(_CREATE_WIKI_CITATION_COUNTS)
+        except Exception:
+            pass
+
+    if from_version < 48:
+        # word_count: número de palavras do content_md — filtra páginas vazias/navegação.
+        try:
+            await db.execute(
+                "ALTER TABLE crawl_pages ADD COLUMN word_count INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass  # coluna já existe
+        try:
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_crawl_pages_word_count "
+                "ON crawl_pages(word_count)"
+            )
         except Exception:
             pass
 

@@ -126,11 +126,16 @@ async def test_search_web_max_results_n_still_works():
 async def test_search_web_passes_n_pages_to_fetch():
     """n_pages é repassado corretamente ao _fetch_web."""
     mock_fetch = AsyncMock(return_value=[])
-    with patch("services.web_search._fetch_web", mock_fetch):
+    # Mockar ambas as camadas de cache para garantir que _fetch_web seja chamado
+    with (
+        patch("services.web_search._fetch_web", mock_fetch),
+        patch("services.web_search._mem_cache") as mock_mem,
+        patch("services.web_search._get_db_cache", new_callable=AsyncMock, return_value=None),
+    ):
+        mock_mem.get = lambda _: None  # sempre cache miss
         from services.web_search import search_web
-        # query única para não bater em cache de testes anteriores
-        await search_web("query_unica_n_pages_test_xyz", max_results=0, n_pages=3)
-    assert mock_fetch.called, "_fetch_web nunca foi chamado (cache hit inesperado)"
+        await search_web("query_n_pages_test", max_results=0, n_pages=3)
+    assert mock_fetch.called, "_fetch_web nunca foi chamado"
     call_kwargs = mock_fetch.call_args.kwargs
     call_args = mock_fetch.call_args.args
     n_pages_passed = call_kwargs.get("n_pages") or (call_args[2] if len(call_args) > 2 else None)

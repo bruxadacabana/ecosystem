@@ -24,6 +24,8 @@ from ecosystem_scraper import extract as _cascade_extract
 
 log = logging.getLogger("akasha.crawler")
 
+MIN_WORDS_TO_STORE = 50  # páginas com menos palavras são descartadas sem indexar
+
 _CRAWL_CONCURRENCY = 4
 _CRAWL_TIMEOUT = 20
 
@@ -387,6 +389,11 @@ async def _upsert_page(
     etag: str = "",
     last_modified: str = "",
 ) -> None:
+    word_count = len(content_md.split())
+    if word_count < MIN_WORDS_TO_STORE:
+        log.debug("_upsert_page: descartando %s (%d palavras < %d)", url, word_count, MIN_WORDS_TO_STORE)
+        return
+
     # Verifica hash atual antes de tocar o FTS — re-indexar texto idêntico é
     # o principal custo de re-crawl em sites que não mudaram.
     row = await (await db.execute(
@@ -397,20 +404,22 @@ async def _upsert_page(
     await db.execute(
         """INSERT INTO crawl_pages
                (site_id, url, title, content_md, content_hash, http_status,
-                etag, last_modified, crawled_at, last_modified_at, last_checked_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                etag, last_modified, crawled_at, last_modified_at, last_checked_at,
+                word_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(url) DO UPDATE SET
                title=excluded.title, content_md=excluded.content_md,
                content_hash=excluded.content_hash, http_status=excluded.http_status,
                etag=excluded.etag, last_modified=excluded.last_modified,
                crawled_at=excluded.crawled_at,
                last_checked_at=excluded.crawled_at,
+               word_count=excluded.word_count,
                last_modified_at=CASE
                    WHEN excluded.content_hash != crawl_pages.content_hash
                    THEN excluded.crawled_at
                    ELSE crawl_pages.last_modified_at
                END""",
-        (site_id, url, title, content_md, content_hash, http_status, etag, last_modified, now, now, now),
+        (site_id, url, title, content_md, content_hash, http_status, etag, last_modified, now, now, now, word_count),
     )
     # Sync FTS5 manualmente — skip se conteúdo idêntico
     if fts_changed:

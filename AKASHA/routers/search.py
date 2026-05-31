@@ -599,6 +599,9 @@ async def search(
                 local_results = watch_later_results = kosmos_results = site_results = []
 
         total = len(web_results) + len(fav_results) + len(local_results) + len(site_results) + len(watch_later_results) + len(paper_results) + len(kosmos_results)
+        log.debug("resultados q=%r: web=%d fav=%d local=%d sites=%d papers=%d total=%d",
+                  q, len(web_results), len(fav_results), len(local_results),
+                  len(site_results), len(paper_results), total)
         src_label = "+".join(filter(None, [
             "web" if src_web else "",
             "local" if src_eco else "",
@@ -745,7 +748,7 @@ async def search(
             "watch_later_results":  watch_later_results,
             "paper_results":        paper_results,
             "kosmos_results":       kosmos_results,
-            "has_more_web":         len(web_results) >= _PAGE_SIZE,
+            "has_more_web":         len(web_results) >= _PAGE_SIZE,  # mostra botão "ver mais" via /search/more
             "query":         q,
             "src_web":       bool(src_web),
             "src_eco":       bool(src_eco),

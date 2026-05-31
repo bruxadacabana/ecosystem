@@ -317,10 +317,13 @@ class TestUpsertPageHashTracking:
                     site_id = cur.lastrowid
                     await db.commit()
 
+                    # Conteúdo com >= MIN_WORDS_TO_STORE palavras para passar a validação
+                    _content = " ".join(["palavra"] * 60)
+
                     # Primeiro crawl: nova página
                     await _crawler._upsert_page(
                         db, site_id, "https://example.com/p1",
-                        "Título", "Conteúdo original", "hash_abc",
+                        "Título", _content, "hash_abc",
                         200, "2026-01-01 10:00:00",
                     )
                     await db.commit()
@@ -335,7 +338,7 @@ class TestUpsertPageHashTracking:
                     # Segundo crawl: mesmo hash
                     await _crawler._upsert_page(
                         db, site_id, "https://example.com/p1",
-                        "Título", "Conteúdo original", "hash_abc",
+                        "Título", _content, "hash_abc",
                         200, "2026-01-02 10:00:00",
                     )
                     await db.commit()
@@ -377,9 +380,12 @@ class TestUpsertPageHashTracking:
                     site_id = cur.lastrowid
                     await db.commit()
 
+                    _content_v1 = " ".join(["palavra"] * 60)
+                    _content_v2 = " ".join(["outro"] * 60)
+
                     await _crawler._upsert_page(
                         db, site_id, "https://example2.com/p1",
-                        "Título", "Conteúdo v1", "hash_v1",
+                        "Título", _content_v1, "hash_v1",
                         200, "2026-01-01 10:00:00",
                     )
                     await db.commit()
@@ -393,7 +399,7 @@ class TestUpsertPageHashTracking:
                     # Conteúdo mudou (hash diferente)
                     await _crawler._upsert_page(
                         db, site_id, "https://example2.com/p1",
-                        "Título", "Conteúdo v2 atualizado", "hash_v2",
+                        "Título", _content_v2, "hash_v2",
                         200, "2026-02-15 08:00:00",
                     )
                     await db.commit()
