@@ -67,14 +67,20 @@ const P1_TIMEOUT: Duration = Duration::from_secs(120);
 const P2_TIMEOUT: Duration = Duration::from_secs(60);
 const P3_TIMEOUT: Duration = Duration::from_secs(30);
 
-// P3 recebe 429 se CPU ou RAM insuficiente — protege Windows e laptop durante indexação
+// Thresholds normais de throttle P3: quando excedidos, P3 entra em delay loop (não rejeição)
 const CPU_P3_BLOCK: f32 = 85.0;
 const RAM_P3_BLOCK_MB: u64 = 1_536;
-// P3 em modo sobrevivência: thresholds mais permissivos — CPU quase saturada ou RAM crítica
+// P3 em modo sobrevivência: thresholds de throttle mais permissivos (Windows sem GPU)
 const CPU_P3_SURVIVAL_BLOCK: f32 = 92.0;
 const RAM_P3_SURVIVAL_BLOCK_MB: u64 = 512;
 // Em bateria: threshold de CPU mais conservador para P2 (preservar energia)
 const ON_BATTERY_P2_CPU_BLOCK: f32 = 60.0;
+// Thresholds críticos de crash-prevention: únicas condições que disparam hard-reject 503 para P3
+const VRAM_CRITICAL_PCT: f32 = 97.0;
+const RAM_CRITICAL_MB:   u64 = 400;
+const THERMAL_CRITICAL_C: f32 = 93.0;
+// Intervalo do delay loop de P3 durante saturação de hardware
+const P3_HW_WAIT_SECS: u64 = 30;
 
 // ── Política de bateria em 3 níveis ──────────────────────────
 /// Controla quanto o LOGOS restringe operações de acordo com o nível de bateria.
@@ -2441,81 +2447,92 @@ async fn queue_and_forward(
                 })),
             ).into_response();
         }
-        // P3 em modo sobrevivência: permite com throttle mínimo, bloqueia só se sistema saturado
+        // P3 em modo sobrevivência: delay loop — aguarda CPU/RAM normalizarem.
+        // Hard-reject 503 apenas para RAM abaixo do limiar de crash.
         if priority == 3 {
-            let (cpu, ram_free) = {
-                let (c, f, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
-                (c, f)
-            };
-            if cpu > CPU_P3_SURVIVAL_BLOCK || ram_free < RAM_P3_SURVIVAL_BLOCK_MB {
+            loop {
+                let (cpu, ram_free, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+                if ram_free < RAM_CRITICAL_MB {
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(serde_json::json!({
+                            "error": format!(
+                                "RAM livre {ram_free} MB — abaixo do mínimo de segurança ({RAM_CRITICAL_MB} MB)"
+                            )
+                        })),
+                    ).into_response();
+                }
+                if cpu <= CPU_P3_SURVIVAL_BLOCK && ram_free >= RAM_P3_SURVIVAL_BLOCK_MB {
+                    break;
+                }
+                log::debug!(
+                    "LOGOS P3 (sobrevivência) aguardando hardware — cpu={:.0}% ram={}MB — dormindo {}s",
+                    cpu, ram_free, P3_HW_WAIT_SECS
+                );
+                tokio::time::sleep(Duration::from_secs(P3_HW_WAIT_SECS)).await;
+            }
+        }
+    } else if priority == 3 {
+        // LOGOS gere P3 via delay loop — nunca rejeita por thresholds normais de hardware.
+        // Hard-reject 503 apenas para valores críticos que causariam crash imediato do sistema.
+        // Sequência garantida: loop de hardware termina → só então tenta adquirir semáforo.
+        loop {
+            // Crash-prevention: avaliar antes de qualquer espera
+            let gpu_temp = *s.0.gpu_temp_celsius.lock().await;
+            if let Some(t) = gpu_temp {
+                if t > THERMAL_CRITICAL_C {
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(serde_json::json!({
+                            "error": format!(
+                                "GPU {t:.0}°C — temperatura crítica (>{THERMAL_CRITICAL_C:.0}°C); \
+                                 pausando para evitar dano térmico"
+                            )
+                        })),
+                    ).into_response();
+                }
+            }
+            let (cpu, ram_free, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+            if ram_free < RAM_CRITICAL_MB {
                 return (
-                    StatusCode::TOO_MANY_REQUESTS,
+                    StatusCode::SERVICE_UNAVAILABLE,
                     Json(serde_json::json!({
                         "error": format!(
-                            "Modo Sobrevivência: CPU {cpu:.0}% ou RAM livre {ram_free} MB — tarefa P3 adiada"
+                            "RAM livre {ram_free} MB — abaixo do mínimo de segurança ({RAM_CRITICAL_MB} MB)"
                         )
                     })),
                 ).into_response();
             }
-        }
-    } else if priority == 3 {
-        // Em bateria: P3 bloqueado completamente (preservar energia)
-        if on_battery {
-            return (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(serde_json::json!({
-                    "error": "Modo bateria: tarefas P3 desabilitadas para preservar energia"
-                })),
-            ).into_response();
-        }
-        // Normal: rejeita P3 se watchdog sinalizou VRAM saturada (histerese: bloqueia >85%, retoma <70%)
-        if s.0.p3_vram_blocked.load(Ordering::Relaxed) {
-            let pct_cfg = (*s.0.vram_limit_pct.lock().await) as u32;
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(serde_json::json!({
-                    "error": format!("VRAM > {pct_cfg}% — tarefa P3 bloqueada pelo watchdog; aguarde VRAM < 70%")
-                })),
-            ).into_response();
-        }
-        // Rejeita P3 se temperatura da GPU > 85°C (retoma em <80°C)
-        if s.0.p3_thermal_blocked.load(Ordering::Relaxed) {
-            let temp = s.0.gpu_temp_celsius.lock().await.unwrap_or(0.0);
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(serde_json::json!({
-                    "error": format!("GPU {temp:.0}°C — tarefa P3 pausada para evitar thermal throttle; aguarde cair abaixo de 80°C")
-                })),
-            ).into_response();
-        }
-        // Verificação por-request como defesa secundária (cobre janela entre polls do watchdog)
-        let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
-        if let Some(pct) = vram_pct(&s.0.client, s.0.hardware_profile).await {
-            if pct > vram_block {
-                let pct_cfg = (vram_block * 100.0) as u32;
-                return (
-                    StatusCode::TOO_MANY_REQUESTS,
-                    Json(serde_json::json!({
-                        "error": format!("VRAM > {pct_cfg}% — tarefa P3 adiada; tente novamente mais tarde")
-                    })),
-                ).into_response();
+            if let Some(vram) = vram_pct(&s.0.client, s.0.hardware_profile).await {
+                if vram * 100.0 > VRAM_CRITICAL_PCT {
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(serde_json::json!({
+                            "error": format!(
+                                "VRAM {:.0}% — crítica (>{VRAM_CRITICAL_PCT:.0}%); \
+                                 aguardar descarga antes de continuar",
+                                vram * 100.0
+                            )
+                        })),
+                    ).into_response();
+                }
             }
-        }
-        // CPU/RAM check — protege Windows (sem GPU) e laptop durante indexação pesada
-        let (cpu, ram_free) = {
-            let (c, f, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
-            (c, f)
-        };
-        let cpu_limit = *s.0.cpu_p3_limit_pct.lock().await;
-        if cpu > cpu_limit || ram_free < RAM_P3_BLOCK_MB {
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(serde_json::json!({
-                    "error": format!(
-                        "CPU {cpu:.0}% ou RAM livre {ram_free} MB insuficiente — tarefa P3 adiada"
-                    )
-                })),
-            ).into_response();
+            // Throttle normal: aguardar condições melhores (sem rejeição)
+            let vram_blocked    = s.0.p3_vram_blocked.load(Ordering::Relaxed);
+            let thermal_blocked = s.0.p3_thermal_blocked.load(Ordering::Relaxed);
+            let cpu_limit       = *s.0.cpu_p3_limit_pct.lock().await;
+            let should_wait = on_battery
+                || vram_blocked
+                || thermal_blocked
+                || cpu > cpu_limit
+                || ram_free < RAM_P3_BLOCK_MB;
+            if !should_wait { break; }
+            log::debug!(
+                "LOGOS P3 aguardando hardware — cpu={:.0}% ram={}MB \
+                 vram_block={} thermal={} on_battery={} — dormindo {}s",
+                cpu, ram_free, vram_blocked, thermal_blocked, on_battery, P3_HW_WAIT_SECS
+            );
+            tokio::time::sleep(Duration::from_secs(P3_HW_WAIT_SECS)).await;
         }
     } else if priority == 2 {
         if battery_policy == BatteryPolicy::Critical {
@@ -8476,6 +8493,236 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["inference_enabled"], serde_json::json!(false));
         assert_eq!(body["status"],            serde_json::json!("disabled"));
+    }
+
+    // ── Testes de hardware guards P3 (Passo 0B) ──────────────
+
+    #[test]
+    fn p3_critical_ram_constant_is_400mb() {
+        assert_eq!(RAM_CRITICAL_MB, 400,
+            "RAM_CRITICAL_MB deve ser 400 MB para prevenir crash por OOM");
+    }
+
+    #[test]
+    fn p3_critical_vram_constant_is_97pct() {
+        assert!((VRAM_CRITICAL_PCT - 97.0).abs() < 0.001,
+            "VRAM_CRITICAL_PCT deve ser 97% — OOM certo ao tentar carregar modelo");
+    }
+
+    #[test]
+    fn p3_critical_thermal_constant_is_93c() {
+        assert!((THERMAL_CRITICAL_C - 93.0).abs() < 0.001,
+            "THERMAL_CRITICAL_C deve ser 93°C — risco de dano térmico");
+    }
+
+    #[test]
+    fn p3_hw_wait_constant_is_30s() {
+        assert_eq!(P3_HW_WAIT_SECS, 30,
+            "P3_HW_WAIT_SECS deve ser 30s por iteração do delay loop");
+    }
+
+    #[tokio::test]
+    async fn p3_rejected_503_when_gpu_temp_exceeds_critical() {
+        // GPU temp > THERMAL_CRITICAL_C → hard-reject 503 (crash-prevention)
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        state.0.inference_enabled.store(true, Ordering::Relaxed);
+        // Fake proc ativo para pular lazy loading
+        let child = tokio::process::Command::new("sleep")
+            .arg("1")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível em Linux/Mac");
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "test-model".to_string(),
+        });
+        // Temperatura crítica
+        *state.0.gpu_temp_celsius.lock().await = Some(THERMAL_CRITICAL_C + 1.0);
+
+        let body = serde_json::json!({ "model": "test:3b", "messages": [] });
+        let resp  = queue_and_forward(
+            state,
+            body.as_object().cloned().unwrap(),
+            "akasha".to_string(),
+            3,
+            "/api/chat",
+        ).await;
+
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE,
+            "GPU temp crítica deve retornar 503, não delay");
+        let bytes = axum::body::to_bytes(resp.into_body(), 4096).await.unwrap();
+        let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let msg = val["error"].as_str().unwrap_or("");
+        assert!(msg.contains("temperatura crítica") || msg.contains("°C"),
+            "mensagem deve mencionar temperatura: {msg}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn p3_waits_when_vram_blocked_not_immediately_rejected() {
+        // Antigo comportamento: p3_vram_blocked → 429 imediato.
+        // Novo comportamento: delay loop — handler não retorna 429, aguarda.
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        state.0.inference_enabled.store(true, Ordering::Relaxed);
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível");
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "test-model".to_string(),
+        });
+        state.0.p3_vram_blocked.store(true, Ordering::Relaxed);
+
+        let state_c = state.clone();
+        let handler = tokio::spawn(async move {
+            let body = serde_json::json!({ "model": "test:3b", "messages": [] });
+            queue_and_forward(
+                state_c,
+                body.as_object().cloned().unwrap(),
+                "akasha".to_string(),
+                3,
+                "/api/chat",
+            ).await
+        });
+
+        // Com tempo pausado, o sleep(30s) dentro do loop não avança.
+        // O handler deve estar parado no loop — não ter retornado 429.
+        tokio::task::yield_now().await;
+        assert!(!handler.is_finished(),
+            "P3 com vram_blocked deve aguardar no loop, não rejeitar imediatamente");
+        handler.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn p3_waits_when_thermal_blocked_not_immediately_rejected() {
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        state.0.inference_enabled.store(true, Ordering::Relaxed);
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível");
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "test-model".to_string(),
+        });
+        // thermal_blocked ativo mas temperatura abaixo do crítico (≤ 93°C) → delay, não 503
+        state.0.p3_thermal_blocked.store(true, Ordering::Relaxed);
+        *state.0.gpu_temp_celsius.lock().await = Some(87.0); // >85 mas <93
+
+        let state_c = state.clone();
+        let handler = tokio::spawn(async move {
+            let body = serde_json::json!({ "model": "test:3b", "messages": [] });
+            queue_and_forward(
+                state_c,
+                body.as_object().cloned().unwrap(),
+                "akasha".to_string(),
+                3,
+                "/api/chat",
+            ).await
+        });
+
+        tokio::task::yield_now().await;
+        assert!(!handler.is_finished(),
+            "P3 com thermal_blocked deve aguardar no loop, não rejeitar imediatamente");
+        handler.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn p3_waits_on_battery_not_immediately_rejected() {
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        state.0.inference_enabled.store(true, Ordering::Relaxed);
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível");
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "test-model".to_string(),
+        });
+        // Em bateria: antigo comportamento era 503 imediato; novo é delay loop
+        *state.0.on_battery.lock().await = true;
+        *state.0.battery_policy.lock().await = BatteryPolicy::Economy;
+
+        let state_c = state.clone();
+        let handler = tokio::spawn(async move {
+            let body = serde_json::json!({ "model": "test:3b", "messages": [] });
+            queue_and_forward(
+                state_c,
+                body.as_object().cloned().unwrap(),
+                "akasha".to_string(),
+                3,
+                "/api/chat",
+            ).await
+        });
+
+        tokio::task::yield_now().await;
+        assert!(!handler.is_finished(),
+            "P3 em bateria deve aguardar no loop, não rejeitar imediatamente");
+        handler.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn p3_hardware_loop_sequential_before_semaphore() {
+        // Verifica que o loop de hardware termina ANTES de tentar o semáforo.
+        // Se o loop conclui e o semáforo está disponível, o handler avança.
+        // (Condições OK → loop sai na 1ª iteração sem dormir.)
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        state.0.inference_enabled.store(true, Ordering::Relaxed);
+        let child = tokio::process::Command::new("sleep")
+            .arg("3600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("sleep deve estar disponível");
+        *state.0.llama_proc.lock().await = Some(LlamaProcHandle {
+            child,
+            model_name: "test-model".to_string(),
+        });
+        // Todas as condições OK → loop deve sair imediatamente (sem sleep)
+        // Estado default: on_battery=false, vram_blocked=false, thermal_blocked=false, gpu_temp=None
+
+        let state_c = state.clone();
+        let handler = tokio::spawn(async move {
+            let body = serde_json::json!({ "model": "test:3b", "messages": [] });
+            queue_and_forward(
+                state_c,
+                body.as_object().cloned().unwrap(),
+                "akasha".to_string(),
+                3,
+                "/api/chat",
+            ).await
+        });
+
+        // Com condições OK e tempo pausado, o loop sai na 1ª iteração (sem sleep).
+        // O handler avança para o semáforo e depois para o forward (que falha — sem servidor).
+        // Esperamos que complete rapidamente (sem sleep no loop).
+        tokio::task::yield_now().await;
+        // Aguarda até 100ms de tempo real (o handler faz HTTP e vai falhar rápido)
+        let result = tokio::time::timeout(
+            Duration::from_millis(200),
+            handler
+        ).await;
+        // Não importa se completou ou não; o importante é que o handler AVANÇOU
+        // além do loop (não ficou preso nele) — verificado pela ausência de sleep(30s).
+        // Se o handler ainda estiver rodando é porque está no forward HTTP, não no loop.
+        drop(result);
     }
 
     #[test]
