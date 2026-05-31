@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Configurações — AKASHA{% endblock %}
+
+{% block content %}
+<div class="settings-page" id="main-content">
+
+  <header class="lenses-header">
+    <h1 class="page-title">&#x2699; Configurações</h1>
+    <p class="page-desc">Preferências persistidas no <code>ecosystem.json</code>. Valores lidos em tempo de execução — não é necessário reiniciar o servidor.</p>
+  </header>
+
+  {% if saved %}
+  <div class="settings-saved-banner">&#x2713; Configurações salvas.</div>
+  {% endif %}
+
+  <form method="post" action="/settings" class="settings-form">
+
+    <!-- ── 1. Busca ──────────────────────────────────────────────── -->
+    <section class="card settings-section">
+      <h2 class="settings-section-title">Busca</h2>
+
+      <div class="settings-field">
+        <label class="settings-label" for="s-max-domain">Máximo de resultados por domínio</label>
+        <input type="number" id="s-max-domain" name="max_per_domain"
+               value="{{ cfg.max_per_domain }}" min="0" max="50" class="input settings-input-sm">
+        <span class="lenses-hint">0 = sem limite · padrão: 5</span>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-label" for="s-web-pages">Páginas de resultados web por busca</label>
+        <input type="number" id="s-web-pages" name="web_pages"
+               value="{{ cfg.web_pages }}" min="1" max="10" class="input settings-input-sm">
+        <span class="lenses-hint">Cada página traz ~25 resultados · padrão: 4 · range: 1–10</span>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-label">Idiomas de resultado</label>
+        <select name="search_languages" id="s-langs" multiple size="5" class="input settings-select-multi">
+          {% for code, label in language_options %}
+          <option value="{{ code }}"
+            {% if code in cfg.search_languages %}selected{% endif %}>
+            {{ label }} ({{ code }})
+          </option>
+          {% endfor %}
+        </select>
+        <span class="lenses-hint">Vazio = sem restrição (recomendado) · Ctrl+clique para selecionar múltiplos</span>
+      </div>
+    </section>
+
+    <!-- ── 2. Localização ────────────────────────────────────────── -->
+    <section class="card settings-section">
+      <h2 class="settings-section-title">Localização</h2>
+
+      <div class="settings-field">
+        <label class="settings-label" for="s-city">Cidade padrão para previsão do tempo</label>
+        <input type="text" id="s-city" name="default_city"
+               value="{{ cfg.default_city }}" class="input" placeholder="ex: Curitiba">
+        <span class="lenses-hint">Usada quando a query de clima não menciona uma cidade específica</span>
+      </div>
+    </section>
+
+    <!-- ── 3. Fontes preferidas ──────────────────────────────────── -->
+    <section class="card settings-section">
+      <h2 class="settings-section-title">Fontes preferidas</h2>
+      <p class="lenses-hint settings-section-hint">Fontes ativas por padrão em novas buscas.</p>
+
+      <div class="settings-checkgroup">
+        <label class="settings-check">
+          <input type="checkbox" name="src_web" {% if cfg.src_web %}checked{% endif %}>
+          Web (DuckDuckGo / SearXNG)
+        </label>
+        <label class="settings-check">
+          <input type="checkbox" name="src_local" {% if cfg.src_local %}checked{% endif %}>
+          Local (arquivos indexados)
+        </label>
+        <label class="settings-check">
+          <input type="checkbox" name="src_sites" {% if cfg.src_sites %}checked{% endif %}>
+          Biblioteca (sites rastreados)
+        </label>
+        <label class="settings-check">
+          <input type="checkbox" name="src_papers" {% if cfg.src_papers %}checked{% endif %}>
+          Papers (artigos acadêmicos)
+        </label>
+        <label class="settings-check">
+          <input type="checkbox" name="src_videos" {% if cfg.src_videos %}checked{% endif %}>
+          Vídeos (Invidious)
+        </label>
+        <label class="settings-check">
+          <input type="checkbox" name="src_images" {% if cfg.src_images %}checked{% endif %}>
+          Imagens
+        </label>
+      </div>
+    </section>
+
+    <!-- ── 4. Backends ───────────────────────────────────────────── -->
+    <section class="card settings-section">
+      <h2 class="settings-section-title">Backends</h2>
+
+      <div class="settings-field">
+        <label class="settings-label" for="s-searxng">URL do SearXNG (self-hosted)</label>
+        <input type="url" id="s-searxng" name="web_search_backend"
+               value="{{ cfg.web_search_backend }}" class="input"
+               placeholder="http://localhost:8888">
+        <span class="lenses-hint">Vazio = usar DuckDuckGo como fallback · porta padrão: 8888</span>
+      </div>
+
+      <div class="settings-field">
+        <label class="settings-label" for="s-invidious">URL da instância Invidious</label>
+        <input type="url" id="s-invidious" name="invidious_instance"
+               value="{{ cfg.invidious_instance }}" class="input"
+               placeholder="https://invidious.example.com">
+        <span class="lenses-hint">Usado para vídeos do YouTube sem rastreamento</span>
+      </div>
+    </section>
+
+    <!-- ── 5. IA ─────────────────────────────────────────────────── -->
+    <section class="card settings-section">
+      <h2 class="settings-section-title">IA</h2>
+      <p class="lenses-hint settings-section-hint">Requer LOGOS (llama-server) ativo para funcionar. Fallback graceful quando offline.</p>
+
+      <div class="settings-checkgroup">
+        <label class="settings-check">
+          <input type="checkbox" name="semantic_search" {% if cfg.semantic_search %}checked{% endif %}>
+          Busca semântica (embeddings + FTS5 híbrido)
+        </label>
+        <label class="settings-check">
+          <input type="checkbox" name="reranking" {% if cfg.reranking %}checked{% endif %}>
+          Re-ranking de resultados via LLM
+        </label>
+        <label class="settings-check">
+          <input type="checkbox" name="llm_query_expansion" {% if cfg.llm_query_expansion %}checked{% endif %}>
+          Expansão de query via LLM
+        </label>
+      </div>
+
+      <div class="settings-field" style="margin-top: 1rem;">
+        <label class="settings-label" for="s-deep-docs">Documentos máximos no modo deep</label>
+        <input type="number" id="s-deep-docs" name="deep_research_max_docs"
+               value="{{ cfg.deep_research_max_docs }}" min="1" max="20" class="input settings-input-sm">
+        <span class="lenses-hint">Documentos fetched em profundidade no modo Pesquisa Profunda · range: 1–20 · padrão: 8</span>
+      </div>
+    </section>
+
+    <!-- ── 6. Privacidade ────────────────────────────────────────── -->
+    <section class="card settings-section">
+      <h2 class="settings-section-title">Privacidade</h2>
+      <p class="lenses-hint settings-section-hint">Dados ficam sempre locais. Esta configuração controla o que é persistido no banco.</p>
+
+      <div class="settings-checkgroup">
+        <label class="settings-check">
+          <input type="checkbox" name="save_search_history" {% if cfg.save_search_history %}checked{% endif %}>
+          Salvar histórico de buscas
+        </label>
+        <label class="settings-check">
+          <input type="checkbox" name="save_clicks" {% if cfg.save_clicks %}checked{% endif %}>
+          Salvar cliques em resultados
+        </label>
+      </div>
+    </section>
+
+    <div class="settings-actions">
+      <button type="submit" class="btn btn-primary">Salvar configurações</button>
+      <a href="/" class="btn btn-ghost">Cancelar</a>
+    </div>
+
+  </form>
+
+</div>
+
+<style>
+.settings-page { max-width: 760px; margin: 0 auto; padding: 1.5rem 1rem; }
+.settings-section { margin-bottom: 1.5rem; padding: 1.25rem 1.5rem; }
+.settings-section-title { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; border-bottom: 1px solid var(--color-border, #333); padding-bottom: .4rem; }
+.settings-section-hint { margin-top: -.5rem; margin-bottom: 1rem; }
+.settings-field { margin-bottom: 1rem; display: flex; flex-direction: column; gap: .3rem; }
+.settings-label { font-size: .85rem; font-weight: 500; }
+.settings-input-sm { width: 6rem; }
+.settings-select-multi { min-height: 7rem; }
+.settings-checkgroup { display: flex; flex-direction: column; gap: .5rem; }
+.settings-check { display: flex; align-items: center; gap: .5rem; font-size: .9rem; cursor: pointer; }
+.settings-check input[type="checkbox"] { width: 1rem; height: 1rem; }
+.settings-actions { display: flex; gap: 1rem; margin-top: 1.5rem; }
+.settings-saved-banner {
+  background: var(--color-accent, #2a5); color: #fff;
+  padding: .6rem 1rem; border-radius: .4rem; margin-bottom: 1rem;
+  font-size: .9rem;
+}
+.settings-form { display: flex; flex-direction: column; gap: 0; }
+</style>
+{% endblock %}

@@ -66,7 +66,20 @@ _WEATHER_TERMS = frozenset({
     "weather", "forecast", "rain", "snow", "hot", "cold",
     "humidity", "umidade", "vento", "wind", "sol", "nublado", "cloudy",
     "chuvoso", "ensolarado", "sunny",
+    # termos adicionais
+    "frio", "calor", "neblina", "geada", "granizo", "trovoada",
+    "úmido", "umido", "seco", "precipitação", "precipitacao",
+    "chove", "chover", "nevando", "neve",
 })
+
+# Frases de clima que não são detectáveis por tokens isolados
+_WEATHER_PHRASES = (
+    "vai chover", "vai fazer frio", "vai fazer calor",
+    "como está o tempo", "como vai ficar o tempo",
+    "precisa de casaco", "precisa de guarda-chuva",
+    "levo guarda-chuva", "preciso de guarda-chuva",
+    "what's the weather", "how's the weather",
+)
 
 # Tokens únicos de tradução (comparação por token_set)
 _TRANSLATION_TOKENS = frozenset({
@@ -132,9 +145,12 @@ def classify_intent_lexical(query: str) -> IntentTypeLexical:
     if token_set & _VISUAL_TERMS:
         return "visual"
 
-    # Regra 5: weather
+    # Regra 5: weather (tokens ou frases)
     if token_set & _WEATHER_TERMS:
         return "weather"
+    for phrase in _WEATHER_PHRASES:
+        if phrase in q_lower:
+            return "weather"
 
     # Regra 6: token único de tradução
     if token_set & _TRANSLATION_TOKENS:

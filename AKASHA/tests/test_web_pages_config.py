@@ -49,7 +49,7 @@ def test_get_web_pages_default_without_ecosystem_client():
 def test_get_web_pages_reads_from_config():
     from routers.search import _get_web_pages
     mock_ec = MagicMock()
-    mock_ec.get_akasha_config.return_value = {"web_pages": 3}
+    mock_ec.read_ecosystem.return_value = {"akasha": {"web_pages": 3}}
     with patch.dict("sys.modules", {"ecosystem_client": mock_ec}):
         result = _get_web_pages()
     assert result == 3
@@ -58,7 +58,7 @@ def test_get_web_pages_reads_from_config():
 def test_get_web_pages_clamped_minimum_1():
     from routers.search import _get_web_pages
     mock_ec = MagicMock()
-    mock_ec.get_akasha_config.return_value = {"web_pages": 0}
+    mock_ec.read_ecosystem.return_value = {"akasha": {"web_pages": 0}}
     with patch.dict("sys.modules", {"ecosystem_client": mock_ec}):
         result = _get_web_pages()
     assert result == 1
@@ -67,7 +67,7 @@ def test_get_web_pages_clamped_minimum_1():
 def test_get_web_pages_clamped_maximum_10():
     from routers.search import _get_web_pages
     mock_ec = MagicMock()
-    mock_ec.get_akasha_config.return_value = {"web_pages": 99}
+    mock_ec.read_ecosystem.return_value = {"akasha": {"web_pages": 99}}
     with patch.dict("sys.modules", {"ecosystem_client": mock_ec}):
         result = _get_web_pages()
     assert result == 10
@@ -76,7 +76,7 @@ def test_get_web_pages_clamped_maximum_10():
 def test_get_web_pages_missing_key_returns_4():
     from routers.search import _get_web_pages
     mock_ec = MagicMock()
-    mock_ec.get_akasha_config.return_value = {}
+    mock_ec.read_ecosystem.return_value = {"akasha": {}}
     with patch.dict("sys.modules", {"ecosystem_client": mock_ec}):
         result = _get_web_pages()
     assert result == 4
@@ -85,7 +85,7 @@ def test_get_web_pages_missing_key_returns_4():
 def test_get_web_pages_handles_exception():
     from routers.search import _get_web_pages
     mock_ec = MagicMock()
-    mock_ec.get_akasha_config.side_effect = RuntimeError("indisponível")
+    mock_ec.read_ecosystem.side_effect = RuntimeError("indisponível")
     with patch.dict("sys.modules", {"ecosystem_client": mock_ec}):
         result = _get_web_pages()
     assert result == 4

@@ -40,6 +40,7 @@ from routers import graph as graph_router
 from routers import interests as interests_router
 from routers import context as context_router
 from routers import suggestions as suggestions_router
+from routers import settings as settings_router
 from services.local_search import index_local_files, init_vec_index, init_spell_checker, check_inference_available
 from services.crawler import crawl_pending_sites
 from services.knowledge_worker import process_queue as _knowledge_process_queue, backfill_knowledge as _backfill_knowledge
@@ -283,6 +284,7 @@ app.include_router(graph_router.router)
 app.include_router(interests_router.router)
 app.include_router(context_router.router)
 app.include_router(suggestions_router.router)
+app.include_router(settings_router.router)
 
 # ---------------------------------------------------------------------------
 # Rotas principais (Fase 1 — estrutura)

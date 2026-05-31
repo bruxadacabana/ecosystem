@@ -51,10 +51,10 @@ def test_get_max_per_domain_default_without_ecosystem_client():
 
 
 def test_get_max_per_domain_reads_from_config():
-    """Lê max_per_domain=3 do ecosystem.json via get_akasha_config."""
+    """Lê max_per_domain=3 do ecosystem.json via read_ecosystem."""
     from routers.search import _get_max_per_domain
     mock_ec = MagicMock()
-    mock_ec.get_akasha_config.return_value = {"max_per_domain": 3}
+    mock_ec.read_ecosystem.return_value = {"akasha": {"max_per_domain": 3}}
     with patch.dict("sys.modules", {"ecosystem_client": mock_ec}):
         result = _get_max_per_domain()
     assert result == 3
@@ -64,7 +64,7 @@ def test_get_max_per_domain_missing_key_returns_5():
     """Config sem max_per_domain → retorna 5."""
     from routers.search import _get_max_per_domain
     mock_ec = MagicMock()
-    mock_ec.get_akasha_config.return_value = {}
+    mock_ec.read_ecosystem.return_value = {"akasha": {}}
     with patch.dict("sys.modules", {"ecosystem_client": mock_ec}):
         result = _get_max_per_domain()
     assert result == 5
@@ -74,7 +74,7 @@ def test_get_max_per_domain_zero_means_no_limit():
     """max_per_domain=0 → retorna 0 (sem limite)."""
     from routers.search import _get_max_per_domain
     mock_ec = MagicMock()
-    mock_ec.get_akasha_config.return_value = {"max_per_domain": 0}
+    mock_ec.read_ecosystem.return_value = {"akasha": {"max_per_domain": 0}}
     with patch.dict("sys.modules", {"ecosystem_client": mock_ec}):
         result = _get_max_per_domain()
     assert result == 0
@@ -84,7 +84,7 @@ def test_get_max_per_domain_handles_exception():
     """Exceção no ecosystem_client → retorna 5 sem explodir."""
     from routers.search import _get_max_per_domain
     mock_ec = MagicMock()
-    mock_ec.get_akasha_config.side_effect = RuntimeError("config indisponível")
+    mock_ec.read_ecosystem.side_effect = RuntimeError("config indisponível")
     with patch.dict("sys.modules", {"ecosystem_client": mock_ec}):
         result = _get_max_per_domain()
     assert result == 5

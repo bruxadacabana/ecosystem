@@ -176,33 +176,6 @@
 </div>
 {% endif %}
 
-{% if weather_card %}
-<div class="weather-card">
-  <div class="weather-main">
-    <span class="weather-city">&#x1F4CD; {{ weather_card.city }}</span>
-    <span class="weather-temp">{{ weather_card.temp }}°C</span>
-    <span class="weather-cond">{{ weather_card.condition }}</span>
-  </div>
-  {% if weather_card.forecast %}
-  <div class="weather-forecast">
-    {% for day in weather_card.forecast %}
-    <div class="weather-day">
-      <span class="weather-day-date">{{ day.date }}</span>
-      <span class="weather-day-cond">{{ day.condition }}</span>
-      <span class="weather-day-temps">
-        {% if day.temp_max is not none %}{{ day.temp_max | round(0) | int }}°{% endif %}
-        {% if day.temp_min is not none %} / {{ day.temp_min | round(0) | int }}°{% endif %}
-      </span>
-      {% if day.precip is not none %}
-      <span class="weather-day-precip">&#x1F327; {{ day.precip }}%</span>
-      {% endif %}
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-  <p class="weather-source">Dados: Open-Meteo · Geocoding: OpenStreetMap Nominatim</p>
-</div>
-{% endif %}
 
 {% if intent_routing and intent_routing.video %}
 <div class="video-intent-banner">
@@ -265,6 +238,38 @@
   {% endfor %}
 </div>
 {% endif %}
+{% endif %}
+
+{% if weather_card and weather_card.no_city is defined and weather_card.no_city %}
+<div class="weather-card weather-no-city">
+  <span>&#x1F4CD; Configure sua cidade em <a href="/settings">&#x2699; Configurações</a> para ver a previsão do tempo.</span>
+</div>
+{% elif weather_card %}
+<div class="weather-card">
+  <div class="weather-main">
+    <span class="weather-city">&#x1F4CD; {{ weather_card.city }}</span>
+    <span class="weather-temp">{{ weather_card.temp }}°C</span>
+    <span class="weather-cond">{{ weather_card.condition }}</span>
+  </div>
+  {% if weather_card.forecast %}
+  <div class="weather-forecast">
+    {% for day in weather_card.forecast %}
+    <div class="weather-day">
+      <span class="weather-day-date">{{ day.date }}</span>
+      <span class="weather-day-cond">{{ day.condition }}</span>
+      <span class="weather-day-temps">
+        {% if day.temp_max is not none %}{{ day.temp_max | round(0) | int }}°{% endif %}
+        {% if day.temp_min is not none %} / {{ day.temp_min | round(0) | int }}°{% endif %}
+      </span>
+      {% if day.precip is not none %}
+      <span class="weather-day-precip">&#x1F327; {{ day.precip }}%</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <p class="weather-source">Dados: Open-Meteo · Geocoding: OpenStreetMap Nominatim</p>
+</div>
 {% endif %}
 
 {% set has_main   = web_results or fav_results or site_results or watch_later_results or paper_results or kosmos_results %}
@@ -485,6 +490,38 @@
     </div>
     {% endif %}
   </section>
+{% endif %}
+
+{% if weather_card and weather_card.no_city is defined and weather_card.no_city %}
+<div class="weather-card weather-no-city">
+  <span>&#x1F4CD; Configure sua cidade em <a href="/settings">&#x2699; Configurações</a> para ver a previsão do tempo.</span>
+</div>
+{% elif weather_card %}
+<div class="weather-card">
+  <div class="weather-main">
+    <span class="weather-city">&#x1F4CD; {{ weather_card.city }}</span>
+    <span class="weather-temp">{{ weather_card.temp }}°C</span>
+    <span class="weather-cond">{{ weather_card.condition }}</span>
+  </div>
+  {% if weather_card.forecast %}
+  <div class="weather-forecast">
+    {% for day in weather_card.forecast %}
+    <div class="weather-day">
+      <span class="weather-day-date">{{ day.date }}</span>
+      <span class="weather-day-cond">{{ day.condition }}</span>
+      <span class="weather-day-temps">
+        {% if day.temp_max is not none %}{{ day.temp_max | round(0) | int }}°{% endif %}
+        {% if day.temp_min is not none %} / {{ day.temp_min | round(0) | int }}°{% endif %}
+      </span>
+      {% if day.precip is not none %}
+      <span class="weather-day-precip">&#x1F327; {{ day.precip }}%</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <p class="weather-source">Dados: Open-Meteo · Geocoding: OpenStreetMap Nominatim</p>
+</div>
 {% endif %}
 
 <!-- ─── Skeleton loader (visível durante requisição HTMX) ─────────── -->

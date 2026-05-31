@@ -75,7 +75,8 @@ def extract_city(query: str) -> str | None:
 def _default_city() -> str:
     try:
         import ecosystem_client as _ec  # type: ignore
-        return ((_ec.get_akasha_config() or {}).get("default_city", "") or "").strip()
+        cfg = (_ec.read_ecosystem() or {}).get("akasha", {})
+        return (cfg.get("default_city", "") or "").strip()
     except Exception:
         return ""
 

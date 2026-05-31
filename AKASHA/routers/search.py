@@ -124,42 +124,27 @@ def _local_qualifies_for_priority(
     return True
 
 
-def _get_local_priority_threshold() -> int:
-    """Lê local_priority_threshold do ecosystem.json (default 5)."""
+def _akasha_cfg() -> dict:
+    """Lê ecosystem.json["akasha"] em runtime. Nunca lança exceção."""
     try:
         import ecosystem_client as _ec  # type: ignore
-        cfg_fn = getattr(_ec, "get_akasha_config", None)
-        if cfg_fn is not None:
-            return max(1, int(cfg_fn().get("local_priority_threshold", 5)))
+        return (_ec.read_ecosystem() or {}).get("akasha", {})
     except Exception:
-        pass
-    return 5
+        return {}
+
+
+def _get_local_priority_threshold() -> int:
+    return max(1, int(_akasha_cfg().get("local_priority_threshold", 5)))
 
 
 def _get_max_per_domain() -> int:
     """Lê max_per_domain do ecosystem.json (default 5). 0 = sem limite."""
-    try:
-        import ecosystem_client as _ec  # type: ignore
-        cfg_fn = getattr(_ec, "get_akasha_config", None)
-        if cfg_fn is not None:
-            val = int(cfg_fn().get("max_per_domain", 5))
-            return max(0, val)
-    except Exception:
-        pass
-    return 5
+    return max(0, int(_akasha_cfg().get("max_per_domain", 5)))
 
 
 def _get_web_pages() -> int:
     """Lê web_pages do ecosystem.json (default 4, range 1–10)."""
-    try:
-        import ecosystem_client as _ec  # type: ignore
-        cfg_fn = getattr(_ec, "get_akasha_config", None)
-        if cfg_fn is not None:
-            val = int(cfg_fn().get("web_pages", 4))
-            return max(1, min(10, val))
-    except Exception:
-        pass
-    return 4
+    return max(1, min(10, int(_akasha_cfg().get("web_pages", 4))))
 
 
 _BASE_DIR = Path(__file__).parent.parent
@@ -688,10 +673,18 @@ async def search(
         # Widget de clima (weather intent → geocoding + Open-Meteo)
         if _intent_routing.get("weather"):
             try:
-                from services.weather_widget import get_weather_card as _get_weather
+                from services.weather_widget import (
+                    get_weather_card as _get_weather,
+                    extract_city as _extract_city,
+                    _default_city as _def_city,
+                )
                 weather_card = await asyncio.wait_for(
                     _get_weather(_effective_query), timeout=8.0
                 )
+                # Sem resultado e sem cidade configurada → sinalizar para o template
+                if weather_card is None and not _extract_city(_effective_query) and not _def_city():
+                    weather_card = {"no_city": True}
+                    log.debug("weather intent mas default_city vazio — exibindo banner de configuração")
             except (asyncio.TimeoutError, Exception):
                 pass
 
