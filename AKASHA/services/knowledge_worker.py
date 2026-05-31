@@ -26,6 +26,14 @@ _QUEUE_MAX:      int   = 200    # descarta silenciosamente se fila cheia
 _COOLDOWN_S:     float = 2.0    # pausa entre processamentos (P3 — não saturar Ollama)
 _EXTRACT_TIMEOUT: float = 20.0  # timeout por chamada de extração
 
+# Headers enviados ao LOGOS em todas as chamadas de inferência.
+# X-App identifica a origem; X-Priority=3 indica background (análise, não interativo).
+# O LOGOS usa X-App para rotear para o servidor correto (AKASHA → porta 8081).
+_LOGOS_HEADERS: dict[str, str] = {
+    "X-App":      "akasha",
+    "X-Priority": "3",
+}
+
 # Termos genéricos que não contribuem para o perfil de interesse
 _STOPWORDS: frozenset[str] = frozenset({
     # artigos, preposições, conjunções PT
@@ -117,6 +125,56 @@ def _get_llm_query_model() -> str:
         return ((p or {}).get("models", {}) or {}).get("llm_query", "") if p else ""
     except Exception:
         return ""
+
+
+async def _logos_llm_post(
+    url: str,
+    payload: dict,
+    timeout: float = _EXTRACT_TIMEOUT,
+    *,
+    max_retries: int = 1,
+) -> dict | None:
+    """POST ao LOGOS com headers X-App/X-Priority; respeita Retry-After em 429/503.
+
+    Retorna o JSON da resposta em sucesso, None em falha.
+    Em 429/503 lê `retry_after` do corpo JSON (adicionado pelo LOGOS no Passo 8)
+    e aguarda esse valor antes de tentar novamente.
+    Fallback: 60s quando o campo está ausente ou o corpo não é JSON válido.
+    """
+    headers = {**_LOGOS_HEADERS, "Content-Type": "application/json"}
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                log.debug("knowledge_worker: LOGOS respondeu %d em '%s'", resp.status_code, url)
+                return resp.json()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status in (429, 503) and attempt < max_retries:
+                try:
+                    retry_after: float = float(exc.response.json().get("retry_after", 60))
+                except Exception:
+                    retry_after = 60.0
+                log.debug(
+                    "knowledge_worker: LOGOS retornou %d — aguardando %.0fs (retry_after)",
+                    status, retry_after,
+                )
+                await asyncio.sleep(retry_after)
+                continue
+            log.warning(
+                "knowledge_worker: LOGOS retornou HTTP %d para '%s': %s",
+                status, url, exc,
+            )
+            return None
+        except httpx.ConnectError as exc:
+            log.debug("knowledge_worker: LOGOS offline ('%s'): %s", url, exc)
+            return None
+        except Exception as exc:
+            log.warning("knowledge_worker: inferência falhou em '%s': %s", url, exc)
+            return None
+    return None
+
 
 # ---------------------------------------------------------------------------
 # API pública
@@ -570,24 +628,21 @@ async def _process_confirmed_feedback(memory_id: int) -> None:
             f"Apenas a proposição, sem introdução. Exemplo: "
             f"\"Usuária tem interesse em aprendizado de máquina aplicado a texto.\""
         )
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.post(
-                    f"{_get_inference_base()}/v1/chat/completions",
-                    json={
-                        "model":       model,
-                        "messages":    [{"role": "user", "content": prompt}],
-                        "stream":      False,
-                        "max_tokens":  60,
-                        "temperature": 0.2,
-                    },
-                )
-                resp.raise_for_status()
-                raw = resp.json()["choices"][0]["message"]["content"].strip()
-                if raw and len(raw) >= 10:
-                    proposition = raw
-        except Exception as exc:
-            log.debug("knowledge_worker: síntese episódica falhou: %s", exc)
+        data = await _logos_llm_post(
+            f"{_get_inference_base()}/v1/chat/completions",
+            {
+                "model":       model,
+                "messages":    [{"role": "user", "content": prompt}],
+                "stream":      False,
+                "max_tokens":  60,
+                "temperature": 0.2,
+            },
+            timeout=15.0,
+        )
+        if data:
+            raw = (data.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+            if raw and len(raw) >= 10:
+                proposition = raw
 
     if not proposition:
         top_terms = sorted(terms, key=lambda t: len(t), reverse=True)[:5]
@@ -834,24 +889,19 @@ async def _call_ollama_extract(title: str, content: str) -> dict | None:
         f"Título: {title}\nTexto: {content}\nJSON:"
     )
 
-    try:
-        async with httpx.AsyncClient(timeout=_EXTRACT_TIMEOUT) as client:
-            resp = await client.post(
-                f"{_get_inference_base()}/v1/chat/completions",
-                json={
-                    "model":       model,
-                    "messages":    [{"role": "user", "content": prompt}],
-                    "stream":      False,
-                    "max_tokens":  150,
-                    "temperature": 0.1,
-                },
-            )
-            resp.raise_for_status()
-            raw = resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as exc:
-        log.warning("knowledge_worker: inferência falhou na extração: %s", exc)
+    data = await _logos_llm_post(
+        f"{_get_inference_base()}/v1/chat/completions",
+        {
+            "model":       model,
+            "messages":    [{"role": "user", "content": prompt}],
+            "stream":      False,
+            "max_tokens":  150,
+            "temperature": 0.1,
+        },
+    )
+    if data is None:
         return None
-
+    raw = (data.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
     return _parse_json(raw)
 
 
@@ -910,23 +960,20 @@ async def _extract_entities_llm(text: str, model: str) -> list[str]:
         f"Escreva SEMPRE em português, mesmo que o texto esteja em outro idioma.\n\n"
         f"Texto: {text[:500]}\n\nEntidades:"
     )
-    try:
-        async with httpx.AsyncClient(timeout=12.0) as client:
-            resp = await client.post(
-                f"{_get_inference_base()}/v1/chat/completions",
-                json={
-                    "model":       model,
-                    "messages":    [{"role": "user", "content": prompt}],
-                    "stream":      False,
-                    "max_tokens":  80,
-                    "temperature": 0.1,
-                },
-            )
-            resp.raise_for_status()
-            raw = resp.json()["choices"][0]["message"]["content"]
-    except Exception as exc:
-        log.debug("knowledge_worker: extração de entidades LLM falhou: %s", exc)
+    data = await _logos_llm_post(
+        f"{_get_inference_base()}/v1/chat/completions",
+        {
+            "model":       model,
+            "messages":    [{"role": "user", "content": prompt}],
+            "stream":      False,
+            "max_tokens":  80,
+            "temperature": 0.1,
+        },
+        timeout=12.0,
+    )
+    if data is None:
         return []
+    raw = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
 
     entities: list[str] = []
     for line in raw.splitlines():
@@ -1052,23 +1099,21 @@ async def _event_reflection(
     # Em CPUs lentos (2-5 tok/s) a extração da próxima página já começou; sem este
     # delay + timeout estendido a reflexão sempre perde a corrida e falha silenciosamente.
     await asyncio.sleep(5.0)
-    try:
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            resp = await client.post(
-                f"{_get_inference_base()}/v1/chat/completions",
-                json={
-                    "model":       model,
-                    "messages":    [{"role": "user", "content": prompt}],
-                    "stream":      False,
-                    "max_tokens":  120,
-                    "temperature": 0.7,
-                },
-            )
-            resp.raise_for_status()
-            raw = resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as exc:
-        log.warning("knowledge_worker: _event_reflection falhou: %s", exc)
+    data = await _logos_llm_post(
+        f"{_get_inference_base()}/v1/chat/completions",
+        {
+            "model":       model,
+            "messages":    [{"role": "user", "content": prompt}],
+            "stream":      False,
+            "max_tokens":  120,
+            "temperature": 0.7,
+        },
+        timeout=90.0,
+    )
+    if data is None:
+        log.warning("knowledge_worker: _event_reflection falhou (sem resposta do LOGOS)")
         return
+    raw = (data.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
 
     if not raw or len(raw) < 10:
         return

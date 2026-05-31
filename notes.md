@@ -1,7 +1,12 @@
 ## Fila de implementação atual:
 
-pode prosseguir para a implementação da seção '### LOGOS — Dois servidores LLM simultâneos (AKASHA + Mnemosyne em paralelo) | 2026-05-30', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir. Seu resumo sempre deve ser detalhado mas acessível, explicando mais a lógica do que códigos e tecnicidades.
+pode prosseguir para a implementação da seção '### AKASHA — Busca sem limites, semântica e multilíngue | 2026-05-30', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir. Seu resumo sempre deve ser detalhado mas acessível, explicando mais a lógica do que códigos e tecnicidades.
 Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes exaustivamente e incluir criação de logs em todo o processo envolvendo a nova feature implementada.
+
+---
+
+não entendi bem "Passo 5 — Roteamento real: Toda requisição agora passa por route_request(app_name) que decide qual servidor atender. "mnemosyne" vai para o servidor 8083, tudo o mais vai para 8081" se cada funcionalidade/aplicativo tem sua llm própria. Criar servidores individuais para cada que são ativos e desativados conforme uso não é mais prático?
+Dai temos "Passo 10 — UI atualizada: O painel do LOGOS agora mostra "Servidor AKASHA", "Servidor Mnemosyne" e "Servidor de Embedding" como três linhas distintas." para cada programa que usa LLM.
 
 ---
 
@@ -11,8 +16,6 @@ Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça 
 
 
 ## próximo: 
-
-### AKASHA — Busca sem limites, semântica e multilíngue | 2026-05-30
 
 ### AKASHA como Google + Gemini — RAG grounded e integração com Mnemosyne | 2026-05-30
 

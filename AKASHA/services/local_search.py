@@ -908,6 +908,7 @@ async def _expand_query_llm(query: str) -> list[str]:
         async with _httpx.AsyncClient(timeout=5.0) as client:
             r = await client.post(
                 f"{_inference_base_url}/v1/chat/completions",
+                headers={"X-App": "akasha", "X-Priority": "3"},
                 json={
                     "model":       model,
                     "messages":    [{"role": "user", "content": prompt}],
@@ -1114,6 +1115,7 @@ async def _generate_hyde(query: str) -> str:
         async with _httpx.AsyncClient(timeout=4.0) as client:
             r = await client.post(
                 f"{_inference_base_url}/v1/chat/completions",
+                headers={"X-App": "akasha", "X-Priority": "3"},
                 json={
                     "model":       model,
                     "messages":    [{"role": "user", "content": prompt}],

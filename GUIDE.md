@@ -2467,7 +2467,15 @@ O LOGOS usa um semáforo com **2 permits** e três níveis de prioridade:
 
 **Preempção inteligente:** quando uma requisição P1 chega e a VRAM está saturada por tarefas P3 ativas, o LOGOS aborta imediatamente as inferências P3 em andamento (sem descarregar o modelo) para abrir espaço.
 
-**Os apps não precisam saber nada disso.** Eles enviam os headers `X-App: mnemosyne` e `X-Priority: 2` — o LOGOS cuida do resto.
+**Os apps não precisam saber nada disso.** Eles enviam os headers `X-App: <app>` e `X-Priority: <prioridade>` — o LOGOS cuida do resto.
+
+| App | X-App | X-Priority padrão | Servidor alvo |
+|-----|-------|--------------------|---------------|
+| AKASHA (knowledge_worker, local_search) | `akasha` | `3` | AKASHA :8081 |
+| Mnemosyne (RAG, indexação) | `mnemosyne` | `2` ou `3` | Mnemosyne :8083 |
+| KOSMOS | `kosmos` | `1` (leitura ativa) ou `3` (background) | AKASHA :8081 |
+
+**Retry-After:** em 429 e 503, o LOGOS retorna `Retry-After: N` e `{"retry_after": N}` no corpo. Os apps devem ler esse campo para determinar quando tentar novamente em vez de usar um wait fixo.
 
 **Código relevante:** `HUB/src-tauri/src/logos.rs` função `queue_and_forward()` — onde toda a lógica de fila, guards e encaminhamento acontece.
 
