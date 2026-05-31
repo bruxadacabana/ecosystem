@@ -187,9 +187,10 @@ O `sync_root` é lido em runtime por todos os apps via `ecosystem_client` — nu
 O HUB é o **dashboard e painel de controle do ecossistema**: lança apps, centraliza configuração, visualiza dados de todos os programas e hospeda o **LOGOS** (proxy inteligente de LLM).
 
 O LOGOS gerencia prioridades de execução de IA:
-- **P1 (crítica):** chat interativo do HUB + escrita ativa no AETHER
+- **P1 (crítica):** leitura ativa no KOSMOS (leitor RSS/notícias — envia P1 enquanto o usuário está lendo)
 - **P2 (importante):** buscas RAG no Mnemosyne
-- **P3 (background):** pré-análise KOSMOS + transcrições Hermes
+- **P3 (background):** análise/indexação KOSMOS, reflexões e indexação Mnemosyne, knowledge_worker AKASHA
+- **AETHER não chama o LOGOS** — é apenas editor de texto, sem integração com LLM.
 
 Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é** um app Android — a Fase 3 (Android APK) está suspensa para replanejamento.
 

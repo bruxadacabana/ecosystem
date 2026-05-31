@@ -693,12 +693,24 @@ impl LogosState {
                 .as_u64()
                 .unwrap_or(0) as usize
         };
+        let active_profile = {
+            let eco = crate::ecosystem::read_json();
+            let p = eco["logos"]["active_profile"]
+                .as_str()
+                .unwrap_or("analise")
+                .to_string();
+            match p.as_str() {
+                "estudo" | "analise" | "normal" => p,
+                _ => "analise".to_string(),
+            }
+        };
         log::info!(
             "LOGOS: embed_model='{}' embed_n_gpu_layers={} cpu_p3_limit_pct={:.0}% \
-             idle_timeout={}s cpu_fallback_max={}MB cpu_max_threads={}",
+             idle_timeout={}s cpu_fallback_max={}MB cpu_max_threads={} active_profile='{}'",
             embed_model, embed_n_gpu_layers, cpu_p3_limit_pct,
             idle_timeout_secs, cpu_fallback_max_mb,
-            if cpu_max_threads == 0 { "auto".to_string() } else { cpu_max_threads.to_string() }
+            if cpu_max_threads == 0 { "auto".to_string() } else { cpu_max_threads.to_string() },
+            active_profile
         );
 
         // Inicialização prévia do sysinfo — primeira leitura é sempre 0%; a segunda é o delta real.
@@ -711,7 +723,7 @@ impl LogosState {
             active_priority: Mutex::new(None),
             active_model_class: Mutex::new(None),
             active_app: Mutex::new(None),
-            active_profile: Mutex::new("normal".to_string()),
+            active_profile: Mutex::new(active_profile),
             hardware_mode,
             hardware_profile,
             has_avx2: detect_avx2(),
@@ -835,7 +847,7 @@ pub struct StatusResponse {
     pub active_model_class: Option<String>,
     /// App que está usando o LOGOS ("kosmos", "mnemosyne", etc.)
     pub active_app: Option<String>,
-    /// Perfil de workflow ativo: "normal" | "escrita" | "estudo" | "consumo"
+    /// Perfil de workflow ativo: "analise" | "estudo" | "normal"
     pub current_profile: String,
     /// Modo de hardware: "normal" (CachyOS/GPU) | "sobrevivencia" (Windows/CPU-only)
     pub hardware_mode: String,
@@ -3687,7 +3699,7 @@ pub async fn do_load_model(s: &LogosState, model: &str) -> bool {
 /// Retorna o perfil efetivamente aplicado.
 pub async fn do_set_profile(s: &LogosState, profile: String) -> String {
     let validated = match profile.as_str() {
-        "escrita" | "estudo" | "consumo" | "normal" => profile,
+        "estudo" | "analise" | "normal" => profile,
         _ => "normal".to_string(),
     };
     *s.0.active_profile.lock().await = validated.clone();
@@ -3977,29 +3989,27 @@ pub async fn do_get_recommended_models(s: &LogosState) -> Vec<RecommendedModel> 
 /// Aplica override de prioridade baseado no perfil ativo e no app requisitante.
 ///
 /// Perfis e seus efeitos:
-///   escrita — prioriza AETHER/HUB; rebaixa KOSMOS reader (P1→P2) e Mnemosyne RAG (P2→P3)
-///   estudo  — promove Mnemosyne RAG (P2→P1); rebaixa KOSMOS reader (P1→P2)
-///   consumo — sem override (KOSMOS P1, tudo normal)
-///   normal  — sem override
+///   analise — caso de uso primário: indexação e análise em background.
+///             AKASHA/Mnemosyne/KOSMOS P3 → P2 (análises não ficam na fila mais baixa).
+///   estudo  — consulta ativa ao vault: Mnemosyne RAG P2→P1; AKASHA P3→P2.
+///   normal  — sem override; prioridades definidas pelos apps.
 fn apply_profile_priority(profile: &str, app: &str, requested: u8) -> u8 {
     match profile {
-        "escrita" => match (app, requested) {
-            // KOSMOS reader rebaixado: não interrompe a escrita
-            ("kosmos", 1) => 2,
-            // Mnemosyne RAG rebaixado para background: escrita em foco
-            ("mnemosyne", 2) => 3,
-            // AETHER, hub e AKASHA (conversas interativas) mantêm prioridade solicitada
-            ("aether" | "hub" | "akasha", p) => p,
+        "analise" => match (app, requested) {
+            ("akasha",    3) => 2,
+            ("mnemosyne", 3) => 2,
+            ("kosmos",    3) => 2,
             _ => requested,
         },
         "estudo" => match (app, requested) {
             // Mnemosyne RAG promovido: consultas ao vault são prioridade
             ("mnemosyne", 2) => 1,
-            // KOSMOS reader rebaixado: não compete com o estudo ativo
-            ("kosmos", 1) => 2,
+            // AKASHA e KOSMOS reader promovidos: pesquisa ativa
+            ("akasha",    3) => 2,
+            ("kosmos",    1) => 2,
             _ => requested,
         },
-        // consumo e normal: sem override de prioridade
+        // normal: sem override de prioridade
         _ => requested,
     }
 }
@@ -8476,5 +8486,90 @@ mod tests {
         let args  = cmd_args(&cmd);
         let idx   = args.iter().position(|a| a == "--port").expect("--port presente");
         assert_eq!(args[idx + 1], "9090");
+    }
+
+    // ── Testes de apply_profile_priority ─────────────────────
+
+    #[test]
+    fn analise_akasha_p3_promoted_to_p2() {
+        assert_eq!(apply_profile_priority("analise", "akasha", 3), 2);
+    }
+
+    #[test]
+    fn analise_mnemosyne_p3_promoted_to_p2() {
+        assert_eq!(apply_profile_priority("analise", "mnemosyne", 3), 2);
+    }
+
+    #[test]
+    fn analise_kosmos_p3_promoted_to_p2() {
+        assert_eq!(apply_profile_priority("analise", "kosmos", 3), 2);
+    }
+
+    #[test]
+    fn analise_mnemosyne_p2_unchanged() {
+        // Mnemosyne P2 (RAG) não é alterado em analise — já é P2
+        assert_eq!(apply_profile_priority("analise", "mnemosyne", 2), 2);
+    }
+
+    #[test]
+    fn analise_kosmos_p1_unchanged() {
+        // KOSMOS P1 (leitura ativa) não sobe nem desce em analise
+        assert_eq!(apply_profile_priority("analise", "kosmos", 1), 1);
+    }
+
+    #[test]
+    fn estudo_mnemosyne_rag_promoted_to_p1() {
+        assert_eq!(apply_profile_priority("estudo", "mnemosyne", 2), 1);
+    }
+
+    #[test]
+    fn estudo_akasha_p3_promoted_to_p2() {
+        assert_eq!(apply_profile_priority("estudo", "akasha", 3), 2);
+    }
+
+    #[test]
+    fn estudo_kosmos_p1_demoted_to_p2() {
+        // KOSMOS leitor rebaixado durante estudo: não compete com consultas ativas
+        assert_eq!(apply_profile_priority("estudo", "kosmos", 1), 2);
+    }
+
+    #[test]
+    fn normal_no_overrides() {
+        // Perfil normal não altera nada
+        assert_eq!(apply_profile_priority("normal", "akasha",    3), 3);
+        assert_eq!(apply_profile_priority("normal", "mnemosyne", 2), 2);
+        assert_eq!(apply_profile_priority("normal", "kosmos",    1), 1);
+    }
+
+    #[test]
+    fn unknown_profile_falls_through_unchanged() {
+        // Perfil inválido/desconhecido age como normal
+        assert_eq!(apply_profile_priority("inexistente", "akasha", 3), 3);
+        assert_eq!(apply_profile_priority("",            "mnemosyne", 2), 2);
+    }
+
+    #[tokio::test]
+    async fn do_set_profile_accepts_valid_profiles() {
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert_eq!(do_set_profile(&state, "analise".into()).await, "analise");
+        assert_eq!(do_set_profile(&state, "estudo".into()).await,  "estudo");
+        assert_eq!(do_set_profile(&state, "normal".into()).await,  "normal");
+    }
+
+    #[tokio::test]
+    async fn do_set_profile_rejects_removed_profiles() {
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        // "escrita" e "consumo" foram removidos — devem cair em "normal"
+        assert_eq!(do_set_profile(&state, "escrita".into()).await, "normal");
+        assert_eq!(do_set_profile(&state, "consumo".into()).await, "normal");
+    }
+
+    #[tokio::test]
+    async fn do_set_profile_rejects_unknown_profile() {
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert_eq!(do_set_profile(&state, "foo".into()).await, "normal");
     }
 }

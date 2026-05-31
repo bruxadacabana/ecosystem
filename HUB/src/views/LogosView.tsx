@@ -11,10 +11,9 @@ import type { LogosStatus, ModelInfo, ModelEntry, ModelAssignment, RecommendedMo
 import { FinetunePanel } from '../components/FinetunePanel'
 
 const PROFILES = [
-  { id: 'normal',  label: 'Normal',  tip: 'Prioridades padrão de cada app'                       },
-  { id: 'escrita', label: 'Escrita', tip: 'AETHER P1; KOSMOS reader → P2; Mnemosyne RAG → P3'   },
-  { id: 'estudo',  label: 'Estudo',  tip: 'Mnemosyne RAG → P1; KOSMOS reader → P2'               },
-  { id: 'consumo', label: 'Consumo', tip: 'KOSMOS P1, Hermes liberado, sem override'              },
+  { id: 'analise', label: 'Análise', tip: 'Prioriza indexação e análise em background. AKASHA, Mnemosyne e KOSMOS sobem de P3 para P2.' },
+  { id: 'normal',  label: 'Normal',  tip: 'Prioridades equilibradas. Sem overrides.'                                                      },
+  { id: 'estudo',  label: 'Estudo',  tip: 'Mnemosyne RAG vira P1. AKASHA e KOSMOS promovidos para P2. Ideal para pesquisa ativa.'        },
 ]
 
 const P_COLORS: Record<number, string> = {
@@ -25,7 +24,7 @@ const P_COLORS: Record<number, string> = {
 
 export function LogosView() {
   const [status,       setStatus]       = useState<LogosStatus | null>(null)
-  const [profile,      setProfile]      = useState('normal')
+  const [profile,      setProfile]      = useState('analise')
   const [,             setModels]       = useState<ModelInfo[]>([])
   const [allModels,    setAllModels]    = useState<ModelEntry[]>([])
   const [silencing,    setSilencing]    = useState(false)
@@ -433,11 +432,9 @@ export function LogosView() {
             )
           })}
         </div>
-        {profile !== 'normal' && (
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', margin: 0 }}>
-            {PROFILES.find(p => p.id === profile)?.tip}
-          </p>
-        )}
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-ghost)', margin: 0 }}>
+          {PROFILES.find(p => p.id === profile)?.tip}
+        </p>
       </section>
 
       {/* ── Monitor de fila ───────────────────────────── */}
