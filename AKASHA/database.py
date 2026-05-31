@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 48
+SCHEMA_VERSION = 49
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -320,6 +320,21 @@ CREATE TABLE IF NOT EXISTS local_vec_paths (
 );
 """
 
+_CREATE_PAGE_EMBEDDINGS = """
+CREATE TABLE IF NOT EXISTS page_embeddings (
+    id         INTEGER PRIMARY KEY,
+    url        TEXT    NOT NULL UNIQUE,
+    model      TEXT    NOT NULL DEFAULT '',
+    dim        INTEGER NOT NULL DEFAULT 768,
+    updated_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (url) REFERENCES crawl_pages(url) ON DELETE CASCADE
+);
+"""
+
+_CREATE_IDX_PAGE_EMBEDDINGS_URL = """
+CREATE INDEX IF NOT EXISTS idx_page_embeddings_url ON page_embeddings(url);
+"""
+
 _CREATE_ARCHIVE_SIMHASHES = """
 CREATE TABLE IF NOT EXISTS archive_simhashes (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -567,6 +582,8 @@ async def init_db() -> None:
         await db.execute(_CREATE_ACTIVITY_LOG)
         await db.execute(_CREATE_IDX_ACTIVITY_LOG)
         await db.execute(_CREATE_LOCAL_VEC_PATHS)
+        await db.execute(_CREATE_PAGE_EMBEDDINGS)
+        await db.execute(_CREATE_IDX_PAGE_EMBEDDINGS_URL)
         await db.execute(_CREATE_ARCHIVE_SIMHASHES)
         await db.execute(_CREATE_IDX_ARCHIVE_SIMHASHES)
         await db.execute(_CREATE_DOC_ACCESSES)
@@ -1225,6 +1242,19 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
                 "CREATE INDEX IF NOT EXISTS idx_crawl_pages_word_count "
                 "ON crawl_pages(word_count)"
             )
+        except Exception:
+            pass
+
+    if from_version < 49:
+        # page_embeddings: metadados de embedding para páginas crawleadas.
+        # page_vec (sqlite-vec virtual table) é criada por semantic_search.py
+        # na primeira chamada — requer extensão sqlite-vec carregada.
+        try:
+            await db.execute(_CREATE_PAGE_EMBEDDINGS)
+        except Exception:
+            pass  # tabela já existe em bancos migrados
+        try:
+            await db.execute(_CREATE_IDX_PAGE_EMBEDDINGS_URL)
         except Exception:
             pass
 
