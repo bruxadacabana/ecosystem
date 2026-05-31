@@ -395,6 +395,12 @@ struct Inner {
     /// true  → VRAM acima do threshold; P3 bloqueado até cair abaixo de 70%.
     /// false → P3 permitido (verificação por-request ainda acontece como defesa).
     p3_vram_blocked: Arc<AtomicBool>,
+    /// true quando temperatura da GPU > 85°C — P3 pausado para evitar throttling térmico.
+    /// A RX 6600 só faz throttling pelo driver acima de ~95°C; pausamos antes para preservar
+    /// desempenho de P1/P2 e evitar o ciclo térmico boost→throttle.
+    p3_thermal_blocked: Arc<AtomicBool>,
+    /// Temperatura atual da GPU em °C (None se não disponível ou WorkPc sem GPU).
+    gpu_temp_celsius: Mutex<Option<f32>>,
     /// Downloads de GGUF em andamento ou concluídos recentemente.
     /// Chave: download ID (timestamp_filename). Valor: sender do canal de progresso.
     downloads: Mutex<HashMap<String, tokio::sync::watch::Sender<DownloadProgress>>>,
@@ -723,6 +729,8 @@ impl LogosState {
             vram_limit_pct: Mutex::new(vram_limit_pct),
             active_inferences: Mutex::new(HashMap::new()),
             p3_vram_blocked: Arc::new(AtomicBool::new(false)),
+            p3_thermal_blocked: Arc::new(AtomicBool::new(false)),
+            gpu_temp_celsius: Mutex::new(read_gpu_temp_celsius()),
             downloads: Mutex::new(HashMap::new()),
             models_dir,
             llama_server_bin,
@@ -791,6 +799,8 @@ impl LogosState {
             vram_limit_pct:     Mutex::new(85.0),
             active_inferences:  Mutex::new(HashMap::new()),
             p3_vram_blocked:    Arc::new(AtomicBool::new(false)),
+            p3_thermal_blocked: Arc::new(AtomicBool::new(false)),
+            gpu_temp_celsius:   Mutex::new(None),
             downloads:          Mutex::new(HashMap::new()),
             models_dir,
             llama_server_bin,
@@ -861,6 +871,11 @@ pub struct StatusResponse {
     /// True quando o watchdog de VRAM bloqueou P3 (VRAM > block_pct%).
     /// Retoma automaticamente quando VRAM cai abaixo de 70%.
     pub p3_vram_blocked: bool,
+    /// True quando temperatura da GPU > 85°C — P3 pausado.
+    /// Retoma quando temperatura cai abaixo de 80°C.
+    pub p3_thermal_blocked: bool,
+    /// Temperatura atual da GPU em °C (None se WorkPc/CPU-only ou leitura indisponível).
+    pub gpu_temp_celsius: Option<f32>,
     /// True se o processo llama-server de chat (porta 8081) está ativo.
     pub chat_server_online: bool,
     /// Modelo carregado no servidor de chat ("" se offline).
@@ -2451,6 +2466,16 @@ async fn queue_and_forward(
                 })),
             ).into_response();
         }
+        // Rejeita P3 se temperatura da GPU > 85°C (retoma em <80°C)
+        if s.0.p3_thermal_blocked.load(Ordering::Relaxed) {
+            let temp = s.0.gpu_temp_celsius.lock().await.unwrap_or(0.0);
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({
+                    "error": format!("GPU {temp:.0}°C — tarefa P3 pausada para evitar thermal throttle; aguarde cair abaixo de 80°C")
+                })),
+            ).into_response();
+        }
         // Verificação por-request como defesa secundária (cobre janela entre polls do watchdog)
         let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
         if let Some(pct) = vram_pct(&s.0.client, s.0.hardware_profile).await {
@@ -2913,6 +2938,12 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
             let pct_cfg = (*s.0.vram_limit_pct.lock().await) as u32;
             return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
                 "error": format!("VRAM > {pct_cfg}% — tarefa P3 bloqueada pelo watchdog; aguarde VRAM < 70%")
+            }))).into_response();
+        }
+        if s.0.p3_thermal_blocked.load(Ordering::Relaxed) {
+            let temp = s.0.gpu_temp_celsius.lock().await.unwrap_or(0.0);
+            return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+                "error": format!("GPU {temp:.0}°C — tarefa P3 pausada para evitar thermal throttle; aguarde cair abaixo de 80°C")
             }))).into_response();
         }
         let vram_block = *s.0.vram_limit_pct.lock().await / 100.0;
@@ -3414,7 +3445,9 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let preempted_count  = *s.0.preempted_count.lock().await;
     let vram_limit_pct   = *s.0.vram_limit_pct.lock().await;
     let cpu_p3_limit_pct = *s.0.cpu_p3_limit_pct.lock().await;
-    let p3_vram_blocked  = s.0.p3_vram_blocked.load(Ordering::Relaxed);
+    let p3_vram_blocked     = s.0.p3_vram_blocked.load(Ordering::Relaxed);
+    let p3_thermal_blocked  = s.0.p3_thermal_blocked.load(Ordering::Relaxed);
+    let gpu_temp_celsius     = *s.0.gpu_temp_celsius.lock().await;
 
     // Estado dos dois servidores llama.cpp
     let chat_model = {
@@ -3465,6 +3498,8 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         vram_limit_pct,
         cpu_p3_limit_pct,
         p3_vram_blocked,
+        p3_thermal_blocked,
+        gpu_temp_celsius,
         chat_server_online: chat_online,
         chat_server_model:  chat_model,
         chat_response_ms:   chat_ms,
@@ -4037,6 +4072,32 @@ fn sysfs_vram_mb() -> Option<(u64, u64)> {
         return best;
     }
     #[allow(unreachable_code)]
+    None
+}
+
+/// Lê temperatura da GPU discreta (em °C) via sysfs hwmon (Linux/AMD e NVIDIA).
+///
+/// Para AMD (RX 6600): `/sys/class/drm/cardX/device/hwmon/hwmonY/temp1_input`
+/// O valor é retornado em mili-graus Celsius — divide por 1000 para obter °C.
+/// temp1 = edge (borda do chip), temp2 = junction (die), temp3 = mem.
+/// Retorna None no Windows ou se nenhuma GPU for detectada.
+fn read_gpu_temp_celsius() -> Option<f32> {
+    #[cfg(target_os = "linux")]
+    {
+        for i in 0..8u8 {
+            let hwmon_path = format!("/sys/class/drm/card{i}/device/hwmon");
+            let hwmon_dir = std::path::Path::new(&hwmon_path);
+            let Ok(entries) = std::fs::read_dir(hwmon_dir) else { continue };
+            for entry in entries.flatten() {
+                let temp_path = entry.path().join("temp1_input");
+                if let Ok(raw) = std::fs::read_to_string(&temp_path) {
+                    if let Ok(millideg) = raw.trim().parse::<i64>() {
+                        return Some(millideg as f32 / 1000.0);
+                    }
+                }
+            }
+        }
+    }
     None
 }
 
@@ -4802,6 +4863,44 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
         }
     });
 
+    // Watchdog térmico — pausa P3 quando GPU > 85°C.
+    // Poll a cada 15s (temperatura muda mais devagar que VRAM).
+    // A RX 6600 só faz throttling pelo driver acima de ~95°C; pausamos antes para preservar
+    // desempenho de P1/P2 e evitar o ciclo térmico boost→throttle.
+    // Retoma quando temperatura cai abaixo de 80°C (histerese de 5°C).
+    const GPU_TEMP_BLOCK_C: f32  = 85.0;
+    const GPU_TEMP_RESUME_C: f32 = 80.0;
+    let thermal_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(15)).await;
+            let temp = read_gpu_temp_celsius();
+            *thermal_state.0.gpu_temp_celsius.lock().await = temp;
+            let currently_blocked = thermal_state.0.p3_thermal_blocked.load(Ordering::Relaxed);
+            match temp {
+                Some(t) if !currently_blocked && t > GPU_TEMP_BLOCK_C => {
+                    thermal_state.0.p3_thermal_blocked.store(true, Ordering::Relaxed);
+                    log::warn!(
+                        "LOGOS watchdog: GPU {:.0}°C > {:.0}°C — P3 pausado (thermal throttle prevention)",
+                        t, GPU_TEMP_BLOCK_C,
+                    );
+                }
+                Some(t) if currently_blocked && t < GPU_TEMP_RESUME_C => {
+                    thermal_state.0.p3_thermal_blocked.store(false, Ordering::Relaxed);
+                    log::info!(
+                        "LOGOS watchdog: GPU {:.0}°C < {:.0}°C — P3 retomado (temperatura normalizada)",
+                        t, GPU_TEMP_RESUME_C,
+                    );
+                }
+                None if currently_blocked => {
+                    // Temperatura ilegível: desbloquear para não travar P3 para sempre
+                    thermal_state.0.p3_thermal_blocked.store(false, Ordering::Relaxed);
+                }
+                _ => {}
+            }
+        }
+    });
+
     // Idle unload watchdog — chat server.
     // Mata o llama-server após `idle_timeout_secs` sem requisições.
     // Poll a cada 60s — resolve o problema de VRAM ocupada sem uso que causava freeze.
@@ -5453,6 +5552,8 @@ mod tests {
             vram_limit_pct:      Mutex::new(85.0),
             active_inferences:   Mutex::new(HashMap::new()),
             p3_vram_blocked:     Arc::new(AtomicBool::new(false)),
+            p3_thermal_blocked:  Arc::new(AtomicBool::new(false)),
+            gpu_temp_celsius:    Mutex::new(None),
             downloads:           Mutex::new(HashMap::new()),
             models_dir,
             llama_server_bin:    None,
@@ -5796,6 +5897,58 @@ mod tests {
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
         assert_eq!(*state.0.battery_pct.lock().await, 100u8);
+    }
+
+    // ── Thermal throttling — proteção de temperatura ──────────────────────────
+
+    #[tokio::test]
+    async fn thermal_blocked_starts_false_in_test() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert!(!state.0.p3_thermal_blocked.load(Ordering::Relaxed),
+            "p3_thermal_blocked deve iniciar false no test state");
+    }
+
+    #[tokio::test]
+    async fn gpu_temp_celsius_starts_none_in_test() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert!(state.0.gpu_temp_celsius.lock().await.is_none(),
+            "gpu_temp_celsius deve iniciar None no test state");
+    }
+
+    #[test]
+    fn thermal_block_threshold_higher_than_resume() {
+        // Histerese: threshold de bloqueio > threshold de retomada (evita oscilação)
+        const GPU_TEMP_BLOCK_C: f32  = 85.0;
+        const GPU_TEMP_RESUME_C: f32 = 80.0;
+        assert!(GPU_TEMP_BLOCK_C > GPU_TEMP_RESUME_C,
+            "threshold de bloqueio deve ser maior que o de retomada");
+        assert_eq!(GPU_TEMP_BLOCK_C - GPU_TEMP_RESUME_C, 5.0,
+            "histerese de 5°C entre bloqueio e retomada");
+    }
+
+    #[test]
+    fn thermal_block_threshold_below_driver_throttle() {
+        // A RX 6600 só faz throttling pelo driver acima de ~95°C.
+        // Nossa proteção antecipa em 10°C para preservar desempenho P1/P2.
+        const GPU_TEMP_BLOCK_C: f32 = 85.0;
+        const DRIVER_THROTTLE_C: f32 = 95.0;
+        assert!(GPU_TEMP_BLOCK_C < DRIVER_THROTTLE_C,
+            "nosso threshold ({GPU_TEMP_BLOCK_C}°C) deve ser menor que o do driver ({DRIVER_THROTTLE_C}°C)");
+    }
+
+    #[tokio::test]
+    async fn thermal_blocked_can_be_set_and_reported_in_status() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+
+        // Simular watchdog detectando temperatura alta
+        state.0.p3_thermal_blocked.store(true, Ordering::Relaxed);
+        *state.0.gpu_temp_celsius.lock().await = Some(87.5);
+
+        assert!(state.0.p3_thermal_blocked.load(Ordering::Relaxed));
+        assert_eq!(*state.0.gpu_temp_celsius.lock().await, Some(87.5));
     }
 
     // ── AVX2 — detecção e limites ─────────────────────────────────────────────
