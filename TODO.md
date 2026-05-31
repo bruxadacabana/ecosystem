@@ -7324,7 +7324,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **Mnemosyne — FAIR-RAG: feedback implícito de utilidade da resposta (`core/rag.py`)** — implementado: `apply_source_feedback(vectorstore, source_paths, is_positive)` em `core/rag.py` com EMA (alpha=0.15, target 1.5/0.5, clamp 0.3–3.0). Botões "✓ Útil / ✗ Inútil" em `gui/main_window.py` abaixo do painel de fontes, visíveis só após resposta com fontes locais. 11 testes em `tests/test_fair_rag.py`. 2026-05-30.
 
-- [ ] **Hermes — `language="pt"` como padrão no `TranscribeWorker` (`hermes.py`)** — `vad_filter=True` e `beam_size=1` já implementados; falta `language="pt"` como padrão (hoje é "auto", com ~1s overhead de detecção por segmento). Mudar o índice padrão do `lang_combo` de 0 ("auto") para 1 ("pt") em `hermes.py:1173` onde `self._prefs["lang_idx"]` é lido com default 0. Ou adicionar `"pt"` como primeiro item de `LANGUAGES`. Origem: Auditoria 05-05, Hermes.
+- [x] **Hermes — `language="pt"` como padrão no `TranscribeWorker` (`hermes.py`)** — implementado: `_load_prefs` agora usa `self._prefs.get("lang_idx", 1)` em vez de verificar se a chave existe. Default é índice 1 (pt). Preferência salva pelo usuário continua sendo respeitada. 7 testes em `tests/test_language_default.py`. 2026-05-30.
 
 - [ ] **Hermes — cache de `WhisperModel` entre transcrições (`hermes.py`)** — `WhisperModel` é instanciado a cada novo `TranscribeWorker` (cada transcrição), causando 5–15s de overhead desnecessário. Mover para atributo de classe ou singleton de módulo `_WHISPER_CACHE: dict[str, WhisperModel] = {}` keyed por `(model_size, device, compute_type)`. Economiza tempo em sessões com múltiplas transcrições. Origem: Auditoria 05-05, Hermes.
 

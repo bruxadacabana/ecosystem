@@ -1169,8 +1169,9 @@ class HermesApp(QMainWindow):
             self.outdir_edit.setText(self._prefs["outdir"])
         if "model" in self._prefs:
             self.model_combo.setCurrentText(self._prefs["model"])
-        if "lang_idx" in self._prefs:
-            self.lang_combo.setCurrentIndex(self._prefs["lang_idx"])
+        # Default: pt (índice 1) — evita ~1s de overhead de detecção automática por segmento.
+        # Preferência salva pelo usuário sobrescreve este default.
+        self.lang_combo.setCurrentIndex(self._prefs.get("lang_idx", 1))
         if "cpu_limit" in self._prefs:
             self.cpu_combo.setCurrentText(self._prefs["cpu_limit"])
         # Pasta do Mnemosyne: preferência salva > sugestão do ecosystem.json
