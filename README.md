@@ -3,7 +3,7 @@
 Conjunto de aplicativos pessoais, completamente locais, sem conta, sem nuvem, sem telemetria.
 Desenvolvidos para CachyOS (Arch Linux), Fedora e Windows 10.
 
-> **Última atualização:** 2026-05-23
+> **Última atualização:** 2026-05-31
 > Para manter este arquivo atualizado: toda mudança significativa de arquitetura, dependência ou funcionalidade deve ser refletida aqui na mesma resposta que implementa a mudança.
 
 ---
@@ -160,6 +160,9 @@ Buscador e amplificador de pesquisa. O LLM age **apenas** na camada de query —
 - Crawler de domínios com agendamento e atualização (freshness)
 - Biblioteca unificada: gerencia sites e documentos numa única seção
 - Busca híbrida: FTS5 (BM25) + busca semântica (embeddings via `/v1/embeddings`)
+- Busca web via SearXNG self-hosted (agrega Google, Bing, Brave, DDG) com fallback DDG; fetch paralelo de múltiplas páginas (padrão 4 × 25 resultados)
+- Classificador de intenção afeta **apresentação** dos resultados, nunca a quantidade
+- Diversificação por domínio configurável (`max_per_domain`, padrão 5); filtragem de páginas vazias (`word_count < 50`)
 - Cache de resultados, facetas, ranking
 - Extensão de browser para pesquisa contextual
 
@@ -315,6 +318,12 @@ sudo pacman -S base-devel cmake pkg-config openssl git
 
 # Tauri (obrigatório para HUB e AETHER)
 sudo pacman -S webkit2gtk-4.1 libayatana-appindicator
+
+# SearXNG (backend de busca do AKASHA — opcional mas recomendado)
+# Instalar via AUR: yay -S searxng-git
+# Configurar: /etc/searxng/settings.yml (engines: google, bing, brave, duckduckgo)
+# Iniciar: systemctl --user enable --now searxng
+# Configurar no AKASHA: ecosystem.json["akasha"]["web_search_backend"] = "http://localhost:8888"
 
 # Python
 sudo pacman -S python python-pip
@@ -903,6 +912,7 @@ cd HUB/src-tauri && cargo test
 | 7072 | LOGOS (proxy LLM) | HUB gerencia; fila de prioridades P1/P2/P3 |
 | 8081 | llama-server AKASHA (interno) | Gerenciado pelo LOGOS; modelo llm_query; AKASHA, KOSMOS, HUB |
 | 8083 | llama-server Mnemosyne (interno) | Gerenciado pelo LOGOS; modelo llm_rag; Mnemosyne |
+| 8888 | SearXNG (self-hosted, opcional) | Backend de busca web do AKASHA; configura via `web_search_backend` no ecosystem.json |
 
 **Syncthing:** gerenciado via painel no HUB; porta padrão 8384 (interface web local do Syncthing).
 
@@ -950,6 +960,8 @@ CachyOS:
 [ ] HSA_OVERRIDE_GFX_VERSION=10.3.0 no config.fish
 [ ] llama-server compilado com -DGGML_ROCM=ON
 [ ] GPU detectada: rocminfo | grep "gfx1032"
+[ ] (opcional) SearXNG rodando: curl http://localhost:8888/healthz → OK
+[ ] (opcional) ecosystem.json com web_search_backend configurado
 
 Fedora (laptop):
 [ ] CUDA toolkit instalado

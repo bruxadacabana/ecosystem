@@ -48,11 +48,14 @@ Toda query passa por um classificador de intenção antes de ser executada:
 **Mecanismos de qualidade nos resultados:**
 
 - **FTS5** (Full-Text Search 5 do SQLite): índice invertido sobre todo o conteúdo crawleado e arquivado. Suporta busca por campo (título tem peso 10×, corpo tem peso 1×) — encontrar a palavra no título de uma página vale muito mais que encontrá-la enterrada no meio do texto.
+- **Classificador de intenção**: toda query é classificada (`navigational`, `fact-seeking`, `exploratory`, `informational`, etc.) para determinar a **apresentação** dos resultados — nunca a quantidade. Resultados não são truncados por intenção.
+- **Busca web multi-página**: com SearXNG configurado, o AKASHA busca até N páginas em paralelo (padrão 4 × 25 = 100 resultados). Configurável em `ecosystem.json["akasha"]["web_pages"]` ou por `?web_pages=N` na URL. Sem SearXNG, usa DDG como fallback.
 - **Expansão de query**: antes de buscar, o AKASHA adiciona sinônimos e termos relacionados lexicalmente (sem LLM). Buscar "machine learning" também encontra "aprendizado de máquina".
 - **Prioridade local**: se há pelo menos N resultados locais com pontuação alta, a busca web é adiada — você não é forçada a esperar a web quando o seu acervo já cobre o tema.
-- **Diversificação por domínio**: máximo 2 resultados por domínio na lista final. Evita que um único site domine os resultados.
+- **Diversificação por domínio**: padrão de 5 resultados por domínio na lista final (configurável em Settings → `max_per_domain`; 0 = sem limite; `?diversity=N` como override por busca). Evita que um único site domine os resultados.
+- **Filtragem de conteúdo vazio**: páginas com menos de 50 palavras são descartadas antes de indexar — evita poluir o banco com páginas de navegação, login ou redirecionamentos. `scripts/backfill_word_count.py` limpa entradas anteriores.
 - **Boost de citações Wikipedia**: páginas que citam artigos da Wikipedia recebem pontuação extra — heurística de confiabilidade baseada em links de autoridade.
-- **Cache de resultados web**: resultados da busca web são cacheados por sessão. A mesma query não dispara duas requisições ao SearXNG.
+- **Cache de resultados web**: resultados da busca web são cacheados em dois níveis (memória LRU + SQLite). A mesma query não dispara duas requisições ao SearXNG/DDG.
 - **Histórico de buscas**: toda query fica registrada e alimenta continuamente o sistema de interesses da Akasha (assistente), que aprende quais temas você explora com frequência.
 
 ### Lentes
@@ -412,12 +415,27 @@ Lida de `ecosystem.json` via `ecosystem_client` no startup:
     "exe_path": "...",
     "unpaywall_email": "seu@email.com",
     "personality_prompt": "...",
-    "interest_seeds": ["tecnologia", "filosofia"]
+    "interest_seeds": ["tecnologia", "filosofia"],
+    "web_search_backend": "http://localhost:8888",
+    "max_per_domain": 5,
+    "web_pages": 4,
+    "search_languages": [],
+    "semantic_search": true,
+    "default_city": ""
   }
 }
 ```
 
-O HUB é a fonte de verdade — não editar `ecosystem.json` diretamente. O prompt de personalidade e as seeds de interesse são editáveis via HUB (aba Configurações).
+| Campo | Padrão | Descrição |
+|-------|--------|-----------|
+| `web_search_backend` | `""` (DDG) | URL base do SearXNG self-hosted. Vazio = usa DuckDuckGo. |
+| `max_per_domain` | `5` | Máximo de resultados por domínio (0 = sem limite). Override: `?diversity=N`. |
+| `web_pages` | `4` | Páginas de resultados a buscar em paralelo (1–10). Override: `?web_pages=N`. |
+| `search_languages` | `[]` | Lista de idiomas de resultado. Vazio = todos os idiomas (recomendado). |
+| `semantic_search` | `true` | Habilita busca vetorial (embeddings via LOGOS) além do FTS5. |
+| `default_city` | `""` | Cidade padrão para widget de previsão do tempo. |
+
+O HUB é a fonte de verdade — não editar `ecosystem.json` diretamente quando o HUB estiver rodando. O prompt de personalidade e as seeds de interesse são editáveis via HUB.
 
 ---
 
@@ -496,9 +514,11 @@ AKASHA/
 | Serviço | Uso | Como configurar |
 |---------|-----|----------------|
 | LOGOS (llama-server) | Reflexão, insights, extração de tópicos, expansão de query | Automático via `ecosystem_client` |
-| SearXNG | Busca web | `SEARXNG_URL` em `config.py` |
+| SearXNG (self-hosted) | Busca web com múltiplos engines (recomendado) | `akasha.web_search_backend` no `ecosystem.json`; instalar via `yay -S searxng-git` no CachyOS; porta padrão 8888 |
 | Unpaywall | Download de papers acadêmicos | `akasha.unpaywall_email` no `ecosystem.json` |
 | qBittorrent | Downloads via torrent | `akasha.qbt_*` no `ecosystem.json` |
+
+**SearXNG vs DuckDuckGo:** sem SearXNG configurado, o AKASHA usa DDG como fallback (~20–50 resultados por query). Com SearXNG, agrega múltiplos engines em paralelo (~100 resultados) sem comprometer privacidade (tráfego passa pelo servidor local). Consultar `### AKASHA — SearXNG self-hosted como backend de busca` no `TODO.md` para instruções de instalação.
 
 Sem nenhum desses serviços, o AKASHA funciona normalmente como buscador local puro.
 
