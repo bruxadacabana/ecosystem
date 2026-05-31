@@ -76,6 +76,45 @@ const RAM_P3_SURVIVAL_BLOCK_MB: u64 = 512;
 // Em bateria: threshold de CPU mais conservador para P2 (preservar energia)
 const ON_BATTERY_P2_CPU_BLOCK: f32 = 60.0;
 
+// ── Política de bateria em 3 níveis ──────────────────────────
+/// Controla quanto o LOGOS restringe operações de acordo com o nível de bateria.
+///
+/// Normal   → sem restrições extras além do comportamento padrão de prioridades.
+/// Economy  → bateria 30-80% em descarga: P3 bloqueado; P2 usa menos threads.
+/// Critical → bateria <30% em descarga: P2 e P3 bloqueados; apenas P1 aceito.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatteryPolicy {
+    Normal,
+    Economy,
+    Critical,
+}
+
+impl BatteryPolicy {
+    /// Calcula a política a partir do estado de descarga e percentual da bateria.
+    pub fn from_state(discharging: bool, pct: u8) -> Self {
+        if !discharging || pct > 80 {
+            BatteryPolicy::Normal
+        } else if pct < 30 {
+            BatteryPolicy::Critical
+        } else {
+            BatteryPolicy::Economy
+        }
+    }
+
+    /// Retorna true quando há alguma restrição ativa (Economy ou Critical).
+    pub fn is_restricted(self) -> bool {
+        self != BatteryPolicy::Normal
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BatteryPolicy::Normal   => "normal",
+            BatteryPolicy::Economy  => "economy",
+            BatteryPolicy::Critical => "critical",
+        }
+    }
+}
+
 // ── Perfil de hardware ────────────────────────────────────────
 
 /// Identifica em qual máquina o HUB está rodando.
@@ -321,8 +360,12 @@ struct Inner {
     /// Instância sysinfo — mantida entre polls para que CPU% seja calculado como delta.
     /// CRÍTICO: nunca criar nova instância a cada poll (retorna sempre 0%).
     sys: Mutex<System>,
-    /// True se rodando em bateria (Linux: /sys/class/power_supply/*/status). Atualizado a cada 60s.
+    /// True se rodando em bateria (= BatteryPolicy::Economy ou Critical). Atualizado a cada 30s.
     on_battery: Mutex<bool>,
+    /// Percentual da bateria (0–100). 100 quando em AC ou sem bateria. Atualizado a cada 30s.
+    battery_pct: Mutex<u8>,
+    /// Política de bateria em 3 níveis. Derivada de (on_battery, battery_pct). Atualizada a cada 30s.
+    battery_policy: Mutex<BatteryPolicy>,
     /// Contagem de requests P3 preemptados por P1 desde o startup.
     preempted_count: Mutex<u32>,
     /// Substituições de modelo definidas pela usuária.
@@ -665,6 +708,11 @@ impl LogosState {
             client,
             sys: Mutex::new(sys),
             on_battery: Mutex::new(is_on_battery()),
+            battery_pct: Mutex::new(read_battery_pct()),
+            battery_policy: Mutex::new({
+                let (dis, pct) = read_battery_info();
+                BatteryPolicy::from_state(dis, pct)
+            }),
             preempted_count: Mutex::new(0),
             model_overrides: Mutex::new(HashMap::new()),
             vram_limit_pct: Mutex::new(vram_limit_pct),
@@ -730,6 +778,8 @@ impl LogosState {
             client,
             sys:                Mutex::new(sys),
             on_battery:         Mutex::new(false),
+            battery_pct:        Mutex::new(100),
+            battery_policy:     Mutex::new(BatteryPolicy::Normal),
             preempted_count:    Mutex::new(0),
             model_overrides:    Mutex::new(HashMap::new()),
             vram_limit_pct:     Mutex::new(85.0),
@@ -790,8 +840,12 @@ pub struct StatusResponse {
     pub ram_free_mb: u64,
     /// RAM total em MB via sysinfo
     pub ram_total_mb: u64,
-    /// True se rodando em bateria — P3 bloqueado, thresholds de P2 mais conservadores
+    /// True se rodando em bateria (= Economy ou Critical). P3 bloqueado, P2 com thresholds conservadores.
     pub on_battery: bool,
+    /// Percentual da bateria (0–100). 100 quando em AC ou sem bateria.
+    pub battery_pct: u8,
+    /// Política de bateria: "normal", "economy" (30-80%), "critical" (<30%).
+    pub battery_policy: String,
     /// Requests P3 preemptados por P1 desde o startup
     pub preempted_count: u32,
     /// Limite de VRAM configurado (0–100). P3 bloqueado acima deste percentual.
@@ -2300,7 +2354,8 @@ async fn queue_and_forward(
     let light = is_light_model(&model_name);
     let permits = if !is_survival && light { 1u32 } else { 2u32 };
     let model_class = if light { "leve" } else { "pesado" }.to_string();
-    let on_battery = *s.0.on_battery.lock().await;
+    let on_battery     = *s.0.on_battery.lock().await;
+    let battery_policy = *s.0.battery_policy.lock().await;
 
     // Injeção de keep_alive por prioridade (transparente para os apps):
     //   Sobrevivência → 0 (RAM liberada imediatamente, independente da prioridade)
@@ -2419,16 +2474,27 @@ async fn queue_and_forward(
                 })),
             ).into_response();
         }
-    } else if priority == 2 && on_battery {
-        // Em bateria: threshold de CPU mais conservador para P2
-        let (cpu, _ram, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
-        if cpu > ON_BATTERY_P2_CPU_BLOCK {
+    } else if priority == 2 {
+        if battery_policy == BatteryPolicy::Critical {
+            // Bateria crítica (<30%): apenas P1 é aceito
             return (
-                StatusCode::TOO_MANY_REQUESTS,
+                StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({
-                    "error": format!("CPU {cpu:.0}% em bateria — tarefa P2 adiada")
+                    "error": "Bateria crítica: apenas tarefas P1 são aceitas para preservar energia"
                 })),
             ).into_response();
+        }
+        if on_battery {
+            // Bateria (Economy): threshold de CPU mais conservador para P2
+            let (cpu, _ram, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+            if cpu > ON_BATTERY_P2_CPU_BLOCK {
+                return (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(serde_json::json!({
+                        "error": format!("CPU {cpu:.0}% em bateria (economy) — tarefa P2 adiada")
+                    })),
+                ).into_response();
+            }
         }
     }
 
@@ -2828,8 +2894,9 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
     }
 
     // Hardware guards por prioridade (mesma lógica de queue_and_forward):
-    let on_battery  = *s.0.on_battery.lock().await;
-    let is_survival = s.0.hardware_mode == "sobrevivencia";
+    let on_battery     = *s.0.on_battery.lock().await;
+    let battery_policy = *s.0.battery_policy.lock().await;
+    let is_survival    = s.0.hardware_mode == "sobrevivencia";
     if priority == 3 {
         if on_battery {
             return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
@@ -2862,12 +2929,19 @@ async fn proxy_openai_to_llama(s: &LogosState, headers: &HeaderMap, body: Bytes,
                 "error": format!("CPU {cpu:.0}% ou RAM livre {ram_free} MB insuficiente — tarefa P3 adiada")
             }))).into_response();
         }
-    } else if priority == 2 && on_battery {
-        let (cpu, _ram, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
-        if cpu > ON_BATTERY_P2_CPU_BLOCK {
-            return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
-                "error": format!("CPU {cpu:.0}% em bateria — tarefa P2 adiada")
+    } else if priority == 2 {
+        if battery_policy == BatteryPolicy::Critical {
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+                "error": "Bateria crítica: apenas tarefas P1 são aceitas para preservar energia"
             }))).into_response();
+        }
+        if on_battery {
+            let (cpu, _ram, _) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
+            if cpu > ON_BATTERY_P2_CPU_BLOCK {
+                return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
+                    "error": format!("CPU {cpu:.0}% em bateria (economy) — tarefa P2 adiada")
+                }))).into_response();
+            }
         }
     }
 
@@ -3329,6 +3403,8 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
     let (vram_used_mb, _, vram_pct) = vram_usage(&s.0.client, s.0.hardware_profile).await;
     let (cpu_pct, ram_free_mb, ram_total_mb) = cpu_ram_usage(&s.0.sys, &s.0.cached_cpu_pct).await;
     let on_battery       = *s.0.on_battery.lock().await;
+    let battery_pct      = *s.0.battery_pct.lock().await;
+    let battery_policy   = s.0.battery_policy.lock().await.as_str().to_string();
     let preempted_count  = *s.0.preempted_count.lock().await;
     let vram_limit_pct   = *s.0.vram_limit_pct.lock().await;
     let cpu_p3_limit_pct = *s.0.cpu_p3_limit_pct.lock().await;
@@ -3377,6 +3453,8 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
         ram_free_mb,
         ram_total_mb,
         on_battery,
+        battery_pct,
+        battery_policy,
         preempted_count,
         vram_limit_pct,
         cpu_p3_limit_pct,
@@ -3973,20 +4051,49 @@ async fn cpu_ram_usage(sys: &Mutex<System>, cached_cpu_pct: &AtomicU32) -> (f32,
 // ── Bateria ───────────────────────────────────────────────────
 
 /// Detecta se o dispositivo está rodando em bateria via sysfs (Linux).
-/// Lê /sys/class/power_supply/*/status; retorna true se alguma fonte reportar "Discharging".
-/// No Windows retorna sempre false (work_pc é desktop sem bateria).
-fn is_on_battery() -> bool {
+/// Lê /sys/class/power_supply/ e retorna (is_discharging, battery_pct).
+/// Itera todas as fontes; usa a primeira bateria encontrada.
+/// No Windows (desktop sem bateria) retorna sempre (false, 100).
+fn read_battery_info() -> (bool, u8) {
     #[cfg(target_os = "linux")]
-    if let Ok(entries) = std::fs::read_dir("/sys/class/power_supply") {
-        for entry in entries.flatten() {
-            if let Ok(s) = std::fs::read_to_string(entry.path().join("status")) {
-                if s.trim() == "Discharging" {
-                    return true;
+    {
+        let mut discharging = false;
+        let mut pct: u8 = 100;
+        if let Ok(entries) = std::fs::read_dir("/sys/class/power_supply") {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                // Pular fontes do tipo "Mains" (adaptador AC)
+                if let Ok(t) = std::fs::read_to_string(p.join("type")) {
+                    if t.trim() == "Mains" { continue; }
                 }
+                if let Ok(s) = std::fs::read_to_string(p.join("status")) {
+                    if s.trim() == "Discharging" {
+                        discharging = true;
+                    }
+                }
+                if let Ok(c) = std::fs::read_to_string(p.join("capacity")) {
+                    if let Ok(n) = c.trim().parse::<u8>() {
+                        pct = n;
+                    }
+                }
+                // Parar na primeira bateria com dados válidos
+                break;
             }
         }
+        return (discharging, pct);
     }
-    false
+    #[cfg(not(target_os = "linux"))]
+    { (false, 100) }
+}
+
+/// Retorna true se alguma fonte de energia reportar "Discharging".
+fn is_on_battery() -> bool {
+    read_battery_info().0
+}
+
+/// Retorna o percentual da bateria (0-100). 100 quando em AC ou sem bateria.
+fn read_battery_pct() -> u8 {
+    read_battery_info().1
 }
 
 // ── Parâmetros de eficiência por prioridade ───────────────────
@@ -4398,12 +4505,24 @@ pub async fn start_server(state: LogosState, app_handle: tauri::AppHandle) {
     // Armazena o AppHandle para emissão de eventos críticos ao frontend
     *state.0.app_handle.lock().await = Some(app_handle);
 
-    // Task de atualização do status de bateria a cada 60s.
+    // Task de atualização do status de bateria a cada 30s.
+    // Atualiza on_battery, battery_pct e battery_policy (3 níveis: Normal/Economy/Critical).
     let battery_state = state.clone();
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_secs(60)).await;
-            *battery_state.0.on_battery.lock().await = is_on_battery();
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            let (dis, pct) = read_battery_info();
+            let policy = BatteryPolicy::from_state(dis, pct);
+            let prev = *battery_state.0.battery_policy.lock().await;
+            if policy != prev {
+                log::info!(
+                    "logos: política de bateria alterada: {} → {} ({}% bateria, descarga={})",
+                    prev.as_str(), policy.as_str(), pct, dis,
+                );
+            }
+            *battery_state.0.on_battery.lock().await    = dis;
+            *battery_state.0.battery_pct.lock().await   = pct;
+            *battery_state.0.battery_policy.lock().await = policy;
         }
     });
 
@@ -5286,6 +5405,8 @@ mod tests {
             client,
             sys:                 Mutex::new(sys),
             on_battery:          Mutex::new(false),
+            battery_pct:         Mutex::new(100),
+            battery_policy:      Mutex::new(BatteryPolicy::Normal),
             preempted_count:     Mutex::new(0),
             model_overrides:     Mutex::new(HashMap::new()),
             vram_limit_pct:      Mutex::new(85.0),
@@ -5551,6 +5672,89 @@ mod tests {
         // Em bateria, P2 usa threshold mais conservador que o P3 normal
         assert!(ON_BATTERY_P2_CPU_BLOCK < CPU_P3_BLOCK,
             "threshold de bateria P2 deve ser mais conservador que P3 normal");
+    }
+
+    // ── BatteryPolicy — 3 níveis ─────────────────────────────────────────────
+
+    #[test]
+    fn battery_policy_normal_when_ac() {
+        let p = BatteryPolicy::from_state(false, 50);
+        assert_eq!(p, BatteryPolicy::Normal, "AC → sempre Normal independente do pct");
+    }
+
+    #[test]
+    fn battery_policy_normal_when_high_charge_discharging() {
+        // >80% em descarga → ainda Normal (bateria cheia, laptop desconectado)
+        let p = BatteryPolicy::from_state(true, 85);
+        assert_eq!(p, BatteryPolicy::Normal);
+    }
+
+    #[test]
+    fn battery_policy_economy_at_boundary_80() {
+        let p = BatteryPolicy::from_state(true, 80);
+        assert_eq!(p, BatteryPolicy::Economy, "80% em descarga → Economy");
+    }
+
+    #[test]
+    fn battery_policy_economy_mid_range() {
+        let p = BatteryPolicy::from_state(true, 55);
+        assert_eq!(p, BatteryPolicy::Economy);
+    }
+
+    #[test]
+    fn battery_policy_economy_at_boundary_30() {
+        // 30% é a fronteira — ainda Economy (não Critical)
+        let p = BatteryPolicy::from_state(true, 30);
+        assert_eq!(p, BatteryPolicy::Economy, "30% em descarga → ainda Economy");
+    }
+
+    #[test]
+    fn battery_policy_critical_below_30() {
+        let p = BatteryPolicy::from_state(true, 29);
+        assert_eq!(p, BatteryPolicy::Critical, "29% em descarga → Critical");
+    }
+
+    #[test]
+    fn battery_policy_critical_at_zero() {
+        let p = BatteryPolicy::from_state(true, 0);
+        assert_eq!(p, BatteryPolicy::Critical);
+    }
+
+    #[test]
+    fn battery_policy_is_restricted_normal() {
+        assert!(!BatteryPolicy::Normal.is_restricted());
+    }
+
+    #[test]
+    fn battery_policy_is_restricted_economy() {
+        assert!(BatteryPolicy::Economy.is_restricted());
+    }
+
+    #[test]
+    fn battery_policy_is_restricted_critical() {
+        assert!(BatteryPolicy::Critical.is_restricted());
+    }
+
+    #[test]
+    fn battery_policy_as_str() {
+        assert_eq!(BatteryPolicy::Normal.as_str(),   "normal");
+        assert_eq!(BatteryPolicy::Economy.as_str(),  "economy");
+        assert_eq!(BatteryPolicy::Critical.as_str(), "critical");
+    }
+
+    #[tokio::test]
+    async fn battery_policy_starts_normal_in_test() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        let policy = *state.0.battery_policy.lock().await;
+        assert_eq!(policy, BatteryPolicy::Normal, "test state começa com Normal");
+    }
+
+    #[tokio::test]
+    async fn battery_pct_starts_100_in_test() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let state = make_test_state(dir.path().to_path_buf());
+        assert_eq!(*state.0.battery_pct.lock().await, 100u8);
     }
 
     // ── Semáforo — 4 cenários ─────────────────────────────────────────────────
