@@ -16,15 +16,20 @@
 use_default_settings:
   engines:
     keep_only:
-      - duckduckgo
-      - brave
-      - startpage
-      - bing
-      - wikipedia
-      - google
-      - wikidata
-      - arxiv
-      - semantic scholar
+      # Engines validados — retornam resultados consistentemente sem bloquear automação
+      - startpage       # mais confiável: 10 resultados por página sem rate limit
+      - bing            # bom volume: 10 resultados, sem CAPTCHA
+      - google          # resultados relevantes: 8-10; pode bloquear esporadicamente
+      - mojeek          # motor independente: sem bot detection, 10-11 resultados
+      - qwant           # motor europeu focado em privacidade: 10-11 resultados
+      - yahoo           # boa cobertura: 11 resultados, confiável
+      - arxiv           # artigos científicos (categoria: science)
+      - semantic scholar # artigos acadêmicos (categoria: science)
+      # Removidos após validação (SearXNG 5):
+      #   duckduckgo     — CAPTCHA permanente (SearxEngineCaptchaException)
+      #   brave          — Rate limit agressivo (SearxEngineTooManyRequestsException, 180s)
+      #   wikipedia      — 0 resultados em todas as queries testadas
+      #   wikidata       — 0 resultados em todas as queries testadas
 
 general:
   debug: false

@@ -1750,9 +1750,30 @@ O script `setup_searxng.sh`:
    (engines curados via `keep_only`, sem filtro seguro, qualquer idioma, JSON habilitado)
 4. Cria e habilita serviço systemd `--user` (inicia com o login, `Restart=on-failure`)
 
-Engines habilitados: **DuckDuckGo, Brave, Startpage, Bing, Wikipedia, Google, Wikidata, arXiv, Semantic Scholar**
+**Engines validados e ativos** (validação realizada em 2026-05-31):
 
-Engines desabilitados por padrão (requerem JS ou bloqueiam automação): Yahoo, Baidu, Yandex.
+| Engine | Status | Resultados/página | Observações |
+|---|---|---|---|
+| Startpage | ✅ Ativo | ~10 | Mais confiável; proxy do Google sem tracking |
+| Bing | ✅ Ativo | ~10 | Confiável; Microsoft index |
+| Google | ✅ Ativo | ~8–10 | Às vezes bloqueia com CAPTCHA após uso intenso |
+| Mojeek | ✅ Ativo | ~10–11 | Motor independente; sem bot detection |
+| Qwant | ✅ Ativo | ~10–11 | Motor europeu focado em privacidade |
+| Yahoo | ✅ Ativo | ~11 | Boa cobertura; confiável |
+| arXiv | ✅ Ativo | variável | Artigos científicos (categoria: science) |
+| Semantic Scholar | ✅ Ativo | variável | Artigos acadêmicos (categoria: science) |
+
+**Engines removidos após validação:**
+- **DuckDuckGo** → CAPTCHA permanente (`SearxEngineCaptchaException`)
+- **Brave** → Rate limit agressivo (`SearxEngineTooManyRequestsException`, suspensão de 180s)
+- **Wikipedia** → 0 resultados em todas as queries testadas
+- **Wikidata** → 0 resultados em todas as queries testadas
+
+**Comportamento de deduplicação:** Engines retornam os mesmos URLs top para queries populares. Após deduplicação inter-engine, o total de resultados únicos por página é ~10–17 (não a soma dos engines). Com `n_pages=2`, sobe para 20–30 URLs únicas. O valor real do SearXNG é **privacidade** (tráfego local) e **ausência de rate limit** — não volume bruto de resultados.
+
+**Nota de estabilidade:** Google e Startpage podem ser suspensos por até 3600s após queries muito rápidas (CAPTCHA). Bing e Qwant têm detecção de bots mais tolerante. Em uso normal (buscas espaçadas), todos os engines funcionam.
+
+**ecosystem.json:** Configurar `akasha.web_search_backend = "http://localhost:8888"` para ativar o SearXNG. Via `write_section("akasha", {"web_search_backend": "http://localhost:8888"})` ou editando o arquivo diretamente.
 
 ---
 

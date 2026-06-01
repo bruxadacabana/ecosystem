@@ -735,6 +735,16 @@ def update_interests(topics: list[dict]) -> None:
         _do_write()
 
 
+def get_akasha_config() -> dict[str, Any]:
+    """Retorna a seção 'akasha' do ecosystem.json.
+
+    Usada por serviços do AKASHA para ler configurações em runtime sem
+    depender de import de config.py (que lê o ecosystem em import-time).
+    Retorna {} silenciosamente se o arquivo não existir ou estiver corrompido.
+    """
+    return read_ecosystem().get("akasha", {})
+
+
 def write_section(app: str, section: dict[str, Any]) -> None:
     """
     Atualiza apenas a seção `app` do ecosystem.json, preservando as demais.
