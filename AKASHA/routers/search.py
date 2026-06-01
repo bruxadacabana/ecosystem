@@ -1017,6 +1017,144 @@ async def search_json(
     return combined[:max]
 
 
+# ---------------------------------------------------------------------------
+# /search/structured — contrato de handoff para a Mnemosyne (Collab 2)
+# ---------------------------------------------------------------------------
+
+class StructuredResult(BaseModel):
+    """Schema padronizado para handoff entre AKASHA e Mnemosyne.
+
+    Campos garantidos independentemente da fonte interna do resultado.
+    Usado pela Mnemosyne no Collab 2 (AKASHA fallback) e por integrações externas.
+    """
+    url:             str
+    title:           str
+    snippet:         str            # max 250 chars
+    domain:          str            # netloc extraído da URL
+    date:            str | None     # data de publicação se disponível, None caso contrário
+    relevance_score: float          # 0.0–1.0 normalizado por posição no ranking
+    source_type:     str            # "web" | "library" | "paper" | "local"
+
+
+_SOURCE_TYPE_MAP: dict[str, str] = {
+    # documentos de valor científico/arquivístico
+    "PAPER":          "paper",
+    # conteúdo indexado intencionalmente pelo usuário (arquivos locais da AKASHA)
+    "AKASHA":         "library",
+    "LOCAL_VEC":      "library",
+    "KOSMOS":         "local",
+    "OBSIDIAN":       "local",
+    "MNEMOSYNE":      "local",
+    # conteúdo crawleado ou descoberto na web
+    "SITES":          "web",
+    "CRAWL_SEMANTIC": "web",
+    "DEPOIS":         "web",
+    "HERMES":         "local",
+    "HIGHLIGHT":      "local",
+}
+
+
+def _to_source_type(source: str) -> str:
+    """Mapeia o campo `source` interno do SearchResult para o source_type público."""
+    return _SOURCE_TYPE_MAP.get(source.upper(), "web")
+
+
+def _extract_domain(url: str) -> str:
+    """Extrai o netloc de uma URL; retorna string vazia se inválida."""
+    try:
+        return urlparse(url).netloc or ""
+    except Exception:
+        return ""
+
+
+def _build_structured_results(
+    raw: list[SearchResult],
+    max_results: int,
+) -> list[StructuredResult]:
+    """Converte SearchResult[] em StructuredResult[] com scores normalizados 0–1.
+
+    A normalização usa posição no ranking (rank 0 = 1.0, rank N-1 ≈ 0.1).
+    Quando o score bruto está disponível, ele é usado para desempate antes da
+    normalização posicional, garantindo que a ordem reflita tanto relevância
+    quanto diversidade de fonte.
+    """
+    if not raw:
+        return []
+
+    # Ordena pelo score bruto antes de normalizar (maior score primeiro)
+    ordered = sorted(raw, key=lambda r: r.score, reverse=True)
+
+    # Limita antes de normalizar para que o score reflita o conjunto retornado
+    sliced = ordered[:max_results]
+    total = len(sliced)
+
+    results: list[StructuredResult] = []
+    for rank, r in enumerate(sliced):
+        # Normalização posicional: rank 0 → 1.0, último → 0.1
+        score = round(1.0 - (rank / total) * 0.9, 4)
+
+        results.append(StructuredResult(
+            url=r.url,
+            title=r.title or "",
+            snippet=(r.snippet or "")[:250],
+            domain=_extract_domain(r.url),
+            date=r.date or None,
+            relevance_score=score,
+            source_type=_to_source_type(r.source),
+        ))
+
+    return results
+
+
+@router.get("/search/structured")
+async def search_structured(
+    q:       str = "",
+    sources: str = "web,eco,sites",  # mesma semântica do /search/json
+    max:     int = 10,
+) -> list[StructuredResult]:
+    """Schema padronizado para handoff entre AKASHA e Mnemosyne.
+
+    Retorna os mesmos resultados que /search/json mas com campos adicionais:
+    - `domain`: netloc extraído da URL
+    - `relevance_score`: 0.0–1.0 normalizado por posição no ranking
+    - `source_type`: "web" | "library" | "paper" | "local"
+    - `snippet`: truncado a 250 chars
+
+    Usado pela Mnemosyne no Collab 2 (fallback AKASHA) e por integrações que
+    precisam de um contrato de dados explícito, sem depender do formato interno.
+    """
+    if not q.strip():
+        log.debug("search_structured: query vazia, retornando []")
+        return []
+
+    max = min(max, 50)  # teto de segurança
+
+    src_list  = {s.strip() for s in sources.split(",")}
+    src_web   = "web"   in src_list
+    src_eco   = "eco"   in src_list
+    src_sites = "sites" in src_list
+
+    tasks = await asyncio.gather(
+        search_web(q, max_results=max) if src_web   else asyncio.sleep(0, result=[]),
+        search_local(q)                if src_eco   else asyncio.sleep(0, result=[]),
+        search_sites(q)                if src_sites else asyncio.sleep(0, result=[]),
+        return_exceptions=True,
+    )
+
+    combined: list[SearchResult] = []
+    for result in tasks:
+        if isinstance(result, list):
+            combined.extend(result)
+
+    structured = _build_structured_results(combined, max)
+
+    log.debug(
+        "search_structured: q=%r sources=%s → %d resultados (web=%s eco=%s sites=%s)",
+        q[:60], sources, len(structured), src_web, src_eco, src_sites,
+    )
+    return structured
+
+
 class _ClickBody(BaseModel):
     url:      str
     query:    str = ""

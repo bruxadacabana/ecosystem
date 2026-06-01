@@ -1,12 +1,14 @@
 """
 Cliente HTTP para a API REST do AKASHA (porta 7071).
 
-Endpoints esperados (Fase 13 do AKASHA):
-  GET  /health          → {"status": "ok", ...}
-  GET  /search/json     → list[{url, title, snippet}]
-  POST /fetch           → {url, title, content_md, word_count}
+Endpoints:
+  GET  /health               → {"status": "ok", ...}
+  GET  /search/json          → list[{url, title, snippet}]  (legado)
+  GET  /search/structured    → list[StructuredAkashaResult]  (Collab 2 — schema padronizado)
+  POST /fetch                → {url, title, content_md, word_count}
+  POST /friendship/feedback  → 204 (feedback de URL ao AKASHA)
 
-is_available() e search() são síncronos.
+is_available() e search() / search_structured() são síncronos.
 fetch() é assíncrono — usar com asyncio.gather para paralelismo.
 """
 from __future__ import annotations
@@ -25,9 +27,24 @@ _DEFAULT_TIMEOUT = 15.0
 
 @dataclass
 class AkashaResult:
-    url: str
-    title: str
+    url:     str
+    title:   str
     snippet: str
+
+
+@dataclass
+class StructuredAkashaResult:
+    """Resultado rico do endpoint /search/structured — contrato de handoff Collab 2.
+
+    Campos adicionais em relação a AkashaResult: domain, date, relevance_score, source_type.
+    """
+    url:             str
+    title:           str
+    snippet:         str
+    domain:          str
+    date:            str | None
+    relevance_score: float   # 0.0–1.0, normalizado por posição no ranking AKASHA
+    source_type:     str     # "web" | "library" | "paper" | "local"
 
 
 @dataclass
@@ -100,6 +117,70 @@ class AkashaClient:
                 url=item["url"],
                 title=item.get("title", ""),
                 snippet=item.get("snippet", ""),
+            ))
+            if len(results) >= max_results:
+                break
+        return results
+
+    def search_structured(
+        self, query: str, max_results: int = 5
+    ) -> list[StructuredAkashaResult]:
+        """Busca no AKASHA via GET /search/structured (schema padronizado Collab 2).
+
+        Retorna resultados com campos adicionais: domain, date, relevance_score, source_type.
+        Cai de volta em search() se o endpoint /search/structured não estiver disponível
+        (AKASHA versão antiga).
+
+        Raises:
+            AkashaOfflineError: se o AKASHA não estiver acessível.
+            AkashaFetchError: se a resposta for inválida.
+        """
+        try:
+            r = httpx.get(
+                f"{self._base}/search/structured",
+                params={"q": query, "max": max_results, "sources": "web,eco,sites"},
+                timeout=_DEFAULT_TIMEOUT,
+            )
+        except httpx.ConnectError as exc:
+            raise AkashaOfflineError() from exc
+        except httpx.TimeoutException as exc:
+            raise AkashaOfflineError() from exc
+        except httpx.TransportError as exc:
+            raise AkashaOfflineError() from exc
+
+        if r.status_code == 404:
+            # AKASHA mais antiga sem o endpoint — fallback gracioso para /search/json
+            legacy = self.search(query, max_results)
+            return [
+                StructuredAkashaResult(
+                    url=lr.url, title=lr.title, snippet=lr.snippet,
+                    domain="", date=None, relevance_score=0.5, source_type="web",
+                )
+                for lr in legacy
+            ]
+
+        if r.status_code != 200:
+            raise AkashaFetchError(
+                f"AKASHA retornou status {r.status_code} em /search/structured"
+            )
+
+        try:
+            items: list = r.json()
+        except (ValueError, TypeError) as exc:
+            raise AkashaFetchError(f"Resposta inválida do AKASHA: {exc}") from exc
+
+        results: list[StructuredAkashaResult] = []
+        for item in items:
+            if not isinstance(item, dict) or not item.get("url"):
+                continue
+            results.append(StructuredAkashaResult(
+                url=item["url"],
+                title=item.get("title", ""),
+                snippet=item.get("snippet", ""),
+                domain=item.get("domain", ""),
+                date=item.get("date"),
+                relevance_score=float(item.get("relevance_score", 0.5)),
+                source_type=item.get("source_type", "web"),
             ))
             if len(results) >= max_results:
                 break

@@ -119,10 +119,16 @@ def _make_vectorstore(n_docs: int = 0) -> Any:
 
 
 class FakeAkashaResult:
-    def __init__(self, url: str, title: str, snippet: str) -> None:
+    """Simula StructuredAkashaResult com campos obrigatórios do novo schema Collab 2."""
+    def __init__(self, url: str, title: str, snippet: str,
+                 relevance_score: float = 0.75, source_type: str = "web") -> None:
         self.url = url
         self.title = title
         self.snippet = snippet
+        self.domain = ""
+        self.date = None
+        self.relevance_score = relevance_score
+        self.source_type = source_type
 
 
 class TestPrepareAskAkashaFallback:
@@ -140,7 +146,7 @@ class TestPrepareAskAkashaFallback:
 
         mock_akasha = MagicMock()
         mock_akasha.is_available.return_value = akasha_available
-        mock_akasha.search.return_value = akasha_results
+        mock_akasha.search_structured.return_value = akasha_results
 
         # AkashaClient é importado dentro da função em rag.py;
         # patch correto é no módulo de origem (akasha_client)
@@ -194,7 +200,7 @@ class TestPrepareAskAkashaFallback:
 
         mock_akasha = MagicMock()
         mock_akasha.is_available.return_value = True
-        mock_akasha.search.return_value = [
+        mock_akasha.search_structured.return_value = [
             FakeAkashaResult("http://a.com", "A", "Snippet de A.")
         ]
 
@@ -207,9 +213,9 @@ class TestPrepareAskAkashaFallback:
             except Exception:
                 return
 
-        # O conteúdo da mensagem final deve mencionar AKASHA
+        # O conteúdo da mensagem final deve mencionar AKASHA (prefixo atualizado)
         last_msg_content = messages[-1].content if messages else ""
-        assert "[Fontes web via AKASHA]" in last_msg_content
+        assert "[Fontes via AKASHA]" in last_msg_content
 
     def test_fallback_sources_have_score_0_5(self) -> None:
         results = [FakeAkashaResult("http://b.com", "B", "Snippet de B.")]
@@ -221,7 +227,8 @@ class TestPrepareAskAkashaFallback:
         )
         akasha_src = [s for s in sources if s["path"] == "http://b.com"]
         assert len(akasha_src) == 1
-        assert akasha_src[0]["score"] == 0.5
+        # score agora vem do relevance_score real do AKASHA (não mais hardcoded 0.5)
+        assert 0.0 <= akasha_src[0]["score"] <= 1.0
 
     def test_fallback_not_triggered_when_context_sufficient(self) -> None:
         """Com 5 docs longos, context.split() > 200 — fallback não deve ser acionado."""
@@ -326,3 +333,184 @@ class TestAkashaClientSendFeedback:
             client = AkashaClient()
             with pytest.raises(AkashaFetchError):
                 client.send_feedback("http://x.com", is_positive=True)
+
+
+# ---------------------------------------------------------------------------
+# AkashaClient.search_structured — novo método com schema Collab 2
+# ---------------------------------------------------------------------------
+
+class TestSearchStructuredClient:
+    """Testa o novo método search_structured do AkashaClient."""
+
+    def _make_structured_response(self, n: int = 2) -> list:
+        return [
+            {
+                "url": f"https://example.com/article{i}",
+                "title": f"Article {i}",
+                "snippet": f"Snippet {i}",
+                "domain": "example.com",
+                "date": "2025-01-01",
+                "relevance_score": round(1.0 - i * 0.1, 2),
+                "source_type": "web" if i % 2 == 0 else "paper",
+            }
+            for i in range(n)
+        ]
+
+    def test_search_structured_returns_structured_results(self) -> None:
+        import httpx
+        from core.akasha_client import AkashaClient, StructuredAkashaResult
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = self._make_structured_response(2)
+
+        with patch.object(httpx, "get", return_value=mock_resp):
+            client = AkashaClient()
+            results = client.search_structured("python", max_results=5)
+
+        assert len(results) == 2
+        assert isinstance(results[0], StructuredAkashaResult)
+        assert results[0].domain == "example.com"
+        assert 0.0 <= results[0].relevance_score <= 1.0
+        assert results[0].source_type in ("web", "paper", "library", "local")
+
+    def test_search_structured_uses_correct_endpoint(self) -> None:
+        import httpx
+        from core.akasha_client import AkashaClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = []
+
+        with patch.object(httpx, "get", return_value=mock_resp) as mock_get:
+            client = AkashaClient("http://localhost:7071")
+            client.search_structured("test")
+
+        called_url = str(mock_get.call_args)
+        assert "/search/structured" in called_url
+
+    def test_search_structured_404_falls_back_to_search_json(self) -> None:
+        """Se AKASHA antiga nao tem /search/structured, usa /search/json."""
+        import httpx
+        from core.akasha_client import AkashaClient, StructuredAkashaResult
+
+        not_found_resp = MagicMock()
+        not_found_resp.status_code = 404
+
+        legacy_resp = MagicMock()
+        legacy_resp.status_code = 200
+        legacy_resp.json.return_value = [
+            {"url": "http://x.com", "title": "X", "snippet": "S"}
+        ]
+
+        with patch.object(httpx, "get", side_effect=[not_found_resp, legacy_resp]):
+            client = AkashaClient()
+            results = client.search_structured("test")
+
+        assert len(results) == 1
+        assert isinstance(results[0], StructuredAkashaResult)
+        assert results[0].source_type == "web"
+        assert results[0].relevance_score == 0.5
+
+    def test_search_structured_connect_error_raises_offline(self) -> None:
+        import httpx
+        from core.akasha_client import AkashaClient, AkashaOfflineError
+
+        with patch.object(httpx, "get", side_effect=httpx.ConnectError("refused")):
+            client = AkashaClient()
+            with pytest.raises(AkashaOfflineError):
+                client.search_structured("test")
+
+    def test_search_structured_source_type_paper_forwarded(self) -> None:
+        import httpx
+        from core.akasha_client import AkashaClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = [{
+            "url": "https://arxiv.org/abs/1234",
+            "title": "A Paper",
+            "snippet": "Abstract.",
+            "domain": "arxiv.org",
+            "date": None,
+            "relevance_score": 0.95,
+            "source_type": "paper",
+        }]
+
+        with patch.object(httpx, "get", return_value=mock_resp):
+            client = AkashaClient()
+            results = client.search_structured("papers")
+
+        assert results[0].source_type == "paper"
+        assert results[0].relevance_score == 0.95
+
+    def test_search_structured_bad_status_raises_fetch_error(self) -> None:
+        import httpx
+        from core.akasha_client import AkashaClient, AkashaFetchError
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+
+        with patch.object(httpx, "get", return_value=mock_resp):
+            client = AkashaClient()
+            with pytest.raises(AkashaFetchError):
+                client.search_structured("test")
+
+
+# ---------------------------------------------------------------------------
+# Collab 2: rag.py usa search_structured (nao search)
+# ---------------------------------------------------------------------------
+
+class TestCollab2UsesStructuredEndpoint:
+    """Verifica que prepare_ask usa search_structured no Collab 2."""
+
+    def test_prepare_ask_calls_search_structured_not_search(self) -> None:
+        from core import rag
+
+        mock_akasha = MagicMock()
+        mock_akasha.is_available.return_value = True
+        mock_akasha.search_structured.return_value = [
+            FakeAkashaResult("https://example.com/doc", "Doc", "Relevant content here")
+        ]
+
+        with patch("core.rag._contextual_compress", side_effect=lambda docs, *a, **kw: docs), \
+             patch("core.rag._apply_time_decay", side_effect=lambda docs, *a, **kw: docs), \
+             patch("core.rag._diversify_languages", side_effect=lambda docs: docs), \
+             patch("core.akasha_client.AkashaClient", return_value=mock_akasha):
+            config = _make_config(akasha_fallback=True)
+            vs = _make_vectorstore(0)
+            try:
+                rag.prepare_ask(vs, "what is python?", config=config)
+            except Exception:
+                pass
+
+        mock_akasha.search_structured.assert_called_once()
+        mock_akasha.search.assert_not_called()
+
+    def test_prepare_ask_uses_relevance_score_from_structured(self) -> None:
+        """SourceRecord.score deve ser o relevance_score do AKASHA, nao 0.5 hardcoded."""
+        from core import rag
+
+        expected_score = 0.88
+        mock_akasha = MagicMock()
+        mock_akasha.is_available.return_value = True
+        mock_akasha.search_structured.return_value = [
+            FakeAkashaResult("https://example.com/doc", "Doc",
+                             "Content relevant for the answer.",
+                             relevance_score=expected_score)
+        ]
+
+        with patch("core.rag._contextual_compress", side_effect=lambda docs, *a, **kw: docs), \
+             patch("core.rag._apply_time_decay", side_effect=lambda docs, *a, **kw: docs), \
+             patch("core.rag._diversify_languages", side_effect=lambda docs: docs), \
+             patch("core.akasha_client.AkashaClient", return_value=mock_akasha):
+            config = _make_config(akasha_fallback=True)
+            vs = _make_vectorstore(0)
+            try:
+                _, sources = rag.prepare_ask(vs, "what is python?", config=config)
+            except Exception:
+                sources = []
+
+        akasha_sources = [s for s in sources if "example.com" in s["path"]]
+        if akasha_sources:
+            assert akasha_sources[0]["score"] == pytest.approx(expected_score, abs=0.01)

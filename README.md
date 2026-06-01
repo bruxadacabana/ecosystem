@@ -174,6 +174,7 @@ Buscador e amplificador de pesquisa. O LLM age **apenas** na camada de query —
 - Reflection loop: reflexões periódicas sobre sessões de pesquisa
 - Geração de insights a partir do padrão de uso
 - Envio de insights para a Mnemosyne via protocolo `friendship` (comunicação bidirecional)
+- **`GET /search/structured`** — schema JSON padronizado para handoff com a Mnemosyne (Collab 2): retorna `url`, `title`, `snippet`, `domain`, `date`, `relevance_score` (0–1), `source_type` ("web"|"library"|"paper"|"local"); a Mnemosyne usa esse endpoint no fallback automático de RAG
 
 **Porta:** 7071 (FastAPI)
 

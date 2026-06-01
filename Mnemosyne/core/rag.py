@@ -1288,6 +1288,7 @@ def prepare_ask(
             ))
 
     # Collab 2: AKASHA fallback — busca complementar quando RAG local é insuficiente
+    # Usa /search/structured para obter relevance_score e source_type explícitos.
     if getattr(config, "akasha_fallback", False) and (
         not sources or len(context.split()) < _AKASHA_FALLBACK_MIN_WORDS
     ):
@@ -1295,17 +1296,17 @@ def prepare_ask(
             from .akasha_client import AkashaClient
             _akasha_client = AkashaClient()
             if _akasha_client.is_available():
-                _ak_results = _akasha_client.search(question, max_results=5)
+                _ak_results = _akasha_client.search_structured(question, max_results=5)
                 if _ak_results:
                     _ak_snippets = [
-                        f"[Fonte web via AKASHA — {r.title or r.url}]\n{r.snippet}"
+                        f"[Fonte {r.source_type} via AKASHA — {r.title or r.url}]\n{r.snippet}"
                         for r in _ak_results if r.snippet
                     ]
                     if _ak_snippets:
                         _ak_block = "\n\n---\n".join(_ak_snippets)
                         context = (
-                            f"[Fontes web via AKASHA]\n{_ak_block}\n\n---\n{context}"
-                            if context else f"[Fontes web via AKASHA]\n{_ak_block}"
+                            f"[Fontes via AKASHA]\n{_ak_block}\n\n---\n{context}"
+                            if context else f"[Fontes via AKASHA]\n{_ak_block}"
                         )
                         existing_paths = {s["path"] for s in sources}
                         for r in _ak_results:
@@ -1313,16 +1314,17 @@ def prepare_ask(
                                 sources.append(SourceRecord(
                                     path=r.url,
                                     excerpt=r.snippet[:250],
-                                    score=0.5,
+                                    score=r.relevance_score,  # score real do AKASHA
                                     start_char=None,
                                     end_char=None,
                                     page_num=None,
                                 ))
                                 existing_paths.add(r.url)
                         log.info(
-                            "rag: AKASHA fallback — %d resultado(s) adicionados ao contexto "
-                            "(query: %.60s, palavras_contexto_orig=%d)",
+                            "rag: AKASHA fallback (structured) — %d resultado(s) adicionados "
+                            "(query: %.60s, palavras_contexto_orig=%d, tipos=%s)",
                             len(_ak_results), question, len(context.split()),
+                            ",".join({r.source_type for r in _ak_results}),
                         )
         except Exception as _ak_exc:
             log.debug("rag: AKASHA fallback falhou: %s", _ak_exc)

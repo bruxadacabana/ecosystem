@@ -863,7 +863,7 @@ AKASHA/
     ├── test_query_understanding.py
     ├── test_friendship_receiver.py
     └── integration/        → Testes de integração (exigem serviços rodando)
-        └── test_api.py     → Rotas FastAPI: /search/json, /insight/current, /insight/feedback, /library/crawl/status
+        └── test_api.py     → Rotas FastAPI: /search/json, /search/structured, /insight/current, /insight/feedback, /library/crawl/status
 ```
 
 ---
@@ -2055,12 +2055,15 @@ ecosystem_client.send_insight_to_akasha(insight_text)
 # → AKASHA/services/friendship_receiver.py processa e salva em personal_memory
 ```
 
-**Mnemosyne → AKASHA (busca web):**
+**Mnemosyne → AKASHA (busca web — Collab 2):**
 ```python
 # Em Mnemosyne/core/akasha_client.py:
-results = akasha_client.search(query)
-# → GET http://localhost:7071/search?q={query}&sources=web
-# → usado durante RAG de sessão para enriquecer contexto com web
+results = akasha_client.search_structured(query)
+# → GET http://localhost:7071/search/structured?q={query}&sources=web,eco,sites
+# Schema retornado: StructuredAkashaResult(url, title, snippet, domain,
+#                   date, relevance_score 0–1, source_type "web|library|paper|local")
+# Fallback para /search/json se AKASHA mais antiga (404 → legado com score=0.5)
+# → usado no RAG da Mnemosyne (prepare_ask) quando contexto local < 200 palavras
 ```
 
 **HUB → todos os apps (configuração):**
