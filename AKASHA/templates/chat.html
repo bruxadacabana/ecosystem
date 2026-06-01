@@ -5,6 +5,38 @@
 {% block head %}
 <style>
   #chat-canvas { display:flex; flex-direction:column; gap:1rem; }
+
+  /* Painel de raciocínio Deep Research */
+  .chat-reasoning {
+    font-size: .8rem;
+    color: var(--text-muted, #888);
+    margin-bottom: .35rem;
+    border-left: 2px solid var(--accent-muted, #4466aa44);
+    padding-left: .6rem;
+  }
+  .chat-reasoning-summary {
+    cursor: pointer;
+    user-select: none;
+    color: var(--accent, #6688cc);
+    font-size: .78rem;
+    letter-spacing: .02em;
+  }
+  .chat-reasoning-list {
+    margin: .3rem 0 0 0;
+    padding-left: 1.2rem;
+    list-style: none;
+  }
+  .chat-reasoning-step {
+    padding: .1rem 0;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .chat-reasoning-searching { color: var(--text-muted, #888); }
+  .chat-reasoning-evaluating { color: var(--accent, #6688cc); }
+  .chat-reasoning-done { color: var(--success, #5a9a5a); }
 </style>
 {% endblock %}
 
@@ -103,7 +135,19 @@ function createAkashaMessage() {
   wrapper.className = 'chat-message-akasha';
   wrapper.id = 'chat-stream-wrapper';
 
-  /* Bloco de raciocínio — oculto enquanto não houver conteúdo */
+  /* Painel de raciocínio Deep Research — oculto até chegar evento step */
+  const reasoning = document.createElement('details');
+  reasoning.className = 'chat-reasoning';
+  reasoning.style.display = 'none';
+  const reasoningSummary = document.createElement('summary');
+  reasoningSummary.className = 'chat-reasoning-summary';
+  reasoningSummary.textContent = 'Mostrar raciocínio ▾';
+  const reasoningList = document.createElement('ol');
+  reasoningList.className = 'chat-reasoning-list';
+  reasoning.appendChild(reasoningSummary);
+  reasoning.appendChild(reasoningList);
+
+  /* Bloco de thinking LLM — oculto enquanto não houver conteúdo */
   const thinking = document.createElement('details');
   thinking.className = 'chat-thinking';
   thinking.style.display = 'none';
@@ -125,12 +169,13 @@ function createAkashaMessage() {
   const sourcesEl = document.createElement('div');
   sourcesEl.className = 'chat-message-sources';
 
+  wrapper.appendChild(reasoning);
   wrapper.appendChild(thinking);
   wrapper.appendChild(bubble);
   wrapper.appendChild(sourcesEl);
   canvas.appendChild(wrapper);
 
-  return { wrapper, thinking, thinkContent, bubble, sourcesEl };
+  return { wrapper, reasoning, reasoningList, thinking, thinkContent, bubble, sourcesEl };
 }
 
 function escHtml(s) {
@@ -216,7 +261,7 @@ async function sendMessage(e) {
   canvas.appendChild(userBubble);
   canvas.scrollTop = canvas.scrollHeight;
 
-  const { wrapper, thinking, thinkContent, bubble, sourcesEl } = createAkashaMessage();
+  const { wrapper, reasoning, reasoningList, thinking, thinkContent, bubble, sourcesEl } = createAkashaMessage();
   let fullText  = '';
   let thinkText = '';
 
@@ -243,7 +288,17 @@ async function sendMessage(e) {
         if (raw === '[DONE]') break;
         try {
           const ev = JSON.parse(raw);
-          if (ev.type === 'loading') {
+          if (ev.type === 'step') {
+            // DeepResearch: etapa do raciocínio — mostrar painel de reasoning
+            reasoning.style.display = '';
+            const li = document.createElement('li');
+            li.className = 'chat-reasoning-step chat-reasoning-' + (ev.status || 'searching');
+            const icon = ev.status === 'done' ? '✓' : ev.status === 'evaluating' ? '⟳' : '🔍';
+            const found = ev.sources_found > 0 ? ' (' + ev.sources_found + ')' : '';
+            li.textContent = icon + ' ' + escHtml(ev.query || '') + found;
+            reasoningList.appendChild(li);
+            canvas.scrollTop = canvas.scrollHeight;
+          } else if (ev.type === 'loading') {
             // DeepResearch 1: indicador durante setup (expansão + fetch)
             bubble.innerHTML = '<span class="chat-loading-deep">' + escHtml(ev.text || '') + '</span>';
             canvas.scrollTop = canvas.scrollHeight;

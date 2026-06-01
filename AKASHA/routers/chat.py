@@ -296,35 +296,59 @@ def _compute_url_novelty(new_results: list, accumulated_urls: set[str]) -> float
     return novel_count / len(new_results)
 
 
-async def _deep_collect_results(
+from typing import AsyncIterator as _AsyncIter, Any as _Any
+
+
+async def _deep_search_steps(
     question: str,
     model: str,
     max_snippets: int = _MAX_SNIPPETS,
     novelty_threshold: float = 0.20,
-) -> list:
-    """Coleta resultados do Deep Research em dois rounds com verificação de novidade.
+) -> "_AsyncIter[tuple[str, _Any]]":
+    """Async generator que emite eventos de raciocínio e ao final os resultados.
 
-    Round 1: busca com a query original.
-    Round 2: query expansion (reformulações via LLM); incluído apenas se a novidade
-             dos resultados novos >= novelty_threshold.
+    Yields:
+        ("step", dict)   — a cada etapa visível do pipeline:
+                           {step, query, sources_found, status}
+                           status: "searching" | "evaluating" | "done"
+        ("results", list) — uma única vez no final, com os SearchResult coletados
 
-    Retorna lista deduplicada de SearchResult para o corpus final.
-    Testável de forma isolada sem depender do streaming SSE.
+    Usado por _deep_stream() para emitir step-events SSE em tempo real.
+    _deep_collect_results() é um wrapper que extrai apenas os resultados.
     """
     import asyncio as _asyncio
     from services.local_search import search_local as _sl
 
-    # Round 1
+    step_n: list[int] = [0]
+
+    def _mk_step(query: str, sources_found: int, status: str) -> dict:
+        step_n[0] += 1
+        return {
+            "step":          step_n[0],
+            "query":         query[:100],
+            "sources_found": sources_found,
+            "status":        status,
+        }
+
+    # Passo 1: rodada 1 — busca com query original
+    yield "step", _mk_step(question, 0, "searching")
     r1_raw = await _sl(question, max_results=max_snippets, expand=False, include_crawl=True)
     accumulated: set[str] = {r.url for r in r1_raw}
     results = list(r1_raw)
     log.info("deep_collect: rodada 1 — %d resultado(s) para '%s'", len(results), question[:60])
 
-    # Round 2: expansão com verificação de novidade
+    yield "step", _mk_step(question, len(results), "evaluating")
+
+    # Passo 2: expansão (rodada 2)
     reformulations = await _expand_queries_deep(question, model)
     if not reformulations:
         log.debug("deep_collect: sem reformulações, usando apenas rodada 1")
-        return results
+        yield "step", _mk_step("síntese", len(results), "done")
+        yield "results", results
+        return
+
+    exp_summary = "; ".join(r[:50] for r in reformulations[:3])
+    yield "step", _mk_step(exp_summary, 0, "searching")
 
     raw_r2 = await _asyncio.gather(*[
         _sl(q, max_results=max_snippets, expand=False, include_crawl=True)
@@ -342,13 +366,38 @@ async def _deep_collect_results(
             "(threshold=%.0f%%) — corpus expandido para %d resultado(s)",
             len(reformulations), novelty * 100, novelty_threshold * 100, len(results),
         )
+        status_msg = f"novidade {novelty*100:.0f}% — corpus expandido"
+        yield "step", _mk_step(status_msg, len(results), "evaluating")
     else:
         log.info(
             "deep_collect: saturação na rodada 2 (novidade=%.0f%% < threshold=%.0f%%) "
             "— usando apenas rodada 1 (%d resultado(s))",
             novelty * 100, novelty_threshold * 100, len(results),
         )
-    return results
+        status_msg = f"saturação (novidade {novelty*100:.0f}%)"
+        yield "step", _mk_step(status_msg, len(results), "done")
+
+    yield "step", _mk_step("síntese", len(results), "done")
+    yield "results", results
+
+
+async def _deep_collect_results(
+    question: str,
+    model: str,
+    max_snippets: int = _MAX_SNIPPETS,
+    novelty_threshold: float = 0.20,
+) -> list:
+    """Wrapper que extrai apenas os resultados do generator _deep_search_steps.
+
+    Usado pelos testes — mantém a assinatura original sem quebrar test_deep_research_novelty.
+    Em produção, _deep_stream usa _deep_search_steps diretamente para emitir step-events.
+    """
+    async for event_type, value in _deep_search_steps(
+        question, model, max_snippets, novelty_threshold
+    ):
+        if event_type == "results":
+            return value
+    return []
 
 
 async def _expand_queries_deep(question: str, model: str) -> list[str]:
@@ -752,12 +801,21 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
             loading = json.dumps({"type": "loading", "text": "🔍 pesquisando em profundidade…"}, ensure_ascii=False)
             yield f"data: {loading}\n\n".encode()
 
-            # Fases 2+3 (DeepResearch 2): coleta com novidade — rounds 1 e 2
-            results = await _deep_collect_results(
+            # Fases 2+3 (DeepResearch 2): coleta com step events em tempo real
+            results: list = []
+            async for event_type, value in _deep_search_steps(
                 body.message, model,
                 max_snippets=_MAX_SNIPPETS,
                 novelty_threshold=novelty_threshold,
-            )
+            ):
+                if event_type == "step":
+                    step_payload = json.dumps(
+                        {"type": "step", **value}, ensure_ascii=False
+                    )
+                    yield f"data: {step_payload}\n\n".encode()
+                elif event_type == "results":
+                    results = value
+
             log.info("chat [DEEP]: corpus final — %d resultado(s)", len(results))
 
             # Fase 3 (DeepResearch 3): conteúdo completo dos top N

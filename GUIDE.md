@@ -2393,14 +2393,21 @@ O endpoint `/chat/message` (POST, SSE stream) segue este pipeline:
 
 ```
 deep=True?
-├── _deep_collect_results(question, model, novelty_threshold)
+├── _deep_search_steps(question, model, novelty_threshold)  ← async generator
+│     ├── yield ("step", {step, query, sources_found, status="searching"})
 │     ├── Rodada 1: search_local(original) → r1_results + accumulated_urls
+│     ├── yield ("step", {step, query, sources_found, status="evaluating"})
 │     ├── _expand_queries_deep() → 3-5 reformulações via LOGOS P1
+│     ├── yield ("step", {step, query="reformulações...", status="searching"})
 │     ├── Rodada 2: asyncio.gather(search_local(q) for q in reformulações)
 │     ├── _compute_url_novelty(r2_all, accumulated_urls)
-│     │     ├── novelty >= threshold → merge r1+r2, log "corpus expandido"
-│     │     └── novelty < threshold  → usar só r1, log "saturação na rodada 2"
-│     └── retorna lista deduplicada final
+│     │     ├── novelty >= threshold → merge r1+r2
+│     │     │   yield ("step", {status="evaluating", query="novidade X%"})
+│     │     └── novelty < threshold  → usar só r1
+│     │         yield ("step", {status="done", query="saturação X%"})
+│     ├── yield ("step", {step, query="síntese", status="done"})
+│     └── yield ("results", list[SearchResult])
+│  _deep_collect_results() — wrapper que extrai só os resultados (usado nos testes)
 ├── _build_deep_corpus(top N)
 │     └── _get_doc_full_content() para cada URL:
 │           file:// → filesystem + FTS5 fallback (8000 chars)
@@ -2413,7 +2420,9 @@ deep=True?
 N = `deep_research_max_docs` (default=8, configurável em Settings → seção IA).
 `novelty_threshold` = `ecosystem.json["akasha"]["novelty_threshold"]` (default=0.20, range 0.05–0.90). Controla quando a rodada 2 é descartada por repetição.
 
-**Protocolo SSE:** `data: {"type": "fragment"|"thinking"|"loading"|"sources", ...}` → `data: [DONE]`
+**Protocolo SSE:** `data: {"type": "step"|"fragment"|"thinking"|"loading"|"sources", ...}` → `data: [DONE]`
+
+Eventos `step` (apenas em modo deep): `{type, step, query, sources_found, status}` — exibidos no painel colapsável "Mostrar raciocínio ▾" acima da resposta.
 
 **Front-end (`templates/chat.html`):** `renderSourcesInMessage(sourcesEl, sources)` renderiza as fontes como `<details open>` colapsável abaixo de cada mensagem — com link clicável e excerpt em `<small>`. `escHtml()` sanitiza URLs.
 
