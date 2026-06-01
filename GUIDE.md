@@ -2424,6 +2424,8 @@ N = `deep_research_max_docs` (default=8, configurável em Settings → seção I
 
 Eventos `step` (apenas em modo deep): `{type, step, query, sources_found, status}` — exibidos no painel colapsável "Mostrar raciocínio ▾" acima da resposta.
 
+Evento `consensus` (apenas em modo normal, perguntas de verificação): `{type, supports, contradicts, neutral}` — badge colorido "N suportam · M contradizem · K neutros" exibido antes da resposta. Detectado por regex nos padrões "é verdade que", "existe evidência", "is it true that", etc. Classificação por heurística de palavras-chave (sem custo LLM).
+
 **Front-end (`templates/chat.html`):** `renderSourcesInMessage(sourcesEl, sources)` renderiza as fontes como `<details open>` colapsável abaixo de cada mensagem — com link clicável e excerpt em `<small>`. `escHtml()` sanitiza URLs.
 
 ---

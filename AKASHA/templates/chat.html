@@ -135,6 +135,24 @@ function createAkashaMessage() {
   wrapper.className = 'chat-message-akasha';
   wrapper.id = 'chat-stream-wrapper';
 
+  /* Badge de consenso — oculto até chegar evento consensus */
+  .chat-consensus {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .78rem;
+    padding: .25rem .6rem;
+    border-radius: 1rem;
+    background: var(--surface-2, #1e2433);
+    border: 1px solid var(--border, #2a3044);
+    margin-bottom: .4rem;
+    flex-wrap: wrap;
+  }
+  .consensus-support  { color: var(--success, #5a9a5a); font-weight: 500; }
+  .consensus-contra   { color: var(--danger,  #b05050); font-weight: 500; }
+  .consensus-neutral  { color: var(--text-muted, #888); }
+  .consensus-dot      { color: var(--border, #444); }
+
   /* Painel de raciocínio Deep Research — oculto até chegar evento step */
   const reasoning = document.createElement('details');
   reasoning.className = 'chat-reasoning';
@@ -262,6 +280,7 @@ async function sendMessage(e) {
   canvas.scrollTop = canvas.scrollHeight;
 
   const { wrapper, reasoning, reasoningList, thinking, thinkContent, bubble, sourcesEl } = createAkashaMessage();
+  let consensusBadge = null;  // badge de consenso — criado ao receber evento
   let fullText  = '';
   let thinkText = '';
 
@@ -288,7 +307,23 @@ async function sendMessage(e) {
         if (raw === '[DONE]') break;
         try {
           const ev = JSON.parse(raw);
-          if (ev.type === 'step') {
+          if (ev.type === 'consensus') {
+            // Badge de consenso: "N suportam · M contradizem · K neutros"
+            if (!consensusBadge) {
+              consensusBadge = document.createElement('div');
+              consensusBadge.className = 'chat-consensus';
+              const parts = [];
+              if ((ev.supports || 0) > 0)
+                parts.push('<span class="consensus-support">✓ ' + ev.supports + ' suportam</span>');
+              if ((ev.contradicts || 0) > 0)
+                parts.push('<span class="consensus-contra">✗ ' + ev.contradicts + ' contradizem</span>');
+              if ((ev.neutral || 0) > 0)
+                parts.push('<span class="consensus-neutral">~ ' + ev.neutral + ' neutros</span>');
+              consensusBadge.innerHTML = parts.join('<span class="consensus-dot"> · </span>');
+              wrapper.insertBefore(consensusBadge, bubble);
+              canvas.scrollTop = canvas.scrollHeight;
+            }
+          } else if (ev.type === 'step') {
             // DeepResearch: etapa do raciocínio — mostrar painel de reasoning
             reasoning.style.display = '';
             const li = document.createElement('li');

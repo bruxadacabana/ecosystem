@@ -7405,7 +7405,7 @@ Quando LOGOS estiver fora (HUB fechado):
 
 ##### AKASHA — Indicador de consenso
 
-- [ ] **Modo consenso visual na UI de chat** (`routers/chat.py`, `templates/chat.html`) — para perguntas que contenham verbos de afirmação/verificação ("é verdade que", "existe evidência", "confirma que", "prova que"), detectar via regex/LLM-leve e ativar um pré-processamento que conta quantas das fontes recuperadas suportam vs. contradizem a afirmação central. Renderizar como badge colorido acima da resposta: "N fontes suportam · M contradizem · K neutras". Fallback graceful: se o modo de consenso não conseguir classificar, omitir o badge sem erro. Testes: badge aparece para perguntas de verificação; badge ausente para perguntas abertas; contagem reflete fontes reais. [Origem: pesquisa Find↔Synthesize]
+- [x] **Modo consenso visual na UI de chat** (`routers/chat.py`, `templates/chat.html`) — para perguntas que contenham verbos de afirmação/verificação ("é verdade que", "existe evidência", "confirma que", "prova que"), detectar via regex/LLM-leve e ativar um pré-processamento que conta quantas das fontes recuperadas suportam vs. contradizem a afirmação central. Renderizar como badge colorido acima da resposta: "N fontes suportam · M contradizem · K neutras". Fallback graceful: se o modo de consenso não conseguir classificar, omitir o badge sem erro. Testes: badge aparece para perguntas de verificação; badge ausente para perguntas abertas; contagem reflete fontes reais. [Origem: pesquisa Find↔Synthesize]
 
 ##### Mnemosyne — Qualidade de indexação
 

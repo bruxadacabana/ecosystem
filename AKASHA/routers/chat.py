@@ -56,6 +56,86 @@ _REFLECT_COOLDOWN = 15.0    # 15 s entre reflexões de chat (evita spam em digit
 _REFLECT_MIN_Q    = 20      # pergunta mínima para disparar reflexão
 _REFLECT_MIN_A    = 50      # resposta mínima para disparar reflexão
 
+# ── Modo consenso (Fase 8 — indicador visual de suporte/contradição) ─────────
+
+# Padrões que identificam perguntas de verificação (afirmação + evidência)
+_CONSENSUS_PATTERNS = re.compile(
+    r"\b("
+    # Português
+    r"é verdade que|existe evidência|confirma que|prova que|comprova que"
+    r"|é comprovado|há evidência|é fato que|é certo que|pode confirmar"
+    r"|existe prova|há prova|isso é verdade|é real que|é correto que"
+    # Inglês
+    r"|is it true that|is there evidence|confirms that|proves that"
+    r"|is it proven|there is evidence|is it a fact|is it certain"
+    r"|does .{1,20} confirm|does .{1,20} prove|is it correct that"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Palavras que indicam que um snippet CONTRADIZ uma afirmação
+_CONTRADICT_TERMS = re.compile(
+    r"\b(não |nunca |jamais |falso|incorreto|refuta|contradiz|nega |negam|"
+    r"errôneo|erro|mito|infundado|sem evidência|sem suporte|não há prova|"
+    r"no evidence|not true|false|debunked|disproven|contradicts|refutes|"
+    r"myth|incorrect|untrue|no proof|unfounded|misleading)\b",
+    re.IGNORECASE,
+)
+
+# Palavras que indicam que um snippet SUPORTA uma afirmação
+_SUPPORT_TERMS = re.compile(
+    r"\b(confirma|prova|demonstra|evidência|comprova|verifica|verdadeiro|"
+    r"correto|válido|documentado|registrado|observado|estudos mostram|"
+    r"confirms|proves|demonstrates|evidence shows|verifies|true|correct|"
+    r"proven|documented|studies show|research shows|validated)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_consensus_query(question: str) -> bool:
+    """Retorna True se a pergunta é uma afirmação que pode ser verificada por evidências."""
+    return bool(_CONSENSUS_PATTERNS.search(question))
+
+
+def _classify_stance(snippet_text: str) -> str:
+    """Classifica a posição de um snippet em relação a uma afirmação.
+
+    Usa heurística de palavras-chave (sem LLM) — rápido e sem custo adicional.
+
+    Retorna:
+        "contradict" — snippet contém termos de negação/refutação
+        "support"    — snippet contém termos de confirmação/evidência
+        "neutral"    — snippet não indica claramente suporte ou contradição
+    """
+    text = snippet_text.lower()
+    has_contra = bool(_CONTRADICT_TERMS.search(text))
+    has_support = bool(_SUPPORT_TERMS.search(text))
+
+    if has_contra and not has_support:
+        return "contradict"
+    if has_support and not has_contra:
+        return "support"
+    return "neutral"
+
+
+def _build_consensus(snippets: list[dict]) -> dict | None:
+    """Classifica snippets e retorna contagens {supports, contradicts, neutral}.
+
+    Retorna None se a lista for vazia (sem informação suficiente para exibir badge).
+    """
+    if not snippets:
+        return None
+    counts: dict[str, int] = {"support": 0, "contradict": 0, "neutral": 0}
+    for s in snippets:
+        stance = _classify_stance(s.get("snippet", "") or s.get("excerpt", ""))
+        counts[stance] += 1
+    log.debug(
+        "consensus: %d suportam, %d contradizem, %d neutros",
+        counts["support"], counts["contradict"], counts["neutral"],
+    )
+    return {"supports": counts["support"], "contradicts": counts["contradict"], "neutral": counts["neutral"]}
+
+
 # ── Deep Research (Fase 5) ──────────────────────────────────────────────────
 
 # Gatilhos heurísticos: pergunta > N palavras OU contém estas frases
@@ -885,7 +965,30 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
 
     messages = await _build_prompt(body.message, snippets, persona_prefix)
 
+    # Modo consenso: classificar fontes antes do stream se for pergunta de verificação
+    consensus_payload: bytes | None = None
+    if _is_consensus_query(body.message):
+        try:
+            consensus = _build_consensus(snippets)
+            if consensus is not None:
+                consensus_payload = (
+                    "data: " +
+                    json.dumps({"type": "consensus", **consensus}, ensure_ascii=False) +
+                    "\n\n"
+                ).encode()
+                log.info(
+                    "chat [consenso]: '%s' — suportam=%d contradizem=%d neutros=%d",
+                    body.message[:60],
+                    consensus["supports"], consensus["contradicts"], consensus["neutral"],
+                )
+        except Exception as _exc:
+            log.debug("chat [consenso]: falhou silenciosamente: %s", _exc)
+
     async def _event_stream() -> AsyncIterator[bytes]:
+        # Emite badge de consenso antes da resposta (só se classificação bem-sucedida)
+        if consensus_payload is not None:
+            yield consensus_payload
+
         answer_buf: list[str] = []
         async for typ, text in _filter_thinking(_stream_chat(messages, model)):
             payload = json.dumps({"type": typ, "text": text}, ensure_ascii=False)
