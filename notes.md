@@ -5,9 +5,13 @@ Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça 
 
 ---
 
-@TODO.md#7375-7376  implemente essa subseção por completo (#### Fase 6 — Colaboração expandida AKASHA↔Mnemosyne (visão de médio prazo))
-Implemente, teste, marque no TODO, commite e no final resuma o que foi feito e o porquê no chat, peça permissão para prosseguir. Seu resumo sempre deve ser detalhado mas acessível, explicando mais a lógica do que códigos e tecnicidades.
-Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes (unitários e de integração) exaustivamente (tanto na implementação em si quanto nas funcionalidades ao redor e como funcionam em conjunto) e incluir criação de logs em todo o processo envolvendo a nova feature implementada.
+SearXNG tem suporte oficial apenas para Linux (incluindo Docker). No Windows, as opções são:
+
+Docker Desktop — a forma mais simples: docker run -d -p 8888:8080 searxng/searxng
+WSL2 — instalar via pip dentro do WSL2 como se fosse Linux
+Não usar no Windows — a AKASHA pode usar o SearXNG do PC principal via IP local (se estiver na mesma rede)
+
+---
 
 > O valor real desse servidor pro ecossistema seria como nó sempre ligado: Syncthing disponível mesmo quando o CachyOS estiver desligado, AKASHA crawlando em background permanentemente, KOSMOS agregando feeds o dia todo. Coisas que hoje dependem do PC principal estar acordado.
 
