@@ -113,25 +113,63 @@ function createAkashaMessage() {
   bubble.className = 'chat-bubble chat-bubble-akasha';
   bubble.id = 'chat-stream-bubble';
 
+  /* Container de fontes — Chat 1: fontes colapsáveis dentro da mensagem */
+  const sourcesEl = document.createElement('div');
+  sourcesEl.className = 'chat-message-sources';
+
   wrapper.appendChild(thinking);
   wrapper.appendChild(bubble);
+  wrapper.appendChild(sourcesEl);
   canvas.appendChild(wrapper);
 
-  return { wrapper, thinking, thinkContent, bubble };
+  return { wrapper, thinking, thinkContent, bubble, sourcesEl };
 }
 
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* Chat 1: fontes colapsáveis dentro da mensagem com excerpt */
+function renderSourcesInMessage(container, sources) {
+  const valid = (sources || []).filter(s => s.title || s.url);
+  if (!valid.length) return;
+
+  const details = document.createElement('details');
+  details.className = 'chat-sources-detail';
+  details.open = true;
+
+  const summary = document.createElement('summary');
+  summary.className = 'chat-sources-summary';
+  summary.textContent = valid.length + ' fonte' + (valid.length !== 1 ? 's' : '');
+  details.appendChild(summary);
+
+  const ul = document.createElement('ul');
+  ul.className = 'chat-sources-list';
+  valid.forEach(function(s, i) {
+    const li = document.createElement('li');
+    const label = escHtml((s.title || s.url).slice(0, 80));
+    const excerpt = s.excerpt ? escHtml(s.excerpt.slice(0, 200)) : '';
+    let html = s.url
+      ? '<a class="chat-source-link" href="' + escHtml(s.url) + '" target="_blank">[' + (i+1) + '] ' + label + '</a>'
+      : '<span>[' + (i+1) + '] ' + label + '</span>';
+    if (excerpt) {
+      html += '<br><small class="chat-source-excerpt">' + excerpt + '</small>';
+    }
+    li.innerHTML = html;
+    ul.appendChild(li);
+  });
+  details.appendChild(ul);
+  container.appendChild(details);
+}
+
+/* Retrocompatibilidade — limpa a área legada quando fontes vão para a mensagem */
 function showSources(sources) {
   const box = document.getElementById('chat-sources');
-  if (!sources.length) { box.innerHTML = ''; return; }
-  const links = sources
-    .filter(s => s.title || s.url)
-    .map((s, i) => {
-      const label = (s.title || s.url).slice(0, 60);
-      return s.url
-        ? `<a class="chat-source-link" href="${s.url}" target="_blank">[${i+1}] ${label}</a>`
-        : `<span class="chat-source-link">[${i+1}] ${label}</span>`;
-    }).join('');
-  box.innerHTML = '<span class="chat-sources-label">Fontes: </span>' + links;
+  if (box) box.innerHTML = '';
 }
 
 async function sendMessage(e) {
@@ -154,7 +192,7 @@ async function sendMessage(e) {
   canvas.appendChild(userBubble);
   canvas.scrollTop = canvas.scrollHeight;
 
-  const { wrapper, thinking, thinkContent, bubble } = createAkashaMessage();
+  const { wrapper, thinking, thinkContent, bubble, sourcesEl } = createAkashaMessage();
   let fullText  = '';
   let thinkText = '';
 
@@ -190,7 +228,8 @@ async function sendMessage(e) {
             thinkContent.textContent = thinkText;
             thinking.style.display = '';
           } else if (ev.type === 'sources') {
-            showSources(ev.sources || []);
+            renderSourcesInMessage(sourcesEl, ev.sources || []);
+            showSources([]);  // limpa área legada
           }
         } catch {}
       }

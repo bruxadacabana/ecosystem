@@ -30,7 +30,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 _BASE_DIR   = Path(__file__).parent.parent
 templates   = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
 
-_MAX_SNIPPETS = 5
+_MAX_SNIPPETS = 15   # Chat 1: mais contexto → respostas mais ricas
 
 # Resolução LOGOS-first em runtime (não import-time)
 def _get_base() -> str:
@@ -110,13 +110,48 @@ async def _get_model() -> str:
     return ""
 
 
-def _build_prompt(
+# Instruções de voz própria e caráter de pesquisadora — Chat 2
+_RESEARCH_VOICE = """\
+Ao responder, siga estas diretrizes:
+• PRIMÁRIO: relate o que as fontes indexadas registram, com citações no formato [N].
+• PERMITIDO: conexões que você percebe entre fontes, contradições ou lacunas, \
+ceticismo sobre uma fonte específica, o que vale investigar mais.
+• NÃO FAÇA: dar aulas sobre conceitos, explicar o que a usuária poderia ler, \
+parafrasear sem citar.
+• Quando não encontrar fontes relevantes: diga explicitamente que não encontrou \
+e sugira onde buscar se souber.
+Citações: [N] onde N corresponde ao número da fonte na lista acima.\
+"""
+
+
+async def _build_prompt(
     question: str,
     snippets: list[dict],
     persona_prefix: str,
 ) -> list[dict]:
-    """Monta messages list para /v1/chat/completions."""
-    parts = [_config.PERSONALITY_PROMPT]
+    """Monta messages list para /v1/chat/completions.
+
+    Chat 2: inclui voz de pesquisadora com diretrizes de citação e permite
+    análise própria (conexões, contradições, lacunas). Injeta framing afetivo
+    via affective_state.get_emotional_framing() quando disponível.
+    """
+    parts = [_config.PERSONALITY_PROMPT, _RESEARCH_VOICE]
+
+    # Modulação afetiva — já implementada em affective_state.py, só falta chamar
+    try:
+        from services.affective_state import get_current_state, get_emotional_framing
+        state   = await get_current_state()
+        framing = get_emotional_framing(state)
+        if framing:
+            parts.append(framing)
+            log.debug(
+                "chat: framing afetivo aplicado (valence=%.2f curiosity=%.2f)",
+                state.get("valence", 0.0),
+                state.get("epistemic_curiosity", 0.0),
+            )
+    except Exception as exc:
+        log.debug("chat: framing afetivo indisponível: %s", exc)
+
     if persona_prefix:
         parts.append(persona_prefix.rstrip())
 
@@ -126,6 +161,8 @@ def _build_prompt(
             for i, s in enumerate(snippets)
         )
         parts.append(f"Fontes encontradas no índice:\n{refs}")
+    else:
+        parts.append("Nenhuma fonte relevante encontrada no índice para esta pergunta.")
 
     messages: list[dict] = [{"role": "system", "content": "\n\n".join(parts)}]
     messages.append({"role": "user", "content": question})
@@ -141,7 +178,7 @@ async def _stream_chat(messages: list[dict], model: str) -> AsyncIterator[str]:
                 f"{_get_base()}/v1/chat/completions",
                 headers=_get_headers(),
                 json={"model": model, "messages": messages, "stream": True,
-                      "max_tokens": 400, "temperature": 0.4, "frequency_penalty": 0.1},
+                      "max_tokens": 600, "temperature": 0.4, "frequency_penalty": 0.1},
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
@@ -349,17 +386,31 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
             yield b"data: [DONE]\n\n"
         return StreamingResponse(_no_model(), media_type="text/event-stream")
 
-    # Pipeline RAG
-    results = await search_local(body.message, max_results=_MAX_SNIPPETS, expand=False)
+    # Pipeline RAG — Chat 1: include_crawl=True inclui Biblioteca (crawl_fts)
+    results = await search_local(
+        body.message,
+        max_results=_MAX_SNIPPETS,
+        expand=False,
+        include_crawl=True,
+    )
+    log.info(
+        "chat: RAG retornou %d resultado(s) para '%s'",
+        len(results), body.message[:80],
+    )
 
     snippets: list[dict] = [
         {"title": r.title, "url": r.url, "snippet": r.snippet or ""}
         for r in results[:_MAX_SNIPPETS]
     ]
 
-    sources = [{"url": s["url"], "title": s["title"]} for s in snippets]
+    # Chat 1: sources com excerpt para renderização no front-end
+    sources = [
+        {"url": s["url"], "title": s["title"], "excerpt": s["snippet"][:200]}
+        for s in snippets
+    ]
+
     persona_prefix = get_persona().as_prompt_prefix()
-    messages = _build_prompt(body.message, snippets, persona_prefix)
+    messages = await _build_prompt(body.message, snippets, persona_prefix)
 
     async def _event_stream() -> AsyncIterator[bytes]:
         answer_buf: list[str] = []

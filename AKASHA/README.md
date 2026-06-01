@@ -145,6 +145,19 @@ Esse histórico é mais do que um log: ele alimenta o sistema de análise de int
 
 ## Assistente — Akasha
 
+### Conversa (/chat)
+
+A aba Conversa é o ponto de acesso ao RAG da Akasha: ela busca no índice pessoal e responde com base no que encontrou, citando as fontes.
+
+**O que o /chat busca:**
+- Arquivos locais (KOSMOS, páginas arquivadas, Mnemosyne, transcrições Hermes) — FTS5 + semântico via LOGOS
+- **Biblioteca inteira** (todos os sites rastreados) — FTS5 em `crawl_fts` (`include_crawl=True`)
+- Vetores LOGOS de arquivos locais e crawl — quando ≥ 10 embeddings disponíveis
+
+**Voz própria:** a Akasha cita as fontes com `[N]` e pode adicionar conexões entre fontes, apontar contradições ou lacunas. Não dá aulas nem parafraseia sem citar. O tom muda com o estado afetivo: valência positiva → exploratório e especulativo; valência negativa → analítico e crítico.
+
+**Fontes:** aparecem como lista colapsável abaixo de cada resposta, com link clicável e trecho do conteúdo — mesmo que a resposta não contenha citações `[N]`.
+
 ### Princípio
 
 O LLM no AKASHA age **apenas** na camada de análise interna (reflexão, insight, entendimento de query). Nunca sintetiza ou interpreta resultados de busca. O AKASHA devolve links, trechos e documentos — a usuária pensa, o sistema amplifica o alcance da busca.

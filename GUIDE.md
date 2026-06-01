@@ -778,7 +778,7 @@ AKASHA/
 ├── 📁 routers/             → Endpoints FastAPI (um arquivo por "área")
 │   ├── search.py           → GET /search — busca principal
 │   ├── crawler.py          → /library — gerencia domínios e biblioteca
-│   ├── chat.py             → /chat — conversa com o Akasha (assistente)
+│   ├── chat.py             → /chat — RAG com voz própria; busca híbrida FTS+semântica+crawl_fts; framing afetivo
 │   ├── dialogue.py         → /dialogue — modo conversacional contínuo
 │   ├── domains.py          → /domains — CRUD de domínios
 │   ├── favorites.py        → /favorites — itens salvos
@@ -2350,6 +2350,41 @@ SOURCE_WEIGHTS = {
     "DEPOIS":    1.0,   # salvo para ler depois
 }
 ```
+
+---
+
+### 7.7b. Pipeline do /chat
+
+**Arquivo:** `routers/chat.py`
+
+O endpoint `/chat/message` (POST, SSE stream) segue este pipeline:
+
+```
+1. Verificações de disponibilidade (LOGOS online, modelo disponível)
+2. RAG via search_local(question, max_results=15, include_crawl=True)
+     ├── FTS5 em local_fts (arquivos locais: KOSMOS, AKASHA, Mnemosyne…)
+     ├── FTS5 em crawl_fts via crawler.search_sites() [include_crawl=True]
+     ├── KNN semântico em vec_items via LOGOS (LOCAL_VEC, peso 0.9)
+     ├── KNN semântico em page_embeddings via LOGOS (CRAWL_SEMANTIC, peso 1.1)
+     ├── ChromaDB (Mnemosyne, peso 1.1)
+     └── highlights pessoais (HIGHLIGHT, peso 1.6)
+3. _build_prompt(question, snippets, persona_prefix) [async]
+     ├── PERSONALITY_PROMPT (personalidade base da Akasha)
+     ├── _RESEARCH_VOICE: diretrizes PRIMÁRIO/PERMITIDO/NÃO FAÇA + citações [N]
+     ├── Framing afetivo: get_emotional_framing(await get_current_state())
+     │     valência positiva → framing exploratório
+     │     valência negativa → framing analítico/crítico
+     │     curiosidade > 0.6 → pergunta de follow-up
+     ├── Fontes [1]...[N] (snippets[:350] cada)
+     └── Mensagem do usuário
+4. _stream_chat() → SSE chunks: fragment | thinking
+5. sources event: [{url, title, excerpt[:200]}] — aparece mesmo sem [N] no texto
+6. _reflect_on_chat() fire-and-forget (P3) — salva na personal_memory
+```
+
+**Protocolo SSE:** `data: {"type": "fragment"|"thinking"|"sources", ...}` → `data: [DONE]`
+
+**Front-end (`templates/chat.html`):** `renderSourcesInMessage(sourcesEl, sources)` renderiza as fontes como `<details open>` colapsável abaixo de cada mensagem — com link clicável e excerpt em `<small>`. `escHtml()` sanitiza URLs.
 
 ---
 

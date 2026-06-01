@@ -128,6 +128,7 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "MNEMOSYNE":      1.1,   # busca semântica ChromaDB
     "CRAWL_SEMANTIC": 1.1,   # crawl_pages via KNN semântico (LOGOS embeddings)
     "LOCAL_VEC":      0.9,   # arquivos locais via KNN semântico (LOGOS embeddings)
+    "SITES":          1.1,   # crawl_fts — páginas da Biblioteca via FTS5
     "HERMES":         1.0,   # transcrições automáticas
     "DEPOIS":         1.0,   # salvo para ler depois
 }
@@ -1928,6 +1929,7 @@ async def search_local(
     max_results: int = 500,
     expand: bool = True,
     expansion_log: list | None = None,
+    include_crawl: bool = False,
 ) -> list[SearchResult]:
     """Busca local: FTS5 + ChromaDB + sqlite-vec + highlights fundidos via RRF, com re-ranking e usage boost.
 
@@ -1940,6 +1942,8 @@ async def search_local(
         expand: se False, desativa expansão LLM (ex: usuário clicou "desfazer").
         expansion_log: lista mutável; se fornecida, os termos anchorados usados
             são adicionados via .extend() para o chamador exibir na UI.
+        include_crawl: se True, inclui FTS5 em crawl_fts (Biblioteca) além dos
+            arquivos locais — útil para chat que deve buscar em toda a base.
     """
     # Inicia expansão LLM e expansão por entidades em paralelo com as buscas principais
     expand_task = None
@@ -1955,6 +1959,16 @@ async def search_local(
     if _inference_available and _get_semantic_search_enabled():
         _semantic_task  = asyncio.ensure_future(_run_semantic_crawl_search(query))
         _local_vec_task = asyncio.ensure_future(_search_vec(query, max_results))
+
+    # Busca FTS5 em crawl_fts (Biblioteca) — opcional, ativada por include_crawl=True
+    _crawl_fts_task = None
+    if include_crawl:
+        try:
+            from services.crawler import search_sites as _search_sites_fn
+            _crawl_fts_task = asyncio.ensure_future(_search_sites_fn(query, max_results))
+            log.debug("search_local: crawl_fts incluído na busca")
+        except Exception as exc:
+            log.debug("search_local: não foi possível iniciar crawl FTS: %s", exc)
 
     fts_results       = await _search_fts(query, max_results)
     chroma_results    = await _search_chroma(query)
@@ -1978,6 +1992,17 @@ async def search_local(
             )
         except (asyncio.TimeoutError, Exception):
             _local_vec_task.cancel()
+
+    crawl_fts_results: list[SearchResult] = []
+    if _crawl_fts_task is not None:
+        try:
+            crawl_fts_results = await asyncio.wait_for(
+                asyncio.shield(_crawl_fts_task), timeout=4.0
+            )
+            log.debug("search_local: crawl_fts retornou %d resultado(s)", len(crawl_fts_results))
+        except (asyncio.TimeoutError, Exception) as exc:
+            log.debug("search_local: crawl_fts falhou: %s", exc)
+            _crawl_fts_task.cancel()
 
     # MUST+SHOULD: ancora termos ao corpus e executa segunda busca FTS5 aditiva
     fts_expanded: list[SearchResult] = []
@@ -2033,15 +2058,15 @@ async def search_local(
 
     combined = _rrf(
         [fts_results, fts_expanded, fts_prf, fts_entity, chroma_results, vec_results,
-         highlight_results, semantic_crawl_results, local_vec_results],
+         highlight_results, semantic_crawl_results, local_vec_results, crawl_fts_results],
         weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0),
     )[:max_results]
     log.debug(
         "retrieval pool: fts=%d fts_exp=%d fts_prf=%d fts_ent=%d chroma=%d vec=%d hl=%d "
-        "sem_crawl=%d local_vec=%d → rrf=%d",
+        "sem_crawl=%d local_vec=%d crawl_fts=%d → rrf=%d",
         len(fts_results), len(fts_expanded), len(fts_prf), len(fts_entity),
         len(chroma_results), len(vec_results), len(highlight_results),
-        len(semantic_crawl_results), len(local_vec_results), len(combined),
+        len(semantic_crawl_results), len(local_vec_results), len(crawl_fts_results), len(combined),
     )
     try:
         from services.knowledge_worker import apply_knowledge_boost as _kb_boost
