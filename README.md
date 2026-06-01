@@ -175,6 +175,7 @@ Buscador e amplificador de pesquisa. O LLM age **apenas** na camada de query —
 - Geração de insights a partir do padrão de uso
 - Envio de insights para a Mnemosyne via protocolo `friendship` (comunicação bidirecional)
 - **`GET /search/structured`** — schema JSON padronizado para handoff com a Mnemosyne (Collab 2): retorna `url`, `title`, `snippet`, `domain`, `date`, `relevance_score` (0–1), `source_type` ("web"|"library"|"paper"|"local"); a Mnemosyne usa esse endpoint no fallback automático de RAG
+- **Deep Research com critério de novidade** — `/chat` em modo deep usa dois rounds de busca; round 2 (expansão) só é incluído se a fração de URLs novas ≥ `novelty_threshold` (padrão 20%); saturação é logada e round 2 descartado automaticamente quando o corpus já é diverso o suficiente
 
 **Porta:** 7071 (FastAPI)
 

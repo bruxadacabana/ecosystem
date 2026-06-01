@@ -258,6 +258,99 @@ def _get_deep_max_docs() -> int:
         return 8
 
 
+def _get_novelty_threshold() -> float:
+    """Lê novelty_threshold do ecosystem.json/akasha.
+
+    Fração mínima de resultados novos (não vistos no corpus) que justifica
+    uma nova rodada de busca. Abaixo do threshold = saturação.
+    Default 0.20 (20% de resultados novos mínimo para continuar).
+    Range válido: 0.05–0.90.
+    """
+    try:
+        from ecosystem_client import get_akasha_config as _gc  # type: ignore
+        val = (_gc() or {}).get("novelty_threshold", 0.20)
+        return max(0.05, min(0.90, float(val)))
+    except Exception:
+        return 0.20
+
+
+def _compute_url_novelty(new_results: list, accumulated_urls: set[str]) -> float:
+    """Calcula a fração de new_results cujas URLs não estão em accumulated_urls.
+
+    Retorna 1.0 se new_results estiver vazio (sem resultados novos = saturado, porém
+    retornamos 0.0 nesse caso para indicar que a rodada não trouxe nada útil).
+
+    Lógica:
+      - novel = {r.url for r in new_results if r.url not in accumulated_urls}
+      - novelty = len(novel) / len(new_results)
+
+    Exemplos:
+      - 5 resultados, 3 novos → 0.60
+      - 5 resultados, 1 novo  → 0.20
+      - 5 resultados, 0 novos → 0.00 (saturação total)
+      - 0 resultados          → 0.00 (sem novidade)
+    """
+    if not new_results:
+        return 0.0
+    novel_count = sum(1 for r in new_results if r.url not in accumulated_urls)
+    return novel_count / len(new_results)
+
+
+async def _deep_collect_results(
+    question: str,
+    model: str,
+    max_snippets: int = _MAX_SNIPPETS,
+    novelty_threshold: float = 0.20,
+) -> list:
+    """Coleta resultados do Deep Research em dois rounds com verificação de novidade.
+
+    Round 1: busca com a query original.
+    Round 2: query expansion (reformulações via LLM); incluído apenas se a novidade
+             dos resultados novos >= novelty_threshold.
+
+    Retorna lista deduplicada de SearchResult para o corpus final.
+    Testável de forma isolada sem depender do streaming SSE.
+    """
+    import asyncio as _asyncio
+    from services.local_search import search_local as _sl
+
+    # Round 1
+    r1_raw = await _sl(question, max_results=max_snippets, expand=False, include_crawl=True)
+    accumulated: set[str] = {r.url for r in r1_raw}
+    results = list(r1_raw)
+    log.info("deep_collect: rodada 1 — %d resultado(s) para '%s'", len(results), question[:60])
+
+    # Round 2: expansão com verificação de novidade
+    reformulations = await _expand_queries_deep(question, model)
+    if not reformulations:
+        log.debug("deep_collect: sem reformulações, usando apenas rodada 1")
+        return results
+
+    raw_r2 = await _asyncio.gather(*[
+        _sl(q, max_results=max_snippets, expand=False, include_crawl=True)
+        for q in reformulations
+    ])
+    r2_flat: list = []
+    for lst in raw_r2:
+        r2_flat.extend(lst)
+
+    novelty = _compute_url_novelty(r2_flat, accumulated)
+    if novelty >= novelty_threshold:
+        results = _merge_dedup_results([results] + list(raw_r2))
+        log.info(
+            "deep_collect: rodada 2 — %d reformulação(ões), novidade=%.0f%% "
+            "(threshold=%.0f%%) — corpus expandido para %d resultado(s)",
+            len(reformulations), novelty * 100, novelty_threshold * 100, len(results),
+        )
+    else:
+        log.info(
+            "deep_collect: saturação na rodada 2 (novidade=%.0f%% < threshold=%.0f%%) "
+            "— usando apenas rodada 1 (%d resultado(s))",
+            novelty * 100, novelty_threshold * 100, len(results),
+        )
+    return results
+
+
 async def _expand_queries_deep(question: str, model: str) -> list[str]:
     """Gera 3-5 reformulações da pergunta via LLM para ampliar o corpus do Deep Research.
 
@@ -653,24 +746,19 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
         log.info("chat [DEEP]: iniciando Deep Research para '%s'", body.message[:80])
 
         async def _deep_stream() -> AsyncIterator[bytes]:
+            novelty_threshold = _get_novelty_threshold()
+
             # Fase 1: loading indicator enquanto setup roda
             loading = json.dumps({"type": "loading", "text": "🔍 pesquisando em profundidade…"}, ensure_ascii=False)
             yield f"data: {loading}\n\n".encode()
 
-            # Fase 2 (DeepResearch 2): query expansion em paralelo com busca principal
-            reformulations = await _expand_queries_deep(body.message, model)
-            all_queries = [body.message] + reformulations
-
-            raw_lists = await _asyncio.gather(*[
-                search_local(q, max_results=_MAX_SNIPPETS, expand=False, include_crawl=True)
-                for q in all_queries
-            ])
-            results = _merge_dedup_results(list(raw_lists))
-            log.info(
-                "chat [DEEP]: %d reformulação(ões), %d resultado(s) únicos (queries: %s)",
-                len(reformulations), len(results),
-                [q[:40] for q in all_queries],
+            # Fases 2+3 (DeepResearch 2): coleta com novidade — rounds 1 e 2
+            results = await _deep_collect_results(
+                body.message, model,
+                max_snippets=_MAX_SNIPPETS,
+                novelty_threshold=novelty_threshold,
             )
+            log.info("chat [DEEP]: corpus final — %d resultado(s)", len(results))
 
             # Fase 3 (DeepResearch 3): conteúdo completo dos top N
             deep_n = _get_deep_max_docs()
