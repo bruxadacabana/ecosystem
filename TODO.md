@@ -6708,10 +6708,10 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **Testes: database.py e config.py** — schema cria todas as tabelas; FTS5 e triggers funcionam; config faz roundtrip; heartbeat reset funciona no startup.
 
 #### Fase 2 — Leitor funcional
-- [ ] **feed_fetcher.py** — feedparser + throttle 2s/domínio via ecosystem_scraper. Salva metadados completos: título, URL, data, autor, feed, resumo, tempo estimado de leitura, tipo provável (notícia/opinião/análise), idioma detectado.
+- [x] **feed_fetcher.py** — feedparser + throttle 2s/domínio via ecosystem_scraper. Salva metadados completos: título, URL, data, autor, feed, resumo, tempo estimado de leitura, tipo provável (notícia/opinião/análise), idioma detectado.
 - [ ] **FetchWorker (QThread P2)** — busca todos os feeds em background, emite sinais de progresso e artigos novos. Intervalo configurável por feed.
 - [ ] **Layout 3-painéis** — `feed_sidebar.py` (feeds por categoria, contadores de não-lidos), `article_list.py` (cards básicos), `reader_pane.py` (conteúdo do feed). Theme PySide6 com paleta do ecossistema (night.qss).
-- [ ] **Testes: feed_fetcher.py** — parse RSS/Atom, throttle, campos salvos corretamente.
+- [x] **Testes: feed_fetcher.py** — parse RSS/Atom, throttle, campos salvos corretamente.
 
 #### Fase 3 — Texto completo e scraping
 - [ ] **article_scraper.py** — trafilatura como método principal; fallback BeautifulSoup. Throttle por domínio (ecosystem_scraper).
