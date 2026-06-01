@@ -1874,9 +1874,10 @@ class MainWindow(QMainWindow):
         self._analysis_queue.clear()
         import logging
         logging.getLogger("mnemosyne.main").info(
-            "IndexReflectionWorker: processando %d arquivo(s) da fila.", len(batch)
+            "IndexReflectionWorker [alta]: %d arquivo(s) recém-indexados enfileirados.", len(batch)
         )
-        self._index_reflection_worker = IndexReflectionWorker(batch, self.config)
+        # priority="high": arquivos recém-indexados têm prioridade sobre backfill retroativo
+        self._index_reflection_worker = IndexReflectionWorker(batch, self.config, priority="high")
         self._index_reflection_worker.finished.connect(self._insight_scheduler.maybe_show)
         self._index_reflection_worker.finished.connect(self._export_reflection_interests)
         self._index_reflection_worker.start()
@@ -2822,7 +2823,10 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Re-analisando {len(all_sources)} arquivo(s)…")
         self._log_event(f"Iniciando re-análise de reflexões para {len(all_sources)} arquivo(s).")
 
-        self._index_reflection_worker = IndexReflectionWorker(all_sources, self.config, force=True)
+        # priority="low": re-análise retroativa não deve competir com indexação ao vivo
+        self._index_reflection_worker = IndexReflectionWorker(
+            all_sources, self.config, force=True, priority="low"
+        )
         self._index_reflection_worker.finished.connect(self._on_reanalyze_reflections_finished)
         self._index_reflection_worker.finished.connect(self._insight_scheduler.maybe_show)
         self._index_reflection_worker.start()

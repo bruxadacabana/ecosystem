@@ -93,7 +93,13 @@ class _KnowledgeTask:
     content:     str   # primeiros 800 chars — suficiente para extração
     source_type: str   # "crawled" | "archived" | "paper"
 
-_queue: asyncio.Queue[_KnowledgeTask] = asyncio.Queue(maxsize=_QUEUE_MAX)
+# Fila dupla de prioridade:
+#   _queue_high — dados novos (crawl/archive/visit/paper ao vivo)  → X-Priority: 2
+#   _queue_low  — backfill (conteúdo já existente sendo reprocessado) → X-Priority: 3
+# O worker esvazia _queue_high primeiro; só processa _queue_low quando alta está vazia.
+_queue_high: asyncio.Queue[_KnowledgeTask] = asyncio.Queue(maxsize=_QUEUE_MAX)
+_queue_low:  asyncio.Queue[_KnowledgeTask] = asyncio.Queue(maxsize=_QUEUE_MAX)
+_LOW_QUEUE_PAUSE_THRESHOLD: int = 50   # pausa backfill se fila baixa > 50 itens
 _worker_started:   bool = False
 _total_processed:  int  = 0   # conta páginas processadas com sucesso nesta sessão
 _backfill_running: bool = False  # True enquanto backfill inicial estiver em andamento
@@ -133,6 +139,7 @@ async def _logos_llm_post(
     timeout: float = _EXTRACT_TIMEOUT,
     *,
     max_retries: int = 1,
+    x_priority: str | None = None,
 ) -> dict | None:
     """POST ao LOGOS com headers X-App/X-Priority; respeita Retry-After em 429/503.
 
@@ -140,8 +147,13 @@ async def _logos_llm_post(
     Em 429/503 lê `retry_after` do corpo JSON (adicionado pelo LOGOS no Passo 8)
     e aguarda esse valor antes de tentar novamente.
     Fallback: 60s quando o campo está ausente ou o corpo não é JSON válido.
+
+    x_priority: sobrescreve o X-Priority padrão do módulo ("3") — use "2" para
+    dados novos de alta prioridade, "3" para backfill.
     """
     headers = {**_LOGOS_HEADERS, "Content-Type": "application/json"}
+    if x_priority is not None:
+        headers["X-Priority"] = x_priority
     for attempt in range(max_retries + 1):
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -180,10 +192,19 @@ async def _logos_llm_post(
 # API pública
 # ---------------------------------------------------------------------------
 
-def schedule_page(url: str, title: str, content: str, source_type: str) -> None:
+def schedule_page(
+    url: str,
+    title: str,
+    content: str,
+    source_type: str,
+    priority: str = "high",
+) -> None:
     """Enfileira URL para extração de conhecimento em background.
 
     Fire-and-forget: nunca bloqueia. Descarta silenciosamente se fila cheia.
+
+    priority="high" → _queue_high (dados novos ao vivo, X-Priority: 2).
+    priority="low"  → _queue_low  (backfill, X-Priority: 3).
     """
     if not url or not content:
         return
@@ -193,10 +214,13 @@ def schedule_page(url: str, title: str, content: str, source_type: str) -> None:
         content=content[:800],
         source_type=source_type,
     )
+    queue = _queue_high if priority == "high" else _queue_low
+    label = "alta" if priority == "high" else "baixa"
     try:
-        _queue.put_nowait(task)
+        queue.put_nowait(task)
+        log.debug("knowledge_worker: página enfileirada [%s]: %s", label, url)
     except asyncio.QueueFull:
-        log.debug("knowledge_worker: fila cheia, descartando %s", url)
+        log.debug("knowledge_worker: fila [%s] cheia, descartando %s", label, url)
 
 
 def schedule_search_update(query: str, snippets: list[str]) -> None:
@@ -340,10 +364,12 @@ def on_feedback_confirmed(memory_id: int) -> None:
 def get_status() -> dict:
     """Estado atual do worker — para monitoramento externo (HUB)."""
     return {
-        "knowledge_extraction": _queue.qsize(),
-        "worker_active":        _worker_started,
-        "processed_session":    _total_processed,
-        "backfill_running":     _backfill_running,
+        "knowledge_extraction":      _queue_high.qsize() + _queue_low.qsize(),
+        "knowledge_queue_high":      _queue_high.qsize(),
+        "knowledge_queue_low":       _queue_low.qsize(),
+        "worker_active":             _worker_started,
+        "processed_session":         _total_processed,
+        "backfill_running":          _backfill_running,
     }
 
 
@@ -409,28 +435,46 @@ async def process_queue() -> None:
     global _worker_started
     _worker_started = True
     await _apply_interest_seeds()
-    log.info("knowledge_worker: iniciado.")
+    log.info("knowledge_worker: iniciado (fila dupla alta/baixa).")
     while True:
         try:
-            task = await _queue.get()
-            # Verifica se Ollama está disponível antes de tentar
+            # Drena alta prioridade primeiro (put_nowait → nunca bloqueia)
+            is_high = True
+            try:
+                task = _queue_high.get_nowait()
+            except asyncio.QueueEmpty:
+                is_high = False
+                low_size = _queue_low.qsize()
+                if low_size > _LOW_QUEUE_PAUSE_THRESHOLD:
+                    log.warning(
+                        "knowledge_worker: fila baixa com %d itens — pausando backfill",
+                        low_size,
+                    )
+                    await asyncio.sleep(_COOLDOWN_S * 10)
+                    continue
+                # Aguarda fila baixa com timeout para re-checar alta a cada 2s
+                try:
+                    task = await asyncio.wait_for(_queue_low.get(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    continue  # re-checa fila alta
+
+            # Verifica se LOGOS está disponível
             from services.local_search import get_inference_status, check_inference_available
             if not get_inference_status():
-                # Re-verifica em tempo real antes de desistir
                 await check_inference_available()
                 if not get_inference_status():
-                    # Recoloca na fila e aguarda — backend pode ficar disponível depois
+                    # Recoloca na fila correta e aguarda
                     try:
-                        _queue.put_nowait(task)
+                        if is_high:
+                            _queue_high.put_nowait(task)
+                        else:
+                            _queue_low.put_nowait(task)
                     except asyncio.QueueFull:
                         pass
                     await asyncio.sleep(60)
                     continue
 
-            # Verifica se já processamos esta URL recentemente.
-            # Páginas crawleadas: usa crawl_pages.knowledge_processed (persiste
-            # mesmo se page_knowledge for limpa para re-análise).
-            # Arquivos arquivados/papers: usa page_knowledge como antes.
+            # Verifica se já processamos esta URL recentemente
             import database as _db
             already_done: bool
             if task.source_type == "crawled":
@@ -438,19 +482,28 @@ async def process_queue() -> None:
             else:
                 already_done = bool(await _db.get_page_knowledge(task.url))
             if already_done:
-                _queue.task_done()
+                if is_high:
+                    _queue_high.task_done()
+                else:
+                    _queue_low.task_done()
                 continue
 
-            log.info("knowledge_worker: extraindo '%s' [%s]", task.title[:60] or task.url[:60], task.source_type)
-            await _extract_and_store(task)
-            _queue.task_done()
+            label = "alta" if is_high else "baixa"
+            log.info(
+                "knowledge_worker: extraindo [%s] '%s' [%s]",
+                label, task.title[:60] or task.url[:60], task.source_type,
+            )
+            await _extract_and_store(task, is_high=is_high)
+            if is_high:
+                _queue_high.task_done()
+            else:
+                _queue_low.task_done()
 
-            # Exporta perfil de interesse: quando fila esvazia OU a cada N páginas.
-            # A condição "queue empty" não basta durante backfill grande — o backfill
-            # re-popula a fila antes de esvaziar, então a exportação nunca dispararia.
+            # Exporta quando ambas as filas estão vazias OU a cada N páginas
             global _processed_since_export, _last_interests_export_at
             _processed_since_export += 1
-            _should_export = _queue.empty() or _processed_since_export >= _INTERESTS_EXPORT_EVERY_N
+            both_empty = _queue_high.empty() and _queue_low.empty()
+            _should_export = both_empty or _processed_since_export >= _INTERESTS_EXPORT_EVERY_N
             if _should_export:
                 now = _time.monotonic()
                 if now - _last_interests_export_at >= _INTERESTS_EXPORT_COOLDOWN_S:
@@ -683,9 +736,14 @@ async def _process_confirmed_feedback(memory_id: int) -> None:
         await _update_entity_graph(entities)
 
 
-async def _extract_and_store(task: _KnowledgeTask) -> None:
-    """Chama Ollama para extrair resumo + tópicos + entidades; armazena no DB."""
-    result = await _call_ollama_extract(task.title, task.content)
+async def _extract_and_store(task: _KnowledgeTask, is_high: bool = False) -> None:
+    """Chama LLM via LOGOS para extrair resumo + tópicos + entidades; armazena no DB.
+
+    is_high=True: usa X-Priority: 2 (dado novo ao vivo).
+    is_high=False: usa X-Priority: 3 (backfill, padrão do módulo).
+    """
+    _xp = "2" if is_high else "3"
+    result = await _call_ollama_extract(task.title, task.content, x_priority=_xp)
     if result is None:
         return
 
@@ -746,7 +804,7 @@ async def _extract_and_store(task: _KnowledgeTask) -> None:
     # Fire-and-forget: nota pessoal sobre o conteúdo recém-descoberto
     try:
         asyncio.get_running_loop().create_task(
-            _event_reflection(task.title, summary, clean_topics, is_echo_chamber=_echo)
+            _event_reflection(task.title, summary, clean_topics, is_echo_chamber=_echo, x_priority=_xp)
         )
     except RuntimeError:
         pass
@@ -873,7 +931,11 @@ async def _check_discoveries(
         log.debug("knowledge_worker: notify_mnemosyne_insight falhou: %s", exc)
 
 
-async def _call_ollama_extract(title: str, content: str) -> dict | None:
+async def _call_ollama_extract(
+    title: str,
+    content: str,
+    x_priority: str | None = None,
+) -> dict | None:
     """Chama llama-server pedindo JSON estruturado com summary, topics, entities."""
     model = _get_llm_query_model()
     if not model:
@@ -898,6 +960,7 @@ async def _call_ollama_extract(title: str, content: str) -> dict | None:
             "max_tokens":  150,
             "temperature": 0.1,
         },
+        x_priority=x_priority,
     )
     if data is None:
         return None
@@ -1030,6 +1093,7 @@ async def _event_reflection(
     summary: str,
     topics: list[str],
     is_echo_chamber: bool = False,
+    x_priority: str | None = None,
 ) -> None:
     """Gera nota pessoal da AKASHA sobre conteúdo recém-descoberto. Fire-and-forget."""
     model = _get_llm_query_model()
@@ -1109,6 +1173,7 @@ async def _event_reflection(
             "temperature": 0.7,
         },
         timeout=90.0,
+        x_priority=x_priority,
     )
     if data is None:
         log.warning("knowledge_worker: _event_reflection falhou (sem resposta do LOGOS)")
@@ -1198,7 +1263,9 @@ async def backfill_knowledge(archive_path: "Path") -> None:
     _backfill_running = True
 
     async def _wait_queue_drain(threshold: int = 50) -> None:
-        while _queue.qsize() > threshold:
+        # Pausa o backfill enquanto _queue_low estiver muito cheia — dá espaço
+        # para itens de alta prioridade serem processados primeiro
+        while _queue_low.qsize() > threshold:
             await asyncio.sleep(5)
 
     total_enqueued = 0
@@ -1217,7 +1284,7 @@ async def backfill_knowledge(archive_path: "Path") -> None:
                 continue
             await _wait_queue_drain()
             src_type = "paper" if "Papers" in md_file.parts else "archived"
-            schedule_page(url, title or md_file.stem, content, src_type)
+            schedule_page(url, title or md_file.stem, content, src_type, priority="low")
             total_enqueued += 1
 
     # ── 2. Páginas crawleadas da Biblioteca sem extração ───────────────────
@@ -1237,7 +1304,7 @@ async def backfill_knowledge(archive_path: "Path") -> None:
             if not url or not content_md:
                 continue
             await _wait_queue_drain()
-            schedule_page(url, title or url, content_md[:800], "crawled")
+            schedule_page(url, title or url, content_md[:800], "crawled", priority="low")
             total_enqueued += 1
     except Exception as exc:
         log.warning("backfill: erro ao ler crawl_pages: %s", exc)

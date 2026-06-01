@@ -1574,14 +1574,21 @@ class IndexReflectionWorker(QThread):
 
     finished = Signal()
 
-    def __init__(self, file_paths: list[str], config: AppConfig, force: bool = False) -> None:
+    def __init__(
+        self,
+        file_paths: list[str],
+        config: AppConfig,
+        force: bool = False,
+        priority: str = "high",
+    ) -> None:
         super().__init__()
         self._file_paths = list(file_paths)
         self._config = config
-        self._force = force  # quando True, ignora has_file_reflection e reprocessa tudo
+        self._force = force      # quando True, ignora has_file_reflection e reprocessa tudo
+        self._priority = priority  # "high" = arquivo recém-indexado; "low" = backfill retroativo
 
-    def start(self, priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
-        super().start(priority)
+    def start(self, thread_priority: QThread.Priority = QThread.Priority.IdlePriority) -> None:
+        super().start(thread_priority)
 
     def run(self) -> None:
         from core.personal_memory import save_memory, get_context_memories
@@ -1590,6 +1597,11 @@ class IndexReflectionWorker(QThread):
         if not self._config.llm_model or not self._file_paths:
             self.finished.emit()
             return
+
+        log.info(
+            "IndexReflectionWorker [%s]: processando %d arquivo(s)",
+            self._priority, len(self._file_paths),
+        )
 
         personality = (
             getattr(self._config, "persona_prompt", "")
@@ -1642,7 +1654,7 @@ class IndexReflectionWorker(QThread):
                     return
             except Exception:
                 pass
-        log.debug("IndexReflectionWorker: processando '%s'", name)
+        log.debug("IndexReflectionWorker [%s]: processando '%s'", self._priority, name)
 
         try:
             raw_data = vs._collection.get(

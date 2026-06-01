@@ -826,7 +826,7 @@ AKASHA/
 │   ├── reflection_loop.py  → Reflexões periódicas sobre sessões de busca
 │   ├── session_memory.py   → Sumariza e persiste memória de sessão
 │   ├── session_insight.py  → Gera insights a partir das sessões
-│   ├── knowledge_worker.py → Analisa corpus local para extrair conhecimento
+│   ├── knowledge_worker.py → Analisa corpus local (fila dupla: alta=dados novos P2, baixa=backfill P3)
 │   ├── query_understanding.py → Classifica intenção da query (LLM leve)
 │   ├── query_expansion.py  → Expande termos de busca (sinônimos, variações)
 │   ├── query_multilang.py  → Expansão multilíngue: detect_language + translate_query via LOGOS
@@ -2565,7 +2565,9 @@ O LOGOS usa um semáforo com **2 permits** e três níveis de prioridade:
 
 | App | X-App | X-Priority padrão | Servidor alvo |
 |-----|-------|--------------------|---------------|
-| AKASHA (knowledge_worker, local_search) | `akasha` | `3` | AKASHA :8081 |
+| AKASHA knowledge_worker — dado novo (crawl/archive/visit ao vivo) | `akasha` | `2` | AKASHA :8081 |
+| AKASHA knowledge_worker — backfill (reprocessamento de histórico) | `akasha` | `3` | AKASHA :8081 |
+| AKASHA local_search | `akasha` | `3` | AKASHA :8081 |
 | Mnemosyne (RAG, indexação) | `mnemosyne` | `2` ou `3` | Mnemosyne :8083 |
 | KOSMOS | `kosmos` | `1` (leitura ativa) ou `3` (background) | AKASHA :8081 |
 
