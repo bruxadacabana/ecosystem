@@ -98,7 +98,7 @@ def _load_vtt(file_path: str) -> list[Document]:
     title = os.path.splitext(os.path.basename(file_path))[0]
     return [Document(
         page_content="\n".join(text_lines),
-        metadata={"source": file_path, "title": title},
+        metadata={"source": file_path, "title": title, "page_num": None, "start_char": 0},
     )]
 
 
@@ -219,7 +219,7 @@ def _load_file(
 
 
 def _load_pdf(file_path: str) -> list[Document]:
-    """Carrega PDF e garante metadata title/author nas páginas."""
+    """Carrega PDF e garante metadata title/author/page_num nas páginas."""
     docs = PyPDFLoader(file_path).load()
     # PyPDFLoader já inclui metadata do PDF; apenas normalizar chaves
     for doc in docs:
@@ -227,6 +227,9 @@ def _load_pdf(file_path: str) -> list[Document]:
             doc.metadata["title"] = os.path.splitext(os.path.basename(file_path))[0]
         if "author" not in doc.metadata:
             doc.metadata["author"] = ""
+        # page = 0-based (PyPDF); page_num = 1-based para citações
+        doc.metadata["page_num"] = int(doc.metadata.get("page", 0)) + 1
+        doc.metadata.setdefault("start_char", 0)
     return docs
 
 
@@ -248,6 +251,8 @@ def _load_docx(file_path: str) -> list[Document]:
     for doc in docs:
         doc.metadata.setdefault("title", title)
         doc.metadata.setdefault("author", author)
+        doc.metadata.setdefault("page_num", None)
+        doc.metadata.setdefault("start_char", 0)
     return docs
 
 
@@ -317,7 +322,7 @@ def _load_obsidian_note(file_path: str) -> list[Document]:
         sec_body = sec_body.strip()
         if len(sec_body) < 50:
             continue
-        meta = {**base_meta, "section": sec_title}
+        meta = {**base_meta, "section": sec_title, "page_num": None, "start_char": 0}
         documents.append(Document(page_content=sec_body, metadata=meta))
 
     return documents
@@ -438,7 +443,8 @@ def _load_image(file_path: str, ocr_model: str = "") -> list[Document]:
 
     return [Document(
         page_content=text.strip(),
-        metadata={"source": file_path, "title": title, "ocr_engine": engine},
+        metadata={"source": file_path, "title": title, "ocr_engine": engine,
+                  "page_num": None, "start_char": 0},
     )]
 
 
@@ -536,7 +542,8 @@ def _load_mobi(file_path: str) -> list[Document]:
 
         return [Document(
             page_content=text,
-            metadata={"source": file_path, "title": title, "author": author},
+            metadata={"source": file_path, "title": title, "author": author,
+                      "page_num": None, "start_char": 0},
         )]
 
 
@@ -578,6 +585,8 @@ def _load_library_md(file_path: str) -> list[Document]:
             "language":      language,
             "doc_type":      doc_type,
             "fm_source":     fm_source,
+            "page_num":      None,
+            "start_char":    0,
         },
     )]
 
@@ -648,6 +657,8 @@ def _load_epub(file_path: str) -> list[Document]:
                     "author": author,
                     "chapter": chapter_name,
                     "chapter_num": chapter_num,
+                    "page_num": chapter_num,   # capítulo 1-based como âncora de navegação
+                    "start_char": 0,
                 },
             )
         )

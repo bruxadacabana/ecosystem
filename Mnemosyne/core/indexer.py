@@ -691,8 +691,9 @@ def _enrich_chunk_offsets(
             chunk.metadata["prefix_quote"] = page_text[max(0, start - 30) : start]
             chunk.metadata["suffix_quote"] = page_text[end : end + 30]
 
-        if "page" in chunk.metadata:
-            chunk.metadata["page_num"] = int(chunk.metadata["page"])
+        # page_num: preservar se já definido pelo loader (1-based); fallback de page (0-based → +1)
+        if "page_num" not in chunk.metadata and "page" in chunk.metadata:
+            chunk.metadata["page_num"] = int(chunk.metadata["page"]) + 1
 
 
 class _InferenceEmbeddings(LCEmbeddings):
