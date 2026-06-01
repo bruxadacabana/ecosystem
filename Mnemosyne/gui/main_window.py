@@ -38,6 +38,8 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QTextBrowser,
     QTextEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -3575,6 +3577,14 @@ class MainWindow(QMainWindow):
             self._open_infographic_output(output)
             return
 
+        if output.type == "Linha do Tempo":
+            self._open_timeline_output(output)
+            return
+
+        if output.type == "Mind Map":
+            self._open_mindmap_output(output)
+            return
+
         dlg = QDialog(self)
         dlg.setWindowTitle(output.title or output.type)
         dlg.resize(700, 500)
@@ -3743,6 +3753,159 @@ class MainWindow(QMainWindow):
         layout.addWidget(btn_widget)
 
         dlg.exec()
+
+    @staticmethod
+    def _parse_timeline_entry(line: str) -> tuple[str, str]:
+        """Parseia linha de timeline. Retorna (period, event) ou ('', '')."""
+        import re
+        line = re.sub(r'^[-*]\s+', '', line.strip())
+        # "**[periodo]** — evento"
+        m = re.match(r'\*\*\[([^\]]+)\]\*\*\s*[—–\-]+\s*(.*)', line)
+        if m:
+            return m.group(1).strip(), m.group(2).strip()
+        # "[periodo] → evento" ou "[periodo] — evento"
+        m = re.match(r'\[([^\]]+)\]\s*[→–—\-]+\s*(.*)', line)
+        if m:
+            return m.group(1).strip(), m.group(2).strip()
+        return "", ""
+
+    def _open_timeline_output(self, output: StudioOutput) -> None:
+        """Renderiza Linha do Tempo como lista vertical com marcador temporal à esquerda."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Linha do Tempo")
+        dlg.resize(720, 540)
+        vl = QVBoxLayout(dlg)
+        vl.setContentsMargins(16, 16, 16, 16)
+        vl.setSpacing(8)
+
+        header = QHBoxLayout()
+        badge = QLabel("Linha do Tempo")
+        badge.setObjectName("studioBadge")
+        header.addWidget(badge)
+        if output.title:
+            title_lbl = QLabel(output.title)
+            title_lbl.setObjectName("studioTileTitle")
+            header.addWidget(title_lbl, 1)
+        header.addStretch()
+        vl.addLayout(header)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        container = QWidget()
+        cl = QVBoxLayout(container)
+        cl.setSpacing(6)
+        cl.setContentsMargins(0, 0, 8, 0)
+
+        entries_added = 0
+        for line in output.content.splitlines():
+            period, event = self._parse_timeline_entry(line)
+            if not event:
+                continue
+            row = QHBoxLayout()
+            period_lbl = QLabel(period or "—")
+            period_lbl.setObjectName("timelinePeriod")
+            period_lbl.setFixedWidth(130)
+            period_lbl.setWordWrap(True)
+            period_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+            event_lbl = QLabel(event)
+            event_lbl.setWordWrap(True)
+            event_lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+            row.addWidget(period_lbl)
+            row.addWidget(event_lbl, 1)
+            entry = QWidget()
+            entry.setLayout(row)
+            cl.addWidget(entry)
+            entries_added += 1
+
+        if not entries_added:
+            cl.addWidget(QLabel("Nenhum evento datado reconhecido no conteúdo."))
+
+        cl.addStretch()
+        scroll.setWidget(container)
+        vl.addWidget(scroll, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        export_btn = QPushButton("Exportar .md")
+        export_btn.clicked.connect(lambda: self._export_output_md(output))
+        close_btn = QPushButton("Fechar")
+        close_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(export_btn)
+        btn_row.addWidget(close_btn)
+        vl.addLayout(btn_row)
+
+        dlg.exec()
+
+    def _open_mindmap_output(self, output: StudioOutput) -> None:
+        """Renderiza Mind Map como árvore colapsável QTreeWidget (fallback: texto plano)."""
+        from core.mindmap import parse_mindmap_json
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Mind Map")
+        dlg.resize(700, 520)
+        vl = QVBoxLayout(dlg)
+        vl.setContentsMargins(16, 16, 16, 16)
+        vl.setSpacing(8)
+
+        header = QHBoxLayout()
+        badge = QLabel("Mind Map")
+        badge.setObjectName("studioBadge")
+        header.addWidget(badge)
+        if output.title:
+            title_lbl = QLabel(output.title)
+            title_lbl.setObjectName("studioTileTitle")
+            header.addWidget(title_lbl, 1)
+        header.addStretch()
+        vl.addLayout(header)
+
+        data = parse_mindmap_json(output.content)
+        if data:
+            tree = QTreeWidget()
+            tree.setHeaderHidden(True)
+            tree.setColumnCount(1)
+            self._populate_mindmap_tree(tree, data)
+            tree.expandAll()
+            vl.addWidget(tree, 1)
+        else:
+            text_edit = QTextEdit()
+            text_edit.setReadOnly(True)
+            text_edit.setPlainText(output.content)
+            vl.addWidget(text_edit, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        export_btn = QPushButton("Exportar .md")
+        export_btn.clicked.connect(lambda: self._export_output_md(output))
+        close_btn = QPushButton("Fechar")
+        close_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(export_btn)
+        btn_row.addWidget(close_btn)
+        vl.addLayout(btn_row)
+
+        dlg.exec()
+
+    @staticmethod
+    def _populate_mindmap_tree(tree: QTreeWidget, data: dict) -> None:
+        """Popula QTreeWidget com a estrutura do mind map JSON."""
+        raiz = data.get("raiz", "Raiz")
+        nos = data.get("nós", [])
+
+        root_item = QTreeWidgetItem(tree, [raiz])
+        items_by_id: dict[str, QTreeWidgetItem] = {}
+
+        for no in nos:
+            items_by_id[no.get("id", "")] = QTreeWidgetItem([no.get("label", "?")])
+
+        for no in nos:
+            item = items_by_id.get(no.get("id", ""))
+            if not item:
+                continue
+            pai_id = no.get("pai_id", "")
+            parent = items_by_id.get(pai_id) if pai_id else root_item
+            if parent is None:
+                parent = root_item
+            parent.addChild(item)
 
     def _export_output_html(self, output: StudioOutput) -> None:
         """Salva conteúdo HTML do infográfico como arquivo .html."""

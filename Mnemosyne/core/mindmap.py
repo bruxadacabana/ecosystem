@@ -44,48 +44,39 @@ _MAP_PROMPT = (
 
 _REDUCE_PROMPT = (
     "Você recebeu estruturas hierárquicas extraídas de múltiplos documentos.\n"
-    "Consolide-as num Mind Map completo usando a sintaxe Mermaid mindmap.\n\n"
-    "IMPORTANTE: responda APENAS com o bloco de código Mermaid, sem texto adicional.\n\n"
+    "Consolide-as num Mind Map e retorne APENAS um objeto JSON válido, sem texto adicional.\n\n"
     "Formato exato:\n"
-    "```mermaid\n"
-    "mindmap\n"
-    "  root((Tema Central))\n"
-    "    Ramo Principal 1\n"
-    "      Subtópico A\n"
-    "      Subtópico B\n"
-    "    Ramo Principal 2\n"
-    "      Subtópico C\n"
-    "```\n\n"
+    '{{"raiz": "Tema Central", "nós": [\n'
+    '  {{"id": "1", "label": "Ramo Principal 1", "pai_id": ""}},\n'
+    '  {{"id": "1.1", "label": "Subtópico A", "pai_id": "1"}},\n'
+    '  {{"id": "2", "label": "Ramo Principal 2", "pai_id": ""}},\n'
+    '  {{"id": "2.1", "label": "Subtópico B", "pai_id": "2"}}\n'
+    "]}}\n\n"
     "Regras:\n"
-    "- O nó raiz usa parênteses duplos: `root((Título))`\n"
+    "- pai_id vazio = filho direto da raiz\n"
     "- Máximo 6 ramos principais, 3-4 subtópicos por ramo\n"
-    "- Textos curtos (máximo 5 palavras por nó)\n"
-    "- Sem caracteres especiais nos nós (evite aspas, vírgulas, colchetes)\n\n"
-    "Estruturas extraídas:\n{structures}\n\n"
-    "Mind Map:"
-)
+    "- Textos curtos (máximo 5 palavras por nó)\n\n"
+    "Estruturas extraídas:\n{{structures}}\n\n"
+    "JSON:"
+).replace("{{structures}}", "{structures}")
 
 _STUFF_PROMPT = (
-    "Analise os trechos abaixo e gere um Mind Map usando a sintaxe Mermaid mindmap.\n\n"
-    "IMPORTANTE: responda APENAS com o bloco de código Mermaid, sem texto adicional.\n\n"
+    "Analise os trechos abaixo e extraia os conceitos principais e suas relações hierárquicas.\n"
+    "Retorne APENAS um objeto JSON válido, sem texto adicional.\n\n"
     "Formato exato:\n"
-    "```mermaid\n"
-    "mindmap\n"
-    "  root((Tema Central))\n"
-    "    Ramo Principal 1\n"
-    "      Subtópico A\n"
-    "      Subtópico B\n"
-    "    Ramo Principal 2\n"
-    "      Subtópico C\n"
-    "```\n\n"
+    '{{"raiz": "Tema Central", "nós": [\n'
+    '  {{"id": "1", "label": "Ramo Principal 1", "pai_id": ""}},\n'
+    '  {{"id": "1.1", "label": "Subtópico A", "pai_id": "1"}},\n'
+    '  {{"id": "2", "label": "Ramo Principal 2", "pai_id": ""}},\n'
+    '  {{"id": "2.1", "label": "Subtópico B", "pai_id": "2"}}\n'
+    "]}}\n\n"
     "Regras:\n"
-    "- O nó raiz usa parênteses duplos: `root((Título))`\n"
+    "- pai_id vazio = filho direto da raiz\n"
     "- Máximo 6 ramos principais, 3-4 subtópicos por ramo\n"
-    "- Textos curtos (máximo 5 palavras por nó)\n"
-    "- Sem caracteres especiais nos nós\n\n"
-    "Trechos:\n{context}\n\n"
-    "Mind Map:"
-)
+    "- Textos curtos (máximo 5 palavras por nó)\n\n"
+    "Trechos:\n{{context}}\n\n"
+    "JSON:"
+).replace("{{context}}", "{context}")
 
 
 def _get_unique_docs(vectorstore: Any, k: int) -> list[tuple[str, str]]:
@@ -144,3 +135,44 @@ def iter_mindmap(
 
     llm_reduce = ChatOpenAI(model=config.llm_model, base_url=f"{_ec_url()}/v1", api_key="logos", temperature=0.1, timeout=120)
     yield from llm_reduce.stream(prompt)
+
+
+def parse_mindmap_json(text: str) -> dict | None:
+    """
+    Parseia o JSON do mind map a partir do texto bruto do LLM.
+
+    Suporta:
+    - JSON direto: {"raiz": ..., "nós": [...]}
+    - JSON dentro de bloco ```json ... ```
+
+    Retorna None se o texto não for JSON válido ou não tiver os campos esperados.
+    Fallback para outputs legados (Mermaid/texto): retorna None graciosamente.
+    """
+    import json
+    import re
+
+    text = text.strip()
+
+    candidates = [text]
+
+    # JSON em bloco de código ```json ... ```
+    m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if m:
+        candidates.insert(0, m.group(1).strip())
+
+    # JSON embutido em texto — procura o primeiro { ... } que pareça JSON
+    m2 = re.search(r'(\{[^{}]*"raiz"[^{}]*"nós"[^}]*\})', text, re.DOTALL)
+    if not m2:
+        m2 = re.search(r'(\{"raiz".*\})', text, re.DOTALL)
+    if m2:
+        candidates.append(m2.group(1).strip())
+
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+            if isinstance(data, dict) and "raiz" in data and "nós" in data:
+                return data
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    return None
