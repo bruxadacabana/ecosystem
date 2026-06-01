@@ -2141,15 +2141,19 @@ Antes de qualquer busca local ser possível, os arquivos do ecossistema precisam
 ```
 startup
   └── index_local_files()
-        └── _index_directory(fonte) [para cada fonte]
-              └── para cada arquivo novo ou modificado:
-                    ├── _reindex()            ← FTS5 atualizado (aguarda)
-                    └── create_task(           ← embedding LOGOS (fire-and-forget)
-                          embed_and_index(path, content)
-                        )
+        ├── _index_directory(fonte) [para cada fonte]
+        │     └── para cada arquivo novo ou modificado:
+        │           ├── _reindex()                    ← FTS5 atualizado (aguarda)
+        │           └── create_task(                  ← embedding via LOGOS (fire-and-forget)
+        │                 embed_and_index(path, f"{title}\n{body}")
+        │               )
+        ├── _purge_missing()
+        └── create_task(backfill_local_embeddings())  ← backfill P3 (aguarda 30s, então processa)
 ```
 
-O embedding usa `f"{title}\n{body}"` como conteúdo (mesma composição que o caminho local via sentence-transformers), truncado a 2000 chars por `embed_and_index`.
+**Embedding de novos arquivos (Local 2):** conteúdo `f"{title}\n{body}"`, truncado a 2000 chars por `embed_and_index`. Falha silenciosa se LOGOS offline.
+
+**Backfill de arquivos existentes (Local 4):** `backfill_local_embeddings()` aguarda 30s e processa até 50 arquivos de `local_fts` que ainda não têm entrada em `local_vec_paths`. Semáforo(2) evita saturar o LOGOS. Log de progresso a cada 10 arquivos. Invalida o cache de contagem após concluir para que a próxima busca veja os novos embeddings.
 
 ---
 
@@ -2328,7 +2332,7 @@ A busca local consulta **cinco fontes em paralelo** e combina os resultados via 
 |-------|--------------|------|
 | `local_fts` | FTS5 em arquivos locais (Mnemosyne, KOSMOS, AETHER, Hermes) | varia por source |
 | `crawl_fts` | FTS5 em páginas crawleadas | AKASHA: 1.4 |
-| `sqlite-vec` | Busca KNN por embedding (desativado por padrão) | — |
+| `sqlite-vec` | Busca KNN semântica em arquivos locais via LOGOS (ativo quando ≥10 embeddings) | LOCAL_VEC: 0.9 |
 | ChromaDB | Busca semântica vetorial (Mnemosyne) | MNEMOSYNE: 1.1 |
 | `highlights` | Trechos marcados explicitamente | HIGHLIGHT: 1.6 |
 

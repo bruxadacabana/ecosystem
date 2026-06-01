@@ -127,6 +127,7 @@ SOURCE_WEIGHTS: dict[str, float] = {
     "OBSIDIAN":       1.2,   # vault do Obsidian / Mnemosyne
     "MNEMOSYNE":      1.1,   # busca semântica ChromaDB
     "CRAWL_SEMANTIC": 1.1,   # crawl_pages via KNN semântico (LOGOS embeddings)
+    "LOCAL_VEC":      0.9,   # arquivos locais via KNN semântico (LOGOS embeddings)
     "HERMES":         1.0,   # transcrições automáticas
     "DEPOIS":         1.0,   # salvo para ler depois
 }
@@ -236,6 +237,12 @@ _inference_available: bool = False
 _entity_graph_checked_at: float = 0.0
 _entity_graph_has_rows: bool = False
 
+# Cache para contagem de embeddings locais — evita query por busca quando índice está vazio
+_local_vec_count_checked_at: float = 0.0
+_local_vec_count_cache: int = 0
+_LOCAL_VEC_MIN_ENTRIES: int = 10   # mínimo para ativar busca vetorial local
+_LOCAL_VEC_COUNT_TTL: float = 120.0
+
 
 async def _has_entity_graph() -> bool:
     """Retorna True se o entity_graph tem pelo menos uma linha. Cache de 2 minutos."""
@@ -252,6 +259,29 @@ async def _has_entity_graph() -> bool:
         _entity_graph_has_rows = False
     _entity_graph_checked_at = now
     return _entity_graph_has_rows
+
+
+async def _count_local_vec_items() -> int:
+    """Retorna número de entradas em local_vec_paths. Cache de 2 minutos.
+
+    Usa local_vec_paths (tabela regular) em vez de vec_items (virtual table)
+    para evitar carregar a extensão sqlite-vec apenas para contar.
+    """
+    global _local_vec_count_checked_at, _local_vec_count_cache
+    import time as _time
+    now = _time.monotonic()
+    if now - _local_vec_count_checked_at < _LOCAL_VEC_COUNT_TTL:
+        return _local_vec_count_cache
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            row = await (await db.execute(
+                "SELECT COUNT(*) FROM local_vec_paths"
+            )).fetchone()
+            _local_vec_count_cache = int(row[0]) if row else 0
+    except Exception:
+        _local_vec_count_cache = 0
+    _local_vec_count_checked_at = now
+    return _local_vec_count_cache
 
 
 async def check_inference_available() -> bool:
@@ -788,31 +818,105 @@ async def index_local_files() -> None:
             Path(config.hermes_output), "HERMES", "**/*.md", _extract_kosmos
         )
     await _purge_missing()
+    # Local 4: inicia backfill de embeddings em background (P3, fire-and-forget).
+    # Processa arquivos que já estão no FTS5 mas ainda não têm vetor.
+    try:
+        asyncio.get_running_loop().create_task(
+            backfill_local_embeddings(),
+            name="backfill_local_embeddings",
+        )
+    except RuntimeError:
+        pass
+
+
+async def backfill_local_embeddings() -> None:
+    """Gera embeddings para arquivos locais que estão no FTS5 mas sem vetor em local_vec_paths.
+
+    Prioridade P3 — aguarda 30s no startup para não competir com a indexação inicial.
+    Processa até 50 arquivos por execução (LIMIT na query). Semáforo(2) evita
+    saturar o LOGOS com requisições paralelas. Log a cada 10 arquivos processados.
+    """
+    await asyncio.sleep(30)  # aguarda startup completo (worker, DB, LOGOS)
+
+    if not _SQLITE_VEC_AVAILABLE:
+        return
+
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                """SELECT f.path, f.title, f.body
+                   FROM local_fts f
+                   WHERE f.path NOT IN (SELECT path FROM local_vec_paths)
+                   LIMIT 50"""
+            )).fetchall()
+    except Exception as exc:
+        log.debug("backfill_local_embeddings: erro ao ler local_fts: %s", exc)
+        return
+
+    if not rows:
+        log.debug("backfill_local_embeddings: nenhum arquivo sem embedding")
+        return
+
+    total = len(rows)
+    log.info("backfill_local_embeddings: %d arquivo(s) sem embedding — iniciando backfill", total)
+
+    sem = asyncio.Semaphore(2)
+    processed = 0
+
+    async def _embed_one(path: str, title: str, body: str) -> None:
+        nonlocal processed
+        async with sem:
+            if not _inference_available:
+                return
+            content = f"{title}\n{body}" if title else body
+            ok = await embed_and_index(path, content)
+            if ok:
+                processed += 1
+                if processed % 10 == 0:
+                    log.info(
+                        "backfill_local_embeddings: %d/%d processados", processed, total
+                    )
+
+    await asyncio.gather(*(_embed_one(p, t or "", b or "") for p, t, b in rows))
+
+    if processed:
+        log.info(
+            "backfill_local_embeddings: lote concluído — %d/%d com embedding gerado",
+            processed, total,
+        )
+        # Invalida cache para que a próxima busca veja os novos embeddings
+        global _local_vec_count_checked_at
+        _local_vec_count_checked_at = 0.0
+    else:
+        log.debug("backfill_local_embeddings: nenhum embedding gerado (LOGOS offline?)")
 
 
 async def init_vec_index() -> None:
+    """Cria vec_items (sqlite-vec virtual table) e local_vec_paths se necessário.
+
+    Deve ser chamada no startup após init_db(). É no-op se sqlite-vec não estiver
+    instalado. Não requer VECTOR_SEARCH_ENABLED — a tabela deve existir sempre que
+    sqlite-vec estiver disponível, pois embed_and_index() precisa dela.
     """
-    Cria a virtual table vec_items (sqlite-vec) se a extensão estiver disponível.
-    Deve ser chamada no startup após init_db().
-    Se VECTOR_SEARCH_ENABLED=False ou sqlite-vec não estiver instalado, é no-op.
-    """
-    if not VECTOR_SEARCH_ENABLED or not _SQLITE_VEC_AVAILABLE:
+    if not _SQLITE_VEC_AVAILABLE:
         return
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            # Carrega extensão sqlite-vec via API aiosqlite (run_sync não existe em 0.22.x)
             await db.enable_load_extension(True)
             await db.load_extension(_sqlite_vec.loadable_path())  # type: ignore[union-attr]
             await db.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(embedding FLOAT[384])"
             )
+            await db.execute(
+                """CREATE TABLE IF NOT EXISTS local_vec_paths (
+                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    path TEXT UNIQUE NOT NULL
+                )"""
+            )
             await db.commit()
-        # Pré-aquece o encoder para que a primeira busca não seja lenta
-        if _ST_AVAILABLE:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, _get_encoder)
-    except Exception:
-        pass
+        log.debug("init_vec_index: tabelas vec_items e local_vec_paths prontas")
+    except Exception as exc:
+        log.debug("init_vec_index: erro ao criar tabelas vec: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -1337,37 +1441,74 @@ def rank_combined(
 # ---------------------------------------------------------------------------
 
 async def _search_vec(query: str, max_results: int) -> list[SearchResult]:
-    """KNN por embedding no vec_items. Retorna lista vazia se vec não estiver ativo."""
-    if not VECTOR_SEARCH_ENABLED or not _SQLITE_VEC_AVAILABLE or not _ST_AVAILABLE:
+    """KNN semântico em vec_items via LOGOS embeddings. Fonte: LOCAL_VEC (peso 0.9).
+
+    Condições de ativação (todas devem ser verdadeiras):
+      - semantic_search habilitado em ecosystem.json (default True)
+      - LOGOS disponível (_inference_available)
+      - sqlite-vec instalado
+      - local_vec_paths tem ao menos _LOCAL_VEC_MIN_ENTRIES (10) entradas
+
+    Retorna [] silenciosamente quando qualquer condição não for satisfeita.
+    """
+    if not _get_semantic_search_enabled():
         return []
+    if not _inference_available or not _SQLITE_VEC_AVAILABLE:
+        return []
+    count = await _count_local_vec_items()
+    if count < _LOCAL_VEC_MIN_ENTRIES:
+        log.debug("_search_vec: %d embedding(s) locais — mínimo %d não atingido", count, _LOCAL_VEC_MIN_ENTRIES)
+        return []
+
+    # Embedding da query via LOGOS (síncrono dentro de executor)
     loop = asyncio.get_running_loop()
-    emb = await loop.run_in_executor(None, _embed_sync, query)
-    if emb is None:
+    try:
+        vecs = await loop.run_in_executor(
+            None, lambda: _embed_via_logos([query[:500]])
+        )
+    except _EmbedError as exc:
+        log.debug("_search_vec: LOGOS embed indisponível: %s", exc)
         return []
+    except Exception as exc:
+        log.debug("_search_vec: erro ao embedar query: %s", exc)
+        return []
+
+    if vecs is None:
+        log.debug("_search_vec: LOGOS offline — busca vetorial local desativada")
+        return []
+
+    try:
+        emb_bytes = _sqlite_vec.serialize_float32(vecs[0])  # type: ignore[union-attr]
+    except Exception as exc:
+        log.debug("_search_vec: erro ao serializar embedding da query: %s", exc)
+        return []
+
     results: list[SearchResult] = []
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.run_sync(_load_vec_ext)
+            # Carrega extensão via API aiosqlite (run_sync não existe em 0.22.x)
+            await db.enable_load_extension(True)
+            await db.load_extension(_sqlite_vec.loadable_path())  # type: ignore[union-attr]
             rows = await (await db.execute(
-                """SELECT p.path, COALESCE(m.source, 'AKASHA')
+                """SELECT p.path
                    FROM vec_items v
                    JOIN local_vec_paths p ON p.id = v.rowid
-                   LEFT JOIN local_index_meta m ON m.path = p.path
                    WHERE v.embedding MATCH ?
                    AND k = ?
                    ORDER BY v.distance""",
-                (emb, max_results),
+                (emb_bytes, max_results),
             )).fetchall()
-        for path_str, source in rows:
+        for (path_str,) in rows:
             path = Path(path_str)
             results.append(SearchResult(
                 title=_stem_to_title(path.stem),
                 url=path.as_uri(),
                 snippet="",
-                source=source,
+                source="LOCAL_VEC",
             ))
-    except Exception:
-        pass
+        log.debug("_search_vec: %d resultado(s) semânticos locais", len(results))
+    except Exception as exc:
+        log.debug("_search_vec: erro na busca KNN local: %s", exc)
     return results
 
 
@@ -1806,14 +1947,18 @@ async def search_local(
         expand_task = asyncio.ensure_future(_expand_query_llm(query))
     entity_task = asyncio.ensure_future(_expand_query_entities(query))
 
-    # Busca semântica em crawl_pages (LOGOS + sqlite-vec) — em paralelo com FTS
+    # Buscas semânticas em paralelo com FTS:
+    #   _semantic_task  → crawl_pages KNN (LOGOS + page_embeddings)
+    #   _local_vec_task → arquivos locais KNN (LOGOS + vec_items)
     _semantic_task = None
+    _local_vec_task = None
     if _inference_available and _get_semantic_search_enabled():
-        _semantic_task = asyncio.ensure_future(_run_semantic_crawl_search(query))
+        _semantic_task  = asyncio.ensure_future(_run_semantic_crawl_search(query))
+        _local_vec_task = asyncio.ensure_future(_search_vec(query, max_results))
 
     fts_results       = await _search_fts(query, max_results)
     chroma_results    = await _search_chroma(query)
-    vec_results       = await _search_vec(query, max_results)
+    vec_results: list[SearchResult] = []  # legacy sentence-transformers (requer _ST_AVAILABLE)
     highlight_results = await _search_highlights(query)
 
     semantic_crawl_results: list[SearchResult] = []
@@ -1824,6 +1969,15 @@ async def search_local(
             )
         except (asyncio.TimeoutError, Exception):
             _semantic_task.cancel()
+
+    local_vec_results: list[SearchResult] = []
+    if _local_vec_task is not None:
+        try:
+            local_vec_results = await asyncio.wait_for(
+                asyncio.shield(_local_vec_task), timeout=5.0
+            )
+        except (asyncio.TimeoutError, Exception):
+            _local_vec_task.cancel()
 
     # MUST+SHOULD: ancora termos ao corpus e executa segunda busca FTS5 aditiva
     fts_expanded: list[SearchResult] = []
@@ -1879,15 +2033,15 @@ async def search_local(
 
     combined = _rrf(
         [fts_results, fts_expanded, fts_prf, fts_entity, chroma_results, vec_results,
-         highlight_results, semantic_crawl_results],
+         highlight_results, semantic_crawl_results, local_vec_results],
         weight_fn=lambda r: SOURCE_WEIGHTS.get(r.source, 1.0),
     )[:max_results]
     log.debug(
         "retrieval pool: fts=%d fts_exp=%d fts_prf=%d fts_ent=%d chroma=%d vec=%d hl=%d "
-        "sem_crawl=%d → rrf=%d",
+        "sem_crawl=%d local_vec=%d → rrf=%d",
         len(fts_results), len(fts_expanded), len(fts_prf), len(fts_entity),
         len(chroma_results), len(vec_results), len(highlight_results),
-        len(semantic_crawl_results), len(combined),
+        len(semantic_crawl_results), len(local_vec_results), len(combined),
     )
     try:
         from services.knowledge_worker import apply_knowledge_boost as _kb_boost
