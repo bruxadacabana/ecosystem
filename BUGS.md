@@ -77,6 +77,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-014](#bug-014) | FIXED | 2026-05-30 | HUB/LOGOS | lazy loading ignorava perfil de hardware — carregava 7B em vez de 3B para AKASHA |
 | [BUG-015](#bug-015) | FIXED | 2026-05-30 | HUB/LOGOS | proxy_openai_to_llama sem hardware guards, model switching ou active state tracking |
 | [BUG-016](#bug-016) | FIXED | 2026-05-30 | HUB/LOGOS | embed-server sem lazy loading — Mnemosyne recebia 503 em /v1/embeddings |
+| [BUG-017](#bug-017) | FIXED | 2026-05-31 | AKASHA | db.run_sync() inexistente em aiosqlite 0.22.x — código morto em _reindex e init_vec_index |
 
 ---
 
@@ -1117,3 +1118,66 @@ Bloqueante: Mnemosyne não conseguia indexar nenhum documento nem fazer RAG depo
 
 #### Teste de regressão
 `ensure_embed_server_started` tem fast path (noop se já ativo) — chamadas redundantes são seguras. Sem teste isolado de `v1_embeddings_proxy` (requer servidor HTTP mock). Regressão verificada via `cargo test`.
+
+---
+
+### BUG-017 · [FIXED] · db.run_sync() inexistente em aiosqlite 0.22.x — código morto em _reindex e init_vec_index
+
+#### Identificação
+- **Data:** 2026-05-31
+- **App(s):** AKASHA
+- **Componente:** `AKASHA/services/local_search.py` — `_reindex()`, `init_vec_index()`
+- **Commit do fix:** `5d90459`
+- **Descoberta via:** tentativa-de-feature (ao implementar `embed_and_index`, o teste revelou AttributeError ao tentar `db.run_sync()`)
+- **Tempo de diagnóstico:** ~15 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas (aiosqlite 0.22.x instalada via pyproject.toml)
+- **OS:** CachyOS
+- **Modo:** desenvolvimento
+- **Reproduzível em:** qualquer ambiente com aiosqlite 0.22.x
+
+#### Pré-condição para reproduzir
+1. `VECTOR_SEARCH_ENABLED = True` em `services/local_search.py`
+2. Chamar `init_vec_index()` ou `_reindex()` com embedding não-nulo
+
+#### Sintoma observado
+```
+AttributeError: 'Connection' object has no attribute 'run_sync'
+```
+Seguido de retorno silencioso False (o except genérico engolia o erro).
+
+#### Logs
+```
+DEBUG:akasha.local_search:embed_and_index: erro ao salvar embedding para '/test/file.md': 'Connection' object has no attribute 'run_sync'
+```
+
+#### Causa raiz
+`db.run_sync(fn)` era usado para carregar a extensão sqlite-vec na conexão aiosqlite:
+```python
+await db.run_sync(_load_vec_ext)  # _load_vec_ext(conn): _sqlite_vec.load(conn)
+```
+O método `run_sync` foi removido ou nunca existiu na versão 0.22.x do aiosqlite instalada
+no ecossistema. Como `VECTOR_SEARCH_ENABLED = False` por padrão, o código nunca executava
+em produção e o bug ficou latente.
+
+#### Impacto
+Código morto: `_reindex()` e `init_vec_index()` falhariam silenciosamente ao tentar
+carregar a extensão sqlite-vec se `VECTOR_SEARCH_ENABLED` fosse habilitado. A indexação
+vetorial local ficaria inoperante sem nenhum aviso visível.
+
+#### Fix aplicado
+Substituído `await db.run_sync(_load_vec_ext)` pelo equivalente correto em aiosqlite 0.22.x:
+```python
+await db.enable_load_extension(True)
+await db.load_extension(_sqlite_vec.loadable_path())
+```
+A função `sqlite_vec.loadable_path()` retorna o caminho portável para o .so da extensão,
+sem depender da função `_sqlite_vec.load(conn)` que exigia acesso à conexão raw sqlite3.
+Alterado em: `_reindex()`, `init_vec_index()`, e a nova `embed_and_index()`.
+
+#### Teste de regressão
+`test_embed_and_index.py` → `TestEmbedAndIndexSuccess::test_returns_true_on_success`:
+usa banco temporário com a extensão real e confirma que a inserção funciona end-to-end.
+O `_load_vec_ext` pode ser removido futuramente; por ora permanece como dead code para
+não quebrar imports externos que possam referenciá-lo.
