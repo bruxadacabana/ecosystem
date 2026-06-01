@@ -1,6 +1,6 @@
 ## Fila de implementação atual:
 
-pode prosseguir para a implementação da seção '### AKASHA como Google + Gemini — RAG grounded e integração com Mnemosyne | 2026-05-30', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir. Seu resumo sempre deve ser detalhado mas acessível, explicando mais a lógica do que códigos e tecnicidades.
+pode prosseguir para a implementação da seção '### KOSMOS v3 — Redesign como ferramenta para jornalistas/estudantes/ativistas | 2026-06-01', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir. Seu resumo sempre deve ser detalhado mas acessível, explicando mais a lógica do que códigos e tecnicidades.
 Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes (unitários e de integração) exaustivamente (tanto na implementação em si quanto nas funcionalidades ao redor e como funcionam em conjunto) e incluir criação de logs em todo o processo envolvendo a nova feature implementada.
 
 ---
@@ -19,8 +19,6 @@ Não usar no Windows — a AKASHA pode usar o SearXNG do PC principal via IP loc
 
 
 ## próximo: 
-
-### KOSMOS — refazer do zero com nova stack | 2026-05-20
 
 ### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
 

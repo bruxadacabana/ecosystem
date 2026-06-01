@@ -4766,30 +4766,9 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > e compatibilidade por hardware (MainPc/Laptop/WorkPc). Achados completos em pesquisas.md (sessão 2026-05-14).
 
 #### KOSMOS
-- [ ] **Event clustering incremental com janela temporal** — implementar pipeline de dois estágios
-  em `app/core/event_clustering.py` (novo módulo). Estágio 1 já existe (deduplicação por
-  `content_hash` e `rapidfuzz`). Estágio 2: para cada artigo não-duplicata salvo nas últimas
-  48h, calcular embedding do título com `paraphrase-multilingual-MiniLM-L12-v2` (50+ idiomas,
-  ~115MB, viável em CPU); comparar com centróides de clusters ativos via similaridade cosseno;
-  se cosseno ≥ 0.80 → atribuir ao cluster mais próximo (atualizar centróide como média); se
-  nenhum cluster ≥ 0.80 → criar novo cluster. Criar tabela `event_clusters(id, anchor_article_id,
-  created_at, last_updated_at)` e campo `event_cluster_id` em `articles`. Processar em background
-  thread após cada ciclo de fetch, não em tempo real por artigo. Modelo recomendado para cada
-  máquina: MainPc → `bge-m3`; Laptop → `paraphrase-multilingual-MiniLM-L12-v2`; WorkPc →
-  fallback léxico (ver próximo item).
-- [ ] **Fallback léxico de clustering para WorkPc (sem AVX2, sem GPU)** — quando nenhum modelo
-  de embedding estiver disponível (detectável por `sentence-transformers` não instalado ou
-  `KOSMOS_EMBEDDING_DISABLED=1`), usar clustering léxico simples como substituto: normalizar
-  título (lowercase, remover pontuação e stopwords), calcular Jaccard de bigrams entre títulos
-  de artigos publicados no mesmo dia, threshold 0.55. Implementar em `event_clustering.py` como
-  `_cluster_lexical(articles)` chamado quando `_cluster_semantic()` não estiver disponível.
-  Não é tão preciso quanto o semântico, mas evita artigos completamente avulsos sem agrupamento.
-- [ ] **Exibição de cluster na feed list** — após implementação do clustering, agrupar artigos
-  do mesmo evento visualmente na `FeedListView`: mostrar o artigo âncora (o mais antigo do
-  cluster, ou o que tiver maior completude de conteúdo) com um badge discreto "N fontes"
-  ao lado da data. Os demais artigos do cluster ficam recolhidos por padrão e expansíveis
-  com clique no badge. Isso reduz a densidade visual da feed em eventos com alta cobertura
-  (ex: um lançamento de produto coberto por 15 sites) sem esconder nenhuma perspectiva.
+- ~~**Event clustering incremental com janela temporal**~~ — supersedido pelo redesign v3 (2026-06-01). Event clustering entra como fase própria no novo roadmap; tabelas `event_clusters` e campo `event_cluster_id` serão adicionados via migration quando a feature for implementada.
+- ~~**Fallback léxico de clustering para WorkPc (sem AVX2, sem GPU)**~~ — supersedido pelo redesign v3 (2026-06-01). Arquitetura hardware-aware preservada nos achados da pesquisa.
+- ~~**Exibição de cluster na feed list**~~ — supersedido pelo redesign v3 (2026-06-01). UI de agrupamento entra junto com a implementação de clustering.
 
 ### Implementação: backend llama-server no LOGOS (correção de items marcados incorretamente) | 2026-05-23
 > Contexto: a pesquisa de 2026-05-22 identificou a migração Ollama → llama-server como objetivo e os items foram marcados [x] antes de serem implementados. O LOGOS continuava usando Ollama como backend real de inferência. Esta sessão implementa a migração real. Binário: `llama-cpp` do Fedora repo (`/usr/bin/llama-server`); CachyOS usa AUR. Instalação: `sudo dnf install llama-cpp` (Fedora/laptop) ou `yay -S llama.cpp` (CachyOS).
@@ -6723,10 +6702,10 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > Contexto: o KOSMOS foi replanejado do zero em 2026-06-01. O código existente é descartado. Stack: PySide6 (consistente com Mnemosyne), SQLite sincronizado via Syncthing, LOGOS para análise AI. Objetivo: leitor de notícias para quem usa informação como matéria-prima de trabalho — análise automática de artigos, ferramentas de investigação, rastreamento de entidades, comparação de viés político entre fontes. Ver plano completo em ~/.claude/plans/agora-vamos-replanejar-kosmos-unified-origami.md.
 
 #### Fase 1 — Base silenciosa
-- [ ] **Schema do banco redesenhado** — SQLite em `sync_root/kosmos/` (sincronizado). Tabelas: `feeds`, `articles` (com campos AI, heartbeat de análise, dados de leitura, highlights), `entities`, `article_entities`, `highlights`, `investigations`, `investigation_articles`. FTS5 com triggers automáticos. Heartbeat timeout: resetar `analysis_status='running'` com `analysis_started_at > 5min` para `pending` no startup.
-- [ ] **Config integrada ao ecosystem_client** — `KosmosConfig` dataclass; `write_section("kosmos", {...})` no startup registrando `data_path`, `archive_path`, `config_path` no ecosystem.json. Ler `get_active_profile()` em runtime para modelo de análise (`llm_analysis`). Nunca hardcodar porta ou modelo.
-- [ ] **paths.py e logger.py** — paths Windows/Linux usando ecosystem_client; RotatingFileHandler.
-- [ ] **Testes: database.py e config.py** — schema cria todas as tabelas; FTS5 e triggers funcionam; config faz roundtrip; heartbeat reset funciona no startup.
+- [x] **Schema do banco redesenhado** — SQLite em `sync_root/kosmos/` (sincronizado). Tabelas: `feeds`, `articles` (com campos AI, heartbeat de análise, dados de leitura, highlights), `entities`, `article_entities`, `highlights`, `investigations`, `investigation_articles`. FTS5 com triggers automáticos. Heartbeat timeout: resetar `analysis_status='running'` com `analysis_started_at > 5min` para `pending` no startup.
+- [x] **Config integrada ao ecosystem_client** — `KosmosConfig` dataclass; `write_section("kosmos", {...})` no startup registrando `data_path`, `archive_path`, `config_path` no ecosystem.json. Ler `get_active_profile()` em runtime para modelo de análise (`llm_analysis`). Nunca hardcodar porta ou modelo.
+- [x] **paths.py e logger.py** — paths Windows/Linux usando ecosystem_client; RotatingFileHandler.
+- [x] **Testes: database.py e config.py** — schema cria todas as tabelas; FTS5 e triggers funcionam; config faz roundtrip; heartbeat reset funciona no startup.
 
 #### Fase 2 — Leitor funcional
 - [ ] **feed_fetcher.py** — feedparser + throttle 2s/domínio via ecosystem_scraper. Salva metadados completos: título, URL, data, autor, feed, resumo, tempo estimado de leitura, tipo provável (notícia/opinião/análise), idioma detectado.

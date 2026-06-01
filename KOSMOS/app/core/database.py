@@ -1,3 +1,26 @@
+"""
+Schema SQLite do KOSMOS v3.
+
+O banco fica em sync_root/kosmos/ (sincronizado via Syncthing). O caminho
+concreto é resolvido em runtime pelo paths.py via ecosystem_client.
+
+Tabelas:
+  feeds               — canais RSS/Atom configurados pela usuária
+  articles            — artigos recebidos, com campos de análise AI e dados de leitura
+  entities            — entidades rastreadas pela usuária (pessoas, orgs, lugares, temas)
+  article_entities    — relação artigo ↔ entidade (resultado da análise AI)
+  highlights          — trechos marcados pela usuária durante a leitura
+  investigations      — pastas de investigação/estudo
+  investigation_articles — relação investigação ↔ artigo curado
+  fts_articles        — índice FTS5 (título + texto + tags AI)
+
+Triggers FTS5 mantêm o índice sincronizado com a tabela articles
+automaticamente em INSERT, UPDATE e DELETE.
+
+Heartbeat timeout: ao inicializar, artigos com analysis_status='running'
+por mais de 5 minutos são resetados para 'pending' — evita artigos
+eternamente travados após crash ou kill do processo.
+"""
 from __future__ import annotations
 
 import logging
@@ -7,114 +30,171 @@ from app.utils.paths import DB_PATH
 
 log = logging.getLogger("kosmos.database")
 
+# Versão do schema de análise AI. Incrementar ao mudar prompts ou estrutura
+# de campos AI para que artigos com versão antiga sejam re-analisados.
+ANALYSIS_SCHEMA_VERSION = 1
+
 # ---------------------------------------------------------------------------
-# DDL — schema completo incluindo campos de IA (relevância, sentimento, etc.)
-# para não precisar de migration na Fase 4
+# DDL — schema completo
 # ---------------------------------------------------------------------------
 _DDL = """
-CREATE TABLE IF NOT EXISTS categories (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT    NOT NULL,
-    position   INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+PRAGMA foreign_keys = ON;
+PRAGMA journal_mode = WAL;
 
+-- Canais RSS/Atom configurados pela usuária
 CREATE TABLE IF NOT EXISTS feeds (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    name          TEXT    NOT NULL,
-    url           TEXT    NOT NULL,
-    feed_type     TEXT    NOT NULL DEFAULT 'rss',
-    favicon_path  TEXT,
-    etag          TEXT,
-    last_modified TEXT,
-    last_fetched  DATETIME,
-    last_error    TEXT,
-    position      INTEGER DEFAULT 0,
-    active        INTEGER DEFAULT 1,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    url                 TEXT    NOT NULL UNIQUE,
+    title               TEXT,
+    site_url            TEXT,
+    category            TEXT    NOT NULL DEFAULT 'Sem categoria',
+    last_fetched_at     TEXT,                           -- ISO8601
+    fetch_interval_min  INTEGER NOT NULL DEFAULT 60,
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    error_count         INTEGER NOT NULL DEFAULT 0,
+    last_error          TEXT,
+    created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
+-- Artigos recebidos dos feeds
 CREATE TABLE IF NOT EXISTS articles (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    feed_id          INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
-    guid             TEXT    NOT NULL,
-    title            TEXT    NOT NULL,
-    title_translated TEXT,
-    url              TEXT,
-    author           TEXT,
-    published_at     DATETIME,
-    fetched_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
-    summary          TEXT,
-    content_full     TEXT,
-    content_type     TEXT    DEFAULT 'html',
-    scrape_status    TEXT    DEFAULT 'none',
-    integrity        TEXT    DEFAULT 'unknown',
-    relevance_score  REAL,
-    sentiment        TEXT,
-    is_clickbait     INTEGER DEFAULT 0,
-    is_read          INTEGER DEFAULT 0,
-    is_saved         INTEGER DEFAULT 0,
-    read_at          DATETIME,
-    saved_at         DATETIME,
-    extra_json       TEXT,
-    UNIQUE(feed_id, guid)
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    feed_id                 INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    url                     TEXT    NOT NULL UNIQUE,
+    title                   TEXT    NOT NULL,
+    title_translated        TEXT,                       -- tradução automática para idioma configurado
+    content_excerpt         TEXT,                       -- trecho fornecido pelo feed (description)
+    content_text            TEXT,                       -- texto completo extraído via scraping
+    published_at            TEXT,                       -- ISO8601
+    author                  TEXT,
+    estimated_reading_min   INTEGER,                    -- tempo estimado (palavras / 200 wpm)
+    article_type            TEXT,                       -- "news"|"opinion"|"analysis"|"press_release"|"scientific"
+    language_detected       TEXT,                       -- código ISO do idioma detectado
+    -- Status de processamento
+    is_scraped              INTEGER NOT NULL DEFAULT 0,
+    is_read                 INTEGER NOT NULL DEFAULT 0,
+    is_saved                INTEGER NOT NULL DEFAULT 0, -- arquivado como .md no ecossistema
+    read_at                 TEXT,                       -- ISO8601
+    read_duration_sec       INTEGER,                    -- segundos gastos lendo
+    notes                   TEXT,                       -- anotações pessoais da usuária
+    -- Campos de análise AI (preenchidos progressivamente pelo AnalysisWorker)
+    ai_tags                 TEXT,                       -- JSON array: ["ia", "python", "llm"]
+    ai_sentiment            TEXT,                       -- "positivo"|"neutro"|"negativo"
+    ai_clickbait_score      REAL,                       -- 0.0–1.0
+    ai_summary              TEXT,                       -- 1-2 frases geradas pelo LLM
+    ai_language             TEXT,                       -- idioma confirmado pela análise
+    ai_five_ws              TEXT,                       -- JSON: {quem, o_que, quando, onde, por_que}
+    ai_entities             TEXT,                       -- JSON array: [{nome, tipo}]
+    ai_bias                 TEXT,                       -- JSON: {espectro, marcadores, qualidade_apuracao}
+    -- Controle da fila de análise
+    analysis_status         TEXT    NOT NULL DEFAULT 'pending', -- pending|running|done|failed
+    analysis_started_at     TEXT,                       -- ISO8601; heartbeat: resetar se > 5min em running
+    analysis_schema_version INTEGER NOT NULL DEFAULT 0,
+    created_at              TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-CREATE TABLE IF NOT EXISTS tags (
-    id    INTEGER PRIMARY KEY AUTOINCREMENT,
-    name  TEXT NOT NULL UNIQUE,
-    color TEXT DEFAULT '#8B7355'
-);
+-- Índice parcial: cobre apenas artigos pendentes/falhos — muito menor que o total
+CREATE INDEX IF NOT EXISTS idx_articles_pending_analysis
+    ON articles(published_at DESC)
+    WHERE analysis_status IN ('pending', 'failed');
 
-CREATE TABLE IF NOT EXISTS article_tags (
-    article_id INTEGER REFERENCES articles(id) ON DELETE CASCADE,
-    tag_id     INTEGER REFERENCES tags(id)     ON DELETE CASCADE,
-    PRIMARY KEY (article_id, tag_id)
-);
-
-CREATE TABLE IF NOT EXISTS read_sessions (
+-- Entidades rastreadas pela usuária (pessoas, organizações, lugares, temas)
+CREATE TABLE IF NOT EXISTS entities (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    article_id   INTEGER REFERENCES articles(id) ON DELETE SET NULL,
-    feed_id      INTEGER REFERENCES feeds(id)    ON DELETE SET NULL,
-    started_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-    duration_sec INTEGER
+    name         TEXT    NOT NULL,
+    entity_type  TEXT    NOT NULL DEFAULT 'topic', -- "person"|"org"|"place"|"topic"
+    notes        TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(name, entity_type)
 );
 
+-- Relação artigo ↔ entidade (extraída pela análise AI)
+CREATE TABLE IF NOT EXISTS article_entities (
+    article_id  INTEGER NOT NULL REFERENCES articles(id)  ON DELETE CASCADE,
+    entity_id   INTEGER NOT NULL REFERENCES entities(id)  ON DELETE CASCADE,
+    confidence  REAL    NOT NULL DEFAULT 1.0,             -- 0.0–1.0
+    PRIMARY KEY (article_id, entity_id)
+);
+
+-- Trechos marcados pela usuária durante a leitura
+CREATE TABLE IF NOT EXISTS highlights (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id      INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    text            TEXT    NOT NULL,
+    note            TEXT,
+    highlight_type  TEXT    NOT NULL DEFAULT 'generic', -- "citation"|"question"|"fact"|"contradiction"|"generic"
+    position_hint   TEXT,                               -- identificador de posição no texto
+    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Pastas de investigação/estudo
+CREATE TABLE IF NOT EXISTS investigations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL,
+    description TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Relação investigação ↔ artigo curado
+CREATE TABLE IF NOT EXISTS investigation_articles (
+    investigation_id  INTEGER NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
+    article_id        INTEGER NOT NULL REFERENCES articles(id)       ON DELETE CASCADE,
+    added_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    notes             TEXT,
+    PRIMARY KEY (investigation_id, article_id)
+);
+
+-- Índice FTS5: busca por título, texto completo e tags AI
 CREATE VIRTUAL TABLE IF NOT EXISTS fts_articles USING fts5(
     title,
-    content_full,
-    content='articles',
-    content_rowid='id'
+    content_text,
+    ai_tags,
+    content=articles,
+    content_rowid=id
 );
 
--- FTS5 com content table: DELETE/UPDATE devem usar o padrão ('delete', ...)
--- para que o SQLite possa remover o documento do índice invertido.
--- Usar DELETE FROM fts_articles diretamente é inválido nesse modo.
 CREATE TRIGGER IF NOT EXISTS fts_articles_insert
     AFTER INSERT ON articles BEGIN
-        INSERT INTO fts_articles(rowid, title, content_full)
-        VALUES (new.id, new.title, COALESCE(new.content_full, new.summary, ''));
+        INSERT INTO fts_articles(rowid, title, content_text, ai_tags)
+        VALUES (new.id,
+                new.title,
+                COALESCE(new.content_text, new.content_excerpt, ''),
+                COALESCE(new.ai_tags, ''));
     END;
 
 CREATE TRIGGER IF NOT EXISTS fts_articles_update
     AFTER UPDATE ON articles BEGIN
-        INSERT INTO fts_articles(fts_articles, rowid, title, content_full)
-        VALUES ('delete', old.id, old.title, COALESCE(old.content_full, old.summary, ''));
-        INSERT INTO fts_articles(rowid, title, content_full)
-        VALUES (new.id, new.title, COALESCE(new.content_full, new.summary, ''));
+        INSERT INTO fts_articles(fts_articles, rowid, title, content_text, ai_tags)
+        VALUES ('delete', old.id,
+                old.title,
+                COALESCE(old.content_text, old.content_excerpt, ''),
+                COALESCE(old.ai_tags, ''));
+        INSERT INTO fts_articles(rowid, title, content_text, ai_tags)
+        VALUES (new.id,
+                new.title,
+                COALESCE(new.content_text, new.content_excerpt, ''),
+                COALESCE(new.ai_tags, ''));
     END;
 
 CREATE TRIGGER IF NOT EXISTS fts_articles_delete
     AFTER DELETE ON articles BEGIN
-        INSERT INTO fts_articles(fts_articles, rowid, title, content_full)
-        VALUES ('delete', old.id, old.title, COALESCE(old.content_full, old.summary, ''));
+        INSERT INTO fts_articles(fts_articles, rowid, title, content_text, ai_tags)
+        VALUES ('delete', old.id,
+                old.title,
+                COALESCE(old.content_text, old.content_excerpt, ''),
+                COALESCE(old.ai_tags, ''));
     END;
 """
 
 
 def init_db() -> None:
-    """Cria tabelas, triggers e FTS5 se não existirem. Idempotente."""
+    """Cria tabelas, índices, triggers e FTS5 se não existirem. Idempotente.
+
+    Também executa o heartbeat reset: artigos travados em 'running' por mais
+    de 5 minutos são devolvidos para 'pending' para que a fila de análise os
+    reprocesse na próxima execução.
+    """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
         conn = sqlite3.connect(str(DB_PATH))
@@ -122,6 +202,7 @@ def init_db() -> None:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(_DDL)
+            _reset_stale_analyses(conn)
             log.info("Banco inicializado em %s.", DB_PATH)
         finally:
             conn.close()
@@ -130,8 +211,35 @@ def init_db() -> None:
         raise
 
 
+def _reset_stale_analyses(conn: sqlite3.Connection) -> None:
+    """Reseta artigos travados em 'running' por mais de 5 minutos para 'pending'.
+
+    Evita que artigos fiquem presos indefinidamente após crash ou kill do
+    processo enquanto uma análise estava em andamento.
+    """
+    cursor = conn.execute(
+        """
+        UPDATE articles
+           SET analysis_status      = 'pending',
+               analysis_started_at  = NULL
+         WHERE analysis_status     = 'running'
+           AND analysis_started_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-5 minutes')
+        """,
+    )
+    conn.commit()
+    if cursor.rowcount:
+        log.warning(
+            "Heartbeat reset: %d artigo(s) travado(s) em 'running' devolvidos para 'pending'.",
+            cursor.rowcount,
+        )
+
+
 def get_conn() -> sqlite3.Connection:
-    """Retorna conexão configurada com foreign_keys e WAL. Caller é responsável por fechar."""
+    """Retorna conexão configurada com foreign_keys, WAL e row_factory.
+
+    O caller é responsável por fechar a conexão (use como context manager
+    ou chame conn.close() explicitamente).
+    """
     try:
         conn = sqlite3.connect(str(DB_PATH))
         conn.row_factory = sqlite3.Row
