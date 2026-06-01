@@ -29,6 +29,7 @@ from core.indexer import (
     index_single_file,
     load_vectorstore,
     reindex_transcripts,
+    reindex_collection_with_strategy,
     update_vectorstore,
     get_and_clear_unknown_sources,
     _detect_batch_config,
@@ -611,6 +612,36 @@ class ReindexTranscriptsWorker(QThread):
         except Exception as exc:
             log.exception("ReindexTranscriptsWorker: erro inesperado")
             self.finished.emit(False, f"Erro ao re-indexar transcrições: {exc}")
+
+
+class ReindexStrategyWorker(QThread):
+    """Re-indexa todos os arquivos da coleção com a estratégia de chunking atual (ex: parent_child)."""
+
+    progress = Signal(str)       # "Reindexando arquivo X/N: {nome}"
+    finished = Signal(bool, str) # sucesso, mensagem final
+
+    def __init__(self, config: AppConfig) -> None:
+        super().__init__()
+        self.config = config
+
+    def start(self, priority: QThread.Priority = QThread.Priority.LowPriority) -> None:
+        super().start(priority)
+
+    def run(self) -> None:
+        from core.errors import VectorstoreNotFoundError
+        try:
+            n_success, n_errors = reindex_collection_with_strategy(
+                self.config, progress_cb=self.progress.emit
+            )
+            msg = f"{n_success} arquivo(s) re-indexado(s)"
+            if n_errors:
+                msg += f", {n_errors} com erro"
+            self.finished.emit(n_errors == 0, msg + ".")
+        except VectorstoreNotFoundError:
+            self.finished.emit(False, "Nenhum índice encontrado. Use 'Indexar tudo' primeiro.")
+        except Exception as exc:
+            log.exception("ReindexStrategyWorker: erro inesperado")
+            self.finished.emit(False, f"Erro ao melhorar indexação: {exc}")
 
 
 class IndexFileWorker(QThread):

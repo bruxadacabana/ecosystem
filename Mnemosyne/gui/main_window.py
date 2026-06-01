@@ -105,6 +105,7 @@ from gui.workers import (
     PersonalReflectionWorker,
     PeriodicReflectionWorker,
     ReindexTranscriptsWorker,
+    ReindexStrategyWorker,
     ResumeIndexWorker,
     KnowledgeGraphWorker,
     StudioWorker,
@@ -1494,12 +1495,20 @@ class MainWindow(QMainWindow):
         self.clear_index_btn = QPushButton("Remover índice")
         self.clear_index_btn.setEnabled(False)
         self.clear_index_btn.clicked.connect(self.clear_index)
+        self.reindex_strategy_btn = QPushButton("Melhorar indexação")
+        self.reindex_strategy_btn.setEnabled(False)
+        self.reindex_strategy_btn.setToolTip(
+            "Re-indexa todos os arquivos com a estratégia de chunking atual (ex: parent_child).\n"
+            "Substitui todos os chunks da coleção — confirme antes de prosseguir."
+        )
+        self.reindex_strategy_btn.clicked.connect(self.start_reindex_strategy)
         actions.addWidget(self.refresh_manage_btn)
         actions.addWidget(self.update_index_btn)
         actions.addWidget(self.reindex_transcripts_btn)
         actions.addWidget(self.reanalyze_reflections_btn)
         actions.addWidget(self.toggle_watcher_btn)
         actions.addWidget(self.clear_index_btn)
+        actions.addWidget(self.reindex_strategy_btn)
         layout.addLayout(actions)
 
         layout.addWidget(QLabel("Log de eventos:"))
@@ -2450,6 +2459,7 @@ class MainWindow(QMainWindow):
             self.reanalyze_reflections_btn,
             self.clear_index_btn,
             self.resume_btn,
+            self.reindex_strategy_btn,
         )
 
         if not self.config.indexing_enabled:
@@ -2823,6 +2833,52 @@ class MainWindow(QMainWindow):
         self._log_event(message)
         if success:
             self.vectorstore = MultiVectorstore(load_all_vectorstores(self.config))
+        else:
+            QMessageBox.warning(self, "Aviso", message)
+        self.statusBar().showMessage(message)
+
+    def start_reindex_strategy(self) -> None:
+        """Solicita confirmação e dispara re-indexação completa com a estratégia atual."""
+        reply = QMessageBox.question(
+            self,
+            "Melhorar indexação",
+            "Isso substituirá todos os chunks da coleção e re-indexará cada arquivo "
+            f"com a estratégia '{self.config.chunking_strategy}'. Continuar?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self.reindex_strategy_btn.setEnabled(False)
+        self.update_index_btn.setEnabled(False)
+        self.reindex_transcripts_btn.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self.progress_file_label.setVisible(True)
+        self.progress_file_label.setText("Preparando re-indexação…")
+        self.statusBar().showMessage("Melhorando indexação com estratégia atual…")
+        self._log_event(
+            f"Iniciando melhoria de indexação (estratégia: {self.config.chunking_strategy})."
+        )
+
+        self._reindex_strategy_worker = ReindexStrategyWorker(self.config)
+        self._reindex_strategy_worker.progress.connect(self.progress_file_label.setText)
+        self._reindex_strategy_worker.finished.connect(self._on_reindex_strategy_finished)
+        self._reindex_strategy_worker.start()
+
+    def _on_reindex_strategy_finished(self, success: bool, message: str) -> None:
+        self.progress.setVisible(False)
+        self.progress_file_label.setVisible(False)
+        self.reindex_strategy_btn.setEnabled(True)
+        self.update_index_btn.setEnabled(True)
+        self.reindex_transcripts_btn.setEnabled(True)
+        self._log_event(message)
+        if success:
+            self.vectorstore = MultiVectorstore(load_all_vectorstores(self.config))
+            if self.vectorstore:
+                self._enable_query_buttons()
+            self.refresh_manage_info()
         else:
             QMessageBox.warning(self, "Aviso", message)
         self.statusBar().showMessage(message)
@@ -4870,6 +4926,7 @@ class MainWindow(QMainWindow):
         self.update_index_btn.setEnabled(True)
         self.reindex_transcripts_btn.setEnabled(True)
         self.reanalyze_reflections_btn.setEnabled(True)
+        self.reindex_strategy_btn.setEnabled(True)
         self.guide_refresh_btn.setEnabled(True)
         self.guide_save_studio_btn.setEnabled(True)
         self.studio_generate_btn.setEnabled(True)
@@ -4880,6 +4937,7 @@ class MainWindow(QMainWindow):
         self.update_index_btn.setEnabled(False)
         self.reindex_transcripts_btn.setEnabled(False)
         self.reanalyze_reflections_btn.setEnabled(False)
+        self.reindex_strategy_btn.setEnabled(False)
         self.guide_refresh_btn.setEnabled(False)
         self.guide_save_studio_btn.setEnabled(False)
         self.studio_generate_btn.setEnabled(False)

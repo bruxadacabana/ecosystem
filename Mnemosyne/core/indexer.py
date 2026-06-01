@@ -1330,6 +1330,114 @@ def load_vectorstore(config: AppConfig) -> Chroma:
     )
 
 
+def reindex_collection_with_strategy(
+    config: AppConfig,
+    progress_cb: Callable[[str], None] | None = None,
+) -> tuple[int, int]:
+    """
+    Re-indexa todos os arquivos da coleção ativa com a estratégia de chunking atual.
+
+    Para cada arquivo:
+      1. Apaga chunks antigos do ChromaDB, BM25, ChunkHashStore e ParentStore.
+      2. Re-indexa usando config.chunking_strategy (tipicamente "parent_child").
+
+    Útil para migrar um corpus já indexado com a estratégia "fixed" para "parent_child".
+    Arquivos que não existem mais no disco são pulados silenciosamente.
+
+    Returns:
+        (n_success, n_errors) — arquivos re-indexados com sucesso e com erro.
+
+    Raises:
+        VectorstoreNotFoundError: se não houver índice para a coleção.
+        IndexBuildError: se não for possível listar as fontes.
+    """
+    vs = load_vectorstore(config)
+    bm25_idx = BM25Index.load(config.mnemosyne_dir)
+    chunk_store = ChunkHashStore(config.persist_dir)
+    _BATCH, _SLEEP = _detect_batch_config()
+
+    try:
+        raw = vs._collection.get(include=["metadatas"])
+        sources: set[str] = set()
+        for meta in (raw.get("metadatas") or []):
+            src = (meta or {}).get("source", "")
+            if src:
+                sources.add(src)
+    except Exception as exc:
+        raise IndexBuildError(f"Falha ao listar fontes da coleção: {exc}") from exc
+
+    if not sources:
+        return 0, 0
+
+    source_list = sorted(sources)
+    total = len(source_list)
+    n_success = 0
+    n_errors = 0
+
+    for i, file_path in enumerate(source_list, 1):
+        if progress_cb:
+            progress_cb(f"Reindexando arquivo {i}/{total}: {os.path.basename(file_path)}")
+
+        try:
+            if not os.path.exists(file_path):
+                log.debug("reindex_with_strategy: arquivo ausente, pulando: %s", file_path)
+                _delete_file_chunks(vs, file_path)
+                bm25_idx.remove_source(file_path)
+                chunk_store.delete_file(file_path)
+                _delete_parent_chunks(config, file_path)
+                n_success += 1
+                continue
+
+            _delete_file_chunks(vs, file_path)
+            bm25_idx.remove_source(file_path)
+            chunk_store.delete_file(file_path)
+            _delete_parent_chunks(config, file_path)
+
+            source_type = config.collection_type
+            docs = load_single_file(file_path, source_type=source_type,
+                                    ocr_model=config.image_ocr_model)
+            if not docs:
+                n_success += 1
+                continue
+
+            if config.chunking_strategy == "parent_child":
+                pc = ParentChildChunker(source_type, file_path)
+                chunks, pr = pc.split_documents(docs)
+                try:
+                    ps = ParentStore(config.persist_dir)
+                    ps.save_batch(pr)
+                    ps.close()
+                except Exception as exc:
+                    log.warning("reindex_with_strategy: parent store: %s", exc)
+            else:
+                splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
+                chunks = splitter.split_documents(docs)
+
+            _enrich_chunk_offsets(chunks, docs)
+            _prepend_titles(chunks)
+            _add_language_metadata(chunks)
+
+            _incremental_update(
+                vs, bm25_idx, chunk_store, file_path, chunks,
+                config.embed_model, config.embedding_truncate_dim,
+                _BATCH, _SLEEP, node_type_model="",
+            )
+            n_success += 1
+            log.debug("reindex_with_strategy: %s re-indexado", file_path)
+
+        except Exception as exc:
+            log.warning("reindex_with_strategy: erro em %s: %s", file_path, exc)
+            n_errors += 1
+
+    chunk_store.close()
+    bm25_idx.save()
+    log.info(
+        "reindex_with_strategy: %d/%d arquivo(s) re-indexado(s), %d erro(s)",
+        n_success, total, n_errors,
+    )
+    return n_success, n_errors
+
+
 def load_all_vectorstores(config: AppConfig) -> list[tuple[Chroma, "CollectionConfig"]]:
     """
     Carrega vectorstores de todas as coleções habilitadas com índice no disco.
