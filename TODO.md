@@ -5539,7 +5539,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [ ] **Mecanismo "abrir no CODEX"** — CODEX lê `ecosystem.json` em `codex.open_request: { path, start_char? }` no startup e ao ganhar foco. Após abrir, limpa o campo com `write_section("codex", { open_request: null })`. Outros apps escrevem nesse campo para solicitar abertura. Também aceitar CLI arg `--open <path>` para lançamento direto.
 - [ ] **Botão "Abrir no CODEX" no AKASHA** — no frontend do AKASHA (`archive_detail.html` ou equivalente), adicionar botão que escreve no `ecosystem.json` e depois faz `fetch` para lançar o CODEX via endpoint do HUB ou diretamente via `open` shell.
 - [ ] **Botão "Abrir no CODEX" no Mnemosyne** — no `_source_viewer` do Mnemosyne (`gui/main_window.py`), adicionar botão que escreve no `ecosystem.json` e lança o CODEX com `subprocess.Popen`.
-- [ ] **KOSMOS: CODEX como leitor externo** — em KOSMOS `gui/reader_window.py` (ou equivalente), adicionar opção "Abrir no CODEX" no menu do artigo aberto que usa o mesmo mecanismo de `open_request`.
+- [ ] **KOSMOS: CODEX como leitor externo** — em KOSMOS `app/ui/views/reader_pane.py` (implementado na Fase 2 do KOSMOS v3), adicionar opção "Abrir no CODEX" no menu do artigo aberto usando o mecanismo de `open_request` no `ecosystem.json`. Depende: Fase 2 do KOSMOS v3 concluída.
 
 #### CODEX — Fase 4: Android (futuro)
 - [ ] **Configurar ambiente Tauri Android** — Android Studio + NDK + `cargo tauri android init`. O Tauri v2 já suporta Android nativamente; a UI React é a mesma.
