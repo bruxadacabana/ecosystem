@@ -926,8 +926,9 @@ Mnemosyne/
 ├── config.example.json     → Modelo de configuração
 │
 ├── 📁 core/                → Lógica de negócio (sem GUI)
-│   ├── indexer.py          → Indexação de documentos: chunking + embeddings
-│   ├── rag.py              → Motor RAG: LangChain + ChatOpenAI + ChromaDB
+│   ├── indexer.py          → Indexação: chunking (fixed|parent_child) + embeddings
+│   ├── parent_store.py     → SQLite store para parent chunks (parent-child retrieval)
+│   ├── rag.py              → Motor RAG: LangChain + ChatOpenAI + ChromaDB + parent lookup
 │   ├── loaders.py          → Carregadores de arquivo (PDF, EPUB, MD, imagens via visão)
 │   ├── notebook.py         → Modelo de notebook (tema, histórico, memória)
 │   ├── notebook_store.py   → Persistência de notebooks (CRUD)
@@ -3378,6 +3379,46 @@ Nunca na síntese de resultados. O AKASHA devolve links, trechos e documentos �
 4. **Funciona offline:** busca local funciona 100% sem LLM
 
 Esta decisão está documentada no CLAUDE.md como "princípio arquitetural do AKASHA: amplificador de pesquisa, não respondedor."
+
+---
+
+### 9.9b. Parent-Child Chunking — retrieval preciso com contexto amplo
+
+**Problema:** existe uma tensão fundamental no RAG: chunks pequenos são precisos para busca vetorial (encontram o trecho certo), mas deixam o LLM sem contexto suficiente para gerar uma resposta completa. Chunks grandes fornecem contexto, mas reduzem a precisão do retrieval.
+
+**Solução — parent-child chunking:** indexar o documento em dois níveis de granularidade simultaneamente.
+
+```
+documento original
+  ↓ splitter parent (1024 chars)
+[ parent_0          ] [ parent_1          ] [ parent_2          ]
+  ↓ splitter child (256 chars, overlap 32)
+[ child_0 ] [ child_1 ] [ child_2 ] [ child_3 ] ...
+   └── parent_id = hash(source)_0
+```
+
+- **Child chunks (256 chars):** armazenados no ChromaDB com metadado `parent_id`. Usados para busca vetorial — são pequenos e precisos, a similaridade cosine funciona melhor com textos curtos e focados.
+- **Parent chunks (1024 chars):** armazenados no `ParentStore` (SQLite em `parent_chunks.db`). Nunca indexados — servem só como lookup de contexto.
+
+**No retrieval (`_do_parent_lookup` em `rag.py`):**
+1. ChromaDB retorna child chunks (retrieval preciso)
+2. Para cada child com `parent_id`, o RAG busca o parent no `ParentStore`
+3. Substitui o conteúdo do child pelo parent antes de montar o prompt
+4. O LLM recebe contexto mais amplo sem perder a qualidade do retrieval
+
+```
+query → ChromaDB (child chunks) → parent lookup → LLM recebe parent text
+         [preciso, 256 chars]         [lookup]     [mais contexto, 1024 chars]
+```
+
+**Fallback graceful:** se `parent_id` não estiver no store (documento indexado com estratégia "fixed" anterior), o child é usado diretamente — sem erro.
+
+**Configuração:** `chunking_strategy: "fixed" | "parent_child"` em `AppConfig`. Default `"parent_child"` para novos corpora. Corpora indexados anteriormente com "fixed" continuam funcionando — a mudança de estratégia só afeta novos arquivos e re-indexações.
+
+**Arquivos:**
+- `core/indexer.py` — `ParentChildChunker`, `_delete_parent_chunks`; integrado em `create_vectorstore`, `index_single_file`, `update_vectorstore`
+- `core/parent_store.py` — SQLite store (schema: `chunk_id TEXT PK, source TEXT, text TEXT`)
+- `core/rag.py` — `_do_parent_lookup`, chamado em `prepare_ask` após re-ranqueamento
 
 ---
 
