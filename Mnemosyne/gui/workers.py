@@ -1749,12 +1749,18 @@ class IndexReflectionWorker(QThread):
             return
 
         try:
-            save_memory(type=mem_type, content=reflection,
-                        tags=["leitura", tag_name], importance=importance)
+            save_memory(
+                type=mem_type,
+                content=reflection,
+                tags=["leitura", tag_name],
+                importance=importance,
+                rag_source_paths=[file_path],   # Integração 2: habilita FAIR-RAG nos pop-ups
+            )
             log.info(
-                "IndexReflectionWorker: %s sobre '%s' — type=%s, importance=%s, overlap=%s",
+                "IndexReflectionWorker [%s]: %s sobre '%s' — type=%s, importance=%s, overlap=%s, source=%s",
+                self._priority,
                 "conexão" if mem_type == "connection" else "surpresa",
-                name, mem_type, importance, overlap,
+                name, mem_type, importance, overlap, file_path,
             )
             # Atualiza termos conhecidos para as próximas iterações da mesma sessão
             known_terms.update(reflection.lower().split())

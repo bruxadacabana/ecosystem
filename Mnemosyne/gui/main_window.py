@@ -2064,7 +2064,9 @@ class MainWindow(QMainWindow):
             mark_seen(-memory_id)
             self._update_insights_badge(0)
         else:
-            from core.personal_memory import set_feedback, get_entry_info
+            import logging as _log
+            _logger = _log.getLogger("mnemosyne.main")
+            from core.personal_memory import set_feedback, get_entry_info, get_by_id
             set_feedback(memory_id, "confirmed")
             try:
                 info = get_entry_info(memory_id)
@@ -2073,6 +2075,19 @@ class MainWindow(QMainWindow):
                     update_communication_feedback(info["comm_id"], "confirmed")
             except Exception:
                 pass
+            # Integração 2: FAIR-RAG — feedback ✓ boost os chunks-fonte no ChromaDB
+            try:
+                entry = get_by_id(memory_id)
+                source_paths = (entry or {}).get("rag_source_paths") or []
+                if source_paths and self.vectorstore:
+                    from core.rag import apply_source_feedback
+                    n = apply_source_feedback(self.vectorstore, source_paths, is_positive=True)
+                    _logger.info(
+                        "insight confirmed: FAIR-RAG boost em %d chunk(s) de %s",
+                        n, source_paths,
+                    )
+            except Exception as exc:
+                _logger.debug("insight confirmed: FAIR-RAG falhou: %s", exc)
 
     def _on_insight_dismissed(self, memory_id: int) -> None:
         if memory_id < 0:
@@ -2080,7 +2095,9 @@ class MainWindow(QMainWindow):
             mark_seen(-memory_id)
             self._update_insights_badge(0)
         else:
-            from core.personal_memory import set_feedback, get_entry_info
+            import logging as _log
+            _logger = _log.getLogger("mnemosyne.main")
+            from core.personal_memory import set_feedback, get_entry_info, get_by_id
             set_feedback(memory_id, "dismissed")
             try:
                 info = get_entry_info(memory_id)
@@ -2089,6 +2106,19 @@ class MainWindow(QMainWindow):
                     update_communication_feedback(info["comm_id"], "dismissed")
             except Exception:
                 pass
+            # Integração 2: FAIR-RAG — feedback ✗ penaliza os chunks-fonte no ChromaDB
+            try:
+                entry = get_by_id(memory_id)
+                source_paths = (entry or {}).get("rag_source_paths") or []
+                if source_paths and self.vectorstore:
+                    from core.rag import apply_source_feedback
+                    n = apply_source_feedback(self.vectorstore, source_paths, is_positive=False)
+                    _logger.info(
+                        "insight dismissed: FAIR-RAG penalidade em %d chunk(s) de %s",
+                        n, source_paths,
+                    )
+            except Exception as exc:
+                _logger.debug("insight dismissed: FAIR-RAG falhou: %s", exc)
 
     def _on_insight_dismissed_with_reason(self, memory_id: int, reason: str) -> None:
         """Dismiss de alta importância — salva motivo no histórico e reflexão de correção."""

@@ -28,6 +28,8 @@ Juntos, eles formam um ecossistema de conhecimento: o que você faz, o que acont
 - **Interface gráfica nativa** — construída com PySide6 (Qt), sem necessidade de navegador.
 - **Totalmente offline** — após baixar os modelos, todos os dados permanecem no seu computador.
 - **Multi‑formato** — suporte a `.txt`, `.pdf`, `.docx`, `.md`.
+- **Coleção AKASHA integrada** — lê automaticamente o arquivo web e os Papers do AKASHA (`{sync_root}/akasha/Web/` e `Papers/`). Arquivos científicos (frontmatter `type: scientific`) recebem boost automático no RAG (`doc_type="scientific"`, peso 1.4×).
+- **FAIR-RAG nos insights** — pop-ups de insight gerados pelo `IndexReflectionWorker` agora armazenam os arquivos-fonte (`rag_source_paths`). Feedback ✓/✗ no pop-up ajusta o `boost` desses chunks no ChromaDB, tornando o RAG progressivamente mais preciso com o uso.
 
 ---
 

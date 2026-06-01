@@ -2014,6 +2014,10 @@ Localização: `{mnemosyne.data_dir}/personal_memory.db`
 
 SQLite separado do ChromaDB e dos notebooks. Contém reflexões, observações e insights da Mnemosyne — nunca indexados no RAG, nunca expostos à busca.
 
+**Campo `rag_source_paths` (Integração 2):** cada insight gerado pelo `IndexReflectionWorker` agora inclui os paths dos arquivos ChromaDB usados para gerá-lo (`rag_source_paths: list[str]`). Quando a usuária dá feedback ✓/✗ num pop-up de insight, `main_window._on_insight_confirmed/dismissed` lê este campo e chama `apply_source_feedback(vectorstore, source_paths, is_positive)` — o que ajusta o `boost` desses chunks no ChromaDB. Isso fecha o loop de aprendizado: insight → feedback → ChromaDB mais preciso.
+
+**Coleção AKASHA no ChromaDB da Mnemosyne:** gerenciada via `ECOSYSTEM_SOURCES` em `core/collections.py`. Nome: `"AKASHA — arquivo web"`. Caminho: `akasha.archive_path` do `ecosystem.json` (`{sync_root}/akasha`). Inclui `Web/*.md` e `Papers/*.md`. Arquivos com frontmatter `type: scientific` recebem `doc_type="scientific"` no ChromaDB → `SOURCE_WEIGHTS["scientific"]=1.4` no RAG (boost automático).
+
 Categories:
 - `"friendship"` — memórias trocadas com o Akasha
 - `"about_user"` — observações sobre a usuária e seu modo de trabalhar

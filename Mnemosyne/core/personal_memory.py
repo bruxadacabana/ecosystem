@@ -486,6 +486,9 @@ def _conn() -> sqlite3.Connection:
         con.execute("ALTER TABLE personal_memory ADD COLUMN zettel_links TEXT NOT NULL DEFAULT '[]'")
     if "comm_id" not in cols:
         con.execute("ALTER TABLE personal_memory ADD COLUMN comm_id INTEGER DEFAULT NULL")
+    # Integração 2: paths dos arquivos ChromaDB que geraram este insight (FAIR-RAG nos pop-ups)
+    if "rag_source_paths" not in cols:
+        con.execute("ALTER TABLE personal_memory ADD COLUMN rag_source_paths TEXT DEFAULT ''")
     # affective_state — estado emocional ativo da Mnemosyne (item [F])
     con.execute("""
         CREATE TABLE IF NOT EXISTS affective_state (
@@ -517,12 +520,15 @@ def save_memory(
     tags: list[str] | None = None,
     category: str | None = None,
     importance: int | None = None,
+    rag_source_paths: list[str] | None = None,
 ) -> int:
     """Salva entrada de memória pessoal. Retorna o ID inserido.
 
     Se `category` não for passado, é derivado automaticamente das tags.
     valence e arousal são calculados automaticamente via VADER.
     importance ∈ [1, 10] deve ser fornecido pelo chamador (via LLM).
+    rag_source_paths: caminhos dos arquivos ChromaDB que geraram este insight —
+        permite FAIR-RAG quando a usuária dá feedback no pop-up.
     """
     if type not in _VALID_TYPES:
         type = "observation"
@@ -534,14 +540,15 @@ def save_memory(
         importance = max(1, min(10, int(importance)))
     valence, arousal = _compute_valence_arousal(content)
     kws = _zkn_keywords(content)
+    raw_source_paths = json.dumps(rag_source_paths or [], ensure_ascii=False)
     import threading
     with _conn() as con:
         cursor = con.execute(
             "INSERT INTO personal_memory "
-            "(type, content, tags, category, valence, arousal, importance, zettel_keywords) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(type, content, tags, category, valence, arousal, importance, zettel_keywords, rag_source_paths) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (type, content, json.dumps(tags, ensure_ascii=False),
-             category, valence, arousal, importance, json.dumps(kws)),
+             category, valence, arousal, importance, json.dumps(kws), raw_source_paths),
         )
         mid = cursor.lastrowid or 0
     # D: Plutchik — classificação emocional em background (fire-and-forget)
@@ -801,7 +808,8 @@ def get_by_id(memory_id: int) -> dict | None:
     """Retorna uma entrada pelo id, ou None se não encontrada."""
     with _conn() as con:
         row = con.execute(
-            "SELECT id, created_at, type, content, tags, feedback, category, valence, arousal, importance "
+            "SELECT id, created_at, type, content, tags, feedback, category, "
+            "valence, arousal, importance, rag_source_paths "
             "FROM personal_memory WHERE id = ?",
             (memory_id,),
         ).fetchone()
@@ -812,6 +820,7 @@ def get_by_id(memory_id: int) -> dict | None:
         "content": row[3], "tags": json.loads(row[4] or "[]"),
         "feedback": row[5], "category": row[6],
         "valence": row[7], "arousal": row[8], "importance": row[9],
+        "rag_source_paths": json.loads(row[10] or "[]"),
     }
 
 

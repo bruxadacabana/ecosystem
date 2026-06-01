@@ -74,7 +74,7 @@ class CollectionConfig:
 ECOSYSTEM_SOURCES: list[tuple[str, str, str]] = [
     # (label legível, ecosystem_key, nome padrão da coleção)
     ("KOSMOS — arquivo", "kosmos.archive_path", "KOSMOS"),
-    ("AKASHA — arquivo", "akasha.archive_path", "AKASHA"),
+    ("AKASHA — arquivo web", "akasha.archive_path", "AKASHA — arquivo web"),
     ("Hermes — saída",   "hermes.output_dir",   "Hermes"),
 ]
 
