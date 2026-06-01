@@ -1034,6 +1034,55 @@ def _diversify_languages(docs: list[Document]) -> list[Document]:
     return result
 
 
+def _do_parent_lookup(docs: list[Document], config: AppConfig) -> list[Document]:
+    """Enriquece child chunks com o texto do parent para o contexto enviado ao LLM.
+
+    Child chunks são usados para ranqueamento (precisos); o LLM recebe o parent
+    (mais contexto). Fallback silencioso para child se parent ausente ou ParentStore
+    inacessível. Retorna lista nova — não modifica a lista original.
+    """
+    if getattr(config, "chunking_strategy", "fixed") != "parent_child":
+        return docs
+    if not getattr(config, "persist_dir", ""):
+        return docs
+
+    parent_ids = [doc.metadata.get("parent_id") for doc in docs]
+    if not any(parent_ids):
+        return docs
+
+    result = list(docs)
+    try:
+        from .parent_store import ParentStore
+        ps = ParentStore(config.persist_dir)
+        try:
+            upgraded = 0
+            for i, (doc, pid) in enumerate(zip(docs, parent_ids)):
+                if not pid:
+                    continue
+                parent_text = ps.get(pid)
+                if parent_text:
+                    old_len = len(doc.page_content)
+                    result[i] = Document(
+                        page_content=parent_text,
+                        metadata=doc.metadata,
+                    )
+                    upgraded += 1
+                    log.debug(
+                        "parent_lookup: child→parent OK (id=%s, %d→%d chars)",
+                        pid, old_len, len(parent_text),
+                    )
+                else:
+                    log.debug("parent_lookup: parent_id %s não encontrado → usando child", pid)
+        finally:
+            ps.close()
+        if upgraded:
+            log.info("parent_lookup: %d/%d chunks expandidos via ParentStore", upgraded, len(docs))
+    except Exception as exc:
+        log.debug("parent_lookup: falhou, usando child chunks: %s", exc)
+        return docs
+    return result
+
+
 def _build_messages(
     context: str,
     question: str,
@@ -1241,6 +1290,7 @@ def prepare_ask(
     )
 
     docs = _reorder_lost_in_middle(docs)
+    docs = _do_parent_lookup(docs, config)
 
     context = "\n\n---\n".join(
         f"{_chunk_label(doc)}{doc.page_content}" for doc in docs

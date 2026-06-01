@@ -169,6 +169,7 @@ _DEFAULTS: dict = {
     "lightrag_enabled": False,
     "raptor_enabled": False,
     "akasha_fallback": True,
+    "chunking_strategy": "parent_child",
 }
 
 
@@ -206,6 +207,8 @@ class AppConfig:
     raptor_enabled: bool = False    # indexação hierárquica para PDFs (papers)
     # Collab 2: busca complementar quando RAG local retornar resultados insuficientes
     akasha_fallback: bool = True    # busca na AKASHA se contexto < 200 palavras ou sem fontes
+    # Estratégia de chunking: "fixed" (legado) ou "parent_child" (padrão novo)
+    chunking_strategy: str = "parent_child"
     # Populados em runtime a partir do ecosystem.json — nunca persistidos
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""
@@ -438,6 +441,7 @@ def load_config() -> AppConfig:
         lightrag_enabled=bool(data.get("lightrag_enabled", False)),
         raptor_enabled=bool(data.get("raptor_enabled", False)),
         akasha_fallback=bool(data.get("akasha_fallback", True)),
+        chunking_strategy=str(data.get("chunking_strategy", "parent_child")),
     )
     config = _apply_logos_recommendations(config, _saved_keys)
 
@@ -527,6 +531,7 @@ def save_config(config: AppConfig) -> None:
         "lightrag_enabled": config.lightrag_enabled,
         "raptor_enabled": config.raptor_enabled,
         "akasha_fallback": config.akasha_fallback,
+        "chunking_strategy": config.chunking_strategy,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

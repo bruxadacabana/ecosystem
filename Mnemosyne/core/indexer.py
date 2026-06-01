@@ -23,6 +23,7 @@ from .bm25_index import BM25Index
 from .config import AppConfig
 from .errors import EmptyDirectoryError, EmbedTimeoutError, IndexBuildError, VectorstoreNotFoundError
 from .loaders import load_documents, load_single_file, is_transcript_file
+from .parent_store import ParentStore
 from .reflection import generate_reflection, maybe_consolidate, MIN_CHUNKS
 from .tracker import FileTracker
 
@@ -449,6 +450,87 @@ CHUNK_PARAMS: dict[str, dict] = {
 _TRANSCRIPT_EXTS = frozenset({".vtt", ".srt"})
 _DOCUMENT_EXTS   = frozenset({".pdf", ".epub", ".docx"})
 
+# Tamanhos para parent-child chunking: child preciso para retrieval; parent amplo para LLM.
+_PARENT_CHUNK_SIZE = 1024
+_CHILD_CHUNK_SIZE  = 256
+_CHILD_OVERLAP     = 32
+
+
+def _make_parent_id(source: str, idx: int) -> str:
+    """ID determinístico: hash(source)[:12]_{idx} — mesmo arquivo sempre gera o mesmo ID."""
+    return f"{hashlib.sha256(source.encode()).hexdigest()[:12]}_{idx}"
+
+
+class ParentChildChunker:
+    """
+    Divide documentos em pares parent-child para retrieval hierárquico.
+
+    Child chunks (256 chars) vão para o ChromaDB com metadata["parent_id"].
+    Parent chunks (1024 chars) vão para o ParentStore (SQLite).
+
+    Retrieval: child localiza o trecho preciso; parent fornece contexto amplo ao LLM.
+    """
+
+    def __init__(self, source_type: str = "article", file_path: str = "") -> None:
+        ctype = _chunk_type_for(source_type, file_path)
+        seps = CHUNK_PARAMS.get(ctype, CHUNK_PARAMS["document"]).get(
+            "separators", ["\n\n", "\n", "。", "！", "？", ". ", " ", ""]
+        )
+        self._parent_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=_PARENT_CHUNK_SIZE,
+            chunk_overlap=0,
+            separators=seps,
+            length_function=len,
+            add_start_index=True,
+        )
+        self._child_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=_CHILD_CHUNK_SIZE,
+            chunk_overlap=_CHILD_OVERLAP,
+            separators=seps,
+            length_function=len,
+            add_start_index=True,
+        )
+
+    def split_documents(
+        self,
+        docs: list[Document],
+    ) -> tuple[list[Document], list[tuple[str, str, str]]]:
+        """
+        Retorna (child_chunks, parent_records).
+
+        child_chunks: Documents para ChromaDB, cada um com metadata["parent_id"].
+        parent_records: [(chunk_id, source, text)] para ParentStore.save_batch().
+        """
+        child_chunks: list[Document] = []
+        parent_records: list[tuple[str, str, str]] = []
+
+        for doc in docs:
+            source = doc.metadata.get("source", "")
+            parents = self._parent_splitter.split_documents([doc])
+
+            for parent_idx, parent in enumerate(parents):
+                parent_id = _make_parent_id(source, parent_idx)
+                parent_records.append((parent_id, source, parent.page_content))
+
+                children = self._child_splitter.split_documents([parent])
+                for child in children:
+                    child.metadata = dict(child.metadata)
+                    child.metadata["parent_id"] = parent_id
+                    child_chunks.append(child)
+
+        return child_chunks, parent_records
+
+
+def _delete_parent_chunks(config: "AppConfig", file_path: str) -> None:
+    """Remove parent chunks do ParentStore ao deletar ou re-indexar um arquivo."""
+    try:
+        ps = ParentStore(config.persist_dir)
+        ps.delete_by_source(file_path)
+        ps.close()
+        log.debug("indexer: parent chunks de %s deletados", file_path)
+    except Exception as exc:
+        log.debug("indexer: falha ao deletar parent chunks de %s: %s", file_path, exc)
+
 # Detecta marcadores estruturais de artigos científicos
 _SCIENTIFIC_MARKERS_RE = re.compile(
     r"^(abstract|references|referências|bibliography|doi:\s*\S|arxiv:\s*\S)",
@@ -859,27 +941,42 @@ def create_vectorstore(
         raise EmptyDirectoryError(config.watched_dir)
 
     embeddings = _get_embeddings(config)
+    _pc_parent_records: list[tuple[str, str, str]] = []
     if config.semantic_chunking:
         splitter = _get_splitter(config, embeddings, source_type=config.collection_type)
         chunks = splitter.split_documents(documents)
         _prepend_titles(chunks)
         _add_language_metadata(chunks)
     else:
-        _splitter_cache: dict[str, RecursiveCharacterTextSplitter] = {}
-        chunks = []
-        for doc in documents:
-            src = doc.metadata.get("source_type", config.collection_type)
-            ctype = _chunk_type_for(src, doc.metadata.get("source", ""))
-            if ctype not in _splitter_cache:
-                params = CHUNK_PARAMS.get(ctype, CHUNK_PARAMS["document"])
-                _splitter_cache[ctype] = RecursiveCharacterTextSplitter(
-                    chunk_size=params["chunk_size"],
-                    chunk_overlap=params["chunk_overlap"],
-                    separators=params.get("separators", ["\n\n", "\n", "。", "！", "？", ". ", " ", ""]),
-                    length_function=len,
-                    add_start_index=True,
-                )
-            chunks.extend(_splitter_cache[ctype].split_documents([doc]))
+        if config.chunking_strategy == "parent_child":
+            chunks = []
+            for doc in documents:
+                src = doc.metadata.get("source_type", config.collection_type)
+                fp = doc.metadata.get("source", "")
+                pc = ParentChildChunker(src, fp)
+                child_chunks, pr = pc.split_documents([doc])
+                chunks.extend(child_chunks)
+                _pc_parent_records.extend(pr)
+            log.info(
+                "create_vectorstore: parent_child — %d child chunks, %d parents",
+                len(chunks), len(_pc_parent_records),
+            )
+        else:
+            _splitter_cache: dict[str, RecursiveCharacterTextSplitter] = {}
+            chunks = []
+            for doc in documents:
+                src = doc.metadata.get("source_type", config.collection_type)
+                ctype = _chunk_type_for(src, doc.metadata.get("source", ""))
+                if ctype not in _splitter_cache:
+                    params = CHUNK_PARAMS.get(ctype, CHUNK_PARAMS["document"])
+                    _splitter_cache[ctype] = RecursiveCharacterTextSplitter(
+                        chunk_size=params["chunk_size"],
+                        chunk_overlap=params["chunk_overlap"],
+                        separators=params.get("separators", ["\n\n", "\n", "。", "！", "？", ". ", " ", ""]),
+                        length_function=len,
+                        add_start_index=True,
+                    )
+                chunks.extend(_splitter_cache[ctype].split_documents([doc]))
         _enrich_chunk_offsets(chunks, documents)
         _prepend_titles(chunks)
         _add_language_metadata(chunks)
@@ -921,6 +1018,15 @@ def create_vectorstore(
     except Exception as exc:
         raise IndexBuildError(f"Falha ao criar vectorstore: {exc}") from exc
 
+    if _pc_parent_records:
+        try:
+            ps = ParentStore(config.persist_dir)
+            ps.save_batch(_pc_parent_records)
+            ps.close()
+            log.info("create_vectorstore: %d parent chunks persistidos", len(_pc_parent_records))
+        except Exception as exc:
+            log.warning("create_vectorstore: falha ao persistir parent chunks: %s", exc)
+
     bm25_idx = BM25Index(config.mnemosyne_dir)
     bm25_idx.add_documents(chunks)
 
@@ -946,8 +1052,20 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
     if not docs:
         return load_vectorstore(config)
 
-    splitter = _get_splitter(config, source_type=config.collection_type, file_path=file_path)
-    chunks = splitter.split_documents(docs)
+    if config.chunking_strategy == "parent_child":
+        pc = ParentChildChunker(config.collection_type, file_path)
+        chunks, _pc_pr = pc.split_documents(docs)
+        _delete_parent_chunks(config, file_path)
+        try:
+            ps = ParentStore(config.persist_dir)
+            ps.save_batch(_pc_pr)
+            ps.close()
+            log.debug("index_single_file: %d parent chunks salvos (%s)", len(_pc_pr), file_path)
+        except Exception as exc:
+            log.warning("index_single_file: falha ao salvar parent chunks: %s", exc)
+    else:
+        splitter = _get_splitter(config, source_type=config.collection_type, file_path=file_path)
+        chunks = splitter.split_documents(docs)
     _enrich_chunk_offsets(chunks, docs)
     _prepend_titles(chunks)
     _add_language_metadata(chunks)
@@ -1036,6 +1154,7 @@ def update_vectorstore(
         bm25_idx.remove_source(file_path)
         chunk_store.delete_file(file_path)
         tracker.remove(file_path)
+        _delete_parent_chunks(config, file_path)
         stats["deleted"] += 1
 
     # Modificados: indexação incremental — só re-embeda chunks que mudaram.
@@ -1043,8 +1162,19 @@ def update_vectorstore(
         try:
             docs = load_single_file(file_path, source_type=source_type,
                                     ocr_model=config.image_ocr_model)
-            splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
-            chunks = splitter.split_documents(docs)
+            if config.chunking_strategy == "parent_child":
+                pc = ParentChildChunker(source_type, file_path)
+                chunks, _pc_pr = pc.split_documents(docs)
+                _delete_parent_chunks(config, file_path)
+                try:
+                    ps = ParentStore(config.persist_dir)
+                    ps.save_batch(_pc_pr)
+                    ps.close()
+                except Exception as _ps_exc:
+                    log.warning("update_vectorstore: falha ao salvar parent chunks (mod): %s", _ps_exc)
+            else:
+                splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
+                chunks = splitter.split_documents(docs)
             _enrich_chunk_offsets(chunks, docs)
             _prepend_titles(chunks)
             _add_language_metadata(chunks)
@@ -1072,8 +1202,19 @@ def update_vectorstore(
         try:
             docs = load_single_file(file_path, source_type=source_type,
                                     ocr_model=config.image_ocr_model)
-            splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
-            chunks = splitter.split_documents(docs)
+            if config.chunking_strategy == "parent_child":
+                pc = ParentChildChunker(source_type, file_path)
+                chunks, _pc_pr = pc.split_documents(docs)
+                _delete_parent_chunks(config, file_path)
+                try:
+                    ps = ParentStore(config.persist_dir)
+                    ps.save_batch(_pc_pr)
+                    ps.close()
+                except Exception as _ps_exc:
+                    log.warning("update_vectorstore: falha ao salvar parent chunks (new): %s", _ps_exc)
+            else:
+                splitter = _get_splitter(config, source_type=source_type, file_path=file_path)
+                chunks = splitter.split_documents(docs)
             _enrich_chunk_offsets(chunks, docs)
             _incremental_update(
                 vs, bm25_idx, chunk_store, file_path, chunks,
