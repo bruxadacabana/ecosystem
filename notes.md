@@ -20,8 +20,6 @@ Não usar no Windows — a AKASHA pode usar o SearXNG do PC principal via IP loc
 
 ## próximo: 
 
-### AKASHA como Google + Gemini — RAG grounded e integração com Mnemosyne | 2026-05-30
-
 ### KOSMOS — refazer do zero com nova stack | 2026-05-20
 
 ### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
@@ -34,6 +32,33 @@ Não usar no Windows — a AKASHA pode usar o SearXNG do PC principal via IP loc
 
 
 ## Anotações
+
+Journalist investigativo:
+
+Tracking stories over time - same entities, organizations, topics appearing across multiple sources
+
+Cross-referencing: when Source A and Source B both cover something, what do they agree/disagree on?
+
+Detecting editorial gaps: what stories are being ignored?
+
+Building a chronological narrative from fragmented coverage
+
+Entity relationships: who is connected to whom, based on co-occurrence
+
+Source credibility and bias analysis
+
+Export and citation capabilities, investigation folders to organize active projects, keyword alerts for tracked entities, and the ability to compare how different outlets with varying political leanings cover the same story or identify what's conspicuously absent from certain feeds
+
+Estudante:
+For students, the focus shifts to comprehension and synthesis—aggregating multiple perspectives on complex topics, connecting news to academic knowledge, annotating articles directly, and exporting highlights with proper citations. They'd benefit from condensed summaries of lengthy pieces, generated study materials like event timelines and key actor lists, and statistical visualizations showing how coverage of a topic evolves over time, plus discovery of related articles to deepen understanding.
+
+Ativista político:
+Political activists need to track bias across sources, monitor specific actors and organizations, detect how narratives shift around particular stories, identify propaganda techniques like loaded language, see which stories gain traction versus get suppressed, compare how different countries frame the same event, connect news to legislative developments, and follow protest movements and organizing efforts.
+
+Common to all three:
+All three personas rely heavily on entity tracking and relationship mapping, chronological story progression, cross-source comparison, the ability to create curated collections for investigations or projects, exporting to structured formats, full-text search, and privacy-first local storage.
+
+---
 
 enquanto Mnemosyne é uma só, a ferramenta e a assistente são a mesma entidade, AKASHA tem uma diferenciação lógica (AKASHA (ferramenta) e a Akasha (assistente)) e é necessário que o AKASHA como ferramenta possa funcionar independemente da Akasha assistente. É por isso que os bancos de dados são separados inclusive, é por isso que devem funcionar em paralelo, com duas filas/processos ocorrendo ao mesmo tempo mas sem um pausar ou interromper o outro.
 
