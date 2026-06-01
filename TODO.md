@@ -6719,43 +6719,60 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 #### Mnemosyne
 - [ ] **Revisar modelo de saliência em `get_unshown_popup_entries()`** — mesma revisão em `Mnemosyne/core/personal_memory.py`. Alinhar com a lógica adotada no AKASHA para consistência entre os dois sistemas de memória afetiva.
 
-### KOSMOS — refazer do zero com nova stack | 2026-05-20
-> Contexto: o KOSMOS atual (PyQt6) acumulou falhas sistêmicas investigadas e confirmadas em 2026-05-20. Causa raiz identificada: (1) `ai_enabled` não existe nos DEFAULTS de `config.py` e não é setado em nenhuma tela — `_ai_enabled()` sempre retorna `False`, o `background_analyzer` pula todos os artigos sem logar nada (o sintoma "análise não aparece" é na verdade "análise nunca roda"); (2) `ai_gen_model`/`ai_embed_model` são removidos do `settings.json` no load (correto: HUB é a fonte de verdade), mas `get_gen_model()` depende do HUB rodando — se não estiver, retorna string vazia e a segunda condição de `_ai_enabled()` também falha; (3) `background_analyzer.py` hardcoda `"http://localhost:7072"` em vez de usar `ecosystem_client.get_ollama_url()`. Além dessas causas raiz, a arquitetura mistura threads OS, QThreads e event loop Qt, dificultando debug. Decisão: descartar e reescrever. Stack a decidir.
+### KOSMOS v3 — Redesign como ferramenta para jornalistas/estudantes/ativistas | 2026-06-01
+> Contexto: o KOSMOS foi replanejado do zero em 2026-06-01. O código existente é descartado. Stack: PySide6 (consistente com Mnemosyne), SQLite sincronizado via Syncthing, LOGOS para análise AI. Objetivo: leitor de notícias para quem usa informação como matéria-prima de trabalho — análise automática de artigos, ferramentas de investigação, rastreamento de entidades, comparação de viés político entre fontes. Ver plano completo em ~/.claude/plans/agora-vamos-replanejar-kosmos-unified-origami.md.
 
-#### KOSMOS
-- [ ] **Corrigir AI nunca rodar no background_analyzer — testar no CachyOS** — duas causas raiz identificadas e corrigidas em código (2026-05-20), mas ainda não testadas: (1) `_ai_enabled()` tinha `self._config.get("ai_enabled", False)` como primeira condição — `ai_enabled` nunca era setado; removida a condição local, agora retorna apenas `bool(get_gen_model())` — se HUB tem modelo configurado no slot `llm_analysis`, AI roda; (2) endpoint Ollama hardcoded substituído por `get_ollama_endpoint()` em `ai_bridge.py` (wrapper de `_get_ollama_base()` do ecosystem_client), chamado nos dois pontos de `background_analyzer.py`. Marcar como concluído após confirmar que análise batch e individual funcionam no CachyOS com HUB rodando.
-- [ ] **Investigar bug: logger para de escrever enquanto KOSMOS segue rodando** — único sintoma remanescente que pode justificar reescrita. Verificar após confirmar que a análise IA agora funciona (pode ser que o "logger parado" fosse o log silencioso do worker que nunca processava nada).
+#### Fase 1 — Base silenciosa
+- [ ] **Schema do banco redesenhado** — SQLite em `sync_root/kosmos/` (sincronizado). Tabelas: `feeds`, `articles` (com campos AI, heartbeat de análise, dados de leitura, highlights), `entities`, `article_entities`, `highlights`, `investigations`, `investigation_articles`. FTS5 com triggers automáticos. Heartbeat timeout: resetar `analysis_status='running'` com `analysis_started_at > 5min` para `pending` no startup.
+- [ ] **Config integrada ao ecosystem_client** — `KosmosConfig` dataclass; `write_section("kosmos", {...})` no startup registrando `data_path`, `archive_path`, `config_path` no ecosystem.json. Ler `get_active_profile()` em runtime para modelo de análise (`llm_analysis`). Nunca hardcodar porta ou modelo.
+- [ ] **paths.py e logger.py** — paths Windows/Linux usando ecosystem_client; RotatingFileHandler.
+- [ ] **Testes: database.py e config.py** — schema cria todas as tabelas; FTS5 e triggers funcionam; config faz roundtrip; heartbeat reset funciona no startup.
 
-#### KOSMOS — itens da auditoria 05-05 a incorporar na nova stack
-> Itens identificados na Auditoria pesquisas.md (2026-05-05) que eram pendentes no KOSMOS atual. Devem ser considerados como requisitos da nova stack, não como patches do código legado.
+#### Fase 2 — Leitor funcional
+- [ ] **feed_fetcher.py** — feedparser + throttle 2s/domínio via ecosystem_scraper. Salva metadados completos: título, URL, data, autor, feed, resumo, tempo estimado de leitura, tipo provável (notícia/opinião/análise), idioma detectado.
+- [ ] **FetchWorker (QThread P2)** — busca todos os feeds em background, emite sinais de progresso e artigos novos. Intervalo configurável por feed.
+- [ ] **Layout 3-painéis** — `feed_sidebar.py` (feeds por categoria, contadores de não-lidos), `article_list.py` (cards básicos), `reader_pane.py` (conteúdo do feed). Theme PySide6 com paleta do ecossistema (night.qss).
+- [ ] **Testes: feed_fetcher.py** — parse RSS/Atom, throttle, campos salvos corretamente.
 
-- [ ] **Streaming de análise com exibição progressiva** — exibir campos rápidos da análise (tags, sentiment, clickbait_score) na UI antes dos campos lentos (entities, five_ws). Na nova stack, estruturar o schema de análise para que campos rápidos sejam gerados primeiro; emitir via sinal/evento conforme ficam prontos em vez de aguardar o JSON completo.
+#### Fase 3 — Texto completo e scraping
+- [ ] **article_scraper.py** — trafilatura como método principal; fallback BeautifulSoup. Throttle por domínio (ecosystem_scraper).
+- [ ] **ScraperWorker (QThread P1/P2)** — P1 quando artigo aberto pelo usuário; P2 para batch em background.
+- [ ] **reader_pane.py** — exibe texto completo após scraping; botão "Carregar texto completo".
+- [ ] **Testes: article_scraper.py** — extração de texto, fallback, throttle.
 
-- [ ] **NER por SpaCy em vez de LLM para `entities` (`pt_core_news_lg`)** — SpaCy `pt_core_news_lg` (~250MB) para extração de entidades PER/ORG/LOC/MISC: roda em CPU, dramaticamente mais rápido que LLM para NER, resolve perda de fidelidade de 3–8% em modelos Q4. LLM mantém responsabilidade sobre sentiment, tags, clickbait. `pip install spacy && python -m spacy download pt_core_news_lg`.
+#### Fase 4 — Análise AI e cards vivos
+- [ ] **logos_client.py** — wrapper LOGOS: `chat(messages, priority, model)`, `is_available()`, `get_analysis_model()`. Headers `X-App: kosmos`, `X-Priority: 1|2|3` obrigatórios. Graceful fallback quando LOGOS offline (artigos ficam na fila `pending`). P3 não é bloqueado — gerenciado pelo LOGOS (pode ser mais lento, nunca rejeitado exceto situação extrema).
+- [ ] **AnalysisWorker (QThread)** — orquestra duas filas: pré-análise P3 (newest-first, roda continuamente) e análise completa P1 (artigo aberto). Pausa P3 ao abrir artigo; retoma após P1 terminar. Call A rápido (tags, sentimento, clickbait, idioma); Call B rico (cinco Ws, entidades, viés político, qualidade da apuração). Schema versioning: `analysis_schema_version` — re-analisar artigos quando versão do prompt mudar. TTL: zerar `ai_five_ws` e `ai_entities` de artigos > 6 meses, manter tags/sentimento.
+- [ ] **Atualização em tempo real dos cards** — `article_list.py` recebe sinais do AnalysisWorker e atualiza cards individualmente: borda colorida por sentimento (verde/cinza/laranja), ícone de alerta para clickbait alto, chips de tags. Artigos na fila têm visual neutro.
+- [ ] **reader_pane.py** — exibe resultados da análise completa à medida que chegam (campos chegam progressivamente: rápidos primeiro, ricos depois).
+- [ ] **Testes: logos_client.py** — chamada com priority, fallback offline; AnalysisWorker — pausa/retoma, ordem newest-first, heartbeat reset.
 
-- [ ] **Heartbeat timeout para análises travadas** — coluna `analysis_started_at DATETIME` na tabela de artigos. No startup: resetar para `pending` todos os artigos com `status='in_progress'` e `analysis_started_at < now - 5min`. Evita artigos eternamente presos após crash ou kill.
+#### Fase 5 — Arquivamento e integração com ecossistema
+- [ ] **archiver.py** — gera `.md` em `sync_root/kosmos/Web/` com frontmatter completo (`archived_by: kosmos`, título, fonte, URL, data, autor, idioma, tags, tipo), texto limpo, seção `## Análise do KOSMOS` (cinco Ws, entidades, sentimento, viés — marcada como análise computacional no frontmatter com `kosmos_analysis: true` para Mnemosyne tratar com peso distinto), referência ABNT ao final (formato artigo científico se tiver DOI; documento eletrônico nos demais casos). Dual-language: se traduzido, arquivo contém ambas as versões em seções separadas com `has_translation: true` e idiomas no frontmatter.
+- [ ] **interests.py** — atualiza `shared_topic_profile` com temas extraídos da análise + tags definidas manualmente pela usuária. Tags manuais configuráveis em Settings.
+- [ ] **Testes: archiver.py** — frontmatter correto, seção de análise, ABNT, dual-language; interests.py — atualiza perfil compartilhado.
 
-- [ ] **Índice parcial SQLite para fila de análise** — `CREATE INDEX idx_pending_analysis ON articles(feed_id, published_at DESC) WHERE analysis_status IN ('pending', 'failed')`. Para 10k artigos com 95% analisados, o índice cobre ~500 linhas — query da fila de background passa de O(log 10000) para O(log 500).
+#### Fase 6 — Tradução
+- [ ] **translator.py** — argostranslate (offline) como padrão; LOGOS como opção quando disponível e configurado. Idioma alvo definido em Settings.
+- [ ] **TranslationWorker (QThread P3)** — traduz títulos/resumos de cards automaticamente em background (newest-first, em paralelo com análise).
+- [ ] **Tradução de artigo sob demanda (P2)** — botão "Traduzir" no reader_pane. Original sempre disponível com alternância. Dual-language no archive se traduzido.
+- [ ] **Testes: translator.py** — tradução de título, fallback entre backends.
 
-- [ ] **TTL de campos pesados para artigos > 6 meses** — job periódico: `UPDATE articles SET ai_five_ws = NULL, ai_entities = NULL WHERE published_at < date('now', '-6 months')`. Manter `ai_tags` e `ai_sentiment` (úteis para filtragem histórica). Seguido de `VACUUM + ANALYZE`. Mantém DB em tamanho gerenciável com acumulação de artigos.
+#### Fase 7 — Ferramentas de investigação (aba Análise)
+- [ ] **analysis_tab.py** — aba dedicada com sub-navegação para todas as ferramentas de análise/investigação: rastreador de entidades, pastas de investigação, mapa de cobertura, comparação de enquadramento, dashboard de stats.
+- [ ] **entity_view.py — rastreador de entidades** — definir entidade (pessoa/organização/lugar/tema); linha do tempo automática de cobertura; sentimento acumulado ao longo do tempo; quais feeds cobriram mais.
+- [ ] **investigation_view.py — pastas de investigação** — criar pastas, arrastar artigos; linha do tempo automática dos artigos dentro; notas próprias da pasta; exportação como dossiê `.md` estruturado.
+- [ ] **coverage_map.py — mapa de cobertura** — para entidade ou tema: tabela feed×dia com indicadores de cobertura. Silêncio editorial visualmente evidente.
+- [ ] **Comparação de enquadramento** — mesmo evento/história em fontes de espectros políticos diferentes: quais entidades mencionaram, sentimento, linguagem. Visão lado a lado.
+- [ ] **Alertas de palavras-chave e entidades** — configurar alertas; cards destacados visualmente quando artigo novo menciona entidade rastreada ou keyword. Sem push — destaque aparece na próxima abertura da lista.
+- [ ] **ServerTarget::Kosmos no HUB (Rust)** — servidor llama-server próprio porta 8084 para `llm_analysis`. CPU fallback automático quando VRAM insuficiente (AKASHA 8081 + Mnemosyne 8083 já carregados).
+- [ ] **Testes: entidades, investigações, cobertura** — criação de entidade e linha do tempo; pasta com artigos e exportação; mapa de cobertura com fonte ausente.
 
-- [ ] **`analysis_schema_version` para invalidação de cache de análise** — coluna `analysis_schema_version INTEGER DEFAULT 0` na tabela de artigos. Constante `ANALYSIS_VERSION` no código. Incrementar ao mudar prompts ou schema — no startup, enfileirar re-análise de artigos com `analysis_schema_version < ANALYSIS_VERSION`. Invalida cache sistematicamente sem processo manual.
-
-- [ ] **Politeness: throttle de 2s por domínio no scraping** — implementar junto ao throttle global de `ecosystem_scraper.py` (§Pendências priorizadas — item ecosystem_scraper throttle). Se `ArticleScraper` usa `ecosystem_scraper` diretamente, não precisa de código extra; verificar na nova stack.
-
-#### KOSMOS — Integração com LOGOS (quando reescrito) | 2026-05-31
-> Contexto: o KOSMOS atual não chama o LOGOS. Quando a nova stack for implementada, as decisões abaixo definem como a integração deve funcionar.
-
-- [ ] **ServerTarget::Kosmos — servidor llama-server próprio (porta 8084)** — o KOSMOS usa `llm_analysis` (ex: gemma2:2b), modelo diferente do AKASHA (`llm_query`) e da Mnemosyne (`llm_rag`). Compartilhar servidor com o AKASHA causaria model thrashing. Implementar `ServerTarget::Kosmos` análogo ao `ServerTarget::Mnemosyne` já existente: nova constante `KOSMOS_SERVER_PORT: u16 = 8084`, campo `kosmos_proc` em `Inner`, idle/crash watchdogs independentes, `route_request("kosmos") → ServerTarget::Kosmos`. **CPU fallback automático:** quando AKASHA (8081) + Mnemosyne (8083) já estão carregados na VRAM (~6.7 GB de 8 GB), o servidor KOSMOS é iniciado em modo CPU (`--n-gpu-layers 0`). O VRAM pre-check de `ensure_server_loaded` detecta VRAM insuficiente e dispara o fallback CPU já implementado. Em hardware de trabalho (Windows, sem GPU), KOSMOS roda em CPU assim como os outros.
-
-- [ ] **Prioridades corretas no KOSMOS** — o KOSMOS deve enviar: `X-Priority: 1` quando a análise é disparada pelo usuário abrindo um artigo (usuária esperando a resposta na tela); `X-Priority: 2` para sync/análise de feed (não urgente); `X-Priority: 3` para análise background de artigos antigos. Esses valores interagem com os perfis já implementados: no perfil `estudo`, `("kosmos", 1) => 2` — KOSMOS P1 vira P2 porque Mnemosyne RAG tem prioridade. No perfil `analise`, `("kosmos", 3) => 2` — background KOSMOS promovido. P3 nunca é bloqueado, apenas atrasado (delay loop já implementado no Passo 0B).
-
-- [ ] **Headers X-App e X-Priority em todas as chamadas** — padrão estabelecido no Passo 12 para o AKASHA: `headers={"X-App": "kosmos", "X-Priority": "<1|2|3>"}`. Criar helper `_logos_llm_post()` análogo ao do AKASHA para centralizar headers + retry Retry-After.
-
-#### KOSMOS [fixes] | 2026-05-21
-- [x] **reader_view.py — remover guard `ai_enabled` em `_start_analyze()`** — linha 1223 checava `self._config.get("ai_enabled", False)`, chave nunca setada → análise inline no reader nunca rodava. Removida; `get_gen_model()` logo abaixo já serve como guard suficiente (se nenhum modelo configurado no HUB, retorna string vazia e análise é pulada).
-- [x] **main_window.py — corrigir `_on_retry_unanalyzed()`** — linha 481 checava `self._config.get("ai_enabled", False)`, mesma chave morta → retry de artigos não analisados nunca enfileirava nada. Substituído por `self._bg_analyzer._ai_enabled()` (usa `get_gen_model()` internamente, consistente com o BackgroundAnalyzer).
-- [x] **feed_list_view.py + unified_feed_view.py — defaults de display flags corrigidos para True** — `ai_relevance_badge`, `ai_sentiment_border` e `ai_clickbait_badge` usavam `False` como default quando a chave não existia no config. BackgroundAnalyzer analisava artigos e emitia `article_analyzed`, mas `update_card_analysis()` passava `None` para tudo (nada renderizava). Defaults alterados para `True` — usuária que nunca tocou em configurações agora vê os badges por padrão; quem desabilitou explicitamente via settings mantém o comportamento desabilitado.
+#### Fase 8 — Ferramentas de estudo e stats
+- [ ] **Anotações e highlights** — selecionar trechos no reader, marcar como: citação relevante / questionamento / dado verificável / contradição com outra fonte. Nota associada por highlight. Todos os highlights de um artigo acessíveis depois.
+- [ ] **Exportação de highlights** — todos os highlights de uma investigação ou feed, organizados por tema/tipo, exportados como `.md`. Útil para preparar textos ou apresentações.
+- [ ] **stats_view.py — dashboard** — artigos lidos por dia/semana, feeds mais consumidos, distribuição de sentimento ao longo do tempo, viés político médio do que está sendo consumido (indicador de bolha editorial), cobertura por tema/entidade rastreada.
+- [ ] **Testes: highlights** — criar/ler/exportar; stats — cálculos de leitura, distribuição de sentimento.
 
 ### Pesquisa: Emoções em Agentes IA — Interpretabilidade, Appraisal e Modulação Comportamental | 2026-05-20
 > Contexto: três sessões de pesquisa de 2026-05-20 cobrindo fundamentos teóricos e empíricos para implementação de estados emocionais funcionais em AKASHA e Mnemosyne: (1) Interpretabilidade Mecanicista de Emoções, Validade de VADER, MemoryBank e LLM como Scorer; (2) Geração de Estados Emocionais Próprios — Appraisal Theory (OCC, CPM de Scherer, EMA), arquiteturas (WASABI, ALMA, EILS), mapeamento para contexto de indexação; (3) Modulação Comportamental por Emoção e feedback confirmed/dismissed como Evento Afetivo. Resultado: fundamento para revisar os itens pendentes de `### AKASHA/Mnemosyne — revisão do modelo de saliência | 2026-05-19`.

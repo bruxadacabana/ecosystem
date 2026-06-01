@@ -194,7 +194,7 @@ O LOGOS gerencia prioridades de execução de IA:
 - **AETHER não chama o LOGOS** — é apenas editor de texto, sem integração com LLM.
 
 **KOSMOS — estado atual e futuro:**
-O KOSMOS está sendo refeito e ainda não chama o LOGOS. Quando chamar, usará `llm_analysis` (modelo separado, ex: gemma2:2b) e terá seu próprio servidor llama-server (`ServerTarget::Kosmos`, porta 8084). Em hardware com VRAM ocupada por AKASHA + Mnemosyne, o servidor KOSMOS roda em CPU (via CPU fallback já implementado no LOGOS).
+O KOSMOS v3 foi replanejado do zero em 2026-06-01 como ferramenta para jornalistas, estudantes e ativistas. Stack: PySide6, SQLite sincronizado via Syncthing, LOGOS para análise AI. Análise em 2 calls: Call A rápido (tags, sentimento, clickbait) em P3 background; Call B rico (cinco Ws, entidades, viés político) em P1 ao abrir artigo. Cards atualizam em tempo real conforme análise chega. Quando chamar o LOGOS, usará `llm_analysis` (ex: gemma2:2b) com `ServerTarget::Kosmos` na porta 8084. CPU fallback automático quando VRAM ocupada por AKASHA (8081) + Mnemosyne (8083). P3 nunca é bloqueado pelo LOGOS — apenas atrasado. Implementação por fases: base silenciosa → leitor funcional → scraping → análise AI → archivamento → tradução → ferramentas de investigação → stats e highlights.
 
 Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é** um app Android — a Fase 3 (Android APK) está suspensa para replanejamento.
 
