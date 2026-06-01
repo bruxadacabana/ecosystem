@@ -2386,7 +2386,25 @@ O endpoint `/chat/message` (POST, SSE stream) segue este pipeline:
 6. _reflect_on_chat() fire-and-forget (P3) — salva na personal_memory
 ```
 
-**Protocolo SSE:** `data: {"type": "fragment"|"thinking"|"sources", ...}` → `data: [DONE]`
+**Modo Deep Research** (Fase 5): ativado pelo botão "🔍" na UI (`_deepForced=true`) OU automaticamente quando a heurística detecta pergunta complexa (≥10 palavras ou gatilhos como "por que", "como funciona", "compare"). Pipeline adicional:
+
+```
+deep=True?
+├── _expand_queries_deep() → 3-5 reformulações via LOGOS P1
+├── asyncio.gather(search_local(q) for q in [original] + reformulações)
+├── _merge_dedup_results() → único pool por URL
+├── _build_deep_corpus(top N)
+│     └── _get_doc_full_content() para cada URL:
+│           file:// → filesystem + FTS5 fallback (8000 chars)
+│           http(s) → crawl_pages.content_md → fetch_and_extract()
+├── _build_deep_prompt() → _DEEP_SYNTHESIS_VOICE + framing afetivo + corpus
+├── _stream_chat(max_tokens=800, timeout=120s)
+└── sources event: {mode: "deep", sources: [...]}
+```
+
+N = `deep_research_max_docs` (default=8, configurável em Settings → seção IA).
+
+**Protocolo SSE:** `data: {"type": "fragment"|"thinking"|"loading"|"sources", ...}` → `data: [DONE]`
 
 **Front-end (`templates/chat.html`):** `renderSourcesInMessage(sourcesEl, sources)` renderiza as fontes como `<details open>` colapsável abaixo de cada mensagem — com link clicável e excerpt em `<small>`. `escHtml()` sanitiza URLs.
 

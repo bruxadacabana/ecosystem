@@ -32,8 +32,16 @@
         rows="2"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(event);}"
       ></textarea>
+      <!-- DeepResearch 1: botão de toggle para Pesquisa Profunda -->
+      <button type="button" id="deep-btn" class="btn btn-ghost chat-deep-btn"
+              onclick="toggleDeep()" title="Pesquisa Profunda — busca mais ampla, síntese integrativa">
+        🔍
+      </button>
       <button type="submit" id="chat-send-btn" class="btn btn-primary chat-send-btn">&#x27A4;</button>
     </form>
+    <div id="deep-indicator" class="chat-deep-indicator" style="display:none">
+      🔍 Pesquisa Profunda ativa
+    </div>
   </div>
 
 </div>
@@ -172,6 +180,22 @@ function showSources(sources) {
   if (box) box.innerHTML = '';
 }
 
+/* ── DeepResearch 1: toggle Pesquisa Profunda ─────────────────────── */
+var _deepForced = false;
+
+function toggleDeep() {
+  _deepForced = !_deepForced;
+  const btn = document.getElementById('deep-btn');
+  const ind = document.getElementById('deep-indicator');
+  if (_deepForced) {
+    btn.classList.add('active');
+    if (ind) ind.style.display = '';
+  } else {
+    btn.classList.remove('active');
+    if (ind) ind.style.display = 'none';
+  }
+}
+
 async function sendMessage(e) {
   e.preventDefault();
   const input   = document.getElementById('chat-input');
@@ -200,7 +224,7 @@ async function sendMessage(e) {
     const resp = await fetch('/chat/message', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({message}),
+      body: JSON.stringify({message, deep_mode: _deepForced}),
     });
 
     const reader  = resp.body.getReader();
@@ -219,7 +243,15 @@ async function sendMessage(e) {
         if (raw === '[DONE]') break;
         try {
           const ev = JSON.parse(raw);
-          if (ev.type === 'fragment') {
+          if (ev.type === 'loading') {
+            // DeepResearch 1: indicador durante setup (expansão + fetch)
+            bubble.innerHTML = '<span class="chat-loading-deep">' + escHtml(ev.text || '') + '</span>';
+            canvas.scrollTop = canvas.scrollHeight;
+          } else if (ev.type === 'fragment') {
+            if (bubble.querySelector('.chat-loading-deep')) {
+              // Limpa indicador de loading quando o stream começa
+              bubble.innerHTML = '';
+            }
             fullText += ev.text;
             bubble.innerHTML = renderText(fullText);
             canvas.scrollTop = canvas.scrollHeight;
@@ -230,6 +262,13 @@ async function sendMessage(e) {
           } else if (ev.type === 'sources') {
             renderSourcesInMessage(sourcesEl, ev.sources || []);
             showSources([]);  // limpa área legada
+            // DeepResearch 4: label visual de modo deep
+            if (ev.mode === 'deep') {
+              const modeLabel = document.createElement('div');
+              modeLabel.className = 'chat-deep-mode-label';
+              modeLabel.textContent = '🔍 Pesquisa Profunda';
+              wrapper.insertBefore(modeLabel, bubble);
+            }
           }
         } catch {}
       }

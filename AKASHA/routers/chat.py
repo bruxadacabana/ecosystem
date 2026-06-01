@@ -50,10 +50,36 @@ def _get_headers() -> "dict[str, str]":
 _EMBED_NAME_PATTERNS = ("embed", "minilm", "nomic", "bge-", "e5-", "all-mini")
 
 _CHAT_TIMEOUT_S   = 60.0
+_DEEP_TIMEOUT_S   = 120.0   # Deep Research é mais lento (expansão + fetch + geração)
 _REFLECT_TIMEOUT  = 20.0
 _REFLECT_COOLDOWN = 15.0    # 15 s entre reflexões de chat (evita spam em digitação rápida)
 _REFLECT_MIN_Q    = 20      # pergunta mínima para disparar reflexão
 _REFLECT_MIN_A    = 50      # resposta mínima para disparar reflexão
+
+# ── Deep Research (Fase 5) ──────────────────────────────────────────────────
+
+# Gatilhos heurísticos: pergunta > N palavras OU contém estas frases
+_DEEP_MIN_WORDS = 10
+_DEEP_TRIGGERS  = (
+    "por que", "porque ", "como funciona", "compare", "análise de",
+    "diferença entre", "vantagens e desvantagens", "explique em detalhe",
+    "descreva", "quais são os", "what are the", "how does", "why does",
+    "analyze", "compare and contrast", "advantages and disadvantages",
+    "como é possível", "qual a relação entre", "o que causa",
+)
+
+# Voz para síntese integrativa (modo deep — diferente do _RESEARCH_VOICE normal)
+_DEEP_SYNTHESIS_VOICE = """\
+Você tem acesso ao corpus completo de documentos. Sua tarefa é uma síntese integrativa.
+
+• PRIMÁRIO: sintetize o que o corpus revela sobre a pergunta, com citações [N].
+• ESPERADO: identificar conexões que fontes isoladas não revelariam; \
+mapear contradições; apontar lacunas — o que o corpus não cobre; \
+propor o que vale investigar a seguir.
+• NÃO FAÇA: resumir fonte por fonte em sequência; repetir sem integrar; \
+dar aulas sobre conceitos que a usuária não pediu.
+Formato: parágrafos temáticos com citações [N] inline — não listas secas.\
+"""
 
 # Cache do modelo para não requerir Ollama a cada mensagem
 _cached_model: str = ""
@@ -68,6 +94,7 @@ _last_chat_reflect: float = 0.0
 
 class ChatMessage(BaseModel):
     message: str
+    deep_mode: bool = False   # True = forçar Deep Research; False = heurística decide
 
 
 # ---------------------------------------------------------------------------
@@ -169,16 +196,21 @@ async def _build_prompt(
     return messages
 
 
-async def _stream_chat(messages: list[dict], model: str) -> AsyncIterator[str]:
+async def _stream_chat(
+    messages: list[dict],
+    model: str,
+    max_tokens: int = 600,
+    timeout: float = _CHAT_TIMEOUT_S,
+) -> AsyncIterator[str]:
     """Gera fragmentos de texto via llama-server /v1/chat/completions stream (SSE)."""
     try:
-        async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT_S) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST",
                 f"{_get_base()}/v1/chat/completions",
                 headers=_get_headers(),
                 json={"model": model, "messages": messages, "stream": True,
-                      "max_tokens": 600, "temperature": 0.4, "frequency_penalty": 0.1},
+                      "max_tokens": max_tokens, "temperature": 0.4, "frequency_penalty": 0.1},
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
@@ -199,6 +231,230 @@ async def _stream_chat(messages: list[dict], model: str) -> AsyncIterator[str]:
     except Exception as exc:
         log.warning("chat: stream inferência falhou: %s", exc)
         yield f"[Erro ao conectar com o servidor de inferência: {exc}]"
+
+
+# ---------------------------------------------------------------------------
+# Deep Research — helpers (DeepResearch 1-4)
+# ---------------------------------------------------------------------------
+
+def _detect_deep_mode(question: str) -> bool:
+    """Heurística: retorna True se a pergunta é complexa o suficiente para Deep Research.
+
+    Ativa quando: pergunta tem >= _DEEP_MIN_WORDS OU contém gatilhos explícitos.
+    """
+    q = question.lower()
+    if any(trigger in q for trigger in _DEEP_TRIGGERS):
+        return True
+    return len(question.split()) >= _DEEP_MIN_WORDS
+
+
+def _get_deep_max_docs() -> int:
+    """Lê deep_research_max_docs do ecosystem.json/akasha. Default=8."""
+    try:
+        from ecosystem_client import get_akasha_config as _gc  # type: ignore
+        val = (_gc() or {}).get("deep_research_max_docs", 8)
+        return max(1, min(20, int(val)))
+    except Exception:
+        return 8
+
+
+async def _expand_queries_deep(question: str, model: str) -> list[str]:
+    """Gera 3-5 reformulações da pergunta via LLM para ampliar o corpus do Deep Research.
+
+    Retorna lista de strings; lista vazia em qualquer falha (LOGOS offline, timeout).
+    """
+    prompt = (
+        f"Reformule esta pergunta de pesquisa de 3 a 5 formas diferentes, "
+        f"cada uma cobrindo um ângulo distinto. Uma reformulação por linha, "
+        f"sem numeração, sem explicação.\n\nPergunta original: {question}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=_DEEP_EXPAND_TIMEOUT) as client:
+            r = await client.post(
+                f"{_get_base()}/v1/chat/completions",
+                headers={"X-App": "akasha", "X-Priority": "1",
+                         "Content-Type": "application/json"},
+                json={
+                    "model":       model,
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "stream":      False,
+                    "max_tokens":  120,
+                    "temperature": 0.4,
+                },
+            )
+            r.raise_for_status()
+            raw = r.json()["choices"][0]["message"]["content"].strip()
+    except Exception as exc:
+        log.debug("deep_expand: falhou (%s) — usando só query original", exc)
+        return []
+
+    reformulations = [line.strip(" -•") for line in raw.splitlines() if line.strip()]
+    # Filtra duplicatas e a query original
+    seen = {question.lower()}
+    result: list[str] = []
+    for r_text in reformulations[:5]:
+        if r_text and r_text.lower() not in seen:
+            seen.add(r_text.lower())
+            result.append(r_text)
+    log.debug("deep_expand: %d reformulação(ões) geradas: %s", len(result), result)
+    return result
+
+
+def _merge_dedup_results(result_lists: list) -> list:
+    """Funde e deduplica múltiplas listas de SearchResult por URL, mantendo ranking."""
+    from urllib.parse import urlparse as _up
+    seen: set[str] = set()
+    merged: list = []
+    for lst in result_lists:
+        for r in lst:
+            key = r.url.lower().rstrip("/")
+            if key and key not in seen:
+                seen.add(key)
+                merged.append(r)
+    return merged
+
+
+async def _get_doc_full_content(url: str, fallback: str = "") -> str:
+    """Retorna conteúdo completo de um documento.
+
+    file:// → lê corpo do local_fts ou arquivo direto.
+    http(s):// → crawl_pages.content_md primeiro; fetch externo como fallback.
+    Retorna fallback se tudo falhar.
+    """
+    import aiosqlite as _aio
+    from urllib.parse import unquote as _unquote, urlparse as _up
+
+    parsed = _up(url)
+
+    if parsed.scheme == "file":
+        path_raw = _unquote(parsed.path)
+        # Lê do sistema de arquivos (conteúdo completo)
+        try:
+            from pathlib import Path as _P
+            import sys as _sys
+            if _sys.platform == "win32" and path_raw.startswith("/"):
+                path_raw = path_raw[1:]
+            text = _P(path_raw).read_text(encoding="utf-8", errors="ignore")
+            # Remove frontmatter YAML se presente
+            if text.startswith("---"):
+                end = text.find("\n---", 3)
+                if end != -1:
+                    text = text[end + 4:].strip()
+            log.debug("deep_corpus: arquivo local lido (%d chars): %s", len(text), path_raw[:60])
+            return text[:8000]
+        except Exception:
+            pass
+        # Fallback: body do FTS5
+        try:
+            from config import DB_PATH as _dbp
+            async with _aio.connect(_dbp) as db:
+                row = await (await db.execute(
+                    "SELECT body FROM local_fts WHERE path = ?", (path_raw,)
+                )).fetchone()
+            if row and row[0]:
+                return row[0]
+        except Exception:
+            pass
+        return fallback
+
+    if parsed.scheme in ("http", "https"):
+        # 1. Tenta crawl_pages
+        try:
+            from config import DB_PATH as _dbp
+            async with _aio.connect(_dbp) as db:
+                row = await (await db.execute(
+                    "SELECT content_md FROM crawl_pages WHERE url = ?", (url,)
+                )).fetchone()
+            if row and row[0]:
+                log.debug("deep_corpus: crawl_pages encontrado: %s", url[:80])
+                return row[0][:8000]
+        except Exception:
+            pass
+        # 2. Fetch externo
+        try:
+            from services.archiver import fetch_and_extract as _fe
+            page = await asyncio.wait_for(_fe(url), timeout=_DEEP_FETCH_TIMEOUT)
+            log.debug("deep_corpus: fetched externo (%d palavras): %s", page.word_count, url[:80])
+            return page.content_md[:8000]
+        except Exception as exc:
+            log.debug("deep_corpus: fetch falhou para %s: %s", url[:80], exc)
+
+    return fallback
+
+
+async def _build_deep_corpus(
+    results: list,
+    max_docs: int,
+) -> list[dict]:
+    """Constrói corpus com conteúdo completo dos top N resultados.
+
+    Retorna lista de dicts: {num, title, url, content, is_full, word_count}.
+    """
+    items: list[dict] = []
+    import asyncio as _asyncio
+
+    async def _fetch_one(r: object, idx: int) -> dict:
+        snippet = getattr(r, "snippet", "") or ""
+        full = await _get_doc_full_content(r.url, fallback=snippet)  # type: ignore[union-attr]
+        is_full = len(full) > len(snippet) + 50
+        return {
+            "num":        idx + 1,
+            "title":      getattr(r, "title", r.url),  # type: ignore[union-attr]
+            "url":        r.url,  # type: ignore[union-attr]
+            "content":    full or snippet,
+            "is_full":    is_full,
+            "word_count": len((full or snippet).split()),
+        }
+
+    tasks = [_fetch_one(r, i) for i, r in enumerate(results[:max_docs])]
+    items = list(await _asyncio.gather(*tasks))
+    total_words = sum(d["word_count"] for d in items)
+    full_count  = sum(1 for d in items if d["is_full"])
+    log.info(
+        "deep_corpus: %d documento(s) — %d com conteúdo completo, %d palavras no corpus",
+        len(items), full_count, total_words,
+    )
+    return items
+
+
+async def _build_deep_prompt(
+    question: str,
+    corpus_items: list[dict],
+    persona_prefix: str,
+) -> list[dict]:
+    """Monta messages list para Deep Research com corpus completo."""
+    parts = [_config.PERSONALITY_PROMPT, _DEEP_SYNTHESIS_VOICE]
+
+    # Modulação afetiva — mesma que o modo normal
+    try:
+        from services.affective_state import get_current_state, get_emotional_framing
+        state   = await get_current_state()
+        framing = get_emotional_framing(state)
+        if framing:
+            parts.append(framing)
+            log.debug("deep_prompt: framing afetivo aplicado (valence=%.2f)", state.get("valence", 0.0))
+    except Exception as exc:
+        log.debug("deep_prompt: framing afetivo indisponível: %s", exc)
+
+    if persona_prefix:
+        parts.append(persona_prefix.rstrip())
+
+    if corpus_items:
+        corpus_text = "\n\n".join(
+            f"[{item['num']}] {item['title']}\nURL: {item['url']}\n\n{item['content'][:3000]}"
+            for item in corpus_items
+        )
+        parts.append(f"Corpus para análise ({len(corpus_items)} documento(s)):\n\n{corpus_text}")
+    else:
+        parts.append("Nenhuma fonte relevante encontrada no índice.")
+
+    messages: list[dict] = [{"role": "system", "content": "\n\n".join(parts)}]
+    messages.append({"role": "user", "content": question})
+    return messages
+
+
+_DEEP_FETCH_TIMEOUT: float = 15.0
+_DEEP_EXPAND_TIMEOUT: float = 15.0
 
 
 def _trim_partial(text: str, tag: str) -> int:
@@ -367,11 +623,13 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
     Protocolo SSE:
       data: {"type": "fragment", "text": "..."}
       data: {"type": "thinking", "text": "..."}
-      data: {"type": "sources",  "sources": [...]}
+      data: {"type": "loading",  "text": "..."}    — Deep Research: setup em andamento
+      data: {"type": "sources",  "sources": [...], "mode": "normal"|"deep"}
       data: [DONE]
     """
     from services.local_search import search_local, get_inference_status
     from services.persona import get_persona
+    import asyncio as _asyncio
 
     if not get_inference_status():
         async def _offline() -> AsyncIterator[bytes]:
@@ -386,6 +644,76 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
             yield b"data: [DONE]\n\n"
         return StreamingResponse(_no_model(), media_type="text/event-stream")
 
+    # Determina modo: forçado pelo botão OU heurística automática
+    effective_deep = body.deep_mode or _detect_deep_mode(body.message)
+    persona_prefix = get_persona().as_prompt_prefix()
+
+    if effective_deep:
+        # ── Deep Research pipeline ──────────────────────────────────────────
+        log.info("chat [DEEP]: iniciando Deep Research para '%s'", body.message[:80])
+
+        async def _deep_stream() -> AsyncIterator[bytes]:
+            # Fase 1: loading indicator enquanto setup roda
+            loading = json.dumps({"type": "loading", "text": "🔍 pesquisando em profundidade…"}, ensure_ascii=False)
+            yield f"data: {loading}\n\n".encode()
+
+            # Fase 2 (DeepResearch 2): query expansion em paralelo com busca principal
+            reformulations = await _expand_queries_deep(body.message, model)
+            all_queries = [body.message] + reformulations
+
+            raw_lists = await _asyncio.gather(*[
+                search_local(q, max_results=_MAX_SNIPPETS, expand=False, include_crawl=True)
+                for q in all_queries
+            ])
+            results = _merge_dedup_results(list(raw_lists))
+            log.info(
+                "chat [DEEP]: %d reformulação(ões), %d resultado(s) únicos (queries: %s)",
+                len(reformulations), len(results),
+                [q[:40] for q in all_queries],
+            )
+
+            # Fase 3 (DeepResearch 3): conteúdo completo dos top N
+            deep_n = _get_deep_max_docs()
+            corpus = await _build_deep_corpus(results, deep_n)
+            sources = [
+                {
+                    "url":      item["url"],
+                    "title":    item["title"],
+                    "excerpt":  item["content"][:200],
+                    "is_full":  item["is_full"],
+                }
+                for item in corpus
+            ]
+
+            # Fase 4 (DeepResearch 4): síntese com corpus completo
+            msgs = await _build_deep_prompt(body.message, corpus, persona_prefix)
+            answer_buf: list[str] = []
+            async for typ, text in _filter_thinking(
+                _stream_chat(msgs, model, max_tokens=800, timeout=_DEEP_TIMEOUT_S)
+            ):
+                payload = json.dumps({"type": typ, "text": text}, ensure_ascii=False)
+                yield f"data: {payload}\n\n".encode()
+                if typ == "fragment":
+                    answer_buf.append(text)
+
+            src_payload = json.dumps(
+                {"type": "sources", "sources": sources, "mode": "deep"},
+                ensure_ascii=False,
+            )
+            yield f"data: {src_payload}\n\n".encode()
+            yield b"data: [DONE]\n\n"
+
+            # Fire-and-forget: reflexão (P3)
+            try:
+                _asyncio.get_running_loop().create_task(
+                    _reflect_on_chat(body.message, "".join(answer_buf))
+                )
+            except RuntimeError:
+                pass
+
+        return StreamingResponse(_deep_stream(), media_type="text/event-stream")
+
+    # ── Modo normal ─────────────────────────────────────────────────────────
     # Pipeline RAG — Chat 1: include_crawl=True inclui Biblioteca (crawl_fts)
     results = await search_local(
         body.message,
@@ -394,7 +722,7 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
         include_crawl=True,
     )
     log.info(
-        "chat: RAG retornou %d resultado(s) para '%s'",
+        "chat [normal]: RAG retornou %d resultado(s) para '%s'",
         len(results), body.message[:80],
     )
 
@@ -409,7 +737,6 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
         for s in snippets
     ]
 
-    persona_prefix = get_persona().as_prompt_prefix()
     messages = await _build_prompt(body.message, snippets, persona_prefix)
 
     async def _event_stream() -> AsyncIterator[bytes]:
@@ -420,7 +747,10 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
             if typ == "fragment":
                 answer_buf.append(text)
 
-        src_payload = json.dumps({"type": "sources", "sources": sources}, ensure_ascii=False)
+        src_payload = json.dumps(
+            {"type": "sources", "sources": sources, "mode": "normal"},
+            ensure_ascii=False,
+        )
         yield f"data: {src_payload}\n\n".encode()
         yield b"data: [DONE]\n\n"
 

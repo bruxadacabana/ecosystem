@@ -158,6 +158,12 @@ A aba Conversa é o ponto de acesso ao RAG da Akasha: ela busca no índice pesso
 
 **Fontes:** aparecem como lista colapsável abaixo de cada resposta, com link clicável e trecho do conteúdo — mesmo que a resposta não contenha citações `[N]`.
 
+**Pesquisa Profunda (Deep Research):** botão "🔍" na interface de chat. Quando ativo (ou quando a heurística detecta uma pergunta complexa), o AKASHA:
+1. Gera 3-5 reformulações da pergunta e busca todas em paralelo
+2. Busca o conteúdo completo dos top 8 documentos (configurável em Settings)
+3. Usa um prompt de síntese integrativa: encontrar conexões, contradições, lacunas
+4. Resposta mais longa com `max_tokens=800` e timeout de 120s
+
 ### Princípio
 
 O LLM no AKASHA age **apenas** na camada de análise interna (reflexão, insight, entendimento de query). Nunca sintetiza ou interpreta resultados de busca. O AKASHA devolve links, trechos e documentos — a usuária pensa, o sistema amplifica o alcance da busca.
