@@ -62,7 +62,7 @@ Por que essa separação? Porque misturar IA no caminho crítico de busca é um 
 | 📝 **OGMA** | Electron + EditorJS | Editor de notas em blocos com busca full-text local |
 | 🔍 **AKASHA** | FastAPI + Python + SQLite | Buscador e indexador pessoal; o Akasha (assistente) vive aqui também |
 | 🧠 **Mnemosyne** | PySide6 + Python + ChromaDB | Assistente RAG com notebooks temáticos — conversa com seus documentos |
-| 👁️ **KOSMOS** | PyQt6 + Python | Análise de imagens, OCR e visão computacional local |
+| 📰 **KOSMOS** | PySide6 + Python + SQLite | Leitor e analisador de feeds RSS/Atom para jornalistas, estudantes e ativistas — análise AI de artigos (viés, entidades, cinco Ws), ferramentas de investigação, rastreamento de entidades |
 | 🎙️ **Hermes** | Python + GUI | Transcrição e processamento de áudio local |
 
 **Relação com o Akasha (assistente):** O AKASHA é a casa do Akasha. O assistente reside em `AKASHA/services/` e usa os dados de busca como substrato para suas reflexões — mas nunca bloqueia a ferramenta de busca para isso.
@@ -92,7 +92,7 @@ Por que essa separação? Porque misturar IA no caminho crítico de busca é um 
     ┌─────────┐   ┌──────────┐  ┌──────────┐  ┌──────────┐
     │ AETHER  │   │  AKASHA  │  │Mnemosyne │  │  KOSMOS  │
     │ :5174   │   │  :7071   │  │(desktop) │  │(desktop) │
-    │(Tauri)  │   │(FastAPI) │  │(PySide6) │  │(PyQt6)   │
+    │(Tauri)  │   │(FastAPI) │  │(PySide6) │  │(PySide6) │
     └─────────┘   └──────────┘  └──────────┘  └──────────┘
                        │
               ┌────────┴────────┐
@@ -733,7 +733,7 @@ program files/
 ├── 📁 AKASHA/          → Buscador pessoal (FastAPI + Python)
 ├── 📁 Hermes/          → Transcrição de áudio (Python + PyQt6)
 ├── 📁 HUB/             → Dashboard central e LOGOS (Tauri 2 + React)
-├── 📁 KOSMOS/          → Análise de feeds e imagens (Python + PySide6)
+├── 📁 KOSMOS/          → Leitor e analisador de feeds RSS/Atom (Python + PySide6 + SQLite)
 ├── 📁 logos/           → Scripts de fine-tuning de LLMs (Python puro)
 ├── 📁 Mnemosyne/       → Assistente RAG com notebooks (Python + PySide6)
 ├── 📁 OGMA/            → Editor de notas (Electron + EditorJS)

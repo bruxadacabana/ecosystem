@@ -24,18 +24,7 @@ from unittest.mock import patch
 
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Fixture: QCoreApplication (headless, sem display)
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="session")
-def qapp():
-    from PySide6.QtCore import QCoreApplication
-    app = QCoreApplication.instance()
-    if app is None:
-        app = QCoreApplication(sys.argv[:1])
-    return app
+# qapp fixture vem do conftest.py (QApplication, session-scope)
 
 
 # ---------------------------------------------------------------------------

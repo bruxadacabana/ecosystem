@@ -319,6 +319,66 @@ QTabBar::tab:hover:!selected {
     background-color: #332B1E;
 }
 
+/* ── Cards de artigos (ArticleList) ──────────────────────────────────── */
+QFrame#article_card {
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid #231D14;
+}
+
+QLabel#card_title {
+    color: #E8D9BE;
+    font-size: 13px;
+}
+
+QLabel#card_meta {
+    color: #7A6E58;
+    font-size: 11px;
+}
+
+QLabel#placeholder {
+    color: #4A4035;
+    font-size: 13px;
+}
+
+/* ── Reader pane ──────────────────────────────────────────────────────── */
+QLabel#reader_title {
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 20px;
+    color: #E8D9BE;
+    line-height: 1.4;
+}
+
+QLabel#reader_meta {
+    color: #7A6E58;
+    font-size: 12px;
+    margin-top: 6px;
+    margin-bottom: 4px;
+}
+
+QLabel#reader_body {
+    color: #C4B49A;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+QFrame#reader_sep {
+    color: #3D3226;
+    background-color: #3D3226;
+    border: none;
+    max-height: 1px;
+}
+
+/* ── Sidebar header ───────────────────────────────────────────────────── */
+QLabel#sidebar_header {
+    background-color: #231D14;
+    color: #7A6E58;
+    font-family: "Special Elite", "Courier New", monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    border-bottom: 1px solid #3D3226;
+}
+
 /* ── Tooltip ──────────────────────────────────────────────────────────── */
 QToolTip {
     background-color: #2A2218;
