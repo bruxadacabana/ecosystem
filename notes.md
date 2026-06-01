@@ -20,11 +20,9 @@ Não usar no Windows — a AKASHA pode usar o SearXNG do PC principal via IP loc
 
 ## próximo: 
 
-### Pesquisa: Detecção de Evento em Feeds — Clustering Temporal-Semântico de Artigos | 2026-05-14
+### CODEX — Leitor centralizado do ecossistema | 2026-05-13
 
 ### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
-
-### CODEX — Leitor centralizado do ecossistema | 2026-05-13
 
 ### Auditoria pesquisas.md → itens não registrados no TODO | 2026-05-05
 
