@@ -1853,7 +1853,8 @@ PRAGMA mmap_size=67108864;    -- 64 MB de mmap para leituras sequenciais rápida
 |--------|-----------|
 | `local_fts` | Tabela FTS5 virtual — busca full-text em arquivos locais. Tokenizador `unicode61 remove_diacritics 2` |
 | `local_index_meta` | Metadados dos arquivos indexados: path, mtime, source, lang, deleted |
-| `local_vec_paths` | Paths cujos embeddings vetoriais foram gerados (complementa `local_fts`) |
+| `local_vec_paths` | Paths cujos embeddings vetoriais foram gerados via LOGOS; rowid → `vec_items` |
+| `vec_items` | Tabela virtual sqlite-vec; embedding FLOAT[dim] por rowid de `local_vec_paths` |
 | `archive_simhashes` | SimHash de conteúdo — detecta duplicatas quase-idênticas antes de indexar |
 | `archive_dois` | DOIs de artigos científicos indexados |
 | `doc_accesses` | Acesso por URL (frequência + timestamp) — alimenta scoring de relevância |

@@ -159,7 +159,7 @@ Buscador e amplificador de pesquisa. O LLM age **apenas** na camada de query —
 - Indexação de páginas web e documentos locais (SQLite FTS5 + embeddings)
 - Crawler de domínios com agendamento e atualização (freshness)
 - Biblioteca unificada: gerencia sites e documentos numa única seção
-- Busca híbrida: FTS5 (BM25) + busca semântica (embeddings via `/v1/embeddings`)
+- Busca híbrida: FTS5 (BM25) + busca vetorial via LOGOS (`embed_and_index` em `services/local_search.py` — gera embedding pelo LOGOS `/v1/embeddings` e insere em sqlite-vec)
 - Busca web via SearXNG self-hosted (agrega Google, Bing, Brave, DDG, Startpage) com fallback DDG; fetch paralelo de múltiplas páginas (padrão 4 × 25 resultados); script de instalação em `AKASHA/scripts/setup_searxng.sh`
 - Classificador de intenção afeta **apresentação** dos resultados, nunca a quantidade
 - Diversificação por domínio configurável (`max_per_domain`, padrão 5); filtragem de páginas vazias (`word_count < 50`)

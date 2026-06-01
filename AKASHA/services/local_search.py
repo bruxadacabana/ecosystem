@@ -427,6 +427,96 @@ def _embed_via_logos(
     ) from last_exc
 
 
+async def embed_and_index(path: str, content: str) -> bool:
+    """Gera embedding via LOGOS e insere em vec_items + local_vec_paths.
+
+    API pública para indexação vetorial de arquivos locais. Encapsula:
+      1. Chamada ao LOGOS /v1/embeddings (via _embed_via_logos em executor).
+      2. Serialização float32 via sqlite-vec.
+      3. Upsert em local_vec_paths (path → rowid) e vec_items (rowid → embedding).
+
+    Retorna True se o embedding foi gerado e salvo com sucesso.
+    Retorna False silenciosamente em qualquer falha — a indexação FTS5 continua
+    normalmente mesmo sem o embedding vetorial.
+
+    Casos de retorno False:
+      - LOGOS offline (ConnectError → _embed_via_logos retorna None)
+      - LOGOS retorna 501 (modelo não carregado) ou timeout após retries
+      - sqlite-vec não disponível ou vec_items não existe
+      - Dimensão do vetor incompatível com a tabela
+      - Qualquer erro de banco de dados
+    """
+    if not _SQLITE_VEC_AVAILABLE:
+        log.debug("embed_and_index: sqlite-vec indisponível — sem embedding para %r", path)
+        return False
+
+    # _embed_via_logos é síncrono (usa time.sleep em retries) → rodar em executor
+    loop = asyncio.get_running_loop()
+    try:
+        vecs = await loop.run_in_executor(
+            None,
+            lambda: _embed_via_logos([content[:2000]]),
+        )
+    except _EmbedError as exc:
+        log.debug("embed_and_index: LOGOS embed indisponível para %r: %s", path, exc)
+        return False
+    except Exception as exc:
+        log.debug("embed_and_index: erro inesperado ao chamar LOGOS para %r: %s", path, exc)
+        return False
+
+    if vecs is None:
+        log.debug("embed_and_index: LOGOS offline para %r — embedding adiado", path)
+        return False
+
+    vec = vecs[0]
+    log.debug(
+        "embed_and_index: embedding gerado para %r (%d dims)",
+        path,
+        len(vec),
+    )
+
+    try:
+        emb_bytes = _sqlite_vec.serialize_float32(vec)  # type: ignore[union-attr]
+    except Exception as exc:
+        log.debug("embed_and_index: erro ao serializar vetor para %r: %s", path, exc)
+        return False
+
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Carrega a extensão sqlite-vec via API aiosqlite (sem run_sync que não existe
+            # em aiosqlite 0.22.x). enable_load_extension + loadable_path() é portável.
+            await db.enable_load_extension(True)
+            await db.load_extension(_sqlite_vec.loadable_path())  # type: ignore[union-attr]
+            # Garante entrada em local_vec_paths e obtém rowid
+            row = await (await db.execute(
+                "SELECT id FROM local_vec_paths WHERE path = ?", (path,)
+            )).fetchone()
+            if row:
+                vec_id = row[0]
+            else:
+                cur = await db.execute(
+                    "INSERT OR IGNORE INTO local_vec_paths (path) VALUES (?)", (path,)
+                )
+                vec_id = cur.lastrowid
+            if not vec_id:
+                log.debug("embed_and_index: não foi possível obter vec_id para %r", path)
+                return False
+            await db.execute(
+                "INSERT OR REPLACE INTO vec_items(rowid, embedding) VALUES (?, ?)",
+                (vec_id, emb_bytes),
+            )
+            await db.commit()
+        log.debug(
+            "embed_and_index: salvo em vec_items[rowid=%s] para %r",
+            vec_id,
+            path,
+        )
+        return True
+    except Exception as exc:
+        log.debug("embed_and_index: erro ao salvar embedding para %r: %s", path, exc)
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Correção ortográfica (symspellpy)
 # ---------------------------------------------------------------------------
@@ -572,7 +662,9 @@ async def _reindex(path_str: str, title: str, body: str, source: str, mtime: str
 
     async with aiosqlite.connect(DB_PATH) as db:
         if emb is not None:
-            await db.run_sync(_load_vec_ext)
+            # Carrega extensão sqlite-vec via API aiosqlite (run_sync não existe em 0.22.x)
+            await db.enable_load_extension(True)
+            await db.load_extension(_sqlite_vec.loadable_path())  # type: ignore[union-attr]
         # Remove entrada anterior do FTS (via rowid para evitar scan completo)
         rows = await (await db.execute(
             "SELECT rowid FROM local_fts WHERE path = ?", (path_str,)
@@ -697,7 +789,9 @@ async def init_vec_index() -> None:
         return
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.run_sync(_load_vec_ext)
+            # Carrega extensão sqlite-vec via API aiosqlite (run_sync não existe em 0.22.x)
+            await db.enable_load_extension(True)
+            await db.load_extension(_sqlite_vec.loadable_path())  # type: ignore[union-attr]
             await db.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS vec_items USING vec0(embedding FLOAT[384])"
             )
