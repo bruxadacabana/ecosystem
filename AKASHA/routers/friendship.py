@@ -15,6 +15,8 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+import services.knowledge_worker as _kw
+
 log = logging.getLogger("akasha.friendship")
 
 router = APIRouter(prefix="/friendship", tags=["friendship"])
@@ -42,7 +44,6 @@ async def receive_url_feedback(body: FeedbackPayload) -> None:
         body.url[:100], body.is_positive,
     )
     try:
-        from services.knowledge_worker import on_url_feedback as _on_feedback
-        _on_feedback(body.url, body.is_positive)
+        _kw.on_url_feedback(body.url, body.is_positive)
     except Exception as exc:
         log.debug("friendship.feedback: on_url_feedback falhou: %s", exc)

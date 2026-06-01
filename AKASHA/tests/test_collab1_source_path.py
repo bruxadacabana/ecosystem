@@ -486,16 +486,12 @@ class TestBackfillSourcePath:
         fake_aiosqlite.connect = _um.MagicMock(return_value=ctx)
 
         async def _run() -> None:
-            import sys as _sys
-            _sys.modules.setdefault("aiosqlite", fake_aiosqlite)
-            with patch.object(kw, "schedule_page", side_effect=_fake_schedule), \
-                 patch("asyncio.sleep", new_callable=_um.AsyncMock):
-
-                async def _fake_get_pk(url: str):
-                    return None
-
-                with patch("database.get_page_knowledge", side_effect=_fake_get_pk):
-                    await kw.backfill_knowledge(tmp_path)
+            # patch.dict force-substitui aiosqlite mesmo que já esteja carregado no venv
+            with patch.dict("sys.modules", {"aiosqlite": fake_aiosqlite}), \
+                 patch.object(kw, "schedule_page", side_effect=_fake_schedule), \
+                 patch("asyncio.sleep", new_callable=_um.AsyncMock), \
+                 patch("database.get_page_knowledge", return_value=None):
+                await kw.backfill_knowledge(tmp_path)
 
         asyncio.run(_run())
 
