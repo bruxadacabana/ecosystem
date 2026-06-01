@@ -748,6 +748,17 @@ async def _index_directory(
         except Exception:
             continue
         await _reindex(str(path), title, body, source, mtime)
+        # Local 2: fire-and-forget embedding via LOGOS após FTS5.
+        # Nunca bloqueia a indexação — embed_and_index retorna False graciosamente se
+        # LOGOS estiver offline ou qualquer outro erro ocorrer.
+        try:
+            asyncio.get_running_loop().create_task(
+                embed_and_index(str(path), f"{title}\n{body}"),
+                name=f"embed:{path.name}",
+            )
+            log.debug("local_search: embed agendado para %r", str(path))
+        except RuntimeError:
+            pass
 
 
 async def index_local_files() -> None:

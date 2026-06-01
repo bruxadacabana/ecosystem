@@ -2119,6 +2119,40 @@ Esta seção descreve a jornada completa de uma query desde o momento em que a u
 
 ---
 
+### 7.0. Indexação incremental de arquivos locais
+
+**Arquivo:** `services/local_search.py`  
+**Função:** `index_local_files()` → `_index_directory()` → `_reindex()` + `embed_and_index()`
+
+Antes de qualquer busca local ser possível, os arquivos do ecossistema precisam estar indexados. `index_local_files()` é chamada no startup do servidor e indexa incrementalmente as seguintes fontes:
+
+| Fonte | Caminho | Tipo |
+|-------|---------|------|
+| KOSMOS | `config.kosmos_archive` | `**/*.md` |
+| AKASHA (arquivo) | `config.ARCHIVE_PATH` | `**/*.md` |
+| Mnemosyne watched | `config.mnemosyne_watched` | `**/*.md` |
+| Mnemosyne vault | `config.mnemosyne_vault` | `**/*.md` |
+| Hermes | `config.hermes_output` | `**/*.md` |
+
+**Indexação incremental:** para cada arquivo, compara o `mtime` atual com o valor armazenado em `local_index_meta`. Se forem iguais, o arquivo é pulado. Se mudaram (arquivo novo ou modificado), `_reindex()` atualiza a entrada FTS5 e `local_index_meta`.
+
+**Embedding automático (fire-and-forget):** após cada `_reindex()` bem-sucedido, `_index_directory()` dispara `embed_and_index(path, content)` como `asyncio.create_task()` — sem aguardar o resultado. Isso mantém o índice vetorial (`vec_items` + `local_vec_paths`) sincronizado com o FTS5 sem atrasar a indexação textual. Se o LOGOS estiver offline, `embed_and_index` retorna False silenciosamente; o arquivo já está no FTS5 e será reembedado em algum backfill futuro (Local 4).
+
+```
+startup
+  └── index_local_files()
+        └── _index_directory(fonte) [para cada fonte]
+              └── para cada arquivo novo ou modificado:
+                    ├── _reindex()            ← FTS5 atualizado (aguarda)
+                    └── create_task(           ← embedding LOGOS (fire-and-forget)
+                          embed_and_index(path, content)
+                        )
+```
+
+O embedding usa `f"{title}\n{body}"` como conteúdo (mesma composição que o caminho local via sentence-transformers), truncado a 2000 chars por `embed_and_index`.
+
+---
+
 ### 7.1. Mapa do pipeline
 
 ```

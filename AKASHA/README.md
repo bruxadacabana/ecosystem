@@ -432,7 +432,7 @@ Lida de `ecosystem.json` via `ecosystem_client` no startup:
 | `max_per_domain` | `5` | Máximo de resultados por domínio (0 = sem limite). Override: `?diversity=N`. |
 | `web_pages` | `4` | Páginas de resultados a buscar em paralelo (1–10). Override: `?web_pages=N`. |
 | `search_languages` | `[]` | Lista de idiomas de resultado. Vazio = todos os idiomas (recomendado). |
-| `semantic_search` | `true` | Habilita busca vetorial (embeddings via LOGOS) além do FTS5. |
+| `semantic_search` | `true` | Habilita busca vetorial (embeddings via LOGOS) além do FTS5. Embeddings são gerados automaticamente ao indexar — ao adicionar ou modificar qualquer arquivo local, o embedding é calculado em background (fire-and-forget) sem bloquear a indexação FTS5. |
 | `default_city` | `""` | Cidade padrão para widget de previsão do tempo. |
 
 O HUB é a fonte de verdade — não editar `ecosystem.json` diretamente quando o HUB estiver rodando. O prompt de personalidade e as seeds de interesse são editáveis via HUB.
