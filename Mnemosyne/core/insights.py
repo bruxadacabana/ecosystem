@@ -41,14 +41,19 @@ def _get_conn() -> sqlite3.Connection:
             sources        TEXT    NOT NULL DEFAULT '[]',
             received_at    TEXT    NOT NULL,
             seen           INTEGER NOT NULL DEFAULT 0,
-            akasha_thought TEXT             DEFAULT NULL
+            akasha_thought TEXT             DEFAULT NULL,
+            source_path    TEXT             DEFAULT NULL
         )"""
     )
-    # Migration: adiciona coluna em DBs anteriores (ignorar se já existir)
-    try:
-        conn.execute("ALTER TABLE incoming_insights ADD COLUMN akasha_thought TEXT DEFAULT NULL")
-    except sqlite3.OperationalError:
-        pass
+    # Migrations: adiciona colunas em DBs anteriores (ignorar se já existir)
+    for _col_ddl in (
+        "ALTER TABLE incoming_insights ADD COLUMN akasha_thought TEXT DEFAULT NULL",
+        "ALTER TABLE incoming_insights ADD COLUMN source_path TEXT DEFAULT NULL",
+    ):
+        try:
+            conn.execute(_col_ddl)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     return conn
 
@@ -75,14 +80,18 @@ def poll_and_store() -> int:
                     sources        = json.dumps(item.get("sources", []), ensure_ascii=False)
                     received_at    = item.get("received_at", datetime.now(timezone.utc).isoformat())
                     akasha_thought = item.get("akasha_thought") or None
+                    source_path    = item.get("source_path") or None
                     conn.execute(
                         "INSERT INTO incoming_insights "
-                        "(topics, summary, sources, received_at, akasha_thought) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (topics, summary, sources, received_at, akasha_thought),
+                        "(topics, summary, sources, received_at, akasha_thought, source_path) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (topics, summary, sources, received_at, akasha_thought, source_path),
                     )
                     # Salva pensamento pessoal do AKASHA em personal_memory (fora do RAG)
                     _save_akasha_insight_to_personal_memory(item)
+                    # Collab 1: indexação prioritária do documento que gerou o insight
+                    if source_path:
+                        _trigger_akasha_priority_index(source_path)
                 conn.commit()
             # Limpa incoming_insights do ecosystem.json após mover para SQLite
             write_section("mnemosyne", {"incoming_insights": []})
@@ -210,7 +219,7 @@ def get_latest_unseen() -> dict | None:
     try:
         with _get_conn() as conn:
             row = conn.execute(
-                "SELECT id, topics, summary, sources, received_at, akasha_thought "
+                "SELECT id, topics, summary, sources, received_at, akasha_thought, source_path "
                 "FROM incoming_insights WHERE seen = 0 "
                 "ORDER BY id DESC LIMIT 1"
             ).fetchone()
@@ -223,9 +232,30 @@ def get_latest_unseen() -> dict | None:
             "sources":        json.loads(row[3]),
             "received_at":    row[4],
             "akasha_thought": row[5],
+            "source_path":    row[6],
         }
     except Exception:
         return None
+
+
+def _trigger_akasha_priority_index(source_path: str) -> None:
+    """Marca source_path em mnemosyne.priority_index_paths para indexação prioritária.
+
+    Quando a Mnemosyne recebe um insight com source_path, sinaliza ao indexer que
+    aquele arquivo deve ser processado antes dos demais na próxima varredura.
+    Fire-and-forget — falha silenciosamente.
+    """
+    try:
+        from ecosystem_client import read_ecosystem, write_section  # type: ignore
+        eco = read_ecosystem()
+        existing: list[str] = eco.get("mnemosyne", {}).get("priority_index_paths", [])
+        if source_path not in existing:
+            existing.append(source_path)
+            existing = existing[-20:]  # FIFO com limite de 20
+            write_section("mnemosyne", {"priority_index_paths": existing})
+            log.info("insights: source_path marcado para indexação prioritária: %s", source_path)
+    except Exception as exc:
+        log.debug("insights: _trigger_akasha_priority_index falhou: %s", exc)
 
 
 def mark_seen(insight_id: int) -> None:

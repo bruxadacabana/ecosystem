@@ -1287,6 +1287,46 @@ def prepare_ask(
                 page_num=doc.metadata.get("page_num"),
             ))
 
+    # Collab 2: AKASHA fallback — busca complementar quando RAG local é insuficiente
+    if getattr(config, "akasha_fallback", False) and (
+        not sources or len(context.split()) < _AKASHA_FALLBACK_MIN_WORDS
+    ):
+        try:
+            from .akasha_client import AkashaClient
+            _akasha_client = AkashaClient()
+            if _akasha_client.is_available():
+                _ak_results = _akasha_client.search(question, max_results=5)
+                if _ak_results:
+                    _ak_snippets = [
+                        f"[Fonte web via AKASHA — {r.title or r.url}]\n{r.snippet}"
+                        for r in _ak_results if r.snippet
+                    ]
+                    if _ak_snippets:
+                        _ak_block = "\n\n---\n".join(_ak_snippets)
+                        context = (
+                            f"[Fontes web via AKASHA]\n{_ak_block}\n\n---\n{context}"
+                            if context else f"[Fontes web via AKASHA]\n{_ak_block}"
+                        )
+                        existing_paths = {s["path"] for s in sources}
+                        for r in _ak_results:
+                            if r.url and r.url not in existing_paths:
+                                sources.append(SourceRecord(
+                                    path=r.url,
+                                    excerpt=r.snippet[:250],
+                                    score=0.5,
+                                    start_char=None,
+                                    end_char=None,
+                                    page_num=None,
+                                ))
+                                existing_paths.add(r.url)
+                        log.info(
+                            "rag: AKASHA fallback — %d resultado(s) adicionados ao contexto "
+                            "(query: %.60s, palavras_contexto_orig=%d)",
+                            len(_ak_results), question, len(context.split()),
+                        )
+        except Exception as _ak_exc:
+            log.debug("rag: AKASHA fallback falhou: %s", _ak_exc)
+
     effective_persona_prompt = (
         config.persona_prompt
         or getattr(config, "ecosystem_personality_prompt", "")
@@ -1348,6 +1388,115 @@ def ask(
 _FAIR_MIN_BOOST: float = 0.3   # boost mínimo (não deixa chunk sumir do ranking)
 _FAIR_MAX_BOOST: float = 3.0   # boost máximo (não permite dominância absoluta)
 _FAIR_ALPHA:     float = 0.15  # taxa de aprendizado EMA
+
+# Collab 2: limiar de palavras no contexto abaixo do qual o fallback AKASHA é acionado
+_AKASHA_FALLBACK_MIN_WORDS: int = 200
+
+# Collab 3: stopwords para extração de tópicos (subconjunto compacto)
+_TOPIC_STOPWORDS: frozenset[str] = frozenset({
+    "a", "o", "e", "de", "da", "do", "em", "no", "na", "para", "por", "com",
+    "que", "se", "não", "um", "uma", "os", "as", "ao", "dos", "das", "é",
+    "mais", "sua", "seu", "ser", "são", "como", "mas", "foi", "pela", "pelo",
+    "sobre", "até", "ele", "ela", "você", "isso", "este", "esse", "tem", "ter",
+    "novo", "nova", "algo", "nada", "tudo", "forma", "parte", "tipo", "caso",
+    "vez", "modo", "coisa", "ponto", "base", "nível", "área", "campo",
+    "domínio", "contexto", "aspecto", "exemplo", "uso", "dado", "dados",
+    "valor", "número", "observação", "análise", "pesquisa", "estudo",
+    "trabalho", "relevante", "geral", "atual",
+    "the", "and", "or", "of", "to", "in", "is", "it", "for", "on", "at",
+    "this", "that", "with", "from", "an", "are", "was", "be", "but", "have",
+    "also", "when", "which", "were", "has", "had", "will", "can", "its",
+    "new", "use", "data", "type", "work", "model", "result",
+})
+
+
+def _extract_topics_from_text(text: str) -> list[str]:
+    """Extrai até 10 tópicos únicos de um texto, filtrando stopwords.
+
+    Usado em apply_source_feedback para extrair tópicos dos chunks avaliados
+    e atualizar o shared_topic_profile com o sinal de feedback da usuária.
+    """
+    import re as _re
+    words = _re.findall(r"[a-zA-ZÀ-ÿ]{4,}", text.lower())
+    seen: set[str] = set()
+    result: list[str] = []
+    for w in words:
+        if w not in _TOPIC_STOPWORDS and w not in seen:
+            seen.add(w)
+            result.append(w)
+        if len(result) >= 10:
+            break
+    return result
+
+
+def _update_shared_topic_profile(
+    source_paths: list[str],
+    is_positive: bool,
+    stores_to_update: list[tuple[Any, Any]],
+) -> None:
+    """Atualiza shared_topic_profile com tópicos dos documentos avaliados.
+
+    Extrai tópicos dos chunks ChromaDB de cada source_path e propaga o sinal
+    de feedback ao perfil compartilhado do ecossistema (delta +1.0 / −0.5).
+    Falha silenciosamente — nunca bloqueia o retorno de apply_source_feedback.
+    """
+    import sys as _sys
+    from pathlib import Path as _PPath
+    _root = str(_PPath(__file__).parent.parent.parent)
+    if _root not in _sys.path:
+        _sys.path.insert(0, _root)
+    try:
+        import shared_topic_profile as _stp
+    except ImportError as _exc:
+        log.debug("fair_rag: shared_topic_profile não disponível: %s", _exc)
+        return
+
+    delta = 1.0 if is_positive else -0.5
+    label = "positivo" if is_positive else "negativo"
+
+    for path in source_paths:
+        for vs, _ in stores_to_update:
+            try:
+                result = vs._collection.get(where={"source": {"$eq": path}})
+                docs_texts = result.get("documents") or []
+                if not docs_texts:
+                    continue
+                text_sample = " ".join(docs_texts[:5])
+                topics = _extract_topics_from_text(text_sample)
+                if topics:
+                    _stp.update_scores(topics, delta, "mnemosyne")
+                    log.info(
+                        "fair_rag: shared_topic_profile — %d tópico(s) (%s, source: %s, delta=%.2f)",
+                        len(topics), label, path, delta,
+                    )
+                break  # apenas o primeiro store com dados para este path
+            except Exception as _exc:
+                log.debug("fair_rag: _update_shared_topic_profile falhou para %s: %s", path, _exc)
+
+
+def _notify_akasha_url_feedback(source_paths: list[str]) -> None:
+    """Notifica AKASHA de feedback positivo para URLs (ciclo emocional Collab 3).
+
+    Apenas para URLs (http/https) — documentos locais não geram appraisal na AKASHA.
+    Falha silenciosamente se AKASHA estiver offline.
+    """
+    web_urls = [p for p in source_paths if p.startswith(("http://", "https://"))]
+    if not web_urls:
+        return
+    try:
+        from .akasha_client import AkashaClient
+        _akasha = AkashaClient()
+        if not _akasha.is_available():
+            log.debug("fair_rag: AKASHA offline — feedback de URL não enviado")
+            return
+        for url in web_urls:
+            try:
+                _akasha.send_feedback(url, is_positive=True)
+                log.info("fair_rag: feedback positivo enviado ao AKASHA (URL: %s)", url)
+            except Exception as _exc:
+                log.debug("fair_rag: AKASHA send_feedback falhou para %s: %s", url, _exc)
+    except Exception as _exc:
+        log.debug("fair_rag: _notify_akasha_url_feedback falhou: %s", _exc)
 
 
 def apply_source_feedback(
@@ -1421,4 +1570,12 @@ def apply_source_feedback(
                 log.warning("fair_rag: falha ao atualizar boost para %s: %s", path, exc)
 
     log.info("fair_rag: total %d chunks atualizados (%s)", updated, label)
+
+    # Collab 3: propagar sinal ao shared_topic_profile do ecossistema
+    _update_shared_topic_profile(source_paths, is_positive, stores_to_update)
+
+    # Collab 3: ciclo emocional — notificar AKASHA para URLs positivas
+    if is_positive:
+        _notify_akasha_url_feedback(source_paths)
+
     return updated

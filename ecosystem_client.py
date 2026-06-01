@@ -503,6 +503,7 @@ def notify_mnemosyne_insight(
     timeout: float = 5.0,          # mantido por compatibilidade de assinatura
     akasha_thought: str | None = None,
     emotional_context: dict | None = None,
+    source_path: str | None = None,
 ) -> None:
     """
     Deposita insight do AKASHA no ecosystem.json para ser lido pela Mnemosyne.
@@ -515,6 +516,10 @@ def notify_mnemosyne_insight(
     akasha_thought: nota pessoal do AKASHA sobre a descoberta (opcional). Se
     presente, a Mnemosyne a exibe separada como "AKASHA pensa:" no painel de
     diálogo e a injeta como contexto no prompt.
+
+    source_path: caminho do arquivo arquivado (para arquivos locais do AKASHA) ou
+    URL da página (para conteúdo crawleado). Permite à Mnemosyne indexar
+    prioritariamente o documento que gerou o insight.
     """
     import datetime as _dt
 
@@ -531,6 +536,8 @@ def notify_mnemosyne_insight(
             entry["akasha_thought"] = akasha_thought
         if emotional_context:
             entry["emotional_context"] = emotional_context
+        if source_path:
+            entry["source_path"] = source_path
         incoming.append(entry)
         incoming = incoming[-50:]  # FIFO com limite de 50
         write_section("mnemosyne", {"incoming_insights": incoming})

@@ -90,8 +90,9 @@ _KNOWN_TECH: frozenset[str] = frozenset({
 class _KnowledgeTask:
     url:         str
     title:       str
-    content:     str   # primeiros 800 chars — suficiente para extração
-    source_type: str   # "crawled" | "archived" | "paper"
+    content:     str        # primeiros 800 chars — suficiente para extração
+    source_type: str        # "crawled" | "archived" | "paper"
+    source_path: str | None = None  # caminho do arquivo (archived/paper) ou None (crawled)
 
 # Fila dupla de prioridade:
 #   _queue_high — dados novos (crawl/archive/visit/paper ao vivo)  → X-Priority: 2
@@ -198,6 +199,7 @@ def schedule_page(
     content: str,
     source_type: str,
     priority: str = "high",
+    source_path: str | None = None,
 ) -> None:
     """Enfileira URL para extração de conhecimento em background.
 
@@ -205,6 +207,7 @@ def schedule_page(
 
     priority="high" → _queue_high (dados novos ao vivo, X-Priority: 2).
     priority="low"  → _queue_low  (backfill, X-Priority: 3).
+    source_path: caminho do arquivo para source_type archived/paper; None para crawled.
     """
     if not url or not content:
         return
@@ -213,6 +216,7 @@ def schedule_page(
         title=title[:200],
         content=content[:800],
         source_type=source_type,
+        source_path=source_path,
     )
     queue = _queue_high if priority == "high" else _queue_low
     label = "alta" if priority == "high" else "baixa"
@@ -345,6 +349,72 @@ def on_feedback_dismissed(memory_id: int) -> None:
         loop.create_task(_process_dismissed_feedback(memory_id))
     except RuntimeError:
         pass
+
+
+def on_url_feedback(url: str, is_positive: bool) -> None:
+    """Fire-and-forget: appraisal emocional quando Mnemosyne avalia URL indexada pelo AKASHA.
+
+    is_positive=True → gratificação: Mnemosyne aprovou conteúdo que a AKASHA encontrou.
+    is_positive=False → vigilância: conteúdo não foi útil para a Mnemosyne.
+    Incrementa/decrementa os topic_scores dos tópicos da página como reforço adicional.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_process_url_feedback(url, is_positive))
+    except RuntimeError:
+        pass
+
+
+async def _process_url_feedback(url: str, is_positive: bool) -> None:
+    """Gera appraisal OCC baseado no feedback da Mnemosyne sobre uma URL indexada."""
+    import database as _db
+
+    page_knowledge = await _db.get_page_knowledge(url)
+    if not page_knowledge:
+        log.debug("on_url_feedback: URL não encontrada em page_knowledge: %s", url[:80])
+        return
+
+    topics: list[str] = page_knowledge.get("topics", [])
+    label = "confirmed" if is_positive else "dismissed"
+
+    if is_positive:
+        for t in topics[:5]:
+            t_lower = t.lower().strip()
+            if t_lower and len(t_lower) >= 3:
+                await _db.update_topic_score(t_lower, delta=0.3)
+        try:
+            from services.affective_state import record_appraisal
+            await record_appraisal(
+                "mnemosyne_feedback_positive",
+                novelty=0.2,
+                pleasantness=0.75,
+                goal_relevance=0.7,
+                coping_potential=0.8,
+                event_ref=f"url_feedback_pos:{url[:60]}",
+            )
+            log.info(
+                "on_url_feedback: gratificação — Mnemosyne aprovou URL (tópicos: %s)",
+                ", ".join(topics[:3]),
+            )
+        except Exception as exc:
+            log.debug("on_url_feedback: record_appraisal falhou (%s): %s", label, exc)
+    else:
+        try:
+            from services.affective_state import record_appraisal
+            await record_appraisal(
+                "mnemosyne_feedback_negative",
+                novelty=0.3,
+                pleasantness=0.3,
+                goal_relevance=0.5,
+                coping_potential=0.4,
+                event_ref=f"url_feedback_neg:{url[:60]}",
+            )
+            log.info(
+                "on_url_feedback: vigilância — Mnemosyne não aprovou URL (tópicos: %s)",
+                ", ".join(topics[:3]),
+            )
+        except Exception as exc:
+            log.debug("on_url_feedback: record_appraisal falhou (%s): %s", label, exc)
 
 
 def on_feedback_confirmed(memory_id: int) -> None:
@@ -799,6 +869,7 @@ async def _extract_and_store(task: _KnowledgeTask, is_high: bool = False) -> Non
         new_topics=clean_topics,
         summary=summary,
         is_echo_chamber=_echo,
+        source_path=task.source_path,
     )
 
     # Fire-and-forget: nota pessoal sobre o conteúdo recém-descoberto
@@ -855,6 +926,7 @@ async def _check_discoveries(
     new_topics: list[str],
     summary: str,
     is_echo_chamber: bool = False,
+    source_path: str | None = None,
 ) -> None:
     """
     Verifica se os tópicos recém-extraídos têm sobreposição relevante com o
@@ -862,6 +934,7 @@ async def _check_discoveries(
 
     Frequência máxima: 1 notificação por hora.
     Threshold: ≥ _INSIGHT_TOPIC_THRESHOLD tópicos em common com score > _INSIGHT_SCORE_MIN.
+    source_path: caminho do arquivo arquivado (se houver) para indexação prioritária na Mnemosyne.
     """
     global _last_insight_at
 
@@ -925,8 +998,13 @@ async def _check_discoveries(
             summary=summary or f"Nova página relevante: {title}",
             sources=[{"url": url, "title": title}],
             akasha_thought=_akasha_thought,
+            source_path=source_path,
         )
-        log.info("knowledge_worker: insight notificado (%d tópicos comuns).", len(overlap))
+        log.info(
+            "knowledge_worker: insight notificado (%d tópicos comuns%s).",
+            len(overlap),
+            f", source_path={source_path!r}" if source_path else "",
+        )
     except Exception as exc:
         log.debug("knowledge_worker: notify_mnemosyne_insight falhou: %s", exc)
 
@@ -1284,7 +1362,7 @@ async def backfill_knowledge(archive_path: "Path") -> None:
                 continue
             await _wait_queue_drain()
             src_type = "paper" if "Papers" in md_file.parts else "archived"
-            schedule_page(url, title or md_file.stem, content, src_type, priority="low")
+            schedule_page(url, title or md_file.stem, content, src_type, priority="low", source_path=str(md_file))
             total_enqueued += 1
 
     # ── 2. Páginas crawleadas da Biblioteca sem extração ───────────────────

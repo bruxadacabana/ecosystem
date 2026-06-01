@@ -145,6 +145,34 @@ class AkashaClient:
         """Wrapper síncrono de fetch() — conveniente quando asyncio.gather não é necessário."""
         return asyncio.run(self.fetch(url))
 
+    def send_feedback(self, url: str, is_positive: bool) -> None:
+        """Envia feedback de utilidade de uma URL ao AKASHA via POST /friendship/feedback.
+
+        Usado pelo ciclo emocional do Collab 3: quando a Mnemosyne avalia positivamente
+        um documento web que o AKASHA indexou, notifica a AKASHA para gerar appraisal.
+
+        Raises:
+            AkashaOfflineError: se o AKASHA não estiver acessível.
+            AkashaFetchError: se a resposta for inválida.
+        """
+        try:
+            r = httpx.post(
+                f"{self._base}/friendship/feedback",
+                json={"url": url, "is_positive": is_positive},
+                timeout=_DEFAULT_TIMEOUT,
+            )
+        except httpx.ConnectError as exc:
+            raise AkashaOfflineError() from exc
+        except httpx.TimeoutException as exc:
+            raise AkashaFetchError(f"Timeout ao enviar feedback para {url}") from exc
+        except httpx.TransportError as exc:
+            raise AkashaFetchError(f"Erro de transporte ao enviar feedback: {exc}") from exc
+
+        if r.status_code not in (200, 204):
+            raise AkashaFetchError(
+                f"AKASHA retornou status {r.status_code} em /friendship/feedback"
+            )
+
     def dialogue_turn(
         self,
         question: str,

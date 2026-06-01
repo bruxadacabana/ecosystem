@@ -168,6 +168,7 @@ _DEFAULTS: dict = {
     "persona_prompt": "",
     "lightrag_enabled": False,
     "raptor_enabled": False,
+    "akasha_fallback": True,
 }
 
 
@@ -203,6 +204,8 @@ class AppConfig:
     # Índices avançados — apenas no MainPc (RX 6600, qwen2.5:7b)
     lightrag_enabled: bool = False  # grafo de conhecimento paralelo ao ChromaDB
     raptor_enabled: bool = False    # indexação hierárquica para PDFs (papers)
+    # Collab 2: busca complementar quando RAG local retornar resultados insuficientes
+    akasha_fallback: bool = True    # busca na AKASHA se contexto < 200 palavras ou sem fontes
     # Populados em runtime a partir do ecosystem.json — nunca persistidos
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""
@@ -434,6 +437,7 @@ def load_config() -> AppConfig:
         persona_prompt=str(data.get("persona_prompt", "")),
         lightrag_enabled=bool(data.get("lightrag_enabled", False)),
         raptor_enabled=bool(data.get("raptor_enabled", False)),
+        akasha_fallback=bool(data.get("akasha_fallback", True)),
     )
     config = _apply_logos_recommendations(config, _saved_keys)
 
@@ -522,6 +526,7 @@ def save_config(config: AppConfig) -> None:
         "persona_prompt": config.persona_prompt,
         "lightrag_enabled": config.lightrag_enabled,
         "raptor_enabled": config.raptor_enabled,
+        "akasha_fallback": config.akasha_fallback,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

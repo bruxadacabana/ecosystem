@@ -285,6 +285,12 @@ class SetupDialog(QDialog):
         )
         self.suggest_questions_check.setChecked(current.suggest_questions)
         opts_layout.addWidget(self.suggest_questions_check)
+        self.akasha_fallback_check = QCheckBox(
+            "Buscar na AKASHA quando RAG local retornar resultados insuficientes\n"
+            "(requer AKASHA rodando na porta 7071; fallback gracioso se offline)"
+        )
+        self.akasha_fallback_check.setChecked(getattr(current, "akasha_fallback", True))
+        opts_layout.addWidget(self.akasha_fallback_check)
         content_layout.addWidget(opts_group)
 
         # Índices avançados (LightRAG + RAPTOR) — apenas MainPc
@@ -353,8 +359,8 @@ class SetupDialog(QDialog):
         if row >= 0:
             self.extra_dirs_list.takeItem(row)
 
-    def get_values(self) -> tuple[str, str, str, list[str], dict[str, bool], bool, int | None, bool, str, bool, bool, bool]:
-        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, suggest_questions, lightrag_enabled, raptor_enabled).
+    def get_values(self) -> tuple[str, str, str, list[str], dict[str, bool], bool, int | None, bool, str, bool, bool, bool, bool]:
+        """Retorna (watched_dir, vault_dir, chroma_dir, extra_dirs, ecosystem_enabled, reranking_enabled, embedding_truncate_dim, node_type_classification, node_type_model, suggest_questions, lightrag_enabled, raptor_enabled, akasha_fallback).
         Modelos e personalidade são gerenciados pelo HUB e não fazem parte desta tupla."""
         extra_dirs = [self.extra_dirs_list.item(i).text()
                       for i in range(self.extra_dirs_list.count())]
@@ -372,6 +378,7 @@ class SetupDialog(QDialog):
             self.suggest_questions_check.isChecked(),
             self.lightrag_check.isChecked(),
             self.raptor_check.isChecked(),
+            self.akasha_fallback_check.isChecked(),
         )
 
 
@@ -2264,8 +2271,8 @@ class MainWindow(QMainWindow):
     def _show_setup_dialog(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en)
+            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en, akasha_fb = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en, akasha_fb)
             self._post_config_init()
         else:
             self.statusBar().showMessage("Configuração cancelada.")
@@ -2273,8 +2280,8 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = SetupDialog(self._available_models, self.config, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en = dialog.get_values()
-            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en)
+            watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en, akasha_fb = dialog.get_values()
+            self._apply_setup_values(watched, vault, chroma, extra_dirs, eco_enabled, reranking, trunc_dim, nt_cls, nt_model, suggest_q, lightrag_en, raptor_en, akasha_fb)
             self.folder_label.setText(self.config.watched_dir)
             self.manage_path_label.setText(self.config.watched_dir)
             self._log_event("Configuração atualizada.")
@@ -2291,6 +2298,7 @@ class MainWindow(QMainWindow):
         suggest_questions: bool = False,
         lightrag_enabled: bool = False,
         raptor_enabled: bool = False,
+        akasha_fallback: bool = True,
     ) -> None:
         """Aplica os valores do SetupDialog ao config e guarda.
         Modelos (llm, embed, ocr) são gerenciados pelo LOGOS — não alterados aqui."""
@@ -2309,6 +2317,7 @@ class MainWindow(QMainWindow):
         self.config.suggest_questions = suggest_questions
         self.config.lightrag_enabled = lightrag_enabled
         self.config.raptor_enabled = raptor_enabled
+        self.config.akasha_fallback = akasha_fallback
         save_config(self.config)
         try:
             from pathlib import Path as _Path
