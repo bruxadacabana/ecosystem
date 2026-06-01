@@ -531,6 +531,27 @@ def _delete_parent_chunks(config: "AppConfig", file_path: str) -> None:
     except Exception as exc:
         log.debug("indexer: falha ao deletar parent chunks de %s: %s", file_path, exc)
 
+
+def _enrich_file_background(config: "AppConfig", file_path: str, vs: object) -> None:
+    """Executa enriquecimento P3 em thread daemon — não bloqueia o indexer."""
+    try:
+        from .context_enricher import ContextEnricher
+        ContextEnricher(config).enrich_file(file_path, vs)
+    except Exception as exc:
+        log.debug("context_enricher background: %s", exc)
+
+
+def _maybe_enrich(config: "AppConfig", file_path: str, vs: object) -> None:
+    """Dispara enriquecimento P3 como fire-and-forget se habilitado."""
+    if not config.enrichment_enabled:
+        return
+    import threading
+    threading.Thread(
+        target=_enrich_file_background,
+        args=(config, file_path, vs),
+        daemon=True,
+    ).start()
+
 # Detecta marcadores estruturais de artigos científicos
 _SCIENTIFIC_MARKERS_RE = re.compile(
     r"^(abstract|references|referências|bibliography|doi:\s*\S|arxiv:\s*\S)",
@@ -1090,6 +1111,7 @@ def index_single_file(file_path: str, config: AppConfig) -> Chroma:
         raise IndexBuildError(f"Falha ao adicionar ao vectorstore: {exc}") from exc
 
     bm25_idx.save()
+    _maybe_enrich(config, file_path, vs)
     return vs
 
 
@@ -1192,6 +1214,7 @@ def update_vectorstore(
                     {file_path: chunks}, vs, bm25_idx, config, progress_cb
                 )
                 stats["reflections"] += n
+                _maybe_enrich(config, file_path, vs)
         except Exception:
             stats["errors"] += 1
 
@@ -1227,6 +1250,7 @@ def update_vectorstore(
                 {file_path: chunks}, vs, bm25_idx, config, progress_cb
             )
             stats["reflections"] += n
+            _maybe_enrich(config, file_path, vs)
             # LightRAG: acumula texto completo do documento para extração de entidades
             if config.lightrag_enabled:
                 _lightrag_texts.append("\n\n".join(c.page_content for c in chunks))

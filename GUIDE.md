@@ -928,6 +928,7 @@ Mnemosyne/
 ├── 📁 core/                → Lógica de negócio (sem GUI)
 │   ├── indexer.py          → Indexação: chunking (fixed|parent_child) + embeddings
 │   ├── parent_store.py     → SQLite store para parent chunks (parent-child retrieval)
+│   ├── context_enricher.py → Enriquecimento P3: context_summary por chunk via LOGOS
 │   ├── rag.py              → Motor RAG: LangChain + ChatOpenAI + ChromaDB + parent lookup
 │   ├── loaders.py          → Carregadores de arquivo (PDF, EPUB, MD, imagens via visão)
 │   ├── notebook.py         → Modelo de notebook (tema, histórico, memória)
@@ -3419,6 +3420,30 @@ query → ChromaDB (child chunks) → parent lookup → LLM recebe parent text
 - `core/indexer.py` — `ParentChildChunker`, `_delete_parent_chunks`; integrado em `create_vectorstore`, `index_single_file`, `update_vectorstore`
 - `core/parent_store.py` — SQLite store (schema: `chunk_id TEXT PK, source TEXT, text TEXT`)
 - `core/rag.py` — `_do_parent_lookup`, chamado em `prepare_ask` após re-ranqueamento
+
+---
+
+### 9.9c. Enriquecimento contextual de chunks (P3)
+
+**Problema:** um chunk de 256 chars recuperado do ChromaDB geralmente é texto puro, sem indicação de onde ele está no documento ou qual é o seu papel. O embedding captura o conteúdo semântico mas não o contexto posicional — "esta seção introduz o conceito de X" vs. "esta seção contesta o conceito de X" pode ter embedding similar.
+
+**Solução:** após a indexação básica, o `ContextEnricher` (P3, opt-in) percorre os chunks recém-indexados e, para cada um, chama o LOGOS com o prompt:
+
+> "Descreva em 1–2 frases onde este trecho se encaixa no documento e qual é o seu tema principal"
+
+O sumário gerado é salvo como metadado `context_summary` no ChromaDB. Na reindexação futura, `prefix_context_summary()` prefixa esse sumário ao texto do chunk antes do embedding — o vetor passa a representar tanto o tema/posição quanto o conteúdo.
+
+**Características:**
+- **Opt-in:** `enrichment_enabled: bool = False` em `AppConfig` (desligado por padrão — consome LOGOS)
+- **Idempotente:** chunks que já têm `context_summary` são ignorados
+- **P3:** chamada ao LOGOS com header `X-Priority: 3` (fila de baixa prioridade)
+- **Fire-and-forget:** `_maybe_enrich()` despacha thread daemon — não bloqueia o indexer
+- **Fallback silencioso:** LOGOS offline, timeout ou erro de ChromaDB → chunk sem `context_summary`, sem exceção
+
+**Arquivos:**
+- `core/context_enricher.py` — `ContextEnricher`, `prefix_context_summary`
+- `core/indexer.py` — `_maybe_enrich`, `_enrich_file_background`; chamado em `index_single_file` e `update_vectorstore` (novos e modificados)
+- `core/config.py` — campo `enrichment_enabled` (default `False`)
 
 ---
 

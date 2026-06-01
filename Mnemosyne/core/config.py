@@ -170,6 +170,7 @@ _DEFAULTS: dict = {
     "raptor_enabled": False,
     "akasha_fallback": True,
     "chunking_strategy": "parent_child",
+    "enrichment_enabled": False,
 }
 
 
@@ -209,6 +210,8 @@ class AppConfig:
     akasha_fallback: bool = True    # busca na AKASHA se contexto < 200 palavras ou sem fontes
     # Estratégia de chunking: "fixed" (legado) ou "parent_child" (padrão novo)
     chunking_strategy: str = "parent_child"
+    # Enriquecimento contextual P3: gera context_summary por chunk via LOGOS (opt-in)
+    enrichment_enabled: bool = False
     # Populados em runtime a partir do ecosystem.json — nunca persistidos
     ecosystem_watched_dir: str = ""
     ecosystem_vault_dir: str = ""
@@ -442,6 +445,7 @@ def load_config() -> AppConfig:
         raptor_enabled=bool(data.get("raptor_enabled", False)),
         akasha_fallback=bool(data.get("akasha_fallback", True)),
         chunking_strategy=str(data.get("chunking_strategy", "parent_child")),
+        enrichment_enabled=bool(data.get("enrichment_enabled", False)),
     )
     config = _apply_logos_recommendations(config, _saved_keys)
 
@@ -532,6 +536,7 @@ def save_config(config: AppConfig) -> None:
         "raptor_enabled": config.raptor_enabled,
         "akasha_fallback": config.akasha_fallback,
         "chunking_strategy": config.chunking_strategy,
+        "enrichment_enabled": config.enrichment_enabled,
     }
     with _CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
