@@ -175,6 +175,23 @@ async def _domain_suggestion_loop() -> None:
             _log.warning("domain_suggestion_loop: erro: %s", exc)
 
 
+async def _observer_popups_loop() -> None:
+    """A cada 2h: a Akasha observa o comportamento e cria pop-ups proativos.
+
+    Detecta zonas mortas de busca (queries repetidas sem engajamento local) e
+    sugere domínios para indexar. Camada assistente (P3) — nunca bloqueia a busca.
+    """
+    while True:
+        await asyncio.sleep(2 * 3600)
+        try:
+            from services.observer_popups import check_search_dead_ends
+            n = await check_search_dead_ends()
+            if n:
+                _log.info("observer_popups_loop: %d zona(s) morta(s) sugerida(s).", n)
+        except Exception as exc:
+            _log.warning("observer_popups_loop: erro: %s", exc)
+
+
 async def _session_gc_loop() -> None:
     """Acorda a cada 10 min: remove sessões expiradas e dispara reflexão pós-sessão."""
     while True:
@@ -273,6 +290,7 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_pagerank_job())
     asyncio.get_running_loop().create_task(_session_gc_loop())
     asyncio.get_running_loop().create_task(_domain_suggestion_loop())
+    asyncio.get_running_loop().create_task(_observer_popups_loop())
     yield
     # Shutdown — nada a liberar por enquanto
 

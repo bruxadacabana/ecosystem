@@ -286,11 +286,19 @@
               _memoryId  = (data.memory_id != null) ? data.memory_id : null;
               _markSeen(text);
               document.getElementById('insight-text').textContent = text;
-              // Adapta botões para sugestão de domínio
+              // Adapta os botões conforme o tipo de pop-up proativo da Akasha.
+              // Cada tipo tem um rótulo de confirmação que descreve a ação concreta.
               var btnConfirm = document.getElementById('insight-btn-confirm');
               var btnDismiss = document.getElementById('insight-btn-dismiss');
-              if (data.entry_type === 'domain_suggestion') {
-                if (btnConfirm) { btnConfirm.textContent = 'Indexar'; btnConfirm.title = 'Adicionar à Biblioteca'; }
+              var CONFIRM_LABELS = {
+                'domain_suggestion':                 {text: 'Indexar',                title: 'Adicionar à Biblioteca'},
+                'search_dead_end':                   {text: 'Adicionar à Biblioteca',  title: 'Indexar os domínios sugeridos'},
+                'unarchived_frequent_visit':         {text: 'Arquivar',               title: 'Salvar esta página no arquivo'},
+                'stale_domain_with_recent_interest': {text: 'Recrawlear',             title: 'Atualizar o índice deste site'}
+              };
+              var cfg = CONFIRM_LABELS[data.entry_type];
+              if (cfg) {
+                if (btnConfirm) { btnConfirm.textContent = cfg.text; btnConfirm.title = cfg.title; }
                 if (btnDismiss) { btnDismiss.textContent = 'Ignorar'; btnDismiss.title = 'Não sugerir novamente'; }
               } else {
                 if (btnConfirm) { btnConfirm.textContent = '✓'; btnConfirm.title = 'Relevante'; }

@@ -1398,6 +1398,56 @@ async def _apply_insight_domain_reputation(entry: dict | None, feedback: str) ->
         pass
 
 
+async def _bg_crawl_site(site_id: int) -> None:
+    """Dispara crawl de um site em background (best-effort).
+
+    crawl_site vive em services.crawler; _bg_crawl (o wrapper) está em routers.crawler.
+    Este helper local evita o import incorreto `from services.crawler import _bg_crawl`,
+    que falhava silenciosamente dentro do try/except (ver BUG-024).
+    """
+    try:
+        from services.crawler import crawl_site
+        await crawl_site(site_id)
+    except Exception as exc:
+        log.warning("insight: bg crawl do site %d falhou: %s", site_id, exc)
+
+
+async def _add_domain_to_library(domain: str) -> None:
+    """Adiciona um domínio à Biblioteca e agenda o crawl inicial. Best-effort."""
+    try:
+        from database import add_crawl_site as _add_site
+        site_id = await _add_site(f"https://{domain}", domain, 2, "[]")
+        if site_id:
+            asyncio.get_running_loop().create_task(_bg_crawl_site(site_id))
+            log.info("insight: domínio %s adicionado à Biblioteca (id=%d)", domain, site_id)
+    except Exception as exc:
+        log.warning("insight: falha ao adicionar domínio %s à Biblioteca: %s", domain, exc)
+
+
+async def _apply_insight_confirmation_action(entry: dict | None) -> None:
+    """Executa a ação concreta ligada à confirmação de um pop-up proativo.
+
+    Despacha por entry["type"]:
+      - domain_suggestion → adiciona o domínio sugerido à Biblioteca
+      - search_dead_end   → adiciona todos os domínios sugeridos à Biblioteca
+    """
+    if not entry:
+        return
+    etype = entry.get("type")
+
+    if etype == "domain_suggestion":
+        domain_tag = next(
+            (t for t in entry.get("tags", []) if t != "domain_suggestion"), None
+        )
+        if domain_tag:
+            await _add_domain_to_library(domain_tag)
+
+    elif etype == "search_dead_end":
+        # Tags de domínio (excluindo a tag de controle e a query original).
+        for domain in _extract_domain_tags(entry):
+            await _add_domain_to_library(domain)
+
+
 class _InsightFeedbackBody(BaseModel):
     memory_id: int
     feedback:  str   # "confirmed" | "dismissed"
@@ -1432,27 +1482,8 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
                 update_communication_feedback(comm_id, "confirmed")
             except Exception:
                 pass
-        # Sugestão de domínio confirmada → adicionar à Biblioteca e disparar crawl
-        if entry and entry.get("type") == "domain_suggestion":
-            domain_tag = next(
-                (t for t in entry.get("tags", []) if t != "domain_suggestion"), None
-            )
-            if domain_tag:
-                try:
-                    from database import add_crawl_site as _add_site
-                    from services.crawler import _bg_crawl
-                    site_id = await _add_site(
-                        f"https://{domain_tag}", domain_tag, 2, "[]"
-                    )
-                    if site_id:
-                        import asyncio as _asyncio
-                        _asyncio.get_running_loop().create_task(_bg_crawl(site_id))
-                        log.info(
-                            "insight_feedback: domínio %s adicionado à Biblioteca (id=%d)",
-                            domain_tag, site_id,
-                        )
-                except Exception as exc:
-                    log.warning("insight_feedback: falha ao adicionar domínio %s: %s", domain_tag, exc)
+        # Ação concreta de confirmação, específica por tipo de pop-up proativo.
+        await _apply_insight_confirmation_action(entry)
         return {"ok": True}
 
     # dismissed — always dismiss regardless of cookie presence

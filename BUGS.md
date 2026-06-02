@@ -84,6 +84,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-021](#bug-021) | FIXED | 2026-06-02 | AKASHA (base.html) | feedbackInsight() sempre retorna cedo — feedback de insight nunca chega ao servidor |
 | [BUG-022](#bug-022) | FIXED | 2026-06-02 | AKASHA (extension/background.js) | extensão consome slot de insight sem exibir quando aba ativa é o próprio AKASHA |
 | [BUG-023](#bug-023) | FIXED | 2026-06-02 | AKASHA (tests/test_domain_suggester.py) | teste usa domínio-semente (ravelry.com) como exemplo de domínio não-indexado |
+| [BUG-024](#bug-024) | FIXED | 2026-06-02 | AKASHA (routers/search.py) | `from services.crawler import _bg_crawl` falha silenciosamente — confirmar domain_suggestion nunca dispara o crawl |
 
 ---
 
@@ -1490,3 +1491,42 @@ Em `test_creates_multiple_suggestions`, trocar `ravelry.com` por `knittinghelp.e
 
 #### Teste de regressão
 O próprio `test_creates_multiple_suggestions` agora passa de forma determinística, e a escolha de um domínio `.example` evita colisão futura com seeds reais. Suíte completa de `test_domain_suggester.py` (10 testes) + `test_domain_quality.py` (24 testes) verde.
+
+---
+
+### BUG-024 · [FIXED] · `from services.crawler import _bg_crawl` falha silenciosamente — confirmar `domain_suggestion` nunca dispara o crawl
+
+#### Identificação
+- **Data:** 2026-06-02
+- **App(s):** AKASHA
+- **Componente:** `AKASHA/routers/search.py` (`insight_feedback`, ação de confirmação de `domain_suggestion`)
+- **Commit do fix:** pendente
+- **Descoberta via:** revisão-de-código (durante implementação dos pop-ups proativos adicionais)
+- **Tempo de diagnóstico:** ~5 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas
+- **OS:** independente de plataforma
+- **Modo:** produção (runtime do servidor AKASHA)
+- **Reproduzível em:** qualquer ambiente
+
+#### Pré-condição para reproduzir
+Receber um pop-up de sugestão de domínio (`domain_suggestion`) e clicar em "Indexar" (confirmar).
+
+#### Sintoma observado
+Nenhum erro visível. O domínio era adicionado à Biblioteca (`add_crawl_site`), mas o crawl inicial **nunca era disparado** — o site ficava com `page_count = 0` indefinidamente até o ciclo horário de `crawl_pending_sites` eventualmente pegá-lo (ou nunca, dependendo de `next_crawl_at`).
+
+#### Logs
+Nenhum — a exceção era suprimida pelo `try/except` que envolvia o bloco.
+
+#### Causa raiz
+A função `_bg_crawl` (wrapper que chama `crawl_site` em background) está definida em `routers/crawler.py`, **não** em `services/crawler.py`. O código fazia `from services.crawler import _bg_crawl`, que levanta `ImportError`. Como o bloco inteiro estava dentro de um `try/except Exception` (para tolerar falhas de rede do crawl), o `ImportError` era engolido silenciosamente: o `add_crawl_site` (que vinha antes) executava, mas o agendamento do crawl nunca acontecia.
+
+#### Impacto
+Degradação silenciosa: a ação de confirmação parecia funcionar (domínio entrava na Biblioteca) mas a metade mais importante — começar a indexar — falhava sem aviso. Afetava o pop-up `domain_suggestion` desde sua introdução.
+
+#### Fix aplicado
+Criado helper local `_bg_crawl_site(site_id)` em `routers/search.py` que importa `crawl_site` de `services.crawler` (onde ele realmente existe) e o executa com tratamento de erro próprio. A lógica de confirmação foi refatorada para um dispatcher `_apply_insight_confirmation_action(entry)` que usa `_add_domain_to_library()` → `_bg_crawl_site()`. O import incorreto foi eliminado.
+
+#### Teste de regressão
+`tests/test_observer_popups.py::test_confirm_adds_domains_to_library` verifica que confirmar uma sugestão adiciona os domínios a `crawl_sites` (com `_bg_crawl_site` mockado para não fazer rede). Os testes de `domain_suggestion` (`test_domain_suggester.py`, `test_inline_domain_suggest.py`) continuam verdes após a refatoração.

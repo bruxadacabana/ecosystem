@@ -30,7 +30,19 @@ import aiosqlite
 
 log = logging.getLogger("akasha.personal_memory")
 
-_VALID_TYPES = {"observation", "connection", "surprise", "reflection", "domain_suggestion"}
+_VALID_TYPES = {
+    "observation", "connection", "surprise", "reflection", "domain_suggestion",
+    # Pop-ups proativos da Akasha observadora (cada um vira overlay com ação própria)
+    "search_dead_end", "unarchived_frequent_visit", "stale_domain_with_recent_interest",
+}
+
+# Tipos de pop-up proativo que devem aparecer no overlay (além de surprise/connection).
+_PROACTIVE_OVERLAY_TYPES = (
+    "domain_suggestion",
+    "search_dead_end",
+    "unarchived_frequent_visit",
+    "stale_domain_with_recent_interest",
+)
 _VALID_CATEGORIES = {"friendship", "about_user", "interests", "reflections", "world"}
 
 # Mapeamento tag → category (primeira tag reconhecida tem prioridade)
@@ -736,14 +748,16 @@ async def get_next_for_overlay(n: int = 5) -> list[dict]:
     """
     fetch_n = max(n * 3, 20)
     async with aiosqlite.connect(_get_pm_db()) as db:
+        _overlay_types = ("surprise", "connection", *_PROACTIVE_OVERLAY_TYPES)
+        _ph = ",".join("?" * len(_overlay_types))
         rows = await (await db.execute(
             "SELECT id, created_at, type, content, tags, feedback, category, "
             "valence, arousal, importance, display_count "
             "FROM personal_memory "
             "WHERE shown_as_overlay = 0 "
-            "AND type IN ('surprise', 'connection', 'domain_suggestion') "
+            f"AND type IN ({_ph}) "
             "LIMIT ?",
-            (fetch_n,),
+            (*_overlay_types, fetch_n),
         )).fetchall()
     top = sorted(rows, key=_salience_score, reverse=True)[:n]
     return [
