@@ -48,6 +48,7 @@ from services.knowledge_worker import process_queue as _knowledge_process_queue,
 from services.persona import load_persona as _load_persona, persona_rebuild_loop as _persona_loop
 from services.reflection_loop import run_reflection_loop as _reflection_loop
 from services.friendship_receiver import run_friendship_receiver_loop as _friendship_receiver_loop
+from services.domain_suggester import check_and_suggest as _check_domain_suggestions, _SUGGESTION_INTERVAL_HOURS
 
 _log = logging.getLogger(__name__)
 
@@ -137,6 +138,18 @@ async def _domain_boost_job() -> None:
                 _log.info("domain_boost_job: %d domínio(s) atualizados.", n)
         except Exception as exc:
             _log.warning("domain_boost_job: erro: %s", exc)
+
+
+async def _domain_suggestion_loop() -> None:
+    """Verifica a cada N horas se há domínios frequentes não indexados para sugerir."""
+    while True:
+        await asyncio.sleep(_SUGGESTION_INTERVAL_HOURS * 3600)
+        try:
+            n = await _check_domain_suggestions(threshold=3)
+            if n:
+                _log.info("domain_suggestion_loop: %d sugestão(ões) criada(s).", n)
+        except Exception as exc:
+            _log.warning("domain_suggestion_loop: erro: %s", exc)
 
 
 async def _session_gc_loop() -> None:
@@ -235,6 +248,7 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_cache_cleanup_job())
     asyncio.get_running_loop().create_task(_domain_boost_job())
     asyncio.get_running_loop().create_task(_session_gc_loop())
+    asyncio.get_running_loop().create_task(_domain_suggestion_loop())
     yield
     # Shutdown — nada a liberar por enquanto
 

@@ -137,8 +137,8 @@
       <p class="insight-text" id="insight-text"></p>
     </div>
     <div class="insight-actions">
-      <button class="insight-feedback-btn insight-confirm" title="Relevante" onclick="feedbackInsight('confirmed')">✓</button>
-      <button class="insight-feedback-btn insight-dismiss" title="Dispensar" onclick="feedbackInsight('dismissed')">✗</button>
+      <button class="insight-feedback-btn insight-confirm" id="insight-btn-confirm" title="Relevante" onclick="feedbackInsight('confirmed')">✓</button>
+      <button class="insight-feedback-btn insight-dismiss" id="insight-btn-dismiss" title="Dispensar" onclick="feedbackInsight('dismissed')">✗</button>
     </div>
   </div>
 
@@ -286,6 +286,16 @@
               _memoryId  = (data.memory_id != null) ? data.memory_id : null;
               _markSeen(text);
               document.getElementById('insight-text').textContent = text;
+              // Adapta botões para sugestão de domínio
+              var btnConfirm = document.getElementById('insight-btn-confirm');
+              var btnDismiss = document.getElementById('insight-btn-dismiss');
+              if (data.entry_type === 'domain_suggestion') {
+                if (btnConfirm) { btnConfirm.textContent = 'Indexar'; btnConfirm.title = 'Adicionar à Biblioteca'; }
+                if (btnDismiss) { btnDismiss.textContent = 'Ignorar'; btnDismiss.title = 'Não sugerir novamente'; }
+              } else {
+                if (btnConfirm) { btnConfirm.textContent = '✓'; btnConfirm.title = 'Relevante'; }
+                if (btnDismiss) { btnDismiss.textContent = '✗'; btnDismiss.title = 'Dispensar'; }
+              }
               document.getElementById('insight-overlay').style.display = 'flex';
             } else if (!text) {
               hideOverlay();

@@ -1303,7 +1303,12 @@ async def insight_current(request: Request) -> dict:
         if _si.pm_already_shown_by(consumer):
             return {"text": None, "memory_id": None}
         _si.mark_pm_shown(consumer)
-        return {"text": pm_entry["content"], "memory_id": pm_entry["id"]}
+        return {
+            "text":       pm_entry["content"],
+            "memory_id":  pm_entry["id"],
+            "entry_type": pm_entry.get("type"),
+            "tags":       pm_entry.get("tags", []),
+        }
 
     return {"text": None, "memory_id": None}
 
@@ -1350,6 +1355,27 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
                 update_communication_feedback(comm_id, "confirmed")
             except Exception:
                 pass
+        # Sugestão de domínio confirmada → adicionar à Biblioteca e disparar crawl
+        if entry and entry.get("type") == "domain_suggestion":
+            domain_tag = next(
+                (t for t in entry.get("tags", []) if t != "domain_suggestion"), None
+            )
+            if domain_tag:
+                try:
+                    from database import add_crawl_site as _add_site
+                    from services.crawler import _bg_crawl
+                    site_id = await _add_site(
+                        f"https://{domain_tag}", domain_tag, 2, "[]"
+                    )
+                    if site_id:
+                        import asyncio as _asyncio
+                        _asyncio.get_running_loop().create_task(_bg_crawl(site_id))
+                        log.info(
+                            "insight_feedback: domínio %s adicionado à Biblioteca (id=%d)",
+                            domain_tag, site_id,
+                        )
+                except Exception as exc:
+                    log.warning("insight_feedback: falha ao adicionar domínio %s: %s", domain_tag, exc)
         return {"ok": True}
 
     # dismissed — always dismiss regardless of cookie presence

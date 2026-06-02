@@ -30,7 +30,7 @@ import aiosqlite
 
 log = logging.getLogger("akasha.personal_memory")
 
-_VALID_TYPES = {"observation", "connection", "surprise", "reflection"}
+_VALID_TYPES = {"observation", "connection", "surprise", "reflection", "domain_suggestion"}
 _VALID_CATEGORIES = {"friendship", "about_user", "interests", "reflections", "world"}
 
 # Mapeamento tag → category (primeira tag reconhecida tem prioridade)
@@ -741,7 +741,7 @@ async def get_next_for_overlay(n: int = 5) -> list[dict]:
             "valence, arousal, importance, display_count "
             "FROM personal_memory "
             "WHERE shown_as_overlay = 0 "
-            "AND type IN ('surprise', 'connection') "
+            "AND type IN ('surprise', 'connection', 'domain_suggestion') "
             "LIMIT ?",
             (fetch_n,),
         )).fetchall()
@@ -807,15 +807,18 @@ async def mark_shown_as_overlay(memory_id: int) -> None:
 
 
 async def get_entry_info(memory_id: int) -> dict | None:
-    """Retorna content, importance e comm_id de uma entrada. None se não existir."""
+    """Retorna content, importance, comm_id, type e tags de uma entrada. None se não existir."""
     async with aiosqlite.connect(_get_pm_db()) as db:
         row = await (await db.execute(
-            "SELECT content, importance, comm_id FROM personal_memory WHERE id = ?",
+            "SELECT content, importance, comm_id, type, tags FROM personal_memory WHERE id = ?",
             (memory_id,),
         )).fetchone()
     if row is None:
         return None
-    return {"content": row[0], "importance": row[1], "comm_id": row[2]}
+    return {
+        "content": row[0], "importance": row[1], "comm_id": row[2],
+        "type": row[3], "tags": json.loads(row[4] or "[]"),
+    }
 
 
 async def prune_high_entropy_stale(max_delete: int = 20) -> int:
