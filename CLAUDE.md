@@ -59,15 +59,16 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 
 Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRAM = 2 GB: modelos-teto são SmolLM2 1.7B (KOSMOS, ~1 GB Q4) e Gemma 2B Q4 (Mnemosyne, ~1.5 GB). Phi-3 mini e Llama 8B → offload para CPU → aquecimento, evitar. Em bateria: LOGOS deve reduzir indexação.
 
-### Hardware — Servidor Dell PowerEdge T410 (Fedora Server 44)
+### Hardware — Servidor Dell PowerEdge T410 (Fedora Server 44) — confirmado 2026-06-02
 
-Servidor antigo (tower, geração ~2009-2011) que a usuária ganhou e quer reaproveitar para serviços leves — **NÃO para IA** (decisão explícita: antigo demais). Specs detalhados a confirmar.
+Servidor tower antigo (~2010) reaproveitado para serviços leves — **NÃO para IA** (CPU sem AVX, confirmado).
 
-- Modelo: Dell PowerEdge T410 · OS: Fedora Server 44
-- CPU: a confirmar (Xeon 5500/5600, Nehalem/Westmere — provavelmente **sem AVX**, logo inferência LLM via llama.cpp inviável)
-- RAM: a confirmar (DDR3 ECC) · GPU: provavelmente só Matrox G200 da iDRAC (inútil p/ ML) · Storage/RAID: a confirmar (possível PERC)
+- Modelo: Dell PowerEdge T410 (HW A07) · BIOS 1.11.0 (2012) · OS: Fedora Linux 44 Server, kernel 7.0.10
+- CPU: 1× Intel Xeon **E5620** (Westmere, 2010), 4c/8t @ 2.40 GHz, 1 socket populado (suporta 2). Flags só até **sse4_2 — SEM AVX/AVX2** → llama.cpp inviável.
+- RAM: **16 GB DDR3 ECC 1333** (2× 8 GB, slots A1/A2; A3/A4 livres) · GPU: Matrox G200eW (iDRAC, inútil p/ ML)
+- Disco: 1× WD 500 GB **7200rpm mecânico** (SATA via SAS), sem redundância; **fedora-root só 15 GB, ~448 GB livres no VG** · HBA LSI SAS1068E (não-PERC) · Rede: 2× gigabit Broadcom
 
-Implicações: fora do pipeline de IA do ecossistema. Pode hospedar serviços-ferramenta que rodam em CPU/rede (não-LLM) — ex.: SearXNG, sync, armazenamento. Validar specs reais antes de atribuir cargas.
+Implicações: fora do pipeline de IA. Bom host always-on para serviços CPU/rede (SearXNG, sync, armazenamento, containers). Ressalvas: disco único (backup importa); estender LV antes de pôr dados; consumo elétrico alto (~100W+ ocioso, aprox.).
 
 **Decisão (2026-05-24):** o laptop usa o **mesmo modelo de embedding do PC principal** (padronização). Como 2 GB de VRAM não comportam embedding model + LLM simultaneamente, o LOGOS deve suportar **modo CPU para inferência LLM** no laptop: quando a VRAM estiver ocupada pelo embedding, o LLM roda via llama-server com `--n-gpu-layers 0`. O LOGOS continua sendo o único ponto de acesso à IA — não há fallback de serviço, apenas alternância de backend de execução (GPU → CPU) gerenciada internamente pelo LOGOS.
 
