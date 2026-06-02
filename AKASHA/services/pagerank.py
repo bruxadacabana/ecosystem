@@ -267,3 +267,32 @@ async def get_page_rank_scores(
     for url, score in rows:
         result[url] = score
     return result
+
+
+# ---------------------------------------------------------------------------
+# Wrapper de produção: abre conexão, calcula e persiste (chamado pelo job de bg)
+# ---------------------------------------------------------------------------
+
+async def run_pagerank_refresh(db_path=None) -> int:
+    """Recalcula o PageRank do corpus e persiste em page_rank.
+
+    Gerencia a conexão e o commit (compute_pagerank não comita sozinho), para que
+    o job de background do main.py seja uma única chamada e a lógica fique
+    testável isoladamente sem importar o main.
+
+    db_path: caminho do banco; se None, usa config.DB_PATH. Retorna o número de
+    URLs com score recalculado.
+    """
+    import aiosqlite
+    if db_path is None:
+        from config import DB_PATH as _DB_PATH
+        db_path = _DB_PATH
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            n = await compute_pagerank(db)
+            await db.commit()
+        log.info("run_pagerank_refresh: %d URL(s) com autoridade recalculada", n)
+        return n
+    except Exception as exc:
+        log.warning("run_pagerank_refresh: erro: %s", exc)
+        return 0

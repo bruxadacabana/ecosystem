@@ -2477,7 +2477,9 @@ Após o RRF, vários sinais adicionais ajustam o ranking final:
 
 **A. PageRank boost** (`local_search.py:_apply_pagerank_boost()`)
 
-Domínios com maior PageRank interno (calculado a partir do grafo de links em `page_links`) sobem no ranking. Formula: `score_final = score_rrf × (1 + pagerank_normalizado)`.
+Páginas mais referenciadas pelo próprio corpus crawleado sobem no ranking. O grafo de links (`page_links`) é populado incrementalmente a cada crawl (`pagerank.extract_links` + `store_page_links`). A autoridade é calculada por **Personalized PageRank** (networkx, com fallback de power-iteration manual e seeds de personalização vindos de `domain_boosts`), normalizada para 0.8–1.2 e gravada em `page_rank`. Formula no ranking: `score_final = score_rrf × pagerank_normalizado`.
+
+O cálculo roda no **job de background `_pagerank_job` (main.py)**: uma primeira vez ~5 min após o startup (tempo para o crawl inicial povoar o grafo) e depois a cada 7 dias, via `pagerank.run_pagerank_refresh()`. Sem esse job, `page_rank` ficaria vazia e o boost seria sempre neutro (1.0).
 
 **B. Domain boost por cliques** (`local_search.py:_apply_domain_boost()`)
 

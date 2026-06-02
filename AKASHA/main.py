@@ -140,6 +140,29 @@ async def _domain_boost_job() -> None:
             _log.warning("domain_boost_job: erro: %s", exc)
 
 
+async def _pagerank_job() -> None:
+    """Job semanal: recalcula a autoridade por grafo de links (page_rank).
+
+    Lê page_links (povoado incrementalmente a cada crawl) e roda Personalized
+    PageRank, gravando os scores em page_rank. Sem este job, a tabela page_rank
+    ficaria vazia e o boost de autoridade em _apply_pagerank_boost seria sempre
+    neutro (1.0). Roda uma vez ~5 min após o startup — tempo para o crawl inicial
+    adicionar arestas frescas — e depois a cada 7 dias.
+    """
+    from services.pagerank import run_pagerank_refresh as _refresh_pr
+    await asyncio.sleep(300)  # deixa o startup_crawl povoar o grafo antes do 1º cálculo
+    while True:
+        try:
+            n = await _refresh_pr()
+            if n:
+                _log.info("pagerank_job: %d URL(s) com autoridade recalculada.", n)
+            else:
+                _log.debug("pagerank_job: grafo de links vazio, nada a calcular.")
+        except Exception as exc:
+            _log.warning("pagerank_job: erro: %s", exc)
+        await asyncio.sleep(7 * 86400)
+
+
 async def _domain_suggestion_loop() -> None:
     """Verifica a cada N horas se há domínios frequentes não indexados para sugerir."""
     while True:
@@ -247,6 +270,7 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_decay_scores_loop())
     asyncio.get_running_loop().create_task(_cache_cleanup_job())
     asyncio.get_running_loop().create_task(_domain_boost_job())
+    asyncio.get_running_loop().create_task(_pagerank_job())
     asyncio.get_running_loop().create_task(_session_gc_loop())
     asyncio.get_running_loop().create_task(_domain_suggestion_loop())
     yield

@@ -6,6 +6,8 @@ Cobre:
   - store_page_links: gravação de arestas no DB
   - compute_pagerank: grafo simples → score calculado; semente → score ≥ 1.0; range 0.8–1.2
   - get_page_rank_scores: batch lookup; URL desconhecida → 1.0
+  - autoridade por in-links: página com 5 in-links > página com 1 (critério do TODO)
+  - run_pagerank_refresh: wrapper de produção popula page_rank; grafo vazio → 0; erro → 0
 """
 from __future__ import annotations
 
@@ -341,3 +343,102 @@ class TestGetPageRankScores:
                 return await get_page_rank_scores(db, [])
 
         assert run(_run()) == {}
+
+
+# ---------------------------------------------------------------------------
+# Autoridade por nº de in-links (critério de aceite do TODO)
+# ---------------------------------------------------------------------------
+
+class TestInboundAuthority:
+    def _insert_links(self, edges, main_path):
+        import sqlite3
+        con = sqlite3.connect(main_path)
+        con.executemany(
+            "INSERT OR IGNORE INTO page_links (source_url, target_url) VALUES (?, ?)",
+            edges,
+        )
+        con.commit()
+        con.close()
+
+    def test_more_inbound_links_higher_authority(self, db_paths):
+        """Página com 5 in-links deve ter autoridade > página com 1 in-link."""
+        main_path, _ = db_paths
+        edges = [(f"https://s{i}.com", "https://popular.com") for i in range(5)]
+        edges += [("https://s0.com", "https://obscura.com")]  # obscura: 1 in-link
+        self._insert_links(edges, main_path)
+
+        async def _run():
+            import aiosqlite
+            from services.pagerank import compute_pagerank
+            async with aiosqlite.connect(main_path) as db:
+                await compute_pagerank(db)
+                await db.commit()
+                rows = await (await db.execute(
+                    "SELECT url, score FROM page_rank WHERE url IN "
+                    "('https://popular.com', 'https://obscura.com')"
+                )).fetchall()
+                return {r[0]: r[1] for r in rows}
+
+        scores = run(_run())
+        assert scores["https://popular.com"] > scores["https://obscura.com"], (
+            f"popular ({scores['https://popular.com']:.4f}) deveria superar "
+            f"obscura ({scores['https://obscura.com']:.4f})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# run_pagerank_refresh — wrapper de produção (chamado pelo job de background)
+# ---------------------------------------------------------------------------
+
+class TestRunPagerankRefresh:
+    def _insert_links(self, edges, main_path):
+        import sqlite3
+        con = sqlite3.connect(main_path)
+        con.executemany(
+            "INSERT OR IGNORE INTO page_links (source_url, target_url) VALUES (?, ?)",
+            edges,
+        )
+        con.commit()
+        con.close()
+
+    def test_refresh_populates_page_rank(self, db_paths):
+        """run_pagerank_refresh abre a conexão, calcula e comita em page_rank."""
+        import sqlite3
+        main_path, _ = db_paths
+        self._insert_links([
+            ("https://a.com", "https://b.com"),
+            ("https://a.com", "https://c.com"),
+            ("https://b.com", "https://c.com"),
+        ], main_path)
+
+        async def _run():
+            from services.pagerank import run_pagerank_refresh
+            return await run_pagerank_refresh(db_path=main_path)
+
+        n = run(_run())
+        assert n == 3
+
+        # Verifica persistência em conexão separada (commit aconteceu)
+        con = sqlite3.connect(main_path)
+        rows = con.execute("SELECT url, score FROM page_rank").fetchall()
+        con.close()
+        assert len(rows) == 3
+
+    def test_refresh_empty_graph_returns_zero(self, db_paths):
+        """Sem arestas em page_links, refresh retorna 0 e não falha."""
+        main_path, _ = db_paths
+
+        async def _run():
+            from services.pagerank import run_pagerank_refresh
+            return await run_pagerank_refresh(db_path=main_path)
+
+        assert run(_run()) == 0
+
+    def test_refresh_bad_path_returns_zero(self, tmp_path):
+        """Caminho de banco inexistente/inválido não propaga exceção — retorna 0."""
+        async def _run():
+            from services.pagerank import run_pagerank_refresh
+            # diretório, não arquivo de banco → erro tratado internamente
+            return await run_pagerank_refresh(db_path=tmp_path)
+
+        assert run(_run()) == 0
