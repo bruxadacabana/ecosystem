@@ -199,7 +199,7 @@ O LOGOS gerencia prioridades de execução de IA:
 **KOSMOS — estado atual e futuro:**
 O KOSMOS v3 foi replanejado do zero em 2026-06-01 como ferramenta para jornalistas, estudantes e ativistas. Stack: PySide6, SQLite sincronizado via Syncthing, LOGOS para análise AI. Análise em 2 calls: Call A rápido (tags, sentimento, clickbait) em P3 background; Call B rico (cinco Ws, entidades, viés político) em P1 ao abrir artigo. Cards atualizam em tempo real conforme análise chega. Quando chamar o LOGOS, usará `llm_analysis` (ex: gemma2:2b) com `ServerTarget::Kosmos` na porta 8084. CPU fallback automático quando VRAM ocupada por AKASHA (8081) + Mnemosyne (8083). P3 nunca é bloqueado pelo LOGOS — apenas atrasado. Implementação por fases: base silenciosa → leitor funcional → scraping → análise AI → archivamento → tradução → ferramentas de investigação → stats e highlights.
 
-Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é** um app Android — a Fase 3 (Android APK) está suspensa para replanejamento.
+Monitora VRAM da RX 6600 e pausa tarefas P3 quando VRAM > 85%. O HUB **não é** um app Android — a Fase 3 (Android APK do HUB) está suspensa. **Acesso mobile será via CODEX** (Tauri v2, leitor read-only do ecossistema): consome artigos do AKASHA, feeds do KOSMOS e docs da Mnemosyne via API local ou sync_root, sem gerenciar nada. Escopo mobile bem definido — não exige portar a infraestrutura do HUB.
 
 **O HUB é a fonte de verdade para todos os apps.** Nenhum app deve configurar ou consultar por conta própria:
 - **Caminhos de dados**: lidos via `ecosystem.json` / `ecosystem_client`

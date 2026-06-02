@@ -5514,6 +5514,8 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ### CODEX — Leitor centralizado do ecossistema | 2026-05-13
 > Contexto: leitor read-only centralizado que suporta todos os formatos do ecossistema e centraliza highlights, notas e citações em markdown. Inspirado no leitor do KOSMOS, mas KOSMOS mantém seu próprio leitor. Apps como AKASHA e Mnemosyne podem abrir arquivos diretamente no CODEX. Deve ter versão Android no futuro — por isso a stack é **Tauri v2 + React + Rust** (mesma do HUB, toolchain já disponível). Sem edição de texto — apenas leitura, comentários, highlights e exportação de citações em MD.
+>
+> **Decisão 2026-06-02:** CODEX identificado como substituto natural da Fase 3 suspensa (Android APK do HUB). Por ser um consumidor passivo (lê artigos do AKASHA, feeds do KOSMOS, docs da Mnemosyne via API local ou sync_root, sem escrever nem gerenciar), tem escopo mobile bem definido — UX de leitura é mapeada e não exige portar a infraestrutura do HUB. A Fase 4 Android passa a ser prioridade quando as fases desktop estiverem concluídas.
 
 #### CODEX — Fase 0: scaffold e design system
 - [ ] **Criar projeto Tauri v2 em `CODEX/`** — `cargo tauri init` dentro da pasta do projeto; estrutura: `CODEX/src/` (React + TypeScript), `CODEX/src-tauri/` (Rust). `strict: true` no tsconfig. Copiar design system do AETHER/HUB sem modificações: `tokens.css`, `animations.css`, `typography.css`, `components.css`, `CosmosLayer.tsx`, `Toast.tsx`, `ThemeToggle.tsx`.
