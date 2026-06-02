@@ -81,6 +81,8 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-018](#bug-018) | FIXED | 2026-06-01 | AKASHA | knowledge_worker deadlock — fila baixa com >50 itens nunca drena |
 | [BUG-019](#bug-019) | FIXED | 2026-06-02 | AKASHA | page_count em crawl_sites desincronizado com crawl_pages — 14/16 domínios sem páginas reais |
 | [BUG-020](#bug-020) | OPEN | 2026-06-02 | HUB/LOGOS + AKASHA + Mnemosyne | embed-server retorna HTTP 500 com requisições concorrentes de múltiplos apps |
+| [BUG-021](#bug-021) | FIXED | 2026-06-02 | AKASHA (base.html) | feedbackInsight() sempre retorna cedo — feedback de insight nunca chega ao servidor |
+| [BUG-022](#bug-022) | FIXED | 2026-06-02 | AKASHA (extension/background.js) | extensão consome slot de insight sem exibir quando aba ativa é o próprio AKASHA |
 
 ---
 
@@ -1334,3 +1336,109 @@ Pendente. Registrado no TODO (`## Melhorias, correções e atualizações` → `
 
 #### Teste de regressão
 Pendente (parte do mesmo TODO). Dois handlers de embed concorrentes → segundo aguarda; embed-server não é chamado duas vezes simultaneamente; `akasha_semaphore` não perde permits por requisições de embedding.
+
+---
+
+### BUG-021 · [FIXED] · `feedbackInsight()` sempre retorna cedo — feedback de insight nunca chega ao servidor
+
+#### Identificação
+- **Data:** 2026-06-02
+- **App(s):** AKASHA
+- **Componente:** `AKASHA/templates/base.html` — função `feedbackInsight()`
+- **Commit do fix:** (próximo commit)
+- **Descoberta via:** uso-real (usuária relatou que feedback ✓/✗ no overlay não parece ser salvo)
+- **Tempo de diagnóstico:** ~5 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas (bug no JavaScript da interface web)
+- **OS:** qualquer
+- **Modo:** produção e dev
+- **Reproduzível em:** qualquer browser com a interface AKASHA aberta
+
+#### Pré-condição para reproduzir
+Overlay de insight visível na interface AKASHA. Clicar no botão ✓ (confirmado) ou ✗ (dispensar).
+
+#### Sintoma observado
+Overlay fecha visualmente mas o servidor nunca recebe o POST para `/insight/feedback`. O campo `feedback` na `personal_memory` permanece NULL. `_pm_current` no servidor não é limpo (porque `set_pm_current(None)` depende do POST que nunca chega), mantendo o insight como "atual" indefinidamente até reinício do servidor.
+
+#### Logs
+Nenhum — o bug é silencioso. No DevTools: nenhuma requisição POST para `/insight/feedback` ao clicar os botões.
+
+#### Causa raiz
+```javascript
+function feedbackInsight(feedback) {
+    hideOverlay();           // ← zera _memoryId = null
+    if (_memoryId === null) return;  // ← guard verifica _memoryId DEPOIS de anulá-lo
+    fetch('/insight/feedback', ...)  // ← nunca executa
+}
+```
+`hideOverlay()` seta `_memoryId = null` como parte do cleanup. O guard logo em seguida sempre encontra `_memoryId === null` e retorna antes do `fetch`. Ambos os POSTs (feedback e dismiss) ficam bloqueados.
+
+#### Impacto
+Feedback da usuária nunca é persistido. A Akasha não aprende com confirmações/dispensas feitas via interface web (apenas via extensão, onde o bug não existe). `_pm_current` fica preso no servidor, impedindo novos insights de serem carregados para qualquer consumidor até reinício.
+
+#### Fix aplicado
+Capturar `_memoryId` em variável local antes de chamar `hideOverlay()`:
+```javascript
+function feedbackInsight(feedback) {
+    var mid = _memoryId;   // captura antes de hideOverlay() zerar _memoryId
+    hideOverlay();
+    if (mid === null) return;
+    fetch('/insight/feedback', { ..., body: JSON.stringify({memory_id: mid, feedback}) })
+    ...
+}
+```
+
+#### Teste de regressão
+Manual: clicar ✓ ou ✗ no overlay → verificar no DevTools que POST para `/insight/feedback` é enviado com `memory_id` correto → verificar no DB que `feedback` da entrada foi atualizado.
+
+---
+
+### BUG-022 · [FIXED] · Extensão consome slot de insight sem exibir quando aba ativa é o próprio AKASHA
+
+#### Identificação
+- **Data:** 2026-06-02
+- **App(s):** AKASHA (extensão do browser)
+- **Componente:** `AKASHA/extension/background.js` — `pollInsight()`
+- **Commit do fix:** (próximo commit)
+- **Descoberta via:** revisão-de-código (investigação do BUG-021)
+- **Tempo de diagnóstico:** ~15 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas
+- **OS:** qualquer (extensão Firefox/Chrome)
+- **Modo:** produção
+- **Reproduzível em:** qualquer sessão com a extensão instalada e a interface AKASHA aberta
+
+#### Pré-condição para reproduzir
+Extensão instalada e ativa. Interface AKASHA aberta como aba ativa no browser. Servidor tem entrada de `personal_memory` disponível para exibição (`shown_as_overlay = 0`).
+
+#### Sintoma observado
+A extensão, ao fazer poll de `/insight/current`, consome o slot da entrada (servidor registra `consumer="ext"` em `_pm_shown_by`), mas não injeta o overlay (porque detecta que a aba ativa é o próprio AKASHA e faz early return). A interface AKASHA então recebe `text: None` (porque "ext" já consumiu) e também não exibe. O insight desaparece sem ser visto.
+
+Efeito secundário: quando a usuária navega para outra aba, a extensão pode tentar exibir o mesmo insight novamente (porque `pm_already_shown_by("ext")` é False depois que a entrada foi carregada para outra sessão), causando a aparência de pop-up repetido.
+
+#### Logs
+Nenhum — o bug é silencioso.
+
+#### Causa raiz
+Em `background.js`, a verificação `if (activeTab.url?.startsWith(AKASHA_ORIGIN)) return` ocorria DEPOIS do `fetch` para `/insight/current`. O servidor já tinha processado a requisição e marcado `"ext"` como consumidor antes do early return da extensão.
+
+#### Impacto
+Insights de `personal_memory` nunca aparecem quando a interface AKASHA está aberta. Quando a usuária troca de aba, a extensão pode re-exibir o insight com aparência de duplicata.
+
+#### Fix aplicado
+Verificar a aba ativa ANTES de fazer o fetch. A extensão não chama `/insight/current` se a aba for o AKASHA — o overlay nativo da interface cuida disso:
+```javascript
+async function pollInsight() {
+  // verifica aba ANTES do fetch para não consumir o slot sem exibir
+  let activeTab = ...;
+  if (activeTab.url?.startsWith(AKASHA_ORIGIN)) return;
+  
+  const res = await fetch(`${AKASHA_ORIGIN}/insight/current`, ...);
+  ...
+}
+```
+
+#### Teste de regressão
+Manual: abrir AKASHA como aba ativa → aguardar 60s → verificar no DevTools da extensão que `pollInsight` retorna sem fazer fetch para `/insight/current` → navegar para outra aba → insight aparece corretamente via extensão (sem ter sido "consumido" silenciosamente).

@@ -67,6 +67,20 @@ checkHealth();   // executa imediatamente no startup
 async function pollInsight() {
   if (!_online) return;
 
+  // Verifica a aba ativa ANTES de chamar /insight/current.
+  // O servidor marca "ext" como consumidor ao receber a requisição — se a aba
+  // for o próprio AKASHA (que tem seu overlay nativo), não devemos consumir
+  // o slot da extensão, senão a UI recebe text=null e o insight some sem ser visto.
+  let activeTab;
+  try {
+    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    activeTab = tab;
+  } catch {
+    return;
+  }
+  if (!activeTab)                                 return;
+  if (activeTab.url?.startsWith(AKASHA_ORIGIN))   return;
+
   let data;
   try {
     const res = await fetch(`${AKASHA_ORIGIN}/insight/current`, {
@@ -79,21 +93,8 @@ async function pollInsight() {
   }
 
   // Sem insight ou arousal alto (adiado para o próximo ciclo)
-  if (!data?.text)              return;
+  if (!data?.text)               return;
   if (data.reason === "deferred") return;
-
-  // Não envia overlay se a aba ativa for a própria interface do AKASHA
-  // (o overlay nativo da interface já cobre esse caso — duplicar seria ruído)
-  let activeTab;
-  try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    activeTab = tab;
-  } catch {
-    return;
-  }
-
-  if (!activeTab)                                  return;
-  if (activeTab.url?.startsWith(AKASHA_ORIGIN))    return;
 
   try {
     await browser.tabs.sendMessage(activeTab.id, {

@@ -262,12 +262,13 @@
       }
 
       function feedbackInsight(feedback) {
+        var mid = _memoryId;   // captura antes de hideOverlay() zerar _memoryId
         hideOverlay();
-        if (_memoryId === null) return;
+        if (mid === null) return;
         fetch('/insight/feedback', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({memory_id: _memoryId, feedback: feedback}),
+          body: JSON.stringify({memory_id: mid, feedback: feedback}),
         }).catch(function(){});
         if (feedback === 'dismissed') {
           fetch('/insight/dismiss', {method: 'POST'}).catch(function(){});
