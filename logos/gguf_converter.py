@@ -104,22 +104,31 @@ def _run(cmd: list[str], *, cwd: "str | None" = None, timeout: float = 3600.0) -
 
 
 def _find_binary(name: str, llama_cpp_dir: str = "") -> str:
-    """Localiza um binário do llama.cpp no PATH ou no diretório explícito.
+    """Localiza um binário do llama.cpp no diretório explícito ou no PATH.
 
+    Dir explícito tem prioridade sobre PATH — permite usar uma build específica
+    do llama.cpp sem precisar manipular o PATH do sistema.
     Retorna o caminho absoluto ou levanta RuntimeError.
     """
-    candidates: list[Path] = []
+    # Dir explícito tem prioridade: permite usar build específica sem mudar PATH
     if llama_cpp_dir:
-        candidates.extend([
+        for candidate in [
             Path(llama_cpp_dir) / name,
             Path(llama_cpp_dir) / "build" / "bin" / name,
-        ])
+        ]:
+            if candidate.exists() and candidate.is_file():
+                return str(candidate)
+        # No Windows, tenta com extensão .exe se não encontrou sem ela
+        if not name.lower().endswith(".exe"):
+            for candidate in [
+                Path(llama_cpp_dir) / (name + ".exe"),
+                Path(llama_cpp_dir) / "build" / "bin" / (name + ".exe"),
+            ]:
+                if candidate.exists() and candidate.is_file():
+                    return str(candidate)
     in_path = shutil.which(name)
     if in_path:
         return in_path
-    for c in candidates:
-        if c.exists() and c.is_file():
-            return str(c)
     raise RuntimeError(
         f"Binário '{name}' não encontrado. Compile llama.cpp e adicione ao PATH, "
         f"ou defina ConverterConfig.llama_cpp_dir."

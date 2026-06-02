@@ -24,6 +24,14 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+
+def _set_eco_env(monkeypatch, tmp_path):
+    """Garante que ecosystem_path() resolve para tmp_path em qualquer OS."""
+    if os.name == "nt":
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+    else:
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
 from logos.gguf_converter import (
     ConverterConfig,
     ConverterResult,
@@ -108,7 +116,7 @@ def test_model_version_name():
 # ─── _update_ecosystem_json ───────────────────────────────────────────────────
 
 def test_update_ecosystem_json_writes_section(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    _set_eco_env(monkeypatch, tmp_path)
     eco_path = tmp_path / "ecosystem" / "ecosystem.json"
     eco_path.parent.mkdir(parents=True)
     eco_path.write_text(json.dumps({"sync_root": str(tmp_path)}))
@@ -123,7 +131,7 @@ def test_update_ecosystem_json_writes_section(tmp_path, monkeypatch):
 
 def test_update_ecosystem_json_graceful_if_logos_offline(tmp_path, monkeypatch):
     """Não levanta exceção se LOGOS offline (retorna None)."""
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    _set_eco_env(monkeypatch, tmp_path)
     eco_path = tmp_path / "ecosystem" / "ecosystem.json"
     eco_path.parent.mkdir(parents=True)
     eco_path.write_text(json.dumps({"sync_root": str(tmp_path)}))
@@ -135,14 +143,18 @@ def test_update_ecosystem_json_graceful_if_logos_offline(tmp_path, monkeypatch):
 # ─── ConverterConfig.resolve ──────────────────────────────────────────────────
 
 def test_resolve_raises_if_sync_root_missing(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    _set_eco_env(monkeypatch, tmp_path)
+    # ecosystem.json existe mas sem sync_root
+    eco_path = tmp_path / "ecosystem" / "ecosystem.json"
+    eco_path.parent.mkdir(parents=True)
+    eco_path.write_text(json.dumps({}))  # sync_root ausente
     cfg = ConverterConfig()
     with pytest.raises(RuntimeError, match="sync_root"):
         cfg.resolve()
 
 
 def test_resolve_fills_output_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    _set_eco_env(monkeypatch, tmp_path)
     eco_path = tmp_path / "ecosystem" / "ecosystem.json"
     eco_path.parent.mkdir(parents=True)
     eco_path.write_text(json.dumps({"sync_root": str(tmp_path / "sync")}))
@@ -157,7 +169,7 @@ def test_resolve_fills_output_dir(tmp_path, monkeypatch):
 
 def test_converter_result_str():
     r = ConverterResult(
-        ollama_model_name="mnemosyne-ft-v2",
+        model_registry_name="mnemosyne-ft-v2",
         prev_model_name="mnemosyne-ft-prev",
         gguf_path="/tmp/model.gguf",
         elapsed_seconds=120.5,
@@ -215,7 +227,7 @@ def test_convert_and_register_smoke(tmp_path, monkeypatch):
          patch("shutil.which", return_value=None):
         result = convert_and_register(cfg)
 
-    assert result.ollama_model_name == "mnemosyne-ft-v1"
+    assert result.model_registry_name == "mnemosyne-ft-v1"
     assert "mnemosyne-ft-v1" in result.gguf_path
     assert result.elapsed_seconds >= 0.0
     # Verifica que a quantização foi chamada (llama-quantize)

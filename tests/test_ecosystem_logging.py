@@ -146,7 +146,8 @@ def test_default_log_dir_uses_xdg(monkeypatch):
     """Quando XDG_DATA_HOME está definido, usa-o como base."""
     monkeypatch.setenv("XDG_DATA_HOME", "/custom/data")
     result = el.default_log_dir()
-    assert str(result) == "/custom/data/ecosystem/logs"
+    # Compara como Path para ser cross-platform (separadores Windows/Linux)
+    assert result == Path("/custom/data") / "ecosystem" / "logs"
 
 
 def test_default_log_dir_fallback_to_home(monkeypatch):

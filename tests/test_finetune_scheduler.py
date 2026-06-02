@@ -24,6 +24,15 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+
+def _set_eco_env(monkeypatch, tmp_path):
+    """Garante que ecosystem_path() resolve para tmp_path em qualquer OS."""
+    if os.name == "nt":
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+    else:
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+
 from logos.finetune_scheduler import (
     FinetuneState,
     _acquire_lock,
@@ -216,7 +225,11 @@ def test_count_chroma_chunks_sums_collections(tmp_path, monkeypatch):
 # ─── trigger_manual ───────────────────────────────────────────────────────────
 
 def test_trigger_manual_raises_if_no_sync_root(monkeypatch, tmp_path):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    _set_eco_env(monkeypatch, tmp_path)
+    # ecosystem.json sem sync_root para garantir o raise
+    eco_path = tmp_path / "ecosystem" / "ecosystem.json"
+    eco_path.parent.mkdir(parents=True)
+    eco_path.write_text(json.dumps({}))
     with pytest.raises(RuntimeError, match="sync_root"):
         trigger_manual("")
 

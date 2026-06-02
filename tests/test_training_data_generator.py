@@ -23,6 +23,15 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+
+def _set_eco_env(monkeypatch, tmp_path):
+    """Garante que ecosystem_path() resolve para tmp_path em qualquer OS."""
+    if os.name == "nt":
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+    else:
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+
 from logos.training_data_generator import (
     _ANCHOR_EXAMPLES,
     GeneratorConfig,
@@ -132,8 +141,11 @@ def test_stats_str_does_not_raise():
 # ─── GeneratorConfig.resolve ──────────────────────────────────────────────────
 
 def test_resolve_raises_if_sync_root_empty(monkeypatch, tmp_path):
-    # Aponta ecosystem_path para arquivo inexistente → retorna defaults (sync_root vazio)
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    # ecosystem.json existe mas sem sync_root → deve levantar RuntimeError
+    _set_eco_env(monkeypatch, tmp_path)
+    eco_path = tmp_path / "ecosystem" / "ecosystem.json"
+    eco_path.parent.mkdir(parents=True)
+    eco_path.write_text(json.dumps({}))
     cfg = GeneratorConfig()
     with pytest.raises(RuntimeError, match="sync_root"):
         cfg.resolve()
@@ -144,7 +156,7 @@ def test_resolve_fills_paths_from_sync_root(monkeypatch, tmp_path):
     eco_path = tmp_path / "ecosystem" / "ecosystem.json"
     eco_path.parent.mkdir(parents=True)
     eco_path.write_text(json.dumps({"sync_root": fake_sync}))
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    _set_eco_env(monkeypatch, tmp_path)
 
     cfg = GeneratorConfig().resolve()
     assert "mnemosyne" in cfg.chroma_dir or "chroma_db" in cfg.chroma_dir

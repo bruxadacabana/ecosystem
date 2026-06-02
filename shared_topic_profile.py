@@ -71,8 +71,12 @@ def _backup_path() -> Path | None:
 
 def _conn(path: Path) -> sqlite3.Connection:
     con = sqlite3.connect(str(path), timeout=10.0, check_same_thread=False)
-    con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA synchronous=NORMAL")
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA synchronous=NORMAL")
+    except Exception:
+        con.close()  # garante que o arquivo é liberado antes do caller tentar deletá-lo
+        raise
     return con
 
 

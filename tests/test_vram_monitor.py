@@ -12,11 +12,18 @@ Cobre:
 from __future__ import annotations
 import sys
 import os
+import pytest
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import vram_monitor as vm
+
+try:
+    import psutil as _psutil_check
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    _PSUTIL_AVAILABLE = False
 
 
 # ─── _amd_sysfs ──────────────────────────────────────────────────────────────
@@ -116,6 +123,7 @@ def test_nvidia_smi_returns_none_on_malformed():
 
 # ─── _ram_fallback ────────────────────────────────────────────────────────────
 
+@pytest.mark.skipif(not _PSUTIL_AVAILABLE, reason="psutil não instalado")
 def test_ram_fallback_uses_psutil():
     """RAM fallback lê total, used e percent do psutil."""
     mock_vm = MagicMock()
@@ -162,6 +170,7 @@ def test_get_vram_info_laptop_falls_back_to_sysfs():
     assert info.source == "amd_sysfs"
 
 
+@pytest.mark.skipif(not _PSUTIL_AVAILABLE, reason="psutil não instalado")
 def test_get_vram_info_work_pc_uses_ram():
     """Perfil work_pc → usa _ram_fallback."""
     mock_vm = MagicMock()
