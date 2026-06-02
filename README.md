@@ -93,6 +93,7 @@ O HUB está sempre aberto — é o centro do ecossistema. Nenhum outro app é in
 - Watchdog de processo: detecta crashes do llama-server e reinicia automaticamente (até 3x com backoff 10s/30s/60s); desabilita após 3 falhas consecutivas
 - Captura stderr do chat-server em `log::warn!` + arquivo `logos_chat.log` com timestamp ISO
 - Captura stderr do embed-server em `log::info!` + arquivo `logos_embed.log` com timestamp ISO
+- Embeddings serializados por semáforo dedicado (capacidade 1): o embed-server não aceita requisições concorrentes, então AKASHA e Mnemosyne nunca colidem; clientes re-tentam 500/503 com backoff (BUG-020)
 - Endpoints de diagnóstico: `GET /logos/logs/chat` e `GET /logos/logs/embed` (últimas 500 linhas, text/plain)
 - OOM fallback: se modelo não carrega na GPU (timeout + exit prematuro), retenta com CPU only (`--n-gpu-layers 0`)
 - Eventos críticos para frontend: `logos-alert` (nivel error/warn), `logos-llama-crashed`, `logos-llama-unavailable`

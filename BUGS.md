@@ -80,7 +80,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-017](#bug-017) | FIXED | 2026-05-31 | AKASHA | db.run_sync() inexistente em aiosqlite 0.22.x — código morto em _reindex e init_vec_index |
 | [BUG-018](#bug-018) | FIXED | 2026-06-01 | AKASHA | knowledge_worker deadlock — fila baixa com >50 itens nunca drena |
 | [BUG-019](#bug-019) | FIXED | 2026-06-02 | AKASHA | page_count em crawl_sites desincronizado com crawl_pages — 14/16 domínios sem páginas reais |
-| [BUG-020](#bug-020) | OPEN | 2026-06-02 | HUB/LOGOS + AKASHA + Mnemosyne | embed-server retorna HTTP 500 com requisições concorrentes de múltiplos apps |
+| [BUG-020](#bug-020) | FIXED | 2026-06-02 | HUB/LOGOS + AKASHA + Mnemosyne | embed-server retorna HTTP 500 com requisições concorrentes de múltiplos apps |
 | [BUG-021](#bug-021) | FIXED | 2026-06-02 | AKASHA (base.html) | feedbackInsight() sempre retorna cedo — feedback de insight nunca chega ao servidor |
 | [BUG-022](#bug-022) | FIXED | 2026-06-02 | AKASHA (extension/background.js) | extensão consome slot de insight sem exibir quando aba ativa é o próprio AKASHA |
 | [BUG-023](#bug-023) | FIXED | 2026-06-02 | AKASHA (tests/test_domain_suggester.py) | teste usa domínio-semente (ravelry.com) como exemplo de domínio não-indexado |
@@ -1298,13 +1298,13 @@ Aplicado também diretamente no banco de produção (`ecosystem_root/akasha/akas
 
 ---
 
-### BUG-020 · [OPEN] · embed-server retorna HTTP 500 com requisições concorrentes de múltiplos apps
+### BUG-020 · [FIXED] · embed-server retorna HTTP 500 com requisições concorrentes de múltiplos apps
 
 #### Identificação
 - **Data:** 2026-06-02
 - **App(s):** HUB/LOGOS, AKASHA, Mnemosyne
-- **Componente:** `HUB/src-tauri/src/logos.rs` — `do_embed_proxy()` (linha ~2917)
-- **Commit do fix:** pendente
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `do_embed_proxy()` (linha ~2917) e `v1_embeddings_proxy()` (linha ~3357)
+- **Commit do fix:** (próximo commit)
 - **Descoberta via:** uso-real (indexação simultânea de AKASHA e Mnemosyne no PC principal)
 - **Tempo de diagnóstico:** ~15 minutos
 
@@ -1328,16 +1328,22 @@ Mnemosyne loga `WARNING: IndexWorker: erro ao embedar 'arquivo.pdf': Server erro
 ```
 
 #### Causa raiz
-`do_embed_proxy()` em `logos.rs` (linha ~2917) usa `akasha_semaphore` (capacidade 2) para serializar requisições de embedding — o mesmo semáforo usado pelo AKASHA para suas chamadas LLM. Com dois apps clientes (AKASHA e Mnemosyne), cada um adquire 1 permit do semáforo de capacidade 2 e ambos encaminham a requisição ao embed-server (llama-server, porta 8082) simultaneamente. O llama-server em modo embedding não processa requisições concorrentes e retorna HTTP 500.
+Os dois proxies de embedding em `logos.rs` — `do_embed_proxy()` (rota Ollama `api/embed`, linha ~2917) e `v1_embeddings_proxy()` (rota OpenAI `v1/embeddings`, linha ~3357, que é o caminho real usado por AKASHA e Mnemosyne) — usavam `akasha_semaphore` (capacidade 2), o mesmo semáforo das chamadas LLM do AKASHA. Com dois apps clientes (AKASHA e Mnemosyne), cada um adquire 1 permit do semáforo de capacidade 2 e ambos encaminham a requisição ao embed-server (llama-server, porta 8082) simultaneamente. O llama-server em modo embedding não processa requisições concorrentes e retorna HTTP 500.
 
 #### Impacto
 Degradação: arquivos deixam de ser indexados silenciosamente quando dois apps embedam ao mesmo tempo. Não é bloqueante (os apps continuam rodando), mas o vectorstore fica incompleto.
 
 #### Fix aplicado
-Pendente. Registrado no TODO (`## Melhorias, correções e atualizações` → `### Fix: servidor de embedding — semáforo dedicado no LOGOS e retry nos clientes | 2026-06-02`). Fix em duas camadas: (1) adicionar `embed_semaphore: Arc<Semaphore>` com capacidade 1 em `logos.rs`, usado exclusivamente em `do_embed_proxy()`; (2) retry com backoff exponencial (1s/2s/4s, 3 tentativas) em `embed_and_store` (`AKASHA/services/semantic_search.py`) e `_embed_batch` (`Mnemosyne/core/indexer.py`).
+Fix em duas camadas:
+1. **Fix definitivo no LOGOS** (`HUB/src-tauri/src/logos.rs`): adicionado `embed_semaphore: Arc<Semaphore>` dedicado, capacidade **1**, inicializado nos 3 construtores (`new`, `for_testing`, `make_test_state`). Ambos os proxies de embed (`do_embed_proxy` e `v1_embeddings_proxy`) passaram a usar `embed_semaphore` em vez de `akasha_semaphore`. Como a capacidade é 1, o `v1_embeddings_proxy` deixou de pedir 2 permits para prioridade alta (pedir 2 numa capacidade-1 nunca seria concedido) e passou a sempre adquirir 1 — cada requisição de embedding já obtém exclusividade. `log::debug!` quando uma requisição entra na fila de espera. Resultado: AKASHA e Mnemosyne nunca mais batem no embed-server ao mesmo tempo, e o semáforo de chat (`akasha_semaphore`) não é mais consumido por embeddings.
+2. **Safety net nos clientes** (retry para falhas transientes residuais):
+   - **AKASHA** (`services/semantic_search.py`): `embed_text()` re-tenta em HTTP 500/503 até 3 vezes com backoff exponencial (1s/2s), logando `log.warning` por falha; esgotadas as tentativas retorna `None` (mantém contrato fire-and-forget). O retry foi colocado em `embed_text` — e não em `embed_and_store` como o TODO sugeria — porque é em `embed_text` que o status HTTP 500/503 é observável (`embed_and_store` só recebe `None`). O semáforo do backfill em `knowledge_worker.py` foi reduzido de 2 para 1 (o LOGOS já serializa).
+   - **Mnemosyne** (`core/indexer.py`): `_embed_batch()` já tinha loop de retry com backoff para timeout/429; 500/503 foram adicionados à mesma branch transiente (`_EMBED_RETRY_STATUS = {429, 500, 503}`), com `log.warning` por tentativa. Optou-se por estender o loop existente em vez de criar um segundo loop com backoff 1s/2s/4s (evita duplicar mecanismo já afinado) — os waits permanecem os do módulo (30s/60s), aceitáveis para um safety net raro.
 
 #### Teste de regressão
-Pendente (parte do mesmo TODO). Dois handlers de embed concorrentes → segundo aguarda; embed-server não é chamado duas vezes simultaneamente; `akasha_semaphore` não perde permits por requisições de embedding.
+- **LOGOS** (`logos.rs`, módulo de testes): `embed_semaphore_tem_capacidade_um`, `embed_semaphore_serializa_duas_requisicoes` (segunda requisição aguarda enquanto a primeira segura o permit), `embed_semaphore_nao_afeta_akasha_semaphore` (chat semaphore intacto). 3 passando.
+- **AKASHA** (`tests/test_embed_text_retry.py`, 8 testes): sucesso sem retry; 500×2 depois 200 → sucede; 500 sempre → None + 3 warnings; 503 dispara retry; 4xx não re-tenta; offline não re-tenta; texto vazio sem HTTP. Todos passando.
+- **Mnemosyne** (`tests/test_logos_embeddings.py`, +5 testes espelhando os de 429): 500/503 retry→sucesso; 500 sempre→`EmbedTimeoutError` após 3 tentativas; warning por tentativa; sucesso na 1ª sem sleep. Tests escritos; **não executados nesta máquina** (ambiente Python do Mnemosyne — langchain/chromadb/etc. — não provisionado no PC onde o fix foi feito). Devem ser rodados no ambiente do Mnemosyne.
 
 ---
 

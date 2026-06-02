@@ -374,6 +374,10 @@ def _incremental_update(
 
 _EMBED_TIMEOUT_S   = 120.0   # timeout por tentativa — detecta rápido
 _EMBED_RETRY_WAITS = (30, 60) # aguarda LOGOS/Ollama liberar antes de re-tentar
+# BUG-020: status transientes que disparam re-tentativa. 429 = fila P3 do LOGOS
+# cheia; 500/503 = embed-server sobrecarregado (ex: colisão de concorrência).
+# O LOGOS já serializa embeddings via embed_semaphore; o retry aqui é safety net.
+_EMBED_RETRY_STATUS = frozenset({429, 500, 503})
 
 
 def _embed_batch(
@@ -386,9 +390,10 @@ def _embed_batch(
 
     Para potion-multilingual-128M: usa model2vec local (sem GPU, sem AVX2).
 
-    Retries automáticos em dois cenários:
+    Retries automáticos (até 3 tentativas, backoff _EMBED_RETRY_WAITS):
     - Timeout (httpx.TimeoutException): backend ocupado com LLM ativo.
     - 429 (LOGOS P3_TIMEOUT): LOGOS retorna 429 quando fila P3 espera >30s.
+    - 500/503 (BUG-020): embed-server transiente sob carga/concorrência.
 
     base_url: resolvido em runtime via ecosystem_client (LOGOS 7072).
     """
@@ -413,8 +418,14 @@ def _embed_batch(
             resp = httpx.post(
                 f"{base_url}/v1/embeddings", json=payload, timeout=_EMBED_TIMEOUT_S
             )
-            if resp.status_code == 429:
-                last_exc = Exception("429 Too Many Requests (LOGOS P3 bloqueado)")
+            if resp.status_code in _EMBED_RETRY_STATUS:
+                last_exc = Exception(
+                    f"HTTP {resp.status_code} (LOGOS/embed-server transiente)"
+                )
+                log.warning(
+                    "_embed_batch: tentativa %d falhou (HTTP %d), re-tentando…",
+                    attempt + 1, resp.status_code,
+                )
                 continue
             resp.raise_for_status()
             return [d["embedding"] for d in resp.json()["data"]]

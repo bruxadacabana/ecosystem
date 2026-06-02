@@ -2678,6 +2678,8 @@ O LOGOS usa um semáforo com **2 permits** e três níveis de prioridade:
 **Modelos leves (≤3B parâmetros)** adquirem 1 permit → até 2 rodam em paralelo.  
 **Modelos pesados (>3B parâmetros)** adquirem 2 permits → exclusividade total.
 
+**Semáforo dedicado de embeddings (`embed_semaphore`, capacidade 1):** o embed-server (llama-server em modo embedding, porta 8082) **não processa requisições concorrentes** — duas chamadas simultâneas retornam HTTP 500. Por isso os proxies de embedding (`do_embed_proxy` para a rota Ollama e `v1_embeddings_proxy` para a rota OpenAI `/v1/embeddings`) usam um semáforo **exclusivo** de capacidade 1, separado do `akasha_semaphore` de chat. Quando AKASHA e Mnemosyne embedam ao mesmo tempo, a segunda requisição aguarda na fila — nunca colidem. Como complemento (safety net), os clientes re-tentam falhas transientes 500/503 com backoff: AKASHA em `embed_text()` (`semantic_search.py`) e Mnemosyne em `_embed_batch()` (`indexer.py`). Histórico: BUG-020.
+
 **Preempção inteligente:** quando uma requisição P1 chega e a VRAM está saturada por tarefas P3 ativas, o LOGOS aborta imediatamente as inferências P3 em andamento (sem descarregar o modelo) para abrir espaço.
 
 **Os apps não precisam saber nada disso.** Eles enviam os headers `X-App: <app>` e `X-Priority: <prioridade>` — o LOGOS cuida do resto.

@@ -392,6 +392,13 @@ struct Inner {
     akasha_semaphore: Arc<Semaphore>,
     /// Semáforo do servidor Mnemosyne — independente, mesma política de permits.
     mnemosyne_semaphore: Arc<Semaphore>,
+    /// Semáforo EXCLUSIVO do embed-server (capacidade 1).
+    /// O embed-server (llama-server na porta EMBED_SERVER_PORT) retorna HTTP 500
+    /// quando recebe duas requisições simultâneas. AKASHA e Mnemosyne embedam em
+    /// paralelo, então sem um semáforo dedicado os dois proxies de embed colidem.
+    /// Capacidade 1 = serialização total das requisições de embedding (BUG-020).
+    /// NÃO compartilhar com akasha_semaphore: este é só para embeddings.
+    embed_semaphore: Arc<Semaphore>,
     active_priority: Mutex<Option<u8>>,
     /// Classe do modelo em execução: "leve" | "pesado"
     active_model_class: Mutex<Option<String>>,
@@ -819,6 +826,7 @@ impl LogosState {
             llama_server_url: llama_server_url.into(),
             akasha_semaphore:    Arc::new(Semaphore::new(2)),
             mnemosyne_semaphore: Arc::new(Semaphore::new(2)),
+            embed_semaphore:     Arc::new(Semaphore::new(1)),
             active_priority: Mutex::new(None),
             active_model_class: Mutex::new(None),
             active_app: Mutex::new(None),
@@ -897,6 +905,7 @@ impl LogosState {
             llama_server_url:    "http://127.0.0.1:8081".to_string(),
             akasha_semaphore:    Arc::new(Semaphore::new(2)),
             mnemosyne_semaphore: Arc::new(Semaphore::new(2)),
+            embed_semaphore:     Arc::new(Semaphore::new(1)),
             active_priority:    Mutex::new(None),
             active_model_class: Mutex::new(None),
             active_app:         Mutex::new(None),
@@ -2914,7 +2923,12 @@ async fn do_embed_proxy(s: LogosState, headers: HeaderMap, body: Bytes, target: 
     }
 
     s.0.queue_counts.lock().await[2] += 1;
-    let sem = s.0.akasha_semaphore.clone();
+    // BUG-020: semáforo EXCLUSIVO do embed-server (capacidade 1) — serializa
+    // embeddings de AKASHA e Mnemosyne para nunca colidirem no embed-server.
+    let sem = s.0.embed_semaphore.clone();
+    if sem.available_permits() == 0 {
+        log::debug!("LOGOS embed proxy (Ollama): embed_semaphore ocupado — requisição entra na fila de espera");
+    }
     let permit = tokio::time::timeout(P3_TIMEOUT, sem.acquire_many_owned(1))
         .await.ok().and_then(|r| r.ok());
     {
@@ -3316,7 +3330,9 @@ async fn v1_embeddings_proxy(
 ) -> Response {
     let (app_name, req_priority) = extract_app_priority(&headers);
     let profile  = s.0.active_profile.lock().await.clone();
-    let priority = apply_profile_priority(&profile, &app_name,
+    // Prioridade calculada para fins de log/perfil; embeddings são sempre serializados
+    // pelo embed_semaphore (cap. 1), independentemente da prioridade (BUG-020).
+    let _priority = apply_profile_priority(&profile, &app_name,
                        if req_priority == 0 { 3 } else { req_priority });
 
     // Gate: inferência desabilitada → rejeitar embeddings também.
@@ -3351,11 +3367,16 @@ async fn v1_embeddings_proxy(
         }
     }
 
-    let permits: u32 = if priority >= 3 { 1 } else { 2 };
     let timeout  = P3_TIMEOUT; // embeddings são sempre P3
 
-    let sem      = s.0.akasha_semaphore.clone();
-    let _permit  = match tokio::time::timeout(timeout, sem.acquire_many_owned(permits)).await {
+    // BUG-020: semáforo EXCLUSIVO do embed-server (capacidade 1). Como a capacidade
+    // é 1, sempre adquirimos 1 permit — cada requisição de embedding já obtém
+    // exclusividade. Pedir 2 permits aqui nunca seria concedido (deadlock por timeout).
+    let sem      = s.0.embed_semaphore.clone();
+    if sem.available_permits() == 0 {
+        log::debug!("LOGOS embed proxy: embed_semaphore ocupado — requisição de '{app_name}' entra na fila de espera");
+    }
+    let _permit  = match tokio::time::timeout(timeout, sem.acquire_many_owned(1)).await {
         Ok(Ok(p)) => p,
         _ => return (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({
             "error": "Timeout aguardando LOGOS — sistema sobrecarregado"
@@ -5837,6 +5858,7 @@ mod tests {
             llama_server_url:    "http://127.0.0.1:8081".to_string(),
             akasha_semaphore:    Arc::new(Semaphore::new(2)),
             mnemosyne_semaphore: Arc::new(Semaphore::new(2)),
+            embed_semaphore:     Arc::new(Semaphore::new(1)),
             active_priority:     Mutex::new(None),
             active_model_class:  Mutex::new(None),
             active_app:          Mutex::new(None),
@@ -9313,5 +9335,63 @@ mod tests {
         let td    = tempfile::tempdir().unwrap();
         let state = make_test_state(td.path().to_path_buf());
         assert_eq!(do_set_profile(&state, "foo".into()).await, "normal");
+    }
+
+    // ── BUG-020: semáforo dedicado do embed-server ───────────────────────────
+
+    #[tokio::test]
+    async fn embed_semaphore_tem_capacidade_um() {
+        // Capacidade 1 = serialização total. Garante que nunca há duas
+        // requisições de embedding simultâneas batendo no embed-server.
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        assert_eq!(state.0.embed_semaphore.available_permits(), 1);
+    }
+
+    #[tokio::test]
+    async fn embed_semaphore_serializa_duas_requisicoes() {
+        // Simula AKASHA + Mnemosyne embedando ao mesmo tempo: a primeira adquire
+        // o permit; a segunda DEVE aguardar (não consegue adquirir enquanto a
+        // primeira segura). Após liberar, a segunda passa.
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        let sem   = state.0.embed_semaphore.clone();
+
+        let permit1 = sem.clone().acquire_owned().await.unwrap();
+        assert_eq!(sem.available_permits(), 0, "primeira requisição segura o único permit");
+
+        // Segunda tentativa com timeout curto deve falhar (estaria na fila).
+        let segunda = tokio::time::timeout(
+            std::time::Duration::from_millis(150),
+            sem.clone().acquire_owned(),
+        ).await;
+        assert!(segunda.is_err(), "segunda requisição de embedding deve aguardar, não passar");
+
+        // Libera a primeira → a segunda agora consegue.
+        drop(permit1);
+        let segunda_ok = tokio::time::timeout(
+            std::time::Duration::from_millis(150),
+            sem.acquire_owned(),
+        ).await;
+        assert!(segunda_ok.is_ok(), "após liberar, a próxima requisição passa");
+    }
+
+    #[tokio::test]
+    async fn embed_semaphore_nao_afeta_akasha_semaphore() {
+        // Embeddings não devem consumir permits do servidor de chat AKASHA.
+        // Segurar o permit de embedding mantém akasha_semaphore intacto (cap. 2).
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+
+        let _permit_embed = state.0.embed_semaphore.clone().acquire_owned().await.unwrap();
+        assert_eq!(state.0.embed_semaphore.available_permits(), 0);
+        assert_eq!(
+            state.0.akasha_semaphore.available_permits(), 2,
+            "akasha_semaphore não é tocado por requisições de embedding"
+        );
+        assert_eq!(
+            state.0.mnemosyne_semaphore.available_permits(), 2,
+            "mnemosyne_semaphore não é tocado por requisições de embedding"
+        );
     }
 }

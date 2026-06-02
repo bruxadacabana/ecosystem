@@ -196,6 +196,82 @@ def test_embed_batch_501_raises_http_status_error():
 
 
 # ---------------------------------------------------------------------------
+# 7b. BUG-020: 500/503 transientes → retry com backoff (mesma branch do 429)
+# ---------------------------------------------------------------------------
+
+def test_embed_batch_500_retries_and_succeeds():
+    from core.indexer import _embed_batch
+
+    responder = _SequentialResponder([
+        _error_response(500),
+        _ok_response([_FAKE_VECTOR]),
+    ])
+    with patch("httpx.post", side_effect=responder):
+        with patch("time.sleep"):
+            result = _embed_batch(["texto"], model=_FAKE_MODEL, base_url=_FAKE_BASE)
+
+    assert result == [_FAKE_VECTOR]
+
+
+def test_embed_batch_503_retries_and_succeeds():
+    from core.indexer import _embed_batch
+
+    responder = _SequentialResponder([
+        _error_response(503),
+        _ok_response([_FAKE_VECTOR]),
+    ])
+    with patch("httpx.post", side_effect=responder):
+        with patch("time.sleep"):
+            result = _embed_batch(["texto"], model=_FAKE_MODEL, base_url=_FAKE_BASE)
+
+    assert result == [_FAKE_VECTOR]
+
+
+def test_embed_batch_500_all_raises_after_3_attempts():
+    from core.indexer import _embed_batch, _EMBED_RETRY_WAITS, EmbedTimeoutError
+
+    n_attempts = 1 + len(_EMBED_RETRY_WAITS)
+    responses = [_error_response(500)] * n_attempts
+    responder = _SequentialResponder(responses)
+
+    with patch("httpx.post", side_effect=responder):
+        with patch("time.sleep"):
+            with pytest.raises(EmbedTimeoutError):
+                _embed_batch(["texto"], model=_FAKE_MODEL, base_url=_FAKE_BASE)
+
+
+def test_embed_batch_500_logs_warning_per_attempt(caplog):
+    from core.indexer import _embed_batch, _EMBED_RETRY_WAITS, EmbedTimeoutError
+
+    n_attempts = 1 + len(_EMBED_RETRY_WAITS)
+    responses = [_error_response(503)] * n_attempts
+    responder = _SequentialResponder(responses)
+
+    with patch("httpx.post", side_effect=responder):
+        with patch("time.sleep"):
+            with caplog.at_level("WARNING"):
+                with pytest.raises(EmbedTimeoutError):
+                    _embed_batch(["texto"], model=_FAKE_MODEL, base_url=_FAKE_BASE)
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"
+                and "_embed_batch" in r.getMessage()]
+    assert len(warnings) == n_attempts
+
+
+def test_embed_batch_500_no_retry_on_success_first_try():
+    """Sucesso na 1ª tentativa não dispara retry nem sleep."""
+    from core.indexer import _embed_batch
+
+    responder = _SequentialResponder([_ok_response([_FAKE_VECTOR])])
+    with patch("httpx.post", side_effect=responder):
+        with patch("time.sleep") as mock_sleep:
+            result = _embed_batch(["texto"], model=_FAKE_MODEL, base_url=_FAKE_BASE)
+
+    assert result == [_FAKE_VECTOR]
+    mock_sleep.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # 8. _InferenceEmbeddings.embed_documents → chama _embed_batch com modelo correto
 # ---------------------------------------------------------------------------
 

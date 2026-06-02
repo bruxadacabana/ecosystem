@@ -1401,7 +1401,9 @@ async def backfill_knowledge(archive_path: "Path") -> None:
 
         if _rows:
             log.info("backfill embeddings: %d página(s) sem vetor", len(_rows))
-            _sem = asyncio.Semaphore(2)
+            # BUG-020: LOGOS serializa embeddings via embed_semaphore (cap. 1),
+            # então 2 requests concorrentes só geram espera desnecessária na fila.
+            _sem = asyncio.Semaphore(1)
 
             async def _backfill_embed(u: str, c: str) -> None:
                 async with _sem:

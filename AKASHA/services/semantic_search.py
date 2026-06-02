@@ -101,26 +101,52 @@ async def _ensure_page_vec_table() -> None:
         log.debug("_ensure_page_vec_table: %s", exc)
 
 
+# BUG-020: o embed-server pode retornar 500/503 sob concorrência. O LOGOS já
+# serializa as requisições via embed_semaphore (fix definitivo), mas mantemos
+# retry com backoff exponencial no cliente como safety net para falhas
+# transientes (500/503): até 3 tentativas, esperando 1s/2s antes de re-tentar.
+_EMBED_RETRY_WAITS: tuple[float, ...] = (1.0, 2.0, 4.0)
+_EMBED_RETRY_STATUS: frozenset[int] = frozenset({500, 503})
+
+
 async def embed_text(text: str) -> "list[float] | None":
     """Chama LOGOS POST /v1/embeddings para um único texto.
 
     Trunca para ~2000 chars. Retorna lista de floats (dim 768) ou None se
     LOGOS offline ou qualquer erro de rede/protocolo.
+
+    Resiliência (BUG-020): em HTTP 500/503 (falha transiente do embed-server sob
+    carga), re-tenta até 3 vezes com backoff exponencial 1s/2s. Cada falha é
+    logada com log.warning. Esgotadas as tentativas, retorna None (mantém o
+    contrato fire-and-forget — nunca lança exceção).
     """
     if not text.strip():
         return None
-    try:
-        import httpx
-        url = _get_inference_url()
-        model = _get_embed_model()
-        payload: dict = {"model": model, "input": [text[:2000]]}
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(f"{url}/v1/embeddings", json=payload)
+    import asyncio
+    import httpx
+    url = _get_inference_url()
+    model = _get_embed_model()
+    payload: dict = {"model": model, "input": [text[:2000]]}
+    for attempt in range(1, 4):  # 3 tentativas: 1, 2, 3
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(f"{url}/v1/embeddings", json=payload)
+            if resp.status_code in _EMBED_RETRY_STATUS:
+                log.warning(
+                    "embed_text: tentativa %d/3 falhou para %s: HTTP %d",
+                    attempt, url, resp.status_code,
+                )
+                if attempt < 3:
+                    await asyncio.sleep(_EMBED_RETRY_WAITS[attempt - 1])
+                    continue
+                return None  # esgotou as tentativas em falha transiente
             resp.raise_for_status()
             return resp.json()["data"][0]["embedding"]
-    except Exception as exc:
-        log.debug("embed_text: %s", exc)
-        return None
+        except Exception as exc:
+            # Erros não-transientes (offline, 4xx, protocolo) — não re-tentar.
+            log.debug("embed_text: %s", exc)
+            return None
+    return None
 
 
 async def embed_and_store(url: str, content_md: str) -> None:
