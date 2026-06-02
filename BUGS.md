@@ -80,6 +80,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-017](#bug-017) | FIXED | 2026-05-31 | AKASHA | db.run_sync() inexistente em aiosqlite 0.22.x — código morto em _reindex e init_vec_index |
 | [BUG-018](#bug-018) | FIXED | 2026-06-01 | AKASHA | knowledge_worker deadlock — fila baixa com >50 itens nunca drena |
 | [BUG-019](#bug-019) | FIXED | 2026-06-02 | AKASHA | page_count em crawl_sites desincronizado com crawl_pages — 14/16 domínios sem páginas reais |
+| [BUG-020](#bug-020) | OPEN | 2026-06-02 | HUB/LOGOS + AKASHA + Mnemosyne | embed-server retorna HTTP 500 com requisições concorrentes de múltiplos apps |
 
 ---
 
@@ -1290,3 +1291,46 @@ Aplicado também diretamente no banco de produção (`ecosystem_root/akasha/akas
 
 #### Observação secundária (não faz parte deste bug)
 5 domínios (positivepsychology.com, covencrafts.co.uk, yarnspirations.com, marxismo.org.br, freevintagecrochet.com) foram crawleados recentemente e retornaram 0 páginas reais — `page_count=0` é correto aqui, mas sugere que esses crawls falharam ou todas as páginas caíram no filtro `word_count >= 50`. Investigação separada recomendada (possível conteúdo JS-heavy ou bloqueio).
+
+---
+
+### BUG-020 · [OPEN] · embed-server retorna HTTP 500 com requisições concorrentes de múltiplos apps
+
+#### Identificação
+- **Data:** 2026-06-02
+- **App(s):** HUB/LOGOS, AKASHA, Mnemosyne
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `do_embed_proxy()` (linha ~2917)
+- **Commit do fix:** pendente
+- **Descoberta via:** uso-real (indexação simultânea de AKASHA e Mnemosyne no PC principal)
+- **Tempo de diagnóstico:** ~15 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS) — Windows 10 não indexa, logo não reproduz
+- **OS:** CachyOS (Arch Linux)
+- **Hardware relevante:** AMD Ryzen 5 4600G, RX 6600 8 GB VRAM
+- **Modo:** produção (LOGOS rodando, embed-server ativo na porta 8082)
+- **Reproduzível em:** qualquer máquina onde dois apps embedam simultaneamente
+
+#### Pré-condição para reproduzir
+AKASHA (`knowledge_worker`) e Mnemosyne (`IndexWorker`) rodando indexação/backfill em paralelo, ambos chamando o endpoint de embedding do LOGOS (porta 7072) ao mesmo tempo.
+
+#### Sintoma observado
+Mnemosyne loga `WARNING: IndexWorker: erro ao embedar 'arquivo.pdf': Server error '500 Internal Server Error' for url 'http://127.0.0.1:7072/v1/embeddings'`. O arquivo não é indexado naquela sessão. AKASHA pode sofrer falha simétrica (não confirmado nos logs vistos).
+
+#### Logs
+```
+07:17:32,377 [WARNING] gui.workers: IndexWorker: erro ao embedar 'Bokar-Rimpoche-Tara-o-Divino-Feminino.pdf': Server error '500 Internal Server Error' for url 'http://127.0.0.1:7072/v1/embeddings'
+07:20:00,235 [WARNING] gui.workers: IndexWorker: erro ao embedar 'Buddhist Epistemology (...).pdf': Server error '500 Internal Server Error' for url 'http://127.0.0.1:7072/v1/embeddings'
+```
+
+#### Causa raiz
+`do_embed_proxy()` em `logos.rs` (linha ~2917) usa `akasha_semaphore` (capacidade 2) para serializar requisições de embedding — o mesmo semáforo usado pelo AKASHA para suas chamadas LLM. Com dois apps clientes (AKASHA e Mnemosyne), cada um adquire 1 permit do semáforo de capacidade 2 e ambos encaminham a requisição ao embed-server (llama-server, porta 8082) simultaneamente. O llama-server em modo embedding não processa requisições concorrentes e retorna HTTP 500.
+
+#### Impacto
+Degradação: arquivos deixam de ser indexados silenciosamente quando dois apps embedam ao mesmo tempo. Não é bloqueante (os apps continuam rodando), mas o vectorstore fica incompleto.
+
+#### Fix aplicado
+Pendente. Registrado no TODO (`## Melhorias, correções e atualizações` → `### Fix: servidor de embedding — semáforo dedicado no LOGOS e retry nos clientes | 2026-06-02`). Fix em duas camadas: (1) adicionar `embed_semaphore: Arc<Semaphore>` com capacidade 1 em `logos.rs`, usado exclusivamente em `do_embed_proxy()`; (2) retry com backoff exponencial (1s/2s/4s, 3 tentativas) em `embed_and_store` (`AKASHA/services/semantic_search.py`) e `_embed_batch` (`Mnemosyne/core/indexer.py`).
+
+#### Teste de regressão
+Pendente (parte do mesmo TODO). Dois handlers de embed concorrentes → segundo aguarda; embed-server não é chamado duas vezes simultaneamente; `akasha_semaphore` não perde permits por requisições de embedding.

@@ -294,7 +294,8 @@ Toda feature de backend que o usuário precisa controlar DEVE ter um elemento de
 
 O sistema visual é definido no `DESIGN_BIBLE.txt` (raiz). A paleta canônica está em:
 - `AETHER/src/styles/tokens.css` (web)
-- `ecosystem_qt.py` → `build_qss()` (PyQt6: KOSMOS, Hermes)
+- `ecosystem_qt.py` → `build_qss()` (PyQt6: Hermes)
+- `KOSMOS/app/theme/night.qss` (PySide6: KOSMOS)
 - `Mnemosyne/gui/styles.qss` (PySide6)
 
 Modo noturno: "Atlas Astronômico à Meia-Noite" (`#12161E` base).
