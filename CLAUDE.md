@@ -59,6 +59,16 @@ Soluções: indexar só na máquina de casa e sincronizar vectorstore; ou usar e
 
 Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRAM = 2 GB: modelos-teto são SmolLM2 1.7B (KOSMOS, ~1 GB Q4) e Gemma 2B Q4 (Mnemosyne, ~1.5 GB). Phi-3 mini e Llama 8B → offload para CPU → aquecimento, evitar. Em bateria: LOGOS deve reduzir indexação.
 
+### Hardware — Servidor Dell PowerEdge T410 (Fedora Server 44)
+
+Servidor antigo (tower, geração ~2009-2011) que a usuária ganhou e quer reaproveitar para serviços leves — **NÃO para IA** (decisão explícita: antigo demais). Specs detalhados a confirmar.
+
+- Modelo: Dell PowerEdge T410 · OS: Fedora Server 44
+- CPU: a confirmar (Xeon 5500/5600, Nehalem/Westmere — provavelmente **sem AVX**, logo inferência LLM via llama.cpp inviável)
+- RAM: a confirmar (DDR3 ECC) · GPU: provavelmente só Matrox G200 da iDRAC (inútil p/ ML) · Storage/RAID: a confirmar (possível PERC)
+
+Implicações: fora do pipeline de IA do ecossistema. Pode hospedar serviços-ferramenta que rodam em CPU/rede (não-LLM) — ex.: SearXNG, sync, armazenamento. Validar specs reais antes de atribuir cargas.
+
 **Decisão (2026-05-24):** o laptop usa o **mesmo modelo de embedding do PC principal** (padronização). Como 2 GB de VRAM não comportam embedding model + LLM simultaneamente, o LOGOS deve suportar **modo CPU para inferência LLM** no laptop: quando a VRAM estiver ocupada pelo embedding, o LLM roda via llama-server com `--n-gpu-layers 0`. O LOGOS continua sendo o único ponto de acesso à IA — não há fallback de serviço, apenas alternância de backend de execução (GPU → CPU) gerenciada internamente pelo LOGOS.
 
 ---
