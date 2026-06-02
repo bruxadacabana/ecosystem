@@ -5512,44 +5512,76 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **`launchOllama()` em `src/lib/tauri.ts`** — wrapper tipado: `call<string>('launch_ollama')`.
 - [x] **Botão na `LogosView.tsx`** — adicionar estado `ollamaOnline: boolean | null` (derivado de polling direto a `localhost:11434/api/tags` via `listModels()` do `ollama.ts`, a cada 4s); estado `launchStatus: 'idle' | 'starting' | 'error'`. Renderizar botão "Iniciar Ollama" visível apenas quando `ollamaOnline === false`; durante `starting` mostra "Iniciando…" e fica desabilitado; erro volta para "Iniciar Ollama" após 3s. Posicionar na seção "Ações" ao lado do botão "Silenciar Ollama".
 
-### CODEX — Leitor centralizado do ecossistema | 2026-05-13
-> Contexto: leitor read-only centralizado que suporta todos os formatos do ecossistema e centraliza highlights, notas e citações em markdown. Inspirado no leitor do KOSMOS, mas KOSMOS mantém seu próprio leitor. Apps como AKASHA e Mnemosyne podem abrir arquivos diretamente no CODEX. Deve ter versão Android no futuro — por isso a stack é **Tauri v2 + React + Rust** (mesma do HUB, toolchain já disponível). Sem edição de texto — apenas leitura, comentários, highlights e exportação de citações em MD.
+### CODEX — Hub mobile e leitor do ecossistema | 2026-05-13 (replanejado 2026-06-02)
+> Contexto: o CODEX é o **acesso mobile do ecossistema** — substitui a Fase 3 Android suspensa do HUB. Vai além de leitor: é editor de AETHER (ficção) e OGMA (grimório) no celular e tablet, e ponto de acesso remoto a AKASHA, Mnemosyne e KOSMOS via SSH tunnel gerenciado internamente. Desktop e mobile desenvolvidos em paralelo. Stack: **Tauri v2 + React + Rust** (mobile: Tauri v2 ou Kotlin — decidido na Fase 6). Dispositivo alvo mobile: Samsung Tab S9 FE (com S Pen) + celular Android.
 >
-> **Decisão 2026-06-02:** CODEX identificado como substituto natural da Fase 3 suspensa (Android APK do HUB). Por ser um consumidor passivo (lê artigos do AKASHA, feeds do KOSMOS, docs da Mnemosyne via API local ou sync_root, sem escrever nem gerenciar), tem escopo mobile bem definido — UX de leitura é mapeada e não exige portar a infraestrutura do HUB. A Fase 4 Android passa a ser prioridade quando as fases desktop estiverem concluídas.
+> **Acesso a dados:** AETHER e OGMA via Syncthing (arquivos locais, offline-first, edição habilitada). AKASHA, Mnemosyne e KOSMOS via SSH tunnel configurado uma vez nas settings do CODEX — app gerencia o túnel automaticamente (mDNS na rede local, SSH quando remoto).
 >
-> **A planejar no futuro (ainda sem fase definida):** acesso ao OGMA e ao AETHER via CODEX mobile — permitir consultar projetos/grimório (OGMA) e escrever/revisar ficção (AETHER) pelo celular. Requer decisões de arquitetura sobre isolamento de dados e permissões de escrita antes de qualquer implementação.
+> **Formatos suportados:** MD e TXT (leitura + edição) · PDF, EPUB, DOCX, HTML (leitura). Canvas `.excalidraw` (Fase 7).
+>
+> **Layout:** celular (bottom nav, single-pane) · tablet (sidebar + two-pane adaptável, tela inteira, split-screen compatível, S Pen com Pointer Events) · desktop (sidebar + área de conteúdo, painel triplo opcional).
+>
+> **Isolamento do AETHER:** a regra é anti-indexação por IA — CODEX pode ler e editar o vault sem infringir o isolamento.
 
-#### CODEX — Fase 0: scaffold e design system
-- [ ] **Criar projeto Tauri v2 em `CODEX/`** — `cargo tauri init` dentro da pasta do projeto; estrutura: `CODEX/src/` (React + TypeScript), `CODEX/src-tauri/` (Rust). `strict: true` no tsconfig. Copiar design system do AETHER/HUB sem modificações: `tokens.css`, `animations.css`, `typography.css`, `components.css`, `CosmosLayer.tsx`, `Toast.tsx`, `ThemeToggle.tsx`.
-- [ ] **Pasta sincronizada no Proton Drive** — `{sync_root}/codex/` com: `annotations.db` (SQLite com highlights, notas, citações vinculadas ao path do arquivo), `exports/` (citações exportadas em MD). Apenas anotações são sincronizadas — o conteúdo dos arquivos permanece onde está. No `ecosystem.json`, adicionar seção `codex: { exe_path, sync_dir }`. O HUB deve incluir CODEX na barra de apps.
-- [ ] **Registrar CODEX no ecosystem.json** — escrever `write_section("codex", { exe_path, sync_dir })` no startup. Adicionar `"codex"` ao `auto_discover_all_exe_paths()` no `launcher.rs` do HUB.
+#### CODEX — Fase 0: scaffold, design system e esqueleto de navegação
+- [ ] **Criar projeto Tauri v2 em `CODEX/`** — `cargo tauri init`; estrutura: `CODEX/src/` (React + TypeScript, `strict: true`), `CODEX/src-tauri/` (Rust). Copiar design system do HUB/AETHER sem modificações: `tokens.css`, `animations.css`, `typography.css`, `components.css`, `CosmosLayer.tsx`, `Toast.tsx`, `ThemeToggle.tsx`.
+- [ ] **Esqueleto de abas** — navegação por abas: AETHER / OGMA / AKASHA / Mnemosyne / KOSMOS / Config. Celular: bottom nav bar. Tablet: sidebar fixa à esquerda. Desktop: sidebar lateral.
+- [ ] **Layout responsivo base** — CSS breakpoints sem lógica de plataforma hardcoded. Celular: single-pane. Tablet: two-pane (lista + conteúdo) com modo tela-inteira e suporte a split-screen (sem largura mínima rígida). Desktop: three-pane opcional.
+- [ ] **Registrar no ecosystem.json e HUB** — `write_section("codex", { exe_path, sync_dir })` no startup. Adicionar `"codex"` ao `auto_discover_all_exe_paths()` em `launcher.rs`. Pasta `{sync_root}/codex/` com `config.json` e `annotations.db`.
 
-#### CODEX — Fase 1: abertura de arquivos e formatos
-- [ ] **Suporte a MD e TXT** — leitura nativa em Rust via `std::fs::read_to_string`. MD renderizado como HTML no frontend via `react-markdown`. TXT exibido como texto pré-formatado.
-- [ ] **Suporte a PDF** — usar crate `pdf-extract` (`pdf-extract = "0.7"` no Cargo.toml) para extração de texto por página. Renderização no frontend como HTML paginado. Alternativa para PDFs com layout complexo: PDF.js via `<webview>` ou iframe — avaliar conforme qualidade de extração.
-- [ ] **Suporte a EPUB** — usar crate `epub` (`epub = "2"`) para iterar capítulos como HTML. Renderizar cada capítulo como seção navegável no frontend. Preservar imagens internas via data URI.
-- [ ] **Suporte a DOCX** — usar crate `docx-rs` (`docx-rs = "0.4"`) para extração de parágrafos e estilos básicos (negrito, itálico, cabeçalhos). Converter para HTML estruturado antes de enviar ao frontend.
-- [ ] **Suporte a HTML** — para arquivos do archive do AKASHA (`.html`): renderizar diretamente na webview do Tauri (CSP permissiva para arquivos locais). Sanitizar links externos para não abrir no leitor.
-- [ ] **Seletor de arquivo** — janela principal com `tauri-plugin-dialog` para abrir arquivo, filtrado por extensão suportada. Estado inicial exibe tela de boas-vindas com drag-and-drop.
+#### CODEX — Fase 1: AETHER no CODEX
+- [ ] **Listar projetos do vault AETHER** — ler pastas de nível superior em `{sync_root}/aether/` (ou caminho configurado em `ecosystem.json`). Exibir como lista de projetos na aba AETHER.
+- [ ] **Árvore de capítulos e cenas** — dentro de um projeto, exibir hierarquia de pastas e arquivos `.md` como árvore navegável (sidebar no tablet/desktop, tela de lista no celular).
+- [ ] **Editor Markdown** — abrir `.md` com modo leitura (react-markdown renderizado) e modo edição (editor de texto com toolbar: negrito, itálico, cabeçalhos, listas, links internos). Alternar por botão. Salvar automático ao digitar (sem botão "salvar").
+- [ ] **Worldbuilding** — seção dedicada para fichas de personagens e cenários (arquivos do vault reconhecidos por pasta ou frontmatter). Leitura e edição com as mesmas ferramentas do editor MD.
+- [ ] **Operações de arquivo** — criar novo `.md` dentro de uma pasta, renomear e mover arquivos básicos.
+- [ ] **Sync e conflitos** — Syncthing gerencia o vault. CODEX detecta conflito (dois arquivos com mesmo nome + sufixo de conflito do Syncthing) e exibe aviso visual com opção de resolver manualmente.
 
-#### CODEX — Fase 2: anotações e highlights
-- [ ] **SQLite para anotações** — `rusqlite` com tabelas: `highlights(id, file_path, start_char, end_char, color, created_at)`, `notes(id, file_path, start_char, text, created_at)`, `citations(id, file_path, start_char, end_char, excerpt, note, created_at)`. Path do DB: `{sync_dir}/annotations.db`. Schema migrations versionadas.
-- [ ] **Seleção de texto e menu de contexto** — no frontend, capturar `mouseup` para detectar seleção de texto; exibir mini-toolbar com opções: "Highlight", "Nota", "Citar". Highlight aplica `<mark>` com cor configurável; Nota abre textarea inline; Citar abre modal de citação.
-- [ ] **Paleta de cores para highlights** — 5 cores fixas alinhadas ao design system: âmbar (`#F5C518`), verde (`var(--accent-green)`), azul (`var(--accent)`), rosa (`var(--ribbon)`), cinza (`var(--rule)`). Seleção via mini-toolbar.
-- [ ] **Persistir e restaurar highlights** — ao abrir arquivo, consultar `annotations.db` por `file_path` e reinjetar highlights via `document.execCommand` ou substituição de HTML. Para MD/TXT (offsets de char), usar `start_char`/`end_char`. Para PDF (offsets por página), usar `page_num + start_char`.
+#### CODEX — Fase 2: OGMA no CODEX
+- [ ] **Listar projetos do grimório** — ler vault do OGMA (`{sync_root}/ogma/` ou configurado). Exibir lista de projetos.
+- [ ] **Navegar e editar páginas** — dentro de um projeto, listar páginas e hierarquia. Abrir página com editor Markdown (mesmo componente da Fase 1). Leitura e edição.
+- [ ] **Criar novo projeto** — formulário simples: nome do projeto → cria pasta no vault do OGMA com estrutura inicial.
+- [ ] **Criar nova página** — dentro de um projeto existente. Tipo: Markdown (padrão). Canvas via Excalidraw disponível após Fase 7.
+- [ ] **Nota rápida** — campo de texto rápido com seletor de projeto destino. Cria arquivo `.md` com timestamp como nome e conteúdo digitado. Útil para capturar ideias sem navegar a hierarquia.
+- [ ] **Sync via Syncthing** — mesmo mecanismo da Fase 1 (salvar automático, aviso de conflito).
 
-#### CODEX — Fase 3: exportação e integração
-- [ ] **Exportar citação como MD** — botão "Exportar citação" em cada anotação; gera arquivo `.md` em `{sync_dir}/exports/` com frontmatter: `source_path`, `source_title`, `page` (se PDF), `date_cited`. Corpo: trecho entre aspas duplas + nota do usuário abaixo. Um arquivo por sessão de citação (agregado por data).
-- [ ] **Mecanismo "abrir no CODEX"** — CODEX lê `ecosystem.json` em `codex.open_request: { path, start_char? }` no startup e ao ganhar foco. Após abrir, limpa o campo com `write_section("codex", { open_request: null })`. Outros apps escrevem nesse campo para solicitar abertura. Também aceitar CLI arg `--open <path>` para lançamento direto.
-- [ ] **Botão "Abrir no CODEX" no AKASHA** — no frontend do AKASHA (`archive_detail.html` ou equivalente), adicionar botão que escreve no `ecosystem.json` e depois faz `fetch` para lançar o CODEX via endpoint do HUB ou diretamente via `open` shell.
-- [ ] **Botão "Abrir no CODEX" no Mnemosyne** — no `_source_viewer` do Mnemosyne (`gui/main_window.py`), adicionar botão que escreve no `ecosystem.json` e lança o CODEX com `subprocess.Popen`.
-- [ ] **KOSMOS: CODEX como leitor externo** — em KOSMOS `app/ui/views/reader_pane.py` (implementado na Fase 2 do KOSMOS v3), adicionar opção "Abrir no CODEX" no menu do artigo aberto usando o mecanismo de `open_request` no `ecosystem.json`. Depende: Fase 2 do KOSMOS v3 concluída.
+#### CODEX — Fase 3: conectividade remota via SSH
+- [ ] **Tela de configuração do servidor** — campos: hostname/IP, porta SSH (default 22), usuário, método de autenticação (chave SSH ou senha).
+- [ ] **Geração de chave SSH** — botão "Gerar par de chaves" cria chave Ed25519 via crate `ssh-key` (MIT). Exibe a chave pública com botão "Copiar" e instruções passo a passo para adicionar em `~/.ssh/authorized_keys` no servidor. A chave privada fica no armazenamento seguro do CODEX (`{sync_root}/codex/config.json` ou keychain do OS).
+- [ ] **mDNS na rede local** — quando na rede de casa, o CODEX descobre o servidor automaticamente pelo hostname (ex: `cachyos.local`) via crate `mdns-sd` (MIT). Sem configuração adicional.
+- [ ] **SSH tunnel automático** — quando fora da rede local (mDNS não responde), estabelece túnel SSH via crate `ssh2` (MIT/Apache). Redireciona portas localmente: AKASHA → 7071, Mnemosyne → porta configurada, KOSMOS → porta configurada. Transparente para o resto do app — cada aba só conecta ao `localhost:{porta}`.
+- [ ] **Status de conectividade** — indicador no header: "local" (mDNS), "remoto" (SSH), "offline". Tela de Config exibe detalhes: latência, última sync, erros de conexão.
 
-#### CODEX — Fase 4: Android (futuro)
-- [ ] **Configurar ambiente Tauri Android** — Android Studio + NDK + `cargo tauri android init`. O Tauri v2 já suporta Android nativamente; a UI React é a mesma.
-- [ ] **Adaptar UI para toque** — aumentar áreas de toque (mínimo 44×44px), toolbar de anotação acessível por toque longo, scroll suave. Avaliar gestos: swipe para trocar capítulos (EPUB), pinch-to-zoom.
-- [ ] **Sync de anotações via Syncthing** — `annotations.db` em pasta monitorada pelo Syncthing; resolver conflitos por timestamp (mais recente vence).
-- [ ] **Build APK de release** — `cargo tauri android build`; testar no dispositivo alvo.
+#### CODEX — Fase 4: AKASHA, Mnemosyne e KOSMOS via SSH
+- [ ] **Aba AKASHA** — barra de busca com toggle local/web. Busca no índice local da AKASHA (documentos e crawl) e busca web via SearXNG (mesmo backend do AKASHA desktop). Lista de resultados (título, snippet, fonte). Leitor de artigo arquivado (HTML, PDF, MD). Indicador de status de conexão.
+- [ ] **Aba Mnemosyne** — interface de chat (histórico + campo de input). Chat com a Mnemosyne: faz perguntas sobre o arquivo pessoal indexado, ela responde. Lista de notebooks com histórico de conversa. Acesso a documentos indexados: fase futura (requer API específica na Mnemosyne — complexidade deferida).
+- [ ] **Aba KOSMOS** — feed de artigos (título, fonte, data, preview). Leitor de artigo completo. Marcar como lido / salvar para depois.
+- [ ] **Graceful offline** — quando sem conexão, abas AKASHA/Mnemosyne/KOSMOS exibem aviso claro de indisponibilidade. AETHER e OGMA continuam funcionando normalmente (Syncthing é local).
+
+#### CODEX — Fase 5: desktop leitor/revisor
+- [ ] **Suporte a PDF** — crate `pdf-extract` (extração de texto por página) + PDF.js como fallback para PDFs com layout complexo. Renderização paginada no frontend.
+- [ ] **Suporte a EPUB** — crate `epub` para iterar capítulos como HTML. Renderizar cada capítulo como seção navegável. Preservar imagens via data URI.
+- [ ] **Suporte a DOCX** — crate `docx-rs` para extração de parágrafos com estilos básicos. Converter para HTML antes de renderizar.
+- [ ] **Suporte a HTML** — arquivos do archive do AKASHA: renderizar na webview do Tauri. Sanitizar links externos.
+- [ ] **Seletor de arquivo e drag-and-drop** — `tauri-plugin-dialog` filtrado por extensão. Tela inicial com drag-and-drop.
+- [ ] **Highlights e anotações** — `annotations.db` SQLite: `highlights(id, file_path, start_char, end_char, color, created_at)`, `notes(id, file_path, start_char, text, created_at)`, `citations(id, file_path, start_char, end_char, excerpt, note, created_at)`. Paleta de 5 cores alinhadas ao design system. Persistir e restaurar highlights ao reabrir arquivo.
+- [ ] **Exportação de citação como MD** — gera `.md` em `{sync_root}/codex/exports/` com frontmatter (`source_path`, `source_title`, `date_cited`) e trecho citado + nota.
+- [ ] **Mecanismo "abrir no CODEX"** — lê `codex.open_request: { path, start_char? }` no `ecosystem.json` ao ganhar foco. Após abrir, limpa o campo. Botão "Abrir no CODEX" em AKASHA (`archive_detail.html`), Mnemosyne (`_source_viewer`), KOSMOS (`reader_pane.py`).
+
+#### CODEX — Fase 6: mobile build
+- [ ] **Decisão de stack mobile** — avaliar Tauri v2 Android (maturidade no momento desta fase) vs Kotlin/Jetpack Compose. Critérios: suporte a S Pen via Pointer Events, performance do WebView Android, tamanho do APK.
+- [ ] **Layout celular** — bottom nav bar com ícones das abas. Navegação em profundidade (lista → detalhe → editor) em tela única.
+- [ ] **Layout tablet adaptável** — two-pane padrão (sidebar + conteúdo). Modo tela-inteira para foco em escrita/leitura (toggle visível). Compatível com split-screen do Android — sem largura mínima rígida, UI responsiva via CSS breakpoints.
+- [ ] **Suporte a S Pen** — Pointer Events API (`pointerType === "pen"`, `pressure`, `tiltX/Y`). Palm rejection via `touch-action: none` no canvas. Testes no Samsung Tab S9 FE.
+- [ ] **Build e release** — `cargo tauri android build` (ou equivalente Kotlin). Testar no dispositivo alvo. APK de release.
+
+#### CODEX — Fase 7: canvas manuscrito com S Pen (extensão do OGMA)
+> Contexto: Samsung Notes guarda anotações em formato proprietário sem acesso ao arquivo real. O CODEX resolve com **Excalidraw** (MIT): cada canvas é um arquivo `.excalidraw` (JSON puro, aberto, sem lock-in) salvo no vault do Syncthing — legível em qualquer editor de texto, com backup transparente.
+- [ ] **Integrar Excalidraw** — `npm install @excalidraw/excalidraw` no CODEX React. Componente `<Excalidraw>` integrado como tipo de página no OGMA: `{ogma_vault}/projeto/pagina.excalidraw`. Também disponível como nota de canvas independente.
+- [ ] **Suporte a S Pen no canvas** — Pointer Events API com pressão e inclinação. Palm rejection. Modo tela-inteira no tablet para foco em desenho. Testar no Tab S9 FE.
+- [ ] **Sync via Syncthing** — arquivo `.excalidraw` tratado como qualquer outro arquivo do OGMA. Conflito: aviso visual, resolução manual.
+- [ ] **Exportação** — exportar canvas como SVG e PNG a partir do arquivo `.excalidraw` via API do Excalidraw.
+- [ ] **Fora do escopo** — OCR de caligrafia, gravação de áudio sincronizada, S Pen SDK exclusivo Samsung.
 
 ### HUB LOGOS: modelos disponíveis + parar Ollama + prioridade baixa no Windows | 2026-05-13
 > Contexto: a lista de modelos no LOGOS mostrava apenas os carregados na VRAM. O usuário quer ver todos os modelos instalados com indicador de status por cor (verde = ativo na VRAM, amarelo = disponível mas não carregado), poder parar o Ollama pelo LOGOS, e no Windows lançar o Ollama com prioridade de CPU abaixo do normal automaticamente.
