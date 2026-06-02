@@ -130,6 +130,9 @@ A Mnemosyne cria pop-ups proativos via `InsightPopup` (PySide6 `QDialog`) aciona
 - Porta real do servidor: **7071** (não 7070)
 - Router principal: `AKASHA/routers/crawler.py` (gerencia `/library`)
 
+**Intenção primária da AKASHA (decisão 2026-06-01): buscador independente via índice local.**
+O índice local — construído a partir de crawling de domínios confiáveis, archivamento de páginas lidas e embeddings semânticos — é o núcleo e diferencial da AKASHA. Engines externos (SearXNG, DDG) existem como complemento secundário, não como núcleo. Ao sugerir ou implementar melhorias na AKASHA, priorizar sempre o pipeline de indexação local sobre qualidade de engines externos.
+
 **Princípio arquitetural do AKASHA: amplificador de pesquisa, não respondedor.**
 O LLM no AKASHA age APENAS na camada de query (classificação de intenção, expansão de termos, reescrita conversacional). Nunca sintetiza, interpreta ou gera texto como resultado. O AKASHA devolve links, trechos e documentos — a usuária pensa, o sistema amplifica o alcance da busca. Isso descartou o Map-Reduce/síntese permanentemente. Todo código de query understanding deve respeitar esse princípio.
 
