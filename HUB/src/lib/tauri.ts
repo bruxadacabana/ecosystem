@@ -5,7 +5,7 @@
 // ============================================================
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core'
-import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, ModelInfo, ModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry, DomainEntry, TopicEntry, FinetuneState } from '../types'
+import type { AppError, TauriResult, EcosystemConfig, Project, Book, ArticleMeta, ArticleContent, OgmaProject, OgmaPage, LogosStatus, ModelInfo, ModelEntry, ModelAssignment, RecommendedModel, GitFileStatus, GitLogEntry, GitIncomingInfo, MemoryEntry, DomainEntry, TopicEntry, FinetuneState, SearxngStatus } from '../types'
 
 async function call<T>(
   command: string,
@@ -419,3 +419,13 @@ export interface ResetReport {
 export const getServiceCredentials  = ():                         Promise<TauriResult<ServiceCredentials>> => call<ServiceCredentials>('get_service_credentials')
 export const saveServiceCredentials = (creds: ServiceCredentials): Promise<TauriResult<void>>              => call<void>('save_service_credentials', { creds })
 export const ecosystemReset         = (confirmToken: string):      Promise<TauriResult<ResetReport>>       => call<ResetReport>('ecosystem_reset', { confirmToken })
+
+// ----------------------------------------------------------
+//  SearXNG
+// ----------------------------------------------------------
+
+export const searxngStatus  = ():              Promise<TauriResult<SearxngStatus>> => call<SearxngStatus>('searxng_status')
+export const searxngStart   = ():              Promise<TauriResult<void>>          => call<void>('searxng_start')
+export const searxngStop    = ():              Promise<TauriResult<void>>          => call<void>('searxng_stop')
+export const searxngGetUrl  = ():              Promise<TauriResult<string>>        => call<string>('searxng_get_url')
+export const searxngSetUrl  = (url: string):   Promise<TauriResult<void>>          => call<void>('searxng_set_url', { url })

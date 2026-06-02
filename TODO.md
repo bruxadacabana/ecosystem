@@ -7448,6 +7448,13 @@ Quando LOGOS estiver fora (HUB fechado):
 
 - [x] **LOGOS — detecção de AVX2 no startup (`HUB/src-tauri/src/logos.rs`)** — implementado: `detect_avx2()` via `std::arch::is_x86_feature_detected!("avx2")` (CPUID runtime, funciona em Linux e Windows). `has_avx2: bool` em `Inner`. Log de aviso no startup se ausente. `inject_efficiency_params` agora recebe `has_avx2`; sem AVX2 força `num_ctx=512`, `num_batch=128`, `num_thread=2` em P1/P2/P3. 7 testes de injeção e detecção. 2026-05-30.
 
+### HUB — SearXNG: painel dedicado + URL configurável via UI | 2026-06-01
+> Contexto: web_search_backend (URL do SearXNG) era configurável apenas editando ecosystem.json manualmente. Regra do ecossistema: toda configuração controlável pela usuária deve ter UI. SearXNG é o backend primário de busca web do AKASHA — sua URL e status de serviço devem ser gerenciáveis pelo HUB, seguindo o mesmo padrão do Syncthing (commands/syncthing.rs + SyncView.tsx).
+
+#### HUB
+- [x] **commands/searxng.rs** — `searxng_status()` (systemctl is-active + GET /healthz), `searxng_start()`, `searxng_stop()`, `searxng_get_url()` / `searxng_set_url(url)` (lê/escreve ecosystem.json["akasha"]["web_search_backend"]). Registrado em mod.rs e lib.rs.
+- [x] **SearchView.tsx + Sidebar 'Busca'** — painel dedicado com: dot de status (verde/vermelho), URL editável com botão Salvar, botões Iniciar/Parar, botão Testar conexão (GET /healthz → OK ou erro), poll a cada 10s. Adicionado como seção 'busca' (símbolo ⊙) na Sidebar e roteado no App.tsx.
+
 #### 🔵 Baixa prioridade
 
 - [x] **Mnemosyne — slide deck export PPTX a partir de coleção (`core/slidemaker.py`)** — LLM gera outline → `python-pptx` monta .pptx. `pip install python-pptx`. Botão na área de Relatórios. Origem: Auditoria 05-05, Mnemosyne. 2026-05-30.

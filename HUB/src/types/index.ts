@@ -402,7 +402,13 @@ export interface FinetuneState {
 
 export type HubView = 'home' | 'writing' | 'reading' | 'projects'
 
-export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'fontes' | 'interesses' | 'comunicacoes' | 'config'
+export type HubSection = 'home' | 'logos' | 'atividade' | 'monitoramento' | 'git' | 'sync' | 'busca' | 'fontes' | 'interesses' | 'comunicacoes' | 'config'
+
+export interface SearxngStatus {
+  active:    boolean
+  reachable: boolean
+  url:       string
+}
 
 export interface ModuleCard {
   id: HubView

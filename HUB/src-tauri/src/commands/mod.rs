@@ -9,5 +9,6 @@ pub mod notify;
 pub mod projects;
 pub mod reading;
 pub mod sources;
+pub mod searxng;
 pub mod syncthing;
 pub mod writing;

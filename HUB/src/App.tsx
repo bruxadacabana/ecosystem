@@ -26,6 +26,7 @@ import { PageView } from './views/PageView'
 import { MonitoramentoView } from './views/MonitoramentoView'
 import { GitView } from './views/GitView'
 import { SyncView } from './views/SyncView'
+import { SearchView } from './views/SearchView'
 import { FontesView } from './views/FontesView'
 import { InteressesView } from './views/InteressesView'
 import { ComunicacoesView } from './views/ComunicacoesView'
@@ -356,6 +357,8 @@ export default function App() {
         return <GitView paused={gitPaused} onTogglePaused={handleToggleGitPaused} />
       case 'sync':
         return <SyncView autoPaused={syncthingAutoPaused.current} />
+      case 'busca':
+        return <SearchView />
       case 'config':
         return (
           <SetupView
