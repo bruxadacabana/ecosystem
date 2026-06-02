@@ -4,28 +4,6 @@ pode prosseguir para a implementação da seção '### KOSMOS v3 — Redesign co
 Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes (unitários e de integração) exaustivamente (tanto na implementação em si quanto nas funcionalidades ao redor e como funcionam em conjunto) e incluir criação de logs em todo o processo envolvendo a nova feature implementada.
 
 ---
-Acho que o servidor de embedding não está conseguindo lidar com mais de um programa ao mesmo tempo e é absolutamente necessário que ele seja capaz. Eu estava rodando (indexando/analisando) Akasha e Mnemosyne ao mesmo tempo. Logs do Mnemosyne:
-
-07:14:33
-,720 [INFO] mnemosyne.main: IndexReflectionWorker [alta]: 1 arquivo(s) recém-indexados enfileirados.
-07:14:33
-,756 [INFO] gui.workers: IndexReflectionWorker [high]: processando 1 arquivo(s)
-07:17:03
-,595 [INFO] mnemosyne.main: IndexReflectionWorker [alta]: 1 arquivo(s) recém-indexados enfileirados.
-07:17:03
-,666 [INFO] gui.workers: IndexReflectionWorker [high]: processando 1 arquivo(s)
-07:17:32
-,377 [WARNING] gui.workers: IndexWorker: erro ao embedar 'Bokar-Rimpoche-Tara-o-Divino-Feminino.pdf': Server error '500 Internal Server Error' for url 'http://127.0.0.1:7072/v1/embeddings'
-For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
-07:19:03
-,590 [INFO] mnemosyne.main: IndexReflectionWorker [alta]: 1 arquivo(s) recém-indexados enfileirados.
-07:19:03
-,674 [INFO] gui.workers: IndexReflectionWorker [high]: processando 1 arquivo(s)
-07:20:00
-,235 [WARNING] gui.workers: IndexWorker: erro ao embedar 'Buddhist Epistemology (S. R. Bhatt, Anu Mehrotra, the Dalai Lama) (z-library.sk, 1lib.sk, z-lib.sk).pdf': Server error '500 Internal Server Error' for url 'http://127.0.0.1:7072/v1/embeddings'
-For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
-
----
 
 SearXNG tem suporte oficial apenas para Linux (incluindo Docker). No Windows, as opções são:
 
