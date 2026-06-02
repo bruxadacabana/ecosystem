@@ -111,12 +111,16 @@ async def test_search_local_logos_offline_falls_back_to_fts():
         db = Path(td) / "akasha.db"
         _make_minimal_db(db)
 
+        # Path cross-platform: /tmp/doc.md é relativo no Windows (sem drive letter),
+        # fazendo Path.as_uri() levantar ValueError. Usar path absoluto via tempdir.
+        doc_path = str(Path(td) / "doc.md")
+
         # Insere um documento indexável
         con = sqlite3.connect(str(db))
         con.execute("INSERT INTO local_fts (path, title, body, source) VALUES (?, ?, ?, ?)",
-                    ("/tmp/doc.md", "Python Tutorial", "Python is a programming language", "local"))
+                    (doc_path, "Python Tutorial", "Python is a programming language", "local"))
         con.execute("INSERT INTO local_index_meta (path, source, mtime, lang) VALUES (?, ?, ?, ?)",
-                    ("/tmp/doc.md", "local", "2024-01-01T00:00:00", "en"))
+                    (doc_path, "local", "2024-01-01T00:00:00", "en"))
         con.commit()
         con.close()
 

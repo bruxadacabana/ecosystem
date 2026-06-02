@@ -404,7 +404,7 @@ class TestBuildDeepPrompt:
     def test_is_async(self):
         """_build_deep_prompt deve ser async."""
         import inspect
-        src = (_ROOT / "routers" / "chat.py").read_text()
+        src = (_ROOT / "routers" / "chat.py").read_text(encoding="utf-8")
         for line in src.splitlines():
             if "_build_deep_prompt" in line and "def " in line:
                 assert "async def" in line
@@ -473,7 +473,7 @@ class TestStreamChatSignature:
     def test_stream_chat_accepts_max_tokens(self):
         """_stream_chat aceita parâmetro max_tokens."""
         import inspect
-        src = (_ROOT / "routers" / "chat.py").read_text()
+        src = (_ROOT / "routers" / "chat.py").read_text(encoding="utf-8")
         for line in src.splitlines():
             if "_stream_chat" in line and "def " in line and "async" in line:
                 assert "max_tokens" in src.split(line)[1][:300] or "max_tokens" in line
@@ -481,7 +481,7 @@ class TestStreamChatSignature:
 
     def test_stream_chat_accepts_timeout(self):
         """_stream_chat aceita parâmetro timeout."""
-        src = (_ROOT / "routers" / "chat.py").read_text()
+        src = (_ROOT / "routers" / "chat.py").read_text(encoding="utf-8")
         assert "timeout: float" in src or "timeout=" in src
 
 
@@ -493,45 +493,45 @@ class TestChatHtmlStructure:
 
     def test_deep_button_exists(self):
         """chat.html deve ter botão de Deep Research."""
-        src = (_ROOT / "templates" / "chat.html").read_text()
+        src = (_ROOT / "templates" / "chat.html").read_text(encoding="utf-8")
         assert "deep-btn" in src, "Deve ter elemento com id='deep-btn'"
 
     def test_toggle_deep_function_exists(self):
         """chat.html deve ter função toggleDeep()."""
-        src = (_ROOT / "templates" / "chat.html").read_text()
+        src = (_ROOT / "templates" / "chat.html").read_text(encoding="utf-8")
         assert "toggleDeep" in src, "Deve ter função toggleDeep() no JS"
 
     def test_deep_forced_variable(self):
         """chat.html deve ter variável _deepForced para o estado do toggle."""
-        src = (_ROOT / "templates" / "chat.html").read_text()
+        src = (_ROOT / "templates" / "chat.html").read_text(encoding="utf-8")
         assert "_deepForced" in src
 
     def test_deep_indicator_element(self):
         """chat.html deve ter indicador visual de modo deep ativo."""
-        src = (_ROOT / "templates" / "chat.html").read_text()
+        src = (_ROOT / "templates" / "chat.html").read_text(encoding="utf-8")
         assert "deep-indicator" in src or "Pesquisa Profunda" in src
 
     def test_deep_mode_sent_in_request(self):
         """sendMessage deve enviar deep_mode no corpo do request."""
-        src = (_ROOT / "templates" / "chat.html").read_text()
+        src = (_ROOT / "templates" / "chat.html").read_text(encoding="utf-8")
         assert "deep_mode" in src, "Request body deve incluir deep_mode"
 
     def test_loading_event_handled(self):
         """chat.html deve lidar com tipo 'loading' do SSE."""
-        src = (_ROOT / "templates" / "chat.html").read_text()
+        src = (_ROOT / "templates" / "chat.html").read_text(encoding="utf-8")
         assert "ev.type === 'loading'" in src or "type === 'loading'" in src, (
             "Front-end deve lidar com evento 'loading' para Deep Research"
         )
 
     def test_deep_mode_label_shown_in_response(self):
         """Quando mode='deep', label visual deve ser adicionado."""
-        src = (_ROOT / "templates" / "chat.html").read_text()
+        src = (_ROOT / "templates" / "chat.html").read_text(encoding="utf-8")
         assert "mode === 'deep'" in src or "ev.mode" in src, (
             "chat.html deve verificar ev.mode === 'deep' para mostrar label"
         )
 
     def test_deep_synthesis_voice_in_chat_py(self):
         """_DEEP_SYNTHESIS_VOICE deve estar definido em chat.py."""
-        src = (_ROOT / "routers" / "chat.py").read_text()
+        src = (_ROOT / "routers" / "chat.py").read_text(encoding="utf-8")
         assert "_DEEP_SYNTHESIS_VOICE" in src
         assert "síntese" in src.lower() or "sintetize" in src.lower()
