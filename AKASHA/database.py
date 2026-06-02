@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 50
+SCHEMA_VERSION = 51
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -1273,6 +1273,37 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             )
         except Exception:
             pass
+
+    if from_version < 51:
+        # BUG-019 fix: page_count em crawl_sites estava desincronizado com crawl_pages.
+        # 14 de 16 domínios tinham page_count > 0 mas crawl_pages completamente vazio —
+        # as páginas foram deletadas de crawl_pages sem decrementar o contador.
+        #
+        # Passo 1: resetar last_crawled_at dos sites que perderam dados (page_count > 0
+        # mas sem páginas reais). Isso força re-crawl imediato no próximo startup_crawl().
+        await db.execute(
+            """UPDATE crawl_sites
+                  SET last_crawled_at = NULL
+                WHERE deleted = 0
+                  AND page_count > 0
+                  AND (SELECT COUNT(*) FROM crawl_pages WHERE site_id = crawl_sites.id) = 0"""
+        )
+        # Passo 2: sincronizar page_count com o count real de crawl_pages.
+        await db.execute(
+            """UPDATE crawl_sites
+                  SET page_count = (SELECT COUNT(*) FROM crawl_pages WHERE site_id = crawl_sites.id)
+                WHERE deleted = 0"""
+        )
+        # Passo 3: trigger DELETE para manter page_count sincronizado quando páginas
+        # forem deletadas individualmente (ex: scripts de limpeza, Fix 6, etc.).
+        await db.execute(
+            """CREATE TRIGGER IF NOT EXISTS trg_crawl_pages_dec_count
+               AFTER DELETE ON crawl_pages BEGIN
+                   UPDATE crawl_sites
+                      SET page_count = MAX(0, page_count - 1)
+                    WHERE id = OLD.site_id;
+               END"""
+        )
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",

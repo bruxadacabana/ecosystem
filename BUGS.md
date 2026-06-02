@@ -78,6 +78,8 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-015](#bug-015) | FIXED | 2026-05-30 | HUB/LOGOS | proxy_openai_to_llama sem hardware guards, model switching ou active state tracking |
 | [BUG-016](#bug-016) | FIXED | 2026-05-30 | HUB/LOGOS | embed-server sem lazy loading — Mnemosyne recebia 503 em /v1/embeddings |
 | [BUG-017](#bug-017) | FIXED | 2026-05-31 | AKASHA | db.run_sync() inexistente em aiosqlite 0.22.x — código morto em _reindex e init_vec_index |
+| [BUG-018](#bug-018) | FIXED | 2026-06-01 | AKASHA | knowledge_worker deadlock — fila baixa com >50 itens nunca drena |
+| [BUG-019](#bug-019) | FIXED | 2026-06-02 | AKASHA | page_count em crawl_sites desincronizado com crawl_pages — 14/16 domínios sem páginas reais |
 
 ---
 
@@ -1236,13 +1238,13 @@ Removido o bloco de threshold de `process_queue()`. O throttling já existia no 
 
 ---
 
-### BUG-019 · [OPEN] · `page_count` em `crawl_sites` desincronizado com `crawl_pages` — 14 de 16 domínios aparentam ter páginas indexadas mas o banco está vazio
+### BUG-019 · [FIXED] · `page_count` em `crawl_sites` desincronizado com `crawl_pages` — 14 de 16 domínios aparentam ter páginas indexadas mas o banco está vazio
 
 #### Identificação
 - **Data:** 2026-06-02
 - **App(s):** AKASHA
 - **Componente:** tabela `crawl_sites` (coluna `page_count`) vs. tabela `crawl_pages`
-- **Commit do fix:** pendente
+- **Commit do fix:** migration 51 em `database.py` (ver abaixo)
 - **Descoberta via:** auditoria manual da Biblioteca durante item "Crescer índice local"
 - **Tempo de diagnóstico:** ~15 min
 
@@ -1276,9 +1278,15 @@ Provavelmente um reset de tabela (`crawl_pages`) durante desenvolvimento ou migr
 A Biblioteca aparenta ter um índice local rico (~2.000 páginas), mas na prática tem 89 páginas de 2 domínios. Buscas locais via FTS5 e busca semântica têm cobertura mínima. O conhecimento de domínios como allfreecrafts.com, pagangrimoire.com, ravelry.com, quantamagazine.org, etc. está perdido.
 
 #### Fix
-1. Resetar `page_count` para o valor real: `UPDATE crawl_sites SET page_count = (SELECT COUNT(*) FROM crawl_pages WHERE site_id = crawl_sites.id)`.
-2. Disparar novo crawl de todos os domínios com `page_count = 0` após o reset.
-3. Garantir que o trigger ou a função que atualiza `page_count` esteja correta e acionada após cada crawl.
+Migration 51 em `database.py` (`_migrate`, `SCHEMA_VERSION = 51`), idempotente e em 3 passos:
+1. **Re-crawl forçado:** `UPDATE crawl_sites SET last_crawled_at = NULL WHERE page_count > 0 AND (SELECT COUNT(*) FROM crawl_pages WHERE site_id = crawl_sites.id) = 0` — os sites que perderam dados voltam à fila de `crawl_pending_sites()` no próximo startup (que crawla sites com `last_crawled_at IS NULL`).
+2. **Sincronização:** `UPDATE crawl_sites SET page_count = (SELECT COUNT(*) FROM crawl_pages WHERE site_id = crawl_sites.id)` — corrige o contador para o valor real.
+3. **Trigger preventivo:** `CREATE TRIGGER trg_crawl_pages_dec_count AFTER DELETE ON crawl_pages` decrementa `page_count` (com piso em 0 via `MAX(0, ...)`) sempre que uma página é deletada individualmente — evita futura dessincronia.
+
+Aplicado também diretamente no banco de produção (`ecosystem_root/akasha/akasha.db`) via SQL idêntico + `schema_version = 51`, já que a migration só roda no startup. Resultado verificado: 9 sites marcados para re-crawl, `SUM(page_count) = COUNT(crawl_pages) = 89`.
 
 #### Teste de regressão
-Após fix: `SELECT SUM(page_count) = (SELECT COUNT(*) FROM crawl_pages)` deve retornar verdadeiro.
+`tests/test_page_count_sync.py` — 10 testes: migration sincroniza page_count para 0 (stale), reseta last_crawled_at de sites stale, preserva sites com páginas reais, não toca sites nunca-crawleados, sincroniza mismatch parcial; trigger decrementa ao deletar, não fica negativo, decrementa N vezes, sobrevive a CASCADE delete, existe após init_db.
+
+#### Observação secundária (não faz parte deste bug)
+5 domínios (positivepsychology.com, covencrafts.co.uk, yarnspirations.com, marxismo.org.br, freevintagecrochet.com) foram crawleados recentemente e retornaram 0 páginas reais — `page_count=0` é correto aqui, mas sugere que esses crawls falharam ou todas as páginas caíram no filtro `word_count >= 50`. Investigação separada recomendada (possível conteúdo JS-heavy ou bloqueio).

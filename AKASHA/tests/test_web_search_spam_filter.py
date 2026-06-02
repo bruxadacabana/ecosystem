@@ -86,10 +86,28 @@ class TestCritério1RedirectSpam:
         ws = _import_ws()
         assert ws._is_spam_result(_result("http://ka.ga/lo")) is True
 
-    def test_domain_6_chars_path_4_chars_é_spam(self):
-        """Limite exato: domínio = 6 chars, path = 4 chars → spam."""
+    def test_domain_6_chars_path_4_chars_tld_obscuro_é_spam(self):
+        """Limite exato em TLD obscuro: domínio = 6 chars, path = 4 chars → spam."""
         ws = _import_ws()
-        assert ws._is_spam_result(_result("http://abcdef.io/wxyz")) is True
+        # .tn (Tunísia) é um dos ccTLDs obscuros usados no spam real, fora do allowlist
+        assert ws._is_spam_result(_result("http://abcdef.tn/wxyz")) is True
+
+    def test_domain_6_chars_path_4_chars_tld_comum_não_é_spam(self):
+        """Domínio curto + path curto mas TLD comum (.io) → NÃO spam (evita falso positivo)."""
+        ws = _import_ws()
+        # bbc.com/news, cnn.com/tech seguem este padrão e devem passar
+        assert ws._is_spam_result(_result("http://abcdef.io/wxyz")) is False
+
+    def test_short_domain_empty_path_não_é_spam(self):
+        """Domínio curto com path vazio (homepage) não é redirect spam."""
+        ws = _import_ws()
+        # https://r0.com/ é uma homepage legítima, não redirect spam
+        assert ws._is_spam_result(_result("https://r0.com/", "r0")) is False
+
+    def test_bbc_news_não_é_spam(self):
+        """Caso real: bbc.com/news (domínio 3, path 4, TLD comum) → não spam."""
+        ws = _import_ws()
+        assert ws._is_spam_result(_result("https://bbc.com/news", "BBC News")) is False
 
     def test_domain_7_chars_não_é_spam_pelo_crit1(self):
         """Domínio com 7 chars não dispara critério 1."""

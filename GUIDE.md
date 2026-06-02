@@ -2584,8 +2584,11 @@ crawler.py:crawl_site(site_id)
   │   ├── verifica duplicata via simhash
   │   ├── insere/atualiza crawl_pages
   │   └── atualiza crawl_fts
+  ├── atualiza page_count = COUNT(crawl_pages do site)
   └── atualiza next_crawl_at = now + crawl_interval_days
 ```
+
+> **Consistência de `page_count`:** o contador em `crawl_sites` é recalculado ao final de cada crawl e mantido sincronizado por um trigger `trg_crawl_pages_dec_count` (migration 51) que o decrementa quando uma página é deletada individualmente. Isso evita a dessincronia do BUG-019, em que o contador indicava centenas de páginas enquanto `crawl_pages` estava vazio após um reset de banco.
 
 **Politeness (comportamento respeitoso):**
 

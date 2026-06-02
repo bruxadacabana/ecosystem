@@ -186,6 +186,20 @@ _SPAM_TLDS: frozenset[str] = frozenset({
     ".ga", ".ml", ".cf", ".gq", ".tk",
 })
 
+# TLDs comuns e confiáveis — usados como allowlist no critério 1 (redirect spam).
+# Um domínio curto com path curto SÓ é considerado redirect spam se o TLD NÃO
+# estiver aqui — caso contrário sites legítimos como bbc.com/news, cnn.com/tech,
+# vox.com/2026 seriam falsamente filtrados.
+_COMMON_TLDS: frozenset[str] = frozenset({
+    ".com", ".org", ".net", ".edu", ".gov", ".mil", ".int",
+    ".io", ".co", ".dev", ".app", ".info", ".me", ".tv", ".ai",
+    ".biz", ".news", ".blog", ".wiki", ".xyz", ".tech", ".online",
+    # ccTLDs de países relevantes para a usuária e mainstream
+    ".br", ".uk", ".us", ".ca", ".de", ".fr", ".es", ".it", ".pt",
+    ".nl", ".se", ".no", ".fi", ".dk", ".jp", ".cn", ".kr", ".au",
+    ".ru", ".pl", ".ch", ".at", ".be", ".ie", ".nz", ".in", ".mx",
+})
+
 # Vocabulário para detecção de títulos gerados automaticamente.
 # Palavras presentes → "dicionário"; ausentes → candidatas a nonsense.
 # Cobre inglês (~300), português (~200) e alguns conectivos de outras línguas.
@@ -326,9 +340,18 @@ def _is_spam_result(result: SearchResult) -> bool:
     domain_name = parts[0] if len(parts) == 2 else hostname
     tld         = f".{parts[-1]}" if len(parts) >= 2 else ""
 
-    # Critério 1: redirect spam — domínio muito curto + path de um segmento curto
+    # Critério 1: redirect spam — domínio curto + path de UM segmento curto E
+    # não-vazio, em TLD incomum. O allowlist de TLDs comuns evita falsos positivos
+    # em sites legítimos (bbc.com/news, cnn.com/tech, vox.com/2026, r0.com/).
+    # O padrão real do redirect spam é http://ka.ga/lo, http://uzo.ae/pak —
+    # domínio minúsculo + token aleatório curto + ccTLD obscuro.
     path_alnum = re.sub(r"[^a-z0-9]", "", path.lower())
-    if "/" not in path and len(domain_name) <= 6 and len(path_alnum) <= 4:
+    if (
+        "/" not in path
+        and 1 <= len(path_alnum) <= 4
+        and len(domain_name) <= 6
+        and tld not in _COMMON_TLDS
+    ):
         log.debug("web_search: spam [crit-1 redirect] %s", url[:80])
         return True
 
