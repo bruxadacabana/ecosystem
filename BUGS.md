@@ -1343,7 +1343,7 @@ Fix em duas camadas:
 #### Teste de regressão
 - **LOGOS** (`logos.rs`, módulo de testes): `embed_semaphore_tem_capacidade_um`, `embed_semaphore_serializa_duas_requisicoes` (segunda requisição aguarda enquanto a primeira segura o permit), `embed_semaphore_nao_afeta_akasha_semaphore` (chat semaphore intacto). 3 passando.
 - **AKASHA** (`tests/test_embed_text_retry.py`, 8 testes): sucesso sem retry; 500×2 depois 200 → sucede; 500 sempre → None + 3 warnings; 503 dispara retry; 4xx não re-tenta; offline não re-tenta; texto vazio sem HTTP. Todos passando.
-- **Mnemosyne** (`tests/test_logos_embeddings.py`, +5 testes espelhando os de 429): 500/503 retry→sucesso; 500 sempre→`EmbedTimeoutError` após 3 tentativas; warning por tentativa; sucesso na 1ª sem sleep. Tests escritos; **não executados nesta máquina** (ambiente Python do Mnemosyne — langchain/chromadb/etc. — não provisionado no PC onde o fix foi feito). Devem ser rodados no ambiente do Mnemosyne.
+- **Mnemosyne** (`tests/test_logos_embeddings.py`, +5 testes espelhando os de 429): 500/503 retry→sucesso; 500 sempre→`EmbedTimeoutError` após 3 tentativas; warning por tentativa; sucesso na 1ª sem sleep. **15 passando** (10 existentes + 5 novos) via venv compartilhado da raiz (`program files/.venv`).
 
 ---
 

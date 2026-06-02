@@ -71,6 +71,11 @@ Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRA
 - Toda correção de bug: adicionar teste que cobre o caso corrigido **e sempre expandir para cobrir casos adjacentes, branches relacionadas e edge cases da função/módulo inteiro** — nunca limitar ao caso específico do bug.
 - Nunca reportar um item como concluído sem que os testes correspondentes existam e passem.
 
+**Ambientes Python por app (CachyOS principal) — onde rodar pytest:**
+- **Mnemosyne** usa o **venv compartilhado da raiz**: `program files/.venv` (o `Mnemosyne/iniciar.sh` aponta para `../.venv`). Rodar: `"program files/.venv/bin/python" -m pytest …` de dentro de `Mnemosyne/`.
+- **AKASHA** tem o **próprio venv**: `AKASHA/.venv`.
+- `python`/`python3` do sistema NÃO têm as dependências — sempre usar o venv correto. Erro a evitar: procurar `.venv` só dentro de `Mnemosyne/` e concluir que o ambiente não existe; ele está um nível acima, compartilhado.
+
 ---
 
 ## Bugs detectados durante o trabalho
