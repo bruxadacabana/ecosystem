@@ -404,6 +404,22 @@
       </section>
       {% endif %}
 
+      {% if suggested_domains %}
+      <div class="domain-suggest-bar">
+        {% for item in suggested_domains %}
+        <form method="post" action="/library/add-quick" class="domain-suggest-form"
+              onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='adicionando…'">
+          <input type="hidden" name="url" value="https://{{ item.domain }}">
+          <span class="domain-suggest-text">
+            <strong>{{ item.domain }}</strong> aparece nos resultados mas não está indexado
+            <em class="domain-suggest-visits">({{ item.visits }}×)</em>
+          </span>
+          <button type="submit" class="btn btn-ghost domain-suggest-btn">Indexar →</button>
+        </form>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       {% if web_results %}
       <section class="results-section">
         {% if site_results or watch_later_results or fav_results or has_eco %}<h3 class="results-section-title">Web</h3>{% endif %}
@@ -617,6 +633,17 @@
 {% endif %}
 
 <style>
+/* ── Sugestão inline de indexação de domínio ── */
+.domain-suggest-bar   { display: flex; flex-direction: column; gap: .35rem; margin-bottom: .75rem; }
+.domain-suggest-form  { display: flex; align-items: center; gap: .6rem; padding: .4rem .7rem;
+                         background: var(--surface-2, #1e2433); border: 1px solid var(--accent-muted, #4466aa33);
+                         border-radius: 6px; font-size: .82rem; flex-wrap: wrap; }
+.domain-suggest-text  { flex: 1; color: var(--text, #c8d0e0); }
+.domain-suggest-visits { opacity: .65; margin-left: .2rem; }
+.domain-suggest-btn   { padding: .2rem .65rem; font-size: .78rem; border-radius: 4px;
+                         color: var(--accent, #6688cc); border-color: var(--accent-muted, #4466aa44); }
+.domain-suggest-btn:hover { background: var(--surface-3, #252c40); }
+
 .inline-images-panel  { margin: 1rem 0 1.25rem; }
 .inline-images-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; }
 .inline-images-label  { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; opacity: .55; }

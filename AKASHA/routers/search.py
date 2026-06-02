@@ -833,6 +833,26 @@ async def search(
         except Exception:
             pass
 
+    # Sugestão inline: domínios nos top-5 resultados web, frequentes no click_log
+    # mas ainda não indexados na Biblioteca.
+    suggested_domains: list[dict] = []
+    if q and web_results:
+        try:
+            from urllib.parse import urlparse as _uparse
+            from database import get_unindexed_frequent_domains as _get_ufd
+
+            _result_domains = {
+                _uparse(r.url).netloc.lower().removeprefix("www.")
+                for r in web_results[:5]
+                if r.url and _uparse(r.url).netloc
+            }
+            _frequent = {d: c for d, c in await _get_ufd(threshold=3)}
+            for _dom in _result_domains:
+                if _dom in _frequent:
+                    suggested_domains.append({"domain": _dom, "visits": _frequent[_dom]})
+        except Exception:
+            pass
+
     has_sites = src_sites and bool(await get_all_crawl_sites())
     recent = await database.recent_searches()
 
@@ -890,6 +910,7 @@ async def search(
             "show_hedging_banner": _show_hedging_banner,
             "session":             _active_session,
             "voice":               _voice_texts(),
+            "suggested_domains":   suggested_domains,
         },
     )
     if _new_cookie:
