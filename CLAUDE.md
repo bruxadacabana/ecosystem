@@ -68,7 +68,9 @@ Servidor tower antigo (~2010) reaproveitado para serviços leves — **NÃO para
 - RAM: **16 GB DDR3 ECC 1333** (2× 8 GB, slots A1/A2; A3/A4 livres) · GPU: Matrox G200eW (iDRAC, inútil p/ ML)
 - Disco: 1× WD 500 GB **7200rpm mecânico** (SATA via SAS), sem redundância; **fedora-root só 15 GB, ~448 GB livres no VG** · HBA LSI SAS1068E (não-PERC) · Rede: 2× gigabit Broadcom
 
-Implicações: fora do pipeline de IA. Bom host always-on para serviços CPU/rede (SearXNG, sync, armazenamento, containers). Ressalvas: disco único (backup importa); estender LV antes de pôr dados; consumo elétrico alto (~100W+ ocioso, aprox.).
+Implicações: fora do pipeline de IA. Bom host always-on para serviços CPU/rede (SearXNG, sync, armazenamento, containers). Ressalvas: disco único (backup importa); consumo elétrico alto (~100W+ ocioso, aprox.).
+
+LVM (2026-06-02): root (`/dev/fedora/root`, VG `fedora`, XFS) estendido de 15 GB → ~463 GB. **Quirk:** o `system.devices` listava o disco por um WWID da controladora LSI SAS1068E que mudou; `pvs/vgs/lvs` vinham vazios apesar do root montado — resolvido com `sudo vgimportdevices --all`. Risco de recorrer após reboot (WWID instável → LVM perde a VG → emergency mode). Conserto definitivo p/ disco único: `use_devicesfile = 0` em `/etc/lvm/lvm.conf` + `dracut -f`.
 
 **Decisão (2026-05-24):** o laptop usa o **mesmo modelo de embedding do PC principal** (padronização). Como 2 GB de VRAM não comportam embedding model + LLM simultaneamente, o LOGOS deve suportar **modo CPU para inferência LLM** no laptop: quando a VRAM estiver ocupada pelo embedding, o LLM roda via llama-server com `--n-gpu-layers 0`. O LOGOS continua sendo o único ponto de acesso à IA — não há fallback de serviço, apenas alternância de backend de execução (GPU → CPU) gerenciada internamente pelo LOGOS.
 
