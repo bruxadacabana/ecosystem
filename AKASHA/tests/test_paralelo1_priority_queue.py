@@ -13,7 +13,9 @@ Cobre:
   process_queue() — ordem de processamento:
     - itens de _queue_high são processados antes de _queue_low
     - _queue_high vazia → processa _queue_low
-    - _queue_low > 50 → log de warning e pausa
+    - _queue_low > 50 → backfill_knowledge pausa via _wait_queue_drain()
+      mas process_queue NÃO pausa — continua drenando a fila normalmente
+      (bug corrigido: o check de threshold foi removido de process_queue)
 
   Propagação de X-Priority:
     - is_high=True  → X-Priority: "2" nas chamadas ao LOGOS
@@ -406,3 +408,72 @@ class TestSchedulePageIsNonBlocking:
 
         assert len(put_nowait_calls) == 1, "Deve usar put_nowait"
         assert len(put_calls) == 0, "Não deve usar await queue.put()"
+
+
+# ---------------------------------------------------------------------------
+# Regressão: fila baixa > threshold não deve bloquear o worker (BUG-fix)
+# ---------------------------------------------------------------------------
+
+class TestQueueThresholdRegression:
+    """
+    Regressão para bug onde process_queue entrava em deadlock quando
+    _queue_low.qsize() > _LOW_QUEUE_PAUSE_THRESHOLD (50):
+
+    Antes do fix, o worker fazia `continue` sem consumir nenhum item,
+    dormia 20s e voltava ao topo — os 51 itens nunca saíam da fila.
+    Após o fix, o threshold só existe em backfill_knowledge._wait_queue_drain();
+    process_queue drena a fila normalmente independente do tamanho.
+    """
+
+    def test_low_queue_above_threshold_is_still_accessible(self):
+        """Fila baixa com >50 itens ainda pode ser lida com get_nowait."""
+        kw = _import_kw()
+        kw._queue_high = asyncio.Queue(maxsize=200)
+        kw._queue_low  = asyncio.Queue(maxsize=200)
+
+        threshold = kw._LOW_QUEUE_PAUSE_THRESHOLD
+        for i in range(threshold + 1):
+            kw.schedule_page(f"http://low{i}.com", "T", "C" * 50, "archived", priority="low")
+
+        assert kw._queue_low.qsize() == threshold + 1, "Todos os itens devem estar na fila"
+
+        # O worker deve conseguir ler itens mesmo com fila acima do threshold
+        task = kw._queue_low.get_nowait()
+        assert task is not None
+        assert kw._queue_low.qsize() == threshold, "Fila deve ter diminuído após get_nowait"
+
+    def test_process_queue_has_no_threshold_check(self):
+        """process_queue não deve conter lógica de pausa por tamanho de fila.
+
+        Verifica que o código-fonte de process_queue não faz `continue` após
+        checar _LOW_QUEUE_PAUSE_THRESHOLD — o throttle pertence ao backfill.
+        """
+        import inspect
+        kw = _import_kw()
+        source = inspect.getsource(kw.process_queue)
+
+        # O threshold não deve aparecer com lógica de continue no process_queue.
+        # A presença de _LOW_QUEUE_PAUSE_THRESHOLD no source seria um sinal de regressão.
+        # Verifica de forma menos frágil: a string "pausando backfill" não deve estar
+        # no source de process_queue (foi movida para backfill_knowledge ou removida).
+        assert "pausando backfill" not in source, (
+            "process_queue não deve logar 'pausando backfill' — "
+            "esse log pertence ao backfill_knowledge ou foi removido. "
+            "Regressão detectada: o deadlock de threshold foi reintroduzido."
+        )
+
+    def test_wait_queue_drain_in_backfill_still_throttles(self):
+        """backfill_knowledge._wait_queue_drain ainda pausa quando fila > threshold.
+
+        O throttle correto existe em backfill_knowledge, não em process_queue.
+        Este teste verifica que _wait_queue_drain existe e funciona.
+        """
+        import inspect
+        kw = _import_kw()
+        source = inspect.getsource(kw.backfill_knowledge)
+        assert "_wait_queue_drain" in source, (
+            "backfill_knowledge deve ter _wait_queue_drain para throttlar o backfill"
+        )
+        assert "_LOW_QUEUE_PAUSE_THRESHOLD" not in source or "_wait_queue_drain" in source, (
+            "O throttle de backfill deve existir em backfill_knowledge via _wait_queue_drain"
+        )

@@ -1181,3 +1181,55 @@ Alterado em: `_reindex()`, `init_vec_index()`, e a nova `embed_and_index()`.
 usa banco temporário com a extensão real e confirma que a inserção funciona end-to-end.
 O `_load_vec_ext` pode ser removido futuramente; por ora permanece como dead code para
 não quebrar imports externos que possam referenciá-lo.
+
+---
+
+### BUG-018 · [FIXED] · knowledge_worker deadlock — fila baixa com >50 itens nunca drena
+
+#### Identificação
+- **Data:** 2026-06-01
+- **App(s):** AKASHA
+- **Componente:** `services/knowledge_worker.py` → `process_queue()`
+- **Commit do fix:** pendente
+- **Descoberta via:** uso-real
+- **Tempo de diagnóstico:** ~30 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** CachyOS principal
+- **OS:** CachyOS
+- **Modo:** produção (AKASHA rodando com LOGOS ativo)
+- **Reproduzível em:** qualquer ambiente com >50 itens no backfill
+
+#### Pré-condição
+AKASHA rodando com backfill de knowledge ativo. `_queue_low` acumula >50 itens durante indexação inicial (arquivos archived + crawl_pages).
+
+#### Sintoma
+Warning `knowledge_worker: fila baixa com 51 itens — pausando backfill` repetindo a cada 20 segundos indefinidamente. Fila nunca drena. LOGOS online, itens não processados.
+
+#### Logs
+```
+23:04:39 [WARNING] akasha.knowledge_worker: knowledge_worker: fila baixa com 51 itens — pausando backfill
+23:04:59 [WARNING] akasha.knowledge_worker: knowledge_worker: fila baixa com 51 itens — pausando backfill
+(repetindo a cada 20s sem mudança no contador)
+```
+
+#### Causa raiz
+Deadlock entre dois mecanismos de throttle redundantes:
+
+1. `backfill_knowledge._wait_queue_drain()` (linha ~1346): pausa corretamente antes de enfileirar novos itens quando `_queue_low.qsize() > 50`. Aguarda com `asyncio.sleep(5)` até drenar.
+
+2. `process_queue()` (linhas 518-524, **bug**): quando `_queue_low.qsize() > _LOW_QUEUE_PAUSE_THRESHOLD`, dormia 20s e fazia `continue` sem consumir nenhum item. Isso impedia a fila de drenar, perpetuando o estado de bloqueio do `backfill_knowledge`.
+
+Resultado: `backfill_knowledge` esperava a fila drenar → `process_queue` não drenava porque a fila era >50 → deadlock perfeito.
+
+#### Impacto
+Knowledge extraction completamente parada em qualquer sessão com backfill não concluído. Extração de tópicos, entidades e perfil de interesse paralisados indefinidamente até reiniciar o AKASHA.
+
+#### Fix
+Removido o bloco de threshold de `process_queue()`. O throttling já existia no lugar correto (`backfill_knowledge._wait_queue_drain()`). `process_queue` agora drena a fila normalmente independente do tamanho.
+
+#### Teste de regressão
+`tests/test_paralelo1_priority_queue.py` → `TestQueueThresholdRegression`:
+- `test_low_queue_above_threshold_is_still_accessible`: fila com >50 itens ainda pode ser lida
+- `test_process_queue_has_no_threshold_check`: verifica via source inspection que "pausando backfill" não está em `process_queue`
+- `test_wait_queue_drain_in_backfill_still_throttles`: confirma que o throttle correto existe em `backfill_knowledge`

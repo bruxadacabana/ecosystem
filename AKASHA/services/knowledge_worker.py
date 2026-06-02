@@ -514,15 +514,9 @@ async def process_queue() -> None:
                 task = _queue_high.get_nowait()
             except asyncio.QueueEmpty:
                 is_high = False
-                low_size = _queue_low.qsize()
-                if low_size > _LOW_QUEUE_PAUSE_THRESHOLD:
-                    log.warning(
-                        "knowledge_worker: fila baixa com %d itens — pausando backfill",
-                        low_size,
-                    )
-                    await asyncio.sleep(_COOLDOWN_S * 10)
-                    continue
-                # Aguarda fila baixa com timeout para re-checar alta a cada 2s
+                # Aguarda fila baixa com timeout para re-checar alta a cada 2s.
+                # Não há pausa por tamanho aqui — backfill_knowledge já throttla
+                # via _wait_queue_drain() antes de enfileirar novos itens.
                 try:
                     task = await asyncio.wait_for(_queue_low.get(), timeout=2.0)
                 except asyncio.TimeoutError:
