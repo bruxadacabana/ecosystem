@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 51
+SCHEMA_VERSION = 52
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -245,6 +245,15 @@ CREATE TABLE IF NOT EXISTS page_rank (
     url         TEXT PRIMARY KEY,
     score       REAL NOT NULL DEFAULT 1.0,
     updated_at  INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+_CREATE_DOMAIN_QUALITY = """
+CREATE TABLE IF NOT EXISTS domain_quality (
+    domain        TEXT    PRIMARY KEY,
+    archive_count INTEGER NOT NULL DEFAULT 0,
+    quality_score REAL    NOT NULL DEFAULT 0.0,
+    updated_at    INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -571,6 +580,7 @@ async def init_db() -> None:
         await db.execute(_CREATE_IDX_PAGE_LINKS_SOURCE)
         await db.execute(_CREATE_IDX_PAGE_LINKS_TARGET)
         await db.execute(_CREATE_PAGE_RANK)
+        await db.execute(_CREATE_DOMAIN_QUALITY)
         await db.execute(_CREATE_SITE_SUGGESTIONS)
         await db.execute(_CREATE_IDX_SITE_SUGGESTIONS_STATUS)
         await db.execute(_CREATE_CLICK_LOG)
@@ -1304,6 +1314,12 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
                     WHERE id = OLD.site_id;
                END"""
         )
+
+    if from_version < 52:
+        try:
+            await db.execute(_CREATE_DOMAIN_QUALITY)
+        except Exception:
+            pass  # tabela já existe em bancos criados com este schema
 
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
@@ -2929,3 +2945,64 @@ async def get_unindexed_frequent_domains(threshold: int = 3) -> list[tuple[str, 
         if domain.removeprefix("www.") not in indexed_domains
     ]
     return result[:5]
+
+
+# ---------------------------------------------------------------------------
+# Domain quality helpers (archive-based ranking signal)
+# ---------------------------------------------------------------------------
+
+_ARCHIVE_WEIGHT     = 2.0   # pontos por arquivo
+_QUALITY_BOOST_CAP  = 3.0   # multiplicador máximo (evita reordenação extrema)
+_QUALITY_NORMALIZER = 10.0  # divide quality_score para obter boost adicional
+
+
+async def increment_domain_archive(domain: str) -> None:
+    """Incrementa archive_count do domínio e recalcula quality_score.
+
+    quality_score = archive_count × _ARCHIVE_WEIGHT
+    Chamado após arquivamento bem-sucedido de uma página.
+    """
+    import time as _time
+    if not domain:
+        return
+    domain = domain.lower().removeprefix("www.")
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                """INSERT INTO domain_quality (domain, archive_count, quality_score, updated_at)
+                   VALUES (?, 1, ?, ?)
+                   ON CONFLICT(domain) DO UPDATE SET
+                       archive_count = archive_count + 1,
+                       quality_score = (archive_count + 1) * ?,
+                       updated_at    = ?""",
+                (domain, _ARCHIVE_WEIGHT, int(_time.time()),
+                 _ARCHIVE_WEIGHT, int(_time.time())),
+            )
+            await db.commit()
+    except Exception:
+        pass
+
+
+async def get_domain_quality_boosts(domains: list[str]) -> dict[str, float]:
+    """Retorna multiplicador de qualidade por domínio (1.0 = neutro, >1.0 = boost).
+
+    boost = 1.0 + quality_score / _QUALITY_NORMALIZER, limitado a _QUALITY_BOOST_CAP.
+    Domínios sem histórico recebem 1.0 (neutro).
+    """
+    if not domains:
+        return {}
+    normed = [d.lower().removeprefix("www.") for d in domains]
+    placeholders = ",".join("?" * len(normed))
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                f"SELECT domain, quality_score FROM domain_quality WHERE domain IN ({placeholders})",
+                normed,
+            )).fetchall()
+    except Exception:
+        return {}
+    result: dict[str, float] = {}
+    for domain, score in rows:
+        boost = min(1.0 + score / _QUALITY_NORMALIZER, _QUALITY_BOOST_CAP)
+        result[domain] = boost
+    return result

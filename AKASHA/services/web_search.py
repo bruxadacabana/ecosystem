@@ -645,4 +645,25 @@ async def search_web(
     _mem_cache.set(qhash, results, ttl_hours * 3600)
     await _set_db_cache(cache_key, qhash, results, ttl_hours)
 
-    return _slice(await _filter_blocked(results))
+    final = _slice(await _filter_blocked(results))
+
+    # Boost por qualidade de domínio (arquivos históricos) — aplicado fora do cache
+    # para refletir o estado atual de domain_quality sem invalidar cache.
+    try:
+        from urllib.parse import urlparse as _urlparse
+        from database import get_domain_quality_boosts as _get_boosts
+        _domains = [(_urlparse(r.url).netloc or "").removeprefix("www.").lower() for r in final]
+        _unique = list({d for d in _domains if d})
+        if _unique:
+            _boost_map = await _get_boosts(_unique)
+            if any(v != 1.0 for v in _boost_map.values()):
+                _scored = [
+                    (r, (1.0 / (i + 1)) * _boost_map.get(_domains[i], 1.0))
+                    for i, r in enumerate(final)
+                ]
+                _scored.sort(key=lambda x: x[1], reverse=True)
+                final = [r for r, _ in _scored]
+    except Exception:
+        pass
+
+    return final

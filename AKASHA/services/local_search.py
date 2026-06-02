@@ -1549,6 +1549,38 @@ async def _apply_pagerank_boost(results: list[SearchResult]) -> list[SearchResul
 # Domain-boost ranking (Learning to Rank via click_log)
 # ---------------------------------------------------------------------------
 
+async def _apply_quality_boost(results: list[SearchResult]) -> list[SearchResult]:
+    """Aplica multiplicador de qualidade baseado em histórico de arquivamento.
+
+    Domínios cujas páginas a usuária arquivou têm score elevado — arquivar é
+    o sinal mais forte de que o conteúdo foi lido e considerado valioso.
+    Fator = 1.0 + quality_score / 10 (neutro=1.0, cap=3.0).
+    """
+    if not results:
+        return results
+    try:
+        from urllib.parse import urlparse as _urlparse
+        from database import get_domain_quality_boosts
+        domains = [
+            (_urlparse(r.url).netloc or "").removeprefix("www.").lower()
+            for r in results
+        ]
+        unique_domains = list({d for d in domains if d})
+        if not unique_domains:
+            return results
+        boost_map = await get_domain_quality_boosts(unique_domains)
+        if all(v == 1.0 for v in boost_map.values()):
+            return results
+        scored = [
+            (r, (1.0 / (i + 1)) * boost_map.get(domains[i], 1.0))
+            for i, r in enumerate(results)
+        ]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [r for r, _ in scored]
+    except Exception:
+        return results
+
+
 async def _apply_domain_boost(results: list[SearchResult]) -> list[SearchResult]:
     """Multiplica score posicional pelo domain_boost do histórico de cliques.
 
@@ -2080,6 +2112,7 @@ async def search_local(
     combined = await _apply_usage_boost(combined)
     combined = await _apply_pagerank_boost(combined)
     combined = await _apply_domain_boost(combined)
+    combined = await _apply_quality_boost(combined)
     try:
         from services.freshness import is_temporal_query, get_dates_for_urls, apply_freshness_rerank
         if is_temporal_query(query):

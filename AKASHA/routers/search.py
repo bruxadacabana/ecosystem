@@ -356,6 +356,17 @@ async def archive(
     except Exception as exc:
         log.warning("archive: verificação de favoritos falhou para %s: %s", url, exc)
 
+    # Arquivo = sinal forte de qualidade → incrementa domain_quality em background
+    try:
+        from urllib.parse import urlparse as _up2
+        _arch_domain = (_up2(url).hostname or "").removeprefix("www.").lower()
+        if _arch_domain:
+            from database import increment_domain_archive as _inc_archive
+            asyncio.create_task(_inc_archive(_arch_domain))
+            log.debug("archive: domain_quality incrementado para %s", _arch_domain)
+    except Exception as exc:
+        log.debug("archive: domain_quality falhou para %s: %s", url, exc)
+
     return Response(status_code=200)
 
 
