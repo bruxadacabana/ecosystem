@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import time
 from collections import OrderedDict
 from urllib.parse import urlparse
@@ -174,6 +175,181 @@ def _deduplicate(results: list[SearchResult]) -> list[SearchResult]:
             seen.add(key)
             out.append(r)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Filtro anti-spam
+# ---------------------------------------------------------------------------
+
+# TLDs gratuitos frequentemente abusados para SEO spam de redirecionamento.
+_SPAM_TLDS: frozenset[str] = frozenset({
+    ".ga", ".ml", ".cf", ".gq", ".tk",
+})
+
+# Vocabulário para detecção de títulos gerados automaticamente.
+# Palavras presentes → "dicionário"; ausentes → candidatas a nonsense.
+# Cobre inglês (~300), português (~200) e alguns conectivos de outras línguas.
+_DICT_WORDS: frozenset[str] = frozenset({
+    # inglês — top 300
+    "the","be","to","of","and","a","in","that","have","it","for","not","on",
+    "with","he","as","you","do","at","this","but","his","by","from","they",
+    "we","say","her","she","or","an","will","my","one","all","would","there",
+    "their","what","so","up","out","if","about","who","get","which","go","me",
+    "when","make","can","like","time","no","just","him","know","take","people",
+    "into","year","your","good","some","could","them","see","other","than",
+    "then","now","look","only","come","its","over","think","also","back",
+    "after","use","two","how","our","work","first","well","way","even","new",
+    "want","because","any","these","give","day","most","us","great","between",
+    "need","large","often","hand","high","place","hold","world","life","few",
+    "north","open","seem","together","next","white","children","begin","got",
+    "walk","example","ease","paper","group","always","music","those","both",
+    "mark","book","letter","until","mile","river","car","feet","care","second",
+    "enough","girl","young","ready","above","ever","red","list","though",
+    "feel","talk","bird","soon","body","dog","family","direct","leave","song",
+    "door","product","black","short","class","wind","question","happen",
+    "complete","ship","area","half","rock","order","fire","south","problem",
+    "piece","told","knew","pass","since","top","whole","king","space","heard",
+    "best","hour","better","true","during","hundred","five","remember","step",
+    "early","west","ground","interest","reach","fast","simple","several",
+    "toward","war","lay","against","pattern","slow","center","love","person",
+    "money","serve","appear","road","map","rain","rule","govern","pull",
+    "cold","notice","voice","fall","power","town","fine","drive","print",
+    "set","copy","hard","start","might","story","saw","far","sea","draw",
+    "left","late","run","while","press","close","night","real","type","front",
+    "watch","every","page","age","enter","share","write","read","search",
+    "find","help","home","add","create","web","site","link","news","click",
+    "free","online","view","download","buy","price","review","top","why",
+    "where","are","has","was","been","more","much","many","such","per","each",
+    "long","little","right","old","big","used","still","should","between",
+    "below","country","plant","last","school","father","keep","never","start",
+    "city","earth","light","thought","head","under","story","saw","left",
+    "dont","wont","cant","isnt","wasnt","didnt","havent","hasnt","couldnt",
+    "three","four","six","seven","eight","nine","ten","hundred","thousand",
+    "million","billion","yes","yeah","okay","sure","please","thank","thanks",
+    "hello","hi","bye","name","number","show","play","live","work","know",
+    "may","must","let","too","very","just","also","here","there","when",
+    "both","own","same","own","than","then","because","while","where","why",
+    "how","again","further","once","off","against","between","through","during",
+    "before","after","above","below","each","few","more","most","other","some",
+    "such","than","then","these","those","until","within","without","among",
+    "along","across","behind","beyond","inside","outside","around","toward",
+    "upon","throughout","everybody","everyone","everything","everywhere",
+    "somebody","someone","something","somewhere","nobody","nothing","nowhere",
+    "anybody","anyone","anything","anywhere","else","instead","however",
+    "therefore","moreover","furthermore","nevertheless","nonetheless",
+    "although","despite","unless","whether","provided","assuming",
+    "article","blog","page","post","guide","tutorial","review","news",
+    "video","image","photo","gallery","forum","community","profile",
+    "comment","reply","share","like","follow","subscribe","contact","about",
+    "privacy","terms","policy","login","sign","register","account","user",
+    "category","tag","archive","recent","popular","related","next","prev",
+    # português — top 200
+    "de","a","o","que","e","do","da","em","um","para","com","uma","os","no",
+    "se","na","por","mais","as","dos","como","mas","foi","ao","ele","das",
+    "tem","seu","sua","ou","ser","quando","muito","nos","já","está","eu",
+    "também","pelo","pela","até","isso","ela","entre","era","depois","sem",
+    "mesmo","aos","ter","seus","quem","nas","me","esse","eles","estão","você",
+    "tinha","foram","essa","num","nem","suas","meu","às","minha","têm","numa",
+    "pelos","elas","havia","seja","qual","será","nós","tenho","lhe","deles",
+    "essas","esses","pelas","este","fosse","dele","tu","bastante","assim",
+    "nosso","vos","lhes","meus","minhas","teu","tua","teus","tuas","nossos",
+    "nossas","dela","delas","esta","estes","estas","aquele","aquela","aqueles",
+    "aquelas","isto","aquilo","estou","estamos","fui","somos","são","foram",
+    "temos","pode","podem","devem","vai","vão","todos","todas","todo","toda",
+    "outro","outra","outros","outras","mesma","mesmos","mesmas","nenhum",
+    "nenhuma","algum","alguma","alguns","algumas","grande","grandes",
+    "pequeno","pequena","novo","nova","primeiro","primeira","último","última",
+    "então","agora","aqui","lá","onde","porque","porém","portanto","além",
+    "antes","dentro","fora","sobre","sob","após","desde","durante","segundo",
+    "conforme","exceto","embora","caso","ano","anos","dia","dias","vez",
+    "vezes","parte","partes","forma","formas","vida","tempo","estado","país",
+    "países","cidade","cidades","governo","mundo","homem","homens","mulher",
+    "mulheres","filho","filhos","com","foi","para","por","não","sim","tudo",
+    "nada","coisa","pessoa","pessoas","lugar","lugares","dizer","fazer",
+    "poder","querer","precisar","saber","ver","vir","dar","ficar","passar",
+    "deixar","seguir","encontrar","parecer","falar","levar","chegar",
+    "muito","pouco","bem","mal","agora","ainda","já","sempre","nunca",
+    "talvez","quase","apenas","mais","menos","também","porém","pois",
+    "como","quando","onde","por","para","que","quem","qual","quanto",
+    "enquanto","embora","apesar","logo","então","portanto","afinal",
+    # espanhol (comuns em queries mistas)
+    "la","el","los","las","del","al","mi","lo","su","sus","nos","les",
+    "hay","fue","han","son","una","uno","pero","sobre","desde","hasta",
+    "entre","durante","este","esta","estos","estas","ese","esa","esos",
+    "esas","ser","estar","tener","hacer","decir","querer","poder","ir",
+    "ver","dar","saber","llevar","salir","pensar","seguir","parecer",
+    "también","así","muy","bien","solo","todo","toda","todos","todas",
+    # termos comuns em conteúdo legítimo que poderiam não estar no top
+    "craft","crafts","crafting","crafted","knit","knitting","crochet",
+    "yarn","sewing","stitch","textile","fabric","needle","thread","art",
+    "arts","artist","artistic","activism","activist","protest","movement",
+    "social","political","feminist","gender","culture","cultural","history",
+    "historical","community","collective","design","maker","making","diy",
+    "tutorial","pattern","project","handmade","creative","creativity",
+    "climate","environmental","justice","rights","media","digital","data",
+    "technology","science","research","study","analysis","report","survey",
+    "wikipedia","bbc","nyt","guardian","npr","medium","github","twitter",
+    "instagram","youtube","reddit","linkedin","facebook","google","amazon",
+    "international","national","global","local","regional","official",
+    "definition","meaning","example","examples","type","types","form",
+    "forms","method","methods","approach","approaches","strategy","tool",
+    "tools","practice","practices","resource","resources","information",
+    "introduction","overview","summary","guide","handbook","manual",
+    "history","origin","origins","background","context","impact","effect",
+    "effects","cause","causes","reason","reasons","benefit","benefits",
+    "challenge","challenges","issue","issues","problem","problems","solution",
+    # universal
+    "vs","via","etc","per","re","hi","ok","yes","no","one","two","three",
+})
+
+_WORD_SPLIT_RE = re.compile(r"[a-záéíóúàãâêôüçñ]+", re.IGNORECASE | re.UNICODE)
+
+
+def _is_spam_result(result: SearchResult) -> bool:
+    """Detecta resultados spam por três critérios independentes.
+
+    Critério 1 — redirect spam: URL com domínio ≤ 6 chars e path ≤ 4 chars
+        (padrão http://ab.cd/ef — domínio curto + path único curto).
+    Critério 2 — título nonsense: proporção de palavras fora do dicionário
+        > 60% quando o título tem 5+ palavras (detecta texto gerado por bot).
+    Critério 3 — TLD spam: domínio em lista de TLDs gratuitos abusados.
+    """
+    url   = result.url   or ""
+    title = result.title or ""
+
+    parsed   = urlparse(url)
+    hostname = (parsed.hostname or "").lower().removeprefix("www.")
+    path     = (parsed.path or "").strip("/")
+
+    # separa "domínio.tld" → registrable domain e TLD
+    parts       = hostname.rsplit(".", 1)
+    domain_name = parts[0] if len(parts) == 2 else hostname
+    tld         = f".{parts[-1]}" if len(parts) >= 2 else ""
+
+    # Critério 1: redirect spam — domínio muito curto + path de um segmento curto
+    path_alnum = re.sub(r"[^a-z0-9]", "", path.lower())
+    if "/" not in path and len(domain_name) <= 6 and len(path_alnum) <= 4:
+        log.debug("web_search: spam [crit-1 redirect] %s", url[:80])
+        return True
+
+    # Critério 3: TLD em lista de spam (O(1), verificado antes do crit-2)
+    if tld in _SPAM_TLDS:
+        log.debug("web_search: spam [crit-3 tld=%s] %s", tld, url[:80])
+        return True
+
+    # Critério 2: título com texto nonsense gerado automaticamente
+    words = [w.lower() for w in _WORD_SPLIT_RE.findall(title) if len(w) >= 3]
+    if len(words) >= 5:
+        non_dict = sum(1 for w in words if w not in _DICT_WORDS)
+        ratio = non_dict / len(words)
+        if ratio > 0.60:
+            log.debug(
+                "web_search: spam [crit-2 ratio=%.0f%%] %s",
+                ratio * 100, url[:80],
+            )
+            return True
+
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +607,15 @@ async def search_web(
     # 3. Busca real — SearXNG (n_pages paralelas) → DDG
     results = await _fetch_web(effective_query, _fetch_max, n_pages=n_pages, lang=lang)
     results = _deduplicate(results)
+
+    # 3b. Filtro anti-spam — remove redirect spam, TLDs abusados e títulos nonsense
+    before_spam = len(results)
+    results = [r for r in results if not _is_spam_result(r)]
+    if len(results) < before_spam:
+        log.debug(
+            "web_search: %d spam filtrado(s) de %r (%d → %d)",
+            before_spam - len(results), query, before_spam, len(results),
+        )
 
     # 4. Armazena em ambas as camadas
     ttl_hours = await _get_ttl_hours(effective_query)
