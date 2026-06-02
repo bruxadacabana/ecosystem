@@ -6714,7 +6714,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **Testes: feed_fetcher.py** — parse RSS/Atom, throttle, campos salvos corretamente.
 
 #### Fase 3 — Texto completo e scraping
-- [ ] **article_scraper.py** — trafilatura como método principal; fallback BeautifulSoup. Throttle por domínio (ecosystem_scraper).
+- [x] **article_scraper.py** — trafilatura como método principal; fallback BeautifulSoup. Throttle por domínio (ecosystem_scraper).
 - [ ] **ScraperWorker (QThread P1/P2)** — P1 quando artigo aberto pelo usuário; P2 para batch em background.
 - [ ] **reader_pane.py** — exibe texto completo após scraping; botão "Carregar texto completo".
 - [ ] **Testes: article_scraper.py** — extração de texto, fallback, throttle.

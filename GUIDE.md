@@ -1001,18 +1001,37 @@ OGMA/
 
 ---
 
-### 3.7. KOSMOS — análise de feeds e imagens
+### 3.7. KOSMOS — leitor e analisador de feeds
 
 ```
 KOSMOS/
-├── main.py                 → Ponto de entrada PyQt6
-├── pyproject.toml          → Dependências (gerenciado por uv)
+├── main.py                      → Ponto de entrada PySide6
+├── pyproject.toml               → Dependências (gerenciado por uv)
 └── app/
-    ├── core/               → Feed parser, download de artigos, análise
-    ├── ui/                 → Widgets e janelas PyQt6
-    ├── theme/              → Estilos e tema visual
-    └── utils/              → Utilitários compartilhados
+    ├── core/
+    │   ├── database.py          → Schema SQLite (feeds, articles, entities, highlights…) + FTS5
+    │   ├── feed_fetcher.py      → RSS/Atom: parse + throttle + persistência
+    │   ├── fetch_worker.py      → QThread P2: busca todos os feeds em background
+    │   └── article_scraper.py  → Extração de texto completo (trafilatura + fallback BS4, throttle por domínio)
+    ├── ui/
+    │   ├── main_window.py       → Janela principal com layout 3-painéis
+    │   ├── splash_screen.py     → Tela de carregamento
+    │   └── views/
+    │       ├── feed_sidebar.py  → Sidebar de feeds por categoria com contadores
+    │       ├── article_list.py  → Lista de cards de artigos
+    │       └── reader_pane.py   → Painel de leitura com metadados e texto
+    ├── theme/                   → QSS (night.qss, day.qss) e fontes
+    └── utils/
+        ├── config.py            → KosmosConfig + integração ecosystem_client
+        ├── logger.py            → RotatingFileHandler em LOCAL_DATA_DIR/logs/
+        └── paths.py             → Caminhos Windows/Linux sem separadores hardcoded
 ```
+
+**Estado das fases (2026-06-01):**
+- Fase 1 (base silenciosa): ✅ schema, config, paths, logger
+- Fase 2 (leitor funcional): ✅ feed_fetcher, FetchWorker, layout 3-painéis
+- Fase 3 (scraping): 🔄 article_scraper.py implementado — ScraperWorker pendente
+- Fases 4–8: pendentes
 
 ---
 
@@ -1579,13 +1598,14 @@ Arquivo: `KOSMOS/pyproject.toml`
 |-----------|---------|
 | `PySide6` | GUI Qt6 |
 | `feedparser` | Parse de feeds RSS e Atom (função principal do KOSMOS) |
-| `trafilatura` | Extração de texto completo de artigos referenciados nos feeds |
-| `requests` | HTTP síncrono para download de imagens e conteúdo |
-| `argostranslate` | Tradução offline de artigos |
-| `matplotlib` | Gráficos e visualizações dentro da interface |
+| `trafilatura` | Extração de texto completo de artigos (método principal em `article_scraper.py`) |
+| `beautifulsoup4` | Fallback de extração HTML quando trafilatura retorna resultado insuficiente |
+| `requests` | HTTP síncrono para fetch de feeds e scraping de artigos |
+| `argostranslate` | Tradução offline de artigos (Fase 6 — pendente) |
+| `matplotlib` | Gráficos e visualizações (Fase 8 — pendente) |
 | `filelock` | Mutex para `ecosystem.json` |
-| `Pillow` | Processamento de imagens dos artigos |
-| `html2text` | Conversão HTML → Markdown para armazenamento |
+| `Pillow` | Processamento de imagens |
+| `html2text` | Conversão HTML → Markdown para arquivamento de artigos (Fase 5) |
 
 ---
 

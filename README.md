@@ -217,16 +217,24 @@ Assistente RAG pessoal organizada em **notebooks** temáticos. Cada conversa é 
 
 ### KOSMOS
 
-Análise de imagens com visão computacional e OCR local.
+Leitor e analisador de feeds RSS/Atom para jornalistas, estudantes e ativistas.
 
-**Funcionalidades:**
-- OCR de imagens e PDFs (via llama-server com modelo de visão)
-- Análise de conteúdo visual (descrever, classificar, extrair texto estruturado)
-- Processamento em lote (queue de imagens)
-- Pré-análise em background (P3 no LOGOS) — não bloqueia interface
-- Exportação de resultados
+**Funcionalidades implementadas (v3):**
+- Aggregador RSS/Atom com layout 3-painéis (sidebar de feeds, lista de cards, painel de leitura)
+- Busca e parse de feeds com throttle por domínio (2s mínimo entre requisições)
+- Extração de texto completo de artigos via `article_scraper.py`: trafilatura como método principal, fallback BeautifulSoup quando o resultado é insuficiente
+- Detecção de idioma, tipo de artigo (notícia/opinião/análise) e tempo estimado de leitura
+- Banco SQLite sincronizado via Syncthing (`sync_root/kosmos/`) com FTS5 e triggers automáticos
+- Rastreamento de leitura (is_read, read_at)
 
-**LLM de visão:** envia imagens em base64 via API OpenAI multimodal (`/v1/chat/completions` com `content` como array de objetos `text` + `image_url`)
+**Funcionalidades planejadas (fases futuras):**
+- ScraperWorker QThread (P1 ao abrir artigo, P2 em batch)
+- Análise AI: tags, sentimento, clickbait, cinco Ws, entidades, viés político (via LOGOS)
+- Arquivamento como `.md` em `sync_root/kosmos/Web/`
+- Ferramentas de investigação: rastreamento de entidades, pastas de investigação, mapa de cobertura
+- Highlights e anotações; tradução offline (argostranslate)
+
+**Dependências chave:** `PySide6`, `feedparser`, `trafilatura`, `beautifulsoup4`, `requests`
 
 ---
 
