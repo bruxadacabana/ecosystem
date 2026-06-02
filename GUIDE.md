@@ -826,6 +826,7 @@ AKASHA/
 │   ├── reflection_loop.py  → Reflexões periódicas sobre sessões de busca
 │   ├── session_memory.py   → Sumariza e persiste memória de sessão
 │   ├── session_insight.py  → Gera insights a partir das sessões
+│   ├── observer_popups.py  → Pop-ups proativos por comportamento (zona morta de busca → sugere domínios)
 │   ├── knowledge_worker.py → Analisa corpus local (fila dupla: alta=dados novos P2, baixa=backfill P3)
 │   ├── query_understanding.py → Classifica intenção da query (LLM leve)
 │   ├── query_expansion.py  → Expande termos de busca (sinônimos, variações)
@@ -1933,6 +1934,15 @@ CREATE TABLE personal_memory (
 ```
 
 > ⚠️ `personal_memory` está no mesmo `akasha.db`, mas é **logicamente isolada** — nunca é lida pelo FTS5, nunca aparece nos resultados de busca, nunca é exposta via API pública.
+
+**Pop-ups proativos (Akasha observadora):** além dos insights/reflexões, certos `type` de `personal_memory` viram overlays acionáveis no browser, cada um com uma ação concreta no botão de confirmação (despachada por `routers/search.py:_apply_insight_confirmation_action`):
+
+| `type` | Gatilho | Ação ao confirmar |
+|--------|---------|-------------------|
+| `domain_suggestion` | domínio clicado N+ vezes e não indexado | Adiciona à Biblioteca |
+| `search_dead_end` | query buscada 3+ vezes/semana com poucos cliques locais (`services/observer_popups.py`, job a cada 2h, cooldown 24h/query) | Indexa os domínios sugeridos (extraídos de busca web leve) |
+
+O texto vai em `content`; os alvos da ação (domínios, URL) ficam em `tags`. Cooldown e dedup são checados em `personal_memory` antes de criar nova sugestão.
 
 **Caches auxiliares:**
 
