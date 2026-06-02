@@ -288,6 +288,9 @@ Quando a usuária diz "leia X" ou "releia X", usar a ferramenta Read para ler o 
 **GUI obrigatório para toda feature de usuário (2026-05-31):**
 Toda feature de backend que o usuário precisa controlar DEVE ter um elemento de GUI visível e acessível. Parâmetros de URL como `?lang=`, `?diversity=N`, `?web_pages=N` existem como overrides programáticos — nunca são o único ponto de controle. O controle principal é sempre via elemento visível: campo em Settings, chip na página de busca, botão na interface de chat. Ao escrever itens de TODO que expõem opções ao usuário: se tem parâmetro de API → incluir o elemento de UI no mesmo item ou verificar que Config 2/settings.html o inclui explicitamente.
 
+**Workflow de implementação não precisa ser relembrado (2026-06-02):**
+A sequência completa de implementação deve ser seguida automaticamente em toda e qualquer implementação, atualização ou modificação — sem precisar ser repetida pela usuária a cada sessão. Sequência obrigatória para cada item do TODO: (1) implementar; (2) criar logs para todo processo envolvendo a nova feature; (3) escrever testes unitários e de integração na mesma resposta, cobrindo caso principal + adjacentes + edge cases; (4) executar a suite completa; (5) marcar `[x]` no TODO; (6) verificar e atualizar README e GUIDE; (7) commit; (8) resumir no chat (detalhado mas acessível — lógica e raciocínio, não código e tecnicidades); (9) parar e aguardar permissão. Um item por vez. Sem exceções de tamanho ou tipo de mudança.
+
 ---
 
 ## Design
