@@ -151,9 +151,9 @@ Regras de implementação:
 
 ### Isolamento de dados do AETHER
 
-**Os dados do AETHER não devem ser lidos por nenhum app do ecossistema exceto o OGMA.**
-O vault do AETHER contém escrita criativa pessoal. Nunca incluir `aether_vault` como fonte de indexação em AKASHA (`local_search.py`), Mnemosyne (`watched_dir`), ou qualquer outro app.
-OGMA é o único com acesso autorizado aos dados do AETHER.
+**O conteúdo do vault do AETHER não deve ser indexado por nenhuma IA do ecossistema.**
+O vault contém escrita criativa pessoal. A regra é sobre indexação/RAG — nunca incluir `aether_vault` como fonte de indexação em AKASHA (`local_search.py`), Mnemosyne (`watched_dir`), KOSMOS ou qualquer outro app com pipeline de IA.
+Apps que apenas leem os arquivos (sem indexar) podem ter acesso autorizado: OGMA (editor) e futuramente CODEX (leitor/revisor mobile). Acesso de leitura ≠ indexação.
 
 ### Isolamento da memória pessoal das IAs
 
