@@ -37,6 +37,27 @@
   .chat-reasoning-searching { color: var(--text-muted, #888); }
   .chat-reasoning-evaluating { color: var(--accent, #6688cc); }
   .chat-reasoning-done { color: var(--success, #5a9a5a); }
+
+  /* Sugestão de indexação de domínios frequentes */
+  .chat-domain-suggestion {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-top: .5rem;
+  }
+  .chat-domain-index-btn {
+    font-size: .78rem;
+    padding: .2rem .6rem;
+    border: 1px solid var(--accent-muted, #4466aa44);
+    border-radius: 1rem;
+    cursor: pointer;
+    background: var(--surface-2, #1e2433);
+    color: var(--accent, #6688cc);
+    transition: background .15s;
+  }
+  .chat-domain-index-btn:hover { background: var(--surface-3, #252c40); }
+  .chat-domain-index-btn:disabled { opacity: .5; cursor: default; }
+  .chat-domain-index-btn.indexed { color: var(--success, #5a9a5a); border-color: var(--success, #5a9a5a44); }
 </style>
 {% endblock %}
 
@@ -259,6 +280,26 @@ function toggleDeep() {
   }
 }
 
+async function indexDomain(domain, btn) {
+  btn.disabled = true;
+  btn.textContent = '⟳ indexando…';
+  try {
+    const form = new FormData();
+    form.append('url', 'https://' + domain);
+    const r = await fetch('/library/add-quick', {method: 'POST', body: form});
+    if (r.ok) {
+      btn.textContent = '✓ ' + domain + ' adicionado';
+      btn.classList.add('indexed');
+    } else {
+      btn.textContent = '✗ erro — tente pela Biblioteca';
+      btn.disabled = false;
+    }
+  } catch (err) {
+    btn.textContent = '✗ erro de rede';
+    btn.disabled = false;
+  }
+}
+
 async function sendMessage(e) {
   e.preventDefault();
   const input   = document.getElementById('chat-input');
@@ -358,6 +399,24 @@ async function sendMessage(e) {
               modeLabel.className = 'chat-deep-mode-label';
               modeLabel.textContent = '🔍 Pesquisa Profunda';
               wrapper.insertBefore(modeLabel, bubble);
+            }
+          } else if (ev.type === 'domain_suggestion') {
+            // Sugestão de indexação — mostra uma vez por sessão
+            var sugKey = 'akasha-domain-suggest-shown';
+            if (!sessionStorage.getItem(sugKey) && (ev.domains || []).length > 0) {
+              sessionStorage.setItem(sugKey, '1');
+              var sugDiv = document.createElement('div');
+              sugDiv.className = 'chat-domain-suggestion';
+              (ev.domains || []).forEach(function(item) {
+                var btn = document.createElement('button');
+                btn.className = 'btn chat-domain-index-btn';
+                btn.textContent = '⊕ Indexar ' + item.domain + ' (' + item.visits + 'x)';
+                btn.setAttribute('data-domain', item.domain);
+                btn.onclick = function() { indexDomain(item.domain, btn); };
+                sugDiv.appendChild(btn);
+              });
+              wrapper.appendChild(sugDiv);
+              canvas.scrollTop = canvas.scrollHeight;
             }
           }
         } catch {}

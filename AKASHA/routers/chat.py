@@ -235,6 +235,7 @@ async def _build_prompt(
     question: str,
     snippets: list[dict],
     persona_prefix: str,
+    domain_suggestions: list[tuple[str, int]] | None = None,
 ) -> list[dict]:
     """Monta messages list para /v1/chat/completions.
 
@@ -270,6 +271,16 @@ async def _build_prompt(
         parts.append(f"Fontes encontradas no índice:\n{refs}")
     else:
         parts.append("Nenhuma fonte relevante encontrada no índice para esta pergunta.")
+
+    if domain_suggestions:
+        dom_str = ", ".join(f"{d} ({c} visitas)" for d, c in domain_suggestions[:3])
+        parts.append(
+            f"Nota de contexto: a usuária visitou estes domínios com frequência recentemente "
+            f"mas eles ainda não estão indexados na Biblioteca local: {dom_str}. "
+            f"Se for natural e relevante para a conversa, você pode mencionar que pode "
+            f"adicioná-los ao índice — mas não force o assunto se não se encaixar."
+        )
+        log.debug("chat: %d domínio(s) não indexado(s) injetados no prompt", len(domain_suggestions))
 
     messages: list[dict] = [{"role": "system", "content": "\n\n".join(parts)}]
     messages.append({"role": "user", "content": question})
@@ -963,7 +974,21 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
         for s in snippets
     ]
 
-    messages = await _build_prompt(body.message, snippets, persona_prefix)
+    # Domínios visitados frequentemente mas não indexados — contexto para Akasha
+    domain_suggestions: list[tuple[str, int]] = []
+    try:
+        from database import get_unindexed_frequent_domains as _get_dom
+        domain_suggestions = await _get_dom(threshold=3)
+        if domain_suggestions:
+            log.info(
+                "chat: %d domínio(s) frequente(s) não indexado(s): %s",
+                len(domain_suggestions),
+                [d for d, _ in domain_suggestions],
+            )
+    except Exception as _exc:
+        log.debug("chat: falha ao buscar domínios sugeridos: %s", _exc)
+
+    messages = await _build_prompt(body.message, snippets, persona_prefix, domain_suggestions)
 
     # Modo consenso: classificar fontes antes do stream se for pergunta de verificação
     consensus_payload: bytes | None = None
@@ -1001,6 +1026,19 @@ async def chat_message(body: ChatMessage) -> StreamingResponse:
             ensure_ascii=False,
         )
         yield f"data: {src_payload}\n\n".encode()
+
+        # Domínios frequentes não indexados — emite evento para o front renderizar botão
+        if domain_suggestions:
+            dom_payload = json.dumps(
+                {
+                    "type":    "domain_suggestion",
+                    "domains": [{"domain": d, "visits": c} for d, c in domain_suggestions],
+                },
+                ensure_ascii=False,
+            )
+            yield f"data: {dom_payload}\n\n".encode()
+            log.debug("chat: evento domain_suggestion emitido (%d domínio(s))", len(domain_suggestions))
+
         yield b"data: [DONE]\n\n"
 
         # Fire-and-forget: reflexão por-mensagem (P3)

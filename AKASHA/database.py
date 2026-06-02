@@ -2869,3 +2869,63 @@ async def set_crawl_page_processed(url: str) -> None:
             await db.commit()
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Domain suggestion helpers (Akasha proactive indexing suggestions)
+# ---------------------------------------------------------------------------
+
+async def get_unindexed_frequent_domains(threshold: int = 3) -> list[tuple[str, int]]:
+    """Retorna domínios clicados >= threshold vezes que não estão na Biblioteca.
+
+    Consulta click_log (cliques em resultados de busca) para identificar domínios
+    de interesse real da usuária que ainda não foram adicionados ao índice local.
+    Retorna lista de (domain, click_count) ordenada por contagem decrescente, até 5.
+    """
+    from urllib.parse import urlparse as _up
+
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            rows = await (await db.execute(
+                """
+                SELECT domain, COUNT(*) AS cnt
+                FROM click_log
+                WHERE domain != ''
+                GROUP BY domain
+                HAVING cnt >= ?
+                ORDER BY cnt DESC
+                LIMIT 10
+                """,
+                (threshold,),
+            )).fetchall()
+    except Exception:
+        return []
+
+    if not rows:
+        return []
+
+    # Filtra domínios já indexados na Biblioteca
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            indexed_rows = await (await db.execute(
+                "SELECT base_url FROM crawl_sites WHERE deleted = 0"
+            )).fetchall()
+    except Exception:
+        indexed_rows = []
+
+    indexed_domains: set[str] = set()
+    for (base_url,) in indexed_rows:
+        try:
+            netloc = _up(base_url).netloc.lower()
+            netloc = netloc.removeprefix("www.")
+            if netloc:
+                indexed_domains.add(netloc)
+        except Exception:
+            pass
+
+    result = [
+        (domain, count)
+        for domain, count in rows
+        if domain.removeprefix("www.") not in indexed_domains
+    ]
+    return result[:5]
