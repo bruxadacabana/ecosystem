@@ -178,16 +178,28 @@ async def _domain_suggestion_loop() -> None:
 async def _observer_popups_loop() -> None:
     """A cada 2h: a Akasha observa o comportamento e cria pop-ups proativos.
 
-    Detecta zonas mortas de busca (queries repetidas sem engajamento local) e
-    sugere domínios para indexar. Camada assistente (P3) — nunca bloqueia a busca.
+    Três detectores (camada assistente, P3 — nunca bloqueiam a busca):
+      - zonas mortas de busca (queries repetidas sem engajamento local);
+      - páginas revisitadas mas não arquivadas (oferece arquivar);
+      - domínios indexados desatualizados com interesse recente (oferece recrawl).
     """
     while True:
         await asyncio.sleep(2 * 3600)
         try:
-            from services.observer_popups import check_search_dead_ends
+            from services.observer_popups import (
+                check_search_dead_ends,
+                check_stale_domains_with_interest,
+                check_unarchived_frequent_visits,
+            )
             n = await check_search_dead_ends()
             if n:
                 _log.info("observer_popups_loop: %d zona(s) morta(s) sugerida(s).", n)
+            n = await check_unarchived_frequent_visits()
+            if n:
+                _log.info("observer_popups_loop: %d visita(s) frequente(s) sem arquivo.", n)
+            n = await check_stale_domains_with_interest()
+            if n:
+                _log.info("observer_popups_loop: %d domínio(s) desatualizado(s) com interesse.", n)
         except Exception as exc:
             _log.warning("observer_popups_loop: erro: %s", exc)
 

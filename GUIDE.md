@@ -1941,8 +1941,10 @@ CREATE TABLE personal_memory (
 |--------|---------|-------------------|
 | `domain_suggestion` | domínio clicado N+ vezes e não indexado | Adiciona à Biblioteca |
 | `search_dead_end` | query buscada 3+ vezes/semana com poucos cliques locais (`services/observer_popups.py`, job a cada 2h, cooldown 24h/query) | Indexa os domínios sugeridos (extraídos de busca web leve) |
+| `unarchived_frequent_visit` | URL visitada 3+ vezes (`activity_log` type='visit') e ausente de `archive_simhashes` | Arquiva a URL (`archiver.archive_url`) |
+| `stale_domain_with_recent_interest` | site da Biblioteca com `last_crawled_at` > 45 dias mas com visita/clique nos últimos 14 dias | Recrawleia o site (`crawl_site` em background) |
 
-O texto vai em `content`; os alvos da ação (domínios, URL) ficam em `tags`. Cooldown e dedup são checados em `personal_memory` antes de criar nova sugestão.
+Os três detectores rodam no mesmo job de 2h (`_observer_popups_loop` em `main.py`), são camada assistente (P3, nunca bloqueiam a busca) e têm cooldown de 24h por alvo. O texto vai em `content`; os alvos da ação (domínios, URL, site_id) ficam em `tags`. Cooldown e dedup são checados em `personal_memory` antes de criar nova sugestão.
 
 **Caches auxiliares:**
 

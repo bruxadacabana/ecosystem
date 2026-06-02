@@ -1424,12 +1424,51 @@ async def _add_domain_to_library(domain: str) -> None:
         log.warning("insight: falha ao adicionar domínio %s à Biblioteca: %s", domain, exc)
 
 
+async def _bg_archive_url(url: str) -> None:
+    """Arquiva uma URL em background (best-effort).
+
+    Usado pela confirmação do pop-up `unarchived_frequent_visit`: a usuária revisita
+    uma página não salva e a Akasha oferece arquivá-la.
+    """
+    try:
+        import config
+        from services.archiver import archive_url as _archive
+        await _archive(url, str(config.ARCHIVE_PATH))
+        log.info("insight: URL arquivada via pop-up: %s", url)
+    except Exception as exc:
+        log.warning("insight: falha ao arquivar URL %s: %s", url, exc)
+
+
+def _extract_url_tag(entry: dict | None) -> str | None:
+    """Primeira tag com aparência de URL (http/https) numa entrada de personal_memory."""
+    if not entry:
+        return None
+    for tag in entry.get("tags", []) or []:
+        t = str(tag).strip()
+        if t.startswith("http://") or t.startswith("https://"):
+            return t
+    return None
+
+
+def _extract_site_id_tag(entry: dict | None) -> int | None:
+    """Primeira tag puramente numérica (site_id) numa entrada de personal_memory."""
+    if not entry:
+        return None
+    for tag in entry.get("tags", []) or []:
+        t = str(tag).strip()
+        if t.isdigit():
+            return int(t)
+    return None
+
+
 async def _apply_insight_confirmation_action(entry: dict | None) -> None:
     """Executa a ação concreta ligada à confirmação de um pop-up proativo.
 
     Despacha por entry["type"]:
-      - domain_suggestion → adiciona o domínio sugerido à Biblioteca
-      - search_dead_end   → adiciona todos os domínios sugeridos à Biblioteca
+      - domain_suggestion                 → adiciona o domínio sugerido à Biblioteca
+      - search_dead_end                   → adiciona todos os domínios sugeridos à Biblioteca
+      - unarchived_frequent_visit         → arquiva a URL frequentemente visitada
+      - stale_domain_with_recent_interest → recrawleia o site desatualizado
     """
     if not entry:
         return
@@ -1446,6 +1485,16 @@ async def _apply_insight_confirmation_action(entry: dict | None) -> None:
         # Tags de domínio (excluindo a tag de controle e a query original).
         for domain in _extract_domain_tags(entry):
             await _add_domain_to_library(domain)
+
+    elif etype == "unarchived_frequent_visit":
+        url = _extract_url_tag(entry)
+        if url:
+            asyncio.get_running_loop().create_task(_bg_archive_url(url))
+
+    elif etype == "stale_domain_with_recent_interest":
+        site_id = _extract_site_id_tag(entry)
+        if site_id is not None:
+            asyncio.get_running_loop().create_task(_bg_crawl_site(site_id))
 
 
 class _InsightFeedbackBody(BaseModel):

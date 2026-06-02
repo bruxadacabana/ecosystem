@@ -102,6 +102,44 @@ def _insert_site(db, base_url: str):
     _run(db.add_crawl_site(base_url, base_url, 2, "[]"))
 
 
+def _insert_visit(db, url: str, title: str = "", count: int = 1, days_ago: int = 0):
+    con = sqlite3.connect(str(db.DB_PATH))
+    for _ in range(count):
+        con.execute(
+            "INSERT INTO activity_log (type, title, url, meta_json, created_at) "
+            "VALUES ('visit', ?, ?, '{}', datetime('now', ?))",
+            (title, url, f"-{days_ago} days"),
+        )
+    con.commit()
+    con.close()
+
+
+def _insert_archive(db, url: str, path: str | None = None):
+    con = sqlite3.connect(str(db.DB_PATH))
+    con.execute(
+        "INSERT INTO archive_simhashes (simhash, path, url) VALUES (?, ?, ?)",
+        (12345, path or f"/arc/{abs(hash(url)) % 10**8}.md", url),
+    )
+    con.commit()
+    con.close()
+
+
+def _insert_site_crawled(db, base_url: str, crawled_days_ago: int) -> int:
+    """Insere um site com last_crawled_at definido; retorna o site_id."""
+    con = sqlite3.connect(str(db.DB_PATH))
+    con.execute(
+        "INSERT INTO crawl_sites (base_url, label, last_crawled_at) "
+        "VALUES (?, ?, datetime('now', ?))",
+        (base_url, base_url, f"-{crawled_days_ago} days"),
+    )
+    con.commit()
+    sid = con.execute(
+        "SELECT id FROM crawl_sites WHERE base_url = ?", (base_url,)
+    ).fetchone()[0]
+    con.close()
+    return int(sid)
+
+
 def _pm_entries(pm_db: Path) -> list[dict]:
     con = sqlite3.connect(str(pm_db))
     rows = con.execute("SELECT type, tags, content FROM personal_memory").fetchall()
@@ -285,3 +323,177 @@ def test_confirm_adds_domains_to_library(dbs):
     con.close()
     assert any("blog-a.net" in u for u in rows)
     assert any("blog-b.org" in u for u in rows)
+
+
+# ---------------------------------------------------------------------------
+# Item 2 — unarchived_frequent_visit
+# ---------------------------------------------------------------------------
+
+def test_unarchived_frequent_visit_creates_suggestion(dbs):
+    db, pm_db = dbs
+    url = "https://craftivism.org/about"
+    _insert_visit(db, url, title="Craftivism — About", count=3)
+
+    import services.observer_popups as obs
+    n = _run(obs.check_unarchived_frequent_visits())
+
+    assert n == 1
+    entries = _pm_entries(pm_db)
+    assert len(entries) == 1
+    assert entries[0]["type"] == "unarchived_frequent_visit"
+    assert url in entries[0]["tags"]
+
+
+def test_archived_url_no_suggestion(dbs):
+    db, pm_db = dbs
+    url = "https://craftivism.org/about"
+    _insert_visit(db, url, count=4)
+    _insert_archive(db, url)  # já arquivada
+
+    import services.observer_popups as obs
+    n = _run(obs.check_unarchived_frequent_visits())
+
+    assert n == 0
+    assert _pm_entries(pm_db) == []
+
+
+def test_below_visit_threshold_no_suggestion(dbs):
+    db, pm_db = dbs
+    _insert_visit(db, "https://x.org/p", count=2)  # < threshold 3
+
+    import services.observer_popups as obs
+    n = _run(obs.check_unarchived_frequent_visits())
+
+    assert n == 0
+
+
+def test_unarchived_cooldown_blocks_resuggest(dbs):
+    db, pm_db = dbs
+    import services.personal_memory as _pm
+    url = "https://craftivism.org/about"
+    _insert_visit(db, url, count=3)
+    _run(_pm.save_memory(
+        type="unarchived_frequent_visit", content="prévia",
+        tags=["unarchived_frequent_visit", url], importance=6,
+    ))
+
+    import services.observer_popups as obs
+    n = _run(obs.check_unarchived_frequent_visits())
+
+    assert n == 0
+    assert len(_pm_entries(pm_db)) == 1  # só a prévia
+
+
+def test_confirm_unarchived_archives_url(dbs):
+    db, _ = dbs
+    url = "https://craftivism.org/about"
+
+    captured = {}
+
+    async def _go():
+        from routers import search as _search
+
+        async def _fake_archive(u, path, *a, **k):
+            captured["url"] = u
+
+        entry = {"type": "unarchived_frequent_visit",
+                 "tags": ["unarchived_frequent_visit", url]}
+        with patch("services.archiver.archive_url", _fake_archive):
+            await _search._apply_insight_confirmation_action(entry)
+            await asyncio.sleep(0)  # drena a task de arquivamento
+
+    _run(_go())
+    assert captured.get("url") == url
+
+
+# ---------------------------------------------------------------------------
+# Item 3 — stale_domain_with_recent_interest
+# ---------------------------------------------------------------------------
+
+def test_stale_domain_with_visit_creates_suggestion(dbs):
+    db, pm_db = dbs
+    sid = _insert_site_crawled(db, "https://craftivism.com", crawled_days_ago=50)
+    _insert_visit(db, "https://craftivism.com/news", days_ago=2)  # interesse recente
+
+    import services.observer_popups as obs
+    n = _run(obs.check_stale_domains_with_interest())
+
+    assert n == 1
+    entries = _pm_entries(pm_db)
+    assert len(entries) == 1
+    assert entries[0]["type"] == "stale_domain_with_recent_interest"
+    assert str(sid) in entries[0]["tags"]
+    assert "craftivism.com" in entries[0]["tags"]
+
+
+def test_stale_domain_via_recent_click_creates_suggestion(dbs):
+    db, pm_db = dbs
+    _insert_site_crawled(db, "https://craftivism.com", crawled_days_ago=60)
+    _insert_clicks(db, "craftivism.com", "qualquer", count=1)  # clique recente (timestamp now)
+
+    import services.observer_popups as obs
+    n = _run(obs.check_stale_domains_with_interest())
+
+    assert n == 1
+
+
+def test_fresh_domain_no_suggestion(dbs):
+    db, pm_db = dbs
+    _insert_site_crawled(db, "https://craftivism.com", crawled_days_ago=10)  # < 45 dias
+    _insert_visit(db, "https://craftivism.com/news", days_ago=1)
+
+    import services.observer_popups as obs
+    n = _run(obs.check_stale_domains_with_interest())
+
+    assert n == 0
+
+
+def test_stale_domain_no_recent_interest_no_suggestion(dbs):
+    db, pm_db = dbs
+    _insert_site_crawled(db, "https://craftivism.com", crawled_days_ago=90)
+    # visita antiga (fora da janela recent_days de 14)
+    _insert_visit(db, "https://craftivism.com/news", days_ago=40)
+
+    import services.observer_popups as obs
+    n = _run(obs.check_stale_domains_with_interest())
+
+    assert n == 0
+
+
+def test_stale_domain_cooldown_blocks_resuggest(dbs):
+    db, pm_db = dbs
+    import services.personal_memory as _pm
+    sid = _insert_site_crawled(db, "https://craftivism.com", crawled_days_ago=50)
+    _insert_visit(db, "https://craftivism.com/news", days_ago=1)
+    _run(_pm.save_memory(
+        type="stale_domain_with_recent_interest", content="prévia",
+        tags=["stale_domain_with_recent_interest", str(sid), "craftivism.com"],
+        importance=6,
+    ))
+
+    import services.observer_popups as obs
+    n = _run(obs.check_stale_domains_with_interest())
+
+    assert n == 0
+    assert len(_pm_entries(pm_db)) == 1
+
+
+def test_confirm_stale_triggers_recrawl(dbs):
+    db, _ = dbs
+
+    captured = {}
+
+    async def _go():
+        from routers import search as _search
+
+        async def _fake_crawl(site_id):
+            captured["site_id"] = site_id
+
+        entry = {"type": "stale_domain_with_recent_interest",
+                 "tags": ["stale_domain_with_recent_interest", "42", "craftivism.com"]}
+        with patch.object(_search, "_bg_crawl_site", _fake_crawl):
+            await _search._apply_insight_confirmation_action(entry)
+            await asyncio.sleep(0)
+
+    _run(_go())
+    assert captured.get("site_id") == 42
