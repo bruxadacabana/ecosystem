@@ -1912,6 +1912,7 @@ PRAGMA mmap_size=67108864;    -- 64 MB de mmap para leituras sequenciais rápida
 | Tabela | Descrição |
 |--------|-----------|
 | `click_log` | Cliques da usuária em resultados (URL, query, posição, timestamp) |
+| `domain_quality` | Reputação de domínio acumulada por uso: `archive_count`, `click_count`, `confirmed_insight_count`, `dismissed_count` → `quality_score` ponderado (arquivo +2, insight confirmado +1.5, clique +0.5 saturado em 20, insight dispensado −0.5). Vira multiplicador de ranking (0.1–3.0) em `search_local`/`search_web` |
 | `topic_interest_profile` | Perfil de interesses por tópico (score de afinidade acumulado) |
 | `entity_graph` | Entidades extraídas e suas relações (Akasha) |
 | `tag_pairs` | Pares de tags co-ocorrentes (para expansão de query) |
@@ -2472,7 +2473,7 @@ Após o RRF, o `weight_fn` multiplica o score pelo peso da fonte (`SOURCE_WEIGHT
 
 ### 7.9. Etapa 7 — Pós-ranqueamento
 
-Após o RRF, quatro sinais adicionais ajustam o ranking final:
+Após o RRF, vários sinais adicionais ajustam o ranking final:
 
 **A. PageRank boost** (`local_search.py:_apply_pagerank_boost()`)
 
@@ -2495,6 +2496,10 @@ Dois sinais personalizados:
 **E. Re-ranking cross-encoder (opcional)** — `RERANKING_ENABLED = False`
 
 FlashRank com modelo `ms-marco-TinyBERT-L-2-v2` (~4MB) re-ordena os top-30 resultados por relevância semântica real (não apenas por palavras-chave). Desativado por padrão porque adiciona ~200ms de latência e pode ser lento em máquinas sem AVX2.
+
+**F. Reputação de domínio** (`local_search.py:_apply_quality_boost()`, tabela `domain_quality`)
+
+O "PageRank pessoal": cada domínio acumula um `quality_score` ponderado a partir do comportamento histórico real da usuária — arquivar uma página (+2, sinal mais forte: ela quis preservar), confirmar um insight ligado ao domínio (+1.5), clicar num resultado (+0.5, satura em 20 cliques) e dispensar um insight (−0.5, penalidade). O score vira um multiplicador entre `0.1` (reputação ruim) e `3.0` (reputação alta) aplicado ao score posicional em `search_local` e `search_web`. Diferente do PageRank clássico ("quem linka para esta página"), mede "o quanto esta pessoa confia neste domínio historicamente". Os sinais são incrementados em runtime: cliques no endpoint `/click`, insights confirmados/dispensados em `/insight/feedback`, arquivamento no hook de `archive_url`.
 
 ---
 

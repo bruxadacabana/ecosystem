@@ -1202,6 +1202,15 @@ async def record_click(body: _ClickBody, request: Request) -> dict:
         await log_click(body.query, body.url, body.position, session_id)
     except Exception:
         pass
+    # Reputação de domínio: clique é um sinal fraco e saturável (+_CLICK_WEIGHT).
+    try:
+        from urllib.parse import urlparse
+        from database import increment_domain_click
+        domain = urlparse(body.url).netloc.removeprefix("www.")
+        if domain:
+            await increment_domain_click(domain)
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -1355,6 +1364,40 @@ async def insight_dismiss(request: Request) -> dict:
     return {"ok": True}
 
 
+def _extract_domain_tags(entry: dict | None) -> list[str]:
+    """Extrai tags com aparência de domínio de uma entrada de personal_memory.
+
+    Considera domínio qualquer tag que contenha ponto, sem espaço nem barra
+    (ex.: 'exemplo.com'), ignorando tags de controle como 'domain_suggestion'.
+    """
+    if not entry:
+        return []
+    out: list[str] = []
+    for tag in entry.get("tags", []) or []:
+        t = str(tag).strip().lower().removeprefix("www.")
+        if not t or t == "domain_suggestion":
+            continue
+        if "." in t and "/" not in t and " " not in t:
+            out.append(t)
+    return out
+
+
+async def _apply_insight_domain_reputation(entry: dict | None, feedback: str) -> None:
+    """Aplica o sinal de reputação (confirmado/dispensado) aos domínios do insight."""
+    domains = _extract_domain_tags(entry)
+    if not domains:
+        return
+    try:
+        if feedback == "confirmed":
+            from database import increment_domain_confirmed_insight as _inc
+        else:
+            from database import increment_domain_dismissed as _inc
+        for d in domains:
+            await _inc(d)
+    except Exception:
+        pass
+
+
 class _InsightFeedbackBody(BaseModel):
     memory_id: int
     feedback:  str   # "confirmed" | "dismissed"
@@ -1381,6 +1424,8 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
         from services.knowledge_worker import on_feedback_confirmed as _on_confirmed
         _on_confirmed(body.memory_id)
         _si.on_feedback_confirmed(body.memory_id)
+        # Reputação de domínio: insight confirmado credita os domínios ligados ao insight.
+        await _apply_insight_domain_reputation(entry, "confirmed")
         if comm_id is not None:
             try:
                 from ecosystem_client import update_communication_feedback  # type: ignore
@@ -1416,6 +1461,8 @@ async def insight_feedback(body: _InsightFeedbackBody, request: Request) -> dict
     _si.dismiss(session_id)
     from services.knowledge_worker import on_feedback_dismissed as _on_dismissed
     _on_dismissed(body.memory_id)
+    # Reputação de domínio: insight dispensado penaliza os domínios ligados ao insight.
+    await _apply_insight_domain_reputation(entry, "dismissed")
     if comm_id is not None:
         try:
             from ecosystem_client import update_communication_feedback  # type: ignore

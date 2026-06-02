@@ -1,5 +1,5 @@
 """
-Testes para domain_quality — ranking boost por arquivamento.
+Testes para domain_quality — reputação de domínio acumulada por histórico de uso.
 
 Cobre:
   - increment_domain_archive: cria entrada e incrementa archive_count
@@ -14,6 +14,13 @@ Cobre:
   - _apply_quality_boost: reordena resultados para domínio com boost
   - _apply_quality_boost: não reordena quando todos os boosts são 1.0
   - _apply_quality_boost: lista vazia retorna lista vazia
+  - increment_domain_click / confirmed_insight / dismissed: cada sinal soma/subtrai seu peso
+  - boost < 1.0 (penalidade) para domínio dispensado, com piso _QUALITY_BOOST_FLOOR
+  - click saturação em _CLICK_CAP
+  - fórmula combinada: 3 arquivos + 1 confirmado > apenas visitado
+  - sinais misturados recalculam o score pela soma ponderada
+  - DDL fresco já contém as colunas de reputação
+  - migration 53 faz backfill de click_count dos últimos 90 dias
 """
 from __future__ import annotations
 
@@ -267,3 +274,180 @@ def test_apply_quality_boost_empty_list(db):
     from services.local_search import _apply_quality_boost
     result = _run(_apply_quality_boost([]))
     assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Reputação acumulada — sinais de clique, insight confirmado e dispensado
+# ---------------------------------------------------------------------------
+
+import aiosqlite
+
+
+def _score(db, domain):
+    """Lê quality_score corrente de um domínio (ou None se ausente)."""
+    async def _q():
+        async with aiosqlite.connect(db.DB_PATH) as conn:
+            row = await (await conn.execute(
+                "SELECT quality_score FROM domain_quality WHERE domain=?", (domain,)
+            )).fetchone()
+        return row[0] if row else None
+    return _run(_q())
+
+
+def _counts(db, domain):
+    """Lê todas as colunas de sinal de um domínio."""
+    async def _q():
+        async with aiosqlite.connect(db.DB_PATH) as conn:
+            row = await (await conn.execute(
+                "SELECT archive_count, click_count, confirmed_insight_count, dismissed_count "
+                "FROM domain_quality WHERE domain=?", (domain,)
+            )).fetchone()
+        return row
+    return _run(_q())
+
+
+def test_click_increments_score(db):
+    """increment_domain_click soma _CLICK_WEIGHT (0.5) ao quality_score."""
+    _run(db.increment_domain_click("clicado.com"))
+    assert abs(_score(db, "clicado.com") - 0.5) < 0.01
+    assert _counts(db, "clicado.com") == (0, 1, 0, 0)
+
+
+def test_confirmed_insight_increments_score(db):
+    """increment_domain_confirmed_insight soma _CONFIRMED_WEIGHT (1.5)."""
+    _run(db.increment_domain_confirmed_insight("confiavel.com"))
+    assert abs(_score(db, "confiavel.com") - 1.5) < 0.01
+    assert _counts(db, "confiavel.com") == (0, 0, 1, 0)
+
+
+def test_dismissed_penalizes_score(db):
+    """increment_domain_dismissed subtrai _DISMISSED_WEIGHT (0.5) → score negativo."""
+    _run(db.increment_domain_dismissed("ruim.com"))
+    assert abs(_score(db, "ruim.com") - (-0.5)) < 0.01
+    assert _counts(db, "ruim.com") == (0, 0, 0, 1)
+
+
+def test_dismissed_boost_below_one(db):
+    """Domínio com penalidade recebe boost < 1.0 (rebaixado no ranking)."""
+    for _ in range(3):
+        _run(db.increment_domain_dismissed("ruim.com"))  # score = -1.5
+    boosts = _run(db.get_domain_quality_boosts(["ruim.com"]))
+    assert boosts["ruim.com"] < 1.0
+    assert boosts["ruim.com"] >= db._QUALITY_BOOST_FLOOR
+
+
+def test_click_saturates_at_cap(db):
+    """Cliques além de _CLICK_CAP não aumentam mais o quality_score."""
+    for _ in range(db._CLICK_CAP + 5):
+        _run(db.increment_domain_click("popular.com"))
+    expected = db._CLICK_CAP * db._CLICK_WEIGHT   # 20 × 0.5 = 10.0
+    assert abs(_score(db, "popular.com") - expected) < 0.01
+
+
+def test_combined_formula_archive_plus_confirmed(db):
+    """Domínio com 3 arquivos + 1 insight confirmado supera domínio apenas visitado.
+
+    A = 3×2.0 + 1×1.5 = 7.5  ;  B = 1×0.5 = 0.5  →  boost(A) > boost(B).
+    """
+    for _ in range(3):
+        _run(db.increment_domain_archive("forte.com"))
+    _run(db.increment_domain_confirmed_insight("forte.com"))
+    _run(db.increment_domain_click("fraco.com"))
+
+    assert abs(_score(db, "forte.com") - 7.5) < 0.01
+    assert abs(_score(db, "fraco.com") - 0.5) < 0.01
+
+    boosts = _run(db.get_domain_quality_boosts(["forte.com", "fraco.com"]))
+    assert boosts["forte.com"] > boosts["fraco.com"]
+
+
+def test_mixed_signals_recompute(db):
+    """Sinais misturados recalculam o score pela fórmula ponderada combinada."""
+    _run(db.increment_domain_archive("mix.com"))            # +2.0
+    _run(db.increment_domain_archive("mix.com"))            # +2.0  → 4.0
+    _run(db.increment_domain_confirmed_insight("mix.com"))  # +1.5  → 5.5
+    _run(db.increment_domain_click("mix.com"))              # +0.5  → 6.0
+    _run(db.increment_domain_dismissed("mix.com"))          # -0.5  → 5.5
+    # 2×2.0 + 1×1.5 + min(1,20)×0.5 − 1×0.5 = 4.0 + 1.5 + 0.5 − 0.5 = 5.5
+    assert abs(_score(db, "mix.com") - 5.5) < 0.01
+    assert _counts(db, "mix.com") == (2, 1, 1, 1)
+
+
+def test_signal_empty_domain_ignored(db):
+    """Domínio vazio não cria entrada em nenhum dos sinais."""
+    _run(db.increment_domain_click(""))
+    _run(db.increment_domain_confirmed_insight(""))
+    _run(db.increment_domain_dismissed(""))
+    assert _run(db.get_domain_quality_boosts([""])) == {}
+
+
+def test_signal_normalizes_www(db):
+    """Prefixo www. é removido antes de gravar o sinal."""
+    _run(db.increment_domain_confirmed_insight("www.exemplo.com"))
+    assert _counts(db, "exemplo.com") == (0, 0, 1, 0)
+
+
+def test_fresh_db_has_reputation_columns(db):
+    """Banco criado do zero já possui as colunas de reputação (DDL atualizado)."""
+    async def _cols():
+        async with aiosqlite.connect(db.DB_PATH) as conn:
+            rows = await (await conn.execute("PRAGMA table_info(domain_quality)")).fetchall()
+        return {r[1] for r in rows}
+    cols = _run(_cols())
+    assert {"click_count", "confirmed_insight_count", "dismissed_count"} <= cols
+
+
+def test_migration_53_backfills_clicks(tmp_path):
+    """Migration 53 popula click_count a partir do click_log dos últimos 90 dias."""
+    import database as _db
+
+    orig_db  = _db.DB_PATH
+    orig_kdb = _db.KNOWLEDGE_DB_PATH
+
+    _db.DB_PATH = tmp_path / "akasha.db"
+    _db.KNOWLEDGE_DB_PATH = tmp_path / "akasha_knowledge.db"
+
+    async def _setup():
+        async with aiosqlite.connect(_db.DB_PATH) as conn:
+            await conn.executescript("""
+                PRAGMA journal_mode=WAL;
+                CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE archive_simhashes (id INTEGER PRIMARY KEY, simhash INTEGER, path TEXT, url TEXT);
+                CREATE TABLE archive_dois (id INTEGER PRIMARY KEY, doi TEXT, arxiv_id TEXT, path TEXT, url TEXT);
+                CREATE TABLE click_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                    query_norm TEXT NOT NULL DEFAULT '',
+                    url TEXT NOT NULL DEFAULT '',
+                    domain TEXT NOT NULL DEFAULT '',
+                    position_clicked INTEGER NOT NULL DEFAULT 0,
+                    session_id TEXT NOT NULL DEFAULT ''
+                );
+                INSERT INTO settings VALUES ('schema_version', '51');
+                INSERT INTO click_log (timestamp, domain) VALUES
+                    (strftime('%s','now'), 'noticias.com'),
+                    (strftime('%s','now'), 'noticias.com'),
+                    (strftime('%s','now','-200 days'), 'antigo.com');
+            """)
+            await conn.commit()
+
+    _run(_setup())
+    _run(_db.init_db())
+
+    async def _check():
+        async with aiosqlite.connect(_db.DB_PATH) as conn:
+            rows = await (await conn.execute(
+                "SELECT domain, click_count, quality_score FROM domain_quality ORDER BY domain"
+            )).fetchall()
+        return {r[0]: (r[1], r[2]) for r in rows}
+
+    result = _run(_check())
+
+    assert "noticias.com" in result
+    assert result["noticias.com"][0] == 2                      # 2 cliques recentes
+    assert abs(result["noticias.com"][1] - 2 * 0.5) < 0.01     # score = 1.0
+    # clique de 200 dias atrás está fora da janela de 90 dias → não conta
+    assert "antigo.com" not in result
+
+    _db.DB_PATH = orig_db
+    _db.KNOWLEDGE_DB_PATH = orig_kdb

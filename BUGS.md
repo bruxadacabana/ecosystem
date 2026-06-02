@@ -83,6 +83,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-020](#bug-020) | OPEN | 2026-06-02 | HUB/LOGOS + AKASHA + Mnemosyne | embed-server retorna HTTP 500 com requisições concorrentes de múltiplos apps |
 | [BUG-021](#bug-021) | FIXED | 2026-06-02 | AKASHA (base.html) | feedbackInsight() sempre retorna cedo — feedback de insight nunca chega ao servidor |
 | [BUG-022](#bug-022) | FIXED | 2026-06-02 | AKASHA (extension/background.js) | extensão consome slot de insight sem exibir quando aba ativa é o próprio AKASHA |
+| [BUG-023](#bug-023) | FIXED | 2026-06-02 | AKASHA (tests/test_domain_suggester.py) | teste usa domínio-semente (ravelry.com) como exemplo de domínio não-indexado |
 
 ---
 
@@ -1442,3 +1443,50 @@ async function pollInsight() {
 
 #### Teste de regressão
 Manual: abrir AKASHA como aba ativa → aguardar 60s → verificar no DevTools da extensão que `pollInsight` retorna sem fazer fetch para `/insight/current` → navegar para outra aba → insight aparece corretamente via extensão (sem ter sido "consumido" silenciosamente).
+
+---
+
+### BUG-023 · [FIXED] · Teste usa domínio-semente (`ravelry.com`) como exemplo de domínio não-indexado
+
+#### Identificação
+- **Data:** 2026-06-02
+- **App(s):** AKASHA
+- **Componente:** `AKASHA/tests/test_domain_suggester.py::test_creates_multiple_suggestions`
+- **Commit do fix:** pendente
+- **Descoberta via:** teste-automatizado (durante implementação da reputação de domínio)
+- **Tempo de diagnóstico:** ~10 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas
+- **OS:** Windows 10 (confirmado), independente de plataforma
+- **Modo:** teste (`uv run python -m pytest`)
+- **Reproduzível em:** qualquer ambiente — falha determinística
+
+#### Pré-condição para reproduzir
+Rodar a suíte do `test_domain_suggester.py`. O `dbs` fixture chama `init_db()`, que por sua vez chama `populate_from_user_data()` e semeia a tabela `crawl_sites` com a lista de sites padrão da usuária.
+
+#### Sintoma observado
+```
+assert 1 == 2
+tests\test_domain_suggester.py:183: AssertionError
+```
+O teste esperava 2 sugestões de domínio, mas apenas 1 era criada.
+
+#### Logs
+```
+candidates: [('craftivism.com', 4)]
+created: 1
+```
+`ravelry.com` desaparecia da lista de candidatos mesmo tendo 4 cliques registrados.
+
+#### Causa raiz
+O teste usava `ravelry.com` como um dos dois domínios "frequentes não indexados". Porém `https://www.ravelry.com` faz parte dos sites-semente da Biblioteca, inseridos em `crawl_sites` durante `init_db` → `populate_from_user_data`. A função `get_unindexed_frequent_domains` **corretamente** filtra domínios já indexados, então `ravelry.com` era removido dos candidatos. O código de produção estava certo; o dado do teste é que era inválido — escolheu um domínio que coincide com um seed real.
+
+#### Impacto
+Cosmético/teste — nenhum impacto em produção. A função de sugestão de domínio sempre funcionou como projetado. O falso negativo do teste mascarava a confiança na suíte.
+
+#### Fix aplicado
+Em `test_creates_multiple_suggestions`, trocar `ravelry.com` por `knittinghelp.example` (TLD reservado `.example`, garantidamente fora de qualquer lista de seeds). Adicionado comentário no docstring do teste alertando que domínios de teste não podem coincidir com os sites-semente.
+
+#### Teste de regressão
+O próprio `test_creates_multiple_suggestions` agora passa de forma determinística, e a escolha de um domínio `.example` evita colisão futura com seeds reais. Suíte completa de `test_domain_suggester.py` (10 testes) + `test_domain_quality.py` (24 testes) verde.

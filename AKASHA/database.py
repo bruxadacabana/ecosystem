@@ -19,7 +19,7 @@ KNOWLEDGE_DB_PATH = DB_PATH.parent / "akasha_knowledge.db"
 # Versão do schema — incrementar a cada migration
 # ---------------------------------------------------------------------------
 
-SCHEMA_VERSION = 52
+SCHEMA_VERSION = 53
 
 # ---------------------------------------------------------------------------
 # DDL
@@ -250,10 +250,13 @@ CREATE TABLE IF NOT EXISTS page_rank (
 
 _CREATE_DOMAIN_QUALITY = """
 CREATE TABLE IF NOT EXISTS domain_quality (
-    domain        TEXT    PRIMARY KEY,
-    archive_count INTEGER NOT NULL DEFAULT 0,
-    quality_score REAL    NOT NULL DEFAULT 0.0,
-    updated_at    INTEGER NOT NULL DEFAULT 0
+    domain                  TEXT    PRIMARY KEY,
+    archive_count           INTEGER NOT NULL DEFAULT 0,
+    click_count             INTEGER NOT NULL DEFAULT 0,
+    confirmed_insight_count INTEGER NOT NULL DEFAULT 0,
+    dismissed_count         INTEGER NOT NULL DEFAULT 0,
+    quality_score           REAL    NOT NULL DEFAULT 0.0,
+    updated_at              INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -1355,6 +1358,42 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
             ON CONFLICT(domain) DO UPDATE SET
                 archive_count = domain_quality.archive_count + excluded.archive_count,
                 quality_score = (domain_quality.archive_count + excluded.archive_count) * 2.0,
+                updated_at    = excluded.updated_at
+            """
+        )
+
+    if from_version < 53:
+        # Amplia domain_quality com sinais de clique, insights confirmados e dispensados.
+        # A fórmula de quality_score passa a ser:
+        #   archive_count×2.0 + confirmed_insight_count×1.5 + min(click_count,20)×0.5 − dismissed_count×0.5
+        for col, ddl in [
+            ("click_count",             "ALTER TABLE domain_quality ADD COLUMN click_count             INTEGER NOT NULL DEFAULT 0"),
+            ("confirmed_insight_count", "ALTER TABLE domain_quality ADD COLUMN confirmed_insight_count INTEGER NOT NULL DEFAULT 0"),
+            ("dismissed_count",         "ALTER TABLE domain_quality ADD COLUMN dismissed_count         INTEGER NOT NULL DEFAULT 0"),
+        ]:
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass  # coluna já existe
+
+        # Backfill click_count com os últimos 90 dias de click_log (mesmo período do domain_boosts)
+        await db.execute(
+            """
+            INSERT INTO domain_quality (domain, click_count, quality_score, updated_at)
+            SELECT domain,
+                   COUNT(*) AS click_count,
+                   MIN(COUNT(*), 20) * 0.5 AS quality_score,
+                   strftime('%s', 'now')
+            FROM click_log
+            WHERE domain != ''
+              AND timestamp >= strftime('%s', 'now', '-90 days')
+            GROUP BY domain
+            ON CONFLICT(domain) DO UPDATE SET
+                click_count   = excluded.click_count,
+                quality_score = (domain_quality.archive_count * 2.0
+                                 + domain_quality.confirmed_insight_count * 1.5
+                                 + MIN(excluded.click_count, 20) * 0.5
+                                 - domain_quality.dismissed_count * 0.5),
                 updated_at    = excluded.updated_at
             """
         )
@@ -2989,43 +3028,109 @@ async def get_unindexed_frequent_domains(threshold: int = 3) -> list[tuple[str, 
 # Domain quality helpers (archive-based ranking signal)
 # ---------------------------------------------------------------------------
 
-_ARCHIVE_WEIGHT     = 2.0   # pontos por arquivo
-_QUALITY_BOOST_CAP  = 3.0   # multiplicador máximo (evita reordenação extrema)
-_QUALITY_NORMALIZER = 10.0  # divide quality_score para obter boost adicional
+# Pesos da reputação de domínio. quality_score é uma soma ponderada dos sinais:
+#   archive_count×2.0 + confirmed_insight_count×1.5 + min(click_count,20)×0.5 − dismissed_count×0.5
+# Cada sinal reflete um grau diferente de confiança: arquivar uma página é o sinal
+# mais forte (a usuária quis preservá-la), confirmar um insight é forte, clicar é
+# fraco (e satura), dispensar um insight é penalidade.
+_ARCHIVE_WEIGHT     = 2.0    # pontos por arquivo
+_CONFIRMED_WEIGHT   = 1.5    # pontos por insight confirmado
+_CLICK_WEIGHT       = 0.5    # pontos por clique (satura em _CLICK_CAP cliques)
+_DISMISSED_WEIGHT   = 0.5    # penalidade por insight dispensado
+_CLICK_CAP          = 20     # nº máximo de cliques que contam para o score
+_QUALITY_BOOST_CAP  = 3.0    # multiplicador máximo (evita reordenação extrema)
+_QUALITY_BOOST_FLOOR = 0.1   # multiplicador mínimo (reputação ruim ainda aparece)
+_QUALITY_NORMALIZER = 10.0   # divide quality_score para obter boost adicional
+
+# Colunas de sinal que podem ser incrementadas individualmente.
+_SIGNAL_COLUMNS = ("archive_count", "click_count", "confirmed_insight_count", "dismissed_count")
+
+# Pontuação inicial atribuída quando a linha é criada pela primeira vez via um sinal.
+_SIGNAL_INITIAL_SCORE = {
+    "archive_count":           _ARCHIVE_WEIGHT,
+    "confirmed_insight_count": _CONFIRMED_WEIGHT,
+    "click_count":             _CLICK_WEIGHT,
+    "dismissed_count":         -_DISMISSED_WEIGHT,
+}
 
 
-async def increment_domain_archive(domain: str) -> None:
-    """Incrementa archive_count do domínio e recalcula quality_score.
+def _recompute_quality_sql(bumped: str) -> str:
+    """Monta a expressão SQL que recalcula quality_score após incrementar `bumped`.
 
-    quality_score = archive_count × _ARCHIVE_WEIGHT
-    Chamado após arquivamento bem-sucedido de uma página.
+    No bloco ON CONFLICT DO UPDATE do SQLite, referências a colunas sem o prefixo
+    `excluded.` apontam para o valor ANTIGO da linha — as cláusulas SET não enxergam
+    umas às outras. Por isso a coluna recém-incrementada precisa de `+ 1` explícito
+    na fórmula, enquanto as demais usam o valor corrente.
+    """
+    terms = []
+    for col, weight, capped in (
+        ("archive_count",           _ARCHIVE_WEIGHT,    False),
+        ("confirmed_insight_count", _CONFIRMED_WEIGHT,  False),
+        ("click_count",             _CLICK_WEIGHT,      True),
+        ("dismissed_count",        -_DISMISSED_WEIGHT,  False),
+    ):
+        expr = f"({col} + 1)" if col == bumped else col
+        if capped:
+            expr = f"MIN({expr}, {_CLICK_CAP})"
+        terms.append(f"{expr} * {weight}")
+    return " + ".join(terms)
+
+
+async def _bump_domain_signal(domain: str, column: str) -> None:
+    """Incrementa em 1 uma coluna de sinal de reputação e recalcula quality_score.
+
+    column ∈ _SIGNAL_COLUMNS. Cria a linha se o domínio ainda não existir.
     """
     import time as _time
-    if not domain:
+    if not domain or column not in _SIGNAL_COLUMNS:
         return
     domain = domain.lower().removeprefix("www.")
+    if not domain:
+        return
+    now = int(_time.time())
+    initial_score = _SIGNAL_INITIAL_SCORE[column]
+    recompute = _recompute_quality_sql(column)
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
-                """INSERT INTO domain_quality (domain, archive_count, quality_score, updated_at)
-                   VALUES (?, 1, ?, ?)
-                   ON CONFLICT(domain) DO UPDATE SET
-                       archive_count = archive_count + 1,
-                       quality_score = (archive_count + 1) * ?,
-                       updated_at    = ?""",
-                (domain, _ARCHIVE_WEIGHT, int(_time.time()),
-                 _ARCHIVE_WEIGHT, int(_time.time())),
+                f"""INSERT INTO domain_quality (domain, {column}, quality_score, updated_at)
+                    VALUES (?, 1, ?, ?)
+                    ON CONFLICT(domain) DO UPDATE SET
+                        {column}      = {column} + 1,
+                        quality_score = {recompute},
+                        updated_at    = ?""",
+                (domain, initial_score, now, now),
             )
             await db.commit()
     except Exception:
         pass
 
 
-async def get_domain_quality_boosts(domains: list[str]) -> dict[str, float]:
-    """Retorna multiplicador de qualidade por domínio (1.0 = neutro, >1.0 = boost).
+async def increment_domain_archive(domain: str) -> None:
+    """Sinal forte: a usuária arquivou uma página deste domínio (+_ARCHIVE_WEIGHT)."""
+    await _bump_domain_signal(domain, "archive_count")
 
-    boost = 1.0 + quality_score / _QUALITY_NORMALIZER, limitado a _QUALITY_BOOST_CAP.
-    Domínios sem histórico recebem 1.0 (neutro).
+
+async def increment_domain_click(domain: str) -> None:
+    """Sinal fraco: a usuária clicou num resultado deste domínio (+_CLICK_WEIGHT, satura)."""
+    await _bump_domain_signal(domain, "click_count")
+
+
+async def increment_domain_confirmed_insight(domain: str) -> None:
+    """Sinal forte: a usuária confirmou um insight ligado a este domínio (+_CONFIRMED_WEIGHT)."""
+    await _bump_domain_signal(domain, "confirmed_insight_count")
+
+
+async def increment_domain_dismissed(domain: str) -> None:
+    """Penalidade: a usuária dispensou um insight ligado a este domínio (−_DISMISSED_WEIGHT)."""
+    await _bump_domain_signal(domain, "dismissed_count")
+
+
+async def get_domain_quality_boosts(domains: list[str]) -> dict[str, float]:
+    """Retorna multiplicador de reputação por domínio (1.0 = neutro, >1.0 = boost, <1.0 = penalidade).
+
+    boost = 1.0 + quality_score / _QUALITY_NORMALIZER, limitado entre
+    _QUALITY_BOOST_FLOOR e _QUALITY_BOOST_CAP. Domínios sem histórico recebem 1.0.
     """
     if not domains:
         return {}
@@ -3042,5 +3147,6 @@ async def get_domain_quality_boosts(domains: list[str]) -> dict[str, float]:
     result: dict[str, float] = {}
     for domain, score in rows:
         boost = min(1.0 + score / _QUALITY_NORMALIZER, _QUALITY_BOOST_CAP)
+        boost = max(boost, _QUALITY_BOOST_FLOOR)
         result[domain] = boost
     return result

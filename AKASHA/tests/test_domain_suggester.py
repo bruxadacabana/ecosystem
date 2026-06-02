@@ -172,9 +172,14 @@ def test_no_duplicate_dismissed_recently(dbs):
 
 
 def test_creates_multiple_suggestions(dbs):
-    """Múltiplos domínios candidatos geram múltiplas sugestões."""
+    """Múltiplos domínios candidatos geram múltiplas sugestões.
+
+    Os domínios usados não podem coincidir com os sites-semente da Biblioteca
+    (populados por populate_from_user_data em init_db) — caso contrário seriam
+    corretamente filtrados por get_unindexed_frequent_domains como já indexados.
+    """
     akasha_db, pm_db = dbs
-    for domain in ["craftivism.com", "ravelry.com"]:
+    for domain in ["craftivism.com", "knittinghelp.example"]:
         _insert_clicks(akasha_db, domain, 4)
 
     import services.domain_suggester as ds
@@ -188,7 +193,7 @@ def test_creates_multiple_suggestions(dbs):
         for e in entries
     }
     assert "craftivism.com" in domains_in_tags
-    assert "ravelry.com" in domains_in_tags
+    assert "knittinghelp.example" in domains_in_tags
 
 
 def test_returns_zero_when_no_candidates(dbs):
