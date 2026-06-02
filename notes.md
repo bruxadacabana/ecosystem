@@ -20,6 +20,9 @@ Não usar no Windows — a AKASHA pode usar o SearXNG do PC principal via IP loc
 
 ## próximo: 
 
+### AKASHA — Qualidade de busca SearXNG: remoção de Qwant e filtro anti-spam | 2026-06-01
+
+
 ### CODEX — Leitor centralizado do ecossistema | 2026-05-13
 
 ### Redesign visual da Mnemosyne — "Bibliotecária Celeste" | 2026-05-19
