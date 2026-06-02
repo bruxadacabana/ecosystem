@@ -4,6 +4,7 @@ pode prosseguir para a implementação da seção '### KOSMOS v3 — Redesign co
 Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes (unitários e de integração) exaustivamente (tanto na implementação em si quanto nas funcionalidades ao redor e como funcionam em conjunto) e incluir criação de logs em todo o processo envolvendo a nova feature implementada.
 
 ---
+Acho que o servidor de embedding não está conseguindo lidar com mais de um programa ao mesmo tempo e é absolutamente necessário que ele seja capaz. Eu estava rodando (indexando/analisando) Akasha e Mnemosyne ao mesmo tempo. Logs do Mnemosyne:
 
 07:14:33
 ,720 [INFO] mnemosyne.main: IndexReflectionWorker [alta]: 1 arquivo(s) recém-indexados enfileirados.
