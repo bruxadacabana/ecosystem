@@ -73,8 +73,9 @@ Implicações: CUDA via MX150 (sem `HSA_OVERRIDE` — isso é só AMD/ROCm). VRA
 
 **Ambientes Python por app (CachyOS principal) — onde rodar pytest:**
 - **Mnemosyne** usa o **venv compartilhado da raiz**: `program files/.venv` (o `Mnemosyne/iniciar.sh` aponta para `../.venv`). Rodar: `"program files/.venv/bin/python" -m pytest …` de dentro de `Mnemosyne/`.
-- **AKASHA** tem o **próprio venv**: `AKASHA/.venv`.
+- **AKASHA** tem o **próprio venv**: `AKASHA/.venv` (Python **3.13**). Separado porque o `pyproject.toml` da AKASHA declara `requires-python = ">=3.11,<3.14"` — o venv da raiz é Python **3.14** e viola esse limite, então a AKASHA não pode usar o compartilhado. A AKASHA é gerenciada por `uv` (auto-sync no `iniciar.sh`); o Mnemosyne usa venv manual compartilhado.
 - `python`/`python3` do sistema NÃO têm as dependências — sempre usar o venv correto. Erro a evitar: procurar `.venv` só dentro de `Mnemosyne/` e concluir que o ambiente não existe; ele está um nível acima, compartilhado.
+- **Para instalar/atualizar dependências, a usuária usa `atualizar.sh` (CachyOS) / `atualizar.bat` (Windows)** — esse é o ponto de entrada oficial de setup de ambiente. Verificar esse script antes de assumir como os venvs são criados.
 
 ---
 
