@@ -204,6 +204,64 @@ def test_apply_quality_boost_no_change_without_data(db):
     assert reordered[1].url == results[1].url
 
 
+def test_migration_backfills_existing_archives(tmp_path):
+    """Migration 52 deve popular domain_quality com arquivos pré-existentes em archive_simhashes."""
+    import database as _db
+    import aiosqlite
+
+    orig_db  = _db.DB_PATH
+    orig_kdb = _db.KNOWLEDGE_DB_PATH
+
+    _db.DB_PATH = tmp_path / "akasha.db"
+    _db.KNOWLEDGE_DB_PATH = tmp_path / "akasha_knowledge.db"
+
+    # Cria banco na versão 51 (sem domain_quality) e insere arquivos históricos
+    async def _setup():
+        async with aiosqlite.connect(_db.DB_PATH) as conn:
+            await conn.executescript("""
+                PRAGMA journal_mode=WAL;
+                CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE archive_simhashes (
+                    id INTEGER PRIMARY KEY, simhash INTEGER, path TEXT, url TEXT
+                );
+                CREATE TABLE archive_dois (
+                    id INTEGER PRIMARY KEY, doi TEXT, arxiv_id TEXT, path TEXT, url TEXT
+                );
+                INSERT INTO settings VALUES ('schema_version', '51');
+                INSERT INTO archive_simhashes (simhash, path, url) VALUES
+                    (1, '/archive/a.md', 'https://exemplo.com/artigo'),
+                    (2, '/archive/b.md', 'https://exemplo.com/outro'),
+                    (3, '/archive/c.md', 'https://www.outro-site.com/pagina');
+            """)
+            await conn.commit()
+
+    _run(_setup())
+
+    # Roda init_db — aplica migration 52 com backfill
+    _run(_db.init_db())
+
+    # Verifica que domain_quality foi populada corretamente
+    async def _check():
+        async with aiosqlite.connect(_db.DB_PATH) as conn:
+            rows = await (await conn.execute(
+                "SELECT domain, archive_count, quality_score FROM domain_quality ORDER BY domain"
+            )).fetchall()
+        return {r[0]: (r[1], r[2]) for r in rows}
+
+    result = _run(_check())
+
+    assert "exemplo.com" in result
+    assert result["exemplo.com"][0] == 2      # 2 arquivos
+    assert abs(result["exemplo.com"][1] - 4.0) < 0.01   # quality_score = 4.0
+
+    assert "outro-site.com" in result
+    assert result["outro-site.com"][0] == 1   # 1 arquivo, www removido
+    assert abs(result["outro-site.com"][1] - 2.0) < 0.01
+
+    _db.DB_PATH = orig_db
+    _db.KNOWLEDGE_DB_PATH = orig_kdb
+
+
 def test_apply_quality_boost_empty_list(db):
     """Lista vazia retorna lista vazia."""
     from services.local_search import _apply_quality_boost

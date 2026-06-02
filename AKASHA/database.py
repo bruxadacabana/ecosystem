@@ -1321,6 +1321,44 @@ async def _migrate(db: aiosqlite.Connection, from_version: int) -> None:
         except Exception:
             pass  # tabela já existe em bancos criados com este schema
 
+        # Backfill: popula domain_quality com o histórico de arquivamento existente.
+        # Lê URLs de archive_simhashes (páginas web) e archive_dois (artigos científicos),
+        # extrai o domínio com SQLite string functions e acumula via ON CONFLICT.
+        # Idempotente: se já houver entradas novas, os counts são somados.
+        await db.execute(
+            """
+            INSERT INTO domain_quality (domain, archive_count, quality_score, updated_at)
+            WITH raw AS (
+                SELECT url FROM archive_simhashes WHERE url LIKE 'http%'
+                UNION ALL
+                SELECT url FROM archive_dois      WHERE url LIKE 'http%'
+            ),
+            extracted AS (
+                SELECT lower(replace(
+                    CASE
+                        WHEN instr(substr(url, instr(url, '://') + 3), '/') > 0
+                        THEN substr(substr(url, instr(url, '://') + 3), 1,
+                                    instr(substr(url, instr(url, '://') + 3), '/') - 1)
+                        ELSE substr(url, instr(url, '://') + 3)
+                    END,
+                'www.', '')) AS domain
+                FROM raw
+                WHERE instr(url, '://') > 0
+            )
+            SELECT domain,
+                   COUNT(*)       AS archive_count,
+                   COUNT(*) * 2.0 AS quality_score,
+                   strftime('%s', 'now')
+            FROM extracted
+            WHERE domain != '' AND domain NOT LIKE '%/%' AND domain NOT LIKE '% %'
+            GROUP BY domain
+            ON CONFLICT(domain) DO UPDATE SET
+                archive_count = domain_quality.archive_count + excluded.archive_count,
+                quality_score = (domain_quality.archive_count + excluded.archive_count) * 2.0,
+                updated_at    = excluded.updated_at
+            """
+        )
+
     await db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', ?)",
         (str(SCHEMA_VERSION),),
