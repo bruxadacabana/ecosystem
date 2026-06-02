@@ -1233,3 +1233,52 @@ Removido o bloco de threshold de `process_queue()`. O throttling já existia no 
 - `test_low_queue_above_threshold_is_still_accessible`: fila com >50 itens ainda pode ser lida
 - `test_process_queue_has_no_threshold_check`: verifica via source inspection que "pausando backfill" não está em `process_queue`
 - `test_wait_queue_drain_in_backfill_still_throttles`: confirma que o throttle correto existe em `backfill_knowledge`
+
+---
+
+### BUG-019 · [OPEN] · `page_count` em `crawl_sites` desincronizado com `crawl_pages` — 14 de 16 domínios aparentam ter páginas indexadas mas o banco está vazio
+
+#### Identificação
+- **Data:** 2026-06-02
+- **App(s):** AKASHA
+- **Componente:** tabela `crawl_sites` (coluna `page_count`) vs. tabela `crawl_pages`
+- **Commit do fix:** pendente
+- **Descoberta via:** auditoria manual da Biblioteca durante item "Crescer índice local"
+- **Tempo de diagnóstico:** ~15 min
+
+#### Ambiente
+- **Máquina(s) afetadas:** CachyOS principal
+- **OS:** CachyOS
+- **Modo:** produção (banco `/home/spacewitch/Documents/ecosystem_root/akasha/akasha.db`)
+
+#### Pré-condição
+16 domínios cadastrados na Biblioteca (tabela `crawl_sites`). A instância AKASHA foi usada em sessões de desenvolvimento onde resets de banco ou migrações podem ter ocorrido.
+
+#### Sintoma
+14 de 16 domínios mostram `page_count > 0` na coluna `crawl_sites.page_count` (ex: allfreecrafts.com = 1225, pagangrimoire.com = 306), mas `SELECT COUNT(*) FROM crawl_pages WHERE site_id = ?` retorna 0 para todos esses domínios. Apenas studybuddhism.com (68 páginas) e buddhism.net (21 páginas) têm conteúdo real em `crawl_pages`.
+
+Total geral: `crawl_pages` tem 89 linhas; a soma de `page_count` em `crawl_sites` seria ~2.000+.
+
+#### Logs
+Confirmado via SQL direto no banco de produção:
+```sql
+SELECT base_url, page_count, (SELECT COUNT(*) FROM crawl_pages cp WHERE cp.site_id = cs.id) as real_count
+FROM crawl_sites cs WHERE deleted = 0;
+-- Resultado: allfreecrafts.com: page_count=1225, real_count=0
+--            pagangrimoire.com: page_count=306, real_count=0
+--            studybuddhism.com: page_count=68, real_count=68 (ok)
+```
+
+#### Causa raiz
+Provavelmente um reset de tabela (`crawl_pages`) durante desenvolvimento ou migração de schema, sem atualizar o contador `page_count` em `crawl_sites`. O contador ficou com os valores do crawl anterior enquanto as páginas foram deletadas.
+
+#### Impacto
+A Biblioteca aparenta ter um índice local rico (~2.000 páginas), mas na prática tem 89 páginas de 2 domínios. Buscas locais via FTS5 e busca semântica têm cobertura mínima. O conhecimento de domínios como allfreecrafts.com, pagangrimoire.com, ravelry.com, quantamagazine.org, etc. está perdido.
+
+#### Fix
+1. Resetar `page_count` para o valor real: `UPDATE crawl_sites SET page_count = (SELECT COUNT(*) FROM crawl_pages WHERE site_id = crawl_sites.id)`.
+2. Disparar novo crawl de todos os domínios com `page_count = 0` após o reset.
+3. Garantir que o trigger ou a função que atualiza `page_count` esteja correta e acionada após cada crawl.
+
+#### Teste de regressão
+Após fix: `SELECT SUM(page_count) = (SELECT COUNT(*) FROM crawl_pages)` deve retornar verdadeiro.
