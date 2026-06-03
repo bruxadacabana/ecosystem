@@ -3367,9 +3367,14 @@ async fn v1_embeddings_proxy(
         ensure_embed_server_started(&s).await;
 
         // Após tentativa de start, verificar se subiu de fato.
-        if !s.embed_proc_active().await {
+        // BUG-027 (cont.): o gate é a SAÚDE do embed-server, não o handle interno. Se o
+        // `embed_proc` está dessincronizado (None) mas o servidor responde /health na porta
+        // — caso clássico após um wait_ready lento ou processo herdado — encaminhamos mesmo
+        // assim, em vez de devolver 503 com um embed-server perfeitamente saudável no ar.
+        if !s.embed_proc_active().await
+            && !embed_health_ok(&s.0.client, s.0.embed_health_port).await {
             log::warn!(
-                "LOGOS embed proxy: embed-server não iniciou para '{}' — \
+                "LOGOS embed proxy: embed-server não ativo nem saudável para '{}' — \
                  verifique embed_model em ecosystem.json (porta {})",
                 app_name, EMBED_SERVER_PORT
             );
