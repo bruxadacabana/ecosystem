@@ -4,6 +4,17 @@
 
 ---
 
+## ⚡ Validação pendente (primeiro item — fazer no PC principal)
+
+### HUB (LOGOS) — validar embed-server em CPU por padrão (BUG-028) | 2026-06-03
+> Contexto: para resolver o BUG-028 (loop de restart do embed-server por disputa de VRAM), o default de `embed_n_gpu_layers` foi mudado de -1 (GPU) para **0 (CPU)** em `HUB/src-tauri/src/logos.rs`. O embed-server (bge-m3 Q8, ~567 MB / ~0,6 GB VRAM) é leve e roda em CPU sem disputar VRAM com os LLMs de chat de AKASHA+Mnemosyne (uso padrão do PC principal). Falta **medir na máquina real** antes de considerar fechado. **Atenção:** se o `ecosystem.json` do PC principal tiver `logos.embed_n_gpu_layers` setado explicitamente (ex.: -1), o valor explícito prevalece sobre o novo default — nesse caso, setar 0 no ecosystem.json ou remover a chave.
+#### HUB (LOGOS)
+- [ ] **Medir VRAM efetivamente liberada** — com o embed em CPU, conferir via `rocm-smi` quanto de VRAM da RX 6600 é devolvido (esperado ~0,6 GB, conforme README). Confirmar que, com AKASHA+Mnemosyne carregados, a VRAM não passa mais do limite por causa do embed-server.
+- [ ] **Medir throughput de embedding em CPU (Ryzen 5 4600G)** — rodar uma indexação real no Mnemosyne e cronometrar; comparar com a velocidade anterior (GPU). Embedding é P3/background, então lentidão moderada é aceitável; mas se a indexação ficar inviável (ex.: horas para um corpus pequeno), reavaliar (ex.: GPU parcial `embed_n_gpu_layers` > 0, ou voltar a GPU só nessa máquina).
+- [ ] **Confirmar que o churn do BUG-028 sumiu** — com o embed fora da VRAM, verificar nos logs do HUB que não há mais o loop "iniciando/pronto" do embed-server, e que o Mnemosyne indexa sem timeout. Se confirmado, marcar BUG-028 como FIXED no BUGS.md.
+
+---
+
 ## Padrões Obrigatórios
 
 
@@ -5534,6 +5545,8 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 > **Layout:** celular (bottom nav, single-pane) · tablet (sidebar + two-pane adaptável, tela inteira, split-screen compatível, S Pen com Pointer Events) · desktop (sidebar + área de conteúdo, painel triplo opcional).
 >
 > **Isolamento do AETHER:** a regra é anti-indexação por IA — CODEX pode ler e editar o vault sem infringir o isolamento.
+>
+> **Leitor geral + estado de leitura sincronizado (req. 2026-06-03):** além de ler conteúdo do ecossistema, o CODEX é um **leitor normal** — uma biblioteca pessoal de livros/documentos quaisquer (PDF, EPUB, etc.), não só arquivos vindos de AKASHA/Mnemosyne/KOSMOS. Deve **salvar onde a usuária parou de ler (posição), highlights, anotações e marcadores**, e esse estado deve ser **o mesmo no celular e no desktop** — a usuária lê os mesmos arquivos nos dois. Implica: (a) a biblioteca de leitura fica numa pasta sincronizada via Syncthing; (b) o estado de leitura precisa ser chaveado por um identificador **estável entre dispositivos** (hash de conteúdo do arquivo, não o caminho absoluto, que difere entre celular e desktop); (c) cuidado com sincronizar um único `annotations.db` SQLite via Syncthing (escritas concorrentes de dois dispositivos → conflito/corrupção) — avaliar sidecar por documento (ex.: JSON ao lado do arquivo, alinhado à preferência de "arquivos de verdade, sem lock-in") vs. db por dispositivo com merge. Decisão de armazenamento a tomar na implementação.
 
 #### CODEX — Fase 0: scaffold, design system e esqueleto de navegação
 - [ ] **Criar projeto Tauri v2 em `CODEX/`** — `cargo tauri init`; estrutura: `CODEX/src/` (React + TypeScript, `strict: true`), `CODEX/src-tauri/` (Rust). Copiar design system do HUB/AETHER sem modificações: `tokens.css`, `animations.css`, `typography.css`, `components.css`, `CosmosLayer.tsx`, `Toast.tsx`, `ThemeToggle.tsx`.
@@ -5576,7 +5589,9 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [ ] **Suporte a DOCX** — crate `docx-rs` para extração de parágrafos com estilos básicos. Converter para HTML antes de renderizar.
 - [ ] **Suporte a HTML** — arquivos do archive do AKASHA: renderizar na webview do Tauri. Sanitizar links externos.
 - [ ] **Seletor de arquivo e drag-and-drop** — `tauri-plugin-dialog` filtrado por extensão. Tela inicial com drag-and-drop.
-- [ ] **Highlights e anotações** — `annotations.db` SQLite: `highlights(id, file_path, start_char, end_char, color, created_at)`, `notes(id, file_path, start_char, text, created_at)`, `citations(id, file_path, start_char, end_char, excerpt, note, created_at)`. Paleta de 5 cores alinhadas ao design system. Persistir e restaurar highlights ao reabrir arquivo.
+- [ ] **Biblioteca de leitura geral** — o CODEX é também um leitor "normal": uma biblioteca pessoal de livros/documentos quaisquer, não só arquivos do ecossistema. Pasta de biblioteca sincronizada via Syncthing (ex.: `{sync_root}/codex/library/`), configurável. Tela de biblioteca com capas/títulos, lista de "continuar lendo" (ordenada por último acesso) e busca por título. Abrir qualquer formato suportado (PDF, EPUB, DOCX, HTML, MD, TXT).
+- [ ] **Progresso de leitura (retomar onde parou)** — ao reabrir um arquivo, voltar exatamente para a posição onde a usuária parou. Persistir progresso por documento: `reading_progress(file_id, position, percent, last_read_at)` — `position` apropriado ao formato (offset de char / página do PDF / capítulo+offset do EPUB). `file_id` = **hash de conteúdo** do arquivo (estável entre dispositivos), não o caminho. Atualizar ao rolar/virar página (com debounce).
+- [ ] **Highlights e anotações** — highlights, notas e citações por documento. Campos: `highlights(file_id, start, end, color, created_at)`, `notes(file_id, anchor, text, created_at)`, `citations(file_id, start, end, excerpt, note, created_at)`. **Chavear por `file_id` = hash de conteúdo** (não caminho), para o estado bater entre celular e desktop. Paleta de 5 cores do design system. Persistir e restaurar ao reabrir. **Armazenamento sync-safe (decisão de implementação):** evitar um único SQLite compartilhado via Syncthing (escritas de 2 dispositivos → conflito/corrupção); avaliar sidecar JSON por documento (alinhado a "arquivos de verdade, sem lock-in") ou db por dispositivo com merge. O `reading_progress` segue a mesma decisão.
 - [ ] **Exportação de citação como MD** — gera `.md` em `{sync_root}/codex/exports/` com frontmatter (`source_path`, `source_title`, `date_cited`) e trecho citado + nota.
 - [ ] **Mecanismo "abrir no CODEX"** — lê `codex.open_request: { path, start_char? }` no `ecosystem.json` ao ganhar foco. Após abrir, limpa o campo. Botão "Abrir no CODEX" em AKASHA (`archive_detail.html`), Mnemosyne (`_source_viewer`), KOSMOS (`reader_pane.py`).
 
@@ -5584,6 +5599,7 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [ ] **Decisão de stack mobile** — avaliar Tauri v2 Android (maturidade no momento desta fase) vs Kotlin/Jetpack Compose. Critérios: suporte a S Pen via Pointer Events, performance do WebView Android, tamanho do APK.
 - [ ] **Layout celular** — bottom nav bar com ícones das abas. Navegação em profundidade (lista → detalhe → editor) em tela única.
 - [ ] **Layout tablet adaptável** — two-pane padrão (sidebar + conteúdo). Modo tela-inteira para foco em escrita/leitura (toggle visível). Compatível com split-screen do Android — sem largura mínima rígida, UI responsiva via CSS breakpoints.
+- [ ] **Leitor + estado de leitura no mobile (mesmos arquivos do desktop)** — a biblioteca de leitura, o progresso (retomar onde parou), highlights e anotações da Fase 5 funcionam igualmente no celular/tablet. A pasta de biblioteca e o store de estado vêm via Syncthing, então abrir um livro no celular continua da posição salva no desktop e vice-versa (estado chaveado por hash de conteúdo). Otimizar o leitor para toque: virar página por gesto, seleção de texto e highlight com toque/caneta.
 - [ ] **Suporte a S Pen** — Pointer Events API (`pointerType === "pen"`, `pressure`, `tiltX/Y`). Palm rejection via `touch-action: none` no canvas. Testes no Samsung Tab S9 FE.
 - [ ] **Build e release** — `cargo tauri android build` (ou equivalente Kotlin). Testar no dispositivo alvo. APK de release.
 
@@ -6763,9 +6779,9 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Fase 3 — Texto completo e scraping
 - [x] **article_scraper.py** — trafilatura como método principal; fallback BeautifulSoup. Throttle por domínio (ecosystem_scraper).
-- [ ] **ScraperWorker (QThread P1/P2)** — P1 quando artigo aberto pelo usuário; P2 para batch em background.
-- [ ] **reader_pane.py** — exibe texto completo após scraping; botão "Carregar texto completo".
-- [ ] **Testes: article_scraper.py** — extração de texto, fallback, throttle.
+- [x] **ScraperWorker (QThread P1/P2)** — P1 quando artigo aberto pelo usuário; P2 para batch em background.
+- [x] **reader_pane.py** — exibe texto completo após scraping; botão "Carregar texto completo".
+- [x] **Testes: article_scraper.py** — extração de texto, fallback, throttle.
 
 #### Fase 4 — Análise AI e cards vivos
 - [ ] **logos_client.py** — wrapper LOGOS: `chat(messages, priority, model)`, `is_available()`, `get_analysis_model()`. Headers `X-App: kosmos`, `X-Priority: 1|2|3` obrigatórios. Graceful fallback quando LOGOS offline (artigos ficam na fila `pending`). P3 não é bloqueado — gerenciado pelo LOGOS (pode ser mais lento, nunca rejeitado exceto situação extrema).
