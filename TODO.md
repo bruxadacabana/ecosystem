@@ -7575,3 +7575,33 @@ Quando LOGOS estiver fora (HUB fechado):
 
 #### Mnemosyne
 - [x] **Retry com backoff exponencial em `_embed_batch` (`Mnemosyne/core/indexer.py`, linha 379)** — 500/503 adicionados à branch de retry transiente já existente (`_EMBED_RETRY_STATUS = {429,500,503}`), reusando o backoff do módulo em vez de duplicar o loop. 5 testes novos em `test_logos_embeddings.py` — 15 passando via venv compartilhado da raiz. envolver a chamada ao modelo de embedding em loop de retry idêntico ao da AKASHA: até 3 tentativas, backoff 1s/2s/4s, detectando exceções HTTP 500/503 (verificar como a exceção se manifesta via ChromaDB/requests — pode ser `requests.exceptions.HTTPError` ou texto na mensagem). Logar cada tentativa falha com `log.warning`. Se todas as tentativas falharem, relançar a exceção — o `IndexWorker` em `gui/workers.py` já captura exceções de `_embed_batch` e trata com `log.warning("IndexWorker: erro ao embedar '%s': %s", name, exc)`. Não há necessidade de mudar a lógica do worker — apenas tornar `_embed_batch` resiliente a falhas transientes. Testes: mock da chamada de embedding retornando `HTTPError(500)` nas primeiras N tentativas → `_embed_batch` tenta N+1 vezes; mock sempre falhando → exceção propagada após 3 tentativas; sucesso na 1ª → sem retry.
+
+---
+
+## Auditoria de erros silenciosos — logs em todo caminho de erro (PLANEJADO — fazer depois) | 2026-06-03
+
+> Diretiva da usuária: "TUDO gera logs" (ver CLAUDE.md → "Princípio de observabilidade"). Escopo escolhido: auditar **apenas os caminhos de erro silenciosos** — `except/catch` que engolem erro sem logar — deixando a instrumentação geral para "ao tocar". Cadência definida: **um app inteiro por vez**, com testes e commit por app, **parando para aprovação entre cada app**. Esta seção é só o plano — **não começar sem ordem explícita da usuária.**
+
+### Levantamento (varredura 2026-06-03)
+- **Python** (`except …: pass`): 313 ocorrências em 66 arquivos. Por app:
+  - **AKASHA ~150** — database.py 44, services/local_search 20, routers/search 18, services/knowledge_worker 14, services/archiver 9, services/personal_memory 8, routers/chat 7, services/suggester 5, services/paper_download 4, services/crawler 4, query_understanding 3, web_search 3, + vários menores.
+  - **Mnemosyne ~120** — gui/main_window 33, gui/workers 15, core/indexer 15, core/rag 10, core/personal_memory 9, core/loaders 7, core/config 7, core/insight_scheduler 4, + outros.
+  - **Hermes 12** (hermes.py 10), **KOSMOS 1** (article_scraper.py).
+  - **Raiz/shared** — ecosystem_client 6, shared_topic_profile 2, logos/gguf_converter 3, logos/finetune_scheduler 1, ecosystem_scraper 1, hardware_probe 1.
+- **FALTA levantar:** Rust (`.ok();`, `let _ = <Result>`, `unwrap_or*` que descartam erro) em `HUB/src-tauri` e `AETHER/src-tauri`; TypeScript (`catch {}` vazio, `.catch(()=>{})`) nos frontends de AETHER/OGMA/HUB.
+
+### Critério de classificação (aplicar em cada sítio)
+- **Perigoso** (erro real de rede/DB/LLM/IO/parse descartado sem rastro): logar ANTES de seguir — `warning` p/ degradação recuperável, `error` p/ falha real. Nunca mudo.
+- **Intencional/idempotente** (ex.: migração `ALTER TABLE … except: pass # coluna já existe`; checagem best-effort): `log.debug(...)` curto OU comentário explícito justificando. Preferir debug a remover.
+- **Não mudar o comportamento** — não relançar onde antes engolia (salvo bug claro); só tornar visível.
+
+### Passos por app (repetir para cada, na ordem definida)
+1. Listar os `except/catch` silenciosos do app (grep multiline `except[^:]*:\s*(#…)?pass`; Rust/TS conforme acima) + revisão manual.
+2. Classificar cada um (perigoso vs intencional).
+3. Instrumentar: log apropriado nos perigosos; debug/comentário nos intencionais.
+4. Rodar a suíte do app no venv correto (ver CLAUDE.md "Testes obrigatórios"); expandir testes onde o log de erro for verificável.
+5. Commit por app (`chore(<app>): instrumenta caminhos de erro silenciosos`).
+6. Parar, resumir, aguardar aprovação antes do próximo app.
+
+### Ordem sugerida (a confirmar com a usuária)
+AKASHA (mais central; erros de rede/LLM/DB mais perigosos) → Mnemosyne → HUB/LOGOS (Rust) → Hermes → raiz/shared → AETHER/OGMA (TS) → KOSMOS (trivial).
