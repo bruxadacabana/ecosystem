@@ -4872,6 +4872,11 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### AKASHA — Observabilidade de falhas de embedding | 2026-06-03
+> Contexto: as falhas de embedding na AKASHA são logadas em `debug` e engolidas (design fire-and-forget — embedding é melhoria opcional não-bloqueante). Por isso, problemas no embed-server compartilhado (ex.: BUG-027, corrida de startup) só apareceram nos logs do Mnemosyne (que loga em `warning` e bloqueia a indexação), nunca nos da AKASHA. A usuária apontou esse buraco de observabilidade: "se fosse o servidor, deveria aparecer nos dois".
+#### AKASHA
+- [ ] **Elevar de `debug` → `warning` os logs de falha de embedding por ERRO DO SERVIDOR** — em `services/local_search.py` (`embed_and_index`: os `except _EmbedError` e o caminho de erro inesperado do LOGOS, ~linhas 491-495) e `services/semantic_search.py` (`embed_and_store` quando `embed_text` retorna None por 500/timeout do servidor, e o warning de retry já existente em `embed_text`). **Manter o fire-and-forget** (não lançar exceção, não bloquear a indexação), mas tornar a falha VISÍVEL em `warning` para que um problema no embed-server apareça nos logs da AKASHA, não só do Mnemosyne. **Distinguir** "LOGOS offline / IA desligada" (permanece `debug`, é estado esperado) de "embed-server retornou 500 / timeout" (sobe para `warning`). Testes: mock de erro 500/timeout do servidor → log de `warning` emitido; mock de LOGOS offline (ConnectError) → permanece `debug`; a indexação não é bloqueada em nenhum caso.
+
 ### KOSMOS — Reescrita v3 do zero | 2026-05-21
 > Contexto: o código existente acumulou dívida técnica, usava PyQt6 (divergente do resto do ecossistema Python), SQLAlchemy (desnecessário para o schema simples), newspaper4k (inferior ao trafilatura) e não tinha integração com ecosystem_client. Decisão: descartar tudo e reescrever. Código antigo e data/ removidos; feeds exportados para `ecosystem_root/kosmos/.config/feeds.json`; arquivos salvos estão em `ecosystem_root/kosmos/`.
 
