@@ -88,6 +88,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-025](#bug-025) | FIXED | 2026-06-02 | AKASHA (services/web_search.py) | Chave de cache de busca web ignora `n_pages` — buscas leves envenenam o volume das reais |
 | [BUG-026](#bug-026) | FIXED | 2026-06-03 | HUB (commands/searxng.rs) | "Testar conexão" do SearXNG falha para instância remota (healthcheck gateado por systemd local) |
 | [BUG-027](#bug-027) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | AKASHA+Mnemosyne embedando ao mesmo tempo: startup do embed-server sem trava spawna duplicado → conflito na 8082 → 500 |
+| [BUG-028](#bug-028) | OPEN | 2026-06-03 | HUB/LOGOS (logos.rs) + Mnemosyne | embed-server em loop de restart (inicia "com sucesso" repetidamente) com Mnemosyne aberto → Mnemosyne dá timeout e não indexa nada |
 
 ---
 
@@ -1653,3 +1654,82 @@ Em `logos.rs`: (1) novo `embed_start_lock: Mutex<()>` na struct `Inner` — `ens
 
 #### Teste de regressão
 `logos.rs` (módulo de testes): `embed_start_lock_inicia_destravado` (a trava nasce livre), `embed_health_ok_true_quando_responde_200` (listener local 200 → reuso detectado), `embed_health_ok_false_em_porta_fechada` (porta fechada → segue para spawn). Os testes de `ensure_embed_server_started_noop_*` continuam válidos.
+
+---
+
+### BUG-028 · [OPEN] · embed-server em loop de restart com Mnemosyne aberto — watchdog de VRAM mata, watchdog do embed-server ressuscita → Mnemosyne dá timeout e não indexa
+
+#### Identificação
+- **Data:** 2026-06-03
+- **App(s):** HUB/LOGOS, Mnemosyne
+- **Componente:** `HUB/src-tauri/src/logos.rs` — watchdog de VRAM (`do_silence` ao bloquear P3, linha ~5203), watchdog do embed-server (restart on-crash, linha ~5110), e os caminhos de restart (`ensure_embed_server_started`, `v1_embeddings_proxy`) que ignoram `p3_vram_blocked`
+- **Commit do fix:** pendente
+- **Descoberta via:** uso-real (Mnemosyne indexando no PC principal)
+- **Tempo de diagnóstico:** ~30 min de revisão de código (logs de runtime ainda não coletados)
+
+#### Ambiente
+- **Máquina(s) afetadas:** MainPC (CachyOS)
+- **OS:** CachyOS (Arch Linux)
+- **Hardware relevante:** AMD Ryzen 5 4600G, RX 6600 **8 GB VRAM** (relevante: VRAM é o recurso disputado)
+- **Modo:** produção — HUB **recompilado** após os fixes BUG-020 e BUG-027; embed-server na porta 8082; Mnemosyne aberto tentando indexar
+- **Reproduzível em:** abrir o Mnemosyne (modelo dele carregado na VRAM) e iniciar indexação enquanto o LOGOS gerencia o embed-server
+
+#### Pré-condição para reproduzir
+Mnemosyne aberto com seu modelo carregado na VRAM (empurrando o uso acima de `vram_limit_pct`, padrão 85%) e pedindo embeddings ao LOGOS (7072 → embed-server 8082).
+
+#### Sintoma observado
+*(Relato da usuária a partir do que viu no terminal — logs de memória, ainda não capturados literalmente.)*
+- **Mnemosyne:** timeout ao conectar no servidor de embedding; a indexação **nem chegou a começar** (nenhum arquivo indexado).
+- **Terminal do HUB:** um par de mensagens se repetindo continuamente — "tentando iniciar o embed-server" seguido de "iniciado com sucesso" — de novo e de novo, em loop. O embed-server chegava a reportar início bem-sucedido a cada ciclo.
+
+#### Logs
+*(De memória — a coletar no CachyOS. Padrão recordado, não literal:)*
+```
+LOGOS embed-server: iniciando '<modelo>' (n_gpu=-1, porta=8082, ...)
+LOGOS embed-server: '<modelo>' pronto na porta 8082
+... (repete continuamente) ...
+[Mnemosyne] timeout ao conectar no embed-server / IndexWorker não iniciou
+```
+**Para confirmar a causa raiz, procurar no log do HUB se entre os ciclos "iniciando/pronto" aparece:**
+`LOGOS watchdog: VRAM XX% > 85% — P3 bloqueado; descarregando modelos P3` e/ou
+`LOGOS embed-watchdog: embed-server saiu inesperadamente`. O intercalar dessas linhas é a prova definitiva.
+
+#### Causa raiz
+*(Hipótese forte, fundamentada em leitura de código — pendente de confirmação por log de runtime.)*
+
+**Dois watchdogs com políticas opostas e sem coordenação, brigando pelo embed-server:**
+
+1. **Watchdog de VRAM** (`logos.rs` ~5183, a cada 5s): quando o uso de VRAM passa de `vram_limit_pct` (padrão 85%), marca `p3_vram_blocked=true` e chama **`do_silence()`** — que executa `kill_embed_proc()` (além de matar os servidores de chat AKASHA e Mnemosyne) para liberar VRAM. Com o Mnemosyne aberto, o modelo dele sozinho já mantém a VRAM da RX 6600 (8 GB) acima de 85%, então esse bloqueio dispara repetidamente.
+2. **Watchdog do embed-server** (`logos.rs` ~5110, a cada 10s): detecta que o `embed_proc` morreu (`try_wait` → `Some`) e **reinicia** via `ensure_embed_server_started` — interpretando a morte intencional do `do_silence` como se fosse um **crash**. Loga "iniciando" + "pronto".
+3. Além disso, o **lazy-start em `v1_embeddings_proxy`** reinicia o embed-server a cada requisição recebida, **sem checar `p3_vram_blocked`**.
+
+Resultado: o watchdog de VRAM mata o embed-server para proteger P1/P2; o watchdog do embed-server (e as requisições do Mnemosyne) o ressuscitam imediatamente, ignorando o flag de bloqueio; a VRAM volta a subir; o ciclo recomeça a cada poucos segundos (período governado pela histerese de bloqueio 85% / retomada 70%). O embed-server **nunca fica estável** numa instância conectável → o cliente do Mnemosyne dá timeout → a indexação não começa.
+
+O cerne é conceitual: **o embed-server É a carga P3 ativa que a usuária quer rodar, mas a política de VRAM o trata como descartável e o mata para proteger um P1/P2 que sequer está rodando — e nenhum dos caminhos de restart respeita o flag `p3_vram_blocked`.** O watchdog do embed-server também não distingue um desligamento intencional (`do_silence`) de um crash real.
+
+**Violação de diretiva do LOGOS (causa raiz mais precisa):** o CLAUDE.md estabelece que **"P3 nunca é bloqueado, apenas atrasado (delay loop, não hard-reject), exceto em situação extrema"** (crash iminente). No limiar normal de 85% (`vram_limit_pct`) o watchdog faz **duas** coisas distintas:
+1. marca `p3_vram_blocked=true` → as *novas requisições* P3 entram no **delay loop** (`logos.rs` ~2670, espera `P3_HW_WAIT_SECS` e re-tenta, sem rejeitar). **Isto respeita a diretiva.**
+2. chama **`do_silence()`** → **mata os modelos P3 já carregados** (embed-server + chat). **Isto viola a diretiva** — não é atrasar P3, é destruir a carga P3 em execução, e a 85% (limiar normal, não extremo).
+
+O hard-reject legítimo para situação extrema **já existe e está correto** em limiares separados: VRAM > **97%** (`VRAM_CRITICAL_PCT`), RAM abaixo do mínimo de crash e temperatura crítica disparam 503; CPU acima do limite causa apenas *delay*. Portanto o churn do BUG-028 é **sintoma** da ação nº 2: matar modelos P3 a 85% em vez de apenas atrasar. A correção alinhada à diretiva é **não chamar `do_silence()` (ou pelo menos não matar o embed-server) no limiar normal de 85%** — reservar a descarga de modelos para o limiar extremo (97%/crash-prevention), deixando o delay loop cuidar do throttle normal.
+
+**Fator agravante (threshold baixo demais):** decisão acordada com a usuária é que o limite de VRAM seja **93–95%**, porque o caso de uso padrão (LLMs de AKASHA + Mnemosyne na VRAM ao mesmo tempo) já passa de 80%. O default no código é **85%** (`vram_limit_pct`). Existe um bump condicional 85→93 para "dual-server" (`logos.rs` ~798-816), mas (a) só ativa se `logos.llm_query` e `logos.llm_rag` estiverem ambos preenchidos no ecosystem.json no startup; (b) só se o valor ainda for o default 85; e (c) o cálculo "~84% com 3B+7B" **não inclui o embed-server (bge-m3)**, que durante a indexação carrega por cima dos dois LLMs e estoura mesmo 93%. Ou seja, no momento exato da indexação (embed-server + 2 LLMs) a VRAM passa do limite com facilidade, disparando o `do_silence` repetidamente. (Confirmar no log do CachyOS qual valor de `vram_limit_pct` estava ativo.)
+
+**Por que os fixes BUG-020/BUG-027 não cobrem isto:** BUG-020 serializa *requisições*; BUG-027 serializa *spawns concorrentes* (corrida em paralelo). Este bug é um ciclo *sequencial* de matar/reiniciar ao longo do tempo, conduzido pelo watchdog de VRAM — um caminho que aqueles fixes não tocam.
+
+#### Impacto
+**Bloqueante** para a indexação do Mnemosyne: enquanto o Mnemosyne mantém a VRAM acima do limite, nenhum arquivo é indexado. Também provoca churn dos servidores de chat (do_silence mata todos), desperdiçando ciclos de load/unload.
+
+#### Tentativas anteriores
+Nenhuma específica para este ciclo. Os fixes BUG-020 (embed_semaphore) e BUG-027 (embed_start_lock + reuso por health) foram aplicados e o HUB foi recompilado, mas não atacam o conflito entre watchdogs.
+
+#### Fix aplicado
+Pendente — investigação retomada quando a usuária estiver no CachyOS. Direções candidatas (a decidir com a usuária, **não implementadas**):
+- **(E — recomendada, alinhada à diretiva) Não matar modelos P3 no limiar normal (85%):** o watchdog de VRAM, ao bloquear a 85%, deve apenas setar `p3_vram_blocked=true` (delay loop já cuida de atrasar P3) e **não** chamar `do_silence()`. A descarga de modelos fica reservada ao limiar extremo de crash-prevention (VRAM > 97% / RAM crítica). Resolve a violação de diretiva e elimina o churn pela raiz, sem precisar de coordenação entre watchdogs.
+- **(A) Restart honrar `p3_vram_blocked`:** o watchdog do embed-server e o lazy-start não reiniciam enquanto P3 estiver bloqueado por VRAM. Para de ressuscitar, mas o Mnemosyne continua sem indexar enquanto a VRAM estiver alta (não resolve a indexação, só o churn).
+- **(B) Fallback de CPU para o embed-server sob pressão de VRAM:** quando `p3_vram_blocked`, subir o embed-server com `--n-gpu-layers 0` (CPU). Alinha com a decisão do CLAUDE.md de o LOGOS alternar GPU→CPU internamente; permite indexar mesmo com a VRAM ocupada.
+- **(C) Não incluir o embed-server no `do_silence` de VRAM / contabilizar coexistência:** tratar o embed-server (leve, ~bge-m3) como compatível com o modelo do Mnemosyne, em vez de descartável.
+- **(D) Distinguir kill intencional de crash:** marcar o handle como "parada intencional" antes do `do_silence` para o watchdog do embed-server não tratar como crash.
+
+#### Teste de regressão
+Pendente. Quando houver fix: teste em `logos.rs` simulando `p3_vram_blocked=true` + chamada de restart → embed-server não é re-spawnado na GPU (ou sobe em CPU, conforme a direção escolhida); teste de que `do_silence` por VRAM não entra em conflito com o watchdog de restart.
