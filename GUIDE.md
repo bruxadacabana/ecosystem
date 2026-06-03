@@ -1773,18 +1773,18 @@ O script `setup_searxng.sh`:
    (engines curados via `keep_only`, sem filtro seguro, qualquer idioma, JSON habilitado)
 4. Cria e habilita serviço systemd `--user` (inicia com o login, `Restart=on-failure`)
 
-**Engines validados e ativos** (validação realizada em 2026-05-31):
+**Deployment atual (2026-06-02): SearXNG no servidor T410**, via `searxng-docker` em `http://192.168.0.252:8080` (HTTP, LAN). A curadoria de engines validada no PC principal (2026-05-31) foi portada para o servidor. Engines ativos confirmados por teste daquela rede:
 
 | Engine | Status | Resultados/página | Observações |
 |---|---|---|---|
 | Startpage | ✅ Ativo | ~10 | Mais confiável; proxy do Google sem tracking |
 | Bing | ✅ Ativo | ~10 | Confiável; Microsoft index |
-| Google | ✅ Ativo | ~8–10 | Às vezes bloqueia com CAPTCHA após uso intenso |
-| Mojeek | ✅ Ativo | ~10–11 | Motor independente; sem bot detection |
-| Qwant | ✅ Ativo | ~10–11 | Motor europeu focado em privacidade |
-| Yahoo | ✅ Ativo | ~11 | Boa cobertura; confiável |
+| Google | ✅ Ativo | ~8–10 | Às vezes timeout/CAPTCHA sob uso intenso |
 | arXiv | ✅ Ativo | variável | Artigos científicos (categoria: science) |
 | Semantic Scholar | ✅ Ativo | variável | Artigos acadêmicos (categoria: science) |
+| Mojeek | ⚠️ Habilitado, bloqueado | 0 | "access denied" do IP do servidor (funcionava no PC principal); suspenso automaticamente, não contribui |
+| Qwant | ❌ Desabilitado | — | Removido em 2026-06-01: SEO spam em queries de nicho |
+| Yahoo | ❌ Desabilitado | — | Wrapper do Bing (redundante); seletores instáveis |
 
 **Engines removidos após validação:**
 - **DuckDuckGo** → CAPTCHA permanente (`SearxEngineCaptchaException`)
@@ -1796,7 +1796,7 @@ O script `setup_searxng.sh`:
 
 **Nota de estabilidade:** Google e Startpage podem ser suspensos por até 3600s após queries muito rápidas (CAPTCHA). Bing e Qwant têm detecção de bots mais tolerante. Em uso normal (buscas espaçadas), todos os engines funcionam.
 
-**ecosystem.json:** Configurar `akasha.web_search_backend = "http://localhost:8888"` para ativar o SearXNG. Via `write_section("akasha", {"web_search_backend": "http://localhost:8888"})` ou editando o arquivo diretamente.
+**ecosystem.json:** `akasha.web_search_backend = "http://192.168.0.252:8080"` (servidor T410). Editável pelo painel Busca do HUB ou direto no arquivo. O `settings.yml` do servidor fica em `/home/spacewitch/searxng/core-config/settings.yml`; reiniciar com `sudo docker restart searxng-core`. (A instância local antiga do PC principal — AUR, `localhost:8888` — foi desinstalada; o `settings.yml` curado original permanece em `~/.config/searxng/settings.yml` como referência.)
 
 ---
 
