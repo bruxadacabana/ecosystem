@@ -87,6 +87,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-024](#bug-024) | FIXED | 2026-06-02 | AKASHA (routers/search.py) | `from services.crawler import _bg_crawl` falha silenciosamente — confirmar domain_suggestion nunca dispara o crawl |
 | [BUG-025](#bug-025) | FIXED | 2026-06-02 | AKASHA (services/web_search.py) | Chave de cache de busca web ignora `n_pages` — buscas leves envenenam o volume das reais |
 | [BUG-026](#bug-026) | FIXED | 2026-06-03 | HUB (commands/searxng.rs) | "Testar conexão" do SearXNG falha para instância remota (healthcheck gateado por systemd local) |
+| [BUG-027](#bug-027) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | AKASHA+Mnemosyne embedando ao mesmo tempo: startup do embed-server sem trava spawna duplicado → conflito na 8082 → 500 |
 
 ---
 
@@ -1611,3 +1612,44 @@ Extraída a função `healthcheck(url)` (GET `{url}/healthz`, trim de barra fina
 
 #### Teste de regressão
 `searxng.rs` (módulo de testes): `healthcheck_empty_url_is_false`, `healthcheck_unreachable_is_false` (porta fechada → false), `healthcheck_200_is_true` (listener local responde 200 → true, prova o caminho remoto sem systemd), `healthcheck_trailing_slash_ok` (barra final não quebra). 7/7 testes do módulo passando.
+
+---
+
+### BUG-027 · [FIXED] · LOGOS perde o handle do embed-server e tenta re-spawnar instâncias que não dão bind na 8082 — janelas de HTTP 500 no Mnemosyne/AKASHA
+
+#### Identificação
+- **Data:** 2026-06-03
+- **App(s):** HUB/LOGOS (impacta Mnemosyne e AKASHA)
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `ensure_embed_server_started()` / `spawn_embed_server_proc()`
+- **Commit do fix:** pendente
+- **Descoberta via:** uso-real (Mnemosyne não indexa com AKASHA rodando) + análise do `logos_embed.log`
+- **Tempo de diagnóstico:** ~30 min (descartadas hipóteses de VRAM, lote e concorrência via log decisivo)
+
+#### Ambiente
+- **Máquina(s):** PC principal (CachyOS), RX 6600 8 GB
+- **Modo:** produção (HUB/LOGOS + AKASHA + Mnemosyne ativos)
+
+#### Pré-condição para reproduzir
+AKASHA e Mnemosyne pedirem embedding ao **mesmo tempo** num momento em que o LOGOS considera o embed-server inativo (`embed_proc` = None — primeira chamada lazy, ou handle dessincronizado após um `wait_ready` lento sob carga).
+
+#### Sintoma observado
+Mnemosyne loga `_embed_batch: HTTP 500` em todas as 3 tentativas → timeout; arquivos não indexam "enquanto a AKASHA está rodando". O `logos_embed.log` mostra, a cada ~10s: `E srv start: couldn't bind HTTP server socket, hostname: 127.0.0.1, port: 8082` seguido de `E srv llama_server: exiting due to HTTP server error` — loop infinito. Em pelo menos um instante, **duas** instâncias sobem no mesmo segundo.
+
+#### Logs
+```
+E srv start: couldn't bind HTTP server socket, hostname: 127.0.0.1, port: 8082
+E srv llama_server: exiting due to HTTP server error
+```
+(VRAM não era o problema: o mesmo log reporta ~4.7 GB livres na RX 6600.)
+
+#### Causa raiz
+`ensure_embed_server_started()` **não era serializada** e o fast path (`embed_proc_active()` checa o handle interno `embed_proc`) não é atômico com o spawn. Quando AKASHA e Mnemosyne pedem embedding ao mesmo tempo e o `embed_proc` está None, **as duas chamadas passam o fast path e cada uma spawna um embed-server** → o segundo não consegue dar bind na porta 8082 (`couldn't bind`), sai, e o watchdog repete → churn de restart (as "duas instâncias no mesmo segundo" do log). Some-se a isso o **handle dessincronizado**: sob carga concorrente, o `wait_ready` do primeiro spawn pode estourar o timeout → o LOGOS acha que falhou (`embed_proc` fica None) embora o processo tenha subido e bindado, e passa a tentar re-spawnar sobre uma porta ocupada. Verificado em produção: o embed-server (PID 240215) estava **saudável e servindo** (`/health` 200, lote de 25 via LOGOS 7072 → 200 em 0.5s), com processos llama-server extras **sem porta** (309xxx) = spawns falhos. **NÃO é VRAM** (4.7 GB livres), **nem lote de 25 chunks** (funciona isolado), **nem concorrência de requisições** (o `embed_semaphore` do BUG-020 serializa as requisições corretamente — o que faltava era serializar o **startup**).
+
+#### Impacto
+Bloqueante intermitente para indexação: durante a janela de churn (spawns falhos brigando pela 8082), embeddings de Mnemosyne e AKASHA podem tomar 500. Silencioso para quem não olha o `logos_embed.log`.
+
+#### Fix aplicado
+Em `logos.rs`: (1) novo `embed_start_lock: Mutex<()>` na struct `Inner` — `ensure_embed_server_started` o adquire e **re-checa** `embed_proc_active()` sob a trava, serializando o startup (AKASHA e Mnemosyne não spawnam mais em paralelo). (2) Novo helper `embed_health_ok(client, port)` (`GET /health` → 2xx): sob a trava, se um embed-server saudável **já responde** na 8082 (handle dessincronizado), o LOGOS **reutiliza** em vez de spawnar um duplicado que não daria bind. Resultado: nenhuma briga pela porta, mesmo com pedidos concorrentes ou handle perdido. Workaround manual (caso já esteja em churn): `pkill -f "llama-server.*--embeddings"` e deixar o LOGOS subir um único.
+
+#### Teste de regressão
+`logos.rs` (módulo de testes): `embed_start_lock_inicia_destravado` (a trava nasce livre), `embed_health_ok_true_quando_responde_200` (listener local 200 → reuso detectado), `embed_health_ok_false_em_porta_fechada` (porta fechada → segue para spawn). Os testes de `ensure_embed_server_started_noop_*` continuam válidos.

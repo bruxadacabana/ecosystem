@@ -482,6 +482,11 @@ struct Inner {
     /// Processo llama-server do servidor de embedding (porta EMBED_SERVER_PORT).
     /// Independente do llama_proc (porta AKASHA_SERVER_PORT) — falhas são isoladas.
     embed_proc: Mutex<Option<LlamaProcHandle>>,
+    /// Trava de inicialização do embed-server (BUG-027). Serializa `ensure_embed_server_started`
+    /// para que AKASHA e Mnemosyne, pedindo embedding AO MESMO TEMPO, não spawnem dois
+    /// embed-servers que brigam pela porta 8082. Distinta do `embed_semaphore` (que serializa
+    /// as REQUISIÇÕES de embedding, não o startup do processo).
+    embed_start_lock: Mutex<()>,
     /// Porta usada por `collect_status` para pings de health no servidor AKASHA.
     /// Em produção = AKASHA_SERVER_PORT (8081). Em testes usa porta livre para isolamento.
     chat_health_port: u16,
@@ -863,6 +868,7 @@ impl LogosState {
             embed_model: Mutex::new(embed_model),
             embed_n_gpu_layers: Mutex::new(embed_n_gpu_layers),
             embed_proc: Mutex::new(None),
+            embed_start_lock: Mutex::new(()),
             chat_health_port:      AKASHA_SERVER_PORT,
             embed_health_port:     EMBED_SERVER_PORT,
             mnemosyne_health_port: MNEMOSYNE_SERVER_PORT,
@@ -939,6 +945,7 @@ impl LogosState {
             embed_model:        Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers: Mutex::new(-1),
             embed_proc:         Mutex::new(None),
+            embed_start_lock:   Mutex::new(()),
             // Em testes: portas livres para isolamento — sem servidor nestas portas
             chat_health_port:      59981,
             embed_health_port:     59982,
@@ -3739,6 +3746,18 @@ pub async fn collect_status(s: &LogosState) -> StatusResponse {
 ///
 /// Não-fatal: erros (modelo ausente, falha de spawn, timeout de ready) são apenas logados —
 /// o servidor de chat continua funcionando independentemente.
+/// Health-check single-shot do embed-server: `GET /health` → 2xx? Timeout curto.
+/// Usado para detectar um embed-server saudável já no ar (handle dessincronizado).
+async fn embed_health_ok(client: &Client, port: u16) -> bool {
+    let url = format!("http://127.0.0.1:{port}/health");
+    client.get(&url)
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
 async fn ensure_embed_server_started(s: &LogosState) {
     let embed_model = s.0.embed_model.lock().await.clone();
     if embed_model.is_empty() {
@@ -3748,6 +3767,27 @@ async fn ensure_embed_server_started(s: &LogosState) {
 
     // Fast path: processo já ativo
     if s.embed_proc_active().await {
+        return;
+    }
+
+    // BUG-027: serializa o startup. Sem isto, AKASHA e Mnemosyne pedindo embedding ao MESMO
+    // tempo (ambos veem embed_proc inativo) chamam esta função em paralelo e cada um tenta
+    // spawnar um embed-server → conflito na porta 8082 → churn de restart → HTTP 500.
+    // (Distinto do embed_semaphore, que serializa as REQUISIÇÕES, não o startup.)
+    let _start = s.0.embed_start_lock.lock().await;
+
+    // Re-checa sob a trava — outra task pode ter iniciado o embed-server enquanto esperávamos.
+    if s.embed_proc_active().await {
+        return;
+    }
+    // Handle dessincronizado: se um embed-server saudável JÁ responde na 8082 (ex.: o LOGOS
+    // perdeu o handle após um wait_ready lento), reutiliza-o em vez de spawnar um duplicado
+    // que não daria bind. Elimina a briga pela porta.
+    if embed_health_ok(&s.0.client, EMBED_SERVER_PORT).await {
+        log::info!(
+            "LOGOS embed: servidor saudável já responde na porta {EMBED_SERVER_PORT} — \
+             reutilizando (sem novo spawn)"
+        );
         return;
     }
 
@@ -5892,6 +5932,7 @@ mod tests {
             embed_model:         Mutex::new("bge-m3".to_string()),
             embed_n_gpu_layers:  Mutex::new(-1),
             embed_proc:          Mutex::new(None),
+            embed_start_lock:    Mutex::new(()),
             // Portas livres para isolamento de testes — sem servidor nestas portas
             chat_health_port:      59981,
             embed_health_port:     59982,
@@ -9393,5 +9434,40 @@ mod tests {
             state.0.mnemosyne_semaphore.available_permits(), 2,
             "mnemosyne_semaphore não é tocado por requisições de embedding"
         );
+    }
+
+    // ── BUG-027: trava de startup do embed-server + reuso por health ────────
+
+    #[tokio::test]
+    async fn embed_start_lock_inicia_destravado() {
+        let td    = tempfile::tempdir().unwrap();
+        let state = make_test_state(td.path().to_path_buf());
+        // A trava deve poder ser adquirida (não nasce travada).
+        assert!(state.0.embed_start_lock.try_lock().is_ok());
+    }
+
+    #[tokio::test]
+    async fn embed_health_ok_true_quando_responde_200() {
+        // Listener local responde 200 em /health → reuso do embed-server existente.
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = sock.read(&mut buf).await;
+                let _ = sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK").await;
+            }
+        });
+        let client = Client::new();
+        assert!(embed_health_ok(&client, port).await,
+            "embed-server saudável (200) deve ser detectado para reuso");
+    }
+
+    #[tokio::test]
+    async fn embed_health_ok_false_em_porta_fechada() {
+        let client = Client::new();
+        assert!(!embed_health_ok(&client, 1).await,
+            "porta sem servidor → health falso → segue para spawn");
     }
 }
