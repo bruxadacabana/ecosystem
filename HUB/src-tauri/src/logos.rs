@@ -1715,6 +1715,13 @@ pub(crate) fn build_embed_server_cmd(
        .arg("--port")       .arg(port.to_string())
        .arg("--embeddings")              // habilita /v1/embeddings (embedding-only mode)
        .arg("--pooling")    .arg("mean") // pooling por média — padrão para bge-m3
+       // BUG-029: sem isto, o ubatch default (512) faz o llama-server forçar
+       // n_batch = n_ubatch = 512 → qualquer input > 512 tokens dá 500 "input too large".
+       // bge-m3 aceita até 8192 tokens. ctx 8192 + batch/ubatch 2048 cobrem os chunks
+       // dos clientes (AKASHA trunca em ~2000 chars; Mnemosyne ~1200) com folga.
+       .arg("--ctx-size")    .arg("8192")
+       .arg("--batch-size")  .arg("2048")
+       .arg("--ubatch-size") .arg("2048")
        .stdout(std::process::Stdio::null())
        .stderr(std::process::Stdio::piped());
     if n_gpu == 0 {
@@ -7103,6 +7110,33 @@ mod tests {
         let args = embed_cmd_args(-1, 8082);
         assert!(!args.contains(&"--parallel".to_string()),
             "--parallel não deve aparecer no embed-server");
+    }
+
+    // ── BUG-029: ubatch/batch/ctx para inputs > 512 tokens ──────────────────
+
+    #[test]
+    fn build_embed_server_cmd_sets_ubatch_2048() {
+        let args = embed_cmd_args(0, 8082);
+        let i = args.iter().position(|a| a == "--ubatch-size")
+            .expect("--ubatch-size deve estar presente (senão default 512 → 500 'input too large')");
+        assert_eq!(args[i + 1], "2048");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_sets_batch_2048() {
+        let args = embed_cmd_args(0, 8082);
+        let i = args.iter().position(|a| a == "--batch-size")
+            .expect("--batch-size deve estar presente");
+        // Para embeddings o llama-server força n_batch == n_ubatch; mantê-los iguais.
+        assert_eq!(args[i + 1], "2048");
+    }
+
+    #[test]
+    fn build_embed_server_cmd_sets_ctx_8192() {
+        let args = embed_cmd_args(0, 8082);
+        let i = args.iter().position(|a| a == "--ctx-size")
+            .expect("--ctx-size deve estar presente");
+        assert_eq!(args[i + 1], "8192");
     }
 
     // ── embed_log_path ────────────────────────────────────────────────────────

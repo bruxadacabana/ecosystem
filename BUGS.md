@@ -89,6 +89,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-026](#bug-026) | FIXED | 2026-06-03 | HUB (commands/searxng.rs) | "Testar conexão" do SearXNG falha para instância remota (healthcheck gateado por systemd local) |
 | [BUG-027](#bug-027) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | AKASHA+Mnemosyne embedando ao mesmo tempo: startup do embed-server sem trava spawna duplicado → conflito na 8082 → 500 |
 | [BUG-028](#bug-028) | OPEN | 2026-06-03 | HUB/LOGOS (logos.rs) + Mnemosyne | embed-server em loop de restart (inicia "com sucesso" repetidamente) com Mnemosyne aberto → Mnemosyne dá timeout e não indexa nada |
+| [BUG-029](#bug-029) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | embed-server com ubatch default 512 → inputs > 512 tokens dão HTTP 500 "input too large" (intermitente, chunks longos) |
 
 ---
 
@@ -1737,3 +1738,44 @@ Direções candidatas restantes (hardening da política de VRAM — **não imple
 
 #### Teste de regressão
 Pendente. Quando houver fix: teste em `logos.rs` simulando `p3_vram_blocked=true` + chamada de restart → embed-server não é re-spawnado na GPU (ou sobe em CPU, conforme a direção escolhida); teste de que `do_silence` por VRAM não entra em conflito com o watchdog de restart.
+
+---
+
+### BUG-029 · [FIXED] · embed-server com `ubatch` default (512) → inputs > 512 tokens dão HTTP 500 "input too large"
+
+#### Identificação
+- **Data:** 2026-06-03
+- **App(s):** HUB/LOGOS (impacta AKASHA e Mnemosyne)
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `build_embed_server_cmd()`
+- **Commit do fix:** (este commit)
+- **Descoberta via:** teste ao vivo (após corrigir o 503 do BUG-027, surgiram 500 intermitentes) + `logos_embed.log`
+
+#### Ambiente
+- **Máquina(s):** PC principal (CachyOS), embed-server bge-m3 em CPU (`--n-gpu-layers 0`)
+- **Modo:** produção
+
+#### Pré-condição para reproduzir
+A AKASHA/Mnemosyne enviar ao embed-server um input (chunk) com mais de ~512 tokens.
+
+#### Sintoma observado
+500 **intermitentes** misturados com 200 OK: chunks curtos embedam (200), chunks longos falham (500). A AKASHA loga `embed_text: HTTP 500` (3 tentativas) → o documento não recebe embedding.
+
+#### Logs
+```
+E srv send_error: task id = 501, error: input (524 tokens) is too large to process. increase the physical batch size (current batch size: 512)
+E srv send_error: task id = 504, error: input (545 tokens) is too large to process. increase the physical batch size (current batch size: 512)
+W srv llama_server: embeddings enabled with n_batch (2048) > n_ubatch (512)
+W srv llama_server: setting n_batch = n_ubatch = 512 to avoid assertion failure
+```
+
+#### Causa raiz
+`build_embed_server_cmd()` não definia `--ubatch-size` nem `--batch-size`, então o llama-server usava o ubatch default **512**. Para embeddings, o llama-server exige `n_batch == n_ubatch` e **rebaixa n_batch para 512**. Como um embedding processa o input inteiro em uma única ubatch (sem split), qualquer input acima de 512 tokens é rejeitado com 500. **NÃO é concorrência (BUG-020), handle (BUG-027) nem VRAM (BUG-028)** — é configuração de batch. O bge-m3 aceita até 8192 tokens.
+
+#### Impacto
+Degradação intermitente e silenciosa-para-AKASHA: documentos com parágrafos longos (chunks > 512 tokens) nunca recebem embedding → busca semântica incompleta.
+
+#### Fix aplicado
+`build_embed_server_cmd()` passou a setar `--ctx-size 8192 --batch-size 2048 --ubatch-size 2048`. Com `--parallel` em auto (4 slots) e ctx 8192, cada slot tem 2048 tokens de contexto = ubatch 2048 → inputs até 2048 tokens embedam sem erro (cobre com folga os chunks dos clientes: AKASHA trunca em ~2000 chars/~545-800 tokens; Mnemosyne ~1200 chars/~400 tokens). Mantém o design sem `--parallel`/`--cont-batching` explícitos (auto).
+
+#### Teste de regressão
+`logos.rs` (módulo de testes): `build_embed_server_cmd_sets_ubatch_2048`, `build_embed_server_cmd_sets_batch_2048`, `build_embed_server_cmd_sets_ctx_8192`. Os testes existentes (`_no_parallel`, `_no_cont_batching`, `_has_embeddings_flag`, etc.) continuam passando — 12/12 no grupo `build_embed_server_cmd`.
