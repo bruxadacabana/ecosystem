@@ -17,6 +17,8 @@ Conexões de sinais:
   FetchWorker.feed_done      → FeedSidebar.update_unread_count
   FetchWorker.feed_error     → statusbar (mensagem de erro)
   FetchWorker.cycle_done     → statusbar (resumo do ciclo)
+  ReaderPane.scrape_requested → ScraperWorker.request_scrape (P1, texto completo)
+  ScraperWorker.scrape_done  → ReaderPane.on_scrape_done + statusbar
 """
 from __future__ import annotations
 
@@ -32,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.fetch_worker import FetchWorker
+from app.core.scraper_worker import ScraperWorker
 from app.ui.views.article_list import ArticleList
 from app.ui.views.feed_sidebar import ALL_FEEDS_ID, FeedSidebar
 from app.ui.views.reader_pane import ReaderPane
@@ -110,6 +113,14 @@ class MainWindow(QMainWindow):
         self._worker.start()
         log.info("FetchWorker iniciado.")
 
+        # ScraperWorker (P1 sob demanda + P2 batch): extrai texto completo.
+        self._scraper = ScraperWorker(self)
+        self._scraper.scrape_done.connect(self._reader.on_scrape_done)
+        self._scraper.scrape_done.connect(self._on_scrape_done)
+        self._reader.scrape_requested.connect(self._scraper.request_scrape)
+        self._scraper.start()
+        log.info("ScraperWorker iniciado.")
+
     def _initial_load(self) -> None:
         self._sidebar.load_feeds()
         self._article_list.load_articles(ALL_FEEDS_ID)
@@ -131,6 +142,14 @@ class MainWindow(QMainWindow):
     def _on_article_read(self, article_id: int) -> None:
         self._sidebar.update_unread_count(-1)  # refresh completo da sidebar
 
+    def _on_scrape_done(self, article_id: int, success: bool) -> None:
+        msg = (
+            "Texto completo carregado."
+            if success
+            else "Não foi possível carregar o texto completo."
+        )
+        self.statusBar().showMessage(msg, 4000)
+
     # ------------------------------------------------------------------
     # Fechamento
     # ------------------------------------------------------------------
@@ -140,6 +159,9 @@ class MainWindow(QMainWindow):
         if self._worker.isRunning():
             self._worker.stop()
             self._worker.wait(3000)
+        if self._scraper.isRunning():
+            self._scraper.stop()
+            self._scraper.wait(3000)
         try:
             save_config(self.config)
         except OSError as exc:

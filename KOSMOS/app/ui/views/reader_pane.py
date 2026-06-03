@@ -1,8 +1,10 @@
 """
 reader_pane.py — Painel direito: exibe o conteúdo do artigo selecionado.
 
-Fase 2: exibe metadados do cabeçalho + excerpt do feed. Texto completo
-chega na Fase 3 (article_scraper). Resultados de análise AI chegam na Fase 4.
+Exibe metadados do cabeçalho + corpo. Se o artigo já tem texto completo
+(`content_text`, scraping concluído), mostra-o; senão mostra o excerpt do feed
+e um botão "Carregar texto completo" que dispara o scraping P1 via ScraperWorker
+(sinal `scrape_requested`). Resultados de análise AI chegam na Fase 4.
 
 Quando um artigo é aberto, marca-o como lido no banco (is_read=1, read_at=now).
 Isso permite que a sidebar atualize os contadores de não-lidos corretamente.
@@ -20,6 +22,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -51,10 +54,12 @@ class ReaderPane(QWidget):
     """Painel direito: exibe artigo selecionado e gerencia estado de leitura."""
 
     article_read = Signal(int)  # article_id — emitido após marcar como lido
+    scrape_requested = Signal(int, str)  # (article_id, url) — pedido P1 de texto completo
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._current_article_id: int | None = None
+        self._current_url: str = ""
         self._setup_ui()
         log.debug("ReaderPane inicializada.")
 
@@ -114,12 +119,19 @@ class ReaderPane(QWidget):
         )
         self._layout.addWidget(self._body_lbl)
 
-        self._fulltext_hint = QLabel(
-            "[ Texto completo disponível após scraping — Fase 3 ]"
-        )
-        self._fulltext_hint.setProperty("class", "meta")
-        self._fulltext_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._layout.addWidget(self._fulltext_hint)
+        # Botão para carregar o texto completo (scraping P1, sob demanda)
+        self._fulltext_btn = QPushButton("Carregar texto completo")
+        self._fulltext_btn.setObjectName("reader_fulltext_btn")
+        self._fulltext_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._fulltext_btn.clicked.connect(self._on_load_fulltext)
+        self._layout.addSpacing(16)
+        self._layout.addWidget(self._fulltext_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Status do scraping (carregando / falha)
+        self._fulltext_status = QLabel()
+        self._fulltext_status.setProperty("class", "meta")
+        self._fulltext_status.setWordWrap(True)
+        self._layout.addWidget(self._fulltext_status)
 
         self._layout.addStretch()
         self._set_content_visible(False)
@@ -151,6 +163,7 @@ class ReaderPane(QWidget):
                 SELECT a.id, a.title, a.author, a.published_at,
                        a.article_type, a.estimated_reading_min,
                        a.language_detected, a.content_excerpt, a.is_read,
+                       a.url, a.content_text, a.is_scraped,
                        COALESCE(f.title, f.url) AS feed_title,
                        f.site_url
                   FROM articles a
@@ -170,6 +183,7 @@ class ReaderPane(QWidget):
             return False
 
         self._current_article_id = article_id
+        self._current_url = row["url"] or ""
         self._render(dict(row))
 
         # Marca como lido (usa a mesma conn se ainda aberta, ou abre nova)
@@ -218,16 +232,92 @@ class ReaderPane(QWidget):
             meta_parts.append(f"{reading} min de leitura")
         self._meta_lbl.setText("  ·  ".join(meta_parts))
 
-        excerpt = (data.get("content_excerpt") or "").strip()
-        if excerpt:
-            self._body_lbl.setText(excerpt)
-            self._body_lbl.show()
-            self._fulltext_hint.show()
-        else:
-            self._body_lbl.hide()
-            self._fulltext_hint.show()
+        self._render_body(
+            content_text=(data.get("content_text") or "").strip(),
+            excerpt=(data.get("content_excerpt") or "").strip(),
+            is_scraped=int(data.get("is_scraped") or 0),
+        )
 
         log.debug("Artigo renderizado: id=%d título='%s'", data["id"], data.get("title", ""))
+
+    def _render_body(self, content_text: str, excerpt: str, is_scraped: int) -> None:
+        """Renderiza o corpo: texto completo se disponível, senão excerpt + botão.
+
+        is_scraped: 0 = pendente (mostra botão), 1 = ok (texto completo já está em
+        content_text), -1 = falhou (mostra aviso, sem botão).
+        """
+        if content_text:
+            # Texto completo já disponível — exibe e oculta o botão.
+            self._body_lbl.setText(content_text)
+            self._body_lbl.show()
+            self._fulltext_btn.hide()
+            self._fulltext_status.hide()
+            return
+
+        # Sem texto completo — mostra o excerpt do feed (se houver)
+        self._body_lbl.setText(excerpt)
+        self._body_lbl.setVisible(bool(excerpt))
+
+        if is_scraped == -1:
+            # Falha definitiva — não oferece botão
+            self._fulltext_btn.hide()
+            self._fulltext_status.setText(
+                "Não foi possível carregar o texto completo desta página."
+            )
+            self._fulltext_status.show()
+        else:
+            self._fulltext_btn.setText("Carregar texto completo")
+            self._fulltext_btn.setEnabled(True)
+            self._fulltext_btn.show()
+            self._fulltext_status.hide()
+
+    def _on_load_fulltext(self) -> None:
+        """Botão 'Carregar texto completo' → pede scraping P1 do artigo atual."""
+        if self._current_article_id is None or not self._current_url:
+            return
+        self._fulltext_btn.setEnabled(False)
+        self._fulltext_btn.setText("Carregando texto completo…")
+        self._fulltext_status.hide()
+        log.info("Solicitando texto completo (P1) do artigo %d.", self._current_article_id)
+        self.scrape_requested.emit(self._current_article_id, self._current_url)
+
+    def on_scrape_done(self, article_id: int, success: bool) -> None:
+        """Slot: ScraperWorker terminou um artigo. Atualiza o corpo se for o atual."""
+        if article_id != self._current_article_id:
+            return
+        if success:
+            self._reload_body()
+        else:
+            self._fulltext_btn.hide()
+            self._fulltext_status.setText(
+                "Não foi possível carregar o texto completo desta página."
+            )
+            self._fulltext_status.show()
+
+    def _reload_body(self, conn: sqlite3.Connection | None = None) -> None:
+        """Recarrega apenas content_text/is_scraped do artigo atual e re-renderiza o corpo."""
+        if self._current_article_id is None:
+            return
+        _conn = conn if conn is not None else get_conn()
+        should_close = conn is None
+        try:
+            row = _conn.execute(
+                "SELECT content_text, content_excerpt, is_scraped FROM articles WHERE id = ?",
+                (self._current_article_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            log.error("Falha ao recarregar corpo do artigo %d: %s",
+                      self._current_article_id, exc)
+            return
+        finally:
+            if should_close:
+                _conn.close()
+        if row is not None:
+            self._render_body(
+                content_text=(row["content_text"] or "").strip(),
+                excerpt=(row["content_excerpt"] or "").strip(),
+                is_scraped=int(row["is_scraped"] or 0),
+            )
 
     def _mark_as_read(
         self,
@@ -260,6 +350,7 @@ class ReaderPane(QWidget):
             self._meta_lbl,
             self._sep,
             self._body_lbl,
-            self._fulltext_hint,
+            self._fulltext_btn,
+            self._fulltext_status,
         ):
             widget.setVisible(visible)
