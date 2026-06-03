@@ -221,3 +221,62 @@ async def test_no_intent_override_returns_all_results(client):
     assert resp.status_code == 200
     for i in range(6):
         assert f"web{i}.example.com" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# SearXNG 9 — cobertura adicional: volume grande + diversidade desligável
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_navigational_no_hidden_cap_with_large_result_set(client):
+    """30 resultados web + navigational → todos 30 (nenhum teto oculto de contagem)."""
+    fake = _fake_web(30)
+    with (
+        patch("routers.search.search_web", new_callable=AsyncMock, return_value=fake),
+        patch("routers.search.search_local", new_callable=AsyncMock, return_value=[]),
+        patch("routers.search.search_sites", new_callable=AsyncMock, return_value=[]),
+    ):
+        resp = await client.get(
+            "/search",
+            params={"q": "github.com", "intent": "navigational",
+                    "src_web": "on", "src_eco": "off", "src_sites": "off"},
+        )
+    assert resp.status_code == 200
+    for i in range(30):
+        assert f"web{i}.example.com" in resp.text, (
+            f"web{i}.example.com ausente — há um teto oculto de contagem"
+        )
+
+
+@pytest.mark.anyio
+async def test_exploratory_diversity_off_keeps_all_same_domain(client):
+    """exploratory + max_per_domain=0 (config) → 8 resultados do MESMO domínio passam todos.
+
+    A diversidade por domínio é o ÚNICO redutor de contagem ligado à intenção (só
+    exploratory) — e é desligável via Settings (`max_per_domain=0`). Garante que dá
+    para extrair volume máximo mesmo quando os resultados se concentram num domínio.
+    Nota: `?diversity=0` na URL NÃO desliga (0 = "usar config"); só o config 0 desliga.
+    """
+    fake = [
+        SearchResult(
+            url=f"https://samedomain.example.com/page{i}",
+            title=f"Resultado {i}", snippet="x", score=0.9, source="web",
+        )
+        for i in range(8)
+    ]
+    with (
+        patch("routers.search.search_web", new_callable=AsyncMock, return_value=fake),
+        patch("routers.search.search_local", new_callable=AsyncMock, return_value=[]),
+        patch("routers.search.search_sites", new_callable=AsyncMock, return_value=[]),
+        patch("routers.search._get_max_per_domain", return_value=0),  # diversidade desligada
+    ):
+        resp = await client.get(
+            "/search",
+            params={"q": "tema amplo de pesquisa", "intent": "exploratory",
+                    "src_web": "on", "src_eco": "off", "src_sites": "off"},
+        )
+    assert resp.status_code == 200
+    for i in range(8):
+        assert f"page{i}" in resp.text, (
+            f"page{i} ausente — com max_per_domain=0 nada do mesmo domínio deveria ser cortado"
+        )
