@@ -23,6 +23,8 @@ key = 11c345dcaebdada6070a5545e7245f5ac91fa265d24324b8b57a5d6ae11c8609
 
 ## próximo: 
 
+### HUB (LOGOS) — validar embed-server em CPU por padrão (BUG-028) | 2026-06-03
+
 ### AKASHA — Qualidade de busca SearXNG: remoção de Qwant e filtro anti-spam | 2026-06-01
 
 ### CODEX — Leitor centralizado do ecossistema | 2026-05-13
