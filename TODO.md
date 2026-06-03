@@ -4,17 +4,6 @@
 
 ---
 
-## ⚡ Validação pendente (primeiro item — fazer no PC principal)
-
-### HUB (LOGOS) — validar embed-server em CPU por padrão (BUG-028) | 2026-06-03
-> Contexto: para resolver o BUG-028 (loop de restart do embed-server por disputa de VRAM), o default de `embed_n_gpu_layers` foi mudado de -1 (GPU) para **0 (CPU)** em `HUB/src-tauri/src/logos.rs`. O embed-server (bge-m3 Q8, ~567 MB / ~0,6 GB VRAM) é leve e roda em CPU sem disputar VRAM com os LLMs de chat de AKASHA+Mnemosyne (uso padrão do PC principal). Falta **medir na máquina real** antes de considerar fechado. **Atenção:** se o `ecosystem.json` do PC principal tiver `logos.embed_n_gpu_layers` setado explicitamente (ex.: -1), o valor explícito prevalece sobre o novo default — nesse caso, setar 0 no ecosystem.json ou remover a chave.
-#### HUB (LOGOS)
-- [ ] **Medir VRAM efetivamente liberada** — com o embed em CPU, conferir via `rocm-smi` quanto de VRAM da RX 6600 é devolvido (esperado ~0,6 GB, conforme README). Confirmar que, com AKASHA+Mnemosyne carregados, a VRAM não passa mais do limite por causa do embed-server.
-- [ ] **Medir throughput de embedding em CPU (Ryzen 5 4600G)** — rodar uma indexação real no Mnemosyne e cronometrar; comparar com a velocidade anterior (GPU). Embedding é P3/background, então lentidão moderada é aceitável; mas se a indexação ficar inviável (ex.: horas para um corpus pequeno), reavaliar (ex.: GPU parcial `embed_n_gpu_layers` > 0, ou voltar a GPU só nessa máquina).
-- [ ] **Confirmar que o churn do BUG-028 sumiu** — com o embed fora da VRAM, verificar nos logs do HUB que não há mais o loop "iniciando/pronto" do embed-server, e que o Mnemosyne indexa sem timeout. Se confirmado, marcar BUG-028 como FIXED no BUGS.md.
-
----
-
 ## Padrões Obrigatórios
 
 
@@ -4885,7 +4874,12 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ### HUB (LOGOS) — BUG-028: embed-server em loop de restart mata indexação do Mnemosyne | 2026-06-03
 > Contexto: com o Mnemosyne aberto, o embed-server entra em loop "iniciando/pronto" e o Mnemosyne dá timeout, sem indexar nada. Causa raiz (revisão de código, pendente de confirmação por log no CachyOS): o watchdog de VRAM, ao passar de `vram_limit_pct` (85% default), chama `do_silence()` que MATA os modelos P3 (incl. embed-server) — violando a diretiva do LOGOS de que P3 só é atrasado, nunca morto, exceto em situação extrema (crash). O watchdog do embed-server ressuscita o processo achando que foi crash → churn. Ver BUG-028 no BUGS.md (status OPEN).
+>
+> **Ordem:** primeiro validar o fix já aplicado (embed em CPU) na máquina real; só depois, se necessário, partir para o hardening do watchdog de VRAM.
 #### HUB (LOGOS)
+- [ ] **(Validar primeiro — fix do embed em CPU já aplicado) Medir VRAM efetivamente liberada** — com o embed em CPU (default `embed_n_gpu_layers=0`, já commitado), conferir via `rocm-smi` quanto de VRAM da RX 6600 é devolvido (esperado ~0,6 GB). Confirmar que, com AKASHA+Mnemosyne carregados, a VRAM não passa mais do limite por causa do embed-server. **Atenção:** se o `ecosystem.json` do PC principal tiver `logos.embed_n_gpu_layers` explícito (ex.: -1), o valor explícito prevalece sobre o default — setar 0 ou remover a chave.
+- [ ] **Medir throughput de embedding em CPU (Ryzen 5 4600G)** — rodar uma indexação real no Mnemosyne e cronometrar; comparar com a velocidade anterior (GPU). Embedding é P3/background, então lentidão moderada é aceitável; se a indexação ficar inviável (ex.: horas para corpus pequeno), reavaliar (GPU parcial `embed_n_gpu_layers` > 0, ou GPU só nessa máquina).
+- [ ] **Confirmar que o churn do BUG-028 sumiu** — com o embed fora da VRAM, verificar nos logs do HUB que não há mais o loop "iniciando/pronto" do embed-server e que o Mnemosyne indexa sem timeout. Se confirmado, marcar BUG-028 como FIXED no BUGS.md.
 - [ ] **Não matar modelos P3 no limiar normal de VRAM (fix recomendado, alinhado à diretiva)** — em `HUB/src-tauri/src/logos.rs`, o watchdog de VRAM (~5196) ao bloquear a 85% deve apenas setar `p3_vram_blocked=true` (o delay loop em ~2670 já atrasa novas requisições P3, o que respeita a diretiva) e **NÃO** chamar `do_silence()`. A descarga de modelos (`do_silence`/`kill_embed_proc`) deve ficar reservada ao limiar EXTREMO de crash-prevention (VRAM > `VRAM_CRITICAL_PCT`=97%, RAM crítica). Isso elimina o churn pela raiz sem precisar coordenar os dois watchdogs. Testes: simular VRAM entre 85% e 97% → embed-server NÃO é morto; simular VRAM > 97% → descarga ocorre; delay loop de P3 continua funcionando.
 - [ ] **Corrigir o threshold de VRAM para o caso de uso padrão (93–95%)** — decisão acordada: rodar os LLMs de AKASHA + Mnemosyne na VRAM ao mesmo tempo (caso padrão) já usa >80%, então o default de 85% é baixo demais e dispara bloqueio/descarga constante. Já existe um bump condicional 85→93 para "dual-server" (`logos.rs` ~798-816), mas: (a) só ativa se `logos.llm_query` E `logos.llm_rag` estiverem ambos preenchidos no ecosystem.json no startup; (b) só se o valor configurado ainda for o default 85; (c) o cálculo "~84% com 3B+7B" **não inclui o embed-server (bge-m3)**, que durante a indexação carrega POR CIMA dos dois LLMs e estoura mesmo 93%. Ações: elevar o default efetivo para 93–95% no caso padrão e/ou contabilizar o embed-server no orçamento; garantir que o bump seja robusto (não depender de ordem de configuração). `set_vram_limit_pct` já faz clamp em 95% (`logos.rs` ~540). Confirmar com log no CachyOS qual valor estava ativo no momento do bug. Testes: dual-server com default → limite 93–95%; embed-server carregado não dispara descarga no caso padrão.
 - [ ] **Watchdog do embed-server distinguir kill intencional de crash** — em `logos.rs` (~5110), o watchdog trata QUALQUER saída do embed_proc como crash e reinicia. Se a direção acima (não matar P3 a 85%) for adotada, isso deixa de causar loop; mas como defesa adicional, marcar paradas intencionais (do_silence/unload) para o watchdog não ressuscitar. Avaliar se ainda é necessário após o fix principal.
