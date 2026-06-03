@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +24,7 @@ _PERSISTENT_FIELDS = (
     "auto_scrape",
     "default_translation_lang",
     "display_language",
+    "manual_topics",
 )
 
 
@@ -38,6 +39,9 @@ class KosmosConfig:
     auto_scrape: bool = True
     default_translation_lang: str = "pt"
     display_language: str = "pt"
+    # Tags de interesse definidas manualmente pela usuária — reforçam o
+    # shared_topic_profile (via interests.apply_manual_topics). Editáveis em Settings.
+    manual_topics: list[str] = field(default_factory=list)
 
     # Paths — derivados do ecosystem.json em runtime, não editáveis pelo usuário diretamente
     archive_path: str = ""

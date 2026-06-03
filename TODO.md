@@ -6786,8 +6786,8 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 #### Fase 5 — Arquivamento e integração com ecossistema
 - [x] **archiver.py** — gera `.md` em `sync_root/kosmos/Web/` com frontmatter completo (`archived_by: kosmos`, título, fonte, URL, data, autor, idioma, tags, tipo), texto limpo, seção `## Análise do KOSMOS` (cinco Ws, entidades, sentimento, viés — marcada como análise computacional no frontmatter com `kosmos_analysis: true` para Mnemosyne tratar com peso distinto), referência ABNT ao final (formato artigo científico se tiver DOI; documento eletrônico nos demais casos). Dual-language: se traduzido, arquivo contém ambas as versões em seções separadas com `has_translation: true` e idiomas no frontmatter.
-- [ ] **interests.py** — atualiza `shared_topic_profile` com temas extraídos da análise + tags definidas manualmente pela usuária. Tags manuais configuráveis em Settings.
-- [ ] **Testes: archiver.py** — frontmatter correto, seção de análise, ABNT, dual-language; interests.py — atualiza perfil compartilhado.
+- [x] **interests.py** — atualiza `shared_topic_profile` com temas extraídos da análise + tags definidas manualmente pela usuária. Tags manuais configuráveis em Settings. *(módulo + config `manual_topics` prontos; falta a UI de Settings p/ editar `manual_topics` e a fiação dos call sites — `update_from_article` no AnalysisWorker da Fase 4; `apply_manual_topics` ao salvar Settings/startup.)*
+- [x] **Testes: archiver.py** — frontmatter correto, seção de análise, ABNT, dual-language; interests.py — atualiza perfil compartilhado.
 
 #### Fase 6 — Tradução
 - [ ] **translator.py** — argostranslate (offline) como padrão; LOGOS como opção quando disponível e configurado. Idioma alvo definido em Settings.
