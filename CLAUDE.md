@@ -113,6 +113,18 @@ LVM (2026-06-02): root (`/dev/fedora/root`, VG `fedora`, XFS) estendido de 15 GB
 
 ---
 
+## Princípio de observabilidade — TUDO gera logs (estabelecido 2026-06-03)
+
+**Absolutamente tudo no ecossistema deve gerar logs. Sem exceção, em todos os apps.**
+
+- Toda operação, processo, job de background, requisição, chamada externa (rede/LLM/DB), transição de estado relevante, ação da usuária e **todo caminho de erro** emite log pelo logger do app (`logging` em Python, `log::` em Rust, logger equivalente em TS).
+- **Proibido caminho silencioso:** nenhum `except/catch` pode engolir um erro sem logar. `except: pass` e `.ok()`/`unwrap_or` que descartam erro sem registro são violação direta desta diretiva — sempre logar antes de seguir.
+- **Níveis apropriados** (para a observabilidade não virar ruído): `debug` para detalhe fino/fluxo interno; `info` para operações e marcos; `warning` para degradação/fallback; `error` para falha real. O critério é "tudo é registrado", não "tudo em info".
+- Vale para **código novo e existente**: todo código novo já nasce instrumentado; código existente é trazido a esse padrão quando tocado (ou em auditoria dedicada, se solicitada).
+- Reforça e eleva o passo 2 do workflow de implementação ("criar logs para todo processo envolvendo a nova feature") para um princípio absoluto que cobre o ecossistema inteiro, não só features novas.
+
+---
+
 ## Memória entre máquinas
 
 O Claude Code mantém memória local em `~/.claude/projects/.../memory/`. Essa memória **não é sincronizada** entre o computador de trabalho (Windows 10) e o computador principal (CachyOS) — cada instância tem sua própria memória local.
