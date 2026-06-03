@@ -127,8 +127,10 @@ class TestGetAkashaConfig:
         backend = cfg.get("web_search_backend", "")
         if not backend:
             pytest.skip("SearXNG não configurado neste ambiente (web_search_backend vazio)")
-        assert "localhost:8888" in backend or "searxng" in backend.lower(), (
-            f"web_search_backend '{backend}' não parece apontar para SearXNG"
+        # Agnóstico de host: a instância pode ser local (localhost:8888) ou no
+        # servidor (ex: http://192.168.0.252:8080). Verifica só que é uma URL HTTP(S).
+        assert backend.startswith("http://") or backend.startswith("https://"), (
+            f"web_search_backend '{backend}' não parece uma URL de SearXNG"
         )
 
 

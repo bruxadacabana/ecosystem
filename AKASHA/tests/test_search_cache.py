@@ -219,14 +219,15 @@ def test_search_web_cache_hit_no_refetch(patched_db, monkeypatch):
 
     call_count = {"n": 0}
 
-    async def _mock_fetch(query, max_results):
+    # Mocka _fetch_web (ponto de despacho SearXNG/DDG) — robusto ao backend configurado.
+    async def _mock_fetch(query, max_results, n_pages=1, lang=""):
         call_count["n"] += 1
         return [SearchResult(title="R", url="https://r.com", snippet="")]
 
     async def _mock_blocked():
         return []
 
-    monkeypatch.setattr(_ws, "_fetch_ddg", _mock_fetch)
+    monkeypatch.setattr(_ws, "_fetch_web", _mock_fetch)
     monkeypatch.setattr(_ws, "get_blocked_domains", _mock_blocked)
 
     async def _run():
@@ -248,19 +249,20 @@ def test_search_web_expired_cache_refetches(patched_db, monkeypatch):
 
     call_count = {"n": 0}
 
-    async def _mock_fetch(query, max_results):
+    async def _mock_fetch(query, max_results, n_pages=1, lang=""):
         call_count["n"] += 1
         return [SearchResult(title="Fresh", url="https://fresh.com", snippet="")]
 
     async def _mock_blocked():
         return []
 
-    monkeypatch.setattr(_ws, "_fetch_ddg", _mock_fetch)
+    monkeypatch.setattr(_ws, "_fetch_web", _mock_fetch)
     monkeypatch.setattr(_ws, "get_blocked_domains", _mock_blocked)
 
     async def _run():
-        # Insere entrada expirada no SQLite (2h atrás, TTL=1h)
-        qh = _query_hash("expired search")
+        # Insere entrada expirada no SQLite (2h atrás, TTL=1h).
+        # A chave deve espelhar o formato do search_web: "<q>::lang=::p=<n_pages>".
+        qh = _query_hash("expired search::lang=::p=1")
         ts_expired = int(time.time()) - 7200
         old_results = [SearchResult(title="Old", url="https://old.com", snippet="")]
         async with aiosqlite.connect(patched_db) as db:
@@ -278,3 +280,90 @@ def test_search_web_expired_cache_refetches(patched_db, monkeypatch):
     result, n_calls = run(_run())
     assert n_calls == 1                         # re-buscou
     assert result[0].url == "https://fresh.com"  # retornou resultado novo
+
+
+# ---------------------------------------------------------------------------
+# BUG-025: a chave de cache deve incluir n_pages
+# (buscas leves de 1 página não podem envenenar o cache das de 10 páginas)
+# ---------------------------------------------------------------------------
+
+def _patch_fetch_web(monkeypatch):
+    """Substitui _fetch_web por um mock que devolve n_pages resultados distintos
+    e registra os n_pages com que foi chamado. Isola o teste do backend real."""
+    import services.web_search as _ws
+    from services.web_search import SearchResult
+
+    calls: list[int] = []
+
+    async def _mock_fetch_web(query, max_results, n_pages=1, lang=""):
+        calls.append(n_pages)
+        return [
+            SearchResult(title=f"r{i}", url=f"https://d{i}.example", snippet="")
+            for i in range(n_pages)
+        ]
+
+    async def _mock_blocked():
+        return []
+
+    monkeypatch.setattr(_ws, "_fetch_web", _mock_fetch_web)
+    monkeypatch.setattr(_ws, "get_blocked_domains", _mock_blocked)
+    return calls
+
+
+def test_cache_separates_by_n_pages(patched_db, monkeypatch):
+    """n_pages diferentes NÃO compartilham cache: cada um re-busca e mantém seu volume."""
+    import services.web_search as _ws
+    calls = _patch_fetch_web(monkeypatch)
+
+    async def _run():
+        r1  = await _ws.search_web("mesma query", max_results=0, n_pages=1)
+        r10 = await _ws.search_web("mesma query", max_results=0, n_pages=10)
+        return r1, r10
+
+    r1, r10 = run(_run())
+    assert calls == [1, 10]      # ambas buscaram — sem cache compartilhado
+    assert len(r1) == 1          # n_pages=1 → 1 resultado
+    assert len(r10) == 10        # n_pages=10 → 10 (NÃO os 1 do cache anterior)
+
+
+def test_cache_n_pages_one_does_not_poison_ten(patched_db, monkeypatch):
+    """Reproduz o BUG-025: busca leve (1 página) ANTES não deve limitar a de 10."""
+    import services.web_search as _ws
+    _patch_fetch_web(monkeypatch)
+
+    async def _run():
+        await _ws.search_web("craftivism", max_results=0, n_pages=1)   # leve, primeiro
+        full = await _ws.search_web("craftivism", max_results=0, n_pages=10)  # real
+        return full
+
+    full = run(_run())
+    assert len(full) == 10       # antes do fix retornava 1 (cache envenenado)
+
+
+def test_cache_same_n_pages_hits_cache(patched_db, monkeypatch):
+    """Mesmo n_pages: segunda busca vem do cache (uma só chamada a _fetch_web)."""
+    import services.web_search as _ws
+    calls = _patch_fetch_web(monkeypatch)
+
+    async def _run():
+        r1 = await _ws.search_web("repetida", max_results=0, n_pages=10)
+        r2 = await _ws.search_web("repetida", max_results=0, n_pages=10)
+        return r1, r2
+
+    r1, r2 = run(_run())
+    assert calls == [10]         # só a primeira buscou; a segunda foi cache
+    assert [x.url for x in r1] == [x.url for x in r2]
+
+
+def test_cache_separates_by_lang(patched_db, monkeypatch):
+    """lang diferente continua separando o cache (regressão do comportamento prévio)."""
+    import services.web_search as _ws
+    calls = _patch_fetch_web(monkeypatch)
+
+    async def _run():
+        await _ws.search_web("q", max_results=0, n_pages=5, lang="pt")
+        await _ws.search_web("q", max_results=0, n_pages=5, lang="en")
+        return calls
+
+    out = run(_run())
+    assert out == [5, 5]         # lang distinto → ambas buscaram

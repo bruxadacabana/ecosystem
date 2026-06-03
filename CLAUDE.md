@@ -155,6 +155,8 @@ A Mnemosyne cria pop-ups proativos via `InsightPopup` (PySide6 `QDialog`) aciona
 **Intenção primária da AKASHA (decisão 2026-06-01): buscador independente via índice local.**
 O índice local — construído a partir de crawling de domínios confiáveis, archivamento de páginas lidas e embeddings semânticos — é o núcleo e diferencial da AKASHA. Engines externos (SearXNG, DDG) existem como complemento secundário, não como núcleo. Ao sugerir ou implementar melhorias na AKASHA, priorizar sempre o pipeline de indexação local sobre qualidade de engines externos.
 
+**Necessidade/objetivo da usuária (reforçado 2026-06-02):** usar a AKASHA como **substituto principal do Google**, com o **máximo de resultados possível** por busca (alvo do plano: 100–400; hoje ~8–62, baixo). Em qualquer trabalho de busca, o norte é maximizar volume **e** qualidade. Causas de volume baixo conhecidas: classificador de intenção que corta listas; só 3 engines mainstream sobrepostos (faltam engines independentes: Marginalia, mwmbl, Stract); BUG-025 (cache ignorava n_pages — corrigido 2026-06-02).
+
 **Princípio arquitetural do AKASHA: amplificador de pesquisa, não respondedor.**
 O LLM no AKASHA age APENAS na camada de query (classificação de intenção, expansão de termos, reescrita conversacional). Nunca sintetiza, interpreta ou gera texto como resultado. O AKASHA devolve links, trechos e documentos — a usuária pensa, o sistema amplifica o alcance da busca. Isso descartou o Map-Reduce/síntese permanentemente. Todo código de query understanding deve respeitar esse princípio.
 

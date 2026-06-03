@@ -605,8 +605,12 @@ async def search_web(
          Incluído na chave de cache para que buscas com filtros distintos sejam independentes.
     """
     effective_query = f"{query} filetype:{filetype}" if filetype else query
-    # Inclui lang na chave de cache: "python::lang=pt" ≠ "python::lang=en" ≠ "python"
-    cache_key = f"{effective_query}::lang={lang}" if lang else effective_query
+    # Chave de cache inclui lang E n_pages (BUG-025): buscas com nº de páginas
+    # diferentes têm volumes diferentes, então NÃO podem compartilhar cache. Sem
+    # o n_pages na chave, uma busca leve interna (n_pages=1, ex: pop-up observador)
+    # envenenava o cache da busca real do usuário (n_pages=10), devolvendo ~1
+    # página em vez de ~10. Ex: "python::lang=pt::p=10" ≠ "python::lang=::p=1".
+    cache_key = f"{effective_query}::lang={lang}::p={n_pages}"
     qhash = _query_hash(cache_key)
     _fetch_max = min(_CACHE_SIZE, n_pages * _FETCH_PAGE_SIZE)
 

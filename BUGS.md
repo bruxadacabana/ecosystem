@@ -85,6 +85,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-022](#bug-022) | FIXED | 2026-06-02 | AKASHA (extension/background.js) | extensão consome slot de insight sem exibir quando aba ativa é o próprio AKASHA |
 | [BUG-023](#bug-023) | FIXED | 2026-06-02 | AKASHA (tests/test_domain_suggester.py) | teste usa domínio-semente (ravelry.com) como exemplo de domínio não-indexado |
 | [BUG-024](#bug-024) | FIXED | 2026-06-02 | AKASHA (routers/search.py) | `from services.crawler import _bg_crawl` falha silenciosamente — confirmar domain_suggestion nunca dispara o crawl |
+| [BUG-025](#bug-025) | FIXED | 2026-06-02 | AKASHA (services/web_search.py) | Chave de cache de busca web ignora `n_pages` — buscas leves envenenam o volume das reais |
 
 ---
 
@@ -1536,3 +1537,41 @@ Criado helper local `_bg_crawl_site(site_id)` em `routers/search.py` que importa
 
 #### Teste de regressão
 `tests/test_observer_popups.py::test_confirm_adds_domains_to_library` verifica que confirmar uma sugestão adiciona os domínios a `crawl_sites` (com `_bg_crawl_site` mockado para não fazer rede). Os testes de `domain_suggestion` (`test_domain_suggester.py`, `test_inline_domain_suggest.py`) continuam verdes após a refatoração.
+
+---
+
+### BUG-025 · [FIXED] · Chave de cache de busca web ignora `n_pages` — buscas leves envenenam o volume das buscas reais
+
+#### Identificação
+- **Data:** 2026-06-02
+- **App(s):** AKASHA
+- **Componente:** `AKASHA/services/web_search.py` — `search_web()` (montagem de `cache_key`)
+- **Commit do fix:** (este commit)
+- **Descoberta via:** investigação após a usuária estranhar o baixo número de resultados ("não parece pouco?")
+- **Tempo de diagnóstico:** ~20 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** todas
+- **Modo:** produção
+- **Reproduzível em:** qualquer ambiente — independe de rede (é lógica de cache)
+
+#### Pré-condição para reproduzir
+Buscar uma query com poucas páginas (`n_pages=1`) e depois a mesma query com muitas (`n_pages=10`) — ou vice-versa — dentro da janela de TTL do cache.
+
+#### Sintoma observado
+A segunda busca devolve o volume da primeira. Ex.: `search_web("craftivism", n_pages=1)` → 12 resultados; em seguida `search_web("craftivism", n_pages=10)` → ainda 12 (deveria ser ~100+). Em produção, qualquer busca interna leve (ex.: o pop-up observador `_get_domain_suggestions_for_query`, que chama `search_web` com o default `n_pages=1`) cacheava ~1 página sob a query, e a busca real do usuário (10 páginas, via router) acertava esse cache pequeno — fazendo a busca "parecer poucos resultados".
+
+#### Logs
+Sem erro — degradação silenciosa. Visível só medindo o funil: `_fetch_web(q, n_pages=10)` cru retornava 183 resultados para "craftivism", mas `search_web` devolvia 12 ao reusar o cache de `n_pages=1`.
+
+#### Causa raiz
+`cache_key = f"{effective_query}::lang={lang}" if lang else effective_query` — **não incluía `n_pages`**. Como o número de páginas determina o volume buscado (`_fetch_max = n_pages × _FETCH_PAGE_SIZE`), buscas com `n_pages` diferentes têm resultados diferentes, mas compartilhavam a mesma entrada de cache (memória + SQLite).
+
+#### Impacto
+Degradação de qualidade: o usuário recebia uma fração dos resultados sempre que uma busca leve interna (pop-ups, sugestões) tocava a mesma query antes. Atinge diretamente o objetivo de "máximo de resultados / substituto do Google".
+
+#### Fix aplicado
+`cache_key` passou a incluir sempre `lang` e `n_pages`: `f"{effective_query}::lang={lang}::p={n_pages}"`. Buscas com nº de páginas distinto não compartilham mais cache. Entradas antigas (chave sem `::p=`) simplesmente viram cache-miss (inofensivo).
+
+#### Teste de regressão
+`tests/test_search_cache.py`: `test_cache_separates_by_n_pages` (n_pages 1 e 10 re-buscam, volumes 1 e 10), `test_cache_n_pages_one_does_not_poison_ten` (reproduz o bug: leve antes não limita a real), `test_cache_same_n_pages_hits_cache` (mesmo n_pages ainda usa cache), `test_cache_separates_by_lang` (lang continua separando). 18/18 testes do arquivo passando.
