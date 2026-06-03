@@ -86,6 +86,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-023](#bug-023) | FIXED | 2026-06-02 | AKASHA (tests/test_domain_suggester.py) | teste usa domínio-semente (ravelry.com) como exemplo de domínio não-indexado |
 | [BUG-024](#bug-024) | FIXED | 2026-06-02 | AKASHA (routers/search.py) | `from services.crawler import _bg_crawl` falha silenciosamente — confirmar domain_suggestion nunca dispara o crawl |
 | [BUG-025](#bug-025) | FIXED | 2026-06-02 | AKASHA (services/web_search.py) | Chave de cache de busca web ignora `n_pages` — buscas leves envenenam o volume das reais |
+| [BUG-026](#bug-026) | FIXED | 2026-06-03 | HUB (commands/searxng.rs) | "Testar conexão" do SearXNG falha para instância remota (healthcheck gateado por systemd local) |
 
 ---
 
@@ -1575,3 +1576,38 @@ Degradação de qualidade: o usuário recebia uma fração dos resultados sempre
 
 #### Teste de regressão
 `tests/test_search_cache.py`: `test_cache_separates_by_n_pages` (n_pages 1 e 10 re-buscam, volumes 1 e 10), `test_cache_n_pages_one_does_not_poison_ten` (reproduz o bug: leve antes não limita a real), `test_cache_same_n_pages_hits_cache` (mesmo n_pages ainda usa cache), `test_cache_separates_by_lang` (lang continua separando). 18/18 testes do arquivo passando.
+
+---
+
+### BUG-026 · [FIXED] · "Testar conexão" do SearXNG no HUB sempre falha para instância remota (healthcheck gateado por systemd local)
+
+#### Identificação
+- **Data:** 2026-06-03
+- **App(s):** HUB
+- **Componente:** `HUB/src-tauri/src/commands/searxng.rs` — `searxng_status()`
+- **Commit do fix:** (este commit)
+- **Descoberta via:** uso-real (usuária: URL correta `http://192.168.0.252:8080/`, mas "Testar conexão" diz "✗ SearXNG não respondeu")
+- **Tempo de diagnóstico:** ~5 minutos
+
+#### Ambiente
+- **Máquina(s) afetadas:** qualquer máquina cujo SearXNG seja **remoto** (não um serviço systemd local)
+- **Modo:** produção
+- **Reproduzível em:** SearXNG no servidor T410 (Docker) com a URL configurada no HUB
+
+#### Pré-condição para reproduzir
+`akasha.web_search_backend` aponta para um SearXNG remoto (ex.: servidor T410) e não existe um serviço systemd `searxng` local na máquina do HUB.
+
+#### Sintoma observado
+O painel Busca do HUB mostra "✗ SearXNG não respondeu — verifique se está rodando e a URL está correta" ao clicar em "Testar conexão", mesmo o servidor respondendo `GET /healthz → 200` quando testado por `curl` da mesma máquina.
+
+#### Causa raiz
+Em `searxng_status()`, o healthcheck HTTP estava **gateado por `active`** (`let reachable = if active { GET /healthz } else { false }`), e `active = service_is_active()` checa `systemctl is-active searxng` — um serviço **systemd local**. Com o SearXNG remoto (Docker no servidor), não há serviço local → `active=false` → o código **nem tentava** o `/healthz` e cravava `reachable=false`. Suposição embutida de quando o SearXNG era instalado localmente via AUR.
+
+#### Impacto
+Cosmético/diagnóstico: a busca funcionava normalmente (a AKASHA consome o SearXNG remoto direto), mas o HUB reportava falsamente que o SearXNG estava inacessível, confundindo a usuária.
+
+#### Fix aplicado
+Extraída a função `healthcheck(url)` (GET `{url}/healthz`, trim de barra final, timeout 3s) e chamada **incondicionalmente** em `searxng_status()` — independente de `service_is_active()`. `active` continua exposto (informativo, para instalações locais), mas não gateia mais `reachable`. Limitação remanescente conhecida: os botões iniciar/parar usam `systemctl` local e não controlam um container remoto (anotado como follow-up — para o servidor, gerenciar via Docker no próprio servidor).
+
+#### Teste de regressão
+`searxng.rs` (módulo de testes): `healthcheck_empty_url_is_false`, `healthcheck_unreachable_is_false` (porta fechada → false), `healthcheck_200_is_true` (listener local responde 200 → true, prova o caminho remoto sem systemd), `healthcheck_trailing_slash_ok` (barra final não quebra). 7/7 testes do módulo passando.

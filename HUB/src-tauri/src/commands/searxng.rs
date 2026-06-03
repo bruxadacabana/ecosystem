@@ -52,25 +52,34 @@ fn systemctl(action: &str) -> Result<(), AppError> {
 
 // ── Comandos Tauri ───────────────────────────────────────────
 
-/// Status completo do SearXNG: serviço ativo, URL configurada e healthcheck.
+/// Healthcheck HTTP: `GET {url}/healthz`, true se status 2xx.
+///
+/// INDEPENDENTE do systemd local (BUG-026): o SearXNG pode ser uma instância
+/// **remota** (ex.: Docker no servidor T410), caso em que não há serviço systemd
+/// local — mas a URL continua perfeitamente acessível pela rede. Nunca gatear este
+/// check por `service_is_active()`.
+async fn healthcheck(url: &str) -> bool {
+    let u = url.trim();
+    if u.is_empty() {
+        return false;
+    }
+    let health = format!("{}/healthz", u.trim_end_matches('/'));
+    reqwest::Client::new()
+        .get(&health)
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
+/// Status completo do SearXNG: serviço local ativo (informativo), URL e healthcheck.
 #[tauri::command]
 pub async fn searxng_status() -> Result<SearxngStatus, AppError> {
-    let active = service_is_active();
     let url    = get_url();
-
-    let reachable = if active {
-        let health = format!("{}/healthz", url.trim_end_matches('/'));
-        reqwest::Client::new()
-            .get(&health)
-            .timeout(std::time::Duration::from_secs(3))
-            .send()
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
-    } else {
-        false
-    };
-
+    let active = service_is_active();
+    // `reachable` é independente de `active`: a instância pode ser remota.
+    let reachable = healthcheck(&url).await;
     Ok(SearxngStatus { active, reachable, url })
 }
 
@@ -131,5 +140,58 @@ mod tests {
         // Ação inválida deve retornar erro (systemctl retorna exit != 0).
         let result = systemctl("status-invalido-xyzzy");
         assert!(result.is_err());
+    }
+
+    // ── BUG-026: healthcheck independente do systemd local ──────────────
+
+    #[tokio::test]
+    async fn healthcheck_empty_url_is_false() {
+        assert!(!healthcheck("").await);
+        assert!(!healthcheck("   ").await);
+    }
+
+    #[tokio::test]
+    async fn healthcheck_unreachable_is_false() {
+        // Porta 1: nada escutando → conexão recusada → false (rápido).
+        assert!(!healthcheck("http://127.0.0.1:1").await);
+    }
+
+    #[tokio::test]
+    async fn healthcheck_200_is_true() {
+        // Sobe um listener mínimo que responde 200 em qualquer rota (inclui /healthz).
+        // Prova que `reachable` funciona com instância REMOTA, sem systemd local.
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = sock.read(&mut buf).await;
+                let _ = sock
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+                    .await;
+            }
+        });
+        let url = format!("http://{addr}");
+        assert!(healthcheck(&url).await, "200 em /healthz deve resultar em reachable=true");
+    }
+
+    #[tokio::test]
+    async fn healthcheck_trailing_slash_ok() {
+        // URL com barra final não deve gerar // nem quebrar o check.
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = sock.read(&mut buf).await;
+                let _ = sock
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+                    .await;
+            }
+        });
+        let url = format!("http://{addr}/");  // barra final
+        assert!(healthcheck(&url).await);
     }
 }
