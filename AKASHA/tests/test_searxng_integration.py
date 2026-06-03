@@ -216,12 +216,17 @@ class TestFetchWebBackend:
             ddg_called.append(q)
             return [_mod.SearchResult(title="DDG", url="https://ddg.com", snippet="", source="WEB")]
 
+        async def _empty_marginalia(q, key, max):
+            return []
+
         monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "http://localhost:8888")
         monkeypatch.setattr(_mod, "_fetch_searxng", _fake_fetch_searxng)
         monkeypatch.setattr(_mod, "_fetch_ddg", _fake_fetch_ddg)
+        monkeypatch.setattr(_mod, "_get_marginalia_key", lambda: "")
+        monkeypatch.setattr(_mod, "_fetch_marginalia", _empty_marginalia)
 
         results = run(_mod._fetch_web("python", 10))
-        assert ddg_called, "DDG deve ser chamado quando SearXNG retorna vazio"
+        assert ddg_called, "DDG deve ser chamado quando SearXNG e Marginalia retornam vazio"
         assert len(results) >= 1
 
     def test_uses_ddg_when_searxng_not_configured(self, monkeypatch):
@@ -234,8 +239,13 @@ class TestFetchWebBackend:
             ddg_called.append(q)
             return [_mod.SearchResult(title="D", url="https://d.com", snippet="", source="WEB")]
 
+        async def _empty_marginalia(q, key, max):
+            return []
+
         monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "")
         monkeypatch.setattr(_mod, "_fetch_ddg", _fake_fetch_ddg)
+        monkeypatch.setattr(_mod, "_get_marginalia_key", lambda: "")
+        monkeypatch.setattr(_mod, "_fetch_marginalia", _empty_marginalia)
 
         run(_mod._fetch_web("python", 10))
         assert ddg_called
@@ -277,8 +287,13 @@ class TestSearxngLogs:
         async def _fake_fetch_ddg(q, max):
             return []
 
+        async def _empty_marginalia(q, key, max):
+            return []
+
         monkeypatch.setattr(_mod, "_get_searxng_url", lambda: "")
         monkeypatch.setattr(_mod, "_fetch_ddg", _fake_fetch_ddg)
+        monkeypatch.setattr(_mod, "_get_marginalia_key", lambda: "")
+        monkeypatch.setattr(_mod, "_fetch_marginalia", _empty_marginalia)
 
         with caplog.at_level(logging.DEBUG, logger="akasha.web_search"):
             run(_mod._fetch_web("python", 10))

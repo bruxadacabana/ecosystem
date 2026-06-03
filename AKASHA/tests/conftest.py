@@ -18,6 +18,29 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+@pytest.fixture(autouse=True)
+def _disable_marginalia_by_default(request, monkeypatch):
+    """Desabilita a Marginalia (busca web complementar, externa) por padrão em todos
+    os testes — evita chamadas de rede reais e mantém o comportamento de `_fetch_web`
+    determinístico (SearXNG/DDG) nos testes que não são sobre a Marginalia.
+
+    Exceção: `test_marginalia.py`, que testa a Marginalia de verdade e re-patcha
+    o que precisar.
+    """
+    if request.module.__name__.rsplit(".", 1)[-1] == "test_marginalia":
+        return
+    try:
+        import services.web_search as _ws
+    except Exception:
+        return
+
+    async def _empty(query, api_key, max_results):  # noqa: ARG001
+        return []
+
+    monkeypatch.setattr(_ws, "_get_marginalia_key", lambda: "", raising=False)
+    monkeypatch.setattr(_ws, "_fetch_marginalia", _empty, raising=False)
+
+
 @pytest.fixture()
 def db_paths(tmp_path):
     """Banco AKASHA temporário com schema completo.

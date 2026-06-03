@@ -35,7 +35,7 @@ As duas camadas correm em paralelo. Lentidão ou falha na IA não afeta a ferram
 
 ### Busca
 
-O AKASHA funciona como um mecanismo de busca pessoal que combina duas fontes: o seu próprio acervo local (sites que você rastreou, páginas que você arquivou) e a web aberta via SearXNG (instância local do meta-buscador, sem rastreamento). As duas fontes são consultadas em paralelo e os resultados aparecem em seções separadas na mesma interface.
+O AKASHA funciona como um mecanismo de busca pessoal que combina duas fontes: o seu próprio acervo local (sites que você rastreou, páginas que você arquivou) e a web aberta via SearXNG (meta-buscador sem rastreamento) somada à Marginalia (índice independente de web indie/nicho). As fontes são consultadas em paralelo e os resultados aparecem em seções separadas na mesma interface.
 
 **Como a busca decide o que fazer com a sua query:**
 
@@ -50,6 +50,7 @@ Toda query passa por um classificador de intenção antes de ser executada:
 - **FTS5** (Full-Text Search 5 do SQLite): índice invertido sobre todo o conteúdo crawleado e arquivado. Suporta busca por campo (título tem peso 10×, corpo tem peso 1×) — encontrar a palavra no título de uma página vale muito mais que encontrá-la enterrada no meio do texto.
 - **Classificador de intenção**: toda query é classificada (`navigational`, `fact-seeking`, `exploratory`, `informational`, etc.) para determinar a **apresentação** dos resultados — nunca a quantidade. Resultados não são truncados por intenção.
 - **Busca web multi-página**: com SearXNG configurado, o AKASHA busca até N páginas em paralelo (padrão 4 × 25 = 100 resultados). Configurável em `ecosystem.json["akasha"]["web_pages"]` ou por `?web_pages=N` na URL. Sem SearXNG, usa DDG como fallback.
+- **Marginalia (web indie/nicho)**: em paralelo ao SearXNG, o AKASHA consulta a [Marginalia](https://marginalia-search.com) — um índice independente focado em "a web pequena, antiga e estranha" (blogs pessoais, zines, ativismo, documentação sem SEO). Traz domínios que Google/Bing não cobrem, somando volume e diversidade. Funciona **sem chave** (API pública, rate limit compartilhado). Para um rate limit próprio, peça uma chave gratuita por e-mail a `contact@marginalia-search.com` e cole em **Settings → Marginalia API key** (campo `akasha.marginalia_api_key`). As fontes web são fundidas via Reciprocal Rank Fusion (RRF), deduplicando por URL.
 - **Expansão de query**: antes de buscar, o AKASHA adiciona sinônimos e termos relacionados lexicalmente (sem LLM). Buscar "machine learning" também encontra "aprendizado de máquina".
 - **Prioridade local**: se há pelo menos N resultados locais com pontuação alta, a busca web é adiada — você não é forçada a esperar a web quando o seu acervo já cobre o tema.
 - **Diversificação por domínio**: padrão de 5 resultados por domínio na lista final (configurável em Settings → `max_per_domain`; 0 = sem limite; `?diversity=N` como override por busca). Evita que um único site domine os resultados.
@@ -436,6 +437,7 @@ Lida de `ecosystem.json` via `ecosystem_client` no startup:
     "personality_prompt": "...",
     "interest_seeds": ["tecnologia", "filosofia"],
     "web_search_backend": "http://localhost:8888",
+    "marginalia_api_key": "",
     "max_per_domain": 5,
     "web_pages": 4,
     "search_languages": [],
@@ -448,6 +450,7 @@ Lida de `ecosystem.json` via `ecosystem_client` no startup:
 | Campo | Padrão | Descrição |
 |-------|--------|-----------|
 | `web_search_backend` | `""` (DDG) | URL base do SearXNG self-hosted. Vazio = usa DuckDuckGo. |
+| `marginalia_api_key` | `""` (public) | Chave da API da Marginalia (web indie/nicho). Vazio = chave pública compartilhada (funciona). Chave própria (rate limit melhor) via `contact@marginalia-search.com`. Editável em Settings. |
 | `max_per_domain` | `5` | Máximo de resultados por domínio (0 = sem limite). Override: `?diversity=N`. |
 | `web_pages` | `4` | Páginas de resultados a buscar em paralelo (1–10). Override: `?web_pages=N`. |
 | `search_languages` | `[]` | Lista de idiomas de resultado. Vazio = todos os idiomas (recomendado). |

@@ -14,7 +14,7 @@ import logging
 import re
 import time
 from collections import OrderedDict
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 log = logging.getLogger("akasha.web_search")
 
@@ -443,6 +443,77 @@ async def _fetch_searxng(
 
 
 # ---------------------------------------------------------------------------
+# Marginalia — índice independente de web indie/nicho (API pública direta)
+# ---------------------------------------------------------------------------
+
+_MARGINALIA_TIMEOUT = 8.0
+
+
+def _get_marginalia_key() -> str:
+    """Lê akasha.marginalia_api_key do ecosystem.json. Vazio → usa a chave pública."""
+    try:
+        from ecosystem_client import get_akasha_config as _gc  # type: ignore
+        return ((_gc() or {}).get("marginalia_api_key", "") or "").strip()
+    except Exception:
+        return ""
+
+
+async def _fetch_marginalia(query: str, api_key: str, max_results: int) -> list[SearchResult]:
+    """Busca via API pública da Marginalia — `GET api.marginalia.nu/{key}/search/{query}`.
+
+    A Marginalia indexa "a web pequena, antiga e estranha" (blogs pessoais, zines,
+    ativismo, conteúdo não-comercial) — complementa Google/Bing com domínios de nicho.
+    `key` vazio → "public" (rate limit compartilhado; 503 quando saturado, tratado como
+    lista vazia). Chave própria (via contact@marginalia-search.com) dá rate limit separado.
+    Falha graciosamente: nunca propaga exceção que quebre a busca.
+    """
+    key = (api_key or "").strip() or "public"
+    count = max(5, min(max_results or 20, 100))
+    url = f"https://api.marginalia.nu/{key}/search/{quote(query, safe='')}"
+    try:
+        async with httpx.AsyncClient(timeout=_MARGINALIA_TIMEOUT) as client:
+            resp = await client.get(url, params={"count": count})
+        if resp.status_code == 503:
+            log.debug("web_search: Marginalia rate-limited (503) para %r", query)
+            return []
+        resp.raise_for_status()
+        raw = resp.json().get("results") or []
+    except Exception as exc:
+        log.debug("web_search: Marginalia erro (%s) para %r", exc, query)
+        return []
+    return [
+        SearchResult(
+            title=r.get("title", ""),
+            url=r.get("url", ""),
+            snippet=r.get("description", ""),
+            source="WEB",
+        )
+        for r in raw
+        if r.get("url")
+    ]
+
+
+def _merge_rrf(lists: list[list[SearchResult]], max_results: int, k: int = 60) -> list[SearchResult]:
+    """Funde várias listas ranqueadas via Reciprocal Rank Fusion, deduplicando por URL.
+
+    RRF score(url) = Σ_fontes 1/(k + rank). Resultados que aparecem em mais de uma
+    fonte (ou bem ranqueados) sobem; URLs únicas de cada fonte são preservadas — é o
+    que maximiza volume E qualidade ao combinar SearXNG + Marginalia.
+    """
+    scores: dict[str, float] = {}
+    first: dict[str, SearchResult] = {}
+    for results in lists:
+        for rank, r in enumerate(results):
+            url = r.url
+            if not url:
+                continue
+            scores[url] = scores.get(url, 0.0) + 1.0 / (k + rank + 1)
+            first.setdefault(url, r)
+    ordered = sorted(first.values(), key=lambda r: scores[r.url], reverse=True)
+    return ordered[:max_results] if max_results > 0 else ordered
+
+
+# ---------------------------------------------------------------------------
 # DuckDuckGo
 # ---------------------------------------------------------------------------
 
@@ -477,28 +548,40 @@ async def _fetch_web(
     n_pages: int = 1,
     lang: str = "",
 ) -> list[SearchResult]:
-    """Tenta SearXNG (com n_pages paralelas); se indisponível ou vazio, cai para DDG.
+    """SearXNG + Marginalia em paralelo (fundidos via RRF); DDG como fallback final.
 
-    Fallover automático em dois estágios:
-      1. SearXNG self-hosted (se akasha.web_search_backend configurado)
-         → fetcha n_pages em paralelo via asyncio.gather + Semaphore(2)
-      2. DuckDuckGo (sempre disponível como fallback)
-         → aumenta max_results para n_pages × _FETCH_PAGE_SIZE
+    Estratégia (objetivo: máximo de resultados):
+      1. SearXNG self-hosted (se configurado) — n_pages em paralelo — agrega Google,
+         Bing, Startpage, mwmbl, etc.
+      2. Marginalia (sempre) — API pública direta, índice independente de web indie/
+         nicho que os engines mainstream não cobrem. Resultados ÚNICOS somam volume.
+      → as duas fontes são fundidas via RRF (dedup por URL).
+      3. DuckDuckGo — fallback só se SearXNG E Marginalia não retornarem nada.
     """
     searxng_url = _get_searxng_url()
+    marg_key = _get_marginalia_key()
+
+    tasks: list[tuple[str, "asyncio.Future"]] = []
     if searxng_url:
-        log.debug("web_search: usando SearXNG em %s (lang=%r, n_pages=%d)", searxng_url, lang, n_pages)
-        try:
-            results = await _fetch_searxng(query, max_results, searxng_url, n_pages=n_pages, lang=lang)
-            if results:
-                log.debug("web_search: SearXNG retornou %d resultados para %r", len(results), query)
-                return results
-            log.debug("web_search: SearXNG retornou 0 resultados — fallback para DDG")
-        except Exception as exc:
-            log.debug("web_search: SearXNG erro (%s) — fallback para DDG", exc)
-    else:
-        log.debug("web_search: SearXNG não configurado — usando DDG para %r", query)
-    # DDG: não suporta filtro de idioma de forma confiável — usa query original
+        log.debug("web_search: SearXNG em %s (lang=%r, n_pages=%d)", searxng_url, lang, n_pages)
+        tasks.append(("searxng", _fetch_searxng(query, max_results, searxng_url, n_pages=n_pages, lang=lang)))
+    # Marginalia sempre roda em paralelo — complementa com web indie/nicho.
+    tasks.append(("marginalia", _fetch_marginalia(query, marg_key, max_results)))
+
+    lists: list[list[SearchResult]] = []
+    gathered = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
+    for (name, _), res in zip(tasks, gathered):
+        if isinstance(res, Exception):
+            log.debug("web_search: %s erro (%s) para %r", name, res, query)
+        elif res:
+            log.debug("web_search: %s retornou %d resultados para %r", name, len(res), query)
+            lists.append(res)
+
+    if lists:
+        return _merge_rrf(lists, max_results)
+
+    # Nada do SearXNG/Marginalia → fallback DDG (sem filtro de idioma confiável).
+    log.debug("web_search: SearXNG/Marginalia vazios — fallback para DDG (%r)", query)
     return await _fetch_ddg(query, max_results)
 
 

@@ -308,7 +308,7 @@ class TestDebugLogs:
         with caplog.at_level(logging.DEBUG, logger="akasha.web_search"):
             run(_ws._fetch_web("test", 10))
 
-        assert any("5" in r.message and "SearXNG" in r.message for r in caplog.records), (
+        assert any("5" in r.message and "searxng" in r.message.lower() for r in caplog.records), (
             "Esperava log com contagem de resultados do SearXNG"
         )
 

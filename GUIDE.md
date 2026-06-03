@@ -1797,6 +1797,8 @@ O script `setup_searxng.sh`:
 
 **Nota de estabilidade:** Google e Startpage podem ser suspensos por até 3600s após queries muito rápidas (CAPTCHA). Bing e Qwant têm detecção de bots mais tolerante. Em uso normal (buscas espaçadas), todos os engines funcionam.
 
+**Marginalia (integração direta, fora do SearXNG):** além do SearXNG, `services/web_search.py` consulta a **API pública da Marginalia** (`api.marginalia.nu/{key}/search/{query}`) em paralelo via `_fetch_marginalia()` — índice independente de web indie/nicho que Google/Bing não cobrem. `key` = `akasha.marginalia_api_key` (vazio → `"public"`, funciona; chave própria via `contact@marginalia-search.com` dá rate limit melhor; editável em Settings). SearXNG + Marginalia são fundidos via `_merge_rrf()` (Reciprocal Rank Fusion, dedup por URL); DDG é fallback só se ambos vazios. Ganho medido: "craftivism" 30→67 resultados, 53 domínios distintos. Stract **não existe** como engine do SearXNG (integração direta pendente, SearXNG 7).
+
 **ecosystem.json:** `akasha.web_search_backend = "http://192.168.0.252:8080"` (servidor T410). Editável pelo painel Busca do HUB ou direto no arquivo. O `settings.yml` do servidor fica em `/home/spacewitch/searxng/core-config/settings.yml`; reiniciar com `sudo docker restart searxng-core`. (A instância local antiga do PC principal — AUR, `localhost:8888` — foi desinstalada; o `settings.yml` curado original permanece em `~/.config/searxng/settings.yml` como referência.)
 
 ---

@@ -215,7 +215,7 @@ async def test_fetch_web_falls_to_ddg_when_searxng_raises(monkeypatch):
 
     monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "http://searxng.local")
 
-    async def _mock_searxng(q, n, url):
+    async def _mock_searxng(q, n, url, n_pages=1, lang=""):
         raise ConnectionError("offline")
 
     monkeypatch.setattr(_ws, "_fetch_searxng", _mock_searxng)
@@ -238,7 +238,7 @@ async def test_fetch_web_falls_to_ddg_when_searxng_empty(monkeypatch):
 
     monkeypatch.setattr(_ws, "_get_searxng_url", lambda: "http://searxng.local")
 
-    async def _mock_searxng(q, n, url):
+    async def _mock_searxng(q, n, url, n_pages=1, lang=""):
         return []
 
     monkeypatch.setattr(_ws, "_fetch_searxng", _mock_searxng)
@@ -263,7 +263,7 @@ async def test_fetch_web_no_searxng_goes_directly_to_ddg(monkeypatch):
 
     searxng_called: list[str] = []
 
-    async def _mock_searxng(q, n, url):
+    async def _mock_searxng(q, n, url, n_pages=1, lang=""):
         searxng_called.append(q)
         return []
 

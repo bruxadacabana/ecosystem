@@ -105,6 +105,14 @@
       </div>
 
       <div class="settings-field">
+        <label class="settings-label" for="s-marginalia">Marginalia API key (opcional)</label>
+        <input type="text" id="s-marginalia" name="marginalia_api_key"
+               value="{{ cfg.marginalia_api_key }}" class="input"
+               placeholder="public" autocomplete="off">
+        <span class="lenses-hint">Busca complementar de web indie/nicho. Vazio = chave pública (funciona, rate limit compartilhado). Chave própria (rate limit melhor) por e-mail a contact@marginalia-search.com</span>
+      </div>
+
+      <div class="settings-field">
         <label class="settings-label" for="s-invidious">URL da instância Invidious</label>
         <input type="url" id="s-invidious" name="invidious_instance"
                value="{{ cfg.invidious_instance }}" class="input"
