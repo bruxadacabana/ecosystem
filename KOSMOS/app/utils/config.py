@@ -23,6 +23,7 @@ _PERSISTENT_FIELDS = (
     "purge_unread_days",
     "auto_scrape",
     "default_translation_lang",
+    "translation_backend",
     "display_language",
     "manual_topics",
 )
@@ -38,6 +39,8 @@ class KosmosConfig:
     purge_unread_days: int = 30
     auto_scrape: bool = True
     default_translation_lang: str = "pt"
+    # Backend de tradução: "argos" (offline, padrão) ou "logos" (online, quando disponível).
+    translation_backend: str = "argos"
     display_language: str = "pt"
     # Tags de interesse definidas manualmente pela usuária — reforçam o
     # shared_topic_profile (via interests.apply_manual_topics). Editáveis em Settings.

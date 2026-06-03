@@ -6790,10 +6790,10 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 - [x] **Testes: archiver.py** — frontmatter correto, seção de análise, ABNT, dual-language; interests.py — atualiza perfil compartilhado.
 
 #### Fase 6 — Tradução
-- [ ] **translator.py** — argostranslate (offline) como padrão; LOGOS como opção quando disponível e configurado. Idioma alvo definido em Settings.
+- [x] **translator.py** — argostranslate (offline) como padrão; LOGOS como opção quando disponível e configurado. Idioma alvo definido em Settings. *(módulo + config `translation_backend` prontos; par de idiomas argos é instalado sob demanda na 1ª tradução. Falta a UI de Settings p/ editar `translation_backend`/`default_translation_lang` — pendente junto da tela de Settings.)*
 - [ ] **TranslationWorker (QThread P3)** — traduz títulos/resumos de cards automaticamente em background (newest-first, em paralelo com análise).
 - [ ] **Tradução de artigo sob demanda (P2)** — botão "Traduzir" no reader_pane. Original sempre disponível com alternância. Dual-language no archive se traduzido.
-- [ ] **Testes: translator.py** — tradução de título, fallback entre backends.
+- [x] **Testes: translator.py** — tradução de título, fallback entre backends. *(16 testes em test_translator.py: argos/logos, detecção de origem, fallback entre backends, no-op mesmo idioma, config; cobertos junto da implementação do translator.py.)*
 
 #### Fase 7 — Ferramentas de investigação (aba Análise)
 - [ ] **analysis_tab.py** — aba dedicada com sub-navegação para todas as ferramentas de análise/investigação: rastreador de entidades, pastas de investigação, mapa de cobertura, comparação de enquadramento, dashboard de stats.
