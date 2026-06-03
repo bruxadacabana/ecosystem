@@ -191,9 +191,11 @@ O diretório `sync_root` é sincronizado entre as máquinas via Syncthing. Os da
     //   Deixar vazio ("") para desabilitar o embed-server — apenas o chat sobe.
     //   Exemplos: "bge-m3-q4_k_m.gguf", "bge-m3", "nomic-embed-text-v1.5-q4_k_m.gguf"
 
-    "embed_n_gpu_layers": -1
+    "embed_n_gpu_layers": 0
     // ^ Camadas GPU para o embed-server. -1 = offload total (GPU); 0 = CPU only.
-    //   No WorkPc (sem GPU), use 0. Na MainPc (RX 6600), -1 para GPU full.
+    //   Padrão: 0 (CPU). O embed-server (bge-m3, ~0,6 GB) é leve e roda em CPU sem
+    //   disputar VRAM com os LLMs de chat — evita o churn do BUG-028 (watchdog de VRAM
+    //   matando o embed-server P3). Use -1 só se quiser forçá-lo na GPU numa máquina específica.
   },
 
   "aether": {
@@ -488,7 +490,7 @@ Configurar o modelo de embedding em `ecosystem.json` no campo `logos.embed_model
 | Campo | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
 | `embed_model` | string | `"bge-m3"` | Alias do modelo de embedding |
-| `embed_n_gpu_layers` | int | `-1` | Camadas GPU para embed; -1 = total |
+| `embed_n_gpu_layers` | int | `0` | Camadas GPU para embed; **0 = CPU (padrão, BUG-028)**; -1 = offload total na GPU |
 | `vram_limit_pct` | float | `85.0` | % de VRAM acima da qual P3 é bloqueado |
 | `cpu_p3_limit_pct` | float | `85.0` | % de CPU acima da qual P3 é bloqueado |
 | `idle_timeout_minutes` | float | `5.0` | Minutos de ociosidade antes do modelo ser descarregado automaticamente |

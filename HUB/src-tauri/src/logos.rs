@@ -63,6 +63,13 @@ pub(crate) const EMBED_SERVER_PORT: u16     = 8082;
 pub(crate) const MNEMOSYNE_SERVER_PORT: u16 = 8083;
 /// Timeout (s) para o llama-server responder ao primeiro /health após o spawn.
 const LLAMA_SERVER_READY_TIMEOUT_SECS: u64 = 90;
+/// Default de `embed_n_gpu_layers`: **0 = embeddings em CPU** (BUG-028).
+/// O embed-server (bge-m3, ~0,6 GB) é leve e roda em CPU sem disputar a VRAM com os
+/// LLMs de chat de AKASHA+Mnemosyne (uso padrão do PC principal). Mantê-lo fora da VRAM
+/// elimina o churn em que o watchdog de VRAM matava o embed-server (P3) ao passar do
+/// limite. Pode ser sobrescrito por máquina via `ecosystem.json[logos][embed_n_gpu_layers]`
+/// (ex.: -1 para offload total na GPU). Embeddings são P3/background — latência de CPU é aceitável.
+const DEFAULT_EMBED_N_GPU_LAYERS: i32 = 0;
 
 // ── Roteamento de servidor ────────────────────────────────────
 
@@ -476,8 +483,9 @@ struct Inner {
     /// Alias canônico do modelo de embedding (ex: "bge-m3").
     /// Lido de ecosystem.json["logos"]["embed_model"] no startup.
     embed_model: Mutex<String>,
-    /// Camadas GPU para o servidor de embedding. -1 = offload total; 0 = CPU.
-    /// Lido de ecosystem.json["logos"]["embed_n_gpu_layers"]. Padrão: -1.
+    /// Camadas GPU para o servidor de embedding. -1 = offload total (GPU); 0 = CPU.
+    /// Lido de ecosystem.json["logos"]["embed_n_gpu_layers"]. Padrão: **0 (CPU)** —
+    /// ver `DEFAULT_EMBED_N_GPU_LAYERS` e BUG-028 (embed leve fora da VRAM).
     embed_n_gpu_layers: Mutex<i32>,
     /// Processo llama-server do servidor de embedding (porta EMBED_SERVER_PORT).
     /// Independente do llama_proc (porta AKASHA_SERVER_PORT) — falhas são isoladas.
@@ -749,7 +757,7 @@ impl LogosState {
             eco["logos"]["embed_n_gpu_layers"]
                 .as_i64()
                 .map(|v| v as i32)
-                .unwrap_or(-1)
+                .unwrap_or(DEFAULT_EMBED_N_GPU_LAYERS)
         };
         let cpu_p3_limit_pct = {
             let eco = crate::ecosystem::read_json();
@@ -943,7 +951,7 @@ impl LogosState {
             mnemosyne_disabled:    Arc::new(AtomicBool::new(false)),
             app_handle:         Mutex::new(None),
             embed_model:        Mutex::new("bge-m3".to_string()),
-            embed_n_gpu_layers: Mutex::new(-1),
+            embed_n_gpu_layers: Mutex::new(DEFAULT_EMBED_N_GPU_LAYERS),
             embed_proc:         Mutex::new(None),
             embed_start_lock:   Mutex::new(()),
             // Em testes: portas livres para isolamento — sem servidor nestas portas
@@ -5930,7 +5938,7 @@ mod tests {
             mnemosyne_disabled:     Arc::new(AtomicBool::new(false)),
             app_handle:          Mutex::new(None),
             embed_model:         Mutex::new("bge-m3".to_string()),
-            embed_n_gpu_layers:  Mutex::new(-1),
+            embed_n_gpu_layers:  Mutex::new(DEFAULT_EMBED_N_GPU_LAYERS),
             embed_proc:          Mutex::new(None),
             embed_start_lock:    Mutex::new(()),
             // Portas livres para isolamento de testes — sem servidor nestas portas
@@ -5989,11 +5997,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn embed_n_gpu_layers_defaults_to_minus1() {
+    async fn embed_n_gpu_layers_defaults_to_cpu() {
+        // BUG-028: o default passou a ser 0 (CPU) para tirar o embed-server da disputa de VRAM.
         let dir = tempfile::tempdir().expect("tmpdir");
         let state = make_test_state(dir.path().to_path_buf());
         let n = *state.0.embed_n_gpu_layers.lock().await;
-        assert_eq!(n, -1, "embed_n_gpu_layers padrão deve ser -1 (offload total)");
+        assert_eq!(n, DEFAULT_EMBED_N_GPU_LAYERS, "embed_n_gpu_layers padrão deve ser 0 (CPU)");
+        assert_eq!(n, 0, "0 = --n-gpu-layers 0 = embeddings em CPU");
     }
 
     #[tokio::test]
@@ -7037,6 +7047,18 @@ mod tests {
             .expect("--n-gpu-layers deve estar presente quando n_gpu=0");
         assert_eq!(args[idx + 1], "0",
             "n_gpu=0 deve passar '--n-gpu-layers 0' (CPU-only)");
+    }
+
+    #[test]
+    fn default_embed_n_gpu_layers_is_cpu() {
+        // BUG-028: o default do embed-server é CPU (0) para não disputar VRAM.
+        assert_eq!(DEFAULT_EMBED_N_GPU_LAYERS, 0,
+            "default deve ser 0 (CPU)");
+        let args = embed_cmd_args(DEFAULT_EMBED_N_GPU_LAYERS, 8082);
+        let idx = args.iter().position(|a| a == "--n-gpu-layers")
+            .expect("--n-gpu-layers deve estar presente");
+        assert_eq!(args[idx + 1], "0",
+            "o default deve produzir '--n-gpu-layers 0' (embeddings em CPU)");
     }
 
     #[test]

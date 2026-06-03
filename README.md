@@ -94,6 +94,7 @@ O HUB está sempre aberto — é o centro do ecossistema. Nenhum outro app é in
 - Captura stderr do chat-server em `log::warn!` + arquivo `logos_chat.log` com timestamp ISO
 - Captura stderr do embed-server em `log::info!` + arquivo `logos_embed.log` com timestamp ISO
 - Embeddings serializados por semáforo dedicado (capacidade 1): o embed-server não aceita requisições concorrentes, então AKASHA e Mnemosyne nunca colidem; clientes re-tentam 500/503 com backoff (BUG-020)
+- Embed-server roda em **CPU por padrão** (`embed_n_gpu_layers = 0`): o bge-m3 (~0,6 GB) é leve e fica fora da VRAM, que é reservada aos LLMs de chat — evita o churn de restart do BUG-028 (configurável por máquina)
 - Endpoints de diagnóstico: `GET /logos/logs/chat` e `GET /logos/logs/embed` (últimas 500 linhas, text/plain)
 - OOM fallback: se modelo não carrega na GPU (timeout + exit prematuro), retenta com CPU only (`--n-gpu-layers 0`)
 - Eventos críticos para frontend: `logos-alert` (nivel error/warn), `logos-llama-crashed`, `logos-llama-unavailable`
