@@ -1,7 +1,7 @@
 ## Fila de implementação atual:
 
 pode prosseguir para a implementação da seção '### KOSMOS v3 — Redesign como ferramenta para jornalistas/estudantes/ativistas | 2026-06-01', mas lembre-se sempre: um item por vez (um item = 1 - [ ]). Implemente, teste, marque no TODO, commite tudo, resuma o que foi feito e o porquê no chat, peça permissão para prosseguir. Seu resumo sempre deve ser detalhado mas acessível, explicando mais a lógica do que códigos e tecnicidades.
-Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes (unitários e de integração) exaustivamente (tanto na implementação em si quanto nas funcionalidades ao redor e como funcionam em conjunto) e incluir criação de logs em todo o processo envolvendo a nova feature implementada.
+Não se esqueça das regras para documentar no README e GUIDE. Não se esqueça de executar testes (unitários e de integração) exaustivamente (tanto na implementação em si quanto nas funcionalidades ao redor e como funcionamah em conjunto) e incluir criação de logs em todo o processo envolvendo a nova feature implementada.
 
 ---
 
@@ -10,6 +10,9 @@ SearXNG tem suporte oficial apenas para Linux (incluindo Docker). No Windows, as
 Docker Desktop — a forma mais simples: docker run -d -p 8888:8080 searxng/searxng
 WSL2 — instalar via pip dentro do WSL2 como se fosse Linux
 Não usar no Windows — a AKASHA pode usar o SearXNG do PC principal via IP local (se estiver na mesma rede)
+
+
+key = 11c345dcaebdada6070a5545e7245f5ac91fa265d24324b8b57a5d6ae11c8609
 
 ---
 
