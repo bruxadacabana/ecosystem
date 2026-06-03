@@ -1780,6 +1780,7 @@ O script `setup_searxng.sh`:
 | Startpage | ✅ Ativo | ~10 | Mais confiável; proxy do Google sem tracking |
 | Bing | ✅ Ativo | ~10 | Confiável; Microsoft index |
 | Google | ✅ Ativo | ~8–10 | Às vezes timeout/CAPTCHA sob uso intenso |
+| **mwmbl** | ✅ Ativo (2026-06-02) | ~15–25 | **Índice independente** (~500M URLs); não bloqueia o IP do servidor; resultados ÚNICOS que ~dobram a contagem (craftivism 16→30, urban foraging 27→48) |
 | arXiv | ✅ Ativo | variável | Artigos científicos (categoria: science) |
 | Semantic Scholar | ✅ Ativo | variável | Artigos acadêmicos (categoria: science) |
 | Mojeek | ⚠️ Habilitado, bloqueado | 0 | "access denied" do IP do servidor (funcionava no PC principal); suspenso automaticamente, não contribui |
