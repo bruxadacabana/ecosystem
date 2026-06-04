@@ -26,4 +26,5 @@ numpy>=1.26
 networkx>=3.0
 lingua-language-detector>=2.0
 lightrag-hku>=1.0
+openai>=1.0          # binding OpenAI do LightRAG aponta ao LOGOS (/v1) — Ollama descartado
 python-pptx>=1.0

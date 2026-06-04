@@ -1,8 +1,11 @@
 """LightRAG — grafo de conhecimento paralelo ao ChromaDB do Mnemosyne.
 
 Wrapper com inicialização lazy e fallback silencioso.
-Se lightrag-hku não estiver instalado ou Ollama estiver fora do ar,
+Se lightrag-hku não estiver instalado ou o LOGOS estiver fora do ar,
 todas as funções retornam sem erro e sem bloquear.
+
+Inferência (LLM + embeddings) passa SEMPRE pelo LOGOS, que é OpenAI-compatível
+em {base}/v1 — Ollama foi descartado no ecossistema.
 """
 from __future__ import annotations
 
@@ -41,35 +44,68 @@ async def init_lightrag(config: AppConfig) -> bool:
     try:
         from lightrag import LightRAG  # type: ignore[import]
         from lightrag.utils import EmbeddingFunc  # type: ignore[import]
-        from lightrag.llm.ollama import ollama_model_complete, ollama_embed  # type: ignore[import]
+        from lightrag.llm.openai import (  # type: ignore[import]
+            openai_complete_if_cache,
+            openai_embed,
+        )
     except ImportError:
         log.info("lightrag: lightrag-hku não instalado — funcionalidade desativada")
         return False
 
     try:
-        from .ollama_client import _BASE_URL as _ollama_url
+        from ecosystem_client import get_inference_url  # type: ignore[import]
+
+        # Toda inferência passa pelo LOGOS (OpenAI-compatível em {base}/v1).
+        openai_base = f"{get_inference_url().rstrip('/')}/v1"
 
         working_dir = str(_get_working_dir(config))
         Path(working_dir).mkdir(parents=True, exist_ok=True)
 
         embed_model = config.embed_model or "bge-m3"
         embed_dim = 1024 if "bge-m3" in embed_model else 128
+        llm_model_name = config.llm_model or "qwen2.5:7b"
+
+        async def _llm(
+            prompt: str,
+            system_prompt: str | None = None,
+            history_messages: list | None = None,
+            keyword_extraction: bool = False,
+            **kwargs,
+        ) -> str:
+            return await openai_complete_if_cache(
+                llm_model_name,
+                prompt,
+                system_prompt=system_prompt,
+                history_messages=history_messages or [],
+                base_url=openai_base,
+                api_key="not-needed",
+                keyword_extraction=keyword_extraction,
+                **kwargs,
+            )
 
         async def _embed(texts: list[str]) -> list[list[float]]:
-            return await ollama_embed(texts, embed_model=embed_model, host=_ollama_url)
+            return await openai_embed(
+                texts,
+                model=embed_model,
+                base_url=openai_base,
+                api_key="not-needed",
+            )
 
         _rag_instance = LightRAG(
             working_dir=working_dir,
-            llm_model_func=ollama_model_complete,
-            llm_model_name=config.llm_model or "qwen2.5:7b",
-            llm_model_kwargs={"host": _ollama_url, "timeout": 120},
+            llm_model_func=_llm,
+            llm_model_name=llm_model_name,
             embedding_func=EmbeddingFunc(
                 embedding_dim=embed_dim,
                 max_token_size=8192,
                 func=_embed,
             ),
         )
-        log.info("lightrag: inicializado em %s", working_dir)
+        # LightRAG 1.x exige init explícito dos storages (e do pipeline status);
+        # sem isto, ainsert/aquery falham mesmo com a instância construída.
+        await _rag_instance.initialize_storages()  # type: ignore[union-attr]
+        log.info("lightrag: inicializado em %s (LOGOS %s, llm=%s, embed=%s)",
+                 working_dir, openai_base, llm_model_name, embed_model)
         return True
     except Exception as exc:
         log.warning("lightrag: falha na inicialização — %s", exc)

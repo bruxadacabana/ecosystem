@@ -92,6 +92,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-029](#bug-029) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | embed-server com ubatch default 512 → inputs > 512 tokens dão HTTP 500 "input too large" (intermitente, chunks longos) |
 | [BUG-030](#bug-030) | FIXED | 2026-06-03 | Mnemosyne | Pipeline sem observabilidade: indexação/memória pessoal/temas salvam (ou falham) em silêncio — impossível auditar se o Mnemosyne funciona |
 | [BUG-031](#bug-031) | OPEN | 2026-06-03 | Mnemosyne | IA fora do controle do LOGOS (model2vec/POTION + cardiffnlp sentiment) carregada via `from_pretrained` sem offline-first → pode travar indexação em HF lento, sem log |
+| [BUG-032](#bug-032) | FIXED | 2026-06-04 | Mnemosyne | LightRAG amarrado ao Ollama (descartado) e sem `initialize_storages()` → feature quebrada em duas frentes; migrado para o LOGOS (OpenAI /v1) + init de storages |
 
 ---
 
@@ -1861,3 +1862,41 @@ Dois modelos rodam em processo, sem o LOGOS gerenciar: (1) **model2vec / POTION*
 
 #### Teste de regressão
 (pendente) Verificar que o carregamento dos modelos emite log; que `local_files_only=True` é tentado primeiro quando há cache; que um timeout/erro de rede é logado e não trava indefinidamente.
+
+---
+
+### BUG-032 · [FIXED] · LightRAG do Mnemosyne amarrado ao Ollama (descartado) e sem init de storages
+
+#### Identificação
+- **Data:** 2026-06-04
+- **App(s):** Mnemosyne
+- **Componente:** `core/lightrag_graph.py` — `init_lightrag()`
+- **Commit do fix:** (este commit)
+- **Descoberta via:** pergunta da usuária ("lightRAG está instalado?") → auditoria do wrapper.
+
+#### Ambiente
+- **Máquina(s):** todas (PC principal, laptop)
+- **Modo:** produção, apenas quando `config.lightrag_enabled` está ligado.
+
+#### Pré-condição para reproduzir
+Habilitar `lightrag_enabled` e indexar/consultar — o LightRAG tenta inicializar.
+
+#### Sintoma observado
+A feature LightRAG (grafo de conhecimento para perguntas relacionais) não funciona: o wrapper aponta para um backend que não existe mais.
+
+#### Logs
+```
+lightrag: falha na inicialização — <erro de conexão Ollama / atributo>
+```
+
+#### Causa raiz
+Dois defeitos somados: (1) `init_lightrag` importava `lightrag.llm.ollama` (`ollama_model_complete`, `ollama_embed`) e a URL de `core/ollama_client._BASE_URL` — mas o Ollama foi **descartado** no ecossistema em favor do LOGOS/llama-cpp (diretiva project_logos_llama_cpp); o backend Ollama simplesmente não existe. (2) Construía a instância `LightRAG` mas **nunca** chamava `await initialize_storages()`, exigido pelo LightRAG 1.x (o `__post_init__` só marca os storages como CREATED, não INITIALIZED) → `ainsert`/`aquery` falhariam mesmo com Ollama presente.
+
+#### Impacto
+LightRAG inutilizável quando habilitado. Como a inicialização é lazy e tem fallback silencioso (`log.warning` + retorno vazio), a degradação passava despercebida — perguntas relacionais não recebiam o contexto de grafo prometido.
+
+#### Fix aplicado
+`init_lightrag` migrado para o binding OpenAI do próprio LightRAG (`lightrag.llm.openai`: `openai_complete_if_cache`, `openai_embed`), apontando para o LOGOS via `ecosystem_client.get_inference_url()` em `{base}/v1` (OpenAI-compatível, mesma convenção que o indexer já usa para `/v1/embeddings`). Wrappers `_llm`/`_embed` passam `base_url=LOGOS/v1` e `api_key="not-needed"`; modelos resolvidos de `config.llm_model` (RAG) e `config.embed_model` (bge-m3, 1024 dims). Adicionado `await _rag_instance.initialize_storages()` após a construção. `openai>=1.0` declarado no `requirements.txt` (era transitivo).
+
+#### Teste de regressão
+`tests/test_lightrag_logos.py` (4 testes): stuba `LightRAG` + funções OpenAI + `get_inference_url` e verifica que (a) a construção usa nosso wrapper e chama `initialize_storages`; (b) LLM e embedding roteiam para `LOGOS/v1` com os modelos certos; (c) o source não tem mais nenhuma referência a Ollama; (d) usa `get_inference_url` + binding OpenAI. 4/4 passam.
