@@ -103,5 +103,5 @@ class ParentStore:
         """Fecha a conexão com o banco."""
         try:
             self._conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("parent_store.close: falha ao fechar conexão: %s", exc)

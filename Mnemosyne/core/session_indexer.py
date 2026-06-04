@@ -5,6 +5,8 @@ Estimativa de RAM: ~50-100 MB por sessão com 10 páginas web típicas.
 """
 from __future__ import annotations
 
+import logging
+
 import chromadb
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
@@ -13,6 +15,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from .akasha_client import FetchResult
 from .errors import IndexBuildError
+
+log = logging.getLogger("mnemosyne.session_indexer")
 
 _MAX_PAGES_DEFAULT = 10
 _COLLECTION_NAME = "deep_research_session"
@@ -117,7 +121,9 @@ class SessionIndexer:
         """Descarta a coleção em memória e reseta o estado."""
         try:
             self._chroma_client.delete_collection(_COLLECTION_NAME)
-        except Exception:
-            pass  # EphemeralClient: sem colecção para apagar se nunca foi criada
+        except Exception as exc:
+            # EphemeralClient: sem coleção para apagar se nunca foi criada
+            log.debug("session_indexer.clear: coleção '%s' inexistente/erro ao apagar: %s",
+                      _COLLECTION_NAME, exc)
         self._vs = None
         self._page_count = 0

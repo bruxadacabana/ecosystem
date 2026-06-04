@@ -149,8 +149,8 @@ class IndexWorker(QThread):
         if bak_dir and os.path.exists(bak_dir):
             try:
                 shutil.rmtree(bak_dir)
-            except OSError:
-                pass  # .bak de sessão anterior — ignorar falha de remoção
+            except OSError as exc:
+                log.debug("IndexWorker: falha ao remover .bak de sessão anterior: %s", exc)
 
         if mnemosyne_dir and os.path.exists(mnemosyne_dir):
             try:
@@ -165,8 +165,8 @@ class IndexWorker(QThread):
             if bak_dir and os.path.exists(bak_dir):
                 try:
                     os.rename(bak_dir, mnemosyne_dir)
-                except OSError:
-                    pass
+                except OSError as exc2:
+                    log.warning("IndexWorker: falha ao restaurar índice do backup .bak: %s", exc2)
             log.error("IndexWorker: falha ao criar diretório de índice: %s", exc)
             self.finished.emit(False, f"Erro ao criar diretório: {exc}")
             return
@@ -177,8 +177,8 @@ class IndexWorker(QThread):
         try:
             from core.logger import setup_logger
             setup_logger()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("worker: falha ao inicializar logger na thread: %s", exc)
 
         _BATCH, _SLEEP = _detect_batch_config()
         embeddings = _get_embeddings(self.config)
@@ -800,8 +800,8 @@ class AskWorker(QThread):
             from core.topic_profile import bulk_update_from_text
             record_query_appraisal(self.question)
             bulk_update_from_text(self.question, 0.5, source="query")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("AskWorker: falha no appraisal/atualização de interesse da query: %s", exc)
 
         try:
             validate_model(self.config.llm_model)
@@ -881,8 +881,8 @@ class AskWorker(QThread):
                     coping_potential=_coping,
                     event_ref=f"n_sources={_n_src}",
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("AskWorker: falha ao registrar appraisal das fontes: %s", exc)
             self.finished.emit(True, answer, sources, updated)
         except Exception as exc:
             log.exception("AskWorker: erro durante streaming")
@@ -988,8 +988,8 @@ class DeepResearchWorker(QThread):
             local_docs = self.vectorstore.similarity_search(
                 self.question, k=self.config.retriever_k
             )
-        except Exception:
-            pass  # vectorstore pode estar vazio
+        except Exception as exc:
+            log.debug("AskWorker: busca no vectorstore falhou (pode estar vazio): %s", exc)
 
         if self.isInterruptionRequested():
             if session:
@@ -1270,8 +1270,8 @@ class StudioWorker(QThread):
                     "Use linguagem cuidadosa, com qualificações explícitas "
                     "onde houver incerteza."
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("AskWorker: falha ao aplicar framing de hedging: %s", exc)
 
         dispatch = _STUDIO_DISPATCH.get(self.doc_type)
         if dispatch is None:
@@ -1524,8 +1524,8 @@ class PersonalReflectionWorker(QThread):
         try:
             memory_id = save_memory(type="reflection", content=raw, tags=["pos_notebook"])
             self.reflection_ready.emit(memory_id, raw)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("PersonalReflectionWorker: falha ao salvar reflexão pós-notebook: %s", exc)
 
 
 class PeriodicReflectionWorker(QThread):
@@ -1572,8 +1572,8 @@ class PeriodicReflectionWorker(QThread):
                     label = "Usuária" if t.role == "user" else "Mnemosyne"
                     nb_text += f"{label}: {t.content[:200]}\n"
                 all_turns_text.append(nb_text)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("PeriodicReflectionWorker: falha ao montar texto dos notebooks: %s", exc)
 
         if not all_turns_text:
             self.finished.emit()
@@ -1614,8 +1614,8 @@ class PeriodicReflectionWorker(QThread):
 
         try:
             save_memory(type="reflection", content=raw, tags=["periodico"])
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("PeriodicReflectionWorker: falha ao salvar reflexão periódica: %s", exc)
 
         self.finished.emit()
 
@@ -1674,8 +1674,8 @@ class IndexReflectionWorker(QThread):
             existing = get_context_memories(20)
             for mem in existing:
                 known_terms.update(mem.get("content", "").lower().split())
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("worker: falha ao carregar memórias de contexto: %s", exc)
 
         try:
             embeddings = _get_embeddings(self._config)
@@ -1712,8 +1712,8 @@ class IndexReflectionWorker(QThread):
                 if has_file_reflection(tag_name):
                     log.debug("IndexReflectionWorker: '%s' já tem reflexão — pulando", name)
                     return
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("IndexReflectionWorker: falha ao checar reflexão existente: %s", exc)
         log.debug("IndexReflectionWorker [%s]: processando '%s'", self._priority, name)
 
         try:
@@ -1751,8 +1751,8 @@ class IndexReflectionWorker(QThread):
                 terms = vec.get_feature_names_out()
                 top_idx = np.argsort(scores)[::-1][:8]
                 keywords = [terms[i] for i in top_idx if scores[i] > 0]
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("worker: falha na extração de keywords (TF-IDF): %s", exc)
 
         keywords = [k.strip().lower() for k in keywords if k.strip()]
 
@@ -1800,8 +1800,8 @@ class IndexReflectionWorker(QThread):
                 raw_imp = parsed.get("importance")
                 if raw_imp is not None:
                     importance = max(1, min(10, int(raw_imp)))
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("worker: falha ao parsear importance do insight: %s", exc)
         if not reflection:
             reflection = raw  # usa resposta bruta se JSON falhou
 
@@ -1889,8 +1889,8 @@ class FeedbackReflectionWorker(QThread):
             try:
                 from core.topic_profile import bulk_update_from_text
                 bulk_update_from_text(content, 1.0, source="feedback")
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("FeedbackReflectionWorker: falha ao atualizar interesse via feedback: %s", exc)
 
         personality = (
             getattr(self._config, "persona_prompt", "")

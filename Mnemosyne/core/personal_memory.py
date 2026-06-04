@@ -134,8 +134,8 @@ def _compute_valence_arousal(text: str) -> tuple[float | None, float | None]:
         if _va_backend == "vader" and _sia is not None:
             compound = _sia.polarity_scores(text)["compound"]  # type: ignore[union-attr]
             return round(compound, 4), round(abs(compound), 4)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("personal_memory: falha no cálculo de valence/arousal: %s", exc)
     return None, None
 
 # ── B1: Entropia de Shannon + B2: Decaimento Ebbinghaus ──────────────────────
@@ -430,11 +430,11 @@ def _resolve_pm_db() -> Path:
                 shutil.copy2(str(old_path), str(new_path))
                 try:
                     old_path.rename(old_path.with_suffix(".db.bak"))
-                except OSError:
-                    pass
+                except OSError as exc:
+                    log.debug("personal_memory: falha ao renomear DB antigo para .bak: %s", exc)
             return new_path
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("personal_memory: falha ao resolver ai_private_dir — usando fallback local: %s", exc)
     return get_app_data_dir() / "personal_memory.db"
 
 
@@ -654,8 +654,8 @@ def set_feedback(memory_id: int, feedback: str | None) -> None:
         try:
             from core.affective_state import record_approval_momentum
             threading.Thread(target=record_approval_momentum, daemon=True).start()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("personal_memory: falha ao iniciar record_approval_momentum: %s", exc)
 
         # H + I-ext + I: curiosidade epistêmica + atribuição causal + appraisal OCC
         def _curiosity_from_feedback(mid: int, fb: str) -> None:
@@ -683,8 +683,8 @@ def set_feedback(memory_id: int, feedback: str | None) -> None:
                             attribution = "internal"
                         elif max_score < 1.0:
                             attribution = "external"
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("personal_memory: falha ao computar atribuição interna/externa: %s", exc)
 
                 # H + I-ext: intensidade de curiosidade escalada pela atribuição
                 if fb == "dismissed" and valence > 0.2:
@@ -759,8 +759,8 @@ def get_context_memories(n: int = 8) -> list[dict]:
         state    = get_current_state()
         mood_vec = _va_to_plutchik(state.get("mood_valence", 0.0),
                                    state.get("mood_arousal", 0.5))
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("personal_memory: falha ao obter mood_vec do affective_state: %s", exc)
 
     def _ctx_score(row: tuple) -> float:
         confirmed  = 1.0 if row[5] == "confirmed" else 0.0
@@ -777,8 +777,8 @@ def get_context_memories(n: int = 8) -> list[dict]:
             for lid in json.loads(r[11] or "[]"):
                 if int(lid) not in top_ids:
                     extra_ids.add(int(lid))
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("personal_memory: falha ao parsear zettel_links: %s", exc)
 
     extra_rows: list[tuple] = []
     if extra_ids:
@@ -912,8 +912,8 @@ def mark_shown_as_popup(memory_id: int) -> None:
                     importance=row[1],
                     tags=tags if isinstance(tags, list) else [],
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("personal_memory: falha ao montar entrada de insight: %s", exc)
 
         con.execute(
             "UPDATE personal_memory "

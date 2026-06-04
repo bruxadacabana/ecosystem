@@ -66,8 +66,8 @@ class InsightScheduler(QObject):
                     _arousal,
                 )
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("InsightScheduler: falha ao ler estado afetivo p/ gating do popup: %s", exc)
 
         # B1: poda de entradas antigas com alta entropia de Shannon
         try:
@@ -75,8 +75,8 @@ class InsightScheduler(QObject):
             pruned = prune_high_entropy_stale()
             if pruned:
                 log.debug("InsightScheduler: %d entradas de alta entropia podadas", pruned)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("InsightScheduler: falha na poda de alta entropia: %s", exc)
 
         try:
             from core.personal_memory import get_unshown_popup_entries
@@ -99,8 +99,8 @@ class InsightScheduler(QObject):
                             entry["id"],
                         )
                         break
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("InsightScheduler: falha na seleção epsilon-greedy de diversidade: %s", exc)
 
         if candidate is None:
             for entry in entries:
@@ -166,8 +166,8 @@ class InsightScheduler(QObject):
                     "epistemic_curiosity": get_epistemic_curiosity(),
                     "appraisal_source":    "mnemosyne_confirmed",
                 }
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("InsightScheduler: falha ao montar contexto emocional do insight: %s", exc)
 
             root = str(Path(__file__).parent.parent.parent)
             if root not in sys.path:

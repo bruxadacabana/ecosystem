@@ -8,12 +8,15 @@ em vez de BM25 sobre o pool semântico restrito.
 """
 from __future__ import annotations
 
+import logging
 import pickle
 import re
 from pathlib import Path
 
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
+
+log = logging.getLogger("mnemosyne.bm25_index")
 
 
 _CJK_RE = re.compile(r'[一-鿿぀-ゟ゠-ヿ가-힯]')
@@ -188,8 +191,9 @@ class BM25Index:
                 idx._docs          = data.get("docs",  [])
                 idx._metas         = data.get("metas", [])
                 idx._deleted_paths = set(data.get("deleted_paths", []))
-            except Exception:
-                pass  # índice corrompido — começa do zero
+            except Exception as exc:
+                log.warning("BM25Index: índice corrompido em %s — recomeçando do zero: %s",
+                            idx._path, exc)
         return idx
 
     @classmethod

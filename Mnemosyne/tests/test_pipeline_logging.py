@@ -180,3 +180,34 @@ class TestBackgroundEnrichmentLogs:
         assert "não foi possível iniciar classificação Plutchik" in src, (
             "o except do disparo do Plutchik deve logar, não engolir em silêncio"
         )
+
+
+# ---------------------------------------------------------------------------
+# Sem `except: pass` mudo nos caminhos de persistência/pipeline (escopo A)
+# ---------------------------------------------------------------------------
+
+class TestNoSilentSwallows:
+    """Regressão: nenhum `except ...: pass` (corpo só `pass`) pode reaparecer nos
+    arquivos de persistência/pipeline do Mnemosyne — todo erro deve ser logado."""
+
+    _SCOPE_A = [
+        "core/indexer.py", "core/personal_memory.py", "core/memory.py",
+        "core/parent_store.py", "core/bm25_index.py", "core/insight_scheduler.py",
+        "core/reflection.py", "core/insights.py", "core/session_indexer.py",
+        "core/idle_indexer.py", "core/rag.py", "gui/workers.py", "core/config.py",
+    ]
+
+    @pytest.mark.parametrize("rel", _SCOPE_A)
+    def test_arquivo_sem_except_pass_mudo(self, rel):
+        import ast
+        src = (_MNEMOSYNE_ROOT / rel).read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        mudos = [
+            node.lineno for node in ast.walk(tree)
+            if isinstance(node, ast.ExceptHandler)
+            and len(node.body) == 1 and isinstance(node.body[0], ast.Pass)
+        ]
+        assert not mudos, (
+            f"{rel} ainda tem `except: pass` mudo nas linhas {mudos} — "
+            f"todo erro deve ser logado (escopo A do BUG-030)"
+        )

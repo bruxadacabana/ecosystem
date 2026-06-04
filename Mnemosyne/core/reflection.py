@@ -16,6 +16,7 @@ não interromper a indexação caso o LLM falhe ou esteja lento.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import sys
 from pathlib import Path
@@ -24,6 +25,8 @@ from typing import TYPE_CHECKING, Callable
 from langchain_core.documents import Document
 
 from .config import AppConfig
+
+log = logging.getLogger("mnemosyne.reflection")
 
 if TYPE_CHECKING:
     from langchain_chroma import Chroma
@@ -308,8 +311,9 @@ def maybe_consolidate(
                     break
             if not ok:
                 return None
-        except Exception:
-            pass  # numpy indisponível ou erro de forma — prossegue sem o check
+        except Exception as exc:
+            # numpy indisponível ou erro de forma — prossegue sem o check
+            log.debug("reflection: check de similaridade ignorado (numpy/forma): %s", exc)
 
     # 4. Montar Document objects e gerar meta-reflexão
     reflections = [
@@ -323,8 +327,9 @@ def maybe_consolidate(
     # 5. Remover reflexões originais do ChromaDB e do BM25
     try:
         vs._collection.delete(ids=ids_to_remove)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("reflection: falha ao remover reflexões originais do Chroma (%d ids): %s",
+                    len(ids_to_remove), exc)
 
     bm25_idx.remove_matching(type="reflection", order=1, theme=theme)
 

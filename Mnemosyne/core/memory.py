@@ -14,11 +14,14 @@ Uso no RAG:
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger("mnemosyne.memory")
 
 
 # ── Constantes ────────────────────────────────────────────────────────────────
@@ -481,8 +484,8 @@ class SessionManager:
         if path.exists():
             try:
                 path.unlink()
-            except OSError:
-                pass
+            except OSError as exc:
+                log.debug("memory.delete_session: falha ao apagar %s: %s", path, exc)
         self._sessions = [s for s in self._sessions if s.id != session_id]
         self._save_index()
 

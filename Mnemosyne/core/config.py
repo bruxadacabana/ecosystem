@@ -4,12 +4,15 @@ Configuração do Mnemosyne — lê config.json, usa defaults se ausente.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .collections import CollectionConfig, CollectionType, sync_ecosystem_collections
 from .errors import ConfigError
+
+log = logging.getLogger("mnemosyne.config")
 
 
 def get_app_data_dir() -> Path:
@@ -90,8 +93,8 @@ def _read_ecosystem_primary_paths() -> tuple[str, str, str]:
             m.get("vault_dir", ""),
             m.get("chroma_dir", ""),
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("config: falha ao ler caminhos do ecosystem.json: %s", exc)
     return ("", "", "")
 
 
@@ -102,8 +105,8 @@ def _resolve_config_path() -> Path:
         config_dir = data.get("mnemosyne", {}).get("config_path", "")
         if config_dir:
             return Path(config_dir) / "settings.json"
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("config: falha ao resolver caminho de settings.json: %s", exc)
     return Path(__file__).parent.parent / "config.json"
 
 
@@ -124,10 +127,10 @@ def _read_ecosystem_personality() -> str:
         try:
             from ecosystem_client import write_section  # type: ignore
             write_section("mnemosyne", {"personality_prompt": _DEFAULT_PERSONALITY})
-        except Exception:
-            pass
-    except Exception:
-        pass
+        except Exception as exc:
+            log.debug("config: falha ao escrever personality_prompt default no ecosystem.json: %s", exc)
+    except Exception as exc:
+        log.debug("config: falha ao resolver personality_prompt: %s", exc)
     return _DEFAULT_PERSONALITY
 
 DEFAULT_PERSONA_PROMPT: str = (
@@ -466,15 +469,15 @@ def load_config() -> AppConfig:
                 try:
                     if _loaded_from_legacy:
                         save_config(config)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("config: falha ao salvar settings na migração de coleção legada: %s", exc)
                 break
     elif _loaded_from_legacy:
         # Migração: settings.json ainda não existe no novo caminho — criar agora
         try:
             save_config(config)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("config: falha ao salvar settings.json na migração de caminho: %s", exc)
 
     return config
 
@@ -499,8 +502,8 @@ def _export_collections_backup(config: "AppConfig") -> None:
             encoding="utf-8",
         )
         os.replace(tmp, backup_dir / "collections.json")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("config: falha ao gravar backup de collections.json: %s", exc)
 
 
 def save_config(config: AppConfig) -> None:

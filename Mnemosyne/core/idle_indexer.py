@@ -4,6 +4,7 @@ e indexa novos arquivos quando o Mnemosyne não está ocupado com indexação pr
 """
 from __future__ import annotations
 
+import logging
 import queue
 from dataclasses import dataclass, replace
 from typing import Callable
@@ -13,6 +14,8 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from core.collections import CollectionConfig
 from core.config import AppConfig
 from core.watcher import FolderWatcher
+
+log = logging.getLogger("mnemosyne.idle_indexer")
 
 
 @dataclass
@@ -41,15 +44,15 @@ class _IndexJobWorker(QThread):
         if _sys.platform != "win32":
             try:
                 _os.nice(15)
-            except OSError:
-                pass
+            except OSError as exc:
+                log.debug("idle_indexer: não foi possível reduzir nice do processo: %s", exc)
         else:
             try:
                 import ctypes as _ct
                 _ct.windll.kernel32.SetPriorityClass(
                     _ct.windll.kernel32.GetCurrentProcess(), 0x00004000)  # BELOW_NORMAL
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("idle_indexer: não foi possível reduzir prioridade do processo (Windows): %s", exc)
         try:
             from core.indexer import index_single_file  # lazy import — heavy
             index_single_file(self._job.file_path, self._config)

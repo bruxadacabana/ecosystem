@@ -52,8 +52,8 @@ def _get_conn() -> sqlite3.Connection:
     ):
         try:
             conn.execute(_col_ddl)
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as exc:
+            log.debug("insights: coluna já existe (migração idempotente) — %s", exc)
     conn.commit()
     return conn
 
@@ -311,5 +311,5 @@ def write_pending_count_to_ecosystem(count: int) -> None:
     try:
         from ecosystem_client import write_section  # type: ignore
         write_section("mnemosyne", {"pending_insights": count})
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("insights: falha ao escrever pending_insights no ecosystem.json: %s", exc)

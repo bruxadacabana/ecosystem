@@ -36,8 +36,8 @@ def _check_index_health(vectorstore: Any) -> None:
             )
         else:
             log.debug("RAM processo: %.2f GB", rss_gb)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("rag: falha ao medir RAM do processo: %s", exc)
     try:
         count = vectorstore._collection.count()
         if count > _CORPUS_WARN:
@@ -48,8 +48,8 @@ def _check_index_health(vectorstore: Any) -> None:
             )
         else:
             log.debug("Corpus ChromaDB: %d chunks", count)
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("rag: falha ao medir contagem do corpus ChromaDB: %s", exc)
 
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -241,8 +241,8 @@ def _follow_wikilinks(
                 import frontmatter as _fm
                 post = _fm.loads(raw_text)
                 body = post.content
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("rag: falha ao parsear frontmatter do documento: %s", exc)
             excerpt = body.strip()[:300]
             if excerpt:
                 excerpts.append(f"[Nota ligada: {note_name}]\n{excerpt}")
@@ -473,8 +473,8 @@ def _multi_query_retrieve(
                 queries.append(line)
             if len(queries) >= n_variants + 1:
                 break
-    except Exception:
-        pass  # fallback: usa só a pergunta original
+    except Exception as exc:
+        log.debug("rag: falha ao gerar variantes de query — usando só a original: %s", exc)
 
     seen: set[str] = set()
     results: list[Document] = []
@@ -561,8 +561,8 @@ def _iterative_retrieve(
         prompt = _ITER_PROVISIONAL_PROMPT.format(context=context_preview, question=question)
         llm = _make_llm(llm_model, temperature=0.0, timeout=30)
         provisional = strip_think(llm.invoke(prompt).content).strip()
-    except Exception:
-        pass  # sem resposta provisória → retornar só iter1
+    except Exception as exc:
+        log.debug("rag: falha ao gerar resposta provisória — retornando só iter1: %s", exc)
 
     if not provisional:
         return iter1
@@ -834,8 +834,8 @@ def _retrieve_multi_strategy(
             prompt = _ITER_PROVISIONAL_PROMPT.format(context=context_preview, question=question)
             llm = _make_llm(llm_model, temperature=0.0, timeout=30)
             provisional = strip_think(llm.invoke(prompt).content).strip()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("rag: falha ao gerar resposta provisória (iterativo): %s", exc)
         if not provisional:
             return iter1
         extra_k = max(1, k // 2)
@@ -862,8 +862,8 @@ def _retrieve_multi_strategy(
                     queries.append(line)
                 if len(queries) >= 4:
                     break
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("rag: falha ao gerar sub-queries: %s", exc)
         seen_keys: set[str] = set()
         results: list[Document] = []
         for q in queries:
@@ -886,8 +886,8 @@ def _retrieve_multi_strategy(
                 return _retrieve_multi(
                     stores, hypothetical, k, source_type, source_files, node_types
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("rag: falha no retrieve com documento hipotético (HyDE): %s", exc)
         return _retrieve_multi(stores, question, k, source_type, source_files, node_types)
 
     # hybrid (padrão)
@@ -1117,8 +1117,8 @@ def _build_messages(
         _self_prefix = _get_persona().as_prompt_prefix()
         if _self_prefix:
             system_text = _self_prefix + system_text
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("rag: falha ao aplicar prefixo de persona ao system prompt: %s", exc)
     messages: list[BaseMessage] = [SystemMessage(content=system_text)]
 
     akasha_insights: list[str] = []
@@ -1387,8 +1387,8 @@ def prepare_ask(
     try:
         from .affective_state import get_current_state as _get_aff, get_emotional_framing as _get_framing
         _emotional_framing = _get_framing(_get_aff())
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("rag: falha ao obter framing emocional: %s", exc)
     messages = _build_messages(
         context, question, chat_history or [], persona, collection_type, secondary_context,
         persona_prompt=effective_persona_prompt,

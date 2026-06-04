@@ -79,8 +79,8 @@ def _clear_orphan_wal(persist_dir: str) -> None:
         if lock.exists():
             try:
                 lock.unlink()
-            except OSError:
-                pass
+            except OSError as exc:
+                log.debug("indexer: falha ao remover arquivo de lock SQLite órfão: %s", exc)
 
 
 class IndexCheckpoint:
@@ -135,16 +135,16 @@ class IndexCheckpoint:
     def close(self) -> None:
         try:
             self._conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("indexer: falha ao fechar conexão SQLite: %s", exc)
 
     def delete(self) -> None:
         """Apaga o banco de checkpoint após conclusão bem-sucedida."""
         self.close()
         try:
             self._db_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        except OSError as exc:
+            log.debug("indexer: falha ao apagar banco de checkpoint: %s", exc)
 
     @classmethod
     def exists(cls, mnemosyne_dir: str) -> bool:
@@ -219,8 +219,8 @@ class ChunkHashStore:
     def close(self) -> None:
         try:
             self._conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("indexer: falha ao fechar conexão SQLite: %s", exc)
 
 
 _NODE_TYPES = frozenset({"article", "entity", "topic", "claim", "source"})
@@ -267,8 +267,8 @@ def _classify_node_types(
             content = resp.json()["choices"][0]["message"]["content"]
             lines = [l.strip().lower() for l in content.splitlines() if l.strip()]
             labels = [l for l in lines if l in _NODE_TYPES]
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("indexer: falha ao classificar node_type via LLM: %s", exc)
         for j, chunk in enumerate(batch):
             chunk.metadata["node_type"] = labels[j] if j < len(labels) else "article"
 
@@ -328,8 +328,8 @@ def _incremental_update(
                 where={"$and": [{"source": {"$eq": file_path}},
                                 {"type":   {"$eq": "reflection"}}]}
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("indexer: falha ao remover chunks de reflexão do Chroma: %s", exc)
 
     if ids_to_delete:
         vs._collection.delete(ids=ids_to_delete)
@@ -646,8 +646,8 @@ def _get_splitter(
             from langchain_experimental.text_splitter import SemanticChunker
             emb = embeddings or _get_embeddings(config)
             return SemanticChunker(emb)
-        except ImportError:
-            pass
+        except ImportError as exc:
+            log.debug("indexer: SemanticChunker indisponível — usando splitter padrão: %s", exc)
 
     chunk_type = _chunk_type_for(source_type or config.collection_type, file_path)
     params = CHUNK_PARAMS.get(chunk_type, CHUNK_PARAMS["document"])
@@ -731,8 +731,8 @@ def _load_reflection_counts(mnemosyne_dir: str) -> dict[str, int]:
     try:
         if path.exists():
             return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("indexer: falha ao ler reflection_meta.json: %s", exc)
     return {}
 
 
@@ -837,8 +837,8 @@ def _add_language_metadata(chunks: list[Document]) -> None:
                 src = chunk.metadata.get("source", "")
                 if src:
                     _unknown_language_sources.add(src)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("indexer: falha ao anotar metadado de idioma: %s", exc)
 
 
 def _group_by_source(chunks: list[Document]) -> dict[str, list[Document]]:
@@ -937,8 +937,8 @@ def _generate_and_index_reflections(
         try:
             from .persona import rebuild_persona_from_texts as _rebuild_persona
             _rebuild_persona(_reflection_texts, config.llm_model)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("indexer: falha ao reconstruir persona a partir de reflexões: %s", exc)
 
     return n_generated
 
@@ -1136,8 +1136,9 @@ def _delete_file_chunks(vs: Chroma, file_path: str) -> None:
     """
     try:
         vs._collection.delete(where={"source": file_path})
-    except Exception:
-        pass  # Se falhar (ex: versão incompatível), continua sem travar
+    except Exception as exc:
+        # Se falhar (ex: versão incompatível), continua sem travar
+        log.debug("indexer: falha ao apagar chunks antigos por source '%s': %s", file_path, exc)
 
 
 def update_vectorstore(
@@ -1474,14 +1475,14 @@ def load_all_vectorstores(config: AppConfig) -> list[tuple[Chroma, "CollectionCo
                 # SQLITE_READONLY_DBMOVED (código 1032) ao tentar escrever.
                 try:
                     vs._client.close()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("indexer: falha ao fechar client Chroma antes de recriar persist_dir: %s", exc)
                 return []
             active = config.active_coll
             if active:
                 return [(vs, active)]
-        except VectorstoreNotFoundError:
-            pass
+        except VectorstoreNotFoundError as exc:
+            log.debug("indexer: vectorstore inexistente para a coleção ativa: %s", exc)
         return []
 
     embeddings = _get_embeddings(config)
@@ -1502,8 +1503,9 @@ def load_all_vectorstores(config: AppConfig) -> list[tuple[Chroma, "CollectionCo
             if vs._collection.count() == 0:
                 continue
             result.append((vs, coll))
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("indexer: falha ao avaliar coleção '%s' para query: %s",
+                      getattr(coll, "name", "?"), exc)
     return result
 
 
@@ -1555,8 +1557,8 @@ def reindex_transcripts(
                         _BATCH, _SLEEP, node_type_model="",
                     )
                     count += 1
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.warning("indexer: falha ao reindexar item: %s", exc)
 
     chunk_store.close()
     bm25_idx.save()
