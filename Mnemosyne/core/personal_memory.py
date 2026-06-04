@@ -322,6 +322,8 @@ def _zettel_link_bg(memory_id: int, keywords: list[str], db_path: Path) -> None:
                     )
         con.commit()
         con.close()
+        log.debug("zettel: memória %d ligada a %d memória(s) relacionada(s).",
+                  memory_id, len(top_ids))
     except Exception as exc:
         log.debug("_zettel_link_bg: %s", exc)
 
@@ -355,6 +357,8 @@ def _update_plutchik_bg(memory_id: int, content: str, llm_model: str, db_path: P
         con.execute("UPDATE personal_memory SET plutchik = ? WHERE id = ?",
                     (json.dumps(vec), memory_id))
         con.commit(); con.close()
+        log.debug("plutchik: memória %d classificada emocionalmente (vec salvo).",
+                  memory_id)
     except Exception as exc:
         log.debug("_update_plutchik_bg: %s", exc)
 
@@ -551,6 +555,10 @@ def save_memory(
              category, valence, arousal, importance, json.dumps(kws), raw_source_paths),
         )
         mid = cursor.lastrowid or 0
+    log.info(
+        "memória pessoal salva id=%s (type=%s, category=%s, importance=%s, valence=%.2f).",
+        mid, type, category, importance, valence,
+    )
     # D: Plutchik — classificação emocional em background (fire-and-forget)
     try:
         _root = str(Path(__file__).parent.parent.parent)
@@ -564,8 +572,8 @@ def save_memory(
                 args=(mid, content, _model, _get_db()),
                 daemon=True,
             ).start()
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("save_memory: não foi possível iniciar classificação Plutchik: %s", exc)
     # C: Zettelkasten — liga memórias relacionadas em background
     if kws and mid:
         threading.Thread(

@@ -217,6 +217,8 @@ class IndexWorker(QThread):
 
             name = os.path.basename(file_path)
             self.progress.emit(name, i, total)
+            log.info("IndexWorker: indexando [%d/%d] %s", i, total, name)
+            file_vectors = 0
 
             try:
                 docs = load_single_file(file_path)
@@ -231,10 +233,12 @@ class IndexWorker(QThread):
                 continue
 
             if not chunks:
+                log.debug("IndexWorker: '%s' sem chunks indexáveis — pulando.", name)
                 tracker.mark_indexed(file_path)
                 checkpoint.record(file_path, "ok")
                 continue
 
+            log.debug("IndexWorker: %d chunks gerados de '%s'.", len(chunks), name)
             bm25_idx.add_documents(chunks)
 
             # Probe de GPU no primeiro batch de chunks encontrado
@@ -253,6 +257,9 @@ class IndexWorker(QThread):
                         embeddings=probe_embs,
                         metadatas=[c.metadata or {} for c in probe_batch],
                     )
+                    file_vectors += len(probe_batch)
+                    log.debug("IndexWorker: batch inicial embedado (%d chunks, %s, %.1fs).",
+                              len(probe_batch), self.config.embed_model, t_probe)
                     use_parallel = t_probe < 2.0 and _BATCH >= 50
                     probe_done = True
                 except Exception as exc:
@@ -306,6 +313,9 @@ class IndexWorker(QThread):
                                 log.error("IndexWorker: erro fatal no vectorstore: %s", exc)
                                 self.finished.emit(False, f"Erro ao gravar no índice: {exc}")
                                 return
+                            file_vectors += len(batch)
+                            log.debug("IndexWorker: batch %d/%d embedado (%d chunks, %s).",
+                                      b_idx + 1, n_batches, len(batch), self.config.embed_model)
                             self.progress.emit(f"Incorporando {name}", i, total)
                             if b_idx + 1 < n_batches:
                                 time.sleep(_SLEEP)
@@ -314,6 +324,7 @@ class IndexWorker(QThread):
                         if self.isInterruptionRequested():
                             self.finished.emit(False, "Interrompido.")
                             return
+                        t0 = time.time()
                         try:
                             embs = _embed_batch(
                                 [c.page_content for c in batch],
@@ -329,6 +340,7 @@ class IndexWorker(QThread):
                             errors.append(f"{name}: {exc}")
                             _embed_failed = True
                             break
+                        t_embed = time.time() - t0
                         try:
                             vs._collection.add(
                                 ids=[str(uuid.uuid4()) for _ in batch],
@@ -340,6 +352,9 @@ class IndexWorker(QThread):
                             log.error("IndexWorker: erro fatal no vectorstore: %s", exc)
                             self.finished.emit(False, f"Erro ao gravar no índice: {exc}")
                             return
+                        file_vectors += len(batch)
+                        log.debug("IndexWorker: batch %d/%d embedado (%d chunks, %s, %.1fs).",
+                                  b_idx + 1, n_batches, len(batch), self.config.embed_model, t_embed)
                         self.progress.emit(f"Incorporando {name}", i, total)
                         if b_idx + 1 < n_batches:
                             time.sleep(_SLEEP)
@@ -351,6 +366,8 @@ class IndexWorker(QThread):
             tracker.mark_indexed(file_path)
             checkpoint.record(file_path, "ok")
             self.file_indexed.emit(file_path)
+            log.info("IndexWorker: [%d/%d] OK — '%s' (%d vetores gravados no Chroma).",
+                     i, total, name, file_vectors)
 
         bm25_idx.save()
         checkpoint.delete()
@@ -477,6 +494,8 @@ class ResumeIndexWorker(QThread):
 
             name = os.path.basename(file_path)
             self.progress.emit(name, already_done + i, total_all)
+            log.info("ResumeIndexWorker: indexando [%d/%d] %s", i, total, name)
+            file_vectors = 0
 
             try:
                 docs = load_single_file(file_path)
@@ -491,19 +510,23 @@ class ResumeIndexWorker(QThread):
                 continue
 
             if not chunks:
+                log.debug("ResumeIndexWorker: '%s' sem chunks indexáveis — pulando.", name)
                 tracker.mark_indexed(file_path)
                 checkpoint.record(file_path, "ok")
                 continue
 
+            log.debug("ResumeIndexWorker: %d chunks gerados de '%s'.", len(chunks), name)
             bm25_idx.add_documents(chunks)
 
             batch_list = [chunks[b : b + _BATCH] for b in range(0, len(chunks), _BATCH)]
+            n_batches = len(batch_list)
             _embed_failed = False
             for b_idx, batch in enumerate(batch_list):
                 if self.isInterruptionRequested():
                     checkpoint.close()
                     self.finished.emit(False, "Retomada interrompida.")
                     return
+                t0 = time.time()
                 try:
                     embs = _embed_batch(
                         [c.page_content for c in batch],
@@ -514,6 +537,7 @@ class ResumeIndexWorker(QThread):
                     errors.append(f"{name}: {exc}")
                     _embed_failed = True
                     break
+                t_embed = time.time() - t0
                 try:
                     vs._collection.add(
                         ids=[str(uuid.uuid4()) for _ in batch],
@@ -526,6 +550,9 @@ class ResumeIndexWorker(QThread):
                     checkpoint.close()
                     self.finished.emit(False, f"Erro ao gravar no índice: {exc}")
                     return
+                file_vectors += len(batch)
+                log.debug("ResumeIndexWorker: batch %d/%d embedado (%d chunks, %s, %.1fs).",
+                          b_idx + 1, n_batches, len(batch), self.config.embed_model, t_embed)
                 self.progress.emit(f"Incorporando {name}", already_done + i, total_all)
                 if b_idx + 1 < len(batch_list):
                     time.sleep(_SLEEP)
@@ -535,6 +562,8 @@ class ResumeIndexWorker(QThread):
 
             tracker.mark_indexed(file_path)
             checkpoint.record(file_path, "ok")
+            log.info("ResumeIndexWorker: [%d/%d] OK — '%s' (%d vetores gravados no Chroma).",
+                     i, total, name, file_vectors)
 
         bm25_idx.save()
         checkpoint.delete()

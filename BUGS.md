@@ -90,6 +90,8 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-027](#bug-027) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | AKASHA+Mnemosyne embedando ao mesmo tempo: startup do embed-server sem trava spawna duplicado → conflito na 8082 → 500 |
 | [BUG-028](#bug-028) | OPEN | 2026-06-03 | HUB/LOGOS (logos.rs) + Mnemosyne | embed-server em loop de restart (inicia "com sucesso" repetidamente) com Mnemosyne aberto → Mnemosyne dá timeout e não indexa nada |
 | [BUG-029](#bug-029) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | embed-server com ubatch default 512 → inputs > 512 tokens dão HTTP 500 "input too large" (intermitente, chunks longos) |
+| [BUG-030](#bug-030) | FIXED | 2026-06-03 | Mnemosyne | Pipeline sem observabilidade: indexação/memória pessoal/temas salvam (ou falham) em silêncio — impossível auditar se o Mnemosyne funciona |
+| [BUG-031](#bug-031) | OPEN | 2026-06-03 | Mnemosyne | IA fora do controle do LOGOS (model2vec/POTION + cardiffnlp sentiment) carregada via `from_pretrained` sem offline-first → pode travar indexação em HF lento, sem log |
 
 ---
 
@@ -1779,3 +1781,83 @@ Degradação intermitente e silenciosa-para-AKASHA: documentos com parágrafos l
 
 #### Teste de regressão
 `logos.rs` (módulo de testes): `build_embed_server_cmd_sets_ubatch_2048`, `build_embed_server_cmd_sets_batch_2048`, `build_embed_server_cmd_sets_ctx_8192`. Os testes existentes (`_no_parallel`, `_no_cont_batching`, `_has_embeddings_flag`, etc.) continuam passando — 12/12 no grupo `build_embed_server_cmd`.
+
+---
+
+### BUG-030 · [FIXED] · Pipeline do Mnemosyne sem observabilidade — salva (ou falha) em silêncio
+
+#### Identificação
+- **Data:** 2026-06-03
+- **App(s):** Mnemosyne
+- **Componente:** `core/indexer.py`, `core/personal_memory.py`, `core/topic_extractor.py`, `gui/workers.py` (pipeline de indexação, memória pessoal, temas, reflexões)
+- **Commit do fix:** (pendente)
+- **Descoberta via:** uso real — usuária resetou o Mnemosyne pelo HUB e reindexou do zero; viu a indexação rodando mas **nenhuma memória pessoal aparecendo no monitor do HUB**, sem nenhum log que confirmasse se algo estava sendo salvo.
+
+#### Ambiente
+- **Máquina(s):** PC principal (CachyOS)
+- **Modo:** produção
+
+#### Pré-condição para reproduzir
+Reindexar do zero e observar o log do Mnemosyne durante a indexação: além de "IndexWorker: N arquivos a indexar" e um eventual warning de terceiros, o log fica praticamente mudo por minutos — não há registro de chunks gerados, embeddings feitos, vetores gravados, memória pessoal salva, temas extraídos nem reflexões geradas.
+
+#### Sintoma observado
+Impossível saber pelo log se o Mnemosyne está funcionando. Contraste direto com a AKASHA, que loga cada etapa (`knowledge_worker: extraindo...`, `nota salva (type=..., importance=...)`, `entity_graph: N item(s)`, `N tópico(s)`) e por isso é auditável. A usuária suspeita que o Mnemosyne "não está funcionando como deveria" e não tem como verificar.
+
+#### Logs
+```
+20:05:00 [INFO] gui.workers: IndexWorker: 30 arquivos a indexar
+20:10:40 [WARNING] huggingface_hub.utils._http: ... unauthenticated requests to the HF Hub ...
+20:15:00 [WARNING] pypdf.generic._data_structures: PdfReadError(...)
+20:15:08 [INFO] mnemosyne.main: IndexReflectionWorker [alta]: 1 arquivo(s) ...
+(nenhum log entre 20:05 e 20:15 sobre o que estava acontecendo com o arquivo 1)
+```
+
+#### Causa raiz
+Os caminhos de persistência e processamento do Mnemosyne não emitem logs (ou emitem só em pontos esparsos), e há engolimento silencioso de erro — confirmado em [personal_memory.py:432](Mnemosyne/core/personal_memory.py#L432) (`except Exception: pass` na resolução do caminho do `personal_memory.db`: se a resolução do `ai_private_dir` falhar, cai no fallback sem avisar, e uma falha de save nunca é reportada). Viola o princípio de observabilidade do ecossistema ("TUDO gera log, nenhum caminho silencioso").
+
+#### Impacto
+A usuária não consegue distinguir "está indexando devagar" de "está travado/quebrado", nem confirmar se memórias pessoais, temas e reflexões estão realmente sendo gravados. Erros de persistência podem estar sendo engolidos sem rastro.
+
+#### Fix aplicado
+Estilo "narração viva" (escolhido pela usuária: INFO nos marcos, DEBUG no detalhe fino). `gui/workers.py` — `IndexWorker` e `ResumeIndexWorker` passam a logar, por arquivo: INFO `indexando [i/total] nome` no início, DEBUG `N chunks gerados`, DEBUG `batch x/y embedado (N chunks, modelo, Ns)` em cada batch (resolve o "10 min mudo" num PDF grande), e INFO `[i/total] OK — nome (N vetores gravados no Chroma)` ao concluir. `core/personal_memory.py` — `save_memory` emite INFO `memória pessoal salva id=N (type, category, importance, valence)` a cada gravação; `_zettel_link_bg` e `_update_plutchik_bg` logam a gravação em DEBUG; o `except: pass` do disparo da thread Plutchik virou `log.debug` (não engole mais em silêncio). Temas (`save_topics`/`extract_topics`) e knowledge_graph (build/save) já logavam. Observação: a auditoria completa dos demais `except: pass` do app é tratada à parte (item de TODO "Eliminar todo `except: pass`").
+
+#### Teste de regressão
+`tests/test_pipeline_logging.py` (15 testes): funcionais via `caplog` (save_memory emite INFO com id/type/nível correto, um log por save; `_zettel_link_bg` loga a ligação) + inspeção de source confirmando a narração em ambos os workers e os logs de sucesso/erro das tarefas de background. 31/31 passam com a suíte de `personal_memory`; suíte total do Mnemosyne 390 passa (2 falhas pré-existentes por falta de `pytesseract`, sem relação).
+
+---
+
+### BUG-031 · [OPEN] · IA fora do controle do LOGOS no Mnemosyne (model2vec/POTION + cardiffnlp) sem offline-first
+
+#### Identificação
+- **Data:** 2026-06-03
+- **App(s):** Mnemosyne
+- **Componente:** `core/indexer.py` (model2vec/POTION), `core/personal_memory.py` (sentiment cardiffnlp)
+- **Commit do fix:** (pendente)
+- **Descoberta via:** investigação do "travamento" da indexação (warning de download do HF Hub levou à auditoria dos modelos que o Mnemosyne carrega por conta própria).
+
+#### Ambiente
+- **Máquina(s):** PC principal (CachyOS) e Windows trabalho (perfil `work_pc` usa POTION)
+- **Modo:** produção
+
+#### Pré-condição para reproduzir
+Primeira execução (ou cache HF ausente/revalidando) com indexação ativa (POTION no perfil `work_pc`) ou geração de memória pessoal com análise de sentimento (cardiffnlp, qualquer perfil).
+
+#### Sintoma observado
+O Mnemosyne baixa/carrega modelos de IA diretamente do Hugging Face Hub, fora do LOGOS — gerando inclusive o warning `huggingface_hub ... unauthenticated requests`. A chamada de rede pode bloquear a indexação sem log de progresso se o HF estiver lento/fora.
+
+#### Logs
+```
+20:10:40 [WARNING] huggingface_hub.utils._http: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN ...
+```
+
+#### Causa raiz
+Dois modelos rodam em processo, sem o LOGOS gerenciar: (1) **model2vec / POTION** (`potion-multilingual-128M`) em [indexer.py:61](Mnemosyne/core/indexer.py#L61), usado como embedding quando `config.embed_model == "potion-multilingual-128M"` (perfil `work_pc`, i5-3470 sem AVX2); (2) **cardiffnlp/twitter-xlm-roberta-base-sentiment** em [personal_memory.py:72](Mnemosyne/core/personal_memory.py#L72). Ambos via `from_pretrained`/`StaticModel.from_pretrained` **sem `local_files_only` nem timeout** → revalidação de metadados ou primeiro download bloqueia na rede. Fere o princípio "nada de IA fora do LOGOS".
+
+#### Impacto
+(1) Violação arquitetural: IA fora do gestor único (LOGOS). (2) Risco operacional: indexação/memória pessoal podem travar em rede lenta, sem log, sem timeout.
+
+#### Fix aplicado
+(pendente) Decidir entre rotear esses modelos pelo LOGOS ou documentar exceção consciente (modelos leves p/ hardware fraco). Em qualquer caso: log `info` antes de carregar, `local_files_only=True`-first com fallback à rede só sem cache, e/ou `HF_HUB_OFFLINE`/timeout. Ver itens no TODO ("Remover/migrar IA que roda fora do controle do LOGOS" e "`from_pretrained` offline-first").
+
+#### Teste de regressão
+(pendente) Verificar que o carregamento dos modelos emite log; que `local_files_only=True` é tentado primeiro quando há cache; que um timeout/erro de rede é logado e não trava indefinidamente.
