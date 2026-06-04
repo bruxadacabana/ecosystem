@@ -431,3 +431,53 @@ class TestCorruptionRecovery:
         finally:
             stp._profile_path = orig_profile
             stp._backup_path  = orig_backup
+
+
+# ---------------------------------------------------------------------------
+# Filtro de termos-lixo no caminho de escrita compartilhado
+# ---------------------------------------------------------------------------
+
+class TestMeaningfulTopicFilter:
+    """Termos-lixo (verbos, gerúndios, abstrações de prosa de LLM) não podem
+    entrar no perfil de interesses — filtro aplicado por todos os apps."""
+
+    # Exatamente os exemplos relatados pela usuária na aba Interesses do HUB.
+    LIXO = ["encontrei", "começando", "conexão", "interessante", "temas", "incluindo"]
+    # Interesses reais que NÃO podem ser descartados (incl. armadilhas morfológicas).
+    REAIS = [
+        "crochê", "sociolinguística", "python", "neuroplasticidade", "marketing",
+        "aprendizado", "comando", "bateria", "livraria", "história", "mercado",
+    ]
+
+    @pytest.mark.parametrize("termo", LIXO)
+    def test_lixo_e_descartado(self, termo):
+        from shared_topic_profile import _is_meaningful_topic
+        assert _is_meaningful_topic(termo) is False, f"'{termo}' deveria ser filtrado"
+
+    @pytest.mark.parametrize("termo", REAIS)
+    def test_interesse_real_sobrevive(self, termo):
+        from shared_topic_profile import _is_meaningful_topic
+        assert _is_meaningful_topic(termo) is True, f"'{termo}' NÃO deveria ser filtrado"
+
+    def test_gerundio_curto_nao_confunde(self):
+        # "lindo" (5 chars) e "findo" (5) ficam abaixo do limiar de 6 — preservados.
+        from shared_topic_profile import _is_meaningful_topic
+        assert _is_meaningful_topic("lindo") is True
+
+    def test_participio_nao_e_filtrado(self):
+        # -ado/-ido são particípios usados por muitos substantivos — preservar.
+        from shared_topic_profile import _is_meaningful_topic
+        for t in ("resultado", "significado", "conteúdo", "partido", "sentido"):
+            assert _is_meaningful_topic(t) is True, f"'{t}' não deveria ser filtrado"
+
+    def test_filtro_aplicado_na_escrita(self, db_path):
+        # Integração: update_scores só grava os termos reais, descartando o lixo.
+        from shared_topic_profile import update_scores
+        update_scores(self.LIXO + ["sociolinguística"], 1.0, "akasha")
+
+        con = sqlite3.connect(db_path)
+        topics = {r[0] for r in con.execute("SELECT topic FROM topic_interest_profile")}
+        con.close()
+        assert topics == {"sociolinguística"}, (
+            f"só 'sociolinguística' deveria ter sido gravado, obteve {topics}"
+        )

@@ -50,7 +50,51 @@ _STOPWORDS: frozenset[str] = frozenset({
     "this", "that", "with", "from", "an", "are", "was", "be", "but", "have",
     "also", "when", "which", "were", "has", "had", "will", "can", "its",
     "new", "use", "data", "type", "work", "model", "result", "general",
+    # abstrações e meta-termos de prosa de LLM (não são interesses reais) — PT
+    "conexão", "conexões", "conexao", "tema", "temas", "temática",
+    "interessante", "interessantes", "descoberta", "descobertas",
+    "ideia", "ideias", "insight", "insights", "conceito", "conceitos",
+    "questão", "questões", "assunto", "assuntos", "detalhe", "detalhes",
+    "resumo", "conclusão", "introdução", "seção", "capítulo", "trecho",
+    "parágrafo", "menção", "destaque", "relação", "relações",
+    "diversos", "vários", "várias", "alguns", "algumas",
+    "especialmente", "principalmente", "ademais",
+    # inglês
+    "including", "interesting", "interestingly", "topic", "topics",
+    "theme", "themes", "connection", "connections", "discovery",
+    "concept", "concepts", "various", "several", "however", "therefore",
 })
+
+# Sufixos de gerúndio PT (verbos: "começando", "incluindo") — não são interesses.
+_GERUND_SUFFIXES = ("ando", "endo", "indo")
+# Substantivos/nomes que terminam como gerúndio — preservar (não filtrar).
+_GERUND_EXCEPTIONS: frozenset[str] = frozenset({
+    "comando", "fernando", "armando", "rolando", "orlando", "brando",
+    "horrendo", "tremendo", "estupendo", "reverendo", "crescendo",
+})
+# Terminações de formas verbais conjugadas comuns (pretérito 1ª pess. sing. e
+# 3ª pess. plural): "encontrei", "começaram", "fizeram", "partiram".
+# NÃO inclui particípios (-ado/-ido) nem -aria/-eria: muitos substantivos os usam
+# (mercado, aprendizado, bateria, livraria) e seriam falsos-positivos.
+_VERB_SUFFIXES = ("ei", "aram", "eram", "iram")
+
+
+def _is_meaningful_topic(term: str) -> bool:
+    """True se o termo parece um interesse real (substantivo/sintagma), e não um
+    verbo, gerúndio, conector ou abstração genérica de prosa de LLM.
+
+    Aplicado no caminho de escrita compartilhado (`update_scores`), vale para
+    todos os apps que alimentam o perfil (AKASHA, KOSMOS, Mnemosyne).
+    """
+    t = term.strip().lower()
+    if len(t) < 3 or t in _STOPWORDS:
+        return False
+    if len(t) >= 6:
+        if t.endswith(_GERUND_SUFFIXES) and t not in _GERUND_EXCEPTIONS:
+            return False
+        if t.endswith(_VERB_SUFFIXES):
+            return False
+    return True
 
 
 # ── Caminhos ────────────────────────────────────────────────────────────────
@@ -195,15 +239,11 @@ def update_scores(topics: list[str], delta: float, source: str) -> None:
         return
 
     raw_count  = len([t for t in topics if t and t.strip()])
-    normalized = [
-        t.strip().lower() for t in topics
-        if t and t.strip() and len(t.strip()) >= 3
-        and t.strip().lower() not in _STOPWORDS
-    ]
+    normalized = [t.strip().lower() for t in topics if _is_meaningful_topic(t)]
     filtered = raw_count - len(normalized)
     if filtered:
         log.debug(
-            "shared_topic_profile: %d/%d tópicos filtrados por stopword (source=%s)",
+            "shared_topic_profile: %d/%d tópicos descartados (stopword/verbo/gerúndio, source=%s)",
             filtered, raw_count, source,
         )
     if not normalized:
