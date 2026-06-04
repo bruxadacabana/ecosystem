@@ -23,9 +23,21 @@ key = 11c345dcaebdada6070a5545e7245f5ac91fa265d24324b8b57a5d6ae11c8609
 
 ## próximo: 
 
+### Mnemosyne — Observabilidade total do pipeline + IA fora do LOGOS | 2026-06-03
+
 ### HUB (LOGOS) — validar embed-server em CPU por padrão (BUG-028) | 2026-06-03
 
+### Interesses do ecossistema — filtro de termos-lixo + unificação cross-idioma | 2026-06-04
+
+### HUB (LOGOS) — Encerramento completo dos processos llama-server (sem órfãos) | 2026-06-03
+
+### HUB (LOGOS) — BUG-028: embed-server em loop de restart mata indexação do Mnemosyne | 2026-06-03
+
+### AKASHA — Observabilidade de falhas de embedding | 2026-06-03
+
 ### AKASHA — Qualidade de busca SearXNG: remoção de Qwant e filtro anti-spam | 2026-06-01
+
+### KOSMOS v3 — Redesign como ferramenta para jornalistas/estudantes/ativistas | 2026-06-01
 
 ## Auditoria de erros silenciosos — logs em todo caminho de erro (PLANEJADO — fazer depois) | 2026-06-03
 
