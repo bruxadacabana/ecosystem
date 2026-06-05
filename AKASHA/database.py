@@ -2791,6 +2791,27 @@ async def decay_old_topic_scores(days_inactive: int = 7, factor: float = 0.97) -
     return _stp.decay_scores(factor, days_inactive)
 
 
+async def consolidate_interest_profile() -> int:
+    """Faxina de fundo: mescla interesses equivalentes em idiomas/variações
+    diferentes (casamento por embedding multilíngue), somando os scores.
+
+    Roda em thread separada porque faz chamadas de embedding ao LOGOS (bloqueantes)
+    — nunca no caminho de escrita. A AKASHA é a única dona desta faxina.
+    Retorna o número de tópicos removidos por mesclagem.
+    """
+    import asyncio as _asyncio
+    import shared_topic_profile as _stp
+    return await _asyncio.to_thread(_stp.consolidate_interests)
+
+
+async def merge_interest_topics(keep: str, remove: list[str]) -> int:
+    """Mescla manualmente interesses (correção da usuária via HUB): soma scores
+    de `remove` em `keep` e apaga `remove`. Retorna o número removido."""
+    import asyncio as _asyncio
+    import shared_topic_profile as _stp
+    return await _asyncio.to_thread(_stp.merge_topics, keep, remove)
+
+
 async def upsert_entity_pair(entity: str, co_entity: str, delta: float = 1.0) -> None:
     """Incrementa peso do par (entity, co_entity) no entity_graph.
 

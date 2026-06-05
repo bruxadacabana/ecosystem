@@ -433,3 +433,298 @@ def has_overlap(topics: list[str], min_topics: int = 2, min_score: float = 1.0) 
         return False
     scores = get_scores(topics)
     return sum(1 for s in scores.values() if s >= min_score) >= min_topics
+
+
+# ── Consolidação cross-idioma (unificação de interesses equivalentes) ───────
+#
+# Faxina de FUNDO (nunca no caminho de escrita): mescla tópicos que são o mesmo
+# interesse em idiomas/variações diferentes ("machine learning" vs "aprendizado
+# de máquina", "crochet pattern" vs "receita de crochê"), somando os scores.
+#
+# Casamento por EMBEDDING (bge-m3 é multilíngue → equivalentes cross-idioma ficam
+# próximos). Rótulo do grupo em PT quando possível (detecção de idioma + Argos,
+# best-effort). Tudo best-effort: sem embed-server, não faz nada e não levanta.
+# Deve ter um ÚNICO dono rodando periodicamente (a AKASHA).
+
+_CONSOLIDATE_SIM_DEFAULT = 0.88  # alto de propósito: só mescla quase-duplicados
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    import math
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def _greedy_clusters(embeddings: list[list[float]], threshold: float) -> list[list[int]]:
+    """Agrupa índices cujos embeddings têm cosseno >= threshold (single-link guloso)."""
+    n = len(embeddings)
+    assigned = [False] * n
+    clusters: list[list[int]] = []
+    for i in range(n):
+        if assigned[i]:
+            continue
+        cluster = [i]
+        assigned[i] = True
+        for j in range(i + 1, n):
+            if not assigned[j] and _cosine(embeddings[i], embeddings[j]) >= threshold:
+                cluster.append(j)
+                assigned[j] = True
+        clusters.append(cluster)
+    return clusters
+
+
+def _resolve_embed_fn():
+    """Resolve função de embedding via LOGOS (OpenAI-compatível em /v1). Best-effort."""
+    try:
+        import sys as _sys
+        _root = str(Path(__file__).parent)
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+        import httpx  # type: ignore
+        from ecosystem_client import get_inference_url  # type: ignore
+        try:
+            from ecosystem_client import get_active_profile  # type: ignore
+            model = (get_active_profile() or {}).get("embed") or "bge-m3"
+        except Exception:
+            model = "bge-m3"
+        base = get_inference_url().rstrip("/")
+    except Exception as exc:
+        log.debug("consolidate_interests: embed_fn indisponível: %s", exc)
+        return None
+
+    def _embed(texts):
+        out = []
+        for i in range(0, len(texts), 128):
+            batch = texts[i:i + 128]
+            resp = httpx.post(f"{base}/v1/embeddings",
+                              json={"model": model, "input": batch}, timeout=60.0)
+            resp.raise_for_status()
+            out.extend(d["embedding"] for d in resp.json()["data"])
+        return out
+
+    return _embed
+
+
+def _resolve_lang_detect_fn():
+    """Resolve detector de idioma via lingua (best-effort; retorna fn topic->'pt'|'en'|...)."""
+    try:
+        from lingua import Language, LanguageDetectorBuilder  # type: ignore
+        det = LanguageDetectorBuilder.from_languages(
+            Language.PORTUGUESE, Language.ENGLISH, Language.SPANISH, Language.FRENCH
+        ).build()
+    except Exception:
+        return None
+
+    def _detect(text):
+        try:
+            lang = det.detect_language_of(text)
+            return lang.iso_code_639_1.name.lower() if lang is not None else ""
+        except Exception:
+            return ""
+
+    return _detect
+
+
+def _resolve_translate_fn():
+    """Resolve tradutor EN->PT via argostranslate (best-effort; só onde instalado)."""
+    try:
+        from argostranslate import translate as _tr  # type: ignore
+        installed = _tr.get_installed_languages()
+        by_code = {l.code: l for l in installed}
+        en, pt = by_code.get("en"), by_code.get("pt")
+        if not en or not pt:
+            return None
+        translation = en.get_translation(pt)
+    except Exception:
+        return None
+
+    def _translate(text):
+        try:
+            return (translation.translate(text) or "").strip()
+        except Exception:
+            return ""
+
+    return _translate
+
+
+def _pick_label(members, lang_detect_fn, translate_fn) -> str:
+    """Escolhe o rótulo do grupo mesclado: prefere o membro em PT (maior score);
+    se nenhum for PT e houver tradutor, traduz o representante para PT; senão,
+    mantém o de maior score. `members` = linhas (topic, score, ...)."""
+    by_score = sorted(members, key=lambda r: r[1], reverse=True)
+    rep_label = by_score[0][0]
+    if lang_detect_fn is not None:
+        pt = [r for r in by_score if lang_detect_fn(r[0]) == "pt"]
+        if pt:
+            return pt[0][0]
+        if translate_fn is not None:
+            tr = translate_fn(rep_label)
+            if tr:
+                return tr.lower()
+    return rep_label
+
+
+def consolidate_interests(
+    embed_fn=None,
+    sim_threshold: float = _CONSOLIDATE_SIM_DEFAULT,
+    lang_detect_fn=None,
+    translate_fn=None,
+) -> int:
+    """Mescla interesses equivalentes (mesmo conceito em idiomas/variações
+    diferentes), somando os scores. Casamento por similaridade de embedding
+    (multilíngue). Best-effort — nunca levanta.
+
+    Retorna quantos tópicos foram removidos por mesclagem (0 se nada a fazer).
+    Deve ser chamada por um ÚNICO dono (a AKASHA), periodicamente — NUNCA no
+    caminho de escrita (`update_scores` continua rápido e sem-LLM).
+    """
+    path = _profile_path()
+    if path is None or not path.exists():
+        return 0
+    if embed_fn is None:
+        embed_fn = _resolve_embed_fn()
+    if embed_fn is None:
+        log.debug("consolidate_interests: embedding indisponível — faxina pulada")
+        return 0
+    if lang_detect_fn is None:
+        lang_detect_fn = _resolve_lang_detect_fn()
+    if translate_fn is None:
+        translate_fn = _resolve_translate_fn()
+
+    try:
+        with _conn(path) as con:
+            rows = con.execute(
+                "SELECT topic, score, akasha_count, mnemosyne_count, kosmos_count, last_updated "
+                "FROM topic_interest_profile"
+            ).fetchall()
+    except Exception as exc:
+        log.warning("consolidate_interests: falha ao ler o perfil: %s", exc)
+        return 0
+    if len(rows) < 2:
+        return 0
+
+    topics = [r[0] for r in rows]
+    try:
+        embeddings = embed_fn(topics)
+    except Exception as exc:
+        log.warning("consolidate_interests: embedding falhou — faxina adiada: %s", exc)
+        return 0
+    if len(embeddings) != len(topics):
+        log.warning("consolidate_interests: nº de embeddings (%d) != tópicos (%d)",
+                    len(embeddings), len(topics))
+        return 0
+
+    clusters = _greedy_clusters(embeddings, sim_threshold)
+
+    removed = 0
+    with _write_lock:
+        try:
+            with _conn(path) as con:
+                for cluster in clusters:
+                    if len(cluster) < 2:
+                        continue
+                    members = [rows[idx] for idx in cluster]
+                    label = _pick_label(members, lang_detect_fn, translate_fn)
+                    total_score = sum(r[1] for r in members)
+                    ak = sum(int(r[2]) for r in members)
+                    mn = sum(int(r[3]) for r in members)
+                    ko = sum(int(r[4]) for r in members)
+                    last = max((r[5] or "") for r in members)
+                    member_labels = [r[0] for r in members]
+                    ph = ",".join("?" * len(member_labels))
+                    con.execute(
+                        f"DELETE FROM topic_interest_profile WHERE topic IN ({ph})",
+                        member_labels,
+                    )
+                    con.execute(
+                        """INSERT INTO topic_interest_profile
+                               (topic, score, akasha_count, mnemosyne_count, kosmos_count, last_updated)
+                           VALUES (?, ?, ?, ?, ?, ?)
+                           ON CONFLICT(topic) DO UPDATE SET
+                               score           = excluded.score,
+                               akasha_count    = excluded.akasha_count,
+                               mnemosyne_count = excluded.mnemosyne_count,
+                               kosmos_count    = excluded.kosmos_count,
+                               last_updated    = excluded.last_updated""",
+                        (label, total_score, ak, mn, ko, last),
+                    )
+                    removed += len(members) - 1
+                    log.info(
+                        "consolidate_interests: %d tópicos → '%s' (score=%.2f): %s",
+                        len(members), label, total_score,
+                        ", ".join(m for m in member_labels if m != label),
+                    )
+            if removed:
+                bk = _backup_path()
+                if bk is not None:
+                    _write_backup(path, bk)
+        except Exception as exc:
+            log.warning("consolidate_interests: falha ao mesclar: %s", exc)
+            return 0
+
+    if removed:
+        log.info("consolidate_interests: faxina concluída — %d tópico(s) removido(s) por mesclagem", removed)
+    return removed
+
+
+def merge_topics(keep: str, remove: list[str]) -> int:
+    """Mescla manualmente: soma os scores/contagens de `remove` em `keep` e apaga
+    os `remove`. Usado pela UI de correção manual no HUB. Retorna nº removido."""
+    path = _profile_path()
+    if path is None or not path.exists():
+        return 0
+    keep = keep.strip().lower()
+    remove = [r.strip().lower() for r in remove if r and r.strip() and r.strip().lower() != keep]
+    if not keep or not remove:
+        return 0
+    removed = 0
+    with _write_lock:
+        try:
+            with _conn(path) as con:
+                labels = [keep] + remove
+                ph = ",".join("?" * len(labels))
+                rows = con.execute(
+                    f"SELECT topic, score, akasha_count, mnemosyne_count, kosmos_count, last_updated "
+                    f"FROM topic_interest_profile WHERE topic IN ({ph})",
+                    labels,
+                ).fetchall()
+                if not rows:
+                    return 0
+                total = sum(r[1] for r in rows)
+                ak = sum(int(r[2]) for r in rows)
+                mn = sum(int(r[3]) for r in rows)
+                ko = sum(int(r[4]) for r in rows)
+                last = max((r[5] or "") for r in rows)
+                rmv = [r[0] for r in rows if r[0] != keep]
+                if rmv:
+                    ph2 = ",".join("?" * len(rmv))
+                    con.execute(
+                        f"DELETE FROM topic_interest_profile WHERE topic IN ({ph2})", rmv
+                    )
+                con.execute(
+                    """INSERT INTO topic_interest_profile
+                           (topic, score, akasha_count, mnemosyne_count, kosmos_count, last_updated)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(topic) DO UPDATE SET
+                           score           = excluded.score,
+                           akasha_count    = excluded.akasha_count,
+                           mnemosyne_count = excluded.mnemosyne_count,
+                           kosmos_count    = excluded.kosmos_count,
+                           last_updated    = excluded.last_updated""",
+                    (keep, total, ak, mn, ko, last),
+                )
+                removed = len(rmv)
+            bk = _backup_path()
+            if bk is not None:
+                _write_backup(path, bk)
+            log.info("merge_topics: '%s' absorveu %s (score=%.2f)", keep, rmv, total)
+        except Exception as exc:
+            log.warning("merge_topics falhou: %s", exc)
+            return 0
+    return removed

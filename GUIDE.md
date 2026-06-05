@@ -787,7 +787,7 @@ AKASHA/
 │   ├── graph.py            → /graph — grafo de conhecimento
 │   ├── highlights.py       → /highlights — trechos marcados
 │   ├── history.py          → /history — histórico de buscas
-│   ├── interests.py        → /interests — perfil de interesses
+│   ├── interests.py        → /interests — perfil de interesses (refresh, consolidate, merge)
 │   ├── kosmos_bridge.py    → /kosmos — ponte com o KOSMOS (busca de imagens)
 │   ├── lenses.py           → /lenses — filtros de busca (lentes)
 │   ├── memory.py           → /memory — memória pessoal do Akasha
@@ -1084,7 +1084,7 @@ Estes arquivos na raiz são importados diretamente pelos apps Python (não são 
 | `ecosystem_scraper.py` | Scraping respeitoso (robots.txt, rate limiting, trafilatura) | AKASHA, Mnemosyne |
 | `hardware_probe.py` | Detecta GPU/VRAM/AVX2 (usado pelo HUB para escolher modelos) | HUB, logos/ |
 | `logits_worker.py` | Worker de logits para inferência especulativa | logos/ |
-| `shared_topic_profile.py` | Perfil de tópicos compartilhado AKASHA↔Mnemosyne | AKASHA, Mnemosyne |
+| `shared_topic_profile.py` | Perfil de interesses compartilhado (AKASHA, Mnemosyne, KOSMOS). Filtro de termos-lixo no caminho de escrita (`_is_meaningful_topic`); faxina de unificação cross-idioma por embedding (`consolidate_interests`, dona = AKASHA, a cada 30 min) + mesclagem manual (`merge_topics`) | AKASHA, Mnemosyne, KOSMOS |
 | `vram_monitor.py` | Monitora VRAM em tempo real (pausa P3 quando > 85%) | logos/, HUB |
 
 ---

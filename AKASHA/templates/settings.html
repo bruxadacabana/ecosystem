@@ -147,6 +147,13 @@
                value="{{ cfg.deep_research_max_docs }}" min="1" max="20" class="input settings-input-sm">
         <span class="lenses-hint">Documentos fetched em profundidade no modo Pesquisa Profunda · range: 1–20 · padrão: 8</span>
       </div>
+
+      <div class="settings-field" style="margin-top: 1rem;">
+        <label class="settings-label" for="s-consolidate-min">Faxina de interesses (intervalo)</label>
+        <input type="number" id="s-consolidate-min" name="interest_consolidate_interval_min"
+               value="{{ cfg.interest_consolidate_interval_min }}" min="5" max="1440" class="input settings-input-sm">
+        <span class="lenses-hint">A cada quantos minutos a AKASHA unifica interesses equivalentes em idiomas diferentes (ex.: "machine learning" + "aprendizado de máquina") · range: 5–1440 · padrão: 30</span>
+      </div>
     </section>
 
     <!-- ── 6. Privacidade ────────────────────────────────────────── -->

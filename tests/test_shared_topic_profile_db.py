@@ -481,3 +481,102 @@ class TestMeaningfulTopicFilter:
         assert topics == {"sociolinguística"}, (
             f"só 'sociolinguística' deveria ter sido gravado, obteve {topics}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Consolidação cross-idioma (unificação por embedding)
+# ---------------------------------------------------------------------------
+
+def _fake_embed(texts):
+    """Embeddings determinísticos: as duas formas de 'ML' iguais; python ortogonal."""
+    vecs = []
+    for t in texts:
+        if t in ("machine learning", "aprendizado de máquina"):
+            vecs.append([1.0, 0.0, 0.0])
+        elif t == "python":
+            vecs.append([0.0, 1.0, 0.0])
+        else:
+            vecs.append([0.0, 0.0, 1.0])
+    return vecs
+
+
+class TestConsolidateInterests:
+    def _seed(self):
+        from shared_topic_profile import update_scores
+        update_scores(["machine learning"], 2.0, "akasha")
+        update_scores(["aprendizado de máquina"], 1.0, "mnemosyne")
+        update_scores(["python"], 3.0, "akasha")
+
+    def test_mescla_equivalentes_e_soma_score(self, db_path):
+        from shared_topic_profile import consolidate_interests
+        self._seed()
+        removed = consolidate_interests(embed_fn=_fake_embed, sim_threshold=0.88)
+        assert removed == 1, f"deveria remover 1 duplicado, removeu {removed}"
+
+        con = sqlite3.connect(db_path)
+        rows = dict(con.execute("SELECT topic, score FROM topic_interest_profile"))
+        con.close()
+        # python intacto; as duas formas de ML viraram uma só com score somado (3.0)
+        assert "python" in rows and rows["python"] == pytest.approx(3.0)
+        ml = [t for t in rows if t != "python"]
+        assert len(ml) == 1, f"as duas formas de ML deveriam virar uma, sobraram {ml}"
+        assert rows[ml[0]] == pytest.approx(3.0), "score do grupo = soma (2.0 + 1.0)"
+
+    def test_rotulo_default_e_maior_score(self, db_path):
+        from shared_topic_profile import consolidate_interests
+        self._seed()
+        # sem detector de idioma → mantém o de maior score ('machine learning', 2.0)
+        consolidate_interests(embed_fn=_fake_embed, sim_threshold=0.88, lang_detect_fn=lambda t: "")
+        con = sqlite3.connect(db_path)
+        topics = {r[0] for r in con.execute("SELECT topic FROM topic_interest_profile")}
+        con.close()
+        assert "machine learning" in topics
+
+    def test_rotulo_prefere_portugues_quando_detectado(self, db_path):
+        from shared_topic_profile import consolidate_interests
+        self._seed()
+        # detector marca a forma PT → vira o rótulo, mesmo com score menor
+        lang = lambda t: "pt" if t == "aprendizado de máquina" else "en"
+        consolidate_interests(embed_fn=_fake_embed, sim_threshold=0.88, lang_detect_fn=lang)
+        con = sqlite3.connect(db_path)
+        topics = {r[0] for r in con.execute("SELECT topic FROM topic_interest_profile")}
+        con.close()
+        assert "aprendizado de máquina" in topics
+        assert "machine learning" not in topics
+
+    def test_sem_embed_fn_nao_faz_nada(self, db_path):
+        from shared_topic_profile import consolidate_interests
+        self._seed()
+        # embed_fn que sinaliza indisponibilidade não deve mesclar nada
+        removed = consolidate_interests(embed_fn=lambda texts: [], sim_threshold=0.88)
+        assert removed == 0
+
+    def test_threshold_alto_nao_mescla_distintos(self, db_path):
+        from shared_topic_profile import consolidate_interests, update_scores
+        update_scores(["python"], 1.0, "akasha")
+        update_scores(["rust"], 1.0, "akasha")  # ortogonal a python no _fake_embed
+        removed = consolidate_interests(embed_fn=_fake_embed, sim_threshold=0.88)
+        assert removed == 0, "tópicos distintos não podem ser mesclados"
+
+
+class TestMergeTopicsManual:
+    def test_merge_manual_soma_e_apaga(self, db_path):
+        from shared_topic_profile import update_scores, merge_topics
+        update_scores(["python"], 3.0, "akasha")
+        update_scores(["pythonista"], 1.0, "akasha")
+        update_scores(["python3"], 1.0, "mnemosyne")
+
+        removed = merge_topics("python", ["pythonista", "python3"])
+        assert removed == 2
+
+        con = sqlite3.connect(db_path)
+        rows = dict(con.execute("SELECT topic, score FROM topic_interest_profile"))
+        con.close()
+        assert set(rows) == {"python"}
+        assert rows["python"] == pytest.approx(5.0)
+
+    def test_merge_ignora_self(self, db_path):
+        from shared_topic_profile import update_scores, merge_topics
+        update_scores(["python"], 3.0, "akasha")
+        # remover == keep → nada a fazer
+        assert merge_topics("python", ["python"]) == 0

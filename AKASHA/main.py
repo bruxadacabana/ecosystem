@@ -97,6 +97,30 @@ async def _decay_scores_loop() -> None:
             _log.warning("decay_scores: erro: %s", exc)
 
 
+def _consolidate_interval_seconds() -> float:
+    """Intervalo da faxina de interesses (min), lido da config — ajustável no HUB."""
+    try:
+        import ecosystem_client as _ec  # type: ignore
+        eco = _ec.read_ecosystem() or {}
+        minutes = float(eco.get("akasha", {}).get("interest_consolidate_interval_min", 30) or 30)
+    except Exception:
+        minutes = 30.0
+    return max(5.0, minutes) * 60.0  # piso de 5 min para não saturar o embed
+
+
+async def _consolidate_interests_loop() -> None:
+    """Faxina periódica: unifica interesses equivalentes cross-idioma (a AKASHA é
+    a única dona). Intervalo configurável (padrão 30 min). Best-effort."""
+    while True:
+        await asyncio.sleep(_consolidate_interval_seconds())
+        try:
+            merged = await database.consolidate_interest_profile()
+            if merged:
+                _log.info("consolidate_interests: %d tópico(s) unificados.", merged)
+        except Exception as exc:
+            _log.warning("consolidate_interests: erro: %s", exc)
+
+
 async def _cache_cleanup_job() -> None:
     """Job a cada 6h: remove entradas expiradas do cache de busca web (search_cache)."""
     while True:
@@ -297,6 +321,7 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().create_task(_reflection_loop())
     asyncio.get_running_loop().create_task(_friendship_receiver_loop())
     asyncio.get_running_loop().create_task(_decay_scores_loop())
+    asyncio.get_running_loop().create_task(_consolidate_interests_loop())
     asyncio.get_running_loop().create_task(_cache_cleanup_job())
     asyncio.get_running_loop().create_task(_domain_boost_job())
     asyncio.get_running_loop().create_task(_pagerank_job())

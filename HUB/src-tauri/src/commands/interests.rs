@@ -155,3 +155,57 @@ pub async fn interests_refresh() -> Result<(), AppError> {
 
     Ok(())
 }
+
+/// Aciona a faxina de unificação cross-idioma na AKASHA (sob demanda — ex.: ao
+/// abrir a aba Interesses). Retorna quantos tópicos foram mesclados. Best-effort.
+#[tauri::command]
+pub async fn interests_consolidate() -> Result<i64, AppError> {
+    let eco = ecosystem::read_json();
+    let akasha_base = eco["akasha"]["base_url"]
+        .as_str()
+        .unwrap_or("http://localhost:7071")
+        .to_string();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| AppError::Io(e.to_string()))?;
+    match client
+        .post(format!("{akasha_base}/interests/consolidate"))
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let v: serde_json::Value = resp.json().await.unwrap_or_else(|_| serde_json::json!({}));
+            Ok(v["merged"].as_i64().unwrap_or(0))
+        }
+        Err(_) => Ok(0),
+    }
+}
+
+/// Mescla manualmente interesses na AKASHA: soma os scores de `remove` em `keep`
+/// e apaga os `remove`. Correção manual da usuária. Retorna quantos removidos.
+#[tauri::command]
+pub async fn interests_merge(keep: String, remove: Vec<String>) -> Result<i64, AppError> {
+    let eco = ecosystem::read_json();
+    let akasha_base = eco["akasha"]["base_url"]
+        .as_str()
+        .unwrap_or("http://localhost:7071")
+        .to_string();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| AppError::Io(e.to_string()))?;
+    let body = serde_json::json!({ "keep": keep, "remove": remove });
+    match client
+        .post(format!("{akasha_base}/interests/merge"))
+        .json(&body)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let v: serde_json::Value = resp.json().await.unwrap_or_else(|_| serde_json::json!({}));
+            Ok(v["removed"].as_i64().unwrap_or(0))
+        }
+        Err(e) => Err(AppError::Io(e.to_string())),
+    }
+}

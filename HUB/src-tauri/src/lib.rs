@@ -171,6 +171,8 @@ pub fn run() {
             commands::interests::interests_set_topic,
             commands::interests::interests_add_manual,
             commands::interests::interests_refresh,
+            commands::interests::interests_consolidate,
+            commands::interests::interests_merge,
         ])
         .setup(|app| {
             // Inicializar LOGOS antes do logging para ter o estado pronto

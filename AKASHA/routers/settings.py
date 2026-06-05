@@ -52,6 +52,7 @@ _DEFAULTS: dict = {
     "deep_research_max_docs": 8,
     "save_search_history": True,
     "save_clicks":         True,
+    "interest_consolidate_interval_min": 30,
 }
 
 
@@ -139,6 +140,7 @@ async def settings_post(request: Request) -> RedirectResponse:
         "deep_research_max_docs": _int("deep_research_max_docs", 8, lo=1, hi=20),
         "save_search_history":    _bool("save_search_history"),
         "save_clicks":            _bool("save_clicks"),
+        "interest_consolidate_interval_min": _int("interest_consolidate_interval_min", 30, lo=5, hi=1440),
     }
 
     _save_cfg(updates)

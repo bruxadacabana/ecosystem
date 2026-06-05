@@ -367,6 +367,15 @@ export const interestsAddManual = (
 export const interestsRefresh = (): Promise<TauriResult<void>> =>
   call<void>('interests_refresh')
 
+export const interestsConsolidate = (): Promise<TauriResult<number>> =>
+  call<number>('interests_consolidate')
+
+export const interestsMerge = (
+  keep:   string,
+  remove: string[],
+): Promise<TauriResult<number>> =>
+  call<number>('interests_merge', { keep, remove })
+
 // ----------------------------------------------------------
 //  Fine-tuning
 // ----------------------------------------------------------

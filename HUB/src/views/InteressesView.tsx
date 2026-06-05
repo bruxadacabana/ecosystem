@@ -34,6 +34,11 @@ export function InteressesView() {
   const [newWeight,   setNewWeight]   = useState(0.5)
   const [adding,      setAdding]      = useState(false)
   const [showExcluded, setShowExcluded] = useState(false)
+  const [mergeMode,      setMergeMode]      = useState(false)
+  const [selected,       setSelected]       = useState<string[]>([])
+  const [keepName,       setKeepName]       = useState<string | null>(null)
+  const [merging,        setMerging]        = useState(false)
+  const [consolidateMsg, setConsolidateMsg] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function load() {
@@ -49,6 +54,48 @@ export function InteressesView() {
   }
 
   useEffect(() => { load() }, [])
+
+  // Ao abrir a aba: roda a faxina de unificação cross-idioma (best-effort) e,
+  // se algo foi mesclado, re-exporta e recarrega — a lista aparece recém-limpa.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const res = await cmd.interestsConsolidate()
+      if (cancelled || !res.ok || res.data <= 0) return
+      setConsolidateMsg(`${res.data} interesse(s) unificado(s)`)
+      await cmd.interestsRefresh()
+      await load()
+      setTimeout(() => { if (!cancelled) setConsolidateMsg(null) }, 4000)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  function toggleSelect(name: string) {
+    setSelected(prev =>
+      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name],
+    )
+    setKeepName(prev => prev ?? name)
+  }
+
+  function exitMergeMode() {
+    setMergeMode(false)
+    setSelected([])
+    setKeepName(null)
+  }
+
+  async function handleMerge() {
+    if (!keepName || selected.length < 2) return
+    const remove = selected.filter(n => n !== keepName)
+    if (remove.length === 0) return
+    setMerging(true)
+    const res = await cmd.interestsMerge(keepName, remove)
+    if (res.ok) {
+      await cmd.interestsRefresh()
+      await load()
+    }
+    setMerging(false)
+    exitMergeMode()
+  }
 
   async function handlePin(topic: TopicEntry) {
     await cmd.interestsSetTopic(topic.name, null, !topic.pinned, null)
@@ -123,14 +170,28 @@ export function InteressesView() {
           Tópicos derivados automaticamente por AKASHA, Mnemosyne e KOSMOS.
           Tópicos fixados (pinned) não são sobrescritos pela atualização automática.
         </p>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={handleRefresh}
-          disabled={refreshing}
-          title="Pinga AKASHA e Mnemosyne para re-exportar interesses, depois recarrega o arquivo"
-        >
-          {refreshing ? '…' : '↺ atualizar agora'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {consolidateMsg && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--accent-green)' }}>
+              {consolidateMsg}
+            </span>
+          )}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => (mergeMode ? exitMergeMode() : setMergeMode(true))}
+            title="Selecionar interesses duplicados e mesclá-los à mão"
+          >
+            {mergeMode ? 'cancelar' : '⇲ mesclar'}
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Pinga AKASHA e Mnemosyne para re-exportar interesses, depois recarrega o arquivo"
+          >
+            {refreshing ? '…' : '↺ atualizar agora'}
+          </button>
+        </div>
       </div>
 
       {/* Formulário — adicionar tópico manual */}
@@ -167,6 +228,28 @@ export function InteressesView() {
         </button>
       </form>
 
+      {/* Barra de mesclagem manual */}
+      {mergeMode && selected.length >= 2 && (
+        <div style={styles.mergeBar}>
+          <span style={styles.muted}>manter:</span>
+          <select
+            value={keepName ?? ''}
+            onChange={e => setKeepName(e.target.value)}
+            style={styles.mergeSelect}
+          >
+            {selected.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <span style={styles.muted}>absorvendo {selected.length - 1} outro(s)</span>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleMerge}
+            disabled={merging}
+          >
+            {merging ? '…' : 'mesclar'}
+          </button>
+        </div>
+      )}
+
       {/* Lista de tópicos */}
       <div style={styles.listWrapper}>
         {visible.length === 0 && (
@@ -180,6 +263,9 @@ export function InteressesView() {
             topic={t}
             onPin={handlePin}
             onExclude={handleExclude}
+            selectable={mergeMode}
+            selected={selected.includes(t.name)}
+            onToggleSelect={toggleSelect}
           />
         ))}
 
@@ -217,11 +303,22 @@ interface TopicRowProps {
   onExclude?: (t: TopicEntry) => void
   onRestore?: (t: TopicEntry) => void
   isExcluded?: boolean
+  selectable?: boolean
+  selected?:   boolean
+  onToggleSelect?: (name: string) => void
 }
 
-function TopicRow({ topic, onPin, onExclude, onRestore, isExcluded }: TopicRowProps) {
+function TopicRow({ topic, onPin, onExclude, onRestore, isExcluded, selectable, selected, onToggleSelect }: TopicRowProps) {
   return (
     <div style={{ ...styles.row, opacity: isExcluded ? 0.45 : 1 }}>
+      {selectable && (
+        <input
+          type="checkbox"
+          checked={!!selected}
+          onChange={() => onToggleSelect?.(topic.name)}
+          style={{ flexShrink: 0, cursor: 'pointer' }}
+        />
+      )}
       {/* Barra de peso */}
       <div style={styles.weightBar}>
         <div
@@ -417,6 +514,25 @@ const styles = {
     display:   'flex',
     flexDirection: 'column' as const,
     gap:       4,
+  },
+  mergeBar: {
+    display:      'flex',
+    alignItems:   'center',
+    gap:          10,
+    padding:      '8px 20px',
+    borderBottom: '1px solid var(--rule)',
+    background:   'color-mix(in srgb, var(--accent) 8%, transparent)',
+    flexShrink:   0,
+  },
+  mergeSelect: {
+    background:   'var(--paper-dark)',
+    border:       '1px solid var(--rule)',
+    borderRadius: 'var(--radius)',
+    color:        'var(--ink)',
+    fontFamily:   'var(--font-mono)',
+    fontSize:     12,
+    padding:      '3px 8px',
+    outline:      'none',
   },
   center: {
     display:        'flex',

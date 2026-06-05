@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 
 log = logging.getLogger("akasha.interests")
 
@@ -61,3 +61,42 @@ async def get_topics(n: int = 30) -> list[dict]:
     import database as _db
     rows = await _db.get_top_topics(n)
     return [{"topic": t, "score": round(s, 4)} for t, s in rows]
+
+
+@router.post("/consolidate")
+async def interests_consolidate() -> dict:
+    """Roda a faxina de unificação cross-idioma sob demanda (ex.: o HUB chama ao
+    abrir a aba Interesses, para a lista exibida estar recém-mesclada).
+
+    Best-effort: sem embed-server, retorna merged=0 sem erro.
+    """
+    import database as _db
+    try:
+        merged = await _db.consolidate_interest_profile()
+        if merged:
+            log.info("interests_consolidate: %d tópico(s) mesclados.", merged)
+        return {"merged": merged}
+    except Exception as exc:
+        log.warning("interests_consolidate: erro: %s", exc)
+        return {"merged": 0, "error": str(exc)}
+
+
+@router.post("/merge")
+async def interests_merge(payload: dict = Body(...)) -> dict:
+    """Mescla manualmente interesses (correção da usuária no HUB).
+
+    Body: {"keep": "<rótulo a manter>", "remove": ["<rótulo>", ...]}.
+    Soma os scores de `remove` em `keep` e apaga os `remove`.
+    """
+    keep = (payload.get("keep") or "").strip()
+    remove = [str(r) for r in (payload.get("remove") or []) if str(r).strip()]
+    if not keep or not remove:
+        return {"removed": 0, "error": "keep e remove são obrigatórios"}
+    import database as _db
+    try:
+        removed = await _db.merge_interest_topics(keep, remove)
+        log.info("interests_merge: '%s' absorveu %d tópico(s).", keep, removed)
+        return {"removed": removed}
+    except Exception as exc:
+        log.warning("interests_merge: erro: %s", exc)
+        return {"removed": 0, "error": str(exc)}
