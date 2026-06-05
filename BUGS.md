@@ -94,6 +94,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-031](#bug-031) | FIXED | 2026-06-04 | Mnemosyne | IA fora do controle do LOGOS (model2vec/POTION + cardiffnlp) — POTION ainda QUEBRAVA buscas no work_pc (128-dim vs índice bge-m3 1024-dim sincronizado). Removidos os dois; embedding sempre bge-m3 via LOGOS, sentimento via Plutchik/LOGOS |
 | [BUG-032](#bug-032) | FIXED | 2026-06-04 | Mnemosyne | LightRAG amarrado ao Ollama (descartado) e sem `initialize_storages()` → feature quebrada em duas frentes; migrado para o LOGOS (OpenAI /v1) + init de storages |
 | [BUG-033](#bug-033) | FIXED | 2026-06-04 | Mnemosyne | Classificação Plutchik nunca funcionou: `_PLUTCHIK_PROMPT.format()` tratava o JSON de exemplo `{"joy":..}` como campos de formatação → `KeyError` engolido. Chaves escapadas (`{{ }}`) |
+| [BUG-034](#bug-034) | FIXED | 2026-06-04 | HUB/LOGOS + Mnemosyne/KOSMOS | `registry.json` com `name` = nome do GGUF em vez do alias (qwen2.5:7b, gemma2:2b baixados em 24/05 por código antigo) → LOGOS não resolvia o alias → reflexões do Mnemosyne falhavam (DEBUG, invisível) → memória pessoal vazia. Corrigidos os 2 `name` + falha de reflexão subida a warning |
 
 ---
 
@@ -1934,3 +1935,36 @@ Escapar as chaves do JSON de exemplo dobrando-as (`{{ }}`) em `_PLUTCHIK_PROMPT`
 
 #### Teste de regressão
 `tests/test_logos_only.py::TestPlutchikBgGravaVA::test_update_plutchik_grava_valence_arousal_via_logos`.
+
+---
+
+### BUG-034 · [FIXED] · LOGOS não resolvia alias `qwen2.5:7b`/`gemma2:2b` — registry com nome do GGUF; reflexões do Mnemosyne falhavam em silêncio
+
+#### Identificação
+- **Data:** 2026-06-04
+- **App(s):** HUB/LOGOS (resolução de modelo) + Mnemosyne (reflexões) + KOSMOS (análise)
+- **Componente:** `HUB/src-tauri/logos/models/registry.json` (dado por-máquina); `Mnemosyne/gui/workers.py` (observabilidade)
+- **Commit do fix:** registry.json é gitignored (corrigido localmente); commit cobre só o workers.py
+- **Descoberta via:** usuária reportou "indexou 7 arquivos mas 0 memórias pessoais"; os logs novos (BUG-030) mostraram `IndexReflectionWorker: processando` sem nenhum `memória pessoal salva`; teste de chat ao LOGOS retornou `Modelo 'qwen2.5:7b' não encontrado no registry`.
+
+#### Ambiente
+- **Máquina(s):** PC principal (CachyOS)
+- **Modo:** produção
+
+#### Pré-condição para reproduzir
+Perfil ativo pede um alias (`qwen2.5:7b`, `gemma2:2b`) cuja entrada no `registry.json` tem `name` = nome do arquivo GGUF.
+
+#### Sintoma observado
+Indexação normal, mas **nenhuma memória pessoal** gravada. Reflexões silenciosamente abortadas. AKASHA funcionava (usa `qwen2.5:3b`, cujo registry tinha o alias correto).
+
+#### Causa raiz
+O LOGOS resolve o modelo casando `entry.name == alias` ou `entry.filename(sem .gguf) == alias` (`find_model_registry_entry`, logos.rs ~1274). As entradas de `qwen2.5:7b` e `gemma2:2b` (baixadas em 2026-05-24, antes do código de registro passar a usar o alias canônico) tinham `name` = `"Qwen2.5-7B-Instruct-Q4_K_M"` / `"gemma-2-2b-it-Q4_K_M"` (o nome do GGUF) — nenhum casava com o alias pedido pelos perfis. As entradas posteriores (`qwen2.5:3b`, `bge-m3`, `moondream`) já usavam o alias. Agravante de observabilidade: o `IndexReflectionWorker` logava a falha do LLM em `debug` (e o `PeriodicReflectionWorker` não logava) — a falha ficava invisível com o log em INFO.
+
+#### Impacto
+Memória pessoal do Mnemosyne (reflexões, insights, emotional RAG) **completamente vazia** no PC principal; análise do KOSMOS (`gemma2:2b`) também falharia. Invisível nos logs.
+
+#### Fix aplicado
+(1) Corrigidos os 2 `name` no `registry.json` para o alias canônico (`qwen2.5:7b`, `gemma2:2b`) — o LOGOS relê o arquivo a cada requisição, resolução passou a funcionar. (2) `gui/workers.py`: falha do LLM de reflexão subida de `debug` → `warning` no `IndexReflectionWorker` e adicionado log de warning no `PeriodicReflectionWorker` (antes engolia sem log) — "indexou mas não salvou nada" agora aparece no log. **Prevenção de recorrência (follow-up, não feito):** tornar `find_model_registry_entry` tolerante — se `name`/`filename` não casarem, mapear o alias via `model_hf_table` e casar pelo filename esperado.
+
+#### Teste de regressão
+Manual: `curl` ao `POST /v1/chat/completions` com `model=qwen2.5:7b` deixou de retornar "não encontrado no registry". A observabilidade é coberta por inspeção (warning presente em ambos os workers de reflexão).

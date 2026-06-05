@@ -4872,6 +4872,11 @@ A BD fica local (leituras offline) e sincroniza com Turso Cloud ao escrever/arra
 
 ## Melhorias, correções e atualizações
 
+### HUB (LOGOS) — Resolução de alias tolerante a registry com nome de GGUF (prevenção do BUG-034) | 2026-06-04
+> Contexto: o BUG-034 (registry.json com `name` = nome do GGUF em vez do alias `qwen2.5:7b`/`gemma2:2b`) deixou o Mnemosyne sem memória pessoal e o KOSMOS sem análise, em silêncio. Os 2 nomes foram corrigidos no registry da máquina (dado por-máquina, gitignored), mas a resolução continua frágil: depende do `name` da entrada bater exatamente com o alias pedido pelo perfil.
+#### HUB (LOGOS)
+- [ ] **`find_model_registry_entry` tolerante a registry desalinhado** — em `HUB/src-tauri/src/logos.rs` (~1265), quando nenhuma entrada casa por `name` nem por `filename(sem .gguf) == alias`, fazer fallback: mapear o alias pedido via `model_hf_table(alias)` → `(repo_id, filename)` esperado e casar a entrada pelo `filename`. Assim `qwen2.5:7b` resolve mesmo que a entrada tenha `name = "Qwen2.5-7B-Instruct-Q4_K_M"`. Aplicar o mesmo fallback nos outros pontos de lookup (`commands/logos.rs` ~320/361/393). Testes: entrada com `name` = nome do GGUF + alias na hf_table → resolve; alias inexistente → None. Evita que um registry escrito por versão antiga (ou download manual) quebre um app inteiro em silêncio.
+
 ### Interesses do ecossistema — filtro de termos-lixo + unificação cross-idioma | 2026-06-04
 > Contexto: na aba Interesses do HUB aparecem termos que não são interesses reais — verbos, gerúndios e abstrações como "encontrei", "começando", "conexão", "temas", "interessante", "incluindo". O `topic_interest_profile` é um store **compartilhado** (`shared_topic_profile`, importável por todos os apps); hoje só a AKASHA alimenta, mas KOSMOS e Mnemosyne vão alimentar quando rodarem — então o filtro e a unificação precisam viver no caminho de escrita do store, não em cada app. Além disso, o mesmo interesse em línguas diferentes fragmenta o sinal, e a tradução literal perde o sentido de domínio (ex.: "crochet pattern" → "padrão" em vez de "receita de crochê").
 #### Ecossistema (perfil de interesses compartilhado)

@@ -1604,7 +1604,8 @@ class PeriodicReflectionWorker(QThread):
             llm = ChatOpenAI(model=self._config.llm_model, base_url=f"{_ec_url()}/v1",
                              default_headers=_ec_hdrs("mnemosyne", 3), temperature=0.7, api_key="logos")
             raw = llm.invoke(prompt).content.strip()
-        except Exception:
+        except Exception as exc:
+            log.warning("PeriodicReflectionWorker: LLM de reflexão falhou (sem memória salva): %s", exc)
             self.finished.emit()
             return
 
@@ -1784,7 +1785,10 @@ class IndexReflectionWorker(QThread):
                              max_tokens=120, api_key="logos")
             raw = llm.invoke(prompt).content.strip()
         except Exception as exc:
-            log.debug("IndexReflectionWorker: LLM falhou para '%s': %s", name, exc)
+            # Visível (warning): se o LLM de reflexão falha, NENHUMA memória pessoal
+            # é gravada — é a diferença entre "indexou mas não salvou nada" e um bug.
+            log.warning("IndexReflectionWorker: LLM de reflexão falhou para '%s' (sem memória salva): %s",
+                        name, exc)
             return
 
         # Extrai JSON — fallback para raw text se parsing falhar
