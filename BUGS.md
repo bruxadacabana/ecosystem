@@ -95,6 +95,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-032](#bug-032) | FIXED | 2026-06-04 | Mnemosyne | LightRAG amarrado ao Ollama (descartado) e sem `initialize_storages()` → feature quebrada em duas frentes; migrado para o LOGOS (OpenAI /v1) + init de storages |
 | [BUG-033](#bug-033) | FIXED | 2026-06-04 | Mnemosyne | Classificação Plutchik nunca funcionou: `_PLUTCHIK_PROMPT.format()` tratava o JSON de exemplo `{"joy":..}` como campos de formatação → `KeyError` engolido. Chaves escapadas (`{{ }}`) |
 | [BUG-034](#bug-034) | FIXED | 2026-06-04 | HUB/LOGOS + Mnemosyne/KOSMOS | `registry.json` com `name` = nome do GGUF em vez do alias (qwen2.5:7b, gemma2:2b baixados em 24/05 por código antigo) → LOGOS não resolvia o alias → reflexões do Mnemosyne falhavam (DEBUG, invisível) → memória pessoal vazia. Corrigidos os 2 `name` + falha de reflexão subida a warning |
+| [BUG-035](#bug-035) | FIXED | 2026-06-05 | Mnemosyne | `_ec_hdrs` usado em 6 chamadas ChatOpenAI mas NUNCA importado → `NameError` quebrava TODA a camada de LLM do Mnemosyne (reflexões, chat, studio, deep research). Causa real (junto com BUG-034) da memória pessoal vazia. Faltava `get_inference_headers as _ec_hdrs` no import |
 
 ---
 
@@ -1968,3 +1969,36 @@ Memória pessoal do Mnemosyne (reflexões, insights, emotional RAG) **completame
 
 #### Teste de regressão
 Manual: `curl` ao `POST /v1/chat/completions` com `model=qwen2.5:7b` deixou de retornar "não encontrado no registry". A observabilidade é coberta por inspeção (warning presente em ambos os workers de reflexão).
+
+---
+
+### BUG-035 · [FIXED] · `_ec_hdrs` nunca importado — NameError quebrava TODA a camada de LLM do Mnemosyne
+
+#### Identificação
+- **Data:** 2026-06-05
+- **App(s):** Mnemosyne
+- **Componente:** `gui/workers.py` (import)
+- **Commit do fix:** (este commit)
+- **Descoberta via:** o warning adicionado no BUG-034 (`IndexReflectionWorker: LLM de reflexão falhou ... name '_ec_hdrs' is not defined`) tornou visível um NameError que antes era engolido em `debug`.
+
+#### Ambiente
+- **Máquina(s):** todas
+- **Modo:** produção
+
+#### Pré-condição para reproduzir
+Qualquer recurso de LLM do Mnemosyne: reflexão pós-indexação, chat no notebook (AskWorker), Studio, deep research, reflexão periódica, sugestão de perguntas.
+
+#### Sintoma observado
+Memória pessoal vazia após indexar (a "análise" não roda). Indexação funciona (não usa LLM). Erro: `name '_ec_hdrs' is not defined`.
+
+#### Causa raiz
+`gui/workers.py` importava `get_inference_url as _ec_url` (linha 7) mas **não** importava o helper de headers. O código usa `_ec_hdrs("mnemosyne", N)` em **6** construções de `ChatOpenAI` (AskWorker ~816, ~1082, PersonalReflectionWorker ~1436, ~1515, PeriodicReflectionWorker ~1604, IndexReflectionWorker ~1783) para enviar `X-App`/`X-Priority` ao LOGOS. Como `_ec_hdrs` nunca foi definido nem importado, **toda** chamada levantava `NameError` na construção do `ChatOpenAI`, antes mesmo de falar com o LOGOS. As exceções eram engolidas (em `debug` ou sem log), então a quebra passou despercebida — toda a camada de LLM do Mnemosyne estava morta. Bug pré-existente (regressão, provavelmente ao adicionar priority headers); o `ecosystem_client.py:165` já tinha `get_inference_headers(app, priority)` pronto, só não estava sendo importado.
+
+#### Impacto
+Mnemosyne sem nenhuma funcionalidade de LLM: zero reflexões/insights (memória pessoal vazia), chat do notebook quebrado, Studio e deep research quebrados. Mascarado por `except` silenciosos.
+
+#### Fix aplicado
+`gui/workers.py` linha 7: `from ecosystem_client import get_inference_url as _ec_url, get_inference_headers as _ec_hdrs`. `get_inference_headers("mnemosyne", 3)` → `{"X-App": "mnemosyne", "X-Priority": "3"}`, que o proxy do LOGOS usa para rotear (X-App → servidor) e priorizar (X-Priority). **Requer reiniciar o Mnemosyne** (mudança de import).
+
+#### Teste de regressão
+`tests/test_pipeline_logging.py::TestIndexWorkerNarration::test_ec_hdrs_importado_onde_e_usado` — se `_ec_hdrs(` é usado no source, o import `get_inference_headers as _ec_hdrs` deve estar presente.

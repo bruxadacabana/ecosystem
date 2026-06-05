@@ -123,6 +123,15 @@ class TestIndexWorkerNarration:
             "IndexWorker deve logar o arquivo concluído com a contagem de vetores"
         )
 
+    def test_ec_hdrs_importado_onde_e_usado(self, src):
+        # BUG-035: _ec_hdrs era usado em 6 chamadas ChatOpenAI mas NUNCA importado
+        # → NameError quebrava toda a camada de LLM do Mnemosyne (reflexões, chat,
+        # studio). Garante que, se _ec_hdrs é usado, ele está importado.
+        if "_ec_hdrs(" in src:
+            assert "get_inference_headers as _ec_hdrs" in src, (
+                "_ec_hdrs é usado mas não importado de ecosystem_client — NameError"
+            )
+
     def test_resumeindexworker_tambem_narra(self, src):
         # O caminho de retomada ("Atualizar índice") deve ser igualmente auditável.
         assert 'ResumeIndexWorker: indexando [%d/%d]' in src

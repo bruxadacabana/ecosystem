@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from langchain_openai import ChatOpenAI
-from ecosystem_client import get_inference_url as _ec_url
+from ecosystem_client import get_inference_url as _ec_url, get_inference_headers as _ec_hdrs
 from PySide6.QtCore import QThread, Signal
 
 from core.config import AppConfig
