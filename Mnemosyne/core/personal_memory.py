@@ -31,15 +31,16 @@ from .config import get_app_data_dir
 
 log = logging.getLogger("mnemosyne.personal_memory")
 
-# ── Cálculo de valência/arousal — backend multilíngue ────────────────────────
-# Prioridade de backend: XLM-RoBERTa → NRC-VAD lexicon → VADER → (None, None)
+# ── Cálculo de valência/arousal ──────────────────────────────────────────────
+# Valor autoritativo: derivado do vetor Plutchik computado pelo LOGOS (ver
+# _plutchik_to_va / _update_plutchik_bg). Fallback rápido/local para o valor
+# imediato na gravação: léxico determinístico NRC-VAD → VADER → (None, None).
 #
 # NRC-VAD lexicon (Mohammad 2018): baixar de
 #   https://saifmohammad.com/WebPages/nrc-vad-lexicon.html
 # e colocar em ~/.cache/ecosystem/nrc_vad_lexicon.tsv
 # Formato TSV: Word<TAB>Valence<TAB>Arousal<TAB>Dominance (com cabeçalho)
 
-_xlmr_pipe:  object | None = None
 _nrc_vad:    dict   | None = None
 _sia:        object | None = None
 _va_backend: str           = ""
@@ -65,21 +66,11 @@ def _load_nrc_vad() -> "dict[str, tuple[float, float]] | None":
 
 
 def _resolve_va_backend() -> None:
-    global _xlmr_pipe, _nrc_vad, _sia, _va_backend
-
-    try:
-        from transformers import pipeline as _hf_pipeline  # type: ignore[import-untyped]
-        _xlmr_pipe = _hf_pipeline(
-            "text-classification",
-            model="cardiffnlp/twitter-xlm-roberta-base-sentiment",
-            top_k=None,
-            device=-1,
-        )
-        _va_backend = "xlm_roberta"
-        log.debug("VA backend: XLM-RoBERTa")
-        return
-    except Exception as exc:
-        log.debug("XLM-RoBERTa indisponível: %s", exc)
+    # O sentimento autoritativo (valence/arousal) vem do LOGOS, derivado do vetor
+    # Plutchik em _update_plutchik_bg. Aqui resolvemos apenas o fallback rápido e
+    # determinístico (léxicos NRC-VAD/VADER) para um valor imediato na gravação —
+    # nada de modelo de IA baixado fora do LOGOS.
+    global _nrc_vad, _sia, _va_backend
 
     _nrc_vad = _load_nrc_vad()
     if _nrc_vad:
@@ -105,21 +96,15 @@ def _resolve_va_backend() -> None:
 
 
 def _compute_valence_arousal(text: str) -> tuple[float | None, float | None]:
-    """Valence ∈ [−1, 1] e arousal ∈ [0, 1] via modelo multilíngue.
+    """Valence ∈ [−1, 1] e arousal ∈ [0, 1] — valor imediato, rápido e local.
 
-    Backend: XLM-RoBERTa → NRC-VAD lexicon → VADER → (None, None).
+    Léxico determinístico: NRC-VAD → VADER → (None, None). É um proxy; o valor
+    autoritativo é derivado pelo LOGOS (vetor Plutchik) em _update_plutchik_bg,
+    que sobrescreve estas colunas em background.
     """
     if not _va_backend:
         _resolve_va_backend()
     try:
-        if _va_backend == "xlm_roberta" and _xlmr_pipe is not None:
-            results = _xlmr_pipe(text[:512], truncation=True)  # type: ignore[operator]
-            scores = {r["label"].upper(): r["score"] for r in results[0]}
-            pos = scores.get("POSITIVE", scores.get("POS", 0.0))
-            neg = scores.get("NEGATIVE", scores.get("NEG", 0.0))
-            neu = scores.get("NEUTRAL",  scores.get("NEU", 0.0))
-            return round(pos - neg, 4), round(1.0 - neu, 4)
-
         if _va_backend == "nrc_vad" and _nrc_vad is not None:
             vals, arousals = [], []
             for w in text.lower().split():
@@ -151,7 +136,7 @@ def _shannon_entropy(valence: float | None, arousal: float | None) -> float:
     """H ∈ [0, 1.585]. Retorna 1.0 se VA ausente (incerteza neutra).
 
     Polaridades derivadas: neu = 1−arousal; pos = (arousal+valence)/2;
-    neg = (arousal−valence)/2. Exato para XLM-RoBERTa, aproximado para NRC-VAD/VADER.
+    neg = (arousal−valence)/2. Aproximação a partir do par (valence, arousal).
     """
     if valence is None or arousal is None:
         return 1.0
@@ -185,9 +170,28 @@ _PLUTCHIK_PROMPT = (
     "Avalie o texto abaixo nas 8 emoções primárias de Plutchik "
     "(0.0 = ausente, 1.0 = dominante).\n"
     "Responda APENAS com JSON válido, sem texto adicional:\n"
-    '{"joy":X,"trust":X,"fear":X,"surprise":X,"sadness":X,"disgust":X,"anger":X,"anticipation":X}\n\n'
+    # Chaves dobradas ({{ }}) porque a string passa por str.format(content=...) —
+    # senão o JSON de exemplo seria interpretado como campos de formatação.
+    '{{"joy":X,"trust":X,"fear":X,"surprise":X,"sadness":X,"disgust":X,"anger":X,"anticipation":X}}\n\n'
     "Texto: {content}\n\nJSON:"
 )
+
+# Pesos de valence (∈[-1,1]) e arousal (∈[0,1]) por emoção de Plutchik, na ordem
+# de _PLUTCHIK_LABELS (joy, trust, fear, surprise, sadness, disgust, anger,
+# anticipation). Permite derivar valence/arousal do vetor Plutchik computado pelo
+# LOGOS — sentimento autoritativo via LOGOS, sem modelo de IA externo.
+_PLUTCHIK_VALENCE = (1.0, 0.6, -0.9, 0.0, -0.8, -0.7, -0.8, 0.4)
+_PLUTCHIK_AROUSAL = (0.6, 0.3, 0.9, 0.9, 0.3, 0.5, 0.8, 0.6)
+
+
+def _plutchik_to_va(vec: list[float]) -> tuple[float, float]:
+    """Deriva (valence ∈ [-1,1], arousal ∈ [0,1]) de um vetor Plutchik normalizado."""
+    if not vec or len(vec) != 8:
+        return 0.0, 0.0
+    valence = sum(v * w for v, w in zip(vec, _PLUTCHIK_VALENCE))
+    arousal = sum(v * w for v, w in zip(vec, _PLUTCHIK_AROUSAL))
+    return (round(max(-1.0, min(1.0, valence)), 4),
+            round(max(0.0,  min(1.0, arousal)), 4))
 
 
 def _va_to_plutchik(valence: float, arousal: float) -> list[float]:
@@ -353,12 +357,15 @@ def _update_plutchik_bg(memory_id: int, content: str, llm_model: str, db_path: P
             return
         total = sum(vec) or 1.0
         vec   = [round(x / total, 4) for x in vec]
+        # Valence/arousal autoritativos derivados do vetor Plutchik (via LOGOS):
+        # sobrescrevem o proxy de léxico gravado na inserção.
+        v_val, v_aro = _plutchik_to_va(vec)
         con   = sqlite3.connect(str(db_path))
-        con.execute("UPDATE personal_memory SET plutchik = ? WHERE id = ?",
-                    (json.dumps(vec), memory_id))
+        con.execute("UPDATE personal_memory SET plutchik = ?, valence = ?, arousal = ? WHERE id = ?",
+                    (json.dumps(vec), v_val, v_aro, memory_id))
         con.commit(); con.close()
-        log.debug("plutchik: memória %d classificada emocionalmente (vec salvo).",
-                  memory_id)
+        log.debug("plutchik: memória %d classificada via LOGOS (valence=%.2f, arousal=%.2f).",
+                  memory_id, v_val, v_aro)
     except Exception as exc:
         log.debug("_update_plutchik_bg: %s", exc)
 

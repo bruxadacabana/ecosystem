@@ -252,8 +252,10 @@ impl HardwareProfile {
                 // qwen2.5:0.5b tem JSON parse rate 61% vs smollm2 26% — melhor para extração
                 llm_analysis: "qwen2.5:0.5b",
                 llm_query:    "qwen2.5:0.5b",
-                // potion: modelo estático, sem GPU, multilíngue — substitui all-minilm
-                embed:        "potion-multilingual-128M",
+                // bge-m3 em CPU: o work_pc NÃO indexa (só consulta o índice sincronizado),
+                // então embeda 1 query por vez — leve. DEVE ser o mesmo modelo das outras
+                // máquinas, senão os vetores do banco sincronizado ficam incompatíveis.
+                embed:        "bge-m3",
                 // WorkPc sem GPU discreta — OCR via Tesseract local apenas
                 image_ocr:    "",
                 // i5-3470 sem GPU discreta — todos os modelos em CPU

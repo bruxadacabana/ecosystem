@@ -93,22 +93,8 @@ def test_embed_batch_multiple_texts():
 
 
 # ---------------------------------------------------------------------------
-# 2. Modelo potion → usa model2vec local, nunca chama rede
+# (POTION/model2vec removido — embedding é sempre bge-m3 via LOGOS, BUG-031)
 # ---------------------------------------------------------------------------
-
-def test_embed_batch_potion_uses_model2vec_not_network():
-    from core import indexer as _idx
-    from core.indexer import _POTION_MODEL_NAME
-
-    mock_vecs = [[0.5] * 128]
-    with patch.object(_idx, "_embed_batch_model2vec", return_value=mock_vecs) as mock_m2v:
-        with patch("httpx.post") as mock_post:
-            result = _idx._embed_batch(["texto"], model=_POTION_MODEL_NAME, base_url=_FAKE_BASE)
-
-    mock_m2v.assert_called_once_with(["texto"])
-    mock_post.assert_not_called()
-    assert result == mock_vecs
-
 
 # ---------------------------------------------------------------------------
 # 3. Timeout na primeira tentativa → retenta e retorna na segunda

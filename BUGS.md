@@ -91,8 +91,9 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-028](#bug-028) | OPEN | 2026-06-03 | HUB/LOGOS (logos.rs) + Mnemosyne | embed-server em loop de restart (inicia "com sucesso" repetidamente) com Mnemosyne aberto → Mnemosyne dá timeout e não indexa nada |
 | [BUG-029](#bug-029) | FIXED | 2026-06-03 | HUB/LOGOS (logos.rs) | embed-server com ubatch default 512 → inputs > 512 tokens dão HTTP 500 "input too large" (intermitente, chunks longos) |
 | [BUG-030](#bug-030) | FIXED | 2026-06-03 | Mnemosyne | Pipeline sem observabilidade: indexação/memória pessoal/temas salvam (ou falham) em silêncio — impossível auditar se o Mnemosyne funciona |
-| [BUG-031](#bug-031) | OPEN | 2026-06-03 | Mnemosyne | IA fora do controle do LOGOS (model2vec/POTION + cardiffnlp sentiment) carregada via `from_pretrained` sem offline-first → pode travar indexação em HF lento, sem log |
+| [BUG-031](#bug-031) | FIXED | 2026-06-04 | Mnemosyne | IA fora do controle do LOGOS (model2vec/POTION + cardiffnlp) — POTION ainda QUEBRAVA buscas no work_pc (128-dim vs índice bge-m3 1024-dim sincronizado). Removidos os dois; embedding sempre bge-m3 via LOGOS, sentimento via Plutchik/LOGOS |
 | [BUG-032](#bug-032) | FIXED | 2026-06-04 | Mnemosyne | LightRAG amarrado ao Ollama (descartado) e sem `initialize_storages()` → feature quebrada em duas frentes; migrado para o LOGOS (OpenAI /v1) + init de storages |
+| [BUG-033](#bug-033) | FIXED | 2026-06-04 | Mnemosyne | Classificação Plutchik nunca funcionou: `_PLUTCHIK_PROMPT.format()` tratava o JSON de exemplo `{"joy":..}` como campos de formatação → `KeyError` engolido. Chaves escapadas (`{{ }}`) |
 
 ---
 
@@ -1827,7 +1828,7 @@ Estilo "narração viva" (escolhido pela usuária: INFO nos marcos, DEBUG no det
 
 ---
 
-### BUG-031 · [OPEN] · IA fora do controle do LOGOS no Mnemosyne (model2vec/POTION + cardiffnlp) sem offline-first
+### BUG-031 · [FIXED] · IA fora do controle do LOGOS no Mnemosyne (model2vec/POTION + cardiffnlp) — POTION também quebrava buscas no work_pc
 
 #### Identificação
 - **Data:** 2026-06-03
@@ -1852,16 +1853,16 @@ O Mnemosyne baixa/carrega modelos de IA diretamente do Hugging Face Hub, fora do
 ```
 
 #### Causa raiz
-Dois modelos rodam em processo, sem o LOGOS gerenciar: (1) **model2vec / POTION** (`potion-multilingual-128M`) em [indexer.py:61](Mnemosyne/core/indexer.py#L61), usado como embedding quando `config.embed_model == "potion-multilingual-128M"` (perfil `work_pc`, i5-3470 sem AVX2); (2) **cardiffnlp/twitter-xlm-roberta-base-sentiment** em [personal_memory.py:72](Mnemosyne/core/personal_memory.py#L72). Ambos via `from_pretrained`/`StaticModel.from_pretrained` **sem `local_files_only` nem timeout** → revalidação de metadados ou primeiro download bloqueia na rede. Fere o princípio "nada de IA fora do LOGOS".
+Dois modelos rodavam em processo, sem o LOGOS gerenciar: (1) **model2vec / POTION** (`potion-multilingual-128M`), embedding do perfil `work_pc`; (2) **cardiffnlp/twitter-xlm-roberta-base-sentiment**, sentimento. Além da violação do princípio, descobriu-se um **bug de correção mais grave** no POTION: o `work_pc` (que **não indexa** — só consulta o índice sincronizado via Syncthing) embedava as **queries** com POTION (128 dimensões), enquanto o índice é bge-m3 (1024 dimensões). Vetores de modelos diferentes são **incompatíveis** → busca no work_pc quebrada. O perfil do LOGOS (`logos.rs`) realmente definia `embed: "potion-multilingual-128M"` só no work_pc.
 
 #### Impacto
-(1) Violação arquitetural: IA fora do gestor único (LOGOS). (2) Risco operacional: indexação/memória pessoal podem travar em rede lenta, sem log, sem timeout.
+(1) Violação arquitetural: IA fora do gestor único (LOGOS) — o LOGOS não conseguia monitorar/gerenciar esses modelos. (2) **Correção:** busca no work_pc retornava lixo/erro por incompatibilidade de dimensão contra o banco sincronizado.
 
 #### Fix aplicado
-(pendente) Decidir entre rotear esses modelos pelo LOGOS ou documentar exceção consciente (modelos leves p/ hardware fraco). Em qualquer caso: log `info` antes de carregar, `local_files_only=True`-first com fallback à rede só sem cache, e/ou `HF_HUB_OFFLINE`/timeout. Ver itens no TODO ("Remover/migrar IA que roda fora do controle do LOGOS" e "`from_pretrained` offline-first").
+Decisão da usuária: **Opção 2 — rotear tudo pelo LOGOS** (e remover o que não cabe no pipeline). (a) **POTION removido por completo** (`_Model2VecEmbeddings`, `_embed_batch_model2vec`, `_POTION_MODEL_NAME`, branches em `_embed_batch`/`_get_embeddings`, fallback do `topic_extractor` → c-TF-IDF). `logos.rs` perfil `work_pc` `embed` → `bge-m3`. Agora **todas as máquinas usam bge-m3 via LOGOS** → banco sincronizado coerente; o work_pc só consulta (1 query por vez, leve em CPU). (b) **cardiffnlp removido**; o sentimento autoritativo (valence/arousal) passa a ser **derivado do vetor Plutchik computado pelo LOGOS** (`_plutchik_to_va` + `_update_plutchik_bg`), com léxico determinístico NRC-VAD/VADER só como proxy rápido na gravação (não são IA, são tabelas de palavras). Item 4 (offline-first do `from_pretrained`) tornou-se **sem objeto** — não há mais `from_pretrained` desses modelos. **Nenhuma IA do Mnemosyne roda mais fora do LOGOS.**
 
 #### Teste de regressão
-(pendente) Verificar que o carregamento dos modelos emite log; que `local_files_only=True` é tentado primeiro quando há cache; que um timeout/erro de rede é logado e não trava indefinidamente.
+`tests/test_logos_only.py` (9 testes): `_plutchik_to_va` (joy→valence+, sadness→valence−, fear→arousal alto, clamp); integração `_update_plutchik_bg` grava valence/arousal via LOGOS (mock); inspeção de source confirmando POTION/model2vec e cardiffnlp/xlm ausentes e `_get_embeddings` sempre LOGOS. Testes obsoletos de POTION removidos. Suíte: 414 passam (2 falhas pré-existentes: falta `pytesseract`).
 
 ---
 
@@ -1900,3 +1901,36 @@ LightRAG inutilizável quando habilitado. Como a inicialização é lazy e tem f
 
 #### Teste de regressão
 `tests/test_lightrag_logos.py` (4 testes): stuba `LightRAG` + funções OpenAI + `get_inference_url` e verifica que (a) a construção usa nosso wrapper e chama `initialize_storages`; (b) LLM e embedding roteiam para `LOGOS/v1` com os modelos certos; (c) o source não tem mais nenhuma referência a Ollama; (d) usa `get_inference_url` + binding OpenAI. 4/4 passam.
+
+---
+
+### BUG-033 · [FIXED] · Classificação Plutchik nunca rodou — `str.format()` quebrava no JSON de exemplo
+
+#### Identificação
+- **Data:** 2026-06-04
+- **App(s):** Mnemosyne
+- **Componente:** `core/personal_memory.py` — `_PLUTCHIK_PROMPT` / `_update_plutchik_bg`
+- **Commit do fix:** (este commit)
+- **Descoberta via:** ao escrever o teste de integração da derivação valence/arousal (BUG-031), o `_update_plutchik_bg` falhava com `KeyError: '"joy"'`.
+
+#### Ambiente
+- **Máquina(s):** todas
+- **Modo:** produção
+
+#### Pré-condição para reproduzir
+Salvar qualquer memória pessoal (dispara `_update_plutchik_bg` em background).
+
+#### Sintoma observado
+A coluna `plutchik` nunca era preenchida; nenhum vetor emocional era computado. Falha silenciosa (o `except Exception: log.debug` da função engolia o erro).
+
+#### Causa raiz
+`_PLUTCHIK_PROMPT` contém o JSON de exemplo `{"joy":X,...}` com chaves simples, e era passado por `str.format(content=...)`. O `.format()` interpreta `{"joy":X,...}` como um campo de formatação inválido → `KeyError`/`ValueError` antes mesmo da chamada ao LLM. A classificação Plutchik, portanto, **nunca executou** desde que foi escrita.
+
+#### Impacto
+Emotional RAG / mood-congruent retrieval sem dados; e, após o BUG-031, a derivação de valence/arousal (que depende do vetor Plutchik) também não funcionaria. Bug latente mascarado pelo `except` silencioso.
+
+#### Fix aplicado
+Escapar as chaves do JSON de exemplo dobrando-as (`{{ }}`) em `_PLUTCHIK_PROMPT`, de modo que `str.format(content=...)` substitua apenas `{content}` e emita o JSON literal. Coberto pelo teste de integração `tests/test_logos_only.py::TestPlutchikBgGravaVA` (mock do LLM → vetor salvo + valence/arousal derivados).
+
+#### Teste de regressão
+`tests/test_logos_only.py::TestPlutchikBgGravaVA::test_update_plutchik_grava_valence_arousal_via_logos`.

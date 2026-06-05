@@ -85,14 +85,14 @@ def extract_topics(
 
     if n < _SMALL_CORPUS_THRESHOLD:
         topics_list, doc_topic_list = _run_small(valid_docs)
+    elif any(e is None for e in valid_embs):
+        # Embeddings ausentes no índice (caso raro — o Chroma guarda os bge-m3):
+        # cai no caminho c-TF-IDF, que não precisa de embeddings. Evita reembedar
+        # (model2vec foi removido; embedding é sempre via LOGOS).
+        log.warning("Embeddings ausentes no índice — usando c-TF-IDF (sem clustering por embedding).")
+        topics_list, doc_topic_list = _run_small(valid_docs)
     else:
-        # Se embeddings não estiverem disponíveis, recalcula com model2vec
-        if any(e is None for e in valid_embs):
-            log.info("Embeddings ausentes — recalculando com model2vec.")
-            from .indexer import _embed_batch_model2vec
-            valid_embs = _embed_batch_model2vec(valid_docs)
-        else:
-            valid_embs = list(valid_embs)
+        valid_embs = list(valid_embs)
         topics_list, doc_topic_list = _run_large(valid_docs, valid_embs, n)
 
     doc_keywords = _extract_keywords(valid_docs)

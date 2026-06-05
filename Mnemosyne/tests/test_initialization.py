@@ -213,17 +213,5 @@ def test_bm25_index_initializes_without_existing_file():
             pytest.fail("BM25Index não deve levantar FileNotFoundError quando arquivo ausente")
 
 
-# ---------------------------------------------------------------------------
-# 8. _embed_batch_model2vec: ImportError claro quando model2vec ausente
-# ---------------------------------------------------------------------------
-
-def test_embed_batch_model2vec_raises_import_error_when_missing():
-    """_embed_batch_model2vec deve levantar IndexBuildError com mensagem clara."""
-    from core.indexer import _embed_batch_model2vec, IndexBuildError
-    import core.indexer as _idx_mod
-
-    # Simula model2vec não instalado
-    with patch.object(_idx_mod, "_model2vec_instance", None):
-        with patch.dict("sys.modules", {"model2vec": None}):
-            with pytest.raises((IndexBuildError, ImportError)):
-                _embed_batch_model2vec(["texto de teste"])
+# 8. (POTION/_embed_batch_model2vec removido — embedding é sempre bge-m3 via
+#    LOGOS em todas as máquinas; ver tests/test_logos_only.py · BUG-031)

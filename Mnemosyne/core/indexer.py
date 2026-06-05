@@ -31,39 +31,11 @@ from .tracker import FileTracker
 # mecanismo de meta-reflexão para detectar quando consolidar 3 reflexões.
 _REFLECTION_META_FILE = "reflection_meta.json"
 
-# Identificador do modelo de embedding estático (model2vec — sem Ollama, sem AVX2).
-# Útil no Windows de trabalho (i5-3470, sem GPU) onde bge-m3 satura o CPU.
-_POTION_MODEL_NAME = "potion-multilingual-128M"
-
-# Cache singleton do StaticModel — carregado uma vez por processo, reutilizado.
-_model2vec_instance: object | None = None
-
-
-class _Model2VecEmbeddings(LCEmbeddings):
-    """Wrapper LangChain para model2vec (StaticModel).
-
-    Carrega o modelo na primeira chamada e o mantém em memória. Não depende do
-    Ollama — embeddings gerados localmente via model2vec em ~50ms por chunk.
-    """
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return _embed_batch_model2vec(texts)
-
-    def embed_query(self, text: str) -> list[float]:
-        return _embed_batch_model2vec([text])[0]
-
-
-def _embed_batch_model2vec(texts: list[str]) -> list[list[float]]:
-    global _model2vec_instance
-    if _model2vec_instance is None:
-        try:
-            from model2vec import StaticModel  # type: ignore[import]
-            _model2vec_instance = StaticModel.from_pretrained(_POTION_MODEL_NAME)
-        except ImportError as exc:
-            raise IndexBuildError(
-                "model2vec não instalado. Execute: pip install model2vec"
-            ) from exc
-    return _model2vec_instance.encode(texts).tolist()  # type: ignore[union-attr]
+# Embedding é SEMPRE via LOGOS (bge-m3), em todas as máquinas — inclusive o
+# work_pc (i5-3470), que não indexa, só consulta o índice sincronizado. Usar o
+# mesmo modelo em todo lugar é obrigatório: vetores de modelos diferentes (ex.:
+# o antigo model2vec/POTION 128-dim) são incompatíveis com o banco bge-m3 1024-dim
+# sincronizado via Syncthing. Nada de IA fora do LOGOS.
 
 
 def _clear_orphan_wal(persist_dir: str) -> None:
@@ -388,7 +360,7 @@ def _embed_batch(
 ) -> list[list[float]]:
     """Gera embeddings para um lote de textos via /v1/embeddings (OpenAI-compatível).
 
-    Para potion-multilingual-128M: usa model2vec local (sem GPU, sem AVX2).
+    Sempre via LOGOS (bge-m3) — mesmo modelo em todas as máquinas.
 
     Retries automáticos (até 3 tentativas, backoff _EMBED_RETRY_WAITS):
     - Timeout (httpx.TimeoutException): backend ocupado com LLM ativo.
@@ -397,9 +369,6 @@ def _embed_batch(
 
     base_url: resolvido em runtime via ecosystem_client (LOGOS 7072).
     """
-    if model == _POTION_MODEL_NAME:
-        return _embed_batch_model2vec(texts)
-
     import time
     import httpx
 
@@ -721,8 +690,6 @@ class _InferenceEmbeddings(LCEmbeddings):
 
 
 def _get_embeddings(config: AppConfig) -> LCEmbeddings:
-    if config.embed_model == _POTION_MODEL_NAME:
-        return _Model2VecEmbeddings()
     return _InferenceEmbeddings(config.embed_model)
 
 

@@ -979,7 +979,7 @@ Mnemosyne/
 ├── 📁 logs/                → Logs rotativos da Mnemosyne
 └── 📁 tests/               → Testes pytest
     ├── test_initialization.py   → Bootstrap: ecosystem.json, paths inválidos, ChromaDB, BM25
-    ├── test_logos_embeddings.py → Contrato _embed_batch: sucesso, potion local, retry, 501
+    ├── test_logos_embeddings.py → Contrato _embed_batch: sucesso, retry, 501
     ├── test_akasha_sync.py      → Protocolo de amizade: notify_akasha_insight, notify_mnemosyne_insight
     ├── test_index_clear.py      → Limpeza pré-indexação: habilitadas, desabilitadas, ecosystem_chroma_dir
     └── integration/             → Testes que precisam de ChromaDB e modelos reais
@@ -2887,15 +2887,14 @@ O LOGOS sabe em qual máquina está rodando e define automaticamente qual modelo
 | `llm_rag` (Mnemosyne RAG) | qwen2.5:7b | gemma2:2b | smollm2:1.7b |
 | `llm_analysis` (KOSMOS) | gemma2:2b | smollm2:1.7b | qwen2.5:0.5b |
 | `llm_query` (AKASHA) | qwen2.5:3b | smollm2:1.7b | qwen2.5:0.5b |
-| `embed` (todos) | bge-m3 | bge-m3 | potion-multilingual-128M |
+| `embed` (todos) | bge-m3 | bge-m3 | bge-m3 |
 | `image_ocr` | moondream | moondream | *(não disponível)* |
 
 **Por que esses modelos?**
 - **qwen2.5:7b** — melhor balanço qualidade/VRAM para RAG longo (4.7 GB Q4, contexto longo)
 - **gemma2:2b** — extração JSON confiável; coexiste com qwen2.5:7b na VRAM (1.6 GB)
 - **qwen2.5:3b** — latência baixa para queries (~1.9 GB, bom JSON, coexiste com 7b)
-- **bge-m3** — multilíngue, compatível entre máquinas via Syncthing (670 MB)
-- **potion-multilingual-128M** — embedding estático (sem GPU), para o PC de trabalho sem AVX2
+- **bge-m3** — multilíngue, em **todas** as máquinas (inclusive o work_pc, que só consulta o índice sincronizado). Obrigatório usar o mesmo modelo em toda máquina que compartilha o índice via Syncthing — vetores de modelos diferentes são incompatíveis. (670 MB; em CPU)
 - **smollm2:1.7b** — modelo-teto do laptop (1.7B cabe inteiro na MX150 de 2 GB)
 - **moondream** — ~1.7 GB VRAM; LOGOS descarrega bge-m3 antes de carregar (swap explícito)
 
@@ -3266,7 +3265,7 @@ embedding("receita de bolo de cenoura")
 
 A **similaridade de cosseno** mede o ângulo entre dois vetores: 1.0 = idênticos, 0.0 = sem relação, -1.0 = opostos. Na prática, dois textos relacionados ficam entre 0.7 e 0.95.
 
-**O modelo de embedding** é uma rede neural treinada especificamente para essa tarefa — no ecossistema, `bge-m3` (multilíngue, 670 MB) para o PC principal e laptop, e `potion-multilingual-128M` (estático, sem GPU) para o PC de trabalho.
+**O modelo de embedding** é uma rede neural treinada especificamente para essa tarefa — no ecossistema, `bge-m3` (multilíngue, 670 MB) em **todas** as máquinas (o mesmo modelo é obrigatório porque o índice é sincronizado entre elas).
 
 **Onde os vetores são armazenados:**
 - Mnemosyne usa **ChromaDB** (banco de vetores) em `{sync_root}/mnemosyne/chroma/`
@@ -3530,7 +3529,7 @@ Total:                 → ~1.2 GB VRAM (cabe na RX 6600 junto com outros modelo
 
 São o mesmo conceito, mas com propósitos diferentes — vale distinguir:
 
-**Embeddings para busca** (bge-m3, potion):
+**Embeddings para busca** (bge-m3):
 - Gerados por modelos especializados em similarity search
 - Treinados para que textos semanticamente similares fiquem próximos no espaço vetorial
 - Usados em runtime para indexar e buscar documentos
