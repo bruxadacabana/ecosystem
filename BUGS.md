@@ -97,6 +97,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-034](#bug-034) | FIXED | 2026-06-04 | HUB/LOGOS + Mnemosyne/KOSMOS | `registry.json` com `name` = nome do GGUF em vez do alias (qwen2.5:7b, gemma2:2b baixados em 24/05 por código antigo) → LOGOS não resolvia o alias → reflexões do Mnemosyne falhavam (DEBUG, invisível) → memória pessoal vazia. Corrigidos os 2 `name` + falha de reflexão subida a warning |
 | [BUG-035](#bug-035) | FIXED | 2026-06-05 | Mnemosyne | `_ec_hdrs` usado em 6 chamadas ChatOpenAI mas NUNCA importado → `NameError` quebrava TODA a camada de LLM do Mnemosyne (reflexões, chat, studio, deep research). Causa real (junto com BUG-034) da memória pessoal vazia. Faltava `get_inference_headers as _ec_hdrs` no import |
 | [BUG-036](#bug-036) | FIXED | 2026-06-05 | HUB/LOGOS | `effective_gpu_layers` com orçamento chumbado (90%) + KV cache ~3x inflado → achava que 3B+7B não cabiam na GPU e jogava o 7B do Mnemosyne na CPU (RAM do sistema) → RAM esgotava, kernel matava o 7B, watchdog reiniciava → espiral que TRAVAVA o PC. Fix: orçamento = `vram_limit_pct` configurado + KV realista + rede de segurança (descarregar o outro LLM e usar GPU, nunca CPU para chat) |
+| [BUG-037](#bug-037) | FIXED | 2026-06-05 | HUB/LOGOS | Com AKASHA+Mnemosyne juntos, um modelo crasha (pressão de RAM dos apps), o watchdog reinicia, mas a VRAM do modelo MORTO ainda não foi reclamada → cai na CPU (rede de segurança do BUG-036 não disparou: o handle do outro estava morto, não "ativo") → 6,7 GB de RAM → OOM-killer derruba o ecossistema. Fix: a rede de segurança ESPERA a VRAM liberar (retry ~9s) em vez de cair na CPU — nunca CPU para chat, exceto último recurso |
 
 ---
 
@@ -2036,3 +2037,36 @@ PC travando (RAM/swap esgotados, I/O 95%); caso de uso principal (índice→aná
 
 #### Teste de regressão
 `logos.rs` (testes): `estimate_kv_cache_realista_nao_3x_inflado` (KV do 7B < 700 MB, 3B < 350 MB, 3B+7B+caches cabem sob 95% de 8176 MB); os 4 testes de `effective_gpu_layers` atualizados para a nova assinatura. `cargo check` limpo; 5/5 passam. Validação final na máquina (GPU real) fica para o rebuild da usuária — observar que o 7B sobe com `n-gpu-layers` != 0 e que a RAM do sistema não estoura.
+
+---
+
+### BUG-037 · [FIXED] · OOM ao rodar AKASHA+Mnemosyne juntos: watchdog reinicia em CPU porque a VRAM do modelo morto ainda não liberou
+
+#### Identificação
+- **Data:** 2026-06-05
+- **App(s):** HUB/LOGOS (requisito: AKASHA + Mnemosyne simultâneos — caso de uso principal)
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `ensure_server_loaded` (rede de segurança)
+- **Commit do fix:** (este commit)
+- **Descoberta via:** com os dois apps rodando, o ecossistema caiu sozinho. `journalctl -k` mostrou `Out of memory: Killed process (llama-server) anon-rss 6.7GB` às 22:06. O log do HUB mostrou, no instante: `VRAM insuficiente para GPU (usada 7630 MB, disponível 137 MB) — carregando em CPU` para o `qwen2.5:3b`.
+
+#### Ambiente
+- **Máquina(s):** PC principal (RX 6600 8 GB, 13 GiB RAM)
+- **Modo:** produção, AKASHA (backfill) + Mnemosyne (indexação) simultâneos
+
+#### Pré-condição para reproduzir
+Os dois apps ativos com trabalho pesado; um llama-server crasha (pressão de RAM dos apps faz o kernel matar o llama-server, que tem `oom_score_adj` alto) e o watchdog tenta reiniciar enquanto a VRAM do modelo morto ainda não foi reclamada.
+
+#### Sintoma observado
+PC **não trava** (o OOM-killer mata rápido em vez de moer no swap), mas os programas fecham sozinhos; indexação perdida.
+
+#### Causa raiz
+O BUG-036 garantiu "nunca CPU para chat" via rede de segurança em `ensure_server_loaded`: se um modelo seria rebaixado para CPU, descarrega o OUTRO LLM e usa GPU. Mas a condição era "o outro está **ativo** (handle vivo)?". No cenário de crash duplo, o outro modelo (7B) também tinha morrido → seu **handle estava limpo** (`mnemosyne_proc_active()==false`), mas sua **VRAM ainda estava alocada** (o driver leva alguns segundos para reclamar após a morte do processo). Então: nada para descarregar (handle morto) → o 3B caiu na **CPU** → ~6,7 GB de RAM → OOM-killer → derrubou o ecossistema. Ambos os watchdogs (AKASHA via `do_load_model→ensure_llama_model_loaded`, Mnemosyne direto) passam por `ensure_server_loaded`, então o furo afetava os dois.
+
+#### Impacto
+Impossível rodar AKASHA + Mnemosyne juntos sob carga — o ecossistema se autodestruía por OOM. Bloqueava o caso de uso principal.
+
+#### Fix aplicado
+A rede de segurança em `ensure_server_loaded` passou a, quando um modelo de chat seria rebaixado para CPU: (1) descarregar o outro LLM se vivo (como antes); (2) **ESPERAR a VRAM liberar** — loop de retry (~6× 1,5s ≈ 9s) re-checando `effective_gpu_layers`, porque a VRAM de um modelo recém-morto se libera em segundos. Só cai para CPU como **último recurso absoluto**, nunca por VRAM transitoriamente ocupada. Resultado: um modelo de chat nunca vai para a RAM do sistema por VRAM ocupada/settling → AKASHA e Mnemosyne coexistem na GPU sem OOM.
+
+#### Teste de regressão
+`cargo check` limpo; testes de `effective_gpu_layers`/`estimate_kv` do BUG-036 continuam passando. Validação do loop de espera é de integração (depende de VRAM mudando no tempo) — fica para observação na máquina: sob crash, o log deve mostrar "aguardando VRAM liberar" e então "carregará na GPU", sem cair em CPU. **Pendente (app-level):** a pressão de RAM dos apps (backfill da AKASHA + indexação do Mnemosyne juntos) é o gatilho do crash inicial — ver item no TODO.

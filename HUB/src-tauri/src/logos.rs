@@ -1980,14 +1980,18 @@ pub(crate) async fn ensure_server_loaded(
     let vram_limit_pct = *s.0.vram_limit_pct.lock().await;
     let mut n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx, vram_limit_pct).await;
 
-    // ── Gestão de RAM do sistema (não só VRAM) ──────────────────────────────
-    // Um modelo de chat grande JAMAIS deve ir para a CPU (RAM do sistema): em
-    // 13 GB isso esgota a RAM, o kernel mata o llama-server, o watchdog reinicia
-    // e vira espiral de restart que TRAVA a máquina. Se o modelo foi rebaixado
-    // para CPU (n_gpu==0) mas o perfil queria GPU, é porque o OUTRO LLM ocupa a
-    // VRAM. Descarregamos o outro servidor de chat e tentamos de novo na GPU —
-    // um LLM pesado por vez na GPU é o que os 8 GB comportam. Nunca CPU.
+    // ── Gestão de RAM do sistema (não só VRAM) — AKASHA + Mnemosyne coexistem ─
+    // Um modelo de chat grande JAMAIS deve ir para a CPU (RAM do sistema): em 13 GB
+    // isso esgota a RAM, o kernel mata o llama-server (OOM) e vira espiral. Se o
+    // modelo foi rebaixado para CPU (n_gpu==0) mas o perfil queria GPU, a VRAM está
+    // ocupada — seja pelo OUTRO LLM vivo, seja pela VRAM ainda-não-reclamada de um
+    // modelo que acabou de morrer (crash/OOM; o driver leva alguns segundos para
+    // liberar). Tratamos os dois: (1) descarregar o outro LLM se vivo; (2) ESPERAR
+    // a VRAM liberar antes de carregar na GPU. Só cair para CPU como último recurso
+    // absoluto — NUNCA por VRAM transitoriamente ocupada. É isto que permite os dois
+    // apps coexistirem na GPU sem estourar a RAM do sistema.
     if n_gpu == 0 && profile_n_gpu != 0 {
+        // (1) descarrega o outro LLM de chat se estiver vivo
         let (other_active, other_label) = match target {
             ServerTarget::Akasha    => (s.mnemosyne_proc_active().await, "Mnemosyne"),
             ServerTarget::Mnemosyne => (s.llama_proc_active().await,     "AKASHA"),
@@ -1995,23 +1999,35 @@ pub(crate) async fn ensure_server_loaded(
         if other_active {
             log::warn!(
                 "LOGOS {label}: '{model_name}' não coube na GPU junto do LLM do {other_label} — \
-                 descarregando o {other_label} para carregar '{model_name}' na GPU \
-                 (evita carga em RAM do sistema / travamento)"
+                 descarregando o {other_label} para usar a GPU (evita RAM do sistema)"
             );
             match target {
                 ServerTarget::Akasha    => { s.kill_mnemosyne_proc().await; }
                 ServerTarget::Mnemosyne => { s.kill_akasha_proc().await; }
             }
-            tokio::time::sleep(Duration::from_millis(600)).await; // aguarda VRAM liberar
+            tokio::time::sleep(Duration::from_millis(600)).await;
             n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx, vram_limit_pct).await;
-            if n_gpu != 0 {
-                log::info!("LOGOS {label}: VRAM liberada — '{model_name}' carregará na GPU");
-            } else {
-                log::error!(
-                    "LOGOS {label}: '{model_name}' não cabe na GPU nem sozinho — \
-                     carregará em CPU (modelo grande demais para esta GPU?). Risco de RAM."
-                );
-            }
+        }
+        // (2) se ainda não cabe, a VRAM pode estar ocupada por um modelo MORTO cuja
+        // memória o driver ainda não reclamou. ESPERAR liberar — não ir para CPU.
+        let mut tries = 0;
+        while n_gpu == 0 && tries < 6 {
+            tries += 1;
+            log::warn!(
+                "LOGOS {label}: '{model_name}' aguardando VRAM liberar (ocupada/settling) \
+                 antes de carregar na GPU — tentativa {tries}/6"
+            );
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx, vram_limit_pct).await;
+        }
+        if n_gpu != 0 {
+            log::info!("LOGOS {label}: VRAM disponível — '{model_name}' carregará na GPU");
+        } else {
+            log::error!(
+                "LOGOS {label}: '{model_name}' não coube na GPU mesmo após aguardar ~9s — \
+                 carregando em CPU como ÚLTIMO RECURSO (risco de RAM). Modelo grande demais \
+                 para esta GPU, ou outro processo retém a VRAM."
+            );
         }
     }
 
