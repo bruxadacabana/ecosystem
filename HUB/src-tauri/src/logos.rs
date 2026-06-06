@@ -1453,7 +1453,11 @@ pub(crate) fn gpu_layers_for_model(model_name: &str, profile: HardwareProfile) -
 /// Calibrada para modelos Q4_K_M (~1489 MB para 7B@4096, ~745 MB para 7B@2048).
 fn estimate_kv_cache_mb(model_size_mb: u64, n_ctx: u32) -> u64 {
     if model_size_mb == 0 { return 0; }
-    (model_size_mb * n_ctx as u64) / (4096 * 3)
+    // KV cache real desses modelos GQA a 4096 ctx ≈ model_size/10. O divisor era
+    // (4096*3) → ~model_size/3, ~3x inflado, fazendo o LOGOS achar que 3B+7B não
+    // cabiam juntos na GPU e jogar o 7B na CPU (RAM do sistema → travamento).
+    // (4096*8) → ~model_size/8: realista, com pequena margem de segurança.
+    (model_size_mb * n_ctx as u64) / (4096 * 8)
 }
 
 /// Decide quantas layers carregar na GPU considerando a VRAM disponível AGORA.
@@ -1471,6 +1475,7 @@ async fn effective_gpu_layers(
     profile_n_gpu: i32,
     model_size_mb: u64,
     n_ctx: u32,
+    vram_limit_pct: f32,
 ) -> i32 {
     // Slot configurado como CPU-only no perfil — respeitar sem checar VRAM
     if profile_n_gpu == 0 {
@@ -1484,8 +1489,11 @@ async fn effective_gpu_layers(
     let vram_used  = vram_used_opt.unwrap_or(0);
     // Usa total real do sysfs; fallback para valor conservador do perfil
     let vram_total = vram_total_opt.unwrap_or_else(|| vram_budget_for_profile(profile));
-    // 10% reservado para overhead do driver
-    let safe_budget = (vram_total as f64 * 0.90) as u64;
+    // Orçamento = limite de VRAM CONFIGURADO (o mesmo que o watchdog usa, 93–95%),
+    // não um valor chumbado. O design quer 3B+7B juntos na GPU sob esse limite —
+    // usar 90% fixo derrubava o 7B para a CPU mesmo com a GPU dentro do limite.
+    let budget_frac = (vram_limit_pct / 100.0).clamp(0.50, 0.97) as f64;
+    let safe_budget = (vram_total as f64 * budget_frac) as u64;
     let available   = safe_budget.saturating_sub(vram_used);
     let kv_cache_mb = estimate_kv_cache_mb(model_size_mb, n_ctx);
     let total_needed = model_size_mb.saturating_add(kv_cache_mb);
@@ -1969,7 +1977,43 @@ pub(crate) async fn ensure_server_loaded(
     let model_size_mb = registry_entry.map(|e| e.size_bytes / 1_048_576).unwrap_or(0);
     let profile_n_gpu = gpu_layers_for_model(model_name, s.0.hardware_profile);
     let n_ctx = n_ctx_for_hardware(s.0.hardware_profile);
-    let n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx).await;
+    let vram_limit_pct = *s.0.vram_limit_pct.lock().await;
+    let mut n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx, vram_limit_pct).await;
+
+    // ── Gestão de RAM do sistema (não só VRAM) ──────────────────────────────
+    // Um modelo de chat grande JAMAIS deve ir para a CPU (RAM do sistema): em
+    // 13 GB isso esgota a RAM, o kernel mata o llama-server, o watchdog reinicia
+    // e vira espiral de restart que TRAVA a máquina. Se o modelo foi rebaixado
+    // para CPU (n_gpu==0) mas o perfil queria GPU, é porque o OUTRO LLM ocupa a
+    // VRAM. Descarregamos o outro servidor de chat e tentamos de novo na GPU —
+    // um LLM pesado por vez na GPU é o que os 8 GB comportam. Nunca CPU.
+    if n_gpu == 0 && profile_n_gpu != 0 {
+        let (other_active, other_label) = match target {
+            ServerTarget::Akasha    => (s.mnemosyne_proc_active().await, "Mnemosyne"),
+            ServerTarget::Mnemosyne => (s.llama_proc_active().await,     "AKASHA"),
+        };
+        if other_active {
+            log::warn!(
+                "LOGOS {label}: '{model_name}' não coube na GPU junto do LLM do {other_label} — \
+                 descarregando o {other_label} para carregar '{model_name}' na GPU \
+                 (evita carga em RAM do sistema / travamento)"
+            );
+            match target {
+                ServerTarget::Akasha    => { s.kill_mnemosyne_proc().await; }
+                ServerTarget::Mnemosyne => { s.kill_akasha_proc().await; }
+            }
+            tokio::time::sleep(Duration::from_millis(600)).await; // aguarda VRAM liberar
+            n_gpu = effective_gpu_layers(&s.0.client, s.0.hardware_profile, profile_n_gpu, model_size_mb, n_ctx, vram_limit_pct).await;
+            if n_gpu != 0 {
+                log::info!("LOGOS {label}: VRAM liberada — '{model_name}' carregará na GPU");
+            } else {
+                log::error!(
+                    "LOGOS {label}: '{model_name}' não cabe na GPU nem sozinho — \
+                     carregará em CPU (modelo grande demais para esta GPU?). Risco de RAM."
+                );
+            }
+        }
+    }
 
     // VRAM pre-check: só executa se o servidor não estava ativo (modelo novo a carregar).
     // Se `killed_prev` é false, nenhum processo estava rodando → verificar disponibilidade.
@@ -5799,7 +5843,7 @@ mod tests {
     async fn effective_gpu_workpc_always_cpu() {
         // WorkPc sem GPU discreta — deve retornar 0 independente do model_size
         let client = Client::new();
-        let result = effective_gpu_layers(&client, HardwareProfile::WorkPc, -1, 0, 4096).await;
+        let result = effective_gpu_layers(&client, HardwareProfile::WorkPc, -1, 0, 4096, 95.0).await;
         assert_eq!(result, 0);
     }
 
@@ -5807,7 +5851,7 @@ mod tests {
     async fn effective_gpu_profile_zero_passthrough() {
         // Se o perfil já diz 0 (slot CPU-only), não deve checar VRAM
         let client = Client::new();
-        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, 0, 0, 4096).await;
+        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, 0, 0, 4096, 95.0).await;
         assert_eq!(result, 0);
     }
 
@@ -5815,8 +5859,8 @@ mod tests {
     async fn effective_gpu_model_fits_uses_profile_value() {
         // Modelo pequeno cabe na VRAM — sem GPU no CI, vram_used=0, modelo+KV < budget
         let client = Client::new();
-        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 500, 4096).await;
-        // KV cache estimado: 500*4096/(4096*3) = 167MB; total=667MB < budget → retorna -1
+        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 500, 4096, 95.0).await;
+        // KV cache estimado: 500*4096/(4096*8) = 62MB; total=562MB < budget → retorna -1
         assert_eq!(result, -1);
     }
 
@@ -5824,8 +5868,23 @@ mod tests {
     async fn effective_gpu_model_size_zero_uses_profile_value() {
         // Tamanho desconhecido (0) → não deve bloquear GPU
         let client = Client::new();
-        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 0, 4096).await;
+        let result = effective_gpu_layers(&client, HardwareProfile::MainPc, -1, 0, 4096, 95.0).await;
         assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn estimate_kv_cache_realista_nao_3x_inflado() {
+        // BUG-036: o KV cache era ~3x inflado (model/3), derrubando o 7B para CPU.
+        // Agora ~model/8: para o 7B (4467 MB) a 4096 ctx, ~558 MB (não ~1489 MB).
+        let kv7b = estimate_kv_cache_mb(4467, 4096);
+        assert!(kv7b < 700, "KV do 7B deveria ser ~558MB, não inflado; obteve {kv7b}");
+        // 3B (1929 MB) → ~241 MB
+        let kv3b = estimate_kv_cache_mb(1929, 4096);
+        assert!(kv3b < 350, "KV do 3B deveria ser ~241MB; obteve {kv3b}");
+        // 3B+7B modelos + caches devem caber sob o orçamento da RX 6600 (8176 MB · 0.95)
+        let total = 1929 + 4467 + kv3b + kv7b;
+        assert!(total < (8176.0 * 0.95) as u64,
+            "3B+7B+caches ({total} MB) deveria caber sob 95% de 8176 MB");
     }
 
     // ── resolve_gguf_path ────────────────────────────────────────────────────

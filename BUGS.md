@@ -96,6 +96,7 @@ Qual teste cobre o caso agora, ou por que não existe um.
 | [BUG-033](#bug-033) | FIXED | 2026-06-04 | Mnemosyne | Classificação Plutchik nunca funcionou: `_PLUTCHIK_PROMPT.format()` tratava o JSON de exemplo `{"joy":..}` como campos de formatação → `KeyError` engolido. Chaves escapadas (`{{ }}`) |
 | [BUG-034](#bug-034) | FIXED | 2026-06-04 | HUB/LOGOS + Mnemosyne/KOSMOS | `registry.json` com `name` = nome do GGUF em vez do alias (qwen2.5:7b, gemma2:2b baixados em 24/05 por código antigo) → LOGOS não resolvia o alias → reflexões do Mnemosyne falhavam (DEBUG, invisível) → memória pessoal vazia. Corrigidos os 2 `name` + falha de reflexão subida a warning |
 | [BUG-035](#bug-035) | FIXED | 2026-06-05 | Mnemosyne | `_ec_hdrs` usado em 6 chamadas ChatOpenAI mas NUNCA importado → `NameError` quebrava TODA a camada de LLM do Mnemosyne (reflexões, chat, studio, deep research). Causa real (junto com BUG-034) da memória pessoal vazia. Faltava `get_inference_headers as _ec_hdrs` no import |
+| [BUG-036](#bug-036) | FIXED | 2026-06-05 | HUB/LOGOS | `effective_gpu_layers` com orçamento chumbado (90%) + KV cache ~3x inflado → achava que 3B+7B não cabiam na GPU e jogava o 7B do Mnemosyne na CPU (RAM do sistema) → RAM esgotava, kernel matava o 7B, watchdog reiniciava → espiral que TRAVAVA o PC. Fix: orçamento = `vram_limit_pct` configurado + KV realista + rede de segurança (descarregar o outro LLM e usar GPU, nunca CPU para chat) |
 
 ---
 
@@ -2002,3 +2003,36 @@ Mnemosyne sem nenhuma funcionalidade de LLM: zero reflexões/insights (memória 
 
 #### Teste de regressão
 `tests/test_pipeline_logging.py::TestIndexWorkerNarration::test_ec_hdrs_importado_onde_e_usado` — se `_ec_hdrs(` é usado no source, o import `get_inference_headers as _ec_hdrs` deve estar presente.
+
+---
+
+### BUG-036 · [FIXED] · LOGOS punha o 7B do Mnemosyne na CPU (RAM do sistema) → espiral de OOM travava o PC
+
+#### Identificação
+- **Data:** 2026-06-05
+- **App(s):** HUB/LOGOS (impacta o caso de uso principal: indexação + análise do Mnemosyne)
+- **Componente:** `HUB/src-tauri/src/logos.rs` — `effective_gpu_layers`, `estimate_kv_cache_mb`, `ensure_server_loaded`
+- **Commit do fix:** (este commit)
+- **Descoberta via:** ao testar o pipeline real índice→análise (após BUG-034/035), a memória pessoal não enchia; medição mostrou RAM em 173 MiB livres, **swap 13/13 GiB (100%)**, pressão de I/O ~95% — o PC travando. O log do HUB mostrava o 7B em loop de restart ("saiu inesperadamente status 256" → "tentativa 1/3" → recarrega em CPU → "couldn't bind socket 8083").
+
+#### Ambiente
+- **Máquina(s):** PC principal (CachyOS, RX 6600 8 GB, 13 GiB RAM efetiva)
+- **Modo:** produção
+
+#### Pré-condição para reproduzir
+AKASHA (3B na GPU) e Mnemosyne (precisa do 7B para reflexão/análise) ativos ao mesmo tempo.
+
+#### Sintoma observado
+PC com travamentos sem CPU nem temperatura altas. Análise do Mnemosyne (reflexões) não roda; memória pessoal vazia. 7B em loop de restart.
+
+#### Causa raiz
+Ao carregar o 7B do Mnemosyne com o 3B da AKASHA já na GPU, `effective_gpu_layers` decidia **CPU** por dois motivos somados: (1) orçamento **chumbado em 90%** da VRAM (ignorando o `vram_limit_pct` configurado em 95% — o limite foi elevado para 93–95% justamente para caber 3B+7B juntos); (2) `estimate_kv_cache_mb` **~3x inflado** (`model_size/3` a 4096 ctx → ~1489 MB para o 7B, quando o real é ~558 MB). Resultado: achava que 3B+7B = ~8,5 GB (não cabe) e jogava o 7B (4,7 GB) na **CPU = RAM do sistema**. Em 13 GiB de RAM, com AKASHA + Mnemosyne + indexação + VS Code, a RAM esgotava → o kernel matava o llama-server (OOM) → o watchdog do LOGOS reiniciava → recarregava 4,7 GB → RAM pior → **espiral**, mais conflito de porta (8083 órfã). O LOGOS gerenciava a VRAM mas era **cego à RAM do sistema** — exatamente a falha que deveria evitar.
+
+#### Impacto
+PC travando (RAM/swap esgotados, I/O 95%); caso de uso principal (índice→análise) inutilizável.
+
+#### Fix aplicado
+(1) `estimate_kv_cache_mb`: divisor `(4096*3)` → `(4096*8)` (KV realista, ~model/8). (2) `effective_gpu_layers`: orçamento passa a usar o `vram_limit_pct` **configurado** (93–95%), não 90% fixo — nova assinatura recebe `vram_limit_pct`. (3) **Rede de segurança** em `ensure_server_loaded`: se um modelo de chat seria rebaixado para CPU (n_gpu==0) mas o perfil queria GPU, o LOGOS **descarrega o outro servidor de chat e tenta de novo na GPU** — um LLM pesado por vez na GPU; **nunca CPU para chat** (evita a RAM do sistema e a espiral). Com (1)+(2) ambos cabem na GPU no caso normal (sem swap); (3) garante GPU mesmo no caso apertado. **keep_alive NÃO foi alterado:** verificou-se que ele é removido antes de chegar ao llama-server (no-op); o descarregamento é por idle timeout (5 min), que já cobre o reuso em lote; a "espiral de reload" era o OOM (resolvido por 1-3), não o keep_alive.
+
+#### Teste de regressão
+`logos.rs` (testes): `estimate_kv_cache_realista_nao_3x_inflado` (KV do 7B < 700 MB, 3B < 350 MB, 3B+7B+caches cabem sob 95% de 8176 MB); os 4 testes de `effective_gpu_layers` atualizados para a nova assinatura. `cargo check` limpo; 5/5 passam. Validação final na máquina (GPU real) fica para o rebuild da usuária — observar que o 7B sobe com `n-gpu-layers` != 0 e que a RAM do sistema não estoura.
