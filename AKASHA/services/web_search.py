@@ -448,6 +448,11 @@ async def _fetch_searxng(
 
 _MARGINALIA_TIMEOUT = 8.0
 
+# mwmbl — índice indie comunitário (~500M URLs), grátis, sem chave. Usado como
+# fallback leve: só consultado quando SearXNG+Marginalia retornam poucos resultados.
+_MWMBL_TIMEOUT = 8.0
+_MWMBL_FALLBACK_THRESHOLD = 10  # abaixo disto, complementa com mwmbl
+
 
 def _get_marginalia_key() -> str:
     """Lê akasha.marginalia_api_key do ecosystem.json. Vazio → usa a chave pública."""
@@ -493,21 +498,63 @@ async def _fetch_marginalia(query: str, api_key: str, max_results: int) -> list[
     ]
 
 
-def _merge_rrf(lists: list[list[SearchResult]], max_results: int, k: int = 60) -> list[SearchResult]:
+async def _fetch_mwmbl(query: str, max_results: int) -> list[SearchResult]:
+    """Busca via API do mwmbl — `GET api.mwmbl.org/search/?s={query}` (grátis, sem chave).
+
+    Índice independente e comunitário (~500M URLs), bom para web de nicho. Usado como
+    FALLBACK leve (só quando SearXNG+Marginalia retornam pouco). Título e snippet vêm
+    como fragmentos `{value, is_bold}` — reconstruídos por join. Falha graciosamente.
+    """
+    def _join(frags: object) -> str:
+        if isinstance(frags, list):
+            return "".join(f.get("value", "") for f in frags if isinstance(f, dict))
+        return str(frags or "")
+
+    try:
+        async with httpx.AsyncClient(timeout=_MWMBL_TIMEOUT) as client:
+            resp = await client.get("https://api.mwmbl.org/search/", params={"s": query})
+        resp.raise_for_status()
+        raw = resp.json()
+        if not isinstance(raw, list):
+            return []
+    except Exception as exc:
+        log.debug("web_search: mwmbl erro (%s) para %r", exc, query)
+        return []
+    out = [
+        SearchResult(
+            title=_join(r.get("title")),
+            url=r.get("url", ""),
+            snippet=_join(r.get("extract")),
+            source="WEB",
+        )
+        for r in raw
+        if isinstance(r, dict) and r.get("url")
+    ]
+    return out[:max_results] if max_results > 0 else out
+
+
+def _merge_rrf(
+    lists: list[list[SearchResult]],
+    max_results: int,
+    k: int = 60,
+    weights: "list[float] | None" = None,
+) -> list[SearchResult]:
     """Funde várias listas ranqueadas via Reciprocal Rank Fusion, deduplicando por URL.
 
-    RRF score(url) = Σ_fontes 1/(k + rank). Resultados que aparecem em mais de uma
-    fonte (ou bem ranqueados) sobem; URLs únicas de cada fonte são preservadas — é o
-    que maximiza volume E qualidade ao combinar SearXNG + Marginalia.
+    RRF score(url) = Σ_fontes peso_fonte/(k + rank). Resultados que aparecem em mais
+    de uma fonte (ou bem ranqueados) sobem; URLs únicas de cada fonte são preservadas.
+    `weights` (opcional, paralelo a `lists`) permite dar menos peso a fontes de menor
+    qualidade (ex.: mwmbl com 0.3) sem que elas poluam o topo. Default: 1.0 cada.
     """
     scores: dict[str, float] = {}
     first: dict[str, SearchResult] = {}
-    for results in lists:
+    for i, results in enumerate(lists):
+        w = weights[i] if weights is not None and i < len(weights) else 1.0
         for rank, r in enumerate(results):
             url = r.url
             if not url:
                 continue
-            scores[url] = scores.get(url, 0.0) + 1.0 / (k + rank + 1)
+            scores[url] = scores.get(url, 0.0) + w / (k + rank + 1)
             first.setdefault(url, r)
     ordered = sorted(first.values(), key=lambda r: scores[r.url], reverse=True)
     return ordered[:max_results] if max_results > 0 else ordered
@@ -578,10 +625,24 @@ async def _fetch_web(
             lists.append(res)
 
     if lists:
-        return _merge_rrf(lists, max_results)
+        merged = _merge_rrf(lists, max_results)
+        # Fallback leve: se SearXNG+Marginalia retornaram POUCO, complementar com mwmbl
+        # (índice indie independente), com peso baixo no RRF para não poluir o topo.
+        if len(merged) < _MWMBL_FALLBACK_THRESHOLD:
+            log.debug("web_search: poucos resultados (%d) — complementando com mwmbl (%r)", len(merged), query)
+            mwmbl = await _fetch_mwmbl(query, max_results)
+            if mwmbl:
+                log.debug("web_search: mwmbl retornou %d resultados para %r", len(mwmbl), query)
+                merged = _merge_rrf([merged, mwmbl], max_results, weights=[1.0, 0.3])
+        return merged
 
-    # Nada do SearXNG/Marginalia → fallback DDG (sem filtro de idioma confiável).
-    log.debug("web_search: SearXNG/Marginalia vazios — fallback para DDG (%r)", query)
+    # Nada do SearXNG/Marginalia → mwmbl como fonte indie; senão DDG.
+    log.debug("web_search: SearXNG/Marginalia vazios — tentando mwmbl (%r)", query)
+    mwmbl = await _fetch_mwmbl(query, max_results)
+    if mwmbl:
+        log.debug("web_search: mwmbl retornou %d resultados (primária) para %r", len(mwmbl), query)
+        return mwmbl
+    log.debug("web_search: mwmbl vazio — fallback para DDG (%r)", query)
     return await _fetch_ddg(query, max_results)
 
 
